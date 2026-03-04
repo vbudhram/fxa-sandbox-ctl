@@ -192,6 +192,22 @@ http {
             proxy_set_header Connection \$connection_upgrade;
         }
 
+        # Inbox viewer — self-contained HTML page for reading captured emails
+        location = /__inbox {
+            alias /tmp/inbox-viewer.html;
+            default_type text/html;
+        }
+
+        # Mail API proxy — avoids CORS when inbox viewer fetches from mail_helper
+        location /__mail/ {
+            rewrite ^/__mail/(.*)$ /mail/\$1 break;
+            proxy_pass http://127.0.0.1:9001;
+            proxy_http_version 1.1;
+            proxy_set_header Host \$http_host;
+            proxy_set_header Accept-Encoding "";
+            proxy_read_timeout 5s;
+        }
+
         # Everything else -> content server (:3031)
         location / {
             proxy_pass http://127.0.0.1:3031;

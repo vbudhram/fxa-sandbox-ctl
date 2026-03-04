@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FXA Sandbox Inbox</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1b26;
+    --surface: #24283b;
+    --surface2: #2f3347;
+    --border: #3b3f54;
+    --text: #c0caf5;
+    --text-dim: #7982a9;
+    --accent: #7aa2f7;
+    --accent-dim: #3d59a1;
+    --green: #9ece6a;
+    --orange: #ff9e64;
+    --red: #f7768e;
+    --purple: #bb9af7;
+    --cyan: #7dcfff;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .email-input-group {
+    display: flex;
+    gap: 8px;
+    flex: 1;
+    max-width: 480px;
+  }
+
+  .email-input-group input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .email-input-group input:focus {
+    border-color: var(--accent);
+  }
+
+  .email-input-group input::placeholder {
+    color: var(--text-dim);
+  }
+
+  button {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+
+  button:hover { background: var(--border); }
+  button:active { transform: scale(0.98); }
+
+  .btn-accent {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-accent:hover { background: var(--accent); }
+
+  .btn-danger {
+    border-color: var(--red);
+    color: var(--red);
+  }
+  .btn-danger:hover { background: rgba(247, 118, 142, 0.15); }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+  }
+
+  .status-dot.active {
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 24px;
+    color: var(--text-dim);
+  }
+
+  .empty-state p { margin-top: 8px; font-size: 14px; }
+  .empty-state .icon { font-size: 48px; opacity: 0.3; margin-bottom: 16px; }
+
+  .email-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+
+  .email-card:hover { border-color: var(--accent-dim); }
+
+  .email-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .email-header:hover { background: var(--surface2); }
+
+  .email-expand {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 3px;
+    transition: transform 0.15s;
+    flex-shrink: 0;
+  }
+
+  .email-card.expanded .email-expand {
+    transform: rotate(90deg);
+  }
+
+  .email-meta {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .email-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge-template {
+    background: rgba(122, 162, 247, 0.15);
+    color: var(--accent);
+  }
+
+  .email-subject {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .email-time {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* Verification codes — the hero of this page */
+  .codes-section {
+    padding: 0 16px 16px;
+  }
+
+  .code-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+
+  .code-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    min-width: 80px;
+    flex-shrink: 0;
+  }
+
+  .code-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: 4px;
+    flex: 1;
+  }
+
+  .code-copy {
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 4px;
+  }
+
+  .code-copy.copied {
+    background: rgba(158, 206, 106, 0.2);
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .link-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+
+  .link-row a {
+    color: var(--cyan);
+    text-decoration: none;
+    font-size: 13px;
+    word-break: break-all;
+  }
+
+  .link-row a:hover { text-decoration: underline; }
+
+  .email-body {
+    display: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .email-card.expanded .email-body {
+    display: block;
+  }
+
+  .email-body iframe {
+    width: 100%;
+    min-height: 300px;
+    border: none;
+    background: #fff;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FXA Inbox</h1>
+  <div class="email-input-group">
+    <input type="text" id="emailInput" placeholder="Enter username or email (e.g. test-user)" autofocus>
+    <button class="btn-accent" onclick="startWatching()">Watch</button>
+  </div>
+  <button class="btn-danger" onclick="clearAll()" id="clearBtn" style="display:none">Clear All</button>
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Idle</span>
+  </div>
+</header>
+
+<main id="emailList">
+  <div class="empty-state">
+    <div class="icon">&#9993;</div>
+    <h2>No emails yet</h2>
+    <p>Enter a username above to start watching for emails.</p>
+  </div>
+</main>
+
+<script>
+(function() {
+  'use strict';
+
+  let username = '';
+  let emails = [];
+  let polling = false;
+  let pollTimer = null;
+  let abortCtrl = null;
+
+  const input = document.getElementById('emailInput');
+  const list = document.getElementById('emailList');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const clearBtn = document.getElementById('clearBtn');
+
+  // Pre-populate from ?email= query param
+  const params = new URLSearchParams(location.search);
+  const emailParam = params.get('email');
+  if (emailParam) {
+    input.value = emailParam;
+    // Auto-start after DOM is ready
+    requestAnimationFrame(() => startWatching());
+  }
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') startWatching();
+  });
+
+  window.startWatching = function() {
+    let val = input.value.trim();
+    if (!val) return;
+    // Strip @domain if present
+    val = val.split('@')[0];
+    username = val;
+    emails = [];
+    render();
+    clearBtn.style.display = '';
+    startPolling();
+  };
+
+  window.clearAll = async function() {
+    if (!username) return;
+    try {
+      await fetch('/__mail/' + encodeURIComponent(username), { method: 'DELETE' });
+      emails = [];
+      render();
+    } catch (e) {
+      console.error('Clear failed:', e);
+    }
+  };
+
+  function startPolling() {
+    stopPolling();
+    polling = true;
+    statusDot.classList.add('active');
+    statusText.textContent = 'Watching ' + username;
+    poll();
+  }
+
+  function stopPolling() {
+    polling = false;
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+    statusDot.classList.remove('active');
+  }
+
+  async function poll() {
+    if (!polling) return;
+
+    abortCtrl = new AbortController();
+    const timeout = setTimeout(() => abortCtrl.abort(), 2000);
+
+    try {
+      const resp = await fetch('/__mail/' + encodeURIComponent(username), {
+        signal: abortCtrl.signal
+      });
+      clearTimeout(timeout);
+
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length > 0) {
+          // Merge new emails (deduplicate by subject+timestamp)
+          const seen = new Set(emails.map(e => emailKey(e)));
+          let added = 0;
+          for (const msg of data) {
+            const key = emailKey(msg);
+            if (!seen.has(key)) {
+              emails.unshift(msg);
+              seen.add(key);
+              added++;
+            }
+          }
+          if (added > 0) render();
+        }
+      }
+      statusText.textContent = 'Watching ' + username + ' (' + emails.length + ')';
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e.name !== 'AbortError') {
+        statusText.textContent = 'Error — retrying...';
+      }
+    }
+
+    if (polling) {
+      pollTimer = setTimeout(poll, 3000);
+    }
+  }
+
+  function emailKey(msg) {
+    return (msg.subject || '') + '|' + ((msg.headers && msg.headers.date) || JSON.stringify(msg.headers));
+  }
+
+  // Pause polling when tab is hidden
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    } else if (polling && !pollTimer) {
+      poll();
+    }
+  });
+
+  function render() {
+    if (emails.length === 0) {
+      list.innerHTML = '<div class="empty-state">'
+        + '<div class="icon">&#9993;</div>'
+        + '<h2>No emails yet</h2>'
+        + '<p>Waiting for emails to ' + escHtml(username) + '...</p>'
+        + '</div>';
+      return;
+    }
+
+    let html = '';
+    for (let i = 0; i < emails.length; i++) {
+      html += renderEmail(emails[i], i);
+    }
+    list.innerHTML = html;
+  }
+
+  function renderEmail(msg, idx) {
+    const h = msg.headers || {};
+    const templateName = h['x-template-name'] || '';
+    const subject = msg.subject || '(no subject)';
+
+    // Collect codes
+    const codes = [];
+    const codeHeaders = [
+      ['x-verify-code', 'Verify'],
+      ['x-signin-verify-code', 'Sign-in'],
+      ['x-recovery-code', 'Recovery'],
+      ['x-unblock-code', 'Unblock'],
+      ['x-password-forgot-otp', 'Reset OTP'],
+    ];
+    for (const [key, label] of codeHeaders) {
+      if (h[key]) codes.push({ label: label, value: h[key] });
+    }
+
+    const link = h['x-link'] || '';
+
+    let html = '<div class="email-card" id="card-' + idx + '">';
+
+    // Header
+    html += '<div class="email-header" onclick="toggleCard(' + idx + ')">';
+    html += '<span class="email-expand">&#9654;</span>';
+    html += '<div class="email-meta">';
+    if (templateName) {
+      html += '<div class="email-badges"><span class="badge badge-template">' + escHtml(templateName) + '</span></div>';
+    }
+    html += '<div class="email-subject">' + escHtml(subject) + '</div>';
+    html += '</div>';
+    html += '<div class="email-time">#' + (idx + 1) + '</div>';
+    html += '</div>';
+
+    // Codes section (always visible)
+    if (codes.length > 0 || link) {
+      html += '<div class="codes-section">';
+      for (const c of codes) {
+        html += '<div class="code-row">';
+        html += '<span class="code-label">' + escHtml(c.label) + '</span>';
+        html += '<span class="code-value">' + escHtml(c.value) + '</span>';
+        html += '<button class="code-copy" onclick="copyCode(this, \'' + escAttr(c.value) + '\')">Copy</button>';
+        html += '</div>';
+      }
+      if (link) {
+        html += '<div class="link-row">';
+        html += '<span class="code-label">Link</span>';
+        html += '<a href="' + escAttr(link) + '" target="_blank">' + escHtml(truncate(link, 80)) + '</a>';
+        html += '<button class="code-copy" onclick="copyCode(this, \'' + escAttr(link) + '\')">Copy</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Body (expandable)
+    const bodyHtml = msg.html || '';
+    html += '<div class="email-body">';
+    html += '<iframe sandbox="allow-same-origin" srcdoc="' + escAttr(bodyHtml) + '"></iframe>';
+    html += '</div>';
+
+    html += '</div>';
+    return html;
+  }
+
+  window.toggleCard = function(idx) {
+    const card = document.getElementById('card-' + idx);
+    if (card) card.classList.toggle('expanded');
+  };
+
+  window.copyCode = function(btn, value) {
+    navigator.clipboard.writeText(value).then(function() {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(function() {
+        btn.textContent = 'Copy';
+        btn.classList.remove('copied');
+      }, 2000);
+    });
+  };
+
+  function escHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function escAttr(s) {
+    return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function truncate(s, n) {
+    return s.length > n ? s.substring(0, n) + '...' : s;
+  }
+})();
+</script>
+</body>
+</html>

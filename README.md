@@ -211,11 +211,35 @@ fxa-sandbox-ctl services auth-fix
 fxa-sandbox-ctl browser auth-fix
 ```
 
-This creates a dedicated Firefox profile at `logs/profiles/<agent-name>/` with a `user.js` containing all the `identity.fxaccounts.*` preferences pointing at the VM's IP. Firefox is launched with `-profile` and `-no-remote` so it runs as a separate instance that won't interfere with your normal browser.
+This creates a dedicated Firefox profile at `logs/profiles/<agent-name>/` with a `user.js` containing all the `identity.fxaccounts.*` preferences pointing at the VM's IP. Firefox opens two tabs:
+- **Tab 1:** `http://<VM_IP>:3030/` — FXA content server
+- **Tab 2:** `http://<VM_IP>:3030/__inbox` — Inbox viewer for captured emails
+
+The browser uses `oauth_webchannel_v1` context (the modern OAuth-based Sync flow). HSTS headers from the auth server are stripped by the proxy so plain HTTP works correctly.
+
+Firefox is launched with `-profile` and `-no-remote` so it runs as a separate instance that won't interfere with your normal browser.
 
 **Profile reuse:** If the profile directory already exists (e.g. after a VM restart), only `user.js` is rewritten with the new IP. Login state, cookies, and other browser data are preserved.
 
 **Cleanup:** The profile directory is automatically deleted when you run `fxa-sandbox-ctl stop <name>`.
+
+### Inbox Viewer
+
+The inbox viewer at `/__inbox` shows emails captured by mail_helper. Enter an email address to watch for verification codes, password reset links, etc. Codes are displayed prominently with copy-to-clipboard buttons.
+
+### Running Functional Tests from Host
+
+You can run Playwright functional tests from your Mac against the sandbox VM:
+
+```bash
+cd packages/functional-tests
+FXA_SANDBOX_IP=<VM_IP> yarn test-sandbox
+
+# Run specific tests:
+FXA_SANDBOX_IP=<VM_IP> npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+```
+
+The sandbox Playwright project uses `oauth_webchannel_v1` context and includes HSTS-disabling Firefox prefs so tests work over plain HTTP.
 
 ## Infrastructure Details
 
@@ -265,7 +289,8 @@ fxa-sandbox-ctl/               # Repo root
 │       ├── 09-fxa-services.sh   # FXA service scripts (fxa-start)
 │       └── 10-agent-guide.sh    # Bake agent guide into image
 ├── templates/
-│   └── agent-startup.sh         # VM entrypoint template
+│   ├── agent-startup.sh         # VM entrypoint template
+│   └── inbox-viewer.html        # Email inbox viewer (served at /__inbox)
 ├── lib/
 │   ├── config.sh                # Constants and defaults
 │   ├── vm.sh                    # Tart VM lifecycle

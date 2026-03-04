@@ -239,12 +239,22 @@ curl localhost:9000/__heartbeat__   # Auth server health
 curl localhost:9001/mail            # Check captured emails
 ```
 
+## Inbox Viewer
+- **URL:** `http://localhost:3030/__inbox` — web UI for viewing captured emails
+- Enter an email address to see verification codes, reset links, etc.
+- Codes displayed prominently with copy-to-clipboard
+- Polls mail_helper every 3 seconds via `/__mail/` nginx proxy
+
 ## Tests
 ```bash
 yarn test-sandbox                         # Functional tests (Playwright)
 npx playwright test --project=sandbox     # Direct Playwright
 npx nx test-unit <package>                # Unit tests
 ```
+
+## Context
+- Browser context: `oauth_webchannel_v1` (modern OAuth-based Sync flow)
+- HSTS stripped by nginx proxy (auth server sends strict-transport-security over HTTP)
 
 ## Full Guide
 Read `/etc/vm-agent-guide.md` for the complete operations manual (port map, architecture, gotchas).
@@ -612,18 +622,18 @@ agent_browser() {
 user_pref("identity.fxaccounts.auth.uri", "http://${ip}:9000/v1");
 user_pref("identity.fxaccounts.allowHttp", true);
 user_pref("identity.fxaccounts.remote.root", "http://${ip}:3030/");
-user_pref("identity.fxaccounts.remote.force_auth.uri", "http://${ip}:3030/force_auth?service=sync&context=fx_desktop_v3");
-user_pref("identity.fxaccounts.remote.signin.uri", "http://${ip}:3030/signin?service=sync&context=fx_desktop_v3");
-user_pref("identity.fxaccounts.remote.signup.uri", "http://${ip}:3030/signup?service=sync&context=fx_desktop_v3");
+user_pref("identity.fxaccounts.remote.force_auth.uri", "http://${ip}:3030/force_auth?service=sync&context=oauth_webchannel_v1");
+user_pref("identity.fxaccounts.remote.signin.uri", "http://${ip}:3030/signin?service=sync&context=oauth_webchannel_v1");
+user_pref("identity.fxaccounts.remote.signup.uri", "http://${ip}:3030/signup?service=sync&context=oauth_webchannel_v1");
 user_pref("identity.fxaccounts.remote.webchannel.uri", "http://${ip}:3030/");
 user_pref("identity.fxaccounts.remote.oauth.uri", "http://${ip}:9000/v1");
 user_pref("identity.fxaccounts.remote.profile.uri", "http://${ip}:1111/v1");
-user_pref("identity.fxaccounts.settings.uri", "http://${ip}:3030/settings?service=sync&context=fx_desktop_v3");
+user_pref("identity.fxaccounts.settings.uri", "http://${ip}:3030/settings?service=sync&context=oauth_webchannel_v1");
 user_pref("identity.sync.tokenserver.uri", "http://${ip}:8000/token/1.0/sync/1.5");
 user_pref("services.sync.tokenServerURI", "http://${ip}:8000/token/1.0/sync/1.5");
-user_pref("identity.fxaccounts.contextParam", "fx_desktop_v3");
+user_pref("identity.fxaccounts.contextParam", "oauth_webchannel_v1");
 user_pref("identity.fxaccounts.lastSignedInUserHash", "");
-user_pref("identity.fxaccounts.oauth.enabled", false);
+user_pref("identity.fxaccounts.oauth.enabled", true);
 user_pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "http://${ip}:3030/");
 user_pref("webchannel.allowObject.urlWhitelist", "http://${ip}:3030");
 user_pref("dom.securecontext.allowlist", "${ip},localhost");
@@ -657,10 +667,101 @@ USERJS
     fi
   '" 2>/dev/null && echo "  Proxy patched: HSTS header stripped." || true
 
+  # ── Inbox viewer setup ──────────────────────────────────────
+  # SCP the self-contained inbox viewer HTML to the VM
+  local inbox_html="${SANDBOX_ROOT}/templates/inbox-viewer.html"
+  local inbox_url=""
+  if [ -f "${inbox_html}" ]; then
+    echo "  Uploading inbox viewer..."
+    scp -i "${ssh_key}" ${VM_SSH_OPTS} \
+      "${inbox_html}" \
+      "${VM_SSH_USER}@${ip}:/tmp/inbox-viewer.html" 2>/dev/null \
+      && echo "  Inbox viewer uploaded." || echo "  WARN: Failed to upload inbox viewer."
+
+    # Patch the running proxy to serve /__inbox and /__mail/
+    if ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
+      'test -f /tmp/fxa-proxy.conf' 2>/dev/null; then
+      # nginx proxy — inject routes if not already present
+      ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" bash -c "'
+        if ! grep -q __inbox /tmp/fxa-proxy.conf; then
+          sed -i \"/# Everything else -> content server/i\\
+        # Inbox viewer\\n\
+        location = /__inbox {\\n\
+            alias /tmp/inbox-viewer.html;\\n\
+            default_type text\\/html;\\n\
+        }\\n\\n\
+        # Mail API proxy\\n\
+        location /__mail\\/ {\\n\
+            rewrite ^\\/__mail\\/(.*)$ \\/mail\\/\\\$1 break;\\n\
+            proxy_pass http:\\/\\/127.0.0.1:9001;\\n\
+            proxy_http_version 1.1;\\n\
+            proxy_set_header Host \\\$http_host;\\n\
+            proxy_set_header Accept-Encoding \\\"\\\";\\n\
+            proxy_read_timeout 5s;\\n\
+        }\\n\" /tmp/fxa-proxy.conf
+          nginx -c /tmp/fxa-proxy.conf -s reload 2>/dev/null && echo \"nginx reloaded with inbox routes\" || echo \"WARN: nginx reload failed\"
+        else
+          echo \"Inbox routes already present.\"
+        fi
+      '" 2>/dev/null && inbox_url="http://${ip}:3030/__inbox"
+    elif ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
+      'test -f /tmp/fxa-proxy.js' 2>/dev/null; then
+      # Node.js proxy (legacy) — start a standalone server on :9002
+      ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" bash -c "'
+        if ! pm2 describe inbox-proxy >/dev/null 2>&1; then
+          cat > /tmp/inbox-proxy.js <<\"INBOXPROXY\"
+const http = require(\"http\");
+const fs = require(\"fs\");
+const server = http.createServer((req, res) => {
+  if (req.url === \"/__inbox\" || req.url === \"/__inbox/\") {
+    try {
+      const html = fs.readFileSync(\"/tmp/inbox-viewer.html\", \"utf8\");
+      res.writeHead(200, {\"Content-Type\": \"text/html\"});
+      res.end(html);
+    } catch (e) {
+      res.writeHead(404);
+      res.end(\"inbox-viewer.html not found\");
+    }
+    return;
+  }
+  const m = req.url.match(/^\\/__mail\\/(.+)/);
+  if (m) {
+    const opts = {hostname: \"127.0.0.1\", port: 9001, path: \"/mail/\" + m[1], method: req.method, timeout: 5000};
+    const proxy = http.request(opts, (pRes) => {
+      res.writeHead(pRes.statusCode, pRes.headers);
+      pRes.pipe(res);
+    });
+    proxy.on(\"error\", () => { if (!res.headersSent) { res.writeHead(502); } res.end(); });
+    proxy.on(\"timeout\", () => { proxy.destroy(); if (!res.headersSent) { res.writeHead(504); res.end(\"timeout\"); } });
+    req.pipe(proxy);
+    return;
+  }
+  res.writeHead(404);
+  res.end(\"not found\");
+});
+server.listen(9002, \"0.0.0.0\", () => console.log(\"[inbox-proxy] :9002\"));
+INBOXPROXY
+          pm2 start /tmp/inbox-proxy.js --name inbox-proxy 2>&1 | tail -1
+        fi
+      '" 2>/dev/null && inbox_url="http://${ip}:9002/__inbox"
+    fi
+  else
+    echo "  WARN: templates/inbox-viewer.html not found, skipping inbox."
+  fi
+
   echo "Firefox profile: ${profile_dir}"
   echo "Launching Firefox pointing at http://${ip}:3030/ ..."
 
-  /Applications/Firefox.app/Contents/MacOS/firefox -profile "${profile_dir}" -no-remote &
+  if [ -n "${inbox_url}" ]; then
+    echo "  Inbox viewer: ${inbox_url}"
+    /Applications/Firefox.app/Contents/MacOS/firefox \
+      -profile "${profile_dir}" -no-remote \
+      "http://${ip}:3030" "${inbox_url}" &
+  else
+    /Applications/Firefox.app/Contents/MacOS/firefox \
+      -profile "${profile_dir}" -no-remote \
+      "http://${ip}:3030" &
+  fi
   disown
 
   echo "Firefox launched (PID $!)."

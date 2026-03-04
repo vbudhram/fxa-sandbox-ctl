@@ -102,15 +102,49 @@ To interact with FXA services from a real Firefox browser on the host, use:
 fxa-sandbox-ctl browser <agent-name>
 ```
 
-This launches Firefox with a dedicated profile pre-configured with all `identity.fxaccounts.*` preferences pointing at the VM. Visit `http://<VM_IP>:3030/` to see the FXA content server.
+This launches Firefox with a dedicated profile pre-configured with all `identity.fxaccounts.*` preferences pointing at the VM. Two tabs open:
+- **Tab 1:** `http://<VM_IP>:3030/` — FXA content server
+- **Tab 2:** `http://<VM_IP>:3030/__inbox` — Inbox viewer for captured emails
+
+The browser uses `oauth_webchannel_v1` context (not `fx_desktop_v3`), matching the modern OAuth-based Sync flow.
+
+### Inbox Viewer
+
+The inbox viewer is a self-contained HTML page served at `/__inbox` via nginx. It polls `/__mail/{username}` (proxied to mail_helper on :9001) every 3 seconds.
+
+Features:
+- Enter an email address (or just the username part) to watch for emails
+- Verification codes are displayed prominently with copy-to-clipboard
+- Clickable verification links (`x-link` header)
+- Expandable HTML body preview
+- Supports `?email=` query param for pre-populating the username
+- Clear All button to flush emails
+
+Inside the VM, the inbox viewer is available at `http://localhost:3030/__inbox`.
+
+### Running Functional Tests from the Host
+
+You can run Playwright functional tests from your Mac targeting the sandbox VM:
+
+```bash
+cd packages/functional-tests
+FXA_SANDBOX_IP=<VM_IP> yarn test-sandbox
+
+# Or run specific tests:
+FXA_SANDBOX_IP=<VM_IP> npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+```
+
+The sandbox Playwright project uses `oauth_webchannel_v1` context and includes HSTS-disabling Firefox prefs (the sandbox auth server sends `strict-transport-security` headers over plain HTTP).
 
 ### Architecture: nginx Reverse Proxy
 
 ```
 Browser ──► nginx (:3030)
-              ├── /static/*          ──► settings dev server (:3000)
-              ├── /settings/static/* ──► settings dev server (:3000)
-              ├── /sockjs-node, /ws  ──► settings dev server (:3000)  [HMR WebSocket]
+              ├── /__inbox             ──► /tmp/inbox-viewer.html (static file)
+              ├── /__mail/*            ──► mail_helper (:9001) [API proxy]
+              ├── /static/*            ──► settings dev server (:3000)
+              ├── /settings/static/*   ──► settings dev server (:3000)
+              ├── /sockjs-node, /ws    ──► settings dev server (:3000)  [HMR WebSocket]
               └── /* (everything else) ──► content server (:3031)
 ```
 
@@ -180,7 +214,7 @@ After `fxa-start`, these PM2 processes run:
 
 8. **Rate limiting is disabled.** `CUSTOMS_SERVER_URL="none"` — no request throttling in the sandbox.
 
-9. **mail_helper is the email service.** Emails are captured locally on :9001. Check `curl http://localhost:9001/mail` for verification codes.
+9. **mail_helper is the email service.** Emails are captured locally on :9001. Check `curl http://localhost:9001/mail` for verification codes. Or use the inbox viewer at `http://localhost:3030/__inbox`.
 
 10. **Settings HMR works live; content-server needs restart.** Edit settings `.tsx` → instant update. Edit content-server `.js` → PM2 auto-restarts (watch mode) but you need to refresh the browser.
 
