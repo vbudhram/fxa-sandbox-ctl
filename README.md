@@ -66,6 +66,12 @@ fxa-sandbox-ctl list
 # Check logs
 fxa-sandbox-ctl logs auth-fix --follow
 
+# Start FXA services in the VM
+fxa-sandbox-ctl services auth-fix
+
+# Launch Firefox pointing at the VM
+fxa-sandbox-ctl browser auth-fix
+
 # Stop an agent
 fxa-sandbox-ctl stop auth-fix
 
@@ -111,6 +117,8 @@ macOS Host (32GB RAM)
 |---------|-------------|
 | `run <dir> [-n name] [-p prompt]` | Start a new agent |
 | `attach <name>` | Attach to agent's Claude Code TUI |
+| `services <name> [options]` | Start FXA app services in an agent's VM |
+| `browser <name>` | Launch Firefox configured to use an agent's VM |
 | `list` | List all agents |
 | `logs <name> [--follow]` | View agent logs |
 | `stop <name>` | Stop and remove an agent |
@@ -191,6 +199,24 @@ Set the default model in `~/.claude/settings.json`:
 
 This is automatically copied into each new VM agent.
 
+## Browser Command
+
+Launch a real Firefox browser on your Mac pre-configured to talk to the FXA services running inside an agent's VM:
+
+```bash
+# Start services first
+fxa-sandbox-ctl services auth-fix
+
+# Launch Firefox
+fxa-sandbox-ctl browser auth-fix
+```
+
+This creates a dedicated Firefox profile at `logs/profiles/<agent-name>/` with a `user.js` containing all the `identity.fxaccounts.*` preferences pointing at the VM's IP. Firefox is launched with `-profile` and `-no-remote` so it runs as a separate instance that won't interfere with your normal browser.
+
+**Profile reuse:** If the profile directory already exists (e.g. after a VM restart), only `user.js` is rewritten with the new IP. Login state, cookies, and other browser data are preserved.
+
+**Cleanup:** The profile directory is automatically deleted when you run `fxa-sandbox-ctl stop <name>`.
+
 ## Infrastructure Details
 
 Each VM runs locally:
@@ -245,4 +271,6 @@ fxa-sandbox-ctl/               # Repo root
 │   ├── vm.sh                    # Tart VM lifecycle
 │   └── agent.sh                 # Agent run/attach/stop/list + security
 └── logs/                        # Runtime logs (gitignored)
+    ├── ssh/<name>/              # Per-agent SSH keys
+    └── profiles/<name>/         # Per-agent Firefox profiles
 ```

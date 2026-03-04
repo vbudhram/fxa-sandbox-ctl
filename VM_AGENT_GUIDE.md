@@ -94,6 +94,16 @@ npx nx test-unit fxa-settings
 
 ---
 
+### Accessing from the Host Mac
+
+To interact with FXA services from a real Firefox browser on the host, use:
+
+```bash
+fxa-sandbox-ctl browser <agent-name>
+```
+
+This launches Firefox with a dedicated profile pre-configured with all `identity.fxaccounts.*` preferences pointing at the VM. Visit `http://<VM_IP>:3030/` to see the FXA content server.
+
 ### Architecture: nginx Reverse Proxy
 
 ```

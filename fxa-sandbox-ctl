@@ -33,6 +33,7 @@ COMMANDS:
   run [directory] [options]    Start a new agent (defaults to current directory)
   attach <name>                Attach to an agent's Claude Code TUI
   services <name> [options]    Start FXA app services in an agent's VM
+  browser <name>               Launch Firefox configured to use an agent's VM
   list                         List all agents and their status
   logs <name> [--follow]       View agent logs
   stop <name>                  Stop and remove an agent
@@ -70,6 +71,9 @@ EXAMPLES:
   # Start FXA services in an agent's VM
   fxa-sandbox-ctl services auth-fix
   fxa-sandbox-ctl services auth-fix --minimal
+
+  # Launch Firefox pointing at the agent's VM
+  fxa-sandbox-ctl browser auth-fix
 
   # Build the golden image (first-time setup)
   fxa-sandbox-ctl image build
@@ -201,6 +205,20 @@ cmd_services() {
   echo "Running 'fxa-start ${fxa_args}' in VM '${full_name}' (${ip})..."
   ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
     "source /etc/agent-env.sh && fxa-start ${fxa_args}"
+}
+
+# ── Command: browser ───────────────────────────────────────────
+
+cmd_browser() {
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl browser <name>" >&2
+    return 1
+  fi
+
+  agent_browser "$name"
 }
 
 # ── Command: list ──────────────────────────────────────────────
@@ -335,6 +353,7 @@ main() {
     run)        cmd_run "$@" ;;
     attach)     cmd_attach "$@" ;;
     services)   cmd_services "$@" ;;
+    browser)    cmd_browser "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

@@ -155,6 +155,10 @@ http {
         listen 3030;
         server_name _;
 
+        # Strip HSTS — content server sends strict-transport-security over
+        # plain HTTP, which causes browsers to upgrade requests to HTTPS.
+        proxy_hide_header strict-transport-security;
+
         # Rewrite VM IP URLs to match the actual request host.
         # From host (VM_IP): no-op (VM_IP -> VM_IP).
         # From VM (localhost): rewrites VM_IP -> localhost.
