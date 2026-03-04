@@ -1,0 +1,354 @@
+#!/bin/bash
+# fxa-sandbox-ctl — Orchestration CLI for FXA Agent Sandbox
+# Manages self-contained Linux VMs running Claude Code agents.
+set -euo pipefail
+
+# Resolve symlinks to find the real script location
+_resolve_symlink() {
+  local target="$1"
+  while [ -L "$target" ]; do
+    local dir="$(cd "$(dirname "$target")" && pwd)"
+    target="$(readlink "$target")"
+    [[ "$target" != /* ]] && target="$dir/$target"
+  done
+  echo "$target"
+}
+SCRIPT_DIR="$(cd "$(dirname "$(_resolve_symlink "${BASH_SOURCE[0]}")")" && pwd)"
+
+# Source library modules
+source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/vm.sh"
+source "${SCRIPT_DIR}/lib/agent.sh"
+
+# ── Usage / Help ───────────────────────────────────────────────
+
+usage() {
+  cat <<'USAGE'
+fxa-sandbox-ctl — FXA Agent Sandbox Manager
+
+USAGE:
+  fxa-sandbox-ctl <command> [options]
+
+COMMANDS:
+  run [directory] [options]    Start a new agent (defaults to current directory)
+  attach <name>                Attach to an agent's Claude Code TUI
+  services <name> [options]    Start FXA app services in an agent's VM
+  list                         List all agents and their status
+  logs <name> [--follow]       View agent logs
+  stop <name>                  Stop and remove an agent
+  stop --all                   Stop and remove all agents
+  image build                  Build the golden VM image (one-time setup)
+  image status                 Check if the golden image exists
+  status                       Show system resource usage
+  help                         Show this help message
+
+RUN OPTIONS:
+  -n, --name <name>            Agent name (auto-generated if omitted)
+  -p, --prompt <text>          Initial prompt to send to Claude Code
+  -c, --cpu <count>            vCPU count (default: 2)
+  -m, --memory <mb>            Memory in MB (default: 5120)
+
+EXAMPLES:
+  # Start an agent
+  fxa-sandbox-ctl run ~/worktrees/feature-auth -n "auth-fix"
+
+  # Start with an initial prompt
+  fxa-sandbox-ctl run ~/worktrees/bugfix -n "bugfix" -p "Fix the login bug in auth-server"
+
+  # List all agents
+  fxa-sandbox-ctl list
+
+  # Attach to agent TUI (Ctrl-b d to detach)
+  fxa-sandbox-ctl attach auth-fix
+
+  # Stop an agent
+  fxa-sandbox-ctl stop auth-fix
+
+  # Stop everything
+  fxa-sandbox-ctl stop --all
+
+  # Start FXA services in an agent's VM
+  fxa-sandbox-ctl services auth-fix
+  fxa-sandbox-ctl services auth-fix --minimal
+
+  # Build the golden image (first-time setup)
+  fxa-sandbox-ctl image build
+USAGE
+}
+
+# ── Prerequisite checks ───────────────────────────────────────
+
+check_prerequisites() {
+  local missing=()
+
+  if ! command -v tart &>/dev/null; then
+    missing+=("tart (brew install cirruslabs/cli/tart)")
+  fi
+
+  if ! command -v tmux &>/dev/null; then
+    missing+=("tmux (brew install tmux)")
+  fi
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "ERROR: Missing required tools:" >&2
+    for tool in "${missing[@]}"; do
+      echo "  - ${tool}" >&2
+    done
+    echo "" >&2
+    echo "Install with: brew install cirruslabs/cli/tart tmux" >&2
+    return 1
+  fi
+}
+
+# ── Command: run ───────────────────────────────────────────────
+
+cmd_run() {
+  local directory=""
+  local name=""
+  local prompt=""
+  local cpu="$DEFAULT_VM_CPU"
+  local memory="$DEFAULT_VM_MEMORY_MB"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n|--name)
+        name="$2"
+        shift 2
+        ;;
+      -p|--prompt)
+        prompt="$2"
+        shift 2
+        ;;
+      -c|--cpu)
+        cpu="$2"
+        shift 2
+        ;;
+      -m|--memory)
+        memory="$2"
+        shift 2
+        ;;
+      -*)
+        echo "ERROR: Unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        if [ -z "$directory" ]; then
+          directory="$1"
+        else
+          echo "ERROR: Unexpected argument: $1" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$directory" ]; then
+    directory="$PWD"
+  fi
+
+  if [ -z "$name" ]; then
+    name="$(basename "$directory")"
+  fi
+
+  check_prerequisites
+  agent_run "$directory" "$name" "$prompt" "$cpu" "$memory"
+}
+
+# ── Command: attach ────────────────────────────────────────────
+
+cmd_attach() {
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl attach <name>" >&2
+    echo "Run 'fxa-sandbox-ctl list' to see running agents." >&2
+    return 1
+  fi
+
+  check_prerequisites
+  agent_attach "$name"
+}
+
+# ── Command: services ──────────────────────────────────────────
+
+cmd_services() {
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl services <name> [--minimal|--stop|--status]" >&2
+    return 1
+  fi
+
+  if ! vm_is_running "$name"; then
+    echo "ERROR: Agent '${name}' is not running." >&2
+    return 1
+  fi
+
+  shift
+  local fxa_args="${*:-}"
+
+  local full_name
+  full_name="$(vm_name "$name")"
+
+  local ip
+  ip="$(vm_ip "$name")"
+
+  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+
+  echo "Running 'fxa-start ${fxa_args}' in VM '${full_name}' (${ip})..."
+  ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
+    "source /etc/agent-env.sh && fxa-start ${fxa_args}"
+}
+
+# ── Command: list ──────────────────────────────────────────────
+
+cmd_list() {
+  agent_list
+}
+
+# ── Command: logs ──────────────────────────────────────────────
+
+cmd_logs() {
+  local name="${1:-}"
+  local follow="false"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl logs <name> [--follow]" >&2
+    return 1
+  fi
+
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -f|--follow)
+        follow="true"
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  agent_logs "$name" "$follow"
+}
+
+# ── Command: stop ──────────────────────────────────────────────
+
+cmd_stop() {
+  if [ "${1:-}" = "--all" ]; then
+    agent_stop_all
+    return
+  fi
+
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name or --all is required." >&2
+    echo "Usage: fxa-sandbox-ctl stop <name>" >&2
+    echo "       fxa-sandbox-ctl stop --all" >&2
+    return 1
+  fi
+
+  agent_stop "$name"
+}
+
+# ── Command: image ─────────────────────────────────────────────
+
+cmd_image() {
+  local subcmd="${1:-}"
+
+  case "$subcmd" in
+    build)
+      check_prerequisites
+      if ! command -v packer &>/dev/null; then
+        echo "Packer not installed. Installing..."
+        echo "Run: brew install hashicorp/tap/packer"
+        return 1
+      fi
+      vm_image_build
+      ;;
+    status)
+      if vm_image_exists; then
+        echo "Golden image '${FXA_IMAGE_NAME}' exists."
+        tart list 2>/dev/null | grep "^${FXA_IMAGE_NAME} "
+      else
+        echo "Golden image '${FXA_IMAGE_NAME}' not found."
+        echo "Build it with: fxa-sandbox-ctl image build"
+      fi
+      ;;
+    *)
+      echo "Usage: fxa-sandbox-ctl image <build|status>" >&2
+      return 1
+      ;;
+  esac
+}
+
+# ── Command: status ────────────────────────────────────────────
+
+cmd_status() {
+  echo "=== FXA Agent Sandbox Status ==="
+  echo ""
+
+  # Host memory
+  local total_mem_bytes
+  total_mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
+  local total_mem_gb=$(( total_mem_bytes / 1024 / 1024 / 1024 ))
+
+  echo "Host: macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown'), ${total_mem_gb}GB RAM"
+  echo ""
+
+  # Golden image
+  if vm_image_exists; then
+    echo "Golden image: installed"
+  else
+    echo "Golden image: NOT INSTALLED (run: fxa-sandbox-ctl image build)"
+  fi
+  echo ""
+
+  # Running agents
+  echo "Agents:"
+  agent_list
+  echo ""
+
+  # tmux session
+  if tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
+    local window_count
+    window_count=$(tmux list-windows -t "${TMUX_SESSION}" 2>/dev/null | wc -l | tr -d ' ')
+    echo "tmux session '${TMUX_SESSION}': active (${window_count} windows)"
+  else
+    echo "tmux session '${TMUX_SESSION}': not running"
+  fi
+}
+
+# ── Main dispatch ──────────────────────────────────────────────
+
+main() {
+  local command="${1:-help}"
+  shift 2>/dev/null || true
+
+  case "$command" in
+    run)        cmd_run "$@" ;;
+    attach)     cmd_attach "$@" ;;
+    services)   cmd_services "$@" ;;
+    list|ls)    cmd_list "$@" ;;
+    logs|log)   cmd_logs "$@" ;;
+    stop)       cmd_stop "$@" ;;
+    image)      cmd_image "$@" ;;
+    status)     cmd_status "$@" ;;
+    help|--help|-h)
+      usage
+      ;;
+    *)
+      echo "ERROR: Unknown command: ${command}" >&2
+      echo "Run 'fxa-sandbox-ctl help' for usage." >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
