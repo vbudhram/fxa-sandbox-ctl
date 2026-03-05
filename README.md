@@ -60,6 +60,9 @@ fxa-sandbox-ctl attach auth-fix
 
 # Inside tmux: Ctrl-b d to detach (agent keeps working)
 
+# Switch to a different workspace (VM restarts, DB preserved)
+fxa-sandbox-ctl switch auth-fix ~/worktrees/new-feature
+
 # See all agents
 fxa-sandbox-ctl list
 
@@ -71,6 +74,12 @@ fxa-sandbox-ctl services auth-fix
 
 # Launch Firefox pointing at the VM
 fxa-sandbox-ctl browser auth-fix
+
+# Run all functional tests against the VM
+fxa-sandbox-ctl test auth-fix
+
+# Run a specific test
+fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
 
 # Stop an agent
 fxa-sandbox-ctl stop auth-fix
@@ -116,9 +125,11 @@ macOS Host (32GB RAM)
 | Command | Description |
 |---------|-------------|
 | `run <dir> [-n name] [-p prompt]` | Start a new agent |
+| `switch <name> <directory>` | Switch an agent's workspace (VM restarts, DB preserved) |
 | `attach <name>` | Attach to agent's Claude Code TUI |
 | `services <name> [options]` | Start FXA app services in an agent's VM |
 | `browser <name>` | Launch Firefox configured to use an agent's VM |
+| `test <name> [-- args]` | Run Playwright functional tests against an agent's VM |
 | `list` | List all agents |
 | `logs <name> [--follow]` | View agent logs |
 | `stop <name>` | Stop and remove an agent |
@@ -229,7 +240,17 @@ The inbox viewer at `/__inbox` shows emails captured by mail_helper. Enter an em
 
 ### Running Functional Tests from Host
 
-You can run Playwright functional tests from your Mac against the sandbox VM:
+The easiest way to run tests from your Mac is the `test` command:
+
+```bash
+# Run all functional tests
+fxa-sandbox-ctl test auth-fix
+
+# Run a specific test
+fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
+```
+
+Or manually with `FXA_SANDBOX_IP`:
 
 ```bash
 cd packages/functional-tests
@@ -262,6 +283,8 @@ All services start automatically on VM boot via systemd.
 **No space on disk:** Golden image is ~10GB, each clone uses CoW so minimal extra space. Run `tart list` to see all VMs.
 
 **Tests fail (missing node_modules):** The workspace mount is your host worktree. Run `yarn install` inside the VM first.
+
+**Switch fails midway:** The VM disk clone is preserved. Retry the switch or run `fxa-sandbox-ctl stop <name>` to clean up.
 
 **Settings not applied:** If Claude shows Sonnet instead of Opus, check that `~/.claude/settings.json` has the `"model"` key and restart the agent.
 

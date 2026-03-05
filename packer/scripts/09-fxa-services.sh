@@ -10,8 +10,7 @@ cat > /usr/local/bin/fxa-start <<'FXASTART'
 # fxa-start — Start FXA application services in the sandbox VM
 #
 # Usage:
-#   fxa-start              Start core FXA services
-#   fxa-start --minimal    Start only auth + content (less RAM)
+#   fxa-start              Start all FXA services
 #   fxa-start --status     Show service status
 #   fxa-start --stop       Stop all FXA services
 #
@@ -59,9 +58,6 @@ case "${1:-}" in
 esac
 
 MINIMAL=false
-if [ "${1:-}" = "--minimal" ]; then
-  MINIMAL=true
-fi
 
 # ── Step 1: Install missing Linux-arm64 native modules ──
 # The workspace node_modules were installed on macOS (darwin-arm64).
@@ -355,14 +351,13 @@ pm2 start /tmp/content-pm2.config.js 2>&1 | tail -3
 nginx -c /tmp/fxa-proxy.conf
 log "nginx reverse proxy started on :3030"
 
-if [ "$MINIMAL" = false ]; then
-  # Settings (port 3000) — React settings UI
-  pm2 start packages/fxa-settings/pm2.config.js 2>&1 | tail -3
+# Settings (port 3000) — React settings UI
+pm2 start packages/fxa-settings/pm2.config.js 2>&1 | tail -3
 
-  # Profile server (port 1111) — user profile API
-  # Inter-service URLs use localhost (same VM). IMG_URL uses $VM_IP since
-  # it appears in API responses consumed by the browser.
-  cat > /tmp/profile-pm2.config.js <<PROFILEPM2
+# Profile server (port 1111) — user profile API
+# Inter-service URLs use localhost (same VM). IMG_URL uses $VM_IP since
+# it appears in API responses consumed by the browser.
+cat > /tmp/profile-pm2.config.js <<PROFILEPM2
 const base = require("/workspace/packages/fxa-profile-server/pm2.config.js");
 const apps = (base.apps || [base]).map(app => ({
   ...app,
@@ -376,15 +371,14 @@ const apps = (base.apps || [base]).map(app => ({
 }));
 module.exports = { apps };
 PROFILEPM2
-  pm2 start /tmp/profile-pm2.config.js 2>&1 | tail -3
+pm2 start /tmp/profile-pm2.config.js 2>&1 | tail -3
 
-  # Customs/rate-limiting — DISABLED for sandbox mode
-  # The auth server has CUSTOMS_SERVER_URL="none" so it won't call customs.
-  # pm2 start packages/fxa-customs-server/pm2.config.js 2>&1 | tail -3
+# Customs/rate-limiting — DISABLED for sandbox mode
+# The auth server has CUSTOMS_SERVER_URL="none" so it won't call customs.
+# pm2 start packages/fxa-customs-server/pm2.config.js 2>&1 | tail -3
 
-  # Test RP (port 8080) — relying party for testing OAuth
-  pm2 start packages/123done/pm2.config.js 2>&1 | tail -3
-fi
+# Test RP (port 8080) — relying party for testing OAuth
+pm2 start packages/123done/pm2.config.js 2>&1 | tail -3
 
 # ── Step 5: Wait and report ──
 log "Waiting for services to start..."
@@ -398,19 +392,15 @@ echo ""
 echo "  In-VM URLs (for Playwright tests):"
 echo "    Content Server:  http://localhost:3030"
 echo "    Auth Server:     http://localhost:9000"
-if [ "$MINIMAL" = false ]; then
-  echo "    Settings:        http://localhost:3000"
-  echo "    Profile:         http://localhost:1111"
-  echo "    123done (RP):    http://localhost:8080"
-fi
+echo "    Settings:        http://localhost:3000"
+echo "    Profile:         http://localhost:1111"
+echo "    123done (RP):    http://localhost:8080"
 echo ""
 echo "  Host Mac URLs (external access):"
 echo "    Content Server:  http://${VM_IP}:3030"
 echo "    Auth Server:     http://${VM_IP}:9000"
-if [ "$MINIMAL" = false ]; then
-  echo "    Profile:         http://${VM_IP}:1111"
-  echo "    123done (RP):    http://${VM_IP}:8080"
-fi
+echo "    Profile:         http://${VM_IP}:1111"
+echo "    123done (RP):    http://${VM_IP}:8080"
 echo ""
 echo "  Monitor logs:  pm2 logs --lines 20"
 echo "  Status:        fxa-start --status"

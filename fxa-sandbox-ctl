@@ -31,9 +31,11 @@ USAGE:
 
 COMMANDS:
   run [directory] [options]    Start a new agent (defaults to current directory)
+  switch <name> <directory>    Switch an agent's workspace directory
   attach <name>                Attach to an agent's Claude Code TUI
   services <name> [options]    Start FXA app services in an agent's VM
   browser <name>               Launch Firefox configured to use an agent's VM
+  test <name> [-- args]        Run Playwright functional tests against an agent's VM
   list                         List all agents and their status
   logs <name> [--follow]       View agent logs
   stop <name>                  Stop and remove an agent
@@ -65,15 +67,23 @@ EXAMPLES:
   # Stop an agent
   fxa-sandbox-ctl stop auth-fix
 
+  # Switch an agent's workspace (VM restarts, DB preserved)
+  fxa-sandbox-ctl switch auth-fix ~/worktrees/new-feature
+
   # Stop everything
   fxa-sandbox-ctl stop --all
 
   # Start FXA services in an agent's VM
   fxa-sandbox-ctl services auth-fix
-  fxa-sandbox-ctl services auth-fix --minimal
 
   # Launch Firefox pointing at the agent's VM
   fxa-sandbox-ctl browser auth-fix
+
+  # Run all functional tests against the agent's VM
+  fxa-sandbox-ctl test auth-fix
+
+  # Run a specific test
+  fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
 
   # Build the golden image (first-time setup)
   fxa-sandbox-ctl image build
@@ -159,6 +169,22 @@ cmd_run() {
   agent_run "$directory" "$name" "$prompt" "$cpu" "$memory"
 }
 
+# ── Command: switch ────────────────────────────────────────────
+
+cmd_switch() {
+  local name="${1:-}"
+  local directory="${2:-}"
+
+  if [ -z "$name" ] || [ -z "$directory" ]; then
+    echo "ERROR: Agent name and directory are required." >&2
+    echo "Usage: fxa-sandbox-ctl switch <name> <directory>" >&2
+    return 1
+  fi
+
+  check_prerequisites
+  agent_switch "$name" "$directory"
+}
+
 # ── Command: attach ────────────────────────────────────────────
 
 cmd_attach() {
@@ -182,7 +208,7 @@ cmd_services() {
 
   if [ -z "$name" ]; then
     echo "ERROR: Agent name is required." >&2
-    echo "Usage: fxa-sandbox-ctl services <name> [--minimal|--stop|--status]" >&2
+    echo "Usage: fxa-sandbox-ctl services <name> [--stop|--status]" >&2
     return 1
   fi
 
@@ -219,6 +245,61 @@ cmd_browser() {
   fi
 
   agent_browser "$name"
+}
+
+# ── Command: test ──────────────────────────────────────────────
+
+cmd_test() {
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl test <name> [-- args]" >&2
+    return 1
+  fi
+
+  if ! vm_is_running "$name"; then
+    echo "ERROR: Agent '${name}' is not running." >&2
+    return 1
+  fi
+
+  shift
+
+  # Read agent metadata for IP and WORKSPACE
+  local meta_file="${LOG_DIR}/${name}.meta"
+  if [ ! -f "$meta_file" ]; then
+    echo "ERROR: No metadata for agent '${name}'." >&2
+    return 1
+  fi
+
+  local NAME WORKSPACE CPU MEMORY IP STARTED
+  source "$meta_file"
+
+  if [ -z "${IP:-}" ] || [ -z "${WORKSPACE:-}" ]; then
+    echo "ERROR: Agent metadata missing IP or WORKSPACE." >&2
+    return 1
+  fi
+
+  # Check that functional tests exist in the workspace
+  if [ ! -d "${WORKSPACE}/packages/functional-tests" ]; then
+    echo "ERROR: packages/functional-tests not found in ${WORKSPACE}" >&2
+    return 1
+  fi
+
+  # Skip past '--' separator if present
+  if [ "${1:-}" = "--" ]; then
+    shift
+  fi
+
+  cd "${WORKSPACE}/packages/functional-tests"
+
+  if [ $# -eq 0 ]; then
+    echo "Running: FXA_SANDBOX_IP=${IP} yarn test-sandbox"
+    FXA_SANDBOX_IP="${IP}" yarn test-sandbox
+  else
+    echo "Running: FXA_SANDBOX_IP=${IP} npx playwright test --project=sandbox $*"
+    FXA_SANDBOX_IP="${IP}" npx playwright test --project=sandbox "$@"
+  fi
 }
 
 # ── Command: list ──────────────────────────────────────────────
@@ -351,9 +432,11 @@ main() {
 
   case "$command" in
     run)        cmd_run "$@" ;;
+    switch)     cmd_switch "$@" ;;
     attach)     cmd_attach "$@" ;;
     services)   cmd_services "$@" ;;
     browser)    cmd_browser "$@" ;;
+    test)       cmd_test "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

@@ -215,6 +215,31 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
   fi
 
+  # commands/ — custom slash commands (if any)
+  if [ -d "${claude_home}/commands" ]; then
+    local commands_tar_b64
+    commands_tar_b64="$(tar -cf - -C "${claude_home}" commands | base64 | tr -d '\n')"
+    tart exec "${full_name}" sudo bash -c "
+      echo '${commands_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
+      chown -R agent:agent /home/agent/.claude/commands
+    " 2>/dev/null || echo "  WARN: Could not copy commands/"
+  fi
+
+  # plugins/ — installed plugins (cache + registry, skip large marketplace data)
+  if [ -d "${claude_home}/plugins/cache" ]; then
+    local plugins_tar_b64
+    plugins_tar_b64="$(tar -cf - -C "${claude_home}" \
+      plugins/cache \
+      plugins/installed_plugins.json \
+      plugins/config.json \
+      2>/dev/null | base64 | tr -d '\n')"
+    tart exec "${full_name}" sudo bash -c "
+      mkdir -p /home/agent/.claude/plugins
+      echo '${plugins_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
+      chown -R agent:agent /home/agent/.claude/plugins
+    " 2>/dev/null || echo "  WARN: Could not copy plugins/"
+  fi
+
   # Append VM-specific context to CLAUDE.md (or create it if no host CLAUDE.md)
   local vm_section
   vm_section="$(cat <<'VMSECTION'
@@ -229,14 +254,62 @@ You are running inside a sandbox VM (Ubuntu 24.04 ARM64, Tart).
 - **Infrastructure auto-started at boot:** MySQL :3306, Redis :6379, Firestore :9090
 - **FXA services require manual start:** run `fxa-start`
 
-## Quick Reference
+## Starting Services
+
+Run `fxa-start` to start all FXA application services. This script:
+1. Installs Linux-arm64 native modules (esbuild, sass-embedded, swc) — the workspace `node_modules` are from macOS
+2. Runs database migrations (`db-migrations/bin/patcher.mjs`)
+3. Starts the Cloud Tasks emulator and goaws SNS stub (if needed)
+4. Starts all application services via PM2 (auth, content, settings, profile, 123done, mail_helper)
+5. Starts nginx reverse proxy on :3030
+
 ```bash
-fxa-start              # Start all FXA services
-fxa-start --status     # Show service status
-fxa-start --stop       # Stop all services
-pm2 logs --lines 50    # View service logs
-curl localhost:9000/__heartbeat__   # Auth server health
-curl localhost:9001/mail            # Check captured emails
+fxa-start              # Start all FXA services (~30s)
+fxa-start --status     # Show PM2 process list
+fxa-start --stop       # Stop all services + nginx
+```
+
+## Verifying Services
+
+After `fxa-start`, verify services are healthy before running tests:
+
+```bash
+curl -sf http://localhost:9000/__heartbeat__   # Auth server (:9000)
+curl -sf http://localhost:3030/                # Content server via nginx (:3030)
+curl -sf http://localhost:3000/                # Settings React dev server (:3000)
+curl -sf http://localhost:1111/__heartbeat__   # Profile server (:1111)
+curl -sf http://localhost:8080/                # 123done test RP (:8080)
+curl -sf http://localhost:9001/mail            # mail_helper (:9001)
+pm2 describe cloud-tasks-emulator             # Cloud Tasks emulator (:8123)
+```
+
+## Running Functional Tests
+
+Functional tests use Playwright with the `sandbox` project configuration.
+
+```bash
+# Run all functional tests
+cd /workspace
+yarn test-sandbox
+
+# Run a specific test file
+npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+
+# Run tests matching a grep pattern
+npx playwright test --project=sandbox -g "sign in"
+
+# Run with headed browser (visible)
+npx playwright test --project=sandbox --headed tests/signin/signIn.spec.ts
+```
+
+**WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for the host Mac. Inside the VM, tests use `localhost` automatically.
+
+## Running Unit Tests
+
+```bash
+npx nx test-unit fxa-auth-server
+npx nx test-unit fxa-settings
+npx nx test-unit <package-name>
 ```
 
 ## Inbox Viewer
@@ -244,13 +317,6 @@ curl localhost:9001/mail            # Check captured emails
 - Enter an email address to see verification codes, reset links, etc.
 - Codes displayed prominently with copy-to-clipboard
 - Polls mail_helper every 3 seconds via `/__mail/` nginx proxy
-
-## Tests
-```bash
-yarn test-sandbox                         # Functional tests (Playwright)
-npx playwright test --project=sandbox     # Direct Playwright
-npx nx test-unit <package>                # Unit tests
-```
 
 ## Context
 - Browser context: `oauth_webchannel_v1` (modern OAuth-based Sync flow)
@@ -482,6 +548,136 @@ META
   echo "  Stop:    fxa-sandbox-ctl stop ${name}"
   echo ""
   echo "  Or switch tmux windows: Ctrl-b then select '${name}'"
+}
+
+agent_switch() {
+  local name="$1"
+  local new_workspace="$2"
+
+  # Validate agent is running and metadata exists
+  local meta_file="${LOG_DIR}/${name}.meta"
+  if [ ! -f "$meta_file" ]; then
+    echo "ERROR: No metadata for agent '${name}'. Is it running?" >&2
+    return 1
+  fi
+
+  if ! vm_is_running "$name"; then
+    echo "ERROR: Agent '${name}' is not running." >&2
+    return 1
+  fi
+
+  # Resolve new workspace to absolute path (validate before stopping VM)
+  new_workspace="$(cd "$new_workspace" 2>/dev/null && pwd)" || {
+    echo "ERROR: Directory does not exist: ${new_workspace}" >&2
+    return 1
+  }
+
+  # Load current metadata
+  local NAME WORKSPACE CPU MEMORY IP STARTED
+  source "$meta_file"
+
+  # No-op if same directory
+  if [ "$new_workspace" = "$WORKSPACE" ]; then
+    echo "Agent '${name}' is already using workspace: ${WORKSPACE}"
+    return 0
+  fi
+
+  local full_name
+  full_name="$(vm_name "$name")"
+
+  echo ""
+  echo "=== Switching agent '${name}' ==="
+  echo "  Old workspace: ${WORKSPACE}"
+  echo "  New workspace: ${new_workspace}"
+  echo ""
+
+  # Step 1: Stop the VM (preserves disk clone)
+  echo "Stopping VM (disk clone preserved)..."
+  vm_stop "$name"
+
+  # Step 2: Detect git worktree for new directory
+  local gitdir=""
+  if [ -f "${new_workspace}/.git" ]; then
+    local gitdir_path
+    gitdir_path="$(sed 's/^gitdir: //' "${new_workspace}/.git")"
+    if [ -d "$gitdir_path" ]; then
+      gitdir="$(cd "$gitdir_path/../.." && pwd)"
+    fi
+  fi
+
+  # Step 3: Restart VM with new workspace mount
+  echo "Restarting VM with new workspace..."
+  vm_start "$name" "$new_workspace" "$gitdir" || {
+    echo "ERROR: VM restart failed. Clone preserved — retry with 'switch' or clean up with 'stop'." >&2
+    return 1
+  }
+
+  # Step 4: Wait for VM to be ready
+  vm_wait_ready "$name" || {
+    echo "ERROR: VM failed to boot after restart. Check logs: ${LOG_DIR}/${name}-vm.log" >&2
+    return 1
+  }
+
+  # Step 5: Wait for infrastructure services
+  _wait_for_infra "$name"
+
+  # Step 6: Re-apply in-memory security (lost on restart)
+  echo "Re-applying security hardening..."
+  _disable_proxy_in_vm "$full_name"
+  _setup_egress_firewall "$full_name"
+
+  # Step 7: Fix git worktree symlinks if needed
+  if [ -n "$gitdir" ]; then
+    echo "Linking git worktree parent (.git: ${gitdir})..."
+    tart exec "${full_name}" sudo bash -c "
+      mkdir -p '$(dirname "$gitdir")'
+      ln -sfn /mnt/shared/gitdir '${gitdir}'
+    " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
+  fi
+
+  # Step 8: Re-inject OAuth token
+  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  if [ -n "$oauth_token" ]; then
+    echo "Re-injecting Claude OAuth token..."
+    _inject_oauth_token "$full_name" "$oauth_token"
+  fi
+
+  # Step 9: Start new Claude Code screen session
+  echo "Starting Claude Code in VM..."
+  local claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions"
+  tart exec "${full_name}" sudo -u agent bash -c "
+    export HOME=/home/agent
+    screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
+  "
+
+  # Step 10: Kill old tmux window, create new one with fresh SSH
+  tmux kill-window -t "${TMUX_SESSION}:${name}" 2>/dev/null || true
+
+  local ip
+  ip="$(vm_ip "$name")"
+
+  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+  local ssh_cmd="ssh -t -i ${ssh_key} ${VM_SSH_OPTS} ${VM_SSH_USER}@${ip} 'screen -r ${VM_SCREEN_SESSION}'"
+
+  _ensure_tmux_session
+  tmux new-window -t "${TMUX_SESSION}" -n "$name" "${ssh_cmd}"
+
+  # Step 11: Update metadata with new workspace and IP
+  cat > "${LOG_DIR}/${name}.meta" <<META
+NAME=${name}
+WORKSPACE=${new_workspace}
+CPU=${CPU}
+MEMORY=${MEMORY}
+IP=${ip}
+STARTED=${STARTED}
+META
+
+  echo ""
+  echo "=== Agent '${name}' switched ==="
+  echo "  Workspace: ${new_workspace}"
+  echo "  Attach:    fxa-sandbox-ctl attach ${name}"
+  echo ""
+  echo "  NOTE: If FXA services were running, re-run: fxa-sandbox-ctl services ${name}"
 }
 
 agent_attach() {

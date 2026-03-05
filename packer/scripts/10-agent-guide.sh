@@ -69,7 +69,6 @@ free -m
 
 ```bash
 fxa-start              # Start all FXA application services
-fxa-start --minimal    # Start only auth + content (less RAM)
 fxa-start --status     # Show PM2 process list
 fxa-start --stop       # Stop all FXA services + nginx
 ```
@@ -91,14 +90,38 @@ fxa-start --stop       # Stop all FXA services + nginx
 
 ### Running Tests
 
-```bash
-# Functional tests (Playwright, sandbox target)
-cd /workspace
-yarn test-sandbox
-# Or directly:
-npx playwright test --project=sandbox
+**Before running tests**, verify services are healthy:
 
-# Unit tests for a specific package
+```bash
+curl -sf http://localhost:9000/__heartbeat__ && echo "auth OK"
+curl -sf http://localhost:3030/ >/dev/null && echo "content OK"
+curl -sf http://localhost:8080/ >/dev/null && echo "123done OK"
+curl -sf http://localhost:9001/mail && echo "mail OK"
+```
+
+**Functional tests** (Playwright, sandbox target):
+
+```bash
+cd /workspace
+
+# Run all functional tests
+yarn test-sandbox
+
+# Run a specific test file
+npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+
+# Run tests matching a grep pattern
+npx playwright test --project=sandbox -g "sign in"
+
+# Run with headed browser (visible)
+npx playwright test --project=sandbox --headed tests/signin/signIn.spec.ts
+```
+
+> **WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for running tests from the host Mac. Inside the VM, tests use `localhost` automatically.
+
+**Unit tests** for a specific package:
+
+```bash
 npx nx test-unit fxa-auth-server
 npx nx test-unit fxa-settings
 ```
@@ -267,7 +290,6 @@ You are inside a sandbox VM (Ubuntu 24.04 ARM64, Tart on Apple Silicon).
 
 ## FXA Services (must start manually)
   fxa-start              # Start all services
-  fxa-start --minimal    # Auth + content only
   fxa-start --status     # PM2 process list
   fxa-start --stop       # Stop everything
 
@@ -281,10 +303,14 @@ You are inside a sandbox VM (Ubuntu 24.04 ARM64, Tart on Apple Silicon).
 - Inbox viewer:    localhost:3030/__inbox
 - Cloud Tasks:     localhost:8123
 
-## Tests
+## Tests (verify services first)
+  curl -sf http://localhost:9000/__heartbeat__ && echo "auth OK"
+  curl -sf http://localhost:3030/ >/dev/null && echo "content OK"
   cd /workspace && yarn test-sandbox
-  npx playwright test --project=sandbox
+  npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+  npx playwright test --project=sandbox --headed  # visible browser
   npx nx test-unit <package-name>
+  # WARNING: Do NOT set FXA_SANDBOX_IP inside the VM (host-only variable)
 
 ## Debugging
   pm2 status / pm2 logs --lines 50
