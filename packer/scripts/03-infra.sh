@@ -14,7 +14,7 @@ cat > /etc/mysql/mysql.conf.d/fxa.cnf <<'MYCNF'
 [mysqld]
 bind-address = 127.0.0.1
 default-authentication-plugin = mysql_native_password
-# FXA uses utf8mb4
+# FxA uses utf8mb4
 character-set-server = utf8mb4
 collation-server = utf8mb4_bin
 MYCNF
@@ -22,7 +22,7 @@ MYCNF
 # Start MySQL to create databases
 systemctl start mysql
 
-echo "==> Creating FXA databases..."
+echo "==> Creating FxA databases..."
 mysql -u root <<'SQL'
 CREATE DATABASE IF NOT EXISTS fxa;
 CREATE DATABASE IF NOT EXISTS fxa_profile;

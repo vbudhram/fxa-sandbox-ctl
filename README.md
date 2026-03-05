@@ -1,4 +1,4 @@
-# FXA Agent Sandbox
+# FxA Agent Sandbox
 
 Run multiple Claude Code agents in self-contained Linux VMs on macOS. Each agent gets its own MySQL, Redis, Firestore, and full Node.js toolchain. A host directory (git worktree) is mounted via VirtioFS. Interact with agents through tmux sessions.
 
@@ -69,7 +69,7 @@ fxa-sandbox-ctl list
 # Check logs
 fxa-sandbox-ctl logs auth-fix --follow
 
-# Start FXA services in the VM
+# Start FxA services in the VM
 fxa-sandbox-ctl services auth-fix
 
 # Launch Firefox pointing at the VM
@@ -127,7 +127,7 @@ macOS Host (32GB RAM)
 | `run <dir> [-n name] [-p prompt]` | Start a new agent |
 | `switch <name> <directory>` | Switch an agent's workspace (VM restarts, DB preserved) |
 | `attach <name>` | Attach to agent's Claude Code TUI |
-| `services <name> [options]` | Start FXA app services in an agent's VM |
+| `services <name> [options]` | Start FxA app services in an agent's VM |
 | `browser <name>` | Launch Firefox configured to use an agent's VM |
 | `test <name> [-- args]` | Run Playwright functional tests against an agent's VM |
 | `list` | List all agents |
@@ -212,7 +212,7 @@ This is automatically copied into each new VM agent.
 
 ## Browser Command
 
-Launch a real Firefox browser on your Mac pre-configured to talk to the FXA services running inside an agent's VM:
+Launch a real Firefox browser on your Mac pre-configured to talk to the FxA services running inside an agent's VM:
 
 ```bash
 # Start services first
@@ -223,7 +223,7 @@ fxa-sandbox-ctl browser auth-fix
 ```
 
 This creates a dedicated Firefox profile at `logs/profiles/<agent-name>/` with a `user.js` containing all the `identity.fxaccounts.*` preferences pointing at the VM's IP. Firefox opens two tabs:
-- **Tab 1:** `http://<VM_IP>:3030/` — FXA content server
+- **Tab 1:** `http://<VM_IP>:3030/` — FxA content server
 - **Tab 2:** `http://<VM_IP>:3030/__inbox` — Inbox viewer for captured emails
 
 The browser uses `oauth_webchannel_v1` context (the modern OAuth-based Sync flow). HSTS headers from the auth server are stripped by the proxy so plain HTTP works correctly.
@@ -309,7 +309,7 @@ fxa-sandbox-ctl/               # Repo root
 │       ├── 06-agent-init.sh     # Systemd boot service + egress firewall
 │       ├── 07-cleanup.sh        # Image trim
 │       ├── 08-playwright.sh     # Playwright browser setup
-│       ├── 09-fxa-services.sh   # FXA service scripts (fxa-start)
+│       ├── 09-fxa-services.sh   # FxA service scripts (fxa-start)
 │       └── 10-agent-guide.sh    # Bake agent guide into image
 ├── templates/
 │   ├── agent-startup.sh         # VM entrypoint template

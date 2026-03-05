@@ -11,8 +11,8 @@ echo "==> Installing VM agent guide and context files..."
 cat > /etc/vm-agent-guide.md <<'VMGUIDE'
 # Sandbox VM — Agent Guide
 
-> Full operations manual for AI agents running inside the FXA sandbox VM.
-> For deep FXA domain knowledge, see `/workspace/ai/AGENTS.md`.
+> Full operations manual for AI agents running inside the FxA sandbox VM.
+> For deep FxA domain knowledge, see `/workspace/ai/AGENTS.md`.
 
 ---
 
@@ -63,17 +63,17 @@ free -m
 
 ---
 
-## Part 2 — FXA Project
+## Part 2 — FxA Project
 
 ### Service Management
 
 ```bash
-fxa-start              # Start all FXA application services
+fxa-start              # Start all FxA application services
 fxa-start --status     # Show PM2 process list
-fxa-start --stop       # Stop all FXA services + nginx
+fxa-start --stop       # Stop all FxA services + nginx
 ```
 
-**Important:** `fxa-start` is NOT run automatically. You must run it before using any FXA services.
+**Important:** `fxa-start` is NOT run automatically. You must run it before using any FxA services.
 
 ### Port Map & Health Checks
 
@@ -130,14 +130,14 @@ npx nx test-unit fxa-settings
 
 ### Accessing from the Host Mac
 
-To interact with FXA services from a real Firefox browser on the host, use:
+To interact with FxA services from a real Firefox browser on the host, use:
 
 ```bash
 fxa-sandbox-ctl browser <agent-name>
 ```
 
 This launches Firefox with a dedicated profile pre-configured with all `identity.fxaccounts.*` preferences pointing at the VM. Two tabs open:
-- **Tab 1:** `http://<VM_IP>:3030/` — FXA content server
+- **Tab 1:** `http://<VM_IP>:3030/` — FxA content server
 - **Tab 2:** `http://<VM_IP>:3030/__inbox` — Inbox viewer for captured emails
 
 The browser uses `oauth_webchannel_v1` context (not `fx_desktop_v3`), matching the modern OAuth-based Sync flow.
@@ -258,12 +258,12 @@ After `fxa-start`, these PM2 processes run:
 
 ### Deep Domain Knowledge
 
-For FXA architecture, domain-specific guides, and coding conventions, see:
+For FxA architecture, domain-specific guides, and coding conventions, see:
 - `/workspace/ai/AGENTS.md` — Entry point for all AI documentation
 - `/workspace/ai/ARCHITECTURE.md` — Full system map
 - Domain guides in `/workspace/ai/docs/domain-guides/`
 
-> These paths reference the FXA monorepo mounted at /workspace.
+> These paths reference the FxA monorepo mounted at /workspace.
 VMGUIDE
 
 chmod 644 /etc/vm-agent-guide.md
@@ -288,7 +288,7 @@ You are inside a sandbox VM (Ubuntu 24.04 ARM64, Tart on Apple Silicon).
 - Firestore:9090
 - goaws:4100
 
-## FXA Services (must start manually)
+## FxA Services (must start manually)
   fxa-start              # Start all services
   fxa-start --status     # PM2 process list
   fxa-start --stop       # Stop everything

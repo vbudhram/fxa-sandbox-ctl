@@ -7,8 +7,8 @@ echo "==> Creating agent-init systemd service..."
 # The agent environment file (sourced by Claude Code at runtime)
 cat > /etc/agent-env.sh <<'AGENTENV'
 #!/bin/bash
-# FXA Agent Environment Variables
-# Sourced before running Claude Code or FXA services
+# FxA Agent Environment Variables
+# Sourced before running Claude Code or FxA services
 
 # MySQL
 export AUTH_MYSQL_HOST=localhost
@@ -60,7 +60,7 @@ export AWS_ACCESS_KEY_ID=fake
 export AWS_SECRET_ACCESS_KEY=fake
 export AWS_REGION=us-east-1
 
-# FXA misc
+# FxA misc
 export NODE_ENV=development
 export FXA_L10N_SKIP=true
 export PROXY_SETTINGS=true
@@ -135,13 +135,13 @@ else
   log "WARN: VirtioFS mount failed (shared dirs unavailable)"
 fi
 
-# ── Detect VM IP and configure FXA service URLs ──
+# ── Detect VM IP and configure FxA service URLs ──
 VM_IP=$(hostname -I | awk '{print $1}')
 if [ -n "$VM_IP" ]; then
-  log "VM IP: ${VM_IP} — configuring FXA service URLs..."
+  log "VM IP: ${VM_IP} — configuring FxA service URLs..."
   cat >> /etc/agent-env.sh <<URLENV
 
-# FXA service URLs (auto-generated from VM IP: ${VM_IP})
+# FxA service URLs (auto-generated from VM IP: ${VM_IP})
 # Bind addresses
 export IP_ADDRESS=0.0.0.0
 export HOST=0.0.0.0
@@ -171,9 +171,9 @@ export WORKER_HOST=0.0.0.0
 export WORKER_URL=http://${VM_IP}:1113
 export IMG_URL=http://${VM_IP}:1112/a/{id}
 URLENV
-  log "FXA service URLs configured for ${VM_IP}"
+  log "FxA service URLs configured for ${VM_IP}"
 else
-  log "WARN: Could not detect VM IP, FXA URLs will use localhost"
+  log "WARN: Could not detect VM IP, FxA URLs will use localhost"
 fi
 
 # ── Start MySQL ──
@@ -208,9 +208,9 @@ if [ -f /usr/local/bin/goaws ]; then
   systemctl start goaws || log "WARN: goaws failed to start"
 fi
 
-# ── Run FXA DB migrations if workspace is mounted ──
+# ── Run FxA DB migrations if workspace is mounted ──
 if [ -d /workspace/packages/db-migrations ]; then
-  log "Running FXA DB migrations..."
+  log "Running FxA DB migrations..."
   source /etc/agent-env.sh
   cd /workspace
   node packages/db-migrations/bin/patcher.mjs 2>/dev/null || \
@@ -224,7 +224,7 @@ chmod +x /usr/local/bin/agent-init.sh
 # Systemd unit
 cat > /etc/systemd/system/agent-init.service <<'UNIT'
 [Unit]
-Description=FXA Agent Infrastructure Init
+Description=FxA Agent Infrastructure Init
 After=network.target
 
 [Service]

@@ -1,18 +1,18 @@
 #!/bin/bash
-# 09-fxa-services.sh — Install FXA service launcher for sandbox VMs
+# 09-fxa-services.sh — Install FxA service launcher for sandbox VMs
 set -euo pipefail
 
-echo "==> Installing FXA service launcher..."
+echo "==> Installing FxA service launcher..."
 
 # Create the fxa-start script that agents can run inside the VM
 cat > /usr/local/bin/fxa-start <<'FXASTART'
 #!/bin/bash
-# fxa-start — Start FXA application services in the sandbox VM
+# fxa-start — Start FxA application services in the sandbox VM
 #
 # Usage:
-#   fxa-start              Start all FXA services
+#   fxa-start              Start all FxA services
 #   fxa-start --status     Show service status
-#   fxa-start --stop       Stop all FXA services
+#   fxa-start --stop       Stop all FxA services
 #
 # Infrastructure (MySQL, Redis, Firestore, goaws) is started at boot
 # by agent-init. This script starts the Node.js application services.
@@ -46,7 +46,7 @@ case "${1:-}" in
     exit 0
     ;;
   --stop)
-    log "Stopping FXA services..."
+    log "Stopping FxA services..."
     pm2 kill 2>/dev/null || true
     # Stop nginx reverse proxy if running
     if [ -f /tmp/nginx.pid ]; then
@@ -276,8 +276,8 @@ else
   log "WARN: cloud-tasks-emulator not installed; accountDestroy may return 500"
 fi
 
-# ── Step 4: Start FXA application services via PM2 ──
-log "Starting FXA services..."
+# ── Step 4: Start FxA application services via PM2 ──
+log "Starting FxA services..."
 
 # Auth server (port 9000) — core authentication API
 # We use a custom PM2 config to override PUBLIC_URL and OAUTH_URL to localhost.
@@ -387,7 +387,7 @@ sleep 8
 echo ""
 pm2 list
 echo ""
-log "FXA services started."
+log "FxA services started."
 echo ""
 echo "  In-VM URLs (for Playwright tests):"
 echo "    Content Server:  http://localhost:3030"
@@ -409,4 +409,4 @@ echo "  Stop:          fxa-start --stop"
 FXASTART
 chmod +x /usr/local/bin/fxa-start
 
-echo "==> FXA service launcher installed (/usr/local/bin/fxa-start)."
+echo "==> FxA service launcher installed (/usr/local/bin/fxa-start)."

@@ -1,7 +1,7 @@
 #!/bin/bash
 # agent-startup.sh — Runs inside the VM after boot
 # This script is the entrypoint for the screen session that hosts Claude Code.
-# It sources the FXA environment, ensures the workspace is ready, and launches Claude.
+# It sources the FxA environment, ensures the workspace is ready, and launches Claude.
 set -euo pipefail
 
 # ── Source environment ─────────────────────────────────────────
@@ -53,13 +53,13 @@ echo "  goaws: localhost:4100 (SNS/SQS)"
 echo ""
 
 # ── Workspace info ────────────────────────────────────────────
-echo "=== FXA Agent Sandbox ==="
+echo "=== FxA Agent Sandbox ==="
 echo "  Workspace: /workspace"
 echo "  Node:      $(node --version 2>/dev/null || echo 'not found')"
 echo ""
 
 if [ -f /workspace/package.json ]; then
-  echo "  FXA monorepo detected."
+  echo "  FxA monorepo detected."
   if [ ! -d /workspace/node_modules ]; then
     echo "  NOTE: node_modules not found. You may need to run 'yarn install'."
   fi

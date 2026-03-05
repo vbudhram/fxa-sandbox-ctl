@@ -1,5 +1,5 @@
 #!/bin/bash
-# 01-base.sh — System packages for FXA development
+# 01-base.sh — System packages for FxA development
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive

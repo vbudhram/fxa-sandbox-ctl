@@ -1,5 +1,5 @@
 #!/bin/bash
-# fxa-sandbox-ctl — Orchestration CLI for FXA Agent Sandbox
+# fxa-sandbox-ctl — Orchestration CLI for FxA Agent Sandbox
 # Manages self-contained Linux VMs running Claude Code agents.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ source "${SCRIPT_DIR}/lib/agent.sh"
 
 usage() {
   cat <<'USAGE'
-fxa-sandbox-ctl — FXA Agent Sandbox Manager
+fxa-sandbox-ctl — FxA Agent Sandbox Manager
 
 USAGE:
   fxa-sandbox-ctl <command> [options]
@@ -33,7 +33,7 @@ COMMANDS:
   run [directory] [options]    Start a new agent (defaults to current directory)
   switch <name> <directory>    Switch an agent's workspace directory
   attach <name>                Attach to an agent's Claude Code TUI
-  services <name> [options]    Start FXA app services in an agent's VM
+  services <name> [options]    Start FxA app services in an agent's VM
   browser <name>               Launch Firefox configured to use an agent's VM
   test <name> [-- args]        Run Playwright functional tests against an agent's VM
   list                         List all agents and their status
@@ -73,7 +73,7 @@ EXAMPLES:
   # Stop everything
   fxa-sandbox-ctl stop --all
 
-  # Start FXA services in an agent's VM
+  # Start FxA services in an agent's VM
   fxa-sandbox-ctl services auth-fix
 
   # Launch Firefox pointing at the agent's VM
@@ -390,7 +390,7 @@ cmd_image() {
 # ── Command: status ────────────────────────────────────────────
 
 cmd_status() {
-  echo "=== FXA Agent Sandbox Status ==="
+  echo "=== FxA Agent Sandbox Status ==="
   echo ""
 
   # Host memory
