@@ -205,6 +205,17 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy settings.json"
   fi
 
+  # Git user config — propagate host identity so commits have correct authorship
+  local git_name git_email
+  git_name="$(git config --global user.name 2>/dev/null || true)"
+  git_email="$(git config --global user.email 2>/dev/null || true)"
+  if [ -n "$git_name" ] || [ -n "$git_email" ]; then
+    tart exec "${full_name}" sudo -u agent bash -c "
+      git config --global user.name '${git_name}'
+      git config --global user.email '${git_email}'
+    " 2>/dev/null || echo "  WARN: Could not set git config"
+  fi
+
   # CLAUDE.md — custom instructions (base64 to avoid quoting issues)
   if [ -f "${claude_home}/CLAUDE.md" ]; then
     local claude_md_b64
@@ -247,6 +258,12 @@ _setup_claude_config() {
 # Sandbox VM Environment
 
 You are running inside a sandbox VM (Ubuntu 24.04 ARM64, Tart).
+
+## IMPORTANT: First Action
+
+At the start of every new session, read these files for full project context:
+1. `/etc/vm-agent-guide.md` — Complete VM operations manual (ports, architecture, gotchas)
+2. `/workspace/ai/AGENTS.md` — FxA project context and coding conventions (if it exists)
 
 ## Key Facts
 - **Workspace:** `/workspace` (host repo mounted read-write)
@@ -686,6 +703,14 @@ agent_attach() {
   if ! vm_is_running "$name"; then
     echo "ERROR: Agent '${name}' is not running." >&2
     return 1
+  fi
+
+  # Re-inject OAuth token so the agent can re-authenticate if needed
+  local full_name
+  full_name="$(vm_name "$name")"
+  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  if [ -n "$oauth_token" ]; then
+    _inject_oauth_token "$full_name" "$oauth_token"
   fi
 
   _ensure_tmux_session

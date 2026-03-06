@@ -66,7 +66,7 @@ export FXA_L10N_SKIP=true
 export PROXY_SETTINGS=true
 
 # Playwright / functional tests
-export NODE_OPTIONS="--dns-result-order=ipv4first"
+export NODE_OPTIONS="--dns-result-order=ipv4first --max-old-space-size=1536"
 AGENTENV
 chmod 644 /etc/agent-env.sh
 

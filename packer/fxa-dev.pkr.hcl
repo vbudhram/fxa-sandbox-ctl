@@ -106,7 +106,9 @@ build {
   provisioner "shell" {
     execute_command = "sudo bash -c '{{ .Vars }} {{ .Path }}'"
     inline = [
-      "useradd -m -s /bin/bash agent",
+      # UID 501 matches macOS default user — VirtioFS maps ownership by UID,
+      # so the agent can read/write host-mounted files under /workspace.
+      "useradd -m -s /bin/bash -u 501 agent",
       "passwd -l agent",
       # Restricted sudo: only specific service/package management commands
       "cat > /etc/sudoers.d/agent <<'SUDOERS'\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *\nagent ALL=(ALL) NOPASSWD: /usr/sbin/service *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt-get *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt *\nagent ALL=(ALL) NOPASSWD: /usr/bin/dpkg *\nagent ALL=(ALL) NOPASSWD: /usr/bin/mysql *\nagent ALL=(ALL) NOPASSWD: /usr/bin/redis-cli *\nagent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts\nagent ALL=(ALL) NOPASSWD: /usr/bin/chmod *\nagent ALL=(ALL) NOPASSWD: /usr/bin/chown *\nSUDOERS",

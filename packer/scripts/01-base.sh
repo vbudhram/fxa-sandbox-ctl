@@ -37,4 +37,13 @@ sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_
 sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
 
+# Create 2GB swap to prevent OOM kills
+echo "==> Creating 2GB swapfile..."
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Low swappiness — only swap under pressure
+echo 'vm.swappiness=10' >> /etc/sysctl.d/99-swap.conf
+
 echo "==> Base packages installed."

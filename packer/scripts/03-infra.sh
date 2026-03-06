@@ -17,6 +17,8 @@ default-authentication-plugin = mysql_native_password
 # FxA uses utf8mb4
 character-set-server = utf8mb4
 collation-server = utf8mb4_bin
+# Cap buffer pool to prevent MySQL from consuming too much RAM on 8GB VMs
+innodb_buffer_pool_size = 256M
 MYCNF
 
 # Start MySQL to create databases
