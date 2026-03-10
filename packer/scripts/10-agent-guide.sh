@@ -199,7 +199,7 @@ After `fxa-start`, these PM2 processes run:
 | `settings-ftl` | Fluent l10n file watcher |
 | `profile` | fxa-profile-server on :1111 |
 | `inbox` | mail_helper on :9001 |
-| `123done` | Test relying party on :8080 |
+| `123done` | Test relying party on :8081 (nginx proxy on :8080) |
 | `cloud-tasks-emulator` | gRPC emulator on :8123 |
 | `goaws-stub` | SNS/SQS stub on :4100 (if goaws binary missing) |
 

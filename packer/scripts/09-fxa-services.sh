@@ -214,6 +214,26 @@ http {
             proxy_set_header Connection \$connection_upgrade;
         }
     }
+
+    # 123done reverse proxy — rewrite hardcoded localhost URLs in client JS
+    server {
+        listen 8080;
+        server_name _;
+
+        sub_filter 'http://localhost:3030' 'http://\$host:3030';
+        sub_filter 'http://localhost:3031' 'http://\$host:3031';
+        sub_filter 'http://localhost:8080' 'http://\$host:8080';
+        sub_filter 'http://127.0.0.1:8080' 'http://\$host:8080';
+        sub_filter_once off;
+        sub_filter_types text/html application/json text/javascript application/javascript;
+
+        location / {
+            proxy_pass http://127.0.0.1:8081;
+            proxy_http_version 1.1;
+            proxy_set_header Host \$http_host;
+            proxy_set_header Accept-Encoding "";
+        }
+    }
 }
 NGINXCONF
 
@@ -377,8 +397,26 @@ pm2 start /tmp/profile-pm2.config.js 2>&1 | tail -3
 # The auth server has CUSTOMS_SERVER_URL="none" so it won't call customs.
 # pm2 start packages/fxa-customs-server/pm2.config.js 2>&1 | tail -3
 
-# Test RP (port 8080) — relying party for testing OAuth
-pm2 start packages/123done/pm2.config.js 2>&1 | tail -3
+# Test RP (port 8080 via nginx, 8081 direct) — relying party for testing OAuth
+# 123done's client-side JS hardcodes localhost URLs in a switch(window.location.host)
+# default case. We run 123done on :8081 and proxy through nginx on :8080 with
+# sub_filter to rewrite localhost → $host, matching the content-server pattern.
+cat > /tmp/123done-pm2.config.js <<RPDONEPM2
+module.exports = {
+  apps: [{
+    name: '123done',
+    cwd: 'packages/123done',
+    script: 'server.js',
+    env: {
+      PORT: 8081,
+      ISSUER_URI: 'http://${VM_IP}:3030',
+      REDIRECT_URI: 'http://${VM_IP}:8080/api/oauth',
+      PKCE_REDIRECT_URI: 'http://${VM_IP}:8080/?oauth_pkce_redirect=1',
+    },
+  }],
+};
+RPDONEPM2
+pm2 start /tmp/123done-pm2.config.js 2>&1 | tail -3
 
 # ── Step 5: Wait and report ──
 log "Waiting for services to start..."
