@@ -16,9 +16,6 @@ readonly DEFAULT_VM_CPU=4
 readonly DEFAULT_VM_MEMORY_MB=8192  # 8 GB
 readonly MIN_HOST_FREE_RAM_MB=4096  # Warn if less than 4GB free on host
 
-# tmux session name (all agent windows live here)
-readonly TMUX_SESSION="fxa-agents"
-
 # VM name prefix (VMs are named agent-<name>)
 readonly VM_PREFIX="agent"
 

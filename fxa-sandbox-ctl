@@ -99,17 +99,13 @@ check_prerequisites() {
     missing+=("tart (brew install cirruslabs/cli/tart)")
   fi
 
-  if ! command -v tmux &>/dev/null; then
-    missing+=("tmux (brew install tmux)")
-  fi
-
   if [ ${#missing[@]} -gt 0 ]; then
     echo "ERROR: Missing required tools:" >&2
     for tool in "${missing[@]}"; do
       echo "  - ${tool}" >&2
     done
     echo "" >&2
-    echo "Install with: brew install cirruslabs/cli/tart tmux" >&2
+    echo "Install with: brew install cirruslabs/cli/tart" >&2
     return 1
   fi
 }
@@ -414,14 +410,6 @@ cmd_status() {
   agent_list
   echo ""
 
-  # tmux session
-  if tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
-    local window_count
-    window_count=$(tmux list-windows -t "${TMUX_SESSION}" 2>/dev/null | wc -l | tr -d ' ')
-    echo "tmux session '${TMUX_SESSION}': active (${window_count} windows)"
-  else
-    echo "tmux session '${TMUX_SESSION}': not running"
-  fi
 }
 
 # ── Main dispatch ──────────────────────────────────────────────

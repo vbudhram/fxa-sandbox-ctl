@@ -8,13 +8,6 @@ source "${AGENT_LIB_DIR}/vm.sh"
 
 # ── Helpers ────────────────────────────────────────────────────
 
-_ensure_tmux_session() {
-  if ! tmux has-session -t "${TMUX_SESSION}" 2>/dev/null; then
-    tmux new-session -d -s "${TMUX_SESSION}" -n "_control" \
-      "echo 'FxA Agent Sandbox — use fxa-sandbox-ctl to manage agents'; read"
-  fi
-}
-
 _check_host_ram() {
   local free_mb
   local pages_free
@@ -537,18 +530,9 @@ agent_run() {
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
   "
 
-  # Step 11: Create tmux window on host
-  _ensure_tmux_session
-
+  # Save agent metadata
   local ip
   ip="$(vm_ip "$name")"
-
-  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
-  local ssh_cmd="ssh -t -i ${ssh_key} ${VM_SSH_OPTS} ${VM_SSH_USER}@${ip} 'screen -r ${VM_SCREEN_SESSION}'"
-
-  tmux new-window -t "${TMUX_SESSION}" -n "$name" "${ssh_cmd}"
-
-  # Save agent metadata
   cat > "${LOG_DIR}/${name}.meta" <<META
 NAME=${name}
 WORKSPACE=${workspace_dir}
@@ -563,8 +547,6 @@ META
   echo "  Attach:  fxa-sandbox-ctl attach ${name}"
   echo "  Logs:    fxa-sandbox-ctl logs ${name}"
   echo "  Stop:    fxa-sandbox-ctl stop ${name}"
-  echo ""
-  echo "  Or switch tmux windows: Ctrl-b then select '${name}'"
 }
 
 agent_switch() {
@@ -667,19 +649,7 @@ agent_switch() {
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
   "
 
-  # Step 10: Kill old tmux window, create new one with fresh SSH
-  tmux kill-window -t "${TMUX_SESSION}:${name}" 2>/dev/null || true
-
-  local ip
-  ip="$(vm_ip "$name")"
-
-  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
-  local ssh_cmd="ssh -t -i ${ssh_key} ${VM_SSH_OPTS} ${VM_SSH_USER}@${ip} 'screen -r ${VM_SCREEN_SESSION}'"
-
-  _ensure_tmux_session
-  tmux new-window -t "${TMUX_SESSION}" -n "$name" "${ssh_cmd}"
-
-  # Step 11: Update metadata with new workspace and IP
+  # Update metadata with new workspace and IP
   cat > "${LOG_DIR}/${name}.meta" <<META
 NAME=${name}
 WORKSPACE=${new_workspace}
@@ -713,26 +683,12 @@ agent_attach() {
     _inject_oauth_token "$full_name" "$oauth_token"
   fi
 
-  _ensure_tmux_session
-
-  # If the tmux window exists, select it and attach
-  if tmux list-windows -t "${TMUX_SESSION}" 2>/dev/null | grep -q "${name}"; then
-    tmux select-window -t "${TMUX_SESSION}:${name}"
-  else
-    # Recreate the tmux window (may have been closed)
-    local ip
-    ip="$(vm_ip "$name")"
-    local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
-    local ssh_cmd="ssh -t -i ${ssh_key} ${VM_SSH_OPTS} ${VM_SSH_USER}@${ip} 'screen -r ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}'"
-    tmux new-window -t "${TMUX_SESSION}" -n "$name" "${ssh_cmd}"
-  fi
-
-  # Attach to the tmux session
-  if [ -n "${TMUX:-}" ]; then
-    tmux switch-client -t "${TMUX_SESSION}:${name}"
-  else
-    tmux attach -t "${TMUX_SESSION}:${name}"
-  fi
+  # SSH directly into the VM's screen session
+  local ip
+  ip="$(vm_ip "$name")"
+  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+  exec ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
+    "screen -r ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}"
 }
 
 agent_list() {
@@ -807,9 +763,6 @@ agent_stop() {
 
   # Delete the VM clone
   vm_delete "$name"
-
-  # Remove tmux window
-  tmux kill-window -t "${TMUX_SESSION}:${name}" 2>/dev/null || true
 
   # Clean up per-agent SSH keys
   rm -rf "${LOG_DIR}/ssh/${name}"
@@ -1004,9 +957,6 @@ agent_stop_all() {
   if [ "$found" = false ]; then
     echo "No agents to stop."
   fi
-
-  # Kill the tmux session
-  tmux kill-session -t "${TMUX_SESSION}" 2>/dev/null || true
 
   # Clean up all SSH keys
   rm -rf "${LOG_DIR}/ssh"

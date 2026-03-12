@@ -114,8 +114,8 @@ build {
       "cat > /etc/sudoers.d/agent <<'SUDOERS'\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *\nagent ALL=(ALL) NOPASSWD: /usr/sbin/service *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt-get *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt *\nagent ALL=(ALL) NOPASSWD: /usr/bin/dpkg *\nagent ALL=(ALL) NOPASSWD: /usr/bin/mysql *\nagent ALL=(ALL) NOPASSWD: /usr/bin/redis-cli *\nagent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts\nagent ALL=(ALL) NOPASSWD: /usr/bin/chmod *\nagent ALL=(ALL) NOPASSWD: /usr/bin/chown *\nSUDOERS",
       "chmod 440 /etc/sudoers.d/agent",
       "mkdir -p /home/agent/.ssh /home/agent/.config/claude /home/agent/.claude",
-      # tmux config: enable mouse selection and OSC 52 clipboard passthrough
-      "cat > /home/agent/.tmux.conf <<'TMUX'\nset -g mouse on\nset -g set-clipboard on\nset -g allow-passthrough on\nTMUX",
+      # screen config: 10k line scrollback, no startup message
+      "cat > /home/agent/.screenrc <<'SCREENRC'\ndefscrollback 10000\nstartup_message off\ntermcapinfo xterm* ti@:te@\nSCREENRC",
       "chown -R agent:agent /home/agent",
       "chmod 700 /home/agent/.ssh",
       # Lock the admin user's password (base image default creds)
