@@ -114,8 +114,8 @@ build {
       "cat > /etc/sudoers.d/agent <<'SUDOERS'\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *\nagent ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *\nagent ALL=(ALL) NOPASSWD: /usr/sbin/service *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt-get *\nagent ALL=(ALL) NOPASSWD: /usr/bin/apt *\nagent ALL=(ALL) NOPASSWD: /usr/bin/dpkg *\nagent ALL=(ALL) NOPASSWD: /usr/bin/mysql *\nagent ALL=(ALL) NOPASSWD: /usr/bin/redis-cli *\nagent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts\nagent ALL=(ALL) NOPASSWD: /usr/bin/chmod *\nagent ALL=(ALL) NOPASSWD: /usr/bin/chown *\nSUDOERS",
       "chmod 440 /etc/sudoers.d/agent",
       "mkdir -p /home/agent/.ssh /home/agent/.config/claude /home/agent/.claude",
-      # screen config: 10k line scrollback, no startup message
-      "cat > /home/agent/.screenrc <<'SCREENRC'\ndefscrollback 10000\nstartup_message off\ntermcapinfo xterm* ti@:te@\nSCREENRC",
+      # screen config: scrollback, status bar, native scroll
+      "cat > /home/agent/.screenrc <<'SCREENRC'\ndefscrollback 10000\nstartup_message off\ntermcapinfo xterm* ti@:te@\nhardstatus alwayslastline '%{= bW} FxA Sandbox VM %= scroll: Ctrl-a [  detach: Ctrl-a d '\nSCREENRC",
       "chown -R agent:agent /home/agent",
       "chmod 700 /home/agent/.ssh",
       # Lock the admin user's password (base image default creds)

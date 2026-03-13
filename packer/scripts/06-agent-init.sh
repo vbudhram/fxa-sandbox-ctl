@@ -113,6 +113,18 @@ if mount -t virtiofs com.apple.virtio-fs.automount /mnt/shared 2>/dev/null; then
     log "Workspace linked: /workspace"
   fi
 
+  # Copy node_modules to local disk and bind-mount over VirtioFS.
+  # VirtioFS has intermittent EACCES permission cache bugs under heavy I/O
+  # (jest reads thousands of files). Local disk eliminates this.
+  if [ -d /mnt/shared/workspace/node_modules ]; then
+    log "Copying node_modules to local disk (VirtioFS workaround)..."
+    mkdir -p /home/agent/node_modules
+    rsync -a --delete /mnt/shared/workspace/node_modules/ /home/agent/node_modules/
+    mount --bind /home/agent/node_modules /workspace/node_modules
+    chown -R agent:agent /home/agent/node_modules
+    log "node_modules overlay ready ($(du -sh /home/agent/node_modules | cut -f1))"
+  fi
+
   # Create writable Claude directories for agent user
   AGENT_HOME=/home/agent
   if [ -d "$AGENT_HOME" ]; then
@@ -141,35 +153,21 @@ if [ -n "$VM_IP" ]; then
   log "VM IP: ${VM_IP} — configuring FxA service URLs..."
   cat >> /etc/agent-env.sh <<URLENV
 
-# FxA service URLs (auto-generated from VM IP: ${VM_IP})
-# Bind addresses
+# VM IP (used by fxa-start to build PM2 configs with correct URLs)
+export VM_IP=${VM_IP}
+
+# Bind addresses — services must listen on all interfaces for host access
 export IP_ADDRESS=0.0.0.0
 export HOST=0.0.0.0
 export HOST_INTERNAL=0.0.0.0
-
-# Auth-server
-# NOTE: PUBLIC_URL is used by BOTH auth-server (its own URL) and
-# content-server (its own URL). We set it here for the auth-server.
-# The content-server overrides it in its custom PM2 config (see fxa-start).
-export PUBLIC_URL=http://${VM_IP}:9000
-export OAUTH_URL=http://${VM_IP}:9000
-export CONTENT_SERVER_URL=http://${VM_IP}:3030
-export CUSTOMS_SERVER_URL=http://${VM_IP}:7000
-export PROFILE_SERVER_URL=http://${VM_IP}:1111
-export SYNC_TOKENSERVER_URL=http://${VM_IP}:8000/token
-
-# Content-server
-export FXA_URL=http://${VM_IP}:9000
-export FXA_OAUTH_URL=http://${VM_IP}:9000
-export FXA_PROFILE_URL=http://${VM_IP}:1111
-export FXA_PROFILE_IMAGES_URL=http://${VM_IP}:1112
-
-# Profile-server
-export AUTH_SERVER_URL=http://${VM_IP}:9000/v1
-export OAUTH_SERVER_URL=http://${VM_IP}:9000/v1
 export WORKER_HOST=0.0.0.0
-export WORKER_URL=http://${VM_IP}:1113
-export IMG_URL=http://${VM_IP}:1112/a/{id}
+
+# Rate limiting disabled — no customs server in sandbox
+export CUSTOMS_SERVER_URL=none
+
+# NOTE: Service URLs (PUBLIC_URL, PROFILE_SERVER_URL, etc.) are NOT set here.
+# They are set per-process in fxa-start's PM2 configs. Setting them globally
+# would override the test harness's mock server URLs and break integration tests.
 URLENV
   log "FxA service URLs configured for ${VM_IP}"
 else

@@ -219,6 +219,17 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
   fi
 
+  # hooks/ — pre/post tool hooks (if any)
+  if [ -d "${claude_home}/hooks" ]; then
+    local hooks_tar_b64
+    hooks_tar_b64="$(tar -cf - -C "${claude_home}" hooks | base64 | tr -d '\n')"
+    tart exec "${full_name}" sudo bash -c "
+      echo '${hooks_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
+      chmod -R +x /home/agent/.claude/hooks/
+      chown -R agent:agent /home/agent/.claude/hooks
+    " 2>/dev/null || echo "  WARN: Could not copy hooks/"
+  fi
+
   # commands/ — custom slash commands (if any)
   if [ -d "${claude_home}/commands" ]; then
     local commands_tar_b64
@@ -227,6 +238,16 @@ _setup_claude_config() {
       echo '${commands_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
       chown -R agent:agent /home/agent/.claude/commands
     " 2>/dev/null || echo "  WARN: Could not copy commands/"
+  fi
+
+  # skills/ — custom skills (if any)
+  if [ -d "${claude_home}/skills" ]; then
+    local skills_tar_b64
+    skills_tar_b64="$(tar -cf - -C "${claude_home}" skills | base64 | tr -d '\n')"
+    tart exec "${full_name}" sudo bash -c "
+      echo '${skills_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
+      chown -R agent:agent /home/agent/.claude/skills
+    " 2>/dev/null || echo "  WARN: Could not copy skills/"
   fi
 
   # plugins/ — installed plugins (cache + registry, skip large marketplace data)
@@ -517,6 +538,16 @@ agent_run() {
   # Step 10: Start Claude Code inside a screen session in the VM
   echo "Starting Claude Code in VM..."
 
+  # Write .screenrc with agent name banner
+  tart exec "${full_name}" sudo -u agent bash -c "
+    cat > /home/agent/.screenrc <<SCREENRC
+defscrollback 10000
+startup_message off
+termcapinfo xterm* ti@:te@
+hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
+SCREENRC
+  "
+
   # The startup command sources the ephemeral token, deletes the file, then runs Claude
   local claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions"
   if [ -n "$prompt" ]; then
@@ -643,6 +674,17 @@ agent_switch() {
 
   # Step 9: Start new Claude Code screen session
   echo "Starting Claude Code in VM..."
+
+  # Write .screenrc with agent name banner
+  tart exec "${full_name}" sudo -u agent bash -c "
+    cat > /home/agent/.screenrc <<SCREENRC
+defscrollback 10000
+startup_message off
+termcapinfo xterm* ti@:te@
+hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
+SCREENRC
+  "
+
   local claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions"
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
@@ -687,7 +729,7 @@ agent_attach() {
   local ip
   ip="$(vm_ip "$name")"
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
-  exec ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
+  ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
     "screen -r ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}"
 }
 
