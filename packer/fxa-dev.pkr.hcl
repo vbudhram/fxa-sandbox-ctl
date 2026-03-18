@@ -115,7 +115,7 @@ build {
       "chmod 440 /etc/sudoers.d/agent",
       "mkdir -p /home/agent/.ssh /home/agent/.config/claude /home/agent/.claude",
       # screen config: scrollback, status bar, native scroll
-      "cat > /home/agent/.screenrc <<'SCREENRC'\ndefscrollback 10000\nstartup_message off\ntermcapinfo xterm* ti@:te@\nhardstatus alwayslastline '%{= bW} FxA Sandbox VM %= scroll: Ctrl-a [  detach: Ctrl-a d '\nSCREENRC",
+      "cat > /home/agent/.screenrc <<'SCREENRC'\ndefscrollback 10000\nstartup_message off\ntermcapinfo xterm* ti@:te@\nhardstatus alwayslastline '%%{= bW} FxA Sandbox VM %%= scroll: Ctrl-a [  detach: Ctrl-a d '\nSCREENRC",
       "chown -R agent:agent /home/agent",
       "chmod 700 /home/agent/.ssh",
       # Lock the admin user's password (base image default creds)
