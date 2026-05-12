@@ -4,6 +4,22 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+# Disable unattended-upgrades to avoid dpkg lock contention during provisioning.
+# The cirruslabs base image runs unattended-upgrades on boot, which races with
+# our apt installs and intermittently fails with "Could not get lock /var/lib/dpkg/lock-frontend".
+echo "==> Disabling unattended-upgrades..."
+systemctl stop unattended-upgrades.service 2>/dev/null || true
+systemctl disable unattended-upgrades.service 2>/dev/null || true
+systemctl mask unattended-upgrades.service 2>/dev/null || true
+# Wait for any in-flight apt/dpkg processes to finish and release the lock.
+for _ in $(seq 1 60); do
+  if ! pgrep -f 'apt-get|apt.systemd.daily|unattended-upgrade|dpkg' >/dev/null 2>&1; then
+    break
+  fi
+  echo "  waiting for background apt/dpkg to finish..."
+  sleep 2
+done
+
 echo "==> Updating package lists..."
 apt-get update -qq
 

@@ -130,6 +130,7 @@ macOS Host (32GB RAM)
 | `services <name> [options]` | Start FxA app services in an agent's VM |
 | `browser <name>` | Launch Firefox configured to use an agent's VM |
 | `test <name> [-- args]` | Run Playwright functional tests against an agent's VM |
+| `ssh <name>` | Print SSH connection info for an agent's VM |
 | `list` | List all agents |
 | `logs <name> [--follow]` | View agent logs |
 | `stop <name>` | Stop and remove an agent |

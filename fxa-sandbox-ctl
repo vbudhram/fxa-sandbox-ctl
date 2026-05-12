@@ -36,6 +36,7 @@ COMMANDS:
   services <name> [options]    Start FxA app services in an agent's VM
   browser <name>               Launch Firefox configured to use an agent's VM
   test <name> [-- args]        Run Playwright functional tests against an agent's VM
+  ssh <name>                   Print SSH connection info for an agent's VM
   list                         List all agents and their status
   logs <name> [--follow]       View agent logs
   stop <name>                  Stop and remove an agent
@@ -84,6 +85,12 @@ EXAMPLES:
 
   # Run a specific test
   fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
+
+  # Get SSH info for an agent's VM
+  fxa-sandbox-ctl ssh auth-fix
+
+  # Connect local Claude Code to an agent's VM
+  claude --ssh "$(fxa-sandbox-ctl ssh auth-fix --cmd)"
 
   # Build the golden image (first-time setup)
   fxa-sandbox-ctl image build
@@ -298,6 +305,49 @@ cmd_test() {
   fi
 }
 
+# ── Command: ssh ───────────────────────────────────────────────
+
+cmd_ssh() {
+  local name="${1:-}"
+
+  if [ -z "$name" ]; then
+    echo "ERROR: Agent name is required." >&2
+    echo "Usage: fxa-sandbox-ctl ssh <name> [--cmd]" >&2
+    return 1
+  fi
+
+  if ! vm_is_running "$name"; then
+    echo "ERROR: Agent '${name}' is not running." >&2
+    return 1
+  fi
+
+  local ip
+  ip="$(vm_ip "$name")"
+  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+
+  if [ ! -f "$ssh_key" ]; then
+    echo "ERROR: SSH key not found at ${ssh_key}" >&2
+    return 1
+  fi
+
+  # --cmd: print just the user@host for use with claude --ssh
+  if [ "${2:-}" = "--cmd" ]; then
+    echo "${VM_SSH_USER}@${ip}"
+    return 0
+  fi
+
+  echo "Agent:   ${name}"
+  echo "Host:    ${ip}"
+  echo "User:    ${VM_SSH_USER}"
+  echo "Key:     ${ssh_key}"
+  echo ""
+  echo "SSH:"
+  echo "  ssh -i ${ssh_key} ${VM_SSH_OPTS} ${VM_SSH_USER}@${ip}"
+  echo ""
+  echo "Claude Code (SSH into VM):"
+  echo "  claude --ssh ${VM_SSH_USER}@${ip}"
+}
+
 # ── Command: list ──────────────────────────────────────────────
 
 cmd_list() {
@@ -425,6 +475,7 @@ main() {
     services)   cmd_services "$@" ;;
     browser)    cmd_browser "$@" ;;
     test)       cmd_test "$@" ;;
+    ssh)        cmd_ssh "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;
