@@ -1,0 +1,17 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Per-agent state (SSH keys, metadata, VM logs, Firefox profiles)
+logs/
+
+# Local Claude Code settings
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor swap / scratch
+*.swp
+*.tmp

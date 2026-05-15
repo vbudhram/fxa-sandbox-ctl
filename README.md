@@ -1,12 +1,18 @@
 # FxA Agent Sandbox
 
-Run multiple Claude Code agents in self-contained Linux VMs on macOS. Each agent gets its own MySQL, Redis, Firestore, and full Node.js toolchain. A host directory (git worktree) is mounted via VirtioFS. Interact with agents through tmux sessions.
+Run multiple Claude Code agents in self-contained Linux VMs on macOS. Each agent gets its own MySQL, Redis, Firestore, and full Node.js toolchain. A host directory (git worktree) is mounted via VirtioFS. Interact with agents through `screen` sessions (multi-attach with `screen -x`).
+
+Two main modes:
+- **Manual** (`run`): start an agent on a worktree you choose, drive it yourself.
+- **Autonomous Jira → PR** (`jira`): point at a ticket, get a pushed branch + pre-filled `gh pr create` command back. See [Autonomous Jira → PR Workflow](#autonomous-jira--pr-workflow).
 
 ## Prerequisites
 
 ```bash
-brew install cirruslabs/cli/tart tmux
+brew install cirruslabs/cli/tart oven-sh/bun/bun
 ```
+
+(`bun` is needed because some Claude Code plugins ship hooks that shell out to it. Without it, every tool call spams a non-blocking "Bun not found" message.)
 
 For building the golden image:
 ```bash
@@ -48,17 +54,17 @@ This:
 - Boots the VM with your worktree mounted at `/workspace`
 - Starts MySQL, Redis, Firestore emulator inside the VM
 - Applies security hardening (egress firewall, restricted sudo, SSH key-only)
-- Copies only `settings.json` and `CLAUDE.md` from host (no sensitive data)
-- Injects the OAuth token ephemerally (deleted from disk after Claude reads it)
-- Launches Claude Code in a tmux window
+- Copies `settings.json`, `CLAUDE.md`, `hooks/`, `commands/`, `skills/`, and `plugins/` from host (no sensitive data)
+- Injects the OAuth token ephemerally via the workspace mount (deleted after Claude reads it)
+- Launches Claude Code in a `screen` session (`screen -x` multi-attach)
 
 ### 4. Interact with the agent
 
 ```bash
-# Attach to the Claude Code TUI
+# Attach to the Claude Code TUI (multi-attach safe)
 fxa-sandbox-ctl attach auth-fix
 
-# Inside tmux: Ctrl-b d to detach (agent keeps working)
+# Inside screen: Ctrl-a d to detach (agent keeps working)
 
 # Switch to a different workspace (VM restarts, DB preserved)
 fxa-sandbox-ctl switch auth-fix ~/worktrees/new-feature
@@ -88,26 +94,143 @@ fxa-sandbox-ctl stop auth-fix
 fxa-sandbox-ctl stop --all
 ```
 
+## Autonomous Jira → PR Workflow
+
+The `jira` subcommand drives a full ticket-to-PR pipeline. Given a Jira key, it fetches the ticket, prepares a worktree, runs an autonomous Claude Code agent against a strict `/goal` directive, watches for a handoff signal, pushes the branch, and prints the `gh pr create` command for you to review.
+
+### One-shot
+
+```bash
+# Set CLAUDE_CODE_OAUTH_TOKEN in .env (auto-loaded at script start)
+echo 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...' > .env
+
+# Dry-run first to inspect the prompt and worktree path
+fxa-sandbox-ctl jira FXA-13474 --dry-run
+
+# Actually run it
+fxa-sandbox-ctl jira FXA-13474
+```
+
+What happens under the hood:
+
+1. **Jira fetch** — `lib/jira.sh` calls `acli jira workitem view --json` and flattens the Atlassian Document Format description + comments to markdown. Result is written to `<worktree>/.fxa-jira-context.md`.
+2. **Worktree** — a pool of `fxa-auto`, `fxa-auto-2`, ... worktrees. Picks the first one not in use by a running agent, else creates the next-numbered slot. Reusing a slot keeps `node_modules` warm across tickets.
+3. **VM boot** — golden image cloned via APFS CoW, hardened (egress firewall, restricted sudo, ephemeral OAuth token written through the workspace mount).
+4. **`/goal` autonomy** — Claude starts in TUI mode (`--permission-mode bypassPermissions`), the prompt is pasted via `screen paste` so it works with curly quotes, parens, and other special chars. Bypass dialog is pre-accepted via `bypassPermissionsModeAccepted` in `~/.claude.json` + `skipDangerousModePermissionPrompt` in `settings.json`.
+5. **Agent runs through 8 conditions** (see `_jira_render_prompt` in `fxa-sandbox-ctl`):
+    1. Print a plan
+    2. Unit tests pass
+    3. `npx nx lint <pkg>` clean for every modified package
+    4. Functional tests pass (+ Playwright media capture for UI flows)
+    5. `/code-simplifier` applied
+    6. `/fxa-review-quick` clean
+    7. Exactly one commit ahead of `origin/main` with a scoped conventional message (scope-creep guard via `git diff --stat`)
+    8. Write `/workspace/.fxa-auto-done.json` (the handoff signal)
+6. **Host watcher** — polls for the handoff file (visible via virtiofs). When it lands, host pushes the branch, uploads any media files as secret gists, and assembles the PR body via `/create-pr-description` + `/humanizer`.
+7. **PR not auto-created** by default. The orchestrator prints the exact `gh pr create --body-file .fxa-auto-pr-body.md` command for you to review and run. Add `--create-pr` to skip the manual step.
+
+### Jira options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--worktree <name>` | auto-pool | Pin to a named worktree slot (creates if missing). Without it, the pool picks a free `fxa-auto*` slot. |
+| `--base <branch>` | `main` | Base branch for new ticket branches. |
+| `--watch` | on | After agent starts, block until handoff lands, then push. |
+| `--no-watch` | — | Fire-and-forget; resume later with `finish`. |
+| `--create-pr` | off | Also run `gh pr create` after pushing. |
+| `--no-ci-watch` | — | Skip CI polling (only relevant with `--create-pr`). |
+| `--dry-run` | off | Print the prompt and worktree path; don't create anything. |
+| `-c, --cpu` / `-m, --memory` | 4 / 8192 | VM resources. |
+
+### Worktree pool
+
+Workspaces live as sibling dirs of the FxA repo: `<parent>/fxa-auto`, `<parent>/fxa-auto-2`, ... Each is a real git worktree. A `<name>-holding` branch keeps the slot checked out when idle. Per-ticket branches (`fxa-13474`, `fxa-13737`, ...) are created off `origin/main`.
+
+Detection of "busy" is anchored on `tart` — the orchestrator scans `logs/*.meta` and only counts a workspace as busy if `vm_is_running` confirms its VM is alive. Stale metas (from crashed orchestrators or `TaskStop`'d shells) don't block new runs.
+
+### Picking up where the agent left off
+
+If you `Ctrl-C` the watcher (or it times out), the agent keeps working inside the VM. When you're ready:
+
+```bash
+fxa-sandbox-ctl finish              # auto-detects which slot has a handoff ready
+fxa-sandbox-ctl finish --create-pr  # also create the PR
+```
+
+Or attach live to see what Claude is doing:
+
+```bash
+fxa-sandbox-ctl attach fxa-13474     # multi-attach via screen -x
+fxa-sandbox-ctl tail fxa-13474       # snapshot the screen scrollback
+```
+
+### Handoff JSON schema
+
+The agent writes `/workspace/.fxa-auto-done.json` when its `/goal` conditions are met:
+
+```json
+{
+  "issue":      "FXA-13474",
+  "branch":     "fxa-13474",
+  "commit_sha": "abc123...",
+  "pr_title":   "fix(settings): match commit subject exactly",
+  "pr_body":    "## Summary\n...\n\n## Test Plan\n...",
+  "media_paths": [".fxa-auto-media/before.png", ".fxa-auto-media/after.png"]
+}
+```
+
+`pr_title` must equal the commit subject (scoped conventional). `media_paths` are relative to the worktree root — host uploads each as a secret gist and embeds raw URLs in the rendered PR body.
+
+### Dirty-state handling
+
+The orchestrator filters certain untracked paths from the "is the worktree clean?" check:
+- `.fxa-auto-*` / `.fxa-jira-*` — our own orchestration files
+- `ai/` — agent-context symlink convention (referenced by `CLAUDE.md`)
+- `.claude/` — per-worktree claude-code state
+- `packages/fxa-auth-server/config/newKey.json` — known FxA test artifact
+
+Set `FXA_DIRTY_IGNORE='<extended-regex>'` to extend the filter for your own scratch files.
+
+### `.env`
+
+The CLI auto-loads `.env` from its script directory at startup. Shell-exported vars win over `.env`. Useful keys:
+
+| Key | Purpose |
+|-----|---------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | Generated via `claude setup-token`. Ephemerally injected into each VM. |
+| `FXA_REPO` | Override the FxA monorepo path (default: `~/Desktop/working2/fxa`). |
+| `FXA_WORKTREE_BASE` | Default base branch (default: `main`). |
+| `FXA_AGENT_MODEL` | Model alias for the agent's Claude (default: `opus`). |
+| `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |
+| `FXA_DIRTY_IGNORE` | Extended-regex pattern of extra status lines to ignore. |
+
 ## Architecture
 
 ```
 macOS Host (32GB RAM)
 ├── Tart (VM manager, Apple Virtualization framework)
-├── tmux session: "fxa-agents"
-│   ├── window 1: "auth-fix"     → SSH → VM 1 → Claude Code
-│   ├── window 2: "payments"     → SSH → VM 2 → Claude Code
-│   └── window 3: "profile-bug"  → SSH → VM 3 → Claude Code
+├── fxa-sandbox-ctl  (CLI; loads .env at startup)
+│   ├── jira          → autonomous ticket→PR pipeline
+│   ├── run / attach  → manual agent driving
+│   └── finish        → resume push + PR after a paused watcher
 │
-├── VM 1 (Ubuntu ARM64, ~5GB RAM, 2 vCPU)
+├── Worktree pool (sibling dirs of the FxA repo)
+│   ├── fxa-auto       ← VM "fxa-13463" mounts this (per-agent)
+│   ├── fxa-auto-2     ← VM "fxa-13474" mounts this
+│   └── ...            ← created on demand when all are busy
+│
+├── VM 1 (Ubuntu ARM64, ~8GB RAM, 4 vCPU)
 │   ├── /workspace ← host worktree (VirtioFS, read-write)
 │   ├── MySQL 8.0 (fxa, fxa_profile, fxa_oauth, pushbox)
 │   ├── Redis 6+
 │   ├── Firestore emulator (:9090)
 │   ├── goaws SNS/SQS emulator (:4100)
 │   ├── iptables egress firewall
-│   └── Claude Code --dangerously-skip-permissions
+│   ├── screen session "claude" (multi-attach via screen -x)
+│   └── Claude Code --permission-mode bypassPermissions
 │
 └── Golden Image: fxa-dev-base (~10GB, APFS CoW clones)
+    └── Pre-installed: Node, MySQL, Redis, Firestore, Playwright, Claude Code, Bun
 ```
 
 ### Resource Budget (32GB host)
@@ -124,9 +247,12 @@ macOS Host (32GB RAM)
 
 | Command | Description |
 |---------|-------------|
-| `run <dir> [-n name] [-p prompt]` | Start a new agent |
+| `jira <ISSUE-KEY> [options]` | Autonomous ticket→PR pipeline (see [Autonomous Jira → PR Workflow](#autonomous-jira--pr-workflow)) |
+| `finish [--wait] [--create-pr]` | Resume after a `jira --no-watch` or `Ctrl-C`: push + optional PR |
+| `run <dir> [-n name] [-p prompt]` | Start a new agent manually |
 | `switch <name> <directory>` | Switch an agent's workspace (VM restarts, DB preserved) |
-| `attach <name>` | Attach to agent's Claude Code TUI |
+| `attach <name>` | Attach to agent's Claude Code TUI (multi-attach via `screen -x`) |
+| `tail [<name>]` | Snapshot the agent's screen scrollback |
 | `services <name> [options]` | Start FxA app services in an agent's VM |
 | `browser <name>` | Launch Firefox configured to use an agent's VM |
 | `test <name> [-- args]` | Run Playwright functional tests against an agent's VM |
@@ -194,10 +320,12 @@ fxa-sandbox-ctl run ~/worktrees/feature -n my-agent
 ```
 
 The token is:
-1. Written to a temporary file inside the VM (readable only by the agent user)
-2. Sourced into the Claude Code process environment
+1. Written by the host to `<worktree>/.fxa-auto-token` (visible inside the VM at `/workspace/.fxa-auto-token` via virtiofs — bypasses the in-VM sudo channel which is unreliable after admin hardening)
+2. Sourced into the Claude Code process environment at startup
 3. Immediately deleted from disk
 4. Available only in the Claude process memory thereafter
+
+`.env` in the script directory is auto-loaded at every CLI invocation. Putting `CLAUDE_CODE_OAUTH_TOKEN=...` there is the recommended setup (the file is gitignored).
 
 ### Model Configuration
 
@@ -289,7 +417,13 @@ All services start automatically on VM boot via systemd.
 
 **Settings not applied:** If Claude shows Sonnet instead of Opus, check that `~/.claude/settings.json` has the `"model"` key and restart the agent.
 
-**Bypass permissions dialog:** This is auto-accepted after the first time. If it appears, arrow down to "Yes, I accept" and press Enter.
+**Bypass permissions dialog:** Pre-accepted automatically via `bypassPermissionsModeAccepted: true` in `~/.claude.json` + `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` (set by `_setup_claude_config` at VM init). If it still appears, the python config-write step likely failed silently — check the orchestrator output for `WARN: Could not pre-trust workspace`.
+
+**`Bun not found` errors after every tool call:** A plugin (e.g. `claude-mem`) ships a hook that shells out to `bun`. Install bun on whichever side is complaining (`brew install oven-sh/bun/bun` on host; rebuild the golden image to refresh the in-VM install — `04-claude.sh` puts bun at `/usr/local/bin/bun`).
+
+**`fxa-sandbox-ctl stop fxa-auto` did nothing useful:** That's a workspace name, not an agent name. Agents are named after their Jira key (`fxa-13474`). Run `fxa-sandbox-ctl list` to see actual agent names.
+
+**Worktree refuses with "uncommitted changes":** Filter is permissive about our orchestration files, `ai/`, `.claude/`, and the FxA test key. For your own scratch files, set `FXA_DIRTY_IGNORE='^\?\? mypath/'`.
 
 ## File Structure
 
@@ -318,8 +452,13 @@ fxa-sandbox-ctl/               # Repo root
 ├── lib/
 │   ├── config.sh                # Constants and defaults
 │   ├── vm.sh                    # Tart VM lifecycle
-│   └── agent.sh                 # Agent run/attach/stop/list + security
+│   ├── agent.sh                 # Agent run/attach/stop/list + security
+│   ├── jira.sh                  # acli fetch + ADF→markdown rendering
+│   ├── worktree.sh              # fxa-auto* pool, dirty-state filter, branch swap
+│   ├── finish.sh                # Handoff wait, push, media gist upload, PR, CI watch
+│   └── stream-prettify.js       # JSONL stream prettifier (legacy -p mode)
 └── logs/                        # Runtime logs (gitignored)
+    ├── <name>.meta              # Agent metadata (NAME, WORKSPACE, IP, ...)
     ├── ssh/<name>/              # Per-agent SSH keys
     └── profiles/<name>/         # Per-agent Firefox profiles
 ```

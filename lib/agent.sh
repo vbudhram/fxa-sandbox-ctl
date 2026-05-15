@@ -219,51 +219,44 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
   fi
 
-  # hooks/ — pre/post tool hooks (if any)
-  if [ -d "${claude_home}/hooks" ]; then
-    local hooks_tar_b64
-    hooks_tar_b64="$(tar -cf - -C "${claude_home}" hooks | base64 | tr -d '\n')"
-    tart exec "${full_name}" sudo bash -c "
-      echo '${hooks_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
-      chmod -R +x /home/agent/.claude/hooks/
-      chown -R agent:agent /home/agent/.claude/hooks
-    " 2>/dev/null || echo "  WARN: Could not copy hooks/"
+  # hooks / commands / skills / plugins — bundle into one tar, SCP it in,
+  # extract inside the VM. The previous approach embedded a base64 tar in a
+  # `tart exec sudo bash -c "..."` argument, which silently failed for large
+  # bundles (the skills + plugins dirs blow past the ARG_MAX limit and the
+  # post-hardening sudo channel is unreliable anyway). SSH/SCP via the
+  # per-agent key is the clean path.
+  local config_tar
+  config_tar="$(mktemp -t fxa-claude-config.XXXX.tar)"
+  # The golden image now ships with Bun installed (packer/scripts/04-claude.sh),
+  # so plugins that depend on it (e.g. claude-mem) work in-VM.
+  local tar_items=()
+  [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
+  [ -d "${claude_home}/commands" ] && tar_items+=("commands")
+  [ -d "${claude_home}/skills" ]   && tar_items+=("skills")
+  [ -d "${claude_home}/plugins/cache" ] && tar_items+=(
+    "plugins/cache"
+    "plugins/installed_plugins.json"
+    "plugins/config.json"
+  )
+  if [ "${#tar_items[@]}" -gt 0 ]; then
+    if tar -cf "$config_tar" -C "$claude_home" "${tar_items[@]}" 2>/dev/null && [ -s "$config_tar" ]; then
+      local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+      local ip
+      ip="$(vm_ip "$name")"
+      if scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
+           "${VM_SSH_USER}@${ip}:/tmp/fxa-claude-config.tar" 2>/dev/null; then
+        ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
+          mkdir -p /home/agent/.claude/plugins
+          tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/
+          chmod -R +x /home/agent/.claude/hooks 2>/dev/null
+          rm -f /tmp/fxa-claude-config.tar
+        " 2>/dev/null || echo "  WARN: extracting claude config bundle in VM failed"
+      else
+        echo "  WARN: scp of claude config bundle failed"
+      fi
+    fi
   fi
-
-  # commands/ — custom slash commands (if any)
-  if [ -d "${claude_home}/commands" ]; then
-    local commands_tar_b64
-    commands_tar_b64="$(tar -cf - -C "${claude_home}" commands | base64 | tr -d '\n')"
-    tart exec "${full_name}" sudo bash -c "
-      echo '${commands_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
-      chown -R agent:agent /home/agent/.claude/commands
-    " 2>/dev/null || echo "  WARN: Could not copy commands/"
-  fi
-
-  # skills/ — custom skills (if any)
-  if [ -d "${claude_home}/skills" ]; then
-    local skills_tar_b64
-    skills_tar_b64="$(tar -cf - -C "${claude_home}" skills | base64 | tr -d '\n')"
-    tart exec "${full_name}" sudo bash -c "
-      echo '${skills_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
-      chown -R agent:agent /home/agent/.claude/skills
-    " 2>/dev/null || echo "  WARN: Could not copy skills/"
-  fi
-
-  # plugins/ — installed plugins (cache + registry, skip large marketplace data)
-  if [ -d "${claude_home}/plugins/cache" ]; then
-    local plugins_tar_b64
-    plugins_tar_b64="$(tar -cf - -C "${claude_home}" \
-      plugins/cache \
-      plugins/installed_plugins.json \
-      plugins/config.json \
-      2>/dev/null | base64 | tr -d '\n')"
-    tart exec "${full_name}" sudo bash -c "
-      mkdir -p /home/agent/.claude/plugins
-      echo '${plugins_tar_b64}' | base64 -d | tar -xf - -C /home/agent/.claude/
-      chown -R agent:agent /home/agent/.claude/plugins
-    " 2>/dev/null || echo "  WARN: Could not copy plugins/"
-  fi
+  rm -f "$config_tar"
 
   # Append VM-specific context to CLAUDE.md (or create it if no host CLAUDE.md)
   local vm_section
@@ -365,9 +358,15 @@ VMSECTION
     chown agent:agent /home/agent/.claude/CLAUDE.md
   " 2>/dev/null || echo "  WARN: Could not append VM context to CLAUDE.md"
 
-  # Pre-trust the workspace paths so Claude Code skips the trust dialog.
-  # The trust dialog can't be dismissed via screen stuffing (TUI raw input),
-  # so we pre-configure it in .claude.json.
+  # Pre-configure ~/.claude.json so Claude Code skips first-run dialogs:
+  #   - hasTrustDialogAccepted: workspace trust prompt
+  #   - hasCompletedOnboarding: onboarding flow
+  #   - bypassPermissionsModeAccepted: the "Bypass Permissions mode" warning
+  #     that appears the first time --permission-mode bypassPermissions or
+  #     --dangerously-skip-permissions is used on a machine. Without this, the
+  #     TUI sits at a y/n dialog and the agent never gets the goal prompt.
+  # Also set the migrated form (skipDangerousModePermissionPrompt) in
+  # settings.json since newer Claude versions read that instead.
   tart exec "${full_name}" sudo -u agent bash -c '
     export HOME=/home/agent
     python3 -c "
@@ -384,8 +383,20 @@ trust = {\"hasTrustDialogAccepted\": True, \"allowedTools\": []}
 data[\"projects\"][\"/workspace\"] = trust
 data[\"projects\"][\"/mnt/shared/workspace\"] = trust
 data[\"hasCompletedOnboarding\"] = True
+data[\"bypassPermissionsModeAccepted\"] = True
 with open(path, \"w\") as f:
     json.dump(data, f)
+
+settings_path = os.path.expanduser(\"~/.claude/settings.json\")
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except:
+    settings = {}
+settings[\"skipDangerousModePermissionPrompt\"] = True
+with open(settings_path, \"w\") as f:
+    json.dump(settings, f, indent=2)
 "
   ' 2>/dev/null || echo "  WARN: Could not pre-trust workspace"
 }
@@ -393,22 +404,21 @@ with open(path, \"w\") as f:
 # ── Security: Ephemeral token injection ───────────────────────
 
 _inject_oauth_token() {
-  local full_name="$1"
+  # Args: workspace_dir, token. Writes <workspace>/.fxa-auto-token on the host;
+  # the file shows up inside the VM at /workspace/.fxa-auto-token via virtiofs.
+  # Claude's startup command sources and deletes it.
+  #
+  # Previous approach used `tart exec sudo bash -c "echo > /tmp/..."` which
+  # races with our security hardening (admin password lock makes tart's
+  # internal sudo channel unreliable). Writing through the mount is direct
+  # and doesn't need any in-VM privilege.
+  local workspace_dir="$1"
   local token="$2"
+  local token_file="${workspace_dir}/.fxa-auto-token"
 
-  # Write token to a temporary file that is deleted immediately after
-  # Claude Code reads it. The token never persists on disk.
-  # Note: The token still exists in the Claude process environment (/proc/<pid>/environ),
-  # which is readable by the process owner. With restricted sudo, the agent user
-  # cannot read other users' /proc entries.
-
-  tart exec "${full_name}" sudo bash -c "
-    echo 'export CLAUDE_CODE_OAUTH_TOKEN=${token}' > /tmp/.claude-token
-    chmod 600 /tmp/.claude-token
-    chown agent:agent /tmp/.claude-token
-  "
-
-  echo "  Token staged for ephemeral injection (${#token} chars)."
+  printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" > "$token_file"
+  chmod 644 "$token_file"
+  echo "  Token written to ${token_file} (${#token} chars)."
 }
 
 # ── Agent commands ─────────────────────────────────────────────
@@ -529,7 +539,7 @@ agent_run() {
   local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
   if [ -n "$oauth_token" ]; then
     echo "Injecting Claude OAuth token..."
-    _inject_oauth_token "$full_name" "$oauth_token"
+    _inject_oauth_token "$workspace_dir" "$oauth_token"
   else
     echo "NOTE: Set CLAUDE_CODE_OAUTH_TOKEN on the host to auto-authenticate agents."
     echo "      Generate one with: claude setup-token"
@@ -549,17 +559,43 @@ SCREENRC
   "
 
   # The startup command sources the ephemeral token, deletes the file, then runs Claude
-  local claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions"
+  # Start Claude Code interactively (TUI) inside the screen session. The host
+  # attaches via `ssh -t ... screen -x` to proxy the TUI to the user's terminal.
+  # The /goal prompt is injected after a short delay (see _inject_goal_prompt
+  # below) so the user can also watch it being entered live.
+  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-opus}"
+
   if [ -n "$prompt" ]; then
-    local escaped_prompt
-    escaped_prompt="$(printf '%q' "$prompt")"
-    claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions -p ${escaped_prompt}"
+    # Write the prompt as a single logical line. Newlines in a screen-paste
+    # would be treated as separate Enter submits by the TUI; collapsing them
+    # to spaces preserves semantics while staying as one input.
+    local prompt_file="${workspace_dir}/.fxa-auto-prompt.txt"
+    printf '%s' "$prompt" | tr '\n' ' ' | tr -s ' ' > "$prompt_file"
   fi
 
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
   "
+
+  # If a prompt was provided, paste it into Claude's TUI after the input box
+  # renders. With bypassPermissionsModeAccepted pre-set in ~/.claude.json (see
+  # _setup_claude_config), Claude skips the warning dialog and goes straight
+  # to the input box, so we just need to wait for the TUI to draw.
+  # Backgrounded so agent_run returns; the user sees the prompt being typed
+  # in live once they attach.
+  if [ -n "$prompt" ]; then
+    (
+      sleep 8
+      tart exec "${full_name}" sudo -u agent bash -c "
+        screen -S ${VM_SCREEN_SESSION} -p 0 -X readreg p /workspace/.fxa-auto-prompt.txt
+        screen -S ${VM_SCREEN_SESSION} -p 0 -X paste p
+        sleep 1
+        screen -S ${VM_SCREEN_SESSION} -p 0 -X stuff \$'\r'
+      " 2>/dev/null
+    ) >/dev/null 2>&1 &
+    disown $! 2>/dev/null || true
+  fi
 
   # Save agent metadata
   local ip
@@ -669,7 +705,7 @@ agent_switch() {
   local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
   if [ -n "$oauth_token" ]; then
     echo "Re-injecting Claude OAuth token..."
-    _inject_oauth_token "$full_name" "$oauth_token"
+    _inject_oauth_token "$new_workspace" "$oauth_token"
   fi
 
   # Step 9: Start new Claude Code screen session
@@ -685,7 +721,7 @@ hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detac
 SCREENRC
   "
 
-  local claude_cmd="test -f /tmp/.claude-token && source /tmp/.claude-token && rm -f /tmp/.claude-token; source /etc/agent-env.sh; cd /workspace; claude --dangerously-skip-permissions"
+  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-opus}"
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
@@ -717,20 +753,44 @@ agent_attach() {
     return 1
   fi
 
-  # Re-inject OAuth token so the agent can re-authenticate if needed
+  # Re-inject OAuth token so the agent can re-authenticate if needed.
+  # Need workspace path from meta file (the file lives on the mounted worktree).
   local full_name
   full_name="$(vm_name "$name")"
   local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
   if [ -n "$oauth_token" ]; then
-    _inject_oauth_token "$full_name" "$oauth_token"
+    local NAME WORKSPACE CPU MEMORY IP STARTED
+    if [ -f "${LOG_DIR}/${name}.meta" ]; then
+      source "${LOG_DIR}/${name}.meta"
+      [ -n "${WORKSPACE:-}" ] && _inject_oauth_token "$WORKSPACE" "$oauth_token"
+    fi
   fi
 
-  # SSH directly into the VM's screen session
+  # SSH into the VM's screen session. `screen -x` multi-attaches so the
+  # orchestrator's auto-attach and ad-hoc `attach` calls can coexist.
   local ip
   ip="$(vm_ip "$name")"
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+
+  # Wait up to 30s for agent_run to generate the per-agent SSH key. Without
+  # this, racing `attach` against the setup steps falls back to password auth
+  # (which our hardening disables) and prints a confusing error.
+  if [ ! -f "$ssh_key" ]; then
+    echo "Waiting for SSH key to be provisioned..." >&2
+    local wait=0
+    while [ ! -f "$ssh_key" ] && [ "$wait" -lt 30 ]; do
+      sleep 1
+      wait=$(( wait + 1 ))
+    done
+    if [ ! -f "$ssh_key" ]; then
+      echo "ERROR: SSH key not found at ${ssh_key} after 30s." >&2
+      echo "       Agent setup may have failed; check the orchestrator output." >&2
+      return 1
+    fi
+  fi
+
   ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
-    "screen -r ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}"
+    "screen -x ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}"
 }
 
 agent_list() {

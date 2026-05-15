@@ -90,6 +90,14 @@ build {
     expect_disconnect = false
   }
 
+  # Stage the canonical agent guide so 10-agent-guide.sh can install it
+  # without duplicating the content. Single source of truth lives in
+  # VM_AGENT_GUIDE.md at the repo root.
+  provisioner "file" {
+    source      = "${path.root}/../VM_AGENT_GUIDE.md"
+    destination = "/tmp/vm-agent-guide.md"
+  }
+
   provisioner "shell" {
     script            = "${path.root}/scripts/10-agent-guide.sh"
     execute_command   = "sudo bash -c '{{ .Path }}'"

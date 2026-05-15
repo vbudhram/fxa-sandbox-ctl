@@ -15,10 +15,33 @@ _resolve_symlink() {
 }
 SCRIPT_DIR="$(cd "$(dirname "$(_resolve_symlink "${BASH_SOURCE[0]}")")" && pwd)"
 
+# Load .env from the script directory if present. Existing env vars win, so
+# users can override anything at the shell level. Only KEY=VALUE lines are
+# loaded; comments and blank lines are ignored.
+if [ -f "${SCRIPT_DIR}/.env" ]; then
+  # `|| [ -n "$_env_key" ]` handles a final line that has no trailing newline.
+  while IFS='=' read -r _env_key _env_val || [ -n "$_env_key" ]; do
+    case "$_env_key" in
+      ''|\#*) continue ;;
+    esac
+    # Strip surrounding quotes from the value if present.
+    _env_val="${_env_val%\"}"; _env_val="${_env_val#\"}"
+    _env_val="${_env_val%\'}"; _env_val="${_env_val#\'}"
+    # Don't clobber an already-exported var.
+    if [ -z "${!_env_key:-}" ]; then
+      export "${_env_key}=${_env_val}"
+    fi
+  done < "${SCRIPT_DIR}/.env"
+  unset _env_key _env_val
+fi
+
 # Source library modules
 source "${SCRIPT_DIR}/lib/config.sh"
 source "${SCRIPT_DIR}/lib/vm.sh"
 source "${SCRIPT_DIR}/lib/agent.sh"
+source "${SCRIPT_DIR}/lib/jira.sh"
+source "${SCRIPT_DIR}/lib/worktree.sh"
+source "${SCRIPT_DIR}/lib/finish.sh"
 
 # ── Usage / Help ───────────────────────────────────────────────
 
@@ -30,6 +53,11 @@ USAGE:
   fxa-sandbox-ctl <command> [options]
 
 COMMANDS:
+  jira <ISSUE-KEY> [options]   Fetch a Jira issue and spin up an agent on a new worktree
+  finish                       Push the shared worktree's branch and open a PR
+                               from the agent's handoff file
+  tail [<name>]                Print a snapshot of the agent's screen scrollback
+                               (for live view, use `attach`)
   run [directory] [options]    Start a new agent (defaults to current directory)
   switch <name> <directory>    Switch an agent's workspace directory
   attach <name>                Attach to an agent's Claude Code TUI
@@ -52,7 +80,31 @@ RUN OPTIONS:
   -c, --cpu <count>            vCPU count (default: 2)
   -m, --memory <mb>            Memory in MB (default: 5120)
 
+JIRA OPTIONS:
+  --base <branch>              Base branch for the new worktree (default: main)
+  --worktree <name>            Use a named worktree slot (creates if missing).
+                               Without this, picks first free pool slot or
+                               creates the next-numbered one (fxa-auto-2, ...).
+  --dry-run                    Fetch the issue and print the prompt without
+                               creating a worktree or VM
+  --watch                      After starting the agent, block until it writes
+                               the handoff file, then push the branch (default)
+  --no-watch                   Don't block; resume later with `finish`
+  --create-pr                  Also run `gh pr create` after pushing (default:
+                               just push and print the gh command)
+  --no-ci-watch                Skip CI polling after the PR opens (only
+                               relevant with --create-pr)
+  -n, --name <name>            Agent name (defaults to the issue key, lowercased)
+  -c, --cpu <count>            vCPU count for the agent VM
+  -m, --memory <mb>            Memory in MB for the agent VM
+
 EXAMPLES:
+  # Jira ticket → worktree → agent VM (one shot)
+  fxa-sandbox-ctl jira FXA-1234
+
+  # Preview the prompt and worktree path without making any changes
+  fxa-sandbox-ctl jira FXA-1234 --dry-run
+
   # Start an agent
   fxa-sandbox-ctl run ~/worktrees/feature-auth -n "auth-fix"
 
@@ -114,6 +166,282 @@ check_prerequisites() {
     echo "" >&2
     echo "Install with: brew install cirruslabs/cli/tart" >&2
     return 1
+  fi
+}
+
+# ── Command: jira ──────────────────────────────────────────────
+
+cmd_jira() {
+  local key=""
+  local name=""
+  local cpu="$DEFAULT_VM_CPU"
+  local memory="$DEFAULT_VM_MEMORY_MB"
+  local base="${FXA_WORKTREE_BASE:-main}"
+  local dry_run="false"
+  local watch="true"
+  local ci_watch="true"
+  local create_pr="false"
+  local worktree_slot=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -n|--name)    name="$2"; shift 2 ;;
+      -c|--cpu)     cpu="$2"; shift 2 ;;
+      -m|--memory)  memory="$2"; shift 2 ;;
+      --base)       base="$2"; shift 2 ;;
+      --worktree)   worktree_slot="$2"; shift 2 ;;
+      --dry-run)    dry_run="true"; shift ;;
+      --watch)      watch="true"; shift ;;
+      --no-watch)   watch="false"; shift ;;
+      --no-ci-watch) ci_watch="false"; shift ;;
+      --create-pr)  create_pr="true"; shift ;;
+      -*)
+        echo "ERROR: Unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        if [ -z "$key" ]; then key="$1"; else
+          echo "ERROR: Unexpected argument: $1" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$key" ]; then
+    echo "ERROR: Jira issue key is required (e.g. FXA-1234)." >&2
+    echo "Usage: fxa-sandbox-ctl jira <ISSUE-KEY> [options]" >&2
+    return 1
+  fi
+
+  key="$(jira_normalize_key "$key")" || return 1
+
+  echo "Fetching ${key} from Jira..." >&2
+  local summary context
+  summary="$(jira_summary_for "$key")" || return 1
+  context="$(jira_fetch_context "$key")" || return 1
+
+  local branch shared_path
+  branch="$(worktree_branch_for "$key")"
+  shared_path="$(worktree_shared_path)" || return 1
+
+  # Default agent name = lowercased issue key (e.g. fxa-1234)
+  if [ -z "$name" ]; then
+    name="$branch"
+  fi
+
+  local prompt
+  prompt="$(_jira_render_prompt "$key" "$branch" "$summary" "$context")"
+
+  if [ "$dry_run" = "true" ]; then
+    cat <<EOF
+=== Dry run for ${key} ===
+
+Summary:       ${summary}
+Base branch:   origin/${base}
+New branch:    ${branch}
+Worktree path: ${shared_path}  (or next free pool slot at runtime)
+Agent name:    ${name}
+Resources:     ${cpu} vCPU, $((memory / 1024))GB RAM
+
+--- Prompt that would be sent to the agent ---
+${prompt}
+--- End of prompt ---
+
+No changes made. Re-run without --dry-run to prepare the worktree and start the agent.
+EOF
+    return 0
+  fi
+
+  if [ -n "$worktree_slot" ]; then
+    echo "Using worktree '${worktree_slot}' for branch ${branch}..." >&2
+  else
+    echo "Acquiring a pool worktree slot for branch ${branch}..." >&2
+  fi
+  local worktree_path
+  worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot")" || return 1
+
+  # Clear any stale handoff file in THIS slot from a prior ticket. Different
+  # slots have independent handoff files so they don't collide.
+  local done_file="${worktree_path}/.fxa-auto-done.json"
+  [ -f "$done_file" ] && {
+    echo "Archiving prior handoff file in ${worktree_path}..." >&2
+    mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+  }
+  # Truncate the agent stream log so `tail` starts fresh.
+  : > "${worktree_path}/.fxa-auto-claude.jsonl" 2>/dev/null || true
+  : > "${worktree_path}/.fxa-auto-claude.log" 2>/dev/null || true
+
+  # Write the full Jira context to a file inside the worktree so the /goal
+  # directive (capped at 4000 chars) can reference it instead of embedding it.
+  local context_file="${worktree_path}/.fxa-jira-context.md"
+  printf '%s\n' "$context" > "$context_file"
+  echo "Wrote Jira context to ${context_file}" >&2
+
+  check_prerequisites
+  agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || return 1
+
+  if [ "$watch" = "true" ]; then
+    if ! finish_attach_and_wait "$name"; then
+      echo "When the agent finishes, run: fxa-sandbox-ctl finish" >&2
+      return 1
+    fi
+    local pr_url
+    pr_url="$(finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
+    if [ -n "$pr_url" ]; then
+      finish_notify "PR opened for ${key}" "$pr_url"
+      echo "" >&2
+      echo "PR: ${pr_url}"
+      if [ "$ci_watch" = "true" ]; then
+        finish_watch_ci "$pr_url" || true
+      fi
+    else
+      finish_notify "Branch pushed for ${key}" ""
+    fi
+  else
+    echo "" >&2
+    echo "Agent started; not watching. Resume with: fxa-sandbox-ctl finish" >&2
+  fi
+}
+
+# Compose the initial /goal prompt sent to the in-VM agent.
+#
+# /goal is a built-in Claude Code feature: after each turn, a small evaluator
+# model judges whether the condition is met (from the transcript alone). The
+# directive is capped at 4000 characters, so we keep it tight and reference
+# .fxa-jira-context.md (written by cmd_jira into the worktree) for the full
+# issue text. The agent must print evidence of each criterion in the transcript
+# for the evaluator to see it.
+_jira_render_prompt() {
+  local key="$1"
+  local branch="$2"
+  local summary="$3"
+  # $4 (full context) is written to a file by cmd_jira, not embedded here.
+
+  cat <<EOF
+/goal Resolve Jira issue ${key} ("${summary}"). Full ticket context is in
+/workspace/.fxa-jira-context.md — read it first. Project conventions are in
+/workspace/ai/AGENTS.md and /etc/vm-agent-guide.md.
+
+The goal is met only when ALL of these are TRUE and visible in this conversation:
+
+1. You have printed a short plan with the root cause and proposed fix.
+2. Unit tests for the changed packages have been run and the output shows zero
+   failures (e.g. "Tests: X passed, 0 failed", or jest summary with 0 failed).
+3. Lint passes for every modified package. Detect changed packages from
+   'git status --porcelain' (paths matching 'packages/<name>/'), then run
+   'npx nx lint <package>' for each. Every invocation must exit 0; if any
+   reports errors, fix them and re-run before moving on.
+4. If any frontend or auth-server package was modified, functional tests
+   have been run via 'yarn test-sandbox' (start FxA services first with
+   'fxa-start' if needed) and pass. For UI changes, also save 1-2 Playwright
+   screenshots or a short --video=on recording of the fixed flow to
+   /workspace/.fxa-auto-media/ — these will be uploaded as secret gists
+   and embedded in the PR body.
+5. /code-simplifier has been invoked on the latest changes and any
+   simplifications it suggests have been applied (or explicitly declined with
+   a one-line reason in the transcript).
+6. /fxa-review-quick has been invoked on the latest commit and reported no
+   blocking issues. Fix any blockers, amend the commit, and re-run.
+7. EXACTLY ONE commit exists on branch '${branch}' ahead of origin/main with
+   a scoped conventional message (e.g. 'fix(auth):'). Before staging, run
+   'git diff --stat origin/main..HEAD' and revert any files unrelated to
+   this ticket via 'git checkout origin/main -- <path>' — scope creep blocks
+   the goal. Squash multi-commits with 'git reset --soft origin/main &&
+   git commit'. Print 'git log origin/main..HEAD --oneline' (must be one
+   line) and 'git rev-parse HEAD'.
+8. Invoke /create-pr-description on the latest commit, then pass its output
+   through /humanizer to strip AI-tell-tale phrasing. Target a CONCISE result
+   (< 30 lines, no filler). Write /workspace/.fxa-auto-done.json with keys
+   {issue, branch, commit_sha, pr_title, pr_body, media_paths} where pr_title
+   MUST equal the commit subject EXACTLY (scoped conventional, e.g.
+   'fix(settings): handle cached signin state') — reference the Jira key
+   in the pr_body, never in the title. pr_body is the humanized text.
+   media_paths is an array of paths relative to /workspace, empty if none.
+   Print 'cat /workspace/.fxa-auto-done.json | jq .' so the JSON is in
+   the transcript.
+
+DO NOT push the branch and DO NOT run 'gh' — the host orchestrator does
+that after seeing the handoff file. No GitHub credentials in this VM.
+
+Or stop after 30 turns.
+EOF
+}
+
+# ── Command: tail ──────────────────────────────────────────────
+
+cmd_tail() {
+  local name="${1:-}"
+
+  # If no name given, find the single running agent.
+  if [ -z "$name" ]; then
+    local metas=( "${LOG_DIR}"/*.meta )
+    if [ -e "${metas[0]}" ] && [ "${#metas[@]}" -eq 1 ]; then
+      name="$(basename "${metas[0]}" .meta)"
+    fi
+  fi
+
+  if [ -z "$name" ]; then
+    echo "Usage: fxa-sandbox-ctl tail <agent-name>" >&2
+    echo "  (For live TUI view, use: fxa-sandbox-ctl attach <agent-name>)" >&2
+    return 1
+  fi
+
+  local meta="${LOG_DIR}/${name}.meta"
+  if [ ! -f "$meta" ]; then
+    echo "ERROR: no metadata for agent '${name}'" >&2
+    return 1
+  fi
+
+  local NAME WORKSPACE CPU MEMORY IP STARTED
+  source "$meta"
+  local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
+
+  # Dump the screen session's scrollback to a temp file in the VM, then cat it.
+  # -h captures history (scrollback), not just the visible region.
+  ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" "
+    screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
+    cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
+  " 2>/dev/null
+}
+
+# ── Command: finish ────────────────────────────────────────────
+
+cmd_finish() {
+  local wait="false"
+  local ci_watch="true"
+  local create_pr="false"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --wait)         wait="true"; shift ;;
+      --no-ci-watch)  ci_watch="false"; shift ;;
+      --create-pr)    create_pr="true"; shift ;;
+      -*)
+        echo "ERROR: Unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        echo "ERROR: Unexpected argument: $1" >&2
+        return 1
+        ;;
+    esac
+  done
+
+  if [ "$wait" = "true" ]; then
+    finish_wait_for_done || return 1
+  fi
+
+  local pr_url
+  pr_url="$(finish_push_and_pr "" "$create_pr")" || return 1
+  if [ -n "$pr_url" ]; then
+    finish_notify "PR opened" "$pr_url"
+    echo "$pr_url"
+    if [ "$ci_watch" = "true" ]; then
+      finish_watch_ci "$pr_url" || true
+    fi
+  else
+    finish_notify "Branch pushed" ""
   fi
 }
 
@@ -469,6 +797,9 @@ main() {
   shift 2>/dev/null || true
 
   case "$command" in
+    jira)       cmd_jira "$@" ;;
+    finish)     cmd_finish "$@" ;;
+    tail)       cmd_tail "$@" ;;
     run)        cmd_run "$@" ;;
     switch)     cmd_switch "$@" ;;
     attach)     cmd_attach "$@" ;;

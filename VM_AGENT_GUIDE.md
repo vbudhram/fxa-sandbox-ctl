@@ -253,3 +253,89 @@ For FxA architecture, domain-specific guides, and coding conventions, see:
 - Domain guides in `/workspace/ai/docs/domain-guides/`
 
 > These paths reference the FxA monorepo mounted at /workspace.
+
+---
+
+## Part 3, Autonomous Pipeline Contract
+
+If you were started by `fxa-sandbox-ctl jira <KEY>` you are running inside a `/goal` loop. The host orchestrator handles git push and PR creation; your job is to leave the worktree in a specific shape and write a handoff file. The contract below is the same one the `/goal` directive references, kept here so you can re-read it on demand without burning a turn fetching docs.
+
+### Files the host writes for you
+
+| Path | Purpose |
+|------|---------|
+| `/workspace/.fxa-jira-context.md` | Full Jira ticket body (description, comments, ADF→markdown). Read this first. |
+| `/workspace/.fxa-auto-token` | Sourced and deleted by Claude on startup. Do NOT cat, log, or re-create it. |
+| `/workspace/.fxa-auto-prompt.txt` | The pasted `/goal` directive. Safe to ignore. |
+
+### Files you write back
+
+| Path | Purpose |
+|------|---------|
+| `/workspace/.fxa-auto-done.json` | The handoff JSON. The host watches for this file. |
+| `/workspace/.fxa-auto-media/` | Optional. Screenshots and videos for the PR body. Use `.png`, `.jpg`, `.webp`, `.gif`, `.webm`, `.mp4`, `.mov`. |
+
+### Handoff JSON schema
+
+```json
+{
+  "issue": "FXA-12345",
+  "branch": "fxa-12345",
+  "commit_sha": "<git rev-parse HEAD>",
+  "pr_title": "fix(settings): handle cached signin state",
+  "pr_body": "<humanized PR description>",
+  "media_paths": [".fxa-auto-media/before.png", ".fxa-auto-media/after.webm"]
+}
+```
+
+- `pr_title` **must equal the commit subject exactly** (scoped conventional, e.g. `fix(auth):`, `feat(settings):`, `chore(ci):`).
+- Reference the Jira key in `pr_body`, never in `pr_title`.
+- `media_paths` are relative to `/workspace`. Empty array if none.
+- After writing the file, print `cat /workspace/.fxa-auto-done.json | jq .` so the evaluator can see it in the transcript.
+
+### Conditions the `/goal` evaluator checks
+
+All of these must be **visible in this conversation's transcript**, in order, before the goal is met:
+
+1. A short plan with root cause and proposed fix.
+2. Unit tests for changed packages run with zero failures.
+3. `npx nx lint <package>` passes for every modified package (one invocation per changed `packages/<name>/`).
+4. If frontend or `fxa-auth-server` was touched: `yarn test-sandbox` passes; save 1–2 screenshots or a short `--video=on` recording to `.fxa-auto-media/`.
+5. `/code-simplifier` was invoked on the latest changes and its suggestions applied (or declined with a one-line reason).
+6. `/fxa-review-quick` reports no blocking issues. Fix any blockers and re-run.
+7. **Exactly one commit** ahead of `origin/main` with a scoped conventional subject. Before staging, run `git diff --stat origin/main..HEAD` and revert any unrelated files via `git checkout origin/main -- <path>`. Scope creep blocks the goal. Squash with `git reset --soft origin/main && git commit`.
+8. `/create-pr-description` then `/humanizer` on the latest commit → concise PR body (< 30 lines). Write the handoff JSON.
+
+The directive has a 30-turn cap.
+
+### Boundaries
+
+- **DO NOT** run `git push`. **DO NOT** run `gh` for any reason. The host has the GitHub credentials and does this after seeing the handoff file.
+- **DO NOT** modify files outside the FxA monorepo (the worktree under `/workspace`). The `/workspace/ai/` symlink target is host-side and is intentionally read-only-by-convention.
+- **DO NOT** alter `.claude/`, `.fxa-auto-*`, or `packages/fxa-auth-server/config/newKey.json`. These are filtered from the dirty-state check on purpose.
+
+### Slash commands available
+
+The host SCPs `.claude/{hooks,commands,skills,plugins}` into the VM before starting Claude, so these are usable directly:
+
+| Command | When to use |
+|---------|-------------|
+| `/code-simplifier` | After the fix compiles and tests pass, before committing |
+| `/fxa-review-quick` | After the first commit attempt, before considering the goal met |
+| `/create-pr-description` | After lint + tests pass, to draft the PR body |
+| `/humanizer` | On the output of `/create-pr-description` to strip AI-tell phrasing |
+| `/squash-commit` | If you ended up with more than one commit |
+
+### Lint workflow
+
+Detect changed packages from `git status --porcelain` (paths matching `packages/<name>/`), then for each unique package:
+
+```bash
+npx nx lint <package>
+```
+
+Every invocation must exit 0. If any reports errors, fix and re-run before moving on.
+
+### Resuming after failure
+
+If you hit context limit or get interrupted, your branch and any commits persist in `/workspace`. The host operator can `fxa-sandbox-ctl attach <agent>` and you can resume. The handoff file is the only signal the host watches, so until it exists and is valid JSON, no push happens.
