@@ -50,12 +50,26 @@ gh_drain() {
   local keys="${1:-}"
   [ -n "$keys" ] || return 0
   local map jqx rc=0
-  jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run)\""
+  jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable)\""
   # `|| rc=$?` is load-bearing: with `set -e` a bare failing command
   # substitution kills the function before the guard below can fire.
-  map="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-           --json number,state,headRefName,statusCheckRollup \
-           -q "$jqx" 2>/dev/null)" || rc=$?
+  #
+  # `mergeable` rides along in this same call for free. GitHub computes it
+  # lazily and returns UNKNOWN for anything it has not computed yet, but the
+  # request itself triggers the computation, so a second call resolves most of
+  # them. Re-poll once rather than reporting a green PR that cannot merge.
+  _gh_drain_fetch() {
+    gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
+      --json number,state,headRefName,statusCheckRollup,mergeable \
+      -q "$jqx" 2>/dev/null
+  }
+  map="$(_gh_drain_fetch)" || rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s\n' "$map" | grep -q ' UNKNOWN$'; then
+    sleep 2
+    local remap
+    remap="$(_gh_drain_fetch)" && [ -n "$remap" ] && map="$remap"
+  fi
+  unset -f _gh_drain_fetch
   # A failed fetch used to fall through to an empty map, which made EVERY done
   # key print `none -`. On 2026-08-25 that reported 12 simultaneous anomalies
   # from one transient `gh` hiccup; the next two runs were clean. A uniform
@@ -66,17 +80,17 @@ gh_drain() {
     echo "drain: gh pr list failed (exit $rc) -- refusing to report 'none' for $(printf '%s\n' "$keys" | grep -c .) done key(s)" >&2
     return 1
   fi
-  local key br line num state ok bad run
+  local key br line num state ok bad run mrg
   for key in $keys; do
     br="$(worktree_branch_for "$key")"
-    line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6; exit}')"
+    line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7; exit}')"
     if [ -z "$line" ]; then
       # Report a missing PR rather than relabelling: it is an anomaly worth a
       # human glance, not a merge.
       echo "$key none -"
       continue
     fi
-    read -r num state ok bad run <<<"$line"
+    read -r num state ok bad run mrg <<<"$line"
     case "$state" in
       OPEN)
         # A `done` ticket is advertised as review-ready and nothing else re-reads
@@ -86,6 +100,17 @@ gh_drain() {
         # repo infrastructure rather than the PR.
         if [ "${bad:-0}" -gt 0 ]; then
           echo "$key $num RED ok=$ok fail=$bad running=$run"
+        # A green PR that cannot merge is not review-ready, but nothing else
+        # reads mergeability: the drain split only on PR state and on a red
+        # check, so a conflict was invisible. On 2026-09-01 four of twelve
+        # `done` PRs were CONFLICTING while the report advertised all twelve.
+        # Conflicts are churn, not a backlog -- FXA-11871 went from clean to
+        # conflicting inside two hours when two unrelated PRs merged.
+        elif [ "$mrg" = "CONFLICTING" ]; then
+          echo "$key $num CONFLICT"
+        elif [ "$mrg" = "UNKNOWN" ]; then
+          # Still uncomputed after a re-poll. Say so rather than call it clean.
+          echo "$key $num CONFLICT? mergeability-uncomputed"
         fi
         ;;
       *) echo "$key $num $state" ;;   # MERGED or CLOSED
@@ -197,6 +222,59 @@ gh_feedback_has_acted() {
 #   Prints `null` when either fetch fails, which is different from `[]` (fetched
 #   fine, no PRs). The dashboard must not draw "no PR" for every ticket because
 #   one call hiccupped. Same guard as gh_drain, for the same reason.
+# gh_conflicts KEY
+#   Which files conflict between origin/main and this ticket's branch, and what
+#   kind of resolution they need. Prints "<class> <file>..." or nothing when the
+#   branch merges clean.
+#
+#   `git merge-tree --write-tree` computes the merge in the object database: no
+#   worktree, no checkout, no pool slot. So this is safe to run on every drain
+#   line without touching the branch a live ticket has checked out.
+#
+#   Classes:
+#     lockfile  only yarn.lock -- resolve by taking main's copy and reinstalling
+#     source    any real file  -- needs an agent to read both sides
+gh_conflicts() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: conflicts needs <KEY>" >&2; return 1; }
+  local br; br="$(worktree_branch_for "$key")" || return 1
+  local repo="${PIPE_REPO:-$PWD}"
+
+  git -C "$repo" fetch origin main "$br" -q 2>/dev/null || {
+    echo "ERROR: cannot fetch origin/${br}" >&2; return 1; }
+
+  local files
+  files="$(git -C "$repo" merge-tree --write-tree --name-only \
+             origin/main "origin/${br}" 2>/dev/null \
+           | tail -n +2 | grep -vE '^(Auto-merging|CONFLICT|$)' || true)"
+  [ -n "$files" ] || return 0
+
+  local class="source"
+  if ! printf '%s\n' "$files" | grep -qvE '(^|/)(yarn\.lock|package-lock\.json)$'; then
+    class="lockfile"
+  fi
+  echo "$class $(printf '%s' "$files" | tr '\n' ' ')"
+}
+
+# gh_has_human_approval KEY
+#   Exit 0 when a human has already reviewed this ticket's PR. A rebase
+#   force-pushes, which dismisses a human review and rewrites history under
+#   someone who may be mid-read. Bot reviewers do not count: copilot re-reviews
+#   every push on its own, so nothing is lost by rebasing past it.
+gh_has_human_approval() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || return 1
+  local br; br="$(worktree_branch_for "$key")" || return 1
+  local humans
+  humans="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
+              --json reviews \
+              -q '[.[0].reviews[]?.author.login
+                   | select(test("(?i)(copilot|\\[bot\\]|-bot$)") | not)]
+                  | unique | join(",")' 2>/dev/null)"
+  [ -n "$humans" ] && { echo "$humans"; return 0; }
+  return 1
+}
+
 gh_pr_states_json() {
   pipeline_require || return 1
   local keys="${1:-}"
@@ -206,7 +284,7 @@ gh_pr_states_json() {
               --json number,state,headRefName,statusCheckRollup 2>/dev/null)" || rc=$?
   [ "$rc" -eq 0 ] && [ -n "$rollup" ] || { echo 'null'; return 0; }
   meta="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-            --json number,headRefName,title,isDraft,reviewDecision,updatedAt 2>/dev/null)" || rc=$?
+            --json number,headRefName,title,isDraft,reviewDecision,updatedAt,mergeable 2>/dev/null)" || rc=$?
   [ "$rc" -eq 0 ] && [ -n "$meta" ] || { echo 'null'; return 0; }
 
   printf '%s\n' "$keys" | jq -R -s --argjson rollup "$rollup" --argjson meta "$meta" '
@@ -229,8 +307,9 @@ gh_pr_states_json() {
         # `//` treats false as empty, so isDraft:false would become null.
         # Branch on the record instead of defaulting each field.
         + (if $m == null
-           then {title: null, draft: null, review: null, updated: null}
+           then {title: null, draft: null, review: null, updated: null, mergeable: null}
            else {title: $m.title, draft: $m.isDraft,
-                 review: $m.reviewDecision, updated: $m.updatedAt}
+                 review: $m.reviewDecision, updated: $m.updatedAt,
+                 mergeable: $m.mergeable}
            end))'
 }

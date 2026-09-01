@@ -382,11 +382,16 @@ function verdictTag(r) {
   if (r.fail > 0)                       return `<span class="tag bad">${r.fail} failing</span>`;
   if (r.running > 0)                    return `<span class="tag run info">${r.running} running</span>`;
   if (!hasChecks(r))                    return `<span class="tag">no checks yet</span>`;
+  // Green but unmergeable is not review-ready: approving it still leaves a
+  // reviewer unable to merge. Rank it above "approved" so the badge says the
+  // blocking thing rather than the reassuring one.
+  if (r.mergeable === "CONFLICTING")    return `<span class="tag bad">conflicts</span>`;
   if (r.review === "APPROVED")          return `<span class="tag ok">approved</span>`;
   return `<span class="tag ok">green</span>`;
 }
 const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft &&
   r.fail === 0 && r.running === 0 && hasChecks(r) &&
+  r.mergeable !== "CONFLICTING" &&
   r.review !== "APPROVED" && r.review !== "CHANGES_REQUESTED";
 
 function head(title, n, note, sub) {

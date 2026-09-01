@@ -48,6 +48,10 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    A `KEY none -` line means the branch has no PR at all. **Do not relabel it.** Report it as an
    anomaly: a `done` ticket with no PR is a bug somewhere, not a merge.
 
+   A `KEY <pr#> CONFLICT` line means the PR is **green but cannot be merged**. Rebase it, under the
+   rules in the conflict section below. `CONFLICT? mergeability-uncomputed` means GitHub had still
+   not computed mergeability after a re-poll: report it, do not rebase on a guess.
+
    A `KEY <pr#> RED ok=N fail=N running=N` line means the PR is **still open but a check has gone
    red**. **Do not relabel it, and do not relaunch the agent.** Put it under ⚠️ in the report with
    the failing job named, and leave the label at `done`.
@@ -216,6 +220,60 @@ it. `thumbsup` no-ops for a ticket with no recorded ids, and it is idempotent, b
 reactions API returns 200 for a reaction that already exists.
 
 This widens the output surface from five writes to six. The sixth is listed below.
+
+## Merge conflicts
+
+`done` means green and awaiting review. It does **not** mean mergeable. A PR that conflicts with
+`main` is not review-ready: approving it still leaves the reviewer unable to merge.
+
+Nothing used to read this. The drain split only on PR state and on a red check, so a conflict was
+invisible in exactly the way a post-reconcile red check used to be. On 2026-09-01 four of twelve
+`done` PRs were `CONFLICTING` while the ✅ list advertised all twelve as ready.
+
+**Conflicts are churn, not a backlog.** FXA-11871 was mergeable at 14:02 and conflicting by 16:00,
+broken by two unrelated PRs merging. Clearing them once does not keep them clear, so do not treat an
+empty conflict list as a finished job.
+
+### Rebase before a human signs off, never after
+
+**The gate is a human review, not an approval.** Bot reviewers do not count: copilot re-reviews
+every push on its own, so nothing is lost by rebasing past it.
+
+- **No human review** -> rebase. The reviewer has not read it yet, so the rebase result is what they
+  will read. The resolution gets reviewed as part of the normal review; it does not bypass one.
+- **A human has reviewed** -> stop. A force-push dismisses their review and rewrites history under
+  someone who may be mid-read. Report it under ⚠️ and let them rebase, or ask.
+
+### Classify before you resolve
+
+`$CTL conflicts <KEY>` prints the class and the files. It uses `git merge-tree --write-tree`, which
+computes the merge in the object database: no worktree, no checkout, no pool slot. Safe to run even
+while another ticket holds every slot.
+
+| Class | Resolution |
+|---|---|
+| `lockfile` | Take main's `yarn.lock`, re-run `yarn install`, push. No judgment, no agent. |
+| `source` | Launch a round on a free slot. The agent reads both sides and the tests gate it. |
+
+Expect `source`. On the first four measured, one file of five was a lockfile.
+
+### Rules
+
+- **One rebase per pass**, same as the one-launch rule, and it counts against that budget. A rebase
+  round and a queue launch compete for the same slot.
+- **Cap rebases at 2 per PR** with `$CTL attempts`. A PR that conflicts a third time is churning
+  faster than it is being reviewed, which is a review-throughput problem a rebase cannot fix.
+  Label it `blocked` and say so.
+- **`--force-with-lease`, never bare `--force`.**
+- **Re-approve the functional gate after the push**: `deps.sh gate <pr>`. Every push resets it.
+- **Never resolve a conflict by dropping the branch's change.** Taking main wholesale makes CI green
+  and silently deletes the work the PR exists to deliver. If both sides cannot be kept, stop and
+  report it.
+
+**Prefer an idle slot for this over an idle pool.** When the queue is exhausted -- every key skipped,
+nothing launchable -- the slots sit empty while merge-ready PRs cannot merge. A rebase round is a
+strictly better use of that slot than idling. When the queue does have work, a new ticket wins:
+unblocking one PR is worth less than shipping one.
 
 ## Grounding pass (before every launch)
 
@@ -555,6 +613,7 @@ took 58 minutes and succeeded.
 | PR open, checks running | Leave it. Next pass revisits. |
 | PR open, all green | Label `done`, which also reaps the VM and 👍s any fixed review comments. Free the slot. Report as ready for review. |
 | `done`, and `feedback` lists comments | Back to `inflight`. See the review-feedback section. Green does not mean correct. |
+| `done`, and `drain` says `CONFLICT` | Rebase it, if no human has reviewed. See the conflict section. Green does not mean mergeable. |
 | PR open, `fail>0` and `running=0`, **thin check set** | **Settled by failure. Reconcile now.** An early job (`Build`, `Init`, `Lint`) failed, so the jobs behind it were never created and the set will never reach 15. Waiting for a full set here waits forever. |
 | PR open, failure is a flake | `deps.sh rerun <pr>`. Max **2 per head SHA**. |
 | PR open, failure is real | Relaunch the agent on the same slot with the failure log. Then `deps.sh gate <pr>`. |
@@ -761,6 +820,7 @@ second agent onto the same worktree. Two rules follow:
 | `$CTL reap --stray` | stop every VM whose ticket is not `inflight` — run once per pass |
 | `$CTL launch <KEY> <slot> <ctx>` | start an agent VM, returns at once |
 | `$CTL prstate <KEY>` | PR number, state, check tally |
+| `$CTL conflicts <KEY>` | files conflicting with main, and their class (`lockfile` \| `source`) |
 | `$CTL drain` | `done` keys needing action: `MERGED`, `CLOSED`, `RED <tally>`, or `none` |
 | `$CTL progress <KEY>` | what the launcher did — **read this first** |
 | `$CTL lock` / `unlock` | one pass at a time |
@@ -789,6 +849,7 @@ second agent onto the same worktree. Two rules follow:
 ⚠️ Needs you:
   FXA-NNNNN  <one-line reason>
   FXA-NNNNN  #PR red check: <job> — repo infra / PR defect
+  FXA-NNNNN  #PR conflicts: <files> — human reviewed, needs their rebase
 ```
 
 Keep it short. The human's only job is reviewing the ✅ list, so that list must contain only PRs

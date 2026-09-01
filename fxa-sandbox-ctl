@@ -105,6 +105,8 @@ PIPELINE COMMANDS:
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
   progress <ISSUE-KEY>         What the launcher did (read this first)
   prstate <ISSUE-KEY>          PR number, state, and check tally
+  conflicts <ISSUE-KEY>        Files conflicting with main, and their class
+                               (lockfile | source). Empty if it merges clean.
   feedback <KEY> [sub]         Unhandled review comments
                                subs: ack | rounds [bump] | acted <id>... | thumbsup
   tokens <ISSUE-KEY>           Token and model usage (run BEFORE the VM stops)
@@ -1147,6 +1149,7 @@ cmd_ticket()    { jira_ticket "$@"; }
 cmd_reporter()  { jira_reporter_login "$@"; }
 cmd_drain()     { gh_drain "$(jira_done_keys)"; }
 cmd_prstate()   { gh_pr_state "$@"; }
+cmd_conflicts() { gh_conflicts "$@"; }
 cmd_feedback()  { gh_feedback "$@"; }
 cmd_progress()  { pipeline_progress "$@"; }
 cmd_lock()      { pipeline_lock; }
@@ -1300,6 +1303,7 @@ main() {
     alive)      cmd_alive "$@" ;;
     progress)   cmd_progress "$@" ;;
     prstate)    cmd_prstate "$@" ;;
+    conflicts)  cmd_conflicts "$@" ;;
     feedback)   cmd_feedback "$@" ;;
     tokens)     cmd_usage_tokens "$@" ;;
     record)     cmd_record "$@" ;;
