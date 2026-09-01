@@ -128,6 +128,10 @@ JIRA OPTIONS:
   --worktree <name>            Use a named worktree slot (creates if missing).
                                Without this, picks first free pool slot or
                                creates the next-numbered one (fxa-auto-2, ...).
+  --private                    Provision from the checkout at $FXA_PRIVATE_REPO
+                               into its own worktree pool. Push and PR follow
+                               that checkout's origin; secrets come from the
+                               public fxa checkout. Set FXA_PRIVATE_REPO in .env.
   --guardrails <file>          Prepend <file> to the agent's task context as
                                mandatory reviewer guidance (e.g. an independent
                                security analysis). Read first by the agent.
@@ -242,6 +246,7 @@ cmd_jira() {
   local create_pr="false"
   local worktree_slot=""
   local functional_tests="false"
+  local private="false"
   local guardrails_file=""
 
   while [ $# -gt 0 ]; do
@@ -251,6 +256,7 @@ cmd_jira() {
       -m|--memory)  memory="$2"; shift 2 ;;
       --base)       base="$2"; shift 2 ;;
       --worktree)   worktree_slot="$2"; shift 2 ;;
+      --private)    private="true"; shift ;;
       --guardrails) guardrails_file="$2"; shift 2 ;;
       --dry-run)    dry_run="true"; shift ;;
       --watch)      watch="true"; shift ;;
@@ -290,6 +296,26 @@ cmd_jira() {
   # bypassPermissions, so an unused key is avoidable exposure.
   if [ "$functional_tests" = "true" ]; then
     export FXA_COPY_SECRETS=true
+  fi
+
+  # --private: provision from the FXA_PRIVATE_REPO checkout into its own pool.
+  # Push/PR follow that worktree's origin automatically; secrets come from the
+  # public fxa checkout via FXA_SECRETS_SOURCE.
+  if [ "$private" = "true" ]; then
+    if [ -z "$FXA_PRIVATE_REPO" ]; then
+      echo "ERROR: --private needs FXA_PRIVATE_REPO set to a local checkout. Put it in .env (see .env.example)." >&2
+      return 1
+    fi
+    if [ ! -d "$FXA_PRIVATE_REPO" ]; then
+      echo "ERROR: FXA_PRIVATE_REPO='${FXA_PRIVATE_REPO}' is not a directory." >&2
+      return 1
+    fi
+    local public_root
+    public_root="$(worktree_repo_root)" || return 1
+    export FXA_SECRETS_SOURCE="$public_root"
+    export FXA_REPO="$FXA_PRIVATE_REPO"
+    export FXA_SHARED_WORKTREE_NAME="fxa-auto-private"
+    echo "Private mode: repo=${FXA_REPO}, pool=${FXA_SHARED_WORKTREE_NAME}, secrets from ${FXA_SECRETS_SOURCE}" >&2
   fi
 
   echo "Fetching ${key} from Jira..." >&2
@@ -368,8 +394,10 @@ EOF
   local worktree_path
   # Which slots are still owned by a ticket. Only needed when we have to pick a
   # slot ourselves; an explicit --worktree says the caller already decided.
+  # Private mode runs its own pool and its own label family, so the pipeline's
+  # inflight list says nothing about which of its slots are owned.
   local owned=""
-  if [ -z "$worktree_slot" ]; then
+  if [ -z "$worktree_slot" ] && [ "$private" != "true" ]; then
     owned="$(jira_owning_keys)"
   fi
   worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot" "$owned")" || return 1

@@ -21,6 +21,7 @@
 _FXA_WORKTREE_LOADED=1
 
 : "${FXA_REPO_DEFAULT:=${HOME}/Desktop/working2/fxa}"
+: "${FXA_PRIVATE_REPO:=}"
 : "${FXA_WORKTREE_BASE:=main}"
 : "${FXA_SHARED_WORKTREE_NAME:=fxa-auto}"
 
