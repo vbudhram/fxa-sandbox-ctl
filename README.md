@@ -6,6 +6,10 @@ Two main modes:
 - **Manual** (`run`): start an agent on a worktree you choose, drive it yourself.
 - **Autonomous Jira → PR** (`jira`): point at a ticket, get a pushed branch + pre-filled `gh pr create` command back. See [Autonomous Jira → PR Workflow](#autonomous-jira--pr-workflow).
 
+On top of those, the pipeline commands drive a hands-off ticket-to-PR loop: a
+labelled ticket becomes a review-ready pull request with no human in the loop.
+[AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) documents that layer.
+
 ## Prerequisites
 
 ```bash
@@ -41,6 +45,13 @@ Export it before starting agents:
 
 ```bash
 export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."
+```
+
+Or put it in `.env`, which the CLI loads at startup. Copy `.env.example` to see
+every variable the tool reads:
+
+```bash
+cp .env.example .env
 ```
 
 ### 3. Start an agent
@@ -102,7 +113,7 @@ The `jira` subcommand drives a full ticket-to-PR pipeline. Given a Jira key, it 
 
 ```bash
 # Set CLAUDE_CODE_OAUTH_TOKEN in .env (auto-loaded at script start)
-echo 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...' > .env
+cp .env.example .env && $EDITOR .env
 
 # Dry-run first to inspect the prompt and worktree path
 fxa-sandbox-ctl jira FXA-13474 --dry-run
@@ -135,12 +146,39 @@ What happens under the hood:
 |------|---------|-------------|
 | `--worktree <name>` | auto-pool | Pin to a named worktree slot (creates if missing). Without it, the pool picks a free `fxa-auto*` slot. |
 | `--base <branch>` | `main` | Base branch for new ticket branches. |
+| `--private` | off | Provision from the checkout at `$FXA_PRIVATE_REPO` into its own pool. See [Private mode](#private-mode). |
+| `--guardrails <file>` | — | Prepend a file to the agent's task context as mandatory reviewer guidance. The agent reads it first. |
+| `--functional-tests` | off | Pre-warm the FxA stack in the VM and require `yarn test-sandbox` before the goal counts as met. Alias: `--with-stack`. |
 | `--watch` | on | After agent starts, block until handoff lands, then push. |
 | `--no-watch` | — | Fire-and-forget; resume later with `finish`. |
 | `--create-pr` | off | Also run `gh pr create` after pushing. |
 | `--no-ci-watch` | — | Skip CI polling (only relevant with `--create-pr`). |
 | `--dry-run` | off | Print the prompt and worktree path; don't create anything. |
+| `-n, --name <name>` | issue key | Agent name, lowercased issue key by default. |
 | `-c, --cpu` / `-m, --memory` | 4 / 8192 | VM resources. |
+
+### Private mode
+
+`--private` runs a ticket against a second local checkout instead of the public
+FxA repo. Point `FXA_PRIVATE_REPO` at that checkout in `.env`:
+
+```bash
+echo 'FXA_PRIVATE_REPO=/path/to/second/checkout' >> .env
+fxa-sandbox-ctl jira FXA-13474 --private
+```
+
+Worktrees come from that checkout and use their own pool (`fxa-auto-private`,
+`fxa-auto-private-2`, ...), so private runs never take a slot from the public
+pool. `git push` and `gh pr create` both run inside the worktree, so they
+resolve the target repo from that worktree's own `origin` remote. The tool is
+never told which repo it is.
+
+Dev secrets still come from the public FxA checkout through
+`FXA_SECRETS_SOURCE`, because a second checkout has no populated secrets of its
+own.
+
+`FXA_PRIVATE_REPO` has no default. Without it, `--private` stops with an error
+and changes nothing.
 
 ### Worktree pool
 
@@ -193,12 +231,20 @@ Set `FXA_DIRTY_IGNORE='<extended-regex>'` to extend the filter for your own scra
 
 ### `.env`
 
-The CLI auto-loads `.env` from its script directory at startup. Shell-exported vars win over `.env`. Useful keys:
+The CLI auto-loads `.env` from its script directory at startup. Shell-exported vars win over `.env`. Copy `.env.example` to get started:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is gitignored. `.env.example` is not, so it carries variable names only, never values.
 
 | Key | Purpose |
 |-----|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Generated via `claude setup-token`. Ephemerally injected into each VM. |
 | `FXA_REPO` | Override the FxA monorepo path (default: `~/Desktop/working2/fxa`). |
+| `FXA_PRIVATE_REPO` | Checkout that `jira --private` provisions from. No default; `--private` fails without it. |
+| `FXA_SECRETS_SOURCE` | Checkout to copy dev secrets and the `ai/` mirror from (default: the worktree's own repo root). |
 | `FXA_WORKTREE_BASE` | Default base branch (default: `main`). |
 | `FXA_AGENT_MODEL` | Model alias for the agent's Claude (default: `opus`). |
 | `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |
@@ -299,6 +345,31 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `skipped [KEY]` | List recorded skips |
 | `attempts <KEY> [bump]` | Read or increment the real-fix attempt counter |
 | `lock` / `unlock` | One pass at a time |
+| `snapshot` | The whole pipeline state as one JSON document |
+| `dashboard [-p N] [-i N]` | Serve a live status page on localhost |
+
+### Dashboard
+
+```bash
+fxa-sandbox-ctl dashboard              # http://localhost:8787
+fxa-sandbox-ctl dashboard -p 9000      # different port
+fxa-sandbox-ctl dashboard -i 120       # refresh every 120s instead of 60s
+```
+
+The page renders `snapshot` output: the queue, pool slots, inflight runs, PRs
+awaiting review, and telemetry. A snapshot takes about 17 seconds, most of it
+waiting on Jira and GitHub, so the server refreshes on a timer in the
+background and serves the last good result. A failed refresh keeps the previous
+snapshot rather than blanking the page.
+
+`snapshot` is useful on its own at the terminal:
+
+```bash
+fxa-sandbox-ctl snapshot | jq '.free_slots'
+```
+
+Every field comes from the same functions a pass uses, so the page cannot
+disagree with the pipeline.
 
 ### Run Options
 
@@ -465,8 +536,15 @@ All services start automatically on VM boot via systemd.
 ```
 fxa-sandbox-ctl/               # Repo root
 ├── fxa-sandbox-ctl              # Main CLI (executable)
+├── .env.example                 # Variable names for .env (no values)
 ├── README.md                    # This file
 ├── VM_AGENT_GUIDE.md            # Full agent operations manual
+├── AI_FIXME_PIPELINE.md         # The pipeline above this tool (source of truth)
+├── AI_FIXME_PIPELINE.html       # Generated: build-pipeline-html.py
+├── AI_FIXME_PIPELINE.canvas.md  # Generated: build-canvas-md.py
+├── build-pipeline-html.py       # AI_FIXME_PIPELINE.md -> standalone HTML
+├── build-canvas-md.py           # AI_FIXME_PIPELINE.md -> Slack Canvas markdown
+├── render-diagrams.py           # Mermaid blocks -> diagrams/*.png
 ├── test-oauth.js                # OAuth smoke test
 ├── packer/
 │   ├── fxa-dev.pkr.hcl         # Golden image Packer template
@@ -486,6 +564,10 @@ fxa-sandbox-ctl/               # Repo root
 │   └── inbox-viewer.html        # Email inbox viewer (served at /__inbox)
 ├── pipelines/
 │   └── fxa-ai-fixme.conf        # Repo, label family, pool state, telemetry paths
+├── dashboard/
+│   ├── server.py                # Serves the snapshot as a live status page
+│   └── index.html               # The page itself
+├── diagrams/                    # Generated PNGs of the pipeline diagrams
 ├── skills/
 │   └── fxa-ai-fixme/            # Pass logic; ~/.claude/skills/ symlinks here
 │       ├── SKILL.md             # The decision rules
@@ -499,6 +581,7 @@ fxa-sandbox-ctl/               # Repo root
 │   ├── worktree.sh              # fxa-auto* pool, branch naming, slot claiming
 │   ├── github.sh                # PR state, drain, review comments
 │   ├── telemetry.sh             # Token usage, run log, cost rollup
+│   ├── snapshot.sh              # Whole pipeline state as one JSON document
 │   ├── finish.sh                # Handoff wait, push, media gist upload, PR, CI watch
 │   └── stream-prettify.js       # JSONL stream prettifier (legacy -p mode)
 └── logs/                        # Runtime logs (gitignored)
