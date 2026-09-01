@@ -35,12 +35,17 @@ telemetry_usage() {
 
 # List pricing in USD per 1M tokens: input, output, cache_write, cache_read.
 # Priced at record time, because reconstructing later means guessing which
-# pricing applied on the day.
+# pricing applied on the day. Source: platform.claude.com/docs/en/about-claude/pricing
+# (read 2026-09-01). cache_write is the 5-minute rate (1.25x input).
+#
+# Order matters: the fable-5-1 row must precede the fable-5 glob. Fable 5.1 is
+# the one model whose cache reads are 0.025x input, not 0.1x.
 _telemetry_price_for() {
   case "$1" in
+    claude-fable-5-1*) echo "10.00 50.00 12.50 0.25" ;;
+    claude-fable-5*)   echo "10.00 50.00 12.50 1.00" ;;
     claude-opus-5*)    echo "5.00 25.00 6.25 0.50" ;;
-    claude-sonnet-5*)  echo "3.00 15.00 3.75 0.30" ;;
-    claude-fable-5*)   echo "1.00  5.00 1.25 0.10" ;;
+    claude-sonnet-5*)  echo "2.00 10.00 2.50 0.20" ;;
     claude-haiku-4-5*) echo "1.00  5.00 1.25 0.10" ;;
     *) echo "" ;;
   esac
