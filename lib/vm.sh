@@ -90,9 +90,21 @@ vm_start() {
     "--dir=${MOUNT_WORKSPACE}:${workspace_dir}"
   )
 
-  # Mount parent .git directory for worktrees
+  # Mount parent .git directory for worktrees, READ-ONLY.
+  #
+  # This is the repo's shared admin directory: it holds .git/worktrees/<name>
+  # for EVERY worktree, not just this agent's. Mounted read-write, a
+  # bypassPermissions agent in one worktree can rewrite another worktree's
+  # gitdir pointer. On 2026-08-14 three sibling worktrees (fxa-agent,
+  # fxa-agent3, fxa-fxa-review) had their admin gitdir files rewritten with a
+  # stray "gitdir: " prefix, which git reports as `prunable`.
+  #
+  # The VM only ever READS this to resolve its own worktree .git pointer. It
+  # commits into the workspace mount, which stays writable. Do not drop the
+  # `:ro` to fix a permissions error in the VM; that error means something is
+  # trying to write here, which is the bug.
   if [ -n "$gitdir" ]; then
-    tart_cmd+=("--dir=gitdir:${gitdir}")
+    tart_cmd+=("--dir=gitdir:${gitdir}:ro")
   fi
 
   # NOTE: We intentionally do NOT mount ~/Library/Application Support/Claude

@@ -9,6 +9,10 @@
 #   worktree_repo_root             Resolve the FxA repo root.
 #   worktree_shared_path           Print the shared worktree path.
 #   worktree_branch_for KEY        Print the branch name for an issue (lowercased key).
+#   worktree_key_for BRANCH        Invert worktree_branch_for.
+#   worktree_pool_slot_names       The pool, as slot names.
+#   worktree_slots                 Per slot: "<slot> busy <agent>" or "<slot> free -".
+#   worktree_free_slots OWNED      Slots a ticket can actually claim.
 #   worktree_prepare_for_issue KEY Ensure the shared worktree exists and is checked
 #                                  out on the branch for KEY (created from origin/main
 #                                  if new). Prints the worktree path on stdout.
@@ -40,7 +44,14 @@ worktree_shared_path() {
   printf '%s/%s\n' "$parent" "$FXA_SHARED_WORKTREE_NAME"
 }
 
-# Branch name for an issue: just the lowercased Jira key (e.g., FXA-13494 → fxa-13494).
+# Branch name for an issue: the lowercased Jira key, and nothing else.
+# FXA-13494 -> fxa-13494, PAY-1234 -> pay-1234.
+#
+# This is the ONLY branch-name generator in the system. The skill used to carry
+# a second one that prefixed `fxa-` onto every key. The two agreed on FXA keys
+# and disagreed on every other project: the skill looked for `fxa-pay-1234`
+# while this function had created `pay-1234`. Eight readers (reap, drain,
+# feedback, prstate, alive, progress, usage, record) would have missed the run.
 worktree_branch_for() {
   local key="${1:-}"
   if [ -z "$key" ]; then
@@ -48,6 +59,14 @@ worktree_branch_for() {
     return 1
   fi
   printf '%s\n' "$key" | tr '[:upper:]' '[:lower:]'
+}
+
+# Invert worktree_branch_for. The branch is the key lowercased, so the inverse
+# is uppercase. Stray-VM collection and free-slot detection both depend on this
+# round trip: when it breaks, a live run gets stopped and the pool hands out a
+# slot that a ticket still owns.
+worktree_key_for() {
+  printf '%s\n' "${1:-}" | tr '[:lower:]' '[:upper:]'
 }
 
 # _worktree_each_active_agent
@@ -111,30 +130,108 @@ _worktree_pool_list() {
     || true
 }
 
-# worktree_acquire_pool_slot [BASE]
-#   Returns the absolute path to a free worktree from the pool, or creates the
-#   next-numbered slot if all are busy. "Free" means no running agent .meta
-#   file lists this workspace. Progress goes to stderr.
+# worktree_pool_slot_names
+#   The pool as slot names (fxa-auto, fxa-auto-2, ...) rather than paths.
+worktree_pool_slot_names() {
+  local wt
+  while IFS= read -r wt; do
+    [ -z "$wt" ] && continue
+    basename "$wt"
+  done <<< "$(_worktree_pool_list)"
+}
+
+# worktree_slots
+#   One line per slot: "<slot> busy <agent>" or "<slot> free -".
+#
+#   This answers "is a VM running there", which is NOT the same question as
+#   "can a ticket claim it". Use worktree_free_slots to claim.
+worktree_slots() {
+  local root parent slot path agent
+  root="$(worktree_repo_root)" || return 1
+  parent="$(dirname "$root")"
+  while IFS= read -r slot; do
+    [ -z "$slot" ] && continue
+    path="${parent}/${slot}"
+    agent="$(_worktree_agent_for_workspace "$path")"
+    if [ -n "$agent" ]; then echo "${slot} busy ${agent}"; else echo "${slot} free -"; fi
+  done <<< "$(worktree_pool_slot_names)"
+}
+
+# worktree_free_slots <OWNED-KEYS>
+#   Print each pool slot that is genuinely claimable, one per line. OWNED-KEYS
+#   is the newline-separated list of uppercase keys that still own a slot
+#   (in practice, the inflight tickets). Pass the empty string when none do.
+#
+#   A slot is claimable only when BOTH hold:
+#     1. the branch checked out in it belongs to no owning ticket, and
+#     2. no agent VM is currently running on it.
+#
+#   Condition 1 is the one `worktree_slots` misses. The VM is stopped as soon
+#   as the PR opens, so a slot reads `free` for the whole CI run while its
+#   ticket still owns the worktree. Launching there switches the branch out
+#   from under a ticket that may still need a fix relaunch.
+#
+#   Condition 2 is not redundant. A ticket that stops owning its slot can still
+#   have a VM up, and worktree_prepare_for_issue refuses to mount a workspace
+#   another agent's VM holds. Reporting such a slot as claimable makes a pass
+#   burn a launch on a guaranteed abort: on 2026-08-24 FXA-14371 was labelled
+#   inflight, aborted with "Stop 'fxa-14285' first", and had to be returned to
+#   the queue by hand. A leftover branch does not block a claim, but a leftover
+#   VM does.
+worktree_free_slots() {
+  local owned="${1:-}"
+  local root parent slot path branch key
+  root="$(worktree_repo_root)" || return 1
+  parent="$(dirname "$root")"
+  while IFS= read -r slot; do
+    [ -z "$slot" ] && continue
+    path="${parent}/${slot}"
+    branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null)" || continue
+    key="$(worktree_key_for "$branch")"
+    if [ -n "$owned" ] && printf '%s\n' "$owned" | grep -qx "$key"; then
+      continue                      # owned by a ticket that may still relaunch
+    fi
+    if [ -n "$(_worktree_agent_for_workspace "$path")" ]; then
+      continue                      # a VM still runs here; a launch would abort
+    fi
+    printf '%s\n' "$slot"
+  done <<< "$(worktree_pool_slot_names)"
+}
+
+# worktree_acquire_pool_slot [BASE] [OWNED-KEYS]
+#   Returns the absolute path to a claimable worktree from the pool, or creates
+#   the next-numbered slot if none is claimable. Progress goes to stderr.
+#
+#   OWNED-KEYS is the newline-separated list of keys that still own a slot; it
+#   comes from the caller because this file does not talk to Jira. Pass the
+#   literal string UNKNOWN when that list could not be fetched, and this refuses
+#   to guess rather than hand out a slot a ticket is still using.
 worktree_acquire_pool_slot() {
   local base="${1:-$FXA_WORKTREE_BASE}"
+  local owned="${2:-}"
   local root parent
   root="$(worktree_repo_root)" || return 1
   parent="$(dirname "$root")"
 
+  if [ "$owned" = "UNKNOWN" ]; then
+    echo "ERROR: cannot tell which pool slots are still owned (the ticket query failed)." >&2
+    echo "       Re-run with an explicit --worktree <slot> rather than risk switching" >&2
+    echo "       the branch out from under a ticket that still needs it." >&2
+    return 1
+  fi
+
+  # First, try to reuse a claimable existing slot.
+  local slot
+  while IFS= read -r slot; do
+    [ -z "$slot" ] && continue
+    echo "Reusing free pool slot: ${parent}/${slot}" >&2
+    printf '%s\n' "${parent}/${slot}"
+    return 0
+  done <<< "$(worktree_free_slots "$owned")"
+
   local pool busy
   pool="$(_worktree_pool_list)"
   busy="$(_worktree_busy_workspaces)"
-
-  # First, try to reuse a free existing slot.
-  local wt
-  while IFS= read -r wt; do
-    [ -z "$wt" ] && continue
-    if ! printf '%s\n' "$busy" | grep -qFx "$wt"; then
-      echo "Reusing free pool slot: ${wt}" >&2
-      printf '%s\n' "$wt"
-      return 0
-    fi
-  done <<< "$pool"
 
   # No free slot — figure out the next-numbered name. Init to 1 so the base
   # name (treated as slot 1) plus any existing numbered slots yields a sane
@@ -260,17 +357,118 @@ _worktree_ensure_shared() {
   printf '%s\n' "$path"
 }
 
+# worktree_copy_secrets <path>
+#   Copy per-developer secrets/configs from the main FxA repo into <path>.
+#   FxA gitignores these files, so a fresh worktree starts empty and the agent
+#   can't run `fxa-start` until they're in place. Mirrors the file list in the
+#   `fxa-worktree` helper. Safe to re-run; missing source files are skipped.
+worktree_copy_secrets() {
+  local path="${1:-}"
+  if [ -z "$path" ] || [ ! -d "$path" ]; then
+    echo "ERROR: worktree_copy_secrets needs an existing worktree path" >&2
+    return 1
+  fi
+  # Secrets/ai source: FXA_SECRETS_SOURCE if set (lets a worktree read secrets
+  # from another checkout), otherwise the worktree's own repo root (unchanged).
+  local root
+  if [ -n "${FXA_SECRETS_SOURCE:-}" ]; then
+    if [ ! -d "$FXA_SECRETS_SOURCE" ]; then
+      echo "ERROR: FXA_SECRETS_SOURCE='${FXA_SECRETS_SOURCE}' is not a directory." >&2
+      return 1
+    fi
+    root="$FXA_SECRETS_SOURCE"
+  else
+    root="$(worktree_repo_root)" || return 1
+  fi
+
+  # Files copied as-is (relative to the FxA repo root).
+  local secret_files=(
+    ".env"
+    "secrets.env"
+    "secrets.json"
+    "packages/fxa-auth-server/config/key.json"
+    "packages/fxa-auth-server/config/public-key.json"
+    "packages/fxa-auth-server/config/secret-key.json"
+    "packages/fxa-auth-server/config/secrets.json"
+    "packages/fxa-auth-server/config/secrets2.json"
+    "packages/fxa-auth-server/config/vapid-keys.json"
+    "packages/fxa-auth-server/test/config/mock-vapid-keys.json"
+    "packages/fxa-admin-server/.env"
+    "packages/fxa-admin-server/src/config/public-key.json"
+    "packages/fxa-admin-server/src/config/secret-key.json"
+    "packages/fxa-admin-server/src/config/secrets.json"
+    "packages/fxa-content-server/server/config/secrets.json"
+    "packages/fxa-payments-server/server/config/secrets.json"
+    "packages/123done/secrets.json"
+    "libs/shared/db/mysql/account/src/.env"
+  )
+
+  local rel src dest copied=0 skipped=0
+  for rel in "${secret_files[@]}"; do
+    src="${root}/${rel}"
+    dest="${path}/${rel}"
+    if [ -f "$src" ]; then
+      mkdir -p "$(dirname "$dest")"
+      cp "$src" "$dest"
+      copied=$((copied + 1))
+    else
+      skipped=$((skipped + 1))
+    fi
+  done
+
+  # Firebase emulator config (entire directory).
+  if [ -d "${root}/_dev/firebase/.config" ]; then
+    mkdir -p "${path}/_dev/firebase"
+    cp -R "${root}/_dev/firebase/.config" "${path}/_dev/firebase/.config"
+    copied=$((copied + 1))
+  fi
+
+  # NX cache left enabled (previously forced off via NX_SKIP_NX_CACHE); nx keys
+  # its cache on input hashes, so reuse across pooled worktrees is safe.
+
+  echo "  Synced ${copied} secret/config file(s) into ${path} (${skipped} not present in source)." >&2
+}
+
+# worktree_copy_ai_docs <path>
+#   Mirror the repo's ai/ directory into <path> as a real directory, not a
+#   symlink: only the worktree itself is virtiofs-mounted, so a symlink to a host
+#   path does not resolve inside the VM. Kept separate from the secret sync
+#   because ai/ holds local notes, not credentials, and every run wants it.
+worktree_copy_ai_docs() {
+  local path="${1:-}"
+  [ -n "$path" ] && [ -d "$path" ] || return 0
+
+  local root
+  if [ -n "${FXA_SECRETS_SOURCE:-}" ] && [ -d "${FXA_SECRETS_SOURCE}" ]; then
+    root="$FXA_SECRETS_SOURCE"
+  else
+    root="$(worktree_repo_root)" || return 0
+  fi
+  [ -d "${root}/ai" ] || return 0
+
+  rm -rf "${path}/ai"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete "${root}/ai/" "${path}/ai/"
+  else
+    cp -R "${root}/ai" "${path}/ai"
+  fi
+  echo "  Mirrored ai/ into ${path}." >&2
+}
+
 # worktree_prepare_for_issue <ISSUE-KEY> [BASE]
 #   1. Ensures the shared worktree exists.
 #   2. Refuses to proceed if the worktree has uncommitted changes (safety).
 #   3. Fetches origin/<base>.
 #   4. If branch exists locally, checks it out (resume mode).
 #      Otherwise, creates it off origin/<base>.
+#   5. Mirrors per-developer secrets/configs from the main repo so the agent
+#      can run `fxa-start` without hand-staging credentials.
 #   Prints the worktree path on stdout. Progress on stderr.
 worktree_prepare_for_issue() {
   local key="${1:-}"
   local base="${2:-$FXA_WORKTREE_BASE}"
   local named_slot="${3:-}"
+  local owned_keys="${4:-}"
 
   if [ -z "$key" ]; then
     echo "ERROR: worktree_prepare_for_issue requires ISSUE-KEY" >&2
@@ -312,7 +510,7 @@ worktree_prepare_for_issue() {
     fi
   else
     # No --worktree: acquire a free pool slot, or create the next-numbered one.
-    path="$(worktree_acquire_pool_slot "$base")" || return 1
+    path="$(worktree_acquire_pool_slot "$base" "$owned_keys")" || return 1
   fi
 
   # Warn (but don't refuse) on uncommitted/untracked changes. The agent will
@@ -341,9 +539,33 @@ worktree_prepare_for_issue() {
   if git -C "$path" show-ref --verify --quiet "refs/heads/${branch}"; then
     echo "Branch '${branch}' already exists locally; resuming." >&2
     git -C "$path" $nohooks checkout "$branch" >&2 || return 1
+  elif git -C "$path" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    # The branch exists on ORIGIN but not locally. That is the normal shape of a
+    # fix round: a previous run pushed it from a different pool slot, and slots
+    # do not share local branch refs. Cutting from origin/<base> here would
+    # silently discard every commit already on the PR and then force the agent
+    # to rebuild from scratch.
+    echo "Branch '${branch}' exists on origin; resuming from there, not from ${base}." >&2
+    git -C "$path" fetch origin "$branch" >&2 || return 1
+    git -C "$path" $nohooks checkout -b "$branch" "origin/${branch}" >&2 || return 1
   else
     echo "Creating branch '${branch}' off origin/${base}." >&2
     git -C "$path" $nohooks checkout -b "$branch" "origin/${base}" >&2 || return 1
+  fi
+
+  # Secrets are copied only when the run actually needs the service stack.
+  # They are real credentials (signing keys, vapid keys, firebase config), and
+  # the worktree is virtiofs-mounted into a VM running an agent with
+  # bypassPermissions whose prompt is built from Jira text. Only `fxa-start`
+  # needs them, and functional tests are off by default, so most runs are a
+  # lint-and-unit-test change that never reads a key. Don't stage a credential
+  # the run will not use.
+  worktree_copy_ai_docs "$path" >&2 || true
+  if [ "${FXA_COPY_SECRETS:-false}" = "true" ]; then
+    echo "Syncing per-developer secrets and config files..." >&2
+    worktree_copy_secrets "$path" >&2 || return 1
+  else
+    echo "Skipping secret sync. Pass --functional-tests, or set FXA_COPY_SECRETS=true, if the run needs fxa-start." >&2
   fi
 
   printf '%s\n' "$path"

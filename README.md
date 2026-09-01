@@ -264,6 +264,41 @@ macOS Host (32GB RAM)
 | `image build` | Build the golden VM image |
 | `image status` | Check golden image status |
 | `status` | Show system status |
+| `reap` | Remove leftover host state for agents whose VM is gone |
+| `reap <ISSUE-KEY>` | Stop that ticket's agent VM (idempotent) |
+| `reap --stray` | Stop every agent VM whose ticket is not inflight |
+
+### Pipeline Commands
+
+These drive an autonomous ticket-to-PR pipeline. Settings come from
+`pipelines/<name>.conf`; pick one with the global flag `--pipeline <name>` before the
+command. They are read-only unless marked WRITE. Nothing here merges or approves a PR.
+
+See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these commands drive.
+
+| Command | Description |
+|---------|-------------|
+| `queue` | Keys in the queue, oldest first |
+| `inflight` | Keys currently running |
+| `done-keys` | Keys awaiting review |
+| `drain` | Done keys whose PR merged, closed, or went red |
+| `ticket <ISSUE-KEY>` | Ticket text **including comments** — ground with this |
+| `reporter <ISSUE-KEY>` | Reporter's GitHub login, empty if unmapped |
+| `label <ISSUE-KEY> <state>` | WRITE: move the ticket; also reaps its VM |
+| `slots` | Pool slots, and any VM running on each |
+| `freeslots` | Slots a ticket can claim — **use this, not `slots`** |
+| `launch <KEY> <slot> [ctx]` | WRITE: start an agent VM in the background |
+| `alive <ISSUE-KEY>` | Exit 0 if a live `claude` process runs in the VM |
+| `progress <ISSUE-KEY>` | What the launcher did — **read this first** |
+| `prstate <ISSUE-KEY>` | PR number, state, and check tally |
+| `feedback <KEY> [sub]` | Unhandled review comments (`ack`, `rounds`, `acted`, `thumbsup`) |
+| `tokens <ISSUE-KEY>` | Token and model usage — run **before** the VM stops |
+| `record <ISSUE-KEY>` | Append the run to the telemetry log |
+| `costs` | Rebuild the per-issue cost rollup |
+| `skip <KEY> [reason]` | Record an admission skip; prints `comment` or `silent <n>` |
+| `skipped [KEY]` | List recorded skips |
+| `attempts <KEY> [bump]` | Read or increment the real-fix attempt counter |
+| `lock` / `unlock` | One pass at a time |
 
 ### Run Options
 
@@ -449,12 +484,21 @@ fxa-sandbox-ctl/               # Repo root
 ├── templates/
 │   ├── agent-startup.sh         # VM entrypoint template
 │   └── inbox-viewer.html        # Email inbox viewer (served at /__inbox)
+├── pipelines/
+│   └── fxa-ai-fixme.conf        # Repo, label family, pool state, telemetry paths
+├── skills/
+│   └── fxa-ai-fixme/            # Pass logic; ~/.claude/skills/ symlinks here
+│       ├── SKILL.md             # The decision rules
+│       └── SCHEDULING.md        # The loop definitions
 ├── lib/
 │   ├── config.sh                # Constants and defaults
 │   ├── vm.sh                    # Tart VM lifecycle
-│   ├── agent.sh                 # Agent run/attach/stop/list + security
-│   ├── jira.sh                  # acli fetch + ADF→markdown rendering
-│   ├── worktree.sh              # fxa-auto* pool, dirty-state filter, branch swap
+│   ├── agent.sh                 # Agent run/attach/stop/list + security, alive check
+│   ├── pipeline.sh              # Pipeline config, pass lock, skips, attempts, progress
+│   ├── jira.sh                  # acli fetch + ADF→markdown, queue reads, label writes
+│   ├── worktree.sh              # fxa-auto* pool, branch naming, slot claiming
+│   ├── github.sh                # PR state, drain, review comments
+│   ├── telemetry.sh             # Token usage, run log, cost rollup
 │   ├── finish.sh                # Handoff wait, push, media gist upload, PR, CI watch
 │   └── stream-prettify.js       # JSONL stream prettifier (legacy -p mode)
 └── logs/                        # Runtime logs (gitignored)

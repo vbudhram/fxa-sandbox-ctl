@@ -1,8 +1,8 @@
 #!/bin/bash
-# 02-node.sh — Node.js toolchain (node 22, corepack, yarn, nx, pm2)
+# 02-node.sh — Node.js toolchain (node 24, corepack, yarn, nx, pm2)
 set -euo pipefail
 
-NODE_VERSION="22"
+NODE_VERSION="24"
 
 echo "==> Installing Node.js ${NODE_VERSION} via NodeSource..."
 curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -

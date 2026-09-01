@@ -12,6 +12,10 @@ logs/
 # macOS
 .DS_Store
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Editor swap / scratch
 *.swp
 *.tmp

@@ -8,9 +8,13 @@ export DEBIAN_FRONTEND=noninteractive
 # The cirruslabs base image runs unattended-upgrades on boot, which races with
 # our apt installs and intermittently fails with "Could not get lock /var/lib/dpkg/lock-frontend".
 echo "==> Disabling unattended-upgrades..."
-systemctl stop unattended-upgrades.service 2>/dev/null || true
-systemctl disable unattended-upgrades.service 2>/dev/null || true
-systemctl mask unattended-upgrades.service 2>/dev/null || true
+# The apt-daily timers respawn unattended-upgrade mid-build, so mask them too.
+for unit in unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer \
+            apt-daily.service apt-daily-upgrade.service; do
+  systemctl stop "$unit" 2>/dev/null || true
+  systemctl disable "$unit" 2>/dev/null || true
+  systemctl mask "$unit" 2>/dev/null || true
+done
 # Wait for any in-flight apt/dpkg processes to finish and release the lock.
 for _ in $(seq 1 60); do
   if ! pgrep -f 'apt-get|apt.systemd.daily|unattended-upgrade|dpkg' >/dev/null 2>&1; then
@@ -40,6 +44,7 @@ apt-get install -y -qq \
   lsb-release \
   python3 \
   python3-pip \
+  python3-venv \
   pkg-config \
   libssl-dev \
   libgraphicsmagick1-dev \

@@ -100,27 +100,23 @@ systemctl enable firestore-emulator
 
 # ── goaws (SNS/SQS emulator) ─────────────────────────────────
 echo "==> Installing goaws..."
-GOAWS_VERSION="0.4.2"
+# v1.1.x are retracted upstream, so v0.5.4 is the newest real release.
+GOAWS_VERSION="v0.5.4"
 ARCH=$(dpkg --print-architecture)
 
 # goaws doesn't have official ARM64 binaries — use Go to build from source
 apt-get install -y -qq golang-go 2>/dev/null || true
 
-if command -v go &>/dev/null; then
-  echo "==> Building goaws from source..."
-  GOPATH=/tmp/gopath go install github.com/Admiral-Piett/goaws/v2/cmd/goaws@latest 2>/dev/null || {
-    echo "WARN: goaws build failed, creating stub config. goaws will need manual setup."
-    mkdir -p /opt/goaws
-    touch /opt/goaws/goaws
-  }
-  if [ -f /tmp/gopath/bin/goaws ]; then
-    cp /tmp/gopath/bin/goaws /usr/local/bin/goaws
-    chmod +x /usr/local/bin/goaws
-  fi
-else
-  echo "WARN: Go not available, skipping goaws build."
-  mkdir -p /opt/goaws
+if ! command -v go &>/dev/null; then
+  echo "ERROR: Go not available, cannot build goaws." >&2
+  exit 1
 fi
+
+echo "==> Building goaws ${GOAWS_VERSION} from source..."
+GOPATH=/tmp/gopath go install "github.com/Admiral-Piett/goaws/app/cmd@${GOAWS_VERSION}"
+
+# go install names the binary after its package dir, so it lands as 'cmd'.
+install -m 755 /tmp/gopath/bin/cmd /usr/local/bin/goaws
 
 # goaws config
 mkdir -p /opt/goaws

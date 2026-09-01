@@ -10,6 +10,11 @@ cat > /etc/agent-env.sh <<'AGENTENV'
 # FxA Agent Environment Variables
 # Sourced before running Claude Code or FxA services
 
+# Claude Code. The global npm prefix is root-owned, so the agent cannot
+# self-update; the attempt only prints "Auto-update failed" on every start.
+# Silence it and pin the version to whatever the image was built with.
+export DISABLE_AUTOUPDATER=1
+
 # MySQL
 export AUTH_MYSQL_HOST=localhost
 export AUTH_MYSQL_PORT=3306
@@ -66,7 +71,7 @@ export FXA_L10N_SKIP=true
 export PROXY_SETTINGS=true
 
 # Playwright / functional tests
-export NODE_OPTIONS="--dns-result-order=ipv4first --max-old-space-size=1536"
+export NODE_OPTIONS="--dns-result-order=ipv4first --max-old-space-size=4096"
 AGENTENV
 chmod 644 /etc/agent-env.sh
 

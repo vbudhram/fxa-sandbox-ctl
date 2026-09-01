@@ -160,3 +160,123 @@ jira_normalize_key() {
 
 # Clean up cache on shell exit
 trap 'rm -rf "${_JIRA_CACHE_DIR}" 2>/dev/null' EXIT
+
+# ── Pipeline queries ───────────────────────────────────────────
+# These read and write the ai-fixme label family, which IS the pipeline's state
+# machine. They need a loaded pipeline config (see lib/pipeline.sh).
+
+_jira_keys_for_jql() {
+  acli jira workitem search --jql "$1" --limit 200 --json 2>/dev/null \
+    | jq -r '.[]?.key // empty'
+}
+
+# Keys waiting in the queue, oldest first.
+jira_queue_keys() {
+  pipeline_require || return 1
+  _jira_keys_for_jql "$PIPE_QUEUE_JQL"
+}
+
+# Keys in one lifecycle state, oldest first.
+jira_keys_in_state() {
+  pipeline_require || return 1
+  local label; label="$(pipeline_label_for "${1:?state required}")"
+  _jira_keys_for_jql "labels = \"${label}\" ORDER BY created ASC"
+}
+
+jira_inflight_keys()  { jira_keys_in_state inflight; }
+
+# jira_items_json <JQL>
+#   Key and summary for every match, as JSON. Same one call as the key-only
+#   reads, with one more field, so the dashboard costs no extra API request.
+#   Prints `null` on failure, which the caller must not confuse with `[]`.
+jira_items_json() {
+  local raw rc=0
+  raw="$(acli jira workitem search --jql "$1" --limit 200 --fields key,summary --json 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$raw" ]; then echo 'null'; return 0; fi
+  printf '%s' "$raw" | jq '[.[]? | {key, summary: (.fields.summary // "")}]' 2>/dev/null || echo 'null'
+}
+
+jira_queue_items()    { pipeline_require || return 1; jira_items_json "$PIPE_QUEUE_JQL"; }
+jira_items_in_state() {
+  pipeline_require || return 1
+  jira_items_json "labels = \"$(pipeline_label_for "${1:?state required}")\" ORDER BY created ASC"
+}
+jira_done_keys()      { jira_keys_in_state done; }
+
+# jira_owning_keys
+#   The keys that still own a pool slot. A ticket owns its slot from the launch
+#   until its label leaves `inflight`, even though its VM is stopped once the PR
+#   opens. Prints UNKNOWN when the query fails, so a caller can fail closed
+#   instead of treating "no owners" as "every slot is claimable".
+jira_owning_keys() {
+  local out rc=0
+  out="$(jira_inflight_keys)" || rc=$?
+  if [ "$rc" -ne 0 ]; then printf 'UNKNOWN\n'; return 0; fi
+  printf '%s\n' "$out" | tr '[:lower:]' '[:upper:]'
+}
+
+# jira_label_set <KEY> <STATE>
+#   WRITE: swap the label family to <STATE>. acli replaces the label set named
+#   by -l, so remove the other states explicitly or a ticket ends up in two
+#   states at once.
+#
+#   This does the label write only. Reaping the VM and reacting to review
+#   comments are the caller's job (see cmd_label), because they are not Jira.
+jira_label_set() {
+  pipeline_require || return 1
+  local key="${1:-}" state="${2:-}"
+  [ -n "$key" ] && [ -n "$state" ] || { echo "ERROR: label needs <KEY> <state>" >&2; return 1; }
+  # Accept the full label too. Callers reach for `ai-fixme-blocked` as often as
+  # `blocked`, and failing on the longer form is pointless friction.
+  [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
+  state="${state#${PIPE_LABEL_PREFIX}-}"
+  case "$state" in
+    public|queued|inflight|done|blocked|merged|rejected) ;;
+    *) echo "ERROR: bad state '$state'" >&2; return 1 ;;
+  esac
+  local want; want="$(pipeline_label_for "$state")"
+  local others="" s l
+  while IFS= read -r s; do
+    l="$(pipeline_label_for "$s")"
+    [ "$l" = "$want" ] || others="${others}${others:+,}${l}"
+  done <<< "$(pipeline_states)"
+  acli jira workitem edit -k "$key" --remove-labels "$others" -l "$want" -y >/dev/null
+  printf '%s -> %s\n' "$key" "$want"
+}
+
+# Ticket text INCLUDING comments. `acli jira workitem view` omits comments
+# entirely and says nothing about it, so grounding that used `view` alone read
+# description-only and looked complete. On 2026-08-13 FXA-14325 was skipped for
+# two "unanswered" questions that the reporter had answered in a comment before
+# tagging the ticket. Always ground with this, never with `view` alone.
+jira_ticket() {
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: ticket needs <KEY>" >&2; return 1; }
+  echo "=== $key description ==="
+  acli jira workitem view "$key" 2>/dev/null
+  echo
+  echo "=== $key comments (oldest first) ==="
+  acli jira workitem comment list --key "$key" --json 2>/dev/null \
+    | jq -r '.comments[]? | "--- \(.author) [\(.id)]\n\(.body)\n"' \
+    || echo "(none)"
+}
+
+# jira_reporter_login <KEY>
+#   Print the GitHub login of whoever filed the ticket, or nothing if it cannot
+#   be resolved. Never guesses: an unmapped reporter prints nothing and the
+#   caller assigns the team only. Mapping lives in reporters.tsv in the state
+#   directory.
+#
+#   Match on displayName: Jira's reporter name and GitHub's user.name are both
+#   the person's real name. Email was the wrong key, because the local-part does
+#   not predict the handle.
+jira_reporter_login() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: reporter needs <KEY>" >&2; return 1; }
+  local map="${PIPE_STATE_DIR}/reporters.tsv"
+  [ -f "$map" ] || return 0
+  local name
+  name="$(acli jira workitem search --jql "key = ${key}" --fields key,reporter --json 2>/dev/null \
+    | jq -r '.[0].fields.reporter.displayName // empty' 2>/dev/null)" || name=""
+  [ -n "$name" ] || return 0
+  awk -F'\t' -v n="$name" '$0 !~ /^#/ && $1 == n {print $2; exit}' "$map"
+}

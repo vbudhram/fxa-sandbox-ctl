@@ -188,10 +188,24 @@ _setup_claude_config() {
     chown -R agent:agent /home/agent/.claude /home/agent/.config/claude
   " 2>/dev/null || true
 
-  # settings.json — user preferences (base64 to avoid quoting issues)
+  # settings.json — user preferences (base64 to avoid quoting issues).
+  # outputStyle is forced to concise for the VM only: the agent's prose is never
+  # read by a human, so terse output is pure savings. Injected here rather than
+  # baked into the image, because this copy overwrites the image's settings.json.
+  # claude-mem is disabled here for the same reason its cache is excluded below:
+  # its store lives in ~/.claude-mem on the host and never crosses, so the VM
+  # would run PreToolUse/PostToolUse hooks on every call against an empty index
+  # that dies with the VM. Leaving it enabled but absent is worse than off.
   if [ -f "${claude_home}/settings.json" ]; then
     local settings_b64
-    settings_b64="$(base64 < "${claude_home}/settings.json" | tr -d '\n')"
+    settings_b64="$(jq -c '. + {outputStyle: "concise"}
+        | if .enabledPlugins then .enabledPlugins |= with_entries(
+            select(.key | startswith("claude-mem@") | not)) else . end' \
+      < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
+    if [ -z "$settings_b64" ]; then
+      echo "  WARN: could not adjust settings.json; copying it unchanged." >&2
+      settings_b64="$(base64 < "${claude_home}/settings.json" | tr -d '\n')"
+    fi
     tart exec "${full_name}" sudo bash -c "
       echo '${settings_b64}' | base64 -d > /home/agent/.claude/settings.json
       chown agent:agent /home/agent/.claude/settings.json
@@ -227,19 +241,54 @@ _setup_claude_config() {
   # per-agent key is the clean path.
   local config_tar
   config_tar="$(mktemp -t fxa-claude-config.XXXX.tar)"
-  # The golden image now ships with Bun installed (packer/scripts/04-claude.sh),
-  # so plugins that depend on it (e.g. claude-mem) work in-VM.
+  # The golden image ships with Bun installed (packer/scripts/04-claude.sh) for
+  # plugins that need it.
   local tar_items=()
   [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
   [ -d "${claude_home}/commands" ] && tar_items+=("commands")
-  [ -d "${claude_home}/skills" ]   && tar_items+=("skills")
   [ -d "${claude_home}/plugins/cache" ] && tar_items+=(
     "plugins/cache"
     "plugins/installed_plugins.json"
     "plugins/config.json"
   )
+  # claude-mem is the bulk of the plugin cache, almost all of it duplicated
+  # node_modules across cached versions. Its data lives in ~/.claude-mem, which
+  # never crosses, so shipping the code buys the VM nothing.
+  local skill_excludes=(--exclude="plugins/cache/thedotmack")
+
+  # Skills are an allow-list, not a deny-list. The VM has no gh, acli, circleci,
+  # or sentry-cli, no GitHub or Jira credential, and no MCP, so any skill that
+  # reaches the network is not merely useless: the agent reads its description,
+  # judges it relevant, and then fails on a missing binary. Ship only the ones
+  # that work against the local worktree. create-pr-description belongs here
+  # because the agent authors the PR title and body into the handoff file, even
+  # though the host is what runs `gh pr create`.
+  # /humanizer and /code-simplifier are mandatory goal conditions in
+  # VM_AGENT_GUIDE.md (steps 5 and 8), so they must ship.
+  # The FxA repo supplies its own skills at /workspace/.claude/skills (fxa-review-quick,
+  # fxa-simplify, and more). Those are authoritative for FxA code. The fxa-vm-* skills
+  # here cover only what the repo cannot know: the sandbox handoff contract and the
+  # pool-worktree diff base.
+  # package-workflows is deliberately absent: it reads 30 days of session
+  # history, and a VM boots, fixes one ticket, and is destroyed.
+  local vm_skills=(
+    code-simplifier
+    create-pr-description
+    fxa-save-investigation
+    fxa-vm-handoff
+    fxa-vm-selfcheck
+    humanizer
+    pr-review-typescript
+    quick-review
+    squash-commit
+  )
+  local s
+  for s in "${vm_skills[@]}"; do
+    [ -d "${claude_home}/skills/${s}" ] && tar_items+=("skills/${s}")
+  done
+
   if [ "${#tar_items[@]}" -gt 0 ]; then
-    if tar -cf "$config_tar" -C "$claude_home" "${tar_items[@]}" 2>/dev/null && [ -s "$config_tar" ]; then
+    if tar -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null && [ -s "$config_tar" ]; then
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"
@@ -423,6 +472,80 @@ _inject_oauth_token() {
 
 # ── Agent commands ─────────────────────────────────────────────
 
+# _screen_hardcopy <full-vm-name>
+#   Dump the VISIBLE screen region (not scrollback) so we can inspect what the
+#   TUI is actually showing right now.
+#   `screen -X hardcopy` is ASYNCHRONOUS: it queues the dump and returns
+#   immediately, so reading the file in the same breath races the write and
+#   yields a stale or empty capture. Wait for the flush before reading.
+_screen_hardcopy() {
+  tart exec "$1" sudo -u agent bash -c \
+    "screen -S ${VM_SCREEN_SESSION} -p 0 -X hardcopy /tmp/.fxa-hardcopy >/dev/null 2>&1; \
+     sleep 1; cat /tmp/.fxa-hardcopy 2>/dev/null" 2>/dev/null
+}
+
+# _inject_prompt <full-vm-name> <agent-name>
+#   Paste the prompt into Claude Code's TUI, press Enter, and verify the agent
+#   actually started. Retries the Enter, and fails LOUDLY if it never takes.
+#
+#   This replaces `sleep 8; paste; sleep 1; Enter`, backgrounded to /dev/null
+#   with no verification. Both sleeps were fixed guesses about how long a TUI
+#   takes to draw, and nothing checked the result.
+#
+#   On 2026-08-31 FXA-10214 pasted fine and the Enter did not take. The agent
+#   sat holding the text in its input box for 15 minutes while `progress`
+#   reported a healthy `watching`, `alive` reported a live claude process, and
+#   `list` reported `running`. Every health signal agreed it was fine. The only
+#   field that disagreed was files_changed=0. A single Enter, sent by hand,
+#   started it immediately.
+#
+#   That is the worst failure shape this system can produce, so the fix is not a
+#   longer sleep: it is to wait for a real readiness signal, verify submission,
+#   and turn a silent stall into a loud error the reconcile table can act on.
+_inject_prompt() {
+  local full_name="$1" name="$2" hc i
+
+  # 1. Wait for the TUI to actually draw. The footer only renders once the
+  #    input box is live, so it is a real signal rather than a guess. Boot can
+  #    be slow (npm auto-update check, MCP auth warnings), so allow 60s.
+  for i in $(seq 1 30); do
+    hc="$(_screen_hardcopy "$full_name")"
+    # Bash pattern matching, deliberately NOT grep. A screen hardcopy is full of
+    # box-drawing bytes that are invalid UTF-8, and grep in a UTF-8 locale then
+    # fails to match even plain ASCII patterns. `printf | grep -q` is worse
+    # still: under `set -o pipefail` grep -q exits on the first match, printf
+    # dies with SIGPIPE, and the pipeline reports FAILURE on a SUCCESSFUL match.
+    # This file runs under pipefail. Both traps were hit while writing this.
+    [[ "$hc" == *"bypass permissions"* || "$hc" == *"for shortcuts"* ]] && break
+    sleep 2
+  done
+
+  # 2. Paste it.
+  tart exec "${full_name}" sudo -u agent bash -c "
+    screen -S ${VM_SCREEN_SESSION} -p 0 -X readreg p /workspace/.fxa-auto-prompt.txt
+    screen -S ${VM_SCREEN_SESSION} -p 0 -X paste p
+  " 2>/dev/null
+  sleep 2
+
+  # 3. Submit, then confirm the agent is genuinely working. Claude Code shows a
+  #    live turn as an active goal, an interrupt hint, or a token counter.
+  for i in 1 2 3 4 5; do
+    tart exec "${full_name}" sudo -u agent bash -c \
+      "screen -S ${VM_SCREEN_SESSION} -p 0 -X stuff \$'\r'" 2>/dev/null
+    sleep 4
+    hc="$(_screen_hardcopy "$full_name")"
+    if [[ "$hc" == *"/goal active"* || "$hc" == *"esc to interrupt"* || "$hc" == *"tokens)"* ]]; then
+      echo "Prompt submitted; agent is working (attempt ${i})." >&2
+      return 0
+    fi
+  done
+
+  echo "ERROR: prompt was pasted into ${name} but never submitted after 5 attempts." >&2
+  echo "       The agent is idle holding the text in its input box. It will look" >&2
+  echo "       healthy to progress/alive/list. Relaunch it, or attach and hit Enter." >&2
+  return 1
+}
+
 agent_run() {
   local workspace_dir="$1"
   local name="${2:-}"
@@ -563,7 +686,7 @@ SCREENRC
   # attaches via `ssh -t ... screen -x` to proxy the TUI to the user's terminal.
   # The /goal prompt is injected after a short delay (see _inject_goal_prompt
   # below) so the user can also watch it being entered live.
-  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-opus}"
+  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-claude-opus-5}"
 
   if [ -n "$prompt" ]; then
     # Write the prompt as a single logical line. Newlines in a screen-paste
@@ -578,22 +701,13 @@ SCREENRC
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
   "
 
-  # If a prompt was provided, paste it into Claude's TUI after the input box
-  # renders. With bypassPermissionsModeAccepted pre-set in ~/.claude.json (see
-  # _setup_claude_config), Claude skips the warning dialog and goes straight
-  # to the input box, so we just need to wait for the TUI to draw.
-  # Backgrounded so agent_run returns; the user sees the prompt being typed
-  # in live once they attach.
+  # If a prompt was provided, deliver it into Claude's TUI and PROVE it landed.
+  # Backgrounded so agent_run returns; the user sees it typed in live on attach.
+  #
+  # Errors are deliberately NOT sent to /dev/null: they belong in the launcher
+  # log, because that log is what `progress` reads and what a pass reconciles on.
   if [ -n "$prompt" ]; then
-    (
-      sleep 8
-      tart exec "${full_name}" sudo -u agent bash -c "
-        screen -S ${VM_SCREEN_SESSION} -p 0 -X readreg p /workspace/.fxa-auto-prompt.txt
-        screen -S ${VM_SCREEN_SESSION} -p 0 -X paste p
-        sleep 1
-        screen -S ${VM_SCREEN_SESSION} -p 0 -X stuff \$'\r'
-      " 2>/dev/null
-    ) >/dev/null 2>&1 &
+    ( _inject_prompt "$full_name" "$name" ) &
     disown $! 2>/dev/null || true
   fi
 
@@ -721,7 +835,7 @@ hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detac
 SCREENRC
   "
 
-  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-opus}"
+  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-claude-opus-5}"
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
@@ -743,6 +857,46 @@ META
   echo "  Attach:    fxa-sandbox-ctl attach ${name}"
   echo ""
   echo "  NOTE: If FxA services were running, re-run: fxa-sandbox-ctl services ${name}"
+}
+
+# agent_prewarm_stack <name>
+#   Kick off `fxa-start` inside a running agent's VM as a detached background
+#   job so the FxA service stack warms while the agent does planning/coding.
+#   Logs to <workspace>/.fxa-auto-stack-start.log (visible from the host).
+agent_prewarm_stack() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    echo "ERROR: agent_prewarm_stack requires <name>" >&2
+    return 1
+  fi
+  if ! vm_is_running "$name"; then
+    echo "ERROR: VM for agent '${name}' is not running." >&2
+    return 1
+  fi
+
+  local full_name workspace
+  full_name="$(vm_name "$name")"
+  if [ -f "${LOG_DIR}/${name}.meta" ]; then
+    local NAME WORKSPACE CPU MEMORY IP STARTED
+    source "${LOG_DIR}/${name}.meta"
+    workspace="${WORKSPACE:-}"
+  fi
+
+  # Fully detach inside the VM: nohup + setsid so fxa-start survives the
+  # tart-exec dispatch returning. Output goes to a log file in the workspace
+  # so it's tail-able from the host.
+  tart exec "${full_name}" sudo -u agent bash -c '
+    cd /workspace || exit 1
+    nohup setsid bash -c "source /etc/agent-env.sh && fxa-start" \
+      > /workspace/.fxa-auto-stack-start.log 2>&1 < /dev/null &
+    disown $! 2>/dev/null || true
+  ' >/dev/null 2>&1 || return 1
+
+  if [ -n "$workspace" ]; then
+    echo "  Pre-warm log: ${workspace}/.fxa-auto-stack-start.log" >&2
+  else
+    echo "  Pre-warm log: <workspace>/.fxa-auto-stack-start.log" >&2
+  fi
 }
 
 agent_attach() {
@@ -1064,4 +1218,44 @@ agent_stop_all() {
   rm -rf "${LOG_DIR}/ssh"
 
   echo "All agents stopped."
+}
+
+# ── Run-state introspection ────────────────────────────────────
+
+# agent_ssh_exec <name> <remote-command...>
+#   Run a command in the agent's VM over SSH and print its stdout. Returns 1
+#   when there is no running VM or no key for it.
+#
+#   Callers used to parse the human-readable output of `fxa-sandbox-ctl ssh`
+#   to find the IP and key path. That is the same two fields this reads
+#   directly, without a text format in between.
+agent_ssh_exec() {
+  local name="${1:-}"; shift || true
+  [ -n "$name" ] || return 1
+  vm_is_running "$name" 2>/dev/null || return 1
+  local ip key
+  ip="$(vm_ip "$name")" || return 1
+  key="${LOG_DIR}/ssh/${name}/id_ed25519"
+  [ -n "$ip" ] && [ -f "$key" ] || return 1
+  # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
+  ssh -i "$key" $VM_SSH_OPTS "${VM_SSH_USER}@${ip}" "$@"
+}
+
+# agent_alive <name>
+#   Exit 0 when a real claude process runs in the VM.
+#
+#   The status field in `agent_list` tracks the screen session, not the agent.
+#   A dead agent still reports "running" because `exec bash` replaces claude
+#   inside the same session, so a run can read healthy for hours after it died.
+#   Confirm a real process before trusting any launch.
+agent_alive() {
+  local name="${1:-}"
+  local n
+  # pgrep -c prints 0 AND exits non-zero on no match, so `|| echo 0` would emit
+  # a second 0 and break the integer test. Use `|| true` and take one line.
+  n="$(agent_ssh_exec "$name" 'pgrep -cf "^claude --permission" 2>/dev/null || true' 2>/dev/null \
+       | tr -d '\r' | head -1)" || return 1
+  n="${n:-0}"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  [ "$n" -gt 0 ]
 }

@@ -299,12 +299,12 @@ All of these must be **visible in this conversation's transcript**, in order, be
 
 1. A short plan with root cause and proposed fix.
 2. Unit tests for changed packages run with zero failures.
-3. `npx nx lint <package>` passes for every modified package (one invocation per changed `packages/<name>/`).
-4. If frontend or `fxa-auth-server` was touched: `yarn test-sandbox` passes; save 1–2 screenshots or a short `--video=on` recording to `.fxa-auto-media/`.
+3. `npx nx lint <package>` passes for every modified package (one invocation per changed `packages/<name>/`). If your change adds a new `libs/*` package or changes imports across package boundaries, ALSO run `npx nx build <affected>` (e.g. a top-level consumer like `fxa-admin-server`) and require it to pass with 0 errors — unit tests + lint do NOT catch a broken build graph (a missing project reference for a new lib passes lint/unit but fails CI `Build`).
+4. Functional tests are skipped by default (the sandbox stack has open issues; the operator validates manually after merge). Unit tests + lint are sufficient. When the host launches you with `--functional-tests`, the stack is pre-warmed and step 4 becomes mandatory: `curl /__heartbeat__` to confirm it is up, then `yarn test-sandbox`, and save 1–2 Playwright screenshots or a `--video=on` recording to `.fxa-auto-media/`.
 5. `/code-simplifier` was invoked on the latest changes and its suggestions applied (or declined with a one-line reason).
 6. `/fxa-review-quick` reports no blocking issues. Fix any blockers and re-run.
-7. **Exactly one commit** ahead of `origin/main` with a scoped conventional subject. Before staging, run `git diff --stat origin/main..HEAD` and revert any unrelated files via `git checkout origin/main -- <path>`. Scope creep blocks the goal. Squash with `git reset --soft origin/main && git commit`.
-8. `/create-pr-description` then `/humanizer` on the latest commit → concise PR body (< 30 lines). Write the handoff JSON.
+7. At least one commit ahead of `origin/main` with a scoped conventional subject. Before committing, run `git diff --stat origin/main..HEAD` and revert any unrelated files via `git checkout origin/main -- <path>`. Scope creep blocks the goal. You do NOT need to squash; the host orchestrator squashes and re-signs on push (the user's GPG signing key is not available inside the VM). The final remote commit uses `pr_title` from your handoff JSON as its subject.
+8. `/fxa-vm-selfcheck` reports no findings, then `/create-pr-description` then `/humanizer` on the latest commit → PR body that follows the repo's `.github/PULL_REQUEST_TEMPLATE.md` verbatim in structure: keep ALL of its checklist items (put `x` only in the ones that apply, leave the rest unchecked, do not delete rows) and its required sections. Keep the prose concise. Write the handoff JSON.
 
 The directive has a 30-turn cap.
 
@@ -324,7 +324,9 @@ The host SCPs `.claude/{hooks,commands,skills,plugins}` into the VM before start
 | `/fxa-review-quick` | After the first commit attempt, before considering the goal met |
 | `/create-pr-description` | After lint + tests pass, to draft the PR body |
 | `/humanizer` | On the output of `/create-pr-description` to strip AI-tell phrasing |
-| `/squash-commit` | If you ended up with more than one commit |
+| `/fxa-vm-selfcheck` | After `/fxa-review-quick`, for the checks the repo skills do not cover |
+| `/fxa-vm-handoff` | Last. Writes and verifies `.fxa-auto-done.json` |
+| `/squash-commit` | Optional. The host squashes and re-signs on push anyway, but you can keep the in-VM history tidy if you like. |
 
 ### Lint workflow
 

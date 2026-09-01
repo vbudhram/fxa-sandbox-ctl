@@ -181,6 +181,26 @@ finish_attach_and_wait() {
 #   when there's no TUI to attach to. Prints a heartbeat every 30s. If no
 #   worktree is supplied, scans every pool slot for a valid handoff so an
 #   agent running in fxa-auto-2+ is still detected.
+# A handoff file is not ready the instant it appears. The agent may still be
+# committing, and it often amends afterwards (/code-simplifier, /fxa-review-quick).
+# On 2026-08-17 FXA-14344 wrote its handoff while HEAD was still origin/main: the
+# watcher returned immediately, the dirty-worktree guard in finish_push_and_pr
+# refused, and the run stranded with a perfectly good commit landing seconds
+# later. Detecting the file is not the same as the work being settled.
+#
+# Readiness is all three: parseable JSON, a clean worktree, and HEAD matching the
+# sha the handoff names. Any of those failing just means "not yet", so the
+# watcher keeps polling until its existing timeout.
+_handoff_settled() {
+  local wt="$1" f="$2"
+  [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1 || return 1
+  # There must be work to ship: uncommitted changes (the normal case, since the
+  # agent cannot commit) or commits it somehow made. An empty worktree with a
+  # handoff file means the agent wrote the handoff before doing the work.
+  [ -n "$(worktree_filtered_status "$wt")" ] && return 0
+  [ "$(git -C "$wt" rev-list --count "origin/${FXA_WORKTREE_BASE:-main}..HEAD" 2>/dev/null || echo 0)" != "0" ]
+}
+
 finish_wait_for_done() {
   local worktree="${1:-}"
   local timeout="${2:-7200}"
@@ -202,7 +222,7 @@ finish_wait_for_done() {
 
   while [ "$elapsed" -lt "$timeout" ]; do
     if [ -n "$done_file" ]; then
-      if [ -s "$done_file" ] && jq -e . "$done_file" >/dev/null 2>&1; then
+      if _handoff_settled "$(dirname "$done_file")" "$done_file"; then
         echo "" >&2
         echo "=== handoff file detected: ${done_file} ===" >&2
         return 0
@@ -212,7 +232,7 @@ finish_wait_for_done() {
       while IFS= read -r wt; do
         [ -z "$wt" ] && continue
         local candidate="${wt}/${FXA_DONE_FILENAME}"
-        if [ -s "$candidate" ] && jq -e . "$candidate" >/dev/null 2>&1; then
+        if _handoff_settled "$wt" "$candidate"; then
           found="$candidate"
           break
         fi
@@ -234,6 +254,17 @@ finish_wait_for_done() {
   echo "" >&2
   echo "ERROR: timed out after ${timeout}s waiting for handoff file." >&2
   return 1
+}
+
+# A failed re-commit is far more often the pre-commit hook rejecting the diff
+# (lint-staged, or check:frozen on a frozen path) than a signing problem. Name
+# the hook first and point at its output, which git already printed above.
+_finish_recommit_failed() {
+  echo "ERROR: re-commit failed. The pre-commit hook rejects the diff, or signing failed." >&2
+  echo "       Read the hook output above first: 'yarn check:frozen' refuses edits to" >&2
+  echo "       frozen paths, and lint-staged fails on lint errors." >&2
+  echo "       If the hook output is clean, check 'git config commit.gpgsign' and that" >&2
+  echo "       your signing key is unlocked." >&2
 }
 
 # finish_push_and_pr
@@ -313,23 +344,111 @@ finish_push_and_pr() {
     fi
   fi
 
-  # Refuse to push if the agent left uncommitted code. worktree_filtered_status
-  # uses the same ignore list as the prepare-time check, so behavior is
-  # consistent end to end.
+  # The agent CANNOT commit, by design. The parent .git is mounted read-only so a
+  # sandboxed agent cannot rewrite a sibling worktree's admin files, and a linked
+  # worktree's commit writes to the COMMON .git/objects and .git/refs, which are
+  # shared with every other worktree. There is no narrower mount that permits one
+  # worktree to commit while protecting the rest, so committing moved to the host.
+  #
+  # This used to refuse on a dirty worktree, which is now the expected state. On
+  # 2026-08-17 FXA-14359 finished its work and stalled for 30 minutes reporting
+  # "the read-only gitdir mount prevents any commit".
+  #
+  # Stage exactly what worktree_filtered_status reports, so the same ignore list
+  # that decides "dirty" also decides what gets committed. A blanket `git add -A`
+  # would sweep in newKey.json and the .fxa-* scratch files.
   local dirty
   dirty="$(worktree_filtered_status "$worktree")"
   if [ -n "$dirty" ]; then
-    echo "ERROR: worktree has uncommitted changes:" >&2
-    printf '%s\n' "$dirty" | head -10 >&2
-    echo "       Inspect and clean up first: git -C '${worktree}' status" >&2
+    echo "Staging agent changes on the host (the VM cannot commit)..." >&2
+    local -a paths=()
+    local line p
+    while IFS= read -r line; do
+      [ -z "$line" ] && continue
+      p="${line:3}"          # porcelain is "XY <path>"
+      p="${p##* -> }"        # renames read "R  old -> new"
+      p="${p%\"}"; p="${p#\"}"
+      paths+=("$p")
+    done <<<"$dirty"
+    if [ "${#paths[@]}" -gt 0 ]; then
+      git -C "$worktree" add -- "${paths[@]}" >&2 || {
+        echo "ERROR: could not stage agent changes." >&2
+        return 1
+      }
+    fi
+  fi
+
+  # Something must exist to ship: either staged work, or commits the agent
+  # somehow managed to make.
+  if git -C "$worktree" diff --cached --quiet 2>/dev/null &&
+     [ "$(git -C "$worktree" rev-list --count "origin/${FXA_WORKTREE_BASE:-main}..HEAD" 2>/dev/null || echo 0)" = "0" ]; then
+    echo "ERROR: nothing to ship: no staged changes and no commits ahead of the base." >&2
     return 1
   fi
 
-  echo "Pushing ${branch} to origin..." >&2
-  git -C "$worktree" push -u origin "$branch" >&2 || {
-    echo "ERROR: git push failed." >&2
+  # Squash and re-commit on the host so the commit picks up the user's GPG
+  # (or SSH) signing config. The VM has no access to that key, so any commit
+  # made in-VM lands unsigned. We collapse against the merge-base with the base
+  # branch so the squash is correct regardless of how many commits the agent
+  # made. Use the base branch, not main: on a release branch such as train-342
+  # the merge-base with main is an old ancestor, and resetting to it would
+  # squash every base-branch commit into the PR.
+  local base_ref merge_base
+  base_ref="origin/${FXA_WORKTREE_BASE:-main}"
+  merge_base="$(git -C "$worktree" merge-base HEAD "$base_ref" 2>/dev/null)"
+  if [ -z "$merge_base" ]; then
+    echo "ERROR: could not find merge-base with ${base_ref}." >&2
+    return 1
+  fi
+  local commit_count
+  commit_count="$(git -C "$worktree" rev-list --count "${merge_base}..HEAD")"
+  echo "Squashing ${commit_count} commit(s) and re-signing on host..." >&2
+  git -C "$worktree" reset --soft "$merge_base" >&2 || {
+    echo "ERROR: soft reset to merge-base failed." >&2
     return 1
   }
+  # Carry the PR narrative into the commit body. `git log` is what a developer
+  # reads months later, and a bare conventional subject loses the why. Keep the
+  # prose sections and drop the PR-template scaffolding: the checklist and the
+  # "(Optional)" sections are review furniture, not history.
+  local commit_body
+  commit_body="$(printf '%s\n' "$pr_body" | awk '
+    /^## Checklist/            { skip = 1 }
+    /^## .*\(Optional\)/       { skip = 1 }
+    /^## /                     { if ($0 !~ /Checklist|\(Optional\)/) skip = 0 }
+    !skip                      { print }
+  ' | sed -e 's/[[:space:]]*$//' | cat -s)"
+
+  if [ -n "${commit_body//[[:space:]]/}" ]; then
+    git -C "$worktree" commit -m "$pr_title" -m "$commit_body" >&2 || {
+      _finish_recommit_failed
+      return 1
+    }
+  else
+    git -C "$worktree" commit -m "$pr_title" >&2 || {
+      _finish_recommit_failed
+      return 1
+    }
+  fi
+  local new_sha
+  new_sha="$(git -C "$worktree" rev-parse HEAD)"
+  echo "  signed HEAD: ${new_sha}" >&2
+
+  # The host re-squashes and re-signs, so resuming/re-running an already-pushed
+  # ticket leaves the local branch diverged from its remote and a plain push is
+  # non-fast-forward. Try a normal push first; on rejection retry with
+  # --force-with-lease, which still refuses to clobber if the remote moved for a
+  # reason we didn't expect (someone else pushed to the branch).
+  echo "Pushing ${branch} to origin..." >&2
+  if ! git -C "$worktree" push -u origin "$branch" >&2; then
+    echo "Normal push rejected (likely a re-squash of an already-pushed branch); retrying with --force-with-lease..." >&2
+    git -C "$worktree" push -u --force-with-lease origin "$branch" >&2 || {
+      echo "ERROR: git push failed even with --force-with-lease." >&2
+      echo "       The remote branch may have moved unexpectedly; inspect:" >&2
+      echo "       git -C '${worktree}' log --oneline origin/${branch}" >&2
+      return 1
+    }
+  fi
 
   # Read media_paths from the handoff and upload them as secret gists. The
   # markdown block is appended to pr_body before gh pr create.
@@ -358,8 +477,9 @@ finish_push_and_pr() {
     echo "Review the commit, body, and any media URLs, then run:" >&2
     echo "" >&2
     printf '  cd %q\n' "$worktree" >&2
-    printf '  gh pr create --base %s --head %s --title %q --body-file %s\n' \
-      "${FXA_WORKTREE_BASE:-main}" "$branch" "$pr_title" ".fxa-auto-pr-body.md" >&2
+    printf '  gh pr create --base %s --head %s --title %q --label %s --body-file %s\n' \
+      "${FXA_WORKTREE_BASE:-main}" "$branch" "$pr_title" "${FXA_PR_LABEL:-auto}" \
+      ".fxa-auto-pr-body.md" >&2
     echo "" >&2
     echo "Or pass --create-pr to your next 'jira' / 'finish' invocation to do it automatically." >&2
     # Archive the handoff so the next ticket can write a fresh one.
@@ -369,24 +489,209 @@ finish_push_and_pr() {
     return 0
   fi
 
+  # Reviewer and assignee are added as separate best-effort steps after the PR
+  # exists, not as `gh pr create` flags: an unknown handle or a permissions error
+  # would otherwise fail the whole create and lose the PR. CODEOWNERS already
+  # requests fxa-devs on most PRs, but not reliably (PR #21019 opened without it),
+  # so ask explicitly and treat "already requested" as success.
+  # A fix round pushes to a branch that already has a PR. `gh pr create` then
+  # fails with "already exists" and this function returns early, so every step
+  # after it is skipped — including the reviewer request and, worse, the
+  # functional gate, which the push just reset to on_hold. On 2026-08-14 the
+  # FXA-14325 feedback round pushed correctly and then sat with a PENDING gate
+  # for exactly this reason. Detect the existing PR and update it instead.
+  local pr_url existing
+  existing="$(cd "$worktree" && gh pr list --head "$branch" --state open \
+                --json url -q '.[0].url' 2>/dev/null)" || existing=""
+  if [ -n "$existing" ]; then
+    echo "PR already open for ${branch}; updating it instead of creating..." >&2
+    pr_url="$existing"
+    # Refresh the body only. NEVER touch the title of an existing PR.
+    #
+    # A fix or feedback round writes a handoff describing only that round, so
+    # PATCHing the title replaces the PR's subject with the subject of its last
+    # small change. The PR still holds the original diff, so the title then lies,
+    # and because this repo squash-merges, the wrong subject lands in main's
+    # history. On 2026-08-18 #21029 merged as "test(jest-transforms): cover the
+    # SVG component name helper" when the PR was the camelcase removal; #21053
+    # read as "preload chai so mocha does not race the ESM loader" for a 46 file
+    # chai 5 upgrade, and #21054 as "drop the redundant initTracing call" for a
+    # 16 file module removal.
+    #
+    # The title is set once, by `gh pr create`. Rounds may extend the body,
+    # which is additive and safe. Do not "improve" this by re-adding the title.
+    #
+    # `gh pr edit` exits 1 on this repo (deprecated Projects-classic GraphQL
+    # field), so go through REST.
+    local pr_num="${existing##*/}"
+    (cd "$worktree" && gh api -X PATCH "repos/{owner}/{repo}/pulls/${pr_num}" \
+       -F "body=@${body_file}" >/dev/null 2>&1) \
+      || echo "  WARN: could not refresh PR body. The pushed diff is still correct." >&2
+    finish_add_reviewers "$pr_url"
+    printf '%s\n' "$pr_url"
+    mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+    return 0
+  fi
+
   echo "Creating pull request via gh..." >&2
-  local pr_url
   pr_url="$(cd "$worktree" && gh pr create \
     --base "${FXA_WORKTREE_BASE:-main}" \
     --head "$branch" \
     --title "$pr_title" \
+    --label "${FXA_PR_LABEL:-auto}" \
     --body-file "$body_file" 2>&1)" || {
-    echo "ERROR: gh pr create failed:" >&2
+    # A missing or renamed label must not cost us the PR: the branch is already
+    # pushed and the body is built, so retry once without the label.
+    echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it." >&2
     echo "$pr_url" >&2
-    return 1
+    pr_url="$(cd "$worktree" && gh pr create \
+      --base "${FXA_WORKTREE_BASE:-main}" \
+      --head "$branch" \
+      --title "$pr_title" \
+      --body-file "$body_file" 2>&1)" || {
+      echo "ERROR: gh pr create failed:" >&2
+      echo "$pr_url" >&2
+      return 1
+    }
+    echo "NOTE: PR created without the '${FXA_PR_LABEL:-auto}' label. Add it by hand." >&2
   }
 
   # gh prints the URL on the last line; pull it out cleanly.
   pr_url="$(printf '%s\n' "$pr_url" | tail -1)"
+
+  finish_add_reviewers "$pr_url"
+
   printf '%s\n' "$pr_url"
 
   # Archive the handoff file so the next ticket can write a fresh one.
   mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+}
+
+# finish_add_reviewers <pr_url>
+#   Request review from the team and assign the ticket's reporter. Best effort:
+#   every failure here is logged and ignored, because the PR already exists and
+#   losing it over a reviewer request would be far worse.
+#
+#   FXA_PR_TEAM     team slug to request, default fxa-devs. Empty disables.
+#   FXA_PR_ASSIGNEE GitHub login of the reporter. The caller resolves this; see
+#                   ~/.claude/state/fxa-ai-fixme/reporters.tsv. Empty disables.
+finish_add_reviewers() {
+  local pr_url="${1:-}"
+  [ -n "$pr_url" ] || return 0
+
+  local team="${FXA_PR_TEAM-fxa-devs}"
+  if [ -n "$team" ]; then
+    # `gh pr edit` fails on this repo: it queries the deprecated Projects-classic
+    # GraphQL field and exits 1. Use the REST review-requests endpoint instead.
+    local owner_repo num
+    owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+    num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+    if [ -n "$owner_repo" ] && [ -n "$num" ]; then
+      if gh api -X POST "repos/${owner_repo}/pulls/${num}/requested_reviewers" \
+           -f "team_reviewers[]=${team}" >/dev/null 2>&1; then
+        echo "  Requested review from ${team}." >&2
+      else
+        # Already-requested is the common case: CODEOWNERS covers most PRs.
+        echo "  NOTE: review request for ${team} not added (already requested, or no permission)." >&2
+      fi
+    fi
+  fi
+
+  local assignee="${FXA_PR_ASSIGNEE:-}"
+  if [ -n "$assignee" ]; then
+    if gh pr edit "$pr_url" --add-assignee "$assignee" >/dev/null 2>&1; then
+      echo "  Assigned ${assignee}." >&2
+    else
+      local owner_repo num
+      owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+      num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+      if gh api -X POST "repos/${owner_repo}/issues/${num}/assignees" \
+           -f "assignees[]=${assignee}" >/dev/null 2>&1; then
+        echo "  Assigned ${assignee}." >&2
+      else
+        echo "  NOTE: could not assign ${assignee}. They may lack repo access." >&2
+      fi
+    fi
+  else
+    echo "  NOTE: no reporter assigned (FXA_PR_ASSIGNEE unset or unresolved)." >&2
+  fi
+}
+
+# finish_approve_functional_gate <pr_url>
+#   If CIRCLECI_TOKEN is set, find the PR's latest CircleCI pipeline and approve
+#   the on-hold "Approve Functional Tests" gate so functional tests start. Called
+#   before the CI watch. Non-fatal: any failure leaves the gate for manual
+#   approval and the watch reports it pending, exactly as before.
+finish_approve_functional_gate() {
+  local pr_url="${1:-}"
+  [ -n "$pr_url" ] || return 0
+
+  # Token resolution, in order: CIRCLECI_TOKEN, the circleci CLI's env var, then
+  # the CLI's stored config (~/.circleci/cli.yml) so a configured `circleci` CLI
+  # works as a fallback without adding the token to this tool's .env.
+  local token="${CIRCLECI_TOKEN:-${CIRCLECI_CLI_TOKEN:-}}"
+  if [ -z "$token" ] && [ -f "${HOME}/.circleci/cli.yml" ]; then
+    token="$(sed -n 's/^token:[[:space:]]*//p' "${HOME}/.circleci/cli.yml" | head -1 | tr -d '\42\47')" || token=""
+  fi
+  if [ -z "$token" ]; then
+    echo "No CircleCI token (CIRCLECI_TOKEN / CIRCLECI_CLI_TOKEN / ~/.circleci/cli.yml); skipping gate auto-approval." >&2
+    echo "Approve it manually in the CircleCI UI for ${pr_url} if functional tests are needed." >&2
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "WARN: curl or jq missing; skipping gate auto-approval." >&2
+    return 0
+  fi
+
+  local owner_repo slug branch
+  owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+  if [ -z "$owner_repo" ] || [ "$owner_repo" = "$pr_url" ]; then
+    echo "WARN: couldn't parse owner/repo from ${pr_url}; skipping gate approval." >&2
+    return 0
+  fi
+  slug="gh/${owner_repo}"
+  branch="$(gh pr view "$pr_url" --json headRefName -q .headRefName 2>/dev/null)" || branch=""
+  if [ -z "$branch" ]; then
+    echo "WARN: couldn't resolve PR branch; skipping gate approval." >&2
+    return 0
+  fi
+
+  local api="https://circleci.com/api/v2"
+  local hdr="Circle-Token: ${token}"
+
+  echo "Looking for the functional-tests approval gate on ${slug}@${branch}..." >&2
+  local elapsed=0
+  while [ "$elapsed" -lt 180 ]; do
+    local pipeline_id
+    # `|| =""` keeps a failed curl (HTTP error, DNS) from aborting under set -e.
+    pipeline_id="$(curl -fsS -H "$hdr" "${api}/project/${slug}/pipeline?branch=${branch}" 2>/dev/null \
+      | jq -r '.items[0].id // empty')" || pipeline_id=""
+    if [ -n "$pipeline_id" ]; then
+      local wf arid
+      # Reads the first page of workflows/jobs; the PR gate sits early in the list.
+      for wf in $(curl -fsS -H "$hdr" "${api}/pipeline/${pipeline_id}/workflow" 2>/dev/null \
+                    | jq -r '.items[].id'); do
+        arid="$(curl -fsS -H "$hdr" "${api}/workflow/${wf}/job" 2>/dev/null \
+          | jq -r '.items[]
+              | select(.type=="approval" and .status=="on_hold" and (.name | test("Functional";"i")))
+              | (.approval_request_id // .id)' \
+          | head -1)" || arid=""
+        if [ -n "$arid" ]; then
+          if curl -fsS -X POST -H "$hdr" "${api}/workflow/${wf}/approve/${arid}" >/dev/null 2>&1; then
+            echo "Approved functional-tests gate (workflow ${wf})." >&2
+            return 0
+          fi
+          echo "WARN: approve call failed for workflow ${wf}." >&2
+        fi
+      done
+    fi
+    sleep 10
+    elapsed=$(( elapsed + 10 ))
+  done
+  echo "WARN: no on-hold functional-tests gate found within 3 minutes." >&2
+  echo "      It may already be approved/running, or the gate never appeared." >&2
+  echo "      If functional tests are required and not running, approve manually: ${pr_url}" >&2
+  return 0
 }
 
 # finish_watch_ci <pr_url>
@@ -402,6 +707,9 @@ finish_watch_ci() {
     echo "WARN: gh or jq missing; skipping CI watch." >&2
     return 0
   fi
+
+  # Clear the manual functional-tests gate so its checks actually run before we watch.
+  finish_approve_functional_gate "$pr_url"
 
   echo "Waiting for CI to register checks on ${pr_url}..." >&2
   # CI can take a minute or two to attach checks to a freshly-opened PR.
