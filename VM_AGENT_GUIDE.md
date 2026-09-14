@@ -291,6 +291,8 @@ If you were started by `fxa-sandbox-ctl jira <KEY>` you are running inside a `/g
 
 - `pr_title` **must equal the commit subject exactly** (scoped conventional, e.g. `fix(auth):`, `feat(settings):`, `chore(ci):`).
 - Reference the Jira key in `pr_body`, never in `pr_title`.
+- No attribution in `pr_body`: no "Generated with Claude Code" line, no 🤖 footer, no session
+  link, no Co-Authored-By. The host strips them, but do not write them.
 - `media_paths` are relative to `/workspace`. Empty array if none.
 - After writing the file, print `cat /workspace/.fxa-auto-done.json | jq .` so the evaluator can see it in the transcript.
 

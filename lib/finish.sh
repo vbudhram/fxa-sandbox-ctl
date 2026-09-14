@@ -296,6 +296,10 @@ _finish_push_and_pr() {
   commit_sha="$(jq -r '.commit_sha // empty' "$done_file")"
   pr_title="$(jq -r '.pr_title // empty' "$done_file")"
   pr_body="$(jq -r '.pr_body // empty' "$done_file")"
+  # The agent's harness asks it to sign the body with a Claude Code footer and a
+  # session link. A reviewer reads the PR, not the tooling; strip both here so
+  # the rule does not depend on the VM's CLAUDE.md being current.
+  pr_body="$(printf '%s\n' "$pr_body" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
 
   if [ -z "$branch" ] || [ -z "$pr_title" ] || [ -z "$pr_body" ]; then
     echo "ERROR: handoff file is missing required keys (branch, pr_title, pr_body):" >&2

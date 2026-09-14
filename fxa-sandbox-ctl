@@ -653,7 +653,8 @@ ${step4}
    '_Put an \`x\`...' line, and EVERY checklist row; empty a section rather than
    drop it. Tick only boxes you can evidence in this session. NEVER tick
    'I have manually reviewed all AI generated code' — you are the AI, so that
-   is a false claim; leave it for the reviewer. Be concise inside sections,
+   is a false claim; leave it for the reviewer. No attribution footer, no
+   "Generated with Claude Code", no session link. Be concise inside sections,
    never by removing structure.
 $(runtime_prompt_handoff_step)
 
