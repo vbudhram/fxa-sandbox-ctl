@@ -25,6 +25,14 @@ readonly VM_SSH_PASS="agent"
 # Not readonly: the gce backend appends an IAP ProxyCommand.
 VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
 
+# GCE backend. Project is required when FXA_VM_BACKEND=gce.
+FXA_GCE_PROJECT="${FXA_GCE_PROJECT:-}"
+FXA_GCE_ZONE="${FXA_GCE_ZONE:-us-central1-a}"
+FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
+# c4a, not n4a: n4a was stocked out in every us-central1 zone on 2026-09-13.
+FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"
+FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
+
 # Screen session name inside the VM (for Claude Code TUI)
 readonly VM_SCREEN_SESSION="claude"
 
