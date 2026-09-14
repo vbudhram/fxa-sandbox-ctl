@@ -78,9 +78,11 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
 
 3. **Fill a free slot.** `$CTL slots` lists both pool slots, `fxa-auto` and `fxa-auto-2`, with
    the ticket holding each. For each free slot, take the oldest launchable key from
-   `$CTL queue`, run the grounding pass, label it `inflight`, and launch on that slot. Fill at
-   most one slot per pass, so a bad context file cannot burn both at once. If every slot is busy,
-   launch nothing.
+   `$CTL queue`, run the grounding pass, label it `inflight`, and launch on that slot. **Launch at
+   most `$CTL launchcap` tickets per pass.** It prints 1 on Tart, where a bad context file must not
+   burn both slots and each VM costs 8-13GB of local disk, and one per free slot on GCE, where a
+   slot is a directory and a runner is $0.13 an hour. Feedback and rebase rounds count against the
+   same number. If every slot is busy, launch nothing.
 
    Before launching, resolve the reporter and export it so the PR gets assigned:
    `export FXA_PR_ASSIGNEE="$($CTL reporter <KEY>)"`. An empty result is fine and
@@ -99,7 +101,7 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    launcher refuses to mount a workspace another VM already holds.
 
    **A free slot is claimable even while another ticket is inflight.** Two slots exist to hold two
-   tickets. The one-launch-per-pass cap is what limits blast radius, not an empty pool.
+   tickets. `launchcap` is what limits blast radius, not an empty pool.
 4. **Sweep review feedback.** For every `done` key, run `$CTL feedback <KEY>` and follow the
    review-feedback section below. Do this after the drain, so a merged PR is never swept.
 5. **Report** the table. Notify only when a ticket newly becomes ready or newly blocked.
@@ -277,8 +279,8 @@ Expect `source`. On the first four measured, one file of five was a lockfile.
 
 ### Rules
 
-- **One rebase per pass**, same as the one-launch rule, and it counts against that budget. A rebase
-  round and a queue launch compete for the same slot.
+- **A rebase counts against `launchcap`**, the same budget as a queue launch and a feedback round.
+  On Tart that is one per pass, so a rebase round and a queue launch compete for the same slot.
 - **Cap rebases at 2 per PR** with `$CTL attempts`. A PR that conflicts a third time is churning
   faster than it is being reviewed, which is a review-throughput problem a rebase cannot fix.
   Label it `blocked` and say so.
@@ -838,8 +840,9 @@ second agent onto the same worktree. Two rules follow:
 - **Never re-read `inflight` to confirm your own label write.** `$CTL label` prints the new label
   and fails loudly; trust it. To verify, read the field directly:
   `acli jira workitem search --jql 'key = <KEY>' --fields labels --json`.
-- **Label and launch in one step, and only launch one ticket per pass.** The one-launch rule already
-  prevents this race. Do not work around it by labelling several tickets and then querying.
+- **Label and launch in one step, one ticket at a time.** Read `freeslots` once, then for each
+  launch label and launch before touching the next. Never label several tickets and then query
+  `inflight` to pick slots; take the slot list from the one `freeslots` read.
 
 ## Guardrails
 
@@ -850,7 +853,8 @@ second agent onto the same worktree. Two rules follow:
 - **Two VMs at most, and always name the slot.** Pass `--worktree <slot>` explicitly on every
   launch. `$CTL launch <KEY> <slot> <ctx>` does this for you. A launch without it picks a slot
   on its own and can collide with a running agent.
-- **One launch per pass.** Two slots are for two tickets, not for retrying the same ticket twice.
+- **At most `$CTL launchcap` launches per pass**, never two for the same ticket. Two slots are for
+  two tickets, not for retrying one twice.
 - **Disk is the binding limit, not CPU.** A running clone takes 8 to 13GB. `$CTL launch`
   refuses below `FXA_MIN_FREE_GB` (25GB default). This host filled to 99% on 2026-08-11 and needed
   a manual 19GB cleanup. Do not raise the threshold to force a launch through.
@@ -866,6 +870,7 @@ second agent onto the same worktree. Two rules follow:
 | `$CTL inflight` | keys currently in flight |
 | `$CTL slots` | pool slots and the ticket holding each (VM state) |
 | `$CTL freeslots` | slots with no inflight owner and no running VM — **use this to pick a slot** |
+| `$CTL launchcap` | launches this pass may make: 1 on Tart, one per free slot on GCE |
 | `$CTL label <KEY> <state>` | swap the state label — `merged` for a MERGED PR, `rejected` for a CLOSED one; reaps the VM unless <state> is `inflight`, and 👍s recorded comments on `done` |
 | `$CTL reap <KEY>` | stop this ticket's agent VM — idempotent, `label` already calls it |
 | `$CTL reap --stray` | stop every VM whose ticket is not `inflight` — run once per pass |

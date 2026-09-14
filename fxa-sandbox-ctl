@@ -100,6 +100,7 @@ PIPELINE COMMANDS:
   label <ISSUE-KEY> <state>    WRITE: move the ticket; also reaps its VM
                                states: public inflight done blocked merged rejected
   slots                        Pool slots, and any VM running on each
+  launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
   freeslots                    Slots a ticket can claim (use this, not `slots`)
   launch <KEY> <slot> [ctx]    WRITE: start an agent VM in the background
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
@@ -1297,6 +1298,19 @@ cmd_dashboard() {
 
 # Slots a ticket can actually claim. Use this, never `slots`: `slots` only
 # answers whether a VM is running there.
+# launchcap: how many launches this pass may make, resolved against the backend.
+# 0 in the config means "one per free slot", so the pass reads this and never
+# the config directly.
+cmd_launchcap() {
+  local cap
+  case "${FXA_VM_BACKEND:-tart}" in
+    gce) cap="${PIPE_MAX_LAUNCHES_GCE:-0}" ;;
+    *)   cap="${PIPE_MAX_LAUNCHES_TART:-1}" ;;
+  esac
+  if [ "$cap" -eq 0 ]; then cap="$(cmd_freeslots 2>/dev/null | grep -c . || true)"; fi
+  echo "${cap:-0}"
+}
+
 cmd_freeslots() {
   local owned; owned="$(jira_owning_keys)"
   if [ "$owned" = "UNKNOWN" ]; then
@@ -1425,6 +1439,7 @@ main() {
     reporter)   cmd_reporter "$@" ;;
     slots)      cmd_slots "$@" ;;
     freeslots)  cmd_freeslots "$@" ;;
+    launchcap)  cmd_launchcap "$@" ;;
     launch)     cmd_launch "$@" ;;
     alive)      cmd_alive "$@" ;;
     progress)   cmd_progress "$@" ;;
