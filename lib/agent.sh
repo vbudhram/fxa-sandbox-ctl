@@ -1004,6 +1004,14 @@ agent_stop() {
   local name="$1"
   local full_name
   full_name="$(vm_name "$name")"
+  # The host launcher that watches this slot must die with the VM. On
+  # 2026-09-14 FXA-2598's first launcher outlived its VM, and when the relaunch
+  # wrote its handoff two launchers raced to commit the same slot. Not a CI
+  # watcher though: past the PR the launcher only reads GitHub.
+  local key; key="$(printf '%s' "$name" | tr 'a-z' 'A-Z')"
+  pgrep -f "jira ${key} " 2>/dev/null | while read -r pid; do
+    grep -q 'pull/' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
+  done
 
   echo "Stopping agent '${name}'..."
 
