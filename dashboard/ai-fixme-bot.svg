@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<rect width="512" height="512" rx="112" fill="#0060DF"/>
+<!-- jaw shadow: the same head shape, dropped, in the base blue -->
+<path d="M120 152 L200 208 L312 208 L392 152 L392 308 Q392 412 256 412 Q120 412 120 308 Z" fill="#0250BB"/>
+<!-- head -->
+<path d="M120 140 L200 196 L312 196 L392 140 L392 296 Q392 400 256 400 Q120 400 120 296 Z" fill="#FFFFFF"/>
+<!-- inner ears -->
+<path d="M142 168 L192 204 L154 208 Z" fill="#9059FF"/>
+<path d="M370 168 L320 204 L358 208 Z" fill="#9059FF"/>
+<!-- eyes with a catchlight -->
+<circle cx="204" cy="292" r="22" fill="#592ACB"/>
+<circle cx="308" cy="292" r="22" fill="#592ACB"/>
+<circle cx="211" cy="285" r="7" fill="#FFFFFF"/>
+<circle cx="315" cy="285" r="7" fill="#FFFFFF"/>
+<!-- nose -->
+<path d="M242 344 L270 344 L256 360 Z" fill="#592ACB"/>
+</svg>
