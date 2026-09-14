@@ -9,6 +9,9 @@ cat > /usr/local/bin/fxa-gce-checkout <<'CHECKOUT'
 # drops link-local, so the metadata read gets a one-call hole and closes it.
 # The instance has no service account, so the endpoint vends no credential.
 set -euo pipefail
+# The firewall blocks the metadata DNS, so sudo cannot resolve the hostname and
+# warns on every call. Pin it.
+grep -q "$(hostname)" /etc/hosts || echo "127.0.1.1 $(hostname)" >> /etc/hosts
 MD=http://169.254.169.254/computeMetadata/v1/instance/attributes
 iptables -I OUTPUT 1 -d 169.254.169.254 -p tcp --dport 80 -j ACCEPT
 md() { curl -sf -H 'Metadata-Flavor: Google' "$MD/$1" || true; }

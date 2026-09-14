@@ -88,7 +88,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/firestore
-ExecStart=/usr/local/bin/firebase emulators:start --only firestore --project fxa-dev
+# env, not a fixed path: NodeSource npm puts firebase in /usr/bin, the Tart base in /usr/local/bin.
+ExecStart=/usr/bin/env firebase emulators:start --only firestore --project fxa-dev
 Restart=on-failure
 RestartSec=5
 

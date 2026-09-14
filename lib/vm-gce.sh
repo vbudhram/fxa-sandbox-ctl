@@ -16,7 +16,8 @@ if [ -z "${FXA_GCE_PROJECT:-}" ]; then
   echo "ERROR: FXA_VM_BACKEND=gce needs FXA_GCE_PROJECT." >&2
   return 1
 fi
-GCE_BOOT_TIMEOUT=180  # VM_BOOT_TIMEOUT is readonly and sized for Tart
+GCE_BOOT_TIMEOUT=300      # VM_BOOT_TIMEOUT is readonly and sized for Tart. Measured: 112 s to ssh.
+GCE_CHECKOUT_TIMEOUT=600  # first-boot fetch over NAT plus lazy disk hydration; measured over 180 s
 
 # The operator's ~/.ssh/google_compute_engine may carry a passphrase, which a
 # non-interactive poll loop cannot answer. The backend uses its own key.
@@ -97,11 +98,12 @@ vm_wait_ready() {
       # A stock image (smoke tests) has no unit; is-enabled fails and we return.
       _gce_ssh "$name" --command 'systemctl is-enabled fxa-gce-checkout' >/dev/null 2>&1 || return 0
       echo "Waiting for fxa-gce-checkout..."
-      while [ $(( $(date +%s) - started )) -lt "$timeout" ]; do
+      local deadline=$(( $(date +%s) + GCE_CHECKOUT_TIMEOUT ))
+      while [ "$(date +%s)" -lt "$deadline" ]; do
         _gce_ssh "$name" --command 'systemctl is-active fxa-gce-checkout' 2>/dev/null | grep -q '^active$' && return 0
         sleep 5
       done
-      echo "ERROR: fxa-gce-checkout did not finish in ${timeout}s" >&2
+      echo "ERROR: fxa-gce-checkout did not finish in ${GCE_CHECKOUT_TIMEOUT}s" >&2
       return 1
     fi
     sleep 5
