@@ -220,6 +220,10 @@ launch, and every read of the slot pulls the runner's tree back first, so
 `progress`, `snapshot`, and `finish` see what the agent wrote. `attach`, `tail`,
 and `alive` work unchanged.
 
+On GCE a pass may launch up to `PIPE_MAX_LAUNCHES_GCE` tickets (5 by default,
+in `pipelines/fxa-ai-fixme.conf`) and the worktree pool grows to match: `freeslots`
+lists slots that do not exist yet and `launch` creates them. A slot without
+`node_modules` is about 1.8 GB. On Tart the cap stays at one launch per pass.
 On GCE the runner is deleted as soon as the PR is open: the branch is on
 origin and a feedback round boots a fresh one. Tart keeps its VM until the
 ticket is labeled `done`. Every runner is created with a hard lifetime (`FXA_GCE_MAX_RUN_SECONDS`, 90

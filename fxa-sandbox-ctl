@@ -1304,10 +1304,11 @@ cmd_dashboard() {
 cmd_launchcap() {
   local cap
   case "${FXA_VM_BACKEND:-tart}" in
-    gce) cap="${PIPE_MAX_LAUNCHES_GCE:-0}" ;;
+    gce) cap="${PIPE_MAX_LAUNCHES_GCE:-5}" ;;
     *)   cap="${PIPE_MAX_LAUNCHES_TART:-1}" ;;
   esac
-  if [ "$cap" -eq 0 ]; then cap="$(cmd_freeslots 2>/dev/null | grep -c . || true)"; fi
+  local free; free="$(cmd_freeslots 2>/dev/null | grep -c . || true)"
+  [ "${free:-0}" -lt "$cap" ] && cap="$free"
   echo "${cap:-0}"
 }
 
@@ -1318,6 +1319,18 @@ cmd_freeslots() {
     return 1
   fi
   worktree_free_slots "$owned"
+  # gce: the pool grows to the launch cap. List the next-numbered slots that do
+  # not exist yet; `launch <KEY> <slot>` creates a named slot on demand. A slot
+  # is a checkout with no node_modules, so this costs disk and a minute, not RAM.
+  if [ "${FXA_VM_BACKEND:-tart}" = "gce" ]; then
+    local cap="${PIPE_MAX_LAUNCHES_GCE:-5}" existing n=1
+    existing="$(worktree_pool_slot_names | grep -c . || true)"
+    local free_now; free_now="$(worktree_free_slots "$owned" | grep -c . || true)"
+    while [ $(( free_now )) -lt "$cap" ] && [ $(( existing + n - 1 )) -lt "$cap" ]; do
+      printf '%s-%s\n' "$FXA_SHARED_WORKTREE_NAME" $(( existing + n ))
+      n=$(( n + 1 )); free_now=$(( free_now + 1 ))
+    done
+  fi
 }
 
 cmd_alive() {

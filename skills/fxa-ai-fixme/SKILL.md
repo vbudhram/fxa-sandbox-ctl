@@ -76,7 +76,7 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    launch and the reconcile, a label edited by hand in Jira, or a run that finished with no pass
    after it. Do this before step 3, so `freeslots` sees the pool after collection rather than before.
 
-3. **Fill a free slot.** `$CTL slots` lists both pool slots, `fxa-auto` and `fxa-auto-2`, with
+3. **Fill a free slot.** `$CTL slots` lists the pool slots, `fxa-auto`, `fxa-auto-2`, ..., with
    the ticket holding each. For each free slot, take the oldest launchable key from
    `$CTL queue`, run the grounding pass, label it `inflight`, and launch on that slot. **Launch at
    most `$CTL launchcap` tickets per pass.** It prints 1 on Tart, where a bad context file must not
@@ -852,9 +852,10 @@ second agent onto the same worktree. Two rules follow:
   when a human approval is a required check. The pass ends at review-ready.
 - **Never** weaken, skip, or delete a test to reach green. Ignoring a file to satisfy an
   assertion counts as weakening it.
-- **Two VMs at most, and always name the slot.** Pass `--worktree <slot>` explicitly on every
-  launch. `$CTL launch <KEY> <slot> <ctx>` does this for you. A launch without it picks a slot
-  on its own and can collide with a running agent.
+- **Always name the slot, and never more runners than `launchcap` allows.** Pass `--worktree
+  <slot>` explicitly on every launch. `$CTL launch <KEY> <slot> <ctx>` does this for you. A
+  launch without it picks a slot on its own and can collide with a running agent. On GCE
+  `freeslots` also lists slots that do not exist yet, up to the cap; `launch` creates them.
 - **At most `$CTL launchcap` launches per pass**, never two for the same ticket. Two slots are for
   two tickets, not for retrying one twice.
 - **Disk is the binding limit, not CPU.** A running clone takes 8 to 13GB. `$CTL launch`
