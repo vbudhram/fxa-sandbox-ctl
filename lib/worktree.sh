@@ -465,6 +465,57 @@ worktree_copy_ai_docs() {
 #   5. Mirrors per-developer secrets/configs from the main repo so the agent
 #      can run `fxa-start` without hand-staging credentials.
 #   Prints the worktree path on stdout. Progress on stderr.
+# _worktree_sync_to_origin <path> <branch>
+#   Bring a resumed local branch up to its remote. The remote is the source of
+#   truth for a branch that already has a PR: it is what the reviewer reads.
+#
+#   On 2026-09-08 FXA-11871 resumed a local branch last touched three weeks
+#   earlier, because the slot had the ref and nothing fetched it. The agent never
+#   saw the PR's head, rewrote a guard that was already merged, and the round's
+#   push would have weakened it. Only --force-with-lease stopped that reaching
+#   the PR, and it stopped it by accident: the lease refused because the same
+#   staleness made the remote-tracking ref wrong too.
+_worktree_sync_to_origin() {
+  local path="$1" branch="$2"
+  # Same reason as the branch swap below: FxA's post-checkout hook clones
+  # external/l10n and is not idempotent. Do not inherit this from the caller.
+  local nohooks="-c core.hooksPath=/dev/null"
+
+  git -C "$path" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1 || {
+    echo "Branch '${branch}' is not on origin yet; nothing to sync." >&2
+    return 0
+  }
+  git -C "$path" fetch origin "$branch" >&2 || {
+    echo "ERROR: 'git fetch origin ${branch}' failed; refusing to resume a branch we cannot verify." >&2
+    return 1
+  }
+
+  local local_sha remote_sha
+  local_sha="$(git -C "$path" rev-parse HEAD)"
+  remote_sha="$(git -C "$path" rev-parse "origin/${branch}")"
+  [ "$local_sha" = "$remote_sha" ] && return 0
+
+  # The safe path first: a plain fast-forward keeps any uncommitted work.
+  if git -C "$path" $nohooks merge --ff-only "origin/${branch}" >&2 2>/dev/null; then
+    echo "Fast-forwarded ${branch} to origin/${branch} ($(git -C "$path" rev-parse --short "origin/${branch}"))." >&2
+    return 0
+  fi
+
+  # Not fast-forwardable, so the local branch carries commits the remote does
+  # not. They are unpushed and unreviewed, and they were built on the stale base
+  # we are here to correct. Reset, but name the sha: the reflog keeps it
+  # reachable, so nothing is destroyed without a way back.
+  local ahead
+  ahead="$(git -C "$path" rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo '?')"
+  echo "WARN: ${branch} has ${ahead} local commit(s) that origin does not, and cannot fast-forward." >&2
+  echo "      Resetting to origin/${branch}. Recover the old tip from ${local_sha} if it mattered:" >&2
+  echo "      git -C '${path}' cherry-pick ${local_sha}" >&2
+  git -C "$path" reset --hard "origin/${branch}" >&2 || {
+    echo "ERROR: could not reset ${branch} to origin/${branch}." >&2
+    return 1
+  }
+}
+
 worktree_prepare_for_issue() {
   local key="${1:-}"
   local base="${2:-$FXA_WORKTREE_BASE}"
@@ -538,8 +589,13 @@ worktree_prepare_for_issue() {
   # worktree-add (which already cloned l10n) fatals on "directory not empty".
   local nohooks="-c core.hooksPath=/dev/null"
   if git -C "$path" show-ref --verify --quiet "refs/heads/${branch}"; then
+    # A slot keeps local branch refs across tickets, so "already exists locally"
+    # can mean a copy from weeks ago. Resuming it as-is hands the agent a stale
+    # branch, which is worse than the elif below guards against: the work looks
+    # current and is not.
     echo "Branch '${branch}' already exists locally; resuming." >&2
     git -C "$path" $nohooks checkout "$branch" >&2 || return 1
+    _worktree_sync_to_origin "$path" "$branch" || return 1
   elif git -C "$path" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
     # The branch exists on ORIGIN but not locally. That is the normal shape of a
     # fix round: a previous run pushed it from a different pool slot, and slots
