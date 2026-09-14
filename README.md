@@ -16,16 +16,11 @@ labelled ticket becomes a review-ready pull request with no human in the loop.
 brew install oven-sh/bun/bun
 ```
 
-Install `tart` from its release tarball, not from Homebrew. The `cirruslabs/cli`
-tap's formula fails on Homebrew 7 (`depends_on macos:` is disabled), and the
-CLI already puts `~/bin` on `PATH`:
+Tart moved to `openai/tart`; install it from the new tap. The old
+`cirruslabs/cli` tap is stale and fails on Homebrew 7:
 
 ```bash
-mkdir -p ~/bin && cd ~/bin
-curl -fsSL -o tart.tar.gz https://github.com/openai/tart/releases/download/2.37.0/tart.tar.gz
-tar -xzf tart.tar.gz && rm tart.tar.gz
-ln -sf ~/bin/tart.app/Contents/MacOS/tart ~/bin/tart
-tart --version
+brew install openai/tools/tart
 ```
 
 A machine that only uses the GCE backend does not need `tart`; `doctor` skips it
