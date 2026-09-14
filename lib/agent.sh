@@ -31,6 +31,12 @@ runtime_load() {
 # humanizer and code-simplifier are mandatory goal conditions. package-workflows
 # is deliberately absent: it reads 30 days of session history, and a VM boots,
 # fixes one ticket, and is destroyed.
+# Plugins whose hooks and skills the agent's session runs on. Everything else
+# in ~/.claude/plugins needs a network or a data store the VM does not have.
+_vm_plugin_allowlist() {
+  printf '%s\n' superpowers@claude-plugins-official code-simplifier@claude-plugins-official ponytail@ponytail
+}
+
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
@@ -323,23 +329,29 @@ _setup_claude_config() {
   local tar_items=()
   [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
   [ -d "${claude_home}/commands" ] && tar_items+=("commands")
-  [ -d "${claude_home}/plugins/cache" ] && tar_items+=(
-    "plugins/cache"
-    "plugins/installed_plugins.json"
-    "plugins/config.json"
-  )
-  # claude-mem is the bulk of the plugin cache, almost all of it duplicated
-  # node_modules across cached versions. Its data lives in ~/.claude-mem, which
-  # never crosses, so shipping the code buys the VM nothing.
-  # node_modules inside plugin caches was 750 MB of an 814 MB bundle, and the
-  # integration plugins (vercel, figma, atlassian, slack) need networks the VM
-  # does not have. Without them the bundle is about 60 MB; through the IAP
-  # tunnel that is the difference between a minute and ten.
-  local skill_excludes=(--exclude="plugins/cache/thedotmack" --exclude="*/node_modules"
-    --exclude="plugins/cache/claude-plugins-official/vercel"
-    --exclude="plugins/cache/claude-plugins-official/figma"
-    --exclude="plugins/cache/claude-plugins-official/atlassian"
-    --exclude="plugins/cache/claude-plugins-official/slack")
+  # Plugins are an allow-list, like the skills below. The whole cache was 814 MB
+  # (a 774 MB vercel plugin, node_modules in every cache, stale temp_git clones,
+  # claude-mem), and the VM can use none of it: no network integrations, no
+  # claude-mem data. Only the plugins the agent's session runs on ship, and
+  # installed_plugins.json is rewritten to list just those with VM paths, so
+  # Claude in the VM does not look for plugins that are not there.
+  local plugins_tmp=""
+  if [ -f "${claude_home}/plugins/installed_plugins.json" ]; then
+    plugins_tmp="$(mktemp -d -t fxa-plugins.XXXX)"
+    mkdir -p "${plugins_tmp}/plugins"
+    local allow; allow="$(_vm_plugin_allowlist | jq -R . | jq -s .)"
+    jq --argjson allow "$allow" --arg home "$claude_home" \
+      '.plugins |= with_entries(select(.key as $k | $allow | index($k)))
+       | .plugins |= map_values(map(.installPath |= sub("^" + $home; "/home/agent/.claude")))' \
+      "${claude_home}/plugins/installed_plugins.json" > "${plugins_tmp}/plugins/installed_plugins.json"
+    [ -f "${claude_home}/plugins/config.json" ] && cp "${claude_home}/plugins/config.json" "${plugins_tmp}/plugins/config.json"
+    local rel
+    while IFS= read -r rel; do
+      [ -n "$rel" ] && [ -d "${claude_home}/${rel}" ] && tar_items+=("$rel")
+    done < <(jq -r --arg home "$claude_home" '.plugins[][] | .installPath | sub("^" + $home + "/"; "")' \
+               "${plugins_tmp}/plugins/installed_plugins.json" 2>/dev/null)
+  fi
+  local skill_excludes=(--exclude="*/node_modules")
 
   # Skills are an allow-list, not a deny-list. The VM has no gh, acli, circleci,
   # or sentry-cli, no GitHub or Jira credential, and no MCP, so any skill that
@@ -363,7 +375,9 @@ _setup_claude_config() {
   done
 
   if [ "${#tar_items[@]}" -gt 0 ]; then
-    if tar -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null && [ -s "$config_tar" ]; then
+    if tar -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
+       && { [ -z "$plugins_tmp" ] || tar -rf "$config_tar" -C "$plugins_tmp" plugins 2>/dev/null; } \
+       && [ -s "$config_tar" ]; then
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"
@@ -380,7 +394,7 @@ _setup_claude_config() {
       fi
     fi
   fi
-  rm -f "$config_tar"
+  rm -f "$config_tar"; [ -n "$plugins_tmp" ] && rm -rf "$plugins_tmp"
 
   # Append VM-specific context to CLAUDE.md (or create it if no host CLAUDE.md)
   local vm_section
