@@ -148,11 +148,12 @@ _snapshot_agent_json() {
   local f="$1" now="$2" mtime model rates
   [ -s "$f" ] || { echo null; return 0; }
   mtime="$(stat -f %m "$f" 2>/dev/null || echo "$now")"
-  model="$(jq -R -r 'fromjson? | select(.type=="assistant") | .message.model // empty' "$f" 2>/dev/null | head -1)"
+  # The first assistant event ("Goal set") reports model <synthetic>; skip it.
+  model="$(jq -R -r 'fromjson? | select(.type=="assistant") | .message.model // empty | select(startswith("<") | not)' "$f" 2>/dev/null | head -1)"
   rates="$(_telemetry_price_for "$model")"
   [ -n "$rates" ] || rates="0 0 0 0"
   jq -R -s -c --argjson idle "$(( now - mtime ))" --arg model "$model" \
-     --argjson r "$(printf '%s' "$rates" | awk '{printf "[%s,%s,%s,%s]",$1,$2,$3,$4}')" '
+     --argjson p "$(printf '%s' "$rates" | awk '{printf "[%s,%s,%s,%s]",$1,$2,$3,$4}')" '
     split("\n") | map(fromjson?) |
     (map(select(.type=="assistant"))) as $a |
     ($a | map(.message.content[]? | select(.type=="text") | .text) | last // "") as $text |
@@ -164,7 +165,7 @@ _snapshot_agent_json() {
         cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
         cache_write: (map(.cache_creation_input_tokens // 0) | add // 0) }) as $u |
     { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
-      cost_so_far: ((($u.in * $r[0] + $u.out * $r[1] + $u.cache_write * $r[2] + $u.cache_read * $r[3]) / 1000000 * 100 | round) / 100),
+      cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + $u.cache_write * $p[2] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),
       last_text: ($text | gsub("\\s+"; " ") | .[0:200]),
       last_tool: ($tool | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),
