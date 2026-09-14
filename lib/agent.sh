@@ -125,7 +125,9 @@ _put_run_files() {
   [ "${#items[@]}" -eq 0 ] && return 0
   echo "Shipping ${#items[@]} run file(s) into the runner..."
   # --no-xattrs and COPYFILE_DISABLE: macOS tar otherwise adds ._* AppleDouble files.
-  COPYFILE_DISABLE=1 tar --no-xattrs -cf "$tar" -C "$slot" "${items[@]}" || return 1
+  # ai/data is review-mining input, 18 MB of raw JSON the agent never reads, and
+  # the IAP tunnel moves it at well under 1 MB/s. The docs and AGENTS.md still ship.
+  COPYFILE_DISABLE=1 tar --no-xattrs --exclude ai/data -cf "$tar" -C "$slot" "${items[@]}" || return 1
   vm_put "$name" "$tar" /workspace; local rc=$?
   rm -f "$tar"
   return $rc
@@ -474,6 +476,8 @@ if \"projects\" not in data:
 trust = {\"hasTrustDialogAccepted\": True, \"allowedTools\": []}
 data[\"projects\"][\"/workspace\"] = trust
 data[\"projects\"][\"/mnt/shared/workspace\"] = trust
+# Claude trusts the resolved path. On gce /workspace links to the baked clone.
+data[\"projects\"][os.path.realpath(\"/workspace\")] = trust
 data[\"hasCompletedOnboarding\"] = True
 data[\"bypassPermissionsModeAccepted\"] = True
 with open(path, \"w\") as f:
