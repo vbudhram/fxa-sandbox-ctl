@@ -659,7 +659,8 @@ took 58 minutes and succeeded.
 | `pr <url>` | The PR exists. Go to the PR rows below. |
 | `pushed` or `squashing` | The host is mid-handoff. Leave it, even if the VM looks idle. |
 | `watching <n>s` and VM alive | Agent still working. Leave it. Do not judge by CPU or by `tail`. |
-| `stalled stuck-prompt <n>m` | **The prompt was pasted into the TUI and never submitted.** The agent is idle holding the text. Attach and press Enter to recover the run in place, or relaunch **once**. Do not wait it out: this never resolves on its own. |
+| `stalled goal-rejected <n>m` | **The `/goal` was over 4000 chars and Claude ended the run with zero turns.** Not a code problem: the rendered prompt is too long. Shorten what `jira` renders (the ticket text lives in the context file, not the prompt), then relaunch **once**. |
+| `stalled exited-without-handoff <n>m` | The agent process ended and wrote no handoff. Read `$CTL tail` for its last words, then relaunch **once**. Second occurrence → `blocked`. |
 | `stalled no-motion <n>m` | Alive, but nothing written and nothing committed past `PIPE_STALL_MINUTES`. Confirm with `$CTL tail`, then relaunch **once**. Second occurrence → `blocked`. |
 | `watching <n>s` and VM dead | Failed launch. Relaunch **once**. Second failure → `blocked`. |
 | `error <line>` | The push or the PR failed. Report the line. Do not relaunch the agent. |
@@ -681,23 +682,19 @@ took 58 minutes and succeeded.
 hangs off the command the table already forces you to run first. It cannot be skipped, for the
 same reason the VM reap hangs off the label write rather than off a pass remembering to run it.
 
-On 2026-08-31 FXA-10214's prompt was pasted into Claude's TUI and the Enter never took. The agent
-sat holding the text in its input box for 15 minutes. `progress` said `watching`, `alive` said
-`alive`, `list` said `running` — every health signal agreed it was fine, and the launcher's own
-elapsed counter is frozen so it could not help. The only field that disagreed was that no file had
-been touched. A single Enter, sent by hand, started the run immediately.
+Until 2026-09-14 the prompt was pasted into Claude's TUI, and on 2026-08-31 FXA-10214's Enter
+never took: the agent sat holding the text for 15 minutes while `progress`, `alive`, and `list`
+all said it was fine. The paste is gone. Claude now runs as `claude -p` with the prompt as an
+argument, the same shape as `codex exec`, so there is nothing to submit and nothing to hold.
 
-`progress` now makes two checks before reporting `watching`:
+`progress` makes two checks before reporting `watching`:
 
-1. **Definitive.** The screen still shows an unsubmitted paste and no active turn. No threshold
-   applies; this is never healthy.
+1. **Definitive.** The VM is up, the agent process has exited, and there is no handoff file.
+   Both runtimes run to completion and exit, so this is never healthy. Claude's JSONL names
+   the commonest cause, a rejected `/goal`, as `goal-rejected`.
 2. **Heuristic.** Past `PIPE_STALL_MINUTES` (20 by default, in `pipelines/*.conf`) with zero files
    touched and zero commits. Deliberately generous: a large ticket can be read for a while before
    the first edit, and a false stall costs a slot and a relaunch.
-
-The launcher itself now waits for the TUI to actually draw, verifies the prompt was submitted,
-retries the Enter, and writes `ERROR:` to the launcher log if it never lands. So a stuck prompt
-should be rare. This row is the backstop for when it is not.
 
 ## Bounded attempts — the cap is the rule
 

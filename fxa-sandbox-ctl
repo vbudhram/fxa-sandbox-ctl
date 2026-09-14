@@ -689,11 +689,17 @@ cmd_tail() {
   source "$meta"
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
 
-  # Dump the screen session's scrollback to a temp file in the VM, then cat it.
-  # -h captures history (scrollback), not just the visible region.
+  # A Claude run streams JSONL; show its last assistant texts and tool calls.
+  # Otherwise dump the screen scrollback (-h: history, not only the visible region).
   ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" "
-    screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
-    cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
+    if [ -s /workspace/.fxa-auto-claude.jsonl ]; then
+      tail -n 200 /workspace/.fxa-auto-claude.jsonl | jq -r '
+        select(.type==\"assistant\") | .message.content[]? |
+        if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end' 2>/dev/null | tail -n 40
+    else
+      screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
+      cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
+    fi
   " 2>/dev/null
 }
 

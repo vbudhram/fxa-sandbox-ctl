@@ -320,7 +320,8 @@ the agent reads its description, judges it relevant, and then fails on a missing
 
 Claude Code starts inside a `screen` session named `claude`, with `--permission-mode
 bypassPermissions`. The OAuth token is written to `/workspace/.fxa-auto-token`, sourced once,
-and deleted. The `/goal` prompt is pasted into the TUI after an 8 second delay.
+and deleted. The `/goal` prompt is passed to `claude -p` as an argument from
+`/workspace/.fxa-auto-launch.sh`; nothing is pasted.
 
 **`$CTL alive` reports `no-vm` for about the first minute here, and that is correct.** The
 VM is booting and Claude has not started. A check-in rule of "DEAD means escalate" fires in this
@@ -875,7 +876,6 @@ slot means adding a worktree and nothing else.
   skill, which holds the two cron definitions, is still unversioned in `~/.claude/skills/`.
 - **Apple Silicon macOS only.** `tart` runs ARM64 VMs under the Virtualization framework.
 - Notifications use `osascript`.
-- The prompt reaches the agent through a `screen` paste, which depends on the TUI having drawn.
 - The CircleCI token is read from `~/.circleci/cli.yml` when the env var is unset.
 - Jira access goes through the `acli` CLI, not the REST API.
 

@@ -4,7 +4,7 @@
 # The runtime contract. Every lib/runtime-<name>.sh defines these, and
 # agent.sh calls only these; nothing else in the tree may branch on the runtime.
 #   runtime_setup_config <name>            prepare the agent's $HOME config in the VM
-#   runtime_inject_auth <workspace>        stage credentials via the virtiofs workspace
+#   runtime_inject_auth <workspace>        stage credentials in the workspace
 #   runtime_write_prompt <prompt> <ws>     write the prompt (and any sidecar) into <ws>
 #   runtime_launch_cmd                     print the shell string screen runs
 #   runtime_submit_prompt <full> <name>    deliver the prompt after launch, if needed
@@ -34,26 +34,48 @@ runtime_inject_auth() {
   fi
 }
 
-# Newlines in a screen-paste read as separate Enter submits, so the prompt is
-# collapsed to one logical line before it is pasted.
-runtime_write_prompt() {
-  local prompt="$1" workspace_dir="$2"
-  printf '%s' "$prompt" | tr '\n' ' ' | tr -s ' ' > "${workspace_dir}/.fxa-auto-prompt.txt"
-}
-
+# The prompt keeps its newlines: `claude -p` takes it as an argument, so there
+# is no TUI to paste into and nothing to submit. The paste was the worst failure
+# shape in the system (FXA-10214 idled 15 min, FXA-14104 57 min, both looking
+# healthy), and /goal works the same in -p mode.
+#
+# The launch is a script, not an inline string: it runs `claude -p "$(cat
+# prompt)"`, and that $(...) must expand inside the VM, not on the host where
+# agent.sh builds the screen command line inside double quotes.
+#
+# Prompt on stdin was tried and rejected: a SessionStart hook consumes stdin and
+# claude then reports "Input must be provided". The argument form is immune.
+#
 # FXA_AGENT_EFFORT is unset by default, so the CLI keeps its own default and
 # this changes nothing. Set it (low, medium, high, xhigh, max) to sweep effort.
 # Set it once per run: a mid-session change invalidates the prompt cache, and
 # cache reads are 63% of what a run costs.
-runtime_launch_cmd() {
+runtime_write_prompt() {
+  local prompt="$1" workspace_dir="$2"
   local effort=""
   [ -n "${FXA_AGENT_EFFORT:-}" ] && effort=" --effort ${FXA_AGENT_EFFORT}"
-  printf '%s' "test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-claude-opus-5}${effort}"
+  printf '%s\n' "$prompt" > "${workspace_dir}/.fxa-auto-prompt.txt"
+  cat > "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
+test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
+source /etc/agent-env.sh
+cd /workspace
+claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)" --permission-mode bypassPermissions \\
+  --model ${FXA_AGENT_MODEL:-claude-opus-5}${effort} --output-format stream-json --verbose 2>&1 \\
+  | tee -a /workspace/.fxa-auto-claude.jsonl
+LAUNCH
 }
 
-runtime_submit_prompt() { _inject_prompt "$1" "$2"; }
+# Runs inside screen's `bash -c '<cmd>; exec bash'`, so no single quotes here.
+# screen stays as the supervisor: attach, tail, and alive are unchanged. The
+# JSONL is the durable transcript; screen scrollback dies with the session.
+runtime_launch_cmd() { printf '%s' "bash /workspace/.fxa-auto-launch.sh"; }
 
-runtime_alive_pattern() { printf '%s' '^claude --permission'; }
+runtime_submit_prompt() {
+  echo "Prompt passed to claude -p at launch; nothing to submit." >&2
+  return 0
+}
+
+runtime_alive_pattern() { printf '%s' '^claude -p'; }
 
 runtime_prompt_header() {
   local key="$1" summary="$2"
@@ -81,8 +103,9 @@ STEP
 
 runtime_skill_ref() { printf '/%s' "$1"; }
 
-# Claude Code rejects a /goal over 4000 chars and then runs with NO goal at all.
-runtime_prompt_max_chars() { printf '%s' "${FXA_GOAL_MAX_CHARS:-4100}"; }
+# Claude Code rejects a /goal over 4000 chars. In -p mode the run then ends at
+# once with num_turns 0 and no error flag; `progress` reports it as goal-rejected.
+runtime_prompt_max_chars() { printf '%s' "${FXA_GOAL_MAX_CHARS:-4000}"; }
 
 # A human attaching to the TUI may need to re-authenticate, so the token is
 # re-staged. Existing behaviour, kept as-is.

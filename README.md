@@ -127,7 +127,7 @@ What happens under the hood:
 1. **Jira fetch** — `lib/jira.sh` calls `acli jira workitem view --json` and flattens the Atlassian Document Format description + comments to markdown. Result is written to `<worktree>/.fxa-jira-context.md`.
 2. **Worktree** — a pool of `fxa-auto`, `fxa-auto-2`, ... worktrees. Picks the first one not in use by a running agent, else creates the next-numbered slot. Reusing a slot keeps `node_modules` warm across tickets.
 3. **VM boot** — golden image cloned via APFS CoW, hardened (egress firewall, restricted sudo, ephemeral OAuth token written through the workspace mount).
-4. **`/goal` autonomy** — Claude starts in TUI mode (`--permission-mode bypassPermissions`), the prompt is pasted via `screen paste` so it works with curly quotes, parens, and other special chars. Bypass dialog is pre-accepted via `bypassPermissionsModeAccepted` in `~/.claude.json` + `skipDangerousModePermissionPrompt` in `settings.json`.
+4. **`/goal` autonomy** — Claude runs as `claude -p "<prompt>" --permission-mode bypassPermissions --output-format stream-json` inside a `screen` session; the prompt is an argument, so nothing is pasted and nothing can sit unsubmitted. The JSONL transcript lands in `/workspace/.fxa-auto-claude.jsonl`, which `tail` reads.
 5. **Agent runs through 8 conditions** (see `_jira_render_prompt` in `fxa-sandbox-ctl`):
     1. Print a plan
     2. Unit tests pass

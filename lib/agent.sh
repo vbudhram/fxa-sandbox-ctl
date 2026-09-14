@@ -117,7 +117,7 @@ _install_ssh_key() {
 _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
-  for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-token \
+  for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
            .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
@@ -521,80 +521,6 @@ _inject_oauth_token() {
 
 # ── Agent commands ─────────────────────────────────────────────
 
-# _screen_hardcopy <full-vm-name>
-#   Dump the VISIBLE screen region (not scrollback) so we can inspect what the
-#   TUI is actually showing right now.
-#   `screen -X hardcopy` is ASYNCHRONOUS: it queues the dump and returns
-#   immediately, so reading the file in the same breath races the write and
-#   yields a stale or empty capture. Wait for the flush before reading.
-_screen_hardcopy() {
-  vm_exec "$1" sudo -u agent bash -c \
-    "screen -S ${VM_SCREEN_SESSION} -p 0 -X hardcopy /tmp/.fxa-hardcopy >/dev/null 2>&1; \
-     sleep 1; cat /tmp/.fxa-hardcopy 2>/dev/null" 2>/dev/null
-}
-
-# _inject_prompt <full-vm-name> <agent-name>
-#   Paste the prompt into Claude Code's TUI, press Enter, and verify the agent
-#   actually started. Retries the Enter, and fails LOUDLY if it never takes.
-#
-#   This replaces `sleep 8; paste; sleep 1; Enter`, backgrounded to /dev/null
-#   with no verification. Both sleeps were fixed guesses about how long a TUI
-#   takes to draw, and nothing checked the result.
-#
-#   On 2026-08-31 FXA-10214 pasted fine and the Enter did not take. The agent
-#   sat holding the text in its input box for 15 minutes while `progress`
-#   reported a healthy `watching`, `alive` reported a live claude process, and
-#   `list` reported `running`. Every health signal agreed it was fine. The only
-#   field that disagreed was files_changed=0. A single Enter, sent by hand,
-#   started it immediately.
-#
-#   That is the worst failure shape this system can produce, so the fix is not a
-#   longer sleep: it is to wait for a real readiness signal, verify submission,
-#   and turn a silent stall into a loud error the reconcile table can act on.
-_inject_prompt() {
-  local name="$2" hc i
-
-  # 1. Wait for the TUI to actually draw. The footer only renders once the
-  #    input box is live, so it is a real signal rather than a guess. Boot can
-  #    be slow (npm auto-update check, MCP auth warnings), so allow 60s.
-  for i in $(seq 1 30); do
-    hc="$(_screen_hardcopy "$name")"
-    # Bash pattern matching, deliberately NOT grep. A screen hardcopy is full of
-    # box-drawing bytes that are invalid UTF-8, and grep in a UTF-8 locale then
-    # fails to match even plain ASCII patterns. `printf | grep -q` is worse
-    # still: under `set -o pipefail` grep -q exits on the first match, printf
-    # dies with SIGPIPE, and the pipeline reports FAILURE on a SUCCESSFUL match.
-    # This file runs under pipefail. Both traps were hit while writing this.
-    [[ "$hc" == *"bypass permissions"* || "$hc" == *"for shortcuts"* ]] && break
-    sleep 2
-  done
-
-  # 2. Paste it.
-  vm_exec "$name" sudo -u agent bash -c "
-    screen -S ${VM_SCREEN_SESSION} -p 0 -X readreg p /workspace/.fxa-auto-prompt.txt
-    screen -S ${VM_SCREEN_SESSION} -p 0 -X paste p
-  " 2>/dev/null
-  sleep 2
-
-  # 3. Submit, then confirm the agent is genuinely working. Claude Code shows a
-  #    live turn as an active goal, an interrupt hint, or a token counter.
-  for i in 1 2 3 4 5; do
-    vm_exec "$name" sudo -u agent bash -c \
-      "screen -S ${VM_SCREEN_SESSION} -p 0 -X stuff \$'\r'" 2>/dev/null
-    sleep 4
-    hc="$(_screen_hardcopy "$name")"
-    if [[ "$hc" == *"/goal active"* || "$hc" == *"esc to interrupt"* || "$hc" == *"tokens)"* ]]; then
-      echo "Prompt submitted; agent is working (attempt ${i})." >&2
-      return 0
-    fi
-  done
-
-  echo "ERROR: prompt was pasted into ${name} but never submitted after 5 attempts." >&2
-  echo "       The agent is idle holding the text in its input box. It will look" >&2
-  echo "       healthy to progress/alive/list. Relaunch it, or attach and hit Enter." >&2
-  return 1
-}
-
 agent_run() {
   local workspace_dir="$1"
   local name="${2:-}"
@@ -739,13 +665,7 @@ SCREENRC
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
   "
 
-  # Deliver the prompt after launch where the runtime needs it, and PROVE it
-  # landed. Backgrounded so agent_run returns. Errors are deliberately NOT sent
-  # to /dev/null: the launcher log is what `progress` reads and reconciles on.
-  if [ -n "$prompt" ]; then
-    ( runtime_submit_prompt "$full_name" "$name" ) &
-    disown $! 2>/dev/null || true
-  fi
+  [ -n "$prompt" ] && runtime_submit_prompt "$full_name" "$name"
 
   # Save agent metadata
   local ip

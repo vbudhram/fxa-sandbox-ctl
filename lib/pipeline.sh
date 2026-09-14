@@ -227,25 +227,18 @@ _pipeline_stalled_reason() {
   local key="$1" elapsed="${2:-0}" name hc wt files commits
 
   name="$(worktree_branch_for "$key" 2>/dev/null)" || return 1
-  runtime_load 2>/dev/null || true
-  if [ "${FXA_AGENT_RUNTIME:-claude}" = "claude" ]; then
-    # 1. DEFINITIVE. The prompt is still sitting unsubmitted in the input box.
-    #    No threshold needed: this is never a healthy state. Claude only: Codex
-    #    has no TUI and reads its prompt from stdin, so this cannot occur.
-    hc="$(_screen_hardcopy "$(vm_name "$name")" 2>/dev/null || true)"
-    if [ -n "$hc" ] && [[ "$hc" == *"Pasted text"* ]] \
-       && [[ "$hc" != *"/goal active"* && "$hc" != *"esc to interrupt"* && "$hc" != *"tokens)"* ]]; then
-      printf 'stuck-prompt'; return 0
+  wt="$(_telemetry_worktree_for_key "$key" 2>/dev/null || echo '')"
+  # 1. DEFINITIVE. Both runtimes run to completion and exit: `claude -p` and
+  #    `codex exec`. A VM that is up with no agent process and no handoff file
+  #    is a run that ended without one. That is an error, not a 20-minute
+  #    heuristic. Claude names the commonest cause: a /goal over 4000 chars
+  #    ends the run at once with num_turns 0 and no error flag.
+  if [ -n "$wt" ] && vm_is_running "$name" 2>/dev/null \
+     && ! agent_alive "$name" 2>/dev/null && [ ! -s "${wt}/.fxa-auto-done.json" ]; then
+    if grep -q '"type":"result".*"num_turns":0[,}]' "${wt}/.fxa-auto-claude.jsonl" 2>/dev/null; then
+      printf 'goal-rejected'; return 0
     fi
-  else
-    # 1. DEFINITIVE. codex exec exits on its final message, which is the
-    #    handoff. A VM that is up with no agent process and no handoff file is a
-    #    run that ended without one. That is an error, not a 20-minute heuristic.
-    wt="$(_telemetry_worktree_for_key "$key" 2>/dev/null || echo '')"
-    if [ -n "$wt" ] && vm_is_running "$name" 2>/dev/null \
-       && ! agent_alive "$name" 2>/dev/null && [ ! -s "${wt}/.fxa-auto-done.json" ]; then
-      printf 'exited-without-handoff'; return 0
-    fi
+    printf 'exited-without-handoff'; return 0
   fi
 
   # 2. HEURISTIC. Past the threshold with nothing written and nothing committed.
