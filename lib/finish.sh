@@ -133,6 +133,8 @@ finish_attach_and_wait() {
 # watcher keeps polling until its existing timeout.
 _handoff_settled() {
   local wt="$1" f="$2"
+  # gce: the handoff and the tree are on the runner until pulled.
+  _worktree_pull_if_remote "$wt"
   [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1 || return 1
   # There must be work to ship: uncommitted changes (the normal case, since the
   # agent cannot commit) or commits it somehow made. An empty worktree with a

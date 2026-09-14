@@ -100,6 +100,19 @@ _worktree_agent_for_workspace() {
   }'
 }
 
+# _worktree_pull_if_remote <path>
+#   On the gce backend the agent edits a copy on the runner, so every reader of
+#   the slot (stall detection, snapshot, the handoff poll, staging) first pulls
+#   the tree back. Tart reads the mount and this is a no-op.
+# ponytail: one gcloud describe plus one rsync per status read; cache the
+# running check if snapshot gets slow.
+_worktree_pull_if_remote() {
+  [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
+  local name; name="$(_worktree_agent_for_workspace "$1")"
+  [ -n "$name" ] || return 0
+  vm_pull_tree "$name" /workspace "$1" 2>/dev/null || true
+}
+
 # worktree_filtered_status <path>
 #   Run `git status --porcelain` and drop lines that are known not to matter:
 #     - our own orchestration files (.fxa-auto-*, .fxa-jira-*, .fxa-auto-token)
@@ -110,6 +123,7 @@ _worktree_agent_for_workspace() {
 #   Empty output means "clean enough for our purposes."
 worktree_filtered_status() {
   local path="$1"
+  _worktree_pull_if_remote "$path"
   local extra_pattern="${FXA_DIRTY_IGNORE:-}"
   git -C "$path" status --porcelain 2>/dev/null \
     | grep -vE '^\?\? \.fxa-(auto|jira)-' \
@@ -363,6 +377,33 @@ _worktree_ensure_shared() {
 #   FxA gitignores these files, so a fresh worktree starts empty and the agent
 #   can't run `fxa-start` until they're in place. Mirrors the file list in the
 #   `fxa-worktree` helper. Safe to re-run; missing source files are skipped.
+# worktree_secret_files
+#   The files, relative to the FxA repo root, that a run needs and git ignores.
+#   One list: worktree_copy_secrets copies them into the slot, and the gce
+#   backend ships the same set into the runner.
+worktree_secret_files() {
+  cat <<'LIST'
+.env
+secrets.env
+secrets.json
+packages/fxa-auth-server/config/key.json
+packages/fxa-auth-server/config/public-key.json
+packages/fxa-auth-server/config/secret-key.json
+packages/fxa-auth-server/config/secrets.json
+packages/fxa-auth-server/config/secrets2.json
+packages/fxa-auth-server/config/vapid-keys.json
+packages/fxa-auth-server/test/config/mock-vapid-keys.json
+packages/fxa-admin-server/.env
+packages/fxa-admin-server/src/config/public-key.json
+packages/fxa-admin-server/src/config/secret-key.json
+packages/fxa-admin-server/src/config/secrets.json
+packages/fxa-content-server/server/config/secrets.json
+packages/fxa-payments-server/server/config/secrets.json
+packages/123done/secrets.json
+libs/shared/db/mysql/account/src/.env
+LIST
+}
+
 worktree_copy_secrets() {
   local path="${1:-}"
   if [ -z "$path" ] || [ ! -d "$path" ]; then
@@ -382,27 +423,7 @@ worktree_copy_secrets() {
     root="$(worktree_repo_root)" || return 1
   fi
 
-  # Files copied as-is (relative to the FxA repo root).
-  local secret_files=(
-    ".env"
-    "secrets.env"
-    "secrets.json"
-    "packages/fxa-auth-server/config/key.json"
-    "packages/fxa-auth-server/config/public-key.json"
-    "packages/fxa-auth-server/config/secret-key.json"
-    "packages/fxa-auth-server/config/secrets.json"
-    "packages/fxa-auth-server/config/secrets2.json"
-    "packages/fxa-auth-server/config/vapid-keys.json"
-    "packages/fxa-auth-server/test/config/mock-vapid-keys.json"
-    "packages/fxa-admin-server/.env"
-    "packages/fxa-admin-server/src/config/public-key.json"
-    "packages/fxa-admin-server/src/config/secret-key.json"
-    "packages/fxa-admin-server/src/config/secrets.json"
-    "packages/fxa-content-server/server/config/secrets.json"
-    "packages/fxa-payments-server/server/config/secrets.json"
-    "packages/123done/secrets.json"
-    "libs/shared/db/mysql/account/src/.env"
-  )
+  local secret_files=( $(worktree_secret_files) )
 
   local rel src dest copied=0 skipped=0
   for rel in "${secret_files[@]}"; do

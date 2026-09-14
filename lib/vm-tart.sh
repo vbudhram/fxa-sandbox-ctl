@@ -29,7 +29,7 @@ vm_image_build() {
 
   cd "${packer_dir}"
   packer init fxa-dev.pkr.hcl
-  packer build fxa-dev.pkr.hcl
+  packer build -only 'tart-cli.*' fxa-dev.pkr.hcl
 }
 
 # ── VM lifecycle ───────────────────────────────────────────────

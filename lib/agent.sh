@@ -110,6 +110,27 @@ _install_ssh_key() {
   "
 }
 
+# _put_run_files <name> <slot>
+#   gce only. No shared filesystem, so the per-run files the slot holds go over
+#   in one tar: ticket context, prompt, runtime auth, ai/ docs, and the same
+#   secret set worktree_copy_secrets wrote. Nothing from the tree itself.
+_put_run_files() {
+  local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
+  local -a items=()
+  for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-token \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json ai \
+           $(worktree_secret_files) _dev/firebase/.config; do
+    [ -e "${slot}/${f}" ] && items+=("$f")
+  done
+  [ "${#items[@]}" -eq 0 ] && return 0
+  echo "Shipping ${#items[@]} run file(s) into the runner..."
+  # --no-xattrs and COPYFILE_DISABLE: macOS tar otherwise adds ._* AppleDouble files.
+  COPYFILE_DISABLE=1 tar --no-xattrs -cf "$tar" -C "$slot" "${items[@]}" || return 1
+  vm_put "$name" "$tar" /workspace; local rc=$?
+  rm -f "$tar"
+  return $rc
+}
+
 # ── Security: Disable SSH password auth ───────────────────────
 
 _harden_ssh() {
@@ -611,7 +632,9 @@ agent_run() {
   echo "  Resources: ${cpu} vCPU, $((memory / 1024))GB RAM"
   echo ""
 
-  # Step 1: Clone the golden image
+  # Step 1: Clone the golden image. gce reads the branch from metadata at boot.
+  FXA_GCE_BRANCH="$(git -C "$workspace_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  export FXA_GCE_BRANCH
   vm_clone "$name" || return 1
 
   # Step 2: Configure VM resources
@@ -666,7 +689,7 @@ agent_run() {
   _install_ssh_key "$name"
 
   # Step 8: Fix git worktrees (worktree .git files reference host paths)
-  if [ -n "$gitdir" ]; then
+  if [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ]; then
     echo "Linking git worktree parent (.git: ${gitdir})..."
     # Symlink /mnt/shared/gitdir to the host absolute path so the
     # worktree .git pointer resolves inside the VM
@@ -699,6 +722,9 @@ SCREENRC
   # Both run inside a screen session so attach/tail/alive behave the same for
   # either: Claude's TUI is pasted into after boot; Codex reads stdin at exec.
   [ -n "$prompt" ] && runtime_write_prompt "$prompt" "$workspace_dir"
+  if [ "$FXA_VM_BACKEND" = "gce" ]; then
+    _put_run_files "$name" "$workspace_dir" || { vm_delete "$name"; return 1; }
+  fi
   local launch_cmd
   launch_cmd="$(runtime_launch_cmd)"
 
@@ -811,7 +837,7 @@ agent_switch() {
   _setup_egress_firewall "$name"
 
   # Step 7: Fix git worktree symlinks if needed
-  if [ -n "$gitdir" ]; then
+  if [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ]; then
     echo "Linking git worktree parent (.git: ${gitdir})..."
     vm_exec "$name" sudo bash -c "
       mkdir -p '$(dirname "$gitdir")'
@@ -836,6 +862,9 @@ hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detac
 SCREENRC
   "
 
+  if [ "$FXA_VM_BACKEND" = "gce" ]; then
+    _put_run_files "$name" "$new_workspace" || return 1
+  fi
   local launch_cmd
   launch_cmd="$(runtime_launch_cmd)"
   vm_exec "$name" sudo -u agent bash -c "

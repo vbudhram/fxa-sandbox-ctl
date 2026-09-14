@@ -93,7 +93,16 @@ vm_wait_ready() {
   while [ $(( $(date +%s) - started )) -lt "$timeout" ]; do
     if _gce_ssh "$name" --command true >/dev/null 2>&1; then
       echo "VM '$(vm_name "$name")' ready ($(( $(date +%s) - started ))s)"
-      return 0
+      # The image's checkout unit must finish before anything touches /workspace.
+      # A stock image (smoke tests) has no unit; is-enabled fails and we return.
+      _gce_ssh "$name" --command 'systemctl is-enabled fxa-gce-checkout' >/dev/null 2>&1 || return 0
+      echo "Waiting for fxa-gce-checkout..."
+      while [ $(( $(date +%s) - started )) -lt "$timeout" ]; do
+        _gce_ssh "$name" --command 'systemctl is-active fxa-gce-checkout' 2>/dev/null | grep -q '^active$' && return 0
+        sleep 5
+      done
+      echo "ERROR: fxa-gce-checkout did not finish in ${timeout}s" >&2
+      return 1
     fi
     sleep 5
   done

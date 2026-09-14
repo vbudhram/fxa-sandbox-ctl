@@ -4,6 +4,10 @@ packer {
       version = ">= 1.14.0"
       source  = "github.com/cirruslabs/tart"
     }
+    googlecompute = {
+      version = ">= 1.1.0"
+      source  = "github.com/hashicorp/googlecompute"
+    }
   }
 }
 
@@ -27,6 +31,35 @@ variable "disk_size_gb" {
   default = 50
 }
 
+# GCE: same scripts, stock arm64 Ubuntu, built over IAP with no external IP.
+# N4A and C4A need Hyperdisk; the plugin's pd-standard default fails the build.
+variable "project" {
+  type    = string
+  default = ""
+}
+
+variable "zone" {
+  type    = string
+  default = "us-central1-a"
+}
+
+source "googlecompute" "ubuntu" {
+  project_id          = var.project
+  zone                = var.zone
+  machine_type        = "c4a-highcpu-4"
+  source_image_family = "ubuntu-2404-lts-arm64"
+  disk_type           = "hyperdisk-balanced"
+  disk_size           = var.disk_size_gb
+  image_name          = var.vm_name
+  image_family        = var.vm_name
+  ssh_username        = "packer"
+  network             = "fxa-sandbox"
+  subnetwork          = "fxa-sandbox"
+  omit_external_ip    = true
+  use_internal_ip     = true
+  use_iap             = true
+}
+
 source "tart-cli" "ubuntu" {
   vm_base_name   = "ghcr.io/cirruslabs/ubuntu:latest"
   vm_name        = "${var.vm_name}"
@@ -39,7 +72,7 @@ source "tart-cli" "ubuntu" {
 }
 
 build {
-  sources = ["source.tart-cli.ubuntu"]
+  sources = ["source.tart-cli.ubuntu", "source.googlecompute.ubuntu"]
 
   # Run provisioning scripts in order
   provisioner "shell" {
@@ -135,5 +168,21 @@ build {
       # Lock the admin user's password (base image default creds)
       "passwd -l admin 2>/dev/null || true",
     ]
+  }
+
+  # GCE only: no host mount, so the tree and node_modules are baked in, and a
+  # boot unit checks out the run's branch from instance metadata.
+  provisioner "shell" {
+    only              = ["googlecompute.ubuntu"]
+    script            = "${path.root}/scripts/11-gce-clone.sh"
+    execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
+  }
+
+  provisioner "shell" {
+    only              = ["googlecompute.ubuntu"]
+    script            = "${path.root}/scripts/12-gce-startup.sh"
+    execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
   }
 }
