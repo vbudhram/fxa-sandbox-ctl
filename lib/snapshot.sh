@@ -46,7 +46,7 @@ _snapshot_inflight() {
   local keys="${1:-}"
   [ -n "$keys" ] || { echo '[]'; return 0; }
   local key branch stage vm alive log started now wt files commits stat_line
-  local cfiles cstat handoff attempts
+  local cfiles cstat handoff attempts agent
   now="$(date +%s)"
   for key in $keys; do
     branch="$(worktree_branch_for "$key")"
@@ -71,6 +71,8 @@ _snapshot_inflight() {
     # once it has committed.
     wt="$(_telemetry_worktree_for_key "$key" 2>/dev/null || echo '')"
     if [ -n "$wt" ]; then
+      # gce: the tree and the transcript are on the runner until pulled.
+      _worktree_pull_if_remote "$wt"
       # `grep -c` prints 0 AND exits non-zero on no match, so `|| echo 0` would
       # emit a SECOND 0. That extra newline split into a phantom inflight row
       # with key "0". Use `|| true` and take one line -- the same trap the
@@ -90,14 +92,15 @@ _snapshot_inflight() {
       # The handoff file is the trigger for the push. Without it, "agent still
       # working" and "agent finished, host has not pushed" look identical.
       [ -f "${wt}/.fxa-auto-done.json" ] && handoff=true || handoff=false
+      agent="$(_snapshot_agent_json "${wt}/.fxa-auto-claude.jsonl" "$now")"
     else
-      files=0; commits=0; stat_line=""; cfiles=0; cstat=""; handoff=false
+      files=0; commits=0; stat_line=""; cfiles=0; cstat=""; handoff=false; agent=null
     fi
     attempts="$(cat "${PIPE_STATE_DIR}/${key}.attempts" 2>/dev/null | head -1 | tr -dc '0-9')"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$key" "$branch" "$vm" "$alive" \
       "$( [ -n "$started" ] && echo $(( now - started )) || echo '' )" "$stage" \
       "${files:-0}" "${commits:-0}" "$stat_line" \
-      "${cfiles:-0}" "$cstat" "$handoff" "${attempts:-0}"
+      "${cfiles:-0}" "$cstat" "$handoff" "${attempts:-0}" "${agent:-null}"
   done \
   | jq -R -s 'split("\n") | map(select(length > 0) | split("\t"))
       | map({ key: .[0], branch: .[1],
@@ -111,7 +114,33 @@ _snapshot_inflight() {
               committed_files: ((.[9] // "0") | tonumber? // 0),
               committed_diffstat: (.[10] // ""),
               handoff: (.[11] == "true"),
-              attempts: ((.[12] // "0") | tonumber? // 0) })'
+              attempts: ((.[12] // "0") | tonumber? // 0),
+              agent: ((.[13] // "null") | fromjson? // null) })'
+}
+
+# _snapshot_agent_json <jsonl> <now>
+#   What the agent is doing, from its own transcript. `claude -p` streams one
+#   JSON event per line; `tee` also catches stray stderr lines, so parse with
+#   fromjson? and drop what is not JSON. idle_seconds is the strongest freshness
+#   signal there is: the file's mtime moves on every event.
+#   cost_usd and is_error exist only once the run ended (the result event).
+_snapshot_agent_json() {
+  local f="$1" now="$2" mtime
+  [ -s "$f" ] || { echo null; return 0; }
+  mtime="$(stat -f %m "$f" 2>/dev/null || echo "$now")"
+  jq -R -s -c --argjson idle "$(( now - mtime ))" '
+    split("\n") | map(fromjson?) |
+    (map(select(.type=="assistant"))) as $a |
+    ($a | map(.message.content[]? | select(.type=="text") | .text) | last // "") as $text |
+    ($a | map(.message.content[]? | select(.type=="tool_use")
+              | .name + " " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)) | last // "") as $tool |
+    (map(select(.type=="result")) | last) as $r |
+    { turns: ($a | length), idle_seconds: $idle,
+      last_text: ($text | gsub("\\s+"; " ") | .[0:200]),
+      last_tool: ($tool | .[0:160]),
+      cost_usd: ($r.total_cost_usd // null),
+      is_error: (if $r then $r.is_error else null end),
+      num_turns: ($r.num_turns // null) }' "$f" 2>/dev/null || echo null
 }
 
 _snapshot_telemetry() {

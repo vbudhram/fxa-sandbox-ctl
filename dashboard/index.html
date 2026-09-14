@@ -273,6 +273,7 @@
                overscroll-behavior:contain; font-family:var(--mono); font-size:11px;
                line-height:1.45; white-space:pre; }
   .term-body .last { color:var(--ink); }
+  .stats.agent .last { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60ch; display:inline-block; vertical-align:bottom; }
   #s-inflight.running .term-body .last { color:#f2ede4; }
 
   @media (prefers-reduced-motion: reduce) { .belt.moving::before { animation:none; } }
@@ -508,6 +509,7 @@ function factory(t) {
       ${t.branch ? `<span class="sep"></span><span class="mono">${esc(t.branch)}</span>` : ""}
     </div>
     ${failed && t.detail ? `<div class="stats" style="color:var(--bad)">${esc(t.detail)}</div>` : ""}
+    <div class="stats agent" id="ag-${esc(t.key)}"></div>
 
     <details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}">
       <summary><span class="hdr"></span></summary>
@@ -524,7 +526,27 @@ function paintStats(inflight) {
   for (const t of inflight) {
     const el = document.getElementById("el-" + t.key);
     if (el && t.elapsed_seconds != null) el.textContent = Math.round(t.elapsed_seconds / 60) + "m";
+    paintAgent(t);
   }
+}
+
+// What the agent is doing, from its own transcript (snapshot.agent). Volatile,
+// so it is painted here rather than embedded in the card HTML.
+function paintAgent(t) {
+  const el = document.getElementById("ag-" + t.key), a = t.agent;
+  if (!el) return;
+  if (!a) { el.innerHTML = ""; return; }
+  const live = t.vm_running && t.agent_alive;
+  const idle = a.idle_seconds ?? 0;
+  const idleTxt = idle >= 3600 ? Math.round(idle / 3600) + "h" : idle >= 60 ? Math.round(idle / 60) + "m" : idle + "s";
+  const bits = [`<span><b>${a.turns ?? 0}</b> turn${a.turns === 1 ? "" : "s"}</span>`];
+  if (a.cost_usd != null) bits.push(`<span><b>$${a.cost_usd.toFixed(2)}</b></span>`);
+  if (live) bits.push(`<span class="${idle >= 300 ? "tag warn" : ""}">${idle >= 300 ? "idle " + idleTxt : "last event " + idleTxt + " ago"}</span>`);
+  if (a.is_error === true) bits.push(`<span class="tag bad">run error</span>`);
+  if (a.num_turns === 0) bits.push(`<span class="tag bad">goal rejected</span>`);
+  const last = a.last_text || a.last_tool || "";
+  el.innerHTML = bits.join(" ") +
+    (last ? `<span class="sep"></span><span class="last" title="${esc(a.last_tool || "")}">${esc(last)}</span>` : "");
 }
 
 function render(state) {

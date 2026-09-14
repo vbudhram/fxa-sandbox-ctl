@@ -245,8 +245,8 @@ _pipeline_stalled_reason() {
   #    Generous by design: a big ticket can be read for a while before the first
   #    edit, and a false stall costs a slot and a relaunch.
   [ "$elapsed" -ge $(( ${PIPE_STALL_MINUTES:-20} * 60 )) ] || return 1
-  wt="$(_telemetry_worktree_for_key "$key" 2>/dev/null || echo '')"
   [ -n "$wt" ] || return 1
+  _worktree_pull_if_remote "$wt"
   # `grep -c` prints 0 AND exits non-zero on no match, so `|| true` and one line.
   files="$(git -C "$wt" status --porcelain 2>/dev/null \
            | grep -vcE '^\?\? \.fxa-' || true)"
