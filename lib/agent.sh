@@ -133,6 +133,22 @@ _put_run_files() {
   return $rc
 }
 
+# _gce_pin_runner_tree <name> <slot>
+#   Fetch the slot's HEAD by sha into the runner and check it out on the branch.
+#   GitHub serves any reachable sha, so this works before the branch is pushed.
+_gce_pin_runner_tree() {
+  local name="$1" slot="$2" sha branch got
+  sha="$(git -C "$slot" rev-parse HEAD)" || return 1
+  branch="$(git -C "$slot" rev-parse --abbrev-ref HEAD)" || return 1
+  echo "Pinning the runner to ${branch} at ${sha:0:10}..."
+  vm_exec "$name" sudo -u agent bash -c "cd /workspace && git fetch --quiet origin ${sha} && git checkout --quiet -B ${branch} ${sha}" 2>&1 | grep -v 'unable to resolve' >&2
+  got="$(vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git rev-parse HEAD' 2>/dev/null | tr -d '\r' | tail -1)"
+  if [ "$got" != "$sha" ]; then
+    echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
+    return 1
+  fi
+}
+
 # ── Security: Disable SSH password auth ───────────────────────
 
 _harden_ssh() {
@@ -612,6 +628,15 @@ META
 
   # Step 5: Wait for agent-init to complete (starts infra services)
   _wait_for_infra "$name"
+
+  # gce: pin the runner's tree to the slot's exact commit. The image's boot
+  # unit fetches on a best-effort basis and a new branch is not on origin, so
+  # on 2026-09-14 FXA-2598 ran on the image's four-commit-stale main and the
+  # pull read the difference as the agent's work. Refuse rather than run on a
+  # base the host did not choose.
+  if [ "$FXA_VM_BACKEND" = "gce" ]; then
+    _gce_pin_runner_tree "$name" "$workspace_dir" || { vm_delete "$name"; return 1; }
+  fi
 
   # Step 6: Security hardening
   echo "Applying security hardening..."

@@ -20,7 +20,11 @@ iptables -D OUTPUT -d 169.254.169.254 -p tcp --dport 80 -j ACCEPT
 
 cd /home/agent/fxa
 g() { sudo -u agent git "$@"; }
-g fetch --quiet origin "$base" ${branch:+"$branch"} || true
+# Two fetches: a new branch is not on origin, and one failed ref fails the whole
+# fetch, which on 2026-09-14 left a runner on the image's stale main. The host
+# pins the exact sha after boot regardless; this only keeps the clone warm.
+g fetch --quiet origin "$base" || true
+[ -n "$branch" ] && g fetch --quiet origin "$branch" || true
 if [ -n "$branch" ] && g rev-parse --verify --quiet "origin/$branch" >/dev/null; then
   g checkout --quiet -B "$branch" "origin/$branch"
 else

@@ -167,7 +167,7 @@ _snapshot_agent_json() {
     { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
       cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + $u.cache_write * $p[2] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),
       last_text: ($text | gsub("\\s+"; " ") | .[0:200]),
-      last_tool: ($tool | .[0:160]),
+      last_tool: ($tool | gsub("\\s+"; " ") | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),
       is_error: (if $r then $r.is_error else null end),
       num_turns: ($r.num_turns // null) }' "$f" 2>/dev/null || echo null
