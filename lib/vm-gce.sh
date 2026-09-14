@@ -35,7 +35,20 @@ _gce_zone() {
   local inst; if [ "$sub" = "ssh" ]; then inst="$1"; else inst="$2"; fi
   _gce compute "$sub" "$@" --zone "$(_vm_zone "$inst")"
 }
-_gce_ssh() { local name="$1"; shift; _gce_zone ssh "$(vm_name "$name")" --tunnel-through-iap --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"; }
+# gcloud compute ssh spends ~3 s per call on its own key and metadata checks.
+# The boot probe goes through it, which provisions the host user and key on
+# the instance; every call after it is plain ssh through the IAP ProxyCommand,
+# about 1.5 s.
+_gce_ssh() {
+  local name="$1"; shift
+  if [ -f "${LOG_DIR}/${name}.ssh-ok" ]; then
+    local cmd=""; [ "${1:-}" = "--command" ] && cmd="$2"
+    # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
+    ssh -i "$FXA_GCE_SSH_KEY" $VM_SSH_OPTS "${USER}@$(vm_name "$name")" "$cmd"
+  else
+    _gce_zone ssh "$(vm_name "$name")" --tunnel-through-iap --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"
+  fi
+}
 
 # The call sites expand VM_SSH_OPTS unquoted, so an option with spaces cannot
 # ride in it. The IAP ProxyCommand goes in a config file instead.
@@ -45,6 +58,10 @@ mkdir -p "${LOG_DIR}"
 # wildcard is the fallback for the default zone. Rewriting only the wildcard
 # keeps the per-host entries across shells.
 if ! grep -q "^Host ${VM_PREFIX}-\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; then
+  # No ControlMaster here, on purpose. A master whose IAP tunnel died kept
+  # every later ssh to that runner queued on its socket for up to 53 min
+  # (2026-09-14), and a killed master left clients hanging anyway. One tunnel
+  # per call costs about 1.5 s; the launch makes ~15 calls.
   printf 'Host %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
     "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" >> "$_GCE_SSH_CONFIG"
 fi
@@ -52,8 +69,8 @@ VM_SSH_OPTS="${VM_SSH_OPTS} -F ${_GCE_SSH_CONFIG}"
 
 # ── Image management ───────────────────────────────────────────
 
-vm_image_list()   { _gce compute images list --filter "name=${FXA_GCE_IMAGE}" --format 'value(name,creationTimestamp)'; }
-vm_image_exists() { _gce compute images describe "$FXA_GCE_IMAGE" >/dev/null 2>&1; }
+vm_image_list()   { _gce compute images list --filter "family=${FXA_GCE_IMAGE}" --format 'value(name,creationTimestamp)'; }
+vm_image_exists() { _gce compute images describe-from-family "$FXA_GCE_IMAGE" >/dev/null 2>&1; }
 vm_image_build() {
   command -v packer &>/dev/null || { echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2; return 1; }
   cd "${SANDBOX_ROOT}/packer"
@@ -75,7 +92,7 @@ vm_clone() {
     echo "ERROR: instance '$(vm_name "$name")' already exists. Stop it first or use a different name." >&2
     return 1
   fi
-  local -a image_flags=(--image "$FXA_GCE_IMAGE")
+  local -a image_flags=(--image-family "$FXA_GCE_IMAGE")
   [ -n "${FXA_GCE_IMAGE_FAMILY:-}" ] && image_flags=(--image-family "$FXA_GCE_IMAGE_FAMILY" --image-project "${FXA_GCE_IMAGE_PROJECT:-ubuntu-os-cloud}")
   mkdir -p "${LOG_DIR}"
   # One zone holds about two of these; on a stockout move to the next zone in
@@ -127,6 +144,7 @@ vm_wait_ready() {
   while [ $(( $(date +%s) - started )) -lt "$timeout" ]; do
     if _gce_ssh "$name" --command true >/dev/null 2>&1; then
       echo "VM '$(vm_name "$name")' ready ($(( $(date +%s) - started ))s)"
+      touch "${LOG_DIR}/${name}.ssh-ok"
       # The image's checkout unit must finish before anything touches /workspace.
       # A stock image (smoke tests) has no unit; is-enabled fails and we return.
       _gce_ssh "$name" --command 'systemctl is-enabled fxa-gce-checkout' >/dev/null 2>&1 || return 0
@@ -167,13 +185,22 @@ vm_put() {
 # vm_pull_tree <name> <remote-dir> <local-dir>
 #   Exactly three excludes. Everything else goes through worktree_filtered_status,
 #   the same filter a Tart run's tree gets.
+# One pass, retried after 3 s when the tunnel drops. The tree is only read for
+# a PR after the handoff file exists, when the agent has stopped writing, so a
+# single pass is consistent there; a convergence loop on a live tree cost three
+# full pulls per poll and put a five-runner snapshot over six minutes.
 vm_pull_tree() {
-  local name="$1" remote="$2" local_dir="$3"
+  local name="$1" remote="$2" local_dir="$3" i rc=1
   local key="${LOG_DIR}/ssh/${name}/id_ed25519"
-  # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
-  rsync -a --delete --exclude .git --exclude node_modules --exclude external/l10n \
-    -e "ssh -i ${key} ${VM_SSH_OPTS}" \
-    "${VM_SSH_USER}@$(vm_ip "$name"):${remote%/}/" "${local_dir%/}/"
+  for i in 1 2 3; do
+    # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
+    rsync -a --delete --timeout=60 --exclude .git --exclude node_modules --exclude external/l10n \
+      --exclude .nx --exclude dist --exclude coverage \
+      -e "ssh -i ${key} ${VM_SSH_OPTS}" \
+      "${VM_SSH_USER}@$(vm_ip "$name"):${remote%/}/" "${local_dir%/}/" 2>/dev/null && return 0
+    rc=$?; sleep 3
+  done
+  return "$rc"
 }
 
 # ssh resolves the instance name through the ProxyCommand.
@@ -201,9 +228,29 @@ vm_delete() {
   echo "Deleting instance '$(vm_name "$name")'..."
   _gce_zone instances delete "$(vm_name "$name")" >/dev/null 2>&1 \
     || echo "WARN: delete failed for $(vm_name "$name"); it is still billing. Retry: fxa-sandbox-ctl --backend gce stop ${name}" >&2
-  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log" "${LOG_DIR}/${name}.zone"
-  # Drop the per-host ssh entry, or the file grows one block per run forever.
-  [ -f "$_GCE_SSH_CONFIG" ] && awk -v h="Host $(vm_name "$name")" '$0==h{skip=2} skip>0{skip--; next} {print}' "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
+  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log" "${LOG_DIR}/${name}.zone" "${LOG_DIR}/${name}.ssh-ok"
+  _gce_ssh_forget "$name"
+}
+
+# Drop the per-host ssh entry, or the file grows one block per run forever.
+_gce_ssh_forget() {
+  [ -f "$_GCE_SSH_CONFIG" ] && awk -v h="Host $(vm_name "$1")" '$0==h{skip=2} skip>0{skip--; next} {print}' "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
+}
+
+# vm_gc: state files whose instance is gone. Each crash path leaves a different
+# one (.meta, .zone, an ssh entry), and a leftover .meta makes freeslots and the
+# dashboard treat the slot as owned. A .meta under 10 min old may belong to a
+# clone still in flight, so it stays.
+vm_gc() {
+  local f name running; running="$(vm_list 2>/dev/null | cut -f1)"
+  for f in "${LOG_DIR}"/*.meta; do
+    [ -e "$f" ] || continue
+    name="$(basename "$f" .meta)"
+    printf '%s\n' "$running" | grep -qx "$(vm_name "$name")" && continue
+    [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 600 ] && continue
+    rm -f "$f" "${LOG_DIR}/${name}.zone" "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
+    echo "$name gc (no instance)"
+  done
 }
 
 # name, status, and age in seconds. The age is what the dashboard flags.

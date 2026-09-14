@@ -336,7 +336,7 @@ macOS Host (32GB RAM)
 │   ├── screen session "claude" (multi-attach via screen -x)
 │   └── Claude Code --permission-mode bypassPermissions
 │
-└── Golden Image: fxa-dev-base (~10GB, APFS CoW clones)
+└── Golden Image: fxa-dev-base (~10GB, APFS CoW clones; on GCE the family fxa-dev-base, newest image wins)
     └── Pre-installed: Node, MySQL, Redis, Firestore, Playwright, Claude Code, Bun
 ```
 
@@ -373,7 +373,8 @@ macOS Host (32GB RAM)
 | `status` | Show system status |
 | `reap` | Remove leftover host state for agents whose VM is gone |
 | `reap <ISSUE-KEY>` | Stop that ticket's agent VM (idempotent) |
-| `reap --stray` | Stop every agent VM whose ticket is not inflight |
+| `reap --stray` | Stop every agent VM whose ticket is not inflight, and drop state files of runners that no longer exist |
+| `reconcile` | Apply the determinate reconcile rows to every inflight key: merged, rejected, done, orphan label |
 
 ### Pipeline Commands
 

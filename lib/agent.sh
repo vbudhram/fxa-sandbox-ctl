@@ -128,6 +128,17 @@ _put_run_files() {
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
+  # The slot's own changes too, so a relaunch resumes a cut-off run instead of
+  # starting over. The runner is pinned to the slot's HEAD; this is the diff on
+  # top. Deletions travel as a list, since a tar cannot carry an absence.
+  local st path; : > "${slot}/.fxa-auto-deleted"
+  while read -r st path; do
+    [ -n "$path" ] || continue
+    path="${path##* -> }"
+    case "$path" in .fxa-auto-done.json.*|.fxa-auto-deleted) continue ;; esac
+    case "$st" in *D*) printf '%s\n' "$path" >> "${slot}/.fxa-auto-deleted" ;; *) [ -e "${slot}/${path}" ] && items+=("$path") ;; esac
+  done < <(git -C "$slot" status --porcelain -uall 2>/dev/null)
+  [ -s "${slot}/.fxa-auto-deleted" ] && items+=(.fxa-auto-deleted)
   [ "${#items[@]}" -eq 0 ] && return 0
   echo "Shipping ${#items[@]} run file(s) into the runner..."
   # --no-xattrs and COPYFILE_DISABLE: macOS tar otherwise adds ._* AppleDouble files.
@@ -136,6 +147,9 @@ _put_run_files() {
   COPYFILE_DISABLE=1 tar --no-xattrs --exclude ai/data -cf "$tar" -C "$slot" "${items[@]}" || return 1
   vm_put "$name" "$tar" /workspace; local rc=$?
   rm -f "$tar"
+  [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-auto-deleted" ] && \
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && xargs rm -f < .fxa-auto-deleted; rm -f .fxa-auto-deleted' >/dev/null 2>&1
+  rm -f "${slot}/.fxa-auto-deleted"
   return $rc
 }
 
@@ -229,7 +243,9 @@ _setup_egress_firewall() {
     iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
     iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
     iptables -A OUTPUT -d 192.168.0.0/16 -j DROP
-    iptables -A OUTPUT -d 169.254.0.0/16 -j DROP
+    # Link-local is the metadata server. The guest agent needs it to deliver the
+    # ssh key; only the agent user is cut off.
+    iptables -A OUTPUT -d 169.254.0.0/16 -m owner --uid-owner agent -j DROP
 
     # Allow all other outbound (public internet)
     iptables -A OUTPUT -j ACCEPT
@@ -609,7 +625,9 @@ agent_run() {
   # Step 1: Clone the golden image. gce reads the branch from metadata at boot.
   FXA_GCE_BRANCH="$(git -C "$workspace_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   export FXA_GCE_BRANCH
-  vm_clone "$name" || return 1
+  # Hold the snapshot's pull off this slot until the run files are shipped.
+  local launching="${LOG_DIR}/$(basename "$workspace_dir").launching"; touch "$launching"
+  vm_clone "$name" || { rm -f "$launching"; return 1; }
   # Claim the slot now, not after boot. freeslots and the launcher's collision
   # check read this file, and a gce boot takes minutes; until 2026-09-14 the
   # slot read free for that whole window. The IP is filled in below.
@@ -718,7 +736,8 @@ SCREENRC
   # either: Claude's TUI is pasted into after boot; Codex reads stdin at exec.
   [ -n "$prompt" ] && runtime_write_prompt "$prompt" "$workspace_dir"
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
-    _put_run_files "$name" "$workspace_dir" || { vm_delete "$name"; return 1; }
+    _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; vm_delete "$name"; return 1; }
+    rm -f "$launching"
   fi
   local launch_cmd
   launch_cmd="$(runtime_launch_cmd)"

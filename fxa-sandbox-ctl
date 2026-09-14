@@ -58,8 +58,8 @@ USAGE:
 
 COMMANDS:
   jira <ISSUE-KEY> [options]   Fetch a Jira issue and spin up an agent on a new worktree
-  finish                       Push the shared worktree's branch and open a PR
-                               from the agent's handoff file
+  finish [--worktree <slot>]   Push the worktree's branch and open a PR from the
+                               agent's handoff file (default: the shared worktree)
   tail [<name>]                Print a snapshot of the agent's screen scrollback
                                (for live view, use `attach`)
   run [directory] [options]    Start a new agent (defaults to current directory)
@@ -93,6 +93,7 @@ PIPELINE COMMANDS:
 
   queue                        Keys in the queue, oldest first
   inflight                     Keys currently running
+  reconcile                    Apply the determinate reconcile rows to every inflight key
   done-keys                    Keys awaiting review
   drain                        Done keys whose PR merged, closed, or went red
   ticket <ISSUE-KEY>           Ticket text INCLUDING comments (ground with this)
@@ -445,10 +446,16 @@ EOF
   # directive (capped at 4000 chars) can reference it instead of embedding it.
   local context_file="${worktree_path}/.fxa-jira-context.md"
   printf '%s\n' "$context" > "$context_file"
+  # A relaunch on a slot that still holds work (a runner GCE deleted at its
+  # lifetime cap, a run that died mid-edit) resumes from that tree.
+  if [ -n "$(worktree_filtered_status "$worktree_path")" ]; then
+    printf '\n## Resumed run\n\nThe tree already holds partial work from an earlier run that was cut off. Read `git status` and `git diff` first and continue from it. Do not start over.\n' >> "$context_file"
+    echo "Slot holds work from an earlier run; the agent resumes it." >&2
+  fi
   echo "Wrote Jira context to ${context_file}" >&2
 
   check_prerequisites
-  agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || return 1
+  agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || { _jira_launch_failed "$key" "$name"; return 1; }
 
   # Optionally pre-warm the FxA stack so functional tests don't pay the full
   # cold-start cost when the agent reaches step 4. We kick off fxa-start as a
@@ -712,8 +719,12 @@ cmd_finish() {
   local wait="false"
   local ci_watch="true"
   local create_pr="false"
+  local worktree=""
   while [ $# -gt 0 ]; do
     case "$1" in
+      # A pool slot by name or path. This is the recovery path for a run whose
+      # host commit failed after the agent finished: fix the cause, finish again.
+      --worktree)     worktree="$2"; shift 2 ;;
       --wait)         wait="true"; shift ;;
       --no-ci-watch)  ci_watch="false"; shift ;;
       --create-pr)    create_pr="true"; shift ;;
@@ -728,12 +739,16 @@ cmd_finish() {
     esac
   done
 
+  if [ -n "$worktree" ] && [ ! -d "$worktree" ]; then
+    worktree="$(dirname "$(worktree_repo_root)")/${worktree}"
+    [ -d "$worktree" ] || { echo "ERROR: no worktree at ${worktree}" >&2; return 1; }
+  fi
   if [ "$wait" = "true" ]; then
-    finish_wait_for_done || return 1
+    finish_wait_for_done "$worktree" || return 1
   fi
 
   local pr_url
-  pr_url="$(finish_push_and_pr "" "$create_pr")" || return 1
+  pr_url="$(finish_push_and_pr "$worktree" "$create_pr")" || return 1
   if [ -n "$pr_url" ]; then
     finish_notify "PR opened" "$pr_url"
     echo "$pr_url"
@@ -1257,10 +1272,46 @@ _reap_stray_vms() {
       echo "$key stray-reap-failed ($name) -- stop it by hand" >&2
     fi
   done <<< "$(_worktree_each_active_agent | awk '{print $1}')"
+  vm_gc
 }
 
 cmd_queue()     { jira_queue_keys; }
 cmd_inflight()  { jira_inflight_keys; }
+
+# cmd_reconcile
+#   WRITE: apply the determinate rows of the reconcile table to every inflight
+#   key and print one line per key. Merged, closed, and green PRs move their
+#   label; an inflight label with no launch log goes back to public. Everything
+#   that needs a judgement (stalls, red checks, a dead runner) is printed as is
+#   for the pass to decide. Until this existed the table lived only in the
+#   skill, so a label frozen while the automation was off stayed frozen until a
+#   human read it (FXA-14300 shipped twice that way on 2026-09-08).
+cmd_reconcile() {
+  local key line stage pr state ok fail run
+  for key in $(jira_inflight_keys); do
+    line="$(pipeline_progress "$key")"; stage="$(printf '%s' "$line" | awk '{print $2}')"
+    case "$stage" in
+      pr)
+        read -r _ pr state ok fail run <<< "$(gh_pr_state "$key")"
+        case "$state" in
+          MERGED) cmd_label "$key" merged >/dev/null && echo "$key merged #$pr" ;;
+          CLOSED) cmd_label "$key" rejected >/dev/null && echo "$key rejected #$pr" ;;
+          OPEN)
+            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "${ok#ok=}" -gt 0 ]; then
+              cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
+            else
+              echo "$key pr #$pr $ok $fail $run"
+            fi ;;
+          *) echo "$key pr $pr $state (could not read the PR)" ;;
+        esac ;;
+      nolog) cmd_label "$key" public >/dev/null && echo "$key public (inflight with no launch log)" ;;
+      watching)
+        if vm_is_running "$(worktree_branch_for "$key")" 2>/dev/null; then echo "$line"
+        else echo "$key dead-runner (no VM, no PR); the slot holds the last pulled tree, a relaunch resumes it"; fi ;;
+      *) echo "$line" ;;
+    esac
+  done
+}
 cmd_done_keys() { jira_done_keys; }
 cmd_ticket()    { jira_ticket "$@"; }
 cmd_reporter()  { jira_reporter_login "$@"; }
@@ -1369,6 +1420,20 @@ cmd_label() {
   fi
 }
 
+# _jira_launch_failed <KEY> <name>
+#   A launch that dies before the agent starts (stockout in every zone, image
+#   missing, tunnel refused) left the ticket at inflight with no runner, and only
+#   a human noticed. Return it to the queue; the next pass tries again and the
+#   daily launch budget bounds how often.
+_jira_launch_failed() {
+  local key="$1" name="$2"
+  [ -n "${PIPE_NAME:-}" ] || return 0
+  jira_inflight_keys 2>/dev/null | grep -qx "$key" || return 0
+  echo "ERROR: launch failed before the agent started; returning ${key} to the queue." >&2
+  rm -f "${LOG_DIR}/${name}.meta"
+  cmd_label "$key" public >&2 || true
+}
+
 # cmd_launch <KEY> <SLOT> [CONTEXT-FILE]
 #   WRITE: start an agent VM in the background. The launcher pushes, opens the
 #   PR, approves the functional gate, then polls CI, so a pass must not block
@@ -1394,6 +1459,15 @@ cmd_launch() {
     echo "       Free space, or raise FXA_MIN_FREE_GB." >&2
     return 1
   fi
+  # Rolling 24 h launch budget. Every launch appends one line here.
+  local ledger="${PIPE_STATE_DIR}/launches.log" day_ago=$(( $(date +%s) - 86400 )) n
+  # awk exits 2 on a missing file, and under set -e that killed the launch silently.
+  n=0; [ -f "$ledger" ] && n="$(awk -v t="$day_ago" '$1 >= t' "$ledger" | wc -l | tr -d ' ')"
+  if [ "$n" -ge "${PIPE_MAX_LAUNCHES_PER_DAY:-20}" ]; then
+    echo "ERROR: refusing to launch ${key}: ${n} launches in 24 h, budget ${PIPE_MAX_LAUNCHES_PER_DAY:-20} (PIPE_MAX_LAUNCHES_PER_DAY)." >&2
+    return 1
+  fi
+  printf '%s %s %s\n' "$(date +%s)" "$key" "$slot" >> "$ledger"
   local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot")
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
@@ -1450,6 +1524,7 @@ main() {
     # Ticket-to-PR pipeline (see pipelines/*.conf)
     queue)      cmd_queue "$@" ;;
     inflight)   cmd_inflight "$@" ;;
+    reconcile)  cmd_reconcile ;;
     done-keys)  cmd_done_keys "$@" ;;
     drain)      cmd_drain "$@" ;;
     label)      cmd_label "$@" ;;

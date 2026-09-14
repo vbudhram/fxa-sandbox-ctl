@@ -217,3 +217,6 @@ vm_list() {
   # List all agent VMs
   tart list 2>/dev/null | grep "${VM_PREFIX}-" || true
 }
+
+# A stopped Tart VM keeps its .meta on purpose (switch and attach reuse it).
+vm_gc() { :; }

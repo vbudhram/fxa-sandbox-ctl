@@ -29,8 +29,16 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    `main-tst2`, 1253 commits behind, so a working-tree grep reported a file as missing that
    exists on `main`. The agent VM is unaffected, because the tool cuts its worktree from
    `origin/main`, but a wrong context file is worse than none.
-2. **Reconcile first.** For each `$CTL inflight` key, follow the reconcile table below. A
-   ticket that turns green frees its slot inside this same pass.
+2. **Reconcile first.** Run `$CTL reconcile`. It applies the determinate rows of the reconcile
+   table itself: a merged PR is labelled `merged`, a closed one `rejected`, a green one `done`,
+   and an inflight label with no launch log goes back to `public`. Everything else prints as
+   the `progress` line for you to judge with the table below. A ticket that turns green frees
+   its slot inside this same pass.
+
+   A launch that dies before the agent starts (stockout in every zone, image missing) returns
+   its ticket to the queue on its own, so the next pass retries it. `PIPE_MAX_LAUNCHES_PER_DAY`
+   (20) caps how often that can happen. A relaunch on a slot that still holds work from a
+   cut-off run ships that tree into the new runner and tells the agent to resume it.
 
    **Then drain `done`.** Run `$CTL drain`. It prints one line per `done` key that needs
    attention: `KEY <pr#> <STATE>` when the PR is no longer open, and

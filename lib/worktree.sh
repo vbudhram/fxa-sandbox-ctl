@@ -113,6 +113,12 @@ _worktree_pull_if_remote() {
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   # finish owns the slot while it stages and commits; a pull now would race it.
   [ -f "${LOG_DIR}/$(basename "$1").finishing" ] && return 0
+  # So does a launch until the run files are on the runner: a pull with
+  # --delete from a runner that has no token yet removed the token from the
+  # slot before the tar was built, and the agent died at turn 1 (FXA-10441).
+  # A marker over 20 min old is a launch that died; ignore it.
+  local mk="${LOG_DIR}/$(basename "$1").launching"
+  [ -f "$mk" ] && [ $(( $(date +%s) - $(stat -f %m "$mk") )) -lt 1200 ] && return 0
   # Once per 20 s per slot: a snapshot reads the same slot several times.
   # A string cache, not an associative array: macOS ships bash 3.2.
   local now hit; now="$(date +%s)"
@@ -344,6 +350,10 @@ worktree_create_named() {
   else
     git -C "$root" -c core.hooksPath=/dev/null worktree add -b "$holding" "$path" "origin/${base}" >&2 || return 1
   fi
+  # The host's pre-commit hook (lint-staged, check:frozen) runs in the slot and
+  # needs node_modules there. Slots 3 to 5 had none, and 4 of 9 gce runs died
+  # at the commit with "prettier ENOENT" after a finished run.
+  [ -d "${root}/node_modules" ] && [ ! -e "${path}/node_modules" ] && ln -s "${root}/node_modules" "${path}/node_modules"
   printf '%s\n' "$path"
 }
 

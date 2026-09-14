@@ -75,7 +75,11 @@ pipeline_lock() {
   pipeline_require || return 1
   if [ -d "$PIPE_LOCK_DIR" ]; then
     local age; age=$(( $(date +%s) - $(stat -f %m "$PIPE_LOCK_DIR" 2>/dev/null || echo 0) ))
-    if [ "$age" -lt 7200 ]; then
+    # The cron fires every 20 min and a pass takes under 10. A lock older than
+    # 30 min belongs to a session that died mid-pass, and holding it turns every
+    # later pass into a silent no-op. The pid inside is the `lock` call's own,
+    # already gone, so age is the only liveness signal.
+    if [ "$age" -lt "${PIPE_LOCK_STALE_SECONDS:-1800}" ]; then
       echo "locked: another pass started ${age}s ago (pid $(cat "${PIPE_LOCK_DIR}/pid" 2>/dev/null || echo '?'))"
       return 1
     fi

@@ -133,7 +133,13 @@ finish_attach_and_wait() {
 # watcher keeps polling until its existing timeout.
 _handoff_settled() {
   local wt="$1" f="$2"
-  # gce: the handoff and the tree are on the runner until pulled.
+  # gce: the handoff and the tree are on the runner until pulled. Ask for the
+  # one file first; a full-tree pull every poll cost the runner CPU it needed
+  # for the tests, and the 5 s loop was running at 150 s per turn.
+  if [ "${FXA_VM_BACKEND:-tart}" = "gce" ] && [ ! -s "$f" ]; then
+    local name; name="$(_worktree_agent_for_workspace "$wt")"
+    [ -n "$name" ] && vm_exec "$name" test -s "/workspace/$(basename "$f")" 2>/dev/null || return 1
+  fi
   _worktree_pull_if_remote "$wt"
   [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1 || return 1
   # There must be work to ship: uncommitted changes (the normal case, since the

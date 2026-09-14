@@ -122,6 +122,7 @@ class Handler(BaseHTTPRequestHandler):
                 "snapshot": snap, "age_seconds": age, "error": err,
                 "agents": ag, "agents_age_seconds": ag_age, "agents_error": ag_err,
                 "refreshing": busy or ag_busy,
+                "interval": FULL.interval, "agents_interval": AGENTS.interval,
             }), "application/json")
         elif path == "/api/tail":
             from urllib.parse import parse_qs, urlparse

@@ -397,6 +397,10 @@ function merged() {
 function renderAlerts() {
   const s = SNAP, g = AGENTS, alerts = [], h = s?.health ?? {};
   const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
+  const staleFeed = (name, age, every) => age != null && every && age > 3 * every &&
+    add("bad", `<b class="key">${name}</b>`, `feed is ${ago(age).replace(" ago", "")} old, refreshes every ${every}s; the page is showing history`);
+  staleFeed("agents", STATE.agents_age_seconds, STATE.agents_interval);
+  staleFeed("tickets", STATE.age_seconds, STATE.interval);
   if (STATE.error) add("bad", `<b class="key">tickets</b>`, esc(STATE.error));
   if (STATE.agents_error) add("bad", `<b class="key">agents</b>`, esc(STATE.agents_error));
   const sp = h.seconds_since_pass;

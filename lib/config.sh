@@ -5,6 +5,13 @@
 [ -n "${_FXA_CONFIG_LOADED:-}" ] && return 0
 _FXA_CONFIG_LOADED=1
 
+# A transient GitHub or Jira failure used to abort the pass (a 5xx in the drain
+# on 2026-09-14). Two retries with a short backoff, then the caller's own error
+# path. Every call these wrap is idempotent: reads, label swaps, reactions.
+_retry() { local d; for d in 3 9 0; do "$@" && return 0; [ "$d" = 0 ] && return 1; sleep "$d"; done; }
+gh()   { _retry command gh "$@"; }
+acli() { _retry command acli "$@"; }
+
 # Ensure ~/bin is on PATH (tart, packer may be installed there)
 export PATH="${HOME}/bin:${PATH}"
 
@@ -23,7 +30,10 @@ readonly VM_PREFIX="agent"
 readonly VM_SSH_USER="agent"
 readonly VM_SSH_PASS="agent"
 # Not readonly: the gce backend appends an IAP ProxyCommand.
-VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
+# ServerAlive: ConnectTimeout covers only the TCP connect. A tunnel that dies
+# mid-session (the runner hit its lifetime cap) otherwise hangs the rsync and
+# every pass behind it forever; on 2026-09-14 one sat for 53 min.
+VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 
 # GCE backend. Project is required when FXA_VM_BACKEND=gce.
 FXA_GCE_PROJECT="${FXA_GCE_PROJECT:-}"
