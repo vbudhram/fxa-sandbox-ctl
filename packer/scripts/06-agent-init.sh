@@ -102,7 +102,10 @@ if [ -n "$GATEWAY" ]; then
   iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
   iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
   iptables -A OUTPUT -d 192.168.0.0/16 -j DROP
-  iptables -A OUTPUT -d 169.254.0.0/16 -j DROP
+  # Link-local carries the metadata server. The guest agent needs it (it is what
+  # delivers the ssh key, and a blocked agent delayed ssh by ~80 s); the agent
+  # user must not reach it. Drop by owner, not by address.
+  iptables -A OUTPUT -d 169.254.0.0/16 -m owner --uid-owner agent -j DROP
   # Allow all public internet
   iptables -A OUTPUT -j ACCEPT
   log "Egress firewall configured (private networks blocked, public internet allowed)"

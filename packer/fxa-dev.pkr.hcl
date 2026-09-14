@@ -50,7 +50,9 @@ source "googlecompute" "ubuntu" {
   source_image_family = "ubuntu-2404-lts-arm64"
   disk_type           = "hyperdisk-balanced"
   disk_size           = var.disk_size_gb
-  image_name          = var.vm_name
+  # Unique name, stable family: a rebuild never collides with the image the
+  # runners boot from, and vm_clone picks the newest in the family.
+  image_name          = "${var.vm_name}-${formatdate("YYYYMMDD-hhmm", timestamp())}"
   image_family        = var.vm_name
   ssh_username        = "packer"
   network             = "fxa-sandbox"
