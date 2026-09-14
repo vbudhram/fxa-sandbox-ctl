@@ -697,7 +697,7 @@ cmd_tail() {
     if [ -s /workspace/.fxa-auto-claude.jsonl ]; then
       jq -r '
         select(.type==\"assistant\") | .message.content[]? |
-        if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end' 2>/dev/null | tail -n 40
+        if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end' /workspace/.fxa-auto-claude.jsonl 2>/dev/null | tail -n 40
     else
       screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
       cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
