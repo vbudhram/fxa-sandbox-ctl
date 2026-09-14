@@ -16,11 +16,16 @@ labelled ticket becomes a review-ready pull request with no human in the loop.
 brew install oven-sh/bun/bun
 ```
 
-Tart moved to `openai/tart`; install it from the new tap. The old
-`cirruslabs/cli` tap is stale and fails on Homebrew 7:
+Tart moved to `openai/tart` and its tap to `openai/tools`. The old
+`cirruslabs/cli` tap is stale and fails on Homebrew 7. Homebrew 7 also refuses
+a third-party tap until it is trusted, and refuses two taps that ship the same
+formula, so clear the old one first if it is there:
 
 ```bash
+brew uninstall tart softnet 2>/dev/null; brew untap cirruslabs/cli 2>/dev/null
+brew trust openai/tools
 brew install openai/tools/tart
+tart --version
 ```
 
 A machine that only uses the GCE backend does not need `tart`; `doctor` skips it
