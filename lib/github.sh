@@ -313,3 +313,50 @@ gh_pr_states_json() {
                  mergeable: $m.mergeable}
            end))'
 }
+
+# ── GitHub App identity ────────────────────────────────────────
+# The pipeline can act as a GitHub App instead of the operator: the bot authors
+# the commit and the PR, GitHub signs the commit, and the operator's key and
+# login never enter the push path. Active when GITHUB_APP_ID, GITHUB_APP_PEM,
+# and GITHUB_APP_INSTALLATION_ID are all set.
+
+github_app_enabled() {
+  [ -n "${GITHUB_APP_ID:-}" ] && [ -n "${GITHUB_APP_PEM:-}" ] && [ -n "${GITHUB_APP_INSTALLATION_ID:-}" ]
+}
+
+# github_app_jwt
+#   A 10-minute RS256 JWT for the app itself. Only the app endpoints take it.
+github_app_jwt() {
+  local b64='openssl base64 -A'
+  local hdr pay now
+  now="$(date +%s)"
+  hdr="$(printf '{"alg":"RS256","typ":"JWT"}' | $b64 | tr '+/' '-_' | tr -d '=')"
+  pay="$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' "$(( now - 60 ))" "$(( now + 540 ))" "$GITHUB_APP_ID" | $b64 | tr '+/' '-_' | tr -d '=')"
+  printf '%s.%s.%s' "$hdr" "$pay" \
+    "$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" | $b64 | tr '+/' '-_' | tr -d '=')"
+}
+
+# github_app_installations
+#   List where the app is installed: "<installation id>\t<account>". Used once,
+#   to find GITHUB_APP_INSTALLATION_ID after the org approves the install.
+github_app_installations() {
+  curl -sf -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+    https://api.github.com/app/installations \
+  | jq -r '.[] | "\(.id)\t\(.account.login)\t\(.repository_selection)"'
+}
+
+# github_app_token
+#   An installation token: what `gh` and git use to act as the bot. It lives 60
+#   minutes, so mint it at handoff, never at launch. Cached for 50 minutes.
+github_app_token() {
+  local cache="${TMPDIR:-/tmp}/fxa-github-app-token.${GITHUB_APP_INSTALLATION_ID}"
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(stat -f %m "$cache") ))" -lt 3000 ]; then
+    cat "$cache"; return 0
+  fi
+  local tok
+  tok="$(curl -sf -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens" | jq -r '.token // empty')"
+  [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token." >&2; return 1; }
+  ( umask 077; printf '%s' "$tok" > "$cache" )
+  printf '%s' "$tok"
+}
