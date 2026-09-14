@@ -16,7 +16,7 @@ read -r -d '' _TELEMETRY_REMOTE <<'REMOTE' || true
 f=$(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] || { echo "{}"; exit 0; }
 jq -s "[.[] | select(.message.usage != null)] as \$m
   | { messages: (\$m|length),
-      model: (\$m|map(.message.model)|unique-[null]|first),
+      model: (\$m|map(.message.model)|unique-[null,\"<synthetic>\"]|first),
       input: (\$m|map(.message.usage.input_tokens // 0)|add),
       output: (\$m|map(.message.usage.output_tokens // 0)|add),
       cache_write: (\$m|map(.message.usage.cache_creation_input_tokens // 0)|add),
@@ -82,7 +82,12 @@ telemetry_record() {
   local log; log="$(pipeline_launch_log "$key")"
   local usage secs pr sha files base
   usage="$(telemetry_usage "$key" 2>/dev/null || echo '{}')"
-  secs="$( [ -f "$log" ] && python3 -c "import os,time;print(int(time.time()-os.stat('$log').st_birthtime))" || echo 0 )"
+  # The launch log's own lifespan, not "now minus launch". `record` can run long
+  # after the agent stopped, and then "now" measures the delay, not the run. On
+  # 2026-09-08 FXA-14471 recorded 119 hours because it was recorded five days
+  # late; its real run was 49 minutes. This is only correct because the launcher
+  # deletes the log before each launch, giving every run a true birth time.
+  secs="$( [ -f "$log" ] && python3 -c "import os;s=os.stat('$log');print(max(0,int(s.st_mtime-s.st_birthtime)))" || echo 0 )"
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" 2>/dev/null || true; } | tail -1)"
   if [ -n "$wt" ]; then
     base="origin/${FXA_WORKTREE_BASE}"
@@ -105,14 +110,22 @@ telemetry_record() {
                     * 100 | round / 100),
           priced: {input:$p[0], output:$p[1], cache_write:$p[2], cache_read:$p[3]} }')"
   else
+    # Say so at record time. An unpriced row is silent in the rollup, so the
+    # total reads low and nobody knows why until someone counts the rows.
+    echo "WARN: no price row for model '${model:-<none>}'; this run is recorded unpriced and the rollup understates spend." >&2
     cost='{"cost_usd":null,"priced":null}'
   fi
+
+  # Which credential paid for this run. A subscription token is not metered per
+  # token, so blending the two makes cost per ticket meaningless.
+  local billing="api"
+  case "${CLAUDE_CODE_OAUTH_TOKEN:-}" in sk-ant-oat*) billing="subscription" ;; esac
 
   mkdir -p "$(dirname "$PIPE_RUNS_FILE")"
   printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
       --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" \
-      --argjson cost "$cost" \
-      '. + $cost + {issue:$k, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, recorded_at:$at}' \
+      --argjson cost "$cost" --arg billing "$billing" \
+      '. + $cost + {issue:$k, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, recorded_at:$at, billing:$billing}' \
     >>"$PIPE_RUNS_FILE"
   echo "recorded $key -> $PIPE_RUNS_FILE"
   tail -1 "$PIPE_RUNS_FILE"
@@ -130,6 +143,8 @@ telemetry_costs() {
       value: {
         runs: length,
         cost_usd: (map(.cost_usd // 0) | add | .*100 | round / 100),
+        unpriced_runs: (map(select(.cost_usd == null)) | length),
+        billing: (map(.billing) | unique - [null] | join(",")),
         model: (map(.model) | unique - [null] | join(",")),
         pr: (map(.pr) | map(select(. != null and . != "")) | last // ""),
         commit: (map(.commit) | map(select(. != null and . != "")) | last // ""),
