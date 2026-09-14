@@ -180,6 +180,37 @@ own.
 `FXA_PRIVATE_REPO` has no default. Without it, `--private` stops with an error
 and changes nothing.
 
+### GCE backend
+
+`--backend gce` runs the agent in a Google Compute Engine VM instead of a Tart
+VM. The laptop stays the controller: it holds the credentials, signs, pushes,
+and opens the PR. Only the runner moves. Once per project:
+
+```bash
+echo 'FXA_GCE_PROJECT=<project-id>' >> .env
+gcloud auth login && gcloud auth application-default login
+FXA_GCE_PROJECT=<project-id> bash infra/gce/setup.sh   # VPC, subnet, NAT, IAP ssh rule
+fxa-sandbox-ctl --backend gce image build              # ~30 min, bakes the FxA clone
+fxa-sandbox-ctl --backend gce jira FXA-13474
+```
+
+The backend is a global flag like `--pipeline`, or `FXA_VM_BACKEND=gce` in
+`.env`, or `PIPE_VM_BACKEND` in the pipeline config. Default is `tart`.
+
+Runners have no service account and no external IP. The laptop reaches them
+over ssh through an IAP tunnel, with its own passphrase-less key at
+`~/.ssh/fxa-sandbox-gce`. There is no shared filesystem: the slot's per-run
+files (ticket context, prompt, auth, `ai/`, dev secrets) go in as one tar at
+launch, and every read of the slot pulls the runner's tree back first, so
+`progress`, `snapshot`, and `finish` see what the agent wrote. `attach`, `tail`,
+and `alive` work unchanged.
+
+The default machine is `c4a-highcpu-4` (4 vCPU, 8 GB, arm64, about $0.13 an
+hour while a run is up, nothing when idle). `n4a-highcpu-4` is cheaper but was
+stocked out in every `us-central1` zone when this was built; set
+`FXA_GCE_MACHINE_TYPE` to try it. A leaked instance keeps billing: `list` shows
+it and `stop <name>` deletes it.
+
 ### Worktree pool
 
 Workspaces live as sibling dirs of the FxA repo: `<parent>/fxa-auto`, `<parent>/fxa-auto-2`, ... Each is a real git worktree. A `<name>-holding` branch keeps the slot checked out when idle. Per-ticket branches (`fxa-13474`, `fxa-13737`, ...) are created off `origin/main`.
@@ -249,6 +280,10 @@ cp .env.example .env
 | `FXA_AGENT_MODEL` | Model alias for the agent's Claude (default: `opus`). |
 | `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |
 | `FXA_DIRTY_IGNORE` | Extended-regex pattern of extra status lines to ignore. |
+| `FXA_VM_BACKEND` | `tart` (default) or `gce`. `--backend` on the command line wins. |
+| `FXA_GCE_PROJECT` | GCP project for `gce` runners. Required for that backend. |
+| `FXA_GCE_ZONE` | Zone for runners and the image build (default: `us-central1-a`). |
+| `FXA_GCE_MACHINE_TYPE` | Runner shape (default: `c4a-highcpu-4`). |
 
 ## Architecture
 
