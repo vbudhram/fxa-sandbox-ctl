@@ -220,7 +220,9 @@ launch, and every read of the slot pulls the runner's tree back first, so
 `progress`, `snapshot`, and `finish` see what the agent wrote. `attach`, `tail`,
 and `alive` work unchanged.
 
-Every runner is created with a hard lifetime (`FXA_GCE_MAX_RUN_SECONDS`, 90
+On GCE the runner is deleted as soon as the PR is open: the branch is on
+origin and a feedback round boots a fresh one. Tart keeps its VM until the
+ticket is labeled `done`. Every runner is created with a hard lifetime (`FXA_GCE_MAX_RUN_SECONDS`, 90
 minutes by default): GCE deletes it at that age whether or not the laptop is
 awake. The default machine is `c4a-highcpu-4` (4 vCPU, 8 GB, arm64, about $0.13 an
 hour while a run is up, nothing when idle). `n4a-highcpu-4` is cheaper but was

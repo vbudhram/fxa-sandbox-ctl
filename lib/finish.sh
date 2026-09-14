@@ -215,6 +215,19 @@ _finish_recommit_failed() {
 #     2. Pushes the branch to origin.
 #     3. Runs `gh pr create` with the title/body from the handoff file.
 #   Prints the PR URL on stdout. Progress on stderr.
+# _finish_release_runner <worktree>
+#   gce only. The PR is open and the branch is on origin, so nothing after this
+#   point reads the runner; a feedback round boots a fresh one. Tart keeps its
+#   VM until the ticket is labeled done, which costs nothing there and about
+#   $0.13 an hour here.
+_finish_release_runner() {
+  [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
+  local name; name="$(_worktree_agent_for_workspace "$1")"
+  [ -n "$name" ] || return 0
+  echo "Releasing runner '${name}': the PR is open and the branch is on origin." >&2
+  agent_stop "$name" >&2 || echo "WARN: could not delete runner '${name}'; it is still billing. Run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
+}
+
 finish_push_and_pr() {
   if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not installed on the host. Install with: brew install gh" >&2
@@ -533,6 +546,7 @@ finish_push_and_pr() {
         || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
     fi
     finish_add_reviewers "$pr_url"
+    _finish_release_runner "$worktree"
     printf '%s\n' "$pr_url"
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
     return 0
@@ -571,6 +585,7 @@ finish_push_and_pr() {
 
   finish_add_reviewers "$pr_url"
 
+  _finish_release_runner "$worktree"
   printf '%s\n' "$pr_url"
 
   # Archive the handoff file so the next ticket can write a fresh one.
