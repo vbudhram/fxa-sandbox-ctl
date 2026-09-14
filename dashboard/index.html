@@ -297,8 +297,8 @@ function rail(t) {
   if (t.stage === "stalled") i = 1;
   if (t.stage === "pr") i = t.pr ? 5 : 4;
   if (i < 0) i = 0;
-  const live = t.live;
   const ciDone = t.pr && t.fail === 0 && t.running === 0 && hasChecks(t);
+  const live = t.live || (t.stage === "pr" && t.pr && t.running > 0);
   return `<div class="rail">${STAGES.map(([id, lbl], n) => {
     const cls = failed ? (n === i ? "fail" : n < i ? "done" : "") : n < i ? "done" : n === i ? (id === "ci" && ciDone ? "done" : "now") : "";
     const seg = ["seg"]; if (failed && n >= i) seg.push("jammed"); else if (n < i) seg.push("done"); if (live && n === i) seg.push("moving");
@@ -314,7 +314,10 @@ function card(t) {
   const stalled = t.stage === "stalled", failed = t.stage === "error";
   const stat = t.diffstat || "", ins = stat.match(/(\d+) insertion/), del = stat.match(/(\d+) deletion/);
   const idle = a.idle_seconds ?? null;
-  const status = stalled ? `<span class="tag bad">stalled · ${esc((t.detail || "").split(" ")[0])}</span>`
+  const status = t.ci ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>`
+      : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>`
+      : t.pr ? `<span class="tag ok">CI green</span>` : `<span class="tag info">PR opening</span>`)
+    : stalled ? `<span class="tag bad">stalled · ${esc((t.detail || "").split(" ")[0])}</span>`
     : failed ? `<span class="tag bad">run failed</span>`
     : t.stage === "starting" ? `<span class="tag run info">${esc(t.detail || "boot")}</span>`
     : t.stage === "squashing" || t.stage === "pushed" ? `<span class="tag run info">${esc(t.stage)}</span>`
@@ -330,7 +333,9 @@ function card(t) {
         <span class="tag">${short(t.elapsed_seconds)}</span>${status}</span></div>
     ${rail(t)}
     <div class="stats">
-      <span><b>${t.files_changed ?? 0}</b> file${t.files_changed === 1 ? "" : "s"} touched</span>
+      ${t.pr ? `${prl(SNAP?.repo ?? "", t.pr)} ${checkBars(t)}<span class="sep"></span>` : ""}
+      ${t.ci ? `<span><b>${t.committed_files ?? t.files_changed ?? 0}</b> file${(t.committed_files ?? t.files_changed) === 1 ? "" : "s"} committed</span>` :
+      `<span><b>${t.files_changed ?? 0}</b> file${t.files_changed === 1 ? "" : "s"} touched</span>`}
       ${ins ? `<span class="add">+${ins[1]}</span>` : ""}${del ? `<span class="del">−${del[1]}</span>` : ""}
       ${t.handoff ? `<span class="tag ok">handoff written</span>` : ""}
       ${a.turns != null ? `<span class="sep"></span><span><b>${a.turns}</b> turns</span>` : ""}
@@ -338,11 +343,11 @@ function card(t) {
       ${idle != null && t.agent_alive ? `<span>last event ${short(idle)} ago</span>` : ""}
       ${a.num_turns === 0 ? `<span class="tag bad">goal rejected</span>` : ""}
       ${a.is_error === true ? `<span class="tag bad">run error</span>` : ""}
-      <span class="sep"></span><span class="mono">${esc(t.name)} · ${esc(t.slot)}</span>
+      ${t.ci ? `<span class="tag">runner released</span>` : `<span class="sep"></span><span class="mono">${esc(t.name)} · ${esc(t.slot)}</span>`}
     </div>
     ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
     ${failed && t.detail ? `<div class="stats" style="color:var(--bad)">${esc(t.detail)}</div>` : ""}
-    <details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>
+    ${t.ci ? "" : `<details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>`}
   </div>`;
 }
 
@@ -380,8 +385,13 @@ function merged() {
     return { ...t, ...r, live: r.agent_alive && r.stage !== "pr", summary: t.summary, attempts: t.attempts, pr: t.pr, ok: t.ok, fail: t.fail, running: t.running };
   });
   const seen = new Set(runners.map(r => r.key));
-  const waiting = inflight.filter(t => !seen.has(t.key));   // inflight with no runner: PR open, CI running, or dead
-  return { cards, waiting };
+  // Inflight with no runner: at the PR stage the runner is gone by design and
+  // CI is the live phase, so it keeps its card and the belt runs on the CI
+  // segment. Anything else without a runner is a fault and gets an alert.
+  const waiting = inflight.filter(t => !seen.has(t.key));
+  const ciCards = waiting.filter(t => t.stage === "pr").map(t => ({ ...t, live: false, ci: true,
+    name: "", slot: "", agent: null, agent_alive: false, elapsed_seconds: t.elapsed_seconds }));
+  return { cards: cards.concat(ciCards), waiting: waiting.filter(t => t.stage !== "pr") };
 }
 
 function renderAlerts() {
@@ -423,17 +433,18 @@ function renderAlerts() {
 function renderAgents() {
   const { cards, waiting } = merged();
   const sec = document.getElementById("s-agents");
-  const anyLive = cards.some(c => c.live);
+  const anyLive = cards.some(c => c.live || (c.ci && c.running > 0));
   sec.className = "wide" + (anyLive ? " running" : "");
   const repo = SNAP?.repo ?? "";
-  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${AGENTS.launchcap} more may launch` : "agents feed not loaded", "runners working now") +
+  const nRunners = cards.filter(c => !c.ci).length;
+  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} runner${nRunners === 1 ? "" : "s"} up · ${AGENTS.launchcap} more may launch` : "agents feed not loaded", "in flight") +
     (cards.length === 0 ? `<div class="empty">no runner is up</div>` : cards.map(card).join("")) +
     (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
         <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}${
           t.stage === "pr" ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>` : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>` : t.pr ? `<span class="tag ok">CI green</span>` : `<span class="tag info">PR opening</span>`)
           : `<span class="tag bad">no runner</span>`}</span></div>`).join("") : ""));
-  cards.forEach(c => paintTail(c.key, c.live));
-  TAIL_KEYS = cards.filter(c => c.live).map(c => c.key);
+  cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
+  TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
 }
 
 function renderTickets() {
