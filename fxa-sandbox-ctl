@@ -690,10 +690,12 @@ cmd_tail() {
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
 
   # A Claude run streams JSONL; show its last assistant texts and tool calls.
+  # Scan the whole file: a long tool call emits hundreds of tool_progress
+  # events, and a fixed tail of lines then holds no assistant event at all.
   # Otherwise dump the screen scrollback (-h: history, not only the visible region).
   ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" "
     if [ -s /workspace/.fxa-auto-claude.jsonl ]; then
-      tail -n 200 /workspace/.fxa-auto-claude.jsonl | jq -r '
+      jq -r '
         select(.type==\"assistant\") | .message.content[]? |
         if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end' 2>/dev/null | tail -n 40
     else

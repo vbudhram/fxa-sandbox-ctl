@@ -233,8 +233,12 @@ _pipeline_stalled_reason() {
   #    is a run that ended without one. That is an error, not a 20-minute
   #    heuristic. Claude names the commonest cause: a /goal over 4000 chars
   #    ends the run at once with num_turns 0 and no error flag.
-  if [ -n "$wt" ] && vm_is_running "$name" 2>/dev/null \
-     && ! agent_alive "$name" 2>/dev/null && [ ! -s "${wt}/.fxa-auto-done.json" ]; then
+  local alive_rc=0
+  if [ -n "$wt" ] && vm_is_running "$name" 2>/dev/null; then
+    agent_alive "$name" 2>/dev/null; alive_rc=$?
+  fi
+  # rc 1 is "asked, no process". rc 2 is "could not ask", which is not a stall.
+  if [ "$alive_rc" -eq 1 ] && [ ! -s "${wt}/.fxa-auto-done.json" ]; then
     if grep -q '"type":"result".*"num_turns":0[,}]' "${wt}/.fxa-auto-claude.jsonl" 2>/dev/null; then
       printf 'goal-rejected'; return 0
     fi
@@ -289,7 +293,14 @@ pipeline_progress() {
     local secs; secs="$( { grep -o '\[ *[0-9]*s\]' "$log" || true; } | tail -1 | tr -dc '0-9')"
     echo "$key watching ${secs:-0}s"; return 0
   fi
-  echo "$key starting"
+  # Before the launcher watches for the handoff, say which boot step it is on.
+  # On gce this stage lasts minutes, and "starting" alone hid all of them.
+  local sub="boot"
+  grep -q "ready (" "$log"                   && sub="checkout"
+  grep -q "Infrastructure ready" "$log"      && sub="hardening"
+  grep -q "^Shipping \|Setting up .* config" "$log" && sub="config"
+  grep -q "is running ===" "$log"            && sub="launching"
+  echo "$key starting ${sub}"
 }
 
 # pipeline_health_json

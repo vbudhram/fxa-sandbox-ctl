@@ -303,6 +303,7 @@
   <section class="wide" id="s-queue"></section>
   <section class="wide" id="s-inflight"></section>
   <section id="s-pool"></section>
+  <section id="s-instances"></section>
 </div>
 <footer id="footer"></footer>
 
@@ -485,13 +486,15 @@ function factory(t) {
              : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>`
              : t.pr ? `<span class="tag ok">CI green</span>`
                     : `<span class="tag info">PR opening</span>`)
+    : t.stage === "starting" ? `<span class="tag run info">starting · ${esc(t.detail || "boot")}</span>`
     : !t.vm_running ? `<span class="tag bad">no VM</span>`
     : live ? `<span class="tag run ok">working</span>`
            : `<span class="tag bad">agent dead</span>`;
+  const where = SNAP_BACKEND ? `<span class="tag">${esc(SNAP_BACKEND)}${SNAP_ZONE ? " · " + esc(SNAP_ZONE) : ""}</span> ` : "";
 
   return `<div class="fac">
     <div class="top">${jira(t.key)}${titled(t.summary)}
-      <span>${(t.attempts ?? 0) > 0 ? `<span class="tag warn">attempt ${t.attempts + 1} of 3</span> ` : ""}${
+      <span>${where}${(t.attempts ?? 0) > 0 ? `<span class="tag warn">attempt ${t.attempts + 1} of 3</span> ` : ""}${
         atPr && live ? `<span class="tag warn">VM not reaped</span> ` : ""}<span
         class="tag" id="el-${esc(t.key)}"></span> ${tag}</span></div>
 
@@ -521,7 +524,7 @@ function factory(t) {
 // Volatile numbers live OUTSIDE the put() string. Embedding a per-minute
 // elapsed count meant the card HTML changed every 12s, which re-created the
 // terminal node and yanked the user's scroll position back to the bottom.
-let SNAP_REPO = "";
+let SNAP_REPO = "", SNAP_BACKEND = "", SNAP_ZONE = "";
 function paintStats(inflight) {
   for (const t of inflight) {
     const el = document.getElementById("el-" + t.key);
@@ -540,7 +543,8 @@ function paintAgent(t) {
   const idle = a.idle_seconds ?? 0;
   const idleTxt = idle >= 3600 ? Math.round(idle / 3600) + "h" : idle >= 60 ? Math.round(idle / 60) + "m" : idle + "s";
   const bits = [`<span><b>${a.turns ?? 0}</b> turn${a.turns === 1 ? "" : "s"}</span>`];
-  if (a.cost_usd != null) bits.push(`<span><b>$${a.cost_usd.toFixed(2)}</b></span>`);
+  const cost = a.cost_usd ?? a.cost_so_far;
+  if (cost != null && cost > 0) bits.push(`<span><b>$${cost.toFixed(2)}</b>${a.cost_usd == null ? " so far" : ""}</span>`);
   if (live) bits.push(`<span class="${idle >= 300 ? "tag warn" : ""}">${idle >= 300 ? "idle " + idleTxt : "last event " + idleTxt + " ago"}</span>`);
   if (a.is_error === true) bits.push(`<span class="tag bad">run error</span>`);
   if (a.num_turns === 0) bits.push(`<span class="tag bad">goal rejected</span>`);
@@ -559,7 +563,7 @@ function render(state) {
     document.getElementById("repo").textContent = "";
     put("attn", state.error
       ? `<div class="alert bad"><b class="key">snapshot</b><span class="what">${esc(state.error)}</span></div>` : "");
-    ["s-review","s-queue","s-inflight","s-pool"].forEach(id => put(id, ""));
+    ["s-review","s-queue","s-inflight","s-pool","s-instances"].forEach(id => put(id, ""));
     put("footer", "");
     document.getElementById("verdict").hidden = true;
     return;
@@ -686,7 +690,7 @@ function render(state) {
   const anyLive = inflight.some(t => t.vm_running && t.agent_alive && t.stage !== "pr");
   const inf = document.getElementById("s-inflight");
   inf.className = (idle ? "idle" : "") + (anyLive ? " running" : "");
-  SNAP_REPO = s.repo;
+  SNAP_REPO = s.repo; SNAP_BACKEND = s.backend || ""; SNAP_ZONE = s.zone || "";
   put("s-inflight", head("in flight", inflightUnknown ? "?" : inflight.length,
       idle ? "pool is idle" : null, idle ? null : "agents working now") +
     (inflightUnknown ? `<div class="unknown">Jira fetch failed — unknown, not zero</div>`
@@ -717,6 +721,22 @@ function render(state) {
             : cls === "free" ? `<span class="tag ok">free</span>`
             : holder ? `<span class="tag warn">held · ${esc(holder)}</span>`
             : `<span class="tag">on ${esc(p.branch ?? "—")}</span>`}</div>`;
+      }).join("")));
+
+  // ── instances: every VM the backend knows about. One with no agent of its
+  // own is a leak, and on gce a leak bills until someone notices.
+  const inst = s.instances ?? [];
+  const known = new Set(pool.map(p => p.agent).filter(Boolean).map(a => "agent-" + a));
+  put("s-instances", head("instances", String(inst.length), "", (s.backend || "tart") + (s.zone ? " · " + s.zone : "")) +
+    (inst.length === 0 ? `<div class="empty">no VMs running</div>`
+     : inst.map(v => {
+        const leaked = !known.has(v.name) && !inflight.some(t => "agent-" + t.branch === v.name);
+        const age = v.age_seconds, old = age != null && v.max_seconds && age >= v.max_seconds;
+        const ageTxt = age == null ? "" : age >= 3600 ? (age / 3600).toFixed(1) + "h" : Math.round(age / 60) + "m";
+        return `<div class="slot ${leaked || old ? "held" : "busy"}">
+          <span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span>
+          <span>${ageTxt ? `<span class="${old ? "tag bad" : ""}">${ageTxt}${old ? " · over cap" : ""}</span> ` : ""}${
+            leaked ? `<span class="tag warn">no owner · ${esc(v.state)}</span>` : `<span class="tag info">${esc(v.state)}</span>`}</span></div>`;
       }).join("")));
 
   const t = s.telemetry;

@@ -1210,8 +1210,11 @@ agent_alive() {
   # a second 0 and break the integer test. Use `|| true` and take one line.
   runtime_load || return 1
   local pat; pat="$(runtime_alive_pattern)"
+  # Could not ask is not "no process". On gce the question rides an ssh
+  # through IAP, and one dropped tunnel read as a dead agent on 2026-09-14
+  # (FXA-9245, mid-test, reported exited-without-handoff). Return 2 for that.
   n="$(agent_ssh_exec "$name" "pgrep -cf '${pat}' 2>/dev/null || true" 2>/dev/null \
-       | tr -d '\r' | head -1)" || return 1
+       | tr -d '\r' | head -1)" || return 2
   n="${n:-0}"
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
   [ "$n" -gt 0 ]

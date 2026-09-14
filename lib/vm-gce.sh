@@ -71,6 +71,7 @@ vm_clone() {
     --boot-disk-type hyperdisk-balanced --boot-disk-size 50GB \
     --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
     --no-service-account --no-scopes \
+    --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
     --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main}" \
     --labels "fxa-agent=${name}" \
     > "${LOG_DIR}/${name}-vm.log" 2>&1 || { cat "${LOG_DIR}/${name}-vm.log" >&2; return 1; }
@@ -163,4 +164,15 @@ vm_delete() {
   rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log"
 }
 
-vm_list() { _gce_zone instances list --filter "name~^${VM_PREFIX}-" --format 'value(name,status)' 2>/dev/null || true; }
+# name, status, and age in seconds. The age is what the dashboard flags.
+# `instances list` takes --zones, not --zone, so it does not go through _gce_zone.
+# creationTimestamp carries a UTC offset with a colon; date -j needs it without.
+vm_list() {
+  local n st ts
+  _gce compute instances list --zones "$FXA_GCE_ZONE" --filter "name~^${VM_PREFIX}-" \
+       --format 'value(name,status,creationTimestamp)' 2>/dev/null \
+  | while IFS=$'\t' read -r n st ts; do
+      ts="$(printf '%s' "$ts" | sed -E 's/\.[0-9]+//; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
+      printf '%s\t%s\t%s\n' "$n" "$st" "$(( $(date +%s) - $(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$ts" +%s 2>/dev/null || echo 0) ))"
+    done || true
+}

@@ -118,24 +118,53 @@ _snapshot_inflight() {
               agent: ((.[13] // "null") | fromjson? // null) })'
 }
 
+# _snapshot_instances
+#   Every VM the backend knows about, whether or not a ticket owns it. On gce a
+#   leaked instance keeps billing, and nothing else on the page would show it.
+_snapshot_instances() {
+  local line name state age
+  vm_list 2>/dev/null | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "${FXA_VM_BACKEND:-tart}" in
+      gce)  IFS=$'\t' read -r name state age <<< "$line" ;;
+      *)    name="$(printf '%s' "$line" | awk '{print $2}')"; state="$(printf '%s' "$line" | awk '{print $NF}')"; age="" ;;
+    esac
+    printf '%s\t%s\t%s\n' "$name" "$state" "$age"
+  done | jq -R -s --argjson max "${FXA_GCE_MAX_RUN_SECONDS:-5400}" 'split("\n") | map(select(length > 0) | split("\t"))
+      | map({ name: .[0], state: (.[1] // "" | ascii_downcase),
+              age_seconds: (if (.[2] // "") == "" then null else (.[2] | tonumber) end),
+              max_seconds: $max })'
+}
+
 # _snapshot_agent_json <jsonl> <now>
 #   What the agent is doing, from its own transcript. `claude -p` streams one
 #   JSON event per line; `tee` also catches stray stderr lines, so parse with
 #   fromjson? and drop what is not JSON. idle_seconds is the strongest freshness
 #   signal there is: the file's mtime moves on every event.
 #   cost_usd and is_error exist only once the run ended (the result event).
+#   cost_so_far prices the per-message usage with the same table `record` uses,
+#   so a run burning fast is visible while it runs, not only at the end.
 _snapshot_agent_json() {
-  local f="$1" now="$2" mtime
+  local f="$1" now="$2" mtime model rates
   [ -s "$f" ] || { echo null; return 0; }
   mtime="$(stat -f %m "$f" 2>/dev/null || echo "$now")"
-  jq -R -s -c --argjson idle "$(( now - mtime ))" '
+  model="$(jq -R -r 'fromjson? | select(.type=="assistant") | .message.model // empty' "$f" 2>/dev/null | head -1)"
+  rates="$(_telemetry_price_for "$model")"
+  [ -n "$rates" ] || rates="0 0 0 0"
+  jq -R -s -c --argjson idle "$(( now - mtime ))" --arg model "$model" \
+     --argjson r "$(printf '%s' "$rates" | awk '{printf "[%s,%s,%s,%s]",$1,$2,$3,$4}')" '
     split("\n") | map(fromjson?) |
     (map(select(.type=="assistant"))) as $a |
     ($a | map(.message.content[]? | select(.type=="text") | .text) | last // "") as $text |
     ($a | map(.message.content[]? | select(.type=="tool_use")
               | .name + " " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)) | last // "") as $tool |
     (map(select(.type=="result")) | last) as $r |
-    { turns: ($a | length), idle_seconds: $idle,
+    ($a | map(.message.usage // {}) |
+      { in: (map(.input_tokens // 0) | add // 0), out: (map(.output_tokens // 0) | add // 0),
+        cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
+        cache_write: (map(.cache_creation_input_tokens // 0) | add // 0) }) as $u |
+    { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
+      cost_so_far: ((($u.in * $r[0] + $u.out * $r[1] + $u.cache_write * $r[2] + $u.cache_read * $r[3]) / 1000000 * 100 | round) / 100),
       last_text: ($text | gsub("\\s+"; " ") | .[0:200]),
       last_tool: ($tool | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),
@@ -173,8 +202,9 @@ snapshot_json() {
   inflight_keys="$(printf '%s' "$inflight_items" | jq -r '.[]?.key // empty' 2>/dev/null || echo '')"
   done_keys="$(printf '%s' "$done_items" | jq -r '.[]?.key // empty' 2>/dev/null || echo '')"
 
-  local pool skipped inflight review telem freeslots
+  local pool skipped inflight review telem freeslots instances
   pool="$(_snapshot_pool)"
+  instances="$(_snapshot_instances)"
   skipped="$(_snapshot_skipped)"
   inflight="$(_snapshot_inflight "$inflight_keys")"
   review="$(gh_pr_states_json "$done_keys")"
@@ -207,9 +237,14 @@ snapshot_json() {
     --argjson inflight_prs "$inflight_prs" \
     --argjson review "$review" \
     --argjson telemetry "$telem" \
+    --argjson instances "$instances" \
+    --arg backend "${FXA_VM_BACKEND:-tart}" \
+    --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     '($skipped | map(.key)) as $skipkeys
      | ($items // []) as $q
      | { generated_at: $at, pipeline: $pipeline, repo: $repo, took_seconds: $secs,
+         backend: $backend, zone: (if $zone == "" then null else $zone end),
+         instances: $instances,
          queue: { total: (if $items == null then null else ($q | length) end),
                   fetch_failed: ($items == null),
                   ready:   [$q[] | select(.key as $k | ($skipkeys | index($k)) == null)],
