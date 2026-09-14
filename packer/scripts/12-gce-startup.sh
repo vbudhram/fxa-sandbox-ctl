@@ -26,7 +26,7 @@ if [ -n "$branch" ] && g rev-parse --verify --quiet "origin/$branch" >/dev/null;
 else
   g checkout --quiet -B "${branch:-$base}" "origin/$base"
 fi
-if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat .image-lock-hash)" ]; then
+if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-hash)" ]; then
   sudo -u agent bash -c 'source /etc/agent-env.sh && yarn install --immutable' || true
 fi
 ln -sfn /home/agent/fxa /workspace

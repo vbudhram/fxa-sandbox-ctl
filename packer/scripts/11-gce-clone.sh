@@ -15,5 +15,6 @@ hash -r; echo "==> Node pinned: $(node --version) (.nvmrc $(cat .nvmrc))"
 sudo -u agent bash -c 'source /etc/agent-env.sh && yarn install --immutable' || {
   echo '==> yarn install failed; build logs:'; cat /tmp/xfs-*/build.log 2>/dev/null | tail -60; exit 1
 }
-sudo -u agent bash -c 'sha256sum yarn.lock | cut -d" " -f1 > .image-lock-hash'
+# Outside the tree: anything inside would be pulled back and staged into the PR.
+sha256sum yarn.lock | cut -d" " -f1 > /home/agent/.image-lock-hash
 echo "==> Clone baked ($(du -sh /home/agent/fxa | cut -f1))"

@@ -190,12 +190,14 @@ _setup_egress_firewall() {
     # Allow established/related connections
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-    # Allow DNS to gateway (VM needs this for name resolution)
+    # Allow DNS to the gateway and to the configured resolvers. On GCE the
+    # resolver is the metadata server, which the link-local drop below would
+    # otherwise silence; port 53 there is DNS only, the metadata API is port 80.
     GATEWAY=$(ip route | awk "/default/ {print \$3}")
-    if [ -n "$GATEWAY" ]; then
-      iptables -A OUTPUT -d "$GATEWAY" -p udp --dport 53 -j ACCEPT
-      iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 53 -j ACCEPT
-    fi
+    for ns in $GATEWAY $(awk "/^nameserver/ {print \$2}" /run/systemd/resolve/resolv.conf 2>/dev/null); do
+      iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+      iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+    done
 
     # Block all traffic to private/link-local networks (prevents host probing)
     iptables -A OUTPUT -d 10.0.0.0/8 -j DROP

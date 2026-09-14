@@ -91,9 +91,13 @@ GATEWAY=$(ip route | awk '/default/ {print $3}')
 if [ -n "$GATEWAY" ]; then
   iptables -A OUTPUT -o lo -j ACCEPT
   iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-  # Allow DNS to gateway
-  iptables -A OUTPUT -d "$GATEWAY" -p udp --dport 53 -j ACCEPT
-  iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport 53 -j ACCEPT
+  # Allow DNS to the gateway and to the configured resolvers. On GCE the
+  # resolver is the metadata server, which the link-local drop below would
+  # otherwise silence; port 53 there is DNS only, the metadata API is port 80.
+  for ns in $GATEWAY $(awk '/^nameserver/ {print $2}' /run/systemd/resolve/resolv.conf 2>/dev/null); do
+    iptables -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+    iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+  done
   # Block private/link-local ranges
   iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
   iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
