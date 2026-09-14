@@ -94,9 +94,11 @@ _worktree_busy_workspaces() {
 # Print the agent NAME whose VM is running on a given workspace path, if any.
 _worktree_agent_for_workspace() {
   local target="$1"
-  _worktree_each_active_agent | awk -v t="$target" '{
+  # No early exit: it closes the pipe under the producer's printf, which then
+  # reports "Broken pipe" on stderr for every caller.
+  _worktree_each_active_agent | awk -v t="$target" '!found {
     name=$1; $1=""; sub(/^ /,"");
-    if ($0 == t) { print name; exit }
+    if ($0 == t) { print name; found=1 }
   }'
 }
 
