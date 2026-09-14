@@ -245,7 +245,8 @@ snapshot_agents_json() {
   done
   wait
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "runners: $(( $(date +%s) - started ))s" >&2
-  local rows; rows="$(cat "${tmp}"/*.row 2>/dev/null)"; rm -rf "$tmp"
+  # No row files when no runner is up; cat then fails and set -e would end the feed.
+  local rows; rows="$(cat "${tmp}"/*.row 2>/dev/null || true)"; rm -rf "$tmp"
   local runners; runners="$(printf '%s' "$rows" | jq -R -s 'split("\n") | map(select(length > 0) | split("\t"))
     | map({ name: .[0], key: .[1], branch: .[2], slot: .[3], agent_alive: (.[4] == "true"),
             stage: .[5], detail: (.[6] // ""),
