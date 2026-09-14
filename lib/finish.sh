@@ -228,7 +228,22 @@ _finish_release_runner() {
   agent_stop "$name" >&2 || echo "WARN: could not delete runner '${name}'; it is still billing. Run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
 }
 
+# _finish_claim <worktree> / _finish_release <worktree>
+#   While finish stages and commits, nothing else may touch the slot's git
+#   state. On 2026-09-14 the dashboard feed ran `git status` on FXA-2598's slot
+#   mid-commit and lint-staged failed with "could not write index". The marker
+#   tells every reader (the pull-through, the snapshot rows) to skip the slot.
+_finish_claim()   { : > "${LOG_DIR}/$(basename "$1").finishing"; }
+_finish_release() { rm -f "${LOG_DIR}/$(basename "$1").finishing"; }
+finish_is_claimed() { [ -f "${LOG_DIR}/$(basename "$1").finishing" ]; }
+
 finish_push_and_pr() {
+  _finish_claim "${1:-$(worktree_shared_path 2>/dev/null)}"
+  trap '_finish_release "${1:-$(worktree_shared_path 2>/dev/null)}"' RETURN
+  _finish_push_and_pr "$@"
+}
+
+_finish_push_and_pr() {
   if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not installed on the host. Install with: brew install gh" >&2
     return 1

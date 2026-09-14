@@ -147,8 +147,16 @@ vm_pull_tree() {
 # ssh resolves the instance name through the ProxyCommand.
 vm_ip() { vm_name "$1"; }
 
+# One instance list answers every vm_is_running for 20 s. A snapshot asks this
+# a dozen times, and each describe through gcloud costs about two seconds.
+_GCE_RUNNING=""; _GCE_RUNNING_AT=0
 vm_is_running() {
-  [ "$(_gce_zone instances describe "$(vm_name "$1")" --format 'value(status)' 2>/dev/null)" = "RUNNING" ]
+  local now; now="$(date +%s)"
+  if [ $(( now - _GCE_RUNNING_AT )) -ge 20 ]; then
+    _GCE_RUNNING="$(_gce compute instances list --zones "$FXA_GCE_ZONE" --filter "name~^${VM_PREFIX}- AND status=RUNNING" --format 'value(name)' 2>/dev/null | tr '\n' ' ')"
+    _GCE_RUNNING_AT="$now"
+  fi
+  case " $_GCE_RUNNING " in *" $(vm_name "$1") "*) return 0 ;; *) return 1 ;; esac
 }
 
 vm_stop() {

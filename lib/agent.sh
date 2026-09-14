@@ -147,6 +147,10 @@ _gce_pin_runner_tree() {
     echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
     return 1
   fi
+  # The dashboard compares this against the slot's HEAD for the rest of the run.
+  # agent_run rewrites .meta after launch, so it appends this again from here.
+  _PINNED_BASE="$sha"
+  printf 'BASE=%s\n' "$sha" >> "${LOG_DIR}/${name}.meta"
 }
 
 # ── Security: Disable SSH password auth ───────────────────────
@@ -715,6 +719,7 @@ MEMORY=${memory}
 IP=${ip}
 STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 META
+  [ -n "${_PINNED_BASE:-}" ] && printf 'BASE=%s\n' "$_PINNED_BASE" >> "${LOG_DIR}/${name}.meta"
 
   echo ""
   echo "=== Agent '${name}' is running ==="
@@ -1240,7 +1245,23 @@ agent_ssh_exec() {
 #   A dead agent still reports "running" because `exec bash` replaces claude
 #   inside the same session, so a run can read healthy for hours after it died.
 #   Confirm a real process before trusting any launch.
+# Memoised for 20 s per name: on gce the answer rides an ssh through IAP, and a
+# snapshot asks for the same runner several times. A string cache, not an
+# associative array: macOS ships bash 3.2.
+_ALIVE_MEMO=""
 agent_alive() {
+  local name="${1:-}" now hit
+  now="$(date +%s)"
+  hit="$(printf '%s\n' "$_ALIVE_MEMO" | grep -m1 "^${name} " || true)"
+  if [ -n "$hit" ] && [ $(( now - $(printf '%s' "$hit" | cut -d' ' -f2) )) -lt 20 ]; then
+    return "$(printf '%s' "$hit" | cut -d' ' -f3)"
+  fi
+  _agent_alive_now "$name"; local rc=$?
+  _ALIVE_MEMO="$(printf '%s\n' "$_ALIVE_MEMO" | grep -v "^${name} " || true)
+${name} ${now} ${rc}"
+  return "$rc"
+}
+_agent_alive_now() {
   local name="${1:-}"
   local n
   # pgrep -c prints 0 AND exits non-zero on no match, so `|| echo 0` would emit

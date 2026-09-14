@@ -108,11 +108,21 @@ _worktree_agent_for_workspace() {
 #   the tree back. Tart reads the mount and this is a no-op.
 # ponytail: one gcloud describe plus one rsync per status read; cache the
 # running check if snapshot gets slow.
+_PULL_MEMO=""
 _worktree_pull_if_remote() {
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
+  # finish owns the slot while it stages and commits; a pull now would race it.
+  [ -f "${LOG_DIR}/$(basename "$1").finishing" ] && return 0
+  # Once per 20 s per slot: a snapshot reads the same slot several times.
+  # A string cache, not an associative array: macOS ships bash 3.2.
+  local now hit; now="$(date +%s)"
+  hit="$(printf '%s\n' "$_PULL_MEMO" | grep -m1 "^$1 " || true)"
+  [ -n "$hit" ] && [ $(( now - $(printf '%s' "$hit" | cut -d' ' -f2) )) -lt 20 ] && return 0
   local name; name="$(_worktree_agent_for_workspace "$1")"
   [ -n "$name" ] || return 0
   vm_pull_tree "$name" /workspace "$1" 2>/dev/null || true
+  _PULL_MEMO="$(printf '%s\n' "$_PULL_MEMO" | grep -v "^$1 " || true)
+$1 ${now}"
 }
 
 # worktree_filtered_status <path>

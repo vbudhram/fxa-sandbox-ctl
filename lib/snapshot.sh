@@ -97,7 +97,7 @@ _snapshot_inflight() {
       files=0; commits=0; stat_line=""; cfiles=0; cstat=""; handoff=false; agent=null
     fi
     attempts="$(cat "${PIPE_STATE_DIR}/${key}.attempts" 2>/dev/null | head -1 | tr -dc '0-9')"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$key" "$branch" "$vm" "$alive" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$key" "$branch" "$vm" "$alive" \
       "$( [ -n "$started" ] && echo $(( now - started )) || echo '' )" "$stage" \
       "${files:-0}" "${commits:-0}" "$stat_line" \
       "${cfiles:-0}" "$cstat" "$handoff" "${attempts:-0}" "${agent:-null}"
@@ -148,6 +148,8 @@ _snapshot_agent_json() {
   local f="$1" now="$2" mtime model rates
   [ -s "$f" ] || { echo null; return 0; }
   mtime="$(stat -f %m "$f" 2>/dev/null || echo "$now")"
+  # rsync -a keeps the runner's mtime and its clock can run ahead of ours.
+  [ "$mtime" -gt "$now" ] && mtime="$now"
   # The first assistant event ("Goal set") reports model <synthetic>; skip it.
   model="$(jq -R -r 'fromjson? | select(.type=="assistant") | .message.model // empty | select(startswith("<") | not)' "$f" 2>/dev/null | head -1)"
   rates="$(_telemetry_price_for "$model")"
@@ -182,11 +184,117 @@ _snapshot_telemetry() {
            last_recorded: ([.[].recorded_at] | max) }' "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }
 
+
+
+# _snapshot_runner_row <meta> <now>
+#   One tab-separated row for one launched runner, or nothing if its VM is gone.
+_snapshot_runner_row() {
+  local meta="$1" now="$2"
+  local NAME="" WORKSPACE="" STARTED="" BASE=""
+  # shellcheck source=/dev/null
+  source "$meta" 2>/dev/null
+  [ -n "$NAME" ] && [ -n "$WORKSPACE" ] || return 0
+  vm_is_running "$NAME" 2>/dev/null || return 0
+  local key branch slot alive stage line files stat_line handoff agent base_ok head elapsed
+  branch="$(git -C "$WORKSPACE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+  key="$(worktree_key_for "$branch" 2>/dev/null || echo '')"
+  # No branch means the slot is gone or unreadable; there is nothing to show.
+  [ -n "$branch" ] && [ -n "$key" ] || return 0
+  slot="$(basename "$WORKSPACE")"
+  # finish is committing on this slot: no git reads either, they take the index lock.
+  if [ -f "${LOG_DIR}/${slot}.finishing" ]; then
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$NAME" "$key" "$branch" "$slot" "true" "squashing" "host is committing" "" "0" "" "true" "null" "null"
+    return 0
+  fi
+  _worktree_pull_if_remote "$WORKSPACE"
+  if agent_alive "$NAME" 2>/dev/null; then alive=true; else alive=false; fi
+  line="$(pipeline_progress "$key" 2>/dev/null || echo "$key unknown")"
+  stage="$(printf '%s' "$line" | cut -d' ' -f2)"
+  files="$(git -C "$WORKSPACE" status --porcelain 2>/dev/null | grep -vcE '^\?\? (\.fxa-|ai/?$|\.claude(/|$)|packages/fxa-auth-server/config/newKey\.json)' || true)"
+  files="$(printf '%s' "$files" | head -1 | tr -dc '0-9')"
+  stat_line="$(git -C "$WORKSPACE" diff --shortstat 2>/dev/null | tr -d '\n')"
+  [ -f "${WORKSPACE}/.fxa-auto-done.json" ] && handoff=true || handoff=false
+  agent="$(_snapshot_agent_json "${WORKSPACE}/.fxa-auto-claude.jsonl" "$now")"
+  head="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
+  if [ -z "$BASE" ]; then base_ok=null; elif [ "$BASE" = "$head" ]; then base_ok=true; else base_ok=false; fi
+  # STARTED is UTC (the Z); parse it as such or the elapsed time is off by the zone.
+  elapsed="$( [ -n "$STARTED" ] && echo $(( now - $(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%SZ' "$STARTED" +%s 2>/dev/null || echo "$now") )) || echo '' )"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$NAME" "$key" "$branch" "$slot" "$alive" "$stage" "$(printf '%s' "$line" | cut -d' ' -f3-)" \
+    "$elapsed" "${files:-0}" "$stat_line" "$handoff" "$base_ok" "${agent:-null}"
+}
+
+# snapshot_agents_json
+#   The fast feed: every runner the host launched, what it is doing, and what
+#   the pool and the instances look like. No Jira, no GitHub. It costs one
+#   rsync and one ssh per runner plus one instance list, so it can run every
+#   30 seconds while the full snapshot, which waits on Jira and GitHub for a
+#   minute or more, runs every couple of minutes. The page merges the two by key.
+snapshot_agents_json() {
+  local started now; started="$(date +%s)"; now="$started"
+  # Fill the instance-state memo here, in the parent shell, so every $(...)
+  # below inherits it instead of paying its own instance list.
+  vm_is_running __prime >/dev/null 2>&1 || true
+  local meta tmp; tmp="$(mktemp -d)"
+  # One subshell per runner: each pays an rsync and an ssh through IAP, about
+  # six seconds apiece, and the feed should cost one runner's worth, not the sum.
+  for meta in "${LOG_DIR}"/*.meta; do
+    [ -f "$meta" ] || continue
+    ( _snapshot_runner_row "$meta" "$now" > "${tmp}/$(basename "$meta").row" 2>/dev/null ) &
+  done
+  wait
+  [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "runners: $(( $(date +%s) - started ))s" >&2
+  local rows; rows="$(cat "${tmp}"/*.row 2>/dev/null)"; rm -rf "$tmp"
+  local runners; runners="$(printf '%s' "$rows" | jq -R -s 'split("\n") | map(select(length > 0) | split("\t"))
+    | map({ name: .[0], key: .[1], branch: .[2], slot: .[3], agent_alive: (.[4] == "true"),
+            stage: .[5], detail: (.[6] // ""),
+            elapsed_seconds: (if (.[7] // "") == "" then null else (.[7] | tonumber) end),
+            files_changed: ((.[8] // "0") | tonumber? // 0), diffstat: (.[9] // ""),
+            handoff: (.[10] == "true"),
+            base_ok: (if .[11] == "true" then true elif .[11] == "false" then false else null end),
+            agent: ((.[12] // "null") | fromjson? // null) })')"
+  local instances pool free cap today
+  instances="$(_snapshot_instances)"
+  [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "instances: $(( $(date +%s) - started ))s" >&2
+  pool="$(_snapshot_pool)"
+  [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "pool: $(( $(date +%s) - started ))s" >&2
+  free="$(cmd_freeslots 2>/dev/null | jq -R -s 'split("\n") | map(select(length > 0))' || echo '[]')"
+  cap="$(cmd_launchcap 2>/dev/null || echo 0)"
+  [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
+  today="$(_snapshot_today)"
+  jq -n --arg at "$(date -u +%FT%TZ)" --argjson secs "$(( $(date +%s) - started ))" \
+    --arg backend "${FXA_VM_BACKEND:-tart}" \
+    --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
+    --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
+    --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
+    --argjson free "$free" --argjson today "$today" \
+    '{ generated_at: $at, took_seconds: $secs, backend: $backend,
+       zone: (if $zone == "" then null else $zone end),
+       launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
+       runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
+       runners: $runners, today: $today }'
+}
+
+# _snapshot_today
+#   Runs recorded today (UTC), from the run log. The footer keeps all time.
+_snapshot_today() {
+  [ -f "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
+  jq -s --arg d "$(date -u +%F)" '
+    map(select((.recorded_at // "") | startswith($d))) |
+    { runs: length, tickets: ([.[].issue] | unique | length),
+      cost_usd: ([.[].cost_usd // 0] | add // 0 | .*100 | round / 100),
+      prs: ([.[].pr] | map(select(. != null)) | unique | length),
+      median_minutes: (if length == 0 then null else (([.[].wall_seconds // 0] | sort | .[length/2|floor]) / 60 | round) end) }' \
+    "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
+}
+
 # snapshot_json
 #   One document describing every stage. Any section that fails to fetch is
 #   `null` rather than empty, so the page can say "unknown" instead of drawing
 #   a confident zero.
 snapshot_json() {
+  vm_is_running __prime >/dev/null 2>&1 || true
   pipeline_require || return 1
   local started; started="$(date +%s)"
 

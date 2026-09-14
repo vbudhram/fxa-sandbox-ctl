@@ -14,6 +14,7 @@
     --ink:#1b1a18; --dim:#63605a; --faint:#74716a;
     --ok:#24693f; --warn:#7d5709; --bad:#a8331f; --info:#2f4bc4; --purple:#5d3fb0;
     --okbg:#e8f3ec; --warnbg:#faf0dc; --badbg:#fbeae7; --infobg:#e9edfb;
+    --amber:#c9791a; --lit:#a35c0e;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
@@ -23,6 +24,7 @@
       --ink:#e9e7e4; --dim:#a5a09a; --faint:#8d8880;
       --ok:#5cb87f; --warn:#dcaa4a; --bad:#ec7a63; --info:#8ba3f5; --purple:#ad96e8;
       --okbg:#16281d; --warnbg:#2a2113; --badbg:#2c1a17; --infobg:#1a1f33;
+      --amber:#ffb545; --lit:#ffd27a;
     }
   }
   * { box-sizing:border-box; }
@@ -31,148 +33,87 @@
          font:var(--t-body)/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
   a { color:inherit; text-decoration:none; }
   a:hover { text-decoration:underline; text-underline-offset:2px; }
-  [hidden] { display:none !important; }   /* an author display: rule otherwise beats the UA sheet */
+  [hidden] { display:none !important; }
 
-  /* Indeterminate: we do not know how long a snapshot takes, so do not draw a percentage. */
   #bar { position:fixed; top:0; left:0; height:2px; width:22%; background:var(--info);
          opacity:0; z-index:9; translate:-100% 0; }
   #bar.on { opacity:1; animation:sweep 1.15s cubic-bezier(.5,0,.5,1) infinite; }
   @keyframes sweep { from { translate:-100% 0; } to { translate:560% 0; } }
 
-  header { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; margin-bottom:var(--s3); }
-  h1 { font-size:var(--t-body); font-weight:650; margin:0; letter-spacing:-.01em; color:var(--dim); }
-  h1 span { color:var(--faint); font-weight:400; }
-  .spacer { flex:1; }
-  .status { display:flex; align-items:center; gap:var(--s2); color:var(--dim); font-size:var(--t-sub); }
+  /* ── status bar: one row, always visible ── */
+  #status { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
+            padding:var(--s2) var(--s3); border-radius:var(--r-lg); margin-bottom:var(--s3);
+            border:1px solid var(--line); background:var(--panel); font-size:var(--t-sub); color:var(--dim); }
+  #status h1 { font-size:var(--t-body); font-weight:650; margin:0; letter-spacing:-.01em; color:var(--ink); }
+  #status h1 span { color:var(--faint); font-weight:400; }
+  #cells { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; }
+  #status .cell { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
+  #status .cell b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
+  #status .cell.bad b { color:var(--bad); }
+  #status .cell.warn b { color:var(--warn); }
+  #status .cell.ok b { color:var(--ok); }
+  #status .sep { width:1px; height:14px; background:var(--line2); opacity:.6; }
+  #status .spacer { flex:1; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
-  /* Health rests. Degradation moves. The pulse must never say "alive" while it is not. */
   .dot.warn { background:var(--warn); animation:beat-warn 3s ease-in-out infinite; }
   .dot.dead { background:var(--bad);  animation:beat-bad 1.4s ease-in-out infinite; }
-  @keyframes beat-warn { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 60%,transparent)}
-                         70%    {box-shadow:0 0 0 7px transparent} }
-  @keyframes beat-bad  { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--bad) 75%,transparent)}
-                         70%    {box-shadow:0 0 0 10px transparent} }
+  @keyframes beat-warn { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 60%,transparent)} 70%{box-shadow:0 0 0 7px transparent} }
+  @keyframes beat-bad  { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--bad) 75%,transparent)}  70%{box-shadow:0 0 0 10px transparent} }
   button { font:inherit; font-size:var(--t-sub); color:var(--dim); background:var(--panel);
-           border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s1) var(--s3);
-           cursor:pointer; transition:color .15s, border-color .15s; }
+           border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s1) var(--s3); cursor:pointer; }
   button:hover:not(:disabled) { color:var(--ink); border-color:var(--line2); }
-  button:disabled { opacity:.45; cursor:default; }
 
-  /* ── verdict: one line, not a slab ── */
-  #verdict { display:flex; align-items:baseline; gap:var(--s3); flex-wrap:wrap;
-             padding:var(--s2) var(--s3); border-radius:var(--r-lg); margin-bottom:var(--s3);
-             border:1px solid; font-size:var(--t-sub); }
-  #verdict .lead { font-weight:650; font-size:var(--t-body); }
-  #verdict .fix { font-family:var(--mono); font-size:var(--t-label); padding:1px var(--s2);
-                  border-radius:var(--r-sm); background:var(--panel); border:1px solid currentColor; }
-  #verdict .meta { margin-left:auto; display:flex; gap:var(--s4); color:var(--dim); }
-  .v-ok   { color:var(--ok);   background:var(--okbg);   border-color:color-mix(in srgb,var(--ok) 25%,transparent); }
-  .v-warn { color:var(--warn); background:var(--warnbg); border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
-  .v-bad  { color:var(--bad);  background:var(--badbg);  border-color:color-mix(in srgb,var(--bad) 30%,transparent); }
-  #verdict .what { color:var(--ink); font-weight:400; }
-
+  /* ── alerts ── */
   #attn { display:flex; flex-direction:column; gap:var(--s2); margin-bottom:var(--s3); }
   #attn:empty { display:none; }
   .alert { display:flex; align-items:baseline; gap:var(--s3); padding:var(--s2) var(--s3);
            border-radius:var(--r-lg); border:1px solid; font-size:var(--t-sub); }
   .alert.bad  { color:var(--bad);  background:var(--badbg);  border-color:color-mix(in srgb,var(--bad) 25%,transparent); }
   .alert.warn { color:var(--warn); background:var(--warnbg); border-color:color-mix(in srgb,var(--warn) 25%,transparent); }
-  .alert .key { font-size:var(--t-sub); }
-  .alert .what { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .alert .what { color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .alert .fix { margin-left:auto; font-family:var(--mono); font-size:var(--t-label); padding:1px var(--s2);
+                border-radius:var(--r-sm); background:var(--panel); border:1px solid currentColor; white-space:nowrap; }
 
+  /* ── panels ── */
   .grid { display:grid; gap:var(--s3); grid-template-columns:1fr; align-items:start; }
   @media (min-width:900px) { .grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
-  section { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel);
-            padding:var(--s4); min-width:0; }
+  section { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:var(--s4); min-width:0; }
   section.wide { grid-column:1/-1; }
-  section.idle { padding:var(--s3) var(--s4); }
   h2 { font-size:var(--t-label); font-weight:650; margin:0 0 var(--s3); letter-spacing:.07em;
        text-transform:uppercase; color:var(--dim); display:flex; align-items:baseline; gap:var(--s2); }
-  h2 .n { font-size:var(--t-body); font-weight:650; color:var(--ink); letter-spacing:0;
-          font-variant-numeric:tabular-nums; border-radius:3px; padding:0 2px; }
+  h2 .n { font-size:var(--t-body); font-weight:650; color:var(--ink); letter-spacing:0; font-variant-numeric:tabular-nums; }
   h2 .note { margin-left:auto; font-weight:400; letter-spacing:0; text-transform:none; color:var(--faint); }
   h2 .sub  { font-weight:400; letter-spacing:0; text-transform:none; color:var(--faint); }
-  section.idle h2 { margin:0; }
-
-  /* The one number this page exists to answer. */
-  .headline { display:flex; align-items:baseline; gap:var(--s3); margin:0 0 var(--s3); }
-  .headline .big { font-size:var(--t-huge); font-weight:600; line-height:1; letter-spacing:-.025em;
-                   font-variant-numeric:tabular-nums; border-radius:var(--r-sm); padding:0 var(--s1); }
-  .headline .cap { color:var(--ink); font-size:var(--t-body); }
-  .headline .rest { color:var(--faint); font-size:var(--t-sub); margin-left:auto; }
-
-  .bump { animation:wash 1.2s ease-out; }
-  @keyframes wash { 0% { background:color-mix(in srgb,var(--info) 30%,transparent); }
-                    100% { background:transparent; } }
   .empty { color:var(--faint); font-size:var(--t-sub); }
   .unknown { color:var(--warn); font-size:var(--t-sub); font-weight:600; }
+  .headline { display:flex; align-items:baseline; gap:var(--s3); margin:0 0 var(--s3); }
+  .headline .big { font-size:var(--t-huge); font-weight:600; line-height:1; letter-spacing:-.025em; font-variant-numeric:tabular-nums; }
+  .headline .cap { color:var(--ink); }
+  .headline .rest { color:var(--faint); font-size:var(--t-sub); margin-left:auto; }
 
   .item { padding:var(--s2) 0; }
   .item + .item { border-top:1px solid color-mix(in srgb,var(--line) 60%,var(--panel)); }
   .item:last-child { padding-bottom:0; }
-  .line1 { display:grid; grid-template-columns:82px minmax(0,1fr) max-content;
-           align-items:baseline; gap:var(--s3); }
-  /* A fixed status column so tags share one left edge and the eye can scan down. */
-  section.wide .line1 { grid-template-columns:82px minmax(0,1fr) 152px; }
-  section.wide .line1 > :last-child { justify-self:start; }
-  .line2 { color:var(--dim); font-size:var(--t-sub); margin-top:2px;
-           display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
+  .line1 { display:grid; grid-template-columns:82px minmax(0,1fr) 152px; align-items:baseline; gap:var(--s3); }
+  .line1 > :last-child { justify-self:start; }
+  .line2 { color:var(--dim); font-size:var(--t-sub); margin-top:2px; display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
   .key { font-family:var(--mono); font-size:var(--t-sub); font-weight:600; color:var(--info); white-space:nowrap; }
   .title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-  section.wide .title { white-space:normal; display:-webkit-box; -webkit-line-clamp:2;
-                        -webkit-box-orient:vertical; max-width:70ch; }
+  .mono { font-family:var(--mono); font-size:var(--t-label); }
 
   .tag { font-size:var(--t-label); font-weight:600; padding:2px var(--s2); border-radius:999px;
-         border:1px solid transparent; color:var(--dim); background:var(--sunk);
-         white-space:nowrap; font-variant-numeric:tabular-nums; }
-  .tag.ok     { color:var(--ok);     background:var(--okbg); }
-  .tag.bad    { color:var(--bad);    background:var(--badbg); }
-  .tag.warn   { color:var(--warn);   background:var(--warnbg); }
-  .tag.info   { color:var(--info);   background:var(--infobg); }
+         border:1px solid transparent; color:var(--dim); background:var(--sunk); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .tag.ok { color:var(--ok); background:var(--okbg); } .tag.bad { color:var(--bad); background:var(--badbg); }
+  .tag.warn { color:var(--warn); background:var(--warnbg); } .tag.info { color:var(--info); background:var(--infobg); }
   .tag.merged { color:var(--purple); background:color-mix(in srgb,var(--purple) 12%,var(--panel)); }
-  .tag.run::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%;
-                     background:currentColor; margin-right:5px; vertical-align:1px;
-                     animation:blink 3s ease-in-out infinite; }
+  .tag.run::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
+                     margin-right:5px; vertical-align:1px; animation:blink 3s ease-in-out infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.55} }
-  .age { font-variant-numeric:tabular-nums; display:inline-block; min-width:6ch; }
-  .age.old { color:var(--bad); font-weight:650; }
+  .age { font-variant-numeric:tabular-nums; } .age.old { color:var(--bad); font-weight:650; }
 
-  .steps { display:flex; align-items:center; gap:5px; margin-top:var(--s2); }
-  .step { display:flex; align-items:center; gap:5px; }
-  .step .bead { width:7px; height:7px; border-radius:50%; background:var(--line2); flex:none;
-                transition:background .3s ease, box-shadow .3s ease; }
-  .step.done .bead { background:var(--ok); }
-  .step.now  .bead { background:var(--info); animation:beat2 3s ease-in-out infinite; }
-  @keyframes beat2 { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--info) 45%,transparent)}
-                     70%    {box-shadow:0 0 0 5px transparent} }
-  .step .lbl { font-size:var(--t-label); color:var(--faint); }
-  .step.now .lbl  { color:var(--info); font-weight:600; }
-  .step.done .lbl { color:var(--dim); }
-  .step .rail { width:18px; height:1.5px; background:var(--line2); border-radius:1px;
-                transition:background .3s ease; }
-  .step.done .rail { background:var(--ok); }
-
-  .slot { display:grid; grid-template-columns:96px minmax(60px,1fr) max-content;
-          align-items:center; gap:var(--s3); padding:var(--s2) 0; }
-  .slot + .slot { border-top:1px solid color-mix(in srgb,var(--line) 60%,var(--panel)); }
-  .slot .nm { font-family:var(--mono); font-size:var(--t-sub); }
-  .slot .meter { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; }
-  .slot .meter i { display:block; height:100%; width:0; border-radius:3px;
-                   transition:width .5s cubic-bezier(.2,.8,.3,1), background-color .3s; }
-  /* A free slot must not look like a stalled progress bar. */
-  .slot.free .meter { background:transparent; border:1px dashed var(--line2); }
-  .slot.busy .meter i { width:100%;
-    background:linear-gradient(90deg,var(--info),color-mix(in srgb,var(--info) 45%,var(--panel)),var(--info));
-    background-size:200% 100%; animation:slide 4.5s linear infinite; }
-  .slot.busy.stalled .meter i { animation:none; background:var(--warn); opacity:.6; }
-  .slot.held .meter i { width:100%; background:var(--warn); opacity:.45; }
-  @keyframes slide { to { background-position:200% 0; } }
-
-  /* Failure differs by size, not only hue. */
   .checks { display:inline-flex; gap:2px; align-items:center; vertical-align:-2px; }
   .checks i { width:3px; height:11px; border-radius:1px; background:var(--ok); }
-  .checks i.f { background:var(--bad); height:16px; }
-  .checks i.r { background:var(--info); animation:blink 3s ease-in-out infinite; }
+  .checks i.f { background:var(--bad); height:16px; } .checks i.r { background:var(--info); animation:blink 3s ease-in-out infinite; }
 
   details { margin-top:var(--s3); }
   details summary { cursor:pointer; color:var(--dim); font-size:var(--t-sub); list-style:none; }
@@ -180,201 +121,134 @@
   details summary::before { content:"\25B8  "; color:var(--faint); }
   details[open] summary::before { content:"\25BE  "; }
   details .body { margin-top:var(--s2); padding-left:var(--s3); border-left:2px solid var(--line); }
-  details .reason { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical;
-                    overflow:hidden; white-space:normal; }
+  details .reason { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; }
+
+  /* ── agent cards ── */
+  #s-agents.running { background:linear-gradient(180deg,#241f18,#1a1713); border-color:#4a4034; color:#ece7de; }
+  #s-agents.running h2 { color:#b9b0a0; } #s-agents.running h2 .n { color:var(--amber); }
+  #s-agents.running .title { color:#f2ede4; } #s-agents.running .stats { color:#b0a798; }
+  #s-agents.running .term-body { background:#15120e; color:#c9c0b0; } #s-agents.running summary { color:#b0a798; }
+  #s-agents.running .rail-lbl { color:#9b9284; }
+  .fac { padding:var(--s3) 0; } .fac + .fac { border-top:1px solid var(--line); }
+  .fac .top { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline; }
+  .fac .top .key { color:var(--lit); } .fac .top .title { font-weight:500; }
+  .fac .top .tags { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+  .rail { display:flex; align-items:center; margin:var(--s3) 0 var(--s2); max-width:600px; }
+  .rail .node { display:flex; flex-direction:column; align-items:center; gap:3px; flex:none; }
+  .rail .box { width:15px; height:15px; border-radius:3px; background:var(--sunk); border:1px solid var(--line2); display:grid; place-items:center; }
+  .rail .box i { width:5px; height:5px; border-radius:1px; background:var(--line2); }
+  .rail .node.done .box { border-color:color-mix(in srgb,var(--ok) 55%,var(--line2)); } .rail .node.done .box i { background:var(--ok); }
+  .rail .node.now .box { border-color:var(--amber); box-shadow:0 0 0 2px color-mix(in srgb,var(--amber) 22%,transparent); }
+  .rail .node.now .box i { background:var(--amber); animation:forge 1.6s ease-in-out infinite; }
+  @keyframes forge { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .rail .node.fail .box { border-color:var(--bad); } .rail .node.fail .box i { background:var(--bad); }
+  .rail-lbl { font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); white-space:nowrap; }
+  .rail .node.now .rail-lbl { color:var(--amber); font-weight:700; } .rail .node.done .rail-lbl { color:var(--dim); }
+  .rail .seg { flex:1; height:4px; min-width:14px; margin:0 3px 13px; border-radius:2px; background:var(--sunk);
+               border:1px solid var(--line); overflow:hidden; position:relative; }
+  .rail .seg::before { content:""; position:absolute; inset:0;
+    background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--line2) 70%,transparent) 0 4px,transparent 4px 10px); background-size:10px 100%; }
+  .rail .seg.done::before { background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--ok) 55%,transparent) 0 4px,transparent 4px 10px); background-size:10px 100%; }
+  .rail .seg.moving::before { animation:belt 800ms linear infinite; } @keyframes belt { to { background-position:10px 0; } }
+  .rail .seg.jammed::before { background:repeating-linear-gradient(115deg,color-mix(in srgb,var(--bad) 45%,transparent) 0 5px,transparent 5px 10px); }
+  .stats { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; font-size:var(--t-sub); color:var(--dim); }
+  .stats b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
+  #s-agents.running .stats b { color:var(--lit); }
+  .stats .add { color:var(--ok); } .stats .del { color:var(--bad); }
+  .stats .sep { width:1px; height:11px; background:var(--line2); opacity:.6; }
+  .stats .last { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:72ch; display:inline-block; vertical-align:bottom; }
+  .fac details { margin-top:var(--s2); }
+  .fac summary { font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .term-body { margin-top:var(--s2); background:var(--sunk); color:var(--dim); border:1px solid var(--line); border-radius:var(--r-sm);
+               padding:var(--s2); max-height:clamp(96px,20vh,170px); overflow:auto; overscroll-behavior:contain;
+               font-family:var(--mono); font-size:11px; line-height:1.45; white-space:pre; }
+  .waiting { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline;
+             padding:var(--s2) 0; font-size:var(--t-sub); border-top:1px solid var(--line); }
+
+  /* ── pool and runners ── */
+  .slot { display:grid; grid-template-columns:96px minmax(60px,1fr) max-content; align-items:center; gap:var(--s3); padding:var(--s2) 0; }
+  .slot + .slot { border-top:1px solid color-mix(in srgb,var(--line) 60%,var(--panel)); }
+  .slot .nm { font-family:var(--mono); font-size:var(--t-sub); }
+  .slot .meter { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; }
+  .slot .meter i { display:block; height:100%; width:0; border-radius:3px; }
+  .slot.free .meter { background:transparent; border:1px dashed var(--line2); }
+  .slot.virtual .meter { background:transparent; border:1px dotted var(--line); }
+  .slot.virtual .nm { color:var(--faint); }
+  .slot.busy .meter i { width:100%; background:linear-gradient(90deg,var(--info),color-mix(in srgb,var(--info) 45%,var(--panel)),var(--info));
+    background-size:200% 100%; animation:slide 4.5s linear infinite; }
+  .slot.held .meter i { width:100%; background:var(--warn); opacity:.45; }
+  .slot.over .meter i { width:100%; background:var(--bad); opacity:.6; animation:none; }
+  @keyframes slide { to { background-position:200% 0; } }
+  .slot .r { display:flex; gap:5px; align-items:center; }
 
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
            display:flex; gap:var(--s6); flex-wrap:wrap; color:var(--faint); font-size:var(--t-sub); }
   footer b { color:var(--dim); font-weight:650; font-variant-numeric:tabular-nums; }
 
-
-  /* ══ factory floor: the in-flight card ═════════════════════════
-     Factorio-flavoured, but compact and theme-safe. Every colour is a token
-     except one amber accent, so the card stays legible in light mode when the
-     dark "running" skin is NOT applied — which is exactly the error, dead and
-     PR states an engineer most needs to read. */
-  .fac { --amber:#c9791a; --lit:#a35c0e; padding:var(--s3) 0; }
-  @media (prefers-color-scheme: dark) { .fac { --amber:#ffb545; --lit:#ffd27a; } }
-  .fac + .fac { border-top:1px solid var(--line); }
-  #s-inflight.running {
-    background:linear-gradient(180deg,#241f18,#1a1713);
-    border-color:#4a4034; color:#ece7de;
-  }
-  #s-inflight.running h2 { color:#b9b0a0; }
-  #s-inflight.running h2 .n { color:#ffb545; }
-  #s-inflight.running .fac { --amber:#ffb545; --lit:#ffd27a; }
-  #s-inflight.running .title { color:#f2ede4; }
-  #s-inflight.running .rail-lbl { color:#9b9284; }
-  #s-inflight.running .stats { color:#b0a798; }
-  #s-inflight.running .term-body { background:#15120e; color:#c9c0b0; }
-  #s-inflight.running summary { color:#b0a798; }
-
-  .fac .top { display:grid; grid-template-columns:88px minmax(0,1fr) max-content;
-              gap:var(--s3); align-items:baseline; }
-  .fac .top .key { color:var(--lit); }
-  .fac .top .title { -webkit-line-clamp:1; font-weight:500; }
-
-  /* Compact conveyor: one row, capped width, arrows not hazard stripes.
-     Hazard diagonals mean DANGER in Factorio, so they are wrong for the calm
-     state; they are reserved for .jammed. */
-  .rail { display:flex; align-items:center; gap:0; margin:var(--s3) 0 var(--s2);
-          max-width:560px; }
-  .rail .node { display:flex; flex-direction:column; align-items:center; gap:3px; flex:none; }
-  .rail .box { width:15px; height:15px; border-radius:3px; background:var(--sunk);
-               border:1px solid var(--line2); display:grid; place-items:center;
-               transition:background .3s, border-color .3s, box-shadow .3s; }
-  .rail .box i { width:5px; height:5px; border-radius:1px; background:var(--line2);
-                 transition:background .3s; }
-  .rail .node.done .box { border-color:color-mix(in srgb,var(--ok) 55%,var(--line2)); }
-  .rail .node.done .box i { background:var(--ok); }
-  .rail .node.now  .box { border-color:var(--amber); box-shadow:0 0 0 2px color-mix(in srgb,var(--amber) 22%,transparent); }
-  .rail .node.now  .box i { background:var(--amber); animation:forge 1.6s ease-in-out infinite; }
-  @keyframes forge { 0%,100%{opacity:1} 50%{opacity:.35} }
-  .rail .node.fail .box { border-color:var(--bad); }
-  .rail .node.fail .box i { background:var(--bad); }
-  .rail-lbl { font-size:9px; letter-spacing:.06em; text-transform:uppercase;
-              color:var(--faint); white-space:nowrap; }
-  .rail .node.now .rail-lbl { color:var(--amber); font-weight:700; }
-  .rail .node.done .rail-lbl { color:var(--dim); }
-  /* the belt between machines */
-  .rail .seg { flex:1; height:4px; min-width:14px; margin:0 3px 13px; border-radius:2px;
-               background:var(--sunk); border:1px solid var(--line); overflow:hidden;
-               position:relative; }
-  .rail .seg::before { content:""; position:absolute; inset:0;
-    background:repeating-linear-gradient(90deg,
-      color-mix(in srgb,var(--line2) 70%,transparent) 0 4px, transparent 4px 10px);
-    background-size:10px 100%; }
-  .rail .seg.done::before { background:repeating-linear-gradient(90deg,
-      color-mix(in srgb,var(--ok) 55%,transparent) 0 4px, transparent 4px 10px);
-    background-size:10px 100%; }
-  .rail .seg.moving::before { animation:belt 800ms linear infinite; }
-  @keyframes belt { to { background-position:10px 0; } }
-  .rail .seg.jammed::before { background:repeating-linear-gradient(115deg,
-      color-mix(in srgb,var(--bad) 45%,transparent) 0 5px, transparent 5px 10px); }
-
-  /* one stats line, not a block */
-  .stats { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
-           font-size:var(--t-sub); color:var(--dim); }
-  .stats b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
-  #s-inflight.running .stats b { color:var(--lit); }
-  .stats .add { color:var(--ok); } .stats .del { color:var(--bad); }
-  .stats .sep { width:1px; height:11px; background:var(--line2); opacity:.6; }
-  .gauge { width:110px; height:3px; border-radius:2px; background:var(--sunk); overflow:hidden; }
-  .gauge i { display:block; height:100%; background:var(--amber); transition:width 1s ease; }
-  .gauge i.over { background:var(--warn); opacity:.6; }
-
-  /* terminal: collapsed instrumentation, newest line is the summary */
-  .fac details { margin-top:var(--s2); }
-  .fac summary { font-family:var(--mono); font-size:11px; color:var(--dim);
-                 white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .term-body { margin-top:var(--s2); background:var(--sunk); color:var(--dim);
-               border:1px solid var(--line); border-radius:var(--r-sm);
-               padding:var(--s2); max-height:clamp(96px,20vh,170px); overflow:auto;
-               overscroll-behavior:contain; font-family:var(--mono); font-size:11px;
-               line-height:1.45; white-space:pre; }
-  .term-body .last { color:var(--ink); }
-  .stats.agent .last { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60ch; display:inline-block; vertical-align:bottom; }
-  #s-inflight.running .term-body .last { color:#f2ede4; }
-
-  @media (prefers-reduced-motion: reduce) { .belt.moving::before { animation:none; } }
-
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation:none !important; transition:none !important; }
-    #bar.on { opacity:.4; width:100%; translate:0 0; }
-  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
-
 <div id="bar"></div>
 
-<header>
+<div id="status">
   <h1>ai-fixme <span id="repo"></span></h1>
+  <span class="sep"></span>
+  <span class="dot" id="dot"></span><span id="cells"></span>
   <span class="spacer"></span>
-  <span class="status"><span class="dot" id="dot"></span><span id="age">connecting…</span></span>
+  <span id="age">connecting…</span>
   <button id="refresh">refresh</button>
-</header>
+</div>
 
-<div id="verdict" hidden></div>
 <div id="attn" role="status" aria-live="polite"></div>
 
-<div class="grid" id="grid">
+<div class="grid">
+  <section class="wide" id="s-agents"></section>
   <section class="wide" id="s-review"></section>
   <section class="wide" id="s-queue"></section>
-  <section class="wide" id="s-inflight"></section>
   <section id="s-pool"></section>
-  <section id="s-instances"></section>
+  <section id="s-today"></section>
 </div>
 <footer id="footer"></footer>
 
 <script>
 "use strict";
 const JIRA = "https://mozilla-hub.atlassian.net/browse/";
-const esc = s => String(s ?? "").replace(/[&<>"']/g,
-  c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-const ago = s => s == null ? "never"
-  : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const ago = s => s == null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
   : s < 172800 ? `${Math.round(s/3600)}h ago` : `${Math.round(s/86400)}d ago`;
-// Bare duration, for sentences that supply their own preposition.
-const dur = s => s == null ? "?" : s < 3600 ? `${Math.round(s/60)} min`
-  : s < 172800 ? `${Math.round(s/3600)} hours` : `${(s/86400).toFixed(1)} days`;
-const stamp = e => e == null ? "" : new Date(e * 1000).toLocaleString(undefined,
-  { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
+const short = s => s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s/60)}m` : `${(s/3600).toFixed(1)}h`;
+const stamp = e => e == null ? "" : new Date(e * 1000).toLocaleString(undefined, { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
 const days = iso => iso == null ? null : (Date.now() - Date.parse(iso)) / 86400000;
 const jira = k => `<a class="key" href="${JIRA}${encodeURIComponent(k)}" target="_blank" rel="noreferrer">${esc(k)}</a>`;
 const prl = (repo, n) => `<a class="key" href="https://github.com/${encodeURI(repo)}/pull/${n}" target="_blank" rel="noreferrer">#${n}</a>`;
 const TICKET = /^[A-Z][A-Z0-9]+-\d+$/;
+const usd = n => n == null ? "—" : "$" + Number(n).toFixed(2);
 
 const LAST = {};
 function put(id, html) {
   if (LAST[id] === html) return false;
   LAST[id] = html;
   const node = document.getElementById(id);
-  // Record what the user CLOSED. The markup ships open, so re-asserting `open`
-  // is a no-op; the direction that actually needs preserving is the collapse.
-  const closed = new Set([...node.querySelectorAll("details")]
-    .filter(d => !d.open && d.dataset.k).map(d => d.dataset.k));
+  const closed = new Set([...node.querySelectorAll("details")].filter(d => !d.open && d.dataset.k).map(d => d.dataset.k));
   node.innerHTML = html;
-  node.querySelectorAll("details").forEach(d => {
-    if (d.dataset.k && closed.has(d.dataset.k)) d.open = false;
-  });
+  node.querySelectorAll("details").forEach(d => { if (d.dataset.k && closed.has(d.dataset.k)) d.open = false; });
   return true;
 }
-const NUMS = {};
-function bump(id, sel) {
-  const n = document.querySelector(`#${id} ${sel}`);
-  if (!n) return;
-  const k = id + sel;
-  if (NUMS[k] !== undefined && NUMS[k] !== n.textContent) n.classList.add("bump");
-  NUMS[k] = n.textContent;
+function head(title, n, note, sub) {
+  return `<h2>${title}${sub ? `<span class="sub">${sub}</span>` : ""}${n != null ? `<span class="n">${n}</span>` : ""}${note ? `<span class="note">${note}</span>` : ""}</h2>`;
 }
-
-const STAGES = [["starting","boot"],["watching","agent"],["squashing","squash"],["pushed","push"],["pr","PR"]];
-function stepper(stage) {
-  const i = STAGES.findIndex(s => s[0] === stage);
-  if (stage === "error")
-    return `<div class="steps"><span class="tag bad">run failed</span></div>`;
-  if (i === -1) return `<div class="steps"><span class="tag warn">stage unknown${
-    stage ? " (" + esc(stage) + ")" : ""}</span></div>`;
-  return `<div class="steps">${STAGES.map(([, lbl], n) =>
-    `<div class="step ${n < i ? "done" : n === i ? "now" : ""}"><span class="bead"></span>
-       <span class="lbl">${lbl}</span>${n < STAGES.length - 1 ? `<span class="rail"></span>` : ""}</div>`
-  ).join("")}</div>`;
-}
+const titled = t => `<span class="title" title="${esc(t ?? "")}">${esc(t ?? "")}</span>`;
 
 function checkBars(r) {
-  const total = r.ok + r.fail + r.running;
+  const total = (r.ok ?? 0) + (r.fail ?? 0) + (r.running ?? 0);
   if (total === 0) return "";
-  const scale = total > 30 ? 30 / total : 1;
-  // Never let a lone failure round away to nothing.
-  const w = n => n > 0 ? Math.max(1, Math.round(n * scale)) : 0;
+  const scale = total > 30 ? 30 / total : 1, w = n => n > 0 ? Math.max(1, Math.round(n * scale)) : 0;
   const label = `${r.ok} passed, ${r.fail} failed, ${r.running} running`;
   return `<span class="checks" role="img" aria-label="${esc(label)}" title="${esc(label)}">${
-    "<i class='f'></i>".repeat(w(r.fail)) + "<i class='r'></i>".repeat(w(r.running)) +
-    "<i></i>".repeat(w(r.ok))}</span>`;
+    "<i class='f'></i>".repeat(w(r.fail)) + "<i class='r'></i>".repeat(w(r.running)) + "<i></i>".repeat(w(r.ok))}</span>`;
 }
-
-const hasChecks = r => (r.ok + r.fail + r.running) > 0;
+const hasChecks = r => ((r.ok ?? 0) + (r.fail ?? 0) + (r.running ?? 0)) > 0;
 function verdictTag(r) {
   if (r.pr == null)                     return `<span class="tag warn">no PR</span>`;
   if (r.state === "MERGED")             return `<span class="tag merged">merged</span>`;
@@ -384,32 +258,18 @@ function verdictTag(r) {
   if (r.fail > 0)                       return `<span class="tag bad">${r.fail} failing</span>`;
   if (r.running > 0)                    return `<span class="tag run info">${r.running} running</span>`;
   if (!hasChecks(r))                    return `<span class="tag">no checks yet</span>`;
-  // Green but unmergeable is not review-ready: approving it still leaves a
-  // reviewer unable to merge. Rank it above "approved" so the badge says the
-  // blocking thing rather than the reassuring one.
   if (r.mergeable === "CONFLICTING")    return `<span class="tag bad">conflicts</span>`;
   if (r.review === "APPROVED")          return `<span class="tag ok">approved</span>`;
   return `<span class="tag ok">green</span>`;
 }
-const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft &&
-  r.fail === 0 && r.running === 0 && hasChecks(r) &&
-  r.mergeable !== "CONFLICTING" &&
-  r.review !== "APPROVED" && r.review !== "CHANGES_REQUESTED";
+const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft && r.fail === 0 && r.running === 0 &&
+  hasChecks(r) && r.mergeable !== "CONFLICTING" && r.review !== "APPROVED" && r.review !== "CHANGES_REQUESTED";
 
-function head(title, n, note, sub) {
-  return `<h2>${title}${sub ? `<span class="sub">${sub}</span>` : ""}${
-    n != null ? `<span class="n">${n}</span>` : ""}${note ? `<span class="note">${note}</span>` : ""}</h2>`;
-}
-const titled = t => `<span class="title" title="${esc(t ?? "")}">${esc(t ?? "")}</span>`;
-
-// Agent screen output. Kept in JS so a snapshot re-render does not blank it,
-// and polled on its own fast cadence: `ctl tail` costs ~0.7s, a snapshot ~30s.
-const TAILS = {};
+// ── the agent's own output, on its own cadence ──
+const TAILS = {}; let TAIL_KEYS = [];
 function paintTail(key, isLive) {
-  const el = document.getElementById("term-" + key);
-  if (!el) return;
-  const body = el.querySelector(".body"), hdr = el.querySelector(".hdr");
-  const lines = TAILS[key] || [];
+  const el = document.getElementById("term-" + key); if (!el) return;
+  const body = el.querySelector(".body"), hdr = el.querySelector(".hdr"), lines = TAILS[key] || [];
   const next = lines.join("\n");
   if (hdr) hdr.textContent = lines.length
     ? (isLive ? "agent output · live · " : "final output · ") + (lines[lines.length - 1] || "").trim().slice(0, 120)
@@ -417,7 +277,7 @@ function paintTail(key, isLive) {
   if (body.textContent === next) return;
   const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 24;
   body.textContent = next;
-  if (atBottom) body.scrollTop = body.scrollHeight;   // follow, unless scrolled up
+  if (atBottom) body.scrollTop = body.scrollHeight;
 }
 async function pollTails(keys) {
   for (const k of keys) {
@@ -428,353 +288,244 @@ async function pollTails(keys) {
   }
 }
 
-// Per-stage budgets. Comparing total elapsed against a 21-minute median was
-// wrong twice over: the total keeps counting through the 20-40 minute CI phase,
-// and half of all healthy runs cross a median by definition, so the bar was red
-// on success. Slowness is not a fault; a stage that stops producing is.
-const STAGE_BUDGET = { starting: 120, watching: 1200, squashing: 60, pushed: 60 };
-
-// Six stages, not five. CI is the longest phase and the only one that can still
-// fail, and it was absent from the card entirely.
-const STAGES6 = [["starting","boot"],["watching","agent"],["squashing","squash"],
-                 ["pushed","push"],["pr","PR"],["ci","CI"]];
-
+// ── the conveyor: boot sub-steps are real steps now ──
+const BOOT = ["boot","checkout","hardening","config","launching"];
+const STAGES = [["starting","boot"],["watching","agent"],["squashing","squash"],["pushed","push"],["pr","PR"],["ci","CI"]];
 function rail(t) {
   const failed = t.stage === "error" || t.stage === "stalled";
-  let i = STAGES6.findIndex(x => x[0] === t.stage);
-  if (t.stage === "stalled") i = 1;   // it died at the agent step
-  // At stage `pr` the agent is done; the live phase is CI.
+  let i = STAGES.findIndex(x => x[0] === t.stage);
+  if (t.stage === "stalled") i = 1;
   if (t.stage === "pr") i = t.pr ? 5 : 4;
-  const live = t.vm_running && t.agent_alive && t.stage !== "pr";
-  const ciDone = t.pr && t.fail === 0 && t.running === 0 && (t.ok + t.fail + t.running) > 0;
-  return `<div class="rail">${STAGES6.map(([id, lbl], n) => {
-    let cls = failed ? (n === i ? "fail" : n < i ? "done" : "")
-            : n < i ? "done"
-            : n === i ? (id === "ci" && ciDone ? "done" : "now") : "";
-    // Build the class list from parts: string-concatenating optional segments
-    // silently produced `class="seg  moving"` (double space), which matched
-    // nothing and killed the animation.
-    const segCls = ["seg"];
-    if (failed && n >= i) segCls.push("jammed");
-    else if (n < i) segCls.push("done");
-    if (live && n === i) segCls.push("moving");
-    const seg = n < STAGES6.length - 1 ? `<span class="${segCls.join(" ")}"></span>` : "";
-    return `<div class="node ${cls}"><span class="box"><i></i></span>
-       <span class="rail-lbl">${lbl}</span></div>${seg}`;
+  if (i < 0) i = 0;
+  const live = t.live;
+  const ciDone = t.pr && t.fail === 0 && t.running === 0 && hasChecks(t);
+  return `<div class="rail">${STAGES.map(([id, lbl], n) => {
+    const cls = failed ? (n === i ? "fail" : n < i ? "done" : "") : n < i ? "done" : n === i ? (id === "ci" && ciDone ? "done" : "now") : "";
+    const seg = ["seg"]; if (failed && n >= i) seg.push("jammed"); else if (n < i) seg.push("done"); if (live && n === i) seg.push("moving");
+    const label = n === 0 && t.stage === "starting" && t.detail ? esc(t.detail) : lbl;
+    return `<div class="node ${cls}"><span class="box"><i></i></span><span class="rail-lbl">${label}</span></div>${
+      n < STAGES.length - 1 ? `<span class="${seg.join(" ")}"></span>` : ""}`;
   }).join("")}</div>`;
 }
 
-function factory(t) {
-  const failed = t.stage === "error";
-  const atPr = t.stage === "pr";
-  const live = t.vm_running && t.agent_alive && t.stage !== "stalled";
-  // Once the host commits, the working tree is clean and files_changed collapses
-  // to 0. Show the committed range instead, or a real change reads "did nothing".
-  const useCommitted = (t.commits ?? 0) > 0;
-  const stat = useCommitted ? (t.committed_diffstat || "") : (t.diffstat || "");
-  const nfiles = useCommitted ? (t.committed_files ?? 0) : (t.files_changed ?? 0);
-  const ins = stat.match(/(\d+) insertion/), del = stat.match(/(\d+) deletion/);
-  const budget = STAGE_BUDGET[t.stage];
-  const pct = budget && t.elapsed_seconds != null
-    ? Math.min(100, (t.elapsed_seconds / budget) * 100) : null;
-
-  const stalled = t.stage === "stalled";
-  const tag = stalled ? `<span class="tag bad">stalled${
-      t.detail ? " · " + esc(t.detail.split(" ")[0]) : ""}</span>`
+// One card per runner (fast feed) merged with its ticket row (slow feed).
+function card(t) {
+  const a = t.agent || {};
+  const stalled = t.stage === "stalled", failed = t.stage === "error";
+  const stat = t.diffstat || "", ins = stat.match(/(\d+) insertion/), del = stat.match(/(\d+) deletion/);
+  const idle = a.idle_seconds ?? null;
+  const status = stalled ? `<span class="tag bad">stalled · ${esc((t.detail || "").split(" ")[0])}</span>`
     : failed ? `<span class="tag bad">run failed</span>`
-    : atPr ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>`
-             : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>`
-             : t.pr ? `<span class="tag ok">CI green</span>`
-                    : `<span class="tag info">PR opening</span>`)
-    : t.stage === "starting" ? `<span class="tag run info">starting · ${esc(t.detail || "boot")}</span>`
-    : !t.vm_running ? `<span class="tag bad">no VM</span>`
-    : live ? `<span class="tag run ok">working</span>`
-           : `<span class="tag bad">agent dead</span>`;
-  const where = SNAP_BACKEND ? `<span class="tag">${esc(SNAP_BACKEND)}${SNAP_ZONE ? " · " + esc(SNAP_ZONE) : ""}</span> ` : "";
-
+    : t.stage === "starting" ? `<span class="tag run info">${esc(t.detail || "boot")}</span>`
+    : t.stage === "squashing" || t.stage === "pushed" ? `<span class="tag run info">${esc(t.stage)}</span>`
+    : !t.agent_alive ? `<span class="tag bad">agent exited</span>`
+    : idle != null && idle >= 300 ? `<span class="tag warn">idle ${short(idle)}</span>`
+    : `<span class="tag run ok">working</span>`;
+  const base = t.base_ok === true ? `<span class="tag ok" title="runner is on the slot's commit">base ok</span>`
+    : t.base_ok === false ? `<span class="tag bad" title="runner and slot are on different commits">base mismatch</span>` : "";
+  const cost = a.cost_usd ?? a.cost_so_far;
   return `<div class="fac">
-    <div class="top">${jira(t.key)}${titled(t.summary)}
-      <span>${where}${(t.attempts ?? 0) > 0 ? `<span class="tag warn">attempt ${t.attempts + 1} of 3</span> ` : ""}${
-        atPr && live ? `<span class="tag warn">VM not reaped</span> ` : ""}<span
-        class="tag" id="el-${esc(t.key)}"></span> ${tag}</span></div>
-
+    <div class="top">${jira(t.key)}${titled(t.summary || t.branch)}
+      <span class="tags">${(t.attempts ?? 0) > 0 ? `<span class="tag warn">attempt ${t.attempts + 1}</span>` : ""}${base}
+        <span class="tag">${short(t.elapsed_seconds)}</span>${status}</span></div>
     ${rail(t)}
-
     <div class="stats">
-      ${t.pr ? `${prl(SNAP_REPO, t.pr)} ${checkBars(t)}` : ""}
-      ${t.pr ? `<span class="sep"></span>` : ""}
-      <span><b>${nfiles}</b> file${nfiles === 1 ? "" : "s"}${useCommitted ? " committed" : " touched"}</span>
+      <span><b>${t.files_changed ?? 0}</b> file${t.files_changed === 1 ? "" : "s"} touched</span>
       ${ins ? `<span class="add">+${ins[1]}</span>` : ""}${del ? `<span class="del">−${del[1]}</span>` : ""}
-      ${(t.commits ?? 0) > 0 ? `<span><b>${t.commits}</b> commit${t.commits === 1 ? "" : "s"}</span>` : ""}
       ${t.handoff ? `<span class="tag ok">handoff written</span>` : ""}
-      ${pct != null && !atPr ? `<span class="sep"></span><span class="gauge"><i class="${
-        pct >= 100 ? "over" : ""}" style="width:${pct.toFixed(0)}%"></i></span>` : ""}
-      ${t.branch ? `<span class="sep"></span><span class="mono">${esc(t.branch)}</span>` : ""}
+      ${a.turns != null ? `<span class="sep"></span><span><b>${a.turns}</b> turns</span>` : ""}
+      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b>${a.cost_usd == null ? " so far" : ""}</span>` : ""}
+      ${idle != null && t.agent_alive ? `<span>last event ${short(idle)} ago</span>` : ""}
+      ${a.num_turns === 0 ? `<span class="tag bad">goal rejected</span>` : ""}
+      ${a.is_error === true ? `<span class="tag bad">run error</span>` : ""}
+      <span class="sep"></span><span class="mono">${esc(t.name)} · ${esc(t.slot)}</span>
     </div>
+    ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
     ${failed && t.detail ? `<div class="stats" style="color:var(--bad)">${esc(t.detail)}</div>` : ""}
-    <div class="stats agent" id="ag-${esc(t.key)}"></div>
-
-    <details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}">
-      <summary><span class="hdr"></span></summary>
-      <div class="term-body body"></div>
-    </details>
+    <details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>
   </div>`;
 }
 
-// Volatile numbers live OUTSIDE the put() string. Embedding a per-minute
-// elapsed count meant the card HTML changed every 12s, which re-created the
-// terminal node and yanked the user's scroll position back to the bottom.
-let SNAP_REPO = "", SNAP_BACKEND = "", SNAP_ZONE = "";
-function paintStats(inflight) {
-  for (const t of inflight) {
-    const el = document.getElementById("el-" + t.key);
-    if (el && t.elapsed_seconds != null) el.textContent = Math.round(t.elapsed_seconds / 60) + "m";
-    paintAgent(t);
-  }
-}
+let SNAP = null, AGENTS = null, STATE = {};
 
-// What the agent is doing, from its own transcript (snapshot.agent). Volatile,
-// so it is painted here rather than embedded in the card HTML.
-function paintAgent(t) {
-  const el = document.getElementById("ag-" + t.key), a = t.agent;
-  if (!el) return;
-  if (!a) { el.innerHTML = ""; return; }
-  const live = t.vm_running && t.agent_alive;
-  const idle = a.idle_seconds ?? 0;
-  const idleTxt = idle >= 3600 ? Math.round(idle / 3600) + "h" : idle >= 60 ? Math.round(idle / 60) + "m" : idle + "s";
-  const bits = [`<span><b>${a.turns ?? 0}</b> turn${a.turns === 1 ? "" : "s"}</span>`];
-  const cost = a.cost_usd ?? a.cost_so_far;
-  if (cost != null && cost > 0) bits.push(`<span><b>$${cost.toFixed(2)}</b>${a.cost_usd == null ? " so far" : ""}</span>`);
-  if (live) bits.push(`<span class="${idle >= 300 ? "tag warn" : ""}">${idle >= 300 ? "idle " + idleTxt : "last event " + idleTxt + " ago"}</span>`);
-  if (a.is_error === true) bits.push(`<span class="tag bad">run error</span>`);
-  if (a.num_turns === 0) bits.push(`<span class="tag bad">goal rejected</span>`);
-  const last = a.last_text || a.last_tool || "";
-  el.innerHTML = bits.join(" ") +
-    (last ? `<span class="sep"></span><span class="last" title="${esc(a.last_tool || "")}">${esc(last)}</span>` : "");
-}
-
-function render(state) {
-  const s = state.snapshot, dot = document.getElementById("dot"), age = document.getElementById("age");
-  document.getElementById("bar").classList.toggle("on", !!state.refreshing);
-
-  if (!s) {
-    dot.className = "dot dead";
-    age.textContent = state.refreshing ? "taking first snapshot…" : "no data — server has no snapshot";
-    document.getElementById("repo").textContent = "";
-    put("attn", state.error
-      ? `<div class="alert bad"><b class="key">snapshot</b><span class="what">${esc(state.error)}</span></div>` : "");
-    ["s-review","s-queue","s-inflight","s-pool","s-instances"].forEach(id => put(id, ""));
-    put("footer", "");
-    document.getElementById("verdict").hidden = true;
-    return;
-  }
-
-  const inflight = s.inflight ?? [], review = s.review, pool = s.pool ?? [];
-  const q = s.queue ?? {}, blocked = s.blocked ?? [], h = s.health ?? {};
-  const inflightUnknown = s.inflight_fetch_failed === true;
-  const sp = h.seconds_since_pass;
-  const dead = sp == null || sp > 7200;
+function renderStatus() {
+  const s = SNAP, g = AGENTS, h = s?.health ?? {};
+  const sp = h.seconds_since_pass, dead = sp == null || sp > 7200, quiet = sp != null && sp > 1500;
   const lowDisk = h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb;
-  const snapStale = state.age_seconds == null || state.age_seconds > 180;
+  const stale = STATE.age_seconds == null || STATE.age_seconds > 300;
+  const dot = document.getElementById("dot");
+  dot.className = "dot " + (dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet ? "warn" : "");
+  document.getElementById("repo").textContent = s?.repo ?? "";
+  const running = (g?.instances ?? []).filter(v => v.state === "running").length;
+  const cells = [];
+  cells.push(`<span class="cell"><b>${esc(g?.backend ?? s?.backend ?? "—")}</b>${g?.zone ? `<span>${esc(g.zone)}</span>` : ""}</span>`);
+  cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
+  cells.push(`<span class="cell">${h.lock_held ? "<b>lock held</b>" : "lock free"}</span>`);
+  if (g) cells.push(`<span class="cell">launchcap <b>${g.launchcap}</b></span>`);
+  if (g) cells.push(`<span class="cell ${running ? "" : ""}"><b>${running}</b> runner${running === 1 ? "" : "s"} · <b>${usd(g.runner_hourly_usd)}</b>/h</span>`);
+  if (g?.today) cells.push(`<span class="cell">today <b>${usd(g.today.cost_usd)}</b> · ${g.today.runs} run${g.today.runs === 1 ? "" : "s"} · ${g.today.prs} PR${g.today.prs === 1 ? "" : "s"}</span>`);
+  cells.push(`<span class="cell ${lowDisk ? "bad" : ""}"><b>${h.free_gb ?? "?"}GB</b> free</span>`);
+  document.getElementById("cells").innerHTML = cells.join(`<span class="sep"></span>`);
+  document.getElementById("age").textContent =
+    (STATE.refreshing ? "refreshing · " : "") + `agents ${ago(STATE.agents_age_seconds)} · tickets ${ago(STATE.age_seconds)}`;
+  document.getElementById("bar").classList.toggle("on", !!STATE.refreshing);
+}
 
-  // The dot reports the PIPELINE, not this page. A green pulse beside a dead
-  // pipeline is the worst thing this dashboard could do.
-  dot.className = "dot " + (dead || lowDisk ? "dead" : snapStale || state.error ? "warn" : "");
-  dot.title = dead ? "pipeline is not running" : "pipeline is running";
-  age.textContent = (state.refreshing ? "refreshing · " : "") +
-    (state.error ? "refresh failing · " : snapStale ? "stale · " : "") + "snapshot " + ago(state.age_seconds);
-  document.getElementById("repo").textContent = s.repo;
+function merged() {
+  // runners from the fast feed, decorated with the ticket row from the slow feed
+  const inflight = SNAP?.inflight ?? [], runners = AGENTS?.runners ?? [];
+  const byKey = Object.fromEntries(inflight.map(t => [t.key, t]));
+  const cards = runners.map(r => {
+    const t = byKey[r.key] || {};
+    return { ...t, ...r, live: r.agent_alive && r.stage !== "pr", summary: t.summary, attempts: t.attempts, pr: t.pr, ok: t.ok, fail: t.fail, running: t.running };
+  });
+  const seen = new Set(runners.map(r => r.key));
+  const waiting = inflight.filter(t => !seen.has(t.key));   // inflight with no runner: PR open, CI running, or dead
+  return { cards, waiting };
+}
 
-  // ── verdict ──
-  const vd = document.getElementById("verdict");
-  let cls, lead, what, fix = "";
-  if (sp == null)     { cls = "v-warn"; lead = "pipeline liveness unknown";
-                        what = "no pass has recorded a skip fingerprint yet"; }
-  else if (sp > 7200) { cls = "v-bad";  lead = `no pass in ${dur(sp)}`;
-                        what = "the schedule is session-scoped and has stopped. Re-arm it:";
-                        fix = "/fxa-automation start"; }
-  else if (lowDisk)   { cls = "v-bad";  lead = "disk below the launch floor";
-                        what = `${h.free_gb}GB free, needs ${h.min_free_gb}GB — launches will refuse`; }
-  else                { cls = "v-ok";   lead = `last pass ${ago(sp)}`; what = "the loop is running"; }
-  vd.hidden = false;
-  vd.className = cls;
-  put("verdict", `<span class="lead">${esc(lead)}</span><span class="what">${esc(what)}</span>
-    ${fix ? `<span class="fix">${esc(fix)}</span>` : ""}
-    <span class="meta"><span>last pass ${esc(stamp(h.last_pass_epoch) || "never")}</span>
-      <span>last launch ${esc(stamp(h.last_launch_epoch) || "never")}</span>
-      <span${lowDisk ? ' class="age old"' : ""}>${h.free_gb != null ? h.free_gb + "GB free" : "disk unknown"}</span>
-      <span>${h.lock_held ? "lock held" : "lock free"}</span></span>`);
-
-  // ── alerts: every subject is a link ──
-  const alerts = [];
-  if (state.error)
-    alerts.push(`<div class="alert bad"><b class="key">refresh</b><span class="what">${esc(state.error)}</span></div>`);
-  if (inflightUnknown)
-    alerts.push(`<div class="alert warn"><b class="key">jira</b><span class="what">could not read in-flight tickets — "nothing running" is unverified</span></div>`);
-  blocked.forEach(b =>
-    alerts.push(`<div class="alert warn">${jira(b.key)}<span class="what">blocked — needs a human decision · ${esc(b.summary ?? "")}</span></div>`));
-  // A ticket at stage "pr" has no VM BY DESIGN: the VM stops when the PR opens
-  // while the label stays inflight. Alerting on it fires on every healthy run.
-  inflight.filter(t => t.stage !== "pr" && (!t.vm_running || !t.agent_alive)).forEach(t =>
-    alerts.push(`<div class="alert bad">${jira(t.key)}<span class="what">${
-      t.vm_running ? "agent process is dead but the VM is up" : "labelled inflight with no VM running"} — reap it or relaunch</span></div>`));
-  if (review) {
-    review.filter(r => r.fail > 0).forEach(r =>
-      alerts.push(`<div class="alert bad">${jira(r.key)}<span class="what">${r.fail} failing check${
-        r.fail > 1 ? "s" : ""} on ${r.pr ? prl(s.repo, r.pr) : "its PR"} · ${esc(r.title ?? "")}</span></div>`));
-    review.filter(r => r.review === "CHANGES_REQUESTED").forEach(r =>
-      alerts.push(`<div class="alert warn">${jira(r.key)}<span class="what">a reviewer asked for changes on ${
-        r.pr ? prl(s.repo, r.pr) : "its PR"} — the feedback loop should pick this up</span></div>`));
-    review.filter(r => r.state === "MERGED" || r.state === "CLOSED").forEach(r =>
-      alerts.push(`<div class="alert warn">${jira(r.key)}<span class="what">${
-        r.pr ? prl(s.repo, r.pr) : "its PR"} is ${esc(r.state.toLowerCase())} but the ticket is still done — the drain has not run</span></div>`));
-  }
+function renderAlerts() {
+  const s = SNAP, g = AGENTS, alerts = [], h = s?.health ?? {};
+  const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
+  if (STATE.error) add("bad", `<b class="key">tickets</b>`, esc(STATE.error));
+  if (STATE.agents_error) add("bad", `<b class="key">agents</b>`, esc(STATE.agents_error));
+  const sp = h.seconds_since_pass;
+  if (s && (sp == null || sp > 7200)) add("bad", `<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pass in ${ago(sp).replace(" ago","")}; the schedule is session-scoped and has stopped`, "/fxa-automation start");
+  else if (sp > 1500) add("warn", `<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
+  if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
+  if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
+  (s?.blocked ?? []).forEach(b => add("warn", jira(b.key), `blocked, needs a human decision · ${esc(b.summary ?? "")}`));
+  const { cards, waiting } = merged();
+  cards.forEach(t => {
+    const a = t.agent || {};
+    if (t.base_ok === false) add("bad", jira(t.key), `runner is not on the slot's commit; its diff will contain main's own changes`, `fxa-sandbox-ctl stop ${t.name}`);
+    if (t.stage === "stalled") add("bad", jira(t.key), `stalled · ${esc(t.detail || "")}`);
+    else if (!t.agent_alive && t.stage === "watching" && !t.handoff) add("bad", jira(t.key), "agent process exited without a handoff");
+    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) add("warn", jira(t.key), `agent idle ${short(a.idle_seconds)}: ${esc(a.last_tool || a.last_text || "no output")}`);
+    if (a.num_turns === 0) add("bad", jira(t.key), "the /goal was rejected; the rendered prompt is over 4000 chars");
+  });
+  waiting.filter(t => t.stage !== "pr").forEach(t => add("bad", jira(t.key), t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no runner; reap it or relaunch"));
+  const known = new Set(cards.map(c => c.name));
+  (g?.instances ?? []).forEach(v => {
+    const owned = known.has(v.name.replace(/^agent-/, ""));
+    if (!owned) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`);
+    else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
+  });
+  (s?.review ?? []).forEach(r => {
+    if (r.fail > 0) add("bad", jira(r.key), `${r.fail} failing check${r.fail > 1 ? "s" : ""} on ${r.pr ? prl(s.repo, r.pr) : "its PR"} · ${esc(r.title ?? "")}`);
+    else if (r.review === "CHANGES_REQUESTED") add("warn", jira(r.key), `a reviewer asked for changes on ${prl(s.repo, r.pr)}; the feedback sweep picks this up`);
+    else if (r.mergeable === "CONFLICTING") add("warn", jira(r.key), `${prl(s.repo, r.pr)} is green but conflicts with main`);
+    else if (r.state === "MERGED" || r.state === "CLOSED") add("warn", jira(r.key), `${prl(s.repo, r.pr)} is ${esc(r.state.toLowerCase())} but the ticket is still done; the drain has not run`);
+  });
   put("attn", alerts.join(""));
+}
 
-  // ── waiting on you: first, and the count is the page's headline ──
+function renderAgents() {
+  const { cards, waiting } = merged();
+  const sec = document.getElementById("s-agents");
+  const anyLive = cards.some(c => c.live);
+  sec.className = "wide" + (anyLive ? " running" : "");
+  const repo = SNAP?.repo ?? "";
+  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${AGENTS.launchcap} more may launch` : "agents feed not loaded", "runners working now") +
+    (cards.length === 0 ? `<div class="empty">no runner is up</div>` : cards.map(card).join("")) +
+    (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
+        <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}${
+          t.stage === "pr" ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>` : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>` : t.pr ? `<span class="tag ok">CI green</span>` : `<span class="tag info">PR opening</span>`)
+          : `<span class="tag bad">no runner</span>`}</span></div>`).join("") : ""));
+  cards.forEach(c => paintTail(c.key, c.live));
+  TAIL_KEYS = cards.filter(c => c.live).map(c => c.key);
+}
+
+function renderTickets() {
+  const s = SNAP; if (!s) return;
+  const review = s.review, repo = s.repo;
   const waiting = review ? review.filter(isWaitingOnHuman) : [];
-  // Rank by age instead of a fixed threshold: with every PR over a week old, a
-  // 3-day warn line paints all ten and ranks nothing.
   const oldest = review ? review.slice().map(r => days(r.updated) ?? 0).sort((a, b) => b - a)[2] ?? 0 : 0;
   put("s-review",
-    (review == null
-      ? `<div class="headline"><span class="big unknown">?</span><span class="cap">GitHub fetch failed — unknown, not zero</span></div>`
-      : `<div class="headline"><span class="big">${waiting.length}</span>
-           <span class="cap">waiting on you</span>
-           <span class="rest">${review.length} done · PR open, CI finished, needs a human</span></div>`) +
-    (review == null ? ""
-     : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
-     : review.slice()
-        .sort((a, b) => (b.fail > 0) - (a.fail > 0) ||
-                        ((Date.parse(a.updated) || 0) - (Date.parse(b.updated) || 0)))
-        .map(r => {
-          const d = days(r.updated);
-          return `<div class="item">
-            <div class="line1">${jira(r.key)}${titled(r.title ?? (r.pr ? "title unavailable" : "no PR found"))}
-              ${verdictTag(r)}</div>
-            <div class="line2">${r.pr ? prl(s.repo, r.pr) : "no PR on this branch"}
-              ${checkBars(r)}
-              ${d != null ? `<span class="age${d >= oldest && d > 7 ? " old" : ""}">${Math.round(d)}d idle</span>` : ""}</div>
-          </div>`;
-        }).join("")));
-  bump("s-review", ".big");
+    (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">GitHub fetch failed; unknown, not zero</span></div>`
+      : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on you</span>
+         <span class="rest">${review.length} done · PR open, CI finished, needs a human</span></div>`) +
+    (review == null ? "" : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
+     : review.slice().sort((a, b) => (b.fail > 0) - (a.fail > 0) || ((Date.parse(a.updated) || 0) - (Date.parse(b.updated) || 0)))
+        .map(r => { const d = days(r.updated); return `<div class="item">
+            <div class="line1">${jira(r.key)}${titled(r.title ?? (r.pr ? "title unavailable" : "no PR found"))}${verdictTag(r)}</div>
+            <div class="line2">${r.pr ? prl(repo, r.pr) : "no PR on this branch"} ${checkBars(r)}
+              ${d != null ? `<span class="age${d >= oldest && d > 7 ? " old" : ""}">${Math.round(d)}d idle</span>` : ""}
+              ${r.reviewers?.length ? `<span>· ${esc(r.reviewers.join(", "))}</span>` : ""}</div></div>`; }).join("")));
 
-  // ── queue: what runs next leads; the permanent blockers collapse ──
-  const ready = q.ready ?? [], skipped = q.skipped ?? [];
-  const liveSkips = skipped.filter(k => k.in_queue !== false);
-  const staleSkips = skipped.filter(k => k.in_queue === false);
-  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length,
-      q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
-    (q.fetch_failed ? `<div class="unknown">Jira fetch failed — unknown, not zero</div>`
+  const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
+  const liveSkips = skipped.filter(k => k.in_queue !== false), staleSkips = skipped.filter(k => k.in_queue === false);
+  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length, q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
+    (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
      : (ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
-        : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">
-             ${jira(t.key)}${titled(t.summary)}
-             <span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
+        : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
           (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
-       (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary>
-          <div class="body">${liveSkips.slice()
-            // The ones seen once are the newest judgement and the likeliest to
-            // still be actionable; the 30-times ones are settled.
-            .sort((a, b) => a.passes - b.passes).map(k =>
-            `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}
-               <span class="tag">${k.passes}×</span></div>
-             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`
-          ).join("")}</div></details>` : "") +
-       (staleSkips.length ? `<div class="empty" style="padding-top:var(--s2)">${
-          staleSkips.length} stale skip record${staleSkips.length > 1 ? "s" : ""} (${
-          staleSkips.map(k => esc(k.key)).join(", ")}) — no longer labelled ai-fixme</div>` : "")));
-  bump("s-queue", ".n");
-
-  // ── in flight ──
-  const idle = !inflightUnknown && inflight.length === 0;
-  const anyLive = inflight.some(t => t.vm_running && t.agent_alive && t.stage !== "pr");
-  const inf = document.getElementById("s-inflight");
-  inf.className = (idle ? "idle" : "") + (anyLive ? " running" : "");
-  SNAP_REPO = s.repo; SNAP_BACKEND = s.backend || ""; SNAP_ZONE = s.zone || "";
-  put("s-inflight", head("in flight", inflightUnknown ? "?" : inflight.length,
-      idle ? "pool is idle" : null, idle ? null : "agents working now") +
-    (inflightUnknown ? `<div class="unknown">Jira fetch failed — unknown, not zero</div>`
-     : idle ? ""
-     : inflight.map(t => factory(t)).join("")));
-  paintStats(inflight);
-  // Poll only while the agent is genuinely producing. At stage `pr` the agent
-  // has finished, so its screen is frozen and calling it "live" is a lie.
-  const livePoll = inflight.filter(t => t.vm_running && t.stage !== "pr");
-  inflight.forEach(t => paintTail(t.key, livePoll.some(x => x.key === t.key)));
-  TAIL_KEYS = livePoll.map(t => t.key);
-
-  // ── pool ──
-  const free = s.free_slots;   // null means we could not tell
-  put("s-pool", head("pool", free == null ? "?" : `${free.length}/${pool.length}`,
-      free == null ? "" : "claimable", "worktree slots") +
-    (free == null ? `<div class="unknown">slot ownership unknown — the in-flight read failed</div>`
-     : pool.length === 0 ? `<div class="empty">no pool worktrees found</div>`
-     : pool.map(p => {
-        const cls = p.busy ? "busy" : free.includes(p.slot) ? "free" : "held";
-        const owner = inflight.find(t => t.key === p.key);
-        const stalled = p.busy && owner && owner.elapsed_seconds > 2400;
-        // A slot parked on `main` is not "held by a ticket" — only a real key is.
-        const holder = TICKET.test(p.key ?? "") ? p.key : null;
-        return `<div class="slot ${cls}${stalled ? " stalled" : ""}">
-          <span class="nm">${esc(p.slot)}</span><span class="meter"><i></i></span>
-          ${p.busy ? `<span class="tag info">${esc(p.agent)}</span>`
-            : cls === "free" ? `<span class="tag ok">free</span>`
-            : holder ? `<span class="tag warn">held · ${esc(holder)}</span>`
-            : `<span class="tag">on ${esc(p.branch ?? "—")}</span>`}</div>`;
-      }).join("")));
-
-  // ── instances: every VM the backend knows about. One with no agent of its
-  // own is a leak, and on gce a leak bills until someone notices.
-  const inst = s.instances ?? [];
-  const known = new Set(pool.map(p => p.agent).filter(Boolean).map(a => "agent-" + a));
-  put("s-instances", head("instances", String(inst.length), "", (s.backend || "tart") + (s.zone ? " · " + s.zone : "")) +
-    (inst.length === 0 ? `<div class="empty">no VMs running</div>`
-     : inst.map(v => {
-        const leaked = !known.has(v.name) && !inflight.some(t => "agent-" + t.branch === v.name);
-        const age = v.age_seconds, old = age != null && v.max_seconds && age >= v.max_seconds;
-        const ageTxt = age == null ? "" : age >= 3600 ? (age / 3600).toFixed(1) + "h" : Math.round(age / 60) + "m";
-        return `<div class="slot ${leaked || old ? "held" : "busy"}">
-          <span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span>
-          <span>${ageTxt ? `<span class="${old ? "tag bad" : ""}">${ageTxt}${old ? " · over cap" : ""}</span> ` : ""}${
-            leaked ? `<span class="tag warn">no owner · ${esc(v.state)}</span>` : `<span class="tag info">${esc(v.state)}</span>`}</span></div>`;
-      }).join("")));
+       (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary><div class="body">${
+          liveSkips.slice().sort((a, b) => a.passes - b.passes).map(k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span class="tag">${k.passes}×</span></div>
+             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`).join("")}</div></details>` : "") +
+       (staleSkips.length ? `<div class="empty" style="padding-top:var(--s2)">${staleSkips.length} stale skip record${staleSkips.length > 1 ? "s" : ""} (${staleSkips.map(k => esc(k.key)).join(", ")}); no longer labelled ai-fixme</div>` : "")));
 
   const t = s.telemetry;
-  put("footer", (t
-    ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span>
-       <span><b>$${t.cost_usd}</b> spend</span><span>median <b>${t.median_minutes}m</b></span>
-       <span>last recorded ${esc((t.last_recorded || "").slice(0, 10))}</span>`
-    : `<span>no run telemetry yet</span>`) +
-    `<span style="flex:1"></span><span>snapshot took ${s.took_seconds}s</span>`);
+  put("footer", (t ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span><span><b>${usd(t.cost_usd)}</b> spend</span>
+      <span>median <b>${t.median_minutes}m</b></span><span>last recorded ${esc((t.last_recorded || "").slice(0, 10))}</span>` : `<span>no run telemetry yet</span>`) +
+    `<span style="flex:1"></span><span>tickets snapshot took ${s.took_seconds}s</span>`);
+}
+
+function renderPool() {
+  const g = AGENTS; if (!g) return;
+  const pool = g.pool ?? [], free = g.free_slots ?? [], inst = g.instances ?? [];
+  const { cards } = merged();
+  const runnerByName = Object.fromEntries(inst.map(v => [v.name, v]));
+  const cardByName = Object.fromEntries(cards.map(c => ["agent-" + c.name, c]));
+  const rows = pool.map(p => {
+    const busy = !!p.agent, v = p.agent ? runnerByName["agent-" + p.agent] : null;
+    const c = p.agent ? cardByName["agent-" + p.agent] : null;
+    const over = v && v.max_seconds && v.age_seconds >= v.max_seconds;
+    const cls = over ? "over" : busy ? "busy" : free.includes(p.slot) ? "free" : "held";
+    const holder = TICKET.test(p.key ?? "") ? p.key : null;
+    return `<div class="slot ${cls}"><span class="nm">${esc(p.slot)}</span><span class="meter"><i></i></span>
+      <span class="r">${busy ? `${jira(holder || p.agent)}${v ? `<span class="tag ${over ? "bad" : "info"}">${short(v.age_seconds)}${over ? " · over cap" : ""}</span>` : ""}${
+          c?.agent?.cost_so_far ? `<span class="tag">${usd(c.agent.cost_so_far)}</span>` : ""}`
+        : cls === "free" ? `<span class="tag ok">free</span>` : holder ? `<span class="tag warn">on ${esc(holder)}</span>` : `<span class="tag">on ${esc(p.branch ?? "—")}</span>`}</span></div>`;
+  });
+  const virtual = free.filter(f => !pool.some(p => p.slot === f)).map(f => `<div class="slot virtual"><span class="nm">${esc(f)}</span><span class="meter"><i></i></span><span class="tag">created on launch</span></div>`);
+  const orphans = inst.filter(v => !pool.some(p => "agent-" + p.agent === v.name)).map(v =>
+    `<div class="slot held"><span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span><span class="tag warn">no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>`);
+  put("s-pool", head("pool", `${free.length}/${pool.length + virtual.length}`, `${inst.length} runner${inst.length === 1 ? "" : "s"} up`, "slots and runners") +
+    (rows.length + virtual.length + orphans.length === 0 ? `<div class="empty">no pool worktrees found</div>` : rows.join("") + virtual.join("") + orphans.join("")));
+}
+
+function renderToday() {
+  const g = AGENTS, t = g?.today;
+  put("s-today", head("today", t ? String(t.runs) : "?", "", "runs recorded since 00:00 UTC") +
+    (!t ? `<div class="empty">no run log yet</div>`
+     : `<div class="stats" style="gap:var(--s4)">
+          <span><b>${t.prs}</b> PR${t.prs === 1 ? "" : "s"} opened</span>
+          <span><b>${t.tickets}</b> ticket${t.tickets === 1 ? "" : "s"}</span>
+          <span><b>${usd(t.cost_usd)}</b> spent</span>
+          ${t.median_minutes != null ? `<span>median <b>${t.median_minutes}m</b></span>` : ""}
+          <span class="sep"></span><span>runners now <b>${usd(g.runner_hourly_usd)}</b>/h</span>
+          <span>agents feed took ${g.took_seconds}s</span></div>`));
+}
+
+function render() {
+  renderStatus(); renderAlerts(); renderAgents(); renderTickets(); renderPool(); renderToday();
 }
 
 async function poll() {
   let data;
-  try {
-    data = await (await fetch("/api/snapshot", { cache: "no-store" })).json();
-  } catch {
-    document.getElementById("dot").className = "dot dead";
-    document.getElementById("age").textContent = "server unreachable";
-    document.getElementById("bar").classList.remove("on");
-    return;
-  }
-  // Outside the fetch guard: a render bug must not be reported as a dead server.
-  render(data);
+  try { data = await (await fetch("/api/snapshot", { cache:"no-store" })).json(); }
+  catch { document.getElementById("dot").className = "dot dead"; document.getElementById("age").textContent = "server unreachable"; return; }
+  SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
+  render();
 }
-document.getElementById("refresh").addEventListener("click", async e => {
-  e.target.disabled = true;
-  try {
-    const r = await (await fetch("/api/refresh")).json();
-    if (r && r.queued === false) e.target.textContent = "already refreshing";
-  } catch {}
-  setTimeout(() => { e.target.disabled = false; e.target.textContent = "refresh"; }, 3000);
-  poll();
+document.getElementById("refresh").addEventListener("click", async () => {
+  try { await fetch("/api/refresh"); } catch {}
+  setTimeout(poll, 1500);
 });
-let TAIL_KEYS = [];
 poll();
-setInterval(poll, 5000);
-// The agent screen moves far faster than a snapshot, so give it its own loop.
-setInterval(() => { if (TAIL_KEYS.length) pollTails(TAIL_KEYS); }, 5000);
+setInterval(poll, 15000);
+setInterval(() => pollTails(TAIL_KEYS), 5000);
 </script>
 </body>
 </html>

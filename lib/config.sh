@@ -32,6 +32,8 @@ FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
 # c4a, not n4a: n4a was stocked out in every us-central1 zone on 2026-09-13.
 FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
+# List price of one runner-hour, for the dashboard's burn rate. c4a-highcpu-4 on demand.
+FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.13}"
 # Hard lifetime for a runner. GCE deletes it at this age, whatever the laptop is doing.
 FXA_GCE_MAX_RUN_SECONDS="${FXA_GCE_MAX_RUN_SECONDS:-5400}"
 

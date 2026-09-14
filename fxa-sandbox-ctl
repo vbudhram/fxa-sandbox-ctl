@@ -1278,7 +1278,12 @@ cmd_usage_tokens() { telemetry_usage "$@"; }
 cmd_record()    { telemetry_record "$@"; }
 cmd_costs()     { telemetry_costs; }
 cmd_slots()     { worktree_slots; }
-cmd_snapshot()  { snapshot_json; }
+cmd_snapshot()  {
+  case "${1:-}" in
+    --agents) snapshot_agents_json ;;
+    *)        snapshot_json ;;
+  esac
+}
 
 # cmd_dashboard [--port N] [--interval S]
 #   Serve the status page from live snapshots. Binds to 127.0.0.1 only: the
