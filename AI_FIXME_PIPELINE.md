@@ -99,7 +99,7 @@ flowchart TD
     SLOT{"A claimable slot?<br/>$CTL freeslots"}:::pass
     S3["Stage 3 · label inflight<br/>resolve reporter, launch on slot"]:::pass
     S4["Stage 4 · Worktree prep<br/>branch, context file, render the goal"]:::orch
-    GOAL{"Goal under 4100 chars?"}:::orch
+    GOAL{"Goal under 4000 chars?"}:::orch
     S5["Stage 5 · VM boot and hardening<br/>clone image, mounts, firewall, sudo, skills"]:::orch
     S6["Stage 6 · Agent run<br/>goal loop, 30 turns<br/>writes .fxa-auto-done.json"]:::vm
     S7["Stage 7 · Host handoff<br/>stage, squash, sign, push<br/>gh pr create, reviewers, approve gate"]:::orch
@@ -286,7 +286,7 @@ Inside `fxa-sandbox-ctl jira`:
 directive and then runs with no goal at all. The agent boots, sits at an empty prompt, and
 `progress` reports a healthy `watching` forever. That is the worst shape a failure can take,
 because nothing looks wrong. FXA-14104's 122 character title pushed the goal to 4032 counted
-characters and the agent sat idle for 57 minutes. The tool now caps the raw render at 4100 and
+characters and the agent sat idle for 57 minutes. The tool now caps the raw render at 4000 and
 fails the launch instead. Do not raise the cap; shorten the renderer.
 
 Secrets are copied into the worktree only with `--functional-tests`. The worktree is mounted
@@ -794,7 +794,7 @@ beats a fourth 40 minute guess.
 | Launches per pass | 1 | 3 | A bad context file cannot burn both slots. |
 | Grounding tool calls | 10, plus 3 for Figma | 2 | The VM agent does the deep work. |
 | Free disk before a launch | 25GB | 3 | A running clone takes 8 to 13GB. |
-| `/goal` directive length | 4100 raw chars | 4 | Over the limit, the agent runs with no goal. |
+| `/goal` directive length | 4000 raw chars | 4 | Over the limit, the agent runs with no goal. |
 | Agent turns | 30 | 6 | The `/goal` evaluator's cap. |
 | Single verification step | 10 minutes | 6 | CI covers the rest. |
 | CI reruns per head SHA | 2 | 8 | Then it is a real failure, not a flake. |

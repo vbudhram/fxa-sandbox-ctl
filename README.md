@@ -220,7 +220,9 @@ launch, and every read of the slot pulls the runner's tree back first, so
 `progress`, `snapshot`, and `finish` see what the agent wrote. `attach`, `tail`,
 and `alive` work unchanged.
 
-The default machine is `c4a-highcpu-4` (4 vCPU, 8 GB, arm64, about $0.13 an
+Every runner is created with a hard lifetime (`FXA_GCE_MAX_RUN_SECONDS`, 90
+minutes by default): GCE deletes it at that age whether or not the laptop is
+awake. The default machine is `c4a-highcpu-4` (4 vCPU, 8 GB, arm64, about $0.13 an
 hour while a run is up, nothing when idle). `n4a-highcpu-4` is cheaper but was
 stocked out in every `us-central1` zone when this was built; set
 `FXA_GCE_MACHINE_TYPE` to try it. A leaked instance keeps billing: `list` shows
@@ -299,6 +301,8 @@ cp .env.example .env
 | `FXA_GCE_PROJECT` | GCP project for `gce` runners. Required for that backend. |
 | `FXA_GCE_ZONE` | Zone for runners and the image build (default: `us-central1-a`). |
 | `FXA_GCE_MACHINE_TYPE` | Runner shape (default: `c4a-highcpu-4`). |
+| `FXA_GCE_MAX_RUN_SECONDS` | Runner lifetime; GCE deletes it at this age (default: `5400`). |
+| `GITHUB_APP_ID`, `GITHUB_APP_PEM`, `GITHUB_APP_INSTALLATION_ID` | GitHub App identity for commits and PRs. Helpers exist in `lib/github.sh`; `finish` does not use them yet. |
 
 ## Architecture
 
@@ -407,10 +411,21 @@ fxa-sandbox-ctl dashboard -i 120       # refresh every 120s instead of 60s
 ```
 
 The page renders `snapshot` output: the queue, pool slots, inflight runs, PRs
-awaiting review, and telemetry. A snapshot takes about 17 seconds, most of it
-waiting on Jira and GitHub, so the server refreshes on a timer in the
-background and serves the last good result. A failed refresh keeps the previous
-snapshot rather than blanking the page.
+awaiting review, running VMs, and telemetry. Each inflight card carries the
+agent's own state from its transcript: turns so far, seconds since its last
+event (amber past five minutes), cost so far, the last thing it said and the
+last tool it ran, and, once the run ends, the result (a rejected `/goal` shows
+as `goal rejected`). The boot stage names its step (`boot`, `checkout`,
+`config`, `launching`), which matters on GCE where it lasts minutes. The
+instances box lists every VM the backend knows about with its age, and flags
+one with no owner or past the lifetime cap. A snapshot takes about 17 seconds
+(about 25 on GCE), most of it waiting on Jira and GitHub, so the server
+refreshes on a timer in the background and serves the last good result. A
+failed refresh keeps the previous snapshot rather than blanking the page.
+
+The server binds to `127.0.0.1` only and nothing on the page authenticates.
+Snapshots and transcripts hold ticket text and branch names; `.gitignore` keeps
+`dashboard/*.json` and `*.jsonl` out of the repo.
 
 `snapshot` is useful on its own at the terminal:
 

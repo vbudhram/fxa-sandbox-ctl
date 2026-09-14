@@ -19,3 +19,7 @@ __pycache__/
 # Editor swap / scratch
 *.swp
 *.tmp
+
+# Real pipeline output: snapshots, transcripts, API results. Never commit these.
+dashboard/*.json
+*.jsonl
