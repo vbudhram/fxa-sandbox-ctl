@@ -275,7 +275,15 @@ pipeline_progress() {
   local pr err
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" || true; } | tail -1)"
   if [ -n "$pr" ]; then echo "$key pr $pr"; return 0; fi
-  err="$(grep -m1 -E '^ERROR|fatal:|rejected' "$log" || true)"
+  # A feedback round's first push is rejected as non-fast-forward and then
+  # retried with --force-with-lease; that "! [rejected]" line is routine when a
+  # "(forced update)" follows it, and reading it as an error hid every round's
+  # real state until the PR line landed.
+  if grep -q '(forced update)' "$log"; then
+    err="$(grep -m1 -E '^ERROR|fatal:' "$log" || true)"
+  else
+    err="$(grep -m1 -E '^ERROR|fatal:|rejected' "$log" || true)"
+  fi
   if [ -n "$err" ]; then echo "$key error ${err}"; return 0; fi
   if grep -q "Pushing " "$log"; then echo "$key pushed"; return 0; fi
   if grep -q "Squashing " "$log"; then echo "$key squashing"; return 0; fi
