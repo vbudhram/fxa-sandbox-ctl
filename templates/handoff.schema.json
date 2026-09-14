@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issue", "branch", "pr_title", "pr_body", "media_paths"],
+  "properties": {
+    "issue":       { "type": "string" },
+    "branch":      { "type": "string" },
+    "pr_title":    { "type": "string" },
+    "pr_body":     { "type": "string" },
+    "media_paths": { "type": "array", "items": { "type": "string" } }
+  }
+}

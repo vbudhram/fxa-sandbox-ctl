@@ -146,6 +146,12 @@ JIRA OPTIONS:
                                just push and print the gh command)
   --no-ci-watch                Skip CI polling after the PR opens (only
                                relevant with --create-pr)
+  --runtime <claude|codex>     Agent to run inside the VM (default: claude, or
+                               FXA_AGENT_RUNTIME / PIPE_AGENT_RUNTIME)
+  --rebase                     Merge origin/<base> into the ticket's existing
+                               branch, then run the agent on the conflict only.
+                               Refuses if a human has reviewed the PR, or once
+                               `attempts` reaches 2.
   --functional-tests           Pre-warm the FxA stack inside the VM (fxa-start
                                in the background) and require the agent to run
                                'yarn test-sandbox' before declaring the goal
@@ -250,6 +256,7 @@ cmd_jira() {
   local functional_tests="false"
   local private="false"
   local guardrails_file=""
+  local rebase="false"
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -267,6 +274,8 @@ cmd_jira() {
       --create-pr)  create_pr="true"; shift ;;
       --functional-tests|--with-stack)
                     functional_tests="true"; shift ;;
+      --runtime)    export FXA_AGENT_RUNTIME="$2"; shift 2 ;;
+      --rebase)     rebase="true"; shift ;;
       -*)
         echo "ERROR: Unknown option: $1" >&2
         return 1
@@ -288,6 +297,8 @@ cmd_jira() {
   fi
 
   key="$(jira_normalize_key "$key")" || return 1
+  # Resolve the runtime before any Jira or VM work, so a bad name fails at once.
+  runtime_load || return 1
 
   # finish_push_and_pr reads FXA_WORKTREE_BASE for `gh pr create --base`, so the
   # PR targets main unless --base is written back here.
@@ -351,18 +362,21 @@ ${context}"
   fi
 
   local prompt
-  prompt="$(_jira_render_prompt "$key" "$branch" "$summary" "$context" "$functional_tests")"
+  if [ "$rebase" = "true" ]; then
+    prompt="$(_jira_render_rebase_prompt "$key" "$branch" "$summary" "$base")"
+  else
+    prompt="$(_jira_render_prompt "$key" "$branch" "$summary" "$context" "$functional_tests")"
+  fi
 
   # Claude Code rejects a /goal directive over 4000 characters and then runs with
   # NO goal at all: the agent boots, sits at an empty prompt, and `progress`
   # reports a healthy `watching` forever. That is the worst failure shape we
-  # have, because nothing looks wrong. Fail the launch instead. The 4000 limit is
-  # counted after Claude Code normalises the text, which measures ~175 fewer
-  # characters than the raw render, so cap the raw string conservatively.
-  if [ "${#prompt}" -gt "${FXA_GOAL_MAX_CHARS:-4100}" ]; then
-    echo "ERROR: rendered /goal is ${#prompt} chars, over the ${FXA_GOAL_MAX_CHARS:-4100} cap." >&2
-    echo "       Claude Code would reject it and the agent would run with no goal." >&2
-    echo "       Shorten _jira_render_prompt, do not raise the cap." >&2
+  # have, because nothing looks wrong. Fail the launch instead. The cap is the
+  # runtime's: Codex reads stdin and has none (reports 0).
+  local max_chars; max_chars="$(runtime_prompt_max_chars)"
+  if [ "$max_chars" -gt 0 ] && [ "${#prompt}" -gt "$max_chars" ]; then
+    echo "ERROR: rendered prompt is ${#prompt} chars, over the ${max_chars} cap for ${FXA_AGENT_RUNTIME}." >&2
+    echo "       The agent would run with no goal. Shorten _jira_render_prompt, do not raise the cap." >&2
     return 1
   fi
 
@@ -403,6 +417,14 @@ EOF
     owned="$(jira_owning_keys)"
   fi
   worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot" "$owned")" || return 1
+
+  # The merge has to happen AFTER the checkout above and BEFORE the agent starts.
+  # `git checkout <branch>` fails on a worktree with unmerged paths ("you need to
+  # resolve your current index first"), so a merge staged earlier would block the
+  # very checkout that prepares the slot.
+  if [ "$rebase" = "true" ]; then
+    _jira_rebase_merge "$key" "$worktree_path" "$base" || return 1
+  fi
 
   # Clear any stale handoff file in THIS slot from a prior ticket. Different
   # slots have independent handoff files so they don't collide.
@@ -457,6 +479,96 @@ EOF
   fi
 }
 
+# Bring <base> into the ticket's branch so the agent can resolve the conflict as
+# ordinary working-tree edits.
+#
+# The agent cannot do this itself. The parent .git is mounted read-only in the
+# VM, so `git merge`, `git add` and `git commit` all fail there. Every git write
+# for a rebase round happens here on the host; the agent only edits files.
+#
+# Both gates are enforced here rather than left to the caller's judgment. A rule
+# that lives only in a skill file does not survive a cron-fired pass.
+_jira_rebase_merge() {
+  local key="$1" wt="$2" base="$3"
+
+  # A force-push dismisses a human review and rewrites history under someone who
+  # may be mid-read. Bot reviewers do not count: copilot re-reviews every push.
+  local humans
+  if humans="$(gh_has_human_approval "$key")"; then
+    echo "ERROR: ${humans} has already reviewed this PR; refusing to rebase." >&2
+    echo "       A force-push would dismiss that review. Ask them to rebase instead." >&2
+    return 1
+  fi
+
+  # A PR that conflicts a third time is churning faster than it is reviewed,
+  # which is a review-throughput problem a rebase cannot fix.
+  local n; n="$(pipeline_attempts "$key")"
+  if [ "${n:-0}" -ge 2 ]; then
+    echo "ERROR: ${key} has ${n} attempts recorded; the cap is 2. Label it blocked." >&2
+    return 1
+  fi
+
+  git -C "$wt" fetch origin "$base" -q || {
+    echo "ERROR: cannot fetch origin/${base}." >&2; return 1; }
+
+  if git -C "$wt" merge --no-edit "origin/${base}" >&2; then
+    echo "Merged origin/${base} cleanly; nothing for the agent to resolve." >&2
+    echo "The host will squash and force-push it on handoff." >&2
+    return 0
+  fi
+
+  local conflicted
+  conflicted="$(git -C "$wt" diff --name-only --diff-filter=U)"
+  if [ -z "$conflicted" ]; then
+    echo "ERROR: the merge failed but left no conflicted paths. Aborting it." >&2
+    git -C "$wt" merge --abort 2>/dev/null || true
+    return 1
+  fi
+
+  echo "Merged origin/${base}; $(printf '%s\n' "$conflicted" | grep -c .) file(s) conflict:" >&2
+  printf '  %s\n' $conflicted >&2
+  pipeline_attempts "$key" bump >/dev/null
+  return 0
+}
+
+# Compose the /goal prompt for a rebase round. Deliberately not the ticket
+# prompt: the work here is the conflict, not the ticket, and an agent handed the
+# ticket's acceptance criteria will re-implement it on top of the resolution.
+_jira_render_rebase_prompt() {
+  local key="$1" branch="$2" summary="$3" base="${4:-main}"
+  if [ "${#summary}" -gt 60 ]; then summary="${summary:0:57}..."; fi
+  cat <<EOF
+/goal Resolve the merge conflict on branch ${branch} (${key}: "${summary}").
+origin/${base} is already merged into your branch and the working tree holds the
+conflict markers. Resolve them. Do NOT implement the ticket.
+
+The goal is met only when ALL of these are TRUE and visible in this conversation:
+
+1. You have run 'git diff --name-only --diff-filter=U' and printed every
+   conflicted file.
+2. Every conflict marker is gone from those files, and 'git diff --check'
+   reports none.
+3. BOTH sides survive. Keep origin/${base}'s change AND this branch's change.
+   Never resolve by taking one side wholesale: dropping this branch's change
+   makes CI green while silently deleting the work the PR exists to deliver.
+   If the two genuinely cannot coexist, STOP, resolve nothing, and say so in
+   the handoff. A reported impasse is a good outcome; a faked resolution is not.
+4. Change ONLY the conflicted files. Anything else is out of scope for a
+   rebase round.
+5. Unit tests pass for every package holding a conflicted file. Detect them
+   from the paths ('packages/<name>/'), then run 'npx nx test-unit <package>'.
+6. Lint passes for those same packages: 'npx nx lint <package>', exit 0.
+7. **DO NOT COMMIT and DO NOT run 'git add'.** The parent .git is mounted
+   read-only, so both fail. Leave the resolution as working-tree edits; the
+   host stages, commits, signs and force-pushes with --force-with-lease.
+$(runtime_prompt_handoff_step)
+
+Verification budget: only the packages that had a conflict. CI runs the rest.
+Never run 'nx reset'. Stop any step that runs past 10 minutes and say so in the
+handoff. After you write the handoff file, stop.
+EOF
+}
+
 # Compose the initial /goal prompt sent to the in-VM agent.
 #
 # /goal is a built-in Claude Code feature: after each turn, a small evaluator
@@ -489,8 +601,8 @@ _jira_render_prompt() {
    if not, wait up to 2 minutes and retry — the stack takes time to settle.
    Then run 'yarn test-sandbox' and ensure it passes. For UI changes, save
    1-2 Playwright screenshots or a short --video=on recording of the fixed
-   flow to /workspace/.fxa-auto-media/ — these will be uploaded as secret
-   gists and embedded in the PR body."
+   flow to /workspace/.fxa-auto-media/ — the host attaches
+   these to the PR."
   else
     step4="4. Functional tests are SKIPPED for this run (the sandbox stack has
    open issues; the operator will validate manually after merge). Do NOT run
@@ -498,10 +610,8 @@ _jira_render_prompt() {
    step 3 are sufficient evidence here."
   fi
 
+  runtime_prompt_header "$key" "$summary"
   cat <<EOF
-/goal Resolve Jira issue ${key} ("${summary}"). Full ticket context is in
-/workspace/.fxa-jira-context.md — read it first. Project conventions are in
-/workspace/ai/AGENTS.md and /etc/vm-agent-guide.md.
 
 The goal is met only when ALL of these are TRUE and visible in this conversation:
 
@@ -513,10 +623,10 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
    'npx nx lint <package>' for each. Every invocation must exit 0; if any
    reports errors, fix them and re-run before moving on.
 ${step4}
-5. /code-simplifier has been invoked on the latest changes and any
+5. $(runtime_skill_ref code-simplifier) has been invoked on the latest changes and any
    simplifications it suggests have been applied (or explicitly declined with
    a one-line reason in the transcript).
-6. /fxa-review-quick has been invoked on your working changes and reported no
+6. $(runtime_skill_ref fxa-review-quick) has been invoked on your working changes and reported no
    blocking issues. Fix any blockers and re-run.
 7. **DO NOT COMMIT. You cannot.** The parent .git is mounted read-only so this
    VM cannot corrupt other worktrees, and 'git commit' will fail. Leave your work
@@ -526,7 +636,7 @@ ${step4}
    revert any file unrelated to this ticket with
    'git checkout -- <path>' — scope creep blocks the goal. Print both, so the
    final diff is visible in this transcript.
-8. Invoke /create-pr-description on the latest commit, then /humanizer on its
+8. Invoke $(runtime_skill_ref create-pr-description) on the latest commit, then $(runtime_skill_ref humanizer) on its
    output. pr_body MUST reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md
    verbatim — read it first. Keep every heading (including '(Optional)'), the
    '_Put an \`x\`...' line, and EVERY checklist row; empty a section rather than
@@ -534,16 +644,11 @@ ${step4}
    'I have manually reviewed all AI generated code' — you are the AI, so that
    is a false claim; leave it for the reviewer. Be concise inside sections,
    never by removing structure.
-9. Write /workspace/.fxa-auto-done.json LAST, once your changes are final, with
-   keys {issue, branch, pr_title, pr_body, media_paths}. Omit commit_sha; the host
-   creates the commit. pr_title is the commit subject the host will use (scoped
-   conventional, e.g. 'fix(settings): handle cached signin state'); put the Jira
-   key in pr_body, never the title. media_paths lists paths relative to
-   /workspace, empty if none. Writing this file is your DONE signal, so write it
-   only when the working tree holds exactly what should ship. Write to
-   /workspace/.fxa-auto-done.json.tmp then 'mv' it into place, so the host never
-   reads a half-written file. Print 'cat
-   /workspace/.fxa-auto-done.json | jq .' at the end.
+$(runtime_prompt_handoff_step)
+
+Run steps 5, 6 and 8 in subagents, one per step, so the files they read stay
+out of this conversation. Each subagent must return a short verdict, and you
+must print that verdict here: the goal evaluator reads only this transcript.
 
 DO NOT push and DO NOT run 'gh' — the host does that once it sees the handoff
 file. No GitHub credentials in this VM.
@@ -1247,8 +1352,13 @@ cmd_launch() {
     return 1
   fi
   local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot")
+  [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
   local log; log="$(pipeline_launch_log "$key")"
+  # Delete, do not just truncate. `>` reuses the inode and APFS keeps the
+  # original st_birthtime, so a relaunched ticket would report a wall time that
+  # spans every earlier attempt. telemetry_record reads that birth time.
+  rm -f "$log"
   nohup "$0" "${args[@]}" >"$log" 2>&1 &
   # A launched ticket is no longer skipped. Drop the fingerprint, or a later
   # admission skip on this same key would be silenced by a stale match.

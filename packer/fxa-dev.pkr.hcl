@@ -67,6 +67,12 @@ build {
   }
 
   provisioner "shell" {
+    script            = "${path.root}/scripts/04b-codex.sh"
+    execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
+  }
+
+  provisioner "shell" {
     script            = "${path.root}/scripts/05-proxy.sh"
     execute_command   = "sudo bash -c '{{ .Path }}'"
     expect_disconnect = false

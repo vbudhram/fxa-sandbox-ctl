@@ -6,6 +6,38 @@ AGENT_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")"
 source "${AGENT_LIB_DIR}/config.sh"
 source "${AGENT_LIB_DIR}/vm.sh"
 
+# ── Runtime selection ──────────────────────────────────────────
+# Which agent runs in the VM. Resolved once, late, because --runtime is parsed
+# after this file is sourced. Precedence: FXA_AGENT_RUNTIME (env or --runtime)
+# > PIPE_AGENT_RUNTIME (pipeline conf) > claude. Everything runtime-specific
+# lives in lib/runtime-<name>.sh behind the contract documented there.
+runtime_load() {
+  [ -n "${_FXA_RUNTIME_LOADED:-}" ] && return 0
+  local rt="${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-claude}}"
+  case "$rt" in
+    claude|codex) ;;
+    *) echo "ERROR: unknown FXA_AGENT_RUNTIME '${rt}' (use claude or codex)" >&2; return 1 ;;
+  esac
+  export FXA_AGENT_RUNTIME="$rt"
+  source "${AGENT_LIB_DIR}/runtime-${rt}.sh"
+}
+
+# Skills shipped into the VM, for either runtime. An allow-list, not a
+# deny-list: the VM has no gh, acli, circleci, sentry-cli, or MCP, so a skill
+# that reaches the network is worse than absent — the agent reads its
+# description, judges it relevant, then fails on a missing binary.
+# create-pr-description belongs here because the agent authors the PR title
+# and body into the handoff even though the host runs `gh pr create`.
+# humanizer and code-simplifier are mandatory goal conditions. package-workflows
+# is deliberately absent: it reads 30 days of session history, and a VM boots,
+# fixes one ticket, and is destroyed.
+_vm_skill_allowlist() {
+  printf '%s\n' \
+    code-simplifier create-pr-description fxa-save-investigation \
+    fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck humanizer \
+    pr-review-typescript quick-review squash-commit
+}
+
 # ── Helpers ────────────────────────────────────────────────────
 
 _check_host_ram() {
@@ -271,17 +303,7 @@ _setup_claude_config() {
   # pool-worktree diff base.
   # package-workflows is deliberately absent: it reads 30 days of session
   # history, and a VM boots, fixes one ticket, and is destroyed.
-  local vm_skills=(
-    code-simplifier
-    create-pr-description
-    fxa-save-investigation
-    fxa-vm-handoff
-    fxa-vm-selfcheck
-    humanizer
-    pr-review-typescript
-    quick-review
-    squash-commit
-  )
+  local vm_skills=( $(_vm_skill_allowlist) )
   local s
   for s in "${vm_skills[@]}"; do
     [ -d "${claude_home}/skills/${s}" ] && tar_items+=("skills/${s}")
@@ -654,22 +676,14 @@ agent_run() {
     " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
   fi
 
-  # Step 9: Copy minimal Claude config (only settings.json + CLAUDE.md)
-  echo "Setting up Claude config..."
-  _setup_claude_config "$name"
+  # Step 9: Runtime config and credentials. The runtime file owns both.
+  runtime_load || return 1
+  echo "Setting up ${FXA_AGENT_RUNTIME} config..."
+  runtime_setup_config "$name" || return 1
+  runtime_inject_auth "$workspace_dir" || return 1
 
-  # Step 9: Inject OAuth token (ephemeral — deleted after Claude reads it)
-  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-  if [ -n "$oauth_token" ]; then
-    echo "Injecting Claude OAuth token..."
-    _inject_oauth_token "$workspace_dir" "$oauth_token"
-  else
-    echo "NOTE: Set CLAUDE_CODE_OAUTH_TOKEN on the host to auto-authenticate agents."
-    echo "      Generate one with: claude setup-token"
-  fi
-
-  # Step 10: Start Claude Code inside a screen session in the VM
-  echo "Starting Claude Code in VM..."
+  # Step 10: Start the agent inside a screen session in the VM
+  echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # Write .screenrc with agent name banner
   tart exec "${full_name}" sudo -u agent bash -c "
@@ -681,33 +695,23 @@ hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detac
 SCREENRC
   "
 
-  # The startup command sources the ephemeral token, deletes the file, then runs Claude
-  # Start Claude Code interactively (TUI) inside the screen session. The host
-  # attaches via `ssh -t ... screen -x` to proxy the TUI to the user's terminal.
-  # The /goal prompt is injected after a short delay (see _inject_goal_prompt
-  # below) so the user can also watch it being entered live.
-  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-claude-opus-5}"
-
-  if [ -n "$prompt" ]; then
-    # Write the prompt as a single logical line. Newlines in a screen-paste
-    # would be treated as separate Enter submits by the TUI; collapsing them
-    # to spaces preserves semantics while staying as one input.
-    local prompt_file="${workspace_dir}/.fxa-auto-prompt.txt"
-    printf '%s' "$prompt" | tr '\n' ' ' | tr -s ' ' > "$prompt_file"
-  fi
+  # The runtime owns the launch string and how the prompt reaches the agent.
+  # Both run inside a screen session so attach/tail/alive behave the same for
+  # either: Claude's TUI is pasted into after boot; Codex reads stdin at exec.
+  [ -n "$prompt" ] && runtime_write_prompt "$prompt" "$workspace_dir"
+  local launch_cmd
+  launch_cmd="$(runtime_launch_cmd)"
 
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
-    screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
+    screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
   "
 
-  # If a prompt was provided, deliver it into Claude's TUI and PROVE it landed.
-  # Backgrounded so agent_run returns; the user sees it typed in live on attach.
-  #
-  # Errors are deliberately NOT sent to /dev/null: they belong in the launcher
-  # log, because that log is what `progress` reads and what a pass reconciles on.
+  # Deliver the prompt after launch where the runtime needs it, and PROVE it
+  # landed. Backgrounded so agent_run returns. Errors are deliberately NOT sent
+  # to /dev/null: the launcher log is what `progress` reads and reconciles on.
   if [ -n "$prompt" ]; then
-    ( _inject_prompt "$full_name" "$name" ) &
+    ( runtime_submit_prompt "$full_name" "$name" ) &
     disown $! 2>/dev/null || true
   fi
 
@@ -815,15 +819,12 @@ agent_switch() {
     " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
   fi
 
-  # Step 8: Re-inject OAuth token
-  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-  if [ -n "$oauth_token" ]; then
-    echo "Re-injecting Claude OAuth token..."
-    _inject_oauth_token "$new_workspace" "$oauth_token"
-  fi
+  # Step 8: Re-stage credentials for the new workspace
+  runtime_load || return 1
+  runtime_inject_auth "$new_workspace" || return 1
 
-  # Step 9: Start new Claude Code screen session
-  echo "Starting Claude Code in VM..."
+  # Step 9: Start a new agent screen session
+  echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # Write .screenrc with agent name banner
   tart exec "${full_name}" sudo -u agent bash -c "
@@ -835,10 +836,11 @@ hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detac
 SCREENRC
   "
 
-  local claude_cmd="test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token; source /etc/agent-env.sh; cd /workspace; claude --permission-mode bypassPermissions --model ${FXA_AGENT_MODEL:-claude-opus-5}"
+  local launch_cmd
+  launch_cmd="$(runtime_launch_cmd)"
   tart exec "${full_name}" sudo -u agent bash -c "
     export HOME=/home/agent
-    screen -dmS ${VM_SCREEN_SESSION} bash -c '${claude_cmd}; exec bash'
+    screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
   "
 
   # Update metadata with new workspace and IP
@@ -907,17 +909,15 @@ agent_attach() {
     return 1
   fi
 
-  # Re-inject OAuth token so the agent can re-authenticate if needed.
-  # Need workspace path from meta file (the file lives on the mounted worktree).
+  # Let the runtime re-stage credentials if a human attaching needs them.
+  # The workspace path comes from the meta file (it lives on the mounted worktree).
   local full_name
   full_name="$(vm_name "$name")"
-  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-  if [ -n "$oauth_token" ]; then
-    local NAME WORKSPACE CPU MEMORY IP STARTED
-    if [ -f "${LOG_DIR}/${name}.meta" ]; then
-      source "${LOG_DIR}/${name}.meta"
-      [ -n "${WORKSPACE:-}" ] && _inject_oauth_token "$WORKSPACE" "$oauth_token"
-    fi
+  runtime_load || return 1
+  local NAME WORKSPACE CPU MEMORY IP STARTED
+  if [ -f "${LOG_DIR}/${name}.meta" ]; then
+    source "${LOG_DIR}/${name}.meta"
+    [ -n "${WORKSPACE:-}" ] && runtime_attach_hook "$WORKSPACE"
   fi
 
   # SSH into the VM's screen session. `screen -x` multi-attaches so the
@@ -1253,7 +1253,9 @@ agent_alive() {
   local n
   # pgrep -c prints 0 AND exits non-zero on no match, so `|| echo 0` would emit
   # a second 0 and break the integer test. Use `|| true` and take one line.
-  n="$(agent_ssh_exec "$name" 'pgrep -cf "^claude --permission" 2>/dev/null || true' 2>/dev/null \
+  runtime_load || return 1
+  local pat; pat="$(runtime_alive_pattern)"
+  n="$(agent_ssh_exec "$name" "pgrep -cf '${pat}' 2>/dev/null || true" 2>/dev/null \
        | tr -d '\r' | head -1)" || return 1
   n="${n:-0}"
   case "$n" in ''|*[!0-9]*) n=0 ;; esac

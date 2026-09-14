@@ -252,8 +252,26 @@ while another ticket holds every slot.
 
 | Class | Resolution |
 |---|---|
-| `lockfile` | Take main's `yarn.lock`, re-run `yarn install`, push. No judgment, no agent. |
-| `source` | Launch a round on a free slot. The agent reads both sides and the tests gate it. |
+| `lockfile` | Take main's `yarn.lock`, re-run `yarn install`, push. No judgment, no agent. Not yet automated; `--rebase` handles it with an agent, which works but is wasteful. |
+| `source` | `$CTL jira <KEY> --worktree <slot> --rebase --create-pr`. The agent reads both sides and the tests gate it. |
+
+**How `--rebase` works, and why it is one flag rather than a separate command.**
+The agent cannot merge, `git add`, or commit: the parent `.git` is mounted read-only
+in the VM. So every git write happens on the host. `--rebase` merges `origin/<base>`
+into the branch **after** the slot's checkout and **before** the agent starts, because
+`git checkout` fails on a worktree with unmerged paths, so a merge staged any earlier
+would block the very checkout that prepares the slot. The agent then resolves the
+markers as ordinary file edits. On handoff the host stages those paths, closes the
+merge, squashes onto `origin/<base>`, signs, and pushes with `--force-with-lease`.
+The result is one commit whose parent is `origin/<base>`: a rebase, not a merge commit.
+
+Both gates are enforced in code, not by your judgment. `--rebase` refuses when a
+human has reviewed the PR, and refuses once `attempts` reaches 2. The handoff refuses
+to commit if any conflict marker survives, so a half-resolved round cannot push
+markers into the PR.
+
+It renders its own goal, not the ticket's. A rebase round that receives the ticket's
+acceptance criteria re-implements the ticket on top of the resolution.
 
 Expect `source`. On the first four measured, one file of five was a lockfile.
 
@@ -440,6 +458,42 @@ rather than reporting an empty result.
 linked from an attachment, a Confluence page, or a Slack thread will be missed. FXA-14345 pointed at
 a Slack thread for its own context, so this happens. Widening the trigger means reading attachments
 again, which is out of scope by choice.
+
+## Screenshots — ask for them only when a component changed
+
+A reviewer reading a UI diff cannot see the result. `/fxa-storybook-capture` runs in
+the VM and screenshots the component states the ticket changed. It needs no stack, no
+credentials, and no `--functional-tests`: Storybook renders one component from static
+args, and the VM already installs Playwright's firefox at boot.
+
+**Decide this during grounding, from the diff surface, not from the ticket text.**
+Ask for capture only when both hold:
+
+1. The change alters what a component renders: markup, style, copy, layout, or which
+   element appears.
+2. That component has a sibling `*.stories.tsx`.
+
+    git ls-tree -r --name-only origin/main -- "$(dirname <file>)" | grep stories.tsx
+
+Most tickets fail this and that is correct. Of eight consecutive pipeline PRs, one
+qualified: #21139 restyled buttons and touched a stories file. The other seven were
+auth-server, `libs/`, a webchannel, a provider, and a cache test, none of which has a
+visual result. **A screenshot of a component the ticket did not change is worse than
+none**, because a reviewer reads it as evidence.
+
+When it qualifies, put one line in the context file:
+
+    Invoke /fxa-storybook-capture before the handoff. Capture <named states>.
+    List the files in media_paths.
+
+The host attaches them with `gh pr create --attach`, so the agent never calls `gh`.
+Media costs a 3 to 6 minute Storybook build on top of a run that already has a
+verification budget, so do not request it "just in case".
+
+**Video and full user flows are out of scope here.** Those need `--functional-tests`,
+which stages real credentials into a `bypassPermissions` VM. That path still exists
+and `cmd_launch` does not pass it. Leave it that way unless a ticket genuinely needs
+a multi-page flow.
 
 ## Verification budget — put one in every context file
 
@@ -821,6 +875,7 @@ second agent onto the same worktree. Two rules follow:
 | `$CTL launch <KEY> <slot> <ctx>` | start an agent VM, returns at once |
 | `$CTL prstate <KEY>` | PR number, state, check tally |
 | `$CTL conflicts <KEY>` | files conflicting with main, and their class (`lockfile` \| `source`) |
+| `$CTL jira <KEY> --worktree <slot> --rebase --create-pr` | resolve a `source` conflict: host merges the base in, agent resolves, host squashes onto the base and force-pushes with lease. Refuses on a human review or at 2 attempts |
 | `$CTL drain` | `done` keys needing action: `MERGED`, `CLOSED`, `RED <tally>`, or `none` |
 | `$CTL progress <KEY>` | what the launcher did — **read this first** |
 | `$CTL lock` / `unlock` | one pass at a time |

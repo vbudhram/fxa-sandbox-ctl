@@ -29,6 +29,7 @@ readonly VM_SCREEN_SESSION="claude"
 
 # Paths on macOS host for Claude config (used to copy specific files only)
 readonly CLAUDE_HOME_DIR="${HOME}/.claude"
+readonly CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 
 # VirtioFS mount names (used by tart run --dir)
 readonly MOUNT_WORKSPACE="workspace"

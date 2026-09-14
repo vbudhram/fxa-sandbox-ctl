@@ -39,66 +39,6 @@ finish_done_file_path() {
 # finish_wait_for_done [timeout_seconds]
 #   Polls the shared worktree for the handoff file. Default timeout is 2 hours.
 #   Prints a progress dot every 30s so the user knows it's alive.
-# finish_upload_media <worktree> <relative_path1> [<relative_path2> ...]
-#   Uploads each media file as a secret gist (default for `gh gist create`)
-#   and emits a markdown "## Media" section to stdout that embeds each file
-#   inline (images) or links it (videos/other). Paths are relative to the
-#   worktree root.
-finish_upload_media() {
-  local worktree="$1"
-  shift
-  local rels=("$@")
-  [ "${#rels[@]}" -eq 0 ] && return 0
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "(media upload skipped: gh not installed)" >&2
-    return 0
-  fi
-
-  local out=""
-  out+=$'\n## Media\n\n'
-
-  local rel local_file filename gist_url gist_id user raw_url
-  for rel in "${rels[@]}"; do
-    [ -z "$rel" ] && continue
-    # Allow callers to pass either absolute /workspace/... or relative paths.
-    local_file="${worktree}/${rel#/workspace/}"
-    if [ ! -f "$local_file" ]; then
-      out+="(missing: ${rel})"$'\n\n'
-      continue
-    fi
-    filename="$(basename "$local_file")"
-
-    echo "Uploading ${filename} as secret gist..." >&2
-    gist_url="$(gh gist create -d "fxa-sandbox-ctl: ${filename}" "$local_file" 2>/dev/null | tail -1)"
-    if [ -z "$gist_url" ] || [[ "$gist_url" != https://gist.github.com/* ]]; then
-      out+="(upload failed: ${rel})"$'\n\n'
-      continue
-    fi
-
-    gist_id="$(basename "$gist_url")"
-    user="$(printf '%s\n' "$gist_url" | awk -F/ '{print $(NF-1)}')"
-    raw_url="https://gist.githubusercontent.com/${user}/${gist_id}/raw/${filename}"
-
-    # macOS /bin/bash is 3.2 which lacks ${var,,} — lowercase via tr.
-    local lower_name
-    lower_name="$(printf '%s' "$filename" | tr '[:upper:]' '[:lower:]')"
-    case "$lower_name" in
-      *.png|*.jpg|*.jpeg|*.gif|*.webp)
-        out+="![${filename}](${raw_url})"$'\n\n'
-        ;;
-      *.webm|*.mp4|*.mov)
-        out+="<video src=\"${raw_url}\" controls></video>"$'\n\n'
-        out+="[Download ${filename}](${gist_url})"$'\n\n'
-        ;;
-      *)
-        out+="[${filename}](${gist_url})"$'\n\n'
-        ;;
-    esac
-  done
-
-  printf '%s' "$out"
-}
-
 # finish_attach_and_wait <agent-name>
 #   SSH into the agent's screen session in the foreground (user sees the live
 #   Claude TUI) while a background poller watches for the handoff file. When
@@ -357,6 +297,43 @@ finish_push_and_pr() {
   # Stage exactly what worktree_filtered_status reports, so the same ignore list
   # that decides "dirty" also decides what gets committed. A blanket `git add -A`
   # would sweep in newKey.json and the .fxa-* scratch files.
+  # A rebase round arrives here mid-merge: the host merged the base branch in,
+  # the agent resolved the files by editing them, and the index still lists them
+  # as unmerged because editing a file does not clear its unmerged entry and the
+  # VM cannot `git add` (the parent .git is mounted read-only). So finish the
+  # merge here: check the markers are gone, then stage the paths.
+  local merging=""
+  if git -C "$worktree" rev-parse --verify -q MERGE_HEAD >/dev/null 2>&1; then
+    merging=1
+    local unmerged f still=""
+    unmerged="$(git -C "$worktree" diff --name-only --diff-filter=U 2>/dev/null)"
+    for f in $unmerged; do
+      grep -qE '^(<{7}|={7}|>{7})( |$)' "${worktree}/${f}" 2>/dev/null && still="${still}${f} "
+    done
+    if [ -n "$still" ]; then
+      echo "ERROR: conflict markers remain in:" >&2
+      printf '  %s\n' $still >&2
+      echo "       Refusing to commit: this would push markers into the PR." >&2
+      return 1
+    fi
+    if [ -n "$unmerged" ]; then
+      echo "Completing the merge: staging $(printf '%s\n' "$unmerged" | grep -c .) resolved file(s)..." >&2
+      git -C "$worktree" add -- $unmerged >&2 || {
+        echo "ERROR: could not stage the resolved files." >&2
+        return 1
+      }
+    fi
+    # Close the merge so MERGE_HEAD clears. `git reset --soft` refuses outright
+    # while a merge is in progress ("Cannot do a soft reset in the middle of a
+    # merge"), and the squash below depends on that reset. The squash discards
+    # this commit immediately, so skip the hooks; the final commit still runs
+    # them.
+    git -C "$worktree" commit --no-edit --no-verify >&2 || {
+      echo "ERROR: could not close the merge commit." >&2
+      return 1
+    }
+  fi
+
   local dirty
   dirty="$(worktree_filtered_status "$worktree")"
   if [ -n "$dirty" ]; then
@@ -395,7 +372,15 @@ finish_push_and_pr() {
   # squash every base-branch commit into the PR.
   local base_ref merge_base
   base_ref="origin/${FXA_WORKTREE_BASE:-main}"
-  merge_base="$(git -C "$worktree" merge-base HEAD "$base_ref" 2>/dev/null)"
+  if [ -n "$merging" ]; then
+    # A rebase round just merged the base in, so the squash target is the base
+    # itself. Using the merge-base here would rewind to the OLD common ancestor
+    # and re-commit there, leaving the PR still conflicting, which is the exact
+    # thing the round set out to fix.
+    merge_base="$(git -C "$worktree" rev-parse "$base_ref" 2>/dev/null)"
+  else
+    merge_base="$(git -C "$worktree" merge-base HEAD "$base_ref" 2>/dev/null)"
+  fi
   if [ -z "$merge_base" ]; then
     echo "ERROR: could not find merge-base with ${base_ref}." >&2
     return 1
@@ -450,24 +435,33 @@ finish_push_and_pr() {
     }
   fi
 
-  # Read media_paths from the handoff and upload them as secret gists. The
-  # markdown block is appended to pr_body before gh pr create.
-  local media_paths=()
+  # Read media_paths from the handoff and turn them into `gh pr create --attach`
+  # flags. gh 2.99.0+ uploads each file to GitHub's own asset store and rewrites
+  # any matching body reference (e.g. `![alt](./shot.png)`), appending the rest.
+  # This replaced secret gists, which are a text store: binary PNG/WebM through
+  # `gh gist create` was never verified to survive intact.
+  #
+  # Skip a path the agent listed but never wrote. A stale entry must not cost us
+  # the PR, for the same reason a missing label does not.
+  local media_args=()
+  local p local_media
   while IFS= read -r p; do
-    [ -n "$p" ] && media_paths+=("$p")
+    [ -z "$p" ] && continue
+    local_media="${worktree}/${p#/workspace/}"
+    if [ -f "$local_media" ]; then
+      media_args+=(--attach "$local_media")
+    else
+      echo "  WARN: media listed but not found, skipping: ${p}" >&2
+    fi
   done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
 
-  if [ "${#media_paths[@]}" -gt 0 ]; then
-    echo "Uploading ${#media_paths[@]} media file(s) as secret gists..." >&2
-    local media_md
-    media_md="$(finish_upload_media "$worktree" "${media_paths[@]}")"
-    if [ -n "$media_md" ]; then
-      pr_body="${pr_body}${media_md}"
-    fi
+  if [ "${#media_args[@]}" -gt 0 ]; then
+    echo "Attaching $(( ${#media_args[@]} / 2 )) media file(s) to the PR..." >&2
   fi
 
-  # Always save the rendered PR body (with media URLs) to a file so the user
-  # can `gh pr create --body-file` later without re-constructing it.
+  # Always save the rendered PR body to a file so the user can
+  # `gh pr create --body-file` later without re-constructing it. Media is no
+  # longer inlined here; it rides along as --attach.
   local body_file="${worktree}/.fxa-auto-pr-body.md"
   printf '%s\n' "$pr_body" > "$body_file"
 
@@ -527,6 +521,15 @@ finish_push_and_pr() {
     (cd "$worktree" && gh api -X PATCH "repos/{owner}/{repo}/pulls/${pr_num}" \
        -F "body=@${body_file}" >/dev/null 2>&1) \
       || echo "  WARN: could not refresh PR body. The pushed diff is still correct." >&2
+    # The REST body PATCH cannot carry an upload, so a fix round's media goes on
+    # as a comment. That also keeps each round's evidence next to the round,
+    # instead of overwriting the original body's screenshots.
+    if [ "${#media_args[@]}" -gt 0 ]; then
+      (cd "$worktree" && gh pr comment "$pr_num" \
+         --body "Updated evidence from the latest automated round." \
+         ${media_args[@]+"${media_args[@]}"} >/dev/null 2>&1) \
+        || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
+    fi
     finish_add_reviewers "$pr_url"
     printf '%s\n' "$pr_url"
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
@@ -534,15 +537,20 @@ finish_push_and_pr() {
   fi
 
   echo "Creating pull request via gh..." >&2
+  # ${arr[@]+"${arr[@]}"} — bash 3.2 under `set -u` treats a bare "${arr[@]}"
+  # on an empty array as an unbound variable, which would break every PR that
+  # has no media.
   pr_url="$(cd "$worktree" && gh pr create \
     --base "${FXA_WORKTREE_BASE:-main}" \
     --head "$branch" \
     --title "$pr_title" \
     --label "${FXA_PR_LABEL:-auto}" \
+    ${media_args[@]+"${media_args[@]}"} \
     --body-file "$body_file" 2>&1)" || {
-    # A missing or renamed label must not cost us the PR: the branch is already
-    # pushed and the body is built, so retry once without the label.
-    echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it." >&2
+    # A missing label, or an attachment gh rejects, must not cost us the PR: the
+    # branch is already pushed and the body is built, so retry once without
+    # either. The PR is worth more than its label or its screenshots.
+    echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it or media." >&2
     echo "$pr_url" >&2
     pr_url="$(cd "$worktree" && gh pr create \
       --base "${FXA_WORKTREE_BASE:-main}" \
