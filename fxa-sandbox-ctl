@@ -225,8 +225,11 @@ USAGE
 check_prerequisites() {
   local missing=()
 
-  if ! command -v tart &>/dev/null; then
+  if [ "${FXA_VM_BACKEND:-tart}" = "tart" ] && ! command -v tart &>/dev/null; then
     missing+=("tart (brew install cirruslabs/cli/tart)")
+  fi
+  if [ "${FXA_VM_BACKEND:-tart}" = "gce" ] && ! command -v gcloud &>/dev/null; then
+    missing+=("gcloud (brew install google-cloud-sdk)")
   fi
 
   if [ ${#missing[@]} -gt 0 ]; then
@@ -1065,7 +1068,7 @@ cmd_image() {
     status)
       if vm_image_exists; then
         echo "Golden image '${FXA_IMAGE_NAME}' exists."
-        tart list 2>/dev/null | grep "^${FXA_IMAGE_NAME} "
+        vm_image_list
       else
         echo "Golden image '${FXA_IMAGE_NAME}' not found."
         echo "Build it with: fxa-sandbox-ctl image build"
@@ -1371,11 +1374,16 @@ cmd_launch() {
 main() {
   # Global flag, before the command: pick which pipeline config the ticket
   # commands read. Defaults to fxa-ai-fixme.
-  if [ "${1:-}" = "--pipeline" ]; then
-    FXA_PIPELINE="${2:?--pipeline needs a name}"
-    shift 2
-  fi
+  # --backend picks the VM backend (tart or gce) the same way.
+  while :; do
+    case "${1:-}" in
+      --pipeline) FXA_PIPELINE="${2:?--pipeline needs a name}"; shift 2 ;;
+      --backend)  FXA_VM_BACKEND="${2:?--backend needs tart or gce}"; shift 2 ;;
+      *) break ;;
+    esac
+  done
   pipeline_load "$FXA_PIPELINE" || return 1
+  vm_backend_load || return 1
 
   local command="${1:-help}"
   shift 2>/dev/null || true

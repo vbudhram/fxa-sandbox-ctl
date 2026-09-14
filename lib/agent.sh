@@ -67,7 +67,7 @@ _wait_for_infra() {
 
   local attempts=0
   while [ $attempts -lt 30 ]; do
-    if tart exec "${full_name}" bash -c "systemctl is-active agent-init 2>/dev/null | grep -q '^active$'" 2>/dev/null; then
+    if vm_exec "$name" bash -c "systemctl is-active agent-init 2>/dev/null | grep -q '^active$'" 2>/dev/null; then
       echo "  Infrastructure ready."
       return 0
     fi
@@ -101,7 +101,7 @@ _install_ssh_key() {
   local pubkey
   pubkey="$(cat "${key_dir}/id_ed25519.pub")"
 
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     mkdir -p /home/agent/.ssh
     echo '${pubkey}' >> /home/agent/.ssh/authorized_keys
     chown -R agent:agent /home/agent/.ssh
@@ -113,9 +113,9 @@ _install_ssh_key() {
 # ── Security: Disable SSH password auth ───────────────────────
 
 _harden_ssh() {
-  local full_name="$1"
+  local name="$1"
 
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     # Disable password authentication — SSH key only
     sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
     sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -131,9 +131,9 @@ _harden_ssh() {
 # ── Security: Restrict sudo ───────────────────────────────────
 
 _restrict_sudo() {
-  local full_name="$1"
+  local name="$1"
 
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     # Replace blanket NOPASSWD:ALL with specific allowed commands
     cat > /etc/sudoers.d/agent <<'SUDOERS'
 # Agent user: restricted sudo access
@@ -158,9 +158,9 @@ SUDOERS
 # ── Security: Egress firewall ─────────────────────────────────
 
 _setup_egress_firewall() {
-  local full_name="$1"
+  local name="$1"
 
-  tart exec "${full_name}" sudo bash -c '
+  vm_exec "$name" sudo bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -188,9 +188,9 @@ _setup_egress_firewall() {
 # ── Security: Disable proxy (for existing golden images) ──────
 
 _disable_proxy_in_vm() {
-  local full_name="$1"
+  local name="$1"
 
-  tart exec "${full_name}" bash -c "
+  vm_exec "$name" bash -c "
     sudo systemctl stop squid 2>/dev/null || true
     sudo systemctl disable squid 2>/dev/null || true
     sudo sed -i '/HTTP_PROXY/d; /HTTPS_PROXY/d; /http_proxy/d; /https_proxy/d; /NO_PROXY/d; /no_proxy/d' /etc/agent-env.sh 2>/dev/null || true
@@ -214,7 +214,7 @@ _setup_claude_config() {
 
   # Remove dangling symlinks left by old golden images that mounted ~/.claude
   # (the mounts were removed for security, but agent-init still creates symlinks)
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     rm -f /home/agent/.claude/settings.json /home/agent/.claude/settings.local.json /home/agent/.claude/CLAUDE.md
     mkdir -p /home/agent/.claude /home/agent/.config/claude
     chown -R agent:agent /home/agent/.claude /home/agent/.config/claude
@@ -238,7 +238,7 @@ _setup_claude_config() {
       echo "  WARN: could not adjust settings.json; copying it unchanged." >&2
       settings_b64="$(base64 < "${claude_home}/settings.json" | tr -d '\n')"
     fi
-    tart exec "${full_name}" sudo bash -c "
+    vm_exec "$name" sudo bash -c "
       echo '${settings_b64}' | base64 -d > /home/agent/.claude/settings.json
       chown agent:agent /home/agent/.claude/settings.json
     " 2>/dev/null || echo "  WARN: Could not copy settings.json"
@@ -249,7 +249,7 @@ _setup_claude_config() {
   git_name="$(git config --global user.name 2>/dev/null || true)"
   git_email="$(git config --global user.email 2>/dev/null || true)"
   if [ -n "$git_name" ] || [ -n "$git_email" ]; then
-    tart exec "${full_name}" sudo -u agent bash -c "
+    vm_exec "$name" sudo -u agent bash -c "
       git config --global user.name '${git_name}'
       git config --global user.email '${git_email}'
     " 2>/dev/null || echo "  WARN: Could not set git config"
@@ -259,7 +259,7 @@ _setup_claude_config() {
   if [ -f "${claude_home}/CLAUDE.md" ]; then
     local claude_md_b64
     claude_md_b64="$(base64 < "${claude_home}/CLAUDE.md" | tr -d '\n')"
-    tart exec "${full_name}" sudo bash -c "
+    vm_exec "$name" sudo bash -c "
       echo '${claude_md_b64}' | base64 -d > /home/agent/.claude/CLAUDE.md
       chown agent:agent /home/agent/.claude/CLAUDE.md
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
@@ -424,7 +424,7 @@ VMSECTION
 )"
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     echo '${vm_section_b64}' | base64 -d >> /home/agent/.claude/CLAUDE.md
     chown agent:agent /home/agent/.claude/CLAUDE.md
   " 2>/dev/null || echo "  WARN: Could not append VM context to CLAUDE.md"
@@ -438,7 +438,7 @@ VMSECTION
   #     TUI sits at a y/n dialog and the agent never gets the goal prompt.
   # Also set the migrated form (skipDangerousModePermissionPrompt) in
   # settings.json since newer Claude versions read that instead.
-  tart exec "${full_name}" sudo -u agent bash -c '
+  vm_exec "$name" sudo -u agent bash -c '
     export HOME=/home/agent
     python3 -c "
 import json, os
@@ -501,7 +501,7 @@ _inject_oauth_token() {
 #   immediately, so reading the file in the same breath races the write and
 #   yields a stale or empty capture. Wait for the flush before reading.
 _screen_hardcopy() {
-  tart exec "$1" sudo -u agent bash -c \
+  vm_exec "$1" sudo -u agent bash -c \
     "screen -S ${VM_SCREEN_SESSION} -p 0 -X hardcopy /tmp/.fxa-hardcopy >/dev/null 2>&1; \
      sleep 1; cat /tmp/.fxa-hardcopy 2>/dev/null" 2>/dev/null
 }
@@ -525,13 +525,13 @@ _screen_hardcopy() {
 #   longer sleep: it is to wait for a real readiness signal, verify submission,
 #   and turn a silent stall into a loud error the reconcile table can act on.
 _inject_prompt() {
-  local full_name="$1" name="$2" hc i
+  local name="$2" hc i
 
   # 1. Wait for the TUI to actually draw. The footer only renders once the
   #    input box is live, so it is a real signal rather than a guess. Boot can
   #    be slow (npm auto-update check, MCP auth warnings), so allow 60s.
   for i in $(seq 1 30); do
-    hc="$(_screen_hardcopy "$full_name")"
+    hc="$(_screen_hardcopy "$name")"
     # Bash pattern matching, deliberately NOT grep. A screen hardcopy is full of
     # box-drawing bytes that are invalid UTF-8, and grep in a UTF-8 locale then
     # fails to match even plain ASCII patterns. `printf | grep -q` is worse
@@ -543,7 +543,7 @@ _inject_prompt() {
   done
 
   # 2. Paste it.
-  tart exec "${full_name}" sudo -u agent bash -c "
+  vm_exec "$name" sudo -u agent bash -c "
     screen -S ${VM_SCREEN_SESSION} -p 0 -X readreg p /workspace/.fxa-auto-prompt.txt
     screen -S ${VM_SCREEN_SESSION} -p 0 -X paste p
   " 2>/dev/null
@@ -552,10 +552,10 @@ _inject_prompt() {
   # 3. Submit, then confirm the agent is genuinely working. Claude Code shows a
   #    live turn as an active goal, an interrupt hint, or a token counter.
   for i in 1 2 3 4 5; do
-    tart exec "${full_name}" sudo -u agent bash -c \
+    vm_exec "$name" sudo -u agent bash -c \
       "screen -S ${VM_SCREEN_SESSION} -p 0 -X stuff \$'\r'" 2>/dev/null
     sleep 4
-    hc="$(_screen_hardcopy "$full_name")"
+    hc="$(_screen_hardcopy "$name")"
     if [[ "$hc" == *"/goal active"* || "$hc" == *"esc to interrupt"* || "$hc" == *"tokens)"* ]]; then
       echo "Prompt submitted; agent is working (attempt ${i})." >&2
       return 0
@@ -650,16 +650,16 @@ agent_run() {
   echo "Applying security hardening..."
 
   # 6a: Disable proxy (for existing golden images with Squid baked in)
-  _disable_proxy_in_vm "$full_name"
+  _disable_proxy_in_vm "$name"
 
   # 6b: Set up egress firewall (blocks host/private network access)
-  _setup_egress_firewall "$full_name"
+  _setup_egress_firewall "$name"
 
   # 6c: Disable SSH password auth (key-only access)
-  _harden_ssh "$full_name"
+  _harden_ssh "$name"
 
   # 6d: Restrict sudo to specific commands
-  _restrict_sudo "$full_name"
+  _restrict_sudo "$name"
 
   # Step 7: Install per-agent SSH key
   echo "Setting up SSH key..."
@@ -670,7 +670,7 @@ agent_run() {
     echo "Linking git worktree parent (.git: ${gitdir})..."
     # Symlink /mnt/shared/gitdir to the host absolute path so the
     # worktree .git pointer resolves inside the VM
-    tart exec "${full_name}" sudo bash -c "
+    vm_exec "$name" sudo bash -c "
       mkdir -p '$(dirname "$gitdir")'
       ln -sfn /mnt/shared/gitdir '${gitdir}'
     " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
@@ -686,7 +686,7 @@ agent_run() {
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # Write .screenrc with agent name banner
-  tart exec "${full_name}" sudo -u agent bash -c "
+  vm_exec "$name" sudo -u agent bash -c "
     cat > /home/agent/.screenrc <<SCREENRC
 defscrollback 10000
 startup_message off
@@ -702,7 +702,7 @@ SCREENRC
   local launch_cmd
   launch_cmd="$(runtime_launch_cmd)"
 
-  tart exec "${full_name}" sudo -u agent bash -c "
+  vm_exec "$name" sudo -u agent bash -c "
     export HOME=/home/agent
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
   "
@@ -807,13 +807,13 @@ agent_switch() {
 
   # Step 6: Re-apply in-memory security (lost on restart)
   echo "Re-applying security hardening..."
-  _disable_proxy_in_vm "$full_name"
-  _setup_egress_firewall "$full_name"
+  _disable_proxy_in_vm "$name"
+  _setup_egress_firewall "$name"
 
   # Step 7: Fix git worktree symlinks if needed
   if [ -n "$gitdir" ]; then
     echo "Linking git worktree parent (.git: ${gitdir})..."
-    tart exec "${full_name}" sudo bash -c "
+    vm_exec "$name" sudo bash -c "
       mkdir -p '$(dirname "$gitdir")'
       ln -sfn /mnt/shared/gitdir '${gitdir}'
     " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
@@ -827,7 +827,7 @@ agent_switch() {
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # Write .screenrc with agent name banner
-  tart exec "${full_name}" sudo -u agent bash -c "
+  vm_exec "$name" sudo -u agent bash -c "
     cat > /home/agent/.screenrc <<SCREENRC
 defscrollback 10000
 startup_message off
@@ -838,7 +838,7 @@ SCREENRC
 
   local launch_cmd
   launch_cmd="$(runtime_launch_cmd)"
-  tart exec "${full_name}" sudo -u agent bash -c "
+  vm_exec "$name" sudo -u agent bash -c "
     export HOME=/home/agent
     screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
   "
@@ -887,7 +887,7 @@ agent_prewarm_stack() {
   # Fully detach inside the VM: nohup + setsid so fxa-start survives the
   # tart-exec dispatch returning. Output goes to a log file in the workspace
   # so it's tail-able from the host.
-  tart exec "${full_name}" sudo -u agent bash -c '
+  vm_exec "$name" sudo -u agent bash -c '
     cd /workspace || exit 1
     nohup setsid bash -c "source /etc/agent-env.sh && fxa-start" \
       > /workspace/.fxa-auto-stack-start.log 2>&1 < /dev/null &
@@ -994,11 +994,11 @@ agent_logs() {
 
   if [ "$follow" = "true" ]; then
     echo "=== Following logs for agent '${name}' (Ctrl-C to stop) ==="
-    tart exec "${full_name}" journalctl -f --no-pager 2>/dev/null || \
+    vm_exec "$name" journalctl -f --no-pager 2>/dev/null || \
       echo "Could not stream logs. Try: fxa-sandbox-ctl attach ${name}"
   else
     echo "=== Logs for agent '${name}' ==="
-    tart exec "${full_name}" journalctl --no-pager -n 100 2>/dev/null || \
+    vm_exec "$name" journalctl --no-pager -n 100 2>/dev/null || \
       echo "Could not read logs. Try: fxa-sandbox-ctl attach ${name}"
   fi
 }
@@ -1011,7 +1011,7 @@ agent_stop() {
   echo "Stopping agent '${name}'..."
 
   # Gracefully stop Claude Code via screen
-  tart exec "${full_name}" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true
+  vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true
   sleep 2
 
   # Stop the VM

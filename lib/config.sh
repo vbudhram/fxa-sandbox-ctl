@@ -22,7 +22,8 @@ readonly VM_PREFIX="agent"
 # SSH defaults for VMs
 readonly VM_SSH_USER="agent"
 readonly VM_SSH_PASS="agent"
-readonly VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
+# Not readonly: the gce backend appends an IAP ProxyCommand.
+VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
 
 # Screen session name inside the VM (for Claude Code TUI)
 readonly VM_SCREEN_SESSION="claude"

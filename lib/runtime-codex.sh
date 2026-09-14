@@ -44,7 +44,7 @@ Read /etc/vm-agent-guide.md for the operations manual (port map, architecture, g
 Fallback quick-reference: /etc/vm-agent-context.md.
 Project conventions: /workspace/ai/AGENTS.md.' | base64 | tr -d '\n')"
 
-  tart exec "${full_name}" sudo bash -c "
+  vm_exec "$name" sudo bash -c "
     mkdir -p /home/agent/.codex/skills
     echo '${config_b64}' | base64 -d > /home/agent/.codex/config.toml
     echo '${agents_b64}' | base64 -d > /home/agent/.codex/AGENTS.md
