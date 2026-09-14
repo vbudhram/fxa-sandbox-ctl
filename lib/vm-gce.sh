@@ -179,7 +179,10 @@ vm_exec_as_agent() {
 #   Build the tar with COPYFILE_DISABLE=1 or macOS adds ._* AppleDouble files.
 vm_put() {
   local name="$1" tar="$2" dir="$3"
-  _gce_ssh "$name" --command "sudo mkdir -p '${dir}' && sudo tar -xf - -C '${dir}' && sudo chown -R agent:agent '${dir}'" < "$tar"
+  # Trailing slash: /workspace is a symlink, and chown -R on the link itself
+  # changed nothing beneath it. Shipped files then belonged to the host user,
+  # and tee could not open the transcript the agent writes (FXA-14216).
+  _gce_ssh "$name" --command "sudo mkdir -p '${dir}' && sudo tar -xf - -C '${dir}' && sudo chown -R agent:agent '${dir%/}/'" < "$tar"
 }
 
 # vm_pull_tree <name> <remote-dir> <local-dir>
