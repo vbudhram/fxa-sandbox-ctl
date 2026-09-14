@@ -1288,7 +1288,7 @@ cmd_inflight()  { jira_inflight_keys; }
 #   skill, so a label frozen while the automation was off stayed frozen until a
 #   human read it (FXA-14300 shipped twice that way on 2026-09-08).
 cmd_reconcile() {
-  local key line stage pr state ok fail run
+  local key line stage pr state ok fail run url
   for key in $(jira_inflight_keys); do
     line="$(pipeline_progress "$key")"; stage="$(printf '%s' "$line" | awk '{print $2}')"
     case "$stage" in
@@ -1300,6 +1300,10 @@ cmd_reconcile() {
           OPEN)
             if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "${ok#ok=}" -gt 0 ]; then
               cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
+            elif url="$(gh_gate_stuck "$key")"; then
+              # The launcher died before it approved the functional gate.
+              finish_approve_functional_gate "$url" 2>/dev/null
+              echo "$key pr #$pr gate approved (launcher died before approving it)"
             else
               echo "$key pr #$pr $ok $fail $run"
             fi ;;

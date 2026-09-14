@@ -35,6 +35,10 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    the `progress` line for you to judge with the table below. A ticket that turns green frees
    its slot inside this same pass.
 
+   It also re-approves the CircleCI functional gate when a PR's only pending check is
+   "Approve Functional Tests" and the head is over 10 min old: that is a launcher that died
+   between `gh pr create` and the approval, and nothing else would ever flip it.
+
    A launch that dies before the agent starts (stockout in every zone, image missing) returns
    its ticket to the queue on its own, so the next pass retries it. `PIPE_MAX_LAUNCHES_PER_DAY`
    (20) caps how often that can happen. A relaunch on a slot that still holds work from a

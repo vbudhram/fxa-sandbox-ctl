@@ -34,6 +34,30 @@ gh_pr_state() {
     | \"\(\$k) \(\$p.number) \(\$p.state) ok=\(\$r.ok) fail=\(\$r.fail) running=\(\$r.run)\""
 }
 
+# gh_gate_stuck <KEY>
+#   Exit 0 when the PR's only pending checks are the CircleCI functional-tests
+#   approval gate (and the workflow that waits on it), and the head commit is
+#   over 10 min old. That is a launcher that died between `gh pr create` and
+#   finish_approve_functional_gate: nothing else re-approves the gate, so the
+#   PR would show one pending check forever. Prints the PR url.
+gh_gate_stuck() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || return 1
+  local br; br="$(worktree_branch_for "$key")" || return 1
+  gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
+    --json url,statusCheckRollup,commits 2>/dev/null \
+  | jq -er --argjson now "$(date +%s)" '
+      .[0] // empty
+      | [ .statusCheckRollup[]
+          | select(((.status // .state) | ascii_upcase) as $s | $s == "PENDING" or $s == "IN_PROGRESS" or $s == "QUEUED")
+          | (.name // .context) ] as $pending
+      | select(($pending | length) > 0)
+      | select($pending | all(test("Approve Functional Tests|^test_pull_request$")))
+      | select($pending | any(test("Approve Functional Tests")))
+      | select(($now - (.commits[-1].committedDate | fromdateiso8601)) > 600)
+      | .url'
+}
+
 # gh_drain <KEYS>
 #   Read-only. For each done key, print a line only when it needs action:
 #   "KEY <pr#> MERGED|CLOSED" to leave `done`, or "KEY <pr#> RED ..." for a PR
