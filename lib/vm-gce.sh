@@ -25,15 +25,29 @@ FXA_GCE_SSH_KEY="${FXA_GCE_SSH_KEY:-${HOME}/.ssh/fxa-sandbox-gce}"
 [ -f "$FXA_GCE_SSH_KEY" ] || ssh-keygen -t ed25519 -f "$FXA_GCE_SSH_KEY" -N "" -q -C fxa-sandbox-gce
 
 _gce() { gcloud --project "$FXA_GCE_PROJECT" --quiet --verbosity=error "$@"; }
-_gce_zone() { local sub="$1"; shift; _gce compute "$sub" "$@" --zone "$FXA_GCE_ZONE"; }
+# Each instance remembers the zone it landed in (stockouts move launches
+# between zones), so every per-instance call reads that file, not the default.
+_vm_zone() { cat "${LOG_DIR}/${1#agent-}.zone" 2>/dev/null || printf '%s' "$FXA_GCE_ZONE"; }
+_gce_zones_csv() { printf '%s' "$FXA_GCE_ZONES" | tr ' ' ','; }
+# _gce_zone instances <verb> <instance> [args]   |   _gce_zone ssh <instance> [args]
+_gce_zone() {
+  local sub="$1"; shift
+  local inst; if [ "$sub" = "ssh" ]; then inst="$1"; else inst="$2"; fi
+  _gce compute "$sub" "$@" --zone "$(_vm_zone "$inst")"
+}
 _gce_ssh() { local name="$1"; shift; _gce_zone ssh "$(vm_name "$name")" --tunnel-through-iap --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"; }
 
 # The call sites expand VM_SSH_OPTS unquoted, so an option with spaces cannot
 # ride in it. The IAP ProxyCommand goes in a config file instead.
 _GCE_SSH_CONFIG="${LOG_DIR}/gce-ssh-config"
 mkdir -p "${LOG_DIR}"
-printf 'Host %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
-  "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" > "$_GCE_SSH_CONFIG"
+# Per-host entries (written at create, removed at delete) come first; the
+# wildcard is the fallback for the default zone. Rewriting only the wildcard
+# keeps the per-host entries across shells.
+if ! grep -q "^Host ${VM_PREFIX}-\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; then
+  printf 'Host %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
+    "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" >> "$_GCE_SSH_CONFIG"
+fi
 VM_SSH_OPTS="${VM_SSH_OPTS} -F ${_GCE_SSH_CONFIG}"
 
 # ── Image management ───────────────────────────────────────────
@@ -64,17 +78,35 @@ vm_clone() {
   local -a image_flags=(--image "$FXA_GCE_IMAGE")
   [ -n "${FXA_GCE_IMAGE_FAMILY:-}" ] && image_flags=(--image-family "$FXA_GCE_IMAGE_FAMILY" --image-project "${FXA_GCE_IMAGE_PROJECT:-ubuntu-os-cloud}")
   mkdir -p "${LOG_DIR}"
-  echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${FXA_GCE_ZONE})..."
-  _gce_zone instances create "$(vm_name "$name")" \
-    --machine-type "$FXA_GCE_MACHINE_TYPE" \
-    "${image_flags[@]}" \
-    --boot-disk-type hyperdisk-balanced --boot-disk-size 50GB \
-    --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
-    --no-service-account --no-scopes \
-    --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
-    --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main}" \
-    --labels "fxa-agent=${name}" \
-    > "${LOG_DIR}/${name}-vm.log" 2>&1 || { cat "${LOG_DIR}/${name}-vm.log" >&2; return 1; }
+  # One zone holds about two of these; on a stockout move to the next zone in
+  # the region and remember where the instance landed.
+  local zone
+  for zone in $FXA_GCE_ZONES; do
+    echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
+    if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
+        --machine-type "$FXA_GCE_MACHINE_TYPE" \
+        "${image_flags[@]}" \
+        --boot-disk-type hyperdisk-balanced --boot-disk-size 50GB \
+        --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
+        --no-service-account --no-scopes \
+        --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
+        --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main}" \
+        --labels "fxa-agent=${name}" \
+        > "${LOG_DIR}/${name}-vm.log" 2>&1; then
+      printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
+      # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
+      printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
+        "$(vm_name "$name")" "$FXA_GCE_PROJECT" "$zone" | cat - "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
+      return 0
+    fi
+    if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
+      echo "  ${zone} is stocked out for ${FXA_GCE_MACHINE_TYPE}; trying the next zone." >&2
+      continue
+    fi
+    cat "${LOG_DIR}/${name}-vm.log" >&2; return 1
+  done
+  echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${FXA_GCE_MACHINE_TYPE}." >&2
+  return 1
 }
 
 # Machine shape is fixed by FXA_GCE_MACHINE_TYPE.
@@ -153,7 +185,7 @@ _GCE_RUNNING=""; _GCE_RUNNING_AT=0
 vm_is_running() {
   local now; now="$(date +%s)"
   if [ $(( now - _GCE_RUNNING_AT )) -ge 20 ]; then
-    _GCE_RUNNING="$(_gce compute instances list --zones "$FXA_GCE_ZONE" --filter "name~^${VM_PREFIX}- AND status=RUNNING" --format 'value(name)' 2>/dev/null | tr '\n' ' ')"
+    _GCE_RUNNING="$(_gce compute instances list --zones "$(_gce_zones_csv)" --filter "name~^${VM_PREFIX}- AND status=RUNNING" --format 'value(name)' 2>/dev/null | tr '\n' ' ')"
     _GCE_RUNNING_AT="$now"
   fi
   case " $_GCE_RUNNING " in *" $(vm_name "$1") "*) return 0 ;; *) return 1 ;; esac
@@ -169,7 +201,9 @@ vm_delete() {
   echo "Deleting instance '$(vm_name "$name")'..."
   _gce_zone instances delete "$(vm_name "$name")" >/dev/null 2>&1 \
     || echo "WARN: delete failed for $(vm_name "$name"); it is still billing. Retry: fxa-sandbox-ctl --backend gce stop ${name}" >&2
-  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log"
+  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log" "${LOG_DIR}/${name}.zone"
+  # Drop the per-host ssh entry, or the file grows one block per run forever.
+  [ -f "$_GCE_SSH_CONFIG" ] && awk -v h="Host $(vm_name "$name")" '$0==h{skip=2} skip>0{skip--; next} {print}' "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
 }
 
 # name, status, and age in seconds. The age is what the dashboard flags.
@@ -177,7 +211,7 @@ vm_delete() {
 # creationTimestamp carries a UTC offset with a colon; date -j needs it without.
 vm_list() {
   local n st ts
-  _gce compute instances list --zones "$FXA_GCE_ZONE" --filter "name~^${VM_PREFIX}-" \
+  _gce compute instances list --zones "$(_gce_zones_csv)" --filter "name~^${VM_PREFIX}-" \
        --format 'value(name,status,creationTimestamp)' 2>/dev/null \
   | while IFS=$'\t' read -r n st ts; do
       ts="$(printf '%s' "$ts" | sed -E 's/\.[0-9]+//; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"

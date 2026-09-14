@@ -28,6 +28,9 @@ VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogL
 # GCE backend. Project is required when FXA_VM_BACKEND=gce.
 FXA_GCE_PROJECT="${FXA_GCE_PROJECT:-}"
 FXA_GCE_ZONE="${FXA_GCE_ZONE:-us-central1-a}"
+# Zones to try in order when the first is stocked out. All in one region, so
+# the subnet and NAT serve every one. A runner remembers the zone it landed in.
+FXA_GCE_ZONES="${FXA_GCE_ZONES:-us-central1-a us-central1-b us-central1-c us-central1-f}"
 FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
 # c4a, not n4a: n4a was stocked out in every us-central1 zone on 2026-09-13.
 FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"

@@ -305,7 +305,8 @@ cp .env.example .env
 | `FXA_DIRTY_IGNORE` | Extended-regex pattern of extra status lines to ignore. |
 | `FXA_VM_BACKEND` | `tart` (default) or `gce`. `--backend` on the command line wins. |
 | `FXA_GCE_PROJECT` | GCP project for `gce` runners. Required for that backend. |
-| `FXA_GCE_ZONE` | Zone for runners and the image build (default: `us-central1-a`). |
+| `FXA_GCE_ZONE` | Default zone for runners and the image build (default: `us-central1-a`). |
+| `FXA_GCE_ZONES` | Zones tried in order on a stockout, same region (default: `us-central1-a b c f`). Each runner remembers its zone. |
 | `FXA_GCE_MACHINE_TYPE` | Runner shape (default: `c4a-highcpu-4`). |
 | `FXA_GCE_MAX_RUN_SECONDS` | Runner lifetime; GCE deletes it at this age (default: `5400`). |
 | `GITHUB_APP_ID`, `GITHUB_APP_PEM`, `GITHUB_APP_INSTALLATION_ID` | GitHub App identity for commits and PRs. Helpers exist in `lib/github.sh`; `finish` does not use them yet. |
