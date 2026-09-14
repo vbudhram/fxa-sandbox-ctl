@@ -331,7 +331,15 @@ _setup_claude_config() {
   # claude-mem is the bulk of the plugin cache, almost all of it duplicated
   # node_modules across cached versions. Its data lives in ~/.claude-mem, which
   # never crosses, so shipping the code buys the VM nothing.
-  local skill_excludes=(--exclude="plugins/cache/thedotmack")
+  # node_modules inside plugin caches was 750 MB of an 814 MB bundle, and the
+  # integration plugins (vercel, figma, atlassian, slack) need networks the VM
+  # does not have. Without them the bundle is about 60 MB; through the IAP
+  # tunnel that is the difference between a minute and ten.
+  local skill_excludes=(--exclude="plugins/cache/thedotmack" --exclude="*/node_modules"
+    --exclude="plugins/cache/claude-plugins-official/vercel"
+    --exclude="plugins/cache/claude-plugins-official/figma"
+    --exclude="plugins/cache/claude-plugins-official/atlassian"
+    --exclude="plugins/cache/claude-plugins-official/slack")
 
   # Skills are an allow-list, not a deny-list. The VM has no gh, acli, circleci,
   # or sentry-cli, no GitHub or Jira credential, and no MCP, so any skill that
