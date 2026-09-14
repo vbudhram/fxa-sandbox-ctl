@@ -90,8 +90,10 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
 
    **`slots` reports VM state, not availability.** The VM is stopped as soon as the PR opens, so a
    slot reads `free` while its ticket is still waiting on CI. A relaunch needs that ticket's branch
-   checked out, and a worktree holds one branch, so **a ticket owns its slot until its label leaves
-   `inflight`.**
+   checked out, and a worktree holds one branch, so on Tart **a ticket owns its slot until its label
+   leaves `inflight`.** On GCE the runner holds the work, not the slot, and a pushed branch lives on
+   origin where any slot can resume it, so a ticket owns its slot only while its runner is up.
+   `freeslots` knows the difference.
 
    **Use `$CTL freeslots` to pick a slot.** It prints only the slots whose checked-out branch
    belongs to no `inflight` ticket, which is the actual question. Do not hand-cross-check `slots`

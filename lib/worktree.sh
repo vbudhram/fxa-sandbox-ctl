@@ -203,7 +203,11 @@ worktree_free_slots() {
     path="${parent}/${slot}"
     branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null)" || continue
     key="$(worktree_key_for "$branch")"
-    if [ -n "$owned" ] && printf '%s\n' "$owned" | grep -qx "$key"; then
+    # On tart the slot is the only copy of an unpushed run, so a ticket owns it
+    # until its label leaves inflight. On gce the runner holds the work while it
+    # runs (the VM check below withholds the slot), and once the PR is pushed the
+    # branch is on origin, where any slot can resume it. Ownership adds nothing.
+    if [ "${FXA_VM_BACKEND:-tart}" != "gce" ] && [ -n "$owned" ] && printf '%s\n' "$owned" | grep -qx "$key"; then
       continue                      # owned by a ticket that may still relaunch
     fi
     if [ -n "$(_worktree_agent_for_workspace "$path")" ]; then

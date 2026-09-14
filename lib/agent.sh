@@ -568,6 +568,18 @@ agent_run() {
   FXA_GCE_BRANCH="$(git -C "$workspace_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   export FXA_GCE_BRANCH
   vm_clone "$name" || return 1
+  # Claim the slot now, not after boot. freeslots and the launcher's collision
+  # check read this file, and a gce boot takes minutes; until 2026-09-14 the
+  # slot read free for that whole window. The IP is filled in below.
+  mkdir -p "${LOG_DIR}"
+  cat > "${LOG_DIR}/${name}.meta" <<META
+NAME=${name}
+WORKSPACE=${workspace_dir}
+CPU=${cpu}
+MEMORY=${memory}
+IP=
+STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+META
 
   # Step 2: Configure VM resources
   vm_configure "$name" "$cpu" "$memory"
