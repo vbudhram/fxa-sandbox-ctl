@@ -80,8 +80,9 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
    failed on `fxa-14373` the same day. Read the failing job's log before concluding the PR is at
    fault, and say which of the two it is.
 
-   No Jira comment for a drain. The merge is visible on the PR, and a comment saying "this merged"
-   tells the reporter nothing they cannot see.
+   `label <KEY> merged` posts the one drain comment itself: the PR link, how many agent runs it
+   took, wall time launch→PR, the models, the token counts, and the API list-price estimate. Do
+   not write a second one. It carries no billing detail by design.
    **Then collect strays.** Run `$CTL reap --stray`. It stops every running VM whose ticket is
    not `inflight` and prints nothing when the pool is clean. `label` already reaps on a normal
    transition, so this only fires when something skipped that path: a pass that died between the
@@ -734,7 +735,7 @@ Reaching a cap is a successful outcome. Handing a human an honest `blocked` beat
 
 ## Output surface — write nowhere else
 
-You may write exactly five things:
+You may write exactly these things:
 
 1. The Jira label, via `$CTL label`.
 2. One Jira comment per state change, led with 🤖.
@@ -746,6 +747,9 @@ You may write exactly five things:
 6. **One 👍 reaction per review comment the round actually fixed**, via
    `$CTL feedback <KEY> thumbsup`. Never on a comment you declined. See the review-feedback
    section for why a reaction is allowed where a reply is not.
+7. **One Jira comment when a ticket is labelled `merged`**, written by `$CTL label` itself from
+   the run telemetry: PR, runs, wall time, models, tokens, estimated API cost. `label <KEY> done`
+   records the run that feeds it, so never skip the `done` step on the way to `merged`.
 
 Write #5 even though a skip changes no label. The session report reaches only the person watching
 that terminal, and an unattended pass has no such person. On 2026-08-12 FXA-14115 was skipped for

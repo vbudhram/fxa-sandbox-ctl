@@ -149,6 +149,24 @@ _handoff_settled() {
   [ "$(git -C "$wt" rev-list --count "origin/${FXA_WORKTREE_BASE:-main}..HEAD" 2>/dev/null || echo 0)" != "0" ]
 }
 
+# _finish_fetch_session_log <worktree>
+#   gce only. Copy Claude Code's own session transcript out of the runner into
+#   the slot as .fxa-auto-session.jsonl before the runner is reaped. The
+#   stream-json log the launcher already pulls carries usage snapshots taken at
+#   message start, so its output-token counts are near zero; the session file
+#   holds the final usage per message and is what telemetry prices from.
+_finish_fetch_session_log() {
+  local wt="$1"
+  [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
+  local name; name="$(_worktree_agent_for_workspace "$wt")"
+  [ -n "$name" ] || return 0
+  vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
+    > "${wt}/.fxa-auto-session.jsonl.tmp" 2>/dev/null \
+    && [ -s "${wt}/.fxa-auto-session.jsonl.tmp" ] \
+    && mv "${wt}/.fxa-auto-session.jsonl.tmp" "${wt}/.fxa-auto-session.jsonl" \
+    || { rm -f "${wt}/.fxa-auto-session.jsonl.tmp"; echo "WARN: could not fetch the session transcript from ${name}; telemetry will undercount output tokens." >&2; }
+}
+
 finish_wait_for_done() {
   local worktree="${1:-}"
   local timeout="${2:-7200}"
@@ -173,6 +191,7 @@ finish_wait_for_done() {
       if _handoff_settled "$(dirname "$done_file")" "$done_file"; then
         echo "" >&2
         echo "=== handoff file detected: ${done_file} ===" >&2
+        _finish_fetch_session_log "$(dirname "$done_file")"
         return 0
       fi
     else
@@ -188,6 +207,7 @@ finish_wait_for_done() {
       if [ -n "$found" ]; then
         echo "" >&2
         echo "=== handoff file detected: ${found} ===" >&2
+        _finish_fetch_session_log "$(dirname "$found")"
         return 0
       fi
     fi

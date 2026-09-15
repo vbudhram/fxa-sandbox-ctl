@@ -1458,6 +1458,20 @@ cmd_label() {
   if [ "$state" = "done" ] && gh_feedback_has_acted "$key"; then
     gh_feedback "$key" thumbsup
   fi
+  # `done` is the last moment the slot still holds this run's transcript: the
+  # next launch on the slot truncates it. Record the run here, every time.
+  if [ "$state" = "done" ]; then
+    telemetry_record "$key" >/dev/null 2>&1 || echo "WARN: telemetry_record failed for $key" >&2
+  fi
+  # `merged` closes the loop on the ticket: say what landed and what it cost.
+  if [ "$state" = "merged" ]; then
+    if ! jq -e --arg k "$key" 'select(.issue == $k)' "$PIPE_RUNS_FILE" >/dev/null 2>&1; then
+      telemetry_record "$key" >/dev/null 2>&1 || true
+    fi
+    local mpr; read -r _ mpr _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
+    [ -n "$mpr" ] && [ "$mpr" != "none" ] && mpr="https://github.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/${mpr}" || mpr=""
+    jira_comment "$key" "$(telemetry_merge_comment "$key" "$mpr")" || echo "WARN: merge comment failed for $key" >&2
+  fi
 }
 
 # _jira_launch_failed <KEY> <name>

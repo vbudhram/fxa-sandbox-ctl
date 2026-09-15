@@ -23,14 +23,63 @@ jq -s "[.[] | select(.message.usage != null)] as \$m
       cache_read: (\$m|map(.message.usage.cache_read_input_tokens // 0)|add) }" "$f"
 REMOTE
 
+# jq that sums the stream-json transcript the launcher pulls back into the slot
+# as .fxa-auto-claude.jsonl. The `result` event carries per-model totals for the
+# whole run (modelUsage), which is the authoritative count and includes subagent
+# models. A run that died before its result event falls back to summing the
+# assistant messages, which undercounts subagents but is never empty.
+read -r -d '' _TELEMETRY_LOCAL <<'LOCAL' || true
+def sum_models: to_entries | map(.value) |
+  { input: (map(.inputTokens//0)|add), output: (map(.outputTokens//0)|add),
+    cache_write: (map(.cacheCreationInputTokens//0)|add), cache_read: (map(.cacheReadInputTokens//0)|add) };
+[.[] | select(.type=="result" and .modelUsage != null)] as $r
+| if ($r|length) > 0 then
+    ($r | map(.modelUsage) | add) as $mu
+    | ($mu | sum_models) + {
+        messages: ($r|map(.num_turns//0)|add), model: ($mu|to_entries|max_by(.value.costUSD//0)|.key),
+        models: ($mu | with_entries(.value |= {input:(.inputTokens//0), output:(.outputTokens//0),
+                   cache_write:(.cacheCreationInputTokens//0), cache_read:(.cacheReadInputTokens//0),
+                   cost_reported:(.costUSD//0)})),
+        agent_ms: ($r|map(.duration_ms//0)|add), source: "result" }
+  else
+    [.[] | select(.type=="assistant" and .message.usage != null and .message.model != "<synthetic>")] as $m
+    | { messages: ($m|length), model: ($m|map(.message.model)|unique|first),
+        input: ($m|map(.message.usage.input_tokens//0)|add), output: ($m|map(.message.usage.output_tokens//0)|add),
+        cache_write: ($m|map(.message.usage.cache_creation_input_tokens//0)|add),
+        cache_read: ($m|map(.message.usage.cache_read_input_tokens//0)|add), source: "assistant-sum" }
+  end
+LOCAL
+
+# jq for Claude Code's session transcript (.fxa-auto-session.jsonl, fetched at
+# handoff). One line per message with FINAL usage. Dedupe on message id: a
+# message with several content blocks appears once per block.
+read -r -d '' _TELEMETRY_SESSION <<'SESSION' || true
+[.[] | select(.type=="assistant" and .message.usage != null and .message.model != "<synthetic>")]
+| group_by(.message.id) | map(.[-1])
+| group_by(.message.model) | map({key: .[0].message.model, value: {
+    input: (map(.message.usage.input_tokens//0)|add), output: (map(.message.usage.output_tokens//0)|add),
+    cache_write: (map(.message.usage.cache_creation_input_tokens//0)|add), cache_read: (map(.message.usage.cache_read_input_tokens//0)|add),
+    n: length }}) | from_entries as $models
+| ($models | to_entries | map(.value)) as $v
+| { messages: ($v|map(.n)|add), model: ($models|to_entries|max_by(.value.output)|.key),
+    input: ($v|map(.input)|add), output: ($v|map(.output)|add),
+    cache_write: ($v|map(.cache_write)|add), cache_read: ($v|map(.cache_read)|add),
+    models: ($models | with_entries(.value |= del(.n))), source: "session" }
+SESSION
+
 # telemetry_usage <KEY>
-#   The transcript lives only inside the VM, so this MUST run before the VM is
-#   stopped or the numbers are lost for good.
+#   Prefer the transcript copy in the slot: on GCE the runner is deleted the
+#   moment the PR opens, so the VM path only works mid-run. Fall back to the VM.
 telemetry_usage() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: usage needs <KEY>" >&2; return 1; }
+  local wt f
+  if wt="$(_telemetry_worktree_for_key "$key")"; then
+    f="${wt}/.fxa-auto-session.jsonl"; [ -s "$f" ] && jq -s "$_TELEMETRY_SESSION" "$f" 2>/dev/null && return 0
+    f="${wt}/.fxa-auto-claude.jsonl";  [ -s "$f" ] && jq -s "$_TELEMETRY_LOCAL" "$f" 2>/dev/null && return 0
+  fi
   local name; name="$(worktree_branch_for "$key")" || return 1
-  agent_ssh_exec "$name" "$_TELEMETRY_REMOTE" 2>/dev/null || { echo '{"error":"no-vm"}'; return 1; }
+  agent_ssh_exec "$name" "$_TELEMETRY_REMOTE" 2>/dev/null || { echo '{"error":"no-transcript"}'; return 1; }
 }
 
 # List pricing in USD per 1M tokens: input, output, cache_write, cache_read.
@@ -102,7 +151,21 @@ telemetry_record() {
   local model rates cost
   model="$(printf '%s\n' "$usage" | jq -r '.model // ""')"
   rates="$(_telemetry_price_for "$model")"
-  if [ -n "$rates" ]; then
+  # A run with a per-model breakdown (subagents on a cheaper model) is priced
+  # model by model; the single-rate path below is the fallback for old rows.
+  if [ "$(printf '%s\n' "$usage" | jq -r '.models // empty | length')" != "" ]; then
+    local m table="" mr
+    for m in $(printf '%s\n' "$usage" | jq -r '.models | keys[]'); do
+      mr="$(_telemetry_price_for "$m")"; [ -n "$mr" ] || { echo "WARN: no price row for model '$m'" >&2; continue; }
+      table="${table}${m} ${mr}\n"
+    done
+    cost="$(printf '%s\n' "$usage" | jq -c --arg t "$(printf "$table")" '
+      ($t | split("\n") | map(select(length>0) | split(" ") | {key:.[0], value:(.[1:]|map(tonumber))}) | from_entries) as $p
+      | { cost_usd: ([.models | to_entries[] | select($p[.key] != null) |
+            (.value.input*$p[.key][0] + .value.output*$p[.key][1] + .value.cache_write*$p[.key][2] + .value.cache_read*$p[.key][3]) / 1000000]
+            | add // 0 | . * 100 | round / 100),
+          priced: ($p | with_entries(.value |= {input:.[0], output:.[1], cache_write:.[2], cache_read:.[3]})) }')"
+  elif [ -n "$rates" ]; then
     cost="$(printf '%s\n' "$usage" | jq -c --arg r "$rates" '
       ($r | split(" ") | map(select(length>0) | tonumber)) as $p
       | { cost_usd: (((.input//0)*$p[0] + (.output//0)*$p[1]
@@ -161,4 +224,38 @@ telemetry_costs() {
     }) | from_entries' "$PIPE_RUNS_FILE" >"${PIPE_COSTS_FILE}.tmp" \
     && mv "${PIPE_COSTS_FILE}.tmp" "$PIPE_COSTS_FILE"
   echo "$PIPE_COSTS_FILE"
+}
+
+# telemetry_merge_comment <KEY>
+#   Render the 🤖 comment posted when a ticket is labelled merged: what landed,
+#   how long the agent runs took, which models, the token counts, and the
+#   API-list-price estimate. Rows come from the run log; a ticket with no rows
+#   gets a one-line comment rather than invented numbers. Deliberately says
+#   nothing about how the runs were billed.
+telemetry_merge_comment() {
+  pipeline_require || return 1
+  local key="${1:-}" pr="${2:-}"
+  [ -s "$PIPE_RUNS_FILE" ] || { printf '🤖 Merged%s. No run telemetry was recorded for this ticket.\n' "${pr:+ as $pr}"; return 0; }
+  jq -r -s --arg k "$key" --arg pr "$pr" '
+    def n: tostring | gsub("(?<a>\\d)(?=(?:\\d{3})+$)"; "\(.a),");
+    def mins: (. / 60 | round) as $m | if $m >= 60 then "\($m/60|floor)h \($m%60)m" else "\($m)m" end;
+    [.[] | select(.issue == $k)] as $r
+    | if ($r|length) == 0 then "🤖 Merged\(if $pr != "" then " as \($pr)" else "" end). No run telemetry was recorded for this ticket."
+      else
+        ($r | map(.wall_seconds//0) | add) as $wall
+        | ($r | map(.cost_usd//0) | add) as $cost
+        | ($r | map(.models // {(.model//"unknown"): {input:.input, output:.output, cache_write:.cache_write, cache_read:.cache_read}})
+             | add // {}) as $models
+        | ($r | map(.models // {} | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | {input:(map(.input)|add), output:(map(.output)|add), cache_write:(map(.cache_write)|add), cache_read:(map(.cache_read)|add)})}) | from_entries) as $bymodel
+        | (if ($bymodel|length) > 0 then $bymodel else $models end) as $bm
+        | (($r|map(.pr)|map(select(. != ""))|last) // $pr) as $url
+        | [ "🤖 Merged\(if $url != "" and $url != null then " as \($url)" else "" end).",
+            "Agent runs: \($r|length). Wall time launch→PR: \($wall|mins). Models: \($bm|keys|join(", ")).",
+            "Tokens: input \($r|map(.input//0)|add|n), output \($r|map(.output//0)|add|n), cache write \($r|map(.cache_write//0)|add|n), cache read \($r|map(.cache_read//0)|add|n).",
+            "Estimated API cost at list price: $\($cost*100|round/100)." ]
+          + ( if ($bm|length) > 1 then [ "Per model: " + ($bm | to_entries | map("\(.key) out \(.value.output|n) / cache read \(.value.cache_read|n)") | join("; ")) + "." ] else [] end )
+          + ( ($r | map(select(.source == "assistant-sum")) | length) as $approx
+              | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; the cost estimate is a floor." ] else [] end )
+        | join("\n")
+      end' "$PIPE_RUNS_FILE"
 }
