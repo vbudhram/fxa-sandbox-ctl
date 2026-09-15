@@ -219,8 +219,15 @@ SUDOERS
 
 _setup_egress_firewall() {
   local name="$1"
+  # The allowlist is per runtime: Codex talks to OpenAI, not Anthropic. Without
+  # these three hosts a Codex runner boots, stages its auth, and every model
+  # call is rejected, which reads as a silent stall.
+  local hosts="$FXA_EGRESS_HOSTS"
+  case "${FXA_AGENT_RUNTIME:-claude}" in
+    codex) hosts="$hosts api.openai.com chatgpt.com auth.openai.com" ;;
+  esac
 
-  vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$FXA_EGRESS_HOSTS" bash -c '
+  vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$hosts" bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -258,13 +265,25 @@ _setup_egress_firewall() {
           iptables -A OUTPUT -m owner --uid-owner agent -d "$ip" -j ACCEPT
         done
       done
+      # Any unconditional ACCEPT ahead of us (older images appended one at boot)
+      # makes every rule below unreachable. Remove them all before the REJECT.
+      while iptables -D OUTPUT -j ACCEPT 2>/dev/null; do :; done
       iptables -A OUTPUT -m owner --uid-owner agent -j REJECT --reject-with icmp-port-unreachable
       iptables -A OUTPUT -j ACCEPT
     fi
     # Assert, so a failed apply aborts the launch instead of running open.
     iptables -S OUTPUT | grep -q -- "-d 10.0.0.0/8 -j DROP" || exit 1
     # iptables -S prints the uid, not the name.
-    [ "$FXA_EGRESS_ALLOW_ALL" = "1" ] || iptables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || exit 1
+    # Assert behaviour, not rule text. A REJECT rule that exists but never
+    # matches passed the old check while example.com answered 200.
+    if [ "$FXA_EGRESS_ALLOW_ALL" != "1" ]; then
+      iptables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || { echo "egress: REJECT rule missing" >&2; exit 1; }
+      if sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null; then
+        echo "egress: agent user reached a non-allowlisted host; allowlist is not enforced" >&2; exit 1
+      fi
+      sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null \
+        || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
+    fi
   ' 2>/dev/null
 }
 

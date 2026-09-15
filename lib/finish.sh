@@ -157,10 +157,11 @@ _handoff_settled() {
 #   holds the final usage per message and is what telemetry prices from.
 _finish_fetch_session_log() {
   local wt="$1"
+  # Claude Code and Codex keep session logs in different trees; take the newest of either.
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   local name; name="$(_worktree_agent_for_workspace "$wt")"
   [ -n "$name" ] || return 0
-  vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
+  vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl /home/agent/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
     > "${wt}/.fxa-auto-session.jsonl.tmp" 2>/dev/null \
     && [ -s "${wt}/.fxa-auto-session.jsonl.tmp" ] \
     && mv "${wt}/.fxa-auto-session.jsonl.tmp" "${wt}/.fxa-auto-session.jsonl" \

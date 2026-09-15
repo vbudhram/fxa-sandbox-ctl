@@ -67,6 +67,22 @@ read -r -d '' _TELEMETRY_SESSION <<'SESSION' || true
     models: ($models | with_entries(.value |= del(.n))), source: "session" }
 SESSION
 
+# jq for a Codex session log (~/.codex/sessions/.../rollout-*.jsonl). The
+# token_count events carry the CUMULATIVE total, so the last one is the run.
+# OpenAI's input_tokens includes the cached part; split it so the row means the
+# same thing as a Claude row: input = uncached, cache_read = cached.
+read -r -d '' _TELEMETRY_CODEX <<'CODEX' || true
+([.[] | select(.type=="turn_context")] | last | .payload.model // "codex") as $model
+| ([.[] | select(.type=="event_msg" and .payload.type=="token_count" and .payload.info.total_token_usage != null)]) as $tc
+| ($tc | last | .payload.info.total_token_usage // {}) as $u
+| { messages: ($tc|length), model: $model,
+    input: (($u.input_tokens//0) - ($u.cached_input_tokens//0)), output: ($u.output_tokens//0),
+    cache_write: ($u.cache_write_input_tokens//0), cache_read: ($u.cached_input_tokens//0),
+    models: { ($model): { input: (($u.input_tokens//0) - ($u.cached_input_tokens//0)), output: ($u.output_tokens//0),
+                          cache_write: ($u.cache_write_input_tokens//0), cache_read: ($u.cached_input_tokens//0) } },
+    source: "codex-session" }
+CODEX
+
 # telemetry_usage <KEY>
 #   Prefer the transcript copy in the slot: on GCE the runner is deleted the
 #   moment the PR opens, so the VM path only works mid-run. Fall back to the VM.
@@ -75,7 +91,11 @@ telemetry_usage() {
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: usage needs <KEY>" >&2; return 1; }
   local wt f
   if wt="$(_telemetry_worktree_for_key "$key")"; then
-    f="${wt}/.fxa-auto-session.jsonl"; [ -s "$f" ] && jq -s "$_TELEMETRY_SESSION" "$f" 2>/dev/null && return 0
+    f="${wt}/.fxa-auto-session.jsonl"
+    if [ -s "$f" ]; then
+      if grep -q '"token_count"' "$f"; then jq -s "$_TELEMETRY_CODEX" "$f" 2>/dev/null && return 0
+      else jq -s "$_TELEMETRY_SESSION" "$f" 2>/dev/null && return 0; fi
+    fi
     f="${wt}/.fxa-auto-claude.jsonl";  [ -s "$f" ] && jq -s "$_TELEMETRY_LOCAL" "$f" 2>/dev/null && return 0
   fi
   local name; name="$(worktree_branch_for "$key")" || return 1
@@ -96,6 +116,9 @@ _telemetry_price_for() {
     claude-opus-5*)    echo "5.00 25.00 6.25 0.50" ;;
     claude-sonnet-5*)  echo "2.00 10.00 2.50 0.20" ;;
     claude-haiku-4-5*) echo "1.00  5.00 1.25 0.10" ;;
+    # OpenAI list prices, developers.openai.com/api/docs/pricing (read 2026-09-15):
+    # input 10, output 50, cache write 12.50, cached input 1.00.
+    gpt-6-astra*)      echo "10.00 50.00 12.50 1.00" ;;
     *) echo "" ;;
   esac
 }

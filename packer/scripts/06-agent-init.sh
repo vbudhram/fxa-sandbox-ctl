@@ -106,9 +106,10 @@ if [ -n "$GATEWAY" ]; then
   # delivers the ssh key, and a blocked agent delayed ssh by ~80 s); the agent
   # user must not reach it. Drop by owner, not by address.
   iptables -A OUTPUT -d 169.254.0.0/16 -m owner --uid-owner agent -j DROP
-  # Allow all public internet
-  iptables -A OUTPUT -j ACCEPT
-  log "Egress firewall configured (private networks blocked, public internet allowed)"
+  # No trailing ACCEPT. The chain policy is already ACCEPT, and an explicit
+  # rule here sat in front of the launch-time allowlist, so the agent user's
+  # REJECT never saw a packet: on 2026-09-15 a runner reached example.com.
+  log "Egress firewall configured (private networks blocked, public internet allowed by policy)"
 else
   log "WARN: Could not determine gateway, skipping firewall"
 fi
