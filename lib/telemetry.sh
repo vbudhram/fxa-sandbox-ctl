@@ -159,8 +159,20 @@ telemetry_record() {
   # 2026-09-08 FXA-14471 recorded 119 hours because it was recorded five days
   # late; its real run was 49 minutes. This is only correct because the launcher
   # deletes the log before each launch, giving every run a true birth time.
-  secs="$( [ -f "$log" ] && python3 -c "import os,sys;s=os.stat(sys.argv[1]);print(max(0,int(s.st_mtime-s.st_birthtime)))" "$log" || echo 0 )"
+  # End at the handoff when the slot still has it: the launcher keeps writing
+  # the log while it polls CI, so the log's own mtime overstates the run. On
+  # FXA-14529 that read 34 min for an 18 min round.
+  local done_file="${wt:+${wt}/.fxa-auto-done.json}"
+  secs="$( [ -f "$log" ] && python3 -c "
+import os,sys
+s=os.stat(sys.argv[1]); end=s.st_mtime
+d=sys.argv[2]
+if d and os.path.exists(d):
+    m=os.stat(d).st_mtime
+    if m>s.st_birthtime: end=m
+print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" 2>/dev/null || true; } | tail -1)"
+  local kind; kind="$( { grep -m1 -o 'Run kind: [a-z-]*' "$log" 2>/dev/null || true; } | awk '{print $3}')"; kind="${kind:-fix}"
   if [ -n "$wt" ]; then
     base="origin/${FXA_WORKTREE_BASE}"
     sha="$(git -C "$wt" rev-parse --short HEAD 2>/dev/null || echo '')"
@@ -210,8 +222,8 @@ telemetry_record() {
   mkdir -p "$(dirname "$PIPE_RUNS_FILE")"
   printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
       --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" \
-      --argjson cost "$cost" --arg billing "$billing" \
-      '. + $cost + {issue:$k, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, recorded_at:$at, billing:$billing}' \
+      --argjson cost "$cost" --arg billing "$billing" --arg kind "$kind" \
+      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, recorded_at:$at, billing:$billing}' \
     >>"$PIPE_RUNS_FILE"
   echo "recorded $key -> $PIPE_RUNS_FILE"
   tail -1 "$PIPE_RUNS_FILE"
@@ -258,27 +270,30 @@ telemetry_costs() {
 telemetry_merge_comment() {
   pipeline_require || return 1
   local key="${1:-}" pr="${2:-}"
-  [ -s "$PIPE_RUNS_FILE" ] || { printf '🤖 Merged%s. No run telemetry was recorded for this ticket.\n' "${pr:+ as $pr}"; return 0; }
-  jq -r -s --arg k "$key" --arg pr "$pr" '
+  # Launches come from the ledger, telemetry rows from the run log. They can
+  # differ: a run that was never recorded (before the done hook existed, or a
+  # transcript lost to a relaunch) must show as a launch without numbers, not
+  # vanish. FXA-14529's first comment said "1 run" for a two-run ticket.
+  local launches=0
+  [ -f "${PIPE_STATE_DIR}/launches.log" ] && launches="$(awk -v k="$key" '$2==k' "${PIPE_STATE_DIR}/launches.log" | wc -l | tr -d ' ')"
+  [ -s "$PIPE_RUNS_FILE" ] || { printf '🤖 Merged%s. Agent launches: %s. No run telemetry was recorded for this ticket.\n' "${pr:+ as $pr}" "$launches"; return 0; }
+  jq -r -s --arg k "$key" --arg pr "$pr" --argjson launches "$launches" '
     def n: tostring | gsub("(?<a>\\d)(?=(?:\\d{3})+$)"; "\(.a),");
+    def short: if . >= 1000000 then "\(. / 100000 | round / 10)M" elif . >= 1000 then "\(. / 1000 | round)k" else tostring end;
     def mins: (. / 60 | round) as $m | if $m >= 60 then "\($m/60|floor)h \($m%60)m" else "\($m)m" end;
-    [.[] | select(.issue == $k)] as $r
-    | if ($r|length) == 0 then "🤖 Merged\(if $pr != "" then " as \($pr)" else "" end). No run telemetry was recorded for this ticket."
+    def kindname: {fix: "fix", feedback: "review feedback", rebase: "rebase"}[.] // .;
+    [.[] | select(.issue == $k)] | sort_by(.recorded_at) as $r
+    | if ($r|length) == 0 then "🤖 Merged\(if $pr != "" then " as \($pr)" else "" end). Agent launches: \($launches). No run telemetry was recorded for this ticket."
       else
         ($r | map(.wall_seconds//0) | add) as $wall
         | ($r | map(.cost_usd//0) | add) as $cost
-        | ($r | map(.models // {(.model//"unknown"): {input:.input, output:.output, cache_write:.cache_write, cache_read:.cache_read}})
-             | add // {}) as $models
-        | ($r | map(.models // {} | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | {input:(map(.input)|add), output:(map(.output)|add), cache_write:(map(.cache_write)|add), cache_read:(map(.cache_read)|add)})}) | from_entries) as $bymodel
-        | (if ($bymodel|length) > 0 then $bymodel else $models end) as $bm
-        | (($r|map(.pr)|map(select(. != ""))|last) // $pr) as $url
+        | ($r | map(.models // {(.model//"unknown"): {}} | keys[]) | unique) as $models
+        | (($r|map(.pr)|map(select(. != "" and . != null))|last) // $pr) as $url
         | [ "🤖 Merged\(if $url != "" and $url != null then " as \($url)" else "" end).",
-            "Agent runs: \($r|length). Wall time launch→PR: \($wall|mins). Models: \($bm|keys|join(", ")).",
-            "Tokens: input \($r|map(.input//0)|add|n), output \($r|map(.output//0)|add|n), cache write \($r|map(.cache_write//0)|add|n), cache read \($r|map(.cache_read//0)|add|n).",
-            "Estimated API cost at list price: $\($cost*100|round/100)." ]
-          + ( if ($bm|length) > 1 then [ "Per model: " + ($bm | to_entries | map("\(.key) out \(.value.output|n) / cache read \(.value.cache_read|n)") | join("; ")) + "." ] else [] end )
+            "Agent runs: \($r|length)\(if $launches > ($r|length) then " recorded of \($launches) launched" else "" end). Total launch→handoff \($wall|mins). Estimated API cost at list price: $\($cost*100|round/100). Models: \($models|join(", "))." ]
+          + [ $r | to_entries[] | "\(.key+1). \(.value.kind // "fix" | kindname): \(.value.wall_seconds//0|mins), $\((.value.cost_usd//0)*100|round/100). Tokens in \(.value.input//0|n) / out \(.value.output//0|n) / cache write \(.value.cache_write//0|short) / cache read \(.value.cache_read//0|short)." ]
           + ( ($r | map(select(.source == "assistant-sum")) | length) as $approx
-              | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; the cost estimate is a floor." ] else [] end )
+              | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; those costs are a floor." ] else [] end )
         | join("\n")
       end' "$PIPE_RUNS_FILE"
 }

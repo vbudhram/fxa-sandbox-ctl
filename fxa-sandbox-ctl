@@ -429,6 +429,14 @@ EOF
     return 0
   fi
 
+  # Stamp what this run is, so telemetry can report it per run: a rebase round,
+  # a review-feedback round (its guardrails file lives under feedback/), or the
+  # fix itself. Read back by telemetry_record from the launch log.
+  local run_kind="fix"
+  if [ "$rebase" = "true" ]; then run_kind="rebase"
+  elif [[ "$guardrails_file" == */feedback/* ]]; then run_kind="feedback"; fi
+  echo "Run kind: ${run_kind}" >&2
+
   if [ -n "$worktree_slot" ]; then
     echo "Using worktree '${worktree_slot}' for branch ${branch}..." >&2
   else
