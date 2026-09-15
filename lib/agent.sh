@@ -28,7 +28,7 @@ runtime_load() {
 # description, judges it relevant, then fails on a missing binary.
 # create-pr-description belongs here because the agent authors the PR title
 # and body into the handoff even though the host runs `gh pr create`.
-# humanizer and code-simplifier are mandatory goal conditions. package-workflows
+# humanizer, code-simplifier and ponytail-review are mandatory goal conditions. package-workflows
 # is deliberately absent: it reads 30 days of session history, and a VM boots,
 # fixes one ticket, and is destroyed.
 # Plugins whose hooks and skills the agent's session runs on. Everything else

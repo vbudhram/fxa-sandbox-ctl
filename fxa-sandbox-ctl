@@ -670,9 +670,9 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
    'npx nx lint <package>' for each. Every invocation must exit 0; if any
    reports errors, fix them and re-run before moving on.
 ${step4}
-5. $(runtime_skill_ref code-simplifier) has been invoked on the latest changes and any
-   simplifications it suggests have been applied (or explicitly declined with
-   a one-line reason in the transcript).
+5. $(runtime_skill_ref code-simplifier), then $(runtime_skill_ref ponytail-review), have been invoked on
+   the latest changes and every simplification or cut they suggest has been
+   applied (or explicitly declined with a one-line reason in the transcript).
 6. $(runtime_skill_ref fxa-review-quick) has been invoked on your working changes and reported no
    blocking issues. Fix any blockers and re-run.
 7. **DO NOT COMMIT. You cannot.** The parent .git is mounted read-only so this
