@@ -37,11 +37,17 @@ _vm_plugin_allowlist() {
   printf '%s\n' superpowers@claude-plugins-official code-simplifier@claude-plugins-official ponytail@ponytail
 }
 
+# Plugins do not load inside the runner: Claude's init event there reports
+# `plugins: []` even though the plugin cache ships, so every skill an agent must
+# be able to invoke has to exist as a plain directory under ~/.claude/skills.
+# code-simplifier and humanizer already do. ponytail-review is a copy of
+# ~/.claude/plugins/cache/ponytail/ponytail/<version>/skills/ponytail-review
+# (MIT); re-copy it when the plugin updates.
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
     fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck humanizer \
-    pr-review-typescript quick-review squash-commit
+    ponytail-review pr-review-typescript quick-review squash-commit
 }
 
 # ── Helpers ────────────────────────────────────────────────────
