@@ -240,8 +240,10 @@ NGINXCONF
 # ── Step 3b: Ensure goaws (SNS/SQS emulator) is running ──
 # The auth server publishes to SNS on account events. If the Go-built goaws
 # binary is missing (common on ARM64), start a minimal Node.js stub.
-if ! curl -sf http://localhost:4100/ >/dev/null 2>&1; then
-  log "goaws not responding on :4100, starting Node.js SNS stub..."
+# goaws answers GET / with 400, so `curl -sf` reads a healthy goaws as down
+# and the stub then crash-loops on EADDRINUSE. Test the listener instead.
+if ! (exec 3<>/dev/tcp/127.0.0.1/4100) 2>/dev/null; then
+  log "nothing listening on :4100, starting Node.js SNS stub..."
   cat > /tmp/goaws-stub.js <<'GOAWSSTUB'
 const http = require("http");
 const server = http.createServer((req, res) => {
