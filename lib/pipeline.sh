@@ -10,6 +10,7 @@
 #   pipeline_label_for STATE    Print the label for a lifecycle state
 #   pipeline_free_gb            Free GB on /
 #   pipeline_lock / _unlock     One pass at a time
+#   pipeline_pause / _resume    Kill switch: lock refuses while a PAUSED marker exists
 #   pipeline_skip KEY [reason]  Record an admission skip; prints comment|silent <n>
 #   pipeline_skipped [KEY]      List recorded skips
 #   pipeline_attempts KEY [bump]  Read or increment the real-fix attempt counter
@@ -71,8 +72,48 @@ pipeline_free_gb() {
 # mkdir is atomic, so it works as a lock without flock, which macOS does not
 # ship. A lock older than 2 hours is stale: no legitimate pass runs that long
 # once launches are backgrounded.
+# Kill switch. A PAUSED marker makes every `lock` refuse, with no stale break,
+# so passes stay off until someone runs `resume`. The marker is a local file, or
+# an object at PIPE_PAUSE_URI (gs://bucket/path) so it works from any machine
+# once the manager runs in GCP. Reading the object needs gcloud; if that call
+# fails we treat it as not paused and say so, because a broken kill switch that
+# silently pauses looks exactly like a healthy idle pipeline.
+pipeline_pause_marker() { printf '%s' "${PIPE_STATE_DIR}/PAUSED"; }
+pipeline_paused() {
+  local m; m="$(pipeline_pause_marker)"
+  if [ -f "$m" ]; then cat "$m"; return 0; fi
+  if [ -n "${PIPE_PAUSE_URI:-}" ]; then
+    local out
+    if out="$(gcloud storage cat "$PIPE_PAUSE_URI" 2>/dev/null)"; then printf '%s\n' "$out"; return 0; fi
+    gcloud storage ls "$PIPE_PAUSE_URI" >/dev/null 2>&1 && return 0
+  fi
+  return 1
+}
+pipeline_pause() {
+  pipeline_require || return 1
+  local reason="${*:-paused by $(whoami) at $(date '+%Y-%m-%d %H:%M')}"
+  printf '%s\n' "$reason" >"$(pipeline_pause_marker)"
+  if [ -n "${PIPE_PAUSE_URI:-}" ]; then
+    printf '%s\n' "$reason" | gcloud storage cp - "$PIPE_PAUSE_URI" >/dev/null 2>&1 || echo "WARN: could not write ${PIPE_PAUSE_URI}; only this machine is paused" >&2
+  fi
+  echo "paused: ${reason}"
+}
+pipeline_resume() {
+  pipeline_require || return 1
+  rm -f "$(pipeline_pause_marker)"
+  if [ -n "${PIPE_PAUSE_URI:-}" ]; then
+    gcloud storage rm "$PIPE_PAUSE_URI" >/dev/null 2>&1 || true
+  fi
+  echo "resumed"
+}
+
 pipeline_lock() {
   pipeline_require || return 1
+  local why
+  if why="$(pipeline_paused)"; then
+    echo "paused: ${why:-no reason recorded}. Run \`fxa-sandbox-ctl resume\` to restart passes."
+    return 1
+  fi
   if [ -d "$PIPE_LOCK_DIR" ]; then
     local age; age=$(( $(date +%s) - $(stat -f %m "$PIPE_LOCK_DIR" 2>/dev/null || echo 0) ))
     # The cron fires every 20 min and a pass takes under 10. A lock older than

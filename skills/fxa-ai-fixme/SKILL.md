@@ -122,7 +122,9 @@ those again. The CircleCI token comes from `~/.circleci/cli.yml`. Never print it
 6. **Release the lock.** `$CTL unlock`.
 
 **Take the lock first.** Run `$CTL lock` before step 1. If it prints `locked`, another pass
-is running: stop, do nothing, and say so. Release it in step 6 even when the pass did no work.
+is running: stop, do nothing, and say so. If it prints `paused`, the operator flipped the kill
+switch (`$CTL pause`): stop, do nothing, and report the reason it printed. Do not `resume` it
+yourself. Release the lock in step 6 even when the pass did no work.
 
 ## PR review feedback
 
@@ -923,7 +925,8 @@ You are the higher-value target.
 | `$CTL jira <KEY> --worktree <slot> --rebase --create-pr` | resolve a `source` conflict: host merges the base in, agent resolves, host squashes onto the base and force-pushes with lease. Refuses on a human review or at 2 attempts |
 | `$CTL drain` | `done` keys needing action: `MERGED`, `CLOSED`, `RED <tally>`, or `none` |
 | `$CTL progress <KEY>` | what the launcher did — **read this first** |
-| `$CTL lock` / `unlock` | one pass at a time |
+| `$CTL lock` / `unlock` | one pass at a time; prints `paused` while the kill switch is set |
+| `$CTL pause [reason]` / `resume` | kill switch: every pass refuses until `resume`; also writes `PIPE_PAUSE_URI` when set |
 | `$CTL alive <KEY>` | exit 0 if a real `claude` process runs |
 | `$CTL attempts <KEY> [bump]` | read or increment the fix counter |
 | `$CTL ticket <KEY>` | description **and comments** — ground with this, never `view` alone |
