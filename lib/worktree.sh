@@ -133,7 +133,8 @@ $1 ${now}"
 
 # worktree_filtered_status <path>
 #   Run `git status --porcelain` and drop lines that are known not to matter:
-#     - our own orchestration files (.fxa-auto-*, .fxa-jira-*, .fxa-auto-token)
+#     - any .fxa-* file at the root: our orchestration files, and agent scratch
+#       files (an agent once wrote .fxa-pr-body.md and finish committed it)
 #     - the ai/ agent-context symlink convention
 #     - per-worktree .claude/ state (claude-code creates this; not part of the fix)
 #     - the FxA auth-server test key artifact (newKey.json)
@@ -144,7 +145,7 @@ worktree_filtered_status() {
   _worktree_pull_if_remote "$path"
   local extra_pattern="${FXA_DIRTY_IGNORE:-}"
   git -C "$path" status --porcelain 2>/dev/null \
-    | grep -vE '^\?\? \.fxa-(auto|jira)-' \
+    | grep -vE '^\?\? \.fxa-' \
     | grep -vE '^\?\? ai/?$' \
     | grep -vE '^\?\? \.claude(/|$)' \
     | grep -vE '^\?\? packages/fxa-auth-server/config/newKey\.json$' \

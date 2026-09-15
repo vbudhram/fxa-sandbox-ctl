@@ -276,6 +276,7 @@ If you were started by `fxa-sandbox-ctl jira <KEY>` you are running inside a `/g
 |------|---------|
 | `/workspace/.fxa-auto-done.json` | The handoff JSON. The host watches for this file. |
 | `/workspace/.fxa-auto-media/` | Optional. Screenshots and videos for the PR body. Use `.png`, `.jpg`, `.webp`, `.gif`, `.webm`, `.mp4`, `.mov`. |
+| `/workspace/.fxa-*` | Any scratch file you write, for example a PR body draft. The host ignores this prefix. A scratch file with any other name gets committed into the PR. |
 
 ### Handoff JSON schema
 

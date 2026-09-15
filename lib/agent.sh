@@ -137,7 +137,7 @@ _put_run_files() {
     path="${path##* -> }"
     # Orchestration files ship from the explicit list above or not at all; an
     # empty transcript shipped from the slot blocked the agent's own writes.
-    case "$path" in .fxa-auto-*|.fxa-jira-*|ai|ai/*) continue ;; esac
+    case "$path" in .fxa-*|ai|ai/*) continue ;; esac
     case "$st" in *D*) printf '%s\n' "$path" >> "${slot}/.fxa-auto-deleted" ;; *) [ -e "${slot}/${path}" ] && items+=("$path") ;; esac
   done < <(git -C "$slot" status --porcelain -uall 2>/dev/null)
   [ -s "${slot}/.fxa-auto-deleted" ] && items+=(.fxa-auto-deleted)
