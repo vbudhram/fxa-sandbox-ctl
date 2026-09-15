@@ -154,6 +154,12 @@ telemetry_record() {
   local log; log="$(pipeline_launch_log "$key")"
   local usage secs pr sha files base
   usage="$(telemetry_usage "$key" 2>/dev/null || echo '{}')"
+  # No transcript means no run to record. Writing a zero row here produced a
+  # merge summary of "2 runs, 0 tokens, unpriced" for FXA-14527 after its slot
+  # had moved on to another ticket.
+  if [ "$(printf '%s\n' "$usage" | jq -r '((.input//0)+(.output//0)+(.cache_read//0)+(.cache_write//0))')" = "0" ]; then
+    echo "WARN: no transcript found for $key; nothing recorded." >&2; return 1
+  fi
   # The launch log's own lifespan, not "now minus launch". `record` can run long
   # after the agent stopped, and then "now" measures the delay, not the run. On
   # 2026-09-08 FXA-14471 recorded 119 hours because it was recorded five days
