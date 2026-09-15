@@ -13,6 +13,7 @@
 #   pipeline_pause / _resume    Kill switch: lock refuses while a PAUSED marker exists
 #   pipeline_skip KEY [reason]  Record an admission skip; prints comment|silent <n>
 #   pipeline_skipped [KEY]      List recorded skips
+#   pipeline_skip_prune         Drop records whose ticket left the queue (queue keys on stdin)
 #   pipeline_attempts KEY [bump]  Read or increment the real-fix attempt counter
 #   pipeline_progress KEY       What the launcher actually did (authoritative)
 
@@ -242,6 +243,26 @@ pipeline_skipped() {
 pipeline_skip_clear() {
   pipeline_require || return 1
   rm -f "${PIPE_STATE_DIR}/${1}.skipped"
+}
+
+# Drop skip records for tickets that left the queue (resolved, or the label was
+# removed). The fingerprint exists to silence repeat comments on a ticket the
+# pass keeps seeing; once the queue no longer returns the key, it is dead weight
+# and the dashboard lists it as stale. Takes the queue keys on stdin so a failed
+# Jira read (empty list) prunes nothing: wiping every record on an outage would
+# make the next pass re-comment on every skipped ticket at once.
+pipeline_skip_prune() {
+  pipeline_require || return 1
+  local -a queue=(); local k f n=0
+  while IFS= read -r k; do [ -n "$k" ] && queue+=("$k"); done
+  [ "${#queue[@]}" -gt 0 ] || return 0
+  for f in "$PIPE_STATE_DIR"/*.skipped; do
+    [ -f "$f" ] || continue
+    k="$(basename "$f" .skipped)"
+    printf '%s\n' "${queue[@]}" | grep -qx "$k" && continue
+    rm -f "$f"; n=$((n + 1)); echo "$k skip record pruned (left the queue)"
+  done
+  return 0
 }
 
 pipeline_attempts() {

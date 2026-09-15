@@ -1344,6 +1344,8 @@ cmd_reconcile() {
       *) echo "$line" ;;
     esac
   done
+  # Every pass reconciles, so this is where a stale skip record dies.
+  jira_queue_keys 2>/dev/null | pipeline_skip_prune
 }
 cmd_done_keys() { jira_done_keys; }
 # Every key reaches JQL, file paths, and a python argv. One gate, applied once.

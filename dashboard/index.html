@@ -478,7 +478,7 @@ function renderTickets() {
        (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary><div class="body">${
           liveSkips.slice().sort((a, b) => a.passes - b.passes).map(k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span class="tag">${k.passes}×</span></div>
              <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`).join("")}</div></details>` : "") +
-       (staleSkips.length ? `<div class="empty" style="padding-top:var(--s2)">${staleSkips.length} stale skip record${staleSkips.length > 1 ? "s" : ""} (${staleSkips.map(k => esc(k.key)).join(", ")}); no longer labelled ai-fixme</div>` : "")));
+       (staleSkips.length ? `<div class="empty" style="padding-top:var(--s2)">${staleSkips.length} stale skip record${staleSkips.length > 1 ? "s" : ""} (${staleSkips.map(k => esc(k.key)).join(", ")}); left the queue (resolved or unlabelled); pruned on the next reconcile</div>` : "")));
 
   const t = s.telemetry;
   put("footer", (t ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span><span><b>${usd(t.cost_usd)}</b> spend</span>
