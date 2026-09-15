@@ -160,7 +160,12 @@ _finish_fetch_session_log() {
   # Claude Code and Codex keep session logs in different trees; take the newest of either.
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   local name; name="$(_worktree_agent_for_workspace "$wt")"
-  [ -n "$name" ] || return 0
+  # The meta lookup missed fxa-auto-3 on 2026-09-15 and the fetch returned in
+  # silence, so that run priced from the stream log. The agent name is the
+  # slot's branch name by construction; use it when the lookup comes up empty.
+  [ -n "$name" ] || name="$(git -C "$wt" branch --show-current 2>/dev/null)"
+  [ -n "$name" ] && vm_is_running "$name" 2>/dev/null \
+    || { echo "WARN: no running agent found for ${wt}; session transcript not fetched, telemetry will undercount output tokens." >&2; return 0; }
   vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl /home/agent/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
     > "${wt}/.fxa-auto-session.jsonl.tmp" 2>/dev/null \
     && [ -s "${wt}/.fxa-auto-session.jsonl.tmp" ] \
