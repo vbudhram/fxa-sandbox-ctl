@@ -190,7 +190,7 @@ gh_feedback() {
     local f="${PIPE_STATE_DIR}/${key}.feedback-acted" id n=0
     [ -s "$f" ] || { echo "no recorded ids for $key"; return 0; }
     while read -r id; do
-      [ -n "$id" ] || continue
+      [[ "$id" =~ ^[0-9]+$ ]] || continue
       if gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}/reactions" \
            -f content='+1' >/dev/null 2>&1; then
         n=$((n + 1))
@@ -210,7 +210,9 @@ gh_feedback() {
   local all
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.position != null)
-                       | {id, author: .user.login, path, line: (.line // .original_line), body}]')"
+                       | {id, author: .user.login, association: .author_association,
+                          trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | test("copilot";"i"))),
+                          path, line: (.line // .original_line), body}]')"
   [ -n "$all" ] || all='[]'
 
   if [ "$sub" = "ack" ]; then

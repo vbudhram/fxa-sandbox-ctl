@@ -306,6 +306,11 @@ _finish_push_and_pr() {
     cat "$done_file" >&2
     return 1
   fi
+  # The title becomes a commit subject and a gh argument. One line, printable.
+  if [ "${#pr_title}" -gt 200 ] || [[ "$pr_title" == *[[:cntrl:]]* ]]; then
+    echo "ERROR: pr_title is over 200 chars or contains control characters. Refusing." >&2
+    return 1
+  fi
 
   # Verify the worktree is on the expected branch.
   local current_branch
@@ -345,20 +350,22 @@ _finish_push_and_pr() {
   local merging=""
   if git -C "$worktree" rev-parse --verify -q MERGE_HEAD >/dev/null 2>&1; then
     merging=1
-    local unmerged f still=""
-    unmerged="$(git -C "$worktree" diff --name-only --diff-filter=U 2>/dev/null)"
-    for f in $unmerged; do
-      grep -qE '^(<{7}|={7}|>{7})( |$)' "${worktree}/${f}" 2>/dev/null && still="${still}${f} "
+    local f still=""
+    local -a unmerged=()
+    while IFS= read -r -d '' f; do unmerged+=("$f"); done \
+      < <(git -C "$worktree" diff -z --name-only --diff-filter=U 2>/dev/null)
+    for f in "${unmerged[@]}"; do
+      grep -qE '^(<{7}|={7}|>{7})( |$)' "${worktree}/${f}" 2>/dev/null && still="${still}${f}"$'\n'
     done
     if [ -n "$still" ]; then
       echo "ERROR: conflict markers remain in:" >&2
-      printf '  %s\n' $still >&2
+      printf '  %s\n' "$still" >&2
       echo "       Refusing to commit: this would push markers into the PR." >&2
       return 1
     fi
-    if [ -n "$unmerged" ]; then
-      echo "Completing the merge: staging $(printf '%s\n' "$unmerged" | grep -c .) resolved file(s)..." >&2
-      git -C "$worktree" add -- $unmerged >&2 || {
+    if [ "${#unmerged[@]}" -gt 0 ]; then
+      echo "Completing the merge: staging ${#unmerged[@]} resolved file(s)..." >&2
+      git -C "$worktree" add -- "${unmerged[@]}" >&2 || {
         echo "ERROR: could not stage the resolved files." >&2
         return 1
       }
@@ -394,6 +401,8 @@ _finish_push_and_pr() {
       }
     fi
   fi
+  _finish_tooling_guard "$worktree" || return 1
+  _finish_check_frozen "$worktree" || return 1
 
   # Something must exist to ship: either staged work, or commits the agent
   # somehow managed to make.
@@ -444,13 +453,17 @@ _finish_push_and_pr() {
     !skip                      { print }
   ' | sed -e 's/[[:space:]]*$//' | cat -s)"
 
+  # Hooks off: core.hooksPath points at .husky in the slot, and lint-staged
+  # runs _scripts/check-frozen.ts FROM THE SLOT, so a hook run here executes
+  # agent-written code on the host as the operator. _finish_check_frozen above
+  # runs origin/main's copy instead, and CI runs lint.
   if [ -n "${commit_body//[[:space:]]/}" ]; then
-    git -C "$worktree" commit -m "$pr_title" -m "$commit_body" >&2 || {
+    git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" -m "$commit_body" >&2 || {
       _finish_recommit_failed
       return 1
     }
   else
-    git -C "$worktree" commit -m "$pr_title" >&2 || {
+    git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" >&2 || {
       _finish_recommit_failed
       return 1
     }
@@ -483,15 +496,28 @@ _finish_push_and_pr() {
   #
   # Skip a path the agent listed but never wrote. A stale entry must not cost us
   # the PR, for the same reason a missing label does not.
+  # The agent chooses these paths. Keep every one inside the worktree (no
+  # absolute path outside /workspace, no .., no symlink out) and to media
+  # types; anything else would upload a host file to a public PR.
   local media_args=()
-  local p local_media
+  local p rel local_media real wt_real
+  wt_real="$(cd "$worktree" && pwd -P)"
   while IFS= read -r p; do
     [ -z "$p" ] && continue
-    local_media="${worktree}/${p#/workspace/}"
-    if [ -f "$local_media" ]; then
+    rel="${p#/workspace/}"
+    case "$rel" in
+      /*|*..*|"") echo "  WARN: media path refused (outside the worktree): ${p}" >&2; continue ;;
+    esac
+    case "$rel" in
+      *.png|*.jpg|*.jpeg|*.webp|*.gif|*.webm|*.mp4|*.mov) ;;
+      *) echo "  WARN: media path refused (not a media type): ${p}" >&2; continue ;;
+    esac
+    local_media="${worktree}/${rel}"
+    real="$( [ -f "$local_media" ] && cd "$(dirname "$local_media")" 2>/dev/null && pwd -P )/$(basename "$rel")"
+    if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]]; then
       media_args+=(--attach "$local_media")
     else
-      echo "  WARN: media listed but not found, skipping: ${p}" >&2
+      echo "  WARN: media listed but not found inside the worktree, skipping: ${p}" >&2
     fi
   done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
 
@@ -822,6 +848,53 @@ finish_watch_ci() {
 }
 
 # finish_notify <message> [pr_url]
+# _finish_tooling_guard <worktree>
+#   Refuse to ship when the staged set reaches into CI or host tooling. A
+#   workflow file runs in mozilla/fxa with secrets before a human reads the
+#   diff; hook and lint-staged config runs on the operator's Mac. A ticket that
+#   legitimately edits these launches with FXA_ALLOW_TOOLING_EDITS=1.
+_finish_tooling_guard() {
+  local wt="$1" f hit=""
+  [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
+  while IFS= read -r -d '' f; do
+    case "$f" in
+      .github/*|.circleci/*|.husky/*|_scripts/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*)
+        hit="${hit}${f}"$'\n' ;;
+      package.json|*/package.json)
+        # Only the parts a hook or CI executes. A dependency bump is fine.
+        if [ "$(git -C "$wt" show ":$f" 2>/dev/null | jq -cS '{scripts, "lint-staged", husky}')" != \
+             "$(git -C "$wt" show "HEAD:$f" 2>/dev/null | jq -cS '{scripts, "lint-staged", husky}')" ]; then
+          hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'
+        fi ;;
+    esac
+  done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
+  [ -z "$hit" ] && return 0
+  echo "ERROR: refusing to ship: the change touches CI or host tooling:" >&2
+  printf '  %s\n' "$hit" >&2
+  echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  return 1
+}
+
+# _finish_check_frozen <worktree>
+#   The frozen-path gate the pre-commit hook used to give us, with the SCRIPT
+#   taken from origin/main rather than from the slot the agent wrote. It reads
+#   `git diff --cached` in its cwd, so run it inside the worktree.
+_finish_check_frozen() {
+  local wt="$1" root tmp
+  root="$(worktree_repo_root)" || return 1
+  tmp="${wt}/.fxa-auto-check-frozen.ts"
+  git -C "$root" show "origin/${FXA_WORKTREE_BASE:-main}:_scripts/check-frozen.ts" > "$tmp" 2>/dev/null || {
+    echo "  WARN: no _scripts/check-frozen.ts on origin; skipping the frozen-path check." >&2
+    rm -f "$tmp"; return 0
+  }
+  if ! (cd "$wt" && npx --no-install ts-node "$tmp" >&2); then
+    rm -f "$tmp"
+    echo "ERROR: check:frozen (origin/main's copy) rejects this change." >&2
+    return 1
+  fi
+  rm -f "$tmp"
+}
+
 #   macOS notification via osascript. Cheap, no extra deps.
 finish_notify() {
   local message="$1"
@@ -830,7 +903,9 @@ finish_notify() {
   [ -n "$pr_url" ] && subtitle="$pr_url"
 
   if command -v osascript >/dev/null 2>&1; then
-    osascript -e "display notification \"${message}\" with title \"fxa-sandbox-ctl\" subtitle \"${subtitle}\"" 2>/dev/null || true
+    # Text as arguments, not in the script body: the message carries CI check
+    # names from the agent's own branch, so it is remote-controlled.
+    osascript -e 'on run {m, s}' -e 'display notification m with title "fxa-sandbox-ctl" subtitle s' -e 'end run' -- "$message" "$subtitle" 2>/dev/null || true
   fi
   echo "${message}${pr_url:+ — $pr_url}" >&2
 }

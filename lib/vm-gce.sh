@@ -197,8 +197,13 @@ vm_pull_tree() {
   local key="${LOG_DIR}/ssh/${name}/id_ed25519"
   for i in 1 2 3; do
     # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
-    rsync -a --delete --timeout=60 --exclude .git --exclude node_modules --exclude external/l10n \
-      --exclude .nx --exclude dist --exclude coverage \
+    # --safe-links: a pulled symlink pointing outside the tree is dropped, not
+    # created and committed. CI and hook config stay on the runner unless the
+    # ticket asks for them (the same flag finish honours).
+    local -a tooling=(--exclude .github --exclude .circleci --exclude .husky)
+    [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && tooling=()
+    rsync -a --delete --safe-links --timeout=60 --exclude .git --exclude node_modules --exclude external/l10n \
+      --exclude .nx --exclude dist --exclude coverage "${tooling[@]}" \
       -e "ssh -i ${key} ${VM_SSH_OPTS}" \
       "${VM_SSH_USER}@$(vm_ip "$name"):${remote%/}/" "${local_dir%/}/" 2>/dev/null && return 0
     rc=$?; sleep 3

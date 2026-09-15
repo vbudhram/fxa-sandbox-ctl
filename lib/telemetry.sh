@@ -87,7 +87,7 @@ telemetry_record() {
   # 2026-09-08 FXA-14471 recorded 119 hours because it was recorded five days
   # late; its real run was 49 minutes. This is only correct because the launcher
   # deletes the log before each launch, giving every run a true birth time.
-  secs="$( [ -f "$log" ] && python3 -c "import os;s=os.stat('$log');print(max(0,int(s.st_mtime-s.st_birthtime)))" || echo 0 )"
+  secs="$( [ -f "$log" ] && python3 -c "import os,sys;s=os.stat(sys.argv[1]);print(max(0,int(s.st_mtime-s.st_birthtime)))" "$log" || echo 0 )"
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" 2>/dev/null || true; } | tail -1)"
   if [ -n "$wt" ]; then
     base="origin/${FXA_WORKTREE_BASE}"

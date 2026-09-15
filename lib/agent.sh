@@ -146,7 +146,10 @@ _put_run_files() {
   # --no-xattrs and COPYFILE_DISABLE: macOS tar otherwise adds ._* AppleDouble files.
   # ai/data is review-mining input, 18 MB of raw JSON the agent never reads, and
   # the IAP tunnel moves it at well under 1 MB/s. The docs and AGENTS.md still ship.
-  COPYFILE_DISABLE=1 tar --no-xattrs --exclude ai/data -cf "$tar" -C "$slot" "${items[@]}" || return 1
+  # "./" prefix: a relaunch ships agent-chosen filenames, and bsdtar reads a
+  # leading dash as an option.
+  local -a rel=(); for f in "${items[@]}"; do rel+=("./${f#./}"); done
+  ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -cf "$tar" -C "$slot" "${rel[@]}" ) || return 1
   vm_put "$name" "$tar" /workspace; local rc=$?
   rm -f "$tar"
   [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-auto-deleted" ] && \
@@ -202,19 +205,11 @@ _restrict_sudo() {
     # Replace blanket NOPASSWD:ALL with specific allowed commands
     cat > /etc/sudoers.d/agent <<'SUDOERS'
 # Agent user: restricted sudo access
-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl start *
-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop *
-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart *
-agent ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *
-agent ALL=(ALL) NOPASSWD: /usr/sbin/service *
-agent ALL=(ALL) NOPASSWD: /usr/bin/apt-get *
-agent ALL=(ALL) NOPASSWD: /usr/bin/apt *
-agent ALL=(ALL) NOPASSWD: /usr/bin/dpkg *
+Cmnd_Alias FXA_UNITS = /usr/bin/systemctl start mysql, /usr/bin/systemctl stop mysql, /usr/bin/systemctl restart mysql, /usr/bin/systemctl status mysql, /usr/bin/systemctl start redis-server, /usr/bin/systemctl stop redis-server, /usr/bin/systemctl restart redis-server, /usr/bin/systemctl status redis-server, /usr/bin/systemctl start firestore-emulator, /usr/bin/systemctl stop firestore-emulator, /usr/bin/systemctl restart firestore-emulator, /usr/bin/systemctl status firestore-emulator, /usr/bin/systemctl start goaws, /usr/bin/systemctl stop goaws, /usr/bin/systemctl restart goaws, /usr/bin/systemctl status goaws
+agent ALL=(ALL) NOPASSWD: FXA_UNITS
 agent ALL=(ALL) NOPASSWD: /usr/bin/mysql *
 agent ALL=(ALL) NOPASSWD: /usr/bin/redis-cli *
 agent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
-agent ALL=(ALL) NOPASSWD: /usr/bin/chmod *
-agent ALL=(ALL) NOPASSWD: /usr/bin/chown *
 SUDOERS
     chmod 440 /etc/sudoers.d/agent
   " 2>/dev/null || true
@@ -225,7 +220,7 @@ SUDOERS
 _setup_egress_firewall() {
   local name="$1"
 
-  vm_exec "$name" sudo bash -c '
+  vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$FXA_EGRESS_HOSTS" bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -249,10 +244,39 @@ _setup_egress_firewall() {
     # ssh key; only the agent user is cut off.
     iptables -A OUTPUT -d 169.254.0.0/16 -m owner --uid-owner agent -j DROP
 
-    # Allow all other outbound (public internet)
-    iptables -A OUTPUT -j ACCEPT
-  ' 2>/dev/null || true
+    # Root (the guest agent, systemd units) keeps the internet. The agent user
+    # gets an allowlist: a prompt-injected agent must not be able to post the
+    # tree, the keys, or its own token to an arbitrary host.
+    if [ "$FXA_EGRESS_ALLOW_ALL" = "1" ]; then
+      iptables -A OUTPUT -j ACCEPT
+    else
+      for cidr in $FXA_EGRESS_CIDRS; do
+        iptables -A OUTPUT -m owner --uid-owner agent -d "$cidr" -j ACCEPT
+      done
+      for h in $FXA_EGRESS_HOSTS; do
+        for ip in $(getent ahostsv4 "$h" 2>/dev/null | awk "{print \$1}" | sort -u); do
+          iptables -A OUTPUT -m owner --uid-owner agent -d "$ip" -j ACCEPT
+        done
+      done
+      iptables -A OUTPUT -m owner --uid-owner agent -j REJECT --reject-with icmp-port-unreachable
+      iptables -A OUTPUT -j ACCEPT
+    fi
+    # Assert, so a failed apply aborts the launch instead of running open.
+    iptables -S OUTPUT | grep -q -- "-d 10.0.0.0/8 -j DROP" || exit 1
+    # iptables -S prints the uid, not the name.
+    [ "$FXA_EGRESS_ALLOW_ALL" = "1" ] || iptables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || exit 1
+  ' 2>/dev/null
 }
+
+# Egress the agent user may reach: Anthropic's API range, GitHub's published
+# ranges, and the hosts below resolved inside the VM at hardening time (the VM
+# keeps the same resolver, so it connects to the addresses it allowed). No
+# Cloudflare ranges on purpose: they would admit a large share of the internet,
+# and the npm and yarn registries are covered by name. FXA_EGRESS_ALLOW_ALL=1
+# restores open egress for a run that needs it.
+FXA_EGRESS_ALLOW_ALL="${FXA_EGRESS_ALLOW_ALL:-0}"
+FXA_EGRESS_CIDRS="${FXA_EGRESS_CIDRS:-160.79.104.0/21 140.82.112.0/20 143.55.64.0/20 185.199.108.0/22 192.30.252.0/22}"
+FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev}"
 
 # ── Security: Disable proxy (for existing golden images) ──────
 
@@ -299,7 +323,10 @@ _setup_claude_config() {
   # that dies with the VM. Leaving it enabled but absent is worse than off.
   if [ -f "${claude_home}/settings.json" ]; then
     local settings_b64
-    settings_b64="$(jq -c '. + {outputStyle: "concise"}
+    # Allowlist of keys. The host file is where people put API keys (env) and
+    # hooks; neither belongs on a bypassPermissions VM.
+    settings_b64="$(jq -c '{model, permissions, enabledPlugins, statusLine, theme} | with_entries(select(.value != null))
+        | . + {outputStyle: "concise"}
         | if .enabledPlugins then .enabledPlugins |= with_entries(
             select(.key | startswith("claude-mem@") | not)) else . end' \
       < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
@@ -574,8 +601,8 @@ _inject_oauth_token() {
   local token="$2"
   local token_file="${workspace_dir}/.fxa-auto-token"
 
-  printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" > "$token_file"
-  chmod 644 "$token_file"
+  ( umask 077; printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" > "$token_file" )
+  chmod 600 "$token_file"
   echo "  Token written to ${token_file} (${#token} chars)."
 }
 
@@ -690,8 +717,8 @@ META
   # 6a: Disable proxy (for existing golden images with Squid baked in)
   _disable_proxy_in_vm "$name"
 
-  # 6b: Set up egress firewall (blocks host/private network access)
-  _setup_egress_firewall "$name"
+  # 6b: Egress firewall. A run that starts open is worse than no run.
+  _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
 
   # 6c: Disable SSH password auth (key-only access)
   _harden_ssh "$name"

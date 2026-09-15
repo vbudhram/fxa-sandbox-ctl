@@ -112,6 +112,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
+        # Bound to 127.0.0.1, but a page on any origin can still point a name it
+        # controls at 127.0.0.1 and read us. Only loopback names are served.
+        host = (self.headers.get("Host") or "").split(":")[0]
+        if host not in ("localhost", "127.0.0.1", "[::1]", "::1"):
+            self._send(421, json.dumps({"error": "bad host"}), "application/json")
+            return
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self._send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
