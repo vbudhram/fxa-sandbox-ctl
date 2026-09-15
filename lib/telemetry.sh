@@ -287,11 +287,11 @@ telemetry_merge_comment() {
       else
         ($r | map(.wall_seconds//0) | add) as $wall
         | ($r | map(.cost_usd//0) | add) as $cost
-        | ($r | map(.models // {(.model//"unknown"): {}} | keys[]) | unique) as $models
+        | ($r | map(.models // {(.model//"unknown"): {}} | keys[]) | unique | map(select(. != "<synthetic>"))) as $models
         | (($r|map(.pr)|map(select(. != "" and . != null))|last) // $pr) as $url
         | [ "🤖 Merged\(if $url != "" and $url != null then " as \($url)" else "" end).",
             "Agent runs: \($r|length)\(if $launches > ($r|length) then " recorded of \($launches) launched" else "" end). Total launch→handoff \($wall|mins). Estimated API cost at list price: $\($cost*100|round/100). Models: \($models|join(", "))." ]
-          + [ $r | to_entries[] | "\(.key+1). \(.value.kind // "fix" | kindname): \(.value.wall_seconds//0|mins), $\((.value.cost_usd//0)*100|round/100). Tokens in \(.value.input//0|n) / out \(.value.output//0|n) / cache write \(.value.cache_write//0|short) / cache read \(.value.cache_read//0|short)." ]
+          + [ $r | to_entries[] | "\(.key+1). \(.value.kind // "fix" | kindname): \(.value.wall_seconds//0|mins), \(if .value.cost_usd == null then "unpriced" else "$" + ((.value.cost_usd*100|round/100)|tostring) end). Tokens in \(.value.input//0|n) / out \(.value.output//0|n) / cache write \(.value.cache_write//0|short) / cache read \(.value.cache_read//0|short)." ]
           + ( ($r | map(select(.source == "assistant-sum")) | length) as $approx
               | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; those costs are a floor." ] else [] end )
         | join("\n")
