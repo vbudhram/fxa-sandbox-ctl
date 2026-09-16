@@ -118,3 +118,30 @@ you; do not read this file on a quiet pass. `SKILL.md` names the section beside 
   tokens per pass and about $4.60 of equivalent API spend for a one-line "changed nothing". The
   manager session cost 13 times the agents it launched. Hence `precheck` first, and this file
   split out of `SKILL.md`.
+
+## Merged tickets were never closed
+
+**2026-09-15.** `label KEY merged` wrote the label and the telemetry comment and stopped there, so
+a merged ticket kept whatever status and assignee it had before the pipeline saw it. A count that
+day found 34 merged or done ai-fixme tickets with no Jira assignee, 20 of them still at In Review
+with the PR long since landed. The oldest was filed in 2020. Nothing in the pipeline re-reads a
+merged ticket, so nothing would ever have noticed.
+
+The fix hangs off the label write, for the same reason the VM reap and the 👍 do: a step that
+depends on a pass remembering to run a separate command does not survive a cron-fired pass.
+
+Three details cost a rewrite each:
+
+- **The assignee is the approver, not the reporter.** The tool already resolved the reporter for
+  the PR assignee, and reusing it here was the obvious move and the wrong one. The reporter filed
+  the ticket; the reviewer who signed off is the one who owns it afterwards.
+- **Last approval wins.** #21225 had two: an l10n reviewer approved the Fluent strings at 20:12 and
+  the code owner approved at 22:19. The first approval is not the one that unblocked the merge.
+- **Board 225 has two active sprints**, "FxA Sprint N" and "SubPlat Train N". Asking the board for
+  its active sprint returns both, so a first-match pick would have filed FxA work into the SubPlat
+  train. The lookup takes the sprint only when exactly one name matches.
+
+`acli` cannot write the Sprint field: it rejects `customfield_*` in `--from-json` and has no flag
+for it. That one step calls the Agile REST API directly and needs `PIPE_JIRA_BASIC`. Without the
+token it warns and the rest of the close still runs, because an unsprinted ticket is a smaller
+problem than a merge close that aborts halfway.

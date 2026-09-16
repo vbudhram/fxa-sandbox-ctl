@@ -281,6 +281,96 @@ jira_reporter_login() {
   awk -F'\t' -v n="$name" '$0 !~ /^#/ && $1 == n {print $2; exit}' "$map"
 }
 
+# jira_login_email <GITHUB_LOGIN>
+#   Read reporters.tsv in the other direction: GitHub login -> Jira email. Empty
+#   when the login has no row or no address, and the caller then leaves the
+#   ticket unassigned. Never guesses an address from the login.
+jira_login_email() {
+  pipeline_require || return 1
+  local login="${1:-}"; [ -n "$login" ] || return 0
+  local map="${PIPE_STATE_DIR}/reporters.tsv"
+  [ -f "$map" ] || return 0
+  awk -F'\t' -v l="$login" '$0 !~ /^#/ && $2 == l {print $3; exit}' "$map"
+}
+
+# jira_active_sprint_id
+#   Print the id of the board's active sprint named by PIPE_JIRA_SPRINT_MATCH.
+#   Prints nothing unless exactly one sprint matches: board 225 runs an FxA and a
+#   SubPlat sprint at the same time, so "the active sprint" is not a single thing
+#   and picking the first would file FxA work into the SubPlat train.
+jira_active_sprint_id() {
+  pipeline_require || return 1
+  [ -n "${PIPE_JIRA_BOARD:-}" ] || return 0
+  acli jira board list-sprints --id "$PIPE_JIRA_BOARD" --state active --json 2>/dev/null \
+    | jq -r --arg re "${PIPE_JIRA_SPRINT_MATCH:-.}" \
+        '[.sprints[]? | select(.name | test($re)) | .id] | if length == 1 then .[0] else empty end'
+}
+
+# jira_sprint_add <KEY> <SPRINT_ID>
+#   WRITE: put the ticket in the sprint. acli cannot write the Sprint field at
+#   all -- it rejects customfield_* in --from-json -- so this is the one call in
+#   the tool that talks to the REST API directly, and the only one that needs a
+#   Jira API token. Without PIPE_JIRA_BASIC it warns and returns 0, because an
+#   unsprinted ticket is a smaller problem than a merge close that aborts.
+jira_sprint_add() {
+  pipeline_require || return 1
+  local key="${1:-}" sid="${2:-}"
+  [ -n "$key" ] && [ -n "$sid" ] || return 0
+  if [ -z "${PIPE_JIRA_BASIC:-}" ]; then
+    echo "WARN: PIPE_JIRA_BASIC unset; $key not added to sprint $sid" >&2
+    return 0
+  fi
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' -u "$PIPE_JIRA_BASIC" \
+            -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -nc --arg k "$key" '{issues: [$k]}')" \
+            "${PIPE_JIRA_SITE}/rest/agile/1.0/sprint/${sid}/issue" 2>/dev/null)" || code="000"
+  [ "$code" = "204" ] || echo "WARN: sprint add for $key returned HTTP $code" >&2
+}
+
+# jira_close_merged <KEY>
+#   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
+#   approved, add it to the active sprint, transition it to Done.
+#
+#   Nothing used to do this. `merged` wrote the label and the drain comment and
+#   stopped, so the ticket kept whatever status and assignee it had before the
+#   pipeline touched it. On 2026-09-15 that was 18 merged tickets sitting
+#   unassigned at In Review, the oldest merged from a 2020 filing.
+#
+#   Assignee and sprint are set ONLY when empty. A ticket someone already owns,
+#   or already planned into a sprint, is a human's decision and this must not
+#   overwrite it. The transition is unconditional: the PR landed.
+#
+#   Every step warns and continues on failure. A merged ticket with no assignee
+#   is still a merged ticket, and failing the label write would leave the state
+#   machine worse off than the cosmetic gap it was trying to fix.
+jira_close_merged() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: close needs <KEY>" >&2; return 1; }
+  local cur; cur="$(acli jira workitem view "$key" --json --fields "*all" 2>/dev/null)"
+
+  if [ -z "$(printf '%s' "$cur" | jq -r '.fields.assignee.accountId // empty' 2>/dev/null)" ]; then
+    local login email
+    login="$(gh_pr_approver "$key" 2>/dev/null)"
+    email="$(jira_login_email "$login" 2>/dev/null)"
+    if [ -n "$email" ]; then
+      acli jira workitem edit -k "$key" --assignee "$email" -y >/dev/null 2>&1 \
+        || echo "WARN: assigning $key to $email failed" >&2
+    else
+      echo "WARN: $key approver '${login:-none}' has no reporters.tsv email; left unassigned" >&2
+    fi
+  fi
+
+  local field="${PIPE_JIRA_SPRINT_FIELD:-customfield_10020}"
+  if [ "$(printf '%s' "$cur" | jq -r --arg f "$field" '(.fields[$f] // []) | length' 2>/dev/null)" = "0" ]; then
+    local sid; sid="$(jira_active_sprint_id)"
+    [ -n "$sid" ] && jira_sprint_add "$key" "$sid"
+  fi
+
+  acli jira workitem transition --key "$key" --status "${PIPE_JIRA_DONE_STATUS:-Done}" -y >/dev/null 2>&1 \
+    || echo "WARN: transition of $key to ${PIPE_JIRA_DONE_STATUS:-Done} failed" >&2
+}
+
 # jira_comment <KEY> <BODY>
 #   WRITE: post one comment. Callers lead the body with 🤖 so readers know a
 #   pipeline wrote it.

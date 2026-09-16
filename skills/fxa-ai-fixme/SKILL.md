@@ -32,7 +32,9 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    do not relabel, report as an anomaly. `CONFLICT`: see conflicts. `CONFLICT? mergeability-
    uncomputed`: report, do not rebase on a guess. `RED`: leave the label, put it under ⚠️ with
    the failing job. **Assume repo infrastructure before the PR** and read the job log
-   (INCIDENTS: Reconcile and CI). `label KEY merged` posts the one telemetry comment itself.
+   (INCIDENTS: Reconcile and CI). `label KEY merged` posts the one telemetry comment itself, then assigns the ticket to the
+   PR's last human approver, adds it to the active FxA sprint, and transitions it to Done. It
+   sets assignee and sprint only when they are empty, so it never overwrites a human's choice.
    **Reap.** `$CTL reap --stray` before slot selection.
 3. **Fill free slots.** Read `$CTL freeslots` **once**. For each free slot take the oldest
    launchable key from `$CTL queue`, ground it, `export FXA_PR_ASSIGNEE="$($CTL reporter KEY)"`,
@@ -211,7 +213,9 @@ body say what was not verified. Skip only when the unverifiable part *is* the ch
 | `ai-fixme-blocked` | Needs a human. |
 
 `$CTL label KEY <state>` swaps the label and removes every other in the family; `public` means
-the bare label. Never use Jira status transitions for state. Keep `merged` and `rejected` apart.
+the bare label. Never read or write Jira status to decide pipeline state; the label is the state
+machine. The one status write is the Done transition inside `label KEY merged`, which is
+bookkeeping after the PR landed and drives nothing. Keep `merged` and `rejected` apart.
 
 ## Reconcile table
 
@@ -251,7 +255,8 @@ Reaching a cap is a successful outcome.
 Write exactly these: (1) the Jira label via `$CTL label`; (2) one 🤖 Jira comment per state
 change; (3) one PR comment when a ticket becomes `blocked`; (4) the session report; (5) one 🤖
 Jira skip comment, only when `skip` prints `comment`; (6) one 👍 per fixed review comment via
-`thumbsup`; (7) the merge telemetry comment, written by `label KEY merged` itself. Never skip the
+`thumbsup`; (7) the merge telemetry comment, written by `label KEY merged` itself; (8) the Jira
+assignee, sprint and Done transition, also written by `label KEY merged`. Never skip the
 `done` step on the way to `merged`; it records the run.
 
 Nothing else. No Slack, no @-mentions, no Jira transitions, no release advice, never reap another
@@ -306,7 +311,7 @@ phone number in a context file, comment, or PR.
 | `precheck` | lock, reconcile, drain, reap, list what needs judgment or `quiet`. Run first |
 | `queue` / `inflight` / `done-keys` | keys by state |
 | `freeslots` / `launchcap` | slots a ticket can claim; launches this pass may make |
-| `label KEY <state>` | swap the label; reaps the VM; 👍s on `done`; telemetry comment on `merged` |
+| `label KEY <state>` | swap the label; reaps the VM; 👍s on `done`; on `merged` also comments, assigns the approver, sprints, and closes |
 | `launch KEY <slot> <ctx>` | start an agent |
 | `reap KEY` / `reap --stray` | stop a VM / every VM whose ticket is not inflight |
 | `drain` | done keys needing action |

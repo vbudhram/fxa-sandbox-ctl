@@ -392,7 +392,7 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `drain` | Done keys whose PR merged, closed, or went red |
 | `ticket <ISSUE-KEY>` | Ticket text **including comments** — ground with this |
 | `reporter <ISSUE-KEY>` | Reporter's GitHub login, empty if unmapped |
-| `label <ISSUE-KEY> <state>` | WRITE: move the ticket; also reaps its VM |
+| `label <ISSUE-KEY> <state>` | WRITE: move the ticket; also reaps its VM, and on `merged` assigns the approver, sprints it, and closes it |
 | `slots` | Pool slots, and any VM running on each |
 | `freeslots` | Slots a ticket can claim — **use this, not `slots`** |
 | `launch <KEY> <slot> [ctx]` | WRITE: start an agent VM in the background |

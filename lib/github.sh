@@ -34,6 +34,27 @@ gh_pr_state() {
     | \"\(\$k) \(\$p.number) \(\$p.state) ok=\(\$r.ok) fail=\(\$r.fail) running=\(\$r.run)\""
 }
 
+# gh_pr_approver <KEY>
+#   Print the login of the last human who approved the PR, or nothing.
+#
+#   The reviewer who signed off owns the ticket afterwards, which is why this is
+#   not jira_reporter_login: the reporter filed it, the approver accepted it.
+#   Bots are skipped, because a copilot approval is not a sign-off.
+#
+#   Last approval wins when several people approved. On #21225 an l10n reviewer
+#   approved the Fluent strings first and the code owner approved two hours
+#   later; the second one is the one that unblocked the merge.
+gh_pr_approver() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: approver needs <KEY>" >&2; return 1; }
+  local br; br="$(worktree_branch_for "$key")" || return 1
+  gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json reviews 2>/dev/null \
+    | jq -r '[ .[0].reviews[]?
+               | select(.state == "APPROVED")
+               | select(.author.login | test("\\[bot\\]$|copilot"; "i") | not)
+               | .author.login ] | last // empty'
+}
+
 # gh_gate_stuck <KEY>
 #   Exit 0 when the PR's only pending checks are the CircleCI functional-tests
 #   approval gate (and the workflow that waits on it), and the head commit is

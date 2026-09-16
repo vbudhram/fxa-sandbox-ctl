@@ -1538,6 +1538,10 @@ cmd_label() {
     local mpr; read -r _ mpr _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
     [ -n "$mpr" ] && [ "$mpr" != "none" ] && mpr="https://github.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/${mpr}" || mpr=""
     jira_comment "$key" "$(telemetry_merge_comment "$key" "$mpr")" || echo "WARN: merge comment failed for $key" >&2
+    # The comment says what landed; this hands the ticket to the reviewer who
+    # approved it and closes it. Without this the ticket keeps the status and
+    # assignee it had before the pipeline ever saw it.
+    jira_close_merged "$key"
   fi
 }
 
