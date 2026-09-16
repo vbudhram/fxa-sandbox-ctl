@@ -238,6 +238,24 @@ pipeline_skipped() {
   done
 }
 
+# pipeline_skip_changed <KEY>
+#   Read-only twin of pipeline_skip: exit 0 when the ticket has no skip record
+#   or its text changed since the record was written, exit 1 when it is the
+#   same ticket the pass already judged. Prints `new` or `changed`. Never
+#   writes, so a quiet-pass probe cannot bump the pass counter or move the
+#   fingerprint the way `skip` does.
+pipeline_skip_changed() {
+  pipeline_require || return 1
+  local key="${1:-}" f fp old
+  f="${PIPE_STATE_DIR}/${key}.skipped"
+  [ -f "$f" ] || { echo "new"; return 0; }
+  fp="$(_pipeline_skip_fingerprint "$key")"
+  [ -n "$fp" ] || { echo "changed"; return 0; }
+  old="$(awk -F'\t' 'NR==1{print $1}' "$f")"
+  [ "$old" = "$fp" ] && return 1
+  echo "changed"
+}
+
 # Launching clears the fingerprint: a later admission skip on this same key must
 # not be silenced by a stale match.
 pipeline_skip_clear() {

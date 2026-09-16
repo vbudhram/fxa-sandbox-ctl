@@ -94,6 +94,8 @@ PIPELINE COMMANDS:
   queue                        Keys in the queue, oldest first
   inflight                     Keys currently running
   reconcile                    Apply the determinate reconcile rows to every inflight key
+  precheck                     WRITE: lock, reconcile, drain, reap, then list what needs
+                               judgment; prints `quiet` when nothing does. Run this first.
   done-keys                    Keys awaiting review
   drain                        Done keys whose PR merged, closed, or went red
   ticket <ISSUE-KEY>           Ticket text INCLUDING comments (ground with this)
@@ -1356,6 +1358,54 @@ cmd_reconcile() {
   jira_queue_keys 2>/dev/null | pipeline_skip_prune
 }
 cmd_done_keys() { jira_done_keys; }
+
+# precheck
+#   The whole deterministic half of a pass, in shell, so a quiet pass costs the
+#   operator's model nothing. Takes the lock, applies the reconcile rows, drains
+#   `done`, reaps strays, then lists what still needs judgment: a reconcile or
+#   drain line, a stray reap, a review comment not noted before, a queue key
+#   with no skip record, or a skipped ticket whose text changed since the skip.
+#   Prints `quiet` and one status line when nothing does. The cron prompt calls
+#   this first and invokes the skill only on work: on 2026-09-15 fourteen idle
+#   passes in a row each re-injected the 61KB skill into a 400K-token session
+#   for no result.
+#
+#   Newly noted review comments are remembered in <KEY>.feedback-noted, so a
+#   comment the pass has already reported (a question waiting on a human) does
+#   not make every later pass loud. `label done` clearing feedback-seen does
+#   not touch this file; a round that fixes a comment removes it from the
+#   feedback list, and the next new one is a new id.
+cmd_precheck() {
+  local out; out="$(pipeline_lock)" || { echo "$out"; return 1; }
+  local work=0 line key ids noted
+  _work() { work=1; printf '%s\n' "$*"; }
+
+  while IFS= read -r line; do [ -n "$line" ] && _work "reconcile: $line"; done < <(cmd_reconcile 2>&1)
+  while IFS= read -r line; do [ -n "$line" ] && _work "drain: $line"; done < <(cmd_drain 2>&1)
+  while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
+
+  local done_keys; done_keys="$(jira_done_keys)"
+  for key in $done_keys; do
+    ids="$(gh_feedback "$key" 2>/dev/null | jq -r '(.comments // [])[].id' | sort)"
+    noted="${PIPE_STATE_DIR}/${key}.feedback-noted"
+    if [ -n "$ids" ] && [ "$ids" != "$(cat "$noted" 2>/dev/null)" ]; then
+      _work "feedback: $key has new review comments: $(printf '%s' "$ids" | tr '\n' ' ')"
+      printf '%s\n' "$ids" > "$noted"
+    fi
+  done
+
+  local queue; queue="$(jira_queue_keys)"
+  local why
+  for key in $queue; do
+    if why="$(pipeline_skip_changed "$key")"; then _work "queue: $key $why"; fi
+  done
+
+  pipeline_unlock >/dev/null
+  if [ "$work" = 0 ]; then
+    echo "quiet: $(printf '%s\n' $queue | grep -c .) queued (all skipped, unchanged), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight"
+  fi
+}
+
 # Every key reaches JQL, file paths, and a python argv. One gate, applied once.
 _key() { local k; k="$(jira_normalize_key "${1:-}")" || exit 1; printf '%s' "$k"; }
 cmd_ticket()    { jira_ticket "$(_key "$1")"; }
@@ -1587,6 +1637,7 @@ main() {
     queue)      cmd_queue "$@" ;;
     inflight)   cmd_inflight "$@" ;;
     reconcile)  cmd_reconcile ;;
+    precheck)   cmd_precheck ;;
     done-keys)  cmd_done_keys "$@" ;;
     drain)      cmd_drain "$@" ;;
     label)      cmd_label "$@" ;;
