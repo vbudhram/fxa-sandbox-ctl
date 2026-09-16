@@ -321,7 +321,7 @@ The directive has a 30-turn cap.
 
 ### Slash commands available
 
-The host SCPs `.claude/{hooks,commands,skills,plugins}` into the VM before starting Claude, so these are usable directly:
+The host SCPs `.claude/{hooks,commands,skills}` into the VM before starting Claude, so these are usable directly. Plugins do not load in the VM; a skill you need must be a plain directory under `~/.claude/skills`:
 
 | Command | When to use |
 |---------|-------------|

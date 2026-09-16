@@ -31,15 +31,10 @@ runtime_load() {
 # humanizer, code-simplifier and ponytail-review are mandatory goal conditions. package-workflows
 # is deliberately absent: it reads 30 days of session history, and a VM boots,
 # fixes one ticket, and is destroyed.
-# Plugins whose hooks and skills the agent's session runs on. Everything else
-# in ~/.claude/plugins needs a network or a data store the VM does not have.
-_vm_plugin_allowlist() {
-  printf '%s\n' superpowers@claude-plugins-official code-simplifier@claude-plugins-official ponytail@ponytail
-}
-
 # Plugins do not load inside the runner: Claude's init event there reports
-# `plugins: []` even though the plugin cache ships, so every skill an agent must
-# be able to invoke has to exist as a plain directory under ~/.claude/skills.
+# `plugins: []`, so nothing under ~/.claude/plugins ships and every skill an
+# agent must be able to invoke has to exist as a plain directory under
+# ~/.claude/skills.
 # code-simplifier and humanizer already do. ponytail-review is a copy of
 # ~/.claude/plugins/cache/ponytail/ponytail/<version>/skills/ponytail-review
 # (MIT); re-copy it when the plugin updates.
@@ -342,18 +337,14 @@ _setup_claude_config() {
   # outputStyle is forced to concise for the VM only: the agent's prose is never
   # read by a human, so terse output is pure savings. Injected here rather than
   # baked into the image, because this copy overwrites the image's settings.json.
-  # claude-mem is disabled here for the same reason its cache is excluded below:
-  # its store lives in ~/.claude-mem on the host and never crosses, so the VM
-  # would run PreToolUse/PostToolUse hooks on every call against an empty index
-  # that dies with the VM. Leaving it enabled but absent is worse than off.
+  # enabledPlugins is dropped: plugins do not load in the runner, and a list
+  # naming plugins that are not there only produces warnings.
   if [ -f "${claude_home}/settings.json" ]; then
     local settings_b64
     # Allowlist of keys. The host file is where people put API keys (env) and
     # hooks; neither belongs on a bypassPermissions VM.
-    settings_b64="$(jq -c '{model, permissions, enabledPlugins, statusLine, theme} | with_entries(select(.value != null))
-        | . + {outputStyle: "concise"}
-        | if .enabledPlugins then .enabledPlugins |= with_entries(
-            select(.key | startswith("claude-mem@") | not)) else . end' \
+    settings_b64="$(jq -c '{model, permissions, statusLine, theme} | with_entries(select(.value != null))
+        | . + {outputStyle: "concise"}' \
       < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
     if [ -z "$settings_b64" ]; then
       echo "  WARN: could not adjust settings.json; copying it unchanged." >&2
@@ -386,41 +377,19 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
   fi
 
-  # hooks / commands / skills / plugins — bundle into one tar, SCP it in,
+  # hooks / commands / skills — bundle into one tar, SCP it in,
   # extract inside the VM. The previous approach embedded a base64 tar in a
   # `tart exec sudo bash -c "..."` argument, which silently failed for large
-  # bundles (the skills + plugins dirs blow past the ARG_MAX limit and the
+  # bundles (the skills dir blows past the ARG_MAX limit and the
   # post-hardening sudo channel is unreliable anyway). SSH/SCP via the
   # per-agent key is the clean path.
   local config_tar
   config_tar="$(mktemp -t fxa-claude-config.XXXX.tar)"
   # The golden image ships with Bun installed (packer/scripts/04-claude.sh) for
-  # plugins that need it.
+  # hooks that need it.
   local tar_items=()
   [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
   [ -d "${claude_home}/commands" ] && tar_items+=("commands")
-  # Plugins are an allow-list, like the skills below. The whole cache was 814 MB
-  # (a 774 MB vercel plugin, node_modules in every cache, stale temp_git clones,
-  # claude-mem), and the VM can use none of it: no network integrations, no
-  # claude-mem data. Only the plugins the agent's session runs on ship, and
-  # installed_plugins.json is rewritten to list just those with VM paths, so
-  # Claude in the VM does not look for plugins that are not there.
-  local plugins_tmp=""
-  if [ -f "${claude_home}/plugins/installed_plugins.json" ]; then
-    plugins_tmp="$(mktemp -d -t fxa-plugins.XXXX)"
-    mkdir -p "${plugins_tmp}/plugins"
-    local allow; allow="$(_vm_plugin_allowlist | jq -R . | jq -s .)"
-    jq --argjson allow "$allow" --arg home "$claude_home" \
-      '.plugins |= with_entries(select(.key as $k | $allow | index($k)))
-       | .plugins |= map_values(map(.installPath |= sub("^" + $home; "/home/agent/.claude")))' \
-      "${claude_home}/plugins/installed_plugins.json" > "${plugins_tmp}/plugins/installed_plugins.json"
-    [ -f "${claude_home}/plugins/config.json" ] && cp "${claude_home}/plugins/config.json" "${plugins_tmp}/plugins/config.json"
-    local rel
-    while IFS= read -r rel; do
-      [ -n "$rel" ] && [ -d "${claude_home}/${rel}" ] && tar_items+=("$rel")
-    done < <(jq -r --arg home "$claude_home" '.plugins[][] | .installPath | sub("^" + $home + "/"; "")' \
-               "${plugins_tmp}/plugins/installed_plugins.json" 2>/dev/null)
-  fi
   local skill_excludes=(--exclude="*/node_modules")
 
   # Skills are an allow-list, not a deny-list. The VM has no gh, acli, circleci,
@@ -446,7 +415,6 @@ _setup_claude_config() {
 
   if [ "${#tar_items[@]}" -gt 0 ]; then
     if tar -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
-       && { [ -z "$plugins_tmp" ] || tar -rf "$config_tar" -C "$plugins_tmp" plugins 2>/dev/null; } \
        && [ -s "$config_tar" ]; then
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
@@ -454,7 +422,6 @@ _setup_claude_config() {
       if scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
            "${VM_SSH_USER}@${ip}:/tmp/fxa-claude-config.tar" 2>/dev/null; then
         ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
-          mkdir -p /home/agent/.claude/plugins
           tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/
           chmod -R +x /home/agent/.claude/hooks 2>/dev/null
           rm -f /tmp/fxa-claude-config.tar
@@ -464,7 +431,7 @@ _setup_claude_config() {
       fi
     fi
   fi
-  rm -f "$config_tar"; [ -n "$plugins_tmp" ] && rm -rf "$plugins_tmp"
+  rm -f "$config_tar"
 
   # Append VM-specific context to CLAUDE.md (or create it if no host CLAUDE.md)
   local vm_section

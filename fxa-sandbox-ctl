@@ -118,6 +118,8 @@ PIPELINE COMMANDS:
   costs                        Rebuild the per-issue cost rollup
   skip <KEY> [reason]          Record an admission skip; prints comment|silent <n>
   skipped [KEY]                List recorded skips
+  skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
+                               or changed since it; silent otherwise. Read-only.
   attempts <KEY> [bump]        Read or increment the real-fix attempt counter
   lock / unlock                One pass at a time
   pause [reason] / resume      Kill switch: lock prints `paused` until resume.
@@ -1394,11 +1396,14 @@ cmd_precheck() {
     fi
   done
 
+  # Each fingerprint is two Jira reads, and 20 keys serially took 85 s. xargs -P
+  # fans them out through the `skip-changed` subcommand; bash 3.2 has no `wait -n`.
+  # A key with no record or a changed ticket prints a line, an unchanged one
+  # prints nothing, so the output is exactly the worklist.
   local queue; queue="$(jira_queue_keys)"
-  local why
-  for key in $queue; do
-    if why="$(pipeline_skip_changed "$key")"; then _work "queue: $key $why"; fi
-  done
+  while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line"; done < <(
+    printf '%s\n' $queue | grep . \
+      | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
 
   pipeline_unlock >/dev/null
   if [ "$work" = 0 ]; then
@@ -1421,6 +1426,10 @@ cmd_pause()     { pipeline_pause "$@"; }
 cmd_resume()    { pipeline_resume; }
 cmd_paused()    { pipeline_paused; }
 cmd_skip()      { pipeline_skip "$(_key "$1")" "${@:2}"; }
+cmd_skip_changed() {
+  local key; key="$(_key "$1")"; local why
+  if why="$(pipeline_skip_changed "$key")"; then echo "$key $why"; fi
+}
 cmd_skipped()   { if [ -n "${1:-}" ]; then pipeline_skipped "$(_key "$1")"; else pipeline_skipped; fi; }
 cmd_attempts()  { pipeline_attempts "$(_key "$1")" "${@:2}"; }
 cmd_usage_tokens() { telemetry_usage "$@"; }
@@ -1560,6 +1569,20 @@ cmd_launch() {
     echo "ERROR: context file '$ctx' not found" >&2
     return 1
   fi
+  # A UI change with a sibling *.stories.tsx should ask for /fxa-storybook-capture,
+  # and the grounding pass forgets (FXA-14503 shipped a copy change with no
+  # screenshot). Warn, do not refuse: the pass may have judged the change
+  # non-visual, and a warning it can read beats a launch it cannot make.
+  if [ -n "$ctx" ] && ! grep -q 'fxa-storybook-capture' "$ctx"; then
+    local dirs; dirs="$(grep -oE '(packages|libs)/[A-Za-z0-9_./-]+\.(tsx|ts|jsx|js|ftl|css|scss)' "$ctx" \
+      | xargs -n1 dirname 2>/dev/null | sort -u)"
+    local d hits=""
+    for d in $dirs; do
+      git -C "$PIPE_REPO" ls-tree -r --name-only origin/main -- "$d" 2>/dev/null | grep -q '\.stories\.tsx$' \
+        && hits="${hits}${hits:+ }${d}"
+    done
+    [ -n "$hits" ] && echo "WARN: ${key}: context names files beside *.stories.tsx but asks for no /fxa-storybook-capture: ${hits}" >&2
+  fi
   # Refuse to launch when the disk is too tight to hold another VM clone. A
   # running agent VM occupies 8 to 13GB, and this host filled to 99% on
   # 2026-08-11, which cost a manual cleanup of 19GB. A refused launch is a small
@@ -1657,6 +1680,7 @@ main() {
     costs)      cmd_costs "$@" ;;
     skip)       cmd_skip "$@" ;;
     skipped)    cmd_skipped "$@" ;;
+    skip-changed) cmd_skip_changed "$@" ;;
     attempts)   cmd_attempts "$@" ;;
     lock)       cmd_lock "$@" ;;
     snapshot)   cmd_snapshot "$@" ;;

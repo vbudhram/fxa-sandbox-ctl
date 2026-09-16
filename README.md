@@ -80,7 +80,7 @@ This:
 - Boots the VM with your worktree mounted at `/workspace`
 - Starts MySQL, Redis, Firestore emulator inside the VM
 - Applies security hardening (egress firewall, restricted sudo, SSH key-only)
-- Copies `settings.json`, `CLAUDE.md`, `hooks/`, `commands/`, `skills/`, and `plugins/` from host (no sensitive data)
+- Copies `settings.json`, `CLAUDE.md`, `hooks/`, `commands/`, and an allow-list of `skills/` from host (no sensitive data). Plugins do not load in the runner and are not shipped.
 - Injects the OAuth token ephemerally via the workspace mount (deleted after Claude reads it)
 - Launches Claude Code in a `screen` session (`screen -x` multi-attach)
 
