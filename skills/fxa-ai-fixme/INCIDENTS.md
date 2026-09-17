@@ -145,3 +145,25 @@ Three details cost a rewrite each:
 for it. That one step calls the Agile REST API directly and needs `PIPE_JIRA_BASIC`. Without the
 token it warns and the rest of the close still runs, because an unsprinted ticket is a smaller
 problem than a merge close that aborts halfway.
+
+## The manager paid to re-read itself
+
+**2026-09-17.** A cost split of the day's $102 manager spend: $53 was the session re-reading its
+own 400K-token context, once per turn, and every tool call is a turn. Nine cron passes cost $36.
+Four of those nine changed nothing but were not `quiet`, because a `watching` or `pr … running`
+line counted as work and bought a lock, drain, sweep, unlock turn each.
+
+Three passes read the same l10n `extract` failure log, the same `HTTP 401: Bad credentials`, on
+three PRs. Two `done` tickets needed a model turn to type `label merged` for a MERGED drain line
+the skill already calls determinate. Grounding five tickets took about twenty greps, each a full
+context re-read.
+
+Changes: precheck applies MERGED and CLOSED drain rows itself, approves a pending functional gate
+at any age, classifies red checks against `PIPE_INFRA_CHECKS` and reports a match as `RED-INFRA`
+(cached per head sha), sweeps feedback on `inflight` tickets with an open PR, holds back
+informational lines, and prints one `quiet` line with counts. `ground KEY` and `feedback KEY
+bundle` deliver the evidence for a judgment as one file instead of a tool call per fact.
+
+Also found that day: review comments on a PR that never reached `done` were never swept, because
+the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
+`inflight` for hours with Copilot findings nobody saw.

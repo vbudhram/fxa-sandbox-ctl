@@ -94,11 +94,14 @@ PIPELINE COMMANDS:
   queue                        Keys in the queue, oldest first
   inflight                     Keys currently running
   reconcile                    Apply the determinate reconcile rows to every inflight key
-  precheck                     WRITE: lock, reconcile, drain, reap, then list what needs
-                               judgment; prints `quiet` when nothing does. Run this first.
+  precheck                     WRITE: lock, reconcile, apply merged/closed drain rows, reap,
+                               sweep feedback on every open PR, then list only what needs
+                               judgment; prints one `quiet` line when nothing does.
   done-keys                    Keys awaiting review
   drain                        Done keys whose PR merged, closed, or went red
-  ticket <ISSUE-KEY>           Ticket text INCLUDING comments (ground with this)
+  ticket <ISSUE-KEY>           Ticket text INCLUDING comments
+  ground <ISSUE-KEY>           Write /tmp/fxa-KEY-ground.md: ticket, cited paths checked on
+                               origin/main, frozen/stories checks, overlapping open PRs
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
   label <ISSUE-KEY> <state>    WRITE: move the ticket; also reaps its VM
                                states: public inflight done blocked merged rejected
@@ -113,6 +116,8 @@ PIPELINE COMMANDS:
                                (lockfile | source). Empty if it merges clean.
   feedback <KEY> [sub]         Unhandled review comments
                                subs: ack | rounds [bump] | acted <id>... | thumbsup
+                               bundle: write /tmp/feedback/fxa-KEY-bundle.md with each comment
+                               and the branch/main lines it cites
   tokens <ISSUE-KEY>           Token and model usage (run BEFORE the VM stops)
   record <ISSUE-KEY>           Append the run to the telemetry log
   costs                        Rebuild the per-issue cost rollup
@@ -1328,7 +1333,7 @@ cmd_inflight()  { jira_inflight_keys; }
 #   skill, so a label frozen while the automation was off stayed frozen until a
 #   human read it (FXA-14300 shipped twice that way on 2026-09-08).
 cmd_reconcile() {
-  local key line stage pr state ok fail run url
+  local key line stage pr state ok fail run url why
   for key in $(jira_inflight_keys); do
     line="$(pipeline_progress "$key")"; stage="$(printf '%s' "$line" | awk '{print $2}')"
     case "$stage" in
@@ -1340,10 +1345,18 @@ cmd_reconcile() {
           OPEN)
             if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "${ok#ok=}" -gt 0 ]; then
               cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
-            elif url="$(gh_gate_stuck "$key")"; then
-              # The launcher died before it approved the functional gate.
+            elif url="$(gh_gate_stuck "$key" 0)"; then
+              # Every push resets the functional-tests gate, and the launcher
+              # approves it only on its own first push. Approve any pending gate
+              # here, so a feedback or rebase round does not wait a pass for it.
               finish_approve_functional_gate "$url" 2>/dev/null
-              echo "$key pr #$pr gate approved (launcher died before approving it)"
+              echo "$key pr #$pr gate approved"
+            elif [ "${fail#fail=}" -gt 0 ]; then
+              if why="$(gh_red_infra "$key")"; then
+                echo "$key pr #$pr RED-INFRA $why; not this PR"
+              else
+                echo "$key pr #$pr RED $ok $fail $run"
+              fi
             else
               echo "$key pr #$pr $ok $fail $run"
             fi ;;
@@ -1379,19 +1392,52 @@ cmd_done_keys() { jira_done_keys; }
 #   feedback list, and the next new one is a new id.
 cmd_precheck() {
   local out; out="$(pipeline_lock)" || { echo "$out"; return 1; }
-  local work=0 line key ids noted
+  local work=0 info="" line key num state ids noted why
+  local inflight_pr=0 infra=0 merged_n=0 rejected_n=0
   _work() { work=1; printf '%s\n' "$*"; }
+  # Informational lines are held back and printed only when something else needs
+  # judgment. A pass that has only these prints one `quiet` line, so an idle
+  # fire costs one short model turn instead of a lock/drain/sweep/unlock turn.
+  _info() { info="${info}${info:+$'\n'}$*"; }
+  # Reconcile lines that need a human or model judgment. Everything else the
+  # reconcile already applied (merged, done, gate approved) or is progress.
+  local judge_re='dead-runner| RED |could not read|exited-without-handoff|stalled|public \(inflight'
 
-  while IFS= read -r line; do [ -n "$line" ] && _work "reconcile: $line"; done < <(cmd_reconcile 2>&1)
-  while IFS= read -r line; do [ -n "$line" ] && _work "drain: $line"; done < <(cmd_drain 2>&1)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in *" pr #"*) inflight_pr=$((inflight_pr + 1)) ;; esac
+    case "$line" in *RED-INFRA*) infra=$((infra + 1)) ;; esac
+    if printf '%s' "$line" | grep -qE "$judge_re"; then _work "reconcile: $line"; else _info "reconcile: $line"; fi
+  done < <(cmd_reconcile 2>&1)
+
+  # Drain rows that are determinate get applied here, not narrated. The skill
+  # says a MERGED line takes `label merged` and a CLOSED line takes `label
+  # rejected` with no judgment in between; a model turn to type that cost about
+  # $0.40 per merge on 2026-09-17.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    read -r key num state _ <<< "$line"
+    case "$state" in
+      MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _work "drain: $line (label merged FAILED)"; fi ;;
+      CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _work "drain: $line (label rejected FAILED)"; fi ;;
+      RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"; else _work "drain: $line"; fi ;;
+      *)      _work "drain: $line" ;;
+    esac
+  done < <(cmd_drain 2>&1)
   while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
 
-  local done_keys; done_keys="$(jira_done_keys)"
-  for key in $done_keys; do
+  # Sweep review feedback on every ticket with an open PR: `done`, and `inflight`
+  # whose runner has handed off. A red check keeps a ticket at inflight for days,
+  # and its review comments were invisible until 2026-09-17.
+  local done_keys sweep; done_keys="$(jira_done_keys)"; sweep="$done_keys"
+  for key in $(jira_inflight_keys); do
+    [ "$(pipeline_progress "$key" 2>/dev/null | awk '{print $2}')" = "pr" ] && sweep="${sweep}${sweep:+ }${key}"
+  done
+  for key in $sweep; do
     ids="$(gh_feedback "$key" 2>/dev/null | jq -r '(.comments // [])[].id' | sort)"
     noted="${PIPE_STATE_DIR}/${key}.feedback-noted"
     if [ -n "$ids" ] && [ "$ids" != "$(cat "$noted" 2>/dev/null)" ]; then
-      _work "feedback: $key has new review comments: $(printf '%s' "$ids" | tr '\n' ' ')"
+      _work "feedback: $key has new review comments: $(printf '%s' "$ids" | tr '\n' ' ')(run: feedback $key bundle)"
       printf '%s\n' "$ids" > "$noted"
     fi
   done
@@ -1401,13 +1447,18 @@ cmd_precheck() {
   # A key with no record or a changed ticket prints a line, an unchanged one
   # prints nothing, so the output is exactly the worklist.
   local queue; queue="$(jira_queue_keys)"
-  while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line"; done < <(
+  while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
     printf '%s\n' $queue | grep . \
       | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
 
   pipeline_unlock >/dev/null
+  local pass=""
+  [ "$merged_n" -gt 0 ] && pass="${pass}; this pass: ${merged_n} merged"
+  [ "$rejected_n" -gt 0 ] && pass="${pass}${pass:+,}${pass:+ }${pass:-; this pass: }${rejected_n} rejected"
   if [ "$work" = 0 ]; then
-    echo "quiet: $(printf '%s\n' $queue | grep -c .) queued (all skipped, unchanged), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight"
+    echo "quiet: $(printf '%s\n' $queue | grep -c .) queued (all skipped, unchanged), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
+  else
+    [ -n "$info" ] && printf '%s\n' "$info"
   fi
 }
 
@@ -1418,7 +1469,9 @@ cmd_reporter()  { jira_reporter_login "$(_key "$1")"; }
 cmd_drain()     { gh_drain "$(jira_done_keys)"; }
 cmd_prstate()   { gh_pr_state "$(_key "$1")"; }
 cmd_conflicts() { gh_conflicts "$(_key "$1")" "${@:2}"; }
-cmd_feedback()  { gh_feedback "$(_key "$1")" "${@:2}"; }
+cmd_feedback()  {
+  if [ "${2:-}" = "bundle" ]; then cmd_feedback_bundle "$(_key "$1")"; else gh_feedback "$(_key "$1")" "${@:2}"; fi
+}
 cmd_progress()  { pipeline_progress "$(_key "$1")"; }
 cmd_lock()      { pipeline_lock; }
 cmd_unlock()    { pipeline_unlock; }
@@ -1502,6 +1555,145 @@ cmd_alive() {
   if ! vm_is_running "$name" 2>/dev/null; then echo "$key no-vm"; return 1; fi
   if agent_alive "$name"; then echo "$key alive"; return 0; fi
   echo "$key dead"; return 1
+}
+
+# _ground_paths <TEXT>
+#   Repo-relative paths a ticket or comment cites, one per line, optionally
+#   `path:LINE` or `path:LINE-LINE`. Trailing punctuation stripped.
+_ground_paths() {
+  printf '%s\n' "$1" \
+    | grep -oE '(packages|libs|_scripts|_dev|\.github|\.circleci|scripts)/[A-Za-z0-9_./@-]+(:[0-9]+(-[0-9]+)?)?' \
+    | sed -E 's/[.,;:)]+$//' | sort -u || true
+}
+
+# cmd_ground <KEY>
+#   Write /tmp/fxa-KEY-ground.md: the ticket, every cited path checked against
+#   origin/main with the cited lines shown, frozen and stories checks, open PRs
+#   touching the same files, and recent commits to them. One read replaces the
+#   six to ten greps a grounding pass ran by hand, and each of those greps was a
+#   model turn re-reading the whole session. Read-only; nothing here decides.
+cmd_ground() {
+  local key; key="$(_key "$1")"
+  local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO"
+  git -C "$repo" fetch -q origin main 2>/dev/null || true
+  local ticket; ticket="$(jira_ticket "$key" 2>/dev/null)"
+  local reporter; reporter="$(jira_reporter_login "$key" 2>/dev/null || true)"
+  local skiprec; skiprec="$(pipeline_skipped "$key" 2>/dev/null || true)"
+  local paths; paths="$(_ground_paths "$ticket" || true)"
+  local n_cited=0 n_missing=0 n_frozen=0 n_stories=0 n_prs=0
+  {
+    echo "# ${key} grounding bundle, origin/main $(git -C "$repo" rev-parse --short origin/main) at $(date -u +%FT%TZ)"
+    echo "reporter_login: ${reporter:-<unmapped>}"
+    echo "skip record: ${skiprec:-none}"
+    echo; echo "## Ticket"; echo; printf '%s\n' "$ticket"
+    echo; echo "## Cited paths on origin/main"; echo
+    local ref path lines lo hi
+    while IFS= read -r ref; do
+      [ -n "$ref" ] || continue
+      n_cited=$((n_cited + 1))
+      path="${ref%%:*}"; lines="${ref#*:}"; [ "$lines" = "$ref" ] && lines=""
+      if git -C "$repo" cat-file -e "origin/main:${path}" 2>/dev/null; then
+        echo "- exists  ${ref}"
+        if [ -n "$lines" ]; then
+          lo="${lines%%-*}"; hi="${lines##*-}"; [ "$hi" -ge "$lo" ] 2>/dev/null || hi="$lo"
+          git -C "$repo" show "origin/main:${path}" | sed -n "${lo},${hi}p" | sed 's/^/      | /'
+        fi
+      else
+        n_missing=$((n_missing + 1)); echo "- MISSING ${ref}"
+        local base; base="$(basename "$path")"
+        git -C "$repo" ls-tree -r --name-only origin/main | grep -F "/${base}" | head -3 | sed 's/^/      maybe: /' || true
+      fi
+    done <<< "$paths"
+    echo; echo "## Frozen paths (from _scripts/check-frozen.ts on origin/main)"; echo
+    local frozen pat p
+    frozen="$(git -C "$repo" show origin/main:_scripts/check-frozen.ts 2>/dev/null | grep -oE "pattern: '[^']+'" | sed -E "s/pattern: '//; s/'$//" || true)"
+    while IFS= read -r pat; do
+      [ -n "$pat" ] || continue
+      while IFS= read -r p; do
+        p="${p%%:*}"; [ -n "$p" ] || continue
+        if printf '%s' "$p" | grep -qE "^${pat}"; then n_frozen=$((n_frozen + 1)); echo "- FROZEN ${p}  (pattern ${pat})"; fi
+      done <<< "$paths"
+    done <<< "$frozen"
+    [ "$n_frozen" = 0 ] && echo "- none of the cited paths is frozen"
+    echo; echo "## Stories beside cited files"; echo
+    local d
+    for d in $(printf '%s\n' "$paths" | sed -E 's/:.*$//' | xargs -n1 dirname 2>/dev/null | sort -u); do
+      if git -C "$repo" ls-tree -r --name-only origin/main -- "$d" 2>/dev/null | grep -q '\.stories\.tsx$'; then
+        n_stories=$((n_stories + 1)); echo "- ${d} has *.stories.tsx: ask for /fxa-storybook-capture if rendered output changes"
+      fi
+    done
+    [ "$n_stories" = 0 ] && echo "- none"
+    echo; echo "## Open PRs touching cited files"; echo
+    local prfiles; prfiles="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --limit 60 --json number,title,headRefName,files \
+      --jq '.[] | .number as $n | .headRefName as $b | .title as $t | .files[].path | "\(.)\t#\($n) \($b): \($t)"' 2>/dev/null || true)"
+    local overlaps; overlaps="$(while IFS= read -r p; do
+      p="${p%%:*}"; [ -n "$p" ] || continue
+      printf '%s\n' "$prfiles" | awk -F'\t' -v f="$p" '$1 == f {print "- " f "  <- " $2}'
+    done <<< "$paths" | sort -u)"
+    if [ -n "$overlaps" ]; then printf '%s\n' "$overlaps"; else echo "- none"; fi
+    echo; echo "## Commits to cited files in the last 30 days"; echo
+    local existing; existing="$(while IFS= read -r p; do p="${p%%:*}"; [ -n "$p" ] && git -C "$repo" cat-file -e "origin/main:${p}" 2>/dev/null && printf '%s\n' "$p"; done <<< "$paths"; true)"
+    if [ -n "$existing" ]; then
+      git -C "$repo" log origin/main --since=30.days --date=short --format='- %h %ad %an: %s' -- $existing 2>/dev/null | head -15
+    else
+      echo "- (no cited path exists on main)"
+    fi
+  } > "$out" 2>/dev/null
+  n_prs="$(grep -c '  <- #' "$out" || true)"
+  echo "$out"
+  echo "cited=${n_cited} missing=${n_missing} frozen=${n_frozen} stories_dirs=${n_stories} open_pr_overlaps=${n_prs}"
+}
+
+# cmd_feedback_bundle <KEY>
+#   Write /tmp/feedback/fxa-KEY-bundle.md: each unhandled review comment with the
+#   branch lines it sits on, and every `file:line` it cites resolved on the branch
+#   and on origin/main. Verification then is one read, not a tool call per claim.
+cmd_feedback_bundle() {
+  local key="$1" repo="$PIPE_REPO"
+  local br; br="$(worktree_branch_for "$key")"
+  local fb; fb="$(gh_feedback "$key" 2>/dev/null)" || fb='{}'
+  local pr; pr="$(printf '%s' "$fb" | jq -r '.pr // "none"')"
+  local n; n="$(printf '%s' "$fb" | jq -r '(.comments // []) | length')"
+  mkdir -p /tmp/feedback
+  local out="/tmp/feedback/fxa-${key}-bundle.md"
+  git -C "$repo" fetch -q origin main "$br" 2>/dev/null || true
+  _show_ref() { # <rev> <path-or-suffix> <lo> <hi>
+    local rev="$1" want="$2" lo="$3" hi="$4" f
+    f="$(git -C "$repo" ls-tree -r --name-only "$rev" 2>/dev/null | grep -E "(^|/)$(printf '%s' "$want" | sed 's/[.[\*^$]/\\&/g')$" | head -1 || true)"
+    [ -n "$f" ] || { echo "      (not found on ${rev})"; return 0; }
+    echo "      ${rev}:${f}"
+    git -C "$repo" show "${rev}:${f}" 2>/dev/null | sed -n "${lo},${hi}p" | awk -v s="$lo" '{printf "      %5d | %s\n", NR+s-1, $0}'
+  }
+  {
+    echo "# ${key} review feedback bundle, PR #${pr}, branch ${br}, rounds used $(gh_feedback "$key" rounds 2>/dev/null)"
+    echo "unhandled comments: ${n}"
+    local i=0 id author assoc trusted path line body lo hi ref rp rl
+    while [ "$i" -lt "$n" ]; do
+      id="$(printf '%s' "$fb" | jq -r ".comments[$i].id")"; author="$(printf '%s' "$fb" | jq -r ".comments[$i].author")"
+      assoc="$(printf '%s' "$fb" | jq -r ".comments[$i].association")"; trusted="$(printf '%s' "$fb" | jq -r ".comments[$i].trusted")"
+      path="$(printf '%s' "$fb" | jq -r ".comments[$i].path // \"\"")"; line="$(printf '%s' "$fb" | jq -r ".comments[$i].line // 0")"
+      body="$(printf '%s' "$fb" | jq -r ".comments[$i].body")"
+      echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) on ${path}:${line}"; echo
+      echo '```'; printf '%s\n' "$body"; echo '```'
+      if [ -n "$path" ] && [ "$line" -gt 0 ] 2>/dev/null; then
+        lo=$((line > 8 ? line - 8 : 1)); hi=$((line + 8))
+        echo; echo "### Branch context ${path}:${lo}-${hi}"
+        _show_ref "origin/${br}" "$path" "$lo" "$hi"
+      fi
+      local refs; refs="$(printf '%s\n' "$body" | grep -oE '[A-Za-z0-9_./-]+\.(ts|tsx|js|mjs|jsx|json|md|yml|yaml|mustache|sql):[0-9]+(-[0-9]+)?' | sort -u || true)"
+      if [ -n "$refs" ]; then
+        echo; echo "### Cited references"
+        while IFS= read -r ref; do
+          [ -n "$ref" ] || continue
+          rp="${ref%%:*}"; rl="${ref#*:}"; lo="${rl%%-*}"; hi="${rl##*-}"; [ "$hi" -ge "$lo" ] 2>/dev/null || hi="$lo"
+          echo "- ${ref}"; _show_ref "origin/${br}" "$rp" "$lo" "$hi"; _show_ref origin/main "$rp" "$lo" "$hi"
+        done <<< "$refs"
+      fi
+      i=$((i + 1))
+    done
+  } > "$out" 2>/dev/null
+  unset -f _show_ref
+  echo "$out"; echo "pr=#${pr} unhandled=${n}"
 }
 
 # cmd_label <KEY> <STATE>
@@ -1684,6 +1876,7 @@ main() {
     drain)      cmd_drain "$@" ;;
     label)      cmd_label "$@" ;;
     ticket)     cmd_ticket "$@" ;;
+    ground)     cmd_ground "$@" ;;
     reporter)   cmd_reporter "$@" ;;
     slots)      cmd_slots "$@" ;;
     freeslots)  cmd_freeslots "$@" ;;

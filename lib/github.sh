@@ -55,10 +55,60 @@ gh_pr_approver() {
                | .author.login ] | last // empty'
 }
 
-# gh_gate_stuck <KEY>
+# gh_red_infra <KEY>
+#   Exit 0 and print why when EVERY failing check on the key's open PR matches a
+#   known repo-infrastructure signature from PIPE_INFRA_CHECKS
+#   ("check-name=log-regex", comma separated). Exit 1 when any failure is
+#   unexplained, so a real red check still reaches a human.
+#
+#   Cached per head sha in <KEY>.redinfra: the failing job's log is fetched once,
+#   not on every pass. On 2026-09-17 the same l10n `extract` 401 was read three
+#   times across three PRs before anyone wrote the pattern down.
+gh_red_infra() {
+  pipeline_require || return 1
+  local key="${1:-}"; [ -n "$key" ] || return 1
+  [ -n "${PIPE_INFRA_CHECKS:-}" ] || return 1
+  local br; br="$(worktree_branch_for "$key")" || return 1
+  local json; json="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
+    --json number,headRefOid,statusCheckRollup 2>/dev/null)" || return 1
+  [ "$(printf '%s' "$json" | jq 'length')" -gt 0 ] || return 1
+  local sha cache; sha="$(printf '%s' "$json" | jq -r '.[0].headRefOid')"
+  cache="${PIPE_STATE_DIR}/${key}.redinfra"
+  if [ -f "$cache" ] && [ "$(head -1 "$cache")" = "$sha" ]; then
+    local hit; hit="$(sed -n '2p' "$cache")"
+    [ -n "$hit" ] && { echo "$hit"; return 0; }
+    return 1
+  fi
+  local fails; fails="$(printf '%s' "$json" | jq -r '.[0].statusCheckRollup[]
+    | select(((.conclusion // .state) | ascii_upcase) as $c | $c=="FAILURE" or $c=="ERROR" or $c=="TIMED_OUT")
+    | "\(.name // .context)\t\(.detailsUrl // .targetUrl // "")"')"
+  [ -n "$fails" ] || return 1
+  local name url rule cname cre run job matched why="" all=1 rules
+  IFS=',' read -ra rules <<< "$PIPE_INFRA_CHECKS"
+  while IFS=$'\t' read -r name url; do
+    [ -n "$name" ] || continue
+    matched=""
+    for rule in "${rules[@]}"; do
+      cname="${rule%%=*}"; cre="${rule#*=}"
+      [ "$name" = "$cname" ] || continue
+      run="$(printf '%s' "$url" | grep -oE 'runs/[0-9]+' | cut -d/ -f2 || true)"
+      job="$(printf '%s' "$url" | grep -oE 'job/[0-9]+' | cut -d/ -f2 || true)"
+      if [ -n "$run" ] && [ -n "$job" ] \
+         && gh run view "$run" --repo "$PIPE_REPO_SLUG" --job "$job" --log-failed 2>/dev/null | grep -qE "$cre"; then
+        matched="${name}(${cre})"
+      fi
+    done
+    if [ -n "$matched" ]; then why="${why}${why:+, }${matched}"; else all=0; fi
+  done <<< "$fails"
+  { echo "$sha"; if [ "$all" = 1 ]; then echo "$why"; else echo ""; fi; } > "$cache"
+  [ "$all" = 1 ] && [ -n "$why" ] && { echo "$why"; return 0; }
+  return 1
+}
+
+# gh_gate_stuck <KEY> [MIN-AGE-SECONDS]
 #   Exit 0 when the PR's only pending checks are the CircleCI functional-tests
 #   approval gate (and the workflow that waits on it), and the head commit is
-#   over 10 min old. That is a launcher that died between `gh pr create` and
+#   older than MIN-AGE-SECONDS (default 600). Pass 0 to approve a fresh push. That is a launcher that died between `gh pr create` and
 #   finish_approve_functional_gate: nothing else re-approves the gate, so the
 #   PR would show one pending check forever. Prints the PR url.
 gh_gate_stuck() {
@@ -67,7 +117,7 @@ gh_gate_stuck() {
   local br; br="$(worktree_branch_for "$key")" || return 1
   gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
     --json url,statusCheckRollup,commits 2>/dev/null \
-  | jq -er --argjson now "$(date +%s)" '
+  | jq -er --argjson now "$(date +%s)" --argjson age "${2:-600}" '
       .[0] // empty
       | [ .statusCheckRollup[]
           | select(((.status // .state) | ascii_upcase) as $s | $s == "PENDING" or $s == "IN_PROGRESS" or $s == "QUEUED")
@@ -75,7 +125,7 @@ gh_gate_stuck() {
       | select(($pending | length) > 0)
       | select($pending | all(test("Approve Functional Tests|^test_pull_request$")))
       | select($pending | any(test("Approve Functional Tests")))
-      | select(($now - (.commits[-1].committedDate | fromdateiso8601)) > 600)
+      | select(($now - (.commits[-1].committedDate | fromdateiso8601)) > $age)
       | .url'
 }
 

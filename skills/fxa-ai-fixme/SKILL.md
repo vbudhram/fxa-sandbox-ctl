@@ -13,8 +13,11 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 
 ## Pass procedure
 
-0. **Run `$CTL precheck` first.** It takes the lock, applies the reconcile rows, drains `done`,
-   reaps strays, then lists what needs judgment and releases the lock. If it prints `quiet`,
+0. **Run `$CTL precheck` first.** It takes the lock, applies the reconcile rows, applies the
+   determinate drain rows itself (`MERGED` → merged, `CLOSED` → rejected), approves a pending
+   functional gate, marks a red check that matches a known infrastructure signature as
+   `RED-INFRA` (nothing to do), reaps strays, sweeps feedback on every open PR including
+   `inflight` ones, then lists only what needs judgment and releases the lock. If it prints `quiet`,
    report that one line and stop. If it prints `locked` or `paused`, stop and say so; never
    `resume` it yourself. Otherwise continue with the lines it printed as your worklist.
 1. **`$CTL lock`.** Then `cd ~/Desktop/working2/fxa && git fetch origin main`. Ground every grep
@@ -52,6 +55,10 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 
 `done` means green and awaiting review, not correct (INCIDENTS: Review feedback). `feedback`
 drops comments with `position: null` and tracks handled ids in `<KEY>.feedback-seen`.
+
+**Run `$CTL feedback KEY bundle` before judging.** It writes one file with each unhandled
+comment, the branch lines it sits on, and every `file:line` it cites resolved on the branch and
+on `origin/main`. Most claims are confirmed or refuted from that one read.
 
 **Verify before you believe.** Ground every comment against `origin/main`. Copilot is often
 right and sometimes wrong; a fix built on a wrong claim is a confident change to correct code.
@@ -104,8 +111,10 @@ the queue has work.
 
 ## Grounding pass (before every launch)
 
-**Use `$CTL ticket KEY`.** It includes comments; `acli jira workitem view` silently omits them
-(INCIDENTS: Grounding). Read the ticket to learn what to look for, then decide from the code.
+**Run `$CTL ground KEY`.** It writes one file: the ticket with comments, every cited path
+checked on `origin/main` with the cited lines shown, the frozen and stories checks, open PRs
+touching the same files, and recent commits to them (INCIDENTS: Grounding, Cost). Read that
+file, then decide from the code; reach for `git grep` only for what the bundle did not cover.
 
 Answer these four against `origin/main` before launching or skipping:
 
@@ -308,7 +317,9 @@ phone number in a context file, comment, or PR.
 
 | Command | Purpose |
 |---|---|
-| `precheck` | lock, reconcile, drain, reap, list what needs judgment or `quiet`. Run first |
+| `precheck` | lock, reconcile, apply merged/closed rows, reap, sweep every open PR, list what needs judgment or `quiet`. Run first |
+| `ground KEY` | one-file grounding bundle at `/tmp/fxa-KEY-ground.md` |
+| `feedback KEY bundle` | one-file review bundle at `/tmp/feedback/fxa-KEY-bundle.md` |
 | `queue` / `inflight` / `done-keys` | keys by state |
 | `freeslots` / `launchcap` | slots a ticket can claim; launches this pass may make |
 | `label KEY <state>` | swap the label; reaps the VM; 👍s on `done`; on `merged` also comments, assigns the approver, sprints, and closes |

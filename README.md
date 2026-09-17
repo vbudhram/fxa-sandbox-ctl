@@ -392,6 +392,7 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `drain` | Done keys whose PR merged, closed, or went red |
 | `ticket <ISSUE-KEY>` | Ticket text **including comments** — ground with this |
 | `reporter <ISSUE-KEY>` | Reporter's GitHub login, empty if unmapped |
+| `ground <ISSUE-KEY>` | Write `/tmp/fxa-KEY-ground.md`: ticket, cited paths checked on origin/main, frozen and stories checks, overlapping open PRs, recent commits |
 | `label <ISSUE-KEY> <state>` | WRITE: move the ticket; also reaps its VM, and on `merged` assigns the approver, sprints it, and closes it |
 | `slots` | Pool slots, and any VM running on each |
 | `freeslots` | Slots a ticket can claim — **use this, not `slots`** |
@@ -399,7 +400,7 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `alive <ISSUE-KEY>` | Exit 0 if a live `claude` process runs in the VM |
 | `progress <ISSUE-KEY>` | What the launcher did — **read this first** |
 | `prstate <ISSUE-KEY>` | PR number, state, and check tally |
-| `feedback <KEY> [sub]` | Unhandled review comments (`ack`, `rounds`, `acted`, `thumbsup`) |
+| `feedback <KEY> [sub]` | Unhandled review comments (`ack`, `rounds`, `acted`, `thumbsup`, `bundle` writes `/tmp/feedback/fxa-KEY-bundle.md` with each comment and the lines it cites) |
 | `tokens <ISSUE-KEY>` | Token and model usage — run **before** the VM stops |
 | `record <ISSUE-KEY>` | Append the run to the telemetry log |
 | `costs` | Rebuild the per-issue cost rollup |
