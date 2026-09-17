@@ -1613,6 +1613,19 @@ cmd_launch() {
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
   local log; log="$(pipeline_launch_log "$key")"
+  # Record the run this slot still holds before the launch destroys its evidence:
+  # the runner overwrites the slot transcript and, for the same key, the launch
+  # log below. Runs used to be recorded only at `done`, so a ticket that never
+  # got there before its next round (a red infra check, a relaunch) lost the
+  # run for good. On 2026-09-17 that was the first runs of FXA-14377 and
+  # FXA-14380. telemetry_record is idempotent, so a run `done` already wrote is
+  # a no-op here.
+  local prev_dir prev_key
+  prev_dir="$(dirname "$(worktree_repo_root 2>/dev/null || echo /)")/${slot}"
+  prev_key="$(worktree_key_for "$(git -C "$prev_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)")"
+  if [ -n "$prev_key" ] && [ "$prev_key" != "HEAD" ] && [ -f "$(pipeline_launch_log "$prev_key")" ]; then
+    telemetry_record "$prev_key" >/dev/null 2>&1 || true
+  fi
   # Delete, do not just truncate. `>` reuses the inode and APFS keeps the
   # original st_birthtime, so a relaunched ticket would report a wall time that
   # spans every earlier attempt. telemetry_record reads that birth time.

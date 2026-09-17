@@ -152,6 +152,16 @@ telemetry_record() {
     wt=""
   }
   local log; log="$(pipeline_launch_log "$key")"
+  # The launch log's birth time is the run's identity: the launcher deletes the
+  # log before every launch, so no two runs of a key share it. Recording is
+  # idempotent on (issue, launched_at), which lets `launch` record the run a
+  # slot still holds and lets `done` record it again without a second row.
+  local launched_at=0
+  [ -f "$log" ] && launched_at="$(stat -f %B "$log" 2>/dev/null || echo 0)"
+  if [ "$launched_at" != "0" ] && [ -s "$PIPE_RUNS_FILE" ] \
+     && jq -e --arg k "$key" --argjson t "$launched_at" 'select(.issue == $k and .launched_at == $t)' "$PIPE_RUNS_FILE" >/dev/null 2>&1; then
+    echo "already recorded $key (launched_at $launched_at)"; return 0
+  fi
   local usage secs pr sha files base
   usage="$(telemetry_usage "$key" 2>/dev/null || echo '{}')"
   # No transcript means no run to record. Writing a zero row here produced a
@@ -228,8 +238,8 @@ print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
   mkdir -p "$(dirname "$PIPE_RUNS_FILE")"
   printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
       --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" \
-      --argjson cost "$cost" --arg billing "$billing" --arg kind "$kind" \
-      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, recorded_at:$at, billing:$billing}' \
+      --argjson cost "$cost" --arg billing "$billing" --arg kind "$kind" --argjson launched "$launched_at" \
+      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, launched_at:$launched, recorded_at:$at, billing:$billing}' \
     >>"$PIPE_RUNS_FILE"
   echo "recorded $key -> $PIPE_RUNS_FILE"
   tail -1 "$PIPE_RUNS_FILE"
