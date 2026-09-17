@@ -1578,8 +1578,10 @@ cmd_launch() {
   # screenshot). Warn, do not refuse: the pass may have judged the change
   # non-visual, and a warning it can read beats a launch it cannot make.
   if [ -n "$ctx" ] && ! grep -q 'fxa-storybook-capture' "$ctx"; then
+    # `|| true`: a context with no source paths makes grep exit 1, and under
+    # pipefail + set -e that aborted the launch with no message (2026-09-17).
     local dirs; dirs="$(grep -oE '(packages|libs)/[A-Za-z0-9_./-]+\.(tsx|ts|jsx|js|ftl|css|scss)' "$ctx" \
-      | xargs -n1 dirname 2>/dev/null | sort -u)"
+      | xargs -n1 dirname 2>/dev/null | sort -u || true)"
     local d hits=""
     for d in $dirs; do
       git -C "$PIPE_REPO" ls-tree -r --name-only origin/main -- "$d" 2>/dev/null | grep -q '\.stories\.tsx$' \
