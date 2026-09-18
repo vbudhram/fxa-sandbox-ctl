@@ -167,6 +167,14 @@ _gce_pin_runner_tree() {
   sha="$(git -C "$slot" rev-parse HEAD)" || return 1
   branch="$(git -C "$slot" rev-parse --abbrev-ref HEAD)" || return 1
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
+  # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
+  # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned
+  # before the directory existed. Poll for it here, at the point of use.
+  local deadline=$(( $(date +%s) + ${GCE_CHECKOUT_TIMEOUT:-600} ))
+  until vm_exec "$name" test -e /workspace/.git >/dev/null 2>&1; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: /workspace never appeared on the runner." >&2; return 1; }
+    sleep 5
+  done
   vm_exec "$name" sudo -u agent bash -c "cd /workspace && git fetch --quiet origin ${sha} && git checkout --quiet -B ${branch} ${sha}" 2>&1 | grep -v 'unable to resolve' >&2
   got="$(vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git rev-parse HEAD' 2>/dev/null | tr -d '\r' | tail -1)"
   if [ "$got" != "$sha" ]; then

@@ -53,17 +53,20 @@ _gce_ssh() {
 # The call sites expand VM_SSH_OPTS unquoted, so an option with spaces cannot
 # ride in it. The IAP ProxyCommand goes in a config file instead.
 _GCE_SSH_CONFIG="${LOG_DIR}/gce-ssh-config"
-mkdir -p "${LOG_DIR}"
-# Per-host entries (written at create, removed at delete) come first; the
-# wildcard is the fallback for the default zone. Rewriting only the wildcard
-# keeps the per-host entries across shells.
-if ! grep -q "^Host ${VM_PREFIX}-\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; then
+_GCE_SSH_HOSTS="${LOG_DIR}/gce-ssh-hosts"
+mkdir -p "${LOG_DIR}" "${_GCE_SSH_HOSTS}"
+# Per-host entries live one file each under gce-ssh-hosts/ (written at create,
+# removed at delete) and reach ssh through Include. Concurrent launches then
+# never rewrite a shared file: on 2026-09-18 two launchers shared one .tmp,
+# one mv landed under the other's `cat - config > config.tmp`, and that cat
+# copied its own output for 25 minutes. The wildcard is the default-zone fallback.
+if ! grep -q "^Include ${_GCE_SSH_HOSTS}/\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; then
   # No ControlMaster here, on purpose. A master whose IAP tunnel died kept
   # every later ssh to that runner queued on its socket for up to 53 min
   # (2026-09-14), and a killed master left clients hanging anyway. One tunnel
   # per call costs about 1.5 s; the launch makes ~15 calls.
-  printf 'Host %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
-    "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" >> "$_GCE_SSH_CONFIG"
+  printf 'Include %s/*\nHost %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
+    "$_GCE_SSH_HOSTS" "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" > "$_GCE_SSH_CONFIG"
 fi
 VM_SSH_OPTS="${VM_SSH_OPTS} -F ${_GCE_SSH_CONFIG}"
 
@@ -113,7 +116,7 @@ vm_clone() {
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
       # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
       printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
-        "$(vm_name "$name")" "$FXA_GCE_PROJECT" "$zone" | cat - "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
+        "$(vm_name "$name")" "$FXA_GCE_PROJECT" "$zone" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
       return 0
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
@@ -242,7 +245,7 @@ vm_delete() {
 
 # Drop the per-host ssh entry, or the file grows one block per run forever.
 _gce_ssh_forget() {
-  [ -f "$_GCE_SSH_CONFIG" ] && awk -v h="Host $(vm_name "$1")" '$0==h{skip=2} skip>0{skip--; next} {print}' "$_GCE_SSH_CONFIG" > "${_GCE_SSH_CONFIG}.tmp" && mv "${_GCE_SSH_CONFIG}.tmp" "$_GCE_SSH_CONFIG"
+  rm -f "${_GCE_SSH_HOSTS}/$(vm_name "$1")"
 }
 
 # vm_gc: state files whose instance is gone. Each crash path leaves a different

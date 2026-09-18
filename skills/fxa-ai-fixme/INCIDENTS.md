@@ -168,6 +168,21 @@ On 2026-09-18 the operator ruled that a PR red only on a known infrastructure ch
 failed PR. Reconcile now labels it `done` once nothing else runs, so review is not held for a
 token nobody on the team can rotate. Three PRs had waited a day at `inflight` for that reason.
 
+## Four parallel launches, one shared temp file
+
+On 2026-09-18 a pass launched four tickets in one minute. Every GCE create appended its
+per-host ssh entry with `cat - config > config.tmp && mv config.tmp config`, all four through
+the same `.tmp` path. One launcher's `mv` landed while another's `cat` still had the file open,
+so that `cat` read its own output for 25 minutes, wrote 82GB, took the disk from 73GB to 0GB,
+and held its launcher at "Creating GCE instance" the whole time. In the same minute two other
+launches pinned the runner before the image's checkout unit had created `/workspace`:
+`vm_wait_ready` skips that wait when a single ssh flakes, and four IAP tunnels at once flake.
+Both tickets went back to the queue with "runner is at ''".
+
+Changes: per-host ssh entries are one file each under `logs/gce-ssh-hosts/`, pulled in by an
+`Include` line, so nothing rewrites a shared file. `_gce_pin_runner_tree` polls for
+`/workspace/.git` before it fetches, at the point of use, instead of trusting an earlier wait.
+
 Also found that day: review comments on a PR that never reached `done` were never swept, because
 the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
 `inflight` for hours with Copilot findings nobody saw.
