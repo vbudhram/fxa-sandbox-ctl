@@ -15,8 +15,8 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 
 0. **Run `$CTL precheck` first.** It takes the lock, applies the reconcile rows, applies the
    determinate drain rows itself (`MERGED` → merged, `CLOSED` → rejected), approves a pending
-   functional gate, marks a red check that matches a known infrastructure signature as
-   `RED-INFRA` (nothing to do), reaps strays, sweeps feedback on every open PR including
+   functional gate, labels a PR `done` when its only red checks match a known infrastructure
+   signature and nothing is still running (`RED-INFRA` while checks run), reaps strays, sweeps feedback on every open PR including
    `inflight` ones, then lists only what needs judgment and releases the lock. If it prints `quiet`,
    report that one line and stop. If it prints `locked` or `paused`, stop and say so; never
    `resume` it yourself. Otherwise continue with the lines it printed as your worklist.

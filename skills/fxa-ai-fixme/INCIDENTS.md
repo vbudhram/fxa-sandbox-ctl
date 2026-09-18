@@ -164,6 +164,10 @@ at any age, classifies red checks against `PIPE_INFRA_CHECKS` and reports a matc
 informational lines, and prints one `quiet` line with counts. `ground KEY` and `feedback KEY
 bundle` deliver the evidence for a judgment as one file instead of a tool call per fact.
 
+On 2026-09-18 the operator ruled that a PR red only on a known infrastructure check is not a
+failed PR. Reconcile now labels it `done` once nothing else runs, so review is not held for a
+token nobody on the team can rotate. Three PRs had waited a day at `inflight` for that reason.
+
 Also found that day: review comments on a PR that never reached `done` were never swept, because
 the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
 `inflight` for hours with Copilot findings nobody saw.

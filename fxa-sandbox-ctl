@@ -1353,7 +1353,13 @@ cmd_reconcile() {
               echo "$key pr #$pr gate approved"
             elif [ "${fail#fail=}" -gt 0 ]; then
               if why="$(gh_red_infra "$key")"; then
-                echo "$key pr #$pr RED-INFRA $why; not this PR"
+                # Every red check is repo infrastructure, not this PR. Once
+                # nothing else is still running, treat it as green.
+                if [ "${run#running=}" = 0 ]; then
+                  cmd_label "$key" done >/dev/null && echo "$key done #$pr green except infra: $why"
+                else
+                  echo "$key pr #$pr RED-INFRA $why; not this PR"
+                fi
               else
                 echo "$key pr #$pr RED $ok $fail $run"
               fi
