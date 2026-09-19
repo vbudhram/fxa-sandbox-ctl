@@ -104,6 +104,16 @@ npx playwright test --project=local tests/signin/signIn.spec.ts
 npx playwright test --project=local -g "sign in"
 ```
 
+
+**Known limits of the VM stack.** Three groups of functional specs cannot pass here and are
+covered by CI instead: OAuth relier flows through 123done (`tests/oauth/*`, `loginHint*`,
+`relayIntegration`, `smartWindowIntegration`) fail at the token exchange because the grant path
+needs the subscriptions capability manager, which needs Stripe and Strapi; the CMS specs
+(`tests/cms/*`) skip because the CMS is off; payments specs live in `local-payments-next`,
+which has no stack here. Verify with direct content-server flows (sign-in, sign-up, reset,
+settings) or Sync through `/pair`. When an issue is relier-specific, say so in the handoff and
+leave it to CI.
+
 > **WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for running tests from the host Mac. Inside the VM, tests use `localhost` automatically.
 
 **Unit tests** for a specific package:

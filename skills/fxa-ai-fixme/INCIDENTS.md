@@ -223,7 +223,11 @@ list the hung process's sockets with `ss -tnp` (shows what a request waits on).
 
 Also: every guide named a `sandbox` Playwright project that does not exist (`local` is the
 one), and `pkill -f "playwright test"` over ssh kills the ssh shell that contains those words.
-A full run is not the goal here; CI does that. A runner has to run the specs that cover one
+Two more, found the same day and left as documented limits on the operator's call: every
+123done OAuth flow fails at `/v1/token` with errno 998 because the grant path calls the
+subscriptions capability manager, which the runner cannot register without Stripe and Strapi;
+and the `run` command never syncs secrets, so a relier needs `--functional-tests` through
+`jira`. A full run is not the goal here; CI does that. A runner has to run the specs that cover one
 issue, which the verification skill's flow now does in about ten seconds per spec.
 
 Also found that day: review comments on a PR that never reached `done` were never swept, because
