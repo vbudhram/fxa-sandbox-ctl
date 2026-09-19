@@ -447,6 +447,22 @@ log "Starting admin server..."
 # ── Step 5: Wait and report ──
 log "Waiting for services to start..."
 sleep 8
+# The settings group runs a tsc watch on fxa-shared that rewrites its dist
+# while auth is still requiring it; on 2026-09-19 auth died at boot with
+# "Cannot find module './errors'" and pm2 left it errored. One restart after
+# the dust settles, then a heartbeat wait, so fxa-start never returns with a
+# dead auth server.
+for app in auth content profile; do
+  if pm2 jlist 2>/dev/null | sed -n '/^\[/,$p' | jq -e --arg a "$app" '.[] | select(.name==$a and .pm2_env.status=="errored")' >/dev/null 2>&1; then
+    log "$app errored at boot; restarting it once..."
+    pm2 restart "$app" >/dev/null 2>&1
+  fi
+done
+for i in $(seq 1 40); do
+  curl -sf -m 3 http://localhost:9000/__heartbeat__ >/dev/null && break
+  sleep 3
+done
+curl -sf -m 3 http://localhost:9000/__heartbeat__ >/dev/null || log "WARN: auth server not answering on :9000; see pm2 logs auth"
 
 echo ""
 pm2 list
