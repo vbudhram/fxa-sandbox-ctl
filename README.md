@@ -584,11 +584,14 @@ fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
 Or manually with `FXA_SANDBOX_IP`:
 
 ```bash
-cd packages/functional-tests
-FXA_SANDBOX_IP=<VM_IP> yarn test-sandbox
+# Inside the VM. The Playwright projects on main are local, local-chromium and
+# local-payments-next; there is no sandbox project, so run from the VM where the
+# stack answers on localhost.
+cd /workspace/packages/functional-tests
+npx playwright test --project=local
 
 # Run specific tests:
-FXA_SANDBOX_IP=<VM_IP> npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+npx playwright test --project=local tests/signin/signIn.spec.ts
 ```
 
 The sandbox Playwright project uses `oauth_webchannel_v1` context and includes HSTS-disabling Firefox prefs so tests work over plain HTTP.

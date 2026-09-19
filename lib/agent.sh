@@ -492,21 +492,20 @@ pm2 describe cloud-tasks-emulator             # Cloud Tasks emulator (:8123)
 
 ## Running Functional Tests
 
-Functional tests use Playwright with the `sandbox` project configuration.
+Functional tests use Playwright with the `local` project (Firefox against the stack in
+this VM). `local-chromium` and `local-payments-next` exist too. There is no `sandbox` project.
 
 ```bash
-# Run all functional tests
-cd /workspace
-yarn test-sandbox
+cd /workspace/packages/functional-tests
+
+# Run all functional tests (same as `yarn test` here)
+npx playwright test --project=local
 
 # Run a specific test file
-npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+npx playwright test --project=local tests/signin/signIn.spec.ts
 
 # Run tests matching a grep pattern
-npx playwright test --project=sandbox -g "sign in"
-
-# Run with headed browser (visible)
-npx playwright test --project=sandbox --headed tests/signin/signIn.spec.ts
+npx playwright test --project=local -g "sign in"
 ```
 
 **WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for the host Mac. Inside the VM, tests use `localhost` automatically.

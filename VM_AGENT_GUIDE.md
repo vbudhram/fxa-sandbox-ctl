@@ -91,19 +91,17 @@ curl -sf http://localhost:9001/mail && echo "mail OK"
 **Functional tests** (Playwright, sandbox target):
 
 ```bash
-cd /workspace
+cd /workspace/packages/functional-tests
 
-# Run all functional tests
-yarn test-sandbox
+# Run all functional tests with the `local` project (Firefox against this VM's stack).
+# `local-chromium` and `local-payments-next` exist too. There is no `sandbox` project.
+npx playwright test --project=local
 
 # Run a specific test file
-npx playwright test --project=sandbox tests/signin/signIn.spec.ts
+npx playwright test --project=local tests/signin/signIn.spec.ts
 
 # Run tests matching a grep pattern
-npx playwright test --project=sandbox -g "sign in"
-
-# Run with headed browser (visible)
-npx playwright test --project=sandbox --headed tests/signin/signIn.spec.ts
+npx playwright test --project=local -g "sign in"
 ```
 
 > **WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for running tests from the host Mac. Inside the VM, tests use `localhost` automatically.
