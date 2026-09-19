@@ -32,6 +32,13 @@ done
 # The auth-server tests need signing and VAPID keys, which git ignores. Without
 # them every run spent a cycle on "keys missing" before it generated its own.
 sudo -u agent bash -c 'source /etc/agent-env.sh && NODE_ENV=dev yarn workspace fxa-auth-server gen-keys' >/dev/null
+# Playwright browsers for the pinned version, into the agent's cache. 08 put the
+# system libraries in the image; the boot-time install in agent-init never ran
+# on GCE because /workspace is linked only after that unit. Baking them saves a
+# 1.3GB download per boot; the checkout unit refreshes when the pin moves.
+sudo -u agent bash -c 'source /etc/agent-env.sh && cd /home/agent/fxa/packages/functional-tests && npx playwright install chromium firefox' \
+  || { echo '==> ERROR: playwright install failed'; exit 1; }
+echo "==> Playwright browsers baked ($(du -sh /home/agent/.cache/ms-playwright | cut -f1))"
 # Outside the tree: anything inside would be pulled back and staged into the PR.
 sha256sum yarn.lock | cut -d" " -f1 > /home/agent/.image-lock-hash
 echo "==> Clone baked ($(du -sh /home/agent/fxa | cut -f1))"

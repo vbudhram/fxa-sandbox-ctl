@@ -15,6 +15,11 @@ cat > /etc/agent-env.sh <<'AGENTENV'
 # Silence it and pin the version to whatever the image was built with.
 export DISABLE_AUTOUPDATER=1
 
+# The VM has no IPv6 route, and Node 24 tries AAAA answers first, so a
+# download from any dual-stack CDN dies with ENETUNREACH. On 2026-09-19 that
+# left `playwright install` with firefox but no chromium or ffmpeg.
+export NODE_OPTIONS="--dns-result-order=ipv4first"
+
 # MySQL
 export AUTH_MYSQL_HOST=localhost
 export AUTH_MYSQL_PORT=3306

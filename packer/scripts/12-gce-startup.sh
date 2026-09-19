@@ -32,6 +32,11 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
   sudo -u agent bash -c 'source /etc/agent-env.sh && yarn install --immutable' || true
 fi
 ln -sfn /home/agent/fxa /workspace
+# A no-op when the branch pins the same Playwright the image baked; a download
+# when it moved. Must run after the link above: agent-init's copy of this step
+# ran before /workspace existed and installed nothing (2026-09-19).
+sudo -u agent bash -c 'source /etc/agent-env.sh && cd /workspace/packages/functional-tests && npx playwright install chromium firefox' \
+  || echo "fxa-gce-checkout: WARN playwright install failed"
 echo "fxa-gce-checkout: $(g rev-parse --abbrev-ref HEAD) at $(g rev-parse --short HEAD)"
 CHECKOUT
 chmod +x /usr/local/bin/fxa-gce-checkout
