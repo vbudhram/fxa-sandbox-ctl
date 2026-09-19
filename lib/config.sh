@@ -44,6 +44,10 @@ FXA_GCE_ZONES="${FXA_GCE_ZONES:-us-central1-a us-central1-b us-central1-c us-cen
 FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
 # c4a, not n4a: n4a was stocked out in every us-central1 zone on 2026-09-13.
 FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"
+# A --functional-tests run holds the whole stack, the admin services and Firefox
+# workers at once. That tipped an 8GB highcpu-4 into the OOM killer on
+# 2026-09-19 (it took the settings dev server first). 16GB, same vCPU count.
+FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-standard-4}"
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
 # List price of one runner-hour, for the dashboard's burn rate. c4a-highcpu-4 on demand.
 FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.13}"

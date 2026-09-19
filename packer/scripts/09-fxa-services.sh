@@ -330,6 +330,10 @@ const apps = (base.apps || [base]).map(app => ({
     // AppleIAP also gracefully return [] when not configured.
     SUBHUB_STRIPE_APIKEY: "",
     SUBSCRIPTIONS_ENABLED: "false",
+    // No Strapi here. With CMS on, /cms/config waits on localhost:1337 until
+    // the client gives up (40 s, a 499), and the CMS functional specs abort
+    // instead of skipping. Off, the route answers at once and they skip.
+    CMS_ENABLED: "false",
     MAILER_HOST: "0.0.0.0",
   },
 }));
@@ -421,6 +425,18 @@ module.exports = {
 };
 RPDONEPM2
 pm2 start /tmp/123done-pm2.config.js 2>&1 | tail -3
+
+# Admin panel (:8091) and admin server (:8095). The functional-test fixtures
+# delete every test account through the admin server, so without it each spec
+# ends in "Failed to cleanup account" even when the flow passed. CI starts both
+# the same way. The Stripe client refuses an empty key at boot; the placeholder
+# makes it construct, and its first call fails harmlessly with no subscriptions
+# configured. nx builds first (cached from the image), about 80 s on a 4 vCPU box.
+log "Starting admin panel and admin server..."
+( export NODE_ENV=test SUBHUB_STRIPE_APIKEY="${SUBHUB_STRIPE_APIKEY:-sk_test_placeholder}"
+  npx nx run-many -t build -p fxa-admin-panel fxa-admin-server > /tmp/admin-build.log 2>&1 \
+    && npx nx run-many -t start -p fxa-admin-panel fxa-admin-server > /tmp/admin-start.log 2>&1 ) \
+  || log "WARN: admin panel/server did not start; see /tmp/admin-build.log and /tmp/admin-start.log"
 
 # ── Step 5: Wait and report ──
 log "Waiting for services to start..."

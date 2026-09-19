@@ -328,6 +328,8 @@ cmd_jira() {
   # bypassPermissions, so an unused key is avoidable exposure.
   if [ "$functional_tests" = "true" ]; then
     export FXA_COPY_SECRETS=true
+    # The stack plus Firefox workers needs more memory than a queue run.
+    export FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL}"
   fi
 
   # --private: provision from the FXA_PRIVATE_REPO checkout into its own pool.

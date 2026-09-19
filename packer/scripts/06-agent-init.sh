@@ -20,6 +20,14 @@ export DISABLE_AUTOUPDATER=1
 # left `playwright install` with firefox but no chromium or ffmpeg.
 export NODE_OPTIONS="--dns-result-order=ipv4first"
 
+# The instance has no service account and the firewall drops the agent user's
+# packets to the metadata server, so a Google client library probing for
+# default credentials sits in SYN-SENT until it gives up. On 2026-09-19 that
+# held every /cms/config call in the auth server for over 75 s. Tell
+# gcp-metadata the server is absent and name a project so nothing looks one up.
+export METADATA_SERVER_DETECTION=none
+export GOOGLE_CLOUD_PROJECT=demo-fxa
+
 # MySQL
 export AUTH_MYSQL_HOST=localhost
 export AUTH_MYSQL_PORT=3306
