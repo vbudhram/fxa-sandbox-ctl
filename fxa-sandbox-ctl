@@ -1824,6 +1824,11 @@ cmd_launch() {
   if [ -n "$prev_key" ] && [ "$prev_key" != "HEAD" ] && [ -f "$(pipeline_launch_log "$prev_key")" ]; then
     telemetry_record "$prev_key" >/dev/null 2>&1 || true
   fi
+  # The same key relaunching on a different slot is the other way to lose a run:
+  # the rm below destroys its launch log while its transcript sits in another
+  # slot. On 2026-09-18 FXA-14578's fix run went that way when its feedback
+  # round landed on fxa-auto-5 before reconcile had labelled it done.
+  [ -f "$log" ] && { telemetry_record "$key" >/dev/null 2>&1 || true; }
   # Delete, do not just truncate. `>` reuses the inode and APFS keeps the
   # original st_birthtime, so a relaunched ticket would report a wall time that
   # spans every earlier attempt. telemetry_record reads that birth time.
