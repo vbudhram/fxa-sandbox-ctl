@@ -51,6 +51,10 @@ FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"
 # (16GB) here if a run ever needs more.
 FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-highcpu-4}"
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
+# Manager service account from infra/gce/setup.sh. gcloud reads this variable
+# on every call, ssh's IAP ProxyCommand included, so one export covers them all.
+FXA_GCE_SERVICE_ACCOUNT="${FXA_GCE_SERVICE_ACCOUNT:-}"
+[ -n "$FXA_GCE_SERVICE_ACCOUNT" ] && export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="$FXA_GCE_SERVICE_ACCOUNT"
 # List price of one runner-hour, for the dashboard's burn rate. c4a-highcpu-4 on demand.
 FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.13}"
 # Hard lifetime for a runner. GCE deletes it at this age, whatever the laptop is doing.

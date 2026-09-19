@@ -204,7 +204,8 @@ and opens the PR. Only the runner moves. Once per project:
 ```bash
 echo 'FXA_GCE_PROJECT=<project-id>' >> .env
 gcloud auth login && gcloud auth application-default login
-FXA_GCE_PROJECT=<project-id> bash infra/gce/setup.sh   # VPC, subnet, NAT, IAP ssh rule
+FXA_GCE_PROJECT=<project-id> bash infra/gce/setup.sh   # VPC, subnet, NAT, IAP ssh rule, manager service account
+echo 'FXA_GCE_SERVICE_ACCOUNT=fxa-ai-fixme-manager@<project-id>.iam.gserviceaccount.com' >> .env
 fxa-sandbox-ctl --backend gce image build              # ~30 min, bakes the FxA clone
 fxa-sandbox-ctl --backend gce jira FXA-13474
 ```
@@ -212,7 +213,10 @@ fxa-sandbox-ctl --backend gce jira FXA-13474
 The backend is a global flag like `--pipeline`, or `FXA_VM_BACKEND=gce` in
 `.env`, or `PIPE_VM_BACKEND` in the pipeline config. Default is `tart`.
 
-Runners have no service account and no external IP. The laptop reaches them
+Every runner and bucket call runs as the manager service account, which
+`setup.sh` creates and the laptop impersonates: no key file, and only the roles
+for runners, the IAP tunnel and the state bucket. `image build` still uses your
+own account. Runners have no service account and no external IP. The laptop reaches them
 over ssh through an IAP tunnel, with its own passphrase-less key at
 `~/.ssh/fxa-sandbox-gce`. There is no shared filesystem: the slot's per-run
 files (ticket context, prompt, auth, `ai/`, dev secrets) go in as one tar at
