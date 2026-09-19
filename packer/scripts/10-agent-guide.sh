@@ -54,7 +54,7 @@ You are inside a sandbox VM (Ubuntu 24.04 ARM64, Tart on Apple Silicon).
 ## Tests (verify services first)
   curl -sf http://localhost:9000/__heartbeat__ && echo "auth OK"
   curl -sf http://localhost:3030/ >/dev/null && echo "content OK"
-  cd /workspace/packages/functional-tests && npx playwright test --project=local
+  cd /workspace/packages/functional-tests && npx playwright test --project=local   # 2 workers, keep it
   npx playwright test --project=local tests/signin/signIn.spec.ts
   # projects: local (firefox), local-chromium, local-payments-next. No "sandbox".
   npx nx test-unit <package-name>

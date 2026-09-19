@@ -426,17 +426,19 @@ module.exports = {
 RPDONEPM2
 pm2 start /tmp/123done-pm2.config.js 2>&1 | tail -3
 
-# Admin panel (:8091) and admin server (:8095). The functional-test fixtures
-# delete every test account through the admin server, so without it each spec
-# ends in "Failed to cleanup account" even when the flow passed. CI starts both
-# the same way. The Stripe client refuses an empty key at boot; the placeholder
-# makes it construct, and its first call fails harmlessly with no subscriptions
-# configured. nx builds first (cached from the image), about 80 s on a 4 vCPU box.
-log "Starting admin panel and admin server..."
-( export NODE_ENV=test SUBHUB_STRIPE_APIKEY="${SUBHUB_STRIPE_APIKEY:-sk_test_placeholder}"
-  npx nx run-many -t build -p fxa-admin-panel fxa-admin-server > /tmp/admin-build.log 2>&1 \
-    && npx nx run-many -t start -p fxa-admin-panel fxa-admin-server > /tmp/admin-start.log 2>&1 ) \
-  || log "WARN: admin panel/server did not start; see /tmp/admin-build.log and /tmp/admin-start.log"
+# Admin server (:8095). The functional-test fixtures delete every test account
+# through it, so without it each spec ends in "Failed to cleanup account" even
+# when the flow passed. CI=true runs the built dist (about 370MB) instead of the
+# nest --watch wrapper (2.2GB). The admin panel UI is not started: only
+# tests/admin needs it and it costs another 1.1GB in dev mode; an agent working
+# on the panel can `npx nx run fxa-admin-panel:start`. The Stripe client refuses
+# an empty key at boot; the placeholder makes it construct, and its first call
+# fails harmlessly with no subscriptions configured.
+log "Starting admin server..."
+( export NODE_ENV=test CI=true SUBHUB_STRIPE_APIKEY="${SUBHUB_STRIPE_APIKEY:-sk_test_placeholder}"
+  npx nx run fxa-admin-server:build > /tmp/admin-build.log 2>&1 \
+    && npx nx run fxa-admin-server:start > /tmp/admin-start.log 2>&1 ) \
+  || log "WARN: admin server did not start; see /tmp/admin-build.log and /tmp/admin-start.log"
 
 # ── Step 5: Wait and report ──
 log "Waiting for services to start..."

@@ -95,7 +95,7 @@ cd /workspace/packages/functional-tests
 
 # Run all functional tests with the `local` project (Firefox against this VM's stack).
 # `local-chromium` and `local-payments-next` exist too. There is no `sandbox` project.
-npx playwright test --project=local
+npx playwright test --project=local   # two workers by default; do not raise it
 
 # Run a specific test file
 npx playwright test --project=local tests/signin/signIn.spec.ts

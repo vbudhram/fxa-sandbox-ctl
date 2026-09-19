@@ -498,7 +498,8 @@ this VM). `local-chromium` and `local-payments-next` exist too. There is no `san
 ```bash
 cd /workspace/packages/functional-tests
 
-# Run all functional tests (same as `yarn test` here)
+# Run all functional tests (same as `yarn test` here). Two workers is the default;
+# do not raise it, each Firefox worker costs about 1GB and the box holds the stack too.
 npx playwright test --project=local
 
 # Run a specific test file
