@@ -130,6 +130,8 @@ PIPELINE COMMANDS:
   pause [reason] / resume      Kill switch: lock prints `paused` until resume.
                                Also writes PIPE_PAUSE_URI (gs://...) when set.
   paused                       Print the pause reason; exit 1 when not paused
+  state push|pull|status       Mirror the state dir to PIPE_STATE_URI (gs://...).
+                               Push runs at every unlock; pull is for a takeover.
   snapshot                     The whole pipeline state as JSON
   dashboard [--port N]         Serve a live status page on localhost (default 8787)
 
@@ -1484,6 +1486,14 @@ cmd_unlock()    { pipeline_unlock; }
 cmd_pause()     { pipeline_pause "$@"; }
 cmd_resume()    { pipeline_resume; }
 cmd_paused()    { pipeline_paused; }
+cmd_state() {
+  case "${1:-status}" in
+    push)   pipeline_state_push ;;
+    pull)   pipeline_state_pull ;;
+    status) pipeline_state_status ;;
+    *) echo "ERROR: state takes push, pull, or status." >&2; return 1 ;;
+  esac
+}
 cmd_skip()      { pipeline_skip "$(_key "$1")" "${@:2}"; }
 cmd_skip_changed() {
   local key; key="$(_key "$1")"; local why
@@ -1912,6 +1922,7 @@ main() {
     pause)      cmd_pause "$@" ;;
     resume)     cmd_resume ;;
     paused)     cmd_paused ;;
+    state)      cmd_state "$@" ;;
     help|--help|-h)
       usage
       ;;

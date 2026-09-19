@@ -140,6 +140,45 @@ pipeline_unlock() {
   pipeline_require || return 1
   rm -rf "$PIPE_LOCK_DIR"
   echo "released"
+  pipeline_state_push
+}
+
+# ── State mirror ───────────────────────────────────────────────
+# PIPE_STATE_URI (gs://bucket/prefix) mirrors the state directory to Cloud
+# Storage. Push runs at every unlock, so the bucket is never more than one pass
+# behind and a second machine can take over with `state pull`. Pull is manual:
+# rsync overwrites whatever differs, and a launcher may be appending to a launch
+# log between passes, so an automatic pull could roll a live log back.
+# Left out of the mirror: the lock and pause marker (coordination, not state;
+# the pause has its own URI), reporters.tsv (carries emails; copy it by hand),
+# and temp files. Nothing is deleted on either side.
+_pipeline_state_exclude='^(pass\.lock(/.*)?|PAUSED|reporters\.tsv|.*\.tmp)$'
+pipeline_state_push() {
+  pipeline_require || return 1
+  [ -n "${PIPE_STATE_URI:-}" ] || return 0
+  if gcloud storage rsync "$PIPE_STATE_DIR" "$PIPE_STATE_URI" --recursive \
+       --exclude="$_pipeline_state_exclude" >/dev/null 2>&1; then
+    echo "state pushed to ${PIPE_STATE_URI}"
+  else
+    echo "WARN: state push to ${PIPE_STATE_URI} failed; local state is still authoritative." >&2
+    return 1
+  fi
+}
+pipeline_state_pull() {
+  pipeline_require || return 1
+  [ -n "${PIPE_STATE_URI:-}" ] || { echo "ERROR: PIPE_STATE_URI is not set." >&2; return 1; }
+  [ -d "$PIPE_LOCK_DIR" ] && { echo "ERROR: a pass holds the lock; pull after it releases." >&2; return 1; }
+  gcloud storage rsync "$PIPE_STATE_URI" "$PIPE_STATE_DIR" --recursive \
+    --exclude="$_pipeline_state_exclude" 2>&1 | grep -v '^$' | tail -3
+  echo "state pulled from ${PIPE_STATE_URI} into ${PIPE_STATE_DIR}"
+}
+pipeline_state_status() {
+  pipeline_require || return 1
+  [ -n "${PIPE_STATE_URI:-}" ] || { echo "state mirror: off (PIPE_STATE_URI unset)"; return 0; }
+  local n
+  n="$(gcloud storage ls --recursive "$PIPE_STATE_URI" 2>/dev/null | grep -c -v ':$' || true)"
+  echo "state mirror: ${PIPE_STATE_URI}  objects=${n:-0}  local_files=$(find "$PIPE_STATE_DIR" -type f | wc -l | tr -d ' ')"
+  echo "pause marker: ${PIPE_PAUSE_URI:-local only}"
 }
 
 # ── Admission skips ────────────────────────────────────────────

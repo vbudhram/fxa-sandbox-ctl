@@ -408,8 +408,30 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `skipped [KEY]` | List recorded skips |
 | `attempts <KEY> [bump]` | Read or increment the real-fix attempt counter |
 | `lock` / `unlock` | One pass at a time |
+| `pause [reason]` / `resume` / `paused` | Kill switch; also written to `PIPE_PAUSE_URI` when set |
+| `state push\|pull\|status` | Mirror the state directory to `PIPE_STATE_URI` |
 | `snapshot` | The whole pipeline state as one JSON document |
 | `dashboard [-p N] [-i N]` | Serve a live status page on localhost |
+
+### State mirror
+
+The pass state (attempt counters, skip fingerprints, feedback bookkeeping, launch logs,
+the launch ledger) lives in `PIPE_STATE_DIR` on the manager host. With `PIPE_STATE_URI`
+set in the pipeline conf, `unlock` pushes that directory to Cloud Storage with
+`gcloud storage rsync`, so the bucket is never more than one pass behind. The push takes
+about 8 seconds for 230 files. The pause marker has its own object at `PIPE_PAUSE_URI`,
+which `pause` writes, `resume` deletes, and `lock` reads, so a pause set from any machine
+holds.
+
+The bucket is in the same project as the runner VMs, private to the project, versioned,
+and drops old object versions after 30 days. Three things stay out of the mirror: the
+lock and pause marker, `reporters.tsv` (it carries emails; copy it by hand), and temp
+files. Nothing is ever deleted on either side.
+
+To take over on another machine: install the tool, set the same conf, copy
+`reporters.tsv`, then run `fxa-sandbox-ctl state pull` once before the first pass. Pull is
+manual on purpose: rsync overwrites what differs, and a launcher may be appending to a
+launch log between passes on the old host.
 
 ### Dashboard
 
