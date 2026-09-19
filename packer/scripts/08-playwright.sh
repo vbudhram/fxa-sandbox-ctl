@@ -10,4 +10,8 @@ echo "==> Installing Playwright system dependencies..."
 # version to avoid version mismatches.
 npx playwright install-deps firefox chromium
 
+# The verification skill trims each recording's blank lead and extracts review
+# frames with ffmpeg. Playwright ships its own ffmpeg for recording only.
+apt-get install -y --no-install-recommends ffmpeg
+
 echo "==> Playwright system dependencies installed."

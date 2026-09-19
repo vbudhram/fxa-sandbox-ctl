@@ -200,6 +200,32 @@ bakes Chromium and Firefox for the pinned Playwright at build time; the checkout
 functional tests use Firefox by default and Chromium for the `-chromium` and `-payments-next`
 projects, so both are baked.
 
+## The functional-test stack in a runner: five faults, one afternoon
+
+With browsers present, a full `--project=local` run on a GCE runner failed 40 of 446 tests on
+2026-09-19 while CI's nightly passed the same suite. The fastest diagnosis was, in order: check
+CI (rules out the tests), open one saved Playwright trace (shows what the page received), and
+list the hung process's sockets with `ss -tnp` (shows what a request waits on).
+
+1. The nginx front proxy rewrote `/settings/static/X` to `/static/X` before forwarding to the
+   settings dev server, which serves under `/settings/static/` and answers `/static/...` with
+   its index page. Every React page loaded HTML as `bundle.js`; email-first never rendered.
+2. The admin server was not started. The fixtures delete every test account through it, so
+   each spec ended in `Failed to cleanup account` after a passing flow.
+3. The admin server dies at boot on an empty Stripe key. A placeholder key lets it construct.
+4. The auth server's `/cms/config` hung 75 s: a Google client probed the metadata server for
+   default credentials, and the firewall drops the agent user's packets to it, so the connect
+   sat in SYN-SENT. `METADATA_SERVER_DETECTION=none` in the agent env ends the probe at once.
+5. An 8GB runner ran out of memory with the stack, an admin build and three Firefox workers
+   up; the kernel killed the settings dev server mid-run. The admin panel dev server and the
+   nest watch wrapper alone held 3.3GB. Only the admin server runs now, from its built dist,
+   and `--functional-tests` launches on a 16GB machine type until an 8GB run is measured.
+
+Also: every guide named a `sandbox` Playwright project that does not exist (`local` is the
+one), and `pkill -f "playwright test"` over ssh kills the ssh shell that contains those words.
+A full run is not the goal here; CI does that. A runner has to run the specs that cover one
+issue, which the verification skill's flow now does in about ten seconds per spec.
+
 Also found that day: review comments on a PR that never reached `done` were never swept, because
 the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
 `inflight` for hours with Copilot findings nobody saw.
