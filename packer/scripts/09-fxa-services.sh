@@ -417,9 +417,13 @@ module.exports = {
     script: 'server.js',
     env: {
       PORT: 8081,
-      ISSUER_URI: 'http://${VM_IP}:3030',
-      REDIRECT_URI: 'http://${VM_IP}:8080/api/oauth',
-      PKCE_REDIRECT_URI: 'http://${VM_IP}:8080/?oauth_pkce_redirect=1',
+      // localhost, not the VM IP: the 123Done client registered in the auth
+      // database allows only http://localhost:8080/api/oauth, so a redirect on
+      // the VM IP is refused at /authorization and every OAuth spec times out
+      // (2026-09-19). The functional tests run inside the VM anyway.
+      ISSUER_URI: 'http://localhost:3030',
+      REDIRECT_URI: 'http://localhost:8080/api/oauth',
+      PKCE_REDIRECT_URI: 'http://localhost:8080/?oauth_pkce_redirect=1',
     },
   }],
 };
