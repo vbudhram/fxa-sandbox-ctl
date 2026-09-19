@@ -173,8 +173,10 @@ http {
             proxy_set_header Upgrade \$http_upgrade;
             proxy_set_header Connection \$connection_upgrade;
         }
+        # No rewrite: the settings dev server serves under /settings/static/
+        # and answers /static/... with its index page. The old rewrite made
+        # every React page load an HTML file as bundle.js (2026-09-19).
         location /settings/static/ {
-            rewrite ^/settings/static/(.*) /static/\$1 break;
             proxy_pass http://127.0.0.1:3000;
             proxy_set_header Host \$http_host;
             proxy_set_header Accept-Encoding "";
