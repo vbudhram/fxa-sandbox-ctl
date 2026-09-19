@@ -623,6 +623,7 @@ _finish_push_and_pr() {
         || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
     fi
     finish_add_reviewers "$pr_url"
+    finish_request_copilot_review "$pr_url"
     _finish_release_runner "$worktree"
     printf '%s\n' "$pr_url"
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
@@ -716,6 +717,29 @@ finish_add_reviewers() {
     fi
   else
     echo "  NOTE: no reporter assigned (FXA_PR_ASSIGNEE unset or unresolved)." >&2
+  fi
+}
+
+# finish_request_copilot_review <pr_url>
+#   Ask Copilot to review the push a round just made, so its earlier review does
+#   not stand as the last word on code that changed. Only for a PR that already
+#   existed; a new PR gets Copilot's first review from the repo rule. The
+#   endpoint returns 200 and an empty requested_reviewers list, because the bot
+#   starts at once; the review_requested timeline event is the proof it took.
+#   FXA_PR_COPILOT  reviewer login, default copilot-pull-request-reviewer[bot].
+#                   Empty disables.
+finish_request_copilot_review() {
+  local pr_url="${1:-}" bot="${FXA_PR_COPILOT-copilot-pull-request-reviewer[bot]}"
+  [ -n "$pr_url" ] && [ -n "$bot" ] || return 0
+  local owner_repo num
+  owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+  num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+  [ -n "$owner_repo" ] && [ -n "$num" ] || return 0
+  if gh api -X POST "repos/${owner_repo}/pulls/${num}/requested_reviewers" \
+       -f "reviewers[]=${bot}" >/dev/null 2>&1; then
+    echo "  Requested a fresh Copilot review." >&2
+  else
+    echo "  NOTE: Copilot re-review request failed; its last review may be stale." >&2
   fi
 }
 
