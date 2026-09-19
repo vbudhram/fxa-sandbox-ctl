@@ -183,6 +183,23 @@ Changes: per-host ssh entries are one file each under `logs/gce-ssh-hosts/`, pul
 `Include` line, so nothing rewrites a shared file. `_gce_pin_runner_tree` polls for
 `/workspace/.git` before it fetches, at the point of use, instead of trusting an earlier wait.
 
+## The GCE runner had Playwright but no browsers
+
+Agents reported that functional tests could not run in the VM. A bare runner on 2026-09-19
+confirmed it: Playwright 1.61.1 was installed, `~agent/.cache/ms-playwright` did not exist, and
+both `chromium.launch()` and `firefox.launch()` failed on a missing executable. Two causes. The
+image's agent-init unit installs browsers only when `/workspace/packages/functional-tests`
+exists, and on GCE `/workspace` is a symlink the checkout unit creates after agent-init, so the
+step never ran. Then a manual install fetched Firefox but failed on Chromium's helper
+downloads with `ENETUNREACH` to an IPv6 address: Node 24 tries AAAA answers first and the VM
+has no IPv6 route.
+
+Changes: the agent environment sets `NODE_OPTIONS=--dns-result-order=ipv4first`; the image
+bakes Chromium and Firefox for the pinned Playwright at build time; the checkout unit runs
+`playwright install` after it links `/workspace`, a no-op unless the branch moved the pin. The
+functional tests use Firefox by default and Chromium for the `-chromium` and `-payments-next`
+projects, so both are baked.
+
 Also found that day: review comments on a PR that never reached `done` were never swept, because
 the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
 `inflight` for hours with Copilot findings nobody saw.

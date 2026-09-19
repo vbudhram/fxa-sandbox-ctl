@@ -44,10 +44,10 @@ check "two fxa sprints is ambiguous" "" "$(echo '{"sprints":[
 check "no fxa sprint" "" "$(echo '{"sprints":[{"id":26024,"name":"SubPlat Train 346"}]}' | sprint)"
 
 # 3. reporters.tsv inverts login -> email, and never guesses.
-map="$(mktemp)"; printf '# c\nWil Clouser\tclouserw\twclouser@mozilla.com\nLiza Ilina\telizabeth-ilina\t\n' > "$map"
+map="$(mktemp)"; printf '# c\nAda Example\tada-example\tada@example.com\nBo Blank\tbo-blank\t\n' > "$map"
 email() { awk -F'\t' -v l="$1" '$0 !~ /^#/ && $2 == l {print $3; exit}' "$map"; }
-check "login to email" "wclouser@mozilla.com" "$(email clouserw)"
-check "blank column stays blank" "" "$(email elizabeth-ilina)"
+check "login to email" "ada@example.com" "$(email ada-example)"
+check "blank column stays blank" "" "$(email bo-blank)"
 check "unknown login" "" "$(email nobody)"
 rm -f "$map"
 

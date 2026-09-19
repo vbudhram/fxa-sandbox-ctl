@@ -23,3 +23,11 @@ __pycache__/
 # Real pipeline output: snapshots, transcripts, API results. Never commit these.
 dashboard/*.json
 *.jsonl
+
+# Talk decks and exported chats sit in the tree but are not part of the tool.
+talk/
+Claude outputs/
+*.pptx
+
+# Operator-only data: Jira emails.
+reporters.tsv
