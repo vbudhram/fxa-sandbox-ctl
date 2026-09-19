@@ -837,7 +837,7 @@ to zero and the caps stopped protecting anything with no visible sign. Keep them
 the handle: `lzugai` is `LZoog`, `wclouser` is `clouserw`. An unmapped reporter resolves to
 nothing, which is the safe direction.
 
-Run telemetry goes to `ai/docs/agent-runs.jsonl` and `ai/docs/agent-costs.json` inside the FxA
+Run telemetry goes to `agent-runs.jsonl` and `agent-costs.json` in the pipeline state directory (mirrored to Cloud Storage; `ai/docs/` in the FxA repo keeps symlinks), formerly inside the FxA
 checkout, which is gitignored. `usage` must run before `stop`, because the token counts live
 inside the VM.
 
