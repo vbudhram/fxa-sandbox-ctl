@@ -31,6 +31,8 @@ SA="fxa-ai-fixme-manager@${FXA_GCE_PROJECT}.iam.gserviceaccount.com"
 OP="${FXA_GCE_OPERATOR:-$(gcloud config get-value account 2>/dev/null)}"
 g iam service-accounts describe "$SA" >/dev/null 2>&1 \
   || g iam service-accounts create fxa-ai-fixme-manager --display-name "fxa-ai-fixme manager"
+# A fresh account takes a few seconds to reach IAM; a binding before then fails "does not exist".
+for _ in 1 2 3 4 5 6; do g iam service-accounts describe "$SA" >/dev/null 2>&1 && break; sleep 5; done
 for r in roles/compute.instanceAdmin.v1 roles/iap.tunnelResourceAccessor; do
   g projects add-iam-policy-binding "$FXA_GCE_PROJECT" --member "serviceAccount:$SA" --role "$r" --condition=None >/dev/null
 done
