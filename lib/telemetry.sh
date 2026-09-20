@@ -144,6 +144,35 @@ _telemetry_worktree_for_key() {
 # telemetry_record <KEY>
 #   Append one run to the event log. The log is append-only, one line per run,
 #   so a relaunched ticket keeps both attempts. The rollup is derived from it.
+# _telemetry_strictness <worktree> <base-ref>   (changed paths on stdin)
+#   "strict", "loose", "mixed", or "" when no source file changed. A file is
+#   strict when it is .ts/.tsx and its package's tsconfig.json on the base ref
+#   does not turn `strict` or `noImplicitAny` off (tsconfig.base.json sets
+#   strict: true, so unset means strict). Plain .js is loose. Read at record
+#   time so a month of runs can answer whether strict packages cost fewer
+#   feedback rounds (ai/docs/033 in the FxA repo).
+_telemetry_strictness() {
+  local wt="$1" base="$2" f pkg cfg n_strict=0 n_loose=0
+  while IFS= read -r f; do
+    case "$f" in
+      packages/*/*|libs/*/*) ;;
+      *) continue ;;
+    esac
+    case "$f" in
+      *.ts|*.tsx)
+        pkg="$(printf '%s' "$f" | cut -d/ -f1-2)"
+        [ "${pkg%%/*}" = libs ] && [ -z "$(git -C "$wt" ls-tree "$base" -- "$pkg/tsconfig.json" 2>/dev/null)" ] && pkg="$(printf '%s' "$f" | cut -d/ -f1-3)"
+        cfg="$(git -C "$wt" show "$base:$pkg/tsconfig.json" 2>/dev/null || true)"
+        if printf '%s' "$cfg" | grep -Eq '"(strict|noImplicitAny)"[[:space:]]*:[[:space:]]*false'; then n_loose=$((n_loose+1)); else n_strict=$((n_strict+1)); fi ;;
+      *.js|*.jsx|*.mjs|*.cjs) n_loose=$((n_loose+1)) ;;
+    esac
+  done
+  if [ $n_strict -gt 0 ] && [ $n_loose -gt 0 ]; then echo mixed
+  elif [ $n_strict -gt 0 ]; then echo strict
+  elif [ $n_loose -gt 0 ]; then echo loose
+  fi
+}
+
 telemetry_record() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: record needs <KEY>" >&2; return 1; }
@@ -156,7 +185,7 @@ telemetry_record() {
   # log before every launch, so no two runs of a key share it. Recording is
   # idempotent on (issue, launched_at), which lets `launch` record the run a
   # slot still holds and lets `done` record it again without a second row.
-  local launched_at=0
+  local launched_at=0 strict=""
   [ -f "$log" ] && launched_at="$(stat -f %B "$log" 2>/dev/null || echo 0)"
   if [ "$launched_at" != "0" ] && [ -s "$PIPE_RUNS_FILE" ] \
      && jq -e --arg k "$key" --argjson t "$launched_at" 'select(.issue == $k and .launched_at == $t)' "$PIPE_RUNS_FILE" >/dev/null 2>&1; then
@@ -193,8 +222,9 @@ print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
     base="origin/${FXA_WORKTREE_BASE}"
     sha="$(git -C "$wt" rev-parse --short HEAD 2>/dev/null || echo '')"
     files="$(git -C "$wt" diff --name-only "${base}...HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+    strict="$(git -C "$wt" diff --name-only "${base}...HEAD" 2>/dev/null | _telemetry_strictness "$wt" "$base")"
   else
-    sha=""; files=0
+    sha=""; files=0; strict=""
   fi
 
   # Price this run from its own model, then store the rate alongside it so an
@@ -237,9 +267,9 @@ print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
 
   mkdir -p "$(dirname "$PIPE_RUNS_FILE")"
   printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
-      --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" \
+      --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" --arg strict "$strict" \
       --argjson cost "$cost" --arg billing "$billing" --arg kind "$kind" --argjson launched "$launched_at" \
-      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, wall_seconds:$secs, launched_at:$launched, recorded_at:$at, billing:$billing}' \
+      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, strict:$strict, wall_seconds:$secs, launched_at:$launched, recorded_at:$at, billing:$billing}' \
     >>"$PIPE_RUNS_FILE"
   echo "recorded $key -> $PIPE_RUNS_FILE"
   tail -1 "$PIPE_RUNS_FILE"

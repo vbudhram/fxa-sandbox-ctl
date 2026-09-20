@@ -672,7 +672,9 @@ fxa-sandbox-ctl/               # Repo root
 │   └── index.html               # The page itself
 ├── diagrams/                    # Generated PNGs of the pipeline diagrams
 ├── skills/
-│   └── fxa-ai-fixme/            # Pass logic; ~/.claude/skills/ symlinks here
+│   ├── fxa-ai-fixme/            # Pass logic; ~/.claude/skills/ symlinks here
+│   ├── fxa-storybook-capture/   # Runner-side; symlinked the same way, shipped into each VM
+│   └── fxa-vm-handoff/          # Runner-side; writes .fxa-auto-done.json
 │       ├── SKILL.md             # The decision rules
 │       └── SCHEDULING.md        # The loop definitions
 ├── lib/
