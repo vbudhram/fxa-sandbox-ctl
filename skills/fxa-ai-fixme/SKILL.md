@@ -166,7 +166,9 @@ that component has a sibling `*.stories.tsx` (check with `git ls-tree -r --name-
 origin/main -- <dir> | grep stories.tsx`). Then one line in the context file:
 `Invoke /fxa-storybook-capture before the handoff. Capture <states>. List the files in
 media_paths.` A screenshot of an unchanged component is worse than none. Video and full flows
-need `--functional-tests`; leave that off unless the ticket needs a multi-page flow.
+need the stack: put `Launch with --functional-tests` on its own line in the context file and
+`launch` adds the flag. Use it only for a multi-page flow; the stack takes about two minutes
+to settle and the runner costs 8GB.
 
 ### Verification budget
 

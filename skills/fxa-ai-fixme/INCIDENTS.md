@@ -233,3 +233,28 @@ issue, which the verification skill's flow now does in about ten seconds per spe
 Also found that day: review comments on a PR that never reached `done` were never swept, because
 the sweep read `done` keys only. A red infrastructure check kept three Backbone-removal PRs at
 `inflight` for hours with Copilot findings nobody saw.
+
+## No PR ever carried a screenshot
+
+Through 2026-09-19 every handoff file listed `media_paths: []`, so the host's
+attach code had never run, and nothing in any log said so. Five faults stacked:
+
+1. GCE runners had no Playwright browser until the 2026-09-19 image; the capture
+   skill said "install nothing" and its shoot script threw at `firefox.launch()`.
+2. The handoff skill's jq template hardcoded `media_paths:[]`. An agent that
+   copied the template erased a successful capture. It now lists the media
+   directory.
+3. Storybook spawns `xdg-open` after the build; on a headless runner that is an
+   uncaught ENOENT and the server dies seconds after its first 200. `--no-open`.
+4. `waitUntil: 'networkidle'` timed out against the dev server. Wait for `load`,
+   then for a child of `#storybook-root`.
+5. Storybook 8 always renders `#error-message` hidden, so the skill's
+   `count() > 0` guard refused every story. Test `isVisible()`.
+
+Also: the pass has never launched with `--functional-tests`, so a flow video was
+never possible. The context line `Launch with --functional-tests` now adds it.
+
+`finish` prints `media: N listed, M attached` on every run, plus the agent's
+reason from `.fxa-auto-media-skipped.txt`, so an empty list is visible. Verified
+2026-09-20 on a throwaway runner: one ThirdPartyAuth story captured, listed,
+pulled and turned into `--attach`.

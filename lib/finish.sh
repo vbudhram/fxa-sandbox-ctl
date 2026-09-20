@@ -269,6 +269,45 @@ _finish_claim()   { : > "${LOG_DIR}/$(basename "$1").finishing"; }
 _finish_release() { rm -f "${LOG_DIR}/$(basename "$1").finishing"; }
 finish_is_claimed() { [ -f "${LOG_DIR}/$(basename "$1").finishing" ]; }
 
+# finish_media_args <worktree> <done_file> <out-array-name>
+#   Read media_paths from the handoff and turn them into `gh pr create --attach`
+#   flags. gh 2.99.0+ uploads each file to GitHub's own asset store and rewrites
+#   any matching body reference (e.g. `![alt](./shot.png)`), appending the rest.
+#   Skip a path the agent listed but never wrote; a stale entry must not cost
+#   us the PR. The agent chooses these paths, so keep every one inside the
+#   worktree (no absolute path outside /workspace, no .., no symlink out) and
+#   to media types; anything else would upload a host file to a public PR.
+#   Always prints one `media:` line. Through 2026-09-19 no handoff ever listed
+#   a file and nothing said so, which hid the cause for a week.
+finish_media_args() {
+  local worktree="$1" done_file="$2" out="$3"
+  local p rel local_media real wt_real listed=0 attached=0
+  wt_real="$(cd "$worktree" && pwd -P)"
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    listed=$((listed + 1))
+    rel="${p#/workspace/}"
+    case "$rel" in
+      /*|*..*|"") echo "  WARN: media path refused (outside the worktree): ${p}" >&2; continue ;;
+    esac
+    case "$rel" in
+      *.png|*.jpg|*.jpeg|*.webp|*.gif|*.webm|*.mp4|*.mov) ;;
+      *) echo "  WARN: media path refused (not a media type): ${p}" >&2; continue ;;
+    esac
+    local_media="${worktree}/${rel}"
+    real="$( [ -f "$local_media" ] && cd "$(dirname "$local_media")" 2>/dev/null && pwd -P )/$(basename "$rel")"
+    if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]]; then
+      eval "$out+=(--attach \"\$local_media\")"
+      attached=$((attached + 1))
+    else
+      echo "  WARN: media listed but not found inside the worktree, skipping: ${p}" >&2
+    fi
+  done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
+  local why=""
+  [ -f "${worktree}/.fxa-auto-media-skipped.txt" ] && why="; skipped: $(head -c 200 "${worktree}/.fxa-auto-media-skipped.txt" | tr -d '\n')"
+  echo "media: ${listed} listed, ${attached} attached${why}" >&2
+}
+
 finish_push_and_pr() {
   _finish_claim "${1:-$(worktree_shared_path 2>/dev/null)}"
   trap '_finish_release "${1:-$(worktree_shared_path 2>/dev/null)}"' RETURN
@@ -514,42 +553,8 @@ _finish_push_and_pr() {
     }
   fi
 
-  # Read media_paths from the handoff and turn them into `gh pr create --attach`
-  # flags. gh 2.99.0+ uploads each file to GitHub's own asset store and rewrites
-  # any matching body reference (e.g. `![alt](./shot.png)`), appending the rest.
-  # This replaced secret gists, which are a text store: binary PNG/WebM through
-  # `gh gist create` was never verified to survive intact.
-  #
-  # Skip a path the agent listed but never wrote. A stale entry must not cost us
-  # the PR, for the same reason a missing label does not.
-  # The agent chooses these paths. Keep every one inside the worktree (no
-  # absolute path outside /workspace, no .., no symlink out) and to media
-  # types; anything else would upload a host file to a public PR.
   local media_args=()
-  local p rel local_media real wt_real
-  wt_real="$(cd "$worktree" && pwd -P)"
-  while IFS= read -r p; do
-    [ -z "$p" ] && continue
-    rel="${p#/workspace/}"
-    case "$rel" in
-      /*|*..*|"") echo "  WARN: media path refused (outside the worktree): ${p}" >&2; continue ;;
-    esac
-    case "$rel" in
-      *.png|*.jpg|*.jpeg|*.webp|*.gif|*.webm|*.mp4|*.mov) ;;
-      *) echo "  WARN: media path refused (not a media type): ${p}" >&2; continue ;;
-    esac
-    local_media="${worktree}/${rel}"
-    real="$( [ -f "$local_media" ] && cd "$(dirname "$local_media")" 2>/dev/null && pwd -P )/$(basename "$rel")"
-    if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]]; then
-      media_args+=(--attach "$local_media")
-    else
-      echo "  WARN: media listed but not found inside the worktree, skipping: ${p}" >&2
-    fi
-  done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
-
-  if [ "${#media_args[@]}" -gt 0 ]; then
-    echo "Attaching $(( ${#media_args[@]} / 2 )) media file(s) to the PR..." >&2
-  fi
+  finish_media_args "$worktree" "$done_file" media_args
 
   # Always save the rendered PR body to a file so the user can
   # `gh pr create --body-file` later without re-constructing it. Media is no

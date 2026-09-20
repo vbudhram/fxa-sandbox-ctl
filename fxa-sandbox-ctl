@@ -659,10 +659,12 @@ _jira_render_prompt() {
    started the FxA stack (fxa-start ran in the background at VM boot). Verify
    it is up: 'curl -sf http://localhost:9000/__heartbeat__' should return ok;
    if not, wait up to 2 minutes and retry — the stack takes time to settle.
-   Then run 'yarn test-sandbox' and ensure it passes. For UI changes, save
-   1-2 Playwright screenshots or a short --video=on recording of the fixed
-   flow to /workspace/.fxa-auto-media/ — the host attaches
-   these to the PR."
+   Then, from packages/functional-tests, run the one spec that covers the
+   changed flow with '--project=local' and it must pass. Record it: write
+   /workspace/.fxa-auto-playwright.ts that extends playwright.config.ts with
+   use: { video: 'on' }, pass it as --config, and copy the .webm from
+   test-results/ into /workspace/.fxa-auto-media/ — the host attaches
+   these to the PR. Run only that spec, never the whole suite."
   else
     step4="4. Functional tests are SKIPPED for this run (the sandbox stack has
    open issues; the operator will validate manually after merge). Do NOT run
@@ -1822,6 +1824,9 @@ cmd_launch() {
   local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot")
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
+  # The pass asks for the full stack with one line in the context file. That is
+  # the only route to a flow video; Storybook covers single components.
+  [ -n "$ctx" ] && grep -q '^Launch with --functional-tests' "$ctx" && args+=(--functional-tests)
   local log; log="$(pipeline_launch_log "$key")"
   # Record the run this slot still holds before the launch destroys its evidence:
   # the runner overwrites the slot transcript and, for the same key, the launch
