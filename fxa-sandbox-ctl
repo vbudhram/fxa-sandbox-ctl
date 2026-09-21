@@ -1786,6 +1786,16 @@ cmd_launch() {
     echo "ERROR: context file '$ctx' not found" >&2
     return 1
   fi
+  # A branch can be checked out in one worktree only. When a round's branch is
+  # still held by the slot of its previous round, `git checkout` in any other
+  # slot dies with "already used by worktree" after the label and the ledger
+  # were written (FXA-13674, 2026-09-21). Launch on the slot that holds it.
+  local held; held="$(git -C "$PIPE_REPO" worktree list --porcelain 2>/dev/null \
+    | awk -v b="refs/heads/$(worktree_branch_for "$key")" '$1=="worktree"{w=$2} $1=="branch"&&$2==b{print w}')"
+  if [ -n "$held" ] && [ "$(basename "$held")" != "$slot" ]; then
+    echo "NOTE: ${key}'s branch is checked out in $(basename "$held"); launching there instead of ${slot}." >&2
+    slot="$(basename "$held")"
+  fi
   # A UI change with a sibling *.stories.tsx should ask for /fxa-storybook-capture,
   # and the grounding pass forgets (FXA-14503 shipped a copy change with no
   # screenshot). Warn, do not refuse: the pass may have judged the change
