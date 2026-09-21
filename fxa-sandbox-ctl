@@ -699,8 +699,11 @@ ${step4}
    revert any file unrelated to this ticket with
    'git checkout -- <path>' — scope creep blocks the goal. Print both, so the
    final diff is visible in this transcript.
-8. Invoke $(runtime_skill_ref create-pr-description) on the latest commit, then $(runtime_skill_ref humanizer) on its
-   output. pr_body MUST reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md
+8. Invoke $(runtime_skill_ref create-pr-description) on the WHOLE branch diff
+   ('git diff origin/main...HEAD'), then $(runtime_skill_ref humanizer) on its output.
+   The host squashes every round into one commit, so the body must describe
+   the entire pull request, never only this round's change; mention the
+   round's change as one bullet inside it. pr_body MUST reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md
    verbatim — read it first. Keep every heading (including '(Optional)'), the
    '_Put an \`x\`...' line, and EVERY checklist row; empty a section rather than
    drop it. Tick only boxes you can evidence in this session. NEVER tick

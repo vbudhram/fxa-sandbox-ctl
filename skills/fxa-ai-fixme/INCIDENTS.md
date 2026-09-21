@@ -268,3 +268,12 @@ pass. Both endpoints are read now. Conversation ids carry an `i` prefix so
 `thumbsup` hits the right reactions endpoint; bot comments and the pass's own 🤖
 comments are dropped. A conversation comment has no diff line, so the bundle
 shows it under "in the PR conversation" with no branch context.
+
+## A round rewrote the PR body to describe only itself
+
+FXA-13674 round 2 (2026-09-21) produced a body that said "these are the only two
+files in the diff" for a six-file PR, because the goal asked for a description
+of "the latest commit" and the host squashes every round into one. Copilot
+flagged the contradiction. The goal now asks for the whole branch diff. The
+same day's rounds were also recorded as kind `fix` because their context files
+sat outside `/tmp/feedback/`; the skill now names that path.
