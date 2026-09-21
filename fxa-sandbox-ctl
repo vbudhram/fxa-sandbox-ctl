@@ -656,16 +656,13 @@ _jira_render_prompt() {
 
   local step4
   if [ "$functional_tests" = "true" ]; then
-    step4="4. Functional tests are REQUIRED for this run. The host has already
-   started the FxA stack (fxa-start ran in the background at VM boot). Verify
-   it is up: 'curl -sf http://localhost:9000/__heartbeat__' should return ok;
-   if not, wait up to 2 minutes and retry — the stack takes time to settle.
-   Then, from packages/functional-tests, run the one spec that covers the
-   changed flow with '--project=local' and it must pass. Record it: write
-   /workspace/.fxa-auto-playwright.ts that extends playwright.config.ts with
+    step4="4. Functional tests are REQUIRED. The stack started at boot; wait until
+   'curl -sf http://localhost:9000/__heartbeat__' returns ok (up to 2 min).
+   From packages/functional-tests run ONLY the one spec that covers the
+   changed flow with '--project=local'; it must pass. Record it: write
+   /workspace/.fxa-auto-playwright.ts extending playwright.config.ts with
    use: { video: 'on' }, pass it as --config, and copy the .webm from
-   test-results/ into /workspace/.fxa-auto-media/ — the host attaches
-   these to the PR. Run only that spec, never the whole suite."
+   test-results/ into /workspace/.fxa-auto-media/ for the host to attach."
   else
     step4="4. Functional tests are SKIPPED for this run (the sandbox stack has
    open issues; the operator will validate manually after merge). Do NOT run
@@ -691,26 +688,20 @@ ${step4}
    applied (or explicitly declined with a one-line reason in the transcript).
 6. $(runtime_skill_ref fxa-review-quick) has been invoked on your working changes and reported no
    blocking issues. Fix any blockers and re-run.
-7. **DO NOT COMMIT. You cannot.** The parent .git is mounted read-only so this
-   VM cannot corrupt other worktrees, and 'git commit' will fail. Leave your work
-   as uncommitted changes; the host stages, commits, signs and pushes them. Do
-   not retry the commit, and do not treat its failure as a blocker.
-   Instead, review scope: run 'git status --short' and 'git diff --stat', and
-   revert any file unrelated to this ticket with
-   'git checkout -- <path>' — scope creep blocks the goal. Print both, so the
-   final diff is visible in this transcript.
+7. **DO NOT COMMIT.** The parent .git is mounted read-only, so 'git commit'
+   fails; the host stages, commits, signs and pushes. Do not retry it and do
+   not treat its failure as a blocker. Review scope: print 'git status --short'
+   and 'git diff --stat', and revert any file unrelated to this ticket with
+   'git checkout -- <path>'; scope creep blocks the goal.
 8. Invoke $(runtime_skill_ref create-pr-description) on the WHOLE branch diff
    ('git diff origin/main...HEAD'), then $(runtime_skill_ref humanizer) on its output.
-   The host squashes every round into one commit, so the body must describe
-   the entire pull request, never only this round's change; mention the
-   round's change as one bullet inside it. pr_body MUST reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md
-   verbatim — read it first. Keep every heading (including '(Optional)'), the
-   '_Put an \`x\`...' line, and EVERY checklist row; empty a section rather than
-   drop it. Tick only boxes you can evidence in this session. NEVER tick
-   'I have manually reviewed all AI generated code' — you are the AI, so that
-   is a false claim; leave it for the reviewer. No attribution footer, no
-   "Generated with Claude Code", no session link. Be concise inside sections,
-   never by removing structure.
+   The host squashes every round into one commit, so the body describes the
+   entire pull request, with this round's change as one bullet. pr_body MUST
+   reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md verbatim: keep every
+   heading, the '_Put an \`x\`...' line and EVERY checklist row; empty a
+   section rather than drop it. Tick only boxes you can evidence. NEVER tick
+   'I have manually reviewed all AI generated code'; you are the AI. No
+   attribution footer, no "Generated with Claude Code", no session link.
 $(runtime_prompt_handoff_step)
 
 Run steps 5, 6 and 8 in subagents, one per step, so the files they read stay
