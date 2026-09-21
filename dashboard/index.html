@@ -422,7 +422,8 @@ function renderAlerts() {
   const known = new Set(cards.map(c => c.name));
   (g?.instances ?? []).forEach(v => {
     const owned = known.has(v.name.replace(/^agent-/, ""));
-    if (!owned) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`);
+    // The launcher writes the agent card only once ssh answers, about a minute in.
+    if (!owned && v.age_seconds > 120) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`);
     else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
   (s?.review ?? []).forEach(r => {
