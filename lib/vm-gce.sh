@@ -204,9 +204,11 @@ vm_pull_tree() {
     # created and committed. CI and hook config stay on the runner unless the
     # ticket asks for them (the same flag finish honours).
     local -a tooling=(--exclude .github --exclude .circleci --exclude .husky)
+    # bash 3.2 on macOS: "${tooling[@]}" on an empty array is an unbound
+    # variable under set -u and killed the launcher on 2026-09-21.
     [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && tooling=()
     rsync -a --delete --safe-links --timeout=60 --exclude .git --exclude node_modules --exclude external/l10n \
-      --exclude .nx --exclude dist --exclude coverage "${tooling[@]}" \
+      --exclude .nx --exclude dist --exclude coverage ${tooling[@]+"${tooling[@]}"} \
       -e "ssh -i ${key} ${VM_SSH_OPTS}" \
       "${VM_SSH_USER}@$(vm_ip "$name"):${remote%/}/" "${local_dir%/}/" 2>/dev/null && return 0
     rc=$?; sleep 3

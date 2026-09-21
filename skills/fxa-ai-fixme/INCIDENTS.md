@@ -290,3 +290,17 @@ with 21 files touched. Rule: the goal now names the spec files beside the
 changed files and forbids a whole package suite. The context file for a
 functional run should name those specs. `FXA_GCE_MACHINE_TYPE_FUNCTIONAL`
 (c4a-standard-4, 16GB) is the knob if a run must have the full suite.
+
+## Two launchers died silently on FXA_ALLOW_TOOLING_EDITS=1 (2026-09-21)
+
+FXA-11635 and FXA-11853 were launched with `FXA_ALLOW_TOOLING_EDITS=1`. Both
+agents finished and wrote their handoff, but no squash, push or PR followed
+and the launch logs ended at "Watching for ...". The host tree still updated,
+because the dashboard snapshot pulls it too, so the run looked healthy. The
+cause was in `vm_pull_tree`: the flag empties the rsync `tooling` exclude
+array, and `"${tooling[@]}"` on an empty array is an unbound variable under
+`set -u` in the macOS /bin/bash 3.2 that runs the launcher. The launcher died
+at its first pull. Fixed with `${tooling[@]+"${tooling[@]}"}`. Recovery when
+this shape appears (handoff on the host, `prstate` none, launcher gone): run
+`finish --worktree <slot path> --create-pr --no-ci-watch` with the same env
+the launch had. Both PRs were opened that way (#21275, #21276).
