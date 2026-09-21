@@ -258,3 +258,13 @@ never possible. The context line `Launch with --functional-tests` now adds it.
 reason from `.fxa-auto-media-skipped.txt`, so an empty list is visible. Verified
 2026-09-20 on a throwaway runner: one ThirdPartyAuth story captured, listed,
 pulled and turned into `--attach`.
+
+## The pass never read the PR conversation
+
+`feedback` read only inline review comments (`pulls/N/comments`, position not
+null). A reviewer's "do not port this, remove it instead" on PR #21248 landed in
+the conversation (`issues/N/comments`) on 2026-09-21 and was invisible to every
+pass. Both endpoints are read now. Conversation ids carry an `i` prefix so
+`thumbsup` hits the right reactions endpoint; bot comments and the pass's own 🤖
+comments are dropped. A conversation comment has no diff line, so the bundle
+shows it under "in the PR conversation" with no branch context.

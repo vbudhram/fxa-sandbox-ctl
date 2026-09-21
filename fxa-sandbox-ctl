@@ -1693,7 +1693,8 @@ cmd_feedback_bundle() {
       assoc="$(printf '%s' "$fb" | jq -r ".comments[$i].association")"; trusted="$(printf '%s' "$fb" | jq -r ".comments[$i].trusted")"
       path="$(printf '%s' "$fb" | jq -r ".comments[$i].path // \"\"")"; line="$(printf '%s' "$fb" | jq -r ".comments[$i].line // 0")"
       body="$(printf '%s' "$fb" | jq -r ".comments[$i].body")"
-      echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) on ${path}:${line}"; echo
+      if [ -n "$path" ]; then echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) on ${path}:${line}"; echo
+      else echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) in the PR conversation"; echo; fi
       echo '```'; printf '%s\n' "$body"; echo '```'
       if [ -n "$path" ] && [ "$line" -gt 0 ] 2>/dev/null; then
         lo=$((line > 8 ? line - 8 : 1)); hi=$((line + 8))

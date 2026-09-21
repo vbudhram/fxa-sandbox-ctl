@@ -261,8 +261,11 @@ gh_feedback() {
     local f="${PIPE_STATE_DIR}/${key}.feedback-acted" id n=0
     [ -s "$f" ] || { echo "no recorded ids for $key"; return 0; }
     while read -r id; do
+      # i<id> is a PR conversation comment; a bare id is an inline review comment.
+      local ep="pulls/comments"
+      case "$id" in i[0-9]*) ep="issues/comments"; id="${id#i}" ;; esac
       [[ "$id" =~ ^[0-9]+$ ]] || continue
-      if gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}/reactions" \
+      if gh api --method POST "repos/${PIPE_REPO_SLUG}/${ep}/${id}/reactions" \
            -f content='+1' >/dev/null 2>&1; then
         n=$((n + 1))
       else
@@ -278,13 +281,26 @@ gh_feedback() {
           -q '.[0].number' 2>/dev/null)"
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
-  local all
+  # Inline review comments, then PR conversation comments. A reviewer's "do not
+  # port this, remove it instead" lands in the conversation, not on a diff line,
+  # and until 2026-09-21 the pass never read that endpoint. Conversation ids
+  # carry an `i` prefix so thumbsup knows which reactions endpoint to hit. The
+  # pass's own 🤖 comments and bot chatter (CI links, Copilot summaries) are not
+  # feedback.
+  local all conv
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.position != null)
-                       | {id, author: .user.login, association: .author_association,
+                       | {id: (.id|tostring), author: .user.login, association: .author_association,
                           trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | test("copilot";"i"))),
                           path, line: (.line // .original_line), body}]')"
   [ -n "$all" ] || all='[]'
+  conv="$(gh api "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" --paginate 2>/dev/null \
+         | jq -c '[.[] | select(.user.type != "Bot" and (.body | startswith("🤖") | not))
+                       | {id: ("i" + (.id|tostring)), author: .user.login, association: .author_association,
+                          trusted: (.author_association | IN("OWNER","MEMBER","COLLABORATOR")),
+                          path: null, line: null, body}]')"
+  [ -n "$conv" ] || conv='[]'
+  all="$(jq -c -n --argjson a "$all" --argjson b "$conv" '$a + $b')"
 
   if [ "$sub" = "ack" ]; then
     printf '%s\n' "$all" | jq -r '.[].id' >>"$seen"
@@ -294,7 +310,7 @@ gh_feedback() {
   fi
 
   local seen_json
-  seen_json="$( { cat "$seen" 2>/dev/null || true; } | jq -R 'tonumber?' | jq -s '.')"
+  seen_json="$( { cat "$seen" 2>/dev/null || true; } | jq -R 'select(length>0)' | jq -s '.')"
   printf '%s\n' "$all" | jq --argjson seen "$seen_json" --arg pr "$pr" \
     '{pr: ($pr|tonumber), comments: [.[] | select(.id as $i | ($seen | index($i)) == null)]}'
 }
