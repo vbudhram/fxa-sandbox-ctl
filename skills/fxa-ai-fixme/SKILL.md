@@ -39,7 +39,9 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    PR's last human approver, adds it to the active FxA sprint, and transitions it to Done. It
    sets assignee and sprint only when they are empty, so it never overwrites a human's choice.
    **Reap.** `$CTL reap --stray` before slot selection.
-3. **Fill free slots.** Read `$CTL freeslots` **once**. For each free slot take the oldest
+3. **Fill free slots.** Skip this step when `$CTL newtickets` prints `off`: the operator wants
+   rounds on existing PRs only, and `launch` refuses a ticket with no PR. Otherwise read
+   `$CTL freeslots` **once**. For each free slot take the oldest
    launchable key from `$CTL queue`, ground it, `export FXA_PR_ASSIGNEE="$($CTL reporter KEY)"`,
    label `inflight`, launch with `$CTL launch KEY <slot> <ctx>`. **Label and launch one ticket at
    a time; never re-read `inflight` to pick slots** (JQL lags a label write by seconds). At most

@@ -90,6 +90,22 @@ pipeline_paused() {
   fi
   return 1
 }
+# Existing-PRs-only mode. A HOLD-NEW marker keeps the pass reconciling, sweeping
+# feedback, and launching feedback and rebase rounds, but no ticket that has no
+# PR yet. For a week of "drive the open PRs to merge" without draining the
+# queue. Lives in the state dir, so `state push` carries it to the mirror.
+pipeline_hold_marker() { printf '%s' "${PIPE_STATE_DIR}/HOLD-NEW"; }
+pipeline_holding_new() { [ -f "$(pipeline_hold_marker)" ]; }
+pipeline_newtickets() {
+  pipeline_require || return 1
+  case "${1:-}" in
+    off) printf '%s\n' "off by $(whoami) at $(date '+%Y-%m-%d %H:%M')" >"$(pipeline_hold_marker)"; echo "newtickets off: rounds on existing PRs only" ;;
+    on)  rm -f "$(pipeline_hold_marker)"; echo "newtickets on" ;;
+    "")  if pipeline_holding_new; then echo "off ($(cat "$(pipeline_hold_marker)"))"; else echo "on"; fi ;;
+    *)   echo "ERROR: newtickets on|off" >&2; return 1 ;;
+  esac
+}
+
 pipeline_pause() {
   pipeline_require || return 1
   local reason="${*:-paused by $(whoami) at $(date '+%Y-%m-%d %H:%M')}"

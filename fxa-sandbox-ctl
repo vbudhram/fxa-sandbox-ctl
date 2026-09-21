@@ -130,6 +130,7 @@ PIPELINE COMMANDS:
   pause [reason] / resume      Kill switch: lock prints `paused` until resume.
                                Also writes PIPE_PAUSE_URI (gs://...) when set.
   paused                       Print the pause reason; exit 1 when not paused
+  newtickets [on|off]          off: rounds on existing PRs only, no new tickets; no arg prints the mode
   state push|pull|status       Mirror the state dir to PIPE_STATE_URI (gs://...).
                                Push runs at every unlock; pull is for a takeover.
   snapshot                     The whole pipeline state as JSON
@@ -1458,7 +1459,8 @@ cmd_precheck() {
   # fans them out through the `skip-changed` subcommand; bash 3.2 has no `wait -n`.
   # A key with no record or a changed ticket prints a line, an unchanged one
   # prints nothing, so the output is exactly the worklist.
-  local queue; queue="$(jira_queue_keys)"
+  local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c .)"
+  if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
     printf '%s\n' $queue | grep . \
       | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
@@ -1468,7 +1470,7 @@ cmd_precheck() {
   [ "$merged_n" -gt 0 ] && pass="${pass}; this pass: ${merged_n} merged"
   [ "$rejected_n" -gt 0 ] && pass="${pass}${pass:+,}${pass:+ }${pass:-; this pass: }${rejected_n} rejected"
   if [ "$work" = 0 ]; then
-    echo "quiet: $(printf '%s\n' $queue | grep -c .) queued (all skipped, unchanged), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
+    echo "quiet: ${queue_n} queued ($(pipeline_holding_new && echo 'newtickets off' || echo 'all skipped, unchanged')), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
   else
     [ -n "$info" ] && printf '%s\n' "$info"
   fi
@@ -1490,6 +1492,7 @@ cmd_unlock()    { pipeline_unlock; }
 cmd_pause()     { pipeline_pause "$@"; }
 cmd_resume()    { pipeline_resume; }
 cmd_paused()    { pipeline_paused; }
+cmd_newtickets() { pipeline_newtickets "$@"; }
 cmd_state() {
   case "${1:-status}" in
     push)   pipeline_state_push ;;
@@ -1827,6 +1830,10 @@ cmd_launch() {
   local ledger="${PIPE_STATE_DIR}/launches.log" day_ago=$(( $(date +%s) - 86400 )) n
   # awk exits 2 on a missing file, and under set -e that killed the launch silently.
   n=0; [ -f "$ledger" ] && n="$(awk -v t="$day_ago" '$1 >= t' "$ledger" | wc -l | tr -d ' ')"
+  if pipeline_holding_new && [ "$(gh_pr_state "$key" 2>/dev/null | awk '{print $2}')" = "none" ]; then
+    echo "ERROR: refusing to launch ${key}: newtickets is off and it has no PR. Run: fxa-sandbox-ctl newtickets on" >&2
+    return 1
+  fi
   if [ "$n" -ge "${PIPE_MAX_LAUNCHES_PER_DAY:-20}" ]; then
     echo "ERROR: refusing to launch ${key}: ${n} launches in 24 h, budget ${PIPE_MAX_LAUNCHES_PER_DAY:-20} (PIPE_MAX_LAUNCHES_PER_DAY)." >&2
     return 1
@@ -1940,6 +1947,7 @@ main() {
     pause)      cmd_pause "$@" ;;
     resume)     cmd_resume ;;
     paused)     cmd_paused ;;
+    newtickets) cmd_newtickets "$@" ;;
     state)      cmd_state "$@" ;;
     help|--help|-h)
       usage
