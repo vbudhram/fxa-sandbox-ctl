@@ -676,8 +676,9 @@ _jira_render_prompt() {
 The goal is met only when ALL of these are TRUE and visible in this conversation:
 
 1. You have printed a short plan with the root cause and proposed fix.
-2. Unit tests for the changed packages have been run and the output shows zero
-   failures (e.g. "Tests: X passed, 0 failed", or jest summary with 0 failed).
+2. The spec files beside the files you changed have been run and show zero
+   failures. Never run a whole package suite: with the stack up it OOM-kills
+   this 8GB runner. CI runs the full suite.
 3. Lint passes for every modified package. Detect changed packages from
    'git status --porcelain' (paths matching 'packages/<name>/'), then run
    'npx nx lint <package>' for each. Every invocation must exit 0; if any

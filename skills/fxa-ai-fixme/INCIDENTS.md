@@ -277,3 +277,16 @@ of "the latest commit" and the host squashes every round into one. Copilot
 flagged the contradiction. The goal now asks for the whole branch diff. The
 same day's rounds were also recorded as kind `fix` because their context files
 sat outside `/tmp/feedback/`; the skill now names that path.
+
+## A functional run OOM-killed its own agent (2026-09-21)
+
+FXA-9550 ran with `--functional-tests`, so the whole FxA stack was up on the
+8GB runner. Goal step 2 said "unit tests for the changed packages", the agent
+ran `nx test-unit fxa-auth-server`, and the kernel killed the node workers and
+the agent at 20:09 and again at 20:16 (serial console: `Out of memory: Killed
+process ... MainThread`). The VM stayed RUNNING but sshd stopped answering, so
+`alive` said dead and the dashboard showed "agent exited, no output captured"
+with 21 files touched. Rule: the goal now names the spec files beside the
+changed files and forbids a whole package suite. The context file for a
+functional run should name those specs. `FXA_GCE_MACHINE_TYPE_FUNCTIONAL`
+(c4a-standard-4, 16GB) is the knob if a run must have the full suite.
