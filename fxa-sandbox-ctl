@@ -131,6 +131,7 @@ PIPELINE COMMANDS:
                                Also writes PIPE_PAUSE_URI (gs://...) when set.
   paused                       Print the pause reason; exit 1 when not paused
   newtickets [on|off]          off: rounds on existing PRs only, no new tickets; no arg prints the mode
+  focus [FXA-<epic>|off]       narrow the queue to one epic's children; no arg prints the epic
   state push|pull|status       Mirror the state dir to PIPE_STATE_URI (gs://...).
                                Push runs at every unlock; pull is for a takeover.
   snapshot                     The whole pipeline state as JSON
@@ -1456,6 +1457,7 @@ cmd_precheck() {
   # prints nothing, so the output is exactly the worklist.
   local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c .)"
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
+  local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
     printf '%s\n' $queue | grep . \
       | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
@@ -1488,6 +1490,7 @@ cmd_pause()     { pipeline_pause "$@"; }
 cmd_resume()    { pipeline_resume; }
 cmd_paused()    { pipeline_paused; }
 cmd_newtickets() { pipeline_newtickets "$@"; }
+cmd_focus() { pipeline_focus "$@"; }
 cmd_state() {
   case "${1:-status}" in
     push)   pipeline_state_push ;;
@@ -1943,6 +1946,7 @@ main() {
     resume)     cmd_resume ;;
     paused)     cmd_paused ;;
     newtickets) cmd_newtickets "$@" ;;
+    focus) cmd_focus "$@" ;;
     state)      cmd_state "$@" ;;
     help|--help|-h)
       usage

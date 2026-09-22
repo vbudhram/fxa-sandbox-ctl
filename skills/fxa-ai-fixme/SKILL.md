@@ -41,6 +41,7 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    **Reap.** `$CTL reap --stray` before slot selection.
 3. **Fill free slots.** Skip this step when `$CTL newtickets` prints `off`: the operator wants
    rounds on existing PRs only, and `launch` refuses a ticket with no PR. Otherwise read
+   `$CTL focus`: an epic key means the queue holds only that epic's children. Then read
    `$CTL freeslots` **once**. For each free slot take the oldest
    launchable key from `$CTL queue`, ground it, `export FXA_PR_ASSIGNEE="$($CTL reporter KEY)"`,
    label `inflight`, launch with `$CTL launch KEY <slot> <ctx>`. **Label and launch one ticket at

@@ -173,7 +173,7 @@ _jira_keys_for_jql() {
 # Keys waiting in the queue, oldest first.
 jira_queue_keys() {
   pipeline_require || return 1
-  _jira_keys_for_jql "$PIPE_QUEUE_JQL"
+  _jira_keys_for_jql "$(pipeline_queue_jql)"
 }
 
 # Keys in one lifecycle state, oldest first.
@@ -196,7 +196,7 @@ jira_items_json() {
   printf '%s' "$raw" | jq '[.[]? | {key, summary: (.fields.summary // "")}]' 2>/dev/null || echo 'null'
 }
 
-jira_queue_items()    { pipeline_require || return 1; jira_items_json "$PIPE_QUEUE_JQL"; }
+jira_queue_items()    { pipeline_require || return 1; jira_items_json "$(pipeline_queue_jql)"; }
 jira_items_in_state() {
   pipeline_require || return 1
   jira_items_json "labels = \"$(pipeline_label_for "${1:?state required}")\" ORDER BY created ASC"

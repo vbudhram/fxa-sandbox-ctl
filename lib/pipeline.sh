@@ -106,6 +106,25 @@ pipeline_newtickets() {
   esac
 }
 
+# Epic focus. A FOCUS marker holding one epic key narrows the queue to that
+# epic's children; the label family still decides admission. Lives in the
+# state dir, so `state push` carries it to the mirror.
+pipeline_focus_marker() { printf '%s' "${PIPE_STATE_DIR}/FOCUS"; }
+pipeline_focus_key() { [ -f "$(pipeline_focus_marker)" ] && head -1 "$(pipeline_focus_marker)"; }
+pipeline_queue_jql() {
+  local k; k="$(pipeline_focus_key || true)"
+  if [ -n "$k" ]; then printf 'parent = %s AND %s' "$k" "$PIPE_QUEUE_JQL"; else printf '%s' "$PIPE_QUEUE_JQL"; fi
+}
+pipeline_focus() {
+  pipeline_require || return 1
+  case "${1:-}" in
+    off) rm -f "$(pipeline_focus_marker)"; echo "focus off: whole queue" ;;
+    "")  local k; k="$(pipeline_focus_key || true)"; echo "${k:-off}" ;;
+    FXA-[0-9]*) printf '%s\n' "$1" >"$(pipeline_focus_marker)"; echo "focus $1: queue is that epic's children only" ;;
+    *)   echo "ERROR: focus FXA-<epic>|off" >&2; return 1 ;;
+  esac
+}
+
 pipeline_pause() {
   pipeline_require || return 1
   local reason="${*:-paused by $(whoami) at $(date '+%Y-%m-%d %H:%M')}"
