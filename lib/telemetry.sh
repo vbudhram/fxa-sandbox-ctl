@@ -108,11 +108,13 @@ telemetry_usage() {
 # (read 2026-09-01). cache_write is the 5-minute rate (1.25x input).
 #
 # Order matters: the fable-5-1 row must precede the fable-5 glob. Fable 5.1 is
-# the one model whose cache reads are 0.025x input, not 0.1x.
+# the one model whose cache reads are 0.025x input, not 0.1x. Likewise opus-5-5
+# must precede the opus-5 glob, which also matches it.
 _telemetry_price_for() {
   case "$1" in
     claude-fable-5-1*) echo "10.00 50.00 12.50 0.25" ;;
     claude-fable-5*)   echo "10.00 50.00 12.50 1.00" ;;
+    claude-opus-5-5*)  echo "4.00 20.00 5.00 0.20" ;;
     claude-opus-5*)    echo "5.00 25.00 6.25 0.50" ;;
     claude-sonnet-5*)  echo "2.00 10.00 2.50 0.20" ;;
     claude-haiku-4-5*) echo "1.00  5.00 1.25 0.10" ;;
