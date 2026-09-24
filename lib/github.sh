@@ -219,7 +219,7 @@ gh_drain() {
 #   ack        mark every currently-open comment handled
 #   rounds [bump]   read or increment the feedback-round counter
 #   acted <id>...   WRITE(local): record the ids this round will fix
-#   thumbsup        WRITE(PR): react 👍 to those ids, then clear them
+#   thumbsup        WRITE(PR): react 👍 to those ids a later push made outdated, then clear them
 #
 # Two filters matter. `position: null` means the comment sits on a diff hunk
 # that a later push replaced, so it is stale and acting on it edits code that
@@ -261,11 +261,13 @@ gh_feedback() {
     local f="${PIPE_STATE_DIR}/${key}.feedback-acted" id n=0
     [ -s "$f" ] || { echo "no recorded ids for $key"; return 0; }
     while read -r id; do
-      # i<id> is a PR conversation comment; a bare id is an inline review comment.
-      local ep="pulls/comments"
-      case "$id" in i[0-9]*) ep="issues/comments"; id="${id#i}" ;; esac
-      [[ "$id" =~ ^[0-9]+$ ]] || continue
-      if gh api --method POST "repos/${PIPE_REPO_SLUG}/${ep}/${id}/reactions" \
+      [[ "$id" =~ ^[0-9]+$ ]] || { echo "$key not addressed: $id has no lines to check; react by hand if fixed"; continue; }
+      # Recording an id is intent, not proof. Only a later commit that changed the
+      # comment's lines (GitHub then nulls its position) shows the round fixed it.
+      if [ "$(gh api "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}" --jq '.position' 2>/dev/null)" != "null" ]; then
+        echo "$key not addressed: comment $id lines unchanged, no reaction"; continue
+      fi
+      if gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}/reactions" \
            -f content='+1' >/dev/null 2>&1; then
         n=$((n + 1))
       else
