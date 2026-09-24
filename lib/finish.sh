@@ -454,6 +454,7 @@ _finish_push_and_pr() {
     local line p
     while IFS= read -r line; do
       [ -z "$line" ] && continue
+      [ "${line:1:1}" = " " ] && continue  # already staged; re-adding a staged delete fails
       p="${line:3}"          # porcelain is "XY <path>"
       p="${p##* -> }"        # renames read "R  old -> new"
       p="${p%\"}"; p="${p#\"}"
