@@ -1758,6 +1758,13 @@ cmd_label() {
     # assignee it had before the pipeline ever saw it.
     jira_close_merged "$key"
   fi
+  # Free the branch for a fix round on another slot or a hand checkout. Record
+  # first: telemetry finds the run's slot by its branch.
+  if [ "$state" != "inflight" ]; then
+    [ -f "$(pipeline_launch_log "$key")" ] && { telemetry_record "$key" >/dev/null 2>&1 || true; }
+    worktree_release_branch "$(worktree_branch_for "$key")" \
+      || echo "WARN: could not detach the slot for $key" >&2
+  fi
 }
 
 # _jira_launch_failed <KEY> <name>

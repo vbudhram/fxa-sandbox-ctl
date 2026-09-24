@@ -13,6 +13,7 @@
 #   worktree_pool_slot_names       The pool, as slot names.
 #   worktree_slots                 Per slot: "<slot> busy <agent>" or "<slot> free -".
 #   worktree_free_slots OWNED      Slots a ticket can actually claim.
+#   worktree_release_branch BRANCH Detach the idle pool slot that holds BRANCH.
 #   worktree_prepare_for_issue KEY Ensure the shared worktree exists and is checked
 #                                  out on the branch for KEY (created from origin/main
 #                                  if new). Prints the worktree path on stdout.
@@ -234,6 +235,22 @@ worktree_free_slots() {
     fi
     printf '%s\n' "$slot"
   done <<< "$(worktree_pool_slot_names)"
+}
+
+# worktree_release_branch <BRANCH>
+#   Detach the pool slot that has <BRANCH> checked out, at the same commit. Git
+#   lets only one worktree hold a branch, so a slot that keeps it after its run
+#   blocks a fix round on another slot and a hand checkout anywhere else. The
+#   local branch ref and the files stay. A slot with a running VM is left alone.
+worktree_release_branch() {
+  local branch="${1:-}" wt
+  [ -z "$branch" ] && return 1
+  while IFS= read -r wt; do
+    [ -z "$wt" ] && continue
+    [ "$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$branch" ] || continue
+    [ -n "$(_worktree_agent_for_workspace "$wt")" ] && continue
+    git -C "$wt" -c core.hooksPath=/dev/null checkout --quiet --detach >&2 || return 1
+  done <<< "$(_worktree_pool_list)"
 }
 
 # worktree_acquire_pool_slot [BASE] [OWNED-KEYS]
