@@ -14,7 +14,7 @@ pipeline_require() { :; }
 worktree_branch_for() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
 PIPE_STATE_DIR="$tmp" PIPE_REPO_SLUG="mozilla/fxa"
 # Comment 1 sits on lines a later force-push changed: GitHub nulls `line` but
-# keeps a non-null `position` (seen on #21297). Comment 2 is unchanged.
+# keeps a non-null `position`. Comment 2 is unchanged.
 gh() {
   case "$*" in
     *"--method POST"*) echo "$*" >>"$tmp/posts"; echo '{}' ;;

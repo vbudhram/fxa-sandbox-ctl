@@ -83,7 +83,7 @@ gh_red_infra() {
     | select(((.conclusion // .state) | ascii_upcase) as $c | $c=="FAILURE" or $c=="ERROR" or $c=="TIMED_OUT")
     | "\(.name // .context)\t\(.detailsUrl // .targetUrl // "")"')"
   [ -n "$fails" ] || return 1
-  local name url rule cname cre run job matched why="" all=1 rules
+  local name url rule cname cre run job matched why="" all=1 rules log unread=0
   IFS=',' read -ra rules <<< "$PIPE_INFRA_CHECKS"
   while IFS=$'\t' read -r name url; do
     [ -n "$name" ] || continue
@@ -93,13 +93,17 @@ gh_red_infra() {
       [ "$name" = "$cname" ] || continue
       run="$(printf '%s' "$url" | grep -oE 'runs/[0-9]+' | cut -d/ -f2 || true)"
       job="$(printf '%s' "$url" | grep -oE 'job/[0-9]+' | cut -d/ -f2 || true)"
-      if [ -n "$run" ] && [ -n "$job" ] \
-         && gh run view "$run" --repo "$PIPE_REPO_SLUG" --job "$job" --log-failed 2>/dev/null | grep -qE "$cre"; then
-        matched="${name}(${cre})"
+      [ -n "$run" ] && [ -n "$job" ] || continue
+      # A fetch that failed says nothing about the log. Caching it as "no match"
+      # kept a known 401 reading RED for the whole head sha.
+      if ! log="$(gh run view "$run" --repo "$PIPE_REPO_SLUG" --job "$job" --log-failed 2>/dev/null)"; then
+        unread=1; continue
       fi
+      printf '%s' "$log" | grep -qE "$cre" && matched="${name}(${cre})"
     done
     if [ -n "$matched" ]; then why="${why}${why:+, }${matched}"; else all=0; fi
   done <<< "$fails"
+  [ "$unread" = 0 ] || return 1
   { echo "$sha"; if [ "$all" = 1 ]; then echo "$why"; else echo ""; fi; } > "$cache"
   [ "$all" = 1 ] && [ -n "$why" ] && { echo "$why"; return 0; }
   return 1
