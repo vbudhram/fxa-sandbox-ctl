@@ -86,7 +86,10 @@ Procedure:
    Quote bodies in a fenced block labelled with the author login; write the instruction above it
    in your own words.
 5. Launch, then `feedback KEY ack`, `feedback KEY rounds bump`, `feedback KEY acted <id>...`
-   naming only the ids the agent will fix.
+   naming only the ids the agent will fix. **Record only after `launch` exits 0 and prints
+   `launched on`.** Never chain the records after `launch` with `;`. A refused launch (daily
+   budget, disk floor, newtickets) records nothing: the comments stay unhandled for the next
+   pass. Report the refusal under ⚠️. The same rule applies to `attempts KEY bump`.
 6. After the push, `deps.sh gate <pr>`. Every push resets the functional gate. The host
    re-requests Copilot's review on that push itself (`FXA_PR_COPILOT`, empty disables).
 7. `label KEY done` fires `thumbsup` on the recorded ids and clears them.
