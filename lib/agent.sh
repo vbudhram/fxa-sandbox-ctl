@@ -236,7 +236,10 @@ _setup_egress_firewall() {
     codex) hosts="$hosts api.openai.com chatgpt.com auth.openai.com" ;;
   esac
 
-  vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$hosts" bash -c '
+  # Keep the script's stderr: the launch log is the only record of which
+  # check refused the run, and the VM is deleted right after.
+  local err rc=0
+  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$hosts" bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -281,7 +284,7 @@ _setup_egress_firewall() {
       iptables -A OUTPUT -j ACCEPT
     fi
     # Assert, so a failed apply aborts the launch instead of running open.
-    iptables -S OUTPUT | grep -q -- "-d 10.0.0.0/8 -j DROP" || exit 1
+    iptables -S OUTPUT | grep -q -- "-d 10.0.0.0/8 -j DROP" || { echo "egress: private-range DROP rule missing" >&2; exit 1; }
     # iptables -S prints the uid, not the name.
     # Assert behaviour, not rule text. A REJECT rule that exists but never
     # matches passed the old check while example.com answered 200.
@@ -293,7 +296,10 @@ _setup_egress_firewall() {
       sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null \
         || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
     fi
-  ' 2>/dev/null
+  ' 2>&1 >/dev/null)" || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  printf '%s\n' "${err:-egress: no reason given (exit $rc); ssh may have failed}" | tail -3 >&2
+  return "$rc"
 }
 
 # Egress the agent user may reach: Anthropic's API range, GitHub's published
