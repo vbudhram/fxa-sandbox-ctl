@@ -1772,12 +1772,21 @@ cmd_label() {
 #   missing, tunnel refused) left the ticket at inflight with no runner, and only
 #   a human noticed. Return it to the queue; the next pass tries again and the
 #   daily launch budget bounds how often.
+#
+#   A fix or feedback round has an open PR, and the queue is the wrong place
+#   for it: reconcile stops tracking the PR, and with newtickets off nothing
+#   relaunches it. It keeps inflight, where reconcile sees the red PR.
 _jira_launch_failed() {
   local key="$1" name="$2"
   [ -n "${PIPE_NAME:-}" ] || return 0
   jira_inflight_keys 2>/dev/null | grep -qx "$key" || return 0
-  echo "ERROR: launch failed before the agent started; returning ${key} to the queue." >&2
   rm -f "${LOG_DIR}/${name}.meta"
+  local pr state; read -r _ pr state _ <<<"$(gh_pr_state "$key" 2>/dev/null)"
+  if [ "$state" = "OPEN" ]; then
+    echo "ERROR: launch failed before the agent started; ${key} stays inflight because PR #${pr} is open. Relaunch the round." >&2
+    return 0
+  fi
+  echo "ERROR: launch failed before the agent started; returning ${key} to the queue." >&2
   cmd_label "$key" public >&2 || true
 }
 
