@@ -263,8 +263,9 @@ gh_feedback() {
     while read -r id; do
       [[ "$id" =~ ^[0-9]+$ ]] || { echo "$key not addressed: $id has no lines to check; react by hand if fixed"; continue; }
       # Recording an id is intent, not proof. Only a later commit that changed the
-      # comment's lines (GitHub then nulls its position) shows the round fixed it.
-      if [ "$(gh api "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}" --jq '.position' 2>/dev/null)" != "null" ]; then
+      # comment's lines shows the round fixed it. GitHub then nulls `line`; after a
+      # force-push `position` can stay non-null, so it is not the signal.
+      if [ "$(gh api "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}" --jq '.line // "outdated"' 2>/dev/null)" != "outdated" ]; then
         echo "$key not addressed: comment $id lines unchanged, no reaction"; continue
       fi
       if gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}/reactions" \

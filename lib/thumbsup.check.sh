@@ -13,11 +13,13 @@ source "$(dirname "$0")/github.sh"
 pipeline_require() { :; }
 worktree_branch_for() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
 PIPE_STATE_DIR="$tmp" PIPE_REPO_SLUG="mozilla/fxa"
-# Comment 1 sits on lines a later push changed (position null); comment 2 does not.
+# Comment 1 sits on lines a later force-push changed: GitHub nulls `line` but
+# keeps a non-null `position` (seen on #21297). Comment 2 is unchanged.
 gh() {
   case "$*" in
     *"--method POST"*) echo "$*" >>"$tmp/posts"; echo '{}' ;;
-    *pulls/comments/1*) echo null ;;
+    *pulls/comments/1*.line*) echo outdated ;;
+    *pulls/comments/1*.position*) echo 1 ;;
     *pulls/comments/2*) echo 12 ;;
     *) return 1 ;;
   esac
