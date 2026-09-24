@@ -194,7 +194,9 @@ telemetry_record() {
     echo "already recorded $key (launched_at $launched_at)"; return 0
   fi
   local usage secs pr sha files base
-  usage="$(telemetry_usage "$key" 2>/dev/null || echo '{}')"
+  # A failed read already printed an error document; `|| echo` inside the
+  # substitution made it two, which beat the zero check and wrote two rows.
+  usage="$(telemetry_usage "$key" 2>/dev/null)" || usage='{}'
   # No transcript means no run to record. Writing a zero row here produced a
   # merge summary of "2 runs, 0 tokens, unpriced" for FXA-14527 after its slot
   # had moved on to another ticket.
