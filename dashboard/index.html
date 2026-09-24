@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ai-fixme status</title>
+<link rel="icon" id="favicon" href="data:,">
 <style>
   :root {
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px;
@@ -55,10 +56,8 @@
   #status .sep { width:1px; height:14px; background:var(--line2); opacity:.6; }
   #status .spacer { flex:1; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
-  .dot.warn { background:var(--warn); animation:beat-warn 3s ease-in-out infinite; }
-  .dot.dead { background:var(--bad);  animation:beat-bad 1.4s ease-in-out infinite; }
-  @keyframes beat-warn { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 60%,transparent)} 70%{box-shadow:0 0 0 7px transparent} }
-  @keyframes beat-bad  { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--bad) 75%,transparent)}  70%{box-shadow:0 0 0 10px transparent} }
+  .dot.warn { background:var(--warn); } .dot.dead { background:var(--bad); }
+  #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); }
   button { font:inherit; font-size:var(--t-sub); color:var(--dim); background:var(--panel);
            border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s1) var(--s3); cursor:pointer; }
   button:hover:not(:disabled) { color:var(--ink); border-color:var(--line2); }
@@ -107,13 +106,12 @@
   .tag.warn { color:var(--warn); background:var(--warnbg); } .tag.info { color:var(--info); background:var(--infobg); }
   .tag.merged { color:var(--purple); background:color-mix(in srgb,var(--purple) 12%,var(--panel)); }
   .tag.run::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
-                     margin-right:5px; vertical-align:1px; animation:blink 3s ease-in-out infinite; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.55} }
+                     margin-right:5px; vertical-align:1px; }
   .age { font-variant-numeric:tabular-nums; } .age.old { color:var(--bad); font-weight:650; }
 
   .checks { display:inline-flex; gap:2px; align-items:center; vertical-align:-2px; }
   .checks i { width:3px; height:11px; border-radius:1px; background:var(--ok); }
-  .checks i.f { background:var(--bad); height:16px; } .checks i.r { background:var(--info); animation:blink 3s ease-in-out infinite; }
+  .checks i.f { background:var(--bad); height:16px; } .checks i.r { background:var(--info); }
 
   details { margin-top:var(--s3); }
   details summary { cursor:pointer; color:var(--dim); font-size:var(--t-sub); list-style:none; }
@@ -174,17 +172,23 @@
   .slot.free .meter { background:transparent; border:1px dashed var(--line2); }
   .slot.virtual .meter { background:transparent; border:1px dotted var(--line); }
   .slot.virtual .nm { color:var(--faint); }
-  .slot.busy .meter i { width:100%; background:linear-gradient(90deg,var(--info),color-mix(in srgb,var(--info) 45%,var(--panel)),var(--info));
-    background-size:200% 100%; animation:slide 4.5s linear infinite; }
+  .slot.busy .meter i { width:100%; background:var(--info); opacity:.7; }
   .slot.held .meter i { width:100%; background:var(--warn); opacity:.45; }
-  .slot.over .meter i { width:100%; background:var(--bad); opacity:.6; animation:none; }
-  @keyframes slide { to { background-position:200% 0; } }
+  .slot.over .meter i { width:100%; background:var(--bad); opacity:.6; }
   .slot .r { display:flex; gap:5px; align-items:center; }
 
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
            display:flex; gap:var(--s6); flex-wrap:wrap; color:var(--faint); font-size:var(--t-sub); }
   footer b { color:var(--dim); font-weight:650; font-variant-numeric:tabular-nums; }
 
+  /* ── phone: fixed columns give way, the key takes its own row ── */
+  @media (max-width:600px) {
+    .line1, .fac .top, .waiting { grid-template-columns:minmax(0,1fr) auto; row-gap:2px; }
+    .line1 > .key, .fac .top > .key, .waiting > .key { grid-column:1 / -1; }
+    .alert { flex-wrap:wrap; } .alert .what { white-space:normal; } .alert .fix { margin-left:0; }
+    h2, .headline { flex-wrap:wrap; } h2 .note, .headline .rest { margin-left:0; flex-basis:100%; }
+    .slot { grid-template-columns:84px minmax(40px,1fr) max-content; }
+  }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
@@ -194,7 +198,7 @@
 <div id="status">
   <h1>ai-fixme <span id="repo"></span></h1>
   <span class="sep"></span>
-  <span class="dot" id="dot"></span><span id="cells"></span>
+  <span class="dot" id="dot"></span><span id="health">healthy</span><span id="cells"></span>
   <span class="spacer"></span>
   <span id="age">connecting…</span>
   <button id="refresh">refresh</button>
@@ -255,12 +259,21 @@ function verdictTag(r) {
   if (r.state === "CLOSED")             return `<span class="tag warn">closed</span>`;
   if (r.draft)                          return `<span class="tag">draft</span>`;
   if (r.review === "CHANGES_REQUESTED") return `<span class="tag bad">changes requested</span>`;
+  if (r.fail > 0 && r.infra)            return `<span class="tag warn" title="${esc(r.infra)}">infra red</span>`;
   if (r.fail > 0)                       return `<span class="tag bad">${r.fail} failing</span>`;
   if (r.running > 0)                    return `<span class="tag run info">${r.running} running</span>`;
   if (!hasChecks(r))                    return `<span class="tag">no checks yet</span>`;
   if (r.mergeable === "CONFLICTING")    return `<span class="tag bad">conflicts</span>`;
   if (r.review === "APPROVED")          return `<span class="tag ok">approved</span>`;
   return `<span class="tag ok">green</span>`;
+}
+function waitAge(r) {
+  const h = r.last_human_review;
+  const since = h ? days(h.at) : days(r.created ?? r.updated);
+  if (since == null) return "";
+  const who = h ? `since ${esc(h.login)}'s review` : "no human review yet";
+  const req = (r.reviewers ?? []).map(x => esc(x.replace(/^mozilla\//, ""))).join(", ");
+  return `<span class="age${since >= 3 ? " old" : ""}">${Math.round(since)}d</span><span>${who}</span>${req ? `<span>· requested ${req}</span>` : ""}`;
 }
 const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft && r.fail === 0 && r.running === 0 &&
   hasChecks(r) && r.mergeable !== "CONFLICTING" && r.review !== "APPROVED" && r.review !== "CHANGES_REQUESTED";
@@ -358,15 +371,20 @@ function renderStatus() {
   const sp = h.seconds_since_pass, dead = sp == null || sp > 7200, quiet = sp != null && sp > 1500;
   const lowDisk = h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb;
   const stale = STATE.age_seconds == null || STATE.age_seconds > 300;
-  const dot = document.getElementById("dot");
-  dot.className = "dot " + (dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet ? "warn" : "");
+  const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet ? "warn" : "";
+  document.getElementById("dot").className = "dot " + level;
+  const hl = document.getElementById("health");
+  hl.className = level; hl.textContent = level === "dead" ? "down" : level === "warn" ? "degraded" : "healthy";
   document.getElementById("repo").textContent = s?.repo ?? "";
   const running = (g?.instances ?? []).filter(v => v.state === "running").length;
   const cells = [];
   cells.push(`<span class="cell"><b>${esc(g?.backend ?? s?.backend ?? "—")}</b>${g?.zone ? `<span>${esc(g.zone)}</span>` : ""}</span>`);
   cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
   cells.push(`<span class="cell">${h.lock_held ? "<b>lock held</b>" : "lock free"}</span>`);
-  if (g) cells.push(`<span class="cell">launchcap <b>${g.launchcap}</b></span>`);
+  const m = s?.mode;
+  if (m?.newtickets === "off") cells.push(`<span class="cell warn" title="${esc(m.newtickets_note ?? "")}"><b>intake off</b> · PR rounds only</span>`);
+  else if (g) cells.push(`<span class="cell">launchcap <b>${g.launchcap}</b></span>`);
+  if (m?.focus) cells.push(`<span class="cell">focus ${jira(m.focus)}</span>`);
   if (g) cells.push(`<span class="cell ${running ? "" : ""}"><b>${running}</b> runner${running === 1 ? "" : "s"} · <b>${usd(g.runner_hourly_usd)}</b>/h</span>`);
   if (g?.today) cells.push(`<span class="cell">today <b>${usd(g.today.cost_usd)}</b> · ${g.today.runs} run${g.today.runs === 1 ? "" : "s"} · ${g.today.prs} PR${g.today.prs === 1 ? "" : "s"}</span>`);
   cells.push(`<span class="cell ${lowDisk ? "bad" : ""}"><b>${h.free_gb ?? "?"}GB</b> free</span>`);
@@ -426,11 +444,15 @@ function renderAlerts() {
     if (!owned && v.age_seconds > 120) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`);
     else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
+  // Per-PR reds, conflicts and change requests already show on their review
+  // rows. Alerts keep what no row shows: one line per repo-infra cause, and a
+  // drain that has fallen behind.
+  const infra = {};
+  (s?.review ?? []).filter(r => r.fail > 0 && r.infra).forEach(r => (infra[r.infra] ??= []).push(r));
+  Object.entries(infra).forEach(([why, rs]) => add("warn", `<b class="key">infra</b>`,
+    `${esc(why)} fails on ${rs.length} PR${rs.length > 1 ? "s" : ""} (${rs.map(r => prl(s.repo, r.pr)).join(", ")}); repo infrastructure, not the PR code`));
   (s?.review ?? []).forEach(r => {
-    if (r.fail > 0) add("bad", jira(r.key), `${r.fail} failing check${r.fail > 1 ? "s" : ""} on ${r.pr ? prl(s.repo, r.pr) : "its PR"} · ${esc(r.title ?? "")}`);
-    else if (r.review === "CHANGES_REQUESTED") add("warn", jira(r.key), `a reviewer asked for changes on ${prl(s.repo, r.pr)}; the feedback sweep picks this up`);
-    else if (r.mergeable === "CONFLICTING") add("warn", jira(r.key), `${prl(s.repo, r.pr)} is green but conflicts with main`);
-    else if (r.state === "MERGED" || r.state === "CLOSED") add("warn", jira(r.key), `${prl(s.repo, r.pr)} is ${esc(r.state.toLowerCase())} but the ticket is still done; the drain has not run`);
+    if (r.state === "MERGED" || r.state === "CLOSED") add("warn", jira(r.key), `${prl(s.repo, r.pr)} is ${esc(r.state.toLowerCase())} but the ticket is still done; the drain has not run`);
   });
   put("attn", alerts.join(""));
 }
@@ -442,7 +464,9 @@ function renderAgents() {
   sec.className = "wide" + (anyLive ? " running" : "");
   const repo = SNAP?.repo ?? "";
   const nRunners = cards.filter(c => !c.ci).length;
-  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} runner${nRunners === 1 ? "" : "s"} up · ${AGENTS.launchcap} more may launch` : "agents feed not loaded", "in flight") +
+  const intakeOff = SNAP?.mode?.newtickets === "off";
+  const more = intakeOff ? "intake off, no new tickets launch" : `${AGENTS?.launchcap} more may launch`;
+  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} runner${nRunners === 1 ? "" : "s"} up · ${more}` : "agents feed not loaded", "in flight") +
     (cards.length === 0 ? `<div class="empty">no runner is up</div>` : cards.map(card).join("")) +
     (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
         <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}${
@@ -456,24 +480,26 @@ function renderTickets() {
   const s = SNAP; if (!s) return;
   const review = s.review, repo = s.repo;
   const waiting = review ? review.filter(isWaitingOnHuman) : [];
-  const oldest = review ? review.slice().map(r => days(r.updated) ?? 0).sort((a, b) => b - a)[2] ?? 0 : 0;
+  const row = r => `<div class="item">
+      <div class="line1">${jira(r.key)}${titled(r.title ?? (r.pr ? "title unavailable" : "no PR found"))}${verdictTag(r)}</div>
+      <div class="line2">${r.pr ? prl(repo, r.pr) : "no PR on this branch"} ${checkBars(r)} ${waitAge(r)}</div></div>`;
+  const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
+  const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
   put("s-review",
     (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">GitHub fetch failed; unknown, not zero</span></div>`
-      : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on you</span>
-         <span class="rest">${review.length} done · PR open, CI finished, needs a human</span></div>`) +
+      : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
+         <span class="rest">${review.length} done · oldest wait first</span></div>`) +
     (review == null ? "" : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
-     : review.slice().sort((a, b) => (b.fail > 0) - (a.fail > 0) || ((Date.parse(a.updated) || 0) - (Date.parse(b.updated) || 0)))
-        .map(r => { const d = days(r.updated); return `<div class="item">
-            <div class="line1">${jira(r.key)}${titled(r.title ?? (r.pr ? "title unavailable" : "no PR found"))}${verdictTag(r)}</div>
-            <div class="line2">${r.pr ? prl(repo, r.pr) : "no PR on this branch"} ${checkBars(r)}
-              ${d != null ? `<span class="age${d >= oldest && d > 7 ? " old" : ""}">${Math.round(d)}d idle</span>` : ""}
-              ${r.reviewers?.length ? `<span>· ${esc(r.reviewers.join(", "))}</span>` : ""}</div></div>`; }).join("")));
+     : waiting.slice().sort(byWait).map(row).join("") +
+       (others.length ? `<h2 style="margin-top:var(--s4)">not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>` +
+         others.slice().sort(byWait).map(row).join("") : "")));
 
   const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
   const liveSkips = skipped.filter(k => k.in_queue !== false), staleSkips = skipped.filter(k => k.in_queue === false);
   put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length, q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
     (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
-     : (ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
+     : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>`
+     : ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
         : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
           (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
        (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary><div class="body">${
@@ -524,8 +550,19 @@ function renderToday() {
           <span>agents feed took ${g.took_seconds}s</span></div>`));
 }
 
+// The tab says what needs you, so a background tab is worth glancing at.
+function renderTab() {
+  const n = (SNAP?.review ?? []).filter(isWaitingOnHuman).length;
+  const bad = document.querySelectorAll("#attn .alert.bad").length;
+  const level = document.getElementById("dot").className.replace("dot", "").trim();
+  document.title = `${n ? `(${n}) ` : ""}${bad ? "⚠ " : ""}ai-fixme`;
+  const fill = { dead:"#a8331f", warn:"#c9791a" }[level] ?? "#24693f";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="${fill}"/></svg>`;
+  document.getElementById("favicon").href = "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderTickets(); renderPool(); renderToday();
+  renderStatus(); renderAlerts(); renderAgents(); renderTickets(); renderPool(); renderToday(); renderTab();
 }
 
 async function poll() {

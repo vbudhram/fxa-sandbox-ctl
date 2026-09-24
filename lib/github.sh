@@ -400,12 +400,15 @@ gh_pr_states_json() {
               --json number,state,headRefName,statusCheckRollup 2>/dev/null)" || rc=$?
   [ "$rc" -eq 0 ] && [ -n "$rollup" ] || { echo 'null'; return 0; }
   meta="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-            --json number,headRefName,title,isDraft,reviewDecision,updatedAt,mergeable 2>/dev/null)" || rc=$?
+            --json number,headRefName,title,isDraft,reviewDecision,updatedAt,mergeable,createdAt,reviewRequests,latestReviews 2>/dev/null)" || rc=$?
   [ "$rc" -eq 0 ] && [ -n "$meta" ] || { echo 'null'; return 0; }
 
-  printf '%s\n' "$keys" | jq -R -s --argjson rollup "$rollup" --argjson meta "$meta" '
-    (INDEX($rollup[]; .headRefName)) as $R
-    | (INDEX($meta[];   .headRefName)) as $M
+  # Files, not --argjson: with latestReviews the payload passes ARG_MAX.
+  local tr tm; tr="$(mktemp)"; tm="$(mktemp)"
+  printf '%s' "$rollup" >"$tr"; printf '%s' "$meta" >"$tm"
+  printf '%s\n' "$keys" | jq -R -s --slurpfile rollup "$tr" --slurpfile meta "$tm" '
+    (INDEX($rollup[0][]; .headRefName)) as $R
+    | (INDEX($meta[0][];   .headRefName)) as $M
     | split("\n") | map(select(length > 0))
     | map(. as $k
       | ($k | ascii_downcase) as $br
@@ -423,11 +426,20 @@ gh_pr_states_json() {
         # `//` treats false as empty, so isDraft:false would become null.
         # Branch on the record instead of defaulting each field.
         + (if $m == null
-           then {title: null, draft: null, review: null, updated: null, mergeable: null}
-           else {title: $m.title, draft: $m.isDraft,
+           then {title: null, draft: null, review: null, updated: null, mergeable: null,
+                 created: null, reviewers: null, last_human_review: null}
+           # updatedAt moves on every bot and CI event, so review age reads the
+           # last human review instead; bots never count as a reviewer.
+           else ([$m.latestReviews[]? | select(.author.login | test("\\[bot\\]$|copilot"; "i") | not)]
+                 | max_by(.submittedAt)) as $h
+             | {title: $m.title, draft: $m.isDraft,
                  review: $m.reviewDecision, updated: $m.updatedAt,
-                 mergeable: $m.mergeable}
+                 mergeable: $m.mergeable, created: $m.createdAt,
+                 reviewers: [$m.reviewRequests[]? | (.login // .slug // .name) | select(. != null)],
+                 last_human_review: (if $h == null then null
+                                     else {login: $h.author.login, state: $h.state, at: $h.submittedAt} end)}
            end))'
+  rm -f "$tr" "$tm"
 }
 
 # ── GitHub App identity ────────────────────────────────────────

@@ -320,6 +320,13 @@ snapshot_json() {
   review="$(gh_pr_states_json "$done_keys")"
   local inflight_prs; inflight_prs="$(gh_pr_states_json "$inflight_keys")"
   telem="$(_snapshot_telemetry)"
+  # Known repo-infrastructure reds, so the page groups them instead of blaming
+  # each PR. gh_red_infra caches per head sha, so this reads each log once.
+  local infra='{}' k why
+  for k in $(printf '%s' "$review" | jq -r '.[]? | select(.fail > 0) | .key' 2>/dev/null); do
+    why="$(gh_red_infra "$k" 2>/dev/null)" && infra="$(jq -c --arg k "$k" --arg w "$why" '. + {($k): $w}' <<<"$infra")"
+  done
+  local hold; hold="$(pipeline_holding_new && cat "$(pipeline_hold_marker)" || true)"
   # If the inflight read failed we do not know which slots a ticket still owns,
   # and worktree_free_slots with an empty owner list calls EVERY idle slot
   # claimable. That is the same confident zero the review section guards
@@ -347,6 +354,9 @@ snapshot_json() {
     --argjson inflight_prs "$inflight_prs" \
     --argjson review "$review" \
     --argjson telemetry "$telem" \
+    --argjson infra "$infra" \
+    --arg hold "$hold" \
+    --arg focus "$(pipeline_focus_key || true)" \
     --argjson instances "$instances" \
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
@@ -372,6 +382,9 @@ snapshot_json() {
                       + (((($inflight_prs // [])[] | select(.key == $i.key))
                           | {pr, pr_state: .state, ok, fail, running, review_decision: .review})
                          // {pr: null, pr_state: null, ok: 0, fail: 0, running: 0, review_decision: null})],
-         review: $review,
+         review: (if $review == null then null else $review | map(. + {infra: ($infra[.key] // null)}) end),
+         mode: { newtickets: (if $hold == "" then "on" else "off" end),
+                 newtickets_note: (if $hold == "" then null else $hold end),
+                 focus: (if $focus == "" then null else $focus end) },
          telemetry: $telemetry }'
 }
