@@ -26,7 +26,7 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 2. **Reconcile.** `$CTL reconcile` applied the determinate rows already: merged→`merged`,
    closed→`rejected`, green→`done`, inflight-without-log→`public`, and it re-approves a stuck
    functional gate. Judge the rest with the reconcile table below. A launch that dies before the
-   agent starts returns its ticket to the queue on its own; `PIPE_MAX_LAUNCHES_PER_DAY` (20) caps
+   agent starts returns its ticket to the queue on its own; `PIPE_MAX_LAUNCHES_PER_DAY` (40) caps
    retries. A relaunch on a slot that still holds a cut-off run's tree ships that tree into the
    new runner and tells the agent to resume it.
    **Drain.** `$CTL drain` prints `KEY <pr> MERGED|CLOSED|CONFLICT|RED ok= fail= running=` or
