@@ -207,7 +207,8 @@ the whole ticket, so an answer in a comment re-opens it. Do not decide repetitio
 
 Skip when any of these hold: no statable acceptance criteria or an open product question; spans
 more than one train; deletes or migrates production data or needs prod SQL; adds a DB migration
-patch or changes a published package surface such as `fxa-auth-client`; needs a decision you
+patch or changes a package that another repo consumes (`fxa-auth-client` is internal, so its
+methods may change); needs a decision you
 would escalate. Judge by "can one agent finish this in one PR", not by length.
 
 **Named implementation steps are a strong signal.** Named files, symbols, ordered steps, stated
