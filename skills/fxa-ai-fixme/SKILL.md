@@ -103,14 +103,16 @@ React 👍 only to comments the round fixed, never to declined ones, and only af
 Green does not mean mergeable (INCIDENTS: Conflicts). Conflicts are churn: clearing them once
 does not keep them clear.
 
-**Rebase before a human signs off, never after.** Bot reviews do not count. If a human has
-reviewed, stop, report under ⚠️, and let them rebase.
+A human review does not block a rebase: the repo keeps approvals across pushes. Say in the Jira
+comment that the branch was rebased after review.
 
 `$CTL conflicts KEY` prints the class and files (`git merge-tree`, no worktree, no slot).
-`lockfile`: take main's `yarn.lock`, `yarn install`, push (not automated; `--rebase` works but
-is wasteful). `source`: `$CTL jira KEY --worktree <slot> --rebase --create-pr`. The host merges
+`lockfile`: `precheck` fixes it itself with `$CTL relock KEY`: merge main in a temporary
+worktree, take main's `yarn.lock`, `yarn install --mode=update-lockfile`, and push the merge as a
+fast-forward, with no force-push. It counts as an attempt. A failed relock
+shows as a work line; report it. `source`: `$CTL jira KEY --worktree <slot> --rebase --create-pr`. The host merges
 the base in after checkout, the agent resolves markers as file edits, the host squashes onto the
-base and pushes `--force-with-lease`. It refuses on a human review, refuses at `attempts` 2, and
+base and pushes `--force-with-lease`. It refuses at `attempts` 2, and
 refuses to commit a surviving marker. It renders its own goal, not the ticket's.
 
 Rules: a rebase counts against `launchcap`; cap 2 per PR via `$CTL attempts`, then `blocked`;

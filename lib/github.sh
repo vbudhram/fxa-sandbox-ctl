@@ -376,23 +376,54 @@ gh_conflicts() {
   echo "$class $(printf '%s' "$files" | tr '\n' ' ')"
 }
 
-# gh_has_human_approval KEY
-#   Exit 0 when a human has already reviewed this ticket's PR. A rebase
-#   force-pushes, which dismisses a human review and rewrites history under
-#   someone who may be mid-read. Bot reviewers do not count: copilot re-reviews
-#   every push on its own, so nothing is lost by rebasing past it.
-gh_has_human_approval() {
+# gh_relock KEY
+#   Fix a conflict that is only yarn.lock, with no agent and no force-push. In a
+#   throwaway detached worktree: merge origin/main, take main's yarn.lock, let
+#   yarn re-resolve the branch's own dependency changes, commit the merge, and
+#   push it as a fast-forward. History is not rewritten.
+#   PIPE_RELOCK_CMD overrides the resolver (tests stub it).
+gh_relock() {
   pipeline_require || return 1
-  local key="${1:-}"; [ -n "$key" ] || return 1
-  local br; br="$(worktree_branch_for "$key")" || return 1
-  local humans
-  humans="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
-              --json reviews \
-              -q '[.[0].reviews[]?.author.login
-                   | select(test("(?i)(copilot|\\[bot\\]|-bot$)") | not)]
-                  | unique | join(",")' 2>/dev/null)"
-  [ -n "$humans" ] && { echo "$humans"; return 0; }
-  return 1
+  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: relock needs <KEY>" >&2; return 1; }
+  local br repo conf n wt rc=0
+  br="$(worktree_branch_for "$key")" || return 1
+  repo="${PIPE_REPO:-$PWD}"
+
+  conf="$(gh_conflicts "$key")" || return 1
+  case "$conf" in
+    "") echo "${key} merges clean; nothing to relock." >&2; return 0 ;;
+    lockfile\ *) ;;
+    *) echo "ERROR: ${key} conflicts outside the lockfile (${conf}); it needs a rebase round." >&2; return 1 ;;
+  esac
+  n="$(pipeline_attempts "$key")"
+  if [ "${n:-0}" -ge 2 ]; then
+    echo "ERROR: ${key} has ${n} attempts recorded; the cap is 2." >&2; return 1
+  fi
+
+  wt="$(mktemp -d "${TMPDIR:-/tmp}/relock-${br}.XXXXXX")"
+  # Hooks off: the repo's post-checkout hook clones l10n into every new worktree.
+  git -C "$repo" -c core.hooksPath=/dev/null worktree add -q --detach "$wt" "origin/${br}" >&2 || {
+    rm -rf "$wt"; return 1; }
+  (
+    set -e
+    cd "$wt"
+    git -c core.hooksPath=/dev/null merge -q --no-edit origin/main >/dev/null 2>&1 || true
+    locks="$(git diff --name-only --diff-filter=U)"
+    [ -n "$locks" ] || { echo "ERROR: the merge left no conflicted paths." >&2; exit 1; }
+    if printf '%s\n' "$locks" | grep -qvE '(^|/)yarn\.lock$'; then
+      echo "ERROR: the merge conflicts outside yarn.lock: $(printf '%s ' $locks)" >&2; exit 1
+    fi
+    # In a merge of main into the branch, "theirs" is main.
+    printf '%s\n' "$locks" | xargs git checkout --theirs --
+    ${PIPE_RELOCK_CMD:-yarn install --mode=update-lockfile} >&2
+    printf '%s\n' "$locks" | xargs git add --
+    git -c core.hooksPath=/dev/null commit -q --no-edit ${PIPE_RELOCK_SIGN--S}
+    git push -q origin "HEAD:refs/heads/${br}" >&2
+  ) || rc=1
+  git -C "$repo" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
+  [ "$rc" = 0 ] || return 1
+  pipeline_attempts "$key" bump >/dev/null
+  echo "${key}: merged origin/main and re-resolved yarn.lock; pushed ${br}."
 }
 
 gh_pr_states_json() {

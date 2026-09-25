@@ -114,6 +114,8 @@ PIPELINE COMMANDS:
   prstate <ISSUE-KEY>          PR number, state, and check tally
   conflicts <ISSUE-KEY>        Files conflicting with main, and their class
                                (lockfile | source). Empty if it merges clean.
+  relock <ISSUE-KEY>           WRITE: fix a yarn.lock-only conflict on the host
+                               (merge main, re-resolve, fast-forward push)
   feedback <KEY> [sub]         Unhandled review comments
                                subs: ack | rounds [bump] | acted <id>... | thumbsup
                                bundle: write /tmp/feedback/fxa-KEY-bundle.md with each comment
@@ -168,8 +170,7 @@ JIRA OPTIONS:
                                FXA_AGENT_RUNTIME / PIPE_AGENT_RUNTIME)
   --rebase                     Merge origin/<base> into the ticket's existing
                                branch, then run the agent on the conflict only.
-                               Refuses if a human has reviewed the PR, or once
-                               `attempts` reaches 2.
+                               Refuses once `attempts` reaches 2.
   --functional-tests           Pre-warm the FxA stack inside the VM (fxa-start
                                in the background) and require the agent to run
                                'yarn test-sandbox' before declaring the goal
@@ -543,19 +544,12 @@ EOF
 # VM, so `git merge`, `git add` and `git commit` all fail there. Every git write
 # for a rebase round happens here on the host; the agent only edits files.
 #
-# Both gates are enforced here rather than left to the caller's judgment. A rule
-# that lives only in a skill file does not survive a cron-fired pass.
+# The attempts gate is enforced here rather than left to the caller's judgment.
+# A rule that lives only in a skill file does not survive a cron-fired pass.
+# A human review does not block a rebase: the repo keeps approvals across pushes
+# (dismiss_stale_reviews is off), so a force-push loses nothing.
 _jira_rebase_merge() {
   local key="$1" wt="$2" base="$3"
-
-  # A force-push dismisses a human review and rewrites history under someone who
-  # may be mid-read. Bot reviewers do not count: copilot re-reviews every push.
-  local humans
-  if humans="$(gh_has_human_approval "$key")"; then
-    echo "ERROR: ${humans} has already reviewed this PR; refusing to rebase." >&2
-    echo "       A force-push would dismiss that review. Ask them to rebase instead." >&2
-    return 1
-  fi
 
   # A PR that conflicts a third time is churning faster than it is reviewed,
   # which is a review-throughput problem a rebase cannot fix.
@@ -1432,6 +1426,10 @@ cmd_precheck() {
       MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _work "drain: $line (label merged FAILED)"; fi ;;
       CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _work "drain: $line (label rejected FAILED)"; fi ;;
       RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"; else _work "drain: $line"; fi ;;
+      CONFLICT)
+        if [ "$(gh_conflicts "$key" 2>/dev/null | cut -d' ' -f1)" = lockfile ]; then
+          if gh_relock "$key" >/dev/null 2>&1; then _info "drain: $key #$num lockfile conflict fixed (main merged, yarn.lock re-resolved)"; else _work "drain: $line lockfile (relock FAILED; run: relock $key)"; fi
+        else _work "drain: $line"; fi ;;
       *)      _work "drain: $line" ;;
     esac
   done < <(cmd_drain 2>&1)
@@ -1482,6 +1480,7 @@ cmd_reporter()  { jira_reporter_login "$(_key "$1")"; }
 cmd_drain()     { gh_drain "$(jira_done_keys)"; }
 cmd_prstate()   { gh_pr_state "$(_key "$1")"; }
 cmd_conflicts() { gh_conflicts "$(_key "$1")" "${@:2}"; }
+cmd_relock()    { gh_relock "$(_key "$1")"; }
 cmd_feedback()  {
   if [ "${2:-}" = "bundle" ]; then cmd_feedback_bundle "$(_key "$1")"; else gh_feedback "$(_key "$1")" "${@:2}"; fi
 }
@@ -1948,6 +1947,7 @@ main() {
     progress)   cmd_progress "$@" ;;
     prstate)    cmd_prstate "$@" ;;
     conflicts)  cmd_conflicts "$@" ;;
+    relock)     cmd_relock "$@" ;;
     feedback)   cmd_feedback "$@" ;;
     tokens)     cmd_usage_tokens "$@" ;;
     record)     cmd_record "$@" ;;
