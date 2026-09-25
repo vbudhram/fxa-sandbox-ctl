@@ -598,7 +598,7 @@ _finish_push_and_pr() {
   if [ -n "$existing" ]; then
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
-    # Refresh the body only. NEVER touch the title of an existing PR.
+    # NEVER touch the title or body of an existing PR.
     #
     # A fix or feedback round writes a handoff describing only that round, so
     # PATCHing the title replaces the PR's subject with the subject of its last
@@ -610,18 +610,14 @@ _finish_push_and_pr() {
     # chai 5 upgrade, and #21054 as "drop the redundant initTracing call" for a
     # 16 file module removal.
     #
-    # The title is set once, by `gh pr create`. Rounds may extend the body,
-    # which is additive and safe. Do not "improve" this by re-adding the title.
-    #
-    # `gh pr edit` exits 1 on this repo (deprecated Projects-classic GraphQL
-    # field), so go through REST.
+    # The title and body are set once, by `gh pr create`. The body is not
+    # refreshed either: a round's handoff describes only that round, and
+    # replacing the body dropped the original's reviewer notes. The Jira
+    # comment records each round.
     local pr_num="${existing##*/}"
-    (cd "$worktree" && gh api -X PATCH "repos/{owner}/{repo}/pulls/${pr_num}" \
-       -F "body=@${body_file}" >/dev/null 2>&1) \
-      || echo "  WARN: could not refresh PR body. The pushed diff is still correct." >&2
-    # The REST body PATCH cannot carry an upload, so a fix round's media goes on
-    # as a comment. That also keeps each round's evidence next to the round,
-    # instead of overwriting the original body's screenshots.
+    echo "  Keeping the PR title and body; the round is recorded on Jira." >&2
+    # A round's media goes on as a comment, next to the round, so the original
+    # body's screenshots stay.
     if [ "${#media_args[@]}" -gt 0 ]; then
       (cd "$worktree" && gh pr comment "$pr_num" \
          --body "Updated evidence from the latest automated round." \
