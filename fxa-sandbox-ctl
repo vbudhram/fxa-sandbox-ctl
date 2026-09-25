@@ -688,15 +688,16 @@ ${step4}
 5. $(runtime_skill_ref code-simplifier), then $(runtime_skill_ref ponytail-review), have been invoked on
    the latest changes and every simplification or cut they suggest has been
    applied (or explicitly declined with a one-line reason in the transcript).
-6. $(runtime_skill_ref fxa-review-quick) has been invoked on your working changes and reported no
-   blocking issues. Fix any blockers and re-run.
+6. $(runtime_skill_ref fxa-review-quick), then $(runtime_skill_ref fxa-vm-selfcheck), found no blockers in
+   your changes: 'git diff \$(git merge-base HEAD origin/main)' plus untracked
+   files. Name that as the review target; HEAD lacks your work. Fix, re-run.
 7. **DO NOT COMMIT.** The parent .git is mounted read-only, so 'git commit'
-   fails; the host stages, commits, signs and pushes. Do not retry it and do
-   not treat its failure as a blocker. Review scope: print 'git status --short'
+   fails; the host stages, commits, signs and pushes; that failure is not a
+   blocker. Review scope: print 'git status --short'
    and 'git diff --stat', and revert any file unrelated to this ticket with
    'git checkout -- <path>'; scope creep blocks the goal.
 8. Invoke $(runtime_skill_ref create-pr-description) on the WHOLE branch diff
-   ('git diff origin/main...HEAD'), then $(runtime_skill_ref humanizer) on its output.
+   (the step 6 diff), then $(runtime_skill_ref humanizer) on its output, then selfcheck Check 5.
    The host squashes every round into one commit, so the body describes the
    entire pull request, with this round's change as one bullet. pr_body MUST
    reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md verbatim: keep every
