@@ -78,7 +78,21 @@ vm_image_build() {
   command -v packer &>/dev/null || { echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2; return 1; }
   cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
-  packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${FXA_GCE_ZONE}" fxa-dev.pkr.hcl
+  # Same zone order as vm_clone; only a stockout moves the build on.
+  local zone last zones log; log="$(mktemp)"
+  last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
+  zones="$FXA_GCE_ZONES"
+  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | grep -vx "$last" | tr '\n' ' ')" ;; esac
+  for zone in $zones; do
+    echo "Building in ${zone}..."
+    packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" fxa-dev.pkr.hcl 2>&1 | tee "$log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] && { rm -f "$log"; return 0; }
+    grep -q 'STOCKOUT\|does not have enough resources' "$log" || { rm -f "$log"; return 1; }
+    echo "  ${zone} is stocked out; trying the next zone."
+  done
+  rm -f "$log"
+  echo "ERROR: every zone in FXA_GCE_ZONES is stocked out." >&2
+  return 1
 }
 
 # ── VM lifecycle ───────────────────────────────────────────────
