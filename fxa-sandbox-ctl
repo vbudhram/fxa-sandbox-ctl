@@ -1794,6 +1794,28 @@ _jira_launch_failed() {
 #   WRITE: start an agent VM in the background. The launcher pushes, opens the
 #   PR, approves the functional gate, then polls CI, so a pass must not block
 #   on it.
+# _launch_slot_for KEY SLOT
+#   The slot a launch must use. A branch can be checked out in one worktree
+#   only, so when a pool slot from an earlier round still holds it, use that
+#   slot: a checkout elsewhere dies with "already used by worktree". A worktree
+#   outside the pool is the operator's own; never launch there, because the
+#   launch resets and commits in it. Refuse and name it instead.
+_launch_slot_for() {
+  local key="$1" slot="$2" held
+  held="$(git -C "$PIPE_REPO" worktree list --porcelain 2>/dev/null \
+    | awk -v b="refs/heads/$(worktree_branch_for "$key")" '$1=="worktree"{w=$2} $1=="branch"&&$2==b{print w}')"
+  if [ -z "$held" ] || [ "$(basename "$held")" = "$slot" ]; then
+    printf '%s\n' "$slot"; return 0
+  fi
+  if _worktree_pool_list | grep -qxF "$held"; then
+    echo "NOTE: ${key}'s branch is checked out in $(basename "$held"); launching there instead of ${slot}." >&2
+    basename "$held"; return 0
+  fi
+  echo "ERROR: ${key}'s branch is checked out in ${held}, which is outside the pool." >&2
+  echo "       Switch that worktree to another branch, then relaunch." >&2
+  return 1
+}
+
 cmd_launch() {
   local key="${1:-}" slot="${2:-}" ctx="${3:-}"
   if [ -z "$key" ] || [ -z "$slot" ]; then
@@ -1804,16 +1826,7 @@ cmd_launch() {
     echo "ERROR: context file '$ctx' not found" >&2
     return 1
   fi
-  # A branch can be checked out in one worktree only. When a round's branch is
-  # still held by the slot of its previous round, `git checkout` in any other
-  # slot dies with "already used by worktree" after the label and the ledger
-  # were written (FXA-13674, 2026-09-21). Launch on the slot that holds it.
-  local held; held="$(git -C "$PIPE_REPO" worktree list --porcelain 2>/dev/null \
-    | awk -v b="refs/heads/$(worktree_branch_for "$key")" '$1=="worktree"{w=$2} $1=="branch"&&$2==b{print w}')"
-  if [ -n "$held" ] && [ "$(basename "$held")" != "$slot" ]; then
-    echo "NOTE: ${key}'s branch is checked out in $(basename "$held"); launching there instead of ${slot}." >&2
-    slot="$(basename "$held")"
-  fi
+  slot="$(_launch_slot_for "$key" "$slot")" || return 1
   # A UI change with a sibling *.stories.tsx should ask for /fxa-storybook-capture,
   # and the grounding pass forgets (FXA-14503 shipped a copy change with no
   # screenshot). Warn, do not refuse: the pass may have judged the change

@@ -570,6 +570,13 @@ _worktree_sync_to_origin() {
   # not. They are unpushed and unreviewed, and they were built on the stale base
   # we are here to correct. Reset, but name the sha: the reflog keeps it
   # reachable, so nothing is destroyed without a way back.
+  # A reset would also discard uncommitted edits, which the reflog cannot bring
+  # back. Stop and let a person decide.
+  if [ -n "$(worktree_filtered_status "$path")" ]; then
+    echo "ERROR: ${branch} in ${path} diverged from origin and has uncommitted changes." >&2
+    echo "       Refusing to reset. Commit, stash, or discard them, then relaunch." >&2
+    return 1
+  fi
   local ahead
   ahead="$(git -C "$path" rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo '?')"
   echo "WARN: ${branch} has ${ahead} local commit(s) that origin does not, and cannot fast-forward." >&2
