@@ -93,8 +93,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events} from the runner transcript
   diff <key>                   The runner's working diff, untracked files included
-  finish --session <key>       WRITE: wrap-up turn, then commit in a throwaway worktree,
-                               push, and open a draft PR
+  finish --session <key>       WRITE: in the background, a wrap-up turn, then commit in a
+                               throwaway worktree and open a draft PR; events reports it
   session list | show <key>    Read session records
 
 PIPELINE COMMANDS:
@@ -1982,11 +1982,11 @@ EOF
   # repo there and shipping its files into the runner.
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BRANCH="$key" \
     agent_run "$dir" "$name" "$(_session_first_prompt)" || { session_set "$key" state failed; return 1; }
-  session_set "$key" state active
+  session_set "$key" state active turn_open 1 turn_started "$(date +%s)"
 }
 
 cmd_steer() {
-  local key="${1:-}" file=""
+  local key="${1:-}" file="" q
   [ "${2:-}" = --message-file ] && file="${3:-}"
   _session_key "$key" || return 1
   [ -s "$file" ] || { echo "ERROR: steer needs --message-file <non-empty file>" >&2; return 1; }
@@ -1994,12 +1994,16 @@ cmd_steer() {
     starting|active) ;;
     *) echo "ERROR: ${key} is $(session_get "$key" state); it takes no messages" >&2; return 1 ;;
   esac
-  # Queue while booting or mid-turn; events delivers the queue when the turn ends.
-  if [ "$(session_get "$key" state)" = starting ] || _session_turn_running "$key"; then
-    { cat "$file"; printf '\n\n'; } >> "${SESSION_DIR}/${key}.queue"
-    echo "${key} queued"; return 0
+  q="${SESSION_DIR}/${key}.queue"
+  # Queue while booting, mid-turn, or while another writer holds the session;
+  # events delivers the queue once no turn is open.
+  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; echo "${key} queued"; return 0; fi
+  if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
+    { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; echo "${key} queued"; return 0
   fi
-  _session_turn "$key" "$(cat "$file")" && echo "${key} started"
+  _session_turn "$key" "$(cat "$file")"; local rc=$?
+  _session_unlock "$key"
+  [ "$rc" -eq 0 ] && echo "${key} started"
 }
 
 cmd_events() {
@@ -2007,32 +2011,54 @@ cmd_events() {
   [ "${2:-}" = --since ] && since="${3:-0}"
   _session_key "$key" || return 1
   [[ "$since" =~ ^[0-9]+$ ]] || since=0
-  local state name tmp lines=0 events="[]"
+  local state name tmp lines=0 events="[]" open running=0
   state="$(session_get "$key" state)"; name="$(worktree_branch_for "$key")"
   case "$state" in
     failed)
       events="$(jq -n --arg t "$(grep -E 'ERROR' "${SESSION_DIR}/${key}.log" 2>/dev/null | tail -1)" '[{type: "error", text: $t}]')"
       session_set "$key" state stopped; state=stopped ;;
     active|wrapping)
+      open="$(session_get "$key" turn_open)"
+      # Ask before reading: once the process is gone, every line it wrote is on disk.
+      [ "$open" = 1 ] && _session_turn_running "$key" && running=1
       tmp="$(mktemp)"
       if vm_exec_as_agent "$name" "tail -n +$(( since + 1 )) /workspace/.fxa-auto-claude.jsonl" > "$tmp" 2>/dev/null; then
         # Count only whole lines; the last one may still be mid-write.
         lines="$(tr -cd '\n' < "$tmp" | wc -c | tr -d ' ')"
-        events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')"
+        [ "$lines" -gt 0 ] && events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')"
         local sid; sid="$(jq -r 'map(select(.type == "init"))[0].session_id // empty' <<< "$events")"
         [ -n "$sid" ] && [ -z "$(session_get "$key" claude_session_id)" ] && session_set "$key" claude_session_id "$sid"
         events="$(jq 'map(select(.type != "init"))' <<< "$events")"
+        if jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$events" >/dev/null; then
+          session_set "$key" turn_open 0; open=0
+        elif [ "$open" = 1 ] && [ "$running" = 0 ] && [ $(( $(date +%s) - $(session_get "$key" turn_started || echo 0) )) -gt 20 ]; then
+          # The process is gone and never wrote a result: auth, resume, or a crash.
+          events="$(jq '. + [{type: "error", text: "I stopped without replying. Send a message to try again."}]' <<< "$events")"
+          session_set "$key" turn_open 0; open=0
+        fi
+        # The Open PR job reports its own outcome; the wrap-up turn's reply is noise.
+        [ "$state" = wrapping ] && events="$(jq 'map(select(.type != "turn_end" and .type != "question"))' <<< "$events")"
       elif ! vm_is_running "$name" 2>/dev/null; then
         events='[{"type":"error","text":"The runner is gone (lifetime cap or deleted)."}]'
         session_set "$key" state stopped; state=stopped
       fi
       rm -f "$tmp"
-      # A turn just ended and messages are waiting: deliver them as one turn.
       local q="${SESSION_DIR}/${key}.queue"
-      if [ "$state" = active ] && [ -s "$q" ] && jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$events" >/dev/null; then
+      if [ "$state" = active ] && [ "$open" != 1 ] && [ -s "$q" ] && _session_lock "$key"; then
         _session_turn "$key" "$(cat "$q")" && rm -f "$q"
+        _session_unlock "$key"
+      fi ;;
+    pr_open)
+      if [ "$(session_get "$key" pr_announced)" != 1 ]; then
+        events="$(jq -n --arg u "$(session_get "$key" pr_url)" '[{type: "pr", url: $u}]')"
+        session_set "$key" pr_announced 1
       fi ;;
   esac
+  local err; err="$(session_get "$key" last_error)"
+  if [ -n "$err" ]; then
+    events="$(jq --arg t "$err" '. + [{type: "error", text: $t}]' <<< "$events")"
+    session_set "$key" last_error ""
+  fi
   jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" '{cursor: $c, state: $s, events: $e}'
 }
 
@@ -2043,32 +2069,49 @@ cmd_diff() {
     "cd /workspace && git diff HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'; git ls-files -o --exclude-standard -- . ':(exclude).fxa-*' ':(exclude)ai' | while read -r f; do git diff --no-index /dev/null \"\$f\"; done; true"
 }
 
-# finish --session: one wrap-up turn, then the normal host finish in a throwaway
-# worktree. Blocks.
+# finish --session: start the wrap-up in the background and return. The job
+# reports through events (a pr event, or an error), so a bot restart loses nothing.
 _finish_session() {
-  local key="$1" name deadline
+  local key="$1"
   _session_key "$key" || return 1
-  [ "$(session_get "$key" state)" = active ] || { echo "ERROR: ${key} is $(session_get "$key" state)" >&2; return 1; }
-  name="$(worktree_branch_for "$key")"
-  _session_turn_running "$key" && { echo "ERROR: ${key} is mid-turn; try again when it replies" >&2; return 1; }
+  _session_lock "$key" || { echo "ERROR: ${key} is busy; try again in a moment" >&2; return 1; }
+  if [ "$(session_get "$key" state)" != active ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
+    echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
+    _session_unlock "$key"; return 1
+  fi
   session_set "$key" state wrapping
-  _session_turn "$key" "$(_session_wrapup_prompt "$key")" || { session_set "$key" state active; return 1; }
-  sleep 10
+  _session_unlock "$key"
+  nohup "$0" --backend gce session-finish "$key" > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
+  echo "${key} wrapping"
+}
+
+_session_finish_fail() {
+  local last; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
+  session_set "$1" state active last_error "Open PR failed: ${last:-$2}"
+  return 1
+}
+
+# One wrap-up turn, then the normal host finish in a throwaway worktree.
+_cmd_session_finish() {
+  local key="$1" name deadline tmp pr_url rc
+  name="$(worktree_branch_for "$key")"
+  _session_turn "$key" "$(_session_wrapup_prompt "$key")" || { _session_finish_fail "$key" "the wrap-up turn did not start"; return 1; }
+  sleep 20
   deadline=$(( $(date +%s) + 2700 ))
   while _session_turn_running "$key"; do
-    [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: wrap-up ran past 45 min" >&2; session_set "$key" state active; return 1; }
+    [ "$(date +%s)" -lt "$deadline" ] || { _session_finish_fail "$key" "the wrap-up ran past 45 min"; return 1; }
     sleep 15
   done
+  session_set "$key" turn_open 0
   vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null \
-    || { echo "ERROR: the wrap-up turn wrote no handoff file" >&2; session_set "$key" state active; return 1; }
-  local tmp pr_url rc
+    || { _session_finish_fail "$key" "the wrap-up turn wrote no handoff file"; return 1; }
   tmp="$(mktemp -d)/${key}"
-  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; session_set "$key" state active; return 1; }
+  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; _session_finish_fail "$key" "could not stage the work"; return 1; }
   # Draft and no team review request by default: a person decides when it is ready.
   pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" true)"; rc=$?
   session_checkout_remove "$tmp"
-  [ "$rc" -eq 0 ] || { session_set "$key" state active; return 1; }
-  agent_stop "$name" >&2 || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
+  [ "$rc" -eq 0 ] && [ -n "$pr_url" ] || { _session_finish_fail "$key" "push or PR create failed"; return 1; }
+  agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
   session_set "$key" state pr_open pr_url "$pr_url"
   echo "$pr_url"
 }
@@ -2161,6 +2204,7 @@ main() {
     # Owner-steered sessions (Slack front door)
     task)       cmd_task "$@" ;;
     session-boot) _cmd_session_boot "$@" ;;
+    session-finish) _cmd_session_finish "$@" ;;
     steer)      cmd_steer "$@" ;;
     events)     cmd_events "$@" ;;
     diff)       cmd_diff "$@" ;;

@@ -99,8 +99,17 @@ STEER
   rm -rf "$tmp"
   [ "$rc" -eq 0 ] || return 1
   vm_exec_as_agent "$name" "nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null &" || return 1
-  session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))"
+  session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)"
 }
+
+# _session_lock <key>   One writer per session: steer, the queue drain, and Open PR
+# all start turns. A lock older than 2 min belongs to a crashed holder.
+_session_lock() {
+  local d="${SESSION_DIR}/$1.lock"
+  [ -d "$d" ] && [ $(( $(date +%s) - $(stat -f %m "$d") )) -gt 120 ] && rmdir "$d" 2>/dev/null
+  mkdir "$d" 2>/dev/null
+}
+_session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }
 
 # _session_turn_running <key>   0 running, 1 idle. A dropped tunnel reads as running,
 # so a message queues rather than starting a second writer on one session.

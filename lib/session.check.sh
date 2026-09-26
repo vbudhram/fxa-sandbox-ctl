@@ -61,4 +61,51 @@ session_stop agent-t1 2>/dev/null
 check "stop saves a patch" "diff --git a/a.txt b/a.txt" "$(cat "$tmp/agent-t1.patch")"
 check "stop deletes the runner" "stopped" "$(cat "$tmp/agent_stop" 2>/dev/null)"
 check "record says stopped" "stopped" "$(session_get agent-t1 state)"
+
+# Lock: one holder; a stale lock is taken over.
+_session_lock agent-t1 && check "first lock wins" "yes" yes
+check "second lock loses" "no" "$(_session_lock agent-t1 && echo yes || echo no)"
+touch -t 202001010000 "$tmp/agent-t1.lock"
+check "stale lock is taken over" "yes" "$(_session_lock agent-t1 && echo yes)"
+_session_unlock agent-t1
+
+# cmd_events against a stubbed runner.
+eval "$(sed -n '/^cmd_events() {/,/^}/p;/^_session_key() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+_session_key() { :; }
+RUNNER=""; RUNNING=1; TURNS_FILE="$tmp/turns"
+vm_exec_as_agent() { printf '%s' "$RUNNER"; }
+_session_turn_running() { [ "$RUNNING" = 1 ]; }
+_session_turn() { echo t >> "$TURNS_FILE"; session_set "$1" turn_open 1 turn_started "$(date +%s)"; }
+reset() { echo "{\"key\":\"agent-t2\",\"state\":\"active\",\"turn_open\":\"1\",\"turn_started\":\"$1\"}" > "$tmp/agent-t2.json"; rm -f "$tmp/agent-t2.queue" "$TURNS_FILE"; }
+
+reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1"}
+'; RUNNING=0
+out="$(cmd_events agent-t2 --since 0)"
+check "dead turn with no result is an error" "error" "$(jq -r '.events[0].type' <<< "$out")"
+check "dead turn closes the turn" "0" "$(session_get agent-t2 turn_open)"
+check "session id captured" "s1" "$(session_get agent-t2 claude_session_id)"
+
+reset "$(date +%s)"; RUNNING=0
+check "fresh turn gets a grace period" "0" "$(cmd_events agent-t2 --since 0 | jq '.events | length')"
+
+reset 0; RUNNING=1
+check "live turn with no result is quiet" "0" "$(cmd_events agent-t2 --since 0 | jq '.events | length')"
+
+reset 0; RUNNING=0; printf 'next\n' > "$tmp/agent-t2.queue"
+RUNNER='{"type":"result","result":"done\nstatus: ready"}
+{"type":"result","res'
+out="$(cmd_events agent-t2 --since 4)"
+check "cursor skips the half-written line" "5" "$(jq .cursor <<< "$out")"
+check "turn end closes the turn, then the queue drains" "1 1" "$(grep -c . "$TURNS_FILE") $(session_get agent-t2 turn_open)"
+check "queue file consumed" "gone" "$([ -e "$tmp/agent-t2.queue" ] || echo gone)"
+
+reset 0; session_set agent-t2 state wrapping; RUNNING=1
+RUNNER='{"type":"result","result":"wrapped\nstatus: ready"}
+'
+check "wrap-up reply is not shown" "0" "$(cmd_events agent-t2 --since 0 | jq '.events | length')"
+
+session_set agent-t2 state pr_open pr_url https://example.com/pull/1
+check "pr announced once" "pr 0" "$(cmd_events agent-t2 | jq -r '.events[0].type') $(cmd_events agent-t2 | jq '.events | length')"
+session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RUNNER=''
+check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
 exit "$fail"
