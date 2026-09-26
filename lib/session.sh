@@ -122,6 +122,26 @@ _session_turn_running() {
   [ "$rc" -ne 1 ]
 }
 
+# _session_activity   stream-json lines on stdin → what the agent did last, one line.
+_session_activity() {
+  jq -R -s -r 'split("\n") | map(fromjson? | select(.type == "assistant") | .message.content[]?)
+    | map(if .type == "tool_use" then .name + ": " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)
+          elif .type == "text" then .text else empty end)
+    | last // "" | gsub("\\s+"; " ") | .[0:90]' 2>/dev/null
+}
+
+# _session_boot_step <key>   The runner's boot progress in plain words.
+_session_boot_step() {
+  case "$(grep -E '^(Creating GCE|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Applying security|Shipping|Starting claude)' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1)" in
+    Creating*) echo "creating a runner" ;;
+    "Waiting for ssh"*) echo "waiting for the runner to boot" ;;
+    *checkout*|*infrastructure*|Pinning*) echo "checking out main" ;;
+    Applying*|Shipping*) echo "locking down the runner" ;;
+    Starting*) echo "starting the agent" ;;
+    *) echo "preparing" ;;
+  esac
+}
+
 # _session_parse   stream-json lines on stdin → event objects, one per line.
 _session_parse() {
   jq -c '

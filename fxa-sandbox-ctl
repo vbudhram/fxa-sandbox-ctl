@@ -2011,9 +2011,10 @@ cmd_events() {
   [ "${2:-}" = --since ] && since="${3:-0}"
   _session_key "$key" || return 1
   [[ "$since" =~ ^[0-9]+$ ]] || since=0
-  local state name tmp lines=0 events="[]" open running=0
+  local state name tmp lines=0 events="[]" open running=0 act=""
   state="$(session_get "$key" state)"; name="$(worktree_branch_for "$key")"
   case "$state" in
+    starting) act="$(_session_boot_step "$key")" ;;
     failed)
       events="$(jq -n --arg t "$(grep -E 'ERROR' "${SESSION_DIR}/${key}.log" 2>/dev/null | tail -1)" '[{type: "error", text: $t}]')"
       session_set "$key" state stopped; state=stopped ;;
@@ -2025,7 +2026,8 @@ cmd_events() {
       if vm_exec_as_agent "$name" "tail -n +$(( since + 1 )) /workspace/.fxa-auto-claude.jsonl" > "$tmp" 2>/dev/null; then
         # Count only whole lines; the last one may still be mid-write.
         lines="$(tr -cd '\n' < "$tmp" | wc -c | tr -d ' ')"
-        [ "$lines" -gt 0 ] && events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')"
+        [ "$lines" -gt 0 ] && events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')" \
+          && act="$(head -n "$lines" "$tmp" | _session_activity)"
         local sid; sid="$(jq -r 'map(select(.type == "init"))[0].session_id // empty' <<< "$events")"
         [ -n "$sid" ] && [ -z "$(session_get "$key" claude_session_id)" ] && session_set "$key" claude_session_id "$sid"
         events="$(jq 'map(select(.type != "init"))' <<< "$events")"
@@ -2059,7 +2061,11 @@ cmd_events() {
     events="$(jq --arg t "$err" '. + [{type: "error", text: $t}]' <<< "$events")"
     session_set "$key" last_error ""
   fi
-  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" '{cursor: $c, state: $s, events: $e}'
+  # busy: the agent owes a reply. The bot keeps a live status line while it is.
+  local busy=false
+  case "$state" in starting|wrapping) busy=true ;; active) [ "$(session_get "$key" turn_open)" = 1 ] && busy=true ;; esac
+  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" --argjson b "$busy" --arg a "$act" \
+    '{cursor: $c, state: $s, events: $e, activity: {busy: $b, text: (if $a == "" then null else $a end)}}'
 }
 
 cmd_diff() {
