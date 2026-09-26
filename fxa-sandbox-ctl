@@ -91,7 +91,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f>
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
-  events <key> --since <n>     JSON {cursor, state, events} from the runner transcript
+  events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
+  watch <key>                  Stream the running turn's steps as JSON lines until killed
   diff <key>                   The runner's working diff, untracked files included
   finish --session <key>       WRITE: in the background, a wrap-up turn, then commit in a
                                throwaway worktree and open a draft PR; events reports it
@@ -2213,6 +2214,7 @@ main() {
     session-finish) _cmd_session_finish "$@" ;;
     steer)      cmd_steer "$@" ;;
     events)     cmd_events "$@" ;;
+    watch)      _session_key "${1:-}" && _session_watch "$1" ;;
     diff)       cmd_diff "$@" ;;
     session)    cmd_session "$@" ;;
     help|--help|-h)

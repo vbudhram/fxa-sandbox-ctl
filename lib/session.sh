@@ -122,12 +122,23 @@ _session_turn_running() {
   [ "$rc" -ne 1 ]
 }
 
+# One assistant content block → one short line: a tool call, or what it said.
+_SESSION_STEP_JQ='if .type == "tool_use" then .name + ": " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)
+  elif .type == "text" then .text else empty end | gsub("\\s+"; " ") | .[0:90]'
+
 # _session_activity   stream-json lines on stdin → what the agent did last, one line.
 _session_activity() {
-  jq -R -s -r 'split("\n") | map(fromjson? | select(.type == "assistant") | .message.content[]?)
-    | map(if .type == "tool_use" then .name + ": " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)
-          elif .type == "text" then .text else empty end)
-    | last // "" | gsub("\\s+"; " ") | .[0:90]' 2>/dev/null
+  jq -R -s -r "split(\"\\n\") | map(fromjson? | select(.type == \"assistant\") | .message.content[]? | ${_SESSION_STEP_JQ}) | last // \"\"" 2>/dev/null
+}
+
+# _session_watch <key>   Stream the running turn as JSON lines, as they happen:
+# {type: "step", text} per tool call or message, {type: "result"} at the turn's end.
+# Runs until the caller kills it or the runner goes away.
+_session_watch() {
+  _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -n 0 -F /workspace/.fxa-auto-claude.jsonl 2>/dev/null' \
+    | jq --unbuffered -R -c "fromjson? | if .type == \"result\" then {type: \"result\"}
+        elif .type == \"assistant\" then (.message.content[]? | ${_SESSION_STEP_JQ} | {type: \"step\", text: .})
+        else empty end"
 }
 
 # _session_boot_step <key>   The runner's boot progress in plain words.
