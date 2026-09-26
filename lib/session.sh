@@ -42,6 +42,8 @@ request is a one-line change.
 Every turn, including later ones:
 - Do not commit or push, and do not run 'gh'. The host does that.
 - Run only the spec files beside what you change. CI runs the full suite.
+- To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
+  Files there are posted to the thread when your turn ends.
 - When you need a decision, list 2 to 4 choices, one per line, each starting 'OPTION: '.
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
@@ -176,6 +178,19 @@ _session_parse() {
         else {type: "turn_end", status: $status, text: $body} end
     elif .type == "system" and .subtype == "init" then {type: "init", session_id: .session_id}
     else empty end' 2>/dev/null
+}
+
+# session_media <key> <dir>   Copy the images and videos the agent saved in
+# /workspace/.fxa-auto-media into <dir>, and list them. Media types only, top
+# level only, under 20 MB each: the agent picks these names.
+session_media() {
+  local key="$1" out="$2"
+  mkdir -p "$out" || return 1
+  _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || exit 0
+    find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
+      -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" \) -print0 | tar -cf - --null -T -' \
+    | tar -xf - -C "$out" 2>/dev/null
+  find "$out" -maxdepth 1 -type f
 }
 
 # Sessions hold no pool slot. The run files are staged here and shipped to the

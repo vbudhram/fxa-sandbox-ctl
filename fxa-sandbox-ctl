@@ -93,6 +93,7 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
   watch <key>                  Stream the running turn's steps as JSON lines until killed
+  media <key> <dir>            Copy the agent's screenshots and videos into <dir>, and list them
   diff <key>                   The runner's working diff, untracked files included
   finish --session <key>       WRITE: in the background, a wrap-up turn, then commit in a
                                throwaway worktree and open a draft PR; events reports it
@@ -2215,6 +2216,7 @@ main() {
     steer)      cmd_steer "$@" ;;
     events)     cmd_events "$@" ;;
     watch)      _session_key "${1:-}" && _session_watch "$1" ;;
+    media)      _session_key "${1:-}" && [ -n "${2:-}" ] && session_media "$1" "$2" ;;
     diff)       cmd_diff "$@" ;;
     session)    cmd_session "$@" ;;
     help|--help|-h)
