@@ -10,6 +10,7 @@ check() { # check <name> <want> <got>
 
 eval "$(sed -n '/^_setup_egress_firewall() {/,/^}/p' "$(dirname "$0")/agent.sh")"
 FXA_EGRESS_ALLOW_ALL=0 FXA_EGRESS_CIDRS="" FXA_EGRESS_HOSTS="github.com"
+_github_meta_cidrs() { :; } # offline: no fetch of GitHub's published ranges
 
 # The remote script failed its reachability assert.
 vm_exec() { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; return 1; }
