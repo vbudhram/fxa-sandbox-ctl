@@ -164,8 +164,9 @@ _put_run_files() {
 #   GitHub serves any reachable sha, so this works before the branch is pushed.
 _gce_pin_runner_tree() {
   local name="$1" slot="$2" sha branch got
-  sha="$(git -C "$slot" rev-parse HEAD)" || return 1
-  branch="$(git -C "$slot" rev-parse --abbrev-ref HEAD)" || return 1
+  # A session has no slot; it names the commit and branch itself.
+  sha="${FXA_PIN_SHA:-$(git -C "$slot" rev-parse HEAD)}" || return 1
+  branch="${FXA_PIN_BRANCH:-$(git -C "$slot" rev-parse --abbrev-ref HEAD)}" || return 1
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
   # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
   # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned

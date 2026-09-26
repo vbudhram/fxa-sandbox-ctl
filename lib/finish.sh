@@ -636,7 +636,7 @@ _finish_push_and_pr() {
   # ${arr[@]+"${arr[@]}"} — bash 3.2 under `set -u` treats a bare "${arr[@]}"
   # on an empty array as an unbound variable, which would break every PR that
   # has no media.
-  pr_url="$(cd "$worktree" && gh pr create \
+  pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
     --base "${FXA_WORKTREE_BASE:-main}" \
     --head "$branch" \
     --title "$pr_title" \
@@ -648,7 +648,7 @@ _finish_push_and_pr() {
     # either. The PR is worth more than its label or its screenshots.
     echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it or media." >&2
     echo "$pr_url" >&2
-    pr_url="$(cd "$worktree" && gh pr create \
+    pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
       --base "${FXA_WORKTREE_BASE:-main}" \
       --head "$branch" \
       --title "$pr_title" \
