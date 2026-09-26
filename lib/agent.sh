@@ -41,7 +41,7 @@ runtime_load() {
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
-    fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck humanizer \
+    fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
     ponytail-review pr-review-typescript quick-review squash-commit
 }
 
@@ -478,7 +478,9 @@ _setup_claude_config() {
   done
 
   if [ "${#tar_items[@]}" -gt 0 ]; then
-    if tar -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
+    # --dereference: skills kept in a repo are symlinks here, and a link to a
+    # host path arrives on the runner dangling.
+    if tar --dereference -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
        && [ -s "$config_tar" ]; then
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip

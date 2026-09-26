@@ -54,10 +54,11 @@ You are inside a sandbox VM (Ubuntu 24.04 ARM64, Tart on Apple Silicon).
 ## Tests (verify services first)
   curl -sf http://localhost:9000/__heartbeat__ && echo "auth OK"
   curl -sf http://localhost:3030/ >/dev/null && echo "content OK"
-  cd /workspace/packages/functional-tests && npx playwright test --project=local   # 2 workers, keep it
+  cd /workspace/packages/functional-tests && npx playwright test --project=local --workers=2   # config defaults to 4
   npx playwright test --project=local tests/signin/signIn.spec.ts
   # projects: local (firefox), local-chromium, local-payments-next. No "sandbox".
-  npx nx test-unit <package-name>
+  # Verify a change: /fxa-verify (right tests + lint per package; nx test-unit is a no-op for fxa-settings)
+  # One flow with video: /fxa-functional-local   Stack up/down/why: /fxa-stack
   npx nx lint <package-name>   # required for pipeline runs
   # WARNING: Do NOT set FXA_SANDBOX_IP inside the VM (host-only variable)
 

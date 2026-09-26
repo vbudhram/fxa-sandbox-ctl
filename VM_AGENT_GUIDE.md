@@ -95,7 +95,7 @@ cd /workspace/packages/functional-tests
 
 # Run all functional tests with the `local` project (Firefox against this VM's stack).
 # `local-chromium` and `local-payments-next` exist too. There is no `sandbox` project.
-npx playwright test --project=local   # two workers by default; do not raise it
+npx playwright test --project=local --workers=2   # the config defaults to 4; keep it at 2 or less
 
 # Run a specific test file
 npx playwright test --project=local tests/signin/signIn.spec.ts
@@ -155,17 +155,9 @@ Inside the VM, the inbox viewer is available at `http://localhost:3030/__inbox`.
 
 ### Running Functional Tests from the Host
 
-You can run Playwright functional tests from your Mac targeting the sandbox VM:
-
-```bash
-cd packages/functional-tests
-FXA_SANDBOX_IP=<VM_IP> yarn test-sandbox
-
-# Or run specific tests:
-FXA_SANDBOX_IP=<VM_IP> npx playwright test --project=sandbox tests/signin/signIn.spec.ts
-```
-
-The sandbox Playwright project uses `oauth_webchannel_v1` context and includes HSTS-disabling Firefox prefs (the sandbox auth server sends `strict-transport-security` headers over plain HTTP).
+The `sandbox` Playwright project and `yarn test-sandbox` no longer exist on main
+(the projects are `local`, `local-chromium`, and `local-payments-next`). Run
+functional tests inside the VM with the `/fxa-functional-local` skill.
 
 ### Architecture: nginx Reverse Proxy
 
@@ -313,7 +305,7 @@ All of these must be **visible in this conversation's transcript**, in order, be
 1. A short plan with root cause and proposed fix.
 2. Unit tests for changed packages run with zero failures.
 3. `npx nx lint <package>` passes for every modified package (one invocation per changed `packages/<name>/`). If your change adds a new `libs/*` package or changes imports across package boundaries, ALSO run `npx nx build <affected>` (e.g. a top-level consumer like `fxa-admin-server`) and require it to pass with 0 errors — unit tests + lint do NOT catch a broken build graph (a missing project reference for a new lib passes lint/unit but fails CI `Build`).
-4. Functional tests are skipped by default (the sandbox stack has open issues; the operator validates manually after merge). Unit tests + lint are sufficient. When the host launches you with `--functional-tests`, the stack is pre-warmed and step 4 becomes mandatory: `curl /__heartbeat__` to confirm it is up, then `yarn test-sandbox`, and save 1–2 Playwright screenshots or a video to `.fxa-auto-media/`. Playwright has no `--video` CLI flag: write `/workspace/.fxa-auto-playwright.ts` that imports the base config from `packages/functional-tests/playwright.config.ts` and sets `use: { video: 'on' }`, then run `npx playwright test --config /workspace/.fxa-auto-playwright.ts --project=sandbox <spec>` and copy the `.webm` from `test-results/` into `.fxa-auto-media/`.
+4. Functional tests are skipped by default (the sandbox stack has open issues; the operator validates manually after merge). Unit tests + lint are sufficient. When the host launches you with `--functional-tests`, the stack is pre-warmed and step 4 becomes mandatory: run the one spec that covers the flow with `/fxa-functional-local`, which starts the stack if needed, records video, and copies it from `/workspace/artifacts/functional/` into `.fxa-auto-media/`.
 5. `/code-simplifier`, then `/ponytail-review`, were invoked on the latest changes and every suggestion or cut applied (or declined with a one-line reason). ponytail-review hunts over-engineering only: dead flexibility, reinvented stdlib, single-implementation abstractions. Apply its `delete`, `stdlib`, `native`, `yagni` and `shrink` lines; the diff getting shorter is the goal.
 6. `/fxa-review-quick` reports no blocking issues. Fix any blockers and re-run.
 7. At least one commit ahead of `origin/main` with a scoped conventional subject. Before committing, run `git diff --stat origin/main..HEAD` and revert any unrelated files via `git checkout origin/main -- <path>`. Scope creep blocks the goal. You do NOT need to squash; the host orchestrator squashes and re-signs on push (the user's GPG signing key is not available inside the VM). The final remote commit uses `pr_title` from your handoff JSON as its subject.

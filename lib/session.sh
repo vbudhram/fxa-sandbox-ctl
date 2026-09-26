@@ -52,7 +52,8 @@ request is a one-line change.
 
 Every turn, including later ones:
 - Do not commit or push, and do not run 'gh'. The host does that.
-- Run only the spec files beside what you change. CI runs the full suite.
+- Verify with /fxa-verify: it runs the right tests and lint for each package.
+  For a UI flow use /fxa-functional-local; for the local stack, /fxa-stack.
 - To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
 - When you need a decision, list 2 to 4 choices, one per line, each starting 'OPTION: '.

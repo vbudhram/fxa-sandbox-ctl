@@ -665,13 +665,9 @@ _jira_render_prompt() {
 
   local step4
   if [ "$functional_tests" = "true" ]; then
-    step4="4. Functional tests are REQUIRED. The stack started at boot; wait until
-   'curl -sf http://localhost:9000/__heartbeat__' returns ok (up to 2 min).
-   From packages/functional-tests run ONLY the one spec that covers the
-   changed flow with '--project=local'; it must pass. Record it: write
-   /workspace/.fxa-auto-playwright.ts extending playwright.config.ts with
-   use: { video: 'on' }, pass it as --config, and copy the .webm from
-   test-results/ into /workspace/.fxa-auto-media/ for the host to attach."
+    step4="4. Functional tests are REQUIRED. Run the one spec that covers the
+   changed flow with $(runtime_skill_ref fxa-functional-local); it must PASS. It starts the stack
+   if needed, records video, and puts it in /workspace/.fxa-auto-media/."
   else
     step4="4. Functional tests are SKIPPED for this run (the sandbox stack has
    open issues; the operator will validate manually after merge). Do NOT run
@@ -685,9 +681,9 @@ _jira_render_prompt() {
 The goal is met only when ALL of these are TRUE and visible in this conversation:
 
 1. You have printed a short plan with the root cause and proposed fix.
-2. The spec files beside the files you changed have been run and show zero
-   failures. Never run a whole package suite: with the stack up it OOM-kills
-   this 8GB runner. CI runs the full suite.
+2. $(runtime_skill_ref fxa-verify) --run on your changes shows no FAIL and no NONE
+   for code you changed. Never run a whole package suite: it OOM-kills this
+   8GB runner. CI runs the full suite.
 3. Lint passes for every modified package. Detect changed packages from
    'git status --porcelain' (paths matching 'packages/<name>/'), then run
    'npx nx lint <package>' for each. Every invocation must exit 0; if any
