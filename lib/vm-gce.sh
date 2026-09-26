@@ -175,7 +175,21 @@ vm_wait_ready() {
 #   Same argv contract as `tart exec`: runs as root inside the instance.
 vm_exec() {
   local name="$1"; shift
+  if [ -n "${_VM_BATCH:-}" ]; then printf 'sudo %s\n' "$(printf '%q ' "$@")" >> "$_VM_BATCH"; return 0; fi
   _gce_ssh "$name" --command "sudo $(printf '%q ' "$@")"
+}
+
+# Each ssh through IAP costs about 1.5 s, and boot setup made about fourteen.
+# Only calls whose output and status nobody reads belong in a batch.
+vm_batch_start() { _VM_BATCH="$(mktemp)"; }
+vm_batch_flush() {
+  local name="$1" f="${_VM_BATCH:-}" rc=0
+  _VM_BATCH=""
+  [ -s "$f" ] && { _gce_ssh "$name" --command "bash -s" < "$f" >/dev/null 2>&1 || rc=$?; }
+  rm -f "$f"
+  # 255 is ssh failing to connect; anything else is a queued command's status,
+  # which each caller used to ignore with || true.
+  [ "$rc" -ne 255 ]
 }
 
 vm_exec_as_agent() {

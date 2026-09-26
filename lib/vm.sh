@@ -13,6 +13,12 @@ vm_name() {
   echo "${VM_PREFIX}-${name}"
 }
 
+# vm_batch_start / vm_batch_flush <name>
+#   gce queues vm_exec calls between these and runs them in one ssh. The default
+#   is a no-op, so on tart each vm_exec still runs at once.
+vm_batch_start() { :; }
+vm_batch_flush() { :; }
+
 # ── Backend selection ──────────────────────────────────────────
 
 # vm_backend_load

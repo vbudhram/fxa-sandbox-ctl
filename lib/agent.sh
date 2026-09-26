@@ -176,8 +176,8 @@ _gce_pin_runner_tree() {
     [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: /workspace never appeared on the runner." >&2; return 1; }
     sleep 5
   done
-  vm_exec "$name" sudo -u agent bash -c "cd /workspace && git fetch --quiet origin ${sha} && git checkout --quiet -B ${branch} ${sha}" 2>&1 | grep -v 'unable to resolve' >&2
-  got="$(vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git rev-parse HEAD' 2>/dev/null | tr -d '\r' | tail -1)"
+  # One ssh: fetch, check out, and read back the commit the runner is on.
+  got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && git fetch --quiet origin ${sha} && git checkout --quiet -B ${branch} ${sha}; git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)"
   if [ "$got" != "$sha" ]; then
     echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
     return 1
@@ -437,7 +437,7 @@ _setup_claude_config() {
       if scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
            "${VM_SSH_USER}@${ip}:/tmp/fxa-claude-config.tar" 2>/dev/null; then
         ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
-          tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/
+          mkdir -p /home/agent/.claude && tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/
           chmod -R +x /home/agent/.claude/hooks 2>/dev/null
           rm -f /tmp/fxa-claude-config.tar
         " 2>/dev/null || echo "  WARN: extracting claude config bundle in VM failed"
@@ -731,21 +731,20 @@ META
   # Step 6: Security hardening
   echo "Applying security hardening..."
 
-  # 6a: Disable proxy (for existing golden images with Squid baked in)
-  _disable_proxy_in_vm "$name"
-
-  # 6b: Egress firewall. A run that starts open is worse than no run.
+  # 6a: Egress firewall. A run that starts open is worse than no run. Its own
+  # ssh: the status and stderr decide whether the run starts.
   _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
 
-  # 6c: Disable SSH password auth (key-only access)
+  # 6b-6d and step 7 in one ssh: proxy off (older images bake Squid in),
+  # password auth off, sudo restricted, per-agent key installed. Flushed before
+  # the config step, whose bundle copy logs in with that key.
+  vm_batch_start
+  _disable_proxy_in_vm "$name"
   _harden_ssh "$name"
-
-  # 6d: Restrict sudo to specific commands
   _restrict_sudo "$name"
-
-  # Step 7: Install per-agent SSH key
   echo "Setting up SSH key..."
   _install_ssh_key "$name"
+  vm_batch_flush "$name" || { echo "ERROR: hardening did not reach the runner; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
 
   # Step 8: Fix git worktrees (worktree .git files reference host paths)
   if [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ]; then
@@ -761,7 +760,9 @@ META
   # Step 9: Runtime config and credentials. The runtime file owns both.
   runtime_load || return 1
   echo "Setting up ${FXA_AGENT_RUNTIME} config..."
-  runtime_setup_config "$name" || return 1
+  # The config writes and the screenrc below go in one ssh.
+  vm_batch_start
+  runtime_setup_config "$name" || { vm_batch_flush "$name"; return 1; }
   runtime_inject_auth "$workspace_dir" || return 1
 
   # Step 10: Start the agent inside a screen session in the VM
@@ -776,6 +777,7 @@ termcapinfo xterm* ti@:te@
 hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
 SCREENRC
   "
+  vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; vm_delete "$name"; return 1; }
 
   # The runtime owns the launch string and how the prompt reaches the agent.
   # Both run inside a screen session so attach/tail/alive behave the same for
