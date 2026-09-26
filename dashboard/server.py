@@ -133,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/tail":
             from urllib.parse import parse_qs, urlparse
             key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
-            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*-\d+", key):
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*-\d+|agent-[a-z0-9]{4,12}", key):
                 self._send(400, json.dumps({"error": "bad key"}), "application/json")
             else:
                 self._send(200, json.dumps({"key": key, "lines": agent_tail(key)}),

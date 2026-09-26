@@ -62,6 +62,10 @@ Use "$1" as the issue value.
 EOF
 }
 
+# _session_sh <name> <script>   Run a script on the runner as the agent user.
+# vm_exec_as_agent goes through `sudo -i`, which blanks $vars in the script.
+_session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
+
 # _session_ship <name> <file>...   Copy host files into /workspace as the agent,
 # over stdin. No chown -R: that walks node_modules on every turn.
 _session_ship() {

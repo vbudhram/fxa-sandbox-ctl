@@ -225,6 +225,42 @@ _snapshot_runner_row() {
     "$elapsed" "${files:-0}" "$stat_line" "$handoff" "$base_ok" "${agent:-null}"
 }
 
+# _snapshot_sessions <now>
+#   Owner-steered sessions from their records, plus what the agent is doing from
+#   its transcript on the runner. Ended sessions stay listed for a day.
+_snapshot_sessions() {
+  local now="$1" f tmp; tmp="$(mktemp -d)"
+  for f in "$SESSION_DIR"/agent-*.json; do
+    [ -f "$f" ] || continue
+    ( _snapshot_session_row "$f" "$now" > "${tmp}/$(basename "$f")" 2>/dev/null ) &
+  done
+  wait
+  cat "$tmp"/*.json 2>/dev/null | jq -s -c 'sort_by(-(.created // 0))' || echo '[]'
+  rm -rf "$tmp"
+}
+
+_snapshot_session_row() {
+  local f="$1" now="$2" key name agent=null alive=false t mtime
+  key="$(jq -r .key "$f")"; name="$(worktree_branch_for "$key")"
+  if ! session_live "$key"; then
+    [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -lt 86400 ] || return 0
+  elif vm_is_running "$name" 2>/dev/null; then
+    t="$(mktemp)"
+    # First line is the transcript's mtime on the runner: the local copy's is always now.
+    # ponytail: last 2000 events per feed, so cost_so_far undercounts a very long session.
+    _session_sh "$name" 'f=/workspace/.fxa-auto-claude.jsonl; stat -c %Y "$f" 2>/dev/null || echo 0; tail -n 2000 "$f" 2>/dev/null' > "$t" 2>/dev/null
+    mtime="$(head -1 "$t" | tr -dc '0-9')"
+    agent="$(tail -n +2 "$t" > "${t}.j"; _snapshot_agent_json "${t}.j" "$now")"
+    [ -n "$mtime" ] && [ "$mtime" -gt 0 ] && [ "$agent" != null ] && \
+      agent="$(jq -c --argjson i "$(( now > mtime ? now - mtime : 0 ))" '.idle_seconds = $i' <<< "$agent")"
+    rm -f "$t" "${t}.j"
+    agent_alive "$name" && alive=true
+  fi
+  jq -c --argjson agent "${agent:-null}" --argjson alive "$alive" \
+    --arg request "$(head -c 300 "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null)" \
+    '. + {agent: $agent, agent_alive: $alive, request: $request}' "$f"
+}
+
 # snapshot_agents_json
 #   The fast feed: every runner the host launched, what it is doing, and what
 #   the pool and the instances look like. No Jira, no GitHub. It costs one
@@ -264,17 +300,19 @@ snapshot_agents_json() {
   cap="$(cmd_launchcap 2>/dev/null || echo 0)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
   today="$(_snapshot_today)"
+  local sessions; sessions="$(_snapshot_sessions "$now")"
+  [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "sessions: $(( $(date +%s) - started ))s" >&2
   jq -n --arg at "$(date -u +%FT%TZ)" --argjson secs "$(( $(date +%s) - started ))" \
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
     --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
-    --argjson free "$free" --argjson today "$today" \
+    --argjson free "$free" --argjson today "$today" --argjson sessions "${sessions:-[]}" \
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
-       runners: $runners, today: $today }'
+       runners: $runners, sessions: $sessions, session_cap: '"${FXA_SESSION_MAX:-2}"', today: $today }'
 }
 
 # _snapshot_today

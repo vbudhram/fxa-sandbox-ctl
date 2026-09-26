@@ -2065,8 +2065,8 @@ cmd_events() {
 cmd_diff() {
   local key="${1:-}"; _session_key "$key" || return 1
   # The runner holds the work; untracked files matter as much as tracked ones.
-  vm_exec_as_agent "$(worktree_branch_for "$key")" \
-    "cd /workspace && git diff HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'; git ls-files -o --exclude-standard -- . ':(exclude).fxa-*' ':(exclude)ai' | while read -r f; do git diff --no-index /dev/null \"\$f\"; done; true"
+  _session_sh "$(worktree_branch_for "$key")" \
+    'cd /workspace && git diff HEAD -- . ":(exclude).fxa-*" ":(exclude)ai"; git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" ":(exclude)ai" | while read -r f; do git diff --no-index /dev/null "$f"; done; true'
 }
 
 # finish --session: start the wrap-up in the background and return. The job

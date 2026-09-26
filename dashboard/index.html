@@ -208,6 +208,7 @@
 
 <div class="grid">
   <section class="wide" id="s-agents"></section>
+  <section class="wide" id="s-sessions"></section>
   <section class="wide" id="s-review"></section>
   <section class="wide" id="s-queue"></section>
   <section id="s-pool"></section>
@@ -438,6 +439,7 @@ function renderAlerts() {
   });
   waiting.filter(t => t.stage !== "pr").forEach(t => add("bad", jira(t.key), t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no runner; reap it or relaunch"));
   const known = new Set(cards.map(c => c.name));
+  (g?.sessions ?? []).forEach(x => known.add(x.key)); // a session runner is agent-<key>
   (g?.instances ?? []).forEach(v => {
     const owned = known.has(v.name.replace(/^agent-/, ""));
     // The launcher writes the agent card only once ssh answers, about a minute in.
@@ -474,6 +476,44 @@ function renderAgents() {
           : `<span class="tag bad">no runner</span>`}</span></div>`).join("") : ""));
   cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
   TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
+}
+
+// Slack sessions: owner-steered, no ticket, no pool slot.
+const LIVE_SESSION = ["starting", "active", "wrapping"];
+function sessionCard(s) {
+  const a = s.agent || {}, live = LIVE_SESSION.includes(s.state);
+  const status = s.state === "starting" ? `<span class="tag run info">booting</span>`
+    : s.state === "wrapping" ? `<span class="tag run info">opening PR</span>`
+    : s.state === "pr_open" ? `<span class="tag ok">PR open</span>`
+    : s.state === "failed" ? `<span class="tag bad">boot failed</span>`
+    : s.state === "stopped" ? `<span class="tag">stopped</span>`
+    : s.agent_alive ? `<span class="tag run ok">working</span>`
+    : s.turn_open === "1" ? `<span class="tag bad">turn died</span>`
+    : `<span class="tag info">waiting on owner</span>`;
+  const cost = a.cost_usd ?? a.cost_so_far;
+  const age = Date.now() / 1000 - (s.created ?? Date.now() / 1000);
+  return `<div class="fac">
+    <div class="top"><span class="key">${esc(s.key)}</span>${titled(s.request || "")}
+      <span class="tags"><span class="tag">${short(Math.round(age))}</span>${status}</span></div>
+    <div class="stats">
+      <span>owner <b class="mono">${esc(s.owner || "?")}</b></span><span class="sep"></span>
+      <span><b>${esc(s.turns ?? 0)}</b> steer turn${s.turns === "1" ? "" : "s"}</span>
+      ${a.turns != null ? `<span><b>${a.turns}</b> agent turns</span>` : ""}
+      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b> so far</span>` : ""}
+      ${live && a.idle_seconds != null ? `<span>last event ${short(a.idle_seconds)} ago</span>` : ""}
+      ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))}</a>` : ""}
+    </div>
+    ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
+    ${live ? `<details data-k="term-${esc(s.key)}" id="term-${esc(s.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
+  </div>`;
+}
+function renderSessions() {
+  const ss = AGENTS?.sessions ?? [], live = ss.filter(s => LIVE_SESSION.includes(s.state));
+  document.getElementById("s-sessions").className = "wide" + (live.some(s => s.agent_alive) ? " running" : "");
+  put("s-sessions", head("sessions", AGENTS ? ss.length : "?", `${live.length} live · cap ${AGENTS?.session_cap ?? "?"}`, "slack, owner-steered") +
+    (ss.length === 0 ? `<div class="empty">no session in the last day</div>` : ss.map(sessionCard).join("")));
+  live.forEach(s => paintTail(s.key, s.agent_alive));
+  TAIL_KEYS = TAIL_KEYS.concat(live.map(s => s.key));
 }
 
 function renderTickets() {
@@ -562,7 +602,7 @@ function renderTab() {
 }
 
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderTickets(); renderPool(); renderToday(); renderTab();
+  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderPool(); renderToday(); renderTab();
 }
 
 async function poll() {
