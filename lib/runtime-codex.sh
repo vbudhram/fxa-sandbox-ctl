@@ -64,7 +64,7 @@ Project conventions: /workspace/ai/AGENTS.md.' | base64 | tr -d '\n')"
     ip="$(vm_ip "$name")"
     if scp -i "$ssh_key" ${VM_SSH_OPTS} "$skills_tar" "${VM_SSH_USER}@${ip}:/tmp/fxa-codex-skills.tar" 2>/dev/null; then
       ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
-        tar -xf /tmp/fxa-codex-skills.tar -C /home/agent/.codex/ && rm -f /tmp/fxa-codex-skills.tar
+        mkdir -p /home/agent/.codex && tar -xf /tmp/fxa-codex-skills.tar -C /home/agent/.codex/ && rm -f /tmp/fxa-codex-skills.tar
       " 2>/dev/null || echo "  WARN: extracting Codex skills in VM failed" >&2
     else
       echo "  WARN: scp of Codex skills failed" >&2

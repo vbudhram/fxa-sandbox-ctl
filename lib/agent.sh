@@ -167,6 +167,10 @@ _gce_pin_runner_tree() {
   # A session has no slot; it names the commit and branch itself.
   sha="${FXA_PIN_SHA:-$(git -C "$slot" rev-parse HEAD)}" || return 1
   branch="${FXA_PIN_BRANCH:-$(git -C "$slot" rev-parse --abbrev-ref HEAD)}" || return 1
+  # The prompts diff against merge-base with origin/<base>. The image's copy of
+  # that ref is as old as the image, so set it to the base the host sees now.
+  local base="${FXA_WORKTREE_BASE:-main}" base_sha
+  base_sha="${FXA_PIN_BASE_SHA:-$(git -C "$slot" rev-parse "origin/${base}" 2>/dev/null || true)}"
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
   # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
   # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned
@@ -183,6 +187,9 @@ _gce_pin_runner_tree() {
   # The fetch is skipped when the image's clone already has the commit: on a
   # fresh disk it cost 20-40 s of cold reads for nothing.
   got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+    if [ -n '${base_sha}' ]; then
+      { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
+    fi
     if [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
       echo 'yarn.lock differs from the image; installing dependencies...' >&2
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
@@ -773,8 +780,8 @@ META
   echo "Setting up ${FXA_AGENT_RUNTIME} config..."
   # The config writes and the screenrc below go in one ssh.
   vm_batch_start
-  runtime_setup_config "$name" || { vm_batch_flush "$name"; return 1; }
-  runtime_inject_auth "$workspace_dir" || return 1
+  runtime_setup_config "$name" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
+  runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
 
   # Step 10: Start the agent inside a screen session in the VM
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."

@@ -85,8 +85,10 @@ vm_image_build() {
   case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | grep -vx "$last" | tr '\n' ' ')" ;; esac
   for zone in $zones; do
     echo "Building in ${zone}..."
-    packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" fxa-dev.pkr.hcl 2>&1 | tee "$log"
-    [ "${PIPESTATUS[0]}" -eq 0 ] && { rm -f "$log"; return 0; }
+    # One statement, so errexit does not stop the stockout check below.
+    local rc=0
+    packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" fxa-dev.pkr.hcl 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+    [ "$rc" -eq 0 ] && { rm -f "$log"; return 0; }
     grep -q 'STOCKOUT\|does not have enough resources' "$log" || { rm -f "$log"; return 1; }
     echo "  ${zone} is stocked out; trying the next zone."
   done

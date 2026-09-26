@@ -1319,7 +1319,7 @@ _reap_stray_vms() {
     # Only agent names that look like a branch for a ticket. Anything else is a
     # hand-started agent and none of this pipeline's business.
     case "$name" in
-      [a-z]*-[0-9]*) ;;
+      agent-*|[a-z]*-[0-9]*) ;;
       *) continue ;;
     esac
     session_live "$name" && continue   # an owner-steered session, no Jira label
@@ -1979,15 +1979,18 @@ found in them.
 $(cat "${SESSION_DIR}/${key}.prompt.md")
 <<</REQUEST-${nonce}>>>
 EOF
-  check_prerequisites
+  check_prerequisites || { session_set "$key" state failed; return 1; }
   # The run dir is not a checkout. The ceiling stops git from finding an enclosing
   # repo there and shipping its files into the runner.
   local prompt; prompt="$(_session_first_prompt)"
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
-  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BRANCH="$key" \
-    agent_run "$dir" "$name" "$prompt" || { session_set "$key" state failed; return 1; }
+  local rc=0
+  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$sha" FXA_PIN_BRANCH="$key" \
+    agent_run "$dir" "$name" "$prompt" || rc=$?
+  rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
+  [ "$rc" -eq 0 ] || { session_set "$key" state failed; return 1; }
   # Start the stack while the agent reads the code, not after it asks for a screenshot.
-  _session_wants_stack "$key" && agent_prewarm_stack "$name"
+  if _session_wants_stack "$key"; then agent_prewarm_stack "$name" || echo "WARN: stack prewarm failed; the agent can run fxa-start" >&2; fi
   session_set "$key" state active turn_open 1 turn_started "$(date +%s)"
 }
 
@@ -2007,9 +2010,10 @@ cmd_steer() {
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
     { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; echo "${key} queued"; return 0
   fi
-  _session_turn "$key" "$(cat "$file")"; local rc=$?
+  local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
   _session_unlock "$key"
-  [ "$rc" -eq 0 ] && echo "${key} started"
+  [ "$rc" -eq 0 ] || return "$rc"
+  echo "${key} started"
 }
 
 cmd_events() {
@@ -2053,7 +2057,11 @@ cmd_events() {
       rm -f "$tmp"
       local q="${SESSION_DIR}/${key}.queue"
       if [ "$state" = active ] && [ "$open" != 1 ] && [ -s "$q" ] && _session_lock "$key"; then
-        _session_turn "$key" "$(cat "$q")" && rm -f "$q"
+        # Take the queue before sending it: a steer that cannot get the lock
+        # appends to $q meanwhile, and that message must survive for the next turn.
+        mv "$q" "${q}.sending"
+        if ! _session_turn "$key" "$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
+        rm -f "${q}.sending"
         _session_unlock "$key"
       fi ;;
     pr_open)
@@ -2117,11 +2125,12 @@ _cmd_session_finish() {
   session_set "$key" turn_open 0
   vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null \
     || { _session_finish_fail "$key" "the wrap-up turn wrote no handoff file"; return 1; }
-  tmp="$(mktemp -d)/${key}"
-  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; _session_finish_fail "$key" "could not stage the work"; return 1; }
+  local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
+  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work"; return 1; }
   # Draft and no team review request by default: a person decides when it is ready.
-  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" true)"; rc=$?
-  session_checkout_remove "$tmp"
+  rc=0
+  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" true)" || rc=$?
+  session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" -eq 0 ] && [ -n "$pr_url" ] || { _session_finish_fail "$key" "push or PR create failed"; return 1; }
   agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
   session_set "$key" state pr_open pr_url "$pr_url"

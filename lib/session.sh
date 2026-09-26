@@ -18,7 +18,16 @@ session_set() {
     filter="${filter} | .[\$k$#] = \$v$#"
     shift 2
   done
-  jq "${args[@]}" "$filter" "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+  # Serialized: events, steer, and the finish job all write the record, and a
+  # lost write can reopen a closed turn. Unique temp name, so writers never share it.
+  local lock="${f}.wlock" i=0 tmp rc=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    i=$(( i + 1 )); [ "$i" -lt 50 ] || { rmdir "$lock" 2>/dev/null; i=0; }; sleep 0.1
+  done
+  tmp="$(mktemp "${f}.XXXXXX")"
+  jq "${args[@]}" "$filter" "$f" > "$tmp" && mv "$tmp" "$f" || { rc=1; rm -f "$tmp"; }
+  rmdir "$lock" 2>/dev/null
+  return "$rc"
 }
 # A session that still owns its runner. reap --stray must leave these alone.
 session_live() {
@@ -84,26 +93,27 @@ _session_turn() {
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then
-    sid="$(vm_exec_as_agent "$name" "grep -m1 '\"session_id\"' /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | jq -r '.session_id // empty' 2>/dev/null)"
+    sid="$(vm_exec_as_agent "$name" "grep -m1 '\"session_id\"' /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | jq -r '.session_id // empty' 2>/dev/null || true)"
     [ -n "$sid" ] || { echo "ERROR: ${key}: no Claude session id on the runner yet." >&2; return 1; }
     session_set "$key" claude_session_id "$sid"
   fi
   tmp="$(mktemp -d)"
+  # Every exit below removes $tmp: it holds a copy of the OAuth token.
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
     printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is unset}" > "${tmp}/.fxa-auto-token"
+    # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace
-claude -p "\$(cat /workspace/.fxa-steer-msg.txt)" --resume ${sid} --permission-mode bypassPermissions \\
-  --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose 2>&1 \\
+claude -p --resume ${sid} --permission-mode bypassPermissions \\
+  --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
-  )
-  _session_ship "$name" "${tmp}/.fxa-steer-msg.txt" "${tmp}/.fxa-auto-token" "${tmp}/.fxa-steer.sh"; local rc=$?
+  ) || { rm -rf "$tmp"; return 1; }
+  _session_ship "$name" "${tmp}/.fxa-steer-msg.txt" "${tmp}/.fxa-auto-token" "${tmp}/.fxa-steer.sh" || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
-  [ "$rc" -eq 0 ] || return 1
   vm_exec_as_agent "$name" "nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null &" || return 1
   session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)"
 }
@@ -112,8 +122,14 @@ STEER
 # writes what it has on SIGINT, so the next --resume continues from there.
 session_interrupt() {
   [ "$(session_get "$1" turn_open)" = 1 ] || { echo "$1 idle"; return 0; }
-  _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '$(runtime_alive_pattern)' || true" >/dev/null 2>&1
+  _session_lock "$1" || { echo "ERROR: $1 is busy; try again in a moment" >&2; return 1; }
+  # Close the turn only once the process is gone: a steer that saw it closed
+  # early started a second claude on the same session.
+  _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '$(runtime_alive_pattern)'
+    for i in \$(seq 30); do pgrep -f '$(runtime_alive_pattern)' >/dev/null || exit 0; sleep 0.5; done
+    pkill -KILL -f '$(runtime_alive_pattern)'; true" >/dev/null 2>&1 || true
   session_set "$1" turn_open 0
+  _session_unlock "$1"
   echo "$1 interrupted"
 }
 
@@ -129,7 +145,7 @@ _session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }
 # _session_turn_running <key>   0 running, 1 idle. A dropped tunnel reads as running,
 # so a message queues rather than starting a second writer on one session.
 _session_turn_running() {
-  local rc; agent_alive "$(worktree_branch_for "$1")"; rc=$?
+  local rc=0; agent_alive "$(worktree_branch_for "$1")" || rc=$?
   [ "$rc" -ne 1 ]
 }
 
@@ -177,7 +193,7 @@ _session_boot_step() {
 
 # _session_parse   stream-json lines on stdin → event objects, one per line.
 _session_parse() {
-  jq -c '
+  jq -R -c 'fromjson? |
     if .type == "result" then
       (.result // "" | tostring) as $t
       | ($t | [scan("(?m)^status: *(needs-input|ready) *$")] | last // ["needs-input"] | .[0]) as $status
