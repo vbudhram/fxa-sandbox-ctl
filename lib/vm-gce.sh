@@ -100,8 +100,12 @@ vm_clone() {
   mkdir -p "${LOG_DIR}"
   # One zone holds about two of these; on a stockout move to the next zone in
   # the region and remember where the instance landed.
-  local zone
-  for zone in $FXA_GCE_ZONES; do
+  # A stockout lasts hours, so start with the zone the last launch landed in.
+  local zone zones last
+  last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
+  zones="$FXA_GCE_ZONES"
+  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | grep -vx "$last" | tr '\n' ' ')" ;; esac
+  for zone in $zones; do
     echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
         --machine-type "$FXA_GCE_MACHINE_TYPE" \
@@ -114,6 +118,7 @@ vm_clone() {
         --labels "fxa-agent=${name}" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
+      printf '%s' "$zone" > "${LOG_DIR}/last-good-zone"
       # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
       printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
         "$(vm_name "$name")" "$FXA_GCE_PROJECT" "$zone" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
@@ -179,13 +184,13 @@ vm_exec_as_agent() {
 }
 
 # vm_put <name> <local-tar> <remote-dir>
-#   Build the tar with COPYFILE_DISABLE=1 or macOS adds ._* AppleDouble files.
+#   Build the tar gzipped, with COPYFILE_DISABLE=1 or macOS adds ._* AppleDouble files.
 vm_put() {
   local name="$1" tar="$2" dir="$3"
-  # Trailing slash: /workspace is a symlink, and chown -R on the link itself
-  # changed nothing beneath it. Shipped files then belonged to the host user,
-  # and tee could not open the transcript the agent writes (FXA-14216).
-  _gce_ssh "$name" --command "sudo mkdir -p '${dir}' && sudo tar -xf - -C '${dir}' && sudo chown -R agent:agent '${dir%/}/'" < "$tar"
+  # Files must belong to the agent, or tee cannot open the transcript it writes.
+  # Extract as the agent, so nothing needs a chown: a chown -R here walked the
+  # whole clone, node_modules included, and cost most of a launch's shipping time.
+  _gce_ssh "$name" --command "sudo -u agent mkdir -p '${dir}' && sudo -u agent tar -xzf - -C '${dir}'" < "$tar"
 }
 
 # vm_pull_tree <name> <remote-dir> <local-dir>

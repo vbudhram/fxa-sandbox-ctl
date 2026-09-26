@@ -150,7 +150,7 @@ _put_run_files() {
   # "./" prefix: a relaunch ships agent-chosen filenames, and bsdtar reads a
   # leading dash as an option.
   local -a rel=(); for f in "${items[@]}"; do rel+=("./${f#./}"); done
-  ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -cf "$tar" -C "$slot" "${rel[@]}" ) || return 1
+  ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -czf "$tar" -C "$slot" "${rel[@]}" ) || return 1
   vm_put "$name" "$tar" /workspace; local rc=$?
   rm -f "$tar"
   [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-auto-deleted" ] && \
