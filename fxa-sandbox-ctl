@@ -99,6 +99,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   finish --session <key>       WRITE: in the background, a wrap-up turn, then commit in a
                                throwaway worktree and open a draft PR; events reports it
   session list | show <key>    Read session records
+  session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (1800);
+                               the work and conversation are saved, the runner is deleted
 
 PIPELINE COMMANDS:
   Drive a ticket-to-PR pipeline. Settings come from pipelines/<name>.conf;
@@ -1946,7 +1948,7 @@ cmd_task() {
   session_exists "$key" && { echo "ERROR: session ${key} already exists" >&2; return 1; }
   if [ -n "$resume_from" ]; then
     _session_key "$resume_from" || return 1
-    case "$(session_get "$resume_from" state)" in stopped|failed) ;; *) echo "ERROR: ${resume_from} is still live; stop it first" >&2; return 1 ;; esac
+    case "$(session_get "$resume_from" state)" in stopped|failed|paused) ;; *) echo "ERROR: ${resume_from} is still live; stop it first" >&2; return 1 ;; esac
   fi
   # ponytail: one cap for all sessions, separate from the pool's; per-owner caps when a second engineer joins.
   local live=0 f
@@ -2006,8 +2008,11 @@ EOF
   if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
   local rc=0
+  # A person steers a session, so its safety-net lifetime is longer than a
+  # pipeline run's; the idle pause, not this limit, is what bounds its cost.
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$key" \
-    FXA_CLAUDE_RESUME="$resume_sid" agent_run "$dir" "$name" "$prompt" || rc=$?
+    FXA_CLAUDE_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
+    agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz"
   rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
@@ -2180,7 +2185,8 @@ cmd_session() {
   case "${1:-list}" in
     list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
-    *) echo "Usage: session list | session show <key>" >&2; return 1 ;;
+    idle-sweep) session_idle_sweep ;;
+    *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac
 }
 

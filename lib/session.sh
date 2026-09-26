@@ -147,6 +147,26 @@ session_interrupt() {
   echo "$1 interrupted"
 }
 
+# session_idle_sweep   Pause every active session with no open turn, nothing
+# queued, and no activity for FXA_SESSION_IDLE_SECONDS. Stop saves the work
+# and the conversation, and deletes the runner; a reply resumes it.
+session_idle_sweep() {
+  local f key now idle="${FXA_SESSION_IDLE_SECONDS:-1800}"; now="$(date +%s)"
+  for f in "$SESSION_DIR"/agent-*.json; do
+    [ -f "$f" ] || continue
+    key="$(basename "$f" .json)"
+    [ "$(jq -r .state "$f")" = active ] && [ "$(jq -r '.turn_open // "0"' "$f")" != 1 ] || continue
+    [ -s "${SESSION_DIR}/${key}.queue" ] && continue
+    [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "$idle" ] || continue
+    _session_lock "$key" || continue
+    # Recheck under the lock: a steer may have just started a turn.
+    if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
+      if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"; else echo "pause-failed ${key}" >&2; fi
+    fi
+    _session_unlock "$key"
+  done
+}
+
 # _session_lock <key>   One writer per session: steer, the queue drain, and Open PR
 # all start turns. A lock older than 2 min belongs to a crashed holder.
 _session_lock() {
