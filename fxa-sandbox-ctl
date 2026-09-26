@@ -1982,8 +1982,12 @@ EOF
   check_prerequisites
   # The run dir is not a checkout. The ceiling stops git from finding an enclosing
   # repo there and shipping its files into the runner.
+  local prompt; prompt="$(_session_first_prompt)"
+  _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BRANCH="$key" \
-    agent_run "$dir" "$name" "$(_session_first_prompt)" || { session_set "$key" state failed; return 1; }
+    agent_run "$dir" "$name" "$prompt" || { session_set "$key" state failed; return 1; }
+  # Start the stack while the agent reads the code, not after it asks for a screenshot.
+  _session_wants_stack "$key" && agent_prewarm_stack "$name"
   session_set "$key" state active turn_open 1 turn_started "$(date +%s)"
 }
 

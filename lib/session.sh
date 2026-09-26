@@ -203,6 +203,16 @@ session_media() {
   find "$out" -maxdepth 1 -type f
 }
 
+# A request about how something looks needs the stack; starting it at boot
+# saves the agent the few minutes fxa-start takes.
+_session_wants_stack() {
+  grep -qiE 'screenshot|video|record|visual|look(s)? like|page|button|\bui\b|render|layout|style|css|storybook' \
+    "${SESSION_DIR}/$1.prompt.md" 2>/dev/null
+}
+_SESSION_STACK_NOTE='
+The FxA stack is starting in the background (log: /workspace/.fxa-auto-stack-start.log).
+Before you use it, wait until curl -sf http://localhost:9000/__heartbeat__ succeeds.'
+
 # Sessions hold no pool slot. The run files are staged here and shipped to the
 # runner; the runner holds the work until Open PR or stop.
 session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
