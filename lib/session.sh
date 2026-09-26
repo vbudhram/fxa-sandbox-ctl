@@ -93,16 +93,6 @@ EOF
 # vm_exec_as_agent goes through `sudo -i`, which blanks $vars in the script.
 _session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
 
-# _session_ship <name> <file>...   Copy host files into /workspace as the agent,
-# over stdin. No chown -R: that walks node_modules on every turn.
-_session_ship() {
-  local name="$1"; shift
-  local dir; dir="$(dirname "$1")"
-  local -a rel=(); local f; for f in "$@"; do rel+=("./$(basename "$f")"); done
-  COPYFILE_DISABLE=1 tar --no-xattrs -cf - -C "$dir" "${rel[@]}" \
-    | vm_exec "$name" sudo -u agent tar -xf - -C /workspace
-}
-
 # _session_turn <key> <message>   Start one resumed turn on the runner and return.
 _session_turn() {
   local key="$1" msg="$2" name sid tmp
@@ -120,6 +110,7 @@ _session_turn() {
     printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is unset}" > "${tmp}/.fxa-auto-token"
     # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
+export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace
@@ -128,9 +119,12 @@ claude -p --resume ${sid} --permission-mode bypassPermissions \\
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
   ) || { rm -rf "$tmp"; return 1; }
-  _session_ship "$name" "${tmp}/.fxa-steer-msg.txt" "${tmp}/.fxa-auto-token" "${tmp}/.fxa-steer.sh" || { rm -rf "$tmp"; return 1; }
+  # One ssh: unpack the files as the agent and start the turn. Two cost ~1.8 s more.
+  # Only the launch is backgrounded: a background job's stdin is /dev/null, so tar must not be in it.
+  ( cd "$tmp" && COPYFILE_DISABLE=1 tar --no-xattrs -cf - ./.fxa-steer-msg.txt ./.fxa-auto-token ./.fxa-steer.sh ) \
+    | vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xf - && { nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null & }' \
+    || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
-  vm_exec_as_agent "$name" "nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null &" || return 1
   session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)"
 }
 
