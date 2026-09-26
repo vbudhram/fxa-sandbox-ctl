@@ -190,6 +190,16 @@ session_media() {
     find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
       -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" \) -print0 | tar -cf - --null -T -' \
     | tar -xf - -C "$out" 2>/dev/null
+  # Playwright records WebM, which Slack does not play inline (iOS not at all).
+  # H.264 MP4 plays everywhere; the scale keeps both sides even, as x264 needs.
+  local f
+  if command -v ffmpeg >/dev/null 2>&1; then
+    for f in "$out"/*.webm; do
+      [ -f "$f" ] || continue
+      ffmpeg -nostdin -y -loglevel error -i "$f" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
+        -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -an "${f%.webm}.mp4" && rm -f "$f"
+    done
+  fi
   find "$out" -maxdepth 1 -type f
 }
 
