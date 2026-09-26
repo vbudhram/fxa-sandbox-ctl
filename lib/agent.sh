@@ -176,8 +176,19 @@ _gce_pin_runner_tree() {
     [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: /workspace never appeared on the runner." >&2; return 1; }
     sleep 5
   done
-  # One ssh: fetch, check out, and read back the commit the runner is on.
-  got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && git fetch --quiet origin ${sha} && git checkout --quiet -B ${branch} ${sha}; git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)"
+  # One ssh: fetch, check out, install dependencies only when this commit's
+  # yarn.lock differs from the one baked into the image, and read back the
+  # commit. The boot unit used to install before this pin, against the branch
+  # tip, which is not always the commit the run is pinned to.
+  # The fetch is skipped when the image's clone already has the commit: on a
+  # fresh disk it cost 20-40 s of cold reads for nothing.
+  got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+    if [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
+      echo 'yarn.lock differs from the image; installing dependencies...' >&2
+      source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
+      (cd packages/functional-tests && npx playwright install chromium firefox > /tmp/fxa-pin-playwright.log 2>&1) || true
+    fi
+    git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)"
   if [ "$got" != "$sha" ]; then
     echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
     return 1
