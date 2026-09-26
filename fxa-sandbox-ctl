@@ -1931,9 +1931,10 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file=""
+  local source="" key="" owner="" prompt_file="" resume_from=""
   while [ $# -gt 0 ]; do
     case "$1" in
+      --resume-from) resume_from="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
       --owner) owner="$2"; shift 2 ;;
@@ -1947,6 +1948,10 @@ cmd_task() {
   # Runners must survive the host sleeping, and Tart runs on the host.
   [ "$FXA_VM_BACKEND" = gce ] || { echo "ERROR: sessions run on gce only; pass --backend gce" >&2; return 1; }
   session_exists "$key" && { echo "ERROR: session ${key} already exists" >&2; return 1; }
+  if [ -n "$resume_from" ]; then
+    _session_key "$resume_from" || return 1
+    case "$(session_get "$resume_from" state)" in stopped|failed) ;; *) echo "ERROR: ${resume_from} is still live; stop it first" >&2; return 1 ;; esac
+  fi
   # ponytail: one cap for all sessions, separate from the pool's; per-owner caps when a second engineer joins.
   local live=0 f
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
@@ -1956,6 +1961,7 @@ cmd_task() {
   jq -n --arg key "$key" --arg owner "$owner" \
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
+  [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   nohup "$0" --backend gce session-boot "$key" > "${SESSION_DIR}/${key}.log" 2>&1 &
   session_set "$key" job_pid "$!"
   echo "${key} starting"
@@ -1970,8 +1976,21 @@ _cmd_session_boot() {
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
     || { echo "ERROR: could not fetch origin/main" >&2; session_set "$key" state failed; return 1; }
+  # Resuming: start from the earlier session's base, so its patch applies, and
+  # continue its Claude conversation. The base for review diffs stays today's main.
+  local from base_sha="$sha" resume_sid=""
+  from="$(session_get "$key" resume_from)"
+  if [ -n "$from" ]; then
+    sha="$(session_get "$from" base_sha)"; sha="${sha:-$base_sha}"
+    [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
+    echo "Resuming ${from} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
+  fi
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"
+  if [ -n "$from" ]; then
+    [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
+    [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
+  fi
   nonce="$(openssl rand -hex 6)"
   cat > "${dir}/.fxa-jira-context.md" <<EOF
 # Session ${key}
@@ -1987,11 +2006,13 @@ EOF
   check_prerequisites || { session_set "$key" state failed; return 1; }
   # The run dir is not a checkout. The ceiling stops git from finding an enclosing
   # repo there and shipping its files into the runner.
-  local prompt; prompt="$(_session_first_prompt)"
+  local prompt
+  if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
   local rc=0
-  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$sha" FXA_PIN_BRANCH="$key" \
-    agent_run "$dir" "$name" "$prompt" || rc=$?
+  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$key" \
+    FXA_CLAUDE_RESUME="$resume_sid" agent_run "$dir" "$name" "$prompt" || rc=$?
+  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz"
   rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
   # Stopped while the runner booted: take it down instead of going active.

@@ -59,7 +59,7 @@ runtime_write_prompt() {
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace
-claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)" --permission-mode bypassPermissions \\
+claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5}${effort} --output-format stream-json --verbose 2>&1 \\
   | tee -a /workspace/.fxa-auto-claude.jsonl
 LAUNCH

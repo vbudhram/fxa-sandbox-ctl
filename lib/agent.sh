@@ -125,7 +125,7 @@ _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume-claude.tgz ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
@@ -156,6 +156,19 @@ _put_run_files() {
   [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-auto-deleted" ] && \
     vm_exec "$name" sudo -u agent bash -c 'cd /workspace && xargs rm -f < .fxa-auto-deleted; rm -f .fxa-auto-deleted' >/dev/null 2>&1
   rm -f "${slot}/.fxa-auto-deleted"
+  # A resumed session: restore the earlier Claude conversation and re-apply its
+  # work before the agent starts, so its first turn picks up where it stopped.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-claude.tgz" ]; then
+    vm_exec "$name" sudo -u agent bash -c 'tar -xzf /workspace/.fxa-resume-claude.tgz -C /home/agent && rm -f /workspace/.fxa-resume-claude.tgz' >/dev/null 2>&1 \
+      || echo "WARN: could not restore the earlier conversation." >&2
+  fi
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume.patch" ]; then
+    if vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git apply --whitespace=nowarn .fxa-resume.patch && rm -f .fxa-resume.patch' >/dev/null 2>&1; then
+      echo "Re-applied the earlier session's changes."
+    else
+      echo "WARN: the earlier changes did not apply cleanly; they are in /workspace/.fxa-resume.patch" >&2
+    fi
+  fi
   return $rc
 }
 
@@ -255,10 +268,14 @@ _setup_egress_firewall() {
     codex) hosts="$hosts api.openai.com chatgpt.com auth.openai.com" ;;
   esac
 
+  # GitHub serves github.com from more addresses than the fixed ranges, and DNS
+  # rotates among them; the check below then failed about one boot in six.
+  local cidrs="$FXA_EGRESS_CIDRS $(_github_meta_cidrs)"
+
   # Keep the script's stderr: the launch log is the only record of which
   # check refused the run, and the VM is deleted right after.
   local err rc=0
-  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$FXA_EGRESS_CIDRS" FXA_EGRESS_HOSTS="$hosts" bash -c '
+  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
 
@@ -312,7 +329,8 @@ _setup_egress_firewall() {
       if sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null; then
         echo "egress: agent user reached a non-allowlisted host; allowlist is not enforced" >&2; exit 1
       fi
-      sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null \
+      # Twice: a DNS change between the allow and the check is not a failure.
+      { sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null || { sleep 2; sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null; }; } \
         || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
     fi
   ' 2>&1 >/dev/null)" || rc=$?
@@ -330,6 +348,19 @@ _setup_egress_firewall() {
 FXA_EGRESS_ALLOW_ALL="${FXA_EGRESS_ALLOW_ALL:-0}"
 FXA_EGRESS_CIDRS="${FXA_EGRESS_CIDRS:-160.79.104.0/21 140.82.112.0/20 143.55.64.0/20 185.199.108.0/22 192.30.252.0/22}"
 FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev}"
+
+# _github_meta_cidrs   GitHub's published IPv4 ranges for web, API, and git,
+# cached for a day. Empty when the host cannot fetch them; the fixed ranges
+# above still apply then.
+_github_meta_cidrs() {
+  local cache="${LOG_DIR}/github-meta-cidrs"
+  if [ ! -s "$cache" ] || [ $(( $(date +%s) - $(stat -f %m "$cache") )) -gt 86400 ]; then
+    curl -sf --max-time 10 https://api.github.com/meta 2>/dev/null \
+      | jq -r '[.web[], .api[], .git[]] | unique | map(select(test(":") | not)) | join(" ")' > "${cache}.tmp" 2>/dev/null \
+      && [ -s "${cache}.tmp" ] && mv "${cache}.tmp" "$cache" || rm -f "${cache}.tmp"
+  fi
+  cat "$cache" 2>/dev/null || true
+}
 
 # ── Security: Disable proxy (for existing golden images) ──────
 

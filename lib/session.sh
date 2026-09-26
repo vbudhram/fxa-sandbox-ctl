@@ -61,6 +61,20 @@ Every turn, including later ones:
 EOF
 }
 
+# The first turn of a session that continues an earlier one in the same thread.
+# The conversation is restored, so this only says what changed underneath it.
+_session_resume_prompt() {
+  cat <<'EOF'
+The engineer came back to this thread, so you are on a new runner. This
+conversation and your earlier changes were carried over: run 'git status' and
+'git diff' to see them, and do not start over. If a change did not carry over,
+it is in /workspace/.fxa-resume.patch. The engineer's new message is in
+/workspace/.fxa-jira-context.md; read it, then continue.
+
+The same rules as before apply, including the final 'status:' line.
+EOF
+}
+
 _session_wrapup_prompt() {
   cat <<EOF
 The engineer asked to open a PR. Wrap up now:
@@ -258,6 +272,9 @@ session_stop() {
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
+    # The conversation too, so a later session in the thread can --resume it.
+    vm_exec_as_agent "$name" "tar -czf - -C /home/agent .claude/projects" > "${SESSION_DIR}/${key}.claude.tgz" 2>/dev/null || true
+    [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
   fi
   # No runner yet (still booting) is fine; a runner that will not go away is not.
   agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
