@@ -122,9 +122,20 @@ _session_turn_running() {
   [ "$rc" -ne 1 ]
 }
 
-# One assistant content block → one short line: a tool call, or what it said.
-_SESSION_STEP_JQ='if .type == "tool_use" then .name + ": " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)
-  elif .type == "text" then .text else empty end | gsub("\\s+"; " ") | .[0:90]'
+# One assistant content block → one short step title for what the agent does.
+# Its messages are not steps: the reply already shows them.
+_SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
+  | (($i.file_path // $i.path // "") | tostring | split("/") | last) as $f
+  | if .name == "Read" then "Reading " + $f
+    elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then "Editing " + $f
+    elif .name == "Grep" then "Searching for \"" + ($i.pattern // "" | tostring) + "\""
+    elif .name == "Glob" then "Finding files " + ($i.pattern // "" | tostring)
+    elif .name == "Bash" then "Running " + ($i.command // "" | tostring)
+    elif .name == "Task" or .name == "Agent" then "Delegating: " + ($i.description // "" | tostring)
+    elif .name == "TodoWrite" then "Updating the plan"
+    elif .name == "Skill" then "Using /" + ($i.skill // $i.command // "" | tostring)
+    else .name end
+  | gsub("\\s+"; " ") | .[0:90]'
 
 # _session_activity   stream-json lines on stdin → what the agent did last, one line.
 _session_activity() {
