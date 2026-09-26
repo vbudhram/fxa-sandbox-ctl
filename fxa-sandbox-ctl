@@ -1088,6 +1088,9 @@ cmd_logs() {
 
 cmd_stop() {
   if [ "${1:-}" = "--all" ]; then
+    local f; for f in "$SESSION_DIR"/agent-*.json; do
+      [ -f "$f" ] && session_live "$(basename "$f" .json)" && { session_stop "$(basename "$f" .json)" || true; }
+    done
     agent_stop_all
     return
   fi
@@ -1954,6 +1957,7 @@ cmd_task() {
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   nohup "$0" --backend gce session-boot "$key" > "${SESSION_DIR}/${key}.log" 2>&1 &
+  session_set "$key" job_pid "$!"
   echo "${key} starting"
 }
 
@@ -1961,6 +1965,7 @@ cmd_task() {
 _cmd_session_boot() {
   local key="$1" dir name nonce root sha
   name="$(worktree_branch_for "$key")"; dir="$(session_run_dir "$key")"
+  FXA_AGENT_RUNTIME=claude # steer runs claude --resume, so sessions are Claude only
   runtime_load || { session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
@@ -1988,7 +1993,9 @@ EOF
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$sha" FXA_PIN_BRANCH="$key" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
-  [ "$rc" -eq 0 ] || { session_set "$key" state failed; return 1; }
+  [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
+  # Stopped while the runner booted: take it down instead of going active.
+  if [ "$(session_get "$key" state)" != starting ]; then agent_stop "$name" >&2 || true; return 0; fi
   # Start the stack while the agent reads the code, not after it asks for a screenshot.
   if _session_wants_stack "$key"; then agent_prewarm_stack "$name" || echo "WARN: stack prewarm failed; the agent can run fxa-start" >&2; fi
   session_set "$key" state active turn_open 1 turn_started "$(date +%s)"
@@ -2023,6 +2030,14 @@ cmd_events() {
   [[ "$since" =~ ^[0-9]+$ ]] || since=0
   local state name tmp lines=0 events="[]" open running=0 act=""
   state="$(session_get "$key" state)"; name="$(worktree_branch_for "$key")"
+  # A boot or finish job that died (a host restart) would leave the state stuck.
+  local job; job="$(session_get "$key" job_pid)"
+  if [ -n "$job" ] && ! kill -0 "$job" 2>/dev/null; then
+    case "$state" in
+      starting) session_set "$key" state failed; state=failed ;;
+      wrapping) session_set "$key" state active last_error "Open PR stopped before it finished. Try again."; state=active ;;
+    esac
+  fi
   case "$state" in
     starting) act="$(_session_boot_step "$key")" ;;
     failed)
@@ -2059,9 +2074,12 @@ cmd_events() {
       if [ "$state" = active ] && [ "$open" != 1 ] && [ -s "$q" ] && _session_lock "$key"; then
         # Take the queue before sending it: a steer that cannot get the lock
         # appends to $q meanwhile, and that message must survive for the next turn.
-        mv "$q" "${q}.sending"
-        if ! _session_turn "$key" "$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
-        rm -f "${q}.sending"
+        # Recheck under the lock: another events or a steer may have got here first.
+        if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
+          mv "$q" "${q}.sending"
+          if ! _session_turn "$key" "$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
+          rm -f "${q}.sending"
+        fi
         _session_unlock "$key"
       fi ;;
     pr_open)
@@ -2102,6 +2120,7 @@ _finish_session() {
   session_set "$key" state wrapping
   _session_unlock "$key"
   nohup "$0" --backend gce session-finish "$key" > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
+  session_set "$key" job_pid "$!"
   echo "${key} wrapping"
 }
 
@@ -2114,6 +2133,9 @@ _session_finish_fail() {
 # One wrap-up turn, then the normal host finish in a throwaway worktree.
 _cmd_session_finish() {
   local key="$1" name deadline tmp pr_url rc
+  # The wrap-up prompt's handoff step comes from the runtime.
+  FXA_AGENT_RUNTIME=claude
+  runtime_load || { _session_finish_fail "$key" "could not load the runtime"; return 1; }
   name="$(worktree_branch_for "$key")"
   _session_turn "$key" "$(_session_wrapup_prompt "$key")" || { _session_finish_fail "$key" "the wrap-up turn did not start"; return 1; }
   sleep 20
@@ -2139,7 +2161,7 @@ _cmd_session_finish() {
 
 cmd_session() {
   case "${1:-list}" in
-    list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done ;;
+    list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     *) echo "Usage: session list | session show <key>" >&2; return 1 ;;
   esac
@@ -2230,7 +2252,7 @@ main() {
     events)     cmd_events "$@" ;;
     watch)      _session_key "${1:-}" && _session_watch "$1" ;;
     interrupt)  _session_key "${1:-}" && runtime_load && session_interrupt "$1" ;;
-    media)      _session_key "${1:-}" && [ -n "${2:-}" ] && session_media "$1" "$2" ;;
+    media)      [ -n "${2:-}" ] || { echo "Usage: media <key> <dir>" >&2; exit 1; }; _session_key "$1" && session_media "$1" "$2" ;;
     diff)       cmd_diff "$@" ;;
     session)    cmd_session "$@" ;;
     help|--help|-h)

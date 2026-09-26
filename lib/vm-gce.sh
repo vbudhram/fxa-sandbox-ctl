@@ -82,7 +82,7 @@ vm_image_build() {
   local zone last zones log; log="$(mktemp)"
   last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
   zones="$FXA_GCE_ZONES"
-  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | grep -vx "$last" | tr '\n' ' ')" ;; esac
+  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
   for zone in $zones; do
     echo "Building in ${zone}..."
     # One statement, so errexit does not stop the stockout check below.
@@ -120,7 +120,7 @@ vm_clone() {
   local zone zones last
   last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
   zones="$FXA_GCE_ZONES"
-  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | grep -vx "$last" | tr '\n' ' ')" ;; esac
+  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
   for zone in $zones; do
     echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \

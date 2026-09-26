@@ -20,13 +20,15 @@ session_set() {
   done
   # Serialized: events, steer, and the finish job all write the record, and a
   # lost write can reopen a closed turn. Unique temp name, so writers never share it.
-  local lock="${f}.wlock" i=0 tmp rc=0
+  # A lock older than 10 s belongs to a writer that died; a slow live one is waited for.
+  local lock="${f}.wlock" tmp rc=0
   while ! mkdir "$lock" 2>/dev/null; do
-    i=$(( i + 1 )); [ "$i" -lt 50 ] || { rmdir "$lock" 2>/dev/null; i=0; }; sleep 0.1
+    [ -d "$lock" ] && [ $(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) )) -gt 10 ] && rmdir "$lock" 2>/dev/null
+    sleep 0.1
   done
   tmp="$(mktemp "${f}.XXXXXX")"
   jq "${args[@]}" "$filter" "$f" > "$tmp" && mv "$tmp" "$f" || { rc=1; rm -f "$tmp"; }
-  rmdir "$lock" 2>/dev/null
+  rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
 # A session that still owns its runner. reap --stray must leave these alone.
@@ -125,9 +127,12 @@ session_interrupt() {
   _session_lock "$1" || { echo "ERROR: $1 is busy; try again in a moment" >&2; return 1; }
   # Close the turn only once the process is gone: a steer that saw it closed
   # early started a second claude on the same session.
+  local rc=0
   _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '$(runtime_alive_pattern)'
     for i in \$(seq 30); do pgrep -f '$(runtime_alive_pattern)' >/dev/null || exit 0; sleep 0.5; done
-    pkill -KILL -f '$(runtime_alive_pattern)'; true" >/dev/null 2>&1 || true
+    pkill -KILL -f '$(runtime_alive_pattern)'; true" >/dev/null 2>&1 || rc=$?
+  # The kill did not reach the runner: the turn is still open.
+  [ "$rc" -eq 0 ] || { _session_unlock "$1"; echo "ERROR: $1: could not reach the runner to interrupt" >&2; return 1; }
   session_set "$1" turn_open 0
   _session_unlock "$1"
   echo "$1 interrupted"
@@ -246,14 +251,17 @@ session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 # Resume and recovery apply it with `git apply --index`.
 session_stop() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
+  # First, so a boot still in progress sees it and takes its own runner down.
+  session_set "$key" state stopped
   if vm_is_running "$name" 2>/dev/null; then
     # ai/ is ignored on the host but not in the runner's clone; the runner is going away.
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
   fi
-  agent_stop "$name" >&2 || return 1
-  session_set "$key" state stopped
+  # No runner yet (still booting) is fine; a runner that will not go away is not.
+  agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
+  return 0
 }
 
 # session_checkout <key> <dir>   A throwaway worktree on the session branch at its

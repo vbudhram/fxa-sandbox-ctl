@@ -194,6 +194,8 @@ _snapshot_runner_row() {
   # shellcheck source=/dev/null
   source "$meta" 2>/dev/null
   [ -n "$NAME" ] && [ -n "$WORKSPACE" ] || return 0
+  # Session runners have their own rows; their run dir is not a checkout to pull into.
+  case "$WORKSPACE" in "${SESSION_DIR}"/*) return 0 ;; esac
   vm_is_running "$NAME" 2>/dev/null || return 0
   local key branch slot alive stage line files stat_line handoff agent base_ok head elapsed
   branch="$(git -C "$WORKSPACE" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
@@ -235,7 +237,8 @@ _snapshot_sessions() {
     ( _snapshot_session_row "$f" "$now" > "${tmp}/$(basename "$f")" 2>/dev/null ) &
   done
   wait
-  cat "$tmp"/*.json 2>/dev/null | jq -s -c 'sort_by(-(.created // 0))' || echo '[]'
+  # No rows is the normal case; cat's failure must not add a second [].
+  { cat "$tmp"/*.json 2>/dev/null || true; } | jq -s -c 'sort_by(-(.created // 0))'
   rm -rf "$tmp"
 }
 
@@ -248,7 +251,7 @@ _snapshot_session_row() {
     t="$(mktemp)"
     # First line is the transcript's mtime on the runner: the local copy's is always now.
     # ponytail: last 2000 events per feed, so cost_so_far undercounts a very long session.
-    _session_sh "$name" 'f=/workspace/.fxa-auto-claude.jsonl; stat -c %Y "$f" 2>/dev/null || echo 0; tail -n 2000 "$f" 2>/dev/null' > "$t" 2>/dev/null
+    _session_sh "$name" 'f=/workspace/.fxa-auto-claude.jsonl; stat -c %Y "$f" 2>/dev/null || echo 0; tail -n 2000 "$f" 2>/dev/null' > "$t" 2>/dev/null || true
     mtime="$(head -1 "$t" | tr -dc '0-9')"
     agent="$(tail -n +2 "$t" > "${t}.j"; _snapshot_agent_json "${t}.j" "$now")"
     [ -n "$mtime" ] && [ "$mtime" -gt 0 ] && [ "$agent" != null ] && \

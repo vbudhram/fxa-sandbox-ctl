@@ -170,7 +170,7 @@ _gce_pin_runner_tree() {
   # The prompts diff against merge-base with origin/<base>. The image's copy of
   # that ref is as old as the image, so set it to the base the host sees now.
   local base="${FXA_WORKTREE_BASE:-main}" base_sha
-  base_sha="${FXA_PIN_BASE_SHA:-$(git -C "$slot" rev-parse "origin/${base}" 2>/dev/null || true)}"
+  base_sha="${FXA_PIN_BASE_SHA:-$(git -C "$slot" rev-parse --verify -q "origin/${base}^{commit}" 2>/dev/null || true)}"
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
   # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
   # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned

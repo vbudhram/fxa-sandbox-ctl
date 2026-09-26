@@ -44,7 +44,9 @@ Read /etc/vm-agent-guide.md for the operations manual (port map, architecture, g
 Fallback quick-reference: /etc/vm-agent-context.md.
 Project conventions: /workspace/ai/AGENTS.md.' | base64 | tr -d '\n')"
 
-  vm_exec "$name" sudo bash -c "
+  # Its own ssh, outside agent_run's batch: a failed write must stop the launch,
+  # and a batched vm_exec always returns 0.
+  _VM_BATCH= vm_exec "$name" sudo bash -c "
     mkdir -p /home/agent/.codex/skills
     echo '${config_b64}' | base64 -d > /home/agent/.codex/config.toml
     echo '${agents_b64}' | base64 -d > /home/agent/.codex/AGENTS.md
