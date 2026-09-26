@@ -108,6 +108,15 @@ STEER
   session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)"
 }
 
+# session_interrupt <key>   Stop the running turn and keep the session. Claude
+# writes what it has on SIGINT, so the next --resume continues from there.
+session_interrupt() {
+  [ "$(session_get "$1" turn_open)" = 1 ] || { echo "$1 idle"; return 0; }
+  _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '$(runtime_alive_pattern)' || true" >/dev/null 2>&1
+  session_set "$1" turn_open 0
+  echo "$1 interrupted"
+}
+
 # _session_lock <key>   One writer per session: steer, the queue drain, and Open PR
 # all start turns. A lock older than 2 min belongs to a crashed holder.
 _session_lock() {
