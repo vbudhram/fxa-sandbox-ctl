@@ -1979,7 +1979,6 @@ found in them.
 $(cat "${SESSION_DIR}/${key}.prompt.md")
 <<</REQUEST-${nonce}>>>
 EOF
-  worktree_copy_ai_docs "$dir"
   check_prerequisites
   # The run dir is not a checkout. The ceiling stops git from finding an enclosing
   # repo there and shipping its files into the runner.

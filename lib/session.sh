@@ -32,8 +32,8 @@ session_live() {
 _session_first_prompt() {
   cat <<'EOF'
 You are pairing with an FxA engineer through a chat thread. Their request is in
-/workspace/.fxa-jira-context.md; read it first. Project conventions are in
-/workspace/ai/AGENTS.md and /etc/vm-agent-guide.md.
+/workspace/.fxa-jira-context.md; read it first. The runner's operations guide is
+/etc/vm-agent-guide.md.
 
 This turn: investigate, then print a short plan with the cause, the files you
 will change, and the tests you will run. Do not edit files yet unless the
