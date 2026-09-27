@@ -335,8 +335,8 @@
 
   /* ── pipeline lanes: one belt per ticket ── */
   #s-lanes { overflow-x:auto; }
-  .lanes { min-width:980px; }
-  .lanes .head, .lane .row { display:grid; grid-template-columns:260px minmax(0,1fr); align-items:center; }
+  .lanes { min-width:1040px; }
+  .lanes .head, .lane .row { display:grid; grid-template-columns:320px minmax(0,1fr); align-items:center; }
   .lanes .head { border-bottom:1px solid var(--line); padding-bottom:var(--s2); }
   .lanes .cols { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); text-align:center; }
   .lanes .cols b { display:block; font-size:var(--t-sub); } .lanes .cols span { font-size:var(--t-label); color:var(--faint); }
@@ -344,7 +344,8 @@
   .lane .row { min-height:68px; }
   .lane .row:hover { background:var(--bg); }
   .lane .who { display:flex; flex-direction:column; min-width:0; padding-right:var(--s3); }
-  .lane .who .t { font-size:var(--t-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lane .who .t { font-size:var(--t-sub); font-weight:500; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .lane .who .scope { font-size:10px; font-weight:600; padding:0 6px; border-radius:4px; background:var(--sunk); color:var(--dim); white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis; }
   .lane .who .m { display:flex; gap:var(--s2); align-items:center; font-size:var(--t-label); color:var(--faint); }
   .lane .track { position:relative; height:68px; }
   .lane .rail0, .lane .rail1 { position:absolute; left:0; top:50px; height:6px; border-radius:3px; }
@@ -360,7 +361,7 @@
   .lane.live .mark { border-color:var(--info); box-shadow:0 6px 16px color-mix(in srgb,var(--info) 22%,transparent); }
   .lane.live .mark .l1 { color:var(--info); } .lane.fix .mark .l1 { color:var(--bad); } .lane.warn .mark .l1 { color:var(--warn); } .lane.done .mark .l1 { color:var(--purple); }
   .lane.fix .mark { border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); } .lane.warn .mark { border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
-  .lane .out { margin:0 0 var(--s3) 260px; }
+  .lane .out { margin:0 0 var(--s3) 320px; }
   .lane .out summary { font-family:var(--mono); font-size:11px; color:var(--dim); }
   .lane .out .term-body { max-height:none; height:168px; background:#15141A; color:#E7E7E7; border-color:#32313C; }
   .lanes .legend { display:flex; flex-wrap:wrap; gap:var(--s4); padding-top:var(--s3); font-size:var(--t-label); color:var(--dim); }
@@ -925,15 +926,22 @@ function laneRows() {
   const order = { live:0, fix:1, warn:2, wait:3, done:4 };
   return rows.sort((x, y) => order[x.kind] - order[y.kind] || (y.age ?? 0) - (x.age ?? 0));
 }
+// "refactor(content-server): retire X" reads as "Retire X" with a content-server tag.
+function laneTitle(raw) {
+  const m = String(raw ?? "").match(/^(\w+)(?:\(([^)]+)\))?!?:\s*(.+)$/);
+  if (!m) return { text: raw ?? "", tag: "" };
+  return { text: m[3].charAt(0).toUpperCase() + m[3].slice(1), tag: m[2] || m[1] };
+}
 function laneHtml(r) {
   const t = r.t, x = (r.st + 0.5) / 9 * 100, c = LANE_COLOR[r.kind], repo = SNAP?.repo ?? "";
+  const title = laneTitle(t.summary || t.branch);
   const open = r.runner && (t.key in LANE_OUT ? LANE_OUT[t.key] : OUT_ALL);
   const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j <= r.st ? `border-color:${c};${j < r.st ? `background:${c}` : ""}` : ""}"></span>`).join("");
   return `<div class="lane ${r.kind}">
     <div class="row">
       <div class="who">
-        <span class="m">${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}</span>
-        <span class="t" title="${esc(t.summary || "")}">${esc(t.summary || t.branch || "")}</span>
+        <span class="m">${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}</span>
+        <span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span>
       </div>
       <div class="track">
         <span class="rail0"></span><span class="rail1${r.kind === "live" ? " run" : ""}" style="width:${x}%;background-color:${c}"></span>${stops}
