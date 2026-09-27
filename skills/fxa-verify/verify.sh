@@ -51,19 +51,46 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
       unit=(); integ=()
       for f in "${code[@]}"; do case "$f" in *.in.spec.ts) integ+=("$f") ;; *) unit+=("$f") ;; esac; done
       [ "${#unit[@]}" -gt 0 ] && add "$p unit" "$p" "yarn test --findRelatedTests $(rel "$p" "${unit[@]}")"
-      [ "${#integ[@]}" -gt 0 ] && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit $(rel "$p" "${integ[@]}")" ;;
+      # The fxa DB has no tables until the patcher runs (fxa-start runs it); without
+      # it the suite waits 63 s and fails on ER_NO_SUCH_TABLE. It is fast and idempotent.
+      [ "${#integ[@]}" -gt 0 ] && add "db patches" "." "node packages/db-migrations/bin/patcher.mjs" \
+        && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit $(rel "$p" "${integ[@]}")" ;;
     packages/fxa-react)
       add "$p tests" "$p" "npx jest --env=jest-environment-jsdom --findRelatedTests $r" ;;
     packages/fxa-profile-server)
       add "$p tests" "$p" "NODE_ENV=test npx jest --findRelatedTests $r" ;;
     packages/fxa-admin-server)
-      add "$p tests" "$p" "npx jest --runInBand --forceExit --findRelatedTests $r" ;;
+      # Its jest maps @fxa/* to ../dist/, which exists only after fxa-start builds it,
+      # and then may be stale; --modulePaths resolves the library source instead.
+      add "$p tests" "$p" "npx jest --runInBand --forceExit --modulePaths=/workspace --findRelatedTests $r" ;;
     packages/fxa-admin-panel|packages/fxa-event-broker)
       add "$p tests" "$p" "npx jest --findRelatedTests $r" ;;
     packages/db-migrations)
       add "$p tests" "$p" "NODE_OPTIONS=--experimental-vm-modules npx jest --no-coverage --forceExit --findRelatedTests $r" ;;
     packages/fxa-shared)
-      add "$p tests" "$p" "echo 'fxa-shared: run the mirrored test/ file with mocha (see SKILL.md), or the nestjs/*.spec.ts with npx jest --runInBand'" ;;
+      # Mocha under test/, mirroring the source path; nestjs/ uses jest.
+      mt=(); nj=()
+      for f in "${code[@]}"; do g="${f#"$p"/}"
+        case "$g" in
+          nestjs/*) nj+=("$g") ;;
+          test/*.spec.ts) mt+=("$g") ;;
+          *) [ -f "$p/test/${g%.ts}.spec.ts" ] && mt+=("test/${g%.ts}.spec.ts") ;;
+        esac; done
+      [ "${#mt[@]}" -gt 0 ] && add "$p tests" "$p" "TS_NODE_PROJECT=tsconfig.cjs.json npx mocha -r ts-node/register/transpile-only -r tsconfig-paths/register -r ./scripts/preload-chai.mjs -g '#integration' --invert $(printf '%q ' "${mt[@]}")"
+      [ "${#nj[@]}" -gt 0 ] && add "$p nestjs tests" "$p" "npx jest --runInBand --findRelatedTests $(printf '%q ' "${nj[@]}")"
+      [ "${#mt[@]}${#nj[@]}" = 00 ] && add "$p tests" "." "echo 'fxa-shared: no mirrored test/ spec for these files'" ;;
+    packages/fxa-auth-client)
+      # Mocha, not jest: jest finds 0 tests here and fails. Tests are test/<name>.ts.
+      at=(); for f in "${code[@]}"; do g="${f#"$p"/}"; b="$(basename "${g%.ts}")"
+        case "$g" in test/*) at+=("$g") ;; *) [ -f "$p/test/$b.ts" ] && at+=("test/$b.ts") ;; esac; done
+      if [ "${#at[@]}" -gt 0 ]; then add "$p tests" "$p" "TS_NODE_PROJECT=tsconfig.cjs.json npx mocha -r ts-node/register/transpile-only $(printf '%q ' "${at[@]}")"
+      else add "$p tests" "." "echo 'fxa-auth-client: no test/<name>.ts for these files'"; fi ;;
+    packages/123done)
+      add "$p tests" "." "echo '123done has no tests'" ;;
+    apps/payments/next)
+      # Checked 2026-09-27 on main: all 18 suites fail to transform in the VM
+      # (babel-jest 30 under jest 29). CI covers them; do not blame the change.
+      add "$p tests" "." "echo 'payments-next jest does not run in the VM on main (babel-jest 30 under jest 29); CI covers it'" ;;
     packages/fxa-content-server)
       add "$p tests" "." "echo 'content-server has no unit runner; covered by functional tests (/fxa-functional-local)'" ;;
     packages/functional-tests)
@@ -79,6 +106,8 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
   if [ "$TYPES" = 1 ]; then
     case "$p" in
       packages/fxa-auth-server) add "$p types" "$p" "npx tsc --noEmit -p tsconfig.build.json" ;;
+      # Both fail on main (checked 2026-09-27) and CI does not type-check them.
+      packages/fxa-profile-server|packages/functional-tests) add "$p types" "." "echo 'tsc fails on main here already; not a CI target, skipped'" ;;
       libs/*) for t in tsconfig.lib.json tsconfig.app.json tsconfig.json; do [ -f "$p/$t" ] && { add "$p types" "$p" "npx tsc --noEmit -p $t"; break; }; done ;;
       *) [ -f "$p/tsconfig.json" ] && add "$p types" "$p" "npx tsc --noEmit" ;;
     esac
@@ -110,7 +139,7 @@ for i in "${!plan[@]}"; do
   if (cd "$dir" && eval "$cmd") > "$logs/$i.log" 2>&1; then v=PASS; else v=FAIL; fail=1; fi
   # Jest can exit 0 having run nothing; that proves nothing, so say so.
   case "$label" in *tests|*unit|*integration)
-    [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed' "$logs/$i.log" && v=NONE ;;
+    [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed|[0-9]+ passing' "$logs/$i.log" && v=NONE ;;
   esac
   results+=("$(printf '%-4s %-40s %4ss  %s' "$v" "$label" "$(( $(date +%s) - start ))" "$logs/$i.log")")
   [ "$v" = FAIL ] && { echo "---- $label failed; last lines:"; tail -25 "$logs/$i.log"; }

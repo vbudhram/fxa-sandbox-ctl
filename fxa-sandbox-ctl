@@ -689,10 +689,8 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
 2. $(runtime_skill_ref fxa-verify) --run on your changes shows no FAIL and no NONE
    for code you changed. Never run a whole package suite: it OOM-kills this
    8GB runner. CI runs the full suite.
-3. Lint passes for every modified package. Detect changed packages from
-   'git status --porcelain' (paths matching 'packages/<name>/'), then run
-   'npx nx lint <package>' for each. Every invocation must exit 0; if any
-   reports errors, fix them and re-run before moving on.
+3. Lint passes on every changed file: the step 2 run lints them with eslint.
+   Fix every error and re-run.
 ${step4}
 5. $(runtime_skill_ref code-simplifier), $(runtime_skill_ref ponytail-review), then $(runtime_skill_ref fxa-unslop) Part 1 have been invoked on
    the latest changes and every simplification or cut they suggest has been

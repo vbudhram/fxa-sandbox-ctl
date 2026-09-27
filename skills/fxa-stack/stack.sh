@@ -46,7 +46,7 @@ diagnose() {
   local name pm
   for name in $down; do
     case "$name" in auth|inbox|profile|content) pm="$name" ;; settings) pm=settings-react ;;
-      admin-server) echo "== admin-server is down (not a pm2 app): tail /tmp/admin-start.log /tmp/admin-build.log"; tail -5 /tmp/admin-start.log 2>/dev/null; continue ;;
+      admin-server) echo "== admin-server is down: pm2 logs admin-server, /tmp/admin-start.log, /tmp/admin-build.log"; pm2 logs admin-server --lines 5 --nostream 2>/dev/null; tail -5 /tmp/admin-build.log 2>/dev/null; continue ;;
       mysql|redis|firestore|goaws) echo "== ${name} is down: journalctl -u ${name/redis/redis-server} -n 30 (firestore: firestore-emulator)"; continue ;; *) continue ;; esac
     echo "== ${name} is down (pm2 ${pm}: $(pm2 jlist 2>/dev/null | jq -r --arg n "$pm" '.[] | select(.name == $n) | .pm2_env.status' || echo unknown))"
     pm2 logs "$pm" --lines 15 --nostream --err 2>/dev/null | grep -v TAILING | tail -15

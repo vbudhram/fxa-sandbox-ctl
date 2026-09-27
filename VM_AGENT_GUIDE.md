@@ -23,8 +23,8 @@ started you. For FxA domain knowledge, read `/workspace/ai/AGENTS.md`.
 - **Network:** an allowlist. You can reach `api.anthropic.com`,
   `statsig.anthropic.com`, `registry.yarnpkg.com`, `registry.npmjs.org`,
   `github.com`, `api.github.com`, `codeload.github.com`,
-  `objects.githubusercontent.com`, `playwright.azureedge.net` and
-  `cdn.playwright.dev`. Codex runs also reach `api.openai.com`, `chatgpt.com`
+  `objects.githubusercontent.com`, `playwright.azureedge.net`,
+  `cdn.playwright.dev`, `pypi.org` and `files.pythonhosted.org`. Codex runs also reach `api.openai.com`, `chatgpt.com`
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
@@ -106,7 +106,8 @@ There is no `/goal`. A person steers you turn by turn.
 ## 4. Verify your change
 
 Use `/fxa-verify --run`. It runs the right tests and lint for each changed
-package, and only for the files you changed.
+package, and only for the files you changed. With no file paths it also
+checks changes an earlier run left on the slot, so read `git status` first.
 
 - Never run a whole package suite. `nx test-unit fxa-auth-server` runs every
   unit test and can run the 8GB machine out of memory. Do not run two auth
@@ -115,9 +116,15 @@ package, and only for the files you changed.
   present". The real command, from `packages/fxa-settings`, is
   `CI=true SKIP_PREFLIGHT_CHECK=true node scripts/test.js --watchAll=false --findRelatedTests <files>`.
   Without `CI=true` it starts in watch mode and never ends.
-- Run `npx nx lint <package>` for each package you changed. For a removal, a
-  rename or a changed signature, also type-check:
-  `npx tsc -p <project>/tsconfig.json --noEmit`.
+- Lint is `npx eslint <files>` from the package, which `/fxa-verify` runs in
+  a second or two. `npx nx lint <package>` works too, but is slower: for
+  auth, content and shared it first installs `glean_parser` from PyPI.
+- For a removal, a rename or a changed signature, also type-check with
+  `/fxa-verify --run --types`. By hand: `npx tsc --noEmit` in the package
+  (auth: `-p tsconfig.build.json`, 11 s and 2.5GB; a lib:
+  `-p tsconfig.lib.json`, about 1 s).
+- One auth test: `yarn test <spec> -t "<name>" --verbose` from
+  `packages/fxa-auth-server`.
 - Never run `nx reset`. It destroys the cache and slows every later step.
 - If one step runs longer than 10 minutes, stop it and say in your handoff that
   CI covers it. CI runs lint and the full suite anyway.
@@ -127,7 +134,11 @@ package, and only for the files you changed.
 ## 5. The local FxA stack
 
 Infrastructure starts at boot: MySQL 3306, Redis 6379, Firestore emulator
-9090, goaws (SNS and SQS stub) 4100. Check them with `mysql -u root -e 'SELECT 1'`,
+9090, goaws (SNS and SQS stub) 4100. The `fxa` database has no tables until
+the patcher runs: `fxa-start` runs it, and so does `/fxa-verify` before an auth
+integration test. By hand: `node packages/db-migrations/bin/patcher.mjs`
+(about 8 s). Without it, auth integration tests wait 63 s and fail on
+`ER_NO_SUCH_TABLE`; `REMOTE_TEST_LOGS=true` shows that error. Check them with `mysql -u root -e 'SELECT 1'`,
 `redis-cli ping`, and `ss -ltn | grep -E ':(9090|4100) '`. goaws answers
 `GET /` with 400, so `curl -f` reports it as down when it is up.
 
@@ -135,7 +146,7 @@ The FxA services do not start on their own. Start them only when you need
 them: in a pipeline run without functional tests, the goal tells you not to.
 
 ```bash
-fxa-start            # builds the admin server, starts everything (a few minutes)
+fxa-start            # builds the admin server, starts everything (about 100 s)
 fxa-start --status   # PM2 process list
 fxa-start --stop     # stop the services and nginx
 ```
@@ -148,9 +159,13 @@ fxa-start --stop     # stop the services and nginx
 | Settings dev server | 3000 | `curl -sf localhost:3000/` |
 | Profile server | 1111 | `curl -sf localhost:1111/__heartbeat__` |
 | 123done (test relying party) | 8080 (nginx) to 8081 | `curl -sf localhost:8080/` |
-| Admin server (test cleanup uses it) | 8095 | `ss -ltn \| grep ':8095 '`; logs in `/tmp/admin-start.log` |
+| Admin server (test cleanup uses it) | 8095 | `ss -ltn \| grep ':8095 '`; PM2 app `admin-server` |
 | mail_helper (captured email) | 9001 | `curl -s localhost:9001/mail/<address>` waits until mail arrives |
 | Cloud Tasks emulator | 8123 | `pm2 describe cloud-tasks-emulator` |
+
+The stack uses about 2.8GB: `settings-react` alone is 1.2GB. Logs are in
+`~/.pm2/logs/<name>-out.log` and `-error.log`, or `pm2 logs <name> --lines 50
+--nostream`.
 
 What is different from production:
 
@@ -180,8 +195,14 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
 
 - The projects are `local` (Firefox), `local-chromium` and
   `local-payments-next`. There is no `sandbox` project.
-- The config defaults to 4 workers. Set `PLAYWRIGHT_WORKERS=2`: each Firefox
-  worker costs about 1GB, and the stack needs the rest.
+- The config defaults to 4 workers. Set `PLAYWRIGHT_WORKERS=2`: with the stack
+  up, 2 workers peaked at 6.85GB of 7.9GB. Stop other jobs first.
+- A failed test keeps a trace in
+  `/workspace/artifacts/functional/<test>/trace.zip`.
+- Checked on main on 2026-09-27: `signIn.spec.ts` "servicesWithEmailVerification
+  RP gets exactly one verifyLoginCode email" fails here in its cleanup
+  ("Failed to cleanup account ... Incorrect password"). Treat it as a local
+  failure, not your change, unless you touched that flow.
 - Do not set `FXA_SANDBOX_IP` in the VM. Tests use `localhost`.
 - These specs cannot pass here, and CI covers them: OAuth relier flows through
   123done (`tests/oauth/*`, `loginHint*`, `relayIntegration`,

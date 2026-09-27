@@ -45,7 +45,7 @@ manual. Project conventions: /workspace/ai/AGENTS.md and /workspace/.claude/rule
 What trips agents most often:
 - You cannot commit or push, and there is no gh. The host commits your tree.
 - The host refuses changes to CI and tooling files and to frozen paths.
-- The network is an allowlist (OpenAI, npm and yarn, GitHub, Playwright).
+- The network is an allowlist (OpenAI, npm and yarn, PyPI, GitHub, Playwright).
 - Verify with the fxa-verify skill, never a whole package suite (it can run
   the machine out of memory). nx test-unit fxa-settings runs no tests.
 - The FxA services are not running. Start them with fxa-start only when needed.' | base64 | tr -d '\n')"

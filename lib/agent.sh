@@ -371,7 +371,7 @@ _setup_egress_firewall() {
 # restores open egress for a run that needs it.
 FXA_EGRESS_ALLOW_ALL="${FXA_EGRESS_ALLOW_ALL:-0}"
 FXA_EGRESS_CIDRS="${FXA_EGRESS_CIDRS:-160.79.104.0/21 140.82.112.0/20 143.55.64.0/20 185.199.108.0/22 192.30.252.0/22}"
-FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev}"
+FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev pypi.org files.pythonhosted.org}"
 
 # _github_meta_cidrs   GitHub's published IPv4 ranges for web, API, and git,
 # cached for a day. Empty when the host cannot fetch them; the fixed ranges
@@ -548,7 +548,7 @@ What trips agents most often:
   pushes your working tree. Revert a file with `git checkout -- <path>`.
 - The host refuses changes to CI and tooling files (`.github/`, `.circleci/`,
   `.husky/`, `_scripts/`, `package.json` scripts) and to frozen paths.
-- The network is an allowlist (Anthropic, npm and yarn, GitHub, Playwright).
+- The network is an allowlist (Anthropic, npm and yarn, PyPI, GitHub, Playwright).
   Any other host is refused.
 - Verify with `/fxa-verify --run`, never a whole package suite: it can run the
   8GB machine out of memory. `nx test-unit fxa-settings` runs no tests.
@@ -797,8 +797,10 @@ SCREENRC
     # The launch always runs .fxa-auto-launch.sh, so without a new prompt an
     # earlier run's script, prompt and ticket must go. On 2026-09-27 a plain
     # `run` on a pool slot started that slot's last ticket, FXA-14620, again.
+    # The token too: only the launch script reads and deletes it, so it would sit
+    # in the workspace in plain text and come back to the slot with each pull.
     rm -f "${workspace_dir}/.fxa-auto-launch.sh" "${workspace_dir}/.fxa-auto-prompt.txt" \
-      "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json"
+      "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json" "${workspace_dir}/.fxa-auto-token"
   fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; vm_delete "$name"; return 1; }
