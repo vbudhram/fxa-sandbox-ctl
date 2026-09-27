@@ -386,6 +386,13 @@
   .lane .who .t { font-size:var(--t-sub); font-weight:500; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .lane .who .scope { font-size:10px; font-weight:600; padding:0 6px; border-radius:4px; background:var(--sunk); color:var(--dim); white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis; }
   .lane .who .m { display:flex; gap:var(--s2); align-items:center; font-size:var(--t-label); color:var(--faint); }
+  svg.fox { flex:none; display:block; }
+  .tgl.sm { padding:1px 6px; font-size:var(--t-label); margin-left:2px; }
+  .ldet { margin:0 0 var(--s3) 320px; padding:var(--s3) var(--s4); border-radius:8px; background:var(--bg); border:1px solid var(--line);
+          display:flex; flex-wrap:wrap; gap:var(--s3) var(--s6); font-size:var(--t-sub); }
+  .ldet h3 { margin:0 0 4px; font:600 var(--t-label) var(--sans); color:var(--faint); text-transform:uppercase; letter-spacing:.05em; }
+  .ldet .kvs { display:flex; flex-wrap:wrap; gap:4px var(--s4); max-width:620px; } .ldet .kvs b { font-weight:600; color:var(--faint); margin-right:6px; }
+  .ldet .links { display:flex; gap:var(--s3); align-items:flex-end; margin-left:auto; } .ldet .links a { color:var(--link); }
   .lane .track { position:relative; height:68px; }
   .lane .rail0, .lane .rail1 { position:absolute; left:0; top:50px; height:6px; border-radius:3px; }
   .lane .rail0 { right:0; background:var(--sunk); }
@@ -431,6 +438,7 @@
 </head>
 <body>
 
+<template id="fox-tpl"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="fox-shell" x1=".15" y1="0" x2=".8" y2="1"><stop stop-color="var(--fox-highlight, #0090ED)"/><stop offset=".58" stop-color="var(--fox-primary, #0060DF)"/><stop offset="1" stop-color="var(--fox-shadow, #054096)"/></linearGradient><linearGradient id="fox-accent" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="var(--fox-accent-light, #AB71FF)"/><stop offset=".5" stop-color="var(--fox-accent, #9059FF)"/><stop offset="1" stop-color="var(--fox-accent-dark, #592ACB)"/></linearGradient><linearGradient id="fox-ear-inner" x2=".7" y2="1"><stop stop-color="var(--fox-accent-dark, #592ACB)"/><stop offset="1" stop-color="var(--fox-ear-shadow, #321C64)"/></linearGradient><linearGradient id="fox-glass" x1=".15" y1="0" x2=".7" y2="1"><stop stop-color="var(--fox-visor-light, #174A7D)"/><stop offset=".45" stop-color="var(--fox-visor, #09204D)"/><stop offset="1" stop-color="var(--fox-ink, #15141A)"/></linearGradient><linearGradient id="fox-cheek" x2=".7" y2="1"><stop stop-color="var(--fox-panel-light, #FFFFFF)"/><stop offset=".55" stop-color="var(--fox-panel, #F0F0F4)"/><stop offset="1" stop-color="var(--fox-panel-shadow, #C9CDDD)"/></linearGradient><linearGradient id="fox-nose" x2=".3" y2="1"><stop stop-color="var(--fox-nose-light, #414753)"/><stop offset=".48" stop-color="var(--fox-ink, #15141A)"/><stop offset="1" stop-color="#090D14"/></linearGradient><g id="fox-ear"><path d="M46 239C23 201 22 88 44 34Q54 10 78 20C125 39 174 97 190 156L132 239Z" fill="url(#fox-shell)"/><path d="M44 34Q53 16 69 23C100 41 130 91 154 146L113 214 46 239C25 197 26 82 44 34Z" fill="url(#fox-accent)"/><path d="M62 65Q70 45 84 66C113 99 139 143 144 166L105 212 59 220C45 183 44 109 62 65Z" fill="url(#fox-ear-inner)"/><path d="M54 33Q63 22 77 29C113 50 148 98 165 135" fill="none" stroke="var(--fox-highlight, #0090ED)" stroke-width="7" stroke-linecap="round" opacity=".7"/></g></defs><g id="fox-ears"><use href="#fox-ear"/><use href="#fox-ear" transform="translate(512 0) scale(-1 1)"/></g><g id="fox-shell-group"><path d="M29 278C43 243 64 187 102 151C146 108 183 91 256 91S366 108 410 151C448 187 469 243 483 278Q491 304 480 332C456 392 402 424 343 453Q303 481 256 483Q209 481 169 453C110 424 56 392 32 332Q21 304 29 278Z" fill="url(#fox-shell)"/><path d="M113 151C143 119 172 106 191 102L217 192Q224 226 256 226Q288 226 295 192L321 102C350 111 374 126 399 151L347 190Q303 211 283 246Q273 260 256 260Q239 260 229 246Q209 211 165 190Z" fill="var(--fox-highlight, #0090ED)" opacity=".82"/><path d="M175 108Q204 92 256 92Q308 92 337 108L303 192Q295 218 278 224L234 224Q217 218 209 192Z" fill="var(--fox-shadow, #054096)"/><path d="M179 103Q211 86 256 88Q301 86 333 103L300 184Q294 207 279 213Q256 216 233 213Q218 207 212 184Z" fill="url(#fox-accent)"/><path d="M184 104L216 184Q221 202 235 205" fill="none" stroke="var(--fox-accent-light, #AB71FF)" stroke-width="5" stroke-linecap="round" opacity=".65"/></g><g id="fox-visor-group"><path d="M79 210Q104 185 133 197Q184 208 225 246Q236 258 256 258Q276 258 287 246Q328 208 379 197Q408 185 433 210C455 235 459 283 449 315Q438 347 383 369L301 385Q256 396 211 385L129 369Q74 347 63 315C53 283 57 235 79 210Z" fill="var(--fox-ink, #15141A)"/><path d="M85 218Q105 199 133 210Q181 220 222 258Q235 271 256 271Q277 271 290 258Q331 220 379 210Q407 199 427 218C446 241 449 281 440 308Q429 338 379 357L299 376Q256 387 213 376L133 357Q83 338 72 308C63 281 66 241 85 218Z" fill="url(#fox-glass)"/><path d="M83 231Q101 208 123 218Q152 226 176 241" fill="none" stroke="var(--fox-visor-light, #174A7D)" stroke-width="8" stroke-linecap="round" opacity=".65"/></g><g id="fox-cheeks"><path d="M31 283Q42 272 66 268C67 311 81 331 120 347L184 374Q183 414 155 435C96 414 46 373 30 330Q20 299 31 283Z" fill="url(#fox-cheek)"/><path d="M31 283Q67 330 120 347Q157 359 184 374L178 395C112 375 67 337 31 300Z" fill="var(--fox-panel-light, #FFFFFF)" opacity=".6"/><path d="M481 283Q470 272 446 268C445 311 431 331 392 347L328 374Q329 414 357 435C416 414 466 373 482 330Q492 299 481 283Z" fill="url(#fox-cheek)"/><path d="M481 283Q445 330 392 347Q355 359 328 374L334 395C400 375 445 337 481 300Z" fill="var(--fox-panel-light, #FFFFFF)" opacity=".6"/></g><g id="fox-eyes" fill="var(--fox-eye, #00DDFF)" stroke="var(--fox-eye, #00DDFF)"><g id="fox-eye-left"><ellipse cx="166" cy="289" rx="19" ry="38" stroke="none"/><ellipse cx="162" cy="268" rx="9" ry="10" fill="var(--fox-eye-highlight, #AAF2FF)" stroke="none"/></g><path id="fox-eye-right" d="M360 266L323 289L360 311" fill="none" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/></g><g id="fox-muzzle"><path d="M185 375Q194 355 216 355L296 355Q318 355 327 375L344 424Q315 473 256 477Q197 473 168 424Z" fill="url(#fox-shell)"/><path d="M200 366Q218 359 256 360Q294 359 312 366" fill="none" stroke="var(--fox-highlight, #0090ED)" stroke-width="6" stroke-linecap="round"/><path d="M227 370Q256 366 285 370Q298 371 291 384L272 408Q265 416 256 416Q247 416 240 408L221 384Q214 371 227 370Z" fill="url(#fox-nose)" stroke="var(--fox-ink, #15141A)" stroke-width="3"/><path d="M230 375Q256 372 282 375" fill="none" stroke="var(--fox-nose-light, #414753)" stroke-width="5" stroke-linecap="round"/><path d="M258 444Q285 444 304 420" fill="none" stroke="var(--fox-ink, #15141A)" stroke-width="9" stroke-linecap="round"/></g></svg></template>
 <div class="app">
 <nav aria-label="Views">
   <h1><img src="/icon.png" alt="" width="36" height="36"><span class="brand">FxA Agent<span id="repo"></span></span></h1>
@@ -966,7 +974,7 @@ let STATS = null, STATS_AT = 0, STATS_RANGE = "all";
 async function loadStats() {
   if (STATS && Date.now() - STATS_AT < 60000) { renderStats(); return; }
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
-  renderStats();
+  renderStats(); if (LANE_DET.size) renderLanes();
 }
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
@@ -1006,6 +1014,60 @@ document.addEventListener("click", e => {
   if (!b) return;
   STATS_RANGE = b.dataset.range; LAST["s-stats"] = ""; renderStats();
 });
+
+// Each agent gets its own fox: the drawing's colours are CSS variables, set per
+// instance. The palette comes from the ticket key, so an agent keeps its look.
+const ACCENTS = {
+  "#9059FF": ["#AB71FF", "#592ACB", "#321C64"], "#0060DF": ["#0090ED", "#054096", "#09204D"],
+  "#7542E5": ["#AB71FF", "#45278D", "#321C64"], "#00B3F4": ["#80EBFF", "#0250BB", "#09204D"],
+  "#FF4AA2": ["#FF8AC5", "#C60084", "#50134B"], "#3AD5B3": ["#88FFD1", "#00736C", "#00736C"],
+};
+const FOX_PALETTES = [
+  { primary: "#0060DF", highlight: "#0090ED", shadow: "#054096", accents: ["#9059FF", "#FF4AA2", "#3AD5B3"] },
+  { primary: "#FF7139", highlight: "#FFA266", shadow: "#CC3D00", accents: ["#9059FF", "#0060DF", "#00B3F4"] },
+  { primary: "#00A49A", highlight: "#3AD5B3", shadow: "#00736C", accents: ["#0060DF", "#9059FF", "#FF4AA2"] },
+  { primary: "#E31587", highlight: "#FF6BBA", shadow: "#C60084", accents: ["#7542E5", "#00B3F4", "#3AD5B3"] },
+  { primary: "#952BB9", highlight: "#D74CF0", shadow: "#722291", accents: ["#00B3F4", "#3AD5B3", "#FF4AA2"] },
+  { primary: "#E27F2E", highlight: "#FFBD4F", shadow: "#C45A27", accents: ["#0060DF", "#7542E5", "#00B3F4"] },
+  { primary: "#7542E5", highlight: "#AB71FF", shadow: "#45278D", accents: ["#FF4AA2", "#3AD5B3", "#00B3F4"] },
+];
+function foxVars({ primary, highlight, shadow, accent }) {
+  const [light, dark, ear] = ACCENTS[accent] ?? [accent, accent, "#321C64"];
+  return { "--fox-primary": primary, "--fox-highlight": highlight, "--fox-shadow": shadow,
+           "--fox-accent": accent, "--fox-accent-light": light, "--fox-accent-dark": dark, "--fox-ear-shadow": ear };
+}
+// setFoxPalette(el, { primary, highlight, shadow, accent }) recolours a fox already on the page.
+function setFoxPalette(fox, palette) { Object.entries(foxVars(palette)).forEach(([k, v]) => fox.style.setProperty(k, v)); }
+const FOX_SVG = document.getElementById("fox-tpl").innerHTML;
+const FOX_LOOKS = FOX_PALETTES.flatMap(p => p.accents.map(accent => ({ ...p, accent })));
+const foxHash = seed => { let h = 0; for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+// Agents on screen get distinct looks. The body colour differs first (7 of
+// them), then the accent; each agent starts from its hashed choice. Sorted
+// keys keep the result the same from one refresh to the next.
+let FOX_SLOT = {};
+function assignFoxes(keys) {
+  FOX_SLOT = {}; const used = new Set(), bodies = new Map();
+  const P = FOX_PALETTES.length, A = 3;
+  [...new Set(keys)].sort().forEach(k => {
+    const h = foxHash(k);
+    let body = h % P;
+    const least = Math.min(...FOX_PALETTES.map((_, i) => bodies.get(i) ?? 0));
+    for (let n = 0; (bodies.get(body) ?? 0) > least && n < P; n++) body = (body + 1) % P;
+    let acc = Math.floor(h / P) % A;
+    for (let n = 0; used.has(body * A + acc) && n < A; n++) acc = (acc + 1) % A;
+    used.add(body * A + acc); bodies.set(body, (bodies.get(body) ?? 0) + 1);
+    FOX_SLOT[k] = body * A + acc;
+  });
+}
+let FOX_N = 0;
+function foxFor(seed, size = 22, cls = "") {
+  const look = FOX_LOOKS[FOX_SLOT[seed] ?? foxHash(seed) % FOX_LOOKS.length], p = look, accent = look.accent;
+  const style = Object.entries(foxVars({ ...p, accent })).map(([k, v]) => `${k}:${v}`).join(";");
+  // Gradient ids must be unique per copy, or every fox paints with the first one's colours.
+  const uid = `${String(seed).replace(/[^A-Za-z0-9]/g, "")}-${FOX_N++}`;
+  return FOX_SVG.replace(/id="(fox-[\w-]+)"/g, `id="$1-${uid}"`).replace(/url\(#(fox-[\w-]+)\)/g, `url(#$1-${uid})`).replace(/href="#(fox-[\w-]+)"/g, `href="#$1-${uid}"`)
+    .replace("<svg ", `<svg class="fox ${cls}" width="${size}" height="${size}" style="${style}" `);
+}
 
 // Pipeline lanes: one belt per ticket, from queue to merge. Runners come from
 // the agents feed; PRs past their runner come from the review feed.
@@ -1061,22 +1123,53 @@ function laneHtml(r) {
   return `<div class="lane ${r.kind}">
     <div class="row">
       <div class="who">
-        <span class="m">${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}</span>
+        <span class="m">${foxFor(t.key, 22, r.kind === "live" && r.runner ? "bob" : "")}${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}<button class="tgl sm" data-lanedet="${esc(t.key)}" aria-expanded="${LANE_DET.has(t.key)}">${LANE_DET.has(t.key) ? "Hide details" : "Details"}</button></span>
         <span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span>
       </div>
       <div class="track">
         <span class="rail0"></span><span class="rail1${r.kind === "live" ? " run" : ""}" style="width:${x}%;background-color:${c}"></span>${stops}
         <div class="mark" style="left:clamp(0px, calc(${x}% - 88px), calc(100% - 176px))">
-          <div class="l1">${r.kind === "live" && r.runner ? `<img class="bob" src="/icon.png" alt="" width="16" height="16">` : ""}${esc(r.l1)}</div>
+          <div class="l1">${r.kind === "live" && r.runner ? foxFor(t.key, 16, "bob") : ""}${esc(r.l1)}</div>
           <div class="l2">${esc(r.l2)}${r.checks ? checkBars(t) : ""}</div>
         </div>
       </div>
     </div>
+    ${LANE_DET.has(t.key) ? laneDetails(r) : ""}
     ${r.runner ? `<details class="out" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
   </div>`;
 }
+// Per-ticket details: the run log (via /api/stats), the PR, and a live agent.
+const LANE_DET = new Set();
+function laneDetails(r) {
+  const t = r.t, k = STATS?.tickets?.[t.key], a = t.agent || {}, repo = SNAP?.repo ?? "";
+  const kv = (label, v) => v == null || v === "" ? "" : `<span><b>${label}</b>${v}</span>`;
+  const kinds = k ? Object.entries(k.kinds).map(([n, c]) => `${c} ${esc(KIND[n] ?? n).toLowerCase()}`).join(" · ") : "";
+  const rv = t.review === "APPROVED" ? "approved" : t.review === "CHANGES_REQUESTED" ? "changes requested" : t.review === "REVIEW_REQUIRED" ? "review required" : t.review;
+  const groups = [
+    ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
+      kv("Median run", `${k.median_min} min`), kv("Files changed", k.files), kv("Last run", ago(Math.round((Date.now() - Date.parse(k.last)) / 1000))),
+      kv("Fix attempts", k.attempts), kv("Feedback rounds", k.feedback_rounds)] : [STATS ? `<span class="empty">no run recorded yet</span>` : `<span class="empty">loading…</span>`]],
+    ...(r.runner ? [["Now", [kv("Sandbox", `<span class="mono">${esc(t.name)}</span>${t.slot ? ` · ${esc(t.slot)}` : ""}`), kv("Elapsed", short(t.elapsed_seconds)),
+      kv("Model", a.model ? `<span class="mono">${esc(a.model)}</span>` : ""), kv("Cost so far", a.cost_so_far ? usd(a.cost_so_far) : ""),
+      kv("Tokens", a.tokens ? `${Math.round((a.tokens.in + a.tokens.out) / 1000)}k` : ""), kv("Turns", a.turns)]]] : []),
+    ...(t.pr ? [["Pull request", [kv("PR", prl(repo, t.pr)), kv("Checks", `${t.ok ?? 0} passed · ${t.fail ?? 0} failed · ${t.running ?? 0} running`),
+      kv("Review", esc(rv ?? "")), kv("Requested", esc((t.reviewers ?? []).map(x => x.replace(/^mozilla\//, "")).join(", "))),
+      kv("Last human review", t.last_human_review ? `${esc(t.last_human_review.login)} · ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : "none"),
+      kv("Opened", t.created ? ago(Math.round((Date.now() - Date.parse(t.created)) / 1000)) : ""), kv("Mergeable", esc((t.mergeable ?? "").toLowerCase()))]]] : []),
+  ];
+  return `<div class="ldet">${groups.map(([h, items]) => `<div><h3>${h}</h3><div class="kvs">${items.join("")}</div></div>`).join("")}
+    <div class="links"><a href="${JIRA}${encodeURIComponent(t.key)}" target="_blank" rel="noopener">Jira ↗</a>${t.pr ? `<a href="https://github.com/${esc(repo)}/pull/${t.pr}" target="_blank" rel="noopener">PR ↗</a><a href="https://github.com/${esc(repo)}/pull/${t.pr}/checks" target="_blank" rel="noopener">Checks ↗</a>` : ""}</div></div>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest?.("[data-lanedet]"); if (!b) return;
+  const k = b.dataset.lanedet; LANE_DET.has(k) ? LANE_DET.delete(k) : LANE_DET.add(k);
+  if (!STATS) loadStats();
+  renderLanes();
+});
 function renderLanes() {
-  const rows = laneRows(), live = rows.some(r => r.kind === "live" && r.runner);
+  const rows = laneRows();
+  assignFoxes(rows.map(r => r.t.key));
+  const live = rows.some(r => r.kind === "live" && r.runner);
   const q = SNAP?.queue ?? {}, ready = q.ready ?? [];
   const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length);
   counts[0] = ready.length;
@@ -1343,7 +1436,7 @@ function route() {
   const view = VIEWS.includes(v) ? v : "overview", tab = ["paused", "stopped"].includes(sub) ? sub : "live";
   SESS_TAB = tab; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(sel ?? "") ? sel : "";
   if (view === "sessions" && AGENTS) renderSess();
-  if (view === "stats") loadStats();
+  if (view === "stats" || view === "pipeline") loadStats();
   document.querySelectorAll("[data-views]").forEach(e => {
     const vs = e.dataset.views.split(" ");
     e.classList.toggle("on", vs.includes(view) || vs.includes(`${view}:${tab}`));
@@ -1358,7 +1451,7 @@ route();
 function render() {
   renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderLanes(); renderNeeds(); renderRunning(); renderSess();
   renderPool(); renderToday(); renderNav(); renderTab();
-  if (document.body.dataset.view === "stats") loadStats();
+  if (["stats", "pipeline"].includes(document.body.dataset.view)) loadStats();
 }
 
 async function poll() {

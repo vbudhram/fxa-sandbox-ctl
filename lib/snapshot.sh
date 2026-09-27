@@ -215,8 +215,27 @@ snapshot_stats_json() {
       kinds: ($all | group_by(.kind // "") | map({ kind: (.[0].kind // "not recorded"), runs: length,
                avg: (map(.cost_usd // 0) | add / length | r2), median_min: (map(.wall_seconds // 0) | med / 60 | round) }) | sort_by(-.runs)),
       top: ($all | group_by(.issue) | map({ issue: .[0].issue, cost: (map(.cost_usd // 0) | add | r2), runs: length }) | sort_by(-.cost) | .[0:5]),
-      models: ($all | map(.model // "") | map(select(. != "" and (startswith("<") | not))) | group_by(.) | map({ model: .[0], runs: length }) | sort_by(-.runs))
-    }' "$PIPE_RUNS_FILE"
+      models: ($all | map(.model // "") | map(select(. != "" and (startswith("<") | not))) | group_by(.) | map({ model: .[0], runs: length }) | sort_by(-.runs)),
+      tickets: ($all | group_by(.issue) | map({ key: .[0].issue, value: {
+        runs: length, cost: (map(.cost_usd // 0) | add | r2),
+        models: (map(.model // "") | map(select(. != "" and (startswith("<") | not))) | unique),
+        kinds: (group_by(.kind // "not recorded") | map({ key: (.[0].kind // "not recorded"), value: length }) | from_entries),
+        median_min: (map(.wall_seconds // 0) | med / 60 | round),
+        files: (sort_by(.recorded_at) | last | .files_changed // null),
+        last: (map(.recorded_at) | max) } }) | from_entries)
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds
+}
+
+# Fix attempts and feedback rounds live in the pipeline's state files.
+_stats_add_rounds() {
+  local rounds='{}' f k
+  for f in "${PIPE_STATE_DIR}"/*.attempts "${PIPE_STATE_DIR}"/*.feedback-rounds; do
+    [ -f "$f" ] || continue
+    k="$(basename "$f")"
+    rounds="$(jq -c --arg k "${k%%.*}" --arg what "${k#*.}" --argjson n "$(tr -dc '0-9' < "$f" || echo 0)" \
+      '.[$k][$what] = $n' <<< "$rounds")"
+  done
+  jq -c --argjson r "$rounds" '.tickets |= with_entries(.value += { attempts: ($r[.key].attempts // 0), feedback_rounds: ($r[.key]["feedback-rounds"] // 0) })'
 }
 
 _snapshot_telemetry() {
