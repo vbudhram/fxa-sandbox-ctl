@@ -29,7 +29,7 @@
     }
   }
   * { box-sizing:border-box; }
-  body { margin:0 auto; padding:var(--s4) var(--s4) 40px; max-width:1400px;
+  body { margin:0 auto; padding:var(--s4) var(--s4) 40px; max-width:1600px;
          background:var(--bg); color:var(--ink);
          font:var(--t-body)/1.5 var(--sans); -webkit-font-smoothing:antialiased; }
   a { color:inherit; text-decoration:none; }
@@ -178,6 +178,41 @@
   .slot.over .meter i { width:100%; background:var(--bad); opacity:.6; }
   .slot .r { display:flex; gap:5px; align-items:center; }
 
+  /* ── app shell: side navigation, one view at a time ── */
+  .app { display:grid; grid-template-columns:196px minmax(0,1fr); gap:var(--s4); align-items:start; }
+  .app > * { min-width:0; }
+  nav { position:sticky; top:var(--s4); display:flex; flex-direction:column; gap:2px; }
+  nav h1 { font-size:var(--t-body); font-weight:650; margin:0 0 var(--s3); padding:0 var(--s3); letter-spacing:-.01em; }
+  nav h1 span { display:block; color:var(--faint); font-weight:400; font-size:var(--t-sub); }
+  nav a { display:flex; align-items:center; gap:var(--s2); padding:var(--s2) var(--s3); border-radius:var(--r-sm);
+          color:var(--dim); font-weight:500; }
+  nav a:hover { text-decoration:none; background:var(--sunk); color:var(--ink); }
+  nav a.on { background:var(--panel); color:var(--ink); border:1px solid var(--line); padding:calc(var(--s2) - 1px) calc(var(--s3) - 1px); }
+  nav a .n { margin-left:auto; font-size:var(--t-label); font-weight:650; font-variant-numeric:tabular-nums;
+             padding:0 var(--s2); border-radius:999px; background:var(--sunk); color:var(--dim); }
+  nav a .n:empty { display:none; }
+  nav a .n.bad { background:var(--badbg); color:var(--bad); } nav a .n.warn { background:var(--warnbg); color:var(--warn); }
+  nav a .n.info { background:var(--infobg); color:var(--info); }
+  [data-views]:not(.on) { display:none !important; }
+  .tabs { display:flex; gap:var(--s1); grid-column:1/-1; border-bottom:1px solid var(--line); }
+  .tabs a { padding:var(--s2) var(--s3); color:var(--dim); font-weight:500; border-bottom:2px solid transparent; margin-bottom:-1px; }
+  .tabs a:hover { text-decoration:none; color:var(--ink); }
+  .tabs a.on { color:var(--ink); border-bottom-color:var(--info); }
+  .tabs a .n { font-size:var(--t-label); color:var(--faint); margin-left:var(--s1); font-variant-numeric:tabular-nums; }
+  .tiles { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); grid-column:1/-1; }
+  .tile { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
+  .tile:hover { text-decoration:none; border-color:var(--line2); }
+  .tile .big { font-size:26px; font-weight:600; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .tile .lbl { font-size:var(--t-label); font-weight:650; letter-spacing:.07em; text-transform:uppercase; color:var(--dim); }
+  .tile .sub { font-size:var(--t-sub); color:var(--faint); }
+  .tile.bad .big { color:var(--bad); } .tile.warn .big { color:var(--warn); } .tile.ok .big { color:var(--ok); }
+  @media (max-width:800px) {
+    .app { grid-template-columns:minmax(0,1fr); }
+    nav { position:static; flex-direction:row; overflow-x:auto; gap:var(--s1); }
+    nav h1 { display:none; }
+    nav a { white-space:nowrap; }
+  }
+
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
            display:flex; gap:var(--s6); flex-wrap:wrap; color:var(--faint); font-size:var(--t-sub); }
   footer b { color:var(--dim); font-weight:650; font-variant-numeric:tabular-nums; }
@@ -196,27 +231,41 @@
 <body>
 <div id="bar"></div>
 
-<div id="status">
+<div class="app">
+<nav aria-label="Views">
   <h1>ai-fixme <span id="repo"></span></h1>
-  <span class="sep"></span>
+  <a href="#overview" data-nav="overview">Overview<span class="n" id="n-overview"></span></a>
+  <a href="#pipeline" data-nav="pipeline">Pipeline<span class="n" id="n-pipeline"></span></a>
+  <a href="#sessions" data-nav="sessions">Sessions<span class="n" id="n-sessions"></span></a>
+  <a href="#runners" data-nav="runners">Runners<span class="n" id="n-runners"></span></a>
+</nav>
+<main>
+<div id="status">
   <span class="dot" id="dot"></span><span id="health">healthy</span><span id="cells"></span>
   <span class="spacer"></span>
   <span id="age">connecting…</span>
   <button id="refresh">refresh</button>
 </div>
 
-<div id="attn" role="status" aria-live="polite"></div>
+<div id="attn" role="status" aria-live="polite" data-views="overview"></div>
 
 <div class="grid">
-  <section class="wide" id="s-agents"></section>
-  <section class="wide" id="s-sessions"></section>
-  <section class="wide" id="s-review"></section>
-  <section class="wide" id="s-queue"></section>
-  <section class="wide" id="s-sessions-off"></section>
-  <section id="s-pool"></section>
-  <section id="s-today"></section>
+  <div class="tiles" id="s-tiles" data-views="overview"></div>
+  <div class="tabs" data-views="sessions">
+    <a href="#sessions/live" data-tab="live">Live<span class="n" id="t-live"></span></a>
+    <a href="#sessions/stopped" data-tab="stopped">Stopped<span class="n" id="t-stopped"></span></a>
+  </div>
+  <section class="wide" id="s-agents" data-views="overview pipeline"></section>
+  <section class="wide" id="s-sessions" data-views="overview sessions:live"></section>
+  <section class="wide" id="s-sessions-off" data-views="sessions:stopped"></section>
+  <section class="wide" id="s-review" data-views="pipeline"></section>
+  <section class="wide" id="s-queue" data-views="pipeline"></section>
+  <section id="s-pool" data-views="runners"></section>
+  <section id="s-today" data-views="overview runners"></section>
 </div>
 <footer id="footer"></footer>
+</main>
+</div>
 
 <script>
 "use strict";
@@ -465,7 +514,7 @@ function renderAgents() {
   const { cards, waiting } = merged();
   const sec = document.getElementById("s-agents");
   const anyLive = cards.some(c => c.live || (c.ci && c.running > 0));
-  sec.className = "wide" + (anyLive ? " running" : "");
+  sec.classList.toggle("running", anyLive);
   const repo = SNAP?.repo ?? "";
   const nRunners = cards.filter(c => !c.ci).length;
   const intakeOff = SNAP?.mode?.newtickets === "off";
@@ -529,12 +578,13 @@ function renderSessions() {
   // No runner: paused first, since a reply brings those back.
   const off = ss.filter(s => !LIVE_SESSION.includes(s.state)).sort((x, y) => (y.state === "paused") - (x.state === "paused"));
   const paused = off.filter(s => s.state === "paused").length;
-  document.getElementById("s-sessions").className = "wide" + (live.some(s => s.agent_alive) ? " running" : "");
+  document.getElementById("s-sessions").classList.toggle("running", live.some(s => s.agent_alive));
   put("s-sessions", head("sessions", AGENTS ? live.length : "?", `cap ${AGENTS?.session_cap ?? "?"}`, "slack, runner up") +
     (live.length === 0 ? `<div class="empty">no session is running</div>` : live.map(sessionCard).join("")));
-  const offEl = document.getElementById("s-sessions-off");
-  offEl.hidden = off.length === 0;
-  put("s-sessions-off", head("stopped sessions", off.length, paused ? `${paused} paused` : "", "no runner, last day") + off.map(sessionCard).join(""));
+  document.getElementById("t-live").textContent = AGENTS ? live.length : "";
+  document.getElementById("t-stopped").textContent = AGENTS ? off.length : "";
+  put("s-sessions-off", head("stopped sessions", off.length, paused ? `${paused} paused` : "", "no runner, last day") +
+    (off.length === 0 ? `<div class="empty">no stopped session in the last day</div>` : off.map(sessionCard).join("")));
   live.forEach(s => paintTail(s.key, s.agent_alive));
   TAIL_KEYS = TAIL_KEYS.concat(live.map(s => s.key));
 }
@@ -624,8 +674,46 @@ function renderTab() {
   document.getElementById("favicon").href = "data:image/svg+xml," + encodeURIComponent(svg);
 }
 
+// Overview tiles and sidebar counts: one number per view, each links to it.
+function renderNav() {
+  const { cards } = merged(), ss = AGENTS?.sessions ?? [];
+  const liveS = ss.filter(s => LIVE_SESSION.includes(s.state)).length;
+  const waiting = SNAP?.review ? SNAP.review.filter(isWaitingOnHuman).length : null;
+  const q = SNAP?.queue, queued = q && !q.fetch_failed ? (q.ready ?? []).length : null;
+  const bad = document.querySelectorAll("#attn .alert.bad").length, alerts = document.querySelectorAll("#attn .alert").length;
+  const free = AGENTS?.free_slots?.length, runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
+  const badge = (id, n, cls) => { const e = document.getElementById(id); e.textContent = n ? n : ""; e.className = "n" + (cls ? " " + cls : ""); };
+  badge("n-overview", alerts, bad ? "bad" : "warn");
+  badge("n-pipeline", waiting, "info");
+  badge("n-sessions", liveS, "info");
+  badge("n-runners", AGENTS ? runners : "", "");
+  const tile = (href, lbl, big, sub, cls = "") => `<a class="tile ${cls}" href="${href}"><div class="lbl">${lbl}</div><div class="big">${big ?? "?"}</div><div class="sub">${sub}</div></a>`;
+  put("s-tiles", [
+    tile("#overview", "alerts", alerts, bad ? `${bad} need action` : "nothing urgent", bad ? "bad" : alerts ? "warn" : "ok"),
+    tile("#pipeline", "in flight", AGENTS ? cards.length : null, "ai-fixme tickets"),
+    tile("#pipeline", "review", waiting, "waiting on a human", waiting ? "warn" : ""),
+    tile("#pipeline", "queue", queued, SNAP?.mode?.newtickets === "off" ? "intake off" : "launchable"),
+    tile("#sessions/live", "sessions", AGENTS ? `${liveS}/${AGENTS.session_cap}` : null, `${ss.filter(s => s.state === "paused").length} paused`),
+    tile("#runners", "runners", AGENTS ? runners : null, AGENTS ? `${usd(AGENTS.runner_hourly_usd)}/h · ${free ?? "?"} slots free` : ""),
+  ].join(""));
+}
+
+const VIEWS = ["overview", "pipeline", "sessions", "runners"];
+function route() {
+  const [v, sub] = location.hash.slice(1).split("/");
+  const view = VIEWS.includes(v) ? v : "overview", tab = sub === "stopped" ? "stopped" : "live";
+  document.querySelectorAll("[data-views]").forEach(e => {
+    const vs = e.dataset.views.split(" ");
+    e.classList.toggle("on", vs.includes(view) || vs.includes(`${view}:${tab}`));
+  });
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.nav === view));
+  document.querySelectorAll(".tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+}
+window.addEventListener("hashchange", route);
+route();
+
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderPool(); renderToday(); renderTab();
+  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderPool(); renderToday(); renderNav(); renderTab();
 }
 
 async function poll() {
