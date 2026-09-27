@@ -541,39 +541,52 @@ _finish_push_and_pr() {
     !skip                      { print }
   ' | sed -e 's/[[:space:]]*$//' | cat -s)"
 
-  # Hooks off: core.hooksPath points at .husky in the slot, and lint-staged
-  # runs _scripts/check-frozen.ts FROM THE SLOT, so a hook run here executes
-  # agent-written code on the host as the operator. _finish_check_frozen above
-  # runs origin/main's copy instead, and CI runs lint.
-  if [ -n "${commit_body//[[:space:]]/}" ]; then
-    git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" -m "$commit_body" >&2 || {
-      _finish_recommit_failed
-      return 1
-    }
+  # As the GitHub App: GitHub authors and signs the commit, and the operator's
+  # key and login stay out of the push. gh below also acts as the App.
+  if github_app_enabled; then
+    local new_sha GH_TOKEN
+    echo "Committing and pushing ${branch} as the GitHub App..." >&2
+    new_sha="$(github_app_commit "$worktree" "$branch" "$merge_base" \
+      "$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")")" || return 1
+    echo "  App commit: ${new_sha}" >&2
+    GH_TOKEN="$(github_app_token)" || return 1
+    export GH_TOKEN
   else
-    git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" >&2 || {
-      _finish_recommit_failed
-      return 1
-    }
-  fi
-  local new_sha
-  new_sha="$(git -C "$worktree" rev-parse HEAD)"
-  echo "  signed HEAD: ${new_sha}" >&2
+    # Hooks off: core.hooksPath points at .husky in the slot, and lint-staged
+    # runs _scripts/check-frozen.ts FROM THE SLOT, so a hook run here executes
+    # agent-written code on the host as the operator. _finish_check_frozen above
+    # runs origin/main's copy instead, and CI runs lint.
+    if [ -n "${commit_body//[[:space:]]/}" ]; then
+      git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" -m "$commit_body" >&2 || {
+        _finish_recommit_failed
+        return 1
+      }
+    else
+      git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" >&2 || {
+        _finish_recommit_failed
+        return 1
+      }
+    fi
+    local new_sha
+    new_sha="$(git -C "$worktree" rev-parse HEAD)"
+    echo "  signed HEAD: ${new_sha}" >&2
 
-  # The host re-squashes and re-signs, so resuming/re-running an already-pushed
-  # ticket leaves the local branch diverged from its remote and a plain push is
-  # non-fast-forward. Try a normal push first; on rejection retry with
-  # --force-with-lease, which still refuses to clobber if the remote moved for a
-  # reason we didn't expect (someone else pushed to the branch).
-  echo "Pushing ${branch} to origin..." >&2
-  if ! git -C "$worktree" push -u origin "$branch" >&2; then
-    echo "Normal push rejected (likely a re-squash of an already-pushed branch); retrying with --force-with-lease..." >&2
-    git -C "$worktree" push -u --force-with-lease origin "$branch" >&2 || {
-      echo "ERROR: git push failed even with --force-with-lease." >&2
-      echo "       The remote branch may have moved unexpectedly; inspect:" >&2
-      echo "       git -C '${worktree}' log --oneline origin/${branch}" >&2
-      return 1
-    }
+    # The host re-squashes and re-signs, so resuming/re-running an already-pushed
+    # ticket leaves the local branch diverged from its remote and a plain push is
+    # non-fast-forward. Try a normal push first; on rejection retry with
+    # --force-with-lease, which still refuses to clobber if the remote moved for a
+    # reason we didn't expect (someone else pushed to the branch).
+    echo "Pushing ${branch} to origin..." >&2
+    if ! git -C "$worktree" push -u origin "$branch" >&2; then
+      echo "Normal push rejected (likely a re-squash of an already-pushed branch); retrying with --force-with-lease..." >&2
+      git -C "$worktree" push -u --force-with-lease origin "$branch" >&2 || {
+        echo "ERROR: git push failed even with --force-with-lease." >&2
+        echo "       The remote branch may have moved unexpectedly; inspect:" >&2
+        echo "       git -C '${worktree}' log --oneline origin/${branch}" >&2
+        return 1
+      }
+    fi
+
   fi
 
   local media_args=()

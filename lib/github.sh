@@ -523,3 +523,56 @@ github_app_token() {
   ( umask 077; printf '%s' "$tok" > "$cache" )
   printf '%s' "$tok"
 }
+
+# _gh_app_api <METHOD> <path>
+#   Call the REST API as the App with the JSON body on stdin. The token goes in a
+#   0600 header file, not argv, so `ps` never shows it.
+_gh_app_api() {
+  local hdr tok rc=0
+  tok="$(github_app_token)" || return 1
+  hdr="$(mktemp)"; chmod 600 "$hdr"
+  printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$tok" > "$hdr"
+  curl -sS --fail-with-body -X "$1" -H @"$hdr" --data-binary @- "https://api.github.com/repos/${PIPE_REPO_SLUG}/$2" || rc=$?
+  rm -f "$hdr"
+  return "$rc"
+}
+
+# github_app_commit <worktree> <branch> <parent_sha> <message>
+#   Create the staged change as one commit through the API, so the App is its
+#   author and GitHub signs it, then move <branch> to it. An existing branch must
+#   still be where our tracking ref says (the --force-with-lease rule). Resets the
+#   slot onto the new commit and prints its sha.
+github_app_commit() {
+  local wt="$1" branch="$2" parent="$3" msg="$4"
+  local st path mode sha entries='[]' tree commit remote expect
+  while IFS= read -r -d '' st && IFS= read -r -d '' path; do
+    if [ "$st" = D ]; then
+      entries="$(jq -c --arg p "$path" '. + [{path: $p, mode: "100644", type: "blob", sha: null}]' <<< "$entries")"
+      continue
+    fi
+    read -r mode sha _ < <(git -C "$wt" ls-files -s -- "$path")
+    sha="$(git -C "$wt" cat-file blob "$sha" | base64 | tr -d '\n' | jq -Rc '{content: ., encoding: "base64"}' \
+           | _gh_app_api POST git/blobs | jq -r '.sha // empty')"
+    [ -n "$sha" ] || { echo "ERROR: could not upload ${path} as the App." >&2; return 1; }
+    entries="$(jq -c --arg p "$path" --arg m "$mode" --arg s "$sha" '. + [{path: $p, mode: $m, type: "blob", sha: $s}]' <<< "$entries")"
+  done < <(git -C "$wt" diff --cached --no-renames --name-status -z "$parent")
+  tree="$(jq -c --arg b "$(git -C "$wt" rev-parse "${parent}^{tree}")" '{base_tree: $b, tree: .}' <<< "$entries" \
+          | _gh_app_api POST git/trees | jq -r '.sha // empty')"
+  [ -n "$tree" ] || { echo "ERROR: could not create the tree as the App." >&2; return 1; }
+  commit="$(jq -nc --arg m "$msg" --arg t "$tree" --arg p "$parent" '{message: $m, tree: $t, parents: [$p]}' \
+            | _gh_app_api POST git/commits | jq -r '.sha // empty')"
+  [ -n "$commit" ] || { echo "ERROR: could not create the commit as the App." >&2; return 1; }
+  remote="$(printf '' | _gh_app_api GET "git/ref/heads/${branch}" 2>/dev/null | jq -r '.object.sha // empty')"
+  if [ -z "$remote" ]; then
+    jq -nc --arg r "refs/heads/${branch}" --arg s "$commit" '{ref: $r, sha: $s}' | _gh_app_api POST git/refs >/dev/null \
+      || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
+  else
+    expect="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" || true)"
+    [ "$remote" = "$expect" ] || { echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1; }
+    jq -nc --arg s "$commit" '{sha: $s, force: true}' | _gh_app_api PATCH "git/refs/heads/${branch}" >/dev/null \
+      || { echo "ERROR: could not move ${branch} as the App." >&2; return 1; }
+  fi
+  git -C "$wt" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" &&
+    git -C "$wt" reset -q --soft "$commit" && git -C "$wt" branch -q --set-upstream-to "origin/${branch}" >/dev/null 2>&1
+  printf '%s\n' "$commit"
+}
