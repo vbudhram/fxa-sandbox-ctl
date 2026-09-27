@@ -694,7 +694,7 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
    'npx nx lint <package>' for each. Every invocation must exit 0; if any
    reports errors, fix them and re-run before moving on.
 ${step4}
-5. $(runtime_skill_ref code-simplifier), then $(runtime_skill_ref ponytail-review), have been invoked on
+5. $(runtime_skill_ref code-simplifier), $(runtime_skill_ref ponytail-review), then $(runtime_skill_ref fxa-unslop) Part 1 have been invoked on
    the latest changes and every simplification or cut they suggest has been
    applied (or explicitly declined with a one-line reason in the transcript).
 6. $(runtime_skill_ref fxa-review-quick), then $(runtime_skill_ref fxa-vm-selfcheck), found no blockers in
@@ -706,7 +706,7 @@ ${step4}
    and 'git diff --stat', and revert any file unrelated to this ticket with
    'git checkout -- <path>'; scope creep blocks the goal.
 8. Invoke $(runtime_skill_ref create-pr-description) on the WHOLE branch diff
-   (the step 6 diff), then $(runtime_skill_ref humanizer) on its output, then selfcheck Check 5.
+   (the step 6 diff), then $(runtime_skill_ref humanizer) and $(runtime_skill_ref fxa-unslop) Part 2 on it, then selfcheck Check 5.
    The host squashes every round into one commit, so the body describes the
    entire pull request, with this round's change as one bullet. pr_body MUST
    reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md verbatim: keep every

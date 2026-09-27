@@ -137,9 +137,9 @@ EOF
   cat <<EOF
 The engineer asked to ${ask}. Wrap up now:
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
-   untracked files, then $(runtime_skill_ref fxa-vm-selfcheck). Fix every blocker.
+   untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker.
 2. Revert any file unrelated to the request with 'git checkout -- <path>'.
-3. Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) on its output.
+3. Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) and $(runtime_skill_ref fxa-unslop) Part 2 on its output.
    pr_body must reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md. There is no
    Jira ticket; leave the ticket field empty and do not name this session.
 4. Write /workspace/.fxa-auto-done.json LAST, once the working tree holds exactly
