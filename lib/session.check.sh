@@ -135,6 +135,9 @@ RUNNING=0; RUNNER='{"type":"result","result":"done it\nstatus: ready"}
 '
 cmd_events agent-t3 --since 0 >/dev/null; cmd_events agent-t3 --since 0 >/dev/null
 check "history holds the request and one reply" "user:fix it|agent:done it" "$(session_history agent-t3 | jq -r 'map("\(.role):\(.text)") | join("|")')"
+session_set agent-t3 owner_name "Test User" owner_image "https://avatars.slack-edge.com/x_48.png"
+_session_history_add agent-t3 user "second" "Other User" ""
+check "history carries who sent each message" "Test User:https://avatars.slack-edge.com/x_48.png|Other User:" "$(session_history agent-t3 | jq -r 'map(select(.role == "user")) | map("\(.name // ""):\(.image // "")") | join("|")')"
 session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RUNNER=''
 check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
 exit "$fail"

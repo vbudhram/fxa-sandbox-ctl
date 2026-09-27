@@ -81,7 +81,17 @@ EOF
 # _session_history_add <key> <role> <text>   One line of the conversation, kept
 # on the host so the dashboard can show it after the runner is gone.
 _session_history_add() {
-  jq -nc --arg r "$2" --arg t "$3" '{at: now, role: $r, text: $t}' >> "${SESSION_DIR}/$1.history.jsonl"
+  jq -nc --arg r "$2" --arg t "$3" --arg n "${4:-}" --arg i "${5:-}" \
+    '{at: now, role: $r, text: $t} + (if $n != "" then {name: $n} else {} end) + (if $i != "" then {image: $i} else {} end)' \
+    >> "${SESSION_DIR}/$1.history.jsonl"
+}
+
+# _session_person <name> <image>   Prints "name<TAB>image", each emptied when
+# unsafe. The dashboard puts both in a page: only Slack's own avatar hosts pass.
+_session_person() {
+  local n i; n="$(printf '%s' "${1:-}" | tr -d '[:cntrl:]' | cut -c1-80)"; i="${2:-}"
+  [[ "$i" =~ ^https://(avatars\.slack-edge\.com|ca\.slack-edge\.com|secure\.gravatar\.com)/[A-Za-z0-9._~/%?=\&-]+$ ]] || i=""
+  printf '%s\t%s\n' "$n" "$i"
 }
 
 # session_history <key>   The conversation as a JSON array, oldest first,
@@ -90,9 +100,10 @@ session_history() {
   local key="$1" out="[]" chunk n=0
   while [ -n "$key" ] && [ "$n" -lt 20 ] && session_exists "$key"; do
     # The first message is the request; the bot appends earlier thread messages as context.
-    chunk="$(jq -n --arg k "$key" --argjson at "$(jq '.created // 0' "$(_session_file "$key")")" \
+    chunk="$(jq -n --arg k "$key" --argjson rec "$(cat "$(_session_file "$key")")" \
       --rawfile p <(cat "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null) \
-      '[{at: $at, role: "user", key: $k, text: ($p | split("\n\nEarlier messages")[0])}]
+      '[{at: ($rec.created // 0), role: "user", key: $k, text: ($p | split("\n\nEarlier messages")[0])}
+        + (if $rec.owner_name then {name: $rec.owner_name} else {} end) + (if $rec.owner_image then {image: $rec.owner_image} else {} end)]
        + [inputs | . + {key: $k}]' <(cat "${SESSION_DIR}/${key}.history.jsonl" 2>/dev/null) 2>/dev/null)" || chunk="[]"
     out="$(jq -c --argjson a "${chunk:-[]}" '$a + .' <<< "$out")"
     key="$(session_get "$key" resume_from)"; n=$(( n + 1 ))

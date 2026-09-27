@@ -1935,12 +1935,14 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
       --link) link="$2"; shift 2 ;;
+      --owner-name) owner_name="$2"; shift 2 ;;
+      --owner-image) owner_image="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
       --owner) owner="$2"; shift 2 ;;
@@ -1969,6 +1971,10 @@ cmd_task() {
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   # The Slack thread, for the dashboard. Only a Slack https link is kept.
+  # Who started it, for the dashboard's conversation view.
+  local person; person="$(_session_person "$owner_name" "$owner_image")"
+  [ -n "${person%%$'\t'*}" ] && session_set "$key" owner_name "${person%%$'\t'*}"
+  [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
@@ -2040,15 +2046,24 @@ EOF
 }
 
 cmd_steer() {
-  local key="${1:-}" file="" q
-  [ "${2:-}" = --message-file ] && file="${3:-}"
+  local key="${1:-}" file="" q name="" image=""
+  shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --message-file) file="${2:-}"; shift 2 ;;
+      --from-name) name="${2:-}"; shift 2 ;;
+      --from-image) image="${2:-}"; shift 2 ;;
+      *) echo "ERROR: unknown steer option: $1" >&2; return 1 ;;
+    esac
+  done
   _session_key "$key" || return 1
   [ -s "$file" ] || { echo "ERROR: steer needs --message-file <non-empty file>" >&2; return 1; }
   case "$(session_get "$key" state)" in
     starting|active) ;;
     *) echo "ERROR: ${key} is $(session_get "$key" state); it takes no messages" >&2; return 1 ;;
   esac
-  _session_history_add "$key" user "$(cat "$file")"
+  local person; person="$(_session_person "$name" "$image")"
+  _session_history_add "$key" user "$(cat "$file")" "${person%%$'\t'*}" "${person#*$'\t'}"
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
