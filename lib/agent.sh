@@ -290,7 +290,9 @@ _setup_egress_firewall() {
 
   # Keep the script's stderr: the launch log is the only record of which
   # check refused the run, and the VM is deleted right after.
-  local err rc=0
+  local err rc=0 try
+  for try in 1 2; do
+  rc=0
   err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" bash -c '
     # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
@@ -350,6 +352,12 @@ _setup_egress_firewall() {
         || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
     fi
   ' 2>&1 >/dev/null)" || rc=$?
+  # A connection that failed before the script ran (ssh exit 255 with a connect
+  # or banner timeout) is safe to repeat once. A script that ran is not: it
+  # appends rules. On 2026-09-27 two launches died on one IAP banner timeout.
+  [ "$rc" -eq 255 ] && [ "$try" = 1 ] && grep -qiE "banner exchange|Connection timed out|Connection closed|Connection refused|kex_exchange" <<< "$err" || break
+  echo "  egress: ssh did not connect; retrying once" >&2; sleep 10
+  done
   [ "$rc" -eq 0 ] && return 0
   printf '%s\n' "${err:-egress: no reason given (exit $rc); ssh may have failed}" | tail -3 >&2
   return "$rc"
