@@ -2127,7 +2127,7 @@ cmd_events() {
         elif [ "$open" = 1 ] && [ "$running" = 0 ] && [ $(( $(date +%s) - $(session_get "$key" turn_started || echo 0) )) -gt 20 ]; then
           # The process is gone and never wrote a result: auth, resume, or a crash.
           # The turn's stderr lands in the transcript as plain lines: an expired token says so there.
-          local why; why="$(grep -v '^[[:space:]]*[{]' "$tmp" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-240)"
+          local why; why="$(grep -v '^[[:space:]]*[{]' "$tmp" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-240 || true)"
           events="$(jq --arg w "$why" '. + [{type: "error", text: ("I stopped without replying." + (if $w == "" then "" else " The last output was: " + $w end) + " Send a message to try again.")}]' <<< "$events")"
           session_set "$key" turn_open 0; open=0
         fi
@@ -2170,6 +2170,13 @@ cmd_events() {
     events="$(jq --arg b "$(session_get "$key" pushed_branch)" --arg r "$(_session_repo_url)" --arg n "$(session_get "$key" finish_notes)" \
       '. + [{type: "pushed", branch: $b, url: "\($r)/compare/main...\($b)?expand=1", notes: ($n | split("\n") | map(select(. != "")))}]' <<< "$events")"
     session_set "$key" pushed_announced 1 finish_notes ""
+  fi
+  # A wrap-up that wrote no handoff: the agent's reason goes before the error.
+  local wr; wr="$(session_get "$key" wrap_reply)"
+  if [ -n "$wr" ]; then
+    events="$(jq --arg t "$wr" '. + [{type: "turn_end", status: "needs-input", text: $t}]' <<< "$events")"
+    _session_history_add "$key" agent "$wr"
+    session_set "$key" wrap_reply ""
   fi
   local err; err="$(session_get "$key" last_error)"
   if [ -n "$err" ]; then
@@ -2218,7 +2225,9 @@ _finish_session() {
 }
 
 _session_finish_fail() {
-  local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
+  # || true: no ERROR line is common, and under pipefail and set -e a grep that
+  # finds nothing ended the job here, before it recorded why it stopped.
+  local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1 || true)"
   [ "${3:-}" = --no-pr ] && what="Push branch"
   session_set "$1" state active last_error "${what} failed: ${last:-$2}"
   _session_history_add "$1" action "${what} failed: ${last:-$2}"
@@ -2241,8 +2250,15 @@ _cmd_session_finish() {
     sleep 15
   done
   session_set "$key" turn_open 0
-  vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null \
-    || { _session_finish_fail "$key" "the wrap-up turn wrote no handoff file" "$mode"; return 1; }
+  if ! vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null; then
+    # The agent chose not to hand off (nothing to ship, or a blocker). Its reply
+    # says why, and the wrap-up hides replies, so pass it on to the thread.
+    local reply
+    reply="$(vm_exec_as_agent "$name" "tail -n 200 /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | _session_parse \
+      | jq -rs 'map(select(.type == "turn_end" or .type == "question")) | last | .text // empty' 2>/dev/null | head -c 3000 || true)"
+    [ -n "$reply" ] && session_set "$key" wrap_reply "$reply"
+    _session_finish_fail "$key" "I wrote no handoff, so nothing was pushed${reply:+ (my reason is above)}" "$mode"; return 1
+  fi
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft and no team review request by default: a person decides when it is ready.

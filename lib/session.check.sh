@@ -205,4 +205,16 @@ check "one QUESTION joins the text" "Intro\n\n**Where?**|a" "$(fin $'Intro\nQUES
 check "several QUESTIONs keep their options apart" "Where?:a,b|Which?:c,d|Intro" \
   "$(fin $'Intro\nQUESTION: Where?\nOPTION: a\nOPTION: b\nQUESTION: Which?\nOPTION: c\nOPTION: d' | jq -r '[.questions[] | "\(.q):\(.options | join(","))"] + [.text] | join("|")')"
 
+# A wrap-up with no handoff: the handler records why even with an empty log
+# (a grep that found nothing used to end the job under set -e), and the
+# agent's reason reaches the thread before the error.
+eval "$(sed -n '/^_session_finish_fail() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+: > "$SESSION_DIR/agent-t2.finish.log"
+out="$(set -euo pipefail; _session_finish_fail agent-t2 "I wrote no handoff" || true; echo reached)"
+check "fail handler survives an empty log" "reached" "$out"
+check "fail handler records the error" "Open PR failed: I wrote no handoff" "$(session_get agent-t2 last_error)"
+session_set agent-t2 state active turn_open 0 wrap_reply "Nothing to ship: the branch matches main."; RUNNER=''
+check "reason, then the error" "turn_end:Nothing to ship: the branch matches main.|error" "$(cmd_events agent-t2 | jq -r '[.events[] | if .type == "turn_end" then "turn_end:\(.text)" else .type end] | join("|")')"
+check "reason is announced once" "" "$(session_get agent-t2 wrap_reply)"
+
 exit "$fail"
