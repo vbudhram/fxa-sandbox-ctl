@@ -280,8 +280,8 @@ _finish_media_to_bucket() {
   for f in ${files[@]+"${files[@]}"}; do
     [ "$f" = --attach ] && continue
     name="$(basename "$f" | tr -c 'A-Za-z0-9._\n-' '-')"; n=$((n + 1))
-    gcloud storage cp -q "$f" "gs://${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}" --cache-control="public, max-age=3600" >/dev/null 2>&1 \
-      || { echo "  WARN: could not upload ${name} to the media bucket." >&2; continue; }
+    local err; err="$(gcloud storage cp -q "$f" "gs://${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}" --cache-control="public, max-age=3600" 2>&1 >/dev/null)" \
+      || { echo "  WARN: could not upload ${name} to the media bucket: $(printf '%s' "$err" | grep -m1 ERROR | cut -c1-200)" >&2; continue; }
     url="https://storage.googleapis.com/${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}"
     case "$name" in *.mp4|*.webm|*.mov) md="${md}[${name}](${url})"$'\n' ;; *) md="${md}![${name}](${url})"$'\n' ;; esac
     # Rewrite `(./shot.png)` and `(shot.png)` references in place; append the rest.
