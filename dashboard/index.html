@@ -827,8 +827,12 @@ function threadHtml(sel) {
   // Screenshots and videos join the thread at the time each file was made,
   // for every session in the chain. Files in a row become one message.
   const keys = [...new Set(h.map(m => m.key))], byKey = Object.fromEntries((AGENTS?.sessions ?? []).map(s => [s.key, s]));
-  const items = h.concat(keys.flatMap(k => (byKey[k]?.media ?? []).map(f => ({ role: "media", at: f.at, key: k, files: [f.name] }))))
-    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+  // A turn's files show under the reply that closes it, as Slack posts them.
+  const replyAfter = (k, t) => h.find(m => m.key === k && m.role === "agent" && m.at >= t)?.at;
+  const items = h.map(m => ({ ...m, sortAt: m.at ?? 0 }))
+    .concat(keys.flatMap(k => (byKey[k]?.media ?? []).map(f => { const r = replyAfter(k, f.at);
+      return { role: "media", at: f.at, key: k, files: [f.name], sortAt: r != null ? r + 0.001 : f.at }; })))
+    .sort((a, b) => a.sortAt - b.sortAt || (a.at ?? 0) - (b.at ?? 0))
     .reduce((acc, m) => { const p = acc[acc.length - 1];
       if (m.role === "media" && p?.role === "media" && p.key === m.key) p.files.push(...m.files); else acc.push(m); return acc; }, []);
   let last = null;
