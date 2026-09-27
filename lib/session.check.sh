@@ -83,7 +83,7 @@ check "stale lock is taken over" "yes" "$(_session_lock agent-t1 && echo yes)"
 _session_unlock agent-t1
 
 # cmd_events against a stubbed runner.
-eval "$(sed -n '/^cmd_events() {/,/^}/p;/^_session_key() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^cmd_events() {/,/^}/p;/^cmd_diff() {/,/^}/p;/^_session_key() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 _session_key() { :; }
 RUNNER=""; RUNNING=1; TURNS_FILE="$tmp/turns"
 vm_exec_as_agent() { printf '%s' "$RUNNER"; }
@@ -122,6 +122,11 @@ check "pr announced once" "pr 0" "$(cmd_events agent-t2 | jq -r '.events[0].type
 _session_repo_url() { echo https://github.com/example/repo; }
 session_set agent-t2 pushed_branch agent-t2 pushed_announced 0
 check "push announced once, with a compare link" "pushed compare/main...agent-t2 0" "$(cmd_events agent-t2 | jq -r '.events[0] | "\(.type) \(.url | capture("(?<c>compare/.*)\\?").c)"') $(cmd_events agent-t2 | jq '.events | length')"
+
+# Diff on a paused session reads the saved patch; there is no runner to ask.
+echo '{"key":"agent-t4","state":"paused"}' > "$tmp/agent-t4.json"; printf 'diff --git a/x b/x\n' > "$tmp/agent-t4.patch"
+_session_sh() { echo "ssh called"; return 1; }
+check "diff on a paused session prints the saved patch" "diff --git a/x b/x" "$(cmd_diff agent-t4)"
 
 # History: the request, then each reply once, even when the bot re-reads a cursor.
 echo '{"key":"agent-t3","state":"active","turn_open":"1","turn_started":"0"}' > "$tmp/agent-t3.json"

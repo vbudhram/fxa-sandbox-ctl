@@ -2157,6 +2157,8 @@ cmd_events() {
 
 cmd_diff() {
   local key="${1:-}"; _session_key "$key" || return 1
+  # Paused or stopped: the runner is gone, and stop saved the work as a patch.
+  if ! session_live "$key"; then cat "${SESSION_DIR}/${key}.patch" 2>/dev/null || true; return 0; fi
   # The runner holds the work; untracked files matter as much as tracked ones.
   _session_sh "$(worktree_branch_for "$key")" \
     'cd /workspace && git diff HEAD -- . ":(exclude).fxa-*" ":(exclude)ai"; git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" ":(exclude)ai" | while read -r f; do git diff --no-index /dev/null "$f"; done; true'
@@ -2169,6 +2171,9 @@ _finish_session() {
   _session_key "$key" || return 1
   case "$mode" in ''|--no-pr) ;; *) echo "ERROR: Unknown option: ${mode}" >&2; return 1 ;; esac
   _session_lock "$key" || { echo "ERROR: ${key} is busy; try again in a moment" >&2; return 1; }
+  case "$(session_get "$key" state)" in
+    paused|stopped) _session_unlock "$key"; echo "ERROR: ${key} is $(session_get "$key" state); reply in the thread to resume it, then try again" >&2; return 1 ;;
+  esac
   if [ "$(session_get "$key" state)" != active ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
     echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
     _session_unlock "$key"; return 1
