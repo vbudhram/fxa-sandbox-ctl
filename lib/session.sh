@@ -58,7 +58,9 @@ Every turn, including later ones:
   For a UI flow use ${func}; for the local stack, ${stack}.
 - To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
-- When you need a decision, list 2 to 4 choices, one per line, each starting 'OPTION: '.
+- When you need a decision, ask ONE question and list 2 to 4 answers to it, one per
+  line, each starting 'OPTION: '. The engineer taps one. With more than one open
+  decision, ask the most important one now and name your default for the others.
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
 EOF
