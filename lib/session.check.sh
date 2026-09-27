@@ -31,6 +31,19 @@ check "marker lines leave the text" "Plan." "$(jq -r '.[1].text' <<< "$ev")"
 check "ready marker" "ready Done." "$(jq -r '.[2] | "\(.status) \(.text)"' <<< "$ev")"
 check "missing marker means needs-input" "needs-input" "$(jq -r '.[3].status' <<< "$ev")"
 
+# Codex: its reply and turn end are separate events, joined by _session_fold.
+cx="$(printf '%s\n' 'Reading additional input from stdin...' \
+  '{"type":"thread.started","thread_id":"cx-1"}' \
+  '{"type":"item.started","item":{"type":"command_execution","command":"/bin/bash -lc \u0027ls packages\u0027"}}' \
+  '{"type":"item.completed","item":{"type":"agent_message","text":"Done.\nstatus: ready"}}' \
+  '{"type":"turn.completed","usage":{}}' | _session_parse | jq -s -c . | _session_fold "")"
+check "codex init carries the thread id" "cx-1" "$(jq -r '.events[0].session_id' <<< "$cx")"
+check "codex turn end joins the last message" "ready Done." "$(jq -r '.events[1] | "\(.status) \(.text)"' <<< "$cx")"
+split1="$(printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"Pick one\nOPTION: A\nOPTION: B"}}' | _session_parse | jq -s -c . | _session_fold "")"
+split2="$(printf '%s\n' '{"type":"turn.completed"}' | _session_parse | jq -s -c . | _session_fold "$(jq -r .last <<< "$split1")")"
+check "codex message and turn end in different polls" "question A,B" "$(jq -r '.events[0] | "\(.type) \(.options | join(","))"' <<< "$split2")"
+check "codex command becomes a step" "Running ls packages" "$(printf '%s\n' '{"type":"item.started","item":{"type":"command_execution","command":"/bin/bash -lc \u0027ls packages\u0027"}}' | _session_activity)"
+
 # session_checkout: throwaway worktree on the session branch, runner tree pulled in.
 eval "$(sed -n '/^worktree_filtered_status() {/,/^}/p;/^worktree_branch_for() {/,/^}/p' "$(dirname "$0")/worktree.sh")"
 _worktree_pull_if_remote() { :; }

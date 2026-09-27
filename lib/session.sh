@@ -41,7 +41,9 @@ session_live() {
 # The first turn. Not a /goal: the owner judges done by steering, and the host
 # checks the work at Open PR.
 _session_first_prompt() {
-  cat <<'EOF'
+  local verify func stack
+  verify="$(runtime_skill_ref fxa-verify)"; func="$(runtime_skill_ref fxa-functional-local)"; stack="$(runtime_skill_ref fxa-stack)"
+  cat <<EOF
 You are pairing with an FxA engineer through a chat thread. Their request is in
 /workspace/.fxa-jira-context.md; read it first. The runner's operations guide is
 /etc/vm-agent-guide.md.
@@ -52,8 +54,8 @@ request is a one-line change.
 
 Every turn, including later ones:
 - Do not commit or push, and do not run 'gh'. The host does that.
-- Verify with /fxa-verify: it runs the right tests and lint for each package.
-  For a UI flow use /fxa-functional-local; for the local stack, /fxa-stack.
+- Verify with ${verify}: it runs the right tests and lint for each package.
+  For a UI flow use ${func}; for the local stack, ${stack}.
 - To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
 - When you need a decision, list 2 to 4 choices, one per line, each starting 'OPTION: '.
@@ -79,14 +81,17 @@ EOF
 _session_wrapup_prompt() {
   cat <<EOF
 The engineer asked to open a PR. Wrap up now:
-1. Run /fxa-review-quick on 'git diff \$(git merge-base HEAD origin/main)' plus
-   untracked files, then /fxa-vm-selfcheck. Fix every blocker.
+1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
+   untracked files, then $(runtime_skill_ref fxa-vm-selfcheck). Fix every blocker.
 2. Revert any file unrelated to the request with 'git checkout -- <path>'.
-3. Invoke /create-pr-description on the whole diff, then /humanizer on its output.
+3. Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) on its output.
    pr_body must reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md. There is no
    Jira ticket; leave the ticket field empty and do not name this session.
-$(runtime_prompt_handoff_step | sed "s/^9\. /4. /")
-Use "$1" as the issue value.
+4. Write /workspace/.fxa-auto-done.json LAST, once the working tree holds exactly
+   what should ship, with keys {issue, branch, pr_title, pr_body, media_paths}:
+   issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
+   conventional commit subject; media_paths relative to /workspace, empty if
+   none. Write it to .fxa-auto-done.json.tmp, then mv it into place.
 EOF
 }
 
@@ -100,7 +105,7 @@ _session_turn() {
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then
-    sid="$(vm_exec_as_agent "$name" "grep -m1 '\"session_id\"' /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | jq -r '.session_id // empty' 2>/dev/null || true)"
+    sid="$(vm_exec_as_agent "$name" "grep -m1 -E '\"(session_id|thread_id)\"' /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | jq -r '.session_id // .thread_id // empty' 2>/dev/null || true)"
     [ -n "$sid" ] || { echo "ERROR: ${key}: no Claude session id on the runner yet." >&2; return 1; }
     session_set "$key" claude_session_id "$sid"
   fi
@@ -110,6 +115,17 @@ _session_turn() {
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
     printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is unset}" > "${tmp}/.fxa-auto-token"
     # "--": a message that starts with a dash is text, not a flag.
+    if [ "$(session_get "$key" runtime)" = codex ]; then
+      # Codex keeps its login in ~/.codex/auth.json on the runner; no token ships.
+      : > "${tmp}/.fxa-auto-token"
+      cat > "${tmp}/.fxa-steer.sh" <<STEER
+export HOME=/home/agent
+source /etc/agent-env.sh
+cd /workspace
+codex exec resume ${sid} --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-steer-msg.txt 2>&1 \\
+  | tee -a /workspace/.fxa-auto-claude.jsonl
+STEER
+    else
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
@@ -119,6 +135,7 @@ claude -p --resume ${sid} --permission-mode bypassPermissions \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
+    fi
   ) || { rm -rf "$tmp"; return 1; }
   # One ssh: unpack the files as the agent and start the turn. Two cost ~1.8 s more.
   # Only the launch is backgrounded: a background job's stdin is /dev/null, so tar must not be in it.
@@ -137,9 +154,9 @@ session_interrupt() {
   # Close the turn only once the process is gone: a steer that saw it closed
   # early started a second claude on the same session.
   local rc=0
-  _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '$(runtime_alive_pattern)'
-    for i in \$(seq 30); do pgrep -f '$(runtime_alive_pattern)' >/dev/null || exit 0; sleep 0.5; done
-    pkill -KILL -f '$(runtime_alive_pattern)'; true" >/dev/null 2>&1 || rc=$?
+  _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '${_SESSION_AGENT_PAT}'
+    for i in \$(seq 30); do pgrep -f '${_SESSION_AGENT_PAT}' >/dev/null || exit 0; sleep 0.5; done
+    pkill -KILL -f '${_SESSION_AGENT_PAT}'; true" >/dev/null 2>&1 || rc=$?
   # The kill did not reach the runner: the turn is still open.
   [ "$rc" -eq 0 ] || { _session_unlock "$1"; echo "ERROR: $1: could not reach the runner to interrupt" >&2; return 1; }
   session_set "$1" turn_open 0
@@ -178,9 +195,14 @@ _session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }
 
 # _session_turn_running <key>   0 running, 1 idle. A dropped tunnel reads as running,
 # so a message queues rather than starting a second writer on one session.
+_SESSION_AGENT_PAT='^(claude -p|(node )?[^ ]*codex exec)'
 _session_turn_running() {
-  local rc=0; agent_alive "$(worktree_branch_for "$1")" || rc=$?
-  [ "$rc" -ne 1 ]
+  local n
+  # An unreachable runner counts as running, so a message queues instead of
+  # starting a second writer on one session.
+  n="$(_session_sh "$(worktree_branch_for "$1")" "pgrep -cf '${_SESSION_AGENT_PAT}' || true" 2>/dev/null | tr -d '\r' | tail -1)" || return 0
+  case "$n" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$n" -gt 0 ]
 }
 
 # One assistant content block → one short step title for what the agent does.
@@ -199,8 +221,22 @@ _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
   | gsub("\\s+"; " ") | .[0:90]'
 
 # _session_activity   stream-json lines on stdin → what the agent did last, one line.
+# One Codex item → one step title, in the same words as Claude's.
+_SESSION_CODEX_STEP_JQ='if .type == "command_execution" then "Running " + ((.command // "") | tostring | sub("^/bin/(ba)?sh -lc \u0027(?<c>.*)\u0027$"; "\(.c)"; "s"))
+  elif .type == "file_change" then "Editing " + (((.changes // [])[0].path // "") | tostring | split("/") | last)
+  elif .type == "web_search" then "Searching the web for " + ((.query // "") | tostring)
+  elif .type == "mcp_tool_call" then "Using " + ((.tool // "a tool") | tostring)
+  else empty end | gsub("\\s+"; " ") | .[0:90]'
+# Either agent's event → its steps. Codex commands count when they start; its
+# other items (file edits) only exist once complete.
+_SESSION_STEPS_JQ="if .type == \"assistant\" then (.message.content[]? | ${_SESSION_STEP_JQ})
+  elif (.type == \"item.started\" and .item.type == \"command_execution\")
+    or (.type == \"item.completed\" and ((.item.type // \"\") | IN(\"command_execution\", \"agent_message\", \"reasoning\") | not))
+  then (.item | ${_SESSION_CODEX_STEP_JQ})
+  else empty end"
+
 _session_activity() {
-  jq -R -s -r "split(\"\\n\") | map(fromjson? | select(.type == \"assistant\") | .message.content[]? | ${_SESSION_STEP_JQ}) | last // \"\"" 2>/dev/null
+  jq -R -s -r "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null
 }
 
 # _session_watch <key>   Stream the running turn as JSON lines, as they happen:
@@ -208,9 +244,8 @@ _session_activity() {
 # Runs until the caller kills it or the runner goes away.
 _session_watch() {
   _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -n 0 -F /workspace/.fxa-auto-claude.jsonl 2>/dev/null' \
-    | jq --unbuffered -R -c "fromjson? | if .type == \"result\" then {type: \"result\"}
-        elif .type == \"assistant\" then (.message.content[]? | ${_SESSION_STEP_JQ} | {type: \"step\", text: .})
-        else empty end"
+    | jq --unbuffered -R -c "fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
+        else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end"
 }
 
 # _session_boot_step <key>   The runner's boot progress in plain words.
@@ -226,17 +261,36 @@ _session_boot_step() {
 }
 
 # _session_parse   stream-json lines on stdin → event objects, one per line.
+# The final text of a turn → a question (OPTION: lines) or a turn end with its
+# status: line. Both agents end a turn with such text.
+_SESSION_FIN_JQ='def fin($t): ($t | tostring) as $t
+  | ($t | [scan("(?m)^status: *(needs-input|ready) *$")] | last // ["needs-input"] | .[0]) as $status
+  | ($t | [scan("(?m)^OPTION: *(.+)$")] | map(.[0])) as $opts
+  | ($t | gsub("(?m)^(status:.*|OPTION:.*)\n?"; "") | sub("\\s+$"; "")) as $body
+  | if ($opts | length) > 0 then {type: "question", text: $body, options: $opts}
+    else {type: "turn_end", status: $status, text: $body} end;'
 _session_parse() {
-  jq -R -c 'fromjson? |
-    if .type == "result" then
-      (.result // "" | tostring) as $t
-      | ($t | [scan("(?m)^status: *(needs-input|ready) *$")] | last // ["needs-input"] | .[0]) as $status
-      | ($t | [scan("(?m)^OPTION: *(.+)$")] | map(.[0])) as $opts
-      | ($t | gsub("(?m)^(status:.*|OPTION:.*)\n?"; "") | sub("\\s+$"; "")) as $body
-      | if ($opts | length) > 0 then {type: "question", text: $body, options: $opts}
-        else {type: "turn_end", status: $status, text: $body} end
-    elif .type == "system" and .subtype == "init" then {type: "init", session_id: .session_id}
-    else empty end' 2>/dev/null
+  # Claude ends a turn with one result event. Codex sends its message (say) and
+  # the turn end (turn_done) separately; _session_fold joins them.
+  jq -R -c "${_SESSION_FIN_JQ} fromjson? |
+    if .type == \"result\" then fin(.result // \"\")
+    elif .type == \"system\" and .subtype == \"init\" then {type: \"init\", session_id: .session_id}
+    elif .type == \"thread.started\" then {type: \"init\", session_id: .thread_id}
+    elif .type == \"item.completed\" and .item.type == \"agent_message\" then {type: \"say\", text: (.item.text // \"\")}
+    elif .type == \"turn.completed\" then {type: \"turn_done\"}
+    elif .type == \"turn.failed\" or .type == \"error\" then {type: \"error\", text: ((.error.message // .message // \"the agent failed\") | tostring)}
+    else empty end" 2>/dev/null
+}
+
+# _session_fold <last say>   A parsed event array on stdin → {events, last}: each
+# Codex turn_done becomes its turn end, built from the last message said, which
+# may have arrived in an earlier poll.
+_session_fold() {
+  jq -c --arg last "$1" "${_SESSION_FIN_JQ}
+    reduce .[] as \$e ({events: [], last: \$last};
+      if \$e.type == \"say\" then .last = \$e.text
+      elif \$e.type == \"turn_done\" then .events += [fin(.last)] | .last = \"\"
+      else .events += [\$e] end)"
 }
 
 # session_media <key> <dir>   Copy the images and videos the agent saved in
@@ -288,7 +342,7 @@ session_stop() {
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
     # The conversation too, so a later session in the thread can --resume it.
-    vm_exec_as_agent "$name" "tar -czf - -C /home/agent .claude/projects" > "${SESSION_DIR}/${key}.claude.tgz" 2>/dev/null || true
+    _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' > "${SESSION_DIR}/${key}.claude.tgz" 2>/dev/null || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
   fi
   # No runner yet (still booting) is fine; a runner that will not go away is not.

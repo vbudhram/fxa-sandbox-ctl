@@ -88,7 +88,7 @@ COMMANDS:
   help                         Show this help message
 
 SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend gce):
-  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f>
+  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key>]
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
@@ -1929,10 +1929,11 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
+      --runtime) runtime="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
       --owner) owner="$2"; shift 2 ;;
@@ -1960,6 +1961,11 @@ cmd_task() {
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
+  # A resumed session keeps its agent: the other one cannot read its conversation.
+  [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
+  runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
+  case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; return 1 ;; esac
+  session_set "$key" runtime "$runtime"
   nohup "$0" --backend gce session-boot "$key" > "${SESSION_DIR}/${key}.log" 2>&1 &
   session_set "$key" job_pid "$!"
   echo "${key} starting"
@@ -1969,7 +1975,8 @@ cmd_task() {
 _cmd_session_boot() {
   local key="$1" dir name nonce root sha
   name="$(worktree_branch_for "$key")"; dir="$(session_run_dir "$key")"
-  FXA_AGENT_RUNTIME=claude # steer runs claude --resume, so sessions are Claude only
+  FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
+  export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   runtime_load || { session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
@@ -2011,7 +2018,7 @@ EOF
   # A person steers a session, so its safety-net lifetime is longer than a
   # pipeline run's; the idle pause, not this limit, is what bounds its cost.
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$key" \
-    FXA_CLAUDE_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
+    FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz"
   rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
@@ -2078,6 +2085,11 @@ cmd_events() {
         local sid; sid="$(jq -r 'map(select(.type == "init"))[0].session_id // empty' <<< "$events")"
         [ -n "$sid" ] && [ -z "$(session_get "$key" claude_session_id)" ] && session_set "$key" claude_session_id "$sid"
         events="$(jq 'map(select(.type != "init"))' <<< "$events")"
+        # Codex says its reply and ends its turn in separate events, maybe in separate polls.
+        local fold prev; prev="$(session_get "$key" last_say)"
+        fold="$(_session_fold "$prev" <<< "$events")"
+        events="$(jq -c .events <<< "$fold")"
+        [ "$(jq -r .last <<< "$fold")" = "$prev" ] || session_set "$key" last_say "$(jq -r .last <<< "$fold")"
         if jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$events" >/dev/null; then
           session_set "$key" turn_open 0; open=0
         elif [ "$open" = 1 ] && [ "$running" = 0 ] && [ $(( $(date +%s) - $(session_get "$key" turn_started || echo 0) )) -gt 20 ]; then
@@ -2155,8 +2167,8 @@ _session_finish_fail() {
 # One wrap-up turn, then the normal host finish in a throwaway worktree.
 _cmd_session_finish() {
   local key="$1" name deadline tmp pr_url rc
-  # The wrap-up prompt's handoff step comes from the runtime.
-  FXA_AGENT_RUNTIME=claude
+  # The wrap-up prompt names skills the way the session's agent invokes them.
+  FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
   runtime_load || { _session_finish_fail "$key" "could not load the runtime"; return 1; }
   name="$(worktree_branch_for "$key")"
   _session_turn "$key" "$(_session_wrapup_prompt "$key")" || { _session_finish_fail "$key" "the wrap-up turn did not start"; return 1; }

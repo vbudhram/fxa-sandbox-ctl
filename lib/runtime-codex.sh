@@ -123,6 +123,12 @@ runtime_write_prompt() {
 # atomic guarantee _handoff_settled relies on. tee keeps a durable log; screen
 # scrollback dies with the session.
 runtime_launch_cmd() {
+  # A Slack session streams JSON events into the transcript the events command
+  # reads, and continues an earlier conversation when FXA_CODEX_RESUME is set.
+  if [ -n "${FXA_SESSION_MODE:-}" ]; then
+    printf '%s' "test -f /workspace/.fxa-auto-codex-auth.json && mkdir -p /home/agent/.codex && mv /workspace/.fxa-auto-codex-auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json; source /etc/agent-env.sh; cd /workspace; codex exec ${FXA_CODEX_RESUME:+resume ${FXA_CODEX_RESUME} }--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-claude.jsonl"
+    return
+  fi
   printf '%s' "test -f /workspace/.fxa-auto-codex-auth.json && mkdir -p /home/agent/.codex && mv /workspace/.fxa-auto-codex-auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json; source /etc/agent-env.sh; cd /workspace; codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C /workspace --output-schema /workspace/.fxa-auto-handoff.schema.json -o /workspace/.fxa-auto-done.json.tmp < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-agent.log; test -s /workspace/.fxa-auto-done.json.tmp && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json"
 }
 
@@ -131,7 +137,7 @@ runtime_submit_prompt() {
   return 0
 }
 
-runtime_alive_pattern() { printf '%s' '^codex exec'; }
+runtime_alive_pattern() { printf '%s' '^(node )?[^ ]*codex exec'; }
 
 runtime_prompt_header() {
   local key="$1" summary="$2"

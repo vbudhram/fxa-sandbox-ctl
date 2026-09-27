@@ -257,7 +257,7 @@ _snapshot_session_row() {
     [ -n "$mtime" ] && [ "$mtime" -gt 0 ] && [ "$agent" != null ] && \
       agent="$(jq -c --argjson i "$(( now > mtime ? now - mtime : 0 ))" '.idle_seconds = $i' <<< "$agent")"
     rm -f "$t" "${t}.j"
-    agent_alive "$name" && alive=true
+    _session_turn_running "$key" && alive=true
   fi
   jq -c --argjson agent "${agent:-null}" --argjson alive "$alive" \
     --arg request "$(head -c 300 "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null)" \
