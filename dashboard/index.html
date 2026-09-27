@@ -1075,8 +1075,7 @@ function foxFor(seed, size = 22, cls = "") {
 // the agents feed; PRs past their runner come from the review feed.
 const LANE_ST = ["Queue","Boot","Agent","Squash","Push","PR","CI","Review","Merged"];
 const LANE_COLOR = { live:"var(--info)", wait:"var(--faint)", warn:"var(--warn)", fix:"var(--bad)", done:"var(--purple)" };
-const LANE_OUT = {}; let OUT_ALL = true;
-try { OUT_ALL = localStorage.getItem("laneOutput") !== "off"; } catch {}
+const LANE_OUT = {};
 function laneRows() {
   const { cards } = merged(), med = SNAP?.telemetry?.median_minutes, rows = [], seen = new Set();
   cards.forEach(t => {
@@ -1120,7 +1119,7 @@ function laneTitle(raw) {
 function laneHtml(r) {
   const t = r.t, x = (r.st + 0.5) / 9 * 100, c = LANE_COLOR[r.kind], repo = SNAP?.repo ?? "";
   const title = laneTitle(t.summary || t.branch);
-  const open = r.runner && (t.key in LANE_OUT ? LANE_OUT[t.key] : OUT_ALL);
+  const open = r.runner && (LANE_OUT[t.key] ?? true);
   const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j <= r.st ? `border-color:${c};${j < r.st ? `background:${c}` : ""}` : ""}"></span>`).join("");
   return `<div class="lane ${r.kind}">
     <div class="row">
@@ -1148,9 +1147,9 @@ function laneDetails(r) {
   const kinds = k ? Object.entries(k.kinds).map(([n, c]) => `${c} ${esc(KIND[n] ?? n).toLowerCase()}`).join(" · ") : "";
   const rv = t.review === "APPROVED" ? "approved" : t.review === "CHANGES_REQUESTED" ? "changes requested" : t.review === "REVIEW_REQUIRED" ? "review required" : t.review;
   const groups = [
-    ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
+    ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Turns", k.turns || ""), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
       kv("Median run", `${k.median_min} min`), kv("Files changed", k.files), kv("Last run", ago(Math.round((Date.now() - Date.parse(k.last)) / 1000))),
-      kv("Fix attempts", k.attempts), kv("Feedback rounds", k.feedback_rounds)] : [STATS ? `<span class="empty">no run recorded yet</span>` : `<span class="empty">loading…</span>`]],
+      kv("Fix attempts", k.attempts), kv("Feedback rounds", k.feedback_rounds)] : [STATS ? `<span class="empty">not in the run log: a run records only when it reaches handoff</span>` : `<span class="empty">loading…</span>`]],
     ...(r.runner ? [["Now", [kv("Sandbox", `<span class="mono">${esc(t.name)}</span>${t.slot ? ` · ${esc(t.slot)}` : ""}`), kv("Elapsed", short(t.elapsed_seconds)),
       kv("Model", a.model ? `<span class="mono">${esc(a.model)}</span>` : ""), kv("Cost so far", a.cost_so_far ? usd(a.cost_so_far) : ""),
       kv("Tokens", a.tokens ? `${Math.round((a.tokens.in + a.tokens.out) / 1000)}k` : ""), kv("Turns", a.turns)]]] : []),
@@ -1179,7 +1178,6 @@ function renderLanes() {
       <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
       <h2 style="margin:0">Pipeline<span class="sub">one belt per ticket</span></h2>
       <span class="sub" style="color:var(--dim)">${live ? `FxA Agent is working on ${rows.filter(r => r.runner).length}` : "FxA Agent is idle"}</span>
-      <button class="switch" role="switch" aria-checked="${OUT_ALL}" id="out-all" style="margin-left:auto"><span class="knob"></span>Agent output</button>
     </div>`;
   put("s-lanes", head + `<div class="lanes">
       <div class="head"><span class="empty">Ticket</span><div class="cols">${LANE_ST.map((n, j) => `<div><b>${n}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div>
@@ -1204,12 +1202,6 @@ document.addEventListener("scroll", e => {
   if (!d || !b.classList?.contains("body")) return;
   LANE_SCROLL[d.dataset.lane] = b.scrollTop + b.clientHeight >= b.scrollHeight - 24 ? undefined : b.scrollTop;
 }, true);
-document.addEventListener("click", e => {
-  if (!e.target.closest?.("#out-all")) return;
-  OUT_ALL = !OUT_ALL; Object.keys(LANE_OUT).forEach(k => delete LANE_OUT[k]);
-  try { localStorage.setItem("laneOutput", OUT_ALL ? "on" : "off"); } catch {}
-  renderLanes();
-});
 
 // Slack sessions: owner-steered, no ticket, no pool slot.
 const LIVE_SESSION = ["starting", "active", "wrapping"];

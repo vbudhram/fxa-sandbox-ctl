@@ -217,7 +217,7 @@ snapshot_stats_json() {
       top: ($all | group_by(.issue) | map({ issue: .[0].issue, cost: (map(.cost_usd // 0) | add | r2), runs: length }) | sort_by(-.cost) | .[0:5]),
       models: ($all | map(.model // "") | map(select(. != "" and (startswith("<") | not))) | group_by(.) | map({ model: .[0], runs: length }) | sort_by(-.runs)),
       tickets: ($all | group_by(.issue) | map({ key: .[0].issue, value: {
-        runs: length, cost: (map(.cost_usd // 0) | add | r2),
+        runs: length, cost: (map(.cost_usd // 0) | add | r2), turns: (map(.messages // 0) | add),
         models: (map(.model // "") | map(select(. != "" and (startswith("<") | not))) | unique),
         kinds: (group_by(.kind // "not recorded") | map({ key: (.[0].kind // "not recorded"), value: length }) | from_entries),
         median_min: (map(.wall_seconds // 0) | med / 60 | round),
