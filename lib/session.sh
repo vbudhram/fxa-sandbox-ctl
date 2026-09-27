@@ -78,6 +78,28 @@ The same rules as before apply, including the final 'status:' line.
 EOF
 }
 
+# _session_history_add <key> <role> <text>   One line of the conversation, kept
+# on the host so the dashboard can show it after the runner is gone.
+_session_history_add() {
+  jq -nc --arg r "$2" --arg t "$3" '{at: now, role: $r, text: $t}' >> "${SESSION_DIR}/$1.history.jsonl"
+}
+
+# session_history <key>   The conversation as a JSON array, oldest first,
+# through every session this one resumed from.
+session_history() {
+  local key="$1" out="[]" chunk n=0
+  while [ -n "$key" ] && [ "$n" -lt 20 ] && session_exists "$key"; do
+    # The first message is the request; the bot appends earlier thread messages as context.
+    chunk="$(jq -n --arg k "$key" --argjson at "$(jq '.created // 0' "$(_session_file "$key")")" \
+      --rawfile p <(cat "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null) \
+      '[{at: $at, role: "user", key: $k, text: ($p | split("\n\nEarlier messages")[0])}]
+       + [inputs | . + {key: $k}]' <(cat "${SESSION_DIR}/${key}.history.jsonl" 2>/dev/null) 2>/dev/null)" || chunk="[]"
+    out="$(jq -c --argjson a "${chunk:-[]}" '$a + .' <<< "$out")"
+    key="$(session_get "$key" resume_from)"; n=$(( n + 1 ))
+  done
+  printf '%s\n' "$out"
+}
+
 # The origin repo as an https URL, for a compare link.
 _session_repo_url() {
   git -C "$(worktree_repo_root)" remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##'

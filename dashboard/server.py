@@ -138,6 +138,19 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, json.dumps({"key": key, "lines": agent_tail(key)}),
                            "application/json")
+        elif path == "/api/history":
+            from urllib.parse import parse_qs, urlparse
+            key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
+            if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):
+                self._send(400, json.dumps({"error": "bad key"}), "application/json")
+                return
+            try:
+                proc = subprocess.run([str(CTL), "session", "history", key], capture_output=True,
+                                      text=True, timeout=15, errors="replace")
+                body = proc.stdout if proc.returncode == 0 and proc.stdout.strip() else json.dumps({"error": (proc.stderr or "history failed").strip()[:200]})
+            except Exception as exc:
+                body = json.dumps({"error": type(exc).__name__})
+            self._send(200, body, "application/json")
         elif path == "/api/refresh":
             queued = []
             for feed in (AGENTS, FULL):

@@ -157,6 +157,14 @@
   .term-body { margin-top:var(--s2); background:var(--sunk); color:var(--dim); border:1px solid var(--line); border-radius:var(--r-sm);
                padding:var(--s2); max-height:clamp(96px,20vh,170px); overflow:auto; overscroll-behavior:contain;
                font-family:var(--mono); font-size:11px; line-height:1.45; white-space:pre; }
+  .chat { max-height:55vh; overflow:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:var(--s2); }
+  .msg { border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s2) var(--s3); background:var(--sunk);
+         font-size:var(--t-sub); white-space:pre-wrap; overflow-wrap:anywhere; }
+  .msg.user { background:var(--infobg); border-color:color-mix(in srgb,var(--info) 25%,transparent); margin-right:15%; }
+  .msg.agent { margin-left:15%; }
+  .msg.action { background:transparent; border-style:dashed; color:var(--dim); text-align:center; }
+  .msg .who { display:block; font-size:var(--t-label); font-weight:650; color:var(--dim); margin-bottom:2px; white-space:normal; }
+  .msg .who span { font-weight:400; color:var(--faint); margin-left:var(--s2); }
   .waiting { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline;
              padding:var(--s2) 0; font-size:var(--t-sub); border-top:1px solid var(--line); }
 
@@ -567,9 +575,36 @@ function sessionCard(s) {
       ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : ""}
     </div>
     ${last ? `<div class="stats"><span class="last" title="${esc(last)}">${esc(last)}</span></div>` : ""}
+    <details class="hist" data-key="${esc(s.key)}"${HIST_OPEN.has(s.key) ? " open" : ""}><summary>Conversation</summary><div class="chat body">${histHtml(s.key)}</div></details>
     ${live ? `<details data-k="term-${esc(s.key)}" id="term-${esc(s.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
   </div>`;
 }
+
+// The conversation loads when opened and refreshes on each poll while open.
+const HIST = {}, HIST_OPEN = new Set();
+function histHtml(key) {
+  const h = HIST[key];
+  if (!h) return `<div class="empty">loading…</div>`;
+  if (h.error) return `<div class="empty">${esc(h.error)}</div>`;
+  if (!h.length) return `<div class="empty">nothing recorded</div>`;
+  const who = { user: "Message", agent: "Agent", action: "" };
+  return h.map(m => `<div class="msg ${esc(m.role)}"><span class="who">${who[m.role] ?? esc(m.role)}<span>${stamp(m.at)}${m.key !== key ? ` · ${esc(m.key)}` : ""}</span></span>${
+    esc(m.text.length > 4000 ? m.text.slice(0, 4000) + "…" : m.text)}</div>`).join("");
+}
+async function loadHist(key) {
+  try { HIST[key] = await (await fetch(`/api/history?key=${encodeURIComponent(key)}`, { cache:"no-store" })).json(); }
+  catch { HIST[key] = { error: "could not load the conversation" }; }
+  document.querySelectorAll(`details.hist[data-key="${key}"] .chat`).forEach(c => {
+    const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 24 || !c.dataset.seen;
+    c.innerHTML = histHtml(key); c.dataset.seen = 1;
+    if (atBottom) c.scrollTop = c.scrollHeight;
+  });
+}
+document.addEventListener("toggle", e => {
+  const d = e.target;
+  if (!d.matches?.("details.hist")) return;
+  if (d.open) { HIST_OPEN.add(d.dataset.key); loadHist(d.dataset.key); } else HIST_OPEN.delete(d.dataset.key);
+}, true);
 function renderSessions() {
   const ss = AGENTS?.sessions ?? [], live = ss.filter(s => LIVE_SESSION.includes(s.state));
   // No runner: paused first, since a reply brings those back.
@@ -727,6 +762,7 @@ async function poll() {
   catch { document.getElementById("dot").className = "dot dead"; document.getElementById("age").textContent = "server unreachable"; return; }
   SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
   render();
+  HIST_OPEN.forEach(loadHist);
 }
 document.getElementById("refresh").addEventListener("click", async () => {
   try { await fetch("/api/refresh"); } catch {}

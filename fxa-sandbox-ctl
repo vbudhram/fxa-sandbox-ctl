@@ -99,7 +99,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   finish --session <key> [--no-pr]
                                WRITE: in the background, a wrap-up turn, then commit in a
                                throwaway worktree and open a draft PR; events reports it
-  session list | show <key>    Read session records
+  session list | show <key> | history <key>
+                               Read session records; history is the conversation as JSON
   session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (1800);
                                the work and conversation are saved, the runner is deleted
 
@@ -2046,6 +2047,7 @@ cmd_steer() {
     starting|active) ;;
     *) echo "ERROR: ${key} is $(session_get "$key" state); it takes no messages" >&2; return 1 ;;
   esac
+  _session_history_add "$key" user "$(cat "$file")"
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
@@ -2106,6 +2108,13 @@ cmd_events() {
         fi
         # The Open PR job reports its own outcome; the wrap-up turn's reply is noise.
         [ "$state" = wrapping ] && events="$(jq 'map(select(.type != "turn_end" and .type != "question"))' <<< "$events")"
+        # A re-read of lines already recorded (the bot retried a cursor) adds nothing.
+        local hc; hc="$(session_get "$key" history_cursor)"
+        if [ "$lines" -gt 0 ] && [ "$since" -ge "${hc:-0}" ]; then
+          jq -r '.[] | select(.type == "turn_end" or .type == "question" or .type == "error") | .text // "" | @json' <<< "$events" |
+            while IFS= read -r t; do _session_history_add "$key" agent "$(jq -r . <<< "$t")"; done
+          session_set "$key" history_cursor "$(( since + lines ))"
+        fi
       elif ! vm_is_running "$name" 2>/dev/null; then
         events='[{"type":"error","text":"The runner is gone (lifetime cap or deleted)."}]'
         session_set "$key" state stopped; state=stopped
@@ -2164,6 +2173,7 @@ _finish_session() {
     echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
     _session_unlock "$key"; return 1
   fi
+  _session_history_add "$key" action "$( [ "$mode" = --no-pr ] && echo "Push branch" || echo "Open PR" )"
   session_set "$key" state wrapping wrap_mode "$( [ "$mode" = --no-pr ] && echo push || echo pr )"
   _session_unlock "$key"
   nohup "$0" --backend gce session-finish "$key" $mode > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
@@ -2175,6 +2185,7 @@ _session_finish_fail() {
   local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
   [ "${3:-}" = --no-pr ] && what="Push branch"
   session_set "$1" state active last_error "${what} failed: ${last:-$2}"
+  _session_history_add "$1" action "${what} failed: ${last:-$2}"
   return 1
 }
 
@@ -2207,11 +2218,13 @@ _cmd_session_finish() {
     # The session stays open for more steering; the next push needs a fresh handoff.
     vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
     session_set "$key" state active pushed_branch "$key" pushed_announced 0
+    _session_history_add "$key" action "Pushed branch ${key}"
     echo "pushed ${key}"; return 0
   fi
   [ -n "$pr_url" ] || { _session_finish_fail "$key" "PR create failed" "$mode"; return 1; }
   agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
   session_set "$key" state pr_open pr_url "$pr_url"
+  _session_history_add "$key" action "Opened ${pr_url}"
   echo "$pr_url"
 }
 
@@ -2219,6 +2232,7 @@ cmd_session() {
   case "${1:-list}" in
     list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
+    history) _session_key "${2:-}" && session_history "$2" ;;
     idle-sweep) session_idle_sweep ;;
     *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac

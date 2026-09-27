@@ -122,6 +122,14 @@ check "pr announced once" "pr 0" "$(cmd_events agent-t2 | jq -r '.events[0].type
 _session_repo_url() { echo https://github.com/example/repo; }
 session_set agent-t2 pushed_branch agent-t2 pushed_announced 0
 check "push announced once, with a compare link" "pushed compare/main...agent-t2 0" "$(cmd_events agent-t2 | jq -r '.events[0] | "\(.type) \(.url | capture("(?<c>compare/.*)\\?").c)"') $(cmd_events agent-t2 | jq '.events | length')"
+
+# History: the request, then each reply once, even when the bot re-reads a cursor.
+echo '{"key":"agent-t3","state":"active","turn_open":"1","turn_started":"0"}' > "$tmp/agent-t3.json"
+printf 'fix it\n\nEarlier messages in this Slack thread: x' > "$tmp/agent-t3.prompt.md"
+RUNNING=0; RUNNER='{"type":"result","result":"done it\nstatus: ready"}
+'
+cmd_events agent-t3 --since 0 >/dev/null; cmd_events agent-t3 --since 0 >/dev/null
+check "history holds the request and one reply" "user:fix it|agent:done it" "$(session_history agent-t3 | jq -r 'map("\(.role):\(.text)") | join("|")')"
 session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RUNNER=''
 check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
 exit "$fail"
