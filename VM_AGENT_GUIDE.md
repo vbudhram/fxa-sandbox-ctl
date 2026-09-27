@@ -106,8 +106,10 @@ There is no `/goal`. A person steers you turn by turn.
 ## 4. Verify your change
 
 Before you change code, write a test plan with `/fxa-test-plan`: each behavior
-the ticket changes and the narrowest test that proves it (unit, integration,
-functional, Storybook, or CI only), in `/workspace/.fxa-test-plan.json`. Then
+the ticket changes and how you will see it work, the way a user or client
+would: a functional flow, a check against the running stack, or an integration
+spec, with unit tests on top for edge cases. Save it in
+`/workspace/.fxa-test-plan.json`. Then
 use `/fxa-verify --run --plan /workspace/.fxa-test-plan.json`. It runs the
 planned tests, then the related specs and lint for each changed package, and
 only for the files you changed. With no file paths it also

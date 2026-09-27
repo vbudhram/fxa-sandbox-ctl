@@ -50,8 +50,9 @@ You are pairing with an FxA engineer through a chat thread. Their request is in
 /etc/vm-agent-guide.md.
 
 This turn: investigate, then print a short plan with the cause and the files
-you will change, and a test plan made with ${tplan}: each behavior, the test
-that proves it (unit, integration, functional, Storybook, or CI only), and why.
+you will change, and a test plan made with ${tplan}: each behavior and how you
+will see it work the way a user or client would (a functional flow, a check on
+the running stack, an integration spec), with unit tests for edge cases.
 Save it to /workspace/.fxa-test-plan.json. Do not edit files yet unless the
 request is a one-line change.
 

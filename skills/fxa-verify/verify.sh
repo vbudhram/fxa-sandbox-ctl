@@ -138,9 +138,14 @@ done
 if [ -n "$PLAN" ]; then
   [ -f "$PLAN" ] && jq -e '.items | type == "array"' "$PLAN" >/dev/null 2>&1 \
     || { echo "ERROR: $PLAN is not a test plan; see /fxa-test-plan."; exit 2; }
-  specs=() funcs=() taken=()
-  while IFS=$'\x1f' read -r level spec grepf behavior; do
+  specs=() funcs=() checks=() taken=()
+  while IFS=$'\x1f' read -r level spec grepf behavior crun cexpect cstack; do
     case "$level" in
+      check)
+        # A direct observation of the behavior, e.g. curl against the running
+        # stack; PASS when the output matches the expected pattern.
+        [ -n "$crun" ] && [ -n "$cexpect" ] || { add "plan missing: check '${behavior:0:30}' needs run and expect" "." "false"; continue; }
+        checks+=("${behavior:0:48}"$'\x1f'"$crun"$'\x1f'"$cexpect"$'\x1f'"$cstack") ;;
       ci) add "plan CI: ${behavior:0:48}" "." "true" ;;
       storybook) add "plan storybook: ${spec:-${behavior:0:40}}" "." "true" ;;
       types) TYPES=1 ;;
@@ -151,12 +156,16 @@ if [ -n "$PLAN" ]; then
         if [ -f "$spec" ]; then specs+=("$spec"); taken+=("$spec")
         else add "plan missing: $spec" "." "echo 'the plan names $spec, which does not exist'; false"; fi ;;
     esac
-  done < <(jq -r '.items[] | [(.level // "unit"), (.spec // ""), (.grep // ""), (.behavior // "")] | map(gsub("[\t\n\u001f]"; " ")) | join("\u001f")' "$PLAN")
+  done < <(jq -r '.items[] | [(.level // "unit"), (.spec // ""), (.grep // ""), (.behavior // ""), (.run // ""), (.expect // ""), (if .needs_stack == false then "no" else "yes" end)] | map(gsub("[\t\n\u001f]"; " ")) | join("\u001f")' "$PLAN")
   [ "${#specs[@]}" -gt 0 ] && plan_files "plan " "${specs[@]}"
   # The safety net: the changed files' related specs, minus what the plan runs.
   net=(); for f in "${files[@]}"; do printf '%s\n' "${taken[@]}" | grep -qxF -- "$f" || net+=("$f"); done
   [ "${#net[@]}" -gt 0 ] && plan_files "net " "${net[@]}"
-  # Functional last: it starts the stack, which needs the memory the others used.
+  # Checks and functional specs last: they start the stack, which needs the
+  # memory the unit and integration runs used. One at a time.
+  for ck in "${checks[@]}"; do IFS=$'\x1f' read -r cb cr ce cs <<<"$ck"
+    pre=""; [ "$cs" = yes ] && pre="bash ~/.claude/skills/fxa-stack/stack.sh ensure >/dev/null || { echo 'the stack did not start; run /fxa-stack diagnose'; exit 3; }; "
+    add "plan check: $cb" "." "${pre}out=\$(bash -c $(printf %q "$cr") 2>&1); printf '%s\\n' \"\$out\"; printf '%s' \"\$out\" | grep -qE $(printf %q "$ce") || { echo 'expected to match: '$(printf %q "$ce"); exit 1; }"; done
   for fu in "${funcs[@]}"; do IFS=$'\t' read -r fs fg <<<"$fu"
     add "plan functional $(basename "$fs")" "." "bash ~/.claude/skills/fxa-functional-local/run.sh $(printf %q "$fs")${fg:+ $(printf %q "$fg")}"; done
 else

@@ -15,7 +15,7 @@ included), plans one command per package, and with `--run` runs them:
 
 With `--plan` it first runs the specs your test plan names (`plan` lines; see
 `/fxa-test-plan`), then the related specs of the changed files (`net` lines),
-then a planned functional spec, last. `CI` and `TODO` lines are not run. Every
+then the planned `check` lines and functional specs, last, with the stack started once. `CI` and `TODO` lines are not run. Every
 run writes its verdict to `/workspace/.fxa-verify-verdict.txt`.
 
 Verdicts: `PASS`; `FAIL`; `NONE` (the command ran no tests: fix the command or

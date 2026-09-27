@@ -674,9 +674,9 @@ _jira_render_prompt() {
    covers the changed flow, and the step 2 run must PASS it. It records video
    into /workspace/.fxa-auto-media/."
   else
-    step4="4. A functional test runs only if your test plan names one (at most one,
-   when no lower level can show the behavior); step 2 runs it. Otherwise do
-   NOT run 'fxa-start'."
+    step4="4. For each change a user or client can see, your test plan observes it on
+   the running stack: a functional spec (up to 3) or a check (curl, mail, SQL);
+   step 2 runs them. Unit tests alone do not meet this step."
   fi
 
   runtime_prompt_header "$key" "$summary"
