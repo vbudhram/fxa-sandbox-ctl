@@ -503,103 +503,27 @@ _setup_claude_config() {
   local vm_section
   vm_section="$(cat <<'VMSECTION'
 
-# Sandbox VM Environment
+# Sandbox VM
 
-You are running inside a sandbox VM (Ubuntu 24.04 ARM64, Tart).
+You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 8GB RAM).
 
-## IMPORTANT: First Action
+First, read `/etc/vm-agent-guide.md`, the operations manual. It covers the
+backend you are on, the network allowlist, what the host refuses to ship, the
+stack and its ports, and how to verify. For FxA itself, read
+`/workspace/ai/AGENTS.md` and the rules in `/workspace/.claude/rules/`.
 
-At the start of every new session, read these files for full project context:
-1. `/etc/vm-agent-guide.md` — Complete VM operations manual (ports, architecture, gotchas)
-2. `/workspace/ai/AGENTS.md` — FxA project context and coding conventions (if it exists)
-
-## Key Facts
-- **Workspace:** `/workspace` (host repo mounted read-write)
-- **All services on localhost** — auth :9000, content :3030, settings :3000, profile :1111
-- **Infrastructure auto-started at boot:** MySQL :3306, Redis :6379, Firestore :9090
-- **FxA services require manual start:** run `fxa-start`
-
-## Starting Services
-
-Run `fxa-start` to start all FxA application services. This script:
-1. Installs Linux-arm64 native modules (esbuild, sass-embedded, swc) — the workspace `node_modules` are from macOS
-2. Runs database migrations (`db-migrations/bin/patcher.mjs`)
-3. Starts the Cloud Tasks emulator and goaws SNS stub (if needed)
-4. Starts all application services via PM2 (auth, content, settings, profile, 123done, mail_helper)
-5. Starts nginx reverse proxy on :3030
-
-```bash
-fxa-start              # Start all FxA services (~30s)
-fxa-start --status     # Show PM2 process list
-fxa-start --stop       # Stop all services + nginx
-```
-
-## Verifying Services
-
-After `fxa-start`, verify services are healthy before running tests:
-
-```bash
-curl -sf http://localhost:9000/__heartbeat__   # Auth server (:9000)
-curl -sf http://localhost:3030/                # Content server via nginx (:3030)
-curl -sf http://localhost:3000/                # Settings React dev server (:3000)
-curl -sf http://localhost:1111/__heartbeat__   # Profile server (:1111)
-curl -sf http://localhost:8080/                # 123done test RP (:8080)
-curl -sf http://localhost:9001/mail            # mail_helper (:9001)
-pm2 describe cloud-tasks-emulator             # Cloud Tasks emulator (:8123)
-```
-
-## Running Functional Tests
-
-Functional tests use Playwright with the `local` project (Firefox against the stack in
-this VM). `local-chromium` and `local-payments-next` exist too. There is no `sandbox` project.
-
-```bash
-cd /workspace/packages/functional-tests
-
-# Run all functional tests (same as `yarn test` here). Two workers is the default;
-# do not raise it, each Firefox worker costs about 1GB and the box holds the stack too.
-npx playwright test --project=local
-
-# Run a specific test file
-npx playwright test --project=local tests/signin/signIn.spec.ts
-
-# Run tests matching a grep pattern
-npx playwright test --project=local -g "sign in"
-```
-
-**Known limits of the VM stack.** Three groups of functional specs cannot pass here and are
-covered by CI instead: OAuth relier flows through 123done (`tests/oauth/*`, `loginHint*`,
-`relayIntegration`, `smartWindowIntegration`) fail at the token exchange because the grant path
-needs the subscriptions capability manager, which needs Stripe and Strapi; the CMS specs
-(`tests/cms/*`) skip because the CMS is off; payments specs live in `local-payments-next`,
-which has no stack here. Verify with direct content-server flows (sign-in, sign-up, reset,
-settings) or Sync through `/pair`. When an issue is relier-specific, say so in the handoff and
-leave it to CI.
-
-
-**WARNING:** Do NOT set `FXA_SANDBOX_IP` inside the VM. That variable is only for the host Mac. Inside the VM, tests use `localhost` automatically.
-
-## Running Unit Tests
-
-```bash
-npx nx test-unit fxa-auth-server
-npx nx test-unit fxa-settings
-npx nx test-unit <package-name>
-```
-
-## Inbox Viewer
-- **URL:** `http://localhost:3030/__inbox` — web UI for viewing captured emails
-- Enter an email address to see verification codes, reset links, etc.
-- Codes displayed prominently with copy-to-clipboard
-- Polls mail_helper every 3 seconds via `/__mail/` nginx proxy
-
-## Context
-- Browser context: `oauth_webchannel_v1` (modern OAuth-based Sync flow)
-- HSTS stripped by nginx proxy (auth server sends strict-transport-security over HTTP)
-
-## Full Guide
-Read `/etc/vm-agent-guide.md` for the complete operations manual (port map, architecture, gotchas).
-Fallback quick-reference: `/etc/vm-agent-context.md`
+What trips agents most often:
+- You cannot commit or push, and there is no `gh`. The host commits, signs and
+  pushes your working tree. Revert a file with `git checkout -- <path>`.
+- The host refuses changes to CI and tooling files (`.github/`, `.circleci/`,
+  `.husky/`, `_scripts/`, `package.json` scripts) and to frozen paths.
+- The network is an allowlist (Anthropic, npm and yarn, GitHub, Playwright).
+  Any other host is refused.
+- Verify with `/fxa-verify --run`, never a whole package suite: it can run the
+  8GB machine out of memory. `nx test-unit fxa-settings` runs no tests.
+- The FxA services are not running. Start them with `fxa-start` only when you
+  need them. Set `PLAYWRIGHT_WORKERS=2` for functional tests.
+- Save screenshots and videos in `/workspace/.fxa-auto-media/`.
 VMSECTION
 )"
   local vm_section_b64
@@ -812,6 +736,10 @@ META
   echo "Setting up ${FXA_AGENT_RUNTIME} config..."
   # The config writes and the screenrc below go in one ssh.
   vm_batch_start
+  # The guide in the image goes stale between image builds; send the current one.
+  local guide_b64; guide_b64="$(base64 < "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md" | tr -d '\n')"
+  vm_exec "$name" sudo bash -c "echo '${guide_b64}' | base64 -d > /etc/vm-agent-guide.md && chmod 644 /etc/vm-agent-guide.md" 2>/dev/null \
+    || echo "  WARN: could not send the VM guide; the image's copy stays" >&2
   runtime_setup_config "$name" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
   runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
 
