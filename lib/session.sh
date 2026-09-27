@@ -41,21 +41,25 @@ session_live() {
 # The first turn. Not a /goal: the owner judges done by steering, and the host
 # checks the work at Open PR.
 _session_first_prompt() {
-  local verify func stack
-  verify="$(runtime_skill_ref fxa-verify)"; func="$(runtime_skill_ref fxa-functional-local)"; stack="$(runtime_skill_ref fxa-stack)"
+  local verify stack tplan
+  verify="$(runtime_skill_ref fxa-verify)"; stack="$(runtime_skill_ref fxa-stack)"
+  tplan="$(runtime_skill_ref fxa-test-plan)"
   cat <<EOF
 You are pairing with an FxA engineer through a chat thread. Their request is in
 /workspace/.fxa-jira-context.md; read it first. The runner's operations guide is
 /etc/vm-agent-guide.md.
 
-This turn: investigate, then print a short plan with the cause, the files you
-will change, and the tests you will run. Do not edit files yet unless the
+This turn: investigate, then print a short plan with the cause and the files
+you will change, and a test plan made with ${tplan}: each behavior, the test
+that proves it (unit, integration, functional, Storybook, or CI only), and why.
+Save it to /workspace/.fxa-test-plan.json. Do not edit files yet unless the
 request is a one-line change.
 
 Every turn, including later ones:
 - Do not commit or push, and do not run 'gh'. The host does that.
-- Verify with ${verify}: it runs the right tests and lint for each package.
-  For a UI flow use ${func}; for the local stack, ${stack}.
+- Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
+  planned tests, then the related specs of what you changed, and lint. Update
+  the plan when the work changes. For the local stack, ${stack}.
 - To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
 - When you need a decision, list 2 to 4 answers, one per line, each starting

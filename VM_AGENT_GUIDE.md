@@ -105,8 +105,12 @@ There is no `/goal`. A person steers you turn by turn.
 
 ## 4. Verify your change
 
-Use `/fxa-verify --run`. It runs the right tests and lint for each changed
-package, and only for the files you changed. With no file paths it also
+Before you change code, write a test plan with `/fxa-test-plan`: each behavior
+the ticket changes and the narrowest test that proves it (unit, integration,
+functional, Storybook, or CI only), in `/workspace/.fxa-test-plan.json`. Then
+use `/fxa-verify --run --plan /workspace/.fxa-test-plan.json`. It runs the
+planned tests, then the related specs and lint for each changed package, and
+only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
 
 - Never run a whole package suite. The whole auth unit project (4157 tests)
@@ -148,7 +152,7 @@ integration test. By hand: `node packages/db-migrations/bin/patcher.mjs`
 `GET /` with 400, so `curl -f` reports it as down when it is up.
 
 The FxA services do not start on their own. Start them only when you need
-them: in a pipeline run without functional tests, the goal tells you not to.
+them: in a pipeline run, only when your test plan names a functional spec.
 
 ```bash
 fxa-start            # builds the admin server, starts everything (about 100 s)
@@ -229,7 +233,7 @@ the reason to `/workspace/.fxa-auto-media-skipped.txt`.
 Plugins do not load here. These skills are copied in at launch:
 `/fxa-verify`, `/fxa-functional-local`, `/fxa-stack`,
 `/fxa-storybook-capture`, `/fxa-vm-selfcheck`, `/fxa-vm-handoff`,
-`/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
+`/fxa-test-plan`, `/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
 `/create-pr-description`, `/humanizer`, `/pr-review-typescript`,
 `/quick-review` and `/fxa-save-investigation`. The FxA repo adds its own in
 `/workspace/.claude/skills`, such as `/fxa-review-quick`, and its rules in

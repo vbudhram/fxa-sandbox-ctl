@@ -670,14 +670,13 @@ _jira_render_prompt() {
 
   local step4
   if [ "$functional_tests" = "true" ]; then
-    step4="4. Functional tests are REQUIRED. Run the one spec that covers the
-   changed flow with $(runtime_skill_ref fxa-functional-local); it must PASS. It starts the stack
-   if needed, records video, and puts it in /workspace/.fxa-auto-media/."
+    step4="4. Functional tests are REQUIRED: your test plan names the one spec that
+   covers the changed flow, and the step 2 run must PASS it. It records video
+   into /workspace/.fxa-auto-media/."
   else
-    step4="4. Functional tests are SKIPPED for this run (the sandbox stack has
-   open issues; the operator will validate manually after merge). Do NOT run
-   'fxa-start' or 'yarn test-sandbox'. Unit tests from step 2 plus lint from
-   step 3 are sufficient evidence here."
+    step4="4. A functional test runs only if your test plan names one (at most one,
+   when no lower level can show the behavior); step 2 runs it. Otherwise do
+   NOT run 'fxa-start'."
   fi
 
   runtime_prompt_header "$key" "$summary"
@@ -685,9 +684,10 @@ _jira_render_prompt() {
 
 The goal is met only when ALL of these are TRUE and visible in this conversation:
 
-1. You have printed a short plan with the root cause and proposed fix.
-2. $(runtime_skill_ref fxa-verify) --run on your changes shows no FAIL and no NONE
-   for code you changed. Never run a whole package suite: it OOM-kills this
+1. You have printed a short plan with the root cause and proposed fix, and a
+   test plan from $(runtime_skill_ref fxa-test-plan) in /workspace/.fxa-test-plan.json.
+2. $(runtime_skill_ref fxa-verify) --run --plan /workspace/.fxa-test-plan.json shows no FAIL
+   and no NONE. Never run a whole package suite: it OOM-kills this
    8GB runner. CI runs the full suite.
 3. Lint passes on every changed file: the step 2 run lints them with eslint.
    Fix every error and re-run.

@@ -54,7 +54,7 @@ _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
     fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
-    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop
+    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan
 }
 
 # ── Helpers ────────────────────────────────────────────────────

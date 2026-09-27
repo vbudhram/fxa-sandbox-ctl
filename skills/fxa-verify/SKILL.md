@@ -11,6 +11,17 @@ included), plans one command per package, and with `--run` runs them:
     bash ~/.claude/skills/fxa-verify/verify.sh             # show the plan
     bash ~/.claude/skills/fxa-verify/verify.sh --run       # run it, print the verdict
     bash ~/.claude/skills/fxa-verify/verify.sh --run --types   # also type-check the touched projects
+    bash ~/.claude/skills/fxa-verify/verify.sh --run --plan /workspace/.fxa-test-plan.json
+
+With `--plan` it first runs the specs your test plan names (`plan` lines; see
+`/fxa-test-plan`), then the related specs of the changed files (`net` lines),
+then a planned functional spec, last. `CI` and `TODO` lines are not run. Every
+run writes its verdict to `/workspace/.fxa-verify-verdict.txt`.
+
+Verdicts: `PASS`; `FAIL`; `NONE` (the command ran no tests: fix the command or
+the spec); `NOREL` (no spec imports that file, for example a route that only
+integration specs cover: your test plan must cover it); `CI` (left to CI);
+`TODO` (Storybook, by hand).
 
 Add `--types` for any removal, rename, or signature change. Pass file paths to
 check only those. Print the verdict table in your reply: it is the evidence.
