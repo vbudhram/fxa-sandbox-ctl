@@ -791,7 +791,15 @@ SCREENRC
   # The runtime owns the launch string and how the prompt reaches the agent.
   # Both run inside a screen session so attach/tail/alive behave the same for
   # either: Claude's TUI is pasted into after boot; Codex reads stdin at exec.
-  [ -n "$prompt" ] && runtime_write_prompt "$prompt" "$workspace_dir"
+  if [ -n "$prompt" ]; then
+    runtime_write_prompt "$prompt" "$workspace_dir"
+  else
+    # The launch always runs .fxa-auto-launch.sh, so without a new prompt an
+    # earlier run's script, prompt and ticket must go. On 2026-09-27 a plain
+    # `run` on a pool slot started that slot's last ticket, FXA-14620, again.
+    rm -f "${workspace_dir}/.fxa-auto-launch.sh" "${workspace_dir}/.fxa-auto-prompt.txt" \
+      "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json"
+  fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; vm_delete "$name"; return 1; }
     rm -f "$launching"
