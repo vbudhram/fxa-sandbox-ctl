@@ -683,7 +683,11 @@ _finish_push_and_pr() {
     # either. The PR is worth more than its label or its screenshots.
     echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it or media." >&2
     echo "$pr_url" >&2
-    pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
+    # gh creates the PR and still exits non-zero when an attachment fails (an App
+    # token cannot upload user assets), so a PR may already exist.
+    pr_url="$(cd "$worktree" && gh pr list --head "$branch" --state open --json url -q '.[0].url' 2>/dev/null)"
+    [ -n "$pr_url" ] && echo "NOTE: the PR was created; some media did not upload." >&2
+    [ -n "$pr_url" ] || pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
       --base "${FXA_WORKTREE_BASE:-main}" \
       --head "$branch" \
       --title "$pr_title" \
