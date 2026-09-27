@@ -435,6 +435,24 @@ _session_wrap_step() {
   esac
 }
 
+# session_pr_status <key>   The session PR's CI, reviews and state, for the thread
+# to follow after Open PR. A failing check named in PIPE_INFRA_CHECKS is listed
+# as infra too: it is the repo's CI setup, not the change.
+session_pr_status() {
+  local url; url="$(session_get "$1" pr_url)"
+  [ -n "$url" ] || { echo null; return 0; }
+  gh pr view "$url" --json state,reviewDecision,statusCheckRollup,latestReviews 2>/dev/null \
+    | jq -c --arg url "$url" --arg infra "${PIPE_INFRA_CHECKS:-extract=Bad credentials}" '
+      ($infra | split(" ") | map(split("=")[0])) as $inf
+      | [.statusCheckRollup[]? | {name: (.name // .context),
+          done: (if .status then .status == "COMPLETED" else ((.state // "") | IN("PENDING", "EXPECTED") | not) end),
+          bad: ((.conclusion // .state // "") | IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"))}] as $c
+      | {url: $url, state, review: .reviewDecision,
+         ci: (if ($c | length) == 0 then "none" elif any($c[]; .bad) then "fail" elif all($c[]; .done) then "pass" else "running" end),
+         failing: [$c[] | select(.bad) | .name], infra: [$c[] | select(.bad) | .name | select(IN($inf[]))],
+         reviews: [.latestReviews[]? | {login: .author.login, state}]}' || echo null
+}
+
 # _session_record_summary <key>   Before the runner goes: time, turns, cost and the
 # size of the change, for the line the bot posts on Stop and Open PR.
 _session_record_summary() {

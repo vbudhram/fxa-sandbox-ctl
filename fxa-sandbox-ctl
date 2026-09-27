@@ -2273,6 +2273,7 @@ cmd_session() {
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     history) _session_key "${2:-}" && session_history "$2" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
+    pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
     idle-sweep) session_idle_sweep ;;
     *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac

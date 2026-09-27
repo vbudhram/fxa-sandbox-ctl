@@ -188,4 +188,13 @@ session_set agent-t2 turns 4 created "$(( $(date +%s) - 600 ))"
 _session_record_summary agent-t2
 check "summary fields" "2.25|4|10|3 files changed, 10 insertions(+)" "$(session_get agent-t2 summary | jq -r '"\(.cost)|\(.turns)|\(.minutes)|\(.diff)"')"
 
+# The thread follows its PR: CI, reviews and state from gh.
+gh() { printf '%s' '{"state":"OPEN","reviewDecision":"CHANGES_REQUESTED","latestReviews":[{"author":{"login":"rev1"},"state":"CHANGES_REQUESTED"}],"statusCheckRollup":[{"name":"extract","status":"COMPLETED","conclusion":"FAILURE"},{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS"},{"context":"ci/circleci","state":"SUCCESS"}]}'; }
+session_set agent-t2 pr_url https://github.com/mozilla/fxa/pull/1
+out="$(session_pr_status agent-t2)"
+check "pr status: ci, failing, infra, review" "fail|extract|extract|rev1:CHANGES_REQUESTED" "$(jq -r '"\(.ci)|\(.failing | join(","))|\(.infra | join(","))|\(.reviews | map("\(.login):\(.state)") | join(","))"' <<< "$out")"
+gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"unit","status":"IN_PROGRESS","conclusion":null},{"context":"ci/circleci","state":"PENDING"}]}'; }
+check "pr status: running" "running" "$(session_pr_status agent-t2 | jq -r .ci)"
+unset -f gh
+
 exit "$fail"
