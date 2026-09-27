@@ -294,9 +294,32 @@
   .media figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--sunk); }
   .media img, .media video { display:block; width:100%; max-height:200px; object-fit:contain; background:#15141A; }
   .media figcaption { font:11px var(--mono); color:var(--dim); padding:4px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sx .sxbar { display:flex; align-items:center; gap:var(--s2); min-height:36px; padding-bottom:var(--s2); border-bottom:1px solid var(--line); }
+  .sx .sxt { font-weight:600; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .sx .sxm { color:var(--faint); font-size:var(--t-sub); white-space:nowrap; } .sx .sp { flex:1; }
+  .sx .lnk { font-size:var(--t-sub); color:var(--link); white-space:nowrap; } .sx .lnk a { color:var(--link); }
+  .sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--faint); } .sdot.info { background:var(--info); } .sdot.bad { background:var(--bad); } .sdot.done { background:var(--purple); }
+  .tgl { border:0; background:transparent; color:var(--faint); padding:4px 8px; border-radius:6px; font:500 var(--t-sub) var(--sans); }
+  .tgl:hover { background:var(--sunk); color:var(--ink); } .tgl[aria-pressed="true"] { color:var(--link); background:var(--sunk); }
+  .sxdetails { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s6); padding:var(--s2) 0; border-bottom:1px solid var(--line); font-size:var(--t-sub); color:var(--dim); }
+  .sxdetails b { font-weight:600; color:var(--faint); margin-right:6px; }
+  .sxbody { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s4); align-items:start; }
+  .withlist .sxbody { grid-template-columns:220px minmax(0,1fr); }
+  .withterm .sxbody { grid-template-columns:minmax(0,1fr) minmax(380px,44%); }
+  .withlist.withterm .sxbody { grid-template-columns:220px minmax(0,1fr) minmax(360px,40%); }
+  @media (max-width:1200px) { .sxbody, .withlist .sxbody, .withterm .sxbody, .withlist.withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { order:-1; position:static; } }
+  .sx .slist { border-right:1px solid var(--line); padding:var(--s3) var(--s2) 0 0; max-height:calc(100vh - 170px); overflow:auto; display:flex; flex-direction:column; gap:2px; }
+  .sx .slist a { padding:var(--s2); border-left-width:2px; }
+  .sx .slist .k { display:block; font-size:11px; } .sx .slist .k span { display:block; margin:0; font-size:11px; }
+  .sx .slist .r { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; font-size:var(--t-sub); line-height:1.35; }
+  .md.clip { max-height:240px; overflow:hidden; position:relative; }
+  .md.clip::after { content:""; position:absolute; left:0; right:0; bottom:0; height:64px; background:linear-gradient(transparent, var(--sunk)); }
+  .tmsg:not(.agent) .md.clip::after { background:linear-gradient(transparent, var(--panel)); }
+  .tmsg .more { border:0; background:transparent; color:var(--link); padding:0; margin-top:4px; font:500 var(--t-sub) var(--sans); }
+  .tmsg .more:hover { text-decoration:underline; }
   .split.two { display:grid; grid-template-columns:minmax(0,1fr) minmax(380px,44%); gap:var(--s4); align-items:start; }
   @media (max-width:1200px) { .split.two { grid-template-columns:minmax(0,1fr); } .split.two .tty { order:-1; position:static; } }
-  .tty { position:sticky; top:var(--s4); margin-top:var(--s4); border-radius:10px; overflow:hidden; background:#0C0C0D; border:1px solid #32313C;
+  .tty { position:sticky; top:var(--s4); margin-top:var(--s3); border-radius:10px; overflow:hidden; background:#0C0C0D; border:1px solid #32313C;
          box-shadow:0 10px 30px rgba(0,0,0,.25); color:#E7E7E7; }
   .tty .bar { display:flex; align-items:center; gap:7px; height:32px; padding:0 12px; background:#1F1E25; border-bottom:1px solid #32313C; font:12px var(--mono); color:#9E9E9E; }
   .tty .bar i { width:11px; height:11px; border-radius:50%; background:#FF5F57; } .tty .bar i:nth-child(2) { background:#FEBC2E; } .tty .bar i:nth-child(3) { background:#28C840; }
@@ -542,6 +565,7 @@ function paintTail(key, isLive) {
   if (atBottom) body.scrollTop = body.scrollHeight;
 }
 async function pollTails(keys) {
+  if (document.hidden) return;
   for (const k of keys) {
     try {
       const r = await (await fetch(`/api/tail?key=${encodeURIComponent(k)}`, { cache:"no-store" })).json();
@@ -755,55 +779,85 @@ function sessStatus(s) {
     : s.state === "pr_open" ? ["PR open", "done"] : s.state === "paused" ? ["paused · a reply resumes", "dim"] : s.state === "failed" ? ["boot failed", "bad"]
     : s.state === "stopped" ? ["stopped", "dim"] : s.agent_alive ? ["working", "info"] : s.turn_open === "1" ? ["turn died", "bad"] : ["waiting on owner", "info"];
 }
+// Session view state: which panels are open, kept per browser.
+const SX = { list: false, details: false, term: true };
+try { Object.assign(SX, JSON.parse(localStorage.getItem("sx") || "{}")); } catch {}
+const saveSX = () => { try { localStorage.setItem("sx", JSON.stringify(SX)); } catch {} };
 function renderSess() {
   const ss = AGENTS?.sessions ?? [];
   Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? ss.filter(s => st.includes(s.state)).length : ""; });
   const list = ss.filter(s => SESS_STATES[SESS_TAB].includes(s.state));
   const sel = list.find(s => s.key === SESS_SEL) || list[0];
-  const now = Date.now() / 1000;
-  const items = list.map(s => { const rt = s.runtime === "codex" ? "Codex" : "Claude";
-    return `<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${esc(s.key)}"><span class="k">${esc(s.key)}<span>${stamp(s.created)}</span></span>
-      <span class="r">${esc(firstLine(s.request))}</span><span class="m">${rt} · ${esc(s.turns ?? 0)} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`; }).join("");
-  let detail = `<div class="emptybox">No ${SESS_TAB} session in the last day.</div>`;
-  if (sel) {
-    const a = sel.agent || {}, rt = sel.runtime || "claude", live = LIVE_SESSION.includes(sel.state);
+  const isLive = sel && live(sel), showTerm = isLive && SX.term;
+  // The frame changes only with the selection or a toggle, so the thread and
+  // terminal inside it keep their DOM, scroll and loaded images between polls.
+  const frame = `<div class="sx${SX.list ? " withlist" : ""}${showTerm ? " withterm" : ""}">
+      <div class="sxbar" id="sx-bar"></div>
+      <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : " hidden"}></div>
+      <div class="sxbody">
+        ${SX.list ? `<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
+        <div class="convo">${sel ? `<div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session in the last day.</div>`}</div>
+        ${showTerm ? `<aside class="tty" id="tty-${esc(sel.key)}" aria-label="Agent output">
+          <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(sel.key)}</span><b class="state"></b></div>
+          <div class="screen" tabindex="0"></div></aside>` : ""}
+      </div></div>`;
+  if (put("s-sess", frame)) { ["sx-bar", "sx-details", "sx-list", "sx-thread"].forEach(id => delete LAST[id]); if (sel) delete TTY_LAST[sel.key]; }
+  const tgl = (k, label, on) => `<button class="tgl" data-sx="${k}" aria-pressed="${on}">${label}</button>`;
+  if (!sel) { put("sx-bar", `<span class="sxt">No session</span><span class="sp"></span>${tgl("list", "Sessions", SX.list)}`); }
+  else {
+    const a = sel.agent || {}, rt = sel.runtime || "claude", now = Date.now() / 1000;
     const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
     const [st, cls] = sessStatus(sel), cost = a.cost_usd ?? a.cost_so_far, tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
     const pauseIn = sel.state === "active" && !sel.agent_alive && sel.turn_open !== "1" && sel.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - sel.last_activity))) : null;
-    const endsIn = live && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
+    const endsIn = isLive && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
     const repo = SNAP?.repo ?? "mozilla/fxa";
-    const branch = sel.pr_url ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))}</a>`
-      : sel.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)}</a>` : `<span style="color:var(--faint);font-weight:400">not pushed</span>`;
+    const branch = sel.pr_url ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>`
+      : sel.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : "";
+    put("sx-bar", `<span class="sdot ${cls}"></span><span class="key">${esc(sel.key)}</span>
+      <span class="sxt" title="${esc(firstLine(sel.request))}">${esc(firstLine(sel.request))}</span>
+      <span class="sxm">${esc(st)}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
+      <span class="sp"></span>
+      ${sel.slack_url ? `<a class="lnk" href="${esc(sel.slack_url)}" target="_blank" rel="noopener">Slack ↗</a>` : ""}${branch ? `<span class="lnk">${branch}</span>` : ""}
+      ${tgl("list", "Sessions", SX.list)}${tgl("details", "Details", SX.details)}${isLive ? tgl("term", "Terminal", SX.term) : ""}`);
+    if (SX.details) put("sx-details", [
+      ["Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`],
+      [cost ? "Cost" : "Tokens", cost ? usd(cost) : tok ? `${(tok / 1000).toFixed(0)}k` : "—"],
+      ["Steer turns", esc(sel.turns ?? 0)],
+      ["Started", stamp(sel.created)],
+      ["Resumed from", sel.resume_from ? `<a href="#sessions/${SESS_TAB}/${esc(sel.resume_from)}">${esc(sel.resume_from)}</a>` : "—"],
+      ["Branch or PR", branch || "not pushed"],
+      ...(pauseIn != null ? [["Idle pause in", short(pauseIn)]] : []),
+      ...(endsIn != null ? [["Sandbox ends in", short(endsIn)]] : []),
+    ].map(([k, v]) => `<span><b>${k}</b>${v}</span>`).join(""));
     HIST_OPEN.add(sel.key); if (!HIST[sel.key]) loadHist(sel.key);
-    detail = `<div class="sdetail">
-      <div style="display:flex;gap:var(--s4);align-items:flex-start">
-        <div style="flex:1;min-width:0"><span class="key">${esc(sel.key)}</span><h2 class="q">${esc(firstLine(sel.request))}</h2>
-          <div class="chips"><span class="chip ${cls}" style="padding:2px 10px">${esc(st)}</span><span class="chip info" style="padding:2px 10px">${rt === "codex" ? "Codex" : "Claude"}${model ? ` · ${esc(model)}` : ""}</span>
-          ${pauseIn != null ? `<span class="chip ${pauseIn < 300 ? "warn" : "dim"}" style="padding:2px 10px">pauses in ${short(pauseIn)}</span>` : ""}
-          ${endsIn != null ? `<span class="chip ${endsIn < 1800 ? "warn" : "dim"}" style="padding:2px 10px">sandbox ends in ${short(endsIn)}</span>` : ""}</div></div>
-        ${sel.slack_url ? `<a class="btnp" href="${esc(sel.slack_url)}" target="_blank" rel="noopener">Open Slack thread ↗</a>` : ""}
-      </div>
-      <div class="scards">
-        <div class="scard"><div class="lbl">${cost ? "Cost" : "Tokens"}</div><div class="v">${cost ? usd(cost) : tok ? `${(tok / 1000).toFixed(0)}k` : "—"}</div></div>
-        <div class="scard"><div class="lbl">Steer turns</div><div class="v">${esc(sel.turns ?? 0)}</div></div>
-        <div class="scard"><div class="lbl">Resumed from</div><div class="v mono" style="font-size:var(--t-sub)">${sel.resume_from ? `<a href="#sessions/${SESS_TAB}/${esc(sel.resume_from)}">${esc(sel.resume_from)}</a>` : "—"}</div></div>
-        <div class="scard"><div class="lbl">Branch or PR</div><div class="v" style="font-size:var(--t-sub)">${branch}</div></div>
-      </div>
-      <div class="split${live ? " two" : ""}"><div class="convo">
-      <h2 style="margin-top:var(--s4)">Conversation<span class="note">messages, agent replies, screenshots and videos</span></h2>
-      <div class="thread" data-thread="${esc(sel.key)}">${threadHtml(sel)}</div></div>
-      ${live ? `<aside class="tty" id="tty-${esc(sel.key)}" aria-label="Agent output">
-        <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(sel.key)}</span><b class="state"></b></div>
-        <div class="screen" tabindex="0"></div></aside>` : ""}
-      </div>
-    </div>`;
+    put("sx-thread", threadHtmlCached(sel));
   }
-  put("s-sess", `<div class="sess"><div class="slist">${items || `<div class="empty" style="padding:var(--s3)">none</div>`}</div>${detail}</div>`);
-  if (sel && live(sel)) { paintTail(sel.key, sel.agent_alive); paintTty(sel.key, sel.agent_alive); }
+  if (SX.list) put("sx-list", list.map(s => `<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${esc(s.key)}"><span class="k">${esc(s.key)}<span>${stamp(s.created)}</span></span>
+      <span class="r">${esc(firstLine(s.request))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${esc(s.turns ?? 0)} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`).join("") || `<div class="empty">none</div>`);
+  if (showTerm) paintTty(sel.key, sel.agent_alive);
 }
+// Markdown for a whole thread is the costly part: rebuild only when it changes.
+const THREAD_CACHE = {};
+function threadHtmlCached(sel) {
+  const h = HIST[sel.key], media = (AGENTS?.sessions ?? []).map(s => (s.media ?? []).length).join(",");
+  const sig = `${Array.isArray(h) ? h.length + ":" + (h[h.length - 1]?.at ?? "") : h?.error ?? "none"}|${media}|${[...OPEN_MSG].join(",")}`;
+  const c = THREAD_CACHE[sel.key];
+  if (c && c.sig === sig) return c.html;
+  const html = threadHtml(sel);
+  THREAD_CACHE[sel.key] = { sig, html };
+  return html;
+}
+// Long messages are clipped; "Show more" opens one and it stays open.
+const OPEN_MSG = new Set();
+document.addEventListener("click", e => {
+  const b = e.target.closest?.("[data-sx]");
+  if (b) { const k = b.dataset.sx; SX[k] = !SX[k]; saveSX(); renderSess(); return; }
+  const more = e.target.closest?.("[data-more]");
+  if (more) { const id = more.dataset.more; OPEN_MSG.has(id) ? OPEN_MSG.delete(id) : OPEN_MSG.add(id); renderSess(); }
+});
 const live = s => LIVE_SESSION.includes(s.state);
 // The agent output as a terminal: commands get a prompt, results their colour.
-const TTY_SCROLL = {};
+const TTY_SCROLL = {}, TTY_LAST = {};
 function ttyLine(l) {
   const m = l.match(/^\[tool\] (\S+)\s*(.*)$/);
   if (m) return m[1] === "Bash" || m[1] === "shell" ? `<span class="p">$</span> ${esc(m[2])}` : `<span class="t">${esc(m[1])}</span> ${esc(m[2])}`;
@@ -819,8 +873,12 @@ function paintTty(key, working) {
   const screen = el.querySelector(".screen"), lines = TAILS[key] || [];
   el.querySelector(".state").textContent = working ? "running" : lines.length ? "waiting on you" : "connecting…";
   el.classList.toggle("busy", !!working);
-  const html = (lines.length ? lines.map(l => `<div>${ttyLine(l)}</div>`).join("") : `<div class="dim">waiting for output…</div>`) + `<span class="cur"></span>`;
-  if (screen.innerHTML !== html) screen.innerHTML = html;
+  // Append only what is new; a shifted window (the 200-line cap) repaints all.
+  const prev = TTY_LAST[key] || [], grew = prev.length && lines.length >= prev.length && lines[0] === prev[0] && lines[prev.length - 1] === prev[prev.length - 1];
+  if (grew && screen.querySelector(".cur")) {
+    if (lines.length > prev.length) screen.querySelector(".cur").insertAdjacentHTML("beforebegin", lines.slice(prev.length).map(l => `<div>${ttyLine(l)}</div>`).join(""));
+  } else screen.innerHTML = (lines.length ? lines.map(l => `<div>${ttyLine(l)}</div>`).join("") : `<div class="dim">waiting for output…</div>`) + `<span class="cur"></span>`;
+  TTY_LAST[key] = lines.slice();
   screen.scrollTop = TTY_SCROLL[key] ?? screen.scrollHeight;
 }
 document.addEventListener("scroll", e => {
@@ -893,11 +951,13 @@ function threadHtml(sel) {
       const what = m.files.every(n => /\.(mp4|webm)$/i.test(n)) ? "video" : m.files.some(n => /\.(mp4|webm)$/i.test(n)) ? "screenshots and videos" : "screenshot";
       return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b><span class="app">APP</span>shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
     }
-    const raw = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, txt = mdHtml(raw);
+    const raw = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, id = `${m.key}:${m.at}`;
+    const long = raw.length > 700 || raw.split("\n").length > 12, open = OPEN_MSG.has(id);
+    const txt = mdHtml(raw), more = long ? `<button class="more" data-more="${esc(id)}">${open ? "Show less" : "Show more"}</button>` : "";
     if (m.role === "action") return out + `<div class="tact">${esc(raw)}</div>`;
-    if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="app">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md">${txt}</div></div></div>`;
+    if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="app">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
     const face = m.image ? `<img class="av" src="${esc(m.image)}" alt="" referrerpolicy="no-referrer">` : PERSON;
-    return out + `<div class="tmsg">${face}<div style="min-width:0"><div class="who"><b>${esc(m.name || "Message")}</b>${stamp(m.at)}</div><div class="txt md">${txt}</div></div></div>`;
+    return out + `<div class="tmsg">${face}<div style="min-width:0"><div class="who"><b>${esc(m.name || "Message")}</b>${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
   }).join("");
 }
 
@@ -1117,7 +1177,7 @@ async function loadHist(key) {
   try { HIST[key] = await (await fetch(`/api/history?key=${encodeURIComponent(key)}`, { cache:"no-store" })).json(); }
   catch { HIST[key] = { error: "could not load the conversation" }; }
   const sel = (AGENTS?.sessions ?? []).find(s => s.key === key);
-  document.querySelectorAll(`.thread[data-thread="${key}"]`).forEach(t => { if (sel) { const html = threadHtml(sel); if (t.innerHTML !== html) t.innerHTML = html; } });
+  if (sel && document.getElementById("sx-thread")?.dataset.thread === key) put("sx-thread", threadHtmlCached(sel));
   document.querySelectorAll(`details.hist[data-key="${key}"] .chat`).forEach(c => {
     const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 24 || !c.dataset.seen;
     c.innerHTML = histHtml(key); c.dataset.seen = 1;
