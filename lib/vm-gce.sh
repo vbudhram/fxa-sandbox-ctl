@@ -123,6 +123,8 @@ vm_clone() {
   case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
   for zone in $zones; do
     echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
+    # Only the host key logs in: a project-wide key reaches every VM, and the guest
+    # agent gives each metadata key user passwordless sudo.
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
         --machine-type "$FXA_GCE_MACHINE_TYPE" \
         "${image_flags[@]}" \
@@ -130,7 +132,7 @@ vm_clone() {
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
         --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
-        --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main}" \
+        --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
         --labels "fxa-agent=${name}" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
