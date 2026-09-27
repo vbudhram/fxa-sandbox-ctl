@@ -109,9 +109,13 @@ Use `/fxa-verify --run`. It runs the right tests and lint for each changed
 package, and only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
 
-- Never run a whole package suite. `nx test-unit fxa-auth-server` runs every
-  unit test and can run the 8GB machine out of memory. Do not run two auth
-  integration suites at once.
+- Never run a whole package suite. The whole auth unit project (4157 tests)
+  takes 87 s and leaves about 0.2GB free with the stack off; with the stack up
+  it runs the machine out of memory. Do not run two auth integration suites at
+  once.
+- Auth unit tests need `SNS_TOPIC_ENDPOINT` unset (`env -u
+  SNS_TOPIC_ENDPOINT yarn test <spec>`): `/etc/agent-env.sh` sets it for the
+  goaws stub, and `config/index.spec.ts` rejects it. `/fxa-verify` does this.
 - `nx test-unit fxa-settings` runs no tests: it only prints "No unit tests
   present". The real command, from `packages/fxa-settings`, is
   `CI=true SKIP_PREFLIGHT_CHECK=true node scripts/test.js --watchAll=false --findRelatedTests <files>`.

@@ -31,8 +31,11 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
   run through `node scripts/test.js`, and without `CI=true --watchAll=false`
   that starts watch mode and hangs.
 - fxa-auth-server: `nx test-unit --testFile` is ignored; only `yarn test`
-  forwards arguments. `*.in.spec.ts` integration tests run in the
-  `integration` Jest project and need MySQL, Redis, and Firestore, which the
+  forwards arguments. Its Jest has four projects: `unit` (`*.spec.ts`),
+  `integration` (`*.in.spec.ts`), `scripts` (`test/scripts/*.in.spec.ts`) and
+  `oauth-api` (`test/remote/oauth_api.in.spec.ts`). `integration` ignores the
+  last two, so the helper sends each file to its own project with
+  `--selectProjects`. The three infra-backed projects need MySQL, Redis, and Firestore, which the
   VM runs at boot, and the DB tables, which only the patcher creates. The
   helper runs `node packages/db-migrations/bin/patcher.mjs` first; without it
   the suite waits 63 s and fails on `ER_NO_SUCH_TABLE`. Do not run two
@@ -40,6 +43,13 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
   with `REMOTE_TEST_LOGS=true` (and `MAIL_HELPER_LOGS=true`).
 - fxa-auth-server one test: `yarn test <spec> -t "<name>" --verbose`; `yarn
   test` forwards paths and flags, `nx test-unit` does not.
+- fxa-auth-server unit tests fail in `config/index.spec.ts` when
+  `SNS_TOPIC_ENDPOINT` is set, and `/etc/agent-env.sh` sets it for the goaws
+  stub. The helper runs unit tests with `env -u SNS_TOPIC_ENDPOINT`; do the
+  same by hand. Integration tests keep it.
+- `--selectProjects` takes several values, so `npx jest --selectProjects unit
+  <spec>` reads the spec as a project name and runs the whole project. Put a
+  flag between them (`--selectProjects unit --forceExit <spec>`).
 - fxa-admin-server: its Jest maps `@fxa/*` to a `dist/` that exists only after
   `fxa-start` builds it. The helper adds `--modulePaths=/workspace` so the
   library source is used.
@@ -79,6 +89,12 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
 | `tsc --noEmit`: settings / libs (`-p tsconfig.lib.json`) | 2 s / 1.3 s | 0.6 GB |
 | `tsc --noEmit`: auth (`-p tsconfig.build.json`) / admin-server | 11 s / 9.5 s | 2.5 / 2.2 GB |
 | `eslint` on a few files | 1-2 s | 0.3 GB |
+| auth `scripts` or `oauth-api` spec, after the patcher | 13 s | 1.4 GB |
+| whole auth unit project (173 suites, 4157 tests), stack off | 87 s | free memory fell to 0.2 GB |
+
+The whole auth unit project passed on main with `SNS_TOPIC_ENDPOINT` unset,
+but it left 0.2 GB free with the stack off; with the stack up it would run out
+of memory. Run only related specs.
 
 ## If a check fails
 

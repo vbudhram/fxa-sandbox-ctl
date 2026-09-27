@@ -48,13 +48,24 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
     packages/fxa-settings)
       add "$p tests" "$p" "CI=true SKIP_PREFLIGHT_CHECK=true node scripts/test.js --watchAll=false --findRelatedTests $r" ;;
     packages/fxa-auth-server)
-      unit=(); integ=()
-      for f in "${code[@]}"; do case "$f" in *.in.spec.ts) integ+=("$f") ;; *) unit+=("$f") ;; esac; done
-      [ "${#unit[@]}" -gt 0 ] && add "$p unit" "$p" "yarn test --findRelatedTests $(rel "$p" "${unit[@]}")"
+      # Four Jest projects; integration ignores oauth_api and test/scripts, which
+      # have projects of their own, so each file goes to the one that runs it.
+      unit=(); integ=(); scr=(); oapi=()
+      for f in "${code[@]}"; do case "$f" in
+        */test/scripts/*.in.spec.ts) scr+=("$f") ;;
+        */oauth_api.in.spec.ts) oapi+=("$f") ;;
+        *.in.spec.ts) integ+=("$f") ;;
+        *) unit+=("$f") ;; esac; done
+      # agent-env.sh sets SNS_TOPIC_ENDPOINT for the goaws stub; the prod config
+      # specs reject it outside dev, so unit runs go without it.
+      [ "${#unit[@]}" -gt 0 ] && add "$p unit" "$p" "env -u SNS_TOPIC_ENDPOINT yarn test --findRelatedTests $(rel "$p" "${unit[@]}")"
       # The fxa DB has no tables until the patcher runs (fxa-start runs it); without
       # it the suite waits 63 s and fails on ER_NO_SUCH_TABLE. It is fast and idempotent.
-      [ "${#integ[@]}" -gt 0 ] && add "db patches" "." "node packages/db-migrations/bin/patcher.mjs" \
-        && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit $(rel "$p" "${integ[@]}")" ;;
+      [ "$(( ${#integ[@]} + ${#scr[@]} + ${#oapi[@]} ))" -gt 0 ] && add "db patches" "." "node packages/db-migrations/bin/patcher.mjs"
+      [ "${#integ[@]}" -gt 0 ] && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit $(rel "$p" "${integ[@]}")"
+      [ "${#scr[@]}" -gt 0 ] && add "$p scripts" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects scripts --forceExit $(rel "$p" "${scr[@]}")"
+      [ "${#oapi[@]}" -gt 0 ] && add "$p oauth-api" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects oauth-api --forceExit $(rel "$p" "${oapi[@]}")"
+      true ;;
     packages/fxa-react)
       add "$p tests" "$p" "npx jest --env=jest-environment-jsdom --findRelatedTests $r" ;;
     packages/fxa-profile-server)
@@ -138,7 +149,7 @@ for i in "${!plan[@]}"; do
   start=$(date +%s)
   if (cd "$dir" && eval "$cmd") > "$logs/$i.log" 2>&1; then v=PASS; else v=FAIL; fail=1; fi
   # Jest can exit 0 having run nothing; that proves nothing, so say so.
-  case "$label" in *tests|*unit|*integration)
+  case "$label" in *tests|*unit|*integration|*scripts|*oauth-api)
     [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed|[0-9]+ passing' "$logs/$i.log" && v=NONE ;;
   esac
   results+=("$(printf '%-4s %-40s %4ss  %s' "$v" "$label" "$(( $(date +%s) - start ))" "$logs/$i.log")")
