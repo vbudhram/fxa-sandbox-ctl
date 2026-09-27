@@ -128,6 +128,13 @@ echo '{"key":"agent-t4","state":"paused"}' > "$tmp/agent-t4.json"; printf 'diff 
 _session_sh() { echo "ssh called"; return 1; }
 check "diff on a paused session prints the saved patch" "diff --git a/x b/x" "$(cmd_diff agent-t4)"
 
+# A snapshot row for a session with no media folder is still one JSON object.
+eval "$(sed -n '/^_snapshot_session_row() {/,/^}/p' "$(dirname "$0")/snapshot.sh")"
+echo '{"key":"agent-t5","state":"stopped","last_activity":'"$(date +%s)"'}' > "$tmp/agent-t5.json"
+check "snapshot row without media is valid" "agent-t5 0" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '"\(.key) \(.media | length)"')"
+mkdir -p "$tmp/agent-t5.media"; touch "$tmp/agent-t5.media/shot.png" "$tmp/agent-t5.media/notes.html"
+check "snapshot row lists only servable media" "shot.png" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '.media | join(",")')"
+
 # History: the request, then each reply once, even when the bot re-reads a cursor.
 echo '{"key":"agent-t3","state":"active","turn_open":"1","turn_started":"0"}' > "$tmp/agent-t3.json"
 printf 'fix it\n\nEarlier messages in this Slack thread: x' > "$tmp/agent-t3.prompt.md"

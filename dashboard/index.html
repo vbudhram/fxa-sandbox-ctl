@@ -290,6 +290,10 @@
   .scards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--s3); margin:var(--s4) 0; }
   .scard { border:1px solid var(--line); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
   .scard .lbl { font-size:var(--t-label); font-weight:600; color:var(--dim); } .scard .v { font-size:18px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .media { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--s3); }
+  .media figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--sunk); }
+  .media img, .media video { display:block; width:100%; max-height:200px; object-fit:contain; background:#15141A; }
+  .media figcaption { font:11px var(--mono); color:var(--dim); padding:4px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .thread { display:flex; flex-direction:column; gap:var(--s4); padding:var(--s3) 0; }
   .tsep { display:flex; align-items:center; gap:var(--s3); font-size:var(--t-label); color:var(--faint); }
   .tsep::before, .tsep::after { content:""; flex:1; height:1px; background:var(--line); }
@@ -769,6 +773,10 @@ function renderSess() {
         <div class="scard"><div class="lbl">Branch or PR</div><div class="v" style="font-size:var(--t-sub)">${branch}</div></div>
       </div>
       ${live ? `<details open data-k="term-${esc(sel.key)}" id="term-${esc(sel.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
+      ${(sel.media ?? []).length ? `<h2 style="margin-top:var(--s4)">Screenshots and videos<span class="n">${sel.media.length}</span><span class="note">kept on the host</span></h2>
+        <div class="media">${sel.media.map(n => { const u = `/api/media?key=${encodeURIComponent(sel.key)}&name=${encodeURIComponent(n)}`;
+          return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
+            : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("")}</div>` : ""}
       <h2 style="margin-top:var(--s4)">Conversation<span class="note">messages, agent replies and button outcomes</span></h2>
       <div class="thread" data-thread="${esc(sel.key)}">${threadHtml(sel)}</div>
     </div>`;

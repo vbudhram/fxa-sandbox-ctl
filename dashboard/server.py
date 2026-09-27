@@ -9,6 +9,7 @@ and the page shows how old each result is. A failed refresh keeps the previous
 result rather than blanking the page.
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 CTL = ROOT.parent / "fxa-sandbox-ctl"
+SESSION_DIR = Path(os.environ.get("FXA_SESSION_DIR") or Path.home() / ".claude/state/agent-sessions")
 
 
 class Feed:
@@ -141,6 +143,32 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, json.dumps({"key": key, "lines": agent_tail(key)}),
                            "application/json")
+        elif path == "/api/media":
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            key, name = (q.get("key") or [""])[0], (q.get("name") or [""])[0]
+            m = re.fullmatch(r"[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)", name)
+            f = SESSION_DIR / f"{key}.media" / name
+            if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key) or not m or not f.is_file():
+                self._send(404, json.dumps({"error": "not found"}), "application/json")
+                return
+            kind = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+                    "mp4": "video/mp4", "webm": "video/webm"}[m.group(1).lower()]
+            data = f.read_bytes()
+            # Safari plays video only through byte ranges.
+            rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+            if rng and (rng.group(1) or rng.group(2)):
+                start = int(rng.group(1)) if rng.group(1) else max(0, len(data) - int(rng.group(2)))
+                end = int(rng.group(2)) if rng.group(1) and rng.group(2) else len(data) - 1
+                end = min(end, len(data) - 1)
+                if start > end:
+                    self.send_response(416); self.send_header("Content-Range", f"bytes */{len(data)}"); self.end_headers(); return
+                part = data[start:end + 1]
+                self.send_response(206)
+                self.send_header("Content-Type", kind); self.send_header("Content-Length", str(len(part)))
+                self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}"); self.send_header("Accept-Ranges", "bytes")
+                self.end_headers(); self.wfile.write(part); return
+            self._send(200, data, kind)
         elif path == "/api/stats":
             now = time.time()
             if not STATS["at"] or now - STATS["at"] > 60:

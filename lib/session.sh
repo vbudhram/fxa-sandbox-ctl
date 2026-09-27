@@ -352,6 +352,9 @@ session_media() {
         -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -an "${f%.webm}.mp4" && rm -f "$f"
     done
   fi
+  # Keep a copy on the host: the sandbox and the Slack upload dir both go away,
+  # and the dashboard shows these on the session.
+  mkdir -p "${SESSION_DIR}/${key}.media" && find "$out" -maxdepth 1 -type f -exec cp -p {} "${SESSION_DIR}/${key}.media/" \;
   find "$out" -maxdepth 1 -type f
 }
 
@@ -380,6 +383,8 @@ session_stop() {
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
+    # Screenshots and videos, which only ever reached Slack before.
+    local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
     # The conversation too, so a later session in the thread can --resume it.
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' > "${SESSION_DIR}/${key}.claude.tgz" 2>/dev/null || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
