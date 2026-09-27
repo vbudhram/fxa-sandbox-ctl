@@ -407,9 +407,11 @@
   .lane.live .mark { border-color:var(--info); box-shadow:0 6px 16px color-mix(in srgb,var(--info) 22%,transparent); }
   .lane.live .mark .l1 { color:var(--info); } .lane.fix .mark .l1 { color:var(--bad); } .lane.warn .mark .l1 { color:var(--warn); } .lane.done .mark .l1 { color:var(--purple); }
   .lane.fix .mark { border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); } .lane.warn .mark { border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
-  .lane .out { margin:0 0 var(--s3) 320px; }
-  .lane .out summary { font-family:var(--mono); font-size:11px; color:var(--dim); }
-  .lane .out .term-body { max-height:none; height:168px; background:#15141A; color:#E7E7E7; border-color:#32313C; }
+  .lane .out.tty { position:static; margin:0 0 var(--s3) 320px; box-shadow:none; }
+  .lane .out summary { list-style:none; cursor:pointer; } .lane .out summary::-webkit-details-marker { display:none; }
+  .lane .out summary::before, .lane .out[open] summary::before { content:none; }
+  .lane .out:not([open]) summary { border-bottom:0; }
+  .lane .out .screen { height:220px; min-height:0; }
   .lanes .legend { display:flex; flex-wrap:wrap; gap:var(--s4); padding-top:var(--s3); font-size:var(--t-label); color:var(--dim); }
   .lanes .legend i { display:inline-block; width:22px; height:6px; border-radius:3px; margin-right:6px; vertical-align:1px; }
   .mascot { width:34px; height:34px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none; background:var(--sunk); }
@@ -556,9 +558,10 @@ function paintTail(key, isLive) {
   const lane = document.getElementById("lane-term-" + key);
   if (lane) {
     const body = lane.querySelector(".body"), lines = TAILS[key] || [], next = lines.join("\n");
-    lane.querySelector(".hdr").textContent = lines.length ? `agent output · live · ${lines.length} of max 200 lines` : "agent output · waiting…";
+    lane.querySelector(".state").textContent = lines.length ? "running" : "connecting…";
+    lane.classList.toggle("busy", lines.length > 0);
     // A redraw replaces the panel; LANE_SCROLL keeps a reader's place above the newest line.
-    if (body.textContent !== next) body.textContent = next;
+    if (body._text !== next) { body._text = next; body.innerHTML = lines.map(ttyLine).join("\n"); }
     body.scrollTop = LANE_SCROLL[key] ?? body.scrollHeight;
   }
   const el = document.getElementById("term-" + key); if (!el) return;
@@ -1136,7 +1139,7 @@ function laneHtml(r) {
       </div>
     </div>
     ${LANE_DET.has(t.key) ? laneDetails(r) : ""}
-    ${r.runner ? `<details class="out" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
+    ${r.runner ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : ""}
   </div>`;
 }
 // Per-ticket details: the run log (via /api/stats), the PR, and a live agent.
@@ -1191,6 +1194,8 @@ function renderLanes() {
         <span>Output shows only while a sandbox is up.</span>
       </div></div>`);
   rows.filter(r => r.runner).forEach(r => paintTail(r.t.key, true));
+  // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
+  TAIL_KEYS = [...new Set([...TAIL_KEYS, ...rows.filter(r => r.runner).map(r => r.t.key)])];
 }
 document.addEventListener("toggle", e => {
   const d = e.target;
