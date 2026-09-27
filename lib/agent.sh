@@ -504,18 +504,25 @@ _setup_claude_config() {
   if [ "${#tar_items[@]}" -gt 0 ]; then
     # --dereference: skills kept in a repo are symlinks here, and a link to a
     # host path arrives on the runner dangling.
-    if tar --dereference -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
+    # COPYFILE_DISABLE: macOS tar would add a ._<name> metadata file for each one.
+    if COPYFILE_DISABLE=1 tar --dereference -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
        && [ -s "$config_tar" ]; then
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"
       if scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
            "${VM_SSH_USER}@${ip}:/tmp/fxa-claude-config.tar" 2>/dev/null; then
-        ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
-          mkdir -p /home/agent/.claude && tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/
-          chmod -R +x /home/agent/.claude/hooks 2>/dev/null
-          rm -f /tmp/fxa-claude-config.tar
-        " 2>/dev/null || echo "  WARN: extracting claude config bundle in VM failed"
+        # Twice: this runs right after the hardening batch restarts sshd, and a
+        # connection in that window can stall. Extracting again is harmless.
+        local x
+        for x in 1 2; do
+          ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
+            mkdir -p /home/agent/.claude && tar -xf /tmp/fxa-claude-config.tar -C /home/agent/.claude/ || exit 1
+            chmod -R +x /home/agent/.claude/hooks 2>/dev/null
+            rm -f /tmp/fxa-claude-config.tar
+          " 2>/dev/null && break
+          [ "$x" = 2 ] && echo "  WARN: extracting claude config bundle in VM failed; the agent has no host skills" >&2 || sleep 10
+        done
       else
         echo "  WARN: scp of claude config bundle failed"
       fi
