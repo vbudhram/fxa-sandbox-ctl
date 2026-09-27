@@ -91,7 +91,8 @@ def agent_tail(key):
         return hit[1]
     branch = key.lower()
     try:
-        proc = subprocess.run([str(CTL), "tail", branch], capture_output=True, text=True,
+        # --pipeline loads the backend: without it, tail tries a plain ssh and fails on GCE.
+        proc = subprocess.run([str(CTL), "--pipeline", PIPELINE, "tail", branch], capture_output=True, text=True,
                               timeout=30, errors="replace")
         lines = clean_tail(proc.stdout or "") if proc.returncode == 0 else \
                 [f"(no output: {(proc.stderr or 'tail failed').strip()[:200]})"]
