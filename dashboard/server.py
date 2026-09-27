@@ -79,6 +79,7 @@ def clean_tail(raw, limit=200):
             out.append(line)
     return out[-limit:]
 
+STATS = {"at": 0, "body": None}   # the run-log summary; the log grows once per run, so a minute is fresh enough.
 TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cadence.
 
 def agent_tail(key):
@@ -140,6 +141,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, json.dumps({"key": key, "lines": agent_tail(key)}),
                            "application/json")
+        elif path == "/api/stats":
+            now = time.time()
+            if not STATS["at"] or now - STATS["at"] > 60:
+                try:
+                    proc = subprocess.run([str(CTL), "--pipeline", PIPELINE, "snapshot", "--stats"], capture_output=True,
+                                          text=True, timeout=30, errors="replace")
+                    if proc.returncode == 0 and proc.stdout.strip():
+                        STATS.update(at=now, body=proc.stdout)
+                except Exception:
+                    pass
+            self._send(200, STATS["body"] or json.dumps({"error": "stats unavailable"}), "application/json")
         elif path == "/api/history":
             from urllib.parse import parse_qs, urlparse
             key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]

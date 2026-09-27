@@ -279,10 +279,10 @@ _session_watch() {
 # _session_boot_step <key>   The runner's boot progress in plain words.
 _session_boot_step() {
   case "$(grep -E '^(Creating GCE|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Applying security|Shipping|Starting claude)' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1)" in
-    Creating*) echo "creating a runner" ;;
-    "Waiting for ssh"*) echo "waiting for the runner to boot" ;;
+    Creating*) echo "creating a sandbox" ;;
+    "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
     *checkout*|*infrastructure*|Pinning*) echo "checking out main" ;;
-    Applying*|Shipping*) echo "locking down the runner" ;;
+    Applying*|Shipping*) echo "locking down the sandbox" ;;
     Starting*) echo "starting the agent" ;;
     *) echo "preparing" ;;
   esac

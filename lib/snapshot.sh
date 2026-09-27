@@ -185,6 +185,40 @@ _snapshot_agent_json() {
     end' "$f" 2>/dev/null || echo null
 }
 
+# snapshot_stats_json   Run-log totals for the Stats page: weekly runs and
+# spend, three ranges of whole Monday weeks, run kinds, costliest tickets and
+# models. Cost is the log's token-based estimate; billing is left out.
+snapshot_stats_json() {
+  pipeline_require || return 1
+  [ -s "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
+  jq -s -c '
+    def med: sort | if length == 0 then null else .[length / 2 | floor] end;
+    def r2: . * 100 | round / 100;
+    def wk: (.recorded_at[0:10] | strptime("%Y-%m-%d") | mktime) as $t | $t - ((($t / 86400 | floor) + 3) % 7) * 86400;
+    map(. + {wk: wk}) as $all |
+    ($all | map(.wk) | unique) as $weeks |
+    def summary($r): {
+      runs: ($r | length), tickets: ($r | map(.issue) | unique | length),
+      spend: ($r | map(.cost_usd // 0) | add // 0 | r2),
+      median_min: ($r | map(.wall_seconds // 0) | med | if . == null then null else . / 60 | round end),
+      per_ticket: ($r | group_by(.issue) | map(map(.cost_usd // 0) | add) | med | if . == null then null else r2 end),
+      max_runs: ($r | group_by(.issue) | map(length) | max),
+      from: ($r | map(.wk) | min | strftime("%b %-d")), to: ($r | map(.recorded_at) | max | .[0:10]) };
+    {
+      weeks: ($all | group_by(.wk) | map({ start: (.[0].wk | strftime("%Y-%m-%d")), label: (.[0].wk | strftime("%b %-d")),
+                                           runs: length, spend: (map(.cost_usd // 0) | add | r2) })),
+      ranges: {
+        all: summary($all),
+        w5: summary($all | map(select(.wk >= ($weeks[-5] // $weeks[0])))),
+        w2: summary($all | map(select(.wk >= ($weeks[-2] // $weeks[0]))))
+      },
+      kinds: ($all | group_by(.kind // "") | map({ kind: (.[0].kind // "not recorded"), runs: length,
+               avg: (map(.cost_usd // 0) | add / length | r2), median_min: (map(.wall_seconds // 0) | med / 60 | round) }) | sort_by(-.runs)),
+      top: ($all | group_by(.issue) | map({ issue: .[0].issue, cost: (map(.cost_usd // 0) | add | r2), runs: length }) | sort_by(-.cost) | .[0:5]),
+      models: ($all | map(.model // "") | map(select(. != "" and (startswith("<") | not))) | group_by(.) | map({ model: .[0], runs: length }) | sort_by(-.runs))
+    }' "$PIPE_RUNS_FILE"
+}
+
 _snapshot_telemetry() {
   [ -f "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
   jq -s '{ runs: length,
