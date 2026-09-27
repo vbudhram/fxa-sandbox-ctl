@@ -58,9 +58,9 @@ Every turn, including later ones:
   For a UI flow use ${func}; for the local stack, ${stack}.
 - To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
-- When you need a decision, ask ONE question and list 2 to 4 answers to it, one per
-  line, each starting 'OPTION: '. The engineer taps one. With more than one open
-  decision, ask the most important one now and name your default for the others.
+- When you need a decision, list 2 to 4 answers, one per line, each starting
+  'OPTION: '. The engineer taps one. For several decisions at once (at most 5),
+  put 'QUESTION: <the question>' on its own line before each group of OPTION lines.
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
 EOF
@@ -337,9 +337,16 @@ _session_boot_step() {
 # status: line. Both agents end a turn with such text.
 _SESSION_FIN_JQ='def fin($t): ($t | tostring) as $t
   | ($t | [scan("(?m)^status: *(needs-input|ready) *$")] | last // ["needs-input"] | .[0]) as $status
-  | ($t | [scan("(?m)^OPTION: *(.+)$")] | map(.[0])) as $opts
-  | ($t | gsub("(?m)^(status:.*|OPTION:.*)\n?"; "") | sub("\\s+$"; "")) as $body
-  | if ($opts | length) > 0 then {type: "question", text: $body, options: $opts}
+  # QUESTION: lines open groups; OPTION: lines answer the latest one (or one unnamed group).
+  | (reduce ($t | split("\n"))[] as $l ([];
+      if ($l | test("^QUESTION: *")) then . + [{q: ($l | sub("^QUESTION: *"; "")), options: []}]
+      elif ($l | test("^OPTION: *")) then (if length == 0 then [{q: null, options: []}] else . end)
+        | .[length - 1].options += [$l | sub("^OPTION: *"; "")]
+      else . end) | map(select(.options | length > 0))) as $groups
+  | ($t | gsub("(?m)^(status:|OPTION:|QUESTION:).*\n?"; "") | sub("\\s+$"; "")) as $body
+  | if ($groups | length) > 1 then {type: "question", text: $body, questions: ($groups | .[0:5])}
+    elif ($groups | length) == 1 then {type: "question", options: $groups[0].options,
+      text: (if $groups[0].q then ($body + (if $body == "" then "" else "\n\n" end) + "**" + $groups[0].q + "**") else $body end)}
     else {type: "turn_end", status: $status, text: $body} end;'
 _session_parse() {
   # Claude ends a turn with one result event. Codex sends its message (say) and

@@ -197,4 +197,12 @@ gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"unit","status"
 check "pr status: running" "running" "$(session_pr_status agent-t2 | jq -r .ci)"
 unset -f gh
 
+# Questions: plain OPTION lines, one named QUESTION, or several groups.
+fin() { jq -nc --arg t "$1" '{type: "result", result: $t}' | _session_parse; }
+check "no options is a turn end" "turn_end" "$(fin $'done\nstatus: ready' | jq -r .type)"
+check "OPTION lines are one question" "question|2|Pick one" "$(fin $'Pick one\nOPTION: a\nOPTION: b\nstatus: needs-input' | jq -r '"\(.type)|\(.options | length)|\(.text)"')"
+check "one QUESTION joins the text" "Intro\n\n**Where?**|a" "$(fin $'Intro\nQUESTION: Where?\nOPTION: a\nOPTION: b' | jq -r '"\(.text | gsub("\n"; "\\n"))|\(.options[0])"')"
+check "several QUESTIONs keep their options apart" "Where?:a,b|Which?:c,d|Intro" \
+  "$(fin $'Intro\nQUESTION: Where?\nOPTION: a\nOPTION: b\nQUESTION: Which?\nOPTION: c\nOPTION: d' | jq -r '[.questions[] | "\(.q):\(.options | join(","))"] + [.text] | join("|")')"
+
 exit "$fail"

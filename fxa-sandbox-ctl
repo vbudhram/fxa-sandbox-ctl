@@ -2139,7 +2139,8 @@ cmd_events() {
         local hc; hc="$(session_get "$key" history_cursor)"
         if [ "$lines" -gt 0 ] && [ "$since" -ge "${hc:-0}" ]; then
           jq -r '.[] | select(.type == "turn_end" or .type == "question" or .type == "error")
-            | (.text // "") + (if (.options // []) | length > 0 then "\n\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n")) else "" end) | @json' <<< "$events" |
+            | (.text // "") + (if (.options // []) | length > 0 then "\n\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n")) else "" end)
+              + ((.questions // []) | map("\n\n**\(.q // "Question")**\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n"))) | join("")) | @json' <<< "$events" |
             while IFS= read -r t; do _session_history_add "$key" agent "$(jq -r . <<< "$t")"; done
           session_set "$key" history_cursor "$(( since + lines ))"
         fi
