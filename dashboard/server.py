@@ -82,6 +82,7 @@ def clean_tail(raw, limit=200):
     return out[-limit:]
 
 STATS = {"at": 0, "body": None}
+ERRORS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
 CTL_SLOTS = threading.BoundedSemaphore(4)
@@ -244,6 +245,16 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             self._send(200, STATS["body"] or json.dumps({"error": "stats unavailable"}), "application/json")
+        elif path == "/api/errors":
+            now = time.time()
+            if not ERRORS["at"] or now - ERRORS["at"] > 20:
+                try:
+                    proc = ctl_run(["errors", "--json"], timeout=20)
+                    if proc.returncode == 0 and proc.stdout.strip():
+                        ERRORS.update(at=now, body=proc.stdout)
+                except Exception:
+                    pass
+            self._send(200, ERRORS["body"] or "[]", "application/json")
         elif path == "/api/history":
             from urllib.parse import parse_qs, urlparse
             key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]

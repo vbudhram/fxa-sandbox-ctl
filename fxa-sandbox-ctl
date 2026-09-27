@@ -46,6 +46,7 @@ source "${SCRIPT_DIR}/lib/github.sh"
 source "${SCRIPT_DIR}/lib/telemetry.sh"
 source "${SCRIPT_DIR}/lib/snapshot.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
+source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 
 # ── Usage / Help ───────────────────────────────────────────────
@@ -2095,14 +2096,18 @@ cmd_events() {
   local job; job="$(session_get "$key" job_pid)"
   if [ -n "$job" ] && ! kill -0 "$job" 2>/dev/null; then
     case "$state" in
-      starting) session_set "$key" state failed; state=failed ;;
-      wrapping) session_set "$key" state active last_error "Open PR stopped before it finished. Try again."; state=active ;;
+      starting) session_set "$key" state failed; state=failed
+        errors_record session boot_died "$key" "session boot" "the boot job ended before the session started" "agent-sessions/${key}.log" ;;
+      wrapping) session_set "$key" state active last_error "Open PR stopped before it finished. Try again."; state=active
+        errors_record session finish_died "$key" "session-finish" "the finish job ended without reporting: $(tail -c 300 "${SESSION_DIR}/${key}.finish.log" 2>/dev/null | tr '\n' ' ' || true)" "agent-sessions/${key}.finish.log" ;;
     esac
   fi
   case "$state" in
     starting) act="$(_session_boot_step "$key")" ;;
     failed)
-      events="$(jq -n --arg t "$(grep -E 'ERROR' "${SESSION_DIR}/${key}.log" 2>/dev/null | tail -1)" '[{type: "error", text: $t}]')"
+      local boot_err; boot_err="$(grep -E 'ERROR' "${SESSION_DIR}/${key}.log" 2>/dev/null | tail -1 || true)"
+      errors_record session boot_failed "$key" "session boot" "${boot_err:-no ERROR line}" "agent-sessions/${key}.log"
+      events="$(jq -n --arg t "$boot_err" '[{type: "error", text: $t}]')"
       session_set "$key" state stopped; state=stopped ;;
     active|wrapping)
       open="$(session_get "$key" turn_open)"
@@ -2129,6 +2134,7 @@ cmd_events() {
           # The turn's stderr lands in the transcript as plain lines: an expired token says so there.
           local why; why="$(grep -v '^[[:space:]]*[{]' "$tmp" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-240 || true)"
           events="$(jq --arg w "$why" '. + [{type: "error", text: ("I stopped without replying." + (if $w == "" then "" else " The last output was: " + $w end) + " Send a message to try again.")}]' <<< "$events")"
+          errors_record session turn_died "$key" "session turn" "${why:-no output}" "agent-sessions/${key}.log"
           session_set "$key" turn_open 0; open=0
         fi
         # The Open PR job reports its own outcome; the wrap-up turn's reply is noise.
@@ -2144,6 +2150,7 @@ cmd_events() {
         fi
       elif ! vm_is_running "$name" 2>/dev/null; then
         events='[{"type":"error","text":"The runner is gone (lifetime cap or deleted)."}]'
+        errors_record session runner_gone "$key" "session events" "the runner is gone while the session was ${state}" ""
         session_set "$key" state stopped; state=stopped
       fi
       rm -f "$tmp"
@@ -2230,6 +2237,7 @@ _session_finish_fail() {
   local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1 || true)"
   [ "${3:-}" = --no-pr ] && what="Push branch"
   session_set "$1" state active last_error "${what} failed: ${last:-$2}"
+  errors_record session "$( [ "$what" = "Push branch" ] && echo push_failed || echo pr_failed )" "$1" "session-finish" "${last:-$2}" "agent-sessions/$1.finish.log"
   _session_history_add "$1" action "${what} failed: ${last:-$2}"
   return 1
 }
@@ -2297,6 +2305,10 @@ cmd_session() {
 # ── Main dispatch ──────────────────────────────────────────────
 
 main() {
+  # Record where an unexpected failure ends a command; set -E hands the trap to functions.
+  _ERR_CONTEXT="$*"
+  set -E
+  trap 'errors_err_trap $? "$BASH_COMMAND"' ERR
   # Global flag, before the command: pick which pipeline config the ticket
   # commands read. Defaults to fxa-ai-fixme.
   # --backend picks the VM backend (tart or gce) the same way.
@@ -2382,6 +2394,7 @@ main() {
     media)      [ -n "${2:-}" ] || { echo "Usage: media <key> <dir>" >&2; exit 1; }; _session_key "$1" && session_media "$1" "$2" ;;
     diff)       cmd_diff "$@" ;;
     session)    cmd_session "$@" ;;
+    errors)     cmd_errors "$@" ;;
     help|--help|-h)
       usage
       ;;

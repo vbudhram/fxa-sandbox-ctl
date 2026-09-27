@@ -226,6 +226,10 @@
   nav a .n:empty { display:none; }
   nav a .n.bad { background:var(--badbg); color:var(--bad); } nav a .n.warn { background:var(--warnbg); color:var(--warn); }
   nav a .n.info { background:var(--infobg); color:var(--info); }
+  .errs .err { display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s2) 0; border-top:1px solid var(--line); }
+  .errs .err .chip { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:999px; } .errs .err .body { min-width:0; }
+  .errs .err .m { font-family:var(--mono); font-size:12px; overflow-wrap:anywhere; }
+  .errs .err .meta { font-size:var(--t-label); color:var(--dim); margin-top:2px; overflow-wrap:anywhere; }
   nav .theme { display:inline-flex; margin-top:var(--s2); }
   nav .theme button { padding:3px var(--s2); font-size:var(--t-label); border-radius:0; margin-left:-1px; }
   nav .theme button:first-child { border-radius:var(--r-sm) 0 0 var(--r-sm); margin-left:0; }
@@ -449,6 +453,7 @@
   <a href="#pipeline" data-nav="pipeline">Pipeline<span class="n" id="n-pipeline"></span></a>
   <a href="#sessions" data-nav="sessions">Sessions<span class="n" id="n-sessions"></span></a>
   <a href="#stats" data-nav="stats">Stats<span class="n" id="n-stats"></span></a>
+  <a href="#errors" data-nav="errors">Errors<span class="n" id="n-errors"></span></a>
   <a href="#runners" data-nav="runners">Sandboxes<span class="n" id="n-runners"></span></a>
   <div class="fresh"><span id="age">connecting…</span><button id="refresh">refresh</button>
     <div class="theme" role="group" aria-label="Theme">
@@ -477,6 +482,7 @@
   <section class="wide" id="s-agents" data-views="none"></section>
   <section class="wide" id="s-sess" data-views="sessions"></section>
   <section class="wide" id="s-stats" data-views="stats"></section>
+  <section class="wide" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-lanes" data-views="pipeline"></section>
   <section class="wide" id="s-sessions" data-views="none"></section>
   <section class="wide" id="s-sessions-off" data-views="none"></section>
@@ -986,6 +992,32 @@ async function loadStats() {
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
   renderStats(); if (LANE_DET.size) renderLanes();
 }
+// Errors: every failure the host and the bot recorded, one row per signature.
+let ERRS = null, ERRS_ALL = false;
+async function loadErrors() {
+  try { ERRS = await (await fetch("/api/errors", { cache:"no-store" })).json(); } catch { return; }
+  const open = (ERRS || []).filter(e => e.status !== "resolved").length;
+  const b = document.getElementById("n-errors"); b.textContent = open || ""; b.className = "n" + (open ? " bad" : "");
+  if (document.body.dataset.view === "errors") renderErrors();
+}
+function renderErrors() {
+  if (!ERRS) { put("s-errors", head("errors") + `<div class="emptybox">loading…</div>`); return; }
+  const rows = ERRS.filter(e => ERRS_ALL || e.status !== "resolved");
+  const chip = { open: "bad", reopened: "bad", resolved: "dim" };
+  const key = (k) => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`;
+  put("s-errors", head("errors", rows.length, `<button class="tgl sm" id="err-all" aria-pressed="${ERRS_ALL}">${ERRS_ALL ? "Hide resolved" : "Show resolved"}</button>`,
+      "from the controller and the bot, grouped by signature") +
+    (rows.length === 0 ? `<div class="emptybox">No open errors.</div>` : `<div class="errs">${rows.map(e => `<div class="err">
+      <span class="chip ${chip[e.status] ?? "dim"}">${esc(e.status)}</span>
+      <div class="body"><div class="m">${esc(e.message)}</div>
+        <div class="meta"><span class="mono">${esc(e.sig)}</span> · ${esc(e.source)}/${esc(e.kind)} · ${esc(e.where)} · ×${e.count} · last ${ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))}
+        ${e.keys?.length ? ` · ${e.keys.map(key).join(" ")}` : ""}${e.log ? ` · <span class="mono">${esc(e.log)}</span>` : ""}
+        ${e.resolved ? ` · resolved ${esc(e.resolved.at.slice(0, 10))}${e.resolved.note ? `: ${esc(e.resolved.note)}` : ""}` : ""}</div></div>
+    </div>`).join("")}</div>
+    <p class="empty" style="margin-top:var(--s3)">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
+}
+document.addEventListener("click", e => { if (!e.target.closest?.("#err-all")) return; ERRS_ALL = !ERRS_ALL; renderErrors(); });
+
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
   const st = STATS;
@@ -1433,7 +1465,7 @@ function renderNav() {
   ].join(""));
 }
 
-const VIEWS = ["overview", "pipeline", "sessions", "stats", "runners"];
+const VIEWS = ["overview", "pipeline", "sessions", "stats", "errors", "runners"];
 let SESS_TAB = "live", SESS_SEL = "";
 function route() {
   const [v, sub, sel] = location.hash.slice(1).split("/");
@@ -1441,6 +1473,7 @@ function route() {
   SESS_TAB = tab; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(sel ?? "") ? sel : "";
   if (view === "sessions" && AGENTS) renderSess();
   if (view === "stats" || view === "pipeline") loadStats();
+  if (view === "errors") renderErrors();
   document.querySelectorAll("[data-views]").forEach(e => {
     const vs = e.dataset.views.split(" ");
     e.classList.toggle("on", vs.includes(view) || vs.includes(`${view}:${tab}`));
@@ -1465,6 +1498,7 @@ async function poll() {
   SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
   render();
   HIST_OPEN.forEach(loadHist);
+  loadErrors();
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }
