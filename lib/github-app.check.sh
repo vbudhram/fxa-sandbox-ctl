@@ -46,5 +46,20 @@ check "moved branch refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
 REMOTE_SHA="$base" github_app_commit "$tmp/r" fxa-1 "$base" "m" >/dev/null 2>&1
 check "expected branch is moved" "true" "$(grep '^PATCH git/refs/heads/fxa-1' "$tmp/calls" | cut -d' ' -f3- | jq -r .force)"
 
+# Media goes to the bucket: references rewritten in place, the rest appended.
+eval "$(sed -n '/^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^slot_write() /p' "$here/worktree.sh")"
+gcloud() { printf '%s\n' "$*" >> "$tmp/gcloud"; }
+FXA_MEDIA_BUCKET=b branch=fxa-1
+mkdir -p "$tmp/m"; : > "$tmp/m/shot.png"; : > "$tmp/m/other.png"; : > "$tmp/m/run.mp4"
+printf 'Before ![x](./shot.png) after\n' > "$tmp/body.md"
+arr=(--attach "$tmp/m/shot.png" --attach "$tmp/m/other.png" --attach "$tmp/m/run.mp4")
+md="$(_finish_media_to_bucket "$tmp/body.md" arr)"
+check "three uploads" "3" "$(grep -c '^storage cp' "$tmp/gcloud")"
+check "reference rewritten in place" "1" "$(grep -cE '^Before !\[x\]\(https://storage.googleapis.com/b/fxa-1/[0-9a-f]{16}/1/shot.png\) after$' "$tmp/body.md")"
+check "unreferenced image appended" "1" "$(grep -cE '^!\[other.png\]\(https://storage.googleapis.com/b/.*/2/other.png\)$' "$tmp/body.md")"
+check "video appended as a link" "1" "$(grep -cE '^\[run.mp4\]\(https://.*/3/run.mp4\)$' "$tmp/body.md")"
+check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.googleapis.com')"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

@@ -269,6 +269,36 @@ _finish_claim()   { : > "${LOG_DIR}/$(basename "$1").finishing"; }
 _finish_release() { rm -f "${LOG_DIR}/$(basename "$1").finishing"; }
 finish_is_claimed() { [ -f "${LOG_DIR}/$(basename "$1").finishing" ]; }
 
+# _finish_media_to_bucket <body_file> <array-name>
+#   The App cannot upload GitHub attachments, so put each file in the public
+#   media bucket under an unguessable path, point the body's references at it and
+#   append the rest. Prints the Markdown for all of them.
+_finish_media_to_bucket() {
+  local body_file="$1" _media_arr="$2" f name url dir md="" n=0 files=()
+  eval "files=(\${${_media_arr}[@]+\"\${${_media_arr}[@]}\"})"
+  dir="${branch:-media}/$(openssl rand -hex 8)"
+  for f in ${files[@]+"${files[@]}"}; do
+    [ "$f" = --attach ] && continue
+    name="$(basename "$f" | tr -c 'A-Za-z0-9._\n-' '-')"; n=$((n + 1))
+    gcloud storage cp -q "$f" "gs://${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}" --cache-control="public, max-age=31536000, immutable" >/dev/null 2>&1 \
+      || { echo "  WARN: could not upload ${name} to the media bucket." >&2; continue; }
+    url="https://storage.googleapis.com/${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}"
+    case "$name" in *.mp4|*.webm|*.mov) md="${md}[${name}](${url})"$'\n' ;; *) md="${md}![${name}](${url})"$'\n' ;; esac
+    # Rewrite `(./shot.png)` and `(shot.png)` references in place; append the rest.
+    python3 - "$body_file" "$(basename "$f")" "$url" <<'PY' | slot_write "${body_file}.new" && mv -f "${body_file}.new" "$body_file"
+import sys
+path, name, url = sys.argv[1:]
+body = open(path).read()
+new = body.replace("(./" + name + ")", "(" + url + ")").replace("(" + name + ")", "(" + url + ")")
+if new == body:
+    link = ("[%s](%s)" if name.rsplit(".", 1)[-1] in ("mp4", "webm", "mov") else "![%s](%s)") % (name, url)
+    new = body.rstrip("\n") + "\n\n" + link + "\n"
+sys.stdout.write(new)
+PY
+  done
+  printf '%s' "$md"
+}
+
 # finish_media_args <worktree> <done_file> <out-array-name>
 #   Read media_paths from the handoff and turn them into `gh pr create --attach`
 #   flags. gh 2.99.0+ uploads each file to GitHub's own asset store and rewrites
@@ -597,6 +627,11 @@ _finish_push_and_pr() {
   # longer inlined here; it rides along as --attach.
   local body_file="${worktree}/.fxa-auto-pr-body.md"
   printf '%s\n' "$pr_body" | slot_write "$body_file"
+  local media_md=""
+  if github_app_enabled && [ -n "${FXA_MEDIA_BUCKET:-}" ] && [ "${#media_args[@]}" -gt 0 ]; then
+    media_md="$(_finish_media_to_bucket "$body_file" media_args)"
+    media_args=()  # the helper ran in a subshell; gh must not retry these as the App
+  fi
 
   if [ "$create_pr" != "true" ]; then
     echo "" >&2
@@ -658,6 +693,10 @@ _finish_push_and_pr() {
          --body "Updated evidence from the latest automated round." \
          ${media_args[@]+"${media_args[@]}"} >/dev/null 2>&1) \
         || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
+    elif [ -n "$media_md" ]; then
+      (cd "$worktree" && gh pr comment "$pr_num" --body "Updated evidence from the latest automated round.
+
+${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR #${pr_num}." >&2
     fi
     finish_add_reviewers "$pr_url"
     finish_request_copilot_review "$pr_url"
