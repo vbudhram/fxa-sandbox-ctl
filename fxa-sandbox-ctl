@@ -2003,6 +2003,7 @@ _cmd_session_boot() {
   if [ -n "$from" ]; then
     sha="$(session_get "$from" base_sha)"; sha="${sha:-$base_sha}"
     [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
+    _session_valid_sid "$resume_sid" || resume_sid=""
     echo "Resuming ${from} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
   fi
   session_set "$key" base_sha "$sha"
@@ -2108,7 +2109,7 @@ cmd_events() {
         [ "$lines" -gt 0 ] && events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')" \
           && act="$(head -n "$lines" "$tmp" | _session_activity)"
         local sid; sid="$(jq -r 'map(select(.type == "init"))[0].session_id // empty' <<< "$events")"
-        [ -n "$sid" ] && [ -z "$(session_get "$key" claude_session_id)" ] && session_set "$key" claude_session_id "$sid"
+        [ -n "$sid" ] && _session_valid_sid "$sid" && [ -z "$(session_get "$key" claude_session_id)" ] && session_set "$key" claude_session_id "$sid"
         events="$(jq 'map(select(.type != "init"))' <<< "$events")"
         # Codex says its reply and ends its turn in separate events, maybe in separate polls.
         local fold prev; prev="$(session_get "$key" last_say)"
