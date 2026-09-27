@@ -1119,7 +1119,7 @@ agent_stop() {
   local key; key="$(printf '%s' "$name" | tr 'a-z' 'A-Z')"
   pgrep -f "jira ${key} " 2>/dev/null | while read -r pid; do
     grep -q 'pull/' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
-  done
+  done || true  # no launcher: pgrep exits 1, and under pipefail and set -e that ended stop before the VM went
 
   echo "Stopping agent '${name}'..."
 
