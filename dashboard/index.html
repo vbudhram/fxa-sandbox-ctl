@@ -36,10 +36,6 @@
   a:hover { text-decoration:underline; text-underline-offset:2px; }
   [hidden] { display:none !important; }
 
-  #bar { position:fixed; top:0; left:0; height:2px; width:22%; background:var(--info);
-         opacity:0; z-index:9; translate:-100% 0; }
-  #bar.on { opacity:1; animation:sweep 1.15s cubic-bezier(.5,0,.5,1) infinite; }
-  @keyframes sweep { from { translate:-100% 0; } to { translate:560% 0; } }
 
   /* ── status bar: one row, always visible ── */
   #status { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
@@ -235,7 +231,6 @@
 </style>
 </head>
 <body>
-<div id="bar"></div>
 
 <div class="app">
 <nav aria-label="Views">
@@ -445,7 +440,6 @@ function renderStatus() {
   document.getElementById("cells").innerHTML = cells.join(`<span class="sep"></span>`);
   document.getElementById("age").textContent =
     (STATE.refreshing ? "refreshing… " : "") + `agents ${ago(STATE.agents_age_seconds)}, tickets ${ago(STATE.age_seconds)}`;
-  document.getElementById("bar").classList.toggle("on", !!STATE.refreshing);
 }
 
 function merged() {
