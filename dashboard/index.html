@@ -609,7 +609,9 @@ function renderTickets() {
   const liveSkips = skipped.filter(k => k.in_queue !== false), staleSkips = skipped.filter(k => k.in_queue === false);
   put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length, q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
     (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
-     : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>`
+     : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>` +
+          (ready.length ? `<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
+            ready.map(t => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span></span></div></div>`).join("")}</div></details>` : "")
      : ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
         : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
           (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
