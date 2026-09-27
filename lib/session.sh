@@ -78,9 +78,15 @@ The same rules as before apply, including the final 'status:' line.
 EOF
 }
 
+# The origin repo as an https URL, for a compare link.
+_session_repo_url() {
+  git -C "$(worktree_repo_root)" remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##'
+}
+
 _session_wrapup_prompt() {
+  local ask="open a PR"; [ "${2:-}" = --no-pr ] && ask="push the branch (no PR yet)"
   cat <<EOF
-The engineer asked to open a PR. Wrap up now:
+The engineer asked to ${ask}. Wrap up now:
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
    untracked files, then $(runtime_skill_ref fxa-vm-selfcheck). Fix every blocker.
 2. Revert any file unrelated to the request with 'git checkout -- <path>'.

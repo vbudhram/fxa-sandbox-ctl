@@ -96,7 +96,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   interrupt <key>              WRITE: stop the running turn, keep the session
   media <key> <dir>            Copy the agent's screenshots and videos into <dir>, and list them
   diff <key>                   The runner's working diff, untracked files included
-  finish --session <key>       WRITE: in the background, a wrap-up turn, then commit in a
+  finish --session <key> [--no-pr]
+                               WRITE: in the background, a wrap-up turn, then commit in a
                                throwaway worktree and open a draft PR; events reports it
   session list | show <key>    Read session records
   session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (1800);
@@ -784,7 +785,7 @@ cmd_finish() {
       --wait)         wait="true"; shift ;;
       --no-ci-watch)  ci_watch="false"; shift ;;
       --create-pr)    create_pr="true"; shift ;;
-      --session)      _finish_session "${2:-}"; return ;;
+      --session)      _finish_session "${2:-}" "${3:-}"; return ;;
       -*)
         echo "ERROR: Unknown option: $1" >&2
         return 1
@@ -2122,6 +2123,11 @@ cmd_events() {
         session_set "$key" pr_announced 1
       fi ;;
   esac
+  if [ "$(session_get "$key" pushed_announced)" = 0 ]; then
+    events="$(jq --arg b "$(session_get "$key" pushed_branch)" --arg r "$(_session_repo_url)" \
+      '. + [{type: "pushed", branch: $b, url: "\($r)/compare/main...\($b)?expand=1"}]' <<< "$events")"
+    session_set "$key" pushed_announced 1
+  fi
   local err; err="$(session_get "$key" last_error)"
   if [ -n "$err" ]; then
     events="$(jq --arg t "$err" '. + [{type: "error", text: $t}]' <<< "$events")"
@@ -2144,8 +2150,9 @@ cmd_diff() {
 # finish --session: start the wrap-up in the background and return. The job
 # reports through events (a pr event, or an error), so a bot restart loses nothing.
 _finish_session() {
-  local key="$1"
+  local key="$1" mode="${2:-}"
   _session_key "$key" || return 1
+  case "$mode" in ''|--no-pr) ;; *) echo "ERROR: Unknown option: ${mode}" >&2; return 1 ;; esac
   _session_lock "$key" || { echo "ERROR: ${key} is busy; try again in a moment" >&2; return 1; }
   if [ "$(session_get "$key" state)" != active ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
     echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
@@ -2153,41 +2160,50 @@ _finish_session() {
   fi
   session_set "$key" state wrapping
   _session_unlock "$key"
-  nohup "$0" --backend gce session-finish "$key" > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
+  nohup "$0" --backend gce session-finish "$key" $mode > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
   session_set "$key" job_pid "$!"
   echo "${key} wrapping"
 }
 
 _session_finish_fail() {
-  local last; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
-  session_set "$1" state active last_error "Open PR failed: ${last:-$2}"
+  local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
+  [ "${3:-}" = --no-pr ] && what="Push branch"
+  session_set "$1" state active last_error "${what} failed: ${last:-$2}"
   return 1
 }
 
 # One wrap-up turn, then the normal host finish in a throwaway worktree.
 _cmd_session_finish() {
-  local key="$1" name deadline tmp pr_url rc
+  local key="$1" mode="${2:-}" name deadline tmp pr_url rc create=true
   # The wrap-up prompt names skills the way the session's agent invokes them.
   FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
-  runtime_load || { _session_finish_fail "$key" "could not load the runtime"; return 1; }
+  runtime_load || { _session_finish_fail "$key" "could not load the runtime" "$mode"; return 1; }
   name="$(worktree_branch_for "$key")"
-  _session_turn "$key" "$(_session_wrapup_prompt "$key")" || { _session_finish_fail "$key" "the wrap-up turn did not start"; return 1; }
+  [ "$mode" = --no-pr ] && create=false
+  _session_turn "$key" "$(_session_wrapup_prompt "$key" "$mode")" || { _session_finish_fail "$key" "the wrap-up turn did not start" "$mode"; return 1; }
   sleep 20
   deadline=$(( $(date +%s) + 2700 ))
   while _session_turn_running "$key"; do
-    [ "$(date +%s)" -lt "$deadline" ] || { _session_finish_fail "$key" "the wrap-up ran past 45 min"; return 1; }
+    [ "$(date +%s)" -lt "$deadline" ] || { _session_finish_fail "$key" "the wrap-up ran past 45 min" "$mode"; return 1; }
     sleep 15
   done
   session_set "$key" turn_open 0
   vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null \
-    || { _session_finish_fail "$key" "the wrap-up turn wrote no handoff file"; return 1; }
+    || { _session_finish_fail "$key" "the wrap-up turn wrote no handoff file" "$mode"; return 1; }
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
-  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work"; return 1; }
+  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft and no team review request by default: a person decides when it is ready.
   rc=0
-  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" true)" || rc=$?
+  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
-  [ "$rc" -eq 0 ] && [ -n "$pr_url" ] || { _session_finish_fail "$key" "push or PR create failed"; return 1; }
+  [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
+  if [ "$create" = false ]; then
+    # The session stays open for more steering; the next push needs a fresh handoff.
+    vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
+    session_set "$key" state active pushed_branch "$key" pushed_announced 0
+    echo "pushed ${key}"; return 0
+  fi
+  [ -n "$pr_url" ] || { _session_finish_fail "$key" "PR create failed" "$mode"; return 1; }
   agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
   session_set "$key" state pr_open pr_url "$pr_url"
   echo "$pr_url"

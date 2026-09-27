@@ -119,6 +119,9 @@ check "wrap-up reply is not shown" "0" "$(cmd_events agent-t2 --since 0 | jq '.e
 
 session_set agent-t2 state pr_open pr_url https://example.com/pull/1
 check "pr announced once" "pr 0" "$(cmd_events agent-t2 | jq -r '.events[0].type') $(cmd_events agent-t2 | jq '.events | length')"
+_session_repo_url() { echo https://github.com/example/repo; }
+session_set agent-t2 pushed_branch agent-t2 pushed_announced 0
+check "push announced once, with a compare link" "pushed compare/main...agent-t2 0" "$(cmd_events agent-t2 | jq -r '.events[0] | "\(.type) \(.url | capture("(?<c>compare/.*)\\?").c)"') $(cmd_events agent-t2 | jq '.events | length')"
 session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RUNNER=''
 check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
 exit "$fail"
