@@ -68,6 +68,8 @@ Every turn, including later ones:
   put 'QUESTION: <the question>' on its own line before each group of OPTION lines.
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
+- If you changed no files (an answer, an investigation), do not suggest a push
+  or a pull request: there is nothing to ship.
 EOF
 }
 
@@ -423,6 +425,14 @@ session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 
 # session_stop <key>   Save the runner's work as a patch, then delete the runner.
 # Resume and recovery apply it with `git apply --index`.
+# _session_changes <key>   How many files the runner has changed, not counting
+# the .fxa-* scratch files, ai/ and artifacts/, which never ship. Empty when the
+# runner did not answer.
+_session_changes() {
+  _session_sh "$(worktree_branch_for "$1")" \
+    "cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE '^.. (\\.fxa-|ai/|artifacts/)' | wc -l" 2>/dev/null | tr -dc '0-9'
+}
+
 # _session_finish_notes <key>   What a handoff could not do, in plain lines for the
 # thread: the PR link alone hid that none of its screenshots uploaded.
 _session_finish_notes() {

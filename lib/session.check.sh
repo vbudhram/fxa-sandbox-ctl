@@ -217,4 +217,15 @@ session_set agent-t2 state active turn_open 0 wrap_reply "Nothing to ship: the b
 check "reason, then the error" "turn_end:Nothing to ship: the branch matches main.|error" "$(cmd_events agent-t2 | jq -r '[.events[] | if .type == "turn_end" then "turn_end:\(.text)" else .type end] | join("|")')"
 check "reason is announced once" "" "$(session_get agent-t2 wrap_reply)"
 
+# A ready turn carries the changed-file count; with none, Open PR refuses at once.
+_session_changes() { echo "$CHANGES"; }
+reset 0; CHANGES=0; RUNNING=0
+RUNNER='{"type":"result","result":"Answered.\nstatus: ready"}
+'
+check "ready turn carries the count" "0" "$(cmd_events agent-t2 --since 0 | jq -r '.events[] | select(.type == "turn_end") | .changes')"
+eval "$(sed -n '/^_finish_session() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+session_set agent-t2 state active turn_open 0
+check "no changed file: Open PR refuses" "nothing to push" "$(_finish_session agent-t2 2>&1 | grep -o 'nothing to push' || true)"
+check "and the session stays active" "active" "$(session_get agent-t2 state)"
+
 exit "$fail"
