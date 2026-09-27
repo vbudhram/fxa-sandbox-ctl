@@ -1933,11 +1933,12 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
+      --link) link="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
       --owner) owner="$2"; shift 2 ;;
@@ -1965,6 +1966,8 @@ cmd_task() {
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
+  # The Slack thread, for the dashboard. Only a Slack https link is kept.
+  [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"

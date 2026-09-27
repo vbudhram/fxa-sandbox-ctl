@@ -507,6 +507,7 @@ function sessionCard(s) {
       <span class="tags"><span class="tag" title="${esc(model || "")}">${rt === "codex" ? "Codex" : "Claude"}</span><span class="tag">${short(Math.round(age))}</span>${status}</span></div>
     <div class="stats">
       <span>owner <b class="mono">${esc(s.owner || "?")}</b></span><span class="sep"></span>
+      ${s.slack_url ? `<a href="${esc(s.slack_url)}" target="_blank" rel="noopener">Slack thread</a><span class="sep"></span>` : ""}
       ${model ? `<span class="mono">${esc(model)}</span><span class="sep"></span>` : ""}
       <span><b>${esc(s.turns ?? 0)}</b> steer turn${s.turns === "1" ? "" : "s"}</span>
       ${a.turns ? `<span><b>${a.turns}</b> agent turns</span>` : ""}
