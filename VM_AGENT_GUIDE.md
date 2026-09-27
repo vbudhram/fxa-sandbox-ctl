@@ -110,9 +110,10 @@ package, and only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
 
 - Never run a whole package suite. The whole auth unit project (4157 tests)
-  takes 87 s and leaves about 0.2GB free with the stack off; with the stack up
-  it runs the machine out of memory. Do not run two auth integration suites at
-  once.
+  left 0.2GB free with Jest's default 3 workers and the stack off, 0.5GB with
+  `--maxWorkers=2`; with the stack up it runs the machine out of memory. Pass
+  `--maxWorkers=2` when you run more than a few auth specs by hand
+  (`/fxa-verify` does). Do not run two auth integration suites at once.
 - Auth unit tests need `SNS_TOPIC_ENDPOINT` unset (`env -u
   SNS_TOPIC_ENDPOINT yarn test <spec>`): `/etc/agent-env.sh` sets it for the
   goaws stub, and `config/index.spec.ts` rejects it. `/fxa-verify` does this.

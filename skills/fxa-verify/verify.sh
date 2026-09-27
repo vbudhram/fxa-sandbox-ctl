@@ -48,6 +48,8 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
     packages/fxa-settings)
       add "$p tests" "$p" "CI=true SKIP_PREFLIGHT_CHECK=true node scripts/test.js --watchAll=false --findRelatedTests $r" ;;
     packages/fxa-auth-server)
+      # Jest defaults to CPUs - 1 = 3 workers here; the whole unit project then left
+      # 0.2 GB free. Two workers; oauth-api one, as in CI (its specs share a DB).
       # Four Jest projects; integration ignores oauth_api and test/scripts, which
       # have projects of their own, so each file goes to the one that runs it.
       unit=(); integ=(); scr=(); oapi=()
@@ -58,13 +60,13 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
         *) unit+=("$f") ;; esac; done
       # agent-env.sh sets SNS_TOPIC_ENDPOINT for the goaws stub; the prod config
       # specs reject it outside dev, so unit runs go without it.
-      [ "${#unit[@]}" -gt 0 ] && add "$p unit" "$p" "env -u SNS_TOPIC_ENDPOINT yarn test --findRelatedTests $(rel "$p" "${unit[@]}")"
+      [ "${#unit[@]}" -gt 0 ] && add "$p unit" "$p" "env -u SNS_TOPIC_ENDPOINT yarn test --maxWorkers=2 --findRelatedTests $(rel "$p" "${unit[@]}")"
       # The fxa DB has no tables until the patcher runs (fxa-start runs it); without
       # it the suite waits 63 s and fails on ER_NO_SUCH_TABLE. It is fast and idempotent.
       [ "$(( ${#integ[@]} + ${#scr[@]} + ${#oapi[@]} ))" -gt 0 ] && add "db patches" "." "node packages/db-migrations/bin/patcher.mjs"
-      [ "${#integ[@]}" -gt 0 ] && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit $(rel "$p" "${integ[@]}")"
-      [ "${#scr[@]}" -gt 0 ] && add "$p scripts" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects scripts --forceExit $(rel "$p" "${scr[@]}")"
-      [ "${#oapi[@]}" -gt 0 ] && add "$p oauth-api" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects oauth-api --forceExit $(rel "$p" "${oapi[@]}")"
+      [ "${#integ[@]}" -gt 0 ] && add "$p integration" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects integration --forceExit --maxWorkers=2 $(rel "$p" "${integ[@]}")"
+      [ "${#scr[@]}" -gt 0 ] && add "$p scripts" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects scripts --forceExit --maxWorkers=2 $(rel "$p" "${scr[@]}")"
+      [ "${#oapi[@]}" -gt 0 ] && add "$p oauth-api" "$p" "VERIFIER_VERSION=0 npx jest --selectProjects oauth-api --forceExit --maxWorkers=1 $(rel "$p" "${oapi[@]}")"
       true ;;
     packages/fxa-react)
       add "$p tests" "$p" "npx jest --env=jest-environment-jsdom --findRelatedTests $r" ;;

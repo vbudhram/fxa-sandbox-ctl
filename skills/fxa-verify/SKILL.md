@@ -90,11 +90,19 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
 | `tsc --noEmit`: auth (`-p tsconfig.build.json`) / admin-server | 11 s / 9.5 s | 2.5 / 2.2 GB |
 | `eslint` on a few files | 1-2 s | 0.3 GB |
 | auth `scripts` or `oauth-api` spec, after the patcher | 13 s | 1.4 GB |
-| whole auth unit project (173 suites, 4157 tests), stack off | 87 s | free memory fell to 0.2 GB |
 
-The whole auth unit project passed on main with `SNS_TOPIC_ENDPOINT` unset,
-but it left 0.2 GB free with the stack off; with the stack up it would run out
-of memory. Run only related specs.
+The whole auth unit project (173 suites, 4157 tests) passed on main with
+`SNS_TOPIC_ENDPOINT` unset. Jest defaults to CPUs - 1 = 3 workers here, and
+each worker grows as it loads more test files:
+
+| Workers | Time | Lowest free memory (stack off) |
+|---|---|---|
+| 3 (default) | 87 s | 0.2 GB |
+| 2 (`--maxWorkers=2`, what the helper passes for auth) | 105 s | 0.5 GB |
+| 1 (all files in one process, which grew to 4.3 GB) | 166 s | 2.5 GB |
+
+The stack takes about 2.8 GB more, so with it up even 2 workers would run out
+of memory on the whole project. Run only related specs.
 
 ## If a check fails
 
