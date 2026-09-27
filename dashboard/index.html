@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ai-fixme status</title>
 <link rel="icon" id="favicon" href="data:,">
+<script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -24,8 +25,10 @@
     --head:Metropolis,Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
     --mono:Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
   }
+  :root { color-scheme:light dark; }
+  :root[data-theme="light"] { color-scheme:light; }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg:#0C0C0D; --panel:#15141A; --sunk:#1F1E25; --line:#32313C; --line2:#5E5E72; --hover:#32313C;
       --ink:#FAFAFB; --dim:#C2C2C2; --faint:#9E9E9E;
       --ok:#3FE1B0; --warn:#FFBD4F; --bad:#FF848B; --info:#00B3F4; --purple:#AB71FF; --link:#0090ED; --link-hover:#00B3F4;
@@ -33,6 +36,15 @@
       --amber:#FF8A50; --lit:#FFA266;
       --card-border:#32313C; --shadow:none;
     }
+  }
+  :root[data-theme="dark"] {
+    color-scheme:dark;
+    --bg:#0C0C0D; --panel:#15141A; --sunk:#1F1E25; --line:#32313C; --line2:#5E5E72; --hover:#32313C;
+    --ink:#FAFAFB; --dim:#C2C2C2; --faint:#9E9E9E;
+    --ok:#3FE1B0; --warn:#FFBD4F; --bad:#FF848B; --info:#00B3F4; --purple:#AB71FF; --link:#0090ED; --link-hover:#00B3F4;
+    --okbg:#0E2A24; --warnbg:#2E2210; --badbg:#35141D; --infobg:#0B2340;
+    --amber:#FF8A50; --lit:#FFA266;
+    --card-border:#32313C; --shadow:none;
   }
   * { box-sizing:border-box; }
   body { margin:0 auto; padding:var(--s4) var(--s4) 40px; max-width:1600px;
@@ -211,6 +223,11 @@
   nav a .n:empty { display:none; }
   nav a .n.bad { background:var(--badbg); color:var(--bad); } nav a .n.warn { background:var(--warnbg); color:var(--warn); }
   nav a .n.info { background:var(--infobg); color:var(--info); }
+  nav .theme { display:inline-flex; margin-top:var(--s2); }
+  nav .theme button { padding:3px var(--s2); font-size:var(--t-label); border-radius:0; margin-left:-1px; }
+  nav .theme button:first-child { border-radius:var(--r-sm) 0 0 var(--r-sm); margin-left:0; }
+  nav .theme button:last-child { border-radius:0 var(--r-sm) var(--r-sm) 0; }
+  nav .theme button[aria-pressed="true"] { background:var(--sunk); color:var(--link); font-weight:700; }
   nav .fresh { margin-top:var(--s4); padding:var(--s3); border-top:1px solid var(--line); font-size:var(--t-label);
                color:var(--faint); display:flex; flex-direction:column; align-items:flex-start; gap:var(--s2); }
   [data-views]:not(.on) { display:none !important; }
@@ -262,7 +279,11 @@
   <a href="#pipeline" data-nav="pipeline">Pipeline<span class="n" id="n-pipeline"></span></a>
   <a href="#sessions" data-nav="sessions">Sessions<span class="n" id="n-sessions"></span></a>
   <a href="#runners" data-nav="runners">Runners<span class="n" id="n-runners"></span></a>
-  <div class="fresh"><span id="age">connecting…</span><button id="refresh">refresh</button></div>
+  <div class="fresh"><span id="age">connecting…</span><button id="refresh">refresh</button>
+    <div class="theme" role="group" aria-label="Theme">
+      <button data-theme-set="system">System</button><button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button>
+    </div>
+  </div>
 </nav>
 <main>
 <div id="status">
@@ -780,6 +801,18 @@ async function poll() {
   render();
   HIST_OPEN.forEach(loadHist);
 }
+// Theme: System follows the OS; Light and Dark are kept in this browser only.
+function paintTheme() {
+  const t = document.documentElement.dataset.theme || "system";
+  document.querySelectorAll("[data-theme-set]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t)));
+}
+document.querySelectorAll("[data-theme-set]").forEach(b => b.addEventListener("click", () => {
+  const t = b.dataset.themeSet;
+  if (t === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { t === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", t); } catch {}
+  paintTheme();
+}));
+paintTheme();
 document.getElementById("refresh").addEventListener("click", async () => {
   try { await fetch("/api/refresh"); } catch {}
   setTimeout(poll, 1500);
