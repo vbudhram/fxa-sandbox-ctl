@@ -160,4 +160,7 @@ _session_history_add agent-t3 user "second" "Other User" ""
 check "history carries who sent each message" "Test User:https://avatars.slack-edge.com/x_48.png|Other User:" "$(session_history agent-t3 | jq -r 'map(select(.role == "user")) | map("\(.name // ""):\(.image // "")") | join("|")')"
 session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RUNNER=''
 check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
+runtime_skill_ref() { printf '/%s' "$1"; }
+check "push wrap-up skips the review" "0|1" "$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-review-quick)|$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-auto-done.json.tmp)"
+check "PR wrap-up keeps the review" "1" "$(_session_wrapup_prompt agent-x | grep -c fxa-review-quick)"
 exit "$fail"

@@ -117,7 +117,21 @@ _session_repo_url() {
 }
 
 _session_wrapup_prompt() {
-  local ask="open a PR"; [ "${2:-}" = --no-pr ] && ask="push the branch (no PR yet)"
+  # A push is a checkpoint: the review and PR write-up run once, at Open PR.
+  # The host checks (tooling guard, frozen paths, markers) still run on the push.
+  if [ "${2:-}" = --no-pr ]; then
+    cat <<EOF
+The engineer asked to push the branch (no PR yet). Do not review, test or
+write a PR description; that happens when they open the PR. Only:
+1. Revert any file unrelated to the request with 'git checkout -- <path>'.
+2. Write /workspace/.fxa-auto-done.json with keys {issue, branch, pr_title, pr_body, media_paths}:
+   issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
+   conventional commit subject; pr_body two or three plain lines on what changed
+   and why; media_paths []. Write it to .fxa-auto-done.json.tmp, then mv it into place.
+EOF
+    return
+  fi
+  local ask="open a PR"
   cat <<EOF
 The engineer asked to ${ask}. Wrap up now:
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
