@@ -110,7 +110,7 @@ comment that the branch was rebased after review.
 `lockfile`: `precheck` fixes it itself with `$CTL relock KEY`: merge main in a temporary
 worktree, take main's `yarn.lock`, `yarn install --mode=update-lockfile`, and push the merge as a
 fast-forward, with no force-push. It counts as an attempt. A failed relock
-shows as a work line; report it. `source`: `$CTL jira KEY --worktree <slot> --rebase --create-pr`. The host merges
+shows as a work line; report it. `source`: `$CTL launch KEY <slot> --rebase`. The host merges
 the base in after checkout, the agent resolves markers as file edits, the host squashes onto the
 base and pushes `--force-with-lease`. It refuses at `attempts` 2, and
 refuses to commit a surviving marker. It renders its own goal, not the ticket's.
@@ -342,7 +342,7 @@ phone number in a context file, comment, or PR.
 | `drain` | done keys needing action |
 | `progress KEY` / `alive KEY` / `prstate KEY` | launcher log; live process; PR state |
 | `conflicts KEY` | conflict class and files |
-| `jira KEY --worktree <slot> --rebase --create-pr` | resolve a source conflict |
+| `launch KEY <slot> --rebase` | resolve a source conflict |
 | `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup]` | review comments |
 | `skip KEY "<reason>"` / `skipped [KEY]` | record and list admission skips |
 | `attempts KEY [bump]` | real-fix counter |

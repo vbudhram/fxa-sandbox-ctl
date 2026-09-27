@@ -126,7 +126,7 @@ PIPELINE COMMANDS:
   slots                        Pool slots, and any VM running on each
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
   freeslots                    Slots a ticket can claim (use this, not `slots`)
-  launch <KEY> <slot> [ctx]    WRITE: start an agent VM in the background
+  launch <KEY> <slot> [ctx] [--rebase]  WRITE: start an agent VM in the background (--rebase: conflict round)
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
   progress <ISSUE-KEY>         What the launcher did (read this first)
   prstate <ISSUE-KEY>          PR number, state, and check tally
@@ -1845,9 +1845,13 @@ _launch_slot_for() {
 }
 
 cmd_launch() {
-  local key="${1:-}" slot="${2:-}" ctx="${3:-}"
+  # --rebase runs a conflict round through here, so it gets the launch log the
+  # dashboard and `progress` read, the ledger, and the prior-run telemetry.
+  local rebase="" a pos=()
+  for a in "$@"; do [ "$a" = --rebase ] && rebase=1 || pos+=("$a"); done
+  local key="${pos[0]:-}" slot="${pos[1]:-}" ctx="${pos[2]:-}"
   if [ -z "$key" ] || [ -z "$slot" ]; then
-    echo "ERROR: launch needs <KEY> <slot> [context-file]" >&2
+    echo "ERROR: launch needs <KEY> <slot> [context-file] [--rebase]" >&2
     return 1
   fi
   if [ -n "$ctx" ] && [ ! -f "$ctx" ]; then
@@ -1895,7 +1899,7 @@ cmd_launch() {
     return 1
   fi
   printf '%s %s %s\n' "$(date +%s)" "$key" "$slot" >> "$ledger"
-  local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot")
+  local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot" ${rebase:+--rebase})
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
   # The pass asks for the full stack with one line in the context file. That is
