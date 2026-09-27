@@ -192,6 +192,8 @@ _gce_pin_runner_tree() {
   # A session has no slot; it names the commit and branch itself.
   sha="${FXA_PIN_SHA:-$(git -C "$slot" rev-parse HEAD)}" || return 1
   branch="${FXA_PIN_BRANCH:-$(git -C "$slot" rev-parse --abbrev-ref HEAD)}" || return 1
+  # A detached slot (a plain `run`) has no branch; name it after the agent.
+  [ "$branch" = HEAD ] && branch="$name"
   # The prompts diff against merge-base with origin/<base>. The image's copy of
   # that ref is as old as the image, so set it to the base the host sees now.
   local base="${FXA_WORKTREE_BASE:-main}" base_sha
