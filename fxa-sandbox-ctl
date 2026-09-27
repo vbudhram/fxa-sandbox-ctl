@@ -2128,7 +2128,9 @@ cmd_events() {
           session_set "$key" turn_open 0; open=0
         elif [ "$open" = 1 ] && [ "$running" = 0 ] && [ $(( $(date +%s) - $(session_get "$key" turn_started || echo 0) )) -gt 20 ]; then
           # The process is gone and never wrote a result: auth, resume, or a crash.
-          events="$(jq '. + [{type: "error", text: "I stopped without replying. Send a message to try again."}]' <<< "$events")"
+          # The turn's stderr lands in the transcript as plain lines: an expired token says so there.
+          local why; why="$(grep -v '^[[:space:]]*[{]' "$tmp" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-240)"
+          events="$(jq --arg w "$why" '. + [{type: "error", text: ("I stopped without replying." + (if $w == "" then "" else " The last output was: " + $w end) + " Send a message to try again.")}]' <<< "$events")"
           session_set "$key" turn_open 0; open=0
         fi
         # The Open PR job reports its own outcome; the wrap-up turn's reply is noise.
@@ -2160,25 +2162,29 @@ cmd_events() {
       fi ;;
     pr_open)
       if [ "$(session_get "$key" pr_announced)" != 1 ]; then
-        events="$(jq -n --arg u "$(session_get "$key" pr_url)" '[{type: "pr", url: $u}]')"
-        session_set "$key" pr_announced 1
+        events="$(jq -n --arg u "$(session_get "$key" pr_url)" --arg n "$(session_get "$key" finish_notes)" --arg s "$(session_get "$key" summary)" \
+          '[{type: "pr", url: $u, notes: ($n | split("\n") | map(select(. != ""))), summary: ($s | fromjson? // null)}]')"
+        session_set "$key" pr_announced 1 finish_notes ""
       fi ;;
   esac
   if [ "$(session_get "$key" pushed_announced)" = 0 ]; then
-    events="$(jq --arg b "$(session_get "$key" pushed_branch)" --arg r "$(_session_repo_url)" \
-      '. + [{type: "pushed", branch: $b, url: "\($r)/compare/main...\($b)?expand=1"}]' <<< "$events")"
-    session_set "$key" pushed_announced 1
+    events="$(jq --arg b "$(session_get "$key" pushed_branch)" --arg r "$(_session_repo_url)" --arg n "$(session_get "$key" finish_notes)" \
+      '. + [{type: "pushed", branch: $b, url: "\($r)/compare/main...\($b)?expand=1", notes: ($n | split("\n") | map(select(. != "")))}]' <<< "$events")"
+    session_set "$key" pushed_announced 1 finish_notes ""
   fi
   local err; err="$(session_get "$key" last_error)"
   if [ -n "$err" ]; then
     events="$(jq --arg t "$err" '. + [{type: "error", text: $t}]' <<< "$events")"
     session_set "$key" last_error ""
   fi
+  # After the wrap-up turn, the host does the rest; say which step it is on.
+  local host=false
+  if [ "$state" = wrapping ] && [ "$(session_get "$key" turn_open)" != 1 ]; then act="$(_session_wrap_step "$key")"; host=true; fi
   # busy: the agent owes a reply. The bot keeps a live status line while it is.
   local busy=false
   case "$state" in starting|wrapping) busy=true ;; active) [ "$(session_get "$key" turn_open)" = 1 ] && busy=true ;; esac
-  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" --argjson b "$busy" --arg a "$act" \
-    '{cursor: $c, state: $s, events: $e, activity: {busy: $b, text: (if $a == "" then null else $a end)}}'
+  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" --argjson b "$busy" --arg a "$act" --argjson h "$host" \
+    '{cursor: $c, state: $s, events: $e, activity: {busy: $b, host: $h, text: (if $a == "" then null else $a end)}}'
 }
 
 cmd_diff() {
@@ -2245,6 +2251,7 @@ _cmd_session_finish() {
   pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
+  session_set "$key" finish_notes "$(_session_finish_notes "$key")"
   if [ "$create" = false ]; then
     # The session stays open for more steering; the next push needs a fresh handoff.
     vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
@@ -2253,6 +2260,7 @@ _cmd_session_finish() {
     echo "pushed ${key}"; return 0
   fi
   [ -n "$pr_url" ] || { _session_finish_fail "$key" "PR create failed" "$mode"; return 1; }
+  _session_record_summary "$key" || true
   agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
   session_set "$key" state pr_open pr_url "$pr_url"
   _session_history_add "$key" action "Opened ${pr_url}"
@@ -2264,6 +2272,7 @@ cmd_session() {
     list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     history) _session_key "${2:-}" && session_history "$2" ;;
+    summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     idle-sweep) session_idle_sweep ;;
     *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac

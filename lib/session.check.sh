@@ -163,4 +163,29 @@ check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | 
 runtime_skill_ref() { printf '/%s' "$1"; }
 check "push wrap-up skips the review" "0|1" "$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-review-quick)|$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-auto-done.json.tmp)"
 check "PR wrap-up keeps the review" "1" "$(_session_wrapup_prompt agent-x | grep -c fxa-review-quick)"
+# A dead turn says why: stderr lands in the transcript as a plain line.
+reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1-abcdefgh"}
+OAuth token has expired. Please run /login
+'; RUNNING=0
+check "dead turn names its last output" "1" "$(cmd_events agent-t2 --since 0 | jq -r '.events[0].text' | grep -c 'OAuth token has expired')"
+
+# Handoff notes and the host step come from the finish log.
+printf 'Squashing 1 commit(s)\n  WARN: could not upload a.png to the media bucket: x\n  WARN: could not upload b.png to the media bucket: x\nCreating pull request via gh...\n' > "$SESSION_DIR/agent-t2.finish.log"
+check "notes count failed uploads" "2 screenshot(s) did not upload, so the PR is missing them." "$(_session_finish_notes agent-t2)"
+check "wrap step after the turn" "Opening the pull request" "$(_session_wrap_step agent-t2)"
+: > "$SESSION_DIR/agent-t2.finish.log"
+check "wrap step before any host line" "Staging the work on the host" "$(_session_wrap_step agent-t2)"
+session_set agent-t2 state pr_open pr_url https://github.com/mozilla/fxa/pull/1 pr_announced 0 finish_notes "one
+two" summary '{"cost":1.5,"turns":3,"minutes":20,"diff":"2 files changed"}'
+out="$(cmd_events agent-t2)"
+check "pr event carries notes and summary" "2|1.5" "$(jq -r '.events[0] | "\(.notes | length)|\(.summary.cost)"' <<< "$out")"
+check "notes are announced once" "" "$(session_get agent-t2 finish_notes)"
+
+# The summary is built from the runner's transcript and diff.
+_session_sh() { case "$2" in *jsonl*) printf '' ;; *shortstat*) printf ' 3 files changed, 10 insertions(+)\n' ;; esac; }
+_snapshot_agent_json() { echo '{"cost_so_far":2.25}'; }
+session_set agent-t2 turns 4 created "$(( $(date +%s) - 600 ))"
+_session_record_summary agent-t2
+check "summary fields" "2.25|4|10|3 files changed, 10 insertions(+)" "$(session_get agent-t2 summary | jq -r '"\(.cost)|\(.turns)|\(.minutes)|\(.diff)"')"
+
 exit "$fail"

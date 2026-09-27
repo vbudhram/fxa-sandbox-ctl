@@ -411,11 +411,50 @@ session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 
 # session_stop <key>   Save the runner's work as a patch, then delete the runner.
 # Resume and recovery apply it with `git apply --index`.
+# _session_finish_notes <key>   What a handoff could not do, in plain lines for the
+# thread: the PR link alone hid that none of its screenshots uploaded.
+_session_finish_notes() {
+  local log="${SESSION_DIR}/$1.finish.log" n
+  n="$(grep -c 'WARN: could not upload .* to the media bucket' "$log" 2>/dev/null || true)"
+  [ "${n:-0}" -gt 0 ] && echo "${n} screenshot(s) did not upload, so the PR is missing them."
+  grep -q "WARN: could not attach round media\|WARN: could not post round media" "$log" 2>/dev/null && echo "This round's screenshots did not reach the PR."
+  grep -q "NOTE: the PR was created; some media did not upload" "$log" 2>/dev/null && echo "Some screenshots did not attach to the PR."
+  grep -q "NOTE: PR created without the" "$log" 2>/dev/null && echo "The PR has no label."
+  true
+}
+
+# _session_wrap_step <key>   The host step an Open PR or Push branch is on, once
+# the agent's wrap-up turn is over, from the finish log.
+_session_wrap_step() {
+  local l; l="$(grep -E '^(Staging agent changes|Squashing|Committing and pushing|Pushing |Creating pull request|PR already open)' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1)"
+  case "$l" in
+    Creating*|"PR already"*) echo "Opening the pull request" ;;
+    Committing*|Pushing*) echo "Committing and pushing" ;;
+    Staging*|Squashing*) echo "Checking the change: tooling, frozen paths, conflict markers" ;;
+    *) echo "Staging the work on the host" ;;
+  esac
+}
+
+# _session_record_summary <key>   Before the runner goes: time, turns, cost and the
+# size of the change, for the line the bot posts on Stop and Open PR.
+_session_record_summary() {
+  local key="$1" name t cost diff
+  name="$(worktree_branch_for "$key")"; t="$(mktemp)"
+  _session_sh "$name" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null' > "$t" 2>/dev/null || true
+  cost="$(_snapshot_agent_json "$t" "$(date +%s)" 2>/dev/null | jq -r '.cost_so_far // empty' 2>/dev/null)"
+  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1)"
+  rm -f "$t"
+  session_set "$key" summary "$(jq -nc --arg c "${cost:-}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
+    '{cost: ($c | tonumber? // null), diff: ($d | gsub("^\\s+"; "")), turns: ($t | tonumber? // 0),
+      minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}')"
+}
+
 session_stop() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
   # First, so a boot still in progress sees it and takes its own runner down.
   session_set "$key" state stopped
   if vm_is_running "$name" 2>/dev/null; then
+    _session_record_summary "$key" || true
     # ai/ is ignored on the host but not in the runner's clone; the runner is going away.
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
