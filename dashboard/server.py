@@ -121,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             self._send(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
+        elif path == "/icon.png":
+            self._send(200, (ROOT / "icon.png").read_bytes(), "image/png")
         elif path == "/api/snapshot":
             snap, age, err, busy = FULL.read()
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
@@ -176,7 +178,7 @@ if __name__ == "__main__":
     AGENTS = Feed("agents", ["--pipeline", PIPELINE, "snapshot", "--agents"], AGENTS_INTERVAL, 180)
     threading.Thread(target=FULL.loop, daemon=True).start()
     threading.Thread(target=AGENTS.loop, daemon=True).start()
-    print(f"ai-fixme dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
+    print(f"FxA Agent dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
           f"tickets every {INTERVAL}s, agents every {AGENTS_INTERVAL}s)")
     print("Ctrl-C to stop.")
     try:
