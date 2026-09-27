@@ -76,7 +76,8 @@
   .warnt { color:var(--warn); font-weight:600; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
   .dot.warn { background:var(--warn); } .dot.dead { background:var(--bad); }
-  #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); }
+  #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); } #health.paused { color:var(--dim); }
+  .dot.paused { background:var(--faint); }
   /* cta-neutral */
   button { font:600 var(--t-sub) var(--head); color:var(--ink); background:var(--bg);
            border:1px solid var(--line2); border-radius:var(--r-sm); padding:6px var(--s4); cursor:pointer; }
@@ -652,18 +653,22 @@ let SNAP = null, AGENTS = null, STATE = {};
 
 function renderStatus() {
   const s = SNAP, g = AGENTS, h = s?.health ?? {};
-  const sp = h.seconds_since_pass, dead = sp == null || sp > 7200, quiet = sp != null && sp > 1500;
+  // A pause is on purpose: the pass age then says nothing about health.
+  const paused = h.paused != null;
+  const sp = h.seconds_since_pass, dead = !paused && (sp == null || sp > 7200), quiet = !paused && sp != null && sp > 1500;
   const lowDisk = h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb;
   const stale = STATE.age_seconds == null || STATE.age_seconds > 300;
   const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet ? "warn" : "";
   document.getElementById("dot").className = "dot " + level;
   const hl = document.getElementById("health");
-  hl.className = level; hl.textContent = level === "dead" ? "down" : level === "warn" ? "degraded" : "healthy";
+  hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? "degraded" : paused ? "paused" : "healthy";
+  if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
   const running = (g?.instances ?? []).filter(v => v.state === "running").length;
   const cells = [];
   cells.push(`<span class="cell"><b>${esc(g?.backend ?? s?.backend ?? "—")}</b>${g?.zone ? `<span>${esc(g.zone)}</span>` : ""}</span>`);
-  cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
+  cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : paused ? "" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
+  if (paused) cells.push(`<span class="cell" title="${esc(h.paused)}"><b>passes paused</b> · ${esc(h.paused.slice(0, 60))}</span>`);
   cells.push(`<span class="cell">${h.lock_held ? "<b>lock held</b>" : "lock free"}</span>`);
   const m = s?.mode;
   if (m?.newtickets === "off") cells.push(`<span class="cell warn" title="${esc(m.newtickets_note ?? "")}"><b>intake off</b> · PR rounds only</span>`);

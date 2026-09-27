@@ -493,7 +493,11 @@ pipeline_health_json() {
                | grep -E '^[0-9]+$' | sort -rn | head -1)"
   [ -d "$PIPE_LOCK_DIR" ] && lock=true || lock=false
   free="$(pipeline_free_gb)"
-  jq -n --arg lp "${last_pass:-}" --arg ll "${last_launch:-}" \
+  # The local marker only: the GCS one costs a round trip per snapshot, and a
+  # pause from this machine writes both.
+  local paused; paused="$(head -c 300 "$(pipeline_pause_marker)" 2>/dev/null | tr -d '\n' || true)"
+  [ -f "$(pipeline_pause_marker)" ] && paused="${paused:-paused}"
+  jq -n --arg lp "${last_pass:-}" --arg ll "${last_launch:-}" --arg paused "$paused" \
         --argjson lock "$lock" --arg free "${free:-}" \
         --argjson floor "${PIPE_MIN_FREE_GB:-0}" --argjson now "$(date +%s)" \
     '{ last_pass_epoch:   (if $lp == "" then null else ($lp | tonumber) end),
@@ -501,5 +505,6 @@ pipeline_health_json() {
        seconds_since_pass: (if $lp == "" then null else ($now - ($lp | tonumber)) end),
        lock_held: $lock,
        free_gb:   (if $free == "" then null else ($free | tonumber) end),
-       min_free_gb: $floor }'
+       min_free_gb: $floor,
+       paused: (if $paused == "" then null else $paused end) }'
 }
