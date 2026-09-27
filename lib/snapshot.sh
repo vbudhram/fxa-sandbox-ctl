@@ -304,8 +304,12 @@ _snapshot_session_row() {
     _session_turn_running "$key" && alive=true
   fi
   # Media the host kept for this session, oldest first; only names the dashboard will serve.
-  # Each stage may find nothing; one fallback here would print a second [] and drop the row.
-  local media; media="$( { ls -tr "${SESSION_DIR}/${key}.media" 2>/dev/null || true; } | { grep -E '^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$' || true; } | jq -R . | jq -sc . )"
+  # Media the host kept, with each file's time, so the conversation can place it.
+  # Each stage may find nothing; a fallback here would print a second [] and drop the row.
+  local media; media="$( { cd "${SESSION_DIR}/${key}.media" 2>/dev/null && for m in *; do
+      [[ "$m" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] || continue
+      printf '%s\t%s\n' "$(stat -f %m "$m" 2>/dev/null || stat -c %Y "$m")" "$m"
+    done; } | jq -R 'split("\t") | {at: (.[0] | tonumber), name: .[1]}' | jq -sc 'sort_by(.at)' )"
   jq -c --argjson agent "${agent:-null}" --argjson alive "$alive" --argjson media "${media:-[]}" \
     --arg request "$(head -c 300 "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null)" \
     '. + {agent: $agent, agent_alive: $alive, request: $request, media: $media}' "$f"

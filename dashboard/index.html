@@ -774,11 +774,7 @@ function renderSess() {
         <div class="scard"><div class="lbl">Branch or PR</div><div class="v" style="font-size:var(--t-sub)">${branch}</div></div>
       </div>
       ${live ? `<details open data-k="term-${esc(sel.key)}" id="term-${esc(sel.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
-      ${(sel.media ?? []).length ? `<h2 style="margin-top:var(--s4)">Screenshots and videos<span class="n">${sel.media.length}</span><span class="note">kept on the host</span></h2>
-        <div class="media">${sel.media.map(n => { const u = `/api/media?key=${encodeURIComponent(sel.key)}&name=${encodeURIComponent(n)}`;
-          return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
-            : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("")}</div>` : ""}
-      <h2 style="margin-top:var(--s4)">Conversation<span class="note">messages, agent replies and button outcomes</span></h2>
+      <h2 style="margin-top:var(--s4)">Conversation<span class="note">messages, agent replies, screenshots and videos</span></h2>
       <div class="thread" data-thread="${esc(sel.key)}">${threadHtml(sel)}</div>
     </div>`;
   }
@@ -828,10 +824,25 @@ function threadHtml(sel) {
   if (h.error) return `<div class="empty">${esc(h.error)}</div>`;
   if (!h.length) return `<div class="empty">nothing recorded</div>`;
   const rt = sel.runtime === "codex" ? "Codex" : "Claude";
+  // Screenshots and videos join the thread at the time each file was made,
+  // for every session in the chain. Files in a row become one message.
+  const keys = [...new Set(h.map(m => m.key))], byKey = Object.fromEntries((AGENTS?.sessions ?? []).map(s => [s.key, s]));
+  const items = h.concat(keys.flatMap(k => (byKey[k]?.media ?? []).map(f => ({ role: "media", at: f.at, key: k, files: [f.name] }))))
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+    .reduce((acc, m) => { const p = acc[acc.length - 1];
+      if (m.role === "media" && p?.role === "media" && p.key === m.key) p.files.push(...m.files); else acc.push(m); return acc; }, []);
   let last = null;
-  return h.map(m => {
+  return items.map(m => {
     let out = "";
     if (m.key !== last) { out += `<div class="tsep">${last ? `Resumed as ${esc(m.key)}` : esc(m.key)} · ${stamp(m.at)}</div>`; last = m.key; }
+    if (m.role === "media") {
+      if (m.key !== last) { out += `<div class="tsep">${last ? `Resumed as ${esc(m.key)}` : esc(m.key)} · ${stamp(m.at)}</div>`; last = m.key; }
+      const figs = m.files.map(n => { const u = `/api/media?key=${encodeURIComponent(m.key)}&name=${encodeURIComponent(n)}`;
+        return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
+          : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("");
+      const what = m.files.every(n => /\.(mp4|webm)$/i.test(n)) ? "video" : m.files.some(n => /\.(mp4|webm)$/i.test(n)) ? "screenshots and videos" : "screenshot";
+      return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b><span class="app">APP</span>shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
+    }
     const raw = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, txt = mdHtml(raw);
     if (m.role === "action") return out + `<div class="tact">${esc(raw)}</div>`;
     if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="app">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md">${txt}</div></div></div>`;

@@ -133,7 +133,7 @@ eval "$(sed -n '/^_snapshot_session_row() {/,/^}/p' "$(dirname "$0")/snapshot.sh
 echo '{"key":"agent-t5","state":"stopped","last_activity":'"$(date +%s)"'}' > "$tmp/agent-t5.json"
 check "snapshot row without media is valid" "agent-t5 0" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '"\(.key) \(.media | length)"')"
 mkdir -p "$tmp/agent-t5.media"; touch "$tmp/agent-t5.media/shot.png" "$tmp/agent-t5.media/notes.html"
-check "snapshot row lists only servable media" "shot.png" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '.media | join(",")')"
+check "snapshot row lists only servable media, with a time" "shot.png true" "$(_snapshot_session_row "$tmp/agent-t5.json" "$(date +%s)" | jq -r '.media | map("\(.name) \(.at > 0)") | join(",")')"
 
 # History: the request, then each reply once, even when the bot re-reads a cursor.
 echo '{"key":"agent-t3","state":"active","turn_open":"1","turn_started":"0"}' > "$tmp/agent-t3.json"
