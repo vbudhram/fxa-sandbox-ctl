@@ -212,6 +212,7 @@
   <section class="wide" id="s-sessions"></section>
   <section class="wide" id="s-review"></section>
   <section class="wide" id="s-queue"></section>
+  <section class="wide" id="s-sessions-off"></section>
   <section id="s-pool"></section>
   <section id="s-today"></section>
 </div>
@@ -525,10 +526,15 @@ function sessionCard(s) {
 }
 function renderSessions() {
   const ss = AGENTS?.sessions ?? [], live = ss.filter(s => LIVE_SESSION.includes(s.state));
-  const paused = ss.filter(s => s.state === "paused").length;
+  // No runner: paused first, since a reply brings those back.
+  const off = ss.filter(s => !LIVE_SESSION.includes(s.state)).sort((x, y) => (y.state === "paused") - (x.state === "paused"));
+  const paused = off.filter(s => s.state === "paused").length;
   document.getElementById("s-sessions").className = "wide" + (live.some(s => s.agent_alive) ? " running" : "");
-  put("s-sessions", head("sessions", AGENTS ? ss.length : "?", `${live.length} live · cap ${AGENTS?.session_cap ?? "?"}${paused ? ` · ${paused} paused` : ""}`, "slack, owner-steered") +
-    (ss.length === 0 ? `<div class="empty">no session in the last day</div>` : ss.map(sessionCard).join("")));
+  put("s-sessions", head("sessions", AGENTS ? live.length : "?", `cap ${AGENTS?.session_cap ?? "?"}`, "slack, runner up") +
+    (live.length === 0 ? `<div class="empty">no session is running</div>` : live.map(sessionCard).join("")));
+  const offEl = document.getElementById("s-sessions-off");
+  offEl.hidden = off.length === 0;
+  put("s-sessions-off", head("stopped sessions", off.length, paused ? `${paused} paused` : "", "no runner, last day") + off.map(sessionCard).join(""));
   live.forEach(s => paintTail(s.key, s.agent_alive));
   TAIL_KEYS = TAIL_KEYS.concat(live.map(s => s.key));
 }
