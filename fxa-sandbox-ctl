@@ -760,9 +760,12 @@ cmd_tail() {
   # Otherwise dump the screen scrollback (-h: history, not only the visible region).
   ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" "
     if [ -s /workspace/.fxa-auto-claude.jsonl ]; then
-      jq -r '
-        select(.type==\"assistant\") | .message.content[]? |
-        if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end' /workspace/.fxa-auto-claude.jsonl 2>/dev/null | tail -n 40
+      jq -R -r 'fromjson? |
+        if .type==\"assistant\" then .message.content[]? |
+          if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end
+        elif .type==\"item.completed\" and .item.type==\"agent_message\" then .item.text
+        elif .type==\"item.completed\" and .item.type==\"command_execution\" then \"[tool] shell \" + (.item.command | tostring)[0:120]
+        else empty end' /workspace/.fxa-auto-claude.jsonl 2>/dev/null | tail -n 40
     else
       screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
       cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
@@ -2028,7 +2031,7 @@ EOF
   if [ "$(session_get "$key" state)" != starting ]; then agent_stop "$name" >&2 || true; return 0; fi
   # Start the stack while the agent reads the code, not after it asks for a screenshot.
   if _session_wants_stack "$key"; then agent_prewarm_stack "$name" || echo "WARN: stack prewarm failed; the agent can run fxa-start" >&2; fi
-  session_set "$key" state active turn_open 1 turn_started "$(date +%s)"
+  session_set "$key" state active turn_open 1 turn_started "$(date +%s)" booted_at "$(date +%s)"
 }
 
 cmd_steer() {
@@ -2158,7 +2161,7 @@ _finish_session() {
     echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
     _session_unlock "$key"; return 1
   fi
-  session_set "$key" state wrapping
+  session_set "$key" state wrapping wrap_mode "$( [ "$mode" = --no-pr ] && echo push || echo pr )"
   _session_unlock "$key"
   nohup "$0" --backend gce session-finish "$key" $mode > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
   session_set "$key" job_pid "$!"

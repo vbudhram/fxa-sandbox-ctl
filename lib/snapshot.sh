@@ -172,7 +172,17 @@ _snapshot_agent_json() {
       last_tool: ($tool | gsub("\\s+"; " ") | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),
       is_error: (if $r then $r.is_error else null end),
-      num_turns: ($r.num_turns // null) }' "$f" 2>/dev/null || echo null
+      num_turns: ($r.num_turns // null) } as $out |
+    # Codex events carry no model or price; tokens come from turn.completed.
+    (map(select(.type=="item.completed") | .item)) as $cx |
+    if ($a | length) > 0 or ($cx | length) == 0 then $out else
+      (map(select(.type=="turn.completed") | .usage // {})) as $cu |
+      $out + { turns: ($cu | length),
+        tokens: { in: ($cu | map(.input_tokens // 0) | add // 0), out: ($cu | map(.output_tokens // 0) | add // 0),
+                  cache_read: ($cu | map(.cached_input_tokens // 0) | add // 0), cache_write: 0 },
+        last_text: ($cx | map(select(.type=="agent_message") | .text) | last // "" | gsub("\\s+"; " ") | .[0:200]),
+        last_tool: ($cx | map(select(.type=="command_execution") | .command | sub("^/bin/bash -lc \u0027(?<c>.*)\u0027$"; "\(.c)")) | last // "" | gsub("\\s+"; " ") | .[0:160]) }
+    end' "$f" 2>/dev/null || echo null
 }
 
 _snapshot_telemetry() {
@@ -315,7 +325,10 @@ snapshot_agents_json() {
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
-       runners: $runners, sessions: $sessions, session_cap: '"${FXA_SESSION_MAX:-2}"', today: $today }'
+       runners: $runners, sessions: $sessions, session_cap: '"${FXA_SESSION_MAX:-2}"',
+       session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-1800}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',
+       session_models: { claude: "'"${FXA_AGENT_MODEL:-claude-opus-5-5}"'", codex: "'"${FXA_CODEX_MODEL:-gpt-6-astra}"'" },
+       today: $today }'
 }
 
 # _snapshot_today

@@ -55,6 +55,7 @@
   #status .cell.ok b { color:var(--ok); }
   #status .sep { width:1px; height:14px; background:var(--line2); opacity:.6; }
   #status .spacer { flex:1; }
+  .warnt { color:var(--warn); font-weight:600; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
   .dot.warn { background:var(--warn); } .dot.dead { background:var(--bad); }
   #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); }
@@ -481,26 +482,40 @@ function renderAgents() {
 // Slack sessions: owner-steered, no ticket, no pool slot.
 const LIVE_SESSION = ["starting", "active", "wrapping"];
 function sessionCard(s) {
-  const a = s.agent || {}, live = LIVE_SESSION.includes(s.state);
+  const a = s.agent || {}, live = LIVE_SESSION.includes(s.state), now = Date.now() / 1000;
   const status = s.state === "starting" ? `<span class="tag run info">booting</span>`
-    : s.state === "wrapping" ? `<span class="tag run info">opening PR</span>`
+    : s.state === "wrapping" ? `<span class="tag run info">${s.wrap_mode === "push" ? "pushing branch" : "opening PR"}</span>`
     : s.state === "pr_open" ? `<span class="tag ok">PR open</span>`
+    : s.state === "paused" ? `<span class="tag">paused · a reply resumes</span>`
     : s.state === "failed" ? `<span class="tag bad">boot failed</span>`
     : s.state === "stopped" ? `<span class="tag">stopped</span>`
     : s.agent_alive ? `<span class="tag run ok">working</span>`
     : s.turn_open === "1" ? `<span class="tag bad">turn died</span>`
     : `<span class="tag info">waiting on owner</span>`;
+  const rt = s.runtime || "claude";
+  const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
   const cost = a.cost_usd ?? a.cost_so_far;
-  const age = Date.now() / 1000 - (s.created ?? Date.now() / 1000);
+  const tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
+  const age = now - (s.created ?? now);
+  // Idle sessions pause after session_idle_seconds; the runner stops at session_max_run_seconds.
+  const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity
+    ? AGENTS.session_idle_seconds - (now - s.last_activity) : null;
+  const endsIn = live && s.booted_at ? AGENTS.session_max_run_seconds - (now - s.booted_at) : null;
+  const repo = SNAP?.repo ?? "mozilla/fxa";
   return `<div class="fac">
     <div class="top"><span class="key">${esc(s.key)}</span>${titled(s.request || "")}
-      <span class="tags"><span class="tag">${short(Math.round(age))}</span>${status}</span></div>
+      <span class="tags"><span class="tag" title="${esc(model || "")}">${rt === "codex" ? "Codex" : "Claude"}</span><span class="tag">${short(Math.round(age))}</span>${status}</span></div>
     <div class="stats">
       <span>owner <b class="mono">${esc(s.owner || "?")}</b></span><span class="sep"></span>
+      ${model ? `<span class="mono">${esc(model)}</span><span class="sep"></span>` : ""}
       <span><b>${esc(s.turns ?? 0)}</b> steer turn${s.turns === "1" ? "" : "s"}</span>
-      ${a.turns != null ? `<span><b>${a.turns}</b> agent turns</span>` : ""}
-      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b> so far</span>` : ""}
+      ${a.turns ? `<span><b>${a.turns}</b> agent turns</span>` : ""}
+      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b> so far</span>` : tok ? `<span><b>${(tok / 1000).toFixed(0)}k</b> tokens</span>` : ""}
       ${live && a.idle_seconds != null ? `<span>last event ${short(a.idle_seconds)} ago</span>` : ""}
+      ${pauseIn != null ? `<span class="${pauseIn < 300 ? "warnt" : ""}">pauses in ${short(Math.max(0, Math.round(pauseIn)))}</span>` : ""}
+      ${endsIn != null ? `<span class="${endsIn < 1800 ? "warnt" : ""}">runner ends in ${short(Math.max(0, Math.round(endsIn)))}</span>` : ""}
+      ${s.resume_from ? `<span>resumed from <span class="mono">${esc(s.resume_from)}</span></span>` : ""}
+      ${s.pushed_branch && !s.pr_url ? `<span class="sep"></span><a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">branch ${esc(s.pushed_branch)}</a>` : ""}
       ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))}</a>` : ""}
     </div>
     ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
@@ -509,8 +524,9 @@ function sessionCard(s) {
 }
 function renderSessions() {
   const ss = AGENTS?.sessions ?? [], live = ss.filter(s => LIVE_SESSION.includes(s.state));
+  const paused = ss.filter(s => s.state === "paused").length;
   document.getElementById("s-sessions").className = "wide" + (live.some(s => s.agent_alive) ? " running" : "");
-  put("s-sessions", head("sessions", AGENTS ? ss.length : "?", `${live.length} live · cap ${AGENTS?.session_cap ?? "?"}`, "slack, owner-steered") +
+  put("s-sessions", head("sessions", AGENTS ? ss.length : "?", `${live.length} live · cap ${AGENTS?.session_cap ?? "?"}${paused ? ` · ${paused} paused` : ""}`, "slack, owner-steered") +
     (ss.length === 0 ? `<div class="empty">no session in the last day</div>` : ss.map(sessionCard).join("")));
   live.forEach(s => paintTail(s.key, s.agent_alive));
   TAIL_KEYS = TAIL_KEYS.concat(live.map(s => s.key));
