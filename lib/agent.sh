@@ -38,6 +38,18 @@ runtime_load() {
 # code-simplifier and humanizer already do. ponytail-review is a copy of
 # ~/.claude/plugins/cache/ponytail/ponytail/<version>/skills/ponytail-review
 # (MIT); re-copy it when the plugin updates.
+# _vm_operator_rules
+#   The sections of the operator's CLAUDE.md that apply to code and writing, for
+#   both runtimes. An allowlist: a section added later (Jira, internal links)
+#   stays on the host until it is named here.
+VM_RULE_SECTIONS="Working Approach|Writing Style|Naming Conventions|Testing|Code Comments|Git Commits|Untrusted text"
+_vm_operator_rules() {
+  local f="${CLAUDE_HOME_DIR}/CLAUDE.md"
+  [ -f "$f" ] || return 0
+  printf '# Operator rules\n\nFrom the instructions of the operator who runs this sandbox. They apply to your code and writing.\n\n'
+  awk -v keep="^## (${VM_RULE_SECTIONS})\$" '/^## /{on = ($0 ~ keep)} on' "$f"
+}
+
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
@@ -431,10 +443,12 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not set git config"
   fi
 
-  # CLAUDE.md — custom instructions (base64 to avoid quoting issues)
-  if [ -f "${claude_home}/CLAUDE.md" ]; then
+  # CLAUDE.md: only the operator rules for code and writing, never the whole file
+  # (it names internal links and host workflows the sandbox must not see).
+  local rules; rules="$(_vm_operator_rules)"
+  if [ -n "$rules" ]; then
     local claude_md_b64
-    claude_md_b64="$(base64 < "${claude_home}/CLAUDE.md" | tr -d '\n')"
+    claude_md_b64="$(printf '%s\n' "$rules" | base64 | tr -d '\n')"
     vm_exec "$name" sudo bash -c "
       echo '${claude_md_b64}' | base64 -d > /home/agent/.claude/CLAUDE.md
       chown agent:agent /home/agent/.claude/CLAUDE.md

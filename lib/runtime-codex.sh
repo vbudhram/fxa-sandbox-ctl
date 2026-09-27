@@ -33,10 +33,9 @@ trust_level = "trusted"
 trust_level = "trusted"
 TOML
 )"
-  # AGENTS.md is Codex's CLAUDE.md. The host's global one comes first, then the
-  # same pointers the Claude VM section gives, so both runtimes read one guide.
-  local agents_b64 host_agents=""
-  [ -f "${CODEX_HOME_DIR}/AGENTS.md" ] && host_agents="$(cat "${CODEX_HOME_DIR}/AGENTS.md")"
+  # AGENTS.md is Codex's CLAUDE.md. The operator rules come first, the same ones
+  # a Claude runner gets, then the pointers to the one guide both runtimes read.
+  local agents_b64 host_agents; host_agents="$(_vm_operator_rules)"
   agents_b64="$(printf '%s\n\n%s\n' "$host_agents" '# FxA sandbox VM
 
 You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 8GB RAM). The FxA

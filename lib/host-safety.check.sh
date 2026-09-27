@@ -42,5 +42,14 @@ done
 echo x > "$tmp/slot/a.ts"; g -C "$tmp/slot" add a.ts
 check "guard passes plain code" "yes" "$(_finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no)"
 
+# The sandbox gets only the allowlisted sections of the operator's CLAUDE.md.
+mkdir -p "$tmp/home"
+printf '# Global\nintro line\n## Writing Style\nshort sentences\n### ASD-STE100 in practice\nuse, not utilize\n## FxA Triage\nhttps://internal.example.com/secret-page\n## Git Commits\nscoped commits\n' > "$tmp/home/CLAUDE.md"
+eval "$(sed -n '/^VM_RULE_SECTIONS=/p;/^_vm_operator_rules() {/,/^}/p' "$here/agent.sh")"
+out="$(CLAUDE_HOME_DIR="$tmp/home" _vm_operator_rules)"
+check "rules keep allowlisted sections" "3" "$(grep -cE '^(short sentences|use, not utilize|scoped commits)$' <<< "$out")"
+check "rules drop other sections and the preamble" "0" "$(grep -cE 'internal.example.com|intro line|FxA Triage' <<< "$out")"
+check "no CLAUDE.md, no rules" "" "$(CLAUDE_HOME_DIR="$tmp/none" _vm_operator_rules)"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"
