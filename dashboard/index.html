@@ -193,13 +193,18 @@
   nav a .n:empty { display:none; }
   nav a .n.bad { background:var(--badbg); color:var(--bad); } nav a .n.warn { background:var(--warnbg); color:var(--warn); }
   nav a .n.info { background:var(--infobg); color:var(--info); }
+  nav .fresh { margin-top:var(--s4); padding:var(--s3); border-top:1px solid var(--line); font-size:var(--t-label);
+               color:var(--faint); display:flex; flex-direction:column; align-items:flex-start; gap:var(--s2); }
   [data-views]:not(.on) { display:none !important; }
+  body[data-view="overview"] section[data-empty="true"] { display:none !important; }
   .tabs { display:flex; gap:var(--s1); grid-column:1/-1; border-bottom:1px solid var(--line); }
   .tabs a { padding:var(--s2) var(--s3); color:var(--dim); font-weight:500; border-bottom:2px solid transparent; margin-bottom:-1px; }
   .tabs a:hover { text-decoration:none; color:var(--ink); }
   .tabs a.on { color:var(--ink); border-bottom-color:var(--info); }
   .tabs a .n { font-size:var(--t-label); color:var(--faint); margin-left:var(--s1); font-variant-numeric:tabular-nums; }
-  .tiles { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); grid-column:1/-1; }
+  .tiles { display:grid; gap:var(--s3); grid-template-columns:repeat(5,minmax(0,1fr)); margin-bottom:var(--s3); }
+  @media (max-width:1000px) { .tiles { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width:600px) { .tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   .tile { border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
   .tile:hover { text-decoration:none; border-color:var(--line2); }
   .tile .big { font-size:26px; font-weight:600; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
@@ -211,6 +216,7 @@
     nav { position:static; flex-direction:row; overflow-x:auto; gap:var(--s1); }
     nav h1 { display:none; }
     nav a { white-space:nowrap; }
+    nav .fresh { margin:0 0 0 auto; padding:0 var(--s2); border:0; flex-direction:row; align-items:center; white-space:nowrap; }
   }
 
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
@@ -238,19 +244,17 @@
   <a href="#pipeline" data-nav="pipeline">Pipeline<span class="n" id="n-pipeline"></span></a>
   <a href="#sessions" data-nav="sessions">Sessions<span class="n" id="n-sessions"></span></a>
   <a href="#runners" data-nav="runners">Runners<span class="n" id="n-runners"></span></a>
+  <div class="fresh"><span id="age">connecting…</span><button id="refresh">refresh</button></div>
 </nav>
 <main>
 <div id="status">
   <span class="dot" id="dot"></span><span id="health">healthy</span><span id="cells"></span>
-  <span class="spacer"></span>
-  <span id="age">connecting…</span>
-  <button id="refresh">refresh</button>
 </div>
 
+<div class="tiles" id="s-tiles" data-views="overview"></div>
 <div id="attn" role="status" aria-live="polite" data-views="overview"></div>
 
 <div class="grid">
-  <div class="tiles" id="s-tiles" data-views="overview"></div>
   <div class="tabs" data-views="sessions">
     <a href="#sessions/live" data-tab="live">Live<span class="n" id="t-live"></span></a>
     <a href="#sessions/stopped" data-tab="stopped">Stopped<span class="n" id="t-stopped"></span></a>
@@ -261,7 +265,7 @@
   <section class="wide" id="s-review" data-views="pipeline"></section>
   <section class="wide" id="s-queue" data-views="pipeline"></section>
   <section id="s-pool" data-views="runners"></section>
-  <section id="s-today" data-views="overview runners"></section>
+  <section id="s-today" data-views="runners"></section>
 </div>
 <footer id="footer"></footer>
 </main>
@@ -437,12 +441,10 @@ function renderStatus() {
   if (m?.newtickets === "off") cells.push(`<span class="cell warn" title="${esc(m.newtickets_note ?? "")}"><b>intake off</b> · PR rounds only</span>`);
   else if (g) cells.push(`<span class="cell">launchcap <b>${g.launchcap}</b></span>`);
   if (m?.focus) cells.push(`<span class="cell">focus ${jira(m.focus)}</span>`);
-  if (g) cells.push(`<span class="cell ${running ? "" : ""}"><b>${running}</b> runner${running === 1 ? "" : "s"} · <b>${usd(g.runner_hourly_usd)}</b>/h</span>`);
-  if (g?.today) cells.push(`<span class="cell">today <b>${usd(g.today.cost_usd)}</b> · ${g.today.runs} run${g.today.runs === 1 ? "" : "s"} · ${g.today.prs} PR${g.today.prs === 1 ? "" : "s"}</span>`);
   cells.push(`<span class="cell ${lowDisk ? "bad" : ""}"><b>${h.free_gb ?? "?"}GB</b> free</span>`);
   document.getElementById("cells").innerHTML = cells.join(`<span class="sep"></span>`);
   document.getElementById("age").textContent =
-    (STATE.refreshing ? "refreshing · " : "") + `agents ${ago(STATE.agents_age_seconds)} · tickets ${ago(STATE.age_seconds)}`;
+    (STATE.refreshing ? "refreshing… " : "") + `agents ${ago(STATE.agents_age_seconds)}, tickets ${ago(STATE.age_seconds)}`;
   document.getElementById("bar").classList.toggle("on", !!STATE.refreshing);
 }
 
@@ -515,6 +517,7 @@ function renderAgents() {
   const sec = document.getElementById("s-agents");
   const anyLive = cards.some(c => c.live || (c.ci && c.running > 0));
   sec.classList.toggle("running", anyLive);
+  sec.dataset.empty = cards.length === 0 && waiting.length === 0;
   const repo = SNAP?.repo ?? "";
   const nRunners = cards.filter(c => !c.ci).length;
   const intakeOff = SNAP?.mode?.newtickets === "off";
@@ -531,6 +534,8 @@ function renderAgents() {
 
 // Slack sessions: owner-steered, no ticket, no pool slot.
 const LIVE_SESSION = ["starting", "active", "wrapping"];
+// "[README.md](/workspace/README.md:15)" reads as "README.md".
+const plainMd = t => String(t ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*`]/g, "");
 function sessionCard(s) {
   const a = s.agent || {}, live = LIVE_SESSION.includes(s.state), now = Date.now() / 1000;
   const status = s.state === "starting" ? `<span class="tag run info">booting</span>`
@@ -549,27 +554,25 @@ function sessionCard(s) {
   const age = now - (s.created ?? now);
   // Idle sessions pause after session_idle_seconds; the runner stops at session_max_run_seconds.
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity
-    ? AGENTS.session_idle_seconds - (now - s.last_activity) : null;
-  const endsIn = live && s.booted_at ? AGENTS.session_max_run_seconds - (now - s.booted_at) : null;
+    ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
+  const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
   const repo = SNAP?.repo ?? "mozilla/fxa";
+  const last = plainMd(a.last_text || a.last_tool);
   return `<div class="fac">
-    <div class="top"><span class="key">${esc(s.key)}</span>${titled(s.request || "")}
-      <span class="tags"><span class="tag" title="${esc(model || "")}">${rt === "codex" ? "Codex" : "Claude"}</span><span class="tag">${short(Math.round(age))}</span>${status}</span></div>
+    <div class="top"><span class="key" title="owner ${esc(s.owner || "?")}">${esc(s.key)}</span>${titled(s.request || "")}
+      <span class="tags">${pauseIn != null ? `<span class="tag ${pauseIn < 300 ? "warn" : ""}" title="idle sessions pause; a reply resumes">pauses in ${short(pauseIn)}</span>` : ""}<span class="tag">${short(Math.round(age))}</span>${status}</span></div>
     <div class="stats">
-      <span>owner <b class="mono">${esc(s.owner || "?")}</b></span><span class="sep"></span>
-      ${s.slack_url ? `<a href="${esc(s.slack_url)}" target="_blank" rel="noopener">Slack thread</a><span class="sep"></span>` : ""}
-      ${model ? `<span class="mono">${esc(model)}</span><span class="sep"></span>` : ""}
+      ${s.slack_url ? `<a href="${esc(s.slack_url)}" target="_blank" rel="noopener"><b>Slack thread ↗</b></a><span class="sep"></span>` : ""}
+      <span>${rt === "codex" ? "Codex" : "Claude"}${model ? ` <span class="mono">${esc(model)}</span>` : ""}</span><span class="sep"></span>
       <span><b>${esc(s.turns ?? 0)}</b> steer turn${s.turns === "1" ? "" : "s"}</span>
-      ${a.turns ? `<span><b>${a.turns}</b> agent turns</span>` : ""}
-      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b> so far</span>` : tok ? `<span><b>${(tok / 1000).toFixed(0)}k</b> tokens</span>` : ""}
-      ${live && a.idle_seconds != null ? `<span>last event ${short(a.idle_seconds)} ago</span>` : ""}
-      ${pauseIn != null ? `<span class="${pauseIn < 300 ? "warnt" : ""}">pauses in ${short(Math.max(0, Math.round(pauseIn)))}</span>` : ""}
-      ${endsIn != null ? `<span class="${endsIn < 1800 ? "warnt" : ""}">runner ends in ${short(Math.max(0, Math.round(endsIn)))}</span>` : ""}
+      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b></span>` : tok ? `<span><b>${(tok / 1000).toFixed(0)}k</b> tokens</span>` : ""}
+      ${live && a.idle_seconds != null ? `<span>active ${short(a.idle_seconds)} ago</span>` : ""}
+      ${endsIn != null ? `<span class="${endsIn < 1800 ? "warnt" : ""}">runner ends in ${short(endsIn)}</span>` : ""}
       ${s.resume_from ? `<span>resumed from <span class="mono">${esc(s.resume_from)}</span></span>` : ""}
-      ${s.pushed_branch && !s.pr_url ? `<span class="sep"></span><a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">branch ${esc(s.pushed_branch)}</a>` : ""}
-      ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))}</a>` : ""}
+      ${s.pushed_branch && !s.pr_url ? `<span class="sep"></span><a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">branch ${esc(s.pushed_branch)} ↗</a>` : ""}
+      ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : ""}
     </div>
-    ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
+    ${last ? `<div class="stats"><span class="last" title="${esc(last)}">${esc(last)}</span></div>` : ""}
     ${live ? `<details data-k="term-${esc(s.key)}" id="term-${esc(s.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
   </div>`;
 }
@@ -579,6 +582,7 @@ function renderSessions() {
   const off = ss.filter(s => !LIVE_SESSION.includes(s.state)).sort((x, y) => (y.state === "paused") - (x.state === "paused"));
   const paused = off.filter(s => s.state === "paused").length;
   document.getElementById("s-sessions").classList.toggle("running", live.some(s => s.agent_alive));
+  document.getElementById("s-sessions").dataset.empty = live.length === 0;
   put("s-sessions", head("sessions", AGENTS ? live.length : "?", `cap ${AGENTS?.session_cap ?? "?"}`, "slack, runner up") +
     (live.length === 0 ? `<div class="empty">no session is running</div>` : live.map(sessionCard).join("")));
   document.getElementById("t-live").textContent = AGENTS ? live.length : "";
@@ -644,8 +648,13 @@ function renderPool() {
         : cls === "free" ? `<span class="tag ok">free</span>` : holder ? `<span class="tag warn">on ${esc(holder)}</span>` : `<span class="tag">on ${esc(p.branch ?? "—")}</span>`}</span></div>`;
   });
   const virtual = free.filter(f => !pool.some(p => p.slot === f)).map(f => `<div class="slot virtual"><span class="nm">${esc(f)}</span><span class="meter"><i></i></span><span class="tag">created on launch</span></div>`);
-  const orphans = inst.filter(v => !pool.some(p => "agent-" + p.agent === v.name)).map(v =>
-    `<div class="slot held"><span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span><span class="tag warn">no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>`);
+  const sessionKeys = new Set((g.sessions ?? []).map(x => x.key));
+  const orphans = inst.filter(v => !pool.some(p => "agent-" + p.agent === v.name)).map(v => {
+    const key = v.name.replace(/^agent-/, "");
+    return sessionKeys.has(key)
+      ? `<div class="slot busy"><a class="nm" href="#sessions/live" title="${esc(v.name)}">${esc(key)}</a><span class="meter"><i></i></span><span class="tag info">session · ${short(v.age_seconds)}</span></div>`
+      : `<div class="slot held"><span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span><span class="tag warn">no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>`;
+  });
   put("s-pool", head("pool", `${free.length}/${pool.length + virtual.length}`, `${inst.length} runner${inst.length === 1 ? "" : "s"} up`, "slots and runners") +
     (rows.length + virtual.length + orphans.length === 0 ? `<div class="empty">no pool worktrees found</div>` : rows.join("") + virtual.join("") + orphans.join("")));
 }
@@ -689,7 +698,6 @@ function renderNav() {
   badge("n-runners", AGENTS ? runners : "", "");
   const tile = (href, lbl, big, sub, cls = "") => `<a class="tile ${cls}" href="${href}"><div class="lbl">${lbl}</div><div class="big">${big ?? "?"}</div><div class="sub">${sub}</div></a>`;
   put("s-tiles", [
-    tile("#overview", "alerts", alerts, bad ? `${bad} need action` : "nothing urgent", bad ? "bad" : alerts ? "warn" : "ok"),
     tile("#pipeline", "in flight", AGENTS ? cards.length : null, "ai-fixme tickets"),
     tile("#pipeline", "review", waiting, "waiting on a human", waiting ? "warn" : ""),
     tile("#pipeline", "queue", queued, SNAP?.mode?.newtickets === "off" ? "intake off" : "launchable"),
@@ -706,6 +714,7 @@ function route() {
     const vs = e.dataset.views.split(" ");
     e.classList.toggle("on", vs.includes(view) || vs.includes(`${view}:${tab}`));
   });
+  document.body.dataset.view = view;
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.nav === view));
   document.querySelectorAll(".tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
 }

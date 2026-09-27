@@ -168,7 +168,7 @@ _snapshot_agent_json() {
         cache_write: (map(.cache_creation_input_tokens // 0) | add // 0) }) as $u |
     { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
       cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + $u.cache_write * $p[2] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),
-      last_text: ($text | gsub("\\s+"; " ") | .[0:200]),
+      last_text: ($text | split("\n") | map(select(test("\\S"))) | first // "" | gsub("\\s+"; " ") | .[0:200]),
       last_tool: ($tool | gsub("\\s+"; " ") | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),
       is_error: (if $r then $r.is_error else null end),
@@ -180,7 +180,7 @@ _snapshot_agent_json() {
       $out + { turns: ($cu | length),
         tokens: { in: ($cu | map(.input_tokens // 0) | add // 0), out: ($cu | map(.output_tokens // 0) | add // 0),
                   cache_read: ($cu | map(.cached_input_tokens // 0) | add // 0), cache_write: 0 },
-        last_text: ($cx | map(select(.type=="agent_message") | .text) | last // "" | gsub("\\s+"; " ") | .[0:200]),
+        last_text: ($cx | map(select(.type=="agent_message") | .text) | last // "" | split("\n") | map(select(test("\\S"))) | first // "" | gsub("\\s+"; " ") | .[0:200]),
         last_tool: ($cx | map(select(.type=="command_execution") | .command | sub("^/bin/bash -lc \u0027(?<c>.*)\u0027$"; "\(.c)")) | last // "" | gsub("\\s+"; " ") | .[0:160]) }
     end' "$f" 2>/dev/null || echo null
 }
