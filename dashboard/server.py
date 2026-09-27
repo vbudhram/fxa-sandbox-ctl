@@ -71,7 +71,7 @@ class Feed:
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]")
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
-def clean_tail(raw, limit=60):
+def clean_tail(raw, limit=200):
     out = []
     for line in _CTRL.sub("", _ANSI.sub("", raw)).splitlines():
         line = line.replace("�", "").rstrip()

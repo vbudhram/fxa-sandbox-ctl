@@ -257,6 +257,47 @@
     nav .fresh { margin:0 0 0 auto; padding:0 var(--s2); border:0; flex-direction:row; align-items:center; white-space:nowrap; }
   }
 
+  /* ── pipeline lanes: one belt per ticket ── */
+  #s-lanes { overflow-x:auto; }
+  .lanes { min-width:980px; }
+  .lanes .head, .lane .row { display:grid; grid-template-columns:260px minmax(0,1fr); align-items:center; }
+  .lanes .head { border-bottom:1px solid var(--line); padding-bottom:var(--s2); }
+  .lanes .cols { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); text-align:center; }
+  .lanes .cols b { display:block; font-size:var(--t-sub); } .lanes .cols span { font-size:var(--t-label); color:var(--faint); }
+  .lane { border-bottom:1px solid var(--sunk); }
+  .lane .row { min-height:68px; }
+  .lane .row:hover { background:var(--bg); }
+  .lane .who { display:flex; flex-direction:column; min-width:0; padding-right:var(--s3); }
+  .lane .who .t { font-size:var(--t-sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lane .who .m { display:flex; gap:var(--s2); align-items:center; font-size:var(--t-label); color:var(--faint); }
+  .lane .track { position:relative; height:68px; }
+  .lane .rail0, .lane .rail1 { position:absolute; left:0; top:50px; height:6px; border-radius:3px; }
+  .lane .rail0 { right:0; background:var(--sunk); }
+  .lane .rail1 { transition:width .8s cubic-bezier(.16,1,.3,1); }
+  .lane .rail1.run { background-image:repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 4px,transparent 4px 10px); background-size:14px 6px; animation:lanerun .7s linear infinite; }
+  @keyframes lanerun { to { background-position:14px 0; } }
+  .lane .stop { position:absolute; top:49px; width:8px; height:8px; margin-left:-4px; border-radius:50%; background:var(--panel); border:1px solid var(--line2); }
+  .lane .mark { position:absolute; top:6px; width:176px; box-sizing:border-box; padding:4px 9px; border-radius:8px; background:var(--panel);
+                border:1px solid var(--line); box-shadow:0 1px 2px rgba(0,0,0,.08); font-size:var(--t-label); transition:left .8s cubic-bezier(.16,1,.3,1); }
+  .lane .mark .l1 { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:4px; align-items:center; }
+  .lane .mark .l2 { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:6px; align-items:center; }
+  .lane.live .mark { border-color:var(--info); box-shadow:0 6px 16px color-mix(in srgb,var(--info) 22%,transparent); }
+  .lane.live .mark .l1 { color:var(--info); } .lane.fix .mark .l1 { color:var(--bad); } .lane.warn .mark .l1 { color:var(--warn); } .lane.done .mark .l1 { color:var(--purple); }
+  .lane.fix .mark { border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); } .lane.warn .mark { border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+  .lane .out { margin:0 0 var(--s3) 260px; }
+  .lane .out summary { font-family:var(--mono); font-size:11px; color:var(--dim); }
+  .lane .out .term-body { max-height:none; height:168px; background:#15141A; color:#E7E7E7; border-color:#32313C; }
+  .lanes .legend { display:flex; flex-wrap:wrap; gap:var(--s4); padding-top:var(--s3); font-size:var(--t-label); color:var(--dim); }
+  .lanes .legend i { display:inline-block; width:22px; height:6px; border-radius:3px; margin-right:6px; vertical-align:1px; }
+  .mascot { width:34px; height:34px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none; background:var(--sunk); }
+  .mascot img { width:28px; height:28px; } .mascot.live { background:color-mix(in srgb,var(--info) 18%,transparent); }
+  .mascot.idle img { filter:grayscale(1) opacity(.6); }
+  .bob { animation:bob 1.4s ease-in-out infinite; } @keyframes bob { 50% { transform:translateY(-3px); } }
+  .switch { display:inline-flex; align-items:center; gap:var(--s2); }
+  .switch .knob { position:relative; width:30px; height:18px; border-radius:9px; background:var(--line2); transition:background .2s; }
+  .switch .knob::after { content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .2s cubic-bezier(.16,1,.3,1); }
+  .switch[aria-checked="true"] .knob { background:var(--info); } .switch[aria-checked="true"] .knob::after { left:14px; }
+
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
            display:flex; gap:var(--s6); flex-wrap:wrap; color:var(--faint); font-size:var(--t-sub); }
   footer b { color:var(--dim); font-weight:650; font-variant-numeric:tabular-nums; }
@@ -300,10 +341,11 @@
     <a href="#sessions/live" data-tab="live">Live<span class="n" id="t-live"></span></a>
     <a href="#sessions/stopped" data-tab="stopped">Stopped<span class="n" id="t-stopped"></span></a>
   </div>
-  <section class="wide" id="s-agents" data-views="overview pipeline"></section>
+  <section class="wide" id="s-agents" data-views="overview"></section>
+  <section class="wide" id="s-lanes" data-views="pipeline"></section>
   <section class="wide" id="s-sessions" data-views="overview sessions:live"></section>
   <section class="wide" id="s-sessions-off" data-views="sessions:stopped"></section>
-  <section class="wide" id="s-review" data-views="pipeline"></section>
+  <section class="wide" id="s-review" data-views="none"></section>
   <section class="wide" id="s-queue" data-views="pipeline"></section>
   <section id="s-pool" data-views="runners"></section>
   <section id="s-today" data-views="runners"></section>
@@ -379,6 +421,14 @@ const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft && r.fail =
 // ── the agent's own output, on its own cadence ──
 const TAILS = {}; let TAIL_KEYS = [];
 function paintTail(key, isLive) {
+  const lane = document.getElementById("lane-term-" + key);
+  if (lane) {
+    const body = lane.querySelector(".body"), lines = TAILS[key] || [], next = lines.join("\n");
+    lane.querySelector(".hdr").textContent = lines.length ? `agent output · live · ${lines.length} of max 200 lines` : "agent output · waiting…";
+    // A redraw replaces the panel; LANE_SCROLL keeps a reader's place above the newest line.
+    if (body.textContent !== next) body.textContent = next;
+    body.scrollTop = LANE_SCROLL[key] ?? body.scrollHeight;
+  }
   const el = document.getElementById("term-" + key); if (!el) return;
   const body = el.querySelector(".body"), hdr = el.querySelector(".hdr"), lines = TAILS[key] || [];
   const next = lines.join("\n");
@@ -572,6 +622,108 @@ function renderAgents() {
   cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
   TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
 }
+
+// Pipeline lanes: one belt per ticket, from queue to merge. Runners come from
+// the agents feed; PRs past their runner come from the review feed.
+const LANE_ST = ["Queue","Boot","Agent","Squash","Push","PR","CI","Review","Merged"];
+const LANE_COLOR = { live:"var(--info)", wait:"var(--faint)", warn:"var(--warn)", fix:"var(--bad)", done:"var(--purple)" };
+const LANE_OUT = {}; let OUT_ALL = true;
+try { OUT_ALL = localStorage.getItem("laneOutput") !== "off"; } catch {}
+function laneRows() {
+  const { cards } = merged(), med = SNAP?.telemetry?.median_minutes, rows = [], seen = new Set();
+  cards.forEach(t => {
+    seen.add(t.key);
+    const a = t.agent || {}, min = Math.round((t.elapsed_seconds ?? 0) / 60);
+    if (t.ci) {
+      const kind = t.fail > 0 ? (t.infra ? "warn" : "fix") : t.running > 0 ? "live" : "wait";
+      rows.push({ t, st: 6, kind, l1: t.fail > 0 ? `${t.fail} failing` : t.running > 0 ? `CI ${t.running} running` : "CI green", l2: "", checks: true });
+      return;
+    }
+    const st = { starting:1, watching:2, stalled:2, error:2, squashing:3, pushed:4, pr:5 }[t.stage] ?? 2;
+    const kind = t.stage === "stalled" || t.stage === "error" ? "fix" : "live";
+    const l1 = t.stage === "starting" ? `Boot: ${t.detail || "starting"}` : t.stage === "stalled" ? `Stalled · ${(t.detail || "").split(" ")[0]}`
+      : t.stage === "error" ? "Run failed" : t.stage === "squashing" ? "Squashing" : t.stage === "pushed" ? "Pushing" : t.stage === "pr" ? "Opening PR"
+      : plainMd(a.last_tool || a.last_text || "Working");
+    const l2 = st === 2 && kind === "live" ? `${min}m${med ? ` of a ${med}m median` : ""} · ${t.files_changed ?? 0} files` : `${min}m`;
+    rows.push({ t, st, kind, l1, l2, runner: !t.ci && t.agent_alive, late: med && st === 2 && min > med });
+  });
+  (SNAP?.review ?? []).filter(r => !seen.has(r.key)).forEach(r => {
+    const d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
+    let st = 7, kind = "wait", l1 = `Waiting ${d} day${d === 1 ? "" : "s"}`, l2 = r.last_human_review ? `${r.last_human_review.login} reviewed` : "no human review";
+    if (r.state === "MERGED") { st = 8; kind = "done"; l1 = "Merged"; l2 = "drain pending"; }
+    else if (r.state === "CLOSED") { st = 8; kind = "wait"; l1 = "Closed"; l2 = "not merged"; }
+    else if (r.mergeable === "CONFLICTING") { st = 6; kind = "fix"; l1 = r.fail > 0 && r.infra ? "Conflicts + infra red" : "Conflicts"; l2 = `${d}d open`; }
+    else if (r.fail > 0) { st = 6; kind = r.infra ? "warn" : "fix"; l1 = r.infra ? "Infra red" : `${r.fail} failing`; l2 = r.infra ? r.infra : `${d}d open`; }
+    else if (r.running > 0) { st = 6; kind = "live"; l1 = `CI ${r.running} running`; }
+    else if (r.review === "CHANGES_REQUESTED") { kind = "fix"; l1 = "Changes requested"; }
+    else if (r.review === "APPROVED") { l1 = "Approved"; }
+    else if (d >= 3) kind = "warn";
+    rows.push({ t: { ...r, summary: r.title }, st, kind, l1, l2, checks: true, age: d });
+  });
+  const order = { live:0, fix:1, warn:2, wait:3, done:4 };
+  return rows.sort((x, y) => order[x.kind] - order[y.kind] || (y.age ?? 0) - (x.age ?? 0));
+}
+function laneHtml(r) {
+  const t = r.t, x = (r.st + 0.5) / 9 * 100, c = LANE_COLOR[r.kind], repo = SNAP?.repo ?? "";
+  const open = r.runner && (t.key in LANE_OUT ? LANE_OUT[t.key] : OUT_ALL);
+  const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j <= r.st ? `border-color:${c};${j < r.st ? `background:${c}` : ""}` : ""}"></span>`).join("");
+  return `<div class="lane ${r.kind}">
+    <div class="row">
+      <div class="who">
+        <span class="m">${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}</span>
+        <span class="t" title="${esc(t.summary || "")}">${esc(t.summary || t.branch || "")}</span>
+      </div>
+      <div class="track">
+        <span class="rail0"></span><span class="rail1${r.kind === "live" ? " run" : ""}" style="width:${x}%;background-color:${c}"></span>${stops}
+        <div class="mark" style="left:clamp(0px, calc(${x}% - 88px), calc(100% - 176px))">
+          <div class="l1">${r.kind === "live" && r.runner ? `<img class="bob" src="/icon.png" alt="" width="16" height="16">` : ""}${esc(r.l1)}</div>
+          <div class="l2">${esc(r.l2)}${r.checks ? checkBars(t) : ""}</div>
+        </div>
+      </div>
+    </div>
+    ${r.runner ? `<details class="out" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
+  </div>`;
+}
+function renderLanes() {
+  const rows = laneRows(), live = rows.some(r => r.kind === "live" && r.runner);
+  const q = SNAP?.queue ?? {}, ready = q.ready ?? [];
+  const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length);
+  counts[0] = ready.length;
+  const head = `<div style="display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)">
+      <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
+      <h2 style="margin:0">Pipeline<span class="sub">one belt per ticket</span></h2>
+      <span class="sub" style="color:var(--dim)">${live ? `FxA Agent is working on ${rows.filter(r => r.runner).length}` : "FxA Agent is idle"}</span>
+      <button class="switch" role="switch" aria-checked="${OUT_ALL}" id="out-all" style="margin-left:auto"><span class="knob"></span>Agent output</button>
+    </div>`;
+  put("s-lanes", head + `<div class="lanes">
+      <div class="head"><span class="empty">Ticket</span><div class="cols">${LANE_ST.map((n, j) => `<div><b>${n}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div>
+      ${rows.length ? rows.map(laneHtml).join("") : `<div class="empty" style="padding:var(--s4) 0">no ticket in flight or in review</div>`}
+      <div class="legend">
+        <span><i style="background:var(--info)"></i>live: agent working, belt moves</span>
+        <span><i style="background:var(--faint)"></i>waiting on a person or CI</span>
+        <span><i style="background:var(--warn)"></i>needs attention</span>
+        <span><i style="background:var(--bad)"></i>blocked: conflicts, failed checks</span>
+        <span><i style="background:var(--purple)"></i>merged</span>
+        <span>Output shows only while a runner is up.</span>
+      </div></div>`);
+  rows.filter(r => r.runner).forEach(r => paintTail(r.t.key, true));
+}
+document.addEventListener("toggle", e => {
+  const d = e.target;
+  if (d.matches?.("details[data-lane]")) LANE_OUT[d.dataset.lane] = d.open;
+}, true);
+const LANE_SCROLL = {};
+document.addEventListener("scroll", e => {
+  const b = e.target, d = b.closest?.("details[data-lane]");
+  if (!d || !b.classList?.contains("body")) return;
+  LANE_SCROLL[d.dataset.lane] = b.scrollTop + b.clientHeight >= b.scrollHeight - 24 ? undefined : b.scrollTop;
+}, true);
+document.addEventListener("click", e => {
+  if (!e.target.closest?.("#out-all")) return;
+  OUT_ALL = !OUT_ALL; Object.keys(LANE_OUT).forEach(k => delete LANE_OUT[k]);
+  try { localStorage.setItem("laneOutput", OUT_ALL ? "on" : "off"); } catch {}
+  renderLanes();
+});
 
 // Slack sessions: owner-steered, no ticket, no pool slot.
 const LIVE_SESSION = ["starting", "active", "wrapping"];
@@ -803,7 +955,7 @@ window.addEventListener("hashchange", route);
 route();
 
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderPool(); renderToday(); renderNav(); renderTab();
+  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderLanes(); renderPool(); renderToday(); renderNav(); renderTab();
 }
 
 async function poll() {

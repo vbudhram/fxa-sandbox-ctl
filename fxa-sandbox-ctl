@@ -766,7 +766,7 @@ cmd_tail() {
           if .type==\"text\" then .text elif .type==\"tool_use\" then \"[tool] \" + .name + \" \" + ((.input.command // .input.file_path // \"\") | tostring)[0:120] else empty end
         elif .type==\"item.completed\" and .item.type==\"agent_message\" then .item.text
         elif .type==\"item.completed\" and .item.type==\"command_execution\" then \"[tool] shell \" + (.item.command | tostring)[0:120]
-        else empty end' /workspace/.fxa-auto-claude.jsonl 2>/dev/null | tail -n 40
+        else empty end' /workspace/.fxa-auto-claude.jsonl 2>/dev/null | tail -n 200
     else
       screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
       cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
