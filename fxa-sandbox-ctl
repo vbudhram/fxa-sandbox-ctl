@@ -503,8 +503,8 @@ EOF
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
   }
   # Truncate the agent stream log so `tail` starts fresh.
-  : > "${worktree_path}/.fxa-auto-claude.jsonl" 2>/dev/null || true
-  : > "${worktree_path}/.fxa-auto-claude.log" 2>/dev/null || true
+  slot_write "${worktree_path}/.fxa-auto-claude.jsonl" < /dev/null 2>/dev/null || true
+  slot_write "${worktree_path}/.fxa-auto-claude.log" < /dev/null 2>/dev/null || true
 
   # Write the full Jira context to a file inside the worktree so the /goal
   # directive (capped at 4000 chars) can reference it instead of embedding it.
@@ -516,7 +516,7 @@ EOF
     context="$(printf '%s\n' "$context" | awk 'BEGIN{done=0} /^## Ticket text \(untrusted\)/ && !done {print "## Resumed run\n\nThe tree already holds partial work from an earlier run that was cut off. Read `git status` and `git diff` first and continue from it. Do not start over.\n"; done=1} {print}')"
     echo "Slot holds work from an earlier run; the agent resumes it." >&2
   fi
-  printf '%s\n' "$context" > "$context_file"
+  printf '%s\n' "$context" | slot_write "$context_file"
   echo "Wrote Jira context to ${context_file}" >&2
 
   check_prerequisites
@@ -605,6 +605,7 @@ _jira_rebase_merge() {
 # ticket's acceptance criteria will re-implement it on top of the resolution.
 _jira_render_rebase_prompt() {
   local key="$1" branch="$2" summary="$3" base="${4:-main}"
+  summary="$(printf '%s' "$summary" | tr -cd 'A-Za-z0-9 ._/:,-' | tr -s ' ')"
   if [ "${#summary}" -gt 60 ]; then summary="${summary:0:57}..."; fi
   cat <<EOF
 /goal Resolve the merge conflict on branch ${branch} (${key}: "${summary}").
@@ -1631,7 +1632,9 @@ cmd_ground() {
     echo "# ${key} grounding bundle, origin/main $(git -C "$repo" rev-parse --short origin/main) at $(date -u +%FT%TZ)"
     echo "reporter_login: ${reporter:-<unmapped>}"
     echo "skip record: ${skiprec:-none}"
-    echo; echo "## Ticket"; echo; printf '%s\n' "$ticket"
+    # A ticket that holds a closing marker cannot guess the nonce, so it cannot forge the sections below.
+    local nonce; nonce="$(openssl rand -hex 6)"
+    echo; echo "## Ticket (untrusted, between the markers)"; echo; echo "<<<UNTRUSTED-${nonce}>>>"; printf '%s\n' "$ticket"; echo "<<</UNTRUSTED-${nonce}>>>"
     echo; echo "## Cited paths on origin/main"; echo
     local ref path lines lo hi
     while IFS= read -r ref; do
@@ -1713,7 +1716,8 @@ cmd_feedback_bundle() {
   {
     echo "# ${key} review feedback bundle, PR #${pr}, branch ${br}, rounds used $(gh_feedback "$key" rounds 2>/dev/null)"
     echo "unhandled comments: ${n}"
-    local i=0 id author assoc trusted path line body lo hi ref rp rl
+    local i=0 id author assoc trusted path line body lo hi ref rp rl nonce
+    nonce="$(openssl rand -hex 6)"
     while [ "$i" -lt "$n" ]; do
       id="$(printf '%s' "$fb" | jq -r ".comments[$i].id")"; author="$(printf '%s' "$fb" | jq -r ".comments[$i].author")"
       assoc="$(printf '%s' "$fb" | jq -r ".comments[$i].association")"; trusted="$(printf '%s' "$fb" | jq -r ".comments[$i].trusted")"
@@ -1721,7 +1725,7 @@ cmd_feedback_bundle() {
       body="$(printf '%s' "$fb" | jq -r ".comments[$i].body")"
       if [ -n "$path" ]; then echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) on ${path}:${line}"; echo
       else echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) in the PR conversation"; echo; fi
-      echo '```'; printf '%s\n' "$body"; echo '```'
+      echo "<<<UNTRUSTED-${nonce}>>>"; printf '%s\n' "$body"; echo "<<</UNTRUSTED-${nonce}>>>"
       if [ -n "$path" ] && [ "$line" -gt 0 ] 2>/dev/null; then
         lo=$((line > 8 ? line - 8 : 1)); hi=$((line + 8))
         echo; echo "### Branch context ${path}:${lo}-${hi}"
@@ -2037,7 +2041,7 @@ EOF
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz"
-  rm -f "${dir}/.fxa-auto-token" # the runner has its copy; none stays on the host
+  rm -f "${dir}/.fxa-auto-token" "${dir}/.fxa-auto-codex-auth.json" # the runner has its copy; none stays on the host
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
   # Stopped while the runner booted: take it down instead of going active.
   if [ "$(session_get "$key" state)" != starting ]; then agent_stop "$name" >&2 || true; return 0; fi

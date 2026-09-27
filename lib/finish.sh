@@ -167,7 +167,7 @@ _finish_fetch_session_log() {
   [ -n "$name" ] && vm_is_running "$name" 2>/dev/null \
     || { echo "WARN: no running agent found for ${wt}; session transcript not fetched, telemetry will undercount output tokens." >&2; return 0; }
   vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl /home/agent/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
-    > "${wt}/.fxa-auto-session.jsonl.tmp" 2>/dev/null \
+    2>/dev/null | slot_write "${wt}/.fxa-auto-session.jsonl.tmp" \
     && [ -s "${wt}/.fxa-auto-session.jsonl.tmp" ] \
     && mv "${wt}/.fxa-auto-session.jsonl.tmp" "${wt}/.fxa-auto-session.jsonl" \
     || { rm -f "${wt}/.fxa-auto-session.jsonl.tmp"; echo "WARN: could not fetch the session transcript from ${name}; telemetry will undercount output tokens." >&2; }
@@ -279,10 +279,29 @@ finish_is_claimed() { [ -f "${LOG_DIR}/$(basename "$1").finishing" ]; }
 #   to media types; anything else would upload a host file to a public PR.
 #   Always prints one `media:` line. Through 2026-09-19 no handoff ever listed
 #   a file and nothing said so, which hid the cause for a week.
+# _finish_copy_media <src> <dest> <root>
+#   On Tart the VM still runs during the upload, so a checked file can turn into
+#   a link to ~/.ssh before gh reads it. Copy from one no-follow descriptor whose
+#   real path is inside <root>, and attach the copy.
+_finish_copy_media() {
+  python3 - "$@" <<'PY'
+import fcntl, os, stat, sys
+src, dest, root = sys.argv[1:]
+fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+real = fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).rstrip(b"\0").decode()
+st = os.fstat(fd)
+if not stat.S_ISREG(st.st_mode) or not real.startswith(root.rstrip("/") + "/") or st.st_size > 100 << 20:
+    sys.exit(1)
+with os.fdopen(fd, "rb") as f, open(dest, "xb") as o:
+    o.write(f.read())
+PY
+}
+
 finish_media_args() {
   local worktree="$1" done_file="$2" out="$3"
-  local p rel local_media real wt_real listed=0 attached=0
+  local p rel local_media real wt_real listed=0 attached=0 copy_dir copy
   wt_real="$(cd "$worktree" && pwd -P)"
+  copy_dir="$(mktemp -d)"
   while IFS= read -r p; do
     [ -z "$p" ] && continue
     listed=$((listed + 1))
@@ -296,15 +315,17 @@ finish_media_args() {
     esac
     local_media="${worktree}/${rel}"
     real="$( [ -f "$local_media" ] && cd "$(dirname "$local_media")" 2>/dev/null && pwd -P )/$(basename "$rel")"
-    if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]]; then
-      eval "$out+=(--attach \"\$local_media\")"
+    mkdir -p "${copy_dir}/${listed}"; copy="${copy_dir}/${listed}/$(basename "$rel")"  # gh matches body refs by name
+    if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]] &&
+       _finish_copy_media "$local_media" "$copy" "$wt_real" 2>/dev/null; then
+      eval "$out+=(--attach \"\$copy\")"
       attached=$((attached + 1))
     else
       echo "  WARN: media listed but not found inside the worktree, skipping: ${p}" >&2
     fi
   done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
   local why=""
-  [ -f "${worktree}/.fxa-auto-media-skipped.txt" ] && why="; skipped: $(head -c 200 "${worktree}/.fxa-auto-media-skipped.txt" | tr -d '\n')"
+  [ -f "${worktree}/.fxa-auto-media-skipped.txt" ] && [ ! -L "${worktree}/.fxa-auto-media-skipped.txt" ] && why="; skipped: $(head -c 200 "${worktree}/.fxa-auto-media-skipped.txt" | tr -d '\n')"
   echo "media: ${listed} listed, ${attached} attached${why}" >&2
 }
 
@@ -377,6 +398,7 @@ _finish_push_and_pr() {
     return 1
   fi
 
+  worktree_git_ok "$worktree" >/dev/null || return 1
   # Verify the worktree is on the expected branch.
   local current_branch
   current_branch="$(git -C "$worktree" rev-parse --abbrev-ref HEAD 2>/dev/null)"
@@ -467,9 +489,6 @@ _finish_push_and_pr() {
       }
     fi
   fi
-  _finish_tooling_guard "$worktree" || return 1
-  _finish_check_frozen "$worktree" || return 1
-
   # Something must exist to ship: either staged work, or commits the agent
   # somehow managed to make.
   if git -C "$worktree" diff --cached --quiet 2>/dev/null &&
@@ -507,6 +526,9 @@ _finish_push_and_pr() {
     echo "ERROR: soft reset to merge-base failed." >&2
     return 1
   }
+  # After the reset the index holds the whole change, a rebase round's merge included.
+  _finish_tooling_guard "$worktree" || return 1
+  _finish_check_frozen "$worktree" || return 1
   # Carry the PR narrative into the commit body. `git log` is what a developer
   # reads months later, and a bare conventional subject loses the why. Keep the
   # prose sections and drop the PR-template scaffolding: the checklist and the
@@ -561,7 +583,7 @@ _finish_push_and_pr() {
   # `gh pr create --body-file` later without re-constructing it. Media is no
   # longer inlined here; it rides along as --attach.
   local body_file="${worktree}/.fxa-auto-pr-body.md"
-  printf '%s\n' "$pr_body" > "$body_file"
+  printf '%s\n' "$pr_body" | slot_write "$body_file"
 
   if [ "$create_pr" != "true" ]; then
     echo "" >&2
@@ -910,7 +932,8 @@ _finish_tooling_guard() {
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
   while IFS= read -r -d '' f; do
     case "$f" in
-      .github/*|.circleci/*|.husky/*|_scripts/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*)
+      .github/*|.circleci/*|.husky/*|_scripts/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*|\
+      .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc)
         hit="${hit}${f}"$'\n' ;;
       package.json|*/package.json)
         # Only the parts a hook or CI executes. A dependency bump is fine.
@@ -932,19 +955,24 @@ _finish_tooling_guard() {
 #   taken from origin/main rather than from the slot the agent wrote. It reads
 #   `git diff --cached` in its cwd, so run it inside the worktree.
 _finish_check_frozen() {
-  local wt="$1" root tmp
+  local wt="$1" root tmp adm
   root="$(worktree_repo_root)" || return 1
-  tmp="${wt}/.fxa-auto-check-frozen.ts"
+  adm="$(worktree_git_ok "$wt")" || return 1
+  tmp="$(mktemp -d)/check-frozen.ts"
   git -C "$root" show "origin/${FXA_WORKTREE_BASE:-main}:_scripts/check-frozen.ts" > "$tmp" 2>/dev/null || {
     echo "  WARN: no _scripts/check-frozen.ts on origin; skipping the frozen-path check." >&2
     rm -f "$tmp"; return 0
   }
-  if ! (cd "$wt" && npx --no-install ts-node "$tmp" >&2); then
-    rm -f "$tmp"
+  # Run from the operator's checkout with no project config: a tsconfig.json in
+  # the slot can make ts-node load any file the agent wrote.
+  if ! (cd "$root" && GIT_DIR="$adm" GIT_WORK_TREE="$wt" TS_NODE_SKIP_PROJECT=true TS_NODE_TRANSPILE_ONLY=true \
+        TS_NODE_COMPILER_OPTIONS='{"module":"commonjs","moduleResolution":"node"}' \
+        npx --no-install ts-node "$tmp" >&2); then
+    rm -rf "$(dirname "$tmp")"
     echo "ERROR: check:frozen (origin/main's copy) rejects this change." >&2
     return 1
   fi
-  rm -f "$tmp"
+  rm -rf "$(dirname "$tmp")"
 }
 
 #   macOS notification via osascript. Cheap, no extra deps.

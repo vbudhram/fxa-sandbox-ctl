@@ -14,6 +14,7 @@ here="$(cd "$(dirname "$0")" && pwd -P)"
 eval "$(sed -n '/^worktree_branch_for() {/,/^}/p;/^worktree_filtered_status() {/,/^}/p;/^_worktree_sync_to_origin() {/,/^}/p' "$here/worktree.sh")"
 eval "$(sed -n '/^_launch_slot_for() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 _worktree_pull_if_remote() { :; }
+worktree_git_ok() { :; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 g() { git -c init.defaultBranch=main -c core.hooksPath=/dev/null "$@"; }
 

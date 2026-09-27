@@ -184,6 +184,10 @@ _gce_pin_runner_tree() {
   # that ref is as old as the image, so set it to the base the host sees now.
   local base="${FXA_WORKTREE_BASE:-main}" base_sha
   base_sha="${FXA_PIN_BASE_SHA:-$(git -C "$slot" rev-parse --verify -q "origin/${base}^{commit}" 2>/dev/null || true)}"
+  # These go into a remote bash -c string unquoted.
+  [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]] && [[ -z "$base_sha" || "$base_sha" =~ ^[0-9a-f]{7,40}$ ]] &&
+    git check-ref-format --branch "$branch" >/dev/null 2>&1 && git check-ref-format --branch "$base" >/dev/null 2>&1 ||
+    { echo "ERROR: refusing to pin: sha, branch or base is not a plain git name." >&2; return 1; }
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
   # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
   # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned
@@ -248,8 +252,6 @@ _restrict_sudo() {
 # Agent user: restricted sudo access
 Cmnd_Alias FXA_UNITS = /usr/bin/systemctl start mysql, /usr/bin/systemctl stop mysql, /usr/bin/systemctl restart mysql, /usr/bin/systemctl status mysql, /usr/bin/systemctl start redis-server, /usr/bin/systemctl stop redis-server, /usr/bin/systemctl restart redis-server, /usr/bin/systemctl status redis-server, /usr/bin/systemctl start firestore-emulator, /usr/bin/systemctl stop firestore-emulator, /usr/bin/systemctl restart firestore-emulator, /usr/bin/systemctl status firestore-emulator, /usr/bin/systemctl start goaws, /usr/bin/systemctl stop goaws, /usr/bin/systemctl restart goaws, /usr/bin/systemctl status goaws
 agent ALL=(ALL) NOPASSWD: FXA_UNITS
-agent ALL=(ALL) NOPASSWD: /usr/bin/mysql *
-agent ALL=(ALL) NOPASSWD: /usr/bin/redis-cli *
 agent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts
 SUDOERS
     chmod 440 /etc/sudoers.d/agent
@@ -410,10 +412,8 @@ _setup_claude_config() {
     settings_b64="$(jq -c '{model, permissions, statusLine, theme} | with_entries(select(.value != null))
         | . + {outputStyle: "concise"}' \
       < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
-    if [ -z "$settings_b64" ]; then
-      echo "  WARN: could not adjust settings.json; copying it unchanged." >&2
-      settings_b64="$(base64 < "${claude_home}/settings.json" | tr -d '\n')"
-    fi
+    # Fail closed: the unfiltered file can hold API keys and hooks.
+    [ -n "$settings_b64" ] || { echo "  WARN: could not filter settings.json; the VM gets none." >&2; settings_b64="$(printf '{}' | base64)"; }
     vm_exec "$name" sudo bash -c "
       echo '${settings_b64}' | base64 -d > /home/agent/.claude/settings.json
       chown agent:agent /home/agent/.claude/settings.json
@@ -669,8 +669,7 @@ _inject_oauth_token() {
   local token="$2"
   local token_file="${workspace_dir}/.fxa-auto-token"
 
-  ( umask 077; printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" > "$token_file" )
-  chmod 600 "$token_file"
+  ( umask 077; printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" | slot_write "$token_file" )
   echo "  Token written to ${token_file} (${#token} chars)."
 }
 
@@ -1142,6 +1141,8 @@ agent_logs() {
 
 agent_stop() {
   local name="$1"
+  # The name becomes rm -rf paths below; `stop ../..` must not reach outside LOG_DIR.
+  [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "ERROR: Invalid name '${name}'." >&2; return 1; }
   local full_name
   full_name="$(vm_name "$name")"
   # The host launcher that watches this slot must die with the VM. On

@@ -298,7 +298,7 @@ gh_feedback() {
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.position != null)
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
-                          trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | test("copilot";"i"))),
+                          trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
                           path, line: (.line // .original_line), body}]')"
   [ -n "$all" ] || all='[]'
   conv="$(gh api "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" --paginate 2>/dev/null \

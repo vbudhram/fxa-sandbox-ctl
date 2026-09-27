@@ -235,9 +235,8 @@ fi
 # ── Run FxA DB migrations if workspace is mounted ──
 if [ -d /workspace/packages/db-migrations ]; then
   log "Running FxA DB migrations..."
-  source /etc/agent-env.sh
-  cd /workspace
-  node packages/db-migrations/bin/patcher.mjs 2>/dev/null || \
+  # As agent, not root: /workspace and its node_modules are agent-written.
+  runuser -u agent -- bash -c 'source /etc/agent-env.sh && cd /workspace && node packages/db-migrations/bin/patcher.mjs' 2>/dev/null || \
     log "WARN: DB migrations failed (may need yarn install first)"
 fi
 

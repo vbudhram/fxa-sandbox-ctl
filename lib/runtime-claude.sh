@@ -54,8 +54,8 @@ runtime_write_prompt() {
   local prompt="$1" workspace_dir="$2"
   local effort=""
   [ -n "${FXA_AGENT_EFFORT:-}" ] && effort=" --effort ${FXA_AGENT_EFFORT}"
-  printf '%s\n' "$prompt" > "${workspace_dir}/.fxa-auto-prompt.txt"
-  cat > "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
+  printf '%s\n' "$prompt" | slot_write "${workspace_dir}/.fxa-auto-prompt.txt"
+  slot_write "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace

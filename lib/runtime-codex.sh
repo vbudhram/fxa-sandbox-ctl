@@ -106,15 +106,15 @@ PY
     return 1
   fi
   echo "Staging Codex auth (token valid ${hours_left}h)..."
-  install -m 600 "$auth" "${workspace_dir}/.fxa-auto-codex-auth.json"
+  ( umask 077; slot_write "${workspace_dir}/.fxa-auto-codex-auth.json" < "$auth" )
 }
 
 # The prompt keeps its newlines: it is read from stdin, not pasted into a TUI.
 # The schema rides along so a run never depends on the image for it.
 runtime_write_prompt() {
   local prompt="$1" workspace_dir="$2"
-  printf '%s\n' "$prompt" > "${workspace_dir}/.fxa-auto-prompt.txt"
-  cp "${SCRIPT_DIR}/templates/handoff.schema.json" "${workspace_dir}/.fxa-auto-handoff.schema.json"
+  printf '%s\n' "$prompt" | slot_write "${workspace_dir}/.fxa-auto-prompt.txt"
+  slot_write "${workspace_dir}/.fxa-auto-handoff.schema.json" < "${SCRIPT_DIR}/templates/handoff.schema.json"
 }
 
 # Runs inside screen's `bash -c '<cmd>; exec bash'`, so no single quotes here.

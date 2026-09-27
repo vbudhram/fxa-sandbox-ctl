@@ -39,6 +39,30 @@ worktree_repo_root() {
   git -C "$candidate" rev-parse --show-toplevel
 }
 
+# worktree_git_ok <path>
+#   On Tart the agent can rewrite <path>/.git to point host git at a config it
+#   wrote (credential helper, remote). Pass only when it names this repo's admin
+#   dir and that dir points back. Prints the admin dir.
+worktree_git_ok() {
+  local wt root adm
+  wt="$(cd "$1" 2>/dev/null && pwd -P)" && root="$(worktree_repo_root)" && root="$(cd "$root" && pwd -P)" || return 1
+  [ "$wt" = "$root" ] && { printf '%s\n' "$root/.git"; return 0; }
+  if [ -f "$wt/.git" ] && [ ! -L "$wt/.git" ]; then
+    adm="$(head -c 4096 "$wt/.git")"; adm="${adm#gitdir: }"
+    if [[ "$adm" =~ ^"$root"/\.git/worktrees/[A-Za-z0-9._-]+$ ]] && [[ "$adm" != */.. ]] && [ ! -L "$adm" ] &&
+       [ "$(cat "$adm/gitdir" 2>/dev/null)" = "$wt/.git" ]; then
+      printf '%s\n' "$adm"; return 0
+    fi
+  fi
+  echo "ERROR: ${wt}/.git is not the worktree pointer the host wrote; refusing to run git there." >&2
+  return 1
+}
+
+# slot_write <file>
+#   Write stdin to a file in a slot the agent can write, never through a link it
+#   planted: remove, then create with O_EXCL (noclobber).
+slot_write() { rm -f -- "$1" && (set -C; cat > "$1"); }
+
 worktree_shared_path() {
   local root parent
   root="$(worktree_repo_root)" || return 1
@@ -144,6 +168,7 @@ $1 ${now}"
 worktree_filtered_status() {
   local path="$1"
   _worktree_pull_if_remote "$path"
+  worktree_git_ok "$path" >/dev/null || { echo "?? .git (pointer changed)"; return 0; }
   local extra_pattern="${FXA_DIRTY_IGNORE:-}"
   git -C "$path" status --porcelain 2>/dev/null \
     | grep -vE '^\?\? \.fxa-' \
@@ -475,6 +500,10 @@ worktree_copy_secrets() {
     dest="${path}/${rel}"
     if [ -f "$src" ]; then
       mkdir -p "$(dirname "$dest")"
+      # The agent can plant a link in the slot (Tart); never copy a secret through one.
+      case "$(cd "$(dirname "$dest")" && pwd -P)/" in "$(cd "$path" && pwd -P)/"*) ;; *)
+        echo "ERROR: ${rel%/*} in the slot leads outside it; refusing to copy secrets." >&2; return 1 ;; esac
+      rm -f -- "$dest"
       cp "$src" "$dest"
       copied=$((copied + 1))
     else
@@ -485,6 +514,8 @@ worktree_copy_secrets() {
   # Firebase emulator config (entire directory).
   if [ -d "${root}/_dev/firebase/.config" ]; then
     mkdir -p "${path}/_dev/firebase"
+    [ -L "${path}/_dev" ] || [ -L "${path}/_dev/firebase" ] && { echo "ERROR: _dev in the slot is a link; refusing to copy secrets." >&2; return 1; }
+    rm -rf -- "${path}/_dev/firebase/.config"
     cp -R "${root}/_dev/firebase/.config" "${path}/_dev/firebase/.config"
     copied=$((copied + 1))
   fi
@@ -695,6 +726,13 @@ worktree_prepare_for_issue() {
     worktree_copy_secrets "$path" >&2 || return 1
   else
     echo "Skipping secret sync. Pass --functional-tests, or set FXA_COPY_SECRETS=true, if the run needs fxa-start." >&2
+    # An earlier functional run left them in this slot; this run must not see them.
+    local rel real; real="$(cd "$path" && pwd -P)"
+    for rel in $(worktree_secret_files) _dev/firebase/.config; do
+      git -C "$path" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1 && continue
+      # Through a planted dir link this rm would reach a host file.
+      case "$(cd "$(dirname "${path}/${rel}")" 2>/dev/null && pwd -P)/" in "$real"/*) rm -rf -- "${path:?}/${rel}" ;; esac
+    done
   fi
 
   printf '%s\n' "$path"

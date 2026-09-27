@@ -47,6 +47,7 @@ check "codex command becomes a step" "Running ls packages" "$(printf '%s\n' '{"t
 # session_checkout: throwaway worktree on the session branch, runner tree pulled in.
 eval "$(sed -n '/^worktree_filtered_status() {/,/^}/p;/^worktree_branch_for() {/,/^}/p' "$(dirname "$0")/worktree.sh")"
 _worktree_pull_if_remote() { :; }
+worktree_git_ok() { :; }
 g() { git -c init.defaultBranch=main -c core.hooksPath=/dev/null "$@"; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 g init -q "$tmp/fxa"; printf '**/node_modules\nai\n' > "$tmp/fxa/.gitignore"; printf 'a\n' > "$tmp/fxa/a.txt"

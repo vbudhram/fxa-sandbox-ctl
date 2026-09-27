@@ -14,6 +14,9 @@ acli() { _retry command acli "$@"; }
 
 # Ensure ~/bin is on PATH (tart, packer may be installed there)
 export PATH="${HOME}/bin:${PATH}"
+# Host git never runs a hook or fsmonitor command: a slot's tree and hooks are agent-written.
+export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+  GIT_CONFIG_KEY_1=core.fsmonitor GIT_CONFIG_VALUE_1=false
 
 # Golden image name (built by Packer)
 readonly FXA_IMAGE_NAME="fxa-dev-base"
