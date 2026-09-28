@@ -39,8 +39,7 @@ _fc_vm_start() { _fc_vm_is_running "$1" || _fc_vm_clone "$1"; }
 _fc_vm_stop() { _fc_vm_delete "$1"; }
 _fc_vm_delete() {
   local name="$1" n; n="$(_fc_slot_of "$name")"
-  echo "Stopping slot ${n:-?} ($(vm_name "$name"))..."
-  [ -n "$n" ] && _fc stop "$n" >/dev/null
+  [ -n "$n" ] && { echo "Stopping slot ${n} ($(vm_name "$name"))..."; _fc stop "$n" >/dev/null; }
   rm -f "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
 }
 # The GCE list plus the slots, in the same name, status, age form.
