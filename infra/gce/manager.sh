@@ -42,7 +42,10 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 grep -vE '^(CLAUDE_CODE_OAUTH_TOKEN|FXA_GCE_SERVICE_ACCOUNT|GITHUB_APP_PEM|FXA_GCE_SSH_DIRECT)=' "${ROOT}/.env" | grep -E '^[A-Z_]+=' > "$tmp/ctl.env.base"
 { echo "GITHUB_APP_PEM=/home/fxa/.config/fxa/github-app.pem"
   echo "FXA_GCE_SSH_DIRECT=1"; } >> "$tmp/ctl.env.base"
-grep -vE '^(SLACK_BOT_TOKEN|SLACK_APP_TOKEN)=' "${BOT}/.env" | grep -E '^[A-Z_]+=' > "$tmp/bot.env.base"
+# After the cutover the laptop's bot .env is renamed .env.retired, so no second
+# bot can start there; it is still the source of these settings.
+BOT_ENV="${BOT}/.env"; [ -f "$BOT_ENV" ] || BOT_ENV="${BOT}/.env.retired"
+grep -vE '^(SLACK_BOT_TOKEN|SLACK_APP_TOKEN)=' "$BOT_ENV" | grep -E '^[A-Z_]+=' > "$tmp/bot.env.base"
 # A secret must never reach these files; stop if one looks like it did.
 if grep -qE 'xox[abpr]-|xapp-|ghp_|github_pat_|sk-ant-|PRIVATE KEY' "$tmp/ctl.env.base" "$tmp/bot.env.base"; then
   echo "ERROR: a secret-looking value is in the .env base files; not sending them." >&2; exit 1
