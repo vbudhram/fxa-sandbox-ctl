@@ -98,6 +98,10 @@ ERRORS = {"at": 0, "body": None}
 # site, must not start them without bound.
 CTL_SLOTS = threading.BoundedSemaphore(4)
 LOOPBACK = ("localhost", "127.0.0.1", "[::1]", "::1")
+# Names a trusted proxy on this host serves us under, such as `tailscale serve`
+# (FXA_DASHBOARD_HOSTS=my-mac.tailnet.ts.net). Only these, never a wildcard.
+EXTRA_HOSTS = tuple(h.strip().lower() for h in os.environ.get("FXA_DASHBOARD_HOSTS", "").split(",") if h.strip())
+SERVED_AS = LOOPBACK + EXTRA_HOSTS
 
 
 def ctl_run(args, timeout):
@@ -217,14 +221,14 @@ class Handler(BaseHTTPRequestHandler):
         # controls at 127.0.0.1 and read us. Only loopback names are served.
         h = self.headers.get("Host") or ""
         host = h[:h.find("]") + 1] if h.startswith("[") else h.split(":")[0]
-        if host not in LOOPBACK:
+        if host.lower() not in SERVED_AS:
             self._json(421, {"error": "bad host"})
             return False
         # Any site can still fire blind requests at localhost. The API answers
         # only this page: same-origin fetches, or tools that send no browser headers.
         if api:
             site, origin = self.headers.get("Sec-Fetch-Site"), self.headers.get("Origin")
-            if (site and site not in ("same-origin", "none")) or (origin and urlparse(origin).hostname not in LOOPBACK + ("",)):
+            if (site and site not in ("same-origin", "none")) or (origin and urlparse(origin).hostname not in SERVED_AS + ("",)):
                 self._json(403, {"error": "cross-site request"})
                 return False
         return True
