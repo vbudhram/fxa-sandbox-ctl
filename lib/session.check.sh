@@ -286,4 +286,6 @@ check "boot steps and times" "restoring=2.3 waiting=1.1 waiting=1.2 checking=3.2
 check "a finished boot has its total and the restore detail" "true 14.9 185 20" "$(jq -r '"\(.done) \(.total) \(.restore.restore_ms) \(.expect)"' <<< "$bt")"
 check "no timings file is null" "null" "$(_session_boot_times agent-none)"
 
+check "the cap is FXA_SESSION_MAX without slots" "2" "$(FXA_FC_HOST= FXA_SESSION_MAX=2 _session_cap)"
+check "with slots it is at least the slot count" "4 6" "$(FXA_FC_HOST=h FXA_SESSION_MAX=2 _session_cap) $(FXA_FC_HOST=h FXA_SESSION_MAX=6 _session_cap)"
 exit "$fail"

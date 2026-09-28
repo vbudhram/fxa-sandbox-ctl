@@ -359,7 +359,7 @@ snapshot_agents_json() {
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
-       runners: $runners, sessions: $sessions, session_cap: '"${FXA_SESSION_MAX:-2}"',
+       runners: $runners, sessions: $sessions, session_cap: '"$(_session_cap)"',
        session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-1800}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',
        session_models: { claude: "'"${FXA_AGENT_MODEL:-claude-opus-5-5}"'", codex: "'"${FXA_CODEX_MODEL:-gpt-6-astra}"'" },
        today: $today }'

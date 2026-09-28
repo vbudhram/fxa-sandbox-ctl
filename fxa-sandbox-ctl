@@ -1778,7 +1778,8 @@ cmd_task() {
   # ponytail: one cap for all sessions, separate from the pool's; per-owner caps when a second engineer joins.
   local live=0 f
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
-  [ "$live" -lt "${FXA_SESSION_MAX:-2}" ] || { echo "ERROR: ${live} sessions running, cap ${FXA_SESSION_MAX:-2} (FXA_SESSION_MAX)" >&2; return 1; }
+  local cap; cap="$(_session_cap)"
+  [ "$live" -lt "$cap" ] || { echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2; return 1; }
   mkdir -p "$SESSION_DIR"
   cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
   jq -n --arg key "$key" --arg owner "$owner" \
