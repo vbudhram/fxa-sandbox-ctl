@@ -13,6 +13,11 @@ new="$(git ls-remote https://github.com/mozilla/fxa.git refs/heads/main | cut -f
 [ "$new" = "$cur" ] && [ "${1:-}" != --force ] && { echo "snapshot is at main (${new:0:10})"; exit 0; }
 echo "main moved: ${cur:0:10} -> ${new:0:10}"
 
+# Start from the newest snapshot's disk: it was synced just before the snapshot,
+# so it is known good. A build disk kept between runs was left damaged by a kill.
+cp --reflink=always "$(readlink -f /fc/snap/latest)/rootfs.ext4" /fc/build/rootfs.ext4
+# On any failure, shut the guest down cleanly; systemd would kill it mid-write.
+trap '"$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; sleep 8' EXIT
 "$fc" boot
 # agent-init appends to /etc/agent-env.sh at boot: wait until it has finished.
 until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done

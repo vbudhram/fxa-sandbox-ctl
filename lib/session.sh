@@ -332,7 +332,8 @@ _session_watch() {
           | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
             elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
             else empty end)
-        else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end"
+        else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end" \
+    || true # the watch ends when its runner stops or after 30 min; neither is a failure
 }
 
 # The session cap. With Firecracker slots on it is at least the slot count
@@ -452,7 +453,9 @@ session_media() {
   mkdir -p "$out" || return 1
   # The sandbox filter below is a courtesy, not a boundary: the agent controls
   # the VM, so the stream is capped and everything is checked again here.
-  _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || exit 0
+  # No media folder is the usual turn: send an empty archive, which tar reads
+  # without error. Nothing at all failed the extract with exit 2.
+  _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || { tar -cf - -T /dev/null; exit 0; }
     find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
       -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" \) -print0 | tar -cf - --null -T -' \
     | head -c 524288000 | tar -xf - -C "$out" 2>/dev/null

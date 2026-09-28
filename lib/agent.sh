@@ -767,7 +767,6 @@ agent_run() {
   runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
 
   # Step 10: Start the agent inside a screen session in the VM
-  echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
   _write_screenrc "$name"
   vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; _stop_pin; vm_delete "$name"; return 1; }
 
@@ -780,6 +779,7 @@ agent_run() {
   fi
   echo "Applying security hardening..."
   _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # The runtime owns the launch string and how the prompt reaches the agent.
   # Both run inside a screen session so attach/tail/alive behave the same for

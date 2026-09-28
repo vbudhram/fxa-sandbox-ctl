@@ -718,7 +718,7 @@ cmd_tail() {
       screen -S ${VM_SCREEN_SESSION} -X hardcopy -h /tmp/screen-dump.txt
       cat /tmp/screen-dump.txt 2>/dev/null | sed '/^\$/d'
     fi
-  " 2>/dev/null
+  " 2>/dev/null || true # a display read: a runner that is gone shows nothing
 }
 
 # ── Command: finish ────────────────────────────────────────────
