@@ -544,7 +544,8 @@ session_desktop() {
   name="$(worktree_branch_for "$key")"
   session_live "$key" && vm_is_running "$name" 2>/dev/null || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
   out="$(vm_exec "$name" bash -c "$(cat "${SANDBOX_ROOT}/templates/desktop-setup.sh")" _ \
-    "$(base64 < "${SANDBOX_ROOT}/templates/novnc-fxa.html" | tr -d '\n')")" || true
+    "$(base64 < "${SANDBOX_ROOT}/templates/novnc-fxa.html" | tr -d '\n')" \
+    "$(base64 < "${SANDBOX_ROOT}/templates/inbox-viewer.html" | tr -d '\n')")" || true
   ip="$(sed -n 's/^ip=\([0-9.]*\)$/\1/p' <<< "$out" | tail -1)"
   pw="$(sed -n 's/^password=\([A-Za-z0-9]\{8\}\)$/\1/p' <<< "$out" | tail -1)"
   [ -n "$ip" ] && [ -n "$pw" ] || { echo "ERROR: the desktop did not start on ${key}" >&2; return 1; }

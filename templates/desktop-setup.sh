@@ -57,6 +57,8 @@ pw="$(cat /root/.desktop-password)"
 
 # The full-screen page (templates/novnc-fxa.html), passed in base64 as $1.
 [ -n "${1:-}" ] && printf '%s' "$1" | base64 -d > /usr/share/novnc/fxa.html
+# The mail viewer the proxy serves at /__inbox (templates/inbox-viewer.html), as $2.
+[ -n "${2:-}" ] && printf '%s' "$2" | base64 -d | install -m 644 -o agent -g agent /dev/stdin /tmp/inbox-viewer.html
 
 # Firefox for the desktop: no first-run terms or welcome, the local stack as
 # the home page (the Home button), and its other pages on the bookmarks toolbar.
