@@ -198,6 +198,10 @@ _gce_pin_runner_tree() {
   # image's, and read back the commit. The install runs here, after the pin,
   # because the branch tip is not always the pinned commit. The fetch is skipped
   # when the clone has the commit: on a fresh disk it cost 20-40 s for nothing.
+  # The step is safe to repeat. An IAP tunnel can time out on the ssh banner,
+  # which reads as an empty answer, so retry that instead of failing the launch.
+  local try
+  for try in 1 2 3; do
   got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
@@ -207,7 +211,15 @@ _gce_pin_runner_tree() {
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
       (cd packages/functional-tests && npx playwright install chromium firefox > /tmp/fxa-pin-playwright.log 2>&1) || true
     fi
-    git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)"
+    git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)" || true
+  [ -n "$got" ] && break
+  echo "  The runner did not answer the pin (try ${try} of 3)." >&2
+  [ "$try" -lt 3 ] && sleep 10
+  done
+  if [ -z "$got" ]; then
+    echo "ERROR: could not reach the runner to pin it: ssh through IAP failed 3 times." >&2
+    return 1
+  fi
   if [ "$got" != "$sha" ]; then
     echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
     return 1
