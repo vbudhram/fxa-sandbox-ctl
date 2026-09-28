@@ -150,6 +150,9 @@ WorkingDirectory=$W/fxa-agent-bot
 Environment=$path
 ExecStart=/usr/local/bin/node --env-file=.env src/app.js
 Restart=on-failure
+# A restart must not kill a session boot or an Open PR job the bot started;
+# the bot stops its own watches on SIGTERM.
+KillMode=process
 RestartSec=10
 [Install]
 WantedBy=multi-user.target
@@ -191,6 +194,9 @@ Environment=$path
 EnvironmentFile=-$W/fxa-sandbox-ctl/.env
 ExecStart=/bin/bash -c 'claude -p --permission-mode auto < $C/$job-prompt.txt'
 TimeoutStartSec=3h
+# launch returns at once and runs the agent in the background: the pass ending
+# must not kill it (the default killed every launch seconds after it started).
+KillMode=process
 UNIT
 done
 cat > /etc/systemd/system/fxa-pass.timer <<'UNIT'
