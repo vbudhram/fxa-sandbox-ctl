@@ -540,6 +540,16 @@ session_stop() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
   # First, so a boot still in progress sees it and takes its own runner down.
   session_set "$key" state stopped
+  _session_save "$key"
+  # No runner yet (still booting) is fine; a runner that will not go away is not.
+  agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
+  return 0
+}
+
+# _session_save <key>   Before the runner goes: the summary, the change, the
+# media, and the conversation, so a later session in the thread can resume it.
+_session_save() {
+  local key="$1" name; name="$(worktree_branch_for "$key")"
   if vm_is_running "$name" 2>/dev/null; then
     _session_record_summary "$key" || true
     # ai/ is ignored on the host but not in the runner's clone; the runner is going away.
@@ -552,9 +562,27 @@ session_stop() {
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
   fi
-  # No runner yet (still booting) is fine; a runner that will not go away is not.
-  agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
   return 0
+}
+
+# _session_review <pr_url>   The PR's open review feedback as context for the
+# agent: review bodies, inline comments still on current lines, and conversation
+# comments. Only members' and Copilot's words are copied; others are named only.
+_session_review() {
+  local url="$1" slug n reviews inline conv
+  [[ "$url" =~ ^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([0-9]+)$ ]] || return 1
+  slug="${BASH_REMATCH[1]}"; n="${BASH_REMATCH[2]}"
+  local trust='((.author_association // "") | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]"))'
+  reviews="$(gh api "repos/${slug}/pulls/${n}/reviews" --paginate 2>/dev/null \
+    | jq -c "[.[] | select((.body // \"\") != \"\") | {who: .user.login, ok: (${trust}), where: .state, body}]")" || return 1
+  inline="$(gh api "repos/${slug}/pulls/${n}/comments" --paginate 2>/dev/null \
+    | jq -c "[.[] | select(.line != null) | {who: .user.login, ok: (${trust}), where: \"\\(.path):\\(.line)\", body}]")" || return 1
+  conv="$(gh api "repos/${slug}/issues/${n}/comments" --paginate 2>/dev/null \
+    | jq -c "[.[] | select(.user.type != \"Bot\" and (.body | startswith(\"🤖\") | not)) | {who: .user.login, ok: (${trust}), where: \"conversation\", body}]")" || return 1
+  jq -rn --argjson a "$reviews" --argjson b "$inline" --argjson c "$conv" '
+    ($a + $b + $c) as $all
+    | ($all | map(select(.ok)) | map("### \(.who) (\(.where))\n\(.body | .[0:4000])") | join("\n\n")),
+      ($all | map(select(.ok | not) | .who) | unique | if length > 0 then "\nNot copied, from people outside the repo: \(join(", "))" else empty end)'
 }
 
 # session_checkout <key> <dir>   A throwaway worktree on the session branch at its
@@ -565,7 +593,11 @@ session_checkout() {
   local key="$1" dir="$2" root name
   root="$(worktree_repo_root)" || return 1
   name="$(worktree_branch_for "$key")"
-  git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$key" "$dir" "$(session_get "$key" base_sha)" >&2 || return 1
+  local branch base; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; base="$(session_get "$key" base_sha)"
+  git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$branch" "$dir" "$base" >&2 || return 1
+  # A review round starts at the PR's head: the push may replace only that
+  # commit, so a push someone made to the PR meanwhile is refused, not lost.
+  [ -n "$(session_get "$key" review_pr)" ] && git -C "$root" update-ref "refs/remotes/origin/${branch}" "$base"
   ln -s "${root}/node_modules" "${dir}/node_modules"
   vm_pull_tree "$name" /workspace "$dir"
 }
