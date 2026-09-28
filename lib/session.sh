@@ -250,6 +250,8 @@ session_idle_sweep() {
     [ "$(jq -r .state "$f")" = active ] && [ "$(jq -r '.turn_open // "0"' "$f")" != 1 ] || continue
     [ -s "${SESSION_DIR}/${key}.queue" ] && continue
     [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "$idle" ] || continue
+    # An open desktop is a person at work, even with no agent turn.
+    if _session_desktop_in_use "$key"; then session_set "$key" last_activity "$now"; continue; fi
     _session_lock "$key" || continue
     # Recheck under the lock: a steer may have just started a turn.
     if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
@@ -491,13 +493,45 @@ _session_summary_json() {
 # bot posts on Stop and Open PR.
 _session_record_summary() { session_set "$1" summary "$(_session_summary_json "$1")"; }
 
-# session_desktop <key>   Start a Linux desktop with Firefox on the runner
-# (templates/desktop-setup.sh) and print its VNC password.
+# session_desktop <key> [owner_email]   Start a Linux desktop with Firefox on
+# the runner (templates/desktop-setup.sh) and print its VNC password. With an
+# email and FXA_DESKTOP_GATEWAY, also publish the record the IAP gateway reads,
+# and print the link to it.
 session_desktop() {
-  local key="$1" name; name="$(worktree_branch_for "$key")"
+  local key="$1" email="${2:-}" name out ip pw
+  name="$(worktree_branch_for "$key")"
   session_live "$key" && vm_is_running "$name" 2>/dev/null || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
-  vm_exec "$name" bash -c "$(cat "${SANDBOX_ROOT}/templates/desktop-setup.sh")" | grep -E '^password=[A-Za-z0-9]{8}$' | tail -1 \
-    || { echo "ERROR: the desktop did not start on ${key}" >&2; return 1; }
+  out="$(vm_exec "$name" bash -c "$(cat "${SANDBOX_ROOT}/templates/desktop-setup.sh")")" || true
+  ip="$(sed -n 's/^ip=\([0-9.]*\)$/\1/p' <<< "$out" | tail -1)"
+  pw="$(sed -n 's/^password=\([A-Za-z0-9]\{8\}\)$/\1/p' <<< "$out" | tail -1)"
+  [ -n "$ip" ] && [ -n "$pw" ] || { echo "ERROR: the desktop did not start on ${key}" >&2; return 1; }
+  session_set "$key" desktop_open 1
+  if [ -n "$email" ] && [ -n "${FXA_DESKTOP_GATEWAY:-}" ]; then
+    [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || { echo "ERROR: bad owner email" >&2; return 1; }
+    # Expires with the runner's own limit, in case no stop ever removes it.
+    jq -n --arg e "$email" --arg ip "$ip" --arg pw "$pw" --argjson exp "$(( $(date +%s) + ${FXA_SESSION_MAX_RUN_SECONDS:-14400} ))" \
+      '{owner_email: $e, ip: $ip, vnc_password: $pw, expires: $exp}' \
+      | gcloud storage cp -q - "$(_session_desktop_uri "$key")" >/dev/null 2>&1 \
+      || { echo "ERROR: could not publish the desktop for the gateway" >&2; return 1; }
+    echo "url=${FXA_DESKTOP_GATEWAY%/}/d/${key}"
+  fi
+  echo "password=${pw}"
+}
+
+_session_desktop_uri() { printf 'gs://%s-fxa-ai-fixme/desktops/%s.json' "$FXA_GCE_PROJECT" "$1"; }
+
+# _session_desktop_close <key>   The runner is going: the gateway link dies with it.
+_session_desktop_close() {
+  [ "$(session_get "$1" desktop_open)" = 1 ] || return 0
+  session_set "$1" desktop_open 0
+  ( gcloud storage rm -q "$(_session_desktop_uri "$1")" >/dev/null 2>&1 || true ) </dev/null &
+}
+
+# _session_desktop_in_use <key>   Someone is looking at the desktop right now.
+_session_desktop_in_use() {
+  [ "$(session_get "$1" desktop_open)" = 1 ] || return 1
+  local n; n="$(vm_exec "$(worktree_branch_for "$1")" bash -c "ss -Htn state established '( sport = :6080 )' | wc -l" 2>/dev/null | tr -dc 0-9)"
+  [ "${n:-0}" -gt 0 ]
 }
 
 # session_tunnel <key> <local_port>   Forward 127.0.0.1:<local_port> to the
@@ -549,6 +583,7 @@ session_stop() {
   # First, so a boot still in progress sees it and takes its own runner down.
   session_set "$key" state stopped
   _session_save "$key"
+  _session_desktop_close "$key"
   # No runner yet (still booting) is fine; a runner that will not go away is not.
   agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
   return 0

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs as root on a session runner: a Linux desktop a person can open through
-# noVNC. Safe to run again; the last line is the VNC password.
+# noVNC. Safe to run again; it ends with the private IP and the VNC password.
 #
 # The desktop user `viewer` cannot read /home/agent (the agent's login lives
 # there), sees the repo read-only at /srv/workspace, and reaches only this VM.
@@ -55,12 +55,15 @@ if ! pgrep -u viewer -x Xtigervnc >/dev/null; then
   tigervncserver :1 -localhost yes -SecurityTypes VncAuth -PasswordFile ~/.vnc/passwd \
     -geometry 1440x900 -xstartup ~/.vnc/xstartup >/tmp/viewer-vnc.log 2>&1
 fi
-if ! pgrep -u viewer -f 'websockify .*127.0.0.1:6080' >/dev/null; then
-  nohup setsid websockify --web /usr/share/novnc 127.0.0.1:6080 127.0.0.1:5901 >/tmp/viewer-websockify.log 2>&1 </dev/null &
+# All addresses: the gateway reaches it on the private IP. The GCP firewall
+# admits only the gateway's subnet, and the agent is blocked above.
+if ! pgrep -u viewer -f 'websockify .*:6080 127.0.0.1:5901' >/dev/null; then
+  nohup setsid websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5901 >/tmp/viewer-websockify.log 2>&1 </dev/null &
 fi
 if ! pgrep -u viewer -x firefox >/dev/null; then
   DISPLAY=:1 nohup setsid firefox http://localhost:3030/ >/tmp/viewer-firefox.log 2>&1 </dev/null &
 fi
 VIEWER
 
+printf 'ip=%s\n' "$(hostname -I | awk '{print $1}')"
 printf 'password=%s\n' "$pw"
