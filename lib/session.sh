@@ -358,6 +358,7 @@ _session_boot_label() {
     "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
     "Waiting for fxa-gce-checkout"*|"Waiting for infrastructure"*) echo "waiting for the sandbox's services" ;;
     "Pinning the runner"*) echo "checking out the commit" ;;
+    "Checking out the commit"*) echo "checking out the commit, and installing keys and settings" ;;
     "Applying security"*) echo "locking down the sandbox" ;;
     "Setting up SSH"*|"Setting up claude"*|"Setting up codex"*) echo "installing keys and settings" ;;
     "Starting claude"*|"Starting codex"*|Shipping*) echo "starting the agent" ;;
@@ -366,7 +367,7 @@ _session_boot_label() {
 
 # _session_boot_step <key>   The runner's boot progress in plain words.
 _session_boot_step() {
-  local l; l="$(grep -E '^(Creating GCE|Restoring|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Applying security|Setting up (SSH|claude|codex)|Shipping|Starting (claude|codex))' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1 || true)"
+  local l; l="$(grep -E '^(Creating GCE|Restoring|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Checking out the commit|Applying security|Setting up (SSH|claude|codex)|Shipping|Starting (claude|codex))' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1 || true)"
   l="$(_session_boot_label "$l")"; echo "${l:-preparing}"
 }
 

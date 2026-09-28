@@ -129,6 +129,11 @@ cmd_snapshot() {
   api 0 PUT snapshot/create "{\"snapshot_type\": \"Full\", \"snapshot_path\": \"$d/vmstate\", \"mem_file_path\": \"$d/mem\"}"
   cp --reflink=always "$FC/build/rootfs.ext4" "$d/rootfs.ext4"
   echo "snapshot $name in $(( $(now_ms) - t0 )) ms ($(du -sh "$d" | cut -f1) on disk)"
+  # The snapshot has its own disk copy; shut the build guest down cleanly, so the
+  # build disk is never left needing a journal replay.
+  api 0 PATCH vm '{"state": "Resumed"}' || true
+  ssh "${SSHO[@]}" "fxa@$(slot_ip 0)" 'sudo systemctl poweroff' 2>/dev/null || true
+  local i; for i in $(seq 30); do kill -0 "$(cat "$FC/run/fc0.pid" 2>/dev/null)" 2>/dev/null || break; sleep 1; done
   kill_slot 0; net_down 0
   ln -sfn "$d" "$FC/snap/latest"
 }

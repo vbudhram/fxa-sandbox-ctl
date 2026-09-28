@@ -727,17 +727,19 @@ agent_run() {
 
   # gce: pin the runner to the slot's exact commit. The boot unit's fetch is best
   # effort, and a run on the image's stale main made the pull read the gap as agent work.
+  # It runs beside the hardening and config steps below, which do not touch the
+  # tree; the egress firewall waits for it, because its reset would cut a fetch.
+  local pin_pid="" pin_out=""
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
-    _gce_pin_runner_tree "$name" "$workspace_dir" || { vm_delete "$name"; return 1; }
+    pin_out="$(mktemp)"
+    echo "Checking out the commit, and installing keys and settings beside it..."
+    ( _gce_pin_runner_tree "$name" "$workspace_dir" > "$pin_out" 2>&1 && printf '%s' "${_PINNED_BASE:-}" > "${pin_out}.base" ) &
+    pin_pid=$!
   fi
+  # A failed step below takes the runner down; the pin must not outlive it.
+  _stop_pin() { [ -n "$pin_pid" ] && kill "$pin_pid" 2>/dev/null; rm -f "$pin_out" "${pin_out}.base"; return 0; }
 
-  # Step 6: Security hardening
-  echo "Applying security hardening..."
-
-  # 6a: Egress firewall. A run that starts open is worse than no run. Its own
-  # ssh: the status and stderr decide whether the run starts.
-  _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
-
+  # Step 6: Security hardening.
   # 6b-6d and step 7 in one ssh: proxy off (older images bake Squid in),
   # password auth off, sudo restricted, per-agent key installed. Flushed before
   # the config step, whose bundle copy logs in with that key.
@@ -745,29 +747,39 @@ agent_run() {
   _disable_proxy_in_vm "$name"
   _harden_ssh "$name"
   _restrict_sudo "$name"
-  echo "Setting up SSH key..."
+  [ -n "$pin_pid" ] || echo "Setting up SSH key..."
   _install_ssh_key "$name"
-  vm_batch_flush "$name" || { echo "ERROR: hardening did not reach the runner; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  vm_batch_flush "$name" || { echo "ERROR: hardening did not reach the runner; refusing to start the agent." >&2; _stop_pin; vm_delete "$name"; return 1; }
 
   # Step 8: Fix git worktrees
   _link_worktree_gitdir "$name" "$gitdir"
 
   # Step 9: Runtime config and credentials. The runtime file owns both.
-  runtime_load || return 1
-  echo "Setting up ${FXA_AGENT_RUNTIME} config..."
+  runtime_load || { _stop_pin; return 1; }
+  [ -n "$pin_pid" ] || echo "Setting up ${FXA_AGENT_RUNTIME} config..."
   # The config writes and the screenrc below go in one ssh.
   vm_batch_start
   # The guide in the image goes stale between image builds; send the current one.
   local guide_b64; guide_b64="$(base64 < "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md" | tr -d '\n')"
   vm_exec "$name" sudo bash -c "echo '${guide_b64}' | base64 -d > /etc/vm-agent-guide.md && chmod 644 /etc/vm-agent-guide.md" 2>/dev/null \
     || echo "  WARN: could not send the VM guide; the image's copy stays" >&2
-  runtime_setup_config "$name" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
-  runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; vm_delete "$name"; return 1; }
+  runtime_setup_config "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
+  runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
 
   # Step 10: Start the agent inside a screen session in the VM
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
   _write_screenrc "$name"
-  vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; vm_delete "$name"; return 1; }
+  vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; _stop_pin; vm_delete "$name"; return 1; }
+
+  # The pin, then the egress firewall. A run that starts open is worse than no
+  # run; the firewall's own ssh status and stderr decide whether the run starts.
+  if [ -n "$pin_pid" ]; then
+    local pin_rc=0; wait "$pin_pid" || pin_rc=$?
+    grep -v '^Pinning the runner' "$pin_out" || true; _PINNED_BASE="$(cat "${pin_out}.base" 2>/dev/null || true)"; rm -f "$pin_out" "${pin_out}.base"
+    [ "$pin_rc" -eq 0 ] || { vm_delete "$name"; return 1; }
+  fi
+  echo "Applying security hardening..."
+  _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
 
   # The runtime owns the launch string and how the prompt reaches the agent.
   # Both run inside a screen session so attach/tail/alive behave the same for
