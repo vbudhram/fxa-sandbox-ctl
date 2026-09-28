@@ -38,7 +38,7 @@ echo "== tmux"; tmux ls 2>/dev/null | sed "s/^/  /" || echo "  no session"
 echo "== open errors"; ./fxa-sandbox-ctl errors 2>/dev/null | grep -cE "^[0-9a-f]{10}" | sed "s/^/  /"
 '
 echo "== disk"; df -h / | tail -1 | awk '{print "  " $4 " free of " $2}'
-echo "== runners"; gcloud compute instances list --filter='name~^agent-' --format='value(name,status)' 2>/dev/null | sed 's/^/  /'
+echo "== runners (name, status, the controller that started it)"; gcloud compute instances list --filter='name~^agent-' --format='value(name,status,labels.fxa-controller)' 2>/dev/null | sed 's/^/  /'
 echo "== secrets the VM can read (present or missing, never the value)"
 for s in fxa-slack-bot-token fxa-slack-app-token fxa-github-app-key fxa-circleci-token fxa-anthropic-api-key fxa-jira-token; do
   gcloud secrets versions access latest --secret "$s" >/dev/null 2>&1 && printf '  %-22s present\n' "$s" || printf '  %-22s missing\n' "$s"

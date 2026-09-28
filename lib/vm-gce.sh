@@ -142,7 +142,7 @@ vm_clone() {
         --no-service-account --no-scopes \
         --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
         --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
-        --labels "fxa-agent=${name}" \
+        --labels "fxa-agent=${name},fxa-controller=$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | cut -c1-63)" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
       printf '%s' "$zone" > "${LOG_DIR}/last-good-zone"
