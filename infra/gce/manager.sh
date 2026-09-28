@@ -1,13 +1,34 @@
 #!/bin/bash
 # Provision the manager VM from the laptop. Safe to run again.
 #   bash infra/gce/manager.sh [project] [zone]
+#   bash infra/gce/manager.sh sync [project] [zone]   pull both repos on the VM
+#     after a push from the laptop; restarts only the services already running.
 # Sends your Claude setup (CLAUDE.md, settings, hooks, skills) and the .env
 # files without their secrets, then runs manager-setup.sh on the VM as root.
 # The secrets come from Secret Manager on the VM (fxa-secrets.service).
 set -euo pipefail
+MODE=provision; [ "${1:-}" = sync ] && { MODE=sync; shift; }
 P="${1:-moz-fx-dev-vbudhram-sandbox}" Z="${2:-us-central1-b}" VM=fxa-manager
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BOT="${ROOT}/../fxa-agent-bot"
+ssh_vm() { gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command "$1"; }
+
+if [ "$MODE" = sync ]; then
+  # Fast-forward only: a checkout edited on the VM stops the sync instead of
+  # being overwritten. The bot and the dashboard load the code at start.
+  ssh_vm 'sudo -u fxa -H bash -c '"'"'
+    set -e
+    for r in fxa-sandbox-ctl fxa-agent-bot; do
+      d=~/Desktop/working2/$r
+      if [ -n "$(git -C "$d" status --porcelain --untracked-files=no)" ]; then echo "$r: local edits on the VM; not pulled"; continue; fi
+      git -C "$d" pull -q --ff-only && echo "$r: $(git -C "$d" log --oneline -1)"
+    done
+    (cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev)
+  '"'"'
+  for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true'
+  exit 0
+fi
+
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 
 # Your Claude setup. Skills that link into this repo are linked again on the
@@ -26,7 +47,6 @@ if grep -qE 'xox[abpr]-|xapp-|ghp_|github_pat_|sk-ant-|PRIVATE KEY' "$tmp/ctl.en
   echo "ERROR: a secret-looking value is in the .env base files; not sending them." >&2; exit 1
 fi
 
-ssh_vm() { gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command "$1"; }
 for f in claude.tgz ctl.env.base bot.env.base; do
   dest=/tmp/fxa-$f; [ "$f" = claude.tgz ] && dest=/tmp/fxa-claude-bundle.tgz
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
