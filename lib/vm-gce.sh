@@ -77,6 +77,13 @@ if ! grep -q "^Include ${_GCE_SSH_HOSTS}/\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; th
   { printf 'Include %s/*\n' "$_GCE_SSH_HOSTS"; _gce_ssh_host_entry "${VM_PREFIX}-*" "$FXA_GCE_ZONE"; } > "$_GCE_SSH_CONFIG"
 fi
 VM_SSH_OPTS="${VM_SSH_OPTS} -F ${_GCE_SSH_CONFIG}"
+# Direct only: one kept-open connection per runner and user, so a call costs
+# about 16 ms instead of 440 (measured). Never through IAP (above). The path is
+# the runner's name as given (%n), unique while it lives; vm_delete closes it.
+if [ "${FXA_GCE_SSH_DIRECT:-}" = 1 ]; then
+  mkdir -p "${HOME}/.ssh/cm" && chmod 700 "${HOME}/.ssh/cm"
+  VM_SSH_OPTS="${VM_SSH_OPTS} -o ControlMaster=auto -o ControlPath=${HOME}/.ssh/cm/%r@%n -o ControlPersist=60"
+fi
 
 # ── Image management ───────────────────────────────────────────
 
@@ -324,6 +331,11 @@ vm_delete() {
 # Drop the per-host ssh entry, or the file grows one block per run forever.
 _gce_ssh_forget() {
   rm -f "${_GCE_SSH_HOSTS}/$(vm_name "$1")"
+  # A later runner may reuse the name (a ticket's next run): close this one's connections.
+  local cm
+  for cm in "${HOME}/.ssh/cm/"*"@$(vm_name "$1")"; do
+    [ -S "$cm" ] && ssh -o ControlPath="$cm" -O exit _ >/dev/null 2>&1; rm -f "$cm"
+  done
 }
 
 # vm_gc: remove state files whose instance is gone. A leftover .meta makes
