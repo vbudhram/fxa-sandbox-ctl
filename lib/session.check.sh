@@ -272,5 +272,8 @@ sessions_pause "costs are high" --now >/dev/null
 check "--now pauses an active session, even mid-turn" "paused" "$(session_get agent-kill2 state)"
 sessions_resume >/dev/null
 check "resume clears it" "no" "$(sessions_paused >/dev/null && echo yes || echo no)"
+check "a Codex session is refused unless the host opts in" "Codex sessions are turned off on this host (FXA_SESSION_CODEX)" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-cdx1 --owner U1 --prompt-file "$tmp/p.md" --runtime codex 2>&1 >/dev/null | sed 's/^ERROR: //')"
+check "and no record is written" "no" "$( [ -f "$tmp/agent-cdx1.json" ] && echo yes || echo no)"
 
 exit "$fail"

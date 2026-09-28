@@ -1760,6 +1760,11 @@ cmd_task() {
   [ "$FXA_VM_BACKEND" = gce ] || { echo "ERROR: sessions run on gce only; pass --backend gce" >&2; return 1; }
   session_exists "$key" && { echo "ERROR: session ${key} already exists" >&2; return 1; }
   local why; if why="$(sessions_paused)"; then echo "ERROR: agent sessions are paused by the operator: ${why}" >&2; return 1; fi
+  # Codex is off unless the host opts in: the manager VM has no Codex login.
+  local eff="$runtime"; [ -n "$resume_from" ] && [ -z "$eff" ] && eff="$(session_get "$resume_from" runtime)"
+  if [ "${eff:-${FXA_SESSION_RUNTIME:-claude}}" = codex ] && [ "${FXA_SESSION_CODEX:-}" != 1 ]; then
+    echo "ERROR: Codex sessions are turned off on this host (FXA_SESSION_CODEX)" >&2; return 1
+  fi
   if [ -n "$resume_from" ]; then
     _session_key "$resume_from" || return 1
     case "$(session_get "$resume_from" state)" in
