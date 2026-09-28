@@ -64,6 +64,8 @@ errors_err_trap() {
   # One of our own functions returning its error, or a return: that code already
   # said what went wrong. A crash is a command such as grep, jq or ssh failing.
   [[ "$cmd" =~ ^return([[:space:]]|$) ]] && return 0
+  # SIGPIPE: a reader such as `| head` closed the pipe early.
+  [ "$rc" = 141 ] && return 0
   declare -F "${cmd%%[[:space:]]*}" >/dev/null && return 0
   local where="${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} ${FUNCNAME[1]}" kind=crash
   cmd="$(printf '%s' "$cmd" | tr -s ' \t\n' ' ' | cut -c1-300)"

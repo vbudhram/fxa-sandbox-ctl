@@ -21,6 +21,7 @@ job() { false || { handler; return 1; }; }
 expected() { local x; x="\$(grep nothing "$tmp/empty.log" | head -1 || true)"; return 0; }
 refuse() { echo "ERROR: refused" >&2; return 1; }
 handled() { true && refuse; }
+piped() { yes | head -1 >/dev/null; }
 main() { _ERR_CONTEXT="\$*"; set -E; trap 'errors_err_trap \$? "\$BASH_COMMAND"' ERR; expected; "\$@"; }
 main "\$@"
 EOF
@@ -40,6 +41,10 @@ check "a function returning its own error is not a crash" "0" "$( [ -f "$FXA_ERR
 rm -f "$FXA_ERRORS_FILE"
 bash "$tmp/prog.sh" expected >/dev/null 2>&1
 check "a handled grep miss records nothing" "0" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
+
+rm -f "$FXA_ERRORS_FILE"
+bash "$tmp/prog.sh" piped >/dev/null 2>&1
+check "a reader closing the pipe is not a crash" "0" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
 
 # Signatures group the same bug across sessions and lines.
 source "$here/errors.sh"
