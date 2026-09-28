@@ -353,12 +353,14 @@ snapshot_agents_json() {
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
+    --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --argjson fc "$( [ -n "${FXA_FC_HOST:-}" ] && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
     --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
     --argjson free "$free" --argjson today "$today" --argjson sessions "${sessions:-[]}" \
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
+       infra_hourly_usd: ($mgr + $fc), infra: {manager: $mgr, firecracker_host: $fc},
        runners: $runners, sessions: $sessions, session_cap: '"$(_session_cap)"',
        session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-1800}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',
        session_models: { claude: "'"${FXA_AGENT_MODEL:-claude-opus-5-5}"'", codex: "'"${FXA_CODEX_MODEL:-gpt-6-astra}"'" },

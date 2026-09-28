@@ -70,6 +70,11 @@ FXA_GCE_SERVICE_ACCOUNT="${FXA_GCE_SERVICE_ACCOUNT:-}"
 [ -n "$FXA_GCE_SERVICE_ACCOUNT" ] && export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="$FXA_GCE_SERVICE_ACCOUNT"
 # List price of one runner-hour, for the dashboard's burn rate. c4a-highcpu-4 on demand.
 FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.13}"
+# Always-on infrastructure at list prices, for the dashboard. The manager VM sets
+# its own (e2-standard-4 and 200 GB balanced disk, about 0.16) in its .env; 0 elsewhere.
+FXA_MANAGER_HOURLY_USD="${FXA_MANAGER_HOURLY_USD:-0}"
+# The Firecracker host while FXA_FC_HOST is set: c3-standard-22, 300 GB SSD, 50 GB boot.
+FXA_FC_HOURLY_USD="${FXA_FC_HOURLY_USD:-1.12}"
 # Hard lifetime for a runner. GCE deletes it at this age, whatever the laptop is doing.
 FXA_GCE_MAX_RUN_SECONDS="${FXA_GCE_MAX_RUN_SECONDS:-5400}"
 

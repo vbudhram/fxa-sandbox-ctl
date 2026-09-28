@@ -41,7 +41,9 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # impersonation (it runs as the service account) and the key path.
 grep -vE '^(CLAUDE_CODE_OAUTH_TOKEN|FXA_GCE_SERVICE_ACCOUNT|GITHUB_APP_PEM|FXA_GCE_SSH_DIRECT)=' "${ROOT}/.env" | grep -E '^[A-Z_]+=' > "$tmp/ctl.env.base"
 { echo "GITHUB_APP_PEM=/home/fxa/.config/fxa/github-app.pem"
-  echo "FXA_GCE_SSH_DIRECT=1"; } >> "$tmp/ctl.env.base"
+  echo "FXA_GCE_SSH_DIRECT=1"
+  # e2-standard-4 plus its 200 GB balanced disk, list price: the dashboard's always-on cost.
+  echo "FXA_MANAGER_HOURLY_USD=0.16"; } >> "$tmp/ctl.env.base"
 # After the cutover the laptop's bot .env is renamed .env.retired, so no second
 # bot can start there; it is still the source of these settings.
 BOT_ENV="${BOT}/.env"; [ -f "$BOT_ENV" ] || BOT_ENV="${BOT}/.env.retired"
