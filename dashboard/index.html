@@ -1362,17 +1362,23 @@ function renderPool() {
     const cls = over ? "over" : busy ? "busy" : free.includes(p.slot) ? "free" : "held";
     const holder = TICKET.test(p.key ?? "") ? p.key : null;
     return `<div class="slot ${cls}"><span class="nm">${esc(p.slot)}</span><span class="meter"><i></i></span>
-      <span class="r">${busy ? `${jira(holder || p.agent)}${v ? `<span class="tag ${over ? "bad" : "info"}">${short(v.age_seconds)}${over ? " · over cap" : ""}</span>` : ""}${
+      <span class="r">${busy ? `${jira(holder || p.agent)}${v ? `<span class="tag ${over ? "bad" : "info"}">pipeline · ${short(v.age_seconds)}${over ? " · over cap" : ""}</span>` : ""}${
           c?.agent?.cost_so_far ? `<span class="tag">${usd(c.agent.cost_so_far)}</span>` : ""}`
         : cls === "free" ? `<span class="tag ok">free</span>` : holder ? `<span class="tag warn">on ${esc(holder)}</span>` : `<span class="tag">on ${esc(p.branch ?? "—")}</span>`}</span></div>`;
   });
   const virtual = free.filter(f => !pool.some(p => p.slot === f)).map(f => `<div class="slot virtual"><span class="nm">${esc(f)}</span><span class="meter"><i></i></span><span class="tag">created on launch</span></div>`);
-  const sessionKeys = new Set((g.sessions ?? []).map(x => x.key));
+  // Each runner says what it is for (Slack or the pipeline) and where it runs.
+  const sessionBy = new Map((g.sessions ?? []).map(x => [x.key, x]));
   const orphans = inst.filter(v => !pool.some(p => "agent-" + p.agent === v.name)).map(v => {
-    const key = v.name.replace(/^agent-/, "");
-    return sessionKeys.has(key)
-      ? `<div class="slot busy"><a class="nm" href="#sessions/live" title="${esc(v.name)}">${esc(key)}</a><span class="meter"><i></i></span><span class="tag info">session · ${short(v.age_seconds)}</span></div>`
-      : `<div class="slot held"><span class="nm">${esc(v.name)}</span><span class="meter"><i></i></span><span class="tag warn">no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>`;
+    const key = v.name.replace(/^agent-/, ""), s = sessionBy.get(key);
+    const where = v.where === "firecracker" ? "Firecracker" : "GCE";
+    if (s) {
+      // A runner still up after its session ended is billing for nothing.
+      const live = ["starting", "active", "wrapping"].includes(s.state);
+      return `<div class="slot ${live ? "busy" : "held"}"><a class="nm" href="#sessions/live" title="${esc(v.name)}">${esc(key)}</a><span class="meter"><i></i></span><span class="tag ${live ? "info" : "warn"}">Slack · ${where} · ${live ? "" : `${esc(s.state)}, runner still up · `}${short(v.age_seconds)}</span></div>`;
+    }
+    const ticket = TICKET.test(key.toUpperCase()) ? key.toUpperCase() : null;
+    return `<div class="slot held"><span class="nm">${ticket ? jira(ticket) : esc(v.name)}</span><span class="meter"><i></i></span><span class="tag warn">pipeline · ${where} · no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>`;
   });
   put("s-pool", head("pool", `${free.length}/${pool.length + virtual.length}`, `${inst.length} sandbox${inst.length === 1 ? "" : "es"} up`, "slots and sandboxes") +
     (rows.length + virtual.length + orphans.length === 0 ? `<div class="empty">no pool worktrees found</div>` : rows.join("") + virtual.join("") + orphans.join("")));

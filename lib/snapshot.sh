@@ -107,18 +107,19 @@ _snapshot_inflight() {
 # _snapshot_instances   Every VM the backend knows, owned or not: on gce a leaked
 # instance keeps billing, and nothing else on the page shows it.
 _snapshot_instances() {
-  local line name state age
+  local line name state age where
   vm_list 2>/dev/null | while IFS= read -r line; do
     [ -n "$line" ] || continue
-    case "${FXA_VM_BACKEND:-tart}" in
-      gce)  IFS=$'\t' read -r name state age <<< "$line" ;;
+    where="${FXA_VM_BACKEND:-tart}"
+    case "$where" in
+      gce)  IFS=$'\t' read -r name state age where <<< "$line"; where="${where:-gce}" ;;
       *)    name="$(printf '%s' "$line" | awk '{print $2}')"; state="$(printf '%s' "$line" | awk '{print $NF}')"; age="" ;;
     esac
-    printf '%s\t%s\t%s\n' "$name" "$state" "$age"
+    printf '%s\t%s\t%s\t%s\n' "$name" "$state" "$age" "$where"
   done | jq -R -s --argjson max "${FXA_GCE_MAX_RUN_SECONDS:-5400}" 'split("\n") | map(select(length > 0) | split("\t"))
       | map({ name: .[0], state: (.[1] // "" | ascii_downcase),
               age_seconds: (if (.[2] // "") == "" then null else (.[2] | tonumber) end),
-              max_seconds: $max })'
+              max_seconds: $max, where: (.[3] // null) })'
 }
 
 # _snapshot_agent_json <jsonl> <now>   What the agent is doing, from its transcript.
@@ -359,7 +360,7 @@ snapshot_agents_json() {
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
-       runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running")) | length) * $hourly else 0 end),
+       runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running" and .where != "firecracker")) | length) * $hourly else 0 end),
        infra_hourly_usd: ($mgr + $fc), infra: {manager: $mgr, firecracker_host: $fc},
        runners: $runners, sessions: $sessions, session_cap: '"$(_session_cap)"',
        session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-1800}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',

@@ -13,7 +13,12 @@ _fc() {
   ssh -i "$FXA_GCE_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
     -o ConnectTimeout=20 "${USER}@${FXA_FC_HOST}" "sudo /usr/local/sbin/fc $*"
 }
-_fc_owns() { case "$1" in ${FXA_FC_NAMES:-agent-*}) return 0 ;; *) return 1 ;; esac; }
+# A runner created on GCE (it has a zone file) stays GCE, whatever its name: a
+# session started before the spike was turned on must be deleted as an instance.
+_fc_owns() {
+  [ -f "${LOG_DIR}/$1.zone" ] && return 1
+  case "$1" in ${FXA_FC_NAMES:-agent-*}) return 0 ;; *) return 1 ;; esac
+}
 _fc_slot_of() { _fc list | awk -F'\t' -v n="$(vm_name "$1")" '$2 == n { print $1 }'; }
 
 # Keep the GCE versions under _gce_ names and dispatch on the runner name.
@@ -42,8 +47,9 @@ _fc_vm_delete() {
   [ -n "$n" ] && { echo "Stopping slot ${n} ($(vm_name "$name"))..."; _fc stop "$n" >/dev/null; }
   rm -f "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
 }
-# The GCE list plus the slots, in the same name, status, age form.
+# The GCE list plus the slots, in the same name, status, age form; a slot row
+# adds a fourth column, firecracker.
 vm_list() {
   _gce_vm_list
-  _fc list 2>/dev/null | awk -F'\t' '{ printf "%s\tRUNNING\t%s\n", $2, $4 }' || true
+  _fc list 2>/dev/null | awk -F'\t' '{ printf "%s\tRUNNING\t%s\tfirecracker\n", $2, $4 }' || true
 }
