@@ -374,7 +374,7 @@ _session_boot_times() {
     split("\n") | map(select(. != "") | split("\t") | {at: (.[0] | tonumber), step: .[1]})
     | reduce .[] as $r ([]; if length > 0 and .[-1].step == $r.step then . else . + [$r] end)
     | [range(length) as $i | {step: .[$i].step, s: ((if $i + 1 < length then .[$i + 1].at else $end end) - .[$i].at | . * 10 | round / 10)}] as $steps
-    | {steps: $steps, elapsed: $end, done: $done, total: (if $done then $end else null end),
+    | {steps: $steps, elapsed: ([$end, 0] | max), done: $done, total: (if $done then $end else null end),
        restore: (if $fc == "" then null else ($fc | capture("restore_ms=(?<r>[0-9]+) ssh_ms=(?<s>[0-9]+)") | {restore_ms: (.r | tonumber), ssh_ms: (.s | tonumber)}) end),
        expect: (if any($steps[]; .step | startswith("restoring")) then 20 else 80 end)}'
 }
