@@ -2137,6 +2137,11 @@ cmd_events() {
           errors_record session turn_died "$key" "session turn" "${why:-no output}" "agent-sessions/${key}.log"
           session_set "$key" turn_open 0; open=0
         fi
+        # Every turn end carries the cost so far, for the status line and the cap.
+        if jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$events" >/dev/null; then
+          local tcost; tcost="$(_session_cost "$key")"
+          [ -n "$tcost" ] && events="$(jq --argjson c "$tcost" 'map(if .type == "turn_end" or .type == "question" then .cost = $c else . end)' <<< "$events")"
+        fi
         # A ready turn carries the changed-file count: with none, the bot offers no
         # Push branch or Open PR.
         if jq -e 'any(.type == "turn_end" and .status == "ready")' <<< "$events" >/dev/null; then
@@ -2309,6 +2314,10 @@ cmd_session() {
     history) _session_key "${2:-}" && session_history "$2" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
+    cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
+    pause) _session_key "${2:-}" && session_pause "$2" ;;
+    plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
+      _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;
     idle-sweep) session_idle_sweep ;;
     *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac

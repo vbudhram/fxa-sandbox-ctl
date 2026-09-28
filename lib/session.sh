@@ -477,16 +477,42 @@ session_pr_status() {
 
 # _session_record_summary <key>   Before the runner goes: time, turns, cost and the
 # size of the change, for the line the bot posts on Stop and Open PR.
-_session_record_summary() {
-  local key="$1" name t cost diff
-  name="$(worktree_branch_for "$key")"; t="$(mktemp)"
-  _session_sh "$name" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null' > "$t" 2>/dev/null || true
-  cost="$(_snapshot_agent_json "$t" "$(date +%s)" 2>/dev/null | jq -r '.cost_so_far // empty' 2>/dev/null)"
-  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1)"
+# _session_cost <key>   The session's model cost so far, from the runner's
+# transcript (its last 5000 events). Empty when the runner did not answer.
+_session_cost() {
+  local t; t="$(mktemp)"
+  _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null' > "$t" 2>/dev/null || true
+  _snapshot_agent_json "$t" "$(date +%s)" 2>/dev/null | jq -r '.cost_so_far // empty' 2>/dev/null || true
   rm -f "$t"
-  session_set "$key" summary "$(jq -nc --arg c "${cost:-}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
+}
+
+# _session_summary_json <key>   Time, turns, cost and the size of the change, live.
+_session_summary_json() {
+  local key="$1" name cost diff
+  name="$(worktree_branch_for "$key")"
+  cost="$(_session_cost "$key")"
+  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1 || true)"
+  jq -nc --arg c "${cost:-}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
     '{cost: ($c | tonumber? // null), diff: ($d | gsub("^\\s+"; "")), turns: ($t | tonumber? // 0),
-      minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}')"
+      minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}'
+}
+
+# _session_record_summary <key>   Before the runner goes: keep the summary the
+# bot posts on Stop and Open PR.
+_session_record_summary() { session_set "$1" summary "$(_session_summary_json "$1")"; }
+
+# session_pause <key>   What the idle sweep does, on request (the bot's cost cap):
+# save the work, stop the runner, and let a reply resume it.
+session_pause() {
+  local key="$1"
+  _session_lock "$key" || { echo "ERROR: ${key} is busy; try again in a moment" >&2; return 1; }
+  if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
+    if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"
+    else _session_unlock "$key"; echo "ERROR: could not stop ${key}" >&2; return 1; fi
+  else
+    _session_unlock "$key"; echo "ERROR: ${key} is not idle; pause it after the turn ends" >&2; return 1
+  fi
+  _session_unlock "$key"
 }
 
 session_stop() {
