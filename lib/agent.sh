@@ -853,7 +853,7 @@ agent_switch() {
   fi
   _launch_in_screen "$name"
 
-  _write_meta "$name" "$new_workspace" "$CPU" "$MEMORY" "${ip}" "$STARTED"
+  _write_meta "$name" "$new_workspace" "$CPU" "$MEMORY" "$IP" "$STARTED"
 
   echo ""
   echo "=== Agent '${name}' switched ==="
