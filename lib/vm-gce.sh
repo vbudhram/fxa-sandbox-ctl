@@ -351,3 +351,7 @@ vm_list() {
       printf '%s\t%s\t%s\n' "$n" "$st" "$(( $(date +%s) - $(_epoch_of "$ts" 2>/dev/null || echo 0) ))"
     done || true
 }
+
+# A spike: Slack session runners as Firecracker slots when FXA_FC_HOST is set.
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/vm-firecracker.sh"

@@ -1,0 +1,192 @@
+#!/bin/bash
+# fc: run FxA runner guests as Firecracker microVMs on this host. Run as root.
+#   fc rootfs                 build /fc/build/rootfs.ext4 from the Ubuntu cloud image
+#   fc boot                   cold-boot the build guest in slot 0 (for provisioning)
+#   fc snapshot <name>        pause slot 0, save its memory, CPU state and disk
+#   fc start <slot> [label]   restore the newest snapshot into a slot, print its ip
+#   fc claim <label>          start the lowest free slot, print "<slot> <ip>"
+#   fc stop <slot>            kill the slot's VM and drop its disk
+#   fc list                   slot, label, ip, age
+#   fc ssh <slot> [cmd]       ssh into a slot's guest as fxa
+# Every guest has the same inside address (172.16.0.2, it is in the snapshot's
+# memory); each slot has its own network namespace that maps it to a routable
+# 10.42.16.(10+slot), which the VPC routes to this host.
+set -euo pipefail
+FC=/fc; VCPU="${FC_VCPU:-4}"; MEM="${FC_MEM_MB:-16384}"; SLOTS="${FC_SLOTS:-4}"
+GUEST_IP=172.16.0.2; GUEST_MAC=06:00:ac:10:00:02; TAP_MAC=02:fc:00:00:00:01
+KEY=$FC/host_key; SSHO=(-i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=3)
+
+slot_ip() { echo "10.42.16.$(( 10 + $1 ))"; }
+now_ms() { date +%s%3N; }
+api() { curl -sf --unix-socket "$FC/run/fc$1.sock" -X "$2" "http://localhost/$3" -H 'Content-Type: application/json' ${4:+-d "$4"}; }
+
+net_up() {
+  local n="$1" ns="fc$1" ip; ip="$(slot_ip "$1")"
+  net_down "$n"
+  ip netns add "$ns"
+  ip link add "fcv$n" type veth peer name eth-ns netns "$ns"
+  ip addr add "10.200.$n.1/30" dev "fcv$n"; ip link set "fcv$n" up
+  ip -n "$ns" link set lo up
+  ip -n "$ns" addr add "10.200.$n.2/30" dev eth-ns; ip -n "$ns" link set eth-ns up
+  ip -n "$ns" tuntap add tap0 mode tap
+  # The guest's ARP cache in the snapshot holds this MAC, so every slot uses it.
+  ip -n "$ns" link set tap0 address "$TAP_MAC"
+  ip -n "$ns" addr add 172.16.0.1/30 dev tap0; ip -n "$ns" link set tap0 up
+  ip -n "$ns" route add default via "10.200.$n.1"
+  ip netns exec "$ns" sysctl -qw net.ipv4.ip_forward=1
+  ip netns exec "$ns" iptables -t nat -A PREROUTING -i eth-ns -d "$ip" -j DNAT --to-destination "$GUEST_IP"
+  ip netns exec "$ns" iptables -t nat -A POSTROUTING -o eth-ns -s "$GUEST_IP" -j SNAT --to-source "$ip"
+  ip route replace "$ip/32" via "10.200.$n.2"
+}
+net_down() {
+  ip route del "$(slot_ip "$1")/32" 2>/dev/null || true
+  ip link del "fcv$1" 2>/dev/null || true
+  ip netns del "fc$1" 2>/dev/null || true
+}
+
+# Launch firecracker in the slot's netns, with its own disk bound to the one
+# path the snapshot names.
+launch() {
+  local n="$1" disk="$2"; shift 2
+  rm -f "$FC/run/fc$n.sock"; touch "$FC/run/rootfs.ext4"
+  ip netns exec "fc$n" unshare -m --propagation private sh -c \
+    "mount --bind '$disk' '$FC/run/rootfs.ext4' && exec firecracker --api-sock '$FC/run/fc$n.sock' $*" \
+    > "$FC/run/fc$n.log" 2>&1 < /dev/null &
+  echo $! > "$FC/run/fc$n.pid"
+  local i; for i in $(seq 100); do [ -S "$FC/run/fc$n.sock" ] && return 0; sleep 0.02; done
+  echo "ERROR: firecracker did not start; see $FC/run/fc$n.log" >&2; return 1
+}
+kill_slot() {
+  local p; p="$(cat "$FC/run/fc$1.pid" 2>/dev/null || true)"
+  [ -n "$p" ] && kill "$p" 2>/dev/null && sleep 0.3 || true
+  pkill -f -- "--api-sock $FC/run/fc$1.sock" 2>/dev/null || true
+  rm -f "$FC/run/fc$1.pid" "$FC/run/fc$1.sock"
+}
+wait_ssh() {
+  local ip="$1" to="${2:-120}" i
+  for i in $(seq $(( to * 5 ))); do ssh "${SSHO[@]}" "fxa@$ip" true 2>/dev/null && return 0; sleep 0.2; done
+  return 1
+}
+
+cmd_rootfs() {
+  local img=$FC/build/noble.img raw=$FC/build/noble.raw out=$FC/build/rootfs.ext4 src=/mnt/fc-src dst=/mnt/fc-dst loop
+  [ -f "$img" ] || curl -fsSL https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img -o "$img"
+  qemu-img convert -O raw "$img" "$raw"
+  loop="$(losetup -Pf --show "$raw")"; mkdir -p "$src" "$dst"
+  mount -o ro "${loop}p1" "$src"
+  rm -f "$out"; truncate -s 60G "$out"; mkfs.ext4 -q -F -L fxa-root "$out"; mount "$out" "$dst"
+  rsync -aHAX "$src/" "$dst/"
+  umount "$src"; losetup -d "$loop"; rm -f "$raw"
+  echo '/dev/vda / ext4 defaults,noatime 0 1' > "$dst/etc/fstab"
+  touch "$dst/etc/cloud/cloud-init.disabled"
+  rm -f "$dst"/etc/netplan/*.yaml
+  cat > "$dst/etc/netplan/50-fc.yaml" <<NETPLAN
+network:
+  version: 2
+  ethernets:
+    eth0:
+      match: {macaddress: "$GUEST_MAC"}
+      set-name: eth0
+      addresses: [$GUEST_IP/30]
+      routes: [{to: default, via: 172.16.0.1}]
+      nameservers: {addresses: [169.254.169.254], search: [us-central1-a.c.moz-fx-dev-vbudhram-sandbox.internal, c.moz-fx-dev-vbudhram-sandbox.internal, google.internal]}
+NETPLAN
+  chmod 600 "$dst/etc/netplan/50-fc.yaml"
+  echo fxa-fc > "$dst/etc/hostname"; printf '127.0.0.1 localhost\n127.0.1.1 fxa-fc\n' > "$dst/etc/hosts"
+  # The controller logs in as fxa (on GCE the guest agent makes this user); the
+  # host logs in with its own key.
+  chroot "$dst" useradd -m -s /bin/bash -G sudo fxa
+  echo 'fxa ALL=(ALL) NOPASSWD:ALL' > "$dst/etc/sudoers.d/90-fxa"; chmod 440 "$dst/etc/sudoers.d/90-fxa"
+  install -d -m 700 -o "$(chroot "$dst" id -u fxa)" -g "$(chroot "$dst" id -g fxa)" "$dst/home/fxa/.ssh"
+  cat /home/fxa/.ssh/authorized_keys "$KEY.pub" > "$dst/home/fxa/.ssh/authorized_keys"
+  chroot "$dst" chown fxa:fxa /home/fxa/.ssh/authorized_keys
+  chroot "$dst" systemctl disable snapd.service snapd.socket snapd.seeded.service systemd-networkd-wait-online.service 2>/dev/null || true
+  chroot "$dst" ssh-keygen -A >/dev/null
+  umount "$dst"
+  echo "rootfs: $out ($(du -h "$out" | cut -f1) used)"
+}
+
+cmd_boot() {
+  kill_slot 0; net_up 0
+  cat > "$FC/run/fc0.json" <<JSON
+{"boot-source": {"kernel_image_path": "$FC/vmlinux", "boot_args": "console=ttyS0 reboot=k panic=1 root=/dev/vda rw"},
+ "drives": [{"drive_id": "rootfs", "path_on_host": "$FC/run/rootfs.ext4", "is_root_device": true, "is_read_only": false}],
+ "machine-config": {"vcpu_count": $VCPU, "mem_size_mib": $MEM},
+ "network-interfaces": [{"iface_id": "eth0", "guest_mac": "$GUEST_MAC", "host_dev_name": "tap0"}]}
+JSON
+  local t0; t0="$(now_ms)"
+  launch 0 "$FC/build/rootfs.ext4" --config-file "$FC/run/fc0.json"
+  wait_ssh "$(slot_ip 0)" 180 || { echo "ERROR: no ssh; console:" >&2; tail -30 "$FC/run/fc0.log" >&2; return 1; }
+  echo "slot 0 booted, ssh after $(( $(now_ms) - t0 )) ms"
+}
+
+cmd_snapshot() {
+  local name="$1" d="$FC/snap/$1"
+  mkdir -p "$d"
+  ssh "${SSHO[@]}" "fxa@$(slot_ip 0)" sync
+  api 0 PATCH vm '{"state": "Paused"}'
+  local t0; t0="$(now_ms)"
+  api 0 PUT snapshot/create "{\"snapshot_type\": \"Full\", \"snapshot_path\": \"$d/vmstate\", \"mem_file_path\": \"$d/mem\"}"
+  cp --reflink=always "$FC/build/rootfs.ext4" "$d/rootfs.ext4"
+  echo "snapshot $name in $(( $(now_ms) - t0 )) ms ($(du -sh "$d" | cut -f1) on disk)"
+  kill_slot 0; net_down 0
+  ln -sfn "$d" "$FC/snap/latest"
+}
+
+cmd_start() {
+  local n="$1" label="${2:-}" d="$FC/snap/latest" ip t0 t1 t2
+  [ "$n" -ge 1 ] && [ "$n" -le "$SLOTS" ] || { echo "ERROR: slot must be 1..$SLOTS" >&2; return 1; }
+  ip="$(slot_ip "$n")"; t0="$(now_ms)"
+  kill_slot "$n"; net_up "$n"
+  mkdir -p "$FC/slots/$n"; rm -f "$FC/slots/$n/rootfs.ext4"
+  cp --reflink=always "$d/rootfs.ext4" "$FC/slots/$n/rootfs.ext4"
+  launch "$n" "$FC/slots/$n/rootfs.ext4"
+  # The memory file is mapped private: slots share its clean pages in the page cache.
+  api "$n" PUT snapshot/load "{\"snapshot_path\": \"$d/vmstate\", \"mem_backend\": {\"backend_type\": \"File\", \"backend_path\": \"$d/mem\"}, \"resume_vm\": true}"
+  t1="$(now_ms)"
+  wait_ssh "$ip" 30 || { echo "ERROR: slot $n restored but no ssh" >&2; return 1; }
+  # The guest clock stopped when the snapshot was taken.
+  ssh "${SSHO[@]}" "fxa@$ip" "sudo date -s @$(date +%s.%N) >/dev/null; sudo hostnamectl set-hostname ${label:-fxa-fc-$n} 2>/dev/null || true"
+  t2="$(now_ms)"
+  printf '%s\t%s\t%s\n' "$label" "$ip" "$(date +%s)" > "$FC/slots/$n/meta"
+  echo "slot $n ip=$ip restore_ms=$(( t1 - t0 )) ssh_ms=$(( t2 - t0 ))"
+}
+
+cmd_claim() {
+  local label="$1" n
+  exec 9> "$FC/run/claim.lock"; flock 9
+  for n in $(seq "$SLOTS"); do
+    [ -f "$FC/slots/$n/meta" ] && continue
+    mkdir -p "$FC/slots/$n"; printf '%s\t-\t%s\n' "$label" "$(date +%s)" > "$FC/slots/$n/meta"
+    flock -u 9
+    cmd_start "$n" "$label" >&2 || { rm -f "$FC/slots/$n/meta"; return 1; }
+    echo "$n $(slot_ip "$n")"; return 0
+  done
+  echo "ERROR: no free slot" >&2; return 1
+}
+
+cmd_stop() {
+  kill_slot "$1"; net_down "$1"; rm -rf "${FC:?}/slots/$1"
+  echo "slot $1 stopped"
+}
+
+cmd_list() {
+  local n
+  for n in $(seq "$SLOTS"); do
+    [ -f "$FC/slots/$n/meta" ] || continue
+    IFS=$'\t' read -r label ip at < "$FC/slots/$n/meta"
+    printf '%s\t%s\t%s\t%s\n' "$n" "$label" "$(slot_ip "$n")" "$(( $(date +%s) - at ))"
+  done
+}
+
+case "${1:-}" in
+  rootfs) cmd_rootfs ;;
+  boot) cmd_boot ;;
+  snapshot) cmd_snapshot "${2:?name}" ;;
+  start) cmd_start "${2:?slot}" "${3:-}" ;;
+  claim) cmd_claim "${2:?label}" ;;
+  stop) cmd_stop "${2:?slot}" ;;
+  list) cmd_list ;;
+  ssh) n="${2:?slot}"; shift 2; exec ssh "${SSHO[@]}" -o ConnectTimeout=10 "fxa@$(slot_ip "$n")" "$@" ;;
+  *) sed -n '2,10p' "$0"; exit 1 ;;
+esac

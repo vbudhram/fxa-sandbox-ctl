@@ -172,7 +172,7 @@ echo "==> Installing Cloud Tasks emulator..."
 # accountDestroy returns 500 after deleting the account because the
 # post-delete Cloud Tasks enqueue call fails.
 CLOUD_TASKS_VERSION="1.2.0"
-CLOUD_TASKS_URL="https://github.com/aertje/cloud-tasks-emulator/releases/download/v${CLOUD_TASKS_VERSION}/cloud-tasks-emulator-v${CLOUD_TASKS_VERSION}-linux-arm64.tar.gz"
+CLOUD_TASKS_URL="https://github.com/aertje/cloud-tasks-emulator/releases/download/v${CLOUD_TASKS_VERSION}/cloud-tasks-emulator-v${CLOUD_TASKS_VERSION}-linux-${ARCH}.tar.gz"
 if curl -sfL "$CLOUD_TASKS_URL" -o /tmp/cloud-tasks-emulator.tar.gz; then
   tar xzf /tmp/cloud-tasks-emulator.tar.gz -C /tmp
   mv /tmp/cloud-tasks-emulator /usr/local/bin/cloud-tasks-emulator

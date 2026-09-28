@@ -549,6 +549,9 @@ session_desktop() {
   ip="$(sed -n 's/^ip=\([0-9.]*\)$/\1/p' <<< "$out" | tail -1)"
   pw="$(sed -n 's/^password=\([A-Za-z0-9]\{8\}\)$/\1/p' <<< "$out" | tail -1)"
   [ -n "$ip" ] && [ -n "$pw" ] || { echo "ERROR: the desktop did not start on ${key}" >&2; return 1; }
+  # A Firecracker slot sees its own inside address; the gateway needs the routed one.
+  local routed; routed="$(ssh -G -F "${_GCE_SSH_CONFIG:-/dev/null}" "$(vm_name "$name")" 2>/dev/null | awk '$1 == "hostname" { print $2 }')"
+  [[ "$routed" =~ ^[0-9.]+$ ]] && ip="$routed"
   session_set "$key" desktop_open 1
   if [ -n "$email" ] && [ -n "${FXA_DESKTOP_GATEWAY:-}" ]; then
     [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || { echo "ERROR: bad owner email" >&2; return 1; }
