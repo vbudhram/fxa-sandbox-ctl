@@ -50,6 +50,12 @@ $H ssh                 # the ssh command for a person
 
 Runners are reached on the private network (`FXA_GCE_SSH_DIRECT=1`), not through IAP.
 
+**Dashboard:** https://fxa-desktop-82056944052.us-central1.run.app/ (the Cloud
+Run gateway, behind IAP; `DASHBOARD_USERS` on the service lists who may see
+it). Desktops are at `/d/<session>` on the same host. The gateway reaches the
+VM at `MANAGER_URL=http://10.42.2.2:8787`; if the VM is rebuilt and its private
+address changes, redeploy the gateway with the new one.
+
 ## Tasks
 
 **Stop spending (kill switch).** `fxa-sandbox-ctl sessions pause "<reason>"`
