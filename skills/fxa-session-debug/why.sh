@@ -21,6 +21,9 @@ if [ -f "$D/$key.log" ]; then
   echo "  --- last 6 lines"; tail -6 "$D/$key.log" | sed 's/^/  /'
 else echo "  none"; fi
 
+echo; echo "== boot timings"
+"$CTL" session times "$key" 2>/dev/null | sed 's/^/  /'
+
 echo; echo "== finish log (Open PR / Push branch)"
 [ -f "$D/$key.finish.log" ] && { grep -nE 'ERROR|WARN|refus|failed' "$D/$key.finish.log" | tail -8; tail -4 "$D/$key.finish.log" | sed 's/^/  /'; } || echo "  none"
 

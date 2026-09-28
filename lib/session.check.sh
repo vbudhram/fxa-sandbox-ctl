@@ -276,4 +276,14 @@ check "a Codex session is refused unless the host opts in" "Codex sessions are t
   "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-cdx1 --owner U1 --prompt-file "$tmp/p.md" --runtime codex 2>&1 >/dev/null | sed 's/^ERROR: //')"
 check "and no record is written" "no" "$( [ -f "$tmp/agent-cdx1.json" ] && echo yes || echo no)"
 
+# Boot timings: each step lasts until the next starts; a repeated label is one step.
+printf '%s\n' '#t0	1790000000.000' '0.4	Restoring x from the Firecracker snapshot' '2.6	slot 1 ip=10.42.16.11 restore_ms=185 ssh_ms=2228' \
+  '2.7	Waiting for ssh on x' '3.8	Waiting for fxa-gce-checkout...' '4.1	Waiting for infrastructure services' '5.0	Pinning the runner' \
+  '8.2	Applying security hardening...' '11.9	Starting claude in VM...' '12.5	Shipping 4 run file(s)' "14.9	=== Agent 'x' is running ===" > "$tmp/agent-bt1.boot.tsv"
+bt="$(_session_boot_times agent-bt1)"
+check "boot steps and times" "restoring=2.3 waiting=1.1 waiting=1.2 checking=3.2 locking=3.7 starting=3" \
+  "$(jq -r '[.steps[] | "\(.step | split(" ")[0])=\(.s)"] | join(" ")' <<< "$bt")"
+check "a finished boot has its total and the restore detail" "true 14.9 185 20" "$(jq -r '"\(.done) \(.total) \(.restore.restore_ms) \(.expect)"' <<< "$bt")"
+check "no timings file is null" "null" "$(_session_boot_times agent-none)"
+
 exit "$fail"

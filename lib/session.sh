@@ -326,16 +326,57 @@ _session_watch() {
         else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end"
 }
 
+# _session_boot_label <log line>   One boot log line → its step in plain words, or nothing.
+_session_boot_label() {
+  case "$1" in
+    "Creating GCE"*) echo "creating a sandbox" ;;
+    Restoring*) echo "restoring a sandbox with FxA running" ;;
+    "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
+    "Waiting for fxa-gce-checkout"*|"Waiting for infrastructure"*) echo "waiting for the sandbox's services" ;;
+    "Pinning the runner"*) echo "checking out the commit" ;;
+    "Applying security"*) echo "locking down the sandbox" ;;
+    "Setting up SSH"*|"Setting up claude"*|"Setting up codex"*) echo "installing keys and settings" ;;
+    "Starting claude"*|"Starting codex"*|Shipping*) echo "starting the agent" ;;
+  esac
+}
+
 # _session_boot_step <key>   The runner's boot progress in plain words.
 _session_boot_step() {
-  case "$(grep -E '^(Creating GCE|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Applying security|Shipping|Starting claude)' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1)" in
-    Creating*) echo "creating a sandbox" ;;
-    "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
-    *checkout*|*infrastructure*|Pinning*) echo "checking out main" ;;
-    Applying*|Shipping*) echo "locking down the sandbox" ;;
-    Starting*) echo "starting the agent" ;;
-    *) echo "preparing" ;;
-  esac
+  local l; l="$(grep -E '^(Creating GCE|Restoring|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Applying security|Setting up (SSH|claude|codex)|Shipping|Starting (claude|codex))' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1 || true)"
+  l="$(_session_boot_label "$l")"; echo "${l:-preparing}"
+}
+
+# The boot job's output goes through this: the log as written, plus each line
+# with its seconds since the request in <key>.boot.tsv, for the timings.
+# shellcheck disable=SC2016  # perl code, not shell
+_SESSION_STAMP_PL='use IO::Handle; use Time::HiRes qw(time);
+open(my $l, ">", $ARGV[0]) or die; open(my $t, ">", $ARGV[1]) or die; $l->autoflush(1); $t->autoflush(1);
+my $t0 = time; printf $t "#t0\t%.3f\n", $t0;
+while (my $x = <STDIN>) { print $l $x; printf $t "%.1f\t%s", time - $t0, $x; }'
+
+# _session_boot_times <key>   The boot's steps and how long each took, as JSON:
+# {steps: [{step, s}], elapsed, done, total, expect}. Each step lasts until the
+# next one starts; the last one runs until the agent starts or now.
+_session_boot_times() {
+  local f="${SESSION_DIR}/$1.boot.tsv" t0 x line lab rows="" done=false end
+  [ -f "$f" ] || { echo null; return 0; }
+  t0="$(awk -F'\t' '$1 == "#t0" { print $2; exit }' "$f")"
+  while IFS=$'\t' read -r x line; do
+    [ "$x" = "#t0" ] && continue
+    case "$line" in *"is running ==="*) done=true; end="$x"; break ;; esac
+    lab="$(_session_boot_label "$line")"
+    [ -n "$lab" ] && rows="${rows}${x}"$'\t'"${lab}"$'\n'
+  done < "$f"
+  [ "$done" = true ] || end="$(awk -v t0="${t0:-0}" -v now="$(date +%s)" 'BEGIN { printf "%.1f", now - t0 }')"
+  # A restore prints its own sub-second timing; keep it as a detail.
+  local fc; fc="$(grep -oE 'restore_ms=[0-9]+ ssh_ms=[0-9]+' "$f" | tail -1 || true)"
+  printf '%s' "$rows" | jq -R -s --argjson end "$end" --argjson done "$done" --arg fc "$fc" '
+    split("\n") | map(select(. != "") | split("\t") | {at: (.[0] | tonumber), step: .[1]})
+    | reduce .[] as $r ([]; if length > 0 and .[-1].step == $r.step then . else . + [$r] end)
+    | [range(length) as $i | {step: .[$i].step, s: ((if $i + 1 < length then .[$i + 1].at else $end end) - .[$i].at | . * 10 | round / 10)}] as $steps
+    | {steps: $steps, elapsed: $end, done: $done, total: (if $done then $end else null end),
+       restore: (if $fc == "" then null else ($fc | capture("restore_ms=(?<r>[0-9]+) ssh_ms=(?<s>[0-9]+)") | {restore_ms: (.r | tonumber), ssh_ms: (.s | tonumber)}) end),
+       expect: (if any($steps[]; .step | startswith("restoring")) then 20 else 80 end)}'
 }
 
 # _session_parse   stream-json lines on stdin → event objects, one per line.

@@ -1802,7 +1802,8 @@ cmd_task() {
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
   case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; return 1 ;; esac
   session_set "$key" runtime "$runtime"
-  nohup "$0" --backend gce session-boot "$key" > "${SESSION_DIR}/${key}.log" 2>&1 &
+  nohup "$0" --backend gce session-boot "$key" 2>&1 < /dev/null \
+    | nohup perl -e "$_SESSION_STAMP_PL" "${SESSION_DIR}/${key}.log" "${SESSION_DIR}/${key}.boot.tsv" > /dev/null 2>&1 &
   session_set "$key" job_pid "$!"
   echo "${key} starting"
 }
@@ -2052,8 +2053,17 @@ cmd_events() {
   # busy: the agent owes a reply. The bot keeps a live status line while it is.
   local busy=false
   case "$state" in starting|wrapping) busy=true ;; active) [ "$(session_get "$key" turn_open)" = 1 ] && busy=true ;; esac
-  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" --argjson b "$busy" --arg a "$act" --argjson h "$host" \
-    '{cursor: $c, state: $s, events: $e, activity: {busy: $b, host: $h, text: (if $a == "" then null else $a end)}}'
+  # The boot's timings, while it runs and once after: the bot shows each step's time.
+  local boot=null
+  if [ "$state" = starting ] || { [ "$(session_get "$key" boot_reported)" != 1 ] && [ -n "$(session_get "$key" booted_at)" ]; }; then
+    boot="$(_session_boot_times "$key")"
+    # Reported once the session is past starting, so the bot sees the final total.
+    if [ "$state" != starting ] && [ "$(jq -r '.done // false' <<< "$boot")" = true ]; then
+      session_set "$key" boot_reported 1 boot_s "$(jq -r .total <<< "$boot")" boot_steps "$(jq -c .steps <<< "$boot")"
+    fi
+  fi
+  jq -n --argjson c "$(( since + lines ))" --arg s "$state" --argjson e "$events" --argjson b "$busy" --arg a "$act" --argjson h "$host" --argjson boot "$boot" \
+    '{cursor: $c, state: $s, events: $e, activity: {busy: $b, host: $h, text: (if $a == "" then null else $a end)}, boot: $boot}'
 }
 
 cmd_diff() {
@@ -2180,7 +2190,10 @@ cmd_session() {
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     idle-sweep) session_idle_sweep ;;
-    *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
+    times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
+      (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
+      + (if .restore then "  (snapshot load \(.restore.restore_ms) ms, ssh at \(.restore.ssh_ms) ms)" else "" end) end' ;;
+    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep" >&2; return 1 ;;
   esac
 }
 
