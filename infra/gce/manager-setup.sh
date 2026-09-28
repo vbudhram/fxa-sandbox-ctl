@@ -64,6 +64,9 @@ sudo -u "$U" bash -c '
   grep -q "fxa manager" ~/.bashrc || cat >> ~/.bashrc <<"RC"
 # fxa manager: the gh shim first, then the controller.
 export PATH="$HOME/bin:$PATH"
+# Your interactive claude bills to the same API key as the timers and runners.
+k="$(grep -m1 "^ANTHROPIC_API_KEY=" ~/Desktop/working2/fxa-sandbox-ctl/.env 2>/dev/null | cut -d= -f2-)"
+[ -n "$k" ] && export ANTHROPIC_API_KEY="$k"; unset k
 cd ~/Desktop/working2/fxa-sandbox-ctl 2>/dev/null
 [ -z "$TMUX" ] && echo "Work in tmux: tmux new -As main, then claude"
 RC
@@ -105,7 +108,9 @@ get fxa-github-app-key > "$C/github-app.pem"
 mkdir -p "$H/.circleci"; printf 'token: %s\n' "$(get fxa-circleci-token)" > "$H/.circleci/cli.yml"
 if [ -d "$W/fxa-sandbox-ctl" ]; then
   { cat "$C/ctl.env.base"
-    t="$(get fxa-claude-token || true)"; [ -n "$t" ] && printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$t"
+    # The API key when there is one (billed per token), else a setup-token.
+    k="$(get fxa-anthropic-api-key || true)"; t="$(get fxa-claude-token || true)"
+    if [ -n "$k" ]; then printf 'ANTHROPIC_API_KEY=%s\n' "$k"; elif [ -n "$t" ]; then printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$t"; fi
     true; } > "$W/fxa-sandbox-ctl/.env"
 fi
 if [ -d "$W/fxa-agent-bot" ]; then

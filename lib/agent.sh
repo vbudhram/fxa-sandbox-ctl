@@ -562,16 +562,22 @@ with open(settings_path, \"w\") as f:
 
 # ── Security: Ephemeral token injection ───────────────────────
 
-_inject_oauth_token() {
-  # Args: workspace_dir, token. The file reaches /workspace through the tart mount
-  # or _put_run_files on gce; the launch script sources and deletes it. No in-VM
-  # sudo: after hardening, that channel is unreliable.
-  local workspace_dir="$1"
-  local token="$2"
-  local token_file="${workspace_dir}/.fxa-auto-token"
+# _claude_auth_line   The line a runner sources to reach Claude: the Anthropic
+# API key when one is set, else the subscription's setup-token. Only one, so
+# the runner never guesses which one Claude Code prefers. Fails when neither is set.
+_claude_auth_line() {
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then printf 'export ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
+  elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$CLAUDE_CODE_OAUTH_TOKEN"
+  else return 1; fi
+}
 
-  ( umask 077; printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" | slot_write "$token_file" )
-  echo "  Token written to ${token_file} (${#token} chars)."
+_inject_claude_auth() {
+  # The file reaches /workspace through the tart mount or _put_run_files on gce;
+  # the launch script sources and deletes it. No in-VM sudo: after hardening,
+  # that channel is unreliable.
+  local token_file="$1/.fxa-auto-token"
+  ( umask 077; _claude_auth_line | slot_write "$token_file" )
+  echo "  Claude credential written to ${token_file} ($( [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "API key" || echo "setup-token"))."
 }
 
 # _worktree_gitdir <workspace>   The parent .git of a worktree, or empty.

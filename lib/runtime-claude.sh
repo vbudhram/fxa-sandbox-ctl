@@ -24,13 +24,11 @@ runtime_setup_config() { _setup_claude_config "$1"; }
 
 runtime_inject_auth() {
   local workspace_dir="$1"
-  local oauth_token="${CLAUDE_CODE_OAUTH_TOKEN:-}"
-  if [ -n "$oauth_token" ]; then
-    echo "Injecting Claude OAuth token..."
-    _inject_oauth_token "$workspace_dir" "$oauth_token"
+  if _claude_auth_line >/dev/null; then
+    _inject_claude_auth "$workspace_dir"
   else
-    echo "NOTE: Set CLAUDE_CODE_OAUTH_TOKEN on the host to auto-authenticate agents."
-    echo "      Generate one with: claude setup-token"
+    echo "NOTE: Set ANTHROPIC_API_KEY (billed per token) or CLAUDE_CODE_OAUTH_TOKEN"
+    echo "      (a subscription's 'claude setup-token') on the host to authenticate agents."
   fi
 }
 
@@ -97,9 +95,9 @@ runtime_skill_ref() { printf '/%s' "$1"; }
 # once with num_turns 0 and no error flag; `progress` reports it as goal-rejected.
 runtime_prompt_max_chars() { printf '%s' "${FXA_GOAL_MAX_CHARS:-4000}"; }
 
-# A human attaching to the TUI may need to re-authenticate, so the token is re-staged.
+# A human attaching to the TUI may need to re-authenticate, so the credential is re-staged.
 runtime_attach_hook() {
   local workspace_dir="$1"
-  [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && _inject_oauth_token "$workspace_dir" "$CLAUDE_CODE_OAUTH_TOKEN"
+  _claude_auth_line >/dev/null && _inject_claude_auth "$workspace_dir"
   return 0
 }
