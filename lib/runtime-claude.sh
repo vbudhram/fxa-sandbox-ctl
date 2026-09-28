@@ -43,13 +43,15 @@ runtime_write_prompt() {
   local effort=""
   [ -n "${FXA_AGENT_EFFORT:-}" ] && effort=" --effort ${FXA_AGENT_EFFORT}"
   printf '%s\n' "$prompt" | slot_write "${workspace_dir}/.fxa-auto-prompt.txt"
+  local partial="" out="tee -a /workspace/.fxa-auto-claude.jsonl"
+  [ "${FXA_SESSION_MODE:-}" = 1 ] && { partial="$_SESSION_CLAUDE_PARTIAL"; out=": > /workspace/.fxa-auto-stream.jsonl; ${_SESSION_CLAUDE_SPLIT}"; }
   slot_write "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace
 claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions \\
-  --model ${FXA_AGENT_MODEL:-claude-opus-5-5}${effort} --output-format stream-json --verbose 2>&1 \\
-  | tee -a /workspace/.fxa-auto-claude.jsonl
+  --model ${FXA_AGENT_MODEL:-claude-opus-5-5}${effort} --output-format stream-json --verbose${partial} 2>&1 \\
+  | { ${out}; }
 LAUNCH
 }
 

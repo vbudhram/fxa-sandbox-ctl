@@ -211,9 +211,10 @@ export HOME=/home/agent # claude finds the session to resume under \$HOME/.claud
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
 cd /workspace
+: > /workspace/.fxa-auto-stream.jsonl
 claude -p --resume ${sid} --permission-mode bypassPermissions \\
-  --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
-  | tee -a /workspace/.fxa-auto-claude.jsonl
+  --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose${_SESSION_CLAUDE_PARTIAL} -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
+  | ${_SESSION_CLAUDE_SPLIT}
 STEER
     fi
   ) || { rm -rf "$tmp"; return 1; }
@@ -320,9 +321,15 @@ _session_activity() {
 # _session_watch <key>   Stream the running turn as JSON lines, as they happen:
 # {type: "step", text} per tool call or message, {type: "result"} at the turn's end.
 # Runs until the caller kills it or the runner goes away.
+# Also {type: "text", text} for each piece of the reply as Claude writes it, and
+# {type: "text_start"} when a new block of text begins (not a subagent's).
 _session_watch() {
-  _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -n 0 -F /workspace/.fxa-auto-claude.jsonl 2>/dev/null' \
+  _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -q -n 0 -F /workspace/.fxa-auto-claude.jsonl /workspace/.fxa-auto-stream.jsonl 2>/dev/null' \
     | jq --unbuffered -R -c "fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
+        elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
+          | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
+            elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
+            else empty end)
         else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end"
 }
 
@@ -333,6 +340,13 @@ _session_cap() {
   [ -n "${FXA_FC_HOST:-}" ] && [ "${FXA_FC_SLOTS:-4}" -gt "$c" ] && c="${FXA_FC_SLOTS:-4}"
   echo "$c"
 }
+
+# A Slack session's claude also streams its text as it writes (partial messages).
+# Those lines go to .fxa-auto-stream.jsonl, which the watch reads for the bot;
+# the transcript keeps only what it had, so every reader of it is unchanged. No
+# single quotes: the steer script runs inside a bash -c '...'.
+_SESSION_CLAUDE_PARTIAL=' --include-partial-messages'
+_SESSION_CLAUDE_SPLIT='awk -v s=/workspace/.fxa-auto-stream.jsonl -v t=/workspace/.fxa-auto-claude.jsonl "/^[{]\"type\":\"stream_event\"/ { print >> s; fflush(s); next } { print >> t; fflush(t); print; fflush() }"'
 
 # _session_boot_label <log line>   One boot log line → its step in plain words, or nothing.
 _session_boot_label() {
