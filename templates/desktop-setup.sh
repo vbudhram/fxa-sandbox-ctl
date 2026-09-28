@@ -27,12 +27,14 @@ if ! mountpoint -q /srv/workspace; then
 fi
 
 v="$(id -u viewer)"; a="$(id -u agent)"
-if ! iptables -C OUTPUT -m owner --uid-owner "$v" -o lo -j ACCEPT 2>/dev/null; then
-  iptables -A OUTPUT -m owner --uid-owner "$v" -o lo -j ACCEPT
-  # The content server links to the VM's own address, not localhost.
-  for ip in $(hostname -I); do iptables -A OUTPUT -m owner --uid-owner "$v" -d "$ip" -j ACCEPT; done
-  iptables -A OUTPUT -m owner --uid-owner "$v" -j REJECT
-fi
+# At the top of the chain: the agent's egress rules end with an ACCEPT for
+# everyone else, so rules appended after it never match. Drop any older viewer
+# rules first, so a rerun also fixes a runner set up in the wrong order.
+iptables -S OUTPUT | grep -- "--uid-owner $v " | sed 's/^-A /-D /' | while read -r r; do eval "iptables $r"; done
+iptables -I OUTPUT 1 -m owner --uid-owner "$v" -j REJECT
+# The content server links to the VM's own address, not localhost.
+for ip in $(hostname -I); do iptables -I OUTPUT 1 -m owner --uid-owner "$v" -d "$ip" -j ACCEPT; done
+iptables -I OUTPUT 1 -m owner --uid-owner "$v" -o lo -j ACCEPT
 iptables -C OUTPUT -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT 2>/dev/null \
   || iptables -I OUTPUT 1 -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT
 
@@ -120,6 +122,14 @@ if ! pgrep -u viewer -x firefox >/dev/null; then
   DISPLAY=:1 nohup setsid ~/fxa-firefox >/tmp/viewer-firefox.log 2>&1 </dev/null &
 fi
 VIEWER
+
+# Fail closed: a desktop whose user reaches the internet is not served.
+if sudo -u viewer timeout 5 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' 2>/dev/null \
+   || sudo -u viewer timeout 5 bash -c 'exec 3<>/dev/tcp/169.254.169.254/80' 2>/dev/null; then
+  pkill -u viewer || true
+  echo "ERROR: the desktop user reached the internet or the metadata server; desktop stopped" >&2
+  exit 1
+fi
 
 printf 'ip=%s\n' "$(hostname -I | awk '{print $1}')"
 printf 'password=%s\n' "$pw"
