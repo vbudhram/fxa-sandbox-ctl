@@ -257,4 +257,20 @@ session_checkout agent-r1 "$tmp/co" 2>/dev/null
 check "checkout on the PR branch" "agent-old1" "$(git -C "$tmp/co" rev-parse --abbrev-ref HEAD)"
 check "lease is the PR head" "$head" "$(git -C "$repo" rev-parse refs/remotes/origin/agent-old1)"
 
+# The sessions kill switch, with the local marker (no bucket).
+_SESSIONS_PAUSE_URI=""
+check "not paused at first" "no" "$(sessions_paused >/dev/null && echo yes || echo no)"
+sessions_pause "costs are high" >/dev/null
+check "paused, with the reason" "costs are high" "$(sessions_paused)"
+eval "$(sed -n '/^cmd_task() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+printf 'hi\n' > "$tmp/p.md"
+check "a new session is refused while paused" "agent sessions are paused by the operator: costs are high" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-kill1 --owner U1 --prompt-file "$tmp/p.md" 2>&1 >/dev/null | sed 's/^ERROR: //')"
+echo '{"key":"agent-kill2","state":"active","turn_open":"1"}' > "$tmp/agent-kill2.json"
+session_stop() { session_set "$1" state stopped; }
+sessions_pause "costs are high" --now >/dev/null
+check "--now pauses an active session, even mid-turn" "paused" "$(session_get agent-kill2 state)"
+sessions_resume >/dev/null
+check "resume clears it" "no" "$(sessions_paused >/dev/null && echo yes || echo no)"
+
 exit "$fail"

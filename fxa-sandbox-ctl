@@ -1759,6 +1759,7 @@ cmd_task() {
   # Runners must survive the host sleeping, and Tart runs on the host.
   [ "$FXA_VM_BACKEND" = gce ] || { echo "ERROR: sessions run on gce only; pass --backend gce" >&2; return 1; }
   session_exists "$key" && { echo "ERROR: session ${key} already exists" >&2; return 1; }
+  local why; if why="$(sessions_paused)"; then echo "ERROR: agent sessions are paused by the operator: ${why}" >&2; return 1; fi
   if [ -n "$resume_from" ]; then
     _session_key "$resume_from" || return 1
     case "$(session_get "$resume_from" state)" in
@@ -2270,6 +2271,13 @@ main() {
     media)      [ -n "${2:-}" ] || { echo "Usage: media <key> <dir>" >&2; exit 1; }; _session_key "$1" && session_media "$1" "$2" ;;
     diff)       cmd_diff "$@" ;;
     session)    cmd_session "$@" ;;
+    sessions)
+      case "${1:-status}" in
+        pause) sessions_pause "${2:-paused by the operator}" "${3:-}" ;;
+        resume) sessions_resume ;;
+        status) sessions_paused | sed 's/^/paused: /' | grep . || echo "sessions: running" ;;
+        *) echo "Usage: fxa-sandbox-ctl sessions pause [reason] [--now] | resume | status" >&2; return 1 ;;
+      esac ;;
     errors)     cmd_errors "$@" ;;
     help|--help|-h)
       usage

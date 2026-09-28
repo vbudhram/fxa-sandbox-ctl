@@ -52,6 +52,14 @@ Runners are reached on the private network (`FXA_GCE_SSH_DIRECT=1`), not through
 
 ## Tasks
 
+**Stop spending (kill switch).** `fxa-sandbox-ctl sessions pause "<reason>"`
+refuses new Slack sessions and resumes on every host (the marker is in GCS);
+the bot answers a tag with the reason. Add `--now` to also stop the sessions
+that are running, mid-turn included; their work is saved. `sessions resume`
+undoes it; `sessions status` shows it. For the pipeline, use
+`fxa-sandbox-ctl pause "<reason>"`. The hard ceiling is the Anthropic
+workspace's spend limit in the Console.
+
 **Deploy a change.** Commit and push on the laptop, then `vm.sh sync`. It
 fast-forwards both repos, skips a repo with local edits on the VM, links new
 repo skills, and restarts the bot and dashboard only if they run.

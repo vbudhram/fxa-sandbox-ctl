@@ -35,6 +35,7 @@ The script masks known token formats. Never print a `.env` or a token.
 | `I'll pause since it's been quiet` | 30 min with no turn (`FXA_SESSION_IDLE_SECONDS`) | A reply resumes; an open desktop counts as activity |
 | `I wrote no handoff, so nothing was pushed` | The agent chose not to ship; its reason is in the reply above it | Read the reply; steer and try again |
 | `could not reach the sandbox to read the handoff` | ssh dropped after the wrap-up | The work is still there; try Open PR again |
+| `Agent sessions are paused right now (<reason>)` | The operator's kill switch | `fxa-sandbox-ctl sessions resume` when the reason is dealt with |
 | `nothing to push: no files changed` | The session changed no files | Nothing to ship |
 | `set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN` | The host has no Claude credential for runners | Add the secret, run `fxa-secrets` on the VM |
 | `Setup failed` after `Done` in older threads | Only the status wording (fixed) | Look at the error line below it |

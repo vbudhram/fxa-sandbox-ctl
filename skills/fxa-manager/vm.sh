@@ -29,6 +29,7 @@ for t in fxa-pass fxa-triage; do printf '  %-16s timer %s\n' "$t" "$(systemctl i
 sudo -u fxa -H bash -c '
 cd ~/Desktop/working2/fxa-sandbox-ctl || exit 0
 echo "== pipeline"; echo "  paused: $(./fxa-sandbox-ctl paused 2>/dev/null || echo no)"
+echo "== agent sessions"; echo "  $(./fxa-sandbox-ctl sessions status 2>/dev/null)"
 echo "== repos"
 for r in fxa-sandbox-ctl fxa-agent-bot; do d=~/Desktop/working2/$r; git -C "$d" fetch -q origin 2>/dev/null
   printf "  %-16s %s  (%s behind origin)\n" "$r" "$(git -C "$d" log --oneline -1 | cut -c1-60)" "$(git -C "$d" rev-list --count HEAD..origin/main 2>/dev/null)"; done

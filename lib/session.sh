@@ -496,6 +496,45 @@ _session_summary_json() {
 # bot posts on Stop and Open PR.
 _session_record_summary() { session_set "$1" summary "$(_session_summary_json "$1")"; }
 
+# Kill switch for agent sessions: a marker in GCS, so a pause set on any host
+# holds on every host, or a local file when there is no bucket. While it is
+# set, new sessions and resumes are refused. Unreadable GCS reads as not
+# paused: a network blip should not stop every engineer's work.
+_SESSIONS_PAUSE_URI="${FXA_SESSIONS_PAUSE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/sessions/PAUSED}}"
+sessions_paused() {
+  if [ -n "$_SESSIONS_PAUSE_URI" ]; then gcloud storage cat "$_SESSIONS_PAUSE_URI" 2>/dev/null; return; fi
+  [ -f "${SESSION_DIR}/PAUSED" ] && cat "${SESSION_DIR}/PAUSED"
+}
+
+# sessions_pause [reason] [--now]   --now also stops every active session, even
+# mid-turn; its change and conversation are saved and a reply resumes it later.
+sessions_pause() {
+  local reason="${1:-paused by the operator}" now="${2:-}" f key
+  if [ -n "$_SESSIONS_PAUSE_URI" ]; then
+    printf '%s\n' "$reason" | gcloud storage cp -q - "$_SESSIONS_PAUSE_URI" >/dev/null 2>&1 \
+      || { echo "ERROR: could not write the pause marker to ${_SESSIONS_PAUSE_URI}" >&2; return 1; }
+  else
+    mkdir -p "$SESSION_DIR" && printf '%s\n' "$reason" > "${SESSION_DIR}/PAUSED"
+  fi
+  echo "sessions paused: ${reason}"
+  [ "$now" = --now ] || return 0
+  for f in "$SESSION_DIR"/agent-*.json; do
+    [ -f "$f" ] || continue
+    key="$(basename "$f" .json)"
+    [ "$(session_get "$key" state)" = active ] || continue
+    if ! _session_lock "$key"; then echo "WARN: ${key} is busy; not paused" >&2; continue; fi
+    if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"
+    else echo "ERROR: could not stop ${key}" >&2; fi
+    _session_unlock "$key"
+  done
+}
+
+sessions_resume() {
+  if [ -n "$_SESSIONS_PAUSE_URI" ]; then gcloud storage rm -q "$_SESSIONS_PAUSE_URI" >/dev/null 2>&1 || true; fi
+  rm -f "${SESSION_DIR}/PAUSED"
+  echo "sessions resumed"
+}
+
 # session_desktop <key> [owner_email]   Start a Linux desktop with Firefox on
 # the runner (templates/desktop-setup.sh) and print its VNC password. With an
 # email and FXA_DESKTOP_GATEWAY, also publish the record the IAP gateway reads,
