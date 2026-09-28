@@ -520,6 +520,21 @@ session_pr_status() {
          reviews: [.latestReviews[]? | {login: .author.login, state}]}' || echo null
 }
 
+# _session_end_facts <key>   What a turn's end needs, in one ssh: the cost so
+# far as {cost, tokens}, a tab, then the changed-file count (as _session_changes).
+_session_end_facts() {
+  local t n cost; t="$(mktemp)"
+  # shellcheck disable=SC2016  # expanded on the runner
+  _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
+    printf "@@changes %s\n" "$(cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE "^.. (\.fxa-|ai/|artifacts/)" | wc -l)"' > "$t" 2>/dev/null || true
+  n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
+  grep -v '^@@changes ' "$t" > "${t}.j" || true
+  cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
+    | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
+  rm -f "$t" "${t}.j"
+  printf '%s\t%s\n' "$cost" "$n"
+}
+
 # _session_cost <key>   {cost, tokens} so far, from the runner's
 # transcript (its last 5000 events). Empty when the runner did not answer.
 _session_cost() {
@@ -551,7 +566,18 @@ _session_record_summary() { session_set "$1" summary "$(_session_summary_json "$
 # paused: a network blip should not stop every engineer's work.
 _SESSIONS_PAUSE_URI="${FXA_SESSIONS_PAUSE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/sessions/PAUSED}}"
 sessions_paused() {
-  if [ -n "$_SESSIONS_PAUSE_URI" ]; then gcloud storage cat "$_SESSIONS_PAUSE_URI" 2>/dev/null; return; fi
+  if [ -n "$_SESSIONS_PAUSE_URI" ]; then
+    # The GCS read costs about 2 s on every tag, so its answer is kept 30 s. A pause
+    # or resume on this host clears it; one from another host applies within 30 s.
+    local c="${SESSION_DIR}/.pause-cache" out
+    if [ ! -f "$c" ] || [ $(( $(date +%s) - $(_mtime "$c") )) -ge 30 ]; then
+      mkdir -p "$SESSION_DIR"
+      if out="$(gcloud storage cat "$_SESSIONS_PAUSE_URI" 2>/dev/null)"; then printf 'P%s' "$out" > "$c.$$"; else printf 'R' > "$c.$$"; fi
+      mv -f "$c.$$" "$c"
+    fi
+    [ "$(head -c1 "$c")" = P ] || return 1
+    tail -c +2 "$c"; echo; return 0
+  fi
   [ -f "${SESSION_DIR}/PAUSED" ] && cat "${SESSION_DIR}/PAUSED"
 }
 
@@ -565,6 +591,7 @@ sessions_pause() {
   else
     mkdir -p "$SESSION_DIR" && printf '%s\n' "$reason" > "${SESSION_DIR}/PAUSED"
   fi
+  rm -f "${SESSION_DIR}/.pause-cache"
   echo "sessions paused: ${reason}"
   [ "$now" = --now ] || return 0
   for f in "$SESSION_DIR"/agent-*.json; do
@@ -580,7 +607,7 @@ sessions_pause() {
 
 sessions_resume() {
   if [ -n "$_SESSIONS_PAUSE_URI" ]; then gcloud storage rm -q "$_SESSIONS_PAUSE_URI" >/dev/null 2>&1 || true; fi
-  rm -f "${SESSION_DIR}/PAUSED"
+  rm -f "${SESSION_DIR}/PAUSED" "${SESSION_DIR}/.pause-cache"
   echo "sessions resumed"
 }
 

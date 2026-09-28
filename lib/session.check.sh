@@ -88,8 +88,9 @@ _session_unlock agent-t1
 eval "$(sed -n '/^cmd_events() {/,/^}/p;/^cmd_diff() {/,/^}/p;/^_session_key() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 _session_key() { :; }
 RUNNER=""; RUNNING=1; TURNS_FILE="$tmp/turns"
-vm_exec_as_agent() { printf '%s' "$RUNNER"; }
-_session_turn_running() { [ "$RUNNING" = 1 ]; }
+# One ssh answers both: the agent process count, then the transcript lines.
+vm_exec_as_agent() { printf '@@run %s\n%s' "$([ "$RUNNING" = 1 ] && echo 1 || echo 0)" "$RUNNER"; }
+_session_end_facts() { printf '\t%s\n' "${CHANGES:-}"; }
 _session_turn() { echo t >> "$TURNS_FILE"; session_set "$1" turn_open 1 turn_started "$(date +%s)"; }
 reset() { echo "{\"key\":\"agent-t2\",\"state\":\"active\",\"turn_open\":\"1\",\"turn_started\":\"$1\"}" > "$tmp/agent-t2.json"; rm -f "$tmp/agent-t2.queue" "$TURNS_FILE"; }
 
@@ -288,4 +289,14 @@ check "no timings file is null" "null" "$(_session_boot_times agent-none)"
 
 check "the cap is FXA_SESSION_MAX without slots" "2" "$(FXA_FC_HOST= FXA_SESSION_MAX=2 _session_cap)"
 check "with slots it is at least the slot count" "4 6" "$(FXA_FC_HOST=h FXA_SESSION_MAX=2 _session_cap) $(FXA_FC_HOST=h FXA_SESSION_MAX=6 _session_cap)"
+# The GCS pause marker is read once per 30 s; this host's own pause clears the cache.
+gcloud() { echo x >> "$tmp/gcs-reads"; case "$2" in cat) [ -f "$tmp/gcs-marker" ] && cat "$tmp/gcs-marker" ;; cp) cat > "$tmp/gcs-marker" ;; rm) rm -f "$tmp/gcs-marker" ;; esac; }
+_SESSIONS_PAUSE_URI=gs://b/sessions/PAUSED; rm -f "$tmp/gcs-reads"
+sessions_paused >/dev/null; sessions_paused >/dev/null
+check "two reads in 30 s make one GCS call" "1" "$(wc -l < "$tmp/gcs-reads" | tr -d ' ')"
+sessions_pause "spend" >/dev/null
+check "a pause here is seen at once" "spend" "$(sessions_paused)"
+sessions_resume >/dev/null
+check "and a resume" "no" "$(sessions_paused >/dev/null && echo yes || echo no)"
+unset -f gcloud; _SESSIONS_PAUSE_URI=""
 exit "$fail"
