@@ -1336,7 +1336,7 @@ cmd_precheck() {
   pipeline_unlock >/dev/null
   local pass=""
   [ "$merged_n" -gt 0 ] && pass="${pass}; this pass: ${merged_n} merged"
-  [ "$rejected_n" -gt 0 ] && pass="${pass}${pass:+,}${pass:+ }${pass:-; this pass: }${rejected_n} rejected"
+  [ "$rejected_n" -gt 0 ] && pass="${pass:-; this pass: }${pass:+, }${rejected_n} rejected"
   if [ "$work" = 0 ]; then
     echo "quiet: ${queue_n} queued ($(pipeline_holding_new && echo 'newtickets off' || echo 'all skipped, unchanged')), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
   else
