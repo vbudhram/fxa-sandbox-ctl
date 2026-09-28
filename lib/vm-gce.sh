@@ -49,19 +49,25 @@ _gce_ssh() {
     cat "$err" >&2; rm -f "$err"
     return "$rc"
   else
-    _gce_zone ssh "$(vm_name "$name")" --tunnel-through-iap --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"
+    local via=--tunnel-through-iap; [ "${FXA_GCE_SSH_DIRECT:-}" = 1 ] && via=--internal-ip
+    _gce_zone ssh "$(vm_name "$name")" "$via" --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"
   fi
 }
 
 # The call sites expand VM_SSH_OPTS unquoted, so an option with spaces cannot
 # ride in it. The IAP ProxyCommand goes in a config file instead.
-_GCE_SSH_CONFIG="${LOG_DIR}/gce-ssh-config"
-_GCE_SSH_HOSTS="${LOG_DIR}/gce-ssh-hosts"
+# FXA_GCE_SSH_DIRECT=1 on a host inside the VPC (the manager VM): runners by
+# their private name, no IAP tunnel. Each mode keeps its own files, so a switch
+# never reuses the other's entries.
+_GCE_SSH_CONFIG="${LOG_DIR}/gce-ssh-config${FXA_GCE_SSH_DIRECT:+-direct}"
+_GCE_SSH_HOSTS="${LOG_DIR}/gce-ssh-hosts${FXA_GCE_SSH_DIRECT:+-direct}"
 mkdir -p "${LOG_DIR}" "${_GCE_SSH_HOSTS}"
 # One file per host under gce-ssh-hosts/, pulled in by Include, so concurrent
 # launches never rewrite a shared file (two did once, and a `cat` then copied its
 # own output for 25 minutes). The wildcard is the default-zone fallback.
 _gce_ssh_host_entry() {
+  # Direct: the name resolves through the VM's DNS search domains.
+  if [ "${FXA_GCE_SSH_DIRECT:-}" = 1 ]; then printf 'Host %s\n' "$1"; return; fi
   printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
     "$1" "$FXA_GCE_PROJECT" "$2"
 }
