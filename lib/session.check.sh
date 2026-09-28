@@ -183,10 +183,10 @@ check "notes are announced once" "" "$(session_get agent-t2 finish_notes)"
 
 # The summary is built from the runner's transcript and diff.
 _session_sh() { case "$2" in *jsonl*) printf '' ;; *shortstat*) printf ' 3 files changed, 10 insertions(+)\n' ;; esac; }
-_snapshot_agent_json() { echo '{"cost_so_far":2.25}'; }
+_snapshot_agent_json() { echo '{"cost_so_far":2.25,"tokens":{"in":1,"out":2,"cache_read":3,"cache_write":4}}'; }
 session_set agent-t2 turns 4 created "$(( $(date +%s) - 600 ))"
 _session_record_summary agent-t2
-check "summary fields" "2.25|4|10|3 files changed, 10 insertions(+)" "$(session_get agent-t2 summary | jq -r '"\(.cost)|\(.turns)|\(.minutes)|\(.diff)"')"
+check "summary fields" "2.25|10|4|10|3 files changed, 10 insertions(+)" "$(session_get agent-t2 summary | jq -r '"\(.cost)|\(.tokens)|\(.turns)|\(.minutes)|\(.diff)"')"
 
 # The thread follows its PR: CI, reviews and state from gh.
 gh() { printf '%s' '{"state":"OPEN","reviewDecision":"CHANGES_REQUESTED","latestReviews":[{"author":{"login":"rev1"},"state":"CHANGES_REQUESTED"}],"statusCheckRollup":[{"name":"extract","status":"COMPLETED","conclusion":"FAILURE"},{"name":"unit","status":"COMPLETED","conclusion":"SUCCESS"},{"context":"ci/circleci","state":"SUCCESS"}]}'; }
