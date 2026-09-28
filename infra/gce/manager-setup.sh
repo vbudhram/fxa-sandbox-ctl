@@ -21,13 +21,17 @@ if ! command -v gh >/dev/null; then
   apt-get update -qq && apt-get install -y -qq gh >/dev/null
 fi
 
-say "node 24"
-if ! node --version 2>/dev/null | grep -q '^v24\.'; then
+say "node"
+# FxA's install refuses any Node but the exact one in its .nvmrc; before the
+# first clone, take the newest 24.
+want="$(sed 's/^v//' "$W/fxa/.nvmrc" 2>/dev/null || true)"
+if [ -z "$want" ] && node --version 2>/dev/null | grep -q '^v24\.'; then want="$(node --version | sed 's/^v//')"; fi
+if [ "$(node --version 2>/dev/null)" != "v${want:-none}" ]; then
   # The official build, checked against the release's own checksum list.
-  base=https://nodejs.org/dist/latest-v24.x
+  base=https://nodejs.org/dist/latest-v24.x; [ -n "$want" ] && base="https://nodejs.org/dist/v${want}"
   tmp="$(mktemp -d)"
   curl -fsSL "$base/SHASUMS256.txt" -o "$tmp/SHASUMS256.txt"
-  f="$(grep -oE 'node-v24\.[0-9.]+-linux-x64\.tar\.xz' "$tmp/SHASUMS256.txt" | head -1)"
+  f="$(grep -oE 'node-v[0-9.]+-linux-x64\.tar\.xz' "$tmp/SHASUMS256.txt" | head -1)"
   curl -fsSL "$base/$f" -o "$tmp/$f"
   (cd "$tmp" && grep " $f\$" SHASUMS256.txt | sha256sum -c -)
   tar -xJf "$tmp/$f" -C /usr/local --strip-components=1
@@ -224,8 +228,9 @@ chown "$U:$U" "$C/provision-repos.sh"; chmod 700 "$C/provision-repos.sh"
 if pgrep -u "$U" -f provision-repos.sh >/dev/null; then
   echo "already running; log: $C/provision-repos.log"
 else
-  # Root runs it: the repos as fxa, then the secrets step, which needs root.
-  nohup setsid bash -c "sudo -u $U -H $C/provision-repos.sh && /usr/local/sbin/fxa-secrets" > "$C/provision-repos.log" 2>&1 < /dev/null &
+  # Root runs it: the repos as fxa, then the secrets step, which needs root and
+  # runs even when yarn fails, so the .env files exist either way.
+  nohup setsid bash -c "sudo -u $U -H $C/provision-repos.sh; /usr/local/sbin/fxa-secrets" > "$C/provision-repos.log" 2>&1 < /dev/null &
   disown
   echo "started; log: $C/provision-repos.log"
 fi
