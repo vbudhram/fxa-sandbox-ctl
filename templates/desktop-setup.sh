@@ -35,6 +35,8 @@ iptables -I OUTPUT 1 -m owner --uid-owner "$v" -j REJECT
 # The content server links to the VM's own address, not localhost.
 for ip in $(hostname -I); do iptables -I OUTPUT 1 -m owner --uid-owner "$v" -d "$ip" -j ACCEPT; done
 iptables -I OUTPUT 1 -m owner --uid-owner "$v" -o lo -j ACCEPT
+# websockify runs as the viewer: let it answer the gateway's connections.
+iptables -I OUTPUT 1 -m owner --uid-owner "$v" -m conntrack --ctstate ESTABLISHED -j ACCEPT
 iptables -C OUTPUT -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT 2>/dev/null \
   || iptables -I OUTPUT 1 -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT
 
