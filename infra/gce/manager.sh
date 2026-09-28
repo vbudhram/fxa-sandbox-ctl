@@ -24,6 +24,7 @@ if [ "$MODE" = sync ]; then
       git -C "$d" pull -q --ff-only && echo "$r: $(git -C "$d" log --oneline -1)"
     done
     (cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev)
+    for s in ~/Desktop/working2/fxa-sandbox-ctl/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
   '"'"'
   for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true'
   exit 0
