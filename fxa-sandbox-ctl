@@ -2235,6 +2235,8 @@ main() {
     relock)     cmd_relock "$@" ;;
     feedback)   cmd_feedback "$@" ;;
     tokens)     cmd_usage_tokens "$@" ;;
+    # For the manager's gh shim: a fresh installation token of the GitHub App.
+    app-token)  github_app_enabled && github_app_token ;;
     record)     cmd_record "$@" ;;
     costs)      cmd_costs "$@" ;;
     skip)       cmd_skip "$@" ;;
