@@ -58,3 +58,10 @@ for f in claude.tgz ctl.env.base bot.env.base; do
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done
 ssh_vm 'sudo bash -s' < "${ROOT}/infra/gce/manager-setup.sh"
+# reporters.tsv maps Jira reporters to GitHub logins for PR assignees. It holds
+# emails, so the GCS state mirror leaves it out: send it straight to the VM when
+# the VM has none.
+R="${HOME}/.claude/state/fxa-ai-fixme/reporters.tsv"
+if [ -f "$R" ] && ! ssh_vm 'sudo test -f /home/fxa/.claude/state/fxa-ai-fixme/reporters.tsv'; then
+  ssh_vm 'sudo install -D -m 600 -o fxa -g fxa /dev/stdin /home/fxa/.claude/state/fxa-ai-fixme/reporters.tsv' < "$R"
+fi

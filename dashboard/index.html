@@ -1319,7 +1319,19 @@ function renderTickets() {
       <div class="line2">${r.pr ? prl(repo, r.pr) : "no PR on this branch"} ${checkBars(r)} ${waitAge(r)}</div></div>`;
   const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
   const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
-  put("s-review",
+  // Every open PR with the pipeline label, as GitHub lists them, each with its ticket's state.
+  const stateOf = k => !k ? "Slack session or by hand"
+    : (review ?? []).some(r => r.key === k) ? "awaiting review"
+    : (s.inflight ?? []).some(r => r.key === k) ? "in flight"
+    : (s.blocked ?? []).some(r => r.key === k) ? "blocked" : "not in the pipeline";
+  const open = s.open_prs ?? [];
+  const counts = open.reduce((m, p) => (m[stateOf(p.key)] = (m[stateOf(p.key)] ?? 0) + 1, m), {});
+  const openList = s.open_prs == null ? `<div class="unknown">GitHub fetch failed; open PRs unknown</div>`
+    : `<details data-k="openprs"><summary>${open.length} open PR${open.length === 1 ? "" : "s"} labelled ${esc(s.pr_label ?? "auto")}: ${
+        Object.entries(counts).map(([k, n]) => `${n} ${esc(k)}`).join(" · ") || "none"}</summary><div class="body">${
+        open.map(p => `<div class="item"><div class="line1">${p.key ? jira(p.key) : `<span class="tag">${esc(p.branch)}</span>`}${titled(p.title)}<span class="tag">${esc(stateOf(p.key))}</span></div>
+          <div class="line2">${prl(repo, p.number)}</div></div>`).join("")}</div></details>`;
+  put("s-review", openList +
     (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">GitHub fetch failed; unknown, not zero</span></div>`
       : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
          <span class="rest">${review.length} done · oldest wait first</span></div>`) +
@@ -1329,6 +1341,9 @@ function renderTickets() {
          others.slice().sort(byWait).map(row).join("") : "")));
 
   const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
+  // A skip outside the epic focus is still in the queue; the focus hides it from the launch list.
+  const skipRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span>${k.in_focus === false && k.in_queue !== false ? `<span class="tag">outside the focus</span>` : ""}<span class="tag">${k.passes}×</span></span></div>
+             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
   const liveSkips = skipped.filter(k => k.in_queue !== false), staleSkips = skipped.filter(k => k.in_queue === false);
   put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length, q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
     (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
@@ -1339,9 +1354,9 @@ function renderTickets() {
         : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
           (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
        (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary><div class="body">${
-          liveSkips.slice().sort((a, b) => a.passes - b.passes).map(k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span class="tag">${k.passes}×</span></div>
-             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`).join("")}</div></details>` : "") +
-       (staleSkips.length ? `<div class="empty" style="padding-top:var(--s2)">${staleSkips.length} stale skip record${staleSkips.length > 1 ? "s" : ""} (${staleSkips.map(k => esc(k.key)).join(", ")}); left the queue (resolved or unlabelled); pruned on the next reconcile</div>` : "")));
+          liveSkips.slice().sort((a, b) => a.passes - b.passes).map(skipRow).join("")}</div></details>` : "") +
+       (staleSkips.length ? `<details data-k="staleskips"><summary>${staleSkips.length} skip record${staleSkips.length > 1 ? "s" : ""} for tickets that left the queue (resolved or unlabelled); pruned on the next reconcile</summary><div class="body">${
+          staleSkips.map(skipRow).join("")}</div></details>` : "")));
 
   const t = s.telemetry;
   put("footer", (t ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span><span><b>${usd(t.cost_usd)}</b> spend</span>

@@ -390,6 +390,9 @@ snapshot_json() {
   # One call per state returns keys and summaries, so titles cost no extra request.
   local queue_items inflight_items done_items blocked_items
   queue_items="$(jira_queue_items)"
+  # Skips are checked against the whole queue: with an epic focus the list above
+  # holds only its children, and every other skip looked stale.
+  local all_queue_items; all_queue_items="$(jira_items_json "$PIPE_QUEUE_JQL")"
   inflight_items="$(jira_items_in_state inflight)"
   done_items="$(jira_items_in_state done)"
   blocked_items="$(jira_items_in_state blocked)"
@@ -405,6 +408,12 @@ snapshot_json() {
   skipped="$(_snapshot_skipped)"
   inflight="$(_snapshot_inflight "$inflight_keys")"
   review="$(gh_pr_states_json "$done_keys")"
+  # Every open PR with the pipeline's label, whatever its ticket's state: the
+  # review list holds only `done` tickets, so the page looked short of GitHub's.
+  local open_prs; open_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state open --limit 100 \
+    --json number,headRefName,title,createdAt 2>/dev/null \
+    | jq -c 'map({number, title, created: .createdAt, branch: .headRefName,
+        key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
   local inflight_prs; inflight_prs="$(gh_pr_states_json "$inflight_keys")"
   telem="$(_snapshot_telemetry)"
   # Known repo-infrastructure reds, so the page groups them instead of blaming
@@ -429,6 +438,8 @@ snapshot_json() {
     --arg repo "$PIPE_REPO_SLUG" \
     --argjson secs "$(( $(date +%s) - started ))" \
     --argjson items "$queue_items" \
+    --argjson allitems "$all_queue_items" \
+    --argjson openprs "${open_prs:-null}" \
     --argjson inflight_items "$inflight_items" \
     --argjson blocked "$blocked_items" \
     --argjson health "$(pipeline_health_json)" \
@@ -453,11 +464,13 @@ snapshot_json() {
          queue: { total: (if $items == null then null else ($q | length) end),
                   fetch_failed: ($items == null),
                   ready:   [$q[] | select(.key as $k | ($skipkeys | index($k)) == null)],
-                  skipped: [($q | map(.key)) as $qk
+                  skipped: [($allitems // $q) as $all | ($all | map(.key)) as $ak | ($q | map(.key)) as $qk
                             | $skipped[] as $s
-                            | $s + {summary: (($q[] | select(.key == $s.key) | .summary) // null),
-                                    in_queue: (($qk | index($s.key)) != null)}] },
+                            | $s + {summary: (($all[] | select(.key == $s.key) | .summary) // null),
+                                    in_queue: (($ak | index($s.key)) != null),
+                                    in_focus: (($qk | index($s.key)) != null)}] },
          blocked: $blocked,
+         open_prs: $openprs,
          health: $health,
          inflight_fetch_failed: ($inflight_items == null),
          pool: $pool, free_slots: $freeslots,
