@@ -1984,9 +1984,10 @@ cmd_task() {
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   # A session after Open PR works on that PR: its branch, its head, its reviews.
-  if [ -n "$resume_from" ] && [ "$(session_get "$resume_from" state)" = pr_open ]; then
-    local pb; pb="$(session_get "$resume_from" branch)"
-    session_set "$key" branch "${pb:-$resume_from}" review_pr "$(session_get "$resume_from" pr_url)"
+  # So does one after a stopped PR round, which has the PR too.
+  if [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
+    local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
+    session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}"
   fi
   # The Slack thread, for the dashboard. Only a Slack https link is kept.
   # Who started it, for the dashboard's conversation view.
@@ -2019,6 +2020,9 @@ _cmd_session_boot() {
   local from base_sha="$sha" resume_sid=""
   from="$(session_get "$key" resume_from)"
   local branch review; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; review="$(session_get "$key" review_pr)"
+  # A new round on the PR starts at its head. A round that stopped part way
+  # resumes like any session: its base (the head it began at) and its patch.
+  [ -n "$review" ] && [ "$(session_get "$from" state)" != pr_open ] && review=""
   if [ -n "$review" ]; then
     # The PR's head holds the change, and a push to it since Open PR too.
     sha="$(gh pr view "$review" --json headRefOid -q .headRefOid 2>/dev/null || true)"
