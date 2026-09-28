@@ -1791,6 +1791,11 @@ cmd_task() {
   if [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
     local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
     session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}"
+  elif [ -n "$resume_from" ] && [ -n "$(session_get "$resume_from" pr_url)" ]; then
+    # Paused or stopped after its PR: resume its work on the PR's branch. No
+    # review_pr, so the push lease stays the branch's last pushed commit.
+    local pb; pb="$(session_get "$resume_from" branch)"
+    session_set "$key" branch "${pb:-$resume_from}" pr_url "$(session_get "$resume_from" pr_url)" pr_announced 1
   fi
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"
@@ -1998,6 +2003,8 @@ cmd_events() {
           tcost="${facts%%$'\t'*}"; nchg="${facts#*$'\t'}"
           [ -n "$tcost" ] && events="$(jq --argjson c "$tcost" 'map(if .type == "turn_end" or .type == "question" then .cost = $c.cost | .tokens = $c.tokens else . end)' <<< "$events")"
           [ -n "$nchg" ] && events="$(jq --argjson n "$nchg" 'map(if .type == "turn_end" and .status == "ready" then .changes = $n else . end)' <<< "$events")"
+          local tpr; tpr="$(session_get "$key" pr_url)"
+          [ -n "$tpr" ] && events="$(jq --arg p "$tpr" 'map(if .type == "turn_end" and .status == "ready" then .pr = $p else . end)' <<< "$events")"
         fi
         # The Open PR job reports its own outcome; the wrap-up turn's reply is noise.
         [ "$state" = wrapping ] && events="$(jq 'map(select(.type != "turn_end" and .type != "question"))' <<< "$events")"
@@ -2028,13 +2035,14 @@ cmd_events() {
         fi
         _session_unlock "$key"
       fi ;;
-    pr_open)
-      if [ "$(session_get "$key" pr_announced)" != 1 ]; then
-        events="$(jq -n --arg u "$(session_get "$key" pr_url)" --arg n "$(session_get "$key" finish_notes)" --arg s "$(session_get "$key" summary)" \
-          '[{type: "pr", url: $u, notes: ($n | split("\n") | map(select(. != ""))), summary: ($s | fromjson? // null)}]')"
-        session_set "$key" pr_announced 1 finish_notes ""
-      fi ;;
   esac
+  # A PR is announced once, whatever the state: sessions stay active after it.
+  if [ -n "$(session_get "$key" pr_url)" ] && [ "$(session_get "$key" pr_announced)" != 1 ]; then
+    events="$(jq --arg u "$(session_get "$key" pr_url)" --arg n "$(session_get "$key" finish_notes)" --arg s "$(session_get "$key" summary)" \
+      --argjson upd "$( [ "$(session_get "$key" pr_updated)" = 1 ] && echo true || echo false )" \
+      '. + [{type: "pr", url: $u, updated: $upd, notes: ($n | split("\n") | map(select(. != ""))), summary: ($s | fromjson? // null)}]' <<< "$events")"
+    session_set "$key" pr_announced 1 finish_notes ""
+  fi
   if [ "$(session_get "$key" pushed_announced)" = 0 ]; then
     events="$(jq --arg b "$(session_get "$key" pushed_branch)" --arg r "$(_session_repo_url)" --arg n "$(session_get "$key" finish_notes)" \
       '. + [{type: "pushed", branch: $b, url: "\($r)/compare/main...\($b)?expand=1", notes: ($n | split("\n") | map(select(. != "")))}]' <<< "$events")"
@@ -2172,11 +2180,14 @@ _cmd_session_finish() {
     echo "pushed ${pb}"; return 0
   fi
   [ -n "$pr_url" ] || { _session_finish_fail "$key" "PR create failed" "$mode"; return 1; }
-  _session_save "$key" || true
-  _session_desktop_close "$key"
-  agent_stop "$name" || echo "WARN: runner ${name} still up; run: fxa-sandbox-ctl --backend gce stop ${name}" >&2
-  session_set "$key" state pr_open pr_url "$pr_url"
-  _session_history_add "$key" action "Opened ${pr_url}"
+  # The session stays open after Open PR: the engineer often asks about the
+  # review or for more changes. The idle sweep pauses it as usual, and a later
+  # Open PR updates this PR (finish_push_and_pr finds it by its branch).
+  local updated=0; [ "$(session_get "$key" pr_url)" = "$pr_url" ] && updated=1
+  vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
+  _session_record_summary "$key" || true
+  session_set "$key" state active pr_url "$pr_url" pr_updated "$updated" pr_announced 0
+  _session_history_add "$key" action "$( [ "$updated" = 1 ] && echo "Updated" || echo "Opened" ) ${pr_url}"
   echo "$pr_url"
 }
 
