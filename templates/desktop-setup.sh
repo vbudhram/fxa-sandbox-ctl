@@ -43,17 +43,73 @@ if [ ! -s /root/.desktop-password ]; then
 fi
 pw="$(cat /root/.desktop-password)"
 
+# The full-screen page (templates/novnc-fxa.html), passed in base64 as $1.
+[ -n "${1:-}" ] && printf '%s' "$1" | base64 -d > /usr/share/novnc/fxa.html
+
+# Firefox for the desktop: no first-run terms or welcome, the local stack as
+# the home page (the Home button), and its other pages on the bookmarks toolbar.
+mkdir -p /usr/lib/firefox/distribution
+cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
+{"policies": {
+  "SkipTermsOfUse": true,
+  "OverrideFirstRunPage": "",
+  "OverridePostUpdatePage": "",
+  "DontCheckDefaultBrowser": true,
+  "DisableAppUpdate": true,
+  "Homepage": {"URL": "http://localhost:3030/", "StartPage": "homepage"},
+  "DisplayBookmarksToolbar": "always",
+  "Bookmarks": [
+    {"Title": "Settings", "URL": "http://localhost:3030/settings", "Placement": "toolbar"},
+    {"Title": "Inbox", "URL": "http://localhost:3030/__inbox", "Placement": "toolbar"},
+    {"Title": "123done", "URL": "http://localhost:8080/", "Placement": "toolbar"}
+  ]
+}}
+POLICIES
+
 sudo -u viewer -H bash -s "$pw" <<'VIEWER'
 set -euo pipefail
 cd ~
 mkdir -p ~/.vnc ~/Desktop
 ln -sfn /srv/workspace ~/Desktop/fxa
+# Firefox with the repo's FxA dev profile, so FxA, Sync and OAuth use the local
+# stack. Not the repo's bin script: with no debugger it passes Firefox an empty
+# argument, which opens file:/// in place of the stack.
+cat > ~/fxa-firefox.mjs <<'MJS'
+const { default: foxfire } = await import('/srv/workspace/node_modules/foxfire/index.js');
+const { default: profile } = await import('/srv/workspace/packages/fxa-dev-launcher/profile.mjs');
+foxfire({ args: ['http://localhost:3030/'], profileOptions: profile });
+MJS
+# foxfire also adds an empty argument, which Firefox opens as file:///; drop it.
+printf '#!/bin/bash\na=(); for x in "$@"; do [ -n "$x" ] && a+=("$x"); done\nexec /usr/bin/firefox "${a[@]}"\n' > ~/firefox-bin
+printf '#!/bin/sh\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
+chmod +x ~/firefox-bin ~/fxa-firefox
+mkdir -p ~/.local/share/applications
+printf '[Desktop Entry]\nType=Application\nName=Firefox (FxA dev)\nComment=Firefox with the FxA dev profile for the local stack\nExec=%s/fxa-firefox\nIcon=firefox\nTerminal=false\n' "$HOME" \
+  | tee ~/.local/share/applications/fxa-firefox.desktop > ~/Desktop/fxa-firefox.desktop
+chmod +x ~/Desktop/fxa-firefox.desktop
+# A plain background the color of the page around it.
+x=~/.config/xfce4/xfconf/xfce-perchannel-xml; mkdir -p "$x"
+[ -f "$x/xfce4-desktop.xml" ] || cat > "$x/xfce4-desktop.xml" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty"><property name="screen0" type="empty">
+    <property name="monitorVNC-0" type="empty"><property name="workspace0" type="empty">
+      <property name="color-style" type="int" value="0"/>
+      <property name="image-style" type="int" value="0"/>
+      <property name="rgba1" type="array">
+        <value type="double" value="0.11"/><value type="double" value="0.106"/><value type="double" value="0.133"/><value type="double" value="1"/>
+      </property>
+    </property></property>
+  </property></property>
+</channel>
+XML
 (umask 077; printf '%s\n' "$1" | tigervncpasswd -f > ~/.vnc/passwd)
 printf '#!/bin/sh\nunset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS\nexec dbus-launch --exit-with-session startxfce4\n' > ~/.vnc/xstartup
 chmod +x ~/.vnc/xstartup
 if ! pgrep -u viewer -x Xtigervnc >/dev/null; then
   tigervncserver :1 -localhost yes -SecurityTypes VncAuth -PasswordFile ~/.vnc/passwd \
     -geometry 1440x900 -xstartup ~/.vnc/xstartup >/tmp/viewer-vnc.log 2>&1
+  DISPLAY=:1 xset s off -dpms 2>/dev/null || true  # no screen blanking
 fi
 # All addresses: the gateway reaches it on the private IP. The GCP firewall
 # admits only the gateway's subnet, and the agent is blocked above.
@@ -61,7 +117,7 @@ if ! pgrep -u viewer -f 'websockify .*:6080 127.0.0.1:5901' >/dev/null; then
   nohup setsid websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5901 >/tmp/viewer-websockify.log 2>&1 </dev/null &
 fi
 if ! pgrep -u viewer -x firefox >/dev/null; then
-  DISPLAY=:1 nohup setsid firefox http://localhost:3030/ >/tmp/viewer-firefox.log 2>&1 </dev/null &
+  DISPLAY=:1 nohup setsid ~/fxa-firefox >/tmp/viewer-firefox.log 2>&1 </dev/null &
 fi
 VIEWER
 

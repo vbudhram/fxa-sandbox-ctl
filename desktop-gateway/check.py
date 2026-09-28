@@ -76,7 +76,7 @@ async def main_check():
     async with aiohttp.ClientSession() as c:
         async with c.get(f"{base}/d/agent-abcd12", allow_redirects=False) as x:
             check("owner is sent to noVNC with the path and password", True,
-                  x.status == 302 and "path=d/agent-abcd12/websockify#&password=pw123456" in x.headers["Location"])
+                  x.status == 302 and x.headers["Location"] == "/d/agent-abcd12/fxa.html#password=pw123456")
         async with c.get(f"{base}/d/agent-abcd12/vnc.html") as x:
             check("pages relay from the runner", "<html>novnc</html>", await x.text())
         async with c.ws_connect(f"{base}/d/agent-abcd12/websockify", protocols=("binary",)) as w:

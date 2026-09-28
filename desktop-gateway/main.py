@@ -80,7 +80,7 @@ async def authorize(request):
 async def start(request):
     key, rec = await authorize(request)
     # The VNC password goes in the fragment, which the browser never sends back.
-    raise web.HTTPFound(f"/d/{key}/vnc.html?autoconnect=1&resize=scale&reconnect=1&path=d/{key}/websockify#&password={rec['vnc_password']}")
+    raise web.HTTPFound(f"/d/{key}/fxa.html#password={rec['vnc_password']}")
 
 
 async def page(request):

@@ -1,0 +1,93 @@
+<!doctype html>
+<!-- The session desktop, full screen: noVNC's core with no menus or banners.
+     Served by the runner's websockify next to noVNC; the VNC password comes
+     in the fragment (#password=...), which the browser never sends. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>FxA sandbox desktop</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1c1b22; overflow: hidden; }
+  #screen { position: fixed; inset: 0; }
+  #tools { position: fixed; right: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 2; }
+  #tools button { width: 44px; height: 44px; border: 0; border-radius: 22px; background: rgba(43, 42, 51, .75);
+    color: #fbfbfe; cursor: pointer; display: grid; place-items: center; }
+  #tools button:hover { background: rgba(43, 42, 51, .95); }
+  #kbd { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; }
+  #note { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px;
+    background: rgba(43, 42, 51, .9); color: #fbfbfe; font: 14px system-ui; display: none; z-index: 3; }
+  #paste { position: fixed; right: 12px; bottom: 68px; display: none; gap: 6px; z-index: 3; }
+  #paste textarea { width: min(70vw, 360px); height: 80px; font: 14px system-ui; }
+</style>
+</head>
+<body>
+<div id="screen"></div>
+<textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+<div id="paste"><textarea placeholder="Text to paste into the desktop"></textarea><button>Send</button></div>
+<div id="note"></div>
+<div id="tools">
+  <button id="bkbd" title="Keyboard" aria-label="Show the keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+  <button id="bpaste" title="Paste" aria-label="Paste text into the desktop"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></button>
+  <button id="bfull" title="Full screen" aria-label="Full screen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</div>
+<script type="module">
+import RFB from './core/rfb.js';
+import keysyms from './core/input/keysymdef.js';
+
+const password = new URLSearchParams(location.hash.slice(1)).get('password') || '';
+const url = new URL('websockify', location.href);
+url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const $ = (id) => document.getElementById(id);
+const note = (text) => { $('note').textContent = text; $('note').style.display = text ? 'block' : 'none'; };
+
+let rfb;
+function connect() {
+  note('Connecting…');
+  rfb = new RFB($('screen'), url.href, { credentials: { password } });
+  rfb.resizeSession = true;   // the desktop takes the window's size: fewer pixels, faster on a phone
+  rfb.scaleViewport = true;   // if the server cannot resize, fit the view instead
+  rfb.qualityLevel = 6;
+  rfb.compressionLevel = 2;
+  rfb.addEventListener('connect', () => note(''));
+  rfb.addEventListener('disconnect', (e) => {
+    note(e.detail.clean ? 'Disconnected. Reconnecting…' : 'Connection lost. Reconnecting…');
+    setTimeout(connect, 2000);
+  });
+  rfb.addEventListener('credentialsrequired', () => note('This link has no password. Open it again from Slack.'));
+  rfb.addEventListener('securityfailure', () => note('The desktop refused the password. Open it again from Slack.'));
+}
+connect();
+
+// Phones show a keyboard only for a text field; forward what is typed there.
+const kbd = $('kbd');
+const key = (sym) => rfb.sendKey(sym);
+$('bkbd').onclick = () => kbd.focus();
+kbd.addEventListener('keydown', (e) => {
+  const special = { Backspace: 0xff08, Enter: 0xff0d, Tab: 0xff09, Escape: 0xff1b,
+    ArrowLeft: 0xff51, ArrowUp: 0xff52, ArrowRight: 0xff53, ArrowDown: 0xff54 }[e.key];
+  if (special) { e.preventDefault(); key(special); }
+});
+kbd.addEventListener('input', () => {
+  for (const ch of kbd.value) key(keysyms.lookup(ch.codePointAt(0)));
+  kbd.value = '';
+});
+
+$('bpaste').onclick = () => {
+  const box = $('paste');
+  box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
+  if (box.style.display === 'flex') box.querySelector('textarea').focus();
+};
+$('paste').querySelector('button').onclick = () => {
+  const t = $('paste').querySelector('textarea');
+  // Paste sets the desktop's clipboard; then Ctrl+V in the desktop pastes it.
+  rfb.clipboardPasteFrom(t.value);
+  t.value = '';
+  $('paste').style.display = 'none';
+  note('Copied to the desktop clipboard. Press Ctrl+V there.');
+  setTimeout(() => note(''), 2500);
+};
+$('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+</script>
+</body>
+</html>

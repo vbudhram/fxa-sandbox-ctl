@@ -146,7 +146,7 @@ def desktop(key):
             if tunnel.poll() is not None:
                 raise RuntimeError("the tunnel to the sandbox did not start")
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/vnc.html", timeout=2).close()
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/fxa.html", timeout=2).close()
                 break
             except OSError:
                 time.sleep(0.5)
@@ -248,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_response(302)
         # The password rides in the fragment, which the browser never sends to a server.
-        self.send_header("Location", f"http://localhost:{port}/vnc.html?autoconnect=1&resize=scale&reconnect=1#&password={password}")
+        self.send_header("Location", f"http://localhost:{port}/fxa.html#password={password}")
         self._hardening()
         self.end_headers()
 
