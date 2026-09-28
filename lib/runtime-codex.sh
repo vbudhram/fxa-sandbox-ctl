@@ -70,7 +70,7 @@ What trips agents most often:
      && tar --dereference -cf "$skills_tar" -C "$CLAUDE_HOME_DIR" "${tar_items[@]}" 2>/dev/null; then
     local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519" ip
     ip="$(vm_ip "$name")"
-    if scp -i "$ssh_key" ${VM_SSH_OPTS} "$skills_tar" "${VM_SSH_USER}@${ip}:/tmp/fxa-codex-skills.tar" 2>/dev/null; then
+    if _retry scp -i "$ssh_key" ${VM_SSH_OPTS} "$skills_tar" "${VM_SSH_USER}@${ip}:/tmp/fxa-codex-skills.tar" 2>/dev/null; then
       ssh -i "$ssh_key" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" "
         mkdir -p /home/agent/.codex && tar -xf /tmp/fxa-codex-skills.tar -C /home/agent/.codex/ && rm -f /tmp/fxa-codex-skills.tar
       " 2>/dev/null || echo "  WARN: extracting Codex skills in VM failed" >&2

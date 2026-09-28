@@ -355,5 +355,5 @@ jira_comment() {
   pipeline_require || return 1
   local key="${1:-}" body="${2:-}"
   [ -n "$key" ] && [ -n "$body" ] || { echo "ERROR: comment needs <KEY> <body>" >&2; return 1; }
-  acli jira workitem comment create --key "$key" --body "$body" >/dev/null
+  command acli jira workitem comment create --key "$key" --body "$body" >/dev/null
 }

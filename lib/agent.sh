@@ -466,7 +466,7 @@ _setup_claude_config() {
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"
-      if scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
+      if _retry scp -i "$ssh_key" ${VM_SSH_OPTS} "$config_tar" \
            "${VM_SSH_USER}@${ip}:/tmp/fxa-claude-config.tar" 2>/dev/null; then
         # Twice: this runs right after the hardening batch restarts sshd, and a
         # connection in that window can stall. Extracting again is harmless.

@@ -509,11 +509,14 @@ session_desktop() {
   session_set "$key" desktop_open 1
   if [ -n "$email" ] && [ -n "${FXA_DESKTOP_GATEWAY:-}" ]; then
     [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || { echo "ERROR: bad owner email" >&2; return 1; }
-    # Expires with the runner's own limit, in case no stop ever removes it.
+    # Expires with the runner's own limit, in case no stop ever removes it. A
+    # private file, not a pipe, so the upload can be retried.
+    local rec rc=0; rec="$(umask 077; mktemp)"
     jq -n --arg e "$email" --arg ip "$ip" --arg pw "$pw" --argjson exp "$(( $(date +%s) + ${FXA_SESSION_MAX_RUN_SECONDS:-14400} ))" \
-      '{owner_email: $e, ip: $ip, vnc_password: $pw, expires: $exp}' \
-      | gcloud storage cp -q - "$(_session_desktop_uri "$key")" >/dev/null 2>&1 \
-      || { echo "ERROR: could not publish the desktop for the gateway" >&2; return 1; }
+      '{owner_email: $e, ip: $ip, vnc_password: $pw, expires: $exp}' > "$rec"
+    _retry gcloud storage cp -q "$rec" "$(_session_desktop_uri "$key")" >/dev/null 2>&1 || rc=$?
+    rm -f "$rec"
+    [ "$rc" = 0 ] || { echo "ERROR: could not publish the desktop for the gateway" >&2; return 1; }
     echo "url=${FXA_DESKTOP_GATEWAY%/}/d/${key}"
   fi
   echo "password=${pw}"

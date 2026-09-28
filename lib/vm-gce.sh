@@ -149,12 +149,15 @@ vm_clone() {
       continue
     fi
     # GCP's own transient faults ("Internal error. Please try again") are not ours.
-    if grep -qiE 'Internal error|try again|backendError|UNAVAILABLE' "${LOG_DIR}/${name}-vm.log"; then
-      echo "  GCP failed to create it in ${zone} ($(grep -m1 -oiE 'Internal error|try again|backendError|UNAVAILABLE' "${LOG_DIR}/${name}-vm.log")); trying the next zone." >&2
+    local transient='Internal error|try again|backendError|UNAVAILABLE|rateLimitExceeded|timed out|Connection reset'
+    if grep -qiE "$transient" "${LOG_DIR}/${name}-vm.log"; then
+      echo "  GCP failed to create it in ${zone} ($(grep -m1 -oiE "$transient" "${LOG_DIR}/${name}-vm.log")); trying the next zone." >&2
       _gce compute instances delete "$(vm_name "$name")" --zone "$zone" --quiet >/dev/null 2>&1 || true
       sleep 5
       continue
     fi
+    # Any other failure: the create may still have gone through server-side.
+    _gce compute instances delete "$(vm_name "$name")" --zone "$zone" --quiet >/dev/null 2>&1 || true
     cat "${LOG_DIR}/${name}-vm.log" >&2; return 1
   done
   echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${FXA_GCE_MACHINE_TYPE}." >&2
@@ -272,11 +275,20 @@ vm_ip() { vm_name "$1"; }
 # One instance list answers every vm_is_running for 20 s. A snapshot asks this
 # a dozen times, and each describe through gcloud costs about two seconds.
 _GCE_RUNNING=""; _GCE_RUNNING_AT=0
+_gce_list_running() {
+  _gce compute instances list --zones "$(_gce_zones_csv)" --filter "name~^${VM_PREFIX}- AND status=RUNNING" --format 'value(name)' 2>/dev/null
+}
 vm_is_running() {
-  local now; now="$(date +%s)"
+  local now out; now="$(date +%s)"
   if [ $(( now - _GCE_RUNNING_AT )) -ge 20 ]; then
-    _GCE_RUNNING="$(_gce compute instances list --zones "$(_gce_zones_csv)" --filter "name~^${VM_PREFIX}- AND status=RUNNING" --format 'value(name)' 2>/dev/null | tr '\n' ' ')"
-    _GCE_RUNNING_AT="$now"
+    # A failed list is not "none running": that misread marked live sessions
+    # stopped and skipped saving their work. Retry once, then answer "running".
+    if out="$(_gce_list_running)" || { sleep 3; out="$(_gce_list_running)"; }; then
+      _GCE_RUNNING="$(printf '%s' "$out" | tr '\n' ' ')"; _GCE_RUNNING_AT="$now"
+    else
+      echo "WARN: could not list the runners; treating $(vm_name "$1") as running." >&2
+      return 0
+    fi
   fi
   case " $_GCE_RUNNING " in *" $(vm_name "$1") "*) return 0 ;; *) return 1 ;; esac
 }
@@ -289,10 +301,18 @@ vm_stop() {
 vm_delete() {
   local name="$1"
   echo "Deleting instance '$(vm_name "$name")'..."
-  _gce_zone instances delete "$(vm_name "$name")" >/dev/null 2>&1 \
-    || echo "WARN: delete failed for $(vm_name "$name"); it is still billing. Retry: fxa-sandbox-ctl --backend gce stop ${name}" >&2
-  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log" "${LOG_DIR}/${name}.zone" "${LOG_DIR}/${name}.ssh-ok"
-  _gce_ssh_forget "$name"
+  # A delete is safe to repeat, and "not found" means done. A failed one keeps
+  # the zone file, so the retry the warning names finds the instance.
+  local out try
+  for try in 1 2 3; do
+    if out="$(_gce_zone instances delete "$(vm_name "$name")" 2>&1)" || grep -qiE 'not found|notFound' <<< "$out"; then
+      rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log" "${LOG_DIR}/${name}.zone" "${LOG_DIR}/${name}.ssh-ok"
+      _gce_ssh_forget "$name"
+      return 0
+    fi
+    [ "$try" -lt 3 ] && sleep $(( try * 5 ))
+  done
+  echo "WARN: delete failed for $(vm_name "$name"); it is still billing. Retry: fxa-sandbox-ctl --backend gce stop ${name}" >&2
 }
 
 # Drop the per-host ssh entry, or the file grows one block per run forever.

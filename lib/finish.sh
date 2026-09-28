@@ -559,12 +559,12 @@ _finish_push_and_pr() {
     echo "  Keeping the PR title and body; the round is recorded on Jira." >&2
     # Post a round's media as a comment, so the original body's screenshots stay.
     if [ "${#media_args[@]}" -gt 0 ]; then
-      (cd "$worktree" && gh pr comment "$pr_num" \
+      (cd "$worktree" && command gh pr comment "$pr_num" \
          --body "Updated evidence from the latest automated round." \
          ${media_args[@]+"${media_args[@]}"} >/dev/null 2>&1) \
         || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
     elif [ -n "$media_md" ]; then
-      (cd "$worktree" && gh pr comment "$pr_num" --body "Updated evidence from the latest automated round.
+      (cd "$worktree" && command gh pr comment "$pr_num" --body "Updated evidence from the latest automated round.
 
 ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR #${pr_num}." >&2
     fi

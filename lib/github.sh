@@ -309,7 +309,7 @@ gh_conflicts() {
   local br; br="$(worktree_branch_for "$key")" || return 1
   local repo="${PIPE_REPO:-$PWD}"
 
-  git -C "$repo" fetch origin main "$br" -q 2>/dev/null || {
+  _retry git -C "$repo" fetch origin main "$br" -q 2>/dev/null || {
     echo "ERROR: cannot fetch origin/${br}" >&2; return 1; }
 
   local files
@@ -460,7 +460,7 @@ github_app_token() {
     cat "$cache"; return 0
   fi
   local tok
-  tok="$(curl -sf -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+  tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens" | jq -r '.token // empty')"
   [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token." >&2; return 1; }
   ( umask 077; printf '%s' "$tok" > "$cache" )
@@ -472,13 +472,21 @@ github_app_token() {
 #   0600 header file, not argv, so `ps` never shows it.
 _gh_app_api() {
   local hdr tok rc=0
+  # GitHub's 5xx and resets are transient. Blobs, trees, commits and reads are
+  # safe to repeat; a ref write is not, and its caller checks the result.
+  local -a retry=(--retry 3 --retry-connrefused --max-time 60)
+  case "$1 $2" in "POST git/refs"|"PATCH git/refs/"*) retry=(--max-time 60) ;; esac
   tok="$(github_app_token)" || return 1
   hdr="$(mktemp)"; chmod 600 "$hdr"
   printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$tok" > "$hdr"
-  curl -sS --fail-with-body -X "$1" -H @"$hdr" --data-binary @- "https://api.github.com/repos/${PIPE_REPO_SLUG}/$2" || rc=$?
+  curl -sS --fail-with-body "${retry[@]}" -X "$1" -H @"$hdr" --data-binary @- "https://api.github.com/repos/${PIPE_REPO_SLUG}/$2" || rc=$?
   rm -f "$hdr"
   return "$rc"
 }
+
+# _gh_app_ref_is <branch> <sha>   A ref write is not retried: when one fails,
+# the branch may still have moved, so read it back.
+_gh_app_ref_is() { [ "$(printf '' | _gh_app_api GET "git/ref/heads/$1" 2>/dev/null | jq -r '.object.sha // empty')" = "$2" ]; }
 
 # github_app_commit <worktree> <branch> <parent_sha> <message>
 #   Create the staged change as one commit through the API, so the App is its
@@ -508,14 +516,14 @@ github_app_commit() {
   remote="$(printf '' | _gh_app_api GET "git/ref/heads/${branch}" 2>/dev/null | jq -r '.object.sha // empty')"
   if [ -z "$remote" ]; then
     jq -nc --arg r "refs/heads/${branch}" --arg s "$commit" '{ref: $r, sha: $s}' | _gh_app_api POST git/refs >/dev/null \
-      || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
+      || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
   else
     expect="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" || true)"
     [ "$remote" = "$expect" ] || { echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1; }
     jq -nc --arg s "$commit" '{sha: $s, force: true}' | _gh_app_api PATCH "git/refs/heads/${branch}" >/dev/null \
-      || { echo "ERROR: could not move ${branch} as the App." >&2; return 1; }
+      || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not move ${branch} as the App." >&2; return 1; }
   fi
-  git -C "$wt" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" &&
+  _retry git -C "$wt" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" &&
     git -C "$wt" reset -q --soft "$commit" && git -C "$wt" branch -q --set-upstream-to "origin/${branch}" >/dev/null 2>&1
   printf '%s\n' "$commit"
 }

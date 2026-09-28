@@ -232,7 +232,7 @@ worktree_release_branch() {
 #   Fetch origin/<base> and add a worktree at <path> on its <name>-holding branch.
 _worktree_add() {
   local root="$1" path="$2" name="$3" base="$4"
-  if ! git -C "$root" fetch origin "$base" >&2; then
+  if ! _retry git -C "$root" fetch origin "$base" >&2; then
     echo "ERROR: 'git fetch origin ${base}' failed." >&2
     return 1
   fi
@@ -435,16 +435,28 @@ worktree_copy_ai_docs() {
 #   Bring a resumed local branch up to origin, which is what the reviewer reads.
 #   A slot once resumed a three-week-old local ref and the agent rewrote a guard
 #   that was already merged on the PR.
+# _origin_has_branch <path> <branch>   0 on origin, 1 not there, 2 origin did
+# not answer. ls-remote exits 2 for "no such ref" and 128 for a network error.
+_origin_has_branch() {
+  local rc d
+  for d in 3 9 0; do
+    rc=0; git -C "$1" ls-remote --exit-code --heads origin "$2" >/dev/null 2>&1 || rc=$?
+    [ "$rc" = 0 ] && return 0
+    [ "$rc" = 2 ] && return 1
+    [ "$d" = 0 ] || sleep "$d"
+  done
+  return 2
+}
+
 _worktree_sync_to_origin() {
   local path="$1" branch="$2"
   # FxA's post-checkout hook clones external/l10n and is not idempotent.
   local nohooks="-c core.hooksPath=/dev/null"
 
-  git -C "$path" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1 || {
-    echo "Branch '${branch}' is not on origin yet; nothing to sync." >&2
-    return 0
-  }
-  git -C "$path" fetch origin "$branch" >&2 || {
+  local has=0; _origin_has_branch "$path" "$branch" || has=$?
+  if [ "$has" = 1 ]; then echo "Branch '${branch}' is not on origin yet; nothing to sync." >&2; return 0; fi
+  [ "$has" = 0 ] || { echo "ERROR: origin did not answer; refusing to resume a branch we cannot verify." >&2; return 1; }
+  _retry git -C "$path" fetch origin "$branch" >&2 || {
     echo "ERROR: 'git fetch origin ${branch}' failed; refusing to resume a branch we cannot verify." >&2
     return 1
   }
@@ -538,22 +550,24 @@ worktree_prepare_for_issue() {
   fi
 
   echo "Fetching origin/${base}..." >&2
-  git -C "$path" fetch origin "$base" >&2 || {
+  _retry git -C "$path" fetch origin "$base" >&2 || {
     echo "ERROR: 'git fetch origin ${base}' failed." >&2
     return 1
   }
 
   # FxA's post-checkout hook clones external/l10n and fatals on a second run.
-  local nohooks="-c core.hooksPath=/dev/null"
+  local nohooks="-c core.hooksPath=/dev/null" has
   if git -C "$path" show-ref --verify --quiet "refs/heads/${branch}"; then
     # A local ref can be weeks old, so sync it to origin before the agent sees it.
     echo "Branch '${branch}' already exists locally; resuming." >&2
     git -C "$path" $nohooks checkout "$branch" >&2 || return 1
     _worktree_sync_to_origin "$path" "$branch" || return 1
-  elif git -C "$path" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-    # A fix round on another slot: cutting from <base> would drop the PR's commits.
+  elif { has=0; _origin_has_branch "$path" "$branch" || has=$?; [ "$has" != 1 ]; }; then
+    # A fix round on another slot: cutting from <base> would drop the PR's
+    # commits, so "origin did not answer" must not read as "not there".
+    [ "$has" = 0 ] || { echo "ERROR: origin did not answer; cannot tell whether '${branch}' exists there." >&2; return 1; }
     echo "Branch '${branch}' exists on origin; resuming from there, not from ${base}." >&2
-    git -C "$path" fetch origin "$branch" >&2 || return 1
+    _retry git -C "$path" fetch origin "$branch" >&2 || return 1
     git -C "$path" $nohooks checkout -b "$branch" "origin/${branch}" >&2 || return 1
   else
     echo "Creating branch '${branch}' off origin/${base}." >&2

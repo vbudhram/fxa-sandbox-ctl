@@ -537,7 +537,7 @@ _jira_rebase_merge() {
     return 1
   fi
 
-  git -C "$wt" fetch origin "$base" -q || {
+  _retry git -C "$wt" fetch origin "$base" -q || {
     echo "ERROR: cannot fetch origin/${base}." >&2; return 1; }
 
   if git -C "$wt" merge --no-edit "origin/${base}" >&2; then
@@ -1804,7 +1804,7 @@ _cmd_session_boot() {
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   runtime_load || { session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
-  git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
+  _retry git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
     || { echo "ERROR: could not fetch origin/main" >&2; session_set "$key" state failed; return 1; }
   # Resuming: start from the earlier session's base, so its patch applies, and
   # continue its Claude conversation. The base for review diffs stays today's main.
@@ -2109,7 +2109,18 @@ _cmd_session_finish() {
     sleep 15
   done
   session_set "$key" turn_open 0
-  if ! vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null; then
+  # 1 is "no handoff"; 255 is ssh failing. After a long wrap-up, do not read a
+  # dropped connection as the agent's choice.
+  local hc try
+  for try in 1 2 3; do
+    hc=0; vm_exec "$name" test -s /workspace/.fxa-auto-done.json 2>/dev/null || hc=$?
+    [ "$hc" = 255 ] || break
+    sleep 10
+  done
+  if [ "$hc" = 255 ]; then
+    _session_finish_fail "$key" "I could not reach the sandbox to read the handoff, so nothing was pushed. The work is still there; try again" "$mode"; return 1
+  fi
+  if [ "$hc" != 0 ]; then
     # The agent chose not to hand off (nothing to ship, or a blocker). Its reply
     # says why, and the wrap-up hides replies, so pass it on to the thread.
     local reply

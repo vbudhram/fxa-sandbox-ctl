@@ -7,7 +7,8 @@ _FXA_CONFIG_LOADED=1
 
 # A transient GitHub or Jira failure used to abort the pass (a 5xx in the drain
 # on 2026-09-14). Two retries with a short backoff, then the caller's own error
-# path. Every call these wrap is idempotent: reads, label swaps, reactions.
+# path. Only for calls that are safe to repeat (reads, label swaps, reactions,
+# pr create); a comment post calls `command gh`/`command acli` directly.
 _retry() { local d; for d in 3 9 0; do "$@" && return 0; [ "$d" = 0 ] && return 1; sleep "$d"; done; }
 gh()   { _retry command gh "$@"; }
 acli() { _retry command acli "$@"; }

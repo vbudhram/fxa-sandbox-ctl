@@ -11,7 +11,8 @@ check() { # check <name> <want> <got>
 
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd -P)"
-eval "$(sed -n '/^worktree_branch_for() {/,/^}/p;/^worktree_filtered_status() {/,/^}/p;/^_worktree_sync_to_origin() {/,/^}/p' "$here/worktree.sh")"
+eval "$(sed -n '/^worktree_branch_for() {/,/^}/p;/^worktree_filtered_status() {/,/^}/p;/^_origin_has_branch() {/,/^}/p;/^_worktree_sync_to_origin() {/,/^}/p' "$here/worktree.sh")"
+eval "$(grep '^_retry()' "$here/config.sh")"
 eval "$(sed -n '/^_launch_slot_for() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 _worktree_pull_if_remote() { :; }
 worktree_git_ok() { :; }

@@ -10,6 +10,7 @@ check() { # check <name> <want> <got>
 
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 source "$(dirname "$0")/github.sh"
+eval "$(grep '^_retry()' "$(dirname "$0")/config.sh")"
 pipeline_require() { :; }
 worktree_branch_for() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
 pipeline_attempts() { if [ "${2:-}" = bump ]; then echo bumped >>"$tmp/attempts"; else wc -l <"$tmp/attempts" 2>/dev/null | tr -d ' ' || echo 0; fi; }
