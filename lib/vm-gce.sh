@@ -36,8 +36,18 @@ _gce_ssh() {
   local name="$1"; shift
   if [ -f "${LOG_DIR}/${name}.ssh-ok" ]; then
     local cmd=""; [ "${1:-}" = "--command" ] && cmd="$2"
-    # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
-    ssh -i "$FXA_GCE_SSH_KEY" $VM_SSH_OPTS "${USER}@$(vm_name "$name")" "$cmd"
+    local err rc try; err="$(mktemp)"
+    # An IAP tunnel often fails before login (no ssh banner). The command has
+    # not run then, so a retry cannot run it twice. Any later failure is final.
+    for try in 1 2 3; do
+      rc=0
+      # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
+      ssh -i "$FXA_GCE_SSH_KEY" $VM_SSH_OPTS "${USER}@$(vm_name "$name")" "$cmd" 2>"$err" || rc=$?
+      [ "$rc" = 255 ] && [ "$try" -lt 3 ] && grep -qE 'banner exchange|kex_exchange_identification|Connection closed by UNKNOWN' "$err" || break
+      sleep $(( try * 3 ))
+    done
+    cat "$err" >&2; rm -f "$err"
+    return "$rc"
   else
     _gce_zone ssh "$(vm_name "$name")" --tunnel-through-iap --ssh-key-file "$FXA_GCE_SSH_KEY" "$@"
   fi

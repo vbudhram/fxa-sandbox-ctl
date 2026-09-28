@@ -26,10 +26,11 @@ readonly MIN_HOST_FREE_RAM_MB=4096  # Warn if less than 4GB free on host
 
 readonly VM_PREFIX="agent"  # VMs are named agent-<name>
 readonly VM_SSH_USER="agent"
-# Not readonly: the gce backend appends an IAP ProxyCommand. ConnectTimeout covers
-# only the TCP connect; ServerAlive stops a tunnel that dies mid-session from
-# hanging the rsync and every pass behind it (one sat for 53 min).
-VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+# Not readonly: the gce backend appends an IAP ProxyCommand. Through a proxy,
+# ConnectTimeout also bounds the wait for the ssh banner, and an IAP tunnel
+# often needs more than 5 s for that. ServerAlive stops a tunnel that dies
+# mid-session from hanging the rsync and every pass behind it.
+VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=${FXA_SSH_CONNECT_TIMEOUT:-30} -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
 
 # GCE backend. Project is required when FXA_VM_BACKEND=gce.
 FXA_GCE_PROJECT="${FXA_GCE_PROJECT:-}"
