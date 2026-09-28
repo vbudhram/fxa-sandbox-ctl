@@ -19,6 +19,8 @@ source "$here/errors.sh"
 handler() { local last; last="\$(grep -E '^ERROR' "$tmp/empty.log" | tail -1)"; echo "not reached"; }
 job() { false || { handler; return 1; }; }
 expected() { local x; x="\$(grep nothing "$tmp/empty.log" | head -1 || true)"; return 0; }
+refuse() { echo "ERROR: refused" >&2; return 1; }
+handled() { true && refuse; }
 main() { _ERR_CONTEXT="\$*"; set -E; trap 'errors_err_trap \$? "\$BASH_COMMAND"' ERR; expected; "\$@"; }
 main "\$@"
 EOF
@@ -30,6 +32,10 @@ check "crash still exits non-zero" "1" "$rc"
 check "crash is named on stderr" "1" "$(grep -c 'unexpected failure (exit 1) at prog.sh:[0-9]* handler' <<< "$err")"
 check "one crash recorded" "1" "$(wc -l < "$FXA_ERRORS_FILE" | tr -d ' ')"
 check "crash fields" "ctl|crash|agent-abc123|handler" "$(jq -r '"\(.source)|\(.kind)|\(.key)|\(.where | split(" ")[1])"' "$FXA_ERRORS_FILE")"
+
+rm -f "$FXA_ERRORS_FILE"
+bash "$tmp/prog.sh" handled >/dev/null 2>&1
+check "a function returning its own error is not a crash" "0" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
 
 rm -f "$FXA_ERRORS_FILE"
 bash "$tmp/prog.sh" expected >/dev/null 2>&1

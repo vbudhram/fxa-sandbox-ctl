@@ -501,6 +501,26 @@ _session_summary_json() {
 # bot posts on Stop and Open PR.
 _session_record_summary() { session_set "$1" summary "$(_session_summary_json "$1")"; }
 
+# session_attach <key> <file>...   Put files a person attached in Slack into the
+# runner's /workspace/.fxa-inbox/. Plain files only, safe names, 25 MB each.
+session_attach() {
+  local key="$1" d f b n=0 rc=0; shift
+  session_live "$key" || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
+  d="$(mktemp -d)"
+  for f in "$@"; do
+    b="$(basename "$f")"
+    [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$ ]] || { echo "skipped ${b}: name" >&2; continue; }
+    [ -f "$f" ] && [ ! -L "$f" ] || { echo "skipped ${b}: not a plain file" >&2; continue; }
+    [ "$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")" -le 26214400 ] || { echo "skipped ${b}: over 25 MB" >&2; continue; }
+    cp "$f" "${d}/${b}" && n=$((n + 1))
+  done
+  [ "$n" -gt 0 ] || { rm -rf "$d"; echo "ERROR: no file to attach" >&2; return 1; }
+  COPYFILE_DISABLE=1 tar -czf "${d}.tgz" -C "$d" . && vm_put "$(worktree_branch_for "$key")" "${d}.tgz" /workspace/.fxa-inbox || rc=$?
+  rm -rf "$d" "${d}.tgz"
+  [ "$rc" -eq 0 ] && echo "attached ${n}"
+  return "$rc"
+}
+
 # session_pause <key>   What the idle sweep does, on request (the bot's cost cap):
 # save the work, stop the runner, and let a reply resume it.
 session_pause() {

@@ -61,6 +61,10 @@ errors_err_trap() {
   local rc="$1" cmd="$2"
   [ "${BASH_SUBSHELL:-0}" = 0 ] || return 0
   [ "${FUNCNAME[1]:-main}" != main ] || return 0
+  # One of our own functions returning its error, or a return: that code already
+  # said what went wrong. A crash is a command such as grep, jq or ssh failing.
+  [[ "$cmd" =~ ^return([[:space:]]|$) ]] && return 0
+  declare -F "${cmd%%[[:space:]]*}" >/dev/null && return 0
   local where="${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} ${FUNCNAME[1]}" kind=crash
   cmd="$(printf '%s' "$cmd" | tr -s ' \t\n' ' ' | cut -c1-300)"
   # ssh exits 255 when it cannot connect: a network or runner hiccup, not a bug here.

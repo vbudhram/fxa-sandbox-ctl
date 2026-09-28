@@ -2326,6 +2326,7 @@ cmd_session() {
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
+    attach) _session_key "${2:-}" && session_attach "${@:2}" ;;
     plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
       _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;
     idle-sweep) session_idle_sweep ;;
