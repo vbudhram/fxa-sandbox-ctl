@@ -491,6 +491,23 @@ _session_summary_json() {
 # bot posts on Stop and Open PR.
 _session_record_summary() { session_set "$1" summary "$(_session_summary_json "$1")"; }
 
+# session_desktop <key>   Start a Linux desktop with Firefox on the runner
+# (templates/desktop-setup.sh) and print its VNC password.
+session_desktop() {
+  local key="$1" name; name="$(worktree_branch_for "$key")"
+  session_live "$key" && vm_is_running "$name" 2>/dev/null || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
+  vm_exec "$name" bash -c "$(cat "${SANDBOX_ROOT}/templates/desktop-setup.sh")" | grep -E '^password=[A-Za-z0-9]{8}$' | tail -1 \
+    || { echo "ERROR: the desktop did not start on ${key}" >&2; return 1; }
+}
+
+# session_tunnel <key> <local_port>   Forward 127.0.0.1:<local_port> to the
+# runner's noVNC. Runs until the runner goes or the caller stops it.
+session_tunnel() {
+  local key="$1" port="$2"
+  [[ "$port" =~ ^[0-9]{4,5}$ ]] || { echo "ERROR: bad port" >&2; return 1; }
+  vm_forward "$(worktree_branch_for "$key")" "$port" 6080
+}
+
 # session_attach <key> <file>...   Put files a person attached in Slack into the
 # runner's /workspace/.fxa-inbox/. Plain files only, safe names, 25 MB each.
 session_attach() {

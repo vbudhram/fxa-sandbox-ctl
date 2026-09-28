@@ -2154,6 +2154,8 @@ cmd_session() {
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;
     plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
       _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;
+    desktop) _session_key "${2:-}" && session_desktop "$2" ;;
+    tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     idle-sweep) session_idle_sweep ;;
     *) echo "Usage: session list | session show <key> | session idle-sweep" >&2; return 1 ;;
   esac

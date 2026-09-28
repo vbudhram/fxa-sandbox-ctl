@@ -8,15 +8,18 @@ timer in the background, every request is served from the last result at once,
 and the page shows how old each result is. A failed refresh keeps the previous
 result rather than blanking the page.
 """
+import atexit
 import base64
 import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -119,6 +122,43 @@ def cached_ctl(cache, args, timeout, max_age):
     return cache["body"]
 
 
+DESKTOPS = {}  # session key -> (tunnel process, local port, VNC password)
+DESKTOP_LOCK = threading.Lock()
+
+
+def desktop(key):
+    """Start a session's desktop and a loopback tunnel to its noVNC; reuse both while the tunnel lives."""
+    # ponytail: one lock for all desktops; a second first-open waits for the first.
+    with DESKTOP_LOCK:
+        cur = DESKTOPS.get(key)
+        if cur and cur[0].poll() is None:
+            return cur[1], cur[2]
+        proc = ctl_run(["session", "desktop", key], timeout=300)
+        m = re.search(r"^password=([A-Za-z0-9]{8})$", proc.stdout, re.M)
+        if proc.returncode != 0 or not m:
+            raise RuntimeError((proc.stderr or "the desktop did not start").strip()[-300:])
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        tunnel = subprocess.Popen([str(CTL), "session", "tunnel", key, str(port)], stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        for _ in range(60):
+            if tunnel.poll() is not None:
+                raise RuntimeError("the tunnel to the sandbox did not start")
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/vnc.html", timeout=2).close()
+                break
+            except OSError:
+                time.sleep(0.5)
+        DESKTOPS[key] = (tunnel, port, m.group(1))
+        return port, m.group(1)
+
+
+def close_desktops():
+    for tunnel, _, _ in DESKTOPS.values():
+        tunnel.terminate()
+
+
 def csp_for(page):
     """Only the page's own inline scripts run: an injected handler or script is blocked."""
     hashes = " ".join(f"'sha256-{base64.b64encode(hashlib.sha256(m.encode()).digest()).decode()}'"
@@ -188,6 +228,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(403, {"error": "cross-site request"})
                 return False
         return True
+
+    def _desktop(self, key):
+        if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):
+            self._json(400, {"error": "bad key"})
+            return
+        # Opening a desktop starts things on the runner. Another site may link
+        # here, but only a click on this server's own page goes through.
+        if self.headers.get("Sec-Fetch-Site") not in (None, "none", "same-origin"):
+            page = (f'<!doctype html><meta charset="utf-8"><title>Open desktop</title>'
+                    f'<body style="font:16px system-ui;margin:3em"><p>Open the Linux desktop of session <b>{key}</b>?</p>'
+                    f'<p><a href="/desktop/{key}">Open desktop</a></p>')
+            self._send(200, page, "text/html; charset=utf-8", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+            return
+        try:
+            port, password = desktop(key)
+        except Exception as exc:
+            self._send(502, f"Could not open the desktop: {exc}", "text/plain; charset=utf-8")
+            return
+        self.send_response(302)
+        # The password rides in the fragment, which the browser never sends to a server.
+        self.send_header("Location", f"http://localhost:{port}/vnc.html?autoconnect=1&resize=scale&reconnect=1#&password={password}")
+        self._hardening()
+        self.end_headers()
 
     def do_POST(self):
         path = self.path.split("?")[0]
@@ -269,6 +332,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 body = json.dumps({"error": type(exc).__name__})
             self._send(200, body, "application/json")
+        elif path.startswith("/desktop/"):
+            self._desktop(path[len("/desktop/"):])
         elif path == "/api/refresh":
             self._json(405, {"error": "use POST"})
         else:
@@ -287,6 +352,7 @@ if __name__ == "__main__":
     print(f"FxA Agent dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
           f"tickets every {INTERVAL}s, agents every {AGENTS_INTERVAL}s)")
     print("Ctrl-C to stop.")
+    atexit.register(close_desktops)
     try:
         ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
     except KeyboardInterrupt:

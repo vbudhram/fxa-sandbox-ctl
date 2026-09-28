@@ -242,6 +242,14 @@ vm_pull_tree() {
 }
 
 # ssh resolves the instance name through the ProxyCommand.
+# vm_forward <name> <local_port> <remote_port>   A loopback-only port forward
+# through IAP, in the foreground.
+vm_forward() {
+  # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags
+  exec ssh -i "$FXA_GCE_SSH_KEY" $VM_SSH_OPTS -N -o ExitOnForwardFailure=yes \
+    -L "127.0.0.1:${2}:127.0.0.1:${3}" "${USER}@$(vm_name "$1")"
+}
+
 vm_ip() { vm_name "$1"; }
 
 # One instance list answers every vm_is_running for 20 s. A snapshot asks this
