@@ -1124,6 +1124,13 @@ function laneRows() {
     else if (d >= 3) kind = "warn";
     rows.push({ t: { ...r, summary: r.title }, st, kind, l1, l2, checks: true, age: d });
   });
+  // Open PRs with the pipeline label that no row shows yet: a ticket between
+  // rounds, a blocked one, or one outside the pipeline. GitHub lists them all.
+  (SNAP?.open_prs ?? []).filter(p => p.key && !rows.some(r => r.t.key === p.key)).forEach(p => {
+    const blocked = (SNAP?.blocked ?? []).some(b => b.key === p.key), d = Math.round(days(p.created) ?? 0);
+    const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : "Not in the pipeline";
+    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d });
+  });
   const order = { live:0, fix:1, warn:2, wait:3, done:4 };
   return rows.sort((x, y) => order[x.kind] - order[y.kind] || (y.age ?? 0) - (x.age ?? 0));
 }
@@ -1184,6 +1191,15 @@ document.addEventListener("click", e => {
   if (!STATS) loadStats();
   renderLanes();
 });
+// "7 open PRs labelled auto: 4 awaiting review · 2 in flight · 1 blocked", as GitHub counts them.
+function openPrLine() {
+  const s = SNAP, open = s?.open_prs;
+  if (!s || open == null) return "";
+  const stateOf = k => !k ? "Slack or by hand" : (s.review ?? []).some(r => r.key === k) ? "awaiting review"
+    : (s.inflight ?? []).some(r => r.key === k) ? "in flight" : (s.blocked ?? []).some(r => r.key === k) ? "blocked" : "not in the pipeline";
+  const n = {}; open.forEach(p => { const k = stateOf(p.key); n[k] = (n[k] ?? 0) + 1; });
+  return `<span class="sub" style="color:var(--dim)"><a href="https://github.com/${esc(s.repo ?? "")}/pulls?q=is%3Apr+state%3Aopen+label%3Aauto" target="_blank" rel="noreferrer">${open.length} open PR${open.length === 1 ? "" : "s"}</a>: ${Object.entries(n).map(([k, c]) => `${c} ${esc(k)}`).join(" · ") || "none"}</span>`;
+}
 function renderLanes() {
   const rows = laneRows();
   assignFoxes(rows.map(r => r.t.key));
@@ -1194,6 +1210,7 @@ function renderLanes() {
   const head = `<div style="display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)">
       <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
       <h2 style="margin:0">Pipeline<span class="sub">one belt per ticket</span></h2>
+      ${openPrLine()}
       <span class="sub" style="color:var(--dim)">${live ? `FxA Agent is working on ${rows.filter(r => r.runner).length}` : "FxA Agent is idle"}</span>
     </div>`;
   put("s-lanes", head + `<div class="lanes">
