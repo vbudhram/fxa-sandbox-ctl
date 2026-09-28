@@ -285,6 +285,9 @@ _setup_egress_firewall() {
   for try in 1 2; do
   rc=0
   err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" bash -c '
+    # Start from an empty OUTPUT chain, so a second run applies the same rules
+    # instead of appending allows after the REJECT.
+    iptables -F OUTPUT
     iptables -A OUTPUT -o lo -j ACCEPT
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
@@ -337,13 +340,21 @@ _setup_egress_firewall() {
       fi
       # Twice: a DNS change between the allow and the check is not a failure.
       { sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null || { sleep 2; sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null; }; } \
-        || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
+        || { ip=$(getent ahostsv4 github.com 2>/dev/null | awk "NR==1 {print \$1}")
+             host=$(timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null && echo yes || echo no)
+             echo "egress: agent user cannot reach github.com; allowlist too tight (github.com is ${ip:-unresolved}; root reaches it: ${host})" >&2; exit 1; }
     fi
   ' 2>&1 >/dev/null)" || rc=$?
-  # Retry once only when ssh failed to connect (exit 255 plus a connect error).
-  # A script that ran must not run again: it appends rules.
-  [ "$rc" -eq 255 ] && [ "$try" = 1 ] && grep -qiE "banner exchange|Connection timed out|Connection closed|Connection refused|kex_exchange" <<< "$err" || break
-  echo "  egress: ssh did not connect; retrying once" >&2; sleep 10
+  # Retry once when ssh failed to connect, or when the github.com check failed:
+  # the script flushes first, so it is safe to run again, and a network blip at
+  # boot should not end the launch.
+  [ "$try" = 1 ] || break
+  if [ "$rc" -eq 255 ] && grep -qiE "banner exchange|Connection timed out|Connection closed|Connection refused|kex_exchange" <<< "$err"; then
+    echo "  egress: ssh did not connect; retrying once" >&2
+  elif grep -q "cannot reach github.com" <<< "$err"; then
+    echo "  $(grep -m1 "cannot reach github.com" <<< "$err"); retrying once" >&2
+  else break; fi
+  sleep 10
   done
   [ "$rc" -eq 0 ] && return 0
   printf '%s\n' "${err:-egress: no reason given (exit $rc); ssh may have failed}" | tail -3 >&2
