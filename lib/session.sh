@@ -1,5 +1,5 @@
 #!/bin/bash
-# session.sh — owner-steered agent sessions with no Jira ticket (the Slack front door).
+# session.sh: owner-steered agent sessions with no Jira ticket (the Slack front door).
 # A session is one branch named after its key and one Claude session on a GCE
 # runner, with no pool slot. Each steer turn is `claude -p --resume` there.
 # The record under FXA_SESSION_DIR is the only state; the bot keeps none.
@@ -19,8 +19,7 @@ session_set() {
     shift 2
   done
   # Serialized: events, steer, and the finish job all write the record, and a
-  # lost write can reopen a closed turn. Unique temp name, so writers never share it.
-  # A lock older than 10 s belongs to a writer that died; a slow live one is waited for.
+  # lost write can reopen a closed turn. A lock older than 10 s belongs to a dead writer.
   local lock="${f}.wlock" tmp rc=0
   while ! mkdir "$lock" 2>/dev/null; do
     [ -d "$lock" ] && [ $(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) )) -gt 10 ] && rmdir "$lock" 2>/dev/null
@@ -140,9 +139,8 @@ write a PR description; that happens when they open the PR. Only:
 EOF
     return
   fi
-  local ask="open a PR"
   cat <<EOF
-The engineer asked to ${ask}. Wrap up now:
+The engineer asked to open a PR. Wrap up now:
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
    untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker.
 2. Revert any file unrelated to the request with 'git checkout -- <path>'.
@@ -193,7 +191,6 @@ _session_turn() {
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
     printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "${CLAUDE_CODE_OAUTH_TOKEN:?CLAUDE_CODE_OAUTH_TOKEN is unset}" > "${tmp}/.fxa-auto-token"
-    # "--": a message that starts with a dash is text, not a flag.
     if [ "$(session_get "$key" runtime)" = codex ]; then
       # Codex keeps its login in ~/.codex/auth.json on the runner; no token ships.
       : > "${tmp}/.fxa-auto-token"
@@ -205,6 +202,7 @@ codex exec resume ${sid} --json --dangerously-bypass-approvals-and-sandbox --ski
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
     else
+    # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
@@ -232,12 +230,10 @@ session_interrupt() {
   _session_lock "$1" || { echo "ERROR: $1 is busy; try again in a moment" >&2; return 1; }
   # Close the turn only once the process is gone: a steer that saw it closed
   # early started a second claude on the same session.
-  local rc=0
   _session_sh "$(worktree_branch_for "$1")" "pkill -INT -f '${_SESSION_AGENT_PAT}'
     for i in \$(seq 30); do pgrep -f '${_SESSION_AGENT_PAT}' >/dev/null || exit 0; sleep 0.5; done
-    pkill -KILL -f '${_SESSION_AGENT_PAT}'; true" >/dev/null 2>&1 || rc=$?
-  # The kill did not reach the runner: the turn is still open.
-  [ "$rc" -eq 0 ] || { _session_unlock "$1"; echo "ERROR: $1: could not reach the runner to interrupt" >&2; return 1; }
+    pkill -KILL -f '${_SESSION_AGENT_PAT}'; true" >/dev/null 2>&1 \
+    || { _session_unlock "$1"; echo "ERROR: $1: could not reach the runner to interrupt" >&2; return 1; }
   session_set "$1" turn_open 0
   _session_unlock "$1"
   echo "$1 interrupted"
@@ -277,8 +273,6 @@ _session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }
 _SESSION_AGENT_PAT='^(claude -p|(node )?[^ ]*codex exec)'
 _session_turn_running() {
   local n
-  # An unreachable runner counts as running, so a message queues instead of
-  # starting a second writer on one session.
   n="$(_session_sh "$(worktree_branch_for "$1")" "pgrep -cf '${_SESSION_AGENT_PAT}' || true" 2>/dev/null | tr -d '\r' | tail -1)" || return 0
   case "$n" in ''|*[!0-9]*) return 0 ;; esac
   [ "$n" -gt 0 ]
@@ -299,7 +293,6 @@ _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
     else .name end
   | gsub("\\s+"; " ") | .[0:90]'
 
-# _session_activity   stream-json lines on stdin → what the agent did last, one line.
 # One Codex item → one step title, in the same words as Claude's.
 _SESSION_CODEX_STEP_JQ='if .type == "command_execution" then "Running " + ((.command // "") | tostring | sub("^/bin/(ba)?sh -lc \u0027(?<c>.*)\u0027$"; "\(.c)"; "s"))
   elif .type == "file_change" then "Editing " + (((.changes // [])[0].path // "") | tostring | split("/") | last)
@@ -314,6 +307,7 @@ _SESSION_STEPS_JQ="if .type == \"assistant\" then (.message.content[]? | ${_SESS
   then (.item | ${_SESSION_CODEX_STEP_JQ})
   else empty end"
 
+# _session_activity   stream-json lines on stdin → what the agent did last, one line.
 _session_activity() {
   jq -R -s -r "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null
 }
@@ -394,7 +388,6 @@ session_media() {
   _session_media_scrub "$out"
   # Playwright records WebM, which Slack does not play inline (iOS not at all).
   # H.264 MP4 plays everywhere; the scale keeps both sides even, as x264 needs.
-  local f
   if command -v ffmpeg >/dev/null 2>&1; then
     for f in "$out"/*.webm; do
       [ -f "$f" ] || continue
@@ -423,8 +416,6 @@ Before you use it, wait until curl -sf http://localhost:9000/__heartbeat__ succe
 # runner; the runner holds the work until Open PR or stop.
 session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 
-# session_stop <key>   Save the runner's work as a patch, then delete the runner.
-# Resume and recovery apply it with `git apply --index`.
 # _session_changes <key>   How many files the runner has changed, not counting
 # the .fxa-* scratch files, ai/ and artifacts/, which never ship. Empty when the
 # runner did not answer.
@@ -475,8 +466,6 @@ session_pr_status() {
          reviews: [.latestReviews[]? | {login: .author.login, state}]}' || echo null
 }
 
-# _session_record_summary <key>   Before the runner goes: time, turns, cost and the
-# size of the change, for the line the bot posts on Stop and Open PR.
 # _session_cost <key>   {cost, tokens} so far, from the runner's
 # transcript (its last 5000 events). Empty when the runner did not answer.
 _session_cost() {
@@ -536,6 +525,8 @@ session_pause() {
   _session_unlock "$key"
 }
 
+# session_stop <key>   Save the runner's work as a patch, then delete the runner.
+# Resume and recovery apply it with `git apply --index`.
 session_stop() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
   # First, so a boot still in progress sees it and takes its own runner down.
@@ -556,9 +547,7 @@ _session_save() {
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
-    # Screenshots and videos, which only ever reached Slack before.
     local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
-    # The conversation too, so a later session in the thread can --resume it.
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
   fi

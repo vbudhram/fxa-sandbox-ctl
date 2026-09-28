@@ -1,5 +1,5 @@
 #!/bin/bash
-# runtime-claude.sh — Claude Code as the agent inside the VM.
+# runtime-claude.sh: Claude Code as the agent inside the VM.
 #
 # The runtime contract. Every lib/runtime-<name>.sh defines these, and
 # agent.sh calls only these; nothing else in the tree may branch on the runtime.
@@ -34,22 +34,12 @@ runtime_inject_auth() {
   fi
 }
 
-# The prompt keeps its newlines: `claude -p` takes it as an argument, so there
-# is no TUI to paste into and nothing to submit. The paste was the worst failure
-# shape in the system (FXA-10214 idled 15 min, FXA-14104 57 min, both looking
-# healthy), and /goal works the same in -p mode.
-#
-# The launch is a script, not an inline string: it runs `claude -p "$(cat
-# prompt)"`, and that $(...) must expand inside the VM, not on the host where
-# agent.sh builds the screen command line inside double quotes.
-#
-# Prompt on stdin was tried and rejected: a SessionStart hook consumes stdin and
-# claude then reports "Input must be provided". The argument form is immune.
-#
-# FXA_AGENT_EFFORT is unset by default, so the CLI keeps its own default and
-# this changes nothing. Set it (low, medium, high, xhigh, max) to sweep effort.
-# Set it once per run: a mid-session change invalidates the prompt cache, and
-# cache reads are 63% of what a run costs.
+# `claude -p` takes the prompt as an argument, newlines intact. A TUI paste let
+# runs idle up to 57 min while they looked healthy; /goal works the same in -p.
+# The launch is a script so that $(cat prompt) expands in the VM, not on the host
+# inside agent.sh's double quotes. Not stdin: a SessionStart hook consumes it.
+# FXA_AGENT_EFFORT (unset: the CLI default) must stay fixed for a run: a change
+# invalidates the prompt cache, and cache reads are 63% of a run's cost.
 runtime_write_prompt() {
   local prompt="$1" workspace_dir="$2"
   local effort=""
@@ -107,8 +97,7 @@ runtime_skill_ref() { printf '/%s' "$1"; }
 # once with num_turns 0 and no error flag; `progress` reports it as goal-rejected.
 runtime_prompt_max_chars() { printf '%s' "${FXA_GOAL_MAX_CHARS:-4000}"; }
 
-# A human attaching to the TUI may need to re-authenticate, so the token is
-# re-staged. Existing behaviour, kept as-is.
+# A human attaching to the TUI may need to re-authenticate, so the token is re-staged.
 runtime_attach_hook() {
   local workspace_dir="$1"
   [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && _inject_oauth_token "$workspace_dir" "$CLAUDE_CODE_OAUTH_TOKEN"

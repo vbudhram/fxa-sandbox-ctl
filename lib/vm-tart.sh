@@ -1,7 +1,6 @@
 #!/bin/bash
-# vm-tart.sh — the Tart implementation of the VM backend contract.
+# vm-tart.sh: the Tart implementation of the VM backend contract.
 
-# Source config if not already loaded
 if [ -z "${FXA_IMAGE_NAME:-}" ]; then
   source "$(dirname "${BASH_SOURCE[0]}")/config.sh"
 fi
@@ -17,8 +16,6 @@ vm_image_exists() {
 }
 
 vm_image_build() {
-  local packer_dir="${SANDBOX_ROOT}/packer"
-
   if ! command -v packer &>/dev/null; then
     echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2
     return 1
@@ -27,7 +24,7 @@ vm_image_build() {
   echo "Building golden image '${FXA_IMAGE_NAME}'..."
   echo "This will take 10-20 minutes on first run."
 
-  cd "${packer_dir}"
+  cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
   packer build -only 'tart-cli.*' fxa-dev.pkr.hcl
 }
@@ -35,8 +32,7 @@ vm_image_build() {
 # ── VM lifecycle ───────────────────────────────────────────────
 
 vm_exists() {
-  local name="$1"
-  tart list 2>/dev/null | grep -q "$(vm_name "$name")"
+  tart list 2>/dev/null | grep -q "$(vm_name "$1")"
 }
 
 vm_clone() {
@@ -60,13 +56,7 @@ vm_clone() {
 }
 
 vm_configure() {
-  local name="$1"
-  local cpu="${2:-$DEFAULT_VM_CPU}"
-  local memory="${3:-$DEFAULT_VM_MEMORY_MB}"
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  tart set "${full_name}" --cpu "$cpu" --memory "$memory"
+  tart set "$(vm_name "$1")" --cpu "${2:-$DEFAULT_VM_CPU}" --memory "${3:-$DEFAULT_VM_MEMORY_MB}"
 }
 
 vm_start() {
@@ -81,37 +71,23 @@ vm_start() {
 
   echo "Starting VM '${full_name}' with workspace: ${workspace_dir}..."
 
-  # Build tart run command with VirtioFS mounts
   local tart_cmd=(
     tart run --no-graphics
     "--dir=${MOUNT_WORKSPACE}:${workspace_dir}"
   )
 
-  # Mount parent .git directory for worktrees, READ-ONLY.
-  #
-  # This is the repo's shared admin directory: it holds .git/worktrees/<name>
-  # for EVERY worktree, not just this agent's. Mounted read-write, a
-  # bypassPermissions agent in one worktree can rewrite another worktree's
-  # gitdir pointer. On 2026-08-14 three sibling worktrees (fxa-agent,
-  # fxa-agent3, fxa-fxa-review) had their admin gitdir files rewritten with a
-  # stray "gitdir: " prefix, which git reports as `prunable`.
-  #
-  # The VM only ever READS this to resolve its own worktree .git pointer. It
-  # commits into the workspace mount, which stays writable. Do not drop the
-  # `:ro` to fix a permissions error in the VM; that error means something is
-  # trying to write here, which is the bug.
+  # The parent .git holds the admin dir of EVERY worktree, so it mounts READ-ONLY:
+  # read-write, an agent once rewrote three sibling worktrees' gitdir files. The VM
+  # only reads it to resolve its own .git pointer. A permissions error here means
+  # something tries to write, which is the bug; do not drop the `:ro`.
   if [ -n "$gitdir" ]; then
     tart_cmd+=("--dir=gitdir:${gitdir}:ro")
   fi
 
-  # NOTE: We intentionally do NOT mount ~/Library/Application Support/Claude
-  # or ~/.claude into the VM. Those directories contain sensitive data (cookies,
-  # token caches, conversation history, project paths). Only specific config
-  # files are copied into the VM after boot via _setup_claude_config().
-
+  # ~/.claude is never mounted: it holds tokens, cookies and history.
+  # _setup_claude_config copies only the files the VM needs.
   tart_cmd+=("${full_name}")
 
-  # Start VM in background
   "${tart_cmd[@]}" > "${log_file}" 2>&1 &
   local vm_pid=$!
   echo "$vm_pid" > "${LOG_DIR}/${name}.pid"
@@ -135,7 +111,7 @@ vm_wait_ready() {
       return 1
     fi
 
-    # tart exec works once the VM is booted and the guest agent is ready
+    # tart exec works once the guest agent is up.
     if tart exec "${full_name}" true 2>/dev/null; then
       echo "VM '${full_name}' ready (${elapsed}s)"
       return 0
@@ -146,75 +122,45 @@ vm_wait_ready() {
 }
 
 vm_exec() {
-  local name="$1"
-  shift
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  tart exec "${full_name}" "$@"
+  local name="$1"; shift
+  tart exec "$(vm_name "$name")" "$@"
 }
 
 vm_exec_as_agent() {
-  local name="$1"
-  shift
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  tart exec "${full_name}" sudo -u agent -i bash -c "$*"
+  local name="$1"; shift
+  tart exec "$(vm_name "$name")" sudo -u agent -i bash -c "$*"
 }
 
 vm_ip() {
-  local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
-
   local ip
-  ip="$(tart ip "${full_name}" 2>/dev/null)" || return 1
-  if [ -z "$ip" ]; then
-    return 1
-  fi
+  ip="$(tart ip "$(vm_name "$1")" 2>/dev/null)" || return 1
+  [ -n "$ip" ] || return 1
   echo "$ip"
 }
 
 vm_stop() {
-  local name="$1"
   local full_name
-  full_name="$(vm_name "$name")"
-
+  full_name="$(vm_name "$1")"
   echo "Stopping VM '${full_name}'..."
-
-  # Graceful shutdown
+  # A clean shutdown first, then a forced stop.
   tart exec "${full_name}" sudo shutdown -h now 2>/dev/null || true
   sleep 3
-
-  # Force stop if still running
   tart stop "${full_name}" 2>/dev/null || true
 }
 
 vm_delete() {
   local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  echo "Deleting VM '${full_name}'..."
-  tart delete "${full_name}" 2>/dev/null || true
-
-  # Clean up PID and log files
-  rm -f "${LOG_DIR}/${name}.pid"
-  rm -f "${LOG_DIR}/${name}-vm.log"
+  echo "Deleting VM '$(vm_name "$name")'..."
+  tart delete "$(vm_name "$name")" 2>/dev/null || true
+  rm -f "${LOG_DIR}/${name}.pid" "${LOG_DIR}/${name}-vm.log"
 }
 
+# tart reports an IP only for a running VM.
 vm_is_running() {
-  local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  # Check if tart reports an IP (means the VM is running)
-  tart ip "${full_name}" &>/dev/null
+  tart ip "$(vm_name "$1")" &>/dev/null
 }
 
 vm_list() {
-  # List all agent VMs
   tart list 2>/dev/null | grep "${VM_PREFIX}-" || true
 }
 

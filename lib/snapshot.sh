@@ -1,12 +1,7 @@
 #!/bin/bash
-# snapshot.sh — the whole pipeline state as one JSON document.
-#
-# This is the dashboard's data source, and it is useful on its own for a quick
-# `ctl snapshot | jq` at the terminal. Every field comes from the same functions
-# the pass uses, so the page can never disagree with the pipeline.
-#
-# Public API:
-#   snapshot_json    Print the full state as JSON
+# snapshot.sh: the whole pipeline state as one JSON document, for the dashboard.
+# Every field comes from the functions the pass uses, so the page cannot disagree
+# with the pipeline.
 
 [ -n "${_FXA_SNAPSHOT_LOADED:-}" ] && return 0
 _FXA_SNAPSHOT_LOADED=1
@@ -40,8 +35,7 @@ _snapshot_skipped() {
       | map(.passes |= tonumber)'
 }
 
-# Per-ticket detail for the runs that are actually in flight. Costs one SSH per
-# live VM, so it is bounded by the pool size, not by the queue.
+# Per-ticket detail for the runs in flight. One SSH per live VM, so the pool size bounds it.
 _snapshot_inflight() {
   local keys="${1:-}"
   [ -n "$keys" ] || { echo '[]'; return 0; }
@@ -61,22 +55,15 @@ _snapshot_inflight() {
     # The launch log is created at launch, so its birth time is the run's start.
     log="$(pipeline_launch_log "$key")"
     started="$( [ -f "$log" ] && stat -f %B "$log" 2>/dev/null || echo '' )"
-    # Forward motion, the honest way. The launcher's own elapsed counter freezes
-    # (macOS block-buffers its stdout with no TTY), so it is NOT a freshness
-    # signal. Changed files and commits are.
-    #
-    # Working-tree numbers go to ZERO the moment the host squashes and commits,
-    # which made a real 1-commit change read "0 files touched". So carry both:
-    # the dirty tree while the agent is still writing, and the committed range
-    # once it has committed.
+    # Progress is changed files and commits: the launcher's elapsed counter freezes
+    # (macOS block-buffers its stdout). Carry the committed range too, since the
+    # dirty tree drops to zero once the host commits.
     wt="$(_telemetry_worktree_for_key "$key" 2>/dev/null || echo '')"
     if [ -n "$wt" ]; then
       # gce: the tree and the transcript are on the runner until pulled.
       _worktree_pull_if_remote "$wt"
-      # `grep -c` prints 0 AND exits non-zero on no match, so `|| echo 0` would
-      # emit a SECOND 0. That extra newline split into a phantom inflight row
-      # with key "0". Use `|| true` and take one line -- the same trap the
-      # pgrep -c call in agent_alive already documents.
+      # grep -c prints 0 and fails on no match: `|| echo 0` would add a second
+      # line, which split into a phantom row with key "0".
       files="$(git -C "$wt" status --porcelain 2>/dev/null \
                | grep -vcE '^\?\? (\.fxa-|packages/fxa-auth-server/config/newKey\.json)' \
                || true)"
@@ -89,8 +76,7 @@ _snapshot_inflight() {
       else
         cfiles=0; cstat=""
       fi
-      # The handoff file is the trigger for the push. Without it, "agent still
-      # working" and "agent finished, host has not pushed" look identical.
+      # Tells "agent still working" from "agent done, host has not pushed yet".
       [ -f "${wt}/.fxa-auto-done.json" ] && handoff=true || handoff=false
       agent="$(_snapshot_agent_json "${wt}/.fxa-auto-claude.jsonl" "$now")"
     else
@@ -118,9 +104,8 @@ _snapshot_inflight() {
               agent: ((.[13] // "null") | fromjson? // null) })'
 }
 
-# _snapshot_instances
-#   Every VM the backend knows about, whether or not a ticket owns it. On gce a
-#   leaked instance keeps billing, and nothing else on the page would show it.
+# _snapshot_instances   Every VM the backend knows, owned or not: on gce a leaked
+# instance keeps billing, and nothing else on the page shows it.
 _snapshot_instances() {
   local line name state age
   vm_list 2>/dev/null | while IFS= read -r line; do
@@ -136,14 +121,10 @@ _snapshot_instances() {
               max_seconds: $max })'
 }
 
-# _snapshot_agent_json <jsonl> <now>
-#   What the agent is doing, from its own transcript. `claude -p` streams one
-#   JSON event per line; `tee` also catches stray stderr lines, so parse with
-#   fromjson? and drop what is not JSON. idle_seconds is the strongest freshness
-#   signal there is: the file's mtime moves on every event.
-#   cost_usd and is_error exist only once the run ended (the result event).
-#   cost_so_far prices the per-message usage with the same table `record` uses,
-#   so a run burning fast is visible while it runs, not only at the end.
+# _snapshot_agent_json <jsonl> <now>   What the agent is doing, from its transcript.
+# tee also catches stray stderr lines, so fromjson? drops what is not JSON.
+# idle_seconds uses the file's mtime, which moves on every event. cost_usd and
+# is_error come only with the result event; cost_so_far shows spend mid-run.
 _snapshot_agent_json() {
   local f="$1" now="$2" mtime model rates
   [ -s "$f" ] || { echo null; return 0; }
@@ -248,10 +229,7 @@ _snapshot_telemetry() {
            last_recorded: ([.[].recorded_at] | max) }' "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }
 
-
-
-# _snapshot_runner_row <meta> <now>
-#   One tab-separated row for one launched runner, or nothing if its VM is gone.
+# _snapshot_runner_row <meta> <now>   One TSV row per launched runner, none if its VM is gone.
 _snapshot_runner_row() {
   local meta="$1" now="$2"
   local NAME="" WORKSPACE="" STARTED="" BASE=""
@@ -291,9 +269,8 @@ _snapshot_runner_row() {
     "$elapsed" "${files:-0}" "$stat_line" "$handoff" "$base_ok" "${agent:-null}"
 }
 
-# _snapshot_sessions <now>
-#   Owner-steered sessions from their records, plus what the agent is doing from
-#   its transcript on the runner. Ended sessions stay listed for a day.
+# _snapshot_sessions <now>   Session records plus what each agent is doing.
+# Ended sessions stay listed for a day.
 _snapshot_sessions() {
   local now="$1" f tmp; tmp="$(mktemp -d)"
   for f in "$SESSION_DIR"/agent-*.json; do
@@ -323,8 +300,7 @@ _snapshot_session_row() {
     rm -f "$t" "${t}.j"
     _session_turn_running "$key" && alive=true
   fi
-  # Media the host kept for this session, oldest first; only names the dashboard will serve.
-  # Media the host kept, with each file's time, so the conversation can place it.
+  # Media the host kept, oldest first, with each file's time so the conversation can place it.
   # Each stage may find nothing; a fallback here would print a second [] and drop the row.
   local media; media="$( { cd "${SESSION_DIR}/${key}.media" 2>/dev/null && for m in *; do
       [[ "$m" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] || continue
@@ -335,12 +311,9 @@ _snapshot_session_row() {
     '. + {agent: $agent, agent_alive: $alive, request: $request, media: $media}' "$f"
 }
 
-# snapshot_agents_json
-#   The fast feed: every runner the host launched, what it is doing, and what
-#   the pool and the instances look like. No Jira, no GitHub. It costs one
-#   rsync and one ssh per runner plus one instance list, so it can run every
-#   30 seconds while the full snapshot, which waits on Jira and GitHub for a
-#   minute or more, runs every couple of minutes. The page merges the two by key.
+# snapshot_agents_json   The fast feed: runners, pool and instances, with no Jira
+# or GitHub, so it can run every 30 s while the slow full snapshot runs every few
+# minutes. The page merges the two by key.
 snapshot_agents_json() {
   local started now; started="$(date +%s)"; now="$started"
   # Fill the instance-state memo here, in the parent shell, so every $(...)
@@ -392,8 +365,7 @@ snapshot_agents_json() {
        today: $today }'
 }
 
-# _snapshot_today
-#   Runs recorded today (UTC), from the run log. The footer keeps all time.
+# _snapshot_today   Runs recorded today (UTC). The footer keeps all time.
 _snapshot_today() {
   [ -f "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
   jq -s --arg d "$(date -u +%F)" '
@@ -405,17 +377,14 @@ _snapshot_today() {
     "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }
 
-# snapshot_json
-#   One document describing every stage. Any section that fails to fetch is
-#   `null` rather than empty, so the page can say "unknown" instead of drawing
-#   a confident zero.
+# snapshot_json   Every stage in one document. A section that fails to fetch is
+# null, not empty, so the page says "unknown" instead of a confident zero.
 snapshot_json() {
   vm_is_running __prime >/dev/null 2>&1 || true
   pipeline_require || return 1
   local started; started="$(date +%s)"
 
-  # One call per state, each returning key AND summary. Keys are derived from
-  # the same payload, so adding titles cost no extra request.
+  # One call per state returns keys and summaries, so titles cost no extra request.
   local queue_items inflight_items done_items blocked_items
   queue_items="$(jira_queue_items)"
   inflight_items="$(jira_items_in_state inflight)"
@@ -442,10 +411,8 @@ snapshot_json() {
     why="$(gh_red_infra "$k" 2>/dev/null)" && infra="$(jq -c --arg k "$k" --arg w "$why" '. + {($k): $w}' <<<"$infra")"
   done
   local hold; hold="$(pipeline_holding_new && cat "$(pipeline_hold_marker)" || true)"
-  # If the inflight read failed we do not know which slots a ticket still owns,
-  # and worktree_free_slots with an empty owner list calls EVERY idle slot
-  # claimable. That is the same confident zero the review section guards
-  # against, so report unknown instead.
+  # A failed inflight read gives an empty owner list, and worktree_free_slots
+  # then calls every idle slot claimable. Report unknown instead.
   if [ "$inflight_items" = "null" ]; then
     freeslots="null"
   else

@@ -1,17 +1,7 @@
 #!/bin/bash
-# finish.sh — Host-side post-agent handoff: push the branch and create the PR.
-#
-# The agent writes /workspace/.fxa-auto-done.json when it finishes implementing
-# and committing. Because /workspace is a virtiofs mount of the host's shared
-# worktree, the file appears on the host with no SSH needed. The host then
-# pushes the branch and runs `gh pr create` using its own credentials.
-#
-# Public API:
-#   finish_done_file_path           Print the absolute path to the handoff file.
-#   finish_wait_for_done [timeout]  Block until the handoff file exists. Returns
-#                                   0 on detection, 1 on timeout.
-#   finish_push_and_pr              Read the handoff file, push the branch,
-#                                   create the PR. Prints the PR URL on stdout.
+# finish.sh: host-side handoff. The agent writes the handoff file in the slot
+# when it finishes its change; the host commits, pushes and opens the PR with
+# its own credentials, because the VM cannot commit or reach GitHub.
 
 [ -n "${_FXA_FINISH_LOADED:-}" ] && return 0
 _FXA_FINISH_LOADED=1
@@ -20,14 +10,10 @@ FINISH_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")"
 source "${FINISH_LIB_DIR}/config.sh"
 source "${FINISH_LIB_DIR}/worktree.sh"
 
-# Filename the agent writes as its handoff signal. Lives at the root of the
-# shared worktree.
 : "${FXA_DONE_FILENAME:=.fxa-auto-done.json}"
 
 # finish_done_file_path [worktree]
-#   Print the absolute path of the handoff JSON for the given worktree (or for
-#   the canonical fxa-auto base if no worktree is supplied — kept for legacy
-#   callers that don't track a specific slot).
+#   With no worktree, use the base slot, for callers that do not track a slot.
 finish_done_file_path() {
   local worktree="${1:-}"
   if [ -z "$worktree" ]; then
@@ -36,15 +22,9 @@ finish_done_file_path() {
   printf '%s/%s\n' "$worktree" "$FXA_DONE_FILENAME"
 }
 
-# finish_wait_for_done [timeout_seconds]
-#   Polls the shared worktree for the handoff file. Default timeout is 2 hours.
-#   Prints a progress dot every 30s so the user knows it's alive.
 # finish_attach_and_wait <agent-name>
-#   SSH into the agent's screen session in the foreground (user sees the live
-#   Claude TUI) while a background poller watches for the handoff file. When
-#   the handoff appears, the poller kills the SSH so control returns here for
-#   push + PR. If the user Ctrl-C's before the handoff, returns 1 so the
-#   caller can print a resume hint.
+#   Attach to the agent's screen session in the foreground. A background poller
+#   kills the SSH when the handoff appears. Returns 1 on a detach without one.
 finish_attach_and_wait() {
   local name="${1:-}"
   if [ -z "$name" ]; then
@@ -62,14 +42,11 @@ finish_attach_and_wait() {
   source "$meta"
 
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
-  # Use THIS agent's workspace, not the singleton — multiple agents can run
-  # concurrently in different pool slots.
+  # This agent's slot, not the base one: agents run in parallel slots.
   local done_file
   done_file="$(finish_done_file_path "${WORKSPACE}")" || return 1
 
-  # Without a TTY (e.g. invoked from a script or background process), the TUI
-  # can't render. Fall back to silent polling so the orchestration still works;
-  # the user can `attach` in their own terminal to see Claude live.
+  # Without a TTY the TUI cannot render, so poll silently instead.
   if [ ! -t 0 ] || [ ! -t 1 ]; then
     echo "(no TTY — polling silently for handoff. Attach live with: fxa-sandbox-ctl attach ${name})" >&2
     finish_wait_for_done "${WORKSPACE}"
@@ -82,8 +59,6 @@ finish_attach_and_wait() {
   echo "Resume later with: fxa-sandbox-ctl finish" >&2
   echo "" >&2
 
-  # Background poller: when the handoff JSON appears, kill the SSH attached
-  # to this VM's screen so control returns to the foreground.
   (
     local elapsed=0
     while [ "$elapsed" -lt 7200 ]; do
@@ -98,8 +73,7 @@ finish_attach_and_wait() {
   local poller_pid=$!
   trap 'kill "$poller_pid" 2>/dev/null; trap - INT TERM EXIT' INT TERM EXIT
 
-  # Foreground SSH+attach. `screen -x` is multi-attach (won't conflict with
-  # a separate `fxa-sandbox-ctl attach`).
+  # `screen -x` is multi-attach, so a separate `fxa-sandbox-ctl attach` still works.
   ssh -t -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" \
     "screen -x ${VM_SCREEN_SESSION} || screen -S ${VM_SCREEN_SESSION}" || true
 
@@ -116,56 +90,35 @@ finish_attach_and_wait() {
   return 1
 }
 
-# finish_wait_for_done [worktree] [timeout_seconds]
-#   Silent poll for the handoff file. Used by `fxa-sandbox-ctl finish --wait`
-#   when there's no TUI to attach to. Prints a heartbeat every 30s. If no
-#   worktree is supplied, scans every pool slot for a valid handoff so an
-#   agent running in fxa-auto-2+ is still detected.
-# A handoff file is not ready the instant it appears. The agent may still be
-# committing, and it often amends afterwards (/code-simplifier, /fxa-review-quick).
-# On 2026-08-17 FXA-14344 wrote its handoff while HEAD was still origin/main: the
-# watcher returned immediately, the dirty-worktree guard in finish_push_and_pr
-# refused, and the run stranded with a perfectly good commit landing seconds
-# later. Detecting the file is not the same as the work being settled.
-#
-# Readiness is all three: parseable JSON, a clean worktree, and HEAD matching the
-# sha the handoff names. Any of those failing just means "not yet", so the
-# watcher keeps polling until its existing timeout.
+# _handoff_settled <worktree> <handoff_file>
+#   A handoff can appear before the work it names, so ready means parseable JSON
+#   plus work to ship. Anything else means "not yet" and the watcher polls on.
 _handoff_settled() {
   local wt="$1" f="$2"
-  # gce: the handoff and the tree are on the runner until pulled. Ask for the
-  # one file first; a full-tree pull every poll cost the runner CPU it needed
-  # for the tests, and the 5 s loop was running at 150 s per turn.
+  # gce: check for the one file before a full-tree pull, which starves the runner's tests.
   if [ "${FXA_VM_BACKEND:-tart}" = "gce" ] && [ ! -s "$f" ]; then
     local name; name="$(_worktree_agent_for_workspace "$wt")"
     [ -n "$name" ] && vm_exec "$name" test -s "/workspace/$(basename "$f")" 2>/dev/null || return 1
   fi
   _worktree_pull_if_remote "$wt"
   [ -s "$f" ] && jq -e . "$f" >/dev/null 2>&1 || return 1
-  # There must be work to ship: uncommitted changes (the normal case, since the
-  # agent cannot commit) or commits it somehow made. An empty worktree with a
-  # handoff file means the agent wrote the handoff before doing the work.
+  # Uncommitted changes are the normal case: the agent cannot commit.
   [ -n "$(worktree_filtered_status "$wt")" ] && return 0
   [ "$(git -C "$wt" rev-list --count "origin/${FXA_WORKTREE_BASE:-main}..HEAD" 2>/dev/null || echo 0)" != "0" ]
 }
 
 # _finish_fetch_session_log <worktree>
-#   gce only. Copy Claude Code's own session transcript out of the runner into
-#   the slot as .fxa-auto-session.jsonl before the runner is reaped. The
-#   stream-json log the launcher already pulls carries usage snapshots taken at
-#   message start, so its output-token counts are near zero; the session file
-#   holds the final usage per message and is what telemetry prices from.
+#   gce only. Copy the agent's session transcript into the slot before the
+#   runner goes. Telemetry prices from it: the stream log's output tokens are near zero.
 _finish_fetch_session_log() {
   local wt="$1"
-  # Claude Code and Codex keep session logs in different trees; take the newest of either.
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   local name; name="$(_worktree_agent_for_workspace "$wt")"
-  # The meta lookup missed fxa-auto-3 on 2026-09-15 and the fetch returned in
-  # silence, so that run priced from the stream log. The agent name is the
-  # slot's branch name by construction; use it when the lookup comes up empty.
+  # The meta lookup can miss; the agent name is the slot's branch name by construction.
   [ -n "$name" ] || name="$(git -C "$wt" branch --show-current 2>/dev/null)"
   [ -n "$name" ] && vm_is_running "$name" 2>/dev/null \
     || { echo "WARN: no running agent found for ${wt}; session transcript not fetched, telemetry will undercount output tokens." >&2; return 0; }
+  # Claude Code and Codex keep session logs in different trees; take the newest of either.
   vm_exec "$name" bash -c 'f=$(ls -t /home/agent/.claude/projects/*/*.jsonl /home/agent/.codex/sessions/*/*/*/*.jsonl 2>/dev/null | head -1); [ -n "$f" ] && cat "$f"' \
     2>/dev/null | slot_write "${wt}/.fxa-auto-session.jsonl.tmp" \
     && [ -s "${wt}/.fxa-auto-session.jsonl.tmp" ] \
@@ -173,6 +126,8 @@ _finish_fetch_session_log() {
     || { rm -f "${wt}/.fxa-auto-session.jsonl.tmp"; echo "WARN: could not fetch the session transcript from ${name}; telemetry will undercount output tokens." >&2; }
 }
 
+# finish_wait_for_done [worktree] [timeout_seconds]
+#   Poll for a settled handoff, default 2 hours. With no worktree, scan every pool slot.
 finish_wait_for_done() {
   local worktree="${1:-}"
   local timeout="${2:-7200}"
@@ -192,34 +147,30 @@ finish_wait_for_done() {
   fi
   echo "(Ctrl-C stops the watcher; the agent keeps running.)" >&2
 
+  local wt found
   while [ "$elapsed" -lt "$timeout" ]; do
+    found=""
     if [ -n "$done_file" ]; then
       if _handoff_settled "$(dirname "$done_file")" "$done_file"; then
-        echo "" >&2
-        echo "=== handoff file detected: ${done_file} ===" >&2
-        _finish_fetch_session_log "$(dirname "$done_file")"
-        return 0
+        found="$done_file"
       fi
     else
-      local wt found=""
       while IFS= read -r wt; do
         [ -z "$wt" ] && continue
-        local candidate="${wt}/${FXA_DONE_FILENAME}"
-        if _handoff_settled "$wt" "$candidate"; then
-          found="$candidate"
+        if _handoff_settled "$wt" "${wt}/${FXA_DONE_FILENAME}"; then
+          found="${wt}/${FXA_DONE_FILENAME}"
           break
         fi
       done < <(_worktree_pool_list)
-      if [ -n "$found" ]; then
-        echo "" >&2
-        echo "=== handoff file detected: ${found} ===" >&2
-        _finish_fetch_session_log "$(dirname "$found")"
-        return 0
-      fi
+    fi
+    if [ -n "$found" ]; then
+      echo "" >&2
+      echo "=== handoff file detected: ${found} ===" >&2
+      _finish_fetch_session_log "$(dirname "$found")"
+      return 0
     fi
     sleep 5
     elapsed=$(( $(date +%s) - started ))
-    # Heartbeat every 30s.
     if [ $(( elapsed % 30 )) -eq 0 ]; then
       printf '[%4ds] ' "$elapsed" >&2
     fi
@@ -230,9 +181,7 @@ finish_wait_for_done() {
   return 1
 }
 
-# A failed re-commit is far more often the pre-commit hook rejecting the diff
-# (lint-staged, or check:frozen on a frozen path) than a signing problem. Name
-# the hook first and point at its output, which git already printed above.
+# A failed re-commit is more often the hook than signing, so name the hook first.
 _finish_recommit_failed() {
   echo "ERROR: re-commit failed. The pre-commit hook rejects the diff, or signing failed." >&2
   echo "       Read the hook output above first: 'yarn check:frozen' refuses edits to" >&2
@@ -241,17 +190,9 @@ _finish_recommit_failed() {
   echo "       your signing key is unlocked." >&2
 }
 
-# finish_push_and_pr
-#   Reads the handoff file and:
-#     1. Verifies the branch + commit_sha match the worktree's current state.
-#     2. Pushes the branch to origin.
-#     3. Runs `gh pr create` with the title/body from the handoff file.
-#   Prints the PR URL on stdout. Progress on stderr.
 # _finish_release_runner <worktree>
-#   gce only. The PR is open and the branch is on origin, so nothing after this
-#   point reads the runner; a feedback round boots a fresh one. Tart keeps its
-#   VM until the ticket is labeled done, which costs nothing there and about
-#   $0.13 an hour here.
+#   gce only. Nothing reads the runner after the push, and it bills by the hour.
+#   A feedback round boots a fresh one. Tart keeps its VM, which costs nothing.
 _finish_release_runner() {
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   local name; name="$(_worktree_agent_for_workspace "$1")"
@@ -261,18 +202,13 @@ _finish_release_runner() {
 }
 
 # _finish_claim <worktree> / _finish_release <worktree>
-#   While finish stages and commits, nothing else may touch the slot's git
-#   state. On 2026-09-14 the dashboard feed ran `git status` on FXA-2598's slot
-#   mid-commit and lint-staged failed with "could not write index". The marker
-#   tells every reader (the pull-through, the snapshot rows) to skip the slot.
+#   Mark the slot so readers skip it: a `git status` mid-commit breaks the index write.
 _finish_claim()   { : > "${LOG_DIR}/$(basename "$1").finishing"; }
 _finish_release() { rm -f "${LOG_DIR}/$(basename "$1").finishing"; }
-finish_is_claimed() { [ -f "${LOG_DIR}/$(basename "$1").finishing" ]; }
 
 # _finish_media_to_bucket <body_file> <array-name>
-#   The App cannot upload GitHub attachments, so put each file in the public
-#   media bucket under an unguessable path, point the body's references at it and
-#   append the rest. Prints the Markdown for all of them.
+#   The App cannot upload GitHub attachments, so upload to the public bucket at
+#   an unguessable path and rewrite the body. Prints the Markdown for all files.
 _finish_media_to_bucket() {
   local body_file="$1" _media_arr="$2" f name url dir md="" n=0 files=()
   eval "files=(\${${_media_arr}[@]+\"\${${_media_arr}[@]}\"})"
@@ -299,20 +235,9 @@ PY
   printf '%s' "$md"
 }
 
-# finish_media_args <worktree> <done_file> <out-array-name>
-#   Read media_paths from the handoff and turn them into `gh pr create --attach`
-#   flags. gh 2.99.0+ uploads each file to GitHub's own asset store and rewrites
-#   any matching body reference (e.g. `![alt](./shot.png)`), appending the rest.
-#   Skip a path the agent listed but never wrote; a stale entry must not cost
-#   us the PR. The agent chooses these paths, so keep every one inside the
-#   worktree (no absolute path outside /workspace, no .., no symlink out) and
-#   to media types; anything else would upload a host file to a public PR.
-#   Always prints one `media:` line. Through 2026-09-19 no handoff ever listed
-#   a file and nothing said so, which hid the cause for a week.
 # _finish_copy_media <src> <dest> <root>
-#   On Tart the VM still runs during the upload, so a checked file can turn into
-#   a link to ~/.ssh before gh reads it. Copy from one no-follow descriptor whose
-#   real path is inside <root>, and attach the copy.
+#   On Tart the VM still runs, so a checked file can become a link to ~/.ssh
+#   before gh reads it. Copy through one no-follow descriptor inside <root>.
 _finish_copy_media() {
   python3 - "$@" <<'PY'
 import fcntl, os, stat, sys
@@ -327,6 +252,11 @@ with os.fdopen(fd, "rb") as f, open(dest, "xb") as o:
 PY
 }
 
+# finish_media_args <worktree> <done_file> <out-array-name>
+#   Turn the handoff's media_paths into `gh pr create --attach` flags. The agent
+#   picks the paths, so refuse any outside the worktree or not media: it would
+#   upload a host file to a public PR. Skip a missing file, it must not cost the PR.
+#   Always print the `media:` line, so a handoff with no media is visible.
 finish_media_args() {
   local worktree="$1" done_file="$2" out="$3"
   local p rel local_media real wt_real listed=0 attached=0 copy_dir copy
@@ -359,6 +289,9 @@ finish_media_args() {
   echo "media: ${listed} listed, ${attached} attached${why}" >&2
 }
 
+# finish_push_and_pr [worktree] [create_pr]
+#   Commit the agent's change, push the branch and open or update the PR.
+#   Prints the PR URL on stdout (an empty line without create_pr). Progress on stderr.
 finish_push_and_pr() {
   _finish_claim "${1:-$(worktree_shared_path 2>/dev/null)}"
   trap '_finish_release "${1:-$(worktree_shared_path 2>/dev/null)}"' RETURN
@@ -375,9 +308,7 @@ _finish_push_and_pr() {
     return 1
   fi
 
-  # $1 = worktree path (optional, auto-detected if empty)
-  # $2 = "true" to actually run `gh pr create`; otherwise just push and print
-  #      the gh command the user can paste to open the PR themselves.
+  # Without create_pr="true", push and print the gh command to paste instead.
   local worktree="${1:-}"
   local create_pr="${2:-false}"
   if [ -z "$worktree" ]; then
@@ -412,9 +343,7 @@ _finish_push_and_pr() {
   commit_sha="$(jq -r '.commit_sha // empty' "$done_file")"
   pr_title="$(jq -r '.pr_title // empty' "$done_file")"
   pr_body="$(jq -r '.pr_body // empty' "$done_file")"
-  # The agent's harness asks it to sign the body with a Claude Code footer and a
-  # session link. A reviewer reads the PR, not the tooling; strip both here so
-  # the rule does not depend on the VM's CLAUDE.md being current.
+  # Strip the harness's Claude Code footer and session link here, whatever the VM's CLAUDE.md says.
   pr_body="$(printf '%s\n' "$pr_body" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
 
   if [ -z "$branch" ] || [ -z "$pr_title" ] || [ -z "$pr_body" ]; then
@@ -429,7 +358,6 @@ _finish_push_and_pr() {
   fi
 
   worktree_git_ok "$worktree" >/dev/null || return 1
-  # Verify the worktree is on the expected branch.
   local current_branch
   current_branch="$(git -C "$worktree" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   if [ "$current_branch" != "$branch" ]; then
@@ -437,7 +365,6 @@ _finish_push_and_pr() {
     return 1
   fi
 
-  # Verify the commit_sha (if present) matches HEAD.
   if [ -n "$commit_sha" ]; then
     local head_sha
     head_sha="$(git -C "$worktree" rev-parse HEAD 2>/dev/null)"
@@ -446,24 +373,11 @@ _finish_push_and_pr() {
     fi
   fi
 
-  # The agent CANNOT commit, by design. The parent .git is mounted read-only so a
-  # sandboxed agent cannot rewrite a sibling worktree's admin files, and a linked
-  # worktree's commit writes to the COMMON .git/objects and .git/refs, which are
-  # shared with every other worktree. There is no narrower mount that permits one
-  # worktree to commit while protecting the rest, so committing moved to the host.
+  # The agent cannot commit: the shared .git is read-only in the VM, because a
+  # linked worktree's commit writes objects and refs that every slot shares.
   #
-  # This used to refuse on a dirty worktree, which is now the expected state. On
-  # 2026-08-17 FXA-14359 finished its work and stalled for 30 minutes reporting
-  # "the read-only gitdir mount prevents any commit".
-  #
-  # Stage exactly what worktree_filtered_status reports, so the same ignore list
-  # that decides "dirty" also decides what gets committed. A blanket `git add -A`
-  # would sweep in newKey.json and the .fxa-* scratch files.
-  # A rebase round arrives here mid-merge: the host merged the base branch in,
-  # the agent resolved the files by editing them, and the index still lists them
-  # as unmerged because editing a file does not clear its unmerged entry and the
-  # VM cannot `git add` (the parent .git is mounted read-only). So finish the
-  # merge here: check the markers are gone, then stage the paths.
+  # A rebase round arrives mid-merge with the agent's resolved files still
+  # unmerged in the index. Check that no markers remain, then stage them here.
   local merging=""
   if git -C "$worktree" rev-parse --verify -q MERGE_HEAD >/dev/null 2>&1; then
     merging=1
@@ -487,17 +401,16 @@ _finish_push_and_pr() {
         return 1
       }
     fi
-    # Close the merge so MERGE_HEAD clears. `git reset --soft` refuses outright
-    # while a merge is in progress ("Cannot do a soft reset in the middle of a
-    # merge"), and the squash below depends on that reset. The squash discards
-    # this commit immediately, so skip the hooks; the final commit still runs
-    # them.
+    # Close the merge: the squash's `git reset --soft` refuses mid-merge. The
+    # squash discards this commit at once, so skip the hooks.
     git -C "$worktree" commit --no-edit --no-verify >&2 || {
       echo "ERROR: could not close the merge commit." >&2
       return 1
     }
   fi
 
+  # Stage what worktree_filtered_status reports, not `git add -A`, which would
+  # sweep in newKey.json and the .fxa-* scratch files.
   local dirty
   dirty="$(worktree_filtered_status "$worktree")"
   if [ -n "$dirty" ]; then
@@ -519,28 +432,19 @@ _finish_push_and_pr() {
       }
     fi
   fi
-  # Something must exist to ship: either staged work, or commits the agent
-  # somehow managed to make.
   if git -C "$worktree" diff --cached --quiet 2>/dev/null &&
      [ "$(git -C "$worktree" rev-list --count "origin/${FXA_WORKTREE_BASE:-main}..HEAD" 2>/dev/null || echo 0)" = "0" ]; then
     echo "ERROR: nothing to ship: no staged changes and no commits ahead of the base." >&2
     return 1
   fi
 
-  # Squash and re-commit on the host so the commit picks up the user's GPG
-  # (or SSH) signing config. The VM has no access to that key, so any commit
-  # made in-VM lands unsigned. We collapse against the merge-base with the base
-  # branch so the squash is correct regardless of how many commits the agent
-  # made. Use the base branch, not main: on a release branch such as train-342
-  # the merge-base with main is an old ancestor, and resetting to it would
-  # squash every base-branch commit into the PR.
+  # Squash to one commit on the host, where the signing key is. Squash against
+  # the base branch, not main: on a release branch the merge-base with main is
+  # an old ancestor, and the PR would absorb every base-branch commit.
   local base_ref merge_base
   base_ref="origin/${FXA_WORKTREE_BASE:-main}"
   if [ -n "$merging" ]; then
-    # A rebase round just merged the base in, so the squash target is the base
-    # itself. Using the merge-base here would rewind to the OLD common ancestor
-    # and re-commit there, leaving the PR still conflicting, which is the exact
-    # thing the round set out to fix.
+    # After a rebase round's merge, the old merge-base would leave the PR conflicting.
     merge_base="$(git -C "$worktree" rev-parse "$base_ref" 2>/dev/null)"
   else
     merge_base="$(git -C "$worktree" merge-base HEAD "$base_ref" 2>/dev/null)"
@@ -559,10 +463,8 @@ _finish_push_and_pr() {
   # After the reset the index holds the whole change, a rebase round's merge included.
   _finish_tooling_guard "$worktree" || return 1
   _finish_check_frozen "$worktree" || return 1
-  # Carry the PR narrative into the commit body. `git log` is what a developer
-  # reads months later, and a bare conventional subject loses the why. Keep the
-  # prose sections and drop the PR-template scaffolding: the checklist and the
-  # "(Optional)" sections are review furniture, not history.
+  # The PR body becomes the commit body so `git log` keeps the why. Drop the
+  # checklist and "(Optional)" template sections.
   local commit_body
   commit_body="$(printf '%s\n' "$pr_body" | awk '
     /^## Checklist/            { skip = 1 }
@@ -582,10 +484,8 @@ _finish_push_and_pr() {
     GH_TOKEN="$(github_app_token)" || return 1
     export GH_TOKEN
   else
-    # Hooks off: core.hooksPath points at .husky in the slot, and lint-staged
-    # runs _scripts/check-frozen.ts FROM THE SLOT, so a hook run here executes
-    # agent-written code on the host as the operator. _finish_check_frozen above
-    # runs origin/main's copy instead, and CI runs lint.
+    # Hooks off: the slot's hooks are agent-written code that would run on the
+    # host. _finish_check_frozen runs origin's copy instead, and CI runs lint.
     if [ -n "${commit_body//[[:space:]]/}" ]; then
       git -C "$worktree" -c core.hooksPath=/dev/null commit -m "$pr_title" -m "$commit_body" >&2 || {
         _finish_recommit_failed
@@ -601,11 +501,8 @@ _finish_push_and_pr() {
     new_sha="$(git -C "$worktree" rev-parse HEAD)"
     echo "  signed HEAD: ${new_sha}" >&2
 
-    # The host re-squashes and re-signs, so resuming/re-running an already-pushed
-    # ticket leaves the local branch diverged from its remote and a plain push is
-    # non-fast-forward. Try a normal push first; on rejection retry with
-    # --force-with-lease, which still refuses to clobber if the remote moved for a
-    # reason we didn't expect (someone else pushed to the branch).
+    # A re-run re-squashes an already-pushed branch, so a plain push can be
+    # rejected. The lease still refuses if someone else pushed to the branch.
     echo "Pushing ${branch} to origin..." >&2
     if ! git -C "$worktree" push -u origin "$branch" >&2; then
       echo "Normal push rejected (likely a re-squash of an already-pushed branch); retrying with --force-with-lease..." >&2
@@ -616,15 +513,12 @@ _finish_push_and_pr() {
         return 1
       }
     fi
-
   fi
 
   local media_args=()
   finish_media_args "$worktree" "$done_file" media_args
 
-  # Always save the rendered PR body to a file so the user can
-  # `gh pr create --body-file` later without re-constructing it. Media is no
-  # longer inlined here; it rides along as --attach.
+  # Always save the body, so the user can run `gh pr create --body-file` later.
   local body_file="${worktree}/.fxa-auto-pr-body.md"
   printf '%s\n' "$pr_body" | slot_write "$body_file"
   local media_md=""
@@ -646,48 +540,24 @@ _finish_push_and_pr() {
     echo "Or pass --create-pr to your next 'jira' / 'finish' invocation to do it automatically." >&2
     # Archive the handoff so the next ticket can write a fresh one.
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
-    # Print empty pr_url so callers know not to expect a URL.
+    # An empty line tells callers not to expect a URL.
     printf '\n'
     return 0
   fi
 
-  # Reviewer and assignee are added as separate best-effort steps after the PR
-  # exists, not as `gh pr create` flags: an unknown handle or a permissions error
-  # would otherwise fail the whole create and lose the PR. CODEOWNERS already
-  # requests fxa-devs on most PRs, but not reliably (PR #21019 opened without it),
-  # so ask explicitly and treat "already requested" as success.
-  # A fix round pushes to a branch that already has a PR. `gh pr create` then
-  # fails with "already exists" and this function returns early, so every step
-  # after it is skipped — including the reviewer request and, worse, the
-  # functional gate, which the push just reset to on_hold. On 2026-08-14 the
-  # FXA-14325 feedback round pushed correctly and then sat with a PENDING gate
-  # for exactly this reason. Detect the existing PR and update it instead.
+  # A fix round's branch already has a PR, and `gh pr create` would fail and
+  # skip the reviewer request and the functional gate. Update that PR instead.
   local pr_url existing
   existing="$(cd "$worktree" && gh pr list --head "$branch" --state open \
                 --json url -q '.[0].url' 2>/dev/null)" || existing=""
   if [ -n "$existing" ]; then
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
-    # NEVER touch the title or body of an existing PR.
-    #
-    # A fix or feedback round writes a handoff describing only that round, so
-    # PATCHing the title replaces the PR's subject with the subject of its last
-    # small change. The PR still holds the original diff, so the title then lies,
-    # and because this repo squash-merges, the wrong subject lands in main's
-    # history. On 2026-08-18 #21029 merged as "test(jest-transforms): cover the
-    # SVG component name helper" when the PR was the camelcase removal; #21053
-    # read as "preload chai so mocha does not race the ESM loader" for a 46 file
-    # chai 5 upgrade, and #21054 as "drop the redundant initTracing call" for a
-    # 16 file module removal.
-    #
-    # The title and body are set once, by `gh pr create`. The body is not
-    # refreshed either: a round's handoff describes only that round, and
-    # replacing the body dropped the original's reviewer notes. The Jira
-    # comment records each round.
+    # Never change an existing PR's title or body: a round's handoff describes
+    # only that round, and the squash-merge would put its subject in main.
     local pr_num="${existing##*/}"
     echo "  Keeping the PR title and body; the round is recorded on Jira." >&2
-    # A round's media goes on as a comment, next to the round, so the original
-    # body's screenshots stay.
+    # Post a round's media as a comment, so the original body's screenshots stay.
     if [ "${#media_args[@]}" -gt 0 ]; then
       (cd "$worktree" && gh pr comment "$pr_num" \
          --body "Updated evidence from the latest automated round." \
@@ -707,9 +577,8 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
   fi
 
   echo "Creating pull request via gh..." >&2
-  # ${arr[@]+"${arr[@]}"} — bash 3.2 under `set -u` treats a bare "${arr[@]}"
-  # on an empty array as an unbound variable, which would break every PR that
-  # has no media.
+  # Reviewers are added after create: a bad handle as a create flag would lose the PR.
+  # ${arr[@]+"${arr[@]}"}: bash 3.2 under `set -u` fails on an empty "${arr[@]}".
   pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
     --base "${FXA_WORKTREE_BASE:-main}" \
     --head "$branch" \
@@ -717,9 +586,7 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
     --label "${FXA_PR_LABEL:-auto}" \
     ${media_args[@]+"${media_args[@]}"} \
     --body-file "$body_file" 2>&1)" || {
-    # A missing label, or an attachment gh rejects, must not cost us the PR: the
-    # branch is already pushed and the body is built, so retry once without
-    # either. The PR is worth more than its label or its screenshots.
+    # A missing label or a rejected attachment must not cost the PR: retry once without either.
     echo "WARN: gh pr create failed with --label ${FXA_PR_LABEL:-auto}; retrying without it or media." >&2
     echo "$pr_url" >&2
     # gh creates the PR and still exits non-zero when an attachment fails (an App
@@ -738,7 +605,7 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
     echo "NOTE: PR created without the '${FXA_PR_LABEL:-auto}' label. Add it by hand." >&2
   }
 
-  # gh prints the URL on the last line; pull it out cleanly.
+  # gh prints the URL on the last line.
   pr_url="$(printf '%s\n' "$pr_url" | tail -1)"
 
   finish_add_reviewers "$pr_url"
@@ -752,23 +619,20 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
 
 # finish_add_reviewers <pr_url>
 #   Request review from the team and assign the ticket's reporter. Best effort:
-#   every failure here is logged and ignored, because the PR already exists and
-#   losing it over a reviewer request would be far worse.
-#
+#   the PR already exists, so log each failure and go on.
 #   FXA_PR_TEAM     team slug to request, default fxa-devs. Empty disables.
-#   FXA_PR_ASSIGNEE GitHub login of the reporter. The caller resolves this; see
-#                   ~/.claude/state/fxa-ai-fixme/reporters.tsv. Empty disables.
+#   FXA_PR_ASSIGNEE reporter's GitHub login, resolved by the caller. Empty disables.
 finish_add_reviewers() {
   local pr_url="${1:-}"
   [ -n "$pr_url" ] || return 0
 
+  local owner_repo num
+  owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+  num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+
   local team="${FXA_PR_TEAM-fxa-devs}"
   if [ -n "$team" ]; then
-    # `gh pr edit` fails on this repo: it queries the deprecated Projects-classic
-    # GraphQL field and exits 1. Use the REST review-requests endpoint instead.
-    local owner_repo num
-    owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
-    num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+    # REST, not `gh pr edit`, which fails on this repo's deprecated Projects-classic field.
     if [ -n "$owner_repo" ] && [ -n "$num" ]; then
       if gh api -X POST "repos/${owner_repo}/pulls/${num}/requested_reviewers" \
            -f "team_reviewers[]=${team}" >/dev/null 2>&1; then
@@ -785,9 +649,6 @@ finish_add_reviewers() {
     if gh pr edit "$pr_url" --add-assignee "$assignee" >/dev/null 2>&1; then
       echo "  Assigned ${assignee}." >&2
     else
-      local owner_repo num
-      owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
-      num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
       if gh api -X POST "repos/${owner_repo}/issues/${num}/assignees" \
            -f "assignees[]=${assignee}" >/dev/null 2>&1; then
         echo "  Assigned ${assignee}." >&2
@@ -801,13 +662,10 @@ finish_add_reviewers() {
 }
 
 # finish_request_copilot_review <pr_url>
-#   Ask Copilot to review the push a round just made, so its earlier review does
-#   not stand as the last word on code that changed. Only for a PR that already
-#   existed; a new PR gets Copilot's first review from the repo rule. The
-#   endpoint returns 200 and an empty requested_reviewers list, because the bot
-#   starts at once; the review_requested timeline event is the proof it took.
-#   FXA_PR_COPILOT  reviewer login, default copilot-pull-request-reviewer[bot].
-#                   Empty disables.
+#   Ask Copilot to re-review a round's push to an existing PR, so its old review
+#   is not the last word. The endpoint returns an empty requested_reviewers list
+#   because the bot starts at once; the timeline event is the proof.
+#   FXA_PR_COPILOT  reviewer login, default copilot-pull-request-reviewer[bot]. Empty disables.
 finish_request_copilot_review() {
   local pr_url="${1:-}" bot="${FXA_PR_COPILOT-copilot-pull-request-reviewer[bot]}"
   [ -n "$pr_url" ] && [ -n "$bot" ] || return 0
@@ -824,17 +682,13 @@ finish_request_copilot_review() {
 }
 
 # finish_approve_functional_gate <pr_url>
-#   If CIRCLECI_TOKEN is set, find the PR's latest CircleCI pipeline and approve
-#   the on-hold "Approve Functional Tests" gate so functional tests start. Called
-#   before the CI watch. Non-fatal: any failure leaves the gate for manual
-#   approval and the watch reports it pending, exactly as before.
+#   Approve the on-hold functional-tests gate on the PR's latest CircleCI
+#   pipeline. Non-fatal: on any failure the gate waits for manual approval.
 finish_approve_functional_gate() {
   local pr_url="${1:-}"
   [ -n "$pr_url" ] || return 0
 
-  # Token resolution, in order: CIRCLECI_TOKEN, the circleci CLI's env var, then
-  # the CLI's stored config (~/.circleci/cli.yml) so a configured `circleci` CLI
-  # works as a fallback without adding the token to this tool's .env.
+  # Fall back to the circleci CLI's config, so the token need not be in .env.
   local token="${CIRCLECI_TOKEN:-${CIRCLECI_CLI_TOKEN:-}}"
   if [ -z "$token" ] && [ -f "${HOME}/.circleci/cli.yml" ]; then
     token="$(sed -n 's/^token:[[:space:]]*//p' "${HOME}/.circleci/cli.yml" | head -1 | tr -d '\42\47')" || token=""
@@ -914,13 +768,10 @@ finish_watch_ci() {
     return 0
   fi
 
-  # Clear the manual functional-tests gate so its checks actually run before we watch.
   finish_approve_functional_gate "$pr_url"
 
   echo "Waiting for CI to register checks on ${pr_url}..." >&2
-  # CI can take a minute or two to attach checks to a freshly-opened PR.
-  # `gh pr checks --watch` exits immediately with "no checks reported" if zero
-  # exist, so poll until at least one shows up, then switch to --watch.
+  # `gh pr checks --watch` exits at once with zero checks, so wait for the first one.
   local appeared=0 elapsed=0
   while [ "$elapsed" -lt 180 ]; do
     if gh pr checks "$pr_url" --json bucket 2>/dev/null | jq -e 'length > 0' >/dev/null 2>&1; then
@@ -940,10 +791,7 @@ finish_watch_ci() {
   echo "Watching CI checks on ${pr_url}" >&2
   echo "(Ctrl-C stops the watcher; CI keeps running on GitHub.)" >&2
 
-  # gh pr checks --watch streams progress and exits when checks settle.
-  # --interval 30 cuts API churn. We tolerate non-zero exits (exit code 8 means
-  # "checks pending" if the watcher is interrupted; the json query below is the
-  # authoritative source.)
+  # Ignore the watch's exit code: the JSON query below is the real result.
   gh pr checks "$pr_url" --watch --interval 30 >&2 || true
 
   local json
@@ -967,7 +815,6 @@ finish_watch_ci() {
     return 1
   fi
   if [ -n "$pending_names" ]; then
-    # Watcher was interrupted before all checks finished.
     echo "CI still pending: ${pending_names}" >&2
     return 1
   fi
@@ -977,12 +824,9 @@ finish_watch_ci() {
   return 0
 }
 
-# finish_notify <message> [pr_url]
 # _finish_tooling_guard <worktree>
-#   Refuse to ship when the staged set reaches into CI or host tooling. A
-#   workflow file runs in mozilla/fxa with secrets before a human reads the
-#   diff; hook and lint-staged config runs on the operator's Mac. A ticket that
-#   legitimately edits these launches with FXA_ALLOW_TOOLING_EDITS=1.
+#   Refuse CI or host tooling edits: CI runs with secrets before review, and
+#   hooks run on the operator's Mac. FXA_ALLOW_TOOLING_EDITS=1 allows them.
 _finish_tooling_guard() {
   local wt="$1" f hit=""
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
@@ -1007,9 +851,8 @@ _finish_tooling_guard() {
 }
 
 # _finish_check_frozen <worktree>
-#   The frozen-path gate the pre-commit hook used to give us, with the SCRIPT
-#   taken from origin/main rather than from the slot the agent wrote. It reads
-#   `git diff --cached` in its cwd, so run it inside the worktree.
+#   The pre-commit hook's frozen-path gate, with the script from origin, not
+#   the agent's slot. GIT_DIR and GIT_WORK_TREE point it at the slot's index.
 _finish_check_frozen() {
   local wt="$1" root tmp adm
   root="$(worktree_repo_root)" || return 1
@@ -1031,17 +874,15 @@ _finish_check_frozen() {
   rm -rf "$(dirname "$tmp")"
 }
 
-#   macOS notification via osascript. Cheap, no extra deps.
+# finish_notify <message> [pr_url]
+#   macOS notification, plus the same line on stderr.
 finish_notify() {
   local message="$1"
   local pr_url="${2:-}"
-  local subtitle=""
-  [ -n "$pr_url" ] && subtitle="$pr_url"
 
   if command -v osascript >/dev/null 2>&1; then
-    # Text as arguments, not in the script body: the message carries CI check
-    # names from the agent's own branch, so it is remote-controlled.
-    osascript -e 'on run {m, s}' -e 'display notification m with title "fxa-sandbox-ctl" subtitle s' -e 'end run' -- "$message" "$subtitle" 2>/dev/null || true
+    # Pass text as arguments: CI check names come from the agent's branch.
+    osascript -e 'on run {m, s}' -e 'display notification m with title "fxa-sandbox-ctl" subtitle s' -e 'end run' -- "$message" "$pr_url" 2>/dev/null || true
   fi
   echo "${message}${pr_url:+ — $pr_url}" >&2
 }

@@ -1,14 +1,9 @@
 #!/bin/bash
-# vm-gce.sh — the GCE implementation of the VM backend contract.
-#
-# One instance per run, no service account, no external IP. The laptop reaches it
-# over ssh through an IAP tunnel. The per-agent key that _install_ssh_key writes
-# works unchanged: VM_SSH_OPTS carries the ProxyCommand and vm_ip returns the
-# instance name, so every `ssh -i key agent@$(vm_ip)` call site keeps working.
-#
-# There is no shared filesystem. vm_start ignores the workspace and gitdir
-# arguments; agent_run ships the run files with vm_put and finish pulls the
-# tree back with vm_pull_tree.
+# vm-gce.sh: the GCE implementation of the VM backend contract.
+# One instance per run, no service account, no external IP, ssh through an IAP
+# tunnel. VM_SSH_OPTS carries the ProxyCommand and vm_ip returns the instance
+# name, so every `ssh -i key agent@$(vm_ip)` call site works unchanged.
+# No shared filesystem: vm_put ships the run files, vm_pull_tree pulls the tree back.
 [ -n "${_FXA_VM_GCE_LOADED:-}" ] && return 0
 _FXA_VM_GCE_LOADED=1
 
@@ -35,10 +30,8 @@ _gce_zone() {
   local inst; if [ "$sub" = "ssh" ]; then inst="$1"; else inst="$2"; fi
   _gce compute "$sub" "$@" --zone "$(_vm_zone "$inst")"
 }
-# gcloud compute ssh spends ~3 s per call on its own key and metadata checks.
-# The boot probe goes through it, which provisions the host user and key on
-# the instance; every call after it is plain ssh through the IAP ProxyCommand,
-# about 1.5 s.
+# gcloud compute ssh costs ~3 s a call. Only the boot probe needs it, to provision
+# the host user and key; after that plain ssh through IAP takes ~1.5 s.
 _gce_ssh() {
   local name="$1"; shift
   if [ -f "${LOG_DIR}/${name}.ssh-ok" ]; then
@@ -55,22 +48,29 @@ _gce_ssh() {
 _GCE_SSH_CONFIG="${LOG_DIR}/gce-ssh-config"
 _GCE_SSH_HOSTS="${LOG_DIR}/gce-ssh-hosts"
 mkdir -p "${LOG_DIR}" "${_GCE_SSH_HOSTS}"
-# Per-host entries live one file each under gce-ssh-hosts/ (written at create,
-# removed at delete) and reach ssh through Include. Concurrent launches then
-# never rewrite a shared file: on 2026-09-18 two launchers shared one .tmp,
-# one mv landed under the other's `cat - config > config.tmp`, and that cat
-# copied its own output for 25 minutes. The wildcard is the default-zone fallback.
+# One file per host under gce-ssh-hosts/, pulled in by Include, so concurrent
+# launches never rewrite a shared file (two did once, and a `cat` then copied its
+# own output for 25 minutes). The wildcard is the default-zone fallback.
+_gce_ssh_host_entry() {
+  printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
+    "$1" "$FXA_GCE_PROJECT" "$2"
+}
 if ! grep -q "^Include ${_GCE_SSH_HOSTS}/\*$" "$_GCE_SSH_CONFIG" 2>/dev/null; then
-  # No ControlMaster here, on purpose. A master whose IAP tunnel died kept
-  # every later ssh to that runner queued on its socket for up to 53 min
-  # (2026-09-14), and a killed master left clients hanging anyway. One tunnel
-  # per call costs about 1.5 s; the launch makes ~15 calls.
-  printf 'Include %s/*\nHost %s-*\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
-    "$_GCE_SSH_HOSTS" "$VM_PREFIX" "$FXA_GCE_PROJECT" "$FXA_GCE_ZONE" > "$_GCE_SSH_CONFIG"
+  # No ControlMaster: a master whose tunnel died queued every later ssh on its
+  # socket for up to 53 min. One tunnel per call costs ~1.5 s.
+  { printf 'Include %s/*\n' "$_GCE_SSH_HOSTS"; _gce_ssh_host_entry "${VM_PREFIX}-*" "$FXA_GCE_ZONE"; } > "$_GCE_SSH_CONFIG"
 fi
 VM_SSH_OPTS="${VM_SSH_OPTS} -F ${_GCE_SSH_CONFIG}"
 
 # ── Image management ───────────────────────────────────────────
+
+# FXA_GCE_ZONES with the last zone that worked moved first: a stockout lasts hours.
+_gce_zone_order() {
+  local last zones="$FXA_GCE_ZONES"
+  last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
+  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
+  printf '%s' "$zones"
+}
 
 vm_image_list()   { _gce compute images list --filter "family=${FXA_GCE_IMAGE}" --format 'value(name,creationTimestamp)'; }
 vm_image_exists() { _gce compute images describe-from-family "$FXA_GCE_IMAGE" >/dev/null 2>&1; }
@@ -78,12 +78,9 @@ vm_image_build() {
   command -v packer &>/dev/null || { echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2; return 1; }
   cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
-  # Same zone order as vm_clone; only a stockout moves the build on.
-  local zone last zones log; log="$(mktemp)"
-  last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
-  zones="$FXA_GCE_ZONES"
-  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
-  for zone in $zones; do
+  # Only a stockout moves the build on to the next zone.
+  local zone log; log="$(mktemp)"
+  for zone in $(_gce_zone_order); do
     echo "Building in ${zone}..."
     # One statement, so errexit does not stop the stockout check below.
     local rc=0
@@ -116,12 +113,8 @@ vm_clone() {
   mkdir -p "${LOG_DIR}"
   # One zone holds about two of these; on a stockout move to the next zone in
   # the region and remember where the instance landed.
-  # A stockout lasts hours, so start with the zone the last launch landed in.
-  local zone zones last
-  last="$(cat "${LOG_DIR}/last-good-zone" 2>/dev/null || true)"
-  zones="$FXA_GCE_ZONES"
-  case " $zones " in *" $last "*) zones="$last $(printf '%s' "$zones" | tr ' ' '\n' | { grep -vx "$last" || true; } | tr '\n' ' ')" ;; esac
-  for zone in $zones; do
+  local zone
+  for zone in $(_gce_zone_order); do
     echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
     # Only the host key logs in: a project-wide key reaches every VM, and the guest
     # agent gives each metadata key user passwordless sudo.
@@ -138,8 +131,7 @@ vm_clone() {
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
       printf '%s' "$zone" > "${LOG_DIR}/last-good-zone"
       # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
-      printf 'Host %s\n  ProxyCommand gcloud --project %s --verbosity=error compute start-iap-tunnel %%h 22 --listen-on-stdin --zone %s\n' \
-        "$(vm_name "$name")" "$FXA_GCE_PROJECT" "$zone" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
+      _gce_ssh_host_entry "$(vm_name "$name")" "$zone" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
       return 0
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
@@ -226,24 +218,20 @@ vm_put() {
 }
 
 # vm_pull_tree <name> <remote-dir> <local-dir>
-#   Exactly three excludes. Everything else goes through worktree_filtered_status,
-#   the same filter a Tart run's tree gets.
-# One pass, retried after 3 s when the tunnel drops. The tree is only read for
-# a PR after the handoff file exists, when the agent has stopped writing, so a
-# single pass is consistent there; a convergence loop on a live tree cost three
-# full pulls per poll and put a five-runner snapshot over six minutes.
+#   Everything not excluded here goes through worktree_filtered_status, like a Tart tree.
+# One pass, retried after 3 s when the tunnel drops. The tree is read for a PR
+# only after the handoff, when the agent has stopped writing; a convergence loop
+# on a live tree cost three full pulls per poll.
 vm_pull_tree() {
   local name="$1" remote="$2" local_dir="$3" i rc=1
   local key="${LOG_DIR}/ssh/${name}/id_ed25519"
+  # CI and hook config stay on the runner unless the ticket asks for them (finish honours the same flag).
+  local -a tooling=(--exclude .github --exclude .circleci --exclude .husky)
+  # bash 3.2: "${tooling[@]}" on an empty array is unbound under set -u, hence the ${x[@]+...} form.
+  [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && tooling=()
   for i in 1 2 3; do
+    # --safe-links: a pulled symlink that points outside the tree is dropped, not committed.
     # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
-    # --safe-links: a pulled symlink pointing outside the tree is dropped, not
-    # created and committed. CI and hook config stay on the runner unless the
-    # ticket asks for them (the same flag finish honours).
-    local -a tooling=(--exclude .github --exclude .circleci --exclude .husky)
-    # bash 3.2 on macOS: "${tooling[@]}" on an empty array is an unbound
-    # variable under set -u and killed the launcher on 2026-09-21.
-    [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && tooling=()
     rsync -a --delete --safe-links --timeout=60 --exclude .git --exclude node_modules --exclude external/l10n \
       --exclude .nx --exclude dist --exclude coverage ${tooling[@]+"${tooling[@]}"} \
       -e "ssh -i ${key} ${VM_SSH_OPTS}" \
@@ -287,10 +275,9 @@ _gce_ssh_forget() {
   rm -f "${_GCE_SSH_HOSTS}/$(vm_name "$1")"
 }
 
-# vm_gc: state files whose instance is gone. Each crash path leaves a different
-# one (.meta, .zone, an ssh entry), and a leftover .meta makes freeslots and the
-# dashboard treat the slot as owned. A .meta under 10 min old may belong to a
-# clone still in flight, so it stays.
+# vm_gc: remove state files whose instance is gone. A leftover .meta makes
+# freeslots and the dashboard treat the slot as owned. A .meta under 10 min old
+# may belong to a clone still in flight, so it stays.
 vm_gc() {
   local f name running; running="$(vm_list 2>/dev/null | cut -f1)"
   for f in "${LOG_DIR}"/*.meta; do

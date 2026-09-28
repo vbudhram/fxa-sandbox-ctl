@@ -63,8 +63,6 @@
   #status { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap;
             padding:var(--s2) var(--s3); border-radius:var(--r-lg); margin-bottom:var(--s3);
             border:1px solid var(--card-border); box-shadow:var(--shadow); background:var(--panel); font-size:var(--t-sub); color:var(--dim); }
-  #status h1 { font-size:var(--t-body); font-weight:650; margin:0; letter-spacing:-.01em; color:var(--ink); }
-  #status h1 span { color:var(--faint); font-weight:400; }
   #cells { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; }
   #status .cell { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
   #status .cell b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
@@ -72,7 +70,6 @@
   #status .cell.warn b { color:var(--warn); }
   #status .cell.ok b { color:var(--ok); }
   #status .sep { width:1px; height:14px; background:var(--line2); opacity:.6; }
-  #status .spacer { flex:1; }
   .warnt { color:var(--warn); font-weight:600; }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
   .dot.warn { background:var(--warn); } .dot.dead { background:var(--bad); }
@@ -279,8 +276,6 @@
   .ldot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--line2); } .ldot.live { background:var(--info); }
   .emptybox { padding:var(--s4); border-radius:8px; border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
-  .sess { display:grid; grid-template-columns:240px minmax(0,1fr); gap:var(--s4); min-height:520px; }
-  @media (max-width:900px) { .sess { grid-template-columns:minmax(0,1fr); } }
   .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
   .slist a { display:flex; flex-direction:column; gap:2px; padding:var(--s3); border-radius:8px; color:inherit; border-left:3px solid transparent; }
   .slist a:hover { text-decoration:none; background:var(--bg); }
@@ -288,11 +283,6 @@
   .slist .k { font-family:var(--mono); font-size:var(--t-label); font-weight:700; color:var(--info); display:flex; gap:var(--s2); }
   .slist .k span { margin-left:auto; color:var(--faint); font-family:var(--sans); font-weight:400; }
   .slist .r { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .slist .m { font-size:var(--t-label); color:var(--dim); }
-  .sdetail h2.q { font:700 22px/1.3 var(--head); margin:4px 0 var(--s2); text-transform:none; letter-spacing:0; color:var(--ink); display:block; }
-  .chips { display:flex; gap:var(--s2); flex-wrap:wrap; }
-  .btnp { display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:0 var(--s4); border-radius:var(--r-sm); background:var(--link); color:#fff !important; font:600 var(--t-body) var(--head); }
-  .btnp:hover { text-decoration:none; background:var(--link-hover); }
-  .scards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--s3); margin:var(--s4) 0; }
   .scard { border:1px solid var(--line); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
   .scard .lbl { font-size:var(--t-label); font-weight:600; color:var(--dim); } .scard .v { font-size:18px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--s3); }
@@ -322,8 +312,6 @@
   .tmsg:not(.agent) .md.clip::after { background:linear-gradient(transparent, var(--panel)); }
   .tmsg .more { border:0; background:transparent; color:var(--link); padding:0; margin-top:4px; font:500 var(--t-sub) var(--sans); }
   .tmsg .more:hover { text-decoration:underline; }
-  .split.two { display:grid; grid-template-columns:minmax(0,1fr) minmax(380px,44%); gap:var(--s4); align-items:start; }
-  @media (max-width:1200px) { .split.two { grid-template-columns:minmax(0,1fr); } .split.two .tty { order:-1; position:static; } }
   .tty { position:sticky; top:var(--s4); margin-top:var(--s3); border-radius:10px; overflow:hidden; background:#0C0C0D; border:1px solid #32313C;
          box-shadow:0 10px 30px rgba(0,0,0,.25); color:#E7E7E7; }
   .tty .bar { display:flex; align-items:center; gap:7px; height:32px; padding:0 12px; background:#1F1E25; border-bottom:1px solid #32313C; font:12px var(--mono); color:#9E9E9E; }
@@ -344,8 +332,7 @@
   .tmsg .av { width:36px; height:36px; flex:none; border-radius:8px; background:var(--sunk); color:var(--dim); display:flex; align-items:center; justify-content:center; }
   .tmsg img.av { background:transparent; }
   .tmsg .who { display:flex; gap:var(--s2); align-items:baseline; font-size:var(--t-label); color:var(--faint); white-space:nowrap; }
-  .tmsg .who b { white-space:nowrap; }
-  .tmsg .who b { font-size:var(--t-body); color:var(--ink); } .tmsg .app { font-size:10px; font-weight:700; padding:0 5px; border-radius:4px; background:var(--sunk); color:var(--dim); }
+  .tmsg .who b { white-space:nowrap; font-size:var(--t-body); color:var(--ink); } .tmsg .app { font-size:10px; font-weight:700; padding:0 5px; border-radius:4px; background:var(--sunk); color:var(--dim); }
   .tmsg .txt { overflow-wrap:anywhere; font-size:var(--t-body); }
   .md p { margin:0 0 var(--s2); } .md p:last-child, .md ul:last-child, .md ol:last-child, .md pre:last-child { margin-bottom:0; }
   .md ul, .md ol { margin:0 0 var(--s2); padding-left:22px; } .md li { margin:2px 0; } .md li.sub { margin-left:18px; }
@@ -423,10 +410,6 @@
   .mascot img { width:28px; height:28px; } .mascot.live { background:color-mix(in srgb,var(--info) 18%,transparent); }
   .mascot.idle img { filter:grayscale(1) opacity(.6); }
   .bob { animation:bob 1.4s ease-in-out infinite; } @keyframes bob { 50% { transform:translateY(-3px); } }
-  .switch { display:inline-flex; align-items:center; gap:var(--s2); }
-  .switch .knob { position:relative; width:30px; height:18px; border-radius:9px; background:var(--line2); transition:background .2s; }
-  .switch .knob::after { content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:left .2s cubic-bezier(.16,1,.3,1); }
-  .switch[aria-checked="true"] .knob { background:var(--info); } .switch[aria-checked="true"] .knob::after { left:14px; }
 
   footer { margin-top:var(--s4); padding-top:var(--s3); border-top:1px solid var(--line);
            display:flex; gap:var(--s6); flex-wrap:wrap; color:var(--faint); font-size:var(--t-sub); }
@@ -670,7 +653,6 @@ function renderStatus() {
   hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? "degraded" : paused ? "paused" : "healthy";
   if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
-  const running = (g?.instances ?? []).filter(v => v.state === "running").length;
   const cells = [];
   cells.push(`<span class="cell"><b>${esc(g?.backend ?? s?.backend ?? "—")}</b>${g?.zone ? `<span>${esc(g.zone)}</span>` : ""}</span>`);
   cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : paused ? "" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
@@ -733,7 +715,7 @@ function renderAlerts() {
     else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) need(1, "Idle agent", "warn", title, `${t.key} · idle ${short(a.idle_seconds)}: ${a.last_tool || a.last_text || "no output"}`, tix(t.key), "View ticket");
     if (a.num_turns === 0) need(0, "Goal rejected", "bad", title, `${t.key} · the rendered prompt is over 4000 chars`, tix(t.key), "View ticket");
   });
-  waiting.filter(t => t.stage !== "pr").forEach(t => need(0, "No sandbox", "bad", t.summary || t.key, `${t.key} · ${t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no sandbox"}`, tix(t.key), "View ticket"));
+  waiting.forEach(t => need(0, "No sandbox", "bad", t.summary || t.key, `${t.key} · ${t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no sandbox"}`, tix(t.key), "View ticket"));
   (s?.review ?? []).forEach(r => {
     const title = r.title || r.key, d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
     if (r.state === "MERGED" || r.state === "CLOSED") need(6, "Drain", "done", `#${r.pr} ${r.state.toLowerCase()}, but ${r.key} is still labelled done`, "the next pass files it", pr(r.pr), "View PR");
@@ -767,9 +749,7 @@ function renderAgents() {
   put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} sandbox${nRunners === 1 ? "" : "es"} up · ${more}` : "agents feed not loaded", "in flight") +
     (cards.length === 0 ? `<div class="empty">no sandbox is up</div>` : cards.map(card).join("")) +
     (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
-        <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}${
-          t.stage === "pr" ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>` : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>` : t.pr ? `<span class="tag ok">CI green</span>` : `<span class="tag info">PR opening</span>`)
-          : `<span class="tag bad">no sandbox</span>`}</span></div>`).join("") : ""));
+        <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}<span class="tag bad">no sandbox</span></span></div>`).join("") : ""));
   cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
   TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
 }
@@ -968,7 +948,6 @@ function threadHtml(sel) {
     let out = "";
     if (m.key !== last) { out += `<div class="tsep">${last ? `Resumed as ${esc(m.key)}` : esc(m.key)} · ${stamp(m.at)}</div>`; last = m.key; }
     if (m.role === "media") {
-      if (m.key !== last) { out += `<div class="tsep">${last ? `Resumed as ${esc(m.key)}` : esc(m.key)} · ${stamp(m.at)}</div>`; last = m.key; }
       const figs = m.files.map(n => { const u = `/api/media?key=${encodeURIComponent(m.key)}&name=${encodeURIComponent(n)}`;
         return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
           : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("");
@@ -1078,8 +1057,6 @@ function foxVars({ primary, highlight, shadow, accent }) {
   return { "--fox-primary": primary, "--fox-highlight": highlight, "--fox-shadow": shadow,
            "--fox-accent": accent, "--fox-accent-light": light, "--fox-accent-dark": dark, "--fox-ear-shadow": ear };
 }
-// setFoxPalette(el, { primary, highlight, shadow, accent }) recolours a fox already on the page.
-function setFoxPalette(fox, palette) { Object.entries(foxVars(palette)).forEach(([k, v]) => fox.style.setProperty(k, v)); }
 const FOX_SVG = document.getElementById("fox-tpl").innerHTML;
 const FOX_LOOKS = FOX_PALETTES.flatMap(p => p.accents.map(accent => ({ ...p, accent })));
 const foxHash = seed => { let h = 0; for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
@@ -1103,8 +1080,8 @@ function assignFoxes(keys) {
 }
 let FOX_N = 0;
 function foxFor(seed, size = 22, cls = "") {
-  const look = FOX_LOOKS[FOX_SLOT[seed] ?? foxHash(seed) % FOX_LOOKS.length], p = look, accent = look.accent;
-  const style = Object.entries(foxVars({ ...p, accent })).map(([k, v]) => `${k}:${v}`).join(";");
+  const look = FOX_LOOKS[FOX_SLOT[seed] ?? foxHash(seed) % FOX_LOOKS.length];
+  const style = Object.entries(foxVars(look)).map(([k, v]) => `${k}:${v}`).join(";");
   // Gradient ids must be unique per copy, or every fox paints with the first one's colours.
   const uid = `${String(seed).replace(/[^A-Za-z0-9]/g, "")}-${FOX_N++}`;
   return FOX_SVG.replace(/id="(fox-[\w-]+)"/g, `id="$1-${uid}"`).replace(/url\(#(fox-[\w-]+)\)/g, `url(#$1-${uid})`).replace(/href="#(fox-[\w-]+)"/g, `href="#$1-${uid}"`)
@@ -1132,7 +1109,7 @@ function laneRows() {
       : t.stage === "error" ? "Run failed" : t.stage === "squashing" ? "Squashing" : t.stage === "pushed" ? "Pushing" : t.stage === "pr" ? "Opening PR"
       : plainMd(a.last_tool || a.last_text || "Working");
     const l2 = st === 2 && kind === "live" ? `${min}m${med ? ` of a ${med}m median` : ""} · ${t.files_changed ?? 0} files` : `${min}m`;
-    rows.push({ t, st, kind, l1, l2, runner: !t.ci && t.agent_alive, late: med && st === 2 && min > med });
+    rows.push({ t, st, kind, l1, l2, runner: t.agent_alive, late: med && st === 2 && min > med });
   });
   (SNAP?.review ?? []).filter(r => !seen.has(r.key)).forEach(r => {
     const d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
@@ -1327,8 +1304,6 @@ function renderSessions() {
   document.getElementById("s-sessions").dataset.empty = live.length === 0;
   put("s-sessions", head("sessions", AGENTS ? live.length : "?", `cap ${AGENTS?.session_cap ?? "?"}`, "slack, sandbox up") +
     (live.length === 0 ? `<div class="empty">no session is running</div>` : live.map(sessionCard).join("")));
-  document.getElementById("t-live").textContent = AGENTS ? live.length : "";
-  document.getElementById("t-stopped").textContent = AGENTS ? off.length : "";
   put("s-sessions-off", head("stopped sessions", off.length, paused ? `${paused} paused` : "", "no sandbox, last day") +
     (off.length === 0 ? `<div class="empty">no stopped session in the last day</div>` : off.map(sessionCard).join("")));
   live.forEach(s => paintTail(s.key, s.agent_alive));
@@ -1440,12 +1415,11 @@ function renderTab() {
 
 // Overview tiles and sidebar counts: one number per view, each links to it.
 function renderNav() {
-  const { cards } = merged(), ss = AGENTS?.sessions ?? [];
+  const ss = AGENTS?.sessions ?? [];
   const liveS = ss.filter(s => LIVE_SESSION.includes(s.state)).length;
   const waiting = SNAP?.review ? SNAP.review.filter(isWaitingOnHuman).length : null;
-  const q = SNAP?.queue, queued = q && !q.fetch_failed ? (q.ready ?? []).length : null;
   const bad = document.querySelectorAll("#attn .alert.bad").length + NEEDS.filter(n => n.cls === "bad").length, alerts = document.querySelectorAll("#attn .alert").length + NEEDS.length;
-  const free = AGENTS?.free_slots?.length, runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
+  const runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
   const badge = (id, n, cls) => { const e = document.getElementById(id); e.textContent = n ? n : ""; e.className = "n" + (cls ? " " + cls : ""); };
   badge("n-overview", alerts, bad ? "bad" : "warn");
   badge("n-pipeline", waiting, "info");

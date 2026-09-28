@@ -8,6 +8,8 @@ timer in the background, every request is served from the last result at once,
 and the page shows how old each result is. A failed refresh keeps the previous
 result rather than blanking the page.
 """
+import base64
+import hashlib
 import json
 import os
 import re
@@ -17,6 +19,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 CTL = ROOT.parent / "fxa-sandbox-ctl"
@@ -38,13 +41,18 @@ class Feed:
             age = None if self.fetched_at is None else round(time.time() - self.fetched_at)
             return self.data, age, self.error, self.refreshing
 
+    def claim(self):
+        """Mark a refresh in flight; False when one already is."""
+        with self.lock:
+            if self.refreshing:
+                return False
+            self.refreshing = True
+            return True
+
     def refresh(self, already_claimed=False):
         """Returns False when a refresh was already in flight and this one did nothing."""
-        if not already_claimed:
-            with self.lock:
-                if self.refreshing:
-                    return False
-                self.refreshing = True
+        if not already_claimed and not self.claim():
+            return False
         try:
             proc = subprocess.run([str(CTL)] + self.args, capture_output=True, text=True,
                                   timeout=self.timeout)
@@ -81,7 +89,7 @@ def clean_tail(raw, limit=200):
             out.append(line)
     return out[-limit:]
 
-STATS = {"at": 0, "body": None}
+STATS = {"at": 0, "body": None}    # the run-log summary; the log grows once per run, so a minute is fresh enough
 ERRORS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
@@ -98,14 +106,28 @@ def ctl_run(args, timeout):
         CTL_SLOTS.release()
 
 
+def cached_ctl(cache, args, timeout, max_age):
+    """Last good stdout of a ctl call, rerun when older than max_age; a failure keeps the old body."""
+    now = time.time()
+    if not cache["at"] or now - cache["at"] > max_age:
+        try:
+            proc = ctl_run(args, timeout=timeout)
+            if proc.returncode == 0 and proc.stdout.strip():
+                cache.update(at=now, body=proc.stdout)
+        except Exception:
+            pass
+    return cache["body"]
+
+
 def csp_for(page):
     """Only the page's own inline scripts run: an injected handler or script is blocked."""
-    import base64, hashlib
     hashes = " ".join(f"'sha256-{base64.b64encode(hashlib.sha256(m.encode()).digest()).decode()}'"
                       for m in re.findall(r"<script>([\s\S]*?)</script>", page))
     return ("default-src 'none'; script-src " + hashes + "; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src https://fonts.gstatic.com; img-src 'self' data: https://avatars.slack-edge.com https://ca.slack-edge.com "
-            "https://secure.gravatar.com; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")   # the run-log summary; the log grows once per run, so a minute is fresh enough.
+            "https://secure.gravatar.com; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+
+
 TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cadence.
 
 def agent_tail(key):
@@ -147,21 +169,23 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _json(self, code, obj):
+        self._send(code, json.dumps(obj), "application/json")
+
     def _allowed(self, api):
         # Bound to 127.0.0.1, but a page on any origin can still point a name it
         # controls at 127.0.0.1 and read us. Only loopback names are served.
         h = self.headers.get("Host") or ""
         host = h[:h.find("]") + 1] if h.startswith("[") else h.split(":")[0]
         if host not in LOOPBACK:
-            self._send(421, json.dumps({"error": "bad host"}), "application/json")
+            self._json(421, {"error": "bad host"})
             return False
         # Any site can still fire blind requests at localhost. The API answers
         # only this page: same-origin fetches, or tools that send no browser headers.
         if api:
-            from urllib.parse import urlparse
             site, origin = self.headers.get("Sec-Fetch-Site"), self.headers.get("Origin")
             if (site and site not in ("same-origin", "none")) or (origin and urlparse(origin).hostname not in LOOPBACK + ("",)):
-                self._send(403, json.dumps({"error": "cross-site request"}), "application/json")
+                self._json(403, {"error": "cross-site request"})
                 return False
         return True
 
@@ -170,23 +194,21 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed(True):
             return
         if path != "/api/refresh":
-            self._send(404, json.dumps({"error": "not found"}), "application/json")
+            self._json(404, {"error": "not found"})
             return
         queued = []
         for feed in (AGENTS, FULL):
-            with feed.lock:
-                busy = feed.refreshing
-                if not busy:
-                    feed.refreshing = True   # claim it here, atomically
-            if not busy:
+            if feed.claim():
                 threading.Thread(target=feed.refresh, args=(True,), daemon=True).start()
                 queued.append(feed.name)
-        self._send(202 if queued else 200, json.dumps({"queued": queued}), "application/json")
+        self._json(202 if queued else 200, {"queued": queued})
 
     def do_GET(self):
         path = self.path.split("?")[0]
         if not self._allowed(path.startswith("/api/")):
             return
+        query = parse_qs(urlparse(self.path).query)
+        arg = lambda name: (query.get(name) or [""])[0]
         if path in ("/", "/index.html"):
             page = (ROOT / "index.html").read_text()
             self._send(200, page, "text/html; charset=utf-8", csp_for(page))
@@ -195,28 +217,24 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/snapshot":
             snap, age, err, busy = FULL.read()
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
-            self._send(200, json.dumps({
+            self._json(200, {
                 "snapshot": snap, "age_seconds": age, "error": err,
                 "agents": ag, "agents_age_seconds": ag_age, "agents_error": ag_err,
                 "refreshing": busy or ag_busy,
                 "interval": FULL.interval, "agents_interval": AGENTS.interval,
-            }), "application/json")
+            })
         elif path == "/api/tail":
-            from urllib.parse import parse_qs, urlparse
-            key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
+            key = arg("key")
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*-\d+|agent-[a-z0-9]{4,12}", key):
-                self._send(400, json.dumps({"error": "bad key"}), "application/json")
+                self._json(400, {"error": "bad key"})
             else:
-                self._send(200, json.dumps({"key": key, "lines": agent_tail(key)}),
-                           "application/json")
+                self._json(200, {"key": key, "lines": agent_tail(key)})
         elif path == "/api/media":
-            from urllib.parse import parse_qs, urlparse
-            q = parse_qs(urlparse(self.path).query)
-            key, name = (q.get("key") or [""])[0], (q.get("name") or [""])[0]
+            key, name = arg("key"), arg("name")
             m = re.fullmatch(r"[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)", name)
             f = SESSION_DIR / f"{key}.media" / name
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key) or not m or not f.is_file():
-                self._send(404, json.dumps({"error": "not found"}), "application/json")
+                self._json(404, {"error": "not found"})
                 return
             kind = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
                     "mp4": "video/mp4", "webm": "video/webm"}[m.group(1).lower()]
@@ -236,30 +254,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._hardening(); self.end_headers(); self.wfile.write(part); return
             self._send(200, data, kind)
         elif path == "/api/stats":
-            now = time.time()
-            if not STATS["at"] or now - STATS["at"] > 60:
-                try:
-                    proc = ctl_run(["--pipeline", PIPELINE, "snapshot", "--stats"], timeout=30)
-                    if proc.returncode == 0 and proc.stdout.strip():
-                        STATS.update(at=now, body=proc.stdout)
-                except Exception:
-                    pass
-            self._send(200, STATS["body"] or json.dumps({"error": "stats unavailable"}), "application/json")
+            body = cached_ctl(STATS, ["--pipeline", PIPELINE, "snapshot", "--stats"], 30, 60)
+            self._send(200, body or json.dumps({"error": "stats unavailable"}), "application/json")
         elif path == "/api/errors":
-            now = time.time()
-            if not ERRORS["at"] or now - ERRORS["at"] > 20:
-                try:
-                    proc = ctl_run(["errors", "--json"], timeout=20)
-                    if proc.returncode == 0 and proc.stdout.strip():
-                        ERRORS.update(at=now, body=proc.stdout)
-                except Exception:
-                    pass
-            self._send(200, ERRORS["body"] or "[]", "application/json")
+            self._send(200, cached_ctl(ERRORS, ["errors", "--json"], 20, 20) or "[]", "application/json")
         elif path == "/api/history":
-            from urllib.parse import parse_qs, urlparse
-            key = (parse_qs(urlparse(self.path).query).get("key") or [""])[0]
+            key = arg("key")
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):
-                self._send(400, json.dumps({"error": "bad key"}), "application/json")
+                self._json(400, {"error": "bad key"})
                 return
             try:
                 proc = ctl_run(["session", "history", key], timeout=15)
@@ -268,9 +270,9 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.dumps({"error": type(exc).__name__})
             self._send(200, body, "application/json")
         elif path == "/api/refresh":
-            self._send(405, json.dumps({"error": "use POST"}), "application/json")
+            self._json(405, {"error": "use POST"})
         else:
-            self._send(404, json.dumps({"error": "not found"}), "application/json")
+            self._json(404, {"error": "not found"})
 
 
 if __name__ == "__main__":

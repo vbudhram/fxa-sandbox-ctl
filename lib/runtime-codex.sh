@@ -1,5 +1,5 @@
 #!/bin/bash
-# runtime-codex.sh — OpenAI Codex as the agent inside the VM.
+# runtime-codex.sh: OpenAI Codex as the agent inside the VM.
 #
 # Same contract as runtime-claude.sh. The shape differs in one way that matters:
 # `codex exec` is a subprocess that exits on its final message. There is no TUI,
@@ -81,12 +81,9 @@ What trips agents most often:
   rm -f "$skills_tar"
 }
 
-# auth.json holds ChatGPT OAuth tokens. The access token lives ~10 days and Codex
-# refreshes it from the refresh token when it expires. Whether that refresh
-# rotates the refresh token is unverified, and if it does, a refresh inside the
-# VM would log the host out. So never let a run straddle the expiry: decode the
-# JWT exp here and refuse to launch when too little remains. Running `codex`
-# once on the host refreshes it where the host keeps the result.
+# auth.json holds ChatGPT OAuth tokens. A refresh inside the VM may rotate the
+# refresh token and log the host out, so a run must never straddle the access
+# token's expiry: refuse to launch when too little remains.
 runtime_inject_auth() {
   local workspace_dir="$1" auth="${CODEX_HOME_DIR}/auth.json"
   if [ ! -f "$auth" ]; then
@@ -129,13 +126,14 @@ runtime_write_prompt() {
 # atomic guarantee _handoff_settled relies on. tee keeps a durable log; screen
 # scrollback dies with the session.
 runtime_launch_cmd() {
+  local start="test -f /workspace/.fxa-auto-codex-auth.json && mkdir -p /home/agent/.codex && mv /workspace/.fxa-auto-codex-auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json; source /etc/agent-env.sh; cd /workspace; codex exec"
   # A Slack session streams JSON events into the transcript the events command
   # reads, and continues an earlier conversation when FXA_CODEX_RESUME is set.
   if [ -n "${FXA_SESSION_MODE:-}" ]; then
-    printf '%s' "test -f /workspace/.fxa-auto-codex-auth.json && mkdir -p /home/agent/.codex && mv /workspace/.fxa-auto-codex-auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json; source /etc/agent-env.sh; cd /workspace; codex exec ${FXA_CODEX_RESUME:+resume ${FXA_CODEX_RESUME} }--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-claude.jsonl"
+    printf '%s' "${start} ${FXA_CODEX_RESUME:+resume ${FXA_CODEX_RESUME} }--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-claude.jsonl"
     return
   fi
-  printf '%s' "test -f /workspace/.fxa-auto-codex-auth.json && mkdir -p /home/agent/.codex && mv /workspace/.fxa-auto-codex-auth.json /home/agent/.codex/auth.json && chmod 600 /home/agent/.codex/auth.json; source /etc/agent-env.sh; cd /workspace; codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C /workspace --output-schema /workspace/.fxa-auto-handoff.schema.json -o /workspace/.fxa-auto-done.json.tmp < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-agent.log; test -s /workspace/.fxa-auto-done.json.tmp && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json"
+  printf '%s' "${start} --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C /workspace --output-schema /workspace/.fxa-auto-handoff.schema.json -o /workspace/.fxa-auto-done.json.tmp < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-agent.log; test -s /workspace/.fxa-auto-done.json.tmp && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json"
 }
 
 runtime_submit_prompt() {

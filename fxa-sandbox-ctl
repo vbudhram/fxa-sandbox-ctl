@@ -1,9 +1,8 @@
 #!/bin/bash
-# fxa-sandbox-ctl — Orchestration CLI for FxA Agent Sandbox
-# Manages self-contained Linux VMs running Claude Code agents.
+# fxa-sandbox-ctl: orchestration CLI for the FxA agent sandbox VMs.
 set -euo pipefail
 
-# Resolve symlinks to find the real script location
+# Follow symlinks so lib/ is found next to the real script.
 _resolve_symlink() {
   local target="$1"
   while [ -L "$target" ]; do
@@ -15,19 +14,15 @@ _resolve_symlink() {
 }
 SCRIPT_DIR="$(cd "$(dirname "$(_resolve_symlink "${BASH_SOURCE[0]}")")" && pwd)"
 
-# Load .env from the script directory if present. Existing env vars win, so
-# users can override anything at the shell level. Only KEY=VALUE lines are
-# loaded; comments and blank lines are ignored.
+# Load KEY=VALUE lines from .env. A variable already set in the shell wins.
 if [ -f "${SCRIPT_DIR}/.env" ]; then
   # `|| [ -n "$_env_key" ]` handles a final line that has no trailing newline.
   while IFS='=' read -r _env_key _env_val || [ -n "$_env_key" ]; do
     case "$_env_key" in
       ''|\#*) continue ;;
     esac
-    # Strip surrounding quotes from the value if present.
     _env_val="${_env_val%\"}"; _env_val="${_env_val#\"}"
     _env_val="${_env_val%\'}"; _env_val="${_env_val#\'}"
-    # Don't clobber an already-exported var.
     if [ -z "${!_env_key:-}" ]; then
       export "${_env_key}=${_env_val}"
     fi
@@ -35,7 +30,6 @@ if [ -f "${SCRIPT_DIR}/.env" ]; then
   unset _env_key _env_val
 fi
 
-# Source library modules
 source "${SCRIPT_DIR}/lib/config.sh"
 source "${SCRIPT_DIR}/lib/vm.sh"
 source "${SCRIPT_DIR}/lib/agent.sh"
@@ -345,18 +339,15 @@ cmd_jira() {
   # PR targets main unless --base is written back here.
   FXA_WORKTREE_BASE="$base"
 
-  # Only stage real credentials in the worktree when the run needs the service
-  # stack. The worktree is mounted into a VM running an agent with
-  # bypassPermissions, so an unused key is avoidable exposure.
+  # Stage real credentials only when the run needs the stack: the agent runs
+  # with bypassPermissions, so an unused key is avoidable exposure.
   if [ "$functional_tests" = "true" ]; then
     export FXA_COPY_SECRETS=true
     # The stack plus Firefox workers needs more memory than a queue run.
     export FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL}"
   fi
 
-  # --private: provision from the FXA_PRIVATE_REPO checkout into its own pool.
-  # Push/PR follow that worktree's origin automatically; secrets come from the
-  # public fxa checkout via FXA_SECRETS_SOURCE.
+  # Push and PR follow the private worktree's origin; secrets come from the public checkout.
   if [ "$private" = "true" ]; then
     if [ -z "$FXA_PRIVATE_REPO" ]; then
       echo "ERROR: --private needs FXA_PRIVATE_REPO set to a local checkout. Put it in .env (see .env.example)." >&2
@@ -379,13 +370,8 @@ cmd_jira() {
   summary="$(jira_summary_for "$key")" || return 1
   context="$(jira_fetch_context "$key")" || return 1
 
-  # --guardrails: prepend mandatory reviewer guidance (e.g. an independent security
-  # analysis) to the context the agent reads first, so it can override a misleading
-  # ticket framing and steer the fix. The standing second-opinion step for security tickets.
-  # Everything from Jira is data about the target, never an instruction. It goes
-  # inside a fence the ticket cannot forge (per-run nonce), after a header that
-  # says so, and after the host-authored guardrails. A comment that contains a
-  # look-alike "GUARDRAILS" marker lands visibly inside the fence.
+  # Jira text is data, never an instruction. It goes inside a fence with a per-run
+  # nonce the ticket cannot forge, after the trusted guardrails.
   local nonce; nonce="$(openssl rand -hex 6 2>/dev/null || date +%s%N)"
   local fenced="# Ticket ${key}
 
@@ -418,10 +404,7 @@ ${context}
   branch="$(worktree_branch_for "$key")"
   shared_path="$(worktree_shared_path)" || return 1
 
-  # Default agent name = lowercased issue key (e.g. fxa-1234)
-  if [ -z "$name" ]; then
-    name="$branch"
-  fi
+  name="${name:-$branch}"
 
   local prompt
   if [ "$rebase" = "true" ]; then
@@ -430,11 +413,8 @@ ${context}
     prompt="$(_jira_render_prompt "$key" "$branch" "$summary" "$context" "$functional_tests")"
   fi
 
-  # Claude Code rejects a /goal directive over 4000 characters and then runs with
-  # NO goal at all: the agent boots, sits at an empty prompt, and `progress`
-  # reports a healthy `watching` forever. That is the worst failure shape we
-  # have, because nothing looks wrong. Fail the launch instead. The cap is the
-  # runtime's: Codex reads stdin and has none (reports 0).
+  # An over-cap /goal is dropped and the agent idles while `progress` reports a
+  # healthy `watching`, so fail here. Codex reads stdin and has no cap (0).
   local max_chars; max_chars="$(runtime_prompt_max_chars)"
   if [ "$max_chars" -gt 0 ] && [ "${#prompt}" -gt "$max_chars" ]; then
     echo "ERROR: rendered prompt is ${#prompt} chars, over the ${max_chars} cap for ${FXA_AGENT_RUNTIME}." >&2
@@ -464,9 +444,7 @@ EOF
     return 0
   fi
 
-  # Stamp what this run is, so telemetry can report it per run: a rebase round,
-  # a review-feedback round (its guardrails file lives under feedback/), or the
-  # fix itself. Read back by telemetry_record from the launch log.
+  # telemetry_record reads this line back from the launch log.
   local run_kind="fix"
   if [ "$rebase" = "true" ]; then run_kind="rebase"
   elif [[ "$guardrails_file" == */feedback/* ]]; then run_kind="feedback"; fi
@@ -478,26 +456,20 @@ EOF
     echo "Acquiring a pool worktree slot for branch ${branch}..." >&2
   fi
   local worktree_path
-  # Which slots are still owned by a ticket. Only needed when we have to pick a
-  # slot ourselves; an explicit --worktree says the caller already decided.
-  # Private mode runs its own pool and its own label family, so the pipeline's
-  # inflight list says nothing about which of its slots are owned.
+  # Owned slots matter only when we pick one. The private pool has its own
+  # labels, so the pipeline's inflight list says nothing about it.
   local owned=""
   if [ -z "$worktree_slot" ] && [ "$private" != "true" ]; then
     owned="$(jira_owning_keys)"
   fi
   worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot" "$owned")" || return 1
 
-  # The merge has to happen AFTER the checkout above and BEFORE the agent starts.
-  # `git checkout <branch>` fails on a worktree with unmerged paths ("you need to
-  # resolve your current index first"), so a merge staged earlier would block the
-  # very checkout that prepares the slot.
+  # Merge after the checkout: `git checkout` refuses a worktree with unmerged paths.
   if [ "$rebase" = "true" ]; then
     _jira_rebase_merge "$key" "$worktree_path" "$base" || return 1
   fi
 
-  # Clear any stale handoff file in THIS slot from a prior ticket. Different
-  # slots have independent handoff files so they don't collide.
+  # Archive a handoff file a prior ticket left in this slot.
   local done_file="${worktree_path}/.fxa-auto-done.json"
   [ -f "$done_file" ] && {
     echo "Archiving prior handoff file in ${worktree_path}..." >&2
@@ -507,12 +479,10 @@ EOF
   slot_write "${worktree_path}/.fxa-auto-claude.jsonl" < /dev/null 2>/dev/null || true
   slot_write "${worktree_path}/.fxa-auto-claude.log" < /dev/null 2>/dev/null || true
 
-  # Write the full Jira context to a file inside the worktree so the /goal
-  # directive (capped at 4000 chars) can reference it instead of embedding it.
+  # The /goal is capped, so it points at this file instead of embedding the context.
   local context_file="${worktree_path}/.fxa-jira-context.md"
-  # A relaunch on a slot that still holds work (a runner GCE deleted at its
-  # lifetime cap, a run that died mid-edit) resumes from that tree. Host-authored,
-  # so it sits above the untrusted fence.
+  # A slot that still holds work (a runner deleted at its lifetime cap, a run cut
+  # off mid-edit) resumes it. Host-authored, so it goes above the untrusted fence.
   if [ -n "$(worktree_filtered_status "$worktree_path")" ]; then
     context="$(printf '%s\n' "$context" | awk 'BEGIN{done=0} /^## Ticket text \(untrusted\)/ && !done {print "## Resumed run\n\nThe tree already holds partial work from an earlier run that was cut off. Read `git status` and `git diff` first and continue from it. Do not start over.\n"; done=1} {print}')"
     echo "Slot holds work from an earlier run; the agent resumes it." >&2
@@ -523,10 +493,7 @@ EOF
   check_prerequisites
   agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || { _jira_launch_failed "$key" "$name"; return 1; }
 
-  # Optionally pre-warm the FxA stack so functional tests don't pay the full
-  # cold-start cost when the agent reaches step 4. We kick off fxa-start as a
-  # detached background tart exec; pm2 daemonizes the underlying services so
-  # the command returns quickly and the agent can keep working in parallel.
+  # Start the stack now so the functional-test step does not pay the cold start.
   if [ "$functional_tests" = "true" ]; then
     echo "Pre-warming FxA stack inside the VM (fxa-start, backgrounded)..." >&2
     agent_prewarm_stack "$name" >&2 || \
@@ -556,17 +523,9 @@ EOF
   fi
 }
 
-# Bring <base> into the ticket's branch so the agent can resolve the conflict as
-# ordinary working-tree edits.
-#
-# The agent cannot do this itself. The parent .git is mounted read-only in the
-# VM, so `git merge`, `git add` and `git commit` all fail there. Every git write
-# for a rebase round happens here on the host; the agent only edits files.
-#
-# The attempts gate is enforced here rather than left to the caller's judgment.
-# A rule that lives only in a skill file does not survive a cron-fired pass.
-# A human review does not block a rebase: the repo keeps approvals across pushes
-# (dismiss_stale_reviews is off), so a force-push loses nothing.
+# Merge <base> into the ticket's branch on the host: the VM mounts .git read-only,
+# so the agent only edits the conflict. The attempts gate lives here because a
+# rule only in a skill file does not survive a cron-fired pass.
 _jira_rebase_merge() {
   local key="$1" wt="$2" base="$3"
 
@@ -601,9 +560,8 @@ _jira_rebase_merge() {
   return 0
 }
 
-# Compose the /goal prompt for a rebase round. Deliberately not the ticket
-# prompt: the work here is the conflict, not the ticket, and an agent handed the
-# ticket's acceptance criteria will re-implement it on top of the resolution.
+# The /goal for a rebase round. Not the ticket prompt: an agent given the
+# acceptance criteria re-implements the ticket on top of the resolution.
 _jira_render_rebase_prompt() {
   local key="$1" branch="$2" summary="$3" base="${4:-main}"
   summary="$(printf '%s' "$summary" | tr -cd 'A-Za-z0-9 ._/:,-' | tr -s ' ')"
@@ -640,14 +598,8 @@ handoff. After you write the handoff file, stop.
 EOF
 }
 
-# Compose the initial /goal prompt sent to the in-VM agent.
-#
-# /goal is a built-in Claude Code feature: after each turn, a small evaluator
-# model judges whether the condition is met (from the transcript alone). The
-# directive is capped at 4000 characters, so we keep it tight and reference
-# .fxa-jira-context.md (written by cmd_jira into the worktree) for the full
-# issue text. The agent must print evidence of each criterion in the transcript
-# for the evaluator to see it.
+# The /goal prompt for the in-VM agent. An evaluator grades it from the
+# transcript alone, so each step asks for printed evidence.
 _jira_render_prompt() {
   local key="$1"
   local branch="$2"
@@ -655,15 +607,8 @@ _jira_render_prompt() {
   # $4 (full context) is written to a file by cmd_jira, not embedded here.
   local functional_tests="${5:-false}"
 
-  # The summary is the only variable-length part of the goal, and a Sentry-style
-  # title can run past 120 characters. Truncate it: the full summary is in
-  # .fxa-jira-context.md, so nothing is lost, and an over-long goal is rejected
-  # outright by Claude Code. FXA-14104's 122-char title pushed the goal to 4032
-  # counted characters and the agent sat with no goal for 57 minutes.
-  # The summary lands inside the /goal string, which the goal evaluator grades
-  # every turn. Quotes, parentheses, and newlines from a ticket title could
-  # close the quote and rewrite the goal. Plain characters only; the full title
-  # is in the fenced context file.
+  # A long title once pushed the goal over the cap, and quotes or newlines could
+  # rewrite it. Plain characters and truncation; the full title is in the context file.
   summary="$(printf '%s' "$summary" | tr -cd 'A-Za-z0-9 ._/:,-' | tr -s ' ')"
   if [ "${#summary}" -gt 70 ]; then
     summary="${summary:0:67}..."
@@ -755,10 +700,8 @@ cmd_tail() {
   source "$meta"
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
 
-  # A Claude run streams JSONL; show its last assistant texts and tool calls.
-  # Scan the whole file: a long tool call emits hundreds of tool_progress
-  # events, and a fixed tail of lines then holds no assistant event at all.
-  # Otherwise dump the screen scrollback (-h: history, not only the visible region).
+  # Scan the whole JSONL: a long tool call emits hundreds of progress events, so
+  # a fixed tail can hold no assistant event. Else dump the screen history.
   ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${IP}" "
     if [ -s /workspace/.fxa-auto-claude.jsonl ]; then
       jq -R -r 'fromjson? |
@@ -783,8 +726,7 @@ cmd_finish() {
   local worktree=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      # A pool slot by name or path. This is the recovery path for a run whose
-      # host commit failed after the agent finished: fix the cause, finish again.
+      # Recovery for a run whose host commit failed: fix the cause, finish again.
       --worktree)     worktree="$2"; shift 2 ;;
       --wait)         wait="true"; shift ;;
       --no-ci-watch)  ci_watch="false"; shift ;;
@@ -833,22 +775,10 @@ cmd_run() {
 
   while [ $# -gt 0 ]; do
     case "$1" in
-      -n|--name)
-        name="$2"
-        shift 2
-        ;;
-      -p|--prompt)
-        prompt="$2"
-        shift 2
-        ;;
-      -c|--cpu)
-        cpu="$2"
-        shift 2
-        ;;
-      -m|--memory)
-        memory="$2"
-        shift 2
-        ;;
+      -n|--name)   name="$2"; shift 2 ;;
+      -p|--prompt) prompt="$2"; shift 2 ;;
+      -c|--cpu)    cpu="$2"; shift 2 ;;
+      -m|--memory) memory="$2"; shift 2 ;;
       -*)
         echo "ERROR: Unknown option: $1" >&2
         return 1
@@ -865,13 +795,8 @@ cmd_run() {
     esac
   done
 
-  if [ -z "$directory" ]; then
-    directory="$PWD"
-  fi
-
-  if [ -z "$name" ]; then
-    name="$(basename "$directory")"
-  fi
+  directory="${directory:-$PWD}"
+  name="${name:-$(basename "$directory")}"
 
   check_prerequisites
   agent_run "$directory" "$name" "$prompt" "$cpu" "$memory"
@@ -973,7 +898,6 @@ cmd_test() {
 
   shift
 
-  # Read agent metadata for IP and WORKSPACE
   local meta_file="${LOG_DIR}/${name}.meta"
   if [ ! -f "$meta_file" ]; then
     echo "ERROR: No metadata for agent '${name}'." >&2
@@ -988,13 +912,11 @@ cmd_test() {
     return 1
   fi
 
-  # Check that functional tests exist in the workspace
   if [ ! -d "${WORKSPACE}/packages/functional-tests" ]; then
     echo "ERROR: packages/functional-tests not found in ${WORKSPACE}" >&2
     return 1
   fi
 
-  # Skip past '--' separator if present
   if [ "${1:-}" = "--" ]; then
     shift
   fi
@@ -1035,7 +957,7 @@ cmd_ssh() {
     return 1
   fi
 
-  # --cmd: print just the user@host for use with claude --ssh
+  # --cmd: only user@host, for `claude --ssh`
   if [ "${2:-}" = "--cmd" ]; then
     echo "${VM_SSH_USER}@${ip}"
     return 0
@@ -1073,15 +995,8 @@ cmd_logs() {
 
   shift
   while [ $# -gt 0 ]; do
-    case "$1" in
-      -f|--follow)
-        follow="true"
-        shift
-        ;;
-      *)
-        shift
-        ;;
-    esac
+    case "$1" in -f|--follow) follow="true" ;; esac
+    shift
   done
 
   agent_logs "$name" "$follow"
@@ -1111,7 +1026,7 @@ cmd_stop() {
   agent_stop "$name"
 }
 
-# ── Command: image ─────────────────────────────────────────────
+# ── Command: secrets ───────────────────────────────────────────
 
 cmd_secrets() {
   local target="${1:-}"
@@ -1141,6 +1056,8 @@ cmd_secrets() {
   echo "Syncing secrets into ${path}..."
   worktree_copy_secrets "$path"
 }
+
+# ── Command: image ─────────────────────────────────────────────
 
 cmd_image() {
   local subcmd="${1:-}"
@@ -1177,7 +1094,6 @@ cmd_status() {
   echo "=== FxA Agent Sandbox Status ==="
   echo ""
 
-  # Host memory
   local total_mem_bytes
   total_mem_bytes=$(sysctl -n hw.memsize 2>/dev/null || echo 0)
   local total_mem_gb=$(( total_mem_bytes / 1024 / 1024 / 1024 ))
@@ -1185,7 +1101,6 @@ cmd_status() {
   echo "Host: macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown'), ${total_mem_gb}GB RAM"
   echo ""
 
-  # Golden image
   if vm_image_exists; then
     echo "Golden image: installed"
   else
@@ -1193,12 +1108,10 @@ cmd_status() {
   fi
   echo ""
 
-  # Running agents
   echo "Agents:"
   agent_list
   echo ""
 
-  # Worktree pool: which slots are free vs. claimed by a running agent.
   echo "Worktree pool:"
   local slot agent_name any_slot=0
   while IFS= read -r slot; do
@@ -1214,7 +1127,6 @@ cmd_status() {
   [ "$any_slot" -eq 0 ] && echo "  (no pool worktrees yet)"
   echo ""
 
-  # Stale host state: .meta files whose VM is no longer running.
   local meta name stale=()
   for meta in "${LOG_DIR}"/*.meta; do
     [ -f "$meta" ] || continue
@@ -1230,10 +1142,8 @@ cmd_status() {
 
 # ── Command: reap ──────────────────────────────────────────────
 
-# Remove leftover host-side state (.meta / .pid / VM log / SSH keys) for agents
-# whose VM is no longer running. Never touches a running agent. Run this only
-# when no agent is mid-boot: a VM that hasn't reported an IP yet reads as "not
-# running", so reaping during startup could delete a live agent's state.
+# Remove host state for agents whose VM is not running. Do not run it while an
+# agent boots: a VM with no IP yet reads as not running.
 _reap_stale_state() {
   local meta name reaped=0
   for meta in "${LOG_DIR}"/*.meta; do
@@ -1257,13 +1167,7 @@ _reap_stale_state() {
 }
 
 # ── Pipeline commands ──────────────────────────────────────────
-#
-# These drive a ticket-to-PR pipeline (see pipelines/*.conf). They used to live
-# in the fxa-ai-fixme skill's fixme.sh, which carried its own copies of the
-# branch naming, the pool logic, and VM reaping. There is now one copy of each.
-#
-# Every command here is read-only unless its comment says otherwise. Nothing
-# here merges or approves a PR, and nothing here prints a secret.
+# Read-only unless marked WRITE. Nothing here merges or approves a PR, or prints a secret.
 
 cmd_reap() {
   case "${1:-}" in
@@ -1273,25 +1177,14 @@ cmd_reap() {
   esac
 }
 
-# _reap_key <KEY>
-#   WRITE: stop the agent VM that belongs to <KEY>. Idempotent: prints `no-vm`
-#   and exits 0 when nothing is running, so a pass can call it unconditionally.
-#
-#   Nothing else in the system does this. `finish` runs
-#   handoff -> push -> PR -> watch-CI -> exit and never stops the VM; it even
-#   prints "the agent keeps running". So a finished agent sits at its prompt at
-#   0% CPU holding its slot and 8-13GB forever. With two slots the pool
-#   deadlocks after two launches and every later pass is a no-op. On 2026-08-24
-#   two VMs idled 4+ hours and eight consecutive passes did nothing.
-#
-#   Set FXA_NO_REAP=1 to keep a VM alive while debugging a failed run.
+# WRITE: stop <KEY>'s VM; idempotent. Nothing else stops a finished agent, and
+# idle VMs once held every slot. FXA_NO_REAP=1 keeps it for debugging.
 _reap_key() {
   local key="$1"
   if [ "${FXA_NO_REAP:-}" = "1" ]; then echo "$key reap-skipped (FXA_NO_REAP=1)"; return 0; fi
   local name; name="$(worktree_branch_for "$key")" || return 1
   if ! vm_is_running "$name" 2>/dev/null; then echo "$key no-vm"; return 0; fi
-  # Never fail a pass on a reap. A stuck VM is a smaller problem than a pass
-  # that aborts halfway through its label writes.
+  # A stuck VM costs less than a pass that aborts halfway through its label writes.
   if agent_stop "$name" >/dev/null 2>&1; then
     echo "$key reaped ($name)"
   else
@@ -1299,19 +1192,8 @@ _reap_key() {
   fi
 }
 
-# _reap_stray_vms
-#   WRITE: stop every running agent VM whose ticket is not inflight. Prints one
-#   line per VM it touched, nothing when the pool is clean.
-#
-#   The reap inside `label` covers the normal path, but it only fires when a
-#   pass actually performs the transition. This catches everything else: a pass
-#   that died between the launch and the reconcile, a label edited by hand in
-#   Jira, a run that finished with no pass after it, or a VM whose branch maps
-#   to no labelled ticket at all.
-#
-#   `inflight` is the protection. A pass labels a ticket inflight before it
-#   launches and the label holds for the whole run, including the host's push
-#   and PR handoff, so a live run can never be collected here.
+# WRITE: stop every agent VM whose ticket is not inflight, for the cases the reap
+# in `label` misses. A live run is safe: its inflight label covers the whole run.
 _reap_stray_vms() {
   if [ "${FXA_NO_REAP:-}" = "1" ]; then echo "reapstray skipped (FXA_NO_REAP=1)"; return 0; fi
   local owned; owned="$(jira_owning_keys)"
@@ -1322,8 +1204,7 @@ _reap_stray_vms() {
   local name key
   while IFS= read -r name; do
     [ -z "$name" ] && continue
-    # Only agent names that look like a branch for a ticket. Anything else is a
-    # hand-started agent and none of this pipeline's business.
+    # Anything else is a hand-started agent.
     case "$name" in
       agent-*|[a-z]*-[0-9]*) ;;
       *) continue ;;
@@ -1345,14 +1226,8 @@ _reap_stray_vms() {
 cmd_queue()     { jira_queue_keys; }
 cmd_inflight()  { jira_inflight_keys; }
 
-# cmd_reconcile
-#   WRITE: apply the determinate rows of the reconcile table to every inflight
-#   key and print one line per key. Merged, closed, and green PRs move their
-#   label; an inflight label with no launch log goes back to public. Everything
-#   that needs a judgement (stalls, red checks, a dead runner) is printed as is
-#   for the pass to decide. Until this existed the table lived only in the
-#   skill, so a label frozen while the automation was off stayed frozen until a
-#   human read it (FXA-14300 shipped twice that way on 2026-09-08).
+# WRITE: apply the determinate reconcile rows to every inflight key, one line per key.
+# Rows that need judgment print as is. When only the skill did this, a frozen label shipped a ticket twice.
 cmd_reconcile() {
   local key line stage pr state ok fail run url why
   for key in $(jira_inflight_keys); do
@@ -1367,15 +1242,12 @@ cmd_reconcile() {
             if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "${ok#ok=}" -gt 0 ]; then
               cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
             elif url="$(gh_gate_stuck "$key" 0)"; then
-              # Every push resets the functional-tests gate, and the launcher
-              # approves it only on its own first push. Approve any pending gate
-              # here, so a feedback or rebase round does not wait a pass for it.
+              # Every push resets the gate and the launcher approves only its first push.
               finish_approve_functional_gate "$url" 2>/dev/null
               echo "$key pr #$pr gate approved"
             elif [ "${fail#fail=}" -gt 0 ]; then
               if why="$(gh_red_infra "$key")"; then
-                # Every red check is repo infrastructure, not this PR. Once
-                # nothing else is still running, treat it as green.
+                # Every red check is repo infra, so green once nothing still runs.
                 if [ "${run#running=}" = 0 ]; then
                   cmd_label "$key" done >/dev/null && echo "$key done #$pr green except infra: $why"
                 else
@@ -1396,39 +1268,22 @@ cmd_reconcile() {
       *) echo "$line" ;;
     esac
   done
-  # Every pass reconciles, so this is where a stale skip record dies. Prune
-  # against the whole queue: a ticket hidden by the epic focus has not left it.
+  # Prune against the whole queue: a ticket hidden by the epic focus has not left it.
   _jira_keys_for_jql "$PIPE_QUEUE_JQL" 2>/dev/null | pipeline_skip_prune
 }
 cmd_done_keys() { jira_done_keys; }
 
-# precheck
-#   The whole deterministic half of a pass, in shell, so a quiet pass costs the
-#   operator's model nothing. Takes the lock, applies the reconcile rows, drains
-#   `done`, reaps strays, then lists what still needs judgment: a reconcile or
-#   drain line, a stray reap, a review comment not noted before, a queue key
-#   with no skip record, or a skipped ticket whose text changed since the skip.
-#   Prints `quiet` and one status line when nothing does. The cron prompt calls
-#   this first and invokes the skill only on work: on 2026-09-15 fourteen idle
-#   passes in a row each re-injected the 61KB skill into a 400K-token session
-#   for no result.
-#
-#   Newly noted review comments are remembered in <KEY>.feedback-noted, so a
-#   comment the pass has already reported (a question waiting on a human) does
-#   not make every later pass loud. `label done` clearing feedback-seen does
-#   not touch this file; a round that fixes a comment removes it from the
-#   feedback list, and the next new one is a new id.
+# The deterministic half of a pass, in shell: idle passes that loaded the skill
+# each cost a large model turn. Lists only what needs judgment, else one `quiet` line.
+# <KEY>.feedback-noted keeps an already reported comment from making every pass loud.
 cmd_precheck() {
   local out; out="$(pipeline_lock)" || { echo "$out"; return 1; }
   local work=0 info="" line key num state ids noted why
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0
   _work() { work=1; printf '%s\n' "$*"; }
-  # Informational lines are held back and printed only when something else needs
-  # judgment. A pass that has only these prints one `quiet` line, so an idle
-  # fire costs one short model turn instead of a lock/drain/sweep/unlock turn.
+  # Held back; printed only when some line needs judgment.
   _info() { info="${info}${info:+$'\n'}$*"; }
-  # Reconcile lines that need a human or model judgment. Everything else the
-  # reconcile already applied (merged, done, gate approved) or is progress.
+  # Reconcile lines that need judgment. The rest were applied or are progress.
   local judge_re='dead-runner| RED |could not read|exited-without-handoff|stalled|public \(inflight'
 
   while IFS= read -r line; do
@@ -1438,10 +1293,7 @@ cmd_precheck() {
     if printf '%s' "$line" | grep -qE "$judge_re"; then _work "reconcile: $line"; else _info "reconcile: $line"; fi
   done < <(cmd_reconcile 2>&1)
 
-  # Drain rows that are determinate get applied here, not narrated. The skill
-  # says a MERGED line takes `label merged` and a CLOSED line takes `label
-  # rejected` with no judgment in between; a model turn to type that cost about
-  # $0.40 per merge on 2026-09-17.
+  # Apply determinate drain rows here: a model turn to type `label merged` costs money.
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     read -r key num state _ <<< "$line"
@@ -1458,9 +1310,7 @@ cmd_precheck() {
   done < <(cmd_drain 2>&1)
   while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
 
-  # Sweep review feedback on every ticket with an open PR: `done`, and `inflight`
-  # whose runner has handed off. A red check keeps a ticket at inflight for days,
-  # and its review comments were invisible until 2026-09-17.
+  # Include inflight keys with a PR: a red check keeps a ticket inflight for days.
   local done_keys sweep; done_keys="$(jira_done_keys)"; sweep="$done_keys"
   for key in $(jira_inflight_keys); do
     [ "$(pipeline_progress "$key" 2>/dev/null | awk '{print $2}')" = "pr" ] && sweep="${sweep}${sweep:+ }${key}"
@@ -1474,10 +1324,8 @@ cmd_precheck() {
     fi
   done
 
-  # Each fingerprint is two Jira reads, and 20 keys serially took 85 s. xargs -P
-  # fans them out through the `skip-changed` subcommand; bash 3.2 has no `wait -n`.
-  # A key with no record or a changed ticket prints a line, an unchanged one
-  # prints nothing, so the output is exactly the worklist.
+  # Two Jira reads per key were slow in series. xargs -P fans them out, since bash
+  # 3.2 has no `wait -n`. Only a new or changed key prints a line.
   local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c .)"
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
@@ -1542,9 +1390,7 @@ cmd_snapshot()  {
   esac
 }
 
-# cmd_dashboard [--port N] [--interval S]
-#   Serve the status page from live snapshots. Binds to 127.0.0.1 only: the
-#   snapshot carries ticket text and branch names, and nothing here authenticates.
+# Binds to 127.0.0.1 only: the snapshot carries ticket text and nothing authenticates.
 cmd_dashboard() {
   local port=8787 interval=60
   while [ "$#" -gt 0 ]; do
@@ -1558,11 +1404,7 @@ cmd_dashboard() {
   exec python3 "${SCRIPT_DIR}/dashboard/server.py" "$port" "$PIPE_NAME" "$interval"
 }
 
-# Slots a ticket can actually claim. Use this, never `slots`: `slots` only
-# answers whether a VM is running there.
-# launchcap: how many launches this pass may make, resolved against the backend.
-# 0 in the config means "one per free slot", so the pass reads this and never
-# the config directly.
+# Launches this pass may make, capped by free slots. The pass reads this, never the config.
 cmd_launchcap() {
   local cap
   case "${FXA_VM_BACKEND:-tart}" in
@@ -1574,6 +1416,7 @@ cmd_launchcap() {
   echo "${cap:-0}"
 }
 
+# Slots a ticket can claim. Use this, never `slots`, which only says whether a VM runs there.
 cmd_freeslots() {
   local owned; owned="$(jira_owning_keys)"
   if [ "$owned" = "UNKNOWN" ]; then
@@ -1581,9 +1424,7 @@ cmd_freeslots() {
     return 1
   fi
   worktree_free_slots "$owned"
-  # gce: the pool grows to the launch cap. List the next-numbered slots that do
-  # not exist yet; `launch <KEY> <slot>` creates a named slot on demand. A slot
-  # is a checkout with no node_modules, so this costs disk and a minute, not RAM.
+  # gce: the pool grows to the cap. `launch` creates a listed slot that does not exist yet.
   if [ "${FXA_VM_BACKEND:-tart}" = "gce" ]; then
     local cap="${PIPE_MAX_LAUNCHES_GCE:-5}" existing n=1
     existing="$(worktree_pool_slot_names | grep -c . || true)"
@@ -1603,21 +1444,15 @@ cmd_alive() {
   echo "$key dead"; return 1
 }
 
-# _ground_paths <TEXT>
-#   Repo-relative paths a ticket or comment cites, one per line, optionally
-#   `path:LINE` or `path:LINE-LINE`. Trailing punctuation stripped.
+# Repo paths a text cites, one per line, with an optional :LINE or :LINE-LINE.
 _ground_paths() {
   printf '%s\n' "$1" \
     | grep -oE '(packages|libs|_scripts|_dev|\.github|\.circleci|scripts)/[A-Za-z0-9_./@-]+(:[0-9]+(-[0-9]+)?)?' \
     | sed -E 's/[.,;:)]+$//' | sort -u || true
 }
 
-# cmd_ground <KEY>
-#   Write /tmp/fxa-KEY-ground.md: the ticket, every cited path checked against
-#   origin/main with the cited lines shown, frozen and stories checks, open PRs
-#   touching the same files, and recent commits to them. One read replaces the
-#   six to ten greps a grounding pass ran by hand, and each of those greps was a
-#   model turn re-reading the whole session. Read-only; nothing here decides.
+# Write /tmp/fxa-KEY-ground.md, so a grounding pass reads one file instead of a
+# model turn per grep. Read-only; nothing here decides.
 cmd_ground() {
   local key; key="$(_key "$1")"
   local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO"
@@ -1692,10 +1527,8 @@ cmd_ground() {
   echo "cited=${n_cited} missing=${n_missing} frozen=${n_frozen} stories_dirs=${n_stories} open_pr_overlaps=${n_prs}"
 }
 
-# cmd_feedback_bundle <KEY>
-#   Write /tmp/feedback/fxa-KEY-bundle.md: each unhandled review comment with the
-#   branch lines it sits on, and every `file:line` it cites resolved on the branch
-#   and on origin/main. Verification then is one read, not a tool call per claim.
+# Write /tmp/feedback/fxa-KEY-bundle.md: each comment with the lines it cites on
+# the branch and on origin/main, so a check is one read, not a tool call per claim.
 cmd_feedback_bundle() {
   local key="$1" repo="$PIPE_REPO"
   local br; br="$(worktree_branch_for "$key")"
@@ -1746,24 +1579,18 @@ cmd_feedback_bundle() {
   echo "$out"; echo "pr=#${pr} unhandled=${n}"
 }
 
-# cmd_label <KEY> <STATE>
-#   WRITE: move the ticket to <STATE>, then do the two things that must never
-#   be separated from that move.
+# WRITE: move the ticket, then do what must never be separated from that move.
+# A rule that relies on a pass to run a separate command does not survive a cron.
 cmd_label() {
   local key="${1:-}" state="${2:-}"
   jira_label_set "$key" "$state" || return 1
   state="${state#${PIPE_LABEL_PREFIX}-}"
   [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
-  # Any state other than inflight means this ticket no longer owns a worktree,
-  # so its VM must go. Tying the reap to the label write is deliberate: a rule
-  # that depends on a pass remembering to run a separate command does not
-  # survive a cron-fired pass.
+  # Only inflight owns a worktree, so any other state reaps the VM.
   if [ "$state" != "inflight" ]; then
     _reap_key "$key"
   fi
-  # Reaching `done` means the fix is pushed and green, so this is the moment the
-  # 👍 becomes truthful. Tied to the label write for the same reason as the
-  # reap. No-ops for a ticket that never had feedback.
+  # `done` means pushed and green, so the 👍 is now true.
   if [ "$state" = "done" ] && gh_feedback_has_acted "$key"; then
     gh_feedback "$key" thumbsup
   fi
@@ -1780,9 +1607,7 @@ cmd_label() {
     local mpr; read -r _ mpr _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
     [ -n "$mpr" ] && [ "$mpr" != "none" ] && mpr="https://github.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/${mpr}" || mpr=""
     jira_comment "$key" "$(telemetry_merge_comment "$key" "$mpr")" || echo "WARN: merge comment failed for $key" >&2
-    # The comment says what landed; this hands the ticket to the reviewer who
-    # approved it and closes it. Without this the ticket keeps the status and
-    # assignee it had before the pipeline ever saw it.
+    # Hand the ticket to the approving reviewer and close it.
     jira_close_merged "$key"
   fi
   # Free the branch for a fix round on another slot or a hand checkout. Record
@@ -1794,15 +1619,8 @@ cmd_label() {
   fi
 }
 
-# _jira_launch_failed <KEY> <name>
-#   A launch that dies before the agent starts (stockout in every zone, image
-#   missing, tunnel refused) left the ticket at inflight with no runner, and only
-#   a human noticed. Return it to the queue; the next pass tries again and the
-#   daily launch budget bounds how often.
-#
-#   A fix or feedback round has an open PR, and the queue is the wrong place
-#   for it: reconcile stops tracking the PR, and with newtickets off nothing
-#   relaunches it. It keeps inflight, where reconcile sees the red PR.
+# A launch that died before the agent started left the ticket inflight with no
+# runner. Requeue it, unless it has an open PR: then reconcile must keep seeing it.
 _jira_launch_failed() {
   local key="$1" name="$2"
   [ -n "${PIPE_NAME:-}" ] || return 0
@@ -1817,16 +1635,8 @@ _jira_launch_failed() {
   cmd_label "$key" public >&2 || true
 }
 
-# cmd_launch <KEY> <SLOT> [CONTEXT-FILE]
-#   WRITE: start an agent VM in the background. The launcher pushes, opens the
-#   PR, approves the functional gate, then polls CI, so a pass must not block
-#   on it.
-# _launch_slot_for KEY SLOT
-#   The slot a launch must use. A branch can be checked out in one worktree
-#   only, so when a pool slot from an earlier round still holds it, use that
-#   slot: a checkout elsewhere dies with "already used by worktree". A worktree
-#   outside the pool is the operator's own; never launch there, because the
-#   launch resets and commits in it. Refuse and name it instead.
+# A branch checks out in one worktree only, so reuse the pool slot that holds it.
+# Refuse a worktree outside the pool: it is the operator's, and a launch resets it.
 _launch_slot_for() {
   local key="$1" slot="$2" held
   held="$(git -C "$PIPE_REPO" worktree list --porcelain 2>/dev/null \
@@ -1843,9 +1653,9 @@ _launch_slot_for() {
   return 1
 }
 
+# WRITE: start an agent VM in the background. The launcher polls CI, so a pass must not block on it.
 cmd_launch() {
-  # --rebase runs a conflict round through here, so it gets the launch log the
-  # dashboard and `progress` read, the ledger, and the prior-run telemetry.
+  # --rebase comes through here to get the launch log, the ledger, and the telemetry.
   local rebase="" a pos=()
   for a in "$@"; do [ "$a" = --rebase ] && rebase=1 || pos+=("$a"); done
   local key="${pos[0]:-}" slot="${pos[1]:-}" ctx="${pos[2]:-}"
@@ -1858,13 +1668,10 @@ cmd_launch() {
     return 1
   fi
   slot="$(_launch_slot_for "$key" "$slot")" || return 1
-  # A UI change with a sibling *.stories.tsx should ask for /fxa-storybook-capture,
-  # and the grounding pass forgets (FXA-14503 shipped a copy change with no
-  # screenshot). Warn, do not refuse: the pass may have judged the change
-  # non-visual, and a warning it can read beats a launch it cannot make.
+  # The grounding pass forgets to ask for storybook screenshots. Warn, do not
+  # refuse: the pass may have judged the change non-visual.
   if [ -n "$ctx" ] && ! grep -q 'fxa-storybook-capture' "$ctx"; then
-    # `|| true`: a context with no source paths makes grep exit 1, and under
-    # pipefail + set -e that aborted the launch with no message (2026-09-17).
+    # || true: no match exits 1, and under pipefail that aborted the launch silently.
     local dirs; dirs="$(grep -oE '(packages|libs)/[A-Za-z0-9_./-]+\.(tsx|ts|jsx|js|ftl|css|scss)' "$ctx" \
       | xargs -n1 dirname 2>/dev/null | sort -u || true)"
     local d hits=""
@@ -1874,11 +1681,7 @@ cmd_launch() {
     done
     [ -n "$hits" ] && echo "WARN: ${key}: context names files beside *.stories.tsx but asks for no /fxa-storybook-capture: ${hits}" >&2
   fi
-  # Refuse to launch when the disk is too tight to hold another VM clone. A
-  # running agent VM occupies 8 to 13GB, and this host filled to 99% on
-  # 2026-08-11, which cost a manual cleanup of 19GB. A refused launch is a small
-  # annoyance; a disk that fills mid-run corrupts the clone and can take the
-  # host down with it.
+  # A VM clone takes 8 to 13GB, and a disk that fills mid-run corrupts it.
   local free_gb; free_gb="$(pipeline_free_gb)"
   if [ -n "$free_gb" ] && [ "$free_gb" -lt "$PIPE_MIN_FREE_GB" ]; then
     echo "ERROR: refusing to launch ${key}: only ${free_gb}GB free, need ${PIPE_MIN_FREE_GB}GB." >&2
@@ -1901,35 +1704,23 @@ cmd_launch() {
   local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot" ${rebase:+--rebase})
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
-  # The pass asks for the full stack with one line in the context file. That is
-  # the only route to a flow video; Storybook covers single components.
+  # One line in the context asks for the full stack, the only route to a flow video.
   [ -n "$ctx" ] && grep -q '^Launch with --functional-tests' "$ctx" && args+=(--functional-tests)
   local log; log="$(pipeline_launch_log "$key")"
-  # Record the run this slot still holds before the launch destroys its evidence:
-  # the runner overwrites the slot transcript and, for the same key, the launch
-  # log below. Runs used to be recorded only at `done`, so a ticket that never
-  # got there before its next round (a red infra check, a relaunch) lost the
-  # run for good. On 2026-09-17 that was the first runs of FXA-14377 and
-  # FXA-14380. telemetry_record is idempotent, so a run `done` already wrote is
-  # a no-op here.
+  # Record the run this slot holds before the launch overwrites its transcript:
+  # a ticket that never reached `done` lost it. telemetry_record is idempotent.
   local prev_dir prev_key
   prev_dir="$(dirname "$(worktree_repo_root 2>/dev/null || echo /)")/${slot}"
   prev_key="$(worktree_key_for "$(git -C "$prev_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || true)")"
   if [ -n "$prev_key" ] && [ "$prev_key" != "HEAD" ] && [ -f "$(pipeline_launch_log "$prev_key")" ]; then
     telemetry_record "$prev_key" >/dev/null 2>&1 || true
   fi
-  # The same key relaunching on a different slot is the other way to lose a run:
-  # the rm below destroys its launch log while its transcript sits in another
-  # slot. On 2026-09-18 FXA-14578's fix run went that way when its feedback
-  # round landed on fxa-auto-5 before reconcile had labelled it done.
+  # The same key on another slot: the rm below would drop its launch log unrecorded.
   [ -f "$log" ] && { telemetry_record "$key" >/dev/null 2>&1 || true; }
-  # Delete, do not just truncate. `>` reuses the inode and APFS keeps the
-  # original st_birthtime, so a relaunched ticket would report a wall time that
-  # spans every earlier attempt. telemetry_record reads that birth time.
+  # Delete, not truncate: APFS keeps the inode's birth time, which telemetry reads as the start.
   rm -f "$log"
   nohup "$0" "${args[@]}" >"$log" 2>&1 &
-  # A launched ticket is no longer skipped. Drop the fingerprint, or a later
-  # admission skip on this same key would be silenced by a stale match.
+  # A stale skip fingerprint would silence a later skip of this key.
   pipeline_skip_clear "$key"
   echo "$key launched on $slot (log ${log})"
 }
@@ -1989,11 +1780,11 @@ cmd_task() {
     local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
     session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}"
   fi
-  # The Slack thread, for the dashboard. Only a Slack https link is kept.
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"
   [ -n "${person%%$'\t'*}" ] && session_set "$key" owner_name "${person%%$'\t'*}"
   [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
+  # Only a Slack https link is kept.
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
@@ -2023,18 +1814,18 @@ _cmd_session_boot() {
   # A new round on the PR starts at its head. A round that stopped part way
   # resumes like any session: its base (the head it began at) and its patch.
   [ -n "$review" ] && [ "$(session_get "$from" state)" != pr_open ] && review=""
+  if [ -n "$from" ]; then
+    [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
+    _session_valid_sid "$resume_sid" || resume_sid=""
+  fi
   if [ -n "$review" ]; then
-    # The PR's head holds the change, and a push to it since Open PR too.
+    # The PR head also holds any push made since Open PR.
     sha="$(gh pr view "$review" --json headRefOid -q .headRefOid 2>/dev/null || true)"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read the head of ${review}" >&2; session_set "$key" state failed; return 1; }
     base_sha="$sha"
-    [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
-    _session_valid_sid "$resume_sid" || resume_sid=""
     echo "Continuing ${review} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
   elif [ -n "$from" ]; then
     sha="$(session_get "$from" base_sha)"; sha="${sha:-$base_sha}"
-    [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
-    _session_valid_sid "$resume_sid" || resume_sid=""
     echo "Resuming ${from} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
   fi
   session_set "$key" base_sha "$sha"
@@ -2055,8 +1846,7 @@ found in them.
 $(cat "${SESSION_DIR}/${key}.prompt.md")
 <<</REQUEST-${nonce}>>>
 EOF
-  # 5: a ticket the request names comes along, read-only and fenced as untrusted.
-  # Jira stays read-only here: nothing in a session can create or change a ticket.
+  # A ticket the request names comes along, fenced as untrusted. Sessions never write to Jira.
   local tk tt
   for tk in $(grep -oE 'FXA-[0-9]{1,6}' "${SESSION_DIR}/${key}.prompt.md" | sort -u | head -2 || true); do
     tt="$(jira_ticket "$tk" 2>/dev/null | head -c 20000 || true)"
@@ -2071,8 +1861,6 @@ EOF
       "$review" "$nonce" "${rv:-No review comments with text.}" "$nonce" >> "${dir}/.fxa-jira-context.md"
   fi
   check_prerequisites || { session_set "$key" state failed; return 1; }
-  # The run dir is not a checkout. The ceiling stops git from finding an enclosing
-  # repo there and shipping its files into the runner.
   local prompt
   if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
@@ -2084,8 +1872,8 @@ shows only what you change now. The review is at the end of
 /workspace/.fxa-jira-context.md. Change what it asks for inside the PR's scope,
 and say which comments you did not act on and why. Do not reply on GitHub."
   local rc=0
-  # A person steers a session, so its safety-net lifetime is longer than a
-  # pipeline run's; the idle pause, not this limit, is what bounds its cost.
+  # The run dir is not a checkout: the ceiling stops git from shipping an enclosing
+  # repo's files. The idle pause, not this longer lifetime, bounds a session's cost.
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
@@ -2281,7 +2069,7 @@ _finish_session() {
     _session_unlock "$key"; return 1
   fi
   # A wrap-up turn costs minutes and dollars, and with no changed file it can
-  # only end in "nothing to ship" (agent-0dd973 on 2026-09-27).
+  # only end in "nothing to ship".
   if [ "$(_session_changes "$key" || true)" = 0 ]; then
     echo "ERROR: nothing to push: no files changed in ${key}" >&2
     _session_unlock "$key"; return 1
@@ -2378,9 +2166,7 @@ main() {
   _ERR_CONTEXT="$*"
   set -E
   trap 'errors_err_trap $? "$BASH_COMMAND"' ERR
-  # Global flag, before the command: pick which pipeline config the ticket
-  # commands read. Defaults to fxa-ai-fixme.
-  # --backend picks the VM backend (tart or gce) the same way.
+  # Global flags, before the command: the pipeline config and the VM backend.
   while :; do
     case "${1:-}" in
       --pipeline) FXA_PIPELINE="${2:?--pipeline needs a name}"; shift 2 ;;

@@ -1,5 +1,5 @@
 #!/bin/bash
-# github.sh — PR state and review-comment reads for a pipeline.
+# github.sh: PR state and review-comment reads for a pipeline.
 #
 # Nothing here merges or approves. Every write is either a 👍 reaction or a
 # local bookkeeping file.
@@ -12,8 +12,8 @@
 [ -n "${_FXA_GITHUB_LOADED:-}" ] && return 0
 _FXA_GITHUB_LOADED=1
 
-# Classify a statusCheckRollup into ok/fail/running counts. Both gh_pr_state and
-# gh_drain use this, or the two commands would disagree about the same PR.
+# Classify a statusCheckRollup into ok/fail/running counts. Every PR read uses
+# this one copy, or two commands would disagree about the same PR.
 read -r -d '' _GH_ROLLUP_JQ <<'JQ' || true
 [.statusCheckRollup[]? | (.conclusion // .state)] as $c
 | { ok:   ($c | map(select(. == "SUCCESS")) | length),
@@ -35,15 +35,10 @@ gh_pr_state() {
 }
 
 # gh_pr_approver <KEY>
-#   Print the login of the last human who approved the PR, or nothing.
-#
-#   The reviewer who signed off owns the ticket afterwards, which is why this is
-#   not jira_reporter_login: the reporter filed it, the approver accepted it.
-#   Bots are skipped, because a copilot approval is not a sign-off.
-#
-#   Last approval wins when several people approved. On #21225 an l10n reviewer
-#   approved the Fluent strings first and the code owner approved two hours
-#   later; the second one is the one that unblocked the merge.
+#   Print the login of the last human who approved the PR, or nothing. The
+#   approver owns the ticket after the merge, not the reporter. Bots do not count.
+#   The last approval wins: an l10n reviewer often approves first, and the code
+#   owner's later approval is the one that unblocks the merge.
 gh_pr_approver() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: approver needs <KEY>" >&2; return 1; }
@@ -61,9 +56,8 @@ gh_pr_approver() {
 #   ("check-name=log-regex", comma separated). Exit 1 when any failure is
 #   unexplained, so a real red check still reaches a human.
 #
-#   Cached per head sha in <KEY>.redinfra: the failing job's log is fetched once,
-#   not on every pass. On 2026-09-17 the same l10n `extract` 401 was read three
-#   times across three PRs before anyone wrote the pattern down.
+#   Cached per head sha in <KEY>.redinfra, so the failing job's log is fetched
+#   once, not on every pass.
 gh_red_infra() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || return 1
@@ -94,8 +88,7 @@ gh_red_infra() {
       run="$(printf '%s' "$url" | grep -oE 'runs/[0-9]+' | cut -d/ -f2 || true)"
       job="$(printf '%s' "$url" | grep -oE 'job/[0-9]+' | cut -d/ -f2 || true)"
       [ -n "$run" ] && [ -n "$job" ] || continue
-      # A fetch that failed says nothing about the log. Caching it as "no match"
-      # kept a known 401 reading RED for the whole head sha.
+      # Do not cache a failed fetch as "no match", or a known failure reads RED for the whole sha.
       if ! log="$(gh run view "$run" --repo "$PIPE_REPO_SLUG" --job "$job" --log-failed 2>/dev/null)"; then
         unread=1; continue
       fi
@@ -112,9 +105,9 @@ gh_red_infra() {
 # gh_gate_stuck <KEY> [MIN-AGE-SECONDS]
 #   Exit 0 when the PR's only pending checks are the CircleCI functional-tests
 #   approval gate (and the workflow that waits on it), and the head commit is
-#   older than MIN-AGE-SECONDS (default 600). Pass 0 to approve a fresh push. That is a launcher that died between `gh pr create` and
-#   finish_approve_functional_gate: nothing else re-approves the gate, so the
-#   PR would show one pending check forever. Prints the PR url.
+#   older than MIN-AGE-SECONDS (default 600, pass 0 for a fresh push). This is a
+#   launcher that died before it approved the gate. Nothing else approves it, so
+#   the PR would show one pending check forever. Prints the PR url.
 gh_gate_stuck() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || return 1
@@ -138,25 +131,17 @@ gh_gate_stuck() {
 #   "KEY <pr#> MERGED|CLOSED" to leave `done`, or "KEY <pr#> RED ..." for a PR
 #   that went red after the reconcile.
 #
-#   MERGED vs CLOSED matters. Filing both as merged made the archive claim the
-#   pipeline landed work a reviewer had thrown away, and nothing else records
-#   that outcome.
-#
-#   One `gh pr list` covers every ticket, so this costs the same for 3 done
-#   tickets or 30.
+#   Keep MERGED and CLOSED apart, or the archive claims rejected work landed.
+#   One `gh pr list` covers every ticket, so the cost does not grow with the count.
 gh_drain() {
   pipeline_require || return 1
   local keys="${1:-}"
   [ -n "$keys" ] || return 0
   local map jqx rc=0
   jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable)\""
-  # `|| rc=$?` is load-bearing: with `set -e` a bare failing command
-  # substitution kills the function before the guard below can fire.
-  #
-  # `mergeable` rides along in this same call for free. GitHub computes it
-  # lazily and returns UNKNOWN for anything it has not computed yet, but the
-  # request itself triggers the computation, so a second call resolves most of
-  # them. Re-poll once rather than reporting a green PR that cannot merge.
+  # `|| rc=$?` keeps `set -e` from killing the function before the guard below.
+  # GitHub computes `mergeable` lazily and says UNKNOWN until then, but the
+  # request starts the computation, so one re-poll resolves most of them.
   _gh_drain_fetch() {
     gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
       --json number,state,headRefName,statusCheckRollup,mergeable \
@@ -169,12 +154,8 @@ gh_drain() {
     remap="$(_gh_drain_fetch)" && [ -n "$remap" ] && map="$remap"
   fi
   unset -f _gh_drain_fetch
-  # A failed fetch used to fall through to an empty map, which made EVERY done
-  # key print `none -`. On 2026-08-25 that reported 12 simultaneous anomalies
-  # from one transient `gh` hiccup; the next two runs were clean. A uniform
-  # answer across every ticket is a tool failure, never 12 PRs vanishing at
-  # once, so fail loudly instead of narrating a wrong one. The repo always has
-  # open PRs, so an empty map is the same failure wearing a different hat.
+  # A failed or empty fetch would make every done key print `none -`. The repo
+  # always has PRs, so treat both as a tool failure, not as PRs that vanished.
   if [ "$rc" -ne 0 ] || [ -z "$map" ]; then
     echo "drain: gh pr list failed (exit $rc) -- refusing to report 'none' for $(printf '%s\n' "$keys" | grep -c .) done key(s)" >&2
     return 1
@@ -184,31 +165,21 @@ gh_drain() {
     br="$(worktree_branch_for "$key")"
     line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7; exit}')"
     if [ -z "$line" ]; then
-      # Report a missing PR rather than relabelling: it is an anomaly worth a
-      # human glance, not a merge.
+      # Report a missing PR, do not relabel it: a human must look.
       echo "$key none -"
       continue
     fi
     read -r num state ok bad run mrg <<<"$line"
     case "$state" in
       OPEN)
-        # A `done` ticket is advertised as review-ready and nothing else re-reads
-        # its checks, so a job that goes red AFTER the reconcile is invisible: on
-        # 2026-08-25 #21073 had been red for six days while the report still
-        # listed it as ready. Report it, never relabel it -- the cause is often
-        # repo infrastructure rather than the PR.
+        # Nothing else re-reads a done PR's checks or mergeability, so report
+        # them here. Never relabel: the cause is often repo infrastructure.
         if [ "${bad:-0}" -gt 0 ]; then
           echo "$key $num RED ok=$ok fail=$bad running=$run"
-        # A green PR that cannot merge is not review-ready, but nothing else
-        # reads mergeability: the drain split only on PR state and on a red
-        # check, so a conflict was invisible. On 2026-09-01 four of twelve
-        # `done` PRs were CONFLICTING while the report advertised all twelve.
-        # Conflicts are churn, not a backlog -- FXA-11871 went from clean to
-        # conflicting inside two hours when two unrelated PRs merged.
         elif [ "$mrg" = "CONFLICTING" ]; then
           echo "$key $num CONFLICT"
         elif [ "$mrg" = "UNKNOWN" ]; then
-          # Still uncomputed after a re-poll. Say so rather than call it clean.
+          # Still uncomputed after the re-poll, so do not call it clean.
           echo "$key $num CONFLICT? mergeability-uncomputed"
         fi
         ;;
@@ -244,31 +215,26 @@ gh_feedback() {
     echo "$n"; return 0
   fi
 
-  # Record the comment IDs this round will actually FIX. A launch and its
-  # reconcile happen in DIFFERENT passes, so this has to live on disk.
-  # Judgment does not survive a cron-fired pass with no memory of the last one.
+  # On disk, because the launch and its reconcile run in different passes.
   if [ "$sub" = "acted" ]; then
     shift 2
     [ "$#" -gt 0 ] || { echo "ERROR: feedback <KEY> acted needs at least one comment id" >&2; return 1; }
-    printf '%s\n' "$@" >>"${PIPE_STATE_DIR}/${key}.feedback-acted"
-    sort -u -o "${PIPE_STATE_DIR}/${key}.feedback-acted" "${PIPE_STATE_DIR}/${key}.feedback-acted" 2>/dev/null || true
+    local acted="${PIPE_STATE_DIR}/${key}.feedback-acted"
+    printf '%s\n' "$@" >>"$acted"
+    sort -u -o "$acted" "$acted" 2>/dev/null || true
     echo "recorded $# id(s) for $key"
     return 0
   fi
 
-  # React 👍 to the comments this round actually fixed, AFTER the fix is pushed.
-  # Reacting is not the same as acking: `ack` covers every listed comment,
-  # including the ones the pass declined on purpose, so reacting at ack time
-  # would claim credit for work nobody did. The reactions API is idempotent --
-  # a repeat POST returns 200 with the existing reaction -- so a re-run is safe.
+  # React only after the fix is pushed, never at ack time: `ack` also covers
+  # comments the pass declined. The reactions API is idempotent, so a re-run is safe.
   if [ "$sub" = "thumbsup" ]; then
     local f="${PIPE_STATE_DIR}/${key}.feedback-acted" id n=0
     [ -s "$f" ] || { echo "no recorded ids for $key"; return 0; }
     while read -r id; do
       [[ "$id" =~ ^[0-9]+$ ]] || { echo "$key not addressed: $id has no lines to check; react by hand if fixed"; continue; }
-      # Recording an id is intent, not proof. Only a later commit that changed the
-      # comment's lines shows the round fixed it. GitHub then nulls `line`; after a
-      # force-push `position` can stay non-null, so it is not the signal.
+      # A recorded id is intent, not proof. GitHub nulls `line` when a commit changes
+      # those lines; `position` can stay set after a force-push, so it is no signal.
       if [ "$(gh api "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}" --jq '.line // "outdated"' 2>/dev/null)" != "outdated" ]; then
         echo "$key not addressed: comment $id lines unchanged, no reaction"; continue
       fi
@@ -288,12 +254,9 @@ gh_feedback() {
           -q '.[0].number' 2>/dev/null)"
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
-  # Inline review comments, then PR conversation comments. A reviewer's "do not
-  # port this, remove it instead" lands in the conversation, not on a diff line,
-  # and until 2026-09-21 the pass never read that endpoint. Conversation ids
-  # carry an `i` prefix so thumbsup knows which reactions endpoint to hit. The
-  # pass's own 🤖 comments and bot chatter (CI links, Copilot summaries) are not
-  # feedback.
+  # Inline comments, then conversation comments, where reviewers often put the
+  # big asks. The `i` id prefix tells the endpoints apart. Our own 🤖 comments
+  # and bot chatter are not feedback.
   local all conv
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.position != null)
@@ -328,20 +291,6 @@ gh_feedback_has_acted() {
   [ -s "${PIPE_STATE_DIR}/${1}.feedback-acted" ]
 }
 
-# gh_pr_states_json <KEYS>
-#   PR number, state, title, draft and review status, and the check tally for
-#   many keys. Prints a JSON array.
-#
-#   Two calls, not one. `statusCheckRollup` is by far the most expensive field,
-#   and asking for it alongside title, isDraft and reviewDecision at limit 200
-#   makes the GraphQL query large enough that GitHub cancels the stream
-#   ("stream error: ... CANCEL; received from peer"). Splitting keeps each query
-#   cheap: the rollup call is the one that already worked, and the metadata call
-#   is small and fast. Both are still O(1) in the number of tickets.
-#
-#   Prints `null` when either fetch fails, which is different from `[]` (fetched
-#   fine, no PRs). The dashboard must not draw "no PR" for every ticket because
-#   one call hiccupped. Same guard as gh_drain, for the same reason.
 # gh_conflicts KEY
 #   Which files conflict between origin/main and this ticket's branch, and what
 #   kind of resolution they need. Prints "<class> <file>..." or nothing when the
@@ -426,6 +375,11 @@ gh_relock() {
   echo "${key}: merged origin/main and re-resolved yarn.lock; pushed ${br}."
 }
 
+# gh_pr_states_json <KEYS>
+#   PR number, state, title, draft and review status, and the check tally for
+#   many keys, as a JSON array. Two calls: with the rollup and the metadata in
+#   one query at limit 200, GitHub cancels the stream. Prints `null` when a
+#   fetch fails, so the dashboard does not draw "no PR" for every ticket.
 gh_pr_states_json() {
   pipeline_require || return 1
   local keys="${1:-}"
@@ -452,11 +406,8 @@ gh_pr_states_json() {
       | {key: $k, branch: $br}
         + (if $p == null
            then {pr: null, state: null, ok: 0, fail: 0, running: 0}
-           else ([$p.statusCheckRollup[]? | (.conclusion // .state)]) as $c
-             | {pr: $p.number, state: $p.state,
-                ok:      ($c | map(select(. == "SUCCESS")) | length),
-                fail:    ($c | map(select(. == "FAILURE" or . == "TIMED_OUT" or . == "ERROR")) | length),
-                running: ($c | map(select(. == "PENDING" or . == "IN_PROGRESS" or . == "QUEUED")) | length)}
+           else ($p | '"${_GH_ROLLUP_JQ}"') as $r
+             | {pr: $p.number, state: $p.state, ok: $r.ok, fail: $r.fail, running: $r.run}
            end)
         # `//` treats false as empty, so isDraft:false would become null.
         # Branch on the record instead of defaulting each field.
@@ -489,23 +440,15 @@ github_app_enabled() {
 
 # github_app_jwt
 #   A 10-minute RS256 JWT for the app itself. Only the app endpoints take it.
+_gh_b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
 github_app_jwt() {
-  local b64='openssl base64 -A'
   local hdr pay now
   now="$(date +%s)"
-  hdr="$(printf '{"alg":"RS256","typ":"JWT"}' | $b64 | tr '+/' '-_' | tr -d '=')"
-  pay="$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' "$(( now - 60 ))" "$(( now + 540 ))" "$GITHUB_APP_ID" | $b64 | tr '+/' '-_' | tr -d '=')"
+  hdr="$(printf '{"alg":"RS256","typ":"JWT"}' | _gh_b64url)"
+  pay="$(printf '{"iat":%s,"exp":%s,"iss":"%s"}' "$(( now - 60 ))" "$(( now + 540 ))" "$GITHUB_APP_ID" | _gh_b64url)"
   printf '%s.%s.%s' "$hdr" "$pay" \
-    "$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" | $b64 | tr '+/' '-_' | tr -d '=')"
-}
-
-# github_app_installations
-#   List where the app is installed: "<installation id>\t<account>". Used once,
-#   to find GITHUB_APP_INSTALLATION_ID after the org approves the install.
-github_app_installations() {
-  curl -sf -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
-    https://api.github.com/app/installations \
-  | jq -r '.[] | "\(.id)\t\(.account.login)\t\(.repository_selection)"'
+    "$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" | _gh_b64url)"
 }
 
 # github_app_token

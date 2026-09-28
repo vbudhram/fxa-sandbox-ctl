@@ -1,5 +1,5 @@
 #!/bin/bash
-# agent.sh — Agent lifecycle: run, attach, stop, list, logs
+# agent.sh: agent lifecycle (run, attach, stop, list, logs)
 
 # Source dependencies
 AGENT_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")"
@@ -22,26 +22,8 @@ runtime_load() {
   source "${AGENT_LIB_DIR}/runtime-${rt}.sh"
 }
 
-# Skills shipped into the VM, for either runtime. An allow-list, not a
-# deny-list: the VM has no gh, acli, circleci, sentry-cli, or MCP, so a skill
-# that reaches the network is worse than absent — the agent reads its
-# description, judges it relevant, then fails on a missing binary.
-# create-pr-description belongs here because the agent authors the PR title
-# and body into the handoff even though the host runs `gh pr create`.
-# humanizer, code-simplifier and ponytail-review are mandatory goal conditions. package-workflows
-# is deliberately absent: it reads 30 days of session history, and a VM boots,
-# fixes one ticket, and is destroyed.
-# Plugins do not load inside the runner: Claude's init event there reports
-# `plugins: []`, so nothing under ~/.claude/plugins ships and every skill an
-# agent must be able to invoke has to exist as a plain directory under
-# ~/.claude/skills.
-# code-simplifier and humanizer already do. ponytail-review is a copy of
-# ~/.claude/plugins/cache/ponytail/ponytail/<version>/skills/ponytail-review
-# (MIT); re-copy it when the plugin updates.
-# _vm_operator_rules
-#   The sections of the operator's CLAUDE.md that apply to code and writing, for
-#   both runtimes. An allowlist: a section added later (Jira, internal links)
-#   stays on the host until it is named here.
+# The sections of the operator's CLAUDE.md that apply to code and writing. An
+# allowlist, so a section added later (Jira, internal links) stays on the host.
 VM_RULE_SECTIONS="Working Approach|Writing Style|Naming Conventions|Testing|Code Comments|Git Commits|Untrusted text"
 _vm_operator_rules() {
   local f="${CLAUDE_HOME_DIR}/CLAUDE.md"
@@ -50,6 +32,15 @@ _vm_operator_rules() {
   awk -v keep="^## (${VM_RULE_SECTIONS})\$" '/^## /{on = ($0 ~ keep)} on' "$f"
 }
 
+# Skills shipped into the VM, for either runtime. An allowlist: the VM has no gh,
+# acli, circleci, sentry-cli, credentials or MCP, so a skill that reaches the
+# network is worse than absent. The agent picks it, then fails on a missing binary.
+# create-pr-description: the agent writes the PR title and body into the handoff.
+# humanizer, code-simplifier and ponytail-review are mandatory goal conditions.
+# package-workflows is absent on purpose: it reads 30 days of session history.
+# Plugins do not load in the runner (`plugins: []`), so each skill must be a plain
+# directory under ~/.claude/skills. ponytail-review is an MIT copy from the
+# ponytail plugin cache; copy it again when the plugin updates.
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
@@ -79,8 +70,6 @@ _check_host_ram() {
 
 _wait_for_infra() {
   local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
 
   echo "Waiting for infrastructure services inside VM..."
 
@@ -109,11 +98,8 @@ _generate_name() {
 
 _install_ssh_key() {
   local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
   local key_dir="${LOG_DIR}/ssh/${name}"
 
-  # Generate a unique SSH key pair per agent
   mkdir -p "${key_dir}"
   ssh-keygen -t ed25519 -f "${key_dir}/id_ed25519" -N "" -q
 
@@ -157,10 +143,8 @@ _put_run_files() {
   [ "${#items[@]}" -eq 0 ] && return 0
   echo "Shipping ${#items[@]} run file(s) into the runner..."
   # --no-xattrs and COPYFILE_DISABLE: macOS tar otherwise adds ._* AppleDouble files.
-  # ai/data is review-mining input, 18 MB of raw JSON the agent never reads, and
-  # the IAP tunnel moves it at well under 1 MB/s. The docs and AGENTS.md still ship.
-  # "./" prefix: a relaunch ships agent-chosen filenames, and bsdtar reads a
-  # leading dash as an option.
+  # ai/data is 18 MB of JSON the agent never reads, slow over the IAP tunnel.
+  # "./" prefix: filenames can come from the agent, and bsdtar reads a leading dash as an option.
   local -a rel=(); for f in "${items[@]}"; do rel+=("./${f#./}"); done
   ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -czf "$tar" -C "$slot" "${rel[@]}" ) || return 1
   vm_put "$name" "$tar" /workspace; local rc=$?
@@ -203,20 +187,17 @@ _gce_pin_runner_tree() {
     git check-ref-format --branch "$branch" >/dev/null 2>&1 && git check-ref-format --branch "$base" >/dev/null 2>&1 ||
     { echo "ERROR: refusing to pin: sha, branch or base is not a plain git name." >&2; return 1; }
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
-  # The image's checkout unit creates /workspace. vm_wait_ready skips that wait
-  # when one ssh flakes, and on 2026-09-18 two of four parallel launches pinned
-  # before the directory existed. Poll for it here, at the point of use.
+  # vm_wait_ready skips the wait for the checkout unit when one ssh flakes, and
+  # parallel launches then pinned before /workspace existed. Poll for it here.
   local deadline=$(( $(date +%s) + ${GCE_CHECKOUT_TIMEOUT:-600} ))
   until vm_exec "$name" test -e /workspace/.git >/dev/null 2>&1; do
     [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: /workspace never appeared on the runner." >&2; return 1; }
     sleep 5
   done
-  # One ssh: fetch, check out, install dependencies only when this commit's
-  # yarn.lock differs from the one baked into the image, and read back the
-  # commit. The boot unit used to install before this pin, against the branch
-  # tip, which is not always the commit the run is pinned to.
-  # The fetch is skipped when the image's clone already has the commit: on a
-  # fresh disk it cost 20-40 s of cold reads for nothing.
+  # One ssh: fetch, check out, install only when yarn.lock differs from the
+  # image's, and read back the commit. The install runs here, after the pin,
+  # because the branch tip is not always the pinned commit. The fetch is skipped
+  # when the clone has the commit: on a fresh disk it cost 20-40 s for nothing.
   got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
@@ -243,14 +224,11 @@ _harden_ssh() {
   local name="$1"
 
   vm_exec "$name" sudo bash -c "
-    # Disable password authentication — SSH key only
     sed -i 's/^PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
     sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    # Ensure the setting exists
     grep -q '^PasswordAuthentication' /etc/ssh/sshd_config || echo 'PasswordAuthentication no' >> /etc/ssh/sshd_config
-    # Lock the admin user password (base image default creds)
+    # The base image ships default creds for admin.
     passwd -l admin 2>/dev/null || true
-    # Restart SSH to apply
     systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
   " 2>/dev/null || true
 }
@@ -294,10 +272,7 @@ _setup_egress_firewall() {
   for try in 1 2; do
   rc=0
   err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" bash -c '
-    # Allow loopback
     iptables -A OUTPUT -o lo -j ACCEPT
-
-    # Allow established/related connections
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
     # Allow DNS to the gateway and to the configured resolvers. On GCE the
@@ -309,7 +284,7 @@ _setup_egress_firewall() {
       iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
     done
 
-    # Block all traffic to private/link-local networks (prevents host probing)
+    # Private ranges: no probing of the host network.
     iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
     iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
     iptables -A OUTPUT -d 192.168.0.0/16 -j DROP
@@ -339,10 +314,10 @@ _setup_egress_firewall() {
     fi
     # Assert, so a failed apply aborts the launch instead of running open.
     iptables -S OUTPUT | grep -q -- "-d 10.0.0.0/8 -j DROP" || { echo "egress: private-range DROP rule missing" >&2; exit 1; }
-    # iptables -S prints the uid, not the name.
-    # Assert behaviour, not rule text. A REJECT rule that exists but never
-    # matches passed the old check while example.com answered 200.
+    # Assert behaviour, not only rule text: a REJECT rule that never matched once
+    # passed the text check while example.com answered 200.
     if [ "$FXA_EGRESS_ALLOW_ALL" != "1" ]; then
+      # iptables -S prints the uid, not the name.
       iptables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || { echo "egress: REJECT rule missing" >&2; exit 1; }
       if sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null; then
         echo "egress: agent user reached a non-allowlisted host; allowlist is not enforced" >&2; exit 1
@@ -352,9 +327,8 @@ _setup_egress_firewall() {
         || { echo "egress: agent user cannot reach github.com; allowlist too tight" >&2; exit 1; }
     fi
   ' 2>&1 >/dev/null)" || rc=$?
-  # A connection that failed before the script ran (ssh exit 255 with a connect
-  # or banner timeout) is safe to repeat once. A script that ran is not: it
-  # appends rules. On 2026-09-27 two launches died on one IAP banner timeout.
+  # Retry once only when ssh failed to connect (exit 255 plus a connect error).
+  # A script that ran must not run again: it appends rules.
   [ "$rc" -eq 255 ] && [ "$try" = 1 ] && grep -qiE "banner exchange|Connection timed out|Connection closed|Connection refused|kex_exchange" <<< "$err" || break
   echo "  egress: ssh did not connect; retrying once" >&2; sleep 10
   done
@@ -404,33 +378,22 @@ _disable_proxy_in_vm() {
 
 _setup_claude_config() {
   local name="$1"
-  local full_name
-  full_name="$(vm_name "$name")"
-
-  # Copy ONLY the specific config files the agent needs (not the entire ~/.claude)
-  # This prevents exposure of: conversation history, project paths, session data,
-  # shell snapshots, debug logs, etc.
-
+  # Only named files, never all of ~/.claude: it holds history, paths and session data.
   local claude_home="${CLAUDE_HOME_DIR}"
 
-  # Remove dangling symlinks left by old golden images that mounted ~/.claude
-  # (the mounts were removed for security, but agent-init still creates symlinks)
+  # Old images mounted ~/.claude, and agent-init still makes dangling symlinks to it.
   vm_exec "$name" sudo bash -c "
     rm -f /home/agent/.claude/settings.json /home/agent/.claude/settings.local.json /home/agent/.claude/CLAUDE.md
     mkdir -p /home/agent/.claude /home/agent/.config/claude
     chown -R agent:agent /home/agent/.claude /home/agent/.config/claude
   " 2>/dev/null || true
 
-  # settings.json — user preferences (base64 to avoid quoting issues).
-  # outputStyle is forced to concise for the VM only: the agent's prose is never
-  # read by a human, so terse output is pure savings. Injected here rather than
-  # baked into the image, because this copy overwrites the image's settings.json.
-  # enabledPlugins is dropped: plugins do not load in the runner, and a list
-  # naming plugins that are not there only produces warnings.
+  # base64 avoids quoting issues. outputStyle is concise because no human reads
+  # the agent's prose; it is set here since this copy replaces the image's file.
   if [ -f "${claude_home}/settings.json" ]; then
     local settings_b64
-    # Allowlist of keys. The host file is where people put API keys (env) and
-    # hooks; neither belongs on a bypassPermissions VM.
+    # Allowlist of keys: the host file holds API keys (env) and hooks, which do
+    # not belong on a bypassPermissions VM. enabledPlugins only gives warnings there.
     settings_b64="$(jq -c '{model, permissions, statusLine, theme} | with_entries(select(.value != null))
         | . + {outputStyle: "concise"}' \
       < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
@@ -442,7 +405,7 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy settings.json"
   fi
 
-  # Git user config — propagate host identity so commits have correct authorship
+  # The host identity, so commits have the correct author.
   local git_name git_email
   git_name="$(git config --global user.name 2>/dev/null || true)"
   git_email="$(git config --global user.email 2>/dev/null || true)"
@@ -465,36 +428,17 @@ _setup_claude_config() {
     " 2>/dev/null || echo "  WARN: Could not copy CLAUDE.md"
   fi
 
-  # hooks / commands / skills — bundle into one tar, SCP it in,
-  # extract inside the VM. The previous approach embedded a base64 tar in a
-  # `tart exec sudo bash -c "..."` argument, which silently failed for large
-  # bundles (the skills dir blows past the ARG_MAX limit and the
-  # post-hardening sudo channel is unreliable anyway). SSH/SCP via the
-  # per-agent key is the clean path.
+  # hooks, commands and skills go in one tar over scp. A base64 tar inside a
+  # `bash -c` argument failed silently once the skills passed ARG_MAX.
   local config_tar
   config_tar="$(mktemp -t fxa-claude-config.XXXX.tar)"
-  # The golden image ships with Bun installed (packer/scripts/04-claude.sh) for
-  # hooks that need it.
   local tar_items=()
   [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
   [ -d "${claude_home}/commands" ] && tar_items+=("commands")
   local skill_excludes=(--exclude="*/node_modules")
 
-  # Skills are an allow-list, not a deny-list. The VM has no gh, acli, circleci,
-  # or sentry-cli, no GitHub or Jira credential, and no MCP, so any skill that
-  # reaches the network is not merely useless: the agent reads its description,
-  # judges it relevant, and then fails on a missing binary. Ship only the ones
-  # that work against the local worktree. create-pr-description belongs here
-  # because the agent authors the PR title and body into the handoff file, even
-  # though the host is what runs `gh pr create`.
-  # /humanizer and /code-simplifier are mandatory goal conditions in
-  # VM_AGENT_GUIDE.md (steps 5 and 8), so they must ship.
-  # The FxA repo supplies its own skills at /workspace/.claude/skills (fxa-review-quick,
-  # fxa-simplify, and more). Those are authoritative for FxA code. The fxa-vm-* skills
-  # here cover only what the repo cannot know: the sandbox handoff contract and the
-  # pool-worktree diff base.
-  # package-workflows is deliberately absent: it reads 30 days of session
-  # history, and a VM boots, fixes one ticket, and is destroyed.
+  # See _vm_skill_allowlist. The repo's own skills in /workspace/.claude/skills
+  # win for FxA code; the fxa-vm-* skills cover only the sandbox contract.
   local vm_skills=( $(_vm_skill_allowlist) )
   local s
   for s in "${vm_skills[@]}"; do
@@ -530,7 +474,7 @@ _setup_claude_config() {
   fi
   rm -f "$config_tar"
 
-  # Append VM-specific context to CLAUDE.md (or create it if no host CLAUDE.md)
+  # Appends, or creates CLAUDE.md when the host has no rules.
   local vm_section
   vm_section="$(cat <<'VMSECTION'
 
@@ -564,15 +508,9 @@ VMSECTION
     chown agent:agent /home/agent/.claude/CLAUDE.md
   " 2>/dev/null || echo "  WARN: Could not append VM context to CLAUDE.md"
 
-  # Pre-configure ~/.claude.json so Claude Code skips first-run dialogs:
-  #   - hasTrustDialogAccepted: workspace trust prompt
-  #   - hasCompletedOnboarding: onboarding flow
-  #   - bypassPermissionsModeAccepted: the "Bypass Permissions mode" warning
-  #     that appears the first time --permission-mode bypassPermissions or
-  #     --dangerously-skip-permissions is used on a machine. Without this, the
-  #     TUI sits at a y/n dialog and the agent never gets the goal prompt.
-  # Also set the migrated form (skipDangerousModePermissionPrompt) in
-  # settings.json since newer Claude versions read that instead.
+  # Skip the first-run dialogs (trust, onboarding, bypass-permissions warning), or
+  # the TUI waits at a y/n prompt and never gets the goal. Newer Claude versions
+  # read skipDangerousModePermissionPrompt in settings.json instead.
   vm_exec "$name" sudo -u agent bash -c '
     export HOME=/home/agent
     python3 -c "
@@ -612,20 +550,70 @@ with open(settings_path, \"w\") as f:
 # ── Security: Ephemeral token injection ───────────────────────
 
 _inject_oauth_token() {
-  # Args: workspace_dir, token. Writes <workspace>/.fxa-auto-token on the host;
-  # the file shows up inside the VM at /workspace/.fxa-auto-token via virtiofs.
-  # Claude's startup command sources and deletes it.
-  #
-  # Previous approach used `tart exec sudo bash -c "echo > /tmp/..."` which
-  # races with our security hardening (admin password lock makes tart's
-  # internal sudo channel unreliable). Writing through the mount is direct
-  # and doesn't need any in-VM privilege.
+  # Args: workspace_dir, token. The file reaches /workspace through the tart mount
+  # or _put_run_files on gce; the launch script sources and deletes it. No in-VM
+  # sudo: after hardening, that channel is unreliable.
   local workspace_dir="$1"
   local token="$2"
   local token_file="${workspace_dir}/.fxa-auto-token"
 
   ( umask 077; printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$token" | slot_write "$token_file" )
   echo "  Token written to ${token_file} (${#token} chars)."
+}
+
+# _worktree_gitdir <workspace>   The parent .git of a worktree, or empty.
+_worktree_gitdir() {
+  [ -f "${1}/.git" ] || return 0
+  local gitdir_path
+  gitdir_path="$(sed 's/^gitdir: //' "${1}/.git")"
+  [ -d "$gitdir_path" ] || return 0
+  # /path/fxa/.git/worktrees/name -> /path/fxa/.git
+  cd "$gitdir_path/../.." && pwd
+}
+
+# _link_worktree_gitdir <name> <gitdir>
+#   tart only. The worktree .git file names a host path; point it at the mount.
+_link_worktree_gitdir() {
+  local name="$1" gitdir="$2"
+  [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ] || return 0
+  echo "Linking git worktree parent (.git: ${gitdir})..."
+  vm_exec "$name" sudo bash -c "
+      mkdir -p '$(dirname "$gitdir")'
+      ln -sfn /mnt/shared/gitdir '${gitdir}'
+    " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
+}
+
+_write_screenrc() {
+  local name="$1"
+  vm_exec "$name" sudo -u agent bash -c "
+    cat > /home/agent/.screenrc <<SCREENRC
+defscrollback 10000
+startup_message off
+termcapinfo xterm* ti@:te@
+hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
+SCREENRC
+  "
+}
+
+_launch_in_screen() {
+  local name="$1" launch_cmd
+  launch_cmd="$(runtime_launch_cmd)"
+  vm_exec "$name" sudo -u agent bash -c "
+    export HOME=/home/agent
+    screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
+  "
+}
+
+# _write_meta <name> <workspace> <cpu> <memory> <ip> <started>
+_write_meta() {
+  cat > "${LOG_DIR}/${1}.meta" <<META
+NAME=${1}
+WORKSPACE=${2}
+CPU=${3}
+MEMORY=${4}
+IP=${5}
+STARTED=${6}
+META
 }
 
 # ── Agent commands ─────────────────────────────────────────────
@@ -679,33 +667,16 @@ agent_run() {
   # Hold the snapshot's pull off this slot until the run files are shipped.
   local launching="${LOG_DIR}/$(basename "$workspace_dir").launching"; touch "$launching"
   vm_clone "$name" || { rm -f "$launching"; return 1; }
-  # Claim the slot now, not after boot. freeslots and the launcher's collision
-  # check read this file, and a gce boot takes minutes; until 2026-09-14 the
-  # slot read free for that whole window. The IP is filled in below.
+  # Claim the slot now, not after boot: freeslots and the launcher's collision
+  # check read this file, and a gce boot takes minutes. The IP comes later.
   mkdir -p "${LOG_DIR}"
-  cat > "${LOG_DIR}/${name}.meta" <<META
-NAME=${name}
-WORKSPACE=${workspace_dir}
-CPU=${cpu}
-MEMORY=${memory}
-IP=
-STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-META
+  _write_meta "$name" "$workspace_dir" "$cpu" "$memory" "" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   # Step 2: Configure VM resources
   vm_configure "$name" "$cpu" "$memory"
 
-  # Detect git worktree and resolve parent .git directory for mounting
-  local gitdir=""
-  if [ -f "${workspace_dir}/.git" ]; then
-    local gitdir_path
-    gitdir_path="$(sed 's/^gitdir: //' "${workspace_dir}/.git")"
-    if [ -d "$gitdir_path" ]; then
-      # Parent .git is two levels up from the worktree entry
-      # e.g. /path/fxa/.git/worktrees/name -> /path/fxa/.git
-      gitdir="$(cd "$gitdir_path/../.." && pwd)"
-    fi
-  fi
+  local gitdir
+  gitdir="$(_worktree_gitdir "$workspace_dir")"
 
   # Step 3: Start the VM (workspace + optional parent .git for worktrees)
   vm_start "$name" "$workspace_dir" "$gitdir" || {
@@ -724,11 +695,8 @@ META
   # Step 5: Wait for agent-init to complete (starts infra services)
   _wait_for_infra "$name"
 
-  # gce: pin the runner's tree to the slot's exact commit. The image's boot
-  # unit fetches on a best-effort basis and a new branch is not on origin, so
-  # on 2026-09-14 FXA-2598 ran on the image's four-commit-stale main and the
-  # pull read the difference as the agent's work. Refuse rather than run on a
-  # base the host did not choose.
+  # gce: pin the runner to the slot's exact commit. The boot unit's fetch is best
+  # effort, and a run on the image's stale main made the pull read the gap as agent work.
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     _gce_pin_runner_tree "$name" "$workspace_dir" || { vm_delete "$name"; return 1; }
   fi
@@ -751,16 +719,8 @@ META
   _install_ssh_key "$name"
   vm_batch_flush "$name" || { echo "ERROR: hardening did not reach the runner; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
 
-  # Step 8: Fix git worktrees (worktree .git files reference host paths)
-  if [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ]; then
-    echo "Linking git worktree parent (.git: ${gitdir})..."
-    # Symlink /mnt/shared/gitdir to the host absolute path so the
-    # worktree .git pointer resolves inside the VM
-    vm_exec "$name" sudo bash -c "
-      mkdir -p '$(dirname "$gitdir")'
-      ln -sfn /mnt/shared/gitdir '${gitdir}'
-    " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
-  fi
+  # Step 8: Fix git worktrees
+  _link_worktree_gitdir "$name" "$gitdir"
 
   # Step 9: Runtime config and credentials. The runtime file owns both.
   runtime_load || return 1
@@ -776,16 +736,7 @@ META
 
   # Step 10: Start the agent inside a screen session in the VM
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
-
-  # Write .screenrc with agent name banner
-  vm_exec "$name" sudo -u agent bash -c "
-    cat > /home/agent/.screenrc <<SCREENRC
-defscrollback 10000
-startup_message off
-termcapinfo xterm* ti@:te@
-hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
-SCREENRC
-  "
+  _write_screenrc "$name"
   vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; vm_delete "$name"; return 1; }
 
   # The runtime owns the launch string and how the prompt reaches the agent.
@@ -794,11 +745,9 @@ SCREENRC
   if [ -n "$prompt" ]; then
     runtime_write_prompt "$prompt" "$workspace_dir"
   else
-    # The launch always runs .fxa-auto-launch.sh, so without a new prompt an
-    # earlier run's script, prompt and ticket must go. On 2026-09-27 a plain
-    # `run` on a pool slot started that slot's last ticket, FXA-14620, again.
-    # The token too: only the launch script reads and deletes it, so it would sit
-    # in the workspace in plain text and come back to the slot with each pull.
+    # The launch always runs .fxa-auto-launch.sh, so an earlier run's files must
+    # go, or a plain `run` starts the slot's last ticket again. The token too: only
+    # the launch script deletes it, so it would sit in plain text in the slot.
     rm -f "${workspace_dir}/.fxa-auto-launch.sh" "${workspace_dir}/.fxa-auto-prompt.txt" \
       "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json" "${workspace_dir}/.fxa-auto-token"
   fi
@@ -806,27 +755,13 @@ SCREENRC
     _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; vm_delete "$name"; return 1; }
     rm -f "$launching"
   fi
-  local launch_cmd
-  launch_cmd="$(runtime_launch_cmd)"
-
-  vm_exec "$name" sudo -u agent bash -c "
-    export HOME=/home/agent
-    screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
-  "
+  _launch_in_screen "$name"
 
   [ -n "$prompt" ] && runtime_submit_prompt "$full_name" "$name"
 
-  # Save agent metadata
   local ip
   ip="$(vm_ip "$name")"
-  cat > "${LOG_DIR}/${name}.meta" <<META
-NAME=${name}
-WORKSPACE=${workspace_dir}
-CPU=${cpu}
-MEMORY=${memory}
-IP=${ip}
-STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-META
+  _write_meta "$name" "$workspace_dir" "$cpu" "$memory" "$ip" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   [ -n "${_PINNED_BASE:-}" ] && printf 'BASE=%s\n' "$_PINNED_BASE" >> "${LOG_DIR}/${name}.meta"
 
   echo ""
@@ -862,14 +797,10 @@ agent_switch() {
   local NAME WORKSPACE CPU MEMORY IP STARTED
   source "$meta_file"
 
-  # No-op if same directory
   if [ "$new_workspace" = "$WORKSPACE" ]; then
     echo "Agent '${name}' is already using workspace: ${WORKSPACE}"
     return 0
   fi
-
-  local full_name
-  full_name="$(vm_name "$name")"
 
   echo ""
   echo "=== Switching agent '${name}' ==="
@@ -882,14 +813,8 @@ agent_switch() {
   vm_stop "$name"
 
   # Step 2: Detect git worktree for new directory
-  local gitdir=""
-  if [ -f "${new_workspace}/.git" ]; then
-    local gitdir_path
-    gitdir_path="$(sed 's/^gitdir: //' "${new_workspace}/.git")"
-    if [ -d "$gitdir_path" ]; then
-      gitdir="$(cd "$gitdir_path/../.." && pwd)"
-    fi
-  fi
+  local gitdir
+  gitdir="$(_worktree_gitdir "$new_workspace")"
 
   # Step 3: Restart VM with new workspace mount
   echo "Restarting VM with new workspace..."
@@ -913,13 +838,7 @@ agent_switch() {
   _setup_egress_firewall "$name"
 
   # Step 7: Fix git worktree symlinks if needed
-  if [ -n "$gitdir" ] && [ "$FXA_VM_BACKEND" = "tart" ]; then
-    echo "Linking git worktree parent (.git: ${gitdir})..."
-    vm_exec "$name" sudo bash -c "
-      mkdir -p '$(dirname "$gitdir")'
-      ln -sfn /mnt/shared/gitdir '${gitdir}'
-    " 2>/dev/null || echo "  WARN: Git worktree symlink failed"
-  fi
+  _link_worktree_gitdir "$name" "$gitdir"
 
   # Step 8: Re-stage credentials for the new workspace
   runtime_load || return 1
@@ -927,36 +846,14 @@ agent_switch() {
 
   # Step 9: Start a new agent screen session
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
-
-  # Write .screenrc with agent name banner
-  vm_exec "$name" sudo -u agent bash -c "
-    cat > /home/agent/.screenrc <<SCREENRC
-defscrollback 10000
-startup_message off
-termcapinfo xterm* ti@:te@
-hardstatus alwayslastline '%{= bW} FxA Agent: ${name} %= scroll: Ctrl-a [  detach: Ctrl-a d '
-SCREENRC
-  "
+  _write_screenrc "$name"
 
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     _put_run_files "$name" "$new_workspace" || return 1
   fi
-  local launch_cmd
-  launch_cmd="$(runtime_launch_cmd)"
-  vm_exec "$name" sudo -u agent bash -c "
-    export HOME=/home/agent
-    screen -dmS ${VM_SCREEN_SESSION} bash -c '${launch_cmd}; exec bash'
-  "
+  _launch_in_screen "$name"
 
-  # Update metadata with new workspace and IP
-  cat > "${LOG_DIR}/${name}.meta" <<META
-NAME=${name}
-WORKSPACE=${new_workspace}
-CPU=${CPU}
-MEMORY=${MEMORY}
-IP=${ip}
-STARTED=${STARTED}
-META
+  _write_meta "$name" "$new_workspace" "$CPU" "$MEMORY" "${ip}" "$STARTED"
 
   echo ""
   echo "=== Agent '${name}' switched ==="
@@ -967,9 +864,7 @@ META
 }
 
 # agent_prewarm_stack <name>
-#   Kick off `fxa-start` inside a running agent's VM as a detached background
-#   job so the FxA service stack warms while the agent does planning/coding.
-#   Logs to <workspace>/.fxa-auto-stack-start.log (visible from the host).
+#   Start `fxa-start` detached in the VM, so the stack warms while the agent plans.
 agent_prewarm_stack() {
   local name="${1:-}"
   if [ -z "$name" ]; then
@@ -981,17 +876,14 @@ agent_prewarm_stack() {
     return 1
   fi
 
-  local full_name workspace
-  full_name="$(vm_name "$name")"
+  local workspace
   if [ -f "${LOG_DIR}/${name}.meta" ]; then
     local NAME WORKSPACE CPU MEMORY IP STARTED
     source "${LOG_DIR}/${name}.meta"
     workspace="${WORKSPACE:-}"
   fi
 
-  # Fully detach inside the VM: nohup + setsid so fxa-start survives the
-  # tart-exec dispatch returning. Output goes to a log file in the workspace
-  # so it's tail-able from the host.
+  # nohup + setsid, so fxa-start outlives the exec that started it.
   vm_exec "$name" sudo -u agent bash -c '
     cd /workspace || exit 1
     nohup setsid bash -c "source /etc/agent-env.sh && fxa-start" \
@@ -1015,9 +907,6 @@ agent_attach() {
   fi
 
   # Let the runtime re-stage credentials if a human attaching needs them.
-  # The workspace path comes from the meta file (it lives on the mounted worktree).
-  local full_name
-  full_name="$(vm_name "$name")"
   runtime_load || return 1
   local NAME WORKSPACE CPU MEMORY IP STARTED
   if [ -f "${LOG_DIR}/${name}.meta" ]; then
@@ -1025,15 +914,12 @@ agent_attach() {
     [ -n "${WORKSPACE:-}" ] && runtime_attach_hook "$WORKSPACE"
   fi
 
-  # SSH into the VM's screen session. `screen -x` multi-attaches so the
-  # orchestrator's auto-attach and ad-hoc `attach` calls can coexist.
+  # `screen -x` multi-attaches, so the orchestrator's attach and an ad-hoc one coexist.
   local ip
   ip="$(vm_ip "$name")"
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
 
-  # Wait up to 30s for agent_run to generate the per-agent SSH key. Without
-  # this, racing `attach` against the setup steps falls back to password auth
-  # (which our hardening disables) and prints a confusing error.
+  # An attach during setup otherwise falls back to password auth, which is disabled.
   if [ ! -f "$ssh_key" ]; then
     echo "Waiting for SSH key to be provisioned..." >&2
     local wait=0
@@ -1060,7 +946,7 @@ agent_list() {
   for meta_file in "${LOG_DIR}"/*.meta; do
     [ -f "$meta_file" ] || continue
 
-    local name workspace cpu memory ip started status ram_display
+    local status ram_display
     source "$meta_file"
 
     if vm_is_running "$NAME" 2>/dev/null; then
@@ -1084,8 +970,6 @@ agent_list() {
 agent_logs() {
   local name="$1"
   local follow="${2:-false}"
-  local full_name
-  full_name="$(vm_name "$name")"
 
   if ! vm_is_running "$name"; then
     if [ -f "${LOG_DIR}/${name}-vm.log" ]; then
@@ -1112,12 +996,8 @@ agent_stop() {
   local name="$1"
   # The name becomes rm -rf paths below; `stop ../..` must not reach outside LOG_DIR.
   [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "ERROR: Invalid name '${name}'." >&2; return 1; }
-  local full_name
-  full_name="$(vm_name "$name")"
-  # The host launcher that watches this slot must die with the VM. On
-  # 2026-09-14 FXA-2598's first launcher outlived its VM, and when the relaunch
-  # wrote its handoff two launchers raced to commit the same slot. Not a CI
-  # watcher though: past the PR the launcher only reads GitHub.
+  # The launcher that watches this slot dies with the VM, or it races a relaunch
+  # to commit the same slot. Not a CI watcher: past the PR it only reads GitHub.
   local key; key="$(printf '%s' "$name" | tr 'a-z' 'A-Z')"
   pgrep -f "jira ${key} " 2>/dev/null | while read -r pid; do
     grep -q 'pull/' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
@@ -1125,23 +1005,13 @@ agent_stop() {
 
   echo "Stopping agent '${name}'..."
 
-  # Gracefully stop Claude Code via screen
+  # Stop the agent gracefully through screen.
   vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true
   sleep 2
 
-  # Stop the VM
   vm_stop "$name"
-
-  # Delete the VM clone
   vm_delete "$name"
-
-  # Clean up per-agent SSH keys
-  rm -rf "${LOG_DIR}/ssh/${name}"
-
-  # Clean up Firefox profile
-  rm -rf "${LOG_DIR}/profiles/${name}"
-
-  # Clean up metadata
+  rm -rf "${LOG_DIR}/ssh/${name}" "${LOG_DIR}/profiles/${name}"
   rm -f "${LOG_DIR}/${name}.meta"
 
   echo "Agent '${name}' stopped and cleaned up."
@@ -1199,11 +1069,10 @@ user_pref("security.cert_pinning.enforcement_level", 0);
 user_pref("security.mixed_content.upgrade_display_content", false);
 USERJS
 
-  # Clear HSTS cache — content server sends strict-transport-security over plain HTTP
+  # The content server sends strict-transport-security over plain HTTP.
   rm -f "${profile_dir}/SiteSecurityServiceState.bin"
 
-  # Strip HSTS header from the reverse proxy so Firefox never caches it.
-  # Works with both the Node.js proxy (fxa-proxy.js) and nginx (fxa-proxy.conf).
+  # Strip the HSTS header in the proxy too, so Firefox never caches it.
   local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
   ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" bash -c "'
     if [ -f /tmp/fxa-proxy.js ] && ! grep -q \"strict-transport-security\" /tmp/fxa-proxy.js; then
@@ -1212,8 +1081,6 @@ USERJS
     fi
   '" 2>/dev/null && echo "  Proxy patched: HSTS header stripped." || true
 
-  # ── Inbox viewer setup ──────────────────────────────────────
-  # SCP the self-contained inbox viewer HTML to the VM
   local inbox_html="${SANDBOX_ROOT}/templates/inbox-viewer.html"
   local inbox_url=""
   if [ -f "${inbox_html}" ]; then
@@ -1226,7 +1093,7 @@ USERJS
     # Patch the running proxy to serve /__inbox and /__mail/
     if ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
       'test -f /tmp/fxa-proxy.conf' 2>/dev/null; then
-      # nginx proxy — inject routes if not already present
+      # nginx proxy: add the routes once.
       ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" bash -c "'
         if ! grep -q __inbox /tmp/fxa-proxy.conf; then
           sed -i \"/# Everything else -> content server/i\\
@@ -1251,7 +1118,7 @@ USERJS
       '" 2>/dev/null && inbox_url="http://${ip}:3030/__inbox"
     elif ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" \
       'test -f /tmp/fxa-proxy.js' 2>/dev/null; then
-      # Node.js proxy (legacy) — start a standalone server on :9002
+      # Legacy Node.js proxy: run a separate server on :9002.
       ssh -i "${ssh_key}" ${VM_SSH_OPTS} "${VM_SSH_USER}@${ip}" bash -c "'
         if ! pm2 describe inbox-proxy >/dev/null 2>&1; then
           cat > /tmp/inbox-proxy.js <<\"INBOXPROXY\"
@@ -1297,16 +1164,12 @@ INBOXPROXY
   echo "Firefox profile: ${profile_dir}"
   echo "Launching Firefox pointing at http://${ip}:3030/ ..."
 
+  local urls=("http://${ip}:3030")
   if [ -n "${inbox_url}" ]; then
     echo "  Inbox viewer: ${inbox_url}"
-    /Applications/Firefox.app/Contents/MacOS/firefox \
-      -profile "${profile_dir}" -no-remote \
-      "http://${ip}:3030" "${inbox_url}" &
-  else
-    /Applications/Firefox.app/Contents/MacOS/firefox \
-      -profile "${profile_dir}" -no-remote \
-      "http://${ip}:3030" &
+    urls+=("${inbox_url}")
   fi
+  /Applications/Firefox.app/Contents/MacOS/firefox -profile "${profile_dir}" -no-remote "${urls[@]}" &
   disown
 
   echo "Firefox launched (PID $!)."
@@ -1329,7 +1192,6 @@ agent_stop_all() {
     echo "No agents to stop."
   fi
 
-  # Clean up all SSH keys
   rm -rf "${LOG_DIR}/ssh"
 
   echo "All agents stopped."
@@ -1340,10 +1202,6 @@ agent_stop_all() {
 # agent_ssh_exec <name> <remote-command...>
 #   Run a command in the agent's VM over SSH and print its stdout. Returns 1
 #   when there is no running VM or no key for it.
-#
-#   Callers used to parse the human-readable output of `fxa-sandbox-ctl ssh`
-#   to find the IP and key path. That is the same two fields this reads
-#   directly, without a text format in between.
 agent_ssh_exec() {
   local name="${1:-}"; shift || true
   [ -n "$name" ] || return 1
@@ -1357,15 +1215,10 @@ agent_ssh_exec() {
 }
 
 # agent_alive <name>
-#   Exit 0 when a real claude process runs in the VM.
-#
-#   The status field in `agent_list` tracks the screen session, not the agent.
-#   A dead agent still reports "running" because `exec bash` replaces claude
-#   inside the same session, so a run can read healthy for hours after it died.
-#   Confirm a real process before trusting any launch.
-# Memoised for 20 s per name: on gce the answer rides an ssh through IAP, and a
-# snapshot asks for the same runner several times. A string cache, not an
-# associative array: macOS ships bash 3.2.
+#   Exit 0 when a real agent process runs in the VM. agent_list shows the screen
+#   session, which stays "running" after the agent dies because of `exec bash`.
+# Memoised for 20 s per name, since each answer is an ssh through IAP. A string
+# cache, not an associative array: macOS ships bash 3.2.
 _ALIVE_MEMO=""
 agent_alive() {
   local name="${1:-}" now hit
@@ -1382,13 +1235,10 @@ ${name} ${now} ${rc}"
 _agent_alive_now() {
   local name="${1:-}"
   local n
-  # pgrep -c prints 0 AND exits non-zero on no match, so `|| echo 0` would emit
-  # a second 0 and break the integer test. Use `|| true` and take one line.
   runtime_load || return 1
   local pat; pat="$(runtime_alive_pattern)"
-  # Could not ask is not "no process". On gce the question rides an ssh
-  # through IAP, and one dropped tunnel read as a dead agent on 2026-09-14
-  # (FXA-9245, mid-test, reported exited-without-handoff). Return 2 for that.
+  # Return 2 when ssh fails: one dropped IAP tunnel once read as a dead agent.
+  # pgrep -c prints 0 and exits 1 on no match, so `|| echo 0` would print two lines.
   n="$(agent_ssh_exec "$name" "pgrep -cf '${pat}' 2>/dev/null || true" 2>/dev/null \
        | tr -d '\r' | head -1)" || return 2
   n="${n:-0}"

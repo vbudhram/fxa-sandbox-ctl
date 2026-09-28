@@ -1,5 +1,5 @@
 #!/bin/bash
-# telemetry.sh — token, cost, and run accounting for a pipeline.
+# telemetry.sh: token, cost, and run accounting for a pipeline.
 #
 # Reference data only. Nothing here reaches Jira or a PR.
 #
@@ -75,12 +75,9 @@ read -r -d '' _TELEMETRY_CODEX <<'CODEX' || true
 ([.[] | select(.type=="turn_context")] | last | .payload.model // "codex") as $model
 | ([.[] | select(.type=="event_msg" and .payload.type=="token_count" and .payload.info.total_token_usage != null)]) as $tc
 | ($tc | last | .payload.info.total_token_usage // {}) as $u
-| { messages: ($tc|length), model: $model,
-    input: (($u.input_tokens//0) - ($u.cached_input_tokens//0)), output: ($u.output_tokens//0),
-    cache_write: ($u.cache_write_input_tokens//0), cache_read: ($u.cached_input_tokens//0),
-    models: { ($model): { input: (($u.input_tokens//0) - ($u.cached_input_tokens//0)), output: ($u.output_tokens//0),
-                          cache_write: ($u.cache_write_input_tokens//0), cache_read: ($u.cached_input_tokens//0) } },
-    source: "codex-session" }
+| { input: (($u.input_tokens//0) - ($u.cached_input_tokens//0)), output: ($u.output_tokens//0),
+    cache_write: ($u.cache_write_input_tokens//0), cache_read: ($u.cached_input_tokens//0) } as $t
+| { messages: ($tc|length), model: $model } + $t + { models: { ($model): $t }, source: "codex-session" }
 CODEX
 
 # telemetry_usage <KEY>
@@ -125,9 +122,8 @@ _telemetry_price_for() {
   esac
 }
 
-# Which pool worktree currently holds this ticket's branch. Hardcoding the first
-# slot recorded every slot-2 ticket against slot 1's HEAD: on 2026-08-13
-# FXA-14104 stored FXA-14150's sha and file count.
+# Which pool worktree holds this ticket's branch. Do not assume the first slot:
+# that records a slot-2 ticket against another ticket's HEAD.
 _telemetry_worktree_for_key() {
   local br root parent slot path
   br="$(worktree_branch_for "$1")" || return 1
@@ -143,16 +139,13 @@ _telemetry_worktree_for_key() {
   return 1
 }
 
-# telemetry_record <KEY>
-#   Append one run to the event log. The log is append-only, one line per run,
-#   so a relaunched ticket keeps both attempts. The rollup is derived from it.
 # _telemetry_strictness <worktree> <base-ref>   (changed paths on stdin)
 #   "strict", "loose", "mixed", or "" when no source file changed. A file is
 #   strict when it is .ts/.tsx and its package's tsconfig.json on the base ref
 #   does not turn `strict` or `noImplicitAny` off (tsconfig.base.json sets
 #   strict: true, so unset means strict). Plain .js is loose. Read at record
 #   time so a month of runs can answer whether strict packages cost fewer
-#   feedback rounds (ai/docs/033 in the FxA repo).
+#   feedback rounds.
 _telemetry_strictness() {
   local wt="$1" base="$2" f pkg cfg n_strict=0 n_loose=0
   while IFS= read -r f; do
@@ -175,6 +168,9 @@ _telemetry_strictness() {
   fi
 }
 
+# telemetry_record <KEY>
+#   Append one run to the event log. The log is append-only, one line per run,
+#   so a relaunched ticket keeps both attempts. The rollup is derived from it.
 telemetry_record() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: record needs <KEY>" >&2; return 1; }
@@ -197,20 +193,14 @@ telemetry_record() {
   # A failed read already printed an error document; `|| echo` inside the
   # substitution made it two, which beat the zero check and wrote two rows.
   usage="$(telemetry_usage "$key" 2>/dev/null)" || usage='{}'
-  # No transcript means no run to record. Writing a zero row here produced a
-  # merge summary of "2 runs, 0 tokens, unpriced" for FXA-14527 after its slot
-  # had moved on to another ticket.
+  # No transcript means no run. A zero row would show as a phantom run in the merge summary.
   if [ "$(printf '%s\n' "$usage" | jq -r '((.input//0)+(.output//0)+(.cache_read//0)+(.cache_write//0))')" = "0" ]; then
     echo "WARN: no transcript found for $key; nothing recorded." >&2; return 1
   fi
-  # The launch log's own lifespan, not "now minus launch". `record` can run long
-  # after the agent stopped, and then "now" measures the delay, not the run. On
-  # 2026-09-08 FXA-14471 recorded 119 hours because it was recorded five days
-  # late; its real run was 49 minutes. This is only correct because the launcher
-  # deletes the log before each launch, giving every run a true birth time.
-  # End at the handoff when the slot still has it: the launcher keeps writing
-  # the log while it polls CI, so the log's own mtime overstates the run. On
-  # FXA-14529 that read 34 min for an 18 min round.
+  # The launch log's lifespan, not "now minus launch": `record` can run days
+  # after the agent stopped. The launcher deletes the log before each launch, so
+  # its birth time is the start. End at the handoff file when present, because
+  # the launcher keeps writing the log while it polls CI.
   local done_file="${wt:+${wt}/.fxa-auto-done.json}"
   secs="$( [ -f "$log" ] && python3 -c "
 import os,sys
@@ -320,10 +310,8 @@ telemetry_costs() {
 telemetry_merge_comment() {
   pipeline_require || return 1
   local key="${1:-}" pr="${2:-}"
-  # Launches come from the ledger, telemetry rows from the run log. They can
-  # differ: a run that was never recorded (before the done hook existed, or a
-  # transcript lost to a relaunch) must show as a launch without numbers, not
-  # vanish. FXA-14529's first comment said "1 run" for a two-run ticket.
+  # Count launches from the ledger, not the run log, so an unrecorded run still
+  # shows as a launch without numbers.
   local launches=0
   [ -f "${PIPE_STATE_DIR}/launches.log" ] && launches="$(awk -v k="$key" '$2==k' "${PIPE_STATE_DIR}/launches.log" | wc -l | tr -d ' ')"
   [ -s "$PIPE_RUNS_FILE" ] || { printf '🤖 Merged%s. Agent launches: %s. No run telemetry was recorded for this ticket.\n' "${pr:+ as $pr}" "$launches"; return 0; }

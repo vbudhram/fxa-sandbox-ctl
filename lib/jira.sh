@@ -1,5 +1,5 @@
 #!/bin/bash
-# jira.sh — Fetch Jira issue context via acli and render it as markdown.
+# jira.sh: Fetch Jira issue context via acli and render it as markdown.
 #
 # Public API:
 #   jira_fetch_context <ISSUE-KEY>   Prints a markdown context blob to stdout.
@@ -8,8 +8,7 @@
 [ -n "${_FXA_JIRA_LOADED:-}" ] && return 0
 _FXA_JIRA_LOADED=1
 
-# jq program that walks an Atlassian Document Format (ADF) tree and emits markdown.
-# ADF is a nested JSON structure used by Jira for rich text fields (description, comments).
+# Render Jira's rich-text JSON (Atlassian Document Format) as markdown.
 read -r -d '' _JIRA_ADF_JQ <<'JQ' || true
 def adf:
   if type == "object" then
@@ -70,7 +69,7 @@ def adf:
    else "" end)
 JQ
 
-# Read the workitem summary (used to derive a slug for branch / worktree names).
+# Slug from the summary, for branch and worktree names.
 read -r -d '' _JIRA_SLUG_JQ <<'JQ' || true
 .fields.summary
 | ascii_downcase
@@ -91,9 +90,7 @@ _jira_require_acli() {
   fi
 }
 
-# jira_fetch_raw <ISSUE-KEY> — fetch the issue JSON and cache it for the lifetime
-# of the current shell so we don't hit the API twice when callers want both
-# context and slug.
+# Cache the issue JSON for this shell, so context and slug cost one API call.
 _JIRA_CACHE_DIR="${TMPDIR:-/tmp}/fxa-sandbox-ctl-jira-$$"
 _jira_fetch_raw() {
   local key="$1"
@@ -111,7 +108,7 @@ _jira_fetch_raw() {
   cat "$cache"
 }
 
-# jira_fetch_context <ISSUE-KEY> — emit a markdown context blob to stdout.
+# jira_fetch_context <ISSUE-KEY>: emit a markdown context blob to stdout.
 jira_fetch_context() {
   local key="${1:-}"
   if [ -z "$key" ]; then
@@ -123,7 +120,7 @@ jira_fetch_context() {
   printf '%s' "$json" | jq -r "${_JIRA_ADF_JQ}"
 }
 
-# jira_slug_for <ISSUE-KEY> — emit a lowercased slug (max 50 chars) from the summary.
+# jira_slug_for <ISSUE-KEY>: emit a lowercased slug (max 50 chars) from the summary.
 jira_slug_for() {
   local key="${1:-}"
   if [ -z "$key" ]; then
@@ -135,7 +132,7 @@ jira_slug_for() {
   printf '%s' "$json" | jq -r "${_JIRA_SLUG_JQ}"
 }
 
-# jira_summary_for <ISSUE-KEY> — emit just the summary string.
+# jira_summary_for <ISSUE-KEY>: emit just the summary string.
 jira_summary_for() {
   local key="${1:-}"
   if [ -z "$key" ]; then
@@ -147,7 +144,7 @@ jira_summary_for() {
   printf '%s' "$json" | jq -r '.fields.summary'
 }
 
-# jira_normalize_key <KEY> — uppercase the project prefix, validate shape.
+# jira_normalize_key <KEY>: uppercase the project prefix, validate shape.
 jira_normalize_key() {
   local key="${1:-}"
   key="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
@@ -158,7 +155,6 @@ jira_normalize_key() {
   printf '%s\n' "$key"
 }
 
-# Clean up cache on shell exit
 trap 'rm -rf "${_JIRA_CACHE_DIR}" 2>/dev/null' EXIT
 
 # ── Pipeline queries ───────────────────────────────────────────
@@ -244,11 +240,8 @@ jira_label_set() {
   printf '%s -> %s\n' "$key" "$want"
 }
 
-# Ticket text INCLUDING comments. `acli jira workitem view` omits comments
-# entirely and says nothing about it, so grounding that used `view` alone read
-# description-only and looked complete. On 2026-08-13 FXA-14325 was skipped for
-# two "unanswered" questions that the reporter had answered in a comment before
-# tagging the ticket. Always ground with this, never with `view` alone.
+# Ticket text INCLUDING comments. `acli jira workitem view` silently omits
+# comments, where reporters often answer the open questions. Ground with this.
 jira_ticket() {
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: ticket needs <KEY>" >&2; return 1; }
   echo "=== $key description ==="
@@ -261,14 +254,9 @@ jira_ticket() {
 }
 
 # jira_reporter_login <KEY>
-#   Print the GitHub login of whoever filed the ticket, or nothing if it cannot
-#   be resolved. Never guesses: an unmapped reporter prints nothing and the
-#   caller assigns the team only. Mapping lives in reporters.tsv in the state
-#   directory.
-#
-#   Match on displayName: Jira's reporter name and GitHub's user.name are both
-#   the person's real name. Email was the wrong key, because the local-part does
-#   not predict the handle.
+#   Print the GitHub login of whoever filed the ticket, from reporters.tsv in
+#   the state directory, or nothing. Never guesses. Match on displayName, the
+#   real name on both sides: an email local-part does not predict the handle.
 jira_reporter_login() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: reporter needs <KEY>" >&2; return 1; }
@@ -307,11 +295,10 @@ jira_active_sprint_id() {
 }
 
 # jira_sprint_add <KEY> <SPRINT_ID>
-#   WRITE: put the ticket in the sprint. acli cannot write the Sprint field at
-#   all -- it rejects customfield_* in --from-json -- so this is the one call in
-#   the tool that talks to the REST API directly, and the only one that needs a
-#   Jira API token. Without PIPE_JIRA_BASIC it warns and returns 0, because an
-#   unsprinted ticket is a smaller problem than a merge close that aborts.
+#   WRITE: put the ticket in the sprint. acli cannot write the Sprint field, so
+#   this is the one direct REST call and the only one that needs a Jira API
+#   token. Without PIPE_JIRA_BASIC it warns and returns 0: an unsprinted ticket
+#   is a smaller problem than a merge close that aborts.
 jira_sprint_add() {
   pipeline_require || return 1
   local key="${1:-}" sid="${2:-}"
@@ -331,19 +318,9 @@ jira_sprint_add() {
 # jira_close_merged <KEY>
 #   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
 #   approved, add it to the active sprint, transition it to Done.
-#
-#   Nothing used to do this. `merged` wrote the label and the drain comment and
-#   stopped, so the ticket kept whatever status and assignee it had before the
-#   pipeline touched it. On 2026-09-15 that was 18 merged tickets sitting
-#   unassigned at In Review, the oldest merged from a 2020 filing.
-#
-#   Assignee and sprint are set ONLY when empty. A ticket someone already owns,
-#   or already planned into a sprint, is a human's decision and this must not
-#   overwrite it. The transition is unconditional: the PR landed.
-#
-#   Every step warns and continues on failure. A merged ticket with no assignee
-#   is still a merged ticket, and failing the label write would leave the state
-#   machine worse off than the cosmetic gap it was trying to fix.
+#   Assignee and sprint are set ONLY when empty, because a human's choice wins.
+#   Every step warns and continues: a failed label write would do more harm
+#   than the cosmetic gap this fixes.
 jira_close_merged() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: close needs <KEY>" >&2; return 1; }

@@ -1,5 +1,5 @@
 #!/bin/bash
-# errors.sh — one log of every failure the host sees, for finding and fixing bugs.
+# errors.sh: one log of every failure the host sees, for finding and fixing bugs.
 #
 # Public API:
 #   errors_record <source> <kind> <key> <where> <message> [log]   append one error
