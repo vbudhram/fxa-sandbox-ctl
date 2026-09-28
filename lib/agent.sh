@@ -138,7 +138,7 @@ _put_run_files() {
     # empty transcript shipped from the slot blocked the agent's own writes.
     case "$path" in .fxa-*|ai|ai/*) continue ;; esac
     case "$st" in *D*) printf '%s\n' "$path" >> "${slot}/.fxa-auto-deleted" ;; *) [ -e "${slot}/${path}" ] && items+=("$path") ;; esac
-  done < <(git -C "$slot" status --porcelain -uall 2>/dev/null)
+  done < <(git -C "$slot" status --porcelain -uall 2>/dev/null || true)  # a session's run dir is no checkout
   [ -s "${slot}/.fxa-auto-deleted" ] && items+=(.fxa-auto-deleted)
   [ "${#items[@]}" -eq 0 ] && return 0
   echo "Shipping ${#items[@]} run file(s) into the runner..."
