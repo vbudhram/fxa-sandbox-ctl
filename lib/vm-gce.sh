@@ -148,6 +148,13 @@ vm_clone() {
       echo "  ${zone} is stocked out for ${FXA_GCE_MACHINE_TYPE}; trying the next zone." >&2
       continue
     fi
+    # GCP's own transient faults ("Internal error. Please try again") are not ours.
+    if grep -qiE 'Internal error|try again|backendError|UNAVAILABLE' "${LOG_DIR}/${name}-vm.log"; then
+      echo "  GCP failed to create it in ${zone} ($(grep -m1 -oiE 'Internal error|try again|backendError|UNAVAILABLE' "${LOG_DIR}/${name}-vm.log")); trying the next zone." >&2
+      _gce compute instances delete "$(vm_name "$name")" --zone "$zone" --quiet >/dev/null 2>&1 || true
+      sleep 5
+      continue
+    fi
     cat "${LOG_DIR}/${name}-vm.log" >&2; return 1
   done
   echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${FXA_GCE_MACHINE_TYPE}." >&2
