@@ -109,8 +109,9 @@ A check that passes on the old code proves nothing.
 - `check` needs `run` and `expect`. It starts the stack first unless you set
   `"needs_stack": false`. `run` goes to `bash -c`, so quote a URL that has `&`
   or `?`.
-- Print the plan in the transcript. In a Slack session it is part of your
-  first-turn plan, so the person can change it before you code.
+- Print a short summary of the plan in the transcript, then go ahead. Nobody
+  approves it first: use your judgement, and ask only when a decision is the
+  engineer's to make.
 
 ## Step 5: Run it
 
