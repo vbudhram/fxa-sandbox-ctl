@@ -24,7 +24,7 @@ errors_push() {
   [ -n "$ERRORS_URI" ] && [ -s "$ERRORS_FILE" ] || return 0
   # At most once a minute: a runner that stops answering fails every 5 s poll.
   local stamp="${ERRORS_FILE}.pushed"
-  if [ "${1:-}" != --now ] && [ -f "$stamp" ] && [ $(( $(date +%s) - $(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp") )) -lt 60 ]; then return 0; fi
+  if [ "${1:-}" != --now ] && [ -f "$stamp" ] && [ $(( $(date +%s) - $(_mtime "$stamp") )) -lt 60 ]; then return 0; fi
   touch "$stamp"
   gcloud storage cp -q "$ERRORS_FILE" "${ERRORS_URI}/$(hostname -s).jsonl" >/dev/null 2>&1
 }

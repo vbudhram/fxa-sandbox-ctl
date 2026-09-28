@@ -22,7 +22,7 @@ session_set() {
   # lost write can reopen a closed turn. A lock older than 10 s belongs to a dead writer.
   local lock="${f}.wlock" tmp rc=0
   while ! mkdir "$lock" 2>/dev/null; do
-    [ -d "$lock" ] && [ $(( $(date +%s) - $(stat -f %m "$lock" 2>/dev/null || date +%s) )) -gt 10 ] && rmdir "$lock" 2>/dev/null
+    [ -d "$lock" ] && [ $(( $(date +%s) - $(_mtime "$lock" 2>/dev/null || date +%s) )) -gt 10 ] && rmdir "$lock" 2>/dev/null
     sleep 0.1
   done
   tmp="$(mktemp "${f}.XXXXXX")"
@@ -167,7 +167,7 @@ _session_media_scrub() {
   find "$dir" -mindepth 1 \( ! -type f -o -links +1 \) -exec rm -rf {} + 2>/dev/null
   find "$dir" -mindepth 2 -exec rm -rf {} + 2>/dev/null
   while IFS= read -r -d '' f; do
-    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] && [ "$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")" -le 52428800 ] \
+    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] && [ "$(_fsize "$f")" -le 52428800 ] \
       || rm -f "$f"
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -print0)
 }
@@ -265,7 +265,7 @@ session_idle_sweep() {
 # all start turns. A lock older than 2 min belongs to a crashed holder.
 _session_lock() {
   local d="${SESSION_DIR}/$1.lock"
-  [ -d "$d" ] && [ $(( $(date +%s) - $(stat -f %m "$d") )) -gt 120 ] && rmdir "$d" 2>/dev/null
+  [ -d "$d" ] && [ $(( $(date +%s) - $(_mtime "$d") )) -gt 120 ] && rmdir "$d" 2>/dev/null
   mkdir "$d" 2>/dev/null
 }
 _session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }
@@ -556,7 +556,7 @@ session_attach() {
     b="$(basename "$f")"
     [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$ ]] || { echo "skipped ${b}: name" >&2; continue; }
     [ -f "$f" ] && [ ! -L "$f" ] || { echo "skipped ${b}: not a plain file" >&2; continue; }
-    [ "$(stat -f %z "$f" 2>/dev/null || stat -c %s "$f")" -le 26214400 ] || { echo "skipped ${b}: over 25 MB" >&2; continue; }
+    [ "$(_fsize "$f")" -le 26214400 ] || { echo "skipped ${b}: over 25 MB" >&2; continue; }
     cp "$f" "${d}/${b}" && n=$((n + 1))
   done
   [ "$n" -gt 0 ] || { rm -rf "$d"; echo "ERROR: no file to attach" >&2; return 1; }

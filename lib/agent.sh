@@ -51,6 +51,7 @@ _vm_skill_allowlist() {
 # ── Helpers ────────────────────────────────────────────────────
 
 _check_host_ram() {
+  [ "$FXA_VM_BACKEND" = tart ] || return 0  # only Tart VMs use this host's RAM
   local free_mb
   local pages_free
   pages_free=$(vm_stat | awk '/Pages free/ {gsub(/\./,"",$3); print $3}')
@@ -364,7 +365,7 @@ FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com re
 # above still apply then.
 _github_meta_cidrs() {
   local cache="${LOG_DIR}/github-meta-cidrs"
-  if [ ! -s "$cache" ] || [ $(( $(date +%s) - $(stat -f %m "$cache") )) -gt 86400 ]; then
+  if [ ! -s "$cache" ] || [ $(( $(date +%s) - $(_mtime "$cache") )) -gt 86400 ]; then
     curl -sf --max-time 10 https://api.github.com/meta 2>/dev/null \
       | jq -r '[.web[], .api[], .git[]] | unique | map(select(test(":") | not)) | join(" ")' > "${cache}.tmp" 2>/dev/null \
       && [ -s "${cache}.tmp" ] && mv "${cache}.tmp" "$cache" || rm -f "${cache}.tmp"
@@ -443,7 +444,7 @@ _setup_claude_config() {
   # hooks, commands and skills go in one tar over scp. A base64 tar inside a
   # `bash -c` argument failed silently once the skills passed ARG_MAX.
   local config_tar
-  config_tar="$(mktemp -t fxa-claude-config.XXXX.tar)"
+  config_tar="$(mktemp "${TMPDIR:-/tmp}/fxa-claude-config.XXXXXX")"
   local tar_items=()
   [ -d "${claude_home}/hooks" ]    && tar_items+=("hooks")
   [ -d "${claude_home}/commands" ] && tar_items+=("commands")

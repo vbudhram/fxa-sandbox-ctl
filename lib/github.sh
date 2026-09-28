@@ -456,7 +456,7 @@ github_app_jwt() {
 #   minutes, so mint it at handoff, never at launch. Cached for 50 minutes.
 github_app_token() {
   local cache="${TMPDIR:-/tmp}/fxa-github-app-token.${GITHUB_APP_INSTALLATION_ID}"
-  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(stat -f %m "$cache") ))" -lt 3000 ]; then
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 3000 ]; then
     cat "$cache"; return 0
   fi
   local tok

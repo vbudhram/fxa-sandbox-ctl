@@ -13,6 +13,24 @@ _retry() { local d; for d in 3 9 0; do "$@" && return 0; [ "$d" = 0 ] && return 
 gh()   { _retry command gh "$@"; }
 acli() { _retry command acli "$@"; }
 
+# The host is macOS (BSD tools) or the manager VM (GNU tools). GNU `stat -f`
+# describes the file system and does not fail, so choose once, not per call.
+if stat -c %Y / >/dev/null 2>&1; then
+  _mtime() { stat -c %Y "$1"; }
+  _fsize() { stat -c %s "$1"; }
+  # %W is 0 where the file system keeps no birth time; the mtime is next best.
+  _btime() { local b; b="$(stat -c %W "$1")" || return 1; if [ "$b" -gt 0 ]; then echo "$b"; else stat -c %Y "$1"; fi; }
+  _epoch_of() { date -u -d "$1" +%s; }
+else
+  _mtime() { stat -f %m "$1"; }
+  _fsize() { stat -f %z "$1"; }
+  _btime() { stat -f %B "$1"; }
+  # BSD date wants no fraction, and an offset with no colon.
+  _epoch_of() { date -j -f '%Y-%m-%dT%H:%M:%S%z' "$(printf '%s' "$1" | sed -E 's/\.[0-9]+//; s/Z$/+0000/; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')" +%s; }
+fi
+# Free space in whole GB on the file system holding <path> (default /).
+_free_gb() { df -Pk "${1:-/}" | awk 'NR==2 {print int($4 / 1048576)}'; }
+
 # tart and packer may live in ~/bin.
 export PATH="${HOME}/bin:${PATH}"
 # Host git never runs a hook or fsmonitor command: a slot's tree and hooks are agent-written.

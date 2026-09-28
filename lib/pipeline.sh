@@ -62,7 +62,7 @@ pipeline_label_for() {
 pipeline_states() { printf '%s\n' public inflight done blocked merged rejected; }
 
 pipeline_free_gb() {
-  df -g / 2>/dev/null | awk 'NR==2 {print $4}'
+  _free_gb / 2>/dev/null
 }
 
 # ── Pass lock ──────────────────────────────────────────────────
@@ -139,7 +139,7 @@ pipeline_lock() {
     return 1
   fi
   if [ -d "$PIPE_LOCK_DIR" ]; then
-    local age; age=$(( $(date +%s) - $(stat -f %m "$PIPE_LOCK_DIR" 2>/dev/null || echo 0) ))
+    local age; age=$(( $(date +%s) - $(_mtime "$PIPE_LOCK_DIR" 2>/dev/null || echo 0) ))
     # A pass takes under 10 min, so an older lock is a dead session. The pid
     # inside is the `lock` call's own and already gone, so age is the only signal.
     if [ "$age" -lt "${PIPE_LOCK_STALE_SECONDS:-1800}" ]; then
@@ -385,7 +385,7 @@ pipeline_progress() {
     # Stall detection lives here because reconcile reads `progress` for every
     # inflight key, so it cannot be skipped.
     local started elapsed reason
-    started="$(stat -f %B "$log" 2>/dev/null || echo 0)"
+    started="$(_btime "$log" 2>/dev/null || echo 0)"
     elapsed=$(( $(date +%s) - started ))
     reason="$(_pipeline_stalled_reason "$key" "$elapsed" || true)"
     if [ -n "$reason" ]; then
@@ -415,7 +415,7 @@ pipeline_health_json() {
   stamped="$(cat "${PIPE_STATE_DIR}/last-pass" 2>/dev/null)"
   newest_skip="$(cut -f2 "$PIPE_STATE_DIR"/*.skipped 2>/dev/null | sort -rn | head -1)"
   last_launch="$(ls -t "$PIPE_STATE_DIR"/*.launch.log 2>/dev/null | head -1)"
-  last_launch="$( [ -n "$last_launch" ] && stat -f %m "$last_launch" 2>/dev/null || echo '' )"
+  last_launch="$( [ -n "$last_launch" ] && _mtime "$last_launch" 2>/dev/null || echo '' )"
   last_pass="$(printf '%s\n%s\n%s\n' "$stamped" "$newest_skip" "$last_launch" \
                | grep -E '^[0-9]+$' | sort -rn | head -1)"
   [ -d "$PIPE_LOCK_DIR" ] && lock=true || lock=false

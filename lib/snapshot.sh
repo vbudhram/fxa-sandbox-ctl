@@ -54,7 +54,7 @@ _snapshot_inflight() {
     stage="$(pipeline_progress "$key" 2>/dev/null | cut -d' ' -f2- || echo 'unknown')"
     # The launch log is created at launch, so its birth time is the run's start.
     log="$(pipeline_launch_log "$key")"
-    started="$( [ -f "$log" ] && stat -f %B "$log" 2>/dev/null || echo '' )"
+    started="$( [ -f "$log" ] && _btime "$log" 2>/dev/null || echo '' )"
     # Progress is changed files and commits: the launcher's elapsed counter freezes
     # (macOS block-buffers its stdout). Carry the committed range too, since the
     # dirty tree drops to zero once the host commits.
@@ -128,7 +128,7 @@ _snapshot_instances() {
 _snapshot_agent_json() {
   local f="$1" now="$2" mtime model rates
   [ -s "$f" ] || { echo null; return 0; }
-  mtime="$(stat -f %m "$f" 2>/dev/null || echo "$now")"
+  mtime="$(_mtime "$f" 2>/dev/null || echo "$now")"
   # rsync -a keeps the runner's mtime and its clock can run ahead of ours.
   [ "$mtime" -gt "$now" ] && mtime="$now"
   # The first assistant event ("Goal set") reports model <synthetic>; skip it.
@@ -263,7 +263,7 @@ _snapshot_runner_row() {
   head="$(git -C "$WORKSPACE" rev-parse HEAD 2>/dev/null || echo '')"
   if [ -z "$BASE" ]; then base_ok=null; elif [ "$BASE" = "$head" ]; then base_ok=true; else base_ok=false; fi
   # STARTED is UTC (the Z); parse it as such or the elapsed time is off by the zone.
-  elapsed="$( [ -n "$STARTED" ] && echo $(( now - $(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%SZ' "$STARTED" +%s 2>/dev/null || echo "$now") )) || echo '' )"
+  elapsed="$( [ -n "$STARTED" ] && echo $(( now - $(_epoch_of "$STARTED" 2>/dev/null || echo "$now") )) || echo '' )"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$NAME" "$key" "$branch" "$slot" "$alive" "$stage" "$(printf '%s' "$line" | cut -d' ' -f3-)" \
     "$elapsed" "${files:-0}" "$stat_line" "$handoff" "$base_ok" "${agent:-null}"
@@ -304,7 +304,7 @@ _snapshot_session_row() {
   # Each stage may find nothing; a fallback here would print a second [] and drop the row.
   local media; media="$( { cd "${SESSION_DIR}/${key}.media" 2>/dev/null && for m in *; do
       [[ "$m" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] || continue
-      printf '%s\t%s\n' "$(stat -f %m "$m" 2>/dev/null || stat -c %Y "$m")" "$m"
+      printf '%s\t%s\n' "$(_mtime "$m")" "$m"
     done; } | jq -R 'split("\t") | {at: (.[0] | tonumber), name: .[1]}' | jq -sc 'sort_by(.at)' )"
   jq -c --argjson agent "${agent:-null}" --argjson alive "$alive" --argjson media "${media:-[]}" \
     --arg request "$(head -c 300 "${SESSION_DIR}/${key}.prompt.md" 2>/dev/null)" \

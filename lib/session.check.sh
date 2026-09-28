@@ -8,6 +8,7 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+source "$(dirname "$0")/config.sh"
 FXA_SESSION_DIR="$tmp" source "$(dirname "$0")/session.sh"
 
 echo '{"key":"agent-7f3a","state":"starting"}' > "$tmp/agent-7f3a.json"

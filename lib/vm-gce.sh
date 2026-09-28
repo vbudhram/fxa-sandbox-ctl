@@ -329,7 +329,7 @@ vm_gc() {
     [ -e "$f" ] || continue
     name="$(basename "$f" .meta)"
     printf '%s\n' "$running" | grep -qx "$(vm_name "$name")" && continue
-    [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 600 ] && continue
+    [ $(( $(date +%s) - $(_mtime "$f") )) -lt 600 ] && continue
     rm -f "$f" "${LOG_DIR}/${name}.zone" "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
     echo "$name gc (no instance)"
   done
@@ -337,13 +337,11 @@ vm_gc() {
 
 # name, status, and age in seconds. The age is what the dashboard flags.
 # `instances list` takes --zones, not --zone, so it does not go through _gce_zone.
-# creationTimestamp carries a UTC offset with a colon; date -j needs it without.
 vm_list() {
   local n st ts
   _gce compute instances list --zones "$(_gce_zones_csv)" --filter "name~^${VM_PREFIX}-" \
        --format 'value(name,status,creationTimestamp)' 2>/dev/null \
   | while IFS=$'\t' read -r n st ts; do
-      ts="$(printf '%s' "$ts" | sed -E 's/\.[0-9]+//; s/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
-      printf '%s\t%s\t%s\n' "$n" "$st" "$(( $(date +%s) - $(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$ts" +%s 2>/dev/null || echo 0) ))"
+      printf '%s\t%s\t%s\n' "$n" "$st" "$(( $(date +%s) - $(_epoch_of "$ts" 2>/dev/null || echo 0) ))"
     done || true
 }

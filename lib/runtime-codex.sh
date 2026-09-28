@@ -62,7 +62,7 @@ What trips agents most often:
 
   # Skills ship from the same host directory Claude's do; only the target moves.
   local skills_tar tar_items=() s
-  skills_tar="$(mktemp -t fxa-codex-skills.XXXX.tar)"
+  skills_tar="$(mktemp "${TMPDIR:-/tmp}/fxa-codex-skills.XXXXXX")"
   for s in $(_vm_skill_allowlist); do
     [ -d "${CLAUDE_HOME_DIR}/skills/${s}" ] && tar_items+=("skills/${s}")
   done
