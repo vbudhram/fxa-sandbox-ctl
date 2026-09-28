@@ -377,24 +377,25 @@ gh_relock() {
 
 # gh_pr_states_json <KEYS>
 #   PR number, state, title, draft and review status, and the check tally for
-#   many keys, as a JSON array. Two calls: with the rollup and the metadata in
-#   one query at limit 200, GitHub cancels the stream. Prints `null` when a
-#   fetch fails, so the dashboard does not draw "no PR" for every ticket.
+#   many keys, as a JSON array. One call per ticket branch, 8 at a time: the
+#   pipeline's own PRs only. Listing the repo's 200 latest PRs instead took
+#   about 45 s of each dashboard refresh. Prints `null` when a fetch fails, so
+#   the dashboard does not draw "no PR" for every ticket.
 gh_pr_states_json() {
   pipeline_require || return 1
   local keys="${1:-}"
   [ -n "$keys" ] || { echo '[]'; return 0; }
-  local rollup meta rc=0
-  rollup="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-              --json number,state,headRefName,statusCheckRollup 2>/dev/null)" || rc=$?
-  [ "$rc" -eq 0 ] && [ -n "$rollup" ] || { echo 'null'; return 0; }
-  meta="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-            --json number,headRefName,title,isDraft,reviewDecision,updatedAt,mergeable,createdAt,reviewRequests,latestReviews 2>/dev/null)" || rc=$?
-  [ "$rc" -eq 0 ] && [ -n "$meta" ] || { echo 'null'; return 0; }
-
-  # Files, not --argjson: with latestReviews the payload passes ARG_MAX.
-  local tr tm; tr="$(mktemp)"; tm="$(mktemp)"
-  printf '%s' "$rollup" >"$tr"; printf '%s' "$meta" >"$tm"
+  local dir; dir="$(mktemp -d)"
+  # The newest PR of each branch, with every field below. A branch is the key in
+  # lower case: a plain git name, so it is safe as an argument.
+  printf '%s\n' "$keys" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z][a-z0-9]*-[0-9]+$' | xargs -P 8 -I{} sh -c '
+    gh pr list --repo "$1" --head "$2" --state all --limit 1 \
+      --json number,state,headRefName,statusCheckRollup,title,isDraft,reviewDecision,updatedAt,mergeable,createdAt,reviewRequests,latestReviews \
+      > "$3/$2.json" 2>/dev/null || : > "$3/$2.fail"' _ "$PIPE_REPO_SLUG" {} "$dir"
+  if ls "$dir"/*.fail >/dev/null 2>&1; then rm -rf "$dir"; echo 'null'; return 0; fi
+  # Files, not --argjson: with latestReviews the payload can pass ARG_MAX.
+  local tr tm; tr="$(mktemp)"; tm="$tr"
+  cat "$dir"/*.json 2>/dev/null | jq -s 'add // []' > "$tr"; rm -rf "$dir"
   printf '%s\n' "$keys" | jq -R -s --slurpfile rollup "$tr" --slurpfile meta "$tm" '
     (INDEX($rollup[0][]; .headRefName)) as $R
     | (INDEX($meta[0][];   .headRefName)) as $M
