@@ -38,6 +38,14 @@ iptables -I OUTPUT 1 -m owner --uid-owner "$v" -o lo -j ACCEPT
 iptables -C OUTPUT -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT 2>/dev/null \
   || iptables -I OUTPUT 1 -m owner --uid-owner "$a" -o lo -p tcp -m multiport --dports 5901,6080 -j REJECT
 
+# The desktop is for looking at the FxA stack: start it when it is not running
+# (the agent starts it only when a request needs it). It runs as the agent,
+# as when the agent starts it, and takes about two minutes.
+if ! ss -ltn | grep -q ':3030 ' && ! pgrep -u agent -f fxa-start >/dev/null; then
+  sudo -u agent bash -c 'cd /workspace && nohup setsid bash -c "source /etc/agent-env.sh && fxa-start" > /workspace/.fxa-auto-stack-start.log 2>&1 < /dev/null & disown'
+  echo "stack=starting"
+fi
+
 # websockify accepts any origin, so a page in the person's browser could reach
 # the tunnel; a password per runner stops it.
 if [ ! -s /root/.desktop-password ]; then
@@ -83,7 +91,8 @@ foxfire({ args: ['http://localhost:3030/'], profileOptions: profile });
 MJS
 # foxfire also adds an empty argument, which Firefox opens as file:///; drop it.
 printf '#!/bin/bash\na=(); for x in "$@"; do [ -n "$x" ] && a+=("$x"); done\nexec /usr/bin/firefox "${a[@]}"\n' > ~/firefox-bin
-printf '#!/bin/sh\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
+# Wait for the stack (up to 3 min), so Firefox opens on the accounts page, not an error.
+printf '#!/bin/bash\nfor i in $(seq 1 90); do (exec 3<>/dev/tcp/127.0.0.1/3030) 2>/dev/null && break; sleep 2; done\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
 chmod +x ~/firefox-bin ~/fxa-firefox
 mkdir -p ~/.local/share/applications
 printf '[Desktop Entry]\nType=Application\nName=Firefox (FxA dev)\nComment=Firefox with the FxA dev profile for the local stack\nExec=%s/fxa-firefox\nIcon=firefox\nTerminal=false\n' "$HOME" \
