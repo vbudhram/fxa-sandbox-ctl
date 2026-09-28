@@ -1192,13 +1192,18 @@ document.addEventListener("click", e => {
   renderLanes();
 });
 // "7 open PRs labelled auto: 4 awaiting review · 2 in flight · 1 blocked", as GitHub counts them.
-function openPrLine() {
+function openPrCounts() {
   const s = SNAP, open = s?.open_prs;
-  if (!s || open == null) return "";
+  if (!s || open == null) return null;
   const stateOf = k => !k ? "Slack or by hand" : (s.review ?? []).some(r => r.key === k) ? "awaiting review"
     : (s.inflight ?? []).some(r => r.key === k) ? "in flight" : (s.blocked ?? []).some(r => r.key === k) ? "blocked" : "not in the pipeline";
   const n = {}; open.forEach(p => { const k = stateOf(p.key); n[k] = (n[k] ?? 0) + 1; });
-  return `<span class="sub" style="color:var(--dim)"><a href="https://github.com/${esc(s.repo ?? "")}/pulls?q=is%3Apr+state%3Aopen+label%3Aauto" target="_blank" rel="noreferrer">${open.length} open PR${open.length === 1 ? "" : "s"}</a>: ${Object.entries(n).map(([k, c]) => `${c} ${esc(k)}`).join(" · ") || "none"}</span>`;
+  return { total: open.length, parts: Object.entries(n).map(([k, c]) => `${c} ${k}`).join(" · ") || "none" };
+}
+function openPrLine() {
+  const c = openPrCounts();
+  if (!c) return "";
+  return `<span class="sub" style="color:var(--dim)"><a href="https://github.com/${esc(SNAP.repo ?? "")}/pulls?q=is%3Apr+state%3Aopen+label%3Aauto" target="_blank" rel="noreferrer">${c.total} open PR${c.total === 1 ? "" : "s"}</a>: ${esc(c.parts)}</span>`;
 }
 function renderLanes() {
   const rows = laneRows();
@@ -1470,7 +1475,9 @@ function renderNav() {
   const conflicts = open.filter(r => r.mergeable === "CONFLICTING").length, infra = open.filter(r => r.fail > 0 && r.infra).length;
   const fix = open.filter(r => r.mergeable === "CONFLICTING" || r.fail > 0 || r.review === "CHANGES_REQUESTED").length;
   const t = SNAP?.telemetry;
+  const opc = openPrCounts();
   put("s-tiles", [
+    tile("#pipeline", "open PRs", opc ? opc.total : null, opc ? esc(opc.parts) : "GitHub fetch failed"),
     tile("#pipeline", "waiting on review", waiting, waiting ? `oldest waits ${oldest} day${oldest === 1 ? "" : "s"}` : "none waiting", waiting ? "warn" : ""),
     tile("#pipeline", "needs a fix", SNAP ? fix : null, [infra && `${infra} infra red`, conflicts && `${conflicts} conflicts`].filter(Boolean).join(" · ") || "nothing red", fix ? "bad" : ""),
     tile("#sessions/live", "sessions", AGENTS ? `${liveS}/${AGENTS.session_cap}` : null, `${ss.filter(s => s.state === "paused").length} paused, a reply resumes`),
