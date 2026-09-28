@@ -54,7 +54,7 @@ _snapshot_inflight() {
     stage="$(pipeline_progress "$key" 2>/dev/null | cut -d' ' -f2- || echo 'unknown')"
     # The launch log is created at launch, so its birth time is the run's start.
     log="$(pipeline_launch_log "$key")"
-    started="$( [ -f "$log" ] && _btime "$log" 2>/dev/null || echo '' )"
+    started="$( [ -f "$log" ] && pipeline_launch_started "$log" 2>/dev/null || echo '' )"
     # Progress is changed files and commits: the launcher's elapsed counter freezes
     # (macOS block-buffers its stdout). Carry the committed range too, since the
     # dirty tree drops to zero once the host commits.

@@ -507,6 +507,10 @@ EOF
     fi
     local pr_url
     pr_url="$(finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
+    # Record the run here, on the host that ran it, while its transcript is in
+    # the slot. The row lands in the state dir, which the GCS mirror carries to
+    # any host that labels the ticket later; that label's record is then a no-op.
+    telemetry_record "$key" >/dev/null 2>&1 || echo "WARN: telemetry_record failed for $key" >&2
     if [ -n "$pr_url" ]; then
       finish_notify "PR opened for ${key}" "$pr_url"
       echo "" >&2
@@ -1719,7 +1723,8 @@ cmd_launch() {
   [ -f "$log" ] && { telemetry_record "$key" >/dev/null 2>&1 || true; }
   # Delete, not truncate: APFS keeps the inode's birth time, which telemetry reads as the start.
   rm -f "$log"
-  nohup "$0" "${args[@]}" >"$log" 2>&1 &
+  echo "Launched at: $(date +%s)" > "$log"
+  nohup "$0" "${args[@]}" >>"$log" 2>&1 &
   # A stale skip fingerprint would silence a later skip of this key.
   pipeline_skip_clear "$key"
   echo "$key launched on $slot (log ${log})"

@@ -317,6 +317,13 @@ pipeline_attempts() {
   echo "$n"
 }
 
+# pipeline_launch_started <log>   The run's start (epoch): the launcher's first
+# line, else the file's birth time. A copy to another host (the state mirror)
+# keeps the line but not the birth time.
+pipeline_launch_started() {
+  local t; t="$(sed -n '1s/^Launched at: \([0-9]\{9,\}\)$/\1/p' "$1" 2>/dev/null)"
+  if [ -n "$t" ]; then echo "$t"; else _btime "$1"; fi
+}
 pipeline_launch_log() { printf '%s/%s.launch.log\n' "$PIPE_STATE_DIR" "$1"; }
 
 # _pipeline_stalled_reason <KEY> <ELAPSED-SECONDS>
@@ -385,7 +392,7 @@ pipeline_progress() {
     # Stall detection lives here because reconcile reads `progress` for every
     # inflight key, so it cannot be skipped.
     local started elapsed reason
-    started="$(_btime "$log" 2>/dev/null || echo 0)"
+    started="$(pipeline_launch_started "$log" 2>/dev/null || echo 0)"
     elapsed=$(( $(date +%s) - started ))
     reason="$(_pipeline_stalled_reason "$key" "$elapsed" || true)"
     if [ -n "$reason" ]; then

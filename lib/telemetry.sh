@@ -184,7 +184,7 @@ telemetry_record() {
   # idempotent on (issue, launched_at), which lets `launch` record the run a
   # slot still holds and lets `done` record it again without a second row.
   local launched_at=0 strict=""
-  [ -f "$log" ] && launched_at="$(_btime "$log" 2>/dev/null || echo 0)"
+  [ -f "$log" ] && launched_at="$(pipeline_launch_started "$log" 2>/dev/null || echo 0)"
   if [ "$launched_at" != "0" ] && [ -s "$PIPE_RUNS_FILE" ] \
      && jq -e --arg k "$key" --argjson t "$launched_at" 'select(.issue == $k and .launched_at == $t)' "$PIPE_RUNS_FILE" >/dev/null 2>&1; then
     echo "already recorded $key (launched_at $launched_at)"; return 0
