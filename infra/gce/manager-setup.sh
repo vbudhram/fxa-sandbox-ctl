@@ -163,6 +163,9 @@ After=fxa-secrets.service
 User=$U
 WorkingDirectory=$W/fxa-sandbox-ctl
 Environment=$path
+# All addresses: the Cloud Run gateway reaches it on the private network; the
+# GCP firewall admits only the gateway's subnet, and only to this VM.
+Environment=FXA_DASHBOARD_BIND=0.0.0.0
 ExecStart=$W/fxa-sandbox-ctl/fxa-sandbox-ctl dashboard
 Restart=on-failure
 RestartSec=10

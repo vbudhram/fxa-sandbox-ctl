@@ -358,6 +358,8 @@ if __name__ == "__main__":
     print("Ctrl-C to stop.")
     atexit.register(close_desktops)
     try:
-        ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+        # 127.0.0.1 unless told otherwise: on the manager VM the Cloud Run gateway
+        # reaches it on the private network, and a GCP firewall rule admits only it.
+        ThreadingHTTPServer((os.environ.get("FXA_DASHBOARD_BIND") or "127.0.0.1", PORT), Handler).serve_forever()
     except KeyboardInterrupt:
         print("\nstopped.")

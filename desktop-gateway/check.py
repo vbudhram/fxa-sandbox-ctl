@@ -4,6 +4,7 @@ import os
 
 os.environ.setdefault("IAP_AUDIENCE", "test")
 os.environ.setdefault("DESKTOP_BUCKET", "test")
+os.environ["MANAGER_URL"] = "http://127.0.0.1:18767"
 import google.auth
 google.auth.default = lambda scopes=None: (type("C", (), {"valid": True, "token": "t"})(), None)
 import aiohttp
@@ -59,8 +60,47 @@ async def jwt_check():
     check("a token signed by another key is refused", None, await main.iap_email(type("R", (), {"headers": {"x-goog-iap-jwt-assertion": forged}, "app": None})()))
 
 
+async def dashboard_check():
+    seen = {}
+    async def dash(request):
+        seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method)
+        return web.Response(text="dash " + request.path, content_type="text/html", headers={"Content-Security-Policy": "default-src 'self'"})
+    app = web.Application(); app.router.add_route("*", "/{tail:.*}", dash)
+    r = web.AppRunner(app); await r.setup(); await web.TCPSite(r, "127.0.0.1", 18767).start()
+    who = {"email": "owner@example.com"}
+    async def fake_email(_):
+        return who["email"]
+    keep = main.iap_email; main.iap_email = fake_email
+    g = web.Application(); g.cleanup_ctx.append(main.session)
+    g.router.add_get("/desktop/{key}", main.desktop_link)
+    g.router.add_route("GET", "/{tail:.*}", main.dashboard); g.router.add_route("POST", "/{tail:.*}", main.dashboard)
+    gr = web.AppRunner(g); await gr.setup(); await web.TCPSite(gr, "127.0.0.1", 18768).start()
+    base = "http://127.0.0.1:18768"
+    async with aiohttp.ClientSession() as c:
+        async with c.get(f"{base}/api/snapshot") as x:
+            check("the dashboard comes through", "dash /api/snapshot", await x.text())
+            check("its CSP comes through", "default-src 'self'", x.headers.get("Content-Security-Policy"))
+        check("Host is loopback for the dashboard", "localhost", seen["host"])
+        async with c.post(f"{base}/api/refresh", headers={"Origin": base}) as x:
+            check("a same-site POST drops the gateway's own origin", None, seen["origin"])
+        async with c.post(f"{base}/api/refresh", headers={"Origin": "https://evil.test"}) as x:
+            check("a cross-site origin passes through for the dashboard to refuse", "https://evil.test", seen["origin"])
+        async with c.get(f"{base}/desktop/agent-abcd12", allow_redirects=False) as x:
+            check("the dashboard's desktop link goes to /d/", "/d/agent-abcd12", x.headers.get("Location"))
+        main.DASHBOARD_USERS = {"someone@example.com"}
+        async with c.get(f"{base}/") as x:
+            check("an account not on the list: 403", 403, x.status)
+        main.DASHBOARD_USERS = set()
+        who["email"] = None
+        async with c.get(f"{base}/") as x:
+            check("no IAP identity: 403", 403, x.status)
+    main.iap_email = keep
+    await gr.cleanup(); await r.cleanup()
+
+
 async def main_check():
     await jwt_check()
+    await dashboard_check()
     await runner()
     who = {"email": "owner@example.com"}
     async def fake_email(_):
