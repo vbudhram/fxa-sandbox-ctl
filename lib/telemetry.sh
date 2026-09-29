@@ -197,6 +197,14 @@ telemetry_record() {
   if [ "$(printf '%s\n' "$usage" | jq -r '((.input//0)+(.output//0)+(.cache_read//0)+(.cache_write//0))')" = "0" ]; then
     echo "WARN: no transcript found for $key; nothing recorded." >&2; return 1
   fi
+  # A relaunch reads the same transcript as the run it resumes, under a new
+  # launch time, and each relaunch attempt recorded that run again. The same
+  # token counts for the same ticket are the same run.
+  if [ -s "$PIPE_RUNS_FILE" ] && jq -e --arg k "$key" --argjson u "$usage" \
+       'select(.issue == $k and .input == $u.input and .output == $u.output and .cache_read == $u.cache_read
+               and .cache_write == $u.cache_write and .messages == $u.messages)' "$PIPE_RUNS_FILE" >/dev/null 2>&1; then
+    echo "already recorded $key (the same run, relaunched)"; return 0
+  fi
   # The launch log's lifespan, not "now minus launch": `record` can run days
   # after the agent stopped. The launcher deletes the log before each launch, so
   # its birth time is the start. End at the handoff file when present, because

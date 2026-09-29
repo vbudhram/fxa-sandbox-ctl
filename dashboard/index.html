@@ -1429,6 +1429,7 @@ function renderToday() {
           <span><b>${t.prs}</b> PR${t.prs === 1 ? "" : "s"} opened</span>
           <span><b>${t.tickets}</b> ticket${t.tickets === 1 ? "" : "s"}</span>
           <span><b>${usd(t.cost_usd)}</b> spent</span>
+          ${t.jobs?.runs ? `<span title="the passes and triage runs themselves"><b>${usd(t.jobs.cost_usd)}</b> on ${t.jobs.runs} pass${t.jobs.runs === 1 ? "" : "es"}</span>` : ""}
           ${t.median_minutes != null ? `<span>median <b>${t.median_minutes}m</b></span>` : ""}
           <span class="sep"></span><span>runners now <b>${usd(g.runner_hourly_usd)}</b>/h</span>
           ${g.infra_hourly_usd ? `<span title="list prices: manager ${usd(g.infra.manager)}/h, Firecracker host ${usd(g.infra.firecracker_host)}/h">always on <b>${usd(g.infra_hourly_usd)}</b>/h · ${usd(g.infra_hourly_usd * 24)}/day</span>` : ""}

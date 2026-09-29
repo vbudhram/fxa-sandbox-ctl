@@ -32,4 +32,9 @@ telemetry_record FXA-1 >/dev/null 2>&1
 check "transcript writes one row" "1" "$(wc -l < "$PIPE_RUNS_FILE" | tr -d ' ')"
 check "transcript row is priced" "5" "$(jq -r '.cost_usd' "$PIPE_RUNS_FILE")"
 
+# A relaunch reads the same transcript under a new launch time: no second row.
+echo "Launched at: 1790000999" > "$(pipeline_launch_log FXA-1)"
+telemetry_record FXA-1 >/dev/null 2>&1
+check "the same run relaunched writes no second row" "1" "$(wc -l < "$PIPE_RUNS_FILE" | tr -d ' ')"
+
 exit "$fail"

@@ -371,12 +371,17 @@ snapshot_agents_json() {
 # _snapshot_today   Runs recorded today (UTC). The footer keeps all time.
 _snapshot_today() {
   [ -f "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
-  jq -s --arg d "$(date -u +%F)" '
+  # The passes and triage runs themselves (infra/gce/claude-job.sh), today.
+  local jobs; jobs="$(jq -s --arg d "$(date -u +%F)" 'map(select((.at // "") | startswith($d)))
+    | {runs: length, cost_usd: ([.[].cost_usd // 0] | add // 0 | .*100 | round / 100)}' \
+    "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo null)"
+  jq -s --arg d "$(date -u +%F)" --argjson jobs "${jobs:-null}" '
     map(select((.recorded_at // "") | startswith($d))) |
     { runs: length, tickets: ([.[].issue] | unique | length),
       cost_usd: ([.[].cost_usd // 0] | add // 0 | .*100 | round / 100),
       prs: ([.[].pr] | map(select(. != null)) | unique | length),
-      median_minutes: (if length == 0 then null else (([.[].wall_seconds // 0] | sort | .[length/2|floor]) / 60 | round) end) }' \
+      median_minutes: (if length == 0 then null else (([.[].wall_seconds // 0] | sort | .[length/2|floor]) / 60 | round) end),
+      jobs: $jobs }' \
     "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }
 

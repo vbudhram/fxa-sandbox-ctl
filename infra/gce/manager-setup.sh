@@ -192,7 +192,8 @@ User=$U
 WorkingDirectory=$W/fxa-sandbox-ctl
 Environment=$path
 EnvironmentFile=-$W/fxa-sandbox-ctl/.env
-ExecStart=/bin/bash -c 'claude -p --permission-mode auto < $C/$job-prompt.txt'
+# The wrapper also records each run's cost in job-costs.jsonl.
+ExecStart=$W/fxa-sandbox-ctl/infra/gce/claude-job.sh $job $C/$job-prompt.txt
 TimeoutStartSec=3h
 # launch returns at once and runs the agent in the background: the pass ending
 # must not kill it (the default killed every launch seconds after it started).
