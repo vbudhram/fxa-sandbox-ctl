@@ -125,12 +125,14 @@ XML
 printf '#!/bin/sh\nunset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS\nexec dbus-launch --exit-with-session startxfce4\n' > ~/.vnc/xstartup
 chmod +x ~/.vnc/xstartup
 if ! pgrep -u viewer -x Xtigervnc >/dev/null; then
+  # SendPrimary=0: only a real copy (Ctrl+C) leaves the desktop, not every selection.
   tigervncserver :1 -localhost yes -SecurityTypes VncAuth -PasswordFile ~/.vnc/passwd \
-    -geometry 1440x900 -xstartup ~/.vnc/xstartup >/tmp/viewer-vnc.log 2>&1
+    -geometry 1440x900 -xstartup ~/.vnc/xstartup -SendPrimary=0 >/tmp/viewer-vnc.log 2>&1
   DISPLAY=:1 xset s off -dpms 2>/dev/null || true  # no screen blanking
 fi
 # All addresses: the gateway reaches it on the private IP. The GCP firewall
 # admits only the gateway's subnet, and the agent is blocked above.
+DISPLAY=:1 vncconfig -display :1 -set SendPrimary=0 2>/dev/null || true  # a desktop started before that option
 if ! pgrep -u viewer -f 'websockify .*:6080 127.0.0.1:5901' >/dev/null; then
   nohup setsid websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5901 >/tmp/viewer-websockify.log 2>&1 </dev/null &
 fi

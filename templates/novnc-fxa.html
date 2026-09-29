@@ -93,8 +93,8 @@ $('paste').querySelector('button').onclick = () => {
 };
 // Keys, before noVNC sees them. On a Mac, Cmd would reach the desktop as Super,
 // which opens menus and can stay held when the browser drops its key-up; so Cmd
-// never goes through, and Cmd+letter is Ctrl+letter in the desktop. Ctrl or
-// Cmd+V lets the browser fire its paste, with this computer's clipboard.
+// never goes through, and Cmd+letter is Ctrl+letter in the desktop: Cmd+C and
+// Cmd+V copy and paste inside it, with its own clipboard.
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 const ctrl = (k) => {
   rfb.sendKey(0xffe3, 'ControlLeft', true);
@@ -105,19 +105,9 @@ const inField = (e) => e.target instanceof HTMLTextAreaElement; // the page's ow
 window.addEventListener('keydown', (e) => {
   if (inField(e)) return;
   if (e.key === 'Meta') { e.stopImmediatePropagation(); return; }
-  if ((mac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === 'v') { e.stopImmediatePropagation(); return; }
   if (mac && e.metaKey && /^[a-z]$/i.test(e.key)) { e.stopImmediatePropagation(); e.preventDefault(); ctrl(e.key.toLowerCase()); }
 }, true);
 window.addEventListener('keyup', (e) => { if (!inField(e) && (e.key === 'Meta' || (mac && e.metaKey))) e.stopImmediatePropagation(); }, true);
-// The paste: this computer's text onto the desktop's clipboard, then Ctrl+V there.
-// With no text here, Ctrl+V pastes what the desktop already holds.
-document.addEventListener('paste', (e) => {
-  if (inField(e)) return;
-  const t = e.clipboardData?.getData('text/plain');
-  e.preventDefault();
-  if (t) rfb.clipboardPasteFrom(t);
-  ctrl('v');
-});
 
 // A copy in the desktop reaches this page: put it on this computer's clipboard.
 // A browser may refuse that without a click on the page, so a button offers it.
@@ -125,7 +115,7 @@ let clip = '';
 const flash = (text) => { note(text); setTimeout(() => note(''), 2000); };
 async function fromDesktop(text) {
   clip = text;
-  try { await navigator.clipboard.writeText(text); $('copyout').style.display = 'none'; flash('Copied from the desktop'); }
+  try { await navigator.clipboard.writeText(text); $('copyout').style.display = 'none'; }
   catch { $('copyout').style.display = 'block'; }
 }
 $('copyout').onclick = async () => {
