@@ -96,7 +96,8 @@ class ProxyTest(unittest.TestCase):
         status, _ = self.call(tok)
         self.assertEqual(status, 200)
         self.assertEqual(SEEN[-1].get("x-api-key"), "sk-real-key")  # the upstream never sees the run token
-        self.assertNotIn("Accept-Encoding", SEEN[-1])  # a compressed answer would hide its usage
+        # Uncompressed: a compressed answer would hide its usage. http.client sends identity itself.
+        self.assertEqual(SEEN[-1].get("Accept-Encoding", "identity"), "identity")
         self.assertAlmostEqual(self.spent(tok), 2.0)  # 0.5 M input at $4
 
     def test_stream_passes_through_and_charges(self):
