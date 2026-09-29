@@ -1864,6 +1864,8 @@ _cmd_session_boot() {
   elif [ -n "$from" ]; then
     sha="$(session_get "$from" base_sha)"; sha="${sha:-$base_sha}"
     echo "Resuming ${from} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
+  else
+    echo "On main at ${sha:0:10}, fetched $(date -u '+%H:%M') UTC"
   fi
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"

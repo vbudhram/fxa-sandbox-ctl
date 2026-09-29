@@ -405,6 +405,8 @@ _SESSION_CLAUDE_SPLIT='awk -v s=/workspace/.fxa-auto-stream.jsonl -v t=/workspac
 # _session_boot_label <log line>   One boot log line → its step in plain words, or nothing.
 _session_boot_label() {
   case "$1" in
+    "On main at "*) echo "on main at ${1#On main at }" ;;
+    "Resuming "*" at "*) echo "on the earlier base at ${1##* at }" | sed 's/[,.].*//' ;;
     "Creating GCE"*) echo "creating a sandbox" ;;
     Restoring*) echo "restoring a sandbox with FxA running" ;;
     "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
