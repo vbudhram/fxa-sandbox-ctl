@@ -144,7 +144,10 @@ _snapshot_agent_json() {
     ($a | map(.message.content[]? | select(.type=="tool_use")
               | .name + " " + ((.input.command // .input.file_path // .input.pattern // .input.description // "") | tostring)) | last // "") as $tool |
     (map(select(.type=="result")) | last) as $r |
-    ($a | map(.message.usage // {}) |
+    # Claude Code writes one line per content block, each repeating its message'"'"'s
+    # usage: count each message once, by its id.
+    ((($a | map(select(.message.id != null)) | group_by(.message.id) | map(last)) + ($a | map(select(.message.id == null))))
+      | map(.message.usage // {}) |
       { in: (map(.input_tokens // 0) | add // 0), out: (map(.output_tokens // 0) | add // 0),
         cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
         cache_write: (map(.cache_creation_input_tokens // 0) | add // 0) }) as $u |
