@@ -345,6 +345,9 @@
   /* ── stats ── */
   .seg { display:inline-flex; gap:4px; padding:4px; border-radius:8px; background:var(--sunk); }
   .seg button { border:0; background:transparent; min-height:32px; } .seg button[aria-pressed="true"] { background:var(--panel); color:var(--link); font-weight:700; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+  .sfilters { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); margin-top:var(--s3); }
+  .sfilters select, .sfilters input { min-height:32px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:inherit; padding:0 8px; font:inherit; }
+  .sfilters label { display:inline-flex; align-items:center; gap:6px; color:var(--dim); }
   .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:var(--s3); margin:var(--s4) 0; }
   @media (max-width:900px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   .charts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s3); }
@@ -965,7 +968,7 @@ function threadHtml(sel) {
 }
 
 // Stats: run-log totals, fetched on their own cadence.
-let STATS = null, STATS_AT = 0, STATS_RANGE = "all";
+let STATS = null, STATS_AT = 0;
 async function loadStats() {
   if (STATS && Date.now() - STATS_AT < 60000) { renderStats(); return; }
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
@@ -1001,39 +1004,94 @@ const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not reco
 function renderStats() {
   const st = STATS;
   if (!st || st.error) { put("s-stats", head("stats") + `<div class="emptybox">${esc(st?.error || "loading the run log…")}</div>`); return; }
-  const r = st.ranges[STATS_RANGE], n = { all: st.weeks.length, w5: 5, w2: 2 }[STATS_RANGE], weeks = st.weeks.slice(-n);
-  const mx = k => Math.max(...weeks.map(w => w[k])), mr = mx("runs"), ms = mx("spend"), H = 150;
-  const kpi = (lbl, v, sub) => `<div class="scard"><div class="lbl">${lbl}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
-  const lastWeek = st.weeks[st.weeks.length - 1]?.start;
-  const bars = (k, color) => weeks.map((w, i) => { const v = k === "runs" ? w.runs : w.spend, partial = w.start === lastWeek;
-    return `<div class="col"><span class="tip"><b>Week of ${esc(w.label)}${partial ? " (in progress)" : ""}</b><br>${w.runs} runs · ${usd(w.spend)}<br>${usd(w.spend / w.runs)} per run</span>
-      <span class="v">${k === "runs" ? w.runs : "$" + Math.round(w.spend)}</span><div class="bar" data-h="${Math.max(3, Math.round(v / (k === "runs" ? mr : ms) * H))}" style="background:${color};transition-delay:${i * 45}ms;${partial ? "opacity:.6" : ""}"></div>
-      <span class="w">${esc(w.label)}${partial ? " *" : ""}</span></div>`; }).join("");
-  const per = st.weeks.filter(w => w.runs >= 5).map(w => ({ ...w, pr: w.spend / w.runs }));
-  const peak = per.reduce((a, b) => (b.pr > (a?.pr ?? 0) ? b : a), null), latest = per[per.length - 1];
-  const insight = peak && latest && latest !== peak && latest.pr < peak.pr
-    ? `<div class="insight"><b>Cost per run fell ${Math.round((1 - latest.pr / peak.pr) * 100)}%:</b> ${usd(peak.pr)} in the week of ${esc(peak.label)}, ${usd(latest.pr)} in the week of ${esc(latest.label)}.</div>` : "";
-  const seg = [["all", "All time"], ["w5", "5 weeks"], ["w2", "2 weeks"]].map(([k, l]) => `<button data-range="${k}" aria-pressed="${STATS_RANGE === k}">${l}</button>`).join("");
-  put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3)"><h2 style="margin:0">Stats<span class="sub">ai-fixme runs, weeks of ${esc(r.from)} to ${esc(r.to)}</span></h2>
-      <div class="seg" role="group" aria-label="Range" style="margin-left:auto">${seg}</div></div>
-    <div class="kpis">${kpi("Runs", r.runs, "fix, feedback and rebase rounds")}${kpi("Tickets", r.tickets, `up to ${r.max_runs} runs on one ticket`)}${kpi("Spend", usd(r.spend), "estimated from token use")}${kpi("Median run", r.median_min != null ? r.median_min + " min" : null, "launch to handoff")}${kpi("Median per ticket", usd(r.per_ticket), "all runs on a ticket")}</div>
-    <div class="charts"><div class="chart"><h2>Runs per week<span class="note">hover a bar</span></h2><div class="bars">${bars("runs", "var(--info)")}</div></div>
-      <div class="chart"><h2>Spend per week<span class="note">and cost per run</span></h2><div class="bars">${bars("spend", "var(--purple)")}</div></div></div>
-    ${insight}
+  const all = st.rows ?? [];
+  const DAY = 86400000, [lo, hi] = statsBounds(SF.range);
+  const q = SF.q.trim().toLowerCase();
+  const rows = all.filter(r => { const t = Date.parse(r.at); return t >= lo && t < hi
+    && (SF.src === "all" || r.src === SF.src) && (SF.kind === "all" || r.kind === SF.kind)
+    && (SF.model === "all" || r.model === SF.model) && (!q || r.key.toLowerCase().includes(q)); });
+  const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  const spend = sum(rows), keys = new Set(rows.map(r => r.key));
+  // Buckets: days for a short range, weeks (from Monday) for a long one.
+  const first = rows.length ? Math.min(...rows.map(r => Date.parse(r.at))) : Date.now();
+  const start = Math.max(lo === 0 ? first : lo, Math.min(first, lo === 0 ? first : lo)), end = Math.min(hi, Date.now() + 1);
+  const byDay = (end - Math.min(start, end)) <= 45 * DAY;
+  const bucketOf = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); if (!byDay) d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+  const buckets = new Map();
+  for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0 });
+  rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; } });
+  const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
+  const lbl = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const bars = k => bl.map(b => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}</span>
+      <span class="v">${k === "runs" ? (b.runs || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : ms) * H))}" style="background:${k === "runs" ? "var(--info)" : "var(--purple)"};transition:height 400ms"></div>
+      <span class="w">${esc(lbl(b.t))}</span></div>`).join("");
+  const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
+  const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
+  const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", pass: "Passes and triage" };
+  const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? jira(r.name) : `<span class="mono">${esc(r.name)}</span>`;
+  const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
+  const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
+  const seg = STATS_RANGES.map(([k, l]) => `<button data-range="${k}" aria-pressed="${SF.range === k}">${l}</button>`).join("");
+  const filters = `<div class="sfilters">
+      <div class="seg" role="group" aria-label="Date range">${seg}</div>
+      ${SF.range === "custom" ? `<label>From <input type="date" data-f="from" value="${esc(SF.from)}"></label><label>To <input type="date" data-f="to" value="${esc(SF.to)}"></label>` : ""}
+      <select data-f="src" aria-label="Source">${opt("src", "all", "All sources")}${Object.entries(SRC).map(([v, l]) => opt("src", v, l)).join("")}</select>
+      <select data-f="kind" aria-label="Kind">${opt("kind", "all", "All kinds")}${kinds.map(k => opt("kind", k, KIND[k] ?? k)).join("")}</select>
+      <select data-f="model" aria-label="Model">${opt("model", "all", "All models")}${models.map(m => opt("model", m, m)).join("")}</select>
+      <input type="search" data-f="q" placeholder="Ticket or session" value="${esc(SF.q)}" aria-label="Ticket or session">
+      ${statsFiltered() ? `<button data-reset>Clear filters</button>` : ""}</div>`;
+  const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
+  put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">Stats<span class="sub">${esc(range)}</span></h2></div>
+    ${filters}
+    ${rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
+    <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
+      ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
+      ${kpi("Spend", usd(spend), "estimated from tokens")}
+      ${kpi("Per run", usd(spend / rows.length), `median ${usd(med(rows.map(r => r.usd)) ?? 0)}`)}
+      ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
+    <div class="charts"><div class="chart"><h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div></div>
+      <div class="chart"><h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div></div></div>
     <div class="three">
-      <div class="chart"><h2>By run kind<span class="note">all time</span></h2>${st.kinds.map(k => `<div class="kv"><b>${esc(KIND[k.kind] ?? k.kind)}</b><span>${k.runs} runs · avg ${usd(k.avg)} · ${k.median_min} min</span></div>`).join("")}
-        <div class="empty" style="margin-top:var(--s2)">"Not recorded" runs are from before the log kept a kind.</div></div>
-      <div class="chart"><h2>Most expensive tickets<span class="note">all time</span></h2>${st.top.map(t => `<div class="kv">${jira(t.issue)}<span>${t.runs} run${t.runs > 1 ? "s" : ""} · <b>${usd(t.cost)}</b></span></div>`).join("")}</div>
-      <div class="chart"><h2>Models<span class="note">all time</span></h2>${st.models.map(m => `<div class="kv"><span class="mono">${esc(m.model)}</span><b>${m.runs} runs</b></div>`).join("")}
-        <div class="empty" style="margin-top:var(--s2)">Slack sessions are not in this log yet.</div></div>
-    </div>`);
+      <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
+        <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
+      <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
+      <div class="chart"><h2>Models<span class="note">pipeline runs</span></h2>${group("model").filter(g => g.name).sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><span class="mono">${esc(g.name)}</span><b>${g.rs.length} runs · ${usd(g.usd)}</b></div>`).join("") || `<div class="empty">No model recorded for these rows.</div>`}</div>
+    </div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
 }
+// Stats filters, remembered per viewer in this browser.
+const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
+const SF_DEFAULT = { range: "30d", from: "", to: "", src: "all", kind: "all", model: "all", q: "" };
+let SF = { ...SF_DEFAULT, ...(() => { try { return JSON.parse(localStorage.getItem("statsFilter")) || {}; } catch { return {}; } })() };
+const statsFiltered = () => Object.keys(SF_DEFAULT).some(k => SF[k] !== SF_DEFAULT[k]);
+function statsBounds(r) {
+  const DAY = 86400000, d = new Date(); d.setHours(0, 0, 0, 0); const t = d.getTime(), y = d.getFullYear(), m = d.getMonth();
+  switch (r) {
+    case "today": return [t, Infinity];
+    case "yesterday": return [t - DAY, t];
+    case "7d": return [t - 6 * DAY, Infinity];
+    case "30d": return [t - 29 * DAY, Infinity];
+    case "month": return [new Date(y, m, 1).getTime(), Infinity];
+    case "lastmonth": return [new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime()];
+    case "custom": return [SF.from ? new Date(SF.from + "T00:00").getTime() : 0, SF.to ? new Date(SF.to + "T00:00").getTime() + DAY : Infinity];
+    default: return [0, Infinity];
+  }
+}
+function setStatsFilter(patch) {
+  SF = { ...SF, ...patch };
+  try { localStorage.setItem("statsFilter", JSON.stringify(SF)); } catch {}
+  LAST["s-stats"] = ""; renderStats();
+}
 document.addEventListener("click", e => {
   const b = e.target.closest?.("#s-stats [data-range]");
-  if (!b) return;
-  STATS_RANGE = b.dataset.range; LAST["s-stats"] = ""; renderStats();
+  if (b) setStatsFilter({ range: b.dataset.range });
+  if (e.target.closest?.("#s-stats [data-reset]")) setStatsFilter({ ...SF_DEFAULT });
+});
+// change, not input: a redraw on each keystroke would drop the search box's focus.
+document.addEventListener("change", e => {
+  const f = e.target.closest?.("#s-stats [data-f]");
+  if (f) setStatsFilter({ [f.dataset.f]: f.value, ...(f.dataset.f === "src" ? { kind: "all" } : {}) });
 });
 
 // Each agent gets its own fox: the drawing's colours are CSS variables, set per

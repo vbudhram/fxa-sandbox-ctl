@@ -187,6 +187,10 @@ snapshot_stats_json() {
       max_runs: ($r | group_by(.issue) | map(length) | max),
       from: ($r | map(.wk) | min | strftime("%b %-d")), to: ($r | map(.recorded_at) | max | .[0:10]) };
     {
+      # One row per run, for the page to filter by date, source, kind and model.
+      rows: ($all | map({ at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
+               usd: (.cost_usd // 0 | r2), min: ((.wall_seconds // 0) / 60 | round), model: (.model // ""),
+               pr: ((.pr // "") != "") })),
       weeks: ($all | group_by(.wk) | map({ start: (.[0].wk | strftime("%Y-%m-%d")), label: (.[0].wk | strftime("%b %-d")),
                                            runs: length, spend: (map(.cost_usd // 0) | add | r2) })),
       ranges: {
@@ -205,7 +209,20 @@ snapshot_stats_json() {
         median_min: (map(.wall_seconds // 0) | med / 60 | round),
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows
+}
+
+# Slack sessions (not dry runs) and the passes themselves, as rows beside the
+# pipeline's runs, so the page can show the whole spend.
+_stats_add_rows() {
+  local sess jobs f
+  sess="$(for f in "${SESSION_DIR}"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc '
+    map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s
+      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($s.cost // 0),
+          min: ($s.minutes // null), model: "", pr: ((.pr_url // "") != ""), who: (.owner_name // null) })' 2>/dev/null || echo '[]')"
+  jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
+          min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
+  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" '.rows += $s + $j'
 }
 
 # Fix attempts and feedback rounds live in the pipeline's state files.
