@@ -194,7 +194,7 @@ _session_turn() {
   # Every exit below removes $tmp: it holds a copy of the Claude credential.
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
-    _claude_auth_line > "${tmp}/.fxa-auto-token" || [ "$(session_get "$key" runtime)" = codex ] \
+    _claude_auth_line "$name" > "${tmp}/.fxa-auto-token" || [ "$(session_get "$key" runtime)" = codex ] \
       || { echo "ERROR: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN on the host" >&2; exit 1; }
     if [ "$(session_get "$key" runtime)" = codex ]; then
       # Codex keeps its login in ~/.codex/auth.json on the runner; no token ships.

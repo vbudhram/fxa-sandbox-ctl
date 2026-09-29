@@ -175,6 +175,24 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 UNIT
+# The only holder of the Anthropic API key for runners (infra/llm-proxy): they
+# get a per-run token. All addresses: the GCP firewall admits only the runner
+# subnets, and only to this VM's port 8788.
+cat > /etc/systemd/system/fxa-llm-proxy.service <<UNIT
+[Unit]
+Description=fxa-llm-proxy (runners reach Claude through it, :8788)
+Requires=fxa-secrets.service
+After=fxa-secrets.service
+[Service]
+User=$U
+EnvironmentFile=-$W/fxa-sandbox-ctl/.env
+Environment=LLM_PROXY_LISTEN=0.0.0.0:8788
+ExecStart=/usr/bin/python3 $W/fxa-sandbox-ctl/infra/llm-proxy/proxy.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+UNIT
 # The two jobs the fxa-automation skill defines, with the same prompts.
 pass='Run `~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl precheck`. If it prints a line starting `quiet`, `locked`, or `paused`, reply with that one line and stop. Do not load any skill. Otherwise invoke /fxa-ai-fixme and run one full pass using the precheck output as the worklist: take the lock, judge the reconcile and drain lines, sweep review feedback, fill free slots via `freeslots` at most `launchcap` launches. Never merge. Release the lock.'
 triage='FxA ai-fixme escalation triage. Read-only. Do NOT take the pass lock, do NOT launch an agent, do NOT relabel anything. Report only items that need a human decision: tickets blocked awaiting a reporter answer (re-verify each live with `fxa-sandbox-ctl ticket <KEY>`), tickets that exhausted the 2-round feedback cap, done PRs stalled in review 3+ days (name the oldest and its reviewer; lead with this), inflight tickets whose agent run died silently (check `git diff --shortstat` on the slot worktree), and structural blockers (frozen paths, missing credentials, disk below the 25GB launch floor). Output a table of ticket, blocker type, and the decision needed. Omit empty categories. If all are empty, say so in one line.'
@@ -222,6 +240,7 @@ WantedBy=timers.target
 UNIT
 systemctl daemon-reload
 systemctl enable -q fxa-secrets.service
+systemctl enable -q fxa-llm-proxy.service
 
 say "repos (in the background: the FxA clone and yarn install take a while)"
 cat > "$C/provision-repos.sh" <<'REPOS'

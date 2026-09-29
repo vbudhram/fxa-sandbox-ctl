@@ -41,6 +41,7 @@ source "${SCRIPT_DIR}/lib/telemetry.sh"
 source "${SCRIPT_DIR}/lib/snapshot.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
+source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 
 # ── Usage / Help ───────────────────────────────────────────────

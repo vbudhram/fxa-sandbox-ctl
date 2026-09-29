@@ -287,7 +287,10 @@ _setup_egress_firewall() {
   local err rc=0 try
   for try in 1 2; do
   rc=0
-  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" bash -c '
+  # The LLM proxy on the manager (FXA_LLM_PROXY_URL), as ip:port: the one private
+  # address a runner may reach.
+  local llm; llm="$(printf '%s' "${FXA_LLM_PROXY_URL:-}" | sed -nE 's#^https?://([0-9.]+):([0-9]+)/?$#\1:\2#p')"
+  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" FXA_LLM="$llm" bash -c '
     # Start from an empty OUTPUT chain, so a second run applies the same rules
     # instead of appending allows after the REJECT.
     iptables -F OUTPUT
@@ -303,7 +306,8 @@ _setup_egress_firewall() {
       iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
     done
 
-    # Private ranges: no probing of the host network.
+    # Private ranges: no probing of the host network, except the LLM proxy.
+    [ -n "$FXA_LLM" ] && iptables -A OUTPUT -d "${FXA_LLM%:*}" -p tcp --dport "${FXA_LLM#*:}" -j ACCEPT
     iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
     iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
     iptables -A OUTPUT -d 192.168.0.0/16 -j DROP
@@ -576,11 +580,15 @@ with open(settings_path, \"w\") as f:
 
 # ── Security: Ephemeral token injection ───────────────────────
 
-# _claude_auth_line   The line a runner sources to reach Claude: the Anthropic
-# API key when one is set, else the subscription's setup-token. Only one, so
-# the runner never guesses which one Claude Code prefers. Fails when neither is set.
+# _claude_auth_line [run]   The line a runner sources to reach Claude. With
+# FXA_LLM_PROXY_URL and a run name: the proxy's address and the run's own
+# token, so the runner never holds the key. Else the Anthropic API key when one
+# is set, else the subscription's setup-token. Fails when there is none.
 _claude_auth_line() {
-  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then printf 'export ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
+  if [ -n "${FXA_LLM_PROXY_URL:-}" ] && [ -n "${1:-}" ]; then
+    local tok; tok="$(llm_token_for "$1")" || return 1
+    printf 'export ANTHROPIC_BASE_URL=%s\nexport ANTHROPIC_API_KEY=%s\n' "$FXA_LLM_PROXY_URL" "$tok"
+  elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then printf 'export ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
   elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$CLAUDE_CODE_OAUTH_TOKEN"
   else return 1; fi
 }
@@ -589,9 +597,9 @@ _inject_claude_auth() {
   # The file reaches /workspace through the tart mount or _put_run_files on gce;
   # the launch script sources and deletes it. No in-VM sudo: after hardening,
   # that channel is unreliable.
-  local token_file="$1/.fxa-auto-token"
-  ( umask 077; _claude_auth_line | slot_write "$token_file" )
-  echo "  Claude credential written to ${token_file} ($( [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "API key" || echo "setup-token"))."
+  local token_file="$1/.fxa-auto-token" run="${2:-}"
+  ( umask 077; _claude_auth_line "$run" | slot_write "$token_file" )
+  echo "  Claude credential written to ${token_file} ($( [ -n "${FXA_LLM_PROXY_URL:-}" ] && [ -n "$run" ] && echo "a run token for the proxy" || { [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "API key"; } || echo "setup-token"))."
 }
 
 # _worktree_gitdir <workspace>   The parent .git of a worktree, or empty.
@@ -768,7 +776,7 @@ agent_run() {
   vm_exec "$name" sudo bash -c "echo '${guide_b64}' | base64 -d > /etc/vm-agent-guide.md && chmod 644 /etc/vm-agent-guide.md" 2>/dev/null \
     || echo "  WARN: could not send the VM guide; the image's copy stays" >&2
   runtime_setup_config "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
-  runtime_inject_auth "$workspace_dir" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
+  runtime_inject_auth "$workspace_dir" "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
 
   # Step 10: Start the agent inside a screen session in the VM
   _write_screenrc "$name"
@@ -888,7 +896,7 @@ agent_switch() {
 
   # Step 8: Re-stage credentials for the new workspace
   runtime_load || return 1
-  runtime_inject_auth "$new_workspace" || return 1
+  runtime_inject_auth "$new_workspace" "$name" || return 1
 
   # Step 9: Start a new agent screen session
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
@@ -957,7 +965,7 @@ agent_attach() {
   local NAME WORKSPACE CPU MEMORY IP STARTED
   if [ -f "${LOG_DIR}/${name}.meta" ]; then
     source "${LOG_DIR}/${name}.meta"
-    [ -n "${WORKSPACE:-}" ] && runtime_attach_hook "$WORKSPACE"
+    [ -n "${WORKSPACE:-}" ] && runtime_attach_hook "$WORKSPACE" "$name"
   fi
 
   # `screen -x` multi-attaches, so the orchestrator's attach and an ad-hoc one coexist.
@@ -1076,6 +1084,7 @@ agent_stop() {
 
   echo "Stopping agent '${name}'..."
   _runner_postmortem "$name"
+  llm_token_revoke "$name"
 
   # Stop the agent gracefully through screen.
   vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true
