@@ -339,7 +339,7 @@ _session_watch() {
 # The session cap. With Firecracker slots on it is at least the slot count
 # (FXA_FC_SLOTS, the host's FC_SLOTS): a slot costs nothing extra while it waits.
 _session_cap() {
-  local c="${FXA_SESSION_MAX:-2}"
+  local c="${FXA_SESSION_MAX:-4}"
   [ -n "${FXA_FC_HOST:-}" ] && [ "${FXA_FC_SLOTS:-4}" -gt "$c" ] && c="${FXA_FC_SLOTS:-4}"
   echo "$c"
 }
