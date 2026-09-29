@@ -354,12 +354,21 @@ _pipeline_stalled_reason() {
   #    stall costs a slot and a relaunch.
   [ "$elapsed" -ge $(( ${PIPE_STALL_MINUTES:-20} * 60 )) ] || return 1
   [ -n "$wt" ] || return 1
-  _worktree_pull_if_remote "$wt"
-  # `grep -c` prints 0 AND exits non-zero on no match, so `|| true` and one line.
-  files="$(git -C "$wt" status --porcelain 2>/dev/null \
-           | grep -vcE '^\?\? \.fxa-' || true)"
-  files="$(printf '%s' "$files" | head -1 | tr -dc '0-9')"
-  commits="$(git -C "$wt" log --oneline "origin/${FXA_WORKTREE_BASE}..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${FXA_VM_BACKEND:-tart}" = gce ]; then
+    # Ask the runner for the two counts. Pulling the whole tree for them took
+    # over a minute a call, and every dashboard refresh made one per run.
+    local out
+    out="$(vm_exec_as_agent "$name" "cd /workspace && { git status --porcelain | grep -vcE '^\?\? \.fxa-' || true; } && git log --oneline 'origin/${FXA_WORKTREE_BASE}..HEAD' | wc -l" 2>/dev/null)" || return 1
+    files="$(printf '%s\n' "$out" | sed -n 1p | tr -dc '0-9')"
+    commits="$(printf '%s\n' "$out" | sed -n 2p | tr -dc '0-9')"
+    [ -n "$files" ] && [ -n "$commits" ] || return 1  # could not ask: not a stall
+  else
+    # `grep -c` prints 0 AND exits non-zero on no match, so `|| true` and one line.
+    files="$(git -C "$wt" status --porcelain 2>/dev/null \
+             | grep -vcE '^\?\? \.fxa-' || true)"
+    files="$(printf '%s' "$files" | head -1 | tr -dc '0-9')"
+    commits="$(git -C "$wt" log --oneline "origin/${FXA_WORKTREE_BASE}..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  fi
   if [ "${files:-0}" -eq 0 ] && [ "${commits:-0}" -eq 0 ]; then
     printf 'no-motion'; return 0
   fi
