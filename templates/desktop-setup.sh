@@ -30,7 +30,8 @@ v="$(id -u viewer)"; a="$(id -u agent)"
 # At the top of the chain: the agent's egress rules end with an ACCEPT for
 # everyone else, so rules appended after it never match. Drop any older viewer
 # rules first, so a rerun also fixes a runner set up in the wrong order.
-iptables -S OUTPUT | grep -- "--uid-owner $v " | sed 's/^-A /-D /' | while read -r r; do eval "iptables $r"; done
+# No older rules on a fresh runner: grep finds nothing, which is not a failure.
+iptables -S OUTPUT | { grep -- "--uid-owner $v " || true; } | sed 's/^-A /-D /' | while read -r r; do eval "iptables $r"; done
 iptables -I OUTPUT 1 -m owner --uid-owner "$v" -j REJECT
 # The content server links to the VM's own address, not localhost.
 for ip in $(hostname -I); do iptables -I OUTPUT 1 -m owner --uid-owner "$v" -d "$ip" -j ACCEPT; done
