@@ -317,6 +317,44 @@ _SESSION_STEPS_JQ="if .type == \"assistant\" then (.message.content[]? | ${_SESS
   then (.item | ${_SESSION_CODEX_STEP_JQ})
   else empty end"
 
+# The live status's own events, from one Claude transcript line: the main
+# agent's todo list and subagents, every edit with its line counts, and test,
+# lint and type-check counts read from the last 4 KB of a tool's output. Tool
+# output itself never leaves: only the counts.
+_SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
+  | if .type == "assistant" then (.message.content[]? | select(.type? == "tool_use") | .input as $i | .id as $id
+      | if .name == "TodoWrite" then (select($p == null) | {type: "todos", items: [($i.todos // [])[]
+            | {content: (.content // "" | tostring | .[0:200]), status: (.status // "pending" | tostring), active: (.activeForm // "" | tostring | .[0:200])}]})
+        elif .name == "Agent" or .name == "Task" then (select($p == null) | {type: "subagent_start", id: $id, description: ($i.description // "" | tostring | .[0:120])})
+        elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then
+          ((if .name == "MultiEdit" then ($i.edits // []) elif .name == "Write" then [{new_string: $i.content}] else [$i] end) as $e
+          | {type: "edit", file: ($i.file_path // "" | tostring | sub("^(/workspace|/home/agent/fxa)/"; "")),
+             added: ([$e[] | .new_string // "" | tostring | split("\n") | length] | add // 0),
+             removed: ([$e[] | .old_string // null | select(. != null) | tostring | split("\n") | length] | add // 0)})
+        else empty end)
+    elif .type == "user" and $p == null then (.message.content[]? | select(type == "object" and .type == "tool_result") | .tool_use_id as $id
+      | ((.content // "") | if type == "array" then map(.text? // "") | join("\n") else tostring end | .[-4096:]) as $o
+      | {type: "tool_done", id: $id, ok: (.is_error != true)},
+        (([$o | scan("Tests:\\s+(?:(\\d+) failed, )?(?:\\d+ skipped, )?(?:\\d+ todo, )?(\\d+) passed")] | last) as $j
+         | ([$o | scan("(\\d+) passing")] | last) as $m
+         | if $j then {type: "tests", passed: ($j[1] | tonumber), failed: ($j[0] // "0" | tonumber)}
+           elif $m then {type: "tests", passed: ($m[0] | tonumber), failed: (([$o | scan("(\\d+) failing")] | last // ["0"])[0] | tonumber)}
+           else empty end),
+        (([$o | scan("(\\d+) problems? \\((\\d+) errors?, (\\d+) warnings?\\)")] | last) as $l
+         | select($l) | {type: "lint", errors: ($l[1] | tonumber), warnings: ($l[2] | tonumber)}),
+        (([$o | scan("Found (\\d+) errors?")] | last) as $t | select($t) | {type: "types", errors: ($t[0] | tonumber)}))
+    else empty end'
+
+# The watch: one runner line in, its events out. {type: "result"} at the turn's
+# end; {type: "text_start"} and {type: "text", text} as the main agent writes;
+# {type: "step", text} per tool call or message; then the live-status events.
+_SESSION_WATCH_JQ="fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
+  elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
+    | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
+      elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
+      else empty end)
+  else ((${_SESSION_STEPS_JQ} | {type: \"step\", text: .}), (${_SESSION_LIVE_JQ})) end"
+
 # _session_activity   stream-json lines on stdin → what the agent did last, one line.
 _session_activity() {
   jq -R -s -r "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null
@@ -329,12 +367,7 @@ _session_activity() {
 # {type: "text_start"} when a new block of text begins (not a subagent's).
 _session_watch() {
   _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -q -n 0 -F /workspace/.fxa-auto-claude.jsonl /workspace/.fxa-auto-stream.jsonl 2>/dev/null' \
-    | jq --unbuffered -R -c "fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
-        elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
-          | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
-            elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
-            else empty end)
-        else (${_SESSION_STEPS_JQ} | {type: \"step\", text: .}) end" \
+    | jq --unbuffered -R -c "$_SESSION_WATCH_JQ" \
     || true # the watch ends when its runner stops or after 30 min; neither is a failure
 }
 
