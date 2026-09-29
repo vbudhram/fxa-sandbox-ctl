@@ -553,6 +553,7 @@ _finish_push_and_pr() {
   if [ -n "$existing" ]; then
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
+    echo "PR updated: ${pr_url}" >&2
     # Never change an existing PR's title or body: a round's handoff describes
     # only that round, and the squash-merge would put its subject in main.
     local pr_num="${existing##*/}"
@@ -607,6 +608,10 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
 
   # gh prints the URL on the last line.
   pr_url="$(printf '%s\n' "$pr_url" | tail -1)"
+  # In the log before the runner is released: progress reads the PR from it, and
+  # agent_stop spares this launcher only once the log has the PR. Without it the
+  # launcher killed itself at the release and left the runner up.
+  echo "PR opened: ${pr_url}" >&2
 
   finish_add_reviewers "$pr_url"
 

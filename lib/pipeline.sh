@@ -386,7 +386,7 @@ pipeline_progress() {
     err="$(grep -m1 -E '^ERROR|fatal:|rejected' "$log" || true)"
   fi
   if [ -n "$err" ]; then echo "$key error ${err}"; return 0; fi
-  if grep -q "Pushing " "$log"; then echo "$key pushed"; return 0; fi
+  if grep -qE "Pushing |Committing and pushing" "$log"; then echo "$key pushed"; return 0; fi
   if grep -q "Squashing " "$log"; then echo "$key squashing"; return 0; fi
   if grep -q "Watching for" "$log"; then
     # Stall detection lives here because reconcile reads `progress` for every
