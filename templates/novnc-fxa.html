@@ -19,6 +19,8 @@
     background: rgba(43, 42, 51, .9); color: #fbfbfe; font: 14px system-ui; display: none; z-index: 3; }
   #paste { position: fixed; right: 12px; bottom: 68px; display: none; gap: 6px; z-index: 3; }
   #paste textarea { width: min(70vw, 360px); height: 80px; font: 14px system-ui; }
+  #copyout { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 14px; border: 0; border-radius: 8px;
+    background: #0060df; color: #fbfbfe; font: 14px system-ui; cursor: pointer; display: none; z-index: 4; }
 </style>
 </head>
 <body>
@@ -26,6 +28,7 @@
 <textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
 <div id="paste"><textarea placeholder="Text to paste into the desktop"></textarea><button>Send</button></div>
 <div id="note"></div>
+<button id="copyout">Copy from the desktop</button>
 <div id="tools">
   <button id="bkbd" title="Keyboard" aria-label="Show the keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
   <button id="bpaste" title="Paste" aria-label="Paste text into the desktop"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></button>
@@ -50,6 +53,7 @@ function connect() {
   rfb.qualityLevel = 6;
   rfb.compressionLevel = 2;
   rfb.addEventListener('connect', () => note(''));
+  rfb.addEventListener('clipboard', (e) => fromDesktop(e.detail.text));
   rfb.addEventListener('disconnect', (e) => {
     note(e.detail.clean ? 'Disconnected. Reconnecting…' : 'Connection lost. Reconnecting…');
     setTimeout(connect, 2000);
@@ -86,6 +90,20 @@ $('paste').querySelector('button').onclick = () => {
   $('paste').style.display = 'none';
   note('Copied to the desktop clipboard. Press Ctrl+V there.');
   setTimeout(() => note(''), 2500);
+};
+// A copy in the desktop reaches this page: put it on this computer's clipboard.
+// A browser may refuse that without a click on the page, so a button offers it.
+let clip = '';
+const flash = (text) => { note(text); setTimeout(() => note(''), 2000); };
+async function fromDesktop(text) {
+  clip = text;
+  try { await navigator.clipboard.writeText(text); $('copyout').style.display = 'none'; flash('Copied from the desktop'); }
+  catch { $('copyout').style.display = 'block'; }
+}
+$('copyout').onclick = async () => {
+  $('copyout').style.display = 'none';
+  try { await navigator.clipboard.writeText(clip); flash('Copied from the desktop'); }
+  catch { flash('This browser blocked the copy'); }
 };
 $('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
 </script>
