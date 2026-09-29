@@ -49,7 +49,13 @@ readonly VM_SSH_USER="agent"
 # ConnectTimeout also bounds the wait for the ssh banner, and an IAP tunnel
 # often needs more than 5 s for that. ServerAlive stops a tunnel that dies
 # mid-session from hanging the rsync and every pass behind it.
-VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=${FXA_SSH_CONNECT_TIMEOUT:-30} -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+# Direct (the manager VM, on the private network) connects in under a second,
+# so it waits less: 10 s to connect, and a dead connection is dropped after
+# 15 s, which also bounds a call that lands on a dead kept-open connection.
+# The margin is for a runner busy with an install, which answers slowly.
+if [ "${FXA_GCE_SSH_DIRECT:-}" = 1 ]; then _ssh_ct=10 _ssh_alive=5; else _ssh_ct=30 _ssh_alive=10; fi
+VM_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=${FXA_SSH_CONNECT_TIMEOUT:-$_ssh_ct} -o ServerAliveInterval=${_ssh_alive} -o ServerAliveCountMax=3"
+unset _ssh_ct _ssh_alive
 
 # GCE backend. Project is required when FXA_VM_BACKEND=gce.
 FXA_GCE_PROJECT="${FXA_GCE_PROJECT:-}"
