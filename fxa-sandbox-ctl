@@ -639,6 +639,9 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
 2. $(runtime_skill_ref fxa-verify) --run --plan /workspace/.fxa-test-plan.json shows no FAIL
    and no NONE. Never run a whole package suite: it OOM-kills this
    8GB runner. CI runs the full suite.
+   Run it, and every long check, in the foreground with a timeout. This run
+   ends when you end a reply: a reply that says you will wait for a background
+   command ends the run and kills that command.
 3. Lint passes on every changed file: the step 2 run lints them with eslint.
    Fix every error and re-run.
 ${step4}
