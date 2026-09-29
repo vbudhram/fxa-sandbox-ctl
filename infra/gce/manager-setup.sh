@@ -199,11 +199,13 @@ TimeoutStartSec=3h
 KillMode=process
 UNIT
 done
+# Quiet hours 20:00-07:00 New York: no pass starts, so nothing new launches.
+# Runs already going finish on their own; reconcile waits for the morning.
 cat > /etc/systemd/system/fxa-pass.timer <<'UNIT'
 [Unit]
-Description=fxa-ai-fixme pass at :09, :29 and :49
+Description=fxa-ai-fixme pass at :09, :29 and :49, 07:09-19:49 New York
 [Timer]
-OnCalendar=*-*-* *:09,29,49:00
+OnCalendar=*-*-* 07..19:09,29,49:00 America/New_York
 Persistent=false
 [Install]
 WantedBy=timers.target
