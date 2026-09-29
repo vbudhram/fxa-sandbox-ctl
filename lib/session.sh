@@ -60,6 +60,8 @@ engineer's to make. A question or an investigation needs no plan: just answer.
 Every turn, including later ones:
 - Before your first tool call, write one short sentence to the engineer that
   says what you will do first. The thread shows it at once, while you work.
+- For work with three or more steps, keep a todo list with the TodoWrite tool,
+  and mark each item done when you finish it. The host shows it as your progress.
 - Do not commit or push, and do not run 'gh'. The host does that.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
