@@ -2,7 +2,8 @@
 
 This is the operations manual for an AI agent inside the FxA sandbox VM. The
 host sends a fresh copy at every launch, so it matches the controller that
-started you. For FxA domain knowledge, read `/workspace/ai/AGENTS.md`.
+started you. For FxA domain knowledge, read `/workspace/ai/AGENTS.md` if it exists.
+Chat sessions do not have it; do not report that it is missing.
 
 ## 1. Where you are
 

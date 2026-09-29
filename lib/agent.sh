@@ -516,7 +516,7 @@ You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM).
 First, read `/etc/vm-agent-guide.md`, the operations manual. It covers the
 backend you are on, the network allowlist, what the host refuses to ship, the
 stack and its ports, and how to verify. For FxA itself, read
-`/workspace/ai/AGENTS.md` and the rules in `/workspace/.claude/rules/`.
+`/workspace/ai/AGENTS.md` (if it exists) and the rules in `/workspace/.claude/rules/`.
 
 What trips agents most often:
 - You cannot commit or push, and there is no `gh`. The host commits, signs and
