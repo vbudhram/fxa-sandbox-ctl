@@ -37,6 +37,9 @@ net_up() {
   ip netns exec "$ns" iptables -t nat -A PREROUTING -i eth-ns -d "$ip" -j DNAT --to-destination "$GUEST_IP"
   ip netns exec "$ns" iptables -t nat -A POSTROUTING -o eth-ns -s "$GUEST_IP" -j SNAT --to-source "$ip"
   ip route replace "$ip/32" via "10.200.$n.2"
+  # A reboot drops the host's NAT rule, and without it no slot reaches the internet.
+  iptables -t nat -C POSTROUTING -s 10.42.16.0/24 ! -d 10.42.0.0/16 -j MASQUERADE 2>/dev/null \
+    || iptables -t nat -A POSTROUTING -s 10.42.16.0/24 ! -d 10.42.0.0/16 -j MASQUERADE
 }
 net_down() {
   ip route del "$(slot_ip "$1")/32" 2>/dev/null || true
