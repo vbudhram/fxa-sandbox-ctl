@@ -34,6 +34,8 @@ PRICES = [("claude-fable-5-1", (10, 50, 12.5, 0.25)), ("claude-fable-5", (10, 50
           ("claude-sonnet-5", (2, 10, 2.5, 0.2)), ("claude-haiku-4-5", (1, 5, 1.25, 0.1))]
 UNKNOWN = (10, 50, 12.5, 1)  # the dearest row: an unknown model never looks cheap
 HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization", "content-length", "host"}
+# Not asked for: a compressed stream hides the usage the proxy counts.
+DROP = HOP | {"x-api-key", "authorization", "accept-encoding"}
 TOKEN_RE = re.compile(r"^fxl_[A-Za-z0-9]{32}$")
 
 locks, locks_guard, local = {}, threading.Lock(), threading.local()
@@ -119,7 +121,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"]:
             return self.refuse(429, "rate_limit_error", "fxa-llm-proxy: this run reached its spend cap of $%s" % rec["cap_usd"])
         body = self.rfile.read(int(self.headers.get("content-length", 0) or 0))
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP | {"x-api-key", "authorization"}}
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         headers["x-api-key"] = KEY
         for attempt in (1, 2):  # a kept-open connection the far end closed: retry once on a new one
             try:
@@ -179,6 +181,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             charge(tok, model, usage)
 
     do_GET = do_POST = handle_any
+
+    def do_HEAD(self):
+        # Claude Code's reachability check; answered here, nothing forwarded.
+        self.send_response(200 if urllib.parse.urlsplit(self.path).path == "/api/hello" else 404)
+        self.end_headers()
 
 
 def main():
