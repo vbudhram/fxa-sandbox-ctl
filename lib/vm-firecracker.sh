@@ -5,6 +5,8 @@
 # Other runners stay GCE instances. Sourced by vm-gce.sh: ssh, put and pull are
 # the GCE ones, pointed at the slot's routed address by a per-host ssh entry.
 [ -n "${FXA_FC_HOST:-}" ] || return 0
+# A stopped host (its 12h run limit, or by hand) means GCE runners, not failed sessions.
+timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null || { unset FXA_FC_HOST; return 0; }
 [ -n "${_FXA_VM_FC_LOADED:-}" ] && return 0
 _FXA_VM_FC_LOADED=1
 
