@@ -60,8 +60,10 @@ engineer's to make. A question or an investigation needs no plan: just answer.
 Every turn, including later ones:
 - Before your first tool call, write one short sentence to the engineer that
   says what you will do first. The thread shows it at once, while you work.
-- For work with three or more steps, keep a todo list with the TodoWrite tool,
-  and mark each item done when you finish it. The host shows it as your progress.
+- For work with three or more steps, keep a todo list in /workspace/.fxa-todo.md:
+  one line per step, '- [ ] step', '- [>] step' for the one you are on, and
+  '- [x] step' when done. Rewrite the whole file with Write each time it changes.
+  The thread shows it as your progress.
 - Do not commit or push, and do not run 'gh'. The host does that.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
@@ -293,6 +295,7 @@ _session_turn_running() {
 _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
   | (($i.file_path // $i.path // "") | tostring | split("/") | last) as $f
   | if .name == "Read" then "Reading " + $f
+    elif (.name == "Write" or .name == "Edit") and $f == ".fxa-todo.md" then "Updating the plan"
     elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then "Editing " + $f
     elif .name == "Grep" then "Searching for \"" + ($i.pattern // "" | tostring) + "\""
     elif .name == "Glob" then "Finding files " + ($i.pattern // "" | tostring)
@@ -318,7 +321,8 @@ _SESSION_STEPS_JQ="if .type == \"assistant\" then (.message.content[]? | ${_SESS
   else empty end"
 
 # The live status's own events, from one Claude transcript line: the main
-# agent's todo list and subagents, every edit with its line counts, and test,
+# agent's todo list (its /workspace/.fxa-todo.md, or TodoWrite where Claude Code
+# has it) and subagents, every edit with its line counts, and test,
 # lint and type-check counts read from the last 4 KB of a tool's output. Tool
 # output itself never leaves: only the counts.
 _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
@@ -326,6 +330,8 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
       | if .name == "TodoWrite" then (select($p == null) | {type: "todos", items: [($i.todos // [])[]
             | {content: (.content // "" | tostring | .[0:200]), status: (.status // "pending" | tostring), active: (.activeForm // "" | tostring | .[0:200])}]})
         elif .name == "Agent" or .name == "Task" then (select($p == null) | {type: "subagent_start", id: $id, description: ($i.description // "" | tostring | .[0:120])})
+        elif ($i.file_path // "" | tostring | endswith("/.fxa-todo.md")) then (select($p == null and .name == "Write") | {type: "todos", items: [($i.content // "" | tostring | split("\n")[]
+            | capture("^\\s*[-*] \\[(?<m>[ xX>~])\\] +(?<t>.+)$")? | {content: (.t | .[0:200]), status: ({"x": "completed", "X": "completed", ">": "in_progress", "~": "in_progress"}[.m] // "pending"), active: (.t | .[0:200])})]})
         elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then
           ((if .name == "MultiEdit" then ($i.edits // []) elif .name == "Write" then [{new_string: $i.content}] else [$i] end) as $e
           | {type: "edit", file: ($i.file_path // "" | tostring | sub("^(/workspace|/home/agent/fxa)/"; "")),

@@ -336,5 +336,10 @@ check "watch: a subagent's tool output is not counted" "0" "$(jq '[.[] | select(
 check "watch: tool results are marked done" 't1:true t2:true t3:false t4:true' "$(jq -r '[.[] | select(.type == "tool_done") | "\(.id):\(.ok)"] | join(" ")' <<< "$w")"
 check "watch: a codex item is a step only" '{"type":"step","text":"Editing b.ts"}' "$(echo '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"a/b.ts"}]}}' | jq -R -c "$_SESSION_WATCH_JQ")"
 check "watch: the result ends it" "result" "$(jq -r 'last | .type' <<< "$w")"
+todo="$(jq -n -c '{type: "assistant", parent_tool_use_id: null, message: {content: [{type: "tool_use", id: "w1", name: "Write",
+  input: {file_path: "/workspace/.fxa-todo.md", content: "# Plan\n- [x] Find it\n- [>] Fix it\n- [ ] Test it\nnot a todo"}}]}}' | jq -R -c "$_SESSION_WATCH_JQ" | jq -s -c '.')"
+check "watch: the todo file is the plan" 'Find it:completed|Fix it:in_progress|Test it:pending' "$(jq -r '[.[] | select(.type == "todos") | .items[] | "\(.content):\(.status)"] | join("|")' <<< "$todo")"
+check "watch: the todo file is not an edit, and its step says so" 'Updating the plan|0' "$(jq -r '"\(.[] | select(.type == "step") | .text)|\([.[] | select(.type == "edit")] | length)"' <<< "$todo")"
+
 
 exit "$fail"
