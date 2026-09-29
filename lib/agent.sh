@@ -1042,6 +1042,8 @@ agent_stop() {
   # to commit the same slot. Not a CI watcher: past the PR it only reads GitHub.
   local key; key="$(printf '%s' "$name" | tr 'a-z' 'A-Z')"
   pgrep -f "jira ${key} " 2>/dev/null | while read -r pid; do
+    # Never this process: a relaunch stops the ticket's earlier runner itself.
+    [ "$pid" = "$$" ] && continue
     grep -q 'pull/' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
   done || true  # no launcher: pgrep exits 1, and under pipefail and set -e that ended stop before the VM went
 

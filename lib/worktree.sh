@@ -512,10 +512,19 @@ worktree_prepare_for_issue() {
     path="$(worktree_create_named "$named_slot" "$base")" || return 1
     local busy_agent
     busy_agent="$(_worktree_agent_for_workspace "$path")"
+    # This ticket's own earlier runner is a relaunch (a stalled or cut-off run):
+    # keep its tree in the slot, then stop it, so the new run resumes that work.
+    if [ -n "$busy_agent" ] && [ "$busy_agent" = "$branch" ]; then
+      echo "Relaunch: stopping this ticket's earlier runner '${busy_agent}' after saving its tree..." >&2
+      _worktree_pull_if_remote "$path" >&2 || true
+      agent_stop "$busy_agent" >&2 || { echo "ERROR: could not stop '${busy_agent}'." >&2; return 1; }
+      busy_agent=""
+    fi
     if [ -n "$busy_agent" ]; then
       # Two agents on one worktree corrupt each other. Use /dev/tty because
       # callers capture stdout with $( ), which defeats `[ -t 1 ]`.
-      if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+      # The device file passes -r and -w even with no terminal; opening it tells.
+      if { : </dev/tty; } 2>/dev/null; then
         {
           echo ""
           echo "WARNING: agent '${busy_agent}' is actively running on ${path}."
