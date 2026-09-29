@@ -102,6 +102,9 @@ _install_ssh_key() {
   local key_dir="${LOG_DIR}/ssh/${name}"
 
   mkdir -p "${key_dir}"
+  # A relaunch finds the earlier run's key; ssh-keygen would ask to overwrite
+  # it, and a background launch has no terminal to answer.
+  rm -f "${key_dir}/id_ed25519" "${key_dir}/id_ed25519.pub"
   ssh-keygen -t ed25519 -f "${key_dir}/id_ed25519" -N "" -q
 
   local pubkey
@@ -688,7 +691,8 @@ agent_run() {
   echo ""
   echo "=== Starting agent '${name}' ==="
   echo "  Workspace: ${workspace_dir}"
-  echo "  Resources: ${cpu} vCPU, $((memory / 1024))GB RAM"
+  # Tart sizes its VM here; on GCE the clone step names the machine or slot.
+  [ "$FXA_VM_BACKEND" = tart ] && echo "  Resources: ${cpu} vCPU, $((memory / 1024))GB RAM"
   echo ""
 
   # Step 1: Clone the golden image. gce reads the branch from metadata at boot.
@@ -1034,6 +1038,25 @@ agent_logs() {
   fi
 }
 
+# _runner_postmortem <name>   What the runner saw, logged before it is deleted:
+# its own logs go with it. An out-of-memory kill is also recorded as an error,
+# so it reaches the dashboard. Best effort: a runner that is gone says nothing.
+_runner_postmortem() {
+  local name="$1" out
+  [ "$FXA_VM_BACKEND" = gce ] || return 0
+  # shellcheck disable=SC2016  # expanded on the runner
+  out="$(vm_exec "$name" bash -c 'echo "load (1/5/15 min): $(cut -d" " -f1-3 /proc/loadavg)"
+    free -m | awk "/^Mem:/ {print \"memory: \" \$3 \" of \" \$2 \" MB used\"} /^Swap:/ {print \"swap: \" \$3 \" MB used\"}"
+    dmesg 2>/dev/null | grep -E "Out of memory: Killed process" | tail -3
+    journalctl -u ssh --no-pager -o cat 2>/dev/null | grep -E "MaxStartups throttling|past MaxStartups" | tail -2' 2>/dev/null)" || return 0
+  [ -n "$out" ] || return 0
+  echo "Runner '${name}' before it goes:"
+  printf '%s\n' "$out" | sed 's/^/  /'
+  local oom; oom="$(printf '%s\n' "$out" | grep -m1 'Out of memory' || true)"
+  [ -z "$oom" ] || errors_record runner oom "$name" "runner memory" "${oom}" "" 2>/dev/null || true
+  return 0
+}
+
 agent_stop() {
   local name="$1"
   # The name becomes rm -rf paths below; `stop ../..` must not reach outside LOG_DIR.
@@ -1052,6 +1075,7 @@ agent_stop() {
   done || true  # no launcher: pgrep exits 1, and under pipefail and set -e that ended stop before the VM went
 
   echo "Stopping agent '${name}'..."
+  _runner_postmortem "$name"
 
   # Stop the agent gracefully through screen.
   vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true

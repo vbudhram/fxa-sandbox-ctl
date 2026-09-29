@@ -646,9 +646,11 @@ finish_add_reviewers() {
       if gh api -X POST "repos/${owner_repo}/pulls/${num}/requested_reviewers" \
            -f "team_reviewers[]=${team}" >/dev/null 2>&1; then
         echo "  Requested review from ${team}." >&2
+      elif gh api "repos/${owner_repo}/pulls/${num}/requested_reviewers" --jq '.teams[].slug' 2>/dev/null | grep -qx "$team"; then
+        # The common case: CODEOWNERS requested the team when the PR opened.
+        echo "  ${team} is already requested (CODEOWNERS)." >&2
       else
-        # Already-requested is the common case: CODEOWNERS covers most PRs.
-        echo "  NOTE: review request for ${team} not added (already requested, or no permission)." >&2
+        echo "  WARN: could not request review from ${team}." >&2
       fi
     fi
   fi
@@ -806,8 +808,20 @@ finish_watch_ci() {
   echo "Watching CI checks on ${pr_url}" >&2
   echo "(Ctrl-C stops the watcher; CI keeps running on GitHub.)" >&2
 
-  # Ignore the watch's exit code: the JSON query below is the real result.
-  gh pr checks "$pr_url" --watch --interval 30 >&2 || true
+  # Each check once, when it finishes, not the whole table every 30 s: in a
+  # log file each redraw was new lines, most of a launch log. 3 h at most.
+  local seen="" cur t0; t0="$(date +%s)"
+  while [ $(( $(date +%s) - t0 )) -lt 10800 ]; do
+    cur="$(gh pr checks "$pr_url" --json name,bucket 2>/dev/null | jq -r '.[] | "\(.bucket)\t\(.name)"' 2>/dev/null | sort)" || cur=""
+    if [ -n "$cur" ]; then
+      comm -13 <(printf '%s\n' "$seen") <(printf '%s\n' "$cur") | while IFS=$'\t' read -r b n; do
+        [ "$b" = pending ] || printf '  [%3dm] %-8s %s\n' $(( ($(date +%s) - t0) / 60 )) "$b" "$n" >&2
+      done
+      seen="$cur"
+      printf '%s\n' "$cur" | cut -f1 | grep -qx pending || break
+    fi
+    sleep 30
+  done
 
   local json
   json="$(gh pr checks "$pr_url" --json bucket,name,state 2>/dev/null)" || {
@@ -815,6 +829,7 @@ finish_watch_ci() {
     return 1
   }
 
+  printf '%s' "$json" | jq -r 'group_by(.bucket) | map("\(length) \(.[0].bucket)") | "CI: " + join(", ")' >&2 2>/dev/null || true
   local failed_names pending_names
   failed_names="$(printf '%s' "$json" | jq -r '
     [.[] | select(.bucket == "fail" or .bucket == "cancel") | .name] | join(", ")
@@ -890,7 +905,7 @@ _finish_check_frozen() {
 }
 
 # finish_notify <message> [pr_url]
-#   macOS notification, plus the same line on stderr.
+#   macOS notification only; the caller logs the message.
 finish_notify() {
   local message="$1"
   local pr_url="${2:-}"
@@ -899,5 +914,5 @@ finish_notify() {
     # Pass text as arguments: CI check names come from the agent's branch.
     osascript -e 'on run {m, s}' -e 'display notification m with title "fxa-sandbox-ctl" subtitle s' -e 'end run' -- "$message" "$pr_url" 2>/dev/null || true
   fi
-  echo "${message}${pr_url:+ — $pr_url}" >&2
+  # A notification only: every caller logs the same message itself.
 }

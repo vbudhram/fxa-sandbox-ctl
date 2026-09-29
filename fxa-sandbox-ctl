@@ -122,6 +122,7 @@ PIPELINE COMMANDS:
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
   freeslots                    Slots a ticket can claim (use this, not `slots`)
   launch <KEY> <slot> [ctx] [--rebase]  WRITE: start an agent VM in the background (--rebase: conflict round)
+  launch-times <KEY>           When each step of the last launch happened (boot, agent, push, PR, CI)
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
   progress <ISSUE-KEY>         What the launcher did (read this first)
   prstate <ISSUE-KEY>          PR number, state, and check tally
@@ -520,6 +521,7 @@ EOF
       fi
     else
       finish_notify "Branch pushed for ${key}" ""
+      echo "Branch pushed for ${key}." >&2
     fi
   else
     echo "" >&2
@@ -768,6 +770,7 @@ cmd_finish() {
     fi
   else
     finish_notify "Branch pushed" ""
+    echo "Branch pushed." >&2
   fi
 }
 
@@ -1727,10 +1730,22 @@ cmd_launch() {
   # Delete, not truncate: APFS keeps the inode's birth time, which telemetry reads as the start.
   rm -f "$log"
   echo "Launched at: $(date +%s)" > "$log"
-  nohup "$0" "${args[@]}" >>"$log" 2>&1 &
+  # Each line also lands in <KEY>.launch.tsv with its seconds since launch; see launch-times.
+  nohup "$0" "${args[@]}" 2>&1 < /dev/null \
+    | nohup perl -e "$_SESSION_STAMP_PL" "$log" "${log%.log}.tsv" > /dev/null 2>&1 &
   # A stale skip fingerprint would silence a later skip of this key.
   pipeline_skip_clear "$key"
   echo "$key launched on $slot (log ${log})"
+}
+
+# launch-times <KEY>   When each milestone of the last launch happened, in
+# minutes and seconds since the launch, from <KEY>.launch.tsv.
+_launch_times() {
+  local key="${1:?launch-times needs <KEY>}"; pipeline_require || return 1
+  local tsv; tsv="$(pipeline_launch_log "$key")"; tsv="${tsv%.log}.tsv"
+  [ -f "$tsv" ] || { echo "no timings for ${key} (launched before they were recorded)"; return 0; }
+  grep -E $'^[0-9.]+\t(Creating GCE|Restoring|VM .* ready|Checking out the commit|Applying security|Starting claude|=== handoff file detected|Committing and pushing|PR opened|PR updated|Releasing runner|Agent .* stopped and cleaned up|CI: |ERROR)' "$tsv" \
+    | awk -F'\t' '{ s = int($1); printf "%3dm%02ds  %s\n", s / 60, s % 60, substr($2, 1, 100) }'
 }
 
 # ── Sessions (Slack front door) ────────────────────────────────
@@ -2271,6 +2286,7 @@ main() {
     freeslots)  cmd_freeslots "$@" ;;
     launchcap)  cmd_launchcap "$@" ;;
     launch)     cmd_launch "$@" ;;
+    launch-times) _launch_times "$@" ;;
     alive)      cmd_alive "$@" ;;
     progress)   cmd_progress "$@" ;;
     prstate)    cmd_prstate "$@" ;;

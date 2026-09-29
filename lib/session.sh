@@ -372,11 +372,12 @@ _session_boot_step() {
   l="$(_session_boot_label "$l")"; echo "${l:-preparing}"
 }
 
-# The boot job's output goes through this: the log as written, plus each line
-# with its seconds since the request in <key>.boot.tsv, for the timings.
+# A session's boot job and a pipeline launch send their output through this:
+# the log as written (appended), plus each line with its seconds since the
+# start in a .tsv beside it, for the timings.
 # shellcheck disable=SC2016  # perl code, not shell
 _SESSION_STAMP_PL='use IO::Handle; use Time::HiRes qw(time);
-open(my $l, ">", $ARGV[0]) or die; open(my $t, ">", $ARGV[1]) or die; $l->autoflush(1); $t->autoflush(1);
+open(my $l, ">>", $ARGV[0]) or die; open(my $t, ">", $ARGV[1]) or die; $l->autoflush(1); $t->autoflush(1);
 my $t0 = time; printf $t "#t0\t%.3f\n", $t0;
 while (my $x = <STDIN>) { print $l $x; printf $t "%.1f\t%s", time - $t0, $x; }'
 
