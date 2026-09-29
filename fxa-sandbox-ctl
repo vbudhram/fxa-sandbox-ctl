@@ -1908,6 +1908,13 @@ so the earlier change is committed: 'git show HEAD' shows it, and 'git diff'
 shows only what you change now. The review is at the end of
 /workspace/.fxa-jira-context.md. Change what it asks for inside the PR's scope,
 and say which comments you did not act on and why. Do not reply on GitHub."
+  if [ -z "$review" ]; then
+    local at; [ -n "$from" ] && at="the base of the earlier session in this thread" || at="origin/main, fetched when this session started ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+    prompt="${prompt}
+
+The checkout is ${sha:0:10}: ${at}. Say that plainly if the engineer asks
+what code you are on. Do not pull: a newer main needs a new thread."
+  fi
   local rc=0
   # The run dir is not a checkout: the ceiling stops git from shipping an enclosing
   # repo's files. The idle pause, not this longer lifetime, bounds a session's cost.
