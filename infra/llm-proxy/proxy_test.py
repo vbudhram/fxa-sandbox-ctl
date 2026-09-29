@@ -14,6 +14,8 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEEN = []  # the headers the fake upstream received
+PEERS = []  # the client address of each call, one per upstream connection
+DROP = []  # when set, the fake upstream closes the connection after its answer
 
 
 class Upstream(http.server.BaseHTTPRequestHandler):
@@ -25,6 +27,10 @@ class Upstream(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         SEEN.append(dict(self.headers))
+        PEERS.append(self.client_address)
+        if DROP:
+            DROP.clear()
+            self.close_connection = True  # silently, as a server that times out an idle socket
         if body.get("stream"):
             events = [{"type": "message_start", "message": {"model": "claude-opus-5-5", "usage": {"input_tokens": 1000000, "output_tokens": 1}}},
                       {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}},
@@ -117,7 +123,22 @@ class ProxyTest(unittest.TestCase):
     def test_a_run_past_its_cap_is_refused(self):
         tok = self.token("d", cap=1)
         self.assertEqual(self.call(tok)[0], 200)  # this call takes it to $2
-        self.assertEqual(self.call(tok)[0], 429)
+        self.assertEqual(self.call(tok)[0], 403)  # not 429, which a client retries
+
+    def test_calls_reuse_one_upstream_connection(self):
+        tok = self.token("e")
+        del PEERS[:]
+        for _ in range(10):
+            self.assertEqual(self.call(tok)[0], 200)
+        self.assertEqual(len(set(PEERS)), 1)
+
+    def test_a_pooled_connection_the_far_end_closed_is_retried(self):
+        tok = self.token("f")
+        self.assertEqual(self.call(tok)[0], 200)
+        DROP.append(1)
+        self.assertEqual(self.call(tok)[0], 200)  # the upstream closes after this answer
+        self.assertEqual(self.call(tok)[0], 200)  # the pooled socket is dead: one retry on a new one
+        self.assertNotEqual(PEERS[-1], PEERS[-2])
 
 
 if __name__ == "__main__":

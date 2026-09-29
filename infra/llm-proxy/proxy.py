@@ -15,6 +15,7 @@ import http.client
 import http.server
 import json
 import os
+import queue
 import re
 import sys
 import threading
@@ -38,7 +39,9 @@ HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrad
 DROP = HOP | {"x-api-key", "authorization", "accept-encoding"}
 TOKEN_RE = re.compile(r"^fxl_[A-Za-z0-9]{32}$")
 
-locks, locks_guard, local = {}, threading.Lock(), threading.local()
+locks, locks_guard = {}, threading.Lock()
+# Idle upstream connections: a call reuses one and skips the TCP and TLS handshake.
+POOL = queue.LifoQueue(maxsize=8)
 
 
 def price(model):
@@ -88,13 +91,27 @@ def charge(tok, model, usage):
         f.write(json.dumps(line) + "\n")
 
 
-def upstream():
-    """One kept-open connection per thread: the TLS handshake is paid once, not per call."""
-    conn = getattr(local, "conn", None)
-    if conn is None:
-        cls = http.client.HTTPSConnection if UPSTREAM.scheme == "https" else http.client.HTTPConnection
-        conn = local.conn = cls(UPSTREAM.hostname, UPSTREAM.port, timeout=600)
-    return conn
+def connect():
+    cls = http.client.HTTPSConnection if UPSTREAM.scheme == "https" else http.client.HTTPConnection
+    return cls(UPSTREAM.hostname, UPSTREAM.port, timeout=600)
+
+
+def take():
+    try:
+        return POOL.get_nowait()
+    except queue.Empty:
+        return connect()
+
+
+def give(conn, resp):
+    """Keep a connection whose answer was read in full and that the far end keeps open."""
+    if resp.will_close or not resp.isclosed():
+        conn.close()
+        return
+    try:
+        POOL.put_nowait(conn)
+    except queue.Full:
+        conn.close()
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -119,18 +136,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rec is None:
             return self.refuse(401, "authentication_error", "fxa-llm-proxy: unknown, revoked or expired run token")
         if rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"]:
-            return self.refuse(429, "rate_limit_error", "fxa-llm-proxy: this run reached its spend cap of $%s" % rec["cap_usd"])
+            # 403, not 429: a client retries a 429, and a capped run must stop, not hang.
+            return self.refuse(403, "permission_error", "fxa-llm-proxy: this run reached its spend cap of $%s" % rec["cap_usd"])
         body = self.rfile.read(int(self.headers.get("content-length", 0) or 0))
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         headers["x-api-key"] = KEY
-        for attempt in (1, 2):  # a kept-open connection the far end closed: retry once on a new one
+        for attempt in (1, 2):  # a pooled connection the far end closed: retry once on a new one
+            conn = take() if attempt == 1 else connect()
             try:
-                conn = upstream()
                 conn.request(self.command, self.path, body=body or None, headers=headers)
                 resp = conn.getresponse()
                 break
             except (http.client.HTTPException, OSError):
-                local.conn = None
+                conn.close()
                 if attempt == 2:
                     return self.refuse(502, "api_error", "fxa-llm-proxy: could not reach the Anthropic API")
         self.send_response(resp.status)
@@ -138,7 +156,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if k.lower() not in HOP:
                 self.send_header(k, v)
         self.end_headers()
-        self.relay(resp, auth, path)
+        try:
+            self.relay(resp, auth, path)
+        except (http.client.HTTPException, OSError):
+            conn.close()
+            raise
+        give(conn, resp)
 
     def relay(self, resp, tok, path):
         """Pass the answer through as it arrives, and read its usage on the way."""
@@ -170,7 +193,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         usage.update({k: v for k, v in ev["usage"].items() if isinstance(v, int)})
             else:
                 whole.append(chunk)
-        resp.read()  # drain, so the kept-open connection can be reused
+        resp.read()  # drain, so the connection can go back to the pool
         if not stream and path.startswith("/v1/messages") and not path.endswith("count_tokens"):
             try:
                 doc = json.loads(b"".join(whole))
