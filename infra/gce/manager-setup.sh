@@ -94,6 +94,12 @@ for f in ctl.env.base bot.env.base; do
   [ -s "/tmp/fxa-$f" ] && install -o "$U" -g "$U" -m 600 "/tmp/fxa-$f" "$C/$f" && rm -f "/tmp/fxa-$f"
 done
 
+say "sshd keepalive"
+# Drop a client that stopped answering (an IAP tunnel that died) after 3 min;
+# the default never checks, and 34 dead sessions piled up on 2026-09-29.
+printf '%s\n' 'ClientAliveInterval 60' 'ClientAliveCountMax 3' > /etc/ssh/sshd_config.d/60-fxa-keepalive.conf
+sshd -t && systemctl reload ssh
+
 say "secrets unit"
 # Writes the .env files and key files from Secret Manager at every boot, so no
 # secret is baked into the disk image and a rotation needs only a reboot.

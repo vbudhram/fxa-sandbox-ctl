@@ -86,6 +86,14 @@ What trips agents most often:
 # token's expiry: refuse to launch when too little remains.
 runtime_inject_auth() {
   local workspace_dir="$1" auth="${CODEX_HOME_DIR}/auth.json"
+  # With the LLM proxy on, runners hold no credential of their own. Codex would
+  # carry the ChatGPT tokens (a refresh token included) onto the runner, so it
+  # waits for its route through the proxy (infra/llm-proxy).
+  if [ -n "${FXA_LLM_PROXY_URL:-}" ]; then
+    echo "ERROR: Codex cannot run while FXA_LLM_PROXY_URL is set: it would put the ChatGPT login on the runner." >&2
+    echo "       Its route through the LLM proxy is not built yet." >&2
+    return 1
+  fi
   if [ ! -f "$auth" ]; then
     echo "ERROR: ${auth} not found. Run 'codex login' on the host first." >&2
     echo "       A VM cannot log in interactively, so Codex refuses to launch without it." >&2
