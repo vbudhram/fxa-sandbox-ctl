@@ -65,17 +65,18 @@ FXA_GCE_ZONE="${FXA_GCE_ZONE:-us-central1-a}"
 FXA_GCE_ZONES="${FXA_GCE_ZONES:-us-central1-a us-central1-b us-central1-c us-central1-f}"
 FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
 # c4a, not n4a: n4a was stocked out in every us-central1 zone on 2026-09-13.
-FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-highcpu-4}"
-# A --functional-tests run (stack, admin server, two Firefox workers) peaked at
-# 6.7GB of 8GB, no OOM. Set c4a-standard-4 (16GB) if a run ever needs more.
-FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-highcpu-4}"
+# 16 GB: on 8 GB (c4a-highcpu-4) the stack plus functional tests reached load 40,
+# swapped, and hit the OOM killer (FXA-14624, 2026-09-28), and sshd dropped the
+# manager's connections while it did.
+FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-standard-4}"
+FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-standard-4}"
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
 # Manager service account from infra/gce/setup.sh. gcloud reads this variable
 # on every call, ssh's IAP ProxyCommand included, so one export covers them all.
 FXA_GCE_SERVICE_ACCOUNT="${FXA_GCE_SERVICE_ACCOUNT:-}"
 [ -n "$FXA_GCE_SERVICE_ACCOUNT" ] && export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT="$FXA_GCE_SERVICE_ACCOUNT"
-# List price of one runner-hour, for the dashboard's burn rate. c4a-highcpu-4 on demand.
-FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.13}"
+# List price of one runner-hour, for the dashboard's burn rate. c4a-standard-4 on demand.
+FXA_GCE_HOURLY_USD="${FXA_GCE_HOURLY_USD:-0.18}"
 # Always-on infrastructure at list prices, for the dashboard. The manager VM sets
 # its own (e2-standard-4 and 200 GB balanced disk, about 0.16) in its .env; 0 elsewhere.
 FXA_MANAGER_HOURLY_USD="${FXA_MANAGER_HOURLY_USD:-0}"

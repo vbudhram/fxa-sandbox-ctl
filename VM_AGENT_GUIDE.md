@@ -6,8 +6,9 @@ started you. For FxA domain knowledge, read `/workspace/ai/AGENTS.md`.
 
 ## 1. Where you are
 
-- **Machine:** Ubuntu 24.04, ARM64, 4 vCPU, 8GB RAM, 50GB disk. Memory is the
-  tight resource: a functional run peaks near 6.7GB.
+- **Machine:** Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM, 50GB disk. Memory is still
+  the tight resource: the stack with functional tests ran an 8GB runner out of
+  memory, so keep `PLAYWRIGHT_WORKERS=2` and never run a whole suite.
 - **Backend:** one of two. The rest of this guide notes where they differ.
   - **GCE** (Slack sessions, most pipeline runs): a `c4a-highcpu-4` instance.
     `/workspace` is a symlink to a clone in the image, `/home/agent/fxa`,

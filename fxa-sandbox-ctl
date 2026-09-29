@@ -637,8 +637,8 @@ The goal is met only when ALL of these are TRUE and visible in this conversation
 1. You have printed a short plan with the root cause and proposed fix, and a
    test plan from $(runtime_skill_ref fxa-test-plan) in /workspace/.fxa-test-plan.json.
 2. $(runtime_skill_ref fxa-verify) --run --plan /workspace/.fxa-test-plan.json shows no FAIL
-   and no NONE. Never run a whole package suite: it OOM-kills this
-   8GB runner. CI runs the full suite.
+   and no NONE. Never run a whole package suite: it can OOM-kill this
+   16GB runner. CI runs the full suite.
    Run it, and every long check, in the foreground with a timeout. This run
    ends when you end a reply: a reply that says you will wait for a background
    command ends the run and kills that command.

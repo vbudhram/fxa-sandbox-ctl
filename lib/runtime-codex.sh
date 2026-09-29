@@ -38,7 +38,7 @@ TOML
   local agents_b64 host_agents; host_agents="$(_vm_operator_rules)"
   agents_b64="$(printf '%s\n\n%s\n' "$host_agents" '# FxA sandbox VM
 
-You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 8GB RAM). The FxA
+You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 16GB RAM). The FxA
 checkout is /workspace. First read /etc/vm-agent-guide.md, the operations
 manual. Project conventions: /workspace/ai/AGENTS.md and /workspace/.claude/rules/.
 

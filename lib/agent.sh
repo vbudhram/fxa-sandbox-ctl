@@ -504,7 +504,7 @@ _setup_claude_config() {
 
 # Sandbox VM
 
-You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 8GB RAM).
+You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM).
 
 First, read `/etc/vm-agent-guide.md`, the operations manual. It covers the
 backend you are on, the network allowlist, what the host refuses to ship, the
@@ -519,7 +519,7 @@ What trips agents most often:
 - The network is an allowlist (Anthropic, npm and yarn, PyPI, GitHub, Playwright).
   Any other host is refused.
 - Verify with `/fxa-verify --run`, never a whole package suite: it can run the
-  8GB machine out of memory. `nx test-unit fxa-settings` runs no tests.
+  16GB machine out of memory. `nx test-unit fxa-settings` runs no tests.
 - The FxA services are not running. Start them with `fxa-start` only when you
   need them. Set `PLAYWRIGHT_WORKERS=2` for functional tests.
 - Save screenshots and videos in `/workspace/.fxa-auto-media/`.
