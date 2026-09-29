@@ -554,6 +554,8 @@ _finish_push_and_pr() {
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
     echo "PR updated: ${pr_url}" >&2
+    # First, before the steps that can fail on their own: the push reset the gate.
+    finish_approve_functional_gate "$pr_url"
     # Never change an existing PR's title or body: a round's handoff describes
     # only that round, and the squash-merge would put its subject in main.
     local pr_num="${existing##*/}"
@@ -612,6 +614,8 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
   # agent_stop spares this launcher only once the log has the PR. Without it the
   # launcher killed itself at the release and left the runner up.
   echo "PR opened: ${pr_url}" >&2
+  # First, before reviewers, Copilot and the release, each of which can fail.
+  finish_approve_functional_gate "$pr_url"
 
   finish_add_reviewers "$pr_url"
 
@@ -725,22 +729,28 @@ finish_approve_functional_gate() {
   local hdr="Circle-Token: ${token}"
 
   echo "Looking for the functional-tests approval gate on ${slug}@${branch}..." >&2
+  # The pipeline for the PR's head: right after a push the newest one on the
+  # branch can still be the previous push's, whose gate is already approved.
+  local head; head="$(gh pr view "$pr_url" --json headRefOid -q .headRefOid 2>/dev/null || true)"
   local elapsed=0
   while [ "$elapsed" -lt 180 ]; do
     local pipeline_id
     # `|| =""` keeps a failed curl (HTTP error, DNS) from aborting under set -e.
     pipeline_id="$(curl -fsS -H "$hdr" "${api}/project/${slug}/pipeline?branch=${branch}" 2>/dev/null \
-      | jq -r '.items[0].id // empty')" || pipeline_id=""
+      | jq -r --arg h "$head" '[.items[] | select($h == "" or .vcs.revision == $h)][0].id // empty')" || pipeline_id=""
     if [ -n "$pipeline_id" ]; then
       local wf arid
       # Reads the first page of workflows/jobs; the PR gate sits early in the list.
       for wf in $(curl -fsS -H "$hdr" "${api}/pipeline/${pipeline_id}/workflow" 2>/dev/null \
                     | jq -r '.items[].id'); do
-        arid="$(curl -fsS -H "$hdr" "${api}/workflow/${wf}/job" 2>/dev/null \
+        local gate; gate="$(curl -fsS -H "$hdr" "${api}/workflow/${wf}/job" 2>/dev/null \
           | jq -r '.items[]
-              | select(.type=="approval" and .status=="on_hold" and (.name | test("Functional";"i")))
-              | (.approval_request_id // .id)' \
-          | head -1)" || arid=""
+              | select(.type=="approval" and (.name | test("Functional";"i")))
+              | "\(.status) \(.approval_request_id // .id)"' \
+          | head -1)" || gate=""
+        # Approved already (this call runs after the PR opens and again in the CI watch).
+        [ "${gate%% *}" = success ] && { echo "Functional-tests gate already approved (workflow ${wf})." >&2; return 0; }
+        arid=""; [ "${gate%% *}" = on_hold ] && arid="${gate#* }"
         if [ -n "$arid" ]; then
           if curl -fsS -X POST -H "$hdr" "${api}/workflow/${wf}/approve/${arid}" >/dev/null 2>&1; then
             echo "Approved functional-tests gate (workflow ${wf})." >&2
