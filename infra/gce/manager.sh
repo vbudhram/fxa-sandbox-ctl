@@ -43,7 +43,9 @@ grep -vE '^(CLAUDE_CODE_OAUTH_TOKEN|FXA_GCE_SERVICE_ACCOUNT|GITHUB_APP_PEM|FXA_G
 { echo "GITHUB_APP_PEM=/home/fxa/.config/fxa/github-app.pem"
   echo "FXA_GCE_SSH_DIRECT=1"
   # e2-standard-4 plus its 200 GB balanced disk, list price: the dashboard's always-on cost.
-  echo "FXA_MANAGER_HOURLY_USD=0.16"; } >> "$tmp/ctl.env.base"
+  echo "FXA_MANAGER_HOURLY_USD=0.16"
+  # Runners reach Claude through the proxy on this VM, never with the key.
+  echo "FXA_LLM_PROXY_URL=http://$(gcloud compute instances describe "$VM" --project "$P" --zone "$Z" --format 'value(networkInterfaces[0].networkIP)'):8788"; } >> "$tmp/ctl.env.base"
 # After the cutover the laptop's bot .env is renamed .env.retired, so no second
 # bot can start there; it is still the source of these settings.
 BOT_ENV="${BOT}/.env"; [ -f "$BOT_ENV" ] || BOT_ENV="${BOT}/.env.retired"
