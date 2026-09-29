@@ -62,7 +62,8 @@ pw="$(cat /root/.desktop-password)"
 [ -n "${2:-}" ] && printf '%s' "$2" | base64 -d | install -m 644 -o agent -g agent /dev/stdin /tmp/inbox-viewer.html
 
 # Firefox for the desktop: no first-run terms or welcome, the local stack as
-# the home page (the Home button), and its other pages on the bookmarks toolbar.
+# the home page (the Home button), and its other pages on the bookmarks toolbar,
+# each opening in a new tab so the page under test stays open.
 mkdir -p /usr/lib/firefox/distribution
 cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
 {"policies": {
@@ -73,6 +74,7 @@ cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
   "DisableAppUpdate": true,
   "Homepage": {"URL": "http://localhost:3030/", "StartPage": "homepage"},
   "DisplayBookmarksToolbar": "always",
+  "Preferences": {"browser.tabs.loadBookmarksInTabs": {"Value": true, "Status": "default"}},
   "Bookmarks": [
     {"Title": "Settings", "URL": "http://localhost:3030/settings", "Placement": "toolbar"},
     {"Title": "Inbox", "URL": "http://localhost:3030/__inbox", "Placement": "toolbar"},
