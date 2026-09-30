@@ -40,9 +40,13 @@ session_live() {
 # The first turn. Not a /goal: the owner judges done by steering, and the host
 # checks the work at Open PR.
 _session_first_prompt() {
-  local verify stack tplan
+  local verify stack tplan slack=""
   verify="$(runtime_skill_ref fxa-verify)"; stack="$(runtime_skill_ref fxa-stack)"
   tplan="$(runtime_skill_ref fxa-test-plan)"
+  # The bot links FXA keys itself; a Slack message needs its channel and ts, which only the agent has.
+  [ -n "${FXA_SLACK_URL:-}" ] && slack="
+- Link each Slack message you cite as [#channel](${FXA_SLACK_URL}/archives/<channel_id>/p<ts without the dot>).
+  Read with response_format detailed to get each message's ts."
   cat <<EOF
 You are pairing with an FxA engineer through a Slack thread. Read their message
 in /workspace/.fxa-jira-context.md first, before you write anything. Talk to them
@@ -86,7 +90,7 @@ Every turn, including later ones:
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
 - If you changed no files (an answer, an investigation), do not suggest a push
-  or a pull request: there is nothing to ship.
+  or a pull request: there is nothing to ship.${slack}
 EOF
 }
 
