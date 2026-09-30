@@ -203,8 +203,6 @@ _session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
 # _session_turn <key> <message>   Start one resumed turn on the runner and return.
 _session_turn() {
   local key="$1" msg="$2" name sid tmp
-  # A CircleCI link in a later message: the host reads it, since the runner cannot.
-  msg="${msg}$(circleci_digests "$msg" "$(openssl rand -hex 6)" 2>/dev/null || true)"
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then
@@ -214,6 +212,8 @@ _session_turn() {
     session_set "$key" claude_session_id "$sid"
   fi
   tmp="$(mktemp -d)"
+  # A CircleCI link in a later message: the host reads it, and its traces ride in the tar below.
+  msg="${msg}$(circleci_digests "$msg" "$(openssl rand -hex 6)" "${tmp}/.fxa-ci" 2>/dev/null || true)"
   # Every exit below removes $tmp: it holds a copy of the Claude credential.
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
@@ -247,7 +247,7 @@ STEER
   ) || { rm -rf "$tmp"; return 1; }
   # One ssh: unpack the files as the agent and start the turn. Two cost ~1.8 s more.
   # Only the launch is backgrounded: a background job's stdin is /dev/null, so tar must not be in it.
-  ( cd "$tmp" && COPYFILE_DISABLE=1 tar --no-xattrs -cf - ./.fxa-steer-msg.txt ./.fxa-auto-token ./.fxa-steer.sh ) \
+  ( cd "$tmp" && COPYFILE_DISABLE=1 tar --no-xattrs -cf - ./.fxa-steer-msg.txt ./.fxa-auto-token ./.fxa-steer.sh $([ -d .fxa-ci ] && echo ./.fxa-ci) ) \
     | vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xf - && { nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null & }' \
     || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"

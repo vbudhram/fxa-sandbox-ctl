@@ -31,8 +31,12 @@ Chat sessions do not have it; do not report that it is missing.
   private ranges and the metadata server. There is no IPv6.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
   `acli`. The host does every push, PR and comment. When a message links a
-  mozilla/fxa CircleCI job or workflow, the host adds its failed tests and the
-  end of each failed step's log, fenced as untrusted, to the context or the message.
+  mozilla/fxa CircleCI job or workflow, the host adds its failed tests, the end
+  of each failed step's log and Playwright's error context (the page when the
+  test failed), fenced as untrusted, to the context or the message. The failed
+  tests' traces land in `/workspace/.fxa-ci/<test>/trace.zip`. Unzip one:
+  `*.trace` holds each action with its error and the console messages,
+  `*.network` each request and response, and `resources/` the page snapshots.
 - **MCP:** only Slack sessions have it; pipeline runs do not. A session has
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.

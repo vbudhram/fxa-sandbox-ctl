@@ -1908,7 +1908,7 @@ EOF
     echo "Added ${tk} to the session context."
   done
   # A CircleCI link comes along too, fenced the same way: runners cannot reach CircleCI.
-  local ci; ci="$(circleci_digests "$(cat "${SESSION_DIR}/${key}.prompt.md")" "$nonce" 2>/dev/null || true)"
+  local ci; ci="$(circleci_digests "$(cat "${SESSION_DIR}/${key}.prompt.md")" "$nonce" "${dir}/.fxa-ci" 2>/dev/null || true)"
   [ -n "$ci" ] && { printf '%s\n' "$ci" >> "${dir}/.fxa-jira-context.md"; echo "Added the CircleCI failure to the session context."; }
   if [ -n "$review" ]; then
     local rv; rv="$(_session_review "$review" 2>/dev/null | head -c 30000 || true)"
