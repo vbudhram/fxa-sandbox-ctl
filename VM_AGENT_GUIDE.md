@@ -31,6 +31,10 @@ Chat sessions do not have it; do not report that it is missing.
   private ranges and the metadata server. There is no IPv6.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
   `acli`. The host does every push, PR and comment.
+- **MCP:** a run with connectors has one MCP server, `fxa`, whose tools are
+  named `<connector>__<tool>`. They are read-only. A tool that refuses a call
+  says why; do not retry it another way. Put anything that should be written
+  (a Jira comment, a reply) in your handoff.
 
 ## 2. What the host does with your work
 

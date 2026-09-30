@@ -1,0 +1,32 @@
+{
+  "connectors": {
+    "jira": {
+      "url": "https://YOUR_RUNLAYER_HOST/YOUR_JIRA_CONNECTOR_PATH",
+      "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
+      "tools": ["getJiraIssue", "searchJiraIssuesUsingJql", "getJiraIssueRemoteIssueLinks"],
+      "rules": [
+        { "tool": "searchJiraIssuesUsingJql", "arg": "jql", "jql_project": "FXA" }
+      ],
+      "deny_result": ["\"security\"\\s*:\\s*\\{"]
+    },
+    "github": {
+      "url": "https://YOUR_RUNLAYER_HOST/YOUR_GITHUB_CONNECTOR_PATH",
+      "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
+      "tools": ["get_pull_request", "get_pull_request_reviews", "get_pull_request_comments",
+                "get_pull_request_status", "get_issue", "list_issues", "get_file_contents",
+                "list_commits", "get_commit", "get_job_logs"],
+      "rules": [
+        { "arg": "owner", "equals": "mozilla" },
+        { "arg": "repo", "equals": "fxa" }
+      ]
+    },
+    "slack": {
+      "url": "https://YOUR_RUNLAYER_HOST/YOUR_SLACK_CONNECTOR_PATH",
+      "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
+      "tools": ["slack_read_thread", "slack_read_channel"],
+      "rules": [
+        { "arg": "channel_id", "one_of": ["YOUR_PUBLIC_CHANNEL_ID"] }
+      ]
+    }
+  }
+}

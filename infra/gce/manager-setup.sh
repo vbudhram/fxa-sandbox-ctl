@@ -124,6 +124,10 @@ if [ -d "$W/fxa-agent-bot" ]; then
     printf 'SLACK_BOT_TOKEN=%s\n' "$(get fxa-slack-bot-token)"
     printf 'SLACK_APP_TOKEN=%s\n' "$(get fxa-slack-app-token)"; } > "$W/fxa-agent-bot/.env"
 fi
+# The MCP gateway's upstream credential, in its own file: no other service reads it.
+r="$(get fxa-runlayer-agent-token || true)"
+if [ -n "$r" ]; then printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r" > "$C/mcp-gateway.env"; else rm -f "$C/mcp-gateway.env"; fi
+unset r
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
 [ -f "$W/fxa-agent-bot/.env" ] && chown fxa:fxa "$W/fxa-agent-bot/.env"
@@ -199,6 +203,26 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
+# Read-only MCP tools for runners (infra/mcp-gateway): they get a per-run
+# token. It starts only once $C/mcp-gateway.json names its connectors. The
+# GCP firewall must admit the runner subnets to port 8789 as it does to 8788.
+cat > /etc/systemd/system/fxa-mcp-gateway.service <<UNIT
+[Unit]
+Description=fxa-mcp-gateway (runners reach MCP tools through it, :8789)
+Requires=fxa-secrets.service
+After=fxa-secrets.service
+ConditionPathExists=$C/mcp-gateway.json
+[Service]
+User=$U
+EnvironmentFile=-$C/mcp-gateway.env
+Environment=MCP_GATEWAY_LISTEN=0.0.0.0:8789
+Environment=MCP_GATEWAY_CONFIG=$C/mcp-gateway.json
+ExecStart=/usr/bin/python3 $W/fxa-sandbox-ctl/infra/mcp-gateway/gateway.py
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
+UNIT
 # The two jobs the fxa-automation skill defines, with the same prompts.
 pass='Run `~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl precheck`. If it prints a line starting `quiet`, `locked`, or `paused`, reply with that one line and stop. Do not load any skill. Otherwise invoke /fxa-ai-fixme and run one full pass using the precheck output as the worklist: take the lock, judge the reconcile and drain lines, sweep review feedback, fill free slots via `freeslots` at most `launchcap` launches. Never merge. Release the lock.'
 triage='FxA ai-fixme escalation triage. Read-only. Do NOT take the pass lock, do NOT launch an agent, do NOT relabel anything. Report only items that need a human decision: tickets blocked awaiting a reporter answer (re-verify each live with `fxa-sandbox-ctl ticket <KEY>`), tickets that exhausted the 2-round feedback cap, done PRs stalled in review 3+ days (name the oldest and its reviewer; lead with this), inflight tickets whose agent run died silently (check `git diff --shortstat` on the slot worktree), and structural blockers (frozen paths, missing credentials, disk below the 25GB launch floor). Output a table of ticket, blocker type, and the decision needed. Omit empty categories. If all are empty, say so in one line.'
@@ -247,6 +271,7 @@ UNIT
 systemctl daemon-reload
 systemctl enable -q fxa-secrets.service
 systemctl enable -q fxa-llm-proxy.service
+systemctl enable -q fxa-mcp-gateway.service
 
 say "repos (in the background: the FxA clone and yarn install take a while)"
 cat > "$C/provision-repos.sh" <<'REPOS'

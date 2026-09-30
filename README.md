@@ -480,6 +480,44 @@ disagree with the pipeline.
 | `-c, --cpu` | 2 | vCPU count |
 | `-m, --memory` | 5120 | Memory in MB |
 
+### MCP gateway
+
+Runners get no MCP server of their own and hold no GitHub, Jira or Slack
+credential. `infra/mcp-gateway/gateway.py` runs on the manager beside the LLM
+proxy and is the only holder of the upstream credential, a Runlayer Agent
+Account token by default. A run asks for connectors; the runner then gets a
+per-run token and one MCP server, `fxa`, with only those connectors' tools.
+
+Every connector is read-only by construction:
+
+- **`tools`** is an allowlist. A tool not on it does not exist for the runner.
+- **`rules`** check or rewrite arguments before a call leaves: `equals` and
+  `one_of` pin a value (`owner` must be `mozilla`), `set` forces one, and
+  `jql_project` wraps a JQL search as `project = FXA AND (...)`, refusing
+  JQL that would escape the group.
+- **`deny_result`** patterns withhold an answer before it reaches the runner,
+  such as a Jira issue with a security level.
+
+The upstream account's own permissions stay the real limit: give the Agent
+Account read-only access, FXA only, and no security-level visibility.
+
+Set it up:
+
+1. Copy `infra/mcp-gateway/connectors.example.json` to
+   `~/.config/fxa/mcp-gateway.json` and fill in the Runlayer URLs. Headers take
+   `${VAR}` references, never literal credentials; `infra/gce/manager.sh` ships
+   the file and refuses one that holds a credential.
+2. Store the Agent Account token as the `fxa-runlayer-agent-token` secret. The
+   secrets unit writes it to a file only the gateway reads.
+3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
+4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
+   Only Slack sessions get connectors; ai-fixme pipeline runs never do.
+
+Each call is a line in `~/.claude/state/mcp-gateway/calls.jsonl` with its run,
+tool, outcome and time. A run is capped at `FXA_MCP_RUN_CAP_CALLS` calls (200).
+Check it offline with `python3 infra/mcp-gateway/gateway_test.py` and
+`bash lib/mcp-token.check.sh`.
+
 ## Security Model
 
 The VM is the security boundary. Each agent runs inside an isolated Linux VM with multiple layers of hardening:

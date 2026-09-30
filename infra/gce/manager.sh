@@ -44,8 +44,11 @@ grep -vE '^(CLAUDE_CODE_OAUTH_TOKEN|FXA_GCE_SERVICE_ACCOUNT|GITHUB_APP_PEM|FXA_G
   echo "FXA_GCE_SSH_DIRECT=1"
   # e2-standard-4 plus its 200 GB balanced disk, list price: the dashboard's always-on cost.
   echo "FXA_MANAGER_HOURLY_USD=0.16"
-  # Runners reach Claude through the proxy on this VM, never with the key.
-  echo "FXA_LLM_PROXY_URL=http://$(gcloud compute instances describe "$VM" --project "$P" --zone "$Z" --format 'value(networkInterfaces[0].networkIP)'):8788"; } >> "$tmp/ctl.env.base"
+  # Runners reach Claude through the proxy on this VM, never with the key,
+  # and MCP tools through the gateway beside it.
+  ip="$(gcloud compute instances describe "$VM" --project "$P" --zone "$Z" --format 'value(networkInterfaces[0].networkIP)')"
+  echo "FXA_LLM_PROXY_URL=http://${ip}:8788"
+  echo "FXA_MCP_GATEWAY_URL=http://${ip}:8789"; } >> "$tmp/ctl.env.base"
 # After the cutover the laptop's bot .env is renamed .env.retired, so no second
 # bot can start there; it is still the source of these settings.
 BOT_ENV="${BOT}/.env"; [ -f "$BOT_ENV" ] || BOT_ENV="${BOT}/.env.retired"
@@ -60,6 +63,16 @@ for f in claude.tgz ctl.env.base bot.env.base; do
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done
 ssh_vm 'sudo bash -s' < "${ROOT}/infra/gce/manager-setup.sh"
+# The MCP gateway's connectors, when you keep them locally. Credentials stay
+# ${VAR} references filled from Secret Manager, so a literal one stops here.
+G="${HOME}/.config/fxa/mcp-gateway.json"
+if [ -f "$G" ]; then
+  jq -e . "$G" >/dev/null || { echo "ERROR: $G is not valid JSON." >&2; exit 1; }
+  if grep -qE 'Bearer [^$"]|xox[abpr]-|ghp_|github_pat_|sk-ant-' "$G"; then
+    echo "ERROR: $G holds a literal credential; use \${VAR} and Secret Manager." >&2; exit 1
+  fi
+  ssh_vm 'sudo install -D -m 600 -o fxa -g fxa /dev/stdin /home/fxa/.config/fxa/mcp-gateway.json && sudo systemctl restart fxa-mcp-gateway.service' < "$G"
+fi
 # reporters.tsv maps Jira reporters to GitHub logins for PR assignees. It holds
 # emails, so the GCS state mirror leaves it out: send it straight to the VM when
 # the VM has none.

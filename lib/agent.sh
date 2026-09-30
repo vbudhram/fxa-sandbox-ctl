@@ -290,7 +290,9 @@ _setup_egress_firewall() {
   # The LLM proxy on the manager (FXA_LLM_PROXY_URL), as ip:port: the one private
   # address a runner may reach.
   local llm; llm="$(printf '%s' "${FXA_LLM_PROXY_URL:-}" | sed -nE 's#^https?://([0-9.]+):([0-9]+)/?$#\1:\2#p')"
-  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" FXA_LLM="$llm" bash -c '
+  # The MCP gateway on the manager (FXA_MCP_GATEWAY_URL), likewise.
+  local mcp; mcp="$(printf '%s' "${FXA_MCP_GATEWAY_URL:-}" | sed -nE 's#^https?://([0-9.]+):([0-9]+)/?$#\1:\2#p')"
+  err="$(vm_exec "$name" sudo env FXA_EGRESS_ALLOW_ALL="$FXA_EGRESS_ALLOW_ALL" FXA_EGRESS_CIDRS="$cidrs" FXA_EGRESS_HOSTS="$hosts" FXA_LLM="$llm" FXA_MCP="$mcp" bash -c '
     # Start from an empty OUTPUT chain, so a second run applies the same rules
     # instead of appending allows after the REJECT.
     iptables -F OUTPUT
@@ -306,8 +308,9 @@ _setup_egress_firewall() {
       iptables -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
     done
 
-    # Private ranges: no probing of the host network, except the LLM proxy.
+    # Private ranges: no probing of the host network, except the LLM proxy and the MCP gateway.
     [ -n "$FXA_LLM" ] && iptables -A OUTPUT -d "${FXA_LLM%:*}" -p tcp --dport "${FXA_LLM#*:}" -j ACCEPT
+    [ -n "$FXA_MCP" ] && iptables -A OUTPUT -d "${FXA_MCP%:*}" -p tcp --dport "${FXA_MCP#*:}" -j ACCEPT
     iptables -A OUTPUT -d 10.0.0.0/8 -j DROP
     iptables -A OUTPUT -d 172.16.0.0/12 -j DROP
     iptables -A OUTPUT -d 192.168.0.0/16 -j DROP
@@ -583,7 +586,8 @@ with open(settings_path, \"w\") as f:
 # _claude_auth_line [run]   The line a runner sources to reach Claude. With
 # FXA_LLM_PROXY_URL and a run name: the proxy's address and the run's own
 # token, so the runner never holds the key. Else the Anthropic API key when one
-# is set, else the subscription's setup-token. Fails when there is none.
+# is set, else the subscription's setup-token. Fails when there is none. With a
+# run name, also the MCP gateway's address and token when the run has connectors.
 _claude_auth_line() {
   if [ -n "${FXA_LLM_PROXY_URL:-}" ] && [ -n "${1:-}" ]; then
     local tok; tok="$(llm_token_for "$1")" || return 1
@@ -591,6 +595,7 @@ _claude_auth_line() {
   elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then printf 'export ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY"
   elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then printf 'export CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$CLAUDE_CODE_OAUTH_TOKEN"
   else return 1; fi
+  mcp_auth_lines "${1:-}"
 }
 
 _inject_claude_auth() {
@@ -1085,6 +1090,7 @@ agent_stop() {
   echo "Stopping agent '${name}'..."
   _runner_postmortem "$name"
   llm_token_revoke "$name"
+  mcp_token_revoke "$name"
 
   # Stop the agent gracefully through screen.
   vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true

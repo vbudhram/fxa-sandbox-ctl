@@ -48,8 +48,9 @@ runtime_write_prompt() {
   slot_write "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
+${_MCP_LAUNCH_SNIPPET}
 cd /workspace
-claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions \\
+claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS} \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5}${effort} --output-format stream-json --verbose${partial} 2>&1 \\
   | { ${out}; }
 LAUNCH

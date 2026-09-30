@@ -42,6 +42,7 @@ source "${SCRIPT_DIR}/lib/snapshot.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
+source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 
 # ── Usage / Help ───────────────────────────────────────────────
@@ -84,7 +85,7 @@ COMMANDS:
   help                         Show this help message
 
 SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend gce):
-  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key>]
+  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key>] [--mcp jira,github]
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
@@ -1757,10 +1758,11 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
+      --mcp) mcp="$2"; mcp_set=1; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
       --link) link="$2"; shift 2 ;;
       --owner-name) owner_name="$2"; shift 2 ;;
@@ -1827,6 +1829,13 @@ cmd_task() {
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
   case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; return 1 ;; esac
   session_set "$key" runtime "$runtime"
+  # MCP connectors: --mcp, else the resumed session's. Sessions only: pipeline runs never get them.
+  [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
+  if [ -n "$mcp" ]; then
+    [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; rm -f "$(_session_file "$key")"; return 1; }
+    if [ "$runtime" = claude ]; then session_set "$key" mcp "$mcp"
+    else echo "NOTE: MCP connectors need the claude runtime; this ${runtime} session gets none" >&2; fi
+  fi
   nohup "$0" --backend gce session-boot "$key" 2>&1 < /dev/null \
     | nohup perl -e "$_SESSION_STAMP_PL" "${SESSION_DIR}/${key}.log" "${SESSION_DIR}/${key}.boot.tsv" > /dev/null 2>&1 &
   session_set "$key" job_pid "$!"
@@ -1839,6 +1848,7 @@ _cmd_session_boot() {
   name="$(worktree_branch_for "$key")"; dir="$(session_run_dir "$key")"
   FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
+  export _FXA_SESSION_MCP="$(session_get "$key" mcp)" # only a session sets this
   runtime_load || { session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   _retry git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \

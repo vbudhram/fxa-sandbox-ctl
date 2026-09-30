@@ -8,7 +8,7 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-FXA_LLM_PROXY_DIR="$tmp"; source "$(dirname "$0")/llm-token.sh"
+FXA_LLM_PROXY_DIR="$tmp"; source "$(dirname "$0")/llm-token.sh"; source "$(dirname "$0")/mcp-token.sh"
 eval "$(sed -n '/^_claude_auth_line() {/,/^}/p' "$(dirname "$0")/agent.sh")"
 
 t1="$(llm_token_for fxa-1)"; t2="$(llm_token_for fxa-1)"
