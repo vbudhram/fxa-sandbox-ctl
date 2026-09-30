@@ -12,10 +12,12 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CALLS = []  # (path, method, params, headers) of every upstream request
 MODE = {"sse": False, "expire": False}
+OAUTH = {"refresh": "rt-0", "access": None, "n": 0}  # the fake token endpoint's current pair
 SESSIONS = [0]
 TOOLS = [
     {"name": "read_issue", "description": "Read an issue", "inputSchema": {"type": "object", "properties": {"key": {}, "fields": {}}}},
@@ -47,7 +49,17 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self):
-        msg = json.loads(self.rfile.read(int(self.headers["content-length"])))
+        body = self.rfile.read(int(self.headers["content-length"]))
+        if self.path == "/token":
+            form = urllib.parse.parse_qs(body.decode())
+            if form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]]:
+                return self.send(400, {"error": "invalid_grant"})
+            OAUTH["n"] += 1
+            OAUTH.update(refresh="rt-%d" % OAUTH["n"], access="at-%d" % OAUTH["n"])
+            return self.send(200, {"access_token": OAUTH["access"], "refresh_token": OAUTH["refresh"], "expires_in": 3600})
+        if self.path == "/oauth" and self.headers.get("Authorization") != "Bearer %s" % OAUTH["access"]:
+            return self.send(401, {"error": "invalid_token"})
+        msg = json.loads(body)
         CALLS.append((self.path, msg.get("method"), msg.get("params"), dict(self.headers)))
         method, mid = msg.get("method"), msg.get("id")
         if method == "initialize":
@@ -98,12 +110,16 @@ class GatewayTest(unittest.TestCase):
             "github": {"url": base + "/github", "headers": auth, "tools": ["get_pr"],
                        "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"}]},
             "slack": {"url": base + "/slack", "headers": {"Authorization": "Bearer ${UNSET_SLACK_TOKEN}"}, "tools": ["read_issue"]},
+            "figma": {"url": base + "/oauth", "headers": {"Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}"}, "tools": ["read_issue"]},
         }}
+        cls.oauth = os.path.join(cls.dir, "oauth.json")
+        with open(cls.oauth, "w") as f:
+            json.dump({"token_endpoint": base + "/token", "client_id": "c1", "refresh_token": "rt-0"}, f)
         cfg = os.path.join(cls.dir, "gateway.json")
         with open(cfg, "w") as f:
             json.dump(conf, f)
         cls.port = free_port()
-        env = dict(os.environ, MCP_GATEWAY_DIR=cls.dir, MCP_GATEWAY_CONFIG=cfg, RUNLAYER_AGENT_TOKEN="rl-secret",
+        env = dict(os.environ, MCP_GATEWAY_DIR=cls.dir, MCP_GATEWAY_CONFIG=cfg, RUNLAYER_AGENT_TOKEN="rl-secret", MCP_GATEWAY_OAUTH=cls.oauth,
                    MCP_GATEWAY_LISTEN="127.0.0.1:%d" % cls.port)
         env.pop("UNSET_SLACK_TOKEN", None)
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "gateway.py")], env=env, stderr=subprocess.DEVNULL)
@@ -212,7 +228,7 @@ class GatewayTest(unittest.TestCase):
         self.assertNotIn("Embargoed", json.dumps(result))
 
     def test_a_list_argument_always_includes_its_values(self):
-        tok = self.token("m")
+        tok = self.token("q")
         self.assertTrue(self.call(tok, "jira__read_issue", {"key": "FXA-SEC", "fields": ["summary"]})["isError"])
         self.call(tok, "jira__read_issue", {"key": "FXA-1"})
         self.assertEqual(self.upstream_calls("/jira")[-1][2]["arguments"]["fields"], ["summary", "security"])
@@ -237,6 +253,17 @@ class GatewayTest(unittest.TestCase):
         MODE["expire"] = True
         self.assertFalse(self.call(tok, "jira__read_issue", {"key": "FXA-2"}).get("isError"))
         self.assertEqual(SESSIONS[0], inits + 1)
+
+    def test_an_oauth_connector_keeps_the_rotated_refresh_token(self):
+        tok = self.token("r", ["figma"])
+        self.assertFalse(self.call(tok, "figma__read_issue", {"key": "FXA-1"}).get("isError"))
+        self.assertEqual(self.upstream_calls("/oauth")[-1][3]["Authorization"], "Bearer " + OAUTH["access"])
+        with open(self.oauth) as f:
+            self.assertEqual(json.load(f)["refresh_token"], OAUTH["refresh"])
+        OAUTH["access"] = "revoked"  # the upstream refuses the token; the gateway renews it once
+        self.assertFalse(self.call(tok, "figma__read_issue", {"key": "FXA-2"}).get("isError"))
+        with open(self.oauth) as f:
+            self.assertEqual(json.load(f)["refresh_token"], OAUTH["refresh"])
 
     def test_every_call_is_audited(self):
         tok = self.token("n")

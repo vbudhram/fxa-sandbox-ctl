@@ -14,6 +14,9 @@ The upstream account's own permissions stay the real limit; this is the second.
 Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
   {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result"}}}
 Header values expand ${VAR} from the environment, so secrets stay in .env.
+${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
+MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_token, resource}, which
+oauth-login.py writes.
 
 Tokens: <dir>/tokens/<token>.json  {run, created, expires, connectors, cap_calls, calls}
 written by the controller (lib/mcp-token.sh), updated here. One line per call
@@ -27,11 +30,15 @@ import re
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 
 DIR = os.environ.get("MCP_GATEWAY_DIR", os.path.expanduser("~/.claude/state/mcp-gateway"))
 CONFIG = os.environ.get("MCP_GATEWAY_CONFIG", os.path.expanduser("~/.config/fxa/mcp-gateway.json"))
 LISTEN = os.environ.get("MCP_GATEWAY_LISTEN", "0.0.0.0:8789")
+OAUTH_FILE = os.environ.get("MCP_GATEWAY_OAUTH", os.path.expanduser("~/.config/fxa/mcp-gateway-oauth.json"))
+OAUTH_VAR = "RUNLAYER_OAUTH_TOKEN"
 TOKEN_RE = re.compile(r"^fxm_[A-Za-z0-9]{32}$")
 SEP = "__"
 # Methods a client may probe that this gateway has nothing for.
@@ -184,10 +191,64 @@ class SessionGone(Exception):
     pass
 
 
-def expand(value):
+class Unauthorized(Exception):
+    pass
+
+
+class OAuth:
+    """Access tokens from a refresh token. The server may rotate the refresh
+    token on each use, so the newest one goes back to the file at once."""
+
+    def __init__(self, path):
+        self.path, self.access, self.until = path, None, 0
+        self.lock = threading.Lock()
+
+    def token(self):
+        with self.lock:
+            if not self.access or time.time() > self.until - 60:
+                self._renew()
+            return self.access
+
+    def drop(self):
+        with self.lock:
+            self.access = None
+
+    def _renew(self):
+        try:
+            with open(self.path) as f:
+                st = json.load(f)
+            body = urllib.parse.urlencode({"grant_type": "refresh_token", "refresh_token": st["refresh_token"],
+                                           "client_id": st["client_id"], "resource": st.get("resource", [])},
+                                          doseq=True).encode()
+            req = urllib.request.Request(st["token_endpoint"], body, {"accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as r:
+                doc = json.load(r)
+            self.access = doc["access_token"]
+        except urllib.error.HTTPError as e:
+            raise UpstreamError("oauth: the token endpoint answered HTTP %d; run manager.sh oauth again" % e.code)
+        except (OSError, ValueError, KeyError) as e:
+            raise UpstreamError("oauth: %s" % e.__class__.__name__)
+        self.until = time.time() + int(doc.get("expires_in") or 300)
+        if doc.get("refresh_token") and doc["refresh_token"] != st["refresh_token"]:
+            st["refresh_token"] = doc["refresh_token"]
+            fd = os.open(self.path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(st, f)
+            os.replace(self.path + ".tmp", self.path)
+
+
+OAUTH = OAuth(OAUTH_FILE)
+
+
+def expand(value, live=False):
+    """Fill ${VAR} from the environment. Without live, only check that each is set."""
     missing = []
 
     def sub(m):
+        if m.group(1) == OAUTH_VAR:
+            if not os.path.exists(OAUTH_FILE):
+                missing.append(OAUTH_VAR + " (no " + OAUTH_FILE + ")")
+            return OAUTH.token() if live else ""
         if m.group(1) not in os.environ:
             missing.append(m.group(1))
         return os.environ.get(m.group(1), "")
@@ -200,7 +261,9 @@ def expand(value):
 class Upstream:
     def __init__(self, name, spec):
         self.name, self.url = name, urllib.parse.urlsplit(spec["url"])
-        self.headers = {k: expand(v) for k, v in (spec.get("headers") or {}).items()}
+        self.headers = dict(spec.get("headers") or {})
+        for v in self.headers.values():
+            expand(v)
         self.tools_allowed = list(spec.get("tools") or [])
         self.rules = list(spec.get("rules") or [])
         self.deny_result = list(spec.get("deny_result") or [])
@@ -211,9 +274,10 @@ class Upstream:
         self.lock = threading.Lock()
 
     def _post(self, msg, want_id):
+        headers = {"content-type": "application/json", "accept": "application/json, text/event-stream",
+                   **{k: expand(v, live=True) for k, v in self.headers.items()}}
         cls = http.client.HTTPSConnection if self.url.scheme == "https" else http.client.HTTPConnection
         conn = cls(self.url.hostname, self.url.port, timeout=UPSTREAM_TIMEOUT)
-        headers = {"content-type": "application/json", "accept": "application/json, text/event-stream", **self.headers}
         if self.session:
             headers["mcp-session-id"] = self.session
         if self.protocol:
@@ -225,6 +289,9 @@ class Upstream:
             if resp.status == 404 and self.session:
                 resp.read()
                 raise SessionGone()
+            if resp.status == 401:
+                resp.read()
+                raise Unauthorized()
             if resp.status >= 400:
                 raise UpstreamError("%s answered HTTP %d" % (self.name, resp.status))
             if want_id is None:
@@ -270,7 +337,7 @@ class Upstream:
 
     def rpc(self, method, params):
         with self.lock:
-            for attempt in (1, 2):  # an expired upstream session: start a new one, once
+            for attempt in (1, 2):  # an expired session or access token: renew it, once
                 try:
                     if self.protocol is None:
                         self._init()
@@ -282,6 +349,11 @@ class Upstream:
                     self.protocol = None
                     if attempt == 2:
                         raise UpstreamError("%s: session lost" % self.name)
+                except Unauthorized:
+                    OAUTH.drop()
+                    self.protocol = None
+                    if attempt == 2:
+                        raise UpstreamError("%s answered HTTP 401" % self.name)
         if not isinstance(answer, dict) or "error" in answer:
             err = (answer or {}).get("error", {}) if isinstance(answer, dict) else {}
             raise UpstreamError("%s: %s" % (self.name, err.get("message", "bad answer")))

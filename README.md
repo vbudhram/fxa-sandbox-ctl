@@ -516,6 +516,12 @@ Set it up:
    the file and refuses one that holds a credential.
 2. Store the Agent Account token as the `fxa-runlayer-agent-token` secret. The
    secrets unit writes it to a file only the gateway reads.
+
+   Without an Agent Account, use `Bearer ${RUNLAYER_OAUTH_TOKEN}` in the
+   headers and run `bash infra/gce/manager.sh oauth`. You sign in to Runlayer
+   in your browser, and the refresh token goes straight to the VM, where the
+   gateway renews its access token. The gateway then acts as you and sees what
+   you see, so its rules are the only limit. Run it again when renewal fails.
 3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
    Only Slack sessions get connectors; ai-fixme pipeline runs never do.
