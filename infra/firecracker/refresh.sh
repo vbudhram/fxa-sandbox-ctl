@@ -42,11 +42,13 @@ GUEST
 "$fc" ssh 0 'sudo -u agent bash -s' <<'GUEST' || echo "WARN: the Firefox build failed; the snapshot keeps the earlier one"
 set -euo pipefail
 cd /home/agent
-[ -d firefox ] || git clone -q --depth 1 https://github.com/mozilla-firefox/firefox firefox
+# Depth 200: CI builds artifacts an hour or more after a push, so mach looks back
+# for the nearest commit that has them; a depth-1 clone has none to look at.
+[ -d firefox ] || git clone -q --depth 200 https://github.com/mozilla-firefox/firefox firefox
 cd firefox
 printf '%s\n' 'ac_add_options --enable-artifact-builds' 'mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-artifact' > mozconfig
 old="$(git rev-parse HEAD)"
-git fetch -q --depth 1 origin main && git checkout -q FETCH_HEAD
+git fetch -q --depth 200 origin main && git checkout -q FETCH_HEAD
 if [ ! -x obj-artifact/dist/bin/firefox ] || [ "$old" != "$(git rev-parse HEAD)" ]; then
   [ -d ~/.mozbuild ] || ./mach --no-interactive bootstrap --no-system-changes \
     --application-choice "Firefox for Desktop Artifact Mode" > /tmp/refresh-firefox.log 2>&1
