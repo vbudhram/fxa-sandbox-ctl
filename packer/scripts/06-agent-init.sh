@@ -28,6 +28,10 @@ export NODE_OPTIONS="--dns-result-order=ipv4first"
 export METADATA_SERVER_DETECTION=none
 export GOOGLE_CLOUD_PROJECT=demo-fxa
 
+# As CI sets it (.circleci/config.yml), so a spec that passes here passes there:
+# every request resolves to this location, and no city is shown.
+export GEODB_LOCATION_OVERRIDE='{"location": {"countryCode": "US", "postalCode": "85001"}}'
+
 # MySQL
 export AUTH_MYSQL_HOST=localhost
 export AUTH_MYSQL_PORT=3306

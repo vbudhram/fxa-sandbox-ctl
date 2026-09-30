@@ -35,6 +35,13 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
 fi
 echo "clone at $(git rev-parse --short HEAD)"
 GUEST
+# The snapshot's stack uses CI's location override; images before it lack the line.
+"$fc" ssh 0 'sudo bash -s' <<'GUEST'
+grep -q GEODB_LOCATION_OVERRIDE /etc/agent-env.sh || cat >> /etc/agent-env.sh <<'ENV'
+# As CI sets it (.circleci/config.yml), so a spec that passes here passes there.
+export GEODB_LOCATION_OVERRIDE='{"location": {"countryCode": "US", "postalCode": "85001"}}'
+ENV
+GUEST
 # Firefox, so a session can change it and hand back a diff: an artifact build
 # (prebuilt C++, local front end), rebuilt when Firefox main moved. A failure
 # keeps the snapshot's earlier build and never blocks the FxA refresh.

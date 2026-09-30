@@ -82,7 +82,10 @@ Every turn, including later ones:
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}.
 - To show the engineer a screenshot, a video or a patch, save it in /workspace/.fxa-auto-media/.
-  Files there are posted to the thread when your turn ends.
+  Files there are posted to the thread when your turn ends. For a change the engineer
+  can see (a page, an email, a flow), attach a screenshot or a video before you end
+  with 'status: ready'.
+- Before you send a path:line, check it against the file with grep -n or sed -n.
 - When a decision blocks the work, list 2 to 4 answers, one per line, each starting
   'OPTION: '. The engineer taps one. For several decisions at once (at most 5),
   put 'QUESTION: <the question>' on its own line before each group of OPTION lines.
@@ -200,6 +203,8 @@ _session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
 # _session_turn <key> <message>   Start one resumed turn on the runner and return.
 _session_turn() {
   local key="$1" msg="$2" name sid tmp
+  # A CircleCI link in a later message: the host reads it, since the runner cannot.
+  msg="${msg}$(circleci_digests "$msg" "$(openssl rand -hex 6)" 2>/dev/null || true)"
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then

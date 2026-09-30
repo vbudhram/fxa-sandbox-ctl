@@ -699,11 +699,7 @@ finish_approve_functional_gate() {
   local pr_url="${1:-}"
   [ -n "$pr_url" ] || return 0
 
-  # Fall back to the circleci CLI's config, so the token need not be in .env.
-  local token="${CIRCLECI_TOKEN:-${CIRCLECI_CLI_TOKEN:-}}"
-  if [ -z "$token" ] && [ -f "${HOME}/.circleci/cli.yml" ]; then
-    token="$(sed -n 's/^token:[[:space:]]*//p' "${HOME}/.circleci/cli.yml" | head -1 | tr -d '\42\47')" || token=""
-  fi
+  local token; token="$(circleci_token)"
   if [ -z "$token" ]; then
     echo "No CircleCI token (CIRCLECI_TOKEN / CIRCLECI_CLI_TOKEN / ~/.circleci/cli.yml); skipping gate auto-approval." >&2
     echo "Approve it manually in the CircleCI UI for ${pr_url} if functional tests are needed." >&2

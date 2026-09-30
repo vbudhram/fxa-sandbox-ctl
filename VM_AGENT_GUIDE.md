@@ -30,7 +30,9 @@ Chat sessions do not have it; do not report that it is missing.
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
-  `acli`. The host does every push, PR and comment.
+  `acli`. The host does every push, PR and comment. When a message links a
+  mozilla/fxa CircleCI job or workflow, the host adds its failed tests and the
+  end of each failed step's log, fenced as untrusted, to the context or the message.
 - **MCP:** only Slack sessions have it; pipeline runs do not. A session has
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
@@ -242,6 +244,10 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
   ("Failed to cleanup account ... Incorrect password"). Treat it as a local
   failure, not your change, unless you touched that flow.
 - Do not set `FXA_SANDBOX_IP` in the VM. Tests use `localhost`.
+- The stack sets `GEODB_LOCATION_OVERRIDE` as CI does (US, postal code 85001),
+  so every request resolves there and no city is shown. A spec that expects a
+  city cannot pass on CI. CI's other test settings are in the functional-tests
+  job's `environment` in `.circleci/config.yml`; check it when a spec depends on a flag.
 - OAuth relier flows through 123done (`tests/oauth/*`, `loginHint*`,
   `relayIntegration`, `smartWindowIntegration`) can run here: the host ships
   `packages/123done/secrets.json` and restarts 123done. If a token exchange
