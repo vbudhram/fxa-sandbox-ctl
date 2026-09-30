@@ -2075,7 +2075,10 @@ cmd_events() {
         # Recheck under the lock: another events or a steer may have got here first.
         if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
           mv "$q" "${q}.sending"
-          if ! _session_turn "$key" "$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
+          # Follow-ups are often a quick correction of what the agent just answered.
+          if ! _session_turn "$key" "These arrived while you were answering. Answer only what is new; if your last reply already covers one, say so in one line.
+
+$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
           rm -f "${q}.sending"
         fi
         _session_unlock "$key"
