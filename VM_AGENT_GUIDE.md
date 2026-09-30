@@ -31,10 +31,10 @@ Chat sessions do not have it; do not report that it is missing.
   private ranges and the metadata server. There is no IPv6.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
   `acli`. The host does every push, PR and comment.
-- **MCP:** a run with connectors has one MCP server, `fxa`, whose tools are
-  named `<connector>__<tool>`. They are read-only. A tool that refuses a call
-  says why; do not retry it another way. Put anything that should be written
-  (a Jira comment, a reply) in your handoff.
+- **MCP:** only Slack sessions have it; pipeline runs do not. A session has
+  one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
+  read-only. A tool that refuses a call says why; do not retry it another way.
+  If something should be written (a Jira comment, a reply), tell the person.
 
 ## 2. What the host does with your work
 
@@ -224,7 +224,7 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
 - OAuth relier flows through 123done (`tests/oauth/*`, `loginHint*`,
   `relayIntegration`, `smartWindowIntegration`) can run here: the host ships
   `packages/123done/secrets.json` and restarts 123done. If a token exchange
-  fails with errno 109, the secret is missing; say so in the handoff. If one
+  fails with errno 109, the secret is missing; say so in your handoff or reply. If one
   fails on a subscriptions capability, CI covers it.
 - These specs cannot pass here, and CI covers them: the CMS specs
   (`tests/cms/*`) and payments (`local-payments-next`). Verify with direct
