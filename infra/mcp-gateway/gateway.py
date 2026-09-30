@@ -127,7 +127,8 @@ def scope_jql(jql, project):
     jql = (jql or "").strip()
     cut = jql_scan(jql)
     where, order = jql[:cut].strip(), jql[cut:].strip()
-    scoped = "project = %s" % project if not where else "project = %s AND (%s)" % (project, where)
+    base = "project = %s AND level IS EMPTY" % project
+    scoped = base if not where else "%s AND (%s)" % (base, where)
     return (scoped + " " + order).strip()
 
 
@@ -150,6 +151,10 @@ def apply_rules(rules, tool, schema, args):
             if not isinstance(val, str):
                 raise Denied("%s needs a jql string" % arg)
             args[arg] = scope_jql(val, rule["jql_project"])
+        elif "include" in rule:
+            # An omitted list means the upstream's defaults, so start from them, not from empty.
+            have = list(val) if isinstance(val, list) and val else list(rule.get("default", []))
+            args[arg] = have + [v for v in rule["include"] if v not in have]
         elif "equals" in rule or "one_of" in rule:
             allowed = [rule["equals"]] if "equals" in rule else rule["one_of"]
             if not isinstance(val, str) or val.lower() not in [a.lower() for a in allowed]:

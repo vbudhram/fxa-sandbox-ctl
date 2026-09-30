@@ -492,11 +492,13 @@ Every connector is read-only by construction:
 
 - **`tools`** is an allowlist. A tool not on it does not exist for the runner.
 - **`rules`** check or rewrite arguments before a call leaves: `equals` and
-  `one_of` pin a value (`owner` must be `mozilla`), `set` forces one, and
-  `jql_project` wraps a JQL search as `project = FXA AND (...)`, refusing
-  JQL that would escape the group.
+  `one_of` pin a value (`owner` must be `mozilla`), `set` forces one,
+  `include` adds values to a list (`fields` always asks for `security`), and
+  `jql_project` wraps a JQL search as `project = FXA AND level IS EMPTY AND (...)`,
+  refusing JQL that would escape the group.
 - **`deny_result`** patterns withhold an answer before it reaches the runner,
-  such as a Jira issue with a security level.
+  such as a Jira issue with a security level. Jira returns `security` only
+  when `fields` asks for it, so keep the `include` rule with this pattern.
 
 The upstream account's own permissions stay the real limit: give the Agent
 Account read-only access, FXA only, and no security-level visibility.

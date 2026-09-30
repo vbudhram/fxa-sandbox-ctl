@@ -5,7 +5,11 @@
       "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
       "tools": ["getJiraIssue", "searchJiraIssuesUsingJql", "getJiraIssueRemoteIssueLinks"],
       "rules": [
-        { "tool": "searchJiraIssuesUsingJql", "arg": "jql", "jql_project": "FXA" }
+        { "tool": "searchJiraIssuesUsingJql", "arg": "jql", "jql_project": "FXA" },
+        { "arg": "cloudId", "set": "mozilla-hub.atlassian.net" },
+        { "arg": "fields", "include": ["security"],
+          "default": ["summary", "description", "status", "issuetype", "priority", "labels", "components",
+                      "assignee", "reporter", "created", "updated", "resolution", "project"] }
       ],
       "deny_result": ["\"security\"\\s*:\\s*\\{"]
     },
