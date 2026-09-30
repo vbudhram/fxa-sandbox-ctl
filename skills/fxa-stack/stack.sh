@@ -14,7 +14,8 @@ inbox|tcp 9001
 content (nginx)|http http://localhost:3030/
 settings|http http://localhost:3000/settings/static/js/bundle.js
 profile|http http://localhost:1111/__heartbeat__
-admin-server|tcp 8095'
+admin-server|tcp 8095
+123done|http http://localhost:8080/'
 
 status() {
   local down=0 name check
