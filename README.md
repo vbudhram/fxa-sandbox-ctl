@@ -522,9 +522,9 @@ Set it up:
    in your browser, and the refresh token goes straight to the VM, where the
    gateway renews its access token. The gateway then acts as you and sees what
    you see, so its rules are the only limit. Run it again when renewal fails.
-   Runlayer binds each sign-in to one URL. Point every connector at the
-   plugin URL (`/mcp`) for one sign-in; its tool names then carry a suffix
-   such as `atlassian_getJiraIssue__353c1c3c690b0056`.
+   Runlayer binds each sign-in to one URL, so each connector's proxy URL
+   asks for its own. Do not use the plugin URL (`/mcp`): to this client it
+   offers only `search_tools` and `execute_tool`, which the rules cannot check.
 3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
    Only Slack sessions get connectors; ai-fixme pipeline runs never do.
