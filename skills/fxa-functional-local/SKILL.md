@@ -16,6 +16,27 @@ It runs one worker and no retries, so a failure is a real failure, and prints
 PASS or FAIL with the video paths. A trace is kept on failure under
 /workspace/artifacts/functional/.
 
+## Read a trace
+
+Use `trace.sh` after a local spec fails, or when a red CI run put traces in
+/workspace/.fxa-ci/. Give it one trace.zip or a directory:
+
+    bash ~/.claude/skills/fxa-functional-local/trace.sh /workspace/artifacts/functional
+    bash ~/.claude/skills/fxa-functional-local/trace.sh /workspace/.fxa-ci
+
+For each trace.zip, it prints:
+
+- The test actions in order, with the duration of each. `!!` marks the failed
+  action, and the line below it shows the error.
+- The console errors and warnings.
+- The failed requests (4xx, 5xx, or no response), with the method and the URL.
+- The last page URL.
+
+It removes the route handler steps and caps each list, and it says how many
+lines it cut. Read the failed action first, then the failed requests near it.
+Do not call CircleCI hosts. If /workspace/.fxa-ci has no trace, ask the
+engineer to paste the job link.
+
 ## Which spec covers which flow
 
 Paths are under /workspace/packages/functional-tests/.

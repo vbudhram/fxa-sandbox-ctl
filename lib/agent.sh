@@ -45,7 +45,7 @@ _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
     fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
-    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan
+    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot
 }
 
 # Skills from the FxA repo's own .claude/skills that need what the runner lacks
@@ -147,7 +147,7 @@ _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume-claude.tgz .fxa-ci ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-ci ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
@@ -181,6 +181,11 @@ _put_run_files() {
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-claude.tgz" ]; then
     vm_exec "$name" sudo -u agent bash -c 'tar -xzf /workspace/.fxa-resume-claude.tgz -C /home/agent && rm -f /workspace/.fxa-resume-claude.tgz' >/dev/null 2>&1 \
       || echo "WARN: could not restore the earlier conversation." >&2
+  fi
+  # Unpacked in the runner, as the agent: the archive came from a runner, so the host never opens it.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-work.tgz" ]; then
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xzf .fxa-resume-work.tgz && rm -f .fxa-resume-work.tgz' >/dev/null 2>&1 \
+      || echo "WARN: could not restore the earlier test plan and PR body." >&2
   fi
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume.patch" ]; then
     if vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git apply --whitespace=nowarn .fxa-resume.patch && rm -f .fxa-resume.patch' >/dev/null 2>&1; then

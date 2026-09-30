@@ -12,6 +12,37 @@ Run the helper from anywhere:
     bash ~/.claude/skills/fxa-stack/stack.sh status        # one line per service
     bash ~/.claude/skills/fxa-stack/stack.sh ensure         # start the stack if auth is down, wait for health
     bash ~/.claude/skills/fxa-stack/stack.sh diagnose       # errored services with their last log lines
+    bash ~/.claude/skills/fxa-stack/stack.sh account 2fa    # a test account, as one line of JSON
+    bash ~/.claude/skills/fxa-stack/stack.sh restart auth KEY=VAL   # one service with extra env
+
+## Test accounts
+
+`account verified|unverified|2fa` creates an account on the local auth server
+with `fxa-auth-client`, the client that the functional tests use. It prints one
+line of JSON:
+
+    {"email":"stack-<hex>@restmail.net","password":"stack-test-password","uid":"...","sessionToken":"...","verified":true}
+
+- `verified`: a verified account and a verified session (`preVerified`).
+- `unverified`: the email is not verified, so the session is not verified.
+- `2fa`: a verified account with TOTP on. The JSON adds `totpSecret` (base32).
+  Any TOTP tool, or `otplib` in `/workspace`, computes codes from it.
+
+Auth must be up (`ensure`). The script does not delete the account.
+
+## Restart one service with extra env
+
+`restart <pm2 name> [KEY=VAL...]` finds the pm2 config that defines the
+service (a `/tmp/*-pm2.config.js` wrapper from `fxa-start` first, then
+`packages/*/pm2.config.js`), adds each `KEY=VAL` to its `env`, and starts it
+again. It then waits up to 2 minutes for the health check of that service.
+With no `KEY=VAL`, the service goes back to the env of its config.
+
+    bash ~/.claude/skills/fxa-stack/stack.sh restart auth SIGNIN_CONFIRMATION_ENABLED=false
+    bash ~/.claude/skills/fxa-stack/stack.sh restart auth     # undo the override
+
+The names are pm2 names: `auth`, `inbox`, `content`, `settings-react`,
+`profile`, `123done`.
 
 ## What each check needs
 
@@ -45,6 +76,8 @@ MySQL 3306, Redis 6379, Firestore 9090, goaws 4100, Cloud Tasks 8123.
 
 ## Rules
 
+- Never run `pm2 restart --update-env`. It copies your whole shell env, for
+  example `NODE_ENV`, into the service and can break it. Use `stack.sh restart`.
 - Do not use `yarn start` or `_scripts/pm2-all.sh` on the VM: they use stock
   configs that collide with the VM's ports and turn Stripe and CMS back on.
 - Do not set `FXA_SANDBOX_IP` inside the VM.

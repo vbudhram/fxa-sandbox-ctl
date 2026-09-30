@@ -1885,6 +1885,7 @@ _cmd_session_boot() {
   if [ -n "$from" ]; then
     [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
+    [ -s "${SESSION_DIR}/${from}.work.tgz" ] && cp "${SESSION_DIR}/${from}.work.tgz" "${dir}/.fxa-resume-work.tgz"
   fi
   nonce="$(openssl rand -hex 6)"
   cat > "${dir}/.fxa-jira-context.md" <<EOF
@@ -1939,7 +1940,7 @@ what code you are on. Do not pull: a newer main needs a new thread."
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
-  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz"
+  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz"
   rm -f "${dir}/.fxa-auto-token" "${dir}/.fxa-auto-codex-auth.json" # the runner has its copy; none stays on the host
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
   # Stopped while the runner booted: take it down instead of going active.

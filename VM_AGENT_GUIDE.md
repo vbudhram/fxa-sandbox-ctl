@@ -29,18 +29,27 @@ Chat sessions do not have it; do not report that it is missing.
   `cdn.playwright.dev`, `pypi.org` and `files.pythonhosted.org`. Codex runs also reach `api.openai.com`, `chatgpt.com`
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
+- **Show the change** with new files included:
+  `git add -N . && git diff origin/main -- . ":(exclude).fxa-*"`.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
   `acli`. The host does every push, PR and comment. When a message links a
   mozilla/fxa CircleCI job or workflow, the host adds its failed tests, the end
   of each failed step's log and Playwright's error context (the page when the
   test failed), fenced as untrusted, to the context or the message. The failed
-  tests' traces land in `/workspace/.fxa-ci/<test>/trace.zip`. Unzip one:
-  `*.trace` holds each action with its error and the console messages,
-  `*.network` each request and response, and `resources/` the page snapshots.
+  tests' traces land in `/workspace/.fxa-ci/<test>/trace.zip`. Read them with
+  `bash ~/.claude/skills/fxa-functional-local/trace.sh /workspace/.fxa-ci`: the
+  actions with the failed one marked, console errors and failed requests.
 - **MCP:** only Slack sessions have it; pipeline runs do not. A session has
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.
+  Jira, Slack and Figma links are readable through these tools, not the network:
+  `jira__getJiraIssue` and `jira__searchJiraIssuesUsingJql` (the host pins the
+  site and scopes JQL to FXA; ask for `fields` such as `summary` and `status`),
+  `slack__slack_read_thread` and `slack__slack_read_channel`, and `figma__*`.
+  Slack reads only #fxa (`C4D36CAJW`) and #fxa-team (`CLV3KMZ8B`); pass the ID,
+  not the name. A permalink `/archives/<C>/p1790355024144359` has
+  `channel_id` `<C>` and `message_ts` `1790355024.144359` (a dot before the last 6 digits).
 - **Firefox source:** cite it as `firefox:<path>:<line>`. It stays outside
   /workspace, so it is never part of the FxA diff.
   - **Firecracker:** `~/firefox` is a full checkout with an artifact build
@@ -267,7 +276,9 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
 Save them in `/workspace/.fxa-auto-media/` as `.png`, `.jpg`, `.webp`, `.gif`,
 `.webm`, `.mp4` or `.mov`, or a `.patch` or `.diff`. Each must be a plain file inside the workspace, not
 a symlink, at most 100MB. For a component with a sibling `*.stories.tsx`, use
-`/fxa-storybook-capture`. If you cannot take a screenshot you planned, write
+`/fxa-storybook-capture`. For a live page (a route, a signed-in state, a
+viewport, a locale or dark mode), or to check a recorded video frame by frame,
+use `/fxa-page-shot`; do not write a throwaway Playwright script or spec. If you cannot take a screenshot you planned, write
 the reason to `/workspace/.fxa-auto-media-skipped.txt`.
 
 ## 8. Skills you have
@@ -277,7 +288,7 @@ Plugins do not load here. These skills are copied in at launch:
 `/fxa-storybook-capture`, `/fxa-vm-selfcheck`, `/fxa-vm-handoff`,
 `/fxa-test-plan`, `/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
 `/create-pr-description`, `/humanizer`, `/pr-review-typescript`,
-`/quick-review` and `/fxa-save-investigation`. The FxA repo adds its own in
+`/quick-review`, `/fxa-save-investigation` and `/fxa-page-shot`. The FxA repo adds its own in
 `/workspace/.claude/skills`, such as `/fxa-review-quick`, and its rules in
 `/workspace/.claude/rules/`. For FxA code, the repo's rules and skills win.
 

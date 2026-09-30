@@ -1,16 +1,16 @@
 ---
 name: fxa-vm-selfcheck
-description: Use inside the FxA sandbox VM after /fxa-review-quick and before the handoff. Runs the six checks that FxA reviewers raise most often and that the repo review skills do not cover.
+description: Use inside the FxA sandbox VM after /fxa-review-quick and before the handoff. Runs the seven checks that FxA reviewers raise most often and that the repo review skills do not cover.
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
 # FxA sandbox self-check
 
 `/fxa-review-quick` from the repo covers FxA conventions, security, and
-migrations. Run it first. This skill adds the six checks that reviewers raised
+migrations. Run it first. This skill adds the seven checks that reviewers raised
 on this pipeline's pull requests and that no repo skill performs.
 
-Each check below traces to real review comments. Run all five. Report a finding
+Each check below traces to real review comments. Run all seven. Report a finding
 only when you can name the file and the line.
 
 ## Step 0: Get the right diff
@@ -37,7 +37,8 @@ For every test the change adds or edits, answer one question: **which assertion
 fails when I revert the source change?**
 
 Name the assertion and the value it receives on unmodified code. When you cannot
-name one, the test does not cover the fix. Fix the test.
+name one, the test does not cover the fix. Fix the test. To prove it, run
+`/fxa-verify --revert`: it runs the tests without the fix and with it.
 
 Watch for these shapes:
 - The test builds the input itself, so it never reaches the code you changed.
@@ -186,6 +187,40 @@ find . -path ./node_modules -prune -o -newer .fxa-verify-verdict.txt -type f \
 
 The PR body's testing section must match the verdict: every `plan` line with
 its result, and every `CI` line with the reason it runs only in CI.
+
+## Check 7: New or changed functional specs
+
+A spec can pass on the VM and fail in CI. The CircleCI `playwright-functional-tests`
+job runs every spec with its own environment. The `smoke-tests` job runs every
+spec against stage and production, not only the `#smoke` specs.
+
+```bash
+cd /workspace
+git --no-pager diff --name-only --diff-filter=AM "$BASE" -- packages/functional-tests/tests/
+git ls-files --others --exclude-standard -- packages/functional-tests/tests/
+git show "origin/${FXA_WORKTREE_BASE:-main}:.circleci/config.yml" \
+  | awk '/^  functional-test-executor:/{f=1;next} f&&/^  [a-z]/{exit} f' | grep -E '^ +[A-Z][A-Z0-9_]+:'
+```
+
+Skip this check when the first two commands print nothing. For each spec they
+print, read the whole file and one or two specs in the same directory:
+
+```bash
+grep -nE "describe\('severity-|#smoke|#phone|test\.(skip|fixme)\(|project\.name|featureFlags\." <spec> <neighbour-spec>
+```
+
+Report a finding when one of these is true:
+- The spec has no `severity-N` or `#smoke` in its `test.describe` title, but the
+  neighbours have one. A test that sends SMS has no `#phone`. CI runs `#phone`
+  tests serially and removes them from the main run.
+- A test needs something that stage or production does not have, and has no
+  skip. Examples are a local-only client, a flag, or a service. Use the skip
+  that neighbours use, such as `test.skip(project.name === 'production', '<reason>')`
+  or a `configPage.getConfig()` flag check.
+- An assertion needs a value that the CI environment above does not give. CI sets
+  `GEODB_LOCATION_OVERRIDE` to a country code and a postal code only, so an
+  asserted city or region fails. A flag that CI does not set and that is off by
+  default in the service config also fails.
 
 ## Output
 

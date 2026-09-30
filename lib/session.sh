@@ -51,7 +51,8 @@ _session_first_prompt() {
 You are pairing with an FxA engineer through a Slack thread. Read their message
 in /workspace/.fxa-jira-context.md first, before you write anything. Talk to them
 as "you". Do not mention that file or Jira unless they linked a ticket. The
-runner's operations guide is /etc/vm-agent-guide.md.
+runner's operations guide is /etc/vm-agent-guide.md: before you change code,
+start the stack or record anything, read all of it in one call, not in slices.
 
 Investigate first. Before you change code, write a test plan with ${tplan}:
 each behavior and how you will see it work the way a user or client would (a
@@ -165,7 +166,11 @@ EOF
     return
   fi
   cat <<EOF
-The engineer asked to open a PR. Wrap up now:
+The engineer asked to open a PR. Wrap up now. First, if
+'git add -N . && git diff --stat \$(git merge-base HEAD origin/main) -- . ":(exclude).fxa-*"'
+prints nothing, say there is nothing to open, write no handoff, and stop. If an
+earlier wrap-up in this session ran steps 1 and 3 and no file changed since, go
+straight to step 4.
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
    untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker.
 2. Revert any file unrelated to the request with 'git checkout -- <path>'.
@@ -176,7 +181,8 @@ The engineer asked to open a PR. Wrap up now:
    what should ship, with keys {issue, branch, pr_title, pr_body, media_paths}:
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; media_paths relative to /workspace, empty if
-   none. Write it to .fxa-auto-done.json.tmp, then mv it into place.
+   none. Write it with the Write tool (not an inline script) to
+   .fxa-auto-done.json.tmp, then mv it into place.
 EOF
 }
 
@@ -813,6 +819,11 @@ _session_save() {
     local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
+    # The agent's work files are not in the patch (it leaves out .fxa-*); without them a
+    # resumed runner writes its test plan and PR body again from memory.
+    _session_sh "$name" 'cd /workspace && f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -z "$f" ] || tar -czf - $f' \
+      2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
+    [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
   fi
   return 0
 }

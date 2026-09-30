@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # Plan, then run, the fastest correct checks for the changed files. See SKILL.md.
 #   verify.sh [--run] [--types] [--no-lint] [--plan <test-plan.json>] [file...]
+#   verify.sh --revert [test file...]   the tests fail without the fix, pass with it
 # With no files: the working diff against origin/main, untracked files included.
 # With --plan: the specs the test plan names (see /fxa-test-plan) first, then the
 # related specs of the changed files as a safety net, then any functional spec.
 set -u
-cd /workspace || exit 2
-RUN=0 TYPES=0 LINT=1 MAX_RELATED=15
+cd "${FXA_WORKSPACE:-/workspace}" || exit 2
+RUN=0 TYPES=0 LINT=1 MAX_RELATED=15 REVERT=0
 files=() PLAN=""
 while [ $# -gt 0 ]; do
-  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; *) files+=("$1") ;; esac
+  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; *) files+=("$1") ;; esac
   shift
 done
+given=${#files[@]}
 if [ "${#files[@]}" -eq 0 ]; then
   base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
   mapfile -t files < <({ git diff --name-only --diff-filter=d "$base"; git ls-files -o --exclude-standard; } \
@@ -168,7 +170,7 @@ if [ -n "$PLAN" ]; then
     add "plan check: $cb" "." "${pre}out=\$(bash -c $(printf %q "$cr") 2>&1); printf '%s\\n' \"\$out\"; printf '%s' \"\$out\" | grep -qE $(printf %q "$ce") || { echo 'expected to match: '$(printf %q "$ce"); exit 1; }"; done
   for fu in "${funcs[@]}"; do IFS=$'\t' read -r fs fg <<<"$fu"
     add "plan functional $(basename "$fs")" "." "bash ~/.claude/skills/fxa-functional-local/run.sh $(printf %q "$fs")${fg:+ $(printf %q "$fg")}"; done
-else
+elif [ "$REVERT" = 0 ]; then
   plan_files "" "${files[@]}"
 fi
 
@@ -183,6 +185,82 @@ cap_related() {
   echo "# ${n} related specs; running the sibling specs only" >&2
   if [ -n "$sib" ]; then echo "${cmd%%--findRelatedTests*}$sib"; else echo "$cmd"; fi
 }
+
+# --revert: run the tests with the non-test files of the diff at the merge-base
+# (the fix removed), then with the fix, and print both verdicts. Never git stash:
+# it fails on a staged file. git show writes the base version and leaves the index alone.
+if [ "$REVERT" = 1 ]; then
+  base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
+  is_test() { case "$1" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*/__snapshots__/*|packages/functional-tests/*) return 0 ;; esac; return 1; }
+  tests=() fix=()
+  [ "$given" -gt 0 ] && tests=("${files[@]}")
+  while IFS= read -r f; do
+    printf '%s\n' "${tests[@]}" | grep -qxF -- "$f" && continue
+    if is_test "$f"; then [ "$given" -gt 0 ] || tests+=("$f"); else fix+=("$f"); fi
+  done < <({ git diff --name-only --no-renames "$base"; git ls-files -o --exclude-standard; } | grep -vE '^(\.fxa-|ai/|artifacts/)' | sort -u)
+  [ "${#fix[@]}" -gt 0 ] || { echo "No non-test changes against $base to revert."; exit 2; }
+
+  # One row per test file; with no test files, the related tests of the fix.
+  # The commands are fixed now, on the fixed tree, so both runs run the same thing.
+  LINT=0 TYPES=0 rows=() setup=""
+  add_rows() { local p label dir cmd; for p in "${plan[@]}"; do IFS='|' read -r label dir cmd <<<"$p"
+    case "$label" in *"db patches") setup="$cmd"; continue ;; esac
+    cmd="$(cap_related "$dir" "$cmd")"; case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
+    rows+=("${1:-$label}|$dir|$cmd"); done; }
+  if [ "${#tests[@]}" -gt 0 ]; then for t in "${tests[@]}"; do plan=(); plan_files "" "$t"; add_rows "$t"; done
+  else plan=(); plan_files "" "${fix[@]}"; add_rows; fi
+  [ "${#rows[@]}" -gt 0 ] || { echo "No tests to run; pass the spec paths."; exit 2; }
+  echo "Fix files, restored from $base for the run without the fix:"; printf '  %s\n' "${fix[@]}"
+
+  sums() { local f; for f in "${fix[@]}"; do
+    if [ -e "$f" ]; then printf '%s %s\n' "$(git hash-object --no-filters -- "$f")" "$f"; else printf -- '- %s\n' "$f"; fi; done; }
+  bak="$(mktemp -d)" before="$(sums)" swapped=0
+  for f in "${fix[@]}"; do [ -e "$f" ] || continue
+    mkdir -p "$bak/$(dirname "$f")" && cp -a "$f" "$bak/$f" || { echo "ERROR: could not back up $f; nothing changed."; exit 2; }; done
+  put_back() { # the fixed versions back, byte for byte; a new file of the fix is part of it
+    [ "$swapped" = 1 ] || return 0
+    local f; for f in "${fix[@]}"; do
+      if [ -e "$bak/$f" ]; then mkdir -p "$(dirname "$f")" && cp -a "$bak/$f" "$f"; else rm -f "$f"; fi; done
+    if [ "$(sums)" = "$before" ]; then swapped=0; rm -rf "$bak"
+    else echo "ERROR: the fix files do not match their checksums after the restore. The backup is in $bak."; return 1; fi; }
+  trap put_back EXIT; trap 'exit 130' INT TERM HUP
+
+  # pm2 restarts auth on a change in its bin/, config/ or lib/ only.
+  srv=0; for f in "${fix[@]}"; do case "$f" in packages/fxa-auth-server/*|packages/fxa-shared/*|libs/*) srv=1 ;; esac; done
+  [ "$srv" = 1 ] && curl -sf -m 5 localhost:9000/__heartbeat__ >/dev/null 2>&1 || srv=0
+  settle() {
+    [ "$srv" = 1 ] || return 0
+    sleep 5 # ponytail: fixed grace for the pm2 watch restart to start; poll pm2 restart_time if it races
+    printf '%s\n' "${fix[@]}" | grep -qvE '^packages/fxa-auth-server/(bin|config|lib)/' && pm2 restart auth >/dev/null 2>&1
+    for _ in $(seq 60); do curl -sf -m 5 localhost:9000/__heartbeat__ >/dev/null 2>&1 && return 0; sleep 2; done
+    echo "ERROR: the auth heartbeat did not come back in 2 minutes; see: pm2 logs auth --lines 50 --nostream"; return 1; }
+
+  logs=/tmp/fxa-verify-revert; rm -rf "$logs"; mkdir -p "$logs"
+  declare -A res=()
+  run_rows() { local i label dir cmd v; for i in "${!rows[@]}"; do IFS='|' read -r label dir cmd <<<"${rows[$i]}"
+    if (cd "$dir" && eval "$cmd") > "$logs/$1-$i.log" 2>&1; then v=PASS; else v=FAIL; fi
+    case "$cmd" in *fxa-functional-local*) ;; *) [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed|[0-9]+ passing' "$logs/$1-$i.log" && v=NONE ;; esac
+    res[$1,$i]=$v; echo "  $1 the fix: $v  $label"; done; }
+
+  [ -z "$setup" ] || eval "$setup" > "$logs/setup.log" 2>&1 || { echo "ERROR: $setup failed; see $logs/setup.log"; exit 2; }
+  swapped=1
+  for f in "${fix[@]}"; do
+    if git cat-file -e "$base:$f" 2>/dev/null; then mkdir -p "$(dirname "$f")" && git show "$base:$f" > "$f"; else rm -f "$f"; fi; done
+  settle || exit 2
+  run_rows without
+  put_back || exit 2
+  settle || exit 2
+  run_rows with
+
+  proof=0; echo; printf '  %-60s %-17s %s\n' "test" "without the fix" "with the fix"
+  for i in "${!rows[@]}"; do w="${res[without,$i]}" h="${res[with,$i]}" note=""
+    [ "$h" = PASS ] || note="  does not pass with the fix"
+    case "$w" in PASS) note="  passes without the fix: it does not prove the change" ;; NONE) note="  ran no tests" ;; esac
+    [ "$w" = FAIL ] && [ "$h" = PASS ] || proof=1
+    printf '  %-60s %-17s %s%s\n' "${rows[$i]%%|*}" "$w" "$h" "$note"; done
+  echo "Logs: $logs"
+  exit "$proof"
+fi
 
 # The same command twice (a type-check the plan and the net both ask for) runs once.
 declare -A seen_cmd=(); kept=()

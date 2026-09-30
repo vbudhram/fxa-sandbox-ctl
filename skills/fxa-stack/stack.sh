@@ -5,12 +5,7 @@ ok() { printf '  %-16s %-5s %s\n' "$1" "$2" "$3"; }
 http() { curl -sf -o /dev/null --max-time 3 "$1"; }
 tcp() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 
-status() {
-  local down=0 name check
-  while IFS='|' read -r name check; do
-    if eval "$check" >/dev/null 2>&1; then ok "$name" up ""; else ok "$name" DOWN "$check"; down=$((down + 1)); fi
-  done <<'LIST'
-mysql|mysqladmin ping -u root --silent
+CHECKS='mysql|mysqladmin ping -u root --silent
 redis|redis-cli ping
 firestore|tcp 9090
 goaws|tcp 4100
@@ -19,8 +14,13 @@ inbox|tcp 9001
 content (nginx)|http http://localhost:3030/
 settings|http http://localhost:3000/settings/static/js/bundle.js
 profile|http http://localhost:1111/__heartbeat__
-admin-server|tcp 8095
-LIST
+admin-server|tcp 8095'
+
+status() {
+  local down=0 name check
+  while IFS='|' read -r name check; do
+    if eval "$check" >/dev/null 2>&1; then ok "$name" up ""; else ok "$name" DOWN "$check"; down=$((down + 1)); fi
+  done <<< "$CHECKS"
   return "$down"
 }
 
@@ -56,9 +56,77 @@ diagnose() {
   done
 }
 
+ROOT="${FXA_ROOT:-/workspace}"
+
+# Same auth client and TOTP math as packages/functional-tests (targets/local.ts, lib/totp.ts).
+account() {
+  case "${1:-}" in verified|unverified|2fa) ;; *) echo "usage: $0 account verified|unverified|2fa" >&2; return 2 ;; esac
+  STATE="$1" ROOT="$ROOT" node - <<'JS'
+const r = (m) => require(require.resolve(m, { paths: [process.env.ROOT] }));
+const mod = r('fxa-auth-client'), AuthClient = mod.default || mod;
+const client = new AuthClient('http://localhost:9000');
+const state = process.env.STATE;
+const email = `stack-${require('crypto').randomBytes(6).toString('hex')}@restmail.net`;
+const password = 'stack-test-password';
+(async () => {
+  const opts = state === 'unverified' ? { lang: 'en' } : { lang: 'en', preVerified: 'true' };
+  const { uid, sessionToken } = await client.signUp(email, password, opts);
+  const out = { email, password, uid, sessionToken, verified: state !== 'unverified' };
+  if (state === '2fa') {
+    const { authenticator } = r('otplib');
+    const totp = new authenticator.Authenticator();
+    totp.options = { ...authenticator.options, encoding: 'hex' };
+    const { secret } = await client.createTotpToken(sessionToken, {});
+    await client.verifyTotpSetupCode(sessionToken, totp.generate(secret));
+    await client.completeTotpSetup(sessionToken);
+    out.totpSecret = secret;
+  }
+  console.log(JSON.stringify(out));
+})().catch((e) => { console.error(`account: ${e.message}`); process.exit(1); });
+JS
+}
+
+# Recreate one pm2 app from the pm2 config that defines it, with KEY=VAL added to its env.
+# Not `pm2 restart --update-env`: that copies the caller's whole env (NODE_ENV) into the app.
+restart() {
+  local svc="${1:-}" kv
+  [ -n "$svc" ] || { echo "usage: $0 restart <pm2 service> [KEY=VAL...]" >&2; return 2; }
+  shift
+  for kv in "$@"; do [[ "$kv" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || { echo "restart: not KEY=VAL: $kv" >&2; return 2; }; done
+  local cfg="${TMPDIR:-/tmp}/fxa-stack-restart-$svc.config.js"
+  # fxa-start runs from /tmp/<svc>-pm2.config.js wrappers when they exist, so those win.
+  SVC="$svc" OUT="$cfg" ROOT="$ROOT" node - "$@" <<'JS' || return 1
+const fs = require('fs'), path = require('path');
+const { SVC, OUT, ROOT } = process.env;
+const ls = (d, f) => { try { return fs.readdirSync(d).filter(f).map((n) => path.join(d, n)); } catch { return []; } };
+const files = [...ls('/tmp', (n) => n.endsWith('-pm2.config.js')),
+  ...ls(path.join(ROOT, 'packages'), () => true).map((d) => path.join(d, 'pm2.config.js')).filter(fs.existsSync)];
+for (const f of files) {
+  let apps; try { apps = require(f).apps || []; } catch { continue; }
+  const app = apps.find((a) => a.name === SVC);
+  if (!app) continue;
+  const extra = Object.fromEntries(process.argv.slice(2).map((kv) => [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)]));
+  fs.writeFileSync(OUT, `module.exports = ${JSON.stringify({ apps: [{ ...app, env: { ...app.env, ...extra } }] }, null, 2)};\n`);
+  console.log(`restart: ${SVC} from ${f}${Object.keys(extra).length ? ' with ' + Object.keys(extra).join(', ') : ''}`);
+  process.exit(0);
+}
+console.error(`restart: no pm2 config defines ${SVC}`); process.exit(1);
+JS
+  pm2 delete "$svc" >/dev/null 2>&1
+  # cwd: 123done's config has a cwd relative to the repo root.
+  (cd "$ROOT" && env -u NODE_ENV pm2 start "$cfg" >/dev/null) || { echo "restart: pm2 start failed" >&2; return 1; }
+  local name="$svc" check i; [ "$svc" = settings-react ] && name=settings
+  check="$(awk -F'|' -v n="$name" '{ split($1, w, " ") } w[1] == n { print $2 }' <<< "$CHECKS")"
+  [ -n "$check" ] || { echo "restart: $svc started; no health check for it, see pm2 list"; return 0; }
+  for i in $(seq 40); do eval "$check" >/dev/null 2>&1 && { echo "restart: $svc up"; return 0; }; sleep 3; done
+  echo "restart: $svc not healthy after 2 minutes; run: pm2 logs $svc --lines 50 --nostream" >&2; return 1
+}
+
 case "${1:-status}" in
   status) echo "FxA stack:"; status; exit $? ;;
   ensure) ensure ;;
   diagnose) diagnose ;;
-  *) echo "usage: $0 status|ensure|diagnose" >&2; exit 2 ;;
+  account) account "${2:-}" ;;
+  restart) shift; restart "$@" ;;
+  *) echo "usage: $0 status|ensure|diagnose|account <state>|restart <service> [KEY=VAL...]" >&2; exit 2 ;;
 esac

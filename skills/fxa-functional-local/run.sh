@@ -34,5 +34,5 @@ while IFS= read -r v; do
   cp "$v" "${media}/${name}" && n=$((n + 1)) && echo "video: ${media}/${name}"
 done < <(find "$out" -name 'video.webm' 2>/dev/null)
 rm -f "$cfg"
-if [ "$rc" -eq 0 ]; then echo "PASS ${spec} (${secs}s, ${n} video(s))"; else echo "FAIL ${spec} (${secs}s). Trace: $(find "$out" -name 'trace.zip' | head -1)"; fi
+if [ "$rc" -eq 0 ]; then echo "PASS ${spec} (${secs}s, ${n} video(s))"; else echo "FAIL ${spec} (${secs}s). Read the trace: bash $(dirname "$0")/trace.sh ${out}"; fi
 exit "$rc"

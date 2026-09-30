@@ -30,6 +30,35 @@ With no file paths it checks every change in the working tree, including
 changes an earlier run left on this slot. Read `git status` first; if the plan
 names files you did not change, pass your own paths instead.
 
+## Prove that the tests fail without the fix (`--revert`)
+
+Use `--revert` when you must show that a new or changed test catches the bug,
+for example for the PR body or the self-check:
+
+    bash ~/.claude/skills/fxa-verify/verify.sh --revert                  # the test files in the diff
+    bash ~/.claude/skills/fxa-verify/verify.sh --revert <spec> [<spec>...]
+
+1. It backs up the non-test files in the diff against the merge-base.
+2. It writes their merge-base versions with `git show`. It removes the new
+   files of the fix, tracked or untracked. It does not touch the index.
+3. It runs the tests, then puts the fixed files back and runs the tests again.
+4. It prints a table: test, without the fix, with the fix.
+
+It exits 0 only when every test fails without the fix and passes with it. A
+test that passes without the fix does not prove the change: the table flags it.
+With no test files in the diff and no specs given, it runs the related tests of
+the fix.
+
+A trap puts the fixed files back on every exit, also on a failure or Ctrl-C.
+It then compares their checksums. If they do not match, it prints where the
+backup is. When the auth server is up and server files changed, it waits for
+`localhost:9000/__heartbeat__` after each swap.
+
+Do not revert by hand with `git stash` or `git checkout`: `git stash` fails on
+a staged file, and `git checkout` changes the index. Settings hot reload has no
+wait, so a functional spec that runs directly after the swap can see the old
+bundle.
+
 ## How it picks tests
 
 For Jest projects it uses Jest's own `--findRelatedTests`, so a source change
