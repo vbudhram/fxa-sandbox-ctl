@@ -1879,6 +1879,8 @@ _cmd_session_boot() {
   fi
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"
+  # The run dir is no worktree, so the stack's gitignored secrets (123done's client secret) come over here.
+  worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
   if [ -n "$from" ]; then
     [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
