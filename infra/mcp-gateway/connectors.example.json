@@ -29,7 +29,16 @@
       "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
       "tools": ["slack_read_thread", "slack_read_channel"],
       "rules": [
-        { "arg": "channel_id", "one_of": ["YOUR_PUBLIC_CHANNEL_ID"] }
+        { "arg": "channel_id", "one_of": ["YOUR_CHANNEL_ID"] }
+      ]
+    },
+    "figma": {
+      "url": "https://YOUR_RUNLAYER_HOST/YOUR_FIGMA_CONNECTOR_PATH",
+      "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
+      "tools": ["get_design_context", "get_metadata", "get_screenshot", "get_variable_defs",
+                "search_design_system"],
+      "rules": [
+        { "tool": "get_screenshot", "arg": "enableBase64Response", "set": true }
       ]
     }
   }

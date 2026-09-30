@@ -482,7 +482,7 @@ disagree with the pipeline.
 
 ### MCP gateway
 
-Runners get no MCP server of their own and hold no GitHub, Jira or Slack
+Runners get no MCP server of their own and hold no GitHub, Jira, Slack or Figma
 credential. `infra/mcp-gateway/gateway.py` runs on the manager beside the LLM
 proxy and is the only holder of the upstream credential, a Runlayer Agent
 Account token by default. A run asks for connectors; the runner then gets a
@@ -502,6 +502,11 @@ Every connector is read-only by construction:
 
 The upstream account's own permissions stay the real limit: give the Agent
 Account read-only access, FXA only, and no security-level visibility.
+
+A Slack channel on the `channel_id` allowlist can be private. Its text then
+reaches every reader of the session thread, so allow only a channel whose
+members can all start sessions. Figma screenshots come back inline, because
+runners cannot reach the Figma image hosts.
 
 Set it up:
 
