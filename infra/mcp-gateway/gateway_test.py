@@ -52,7 +52,8 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers["content-length"]))
         if self.path == "/token":
             form = urllib.parse.parse_qs(body.decode())
-            if form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]]:
+            if (form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]]
+                    or not form.get("resource", [""])[0].endswith("/oauth")):
                 return self.send(400, {"error": "invalid_grant"})
             OAUTH["n"] += 1
             OAUTH.update(refresh="rt-%d" % OAUTH["n"], access="at-%d" % OAUTH["n"])
@@ -114,7 +115,7 @@ class GatewayTest(unittest.TestCase):
         }}
         cls.oauth = os.path.join(cls.dir, "oauth.json")
         with open(cls.oauth, "w") as f:
-            json.dump({"token_endpoint": base + "/token", "client_id": "c1", "refresh_token": "rt-0"}, f)
+            json.dump({"token_endpoint": base + "/token", "client_id": "c1", "refresh_tokens": {base + "/oauth": "rt-0"}}, f)
         cfg = os.path.join(cls.dir, "gateway.json")
         with open(cfg, "w") as f:
             json.dump(conf, f)
@@ -259,11 +260,11 @@ class GatewayTest(unittest.TestCase):
         self.assertFalse(self.call(tok, "figma__read_issue", {"key": "FXA-1"}).get("isError"))
         self.assertEqual(self.upstream_calls("/oauth")[-1][3]["Authorization"], "Bearer " + OAUTH["access"])
         with open(self.oauth) as f:
-            self.assertEqual(json.load(f)["refresh_token"], OAUTH["refresh"])
+            self.assertEqual(list(json.load(f)["refresh_tokens"].values()), [OAUTH["refresh"]])
         OAUTH["access"] = "revoked"  # the upstream refuses the token; the gateway renews it once
         self.assertFalse(self.call(tok, "figma__read_issue", {"key": "FXA-2"}).get("isError"))
         with open(self.oauth) as f:
-            self.assertEqual(json.load(f)["refresh_token"], OAUTH["refresh"])
+            self.assertEqual(list(json.load(f)["refresh_tokens"].values()), [OAUTH["refresh"]])
 
     def test_every_call_is_audited(self):
         tok = self.token("n")

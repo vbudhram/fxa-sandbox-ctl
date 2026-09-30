@@ -5,10 +5,11 @@
 
 bash infra/gce/manager.sh oauth runs this and sends the result to the manager.
 It registers a public client, signs in with PKCE, and prints
-{token_endpoint, client_id, refresh_token} to stdout, which must not be a
-terminal. The token names (RFC 8707) each connector in
-~/.config/fxa/mcp-gateway.json that uses ${RUNLAYER_OAUTH_TOKEN}; after sign-in
-each is tried and only its HTTP status is shown. Standard library only.
+{token_endpoint, client_id, refresh_tokens: {url: token}} to stdout, which must not be a
+terminal. The server binds a sign-in to one resource (RFC 8707), so each URL
+in ~/.config/fxa/mcp-gateway.json that uses ${RUNLAYER_OAUTH_TOKEN} gets its
+own; connectors on one URL share it. Each URL is then tried and only its HTTP
+status is shown. Standard library only.
 """
 import base64
 import hashlib
@@ -27,7 +28,7 @@ CONFIG = os.environ.get("MCP_GATEWAY_CONFIG", os.path.expanduser("~/.config/fxa/
 
 
 def post(url, data, form=False, headers=None):
-    body = urllib.parse.urlencode(data, doseq=True).encode() if form else json.dumps(data).encode()
+    body = urllib.parse.urlencode(data).encode() if form else json.dumps(data).encode()
     ctype = "application/x-www-form-urlencoded" if form else "application/json"
     req = urllib.request.Request(url, body, {"content-type": ctype, "accept": "application/json", **(headers or {})})
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -68,28 +69,36 @@ def main():
     client = post(meta["registration_endpoint"], {
         "client_name": "fxa-mcp-gateway", "redirect_uris": [redirect], "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"], "token_endpoint_auth_method": "none"})
-    verifier = secrets.token_urlsafe(64)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-    state = secrets.token_urlsafe(16)
-    url = meta["authorization_endpoint"] + "?" + urllib.parse.urlencode([
-        ("response_type", "code"), ("client_id", client["client_id"]), ("redirect_uri", redirect), ("scope", "mcp:proxy"),
-        ("code_challenge", challenge), ("code_challenge_method", "S256"), ("state", state)] + [("resource", u) for u in resources])
-    sys.stderr.write("Sign in in your browser. If it does not open, visit:\n%s\n" % url)
-    webbrowser.open(url)
-    while "code" not in got and "error" not in got:
-        srv.handle_request()
-    if got.get("state") != state or "code" not in got:
-        sys.exit("oauth-login: sign-in failed: %s" % got.get("error", "state mismatch"))
-    tok = post(meta["token_endpoint"], {
-        "grant_type": "authorization_code", "code": got["code"], "redirect_uri": redirect,
-        "client_id": client["client_id"], "code_verifier": verifier, "resource": resources}, form=True)
-    if not tok.get("refresh_token"):
-        sys.exit("oauth-login: the server issued no refresh token")
-
     init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
         "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fxa-mcp-gateway", "version": "1"}}}
-    for name, u in mine.items():
-        req = urllib.request.Request(u, json.dumps(init).encode(), {
+    refresh = {}
+    # The server binds a sign-in to one resource, so each URL gets its own.
+    for i, resource in enumerate(resources, 1):
+        got.clear()
+        verifier = secrets.token_urlsafe(64)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        state = secrets.token_urlsafe(16)
+        url = meta["authorization_endpoint"] + "?" + urllib.parse.urlencode({
+            "response_type": "code", "client_id": client["client_id"], "redirect_uri": redirect, "scope": "mcp:proxy",
+            "code_challenge": challenge, "code_challenge_method": "S256", "state": state, "resource": resource})
+        names = ", ".join(n for n, u in mine.items() if u == resource)
+        sys.stderr.write("Sign-in %d of %d (%s). If the browser does not open, visit:\n%s\n" % (i, len(resources), names, url))
+        webbrowser.open(url)
+        while "code" not in got and "error" not in got:
+            srv.handle_request()
+        if got.get("state") != state or "code" not in got:
+            sys.exit("oauth-login: sign-in failed: %s" % (got.get("error_description") or got.get("error", "state mismatch")))
+        try:
+            tok = post(meta["token_endpoint"], {
+                "grant_type": "authorization_code", "code": got["code"], "redirect_uri": redirect,
+                "client_id": client["client_id"], "code_verifier": verifier, "resource": resource}, form=True)
+        except urllib.error.HTTPError as e:
+            err = json.loads(e.read() or b"{}")
+            sys.exit("oauth-login: token exchange refused (HTTP %d): %s" % (e.code, err.get("error_description") or err.get("error")))
+        if not tok.get("refresh_token"):
+            sys.exit("oauth-login: the server issued no refresh token")
+        refresh[resource] = tok["refresh_token"]
+        req = urllib.request.Request(resource, json.dumps(init).encode(), {
             "content-type": "application/json", "accept": "application/json, text/event-stream",
             "authorization": "Bearer " + tok["access_token"]})
         try:
@@ -99,10 +108,10 @@ def main():
             status = e.code
         except OSError as e:
             status = e.__class__.__name__
-        sys.stderr.write("%s: HTTP %s\n" % (name, status))
+        sys.stderr.write("%s: HTTP %s\n" % (names, status))
 
     json.dump({"token_endpoint": meta["token_endpoint"], "client_id": client["client_id"],
-               "refresh_token": tok["refresh_token"], "resource": resources}, sys.stdout)
+               "refresh_tokens": refresh}, sys.stdout)
 
 
 if __name__ == "__main__":
