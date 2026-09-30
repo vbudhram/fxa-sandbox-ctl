@@ -81,7 +81,7 @@ Every turn, including later ones:
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}.
-- To show the engineer a screenshot or a video, save it in /workspace/.fxa-auto-media/.
+- To show the engineer a screenshot, a video or a patch, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends.
 - When a decision blocks the work, list 2 to 4 answers, one per line, each starting
   'OPTION: '. The engineer taps one. For several decisions at once (at most 5),
@@ -189,7 +189,7 @@ _session_media_scrub() {
   find "$dir" -mindepth 1 \( ! -type f -o -links +1 \) -exec rm -rf {} + 2>/dev/null
   find "$dir" -mindepth 2 -exec rm -rf {} + 2>/dev/null
   while IFS= read -r -d '' f; do
-    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)$ ]] && [ "$(_fsize "$f")" -le 52428800 ] \
+    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm|patch|diff)$ ]] && [ "$(_fsize "$f")" -le 52428800 ] \
       || rm -f "$f"
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -print0)
 }
@@ -505,7 +505,7 @@ _session_fold() {
       else .events += [\$e] end)"
 }
 
-# session_media <key> <dir>   Copy the images and videos the agent saved in
+# session_media <key> <dir>   Copy the images, videos and patches the agent saved in
 # /workspace/.fxa-auto-media into <dir>, and list them. Media types only, top
 # level only, under 20 MB each: the agent picks these names.
 session_media() {
@@ -517,7 +517,7 @@ session_media() {
   # without error. Nothing at all failed the extract with exit 2.
   _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || { tar -cf - -T /dev/null; exit 0; }
     find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
-      -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" \) -print0 | tar -cf - --null -T -' \
+      -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" -o -iname "*.patch" -o -iname "*.diff" \) -print0 | tar -cf - --null -T -' \
     | head -c 524288000 | tar -xf - -C "$out" 2>/dev/null
   _session_media_scrub "$out"
   # Playwright records WebM, which Slack does not play inline (iOS not at all).

@@ -35,19 +35,27 @@ Chat sessions do not have it; do not report that it is missing.
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.
-- **Firefox source:** to read Firefox's side of a flow (the FxA client, Sync,
-  pairing, WebChannel), clone it outside /workspace, so it stays out of the diff.
-  It takes about 10 s and checks out only the folders you name:
+- **Firefox source:** cite it as `firefox:<path>:<line>`. It stays outside
+  /workspace, so it is never part of the FxA diff.
+  - **Firecracker:** `~/firefox` is a full checkout with an artifact build
+    (prebuilt C++, local front end). Change JS, CSS, HTML or `.ftl`, then run
+    `./mach build faster` (a few seconds, no network). C++ changes cannot be
+    built here. Open it on the local stack with
+    `FIREFOX_BIN=$HOME/Nightly/firefox yarn firefox` from /workspace. To hand
+    the change back, run `git -C ~/firefox diff > /workspace/.fxa-auto-media/firefox.patch`;
+    the file is posted to the thread. Nothing is pushed to any Firefox repo.
+    The checkout is at the commit `git -C ~/firefox log -1` shows; it cannot
+    update from here, so say which commit the patch is against.
+  - **GCE, or no `~/firefox`:** read it from a sparse clone, about 10 s:
 
-  ```sh
-  git clone -q --depth 1 --filter=blob:none --sparse https://github.com/mozilla-firefox/firefox ~/firefox
-  git -C ~/firefox sparse-checkout set services/fxaccounts services/sync
-  git -C ~/firefox sparse-checkout add browser/components/preferences  # more, when you need it
-  ```
+    ```sh
+    git clone -q --depth 1 --filter=blob:none --sparse https://github.com/mozilla-firefox/firefox ~/firefox
+    git -C ~/firefox sparse-checkout set services/fxaccounts services/sync
+    git -C ~/firefox sparse-checkout add browser/components/preferences  # more, when you need it
+    ```
 
-  Search the checked-out folders with `grep -rn`. `git grep` across the whole
-  tree downloads every file, so add a folder first. The clone is for reading;
-  do not change it, and cite it as `firefox:<path>:<line>`.
+    Search the checked-out folders with `grep -rn`. `git grep` across the
+    whole tree downloads every file, so add a folder first.
 
 ## 2. What the host does with your work
 
@@ -247,7 +255,7 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
 ## 7. Screenshots and videos
 
 Save them in `/workspace/.fxa-auto-media/` as `.png`, `.jpg`, `.webp`, `.gif`,
-`.webm`, `.mp4` or `.mov`. Each must be a plain file inside the workspace, not
+`.webm`, `.mp4` or `.mov`, or a `.patch` or `.diff`. Each must be a plain file inside the workspace, not
 a symlink, at most 100MB. For a component with a sibling `*.stories.tsx`, use
 `/fxa-storybook-capture`. If you cannot take a screenshot you planned, write
 the reason to `/workspace/.fxa-auto-media-skipped.txt`.

@@ -35,6 +35,27 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
 fi
 echo "clone at $(git rev-parse --short HEAD)"
 GUEST
+# Firefox, so a session can change it and hand back a diff: an artifact build
+# (prebuilt C++, local front end), rebuilt when Firefox main moved. A failure
+# keeps the snapshot's earlier build and never blocks the FxA refresh.
+"$fc" ssh 0 'sudo apt-get install -y -qq make perl unzip watchman > /dev/null 2>&1' || true
+"$fc" ssh 0 'sudo -u agent bash -s' <<'GUEST' || echo "WARN: the Firefox build failed; the snapshot keeps the earlier one"
+set -euo pipefail
+cd /home/agent
+[ -d firefox ] || git clone -q --depth 1 https://github.com/mozilla-firefox/firefox firefox
+cd firefox
+printf '%s\n' 'ac_add_options --enable-artifact-builds' 'mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-artifact' > mozconfig
+old="$(git rev-parse HEAD)"
+git fetch -q --depth 1 origin main && git checkout -q FETCH_HEAD
+if [ ! -x obj-artifact/dist/bin/firefox ] || [ "$old" != "$(git rev-parse HEAD)" ]; then
+  [ -d ~/.mozbuild ] || ./mach --no-interactive bootstrap --no-system-changes \
+    --application-choice "Firefox for Desktop Artifact Mode" > /tmp/refresh-firefox.log 2>&1
+  ./mach build >> /tmp/refresh-firefox.log 2>&1 || { git checkout -q "$old"; tail -30 /tmp/refresh-firefox.log; exit 1; }
+fi
+# fxa-dev-launcher sets the Nightly prefs only when FIREFOX_BIN has "Nightly" in it.
+ln -sfn /home/agent/firefox/obj-artifact/dist/bin /home/agent/Nightly
+echo "firefox at $(git rev-parse --short HEAD)"
+GUEST
 "$fc" ssh 0 'sudo sync; sudo systemctl poweroff' || true
 sleep 8
 

