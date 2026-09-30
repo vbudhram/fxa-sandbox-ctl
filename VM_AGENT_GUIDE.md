@@ -35,6 +35,19 @@ Chat sessions do not have it; do not report that it is missing.
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.
+- **Firefox source:** to read Firefox's side of a flow (the FxA client, Sync,
+  pairing, WebChannel), clone it outside /workspace, so it stays out of the diff.
+  It takes about 10 s and checks out only the folders you name:
+
+  ```sh
+  git clone -q --depth 1 --filter=blob:none --sparse https://github.com/mozilla-firefox/firefox ~/firefox
+  git -C ~/firefox sparse-checkout set services/fxaccounts services/sync
+  git -C ~/firefox sparse-checkout add browser/components/preferences  # more, when you need it
+  ```
+
+  Search the checked-out folders with `grep -rn`. `git grep` across the whole
+  tree downloads every file, so add a folder first. The clone is for reading;
+  do not change it, and cite it as `firefox:<path>:<line>`.
 
 ## 2. What the host does with your work
 
