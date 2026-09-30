@@ -169,6 +169,10 @@ _put_run_files() {
       echo "WARN: the earlier changes did not apply cleanly; they are in /workspace/.fxa-resume.patch" >&2
     fi
   fi
+  # A restored snapshot runs 123done already, and it reads its secret only at start.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/packages/123done/secrets.json" ]; then
+    vm_exec "$name" sudo -u agent bash -lc 'pm2 describe 123done >/dev/null 2>&1 && pm2 restart 123done >/dev/null 2>&1' >/dev/null 2>&1 || true
+  fi
   return $rc
 }
 
