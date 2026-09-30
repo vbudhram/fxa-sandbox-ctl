@@ -48,6 +48,26 @@ _vm_skill_allowlist() {
     ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan
 }
 
+# Skills from the FxA repo's own .claude/skills that need what the runner lacks
+# (gh, git push, CircleCI, Jira or Confluence writes, other MCP servers). The
+# checkout cannot be edited to hide them, so the runner's settings deny them.
+_vm_skill_blocklist() {
+  printf '%s\n' \
+    fxa-ai-fixme-create-issue fxa-changelog fxa-dep-triage fxa-docs-sync fxa-dot-release \
+    fxa-issue-verification fxa-pr-debug fxa-pr-open fxa-pr-status fxa-run-functional-tests fxa-triage
+}
+
+# _vm_settings_json <host-settings-file>   The runner's Claude settings: an
+# allowlist of the host's keys (its file holds API keys and hooks, which do not
+# belong on a bypassPermissions VM), the concise style no human reads past, and
+# the blocklisted skills denied. A missing host file gives the defaults.
+_vm_settings_json() {
+  local deny; deny="$(_vm_skill_blocklist | jq -R '"Skill(\(.))"' | jq -sc .)"
+  { cat "$1" 2>/dev/null || echo '{}'; } | jq -c --argjson deny "$deny" '{model, permissions, statusLine, theme}
+    | with_entries(select(.value != null)) | . + {outputStyle: "concise"}
+    | .permissions.deny = ((.permissions.deny // []) + $deny)'
+}
+
 # ── Helpers ────────────────────────────────────────────────────
 
 _check_host_ram() {
@@ -426,22 +446,15 @@ _setup_claude_config() {
     chown -R agent:agent /home/agent/.claude /home/agent/.config/claude
   " 2>/dev/null || true
 
-  # base64 avoids quoting issues. outputStyle is concise because no human reads
-  # the agent's prose; it is set here since this copy replaces the image's file.
-  if [ -f "${claude_home}/settings.json" ]; then
-    local settings_b64
-    # Allowlist of keys: the host file holds API keys (env) and hooks, which do
-    # not belong on a bypassPermissions VM. enabledPlugins only gives warnings there.
-    settings_b64="$(jq -c '{model, permissions, statusLine, theme} | with_entries(select(.value != null))
-        | . + {outputStyle: "concise"}' \
-      < "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
-    # Fail closed: the unfiltered file can hold API keys and hooks.
-    [ -n "$settings_b64" ] || { echo "  WARN: could not filter settings.json; the VM gets none." >&2; settings_b64="$(printf '{}' | base64)"; }
-    vm_exec "$name" sudo bash -c "
-      echo '${settings_b64}' | base64 -d > /home/agent/.claude/settings.json
-      chown agent:agent /home/agent/.claude/settings.json
-    " 2>/dev/null || echo "  WARN: Could not copy settings.json"
-  fi
+  # base64 avoids quoting issues. This copy replaces the image's file (_vm_settings_json).
+  local settings_b64
+  settings_b64="$(_vm_settings_json "${claude_home}/settings.json" 2>/dev/null | base64 | tr -d '\n')"
+  # Fail closed: the unfiltered file can hold API keys and hooks.
+  [ -n "$settings_b64" ] || { echo "  WARN: could not filter settings.json; the VM gets none." >&2; settings_b64="$(printf '{}' | base64)"; }
+  vm_exec "$name" sudo bash -c "
+    echo '${settings_b64}' | base64 -d > /home/agent/.claude/settings.json
+    chown agent:agent /home/agent/.claude/settings.json
+  " 2>/dev/null || echo "  WARN: Could not copy settings.json"
 
   # The host identity, so commits have the correct author.
   local git_name git_email

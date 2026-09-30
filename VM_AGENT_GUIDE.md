@@ -281,6 +281,15 @@ Plugins do not load here. These skills are copied in at launch:
 `/workspace/.claude/skills`, such as `/fxa-review-quick`, and its rules in
 `/workspace/.claude/rules/`. For FxA code, the repo's rules and skills win.
 
+These repo skills need what the sandbox lacks (`gh`, `git push`, CircleCI,
+Jira or Confluence writes, other MCP servers), so the settings block them:
+`/fxa-pr-open`, `/fxa-pr-status`, `/fxa-pr-debug`, `/fxa-run-functional-tests`,
+`/fxa-dot-release`, `/fxa-issue-verification`, `/fxa-ai-fixme-create-issue`,
+`/fxa-changelog`, `/fxa-docs-sync`, `/fxa-dep-triage` and `/fxa-triage`. Do
+not offer them. To record proof, use `/fxa-functional-local` and the media
+folder. `/fxa-jira-bug-description` and `/fxa-jira-feature-description` can
+draft a ticket, but not file it.
+
 ## 9. When something goes wrong
 
 ```bash
