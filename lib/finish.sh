@@ -243,7 +243,9 @@ _finish_copy_media() {
 import fcntl, os, stat, sys
 src, dest, root = sys.argv[1:]
 fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
-real = fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).rstrip(b"\0").decode()
+# F_GETPATH is macOS only; Linux names the descriptor's file under /proc.
+real = (fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).rstrip(b"\0").decode() if hasattr(fcntl, "F_GETPATH")
+        else os.readlink("/proc/self/fd/%d" % fd))
 st = os.fstat(fd)
 if not stat.S_ISREG(st.st_mode) or not real.startswith(root.rstrip("/") + "/") or st.st_size > 100 << 20:
     sys.exit(1)
