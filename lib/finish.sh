@@ -220,12 +220,13 @@ _finish_media_to_bucket() {
       || { echo "  WARN: could not upload ${name} to the media bucket: $(printf '%s' "$err" | grep -m1 ERROR | cut -c1-200)" >&2; continue; }
     url="https://storage.googleapis.com/${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}"
     case "$name" in *.mp4|*.webm|*.mov) md="${md}[${name}](${url})"$'\n' ;; *) md="${md}![${name}](${url})"$'\n' ;; esac
-    # Rewrite `(./shot.png)` and `(shot.png)` references in place; append the rest.
+    # Rewrite local references in place, `(shot.png)` or `(./.fxa-auto-media/shot.png)`
+    # (never a URL); append the rest.
     python3 - "$body_file" "$(basename "$f")" "$url" <<'PY' | slot_write "${body_file}.new" && mv -f "${body_file}.new" "$body_file"
-import sys
+import re, sys
 path, name, url = sys.argv[1:]
 body = open(path).read()
-new = body.replace("(./" + name + ")", "(" + url + ")").replace("(" + name + ")", "(" + url + ")")
+new = re.sub(r"\((?![a-z]+://)(?:[^()\s]*/)?" + re.escape(name) + r"\)", lambda m: "(" + url + ")", body)
 if new == body:
     link = ("[%s](%s)" if name.rsplit(".", 1)[-1] in ("mp4", "webm", "mov") else "![%s](%s)") % (name, url)
     new = body.rstrip("\n") + "\n\n" + link + "\n"
