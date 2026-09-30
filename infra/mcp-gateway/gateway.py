@@ -22,6 +22,7 @@ Tokens: <dir>/tokens/<token>.json  {run, created, expires, connectors, cap_calls
 written by the controller (lib/mcp-token.sh), updated here. One line per call
 goes to <dir>/calls.jsonl. Standard library only.
 """
+import hashlib
 import http.client
 import http.server
 import json
@@ -39,6 +40,8 @@ CONFIG = os.environ.get("MCP_GATEWAY_CONFIG", os.path.expanduser("~/.config/fxa/
 LISTEN = os.environ.get("MCP_GATEWAY_LISTEN", "0.0.0.0:8789")
 OAUTH_FILE = os.environ.get("MCP_GATEWAY_OAUTH", os.path.expanduser("~/.config/fxa/mcp-gateway-oauth.json"))
 OAUTH_VAR = "RUNLAYER_OAUTH_TOKEN"
+# The controller's error log (lib/errors.sh): a new line there reaches the operator.
+ERRORS_FILE = os.environ.get("FXA_ERRORS_FILE", os.path.expanduser("~/.claude/state/fxa-ai-fixme/errors.jsonl"))
 TOKEN_RE = re.compile(r"^fxm_[A-Za-z0-9]{32}$")
 SEP = "__"
 # Methods a client may probe that this gateway has nothing for.
@@ -49,6 +52,7 @@ UPSTREAM_TIMEOUT = 60
 MAX_BODY = 1 << 20
 
 locks, locks_guard = {}, threading.Lock()
+reported, reported_guard = {}, threading.Lock()
 
 
 def now_iso():
@@ -86,6 +90,24 @@ def take_call(tok):
             json.dump(rec, f)
         os.replace(path + ".tmp", path)
         return True
+
+
+def report(kind, key, message, detail=""):
+    """One line in the controller's error log, at most once per 10 minutes per
+    kind and run. The signature hashes only the message, so repeats group."""
+    with reported_guard:
+        if time.time() - reported.get((kind, key), 0) < 600:
+            return
+        reported[(kind, key)] = time.time()
+    line = {"at": now_iso(), "source": "gateway", "kind": kind, "key": key, "where": "mcp-gateway",
+            "message": (message + detail)[:600], "log": None,
+            "sig": hashlib.sha1(("mcp-gateway|%s|%s" % (kind, message)).encode()).hexdigest()[:10]}
+    try:
+        os.makedirs(os.path.dirname(ERRORS_FILE), exist_ok=True)
+        with open(ERRORS_FILE, "a") as f:
+            f.write(json.dumps(line, separators=(",", ":")) + "\n")  # errors resolve greps compact JSON
+    except OSError:
+        pass
 
 
 def audit(run, connector, tool, outcome, ms=0, size=0, args=None):
@@ -233,8 +255,13 @@ class OAuth:
                 doc = json.load(r)
             self.access[resource] = doc["access_token"]
         except urllib.error.HTTPError as e:
+            report("oauth", None, "Runlayer refused the gateway's refresh token; run infra/gce/manager.sh oauth",
+                   " (HTTP %d for %s)" % (e.code, resource))
             raise UpstreamError("oauth: the token endpoint answered HTTP %d; run manager.sh oauth again" % e.code)
-        except (OSError, ValueError, KeyError) as e:
+        except KeyError:
+            report("oauth", None, "the gateway has no sign-in for a connector; run infra/gce/manager.sh oauth", " (%s)" % resource)
+            raise UpstreamError("oauth: not signed in for this connector")
+        except (OSError, ValueError) as e:
             raise UpstreamError("oauth: %s" % e.__class__.__name__)
         self.until[resource] = time.time() + int(doc.get("expires_in") or 300)
         if doc.get("refresh_token") and doc["refresh_token"] != old:
@@ -466,6 +493,8 @@ def call_tool(tok, rec, params):
     ms, size = int((time.time() - t0) * 1000), len(json.dumps(result))
     if withheld(result, up.deny_result):
         audit(run, conn, tool, "denied:result", ms, size, args)
+        report("withheld", run, "the gateway withheld an answer by policy",
+               ": %s__%s %s" % (conn, tool, json.dumps(args, sort_keys=True)[:200]))
         return tool_error("the answer was withheld by policy")
     audit(run, conn, tool, "ok", ms, size, args)
     return result

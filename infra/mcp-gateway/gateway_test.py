@@ -121,6 +121,7 @@ class GatewayTest(unittest.TestCase):
             json.dump(conf, f)
         cls.port = free_port()
         env = dict(os.environ, MCP_GATEWAY_DIR=cls.dir, MCP_GATEWAY_CONFIG=cfg, RUNLAYER_AGENT_TOKEN="rl-secret", MCP_GATEWAY_OAUTH=cls.oauth,
+                   FXA_ERRORS_FILE=os.path.join(cls.dir, "errors.jsonl"),
                    MCP_GATEWAY_LISTEN="127.0.0.1:%d" % cls.port)
         env.pop("UNSET_SLACK_TOKEN", None)
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "gateway.py")], env=env, stderr=subprocess.DEVNULL)
@@ -265,6 +266,21 @@ class GatewayTest(unittest.TestCase):
         self.assertFalse(self.call(tok, "figma__read_issue", {"key": "FXA-2"}).get("isError"))
         with open(self.oauth) as f:
             self.assertEqual(list(json.load(f)["refresh_tokens"].values()), [OAUTH["refresh"]])
+
+    def test_a_withheld_answer_and_a_refused_sign_in_reach_the_error_log(self):
+        self.call(self.token("s"), "jira__read_issue", {"key": "FXA-SEC"})
+        tok = self.token("t", ["figma"])
+        saved = dict(OAUTH)
+        OAUTH.update(access="revoked", refresh="gone")  # the refresh token no longer works
+        self.assertTrue(self.call(tok, "figma__read_issue", {"key": "FXA-1"})["isError"])
+        self.assertTrue(self.call(tok, "figma__read_issue", {"key": "FXA-2"})["isError"])
+        OAUTH.update(saved)
+        with open(os.path.join(self.dir, "errors.jsonl")) as f:
+            lines = f.read().splitlines()
+        rows = [r for r in map(json.loads, lines) if r["key"] in ("s", None)]  # other tests withhold too
+        self.assertEqual([(r["source"], r["kind"], r["key"]) for r in rows], [("gateway", "withheld", "s"), ("gateway", "oauth", None)])
+        self.assertIn("manager.sh oauth", rows[1]["message"])
+        self.assertTrue(all('"sig":"' in l for l in lines))  # errors resolve greps compact JSON
 
     def test_every_call_is_audited(self):
         tok = self.token("n")
