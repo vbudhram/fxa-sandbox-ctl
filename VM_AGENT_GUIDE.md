@@ -221,12 +221,15 @@ PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spe
   ("Failed to cleanup account ... Incorrect password"). Treat it as a local
   failure, not your change, unless you touched that flow.
 - Do not set `FXA_SANDBOX_IP` in the VM. Tests use `localhost`.
-- These specs cannot pass here, and CI covers them: OAuth relier flows through
-  123done (`tests/oauth/*`, `loginHint*`, `relayIntegration`,
-  `smartWindowIntegration`), which need the subscriptions capability manager;
-  the CMS specs (`tests/cms/*`); and payments (`local-payments-next`). Verify
-  with direct content-server flows (sign-in, sign-up, reset, settings) or Sync
-  through `/pair`, and say in the handoff what CI must cover.
+- OAuth relier flows through 123done (`tests/oauth/*`, `loginHint*`,
+  `relayIntegration`, `smartWindowIntegration`) can run here: the host ships
+  `packages/123done/secrets.json` and restarts 123done. If a token exchange
+  fails with errno 109, the secret is missing; say so in the handoff. If one
+  fails on a subscriptions capability, CI covers it.
+- These specs cannot pass here, and CI covers them: the CMS specs
+  (`tests/cms/*`) and payments (`local-payments-next`). Verify with direct
+  content-server flows (sign-in, sign-up, reset, settings) or Sync through
+  `/pair`, and say in the handoff what CI must cover.
 
 ## 7. Screenshots and videos
 
