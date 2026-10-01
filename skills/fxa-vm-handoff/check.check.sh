@@ -41,6 +41,10 @@ echo ugly > src/a.ts; check "an unformatted file is named" 1 "$(bash "$C" | grep
 check "--fix formats it and then passes" "formatted: src/a.ts|handoff check: ok" "$(bash "$C" --fix | paste -sd'|' -)"
 check "--fix wrote the formatted file" pretty "$(cat src/a.ts)"
 
+printf 'a\n<<<<<<< Updated upstream\nb\n=======\nc\n>>>>>>> Stashed changes\n' > src/a.ts
+check "conflict markers are named" 1 "$(bash "$C" | grep -c "conflict markers remain in src/a.ts")"
+echo pretty > src/a.ts
+
 mkdir -p tests && echo x > tests/zzShot.spec.ts && echo x > src/shot.tmp.mjs
 check "scratch files are named" 2 "$(bash "$C" | grep -c "scratch file")"
 bash "$C" --fix >/dev/null; check "--fix deletes untracked scratch files" "no|no" "$([ -e tests/zzShot.spec.ts ] && echo yes || echo no)|$([ -e src/shot.tmp.mjs ] && echo yes || echo no)"

@@ -23,6 +23,11 @@ for f in ${files[@]+"${files[@]}"}; do
   kept+=("$f")
 done
 
+# A rebase can leave conflict markers; they must never reach the PR.
+for f in ${kept[@]+"${kept[@]}"}; do
+  [ -f "$f" ] && grep -qE '^(<{7}|>{7})( |$)' "$f" 2>/dev/null && problems+=("conflict markers remain in $f (resolve them)")
+done
+
 # The App commits through the API, so no lint-staged hook formats the change.
 if [ "${#kept[@]}" -gt 0 ]; then
   if [ "$fix" = 1 ]; then

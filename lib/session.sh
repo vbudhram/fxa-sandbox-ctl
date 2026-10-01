@@ -86,7 +86,9 @@ Every turn, including later ones:
   decisions and why, what is built and verified, open questions, and the next
   step. Rewrite it with Write before you end a turn that changed any of these.
   The next session in this thread starts from these notes, not from this conversation.
-- Do not commit or push, and do not run 'gh'. The host does that.
+- Do not commit or push, and do not run 'gh'. The host does that. Do not rebase,
+  merge main or check out another commit: the host would build the PR on the old
+  base. For a rebase, ask the engineer to type '!rebase'.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}; wait for a
@@ -1015,9 +1017,76 @@ session_checkout() {
   git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$branch" "$dir" "$base" >&2 || return 1
   # A review round starts at the PR's head: the push may replace only that
   # commit, so a push someone made to the PR meanwhile is refused, not lost.
-  [ -n "$(session_get "$key" review_pr)" ] && git -C "$root" update-ref "refs/remotes/origin/${branch}" "$base"
+  # push_lease: the PR head after a push or a rebase, which moves base_sha off it.
+  local lease; lease="$(session_get "$key" push_lease)"
+  [ -n "$(session_get "$key" review_pr)" ] && git -C "$root" update-ref "refs/remotes/origin/${branch}" "${lease:-$base}"
   ln -s "${root}/node_modules" "${dir}/node_modules"
   vm_pull_tree "$name" /workspace "$dir"
+}
+
+# _session_rebase_script <new main sha>   The runner side of session_rebase: the
+# work (commits since main and uncommitted edits) moves onto the new main as
+# uncommitted edits. A conflict leaves markers in the files and the stash as a backup.
+_session_rebase_script() {
+  cat <<EOF
+cd /workspace || exit 2
+new=$1
+git cat-file -e "\${new}^{commit}" 2>/dev/null || git fetch -q origin "\$new" || { echo "ERROR: cannot fetch \$new" >&2; exit 1; }
+git update-ref refs/remotes/origin/main "\$new"
+old="\$(git merge-base HEAD "\$new")" || exit 1
+[ "\$old" = "\$new" ] && { echo result=uptodate; exit 0; }
+git diff --quiet "\$old" "\$new" -- yarn.lock && echo lock=0 || echo lock=1
+b="\$(git branch --show-current)"
+git reset -q --soft "\$old" || exit 1
+set -- ':(exclude).fxa-*' ':(exclude)ai' ':(exclude)artifacts'
+if git diff --cached --quiet && git diff --quiet && [ -z "\$(git ls-files -o --exclude-standard -- . "\$@")" ]; then
+  git checkout -q \${b:+-B "\$b"} "\$new" && { echo result=clean; exit 0; }; exit 1
+fi
+git stash push -q -u -m fxa-rebase -- . "\$@" || exit 1
+git checkout -q \${b:+-B "\$b"} "\$new" || { git checkout -q \${b:+-B "\$b"} "\$old"; git stash pop -q; echo "ERROR: checkout of \$new failed; the work is back on \$old" >&2; exit 1; }
+if git stash pop -q 2>/dev/null; then git reset -q; echo result=clean
+else git diff --name-only --diff-filter=U | sed 's/^/file=/'; git reset -q; echo result=conflict; fi
+EOF
+}
+
+# session_rebase <key>   Move a running session's work onto the latest origin/main.
+# Prints JSON {result: uptodate|clean|conflict, base, files, lock_changed, prompt};
+# the prompt is the turn that checks the result, or resolves the conflicts.
+session_rebase() {
+  local key="$1" name root new out result old
+  [ "$(session_get "$key" state)" = active ] || { echo "ERROR: ${key} is not running; reply in the thread to pick it up first." >&2; return 1; }
+  _session_turn_running "$key" && { echo "ERROR: ${key} is in a turn; wait for it to end." >&2; return 1; }
+  root="$(worktree_repo_root)" || return 1
+  _retry git -C "$root" fetch -q origin main || { echo "ERROR: cannot fetch origin/main." >&2; return 1; }
+  new="$(git -C "$root" rev-parse origin/main)"
+  [[ "$new" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: origin/main is not a commit." >&2; return 1; }
+  name="$(worktree_branch_for "$key")"
+  out="$(_session_sh "$name" "$(_session_rebase_script "$new")" 2>&1)" || {
+    echo "ERROR: the rebase failed on the runner: $(grep -m1 '^ERROR' <<<"$out" || tail -1 <<<"$out")" >&2; return 1; }
+  result="$(sed -n 's/^result=//p' <<<"$out" | tail -1)"
+  case "$result" in uptodate|clean|conflict) ;; *) echo "ERROR: the runner gave no rebase result." >&2; return 1 ;; esac
+  if [ "$result" != uptodate ]; then
+    old="$(session_get "$key" base_sha)"
+    # The PR head stays the push lease until the next push moves it.
+    [ -n "$(session_get "$key" review_pr)" ] && [ -z "$(session_get "$key" push_lease)" ] && session_set "$key" push_lease "$old"
+    session_set "$key" base_sha "$new"
+    _session_history_add "$key" action "Rebased onto main ${new:0:10} (${result})"
+  fi
+  # Paths only: the list goes into a prompt and a Slack post.
+  local files; files="$(sed -n 's/^file=//p' <<<"$out" | grep -E '^[A-Za-z0-9._/@+-]+$' | head -50 || true)"
+  local lock=0; grep -qx 'lock=1' <<<"$out" && lock=1
+  local prompt=""
+  case "$result" in
+    clean) prompt="The host moved your change onto the latest origin/main (${new:0:10}) with no conflicts.$( [ "$lock" = 1 ] && printf ' yarn.lock changed: run yarn install first.')
+Run the verify again and fix anything the new main broke. Reply in one or two lines with what you checked." ;;
+    conflict) prompt="The host moved your change onto the latest origin/main (${new:0:10}). These files have conflict markers:
+$(sed 's/^/- /' <<<"$files")
+$( [ "$lock" = 1 ] && printf 'yarn.lock changed: run yarn install first.\n')Resolve each conflict so that BOTH sides survive: keep main's change and yours. Never take one side whole.
+If the two cannot coexist, stop and say why. Then run the verify. 'git stash list' holds your work from before the move, as a backup.
+Reply in a few lines: what conflicted, how you resolved it, and what you checked." ;;
+  esac
+  jq -nc --arg r "$result" --arg b "$new" --arg f "$files" --argjson l "$lock" --arg p "$prompt" \
+    '{result: $r, base: $b, files: ($f | split("\n") | map(select(. != ""))), lock_changed: ($l == 1), prompt: $p}'
 }
 
 session_checkout_remove() {

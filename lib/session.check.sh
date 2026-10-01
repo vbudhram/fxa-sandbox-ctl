@@ -67,6 +67,16 @@ check "node_modules is linked, not copied" "yes" "$([ -L "$tmp/wt/node_modules" 
 check "main checkout untouched" "" "$(g -C "$tmp/fxa" status --porcelain)"
 session_checkout_remove "$tmp/wt"
 check "checkout removed" "gone 1" "$([ -e "$tmp/wt" ] || echo gone) $(g -C "$tmp/fxa" worktree list | grep -c .)"
+# A PR round leases against the PR head: its base, or push_lease once a rebase or a push moved the base off it.
+B="$(g -C "$tmp/fxa" rev-parse HEAD)"
+session_set agent-t1 review_pr https://github.com/o/r/pull/1
+session_checkout agent-t1 "$tmp/wt" 2>/dev/null; session_checkout_remove "$tmp/wt"
+check "a PR round leases against its base" "$B" "$(g -C "$tmp/fxa" rev-parse refs/remotes/origin/agent-t1)"
+g -C "$tmp/fxa" commit -q --allow-empty -m pushed; P="$(g -C "$tmp/fxa" rev-parse HEAD)"; g -C "$tmp/fxa" reset -q --hard "$B"
+session_set agent-t1 push_lease "$P"
+session_checkout agent-t1 "$tmp/wt" 2>/dev/null; session_checkout_remove "$tmp/wt"
+check "push_lease wins over the base" "$P" "$(g -C "$tmp/fxa" rev-parse refs/remotes/origin/agent-t1)"
+session_set agent-t1 review_pr "" push_lease ""; g -C "$tmp/fxa" update-ref -d refs/remotes/origin/agent-t1
 
 # session_stop saves the runner's work as a patch before deleting the runner.
 vm_is_running() { return 0; }

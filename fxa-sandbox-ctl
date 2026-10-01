@@ -2304,6 +2304,9 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   local updated=0; [ "$(session_get "$key" pr_url)" = "$pr_url" ] && updated=1
   if [ "$updated" = 1 ]; then session_review_ack "$key" "$pr_url"; fi
   vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
+  # The next Update PR leases against what this push made the PR head.
+  local pushed; pushed="$(git -C "$(worktree_repo_root)" rev-parse -q --verify "refs/remotes/origin/$(session_get "$key" branch)" 2>/dev/null || true)"
+  [ -n "$pushed" ] && session_set "$key" push_lease "$pushed"
   _session_record_summary "$key" || true
   session_set "$key" state active pr_url "$pr_url" pr_updated "$updated" pr_announced 0
   local tid; tid="$(session_get "$key" thread)"
@@ -2322,6 +2325,7 @@ cmd_session() {
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
+    rebase) _session_key "${2:-}" && session_rebase "$2" ;;
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;
     plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
       _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;
