@@ -406,9 +406,10 @@ _setup_egress_firewall() {
 # Cloudflare ranges on purpose: they would admit a large share of the internet,
 # and the npm and yarn registries are covered by name. FXA_EGRESS_ALLOW_ALL=1
 # restores open egress for a run that needs it.
+# channelserver.services.mozilla.com: the pairing channel (wss) that Firefox pairing tests use.
 FXA_EGRESS_ALLOW_ALL="${FXA_EGRESS_ALLOW_ALL:-0}"
 FXA_EGRESS_CIDRS="${FXA_EGRESS_CIDRS:-160.79.104.0/21 140.82.112.0/20 143.55.64.0/20 185.199.108.0/22 192.30.252.0/22}"
-FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev pypi.org files.pythonhosted.org}"
+FXA_EGRESS_HOSTS="${FXA_EGRESS_HOSTS:-api.anthropic.com statsig.anthropic.com registry.yarnpkg.com registry.npmjs.org github.com api.github.com codeload.github.com objects.githubusercontent.com playwright.azureedge.net cdn.playwright.dev pypi.org files.pythonhosted.org channelserver.services.mozilla.com}"
 
 # _github_meta_cidrs   GitHub's published IPv4 ranges for web, API, and git,
 # cached for a day. Empty when the host cannot fetch them; the fixed ranges
