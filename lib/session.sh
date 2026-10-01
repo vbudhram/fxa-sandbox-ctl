@@ -678,11 +678,40 @@ session_pr_status() {
       ($infra | split(" ") | map(split("=")[0])) as $inf
       | [.statusCheckRollup[]? | {name: (.name // .context),
           done: (if .status then .status == "COMPLETED" else ((.state // "") | IN("PENDING", "EXPECTED") | not) end),
-          bad: ((.conclusion // .state // "") | IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED"))}] as $c
+          bad: ((.conclusion // .state // "") | IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED")),
+          link: (.detailsUrl // .targetUrl // "")}] as $c
       | {url: $url, state, review: .reviewDecision,
          ci: (if ($c | length) == 0 then "none" elif any($c[]; .bad) then "fail" elif all($c[]; .done) then "pass" else "running" end),
          failing: [$c[] | select(.bad) | .name], infra: [$c[] | select(.bad) | .name | select(IN($inf[]))],
-         reviews: [.latestReviews[]? | {login: .author.login, state}]}' || echo null
+         links: [$c[] | select(.bad and (.name | IN($inf[]) | not)) | .link | select(startswith("https://"))],
+         reviews: [.latestReviews[]? | {login: .author.login, state, at: .submittedAt}]}' || echo null
+}
+
+# _session_pr_parts <key>   "owner/repo<TAB>number" of the session's PR, or nothing.
+_session_pr_parts() {
+  [[ "$(session_get "$1" pr_url)" =~ ^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([0-9]+)$ ]] && printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+}
+_SESSION_COPILOT='IN("Copilot", "copilot-pull-request-reviewer[bot]")'
+
+# session_copilot_comments <key>   The inline comments of Copilot's latest review
+# that are still on current lines: [{id, path, line, body}]. [] when there are none.
+session_copilot_comments() {
+  local p; p="$(_session_pr_parts "$1")" || { echo '[]'; return 0; }
+  gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/comments" --paginate 2>/dev/null \
+    | jq -sc "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.line != null)
+        | {id, review: .pull_request_review_id, path, line, body: (.body | .[0:2000])}]
+      | (map(.review) | max) as \$r | map(select(.review == \$r) | del(.review))" 2>/dev/null || echo '[]'
+}
+
+# session_review_ack <key> <pr_url>   After a PR update: a thumbs up on each Copilot
+# comment the agent fixed, from its /workspace/.fxa-review-outcomes.json.
+session_review_ack() {
+  local p id ids; p="$(_session_pr_parts "$1")" || return 0
+  ids="$(vm_exec_as_agent "$(worktree_branch_for "$1")" 'cat /workspace/.fxa-review-outcomes.json 2>/dev/null; rm -f /workspace/.fxa-review-outcomes.json' 2>/dev/null \
+    | jq -r '.[]? | select(.outcome == "fixed") | .id | tostring | select(test("^[0-9]{1,15}$"))' 2>/dev/null || true)"
+  for id in $ids; do
+    gh api -X POST "repos/${p%%$'\t'*}/pulls/comments/${id}/reactions" -f content=+1 >/dev/null 2>&1 || echo "NOTE: could not react to comment ${id}" >&2
+  done
 }
 
 # _session_end_facts <key>   What a turn's end needs, in one ssh: the cost so

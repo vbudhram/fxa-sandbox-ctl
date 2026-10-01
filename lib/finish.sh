@@ -621,6 +621,8 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
   finish_approve_functional_gate "$pr_url"
 
   finish_add_reviewers "$pr_url"
+  # The repo's automatic Copilot review skips drafts, so ask for it on every new PR.
+  finish_request_copilot_review "$pr_url"
 
   _finish_release_runner "$worktree"
   printf '%s\n' "$pr_url"

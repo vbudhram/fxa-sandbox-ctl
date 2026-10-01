@@ -197,6 +197,16 @@ out="$(session_pr_status agent-t2)"
 check "pr status: ci, failing, infra, review" "fail|extract|extract|rev1:CHANGES_REQUESTED" "$(jq -r '"\(.ci)|\(.failing | join(","))|\(.infra | join(","))|\(.reviews | map("\(.login):\(.state)") | join(","))"' <<< "$out")"
 gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"unit","status":"IN_PROGRESS","conclusion":null},{"context":"ci/circleci","state":"PENDING"}]}'; }
 check "pr status: running" "running" "$(session_pr_status agent-t2 | jq -r .ci)"
+gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"extract","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://x/1"},{"name":"unit","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://circleci.com/gh/mozilla/fxa/9"}]}'; }
+check "pr status: the links of real failures, not infra" "https://circleci.com/gh/mozilla/fxa/9" "$(session_pr_status agent-t2 | jq -r '.links | join(",")')"
+# Copilot's latest review only, on current lines; others' comments are not its.
+gh() { printf '%s' '[{"id":1,"pull_request_review_id":10,"user":{"login":"Copilot"},"path":"a.ts","line":3,"body":"old"},{"id":2,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"b.ts","line":5,"body":"new"},{"id":3,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"c.ts","line":null,"body":"outdated"},{"id":4,"pull_request_review_id":30,"user":{"login":"rev1"},"path":"d.ts","line":1,"body":"human"}]'; }
+check "copilot comments: the latest review, current lines" '[{"id":2,"path":"b.ts","line":5,"body":"new"}]' "$(session_copilot_comments agent-t2)"
+# The thumbs up goes to fixed comments only, with a numeric id.
+check "thumbs up on fixed comments only" "api -X POST repos/mozilla/fxa/pulls/comments/2/reactions -f content=+1" "$(
+  gh() { echo "$*" >> "$tmp/gh-calls"; }
+  vm_exec_as_agent() { echo '[{"id":2,"outcome":"fixed"},{"id":5,"outcome":"asked"},{"id":"7;rm","outcome":"fixed"}]'; }
+  session_review_ack agent-t2 x; cat "$tmp/gh-calls")"
 unset -f gh
 
 # Questions: plain OPTION lines, one named QUESTION, or several groups.

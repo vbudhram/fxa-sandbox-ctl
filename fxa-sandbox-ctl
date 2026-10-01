@@ -2253,9 +2253,9 @@ _cmd_session_finish() {
   fi
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
-  # Draft and no team review request by default: a person decides when it is ready.
+  # Ready for review, so Copilot reviews it at once; no team review request: a person decides that.
   rc=0
-  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
+  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
   session_set "$key" finish_notes "$(_session_finish_notes "$key")"
@@ -2272,6 +2272,7 @@ _cmd_session_finish() {
   # review or for more changes. The idle sweep pauses it as usual, and a later
   # Open PR updates this PR (finish_push_and_pr finds it by its branch).
   local updated=0; [ "$(session_get "$key" pr_url)" = "$pr_url" ] && updated=1
+  if [ "$updated" = 1 ]; then session_review_ack "$key" "$pr_url"; fi
   vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
   _session_record_summary "$key" || true
   session_set "$key" state active pr_url "$pr_url" pr_updated "$updated" pr_announced 0
@@ -2288,6 +2289,7 @@ cmd_session() {
     history) _session_key "${2:-}" && session_history "$2" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
+    copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;

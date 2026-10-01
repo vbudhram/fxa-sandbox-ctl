@@ -58,12 +58,13 @@ _circleci_job() {
 
 circleci_digests() {
   local text="$1" nonce="$2" dest="${3:-}" t urls u wf jobs j body
-  local re='https://app\.circleci\.com/pipelines/github/mozilla/fxa/[0-9]+/workflows/[0-9a-f-]{36}(/jobs/[0-9]+)?'
+  # Pipeline links people paste, and the job and workflow links on a PR's checks.
+  local re='https://app\.circleci\.com/pipelines/github/mozilla/fxa/[0-9]+/workflows/[0-9a-f-]{36}(/jobs/[0-9]+)?|https://circleci\.com/gh/mozilla/fxa/[0-9]+|https://app\.circleci\.com/workflow/[0-9a-f-]{36}'
   urls="$(grep -oE "$re" <<< "$text" | sort -u | head -2 || true)"
   [ -n "$urls" ] || return 0
   t="$(circleci_token)"; [ -n "$t" ] || return 0
   for u in $urls; do
-    if [[ "$u" =~ /jobs/([0-9]+)$ ]]; then jobs="${BASH_REMATCH[1]}"
+    if [[ "$u" =~ /(jobs|fxa)/([0-9]+)$ ]]; then jobs="${BASH_REMATCH[2]}"
     else
       wf="$(grep -oE '[0-9a-f-]{36}' <<< "$u")"
       jobs="$(_circleci_get "$t" "https://circleci.com/api/v2/workflow/${wf}/job" \

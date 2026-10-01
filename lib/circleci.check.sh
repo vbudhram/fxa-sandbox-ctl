@@ -41,6 +41,7 @@ out="$(circleci_digests "$job" n1)"
 check "the job, its failed test (not the passing one) and the end of its failed step" "yes yes yes yes" \
   "$(grep -q 'playwright-functional-tests, failed' <<< "$out" && echo yes) $(grep -A1 -x 'Failed tests:' <<< "$out" | grep -q 'connectedServices.spec.ts shows the location: Timeout' && echo yes) $(grep -q '^1 failed$' <<< "$out" && echo yes) $(grep -q ' a ok' <<< "$out" || echo yes)"
 check "it is fenced as untrusted" "2" "$(grep -c 'CI-n1>>>' <<< "$out")"
+check "a PR check's job link is read too" "yes" "$(circleci_digests 'https://circleci.com/gh/mozilla/fxa/711803' n6 | grep -q 'playwright-functional-tests, failed' && echo yes)"
 out="$(circleci_digests 'https://app.circleci.com/pipelines/github/mozilla/fxa/73659/workflows/48a37f1d-c27d-4de2-af96-3b954c8b4be3' n2)"
 check "the first attempt's error context, not the retry's or a bad name" "1|0|0" \
   "$(grep -c 'element(s) not found service-location' <<< "$out")|$(grep -c 'retry1' <<< "$out")|$(grep -c 'escape' <<< "$out")"
