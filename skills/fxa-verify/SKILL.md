@@ -121,16 +121,20 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
   `compile` target type-checks the whole project.
 - UI and flows: `/fxa-functional-local`. Screenshots: `/fxa-storybook-capture`.
 
-## Speeds measured in the VM (4 vCPU, 8 GB)
+## Speeds measured in the VM (4 vCPU)
+
+`tsc` is incremental (`tsconfig.base.json`), so only the first run in a
+session pays the cold time.
 
 | Check | Time | Peak memory |
 |---|---|---|
 | one auth unit spec (`yarn test <spec>`) | 3-8 s | 0.3-0.8 GB |
 | one auth integration spec, after the patcher | 10-12 s | 0.8 GB |
 | settings sibling spec | 2 s | 0.4 GB |
-| `tsc --noEmit`: settings / libs (`-p tsconfig.lib.json`) | 2 s / 1.3 s | 0.6 GB |
-| `tsc --noEmit`: auth (`-p tsconfig.build.json`) / admin-server | 11 s / 9.5 s | 2.5 / 2.2 GB |
-| `eslint` on a few files | 1-2 s | 0.3 GB |
+| `tsc --noEmit`: settings / libs (`-p tsconfig.lib.json`) | 2 s / 1.3 s (cold 10 s / 4 s) | 0.6 GB |
+| `tsc --noEmit`: auth (`-p tsconfig.build.json`) / admin-server | 9-11 s / 9.5 s (auth cold 14-23 s) | 2.2-2.5 / 2.2 GB |
+| `tsc --noEmit`: functional-tests | 4 s | 0.45 GB |
+| `eslint` / `prettier --check` on a few files | 1-2 s / 1 s | 0.3 GB |
 | auth `scripts` or `oauth-api` spec, after the patcher | 13 s | 1.4 GB |
 
 The whole auth unit project (173 suites, 4157 tests) passed on main with
