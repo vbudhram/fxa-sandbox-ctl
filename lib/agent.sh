@@ -41,6 +41,13 @@ _vm_operator_rules() {
 # Plugins do not load in the runner (`plugins: []`), so each skill must be a plain
 # directory under ~/.claude/skills. ponytail-review is an MIT copy from the
 # ponytail plugin cache; copy it again when the plugin updates.
+# vm_guide_build <session|pipeline>   The runner's guide: the shared file with the
+# mode's sections 2 and 3 in place of its marker line, so each mode reads only its own rules.
+vm_guide_build() {
+  awk -v part="${SANDBOX_ROOT}/guide/$1.md" '/^<!-- The host puts guide\// { while ((getline l < part) > 0) print l; next } { print }' \
+    "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md"
+}
+
 _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
@@ -821,7 +828,7 @@ agent_run() {
   # The config writes and the screenrc below go in one ssh.
   vm_batch_start
   # The guide in the image goes stale between image builds; send the current one.
-  local guide_b64; guide_b64="$(base64 < "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md" | tr -d '\n')"
+  local guide_b64; guide_b64="$(vm_guide_build "$([ "${FXA_SESSION_MODE:-}" = 1 ] && echo session || echo pipeline)" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "echo '${guide_b64}' | base64 -d > /etc/vm-agent-guide.md && chmod 644 /etc/vm-agent-guide.md" 2>/dev/null \
     || echo "  WARN: could not send the VM guide; the image's copy stays" >&2
   runtime_setup_config "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }

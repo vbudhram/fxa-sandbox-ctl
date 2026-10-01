@@ -695,7 +695,8 @@ fxa-sandbox-ctl/               # Repo root
 ├── fxa-sandbox-ctl              # Main CLI (executable)
 ├── .env.example                 # Variable names for .env (no values)
 ├── README.md                    # This file
-├── VM_AGENT_GUIDE.md            # Full agent operations manual
+├── VM_AGENT_GUIDE.md            # Agent operations manual, the part both modes share
+├── guide/                       # Sections 2 and 3 per mode (session.md, pipeline.md); the host joins them
 ├── AI_FIXME_PIPELINE.md         # The pipeline above this tool (source of truth)
 ├── AI_FIXME_PIPELINE.html       # Generated: build-pipeline-html.py
 ├── AI_FIXME_PIPELINE.canvas.md  # Generated: build-canvas-md.py
