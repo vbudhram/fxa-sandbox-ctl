@@ -71,8 +71,12 @@ the closest existing test.
 - OAuth through 123done (`tests/oauth/*`, loginHint, relay, smart window): the
   token exchange needs Stripe and Strapi. Say CI covers it.
 - Payments (`tests-payments-next`): no payments stack. Say CI covers it.
-- Pairing and Sync specs open a second Firefox that is not recorded, and pairing
-  needs Firefox Nightly. Run them only when asked; the video shows one side.
+- Sync specs launch their own Firefox. The helper records it too, as
+  `<test>-own-<n>.webm`. Pairing's authority is a headless Firefox driven by
+  Marionette, which nothing can record, and pairing needs Firefox Nightly. Run
+  them only when asked; the video shows the supplicant side only.
+- The helper drops a video that shows only a blank page, and says so. Do not
+  post a blank video in its place.
 - `#chromium` tests run in the `local-chromium` project, not `local`.
 
 ## Notes
