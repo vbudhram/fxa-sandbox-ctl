@@ -86,7 +86,7 @@ COMMANDS:
   help                         Show this help message
 
 SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend gce):
-  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key>] [--mcp jira,github]
+  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key> [--fresh]] [--mcp jira,github]
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
@@ -1759,10 +1759,11 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
+      --fresh) fresh_pr=1; shift ;;
       --mcp) mcp="$2"; mcp_set=1; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
       --link) link="$2"; shift 2 ;;
@@ -1787,6 +1788,13 @@ cmd_task() {
   if [ "${eff:-${FXA_SESSION_RUNTIME:-claude}}" = codex ] && [ "${FXA_SESSION_CODEX:-}" != 1 ]; then
     echo "ERROR: Codex sessions are turned off on this host (FXA_SESSION_CODEX)" >&2; return 1
   fi
+  # --fresh: a new conversation on the earlier session's open PR, at its head.
+  # With no open PR there is nothing to keep, so it starts from main.
+  if [ -n "$fresh_pr" ] && [ -n "$resume_from" ]; then
+    _session_key "$resume_from" || return 1
+    local fpu; fpu="$(session_get "$resume_from" pr_url)"
+    { [ -n "$fpu" ] && [ "$(gh pr view "$fpu" --json state -q .state 2>/dev/null)" = OPEN ]; } || { resume_from=""; fresh_pr=""; }
+  fi
   if [ -n "$resume_from" ]; then
     _session_key "$resume_from" || return 1
     case "$(session_get "$resume_from" state)" in
@@ -1810,7 +1818,10 @@ cmd_task() {
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   # A session after Open PR works on that PR: its branch, its head, its reviews.
   # So does one after a stopped PR round, which has the PR too.
-  if [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
+  if [ -n "$fresh_pr" ]; then
+    local pb; pb="$(session_get "$resume_from" branch)"
+    session_set "$key" branch "${pb:-$resume_from}" review_pr "$(session_get "$resume_from" pr_url)" fresh 1
+  elif [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
     local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
     session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}"
   elif [ -n "$resume_from" ] && [ -n "$(session_get "$resume_from" pr_url)" ]; then
@@ -1861,8 +1872,10 @@ _cmd_session_boot() {
   local branch review; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; review="$(session_get "$key" review_pr)"
   # A new round on the PR starts at its head. A round that stopped part way
   # resumes like any session: its base (the head it began at) and its patch.
-  [ -n "$review" ] && [ "$(session_get "$from" state)" != pr_open ] && review=""
-  if [ -n "$from" ]; then
+  # A fresh round (!restart) keeps the PR head but not the conversation or the patch.
+  local fresh_pr; fresh_pr="$(session_get "$key" fresh)"
+  [ -n "$review" ] && [ "$(session_get "$from" state)" != pr_open ] && [ "$fresh_pr" != 1 ] && review=""
+  if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
     [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
     _session_valid_sid "$resume_sid" || resume_sid=""
   fi
@@ -1882,7 +1895,7 @@ _cmd_session_boot() {
   mkdir -p "$dir"
   # The run dir is no worktree, so the stack's gitignored secrets (123done's client secret) come over here.
   worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
-  if [ -n "$from" ]; then
+  if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
     [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
     [ -s "${SESSION_DIR}/${from}.work.tgz" ] && cp "${SESSION_DIR}/${from}.work.tgz" "${dir}/.fxa-resume-work.tgz"
@@ -1927,6 +1940,9 @@ so the earlier change is committed: 'git show HEAD' shows it, and 'git diff'
 shows only what you change now. The review is at the end of
 /workspace/.fxa-jira-context.md. Change what it asks for inside the PR's scope,
 and say which comments you did not act on and why. Do not reply on GitHub."
+  [ "$fresh_pr" = 1 ] && prompt="${prompt}
+The engineer restarted this thread: the earlier conversation is gone, but its
+work is in the PR. The request and the thread are the task; the review is context."
   if [ -z "$review" ]; then
     local at; [ -n "$from" ] && at="the base of the earlier session in this thread" || at="origin/main, fetched when this session started ($(date -u '+%Y-%m-%d %H:%M UTC'))"
     prompt="${prompt}

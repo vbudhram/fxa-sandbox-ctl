@@ -276,6 +276,15 @@ check "resume clears it" "no" "$(sessions_paused >/dev/null && echo yes || echo 
 check "a Codex session is refused unless the host opts in" "Codex sessions are turned off on this host (FXA_SESSION_CODEX)" \
   "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-cdx1 --owner U1 --prompt-file "$tmp/p.md" --runtime codex 2>&1 >/dev/null | sed 's/^ERROR: //')"
 check "and no record is written" "no" "$( [ -f "$tmp/agent-cdx1.json" ] && echo yes || echo no)"
+# !restart on an open PR: a fresh round on its branch at its head. A closed PR starts from main.
+nohup() { :; }; gh() { echo "$GH_STATE"; }
+echo '{"key":"agent-prr1","state":"stopped","branch":"agent-prr1","pr_url":"https://github.com/mozilla/fxa/pull/9"}' > "$tmp/agent-prr1.json"
+GH_STATE=OPEN FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre1 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
+check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.com/mozilla/fxa/pull/9 1 agent-prr1" \
+  "$(session_get agent-fre1 branch) $(session_get agent-fre1 review_pr) $(session_get agent-fre1 fresh) $(session_get agent-fre1 resume_from)"
+GH_STATE=CLOSED FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
+check "fresh on a closed PR starts from main" "agent-fre2||" "$(session_get agent-fre2 branch)|$(session_get agent-fre2 review_pr)|$(session_get agent-fre2 resume_from)"
+unset -f nohup gh
 
 # Boot timings: each step lasts until the next starts; a repeated label is one step.
 printf '%s\n' '#t0	1790000000.000' '0.4	Restoring x from the Firecracker snapshot' '2.6	slot 1 ip=10.42.16.11 restore_ms=185 ssh_ms=2228' \
