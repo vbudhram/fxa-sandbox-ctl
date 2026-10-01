@@ -2324,6 +2324,8 @@ cmd_session() {
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
+    review-comments) _session_key "${2:-}" && session_review_comments "$2" "${3:-}" ;;
+    pr-ready) _session_key "${2:-}" && session_pr_ready "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;

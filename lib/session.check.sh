@@ -209,12 +209,22 @@ gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"unit","status"
 check "pr status: running" "running" "$(session_pr_status agent-t2 | jq -r .ci)"
 gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"extract","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://x/1"},{"name":"unit","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://circleci.com/gh/mozilla/fxa/9"}]}'; }
 check "pr status: the links of real failures, not infra" "https://circleci.com/gh/mozilla/fxa/9" "$(session_pr_status agent-t2 | jq -r '.links | join(",")')"
+gh() { printf '%s' '{"state":"OPEN","isDraft":true,"mergeable":"CONFLICTING","title":"fix(auth): x","headRefName":"agent-ab12","body":"Closes: FXA-123 and FXA-9","statusCheckRollup":[]}'; }
+check "pr status: draft, mergeable, the first ticket" "true|CONFLICTING|FXA-123" "$(session_pr_status agent-t2 | jq -r '"\(.draft)|\(.mergeable)|\(.jira)"')"
+gh() { printf '%s' '{"state":"OPEN","title":"notFXA-1 x","statusCheckRollup":[]}'; }
+check "pr status: no ticket, not a draft" "false|null" "$(session_pr_status agent-t2 | jq -r '"\(.draft)|\(.jira)"')"
 # Copilot's latest review only, on current lines; others' comments are not its.
 gh() { case "$2" in
   */reviews) printf '%s' "[{\"id\":10,\"user\":{\"login\":\"copilot-pull-request-reviewer[bot]\"}},{\"id\":$LATEST,\"user\":{\"login\":\"copilot-pull-request-reviewer[bot]\"}},{\"id\":99,\"user\":{\"login\":\"rev1\"}}]" ;;
   *) printf '%s' '[{"id":1,"pull_request_review_id":10,"user":{"login":"Copilot"},"path":"a.ts","line":3,"body":"old"},{"id":2,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"b.ts","line":5,"body":"new"},{"id":3,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"c.ts","line":null,"body":"outdated"},{"id":4,"pull_request_review_id":99,"user":{"login":"rev1"},"path":"d.ts","line":1,"body":"human"}]' ;; esac; }
 check "copilot comments: the latest review, current lines" '[{"id":2,"path":"b.ts","line":5,"body":"new"}]' "$(LATEST=20 session_copilot_comments agent-t2)"
 check "copilot comments: a latest review with none gives none, not an older review's" '[]' "$(LATEST=30 session_copilot_comments agent-t2)"
+gh() { case "$2" in
+  */reviews) printf '%s' '[{"id":5,"user":{"login":"rev1"},"body":"old"},{"id":99,"user":{"login":"rev1"},"body":"Please rename."},{"id":20,"user":{"login":"rev2"},"body":"x"}]' ;;
+  *) printf '%s' '[{"id":4,"pull_request_review_id":99,"user":{"login":"rev1"},"path":"d.ts","line":1,"body":"human"},{"id":6,"pull_request_review_id":99,"user":{"login":"rev1"},"path":"e.ts","line":null,"body":"outdated"},{"id":2,"pull_request_review_id":20,"user":{"login":"rev2"},"path":"b.ts","line":5,"body":"other"}]' ;; esac; }
+check "review comments: that person's latest review, body first" '[{"id":"review","path":"","line":0,"body":"Please rename."},{"id":4,"path":"d.ts","line":1,"body":"human"}]' "$(session_review_comments agent-t2 rev1)"
+check "review comments: a bad login gives none" '[]' "$(session_review_comments agent-t2 'rev1;rm')"
+check "pr ready: refuses with no PR" "1" "$(session_pr_ready agent-zz99 2>/dev/null; echo $?)"
 # The thumbs up goes to fixed comments only, with a numeric id.
 check "thumbs up on fixed comments only" "api -X POST repos/mozilla/fxa/pulls/comments/2/reactions -f content=+1" "$(
   gh() { echo "$*" >> "$tmp/gh-calls"; }

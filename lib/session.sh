@@ -720,14 +720,15 @@ _session_wrap_step() {
 session_pr_status() {
   local url; url="$(session_get "$1" pr_url)"
   [ -n "$url" ] || { echo null; return 0; }
-  gh pr view "$url" --json state,reviewDecision,statusCheckRollup,latestReviews 2>/dev/null \
+  gh pr view "$url" --json state,reviewDecision,statusCheckRollup,latestReviews,isDraft,mergeable,title,body,headRefName 2>/dev/null \
     | jq -c --arg url "$url" --arg infra "${PIPE_INFRA_CHECKS:-extract=Bad credentials}" '
       ($infra | split(" ") | map(split("=")[0])) as $inf
       | [.statusCheckRollup[]? | {name: (.name // .context),
           done: (if .status then .status == "COMPLETED" else ((.state // "") | IN("PENDING", "EXPECTED") | not) end),
           bad: ((.conclusion // .state // "") | IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED")),
           link: (.detailsUrl // .targetUrl // "")}] as $c
-      | {url: $url, state, review: .reviewDecision,
+      | {url: $url, state, review: .reviewDecision, draft: (.isDraft == true), mergeable,
+         jira: ([.title, .headRefName, .body] | map(. // "") | join(" ") | [scan("(?<![A-Za-z0-9-])FXA-[0-9]+")] | first // null),
          ci: (if ($c | length) == 0 then "none" elif any($c[]; .bad) then "fail" elif all($c[]; .done) then "pass" else "running" end),
          failing: [$c[] | select(.bad) | .name], infra: [$c[] | select(.bad) | .name | select(IN($inf[]))],
          links: [$c[] | select(.bad and (.name | IN($inf[]) | not)) | .link | select(startswith("https://"))],
@@ -752,6 +753,29 @@ session_copilot_comments() {
   gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/comments" --paginate 2>/dev/null \
     | jq -sc --argjson r "$r" "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.pull_request_review_id == \$r and .line != null)
         | {id, path, line, body: (.body | .[0:2000])}]" 2>/dev/null || echo '[]'
+}
+
+# session_review_comments <key> <login>   A person's latest review on the PR: its
+# body as id "review", then its inline comments on current lines. [] when empty.
+session_review_comments() {
+  local p r; p="$(_session_pr_parts "$1")" || { echo '[]'; return 0; }
+  [[ "${2:-}" =~ ^[A-Za-z0-9-]{1,39}$ ]] || { echo '[]'; return 0; }
+  r="$(gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/reviews" --paginate 2>/dev/null \
+    | jq -sc --arg u "$2" '[.[][] | select(.user.login == $u)] | max_by(.id) // empty' 2>/dev/null || true)"
+  [ -n "$r" ] || { echo '[]'; return 0; }
+  gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/comments" --paginate 2>/dev/null \
+    | jq -sc --argjson r "$r" '[($r | select((.body // "") != "") | {id: "review", path: "", line: 0, body: (.body | .[0:4000])})]
+        + [.[][] | select(.pull_request_review_id == $r.id and .line != null) | {id, path, line, body: (.body | .[0:2000])}]' 2>/dev/null || echo '[]'
+}
+
+# session_pr_ready <key>   Take the session's draft PR out of draft. GitHub then
+# asks the code owners for review.
+session_pr_ready() {
+  local url; url="$(session_get "$1" pr_url)"
+  [ -n "$url" ] || { echo "no PR for $1" >&2; return 1; }
+  gh pr ready "$url" >/dev/null 2>&1 || [ "$(gh pr view "$url" --json isDraft -q .isDraft 2>/dev/null)" = false ] \
+    || { echo "could not mark $url ready" >&2; return 1; }
+  _session_history_add "$1" action "Marked ${url} ready for review"
 }
 
 # session_review_ack <key> <pr_url>   After a PR update: a thumbs up on each Copilot
