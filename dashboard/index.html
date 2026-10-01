@@ -226,6 +226,11 @@
   .errs .err { display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s2) 0; border-top:1px solid var(--line); }
   .errs .err .chip { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:999px; } .errs .err .body { min-width:0; }
   .errs .err .m { font-family:var(--mono); font-size:12px; overflow-wrap:anywhere; }
+  .errs .err textarea { width:100%; box-sizing:border-box; font:13px var(--sans); color:var(--ink); background:var(--sunk); border:1px solid var(--line2); border-radius:6px; padding:6px 8px; resize:vertical; }
+  .errs .err .acts { display:flex; gap:var(--s2); margin-top:var(--s2); }
+  .errs .err .acts button { border:1px solid var(--line2); background:transparent; color:var(--ink); border-radius:6px; padding:3px 10px; font:500 var(--t-label) var(--sans); cursor:pointer; }
+  .errs .err .acts button[data-act="approve"] { color:var(--link); border-color:var(--link); }
+  .errs .err .acts button:disabled { opacity:.5; cursor:default; }
   .errs .err .meta { font-size:var(--t-label); color:var(--dim); margin-top:2px; overflow-wrap:anywhere; }
   nav .theme { display:inline-flex; margin-top:var(--s2); }
   nav .theme button { padding:3px var(--s2); font-size:var(--t-label); border-radius:0; margin-left:-1px; }
@@ -268,7 +273,7 @@
   .need .body .m { font-size:var(--t-sub); color:var(--faint); } .need > a { font-size:var(--t-sub); font-weight:600; color:var(--link); white-space:nowrap; }
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:color-mix(in srgb,var(--purple) 14%,var(--panel)); color:var(--purple); }
-  .chip.dim { background:var(--sunk); color:var(--dim); }
+  .chip.dim { background:var(--sunk); color:var(--dim); } .chip.ok { background:var(--okbg); color:var(--ok); }
   .runrow { display:flex; align-items:center; gap:var(--s3); padding:var(--s2) 0; border-top:1px solid var(--sunk); color:inherit; }
   .runrow:hover { text-decoration:none; background:var(--bg); }
   .runrow .t { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -440,6 +445,7 @@
   <a href="#sessions" data-nav="sessions">Sessions<span class="n" id="n-sessions"></span></a>
   <a href="#stats" data-nav="stats">Stats<span class="n" id="n-stats"></span></a>
   <a href="#errors" data-nav="errors">Errors<span class="n" id="n-errors"></span></a>
+  <a href="#lessons" data-nav="lessons">Lessons<span class="n" id="n-lessons"></span></a>
   <a href="#runners" data-nav="runners">Sandboxes<span class="n" id="n-runners"></span></a>
   <div class="fresh"><span id="age">connecting…</span><button id="refresh">refresh</button>
     <div class="theme" role="group" aria-label="Theme">
@@ -469,6 +475,7 @@
   <section class="wide" id="s-sess" data-views="sessions"></section>
   <section class="wide" id="s-stats" data-views="stats"></section>
   <section class="wide" id="s-errors" data-views="errors"></section>
+  <section class="wide" id="s-lessons" data-views="lessons"></section>
   <section class="wide" id="s-lanes" data-views="pipeline"></section>
   <section class="wide" id="s-sessions" data-views="none"></section>
   <section class="wide" id="s-sessions-off" data-views="none"></section>
@@ -999,6 +1006,43 @@ function renderErrors() {
     <p class="empty" style="margin-top:var(--s3)">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
 }
 document.addEventListener("click", e => { if (!e.target.closest?.("#err-all")) return; ERRS_ALL = !ERRS_ALL; renderErrors(); });
+// Lessons: what sessions learned. None reaches a runner until it is approved here.
+let LESSONS = null, LESSONS_ALL = false;
+async function loadLessons() {
+  try { LESSONS = await (await fetch("/api/lessons", { cache:"no-store" })).json(); } catch { return; }
+  const pending = (LESSONS || []).filter(l => l.status === "pending").length;
+  const b = document.getElementById("n-lessons"); b.textContent = pending || ""; b.className = "n" + (pending ? " warn" : "");
+  if (document.body.dataset.view === "lessons" && !document.activeElement?.closest?.("#s-lessons")) renderLessons();
+}
+function renderLessons() {
+  if (!LESSONS) { put("s-lessons", head("lessons") + `<div class="emptybox">loading…</div>`); return; }
+  const rows = LESSONS.filter(l => LESSONS_ALL || l.status !== "rejected").slice().reverse()
+    .sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1));
+  const chip = { pending: "warn", approved: "ok", rejected: "dim" };
+  put("s-lessons", head("lessons", rows.length, `<button class="tgl sm" id="les-all" aria-pressed="${LESSONS_ALL}">${LESSONS_ALL ? "Hide rejected" : "Show rejected"}</button>`,
+      "proposed by sessions at wrap-up; approved ones go into every new sandbox's guide") +
+    (rows.length === 0 ? `<div class="emptybox">No lessons yet.</div>` : `<div class="errs">${rows.map(l => `<div class="err" data-lesson="${esc(l.id)}">
+      <span class="chip ${chip[l.status] ?? "dim"}">${esc(l.status)}</span>
+      <div class="body" style="flex:1">${l.status === "pending" ? `<textarea rows="2" maxlength="300" aria-label="Lesson text">${esc(l.text)}</textarea>` : `<div class="m">${esc(l.text)}</div>`}
+        <div class="meta">${l.why ? `why: ${esc(l.why)} · ` : ""}<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a> · ${esc((l.at || "").slice(0, 10))}${l.decided_at ? ` · ${esc(l.status)} ${esc(l.decided_at.slice(0, 10))}` : ""}</div>
+        <div class="acts">${l.status !== "approved" ? `<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? `<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
+    </div>`).join("")}</div>
+    <p class="empty" style="margin-top:var(--s3)">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`));
+}
+document.addEventListener("click", async e => {
+  if (e.target.closest?.("#les-all")) { LESSONS_ALL = !LESSONS_ALL; renderLessons(); return; }
+  const btn = e.target.closest?.("[data-lesson] button[data-act]"); if (!btn) return;
+  const row = btn.closest("[data-lesson]"), msg = row.querySelector("[data-msg]");
+  const text = row.querySelector("textarea")?.value.trim() ?? "";
+  row.querySelectorAll("button").forEach(b => b.disabled = true);
+  try {
+    const r = await fetch("/api/lessons", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.dataset.lesson, action: btn.dataset.act, text }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.status);
+    document.activeElement?.blur?.(); await loadLessons(); renderLessons();
+  } catch (err) { msg.textContent = `failed: ${err.message}`; row.querySelectorAll("button").forEach(b => b.disabled = false); }
+});
 
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
@@ -1544,7 +1588,7 @@ function renderNav() {
   ].join(""));
 }
 
-const VIEWS = ["overview", "pipeline", "sessions", "stats", "errors", "runners"];
+const VIEWS = ["overview", "pipeline", "sessions", "stats", "errors", "lessons", "runners"];
 let SESS_TAB = "live", SESS_SEL = "";
 function route() {
   const [v, sub, sel] = location.hash.slice(1).split("/");
@@ -1553,6 +1597,7 @@ function route() {
   if (view === "sessions" && AGENTS) renderSess();
   if (view === "stats" || view === "pipeline") loadStats();
   if (view === "errors") renderErrors();
+  if (view === "lessons") renderLessons();
   document.querySelectorAll("[data-views]").forEach(e => {
     const vs = e.dataset.views.split(" ");
     e.classList.toggle("on", vs.includes(view) || vs.includes(`${view}:${tab}`));
@@ -1577,7 +1622,7 @@ async function poll() {
   SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
   render();
   HIST_OPEN.forEach(loadHist);
-  loadErrors();
+  loadErrors(); loadLessons();
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }

@@ -256,9 +256,37 @@ class Handler(BaseHTTPRequestHandler):
         self._hardening()
         self.end_headers()
 
+    def _lesson_decide(self):
+        # JSON only: a cross-site form cannot send it without a preflight, which this server never answers.
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._json(415, {"error": "send JSON"})
+            return
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 4096)) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "bad JSON"})
+            return
+        lid, action, text = body.get("id"), body.get("action"), body.get("text") or ""
+        if not (isinstance(lid, str) and re.fullmatch(r"[0-9a-f]{8}", lid)) or action not in ("approve", "reject") \
+                or not isinstance(text, str) or len(text) > 300:
+            self._json(400, {"error": "bad request"})
+            return
+        try:
+            proc = ctl_run(["lessons", action, lid] + (["--text", text] if text.strip() and action == "approve" else []), timeout=15)
+        except Exception as exc:
+            self._json(503, {"error": type(exc).__name__})
+            return
+        if proc.returncode != 0:
+            self._json(400, {"error": (proc.stderr or "failed").strip()[:200]})
+            return
+        self._json(200, {"ok": True})
+
     def do_POST(self):
         path = self.path.split("?")[0]
         if not self._allowed(True):
+            return
+        if path == "/api/lessons":
+            self._lesson_decide()
             return
         if path != "/api/refresh":
             self._json(404, {"error": "not found"})
@@ -323,6 +351,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stats":
             body = cached_ctl(STATS, ["--pipeline", PIPELINE, "snapshot", "--stats"], 30, 60)
             self._send(200, body or json.dumps({"error": "stats unavailable"}), "application/json")
+        elif path == "/api/lessons":
+            try:
+                proc = ctl_run(["lessons", "--json"], timeout=15)
+                body = proc.stdout if proc.returncode == 0 and proc.stdout.strip() else "[]"
+            except Exception:
+                body = "[]"
+            self._send(200, body, "application/json")
         elif path == "/api/errors":
             self._send(200, cached_ctl(ERRORS, ["errors", "--json"], 20, 20) or "[]", "application/json")
         elif path == "/api/history":

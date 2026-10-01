@@ -576,6 +576,9 @@ VMSECTION
       /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
       skip && /^  / { next } { skip = 0; print }')"
   fi
+  # Approved lessons only: an unreviewed one could carry text the agent read from the web.
+  declare -F lessons_approved_md >/dev/null && vm_section="${vm_section}
+$(lessons_approved_md)"
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "

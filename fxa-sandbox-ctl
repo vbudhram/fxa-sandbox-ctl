@@ -42,6 +42,7 @@ source "${SCRIPT_DIR}/lib/snapshot.sh"
 source "${SCRIPT_DIR}/lib/circleci.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
+source "${SCRIPT_DIR}/lib/lessons.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
@@ -2282,6 +2283,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
     printf '%s\n' "$chk" >&2
     [ "$crc" = 1 ] && { _session_finish_fail "$key" "$(grep -m1 '^handoff check:' <<<"$chk")" "$mode"; return 1; }
   fi
+  lessons_collect "$key" "$name"
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
@@ -2443,6 +2445,7 @@ main() {
         *) echo "Usage: fxa-sandbox-ctl sessions pause [reason] [--now] | resume | status" >&2; return 1 ;;
       esac ;;
     errors)     cmd_errors "$@" ;;
+    lessons)    cmd_lessons "$@" ;;
     help|--help|-h)
       usage
       ;;

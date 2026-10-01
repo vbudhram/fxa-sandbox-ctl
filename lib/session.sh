@@ -213,6 +213,11 @@ straight to step 4.
    none. Write it with the Write tool (not an inline script) to
    .fxa-auto-done.json.tmp, then mv it into place.
 5. Run 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' and fix what it prints.
+6. If this session taught you something that a later session in this repo needs
+   (a command that works, a trap, a wrong assumption that cost time), write
+   /workspace/.fxa-lessons.json as [{"lesson": "...", "why": "..."}]: at most 3,
+   one sentence each, about the repo or the sandbox, never about this change.
+   Write none when there is nothing new. The operator reviews each one first.
 EOF
 }
 
