@@ -74,9 +74,38 @@ Chat sessions do not have it; do not report that it is missing.
 
 ## 2. What the host does with your work
 
-You cannot commit. On Tart the git directory is read-only; on GCE the host
-copies your tree back without `.git`, so a commit you make is lost. The host
-stages your changes, squashes them into one commit, signs it and pushes it.
+**Pipeline run:** you cannot commit. On Tart the git directory is read-only;
+on GCE the host copies your tree back without `.git`, so a commit you make is
+lost. The host stages your changes, squashes them into one commit, signs it
+and pushes it.
+
+**Slack session:** git is yours, except `push` (there is no `gh` and no push
+credential). Commit, amend, fetch, rebase onto `origin/main`, stash,
+cherry-pick and make extra branches as you like. At Push branch or Open PR
+the host does this:
+
+- It copies the files of `/workspace` as they are on disk, without `.git`. It
+  takes the checked-out branch's files plus your uncommitted and untracked
+  changes. Other branches and stashes are not shipped.
+- It bases the PR on `git merge-base HEAD origin/main`. Rebase onto a newer
+  `origin/main` and the PR moves with you; never merge main in.
+- It squashes everything into one signed commit on this thread's branch, so
+  your commit messages do not reach the PR. `pr_title` becomes the message.
+- One thread ships one PR. For a second feature, ask the person to start a
+  second thread; each thread gets its own sandbox and branch.
+
+Rules that follow from this:
+
+- Be on the branch you want to ship when you write the handoff. `branch` in
+  the handoff must match `git branch --show-current`.
+- Make extra worktrees outside `/workspace` (for example `~/wt/<name>`). A
+  worktree inside it is copied into the PR.
+- When the session pauses, the host saves the commits on `HEAD` and the
+  working tree. Other branches, stashes and worktrees are lost. Merge or
+  cherry-pick what you need onto the shipping branch first.
+- There is no editor, so interactive commands stop. In place of
+  `git rebase -i`, use `git commit --fixup <sha>` and then
+  `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/main`.
 
 Before it ships anything, the host checks the change. It refuses when:
 
@@ -89,7 +118,8 @@ Before it ships anything, the host checks the change. It refuses when:
   before you edit near a frozen path.
 - A conflict marker is left in a file.
 
-To leave a file out of the change, revert it with `git checkout -- <path>`.
+To leave a file out of the change, revert it with `git checkout -- <path>`
+(in a Slack session, `git checkout "$(git merge-base HEAD origin/main)" -- <path>`).
 Scratch files whose names start with `.fxa-` at the root of `/workspace` are
 never committed. Any other new file is.
 
