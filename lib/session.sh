@@ -374,6 +374,39 @@ session_idle_sweep() {
   done
 }
 
+# session_prune   Retention: delete what a session left on the host (its prompt and
+# thread text, history, transcript, patch, media) FXA_SESSION_RETAIN_DAYS (30) after
+# its last activity, then thread records no session uses, the MCP call log's old
+# lines (they hold tool arguments), and old per-run token files. Prints each key it
+# deleted, so the bot forgets those threads too. Live sessions are never touched.
+session_prune() {
+  local cutoff f key k used
+  cutoff=$(( $(date +%s) - ${FXA_SESSION_RETAIN_DAYS:-30} * 86400 ))
+  for f in "$SESSION_DIR"/agent-*.json; do
+    [ -f "$f" ] || continue
+    key="$(basename "$f" .json)"
+    session_live "$key" && continue
+    [ "$(jq -r '.last_activity // 0 | floor' "$f" 2>/dev/null || echo 0)" -lt "$cutoff" ] || continue
+    rm -rf "${SESSION_DIR:?}/${key}".* && echo "$key"
+  done
+  for f in "$SESSION_DIR"/thread-*.json; do
+    [ -f "$f" ] || continue
+    used=0; for k in $(jq -r '.sessions // ""' "$f" 2>/dev/null || true); do session_exists "$k" && used=1; done
+    [ "$used" = 1 ] || rm -f "$f" "${f%.json}.notes.md"
+  done
+  local d calls="${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}/calls.jsonl" t
+  if [ -s "$calls" ]; then
+    t="$(mktemp "${calls}.XXXXXX")"
+    jq -c --argjson c "$cutoff" 'select((.at // 0) >= $c)' "$calls" > "$t" 2>/dev/null && mv "$t" "$calls" || rm -f "$t"
+  fi
+  for d in "${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}"; do
+    for f in "$d"/tokens/* "$d"/runs/*; do
+      [ -f "$f" ] && [ "$(_mtime "$f")" -lt "$cutoff" ] && rm -f "$f"
+    done
+  done
+  return 0
+}
+
 # _session_lock <key>   One writer per session: steer, the queue drain, and Open PR
 # all start turns. A lock older than 2 min belongs to a crashed holder.
 _session_lock() {

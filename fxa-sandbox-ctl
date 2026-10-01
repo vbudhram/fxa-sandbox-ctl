@@ -101,6 +101,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
                                Read session records; history is the conversation as JSON
   session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (1800);
                                the work and conversation are saved, the runner is deleted
+  session prune                WRITE: delete sessions idle past FXA_SESSION_RETAIN_DAYS (30): prompts,
+                               thread text, transcripts, patches, media; prints the deleted keys
 
 PIPELINE COMMANDS:
   Drive a ticket-to-PR pipeline. Settings come from pipelines/<name>.conf;
@@ -2307,10 +2309,11 @@ cmd_session() {
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     idle-sweep) session_idle_sweep ;;
+    prune) session_prune ;;
     times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
       (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
       + (if .restore then "  (snapshot load \(.restore.restore_ms) ms, ssh at \(.restore.ssh_ms) ms)" else "" end) end' ;;
-    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep" >&2; return 1 ;;
+    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep | session prune" >&2; return 1 ;;
   esac
 }
 
