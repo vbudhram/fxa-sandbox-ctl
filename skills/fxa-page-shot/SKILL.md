@@ -36,6 +36,18 @@ On a failure it saves `<name>-FAILED.png` and prints the current URL. Read
 that screenshot before you change a selector. Open every PNG with Read
 before you describe it.
 
+## Record a desktop Firefox flow
+
+For a flow in desktop Firefox (Sync, about:preferences) that
+`/fxa-functional-local` does not record, use the helper. Do not build an
+ffmpeg command by hand.
+
+    bash ~/.claude/skills/fxa-page-shot/record.sh start signout   # starts Xvfb :99 if needed
+    DISPLAY=:99 <start Firefox and drive it>
+    bash ~/.claude/skills/fxa-page-shot/record.sh stop --speed 4  # .fxa-auto-media/signout.mp4
+
+`stop` ends the file cleanly, so it plays. `--speed` shortens a slow flow.
+
 ## Check a video
 
     node ~/.claude/skills/fxa-page-shot/page-shot.mjs frames /workspace/.fxa-auto-media/<video>.webm --every 1

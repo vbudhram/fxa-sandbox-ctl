@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Plan, then run, the fastest correct checks for the changed files. See SKILL.md.
-#   verify.sh [--run] [--types] [--no-lint] [--plan <test-plan.json>] [file...]
+#   verify.sh [--run] [--no-types] [--no-lint] [--plan <test-plan.json>] [file...]
 #   verify.sh --revert [test file...]   the tests fail without the fix, pass with it
 # With no files: the working diff against origin/main, untracked files included.
 # With --plan: the specs the test plan names (see /fxa-test-plan) first, then the
 # related specs of the changed files as a safety net, then any functional spec.
 set -u
 cd "${FXA_WORKSPACE:-/workspace}" || exit 2
-RUN=0 TYPES=0 LINT=1 MAX_RELATED=15 REVERT=0
+RUN=0 TYPES=1 LINT=1 MAX_RELATED=15 REVERT=0
 files=() PLAN=""
 while [ $# -gt 0 ]; do
-  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; *) files+=("$1") ;; esac
+  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; *) files+=("$1") ;; esac
   shift
 done
 given=${#files[@]}
@@ -35,6 +35,17 @@ nearest_jest() { # nearest jest.config.* at or above a dir, within the project
   local d="$1"; while [ "$d" != "." ]; do
     for c in jest.config.ts jest.config.js; do [ -f "$d/$c" ] && { echo "$d/$c"; return; }; done
     d="$(dirname "$d")"; done
+}
+
+# tsc_files <tsconfig> <file...>   Fail only on type errors in these files, for a
+# project whose tsc already fails on main in the VM (CI builds what it imports).
+# ponytail: an error the change causes in an unchanged file is missed; CI's compile catches it.
+tsc_files() {
+  local cfg="$1" f out bad=""; shift
+  out="$(npx tsc --noEmit -p "$cfg" 2>&1)"
+  for f in "$@"; do bad+="$(awk -v f="$f(" 'index($0, f) == 1' <<<"$out")"; done
+  if [ -z "$bad" ]; then echo "no type errors in the changed files ($(grep -c 'error TS' <<<"$out") in other files, as on main)"; return 0; fi
+  printf '%s\n' "$bad"; return 1
 }
 
 plan=() # "label|dir|command"
@@ -124,12 +135,16 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
     *)
       add "${pre}$p tests" "$p" "npx jest --findRelatedTests $r" ;;
   esac
-  if [ "$LINT" = 1 ]; then add "${pre}$p lint" "$p" "npx eslint $r"; fi
+  if [ "$LINT" = 1 ]; then
+    add "${pre}$p lint" "$p" "npx eslint $r"
+    # The App commits through the API, so no lint-staged hook formats the change.
+    add "${pre}$p format" "$p" "npx prettier --check --ignore-unknown $(rel "$p" "${fs[@]}") || { echo 'fix with: npx prettier --write <files>'; false; }"
+  fi
   if [ "$TYPES" = 1 ]; then
     case "$p" in
       packages/fxa-auth-server) add "${pre}$p types" "$p" "npx tsc --noEmit -p tsconfig.build.json" ;;
-      # Both fail on main (checked 2026-09-27) and CI does not type-check them.
-      packages/fxa-profile-server|packages/functional-tests) add "${pre}$p types" "." "echo 'tsc fails on main here already; not a CI target, skipped'" ;;
+      # Both fail on main in the VM (checked 2026-09-27); CI's compile target runs tsc on them.
+      packages/fxa-profile-server|packages/functional-tests) add "${pre}$p types" "$p" "tsc_files tsconfig.json $r" ;;
       libs/*) for t in tsconfig.lib.json tsconfig.app.json tsconfig.json; do [ -f "$p/$t" ] && { add "${pre}$p types" "$p" "npx tsc --noEmit -p $t"; break; }; done ;;
       *) [ -f "$p/tsconfig.json" ] && add "${pre}$p types" "$p" "npx tsc --noEmit" ;;
     esac

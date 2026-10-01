@@ -14,6 +14,11 @@ Run the helper from anywhere:
     bash ~/.claude/skills/fxa-stack/stack.sh diagnose       # errored services with their last log lines
     bash ~/.claude/skills/fxa-stack/stack.sh account 2fa    # a test account, as one line of JSON
     bash ~/.claude/skills/fxa-stack/stack.sh restart auth KEY=VAL   # one service with extra env
+    bash ~/.claude/skills/fxa-stack/stack.sh wait auth settings     # block until healthy (3 min each)
+
+Use `wait` after a change that restarts a service, not a `sleep` or `curl`
+loop. Never run `fxa-start` yourself: `ensure` runs it only when the core is
+down, and a second copy fails with nginx EADDRINUSE on 3030 and 8080.
 
 ## Test accounts
 

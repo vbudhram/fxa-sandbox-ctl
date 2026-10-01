@@ -57,7 +57,7 @@ git --no-pager log -1 --format='%s'
 
 Rules for the title:
 - Give the scope. `fix:` is not enough. Write `fix(settings):`.
-- Use one of `fix`, `feat`, `chore`, `refactor`, `test`, `docs`, `perf`.
+- Use one of `fix`, `feat`, `chore`, `refactor`, `test`, `docs`, `perf`, `ci`, `build`.
 - Do not put the Jira key in the title. Put it in the body.
 - Keep it under 72 characters.
 
@@ -90,20 +90,18 @@ newlines, and the pull request body then arrives as one paragraph.
 `media_paths` is read from `.fxa-auto-media/`, so every file a capture skill
 wrote is listed and nothing is typed by hand. Do not replace it with `[]`.
 
-## Step 5: Verify the file before you stop
+## Step 5: Run the check before you stop
 
 ```bash
-jq -e '.branch and .pr_title and .pr_body' /workspace/.fxa-auto-done.json \
-  && echo "handoff OK" || echo "handoff INVALID"
-echo "media: $(jq -r '.media_paths | length' /workspace/.fxa-auto-done.json) file(s) listed"
-jq -r '.pr_title' /workspace/.fxa-auto-done.json
-test "$(jq -r '.pr_title' /workspace/.fxa-auto-done.json)" \
-     = "$(git --no-pager log -1 --format='%s')" \
-  && echo "title matches commit" || echo "TITLE MISMATCH"
+bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix
 ```
 
-The host rejects the file when `branch`, `pr_title`, or `pr_body` is empty. Do
-not finish the run until `handoff OK` and `title matches commit` both print.
+It formats the changed files with Prettier, deletes untracked scratch files
+(`zz*.spec.ts`, `*.tmp.mjs`), and checks the handoff file: the keys, a scoped
+conventional `pr_title`, the branch, and that each `media_paths` file exists.
+Fix each `handoff check:` line it prints, and run it again until it prints
+`handoff check: ok`. The host runs the same check at Open PR and refuses a
+title that is not a scoped conventional subject.
 
 ## Body rules
 

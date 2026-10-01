@@ -21,6 +21,8 @@ bash "$S" restart >/dev/null 2>&1; check "restart needs a service" 2 $?
 bash "$S" restart demo-svc 1BAD=x >/dev/null 2>&1; check "restart rejects a bad key" 2 $?
 bash "$S" restart demo-svc NOEQUALS >/dev/null 2>&1; check "restart rejects a word with no =" 2 $?
 check "a rejected restart does not call pm2" "" "$(cat "$tmp/pm2.log" 2>/dev/null)"
+bash "$S" wait nosuch >/dev/null 2>&1; check "wait rejects an unknown service" 2 $?
+check "wait names the known services" 1 "$(bash "$S" wait nosuch 2>&1 | grep -c 'names: mysql redis firestore goaws auth inbox content settings profile admin-server 123done')"
 # The rest reads pm2 configs with node, which the runner has and a bare test host may not.
 command -v node >/dev/null || { echo "skip: restart needs node"; exit "$fail"; }
 bash "$S" restart no-such-svc A=1 >/dev/null 2>&1; check "restart fails for a service no config defines" 1 $?

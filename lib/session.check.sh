@@ -430,4 +430,28 @@ check "watch: the todo file is the plan" 'Find it:completed|Fix it:in_progress|T
 check "watch: the todo file is not an edit, and its step says so" 'Updating the plan|0' "$(jq -r '"\(.[] | select(.type == "step") | .text)|\([.[] | select(.type == "edit")] | length)"' <<< "$todo")"
 
 
+# Open PR: the runner's handoff check gets one repair turn; a second failure stops the ship.
+eval "$(sed -n '/^_cmd_session_finish() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+HC="$tmp/hc-exits" # not $tmp: _cmd_session_finish has a local tmp
+finish_case() { # finish_case <check exits...>   prints the turns, then pushed or the error
+  ( echo '{"key":"agent-hc1","state":"wrapping","runtime":"claude"}' > "$SESSION_DIR/agent-hc1.json"
+    : > "$SESSION_DIR/agent-hc1.finish.log"; echo "$*" > "$HC"
+    runtime_load() { :; }; sleep() { :; }; _session_turn_running() { return 1; }; errors_record() { :; }
+    _session_turn() { echo "turn:$(head -1 <<<"$2" | cut -c1-12)"; }
+    vm_exec() { return 0; }
+    _session_sh() { local e; read -r e rest < "$HC"; echo "${rest:-}" > "$HC"
+      [ "$e" = 0 ] && echo "handoff check: ok" || echo "handoff check: pr_title is not a scoped conventional subject"; return "$e"; }
+    session_checkout() { mkdir -p "$2"; }; session_checkout_remove() { :; }
+    finish_push_and_pr() { echo pushed >&2; echo https://github.com/o/r/pull/1; }
+    _session_finish_notes() { :; }; _session_record_summary() { :; }; _thread_ok() { return 1; }
+    _cmd_session_finish agent-hc1 2>&1 | grep -E '^(turn:|pushed$)' | paste -sd'|' -
+    session_get agent-hc1 last_error )
+}
+check "a clean check ships with no repair turn" "turn:The engineer|pushed" "$(finish_case 0)"
+check "a failed check gets one repair turn, then ships" "turn:The engineer|turn:The host's c|pushed" "$(finish_case 1 0)"
+check "a second failure stops the ship and says why" "turn:The engineer|turn:The host's c
+Open PR failed: handoff check: pr_title is not a scoped conventional subject" "$(finish_case 1 1)"
+check "an unreachable runner skips the check" "turn:The engineer|pushed" "$(finish_case 255)"
+
 exit "$fail"
+

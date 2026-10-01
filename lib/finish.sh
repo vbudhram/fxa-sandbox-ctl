@@ -359,6 +359,11 @@ _finish_push_and_pr() {
     echo "ERROR: pr_title is over 200 chars or contains control characters. Refusing." >&2
     return 1
   fi
+  local conv='^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?: [^[:space:]]'
+  if ! [[ "$pr_title" =~ $conv ]]; then
+    echo "ERROR: pr_title is not a scoped conventional subject, e.g. 'fix(auth): reject an expired token': ${pr_title}" >&2
+    return 1
+  fi
 
   worktree_git_ok "$worktree" >/dev/null || return 1
   local current_branch

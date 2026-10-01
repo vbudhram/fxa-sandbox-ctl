@@ -25,6 +25,23 @@ status() {
   return "$down"
 }
 
+# check_for <name>   The health check of a service, by the first word of its name.
+check_for() { awk -F'|' -v n="$1" '{ split($1, w, " ") } w[1] == n { print $2 }' <<< "$CHECKS"; }
+
+# wait [name...]   Block until each service is healthy (default: auth, content,
+# settings), up to 3 minutes each. For a sleep or curl loop after a change.
+wait_up() {
+  local n check i
+  [ $# -gt 0 ] || set -- auth content settings
+  for n in "$@"; do
+    check="$(check_for "$n")"
+    [ -n "$check" ] || { echo "wait: no health check for $n; names: $(cut -d'|' -f1 <<< "$CHECKS" | cut -d' ' -f1 | paste -sd' ' -)" >&2; return 2; }
+    for i in $(seq 60); do eval "$check" >/dev/null 2>&1 && break; [ "$i" = 60 ] || sleep 3; done
+    eval "$check" >/dev/null 2>&1 || { echo "wait: $n not up after 3 minutes; run: bash $0 diagnose" >&2; return 1; }
+    echo "wait: $n up"
+  done
+}
+
 # The services a UI check cannot run without. Others are reported, not required.
 core_up() { http http://localhost:9000/__heartbeat__ && http http://localhost:3030/ && http http://localhost:3000/settings/static/js/bundle.js; }
 
@@ -117,7 +134,7 @@ JS
   # cwd: 123done's config has a cwd relative to the repo root.
   (cd "$ROOT" && env -u NODE_ENV pm2 start "$cfg" >/dev/null) || { echo "restart: pm2 start failed" >&2; return 1; }
   local name="$svc" check i; [ "$svc" = settings-react ] && name=settings
-  check="$(awk -F'|' -v n="$name" '{ split($1, w, " ") } w[1] == n { print $2 }' <<< "$CHECKS")"
+  check="$(check_for "$name")"
   [ -n "$check" ] || { echo "restart: $svc started; no health check for it, see pm2 list"; return 0; }
   for i in $(seq 40); do eval "$check" >/dev/null 2>&1 && { echo "restart: $svc up"; return 0; }; sleep 3; done
   echo "restart: $svc not healthy after 2 minutes; run: pm2 logs $svc --lines 50 --nostream" >&2; return 1
@@ -129,5 +146,6 @@ case "${1:-status}" in
   diagnose) diagnose ;;
   account) account "${2:-}" ;;
   restart) shift; restart "$@" ;;
-  *) echo "usage: $0 status|ensure|diagnose|account <state>|restart <service> [KEY=VAL...]" >&2; exit 2 ;;
+  wait) shift; wait_up "$@" ;;
+  *) echo "usage: $0 status|ensure|diagnose|account <state>|restart <service> [KEY=VAL...]|wait [service...]" >&2; exit 2 ;;
 esac

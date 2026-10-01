@@ -89,7 +89,8 @@ Every turn, including later ones:
 - Do not commit or push, and do not run 'gh'. The host does that.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
-  the plan when the work changes. For the local stack, ${stack}.
+  the plan when the work changes. For the local stack, ${stack}; wait for a
+  service with its 'wait' command, not a sleep loop.
 - To show the engineer a screenshot, a video or a patch, save it in /workspace/.fxa-auto-media/.
   Files there are posted to the thread when your turn ends. For a change the engineer
   can see (a page, an email, a flow), attach a screenshot or a video before you end
@@ -207,6 +208,7 @@ straight to step 4.
    conventional commit subject; media_paths relative to /workspace, empty if
    none. Write it with the Write tool (not an inline script) to
    .fxa-auto-done.json.tmp, then mv it into place.
+5. Run 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' and fix what it prints.
 EOF
 }
 

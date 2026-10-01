@@ -1,6 +1,6 @@
 ---
 name: fxa-verify
-description: Verify a change in the FxA monorepo on the sandbox VM with the fastest correct checks. Maps each changed file to its package and runs only the related unit tests, lint on the changed files, and an optional type-check, then prints a verdict table. Use before saying tests pass, and before the handoff.
+description: Verify a change in the FxA monorepo on the sandbox VM with the fastest correct checks. Maps each changed file to its package and runs only the related unit tests, lint, a Prettier check and a type-check on the changed files, then prints a verdict table. Use before saying tests pass, and before the handoff.
 ---
 
 # Verify a change
@@ -10,7 +10,7 @@ included), plans one command per package, and with `--run` runs them:
 
     bash ~/.claude/skills/fxa-verify/verify.sh             # show the plan
     bash ~/.claude/skills/fxa-verify/verify.sh --run       # run it, print the verdict
-    bash ~/.claude/skills/fxa-verify/verify.sh --run --types   # also type-check the touched projects
+    bash ~/.claude/skills/fxa-verify/verify.sh --run --no-types   # skip the type-check for a quick rerun
     bash ~/.claude/skills/fxa-verify/verify.sh --run --plan /workspace/.fxa-test-plan.json
 
 With `--plan` it first runs the specs your test plan names (`plan` lines; see
@@ -23,8 +23,9 @@ the spec); `NOREL` (no spec imports that file, for example a route that only
 integration specs cover: your test plan must cover it); `CI` (left to CI);
 `TODO` (Storybook, by hand).
 
-Add `--types` for any removal, rename, or signature change. Pass file paths to
-check only those. Print the verdict table in your reply: it is the evidence.
+Each touched project gets lint, a Prettier check, and a type-check. The App
+commits through the API, so no hook formats your change: fix a `format` FAIL
+with `npx prettier --write <files>`. Pass file paths to check only those. Print the verdict table in your reply: it is the evidence.
 
 With no file paths it checks every change in the working tree, including
 changes an earlier run left on this slot. Read `git status` first; if the plan
@@ -115,8 +116,9 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
 - payments-next (`apps/payments/next`): all its Jest suites fail to transform
   in the VM on main (babel-jest 30 under Jest 29), so the helper skips them and
   says so. Its type-check and lint work. CI covers the tests.
-- `--types` skips fxa-profile-server and functional-tests: `tsc` already fails
-  on main there, and CI does not type-check them.
+- fxa-profile-server and functional-tests: `tsc` already fails on main in the
+  VM, so the type-check fails only on errors in the changed files. CI's
+  `compile` target type-checks the whole project.
 - UI and flows: `/fxa-functional-local`. Screenshots: `/fxa-storybook-capture`.
 
 ## Speeds measured in the VM (4 vCPU, 8 GB)

@@ -2262,6 +2262,25 @@ _cmd_session_finish() {
     [ -n "$reply" ] && session_set "$key" wrap_reply "$reply"
     _session_finish_fail "$key" "I wrote no handoff, so nothing was pushed${reply:+ (my reason is above)}" "$mode"; return 1
   fi
+  # Script checks in the runner: it formats the change, deletes scratch files, and
+  # checks the handoff's fields. One repair turn for what it cannot fix itself.
+  local chk crc=0
+  chk="$(_session_sh "$name" 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' 2>&1)" || crc=$?
+  printf '%s\n' "$chk" >&2
+  if [ "$crc" = 1 ]; then
+    _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write
+/workspace/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
+$(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key" "the repair turn did not start" "$mode"; return 1; }
+    sleep 20
+    while _session_turn_running "$key"; do
+      [ "$(date +%s)" -lt "$deadline" ] || { _session_finish_fail "$key" "the wrap-up ran past 45 min" "$mode"; return 1; }
+      sleep 15
+    done
+    session_set "$key" turn_open 0
+    crc=0; chk="$(_session_sh "$name" 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' 2>&1)" || crc=$?
+    printf '%s\n' "$chk" >&2
+    [ "$crc" = 1 ] && { _session_finish_fail "$key" "$(grep -m1 '^handoff check:' <<<"$chk")" "$mode"; return 1; }
+  fi
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
