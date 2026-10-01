@@ -300,6 +300,8 @@ printf 'Build the tests\n\nEarlier messages in this Slack thread, for context:\n
 th="C0AB:1790805741.326109"
 FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr1 --owner U1 --prompt-file "$tmp/t.md" --thread "$th" >/dev/null 2>&1
 check "the thread keeps the first request and its sessions" "Build the tests|agent-thr1|$th" "$(thread_get "$th" request | head -1)|$(thread_get "$th" sessions)|$(session_get agent-thr1 thread)"
+check "a new thread's task runs under set -e" "agent-thr4 starting" \
+  "$(set -e; nohup() { :; }; FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr4 --owner U1 --prompt-file "$tmp/t.md" --thread C0AB:1790000000.000001 2>/dev/null)"
 check "a bad thread id is refused" "--thread must look like C0123:1790000000.000100" \
   "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr9 --owner U1 --prompt-file "$tmp/t.md" --thread 'x;y' 2>&1 >/dev/null | sed 's/^ERROR: //')"
 thread_set "$th" pr_url https://github.com/mozilla/fxa/pull/9 pr_session agent-prr1

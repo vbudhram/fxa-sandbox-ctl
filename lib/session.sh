@@ -233,7 +233,8 @@ _session_media_scrub() {
 _thread_ok() { [[ "${1:-}" =~ ^[A-Z0-9]+:[0-9]+\.[0-9]+$ ]]; }
 _thread_file() { printf '%s/thread-%s.json' "$SESSION_DIR" "${1/:/-}"; }
 _thread_notes() { printf '%s/thread-%s.notes.md' "$SESSION_DIR" "${1/:/-}"; }
-thread_get() { jq -r --arg f "$2" '.[$f] // empty' "$(_thread_file "$1")" 2>/dev/null; }
+# A thread with no record yet is empty, not an error: callers run under set -e.
+thread_get() { jq -r --arg f "$2" '.[$f] // empty' "$(_thread_file "$1")" 2>/dev/null || true; }
 # thread_set <thread> <field> <value>...   One writer at a time is enough: only task and the finish job write it.
 thread_set() {
   local f t filter='.' i=0; f="$(_thread_file "$1")"; shift
