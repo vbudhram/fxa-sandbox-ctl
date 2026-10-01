@@ -86,7 +86,7 @@ COMMANDS:
   help                         Show this help message
 
 SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend gce):
-  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key> [--fresh]] [--mcp jira,github]
+  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key> [--fresh]] [--thread <channel:ts> [--new]] [--mcp jira,github]
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
@@ -1759,11 +1759,13 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
       --fresh) fresh_pr=1; shift ;;
+      --thread) thread="$2"; shift 2 ;;
+      --new) new_pr=1; shift ;;
       --mcp) mcp="$2"; mcp_set=1; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
       --link) link="$2"; shift 2 ;;
@@ -1779,6 +1781,7 @@ cmd_task() {
   [ "$source" = slack ] || { echo "ERROR: task needs --source slack" >&2; return 1; }
   [[ "$key" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like agent-7f3a" >&2; return 1; }
   [ -n "$owner" ] && [ -s "$prompt_file" ] || { echo "ERROR: task needs --owner and a non-empty --prompt-file" >&2; return 1; }
+  [ -z "$thread" ] || _thread_ok "$thread" || { echo "ERROR: --thread must look like C0123:1790000000.000100" >&2; return 1; }
   # Runners must survive the host sleeping, and Tart runs on the host.
   [ "$FXA_VM_BACKEND" = gce ] || { echo "ERROR: sessions run on gce only; pass --backend gce" >&2; return 1; }
   session_exists "$key" && { echo "ERROR: session ${key} already exists" >&2; return 1; }
@@ -1787,6 +1790,13 @@ cmd_task() {
   local eff="$runtime"; [ -n "$resume_from" ] && [ -z "$eff" ] && eff="$(session_get "$resume_from" runtime)"
   if [ "${eff:-${FXA_SESSION_RUNTIME:-claude}}" = codex ] && [ "${FXA_SESSION_CODEX:-}" != 1 ]; then
     echo "ERROR: Codex sessions are turned off on this host (FXA_SESSION_CODEX)" >&2; return 1
+  fi
+  # The thread's open PR carries over to any new session in it, unless --new
+  # (start from main): the bot may have lost track of it, as after a restart.
+  local tpu; [ -n "$thread" ] && tpu="$(thread_get "$thread" pr_url)"
+  if [ -n "${tpu:-}" ] && [ -z "$resume_from" ] && [ -z "$new_pr" ]; then
+    local tkey; tkey="$(thread_get "$thread" pr_session)"
+    [ -n "$tkey" ] && session_exists "$tkey" && { resume_from="$tkey"; fresh_pr=1; }
   fi
   # --fresh: a new conversation on the earlier session's open PR, at its head.
   # With no open PR there is nothing to keep, so it starts from main.
@@ -1816,6 +1826,13 @@ cmd_task() {
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
+  if [ -n "$thread" ]; then
+    session_set "$key" thread "$thread"
+    [ -n "$new_pr" ] && session_set "$key" new 1
+    # The first session's request is the thread's: later prompts are only follow-ups.
+    [ -n "$(thread_get "$thread" request)" ] || thread_set "$thread" thread "$thread" request "$(sed '/^Earlier messages in this Slack thread/,$d' "$prompt_file")"
+    thread_set "$thread" sessions "$(thread_get "$thread" sessions | tr ' ' '\n' | grep -v '^$' | grep -vx "$key" | tr '\n' ' ')${key}"
+  fi
   # A session after Open PR works on that PR: its branch, its head, its reviews.
   # So does one after a stopped PR round, which has the PR too.
   if [ -n "$fresh_pr" ]; then
@@ -1875,7 +1892,12 @@ _cmd_session_boot() {
   # A fresh round (!restart) keeps the PR head but not the conversation or the patch.
   local fresh_pr; fresh_pr="$(session_get "$key" fresh)"
   [ -n "$review" ] && [ "$(session_get "$from" state)" != pr_open ] && [ "$fresh_pr" != 1 ] && review=""
-  if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
+  # With the thread's notes, a later session starts a new conversation from them
+  # and the checkout: no replay of a long conversation that it would compact anyway.
+  local tid notes=""; tid="$(session_get "$key" thread)"
+  # Not for !new: it starts from main, so the notes' "built" would be wrong.
+  _thread_ok "$tid" && [ "$(session_get "$key" new)" != 1 ] && [ -s "$(_thread_notes "$tid")" ] && notes="$(_thread_notes "$tid")"
+  if [ -n "$from" ] && [ "$fresh_pr" != 1 ] && [ -z "$notes" ]; then
     [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
     _session_valid_sid "$resume_sid" || resume_sid=""
   fi
@@ -1893,6 +1915,7 @@ _cmd_session_boot() {
   fi
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"
+  rm -f "${dir}/.fxa-thread-notes.md"; [ -n "$notes" ] && cp "$notes" "${dir}/.fxa-thread-notes.md"
   # The run dir is no worktree, so the stack's gitignored secrets (123done's client secret) come over here.
   worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
   if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
@@ -1933,6 +1956,7 @@ EOF
   local prompt
   if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
+  [ -n "$notes" ] && [ -z "$resume_sid" ] && prompt="${prompt}${_SESSION_NOTES_NOTE}"
   [ -n "$review" ] && prompt="${prompt}
 
 This session continues the open PR ${review}. The branch is at the PR's head,
@@ -1989,7 +2013,7 @@ cmd_steer() {
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
   if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; echo "${key} queued"; return 0; fi
-  if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
+  if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
     { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; echo "${key} queued"; return 0
   fi
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
@@ -2089,7 +2113,7 @@ cmd_events() {
         # Take the queue before sending it: a steer that cannot get the lock
         # appends to $q meanwhile, and that message must survive for the next turn.
         # Recheck under the lock: another events or a steer may have got here first.
-        if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
+        if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ] && ! _session_handoff_busy "$key"; then
           mv "$q" "${q}.sending"
           # Follow-ups are often a quick correction of what the agent just answered.
           if ! _session_turn "$key" "These arrived while you were answering. Answer only what is new; if your last reply already covers one, say so in one line.
@@ -2251,6 +2275,8 @@ _cmd_session_finish() {
   vm_exec "$name" rm -f /workspace/.fxa-auto-done.json 2>/dev/null || true
   _session_record_summary "$key" || true
   session_set "$key" state active pr_url "$pr_url" pr_updated "$updated" pr_announced 0
+  local tid; tid="$(session_get "$key" thread)"
+  _thread_ok "$tid" && thread_set "$tid" pr_url "$pr_url" pr_session "$key" branch "$(session_get "$key" branch)"
   _session_history_add "$key" action "$( [ "$updated" = 1 ] && echo "Updated" || echo "Opened" ) ${pr_url}"
   echo "$pr_url"
 }

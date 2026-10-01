@@ -82,6 +82,10 @@ Every turn, including later ones:
   The thread shows it as your progress.
 - A late notice from a finished background task or an expired monitor needs no
   reply. Do not write one.
+- Keep /workspace/.fxa-thread-notes.md current, at most 25 lines: the goal,
+  decisions and why, what is built and verified, open questions, and the next
+  step. Rewrite it with Write before you end a turn that changed any of these.
+  The next session in this thread starts from these notes, not from this conversation.
 - Do not commit or push, and do not run 'gh'. The host does that.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
@@ -101,6 +105,22 @@ Every turn, including later ones:
   or a pull request: there is nothing to ship.${slack}
 EOF
 }
+
+# The quiet turn before a pause (session_idle_sweep): the notes only, no reply.
+_SESSION_HANDOFF_PROMPT='This session is about to pause. Update /workspace/.fxa-thread-notes.md so the next
+session in this thread can continue from it alone: the goal, decisions and why,
+what is built and verified, open questions, and the next step, at most 25 lines.
+Do nothing else. Nobody reads your reply.'
+
+# _session_notes_note   The first turn of a session whose thread has notes:
+# a new conversation, with the earlier work in the notes and the checkout.
+_SESSION_NOTES_NOTE='
+
+This thread has earlier work. Read /workspace/.fxa-thread-notes.md before
+anything else: it says where the work stands. The earlier changes are in the
+checkout ("git diff" or "git show HEAD"); the earlier conversation is not. If a
+change did not carry over, it is in /workspace/.fxa-resume.patch. Keep the notes
+current from here on.'
 
 # The first turn of a session that continues an earlier one in the same thread.
 # The conversation is restored, so this only says what changed underneath it.
@@ -207,12 +227,48 @@ _session_media_scrub() {
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -print0)
 }
 
+# A Slack thread's record, across its sessions: the request, the session keys,
+# and the open PR's branch and URL. Its notes file holds where the work stands,
+# written by the agent, so a new session starts from it, not from a replay.
+_thread_ok() { [[ "${1:-}" =~ ^[A-Z0-9]+:[0-9]+\.[0-9]+$ ]]; }
+_thread_file() { printf '%s/thread-%s.json' "$SESSION_DIR" "${1/:/-}"; }
+_thread_notes() { printf '%s/thread-%s.notes.md' "$SESSION_DIR" "${1/:/-}"; }
+thread_get() { jq -r --arg f "$2" '.[$f] // empty' "$(_thread_file "$1")" 2>/dev/null; }
+# thread_set <thread> <field> <value>...   One writer at a time is enough: only task and the finish job write it.
+thread_set() {
+  local f t filter='.' i=0; f="$(_thread_file "$1")"; shift
+  local -a args=()
+  while [ $# -ge 2 ]; do args+=(--arg "k$i" "$1" --arg "v$i" "$2"); filter="${filter} | .[\$k$i] = \$v$i"; i=$((i + 1)); shift 2; done
+  t="$(mktemp "${f}.XXXXXX")"
+  { cat "$f" 2>/dev/null || echo '{}'; } | jq "${args[@]}" "$filter" > "$t" && mv "$t" "$f" || rm -f "$t"
+}
+# _thread_save_notes <key> <file>   Keep the agent's notes for the session's thread.
+# notes_stale 1: the last turn did not change them, so the pause asks for a handoff.
+_thread_save_notes() {
+  local tid; tid="$(session_get "$1" thread)"; _thread_ok "$tid" || return 0
+  if [ -s "$2" ] && ! cmp -s "$2" "$(_thread_notes "$tid")"; then
+    cp "$2" "$(_thread_notes "$tid")"; session_set "$1" notes_stale 0
+  else session_set "$1" notes_stale 1; fi
+}
+# _session_handoff_busy <key>   0 while the quiet handoff turn still runs. One
+# that ended, or ran past 5 min, is marked done.
+_session_handoff_busy() {
+  [ "$(session_get "$1" handoff)" = running ] || return 1
+  if [ $(( $(date +%s) - $(session_get "$1" handoff_at || echo 0) )) -lt 300 ] \
+    && _session_sh "$(worktree_branch_for "$1")" "pgrep -f '${_SESSION_AGENT_PAT}' >/dev/null" 2>/dev/null; then return 0; fi
+  session_set "$1" handoff done
+  return 1
+}
+
 # _session_valid_sid <id>   A conversation id from the transcript, which the agent can write.
 _session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
 
-# _session_turn <key> <message>   Start one resumed turn on the runner and return.
+# _session_turn <key> <message> [quiet]   Start one resumed turn on the runner and return.
+# quiet: the handoff before a pause. Its output stays out of the transcript, so
+# the thread never sees it, and it opens no turn.
 _session_turn() {
-  local key="$1" msg="$2" name sid tmp
+  local key="$1" msg="$2" quiet="${3:-}" name sid tmp out="${_SESSION_CLAUDE_SPLIT}"
+  [ -n "$quiet" ] && out='cat > /workspace/.fxa-handoff.jsonl'
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then
@@ -251,7 +307,7 @@ cd /workspace
 : > /workspace/.fxa-auto-stream.jsonl
 claude -p --resume ${sid} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS} \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose${_SESSION_CLAUDE_PARTIAL} -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
-  | ${_SESSION_CLAUDE_SPLIT}
+  | ${out}
 STEER
     fi
   ) || { rm -rf "$tmp"; return 1; }
@@ -261,7 +317,9 @@ STEER
     | vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xf - && { nohup setsid bash /workspace/.fxa-steer.sh >/dev/null 2>&1 < /dev/null & }' \
     || { rm -rf "$tmp"; return 1; }
   rm -rf "$tmp"
-  session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)"
+  if [ -n "$quiet" ]; then session_set "$key" handoff running handoff_at "$(date +%s)"; return 0; fi
+  # A real turn means someone is here: a later pause asks for a new handoff.
+  session_set "$key" turns "$(( $(session_get "$key" turns || echo 0) + 1 ))" turn_open 1 turn_started "$(date +%s)" handoff ""
 }
 
 # session_interrupt <key>   Stop the running turn and keep the session. Claude
@@ -290,9 +348,19 @@ session_idle_sweep() {
     key="$(basename "$f" .json)"
     [ "$(jq -r .state "$f")" = active ] && [ "$(jq -r '.turn_open // "0"' "$f")" != 1 ] || continue
     [ -s "${SESSION_DIR}/${key}.queue" ] && continue
-    [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "$idle" ] || continue
+    _session_handoff_busy "$key" && continue
+    # The handoff's own writes moved last_activity: once it is done, pause at once.
+    [ "$(jq -r '.handoff // ""' "$f")" = done ] || [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "$idle" ] || continue
     # An open desktop is a person at work, even with no agent turn.
     if _session_desktop_in_use "$key"; then session_set "$key" last_activity "$now"; continue; fi
+    # Notes the last turn did not update: one quiet turn writes them, and the next sweep pauses.
+    if [ "$(jq -r '.notes_stale // ""' "$f")" = 1 ] && [ -z "$(jq -r '.handoff // ""' "$f")" ] && [ "$(jq -r '.runtime // "claude"' "$f")" = claude ]; then
+      if _session_lock "$key"; then
+        [ "$(session_get "$key" turn_open)" != 1 ] && _session_turn "$key" "$_SESSION_HANDOFF_PROMPT" quiet >/dev/null 2>&1 && echo "handoff ${key}"
+        _session_unlock "$key"
+      fi
+      continue
+    fi
     _session_lock "$key" || continue
     # Recheck under the lock: a steer may have just started a turn.
     if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
@@ -327,6 +395,7 @@ _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
   | (($i.file_path // $i.path // "") | tostring | split("/") | last) as $f
   | if .name == "Read" then "Reading " + $f
     elif (.name == "Write" or .name == "Edit") and $f == ".fxa-todo.md" then "Updating the plan"
+    elif (.name == "Write" or .name == "Edit") and $f == ".fxa-thread-notes.md" then "Updating the notes"
     elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then "Editing " + $f
     elif .name == "Grep" then "Searching for \"" + ($i.pattern // "" | tostring) + "\""
     elif .name == "Glob" then "Finding files " + ($i.pattern // "" | tostring)
@@ -363,6 +432,7 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
         elif .name == "Agent" or .name == "Task" then (select($p == null) | {type: "subagent_start", id: $id, description: ($i.description // "" | tostring | .[0:120])})
         elif ($i.file_path // "" | tostring | endswith("/.fxa-todo.md")) then (select($p == null and .name == "Write") | {type: "todos", items: [($i.content // "" | tostring | split("\n")[]
             | capture("^\\s*[-*] \\[(?<m>[ xX>~])\\] +(?<t>.+)$")? | {content: (.t | .[0:200]), status: ({"x": "completed", "X": "completed", ">": "in_progress", "~": "in_progress"}[.m] // "pending"), active: (.t | .[0:200])})]})
+        elif ($i.file_path // "" | tostring | endswith("/.fxa-thread-notes.md")) then empty
         elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then
           ((if .name == "MultiEdit" then ($i.edits // []) elif .name == "Write" then [{new_string: $i.content}] else [$i] end) as $e
           | {type: "edit", file: ($i.file_path // "" | tostring | sub("^(/workspace|/home/agent/fxa)/"; "")),
@@ -621,9 +691,13 @@ _session_end_facts() {
   local t n cost; t="$(mktemp)"
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
-    printf "@@changes %s\n" "$(cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE "^.. (\.fxa-|ai/|artifacts/)" | wc -l)"' > "$t" 2>/dev/null || true
+    printf "@@changes %s\n" "$(cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE "^.. (\.fxa-|ai/|artifacts/)" | wc -l)"
+    printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
-  grep -v '^@@changes ' "$t" > "${t}.j" || true
+  # The notes ride in the same ssh, saved at every turn end: a crash or the runner's time limit loses none.
+  grep '^@@notes ' "$t" | tail -1 | cut -c9- | openssl base64 -d -A > "${t}.n" 2>/dev/null || true
+  _thread_save_notes "$1" "${t}.n"; rm -f "${t}.n"
+  grep -v '^@@changes \|^@@notes ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   rm -f "$t" "${t}.j"
@@ -828,6 +902,9 @@ _session_save() {
     _session_sh "$name" 'cd /workspace && f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -z "$f" ] || tar -czf - $f' \
       2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
     [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
+    local notes; notes="$(mktemp)"
+    _session_sh "$name" 'head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null' > "$notes" 2>/dev/null || true
+    _thread_save_notes "$key" "$notes"; rm -f "$notes"
   fi
   return 0
 }

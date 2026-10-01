@@ -284,7 +284,41 @@ check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.c
   "$(session_get agent-fre1 branch) $(session_get agent-fre1 review_pr) $(session_get agent-fre1 fresh) $(session_get agent-fre1 resume_from)"
 GH_STATE=CLOSED FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
 check "fresh on a closed PR starts from main" "agent-fre2||" "$(session_get agent-fre2 branch)|$(session_get agent-fre2 review_pr)|$(session_get agent-fre2 resume_from)"
+# The thread record: the first request, its sessions, and its open PR for later sessions.
+export FXA_SESSION_MAX=20 # the earlier checks left sessions live
+printf 'Build the tests\n\nEarlier messages in this Slack thread, for context:\n> owner: hi\n' > "$tmp/t.md"
+th="C0AB:1790805741.326109"
+FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr1 --owner U1 --prompt-file "$tmp/t.md" --thread "$th" >/dev/null 2>&1
+check "the thread keeps the first request and its sessions" "Build the tests|agent-thr1|$th" "$(thread_get "$th" request | head -1)|$(thread_get "$th" sessions)|$(session_get agent-thr1 thread)"
+check "a bad thread id is refused" "--thread must look like C0123:1790000000.000100" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr9 --owner U1 --prompt-file "$tmp/t.md" --thread 'x;y' 2>&1 >/dev/null | sed 's/^ERROR: //')"
+thread_set "$th" pr_url https://github.com/mozilla/fxa/pull/9 pr_session agent-prr1
+GH_STATE=OPEN FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr2 --owner U1 --prompt-file "$tmp/p.md" --thread "$th" >/dev/null 2>&1
+check "a later session in the thread gets its open PR" "agent-prr1 https://github.com/mozilla/fxa/pull/9 1|agent-thr1 agent-thr2|Build the tests" \
+  "$(session_get agent-thr2 branch) $(session_get agent-thr2 review_pr) $(session_get agent-thr2 fresh)|$(thread_get "$th" sessions)|$(thread_get "$th" request | head -1)"
+GH_STATE=OPEN FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr3 --owner U1 --prompt-file "$tmp/p.md" --thread "$th" --new >/dev/null 2>&1
+check "!new starts from main" "agent-thr3||1" "$(session_get agent-thr3 branch)|$(session_get agent-thr3 review_pr)|$(session_get agent-thr3 new)"
 unset -f nohup gh
+
+# Notes: saved when the turn changed them; stale when it did not.
+printf 'goal: tests\n' > "$tmp/n1"
+_thread_save_notes agent-thr1 "$tmp/n1"
+check "changed notes are saved" "goal: tests|0" "$(cat "$(_thread_notes "$th")")|$(session_get agent-thr1 notes_stale)"
+_thread_save_notes agent-thr1 "$tmp/n1"
+check "unchanged notes are stale" "1" "$(session_get agent-thr1 notes_stale)"
+: > "$tmp/n0"; _thread_save_notes agent-thr1 "$tmp/n0"
+check "empty notes keep the saved ones" "goal: tests|1" "$(cat "$(_thread_notes "$th")")|$(session_get agent-thr1 notes_stale)"
+
+# The pause: stale notes get one quiet handoff turn first, then the next sweep pauses at once.
+_session_turn() { [ "${3:-}" = quiet ] && session_set "$1" handoff running handoff_at "$(date +%s)"; }
+_session_sh() { return 1; } # the handoff's claude is gone
+_session_desktop_in_use() { return 1; }
+session_stop() { session_set "$1" state stopped; }
+for k in agent-thr1 agent-thr2 agent-thr3 agent-fre1 agent-fre2; do session_set "$k" state stopped; done
+session_set agent-thr1 state active turn_open 0 notes_stale 1 runtime claude
+jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
+check "stale notes: a handoff, no pause yet" "handoff agent-thr1|active|running" "$(session_idle_sweep 2>/dev/null)|$(session_get agent-thr1 state)|$(session_get agent-thr1 handoff)"
+check "after the handoff it pauses at once" "paused agent-thr1|paused" "$(session_idle_sweep 2>/dev/null)|$(session_get agent-thr1 state)"
 
 # Boot timings: each step lasts until the next starts; a repeated label is one step.
 printf '%s\n' '#t0	1790000000.000' '0.4	Restoring x from the Firecracker snapshot' '2.6	slot 1 ip=10.42.16.11 restore_ms=185 ssh_ms=2228' \
