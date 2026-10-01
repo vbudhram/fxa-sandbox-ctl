@@ -88,7 +88,8 @@ transcript: `pass`, `fixed: <what>`, or `n/a`.
    failure branch. Never log a full URL, a token or an email.
 
 10. **Scope and test data.** Every hunk must trace to the ticket or request.
-    Revert the rest with `git checkout -- <path>` and list it in the PR body
+    Revert the rest with `git checkout "$(git merge-base HEAD origin/main)" -- <path>`
+    and list it in the PR body
     as a follow-up. Test emails are obviously fake, such as
     `user@example.com`.
 

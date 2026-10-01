@@ -86,9 +86,10 @@ Every turn, including later ones:
   decisions and why, what is built and verified, open questions, and the next
   step. Rewrite it with Write before you end a turn that changed any of these.
   The next session in this thread starts from these notes, not from this conversation.
-- Do not commit or push, and do not run 'gh'. The host does that. Do not rebase,
-  merge main or check out another commit: the host would build the PR on the old
-  base. For a rebase, ask the engineer to type '!rebase'.
+- Use git as you like: commit, amend, fetch, and rebase onto origin/main. You
+  cannot push and there is no 'gh': the host pushes your branch at Open PR or
+  Push, squashed to one commit. Keep the work on origin/main: rebase, do not
+  merge main in, and never start from another branch.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}; wait for a
@@ -121,7 +122,7 @@ _SESSION_NOTES_NOTE='
 
 This thread has earlier work. Read /workspace/.fxa-thread-notes.md before
 anything else: it says where the work stands. The earlier changes are in the
-checkout ("git diff" or "git show HEAD"); the earlier conversation is not. If a
+checkout ("git log origin/main..HEAD" and "git diff"); the earlier conversation is not. If a
 change did not carry over, it is in /workspace/.fxa-resume.patch. Keep the notes
 current from here on.'
 
@@ -130,8 +131,8 @@ current from here on.'
 _session_resume_prompt() {
   cat <<'EOF'
 The engineer came back to this thread, so you are on a new runner. This
-conversation and your earlier changes were carried over: run 'git status' and
-'git diff' to see them, and do not start over. If a change did not carry over,
+conversation and your earlier changes were carried over, commits included: run 'git status',
+'git log origin/main..HEAD' and 'git diff' to see them, and do not start over. If a change did not carry over,
 it is in /workspace/.fxa-resume.patch. The engineer's new message is in
 /workspace/.fxa-jira-context.md; read it, then continue.
 
@@ -184,7 +185,7 @@ _session_wrapup_prompt() {
     cat <<EOF
 The engineer asked to push the branch (no PR yet). Do not review, test or
 write a PR description; that happens when they open the PR. Only:
-1. Revert any file unrelated to the request with 'git checkout -- <path>'.
+1. Revert any file unrelated to the request with 'git checkout "\$(git merge-base HEAD origin/main)" -- <path>'.
 2. Write /workspace/.fxa-auto-done.json with keys {issue, branch, pr_title, pr_body, media_paths}:
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; pr_body two or three plain lines on what changed
@@ -200,7 +201,8 @@ earlier wrap-up in this session ran steps 1 and 3 and no file changed since, go
 straight to step 4.
 1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
    untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker.
-2. Revert any file unrelated to the request with 'git checkout -- <path>'.
+2. Revert any file unrelated to the request with 'git checkout "\$(git merge-base HEAD origin/main)" -- <path>'.
+   Then commit everything ('git add -A && git commit'), so the PR description sees all of it.
 3. Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) and $(runtime_skill_ref fxa-unslop) Part 2 on its output.
    pr_body must reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md. There is no
    Jira ticket; leave the ticket field empty and do not name this session.
@@ -676,12 +678,16 @@ Before you use it, wait until curl -sf http://localhost:9000/__heartbeat__ succe
 # runner; the runner holds the work until Open PR or stop.
 session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 
+# The changed-file count on the runner: the work since it left origin/main
+# (commits and edits), plus untracked files, without the session's own files.
+_SESSION_COUNT='{ git diff --name-only "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" 2>/dev/null; git ls-files -o --exclude-standard; } | grep -vE "^(\.fxa-|ai/|artifacts/)" | sort -u | wc -l'
+
 # _session_changes <key>   How many files the runner has changed, not counting
 # the .fxa-* scratch files, ai/ and artifacts/, which never ship. Empty when the
 # runner did not answer.
 _session_changes() {
-  _session_sh "$(worktree_branch_for "$1")" \
-    "cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE '^.. (\\.fxa-|ai/|artifacts/)' | wc -l" 2>/dev/null | tr -dc '0-9'
+  # shellcheck disable=SC2016  # expanded on the runner
+  _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && '"$_SESSION_COUNT" 2>/dev/null | tr -dc '0-9'
 }
 
 # _session_finish_notes <key>   What a handoff could not do, in plain lines for the
@@ -765,7 +771,7 @@ _session_end_facts() {
   local t n cost; t="$(mktemp)"
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
-    printf "@@changes %s\n" "$(cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE "^.. (\.fxa-|ai/|artifacts/)" | wc -l)"
+    printf "@@changes %s\n" "$(cd /workspace && '"$_SESSION_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
     printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
@@ -795,7 +801,7 @@ _session_summary_json() {
   local key="$1" name cost diff
   name="$(worktree_branch_for "$key")"
   cost="$(_session_cost "$key")"
-  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat HEAD -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1 || true)"
+  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat \"\$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)\" -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1 || true)"
   jq -nc --argjson u "${cost:-null}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
     '{cost: ($u.cost // null), tokens: ($u.tokens // null), diff: ($d | gsub("^\\s+"; "")), turns: ($t | tonumber? // 0),
       minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}'
@@ -970,6 +976,18 @@ _session_save() {
     vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
       > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
     [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
+    # The agent's commits since the session's base, for a resume; empty (no commits) makes no file.
+    local base; base="$(session_get "$key" base_sha)"
+    if [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+      _session_sh "$name" "cd /workspace && git bundle create /tmp/fxa-work.bundle HEAD ^${base} >/dev/null 2>&1 && cat /tmp/fxa-work.bundle" \
+        2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.bundle" || true
+    fi
+    [ -s "${SESSION_DIR}/${key}.bundle" ] || rm -f "${SESSION_DIR}/${key}.bundle"
+    # The whole change, commits included, for !diff once the runner is gone.
+    # shellcheck disable=SC2016  # expanded on the runner
+    _session_sh "$name" 'cd /workspace && git diff --binary "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*"' \
+      > "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || true
+    [ -s "${SESSION_DIR}/${key}.full.patch" ] || rm -f "${SESSION_DIR}/${key}.full.patch"
     local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
@@ -1014,79 +1032,23 @@ session_checkout() {
   root="$(worktree_repo_root)" || return 1
   name="$(worktree_branch_for "$key")"
   local branch base; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; base="$(session_get "$key" base_sha)"
-  git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$branch" "$dir" "$base" >&2 || return 1
+  # The agent commits and rebases, so the PR's base is where its HEAD leaves the
+  # latest main, not the base it started on. The tree below holds the whole change.
+  local main work=""
+  _retry git -C "$root" fetch -q origin main 2>/dev/null || true
+  main="$(git -C "$root" rev-parse -q --verify origin/main 2>/dev/null || true)"
+  if [[ "$main" =~ ^[0-9a-f]{40}$ ]]; then
+    work="$(_session_sh "$name" "cd /workspace && { git cat-file -e ${main}^{commit} 2>/dev/null || git fetch -q origin ${main}; } && git merge-base HEAD ${main}" 2>/dev/null | tail -1 || true)"
+    [[ "$work" =~ ^[0-9a-f]{40}$ ]] && git -C "$root" merge-base --is-ancestor "$work" "$main" 2>/dev/null || work=""
+  fi
+  git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$branch" "$dir" "${work:-$base}" >&2 || return 1
   # A review round starts at the PR's head: the push may replace only that
   # commit, so a push someone made to the PR meanwhile is refused, not lost.
-  # push_lease: the PR head after a push or a rebase, which moves base_sha off it.
+  # push_lease: the PR head after this session pushed, which base_sha no longer is.
   local lease; lease="$(session_get "$key" push_lease)"
   [ -n "$(session_get "$key" review_pr)" ] && git -C "$root" update-ref "refs/remotes/origin/${branch}" "${lease:-$base}"
   ln -s "${root}/node_modules" "${dir}/node_modules"
   vm_pull_tree "$name" /workspace "$dir"
-}
-
-# _session_rebase_script <new main sha>   The runner side of session_rebase: the
-# work (commits since main and uncommitted edits) moves onto the new main as
-# uncommitted edits. A conflict leaves markers in the files and the stash as a backup.
-_session_rebase_script() {
-  cat <<EOF
-cd /workspace || exit 2
-new=$1
-git cat-file -e "\${new}^{commit}" 2>/dev/null || git fetch -q origin "\$new" || { echo "ERROR: cannot fetch \$new" >&2; exit 1; }
-git update-ref refs/remotes/origin/main "\$new"
-old="\$(git merge-base HEAD "\$new")" || exit 1
-[ "\$old" = "\$new" ] && { echo result=uptodate; exit 0; }
-git diff --quiet "\$old" "\$new" -- yarn.lock && echo lock=0 || echo lock=1
-b="\$(git branch --show-current)"
-git reset -q --soft "\$old" || exit 1
-set -- ':(exclude).fxa-*' ':(exclude)ai' ':(exclude)artifacts'
-if git diff --cached --quiet && git diff --quiet && [ -z "\$(git ls-files -o --exclude-standard -- . "\$@")" ]; then
-  git checkout -q \${b:+-B "\$b"} "\$new" && { echo result=clean; exit 0; }; exit 1
-fi
-git stash push -q -u -m fxa-rebase -- . "\$@" || exit 1
-git checkout -q \${b:+-B "\$b"} "\$new" || { git checkout -q \${b:+-B "\$b"} "\$old"; git stash pop -q; echo "ERROR: checkout of \$new failed; the work is back on \$old" >&2; exit 1; }
-if git stash pop -q 2>/dev/null; then git reset -q; echo result=clean
-else git diff --name-only --diff-filter=U | sed 's/^/file=/'; git reset -q; echo result=conflict; fi
-EOF
-}
-
-# session_rebase <key>   Move a running session's work onto the latest origin/main.
-# Prints JSON {result: uptodate|clean|conflict, base, files, lock_changed, prompt};
-# the prompt is the turn that checks the result, or resolves the conflicts.
-session_rebase() {
-  local key="$1" name root new out result old
-  [ "$(session_get "$key" state)" = active ] || { echo "ERROR: ${key} is not running; reply in the thread to pick it up first." >&2; return 1; }
-  _session_turn_running "$key" && { echo "ERROR: ${key} is in a turn; wait for it to end." >&2; return 1; }
-  root="$(worktree_repo_root)" || return 1
-  _retry git -C "$root" fetch -q origin main || { echo "ERROR: cannot fetch origin/main." >&2; return 1; }
-  new="$(git -C "$root" rev-parse origin/main)"
-  [[ "$new" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: origin/main is not a commit." >&2; return 1; }
-  name="$(worktree_branch_for "$key")"
-  out="$(_session_sh "$name" "$(_session_rebase_script "$new")" 2>&1)" || {
-    echo "ERROR: the rebase failed on the runner: $(grep -m1 '^ERROR' <<<"$out" || tail -1 <<<"$out")" >&2; return 1; }
-  result="$(sed -n 's/^result=//p' <<<"$out" | tail -1)"
-  case "$result" in uptodate|clean|conflict) ;; *) echo "ERROR: the runner gave no rebase result." >&2; return 1 ;; esac
-  if [ "$result" != uptodate ]; then
-    old="$(session_get "$key" base_sha)"
-    # The PR head stays the push lease until the next push moves it.
-    [ -n "$(session_get "$key" review_pr)" ] && [ -z "$(session_get "$key" push_lease)" ] && session_set "$key" push_lease "$old"
-    session_set "$key" base_sha "$new"
-    _session_history_add "$key" action "Rebased onto main ${new:0:10} (${result})"
-  fi
-  # Paths only: the list goes into a prompt and a Slack post.
-  local files; files="$(sed -n 's/^file=//p' <<<"$out" | grep -E '^[A-Za-z0-9._/@+-]+$' | head -50 || true)"
-  local lock=0; grep -qx 'lock=1' <<<"$out" && lock=1
-  local prompt=""
-  case "$result" in
-    clean) prompt="The host moved your change onto the latest origin/main (${new:0:10}) with no conflicts.$( [ "$lock" = 1 ] && printf ' yarn.lock changed: run yarn install first.')
-Run the verify again and fix anything the new main broke. Reply in one or two lines with what you checked." ;;
-    conflict) prompt="The host moved your change onto the latest origin/main (${new:0:10}). These files have conflict markers:
-$(sed 's/^/- /' <<<"$files")
-$( [ "$lock" = 1 ] && printf 'yarn.lock changed: run yarn install first.\n')Resolve each conflict so that BOTH sides survive: keep main's change and yours. Never take one side whole.
-If the two cannot coexist, stop and say why. Then run the verify. 'git stash list' holds your work from before the move, as a backup.
-Reply in a few lines: what conflicted, how you resolved it, and what you checked." ;;
-  esac
-  jq -nc --arg r "$result" --arg b "$new" --arg f "$files" --argjson l "$lock" --arg p "$prompt" \
-    '{result: $r, base: $b, files: ($f | split("\n") | map(select(. != ""))), lock_changed: ($l == 1), prompt: $p}'
 }
 
 session_checkout_remove() {

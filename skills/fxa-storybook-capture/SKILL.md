@@ -21,7 +21,7 @@ Run only when **both** are true:
 
 Check it directly:
 
-    git status --porcelain | awk '{print $2}' | grep '^packages/fxa-settings/src' 
+    { git diff --name-only "$(git merge-base HEAD origin/main)"; git ls-files -o --exclude-standard; } | grep '^packages/fxa-settings/src'
     ls "$(dirname <changed-file>)"/*.stories.tsx
 
 **Stop and produce nothing** when the change is logic without a visual result: a

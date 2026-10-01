@@ -22,8 +22,9 @@ git --no-pager diff --stat "$BASE"
 git --no-pager status --short
 ```
 
-Never review `HEAD`. You often cannot commit, and `HEAD` is then an upstream
-merge. A review of the wrong diff reports clean and teaches nothing.
+Review the diff from `$BASE`, never `HEAD` alone. It holds your commits and
+your uncommitted edits; a pipeline run cannot commit, so its `HEAD` is an
+upstream merge. A review of the wrong diff reports clean and teaches nothing.
 
 Read every file that `git status --short` marks `??`. A diff hides an untracked
 file, and a new test file is usually untracked.

@@ -1926,6 +1926,7 @@ _cmd_session_boot() {
   worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
   if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
     [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
+    [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.bundle" ] && cp "${SESSION_DIR}/${from}.bundle" "${dir}/.fxa-resume.bundle"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
     [ -s "${SESSION_DIR}/${from}.work.tgz" ] && cp "${SESSION_DIR}/${from}.work.tgz" "${dir}/.fxa-resume-work.tgz"
   fi
@@ -1986,7 +1987,7 @@ what code you are on. Do not pull: a newer main needs a new thread."
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
-  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz"
+  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz"
   rm -f "${dir}/.fxa-auto-token" "${dir}/.fxa-auto-codex-auth.json" # the runner has its copy; none stays on the host
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
   # Stopped while the runner booted: take it down instead of going active.
@@ -2179,10 +2180,10 @@ $(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
 cmd_diff() {
   local key="${1:-}"; _session_key "$key" || return 1
   # Paused or stopped: the runner is gone, and stop saved the work as a patch.
-  if ! session_live "$key"; then cat "${SESSION_DIR}/${key}.patch" 2>/dev/null || true; return 0; fi
+  if ! session_live "$key"; then cat "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || cat "${SESSION_DIR}/${key}.patch" 2>/dev/null || true; return 0; fi
   # The runner holds the work; untracked files matter as much as tracked ones.
   _session_sh "$(worktree_branch_for "$key")" \
-    'cd /workspace && git diff HEAD -- . ":(exclude).fxa-*" ":(exclude)ai"; git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" ":(exclude)ai" | while read -r f; do git diff --no-index /dev/null "$f"; done; true'
+    'cd /workspace && git diff "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*" ":(exclude)ai"; git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" ":(exclude)ai" | while read -r f; do git diff --no-index /dev/null "$f"; done; true'
 }
 
 # finish --session: start the wrap-up in the background and return. The job
@@ -2325,7 +2326,6 @@ cmd_session() {
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
-    rebase) _session_key "${2:-}" && session_rebase "$2" ;;
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;
     plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
       _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;

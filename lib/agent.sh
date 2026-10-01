@@ -147,7 +147,7 @@ _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-thread-notes.md .fxa-ci ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-thread-notes.md .fxa-ci ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
@@ -186,6 +186,18 @@ _put_run_files() {
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-work.tgz" ]; then
     vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xzf .fxa-resume-work.tgz && rm -f .fxa-resume-work.tgz' >/dev/null 2>&1 \
       || echo "WARN: could not restore the earlier test plan and PR body." >&2
+  fi
+  # A session's own files stay out of its commits: it runs git add -A.
+  if [ "$rc" -eq 0 ] && [ "${FXA_SESSION_MODE:-}" = 1 ]; then
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && grep -qxF ".fxa-*" .git/info/exclude 2>/dev/null || printf "%s\n" ".fxa-*" "ai/" "artifacts/" >> .git/info/exclude' >/dev/null 2>&1 || true
+  fi
+  # The earlier session's commits, before its uncommitted patch. Hooks off: post-checkout clones l10n.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume.bundle" ]; then
+    if vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git fetch -q .fxa-resume.bundle HEAD && git -c core.hooksPath=/dev/null checkout -q -B "$(git branch --show-current)" FETCH_HEAD && rm -f .fxa-resume.bundle' >/dev/null 2>&1; then
+      echo "Restored the earlier session's commits."
+    else
+      echo "WARN: the earlier session's commits did not restore; they are in /workspace/.fxa-resume.bundle" >&2
+    fi
   fi
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume.patch" ]; then
     if vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git apply --whitespace=nowarn .fxa-resume.patch && rm -f .fxa-resume.patch' >/dev/null 2>&1; then
@@ -558,6 +570,12 @@ What trips agents most often:
 - Save screenshots and videos in `/workspace/.fxa-auto-media/`.
 VMSECTION
 )"
+  # A Slack session owns its git: it commits and rebases, and the host pushes. The pipeline's slots share a read-only .git.
+  if [ "${FXA_SESSION_MODE:-}" = 1 ]; then
+    vm_section="$(printf '%s\n' "$vm_section" | awk '
+      /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
+      skip && /^  / { next } { skip = 0; print }')"
+  fi
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "
