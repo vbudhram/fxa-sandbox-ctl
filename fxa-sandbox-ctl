@@ -1802,7 +1802,7 @@ cmd_task() {
   # With no open PR there is nothing to keep, so it starts from main.
   if [ -n "$fresh_pr" ] && [ -n "$resume_from" ]; then
     _session_key "$resume_from" || return 1
-    local fpu; fpu="$(session_get "$resume_from" pr_url)"
+    local fpu; fpu="$(session_get "$resume_from" pr_url)"; fpu="${fpu:-$(session_get "$resume_from" review_pr)}"
     { [ -n "$fpu" ] && [ "$(gh pr view "$fpu" --json state -q .state 2>/dev/null)" = OPEN ]; } || { resume_from=""; fresh_pr=""; }
   fi
   if [ -n "$resume_from" ]; then
@@ -1837,10 +1837,11 @@ cmd_task() {
   # So does one after a stopped PR round, which has the PR too.
   if [ -n "$fresh_pr" ]; then
     local pb; pb="$(session_get "$resume_from" branch)"
-    session_set "$key" branch "${pb:-$resume_from}" review_pr "$(session_get "$resume_from" pr_url)" fresh 1
+    # pr_url too: a later !restart or Update PR finds the same PR, and does not open a second one.
+    session_set "$key" branch "${pb:-$resume_from}" review_pr "$(session_get "$resume_from" pr_url)" pr_url "$(session_get "$resume_from" pr_url)" pr_announced 1 fresh 1
   elif [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
     local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
-    session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}"
+    session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}" pr_url "${pu:-$(session_get "$resume_from" review_pr)}" pr_announced 1
   elif [ -n "$resume_from" ] && [ -n "$(session_get "$resume_from" pr_url)" ]; then
     # Paused or stopped after its PR: resume its work on the PR's branch. No
     # review_pr, so the push lease stays the branch's last pushed commit.
@@ -1896,7 +1897,8 @@ _cmd_session_boot() {
   # and the checkout: no replay of a long conversation that it would compact anyway.
   local tid notes=""; tid="$(session_get "$key" thread)"
   # Not for !new: it starts from main, so the notes' "built" would be wrong.
-  _thread_ok "$tid" && [ "$(session_get "$key" new)" != 1 ] && [ -s "$(_thread_notes "$tid")" ] && notes="$(_thread_notes "$tid")"
+  # Only for a session that continues the thread's work: one from main would read "built" for what it does not have.
+  [ -n "$from" ] && _thread_ok "$tid" && [ "$(session_get "$key" new)" != 1 ] && [ -s "$(_thread_notes "$tid")" ] && notes="$(_thread_notes "$tid")"
   if [ -n "$from" ] && [ "$fresh_pr" != 1 ] && [ -z "$notes" ]; then
     [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
     _session_valid_sid "$resume_sid" || resume_sid=""
@@ -2088,6 +2090,9 @@ cmd_events() {
           tcost="${facts%%$'\t'*}"; nchg="${facts#*$'\t'}"
           [ -n "$tcost" ] && events="$(jq --argjson c "$tcost" 'map(if .type == "turn_end" or .type == "question" then .cost = $c.cost | .tokens = $c.tokens else . end)' <<< "$events")"
           [ -n "$nchg" ] && events="$(jq --argjson n "$nchg" 'map(if .type == "turn_end" and .status == "ready" then .changes = $n else . end)' <<< "$events")"
+          # fixed: review comments or CI failures this round fixed, from the agent's outcomes file. An automatic round pushes only then.
+          local nfix; nfix="$(session_get "$key" round_fixed)"
+          [ -n "$nfix" ] && events="$(jq --argjson n "$nfix" 'map(if .type == "turn_end" and .status == "ready" then .fixed = $n else . end)' <<< "$events")"
           local tpr; tpr="$(session_get "$key" pr_url)"
           [ -n "$tpr" ] && events="$(jq --arg p "$tpr" 'map(if .type == "turn_end" and .status == "ready" then .pr = $p else . end)' <<< "$events")"
         fi
@@ -2186,6 +2191,8 @@ _finish_session() {
   case "$(session_get "$key" state)" in
     paused|stopped) _session_unlock "$key"; echo "ERROR: ${key} is $(session_get "$key" state); reply in the thread to resume it, then try again" >&2; return 1 ;;
   esac
+  # The quiet handoff is a claude on the same conversation: a wrap-up now would start a second one.
+  if _session_handoff_busy "$key"; then _session_unlock "$key"; echo "ERROR: ${key} is saving its notes; try again in a moment" >&2; return 1; fi
   if [ "$(session_get "$key" state)" != active ] || [ "$(session_get "$key" turn_open)" = 1 ]; then
     echo "ERROR: ${key} is $(session_get "$key" state) and mid-turn or not ready; try again when it replies" >&2
     _session_unlock "$key"; return 1
@@ -2253,9 +2260,9 @@ _cmd_session_finish() {
   fi
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
-  # Ready for review, so Copilot reviews it at once; no team review request: a person decides that.
+  # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
   rc=0
-  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
+  pr_url="$(FXA_WORKTREE_BASE=main FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
   session_set "$key" finish_notes "$(_session_finish_notes "$key")"

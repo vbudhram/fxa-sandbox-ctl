@@ -81,7 +81,7 @@ Every turn, including later ones:
   '- [x] step' when done. Rewrite the whole file with Write each time it changes.
   The thread shows it as your progress.
 - A late notice from a finished background task or an expired monitor needs no
-  reply. Do not write one.
+  answer: reply with only 'No response requested.' The thread hides that reply.
 - Keep /workspace/.fxa-thread-notes.md current, at most 25 lines: the goal,
   decisions and why, what is built and verified, open questions, and the next
   step. Rewrite it with Write before you end a turn that changed any of these.
@@ -357,7 +357,10 @@ session_idle_sweep() {
     # Notes the last turn did not update: one quiet turn writes them, and the next sweep pauses.
     if [ "$(jq -r '.notes_stale // ""' "$f")" = 1 ] && [ -z "$(jq -r '.handoff // ""' "$f")" ] && [ "$(jq -r '.runtime // "claude"' "$f")" = claude ]; then
       if _session_lock "$key"; then
-        [ "$(session_get "$key" turn_open)" != 1 ] && _session_turn "$key" "$_SESSION_HANDOFF_PROMPT" quiet >/dev/null 2>&1 && echo "handoff ${key}"
+        # A handoff that cannot start must not hold the pause off: the next sweep pauses.
+        if [ "$(session_get "$key" turn_open)" != 1 ]; then
+          if _session_turn "$key" "$_SESSION_HANDOFF_PROMPT" quiet >/dev/null 2>&1; then echo "handoff ${key}"; else session_set "$key" handoff done; fi
+        fi
         _session_unlock "$key"
       fi
       continue
@@ -697,11 +700,14 @@ _SESSION_COPILOT='IN("Copilot", "copilot-pull-request-reviewer[bot]")'
 # session_copilot_comments <key>   The inline comments of Copilot's latest review
 # that are still on current lines: [{id, path, line, body}]. [] when there are none.
 session_copilot_comments() {
-  local p; p="$(_session_pr_parts "$1")" || { echo '[]'; return 0; }
+  local p r; p="$(_session_pr_parts "$1")" || { echo '[]'; return 0; }
+  # The latest review from the review list: one with no inline comments must give [], not an older review's.
+  r="$(gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/reviews" --paginate 2>/dev/null \
+    | jq -sr "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | .id] | max // empty" 2>/dev/null || true)"
+  [ -n "$r" ] || { echo '[]'; return 0; }
   gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/comments" --paginate 2>/dev/null \
-    | jq -sc "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.line != null)
-        | {id, review: .pull_request_review_id, path, line, body: (.body | .[0:2000])}]
-      | (map(.review) | max) as \$r | map(select(.review == \$r) | del(.review))" 2>/dev/null || echo '[]'
+    | jq -sc --argjson r "$r" "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.pull_request_review_id == \$r and .line != null)
+        | {id, path, line, body: (.body | .[0:2000])}]" 2>/dev/null || echo '[]'
 }
 
 # session_review_ack <key> <pr_url>   After a PR update: a thumbs up on each Copilot
@@ -722,12 +728,14 @@ _session_end_facts() {
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
     printf "@@changes %s\n" "$(cd /workspace && git status --porcelain -uall 2>/dev/null | grep -vE "^.. (\.fxa-|ai/|artifacts/)" | wc -l)"
-    printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"' > "$t" 2>/dev/null || true
+    printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
+    printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
   # The notes ride in the same ssh, saved at every turn end: a crash or the runner's time limit loses none.
   grep '^@@notes ' "$t" | tail -1 | cut -c9- | openssl base64 -d -A > "${t}.n" 2>/dev/null || true
   _thread_save_notes "$1" "${t}.n"; rm -f "${t}.n"
-  grep -v '^@@changes \|^@@notes ' "$t" > "${t}.j" || true
+  session_set "$1" round_fixed "$(sed -n 's/^@@fixed *\([0-9]*\)$/\1/p' "$t" | tail -1)"
+  grep -v '^@@changes \|^@@notes \|^@@fixed ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   rm -f "$t" "${t}.j"

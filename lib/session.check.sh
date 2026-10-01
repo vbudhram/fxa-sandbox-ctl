@@ -200,8 +200,11 @@ check "pr status: running" "running" "$(session_pr_status agent-t2 | jq -r .ci)"
 gh() { printf '%s' '{"state":"OPEN","statusCheckRollup":[{"name":"extract","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://x/1"},{"name":"unit","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://circleci.com/gh/mozilla/fxa/9"}]}'; }
 check "pr status: the links of real failures, not infra" "https://circleci.com/gh/mozilla/fxa/9" "$(session_pr_status agent-t2 | jq -r '.links | join(",")')"
 # Copilot's latest review only, on current lines; others' comments are not its.
-gh() { printf '%s' '[{"id":1,"pull_request_review_id":10,"user":{"login":"Copilot"},"path":"a.ts","line":3,"body":"old"},{"id":2,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"b.ts","line":5,"body":"new"},{"id":3,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"c.ts","line":null,"body":"outdated"},{"id":4,"pull_request_review_id":30,"user":{"login":"rev1"},"path":"d.ts","line":1,"body":"human"}]'; }
-check "copilot comments: the latest review, current lines" '[{"id":2,"path":"b.ts","line":5,"body":"new"}]' "$(session_copilot_comments agent-t2)"
+gh() { case "$2" in
+  */reviews) printf '%s' "[{\"id\":10,\"user\":{\"login\":\"copilot-pull-request-reviewer[bot]\"}},{\"id\":$LATEST,\"user\":{\"login\":\"copilot-pull-request-reviewer[bot]\"}},{\"id\":99,\"user\":{\"login\":\"rev1\"}}]" ;;
+  *) printf '%s' '[{"id":1,"pull_request_review_id":10,"user":{"login":"Copilot"},"path":"a.ts","line":3,"body":"old"},{"id":2,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"b.ts","line":5,"body":"new"},{"id":3,"pull_request_review_id":20,"user":{"login":"Copilot"},"path":"c.ts","line":null,"body":"outdated"},{"id":4,"pull_request_review_id":99,"user":{"login":"rev1"},"path":"d.ts","line":1,"body":"human"}]' ;; esac; }
+check "copilot comments: the latest review, current lines" '[{"id":2,"path":"b.ts","line":5,"body":"new"}]' "$(LATEST=20 session_copilot_comments agent-t2)"
+check "copilot comments: a latest review with none gives none, not an older review's" '[]' "$(LATEST=30 session_copilot_comments agent-t2)"
 # The thumbs up goes to fixed comments only, with a numeric id.
 check "thumbs up on fixed comments only" "api -X POST repos/mozilla/fxa/pulls/comments/2/reactions -f content=+1" "$(
   gh() { echo "$*" >> "$tmp/gh-calls"; }
@@ -290,8 +293,8 @@ check "and no record is written" "no" "$( [ -f "$tmp/agent-cdx1.json" ] && echo 
 nohup() { :; }; gh() { echo "$GH_STATE"; }
 echo '{"key":"agent-prr1","state":"stopped","branch":"agent-prr1","pr_url":"https://github.com/mozilla/fxa/pull/9"}' > "$tmp/agent-prr1.json"
 GH_STATE=OPEN FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre1 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
-check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.com/mozilla/fxa/pull/9 1 agent-prr1" \
-  "$(session_get agent-fre1 branch) $(session_get agent-fre1 review_pr) $(session_get agent-fre1 fresh) $(session_get agent-fre1 resume_from)"
+check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.com/mozilla/fxa/pull/9 1 agent-prr1 https://github.com/mozilla/fxa/pull/9" \
+  "$(session_get agent-fre1 branch) $(session_get agent-fre1 review_pr) $(session_get agent-fre1 fresh) $(session_get agent-fre1 resume_from) $(session_get agent-fre1 pr_url)"
 GH_STATE=CLOSED FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
 check "fresh on a closed PR starts from main" "agent-fre2||" "$(session_get agent-fre2 branch)|$(session_get agent-fre2 review_pr)|$(session_get agent-fre2 resume_from)"
 # The thread record: the first request, its sessions, and its open PR for later sessions.
@@ -331,6 +334,11 @@ session_set agent-thr1 state active turn_open 0 notes_stale 1 runtime claude
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
 check "stale notes: a handoff, no pause yet" "handoff agent-thr1|active|running" "$(session_idle_sweep 2>/dev/null)|$(session_get agent-thr1 state)|$(session_get agent-thr1 handoff)"
 check "after the handoff it pauses at once" "paused agent-thr1|paused" "$(session_idle_sweep 2>/dev/null)|$(session_get agent-thr1 state)"
+_session_turn() { return 1; } # the handoff cannot start
+session_set agent-thr1 state active handoff "" notes_stale 1
+jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
+session_idle_sweep >/dev/null 2>&1
+check "a handoff that cannot start does not hold the pause off" "paused agent-thr1" "$(session_idle_sweep 2>/dev/null)"
 
 # Boot timings: each step lasts until the next starts; a repeated label is one step.
 printf '%s\n' '#t0	1790000000.000' '0.4	Restoring x from the Firecracker snapshot' '2.6	slot 1 ip=10.42.16.11 restore_ms=185 ssh_ms=2228' \
