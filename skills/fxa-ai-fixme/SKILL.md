@@ -13,7 +13,8 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 
 ## Pass procedure
 
-0. **Run `$CTL precheck` first.** It takes the lock, applies the reconcile rows, applies the
+0. **Run `$CTL precheck` first,** unless the prompt already gives its output: the timer runs
+   it in shell, and a second run would drop review comments the first marked as noted. It takes the lock, applies the reconcile rows, applies the
    determinate drain rows itself (`MERGED` → merged, `CLOSED` → rejected), approves a pending
    functional gate, labels a PR `done` when its only red checks match a known infrastructure
    signature and nothing is still running (`RED-INFRA` while checks run), reaps strays, sweeps feedback on every open PR including

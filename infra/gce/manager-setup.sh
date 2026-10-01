@@ -224,7 +224,7 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 # The two jobs the fxa-automation skill defines, with the same prompts.
-pass='Run `~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl precheck`. If it prints a line starting `quiet`, `locked`, or `paused`, reply with that one line and stop. Do not load any skill. Otherwise invoke /fxa-ai-fixme and run one full pass using the precheck output as the worklist: take the lock, judge the reconcile and drain lines, sweep review feedback, fill free slots via `freeslots` at most `launchcap` launches. Never merge. Release the lock.'
+pass='Invoke /fxa-ai-fixme and run one full pass using the precheck output below as the worklist: take the lock, judge the reconcile and drain lines, sweep review feedback, fill free slots via `freeslots` at most `launchcap` launches. Never merge. Release the lock.'
 triage='FxA ai-fixme escalation triage. Read-only. Do NOT take the pass lock, do NOT launch an agent, do NOT relabel anything. Report only items that need a human decision: tickets blocked awaiting a reporter answer (re-verify each live with `fxa-sandbox-ctl ticket <KEY>`), tickets that exhausted the 2-round feedback cap, done PRs stalled in review 3+ days (name the oldest and its reviewer; lead with this), inflight tickets whose agent run died silently (check `git diff --shortstat` on the slot worktree), and structural blockers (frozen paths, missing credentials, disk below the 25GB launch floor). Output a table of ticket, blocker type, and the decision needed. Omit empty categories. If all are empty, say so in one line.'
 for job in pass triage; do
   prompt="$pass"; [ "$job" = triage ] && prompt="$triage"
@@ -252,9 +252,9 @@ done
 # Runs already going finish on their own; reconcile waits for the morning.
 cat > /etc/systemd/system/fxa-pass.timer <<'UNIT'
 [Unit]
-Description=fxa-ai-fixme pass at :09, :29 and :49, 07:09-19:49 New York
+Description=fxa-ai-fixme pass at :04, :19, :34 and :49, 07:04-19:49 New York
 [Timer]
-OnCalendar=*-*-* 07..19:09,29,49:00 America/New_York
+OnCalendar=*-*-* 07..19:04,19,34,49:00 America/New_York
 Persistent=false
 [Install]
 WantedBy=timers.target
