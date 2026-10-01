@@ -1,14 +1,15 @@
 #!/bin/bash
 # guest-provision.sh: run the Packer build's steps, in the Packer order, inside
 # a Firecracker build guest. Run as root from a copy of the repo's packer/ dir
-# with VM_AGENT_GUIDE.md beside it:   sudo bash guest-provision.sh
+# with the built guide in it (vm_guide_build pipeline > packer/.vm-agent-guide.md):
+#   sudo bash guest-provision.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 S=packer/scripts
 for s in 01-base 02-node 03-infra 04-claude 04b-codex 05-proxy 06-agent-init 08-playwright 09-fxa-services; do
   echo "=== $s"; bash "$S/$s.sh"
 done
-cp VM_AGENT_GUIDE.md /tmp/vm-agent-guide.md
+cp packer/.vm-agent-guide.md /tmp/vm-agent-guide.md
 echo "=== 10-agent-guide"; bash "$S/10-agent-guide.sh"
 echo "=== 07-cleanup"; bash "$S/07-cleanup.sh"
 # The template's inline agent-user step, read from the template so it cannot drift.

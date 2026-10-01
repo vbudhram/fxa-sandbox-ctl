@@ -131,11 +131,10 @@ build {
     expect_disconnect = false
   }
 
-  # Stage the canonical agent guide so 10-agent-guide.sh can install it
-  # without duplicating the content. Single source of truth lives in
-  # VM_AGENT_GUIDE.md at the repo root.
+  # The agent guide as vm_guide_build makes it (VM_AGENT_GUIDE.md plus guide/pipeline.md);
+  # vm_image_build writes this file before packer runs. The host sends each runner its mode's guide at launch.
   provisioner "file" {
-    source      = "${path.root}/../VM_AGENT_GUIDE.md"
+    source      = "${path.root}/.vm-agent-guide.md"
     destination = "/tmp/vm-agent-guide.md"
   }
 

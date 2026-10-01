@@ -24,6 +24,7 @@ vm_image_build() {
   echo "Building golden image '${FXA_IMAGE_NAME}'..."
   echo "This will take 10-20 minutes on first run."
 
+  vm_guide_build pipeline > "${SANDBOX_ROOT}/packer/.vm-agent-guide.md" || return 1
   cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
   packer build -only 'tart-cli.*' fxa-dev.pkr.hcl

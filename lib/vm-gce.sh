@@ -99,6 +99,8 @@ vm_image_list()   { _gce compute images list --filter "family=${FXA_GCE_IMAGE}" 
 vm_image_exists() { _gce compute images describe-from-family "$FXA_GCE_IMAGE" >/dev/null 2>&1; }
 vm_image_build() {
   command -v packer &>/dev/null || { echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2; return 1; }
+  # Pipeline mode: the stricter rules, for the rare launch that cannot send its own guide.
+  vm_guide_build pipeline > "${SANDBOX_ROOT}/packer/.vm-agent-guide.md" || return 1
   cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
   # Only a stockout moves the build on to the next zone.

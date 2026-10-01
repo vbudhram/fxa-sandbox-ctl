@@ -16,6 +16,9 @@ logs/
 __pycache__/
 *.pyc
 
+# Built before each image build (vm_guide_build)
+packer/.vm-agent-guide.md
+
 # Editor swap / scratch
 *.swp
 *.tmp

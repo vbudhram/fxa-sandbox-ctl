@@ -5,8 +5,8 @@ set -euo pipefail
 echo "==> Installing VM agent guide and context files..."
 
 # ── Full guide: /etc/vm-agent-guide.md ────────────────────────
-# The canonical source is VM_AGENT_GUIDE.md at the repo root, staged to
-# /tmp/vm-agent-guide.md by the `file` provisioner in fxa-dev.pkr.hcl.
+# Built by vm_guide_build (VM_AGENT_GUIDE.md plus guide/pipeline.md) and staged
+# to /tmp/vm-agent-guide.md by the `file` provisioner in fxa-dev.pkr.hcl.
 
 if [ ! -f /tmp/vm-agent-guide.md ]; then
   echo "ERROR: /tmp/vm-agent-guide.md missing. The packer `file` provisioner must run first." >&2
