@@ -1838,15 +1838,17 @@ cmd_task() {
   if [ -n "$fresh_pr" ]; then
     local pb; pb="$(session_get "$resume_from" branch)"
     # pr_url too: a later !restart or Update PR finds the same PR, and does not open a second one.
-    session_set "$key" branch "${pb:-$resume_from}" review_pr "$(session_get "$resume_from" pr_url)" pr_url "$(session_get "$resume_from" pr_url)" pr_announced 1 fresh 1
+    session_set "$key" branch "${pb:-$resume_from}" review_pr "$fpu" pr_url "$fpu" pr_announced 1 fresh 1
   elif [ -n "$resume_from" ] && { [ "$(session_get "$resume_from" state)" = pr_open ] || [ -n "$(session_get "$resume_from" review_pr)" ]; }; then
     local pb pu; pb="$(session_get "$resume_from" branch)"; pu="$(session_get "$resume_from" pr_url)"
     session_set "$key" branch "${pb:-$resume_from}" review_pr "${pu:-$(session_get "$resume_from" review_pr)}" pr_url "${pu:-$(session_get "$resume_from" review_pr)}" pr_announced 1
   elif [ -n "$resume_from" ] && [ -n "$(session_get "$resume_from" pr_url)" ]; then
     # Paused or stopped after its PR: resume its work on the PR's branch. No
-    # review_pr, so the push lease stays the branch's last pushed commit.
-    local pb; pb="$(session_get "$resume_from" branch)"
-    session_set "$key" branch "${pb:-$resume_from}" pr_url "$(session_get "$resume_from" pr_url)" pr_announced 1
+    # review_pr, so the push lease stays the branch's last pushed commit. Not a
+    # merged or closed PR: its Open PR would make a second one. gh failing keeps it.
+    local pb pst; pb="$(session_get "$resume_from" branch)"
+    pst="$(gh pr view "$(session_get "$resume_from" pr_url)" --json state -q .state 2>/dev/null || true)"
+    case "$pst" in MERGED|CLOSED) ;; *) session_set "$key" branch "${pb:-$resume_from}" pr_url "$(session_get "$resume_from" pr_url)" pr_announced 1 ;; esac
   fi
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"

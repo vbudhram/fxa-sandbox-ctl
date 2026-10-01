@@ -297,6 +297,14 @@ check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.c
   "$(session_get agent-fre1 branch) $(session_get agent-fre1 review_pr) $(session_get agent-fre1 fresh) $(session_get agent-fre1 resume_from) $(session_get agent-fre1 pr_url)"
 GH_STATE=CLOSED FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
 check "fresh on a closed PR starts from main" "agent-fre2||" "$(session_get agent-fre2 branch)|$(session_get agent-fre2 review_pr)|$(session_get agent-fre2 resume_from)"
+# A fresh session made before pr_url was kept has only review_pr; !restart again keeps that PR.
+echo '{"key":"agent-old7","state":"stopped","branch":"agent-prr1","review_pr":"https://github.com/mozilla/fxa/pull/9"}' > "$tmp/agent-old7.json"
+GH_STATE=OPEN FXA_VM_BACKEND=gce FXA_SESSION_MAX=20 cmd_task --source slack --id agent-fre3 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-old7 --fresh >/dev/null 2>&1
+check "a legacy fresh session's PR carries over" "https://github.com/mozilla/fxa/pull/9|https://github.com/mozilla/fxa/pull/9" "$(session_get agent-fre3 review_pr)|$(session_get agent-fre3 pr_url)"
+# A paused session whose PR merged resumes without it.
+echo '{"key":"agent-mrg1","state":"paused","branch":"agent-mrg1","pr_url":"https://github.com/mozilla/fxa/pull/8"}' > "$tmp/agent-mrg1.json"
+GH_STATE=MERGED FXA_VM_BACKEND=gce FXA_SESSION_MAX=20 cmd_task --source slack --id agent-mrg2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-mrg1 >/dev/null 2>&1
+check "a merged PR is not carried to the resume" "agent-mrg2|" "$(session_get agent-mrg2 branch)|$(session_get agent-mrg2 pr_url)"
 # The thread record: the first request, its sessions, and its open PR for later sessions.
 export FXA_SESSION_MAX=20 # the earlier checks left sessions live
 printf 'Build the tests\n\nEarlier messages in this Slack thread, for context:\n> owner: hi\n' > "$tmp/t.md"

@@ -688,6 +688,7 @@ session_pr_status() {
          ci: (if ($c | length) == 0 then "none" elif any($c[]; .bad) then "fail" elif all($c[]; .done) then "pass" else "running" end),
          failing: [$c[] | select(.bad) | .name], infra: [$c[] | select(.bad) | .name | select(IN($inf[]))],
          links: [$c[] | select(.bad and (.name | IN($inf[]) | not)) | .link | select(startswith("https://"))],
+         running: any($c[]; .done | not),
          reviews: [.latestReviews[]? | {login: .author.login, state, at: .submittedAt}]}' || echo null
 }
 
