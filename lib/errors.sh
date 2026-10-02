@@ -43,10 +43,12 @@ errors_record() {
   mkdir -p "$(dirname "$ERRORS_FILE")" 2>/dev/null || return 0
   # One short line per write: an O_APPEND write this size lands whole, so
   # concurrent writers (the bot, jobs, polls) need no lock.
-  jq -nc --arg at "$(date -u +%FT%TZ)" --arg s "$src" --arg k "$kind" --arg key "$key" --arg w "$where" \
+  local line; line="$(jq -nc --arg at "$(date -u +%FT%TZ)" --arg s "$src" --arg k "$kind" --arg key "$key" --arg w "$where" \
     --arg m "$msg" --arg l "$log" --arg sig "$(errors_sig "$where" "$msg")" \
     '{at: $at, source: $s, kind: $k, key: (if $key == "" then null else $key end), where: $w,
-      message: $m, log: (if $l == "" then null else $l end), sig: $sig}' >> "$ERRORS_FILE" 2>/dev/null || true
+      message: $m, log: (if $l == "" then null else $l end), sig: $sig}' 2>/dev/null)" || return 0
+  printf '%s\n' "$line" >> "$ERRORS_FILE" 2>/dev/null || true
+  declare -F db_ingest >/dev/null && db_ingest errors "$line"
   # In the background: the caller may be about to exit, and must not wait on GCS.
   ( errors_push || true ) </dev/null >/dev/null 2>&1 &
   disown 2>/dev/null || true
@@ -84,29 +86,53 @@ errors_err_trap() {
 #   errors show SIG   every occurrence of one signature
 #   errors resolve SIG [note]   mark it fixed; it reopens if it happens again
 #   errors push       copy this host's log to GCS now (the bot uses this)
+# _errors_rows   One row per signature, newest first: from the store when it is up, else the file.
+_errors_rows() {
+  if declare -F db_on >/dev/null && db_on; then
+    # The first occurrence names the source and kind; the last gives where, message and log.
+    db_json 'WITH g AS (SELECT sig, count(*) AS count, min(at) AS first, max(at) AS last, min(id) AS fid, max(id) AS lid FROM errors GROUP BY sig)
+      SELECT g.sig, f.source, f.kind, l."where" AS "where", l.message, g.count, g.first, g.last, l.log,
+        (SELECT json_group_array(key) FROM (SELECT DISTINCT key FROM errors WHERE sig = g.sig AND key IS NOT NULL ORDER BY key DESC LIMIT 5)) AS keys,
+        r.at AS rat, r.note AS rnote
+      FROM g JOIN errors f ON f.id = g.fid JOIN errors l ON l.id = g.lid LEFT JOIN error_resolutions r ON r.sig = g.sig' \
+    | jq -c 'map({sig, source, kind, where, message, count, first, last, keys: (.keys | fromjson | sort), log,
+        resolved: (if .rat then {at: .rat, note: .rnote} else null end)}
+      | .status = (if .resolved == null then "open" elif .last > .resolved.at then "reopened" else "resolved" end))
+      | sort_by(.last) | reverse'
+    return
+  fi
+  [ -s "$ERRORS_FILE" ] || { echo '[]'; return 0; }
+  local resolved='{}'; [ -s "$ERRORS_RESOLVED" ] && resolved="$(cat "$ERRORS_RESOLVED")"
+  jq -s -c --argjson r "$resolved" '
+    group_by(.sig) | map({sig: .[0].sig, source: .[0].source, kind: .[0].kind, where: (last | .where),
+      message: (last | .message), count: length, first: (map(.at) | min), last: (map(.at) | max),
+      keys: ([.[].key | select(. != null)] | unique | .[-5:]), log: (last | .log),
+      resolved: $r[.[0].sig]}
+    | .status = (if .resolved == null then "open" elif .last > .resolved.at then "reopened" else "resolved" end))
+    | sort_by(.last) | reverse' "$ERRORS_FILE"
+}
+
 cmd_errors() {
   [ "${1:-}" = push ] && { errors_push "${2:-}" && echo "pushed to ${ERRORS_URI}/$(hostname -s).jsonl"; return; }
-  [ -s "$ERRORS_FILE" ] || { [ "${1:-}" = --json ] && echo '[]' || echo "No errors recorded."; return 0; }
   local resolved='{}'; [ -s "$ERRORS_RESOLVED" ] && resolved="$(cat "$ERRORS_RESOLVED")"
   case "${1:-}" in
     show)
       local sig="${2:?errors show needs a signature}"
-      jq -c --arg s "$sig" 'select(.sig == $s)' "$ERRORS_FILE" ;;
+      if declare -F db_on >/dev/null && db_on; then
+        db_json "SELECT at, source, kind, key, \"where\", message, log, sig FROM errors WHERE sig = $(db_q "$sig") ORDER BY id;" | jq -c '.[]'
+      else jq -c --arg s "$sig" 'select(.sig == $s)' "$ERRORS_FILE" 2>/dev/null; fi ;;
     resolve)
       local sig="${2:?errors resolve needs a signature}" note="${3:-}"
-      grep -q "\"sig\":\"${sig}\"" "$ERRORS_FILE" || { echo "ERROR: no error has signature ${sig}" >&2; return 1; }
-      jq --arg s "$sig" --arg at "$(date -u +%FT%TZ)" --arg n "$note" '.[$s] = {at: $at, note: $n}' <<< "$resolved" > "${ERRORS_RESOLVED}.tmp" \
-        && mv "${ERRORS_RESOLVED}.tmp" "$ERRORS_RESOLVED" && echo "resolved ${sig}" ;;
+      [ "$(_errors_rows | jq --arg s "$sig" 'any(.[]; .sig == $s)')" = true ] || { echo "ERROR: no error has signature ${sig}" >&2; return 1; }
+      local at; at="$(date -u +%FT%TZ)"
+      jq --arg s "$sig" --arg at "$at" --arg n "$note" '.[$s] = {at: $at, note: $n}' <<< "$resolved" > "${ERRORS_RESOLVED}.tmp" \
+        && mv "${ERRORS_RESOLVED}.tmp" "$ERRORS_RESOLVED" && echo "resolved ${sig}" || return 1
+      declare -F db_ingest >/dev/null && db_ingest error_resolutions "$(jq -nc --arg s "$sig" --arg at "$at" --arg n "$note" '{sig: $s, at: $at, note: $n}')"
+      return 0 ;;
     ""|--all|--json)
-      local rows
-      rows="$(jq -s -c --argjson r "$resolved" '
-        group_by(.sig) | map({sig: .[0].sig, source: .[0].source, kind: .[0].kind, where: (last | .where),
-          message: (last | .message), count: length, first: (map(.at) | min), last: (map(.at) | max),
-          keys: ([.[].key | select(. != null)] | unique | .[-5:]), log: (last | .log),
-          resolved: $r[.[0].sig]}
-        | .status = (if .resolved == null then "open" elif .last > .resolved.at then "reopened" else "resolved" end))
-        | sort_by(.last) | reverse' "$ERRORS_FILE")"
+      local rows; rows="$(_errors_rows)"
       if [ "${1:-}" = --json ]; then printf '%s\n' "$rows"; return 0; fi
+      [ "$rows" != "[]" ] || { echo "No errors recorded."; return 0; }
       [ "${1:-}" = --all ] || rows="$(jq -c 'map(select(.status != "resolved"))' <<< "$rows")"
       [ "$(jq length <<< "$rows")" -gt 0 ] || { echo "No open errors."; return 0; }
       jq -r '.[] | "\(.sig)  \(.status | ascii_upcase)  x\(.count)  last \(.last)  \(.source)/\(.kind)  \(.where)\n    \(.message | .[0:160])\(if (.keys | length) > 0 then "\n    sessions: " + (.keys | join(", ")) else "" end)"' <<< "$rows" ;;

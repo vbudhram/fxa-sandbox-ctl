@@ -65,6 +65,22 @@ check "resolve hides it" "No open errors." "$(cmd_errors)"
 sleep 1; errors_record session pr_failed agent-cccc33 session-finish "no handoff" ""
 check "seen again, it reopens" "reopened" "$(cmd_errors --json | jq -r '.[0].status')"
 
+# The store gives the same rows as the file: with the store, every write and resolve lands in both.
+if command -v sqlite3 >/dev/null; then
+  export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI=""
+  _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  source "$here/db.sh"; db_init >/dev/null; ERRORS_FILE="$tmp/e3.jsonl"; ERRORS_RESOLVED="$tmp/e3-resolved.json"
+  errors_record session pr_failed agent-dddd44 session-finish "no handoff" "log/a"
+  errors_record bot stream agent-eeee55 stream "it's gone" ""
+  errors_record session pr_failed agent-ffff66 session-finish "no handoff" ""
+  cmd_errors resolve "$(jq -r .sig "$ERRORS_FILE" | head -1)" "fixed, it's in" >/dev/null
+  from_db="$(cmd_errors --json | jq -S .)"; show_db="$(cmd_errors show "$(jq -r .sig "$ERRORS_FILE" | head -1)")"
+  db_on() { return 1; }
+  check "errors: the store's rows equal the file's" "$(cmd_errors --json | jq -S .)" "$from_db"
+  check "errors show: the same occurrences" "$(cmd_errors show "$(jq -r .sig "$ERRORS_FILE" | head -1)")" "$show_db"
+  unset -f db_on; source "$here/db.sh"
+fi
+
 # Capacity failures: one signature for every zone, the session key only for a session runner.
 eval "$(sed -n '/^_gce_capacity_error() {/,/^}/p' "$here/vm-gce.sh")"
 _gce_capacity_error stockout agent-ab12 "zone stocked out for c4a-highcpu-4" "zone us-central1-b"

@@ -41,4 +41,17 @@ check "collect queues the runner's lessons" "agent-ef56" "$(cmd_lessons --json |
 check "collect removes the file on the runner" "1" "$(grep -c 'rm -f /workspace/.fxa-lessons.json' "$tmp/script")"
 _session_sh() { return 255; }
 check "an unreachable runner is not an error" "0" "$(lessons_collect agent-ef56 runner; echo $?)"
+
+# The store gives the same lessons and the same guide section as the file.
+if command -v sqlite3 >/dev/null; then
+  export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI=""
+  _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  source "$(dirname "$0")/db.sh"; db_init >/dev/null
+  _lessons_add agent-db01 '[{"lesson":"Use stack.sh wait before a test, it'"'"'s faster.","why":"x"}]' >/dev/null
+  id="$(cmd_lessons --json | jq -r '.[-1].id')"; cmd_lessons approve "$id" >/dev/null
+  from_db="$(cmd_lessons --json | jq -S 'map(del(.decided_at))')"; md_db="$(lessons_approved_md)"
+  db_on() { return 1; }
+  check "lessons: the store equals the file" "$(cmd_lessons --json | jq -S 'map(del(.decided_at))')" "$from_db"
+  check "lessons: the same guide section" "$(lessons_approved_md)" "$md_db"
+fi
 exit $fail

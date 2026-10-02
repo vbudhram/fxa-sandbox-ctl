@@ -19,8 +19,10 @@ _lessons_all() { [ -s "$LESSONS_FILE" ] && jq -c 'if type == "array" then . else
 
 # ponytail: no lock; a wrap-up and a dashboard tap at the same second can lose one write.
 _lessons_save() {
-  local t; t="$(mktemp "${LESSONS_FILE}.XXXXXX")" || return 1
-  cat > "$t" && mv "$t" "$LESSONS_FILE"
+  local t l; t="$(mktemp "${LESSONS_FILE}.XXXXXX")" || return 1
+  cat > "$t" && mv "$t" "$LESSONS_FILE" || return 1
+  declare -F db_ingest >/dev/null || return 0
+  jq -c '.[]' "$LESSONS_FILE" 2>/dev/null | while IFS= read -r l; do db_ingest lessons "$l"; done
 }
 
 # _lessons_add <key> <json-array>   Queue each valid {lesson, why} as pending. Prints how many.
@@ -53,8 +55,15 @@ lessons_collect() {
   return 0
 }
 
+# _lessons_read   For readers: the store when it is up, else the file (writes go to the file, then the store).
+_lessons_read() {
+  if declare -F db_on >/dev/null && db_on; then
+    db_json "SELECT text, why, session, at, status, id, decided_at FROM lessons ORDER BY rowid;" | jq -c 'map(with_entries(select(.value != null)))'
+  else _lessons_all; fi
+}
+
 lessons_approved_md() {
-  _lessons_all | jq -r --argjson max "$LESSONS_MAX" '
+  _lessons_read | jq -r --argjson max "$LESSONS_MAX" '
     [ .[] | select(.status == "approved") ] | .[-$max:]
     | if length == 0 then empty else
         "\n# Lessons from earlier sessions\n\nThe operator approved each one. Follow them unless the task says otherwise.\n", (.[] | "- \(.text)")
@@ -64,7 +73,7 @@ lessons_approved_md() {
 cmd_lessons() {
   case "${1:-list}" in
     list|--json)
-      if [ "${1:-}" = --json ] || [ "${2:-}" = --json ]; then _lessons_all; return 0; fi
+      if [ "${1:-}" = --json ] || [ "${2:-}" = --json ]; then _lessons_read; return 0; fi
       _lessons_all | jq -r '.[] | "\(.id)  \(.status)\t\(.session)  \(.text)"' ;;
     approve|reject)
       local id="${2:-}" text="" status

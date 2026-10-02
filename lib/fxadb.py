@@ -3,6 +3,7 @@ dashboard, the LLM proxy and the MCP gateway. lib/db.sh owns the schema
 (`fxa-sandbox-ctl db init`); this only connects. Use bound parameters, never
 string formatting, for any value.
 """
+import json
 import os
 import sqlite3
 
@@ -18,6 +19,61 @@ def connect(path=None, readonly=False):
     return con
 
 
+_CON = None
+
+
+def ingest(tbl, obj):
+    """One log record into the store, mapped by the ingest triggers. Never raises:
+    the caller's file is the fallback while the store proves itself."""
+    global _CON
+    try:
+        if _CON is None:
+            if not os.path.exists(PATH):
+                return  # no store here (a test, or a host without db init): do not create an empty one
+            _CON = connect()
+        _CON.execute("INSERT INTO ingest (tbl, j) VALUES (?, ?)", (tbl, obj if isinstance(obj, str) else json.dumps(obj)))
+    except Exception:  # noqa: BLE001 - the file write already happened
+        _CON = None
+
+
 def rows(con, sql, params=()):
     """The rows of one query as plain dicts, ready for json.dumps."""
     return [dict(r) for r in con.execute(sql, params)]
+
+
+def import_files(con, files):
+    """Rebuild log tables from their files, one transaction: the files are complete
+    (each writer appends to its file first), so the table matches them exactly.
+    files: [(table, path, kind)] with kind "jsonl", "array" (lessons) or "object" (resolutions)."""
+    con.execute("BEGIN IMMEDIATE")
+    try:
+        counts = {}
+        for tbl, path, kind in files:
+            if not os.path.exists(path):
+                counts[tbl] = 0
+                continue
+            if tbl == "llm_calls":
+                con.execute("DELETE FROM llm_daily")  # its trigger rebuilds it from the calls
+            if tbl in ("errors", "error_resolutions", "llm_calls", "mcp_calls", "runs", "job_costs", "passes", "lessons"):
+                con.execute(f"DELETE FROM {tbl}")
+            if kind == "jsonl":
+                recs = [ln for ln in open(path, errors="replace") if ln.strip()]
+            elif kind == "array":
+                recs = [json.dumps(r) for r in json.load(open(path))]
+            else:
+                recs = [json.dumps({"sig": k, **v}) for k, v in json.load(open(path)).items()]
+            con.executemany("INSERT INTO ingest (tbl, j) VALUES (?, ?)", [(tbl, r) for r in recs if _is_json(r)])
+            counts[tbl] = len(recs)
+        con.execute("COMMIT")
+        return counts
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+
+
+def _is_json(s):
+    try:
+        json.loads(s)
+        return True
+    except ValueError:
+        return False

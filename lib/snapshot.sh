@@ -221,6 +221,14 @@ _stats_add_rows() {
   local sess jobs f llm='{}' usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl"
   # The LLM proxy's per-call log is the one cost source where it has the run. gap_usd: cache
   # writes on calls more than 5 min after the run's previous call, when the prompt cache had expired.
+  if declare -F db_on >/dev/null && db_on; then
+    llm="$(db_json "SELECT json_object(
+      'runs', (SELECT json_group_object(run, u) FROM (SELECT run, round(sum(usd), 2) AS u FROM llm_calls WHERE run IS NOT NULL GROUP BY run)),
+      'days', (SELECT json_group_array(json_object('day', day, 'usd', usd, 'calls', calls, 'cache_write_usd', cw)) FROM (SELECT * FROM
+               (SELECT day, round(sum(usd), 2) AS usd, sum(calls) AS calls, round(sum(usd_cache_write), 2) AS cw FROM llm_daily GROUP BY day ORDER BY day DESC LIMIT 30) ORDER BY day)),
+      'gap_usd', (SELECT round(coalesce(sum(usd_cache_write), 0), 2) FROM (SELECT usd_cache_write, at, lag(at) OVER (PARTITION BY run ORDER BY at, id) AS prev
+               FROM llm_calls WHERE run IS NOT NULL) WHERE (unixepoch(at) - unixepoch(prev)) > 300)) AS llm;" | jq -c '.[0].llm | fromjson')" || llm='{}'
+  else
   [ -s "$usage" ] && llm="$(jq -sc 'def r2: . * 100 | round / 100;
     { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
       days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
@@ -228,6 +236,7 @@ _stats_add_rows() {
       gap_usd: (map(select(.run != null)) | group_by(.run) | map(sort_by(.at) | . as $c
                | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2) }' \
     "$usage" 2>/dev/null || echo '{}')"
+  fi
   sess="$(for f in "${SESSION_DIR}"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc --argjson llm "$llm" '
     def n: if . == null or . == "" then null else (tonumber? // null) end;
     map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s

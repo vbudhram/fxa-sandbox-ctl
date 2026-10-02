@@ -22,6 +22,9 @@ import threading
 import time
 import urllib.parse
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import fxadb  # noqa: E402  the controller's store
+
 DIR = os.environ.get("LLM_PROXY_DIR", os.path.expanduser("~/.claude/state/llm-proxy"))
 UPSTREAM = urllib.parse.urlsplit(os.environ.get("LLM_PROXY_UPSTREAM", "https://api.anthropic.com"))
 KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -92,6 +95,7 @@ def charge(tok, model, usage):
                                                                    "cache_creation_input_tokens", "cache_read_input_tokens")}}
     with open(os.path.join(DIR, "usage.jsonl"), "a") as f:
         f.write(json.dumps(line) + "\n")
+    fxadb.ingest("llm_calls", line)
 
 
 def connect():

@@ -37,7 +37,9 @@ alerts_check() {
   idle="$(jq -r --argjson t "$since" "$def"' map(select((.stopped_at | n) >= $t)) | map(.idle_s | n) | add // 0' <<< "$sessions")"
   boot="$(jq -r --argjson t "$since" "$def"' [.[] | select((.booted_at | n) >= $t) | .boot_s | n | select(. > 0)] | sort
     | if length >= 3 then .[length / 2 | floor] else 0 end' <<< "$sessions")"
-  spend=0; [ -s "$usage" ] && spend="$(jq -rs --argjson t "$since" 'map(select((.at // "" | fromdate? // 0) >= $t) | .usd // 0) | add // 0' "$usage" 2>/dev/null || echo 0)"
+  spend=0
+  if declare -F db_on >/dev/null && db_on; then spend="$(db_value "SELECT coalesce(sum(usd), 0) FROM llm_calls WHERE at >= strftime('%Y-%m-%dT%H:%M:%SZ', ${since}, 'unixepoch');")"
+  elif [ -s "$usage" ]; then spend="$(jq -rs --argjson t "$since" 'map(select((.at // "" | fromdate? // 0) >= $t) | .usd // 0) | add // 0' "$usage" 2>/dev/null || echo 0)"; fi
   cap=0; [ -s "$ERRORS_FILE" ] && cap="$(jq -rs --argjson t "$since" 'map(select((.at | fromdate? // 0) >= $t and (.kind | IN("stockout", "all_zones_out", "session_cap")))) | length' "$ERRORS_FILE" 2>/dev/null || echo 0)"
   local ih="${FXA_ALERT_IDLE_HOURS:-6}" du="${FXA_ALERT_DAILY_USD:-150}" bs="${FXA_ALERT_BOOT_S:-60}" cn="${FXA_ALERT_CAPACITY:-3}"
   _alert idle_hours "$(awk -v i="$idle" -v h="$ih" 'BEGIN { print (i > h * 3600) }')" \

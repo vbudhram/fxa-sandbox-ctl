@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql" "$(db_init)"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "1|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "2|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"
@@ -45,8 +45,41 @@ check "every write lands in changes" "301" "$(db_value "SELECT count(*) FROM cha
 check "the state index is used" "1" "$(db_value "EXPLAIN QUERY PLAN SELECT key FROM sessions WHERE state = 'active';" | grep -c sessions_state)"
 
 # The daily rollup is kept on insert.
-db_exec "INSERT INTO llm_calls (at, run, model, usd, usd_cache_write) VALUES ('2026-10-02T10:00:00Z', 'agent-x', 'opus', 0.5, 0.2), ('2026-10-02T11:00:00Z', 'agent-y', 'opus', 0.25, 0.1), ('2026-10-03T09:00:00Z', 'agent-x', 'opus', 1, 0);"
+for j in '{"at":"2026-10-02T10:00:00Z","run":"agent-x","model":"opus","usd":0.5,"usd_cache_write":0.2,"input_tokens":3}' '{"at":"2026-10-02T11:00:00Z","run":"agent-y","model":"opus","usd":0.25,"usd_cache_write":0.1}' '{"at":"2026-10-03T09:00:00Z","run":"agent-x","model":"opus","usd":1,"usd_cache_write":0}'; do db_ingest llm_calls "$j"; done
 check "llm_daily: calls and spend per day" "2026-10-02|2|0.75|2026-10-03|1|1.0" "$(db_value "SELECT group_concat(day || '|' || calls || '|' || usd, '|') FROM (SELECT * FROM llm_daily ORDER BY day);")"
+
+# Every log goes in through ingest, as the writers' JSON lines.
+db_ingest errors '{"at":"2026-10-02T10:00:00Z","source":"bot","kind":"stream","key":null,"where":"stream","message":"it'"'"'s broken","log":null,"sig":"abc"}'
+db_ingest mcp_calls '{"at":"2026-10-02T10:00:00Z","run":"agent-x","connector":"jira","tool":"getJiraIssue","outcome":"ok","ms":120,"bytes":900,"args":"{}"}'
+db_ingest runs '{"recorded_at":"2026-10-02T10:00:00Z","issue":"FXA-1","kind":"fix","model":"opus","cost_usd":1.5,"wall_seconds":600,"pr":"21300"}'
+db_ingest job_costs '{"at":"2026-10-02T10:00:00Z","job":"pass","cost_usd":0.35,"turns":10,"duration_ms":1000,"is_error":false}'
+db_ingest passes '{"at":1790969732,"queued":26,"awaiting":7,"inflight":2,"work":true}'
+db_ingest lessons '{"id":"l1","at":"x","session":"agent-x","text":"one","status":"pending"}'
+db_ingest lessons '{"id":"l1","at":"x","session":"agent-x","text":"one, edited","status":"approved","decided_at":"y"}'
+db_ingest error_resolutions '{"sig":"abc","at":"z","note":"fixed"}'
+db_ingest nosuch '{"a":1}'; db_ingest errors 'not json'
+check "ingest: each table maps its fields" "it's broken|jira|FXA-1|21300|0.35|0|26|1|one, edited|approved|fixed" \
+  "$(db_value "SELECT (SELECT message FROM errors) || '|' || (SELECT connector FROM mcp_calls) || '|' || (SELECT issue FROM runs) || '|' || (SELECT data->>'pr' FROM runs) || '|' || (SELECT cost_usd FROM job_costs) || '|' || (SELECT is_error FROM job_costs) || '|' || (SELECT queued FROM passes) || '|' || (SELECT count(*) FROM lessons) || '|' || (SELECT text FROM lessons) || '|' || (SELECT status FROM lessons) || '|' || (SELECT note FROM error_resolutions);")"
+check "ingest: an unknown table or bad JSON is dropped, quietly" "1|0" "$(db_value "SELECT count(*) FROM errors;")|$(db_ingest errors 'not json'; echo $?)"
+
+# Import rebuilds each table from its file; parity then matches; a second import changes nothing.
+export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_MCP_GATEWAY_DIR="$tmp/gw"; mkdir -p "$PIPE_STATE_DIR" "$FXA_LLM_PROXY_DIR" "$FXA_MCP_GATEWAY_DIR"
+printf '%s\n' '{"at":"2026-10-01T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m1","log":null,"sig":"s1"}' '{"at":"2026-10-02T10:00:00Z","source":"ctl","kind":"crash","key":"agent-a","where":"x","message":"m2","log":null,"sig":"s1"}' > "$PIPE_STATE_DIR/errors.jsonl"
+echo '{"s1":{"at":"2026-10-01T12:00:00Z","note":"fixed"}}' > "$PIPE_STATE_DIR/errors-resolved.json"
+printf '%s\n' '{"at":"2026-10-01T10:00:00Z","run":"agent-a","model":"m","usd":1.25,"usd_cache_write":0.5}' '{"at":"2026-10-01T10:09:00Z","run":"agent-a","model":"m","usd":0.75,"usd_cache_write":0.25}' > "$FXA_LLM_PROXY_DIR/usage.jsonl"
+printf '%s\n' '{"recorded_at":"2026-10-01T10:00:00Z","issue":"FXA-1","cost_usd":2.5}' > "$PIPE_STATE_DIR/agent-runs.jsonl"
+echo '[{"id":"l9","at":"x","session":"agent-a","text":"t","status":"pending"}]' > "$PIPE_STATE_DIR/lessons.json"
+db_import >/dev/null
+check "import: tables match their files" "0" "$(db_parity >/dev/null; echo $?)"
+check "import: the daily rollup is rebuilt" "2026-10-01|2|2.0" "$(db_value "SELECT day || '|' || calls || '|' || usd FROM llm_daily;")"
+db_import >/dev/null
+( export SESSION_DIR="$tmp/ss"; mkdir -p "$SESSION_DIR"; echo '{"key":"agent-a","owner":"U1","created":1}' > "$SESSION_DIR/agent-a.json"
+  source "$here/snapshot.sh"; a="$(echo '{}' | _stats_add_rows | jq -c '.llm | .. |= (if type == "number" then . + 0 else . end)')"
+  db_on() { false; }; b="$(echo '{}' | _stats_add_rows | jq -c .llm)"
+  check "stats: the store's LLM rollup equals the file's" "$b" "$a"; exit "$fail" ) || fail=1
+check "import twice: still one copy" "2|2|1" "$(db_value "SELECT (SELECT count(*) FROM errors) || '|' || (SELECT count(*) FROM llm_calls) || '|' || (SELECT count(*) FROM runs);")"
+echo '{"at":"2026-10-03T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m3","log":null,"sig":"s2"}' >> "$PIPE_STATE_DIR/errors.jsonl"
+check "parity: a row only in the file shows as a difference" "1|DIFF" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^errors ' | awk '{print $2}')"
 
 # A backup is a whole, valid database.
 _db ".backup '$tmp/copy.db'"

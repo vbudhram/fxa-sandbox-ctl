@@ -6,9 +6,12 @@
 #   db_exec <sql>        run statements; returns non-zero on any error
 #   db_json <sql>        rows of one SELECT as a JSON array ([] for none)
 #   db_value <sql>       the value of a query that returns one row and one column, or nothing
+#   db_ingest <tbl> <json>  one log record (errors, llm_calls, mcp_calls, runs, job_costs,
+#                        passes, lessons, error_resolutions); never fails its caller
 #   db_init              create the file and apply the migrations in lib/db/ (PRAGMA user_version)
 #   db_backup [--now]    copy it with SQLite's backup API to the state bucket, at most hourly
-#   cmd_db status | init | backup | query <sql>
+#   db_on                true when the store is usable: the readers' switch while the files remain
+#   cmd_db status | init | backup | import | parity | query <sql>
 #
 # WAL mode and a 5 s busy timeout on every connection, so the dashboard reads
 # while the controller, the bot, the proxy and the gateway write.
@@ -39,6 +42,54 @@ db_json() {
   _db_ready || return 1
   local out; out="$(_db -json "$1")" || return 1
   printf '%s\n' "${out:-[]}"
+}
+
+# The writers keep their files while the store proves itself, so a failed insert must not fail them.
+db_ingest() { { _db_ready && _db "INSERT INTO ingest (tbl, j) VALUES ($(db_q "$1"), $(db_q "$2"));"; } >/dev/null 2>&1 || true; }
+
+db_on() { declare -F db_json >/dev/null && command -v sqlite3 >/dev/null && [ -s "$FXA_DB" ] && _db_ready 2>/dev/null; }
+
+# _db_log_files   table, path and kind of every log the store mirrors.
+_db_log_files() {
+  local ps="${PIPE_STATE_DIR:-$HOME/.claude/state/fxa-ai-fixme}"
+  printf '%s\t%s\t%s\n' errors "${ERRORS_FILE:-$ps/errors.jsonl}" jsonl \
+    error_resolutions "${ERRORS_RESOLVED:-$ps/errors-resolved.json}" object \
+    llm_calls "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl" jsonl \
+    mcp_calls "${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}/calls.jsonl" jsonl \
+    runs "${PIPE_RUNS_FILE:-$ps/agent-runs.jsonl}" jsonl \
+    job_costs "$ps/job-costs.jsonl" jsonl \
+    passes "$ps/passes.jsonl" jsonl \
+    lessons "${LESSONS_FILE:-$ps/lessons.json}" array
+}
+
+# db_import   Rebuild the log tables from their files (exact: every writer appends to its file first).
+# ponytail: a writer that appends during the rebuild can land twice; db parity shows it, and a rerun fixes it.
+db_import() {
+  _db_ready || return 1
+  _db_log_files | python3 -c '
+import json, os, sys
+sys.path.insert(0, sys.argv[1]); import fxadb
+files = [tuple(l.rstrip("\n").split("\t")) for l in sys.stdin if l.strip()]
+for t, n in fxadb.import_files(fxadb.connect(sys.argv[2]), files).items(): print(f"{t:18} {n} records")
+' "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" "$FXA_DB"
+}
+
+# db_parity   Each mirrored log against its table: records and, where it has money, the total.
+db_parity() {
+  _db_ready || return 1
+  local tbl path kind n m bad=0
+  while IFS=$'\t' read -r tbl path kind; do
+    [ -f "$path" ] || { printf '%-18s no file\n' "$tbl"; continue; }
+    case "$kind" in jsonl) n="$(grep -c . "$path" || true)" ;; array) n="$(jq length "$path")" ;; object) n="$(jq 'keys | length' "$path")" ;; esac
+    m="$(db_value "SELECT count(*) FROM ${tbl};")"
+    local extra=""
+    case "$tbl" in
+      llm_calls) extra=" usd file $(jq -s 'map(.usd // 0) | add // 0 | . * 100 | round / 100' "$path") db $(db_value "SELECT round(coalesce(sum(usd), 0), 2) FROM llm_calls;") daily $(db_value "SELECT round(coalesce(sum(usd), 0), 2) FROM llm_daily;")" ;;
+      runs) extra=" usd file $(jq -s 'map(.cost_usd // 0) | add // 0 | . * 100 | round / 100' "$path") db $(db_value "SELECT round(coalesce(sum(cost_usd), 0), 2) FROM runs;")" ;;
+    esac
+    [ "$n" = "$m" ] && printf '%-18s ok   %s%s\n' "$tbl" "$n" "$extra" || { printf '%-18s DIFF file %s, db %s%s\n' "$tbl" "$n" "$m" "$extra"; bad=1; }
+  done < <(_db_log_files)
+  return "$bad"
 }
 
 db_init() {
@@ -73,6 +124,8 @@ cmd_db() {
   case "${1:-status}" in
     init) db_init ;;
     backup) db_backup --now && echo "backed up to ${FXA_DB_BACKUP_URI:-nowhere (no bucket set)}" ;;
+    import) db_import ;;
+    parity) db_parity ;;
     query) [ -n "${2:-}" ] || { echo "usage: fxa-sandbox-ctl db query '<sql>'" >&2; return 1; }
       _db_ready && _db -readonly -box "$2" ;;
     status)
@@ -80,6 +133,6 @@ cmd_db() {
       echo "database: ${FXA_DB} ($(du -h "$FXA_DB" | cut -f1), schema $(_db "PRAGMA user_version;"), journal $(_db "PRAGMA journal_mode;"))"
       _db -list "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;" | while read -r t; do
         printf '  %-18s %s rows\n' "$t" "$(_db "SELECT count(*) FROM \"$t\";")"; done ;;
-    *) echo "usage: fxa-sandbox-ctl db [status | init | backup | query '<sql>']" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl db [status | init | backup | import | parity | query '<sql>']" >&2; return 1 ;;
   esac
 }

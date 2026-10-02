@@ -1356,10 +1356,10 @@ cmd_precheck() {
   pipeline_unlock >/dev/null
   # One line per pass: the queue's size and what the pass found, for the Stats page.
   local awaiting_n inflight_n; awaiting_n="$(printf '%s\n' $done_keys | grep -c . || true)"; inflight_n="$(jira_inflight_keys | grep -c . || true)"
-  jq -nc --argjson q "$queue_n" --argjson a "$awaiting_n" --argjson i "$inflight_n" --argjson p "$inflight_pr" --argjson r "$infra" \
+  local prow; prow="$(jq -nc --argjson q "$queue_n" --argjson a "$awaiting_n" --argjson i "$inflight_n" --argjson p "$inflight_pr" --argjson r "$infra" \
     --argjson m "$merged_n" --argjson x "$rejected_n" --argjson w "$work" \
-    '{at: (now | floor), queued: $q, awaiting: $a, inflight: $i, with_pr: $p, red_infra: $r, merged: $m, rejected: $x, work: ($w == 1)}' \
-    >> "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || true
+    '{at: (now | floor), queued: $q, awaiting: $a, inflight: $i, with_pr: $p, red_infra: $r, merged: $m, rejected: $x, work: ($w == 1)}' 2>/dev/null || true)"
+  [ -n "$prow" ] && { printf '%s\n' "$prow" >> "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || true; db_ingest passes "$prow"; }
   local pass=""
   [ "$merged_n" -gt 0 ] && pass="${pass}; this pass: ${merged_n} merged"
   [ "$rejected_n" -gt 0 ] && pass="${pass:-; this pass: }${pass:+, }${rejected_n} rejected"

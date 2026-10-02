@@ -268,11 +268,12 @@ print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
   case "${CLAUDE_CODE_OAUTH_TOKEN:-}" in sk-ant-oat*) billing="subscription" ;; esac
 
   mkdir -p "$(dirname "$PIPE_RUNS_FILE")"
-  printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
+  local row; row="$(printf '%s\n' "$usage" | jq -c --arg k "$key" --arg pr "$pr" --arg sha "$sha" \
       --argjson secs "${secs:-0}" --argjson files "${files:-0}" --arg at "$(date -u +%FT%TZ)" --arg strict "$strict" \
       --argjson cost "$cost" --arg billing "$billing" --arg kind "$kind" --argjson launched "$launched_at" \
-      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, strict:$strict, wall_seconds:$secs, launched_at:$launched, recorded_at:$at, billing:$billing}' \
-    >>"$PIPE_RUNS_FILE"
+      '. + $cost + {issue:$k, kind:$kind, pr:$pr, commit:$sha, files_changed:$files, strict:$strict, wall_seconds:$secs, launched_at:$launched, recorded_at:$at, billing:$billing}')" || return 1
+  printf '%s\n' "$row" >>"$PIPE_RUNS_FILE"
+  declare -F db_ingest >/dev/null && db_ingest runs "$row"
   echo "recorded $key -> $PIPE_RUNS_FILE"
   tail -1 "$PIPE_RUNS_FILE"
   telemetry_costs >/dev/null && echo "rolled up -> $PIPE_COSTS_FILE"

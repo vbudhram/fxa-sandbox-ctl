@@ -23,6 +23,7 @@ written by the controller (lib/mcp-token.sh), updated here. One line per call
 goes to <dir>/calls.jsonl. Standard library only.
 """
 import hashlib
+import sys
 import http.client
 import http.server
 import json
@@ -34,6 +35,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import fxadb  # noqa: E402  the controller's store
 
 DIR = os.environ.get("MCP_GATEWAY_DIR", os.path.expanduser("~/.claude/state/mcp-gateway"))
 CONFIG = os.environ.get("MCP_GATEWAY_CONFIG", os.path.expanduser("~/.config/fxa/mcp-gateway.json"))
@@ -108,6 +112,7 @@ def report(kind, key, message, detail=""):
             f.write(json.dumps(line, separators=(",", ":")) + "\n")  # errors resolve greps compact JSON
     except OSError:
         pass
+    fxadb.ingest("errors", line)
 
 
 def audit(run, connector, tool, outcome, ms=0, size=0, args=None):
@@ -115,6 +120,7 @@ def audit(run, connector, tool, outcome, ms=0, size=0, args=None):
             "ms": ms, "bytes": size, "args": json.dumps(args or {}, sort_keys=True)[:300]}
     with open(os.path.join(DIR, "calls.jsonl"), "a") as f:
         f.write(json.dumps(line) + "\n")
+    fxadb.ingest("mcp_calls", line)
 
 
 # ── Argument rules ────────────────────────────────────────────
