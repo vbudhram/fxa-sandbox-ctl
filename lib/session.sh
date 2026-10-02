@@ -352,10 +352,11 @@ session_interrupt() {
 }
 
 # session_idle_sweep   Pause every active session with no open turn, nothing
-# queued, and no activity for FXA_SESSION_IDLE_SECONDS. Stop saves the work
+# queued, and no activity for FXA_SESSION_IDLE_SECONDS (10 min: the prompt cache
+# is cold after 5, so waiting longer saves nothing on resume). Stop saves the work
 # and the conversation, and deletes the runner; a reply resumes it.
 session_idle_sweep() {
-  local f key now idle="${FXA_SESSION_IDLE_SECONDS:-1800}"; now="$(date +%s)"
+  local f key now idle="${FXA_SESSION_IDLE_SECONDS:-600}"; now="$(date +%s)"
   for f in "$SESSION_DIR"/agent-*.json; do
     [ -f "$f" ] || continue
     key="$(basename "$f" .json)"

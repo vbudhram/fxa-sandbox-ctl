@@ -126,6 +126,13 @@ checks changes an earlier run left on the slot, so read `git status` first.
 - Never run `nx reset`. It destroys the cache and slows every later step.
 - If one step runs longer than 10 minutes, stop it and say in your handoff that
   CI covers it. CI runs lint and the full suite anyway.
+- Run a long command in the foreground, with a Bash timeout of up to 600000 ms.
+  Do not start it in the background and then wait in a loop such as
+  `until grep -q DONE out; do sleep 5; done`. That loop does not see the
+  command fail, so it waits until the Bash call times out at 10 minutes.
+  Agents lost 43 minutes this way. If you must wait on a background job, stop
+  the loop when the job ends too:
+  `while kill -0 "$PID" 2>/dev/null && ! grep -q DONE out; do sleep 5; done`.
 - Before the handoff, run `/fxa-unslop`. It checks your tests, leftovers,
   comments and PR body against what reviewers flag most often.
 

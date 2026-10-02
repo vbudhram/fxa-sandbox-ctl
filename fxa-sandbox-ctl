@@ -100,7 +100,7 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
                                throwaway worktree and open a draft PR; events reports it
   session list | show <key> | history <key>
                                Read session records; history is the conversation as JSON
-  session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (1800);
+  session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (600);
                                the work and conversation are saved, the runner is deleted
   session prune                WRITE: delete sessions idle past FXA_SESSION_RETAIN_DAYS (30): prompts,
                                thread text, transcripts, patches, media; prints the deleted keys
