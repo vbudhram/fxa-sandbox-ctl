@@ -12,6 +12,8 @@ and copies it to /workspace/.fxa-auto-media/ (posted to the engineer):
     bash ~/.claude/skills/fxa-functional-local/run.sh tests/settings/changePassword.spec.ts "change password with a correct password"
 
 The second argument is a `-g` filter on the test title; omit it to run the file.
+While you change one test, always give the filter: a whole file reruns every
+test in it.
 It runs one worker and no retries, so a failure is a real failure, and prints
 PASS or FAIL with the video paths. A trace is kept on failure under
 /workspace/artifacts/functional/.

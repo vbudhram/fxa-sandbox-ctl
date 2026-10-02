@@ -12,6 +12,12 @@ included), plans one command per package, and with `--run` runs them:
     bash ~/.claude/skills/fxa-verify/verify.sh --run       # run it, print the verdict
     bash ~/.claude/skills/fxa-verify/verify.sh --run --no-types   # skip the type-check for a quick rerun
     bash ~/.claude/skills/fxa-verify/verify.sh --run --plan /workspace/.fxa-test-plan.json
+    bash ~/.claude/skills/fxa-verify/verify.sh --failed    # after a fix: rerun only what failed
+
+After you fix a failure, use `--failed`. It reruns only the rows that failed or
+ran no tests last time, and keeps the other rows' verdicts. A full rerun repeats
+every planned spec, the functional ones too. Before the handoff, run the full
+`--run` once, because a fix can break a row that passed before.
 
 With `--plan` it first runs the specs your test plan names (`plan` lines; see
 `/fxa-test-plan`), then the related specs of the changed files (`net` lines),

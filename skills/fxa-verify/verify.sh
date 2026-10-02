@@ -2,15 +2,16 @@
 # Plan, then run, the fastest correct checks for the changed files. See SKILL.md.
 #   verify.sh [--run] [--no-types] [--no-lint] [--plan <test-plan.json>] [file...]
 #   verify.sh --revert [test file...]   the tests fail without the fix, pass with it
+#   verify.sh --failed   rerun only the rows that failed or ran nothing last time
 # With no files: the working diff against origin/main, untracked files included.
 # With --plan: the specs the test plan names (see /fxa-test-plan) first, then the
 # related specs of the changed files as a safety net, then any functional spec.
 set -u
 cd "${FXA_WORKSPACE:-/workspace}" || exit 2
-RUN=0 TYPES=1 LINT=1 MAX_RELATED=15 REVERT=0
+RUN=0 TYPES=1 LINT=1 MAX_RELATED=15 REVERT=0 FAILED=0
 files=() PLAN=""
 while [ $# -gt 0 ]; do
-  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; *) files+=("$1") ;; esac
+  case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; --failed) FAILED=1 ;; *) files+=("$1") ;; esac
   shift
 done
 given=${#files[@]}
@@ -284,6 +285,19 @@ for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"
   [ -n "${seen_cmd["$dir|$cmd"]:-}" ] && continue; seen_cmd["$dir|$cmd"]=1; kept+=("${plan[$i]}"); done
 plan=("${kept[@]}")
 
+# --failed: rerun only last time's FAIL and NONE rows; the other rows keep last
+# time's verdict. A row file beside the verdict holds each row's command.
+ROWS=/workspace/.fxa-verify-rows.tsv kept_rows=()
+if [ "$FAILED" = 1 ]; then
+  [ -s "$ROWS" ] || { echo "No earlier run to rerun. Run: bash $0 --run"; exit 2; }
+  plan=()
+  while IFS=$'\t' read -r v entry line; do
+    case "$v" in FAIL|NONE) plan+=("$entry") ;; *) kept_rows+=("$v"$'\t'"$entry"$'\t'"$line") ;; esac
+  done < "$ROWS"
+  [ "${#plan[@]}" -gt 0 ] || { echo "Nothing failed in the last run."; exit 0; }
+  RUN=1
+fi
+
 echo "Plan (${#files[@]} changed file(s)):"
 for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"; printf '  %-40s %s\n' "$label" "(cd $dir && $cmd)"; done
 [ "$RUN" = 1 ] || { echo; echo "Run it with: bash $0 --run${PLAN:+ --plan $PLAN}"; exit 0; }
@@ -310,7 +324,11 @@ for i in "${!plan[@]}"; do
   results+=("$(printf '%-4s %-40s %4ss  %s' "$v" "$label" "$(( $(date +%s) - start ))" "$logs/$i.log")")
   [ "$v" = FAIL ] && { echo "---- $label failed; last lines:"; tail -25 "$logs/$i.log"; }
 done
+for r in ${kept_rows[@]+"${kept_rows[@]}"}; do results+=("${r##*$'\t'}"); done
 echo; echo "Verdict:"; printf '  %s\n' "${results[@]}"
 # The record the self-check and the PR body read. .fxa- keeps it out of the commit.
-{ echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt
+note=""; [ "$FAILED" = 1 ] && note=" (reran ${#plan[@]} failed row(s); ${#kept_rows[@]} kept from the last run)"
+{ echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}${note}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt
+{ for i in "${!plan[@]}"; do printf '%s\t%s\t%s\n' "${results[$i]%% *}" "${plan[$i]}" "${results[$i]}"; done
+  for r in ${kept_rows[@]+"${kept_rows[@]}"}; do printf '%s\n' "$r"; done; } > "$ROWS"
 exit "$fail"

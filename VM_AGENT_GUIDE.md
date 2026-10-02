@@ -101,6 +101,8 @@ use `/fxa-verify --run --plan /workspace/.fxa-test-plan.json`. It runs the
 planned tests, then the related specs and lint for each changed package, and
 only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
+After a fix, rerun only what failed with `/fxa-verify --failed`. Run the full
+`--run` once more before the handoff.
 
 - Never run a whole package suite. The whole auth unit project (4157 tests)
   left 0.2GB free with Jest's default 3 workers and the stack off, 0.5GB with
@@ -200,6 +202,8 @@ cd /workspace/packages/functional-tests
 PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spec.ts
 ```
 
+- While you change one test, run only it: add `-g '<test title>'`. A whole spec
+  file took 51 s on average, and most hand runs ran the whole file.
 - The projects are `local` (Firefox), `local-chromium` and
   `local-payments-next`. There is no `sandbox` project.
 - The config defaults to 4 workers. Set `PLAYWRIGHT_WORKERS=2`: with the stack
