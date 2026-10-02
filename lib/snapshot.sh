@@ -361,7 +361,7 @@ for n in os.listdir(d):
     key = n[:-5]
     try:
         with open(os.path.join(d, key + ".prompt.md"), "rb") as f:
-            req = f.read(300).decode("utf-8", "ignore")
+            req = f.read(300).decode("utf-8", "ignore").rstrip("\n")   # as $(head -c 300) did
     except OSError:
         req = ""
     md = os.path.join(d, key + ".media"); media = []
