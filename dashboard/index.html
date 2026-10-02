@@ -808,7 +808,7 @@ function renderSess() {
       <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : " hidden"}></div>
       <div class="sxbody">
         ${SX.list ? `<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
-        <div class="convo">${sel ? `<div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session in the last day.</div>`}</div>
+        <div class="convo">${sel ? `<div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session.</div>`}</div>
         ${showTerm ? `<aside class="tty" id="tty-${esc(sel.key)}" aria-label="Agent output">
           <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(sel.key)}</span><b class="state"></b></div>
           <div class="screen" tabindex="0"></div></aside>` : ""}

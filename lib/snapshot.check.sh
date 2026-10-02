@@ -23,4 +23,14 @@ out="$(_snapshot_agent_json "$tmp/t.jsonl" "$(date +%s)")"
 check "usage counts once per message" "2 20 2000 200" "$(jq -r '.tokens | "\(.in) \(.out) \(.cache_read) \(.cache_write)"' <<< "$out")"
 check "the last tool and text still come from every line" "Bash ls|Done." "$(jq -r '"\(.last_tool)|\(.last_text)"' <<< "$out")"
 
+# Every kept session is listed: a paused one from last week too, newest first.
+sd="$(mktemp -d)"; now=$(date +%s)
+echo "{\"key\":\"agent-old1\",\"state\":\"paused\",\"created\":1,\"last_activity\":$(( now - 9 * 86400 ))}" > "$sd/agent-old1.json"
+echo "{\"key\":\"agent-new1\",\"state\":\"stopped\",\"created\":2,\"last_activity\":$now}" > "$sd/agent-new1.json"
+check "old paused sessions stay listed" '["agent-new1","agent-old1"]' "$(
+  SESSION_DIR="$sd"; session_live() { return 1; }; worktree_branch_for() { echo "$1"; }
+  eval "$(sed -n '/^_snapshot_sessions() {/,/^}/p;/^_snapshot_session_row() {/,/^}/p' "$(dirname "$0")/snapshot.sh")"
+  _snapshot_sessions "$now" | jq -c 'map(.key)')"
+rm -rf "$sd"
+
 exit "$fail"

@@ -304,7 +304,8 @@ _snapshot_runner_row() {
 }
 
 # _snapshot_sessions <now>   Session records plus what each agent is doing.
-# Ended sessions stay listed for a day.
+# Every session the host keeps is listed: paused and PR-open ones are not over,
+# and session_prune bounds the list at FXA_SESSION_RETAIN_DAYS.
 _snapshot_sessions() {
   local now="$1" f tmp; tmp="$(mktemp -d)"
   for f in "$SESSION_DIR"/agent-*.json; do
@@ -320,9 +321,7 @@ _snapshot_sessions() {
 _snapshot_session_row() {
   local f="$1" now="$2" key name agent=null alive=false t mtime
   key="$(jq -r .key "$f")"; name="$(worktree_branch_for "$key")"
-  if ! session_live "$key"; then
-    [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -lt 86400 ] || return 0
-  elif vm_is_running "$name" 2>/dev/null; then
+  if session_live "$key" && vm_is_running "$name" 2>/dev/null; then
     t="$(mktemp)"
     # First line is the transcript's mtime on the runner: the local copy's is always now.
     # ponytail: last 2000 events per feed, so cost_so_far undercounts a very long session.
