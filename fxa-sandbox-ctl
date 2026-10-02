@@ -2269,7 +2269,8 @@ _cmd_session_finish() {
   local chk crc=0
   chk="$(_session_sh "$name" 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' 2>&1)" || crc=$?
   printf '%s\n' "$chk" >&2
-  if [ "$crc" = 1 ]; then
+  # 1 is a problem; 3 is only the PR text's style, which gets the same one repair turn but never stops the ship.
+  if [ "$crc" = 1 ] || [ "$crc" = 3 ]; then
     _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write
 /workspace/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
 $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key" "the repair turn did not start" "$mode"; return 1; }

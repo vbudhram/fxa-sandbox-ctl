@@ -51,6 +51,23 @@ bash "$C" --fix >/dev/null; check "--fix deletes untracked scratch files" "no|no
 echo x > src/kept.tmp.ts && g add src/kept.tmp.ts && g commit -qm kept
 bash "$C" --fix >/dev/null; check "--fix leaves a committed scratch file and reports it" "yes|1" "$([ -e src/kept.tmp.ts ] && echo yes)|$(bash "$C" | grep -c "scratch file in the change: src/kept.tmp.ts")"
 
+g rm -q src/kept.tmp.ts && g commit -qm 'drop kept'
+# STE in the PR text: named, exit 3 on style alone, so the host asks once and still ships.
+body() { jq -n --arg b "$1" --arg t "${2:-fix(auth): keep the stored location}" '{issue:"agent-x",branch:"agent-x",pr_title:$t,pr_body:$b,media_paths:[]}' > .fxa-auto-done.json; }
+body 'We utilize the cache.'; bash "$C" >/dev/null; check "style alone exits 3" 3 $?
+check "the word and its replacement are named" 1 "$(bash "$C" | grep -c 'PR text, STE: "utilize": use "use"')"
+body 'We utilize the cache.' 'Fix it'; bash "$C" >/dev/null; check "style and a real problem exit 1" 1 $?
+mkdir -p .github && printf -- '- [ ] I have added necessary documentation (if appropriate).\n' > .github/PULL_REQUEST_TEMPLATE.md
+body $'## Because\n\n- The cache was cold.\n\n- [ ] I have added necessary documentation (if appropriate).\n\n```\nutilize(x) // code\n```\nCall `ensure()` first.'
+check "template lines, code and inline code are skipped" "handoff check: ok" "$(bash "$C")"
+rm -rf .github .fxa-auto-done.json
+S="$(dirname "$C")/ste.sh"
+check "ste: an em dash" 1 "$(printf 'Fast \342\200\224 and small.\n' | bash "$S" | grep -c 'em dash')"
+check "ste: a 26-word sentence" 1 "$(printf '%s\n' "$(printf 'word %.0s' $(seq 26))end." | bash "$S" | grep -c '27 words, limit 25')"
+check "ste: 7 sentences in a paragraph" 1 "$(printf 'A. B. C. D. E. F. G.\n' | bash "$S" | grep -c 'paragraph of 7 sentences')"
+check "ste: list items are their own paragraphs" "" "$(printf -- '- A. B. C.\n- D. E. F.\n- G.\n' | bash "$S")"
+check "ste: a multi-word phrase" 1 "$(printf 'Run it in order to see.\n' | bash "$S" | grep -c '"in order to": use "to"')"
+
 # The host refuses the same titles in finish.sh, where the runner cannot skip it.
 eval "$(grep -m1 "local conv=" "$(dirname "$C")/../../lib/finish.sh" | sed 's/^ *local //')"
 for t in 'fix(auth): x' 'feat(settings)!: y' 'chore(deps, ci): z'; do check "host takes: $t" yes "$([[ "$t" =~ $conv ]] && echo yes)"; done

@@ -471,6 +471,7 @@ check "a clean check ships with no repair turn" "turn:The engineer|pushed" "$(fi
 check "a failed check gets one repair turn, then ships" "turn:The engineer|turn:The host's c|pushed" "$(finish_case 1 0)"
 check "a second failure stops the ship and says why" "turn:The engineer|turn:The host's c
 Open PR failed: handoff check: pr_title is not a scoped conventional subject" "$(finish_case 1 1)"
+check "style alone gets one repair turn and ships even if it stays" "turn:The engineer|turn:The host's c|pushed" "$(finish_case 3 3)"
 check "an unreachable runner skips the check" "turn:The engineer|pushed" "$(finish_case 255)"
 
 exit "$fail"

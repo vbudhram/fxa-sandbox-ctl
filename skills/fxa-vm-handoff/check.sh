@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Check the change and the handoff file before the host ships them. See SKILL.md.
 #   check.sh [--fix]   --fix formats the changed files and deletes untracked scratch files first
-# Prints one line per problem and exits 1 when there is one.
+# Prints one line per problem. Exits 1 on a problem, 3 when only the PR text's STE style needs work.
 set -u
 cd "${FXA_WORKSPACE:-/workspace}" || exit 2
 fix=0; [ "${1:-}" = --fix ] && fix=1
-problems=()
+problems=() style=()
 
 base="$(git merge-base HEAD "origin/${FXA_WORKTREE_BASE:-main}" 2>/dev/null || echo HEAD)"
 files=()
@@ -54,9 +54,14 @@ if [ -s "$done_file" ]; then
     while IFS= read -r m; do
       [ -n "$m" ] && [ ! -f "${m#/workspace/}" ] && problems+=("media_paths names $m, which does not exist")
     done < <(jq -r '.media_paths[]' "$done_file")
+    # STE in the PR text. A script can be wrong about style, so these never stop a ship (exit 3).
+    while IFS= read -r m; do style+=("$m"); done < <(jq -r '.pr_title, "", .pr_body' "$done_file" \
+      | bash "$(dirname "$0")/ste.sh" --skip-lines-of .github/PULL_REQUEST_TEMPLATE.md | sed 's/^ste: /PR text, STE: /')
   fi
 fi
 
-[ "${#problems[@]}" -eq 0 ] && { echo "handoff check: ok"; exit 0; }
-printf 'handoff check: %s\n' "${problems[@]}"
+[ "${#problems[@]}" -eq 0 ] && [ "${#style[@]}" -eq 0 ] && { echo "handoff check: ok"; exit 0; }
+printf 'handoff check: %s\n' ${problems[@]+"${problems[@]}"} ${style[@]+"${style[@]}"}
+# 3: style only. The host asks for one rewrite and ships either way.
+[ "${#problems[@]}" -eq 0 ] && exit 3
 exit 1

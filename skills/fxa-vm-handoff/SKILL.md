@@ -99,6 +99,10 @@ bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix
 It formats the changed files with Prettier, deletes untracked scratch files
 (`zz*.spec.ts`, `*.tmp.mjs`), and checks the handoff file: the keys, a scoped
 conventional `pr_title`, the branch, and that each `media_paths` file exists.
+It also checks the PR title and body against the STE rules a script can check:
+unapproved words, em dashes, sentences over 25 words and paragraphs over 6
+sentences (`ste.sh`, beside it). Rewrite what it names; a style line alone
+exits 3 and does not stop the ship.
 Fix each `handoff check:` line it prints, and run it again until it prints
 `handoff check: ok`. The host runs the same check at Open PR and refuses a
 title that is not a scoped conventional subject.
