@@ -1111,11 +1111,15 @@ _runner_postmortem() {
   # shellcheck disable=SC2016  # expanded on the runner
   out="$(vm_exec "$name" bash -c 'echo "load (1/5/15 min): $(cut -d" " -f1-3 /proc/loadavg)"
     free -m | awk "/^Mem:/ {print \"memory: \" \$3 \" of \" \$2 \" MB used\"} /^Swap:/ {print \"swap: \" \$3 \" MB used\"}"
+    df -h /workspace 2>/dev/null | awk "NR == 2 {print \"disk: \" \$3 \" of \" \$2 \" used (\" \$5 \")\"}"
     dmesg 2>/dev/null | grep -E "Out of memory: Killed process" | tail -3
     journalctl -u ssh --no-pager -o cat 2>/dev/null | grep -E "MaxStartups throttling|past MaxStartups" | tail -2' 2>/dev/null)" || return 0
   [ -n "$out" ] || return 0
   echo "Runner '${name}' before it goes:"
   printf '%s\n' "$out" | sed 's/^/  /'
+  # Kept, since callers often send this output to /dev/null; a session's copy is pruned with it.
+  local keep="${LOG_DIR}/${name}.postmortem"; [ -f "${SESSION_DIR:-/nonexistent}/${name}.json" ] && keep="${SESSION_DIR}/${name}.postmortem"
+  { date -u +%FT%TZ; printf '%s\n' "$out"; } > "$keep" 2>/dev/null || true
   local oom; oom="$(printf '%s\n' "$out" | grep -m1 'Out of memory' || true)"
   [ -z "$oom" ] || errors_record runner oom "$name" "runner memory" "${oom}" "" 2>/dev/null || true
   return 0

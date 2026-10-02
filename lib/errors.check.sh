@@ -65,5 +65,13 @@ check "resolve hides it" "No open errors." "$(cmd_errors)"
 sleep 1; errors_record session pr_failed agent-cccc33 session-finish "no handoff" ""
 check "seen again, it reopens" "reopened" "$(cmd_errors --json | jq -r '.[0].status')"
 
+# Capacity failures: one signature for every zone, the session key only for a session runner.
+eval "$(sed -n '/^_gce_capacity_error() {/,/^}/p' "$here/vm-gce.sh")"
+_gce_capacity_error stockout agent-ab12 "zone stocked out for c4a-highcpu-4" "zone us-central1-b"
+_gce_capacity_error stockout agent-ab12 "zone stocked out for c4a-highcpu-4" "zone us-central1-c"
+_gce_capacity_error stockout fxa-123 "zone stocked out for c4a-highcpu-4" "zone us-central1-a"
+check "stockouts in different zones share a signature" "1" "$(jq -r 'select(.kind == "stockout") | .sig' "$ERRORS_FILE" | sort -u | wc -l | tr -d ' ')"
+check "a session runner's key is kept; a pipeline runner's is not" "agent-ab12|null" "$(jq -r 'select(.kind == "stockout") | .key' "$ERRORS_FILE" | sort -u | paste -sd'|' -)"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

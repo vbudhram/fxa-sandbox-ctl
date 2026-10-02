@@ -161,12 +161,15 @@ vm_clone() {
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
       echo "  ${zone} is stocked out for ${FXA_GCE_MACHINE_TYPE}; trying the next zone." >&2
+      # The zone rides in the log field, so all zones share one error signature.
+      _gce_capacity_error stockout "$name" "zone stocked out for ${FXA_GCE_MACHINE_TYPE}" "zone ${zone}"
       continue
     fi
     # GCP's own transient faults ("Internal error. Please try again") are not ours.
     local transient='Internal error|try again|backendError|UNAVAILABLE|rateLimitExceeded|timed out|Connection reset'
     if grep -qiE "$transient" "${LOG_DIR}/${name}-vm.log"; then
       echo "  GCP failed to create it in ${zone} ($(grep -m1 -oiE "$transient" "${LOG_DIR}/${name}-vm.log")); trying the next zone." >&2
+      _gce_capacity_error gce_transient "$name" "GCP failed to create a runner: $(grep -m1 -oiE "$transient" "${LOG_DIR}/${name}-vm.log")" "zone ${zone}"
       _gce compute instances delete "$(vm_name "$name")" --zone "$zone" --quiet >/dev/null 2>&1 || true
       sleep 5
       continue
@@ -176,7 +179,16 @@ vm_clone() {
     cat "${LOG_DIR}/${name}-vm.log" >&2; return 1
   done
   echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${FXA_GCE_MACHINE_TYPE}." >&2
+  _gce_capacity_error all_zones_out "$name" "every zone is stocked out for ${FXA_GCE_MACHINE_TYPE}" "zones ${FXA_GCE_ZONES}"
   return 1
+}
+
+# _gce_capacity_error <kind> <runner> <message> <detail>   Capacity failures go to the
+# error log, so the dashboard counts them; a session runner's key is its name.
+_gce_capacity_error() {
+  declare -F errors_record >/dev/null || return 0
+  local k=""; [[ "$2" =~ ^agent-[a-z0-9]{4,12}$ ]] && k="$2"
+  errors_record vm "$1" "$k" "vm create" "$3" "$4"
 }
 
 # Machine shape is fixed by FXA_GCE_MACHINE_TYPE.

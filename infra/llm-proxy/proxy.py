@@ -85,7 +85,10 @@ def charge(tok, model, usage):
                 json.dump(rec, f)
             os.replace(path + ".tmp", path)
     line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "model": model,
-            "usd": round(usd, 6), **{k: usage.get(k, 0) for k in ("input_tokens", "output_tokens",
+            "usd": round(usd, 6),
+            # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
+            "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "")[2] / 1e6, 6),
+            **{k: usage.get(k, 0) for k in ("input_tokens", "output_tokens",
                                                                    "cache_creation_input_tokens", "cache_read_input_tokens")}}
     with open(os.path.join(DIR, "usage.jsonl"), "a") as f:
         f.write(json.dumps(line) + "\n")

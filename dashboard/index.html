@@ -1100,9 +1100,35 @@ function renderStats() {
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Models<span class="note">pipeline runs</span></h2>${group("model").filter(g => g.name).sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><span class="mono">${esc(g.name)}</span><b>${g.rs.length} runs · ${usd(g.usd)}</b></div>`).join("") || `<div class="empty">No model recorded for these rows.</div>`}</div>
-    </div>`}`);
+    </div>
+    <div class="three">${runnerCard(rows)}${llmCard(st.llm)}</div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
+}
+// Runner time of the Slack sessions in this view: only those stopped since the controller records it.
+function runnerCard(rows) {
+  const rs = rows.filter(r => r.runner_s != null), h = s => (s / 3600).toFixed(1);
+  if (!rs.length) return `<div class="chart"><h2>Runner time<span class="note">Slack sessions</span></h2><div class="empty">No stopped session in this view has runner times yet.</div></div>`;
+  const up = rs.reduce((x, r) => x + r.runner_s, 0), busy = rs.reduce((x, r) => x + (r.busy_s || 0), 0);
+  const med = a => { const v = a.filter(x => x != null).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : null; };
+  const boots = ["firecracker", "gce"].map(b => [b, med(rs.filter(r => r.backend === b).map(r => r.boot_s))]).filter(([, m]) => m != null);
+  const stops = Object.entries(rs.reduce((m, r) => (m[r.stop || "not recorded"] = (m[r.stop || "not recorded"] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
+  const peak = k => Math.max(0, ...rs.map(r => r.peak?.[k] ?? 0));
+  return `<div class="chart"><h2>Runner time<span class="note">${rs.length} stopped sessions</span></h2>
+    <div class="kv"><b>Runner hours</b><span>${h(up)} h</span></div>
+    <div class="kv"><b>Busy (turns running)</b><span>${h(busy)} h · ${Math.round(busy / Math.max(up, 1) * 100)}%</span></div>
+    <div class="kv"><b>Idle</b><span>${h(up - busy)} h</span></div>
+    ${boots.map(([b, m]) => `<div class="kv"><b>Median boot, ${esc(b)}</b><span>${m.toFixed(0)} s</span></div>`).join("")}
+    <div class="kv"><b>Peak memory, load, disk</b><span>${peak("mem_mb")} MB · ${peak("load1")} · ${peak("disk_pct")}%</span></div>
+    <h2 style="margin-top:var(--s4)">Why they stopped</h2>${stops.map(([k, n]) => `<div class="kv"><b>${esc(k)}</b><span>${n}</span></div>`).join("")}</div>`;
+}
+// LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
+function llmCard(l) {
+  const days = (l?.days ?? []).slice(-14).reverse();
+  if (!days.length) return `<div class="chart"><h2>LLM spend<span class="note">proxy log</span></h2><div class="empty">No proxy log yet.</div></div>`;
+  return `<div class="chart"><h2>LLM spend<span class="note">proxy log, all runs</span></h2>
+    <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
+    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
 }
 // Stats filters, remembered per viewer in this browser.
 const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];

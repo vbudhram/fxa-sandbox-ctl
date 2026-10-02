@@ -1023,7 +1023,7 @@ cmd_logs() {
 cmd_stop() {
   if [ "${1:-}" = "--all" ]; then
     local f; for f in "$SESSION_DIR"/agent-*.json; do
-      [ -f "$f" ] && session_live "$(basename "$f" .json)" && { session_stop "$(basename "$f" .json)" || true; }
+      [ -f "$f" ] && session_live "$(basename "$f" .json)" && { session_stop "$(basename "$f" .json)" "stop all" || true; }
     done
     agent_stop_all
     return
@@ -1822,7 +1822,8 @@ cmd_task() {
   local live=0 f
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
   local cap; cap="$(_session_cap)"
-  [ "$live" -lt "$cap" ] || { echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2; return 1; }
+  [ "$live" -lt "$cap" ] || { echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
+    errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
   mkdir -p "$SESSION_DIR"
   cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
   jq -n --arg key "$key" --arg owner "$owner" \
@@ -1996,6 +1997,10 @@ what code you are on. Do not pull: a newer main needs a new thread."
   # Start the stack while the agent reads the code, not after it asks for a screenshot.
   if _session_wants_stack "$key"; then agent_prewarm_stack "$name" || echo "WARN: stack prewarm failed; the agent can run fxa-start" >&2; fi
   session_set "$key" state active turn_open 1 turn_started "$(date +%s)" booted_at "$(date +%s)"
+  # The boot's timing now, not only when the bot next polls; the backend tells a slot restore from a new VM.
+  local boot; boot="$(_session_boot_times "$key")"
+  [ "$boot" = null ] || session_set "$key" boot_s "$(jq -r '.total // .elapsed' <<< "$boot")" boot_steps "$(jq -c .steps <<< "$boot")" \
+    boot_backend "$(jq -r 'if .restore then "firecracker" else "gce" end' <<< "$boot")"
 }
 
 cmd_steer() {
@@ -2086,6 +2091,7 @@ cmd_events() {
           local why; why="$(grep -v '^[[:space:]]*[{]' "$tmp" | grep -v '^[[:space:]]*$' | tail -1 | cut -c1-240 || true)"
           events="$(jq --arg w "$why" '. + [{type: "error", text: ("I stopped without replying." + (if $w == "" then "" else " The last output was: " + $w end) + " Send a message to try again.")}]' <<< "$events")"
           errors_record session turn_died "$key" "session turn" "${why:-no output}" "agent-sessions/${key}.log"
+          _session_turn_log "$key"
           session_set "$key" turn_open 0; open=0
         fi
         # Every turn end carries the cost so far, for the status line and the cap,
@@ -2096,6 +2102,7 @@ cmd_events() {
           tcost="${facts%%$'\t'*}"; nchg="${facts#*$'\t'}"
           [ -n "$tcost" ] && events="$(jq --argjson c "$tcost" 'map(if .type == "turn_end" or .type == "question" then .cost = $c.cost | .tokens = $c.tokens else . end)' <<< "$events")"
           [ -n "$nchg" ] && events="$(jq --argjson n "$nchg" 'map(if .type == "turn_end" and .status == "ready" then .changes = $n else . end)' <<< "$events")"
+          _session_turn_log "$key" "${tcost:-null}"
           # fixed: review comments or CI failures this round fixed, from the agent's outcomes file. An automatic round pushes only then.
           local nfix; nfix="$(session_get "$key" round_fixed)"
           [ -n "$nfix" ] && events="$(jq --argjson n "$nfix" 'map(if .type == "turn_end" and .status == "ready" then .fixed = $n else . end)' <<< "$events")"
@@ -2116,6 +2123,7 @@ cmd_events() {
       elif ! vm_is_running "$name" 2>/dev/null; then
         events='[{"type":"error","text":"The runner is gone (lifetime cap or deleted)."}]'
         errors_record session runner_gone "$key" "session events" "the runner is gone while the session was ${state}" ""
+        _session_usage_close "$key" "runner gone"
         session_set "$key" state stopped; state=stopped
       fi
       rm -f "$tmp"

@@ -474,5 +474,29 @@ Open PR failed: handoff check: pr_title is not a scoped conventional subject" "$
 check "style alone gets one repair turn and ships even if it stays" "turn:The engineer|turn:The host's c|pushed" "$(finish_case 3 3)"
 check "an unreachable runner skips the check" "turn:The engineer|pushed" "$(finish_case 255)"
 
+# Usage records: one line per turn, and at stop the runner, busy and idle seconds with the reason.
+echo '{"key":"agent-us01","state":"active","turns":"2"}' > "$SESSION_DIR/agent-us01.json"
+now=$(date +%s)
+session_set agent-us01 booted_at "$(( now - 600 ))" turn_started "$(( now - 100 ))" turn_open 1
+_session_turn_log agent-us01 '{"cost":1.25,"tokens":900}'
+_session_turn_log agent-us01 '{"cost":9,"tokens":9}'
+check "a turn is logged once, with its cost so far" "1|2|1.25" "$(wc -l < "$SESSION_DIR/agent-us01.turns.jsonl" | tr -d ' ')|$(jq -r .turn "$SESSION_DIR/agent-us01.turns.jsonl")|$(jq -r .cost_so_far "$SESSION_DIR/agent-us01.turns.jsonl")"
+check "the turn's seconds" "1" "$(jq -r '.secs >= 99 and .secs <= 102 | if . then 1 else 0 end' "$SESSION_DIR/agent-us01.turns.jsonl")"
+session_set agent-us01 turn_open 0
+_session_usage_close agent-us01 idle
+check "stop: reason and the runner's busy and idle seconds" "idle|1|100" "$(session_get agent-us01 stop_reason)|$(s=$(session_get agent-us01 runner_s); [ "$s" -ge 600 ] && [ "$s" -le 602 ] && echo 1)|$(session_get agent-us01 busy_s)"
+check "idle is runner minus busy" "$(( $(session_get agent-us01 runner_s) - 100 ))" "$(session_get agent-us01 idle_s)"
+_session_usage_close agent-us01 later
+check "a second close keeps the first reason" "idle" "$(session_get agent-us01 stop_reason)"
+echo '{"key":"agent-us02","state":"starting"}' > "$SESSION_DIR/agent-us02.json"
+_session_usage_close agent-us02 stopped
+check "a session that never booted gets only the reason" "stopped|" "$(session_get agent-us02 stop_reason)|$(session_get agent-us02 runner_s)"
+_session_res_peaks agent-us01 "1.5 4000 40"; _session_res_peaks agent-us01 "0.7 9000 35"; _session_res_peaks agent-us01 ""
+check "resource peaks keep the highest of each" '{"load1":1.5,"mem_mb":9000,"disk_pct":40}' "$(session_get agent-us01 res_peak)"
+# The proxy's call log keeps 90 days.
+mkdir -p "$tmp/proxy"; printf '%s\n' '{"at":"2020-01-01T00:00:00Z","usd":1}' "{\"at\":\"$(date -u +%FT%TZ)\",\"usd\":2}" > "$tmp/proxy/usage.jsonl"
+FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_MCP_GATEWAY_DIR="$tmp/none" session_prune >/dev/null
+check "prune drops proxy calls older than 90 days" "2" "$(jq -r .usd "$tmp/proxy/usage.jsonl")"
+
 exit "$fail"
 

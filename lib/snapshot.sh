@@ -218,14 +218,27 @@ snapshot_stats_json() {
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the
 # pipeline's runs, so the page can show the whole spend.
 _stats_add_rows() {
-  local sess jobs f
-  sess="$(for f in "${SESSION_DIR}"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc '
+  local sess jobs f llm='{}' usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl"
+  # The LLM proxy's per-call log is the one cost source where it has the run. gap_usd: cache
+  # writes on calls more than 5 min after the run's previous call, when the prompt cache had expired.
+  [ -s "$usage" ] && llm="$(jq -sc 'def r2: . * 100 | round / 100;
+    { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
+      days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
+               cache_write_usd: (map(.usd_cache_write // 0) | add | r2)}) | .[-30:]),
+      gap_usd: (map(select(.run != null)) | group_by(.run) | map(sort_by(.at) | . as $c
+               | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2) }' \
+    "$usage" 2>/dev/null || echo '{}')"
+  sess="$(for f in "${SESSION_DIR}"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc --argjson llm "$llm" '
+    def n: if . == null or . == "" then null else (tonumber? // null) end;
     map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s
-      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($s.cost // 0),
-          min: ($s.minutes // null), model: "", pr: ((.pr_url // "") != ""), who: (.owner_name // null) })' 2>/dev/null || echo '[]')"
-  jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
+      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
+          min: ($s.minutes // null), model: "", pr: ((.pr_url // "") != ""), who: (.owner_name // null),
+          runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
+          backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null) })' 2>/dev/null || echo '[]')"
+  jobs='[]'
+  [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
-  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" '.rows += $s + $j'
+  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson l "$llm" '.rows += $s + $j | .llm = $l'
 }
 
 # Fix attempts and feedback rounds live in the pipeline's state files.

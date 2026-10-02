@@ -345,6 +345,7 @@ session_interrupt() {
     for i in \$(seq 30); do pgrep -f '${_SESSION_AGENT_PAT}' >/dev/null || exit 0; sleep 0.5; done
     pkill -KILL -f '${_SESSION_AGENT_PAT}'; true" >/dev/null 2>&1 \
     || { _session_unlock "$1"; echo "ERROR: $1: could not reach the runner to interrupt" >&2; return 1; }
+  _session_turn_log "$1"
   session_set "$1" turn_open 0
   _session_unlock "$1"
   echo "$1 interrupted"
@@ -379,7 +380,8 @@ session_idle_sweep() {
     _session_lock "$key" || continue
     # Recheck under the lock: a steer may have just started a turn.
     if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
-      if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"; else echo "pause-failed ${key}" >&2; fi
+      if session_stop "$key" idle; then session_set "$key" state paused; echo "paused ${key}"
+      else echo "pause-failed ${key}" >&2; errors_record session pause_failed "$key" "idle sweep" "the idle pause could not stop the runner" ""; fi
     fi
     _session_unlock "$key"
   done
@@ -410,6 +412,17 @@ session_prune() {
     t="$(mktemp "${calls}.XXXXXX")"
     jq -c --argjson c "$cutoff" 'select((.at // 0) >= $c)' "$calls" > "$t" 2>/dev/null && mv "$t" "$calls" || rm -f "$t"
   fi
+  # The LLM proxy's call log keeps 90 days, for spend trends past the sessions' 30.
+  # ponytail: a call the proxy appends during this rewrite is lost; rotate by month if that matters.
+  local usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl"
+  if [ -s "$usage" ]; then
+    t="$(mktemp "${usage}.XXXXXX")"
+    jq -c --argjson c "$(( $(date +%s) - ${FXA_LLM_USAGE_RETAIN_DAYS:-90} * 86400 ))" 'select((.at // "" | fromdate? // 0) >= $c)' "$usage" > "$t" 2>/dev/null \
+      && mv "$t" "$usage" || rm -f "$t"
+  fi
+  for f in "${LOG_DIR:-/nonexistent}"/*.postmortem; do
+    [ -f "$f" ] && [ "$(_mtime "$f")" -lt "$cutoff" ] && rm -f "$f"
+  done
   for d in "${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}"; do
     for f in "$d"/tokens/* "$d"/runs/*; do
       [ -f "$f" ] && [ "$(_mtime "$f")" -lt "$cutoff" ] && rm -f "$f"
@@ -802,17 +815,29 @@ _session_end_facts() {
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
     printf "@@changes %s\n" "$(cd /workspace && '"$_SESSION_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
-    printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"' > "$t" 2>/dev/null || true
+    printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"
+    printf "@@res %s %s %s\n" "$(cut -d" " -f1 /proc/loadavg)" "$(free -m | awk "/^Mem:/ {print \$3}")" "$(df --output=pcent /workspace 2>/dev/null | tail -1 | tr -dc 0-9)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
   # The notes ride in the same ssh, saved at every turn end: a crash or the runner's time limit loses none.
   grep '^@@notes ' "$t" | tail -1 | cut -c9- | openssl base64 -d -A > "${t}.n" 2>/dev/null || true
   _thread_save_notes "$1" "${t}.n"; rm -f "${t}.n"
   session_set "$1" round_fixed "$(sed -n 's/^@@fixed *\([0-9]*\)$/\1/p' "$t" | tail -1)"
-  grep -v '^@@changes \|^@@notes \|^@@fixed ' "$t" > "${t}.j" || true
+  _session_res_peaks "$1" "$(sed -n 's/^@@res \([0-9.]* [0-9]* [0-9]*\)$/\1/p' "$t" | tail -1)"
+  grep -v '^@@changes \|^@@notes \|^@@fixed \|^@@res ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   rm -f "$t" "${t}.j"
   printf '%s\t%s\n' "$cost" "$n"
+}
+
+# _session_res_peaks <key> "<load1> <mem_mb> <disk_pct>"   The highest load, memory
+# and disk the runner showed at any turn end. A sample a turn, not a sampler.
+_session_res_peaks() {
+  [ -n "$2" ] || return 0
+  local l m d; read -r l m d <<< "$2"
+  session_set "$1" res_peak "$(jq -c --arg l "$l" --argjson m "${m:-0}" --argjson d "${d:-0}" \
+    '{load1: ([.load1 // 0, ($l | tonumber? // 0)] | max), mem_mb: ([.mem_mb // 0, $m] | max), disk_pct: ([.disk_pct // 0, $d] | max)}' \
+    <<< "$(session_get "$1" res_peak | grep . || echo '{}')" 2>/dev/null)"
 }
 
 # _session_cost <key>   {cost, tokens} so far, from the runner's
@@ -879,7 +904,7 @@ sessions_pause() {
     key="$(basename "$f" .json)"
     [ "$(session_get "$key" state)" = active ] || continue
     if ! _session_lock "$key"; then echo "WARN: ${key} is busy; not paused" >&2; continue; fi
-    if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"
+    if session_stop "$key" "kill switch"; then session_set "$key" state paused; echo "paused ${key}"
     else echo "ERROR: could not stop ${key}" >&2; fi
     _session_unlock "$key"
   done
@@ -974,7 +999,7 @@ session_pause() {
   local key="$1"
   _session_lock "$key" || { echo "ERROR: ${key} is busy; try again in a moment" >&2; return 1; }
   if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" != 1 ]; then
-    if session_stop "$key"; then session_set "$key" state paused; echo "paused ${key}"
+    if session_stop "$key" "paused on request"; then session_set "$key" state paused; echo "paused ${key}"
     else _session_unlock "$key"; echo "ERROR: could not stop ${key}" >&2; return 1; fi
   else
     _session_unlock "$key"; echo "ERROR: ${key} is not idle; pause it after the turn ends" >&2; return 1
@@ -982,10 +1007,39 @@ session_pause() {
   _session_unlock "$key"
 }
 
-# session_stop <key>   Save the runner's work as a patch, then delete the runner.
-# Resume and recovery apply it with `git apply --index`.
+# _session_turn_log <key> [cost-json]   Close the open turn's clock, once per turn:
+# one line in <key>.turns.jsonl with its seconds and the cost so far.
+_session_turn_log() {
+  local s n now; s="$(session_get "$1" turn_started)"; n="$(session_get "$1" turns)"; now="$(date +%s)"
+  [[ "$s" =~ ^[0-9]+$ ]] || return 0
+  [ "$(session_get "$1" turn_logged)" = "$s" ] && return 0
+  jq -nc --argjson s "$s" --argjson e "$now" --argjson n "${n:-0}" --argjson c "${2:-null}" \
+    '{turn: $n, start: $s, end: $e, secs: ($e - $s), cost_so_far: ($c.cost // null), tokens_so_far: ($c.tokens // null)}' \
+    >> "${SESSION_DIR}/$1.turns.jsonl" 2>/dev/null || true
+  session_set "$1" turn_logged "$s" turn_ended_at "$now"
+}
+
+# _session_usage_close <key> <reason>   At the end of a runner's life (each resume is
+# a new key): when and why it ended, and its runner, busy and idle seconds.
+_session_usage_close() {
+  local now up busy b; now="$(date +%s)"; b="$(session_get "$1" booted_at)"
+  [ -n "$(session_get "$1" stopped_at)" ] && return 0
+  [ "$(session_get "$1" turn_open)" = 1 ] && _session_turn_log "$1"
+  if [[ "$b" =~ ^[0-9]+$ ]]; then
+    up=$(( now - b ))
+    busy="$(jq -s 'map(.secs) | add // 0' "${SESSION_DIR}/$1.turns.jsonl" 2>/dev/null || echo 0)"
+    [ "${busy:-0}" -le "$up" ] || busy="$up"
+    session_set "$1" stopped_at "$now" stop_reason "$2" runner_s "$up" busy_s "${busy:-0}" idle_s "$(( up - ${busy:-0} ))"
+  else
+    session_set "$1" stopped_at "$now" stop_reason "$2"
+  fi
+}
+
+# session_stop <key> [reason]   Save the runner's work as a patch, then delete the runner.
+# Resume and recovery apply it with `git apply --index`. reason: idle, kill switch, cost cap, stopped, ...
 session_stop() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
+  _session_usage_close "$key" "${2:-stopped}"
   # First, so a boot still in progress sees it and takes its own runner down.
   session_set "$key" state stopped
   _session_save "$key"
