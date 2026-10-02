@@ -328,9 +328,9 @@ _snapshot_runner_row() {
 _snapshot_sessions() {
   local now="$1" f tmp; tmp="$(mktemp -d)"
   # Only a live session needs its own shell (it probes the runner over ssh).
-  for f in "$SESSION_DIR"/agent-*.json; do
+  # One jq over every record finds the live ones; a session_live per file was a jq each.
+  for f in $(jq -r 'select(.state == "starting" or .state == "active" or .state == "wrapping") | input_filename' "$SESSION_DIR"/agent-*.json 2>/dev/null); do
     [ -f "$f" ] || continue
-    session_live "$(basename "$f" .json)" || continue
     ( _snapshot_session_row "$f" "$now" > "${tmp}/$(basename "$f")" 2>/dev/null ) &
   done
   # The rest in one process: a shell and several jq per row took 11 s at 500 sessions.
@@ -366,7 +366,7 @@ for n in os.listdir(d):
         req = ""
     md = os.path.join(d, key + ".media"); media = []
     if os.path.isdir(md):
-        media = sorted(({"at": int(os.path.getmtime(os.path.join(md, m))), "name": m} for m in os.listdir(md) if media_re.match(m)), key=lambda x: x["at"])
+        media = sorted(({"at": int(os.path.getmtime(os.path.join(md, m))), "name": m} for m in os.listdir(md) if media_re.match(m)), key=lambda x: (x["at"], x["name"]))
     rec.update(agent=None, agent_alive=False, request=req, media=media)
     print(json.dumps(rec))
 ' "$SESSION_DIR"
