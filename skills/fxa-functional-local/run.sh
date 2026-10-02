@@ -1,7 +1,32 @@
 #!/usr/bin/env bash
 # Run one functional spec on the local stack with video. See SKILL.md.
 #   run.sh <spec path under packages/functional-tests> [test title filter]
+#   run.sh --bg <spec> [filter]   start it in the background; a Bash call waits 10 min at most
+#   run.sh wait [seconds]         wait for the background run (540 s at most): its result,
+#                                 "still running" (exit 75), or that it died (exit 4)
 set -u
+job="${FXA_FUNCTIONAL_JOB_DIR:-/workspace/.fxa-functional-job}"
+running() { [ -f "${job}/pid" ] && [ ! -f "${job}/rc" ] && kill -0 "$(cat "${job}/pid")" 2>/dev/null; }
+if [ "${1:-}" = --bg ]; then
+  shift; [ -n "${1:-}" ] || { echo "usage: run.sh --bg <spec> [title filter]" >&2; exit 2; }
+  running && { echo "a background run is still going; use: bash $0 wait" >&2; exit 2; }
+  rm -rf "$job"; mkdir -p "$job"
+  # The exit code goes to a file: wait reads it, and tells a finished run from a dead one.
+  # setsid: its own process group, so the end of this Bash call does not take it down (macOS has none).
+  nohup $(command -v setsid) bash -c 'bash "$0" "$@" > "'"$job"'/log" 2>&1; echo $? > "'"$job"'/rc"' "$0" "$@" </dev/null >/dev/null 2>&1 &
+  echo $! > "${job}/pid"; date +%s > "${job}/started"
+  echo "started in the background. Wait for it with: bash $0 wait"
+  exit 0
+fi
+if [ "${1:-}" = wait ]; then
+  [ -f "${job}/pid" ] || { echo "no background run; start one with: bash $0 --bg <spec> [filter]" >&2; exit 2; }
+  limit="${2:-540}"; t0=$(date +%s)
+  while running && [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do sleep 5; done
+  ran=$(( $(date +%s) - $(cat "${job}/started" 2>/dev/null || echo "$t0") ))
+  if [ -f "${job}/rc" ]; then grep -E '^(PASS|FAIL|video:|no video:|[0-9]+ video)' "${job}/log"; exit "$(cat "${job}/rc")"; fi
+  if running; then echo "still running after ${ran}s. Last line: $(tail -1 "${job}/log" | cut -c1-200). Call: bash $0 wait"; exit 75; fi
+  echo "the run died after ${ran}s without a result. Last lines:"; tail -5 "${job}/log"; exit 4
+fi
 spec="${1:?usage: run.sh <spec> [title filter]}"; filter="${2:-}"
 ft=/workspace/packages/functional-tests out=/workspace/artifacts/functional media=/workspace/.fxa-auto-media
 [ -f "${ft}/${spec}" ] || { echo "no spec at ${ft}/${spec}" >&2; exit 2; }

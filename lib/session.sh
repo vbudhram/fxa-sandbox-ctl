@@ -367,6 +367,8 @@ session_idle_sweep() {
     [ "$(jq -r '.handoff // ""' "$f")" = done ] || [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "$idle" ] || continue
     # An open desktop is a person at work, even with no agent turn.
     if _session_desktop_in_use "$key"; then session_set "$key" last_activity "$now"; continue; fi
+    # So is a test or verify run the agent left in the background (run.sh --bg).
+    if _session_job_running "$key"; then session_set "$key" last_activity "$now"; continue; fi
     # Notes the last turn did not update: one quiet turn writes them, and the next sweep pauses.
     if [ "$(jq -r '.notes_stale // ""' "$f")" = 1 ] && [ -z "$(jq -r '.handoff // ""' "$f")" ] && [ "$(jq -r '.runtime // "claude"' "$f")" = claude ]; then
       if _session_lock "$key"; then
@@ -386,6 +388,13 @@ session_idle_sweep() {
     fi
     _session_unlock "$key"
   done
+}
+
+# _session_job_running <key>   A Playwright or fxa-verify run younger than 2 h on the
+# runner. Older is taken as hung, so it cannot hold a runner up. [p]: pgrep must not match this script.
+_session_job_running() {
+  _session_sh "$(worktree_branch_for "$1")" 'for p in $(pgrep -f "[p]laywright test|[f]xa-verify/verify.sh"); do
+      [ "$(ps -o etimes= -p "$p" | tr -d " ")" -lt 7200 ] 2>/dev/null && exit 0; done; exit 1' >/dev/null 2>&1
 }
 
 # session_prune   Retention: delete what a session left on the host (its prompt and

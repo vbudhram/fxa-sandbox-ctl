@@ -16,6 +16,23 @@ It runs one worker and no retries, so a failure is a real failure, and prints
 PASS or FAIL with the video paths. A trace is kept on failure under
 /workspace/artifacts/functional/.
 
+## A run longer than 10 minutes
+
+A Bash call waits 10 minutes at most. A whole spec file, or a first run that
+starts the stack, can take longer. Start it in the background, then wait:
+
+    bash ~/.claude/skills/fxa-functional-local/run.sh --bg tests/settings/changePassword.spec.ts
+    bash ~/.claude/skills/fxa-functional-local/run.sh wait
+
+`wait` returns within 9 minutes:
+
+- exit 0 or 1: the run ended. It prints PASS or FAIL and the video lines.
+- exit 75: still running. Call `wait` again.
+- exit 4: the run died without a result. It prints the last log lines.
+
+Keep calling `wait` in the same turn. Do not end the turn while the run goes on,
+and do not write your own `sleep` loop.
+
 ## Read a trace
 
 Use `trace.sh` after a local spec fails, or when a red CI run put traces in

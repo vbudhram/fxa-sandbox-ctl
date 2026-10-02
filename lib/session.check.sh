@@ -382,6 +382,15 @@ session_set agent-thr1 state active handoff "" notes_stale 1
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
 session_idle_sweep >/dev/null 2>&1
 check "a handoff that cannot start does not hold the pause off" "paused agent-thr1" "$(session_idle_sweep 2>/dev/null)"
+# A test the agent left running in the background holds the pause off; none, and it pauses.
+session_set agent-thr1 state active handoff done notes_stale 0
+jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
+_session_sh() { case "$2" in *laywright*) return 0 ;; *) return 1 ;; esac; }
+check "a running test run keeps it up" "|active" "$(session_idle_sweep 2>/dev/null)|$(session_get agent-thr1 state)"
+session_set agent-thr1 handoff done
+jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
+_session_sh() { return 1; }
+check "with no run left it pauses" "paused agent-thr1" "$(session_idle_sweep 2>/dev/null)"
 
 # Boot timings: each step lasts until the next starts; a repeated label is one step.
 printf '%s\n' '#t0	1790000000.000' '0.4	Restoring x from the Firecracker snapshot' '2.6	slot 1 ip=10.42.16.11 restore_ms=185 ssh_ms=2228' \

@@ -124,15 +124,17 @@ checks changes an earlier run left on the slot, so read `git status` first.
 - One auth test: `yarn test <spec> -t "<name>" --verbose` from
   `packages/fxa-auth-server`.
 - Never run `nx reset`. It destroys the cache and slows every later step.
-- If one step runs longer than 10 minutes, stop it and say in your handoff that
-  CI covers it. CI runs lint and the full suite anyway.
-- Run a long command in the foreground, with a Bash timeout of up to 600000 ms.
-  Do not start it in the background and then wait in a loop such as
-  `until grep -q DONE out; do sleep 5; done`. That loop does not see the
-  command fail, so it waits until the Bash call times out at 10 minutes.
-  Agents lost 43 minutes this way. If you must wait on a background job, stop
-  the loop when the job ends too:
-  `while kill -0 "$PID" 2>/dev/null && ! grep -q DONE out; do sleep 5; done`.
+- If lint or a unit suite runs longer than 10 minutes, stop it and say in your
+  handoff that CI covers it. CI runs lint and the full suite anyway. This does
+  not apply to a functional test the engineer asked for.
+- A Bash call waits 10 minutes at most. Run a command that ends sooner in the
+  foreground, with a timeout of up to 600000 ms.
+- For a functional run that can take longer, use
+  `run.sh --bg <spec> [filter]`, then `run.sh wait` until it gives the result
+  (see `/fxa-functional-local`). `wait` returns at once when the run ends or
+  dies. Keep waiting in the same turn: the session pauses when it is idle.
+- Never write your own wait loop, such as `until grep -q DONE out; do sleep 5; done`.
+  It does not see the job die, so it waits until the 10-minute timeout.
 - Before the handoff, run `/fxa-unslop`. It checks your tests, leftovers,
   comments and PR body against what reviewers flag most often.
 
