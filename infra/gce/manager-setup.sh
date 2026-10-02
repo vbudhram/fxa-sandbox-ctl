@@ -12,7 +12,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 say "packages"
 apt-get update -qq
-apt-get install -y -qq git jq tmux rsync curl ca-certificates python3 python3-venv unzip build-essential openssl >/dev/null
+apt-get install -y -qq git jq tmux rsync curl ca-certificates python3 python3-venv unzip build-essential openssl sqlite3 >/dev/null
 if ! command -v gh >/dev/null; then
   install -d -m 0755 /etc/apt/keyrings
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg

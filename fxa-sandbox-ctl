@@ -44,6 +44,7 @@ source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/lessons.sh"
 source "${SCRIPT_DIR}/lib/alerts.sh"
+source "${SCRIPT_DIR}/lib/db.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
@@ -2354,7 +2355,7 @@ cmd_session() {
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     # The alerts ride on the sweep the bot runs every minute, once an hour; their lines go to stderr, as the bot reads "paused" lines.
-    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true ;;
+    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true; db_backup >&2 || true ;;
     prune) session_prune ;;
     times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
       (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
@@ -2466,6 +2467,7 @@ main() {
     errors)     cmd_errors "$@" ;;
     lessons)    cmd_lessons "$@" ;;
     alerts)     alerts_check ;;
+    db)         cmd_db "$@" ;;
     help|--help|-h)
       usage
       ;;
