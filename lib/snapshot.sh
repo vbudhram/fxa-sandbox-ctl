@@ -212,7 +212,7 @@ snapshot_stats_json() {
         median_min: (map(.wall_seconds // 0) | med / 60 | round),
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline
 }
 
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the
@@ -234,11 +234,30 @@ _stats_add_rows() {
       | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
           min: ($s.minutes // null), model: "", pr: ((.pr_url // "") != ""), who: (.owner_name // null),
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
-          backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null) })' 2>/dev/null || echo '[]')"
+          backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),
+          compute_usd: (.compute_usd | n), verify_runs: (.verify_runs | n), verify_full: (.verify_full | n), verify_s: (.verify_s | n),
+          verify_fail_runs: (.verify_fail_runs | n), stack_starts: (.stack_starts | n), stack_s: (.stack_s | n), stack_fails: (.stack_fails | n) })' 2>/dev/null || echo '[]')"
   jobs='[]'
   [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
   jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson l "$llm" '.rows += $s + $j | .llm = $l'
+}
+
+# The pipeline's passes by day (from passes.jsonl), and each ticket's wait from
+# first queued to first run (queued-at files against the run log).
+_stats_add_pipeline() {
+  local passes='[]' waits='[]' f k q r
+  [ -s "${PIPE_STATE_DIR}/passes.jsonl" ] && passes="$(jq -sc 'group_by(.at | todate | .[0:10]) | map({day: (.[0].at | todate | .[0:10]),
+      passes: length, work: (map(select(.work)) | length), max_queued: (map(.queued) | max), inflight: (last | .inflight),
+      awaiting: (last | .awaiting)}) | .[-14:]' "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || echo '[]')"
+  for f in "${PIPE_STATE_DIR}"/*.queued-at; do
+    [ -f "$f" ] || continue
+    k="$(basename "$f" .queued-at)"; q="$(tr -dc 0-9 < "$f")"
+    r="$(jq -r --arg k "$k" 'select(.issue == $k) | .recorded_at' "$PIPE_RUNS_FILE" 2>/dev/null | sort | head -1)"
+    [ -n "$q" ] && [ -n "$r" ] && waits="$(jq -c --arg k "$k" --argjson q "$q" --arg r "$r" '. + [{key: $k, hours: ((($r | fromdate? // $q) - $q) / 3600 | . * 10 | round / 10)}]' <<< "$waits")"
+  done
+  jq -c --argjson p "${passes:-[]}" --argjson w "$waits" '.pipeline = {days: $p, waits: ($w | map(select(.hours >= 0))),
+    retried: ([.tickets[]? | select((.attempts // 0) > 1)] | length), tickets: (.tickets | length)}'
 }
 
 # Fix attempts and feedback rounds live in the pipeline's state files.

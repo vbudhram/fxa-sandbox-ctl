@@ -14,7 +14,7 @@ while [ $# -gt 0 ]; do
   case "$1" in --run) RUN=1 ;; --types) TYPES=1 ;; --no-types) TYPES=0 ;; --no-lint) LINT=0 ;; --plan) PLAN="${2:?--plan needs a file}"; shift ;; --revert) REVERT=1 ;; --failed) FAILED=1 ;; *) files+=("$1") ;; esac
   shift
 done
-given=${#files[@]}
+given=${#files[@]} VSTART=$(date +%s)
 if [ "${#files[@]}" -eq 0 ]; then
   base="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)"
   mapfile -t files < <({ git diff --name-only --diff-filter=d "$base"; git ls-files -o --exclude-standard; } \
@@ -331,4 +331,7 @@ note=""; [ "$FAILED" = 1 ] && note=" (reran ${#plan[@]} failed row(s); ${#kept_r
 { echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}${note}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt
 { for i in "${!plan[@]}"; do printf '%s\t%s\t%s\n' "${results[$i]%% *}" "${plan[$i]}" "${results[$i]}"; done
   for r in ${kept_rows[@]+"${kept_rows[@]}"}; do printf '%s\n' "$r"; done; } > "$ROWS"
+# One line per run, for the host's metrics: what ran, what failed, how long.
+printf '{"at":%s,"mode":"%s","rows":%s,"fail":%s,"secs":%s}\n' "$(date +%s)" "$([ "$FAILED" = 1 ] && echo failed || echo full)" \
+  "${#plan[@]}" "$(printf '%s\n' "${results[@]}" | grep -c '^FAIL')" "$(( $(date +%s) - VSTART ))" >> /workspace/.fxa-verify-runs.jsonl 2>/dev/null || true
 exit "$fail"

@@ -43,6 +43,7 @@ source "${SCRIPT_DIR}/lib/circleci.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/lessons.sh"
+source "${SCRIPT_DIR}/lib/alerts.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
@@ -1343,6 +1344,8 @@ cmd_precheck() {
   # Two Jira reads per key were slow in series. xargs -P fans them out, since bash
   # 3.2 has no `wait -n`. Only a new or changed key prints a line.
   local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c .)"
+  # When each ticket first entered the queue, for the queue wait on the Stats page.
+  local qk; for qk in $queue; do [[ "$qk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ ! -f "${PIPE_STATE_DIR}/${qk}.queued-at" ] && date +%s > "${PIPE_STATE_DIR}/${qk}.queued-at"; done
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
@@ -1350,11 +1353,17 @@ cmd_precheck() {
       | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
 
   pipeline_unlock >/dev/null
+  # One line per pass: the queue's size and what the pass found, for the Stats page.
+  local awaiting_n inflight_n; awaiting_n="$(printf '%s\n' $done_keys | grep -c . || true)"; inflight_n="$(jira_inflight_keys | grep -c . || true)"
+  jq -nc --argjson q "$queue_n" --argjson a "$awaiting_n" --argjson i "$inflight_n" --argjson p "$inflight_pr" --argjson r "$infra" \
+    --argjson m "$merged_n" --argjson x "$rejected_n" --argjson w "$work" \
+    '{at: (now | floor), queued: $q, awaiting: $a, inflight: $i, with_pr: $p, red_infra: $r, merged: $m, rejected: $x, work: ($w == 1)}' \
+    >> "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || true
   local pass=""
   [ "$merged_n" -gt 0 ] && pass="${pass}; this pass: ${merged_n} merged"
   [ "$rejected_n" -gt 0 ] && pass="${pass:-; this pass: }${pass:+, }${rejected_n} rejected"
   if [ "$work" = 0 ]; then
-    echo "quiet: ${queue_n} queued ($(pipeline_holding_new && echo 'newtickets off' || echo 'all skipped, unchanged')), $(printf '%s\n' $done_keys | grep -c .) awaiting review, $(jira_inflight_keys | grep -c .) in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
+    echo "quiet: ${queue_n} queued ($(pipeline_holding_new && echo 'newtickets off' || echo 'all skipped, unchanged')), ${awaiting_n} awaiting review, ${inflight_n} in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
   else
     [ -n "$info" ] && printf '%s\n' "$info"
   fi
@@ -2344,7 +2353,8 @@ cmd_session() {
       _session_sh "$(worktree_branch_for "$2")" 'cat /workspace/.fxa-test-plan.json 2>/dev/null' 2>/dev/null | head -c 20000 | jq -c . 2>/dev/null || echo null; } ;;
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
-    idle-sweep) session_idle_sweep ;;
+    # The alerts ride on the sweep the bot runs every minute, once an hour; their lines go to stderr, as the bot reads "paused" lines.
+    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true ;;
     prune) session_prune ;;
     times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
       (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
@@ -2455,6 +2465,7 @@ main() {
       esac ;;
     errors)     cmd_errors "$@" ;;
     lessons)    cmd_lessons "$@" ;;
+    alerts)     alerts_check ;;
     help|--help|-h)
       usage
       ;;

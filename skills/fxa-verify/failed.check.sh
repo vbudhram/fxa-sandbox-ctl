@@ -24,6 +24,7 @@ check "only the failed row ran" "no|yes" "$([ -e "$tmp/ran-a" ] && echo yes || e
 check "it passes now, so exit 0" 0 "$rc"
 check "the verdict keeps the passed and CI rows and says it was a rerun" "1|PASS pkg-a|CI|PASS pkg-b" \
   "$(head -1 "$tmp/.fxa-verify-verdict.txt" | grep -c 'reran 1 failed row(s); 2 kept')|$(grep -o '^PASS pkg-a' "$tmp/.fxa-verify-verdict.txt")|$(grep -o '^CI' "$tmp/.fxa-verify-verdict.txt")|$(grep -o '^PASS pkg-b' "$tmp/.fxa-verify-verdict.txt")"
+check "the run is recorded for the host's metrics" '"mode":"failed","rows":1,"fail":0' "$(grep -o '"mode":"failed","rows":1,"fail":0' "$tmp/.fxa-verify-runs.jsonl")"
 check "a second --failed finds nothing to rerun" "Nothing failed in the last run." "$(bash "$tmp/verify.sh" --failed 2>&1 | tail -1)"
 rm -f "$tmp/.fxa-verify-rows.tsv"
 check "with no earlier run it says so" 2 "$(bash "$tmp/verify.sh" --failed >/dev/null 2>&1; echo $?)"

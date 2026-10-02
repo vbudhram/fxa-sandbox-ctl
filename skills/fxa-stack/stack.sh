@@ -25,6 +25,12 @@ status() {
   return "$down"
 }
 
+# rec <action> <t0> <rc>   One line per stack start or restart, for the host's metrics.
+rec() {
+  printf '{"at":%s,"action":"%s","secs":%s,"ok":%s}\n' "$(date +%s)" "$1" "$(( $(date +%s) - $2 ))" "$([ "$3" = 0 ] && echo true || echo false)" \
+    >> "${FXA_WORKSPACE:-/workspace}/.fxa-stack-times.jsonl" 2>/dev/null || true
+}
+
 # check_for <name>   The health check of a service, by the first word of its name.
 check_for() { awk -F'|' -v n="$1" '{ split($1, w, " ") } w[1] == n { print $2 }' <<< "$CHECKS"; }
 
@@ -48,12 +54,14 @@ core_up() { http http://localhost:9000/__heartbeat__ && http http://localhost:30
 ensure() {
   if core_up; then echo "stack already up"; status; return 0; fi
   echo "starting the stack with fxa-start (about 2 minutes)..."
+  local t0; t0=$(date +%s)
   source /etc/agent-env.sh 2>/dev/null
   fxa-start > /tmp/fxa-start.log 2>&1 || echo "fxa-start exited non-zero; see /tmp/fxa-start.log"
   local i
   for i in $(seq 40); do core_up && break; sleep 3; done
   status || echo "(some optional services are down; bash $0 diagnose shows why)"
-  core_up || { echo "auth, content, or settings is down; run: bash $0 diagnose"; return 1; }
+  core_up || { rec start "$t0" 1; echo "auth, content, or settings is down; run: bash $0 diagnose"; return 1; }
+  rec start "$t0" 0
 }
 
 diagnose() {
@@ -145,7 +153,7 @@ case "${1:-status}" in
   ensure) ensure ;;
   diagnose) diagnose ;;
   account) account "${2:-}" ;;
-  restart) shift; restart "$@" ;;
+  restart) shift; t0=$(date +%s); restart "$@"; rc=$?; rec "restart $1" "$t0" "$rc"; exit "$rc" ;;
   wait) shift; wait_up "$@" ;;
   *) echo "usage: $0 status|ensure|diagnose|account <state>|restart <service> [KEY=VAL...]|wait [service...]" >&2; exit 2 ;;
 esac

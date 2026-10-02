@@ -996,7 +996,10 @@ agent_prewarm_stack() {
   # nohup + setsid, so fxa-start outlives the exec that started it.
   vm_exec "$name" sudo -u agent bash -c '
     cd /workspace || exit 1
-    nohup setsid bash -c "source /etc/agent-env.sh && fxa-start" \
+    # Timed until auth answers (5 min at most), into the same record stack.sh writes.
+    nohup setsid bash -c "t0=\$(date +%s); source /etc/agent-env.sh && fxa-start; ok=false
+      for i in \$(seq 100); do curl -sf -o /dev/null --max-time 3 http://localhost:9000/__heartbeat__ && { ok=true; break; }; sleep 3; done
+      echo \"{\\\"at\\\":\$(date +%s),\\\"action\\\":\\\"prewarm\\\",\\\"secs\\\":\$(( \$(date +%s) - t0 )),\\\"ok\\\":\$ok}\" >> /workspace/.fxa-stack-times.jsonl" \
       > /workspace/.fxa-auto-stack-start.log 2>&1 < /dev/null &
     disown $! 2>/dev/null || true
   ' >/dev/null 2>&1 || return 1

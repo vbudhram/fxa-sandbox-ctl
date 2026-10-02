@@ -820,20 +820,25 @@ session_review_ack() {
 # _session_end_facts <key>   What a turn's end needs, in one ssh: the cost so
 # far as {cost, tokens}, a tab, then the changed-file count (as _session_changes).
 _session_end_facts() {
-  local t n cost; t="$(mktemp)"
+  local t n cost b; t="$(mktemp)"
+  # Only this runner's verify runs and stack starts: a resume brings back the earlier runner's files.
+  b="$(session_get "$1" booted_at | tr -dc 0-9)"; b="${b:-0}"
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
     printf "@@changes %s\n" "$(cd /workspace && '"$_SESSION_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
     printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"
-    printf "@@res %s %s %s\n" "$(cut -d" " -f1 /proc/loadavg)" "$(free -m | awk "/^Mem:/ {print \$3}")" "$(df --output=pcent /workspace 2>/dev/null | tail -1 | tr -dc 0-9)"' > "$t" 2>/dev/null || true
+    printf "@@res %s %s %s\n" "$(cut -d" " -f1 /proc/loadavg)" "$(free -m | awk "/^Mem:/ {print \$3}")" "$(df --output=pcent /workspace 2>/dev/null | tail -1 | tr -dc 0-9)"
+    printf "@@vr %s\n" "$(jq -rs "map(select(.at >= '"$b"')) | [length, (map(select(.mode == \"full\")) | length), (map(.secs) | add // 0), (map(select(.fail > 0)) | length)] | @tsv" /workspace/.fxa-verify-runs.jsonl 2>/dev/null)"
+    printf "@@st %s\n" "$(jq -rs "map(select(.at >= '"$b"')) | [length, (map(.secs) | add // 0), (map(select(.ok | not)) | length)] | @tsv" /workspace/.fxa-stack-times.jsonl 2>/dev/null)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
   # The notes ride in the same ssh, saved at every turn end: a crash or the runner's time limit loses none.
   grep '^@@notes ' "$t" | tail -1 | cut -c9- | openssl base64 -d -A > "${t}.n" 2>/dev/null || true
   _thread_save_notes "$1" "${t}.n"; rm -f "${t}.n"
   session_set "$1" round_fixed "$(sed -n 's/^@@fixed *\([0-9]*\)$/\1/p' "$t" | tail -1)"
   _session_res_peaks "$1" "$(sed -n 's/^@@res \([0-9.]* [0-9]* [0-9]*\)$/\1/p' "$t" | tail -1)"
-  grep -v '^@@changes \|^@@notes \|^@@fixed \|^@@res ' "$t" > "${t}.j" || true
+  _session_work_times "$1" "$(grep '^@@vr ' "$t" | tail -1 | cut -c6-)" "$(grep '^@@st ' "$t" | tail -1 | cut -c6-)"
+  grep -v '^@@changes \|^@@notes \|^@@fixed \|^@@res \|^@@vr \|^@@st ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   rm -f "$t" "${t}.j"
@@ -848,6 +853,19 @@ _session_res_peaks() {
   session_set "$1" res_peak "$(jq -c --arg l "$l" --argjson m "${m:-0}" --argjson d "${d:-0}" \
     '{load1: ([.load1 // 0, ($l | tonumber? // 0)] | max), mem_mb: ([.mem_mb // 0, $m] | max), disk_pct: ([.disk_pct // 0, $d] | max)}' \
     <<< "$(session_get "$1" res_peak | grep . || echo '{}')" 2>/dev/null)"
+}
+
+# _session_work_times <key> "<runs> <full> <secs> <failed>" "<starts> <secs> <failed>"
+# This runner's verify runs and stack starts so far, from its own records.
+_session_work_times() {
+  local a b c d
+  if [[ "$2" =~ ^[0-9]+[[:space:]][0-9]+[[:space:]][0-9]+[[:space:]][0-9]+$ ]]; then
+    read -r a b c d <<< "$2"; session_set "$1" verify_runs "$a" verify_full "$b" verify_s "$c" verify_fail_runs "$d"
+  fi
+  if [[ "$3" =~ ^[0-9]+[[:space:]][0-9]+[[:space:]][0-9]+$ ]]; then
+    read -r a b c <<< "$3"; session_set "$1" stack_starts "$a" stack_s "$b" stack_fails "$c"
+  fi
+  return 0
 }
 
 # _session_cost <key>   {cost, tokens} so far, from the runner's
@@ -1039,7 +1057,13 @@ _session_usage_close() {
     up=$(( now - b ))
     busy="$(jq -s 'map(.secs) | add // 0' "${SESSION_DIR}/$1.turns.jsonl" 2>/dev/null || echo 0)"
     [ "${busy:-0}" -le "$up" ] || busy="$up"
-    session_set "$1" stopped_at "$now" stop_reason "$2" runner_s "$up" busy_s "${busy:-0}" idle_s "$(( up - ${busy:-0} ))"
+    # Compute at list price. A Firecracker slot is a quarter of its host:
+    # ponytail: assumes all slots busy, so it is the low end; divide by busy slot-seconds for the real share.
+    local rate; case "$(session_get "$1" boot_backend)" in
+      firecracker) rate="$(awk -v h="${FXA_FC_HOURLY_USD:-1.12}" -v n="${FXA_FC_SLOTS:-4}" 'BEGIN { print h / n }')" ;;
+      *) rate="${FXA_GCE_HOURLY_USD:-0.18}" ;; esac
+    session_set "$1" stopped_at "$now" stop_reason "$2" runner_s "$up" busy_s "${busy:-0}" idle_s "$(( up - ${busy:-0} ))" \
+      compute_usd "$(awk -v s="$up" -v r="$rate" 'BEGIN { printf "%.4f", s * r / 3600 }')"
   else
     session_set "$1" stopped_at "$now" stop_reason "$2"
   fi

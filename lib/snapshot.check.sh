@@ -33,4 +33,15 @@ check "old paused sessions stay listed" '["agent-new1","agent-old1"]' "$(
   _snapshot_sessions "$now" | jq -c 'map(.key)')"
 rm -rf "$sd"
 
+# The pipeline block: passes by day, and the wait from queued to the first run.
+pd="$(mktemp -d)"; now=$(date +%s)
+printf '%s\n' "{\"at\":$now,\"queued\":5,\"awaiting\":2,\"inflight\":1,\"work\":true}" "{\"at\":$now,\"queued\":7,\"awaiting\":2,\"inflight\":3,\"work\":false}" > "$pd/passes.jsonl"
+echo $(( now - 7200 )) > "$pd/FXA-1.queued-at"
+echo "{\"issue\":\"FXA-1\",\"recorded_at\":\"$(date -u +%FT%TZ)\"}" > "$pd/runs.jsonl"
+out="$(PIPE_STATE_DIR="$pd" PIPE_RUNS_FILE="$pd/runs.jsonl"; eval "$(sed -n '/^_stats_add_pipeline() {/,/^}/p' "$(dirname "$0")/snapshot.sh")"
+  echo '{"tickets":{"FXA-1":{"attempts":2},"FXA-2":{"attempts":1}}}' | _stats_add_pipeline)"
+check "pipeline: a day's passes, work, max queue, last in flight" "2|1|7|3" "$(jq -r '.pipeline.days[0] | "\(.passes)|\(.work)|\(.max_queued)|\(.inflight)"' <<< "$out")"
+check "pipeline: queue wait and retries" "2|1|2" "$(jq -r '.pipeline | "\(.waits[0].hours | round)|\(.retried)|\(.tickets)"' <<< "$out")"
+rm -rf "$pd"
+
 exit "$fail"

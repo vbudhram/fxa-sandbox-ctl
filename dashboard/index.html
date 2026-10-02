@@ -1101,7 +1101,7 @@ function renderStats() {
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Models<span class="note">pipeline runs</span></h2>${group("model").filter(g => g.name).sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><span class="mono">${esc(g.name)}</span><b>${g.rs.length} runs · ${usd(g.usd)}</b></div>`).join("") || `<div class="empty">No model recorded for these rows.</div>`}</div>
     </div>
-    <div class="three">${runnerCard(rows)}${llmCard(st.llm)}</div>`}`);
+    <div class="three">${runnerCard(rows)}${llmCard(st.llm)}${pipelineCard(st.pipeline)}</div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
 }
@@ -1120,6 +1120,12 @@ function runnerCard(rows) {
     <div class="kv"><b>Idle</b><span>${h(up - busy)} h</span></div>
     ${boots.map(([b, m]) => `<div class="kv"><b>Median boot, ${esc(b)}</b><span>${m.toFixed(0)} s</span></div>`).join("")}
     <div class="kv"><b>Peak memory, load, disk</b><span>${peak("mem_mb")} MB · ${peak("load1")} · ${peak("disk_pct")}%</span></div>
+    <div class="kv"><b>Compute, estimated</b><span>${usd(rs.reduce((x, r) => x + (r.compute_usd || 0), 0))}</span></div>
+    ${(() => { const v = rows.filter(r => r.verify_runs != null), vr = v.reduce((x, r) => x + r.verify_runs, 0);
+      return v.length ? `<div class="kv"><b>Verify runs</b><span>${vr} in ${v.length} sessions · ${v.reduce((x, r) => x + (r.verify_full || 0), 0)} full · ${Math.round(v.reduce((x, r) => x + (r.verify_s || 0), 0) / 60)} min · ${v.reduce((x, r) => x + (r.verify_fail_runs || 0), 0)} with a FAIL</span></div>` : ""; })()}
+    ${(() => { const s = rows.filter(r => r.stack_starts); if (!s.length) return "";
+      const n = s.reduce((x, r) => x + r.stack_starts, 0);
+      return `<div class="kv"><b>Stack starts</b><span>${n} · avg ${Math.round(s.reduce((x, r) => x + (r.stack_s || 0), 0) / n)} s · ${s.reduce((x, r) => x + (r.stack_fails || 0), 0)} failed</span></div>`; })()}
     <h2 style="margin-top:var(--s4)">Why they stopped</h2>${stops.map(([k, n]) => `<div class="kv"><b>${esc(k)}</b><span>${n}</span></div>`).join("")}</div>`;
 }
 // LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
@@ -1129,6 +1135,15 @@ function llmCard(l) {
   return `<div class="chart"><h2>LLM spend<span class="note">proxy log, all runs</span></h2>
     <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
+}
+// The pipeline's passes and queue: days from passes.jsonl, waits from queued to first run.
+function pipelineCard(p) {
+  const days = (p?.days ?? []).slice().reverse(), w = (p?.waits ?? []).map(x => x.hours).sort((a, b) => a - b);
+  if (!days.length && !w.length) return `<div class="chart"><h2>Pipeline queue<span class="note">passes</span></h2><div class="empty">No pass recorded yet.</div></div>`;
+  return `<div class="chart"><h2>Pipeline queue<span class="note">passes, all time</span></h2>
+    ${w.length ? `<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>` : ""}
+    <div class="kv"><b>Tickets retried</b><span>${p.retried} of ${p.tickets}</span></div>
+    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.passes} passes · ${d.work} with work · queue up to ${d.max_queued} · ${d.inflight} in flight</span></div>`).join("")}</div>`;
 }
 // Stats filters, remembered per viewer in this browser.
 const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
