@@ -141,21 +141,25 @@ vm_clone() {
   mkdir -p "${LOG_DIR}"
   # One zone holds about two of these; on a stockout move to the next zone in
   # the region and remember where the instance landed.
-  local zone
+  # On a stockout everywhere, the next machine type: FXA_GCE_MACHINE_FALLBACK (Arm, so
+  # the image fits), empty for none. c4a ran out in every us-central1 zone on 2026-10-03.
+  local zone mt
+  for mt in $FXA_GCE_MACHINE_TYPE ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}; do
   for zone in $(_gce_zone_order); do
-    echo "Creating GCE instance '$(vm_name "$name")' (${FXA_GCE_MACHINE_TYPE}, ${zone})..."
+    echo "Creating GCE instance '$(vm_name "$name")' (${mt}, ${zone})..."
     # Only the host key logs in: a project-wide key reaches every VM, and the guest
     # agent gives each metadata key user passwordless sudo.
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
-        --machine-type "$FXA_GCE_MACHINE_TYPE" \
+        --machine-type "$mt" \
         "${image_flags[@]}" \
-        --boot-disk-type hyperdisk-balanced --boot-disk-size 50GB \
+        --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size 50GB \
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
         ${run_limit[@]+"${run_limit[@]}"} \
         --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
         --labels "fxa-agent=${name},fxa-controller=$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | cut -c1-63)" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
+      [ "$mt" = "$FXA_GCE_MACHINE_TYPE" ] || echo "  Created as ${mt}: ${FXA_GCE_MACHINE_TYPE} is stocked out." >&2
       printf '%s' "$zone" > "${LOG_DIR}/${name}.zone"
       printf '%s' "$zone" > "${LOG_DIR}/last-good-zone"
       # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
@@ -163,9 +167,13 @@ vm_clone() {
       return 0
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
-      echo "  ${zone} is stocked out for ${FXA_GCE_MACHINE_TYPE}; trying the next zone." >&2
+      echo "  ${zone} is stocked out for ${mt}; trying the next zone." >&2
       # The zone rides in the log field, so all zones share one error signature.
-      _gce_capacity_error stockout "$name" "zone stocked out for ${FXA_GCE_MACHINE_TYPE}" "zone ${zone}"
+      _gce_capacity_error stockout "$name" "zone stocked out for ${mt}" "zone ${zone}"
+      continue
+    fi
+    # A machine type not offered in a zone (t2a is not in us-central1-c) is a skip, not a failure.
+    if grep -qiE "machineTypes/${mt}' was not found|machine type .*${mt}.* (is not|does not exist)|Invalid value for field 'resource.machineType'" "${LOG_DIR}/${name}-vm.log"; then
       continue
     fi
     # GCP's own transient faults ("Internal error. Please try again") are not ours.
@@ -181,10 +189,15 @@ vm_clone() {
     _gce compute instances delete "$(vm_name "$name")" --zone "$zone" --quiet >/dev/null 2>&1 || true
     cat "${LOG_DIR}/${name}-vm.log" >&2; return 1
   done
-  echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${FXA_GCE_MACHINE_TYPE}." >&2
-  _gce_capacity_error all_zones_out "$name" "every zone is stocked out for ${FXA_GCE_MACHINE_TYPE}" "zones ${FXA_GCE_ZONES}"
+  done
+  local types="$FXA_GCE_MACHINE_TYPE"; [ -n "${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}" ] && types="$types and ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}"
+  echo "ERROR: every zone in FXA_GCE_ZONES (${FXA_GCE_ZONES}) is stocked out for ${types}." >&2
+  _gce_capacity_error all_zones_out "$name" "every zone is stocked out for ${types}" "zones ${FXA_GCE_ZONES}"
   return 1
 }
+
+# _gce_disk_type <machine-type>   Hyperdisk for the families that take only it, else a balanced PD.
+_gce_disk_type() { case "$1" in c4a-*|c4-*|c4d-*|n4-*|c3-*|c3d-*|x4-*) echo hyperdisk-balanced ;; *) echo pd-balanced ;; esac; }
 
 # _gce_capacity_error <kind> <runner> <message> <detail>   Capacity failures go to the
 # error log, so the dashboard counts them; a session runner's key is its name.
