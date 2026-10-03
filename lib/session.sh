@@ -434,6 +434,7 @@ session_prune() {
     key="$(basename "$f" .json)"
     session_live "$key" && continue
     [ "$(jq -r '.last_activity // 0 | floor' "$f" 2>/dev/null || echo 0)" -lt "$cutoff" ] || continue
+    [ -n "$(_session_store)" ] && { gcloud storage rm -q "$(_session_store)/${key}.*" >/dev/null 2>&1 || true; }
     rm -rf "${SESSION_DIR:?}/${key}".* && _session_db_sync "$key" && echo "$key"
   done
   for f in "$SESSION_DIR"/thread-*.json; do
@@ -1140,8 +1141,30 @@ _session_save() {
     local notes; notes="$(mktemp)"
     _session_sh "$name" 'head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null' > "$notes" 2>/dev/null || true
     _thread_save_notes "$key" "$notes"; rm -f "$notes"
+    _session_upload "$key" || true
   fi
   return 0
+}
+
+# The saved work a resume needs lives in the bucket; this disk keeps a copy until prune,
+# so a resume here stays local, and one after a lost disk still has it.
+_SESSION_SAVED="patch bundle full.patch claude.tgz work.tgz"
+_session_store() { printf '%s' "${FXA_SESSION_STORE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/saved}}"; }
+
+# _session_upload <key>   The saved files to the bucket, in one call. A failure leaves them on this disk.
+_session_upload() {
+  local uri n files=(); uri="$(_session_store)"; [ -n "$uri" ] || return 0
+  for n in $_SESSION_SAVED; do [ -s "${SESSION_DIR}/$1.$n" ] && files+=("${SESSION_DIR}/$1.$n"); done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  gcloud storage cp -q "${files[@]}" "${uri}/" >/dev/null 2>&1 \
+    || { errors_record session upload_failed "$1" "_session_upload" "the saved work did not reach ${uri}; it stays on this disk" "" 2>/dev/null || true; return 1; }
+}
+
+# _session_fetch <key>   The saved files from the bucket, when this disk has none of them.
+_session_fetch() {
+  local uri n; uri="$(_session_store)"; [ -n "$uri" ] || return 0
+  for n in $_SESSION_SAVED; do [ -s "${SESSION_DIR}/$1.$n" ] && return 0; done
+  gcloud storage cp -q "${uri}/$1.*" "${SESSION_DIR}/" >/dev/null 2>&1 || true
 }
 
 # _session_review <pr_url>   The PR's open review feedback as context for the

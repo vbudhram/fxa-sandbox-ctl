@@ -9,6 +9,7 @@ check() { # check <name> <want> <got>
 }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 source "$(dirname "$0")/config.sh"
+export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI=""  # no bucket unless a check stubs gcloud
 FXA_SESSION_DIR="$tmp" source "$(dirname "$0")/session.sh"
 
 echo '{"key":"agent-7f3a","state":"starting"}' > "$tmp/agent-7f3a.json"
@@ -522,6 +523,31 @@ check "prune drops proxy calls older than 90 days" "2" "$(jq -r .usd "$tmp/proxy
   check "backup: and tries again on the next sweep" "4" "$(wc -l < "$calls" | tr -d ' ')"
   FXA_SESSION_BACKUP_URI=""; session_backup --now
   check "backup: no bucket, nothing to do" "4" "$(wc -l < "$calls" | tr -d ' ')"
+  exit "$fail" ) || fail=1
+
+# Saved work: up to the bucket after a save, back when this disk has none, gone at prune.
+( calls="$tmp/gs.calls"; bucket="$tmp/bucket"; mkdir -p "$bucket"; rm -f "$calls"
+  export FXA_SESSION_STORE_URI="gs://b/saved"
+  gcloud() { echo "$*" >> "$calls"; [ ! -f "$tmp/gs.fail" ] || return 1
+    case "$2" in cp) shift 3; local dst="${@: -1}"; set -- "${@:1:$#-1}"
+         if [ "${dst#gs://}" != "$dst" ]; then cp "$@" "$bucket/"; else cp "$bucket/$(basename "$1")" "$dst" 2>/dev/null || return 1; fi ;;
+       rm) shift 3; rm -f "$bucket/$(basename "$1")" ;; esac; }
+  errors_record() { echo "$2" >> "$tmp/gs.errors"; }
+  printf 'p' > "$SESSION_DIR/agent-up01.patch"; printf 't' > "$SESSION_DIR/agent-up01.claude.tgz"
+  _session_upload agent-up01
+  check "saved: both files go up in one call" "1|agent-up01.claude.tgz agent-up01.patch" "$(wc -l < "$calls" | tr -d ' ')|$(ls "$bucket" | tr '\n' ' ' | sed 's/ $//')"
+  _session_fetch agent-up01
+  check "saved: no fetch while this disk has them" "1" "$(wc -l < "$calls" | tr -d ' ')"
+  rm -f "$SESSION_DIR/agent-up01".*
+  gcloud() { echo "$*" >> "$calls"; cp "$bucket"/agent-up01.* "${@: -1}"; }
+  _session_fetch agent-up01
+  check "saved: a lost disk gets them back" "p|t" "$(cat "$SESSION_DIR/agent-up01.patch")|$(cat "$SESSION_DIR/agent-up01.claude.tgz")"
+  gcloud() { echo "$*" >> "$calls"; return 1; }
+  check "saved: a failed upload is recorded and fails" "1|upload_failed" "$(_session_upload agent-up01; echo $?)|$(cat "$tmp/gs.errors")"
+  : > "$calls"; _session_upload agent-none
+  check "saved: nothing saved, no call" "0" "$(wc -l < "$calls" | tr -d ' ')"
+  FXA_SESSION_STORE_URI=""; _session_upload agent-up01
+  check "saved: no bucket, no call" "0" "$(wc -l < "$calls" | tr -d ' ')"
   exit "$fail" ) || fail=1
 
 exit "$fail"

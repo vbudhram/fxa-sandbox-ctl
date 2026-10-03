@@ -1916,6 +1916,7 @@ _cmd_session_boot() {
   # Not for !new: it starts from main, so the notes' "built" would be wrong.
   # Only for a session that continues the thread's work: one from main would read "built" for what it does not have.
   [ -n "$from" ] && _thread_ok "$tid" && [ "$(session_get "$key" new)" != 1 ] && [ -s "$(_thread_notes "$tid")" ] && notes="$(_thread_notes "$tid")"
+  [ -n "$from" ] && [ "$fresh_pr" != 1 ] && _session_fetch "$from"
   if [ -n "$from" ] && [ "$fresh_pr" != 1 ] && [ -z "$notes" ]; then
     [ -s "${SESSION_DIR}/${from}.claude.tgz" ] && resume_sid="$(session_get "$from" claude_session_id)"
     _session_valid_sid "$resume_sid" || resume_sid=""
@@ -2200,7 +2201,7 @@ $(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
 cmd_diff() {
   local key="${1:-}"; _session_key "$key" || return 1
   # Paused or stopped: the runner is gone, and stop saved the work as a patch.
-  if ! session_live "$key"; then cat "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || cat "${SESSION_DIR}/${key}.patch" 2>/dev/null || true; return 0; fi
+  if ! session_live "$key"; then _session_fetch "$key"; cat "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || cat "${SESSION_DIR}/${key}.patch" 2>/dev/null || true; return 0; fi
   # The runner holds the work; untracked files matter as much as tracked ones.
   _session_sh "$(worktree_branch_for "$key")" \
     'cd /workspace && git diff "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*" ":(exclude)ai"; git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" ":(exclude)ai" | while read -r f; do git diff --no-index /dev/null "$f"; done; true'

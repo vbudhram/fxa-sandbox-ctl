@@ -8,7 +8,8 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 rc=0
 export FXA_DB="${TMPDIR:-/tmp}/fxa-test-no-store-$$.db"
-export FXA_SESSION_DIR="${TMPDIR:-/tmp}/fxa-test-no-sessions-$$"  # a check that forgets its own never reaches real sessions
+export FXA_SESSION_DIR="${TMPDIR:-/tmp}/fxa-test-no-sessions-$$"
+export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" FXA_DB_BACKUP_URI=""  # empty turns the bucket copies off  # a check that forgets its own never reaches real sessions
 
 run_here() {
   local f bad=0
