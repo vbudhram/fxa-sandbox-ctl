@@ -1987,6 +1987,7 @@ EOF
   check_prerequisites || { session_set "$key" state failed; return 1; }
   local prompt
   if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
+  prompt="${prompt}$(_session_prompt_tail "$dir" "$([ -n "$resume_sid" ] && echo 1 || echo 0)")"
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
   [ -n "$notes" ] && [ -z "$resume_sid" ] && prompt="${prompt}${_SESSION_NOTES_NOTE}"
   [ -n "$review" ] && prompt="${prompt}

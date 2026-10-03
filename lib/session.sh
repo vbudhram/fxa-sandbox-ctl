@@ -56,11 +56,11 @@ _session_first_prompt() {
 - Link each Slack message you cite as [#channel](${FXA_SLACK_URL}/archives/<channel_id>/p<ts without the dot>).
   Read with response_format detailed to get each message's ts."
   cat <<EOF
-You are pairing with an FxA engineer through a Slack thread. Read their message
-in /workspace/.fxa-jira-context.md first, before you write anything. Talk to them
-as "you". Do not mention that file or Jira unless they linked a ticket. The
-runner's operations guide is /etc/vm-agent-guide.md: before you change code,
-start the stack or record anything, read all of it in one call, not in slices.
+You are pairing with an FxA engineer through a Slack thread. Their message, and
+the runner's operations guide, are at the end of this prompt: read both before
+you write anything, and do not read them again from /workspace/.fxa-jira-context.md
+or /etc/vm-agent-guide.md. Talk to them as "you". Do not mention that file or
+Jira unless they linked a ticket.
 
 Investigate first. Before you change code, write a test plan with ${tplan}:
 each behavior and how you will see it work the way a user or client would (a
@@ -141,11 +141,20 @@ _session_resume_prompt() {
 The engineer came back to this thread, so you are on a new runner. This
 conversation and your earlier changes were carried over, commits included: run 'git status',
 'git log origin/main..HEAD' and 'git diff' to see them, and do not start over. If a change did not carry over,
-it is in /workspace/.fxa-resume.patch. The engineer's new message is in
-/workspace/.fxa-jira-context.md; read it, then continue.
+it is in /workspace/.fxa-resume.patch. The engineer's new message is at the end
+of this prompt; read it, then continue.
 
 The same rules as before apply, including the final 'status:' line.
 EOF
+}
+
+# _session_prompt_tail <run dir> <resumed 0|1>   The request (and, on a first turn, the
+# guide) for the end of the prompt. In the prompt, not files to read: a read was a tool call,
+# and a second read put a second copy in the context (93 guide reads in 70 sessions to
+# 2026-10-03). A resumed conversation has the guide from its first turn.
+_session_prompt_tail() {
+  printf "\n\nThe engineer's message, with any ticket, CI failure or review it brought (the same text as /workspace/.fxa-jira-context.md):\n\n%s" "$(cat "$1/.fxa-jira-context.md" 2>/dev/null)"
+  [ "$2" = 1 ] || printf "\n\nThe runner's operations guide (the same text as /etc/vm-agent-guide.md):\n\n%s" "$(vm_guide_build session)"
 }
 
 # _session_history_add <key> <role> <text>   One line of the conversation, kept

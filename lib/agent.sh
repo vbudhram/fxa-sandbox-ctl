@@ -527,6 +527,8 @@ _setup_claude_config() {
     # COPYFILE_DISABLE: macOS tar would add a ._<name> metadata file for each one.
     if COPYFILE_DISABLE=1 tar --dereference -cf "$config_tar" -C "$claude_home" "${skill_excludes[@]}" "${tar_items[@]}" 2>/dev/null \
        && [ -s "$config_tar" ]; then
+      # The subagents runners get (agents/ in this repo, such as fxa-explore), beside the skills.
+      [ -d "${SANDBOX_ROOT}/agents" ] && COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" agents 2>/dev/null
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"

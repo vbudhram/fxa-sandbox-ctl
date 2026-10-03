@@ -72,6 +72,22 @@ Chat sessions do not have it; do not report that it is missing.
     Search the checked-out folders with `grep -rn`. `git grep` across the
     whole tree downloads every file, so add a folder first.
 
+### Reading code without filling your context
+
+Every tool result stays in your context, and every later step reads the whole
+context again. A long session pays for a large result many times: in the week
+to 2026-10-03, the longest 10% of sessions used half of all tokens.
+
+- **Explore in a subagent.** For a search that needs more than about three
+  greps, or for files you will not edit, use the `fxa-explore` subagent (Agent
+  tool). It runs on a faster model and returns a short summary with `file:line`
+  references; only that summary stays in your context.
+- **Find, then read narrowly.** `git grep -n <symbol>` first, then at most about
+  120 lines around the hit with `sed -n A,Bp`. Never `cat` a whole source or
+  config file, and do not read the same range twice.
+- **Keep command output short.** Pipe long output through `head` or `tail`, and
+  for tests use the skills, which print only the failures.
+
 <!-- The host puts guide/session.md or guide/pipeline.md here: sections 2 and 3. -->
 
 ## 4. What the host refuses to ship
@@ -246,7 +262,8 @@ Plugins do not load here. These skills are copied in at launch:
 `/fxa-storybook-capture`, `/fxa-vm-selfcheck`, `/fxa-vm-handoff`,
 `/fxa-test-plan`, `/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
 `/create-pr-description`, `/humanizer`, `/pr-review-typescript`,
-`/quick-review`, `/fxa-save-investigation` and `/fxa-page-shot`. The FxA repo adds its own in
+`/quick-review`, `/fxa-save-investigation`, `/fxa-page-shot` and `/fxa-jira-link`, and the
+`fxa-explore` subagent (above). The FxA repo adds its own in
 `/workspace/.claude/skills`, such as `/fxa-review-quick`, and its rules in
 `/workspace/.claude/rules/`. For FxA code, the repo's rules and skills win.
 

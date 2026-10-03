@@ -561,5 +561,12 @@ out="$(session_idle_sweep 2>/dev/null)"
 check "a day-old pause is stopped as inactive" "1|stopped|inactive" "$(grep -cx 'stopped agent-day1' <<< "$out")|$(session_get agent-day1 state)|$(session_get agent-day1 stop_reason)"
 check "a fresh pause stays paused" "0|paused" "$(grep -c 'agent-day2' <<< "$out")|$(session_get agent-day2 state)"
 
+# The request and the guide travel in the prompt; a resumed turn gets only the request.
+( mkdir -p "$tmp/pt"; printf 'Fix the <<<REQUEST-ab>>> login\n' > "$tmp/pt/.fxa-jira-context.md"; vm_guide_build() { echo "GUIDE $1"; }
+  first="$(_session_prompt_tail "$tmp/pt" 0)"; again="$(_session_prompt_tail "$tmp/pt" 1)"
+  check "prompt: a first turn carries the request and the session guide" "1|1" "$(grep -c 'Fix the <<<REQUEST-ab>>> login' <<< "$first")|$(grep -c '^GUIDE session$' <<< "$first")"
+  check "prompt: a resumed turn carries only the request" "1|0" "$(grep -c 'Fix the' <<< "$again")|$(grep -c 'GUIDE' <<< "$again")"
+  exit "$fail" ) || fail=1
+
 exit "$fail"
 
