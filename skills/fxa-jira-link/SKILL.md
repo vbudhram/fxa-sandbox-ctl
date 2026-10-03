@@ -19,6 +19,24 @@ the code show. Nothing is created until the person reviews it and clicks Create.
 Do not offer when the thread already has a ticket for it (an `FXA-` key), or for a
 question with nothing to do. Offer at most one link in a reply.
 
+## Ask first
+
+A ticket the pipeline can take has every decision made. Before you offer the link,
+list what is still open: the exact wording, which of two approaches, the scope,
+whether tests change. If anything is open, do not offer the link yet. End your reply
+with 1 to 3 questions, the ones that change the ticket most:
+
+```
+QUESTION: What should the heading say?
+OPTION: Sign in or sign up (recommended)
+OPTION: Enter your email to continue
+OPTION: Something else (reply with it)
+```
+
+Put the option you recommend first, ending in " (recommended)". The person taps an
+answer or replies. Then write the ticket with their answers under Decisions, and
+offer the link. When nothing is open, offer the link at once.
+
 ## Pick the type
 
 | Type | When |
@@ -74,7 +92,8 @@ Open questions:
 
 Add `--labels ai-fixme` only when the ticket is ready: one decided approach, every
 heading filled, and "Open questions: None". Creating it then puts it straight into
-the pipeline. Leave the label off, and list the open questions, when any of these hold:
+the pipeline. Leave the label off, and list the open questions, when the person asks
+for the link before deciding, or when any of these hold:
 
 - a decision is open (you would write "maybe", "or", "should we", "TBD")
 - a security issue: never label it; the agent's PR is public

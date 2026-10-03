@@ -8,6 +8,7 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
 export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_URL="http://10.0.0.2:8788"; mkdir -p "$PIPE_STATE_DIR"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+FXA_SESSION_DIR="$tmp/sess" source "$here/session.sh"   # _SESSION_FIN_JQ: questions parse as a turn does
 source "$here/answer.sh"
 export LOG_DIR="$tmp/logs"; mkdir -p "$LOG_DIR"; echo us-central1-b > "$LOG_DIR/fxa-answer.zone"
 _claude_auth_line() { printf 'export ANTHROPIC_BASE_URL=%s\nexport ANTHROPIC_API_KEY=fxl_test%s\n' "$FXA_LLM_PROXY_URL" "$1"; }
@@ -66,4 +67,9 @@ check "prs: a linked PR comes as fenced data" "1|2" "$(_answer_prs "$tmp/q2" | g
 s="$(answer_ask ask-t008 "$tmp/q1" "" 1)"
 check "stream: one step per tool, then the answer" 'Searching for `changePassword`|Reading `password.ts`|answer' "$(jq -r 'if .type == "step" then .text else .type end' <<< "$s" | paste -sd'|' -)"
 check "stream: a tool result that quotes a result line is not the result" "0.21" "$(tail -1 <<< "$s" | jq -r .cost_usd)"
+q='{"type":"result","result":"I found the heading at `en.ftl:3`.\nQUESTION: What should the heading say?\nOPTION: Sign in or sign up (recommended)\nOPTION: Enter your email to continue\nQUESTION: Update the two tests too?\nOPTION: Yes (recommended)\nOPTION: No"}'
+r="$(_answer_result ask-t009 2 "$q")"
+check "question: the text without the control lines" "I found the heading at \`en.ftl:3\`." "$(jq -r .answer <<< "$r")"
+check "question: two groups, as a turn parses them" "2|What should the heading say?|Sign in or sign up (recommended)" "$(jq -r '"\(.question.questions | length)|\(.question.questions[0].q)|\(.question.questions[0].options[0])"' <<< "$r")"
+check "no question: null" "null" "$(_answer_result ask-t010 1 '{"type":"result","result":"Just an answer."}' | jq -c .question)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
