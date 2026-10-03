@@ -5,6 +5,8 @@
 #   vm.sh sys '<cmd>'     run as your own login user, who can sudo (systemctl, journalctl)
 #   vm.sh screen          read the tmux session "main" (read-only, secrets masked)
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
+#   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
+#                         (no commit, no Docker); a scratch folder, removed after
 #   vm.sh ssh             print the ssh command for a person
 # Never prints a secret value: secrets show as present or missing.
 set -euo pipefail
@@ -56,6 +58,18 @@ EOF
     echo 'sudo -u fxa -H tmux capture-pane -p -t main -S -40 | sed "/^\s*$/d" | tail -40' | on_vm | mask ;;
   sync)
     bash "$CTL_ROOT/infra/gce/manager.sh" sync "$P" "$Z" ;;
+  test)
+    # Tracked and new files, not ignored ones (.env, ai/, logs/), as base64 in the script on stdin.
+    { echo 'd=$(mktemp -d) && cd "$d" && base64 -d <<"B64" | tar -xzf -'
+      ( cd "$CTL_ROOT" && git ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$f" ] && printf '%s\n' "$f"; done \
+        | COPYFILE_DISABLE=1 tar -czf - -T - ) | base64
+      echo 'B64'
+      # The git identity and default branch the checks commit with, as the Docker run sets them; scratch only.
+      echo 'export GIT_CONFIG_GLOBAL="$d/.gitconfig"; git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main'
+      # One check file, with its full output, when named; else the whole suite.
+      if [ -n "${2:-}" ]; then printf 'bash %q; rc=$?; cd /; rm -rf "$d"; exit $rc\n' "$2"
+      else echo 'bash skills/fxa-ctl-dev/test.sh here; rc=$?; cd /; rm -rf "$d"; exit $rc'; fi
+    } | on_vm | mask ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
     echo "then: sudo -iu fxa; tmux new -As main" ;;

@@ -2,7 +2,8 @@
 # Run every lib/*.check.sh and skills/*/*.check.sh on this host (macOS) and in an Ubuntu 24.04
 # container (the manager VM's OS). Prints only failures and a summary line.
 #   test.sh            both
-#   test.sh mac|linux  one of them
+#   test.sh mac|here   this host only (here: any OS, as vm.sh test runs it on the manager)
+#   test.sh linux      the Ubuntu container only
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -20,12 +21,13 @@ check_one() {
   return 1
 }
 
+HOST="$( [ "$(uname -s)" = Darwin ] && echo mac || echo linux)"
 run_here() {
   local f bad=0
-  for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" mac || bad=1; done
+  for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" "$HOST" || bad=1; done
   for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/gce/*.sh skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
-  python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL mac: infra/llm-proxy/proxy_test.py"; bad=1; }
-  [ "$bad" = 0 ] && echo "mac: all checks pass" || rc=1
+  python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL $HOST: infra/llm-proxy/proxy_test.py"; bad=1; }
+  [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
 }
 
 run_linux() {
@@ -41,7 +43,7 @@ run_linux() {
 }
 
 case "${1:-both}" in
-  mac) run_here ;;
+  mac|here) run_here ;;
   linux) run_linux ;;
   *) run_here; run_linux ;;
 esac
