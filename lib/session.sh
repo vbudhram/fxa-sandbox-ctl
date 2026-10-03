@@ -368,6 +368,12 @@ session_idle_sweep() {
   for f in "$SESSION_DIR"/agent-*.json; do
     [ -f "$f" ] || continue
     key="$(basename "$f" .json)"
+    # A pause nobody came back to in a day is over: stopped. A reply still resumes it from the saved work.
+    if [ "$(jq -r .state "$f")" = paused ] && [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "${FXA_SESSION_PAUSED_SECONDS:-86400}" ]; then
+      _session_lock "$key" || continue
+      [ "$(session_get "$key" state)" = paused ] && session_set "$key" state stopped stop_reason inactive && echo "stopped ${key}"
+      _session_unlock "$key"; continue
+    fi
     [ "$(jq -r .state "$f")" = active ] && [ "$(jq -r '.turn_open // "0"' "$f")" != 1 ] || continue
     [ -s "${SESSION_DIR}/${key}.queue" ] && continue
     _session_handoff_busy "$key" && continue
