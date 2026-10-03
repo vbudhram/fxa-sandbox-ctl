@@ -10,6 +10,7 @@
 #                        passes, lessons, error_resolutions); never fails its caller
 #   db_init              create the file and apply the migrations in lib/db/ (PRAGMA user_version)
 #   db_backup [--now]    copy it with SQLite's backup API to the state bucket, at most hourly
+#   db_session <key> <file>  mirror one session record (or drop its row when the file is gone)
 #   db_on                true when the store is usable: the readers' switch while the files remain
 #   cmd_db status | init | backup | import | parity | query <sql>
 #
@@ -45,7 +46,13 @@ db_json() {
 }
 
 # The writers keep their files while the store proves itself, so a failed insert must not fail them.
-db_ingest() { { _db_ready && _db "INSERT INTO ingest (tbl, j) VALUES ($(db_q "$1"), $(db_q "$2"));"; } >/dev/null 2>&1 || true; }
+db_ingest() { [ -s "$FXA_DB" ] || return 0; { _db_ready && _db "INSERT INTO ingest (tbl, j) VALUES ($(db_q "$1"), $(db_q "$2"));"; } >/dev/null 2>&1 || true; }
+
+db_session() {
+  [ -s "$FXA_DB" ] || return 0
+  if [ -f "$2" ]; then db_exec "INSERT INTO sessions (key, data) VALUES ($(db_q "$1"), json($(db_q "$(cat "$2")"))) ON CONFLICT (key) DO UPDATE SET data = excluded.data;"
+  else db_exec "DELETE FROM sessions WHERE key = $(db_q "$1");"; fi >/dev/null 2>&1 || true
+}
 
 db_on() { declare -F db_json >/dev/null && command -v sqlite3 >/dev/null && [ -s "$FXA_DB" ] && _db_ready 2>/dev/null; }
 
@@ -59,7 +66,8 @@ _db_log_files() {
     runs "${PIPE_RUNS_FILE:-$ps/agent-runs.jsonl}" jsonl \
     job_costs "$ps/job-costs.jsonl" jsonl \
     passes "$ps/passes.jsonl" jsonl \
-    lessons "${LESSONS_FILE:-$ps/lessons.json}" array
+    lessons "${LESSONS_FILE:-$ps/lessons.json}" array \
+    sessions "${SESSION_DIR:-${FXA_SESSION_DIR:-$HOME/.claude/state/agent-sessions}}" dir
 }
 
 # db_import   Rebuild the log tables from their files (exact: every writer appends to its file first).
@@ -79,12 +87,16 @@ db_parity() {
   _db_ready || return 1
   local tbl path kind n m bad=0
   while IFS=$'\t' read -r tbl path kind; do
-    [ -f "$path" ] || { printf '%-18s no file\n' "$tbl"; continue; }
-    case "$kind" in jsonl) n="$(grep -c . "$path" || true)" ;; array) n="$(jq length "$path")" ;; object) n="$(jq 'keys | length' "$path")" ;; esac
+    [ -e "$path" ] || { printf '%-18s no file\n' "$tbl"; continue; }
+    case "$kind" in jsonl) n="$(grep -c . "$path" || true)" ;; array) n="$(jq length "$path")" ;; object) n="$(jq 'keys | length' "$path")" ;;
+      dir) n="$(find "$path" -maxdepth 1 -name 'agent-*.json' | wc -l | tr -d ' ')" ;; esac
     m="$(db_value "SELECT count(*) FROM ${tbl};")"
     local extra=""
     case "$tbl" in
       llm_calls) extra=" usd file $(jq -s 'map(.usd // 0) | add // 0 | . * 100 | round / 100' "$path") db $(db_value "SELECT round(coalesce(sum(usd), 0), 2) FROM llm_calls;") daily $(db_value "SELECT round(coalesce(sum(usd), 0), 2) FROM llm_daily;")" ;;
+      sessions) extra=" differ $(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import fxadb; print(fxadb.sessions_differ(fxadb.connect(sys.argv[2], readonly=True), sys.argv[3]))' \
+          "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" "$FXA_DB" "$path")"
+        [ "${extra##* }" = 0 ] || bad=1 ;;
       runs) extra=" usd file $(jq -s 'map(.cost_usd // 0) | add // 0 | . * 100 | round / 100' "$path") db $(db_value "SELECT round(coalesce(sum(cost_usd), 0), 2) FROM runs;")" ;;
     esac
     [ "$n" = "$m" ] && printf '%-18s ok   %s%s\n' "$tbl" "$n" "$extra" || { printf '%-18s DIFF file %s, db %s%s\n' "$tbl" "$n" "$m" "$extra"; bad=1; }

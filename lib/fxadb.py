@@ -52,6 +52,12 @@ def import_files(con, files):
             if not os.path.exists(path):
                 counts[tbl] = 0
                 continue
+            if kind == "dir":
+                con.execute("DELETE FROM sessions")
+                recs = _session_files(path)
+                con.executemany("INSERT INTO sessions (key, data) VALUES (?, json(?))", recs)
+                counts[tbl] = len(recs)
+                continue
             if tbl == "llm_calls":
                 con.execute("DELETE FROM llm_daily")  # its trigger rebuilds it from the calls
             if tbl in ("errors", "error_resolutions", "llm_calls", "mcp_calls", "runs", "job_costs", "passes", "lessons"):
@@ -69,6 +75,27 @@ def import_files(con, files):
     except Exception:
         con.execute("ROLLBACK")
         raise
+
+
+def _session_files(d):
+    """(key, text) of every readable session record in d."""
+    out = []
+    for n in sorted(os.listdir(d)):
+        if n.startswith("agent-") and n.endswith(".json"):
+            try:
+                t = open(os.path.join(d, n)).read()
+            except OSError:
+                continue
+            if _is_json(t):
+                out.append((n[:-5], t))
+    return out
+
+
+def sessions_differ(con, d):
+    """How many session records differ between the directory and the table, either way."""
+    files = {k: json.loads(t) for k, t in _session_files(d)}
+    rows = {r["key"]: json.loads(r["data"]) for r in con.execute("SELECT key, data FROM sessions")}
+    return sum(1 for k in files.keys() | rows.keys() if files.get(k) != rows.get(k))
 
 
 def _is_json(s):

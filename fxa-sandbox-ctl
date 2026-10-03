@@ -1839,6 +1839,7 @@ cmd_task() {
   jq -n --arg key "$key" --arg owner "$owner" \
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
       state: "starting", turns: "1", created: now, last_activity: now}' > "$(_session_file "$key")"
+  _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   if [ -n "$thread" ]; then
     session_set "$key" thread "$thread"
@@ -1873,12 +1874,12 @@ cmd_task() {
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
-  case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; return 1 ;; esac
+  case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; _session_db_sync "$key"; return 1 ;; esac
   session_set "$key" runtime "$runtime"
   # MCP connectors: --mcp, else the resumed session's. Sessions only: pipeline runs never get them.
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
-    [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; rm -f "$(_session_file "$key")"; return 1; }
+    [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; rm -f "$(_session_file "$key")"; _session_db_sync "$key"; return 1; }
     if [ "$runtime" = claude ]; then session_set "$key" mcp "$mcp"
     else echo "NOTE: MCP connectors need the claude runtime; this ${runtime} session gets none" >&2; fi
   fi

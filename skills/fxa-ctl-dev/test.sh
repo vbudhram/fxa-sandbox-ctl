@@ -7,6 +7,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 rc=0
+export FXA_DB="${TMPDIR:-/tmp}/fxa-test-no-store-$$.db"
+export FXA_SESSION_DIR="${TMPDIR:-/tmp}/fxa-test-no-sessions-$$"  # a check that forgets its own never reaches real sessions
 
 run_here() {
   local f bad=0

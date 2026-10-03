@@ -73,19 +73,43 @@ db_import >/dev/null
 check "import: tables match their files" "0" "$(db_parity >/dev/null; echo $?)"
 check "import: the daily rollup is rebuilt" "2026-10-01|2|2.0" "$(db_value "SELECT day || '|' || calls || '|' || usd FROM llm_daily;")"
 db_import >/dev/null
-( export SESSION_DIR="$tmp/ss"; mkdir -p "$SESSION_DIR"; echo '{"key":"agent-a","owner":"U1","created":1}' > "$SESSION_DIR/agent-a.json"
-  source "$here/snapshot.sh"; a="$(echo '{}' | _stats_add_rows | jq -c '.llm | .. |= (if type == "number" then . + 0 else . end)')"
+( export FXA_SESSION_DIR="$tmp/ss" SESSION_DIR="$tmp/ss"; mkdir -p "$SESSION_DIR"; echo '{"key":"agent-a","owner":"U1","created":1}' > "$SESSION_DIR/agent-a.json"
+  source "$here/session.sh"; source "$here/snapshot.sh"; a="$(echo '{}' | _stats_add_rows | jq -c '.llm | .. |= (if type == "number" then . + 0 else . end)')"
   db_on() { false; }; b="$(echo '{}' | _stats_add_rows | jq -c .llm)"
   check "stats: the store's LLM rollup equals the file's" "$b" "$a"; exit "$fail" ) || fail=1
+# Sessions: each write mirrors to the store, import and parity cover the directory, and the readers agree.
+( export FXA_SESSION_DIR="$tmp/ss2" SESSION_DIR="$tmp/ss2"; mkdir -p "$SESSION_DIR"
+  source "$here/session.sh"; source "$here/snapshot.sh"
+  [ "$SESSION_DIR" = "$tmp/ss2" ] || { echo "FAIL sessions: SESSION_DIR is not the scratch folder"; exit 1; }
+  echo '{"key":"agent-b","owner":"U1","state":"stopped","created":1790000000.5,"last_activity":1}' > "$SESSION_DIR/agent-b.json"
+  echo '{"key":"agent-c","owner":"U2","state":"paused","created":1790000001}' > "$SESSION_DIR/agent-c.json"
+  echo 'a request' > "$SESSION_DIR/agent-c.prompt.md"
+  db_import >/dev/null
+  check "sessions: import fills the table" "2" "$(db_value 'SELECT count(*) FROM sessions;')"
+  session_set agent-b pr_url "https://example.com/pr/1" summary '{"cost":1.5}'
+  check "sessions: a write mirrors to the store" "https://example.com/pr/1" "$(db_value "SELECT json_extract(data, '\$.pr_url') FROM sessions WHERE key = 'agent-b';")"
+  check "sessions: parity finds no difference" "0|differ 0" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^sessions ' | grep -o 'differ.*')"
+  a="$(_snapshot_quiet_rows "$FXA_DB" | jq -sc 'sort_by(.key)')"; b="$(_snapshot_quiet_rows "" | jq -sc 'sort_by(.key)')"
+  check "sessions: the page's rows from the store equal the files'" "$b" "$a"
+  a="$(_session_records | jq -sc .)"; b="$(db_on() { false; }; _session_records | jq -sc .)"
+  check "sessions: the records from the store equal the files'" "$b" "$a"
+  echo '{"key":"agent-b","state":"edited"}' > "$SESSION_DIR/agent-b.json"
+  check "parity: a record changed outside the store shows" "1|differ 1" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^sessions ' | grep -o 'differ.*')"
+  rm -f "$SESSION_DIR/agent-b.json"; _session_db_sync agent-b
+  check "sessions: a removed record leaves the store" "agent-c" "$(db_value 'SELECT key FROM sessions;')"
+  db_on() { false; }; rm -rf "$SESSION_DIR"/*
+  check "sessions: no records is one empty list" "[]" "$(_session_records | jq -sc .)"
+  exit "$fail" ) || fail=1
+db_import >/dev/null
 check "import twice: still one copy" "2|2|1" "$(db_value "SELECT (SELECT count(*) FROM errors) || '|' || (SELECT count(*) FROM llm_calls) || '|' || (SELECT count(*) FROM runs);")"
 echo '{"at":"2026-10-03T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m3","log":null,"sig":"s2"}' >> "$PIPE_STATE_DIR/errors.jsonl"
 check "parity: a row only in the file shows as a difference" "1|DIFF" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^errors ' | awk '{print $2}')"
 
 # A backup is a whole, valid database.
 _db ".backup '$tmp/copy.db'"
-check "backup passes the integrity check" "ok|300" "$(sqlite3 "$tmp/copy.db" "PRAGMA integrity_check;")|$(sqlite3 "$tmp/copy.db" "SELECT count(*) FROM sessions;")"
+check "backup passes the integrity check" "ok|$(db_value 'SELECT count(*) FROM sessions;')" "$(sqlite3 "$tmp/copy.db" "PRAGMA integrity_check;")|$(sqlite3 "$tmp/copy.db" "SELECT count(*) FROM sessions;")"
 # The Python helper reads what bash wrote, and writes with bound parameters.
-check "python: reads and writes the same file" "300|it's" "$(python3 -c "
+check "python: reads and writes the same file" "$(db_value 'SELECT count(*) FROM sessions;')|it's" "$(python3 -c "
 import sys; sys.path.insert(0, '$here'); import fxadb
 con = fxadb.connect(); con.execute('DELETE FROM t'); con.execute('INSERT INTO t VALUES (?)', (\"it's\",))
 print(str(con.execute('SELECT count(*) FROM sessions').fetchone()[0]) + '|' + fxadb.rows(con, 'SELECT v FROM t')[0]['v'])")"

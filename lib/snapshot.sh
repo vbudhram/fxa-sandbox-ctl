@@ -237,7 +237,7 @@ _stats_add_rows() {
                | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2) }' \
     "$usage" 2>/dev/null || echo '{}')"
   fi
-  sess="$(for f in "${SESSION_DIR}"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc --argjson llm "$llm" '
+  sess="$(_session_records | jq -sc --argjson llm "$llm" '
     def n: if . == null or . == "" then null else (tonumber? // null) end;
     map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s
       | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
@@ -335,39 +335,49 @@ _snapshot_runner_row() {
 # Every session the host keeps is listed: paused and PR-open ones are not over,
 # and session_prune bounds the list at FXA_SESSION_RETAIN_DAYS.
 _snapshot_sessions() {
-  local now="$1" f tmp; tmp="$(mktemp -d)"
+  local now="$1" f tmp live db=""; tmp="$(mktemp -d)"
   # Only a live session needs its own shell (it probes the runner over ssh).
-  # One jq over every record finds the live ones; a session_live per file was a jq each.
-  for f in $(jq -r 'select(.state == "starting" or .state == "active" or .state == "wrapping") | input_filename' "$SESSION_DIR"/agent-*.json 2>/dev/null); do
+  if declare -F db_on >/dev/null && db_on; then
+    db="$FXA_DB"
+    live="$(db_value "SELECT key FROM sessions WHERE state IN ('starting', 'active', 'wrapping') ORDER BY key;" | sed "s|.*|${SESSION_DIR}/&.json|")"
+  else
+    live="$(jq -r 'select(.state == "starting" or .state == "active" or .state == "wrapping") | input_filename' "$SESSION_DIR"/agent-*.json 2>/dev/null)"
+  fi
+  for f in $live; do
     [ -f "$f" ] || continue
     ( _snapshot_session_row "$f" "$now" > "${tmp}/$(basename "$f")" 2>/dev/null ) &
   done
   # The rest in one process: a shell and several jq per row took 11 s at 500 sessions.
-  # ponytail: a stopgap until sessions move to SQLite (ai/docs/design-docs/2026-10-02-sqlite-state-design.md).
-  _snapshot_quiet_rows > "${tmp}/quiet.rows" 2>/dev/null || true
+  _snapshot_quiet_rows "$db" > "${tmp}/quiet.rows" 2>/dev/null || true
   wait
   # No rows is the normal case; cat's failure must not add a second [].
   { cat "$tmp"/*.json "${tmp}/quiet.rows" 2>/dev/null || true; } | jq -s -c 'sort_by(-(.created // 0))'
   rm -rf "$tmp"
 }
 
-# _snapshot_quiet_rows   Every session that is not live, as JSON lines: the record
-# with its request (300 chars) and media, the same shape a live row has.
+# _snapshot_quiet_rows [db]   Every session that is not live, as JSON lines: the record
+# with its request (300 chars) and media, the same shape a live row has. With a
+# database path, the records come from the store, else from the files.
 _snapshot_quiet_rows() {
   python3 -c '
 import json, os, re, sys
 d = sys.argv[1]; live = {"starting", "active", "wrapping"}
 media_re = re.compile(r"^[A-Za-z0-9._-]{1,120}[.](png|jpe?g|gif|webp|mp4|webm)$")
-for n in os.listdir(d):
-    if not (n.startswith("agent-") and n.endswith(".json")):
-        continue
-    try:
-        rec = json.load(open(os.path.join(d, n)))
-    except (OSError, ValueError):
-        continue
+def records():
+    if sys.argv[2]:
+        sys.path.insert(0, sys.argv[3]); import fxadb
+        for r in fxadb.connect(sys.argv[2], readonly=True).execute("SELECT key, data FROM sessions"):
+            yield r["key"], json.loads(r["data"])
+        return
+    for n in os.listdir(d):
+        if n.startswith("agent-") and n.endswith(".json"):
+            try:
+                yield n[:-5], json.load(open(os.path.join(d, n)))
+            except (OSError, ValueError):
+                pass
+for key, rec in records():
     if rec.get("state") in live:
         continue
-    key = n[:-5]
     try:
         with open(os.path.join(d, key + ".prompt.md"), "rb") as f:
             req = f.read(300).decode("utf-8", "ignore").rstrip("\n")   # as $(head -c 300) did
@@ -378,7 +388,7 @@ for n in os.listdir(d):
         media = sorted(({"at": int(os.path.getmtime(os.path.join(md, m))), "name": m} for m in os.listdir(md) if media_re.match(m)), key=lambda x: (x["at"], x["name"]))
     rec.update(agent=None, agent_alive=False, request=req, media=media)
     print(json.dumps(rec))
-' "$SESSION_DIR"
+' "$SESSION_DIR" "${1:-}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 }
 
 _snapshot_session_row() {

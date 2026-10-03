@@ -31,7 +31,7 @@ _alert() {
 alerts_check() {
   local since sessions idle spend boot cap usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl"
   since=$(( $(date +%s) - 86400 ))
-  sessions="$(for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && cat "$f"; done | jq -sc '.' 2>/dev/null || echo '[]')"
+  sessions="$(_session_records | jq -sc '.' 2>/dev/null || echo '[]')"
   [ -n "$sessions" ] || sessions='[]'
   local def='def n: (. // 0 | tonumber? // 0);'
   idle="$(jq -r --argjson t "$since" "$def"' map(select((.stopped_at | n) >= $t)) | map(.idle_s | n) | add // 0' <<< "$sessions")"

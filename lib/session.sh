@@ -9,6 +9,14 @@ SESSION_DIR="${FXA_SESSION_DIR:-${HOME}/.claude/state/agent-sessions}"
 _session_file() { printf '%s/%s.json' "$SESSION_DIR" "$1"; }
 session_exists() { [ -f "$(_session_file "$1")" ]; }
 session_get() { jq -r --arg f "$2" '.[$f] // empty' "$(_session_file "$1")" 2>/dev/null; }
+# _session_db_sync <key>   Mirror the record to the store, or drop its row when the file is gone.
+_session_db_sync() { declare -F db_session >/dev/null && db_session "$1" "$(_session_file "$1")"; return 0; }
+# _session_records   Every record, one JSON per line, in key order: from the store when it is up.
+_session_records() {
+  if declare -F db_on >/dev/null && db_on; then _db -list "SELECT data FROM sessions ORDER BY key;"
+  else local f; for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && cat "$f"; done; fi
+  return 0
+}
 # session_set <key> <field> <value>...   Atomic rewrite; last_activity always moves.
 session_set() {
   local key="$1" f; f="$(_session_file "$key")"; shift
@@ -26,7 +34,7 @@ session_set() {
     sleep 0.1
   done
   tmp="$(mktemp "${f}.XXXXXX")"
-  jq "${args[@]}" "$filter" "$f" > "$tmp" && mv "$tmp" "$f" || { rc=1; rm -f "$tmp"; }
+  jq "${args[@]}" "$filter" "$f" > "$tmp" && mv "$tmp" "$f" && _session_db_sync "$key" || { rc=1; rm -f "$tmp"; }
   rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
@@ -410,7 +418,7 @@ session_prune() {
     key="$(basename "$f" .json)"
     session_live "$key" && continue
     [ "$(jq -r '.last_activity // 0 | floor' "$f" 2>/dev/null || echo 0)" -lt "$cutoff" ] || continue
-    rm -rf "${SESSION_DIR:?}/${key}".* && echo "$key"
+    rm -rf "${SESSION_DIR:?}/${key}".* && _session_db_sync "$key" && echo "$key"
   done
   for f in "$SESSION_DIR"/thread-*.json; do
     [ -f "$f" ] || continue
