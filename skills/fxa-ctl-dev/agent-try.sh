@@ -5,35 +5,51 @@
 # request in it. It does not get the stack, Linux, the firewall or the proxy, so test
 # those with `fxa-sandbox-ctl session try` on the manager.
 #
-#   agent-try.sh [--then <text>]... [--keep] [--dry-run] <request>
+#   agent-try.sh [--then <text>]... [--keep] [--dry-run] [--base <sha>] [--runtime claude|codex] <request>
 #
 # --then sends a follow-up turn; --keep leaves the scratch copy; --dry-run builds the
 # copy and the prompt, prints where they are, and does not call Claude.
+# --base: the copy is at that commit as if it were main, with no ref past it and no
+# remote to fetch from (an eval; see eval-local.sh). --runtime codex: the prompt names
+# skills the Codex way; with it, only --dry-run (eval-local.sh runs Codex).
 # FXA_CLONE (default ~/Desktop/working2/fxa) is the clone the scratch copy shares
 # objects with; FXA_TRY_NO_FETCH=1 skips fetching main (for the offline check).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FXA="${FXA_CLONE:-$HOME/Desktop/working2/fxa}"
-then=(); keep=""; dry=""
+then=(); keep=""; dry=""; base=""; runtime=claude
 while [ $# -gt 0 ]; do
   case "$1" in
     --then) then+=("$2"); shift 2 ;;
     --keep) keep=1; shift ;;
     --dry-run) dry=1; shift ;;
+    --base) base="$2"; shift 2 ;;
+    --runtime) runtime="$2"; shift 2 ;;
     -*) echo "usage: agent-try.sh [--then <text>]... [--keep] [--dry-run] <request>" >&2; exit 2 ;;
     *) break ;;
   esac
 done
 request="${1:-}"; [ -n "$request" ] || { echo "agent-try.sh: give the request" >&2; exit 2; }
+[[ -z "$base" || "$base" =~ ^[0-9a-f]{40}$ ]] || { echo "agent-try.sh: --base takes a full commit sha" >&2; exit 2; }
+case "$runtime" in claude) ;; codex) [ -n "$dry" ] || { echo "agent-try.sh: --runtime codex runs through eval-local.sh" >&2; exit 2; } ;; *) echo "agent-try.sh: --runtime claude or codex" >&2; exit 2 ;; esac
 [ -d "$FXA/.git" ] || { echo "agent-try.sh: no FxA clone at $FXA (set FXA_CLONE)" >&2; exit 2; }
 
 ws="$(mktemp -d "${TMPDIR:-/tmp}/fxa-try.XXXXXX")"; ws="$(cd "$ws" && pwd -P)"
 [ -n "$keep$dry" ] || trap 'rm -rf "$ws"' EXIT
 repo="$ws/fxa"
 # A shared clone: fast, its own config, and a push that goes nowhere.
-git clone -q --shared --no-checkout "$FXA" "$repo"
+git clone -q --shared --no-checkout --single-branch --no-tags "$FXA" "$repo"
 git -C "$repo" config remote.origin.pushurl "no-push://agent-try"
-if [ -z "${FXA_TRY_NO_FETCH:-}" ]; then
+if [ -n "$base" ]; then
+  # As on a pinned runner: the base is main, nothing newer has a ref, and there is no remote.
+  git -C "$repo" checkout -q --detach "$base"
+  git -C "$repo" update-ref refs/remotes/origin/main "$base"
+  # Symbolic refs (origin/HEAD) go first: a batch that deletes their target is refused whole.
+  git -C "$repo" symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
+  git -C "$repo" for-each-ref --no-merged="$base" --format='%(if)%(symref)%(then)%(else)delete %(refname)%(end)' | sed '/^$/d' | git -C "$repo" update-ref --stdin
+  git -C "$repo" remote set-url origin "no-fetch://eval"
+  git -C "$repo" reflog expire --expire=now --all
+elif [ -z "${FXA_TRY_NO_FETCH:-}" ]; then
   git -C "$repo" fetch -q https://github.com/mozilla/fxa main && git -C "$repo" checkout -q --detach FETCH_HEAD
 else git -C "$repo" checkout -q --detach HEAD; fi
 
@@ -55,7 +71,7 @@ prompt="$(
   cd "$ROOT"
   # shellcheck source=/dev/null
   source lib/config.sh >/dev/null 2>&1; source lib/agent.sh >/dev/null 2>&1; source lib/session.sh >/dev/null 2>&1
-  runtime_skill_ref() { printf '/%s' "$1"; }
+  if [ "$runtime" = codex ]; then runtime_skill_ref() { printf 'the `%s` skill' "$1"; }; else runtime_skill_ref() { printf '/%s' "$1"; }; fi
   printf '%s' "$(_session_first_prompt)$(_session_prompt_tail "$repo" 0)"
 )"
 note="
@@ -63,6 +79,7 @@ note="
 This trial runs on a laptop, not a runner. /workspace in the guide and the skills
 means $repo here, and ~/.claude/skills means $repo/.claude/skills. There is no
 FxA stack, so say what you would run where the stack is needed."
+[ "$runtime" = codex ] && note="$note To use a skill, read $repo/.claude/skills/<name>/SKILL.md and follow it."
 printf '%s%s' "$prompt" "$note" > "$ws/prompt.md"
 
 if [ -n "$dry" ]; then

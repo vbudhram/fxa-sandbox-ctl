@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# eval-local.sh: one eval on the laptop with Claude or Codex, judged as eval.sh judges.
+#
+#   eval-local.sh <evals/name.json> --runtime claude|codex
+#
+# The agent works in a scratch copy of FxA at the spec's base (agent-try.sh --base: no
+# newer ref, no remote), with the runner's prompt, skills and (Claude) subagents. It
+# answers a question with the spec's answer, up to max_replies. Then it saves the same
+# files as eval.sh, and eval.sh --judge scores them. No stack and no Linux: compare
+# local runs with each other, not with runs through the bot.
+# Results: ai/evals/<time>-<name>-<runtime>-local/ (local only).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+spec="${1:?usage: eval-local.sh <evals/name.json> --runtime claude|codex}"
+[ "${2:-}" = --runtime ] && runtime="${3:-}" || runtime=""
+case "$runtime" in claude|codex) ;; *) echo "usage: eval-local.sh <spec> --runtime claude|codex" >&2; exit 2 ;; esac
+s() { jq -r "$1" "$spec"; }
+base="$(s .base)"
+out="$ROOT/ai/evals/$(date +%Y%m%d-%H%M)-$(s .name)-$runtime-local"; mkdir -p "$out"; cp "$spec" "$out/spec.json"
+
+info="$(bash "$ROOT/skills/fxa-ctl-dev/agent-try.sh" --dry-run --base "$base" --runtime "$runtime" "$(s .prompt)")"
+repo="$(sed -n 's/^scratch copy: //p' <<< "$info")"; ws="$(dirname "$repo")"
+trap 'rm -rf "$ws"' EXIT
+t0=$(date +%s) sid="" reply=""
+
+# turn <message file>: one turn; its events go to events.jsonl, its reply to $reply.
+turn() {
+  if [ "$runtime" = claude ]; then
+    ( cd "$repo" && claude -p ${sid:+--resume "$sid"} --output-format stream-json --verbose \
+        --setting-sources project,local --permission-mode bypassPermissions \
+        --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+    sid="$(jq -r 'select(.type == "result") | .session_id' "$ws/turn.jsonl" | tail -1)"
+    # The result holds only the last text block; the reply is every block the main agent wrote.
+    reply="$(jq -r 'select(.type == "assistant" and .parent_tool_use_id == null) | .message.content[]? | select(.type == "text") | .text' "$ws/turn.jsonl")"
+  else
+    # workspace-write: it edits and commits in the copy, with no network.
+    if [ -z "$sid" ]; then
+      ( cd "$repo" && codex exec --json -s workspace-write --skip-git-repo-check -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+      sid="$(jq -r 'select(.type == "thread.started") | .thread_id' "$ws/turn.jsonl" | head -1)"
+    else
+      ( cd "$repo" && codex exec resume "$sid" --json -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+    fi
+    reply="$(cat "$ws/last.txt" 2>/dev/null || true)"
+  fi
+  cat "$ws/turn.jsonl" >> "$out/events.jsonl"
+}
+
+echo "== $runtime at ${base:0:10} in $repo"
+printf 'me: %s\n' "$(s .prompt)" > "$out/thread.txt"
+turn "$(sed -n 's/^prompt: \([^ ]*\) .*/\1/p' <<< "$info")"
+n=0
+while :; do
+  printf 'agent: %s\n' "$reply" >> "$out/thread.txt"
+  echo "== reply $((n + 1)): $(head -c 300 <<< "$reply" | tr '\n' ' ')"
+  # A question: the QUESTION/OPTION form the guide asks for, or a reply that ends asking.
+  if { grep -qE '^QUESTION:|status: needs-input' <<< "$reply" || tail -3 <<< "$reply" | grep -q '?[*_ ]*$'; } && [ "$n" -lt "$(s '.max_replies // 3')" ]; then
+    n=$((n + 1)); s .answer > "$ws/next.md"; printf 'me: %s\n' "$(s .answer)" >> "$out/thread.txt"
+    echo "== answering question $n"; turn "$ws/next.md"
+  else break; fi
+done
+
+# The diff from the base, commits and untracked files included, without the trial's own files.
+x=(':(exclude).fxa-*' ':(exclude).claude')
+{ git -C "$repo" diff "$base" -- . "${x[@]}"
+  git -C "$repo" ls-files -o --exclude-standard -- . "${x[@]}" | while read -r f; do git -C "$repo" diff --no-index /dev/null "$f" || true; done
+} > "$out/diff.patch"
+# Every tool call, subagents included: one line each.
+if [ "$runtime" = claude ]; then
+  jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use")
+    | "\(.name): \(.input.command // .input.file_path // .input.pattern // .input.description // "" | tostring | gsub("\n"; " ") | .[0:300])"' "$out/events.jsonl" > "$out/commands.txt"
+else
+  jq -r 'select(.type == "item.started" or .type == "item.completed") | .item
+    | if .type == "command_execution" then "Bash: \(.command | tostring | gsub("\n"; " ") | .[0:300])"
+      elif .type == "file_change" then "Edit: \([.changes[]?.path] | join(", "))" else empty end' "$out/events.jsonl" | uniq > "$out/commands.txt"
+fi
+{ echo "runtime: $runtime (local, no stack)"; echo "base: $base"; echo "seconds: $(( $(date +%s) - t0 ))"; echo "questions answered: $n"
+  if [ "$runtime" = claude ]; then
+    jq -rs '[.[] | select(.type == "result") | .modelUsage // {} | to_entries[]] | group_by(.key)[]
+      | "model \(.[0].key): \(map(.value.inputTokens + .value.cacheReadInputTokens + .value.cacheCreationInputTokens) | add) in, \(map(.value.outputTokens) | add) out, $\(map(.value.costUSD) | add * 100 | round / 100)"' "$out/events.jsonl"
+  else
+    echo "model: $(sed -n 's/^model *= *"\(.*\)"/\1/p' ~/.codex/config.toml 2>/dev/null | head -1)"
+    jq -rs '[.[] | select(.type == "turn.completed") | .usage] | "tokens: \(map(.input_tokens // 0) | add) in (\(map(.cached_input_tokens // 0) | add) cached), \(map(.output_tokens // 0) | add) out"' "$out/events.jsonl"
+  fi
+} > "$out/report.txt"
+echo "== saved to $out ($(wc -l < "$out/commands.txt" | tr -d ' ') tool calls, $(grep -c '^diff --git' "$out/diff.patch" || true) files changed)"
+cat "$out/report.txt"
+bash "$ROOT/skills/fxa-ctl-dev/eval.sh" "$spec" --judge "$out"

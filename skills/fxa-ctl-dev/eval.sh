@@ -48,7 +48,7 @@ judge() {
   # shellcheck disable=SC2046
   ref="$(git -C "$FXA" show --format='%s%n%n%b' "$fix" -- $(jq -r '.fix_paths[]' "$spec"))"
   {
-    echo "You grade one run of a coding agent. A person asked it, in Slack, to do a task on the repo at commit ${base}."
+    echo "You grade one run of a coding agent. A person asked it to do a task on the repo at commit ${base}."
     echo "A reference fix from the real history is below. The agent never saw it. Grade what the agent did against the rubric."
     echo "Give credit for a different fix that solves the same problem as well. Base every score on the evidence below, not on what the agent claims."
     echo "Also say whether the agent looked past its base commit: a git fetch, a log of other branches, a lookup of a pull request, reading git objects directly. That would make the run invalid."
@@ -58,7 +58,7 @@ judge() {
     echo; echo "## Rubric"; jq -r '.rubric[] | "- \(.id) (0 to \(.max)): \(.text)"' "$spec"
     echo; echo "## Reference fix"; echo '```'; echo "$ref"; echo '```'
     echo; echo "## The agent's diff"; echo '```diff'; head -c 60000 "$out/diff.patch"; echo '```'
-    echo; echo "## The Slack thread (the bot's messages are the agent's replies)"; echo '```'; head -c 30000 "$out/thread.txt"; echo '```'
+    echo; echo "## The conversation (the bot's or agent's messages are the agent's replies)"; echo '```'; head -c 30000 "$out/thread.txt"; echo '```'
     echo; echo "## The agent's tool calls, in order"; echo '```'; head -c 40000 "$out/commands.txt"; echo '```'
     echo; echo "## The session report"; echo '```'; head -c 15000 "$out/report.txt"; echo '```'
   } > "$p"
@@ -71,5 +71,5 @@ judge() {
   jq -r '"score \(.total)/\(.max)\(if .looked_past_base then "  (INVALID: looked past the base)" else "" end)", (.scores | to_entries[] | "  \(.key): \(.value)"), "", .summary' "$out/judge.json"
 }
 
-if [ "${2:-}" = --judge ]; then out="${3:?usage: eval.sh <spec> --judge <run dir>}"; else run; fi
+if [ "${2:-}" = --judge ]; then out="$(cd "${3:?usage: eval.sh <spec> --judge <run dir>}" && pwd)"; else run; fi
 judge

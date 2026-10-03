@@ -260,7 +260,8 @@ _gce_pin_runner_tree() {
     fi
     # An eval (FXA_PIN_HIDE): no ref, reflog or fetch record that reaches past the base.
     if [ '${FXA_PIN_HIDE:-}' = 1 ]; then
-      git for-each-ref --no-merged=${sha} --format='delete %(refname)' | git update-ref --stdin
+      git symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null
+      git for-each-ref --no-merged=${sha} --format='%(if)%(symref)%(then)%(else)delete %(refname)%(end)' | sed '/^\$/d' | git update-ref --stdin || echo 'WARN: could not hide the refs past the base' >&2
       rm -f \"\$(git rev-parse --git-dir)/FETCH_HEAD\" \"\$(git rev-parse --git-dir)/ORIG_HEAD\"
       git reflog expire --expire=now --all
     fi
