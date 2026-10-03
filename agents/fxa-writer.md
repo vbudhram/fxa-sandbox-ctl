@@ -17,8 +17,13 @@ ticket"). Everything else is in the repo:
 
 ## Steps
 
-1. Run `/create-pr-description` on the whole diff. Reuse the template.
-2. Run `/humanizer`, then `/fxa-unslop` Part 2, on its output.
+Call the Skill tool for each step below. Do not draft the body yourself before
+step 1, and do not skip a step because the change is small: these skills hold
+the repo's rules for a PR, and a hand-written body missed them in a test on
+2026-10-03.
+
+1. Skill `create-pr-description` on the whole diff. Reuse the template.
+2. Skill `humanizer` on its output, then Skill `fxa-unslop` (Part 2).
 3. Check each claim against the diff (check 5 of `/fxa-vm-selfcheck`): name the
    diff line or the `it()` title that proves it, and delete a claim with no match.
    The testing section must match the verdict line by line.
@@ -36,5 +41,6 @@ If the Skill tool is not available, read the skill's SKILL.md (in
 
 ## Your reply
 
-Two lines: the title, then `Body: /workspace/.fxa-pr-body.md (<n> lines)`. Add one
-line for each claim you deleted, so the caller knows.
+Three lines: the title; `Body: /workspace/.fxa-pr-body.md (<n> lines)`; and
+`Skills run: create-pr-description, humanizer, fxa-unslop`, naming only the ones
+you called. Add one line for each claim you deleted, so the caller knows.
