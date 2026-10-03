@@ -6,7 +6,11 @@
 # the GCE ones, pointed at the slot's routed address by a per-host ssh entry.
 [ -n "${FXA_FC_HOST:-}" ] || return 0
 # A stopped host (its 12h run limit, or by hand) means GCE runners, not failed sessions.
-timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null || { unset FXA_FC_HOST; return 0; }
+# A stopped host drops the probe, so every command would wait the full 3 s: remember a miss for a minute.
+_fc_down="${TMPDIR:-/tmp}/fxa-fc-down-${USER:-u}-${FXA_FC_HOST}"
+if [ -f "$_fc_down" ] && [ $(( $(date +%s) - $(_mtime "$_fc_down") )) -lt 60 ]; then unset FXA_FC_HOST; return 0; fi
+timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null || { touch "$_fc_down"; unset FXA_FC_HOST; return 0; }
+rm -f "$_fc_down"
 [ -n "${_FXA_VM_FC_LOADED:-}" ] && return 0
 _FXA_VM_FC_LOADED=1
 
