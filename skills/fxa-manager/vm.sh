@@ -7,7 +7,7 @@
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
 #                         (no commit, no Docker); a scratch folder, removed after
-#   vm.sh dev [stop|log [n]|report <thread|key>]
+#   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>]
 #                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
@@ -80,6 +80,9 @@ EOF
     case "${2:-up}" in
       stop) printf 'exec sudo -u fxa -H bash -s\n%s\n%s\n' "$vars" '[ -f $D/bot.pid ] && kill "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot stopped" || echo "dev bot not running"' | on_vm ;;
       log) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/bot.log\n' "$vars" "${3:-40}" | on_vm | mask ;;
+      # The dev bot's last n Slack calls: time, method, message, and each row or text it sent.
+      calls) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/slack-calls.jsonl | jq -r %q\n' "$vars" "${3:-60}" \
+          '"\(.at / 1000 | strftime("%H:%M:%S")) \(.method) \(.args.ts // .args.thread_ts // "")" + ([(.args.chunks // [])[] | if .type == "task_update" then "\n    [\(.id) \(.status)] \(.title)\(if .details then " | " + (.details | gsub("\n"; " ⏎ ")) else "" end)" else "\n    text: \(.text // "" | gsub("\n"; " ⏎ ") | .[0:120])" end] | join("")) + (if .args.text and (.args.chunks | not) then "\n    \(.args.text | gsub("\n"; " ⏎ ") | .[0:160])" else "" end) + (if .args.name then " :\(.args.name):" else "" end)' | on_vm | mask ;;
       report) [ -n "${3:-}" ] || { echo "usage: vm.sh dev report <thread ts | key>" >&2; exit 1; }
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q\n' "$vars" "$3" | on_vm | mask ;;
       up)
@@ -102,7 +105,7 @@ if cmp -s fxa-agent-bot/package-lock.json $R/fxa-agent-bot/package-lock.json; th
   [ -d fxa-agent-bot/node_modules ] && [ ! -L fxa-agent-bot/node_modules ] && rm -rf fxa-agent-bot/node_modules
   ln -sfn $R/fxa-agent-bot/node_modules fxa-agent-bot/node_modules
 else rm -f fxa-agent-bot/node_modules; (cd fxa-agent-bot && npm ci --silent); fi
-printf 'FXA_CTL=%s\nERROR_DMS=0\n' "$D/fxa-sandbox-ctl/fxa-sandbox-ctl" > fxa-agent-bot/.env.devhost
+printf 'FXA_CTL=%s\nERROR_DMS=0\nSLACK_CALL_LOG=%s\n' "$D/fxa-sandbox-ctl/fxa-sandbox-ctl" "$D/slack-calls.jsonl" > fxa-agent-bot/.env.devhost
 [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2
 cd fxa-agent-bot
 # The real bot's settings, then the dev app's, then the dev paths: the last file wins.
@@ -112,7 +115,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; grep -q "is running" <(tail -n 5 $D/b
 kill -0 "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot up (pid $(cat $D/bot.pid))" || { echo "dev bot failed:"; tail -n 20 $D/bot.log; }
 EOF2
         } | on_vm | mask ;;
-      *) echo "usage: vm.sh dev [stop|log [n]|report <thread|key>]" >&2; exit 1 ;;
+      *) echo "usage: vm.sh dev [stop|log [n]|calls [n]|report <thread|key>]" >&2; exit 1 ;;
     esac ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
