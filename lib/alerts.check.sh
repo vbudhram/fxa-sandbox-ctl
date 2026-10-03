@@ -12,6 +12,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 export FXA_ERRORS_FILE="$tmp/errors.jsonl" FXA_ERRORS_URI="" FXA_LLM_PROXY_DIR="$tmp/proxy"
 SESSION_DIR="$tmp/s"; mkdir -p "$SESSION_DIR" "$tmp/proxy"
 source "$here/config.sh" >/dev/null 2>&1; source "$here/errors.sh"; source "$here/alerts.sh"
+FXA_SESSION_DIR="$SESSION_DIR" source "$here/session.sh"  # _session_records: the alerts read sessions through it
 now=$(date +%s)
 # 7 h idle in a session stopped an hour ago; three boots with a median of 90 s; $130 of spend.
 echo "{\"key\":\"agent-al01\",\"stopped_at\":\"$(( now - 3600 ))\",\"idle_s\":\"25200\",\"booted_at\":\"$(( now - 9000 ))\",\"boot_s\":\"90\"}" > "$SESSION_DIR/agent-al01.json"
