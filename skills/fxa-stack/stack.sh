@@ -153,7 +153,7 @@ case "${1:-status}" in
   ensure) ensure ;;
   diagnose) diagnose ;;
   account) account "${2:-}" ;;
-  restart) shift; t0=$(date +%s); restart "$@"; rc=$?; rec "restart $1" "$t0" "$rc"; exit "$rc" ;;
+  restart) shift; t0=$(date +%s); restart "$@"; rc=$?; rec "restart ${1:-}" "$t0" "$rc"; exit "$rc" ;;
   wait) shift; wait_up "$@" ;;
   *) echo "usage: $0 status|ensure|diagnose|account <state>|restart <service> [KEY=VAL...]|wait [service...]" >&2; exit 2 ;;
 esac
