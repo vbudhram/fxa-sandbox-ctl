@@ -235,7 +235,7 @@ session_report() {
   echo "== usage by model"
   if declare -F db_on >/dev/null && db_on; then
     db_json "SELECT run, model, count(*) AS calls, round(sum(usd), 2) AS usd FROM llm_calls WHERE run IN ($(db_q "$key"), $(db_q "$ask")) GROUP BY run, model ORDER BY run, sum(usd) DESC;" \
-      | jq -r '.[] | "  \(.run) \(.model): \(.calls) calls, $\(.usd)"'
+      | jq -r '.[] | "  \(.run) \(.model): \(.calls) calls, $\(.usd * 100 | round / 100)"'
   else echo "  (no store here)"; fi
   echo "== transcripts"
   tgz="${SESSION_DIR}/${key}.claude.tgz"
@@ -255,7 +255,7 @@ _session_try_report() {
   echo "== usage by model"
   if declare -F db_on >/dev/null && db_on; then
     db_json "SELECT model, count(*) AS calls, round(sum(usd), 2) AS usd FROM llm_calls WHERE run = $(db_q "$1") GROUP BY model ORDER BY sum(usd) DESC;" \
-      | jq -r '.[] | "  \(.model): \(.calls) calls, $\(.usd)"'
+      | jq -r '.[] | "  \(.model): \(.calls) calls, $\(.usd * 100 | round / 100)"'
   else echo "  (no store here)"; fi
   echo "== transcripts"
   _session_sh "$(worktree_branch_for "$1")" "echo $(base64 < "${SANDBOX_ROOT:-.}/lib/try_report.py" | tr -d '\n') | base64 -d | python3 - /home/agent/.claude/projects" 2>/dev/null \
