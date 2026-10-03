@@ -600,6 +600,7 @@ _session_boot_label() {
   case "$1" in
     "On main at "*) echo "on main at ${1#On main at }" ;;
     "Resuming "*" at "*) echo "on the earlier base at ${1##* at }" | sed 's/[,.].*//' ;;
+    "Starting the runner host"*) echo "starting a runner" ;;
     "Creating GCE"*) echo "creating a sandbox" ;;
     Restoring*) echo "restoring a sandbox with FxA running" ;;
     "Waiting for ssh"*) echo "waiting for the sandbox to boot" ;;
@@ -614,7 +615,7 @@ _session_boot_label() {
 
 # _session_boot_step <key>   The runner's boot progress in plain words.
 _session_boot_step() {
-  local l; l="$(grep -E '^(Creating GCE|Restoring|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Checking out the commit|Applying security|Setting up (SSH|claude|codex)|Shipping|Starting (claude|codex))' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1 || true)"
+  local l; l="$(grep -E '^(Starting the runner host|Creating GCE|Restoring|Waiting for ssh|Waiting for fxa-gce-checkout|Waiting for infrastructure|Pinning the runner|Checking out the commit|Applying security|Setting up (SSH|claude|codex)|Shipping|Starting (claude|codex))' "${SESSION_DIR}/$1.log" 2>/dev/null | tail -1 || true)"
   l="$(_session_boot_label "$l")"; echo "${l:-preparing}"
 }
 

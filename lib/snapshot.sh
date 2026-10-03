@@ -490,7 +490,7 @@ snapshot_agents_json() {
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
-    --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --argjson fc "$( [ -n "${FXA_FC_HOST:-}" ] && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
+    --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --argjson fc "$( declare -F _fc_up >/dev/null && _fc_up && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
     --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
     --argjson free "$free" --argjson today "$today" --slurpfile sessions <(printf '%s' "${sessions:-[]}") \
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,

@@ -22,7 +22,7 @@ check_one() {
 
 run_here() {
   local f bad=0
-  for f in lib/*.check.sh skills/*/*.check.sh; do check_one "$f" mac || bad=1; done
+  for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" mac || bad=1; done
   for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/gce/*.sh skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
   python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL mac: infra/llm-proxy/proxy_test.py"; bad=1; }
   [ "$bad" = 0 ] && echo "mac: all checks pass" || rc=1
@@ -35,7 +35,7 @@ run_linux() {
     apt-get update -qq >/dev/null && apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates >/dev/null 2>&1
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
-    for f in lib/*.check.sh skills/*/*.check.sh; do check_one "$f" linux || bad=1; done
+    for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" linux || bad=1; done
     python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL linux: infra/llm-proxy/proxy_test.py"; bad=1; }
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }

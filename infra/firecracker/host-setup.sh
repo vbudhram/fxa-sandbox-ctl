@@ -73,7 +73,8 @@ iptables -t nat -C POSTROUTING -s 10.42.16.0/24 ! -d 10.42.0.0/16 -j MASQUERADE 
 [ -f /fc/host_key ] || ssh-keygen -t ed25519 -N "" -q -f /fc/host_key -C fc-host
 # Keep the snapshot near main: a session on an old one fetches, and after a
 # yarn.lock change it installs for 40 s or more. fc-refresh does nothing when
-# main has not moved. Installed by hand beside this script: fc, fc-make-snapshot, fc-refresh.
+# main has not moved. Installed by hand beside this script: fc, fc-make-snapshot, fc-refresh,
+# and fc-idle-stop (idle-stop.sh).
 cat > /etc/systemd/system/fc-refresh.service <<'UNIT'
 [Unit]
 Description=Refresh the Firecracker snapshot when main moved
@@ -90,6 +91,24 @@ OnUnitActiveSec=30min
 [Install]
 WantedBy=timers.target
 UNIT
+# On demand: a controller starts the host for a session; the host stops itself after
+# 30 minutes with no slot in use (idle-stop.sh), so no controller decides for the others.
+cat > /etc/systemd/system/fc-idle-stop.service <<'UNIT'
+[Unit]
+Description=Power off after 30 minutes with no Firecracker slot in use
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/fc-idle-stop
+UNIT
+cat > /etc/systemd/system/fc-idle-stop.timer <<'UNIT'
+[Unit]
+Description=Check for an idle host every minute
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+[Install]
+WantedBy=timers.target
+UNIT
 systemctl daemon-reload
-systemctl enable --now fc-refresh.timer
+systemctl enable --now fc-refresh.timer fc-idle-stop.timer
 echo "host ready"

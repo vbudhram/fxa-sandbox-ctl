@@ -1,23 +1,48 @@
 #!/bin/bash
-# vm-firecracker.sh: a spike. With FXA_FC_HOST set, runners whose name matches
-# FXA_FC_NAMES (default: Slack sessions) are Firecracker slots on that host
-# (infra/firecracker/fc), restored from a snapshot with the FxA stack running.
-# Other runners stay GCE instances. Sourced by vm-gce.sh: ssh, put and pull are
-# the GCE ones, pointed at the slot's routed address by a per-host ssh entry.
+# vm-firecracker.sh: with FXA_FC_HOST set, runners whose name matches FXA_FC_NAMES
+# (default: Slack sessions) are Firecracker slots on that host (infra/firecracker/fc),
+# restored from a snapshot with the FxA stack running. Other runners stay GCE
+# instances. Sourced by vm-gce.sh: ssh, put and pull are the GCE ones, pointed at
+# the slot's routed address by a per-host ssh entry.
+# The host runs on demand: a session's runner starts it when it is stopped
+# (FXA_FC_INSTANCE in FXA_FC_ZONE), and the host powers itself off after 30 idle
+# minutes (infra/firecracker/idle-stop.sh). When it cannot start, the runner is GCE.
 [ -n "${FXA_FC_HOST:-}" ] || return 0
-# A stopped host (its 12h run limit, or by hand) means GCE runners, not failed sessions.
-# A stopped host drops the probe, so every command would wait the full 3 s: remember a miss for a minute.
-_fc_down="${TMPDIR:-/tmp}/fxa-fc-down-${USER:-u}-${FXA_FC_HOST}"
-if [ -f "$_fc_down" ] && [ $(( $(date +%s) - $(_mtime "$_fc_down") )) -lt 60 ]; then unset FXA_FC_HOST; return 0; fi
-timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null || { touch "$_fc_down"; unset FXA_FC_HOST; return 0; }
-rm -f "$_fc_down"
 [ -n "${_FXA_VM_FC_LOADED:-}" ] && return 0
 _FXA_VM_FC_LOADED=1
+FXA_FC_INSTANCE="${FXA_FC_INSTANCE:-fxa-fc-spike}"
+FXA_FC_ZONE="${FXA_FC_ZONE:-us-central1-a}"
 
-_fc() {
+_fc_raw() {
   # shellcheck disable=SC2029  # the arguments are ours, expanded on purpose
   ssh -i "$FXA_GCE_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
     -o ConnectTimeout=20 "${USER}@${FXA_FC_HOST}" "sudo /usr/local/sbin/fc $*"
+}
+# A stopped host has no slots: say so at once, not after a 20 s ssh timeout.
+_fc() { _fc_up && _fc_raw "$@"; }
+
+# _fc_up   The host answers ssh. A stopped host drops the probe, so every call would
+# wait the full 3 s: a miss is remembered for a minute.
+_fc_up() {
+  local down="${TMPDIR:-/tmp}/fxa-fc-down-${USER:-u}-${FXA_FC_HOST}"
+  [ -f "$down" ] && [ $(( $(date +%s) - $(_mtime "$down") )) -lt 60 ] && return 1
+  timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null && { rm -f "$down"; return 0; }
+  touch "$down"; return 1
+}
+
+# _fc_wake   Start the stopped host and wait until fc answers: about 35 s measured.
+# Any controller may start it; starting a running one changes nothing.
+_fc_wake() {
+  local end=$(( $(date +%s) + ${FXA_FC_WAKE_SECONDS:-150} ))
+  echo "Starting the runner host..."
+  _gce compute instances start "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --quiet >/dev/null 2>&1 \
+    || { echo "  The runner host did not start; using GCE." >&2; return 1; }
+  while [ "$(date +%s)" -lt "$end" ]; do
+    timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null && _fc_raw list >/dev/null 2>&1 \
+      && { rm -f "${TMPDIR:-/tmp}/fxa-fc-down-${USER:-u}-${FXA_FC_HOST}"; return 0; }
+    sleep 3
+  done
+  echo "  The runner host did not answer in ${FXA_FC_WAKE_SECONDS:-150}s; using GCE." >&2; return 1
 }
 # A runner created on GCE (it has a zone file) stays GCE, whatever its name: a
 # session started before the spike was turned on must be deleted as an instance.
@@ -33,6 +58,15 @@ for _f in vm_exists vm_clone vm_start vm_is_running vm_stop vm_delete vm_list; d
   eval "$_f() { if _fc_owns \"\${1:-}\"; then _fc_$_f \"\$@\"; else _gce_$_f \"\$@\"; fi; }"
 done
 unset _f
+# A new runner wakes a stopped host. One it cannot wake, or that finds every slot
+# taken, is a GCE runner (its zone file keeps it GCE from then on).
+vm_clone() {
+  if _fc_owns "${1:-}" && { _fc_up || _fc_wake; }; then
+    _fc_vm_clone "$@" && return 0
+    echo "  No free slot on the runner host; using GCE." >&2
+  fi
+  _gce_vm_clone "$@"
+}
 
 _fc_vm_exists() { [ -n "$(_fc_slot_of "$1")" ]; }
 _fc_vm_is_running() { _fc_vm_exists "$1"; }
