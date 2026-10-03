@@ -7,7 +7,8 @@
 # bot starts a normal session with the agent's findings (task --findings-file).
 #
 #   answer_up                       create and harden the runner if it is missing
-#   answer_ask <id> <prompt-file>   one answer, as JSON: {id, answer, upgrade, secs, cost_usd, turns, error}
+#   answer_ask <id> <prompt-file> [connectors] [stream]   one answer, as JSON: {id, answer, upgrade, secs, cost_usd, turns, error};
+#                                   with stream=1, first one {"type":"step","text"} line per tool the agent uses
 #   cmd_answer up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <connectors>]
 
 [ -n "${_FXA_ANSWER_LOADED:-}" ] && return 0
@@ -81,7 +82,7 @@ cd /workspace || exit 1
 ( flock -w 30 9 && [ \$(( \$(date +%s) - \$(stat -c %Y .git/FETCH_HEAD 2>/dev/null || echo 0) )) -gt 300 ] \\
   && git fetch -q origin main && git checkout -q -f --detach FETCH_HEAD ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
-  --output-format json --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
+  --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
   --allowedTools Read Grep Glob 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git diff:*)' 'Bash(git blame:*)' 'Bash(git fetch:*)' 'Bash(git grep:*)' 'Bash(git ls-files:*)' 'Bash(git rev-parse:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
   \${FXA_MCP_CONFIG:+--mcp-config "\$FXA_MCP_CONFIG" --strict-mcp-config}
@@ -100,6 +101,19 @@ _answer_result() {
   || jq -nc --arg id "$1" --argjson secs "$2" '{id: $id, answer: "", upgrade: null, secs: $secs, cost_usd: 0, turns: 0, error: true}'
 }
 
+# _answer_step <stream-json line>   A tool use as a short step for the thread, or nothing.
+_answer_step() {
+  jq -c 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use")
+    | (.input // {}) as $i | def short: tostring | gsub("\\s+"; " ") | .[0:70];
+    {type: "step", text: (
+      if .name == "Grep" then "Searching for `\($i.pattern | short)`"
+      elif .name == "Glob" then "Finding files `\($i.pattern | short)`"
+      elif .name == "Read" then "Reading `\($i.file_path // "" | split("/") | last)`"
+      elif .name == "Bash" then "Running `\($i.command | short)`"
+      elif (.name | startswith("mcp__fxa__")) then "Looking up \(.name | ltrimstr("mcp__fxa__") | split("__") | first)"
+      else .name end)}' <<< "$1" 2>/dev/null || true
+}
+
 # _answer_prs <prompt-file>   The title, state and body of up to 2 mozilla/fxa PRs the
 # request links, fetched here (the runner has no GitHub credential), fenced as data.
 _answer_prs() {
@@ -112,7 +126,7 @@ _answer_prs() {
 }
 
 answer_ask() {
-  local id="$1" pf="$2" mcp="${3:-}" slot t0 out rc=0 res full
+  local id="$1" pf="$2" mcp="${3:-}" stream="${4:-}" slot t0 out="" rc=0 res full line resf
   [[ "$id" =~ ^ask-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like ask-7f3a" >&2; return 1; }
   [ -s "$pf" ] || { echo "ERROR: ask needs a non-empty --prompt-file" >&2; return 1; }
   [ -n "${FXA_LLM_PROXY_URL:-}" ] || { echo "ERROR: answers need FXA_LLM_PROXY_URL" >&2; return 1; }
@@ -122,15 +136,24 @@ answer_ask() {
   local script; script="$(_answer_script "$id" "$full" "$mcp")" || { rm -f "$full"; rmdir "$slot" 2>/dev/null; echo "ERROR: could not make the answer's tokens" >&2; return 1; }
   t0="$(date +%s)"
   # The firewall check and the answer in one ssh: no answer runs on a runner that lost its firewall.
-  out="$(printf '%s\n' "$script" | _answer_vm _gce_ssh "$ANSWER_NAME" --command \
-    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; sudo -u agent -i bash -s")" || rc=$?
+  # Lines as they come: each tool use is a step (when streaming); the last line is the result.
+  resf="$(mktemp)"
+  printf '%s\n' "$script" | _answer_vm _gce_ssh "$ANSWER_NAME" --command \
+    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; sudo -u agent -i bash -s" \
+    | while IFS= read -r line; do
+        case "$line" in
+          *'"type":"result"'*) printf '%s\n' "$line" > "$resf" ;;
+          *) [ "$stream" = 1 ] && _answer_step "$line" ;;
+        esac
+      done
+  rc="${PIPESTATUS[1]}"; out="$(cat "$resf")"; rm -f "$resf"
   rm -f "$full"; rmdir "$slot" 2>/dev/null
   llm_token_revoke "$id" >/dev/null 2>&1 || true; mcp_token_revoke "$id" >/dev/null 2>&1 || true
   [ "$rc" = 9 ] && { errors_record answer no_firewall "" "answer_ask" "fxa-answer has no egress firewall; run: fxa-sandbox-ctl answer up" ""; return 1; }
   res="$(_answer_result "$id" "$(( $(date +%s) - t0 ))" "$out")"
   [ "$(jq -r .error <<< "$res")" = true ] && errors_record answer failed "" "answer_ask" "an answer failed (ssh status ${rc}): $(printf '%s' "$out" | tail -c 200 | tr '\n' ' ')" ""
   jq -c '{at: (now | todate), id, secs, cost_usd, turns, upgrade: (.upgrade != null), error}' <<< "$res" >> "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
-  printf '%s\n' "$res"
+  if [ "$stream" = 1 ]; then jq -c '{type: "answer"} + .' <<< "$res"; else printf '%s\n' "$res"; fi
 }
 
 cmd_answer() {
@@ -139,17 +162,18 @@ cmd_answer() {
     status) _answer_vm vm_exists "$ANSWER_NAME" && echo "fxa-answer: up" || echo "fxa-answer: not created (run: fxa-sandbox-ctl answer up)" ;;
     down) _answer_vm vm_delete "$ANSWER_NAME" ;;
     ask) shift
-      local id="" pf="" mcp=""
+      local id="" pf="" mcp="" stream=""
       while [ $# -gt 0 ]; do
         case "$1" in
           --id) id="$2"; shift 2 ;;
           --prompt-file) pf="$2"; shift 2 ;;
           --mcp) mcp="$2"; shift 2 ;;
+          --stream) stream=1; shift ;;
           *) echo "ERROR: unknown ask option: $1" >&2; return 1 ;;
         esac
       done
       [ -z "$mcp" ] || [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,slack" >&2; return 1; }
-      answer_ask "$id" "$pf" "$mcp" ;;
-    *) echo "usage: fxa-sandbox-ctl answer [up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <list>]]" >&2; return 1 ;;
+      answer_ask "$id" "$pf" "$mcp" "$stream" ;;
+    *) echo "usage: fxa-sandbox-ctl answer [up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <list>] [--stream]]" >&2; return 1 ;;
   esac
 }

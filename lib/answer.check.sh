@@ -22,7 +22,10 @@ cat > "$tmp/bin/claude" <<'EOF'
 #!/bin/bash
 p="$(cat)"; args="$*"
 case "$p" in *UPGRADE-ME*) r=$'It needs the stack.\n@@upgrade {"reason": "needs the stack", "findings": "see auth.ts:12"}' ;; *) r="answer to: ${p%%$'\n'*}" ;; esac
-jq -nc --arg r "$r" --arg a "$args" '{result: $r, total_cost_usd: 0.21, num_turns: 3, is_error: false, args: $a}'
+echo '{"type":"system","subtype":"init"}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Let me look."},{"type":"tool_use","name":"Grep","input":{"pattern":"changePassword"}},{"type":"tool_use","name":"Read","input":{"file_path":"/workspace/packages/a/password.ts"}}]}}'
+echo '{"type":"user","message":{"content":[{"type":"tool_result","content":"\"type\":\"result\" inside a file is not the result"}]}}'
+jq -nc --arg r "$r" --arg a "$args" '{type: "result", result: $r, total_cost_usd: 0.21, num_turns: 3, is_error: false, args: $a}'
 EOF
 chmod +x "$tmp/bin/claude"
 for c in git flock timeout; do printf '#!/bin/bash\n%s\n' "$( [ $c = timeout ] && echo 'shift; exec "$@"' || echo 'exit 0')" > "$tmp/bin/$c"; chmod +x "$tmp/bin/$c"; done
@@ -60,4 +63,7 @@ FIREWALL=1
 check "no proxy: refused, never the API key" "1" "$(FXA_LLM_PROXY_URL= answer_ask ask-t007 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "id: must look like ask-xxxx" "1" "$(answer_ask agent-1234 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "prs: a linked PR comes as fenced data" "1|2" "$(_answer_prs "$tmp/q2" | grep -c '"title":"Fix it"')|$(_answer_prs "$tmp/q2" | grep -cE '^</?pr-')"
+s="$(answer_ask ask-t008 "$tmp/q1" "" 1)"
+check "stream: one step per tool, then the answer" 'Searching for `changePassword`|Reading `password.ts`|answer' "$(jq -r 'if .type == "step" then .text else .type end' <<< "$s" | paste -sd'|' -)"
+check "stream: a tool result that quotes a result line is not the result" "0.21" "$(tail -1 <<< "$s" | jq -r .cost_usd)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
