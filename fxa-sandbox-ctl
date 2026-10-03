@@ -103,6 +103,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
                                throwaway worktree and open a draft PR; events reports it
   session list | show <key> | history <key>
                                Read session records; history is the conversation as JSON
+  session report <key | thread ts>
+                               One run start to end: quick answer, boot, turns, usage, subagents, errors
   session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (600);
                                the work and conversation are saved, the runner is deleted
   session prune                WRITE: delete sessions idle past FXA_SESSION_RETAIN_DAYS (30): prompts,
@@ -2356,6 +2358,7 @@ cmd_session() {
     list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     history) _session_key "${2:-}" && session_history "$2" ;;
+    report) [ -n "${2:-}" ] || { echo "usage: session report <key | thread ts>" >&2; exit 2; }; session_report "$2" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;

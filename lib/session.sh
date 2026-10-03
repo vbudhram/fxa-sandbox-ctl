@@ -205,6 +205,52 @@ _session_try_wait() {
 }
 
 # _session_try_report <key>   The usage by model (the proxy's calls) and the transcripts' summary.
+# session_report <key | thread ts | channel:ts>   One run, start to end: the quick
+# answer, the boot, each turn, the conversation, usage by model, the subagents,
+# errors. A thread is looked up in the bot's state file.
+session_report() {
+  local key="$1" st="${FXA_AGENT_STATE:-$HOME/.fxa-agent-sessions.json}" ask tgz t
+  case "$key" in
+    agent-*) ;;
+    *) key="$(jq -r --arg t "${key#*:}" '[.[] | select(.thread_ts == $t) | .key][0] // empty' "$st" 2>/dev/null || true)" ;;
+  esac
+  [ -n "$key" ] || { echo "session report: no session for '$1'" >&2; return 1; }
+  ask="ask-${key#agent-}"
+  echo "# $key"
+  echo "== quick answer ($ask)"
+  jq -c --arg id "$ask" 'select(.id == $id)' "${PIPE_STATE_DIR:-$HOME/.claude/state/fxa-ai-fixme}/answers.jsonl" 2>/dev/null | sed 's/^/  /' | grep . || echo "  none"
+  if ! session_exists "$key"; then echo "== no sandbox session (answered without one)"; else
+    echo "== session"
+    jq -r '"  state \(.state) (\(.stop_reason // "-")), backend \(.boot_backend // "-"), boot \(.boot_s // "-")s, stack \(.stack_s // "-")s, turns \(.turns // 0)",
+      "  runner \(.runner_s // "-")s (busy \(.busy_s // "-"), idle \(.idle_s // "-")), compute $\(.compute_usd // "-"), verify runs \(.verify_runs // 0) (failed \(.verify_fail_runs // 0))",
+      "  summary \(.summary // "-")", "  pr \(.pr_url // "-"), resumed from \(.resume_from // "-")"' "$(_session_file "$key")"
+    echo "== boot (seconds, step)"
+    sed 's/^/  /' "${SESSION_DIR}/${key}.boot.tsv" 2>/dev/null | grep -v '^  [0-9.]*	$' || echo "  none"
+    echo "== turns"
+    jq -r '"  turn \(.turn): \(.secs)s, cost so far $\(.cost_so_far), tokens \(.tokens_so_far)"' "${SESSION_DIR}/${key}.turns.jsonl" 2>/dev/null || echo "  none"
+    echo "== conversation (seconds from the request)"
+    t="$(session_get "$key" created)"
+    session_history "$key" | jq -r --argjson t "${t:-0}" '.[] | "  +\((.at - $t) | floor)s \(.role): \(.text | gsub("\n"; " ") | .[0:300])"'
+  fi
+  echo "== usage by model"
+  if declare -F db_on >/dev/null && db_on; then
+    db_json "SELECT run, model, count(*) AS calls, round(sum(usd), 2) AS usd FROM llm_calls WHERE run IN ($(db_q "$key"), $(db_q "$ask")) GROUP BY run, model ORDER BY run, sum(usd) DESC;" \
+      | jq -r '.[] | "  \(.run) \(.model): \(.calls) calls, $\(.usd)"'
+  else echo "  (no store here)"; fi
+  echo "== transcripts"
+  tgz="${SESSION_DIR}/${key}.claude.tgz"
+  if [ -f "$tgz" ]; then
+    t="$(mktemp -d "${TMPDIR:-/tmp}/fxa-report.XXXXXX")"
+    tar xzf "$tgz" -C "$t" 2>/dev/null && python3 "${SANDBOX_ROOT:-.}/lib/try_report.py" "$t/.claude/projects" | sed 's/^/  /'
+    rm -rf "$t"
+  elif session_exists "$key"; then _session_try_report "$key" | sed -n '/^== transcripts/,$p' | tail -n +2
+  else echo "  none"; fi
+  echo "== errors"
+  jq -c --arg k "$key" 'select(.key == $k) | {at, kind, where, message: (.message // "" | .[0:200])}' "${ERRORS_FILE:-/nonexistent}" 2>/dev/null | sed 's/^/  /' | grep . || echo "  none"
+  [ -f "${SESSION_DIR}/${key}.postmortem" ] && { echo "== runner at the end"; sed 's/^/  /' "${SESSION_DIR}/${key}.postmortem"; }
+  return 0
+}
+
 _session_try_report() {
   echo "== usage by model"
   if declare -F db_on >/dev/null && db_on; then
