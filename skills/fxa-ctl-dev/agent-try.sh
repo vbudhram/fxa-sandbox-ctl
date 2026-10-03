@@ -90,5 +90,5 @@ for msg in "" ${then[@]+"${then[@]}"}; do
   n=$((n + 1))
 done
 echo "== transcripts"
-python3 "$ROOT/lib/try_report.py" "$HOME/.claude/projects/$(sed 's#[/.]#-#g' <<< "$repo")" | sed 's/^/  /'
+python3 "$ROOT/lib/try_report.py" "$HOME/.claude/projects/$(sed 's#[^A-Za-z0-9]#-#g' <<< "$repo")" | sed 's/^/  /'
 [ -n "$keep" ] && echo "== kept: $repo"
