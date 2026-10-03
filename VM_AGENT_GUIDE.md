@@ -119,6 +119,8 @@ only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
 After a fix, rerun only what failed with `/fxa-verify --failed`. Run the full
 `--run` once more before the handoff.
+When a run fails and its output or log is long, give the path to the
+`fxa-log-triage` subagent and read its summary, not the log.
 
 - Never run a whole package suite. The whole auth unit project (4157 tests)
   left 0.2GB free with Jest's default 3 workers and the stack off, 0.5GB with
@@ -262,8 +264,15 @@ Plugins do not load here. These skills are copied in at launch:
 `/fxa-storybook-capture`, `/fxa-vm-selfcheck`, `/fxa-vm-handoff`,
 `/fxa-test-plan`, `/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
 `/create-pr-description`, `/humanizer`, `/pr-review-typescript`,
-`/quick-review`, `/fxa-save-investigation`, `/fxa-page-shot` and `/fxa-jira-link`, and the
-`fxa-explore` subagent (above). The FxA repo adds its own in
+`/quick-review`, `/fxa-save-investigation`, `/fxa-page-shot` and `/fxa-jira-link`.
+
+Subagents (Agent tool) run on a smaller model with a small context of their own,
+so their work does not fill yours: `fxa-explore` (searching, above),
+`fxa-reviewer` (the wrap-up review), `fxa-writer` (the PR title and body) and
+`fxa-log-triage` (a failed run's log: give it the path, read its summary). `/fxa-vm-selfcheck`
+starts with `check.sh`, which does its mechanical checks in one call.
+
+The FxA repo adds its own in
 `/workspace/.claude/skills`, such as `/fxa-review-quick`, and its rules in
 `/workspace/.claude/rules/`. For FxA code, the repo's rules and skills win.
 

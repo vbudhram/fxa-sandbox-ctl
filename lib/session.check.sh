@@ -176,6 +176,9 @@ check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | 
 runtime_skill_ref() { printf '/%s' "$1"; }
 check "push wrap-up skips the review" "0|1" "$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-review-quick)|$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-auto-done.json.tmp)"
 check "PR wrap-up keeps the review" "1" "$(_session_wrapup_prompt agent-x | grep -c fxa-review-quick)"
+echo '{"key":"agent-cdxw","runtime":"codex"}' > "$tmp/agent-cdxw.json"
+check "PR wrap-up: Claude reviews and writes in subagents" "1|1" "$(_session_wrapup_prompt agent-x | grep -c 'fxa-reviewer subagent')|$(_session_wrapup_prompt agent-x | grep -c 'fxa-writer subagent')"
+check "PR wrap-up: Codex, with no subagents, runs the skills itself" "0|1" "$(_session_wrapup_prompt agent-cdxw | grep -c 'subagent')|$(_session_wrapup_prompt agent-cdxw | grep -c '/create-pr-description on the whole diff')"
 # A dead turn says why: stderr lands in the transcript as a plain line.
 reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1-abcdefgh"}
 OAuth token has expired. Please run /login

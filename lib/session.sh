@@ -210,17 +210,30 @@ write a PR description; that happens when they open the PR. Only:
 EOF
     return
   fi
+  # Claude: the review and the write-up run in subagents (agents/), on a smaller model and a
+  # small context; in the main context, at about 100K, each took 1.2 to 1.6 M tokens (retro 2026-10-03).
+  local review write
+  if [ "$(session_get "$1" runtime 2>/dev/null || true)" = codex ]; then
+    review="Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
+   untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker."
+    write="Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) and $(runtime_skill_ref fxa-unslop) Part 2 on its output."
+  else
+    review="Use the fxa-reviewer subagent (Agent tool) to review the diff: it runs /fxa-review-quick, /fxa-vm-selfcheck
+   and /fxa-unslop Part 1 and returns only the findings. Fix every blocker it reports."
+    write="Use the fxa-writer subagent to write the PR title and body: it runs /create-pr-description, /humanizer
+   and /fxa-unslop Part 2 and writes /workspace/.fxa-pr-body.md and .fxa-pr-title.txt. Tell it there is no Jira ticket.
+   Use those files for pr_title and pr_body."
+  fi
   cat <<EOF
 The engineer asked to open a PR. Wrap up now. First, if
 'git add -N . && git diff --stat \$(git merge-base HEAD origin/main) -- . ":(exclude).fxa-*"'
 prints nothing, say there is nothing to open, write no handoff, and stop. If an
 earlier wrap-up in this session ran steps 1 and 3 and no file changed since, go
 straight to step 4.
-1. Run $(runtime_skill_ref fxa-review-quick) on 'git diff \$(git merge-base HEAD origin/main)' plus
-   untracked files, then $(runtime_skill_ref fxa-vm-selfcheck) and $(runtime_skill_ref fxa-unslop) Part 1. Fix every blocker.
+1. ${review}
 2. Revert any file unrelated to the request with 'git checkout "\$(git merge-base HEAD origin/main)" -- <path>'.
    Then commit everything ('git add -A && git commit'), so the PR description sees all of it.
-3. Use $(runtime_skill_ref create-pr-description) on the whole diff, then $(runtime_skill_ref humanizer) and $(runtime_skill_ref fxa-unslop) Part 2 on its output.
+3. ${write}
    pr_body must reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md. There is no
    Jira ticket; leave the ticket field empty and do not name this session.
 4. Write /workspace/.fxa-auto-done.json LAST, once the working tree holds exactly

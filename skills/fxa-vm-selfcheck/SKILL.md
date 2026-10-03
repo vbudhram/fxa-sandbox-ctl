@@ -13,6 +13,19 @@ on this pipeline's pull requests and that no repo skill performs.
 Each check below traces to real review comments. Run all seven. Report a finding
 only when you can name the file and the line.
 
+## Run the script first
+
+```bash
+bash ~/.claude/skills/fxa-vm-selfcheck/check.sh
+```
+
+In one call it does Step 0, the test-line grep of Check 1, Check 3 (which
+packages to compile), the frozen paths of Check 4, Check 6 and the tags of
+Check 7. Fix each line that starts with `!`. Then do by hand only what needs
+judgment: Check 1 (name the assertion that fails on a revert), Check 2, Check 5,
+the file list of Check 4 against the request, and the skips and CI values of
+Check 7. The sections below are the reference for each check.
+
 ## Step 0: Get the right diff
 
 ```bash
