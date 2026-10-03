@@ -38,6 +38,8 @@ script="$(_answer_script ask-t001 "$tmp/q1" "")"
 check "script: the question travels only as base64" "0" "$(grep -c 'password' <<< "$script")"
 check "script: the proxy token, never the API key" "1|0" "$(grep -c 'ANTHROPIC_BASE_URL=http://10.0.0.2:8788' <<< "$script")|$(grep -c 'sk-ant' <<< "$script")"
 check "script: no edit tools" "1" "$(grep -c -- '--disallowedTools Edit Write' <<< "$script")"
+check "script: git only through the wrapper, never by prefix" "0|1" "$(grep -c "'Bash(git " <<< "$script")|$(grep -c "'Bash(fxa-git-ro:\*)'" <<< "$script")"
+check "script: no reads of /proc, tokens or other answers" "1|1|1" "$(grep -c "'Read(//proc/\*\*)'" <<< "$script")|$(grep -c "'Read(//home/agent/.fxa-mcp-\*)'" <<< "$script")|$(grep -c "'Read(//home/agent/.claude/projects/\*\*)'" <<< "$script")"
 
 out="$(answer_ask ask-t001 "$tmp/q1")"
 check "ask: the answer comes back" "answer to: Where is the 'password' check? \$(touch $tmp/pwned) EOF" "$(jq -r .answer <<< "$out")"

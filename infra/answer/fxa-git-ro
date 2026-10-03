@@ -1,0 +1,26 @@
+#!/bin/bash
+# fxa-git-ro: the quick-answer agent's only git, installed root-owned on fxa-answer.
+# Read-only subcommands with an allowlist of options: a prefix rule like "git log:*"
+# also allowed --output (writes files) and "git fetch --upload-pack=<cmd>" (runs one).
+#   fxa-git-ro log|show|diff|blame|grep|ls-files|rev-parse [options] [revisions] [-- paths]
+#   fxa-git-ro fetch-pr <number>   then compare origin/main...refs/fxa/pr-<number>
+set -euo pipefail
+die() { echo "fxa-git-ro: $*" >&2; exit 2; }
+cd /workspace
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_PAGER=cat PAGER=cat
+unset GIT_EXTERNAL_DIFF GIT_DIR GIT_WORK_TREE GIT_EXEC_PATH GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+G=(git --no-pager -c core.pager=cat -c core.fsmonitor=false -c core.hooksPath=/dev/null -c diff.external= -c protocol.ext.allow=never -c protocol.file.allow=never)
+sub="${1:-}"; [ $# -gt 0 ] && shift
+case "$sub" in
+  fetch-pr)
+    [[ "${1:-}" =~ ^[0-9]{1,7}$ ]] && [ $# = 1 ] || die "fetch-pr takes one pull request number"
+    exec "${G[@]}" fetch -q --no-tags origin "+refs/pull/$1/head:refs/fxa/pr-$1" ;;
+  log|show|diff|blame|grep|ls-files|rev-parse) ;;
+  *) die "not allowed: ${sub:-no subcommand} (log, show, diff, blame, grep, ls-files, rev-parse, fetch-pr)" ;;
+esac
+# Options from a fixed list; everything after the subcommand, so no global option (-c, -C <dir>) fits.
+ok='^(--|-[0-9]+|-[npiwlcEFPWsuzMCh]+|-[ABCU][0-9]*|-[LSG].+|-e|--(oneline|stat|numstat|shortstat|name-only|name-status|patch|no-patch|follow|word-diff|abbrev-commit|no-color|decorate|graph|first-parent|merges|no-merges|reverse|all|cached|staged|function-context|ignore-all-space|ignore-space-change|relative|summary|source|heading|break|porcelain|show-toplevel|verify|abbrev-ref|others|exclude-standard|full-name|line-number|count|files-with-matches|ignore-case|word-regexp|extended-regexp|fixed-strings|perl-regexp|short)|--(format|pretty|max-count|since|until|after|before|author|committer|grep|diff-filter|date|unified|abbrev|max-depth)=.*)$'
+for a in "$@"; do
+  case "$a" in -*) [[ "$a" =~ $ok ]] || die "option not allowed: $a" ;; esac
+done
+exec "${G[@]}" "$sub" "$@"

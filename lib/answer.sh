@@ -43,8 +43,18 @@ answer_up() {
     vm_exec "$ANSWER_NAME" systemctl disable --now mysql redis-server firestore-emulator goaws
     vm_batch_flush "$ANSWER_NAME" || exit 1
     _setup_egress_firewall "$ANSWER_NAME" || exit 1
+    _answer_git_ro || exit 1
     _answer_skills || exit 1
     echo "fxa-answer is up" )
+}
+
+# _answer_git_ro   The agent's only git (infra/answer/fxa-git-ro), root-owned, and the clone's
+# config and hooks root-owned too: a planted hook or config entry ran in later answers.
+_answer_git_ro() {
+  _gce_ssh "$ANSWER_NAME" --command "sudo install -o root -g root -m 755 /dev/stdin /usr/local/bin/fxa-git-ro" < "${SANDBOX_ROOT}/infra/answer/fxa-git-ro" || return 1
+  _gce_ssh "$ANSWER_NAME" --command "sudo bash -c 'g=\$(readlink -f /workspace)/.git; rm -rf \$g/hooks; mkdir \$g/hooks; chown root:root \$g/hooks \$g/config; chmod 755 \$g/hooks; chmod 644 \$g/config'" || return 1
+  # Nothing a past answer left behind in the clone: tracked files back to HEAD, untracked ones gone.
+  _gce_ssh "$ANSWER_NAME" --command "sudo -u agent git -C /workspace checkout -q -f && sudo -u agent git -C /workspace clean -fdq"
 }
 
 # _answer_skills   The skills the quick agent shares with session runners, fresh each time.
@@ -68,7 +78,7 @@ _answer_slot() {
 }
 
 _ANSWER_RULES='You are the FxA agent, answering in a Slack thread about the mozilla/fxa code. The person sees one agent.
-Your tools: search and read files in /workspace (a clone of main); git log, show, diff, blame, grep and ls-files; git fetch of a pull request ref (git fetch origin pull/N/head:pr-N, then git diff main...pr-N); and Jira or Slack reads when you have them. Run each git command alone, not chained with && or ;.
+Your tools: search and read files in /workspace (a clone of main); git through "fxa-git-ro" only (fxa-git-ro log, show, diff, blame, grep, ls-files or rev-parse with their usual options; "fxa-git-ro fetch-pr N" fetches pull request N, then compare origin/main...refs/fxa/pr-N); and Jira or Slack reads when you have them. Run each command alone, not chained with && or ;.
 Answer briefly. Give file paths and line numbers.
 Never mention your tools, environments, sandboxes, read-only access, hand-offs, or anything you cannot do. Never say "from here".
 When you offer a next step, offer the work itself: "Tell me which tests and I will write them", not a hand-off.
@@ -95,8 +105,9 @@ cd /workspace || exit 1
   && git fetch -q origin main && git checkout -q -f --detach FETCH_HEAD ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
   --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
-  --allowedTools Read Grep Glob 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git diff:*)' 'Bash(git blame:*)' 'Bash(git fetch:*)' 'Bash(git grep:*)' 'Bash(git ls-files:*)' 'Bash(git rev-parse:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
+  --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
+    'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\
   \${FXA_MCP_CONFIG:+--mcp-config "\$FXA_MCP_CONFIG" --strict-mcp-config}
 rc=\$?; rm -f "\$FXA_MCP_CONFIG"; exit \$rc
 EOF
