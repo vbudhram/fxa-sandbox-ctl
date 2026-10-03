@@ -494,8 +494,9 @@ check "a turn is logged once, with its cost so far" "1|2|1.25" "$(wc -l < "$SESS
 check "the turn's seconds" "1" "$(jq -r '.secs >= 99 and .secs <= 102 | if . then 1 else 0 end' "$SESSION_DIR/agent-us01.turns.jsonl")"
 session_set agent-us01 turn_open 0
 _session_usage_close agent-us01 idle
-check "stop: reason and the runner's busy and idle seconds" "idle|1|100" "$(session_get agent-us01 stop_reason)|$(s=$(session_get agent-us01 runner_s); [ "$s" -ge 600 ] && [ "$s" -le 602 ] && echo 1)|$(session_get agent-us01 busy_s)"
-check "idle is runner minus busy" "$(( $(session_get agent-us01 runner_s) - 100 ))" "$(session_get agent-us01 idle_s)"
+# The turn ends when the clock says, so busy is 100 s give or take a second.
+check "stop: reason and the runner's busy and idle seconds" "idle|1|1" "$(session_get agent-us01 stop_reason)|$(s=$(session_get agent-us01 runner_s); [ "$s" -ge 600 ] && [ "$s" -le 602 ] && echo 1)|$(b=$(session_get agent-us01 busy_s); [ "$b" -ge 99 ] && [ "$b" -le 102 ] && echo 1)"
+check "idle is runner minus busy" "$(( $(session_get agent-us01 runner_s) - $(session_get agent-us01 busy_s) ))" "$(session_get agent-us01 idle_s)"
 _session_usage_close agent-us01 later
 check "a second close keeps the first reason" "idle" "$(session_get agent-us01 stop_reason)"
 echo '{"key":"agent-us02","state":"starting"}' > "$SESSION_DIR/agent-us02.json"
