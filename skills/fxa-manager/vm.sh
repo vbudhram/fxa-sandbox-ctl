@@ -7,6 +7,10 @@
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
 #                         (no commit, no Docker); a scratch folder, removed after
+#   vm.sh dev [stop|log [n]|report <thread|key>]
+#                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
+#                         both repos: uncommitted changes included. Its own sessions folder and thread map;
+#                         the same runners, proxy and store as the real bot. Deploy for real with sync.
 #   vm.sh ssh             print the ssh command for a person
 # Never prints a secret value: secrets show as present or missing.
 set -euo pipefail
@@ -70,6 +74,46 @@ EOF
       if [ -n "${2:-}" ]; then printf 'bash %q; rc=$?; cd /; rm -rf "$d"; exit $rc\n' "$2"
       else echo 'bash skills/fxa-ctl-dev/test.sh here; rc=$?; cd /; rm -rf "$d"; exit $rc'; fi
     } | on_vm | mask ;;
+  dev)
+    # Each dev path, and what the dev bot runs with, as fxa on the VM.
+    vars='D=$HOME/dev; S=$HOME/.claude/state/agent-sessions-dev; export FXA_SESSION_DIR=$S FXA_AGENT_STATE=$HOME/.fxa-agent-dev-sessions.json'
+    case "${2:-up}" in
+      stop) printf 'exec sudo -u fxa -H bash -s\n%s\n%s\n' "$vars" '[ -f $D/bot.pid ] && kill "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot stopped" || echo "dev bot not running"' | on_vm ;;
+      log) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/bot.log\n' "$vars" "${3:-40}" | on_vm | mask ;;
+      report) [ -n "${3:-}" ] || { echo "usage: vm.sh dev report <thread ts | key>" >&2; exit 1; }
+        printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q\n' "$vars" "$3" | on_vm | mask ;;
+      up)
+        BOT_ROOT="$(cd "$CTL_ROOT/../fxa-agent-bot" && pwd)"
+        [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
+        { echo 'exec sudo -u fxa -H bash -s'
+          echo "$vars"
+          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && base64 -d <<"B64" | tar -xzf -'
+          # Tracked and new files of both repos (not ignored ones: .env, ai/, logs/, node_modules), and the dev env.
+          ( cd "$CTL_ROOT/.." && for r in fxa-sandbox-ctl fxa-agent-bot; do
+              git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s/%s\n' "$r" "$f"; done
+            done; echo fxa-agent-bot/.env.dev ) | ( cd "$CTL_ROOT/.." && COPYFILE_DISABLE=1 tar -czf - -T - ) | base64
+          echo 'B64'
+          cat <<'EOF2'
+chmod 600 fxa-agent-bot/.env.dev
+R=$HOME/Desktop/working2
+ln -sfn $R/fxa-sandbox-ctl/.env fxa-sandbox-ctl/.env
+# The real bot's packages, unless this tree changed them.
+if cmp -s fxa-agent-bot/package-lock.json $R/fxa-agent-bot/package-lock.json; then
+  [ -d fxa-agent-bot/node_modules ] && [ ! -L fxa-agent-bot/node_modules ] && rm -rf fxa-agent-bot/node_modules
+  ln -sfn $R/fxa-agent-bot/node_modules fxa-agent-bot/node_modules
+else rm -f fxa-agent-bot/node_modules; (cd fxa-agent-bot && npm ci --silent); fi
+printf 'FXA_CTL=%s\nERROR_DMS=0\n' "$D/fxa-sandbox-ctl/fxa-sandbox-ctl" > fxa-agent-bot/.env.devhost
+[ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2
+cd fxa-agent-bot
+# The real bot's settings, then the dev app's, then the dev paths: the last file wins.
+setsid nohup node --env-file=$R/fxa-agent-bot/.env --env-file=.env.dev --env-file=.env.devhost src/app.js >> $D/bot.log 2>&1 < /dev/null &
+echo $! > $D/bot.pid
+for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; grep -q "is running" <(tail -n 5 $D/bot.log) && break; done
+kill -0 "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot up (pid $(cat $D/bot.pid))" || { echo "dev bot failed:"; tail -n 20 $D/bot.log; }
+EOF2
+        } | on_vm | mask ;;
+      *) echo "usage: vm.sh dev [stop|log [n]|report <thread|key>]" >&2; exit 1 ;;
+    esac ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
     echo "then: sudo -iu fxa; tmux new -As main" ;;

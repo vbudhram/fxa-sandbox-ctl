@@ -53,6 +53,32 @@ A change to a function with outside calls gets a stubbed test: define the
 outside command as a shell function that fails the first time, then check
 the retry. Put a counter in a file, not a variable: `$(...)` runs in a subshell.
 
+## Try a change before you deploy
+
+| What changed | Try it with |
+|---|---|
+| A runner prompt, a subagent, a skill | `skills/fxa-ctl-dev/agent-try.sh "<request>"`: on the laptop, about 20 s; no stack |
+| Anything a runner does | `fxa-sandbox-ctl session try "<request>"` on the manager: a real runner, no Slack |
+| The bot, or the whole path from Slack | the dev bot, below |
+
+The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` copies
+the working trees of both repos (uncommitted changes too) to `~fxa/dev` on the
+manager and restarts it there: the same runners, proxy and store as the real bot,
+its own sessions folder and thread map. The real bot keeps the committed code.
+
+```bash
+H=skills/fxa-manager/vm.sh D=skills/fxa-ctl-dev/slack-drive.sh
+$H dev                           # deploy the working trees to the dev bot
+ts=$($D start "<request>")       # @mention it in a new thread, as you
+$D wait "$ts"                    # until ✅ or ⚠️, then the thread with times
+$D reply "$ts" "<text>"          # a follow-up, or the answer to a question
+$H dev report "$ts"              # quick answer, boot, turns, usage by model, subagents, errors
+$H dev log                       # the dev bot's log;  $H dev stop
+```
+
+Buttons cannot be pressed through the API: answer with a reply. The tokens are in
+`fxa-agent-bot/.env.dev`. When it looks right: commit, push, `vm.sh sync`.
+
 ## Commit and deploy
 
 1. Scoped conventional commit: `fix(gce): ...`, `feat(session): ...`.
