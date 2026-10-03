@@ -1157,7 +1157,8 @@ _session_save() {
     # The agent's commits since the session's base, for a resume; empty (no commits) makes no file.
     local base; base="$(session_get "$key" base_sha)"
     if [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
-      _session_sh "$name" "cd /workspace && git bundle create /tmp/fxa-work.bundle HEAD ^${base} >/dev/null 2>&1 && cat /tmp/fxa-work.bundle" \
+      # A fresh file, not a fixed /tmp path: another user's file there refused the write.
+      _session_sh "$name" "cd /workspace && b=\$(mktemp) && git bundle create \"\$b\" HEAD ^${base} >/dev/null 2>&1 && cat \"\$b\"; rm -f \"\$b\"" \
         2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.bundle" || true
     fi
     [ -s "${SESSION_DIR}/${key}.bundle" ] || rm -f "${SESSION_DIR}/${key}.bundle"

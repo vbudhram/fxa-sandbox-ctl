@@ -251,7 +251,8 @@ if [ "$REVERT" = 1 ]; then
     for _ in $(seq 60); do curl -sf -m 5 localhost:9000/__heartbeat__ >/dev/null 2>&1 && return 0; sleep 2; done
     echo "ERROR: the auth heartbeat did not come back in 2 minutes; see: pm2 logs auth --lines 50 --nostream"; return 1; }
 
-  logs=/tmp/fxa-verify-revert; rm -rf "$logs"; mkdir -p "$logs"
+  # One folder per user: a fixed /tmp path that another user made first refused every write.
+  logs="${TMPDIR:-/tmp}/fxa-verify-revert-$(id -u)"; rm -rf "$logs"; mkdir -p "$logs"
   declare -A res=()
   run_rows() { local i label dir cmd v; for i in "${!rows[@]}"; do IFS='|' read -r label dir cmd <<<"${rows[$i]}"
     if (cd "$dir" && eval "$cmd") > "$logs/$1-$i.log" 2>&1; then v=PASS; else v=FAIL; fi
@@ -302,7 +303,7 @@ echo "Plan (${#files[@]} changed file(s)):"
 for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"; printf '  %-40s %s\n' "$label" "(cd $dir && $cmd)"; done
 [ "$RUN" = 1 ] || { echo; echo "Run it with: bash $0 --run${PLAN:+ --plan $PLAN}"; exit 0; }
 
-logs=/tmp/fxa-verify; rm -rf "$logs"; mkdir -p "$logs"
+logs="${TMPDIR:-/tmp}/fxa-verify-$(id -u)"; rm -rf "$logs"; mkdir -p "$logs"
 fail=0; results=()
 for i in "${!plan[@]}"; do
   IFS='|' read -r label dir cmd <<<"${plan[$i]}"
