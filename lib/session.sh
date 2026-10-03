@@ -645,7 +645,7 @@ _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
     elif .name == "Grep" then "Searching for \"" + ($i.pattern // "" | tostring) + "\""
     elif .name == "Glob" then "Finding files " + ($i.pattern // "" | tostring)
     elif .name == "Bash" then "Running " + ($i.command // "" | tostring)
-    elif .name == "Task" or .name == "Agent" then "Delegating: " + ($i.description // "" | tostring)
+    elif .name == "Task" or .name == "Agent" then "Delegating" + (($i.subagent_type // "") | tostring | if . == "" then "" else " to " + . end) + ": " + ($i.description // "" | tostring)
     elif .name == "TodoWrite" then "Updating the plan"
     elif .name == "Skill" then "Using /" + ($i.skill // $i.command // "" | tostring)
     else .name end
@@ -658,8 +658,9 @@ _SESSION_CODEX_STEP_JQ='if .type == "command_execution" then "Running " + ((.com
   elif .type == "mcp_tool_call" then "Using " + ((.tool // "a tool") | tostring)
   else empty end | gsub("\\s+"; " ") | .[0:90]'
 # Either agent's event → its steps. Codex commands count when they start; its
-# other items (file edits) only exist once complete.
-_SESSION_STEPS_JQ="if .type == \"assistant\" then (.message.content[]? | ${_SESSION_STEP_JQ})
+# other items (file edits) only exist once complete. A subagent's step starts
+# with "↳ ", so it stays under the step that started the subagent.
+_SESSION_STEPS_JQ="if .type == \"assistant\" then (.parent_tool_use_id // null) as \$p | (.message.content[]? | ${_SESSION_STEP_JQ}) | if \$p then \"↳ \" + . else . end
   elif (.type == \"item.started\" and .item.type == \"command_execution\")
     or (.type == \"item.completed\" and ((.item.type // \"\") | IN(\"command_execution\", \"agent_message\", \"reasoning\") | not))
   then (.item | ${_SESSION_CODEX_STEP_JQ})
@@ -674,7 +675,7 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
   | if .type == "assistant" then (.message.content[]? | select(.type? == "tool_use") | .input as $i | .id as $id
       | if .name == "TodoWrite" then (select($p == null) | {type: "todos", items: [($i.todos // [])[]
             | {content: (.content // "" | tostring | .[0:200]), status: (.status // "pending" | tostring), active: (.activeForm // "" | tostring | .[0:200])}]})
-        elif .name == "Agent" or .name == "Task" then (select($p == null) | {type: "subagent_start", id: $id, description: ($i.description // "" | tostring | .[0:120])})
+        elif .name == "Agent" or .name == "Task" then (select($p == null) | {type: "subagent_start", id: $id, agent: ($i.subagent_type // "" | tostring | .[0:40]), description: ($i.description // "" | tostring | .[0:120])})
         elif ($i.file_path // "" | tostring | endswith("/.fxa-todo.md")) then (select($p == null and .name == "Write") | {type: "todos", items: [($i.content // "" | tostring | split("\n")[]
             | capture("^\\s*[-*] \\[(?<m>[ xX>~])\\] +(?<t>.+)$")? | {content: (.t | .[0:200]), status: ({"x": "completed", "X": "completed", ">": "in_progress", "~": "in_progress"}[.m] // "pending"), active: (.t | .[0:200])})]})
         elif ($i.file_path // "" | tostring | endswith("/.fxa-thread-notes.md")) then empty

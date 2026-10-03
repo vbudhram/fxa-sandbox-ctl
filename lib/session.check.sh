@@ -435,7 +435,7 @@ w="$(printf '%s\n' \
   '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}}' \
   '{"type":"stream_event","parent_tool_use_id":"s1","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"sub"}}}' \
   '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"a1","name":"TodoWrite","input":{"todos":[{"content":"Find it","status":"completed","activeForm":"Finding it"},{"content":"Fix it","status":"in_progress","activeForm":"Fixing it"}]}}]}}' \
-  '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"s1","name":"Agent","input":{"description":"find the limiter","prompt":"p"}}]}}' \
+  '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"s1","name":"Agent","input":{"description":"find the limiter","subagent_type":"fxa-explore","prompt":"p"}}]}}' \
   '{"type":"assistant","parent_tool_use_id":"s1","message":{"content":[{"type":"tool_use","id":"b1","name":"TodoWrite","input":{"todos":[{"content":"sub todo","status":"pending"}]}}]}}' \
   '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"/workspace/libs/a.ts","old_string":"x\ny","new_string":"x\ny\nz"}},{"type":"tool_use","id":"e2","name":"Write","input":{"file_path":"/home/agent/fxa/b.ts","content":"1\n2"}}]}}' \
   '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"PASS\nTests:       1 failed, 44 passed, 45 total\n"}]}}' \
@@ -447,10 +447,10 @@ w="$(printf '%s\n' \
   '{"type":"result","result":"ok"}' | jq -R -c "$_SESSION_WATCH_JQ" | jq -s -c '.')"
 check "watch: text events unchanged" 'text_start|hi' "$(jq -r '[.[] | select(.type == "text_start" or .type == "text") | .text // .type] | join("|")' <<< "$w")"
 check "watch: a subagent's text is not streamed" "0" "$(jq '[.[] | select(.text == "sub")] | length' <<< "$w")"
-check "watch: steps unchanged" 'Updating the plan|Delegating: find the limiter|Updating the plan|Editing a.ts|Editing b.ts|Editing b.ts' "$(jq -r '[.[] | select(.type == "step") | .text] | join("|")' <<< "$w")"
+check "watch: steps, a subagent's marked" 'Updating the plan|Delegating to fxa-explore: find the limiter|↳ Updating the plan|Editing a.ts|Editing b.ts|Editing b.ts' "$(jq -r '[.[] | select(.type == "step") | .text] | join("|")' <<< "$w")"
 check "watch: the main agent's todos" 'Find it:completed:Finding it|Fix it:in_progress:Fixing it' "$(jq -r '[.[] | select(.type == "todos") | .items[] | "\(.content):\(.status):\(.active)"] | join("|")' <<< "$w")"
 check "watch: a subagent's todos are not the plan" "1" "$(jq '[.[] | select(.type == "todos")] | length' <<< "$w")"
-check "watch: a subagent starts" 's1 find the limiter' "$(jq -r '.[] | select(.type == "subagent_start") | "\(.id) \(.description)"' <<< "$w")"
+check "watch: a subagent starts" 's1 fxa-explore find the limiter' "$(jq -r '.[] | select(.type == "subagent_start") | "\(.id) \(.agent) \(.description)"' <<< "$w")"
 check "watch: edits with line counts" 'libs/a.ts +3 -2|b.ts +2 -0' "$(jq -r '[.[] | select(.type == "edit") | "\(.file) +\(.added) -\(.removed)"] | join("|")' <<< "$w")"
 check "watch: jest and mocha counts" '44/1|12/2' "$(jq -r '[.[] | select(.type == "tests") | "\(.passed)/\(.failed)"] | join("|")' <<< "$w")"
 check "watch: lint and type-check counts" 'lint 2/1 types 4' "$(jq -r '"lint \(.[] | select(.type == "lint") | "\(.errors)/\(.warnings)") types \(.[] | select(.type == "types") | .errors)"' <<< "$w")"
