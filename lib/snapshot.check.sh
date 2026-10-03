@@ -60,4 +60,12 @@ rm -rf "$pd"
   check "load: a live session counts until now" "1" "$live"
   exit "$fail" ) || fail=1
 
+# More than 128 KB of sessions: one jq argument stops there (exit 126), so they go as files.
+( export SESSION_DIR="$tmp/big" PIPE_STATE_DIR="$tmp/bigps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"; db_on() { false; }; _session_records() { for f in "$SESSION_DIR"/agent-*.json; do cat "$f"; done; }
+  big="$(head -c 3000 /dev/zero | tr '\0' x)"
+  for n in $(seq 100 160); do printf '{"key":"agent-b%s","owner":"U1","created":%s,"summary":"{\\"note\\":\\"%s\\"}"}\n' "$n" "$n" "$big" > "$SESSION_DIR/agent-b$n.json"; done
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>&1)"
+  check "stats: more than 128 KB of sessions still builds" "61" "$(jq '[.rows[] | select(.src == "slack")] | length' <<< "$out" 2>/dev/null)"
+  exit "$fail" ) || fail=1
+
 exit "$fail"

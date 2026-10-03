@@ -257,7 +257,9 @@ _stats_add_rows() {
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
           usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, model: "", pr: false })' \
       "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
-  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson a "${asks:-[]}" --argjson l "$llm" '.rows += $s + $j + $a | .llm = $l'
+  # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.
+  jq -c --slurpfile s <(printf '%s' "${sess:-[]}") --slurpfile j <(printf '%s' "${jobs:-[]}") --slurpfile a <(printf '%s' "${asks:-[]}") \
+    --slurpfile l <(printf '%s' "$llm") '.rows += $s[0] + $j[0] + $a[0] | .llm = $l[0]'
 }
 
 # _stats_add_load   Slack sessions per day: the most live at once (from start and stop
@@ -481,6 +483,7 @@ snapshot_agents_json() {
   cap="$(cmd_launchcap 2>/dev/null || echo 0)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
   today="$(_snapshot_today)"
+  # sessions goes to jq as a file below: as an argument it passed the 128 KB limit (exit 126).
   local sessions; sessions="$(_snapshot_sessions "$now")"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "sessions: $(( $(date +%s) - started ))s" >&2
   jq -n --arg at "$(date -u +%FT%TZ)" --argjson secs "$(( $(date +%s) - started ))" \
@@ -489,13 +492,13 @@ snapshot_agents_json() {
     --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
     --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --argjson fc "$( [ -n "${FXA_FC_HOST:-}" ] && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
     --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
-    --argjson free "$free" --argjson today "$today" --argjson sessions "${sessions:-[]}" \
+    --argjson free "$free" --argjson today "$today" --slurpfile sessions <(printf '%s' "${sessions:-[]}") \
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running" and .where != "firecracker")) | length) * $hourly else 0 end),
        infra_hourly_usd: ($mgr + $fc), infra: {manager: $mgr, firecracker_host: $fc},
-       runners: $runners, sessions: $sessions, session_cap: '"$(_session_cap)"',
+       runners: $runners, sessions: $sessions[0], session_cap: '"$(_session_cap)"',
        session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-1800}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',
        session_models: { claude: "'"${FXA_AGENT_MODEL:-claude-opus-5-5}"'", codex: "'"${FXA_CODEX_MODEL:-gpt-6-astra}"'" },
        today: $today }'
