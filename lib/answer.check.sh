@@ -9,6 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_URL="http://10.0.0.2:8788"; mkdir -p "$PIPE_STATE_DIR"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/answer.sh"
+export LOG_DIR="$tmp/logs"; mkdir -p "$LOG_DIR"; echo us-central1-b > "$LOG_DIR/fxa-answer.zone"
 _claude_auth_line() { printf 'export ANTHROPIC_BASE_URL=%s\nexport ANTHROPIC_API_KEY=fxl_test%s\n' "$FXA_LLM_PROXY_URL" "$1"; }
 llm_token_revoke() { echo "llm $1" >> "$tmp/revoked"; }
 mcp_token_revoke() { echo "mcp $1" >> "$tmp/revoked"; }

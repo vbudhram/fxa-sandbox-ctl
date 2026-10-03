@@ -17,13 +17,24 @@ _FXA_ANSWER_LOADED=1
 # reaper and the dashboard's runner list never take it for a session's runner.
 ANSWER_NAME=answer
 # VM_PREFIX is readonly; inside the subshell, only this one name changes.
-_answer_vm() { ( vm_name() { echo "fxa-$1"; }; "$@" ); }
+_answer_vm() { _answer_zone; ( vm_name() { echo "fxa-$1"; }; "$@" ); }
+# _vm_zone reads <instance minus agent->.zone, and vm_clone writes <name>.zone: give it fxa-answer.zone,
+# from GCE when this host did not create the runner.
+_answer_zone() {
+  local f="${LOG_DIR}/fxa-answer.zone" z
+  [ -s "$f" ] && return 0
+  [ -s "${LOG_DIR}/${ANSWER_NAME}.zone" ] && { cp "${LOG_DIR}/${ANSWER_NAME}.zone" "$f"; return 0; }
+  z="$(_gce compute instances list --zones "$(_gce_zones_csv)" --filter 'name=fxa-answer' --format 'value(zone.basename())' 2>/dev/null || true)"
+  [ -n "$z" ] && printf '%s' "$z" > "$f"
+  return 0
+}
 
 answer_up() {
   # A per-question proxy token is the only Claude credential it may hold.
   [ -n "${FXA_LLM_PROXY_URL:-}" ] || { echo "ERROR: the answer runner needs FXA_LLM_PROXY_URL; it must never hold the API key" >&2; return 1; }
   ( vm_name() { echo "fxa-$1"; }; FXA_GCE_MACHINE_TYPE="${FXA_ANSWER_MACHINE_TYPE:-c4a-standard-1}" FXA_GCE_MAX_RUN_SECONDS=0
-    if ! vm_exists "$ANSWER_NAME"; then vm_clone "$ANSWER_NAME" && vm_wait_ready "$ANSWER_NAME" || exit 1; fi
+    _answer_zone
+    if ! vm_exists "$ANSWER_NAME"; then vm_clone "$ANSWER_NAME" && _answer_zone && vm_wait_ready "$ANSWER_NAME" || exit 1; fi
     _wait_for_infra "$ANSWER_NAME"
     vm_batch_start
     _disable_proxy_in_vm "$ANSWER_NAME"; _harden_ssh "$ANSWER_NAME"; _restrict_sudo "$ANSWER_NAME"
