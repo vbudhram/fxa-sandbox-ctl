@@ -27,6 +27,9 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent
 CTL = ROOT.parent / "fxa-sandbox-ctl"
 SESSION_DIR = Path(os.environ.get("FXA_SESSION_DIR") or Path.home() / ".claude/state/agent-sessions")
+ERRORS_FILE = os.environ.get("FXA_ERRORS_FILE") or str(Path.home() / ".claude/state/fxa-ai-fixme/errors.jsonl")
+sys.path.insert(0, str(ROOT.parent / "lib"))
+import fxadb  # noqa: E402  the controller's store: sessions as they change
 
 
 class Feed:
@@ -38,6 +41,8 @@ class Feed:
         self.fetched_at = None    # when that succeeded
         self.error = None         # error from the most recent attempt, if any
         self.refreshing = False
+        self.fails = 0            # failures in a row; the third raises an alert
+        self.alerted = False
 
     def read(self):
         with self.lock:
@@ -65,9 +70,17 @@ class Feed:
             data = json.loads(proc.stdout)
             with self.lock:
                 self.data, self.fetched_at, self.error = data, time.time(), None
+            self.fails = 0
+            if self.alerted:
+                self.alerted = False
+                threading.Thread(target=feed_alert_clear, args=(self.name,), daemon=True).start()
         except Exception as exc:
             with self.lock:
                 self.error = f"{type(exc).__name__}: {exc}"[:300]
+            self.fails += 1
+            if self.fails == 3:
+                self.alerted = True
+                feed_alert(self.name, self.error)
         finally:
             with self.lock:
                 self.refreshing = False
@@ -77,6 +90,33 @@ class Feed:
         while True:
             self.refresh()
             time.sleep(self.interval)
+
+
+# A feed that keeps failing leaves the page empty with no other sign (the sessions
+# feed failed every refresh on 2026-10-03). The third failure in a row goes to the
+# error log, which DMs the operator; the next success resolves it.
+def _feed_sig(name):
+    return hashlib.sha1(f"dashboard|feed_failed|{name}".encode()).hexdigest()[:10]
+
+
+def feed_alert(name, error):
+    line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "source": "dashboard", "kind": "feed_failed", "key": None,
+            "where": "dashboard", "message": f"the dashboard's {name} feed failed 3 times in a row; the page shows no fresh {name} data",
+            "log": (error or "")[:300], "sig": _feed_sig(name)}
+    try:
+        os.makedirs(os.path.dirname(ERRORS_FILE), exist_ok=True)
+        with open(ERRORS_FILE, "a") as f:
+            f.write(json.dumps(line, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+    fxadb.ingest("errors", line)
+
+
+def feed_alert_clear(name):
+    try:
+        ctl_run(["errors", "resolve", _feed_sig(name), f"the {name} feed works again"], timeout=30)
+    except Exception:
+        pass
 
 
 # `ctl tail` returns readable lines for a claude -p run, or a screen hardcopy
@@ -347,6 +387,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}"); self.send_header("Accept-Ranges", "bytes")
                 self._hardening(); self.end_headers(); self.wfile.write(part); return
             self._send(200, data, kind)
+        elif path == "/api/sessions":
+            # Sessions written since the page's cursor, from the store: milliseconds, so the
+            # page asks every few seconds. No store: an empty answer, and the feeds carry on.
+            since = arg("since")
+            try:
+                if not os.path.exists(fxadb.PATH):
+                    raise FileNotFoundError(fxadb.PATH)
+                con = fxadb.connect(readonly=True)
+                try:
+                    body = fxadb.sessions_since(con, int(since) if since.isdigit() else None, str(SESSION_DIR))
+                finally:
+                    con.close()
+            except Exception as exc:
+                body = {"cursor": None, "rows": [], "error": type(exc).__name__}
+            self._json(200, body)
         elif path == "/api/stats":
             data = STATS.read()[0]
             self._json(200, data if data is not None else {"error": "stats unavailable"})

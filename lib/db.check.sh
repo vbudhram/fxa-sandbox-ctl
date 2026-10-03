@@ -97,6 +97,17 @@ db_import >/dev/null
   check "parity: a record changed outside the store shows" "1|differ 1" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^sessions ' | grep -o 'differ.*')"
   rm -f "$SESSION_DIR/agent-b.json"; _session_db_sync agent-b
   check "sessions: a removed record leaves the store" "agent-c" "$(db_value 'SELECT key FROM sessions;')"
+  # The page's quick path: only what changed since its cursor, and a removed one as deleted.
+  since() { python3 -c 'import json, sys; sys.path.insert(0, sys.argv[1]); import fxadb
+c = fxadb.connect(sys.argv[2], readonly=True); print(json.dumps(fxadb.sessions_since(c, None if sys.argv[3] == "-" else int(sys.argv[3]), sys.argv[4])))' "$here" "$FXA_DB" "$1" "$SESSION_DIR"; }
+  cur="$(since - | jq .cursor)"
+  check "since: the first call is only a cursor" "[]" "$(since - | jq -c .rows)"
+  session_set agent-c state stopped
+  check "since: a changed session, with its request" "agent-c|stopped|a request" "$(since "$cur" | jq -r '.rows[] | "\(.key)|\(.state)|\(.request)"')"
+  next="$(since "$cur" | jq .cursor)"
+  check "since: nothing new after the new cursor" "[]" "$(since "$next" | jq -c .rows)"
+  rm -f "$SESSION_DIR/agent-c.json"; _session_db_sync agent-c
+  check "since: a removed session is marked deleted" "agent-c|true" "$(since "$next" | jq -r '.rows[] | "\(.key)|\(.deleted)"')"
   db_on() { false; }; rm -rf "$SESSION_DIR"/*
   check "sessions: no records is one empty list" "[]" "$(_session_records | jq -sc .)"
   exit "$fail" ) || fail=1

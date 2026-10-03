@@ -1943,6 +1943,7 @@ async function poll() {
   try { data = await (await fetch("/api/snapshot", { cache:"no-store" })).json(); }
   catch { document.getElementById("dot").className = "dot dead"; document.getElementById("age").textContent = "server unreachable"; return; }
   SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
+  overlay();
   render();
   HIST_OPEN.forEach(loadHist);
   loadErrors(); loadLessons(); loadStats();
@@ -1953,9 +1954,38 @@ document.getElementById("refresh").addEventListener("click", async () => {
   try { await fetch("/api/refresh", { method: "POST" }); } catch {}
   setTimeout(poll, 1500);
 });
+// Sessions as they change: every 3 s, the server answers from the store with only the
+// sessions written since the last cursor. The 30 s feed still brings the live agents;
+// a row stays from here while it is newer than the feed's (last_activity moves on every write).
+let SESS_CUR = null;
+const FRESH = new Map();
+function overlay() {
+  if (!AGENTS) return false;
+  let changed = false;
+  for (const [k, r] of FRESH) {
+    const list = AGENTS.sessions ?? (AGENTS.sessions = []), s = list.find(x => x.key === k);
+    if (r.deleted) { if (s) { AGENTS.sessions = list.filter(x => x.key !== k); changed = true; } FRESH.delete(k); continue; }
+    if (s && (s.last_activity ?? 0) >= (r.last_activity ?? 0)) { FRESH.delete(k); continue; } // the feed caught up
+    const row = { ...r, agent: s?.agent ?? null, agent_alive: s?.agent_alive ?? false };
+    if (s) Object.assign(s, row); else list.unshift(row);
+    changed = true;
+  }
+  if (changed) AGENTS.sessions.sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+  return changed;
+}
+async function pollSessions() {
+  let r;
+  try { r = await (await fetch(`/api/sessions${SESS_CUR == null ? "" : `?since=${SESS_CUR}`}`, { cache: "no-store" })).json(); } catch { return; }
+  if (r.cursor == null) return;
+  SESS_CUR = r.cursor;
+  (r.rows ?? []).forEach(x => FRESH.set(x.key, x));
+  if (overlay()) render();
+}
 route();
 poll();
+pollSessions();
 setInterval(poll, 15000);
+setInterval(pollSessions, 3000);
 setInterval(() => pollTails(TAIL_KEYS), 5000);
 </script>
 </body>

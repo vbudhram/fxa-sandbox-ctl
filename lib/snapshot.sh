@@ -390,34 +390,23 @@ _snapshot_sessions() {
 # database path, the records come from the store, else from the files.
 _snapshot_quiet_rows() {
   python3 -c '
-import json, os, re, sys
+import json, os, sys
 d = sys.argv[1]; live = {"starting", "active", "wrapping"}
-media_re = re.compile(r"^[A-Za-z0-9._-]{1,120}[.](png|jpe?g|gif|webp|mp4|webm)$")
+sys.path.insert(0, sys.argv[3]); import fxadb
 def records():
     if sys.argv[2]:
-        sys.path.insert(0, sys.argv[3]); import fxadb
         for r in fxadb.connect(sys.argv[2], readonly=True).execute("SELECT key, data FROM sessions"):
-            yield r["key"], json.loads(r["data"])
+            yield json.loads(r["data"])
         return
     for n in os.listdir(d):
         if n.startswith("agent-") and n.endswith(".json"):
             try:
-                yield n[:-5], json.load(open(os.path.join(d, n)))
+                yield json.load(open(os.path.join(d, n)))
             except (OSError, ValueError):
                 pass
-for key, rec in records():
-    if rec.get("state") in live:
-        continue
-    try:
-        with open(os.path.join(d, key + ".prompt.md"), "rb") as f:
-            req = f.read(300).decode("utf-8", "ignore").rstrip("\n")   # as $(head -c 300) did
-    except OSError:
-        req = ""
-    md = os.path.join(d, key + ".media"); media = []
-    if os.path.isdir(md):
-        media = sorted(({"at": int(os.path.getmtime(os.path.join(md, m))), "name": m} for m in os.listdir(md) if media_re.match(m)), key=lambda x: (x["at"], x["name"]))
-    rec.update(agent=None, agent_alive=False, request=req, media=media)
-    print(json.dumps(rec))
+for rec in records():
+    if rec.get("state") not in live:
+        print(json.dumps(fxadb.session_row(rec, d)))
 ' "$SESSION_DIR" "${1:-}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 }
 

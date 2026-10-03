@@ -5,6 +5,7 @@ string formatting, for any value.
 """
 import json
 import os
+import re
 import sqlite3
 
 PATH = os.environ.get("FXA_DB") or os.path.expanduser("~/.claude/state/fxa.db")
@@ -75,6 +76,40 @@ def import_files(con, files):
     except Exception:
         con.execute("ROLLBACK")
         raise
+
+
+_MEDIA = re.compile(r"^[A-Za-z0-9._-]{1,120}[.](png|jpe?g|gif|webp|mp4|webm)$")
+
+
+def session_row(rec, d):
+    """A session as the page shows it when no live agent is attached: the record,
+    its request (the first 300 bytes of the prompt) and the media the host kept."""
+    key = rec.get("key", "")
+    try:
+        with open(os.path.join(d, key + ".prompt.md"), "rb") as f:
+            req = f.read(300).decode("utf-8", "ignore").rstrip("\n")   # as $(head -c 300) did
+    except OSError:
+        req = ""
+    md = os.path.join(d, key + ".media")
+    media = []
+    if os.path.isdir(md):
+        media = sorted(({"at": int(os.path.getmtime(os.path.join(md, m))), "name": m} for m in os.listdir(md) if _MEDIA.match(m)),
+                       key=lambda x: (x["at"], x["name"]))
+    return {**rec, "agent": None, "agent_alive": False, "request": req, "media": media}
+
+
+def sessions_since(con, since, d, limit=200):
+    """{cursor, rows}: the sessions written after change `since`, as session_row()s, and
+    {key, deleted} for one that is gone. With since None, only the cursor to start from."""
+    cur = con.execute("SELECT coalesce(max(version), 0) FROM changes").fetchone()[0]
+    if since is None:
+        return {"cursor": cur, "rows": []}
+    rows = []
+    for (key,) in con.execute("SELECT DISTINCT key FROM changes WHERE tbl = 'sessions' AND version > ? AND version <= ? LIMIT ?",
+                              (since, cur, limit)).fetchall():
+        r = con.execute("SELECT data FROM sessions WHERE key = ?", (key,)).fetchone()
+        rows.append(session_row(json.loads(r[0]), d) if r else {"key": key, "deleted": True})
+    return {"cursor": cur, "rows": rows}
 
 
 def _session_files(d):
