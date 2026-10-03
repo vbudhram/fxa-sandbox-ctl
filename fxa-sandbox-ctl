@@ -1913,6 +1913,13 @@ _cmd_session_boot() {
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   _retry git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
     || { echo "ERROR: could not fetch origin/main" >&2; session_set "$key" state failed; return 1; }
+  # An eval (FXA_SESSION_BASE_SHA, the dev bot only): every session starts at that
+  # commit, as if it were main, and the runner's clone keeps no ref past it.
+  local pin_hide=""
+  if [ -n "${FXA_SESSION_BASE_SHA:-}" ]; then
+    [[ "$FXA_SESSION_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: FXA_SESSION_BASE_SHA is not a full commit sha" >&2; session_set "$key" state failed; return 1; }
+    sha="$FXA_SESSION_BASE_SHA"; pin_hide=1
+  fi
   # Resuming: start from the earlier session's base, so its patch applies, and
   # continue its Claude conversation. The base for review diffs stays today's main.
   local from base_sha="$sha" resume_sid=""
@@ -2012,7 +2019,7 @@ what code you are on. Do not pull: a newer main needs a new thread."
   local rc=0
   # The run dir is not a checkout: the ceiling stops git from shipping an enclosing
   # repo's files. The idle pause, not this longer lifetime, bounds a session's cost.
-  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" \
+  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" FXA_PIN_HIDE="$pin_hide" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz"

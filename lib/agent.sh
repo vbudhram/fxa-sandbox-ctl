@@ -258,6 +258,12 @@ _gce_pin_runner_tree() {
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
     fi
+    # An eval (FXA_PIN_HIDE): no ref, reflog or fetch record that reaches past the base.
+    if [ '${FXA_PIN_HIDE:-}' = 1 ]; then
+      git for-each-ref --no-merged=${sha} --format='delete %(refname)' | git update-ref --stdin
+      rm -f \"\$(git rev-parse --git-dir)/FETCH_HEAD\" \"\$(git rev-parse --git-dir)/ORIG_HEAD\"
+      git reflog expire --expire=now --all
+    fi
     if [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
       echo 'yarn.lock differs from the image; installing dependencies...' >&2
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
