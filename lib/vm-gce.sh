@@ -134,6 +134,9 @@ vm_clone() {
     return 1
   fi
   local -a image_flags=(--image-family "$FXA_GCE_IMAGE")
+  # 0 means no run limit: the long-lived answer runner. Session and pipeline runners always get one.
+  local -a run_limit=(--max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE)
+  [ "$FXA_GCE_MAX_RUN_SECONDS" = 0 ] && run_limit=()
   [ -n "${FXA_GCE_IMAGE_FAMILY:-}" ] && image_flags=(--image-family "$FXA_GCE_IMAGE_FAMILY" --image-project "${FXA_GCE_IMAGE_PROJECT:-ubuntu-os-cloud}")
   mkdir -p "${LOG_DIR}"
   # One zone holds about two of these; on a stockout move to the next zone in
@@ -149,7 +152,7 @@ vm_clone() {
         --boot-disk-type hyperdisk-balanced --boot-disk-size 50GB \
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
-        --max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE \
+        ${run_limit[@]+"${run_limit[@]}"} \
         --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
         --labels "fxa-agent=${name},fxa-controller=$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | cut -c1-63)" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
