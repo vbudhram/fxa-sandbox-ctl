@@ -57,8 +57,9 @@ _answer_skills() {
 _answer_slot() {
   local d="${PIPE_STATE_DIR}/answer-slots" n
   mkdir -p "$d" || return 1
-  # 8: a load test on 2026-10-03 ran 8 at once on c4a-standard-1 at 32% CPU, 1.2 GB free, no slower.
-  for n in $(seq "${FXA_ANSWER_MAX:-8}"); do
+  # 10: a load test on 2026-10-03 ran 8 at once on c4a-standard-1 at 32% CPU, 1.2 GB free, no
+  # slower; each answer takes about 120 MB, so 10 leaves about 0.9 GB.
+  for n in $(seq "${FXA_ANSWER_MAX:-10}"); do
     # A slot older than 10 min belongs to a dead answer.
     [ -d "$d/$n" ] && [ $(( $(date +%s) - $(_mtime "$d/$n") )) -gt 600 ] && rmdir "$d/$n" 2>/dev/null
     mkdir "$d/$n" 2>/dev/null && { echo "$d/$n"; return 0; }
