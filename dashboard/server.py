@@ -402,6 +402,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 body = {"cursor": None, "rows": [], "error": type(exc).__name__}
             self._json(200, body)
+        elif path == "/api/usage":
+            # One session's or quick answer's LLM use by model, from the proxy's calls in the store.
+            run = arg("run")
+            if not re.fullmatch(r"(agent|ask)-[a-z0-9]{4,12}", run):
+                self._json(400, {"error": "bad run"})
+                return
+            try:
+                con = fxadb.connect(readonly=True)
+                try:
+                    self._json(200, {"run": run, "models": fxadb.usage_by_model(con, run)})
+                finally:
+                    con.close()
+            except Exception as exc:
+                self._json(200, {"run": run, "models": [], "error": type(exc).__name__})
         elif path == "/api/stats":
             data = STATS.read()[0]
             self._json(200, data if data is not None else {"error": "stats unavailable"})

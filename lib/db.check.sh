@@ -66,17 +66,20 @@ check "ingest: an unknown table or bad JSON is dropped, quietly" "1|0" "$(db_val
 export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_MCP_GATEWAY_DIR="$tmp/gw"; mkdir -p "$PIPE_STATE_DIR" "$FXA_LLM_PROXY_DIR" "$FXA_MCP_GATEWAY_DIR"
 printf '%s\n' '{"at":"2026-10-01T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m1","log":null,"sig":"s1"}' '{"at":"2026-10-02T10:00:00Z","source":"ctl","kind":"crash","key":"agent-a","where":"x","message":"m2","log":null,"sig":"s1"}' > "$PIPE_STATE_DIR/errors.jsonl"
 echo '{"s1":{"at":"2026-10-01T12:00:00Z","note":"fixed"}}' > "$PIPE_STATE_DIR/errors-resolved.json"
-printf '%s\n' '{"at":"2026-10-01T10:00:00Z","run":"agent-a","model":"m","usd":1.25,"usd_cache_write":0.5}' '{"at":"2026-10-01T10:09:00Z","run":"agent-a","model":"m","usd":0.75,"usd_cache_write":0.25}' > "$FXA_LLM_PROXY_DIR/usage.jsonl"
+printf '%s\n' '{"at":"2026-10-01T10:00:00Z","run":"agent-a","model":"m","usd":1.25,"usd_cache_write":0.5,"input_tokens":3,"cache_read_input_tokens":1000,"cache_creation_input_tokens":200,"output_tokens":20}' '{"at":"2026-10-01T10:09:00Z","run":"agent-a","model":"m","usd":0.75,"usd_cache_write":0.25,"cache_read_input_tokens":500,"output_tokens":5}' '{"at":"2026-10-01T10:10:00Z","run":"agent-a","model":"h","usd":0.1,"cache_read_input_tokens":50,"output_tokens":7}' > "$FXA_LLM_PROXY_DIR/usage.jsonl"
 printf '%s\n' '{"recorded_at":"2026-10-01T10:00:00Z","issue":"FXA-1","cost_usd":2.5}' > "$PIPE_STATE_DIR/agent-runs.jsonl"
 echo '[{"id":"l9","at":"x","session":"agent-a","text":"t","status":"pending"}]' > "$PIPE_STATE_DIR/lessons.json"
 db_import >/dev/null
 check "import: tables match their files" "0" "$(db_parity >/dev/null; echo $?)"
-check "import: the daily rollup is rebuilt" "2026-10-01|2|2.0" "$(db_value "SELECT day || '|' || calls || '|' || usd FROM llm_daily;")"
+check "import: the daily rollup is rebuilt" "2026-10-01|m|2|2.0" "$(db_value "SELECT day || '|' || model || '|' || calls || '|' || usd FROM llm_daily WHERE model = 'm';")"
 db_import >/dev/null
 ( export FXA_SESSION_DIR="$tmp/ss" SESSION_DIR="$tmp/ss"; mkdir -p "$SESSION_DIR"; echo '{"key":"agent-a","owner":"U1","created":1}' > "$SESSION_DIR/agent-a.json"
   source "$here/session.sh"; source "$here/snapshot.sh"; a="$(echo '{}' | _stats_add_rows | jq -c '.llm | .. |= (if type == "number" then . + 0 else . end)')"
   db_on() { false; }; b="$(echo '{}' | _stats_add_rows | jq -c .llm)"
   check "stats: the store's LLM rollup equals the file's" "$b" "$a"; exit "$fail" ) || fail=1
+check "usage by model: tokens and cost per model, costliest first" '[{"model":"m","calls":2,"input":3,"cache_read":1500,"cache_write":200,"output":25,"usd":2.0},{"model":"h","calls":1,"input":0,"cache_read":50,"cache_write":0,"output":7,"usd":0.1}]' \
+  "$(python3 -c 'import json, sys; sys.path.insert(0, sys.argv[1]); import fxadb; print(json.dumps(fxadb.usage_by_model(fxadb.connect(sys.argv[2], readonly=True), "agent-a"), separators=(",", ":")))' "$here" "$FXA_DB")"
+
 # Sessions: each write mirrors to the store, import and parity cover the directory, and the readers agree.
 ( export FXA_SESSION_DIR="$tmp/ss2" SESSION_DIR="$tmp/ss2"; mkdir -p "$SESSION_DIR"
   source "$here/session.sh"; source "$here/snapshot.sh"
@@ -112,7 +115,7 @@ c = fxadb.connect(sys.argv[2], readonly=True); print(json.dumps(fxadb.sessions_s
   check "sessions: no records is one empty list" "[]" "$(_session_records | jq -sc .)"
   exit "$fail" ) || fail=1
 db_import >/dev/null
-check "import twice: still one copy" "2|2|1" "$(db_value "SELECT (SELECT count(*) FROM errors) || '|' || (SELECT count(*) FROM llm_calls) || '|' || (SELECT count(*) FROM runs);")"
+check "import twice: still one copy" "2|3|1" "$(db_value "SELECT (SELECT count(*) FROM errors) || '|' || (SELECT count(*) FROM llm_calls) || '|' || (SELECT count(*) FROM runs);")"
 echo '{"at":"2026-10-03T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m3","log":null,"sig":"s2"}' >> "$PIPE_STATE_DIR/errors.jsonl"
 check "parity: a row only in the file shows as a difference" "1|DIFF" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^errors ' | awk '{print $2}')"
 

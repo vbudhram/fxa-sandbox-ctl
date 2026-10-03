@@ -487,6 +487,11 @@
     .slot { grid-template-columns:84px minmax(40px,1fr) max-content; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+table.usage { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.usage th, table.usage td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.usage th:first-child, table.usage td:first-child { text-align: left; }
+table.usage th { font-weight: 600; color: var(--dim); }
+table.usage tr.tot td { border-bottom: 0; }
 </style>
 </head>
 <body>
@@ -1197,7 +1202,13 @@ function runnerCard(rows) {
 function llmCard(l) {
   const days = (l?.days ?? []).slice(-14).reverse();
   if (!days.length) return `<div class="chart"><h2>LLM spend<span class="note">proxy log</span></h2><div class="empty">No proxy log yet.</div></div>`;
+  // By model over the same days: who spends, and on which kind of token.
+  const bm = Object.values((l.models ?? []).reduce((m, r) => { const x = m[r.model] ??= { model: r.model, calls: 0, usd: 0, input: 0, cache_read: 0, cache_write: 0, output: 0 };
+    for (const k of ["calls", "usd", "input", "cache_read", "cache_write", "output"]) x[k] += r[k] || 0; return m; }, {})).sort((a, b) => b.usd - a.usd);
+  const all = bm.reduce((x, r) => x + r.usd, 0) || 1;
+  const models = bm.length ? `<div class="kv"><b>By model, these days</b><span></span></div>${bm.map(r => `<div class="kv"><span>${esc(modelName(r.model))}</span><span><b>${usd(r.usd)}</b> · ${Math.round(r.usd / all * 100)}% · ${r.calls} calls · ${tokn(r.cache_read)} cache read · ${tokn(r.cache_write)} written · ${tokn(r.output)} out</span></div>`).join("")}` : "";
   return `<div class="chart"><h2>LLM spend<span class="note">proxy log, all runs</span></h2>
+    ${models}
     <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
 }
@@ -1825,6 +1836,29 @@ const currentSession = () => { const list = (AGENTS?.sessions ?? []).filter(s =>
 const kvr = (k, v, na) => `<div class="kvr"><span>${k}</span><b${na ? ' class="na"' : ""}>${v}</b></div>`;
 const closeBtn = `<button type="button" class="drawer-close" id="rclose">Close</button>`;
 const num = v => v == null || v === "" ? null : Number(v);
+// LLM use by model for one session or quick answer, from the proxy's calls (/api/usage): main
+// agent and subagents apart, with the token kinds that make the cost. Fetched when shown, 30 s fresh.
+const USAGE = {};
+const tokn = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);
+const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/^./, c => c.toUpperCase());
+function usageTable(rows) {
+  if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
+  const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
+  const tr = (r, b) => `<tr${b ? ' class="tot"' : ""}><td>${b ? "<b>Total</b>" : esc(modelName(r.model))}</td><td>${r.calls}</td><td>${tokn(r.cache_read)}</td><td>${tokn(r.cache_write)}</td><td>${tokn(r.input)}</td><td>${tokn(r.output)}</td><td><b>${usd(r.usd)}</b></td></tr>`;
+  return `<table class="usage"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
+    <tbody>${rows.map(r => tr(r)).join("")}${rows.length > 1 ? tr({ calls: t("calls"), cache_read: t("cache_read"), cache_write: t("cache_write"), input: t("input"), output: t("output"), usd: t("usd") }, true) : ""}</tbody></table>`;
+}
+function usageHtml(key) {
+  const u = USAGE[key];
+  if (!u || (Date.now() - u.at > 30000 && !u.busy)) loadUsage(key);
+  return u?.rows ? usageTable(u.rows) : `<div class="empty">Loading…</div>`;
+}
+async function loadUsage(key) {
+  USAGE[key] = { ...(USAGE[key] ?? {}), busy: true, at: USAGE[key]?.at ?? 0 };
+  try { const r = await (await fetch(`/api/usage?run=${encodeURIComponent(key)}`, { cache: "no-store" })).json(); USAGE[key] = { at: Date.now(), rows: r.models ?? [] }; }
+  catch { USAGE[key] = { at: Date.now(), rows: USAGE[key]?.rows ?? [] }; }
+  renderRight();
+}
 function sessionDetails(s) {
   const a = s.agent || {}, rt = s.runtime || "claude", now = Date.now() / 1000, live = LIVE_SESSION.includes(s.state);
   const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
@@ -1839,6 +1873,7 @@ function sessionDetails(s) {
     <div><h4>Session</h4>${kvr("State", esc(st))}${kvr("Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`)}${kvr("Cost", cost ? usd(cost) : "—")}
       ${kvr("Turns", esc(s.turns ?? 0))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
       ${kvr("Branch or PR", branch)}${sm.diff ? kvr("Change", esc(sm.diff)) : ""}${pauseIn != null ? kvr("Idle pause in", short(pauseIn)) : ""}${endsIn != null ? kvr("Sandbox ends in", short(endsIn)) : ""}</div>
+    <div><h4>Usage by model</h4>${usageHtml(s.key)}</div>
     <div><h4>Runner</h4>${s.boot_s ? kvr("Boot", `${Math.round(num(s.boot_s))} s${s.boot_backend ? ` · ${esc(s.boot_backend)}` : ""}`) : ""}
       ${rs != null ? kvr("Busy, idle", `${short(num(s.busy_s))} busy · ${short(num(s.idle_s))} idle of ${short(rs)}`) : kvr("Busy, idle", live ? "recorded when it stops" : nr, 1)}
       ${s.verify_runs != null ? kvr("Verify runs", `${s.verify_runs} · ${s.verify_full ?? 0} full · ${short(num(s.verify_s))}${num(s.verify_fail_runs) ? ` · ${s.verify_fail_runs} with a FAIL` : ""}`) : kvr("Verify runs", nr, 1)}

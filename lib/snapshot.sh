@@ -227,14 +227,24 @@ _stats_add_rows() {
       'days', (SELECT json_group_array(json_object('day', day, 'usd', usd, 'calls', calls, 'cache_write_usd', cw)) FROM (SELECT * FROM
                (SELECT day, round(sum(usd), 2) AS usd, sum(calls) AS calls, round(sum(usd_cache_write), 2) AS cw FROM llm_daily GROUP BY day ORDER BY day DESC LIMIT 30) ORDER BY day)),
       'gap_usd', (SELECT round(coalesce(sum(usd_cache_write), 0), 2) FROM (SELECT usd_cache_write, at, lag(at) OVER (PARTITION BY run ORDER BY at, id) AS prev
-               FROM llm_calls WHERE run IS NOT NULL) WHERE (unixepoch(at) - unixepoch(prev)) > 300)) AS llm;" | jq -c '.[0].llm | fromjson')" || llm='{}'
+               FROM llm_calls WHERE run IS NOT NULL) WHERE (unixepoch(at) - unixepoch(prev)) > 300),
+      'models', (SELECT json_group_array(json_object('day', day, 'model', model, 'calls', calls, 'usd', usd, 'input', i, 'cache_read', cr, 'cache_write', cw, 'output', o))
+               FROM (SELECT substr(at, 1, 10) AS day, coalesce(model, '') AS model, count(*) AS calls, round(sum(coalesce(usd, 0)), 2) AS usd,
+                 sum(coalesce(input_tokens, 0)) AS i, sum(coalesce(cache_read_input_tokens, 0)) AS cr, sum(coalesce(cache_creation_input_tokens, 0)) AS cw,
+                 sum(coalesce(output_tokens, 0)) AS o FROM llm_calls
+                 WHERE substr(at, 1, 10) IN (SELECT DISTINCT substr(at, 1, 10) FROM llm_calls ORDER BY 1 DESC LIMIT 14)
+                 GROUP BY 1, 2 ORDER BY 1, 2))) AS llm;" | jq -c '.[0].llm | fromjson')" || llm='{}'
   else
   [ -s "$usage" ] && llm="$(jq -sc 'def r2: . * 100 | round / 100;
     { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
       days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
                cache_write_usd: (map(.usd_cache_write // 0) | add | r2)}) | .[-30:]),
       gap_usd: (map(select(.run != null)) | group_by(.run) | map(sort_by(.at) | . as $c
-               | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2) }' \
+               | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2),
+      models: ((map(.at[0:10]) | unique | .[-14:]) as $d | map(select(.at[0:10] as $x | $d | index($x)))
+               | group_by([.at[0:10], (.model // "")]) | map({day: .[0].at[0:10], model: (.[0].model // ""), calls: length, usd: (map(.usd // 0) | add | r2),
+                   input: (map(.input_tokens // 0) | add), cache_read: (map(.cache_read_input_tokens // 0) | add),
+                   cache_write: (map(.cache_creation_input_tokens // 0) | add), output: (map(.output_tokens // 0) | add)})) }' \
     "$usage" 2>/dev/null || echo '{}')"
   fi
   sess="$(_session_records | jq -sc --argjson llm "$llm" '

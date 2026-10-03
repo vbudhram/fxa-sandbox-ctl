@@ -112,6 +112,14 @@ def sessions_since(con, since, d, limit=200):
     return {"cursor": cur, "rows": rows}
 
 
+def usage_by_model(con, run):
+    """One run's LLM calls by model: calls, the four token kinds and the cost, costliest first."""
+    return rows(con, """SELECT model, count(*) AS calls, coalesce(sum(input_tokens), 0) AS input,
+        coalesce(sum(cache_read_input_tokens), 0) AS cache_read, coalesce(sum(cache_creation_input_tokens), 0) AS cache_write,
+        coalesce(sum(output_tokens), 0) AS output, round(coalesce(sum(usd), 0), 4) AS usd
+        FROM llm_calls WHERE run = ? GROUP BY model ORDER BY usd DESC""", (run,))
+
+
 def _session_files(d):
     """(key, text) of every readable session record in d."""
     out = []
