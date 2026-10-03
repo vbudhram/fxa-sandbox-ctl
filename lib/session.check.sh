@@ -571,5 +571,36 @@ check "a fresh pause stays paused" "0|paused" "$(grep -c 'agent-day2' <<< "$out"
   check "prompt: a resumed turn carries only the request" "1|0" "$(grep -c 'Fix the' <<< "$again")|$(grep -c 'GUIDE' <<< "$again")"
   exit "$fail" ) || fail=1
 
+# session try: start, wait for each turn through events, send --then, report, stop.
+( ctl="$tmp/fakectl"; log="$tmp/try.log"; : > "$log"; echo 0 > "$tmp/polls"
+  cat > "$ctl" <<STUB
+#!/bin/bash
+shift 2   # --backend gce
+echo "\$*" >> "$log"
+case "\$1" in
+  task) [ -f "$tmp/try-fail" ] && exit 1; exit 0 ;;
+  steer|stop) exit 0 ;;
+  events) n=\$(( \$(cat "$tmp/polls") + 1 )); echo \$n > "$tmp/polls"
+    if [ -f "$tmp/try-ends" ]; then echo '{"state":"failed","cursor":1,"events":[]}'
+    elif [ \$(( n % 2 )) = 0 ]; then echo "{\\"state\\":\\"active\\",\\"cursor\\":\$n,\\"events\\":[{\\"type\\":\\"turn_end\\"}]}"
+    else echo "{\\"state\\":\\"active\\",\\"cursor\\":\$n,\\"events\\":[{\\"type\\":\\"step\\"}]}"; fi ;;
+  session) echo '[{"role":"user","text":"q"},{"role":"agent","text":"the reply"}]' ;;
+esac
+STUB
+  chmod +x "$ctl"; export _SESSION_TRY_CTL="$ctl" FXA_TRY_POLL_SECONDS=0
+  db_on() { false; }; _session_sh() { echo "main: {}; tools {}"; }; worktree_branch_for() { echo "$1"; }
+  out="$(session_try --prompt "change it" --then "now review" 2>&1)"
+  check "try: two turns, each reply, then a stop" "2|2|1|1" "$(grep -c '^the reply$' <<< "$out")|$(grep -c '^== turn [12],' <<< "$out")|$(grep -c '^steer agent-try' "$log")|$(grep -c '^stop agent-try' "$log")"
+  check "try: it waits through steps, polling from the last cursor" "events agent-try" "$(grep -m1 -o '^events agent-try' "$log")"
+  check "try: a dry-run owner" "1" "$(grep -c -- '--owner U-DRYRUN' "$log")"
+  : > "$log"; out="$(session_try --prompt "x" --keep 2>&1)"
+  check "try --keep: no stop, and says how" "0|1" "$(grep -c '^stop' "$log")|$(grep -c 'kept: fxa-sandbox-ctl stop' <<< "$out")"
+  : > "$log"; touch "$tmp/try-ends"; out="$(session_try --prompt "x" 2>&1)"; rc=$?; rm -f "$tmp/try-ends"
+  check "try: a session that ends early fails, and is still stopped" "1|1|1" "$rc|$(grep -c 'the session ended: failed' <<< "$out")|$(grep -c '^stop' "$log")"
+  touch "$tmp/try-fail"; out="$(session_try --prompt "x" 2>&1)"; rc=$?; rm -f "$tmp/try-fail"
+  check "try: a session that does not start says where to look" "1|1" "$rc|$(grep -c 'did not start' <<< "$out")"
+  check "try: a prompt is required" "1" "$(session_try >/dev/null 2>&1; echo $?)"
+  exit "$fail" ) || fail=1
+
 exit "$fail"
 

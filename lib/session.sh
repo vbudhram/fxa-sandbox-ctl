@@ -148,6 +148,74 @@ The same rules as before apply, including the final 'status:' line.
 EOF
 }
 
+# session_try --prompt <text> | --prompt-file <f>  [--then <text>]...  [--keep]
+# A throwaway session for trying the agent: owner U-DRYRUN (Stats leaves it out). It
+# prints each turn's reply, the usage by model and what each subagent did, then stops
+# the session (--keep leaves it up). The bot is not involved, so this polls events itself.
+session_try() {
+  local ctl="${_SESSION_TRY_CTL:-${SCRIPT_DIR:-.}/fxa-sandbox-ctl}" key prompt="" keep="" f msg t0 n=1 rc=0
+  local then=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --prompt) prompt="${2:-}"; shift 2 ;;
+      --prompt-file) prompt="$(cat "${2:-/nonexistent}")" || return 1; shift 2 ;;
+      --then) then+=("${2:-}"); shift 2 ;;
+      --keep) keep=1; shift ;;
+      *) echo "usage: session try --prompt <text> | --prompt-file <f> [--then <text>]... [--keep]" >&2; return 1 ;;
+    esac
+  done
+  [ -n "$prompt" ] || { echo "ERROR: session try needs --prompt or --prompt-file" >&2; return 1; }
+  key="agent-try$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5)"
+  f="$(mktemp)"; printf '%s\n' "$prompt" > "$f"
+  echo "== ${key}: starting"
+  "$ctl" --backend gce task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1 \
+    || { rm -f "$f"; echo "ERROR: ${key} did not start; see ${SESSION_DIR}/${key}.log" >&2; return 1; }
+  _TRY_CUR=0
+  for msg in "" ${then[@]+"${then[@]}"}; do
+    if [ -n "$msg" ]; then
+      printf '%s\n' "$msg" > "$f"
+      "$ctl" --backend gce steer "$key" --message-file "$f" >/dev/null 2>&1 || { echo "ERROR: the next message was not sent" >&2; rc=1; break; }
+    fi
+    t0="$(date +%s)"
+    _session_try_wait "$ctl" "$key" || { rc=1; break; }
+    echo "== turn ${n}, $(( $(date +%s) - t0 )) s"
+    "$ctl" --backend gce session history "$key" 2>/dev/null | jq -r '[.[] | select(.role == "agent")] | last | .text // "(no reply)"'
+    n=$((n + 1))
+  done
+  rm -f "$f"
+  _session_try_report "$key"
+  if [ -n "$keep" ]; then echo "== kept: fxa-sandbox-ctl stop ${key} when you are done"
+  else "$ctl" --backend gce stop "$key" >/dev/null 2>&1; echo "== stopped ${key}"; fi
+  return "$rc"
+}
+
+# _session_try_wait <ctl> <key>   Poll events as the bot does (that records a turn's
+# end), until a reply, a question or an error. FXA_TRY_TURN_SECONDS caps a turn.
+_session_try_wait() {
+  local end=$(( $(date +%s) + ${FXA_TRY_TURN_SECONDS:-2700} )) out
+  while [ "$(date +%s)" -lt "$end" ]; do
+    if out="$("$1" --backend gce events "$2" --since "${_TRY_CUR:-0}" 2>/dev/null)"; then
+      _TRY_CUR="$(jq -r ".cursor // ${_TRY_CUR:-0}" <<< "$out" 2>/dev/null || echo "${_TRY_CUR:-0}")"
+      jq -e '[.events[]? | select(.type == "turn_end" or .type == "question" or .type == "error")] | length > 0' <<< "$out" >/dev/null 2>&1 && return 0
+      jq -e '.state == "failed" or .state == "stopped"' <<< "$out" >/dev/null 2>&1 && { echo "ERROR: the session ended: $(jq -r .state <<< "$out")" >&2; return 1; }
+    fi
+    sleep "${FXA_TRY_POLL_SECONDS:-10}"
+  done
+  echo "ERROR: no reply in ${FXA_TRY_TURN_SECONDS:-2700}s" >&2; return 1
+}
+
+# _session_try_report <key>   The usage by model (the proxy's calls) and the transcripts' summary.
+_session_try_report() {
+  echo "== usage by model"
+  if declare -F db_on >/dev/null && db_on; then
+    db_json "SELECT model, count(*) AS calls, round(sum(usd), 2) AS usd FROM llm_calls WHERE run = $(db_q "$1") GROUP BY model ORDER BY sum(usd) DESC;" \
+      | jq -r '.[] | "  \(.model): \(.calls) calls, $\(.usd)"'
+  else echo "  (no store here)"; fi
+  echo "== transcripts"
+  _session_sh "$(worktree_branch_for "$1")" "echo $(base64 < "${SANDBOX_ROOT:-.}/lib/try_report.py" | tr -d '\n') | base64 -d | python3 - /home/agent/.claude/projects" 2>/dev/null \
+    | sed 's/^/  /' || echo "  (the runner is gone)"
+}
+
 # _session_prompt_tail <run dir> <resumed 0|1>   The request (and, on a first turn, the
 # guide) for the end of the prompt. In the prompt, not files to read: a read was a tool call,
 # and a second read put a second copy in the context (93 guide reads in 70 sessions to
