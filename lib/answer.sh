@@ -107,7 +107,7 @@ echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOU
   --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
   --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
-    'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\
+    'Bash(git:*)' 'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\
   \${FXA_MCP_CONFIG:+--mcp-config "\$FXA_MCP_CONFIG" --strict-mcp-config}
 rc=\$?; rm -f "\$FXA_MCP_CONFIG"; exit \$rc
 EOF
