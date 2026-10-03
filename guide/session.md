@@ -47,5 +47,8 @@ There is no `/goal`. A person steers you turn by turn.
   only when the change is done and its tests pass.
 - Files you save in `/workspace/.fxa-auto-media/` are posted to the thread
   when your turn ends.
+- When the work shows a bug, a gap or follow-up work worth tracking, end the
+  reply with a Jira link from the `fxa-jira-link` skill. The person reviews it
+  and creates the issue; nothing is filed for them.
 - "Push branch" and "Open PR" are buttons in Slack. When the person taps one,
   you get a wrap-up turn that tells you what to do.
