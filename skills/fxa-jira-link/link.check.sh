@@ -12,6 +12,6 @@ check "labels: only safe ones" "&labels=fxa-agent&labels=ok.1" "$(grep -o '&labe
 check "types map to FXA's ids" "10007 10030 10057" "$(for t in task story spike; do bash "$L" --type "$t" --summary x | sed -E 's/.*issuetype=([0-9]+).*/\1/'; done | tr '\n' ' ' | sed 's/ $//')"
 check "no summary is refused" "2" "$(bash "$L" --type bug 2>/dev/null; echo $?)"
 check "an unknown type is refused" "2" "$(bash "$L" --type incident --summary x 2>/dev/null; echo $?)"
-long="$(head -c 5000 /dev/zero | tr '\0' a)"
-check "a long description is cut, so the link stays short" "1" "$([ "$(bash "$L" --type task --summary x --description "$long" | wc -c)" -lt 2500 ] && echo 1)"
+long="$(head -c 9000 /dev/zero | tr '\0' a)"
+check "a long description is cut, so the link stays under 8,000 characters" "1" "$([ "$(bash "$L" --type task --summary x --description "$long" | wc -c)" -lt 8000 ] && echo 1)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

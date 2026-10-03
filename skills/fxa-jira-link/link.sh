@@ -23,7 +23,7 @@ esac
 [ -n "$summary" ] || { echo "link.sh: --summary is required" >&2; exit 2; }
 enc() { jq -rn --arg v "$1" '$v | @uri'; }
 # Browsers and Slack keep a link of a few thousand characters; a longer description is cut.
-[ "${#desc}" -gt 1800 ] && desc="${desc:0:1800}
+[ "${#desc}" -gt 4000 ] && desc="${desc:0:4000}
 (cut; see the Slack thread for the rest)"
 url="${JIRA}/secure/CreateIssueDetails!init.jspa?pid=${PID}&issuetype=${it}&summary=$(enc "${summary:0:250}")"
 [ -n "$desc" ] && url="${url}&description=$(enc "$desc")"
