@@ -92,7 +92,6 @@ def clean_tail(raw, limit=200):
             out.append(line)
     return out[-limit:]
 
-STATS = {"at": 0, "body": None}    # the run-log summary; the log grows once per run, so a minute is fresh enough
 ERRORS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
@@ -349,8 +348,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._hardening(); self.end_headers(); self.wfile.write(part); return
             self._send(200, data, kind)
         elif path == "/api/stats":
-            body = cached_ctl(STATS, ["--pipeline", PIPELINE, "snapshot", "--stats"], 30, 60)
-            self._send(200, body or json.dumps({"error": "stats unavailable"}), "application/json")
+            data = STATS.read()[0]
+            self._json(200, data if data is not None else {"error": "stats unavailable"})
         elif path == "/api/lessons":
             try:
                 proc = ctl_run(["lessons", "--json"], timeout=15)
@@ -387,7 +386,10 @@ if __name__ == "__main__":
     FULL = Feed("snapshot", ["--pipeline", PIPELINE, "snapshot"], INTERVAL, 300)
     AGENTS = Feed("agents", ["--pipeline", PIPELINE, "snapshot", "--agents"], AGENTS_INTERVAL, 180)
     threading.Thread(target=FULL.loop, daemon=True).start()
+    # The run logs grow once per run, so a minute is fresh enough; no request waits for a refresh.
+    STATS = Feed("stats", ["--pipeline", PIPELINE, "snapshot", "--stats"], 60, 30)
     threading.Thread(target=AGENTS.loop, daemon=True).start()
+    threading.Thread(target=STATS.loop, daemon=True).start()
     print(f"FxA Agent dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
           f"tickets every {INTERVAL}s, agents every {AGENTS_INTERVAL}s)")
     print("Ctrl-C to stop.")
