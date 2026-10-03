@@ -58,7 +58,7 @@ _answer_slot() {
 }
 
 _ANSWER_RULES='You answer a request from a Slack thread about the mozilla/fxa code.
-Your tools are read-only: search and read files in /workspace (a clone of main), git log, show, diff and blame, git fetch of a pull request ref (git fetch origin pull/N/head), and Jira or Slack reads when you have them.
+Your tools are read-only: search and read files in /workspace (a clone of main), git log, show, diff, blame, grep and ls-files, and git fetch of a pull request ref (git fetch origin pull/N/head:pr-N, then git diff main...pr-N). Run each git command alone, not chained with && or ;, and Jira or Slack reads when you have them.
 You cannot edit files, run the stack or tests, use a browser, take screenshots or video, or push.
 Answer briefly. Give file paths and line numbers.
 If the request needs anything you cannot do (code changes, a running stack, tests, a browser, a screenshot or video, a push or a pull request), stop as soon as you know, and end your reply with one line in this form:
@@ -82,7 +82,7 @@ cd /workspace || exit 1
   && git fetch -q origin main && git checkout -q -f --detach FETCH_HEAD ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
   --output-format json --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
-  --allowedTools Read Grep Glob 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git diff:*)' 'Bash(git blame:*)' 'Bash(git fetch origin pull/*)' mcp__fxa \\
+  --allowedTools Read Grep Glob 'Bash(git log:*)' 'Bash(git show:*)' 'Bash(git diff:*)' 'Bash(git blame:*)' 'Bash(git fetch:*)' 'Bash(git grep:*)' 'Bash(git ls-files:*)' 'Bash(git rev-parse:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
   \${FXA_MCP_CONFIG:+--mcp-config "\$FXA_MCP_CONFIG" --strict-mcp-config}
 rc=\$?; rm -f "\$FXA_MCP_CONFIG"; exit \$rc
