@@ -507,5 +507,22 @@ mkdir -p "$tmp/proxy"; printf '%s\n' '{"at":"2020-01-01T00:00:00Z","usd":1}' "{\
 FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_MCP_GATEWAY_DIR="$tmp/none" session_prune >/dev/null
 check "prune drops proxy calls older than 90 days" "2" "$(jq -r .usd "$tmp/proxy/usage.jsonl")"
 
+# The backup: at most daily, --now forces it, a failed upload tries again next sweep.
+( calls="$tmp/gcloud.calls"; gcloud() { echo "$*" >> "$calls"; [ ! -f "$tmp/gcloud.fail" ]; }
+  _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  export FXA_SESSION_BACKUP_URI="gs://b/sessions"; rm -f "$SESSION_DIR/.backed-up"
+  session_backup; session_backup
+  check "backup: once a day" "1" "$(wc -l < "$calls" | tr -d ' ')"
+  check "backup: to the host's folder, without the launch staging" "yes|yes" "$(grep -q "gs://b/sessions/$(hostname -s)" "$calls" && echo yes)|$(grep -q 'run/' "$calls" && echo yes)"
+  session_backup --now
+  check "backup: --now goes anyway" "2" "$(wc -l < "$calls" | tr -d ' ')"
+  touch "$tmp/gcloud.fail"
+  check "backup: a failed upload fails" "1" "$(session_backup --now; echo $?)"
+  rm -f "$tmp/gcloud.fail"; session_backup
+  check "backup: and tries again on the next sweep" "4" "$(wc -l < "$calls" | tr -d ' ')"
+  FXA_SESSION_BACKUP_URI=""; session_backup --now
+  check "backup: no bucket, nothing to do" "4" "$(wc -l < "$calls" | tr -d ' ')"
+  exit "$fail" ) || fail=1
+
 exit "$fail"
 

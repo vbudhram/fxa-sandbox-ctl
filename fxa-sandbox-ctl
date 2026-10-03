@@ -2356,12 +2356,13 @@ cmd_session() {
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     # The alerts ride on the sweep the bot runs every minute, once an hour; their lines go to stderr, as the bot reads "paused" lines.
-    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true; db_backup >&2 || true ;;
+    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true; db_backup >&2 || true; session_backup >&2 || true ;;
+    backup) session_backup --now && echo "backed up the session folder" ;;
     prune) session_prune ;;
     times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
       (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
       + (if .restore then "  (snapshot load \(.restore.restore_ms) ms, ssh at \(.restore.ssh_ms) ms)" else "" end) end' ;;
-    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep | session prune" >&2; return 1 ;;
+    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep | session prune | session backup" >&2; return 1 ;;
   esac
 }
 

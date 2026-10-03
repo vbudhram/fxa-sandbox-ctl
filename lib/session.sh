@@ -410,6 +410,22 @@ _session_job_running() {
 # its last activity, then thread records no session uses, the MCP call log's old
 # lines (they hold tool arguments), and old per-run token files. Prints each key it
 # deleted, so the bot forgets those threads too. Live sessions are never touched.
+# session_backup [--now]   Copy the session folder to the state bucket, at most daily: the saved
+# work and conversations that a resume needs live only on this disk. Only new or changed
+# files go up, and nothing is deleted there, so a local loss never reaches the copy.
+# Restore: gcloud storage rsync -r <uri>/<host> "$SESSION_DIR"
+# ponytail: the copy keeps pruned sessions; add a bucket lifecycle rule if it grows.
+session_backup() {
+  local uri="${FXA_SESSION_BACKUP_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/sessions}}" stamp="${SESSION_DIR}/.backed-up"
+  [ -n "$uri" ] && [ -d "$SESSION_DIR" ] || return 0
+  if [ "${1:-}" != --now ] && [ -f "$stamp" ] && [ $(( $(date +%s) - $(_mtime "$stamp") )) -lt 86400 ]; then return 0; fi
+  touch "$stamp"
+  # Not the .run folders: launch staging, with the stack's secret files in it.
+  gcloud storage rsync -r -q "$SESSION_DIR" "${uri}/$(hostname -s)" \
+    --exclude='[^/]*\.run/.*|.*\.w?lock(/.*)?|PAUSED|\.pause-cache|\.backed-up|.*\.json\.[A-Za-z0-9]{6}' >/dev/null 2>&1 \
+    || { rm -f "$stamp"; return 1; }
+}
+
 session_prune() {
   local cutoff f key k used
   cutoff=$(( $(date +%s) - ${FXA_SESSION_RETAIN_DAYS:-30} * 86400 ))
