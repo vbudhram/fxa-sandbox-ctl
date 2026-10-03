@@ -44,4 +44,20 @@ check "pipeline: a day's passes, work, max queue, last in flight" "2|1|7|3" "$(j
 check "pipeline: queue wait and retries" "2|1|2" "$(jq -r '.pipeline | "\(.waits[0].hours | round)|\(.retried)|\(.tickets)"' <<< "$out")"
 rm -rf "$pd"
 
+# Load: the most Slack sessions live at once each day, waits at the cap, and drops.
+( _session_cap() { echo 2; }; db_on() { false; }; export ERRORS_FILE="$tmp/load-errors.jsonl"
+  printf '%s\n' '{"at":"2026-10-01T15:00:00Z","kind":"queue_dropped","key":"agent-ld09"}' '{"at":"2026-10-01T15:00:00Z","kind":"crash","key":null}' > "$ERRORS_FILE"
+  d1=$(date -u -d 2026-10-01T10:00:00Z +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ 2026-10-01T10:00:00Z +%s)
+  rows="$(jq -nc --argjson t "$d1" '{rows: [
+    {src: "slack", at: "2026-10-01T10:00:00Z", t0: $t, end: ($t + 3600), live: false},
+    {src: "slack", at: "2026-10-01T10:30:00Z", t0: ($t + 1800), end: ($t + 5400), live: false, queued_s: 90},
+    {src: "slack", at: "2026-10-01T11:00:00Z", t0: ($t + 3600), end: ($t + 7200), live: false, queued_s: 400},
+    {src: "slack", at: "2026-10-01T09:00:00Z", t0: ($t - 3600), end: null, live: false},
+    {src: "pipeline", at: "2026-10-01T10:00:00Z", t0: $t, end: ($t + 9999)}]}')"
+  out="$(echo "$rows" | _stats_add_load | jq -c '.load')"
+  check "load: a stop at the same second as a start does not count both" '{"cap":2,"days":[{"day":"2026-10-01","peak":2,"queued":2,"wait_max_s":400,"dropped":1}]}' "$out"
+  live="$(jq -nc '{rows: [{src: "slack", at: "2026-10-02T10:00:00Z", t0: 1790935200, end: null, live: true}]}' | _stats_add_load | jq -c '.load.days[-1].peak')"
+  check "load: a live session counts until now" "1" "$live"
+  exit "$fail" ) || fail=1
+
 exit "$fail"

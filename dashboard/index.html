@@ -1138,7 +1138,7 @@ function renderStats() {
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2></div>
-    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : ""}
+    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
@@ -1202,6 +1202,13 @@ function llmCard(l) {
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
 }
 // The pipeline's passes and queue: days from passes.jsonl, waits from queued to first run.
+function loadCard(l) {
+  const days = (l?.days ?? []).slice().reverse();
+  const mins = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;
+  if (!days.length) return `<div class="chart"><h2>Sessions at once<span class="note">cap ${l?.cap ?? "?"}</span></h2><div class="empty">No session with a stop time yet.</div></div>`;
+  return `<div class="chart"><h2>Sessions at once<span class="note">Slack, peak per day, cap ${l.cap}</span></h2>
+    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span${d.peak >= l.cap ? ' style="color:var(--warn)"' : ""}>peak ${d.peak} of ${l.cap}${d.queued ? ` · ${d.queued} waited, up to ${mins(d.wait_max_s)}` : ""}${d.dropped ? ` · ${d.dropped} dropped` : ""}</span></div>`).join("")}</div>`;
+}
 function pipelineCard(p) {
   const days = (p?.days ?? []).slice().reverse(), w = (p?.waits ?? []).map(x => x.hours).sort((a, b) => a - b);
   if (!days.length && !w.length) return `<div class="chart"><h2>Pipeline queue<span class="note">passes</span></h2><div class="empty">No pass recorded yet.</div></div>`;

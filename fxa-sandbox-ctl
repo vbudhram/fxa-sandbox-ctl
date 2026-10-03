@@ -1772,7 +1772,7 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
@@ -1782,6 +1782,7 @@ cmd_task() {
       --mcp) mcp="$2"; mcp_set=1; shift 2 ;;
       --runtime) runtime="$2"; shift 2 ;;
       --link) link="$2"; shift 2 ;;
+      --queued-s) queued_s="$2"; shift 2 ;;
       --owner-name) owner_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
@@ -1871,6 +1872,8 @@ cmd_task() {
   [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
   # Only a Slack https link is kept.
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"
+  # How long the request waited at the session cap: the bot queues it and retries.
+  [[ "$queued_s" =~ ^[0-9]{1,6}$ ]] && session_set "$key" queued_s "$queued_s"
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"

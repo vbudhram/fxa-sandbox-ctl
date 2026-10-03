@@ -212,7 +212,7 @@ snapshot_stats_json() {
         median_min: (map(.wall_seconds // 0) | med / 60 | round),
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load
 }
 
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the
@@ -245,11 +245,33 @@ _stats_add_rows() {
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
           backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),
           compute_usd: (.compute_usd | n), verify_runs: (.verify_runs | n), verify_full: (.verify_full | n), verify_s: (.verify_s | n),
-          verify_fail_runs: (.verify_fail_runs | n), stack_starts: (.stack_starts | n), stack_s: (.stack_s | n), stack_fails: (.stack_fails | n) })' 2>/dev/null || echo '[]')"
+          verify_fail_runs: (.verify_fail_runs | n), stack_starts: (.stack_starts | n), stack_s: (.stack_s | n), stack_fails: (.stack_fails | n),
+          t0: (.created | n | if . then floor else null end), end: (.stopped_at | n), queued_s: (.queued_s | n),
+          live: ((.state // "") | IN("starting", "active", "wrapping")) })' 2>/dev/null || echo '[]')"
   jobs='[]'
   [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
   jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson l "$llm" '.rows += $s + $j | .llm = $l'
+}
+
+# _stats_add_load   Slack sessions per day: the most live at once (from start and stop
+# times; a session with no stop time before stopped_at was recorded is left out),
+# the requests that waited at the cap, the longest wait, and the ones dropped.
+_stats_add_load() {
+  local drops='[]'
+  if declare -F db_on >/dev/null && db_on; then drops="$(db_json "SELECT substr(at, 1, 10) AS day, count(*) AS n FROM errors WHERE kind = 'queue_dropped' GROUP BY 1;")" || drops='[]'
+  elif [ -s "${ERRORS_FILE:-}" ]; then drops="$(jq -sc 'map(select(.kind == "queue_dropped")) | group_by(.at[0:10]) | map({day: .[0].at[0:10], n: length})' "$ERRORS_FILE" 2>/dev/null || echo '[]')"; fi
+  jq -c --argjson cap "$(_session_cap)" --argjson drops "${drops:-[]}" --argjson now "$(date +%s)" '
+    [.rows[] | select(.src == "slack" and .t0 != null and (.end != null or .live))] as $s
+    | ([$s[] | {t: .t0, d: 1}, {t: (.end // $now), d: -1}] | sort_by(.t, .d)
+       | reduce .[] as $e ({cur: 0, peak: {}}; ($e.t | floor | todate | .[0:10]) as $day
+           # A day starts from the sessions still live at its start, not from zero.
+           | .peak[$day] = ([(.peak[$day] // .cur), (.cur + $e.d)] | max) | .cur += $e.d) | .peak) as $peak
+    | ([.rows[] | select(.src == "slack" and (.queued_s // 0) > 0)] | group_by(.at[0:10])
+       | map({key: .[0].at[0:10], value: {queued: length, wait_max_s: (map(.queued_s) | max)}}) | from_entries) as $q
+    | ($drops | map({key: .day, value: .n}) | from_entries) as $dr
+    | .load = {cap: $cap, days: ([$peak, $q, $dr] | map(keys) | add | unique | .[-14:]
+        | map({day: ., peak: ($peak[.] // 0), queued: ($q[.].queued // 0), wait_max_s: ($q[.].wait_max_s // 0), dropped: ($dr[.] // 0)}))}'
 }
 
 # The pipeline's passes by day (from passes.jsonl), and each ticket's wait from
