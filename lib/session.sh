@@ -1147,7 +1147,9 @@ _session_save() {
     local notes; notes="$(mktemp)"
     _session_sh "$name" 'head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null' > "$notes" 2>/dev/null || true
     _thread_save_notes "$key" "$notes"; rm -f "$notes"
-    _session_upload "$key" || true
+    # In the background: the files are on this disk already, so the stop need not wait for the
+    # bucket. No fd stays open, or the bot would wait on this process's output until it ends.
+    ( _session_upload "$key" </dev/null >/dev/null 2>&1 & )
   fi
   return 0
 }
