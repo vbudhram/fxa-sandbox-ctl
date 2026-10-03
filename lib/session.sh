@@ -451,7 +451,8 @@ session_prune() {
   local d calls="${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}/calls.jsonl" t
   if [ -s "$calls" ]; then
     t="$(mktemp "${calls}.XXXXXX")"
-    jq -c --argjson c "$cutoff" 'select((.at // 0) >= $c)' "$calls" > "$t" 2>/dev/null && mv "$t" "$calls" || rm -f "$t"
+    # The gateway writes .at as an ISO time; a string always compared above the number, so nothing was cut.
+    jq -c --argjson c "$cutoff" 'select((.at // 0 | if type == "number" then . else (fromdate? // 0) end) >= $c)' "$calls" > "$t" 2>/dev/null && mv "$t" "$calls" || rm -f "$t"
   fi
   # The LLM proxy's call log keeps 90 days, for spend trends past the sessions' 30.
   # ponytail: a call the proxy appends during this rewrite is lost; rotate by month if that matters.
@@ -460,6 +461,11 @@ session_prune() {
     t="$(mktemp "${usage}.XXXXXX")"
     jq -c --argjson c "$(( $(date +%s) - ${FXA_LLM_USAGE_RETAIN_DAYS:-90} * 86400 ))" 'select((.at // "" | fromdate? // 0) >= $c)' "$usage" > "$t" 2>/dev/null \
       && mv "$t" "$usage" || rm -f "$t"
+  fi
+  # The store keeps the same windows: its tables hold the same tool arguments. llm_daily keeps the totals.
+  if declare -F db_on >/dev/null && db_on; then
+    db_exec "DELETE FROM mcp_calls WHERE at < strftime('%Y-%m-%dT%H:%M:%SZ', ${cutoff}, 'unixepoch');
+      DELETE FROM llm_calls WHERE at < strftime('%Y-%m-%dT%H:%M:%SZ', $(( $(date +%s) - ${FXA_LLM_USAGE_RETAIN_DAYS:-90} * 86400 )), 'unixepoch');" >/dev/null 2>&1 || true
   fi
   for f in "${LOG_DIR:-/nonexistent}"/*.postmortem; do
     [ -f "$f" ] && [ "$(_mtime "$f")" -lt "$cutoff" ] && rm -f "$f"

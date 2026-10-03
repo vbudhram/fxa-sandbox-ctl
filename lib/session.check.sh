@@ -340,13 +340,15 @@ echo "{\"key\":\"agent-ret2\",\"state\":\"active\",\"last_activity\":$old}" > "$
 echo "{\"key\":\"agent-ret3\",\"state\":\"stopped\",\"last_activity\":$(date +%s)}" > "$tmp/rt/agent-ret3.json"
 echo '{"sessions":"agent-ret1"}' > "$tmp/rt/thread-C0AB-1.1.json"; touch "$tmp/rt/thread-C0AB-1.1.notes.md"
 echo '{"sessions":"agent-ret1 agent-ret3"}' > "$tmp/rt/thread-C0AB-2.2.json"
-printf '%s\n' "{\"at\":$old,\"args\":\"old\"}" "{\"at\":$(date +%s),\"args\":\"new\"}" > "$tmp/rt/mcp/calls.jsonl"
+# The gateway writes ISO times; numbers too, as older lines did.
+printf '%s\n' "{\"at\":$old,\"args\":\"old\"}" "{\"at\":$(date +%s),\"args\":\"new\"}" \
+  "{\"at\":\"$(jq -rn --argjson t "$old" '$t | todate')\",\"args\":\"old-iso\"}" "{\"at\":\"$(date -u +%FT%TZ)\",\"args\":\"new-iso\"}" > "$tmp/rt/mcp/calls.jsonl"
 touch "$tmp/rt/mcp/tokens/fxm_new"
 out="$(SESSION_DIR="$tmp/rt" FXA_MCP_GATEWAY_DIR="$tmp/rt/mcp" FXA_LLM_PROXY_DIR="$tmp/rt/none" session_prune)"
 check "prune deletes the old session's files and prints its key" "agent-ret1|0" "$out|$(ls "$tmp/rt" | grep -c '^agent-ret1')"
 check "prune keeps a live session and a recent one" "yes yes" "$([ -f "$tmp/rt/agent-ret2.json" ] && echo yes) $([ -f "$tmp/rt/agent-ret3.json" ] && echo yes)"
 check "prune deletes a thread no session uses, keeps one still in use" "no yes" "$([ -f "$tmp/rt/thread-C0AB-1.1.json" ] || [ -f "$tmp/rt/thread-C0AB-1.1.notes.md" ] && echo yes || echo no) $([ -f "$tmp/rt/thread-C0AB-2.2.json" ] && echo yes)"
-check "prune drops old MCP call lines and keeps new tokens" "new|yes" "$(jq -r .args "$tmp/rt/mcp/calls.jsonl")|$([ -f "$tmp/rt/mcp/tokens/fxm_new" ] && echo yes)"
+check "prune drops old MCP call lines and keeps new tokens" "new,new-iso|yes" "$(jq -r .args "$tmp/rt/mcp/calls.jsonl" | paste -sd, -)|$([ -f "$tmp/rt/mcp/tokens/fxm_new" ] && echo yes)"
 check "a new thread's task runs under set -e" "agent-thr4 starting" \
   "$(set -e; nohup() { :; }; FXA_VM_BACKEND=gce cmd_task --source slack --id agent-thr4 --owner U1 --prompt-file "$tmp/t.md" --thread C0AB:1790000000.000001 2>/dev/null)"
 check "a bad thread id is refused" "--thread must look like C0123:1790000000.000100" \

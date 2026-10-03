@@ -116,6 +116,19 @@ check "import twice: still one copy" "2|2|1" "$(db_value "SELECT (SELECT count(*
 echo '{"at":"2026-10-03T10:00:00Z","source":"ctl","kind":"crash","key":null,"where":"x","message":"m3","log":null,"sig":"s2"}' >> "$PIPE_STATE_DIR/errors.jsonl"
 check "parity: a row only in the file shows as a difference" "1|DIFF" "$(db_parity >/dev/null; echo $?)|$(db_parity | grep '^errors ' | awk '{print $2}')"
 
+# Prune keeps the store to the files' windows: MCP calls 30 days, LLM calls 90; llm_daily keeps its totals.
+( export FXA_SESSION_DIR="$tmp/pr" SESSION_DIR="$tmp/pr" FXA_MCP_GATEWAY_DIR="$tmp/pr/mcp" FXA_LLM_PROXY_DIR="$tmp/pr/llm"; mkdir -p "$SESSION_DIR"
+  source "$here/session.sh"
+  [ "$SESSION_DIR" = "$tmp/pr" ] || { echo "FAIL prune: SESSION_DIR is not the scratch folder"; exit 1; }
+  iso() { jq -rn --argjson t "$(( $(date +%s) - $1 * 86400 ))" '$t | todate'; }
+  for d in 40 1; do db_ingest mcp_calls "{\"at\":\"$(iso $d)\",\"run\":\"r\",\"connector\":\"jira\",\"tool\":\"t\",\"outcome\":\"ok\",\"args\":\"day $d\"}"; done
+  for d in 100 40; do db_ingest llm_calls "{\"at\":\"$(iso $d)\",\"run\":\"r\",\"model\":\"m\",\"usd\":1}"; done
+  daily="$(db_value "SELECT round(sum(usd), 2) FROM llm_daily;")"
+  session_prune >/dev/null 2>&1
+  check "prune: MCP calls past 30 days leave the store" "day 1" "$(db_value "SELECT args FROM mcp_calls WHERE run = 'r';")"
+  check "prune: LLM calls past 90 days leave it; the daily totals stay" "1|$daily" "$(db_value "SELECT count(*) FROM llm_calls WHERE run = 'r';")|$(db_value "SELECT round(sum(usd), 2) FROM llm_daily;")"
+  exit "$fail" ) || fail=1
+
 # A backup is a whole, valid database.
 _db ".backup '$tmp/copy.db'"
 check "backup passes the integrity check" "ok|$(db_value 'SELECT count(*) FROM sessions;')" "$(sqlite3 "$tmp/copy.db" "PRAGMA integrity_check;")|$(sqlite3 "$tmp/copy.db" "SELECT count(*) FROM sessions;")"
