@@ -251,7 +251,13 @@ _stats_add_rows() {
   jobs='[]'
   [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
-  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson l "$llm" '.rows += $s + $j | .llm = $l'
+  # Quick answers from the answer runner (lib/answer.sh): one row each, so Spend counts them.
+  local asks='[]'
+  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc 'map({ at, src: "answer", key: .id,
+          kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
+          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, model: "", pr: false })' \
+      "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
+  jq -c --argjson s "${sess:-[]}" --argjson j "${jobs:-[]}" --argjson a "${asks:-[]}" --argjson l "$llm" '.rows += $s + $j + $a | .llm = $l'
 }
 
 # _stats_add_load   Slack sessions per day: the most live at once (from start and stop

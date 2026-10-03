@@ -1131,14 +1131,14 @@ function renderStats() {
       <span class="w">${esc(lbl(b.t))}</span></div>`).join("");
   const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
   const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
-  const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", pass: "Passes and triage" };
+  const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
   const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? jira(r.name) : `<span class="mono">${esc(r.name)}</span>`;
   const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
   const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2></div>
-    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : ""}
+    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
@@ -1202,6 +1202,16 @@ function llmCard(l) {
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
 }
 // The pipeline's passes and queue: days from passes.jsonl, waits from queued to first run.
+function answerCard(rows) {
+  const a = rows.filter(r => r.src === "answer"), n = k => a.filter(r => r.kind === k).length;
+  if (!a.length) return `<div class="chart"><h2>Quick answers<span class="note">read-only, no sandbox</span></h2><div class="empty">No quick answer in this range.</div></div>`;
+  const secs = a.filter(r => r.kind !== "failed").map(r => r.secs).filter(v => v != null).sort((x, y) => x - y);
+  const kv = (k, v) => `<div class="kv"><b>${k}</b><span>${v}</span></div>`;
+  return `<div class="chart"><h2>Quick answers<span class="note">read-only, no sandbox</span></h2>
+    ${kv("Answered", `${n("answered")} of ${a.length}`)}${kv("Upgraded to a sandbox", n("upgraded"))}${n("failed") ? kv("Failed, then a session", n("failed")) : ""}
+    ${secs.length ? kv("Time", `median ${secs[Math.floor(secs.length / 2)]} s · slowest ${secs[secs.length - 1]} s`) : ""}
+    ${kv("Cost", `${usd(a.reduce((x, r) => x + (r.usd || 0), 0))} · ${usd(a.reduce((x, r) => x + (r.usd || 0), 0) / a.length)} each`)}</div>`;
+}
 function loadCard(l) {
   const days = (l?.days ?? []).slice().reverse();
   const mins = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;
