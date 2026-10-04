@@ -567,6 +567,15 @@ _jira_rebase_merge() {
     git -C "$wt" merge --abort >&2 || { echo "ERROR: could not abort the slot's earlier merge." >&2; return 1; }
   fi
 
+  # The runner fetches HEAD from GitHub, so a commit only this host has (an older round's
+  # merge) must go. Pipeline agents cannot commit; such a commit is never their work.
+  local br; br="$(git -C "$wt" rev-parse --abbrev-ref HEAD)"
+  if [ "$br" != HEAD ] && git -C "$wt" rev-parse -q --verify "origin/${br}" >/dev/null \
+     && [ -n "$(git -C "$wt" rev-list "origin/${br}..HEAD")" ] && [ -z "$(worktree_filtered_status "$wt")" ]; then
+    echo "Dropping $(git -C "$wt" rev-list --count "origin/${br}..HEAD") commit(s) origin does not have; recover from $(git -C "$wt" rev-parse --short HEAD) if needed." >&2
+    git -C "$wt" reset -q --hard "origin/${br}" >&2 || return 1
+  fi
+
   # --no-commit even when clean: the runner fetches HEAD from GitHub by sha, and a merge
   # commit made here exists only on the host. HEAD stays the pushed branch tip, and the
   # merged files ship as the slot's changes, as after a conflict.
