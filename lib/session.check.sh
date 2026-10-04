@@ -457,6 +457,9 @@ check "watch: lint and type-check counts" 'lint 2/1 types 4' "$(jq -r '"lint \(.
 check "watch: only the last 4 KB of output is read" "0" "$(jq '[.[] | select(.type == "tests" and .passed == 9)] | length' <<< "$w")"
 check "watch: a subagent's tool output is not counted" "0" "$(jq '[.[] | select(.type == "tests" and .passed == 3)] | length' <<< "$w")"
 check "watch: tool results are marked done" 't1:true t2:true t3:false t4:true' "$(jq -r '[.[] | select(.type == "tool_done") | "\(.id):\(.ok)"] | join(" ")' <<< "$w")"
+check "watch: a script that writes a file is an edit, one that reads is not" 'Editing with a script: python3 - <<EOF|Running python3 -c print(1)' \
+  "$(printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"p1","name":"Bash","input":{"command":"python3 - <<EOF\np=\"a.tsx\"; s=open(p).read()\nopen(p, \"w\").write(s.replace(\"a\", \"b\"))\nEOF"}},{"type":"tool_use","id":"p2","name":"Bash","input":{"command":"python3 -c print(1)"}}]}}' \
+    | jq -R -c "$_SESSION_WATCH_JQ" | jq -r 'select(.type == "step") | .text' | sed 's/^\(Editing with a script: python3 - <<EOF\).*/\1/' | paste -sd'|' -)"
 check "watch: a codex item is a step only" '{"type":"step","text":"Editing b.ts"}' "$(echo '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"a/b.ts"}]}}' | jq -R -c "$_SESSION_WATCH_JQ")"
 check "watch: the result ends it" "result" "$(jq -r 'last | .type' <<< "$w")"
 todo="$(jq -n -c '{type: "assistant", parent_tool_use_id: null, message: {content: [{type: "tool_use", id: "w1", name: "Write",

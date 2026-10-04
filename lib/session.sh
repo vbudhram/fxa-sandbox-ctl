@@ -644,7 +644,10 @@ _SESSION_STEP_JQ='select(.type == "tool_use") | (.input // {}) as $i
     elif .name == "Edit" or .name == "MultiEdit" or .name == "Write" then "Editing " + $f
     elif .name == "Grep" then "Searching for \"" + ($i.pattern // "" | tostring) + "\""
     elif .name == "Glob" then "Finding files " + ($i.pattern // "" | tostring)
-    elif .name == "Bash" then "Running " + ($i.command // "" | tostring)
+    elif .name == "Bash" then ($i.command // "" | tostring) as $c
+      # A script that writes a file is an edit; the write is often past the 90 characters kept.
+      | if ($c | test("\\b(python3?|node|perl|ruby)\\b")) and ($c | test("write_text\\(|\\.write\\(|writeFileSync|open\\([^)]*[\"\u0027][wa]\\+?[\"\u0027]|perl -[a-z]*i"))
+        then "Editing with a script: " + $c else "Running " + $c end
     elif .name == "Task" or .name == "Agent" then "Delegating" + (($i.subagent_type // "") | tostring | if . == "" then "" else " to " + . end) + ": " + ($i.description // "" | tostring)
     elif .name == "TodoWrite" then "Updating the plan"
     elif .name == "Skill" then "Using /" + ($i.skill // $i.command // "" | tostring)
