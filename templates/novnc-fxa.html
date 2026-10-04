@@ -5,125 +5,280 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>FxA sandbox desktop</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1c1b22">
+<title>FxA desktop</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #1c1b22; overflow: hidden; }
+  :root { --bg: #1c1b22; --chip: rgba(43, 42, 51, .88); --chip-hi: rgba(66, 65, 77, .95); --fg: #fbfbfe; --accent: #0060df; --on: #00ddff;
+    --sat: env(safe-area-inset-top, 0px); --sar: env(safe-area-inset-right, 0px); --sab: env(safe-area-inset-bottom, 0px); }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; color: var(--fg); font: 14px/1.4 system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   #screen { position: fixed; inset: 0; }
-  #tools { position: fixed; right: 12px; bottom: 12px; display: flex; gap: 8px; z-index: 2; }
-  #tools button { width: 44px; height: 44px; border: 0; border-radius: 22px; background: rgba(43, 42, 51, .75);
-    color: #fbfbfe; cursor: pointer; display: grid; place-items: center; }
-  #tools button:hover { background: rgba(43, 42, 51, .95); }
-  #kbd { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; }
-  #note { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 14px; border-radius: 8px;
-    background: rgba(43, 42, 51, .9); color: #fbfbfe; font: 14px system-ui; display: none; z-index: 3; }
-  #paste { position: fixed; right: 12px; bottom: 68px; display: none; gap: 6px; z-index: 3; }
-  #paste textarea { width: min(70vw, 360px); height: 80px; font: 14px system-ui; }
-  #copyout { position: fixed; left: 50%; top: 16px; transform: translateX(-50%); padding: 8px 14px; border: 0; border-radius: 8px;
-    background: #0060df; color: #fbfbfe; font: 14px system-ui; cursor: pointer; display: none; z-index: 4; }
+  button { font: inherit; color: var(--fg); border: 0; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
+
+  /* The controls: a tab on the right edge, clear of the desktop's panels at the top and bottom. */
+  #dock { position: fixed; right: calc(6px + var(--sar)); top: 50%; transform: translateY(-50%); z-index: 5;
+    display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  #dock .tool { width: 44px; height: 44px; border-radius: 22px; background: var(--chip); display: grid; place-items: center; }
+  #dock .tool:hover { background: var(--chip-hi); }
+  #dock .tool.on { color: var(--on); }
+  #tools { display: none; flex-direction: column; gap: 8px; }
+  #dock.open #tools { display: flex; }
+  #handle { width: 22px; height: 56px; border-radius: 11px; background: var(--chip); opacity: .7; display: grid; place-items: center; }
+  #dock.open #handle { width: 44px; height: 32px; border-radius: 16px; opacity: 1; }
+  #handle:hover { opacity: 1; }
+
+  #kbd { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; } /* 16px: iOS does not zoom */
+  /* Keys a phone keyboard lacks, above it while it is open. */
+  #keys { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: none; gap: 6px; padding: 6px 8px calc(6px + var(--sab));
+    background: rgba(28, 27, 34, .96); overflow-x: auto; scrollbar-width: none; }
+  #keys.show { display: flex; }
+  #keys button { flex: 0 0 auto; min-width: 44px; height: 38px; padding: 0 10px; border-radius: 8px; background: #42414d; }
+  #keys button.on { background: var(--accent); }
+
+  #status { position: fixed; left: 50%; top: calc(12px + var(--sat)); transform: translateX(-50%); z-index: 7; max-width: min(92vw, 520px);
+    padding: 8px 14px; border-radius: 10px; background: var(--chip); display: none; align-items: center; gap: 12px; text-align: center; }
+  #status.show { display: flex; }
+  #status button { padding: 6px 12px; border-radius: 8px; background: var(--accent); white-space: nowrap; }
+  #paste { position: fixed; right: calc(60px + var(--sar)); top: 50%; transform: translateY(-50%); z-index: 6; display: none;
+    flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--chip); width: min(70vw, 360px); }
+  #paste.show { display: flex; }
+  #paste textarea { height: 90px; font: 16px system-ui, sans-serif; border-radius: 8px; border: 0; padding: 8px; resize: vertical; }
+  #paste button, #copyout { padding: 8px 14px; border-radius: 8px; background: var(--accent); }
+  #copyout { position: fixed; left: 50%; top: calc(56px + var(--sat)); transform: translateX(-50%); z-index: 7; display: none; }
+  #hint { position: fixed; left: 50%; bottom: calc(24px + var(--sab)); transform: translateX(-50%); z-index: 7; width: min(92vw, 420px);
+    padding: 12px 14px; border-radius: 12px; background: var(--chip); display: none; }
+  #hint.show { display: block; }
+  #hint ul { margin: 6px 0 10px; padding-left: 18px; }
+  #hint button { padding: 6px 14px; border-radius: 8px; background: var(--accent); }
 </style>
 </head>
 <body>
 <div id="screen"></div>
-<textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
-<div id="paste"><textarea placeholder="Text to paste into the desktop"></textarea><button>Send</button></div>
-<div id="note"></div>
+<textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input"></textarea>
+<div id="status" role="status"><span id="msg"></span><button id="retry" hidden>Try again</button></div>
 <button id="copyout">Copy from the desktop</button>
-<div id="tools">
-  <button id="bkbd" title="Keyboard" aria-label="Show the keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
-  <button id="bpaste" title="Paste" aria-label="Paste text into the desktop"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></button>
-  <button id="bfull" title="Full screen" aria-label="Full screen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+<div id="paste"><textarea id="pastebox" placeholder="Text to paste into the desktop"></textarea><button id="pastego">Paste into the desktop</button></div>
+<div id="hint"><b>Touch controls</b>
+  <ul><li>Tap: click</li><li>Two-finger tap: right click</li><li>Two-finger drag: scroll</li><li>Long press, then drag: select or move</li><li>Pinch: zoom</li></ul>
+  <button id="hintok">Got it</button></div>
+<div id="keys" aria-label="Extra keys">
+  <button data-k="Escape">Esc</button><button data-k="Tab">Tab</button>
+  <button data-mod="ctrl">Ctrl</button><button data-mod="alt">Alt</button>
+  <button data-k="ArrowLeft" aria-label="Left">←</button><button data-k="ArrowUp" aria-label="Up">↑</button>
+  <button data-k="ArrowDown" aria-label="Down">↓</button><button data-k="ArrowRight" aria-label="Right">→</button>
+  <button data-combo="l" title="Address bar">Ctrl+L</button><button data-k="Backspace" aria-label="Backspace">⌫</button>
+  <button id="kbdone">Done</button>
+</div>
+<div id="dock">
+  <button id="handle" aria-expanded="false" aria-label="Show the controls" title="Controls"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
+  <div id="tools">
+    <button class="tool" id="bkbd" title="Keyboard" aria-label="Show the keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
+    <button class="tool" id="bpaste" title="Paste text into the desktop" aria-label="Paste text into the desktop"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></button>
+    <button class="tool" id="bfit" title="Fit: the desktop takes this window's size" aria-label="Switch between fitting the window and a fixed desktop size"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 12h8M12 8v8"/></svg></button>
+    <button class="tool" id="bfull" title="Full screen" aria-label="Full screen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+  </div>
 </div>
 <script type="module">
 import RFB from './core/rfb.js';
 import keysyms from './core/input/keysymdef.js';
 
+const $ = (id) => document.getElementById(id);
 const password = new URLSearchParams(location.hash.slice(1)).get('password') || '';
 const url = new URL('websockify', location.href);
 url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-const $ = (id) => document.getElementById(id);
-const note = (text) => { $('note').textContent = text; $('note').style.display = text ? 'block' : 'none'; };
+const touch = matchMedia('(pointer: coarse)').matches;
+const mac = /Mac|iPhone|iPad/.test(navigator.platform) || (navigator.userAgent.includes('Mac') && navigator.maxTouchPoints > 1);
+const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+const key = location.pathname.match(/agent-[a-z0-9]+/)?.[0];
+if (key) document.title = `FxA desktop · ${key}`;
 
-let rfb;
-function connect() {
-  note('Connecting…');
-  rfb = new RFB($('screen'), url.href, { credentials: { password } });
-  rfb.resizeSession = true;   // the desktop takes the window's size: fewer pixels, faster on a phone
-  rfb.scaleViewport = true;   // if the server cannot resize, fit the view instead
-  rfb.qualityLevel = 6;
-  rfb.compressionLevel = 2;
-  rfb.addEventListener('connect', () => note(''));
-  rfb.addEventListener('clipboard', (e) => fromDesktop(e.detail.text));
-  rfb.addEventListener('disconnect', (e) => {
-    note(e.detail.clean ? 'Disconnected. Reconnecting…' : 'Connection lost. Reconnecting…');
-    setTimeout(connect, 2000);
-  });
-  rfb.addEventListener('credentialsrequired', () => note('This link has no password. Open it again from Slack.'));
-  rfb.addEventListener('securityfailure', () => note('The desktop refused the password. Open it again from Slack.'));
+// Status: a line at the top; a sticky one has a Try again button.
+let hideTimer;
+function status(text, { sticky = false, retry = false, ms = 0 } = {}) {
+  clearTimeout(hideTimer);
+  $('msg').textContent = text;
+  $('retry').hidden = !retry;
+  $('status').classList.toggle('show', Boolean(text));
+  if (text && ms && !sticky) hideTimer = setTimeout(() => $('status').classList.remove('show'), ms);
 }
+
+// The desktop's size. On a desktop browser it takes the window's size ("fit"). A phone gets
+// twice its window (780x1688 on a 390x844 phone), scaled to fit: Firefox will not go below
+// 500 px wide, and a high-density screen shows the extra pixels as sharper text. "Fixed" is
+// a 1440x900 desktop, scaled to fit, to see the desktop layout anywhere.
+const phone = new URLSearchParams(location.hash.slice(1)).get('phone') === '1'
+  || (touch && Math.min(screen.width, screen.height) < 700);
+let fit = store.get('fxa-desktop-fit') !== 'fixed';
+let rfb, tries = 0, typing = false, asked = '';
+const MAX_TRIES = 6;
+const target = () => (!fit ? [1440, 900] : phone ? [innerWidth * 2, innerHeight * 2].map(Math.round) : null);
+// noVNC asks the server for its container's size, so size the container for a moment.
+function requestSize([w, h]) {
+  if (asked === `${w}x${h}`) return;
+  asked = `${w}x${h}`;
+  const s = $('screen');
+  s.style.cssText = `inset:auto;left:0;top:0;width:${w}px;height:${h}px`;
+  rfb.resizeSession = true;
+  setTimeout(() => { rfb.resizeSession = false; s.style.cssText = ''; rfb.scaleViewport = false; rfb.scaleViewport = true; }, 600);
+}
+function applySize() {
+  if (!rfb) return;
+  rfb.scaleViewport = true;                 // never crop: scale down when the desktop is larger than the window
+  const t = target();
+  if (t) { rfb.resizeSession = false; if (!typing) requestSize(t); }
+  else { asked = ''; rfb.resizeSession = !typing; }   // a phone keyboard must not reflow the whole desktop
+  $('bfit').classList.toggle('on', !fit);
+  $('bfit').title = fit ? 'Fit: the desktop takes this window\'s size' : 'Fixed: a 1440x900 desktop, scaled to fit';
+}
+// A phone that turns, or a fixed desktop in a resized window: ask again once it settles.
+let settle;
+window.addEventListener('resize', () => { clearTimeout(settle); settle = setTimeout(() => { if (target()) applySize(); }, 400); });
+function connect() {
+  tries += 1;
+  status(tries === 1 ? 'Connecting…' : `Reconnecting… (${tries - 1} of ${MAX_TRIES - 1})`, { sticky: true });
+  rfb = new RFB($('screen'), url.href, { credentials: { password } });
+  rfb.qualityLevel = touch ? 5 : 6;
+  rfb.compressionLevel = 2;
+  applySize();
+  rfb.addEventListener('connect', () => {
+    tries = 0; status(''); asked = '';
+    applySize();
+    if (touch && !store.get('fxa-desktop-hint')) $('hint').classList.add('show');
+  });
+  rfb.addEventListener('clipboard', (e) => fromDesktop(e.detail.text));
+  rfb.addEventListener('credentialsrequired', () => { stop = true; status('This link has no password. Open the desktop again from the Slack thread.', { sticky: true }); });
+  rfb.addEventListener('securityfailure', () => { stop = true; status('The desktop refused this link. Open it again from the Slack thread.', { sticky: true }); });
+  rfb.addEventListener('disconnect', () => {
+    if (stop) return;
+    if (tries >= MAX_TRIES) {
+      status('The desktop is not reachable. The session may be paused: reply in the Slack thread to pick it up, then open the desktop again.', { sticky: true, retry: true });
+      return;
+    }
+    setTimeout(connect, Math.min(1000 * 2 ** (tries - 1), 8000));
+  });
+}
+let stop = false;
+$('retry').onclick = () => { tries = 0; stop = false; connect(); };
 connect();
 
-// Phones show a keyboard only for a text field; forward what is typed there.
+// The controls.
+const dock = $('dock');
+const setOpen = (open) => { dock.classList.toggle('open', open); $('handle').setAttribute('aria-expanded', String(open)); };
+$('handle').onclick = () => setOpen(!dock.classList.contains('open'));
+setOpen(store.get('fxa-desktop-dock') !== 'closed');
+dock.addEventListener('click', () => store.set('fxa-desktop-dock', dock.classList.contains('open') ? 'open' : 'closed'));
+$('bfit').onclick = () => { fit = !fit; store.set('fxa-desktop-fit', fit ? 'fit' : 'fixed'); applySize(); };
+// iPhone Safari has no Fullscreen API; there, Add to Home Screen opens the page full screen.
+if (!document.documentElement.requestFullscreen) $('bfull').hidden = true;
+$('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+if (!touch) $('bkbd').hidden = true;
+$('hintok').onclick = () => { $('hint').classList.remove('show'); store.set('fxa-desktop-hint', '1'); };
+
+// Keys.
+const SYM = { Backspace: 0xff08, Enter: 0xff0d, Tab: 0xff09, Escape: 0xff1b, Delete: 0xffff,
+  ArrowLeft: 0xff51, ArrowUp: 0xff52, ArrowRight: 0xff53, ArrowDown: 0xff54 };
+const MOD = { ctrl: [0xffe3, 'ControlLeft'], alt: [0xffe9, 'AltLeft'] };
+const held = new Set();
+function press(sym, code) {
+  for (const m of held) rfb.sendKey(MOD[m][0], MOD[m][1], true);
+  rfb.sendKey(sym, code);
+  for (const m of held) rfb.sendKey(MOD[m][0], MOD[m][1], false);
+  if (held.size) { held.clear(); document.querySelectorAll('#keys [data-mod]').forEach((b) => b.classList.remove('on')); }
+}
+const charSym = (ch) => keysyms.lookup(ch.codePointAt(0));
+
+// The phone keyboard: it shows only for a text field, so a hidden one takes what is typed.
 const kbd = $('kbd');
-const key = (sym) => rfb.sendKey(sym);
+function keysBar() {
+  // Keep the bar just above the keyboard: the visual viewport shrinks while it is open.
+  const v = window.visualViewport;
+  $('keys').style.bottom = v ? `${Math.max(0, innerHeight - v.height - v.offsetTop)}px` : '0px';
+}
 $('bkbd').onclick = () => kbd.focus();
+kbd.addEventListener('focus', () => { typing = true; applySize(); $('keys').classList.add('show'); keysBar(); });
+kbd.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== kbd) { typing = false; $('keys').classList.remove('show'); applySize(); } }, 150); });
+window.visualViewport?.addEventListener('resize', keysBar);
+window.visualViewport?.addEventListener('scroll', keysBar);
 kbd.addEventListener('keydown', (e) => {
-  const special = { Backspace: 0xff08, Enter: 0xff0d, Tab: 0xff09, Escape: 0xff1b,
-    ArrowLeft: 0xff51, ArrowUp: 0xff52, ArrowRight: 0xff53, ArrowDown: 0xff54 }[e.key];
-  if (special) { e.preventDefault(); key(special); }
+  if (SYM[e.key]) { e.preventDefault(); press(SYM[e.key], e.code); }
 });
 kbd.addEventListener('input', () => {
-  for (const ch of kbd.value) key(keysyms.lookup(ch.codePointAt(0)));
+  for (const ch of kbd.value) press(charSym(ch));
   kbd.value = '';
 });
+// The bar's buttons must not take focus from the hidden field, or the keyboard closes.
+$('keys').addEventListener('pointerdown', (e) => { if (e.target.closest('button') && e.target.id !== 'kbdone') e.preventDefault(); });
+$('keys').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'kbdone') { kbd.blur(); return; }
+  if (b.dataset.mod) { const m = b.dataset.mod; held.has(m) ? held.delete(m) : held.add(m); b.classList.toggle('on', held.has(m)); }
+  else if (b.dataset.k) press(SYM[b.dataset.k], b.dataset.k);
+  else if (b.dataset.combo) { held.add('ctrl'); press(charSym(b.dataset.combo), `Key${b.dataset.combo.toUpperCase()}`); }
+  kbd.focus();
+});
 
-$('bpaste').onclick = () => {
-  const box = $('paste');
-  box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
-  if (box.style.display === 'flex') box.querySelector('textarea').focus();
-};
-$('paste').querySelector('button').onclick = () => {
-  const t = $('paste').querySelector('textarea');
-  // Paste sets the desktop's clipboard; then Ctrl+V in the desktop pastes it.
-  rfb.clipboardPasteFrom(t.value);
-  t.value = '';
-  $('paste').style.display = 'none';
-  note('Copied to the desktop clipboard. Press Ctrl+V there.');
-  setTimeout(() => note(''), 2500);
-};
-// Keys, before noVNC sees them. On a Mac, Cmd would reach the desktop as Super,
-// which opens menus and can stay held when the browser drops its key-up; so Cmd
-// never goes through, and Cmd+letter is Ctrl+letter in the desktop: Cmd+C and
-// Cmd+V copy and paste inside it, with its own clipboard.
-const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-const ctrl = (k) => {
-  rfb.sendKey(0xffe3, 'ControlLeft', true);
-  rfb.sendKey(keysyms.lookup(k.charCodeAt(0)), `Key${k.toUpperCase()}`);
-  rfb.sendKey(0xffe3, 'ControlLeft', false);
-};
-const inField = (e) => e.target instanceof HTMLTextAreaElement; // the page's own text boxes keep normal keys
-window.addEventListener('keydown', (e) => {
+// Paste: from a box (any device), or with Cmd+V / Ctrl+V straight from this computer's clipboard.
+$('bpaste').onclick = () => { const p = $('paste'); p.classList.toggle('show'); if (p.classList.contains('show')) $('pastebox').focus(); };
+function pasteIn(text) {
+  if (!text) return;
+  rfb.clipboardPasteFrom(text);
+  held.add('ctrl'); press(charSym('v'), 'KeyV');   // the desktop's own Ctrl+V, now with this text
+}
+$('pastego').onclick = () => { pasteIn($('pastebox').value); $('pastebox').value = ''; $('paste').classList.remove('show'); status('Pasted into the desktop', { ms: 1800 }); };
+const inField = (e) => e.target instanceof HTMLTextAreaElement && e.target !== kbd;   // the page's own boxes keep normal keys
+let pasteKey = false;
+window.addEventListener('paste', (e) => {
   if (inField(e)) return;
+  const text = e.clipboardData?.getData('text/plain');
+  if (text) { e.preventDefault(); pasteKey = false; pasteIn(text); }
+});
+
+// Keys before noVNC sees them. On a Mac, Cmd would reach the desktop as Super, which opens
+// menus and can stay held when the browser drops its key-up; so Cmd never goes through,
+// and Cmd+letter is Ctrl+letter in the desktop. Cmd+V (Ctrl+V elsewhere) pastes this
+// computer's clipboard, which holds the desktop's last copy too unless the browser blocked
+// that copy; then it pastes the desktop's own clipboard, so copy and paste inside it agree.
+const ctrl = (k) => { held.add('ctrl'); press(charSym(k), `Key${k.toUpperCase()}`); };
+window.addEventListener('keydown', (e) => {
+  if (inField(e) || e.target === kbd) return;
+  const paste = e.key.toLowerCase() === 'v' && (mac ? e.metaKey : e.ctrlKey) && !e.altKey;
+  if (paste) {
+    e.stopImmediatePropagation();
+    // The desktop's last copy did not reach this computer's clipboard: paste the desktop's own.
+    if (clipPending) { e.preventDefault(); ctrl('v'); return; }
+    // Else let the browser fire its paste event; if it has no text (a file, an image), send a plain Ctrl+V.
+    pasteKey = true;
+    setTimeout(() => { if (pasteKey) { pasteKey = false; ctrl('v'); } }, 120);
+    return;
+  }
   if (e.key === 'Meta') { e.stopImmediatePropagation(); return; }
   if (mac && e.metaKey && /^[a-z]$/i.test(e.key)) { e.stopImmediatePropagation(); e.preventDefault(); ctrl(e.key.toLowerCase()); }
 }, true);
-window.addEventListener('keyup', (e) => { if (!inField(e) && (e.key === 'Meta' || (mac && e.metaKey))) e.stopImmediatePropagation(); }, true);
+window.addEventListener('keyup', (e) => {
+  if (inField(e) || e.target === kbd) return;
+  if (e.key === 'Meta' || (mac && e.metaKey) || (e.key.toLowerCase() === 'v' && (e.ctrlKey || e.metaKey))) e.stopImmediatePropagation();
+}, true);
 
 // A copy in the desktop reaches this page: put it on this computer's clipboard.
 // A browser may refuse that without a click on the page, so a button offers it.
-let clip = '';
-const flash = (text) => { note(text); setTimeout(() => note(''), 2000); };
+let clip = '', clipPending = false;
 async function fromDesktop(text) {
   clip = text;
-  try { await navigator.clipboard.writeText(text); $('copyout').style.display = 'none'; }
-  catch { $('copyout').style.display = 'block'; }
+  try { await navigator.clipboard.writeText(text); clipPending = false; $('copyout').style.display = 'none'; }
+  catch { clipPending = true; $('copyout').style.display = 'block'; }
 }
 $('copyout').onclick = async () => {
   $('copyout').style.display = 'none';
-  try { await navigator.clipboard.writeText(clip); flash('Copied from the desktop'); }
-  catch { flash('This browser blocked the copy'); }
+  try { await navigator.clipboard.writeText(clip); clipPending = false; status('Copied from the desktop', { ms: 1800 }); }
+  catch { status('This browser blocked the copy', { ms: 2500 }); }
 };
-$('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
 </script>
 </body>
 </html>

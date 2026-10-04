@@ -8,7 +8,7 @@
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-if ! command -v Xtigervnc >/dev/null || ! command -v firefox >/dev/null; then
+if ! command -v Xtigervnc >/dev/null || ! command -v firefox >/dev/null || ! command -v wmctrl >/dev/null; then
   install -d -m 0755 /etc/apt/keyrings
   curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg -o /etc/apt/keyrings/packages.mozilla.org.asc
   echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list
@@ -16,7 +16,7 @@ if ! command -v Xtigervnc >/dev/null || ! command -v firefox >/dev/null; then
   printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' > /etc/apt/preferences.d/mozilla
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends xfce4 xfce4-terminal thunar dbus-x11 \
-    tigervnc-standalone-server tigervnc-tools novnc websockify firefox xfonts-base fonts-dejavu >/tmp/desktop-apt.log 2>&1
+    tigervnc-standalone-server tigervnc-tools novnc websockify firefox wmctrl xfonts-base fonts-dejavu >/tmp/desktop-apt.log 2>&1
 fi
 
 id viewer >/dev/null 2>&1 || useradd -m -s /bin/bash viewer
@@ -139,6 +139,11 @@ fi
 if ! pgrep -u viewer -x firefox >/dev/null; then
   DISPLAY=:1 nohup setsid ~/fxa-firefox >/tmp/viewer-firefox.log 2>&1 </dev/null &
 fi
+# Maximized, Firefox follows the desktop's size, which the page sets from the screen it is
+# on (a phone gets a narrow, tall desktop). Unmaximized it keeps 1280 px and runs off a phone.
+DISPLAY=:1 nohup setsid bash -c 'for i in $(seq 1 120); do
+  id=$(wmctrl -lx | awk "\$3 ~ /Navigator.firefox/ {print \$1; exit}")
+  [ -n "$id" ] && { wmctrl -i -r "$id" -b add,maximized_vert,maximized_horz; exit 0; }; sleep 2; done' >/dev/null 2>&1 </dev/null &
 VIEWER
 
 # Fail closed: a desktop whose user reaches the internet is not served.
