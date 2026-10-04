@@ -50,6 +50,7 @@ async def iap_email(request):
                 _certs.update(at=time.time(), keys=await r.json())
         except Exception as exc:
             print(f"iap keys fetch failed: {type(exc).__name__}: {exc}", flush=True)
+            _certs["at"] = max(_certs["at"], time.time() - 3540)  # try again in a minute, not on every request
     try:
         claims = jwt.decode(token, certs=_certs["keys"], audience=AUDIENCE)
     except Exception as exc:
@@ -121,9 +122,9 @@ async def page(request):
         async with request.app["http"].get(url, params=request.query) as r:
             body = await r.read()
     except (aiohttp.ClientError, asyncio.TimeoutError):
-        raise error(web.HTTPBadGateway, "The desktop is not answering. The session may be paused: reply in the Slack thread, then open this link again.")
+        raise error(web.HTTPBadGateway, "The desktop is not answering. The session may be paused: reply in the Slack thread, then type !desktop there for a new link.")
     # noVNC's core files do not change under one /d/<key>/; only our page does.
-    cache = "private, max-age=86400" if r.status == 200 and not tail.endswith(".html") else "no-store"
+    cache = "private, max-age=86400" if r.status == 200 and r.content_type != "text/html" else "no-store"
     resp = web.Response(status=r.status, body=body, content_type=r.content_type,
                         headers={"Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
     resp.enable_compression()

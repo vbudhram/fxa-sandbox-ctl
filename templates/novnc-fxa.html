@@ -141,7 +141,8 @@ function applySize() {
 }
 // A phone that turns, or a fixed desktop in a resized window: ask again once it settles.
 let settle;
-window.addEventListener('resize', () => { clearTimeout(settle); settle = setTimeout(() => { if (target()) applySize(); }, 400); });
+// A move to a monitor with another pixel ratio, or a browser zoom, changes devicePixelRatio too.
+window.addEventListener('resize', () => { clearTimeout(settle); settle = setTimeout(applySize, 400); });
 function connect() {
   tries += 1;
   status(tries === 1 ? 'Connecting…' : `Reconnecting… (${tries - 1} of ${MAX_TRIES - 1})`, { sticky: true });
@@ -162,7 +163,7 @@ function connect() {
     connected = false;
     if (stop) return;
     if (tries >= MAX_TRIES) {
-      status('The desktop is not reachable. The session may be paused: reply in the Slack thread to pick it up, then open the desktop again.', { sticky: true, retry: true });
+      status('The desktop is not reachable. The session may be paused: reply in the Slack thread to pick it up, then type !desktop there for a new link.', { sticky: true, retry: true });
       return;
     }
     setTimeout(() => { if (!stop) connect(); }, Math.min(1000 * 2 ** (tries - 1), 8000));
@@ -180,7 +181,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     hiddenTimer = setTimeout(() => {
       hiddenOut = true; stop = true; rfb.disconnect();
-      status('Disconnected while the tab was hidden', { sticky: true, retry: true });
+      status('Disconnected while the tab was hidden.', { sticky: true, retry: true });
     }, 10 * 60 * 1000);
   } else {
     clearTimeout(hiddenTimer);
