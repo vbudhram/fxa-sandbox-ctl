@@ -178,6 +178,8 @@ snapshot_stats_json() {
   [ -s "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
   jq -s -c '
     def med: sort | if length == 0 then null else .[length / 2 | floor] end;
+    # A run with no recorded length (0: Linux runs before 3d4e006) is left out, not counted as 0.
+    def mins: map(.wall_seconds // 0 | select(. > 0)) | med | if . == null then null else . / 60 | round end;
     def r2: . * 100 | round / 100;
     def wk: (.recorded_at[0:10] | strptime("%Y-%m-%d") | mktime) as $t | $t - ((($t / 86400 | floor) + 3) % 7) * 86400;
     map(. + {wk: wk}) as $all |
@@ -185,14 +187,16 @@ snapshot_stats_json() {
     def summary($r): {
       runs: ($r | length), tickets: ($r | map(.issue) | unique | length),
       spend: ($r | map(.cost_usd // 0) | add // 0 | r2),
-      median_min: ($r | map(.wall_seconds // 0) | med | if . == null then null else . / 60 | round end),
+      median_min: ($r | mins),
       per_ticket: ($r | group_by(.issue) | map(map(.cost_usd // 0) | add) | med | if . == null then null else r2 end),
       max_runs: ($r | group_by(.issue) | map(length) | max),
       from: ($r | map(.wk) | min | strftime("%b %-d")), to: ($r | map(.recorded_at) | max | .[0:10]) };
     {
       # One row per run, for the page to filter by date, source, kind and model.
       rows: ($all | map({ at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
-               usd: (.cost_usd // 0 | r2), min: ((.wall_seconds // 0) / 60 | round), model: (.model // ""),
+               usd: (.cost_usd // 0 | r2), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // ""),
+               # The split by model when the proxy priced the run; else the main agent only (no subagents).
+               models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"),
                pr: ((.pr // "") != "") })),
       weeks: ($all | group_by(.wk) | map({ start: (.[0].wk | strftime("%Y-%m-%d")), label: (.[0].wk | strftime("%b %-d")),
                                            runs: length, spend: (map(.cost_usd // 0) | add | r2) })),
@@ -202,14 +206,14 @@ snapshot_stats_json() {
         w2: summary($all | map(select(.wk >= ($weeks[-2] // $weeks[0]))))
       },
       kinds: ($all | group_by(.kind // "") | map({ kind: (.[0].kind // "not recorded"), runs: length,
-               avg: (map(.cost_usd // 0) | add / length | r2), median_min: (map(.wall_seconds // 0) | med / 60 | round) }) | sort_by(-.runs)),
+               avg: (map(.cost_usd // 0) | add / length | r2), median_min: mins }) | sort_by(-.runs)),
       top: ($all | group_by(.issue) | map({ issue: .[0].issue, cost: (map(.cost_usd // 0) | add | r2), runs: length }) | sort_by(-.cost) | .[0:5]),
       models: ($all | map(.model // "") | map(select(. != "" and (startswith("<") | not))) | group_by(.) | map({ model: .[0], runs: length }) | sort_by(-.runs)),
       tickets: ($all | group_by(.issue) | map({ key: .[0].issue, value: {
         runs: length, cost: (map(.cost_usd // 0) | add | r2), turns: (map(.messages // 0) | add),
         models: (map(.model // "") | map(select(. != "" and (startswith("<") | not))) | unique),
         kinds: (group_by(.kind // "not recorded") | map({ key: (.[0].kind // "not recorded"), value: length }) | from_entries),
-        median_min: (map(.wall_seconds // 0) | med / 60 | round),
+        median_min: mins,
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
     }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load
@@ -327,7 +331,7 @@ _snapshot_telemetry() {
   jq -s '{ runs: length,
            tickets: ([.[].issue] | unique | length),
            cost_usd: ([.[].cost_usd // 0] | add | .*100 | round / 100),
-           median_minutes: (([.[].wall_seconds // 0] | sort | .[length/2|floor]) / 60 | round),
+           median_minutes: ([.[].wall_seconds // 0 | select(. > 0)] | sort | if length == 0 then null else (.[length/2|floor] / 60 | round) end),
            last_recorded: ([.[].recorded_at] | max) }' "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }
 
@@ -426,12 +430,13 @@ _snapshot_session_row() {
   if session_live "$key" && vm_is_running "$name" 2>/dev/null; then
     t="$(mktemp)"
     # First line is the transcript's mtime on the runner: the local copy's is always now.
-    # ponytail: last 2000 events per feed, so cost_so_far undercounts a very long session.
     _session_sh "$name" 'f=/workspace/.fxa-auto-claude.jsonl; stat -c %Y "$f" 2>/dev/null || echo 0; tail -n 2000 "$f" 2>/dev/null' > "$t" 2>/dev/null || true
     mtime="$(head -1 "$t" | tr -dc '0-9')"
     agent="$(tail -n +2 "$t" > "${t}.j"; _snapshot_agent_json "${t}.j" "$now")"
     [ -n "$mtime" ] && [ "$mtime" -gt 0 ] && [ "$agent" != null ] && \
       agent="$(jq -c --argjson i "$(( now > mtime ? now - mtime : 0 ))" '.idle_seconds = $i' <<< "$agent")"
+    # The proxy's total so far: the transcript prices the main agent only, and only its last 2000 events.
+    [ "$agent" != null ] && agent="$(_session_proxy_cost "$key" "$agent")"
     rm -f "$t" "${t}.j"
     _session_turn_running "$key" && alive=true
   fi
@@ -515,7 +520,7 @@ _snapshot_today() {
     { runs: length, tickets: ([.[].issue] | unique | length),
       cost_usd: ([.[].cost_usd // 0] | add // 0 | .*100 | round / 100),
       prs: ([.[].pr] | map(select(. != null)) | unique | length),
-      median_minutes: (if length == 0 then null else (([.[].wall_seconds // 0] | sort | .[length/2|floor]) / 60 | round) end),
+      median_minutes: ([.[].wall_seconds // 0 | select(. > 0)] | sort | if length == 0 then null else (.[length/2|floor] / 60 | round) end),
       jobs: $jobs }' \
     "$PIPE_RUNS_FILE" 2>/dev/null || echo 'null'
 }

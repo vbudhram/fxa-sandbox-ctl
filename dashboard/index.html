@@ -1121,6 +1121,8 @@ function renderStats() {
     && (SF.model === "all" || r.model === SF.model) && (!q || r.key.toLowerCase().includes(q)); });
   const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   const spend = sum(rows), keys = new Set(rows.map(r => r.key));
+  // Pipeline runs priced before the proxy (cost_source) count the main agent only: about half their cost.
+  const mainOnly = rows.filter(r => r.src === "pipeline" && r.main_only).length;
   // Buckets: days for a short range, weeks (from Monday) for a long one.
   const first = rows.length ? Math.min(...rows.map(r => Date.parse(r.at))) : Date.now();
   const start = Math.max(lo === 0 ? first : lo, Math.min(first, lo === 0 ? first : lo)), end = Math.min(hi, Date.now() + 1);
@@ -1147,7 +1149,7 @@ function renderStats() {
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
-      ${kpi("Spend", usd(spend), "estimated from tokens")}
+      ${kpi("Spend", usd(spend), mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "estimated from tokens")}
       ${kpi("Per run", usd(spend / rows.length), `median ${usd(med(rows.map(r => r.usd)) ?? 0)}`)}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
     <div class="charts"><div class="chart"><h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div></div>
@@ -1156,7 +1158,14 @@ function renderStats() {
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
-      <div class="chart"><h2>Models<span class="note">pipeline runs</span></h2>${group("model").filter(g => g.name).sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><span class="mono">${esc(g.name)}</span><b>${g.rs.length} runs · ${usd(g.usd)}</b></div>`).join("") || `<div class="empty">No model recorded for these rows.</div>`}</div>
+      <div class="chart"><h2>Spend by model<span class="note">pipeline runs</span></h2>${(() => {
+        // Subagents included where the proxy priced the run; else the run's main model only.
+        const m = new Map();
+        for (const r of rows.filter(r => r.src === "pipeline")) for (const [k, v] of Object.entries(r.models ?? (r.model ? { [r.model]: r.usd } : {}))) m.set(k, (m.get(k) ?? 0) + (v || 0));
+        const t = [...m.values()].reduce((a, b) => a + b, 0) || 1;
+        return [...m].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="kv"><span class="mono">${esc(modelName(k))}</span><b>${usd(v)} · ${Math.round(v / t * 100)}%</b></div>`).join("")
+          + (mainOnly ? `<div class="kv"><span class="note">${mainOnly} run${mainOnly === 1 ? "" : "s"} here count the main agent only</span><span></span></div>` : "");
+      })() || `<div class="empty">No model recorded for these rows.</div>`}</div>
     </div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));

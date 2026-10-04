@@ -46,6 +46,12 @@ check "the state index is used" "1" "$(db_value "EXPLAIN QUERY PLAN SELECT key F
 
 # The daily rollup is kept on insert.
 for j in '{"at":"2026-10-02T10:00:00Z","run":"agent-x","model":"opus","usd":0.5,"usd_cache_write":0.2,"input_tokens":3}' '{"at":"2026-10-02T11:00:00Z","run":"agent-y","model":"opus","usd":0.25,"usd_cache_write":0.1}' '{"at":"2026-10-03T09:00:00Z","run":"agent-x","model":"opus","usd":1,"usd_cache_write":0}'; do db_ingest llm_calls "$j"; done
+# A running session's cost is the proxy's total so far (agent-x: 0.5 + 1), subagents included.
+eval "$(sed -n '/^_session_proxy_cost() {/,/^}/p' "$here/session.sh")"
+check "session cost: the proxy's total replaces the transcript's" '{"cost":1.5,"tokens":10}' "$(_session_proxy_cost agent-x '{"cost":0.4,"tokens":10}')"
+check "session cost: a live card's cost_so_far too" '{"turns":3,"cost_so_far":1.5}' "$(_session_proxy_cost agent-x '{"turns":3,"cost_so_far":0.4}')"
+check "session cost: unchanged when the proxy never saw it" '{"cost":0.4}' "$(_session_proxy_cost agent-none '{"cost":0.4}')"
+check "session cost: the proxy's even with no transcript price" '{"cost":1.5}' "$(_session_proxy_cost agent-x '')"
 check "llm_daily: calls and spend per day" "2026-10-02|2|0.75|2026-10-03|1|1.0" "$(db_value "SELECT group_concat(day || '|' || calls || '|' || usd, '|') FROM (SELECT * FROM llm_daily ORDER BY day);")"
 
 # Every log goes in through ingest, as the writers' JSON lines.

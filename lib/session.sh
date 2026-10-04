@@ -1020,6 +1020,7 @@ _session_end_facts() {
   grep -v '^@@changes \|^@@notes \|^@@fixed \|^@@res \|^@@vr \|^@@st ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
+  cost="$(_session_proxy_cost "$1" "$cost")"
   rm -f "$t" "${t}.j"
   printf '%s\t%s\n' "$cost" "$n"
 }
@@ -1047,13 +1048,24 @@ _session_work_times() {
   return 0
 }
 
+# _session_proxy_cost <key> <json>   The json ({cost, ...}, or an agent record with
+# cost_so_far) with its cost set to what the LLM proxy logged for this session, subagents
+# included. The transcript prices only the main agent: 16.18 against 20.03 dollars over 12
+# sessions. Unchanged when the store has no calls for the session.
+_session_proxy_cost() {
+  local j="${2:-}" usd; [ -n "$j" ] || j='{}'
+  usd="$( { declare -F db_on >/dev/null && db_on && db_value "SELECT round(sum(usd), 2) FROM llm_calls WHERE run = $(db_q "$1");"; } 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)?$' || true)"
+  [ -n "$usd" ] || { printf '%s\n' "${2:-}"; return 0; }
+  jq -c --argjson u "$usd" 'if has("cost_so_far") then .cost_so_far = $u else .cost = $u end' <<< "$j"
+}
+
 # _session_cost <key>   {cost, tokens} so far, from the runner's
 # transcript (its last 5000 events). Empty when the runner did not answer.
 _session_cost() {
   local t; t="$(mktemp)"
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null' > "$t" 2>/dev/null || true
-  _snapshot_agent_json "$t" "$(date +%s)" 2>/dev/null \
-    | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true
+  _session_proxy_cost "$1" "$(_snapshot_agent_json "$t" "$(date +%s)" 2>/dev/null \
+    | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   rm -f "$t"
 }
 
