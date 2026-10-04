@@ -144,4 +144,14 @@ check "python: a read-only connection cannot write" "readonly" "$(python3 -c "
 import sys, sqlite3; sys.path.insert(0, '$here'); import fxadb
 try: fxadb.connect(readonly=True).execute('DELETE FROM t'); print('wrote')
 except sqlite3.OperationalError as e: print('readonly' if 'readonly' in str(e) else e)")"
+# A pipeline run's cost from the proxy: its ticket (any case), inside its own window, by model.
+eval "$(sed -n '/^_telemetry_proxy_cost() {/,/^}/p' "$here/telemetry.sh")"
+for j in '{"at":"2026-10-02T10:05:00Z","run":"fxa-1","model":"claude-opus-5-5","usd":0.5}' \
+         '{"at":"2026-10-02T10:40:00Z","run":"fxa-1","model":"claude-sonnet-5-5","usd":0.25}' \
+         '{"at":"2026-10-02T15:00:00Z","run":"fxa-1","model":"claude-opus-5-5","usd":9}' \
+         '{"at":"2026-10-02T10:10:00Z","run":"fxa-2","model":"claude-opus-5-5","usd":1}'; do db_ingest llm_calls "$j"; done
+check "proxy cost: this run's window and ticket only, by model" \
+  '{"usd":0.75,"models":{"claude-opus-5-5":0.5,"claude-sonnet-5-5":0.25}}' "$(_telemetry_proxy_cost FXA-1 1790935200 1790938800)"
+check "proxy cost: nothing for a run the proxy never saw" "" "$(_telemetry_proxy_cost FXA-3 1790935200 1790938800)"
+check "proxy cost: no window, no answer" "" "$(_telemetry_proxy_cost FXA-1 0x 1790938800)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

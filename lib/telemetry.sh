@@ -171,6 +171,20 @@ _telemetry_strictness() {
 # telemetry_record <KEY>
 #   Append one run to the event log. The log is append-only, one line per run,
 #   so a relaunched ticket keeps both attempts. The rollup is derived from it.
+# _telemetry_proxy_cost <key> <from epoch> <to epoch>   What the LLM proxy logged for this
+# run, subagents included: {"usd": n, "models": {model: usd}}. Nothing when the store has
+# no calls for it (no proxy then, or a run before it). The proxy names a pipeline run by
+# its ticket in lower case, and a ticket can have several runs, so the window matters.
+_telemetry_proxy_cost() {
+  declare -F db_on >/dev/null && db_on || return 0
+  [[ "$2" =~ ^[0-9]+$ && "$3" =~ ^[0-9]+$ ]] || return 0
+  local run; run="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  db_json "SELECT model, sum(usd) AS usd FROM llm_calls WHERE run = $(db_q "$run")
+      AND at >= strftime('%Y-%m-%dT%H:%M:%SZ', $2, 'unixepoch') AND at <= strftime('%Y-%m-%dT%H:%M:%SZ', $3, 'unixepoch')
+      GROUP BY model;" \
+    | jq -c 'select(length > 0) | {usd: (map(.usd) | add * 100 | round / 100), models: (map({key: .model, value: (.usd * 100 | round / 100)}) | from_entries)}'
+}
+
 telemetry_record() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: record needs <KEY>" >&2; return 1; }
@@ -213,11 +227,13 @@ telemetry_record() {
   secs="$( [ -f "$log" ] && python3 -c "
 import os,sys
 s=os.stat(sys.argv[1]); end=s.st_mtime
+# Linux has no birth time: the launch time the launcher wrote is the same moment.
+start=getattr(s,'st_birthtime',None) or float(sys.argv[3])
 d=sys.argv[2]
 if d and os.path.exists(d):
     m=os.stat(d).st_mtime
-    if m>s.st_birthtime: end=m
-print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
+    if m>start: end=m
+print(max(0,int(end-start)) if start else 0)" "$log" "${done_file:-}" "$launched_at" || echo 0 )"
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" 2>/dev/null || true; } | tail -1)"
   local kind; kind="$( { grep -m1 -o 'Run kind: [a-z-]*' "$log" 2>/dev/null || true; } | awk '{print $3}')"; kind="${kind:-fix}"
   if [ -n "$wt" ]; then
@@ -260,6 +276,18 @@ print(max(0,int(end-s.st_birthtime)))" "$log" "${done_file:-}" || echo 0 )"
     # total reads low and nobody knows why until someone counts the rows.
     echo "WARN: no price row for model '${model:-<none>}'; this run is recorded unpriced and the rollup understates spend." >&2
     cost='{"cost_usd":null,"priced":null}'
+  fi
+
+  # The transcript holds only the main agent: its subagents (the wrap-up steps) were
+  # about half the real cost. The proxy logs every call, so its total wins when it has
+  # this run; the transcript's price stays beside it. 2 minutes of slack for the last call.
+  local proxy="" to
+  to=$(( launched_at + ${secs:-0} + 120 )); [ "${secs:-0}" -gt 0 ] || to="$(date +%s)"
+  [ "$launched_at" != "0" ] && proxy="$(_telemetry_proxy_cost "$key" "$launched_at" "$to" 2>/dev/null || true)"
+  if [ -n "$proxy" ]; then
+    cost="$(printf '%s\n' "$cost" | jq -c --argjson p "$proxy" '. + {transcript_cost_usd: .cost_usd, cost_usd: $p.usd, cost_models: $p.models, cost_source: "proxy"}')"
+  else
+    cost="$(printf '%s\n' "$cost" | jq -c '. + {cost_source: "transcript"}')"
   fi
 
   # Which credential paid for this run. A subscription token is not metered per
