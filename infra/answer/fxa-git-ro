@@ -14,7 +14,7 @@ sub="${1:-}"; [ $# -gt 0 ] && shift
 case "$sub" in
   fetch-pr)
     [[ "${1:-}" =~ ^[0-9]{1,7}$ ]] && [ $# = 1 ] || die "fetch-pr takes one pull request number"
-    exec "${G[@]}" fetch -q --no-tags origin "+refs/pull/$1/head:refs/fxa/pr-$1" ;;
+    exec "${G[@]}" fetch -q --no-tags --no-write-fetch-head origin "+refs/pull/$1/head:refs/fxa/pr-$1" ;;
   log|show|diff|blame|grep|ls-files|rev-parse) ;;
   *) die "not allowed: ${sub:-no subcommand} (log, show, diff, blame, grep, ls-files, rev-parse, fetch-pr)" ;;
 esac

@@ -60,7 +60,7 @@ _answer_git_ro() {
 # _answer_skills   The skills the quick agent shares with session runners, fresh each time.
 _answer_skills() {
   COPYFILE_DISABLE=1 tar -C "${SANDBOX_ROOT}/skills" --exclude='*.check.sh' -cf - fxa-jira-link \
-    | _gce_ssh "$ANSWER_NAME" --command "sudo -u agent bash -c 'mkdir -p /home/agent/.claude/skills && rm -rf /home/agent/.claude/skills/fxa-jira-link && tar -xf - -C /home/agent/.claude/skills'"
+    | _gce_ssh "$ANSWER_NAME" --command "sudo bash -c 'mkdir -p /home/agent/.claude/skills && chown agent:agent /home/agent/.claude/skills && rm -rf /home/agent/.claude/skills/fxa-jira-link && tar --no-same-owner -xf - -C /home/agent/.claude/skills && chown -R root:root /home/agent/.claude/skills/fxa-jira-link'"
 }
 
 # _answer_slot   A free slot (a lock dir), or fail when FXA_ANSWER_MAX answers already run.
@@ -100,9 +100,10 @@ if [ -n "\${FXA_MCP_URL:-}" ] && [ -n "\${FXA_MCP_TOKEN:-}" ]; then
   ( umask 077; printf '{"mcpServers":{"fxa":{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}}}\n' "\$FXA_MCP_URL" "\$FXA_MCP_TOKEN" > "\$FXA_MCP_CONFIG" )
 fi
 cd /workspace || exit 1
-# Main, at most 5 minutes old; one fetch at a time.
-( flock -w 30 9 && [ \$(( \$(date +%s) - \$(stat -c %Y .git/FETCH_HEAD 2>/dev/null || echo 0) )) -gt 300 ] \\
-  && git fetch -q origin main && git checkout -q -f --detach FETCH_HEAD ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
+# Main, at most 5 minutes old; one fetch at a time. origin/main and a stamp, not FETCH_HEAD,
+# which an agent's fxa-git-ro fetch-pr could point at a pull request.
+( flock -w 30 9 && [ \$(( \$(date +%s) - \$(stat -c %Y .git/fxa-main-fetched 2>/dev/null || echo 0) )) -gt 300 ] \\
+  && git fetch -q origin main && git checkout -q -f --detach origin/main && touch .git/fxa-main-fetched ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
   --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
   --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\

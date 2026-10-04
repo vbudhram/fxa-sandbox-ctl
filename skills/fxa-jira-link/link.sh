@@ -11,7 +11,10 @@ while [ $# -gt 0 ]; do
     --type) type="$2"; shift 2 ;;
     --summary) summary="$2"; shift 2 ;;
     --description) desc="$2"; shift 2 ;;
-    --description-file) desc="$(cat "$2")"; shift 2 ;;
+    # Only a file in the workspace: a quick answer may run this script with any arguments.
+    --description-file) f="$(realpath -e -- "$2" 2>/dev/null)" && w="$(realpath -e /workspace 2>/dev/null)" && [[ "$f" == "$w"/* ]] \
+        || { echo "link.sh: --description-file must be a file in /workspace" >&2; exit 2; }
+      desc="$(cat -- "$f")"; shift 2 ;;
     --labels) labels="$2"; shift 2 ;;
     *) echo "link.sh: unknown option $1" >&2; exit 2 ;;
   esac
