@@ -6,7 +6,8 @@
 #
 # It starts as a clean checkout of the base with node_modules copied copy-on-write (APFS
 # cp -c: no extra disk) from the nearest install: an earlier base, else FXA_CLONE. Then it
-# installs with the Node version in .nvmrc (only what changed), and hides every
+# installs with the Node version in .nvmrc (only what changed), builds the workspace
+# packages as the runner image does, and hides every
 # ref past the base: only origin/main, at the base, and no remote. The objects of newer
 # commits stay in .git, as on a pinned runner.
 # Each run copies this folder again (agent-try.sh --base), so runs never share files.
@@ -16,7 +17,20 @@ base="${1:?usage: eval-install.sh <base sha>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FXA="${FXA_CLONE:-$ROOT/../fxa}" CACHE="${FXA_EVAL_CACHE:-$HOME/.cache/fxa-eval}"
 dir="$CACHE/$base"
-[ -f "$dir.ready" ] && { echo "$dir"; exit 0; }
+# build: every workspace package built, as the runner image does (packer/scripts/11-gce-clone.sh),
+# so a test that imports fxa-shared or a lib loads. Like the image, a failed package is not fatal.
+build() {
+  [ -f "$dir.built" ] && return 0
+  echo "== building the workspace packages for ${base:0:10} (once per base)" >&2
+  # shellcheck source=/dev/null
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; . "$NVM_DIR/nvm.sh"
+  # The l10n-prime targets need the translations cloned first, as the image does.
+  ( cd "$dir" && { [ -d external/l10n ] || nvm exec "$(cat .nvmrc)" yarn l10n:clone; } \
+      && nvm exec "$(cat .nvmrc)" npx nx run-many -t build --all --exclude=fxa-dev-launcher ) > "$dir.build.log" 2>&1 \
+    || echo "eval-install.sh: some packages did not build; see $dir.build.log" >&2
+  touch "$dir.built"
+}
+[ -f "$dir.ready" ] && { build; echo "$dir"; exit 0; }
 mkdir -p "$CACHE"
 
 # The seed: the newest ready base, else the operator's clone (with its install).
@@ -51,4 +65,5 @@ git update-ref refs/remotes/origin/main "$base"
 git remote set-url origin "no-fetch://eval"
 git reflog expire --expire=now --all
 cd /; mv "$dir.tmp" "$dir"; touch "$dir.ready"
+build
 echo "$dir"

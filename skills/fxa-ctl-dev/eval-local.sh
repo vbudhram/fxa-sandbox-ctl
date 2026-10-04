@@ -2,6 +2,7 @@
 # eval-local.sh: one eval on the laptop with Claude or Codex, judged as eval.sh judges.
 #
 #   eval-local.sh <evals/name.json> --runtime claude|codex
+#   FXA_EVAL_CLAUDE_MODEL=claude-sonnet-5-5 eval-local.sh <spec> --runtime claude
 #
 # The agent works in a scratch copy of FxA at the spec's base (agent-try.sh --base: no
 # newer ref, no remote), with the runner's prompt, skills and (Claude) subagents. It
@@ -16,7 +17,10 @@ spec="${1:?usage: eval-local.sh <evals/name.json> --runtime claude|codex}"
 case "$runtime" in claude|codex) ;; *) echo "usage: eval-local.sh <spec> --runtime claude|codex" >&2; exit 2 ;; esac
 s() { jq -r "$1" "$spec"; }
 base="$(s .base)"
-out="$ROOT/ai/evals/$(date +%Y%m%d-%H%M)-$(s .name)-$runtime-local"; mkdir -p "$out"; cp "$spec" "$out/spec.json"
+# FXA_EVAL_CLAUDE_MODEL (e.g. claude-sonnet-5-5) runs Claude on that model; the folder names it.
+CLAUDE_MODEL="${FXA_EVAL_CLAUDE_MODEL:-}"
+label="$runtime${CLAUDE_MODEL:+-$CLAUDE_MODEL}"; [ "$runtime" = codex ] && label="codex${FXA_EVAL_CODEX_MODEL:+-$FXA_EVAL_CODEX_MODEL}"
+out="$ROOT/ai/evals/$(date +%Y%m%d-%H%M)-$(s .name)-$label-local"; mkdir -p "$out"; cp "$spec" "$out/spec.json"
 
 # An installed checkout at the base (made once per base), so the agent can run tests,
 # and that commit's Node version first on PATH for the agent and its tests.
@@ -34,7 +38,7 @@ CODEX_MODEL="${FXA_EVAL_CODEX_MODEL:-$(sed -n 's/^model *= *"\(.*\)"/\1/p' ~/.co
 # turn <message file>: one turn; its events go to events.jsonl, its reply to $reply.
 turn() {
   if [ "$runtime" = claude ]; then
-    ( cd "$repo" && claude -p ${sid:+--resume "$sid"} --output-format stream-json --verbose \
+    ( cd "$repo" && claude -p ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} ${sid:+--resume "$sid"} --output-format stream-json --verbose \
         --setting-sources project,local --permission-mode bypassPermissions \
         --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
     sid="$(jq -r 'select(.type == "result") | .session_id' "$ws/turn.jsonl" | tail -1)"
