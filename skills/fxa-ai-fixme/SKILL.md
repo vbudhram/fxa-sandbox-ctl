@@ -36,7 +36,7 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    do not relabel, report as an anomaly. `CONFLICT`: see conflicts. `CONFLICT? mergeability-
    uncomputed`: report, do not rebase on a guess. `RED`: leave the label, put it under ⚠️ with
    the failing job. **Assume repo infrastructure before the PR** and read the job log
-   (INCIDENTS: Reconcile and CI). `label KEY merged` posts the one telemetry comment itself, then assigns the ticket to the
+   (INCIDENTS: Reconcile and CI). `label KEY done` posts the 🤖 PR-ready comment itself, once per PR. `label KEY merged` posts the one telemetry comment itself, then assigns the ticket to the
    PR's last human approver, adds it to the active FxA sprint, and transitions it to Done. It
    sets assignee and sprint only when they are empty, so it never overwrites a human's choice.
    **Reap.** `$CTL reap --stray` before slot selection.
