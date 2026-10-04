@@ -154,7 +154,10 @@ When a run fails and its output or log is long, give the path to the
   (see `/fxa-functional-local`). `wait` returns at once when the run ends or
   dies. Keep waiting in the same turn: the session pauses when it is idle.
 - Never write your own wait loop, such as `until grep -q DONE out; do sleep 5; done`.
-  It does not see the job die, so it waits until the 10-minute timeout.
+  It does not see the job die, so it waits until the 10-minute timeout. A hook
+  blocks it, and a `sleep` of 30 s or more.
+- Bracket the first letter in `pkill -f '[p]attern'`. A bare pattern also
+  matches your own shell, and the call kills itself (exit 144). A hook blocks it.
 - Before the handoff, run `/fxa-unslop`. It checks your tests, leftovers,
   comments and PR body against what reviewers flag most often.
 
@@ -212,16 +215,14 @@ What is different from production:
 
 ## 7. Functional tests
 
-Use `/fxa-functional-local`. It starts the stack if needed, runs one spec and
-records a video. By hand:
+Use `/fxa-functional-local` for one spec. It starts the stack if needed,
+records a video, and its `--bg` and `wait` handle a run longer than 10 minutes.
 
-```bash
-cd /workspace/packages/functional-tests
-PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/signin/signIn.spec.ts
-```
-
-- While you change one test, run only it: add `-g '<test title>'`. A whole spec
-  file took 51 s on average, and most hand runs ran the whole file.
+- While you change one test, give `run.sh` the test title as its filter. A
+  whole spec file took 51 s on average, and most hand runs ran the whole file.
+- Run `npx playwright test` by hand only for more than one spec or project.
+  Start it with `run_in_background`, then wait with
+  `timeout 570 tail --pid=<pid> -f /dev/null`.
 - The projects are `local` (Firefox), `local-chromium` and
   `local-payments-next`. There is no `sandbox` project.
 - The config defaults to 4 workers. Set `PLAYWRIGHT_WORKERS=2`: with the stack

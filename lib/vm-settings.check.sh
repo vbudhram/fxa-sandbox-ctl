@@ -12,7 +12,7 @@ eval "$(sed -n '/^_vm_skill_blocklist() {/,/^}/p; /^_vm_settings_json() {/,/^}/p
 
 printf '{"env":{"ANTHROPIC_API_KEY":"sk-x"},"hooks":{},"model":"opus","permissions":{"deny":["Bash(rm -rf:*)"]}}' > "$tmp/s.json"
 out="$(_vm_settings_json "$tmp/s.json")"
-check "secrets and hooks stay on the host" "null|null" "$(jq -c '.env' <<< "$out")|$(jq -c '.hooks' <<< "$out")"
+check "secrets and the host's hooks stay on the host" "null|fxa-bash-guard.sh" "$(jq -c '.env' <<< "$out")|$(jq -r '[.hooks[][].hooks[].command | split("/")[-1]] | join(",")' <<< "$out")"
 check "the host's own deny rules are kept" "true" "$(jq '.permissions.deny | index("Bash(rm -rf:*)") != null' <<< "$out")"
 check "a repo skill the runner cannot use is denied" "true" "$(jq '.permissions.deny | index("Skill(fxa-pr-open)") != null' <<< "$out")"
 check "the model and concise style come through" "opus|concise" "$(jq -r '"\(.model)|\(.outputStyle)"' <<< "$out")"

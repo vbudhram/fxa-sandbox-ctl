@@ -72,7 +72,8 @@ _vm_settings_json() {
   local deny; deny="$(_vm_skill_blocklist | jq -R '"Skill(\(.))"' | jq -sc .)"
   { cat "$1" 2>/dev/null || echo '{}'; } | jq -c --argjson deny "$deny" '{model, permissions, statusLine, theme}
     | with_entries(select(.value != null)) | . + {outputStyle: "concise"}
-    | .permissions.deny = ((.permissions.deny // []) + $deny)'
+    | .permissions.deny = ((.permissions.deny // []) + $deny)
+    | .hooks = {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-bash-guard.sh"}]}]}'
 }
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -536,6 +537,8 @@ _setup_claude_config() {
        && [ -s "$config_tar" ]; then
       # The subagents runners get (agents/ in this repo, such as fxa-explore), beside the skills.
       [ -d "${SANDBOX_ROOT}/agents" ] && COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" agents 2>/dev/null
+      # The runner's own hooks (hooks/ in this repo), which its settings.json names.
+      COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" hooks/fxa-bash-guard.sh 2>/dev/null
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"
