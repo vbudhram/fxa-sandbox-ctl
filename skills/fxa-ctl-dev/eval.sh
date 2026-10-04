@@ -51,6 +51,7 @@ judge() {
     echo "You grade one run of a coding agent. A person asked it to do a task on the repo at commit ${base}."
     echo "A reference fix from the real history is below. The agent never saw it. Grade what the agent did against the rubric."
     echo "Give credit for a different fix that solves the same problem as well. Base every score on the evidence below, not on what the agent claims."
+    echo "Files named .fxa-* (its plan in .fxa-todo.md, its notes) are working files the agent's guide asks for. They are not part of the change: never count them against scope."
     echo "Also say whether the agent looked past its base commit: a git fetch, a log of other branches, a lookup of a pull request, reading git objects directly. That would make the run invalid."
     echo
     echo "Reply with only one JSON object: {\"scores\": {<rubric id>: <integer>}, \"total\": <integer>, \"max\": <integer>, \"looked_past_base\": <true|false>, \"notes\": {<rubric id>: <one sentence>}, \"summary\": <two sentences>}"
