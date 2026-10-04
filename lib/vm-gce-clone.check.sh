@@ -31,14 +31,15 @@ printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=ok > "$tmp/out"; : > "$c
 vm_clone r1 >/dev/null 2>&1
 check "a stockout moves to the next zone" "c4a-standard-4 z-a hyperdisk-balanced|c4a-standard-4 z-b hyperdisk-balanced" "$(paste -sd'|' "$calls")"
 
-printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=out c4a-standard-4@z-c=out t2a-standard-4@z-a=out t2a-standard-4@z-b=none t2a-standard-4@z-c=ok > "$tmp/out"; : > "$calls"
+printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=out c4a-standard-4@z-c=out t2a-standard-4@z-a=out t2a-standard-4@z-b=none t2a-standard-4@z-c=ok > "$tmp/out"; : > "$calls"; : > "$tmp/errors"
 rm -f "$LOG_DIR/last-good-zone"; out="$(vm_clone r2 2>&1)"; rc=$?
 check "every zone out: the fallback type, on a balanced PD" "0|t2a-standard-4 z-c pd-balanced" "$rc|$(tail -1 "$calls")"
 check "the fallback says so" "1" "$(grep -c 'Created as t2a-standard-4' <<< "$out")"
 check "the zone it landed in is kept" "z-c" "$(cat "$LOG_DIR/r2.zone")"
+check "stockouts on the way to a runner are not errors" "" "$(paste -sd, "$tmp/errors")"
 
 printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=out c4a-standard-4@z-c=out > "$tmp/out"; : > "$calls"; : > "$tmp/errors"
 out="$(FXA_GCE_MACHINE_FALLBACK= vm_clone r3 2>&1)"; rc=$?
 check "no fallback: fails after the zones, and says which types" "1|3|1" "$rc|$(wc -l < "$calls" | tr -d ' ')|$(grep -c 'stocked out for c4a-standard-4\.' <<< "$out")"
-check "the capacity errors are recorded" "stockout,stockout,stockout,all_zones_out" "$(paste -sd, "$tmp/errors")"
+check "no runner at all: one capacity error" "all_zones_out" "$(paste -sd, "$tmp/errors")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

@@ -167,9 +167,8 @@ vm_clone() {
       return 0
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
+      # Not an error yet: another zone or the fallback type usually works. all_zones_out below is one.
       echo "  ${zone} is stocked out for ${mt}; trying the next zone." >&2
-      # The zone rides in the log field, so all zones share one error signature.
-      _gce_capacity_error stockout "$name" "zone stocked out for ${mt}" "zone ${zone}"
       continue
     fi
     # A machine type not offered in a zone (t2a is not in us-central1-c) is a skip, not a failure.
