@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 
 PATH = os.environ.get("FXA_DB") or os.path.expanduser("~/.claude/state/fxa.db")
 
@@ -20,21 +21,25 @@ def connect(path=None, readonly=False):
     return con
 
 
-_CON = None
+# One connection per thread: the proxy and the gateway call ingest from ThreadingHTTPServer
+# handlers, and sqlite3 refuses a connection made on another thread.
+_LOCAL = threading.local()
 
 
 def ingest(tbl, obj):
     """One log record into the store, mapped by the ingest triggers. Never raises:
     the caller's file is the fallback while the store proves itself."""
-    global _CON
+    con = getattr(_LOCAL, "con", None)
     try:
-        if _CON is None:
+        if con is None:
             if not os.path.exists(PATH):
                 return  # no store here (a test, or a host without db init): do not create an empty one
-            _CON = connect()
-        _CON.execute("INSERT INTO ingest (tbl, j) VALUES (?, ?)", (tbl, obj if isinstance(obj, str) else json.dumps(obj)))
+            con = _LOCAL.con = connect()
+        con.execute("INSERT INTO ingest (tbl, j) VALUES (?, ?)", (tbl, obj if isinstance(obj, str) else json.dumps(obj)))
     except Exception:  # noqa: BLE001 - the file write already happened
-        _CON = None
+        if con is not None:
+            con.close()
+        _LOCAL.con = None
 
 
 def rows(con, sql, params=()):

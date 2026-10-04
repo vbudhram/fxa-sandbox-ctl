@@ -160,4 +160,9 @@ check "proxy cost: this run's window and ticket only, by model" \
   '{"usd":0.75,"models":{"claude-opus-5-5":0.5,"claude-sonnet-5-5":0.25}}' "$(_telemetry_proxy_cost FXA-1 1790935200 1790938800)"
 check "proxy cost: nothing for a run the proxy never saw" "" "$(_telemetry_proxy_cost FXA-3 1790935200 1790938800)"
 check "proxy cost: no window, no answer" "" "$(_telemetry_proxy_cost FXA-1 0x 1790938800)"
+# The proxy and the gateway call ingest from ThreadingHTTPServer handlers: no row may be lost.
+check "ingest: every row from many threads" "40" "$(python3 -c "
+import sys, threading; sys.path.insert(0, '$(dirname "$0")'); import fxadb
+ts = [threading.Thread(target=lambda: [fxadb.ingest('llm_calls', dict(at='2026-10-04T10:00:00Z', run='thr', model='m', usd=1)) for _ in range(5)]) for _ in range(8)]
+[t.start() for t in ts]; [t.join() for t in ts]")$(db_value "SELECT count(*) FROM llm_calls WHERE run = 'thr';")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
