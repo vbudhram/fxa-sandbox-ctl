@@ -11,13 +11,14 @@
 # copy and the prompt, prints where they are, and does not call Claude.
 # --base: the copy is at that commit as if it were main, with no ref past it and no
 # remote to fetch from (an eval; see eval-local.sh). --runtime codex: the prompt names
-# skills the Codex way; with it, only --dry-run (eval-local.sh runs Codex).
+# skills the Codex way; with it, only --dry-run (eval-local.sh runs Codex). --from <dir>:
+# start from that installed checkout (eval-install.sh) instead of a bare clone.
 # FXA_CLONE (default ~/Desktop/working2/fxa) is the clone the scratch copy shares
 # objects with; FXA_TRY_NO_FETCH=1 skips fetching main (for the offline check).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FXA="${FXA_CLONE:-$HOME/Desktop/working2/fxa}"
-then=(); keep=""; dry=""; base=""; runtime=claude
+then=(); keep=""; dry=""; base=""; runtime=claude; from=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --then) then+=("$2"); shift 2 ;;
@@ -25,6 +26,7 @@ while [ $# -gt 0 ]; do
     --dry-run) dry=1; shift ;;
     --base) base="$2"; shift 2 ;;
     --runtime) runtime="$2"; shift 2 ;;
+    --from) from="$2"; shift 2 ;;
     -*) echo "usage: agent-try.sh [--then <text>]... [--keep] [--dry-run] <request>" >&2; exit 2 ;;
     *) break ;;
   esac
@@ -38,7 +40,9 @@ ws="$(mktemp -d "${TMPDIR:-/tmp}/fxa-try.XXXXXX")"; ws="$(cd "$ws" && pwd -P)"
 [ -n "$keep$dry" ] || trap 'rm -rf "$ws"' EXIT
 repo="$ws/fxa"
 # A shared clone: fast, its own config, and a push that goes nowhere.
-git clone -q --shared --no-checkout --single-branch --no-tags "$FXA" "$repo"
+# --from: an installed checkout (eval-install.sh), copied copy-on-write so tests can run.
+if [ -n "$from" ]; then cp -c -R "$from" "$repo"
+else git clone -q --shared --no-checkout --single-branch --no-tags "$FXA" "$repo"; fi
 git -C "$repo" config remote.origin.pushurl "no-push://agent-try"
 if [ -n "$base" ]; then
   # As on a pinned runner: the base is main, nothing newer has a ref, and there is no remote.

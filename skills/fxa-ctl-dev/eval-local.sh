@@ -6,8 +6,8 @@
 # The agent works in a scratch copy of FxA at the spec's base (agent-try.sh --base: no
 # newer ref, no remote), with the runner's prompt, skills and (Claude) subagents. It
 # answers a question with the spec's answer, up to max_replies. Then it saves the same
-# files as eval.sh, and eval.sh --judge scores them. No stack and no Linux: compare
-# local runs with each other, not with runs through the bot.
+# files as eval.sh, and eval.sh --judge scores them. The copy is installed
+# (eval-install.sh), so tests run; there is no stack and no Linux.
 # Results: ai/evals/<time>-<name>-<runtime>-local/ (local only).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -18,7 +18,13 @@ s() { jq -r "$1" "$spec"; }
 base="$(s .base)"
 out="$ROOT/ai/evals/$(date +%Y%m%d-%H%M)-$(s .name)-$runtime-local"; mkdir -p "$out"; cp "$spec" "$out/spec.json"
 
-info="$(bash "$ROOT/skills/fxa-ctl-dev/agent-try.sh" --dry-run --base "$base" --runtime "$runtime" "$(s .prompt)")"
+# An installed checkout at the base (made once per base), so the agent can run tests,
+# and that commit's Node version first on PATH for the agent and its tests.
+inst="$(bash "$ROOT/skills/fxa-ctl-dev/eval-install.sh" "$base")"
+# shellcheck source=/dev/null
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"; . "$NVM_DIR/nvm.sh"
+PATH="$(dirname "$(nvm which "$(cat "$inst/.nvmrc")")"):$PATH"; export PATH
+info="$(bash "$ROOT/skills/fxa-ctl-dev/agent-try.sh" --dry-run --base "$base" --runtime "$runtime" --from "$inst" "$(s .prompt)")"
 repo="$(sed -n 's/^scratch copy: //p' <<< "$info")"; ws="$(dirname "$repo")"
 trap 'rm -rf "$ws"' EXIT
 t0=$(date +%s) sid="" reply=""
