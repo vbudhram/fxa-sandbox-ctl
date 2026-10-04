@@ -1,5 +1,6 @@
 """Offline check: python check.py (needs the requirements). Fakes IAP, GCS and the runner."""
 import asyncio
+import json
 import os
 
 os.environ.setdefault("IAP_AUDIENCE", "test")
@@ -15,6 +16,24 @@ RUNNER = 18765
 fail = 0
 
 
+class FakeHttp:
+    """Stands in for app["http"].get: answers with a status and a JSON body."""
+    def __init__(self, status, body):
+        self.status, self.body, self.calls = status, body, 0
+    def get(self, *_, **__):
+        self.calls += 1
+        fake = self
+        class R:
+            status = fake.status
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_): pass
+            def raise_for_status(self):
+                if self.status != 200: raise aiohttp.ClientError(self.status)
+            async def json(self): return fake.body
+            async def text(self): return json.dumps(fake.body)
+        return R()
+
+
 def check(name, want, got):
     global fail
     ok = want == got
@@ -25,6 +44,8 @@ def check(name, want, got):
 async def runner():
     async def vnc(_):
         return web.Response(text="<html>novnc</html>", content_type="text/html")
+    async def js(_):
+        return web.Response(text="export default 1;\n" * 200, content_type="application/javascript")
     async def ws(request):
         w = web.WebSocketResponse(protocols=("binary",))
         await w.prepare(request)
@@ -33,6 +54,7 @@ async def runner():
         return w
     app = web.Application()
     app.router.add_get("/vnc.html", vnc)
+    app.router.add_get("/core/rfb.js", js)
     app.router.add_get("/websockify", ws)
     r = web.AppRunner(app); await r.setup(); await web.TCPSite(r, "127.0.0.1", RUNNER).start()
 
@@ -58,6 +80,34 @@ async def jwt_check():
     other = crypt.ES256Signer.from_string(ec.generate_private_key(ec.SECP256R1()).private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()), key_id="k1")
     forged = jwt.encode(other, {"iat": now, "exp": now + 600, **good}).decode()
     check("a token signed by another key is refused", None, await main.iap_email(type("R", (), {"headers": {"x-goog-iap-jwt-assertion": forged}, "app": None})()))
+    # A rotated key: an unknown kid fetches the keys again, once a minute at most.
+    k2 = ec.generate_private_key(ec.SECP256R1())
+    pub2 = k2.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+    signer2 = crypt.ES256Signer.from_string(k2.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()), key_id="k2")
+    http = FakeHttp(200, {"k1": pub, "k2": pub2})
+    rotated = type("R", (), {"headers": {"x-goog-iap-jwt-assertion": jwt.encode(signer2, {"iat": now, "exp": now + 600, **good}).decode()}, "app": {"http": http}})()
+    check("a new kid inside a minute does not fetch", None, await main.iap_email(rotated))
+    main._certs["at"] = time.time() - 120
+    check("a new kid after a minute fetches the keys again", "owner@example.com", await main.iap_email(rotated))
+    main._certs.update(at=0.0, keys={})
+    check("a failed key fetch is a refusal, not a crash", None, await main.iap_email(type("R", (), {"headers": rotated.headers, "app": {"http": FakeHttp(500, {})}})()))
+    check("a garbage token is refused", None, await main.iap_email(type("R", (), {"headers": {"x-goog-iap-jwt-assertion": "x.y.z"}, "app": None})()))
+
+
+async def record_check():
+    app = {"http": FakeHttp(500, {})}
+    try:
+        await main.record(app, "agent-gcs500")
+        got = None
+    except web.HTTPServiceUnavailable:
+        got = 503
+    check("a GCS error is a 503, not 'no desktop'", 503, got)
+    app["http"] = FakeHttp(200, {"owner_email": "o@example.com"})
+    check("a GCS error is not cached", "o@example.com", (await main.record(app, "agent-gcs500"))["owner_email"])
+    app["http"] = FakeHttp(404, {})
+    check("a 404 is no desktop", None, await main.record(app, "agent-gone12"))
+    await main.record(app, "agent-gone12")
+    check("a 404 is cached", 1, app["http"].calls)
 
 
 async def dashboard_check():
@@ -100,6 +150,7 @@ async def dashboard_check():
 
 async def main_check():
     await jwt_check()
+    await record_check()
     await dashboard_check()
     await runner()
     who = {"email": "owner@example.com"}
@@ -119,9 +170,22 @@ async def main_check():
                   x.status == 302 and x.headers["Location"] == "/d/agent-abcd12/fxa.html#password=pw123456")
         async with c.get(f"{base}/d/agent-abcd12/vnc.html") as x:
             check("pages relay from the runner", "<html>novnc</html>", await x.text())
+            check("an html page is not cached", "no-store", x.headers.get("Cache-Control"))
+        async with c.get(f"{base}/d/agent-abcd12/core/rfb.js", headers={"Accept-Encoding": "gzip"}) as x:
+            check("noVNC js is cached", "private, max-age=86400", x.headers.get("Cache-Control"))
+            check("noVNC js is gzipped", "gzip", x.headers.get("Content-Encoding"))
+        async with c.get(f"{base}/d/agent-abcd12/core/none.js") as x:
+            check("a missing file is not cached", "no-store", x.headers.get("Cache-Control"))
         async with c.ws_connect(f"{base}/d/agent-abcd12/websockify", protocols=("binary",)) as w:
             await w.send_bytes(b"hi")
             check("websocket relays both ways", b"echo:hi", (await w.receive()).data)
+            check("websocket is not deflated again", 0, w.compress)
+        main.NOVNC_PORT = RUNNER + 50
+        async with c.get(f"{base}/d/agent-abcd12/vnc.html") as x:
+            check("a paused runner: 502 that says so", (502, True), (x.status, "may be paused" in await x.text()))
+        async with c.ws_connect(f"{base}/d/agent-abcd12/websockify", protocols=("binary",)) as w:
+            check("a paused runner closes the websocket", aiohttp.WSMsgType.CLOSE, (await w.receive()).type)
+        main.NOVNC_PORT = RUNNER
         async with c.get(f"{base}/d/agent-zzzz99/vnc.html") as x:
             check("no record: 404", 404, x.status)
         async with c.get(f"{base}/d/..%2Fetc/vnc.html") as x:
@@ -132,9 +196,13 @@ async def main_check():
         async with c.get(f"{base}/d/agent-abcd12/vnc.html") as x:
             check("an expired record: 404", 404, x.status)
         main.record = keep
-        who["email"] = "someone@example.com"
+        who["email"] = "some<b>one@example.com"
         async with c.get(f"{base}/d/agent-abcd12/vnc.html") as x:
+            body = await x.text()
             check("another person: 403", 403, x.status)
+            check("it is a page for a phone", "text/html", x.content_type)
+            check("it names the account, escaped", True, "some&lt;b&gt;one@example.com" in body)
+            check("it links to another account", True, "?gcp-iap-mode=CLEAR_LOGIN_COOKIE" in body)
         who["email"] = None
         async with c.get(f"{base}/d/agent-abcd12", allow_redirects=False) as x:
             check("no IAP identity: 403", 403, x.status)
