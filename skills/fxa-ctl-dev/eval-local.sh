@@ -34,23 +34,29 @@ trap 'rm -rf "$ws"' EXIT
 t0=$(date +%s) sid="" reply=""
 # Codex: the model is named, not left to ~/.codex/config.toml, so the report and the price agree.
 CODEX_MODEL="${FXA_EVAL_CODEX_MODEL:-$(sed -n 's/^model *= *"\(.*\)"/\1/p' ~/.codex/config.toml 2>/dev/null | head -1)}"
+# Codex gets its own home with only the login and the effort earlier runs used: no MCP
+# servers or plugins from ~/.codex, which act as you.
+if [ "$runtime" = codex ]; then
+  mkdir -p "$ws/codex-home" && ln -sf ~/.codex/auth.json "$ws/codex-home/auth.json"
+  echo "model_reasoning_effort = \"${FXA_EVAL_CODEX_EFFORT:-medium}\"" > "$ws/codex-home/config.toml"
+fi
 
 # turn <message file>: one turn; its events go to events.jsonl, its reply to $reply.
 turn() {
   if [ "$runtime" = claude ]; then
-    ( cd "$repo" && claude -p ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} ${sid:+--resume "$sid"} --output-format stream-json --verbose \
-        --setting-sources project,local --permission-mode bypassPermissions \
-        --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+    ( cd "$repo" && ENABLE_CLAUDEAI_MCP_SERVERS=false claude -p ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} ${sid:+--resume "$sid"} --output-format stream-json --verbose \
+        --setting-sources project,local --permission-mode bypassPermissions --strict-mcp-config \
+        --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' WebFetch WebSearch < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
     sid="$(jq -r 'select(.type == "result") | .session_id' "$ws/turn.jsonl" | tail -1)"
     # The result holds only the last text block; the reply is every block the main agent wrote.
     reply="$(jq -r 'select(.type == "assistant" and .parent_tool_use_id == null) | .message.content[]? | select(.type == "text") | .text' "$ws/turn.jsonl")"
   else
     # workspace-write: it edits and commits in the copy, with no network.
     if [ -z "$sid" ]; then
-      ( cd "$repo" && codex exec --json ${CODEX_MODEL:+-m "$CODEX_MODEL"} -s workspace-write --skip-git-repo-check -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+      ( cd "$repo" && CODEX_HOME="$ws/codex-home" codex exec --json ${CODEX_MODEL:+-m "$CODEX_MODEL"} -s workspace-write --skip-git-repo-check -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
       sid="$(jq -r 'select(.type == "thread.started") | .thread_id' "$ws/turn.jsonl" | head -1)"
     else
-      ( cd "$repo" && codex exec resume "$sid" --json -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+      ( cd "$repo" && CODEX_HOME="$ws/codex-home" codex exec resume "$sid" --json -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
     fi
     reply="$(cat "$ws/last.txt" 2>/dev/null || true)"
   fi

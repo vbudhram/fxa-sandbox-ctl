@@ -95,9 +95,9 @@ fi
 echo "== trial in $repo (no stack, no Linux, no firewall; the agent's setup and prompts only)"
 # No personal settings: the runner has none of your hooks or plugins. No push, no gh.
 run() { # run <prompt file> [session id]
-  ( cd "$repo" && claude -p ${2:+--resume "$2"} --output-format stream-json --verbose \
-      --setting-sources project,local --permission-mode bypassPermissions \
-      --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' < "$1" ) | tail -1
+  ( cd "$repo" && ENABLE_CLAUDEAI_MCP_SERVERS=false claude -p ${2:+--resume "$2"} --output-format stream-json --verbose \
+      --setting-sources project,local --permission-mode bypassPermissions --strict-mcp-config \
+      --disallowedTools 'Bash(git push:*)' 'Bash(gh:*)' WebFetch WebSearch < "$1" ) | tail -1
 }
 sid=""; n=1
 for msg in "" ${then[@]+"${then[@]}"}; do
