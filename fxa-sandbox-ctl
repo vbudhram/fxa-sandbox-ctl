@@ -557,7 +557,20 @@ _jira_rebase_merge() {
   _retry git -C "$wt" fetch origin "$base" -q || {
     echo "ERROR: cannot fetch origin/${base}." >&2; return 1; }
 
-  if git -C "$wt" merge --no-edit "origin/${base}" >&2; then
+  # A relaunch after a failed or cut-off round finds its merge still open: resume it when
+  # it merged this same base, else start again.
+  if git -C "$wt" rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    if [ "$(git -C "$wt" rev-parse MERGE_HEAD)" = "$(git -C "$wt" rev-parse "origin/${base}")" ]; then
+      echo "The slot holds this merge of origin/${base} already; resuming it." >&2
+      return 0
+    fi
+    git -C "$wt" merge --abort >&2 || { echo "ERROR: could not abort the slot's earlier merge." >&2; return 1; }
+  fi
+
+  # --no-commit even when clean: the runner fetches HEAD from GitHub by sha, and a merge
+  # commit made here exists only on the host. HEAD stays the pushed branch tip, and the
+  # merged files ship as the slot's changes, as after a conflict.
+  if git -C "$wt" -c core.hooksPath=/dev/null merge --no-commit --no-ff "origin/${base}" >&2; then
     echo "Merged origin/${base} cleanly; nothing for the agent to resolve." >&2
     echo "The host will squash and force-push it on handoff." >&2
     return 0
