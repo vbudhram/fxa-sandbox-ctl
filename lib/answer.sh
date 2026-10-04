@@ -124,7 +124,7 @@ _answer_result() {
     | fin($r | split("\n") | map(select(startswith("@@upgrade") | not)) | join("\n")) as $f
     | {id: $id, answer: $f.text, question: (if $f.type == "question" then $f | del(.type) else null end),
        upgrade: (if $u == null then null else ($u | ltrimstr("@@upgrade") | sub("^\\s+"; "") | fromjson? // {reason: "the agent asked for a sandbox", findings: ($u | ltrimstr("@@upgrade"))}) end),
-       secs: $secs, cost_usd: (.total_cost_usd // 0), turns: (.num_turns // 0), error: (.is_error // false)}' <<< "$3" 2>/dev/null \
+       secs: $secs, run_ms: .duration_ms, api_ms: .duration_api_ms, cost_usd: (.total_cost_usd // 0), turns: (.num_turns // 0), error: (.is_error // false)}' <<< "$3" 2>/dev/null \
   || jq -nc --arg id "$1" --argjson secs "$2" '{id: $id, answer: "", upgrade: null, secs: $secs, cost_usd: 0, turns: 0, error: true}'
 }
 
@@ -170,16 +170,20 @@ answer_ask() {
     | while IFS= read -r line; do
         case "$line" in
           *'"type":"result"'*) printf '%s\n' "$line" > "$resf" ;;
+          *'"subtype":"init"'*) echo $(( $(date +%s) - t0 )) > "${resf}.init"; [ "$stream" = 1 ] && _answer_step "$line" ;;
           *) [ "$stream" = 1 ] && _answer_step "$line" ;;
         esac
       done
-  rc="${PIPESTATUS[1]}"; out="$(cat "$resf")"; rm -f "$resf"
+  rc="${PIPESTATUS[1]}"; out="$(cat "$resf")"
+  local init_s; init_s="$(cat "${resf}.init" 2>/dev/null || echo null)"; rm -f "$resf" "${resf}.init"
   rm -f "$full"; rmdir "$slot" 2>/dev/null
   llm_token_revoke "$id" >/dev/null 2>&1 || true; mcp_token_revoke "$id" >/dev/null 2>&1 || true
   [ "$rc" = 9 ] && { errors_record answer no_firewall "" "answer_ask" "fxa-answer has no egress firewall; run: fxa-sandbox-ctl answer up" ""; return 1; }
   res="$(_answer_result "$id" "$(( $(date +%s) - t0 ))" "$out")"
   [ "$(jq -r .error <<< "$res")" = true ] && errors_record answer failed "" "answer_ask" "an answer failed (ssh status ${rc}): $(printf '%s' "$out" | tail -c 200 | tr '\n' ' ')" ""
-  jq -c '{at: (now | todate), id, secs, cost_usd, turns, upgrade: (.upgrade != null), error}' <<< "$res" >> "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
+  # Where the time went: init_s is ssh, setup, the main fetch and Claude's start with its MCP servers;
+  # run_ms is Claude's run, api_ms the part spent waiting on the model.
+  jq -c --argjson init "$init_s" '{at: (now | todate), id, secs, init_s: $init, run_ms, api_ms, cost_usd, turns, upgrade: (.upgrade != null), error}' <<< "$res" >> "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
   if [ "$stream" = 1 ]; then jq -c '{type: "answer"} + .' <<< "$res"; else printf '%s\n' "$res"; fi
 }
 
