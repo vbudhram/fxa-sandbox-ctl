@@ -74,7 +74,9 @@ cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
   "DisableAppUpdate": true,
   "Homepage": {"URL": "http://localhost:3030/", "StartPage": "homepage"},
   "DisplayBookmarksToolbar": "always",
-  "Preferences": {"browser.tabs.loadBookmarksInTabs": {"Value": true, "Status": "default"}},
+  "NoDefaultBookmarks": true,
+  "Preferences": {"browser.tabs.loadBookmarksInTabs": {"Value": true, "Status": "default"},
+    "browser.tabs.closeWindowWithLastTab": {"Value": false, "Status": "default"}},
   "Bookmarks": [
     {"Title": "Settings", "URL": "http://localhost:3030/settings", "Placement": "toolbar"},
     {"Title": "Inbox", "URL": "http://localhost:3030/__inbox", "Placement": "toolbar"},
@@ -94,12 +96,18 @@ ln -sfn /srv/workspace ~/Desktop/fxa
 cat > ~/fxa-firefox.mjs <<'MJS'
 const { default: foxfire } = await import('/srv/workspace/node_modules/foxfire/index.js');
 const { default: profile } = await import('/srv/workspace/packages/fxa-dev-launcher/profile.mjs');
-foxfire({ args: ['http://localhost:3030/'], profileOptions: profile });
+foxfire({ args: ['file://' + process.env.HOME + '/starting.html'], profileOptions: profile });
 MJS
 # foxfire also adds an empty argument, which Firefox opens as file:///; drop it.
 printf '#!/bin/bash\na=(); for x in "$@"; do [ -n "$x" ] && a+=("$x"); done\nexec /usr/bin/firefox "${a[@]}"\n' > ~/firefox-bin
-# Wait for the stack (up to 3 min), so Firefox opens on the accounts page, not an error.
-printf '#!/bin/bash\nfor i in $(seq 1 90); do (exec 3<>/dev/tcp/127.0.0.1/3030) 2>/dev/null && break; sleep 2; done\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
+# Firefox opens at once on this page, which goes to the stack when it answers.
+cat > ~/starting.html <<'HTML'
+<!doctype html><title>Starting</title>
+<body style="background:#1c1b22;color:#fbfbfe;font:20px sans-serif;display:grid;place-items:center;height:90vh">
+<p>Starting the FxA stack, about 2 minutes&hellip;</p>
+<script>setInterval(()=>fetch('http://localhost:3030/',{mode:'no-cors'}).then(()=>location='http://localhost:3030/',()=>{}),3000)</script>
+HTML
+printf '#!/bin/bash\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
 chmod +x ~/firefox-bin ~/fxa-firefox
 mkdir -p ~/.local/share/applications
 printf '[Desktop Entry]\nType=Application\nName=Firefox (FxA dev)\nComment=Firefox with the FxA dev profile for the local stack\nExec=%s/fxa-firefox\nIcon=firefox\nTerminal=false\n' "$HOME" \
@@ -121,6 +129,8 @@ x=~/.config/xfce4/xfconf/xfce-perchannel-xml; mkdir -p "$x"
   </property></property>
 </channel>
 XML
+# No bottom dock: its launcher starts a Firefox without the FxA dev profile.
+[ -f "$x/xfce4-panel.xml" ] || sed '0,/<value type="int" value="2"\/>/{//d}' /etc/xdg/xfce4/panel/default.xml > "$x/xfce4-panel.xml"
 (umask 077; printf '%s\n' "$1" | tigervncpasswd -f > ~/.vnc/passwd)
 printf '#!/bin/sh\nunset SESSION_MANAGER DBUS_SESSION_BUS_ADDRESS\nexec dbus-launch --exit-with-session startxfce4\n' > ~/.vnc/xstartup
 chmod +x ~/.vnc/xstartup
@@ -136,7 +146,8 @@ DISPLAY=:1 vncconfig -display :1 -set SendPrimary=0 2>/dev/null || true  # a des
 if ! pgrep -u viewer -f 'websockify .*:6080 127.0.0.1:5901' >/dev/null; then
   nohup setsid websockify --web /usr/share/novnc 0.0.0.0:6080 127.0.0.1:5901 >/tmp/viewer-websockify.log 2>&1 </dev/null &
 fi
-if ! pgrep -u viewer -x firefox >/dev/null; then
+# Mozilla's build runs as firefox-bin; fxa-firefox (then node) runs before it.
+if ! pgrep -u viewer -f 'fxa-firefox|firefox-bin' >/dev/null; then
   DISPLAY=:1 nohup setsid ~/fxa-firefox >/tmp/viewer-firefox.log 2>&1 </dev/null &
 fi
 # Maximized, Firefox follows the desktop's size, which the page sets from the screen it is
