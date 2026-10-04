@@ -22,6 +22,8 @@ info="$(bash "$ROOT/skills/fxa-ctl-dev/agent-try.sh" --dry-run --base "$base" --
 repo="$(sed -n 's/^scratch copy: //p' <<< "$info")"; ws="$(dirname "$repo")"
 trap 'rm -rf "$ws"' EXIT
 t0=$(date +%s) sid="" reply=""
+# Codex: the model is named, not left to ~/.codex/config.toml, so the report and the price agree.
+CODEX_MODEL="${FXA_EVAL_CODEX_MODEL:-$(sed -n 's/^model *= *"\(.*\)"/\1/p' ~/.codex/config.toml 2>/dev/null | head -1)}"
 
 # turn <message file>: one turn; its events go to events.jsonl, its reply to $reply.
 turn() {
@@ -35,7 +37,7 @@ turn() {
   else
     # workspace-write: it edits and commits in the copy, with no network.
     if [ -z "$sid" ]; then
-      ( cd "$repo" && codex exec --json -s workspace-write --skip-git-repo-check -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
+      ( cd "$repo" && codex exec --json ${CODEX_MODEL:+-m "$CODEX_MODEL"} -s workspace-write --skip-git-repo-check -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
       sid="$(jq -r 'select(.type == "thread.started") | .thread_id' "$ws/turn.jsonl" | head -1)"
     else
       ( cd "$repo" && codex exec resume "$sid" --json -o "$ws/last.txt" - < "$1" ) > "$ws/turn.jsonl" 2>>"$out/agent.err" || true
@@ -78,8 +80,7 @@ fi
     jq -rs '[.[] | select(.type == "result") | .modelUsage // {} | to_entries[]] | group_by(.key)[]
       | "model \(.[0].key): \(map(.value.inputTokens + .value.cacheReadInputTokens + .value.cacheCreationInputTokens) | add) in, \(map(.value.outputTokens) | add) out, $\(map(.value.costUSD) | add * 100 | round / 100)"' "$out/events.jsonl"
   else
-    echo "model: $(sed -n 's/^model *= *"\(.*\)"/\1/p' ~/.codex/config.toml 2>/dev/null | head -1)"
-    jq -rs '[.[] | select(.type == "turn.completed") | .usage] | "tokens: \(map(.input_tokens // 0) | add) in (\(map(.cached_input_tokens // 0) | add) cached), \(map(.output_tokens // 0) | add) out"' "$out/events.jsonl"
+    jq -rs --arg m "$CODEX_MODEL" --slurpfile p "$ROOT/evals/prices.json" -f "$ROOT/skills/fxa-ctl-dev/codex-cost.jq" "$out/events.jsonl"
   fi
 } > "$out/report.txt"
 echo "== saved to $out ($(wc -l < "$out/commands.txt" | tr -d ' ') tool calls, $(grep -c '^diff --git' "$out/diff.patch" || true) files changed)"

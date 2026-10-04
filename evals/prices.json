@@ -1,0 +1,11 @@
+{
+  "as_of": "2026-10-03",
+  "note": "US dollars per million tokens, standard speed. Codex reports input_tokens with the cached ones included, and output_tokens with the reasoning ones included.",
+  "models": {
+    "gpt-6-astra": {
+      "input": 10.0, "cached_input": 1.0, "cache_write": 12.5, "output": 50.0,
+      "source": "https://learn.chatgpt.com/docs/pricing (credits: 250 in, 25 cached, 1,250 out); dollar rates and cache writes: https://www.yottalabs.ai/post/gpt-6-astra-pricing-api-cost-2026",
+      "long_context": "a request over 272K input tokens is billed at 20 in and 75 out for the whole request (third-party source)"
+    }
+  }
+}
