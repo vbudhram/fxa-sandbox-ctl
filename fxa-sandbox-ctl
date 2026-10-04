@@ -642,6 +642,15 @@ _jira_render_prompt() {
    step 2 runs them. Unit tests alone do not meet this step."
   fi
 
+  # Claude: the review and PR subagents on Sonnet, not general-purpose ones on the main model.
+  local delegate="Run steps 5, 6 and 8 in subagents, one per step, so the files they read stay
+out of this conversation. Each subagent must return a short verdict, and you
+must print that verdict here: the goal evaluator reads only this transcript."
+  [ "${FXA_AGENT_RUNTIME:-claude}" = claude ] && delegate="Run steps 5 and 6 in the fxa-reviewer subagent, and ask it for /code-simplifier
+and /ponytail-review too; apply each cut it reports or decline it in one line.
+Run step 8 in the fxa-writer subagent. Print each verdict and its 'Skills run:'
+line here: the goal evaluator reads only this transcript."
+
   runtime_prompt_header "$key" "$summary"
   cat <<EOF
 
@@ -680,9 +689,7 @@ ${step4}
    attribution footer, no "Generated with Claude Code", no session link.
 $(runtime_prompt_handoff_step)
 
-Run steps 5, 6 and 8 in subagents, one per step, so the files they read stay
-out of this conversation. Each subagent must return a short verdict, and you
-must print that verdict here: the goal evaluator reads only this transcript.
+${delegate}
 
 DO NOT push and DO NOT run 'gh' — the host does that once it sees the handoff
 file. No GitHub credentials in this VM.

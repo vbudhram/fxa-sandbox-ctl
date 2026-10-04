@@ -16,6 +16,9 @@ you find. Only your reply reaches it, so make the reply the findings, nothing el
 3. Run `/fxa-vm-selfcheck`: start with its `check.sh`, then its judgment checks
    1, 2 and the scope part of 4. Skip check 5: the PR body is not written yet.
 4. Run `/fxa-unslop` Part 1 (the tests and leftovers).
+5. Run any other review skill the caller names (the pipeline asks for
+   `/code-simplifier` and `/ponytail-review`). Report their cuts as findings; do
+   not apply them.
 
 If the Skill tool is not available, read the skill's SKILL.md (in
 /workspace/.claude/skills/<name>/ or ~/.claude/skills/<name>/) and follow it.
@@ -30,4 +33,6 @@ If the Skill tool is not available, read the skill's SKILL.md (in
 
 - Blockers first, then the rest. One line each: `path:line`, the problem, the fix.
 - At most about 40 lines. No praise, no summary of what passed.
-- If nothing needs a change: `Review clean: fxa-review-quick, selfcheck, unslop Part 1.`
+- If nothing needs a change: `Review clean.`
+- Last line, always: `Skills run: <each skill you called>`. The caller's goal
+  checker reads only that line as proof that a skill ran.
