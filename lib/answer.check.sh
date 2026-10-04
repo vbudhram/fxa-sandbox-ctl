@@ -10,6 +10,7 @@ export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_URL="http://10.0.0.2:8788"; mkdir 
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 FXA_SESSION_DIR="$tmp/sess" source "$here/session.sh"   # _SESSION_FIN_JQ: questions parse as a turn does
 source "$here/answer.sh"
+SANDBOX_ROOT="$here/.."  # config.sh sets it on a host; the script reads guide/voice.md from it
 export LOG_DIR="$tmp/logs"; mkdir -p "$LOG_DIR"; echo us-central1-b > "$LOG_DIR/fxa-answer.zone"
 _claude_auth_line() { printf 'export ANTHROPIC_BASE_URL=%s\nexport ANTHROPIC_API_KEY=fxl_test%s\n' "$FXA_LLM_PROXY_URL" "$1"; }
 llm_token_revoke() { echo "llm $1" >> "$tmp/revoked"; }
@@ -35,6 +36,7 @@ _gce_ssh() { [ "$FIREWALL" = 1 ] || exit 9; sed "s#/workspace#$tmp/ws#g; s#/home
 
 printf "%s\n" "Where is the 'password' check? \$(touch $tmp/pwned) EOF" > "$tmp/q1"
 script="$(_answer_script ask-t001 "$tmp/q1" "")"
+check "the quick agent gets the voice" "1" "$(printf '%s' "$script" | grep -oE "append-system-prompt \"\\\$\(echo '[A-Za-z0-9+/=]+'" | grep -oE "'[A-Za-z0-9+/=]+'" | tr -d "'" | base64 -d | grep -c "helpful fox")"
 check "script: the question travels only as base64" "0" "$(grep -c 'password' <<< "$script")"
 check "script: the proxy token, never the API key" "1|0" "$(grep -c 'ANTHROPIC_BASE_URL=http://10.0.0.2:8788' <<< "$script")|$(grep -c 'sk-ant' <<< "$script")"
 check "script: no edit tools" "1" "$(grep -c -- '--disallowedTools Edit Write' <<< "$script")"

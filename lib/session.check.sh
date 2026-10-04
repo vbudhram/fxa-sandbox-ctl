@@ -608,5 +608,8 @@ STUB
   check "try: a prompt is required" "1" "$(session_try >/dev/null 2>&1; echo $?)"
   exit "$fail" ) || fail=1
 
+runtime_skill_ref() { printf '/%s' "$1"; }
+check "the first prompt carries the voice" "1" "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'helpful fox')"
+
 exit "$fail"
 

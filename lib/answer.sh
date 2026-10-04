@@ -105,7 +105,7 @@ cd /workspace || exit 1
 ( flock -w 30 9 && [ \$(( \$(date +%s) - \$(stat -c %Y .git/fxa-main-fetched 2>/dev/null || echo 0) )) -gt 300 ] \\
   && git fetch -q origin main && git checkout -q -f --detach origin/main && touch .git/fxa-main-fetched ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
-  --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s' "$_ANSWER_RULES" | base64 | tr -d '\n')' | base64 -d)" \\
+  --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s\n\n%s' "$_ANSWER_RULES" "$(cat "${SANDBOX_ROOT}/guide/voice.md")" | base64 | tr -d '\n')' | base64 -d)" \\
   --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
     'Bash(git:*)' 'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\
