@@ -245,6 +245,14 @@
   .iconbtn { width:36px; height:36px; padding:0; display:grid; place-items:center; border-radius:8px; color:var(--dim); }
   .iconbtn svg { width:18px; height:18px; } .iconbtn[aria-pressed="true"] { color:var(--link); border-color:var(--link); }
   .mc { padding:var(--s4) var(--s6) var(--s6); }
+  /* Drag handles on the sidebars' inner edges: drag to resize, double-click for the default. */
+  .rsz { width:8px; height:100%; z-index:6; cursor:col-resize; touch-action:none; background:transparent; transition:background .15s; }
+  .rsz:hover, .rsz.on { background:var(--line); }
+  .rsz-side { grid-area:side; justify-self:end; margin-right:-4px; }
+  .rsz-right { grid-area:right; justify-self:start; margin-left:-4px; }
+  body.noside .rsz-side, body.v-overview .rsz-side, body.noright .rsz-right, body.v-overview .rsz-right, body.v-stats .rsz-right { display:none; }
+  @media (max-width:1280px) { .rsz-right { display:none; } }
+  @media (max-width:900px) { .rsz-side { display:none; } }
   .right { grid-area:right; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
   .right .rh { display:block; font:700 16px/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
   .right h4 { margin:0 0 var(--s2); font:700 var(--t-label) var(--sans); color:var(--dim); }
@@ -540,6 +548,8 @@ table.usage tr.tot td { border-bottom: 0; }
 </div>
 </main>
 <aside class="right" id="right" aria-label="Details"></aside>
+<div class="rsz rsz-side" data-var="--side" data-min="220" data-max="640" data-dir="1" role="separator" aria-orientation="vertical" aria-label="Resize the list" title="Drag to resize; double-click to reset"></div>
+<div class="rsz rsz-right" data-var="--right" data-min="260" data-max="720" data-dir="-1" role="separator" aria-orientation="vertical" aria-label="Resize the details" title="Drag to resize; double-click to reset"></div>
 <footer class="status" aria-label="Status"><span class="dot" id="dot"></span><span id="health">healthy</span><span id="cells"></span><span class="sp"></span><span id="repo"></span><span id="age">connecting…</span><button id="refresh" type="button">Refresh</button></footer>
 </div>
 <div class="help" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
@@ -863,6 +873,25 @@ const SX = { list: false, details: false, term: true };
 try { Object.assign(SX, JSON.parse(localStorage.getItem("sx") || "{}")); } catch {}
 SX.list = false; SX.details = false;   // the list and the details are the side panels
 const saveSX = () => { try { localStorage.setItem("sx", JSON.stringify(SX)); } catch {} };
+// Sidebar widths: drag a handle; remembered in this browser; double-click for the default.
+(() => {
+  const root = document.documentElement.style;
+  let saved = {}; try { saved = JSON.parse(localStorage.getItem("panelW") || "{}"); } catch {}
+  for (const [k, v] of Object.entries(saved)) if (/^--(side|right)$/.test(k) && Number.isFinite(v)) root.setProperty(k, v + "px");
+  const save = () => { try { localStorage.setItem("panelW", JSON.stringify(saved)); } catch {} };
+  for (const h of document.querySelectorAll(".rsz")) {
+    const v = h.dataset.var, min = +h.dataset.min, max = +h.dataset.max, dir = +h.dataset.dir;
+    const cur = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || min;
+    h.addEventListener("pointerdown", e => {
+      e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add("on");
+      const x0 = e.clientX, w0 = cur();
+      const move = m => { const w = Math.round(Math.min(max, Math.max(min, w0 + dir * (m.clientX - x0)))); root.setProperty(v, w + "px"); saved[v] = w; };
+      const up = () => { h.classList.remove("on"); h.removeEventListener("pointermove", move); save(); };
+      h.addEventListener("pointermove", move); h.addEventListener("pointerup", up, { once: true }); h.addEventListener("pointercancel", up, { once: true });
+    });
+    h.addEventListener("dblclick", () => { root.removeProperty(v); delete saved[v]; save(); });
+  }
+})();
 function renderSess() {
   const ss = AGENTS?.sessions ?? [];
   Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? ss.filter(s => st.includes(s.state)).length : ""; });
@@ -1133,9 +1162,13 @@ function renderStats() {
   rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; } });
   const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
   const lbl = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const bars = k => bl.map(b => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}</span>
-      <span class="v">${k === "runs" ? (b.runs || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : ms) * H))}" style="background:${k === "runs" ? "var(--info)" : "var(--purple)"};transition:height 400ms"></div>
-      <span class="w">${esc(lbl(b.t))}</span></div>`).join("");
+  // A month of days does not fit 30 labels: with many bars, label about every fifth day and
+  // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
+  const many = bl.length > 14, step = Math.ceil(bl.length / 7);
+  const showDay = i => !many || i === bl.length - 1 || (i % step === 0 && bl.length - 1 - i >= step / 2);
+  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}</span>
+      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : ms) * H))}" style="background:${k === "runs" ? "var(--info)" : "var(--purple)"};transition:height 400ms"></div>
+      <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
   const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
   const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
   const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
@@ -1849,7 +1882,7 @@ const num = v => v == null || v === "" ? null : Number(v);
 // agent and subagents apart, with the token kinds that make the cost. Fetched when shown, 30 s fresh.
 const USAGE = {};
 const tokn = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);
-const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/^./, c => c.toUpperCase());
+const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
 function usageTable(rows) {
   if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
