@@ -532,6 +532,9 @@ check "prune drops proxy calls older than 90 days" "2" "$(jq -r .usd "$tmp/proxy
   check "backup: and tries again on the next sweep" "4" "$(wc -l < "$calls" | tr -d ' ')"
   FXA_SESSION_BACKUP_URI=""; session_backup --now
   check "backup: no bucket, nothing to do" "4" "$(wc -l < "$calls" | tr -d ' ')"
+  mkdir -p "$tmp/bk"; echo "{\"key\":\"agent-bk1\",\"state\":\"stopped\",\"last_activity\":1}" > "$tmp/bk/agent-bk1.json"
+  FXA_SESSION_BACKUP_URI="gs://b/sessions" SESSION_DIR="$tmp/bk" FXA_MCP_GATEWAY_DIR="$tmp/none" FXA_LLM_PROXY_DIR="$tmp/none" session_prune >/dev/null
+  check "prune: deletes the pruned session's backup copy" "yes" "$(grep -q "rm -q -r gs://b/sessions/$(hostname -s)/agent-bk1\.\*" "$calls" && echo yes)"
   exit "$fail" ) || fail=1
 
 # Saved work: up to the bucket after a save, back when this disk has none, gone at prune.

@@ -557,9 +557,13 @@ _session_job_running() {
 # work and conversations that a resume needs live only on this disk. Only new or changed
 # files go up, and nothing is deleted there, so a local loss never reaches the copy.
 # Restore: gcloud storage rsync -r <uri>/<host> "$SESSION_DIR"
-# ponytail: the copy keeps pruned sessions; add a bucket lifecycle rule if it grows.
+# session_prune deletes a pruned session's copy there too, so retention holds.
+_session_backup_uri() {
+  printf '%s' "${FXA_SESSION_BACKUP_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/sessions}}"
+}
 session_backup() {
-  local uri="${FXA_SESSION_BACKUP_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/sessions}}" stamp="${SESSION_DIR}/.backed-up"
+  local uri stamp="${SESSION_DIR}/.backed-up"
+  uri="$(_session_backup_uri)"
   [ -n "$uri" ] && [ -d "$SESSION_DIR" ] || return 0
   if [ "${1:-}" != --now ] && [ -f "$stamp" ] && [ $(( $(date +%s) - $(_mtime "$stamp") )) -lt 86400 ]; then return 0; fi
   touch "$stamp"
@@ -578,6 +582,8 @@ session_prune() {
     session_live "$key" && continue
     [ "$(jq -r '.last_activity // 0 | floor' "$f" 2>/dev/null || echo 0)" -lt "$cutoff" ] || continue
     [ -n "$(_session_store)" ] && { gcloud storage rm -q "$(_session_store)/${key}.*" >/dev/null 2>&1 || true; }
+    # The daily backup's copy (session_backup): its files and folders, such as the media.
+    [ -n "$(_session_backup_uri)" ] && { gcloud storage rm -q -r "$(_session_backup_uri)/$(hostname -s)/${key}.*" >/dev/null 2>&1 || true; }
     rm -rf "${SESSION_DIR:?}/${key}".* && _session_db_sync "$key" && echo "$key"
   done
   for f in "$SESSION_DIR"/thread-*.json; do
