@@ -307,6 +307,34 @@ print(max(0,int(end-start)) if start else 0)" "$log" "${done_file:-}" "$launched
   telemetry_costs >/dev/null && echo "rolled up -> $PIPE_COSTS_FILE"
 }
 
+# telemetry_reprice   Price the runs recorded before proxy pricing (no cost_source) from
+# the proxy, where it logged them. In place, with a backup, under the pipeline lock: the
+# rollup and the store are rebuilt from this file, so an added row would count twice.
+# A run outside the proxy's records keeps its transcript price. Safe to run again.
+telemetry_reprice() {
+  pipeline_lock || return 1
+  local tmp n=0 line p a e
+  cp "$PIPE_RUNS_FILE" "${PIPE_RUNS_FILE}.bak-$(date -u +%Y%m%d%H%M%S)"
+  tmp="$(mktemp "${PIPE_RUNS_FILE}.XXXXXX")"
+  while IFS= read -r line; do
+    p=""
+    if [ -n "$line" ] && [ -z "$(jq -r '.cost_source // empty' <<< "$line" 2>/dev/null)" ]; then
+      a="$(jq -r '.launched_at // 0' <<< "$line")"
+      e="$(_epoch_of "$(jq -r '.recorded_at // ""' <<< "$line")" 2>/dev/null || echo 0)"
+      [ "$a" != 0 ] && [ "${e:-0}" -gt "$a" ] && p="$(_telemetry_proxy_cost "$(jq -r '.issue' <<< "$line")" "$a" "$e" 2>/dev/null || true)"
+    fi
+    if [ -n "$p" ]; then
+      jq -c --argjson p "$p" '. + {transcript_cost_usd: .cost_usd, cost_usd: $p.usd, cost_models: $p.models, cost_source: "proxy"}' <<< "$line"; n=$((n + 1))
+    else printf '%s\n' "$line"; fi
+  done < "$PIPE_RUNS_FILE" > "$tmp"
+  chmod --reference="$PIPE_RUNS_FILE" "$tmp" 2>/dev/null || chmod 644 "$tmp"
+  mv "$tmp" "$PIPE_RUNS_FILE"
+  declare -F db_import >/dev/null && db_import >/dev/null
+  telemetry_costs >/dev/null
+  pipeline_unlock
+  echo "repriced $n runs from the proxy; the old file is beside it as ${PIPE_RUNS_FILE##*/}.bak-*"
+}
+
 # Roll the event log up into a per-issue view. Rebuilt from scratch each time,
 # so it can never drift from the event log.
 telemetry_costs() {

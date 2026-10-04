@@ -147,7 +147,7 @@ PIPELINE COMMANDS:
                                and the branch/main lines it cites
   tokens <ISSUE-KEY>           Token and model usage (run BEFORE the VM stops)
   record <ISSUE-KEY>           Append the run to the telemetry log
-  costs                        Rebuild the per-issue cost rollup
+  costs [--reprice]            Rebuild the per-issue cost rollup; --reprice prices old runs from the LLM proxy
   skip <KEY> [reason]          Record an admission skip; prints comment|silent <n>
   skipped [KEY]                List recorded skips
   skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
@@ -1409,7 +1409,7 @@ cmd_skipped()   { if [ -n "${1:-}" ]; then pipeline_skipped "$(_key "$1")"; else
 cmd_attempts()  { pipeline_attempts "$(_key "$1")" "${@:2}"; }
 cmd_usage_tokens() { telemetry_usage "$@"; }
 cmd_record()    { telemetry_record "$(_key "$1")"; }
-cmd_costs()     { telemetry_costs; }
+cmd_costs()     { if [ "${1:-}" = --reprice ]; then telemetry_reprice; else telemetry_costs; fi; }
 cmd_slots()     { worktree_slots; }
 cmd_snapshot()  {
   case "${1:-}" in
