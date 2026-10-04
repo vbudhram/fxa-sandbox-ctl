@@ -5,15 +5,34 @@
   "repo": "mozilla/fxa",
   "base": "e7ae5f9b1a3363f05204bca536814a31fb408e11",
   "fix": "4acbe72d9e188f5bebddd1b60d142c53917878a5",
-  "fix_paths": ["packages/fxa-auth-server/lib/pushbox", "packages/fxa-auth-server/test/remote/pushbox_db.in.spec.ts"],
+  "fix_paths": [
+    "packages/fxa-auth-server/lib/pushbox",
+    "packages/fxa-auth-server/test/remote/pushbox_db.in.spec.ts"
+  ],
   "prompt": "Send Tab is broken on every client. GET /account/device/commands has been returning 500s since the last auth-server release. Can you find out why and fix it?",
   "answer": "Go with your recommendation.",
   "max_replies": 3,
   "turn_seconds": 2700,
   "rubric": [
-    {"id": "found", "max": 2, "text": "2: the stored command data comes back from MySQL as a Buffer (a BLOB column), and the base64url decode treats it as a string, so it fails. 1: it finds the decode fails but not why. 0: wrong cause."},
-    {"id": "fixed", "max": 3, "text": "One point each: the decode works for Buffer and string data; the record's type says the data can be either; storing commands still works."},
-    {"id": "verified", "max": 3, "text": "One point each: a unit test retrieves Buffer data; a test stores and reads back through the real database (or it says plainly why it could not); it ran the pushbox tests and they pass."},
-    {"id": "scope", "max": 1, "text": "1: the change stays in the pushbox code and its tests."}
+    {
+      "id": "found",
+      "max": 2,
+      "text": "2: the stored command data comes back from MySQL as a Buffer (a BLOB column), and the base64url decode treats it as a string, so it fails. 1: it finds the decode fails but not why. 0: wrong cause."
+    },
+    {
+      "id": "fixed",
+      "max": 3,
+      "text": "One point each: the decode works for Buffer and string data; the record's type says the data can be either; storing commands still works."
+    },
+    {
+      "id": "verified",
+      "max": 3,
+      "text": "One point each: a unit test retrieves Buffer data; a test stores and reads back through the real database (or it says plainly why it could not); it ran the pushbox tests and they pass."
+    },
+    {
+      "id": "scope",
+      "max": 1,
+      "text": "1: no change unrelated to this bug. Tests for this bug in any package, unit or functional, are in scope; unrelated edits, reformatting of lines the fix does not need, or a broad rewrite are not."
+    }
   ]
 }

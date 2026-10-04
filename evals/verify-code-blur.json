@@ -3,15 +3,33 @@
   "repo": "mozilla/fxa",
   "base": "77aecfecb54a0f8c9379eface6aba7a1559e14c2",
   "fix": "1963a3e14b1bf51cf0bc6411078f1991a26357f2",
-  "fix_paths": ["packages/fxa-settings/src/components/FormVerifyCode"],
+  "fix_paths": [
+    "packages/fxa-settings/src/components/FormVerifyCode"
+  ],
   "prompt": "On the sign-in confirmation code page, if I click into the code field and then click away without typing anything, it right away shows \"This field is required\". It should only complain when I actually submit. Can you fix it?",
   "answer": "Go with your recommendation.",
   "max_replies": 3,
   "turn_seconds": 2700,
   "rubric": [
-    {"id": "found", "max": 2, "text": "2: names the same root cause as the reference fix, in the shared component, and says which other pages it affects. 1: finds a cause on the one page only. 0: wrong cause."},
-    {"id": "fixed", "max": 3, "text": "One point each: the early error is gone on blur; the error still shows when an empty form is submitted; the change is in the shared component, so every page that uses it is fixed."},
-    {"id": "verified", "max": 3, "text": "One point each: a new or changed test covers blur on the empty field; it ran that test and it passed; it checked that submit still validates (a test, or the running page)."},
-    {"id": "scope", "max": 1, "text": "1: the change stays on this bug, with no unrelated edits."}
+    {
+      "id": "found",
+      "max": 2,
+      "text": "2: names the same root cause as the reference fix, in the shared component, and says which other pages it affects. 1: finds a cause on the one page only. 0: wrong cause."
+    },
+    {
+      "id": "fixed",
+      "max": 3,
+      "text": "One point each: the early error is gone on blur; the error still shows when an empty form is submitted; the change is in the shared component, so every page that uses it is fixed."
+    },
+    {
+      "id": "verified",
+      "max": 3,
+      "text": "One point each: a new or changed test covers blur on the empty field; it ran that test and it passed; it checked that submit still validates (a test, or the running page)."
+    },
+    {
+      "id": "scope",
+      "max": 1,
+      "text": "1: no change unrelated to this bug. Tests for this bug in any package, unit or functional, are in scope; unrelated edits, reformatting of lines the fix does not need, or a broad rewrite are not."
+    }
   ]
 }

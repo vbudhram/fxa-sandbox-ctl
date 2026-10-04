@@ -5,15 +5,33 @@
   "repo": "mozilla/fxa",
   "base": "0e56416ee5ecb484f4d93678729ee1b715768fba",
   "fix": "44d68bb99ca40e1d4181df01294d3bf04344b8f7",
-  "fix_paths": ["packages/fxa-settings/src/pages/Pair/Index"],
+  "fix_paths": [
+    "packages/fxa-settings/src/pages/Pair/Index"
+  ],
   "prompt": "On desktop Firefox with pairing v2 on, if I'm signed out and go to /pair, I still get a QR code. When I scan it with my phone, the approve page crashes with \"Account data not loaded from localStorage\". Signed-out people should be sent to sign in first. Can you fix it?",
   "answer": "Go with your recommendation.",
   "max_replies": 3,
   "turn_seconds": 2700,
   "rubric": [
-    {"id": "found", "max": 2, "text": "2: Pair/Index sends a v2 desktop to scan_qr before it checks for a signed-in account, and the QR side needs no account, so the failure shows only after the scan. 1: it finds the early redirect but not the order problem. 0: wrong cause."},
-    {"id": "fixed", "max": 3, "text": "One point each: a signed-out v2 desktop goes to sign-in; a verified signed-in v2 desktop still reaches scan_qr; an unverified session goes to sign-in, as in v1."},
-    {"id": "verified", "max": 3, "text": "One point each: tests cover signed-out and signed-in v2; a test covers a status answer that comes late (the gate can change while the sign-in check runs) or it explains why that case is safe; it ran the Pair Index tests and they pass."},
-    {"id": "scope", "max": 1, "text": "1: only Pair/Index and its tests change."}
+    {
+      "id": "found",
+      "max": 2,
+      "text": "2: Pair/Index sends a v2 desktop to scan_qr before it checks for a signed-in account, and the QR side needs no account, so the failure shows only after the scan. 1: it finds the early redirect but not the order problem. 0: wrong cause."
+    },
+    {
+      "id": "fixed",
+      "max": 3,
+      "text": "One point each: a signed-out v2 desktop goes to sign-in; a verified signed-in v2 desktop still reaches scan_qr; an unverified session goes to sign-in, as in v1."
+    },
+    {
+      "id": "verified",
+      "max": 3,
+      "text": "One point each: tests cover signed-out and signed-in v2; a test covers a status answer that comes late (the gate can change while the sign-in check runs) or it explains why that case is safe; it ran the Pair Index tests and they pass."
+    },
+    {
+      "id": "scope",
+      "max": 1,
+      "text": "1: no change unrelated to this bug. Tests for this bug in any package, unit or functional, are in scope; unrelated edits, reformatting of lines the fix does not need, or a broad rewrite are not."
+    }
   ]
 }
