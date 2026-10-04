@@ -33,6 +33,7 @@
   #dock.open #handle { width: 44px; height: 32px; border-radius: 16px; opacity: 1; }
   #handle:hover { opacity: 1; }
 
+  #screen.px canvas { image-rendering: pixelated; } /* a whole-number device scale: sharp text, not smoothed */
   #kbd { position: fixed; left: -100px; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; } /* 16px: iOS does not zoom */
   /* Keys a phone keyboard lacks, above it while it is open. */
   #keys { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: none; gap: 6px; padding: 6px 8px calc(6px + var(--sab));
@@ -65,7 +66,7 @@
 <button id="copyout">Copy from the desktop</button>
 <div id="paste"><textarea id="pastebox" placeholder="Text to paste into the desktop"></textarea><button id="pastego">Paste into the desktop</button></div>
 <div id="hint"><b>Touch controls</b>
-  <ul><li>Tap: click</li><li>Two-finger tap: right click</li><li>Two-finger drag: scroll</li><li>Long press, then drag: select or move</li><li>Pinch: zoom</li></ul>
+  <ul><li>Tap: click</li><li>Two-finger tap or long press: right click</li><li>Two-finger drag: scroll</li><li>One-finger drag: select or move</li><li>Pinch: zoom the page</li></ul>
   <button id="hintok">Got it</button></div>
 <div id="keys" aria-label="Extra keys">
   <button data-k="Escape">Esc</button><button data-k="Tab">Tab</button>
@@ -81,7 +82,7 @@
     <button class="tool" id="bkbd" title="Keyboard" aria-label="Show the keyboard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></button>
     <button class="tool" id="bpaste" title="Paste text into the desktop" aria-label="Paste text into the desktop"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/></svg></button>
     <button class="tool" id="bfit" title="Fit: the desktop takes this window's size" aria-label="Switch between fitting the window and a fixed desktop size"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 12h8M12 8v8"/></svg></button>
-    <button class="tool" id="bfull" title="Full screen" aria-label="Full screen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button class="tool" id="bfull" title="Full screen: browser shortcuts go to the desktop (Chrome)" aria-label="Full screen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </div>
 </div>
 <script type="module">
@@ -116,7 +117,7 @@ function status(text, { sticky = false, retry = false, ms = 0 } = {}) {
 const phone = new URLSearchParams(location.hash.slice(1)).get('phone') === '1'
   || (touch && Math.min(screen.width, screen.height) < 700);
 let fit = store.get('fxa-desktop-fit') !== 'fixed';
-let rfb, tries = 0, typing = false, asked = '';
+let rfb, tries = 0, typing = false, asked = '', connected = false;
 const MAX_TRIES = 6;
 const target = () => (!fit ? [1440, 900] : phone ? [innerWidth * 2, innerHeight * 2].map(Math.round) : null);
 // noVNC asks the server for its container's size, so size the container for a moment.
@@ -135,6 +136,7 @@ function applySize() {
   if (t) { rfb.resizeSession = false; if (!typing) requestSize(t); }
   else { asked = ''; rfb.resizeSession = !typing; }   // a phone keyboard must not reflow the whole desktop
   $('bfit').classList.toggle('on', !fit);
+  $('screen').classList.toggle('px', fit && !phone && Number.isInteger(devicePixelRatio));
   $('bfit').title = fit ? 'Fit: the desktop takes this window\'s size' : 'Fixed: a 1440x900 desktop, scaled to fit';
 }
 // A phone that turns, or a fixed desktop in a resized window: ask again once it settles.
@@ -144,40 +146,64 @@ function connect() {
   tries += 1;
   status(tries === 1 ? 'Connecting…' : `Reconnecting… (${tries - 1} of ${MAX_TRIES - 1})`, { sticky: true });
   rfb = new RFB($('screen'), url.href, { credentials: { password } });
-  rfb.qualityLevel = touch ? 5 : 6;
+  rfb.qualityLevel = touch ? 5 : 8;   // less JPEG blur around text on a laptop
   rfb.compressionLevel = 2;
   applySize();
   rfb.addEventListener('connect', () => {
-    tries = 0; status(''); asked = '';
+    tries = 0; status(''); asked = ''; connected = true;
     applySize();
+    if (!touch) rfb.focus();   // noVNC takes keys only while its canvas has focus
     if (touch && !store.get('fxa-desktop-hint')) $('hint').classList.add('show');
   });
   rfb.addEventListener('clipboard', (e) => fromDesktop(e.detail.text));
   rfb.addEventListener('credentialsrequired', () => { stop = true; status('This link has no password. Open the desktop again from the Slack thread.', { sticky: true }); });
   rfb.addEventListener('securityfailure', () => { stop = true; status('The desktop refused this link. Open it again from the Slack thread.', { sticky: true }); });
   rfb.addEventListener('disconnect', () => {
+    connected = false;
     if (stop) return;
     if (tries >= MAX_TRIES) {
       status('The desktop is not reachable. The session may be paused: reply in the Slack thread to pick it up, then open the desktop again.', { sticky: true, retry: true });
       return;
     }
-    setTimeout(connect, Math.min(1000 * 2 ** (tries - 1), 8000));
+    setTimeout(() => { if (!stop) connect(); }, Math.min(1000 * 2 ** (tries - 1), 8000));
   });
 }
 let stop = false;
-$('retry').onclick = () => { tries = 0; stop = false; connect(); };
+// A reload also signs in to IAP again and loads the newest page; the password stays in the fragment.
+$('retry').onclick = () => location.reload();
 connect();
+// Ctrl+W or Cmd+W closes this tab, not the remote one: ask first.
+window.addEventListener('beforeunload', (e) => { if (connected) { e.preventDefault(); e.returnValue = ''; } });
+// A hidden tab keeps the session awake: let go of it after 10 minutes.
+let hiddenTimer, hiddenOut = false;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    hiddenTimer = setTimeout(() => {
+      hiddenOut = true; stop = true; rfb.disconnect();
+      status('Disconnected while the tab was hidden', { sticky: true, retry: true });
+    }, 10 * 60 * 1000);
+  } else {
+    clearTimeout(hiddenTimer);
+    if (hiddenOut) $('retry').onclick();
+  }
+});
 
 // The controls.
 const dock = $('dock');
 const setOpen = (open) => { dock.classList.toggle('open', open); $('handle').setAttribute('aria-expanded', String(open)); };
 $('handle').onclick = () => setOpen(!dock.classList.contains('open'));
-setOpen(store.get('fxa-desktop-dock') !== 'closed');
-dock.addEventListener('click', () => store.set('fxa-desktop-dock', dock.classList.contains('open') ? 'open' : 'closed'));
+// Open by default only on touch: on a laptop it covers the remote scrollbar.
+setOpen(store.get('fxa-desktop-dock') === 'open' || (touch && store.get('fxa-desktop-dock') !== 'closed'));
+dock.addEventListener('click', (e) => {
+  store.set('fxa-desktop-dock', dock.classList.contains('open') ? 'open' : 'closed');
+  if (!touch && !e.target.closest('#bpaste')) rfb.focus();   // or Enter and Space click the button again
+});
 $('bfit').onclick = () => { fit = !fit; store.set('fxa-desktop-fit', fit ? 'fit' : 'fixed'); applySize(); };
 // iPhone Safari has no Fullscreen API; there, Add to Home Screen opens the page full screen.
 if (!document.documentElement.requestFullscreen) $('bfull').hidden = true;
-$('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {});
+// In full screen, Chromium's Keyboard Lock sends Ctrl+W/T/N/Tab and Esc to the desktop (hold Esc to leave).
+$('bfull').onclick = () => (document.fullscreenElement ? document.exitFullscreen()
+  : document.documentElement.requestFullscreen().then(() => navigator.keyboard?.lock())).catch(() => {});
 if (!touch) $('bkbd').hidden = true;
 $('hintok').onclick = () => { $('hint').classList.remove('show'); store.set('fxa-desktop-hint', '1'); };
 
@@ -202,16 +228,27 @@ function keysBar() {
   $('keys').style.bottom = v ? `${Math.max(0, innerHeight - v.height - v.offsetTop)}px` : '0px';
 }
 $('bkbd').onclick = () => kbd.focus();
-kbd.addEventListener('focus', () => { typing = true; applySize(); $('keys').classList.add('show'); keysBar(); });
-kbd.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== kbd) { typing = false; $('keys').classList.remove('show'); applySize(); } }, 150); });
+kbd.addEventListener('focus', () => { if (!touch) return; typing = true; applySize(); $('keys').classList.add('show'); keysBar(); });
+kbd.addEventListener('blur', () => { if (!touch) return; setTimeout(() => { if (document.activeElement !== kbd) { typing = false; $('keys').classList.remove('show'); applySize(); } }, 150); });
 window.visualViewport?.addEventListener('resize', keysBar);
 window.visualViewport?.addEventListener('scroll', keysBar);
 kbd.addEventListener('keydown', (e) => {
   if (SYM[e.key]) { e.preventDefault(); press(SYM[e.key], e.code); }
 });
+// Keep filler text in the field and send the difference, as noVNC's own UI does: Gboard
+// rewrites whole words, and its Backspace in an empty field sends no usable key.
+const FILL = '_'.repeat(100);
+let last = FILL;
+const refill = () => { kbd.value = last = FILL; };
+refill();
 kbd.addEventListener('input', () => {
-  for (const ch of kbd.value) press(charSym(ch));
-  kbd.value = '';
+  const now = kbd.value;
+  let i = 0;
+  while (i < last.length && i < now.length && last[i] === now[i]) i++;
+  for (let n = last.length - i; n > 0; n--) press(SYM.Backspace, 'Backspace');
+  for (const ch of now.slice(i)) ch === '\n' ? press(SYM.Enter, 'Enter') : press(charSym(ch));
+  last = now;
+  if (now.length < 10 || now.length > 200) refill();
 });
 // The bar's buttons must not take focus from the hidden field, or the keyboard closes.
 $('keys').addEventListener('pointerdown', (e) => { if (e.target.closest('button') && e.target.id !== 'kbdone') e.preventDefault(); });
@@ -231,7 +268,7 @@ function pasteIn(text) {
   rfb.clipboardPasteFrom(text);
   held.add('ctrl'); press(charSym('v'), 'KeyV');   // the desktop's own Ctrl+V, now with this text
 }
-$('pastego').onclick = () => { pasteIn($('pastebox').value); $('pastebox').value = ''; $('paste').classList.remove('show'); status('Pasted into the desktop', { ms: 1800 }); };
+$('pastego').onclick = () => { pasteIn($('pastebox').value); $('pastebox').value = ''; $('paste').classList.remove('show'); status('Pasted into the desktop', { ms: 1800 }); if (!touch) rfb.focus(); };
 const inField = (e) => e.target instanceof HTMLTextAreaElement && e.target !== kbd;   // the page's own boxes keep normal keys
 let pasteKey = false;
 window.addEventListener('paste', (e) => {
@@ -254,8 +291,10 @@ window.addEventListener('keydown', (e) => {
     // The desktop's last copy did not reach this computer's clipboard: paste the desktop's own.
     if (clipPending) { e.preventDefault(); ctrl('v'); return; }
     // Else let the browser fire its paste event; if it has no text (a file, an image), send a plain Ctrl+V.
+    // Safari fires paste only on an editable target, so move focus to the hidden field first.
+    if (!touch) kbd.focus();
     pasteKey = true;
-    setTimeout(() => { if (pasteKey) { pasteKey = false; ctrl('v'); } }, 120);
+    setTimeout(() => { if (pasteKey) { pasteKey = false; ctrl('v'); } if (!touch) { refill(); rfb.focus(); } }, 120);
     return;
   }
   if (e.key === 'Meta') { e.stopImmediatePropagation(); return; }
