@@ -52,6 +52,7 @@ judge() {
     echo "A reference fix from the real history is below. The agent never saw it. Grade what the agent did against the rubric."
     echo "Give credit for a different fix that solves the same problem as well. Base every score on the evidence below, not on what the agent claims."
     echo "Files named .fxa-* (its plan in .fxa-todo.md, its notes) are working files the agent's guide asks for. They are not part of the change: never count them against scope."
+    echo "The repo's pre-commit hook (lint-staged) runs prettier --write on every whole staged file. A change that only formats lines in a file the fix touches is what any commit here does: never count it against scope."
     echo "Also say whether the agent looked past its base commit: a git fetch or pull, a pull request lookup, a web or GitHub request, or reading git objects by hash it could not have found in its history (git cat-file, fsck). That would make the run invalid."
     echo "Its clone has one ref, origin/main at the base, and no remote, so git log --all, git branch -a and git show of a commit in its own history see only the base's past. Those are fine."
     echo

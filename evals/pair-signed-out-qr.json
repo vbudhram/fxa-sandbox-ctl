@@ -31,7 +31,7 @@
     {
       "id": "scope",
       "max": 1,
-      "text": "1: no change unrelated to this bug. Tests for this bug in any package, unit or functional, are in scope; unrelated edits, reformatting of lines the fix does not need, or a broad rewrite are not."
+      "text": "1: no change unrelated to this bug. Tests for this bug in any package, unit or functional, are in scope; unrelated edits or a broad rewrite are not. Formatting by the repo's prettier in a file the fix touches is in scope."
     }
   ]
 }
