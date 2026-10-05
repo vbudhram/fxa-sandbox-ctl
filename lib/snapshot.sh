@@ -483,7 +483,8 @@ snapshot_agents_json() {
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "instances: $(( $(date +%s) - started ))s" >&2
   pool="$(_snapshot_pool)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "pool: $(( $(date +%s) - started ))s" >&2
-  free="$(cmd_freeslots 2>/dev/null | jq -R -s 'split("\n") | map(select(length > 0))' || echo '[]')"
+  # jq -R -s prints [] even on empty input: a fallback after it gave "[] []" under pipefail.
+  free="$( { cmd_freeslots 2>/dev/null || true; } | jq -R -s 'split("\n") | map(select(length > 0))')"
   cap="$(cmd_launchcap 2>/dev/null || echo 0)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
   today="$(_snapshot_today)"
