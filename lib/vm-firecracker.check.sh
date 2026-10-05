@@ -35,4 +35,12 @@ check "every slot taken: GCE" "gce-vm_clone" "$(UP=1 vm_clone agent-a1 2>/dev/nu
 check "a pipeline runner never wakes the host" "gce-vm_clone" "$(UP=0 WAKE=1 vm_clone fxa-auto-3 2>/dev/null)"
 touch "$LOG_DIR/agent-a2.zone"
 check "a runner already on GCE stays there" "gce-vm_clone" "$(UP=1 vm_clone agent-a2 2>/dev/null)"
+
+# A stop when the host has stopped itself: its slots are gone, so the stop succeeds.
+vm_name() { echo "$1"; }; _gce_ssh_forget() { :; }
+_fc() { echo "fc $*" >> "$tmp/fc-calls"; return 1; }
+check "host down: the stop succeeds and asks the host nothing" "0|0" \
+  "$(UP=0; (set -e; vm_stop agent-a1 >/dev/null); echo "$?|$( [ -f "$tmp/fc-calls" ] && wc -l < "$tmp/fc-calls" | tr -d ' ' || echo 0)")"
+_fc() { case "$1" in list) printf '3\tagent-a1\tx\ty\n' ;; *) echo "fc $*" >> "$tmp/fc-calls" ;; esac; }
+check "host up: the slot is stopped" "fc stop 3" "$(UP=1 vm_stop agent-a1 >/dev/null; cat "$tmp/fc-calls")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

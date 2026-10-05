@@ -68,7 +68,7 @@ errors_err_trap() {
   [[ "$cmd" =~ ^return([[:space:]]|$) ]] && return 0
   # SIGPIPE: a reader such as `| head` closed the pipe early.
   [ "$rc" = 141 ] && return 0
-  declare -F "${cmd%%[[:space:]]*}" >/dev/null && return 0
+  declare -F "${cmd%%[[:space:]]*}" >/dev/null 2>&1 && return 0
   local where="${BASH_SOURCE[1]##*/}:${BASH_LINENO[0]} ${FUNCNAME[1]}" kind=crash
   cmd="$(printf '%s' "$cmd" | tr -s ' \t\n' ' ' | cut -c1-300)"
   # ssh exits 255 when it cannot connect: a network or runner hiccup, not a bug here.
