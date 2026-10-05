@@ -37,9 +37,10 @@ To leave a file out of the change, revert it with
 
 There is no `/goal`. A person steers you turn by turn.
 
-- Your first turn investigates and prints a short plan: the cause, the files
-  you will change and the tests you will run. Do not edit files in that turn
-  unless the request is a one-line change.
+- Your first turn investigates, writes a test plan with `/fxa-test-plan`, and
+  prints a short plan: the cause, the files you will change and how you will
+  verify. Then make the change and verify it. Nobody approves the plan first.
+  A question or an investigation needs no plan.
 - To ask for a decision, put 2 to 4 answers on lines that start with
   `OPTION: `. For several decisions at once (at most 5), put
   `QUESTION: <the question>` on its own line before each group.

@@ -42,8 +42,8 @@ The system is four parts. Only one of them lives in this repository.
 
 ```
   ┌─────────────────────────────────────────────────────────────────┐
-  │ SCHEDULER          Claude Code cron jobs, session-only          │
-  │                    (see §6 for the durable alternative)         │
+  │ SCHEDULER          systemd timers on the manager VM, or         │
+  │                    session-only Claude Code cron jobs (see §6)  │
   └────────────────────────────┬────────────────────────────────────┘
                                │ fires a prompt
   ┌────────────────────────────▼────────────────────────────────────┐
@@ -63,17 +63,18 @@ The system is four parts. Only one of them lives in this repository.
   │                      lib/github.sh    PR state, review comments │
   │                      lib/telemetry.sh tokens, cost, run log     │
   │                      lib/worktree.sh  git worktree pool         │
-  │                      lib/vm.sh        tart VM lifecycle         │
+  │                      lib/vm.sh        VM backends: tart or gce  │
   │                      lib/agent.sh     boot, harden, start agent │
   │                      lib/finish.sh    handoff, push, PR, CI     │
   │                      packer/          golden image build        │
   └────────────────────────────┬────────────────────────────────────┘
-                               │ virtiofs mount + screen session
+                               │ virtiofs mount (tart) or a tree copy (gce),
+                               │ then a screen session
   ┌────────────────────────────▼────────────────────────────────────┐
-  │ AGENT VM           Ubuntu 24.04 ARM64 under tart                │
+  │ AGENT VM           Ubuntu 24.04 ARM64, under tart or on GCE     │
   │                      Claude Code, bypassPermissions             │
-  │                      /workspace = the host worktree             │
-  │                      Contract: VM_AGENT_GUIDE.md Part 3         │
+  │                      /workspace = the slot's tree               │
+  │                      Contract: the /goal + guide/pipeline.md    │
   └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -103,7 +104,7 @@ flowchart TD
     S5["Stage 5 · VM boot and hardening<br/>clone image, mounts, firewall, sudo, skills"]:::orch
     S6["Stage 6 · Agent run<br/>goal loop, 30 turns<br/>writes .fxa-auto-done.json"]:::vm
     S7["Stage 7 · Host handoff<br/>stage, squash, sign, push<br/>gh pr create, reviewers, approve gate"]:::orch
-    REAP["Check-in reclaims the VM<br/>usage, then record, then stop"]:::pass
+    REAP["Check-in reclaims the VM<br/>tokens, then record, then stop"]:::pass
     RELAUNCH1{"Relaunched once already?"}:::pass
     S8{"Stage 8 · CI settled?"}:::pass
     S9["Stage 9 · ai-fixme-done<br/>PR open and green, slot free"]:::human
@@ -199,9 +200,9 @@ first. The ticket appears there and stays until a pass admits it.
 
 A ticket can sit here indefinitely, and that is by design. Three things hold it:
 
-- Both pool slots are busy.
+- Every pool slot is busy.
 - It already failed admission, so it is in the skip list.
-- Nobody armed the crons.
+- No pass runs: the timers or the crons are stopped, or the pipeline is paused.
 
 A skipped ticket keeps its bare `ai-fixme` label on purpose, so a human still sees it. The
 consequence is that the queue is not a work list. `$CTL skipped` is what tells you which
@@ -230,6 +231,9 @@ Grounding, in order:
 5. Fetch a Figma design, but only if the ticket text contains a `figma.com` URL. **The VM has
    no MCP,** so the pass is the only place a design can enter the pipeline.
 
+`$CTL ground <KEY>` does steps 1, 2, and 4 in shell. It writes one file,
+`/tmp/fxa-<KEY>-ground.md`, so the pass reads one file instead of one grep per tool call.
+
 Budget: **10 tool calls, plus 3 for Figma.** The VM agent does the deep investigation.
 
 The output is `/tmp/fxa-<KEY>-context.md` with four parts: scope, likely files, acceptance
@@ -246,7 +250,8 @@ tickets collect one identical comment every hour, forever.
 
 Four actions, in this order:
 
-1. `$CTL freeslots` picks a claimable slot. **Not `slots`.** See §7.
+1. `$CTL freeslots` picks a claimable slot. **Not `slots`.** See §7. A pass makes at most
+   `$CTL launchcap` launches, so it repeats steps 2 to 4 once for each launch.
 2. `export FXA_PR_ASSIGNEE="$($CTL reporter <KEY>)"` resolves the reporter's GitHub login.
    An empty result is fine and means the team gets the review request alone.
 3. `$CTL label <KEY> inflight`. The ticket now owns the slot.
@@ -258,13 +263,16 @@ The launcher's stdout goes to `~/.claude/state/fxa-ai-fixme/<KEY>.launch.log`. *
 authoritative record of what the host did.** Read `$CTL progress <KEY>` before you draw any
 conclusion from process state.
 
-`launch` refuses below `FXA_MIN_FREE_GB`, 25GB by default. It also deletes the skip fingerprint,
-so a later skip on the same key is never silenced by a stale match.
+`launch` refuses below `FXA_MIN_FREE_GB`, 5GB by default (`PIPE_MIN_FREE_GB`). It also refuses
+after `PIPE_MAX_LAUNCHES_PER_DAY` launches (40) in a rolling 24 hours, and refuses a ticket with no
+PR while `$CTL newtickets` is `off`. It deletes the skip fingerprint, so a later skip on the same
+key is never silenced by a stale match.
 
 **Label and launch in one step.** Jira's JQL index lags a label write by several seconds, so an
 `inflight` query taken right after the write may omit the ticket. A pass could then believe the
-slot is free and launch a second agent onto the same worktree. The one-launch-per-pass rule is
-what prevents this.
+slot is free and launch a second agent onto the same worktree. To prevent this, the pass
+labels and launches one ticket at a time, and it reads `freeslots` once per pass. It never
+re-reads `inflight` to pick a slot.
 
 #### Stage 4: Worktree preparation
 
@@ -274,13 +282,14 @@ Inside `fxa-sandbox-ctl jira`:
    markdown.
 2. The `--guardrails` file is prepended under a header that gives it precedence over the ticket
    text. **This is how the pass steers the agent**, including telling it to ignore a stale
-   ticket instruction.
-3. `worktree_prepare_for_issue` claims the named slot, fetches `origin/main`, and checks out or
-   creates the branch `fxa-<key-lowercased>`. Git hooks are skipped on the swap, because FxA's
-   post-checkout hook clones `external/l10n` and is not idempotent.
-4. Any stale handoff file in the slot is archived, and the agent stream logs are truncated.
-5. The context is written to `<worktree>/.fxa-jira-context.md`.
-6. `_jira_render_prompt` builds the `/goal` directive.
+   ticket instruction. The ticket text goes below it, inside `UNTRUSTED` markers.
+3. `_jira_render_prompt` builds the `/goal` directive, and the tool checks its length.
+4. `worktree_prepare_for_issue` claims the named slot, fetches `origin/main`, and checks out or
+   creates the branch. The branch is the lowercased key, for example `fxa-14325`. Git hooks are
+   skipped on the swap, because FxA's post-checkout hook clones `external/l10n` and is not
+   idempotent.
+5. Any stale handoff file in the slot is archived, and the agent stream logs are truncated.
+6. The context is written to `<worktree>/.fxa-jira-context.md`.
 
 **The 4000 character cap on `/goal` is a hard failure mode.** Claude Code rejects a longer
 directive and then runs with no goal at all. The agent boots, sits at an empty prompt, and
@@ -295,8 +304,9 @@ unused credential is avoidable exposure.
 
 #### Stage 5: VM boot and hardening
 
-`agent_run` clones the `fxa-dev-base` golden image, which Packer built from ten provisioner
-scripts. It sets CPU and memory, then starts the VM with two virtiofs mounts:
+`agent_run` clones the `fxa-dev-base` golden image, which Packer built from eleven provisioner
+scripts (thirteen for the GCE image). On tart it sets CPU and memory, then starts the VM with two
+virtiofs mounts:
 
 - `workspace` maps to the slot worktree, read-write.
 - `gitdir` maps to the repo's shared `.git` directory, **read-only**. That directory holds the
@@ -304,23 +314,30 @@ scripts. It sets CPU and memory, then starts the VM with two virtiofs mounts:
   agent could rewrite a sibling worktree's gitdir pointer, and on 2026-08-14 it did exactly that
   to three of them.
 
+On the gce backend (`--backend gce` or `FXA_VM_BACKEND=gce`) there are no mounts. The runner
+is a GCE instance from the same image. `/workspace` is a clone inside the image, the host copies
+the run files in and copies the tree back, and Google deletes the instance after 90 minutes
+(`FXA_GCE_MAX_RUN_SECONDS`).
+
 Hardening then runs on every boot, not in the image, so an old image cannot ship a weaker
 policy:
 
 1. Stop the proxy and strip proxy variables from the environment.
-2. Install an egress firewall. It drops `10/8`, `172.16/12`, `192.168/16`, and `169.254/16`, so
-   the VM reaches the public internet but cannot probe the host.
+2. Install an egress firewall. It drops `10/8`, `172.16/12`, and `192.168/16`, except the LLM
+   proxy and the MCP gateway on the manager. The `agent` user also loses `169.254/16`, and it
+   reaches only an allowlist of hosts (`FXA_EGRESS_ALLOW_ALL=1` turns the allowlist off).
 3. Disable SSH password authentication and install a per-agent key.
 4. Replace blanket `NOPASSWD:ALL` sudo with an allow-list.
 
-`_setup_claude_config` then tars hooks, commands, plugin cache, and an **allow-list** of skills,
-and SCPs the bundle in. The allow-list matters: the VM has no `gh`, no `acli`, no CircleCI
-credential, and no MCP. A skill that reaches the network is worse than useless there, because
+`_setup_claude_config` then tars hooks, commands, this repository's subagents, and an
+**allow-list** of skills, and SCPs the bundle in. The allow-list matters: the VM has no `gh`, no
+`acli`, no CircleCI credential, and no MCP. A skill that reaches the network is worse than useless there, because
 the agent reads its description, judges it relevant, and then fails on a missing binary.
 
 Claude Code starts inside a `screen` session named `claude`, with `--permission-mode
-bypassPermissions`. The OAuth token is written to `/workspace/.fxa-auto-token`, sourced once,
-and deleted. The `/goal` prompt is passed to `claude -p` as an argument from
+bypassPermissions`. The Claude credential is written to `/workspace/.fxa-auto-token`, sourced
+once, and deleted. It is a per-run token for the LLM proxy when `FXA_LLM_PROXY_URL` is set, else
+an API key or an OAuth setup-token. The `/goal` prompt is passed to `claude -p` as an argument from
 `/workspace/.fxa-auto-launch.sh`; nothing is pasted.
 
 **`$CTL alive` reports `no-vm` for about the first minute here, and that is correct.** The
@@ -331,13 +348,24 @@ stage word.
 #### Stage 6: Agent run
 
 The agent runs a `/goal` loop with a 30-turn cap. The evaluator judges the transcript after each
-turn, so the agent must print evidence of every criterion. The eight conditions are in
-`VM_AGENT_GUIDE.md` Part 3: a plan, unit tests, lint per changed package, functional tests (off
-by default), `/code-simplifier`, `/fxa-review-quick`, a scoped conventional commit with no scope
-creep, then `/fxa-vm-selfcheck`, `/create-pr-description`, `/humanizer`, and the handoff file.
+turn, so the agent must print evidence of every criterion. `_jira_render_prompt` writes the
+nine conditions into the `/goal`, and `guide/pipeline.md` (section 3 of the runner's
+`VM_AGENT_GUIDE.md`) explains the files around them:
 
-**The agent cannot commit and cannot push.** The read-only gitdir mount blocks the commit, and a
-linked worktree's commit would write to the shared `.git/objects` and `.git/refs` anyway. The
+1. A plan, and a test plan from `/fxa-test-plan`.
+2. `/fxa-verify` on that plan, with no FAIL.
+3. Lint on every changed file.
+4. A check of each change a user can see. Functional tests are required only with
+   `--functional-tests`.
+5. `/code-simplifier`, `/ponytail-review`, and `/fxa-unslop`.
+6. `/fxa-review-quick`, then `/fxa-vm-selfcheck`.
+7. No commit, and a scope review that reverts unrelated files.
+8. `/create-pr-description`, then `/humanizer` and `/fxa-unslop` on the PR body.
+9. The handoff file.
+
+**The agent cannot commit and cannot push.** On tart the read-only gitdir mount blocks the
+commit, and a linked worktree's commit would write to the shared `.git/objects` and `.git/refs`
+anyway. On gce the host copies the tree back without `.git`, so a commit there is lost. The
 boundary rules forbid `git push` and `gh` outright. The agent leaves the worktree dirty and
 writes the handoff.
 
@@ -345,10 +373,11 @@ writes the handoff.
 |---|---|
 | `.fxa-jira-context.md` | `.fxa-auto-done.json` |
 | `.fxa-auto-token`, deleted on read | `.fxa-auto-media/`, optional |
-| `.fxa-auto-prompt.txt` | |
+| `.fxa-auto-prompt.txt`, `.fxa-auto-launch.sh` | |
 
-The handoff JSON carries `issue`, `branch`, `commit_sha`, `pr_title`, `pr_body`, and
-`media_paths`. `pr_title` must equal the commit subject exactly.
+The handoff JSON carries `issue`, `branch`, `pr_title`, `pr_body`, and `media_paths`. The agent
+omits `commit_sha`, because the host creates the commit. `pr_title` becomes the commit subject,
+and the host refuses a title that is not a scoped conventional subject.
 
 Run length is the main variable in the whole lifecycle. Ten to twenty minutes is typical. A 58
 minute run has succeeded. **Do not judge a run by CPU or by `tail`.** On 2026-08-11 a run was
@@ -368,8 +397,9 @@ a push.
    the `.fxa-auto-*` scratch files.
 3. Squashes to the merge-base with the base branch and re-commits **on the host**, which picks up
    the operator's GPG or SSH signing key. The VM has no access to that key, so any in-VM commit
-   would land unsigned. The squash uses the base branch, not `main`, so a release branch such as
-   `train-342` does not collapse its own history into the PR.
+   would land unsigned. When the GitHub App is set up, the App creates the commit instead, and
+   GitHub authors and signs it. The squash uses the base branch, not `main`, so a release branch
+   such as `train-342` does not collapse its own history into the PR.
 4. Pushes and runs `gh pr create`.
 5. `finish_add_reviewers` requests review from `mozilla/fxa-devs` and assigns the reporter. Both
    run **after** the create, never as flags on it, so a bad handle cannot fail the create and
@@ -380,17 +410,19 @@ a push.
    approval job matching `Functional`, and approves it.
 7. `finish_watch_ci` waits for checks to attach, then polls until they settle.
 
-The launcher then exits. **It does not stop the VM,** and it prints "the agent keeps running".
+The launcher then exits. **On tart it does not stop the VM.** On gce it deletes the runner as
+soon as the PR is open, because a runner bills by the hour.
 
 #### Stage 8: CI settle and reconcile
 
 Two loops act here.
 
-**The check-in reclaims the VM.** Once a PR exists, the agent has no work left, and the VM holds
-4 vCPU and 8GB for the whole 20 to 40 minute CI run. The check-in stops it. Order matters:
+**The check-in reclaims the VM.** Once a PR exists, the agent has no work left, and a tart VM
+holds 4 vCPU and 8GB for the whole 20 to 40 minute CI run. The check-in stops it. On gce the
+launcher already deleted the runner. Order matters:
 
 ```
-$CTL tokens <KEY>     # token counts live INSIDE the VM; stop deletes them
+$CTL tokens <KEY>     # reads the transcript copy in the slot, else asks the VM
 $CTL record <KEY>    # append the run to the local dataset
 $CTL stop <agent-name>
 ```
@@ -407,6 +439,7 @@ process.
 | `pushed` or `squashing` | The host is mid-handoff. Leave it. |
 | `watching <n>s`, VM alive | Working. Leave it. |
 | `watching <n>s`, VM dead | Failed launch. Relaunch **once**. Second failure means `blocked`. |
+| `stalled <reason> <n>m` | The agent exited with no handoff, the `/goal` was rejected, or nothing changed for `PIPE_STALL_MINUTES` (20). Relaunch **once**. Second failure means `blocked`. |
 | `error <line>` | The push or the PR failed. Report the line. Do not relaunch. |
 | `nolog` | Orphaned label from a dead pass. Return it to the queue. |
 | PR open, checks running | Leave it. The next pass revisits. |
@@ -428,7 +461,8 @@ on a TS7030 error, and only 10 checks ever existed. Treat any `fail>0` with `run
 settled.
 
 **Every push resets the functional gate to `on_hold`.** The launcher approves it for the first
-PR. After any fix push, the pass must approve it again.
+PR. After any fix push, the pass must approve it again. `$CTL reconcile` approves a gate that it
+finds on hold.
 
 #### Stage 9: Human review
 
@@ -450,8 +484,9 @@ Two automated things still happen here:
 #### Stage 10: Drain
 
 `$CTL drain` prints one line per `done` key that needs attention. `MERGED` takes
-`label <KEY> merged`. `CLOSED` takes `label <KEY> rejected`. A green, still-open PR prints
-nothing, and one `gh pr list` call covers every ticket.
+`label <KEY> merged`. `CLOSED` takes `label <KEY> rejected`. `$CTL precheck` applies these two
+rows itself. An open PR prints `RED` or `CONFLICT` when it needs attention. A green, still-open
+PR prints nothing, and one `gh pr list` call covers every ticket.
 
 **Never file a CLOSED PR as `merged`.** A closed PR is work a reviewer read and threw away, and
 the label is the only place that outcome is recorded. Collapsing both into `merged` makes the
@@ -461,7 +496,10 @@ auditing: which tickets produce PRs people reject.
 A `KEY none -` line means the branch has no PR at all. Do not relabel it. That is a bug
 somewhere, not a merge.
 
-No Jira comment for a drain. The merge is visible on the PR.
+`label <KEY> merged` posts one 🤖 Jira comment with the run's telemetry. It then assigns the
+ticket to the PR's last human approver, adds it to the active FxA sprint, and moves it to Done.
+It sets the assignee and the sprint only when they are empty. `label <KEY> rejected` posts no
+comment.
 
 ### 3.3 Exit paths
 
@@ -575,12 +613,16 @@ every hour is safe.
   2. reconcile       For each `inflight` key, apply the stage 8 table.
   3. drain           $CTL drain. Stage 10.
   4. reapstray       Stop every VM whose ticket is not `inflight`.
-  5. fill a slot     freeslots -> oldest launchable key -> stages 2 and 3.
-                     ONE launch per pass, whatever the slot count.
+  5. fill slots      freeslots -> oldest launchable key -> stages 2 and 3.
+                     At most `launchcap` launches: 1 on tart, 8 on gce.
   6. feedback sweep  For each `done` key, $CTL feedback <KEY>. §8.
   7. report          The table. Notify only on a new ready or a new block.
   8. unlock          Even if the pass did nothing.
 ```
+
+`$CTL precheck` runs steps 0, 2, 3, 4, 6, and 8 in shell. It applies every determinate row
+itself and prints only the lines that need judgment. When it prints `quiet`, the pass ends there
+with no model turn. A pass starts with `precheck`.
 
 Order matters in two places. Reconcile runs before the fill, so a ticket that turns green frees
 its slot inside the same pass. `reapstray` runs before the fill, so `freeslots` sees the pool
@@ -592,8 +634,8 @@ that finished with no pass after it.
 
 ### The output surface
 
-A pass may write exactly six things. Everything else is out of scope, including Slack posts,
-Jira status transitions, and release advice.
+A pass may write exactly eight things. Everything else is out of scope, including Slack posts,
+other Jira status transitions, and release advice.
 
 1. The Jira label, through `$CTL label`.
 2. One Jira comment per state change, led with 🤖.
@@ -601,6 +643,9 @@ Jira status transitions, and release advice.
 4. The report in the session.
 5. One Jira comment on an admission skip, and only when `$CTL skip` prints `comment`.
 6. One 👍 reaction per review comment the round actually fixed.
+7. The merge telemetry comment, which `label <KEY> merged` writes itself.
+8. The Jira assignee, the sprint, and the Done transition, which `label <KEY> merged` also
+   writes. This is bookkeeping after the merge, and it drives no pipeline state.
 
 Number 5 matters even though a skip changes no label. The session report reaches only the person
 watching that terminal, and an unattended pass has no such person. A finding that reaches nobody
@@ -634,10 +679,11 @@ Two refinements that came from real misses:
 
 ## 6. Scheduling
 
-### The loop is session-only today
+### The session loop
 
-Claude Code cron jobs live in the scheduler's memory. They write nothing to disk. Three events
-destroy them:
+The manager VM runs the pass on systemd timers (see "The durable path" below). A Claude Code
+session can also run it on cron jobs. Claude Code cron jobs live in the scheduler's memory. They
+write nothing to disk. Three events destroy them:
 
 1. The operator closes the session.
 2. Claude exits.
@@ -652,12 +698,13 @@ without dropping it. Sleep stops every job, and nothing catches up on wake.
 ### Two loop designs exist, and they disagree
 
 This is an open issue, not a design. `SCHEDULING.md` and the `fxa-automation` skill describe
-different job pairs:
+different session job pairs. The manager timers use the `fxa-automation` prompts:
 
 | Source | Job 1 | Job 2 |
 |---|---|---|
 | `fxa-ai-fixme/SCHEDULING.md` | `*/5 8-18 * * 1-5` cheap check-in that escalates | `7 8-18 * * 1-5` full pass, as backstop |
 | `fxa-automation/SKILL.md` | `9,29,49 * * * *` full pass | `23 9,13,17 * * 1-5` read-only escalation triage |
+| Manager VM, `infra/gce/manager-setup.sh` | `fxa-pass.timer`: :04, :19, :34, :49, 07:04 to 19:49 New York | `fxa-triage.timer`: weekdays 09:23, 13:23, 17:23 New York |
 
 A team picking this up must choose one and delete the other. `SCHEDULING.md` itself warns about
 exactly this divergence, which means a wrong pair has already been armed once.
@@ -696,16 +743,20 @@ at stage 8. Four signals matter, and each has a trap behind it.
 runs without a TTY, so the counter freezes during healthy runs. On 2026-08-12 it read
 `watching 180s` for 11 minutes. Use changed-file count and commit count instead.
 
-### The durable alternative
+### The durable path
 
-A macOS LaunchAgent running `claude -p "/fxa-ai-fixme"` removes every session limit. Each tick
-reads a small prompt instead of a growing transcript, so cost stays flat and the pass can run
-around the clock. Two risks need an answer first:
+The manager VM runs each job as a systemd oneshot, `fxa-pass.service` and
+`fxa-triage.service`, through `infra/gce/claude-job.sh`. Each tick is a fresh `claude -p` that
+reads a small prompt instead of a growing transcript, so cost stays flat. It survives a session
+exit and a reboot. For a pass, the wrapper runs `$CTL precheck` in shell first. A `quiet`,
+`locked`, or `paused` result ends the tick with no model turn.
 
-1. An unattended pass cannot ask for permission. It needs `--dangerously-skip-permissions` or an
-   explicit `--allowedTools` list.
-2. `finish_push_and_pr` signs the squashed commit on the host. A LaunchAgent may not reach an
-   unlocked signing key. Test that step in the LaunchAgent environment before you switch.
+The two risks of an unattended pass have these answers:
+
+1. An unattended pass cannot ask for permission. The wrapper runs `claude -p` with
+   `--permission-mode auto`.
+2. `finish_push_and_pr` signs the squashed commit on the host. When the GitHub App is set up, the
+   App creates and signs the commit, so no operator key is necessary.
 
 ---
 
@@ -716,7 +767,9 @@ The pool is the concurrency limit and the trickiest part of the system.
 The pool is discovered, not declared: every git worktree named `fxa-auto` or `fxa-auto-<n>`
 beside the FxA checkout is a slot. Each slot is a git worktree of the FxA monorepo, cut
 from `origin/main`. Reusing worktrees keeps `node_modules` warm; a brand-new slot pays a 5 to 10
-minute install on its first run. Each running slot costs 4 vCPU, 8GB RAM, and 8 to 13GB of disk.
+minute install on its first run. On tart each running slot costs 4 vCPU, 8GB RAM, and 8 to 13GB
+of disk. On gce the pool grows on demand: `freeslots` also lists slots that do not exist yet, up
+to `PIPE_MAX_LAUNCHES_GCE`, and `launch` creates them.
 
 **A worktree holds one branch.** A relaunch after a CI failure needs that ticket's branch checked
 out. So a ticket owns its slot from stage 3 until its label leaves `inflight` at stage 9, even
@@ -730,7 +783,9 @@ That gap produces the single most important distinction in the codebase:
 | `$CTL freeslots` | Is this slot claimable? | **Picking a slot. Always.** |
 
 `freeslots` requires both conditions: the checked-out branch belongs to no `inflight` ticket,
-**and** no agent VM is running on it. The second is not redundant. A ticket that leaves
+**and** no agent VM is running on it. On gce only the second condition applies, because the
+runner and then `origin` hold the work, so any slot can resume a ticket. The second is not
+redundant. A ticket that leaves
 `inflight` releases its label while its VM may still be up, and `worktree_prepare_for_issue`
 refuses to mount a workspace another VM already holds. Reporting such a slot as claimable makes a
 pass burn its launch on a guaranteed abort, which is what happened to FXA-14371 on 2026-08-24.
@@ -791,9 +846,10 @@ beats a fourth 40 minute guess.
 
 | Cap | Value | Stage | Why |
 |---|---|---|---|
-| Launches per pass | 1 | 3 | A bad context file cannot burn both slots. |
+| Launches per pass | 1 on tart, 8 on gce (`launchcap`) | 3 | On tart, a bad context file cannot burn both slots. |
+| Launches in a rolling 24 hours | 40 | 3 | A relaunch loop cannot spend without limit. |
 | Grounding tool calls | 10, plus 3 for Figma | 2 | The VM agent does the deep work. |
-| Free disk before a launch | 25GB | 3 | A running clone takes 8 to 13GB. |
+| Free disk before a launch | 5GB | 3 | A tart clone takes 8 to 13GB. A gce runner's disk is remote. |
 | `/goal` directive length | 4000 raw chars | 4 | Over the limit, the agent runs with no goal. |
 | Agent turns | 30 | 6 | The `/goal` evaluator's cap. |
 | Single verification step | 10 minutes | 6 | CI covers the rest. |
@@ -816,9 +872,11 @@ Hard prohibitions:
 
 ## 10. Durable state on disk
 
-Everything under `~/.claude/state/fxa-ai-fixme/` is a cache or a counter. Deleting the directory
-loses attempt counters and skip fingerprints, and loses nothing else. The Jira label carries the
-position.
+Everything under `~/.claude/state/fxa-ai-fixme/` is a cache, a counter, or run telemetry.
+Deleting the directory loses the counters, the skip fingerprints, and the local telemetry, and
+nothing else. The Jira label carries the position. `$CTL unlock` pushes the directory to the
+Cloud Storage mirror (`PIPE_STATE_URI`) when one is set. The push leaves out the lock, the pause
+marker, and `reporters.tsv`.
 
 | File | Holds | Consequence if lost |
 |---|---|---|
@@ -828,8 +886,9 @@ position.
 | `<KEY>.feedback-seen` | Handled review comment IDs | Handled comments reappear as new |
 | `<KEY>.feedback-rounds` | Round counter | The 2-round cap resets |
 | `<KEY>.feedback-acted` | IDs this round will fix | The 👍 reactions are lost |
+| `launches.log` | One line per launch | The 24 hour launch budget resets |
 | `reporters.tsv` | Jira displayName to GitHub login | PRs get the team review only |
-| `lock` | One pass at a time | A manual pass can race the cron |
+| `pass.lock/` | One pass at a time | A manual pass can race the cron |
 
 The counters were originally under `TMPDIR`. macOS purges `/var/folders`, so they silently reset
 to zero and the caps stopped protecting anything with no visible sign. Keep them under `~`.
@@ -839,8 +898,9 @@ the handle: `lzugai` is `LZoog`, `wclouser` is `clouserw`. An unmapped reporter 
 nothing, which is the safe direction.
 
 Run telemetry goes to `agent-runs.jsonl` and `agent-costs.json` in the pipeline state directory (mirrored to Cloud Storage; `ai/docs/` in the FxA repo keeps symlinks), formerly inside the FxA
-checkout, which is gitignored. `usage` must run before `stop`, because the token counts live
-inside the VM.
+checkout, which is gitignored. `$CTL tokens` reads the transcript copy in the slot
+(`.fxa-auto-claude.jsonl`), and asks the VM only when that copy is missing. `label <KEY> done`
+records the run itself.
 
 ---
 
@@ -860,8 +920,8 @@ select it with `fxa-sandbox-ctl --pipeline <name>`.
 | `PIPE_LABEL_PREFIX="ai-fixme"` | The label family, which IS the state machine |
 | `PIPE_QUEUE_JQL` | What enters stage 1 |
 | `PIPE_STATE_DIR` | Attempt counters, skip fingerprints, launch logs, the pass lock |
-| `PIPE_RUNS_FILE`, `PIPE_COSTS_FILE` | Telemetry, in the FxA checkout's gitignored `ai/` |
-| `PIPE_MIN_FREE_GB=25` | Disk floor for a launch |
+| `PIPE_RUNS_FILE`, `PIPE_COSTS_FILE` | Telemetry, in `PIPE_STATE_DIR` |
+| `PIPE_MIN_FREE_GB=5` | Disk floor for a launch |
 
 Every one is overridable by its old environment variable (`FXA_REPO`, `FXA_FIXME_STATE`,
 `FXA_FIXME_RUNS`, `FXA_FIXME_COSTS`, `FXA_MIN_FREE_GB`), so a one-off run needs no edit.
@@ -874,8 +934,10 @@ slot means adding a worktree and nothing else.
 - **The pass logic is version controlled here.** `skills/fxa-ai-fixme/` holds `SKILL.md` and
   `SCHEDULING.md`; `~/.claude/skills/fxa-ai-fixme` is a symlink to it. The `fxa-automation`
   skill, which holds the two cron definitions, is still unversioned in `~/.claude/skills/`.
-- **Apple Silicon macOS only.** `tart` runs ARM64 VMs under the Virtualization framework.
-- Notifications use `osascript`.
+- **The tart backend needs Apple Silicon macOS.** `tart` runs ARM64 VMs under the
+  Virtualization framework. The gce backend runs ARM64 runners on GCE, and most pipeline runs
+  use it.
+- Notifications use `osascript`, so they appear on macOS only.
 - The CircleCI token is read from `~/.circleci/cli.yml` when the env var is unset.
 - Jira access goes through the `acli` CLI, not the REST API.
 
@@ -903,26 +965,23 @@ generator, `worktree_branch_for`, and the branch is the lowercased key and nothi
 
 These are real and unresolved. Do not treat them as solved.
 
-(Two earlier gaps are closed: the pass logic is version controlled, and the duplicate branch
-naming is gone. See §11.)
+(Three earlier gaps are closed: the pass logic is version controlled, the duplicate branch
+naming is gone, and the manager VM runs the pass on systemd timers. See §6 and §11.)
 
-1. **The two scheduling designs conflict.** See §6. Pick one.
-2. **The loop is session-only.** It dies with the session and expires after seven days. The
-   LaunchAgent path is designed but not built.
-3. **`fxa-sandbox-ctl list` misreports status.** It tracks the `screen` session, not the agent.
-   Claude Code can exit while `exec bash` keeps the session alive, so a dead agent reads as
-   `running` for hours. Always confirm with `fxa-sandbox-ctl alive <KEY>`, which checks for a
-   real `claude` process over SSH. Both now live in the same tool, so `list` should learn to
-   call it.
-4. **The launcher's elapsed counter freezes.** macOS block-buffers its stdout without a TTY. It
+1. **The two session scheduling designs conflict.** See §6. Pick one.
+2. **`fxa-sandbox-ctl list` misreports status.** It tracks the VM, not the agent. Claude Code
+   can exit while the VM stays up, so a dead agent reads as `running` for hours. Always confirm
+   with `fxa-sandbox-ctl alive <KEY>`, which checks for a real `claude` process over SSH. Both
+   now live in the same tool, so `list` should learn to call it.
+3. **The launcher's elapsed counter freezes.** macOS block-buffers its stdout without a TTY. It
    is not a freshness signal.
-5. **`from_failed` reruns break on a stale workflow.** Rerunning a week-old workflow restores an
+4. **`from_failed` reruns break on a stale workflow.** Rerunning a week-old workflow restores an
    expired cache and dies in "Run DB migrations" before any test runs. Zero test results is the
    signature. Use a full rerun, then re-approve the gate.
-6. **Figma designs enter only at stage 2.** The VM has no MCP, and the trigger reads only the
+5. **Figma designs enter only at stage 2.** The VM has no MCP, and the trigger reads only the
    description and comments. A design linked from an attachment, a Confluence page, or a Slack
    thread is missed.
-7. **Review throughput is the bottleneck.** Stage 9 is where the pipeline actually queues.
+6. **Review throughput is the bottleneck.** Stage 9 is where the pipeline actually queues.
    Optimising stages 2 to 8 moves nothing until that changes.
 
 ---
@@ -931,6 +990,10 @@ naming is gone. See §11.)
 
 ```bash
 CTL=~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl
+
+# One pass
+$CTL precheck              # lock, reconcile, drain, reap, sweep; `quiet` means stop
+$CTL launchcap             # how many launches this pass may make
 
 # Where is everything?
 $CTL queue                 # stage 1: keys labelled ai-fixme, oldest first

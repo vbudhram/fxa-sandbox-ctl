@@ -1,7 +1,7 @@
 # FxA ai-fixme queue
 
 One **pass** = reconcile the tickets in flight, then fill free pool slots from the queue. A pass
-never waits on a VM or on CI. **You never merge.** Idempotent, safe to run every 20 minutes.
+never waits on a VM or on CI. **You never merge.** Idempotent, safe to run every 15 minutes.
 
 Toolkit: `fxa-sandbox-ctl`. Set `CTL=~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl`.
 Settings live in that repo's `pipelines/fxa-ai-fixme.conf`. This skill is a symlink to
@@ -181,7 +181,7 @@ origin/main -- <dir> | grep stories.tsx`). Then one line in the context file:
 media_paths.` A screenshot of an unchanged component is worse than none. Video and full flows
 need the stack: put `Launch with --functional-tests` on its own line in the context file and
 `launch` adds the flag. Use it only for a multi-page flow; the stack takes about two minutes
-to settle and the runner costs 8GB.
+to settle.
 
 ### Verification budget
 
@@ -282,7 +282,8 @@ Write exactly these: (1) the Jira label via `$CTL label`; (2) one 🤖 Jira comm
 change; (3) one PR comment when a ticket becomes `blocked`; (4) the session report; (5) one 🤖
 Jira skip comment, only when `skip` prints `comment`; (6) one 👍 per fixed review comment via
 `thumbsup`; (7) the merge telemetry comment, written by `label KEY merged` itself; (8) the Jira
-assignee, sprint and Done transition, also written by `label KEY merged`. Never skip the
+assignee, sprint and Done transition, also written by `label KEY merged`; (9) the 🤖 PR-ready
+Jira comment, written once per PR by `label KEY done`. Never skip the
 `done` step on the way to `merged`; it records the run.
 
 Nothing else. No Slack, no @-mentions, no Jira transitions, no release advice, never reap another
@@ -327,7 +328,7 @@ runs with hooks off and runs `origin/main`'s `check-frozen.ts` itself.
 
 Never merge, approve, or enable auto-merge. Never weaken, skip, or delete a test. Always name the
 slot. At most `launchcap` launches per pass, never two for one ticket. `launch` refuses below
-`FXA_MIN_FREE_GB` (25GB); do not raise it. One lock per pass. No secret, token, real email, or
+`FXA_MIN_FREE_GB` (default 5GB, `PIPE_MIN_FREE_GB`); do not change it. One lock per pass. No secret, token, real email, or
 phone number in a context file, comment, or PR.
 
 ## Quick reference
@@ -339,7 +340,7 @@ phone number in a context file, comment, or PR.
 | `feedback KEY bundle` | one-file review bundle at `/tmp/feedback/fxa-KEY-bundle.md` |
 | `queue` / `inflight` / `done-keys` | keys by state |
 | `freeslots` / `launchcap` | slots a ticket can claim; launches this pass may make |
-| `label KEY <state>` | swap the label; reaps the VM; 👍s on `done`; on `merged` also comments, assigns the approver, sprints, and closes |
+| `label KEY <state>` | swap the label; reaps the VM; 👍s and the PR-ready comment on `done`; on `merged` also comments, assigns the approver, sprints, and closes |
 | `launch KEY <slot> <ctx>` | start an agent |
 | `reap KEY` / `reap --stray` | stop a VM / every VM whose ticket is not inflight |
 | `drain` | done keys needing action |

@@ -3,6 +3,11 @@
 This file records how the skill runs on a timer. The timer is not part of the skill. You must
 start it in each new Claude session.
 
+This file covers a pass from a Claude session on a laptop. On the manager VM, the systemd unit
+`fxa-pass.timer` starts the pass every 15 minutes, 07:04 to 19:49 New York time.
+`infra/gce/claude-job.sh` runs `precheck` in shell first and starts `claude -p` only when there
+is work. The session crons below do not apply there.
+
 ## Why you must restart it
 
 Claude Code cron jobs are session-only. The scheduler holds them in memory. It writes nothing to
@@ -139,7 +144,7 @@ The minute is 7, not 0. An off-minute spreads load and avoids the crowded hour b
 The launcher pushes the branch and opens the PR. It does not stop the VM. The agent then sits idle
 at a prompt and holds 4 vCPU and 8GB for the whole CI run, which takes 20 to 40 minutes.
 
-The check-in stops that VM as soon as a PR exists. It captures `usage` first, because the token
+The check-in stops that VM as soon as a PR exists. It runs `tokens` first, because the token
 counts live inside the VM and `stop` deletes them.
 
 This creates one trap. The label stays `inflight` while CI runs, so `alive` reports DEAD for a
@@ -174,8 +179,10 @@ Escalate only when the queue holds at least one key that command does not list.
 file named a single `skipped.tsv` that nothing ever created, so the guard did not work and this
 prompt read an empty list on every tick. Use the command, never a raw path.
 
-**Remove a key from the file when its blocking question gets answered.** That is what puts the
-ticket back in play. Nothing else reads the file, so a stale entry silently keeps a ticket parked.
+**An edit or a new comment on a skipped ticket puts it back in play.** The record holds a hash of
+the whole ticket, and `precheck` (through `skip-changed`) lists a ticket whose hash changed. The
+check-in reads only `skipped`, so it does not see that change; the hourly pass does. A record is
+deleted when the ticket launches or leaves the queue.
 
 ## Why "settled" needs a check count, not just running=0
 

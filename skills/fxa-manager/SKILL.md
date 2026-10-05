@@ -45,7 +45,7 @@ $H ssh                 # the ssh command for a person
 | Repos | `/home/fxa/Desktop/working2/{fxa-sandbox-ctl,fxa-agent-bot,fxa}` |
 | Controller state, error log | `/home/fxa/.claude/state/{fxa-ai-fixme,agent-sessions}` |
 | Env and key files | the repos' `.env`, `~/.config/fxa/github-app.pem`, `~/.circleci/cli.yml`, all written at boot |
-| Units | `fxa-secrets` (boot), `fxa-agent-bot`, `fxa-dashboard`, `fxa-pass.timer`, `fxa-triage.timer` |
+| Units | `fxa-secrets` (boot), `fxa-agent-bot`, `fxa-dashboard`, `fxa-llm-proxy` (:8788), `fxa-mcp-gateway` (:8789), `fxa-pass.timer`, `fxa-triage.timer` |
 | gh | `~/bin/gh`, a shim that acts as the fxa-agent GitHub App with a fresh token |
 
 Runners are reached on the private network (`FXA_GCE_SSH_DIRECT=1`), not through IAP.

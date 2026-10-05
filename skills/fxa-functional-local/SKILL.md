@@ -63,7 +63,7 @@ Paths are under /workspace/packages/functional-tests/.
 | Flow | Spec | Test title to filter on |
 |---|---|---|
 | Sign in with password | tests/signin/signIn.spec.ts | login as an existing user |
-| Sign in with a code | tests/key-stretching-v2/signInTokenCode.spec.ts | accepts valid sign in code |
+| Sign in with a code | tests/key-stretching-v2/signInTokenCode.spec.ts | sign in within token code |
 | Unblock | tests/signin/signinBlocked.spec.ts | valid code entered |
 | Cached sign in | tests/signin/signinCached.spec.ts | sign in twice |
 | Sign up with a code | tests/react-conversion/signup.spec.ts | signup web |

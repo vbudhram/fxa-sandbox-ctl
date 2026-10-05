@@ -14,7 +14,7 @@ bash ~/Desktop/working2/fxa-sandbox-ctl/skills/fxa-session-debug/why.sh [agent-x
 
 With no key it takes the newest session. A pasted thread rarely shows the
 key; the newest session, or `fxa-sandbox-ctl session list`, usually finds it.
-After the cutover the controller runs on the manager VM:
+The controller runs on the manager VM, so run it there:
 
 ```bash
 bash ~/Desktop/working2/fxa-sandbox-ctl/skills/fxa-manager/vm.sh run 'bash skills/fxa-session-debug/why.sh agent-xxxx'
@@ -28,11 +28,11 @@ The script masks known token formats. Never print a `.env` or a token.
 |---|---|---|
 | `runner is at '', slot is at '<sha>'` or `could not reach the runner to pin it` | The IAP ssh failed at the pin step | Retried now; if it keeps failing, IAP is degraded. Try again later |
 | `egress firewall did not apply` | The IAP ssh failed at the firewall step | Same as above |
-| `Connection timed out during banner exchange` | An IAP tunnel blip before login | `_gce_ssh` retries 3 times with a 30 s wait |
+| `Connection timed out during banner exchange` | An IAP tunnel blip before login | `_gce_ssh` tries 3 times, with a wait of 3 s, then 6 s |
 | `gcloud.compute.instances.create ... Internal error` | GCP's own fault | `vm_clone` now tries the next zone |
-| `stocked out` in every zone | No capacity for `c4a-highcpu-4` | Wait, or set `FXA_GCE_ZONES` |
+| `stocked out` in every zone | No capacity for `c4a-standard-4` or the fallback `t2a-standard-4` | Wait, or set `FXA_GCE_ZONES` |
 | `I paused: this session reached its usage limit` | The bot's cost cap (`SESSION_COST_CAP`, default $15) | A reply resumes with a new limit; raise the cap in the bot's `.env` |
-| `I'll pause since it's been quiet` | 30 min with no turn (`FXA_SESSION_IDLE_SECONDS`) | A reply resumes; an open desktop counts as activity |
+| `I'll pause since it's been quiet` | 10 min with no activity (`FXA_SESSION_IDLE_SECONDS`, default 600) | A reply resumes; an open desktop counts as activity |
 | `I wrote no handoff, so nothing was pushed` | The agent chose not to ship; its reason is in the reply above it | Read the reply; steer and try again |
 | `could not reach the sandbox to read the handoff` | ssh dropped after the wrap-up | The work is still there; try Open PR again |
 | `Agent sessions are paused right now (<reason>)` | The operator's kill switch | `fxa-sandbox-ctl sessions resume` when the reason is dealt with |

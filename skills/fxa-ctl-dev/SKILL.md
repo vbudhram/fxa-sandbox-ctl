@@ -58,7 +58,7 @@ the retry. Put a counter in a file, not a variable: `$(...)` runs in a subshell.
 | What changed | Try it with |
 |---|---|
 | A runner prompt, a subagent, a skill | `skills/fxa-ctl-dev/agent-try.sh "<request>"`: on the laptop, about 20 s; no stack |
-| Anything a runner does | `fxa-sandbox-ctl session try "<request>"` on the manager: a real runner, no Slack |
+| Anything a runner does | `fxa-sandbox-ctl session try --prompt "<request>"` on the manager: a real runner, no Slack |
 | The bot, or the whole path from Slack | the dev bot, below |
 
 The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` copies
@@ -87,15 +87,13 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 
 ## Restart the bot safely
 
-The bot runs on the laptop until the cutover, on the VM after it. Before a
-restart, make sure no session job is running, or a wrap-up or a launch is cut:
+The bot runs on the manager VM. On the laptop its `.env` is now `.env.retired`,
+so no second bot starts there. The unit uses `KillMode=process`, so a restart
+does not stop a session boot or an Open PR job that the bot started.
+`vm.sh sync` restarts the bot when it runs.
 
-```bash
-pgrep -fl 'session-boot|session-finish' || echo "no session jobs"
-```
-
-On the VM: `vm.sh sys 'sudo systemctl restart fxa-agent-bot'`. Never run a
-second copy of the bot beside the first.
+To restart only the bot: `vm.sh sys 'sudo systemctl restart fxa-agent-bot'`.
+Never run a second copy of the bot beside the first.
 
 ## Errors
 

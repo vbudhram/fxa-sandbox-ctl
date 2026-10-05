@@ -154,7 +154,7 @@ Delete nothing from `.fxa-auto-media/`. The host reads it after you exit.
 
 ## Do not
 
-- Do not start the FxA stack, run `fxa-start`, or run `yarn test-sandbox`. This
+- Do not start the FxA stack, run `fxa-start`, or run a functional test. This
   skill exists to avoid all of that.
 - Do not screenshot a component the ticket did not change.
 - Do not commit anything under `.fxa-auto-media/`. It is scratch for the host.

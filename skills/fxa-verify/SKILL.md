@@ -70,7 +70,8 @@ bundle.
 
 For Jest projects it uses Jest's own `--findRelatedTests`, so a source change
 runs every spec that imports it. When more than 15 specs relate (a widely used
-file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-verify/.
+file), it runs the sibling spec only and says so. Full logs are in
+`/tmp/fxa-verify-<uid>/` (`--revert`: `/tmp/fxa-verify-revert-<uid>/`).
 
 ## Traps it avoids (do not work around them by hand)
 
@@ -110,8 +111,8 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
   directory with its local `npx jest`.
 - Nx caches `@nx/jest` results; a cached pass proves nothing new. The helper
   calls Jest directly.
-- Never run a whole package suite: with the stack up it runs this 8 GB runner
-  out of memory. CI runs the full suites.
+- Never run a whole package suite: with the stack up it can run this 16 GB
+  runner out of memory. CI runs the full suites.
 
 ## What it cannot cover
 
@@ -127,7 +128,7 @@ file), it runs the sibling spec only and says so. Full logs are in /tmp/fxa-veri
   `compile` target type-checks the whole project.
 - UI and flows: `/fxa-functional-local`. Screenshots: `/fxa-storybook-capture`.
 
-## Speeds measured in the VM (4 vCPU)
+## Speeds measured in the VM (4 vCPU, on the earlier 8 GB runner)
 
 `tsc` is incremental (`tsconfig.base.json`), so only the first run in a
 session pays the cold time.

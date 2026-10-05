@@ -28,8 +28,8 @@ brew install openai/tools/tart
 tart --version
 ```
 
-A machine that only uses the GCE backend does not need `tart`; `doctor` skips it
-when `FXA_VM_BACKEND=gce`.
+A machine that only uses the GCE backend does not need `tart`; the prerequisite
+check skips it when `FXA_VM_BACKEND=gce`.
 
 (`bun` is needed because some Claude Code plugins ship hooks that shell out to it. Without it, every tool call spams a non-blocking "Bun not found" message.)
 
@@ -143,16 +143,17 @@ What happens under the hood:
 2. **Worktree** — a pool of `fxa-auto`, `fxa-auto-2`, ... worktrees. Picks the first one not in use by a running agent, else creates the next-numbered slot. Reusing a slot keeps `node_modules` warm across tickets.
 3. **VM boot** — golden image cloned via APFS CoW, hardened (egress firewall, restricted sudo, ephemeral OAuth token written through the workspace mount).
 4. **`/goal` autonomy** — Claude runs as `claude -p "<prompt>" --permission-mode bypassPermissions --output-format stream-json` inside a `screen` session; the prompt is an argument, so nothing is pasted and nothing can sit unsubmitted. The JSONL transcript lands in `/workspace/.fxa-auto-claude.jsonl`, which `tail` reads.
-5. **Agent runs through 8 conditions** (see `_jira_render_prompt` in `fxa-sandbox-ctl`):
-    1. Print a plan
-    2. Unit tests pass
-    3. `npx nx lint <pkg>` clean for every modified package
-    4. Functional tests pass (+ Playwright media capture for UI flows)
-    5. `/code-simplifier` applied
-    6. `/fxa-review-quick` clean
-    7. Exactly one commit ahead of `origin/main` with a scoped conventional message (scope-creep guard via `git diff --stat`)
-    8. Write `/workspace/.fxa-auto-done.json` (the handoff signal)
-6. **Host watcher** — polls for the handoff file (visible via virtiofs). When it lands, host pushes the branch, uploads any media files as secret gists, and assembles the PR body via `/create-pr-description` + `/humanizer`.
+5. **Agent runs through 9 conditions** (see `_jira_render_prompt` in `fxa-sandbox-ctl` and `runtime_prompt_handoff_step` in `lib/runtime-claude.sh`):
+    1. Print a plan and write a test plan with `/fxa-test-plan`
+    2. `/fxa-verify --run --plan` shows no FAIL and no NONE
+    3. Lint passes on every changed file
+    4. The test plan observes each visible change on the running stack (functional tests are required with `--functional-tests`)
+    5. `/code-simplifier`, `/ponytail-review`, then `/fxa-unslop` Part 1 applied
+    6. `/fxa-review-quick`, then `/fxa-vm-selfcheck`, find no blockers
+    7. No commit (the `.git` mount is read-only); scope-creep guard via `git status --short` and `git diff --stat`
+    8. PR body from `/create-pr-description`, then `/humanizer` and `/fxa-unslop` Part 2
+    9. Write `/workspace/.fxa-auto-done.json` (the handoff signal)
+6. **Host watcher**: polls for the handoff file (visible via virtiofs). When it lands, the host stages the agent's changes, squashes them into one signed commit with `pr_title` as the subject, and pushes the branch. The PR body is the `pr_body` the agent wrote. Media files go on the PR with `gh pr create --attach`, or to `FXA_MEDIA_BUCKET` when the GitHub App is in use.
 7. **PR not auto-created** by default. The orchestrator prints the exact `gh pr create --body-file .fxa-auto-pr-body.md` command for you to review and run. Add `--create-pr` to skip the manual step.
 
 ### Jira options
@@ -163,10 +164,12 @@ What happens under the hood:
 | `--base <branch>` | `main` | Base branch for new ticket branches. |
 | `--private` | off | Provision from the checkout at `$FXA_PRIVATE_REPO` into its own pool. See [Private mode](#private-mode). |
 | `--guardrails <file>` | — | Prepend a file to the agent's task context as mandatory reviewer guidance. The agent reads it first. |
-| `--functional-tests` | off | Pre-warm the FxA stack in the VM and require `yarn test-sandbox` before the goal counts as met. Alias: `--with-stack`. |
+| `--functional-tests` | off | Pre-warm the FxA stack in the VM. The test plan must name the functional spec for the changed flow, and `/fxa-verify --plan` must pass it. Alias: `--with-stack`. |
 | `--watch` | on | After agent starts, block until handoff lands, then push. |
 | `--no-watch` | — | Fire-and-forget; resume later with `finish`. |
 | `--create-pr` | off | Also run `gh pr create` after pushing. |
+| `--runtime <claude\|codex>` | `claude` | Agent to run inside the VM. `FXA_AGENT_RUNTIME` or `PIPE_AGENT_RUNTIME` also set it. |
+| `--rebase` | off | Merge `origin/<base>` into the ticket's existing branch, then run the agent on the conflict only. Refuses once `attempts` reaches 2. |
 | `--no-ci-watch` | — | Skip CI polling (only relevant with `--create-pr`). |
 | `--dry-run` | off | Print the prompt and worktree path; don't create anything. |
 | `-n, --name <name>` | issue key | Agent name, lowercased issue key by default. |
@@ -224,7 +227,7 @@ launch, and every read of the slot pulls the runner's tree back first, so
 `progress`, `snapshot`, and `finish` see what the agent wrote. `attach`, `tail`,
 and `alive` work unchanged.
 
-On GCE a pass may launch up to `PIPE_MAX_LAUNCHES_GCE` tickets (5 by default,
+On GCE a pass may launch up to `PIPE_MAX_LAUNCHES_GCE` tickets (8 by default,
 in `pipelines/fxa-ai-fixme.conf`) and the worktree pool grows to match: `freeslots`
 lists slots that do not exist yet and `launch` creates them. A slot without
 `node_modules` is about 1.8 GB. On Tart the cap stays at one launch per pass.
@@ -232,8 +235,9 @@ On GCE the runner is deleted as soon as the PR is open: the branch is on
 origin and a feedback round boots a fresh one. Tart keeps its VM until the
 ticket is labeled `done`. Every runner is created with a hard lifetime (`FXA_GCE_MAX_RUN_SECONDS`, 90
 minutes by default): GCE deletes it at that age whether or not the laptop is
-awake. The default machine is `c4a-highcpu-4` (4 vCPU, 8 GB, arm64, about $0.13 an
-hour while a run is up, nothing when idle). `n4a-highcpu-4` is cheaper but was
+awake. The default machine is `c4a-standard-4` (4 vCPU, 16 GB, arm64, about $0.18 an
+hour while a run is up, nothing when idle). When every zone is stocked out, the
+runner uses `FXA_GCE_MACHINE_FALLBACK` (default `t2a-standard-4`). `n4a-highcpu-4` is cheaper but was
 stocked out in every `us-central1` zone when this was built; set
 `FXA_GCE_MACHINE_TYPE` to try it. A leaked instance keeps billing: `list` shows
 it and `stop <name>` deletes it.
@@ -242,7 +246,7 @@ it and `stop <name>` deletes it.
 
 Workspaces live as sibling dirs of the FxA repo: `<parent>/fxa-auto`, `<parent>/fxa-auto-2`, ... Each is a real git worktree. A `<name>-holding` branch keeps the slot checked out when idle. Per-ticket branches (`fxa-13474`, `fxa-13737`, ...) are created off `origin/main`.
 
-Detection of "busy" is anchored on `tart` — the orchestrator scans `logs/*.meta` and only counts a workspace as busy if `vm_is_running` confirms its VM is alive. Stale metas (from crashed orchestrators or `TaskStop`'d shells) don't block new runs.
+Detection of "busy" is anchored on the VM backend: the orchestrator scans `logs/*.meta` and only counts a workspace as busy if `vm_is_running` confirms its VM is alive. Stale metas (from crashed orchestrators or `TaskStop`'d shells) don't block new runs.
 
 ### Picking up where the agent left off
 
@@ -268,19 +272,18 @@ The agent writes `/workspace/.fxa-auto-done.json` when its `/goal` conditions ar
 {
   "issue":      "FXA-13474",
   "branch":     "fxa-13474",
-  "commit_sha": "abc123...",
   "pr_title":   "fix(settings): match commit subject exactly",
   "pr_body":    "## Summary\n...\n\n## Test Plan\n...",
   "media_paths": [".fxa-auto-media/before.png", ".fxa-auto-media/after.png"]
 }
 ```
 
-`pr_title` must equal the commit subject (scoped conventional). `media_paths` are relative to the worktree root — host uploads each as a secret gist and embeds raw URLs in the rendered PR body.
+`pr_title` is the commit subject the host uses (scoped conventional). The agent does not write `commit_sha`, because the host makes the commit. `templates/handoff.schema.json` holds the schema. `media_paths` are relative to the worktree root. The host attaches each file to the PR, or uploads it to `FXA_MEDIA_BUCKET` and links it in the PR body when the GitHub App is in use.
 
 ### Dirty-state handling
 
 The orchestrator filters certain untracked paths from the "is the worktree clean?" check:
-- `.fxa-auto-*` / `.fxa-jira-*` — our own orchestration files
+- `.fxa-*`: our own orchestration files and agent scratch files
 - `ai/` — agent-context symlink convention (referenced by `CLAUDE.md`)
 - `.claude/` — per-worktree claude-code state
 - `packages/fxa-auth-server/config/newKey.json` — known FxA test artifact
@@ -304,16 +307,16 @@ cp .env.example .env
 | `FXA_PRIVATE_REPO` | Checkout that `jira --private` provisions from. No default; `--private` fails without it. |
 | `FXA_SECRETS_SOURCE` | Checkout to copy dev secrets and the `ai/` mirror from (default: the worktree's own repo root). |
 | `FXA_WORKTREE_BASE` | Default base branch (default: `main`). |
-| `FXA_AGENT_MODEL` | Model alias for the agent's Claude (default: `opus`). |
+| `FXA_AGENT_MODEL` | Model for the agent's Claude, passed as `--model` (default: `claude-opus-5-5`). |
 | `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |
 | `FXA_DIRTY_IGNORE` | Extended-regex pattern of extra status lines to ignore. |
 | `FXA_VM_BACKEND` | `tart` (default) or `gce`. `--backend` on the command line wins. |
 | `FXA_GCE_PROJECT` | GCP project for `gce` runners. Required for that backend. |
 | `FXA_GCE_ZONE` | Default zone for runners and the image build (default: `us-central1-a`). |
 | `FXA_GCE_ZONES` | Zones tried in order on a stockout, same region (default: `us-central1-a b c f`). Each runner remembers its zone. |
-| `FXA_GCE_MACHINE_TYPE` | Runner shape (default: `c4a-highcpu-4`). |
+| `FXA_GCE_MACHINE_TYPE` | Runner shape (default: `c4a-standard-4`). |
 | `FXA_GCE_MAX_RUN_SECONDS` | Runner lifetime; GCE deletes it at this age (default: `5400`). |
-| `GITHUB_APP_ID`, `GITHUB_APP_PEM`, `GITHUB_APP_INSTALLATION_ID` | GitHub App identity for commits and PRs. Helpers exist in `lib/github.sh`; `finish` does not use them yet. |
+| `GITHUB_APP_ID`, `GITHUB_APP_PEM`, `GITHUB_APP_INSTALLATION_ID` | GitHub App identity for commits and PRs. When all three are set, `finish` commits, pushes, and opens the PR as the App. |
 
 ## Architecture
 
@@ -360,7 +363,7 @@ macOS Host (32GB RAM)
 |---------|-------------|
 | `jira <ISSUE-KEY> [options]` | Autonomous ticket→PR pipeline (see [Autonomous Jira → PR Workflow](#autonomous-jira--pr-workflow)) |
 | `finish [--wait] [--create-pr]` | Resume after a `jira --no-watch` or `Ctrl-C`: push + optional PR |
-| `run <dir> [-n name] [-p prompt]` | Start a new agent manually |
+| `run [dir] [-n name] [-p prompt]` | Start a new agent manually (default: the current directory) |
 | `switch <name> <directory>` | Switch an agent's workspace (VM restarts, DB preserved) |
 | `attach <name>` | Attach to agent's Claude Code TUI (multi-attach via `screen -x`) |
 | `tail [<name>]` | Snapshot the agent's screen scrollback |
@@ -458,7 +461,7 @@ one with no owner or past the lifetime cap. A snapshot takes about 17 seconds
 refreshes on a timer in the background and serves the last good result. A
 failed refresh keeps the previous snapshot rather than blanking the page.
 
-The server binds to `127.0.0.1` only and nothing on the page authenticates.
+The server binds to `127.0.0.1` unless `FXA_DASHBOARD_BIND` names another address, and nothing on the page authenticates.
 Snapshots and transcripts hold ticket text and branch names; `.gitignore` keeps
 `dashboard/*.json` and `*.jsonl` out of the repo.
 
@@ -475,10 +478,10 @@ disagree with the pipeline.
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-n, --name` | auto-generated | Agent name |
+| `-n, --name` | directory name | Agent name |
 | `-p, --prompt` | none | Initial prompt for Claude Code |
-| `-c, --cpu` | 2 | vCPU count |
-| `-m, --memory` | 5120 | Memory in MB |
+| `-c, --cpu` | 4 | vCPU count |
+| `-m, --memory` | 8192 | Memory in MB |
 
 ### MCP gateway
 
@@ -540,14 +543,15 @@ The VM is the security boundary. Each agent runs inside an isolated Linux VM wit
 
 ### What the agent CAN do
 - Read and write files in the mounted workspace directory
-- Access the public internet (for npm, GitHub, Anthropic API, etc.)
+- Reach an allowlist of hosts: Anthropic, npm and yarn, PyPI, GitHub, Playwright, and the Firefox pairing channel (`FXA_EGRESS_HOSTS`, `FXA_EGRESS_CIDRS`; `FXA_EGRESS_ALLOW_ALL=1` opens all egress)
 - Run any command inside the VM (build, test, install packages)
 - Use MySQL, Redis, Firestore locally inside the VM
 
 ### What the agent CANNOT do
 - **Access the host filesystem** beyond the workspace (no `~/.claude` history, no `~/Library`, no other projects)
-- **Reach the host machine** — iptables blocks all traffic to `192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12` (only DNS to gateway is allowed)
-- **Escalate to root freely** — sudo is restricted to specific commands (`systemctl`, `apt-get`, `mysql`, `redis-cli`, `chmod`, `chown`)
+- **Reach the host machine**: iptables blocks all traffic to `192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12` (only DNS to the gateway and resolvers, the LLM proxy, and the MCP gateway are allowed)
+- **Reach other public hosts**: the agent user can reach only the allowlist above
+- **Escalate to root freely**: sudo is restricted to `systemctl start|stop|restart|status` for `mysql`, `redis-server`, `firestore-emulator`, and `goaws`, and `tee /etc/hosts`
 - **Read the OAuth token from disk** — the token is injected via an ephemeral file that is deleted immediately after Claude reads it; it only exists in process memory
 - **SSH to other agent VMs** — each agent has a unique SSH key pair; password authentication is disabled
 - **Read host Claude data** — conversation history, project paths, session data, cookies, and token caches are never mounted into the VM
@@ -557,11 +561,11 @@ The VM is the security boundary. Each agent runs inside an isolated Linux VM wit
 | Layer | Protection |
 |-------|-----------|
 | **Mount isolation** | Only the workspace directory is shared (read-write). No host config directories. |
-| **Egress firewall** | iptables drops traffic to all private/link-local ranges. DNS to gateway allowed. Public internet open. |
-| **Restricted sudo** | Agent user limited to service management and package installation commands. |
+| **Egress firewall** | iptables drops traffic to all private/link-local ranges. DNS to gateway allowed. The agent user reaches only the allowlisted hosts. |
+| **Restricted sudo** | Agent user limited to service management for the four infra units and `tee /etc/hosts`. |
 | **SSH hardening** | Password auth disabled. Per-agent Ed25519 keys. Admin user locked. |
 | **Ephemeral token** | OAuth token exists only in process memory after startup. No persistent file. |
-| **Minimal config** | Only `settings.json` and `CLAUDE.md` copied from host. No history, no project data. |
+| **Minimal config** | Only a filtered `settings.json`, the operator-rule sections of `CLAUDE.md`, `hooks/`, `commands/`, and allowlisted `skills/` copied from host. No history, no project data. |
 | **Workspace trust** | Pre-configured so Claude Code skips interactive trust dialogs. |
 
 ## Claude Auth
@@ -589,15 +593,13 @@ The token is:
 
 ### Model Configuration
 
-Set the default model in `~/.claude/settings.json`:
+The launch script passes `--model ${FXA_AGENT_MODEL}` (default `claude-opus-5-5`), so set the model in `.env`:
 
-```json
-{
-  "model": "claude-opus-4-6"
-}
+```bash
+FXA_AGENT_MODEL=claude-opus-5-5
 ```
 
-This is automatically copied into each new VM agent.
+The `--model` flag wins over the `model` key in `~/.claude/settings.json`.
 
 ## Browser Command
 
@@ -678,7 +680,7 @@ All services start automatically on VM boot via systemd.
 
 **Switch fails midway:** The VM disk clone is preserved. Retry the switch or run `fxa-sandbox-ctl stop <name>` to clean up.
 
-**Settings not applied:** If Claude shows Sonnet instead of Opus, check that `~/.claude/settings.json` has the `"model"` key and restart the agent.
+**Wrong model:** The agent runs with `--model ${FXA_AGENT_MODEL}`. Check `FXA_AGENT_MODEL` in `.env` and restart the agent.
 
 **Bypass permissions dialog:** Pre-accepted automatically via `bypassPermissionsModeAccepted: true` in `~/.claude.json` + `skipDangerousModePermissionPrompt: true` in `~/.claude/settings.json` (set by `_setup_claude_config` at VM init). If it still appears, the python config-write step likely failed silently — check the orchestrator output for `WARN: Could not pre-trust workspace`.
 
@@ -711,14 +713,18 @@ fxa-sandbox-ctl/               # Repo root
 │       ├── 02-node.sh           # Node.js toolchain
 │       ├── 03-infra.sh          # MySQL, Redis, Firestore, goaws
 │       ├── 04-claude.sh         # Claude Code CLI
+│       ├── 04b-codex.sh         # OpenAI Codex CLI
 │       ├── 05-proxy.sh          # Network config (no proxy)
 │       ├── 06-agent-init.sh     # Systemd boot service + egress firewall
 │       ├── 07-cleanup.sh        # Image trim
 │       ├── 08-playwright.sh     # Playwright browser setup
 │       ├── 09-fxa-services.sh   # FxA service scripts (fxa-start)
-│       └── 10-agent-guide.sh    # Bake agent guide into image
+│       ├── 10-agent-guide.sh    # Bake agent guide into image
+│       ├── 11-gce-clone.sh      # GCE only: bake the FxA clone and node_modules
+│       └── 12-gce-startup.sh    # GCE only: boot unit that links /workspace to the clone
 ├── templates/
 │   ├── agent-startup.sh         # VM entrypoint template
+│   ├── handoff.schema.json      # Schema of .fxa-auto-done.json
 │   └── inbox-viewer.html        # Email inbox viewer (served at /__inbox)
 ├── pipelines/
 │   └── fxa-ai-fixme.conf        # Repo, label family, pool state, telemetry paths
@@ -728,13 +734,28 @@ fxa-sandbox-ctl/               # Repo root
 ├── diagrams/                    # Generated PNGs of the pipeline diagrams
 ├── skills/
 │   ├── fxa-ai-fixme/            # Pass logic; ~/.claude/skills/ symlinks here
+│   │   ├── SKILL.md             # The decision rules
+│   │   └── SCHEDULING.md        # The loop definitions
+│   ├── fxa-ai-fixme-create-issue/ # Host-side; drafts an ai-fixme Jira ticket
+│   ├── fxa-ctl-dev/             # Host-side; how to change and deploy this repo and the bot
+│   ├── fxa-manager/             # Host-side; operate the manager VM (vm.sh)
+│   ├── fxa-session-debug/       # Host-side; why a Slack session failed (why.sh)
+│   ├── fxa-functional-local/    # Runner-side; one Playwright spec with video
+│   ├── fxa-jira-link/           # Runner-side; a Jira link for follow-up work
+│   ├── fxa-page-shot/           # Runner-side; screenshot a live page on the local stack
+│   ├── fxa-stack/               # Runner-side; start and check the local FxA stack
 │   ├── fxa-storybook-capture/   # Runner-side; symlinked the same way, shipped into each VM
-│   └── fxa-vm-handoff/          # Runner-side; writes .fxa-auto-done.json
-│       ├── SKILL.md             # The decision rules
-│       └── SCHEDULING.md        # The loop definitions
+│   ├── fxa-test-plan/           # Runner-side; the test plan that /fxa-verify runs
+│   ├── fxa-unslop/              # Runner-side; fixes what reviewers of agent PRs flag
+│   ├── fxa-verify/              # Runner-side; related unit tests, lint, types
+│   ├── fxa-vm-handoff/          # Runner-side; writes .fxa-auto-done.json
+│   └── fxa-vm-selfcheck/        # Runner-side; checks that reviewers raise most often
+├── agents/                      # Runner subagents: fxa-explore, fxa-log-triage, fxa-reviewer, fxa-writer
 ├── lib/
 │   ├── config.sh                # Constants and defaults
-│   ├── vm.sh                    # Tart VM lifecycle
+│   ├── vm.sh                    # VM naming and backend selection
+│   ├── vm-tart.sh               # Tart VM lifecycle
+│   ├── vm-gce.sh                # GCE VM lifecycle
 │   ├── agent.sh                 # Agent run/attach/stop/list + security, alive check
 │   ├── pipeline.sh              # Pipeline config, pass lock, skips, attempts, progress
 │   ├── jira.sh                  # acli fetch + ADF→markdown, queue reads, label writes
@@ -742,7 +763,7 @@ fxa-sandbox-ctl/               # Repo root
 │   ├── github.sh                # PR state, drain, review comments
 │   ├── telemetry.sh             # Token usage, run log, cost rollup
 │   ├── snapshot.sh              # Whole pipeline state as one JSON document
-│   ├── finish.sh                # Handoff wait, push, media gist upload, PR, CI watch
+│   ├── finish.sh                # Handoff wait, commit, push, media attach, PR, CI watch
 │   └── stream-prettify.js       # JSONL stream prettifier (legacy -p mode)
 └── logs/                        # Runtime logs (gitignored)
     ├── <name>.meta              # Agent metadata (NAME, WORKSPACE, IP, ...)

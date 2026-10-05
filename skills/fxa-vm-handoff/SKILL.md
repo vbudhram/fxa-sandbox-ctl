@@ -10,9 +10,8 @@ The host opens the pull request. You never run `gh`. The host reads
 `/workspace/.fxa-auto-done.json` and nothing else, so this file is the only
 route your work takes to a human.
 
-When the file is absent or invalid, the host still opens a pull request. It
-derives a title from the branch and sends an empty body. Three runs shipped that
-way, and one branch produced two identical pull requests.
+When the file is absent or invalid, the host refuses to ship. It pushes nothing
+and opens no pull request.
 
 ## Step 1: Confirm you have something to hand off
 
@@ -48,12 +47,9 @@ is there, and that question delays every other file in the change.
 
 ## Step 3: Build the title
 
-The title must equal the commit subject exactly. Use a scoped conventional
-subject, for example `fix(auth): reject an expired session token`.
-
-```bash
-git --no-pager log -1 --format='%s'
-```
+The host squashes the change to one commit and uses `pr_title` as its subject.
+Use a scoped conventional subject, for example
+`fix(auth): reject an expired session token`.
 
 Rules for the title:
 - Give the scope. `fix:` is not enough. Write `fix(settings):`.
@@ -61,12 +57,8 @@ Rules for the title:
 - Do not put the Jira key in the title. Put it in the body.
 - Keep it under 72 characters.
 
-Fix the commit subject when it does not match, then read it again:
-
-```bash
-git commit --amend -m "<corrected subject>"
-git --no-pager log -1 --format='%s'
-```
+Do not commit to set the title. In a pipeline run the shared `.git` is
+read-only, so `git commit` fails. The host makes the commit.
 
 ## Step 4: Write the file
 
@@ -75,14 +67,17 @@ cd /workspace
 jq -n \
   --arg issue "FXA-12345" \
   --arg branch "$(git branch --show-current)" \
-  --arg sha "$(git rev-parse HEAD)" \
-  --arg title "$(git --no-pager log -1 --format='%s')" \
+  --arg title "fix(auth): reject an expired session token" \
   --rawfile body /tmp/pr-body.md \
   --argjson media "$(ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .)" \
-  '{issue:$issue, branch:$branch, commit_sha:$sha, pr_title:$title,
+  '{issue:$issue, branch:$branch, pr_title:$title,
     pr_body:$body, media_paths:$media}' \
-  > /workspace/.fxa-auto-done.json
+  > /workspace/.fxa-auto-done.json.tmp \
+  && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json
 ```
+
+Write to the `.tmp` file, then `mv` it into place, so the host never reads a
+half-written file. Omit `commit_sha`: the host creates the commit.
 
 Write the body to `/tmp/pr-body.md` first. A here-doc inside `jq -n` loses the
 newlines, and the pull request body then arrives as one paragraph.

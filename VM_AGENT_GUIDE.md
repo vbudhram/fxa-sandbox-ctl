@@ -7,11 +7,12 @@ Chat sessions do not have it; do not report that it is missing.
 
 ## 1. Where you are
 
-- **Machine:** Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM, 50GB disk. Memory is still
+- **Machine:** Ubuntu 24.04, 4 vCPU, 16GB RAM. GCE and Tart are ARM64 with a 50GB
+  disk; Firecracker is x86-64 with a 60GB disk. Memory is still
   the tight resource: the stack with functional tests ran an 8GB runner out of
   memory, so keep `PLAYWRIGHT_WORKERS=2` and never run a whole suite.
 - **Backend:** one of two. The rest of this guide notes where they differ.
-  - **GCE** (Slack sessions, most pipeline runs): a `c4a-highcpu-4` instance.
+  - **GCE** (Slack sessions, most pipeline runs): a `c4a-standard-4` instance.
     `/workspace` is a symlink to a clone in the image, `/home/agent/fxa`,
     pinned to the commit the host chose. `node_modules` is native Linux.
     Google deletes the instance after its run limit (90 minutes for a
@@ -26,7 +27,8 @@ Chat sessions do not have it; do not report that it is missing.
   `statsig.anthropic.com`, `registry.yarnpkg.com`, `registry.npmjs.org`,
   `github.com`, `api.github.com`, `codeload.github.com`,
   `objects.githubusercontent.com`, `playwright.azureedge.net`,
-  `cdn.playwright.dev`, `pypi.org` and `files.pythonhosted.org`. Codex runs also reach `api.openai.com`, `chatgpt.com`
+  `cdn.playwright.dev`, `pypi.org`, `files.pythonhosted.org` and
+  `channelserver.services.mozilla.com` (the pairing channel). Codex runs also reach `api.openai.com`, `chatgpt.com`
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
 - **Show the change** with new files included:
@@ -137,8 +139,8 @@ When a run fails and its output or log is long, give the path to the
 - Lint is `npx eslint <files>` from the package, which `/fxa-verify` runs in
   a second or two. `npx nx lint <package>` works too, but is slower: for
   auth, content and shared it first installs `glean_parser` from PyPI.
-- For a removal, a rename or a changed signature, also type-check with
-  `/fxa-verify --run --types`. By hand: `npx tsc --noEmit` in the package
+- For a removal, a rename or a changed signature, also type-check.
+  `/fxa-verify --run` does it by default (`--no-types` skips it). By hand: `npx tsc --noEmit` in the package
   (auth: `-p tsconfig.build.json`, 11 s and 2.5GB; a lib:
   `-p tsconfig.lib.json`, about 1 s).
 - One auth test: `yarn test <spec> -t "<name>" --verbose` from
@@ -252,7 +254,9 @@ records a video, and its `--bg` and `wait` handle a run longer than 10 minutes.
 
 Save them in `/workspace/.fxa-auto-media/` as `.png`, `.jpg`, `.webp`, `.gif`,
 `.webm`, `.mp4` or `.mov`, or a `.patch` or `.diff`. Each must be a plain file inside the workspace, not
-a symlink, at most 100MB. For a component with a sibling `*.stories.tsx`, use
+a symlink, at most 100MB. A pipeline PR attaches only the image and video
+types. In a Slack session, a file must be under 20MB and
+have a name of only letters, digits, `.`, `_` and `-`; a `.mov` is not posted. For a component with a sibling `*.stories.tsx`, use
 `/fxa-storybook-capture`. For a live page (a route, a signed-in state, a
 viewport, a locale or dark mode), or to check a recorded video frame by frame,
 use `/fxa-page-shot`; do not write a throwaway Playwright script or spec. If you cannot take a screenshot you planned, write

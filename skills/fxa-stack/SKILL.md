@@ -10,7 +10,7 @@ this skill checks what is up and starts the stack only when a check needs it.
 Run the helper from anywhere:
 
     bash ~/.claude/skills/fxa-stack/stack.sh status        # one line per service
-    bash ~/.claude/skills/fxa-stack/stack.sh ensure         # start the stack if auth is down, wait for health
+    bash ~/.claude/skills/fxa-stack/stack.sh ensure         # start the stack if auth, content, or settings is down, wait for health
     bash ~/.claude/skills/fxa-stack/stack.sh diagnose       # errored services with their last log lines
     bash ~/.claude/skills/fxa-stack/stack.sh account 2fa    # a test account, as one line of JSON
     bash ~/.claude/skills/fxa-stack/stack.sh restart auth KEY=VAL   # one service with extra env
@@ -86,5 +86,5 @@ MySQL 3306, Redis 6379, Firestore 9090, goaws 4100, Cloud Tasks 8123.
 - Do not use `yarn start` or `_scripts/pm2-all.sh` on the VM: they use stock
   configs that collide with the VM's ports and turn Stripe and CMS back on.
 - Do not set `FXA_SANDBOX_IP` inside the VM.
-- The stack uses about 5 GB of the 8 GB runner. Stop it with `fxa-start --stop`
+- The stack uses about 5 GB of the 16 GB runner. Stop it with `fxa-start --stop`
   before a heavy unit-test run if memory is tight (`free -m`).
