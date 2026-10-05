@@ -161,8 +161,9 @@ its reason. If the real fix needs a frozen edit, skip: unfreezing is a human dec
 ### Figma
 
 The VM has no MCP. Fetch a design here **only when the ticket or a comment contains a
-`figma.com` URL.** Budget 3 calls on top of the 10: `get_code_connect_map` (highest value, names
-the existing FxA component), `get_variable_defs`, `get_design_context`, `get_screenshot` last.
+`figma.com` URL.** The tools are the gateway's `figma__*` (server `fxa`). Budget 3 calls on top
+of the 10: `get_design_context` (names the existing FxA component), `get_variable_defs`,
+`get_screenshot` last.
 Write a screenshot to `<worktree>/.fxa-auto-design-KEY.png` and reference
 `/workspace/.fxa-auto-design-KEY.png`. Unauthenticated: write "Design not fetched: Figma MCP
 unavailable. Treat the layout as unspecified and ask in the PR body." A rate-limit failure counts
