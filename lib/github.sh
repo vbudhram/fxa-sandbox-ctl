@@ -255,14 +255,22 @@ gh_feedback() {
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
   # Inline comments, then conversation comments, where reviewers often put the
-  # big asks. The `i` id prefix tells the endpoints apart. Our own 🤖 comments
-  # and bot chatter are not feedback.
-  local all conv
+  # big asks, then review summaries. The `i` and `r` id prefixes tell the
+  # endpoints apart. Our own 🤖 comments and bot chatter are not feedback.
+  # An inline comment counts until its thread is resolved, also after a push moved
+  # its lines (outdated). Without the thread list, outdated ones are left out, as before.
+  local all conv reviews resolved
+  resolved="$(gh api graphql -F o="${PIPE_REPO_SLUG%/*}" -F r="${PIPE_REPO_SLUG#*/}" -F n="$pr" -f query='
+    query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) {
+      reviewThreads(first: 100) { nodes { isResolved comments(first: 100) { nodes { databaseId } } } } } } }' \
+    --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[].databaseId | tostring]' 2>/dev/null)" \
+    && [ -n "$resolved" ] || resolved=null
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
-         | jq -c '[.[] | select(.position != null)
+         | jq -c --argjson resolved "$resolved" '[.[]
+                       | select(if $resolved == null then .position != null else ((.id | tostring) | IN($resolved[]) | not) end)
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
                           trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
-                          path, line: (.line // .original_line), body}]')"
+                          path, line: (.line // .original_line), outdated: (.line == null), body}]')"
   [ -n "$all" ] || all='[]'
   conv="$(gh api "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.user.type != "Bot" and (.body | startswith("🤖") | not))
@@ -270,7 +278,26 @@ gh_feedback() {
                           trusted: (.author_association | IN("OWNER","MEMBER","COLLABORATOR")),
                           path: null, line: null, body}]')"
   [ -n "$conv" ] || conv='[]'
-  all="$(jq -c -n --argjson a "$all" --argjson b "$conv" '$a + $b')"
+  # A review's own text, such as a "Request changes" summary. Copilot's overview
+  # repeats its inline comments, and each new review would read as new feedback.
+  reviews="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/reviews" --paginate 2>/dev/null \
+         | jq -c '[.[] | select(.user.type != "Bot" and (.body // "") != "" and (.body | startswith("🤖") | not))
+                       | {id: ("r" + (.id|tostring)), author: .user.login, association: .author_association,
+                          trusted: (.author_association | IN("OWNER","MEMBER","COLLABORATOR")),
+                          path: null, line: null, state, body}]')"
+  [ -n "$reviews" ] || reviews='[]'
+  all="$(jq -c -n --argjson a "$all" --argjson b "$conv" --argjson c "$reviews" '$a + $b + $c')"
+  # A member whose org membership is private shows as CONTRIBUTOR to this host's
+  # GitHub identity, so their repo permission decides: write or more is trusted.
+  local who ok=""
+  for who in $(printf '%s' "$all" | jq -r '[.[] | select(.trusted | not) | .author | select(endswith("[bot]") | not)] | unique | .[]'); do
+    [[ "$who" =~ ^[A-Za-z0-9-]+$ ]] || continue
+    case "$(gh api "repos/${PIPE_REPO_SLUG}/collaborators/${who}/permission" --jq .permission 2>/dev/null)" in
+      admin|maintain|write) ok="${ok} ${who}" ;;
+    esac
+  done
+  [ -n "$ok" ] && all="$(printf '%s' "$all" | jq -c --arg ok "$ok" \
+    '($ok | split(" ") | map(select(length > 0))) as $w | map(if (.author | IN($w[])) then .trusted = true else . end)')"
 
   if [ "$sub" = "ack" ]; then
     printf '%s\n' "$all" | jq -r '.[].id' >>"$seen"
