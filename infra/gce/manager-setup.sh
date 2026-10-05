@@ -128,6 +128,13 @@ fi
 r="$(get fxa-runlayer-agent-token || true)"
 if [ -n "$r" ]; then printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r" > "$C/mcp-gateway.env"; else rm -f "$C/mcp-gateway.env"; fi
 unset r
+# acli keeps its Jira login in its own config, so log it in from the secrets.
+j="$(get fxa-jira-token || true)" e="$(get fxa-jira-email || true)"
+if [ -n "$j" ] && [ -n "$e" ] && command -v acli >/dev/null; then
+  printf %s "$j" | sudo -u fxa -H acli jira auth login --site mozilla-hub.atlassian.net --email "$e" --token >/dev/null \
+    || echo "fxa-secrets: the acli Jira login failed" >&2
+fi
+unset j e
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
 [ -f "$W/fxa-agent-bot/.env" ] && chown fxa:fxa "$W/fxa-agent-bot/.env"
