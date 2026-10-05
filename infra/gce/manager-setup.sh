@@ -130,8 +130,12 @@ if [ -n "$r" ]; then printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r" > "$C/mcp-gateway.e
 unset r
 # acli keeps its Jira login in its own config, so log it in from the secrets.
 j="$(get fxa-jira-token || true)" e="$(get fxa-jira-email || true)"
-if [ -n "$j" ] && [ -n "$e" ] && command -v acli >/dev/null; then
-  printf %s "$j" | sudo -u fxa -H acli jira auth login --site mozilla-hub.atlassian.net --email "$e" --token >/dev/null \
+if [ -z "$j" ] || [ -z "$e" ]; then
+  echo "fxa-secrets: no fxa-jira-token or fxa-jira-email, so acli keeps its old Jira login" >&2
+elif command -v acli >/dev/null; then
+  # The pipe must start inside fxa's shell: through sudo's own terminal, acli reads no token.
+  T="$j" E="$e" sudo -u fxa -H --preserve-env=T,E bash -c \
+    'printf "%s\n" "$T" | acli jira auth login --site mozilla-hub.atlassian.net --email "$E" --token' >/dev/null 2>&1 \
     || echo "fxa-secrets: the acli Jira login failed" >&2
 fi
 unset j e
