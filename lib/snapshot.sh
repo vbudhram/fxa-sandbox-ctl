@@ -352,7 +352,7 @@ _snapshot_runner_row() {
   [ -n "$branch" ] && [ -n "$key" ] || return 0
   slot="$(basename "$WORKSPACE")"
   # finish is committing on this slot: no git reads either, they take the index lock.
-  if [ -f "${LOG_DIR}/${slot}.finishing" ]; then
+  if worktree_finishing "$WORKSPACE"; then
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$NAME" "$key" "$branch" "$slot" "true" "squashing" "host is committing" "" "0" "" "true" "null" "null"
     return 0

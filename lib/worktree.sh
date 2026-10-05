@@ -117,10 +117,16 @@ _worktree_agent_for_workspace() {
 # ponytail: one gcloud describe plus one rsync per status read; cache the
 # running check if snapshot gets slow.
 _PULL_MEMO=""
+# worktree_finishing <slot path>   finish is staging and committing on this slot. A finish
+# takes minutes; a marker over 30 min is one a crash left (its RETURN trap never ran).
+worktree_finishing() {
+  local mk="${LOG_DIR}/$(basename "$1").finishing"
+  [ -f "$mk" ] && [ $(( $(date +%s) - $(_mtime "$mk") )) -lt "${FXA_FINISHING_STALE_SECONDS:-1800}" ]
+}
 _worktree_pull_if_remote() {
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0
   # finish owns the slot while it stages and commits; a pull now would race it.
-  [ -f "${LOG_DIR}/$(basename "$1").finishing" ] && return 0
+  worktree_finishing "$1" && return 0
   # So does a launch: a --delete pull before the runner had the token removed
   # it from the slot, and the agent died at turn 1. Ignore markers over 20 min.
   local mk="${LOG_DIR}/$(basename "$1").launching"
