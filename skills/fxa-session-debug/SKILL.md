@@ -13,7 +13,9 @@ bash ~/Desktop/working2/fxa-sandbox-ctl/skills/fxa-session-debug/why.sh [agent-x
 ```
 
 With no key it takes the newest session. A pasted thread rarely shows the
-key; the newest session, or `fxa-sandbox-ctl session list`, usually finds it.
+key. Use `fxa-sandbox-ctl session list` (newest first, with the thread ID) or
+`session report <Slack link | thread ID>`. The report shows every session of
+the thread and the total cost, then the newest session in full.
 The controller runs on the manager VM, so run it there:
 
 ```bash

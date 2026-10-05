@@ -206,17 +206,54 @@ _session_try_wait() {
   echo "ERROR: no reply in ${FXA_TRY_TURN_SECONDS:-2700}s" >&2; return 1
 }
 
+# session_thread_id <key | channel:ts | ts | Slack link>   The thread ID (channel:ts), or nothing.
+# It stays the same across every session of a Slack thread.
+session_thread_id() {
+  local a="$1" ch p f
+  case "$a" in
+    agent-*) session_get "$a" thread ;;
+    https://*/archives/*)
+      ch="${a#*/archives/}"; ch="${ch%%/*}"
+      # A reply's link names its thread in thread_ts; else the linked message starts the thread.
+      if [[ "$a" =~ thread_ts=([0-9]+\.[0-9]+) ]]; then p="${BASH_REMATCH[1]}"
+      else p="${a##*/p}"; p="${p%%\?*}"; p="${p:0:10}.${p:10}"; fi
+      printf '%s:%s\n' "$ch" "$p" ;;
+    *:*) printf '%s\n' "$a" ;;
+    *) f="$(ls "$SESSION_DIR"/thread-*-"$a".json 2>/dev/null | head -1)"
+       [ -n "$f" ] && { f="${f##*/thread-}"; f="${f%.json}"; printf '%s\n' "${f/-/:}"; } ;;
+  esac
+}
+
+# _thread_summary <thread>   The request, each session, and the cost of the whole thread.
+_thread_summary() {
+  local tid="$1" k keys usd="{}"
+  keys="$(thread_get "$tid" sessions)"
+  echo "# thread $tid"
+  echo "  request: $(thread_get "$tid" request | tr '\n' ' ' | cut -c1-200)"
+  if [ -n "$keys" ] && declare -F db_on >/dev/null && db_on; then
+    local runs=""; for k in $keys; do runs="${runs}${runs:+, }$(db_q "$k"), $(db_q "ask-${k#agent-}")"; done
+    usd="$(db_json "SELECT run, sum(usd) AS usd FROM llm_calls WHERE run IN ($runs) GROUP BY run;" \
+      | jq -c 'map({key: (.run | sub("^ask-"; "agent-")), value: .usd}) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries')"
+  fi
+  for k in $keys; do session_exists "$k" && cat "$(_session_file "$k")"; done | jq -rs --argjson usd "$usd" '
+    (.[] | "  \(.key) \(.state) \(.created // 0 | floor | todate) turns \(.turns // 0) llm $\(($usd[.key] // 0) * 100 | round / 100) compute $\(.compute_usd // 0) pr \(.pr_url // "-")"),
+    "  total: \(length) sessions, llm $\(([.[] | $usd[.key] // 0] | add // 0) * 100 | round / 100), compute $\(([.[] | (.compute_usd // 0 | tonumber)] | add // 0) * 100 | round / 100)"'
+}
+
 # _session_try_report <key>   The usage by model (the proxy's calls) and the transcripts' summary.
-# session_report <key | thread ts | channel:ts>   One run, start to end: the quick
+# session_report <key | thread ID | ts | Slack link>   One run, start to end: the quick
 # answer, the boot, each turn, the conversation, usage by model, the subagents,
-# errors. A thread is looked up in the bot's state file.
+# errors. For a thread, the thread's sessions and total cost come first, then its newest session.
 session_report() {
-  local key="$1" st="${FXA_AGENT_STATE:-$HOME/.fxa-agent-sessions.json}" ask tgz t
+  local key="$1" st="${FXA_AGENT_STATE:-$HOME/.fxa-agent-sessions.json}" ask tgz t tid
   case "$key" in
-    agent-*) ;;
-    *) key="$(jq -r --arg t "${key#*:}" '[.[] | select(.thread_ts == $t) | .key][0] // empty' "$st" 2>/dev/null || true)" ;;
+    agent-*) tid="$(session_get "$key" thread)" ;;
+    *) tid="$(session_thread_id "$key")"; key="$(thread_get "$tid" sessions | awk '{print $NF}')"
+       # Threads from before the thread record: the bot's state file.
+       [ -n "$key" ] || key="$(jq -r --arg t "${tid#*:}" '[.[] | select(.thread_ts == $t) | .key][0] // empty' "$st" 2>/dev/null || true)" ;;
   esac
   [ -n "$key" ] || { echo "session report: no session for '$1'" >&2; return 1; }
+  _thread_ok "$tid" && [ -n "$(thread_get "$tid" sessions)" ] && { _thread_summary "$tid"; echo; }
   ask="ask-${key#agent-}"
   echo "# $key"
   echo "== quick answer ($ask)"

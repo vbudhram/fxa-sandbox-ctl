@@ -103,7 +103,7 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
                                throwaway worktree and open a draft PR; events reports it
   session list | show <key> | history <key>
                                Read session records; history is the conversation as JSON
-  session report <key | thread ts>
+  session report <key | thread ID | Slack link>
                                One run start to end: quick answer, boot, turns, usage, subagents, errors
   session idle-sweep           WRITE: pause sessions idle past FXA_SESSION_IDLE_SECONDS (600);
                                the work and conversation are saved, the runner is deleted
@@ -2385,10 +2385,12 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
 
 cmd_session() {
   case "${1:-list}" in
-    list) for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && jq -r '[.key, .state, .owner, (.pr_url // "-")] | @tsv' "$f"; done; true ;;
+    # Newest first, with the thread: one thread holds every session of a Slack thread.
+    list) cat "$SESSION_DIR"/agent-*.json 2>/dev/null | jq -rs 'sort_by(-(.created // 0)) | .[]
+            | [.key, .state, .owner, (.created // 0 | floor | todate), (.thread // "-"), (.pr_url // "-")] | @tsv' ;;
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     history) _session_key "${2:-}" && session_history "$2" ;;
-    report) [ -n "${2:-}" ] || { echo "usage: session report <key | thread ts>" >&2; exit 2; }; session_report "$2" ;;
+    report) [ -n "${2:-}" ] || { echo "usage: session report <key | thread ID | Slack link>" >&2; exit 2; }; session_report "$2" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
