@@ -1279,17 +1279,19 @@ cmd_inflight()  { jira_inflight_keys; }
 # WRITE: apply the determinate reconcile rows to every inflight key, one line per key.
 # Rows that need judgment print as is. When only the skill did this, a frozen label shipped a ticket twice.
 cmd_reconcile() {
-  local key line stage pr state ok fail run url why
+  local key line stage pr state ok fail run url why settled
   for key in $(jira_inflight_keys); do
     line="$(pipeline_progress "$key")"; stage="$(printf '%s' "$line" | awk '{print $2}')"
     case "$stage" in
       pr)
         read -r _ pr state ok fail run <<< "$(gh_pr_state "$key")"
+        # A full FxA PR has 18 to 21 checks. Fewer means the gated jobs do not exist yet.
+        settled=0; [ $(( ${ok#ok=} + ${fail#fail=} )) -ge 15 ] 2>/dev/null && settled=1
         case "$state" in
           MERGED) cmd_label "$key" merged >/dev/null && echo "$key merged #$pr" ;;
           CLOSED) cmd_label "$key" rejected >/dev/null && echo "$key rejected #$pr" ;;
           OPEN)
-            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "${ok#ok=}" -gt 0 ]; then
+            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "$settled" = 1 ]; then
               cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
             elif url="$(gh_gate_stuck "$key" 0)"; then
               # Every push resets the gate and the launcher approves only its first push.
@@ -1298,7 +1300,7 @@ cmd_reconcile() {
             elif [ "${fail#fail=}" -gt 0 ]; then
               if why="$(gh_red_infra "$key")"; then
                 # Every red check is repo infra, so green once nothing still runs.
-                if [ "${run#running=}" = 0 ]; then
+                if [ "${run#running=}" = 0 ] && [ "$settled" = 1 ]; then
                   cmd_label "$key" done >/dev/null && echo "$key done #$pr green except infra: $why"
                 else
                   echo "$key pr #$pr RED-INFRA $why; not this PR"
