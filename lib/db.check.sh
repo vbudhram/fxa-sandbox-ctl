@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "2|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "3|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"
@@ -53,6 +53,8 @@ check "session cost: a live card's cost_so_far too" '{"turns":3,"cost_so_far":1.
 check "session cost: unchanged when the proxy never saw it" '{"cost":0.4}' "$(_session_proxy_cost agent-none '{"cost":0.4}')"
 check "session cost: the proxy's even with no transcript price" '{"cost":1.5}' "$(_session_proxy_cost agent-x '')"
 check "llm_daily: calls and spend per day" "2026-10-02|2|0.75|2026-10-03|1|1.0" "$(db_value "SELECT group_concat(day || '|' || calls || '|' || usd, '|') FROM (SELECT * FROM llm_daily ORDER BY day);")"
+db_ingest llm_calls '{"at":"2026-10-03T10:00:00Z","run":"ask-z","thread":"C0AB12CD3:1791135361.015169","model":"opus","usd":0.1}'
+check "llm_calls keeps the thread" "C0AB12CD3:1791135361.015169" "$(db_value "SELECT thread FROM llm_calls WHERE run = 'ask-z';")"
 
 # Every log goes in through ingest, as the writers' JSON lines.
 db_ingest errors '{"at":"2026-10-02T10:00:00Z","source":"bot","kind":"stream","key":null,"where":"stream","message":"it'"'"'s broken","log":null,"sig":"abc"}'
@@ -165,4 +167,13 @@ check "ingest: every row from many threads" "40" "$(python3 -c "
 import sys, threading; sys.path.insert(0, '$(dirname "$0")'); import fxadb
 ts = [threading.Thread(target=lambda: [fxadb.ingest('llm_calls', dict(at='2026-10-04T10:00:00Z', run='thr', model='m', usd=1)) for _ in range(5)]) for _ in range(8)]
 [t.start() for t in ts]; [t.join() for t in ts]")$(db_value "SELECT count(*) FROM llm_calls WHERE run = 'thr';")"
+# Migration 3 fills the thread of older rows from the session records, quick answers included.
+mig="$tmp/mig"; mkdir -p "$mig"; cp "$here/db/001-init.sql" "$here/db/002-ingest.sql" "$mig/"
+FXA_DB="$tmp/old.db" _DB_DIR="$mig" db_init >/dev/null
+FXA_DB="$tmp/old.db" _db "INSERT INTO sessions (key, data) VALUES ('agent-ab12', '{\"thread\":\"C0AB12CD3:1791135361.015169\"}');
+  INSERT INTO llm_calls (at, run, usd) VALUES ('2026-10-04T10:00:00Z', 'agent-ab12', 1), ('2026-10-04T10:00:00Z', 'ask-ab12', 1), ('2026-10-04T10:00:00Z', 'fxa-1', 1);"
+cp "$here/db/003-llm-thread.sql" "$mig/"; FXA_DB="$tmp/old.db" _DB_DIR="$mig" db_init >/dev/null
+check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169 ask-ab12|C0AB12CD3:1791135361.015169 fxa-1|" \
+  "$(FXA_DB="$tmp/old.db" _db "SELECT run || '|' || coalesce(thread, '') FROM llm_calls ORDER BY run;" | tr '\n' ' ' | sed 's/ $//')"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

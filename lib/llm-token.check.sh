@@ -17,6 +17,12 @@ check "the token has the proxy's form" "yes" "$([[ "$t1" =~ ^fxl_[A-Za-z0-9]{32}
 check "another run gets another token" "no" "$([ "$(llm_token_for fxa-2)" = "$t1" ] && echo yes || echo no)"
 check "the token file is private" "600" "$(perl -e 'printf "%o", (stat shift)[2] & 0777' "$tmp/tokens/$t1.json")"
 
+check "no thread: none in the token" "null" "$(jq -c .thread "$tmp/tokens/$t1.json")"
+check "FXA_THREAD goes in the token" "C0AB12CD3:1791135361.015169" "$(jq -r .thread "$tmp/tokens/$(FXA_THREAD=C0AB12CD3:1791135361.015169 llm_token_for ask-ab12).json")"
+session_get() { [ "$1:$2" = "agent-ab12:thread" ] && echo C0AB12CD3:1791135361.015169; }
+check "a session's thread comes from its record" "C0AB12CD3:1791135361.015169" "$(jq -r .thread "$tmp/tokens/$(llm_token_for agent-ab12).json")"
+unset -f session_get
+
 ANTHROPIC_API_KEY=sk-real FXA_LLM_PROXY_URL=http://10.0.0.1:8788
 line="$(_claude_auth_line fxa-1)"
 check "the runner gets the proxy and its token" "export ANTHROPIC_BASE_URL=http://10.0.0.1:8788|export ANTHROPIC_API_KEY=$t1" "$(printf '%s' "$line" | paste -sd'|' -)"

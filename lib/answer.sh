@@ -9,7 +9,7 @@
 #   answer_up                       create and harden the runner if it is missing
 #   answer_ask <id> <prompt-file> [connectors] [stream]   one answer, as JSON: {id, answer, upgrade, secs, cost_usd, turns, error};
 #                                   with stream=1, first one {"type":"step","text"} line per tool the agent uses
-#   cmd_answer up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <connectors>]
+#   cmd_answer up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <connectors>] [--thread <channel:ts>]
 
 [ -n "${_FXA_ANSWER_LOADED:-}" ] && return 0
 _FXA_ANSWER_LOADED=1
@@ -200,11 +200,12 @@ cmd_answer() {
           --prompt-file) pf="$2"; shift 2 ;;
           --mcp) mcp="$2"; shift 2 ;;
           --stream) stream=1; shift ;;
+          --thread) export FXA_THREAD="$2"; shift 2 ;;
           *) echo "ERROR: unknown ask option: $1" >&2; return 1 ;;
         esac
       done
       [ -z "$mcp" ] || [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,slack" >&2; return 1; }
       answer_ask "$id" "$pf" "$mcp" "$stream" ;;
-    *) echo "usage: fxa-sandbox-ctl answer [up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <list>] [--stream]]" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl answer [up | status | down | ask --id <ask-id> --prompt-file <f> [--mcp <list>] [--thread <channel:ts>] [--stream]]" >&2; return 1 ;;
   esac
 }

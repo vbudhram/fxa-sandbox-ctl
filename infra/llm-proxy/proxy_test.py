@@ -80,10 +80,10 @@ class ProxyTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.proc.terminate()
 
-    def token(self, name, cap=50):
+    def token(self, name, cap=50, **extra):
         tok = "fxl_" + (name * 32)[:32]
         with open(os.path.join(self.dir, "tokens", tok + ".json"), "w") as f:
-            json.dump({"run": name, "created": 0, "expires": time.time() + 60, "cap_usd": cap, "spent_usd": 0}, f)
+            json.dump({"run": name, "created": 0, "expires": time.time() + 60, "cap_usd": cap, "spent_usd": 0, **extra}, f)
         return tok
 
     def call(self, tok, path="/v1/messages", body=None):
@@ -112,6 +112,13 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"text_delta", body)
         self.assertAlmostEqual(self.spent(tok), 6.0)  # 1 M input at $4 + 0.1 M output at $20
+
+    def test_usage_line_carries_the_thread(self):
+        tok = self.token("t", thread="C0AB12CD3:1791135361.015169")
+        self.assertEqual(self.call(tok)[0], 200)
+        with open(os.path.join(self.dir, "usage.jsonl")) as f:
+            line = [json.loads(ln) for ln in f if '"run": "t"' in ln][-1]
+        self.assertEqual(line["thread"], "C0AB12CD3:1791135361.015169")
 
     def test_unknown_token_is_refused(self):
         self.assertEqual(self.call("fxl_" + "z" * 32)[0], 401)

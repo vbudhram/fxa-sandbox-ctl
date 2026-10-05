@@ -7,7 +7,7 @@ the token, allows only the Messages and Models API, swaps in the real key, and
 streams the answer back as it arrives. It counts each run's tokens and cost,
 and refuses a run past its cap.
 
-Tokens: <dir>/tokens/<token>.json  {run, created, expires, cap_usd, spent_usd}
+Tokens: <dir>/tokens/<token>.json  {run, thread?, created, expires, cap_usd, spent_usd}
 written by the controller (lib/llm-token.sh), updated here. Usage lines go to
 <dir>/usage.jsonl. Standard library only.
 """
@@ -87,7 +87,7 @@ def charge(tok, model, usage):
             with open(path + ".tmp", "w") as f:
                 json.dump(rec, f)
             os.replace(path + ".tmp", path)
-    line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "model": model,
+    line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "model": model,
             "usd": round(usd, 6),
             # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
             "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "")[2] / 1e6, 6),

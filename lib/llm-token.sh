@@ -8,8 +8,10 @@ FXA_LLM_PROXY_DIR="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}"
 
 # llm_token_for <run>   The run's token, made the first time. A Slack session
 # rewrites its credential every turn, so it keeps one token for its life.
+# The token carries the Slack thread (FXA_THREAD, else the session's record), so usage rows sum by thread.
 llm_token_for() {
-  local run="$1" map tok
+  local run="$1" map tok thread="${FXA_THREAD:-}"
+  [ -n "$thread" ] || { declare -F session_get >/dev/null && thread="$(session_get "$run" thread)"; }
   [[ "$run" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ERROR: bad run name for a token" >&2; return 1; }
   map="${FXA_LLM_PROXY_DIR}/runs/${run}"
   mkdir -p "${FXA_LLM_PROXY_DIR}/tokens" "${FXA_LLM_PROXY_DIR}/runs" || return 1
@@ -19,9 +21,9 @@ llm_token_for() {
   fi
   tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
   ( umask 077
-    jq -n --arg r "$run" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
+    jq -n --arg r "$run" --arg th "$thread" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
       --argjson cap "${FXA_LLM_RUN_CAP_USD:-50}" \
-      '{run: $r, created: $now, expires: ($now + $ttl), cap_usd: $cap, spent_usd: 0}' \
+      '{run: $r, created: $now, expires: ($now + $ttl), cap_usd: $cap, spent_usd: 0} + (if $th != "" then {thread: $th} else {} end)' \
       > "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" ) || return 1
   printf '%s\n' "$tok" > "$map"
   printf '%s\n' "$tok"
