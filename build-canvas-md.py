@@ -50,7 +50,7 @@ LIFECYCLE_ASCII = r"""  [Stage 0]  reporter adds the label  ai-fixme
       v                                                    |
   [Stage 4]  worktree prep, branch, context, render goal   |
       |                                                    |
-      +-- goal over 4100 chars --> EXIT: blocked           |
+      +-- goal over 4000 chars --> EXIT: blocked           |
       |                                                    |
       v                                                    |
   [Stage 5]  VM boot + hardening                           |
@@ -66,7 +66,7 @@ LIFECYCLE_ASCII = r"""  [Stage 0]  reporter adds the label  ai-fixme
              gh pr create, reviewers, approve gate         |
       |                                                    |
       v                                                    |
-  [ check-in reclaims the VM: usage -> record -> stop ]    |
+  [ check-in reclaims the VM: tokens -> record -> stop ]   |
       |                                                    |
       v                                                    |
   [Stage 8]  CI settled?                                   |

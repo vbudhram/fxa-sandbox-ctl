@@ -1733,11 +1733,11 @@ cmd_launch() {
     done
     [ -n "$hits" ] && echo "WARN: ${key}: context names files beside *.stories.tsx but asks for no /fxa-storybook-capture: ${hits}" >&2
   fi
-  # A VM clone takes 8 to 13GB, and a disk that fills mid-run corrupts it.
+  # A tart clone takes 8 to 13GB on this disk, and a disk that fills mid-run corrupts it.
   local free_gb; free_gb="$(pipeline_free_gb)"
   if [ -n "$free_gb" ] && [ "$free_gb" -lt "$PIPE_MIN_FREE_GB" ]; then
     echo "ERROR: refusing to launch ${key}: only ${free_gb}GB free, need ${PIPE_MIN_FREE_GB}GB." >&2
-    echo "       Free space, or raise FXA_MIN_FREE_GB." >&2
+    echo "       Free space, or lower FXA_MIN_FREE_GB." >&2
     return 1
   fi
   # Rolling 24 h launch budget. Every launch appends one line here.
