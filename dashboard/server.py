@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import os
+import queue
 import re
 import socket
 import subprocess
@@ -233,6 +234,19 @@ def agent_tail(key):
     return lines
 
 
+WATCHERS = threading.BoundedSemaphore(16)  # each is one ssh to a runner
+
+
+def watch_session(thread):
+    """A Slack thread's newest session as (key, state), or None."""
+    try:
+        rec = json.loads((SESSION_DIR / f"thread-{thread.replace(':', '-', 1)}.json").read_text())
+        key = (rec.get("sessions") or "").split()[-1]
+        return key, json.loads((SESSION_DIR / f"{key}.json").read_text()).get("state")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # the page polls; access logs would bury any real error
@@ -337,6 +351,59 @@ class Handler(BaseHTTPRequestHandler):
                 queued.append(feed.name)
         self._json(202 if queued else 200, {"queued": queued})
 
+    def _watch_events(self, thread):
+        """Server-sent events for the gateway's /w/<thread> page: the session, then its view lines live."""
+        if not re.fullmatch(r"[A-Z0-9]+:\d+\.\d+", thread):
+            self._json(400, {"error": "bad thread"})
+            return
+        found = watch_session(thread)
+        if not found:
+            self._json(404, {"error": "no session in this thread yet"})
+            return
+        if not WATCHERS.acquire(blocking=False):
+            self._json(503, {"error": "too many watchers; try again soon"})
+            return
+        key, state = found
+        proc = None
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(f"event: session\ndata: {json.dumps({'key': key, 'state': state})}\n\n".encode())
+            self.wfile.flush()
+            if state in ("starting", "active"):
+                proc = subprocess.Popen([str(CTL), "--pipeline", PIPELINE, "view", key], stdout=subprocess.PIPE,
+                                        stderr=subprocess.DEVNULL, text=True, errors="replace", start_new_session=True)
+                lines = queue.Queue()
+
+                def pump():
+                    for ln in proc.stdout:
+                        lines.put(ln)
+                    lines.put(None)
+                threading.Thread(target=pump, daemon=True).start()
+                while True:
+                    try:
+                        ln = lines.get(timeout=15)
+                    except queue.Empty:
+                        ln = ""  # a comment keeps proxies from closing an idle stream
+                    if ln is None:
+                        break
+                    self.wfile.write((f"data: {ln.strip()}\n\n" if ln else ": ping\n\n").encode())
+                    self.wfile.flush()
+            self.wfile.write(b"event: end\ndata: {}\n\n")
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the viewer left
+        finally:
+            if proc:
+                try:
+                    os.killpg(proc.pid, 15)  # the ctl, its ssh and jq
+                except OSError:
+                    pass  # already gone (macOS says EPERM for an exited group)
+                proc.wait()
+            WATCHERS.release()
+
     def do_GET(self):
         path = self.path.split("?")[0]
         if not self._allowed(path.startswith("/api/")):
@@ -363,21 +430,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "bad key"})
             else:
                 self._json(200, {"key": key, "lines": agent_tail(key)})
-        elif path == "/api/watch":
-            # A Slack thread's newest session and its output, for the gateway's /w/<thread> page.
-            thread = arg("thread")
-            if not re.fullmatch(r"[A-Z0-9]+:\d+\.\d+", thread):
-                self._json(400, {"error": "bad thread"})
-                return
-            try:
-                rec = json.loads((SESSION_DIR / f"thread-{thread.replace(':', '-', 1)}.json").read_text())
-                key = (rec.get("sessions") or "").split()[-1]
-                state = json.loads((SESSION_DIR / f"{key}.json").read_text()).get("state")
-            except (OSError, ValueError, IndexError):
-                self._json(404, {"error": "no session in this thread yet"})
-                return
-            live = state in ("starting", "active")
-            self._json(200, {"key": key, "state": state, "lines": agent_tail(key) if live else []})
+        elif path == "/api/watch/events":
+            self._watch_events(arg("thread"))
         elif path == "/api/media":
             key, name = arg("key"), arg("name")
             m = re.fullmatch(r"[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm)", name)

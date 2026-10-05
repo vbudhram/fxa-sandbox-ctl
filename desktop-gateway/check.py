@@ -123,7 +123,7 @@ async def dashboard_check():
     keep = main.iap_email; main.iap_email = fake_email
     g = web.Application(); g.cleanup_ctx.append(main.session)
     g.router.add_get("/desktop/{key}", main.desktop_link)
-    g.router.add_get("/w/{thread}", main.watch); g.router.add_get("/w/{thread}/{tail:tail}", main.watch)
+    g.router.add_get("/w/{thread}", main.watch); g.router.add_get("/w/{thread}/{events:events}", main.watch)
     g.router.add_route("GET", "/{tail:.*}", main.dashboard); g.router.add_route("POST", "/{tail:.*}", main.dashboard)
     gr = web.AppRunner(g); await gr.setup(); await web.TCPSite(gr, "127.0.0.1", 18768).start()
     base = "http://127.0.0.1:18768"
@@ -143,9 +143,10 @@ async def dashboard_check():
             check("an account not on the list: 403", 403, x.status)
         t = "C0AB12CD3:1791135361.015169"
         async with c.get(f"{base}/w/{t}") as x:
-            check("the watch page is open to any IAP account", (200, True), (x.status, "Agent output" in await x.text()))
-        async with c.get(f"{base}/w/{t}/tail") as x:
-            check("the watch tail asks the dashboard for that thread", ("dash /api/watch", t), (await x.text(), seen["query"]))
+            check("the watch page is open to any IAP account", (200, True), (x.status, "<title>fxa-agent</title>" in await x.text()))
+        async with c.get(f"{base}/w/{t}/events") as x:
+            check("the watch events stream from the dashboard for that thread", ("dash /api/watch/events", t, "text/event-stream"),
+                  (await x.text(), seen["query"], x.headers.get("Content-Type")))
         async with c.get(f"{base}/w/not-a-thread") as x:
             check("a bad thread: 404", 404, x.status)
         main.DASHBOARD_USERS = set()

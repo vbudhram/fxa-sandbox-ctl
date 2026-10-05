@@ -772,6 +772,45 @@ _session_watch() {
     || true # the watch ends when its runner stops or after 30 min; neither is a failure
 }
 
+# The watch page's events, from one runner line: what a Claude Code terminal shows.
+# Tool output is clipped and known token formats are masked here, on the host: the
+# page is open to anyone IAP admits. "sub" marks a subagent's line.
+_SESSION_VIEW_JQ='def mask: gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>");
+def clip($n): if length > $n then .[0:$n] + "…" else . end;
+def head($k): (rtrimstr("\n") | split("\n")) as $l | {out: ($l[0:$k] | join("\n") | clip(4000)), more: ([($l | length) - $k, 0] | max)};
+def arg: (.command // .file_path // .pattern // .path // .url // .query // .description // .skill // .prompt
+  // ([to_entries[] | select(.value | type == "string") | .value][0]) // "") | tostring | sub("^/workspace/"; "");
+def diff: [(.old_string // "" | tostring | split("\n")[] | "- " + .), (.new_string // "" | tostring | split("\n")[] | "+ " + .)];
+fromjson? | (.parent_tool_use_id != null) as $sub
+| if .type == "system" and .subtype == "init" then {t: "init", model}
+  elif .type == "stream_event" then (select($sub | not) | .event
+    | if .type == "content_block_start" and .content_block.type == "text" then {t: "text_start"}
+      elif .type == "content_block_delta" and .delta.type == "text_delta" then {t: "delta", text: (.delta.text | mask)}
+      elif .type == "content_block_start" and .content_block.type == "thinking" then {t: "thinking"}
+      else empty end)
+  elif .type == "assistant" then .message.content[]?
+    | if .type == "text" then {t: "text", text: (.text | mask | clip(20000)), sub: $sub}
+      elif .type == "tool_use" and .name == "TodoWrite" then {t: "todos", sub: $sub,
+        items: [(.input.todos // [])[] | {content: (.content // "" | tostring | mask | clip(200)), status: (.status // "pending" | tostring)}]}
+      elif .type == "tool_use" then {t: "tool", id, name, sub: $sub, arg: (.input | arg | mask | clip(600))}
+        + (if .name == "Edit" then {diff: (.input | diff)} elif .name == "MultiEdit" then {diff: [.input.edits[]? | diff[]]}
+           elif .name == "Write" then {diff: [.input.content // "" | tostring | split("\n")[] | "+ " + .]} else {} end
+           | if .diff then .diff |= (map(mask | clip(300)) | if length > 24 then .[0:24] + ["… +\(length - 24) lines"] else . end) else . end)
+      else empty end
+  elif .type == "user" then .message.content[]? | select(type == "object" and .type == "tool_result") | . as $r
+    | (.content // "") | (if type == "array" then map(.text? // "") | join("\n") else tostring end | mask | head(if $sub then 3 else 8 end))
+    + {t: "done", id: $r.tool_use_id, ok: ($r.is_error != true), sub: $sub}
+  elif .type == "result" then {t: "turn_end", secs: ((.duration_ms // 0) / 1000 | floor), cost: (.total_cost_usd // null), error: (.is_error // false)}
+  else empty end'
+
+# _session_view <key>   The running session as watch-page events, the last 300
+# transcript lines first, then live: the reply as it is written, each tool call and result.
+_session_view() {
+  _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && { timeout 1800 tail -n 300 -F .fxa-auto-claude.jsonl & timeout 1800 tail -n 0 -F .fxa-auto-stream.jsonl & wait; } 2>/dev/null' \
+    | jq --unbuffered -R -c "$_SESSION_VIEW_JQ" \
+    || true
+}
+
 # The session cap. With Firecracker slots on it is at least the slot count
 # (FXA_FC_SLOTS, the host's FC_SLOTS): a slot costs nothing extra while it waits.
 _session_cap() {

@@ -182,32 +182,101 @@ async def dashboard(request):
 
 
 WATCH_PAGE = r"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent output</title>
+<title>fxa-agent</title>
 <style>
-:root { --bg:#fbfbfa; --fg:#1d1d1b; --mute:#6b6b66; --line:#e3e3df; color-scheme:light dark; }
-@media (prefers-color-scheme: dark) { :root { --bg:#16171a; --fg:#e6e6e3; --mute:#9a9a94; --line:#2b2c30; } }
-body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,sans-serif; }
-header { position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
-header b { font-weight:600; } #st { color:var(--mute); }
-pre { margin:0; padding:12px 16px 40px; font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+:root { --bg:#141414; --fg:#e6e6e6; --dim:#8b8b8b; --line:#2a2a2a; --ok:#4eba65; --err:#ff6b80; --run:#b1b9f9; --brand:#d77757; --add:#22381f; --del:#3d1f24; }
+* { box-sizing:border-box; }
+html, body { margin:0; background:var(--bg); color:var(--fg); }
+body { font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+header { position:sticky; top:0; z-index:1; background:var(--bg); border-bottom:1px solid var(--line); padding:8px 16px; display:flex; gap:10px; flex-wrap:wrap; color:var(--dim); }
+header b { color:var(--brand); font-weight:600; }
+#log { padding:12px 16px 64px; }
+.row { display:flex; gap:8px; margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.row > .dot { flex:none; width:1ch; }
+.row > .body { min-width:0; flex:1; }
+.tool .name { font-weight:600; }
+.tool .dot { color:var(--dim); } .tool.run .dot { color:var(--run); animation:blink 1s steps(2) infinite; }
+.tool.ok .dot { color:var(--ok); } .tool.err .dot { color:var(--err); }
+.out { color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; margin-left:2ch; }
+.out::before { content:"⎿  "; }
+.err .out { color:var(--err); }
+.diff { margin:4px 0 0 4ch; white-space:pre-wrap; overflow-wrap:anywhere; }
+.diff .a { background:var(--add); } .diff .d { background:var(--del); } .diff .m { color:var(--dim); }
+.sub { margin-left:4ch; opacity:.75; }
+.todos { margin-left:2ch; color:var(--dim); } .todos .in_progress { color:var(--fg); font-weight:600; } .todos .completed { text-decoration:line-through; }
+.msg.live .body::after { content:"▋"; color:var(--brand); animation:blink 1s steps(2) infinite; }
+.end { color:var(--dim); margin-top:10px; }
+footer { position:fixed; left:0; right:0; bottom:0; background:var(--bg); border-top:1px solid var(--line); padding:8px 16px; color:var(--brand); }
+footer span { color:var(--dim); }
+@keyframes blink { 50% { opacity:0; } }
 </style>
-<header><b>Agent output</b><span id="st">loading…</span></header>
-<pre id="out"></pre>
+<header><b>fxa-agent</b><span id="who">connecting…</span></header>
+<div id="log"></div>
+<footer id="st">✻ connecting…</footer>
 <script>
-const out = document.getElementById("out"), st = document.getElementById("st");
-async function tick() {
-  try {
-    const r = await fetch(location.pathname.replace(/\/$/, "") + "/tail", { cache: "no-store" });
-    const j = await r.json();
-    if (!r.ok) { st.textContent = j.error || "not found"; return; }
-    const live = j.state === "active" || j.state === "starting";
-    st.textContent = `${j.key} · ${j.state}` + (live ? " · refreshes every 5 s" : " · reply in the Slack thread to resume");
-    const atEnd = innerHeight + scrollY >= document.body.scrollHeight - 40;
-    if (live) out.textContent = j.lines.join("\n");
-    if (atEnd) scrollTo(0, document.body.scrollHeight);
-  } catch { st.textContent = "could not reach the agent; retrying"; }
+const log = document.getElementById("log"), who = document.getElementById("who"), st = document.getElementById("st");
+let tools = {}, live = null, key = "", state = "", model = "", last = Date.now(), status = "", es = null;
+const SPIN = "·✢✳✶✻✽";
+function el(cls, text) { const d = document.createElement("div"); d.className = cls; if (text != null) d.textContent = text; return d; }
+function row(cls, dot, body) { const r = el("row " + cls); r.append(el("dot", dot)); const b = el("body"); if (body != null) b.append(body); r.append(b); return r; }
+function add(node, sub) {
+  if (sub) node.classList.add("sub");
+  const stick = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  log.append(node); if (stick) scrollTo(0, document.body.scrollHeight);
 }
-tick(); setInterval(tick, 5000);
+function out(text, more) { return el("out", (text || "(no output)") + (more ? `\n… +${more} lines` : "")); }
+function secs(s) { return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`; }
+function on(e) {
+  last = Date.now();
+  if (e.t === "init") { model = e.model || ""; head(); }
+  else if (e.t === "thinking") status = "Thinking…";
+  else if (e.t === "text_start") { live = row("msg live", "⏺", ""); add(live); status = "Writing…"; }
+  else if (e.t === "delta") { if (!live) { live = row("msg live", "⏺", ""); add(live); } live.lastChild.textContent += e.text; }
+  else if (e.t === "text") {
+    if (live && !e.sub) { live.lastChild.textContent = e.text; live.classList.remove("live"); live = null; }
+    else add(row("msg", "⏺", e.text), e.sub);
+  }
+  else if (e.t === "tool") {
+    const b = document.createDocumentFragment(), n = el("name", e.name); b.append(n, `(${e.arg})`);
+    const r = row("tool run", "⏺", b);
+    if (e.diff) { const d = el("diff"); for (const l of e.diff) d.append(el(l[0] === "+" ? "a" : l[0] === "-" ? "d" : "m", l)); r.lastChild.append(d); }
+    tools[e.id] = r; add(r, e.sub); status = `${e.name}…`;
+  }
+  else if (e.t === "done") {
+    const r = tools[e.id];
+    if (r) { r.classList.remove("run"); r.classList.add(e.ok ? "ok" : "err"); r.lastChild.append(out(e.out, e.more)); }
+    else add(out(e.out, e.more), e.sub);
+    status = "Working…";
+  }
+  else if (e.t === "todos") {
+    const t = el("todos");
+    for (const i of e.items) t.append(el(i.status, (i.status === "completed" ? "☒ " : i.status === "in_progress" ? "◼ " : "☐ ") + i.content));
+    add(row("tool ok", "⏺", "Update Todos"), e.sub); add(t, e.sub);
+  }
+  else if (e.t === "turn_end") {
+    add(el("end", `✻ Turn ${e.error ? "ended with an error" : "done"} in ${secs(e.secs)}` + (e.cost != null ? ` · $${e.cost.toFixed(2)}` : "")));
+    status = "idle"; live = null;
+  }
+}
+function head() { who.textContent = [key, state, model].filter(Boolean).join(" · "); }
+function connect() {
+  es = new EventSource(location.pathname.replace(/\/$/, "") + "/events");
+  es.addEventListener("session", (m) => {
+    const s = JSON.parse(m.data); key = s.key; state = s.state; head();
+    log.textContent = ""; tools = {}; live = null; status = state === "active" || state === "starting" ? "Working…" : "";
+  });
+  es.onmessage = (m) => { try { on(JSON.parse(m.data)); } catch {} };
+  es.addEventListener("end", () => { es.close(); if (status !== "idle") status = "ended"; setTimeout(connect, 10000); });
+}
+setInterval(() => {
+  const ago = Math.round((Date.now() - last) / 1000), running = state === "active" || state === "starting";
+  if (!key) st.textContent = "✻ connecting…";
+  else if (!running) st.innerHTML = `<span>The session is ${state}. Reply in the Slack thread to pick it up; this page follows.</span>`;
+  else if (status === "idle") st.innerHTML = "<span>Waiting for a reply in the Slack thread.</span>";
+  else if (status === "ended") st.innerHTML = "<span>Reconnecting…</span>";
+  else { st.textContent = `${SPIN[Math.floor(Date.now() / 150) % SPIN.length]} ${status} `; const sp = document.createElement("span"); sp.textContent = `(${ago}s since the last event)`; st.append(sp); }
+}, 150);
+connect();
 </script>"""
 
 
@@ -217,12 +286,22 @@ async def watch(request):
         raise web.HTTPNotFound()
     if not await iap_email(request):
         raise error(web.HTTPForbidden, "Not signed in through IAP.")
-    if not request.match_info.get("tail"):
+    if not request.match_info.get("events"):
         return web.Response(text=WATCH_PAGE, content_type="text/html", headers={"Cache-Control": "no-store"})
     if not MANAGER_URL:
         raise web.HTTPNotFound()
-    async with request.app["http"].get(f"{MANAGER_URL}/api/watch", params={"thread": thread}, headers={"Host": "localhost"}) as r:
-        return web.Response(status=r.status, body=await r.read(), content_type="application/json", headers={"Cache-Control": "no-store"})
+    # The dashboard's server-sent events, passed on as they come.
+    async with request.app["http"].get(f"{MANAGER_URL}/api/watch/events", params={"thread": thread}, headers={"Host": "localhost"}) as r:
+        if r.status != 200:
+            return web.Response(status=r.status, body=await r.read(), content_type="application/json")
+        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+        await resp.prepare(request)
+        try:
+            async for chunk in r.content.iter_any():
+                await resp.write(chunk)
+        except (ConnectionResetError, aiohttp.ClientError):
+            pass  # the viewer or the dashboard left; closing r stops the dashboard's ssh
+        return resp
 
 
 async def desktop_link(request):
@@ -249,7 +328,7 @@ def main():
     app.router.add_get("/d/{key}/{tail:.+}", page)
     app.router.add_get("/desktop/{key}", desktop_link)
     app.router.add_get("/w/{thread}", watch)
-    app.router.add_get("/w/{thread}/{tail:tail}", watch)
+    app.router.add_get("/w/{thread}/{events:events}", watch)
     app.router.add_route("GET", "/{tail:.*}", dashboard)
     app.router.add_route("POST", "/{tail:.*}", dashboard)
     web.run_app(app, port=int(os.environ.get("PORT", "8080")))

@@ -2504,6 +2504,7 @@ main() {
     steer)      cmd_steer "$@" ;;
     events)     cmd_events "$@" ;;
     watch)      _session_key "${1:-}" && _session_watch "$1" ;;
+    view)       _session_key "${1:-}" && _session_view "$1" ;;
     interrupt)  _session_key "${1:-}" && runtime_load && session_interrupt "$1" ;;
     media)      [ -n "${2:-}" ] || { echo "Usage: media <key> <dir>" >&2; exit 1; }; _session_key "$1" && session_media "$1" "$2" ;;
     diff)       cmd_diff "$@" ;;
