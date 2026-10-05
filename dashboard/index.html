@@ -537,6 +537,7 @@ table.usage tr.tot td { border-bottom: 0; }
   <section class="wide" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-lessons" data-views="lessons"></section>
   <section class="wide" id="s-lanes" data-views="pipeline:belts"></section>
+  <section class="wide" id="s-done" data-views="pipeline:done"></section>
   <section class="wide" id="s-sessions" data-views="none"></section>
   <section class="wide" id="s-sessions-off" data-views="none"></section>
   <section class="wide" id="s-review" data-views="pipeline:queue"></section>
@@ -1467,7 +1468,7 @@ document.addEventListener("click", e => {
   const b = e.target.closest?.("[data-lanedet]"); if (!b) return;
   const k = b.dataset.lanedet; LANE_DET.has(k) ? LANE_DET.delete(k) : LANE_DET.add(k);
   if (!STATS) loadStats();
-  renderLanes();
+  renderLanes(); renderDone();
 });
 // "7 open PRs labelled auto: 4 awaiting review · 2 in flight · 1 blocked", as GitHub counts them.
 function openPrCounts() {
@@ -1510,6 +1511,24 @@ function renderLanes() {
   rows.filter(r => r.runner).forEach(r => paintTail(r.t.key, true));
   // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
   TAIL_KEYS = [...new Set([...TAIL_KEYS, ...rows.filter(r => r.runner).map(r => r.t.key)])];
+}
+// Merged pipeline PRs on full belts, newest first.
+function doneRows() {
+  return (SNAP?.merged_prs ?? []).filter(p => p.key).map(p => {
+    const ago = Math.round(days(p.merged) ?? 0), took = Math.round((Date.parse(p.merged) - Date.parse(p.created)) / 86400000);
+    return { t: { key: p.key, pr: p.number, summary: p.title, created: p.created }, st: 8, kind: "done",
+      l1: ago === 0 ? "Merged today" : `Merged ${ago} day${ago === 1 ? "" : "s"} ago`,
+      l2: `${took}d to merge${p.merged_by ? ` · by ${p.merged_by}` : ""}`, merged: p.merged };
+  }).sort((x, y) => Date.parse(y.merged) - Date.parse(x.merged));
+}
+function renderDone() {
+  const rows = doneRows();
+  assignFoxes(rows.map(r => r.t.key));
+  put("s-done", `<div style="margin-bottom:var(--s3)"><span class="sub" style="color:var(--dim)">${rows.length} tickets from the last ${(SNAP?.merged_prs ?? []).length} merged PRs with the pipeline label, newest first.</span></div>
+    <div class="lanes">
+      <div class="head"><span class="empty">Ticket</span><div class="cols">${LANE_ST.map(n => `<div><b>${n}</b><span>·</span></div>`).join("")}</div></div>
+      ${rows.length ? rows.map(laneHtml).join("") : `<div class="empty" style="padding:var(--s4) 0">${SNAP?.merged_prs == null ? "could not read merged PRs" : "no merged ticket yet"}</div>`}
+    </div>`);
 }
 document.addEventListener("toggle", e => {
   const d = e.target;
@@ -1768,7 +1787,7 @@ function renderNav() {
 // ── views, tabs and the selection: all in the hash, so a link opens the same screen ──
 const VIEWS = [
   ["overview", "Overview", "What needs you, what is running, and today's cost", []],
-  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"]]],
+  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
   ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"]]],
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
@@ -1820,7 +1839,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return AGENTS ? ss.filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : (SNAP.queue?.ready ?? []).length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length) : "";
   return "";
 }
 function renderHeader() {
@@ -2009,7 +2028,7 @@ function cycleTheme() {
 paintTheme();
 
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderLanes(); renderNeeds(); renderRunning(); renderSess();
+  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderLanes(); renderDone(); renderNeeds(); renderRunning(); renderSess();
   renderPool(); renderToday(); renderNav(); renderTab(); renderHeader();
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide();
   renderRight();

@@ -559,6 +559,11 @@ snapshot_json() {
     --json number,headRefName,title,createdAt 2>/dev/null \
     | jq -c 'map({number, title, created: .createdAt, branch: .headRefName,
         key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
+  # Recently merged PRs with the label, for the page's Done tab.
+  local merged_prs; merged_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state merged --limit 30 \
+    --json number,headRefName,title,createdAt,mergedAt,mergedBy 2>/dev/null \
+    | jq -c 'map({number, title, created: .createdAt, merged: .mergedAt, merged_by: (.mergedBy.login // null),
+        key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
   local inflight_prs; inflight_prs="$(gh_pr_states_json "$inflight_keys")"
   telem="$(_snapshot_telemetry)"
   # Known repo-infrastructure reds, so the page groups them instead of blaming
@@ -585,6 +590,7 @@ snapshot_json() {
     --argjson items "$queue_items" \
     --argjson allitems "$all_queue_items" \
     --argjson openprs "${open_prs:-null}" \
+    --argjson mergedprs "${merged_prs:-null}" \
     --argjson inflight_items "$inflight_items" \
     --argjson blocked "$blocked_items" \
     --argjson health "$(pipeline_health_json)" \
@@ -616,6 +622,7 @@ snapshot_json() {
                                     in_focus: (($qk | index($s.key)) != null)}] },
          blocked: $blocked,
          open_prs: $openprs,
+         merged_prs: $mergedprs,
          health: $health,
          inflight_fetch_failed: ($inflight_items == null),
          pool: $pool, free_slots: $freeslots,
