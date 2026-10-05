@@ -52,7 +52,7 @@ _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
     fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
-    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot fxa-jira-link
+    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot fxa-jira-link fxa-perf
 }
 
 # Skills from the FxA repo's own .claude/skills that need what the runner lacks

@@ -272,7 +272,8 @@ Plugins do not load here. These skills are copied in at launch:
 `/fxa-storybook-capture`, `/fxa-vm-selfcheck`, `/fxa-vm-handoff`,
 `/fxa-test-plan`, `/fxa-unslop`, `/code-simplifier`, `/ponytail-review`,
 `/create-pr-description`, `/humanizer`, `/pr-review-typescript`,
-`/quick-review`, `/fxa-save-investigation`, `/fxa-page-shot` and `/fxa-jira-link`.
+`/quick-review`, `/fxa-save-investigation`, `/fxa-page-shot`, `/fxa-jira-link` and
+`/fxa-perf` (page speed: builds, timed cold loads, side-by-side video).
 
 Subagents (Agent tool) run on a smaller model with a small context of their own,
 so their work does not fill yours: `fxa-explore` (searching, above),

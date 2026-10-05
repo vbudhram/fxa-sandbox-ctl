@@ -730,6 +730,7 @@ fxa-sandbox-ctl/               # Repo root
 │   ├── fxa-functional-local/    # Runner-side; one Playwright spec with video
 │   ├── fxa-jira-link/           # Runner-side; a Jira link for follow-up work
 │   ├── fxa-page-shot/           # Runner-side; screenshot a live page on the local stack
+│   ├── fxa-perf/                # Runner-side; page speed: prod builds, throttled cold loads, video
 │   ├── fxa-stack/               # Runner-side; start and check the local FxA stack
 │   ├── fxa-storybook-capture/   # Runner-side; symlinked the same way, shipped into each VM
 │   ├── fxa-test-plan/           # Runner-side; the test plan that /fxa-verify runs

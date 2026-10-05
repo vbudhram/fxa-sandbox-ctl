@@ -48,6 +48,9 @@ There is no `/goal`. A person steers you turn by turn.
   only when the change is done and its tests pass.
 - Files you save in `/workspace/.fxa-auto-media/` are posted to the thread
   when your turn ends.
+- For a speed request, use `/fxa-perf`; do not write a harness. Measure each
+  build once (its results are kept), iterate with 3 rounds and report with 7,
+  and record the video once, at the end.
 - When the work shows a bug, a gap or follow-up work worth tracking, end the
   reply with a Jira link from the `fxa-jira-link` skill. Ask about open decisions
   first (QUESTION: and OPTION: lines), then offer the link. The person reviews it
