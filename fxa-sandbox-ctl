@@ -65,7 +65,7 @@ COMMANDS:
                                agent's handoff file (default: the shared worktree)
   tail [<name>]                Print a snapshot of the agent's screen scrollback
                                (for live view, use `attach`)
-  run [directory] [options]    Start a new agent (defaults to current directory)
+  run [directory] -p <prompt>  Start a new agent (defaults to current directory)
   switch <name> <directory>    Switch an agent's workspace directory
   attach <name>                Attach to an agent's Claude Code TUI
   services <name> [options]    Start FxA app services in an agent's VM
@@ -165,8 +165,8 @@ PIPELINE COMMANDS:
   dashboard [--port N]         Serve a live status page on localhost (default 8787)
 
 RUN OPTIONS:
-  -n, --name <name>            Agent name (auto-generated if omitted)
-  -p, --prompt <text>          Initial prompt to send to Claude Code
+  -n, --name <name>            Agent name (default: the directory name)
+  -p, --prompt <text>          The task for the agent (required)
   -c, --cpu <count>            vCPU count (default: 4)
   -m, --memory <mb>            Memory in MB (default: 8192)
 
@@ -214,9 +214,6 @@ EXAMPLES:
   fxa-sandbox-ctl jira FXA-1234 --dry-run
 
   # Start an agent
-  fxa-sandbox-ctl run ~/worktrees/feature-auth -n "auth-fix"
-
-  # Start with an initial prompt
   fxa-sandbox-ctl run ~/worktrees/bugfix -n "bugfix" -p "Fix the login bug in auth-server"
 
   # List all agents
@@ -845,6 +842,8 @@ cmd_run() {
     esac
   done
 
+  # The agent starts as `claude -p`, so a run with no prompt boots a VM that never starts it.
+  [ -n "$prompt" ] || { echo "ERROR: run needs -p <prompt>" >&2; return 1; }
   directory="${directory:-$PWD}"
   name="${name:-$(basename "$directory")}"
 

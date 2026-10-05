@@ -72,7 +72,7 @@ cp .env.example .env
 ### 3. Start an agent
 
 ```bash
-fxa-sandbox-ctl run ~/worktrees/feature-auth -n "auth-fix"
+fxa-sandbox-ctl run ~/worktrees/feature-auth -n "auth-fix" -p "Fix the login bug in auth-server"
 ```
 
 This:
@@ -580,7 +580,7 @@ claude setup-token
 export CLAUDE_CODE_OAUTH_TOKEN="sk-ant-oat01-..."
 
 # Start agent (token is injected ephemerally into the VM)
-fxa-sandbox-ctl run ~/worktrees/feature -n my-agent
+fxa-sandbox-ctl run ~/worktrees/feature -n my-agent -p "<task>"
 ```
 
 The token is:
