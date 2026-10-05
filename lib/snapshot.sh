@@ -194,7 +194,7 @@ snapshot_stats_json() {
     {
       # One row per run, for the page to filter by date, source, kind and model.
       rows: ($all | map({ at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
-               usd: (.cost_usd // 0 | r2), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // ""),
+               usd: (.cost_usd // 0 | r2), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // "" | if . == "<synthetic>" then "" else . end),
                # The split by model when the proxy priced the run; else the main agent only (no subagents).
                models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"),
                pr: ((.pr // "") != "") })),
