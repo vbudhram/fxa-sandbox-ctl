@@ -499,9 +499,9 @@ Every connector is read-only by construction:
   `include` adds values to a list (`fields` always asks for `security` and `labels`),
   and `jql_project` wraps a JQL search as `project = FXA AND level IS EMPTY AND (...)`,
   refusing JQL that would escape the group. Its `exclude_labels` also drops issues
-  with those labels, such as `HackerOne` reports that have no security level.
+  with those labels, such as `HackerOne` or `security` issues that have no security level.
 - **`deny_result`** patterns withhold an answer before it reaches the runner,
-  such as a Jira issue with a security level or a `HackerOne` label. Jira returns
+  such as a Jira issue with a security level, or a `HackerOne` or `security` label. Jira returns
   `security` and `labels` only when `fields` asks for them, so keep the `include`
   rule with these patterns.
 

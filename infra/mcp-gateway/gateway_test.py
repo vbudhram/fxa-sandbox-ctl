@@ -84,6 +84,8 @@ class Upstream(http.server.BaseHTTPRequestHandler):
                 text = '{"key": "FXA-SEC", "fields": {"security": {"name": "Embargoed"}}}'
             if args.get("key") == "FXA-H1" and "labels" in (args.get("fields") or []):
                 text = '{"key": "FXA-H1", "fields": {"summary": "Takeover", "labels": ["no-sync", "HackerOne"]}}'
+            if args.get("key") == "FXA-S" and "labels" in (args.get("fields") or []):
+                text = '{"key": "FXA-S", "fields": {"labels": ["security"]}}'
             return self.send(200, {"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": text}]}})
         self.send(200, {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "nope"}})
 
@@ -107,9 +109,9 @@ class GatewayTest(unittest.TestCase):
         auth = {"Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}"}
         conf = {"connectors": {
             "jira": {"url": base + "/jira", "headers": auth, "tools": ["read_issue", "search"],
-                     "rules": [{"tool": "search", "arg": "jql", "jql_project": "FXA", "exclude_labels": ["HackerOne"]},
+                     "rules": [{"tool": "search", "arg": "jql", "jql_project": "FXA", "exclude_labels": ["HackerOne", "security"]},
                                {"arg": "fields", "include": ["security", "labels"], "default": ["summary"]}],
-                     "deny_result": ["\"security\"\\s*:\\s*\\{", "\"labels\"\\s*:\\s*\\[[^\\]]*\"HackerOne\""]},
+                     "deny_result": ["\"security\"\\s*:\\s*\\{", "\"labels\"\\s*:\\s*\\[[^\\]]*\"(HackerOne|security)\""]},
             "github": {"url": base + "/github", "headers": auth, "tools": ["get_pr"],
                        "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"}]},
             "slack": {"url": base + "/slack", "headers": {"Authorization": "Bearer ${UNSET_SLACK_TOKEN}"}, "tools": ["read_issue"]},
@@ -209,9 +211,9 @@ class GatewayTest(unittest.TestCase):
         tok = self.token("g")
         self.call(tok, "jira__search", {"jql": 'text ~ "order by" ORDER BY created DESC'})
         self.assertEqual(self.upstream_calls("/jira")[-1][2]["arguments"]["jql"],
-                         'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("HackerOne")) AND (text ~ "order by") ORDER BY created DESC')
+                         'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("HackerOne", "security")) AND (text ~ "order by") ORDER BY created DESC')
         self.call(tok, "jira__search", {"jql": ""})
-        self.assertEqual(self.upstream_calls("/jira")[-1][2]["arguments"]["jql"], "project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN (\"HackerOne\"))")
+        self.assertEqual(self.upstream_calls("/jira")[-1][2]["arguments"]["jql"], "project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN (\"HackerOne\", \"security\"))")
 
     def test_jql_that_escapes_its_group_is_refused(self):
         tok = self.token("h")
@@ -233,6 +235,8 @@ class GatewayTest(unittest.TestCase):
         result = self.call(self.token("j2"), "jira__read_issue", {"key": "FXA-H1"})
         self.assertTrue(result["isError"])
         self.assertNotIn("Takeover", json.dumps(result))
+        result = self.call(self.token("j3"), "jira__read_issue", {"key": "FXA-S"})
+        self.assertTrue(result["isError"])
 
     def test_a_list_argument_always_includes_its_values(self):
         tok = self.token("q")
