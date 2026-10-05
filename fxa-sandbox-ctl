@@ -1301,6 +1301,9 @@ cmd_done_keys() { jira_done_keys; }
 # <KEY>.feedback-noted keeps an already reported comment from making every pass loud.
 cmd_precheck() {
   local out; out="$(pipeline_lock)" || { echo "$out"; return 1; }
+  # Under set -e a failed read (Jira logged out) ends the process here; without this
+  # the lock stays held, and every pass for the next 30 min stops at it.
+  trap '[ "$(cat "${PIPE_LOCK_DIR}/pid" 2>/dev/null)" = "$$" ] && rm -rf "$PIPE_LOCK_DIR"' EXIT
   local work=0 info="" line key num state ids noted why
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0
   _work() { work=1; printf '%s\n' "$*"; }
