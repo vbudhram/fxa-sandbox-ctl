@@ -629,9 +629,9 @@ Firefox is launched with `-profile` and `-no-remote` so it runs as a separate in
 
 The inbox viewer at `/__inbox` shows emails captured by mail_helper. Enter an email address to watch for verification codes, password reset links, etc. Codes are displayed prominently with copy-to-clipboard buttons.
 
-### Running Functional Tests from Host
+### Running Functional Tests
 
-The easiest way to run tests from your Mac is the `test` command:
+The `test` command runs Playwright inside the VM, against the VM's own stack on `localhost`:
 
 ```bash
 # Run all functional tests
@@ -641,20 +641,7 @@ fxa-sandbox-ctl test auth-fix
 fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
 ```
 
-Or manually with `FXA_SANDBOX_IP`:
-
-```bash
-# Inside the VM. The Playwright projects on main are local, local-chromium and
-# local-payments-next; there is no sandbox project, so run from the VM where the
-# stack answers on localhost.
-cd /workspace/packages/functional-tests
-npx playwright test --project=local
-
-# Run specific tests:
-npx playwright test --project=local tests/signin/signIn.spec.ts
-```
-
-The sandbox Playwright project uses `oauth_webchannel_v1` context and includes HSTS-disabling Firefox prefs so tests work over plain HTTP.
+It runs `npx playwright test --project=local` in `/workspace/packages/functional-tests`. FxA has no Playwright project for a remote stack, so the tests cannot run from the host. Start the stack first with `fxa-sandbox-ctl services`.
 
 ## Infrastructure Details
 

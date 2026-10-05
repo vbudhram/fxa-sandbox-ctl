@@ -197,9 +197,9 @@ JIRA OPTIONS:
                                branch, then run the agent on the conflict only.
                                Refuses once `attempts` reaches 2.
   --functional-tests           Pre-warm the FxA stack inside the VM (fxa-start
-                               in the background) and require the agent to run
-                               'yarn test-sandbox' before declaring the goal
-                               met. Useful when the stack takes minutes to
+                               in the background) and require the test plan
+                               to name the functional spec that /fxa-verify
+                               --plan runs. Useful when the stack takes minutes to
                                settle and you don't want the agent waiting.
                                Alias: --with-stack.
   -n, --name <name>            Agent name (defaults to the issue key, lowercased)
@@ -946,39 +946,11 @@ cmd_test() {
   fi
 
   shift
-
-  local meta_file="${LOG_DIR}/${name}.meta"
-  if [ ! -f "$meta_file" ]; then
-    echo "ERROR: No metadata for agent '${name}'." >&2
-    return 1
-  fi
-
-  local NAME WORKSPACE CPU MEMORY IP STARTED
-  source "$meta_file"
-
-  if [ -z "${IP:-}" ] || [ -z "${WORKSPACE:-}" ]; then
-    echo "ERROR: Agent metadata missing IP or WORKSPACE." >&2
-    return 1
-  fi
-
-  if [ ! -d "${WORKSPACE}/packages/functional-tests" ]; then
-    echo "ERROR: packages/functional-tests not found in ${WORKSPACE}" >&2
-    return 1
-  fi
-
-  if [ "${1:-}" = "--" ]; then
-    shift
-  fi
-
-  cd "${WORKSPACE}/packages/functional-tests"
-
-  if [ $# -eq 0 ]; then
-    echo "Running: FXA_SANDBOX_IP=${IP} yarn test-sandbox"
-    FXA_SANDBOX_IP="${IP}" yarn test-sandbox
-  else
-    echo "Running: FXA_SANDBOX_IP=${IP} npx playwright test --project=sandbox $*"
-    FXA_SANDBOX_IP="${IP}" npx playwright test --project=sandbox "$@"
-  fi
+  [ "${1:-}" = "--" ] && shift
+  # FxA has no project for a remote stack, so the tests run in the VM against its own stack.
+  local args; args="$(printf ' %q' "$@")"
+  echo "Running: npx playwright test --project=local${args} (in ${name})"
+  vm_exec_as_agent "$name" "source /etc/agent-env.sh && cd /workspace/packages/functional-tests && NODE_OPTIONS=--dns-result-order=ipv4first npx playwright test --project=local${args}"
 }
 
 # ── Command: ssh ───────────────────────────────────────────────
