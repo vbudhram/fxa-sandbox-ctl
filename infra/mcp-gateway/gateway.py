@@ -158,11 +158,14 @@ def jql_scan(jql):
     return order
 
 
-def scope_jql(jql, project):
+def scope_jql(jql, project, exclude_labels=()):
     jql = (jql or "").strip()
     cut = jql_scan(jql)
     where, order = jql[:cut].strip(), jql[cut:].strip()
     base = "project = %s AND level IS EMPTY" % project
+    if exclude_labels:
+        # NOT IN alone also drops issues with no labels.
+        base += " AND (labels IS EMPTY OR labels NOT IN (%s))" % ", ".join(json.dumps(l) for l in exclude_labels)
     scoped = base if not where else "%s AND (%s)" % (base, where)
     return (scoped + " " + order).strip()
 
@@ -185,7 +188,7 @@ def apply_rules(rules, tool, schema, args):
         elif "jql_project" in rule:
             if not isinstance(val, str):
                 raise Denied("%s needs a jql string" % arg)
-            args[arg] = scope_jql(val, rule["jql_project"])
+            args[arg] = scope_jql(val, rule["jql_project"], rule.get("exclude_labels", ()))
         elif "include" in rule:
             # An omitted list means the upstream's defaults, so start from them, not from empty.
             have = list(val) if isinstance(val, list) and val else list(rule.get("default", []))
