@@ -197,8 +197,8 @@ header b { color:var(--brand); font-weight:600; }
 .tool .name { font-weight:600; }
 .tool .dot { color:var(--dim); } .tool.run .dot { color:var(--run); animation:blink 1s steps(2) infinite; }
 .tool.ok .dot { color:var(--ok); } .tool.err .dot { color:var(--err); }
-.out { color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; margin-left:2ch; }
-.out::before { content:"⎿  "; }
+.out { display:flex; color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; margin-left:2ch; }
+.out::before { content:"⎿  "; flex:none; white-space:pre; }
 .err .out { color:var(--err); }
 .diff { margin:4px 0 0 4ch; white-space:pre-wrap; overflow-wrap:anywhere; }
 .diff .a { background:var(--add); } .diff .d { background:var(--del); } .diff .m { color:var(--dim); }
@@ -237,7 +237,7 @@ function on(e) {
     else add(row("msg", "⏺", e.text), e.sub);
   }
   else if (e.t === "tool") {
-    const b = document.createDocumentFragment(), n = el("name", e.name); b.append(n, `(${e.arg})`);
+    const b = document.createDocumentFragment(), n = document.createElement("span"); n.className = "name"; n.textContent = e.name; b.append(n, `(${e.arg})`);
     const r = row("tool run", "⏺", b);
     if (e.diff) { const d = el("diff"); for (const l of e.diff) d.append(el(l[0] === "+" ? "a" : l[0] === "-" ? "d" : "m", l)); r.lastChild.append(d); }
     tools[e.id] = r; add(r, e.sub); status = `${e.name}…`;
