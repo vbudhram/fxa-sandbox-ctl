@@ -96,6 +96,9 @@ Every turn, including later ones:
   decisions and why, what is built and verified, open questions, and the next
   step. Rewrite it with Write before you end a turn that changed any of these.
   The next session in this thread starts from these notes, not from this conversation.
+- /tmp and all else outside /workspace is gone when the session pauses. Keep the
+  scripts and fixtures you will run again (a harness, a seed script) in
+  /workspace/.fxa-keep/, 10 MB at most and no build output, and name them in the notes.
 - Use git as you like: commit, amend, fetch, and rebase onto origin/main. You
   cannot push and there is no 'gh': the host pushes your branch at Open PR or
   Push, squashed to one commit. Keep the work on origin/main: rebase, do not
@@ -124,7 +127,8 @@ EOF
 _SESSION_HANDOFF_PROMPT='This session is about to pause. Update /workspace/.fxa-thread-notes.md so the next
 session in this thread can continue from it alone: the goal, decisions and why,
 what is built and verified, open questions, and the next step, at most 25 lines.
-Do nothing else. Nobody reads your reply.'
+Copy any script in /tmp that the next session will run again into /workspace/.fxa-keep/,
+and name it in the notes. Do nothing else. Nobody reads your reply.'
 
 # _session_notes_note   The first turn of a session whose thread has notes:
 # a new conversation, with the earlier work in the notes and the checkout.
@@ -1385,8 +1389,9 @@ _session_save() {
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
     # The agent's work files are not in the patch (it leaves out .fxa-*); without them a
-    # resumed runner writes its test plan and PR body again from memory.
-    _session_sh "$name" 'cd /workspace && f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -z "$f" ] || tar -czf - $f' \
+    # resumed runner writes its test plan and PR body again from memory. .fxa-keep holds the
+    # scripts it runs again (a perf harness): /tmp is gone at the pause. Over 10 MB, it stays behind.
+    _session_sh "$name" "cd /workspace && ${_SESSION_WORK_TAR}" \
       2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
     [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
     local notes; notes="$(mktemp)"
@@ -1401,6 +1406,8 @@ _session_save() {
 
 # The saved work a resume needs lives in the bucket; this disk keeps a copy until prune,
 # so a resume here stays local, and one after a lost disk still has it.
+# The work files a pause keeps, as a gzipped tar on stdout, run in /workspace.
+_SESSION_WORK_TAR='f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -d .fxa-keep ] && [ "$(du -sk .fxa-keep | cut -f1)" -le 10240 ] && f="$f .fxa-keep"; [ -z "$f" ] || tar -czf - $f'
 _SESSION_SAVED="patch bundle full.patch claude.tgz work.tgz"
 _session_store() { printf '%s' "${FXA_SESSION_STORE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/saved}}"; }
 
