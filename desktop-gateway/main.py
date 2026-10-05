@@ -3,6 +3,7 @@
 IAP signs in the person and signs each request with their email. The gateway
 checks that signature. /d/<key> reads the session's record from GCS (owner,
 runner IP, VNC password) and relays noVNC's pages and WebSocket to the runner.
+/w/<thread> shows what the agent in a Slack thread is doing, read-only, to anyone IAP lets in.
 Every other path goes to the manager VM's dashboard (MANAGER_URL).
 """
 import asyncio
@@ -21,6 +22,7 @@ from google.auth.transport.requests import Request
 AUDIENCE = os.environ["IAP_AUDIENCE"]
 BUCKET = os.environ["DESKTOP_BUCKET"]
 KEY = re.compile(r"agent-[a-z0-9]{4,12}")
+THREAD = re.compile(r"[A-Z0-9]+:\d+\.\d+")
 IAP_KEYS_URL = "https://www.gstatic.com/iap/verify/public_key"
 NOVNC_PORT = 6080
 MANAGER_URL = os.environ.get("MANAGER_URL", "").rstrip("/")
@@ -179,6 +181,50 @@ async def dashboard(request):
         return web.Response(status=r.status, body=await r.read(), headers=keep)
 
 
+WATCH_PAGE = r"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent output</title>
+<style>
+:root { --bg:#fbfbfa; --fg:#1d1d1b; --mute:#6b6b66; --line:#e3e3df; color-scheme:light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg:#16171a; --fg:#e6e6e3; --mute:#9a9a94; --line:#2b2c30; } }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,sans-serif; }
+header { position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+header b { font-weight:600; } #st { color:var(--mute); }
+pre { margin:0; padding:12px 16px 40px; font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
+</style>
+<header><b>Agent output</b><span id="st">loading…</span></header>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById("out"), st = document.getElementById("st");
+async function tick() {
+  try {
+    const r = await fetch(location.pathname.replace(/\/$/, "") + "/tail", { cache: "no-store" });
+    const j = await r.json();
+    if (!r.ok) { st.textContent = j.error || "not found"; return; }
+    const live = j.state === "active" || j.state === "starting";
+    st.textContent = `${j.key} · ${j.state}` + (live ? " · refreshes every 5 s" : " · reply in the Slack thread to resume");
+    const atEnd = innerHeight + scrollY >= document.body.scrollHeight - 40;
+    if (live) out.textContent = j.lines.join("\n");
+    if (atEnd) scrollTo(0, document.body.scrollHeight);
+  } catch { st.textContent = "could not reach the agent; retrying"; }
+}
+tick(); setInterval(tick, 5000);
+</script>"""
+
+
+async def watch(request):
+    thread = request.match_info["thread"]
+    if not THREAD.fullmatch(thread):
+        raise web.HTTPNotFound()
+    if not await iap_email(request):
+        raise error(web.HTTPForbidden, "Not signed in through IAP.")
+    if not request.match_info.get("tail"):
+        return web.Response(text=WATCH_PAGE, content_type="text/html", headers={"Cache-Control": "no-store"})
+    if not MANAGER_URL:
+        raise web.HTTPNotFound()
+    async with request.app["http"].get(f"{MANAGER_URL}/api/watch", params={"thread": thread}, headers={"Host": "localhost"}) as r:
+        return web.Response(status=r.status, body=await r.read(), content_type="application/json", headers={"Cache-Control": "no-store"})
+
+
 async def desktop_link(request):
     # The dashboard's local /desktop/<key> link: here the desktop lives at /d/<key>.
     raise web.HTTPFound(f"/d/{request.match_info['key']}")
@@ -202,6 +248,8 @@ def main():
     app.router.add_get("/d/{key}/", start)
     app.router.add_get("/d/{key}/{tail:.+}", page)
     app.router.add_get("/desktop/{key}", desktop_link)
+    app.router.add_get("/w/{thread}", watch)
+    app.router.add_get("/w/{thread}/{tail:tail}", watch)
     app.router.add_route("GET", "/{tail:.*}", dashboard)
     app.router.add_route("POST", "/{tail:.*}", dashboard)
     web.run_app(app, port=int(os.environ.get("PORT", "8080")))

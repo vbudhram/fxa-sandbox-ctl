@@ -113,7 +113,7 @@ async def record_check():
 async def dashboard_check():
     seen = {}
     async def dash(request):
-        seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method)
+        seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method, query=request.query.get("thread"))
         return web.Response(text="dash " + request.path, content_type="text/html", headers={"Content-Security-Policy": "default-src 'self'"})
     app = web.Application(); app.router.add_route("*", "/{tail:.*}", dash)
     r = web.AppRunner(app); await r.setup(); await web.TCPSite(r, "127.0.0.1", 18767).start()
@@ -123,6 +123,7 @@ async def dashboard_check():
     keep = main.iap_email; main.iap_email = fake_email
     g = web.Application(); g.cleanup_ctx.append(main.session)
     g.router.add_get("/desktop/{key}", main.desktop_link)
+    g.router.add_get("/w/{thread}", main.watch); g.router.add_get("/w/{thread}/{tail:tail}", main.watch)
     g.router.add_route("GET", "/{tail:.*}", main.dashboard); g.router.add_route("POST", "/{tail:.*}", main.dashboard)
     gr = web.AppRunner(g); await gr.setup(); await web.TCPSite(gr, "127.0.0.1", 18768).start()
     base = "http://127.0.0.1:18768"
@@ -140,10 +141,19 @@ async def dashboard_check():
         main.DASHBOARD_USERS = {"someone@example.com"}
         async with c.get(f"{base}/") as x:
             check("an account not on the list: 403", 403, x.status)
+        t = "C0AB12CD3:1791135361.015169"
+        async with c.get(f"{base}/w/{t}") as x:
+            check("the watch page is open to any IAP account", (200, True), (x.status, "Agent output" in await x.text()))
+        async with c.get(f"{base}/w/{t}/tail") as x:
+            check("the watch tail asks the dashboard for that thread", ("dash /api/watch", t), (await x.text(), seen["query"]))
+        async with c.get(f"{base}/w/not-a-thread") as x:
+            check("a bad thread: 404", 404, x.status)
         main.DASHBOARD_USERS = set()
         who["email"] = None
         async with c.get(f"{base}/") as x:
             check("no IAP identity: 403", 403, x.status)
+        async with c.get(f"{base}/w/C0AB12CD3:1791135361.015169") as x:
+            check("no IAP identity: no watch page", 403, x.status)
     main.iap_email = keep
     await gr.cleanup(); await r.cleanup()
 
