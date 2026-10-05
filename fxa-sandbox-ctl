@@ -1513,6 +1513,14 @@ _ground_paths() {
 
 # Write /tmp/fxa-KEY-ground.md, so a grounding pass reads one file instead of a
 # model turn per grep. Read-only; nothing here decides.
+# _frozen_patterns   check-frozen.ts on stdin; prints "<pattern>\t<exclude>" per entry.
+# An entry can span lines, and the TS source doubles each backslash.
+_frozen_patterns() {
+  perl -0777 -ne 'while (/\{([^{}]*?pattern:\s*\x27([^\x27]+)\x27[^{}]*)\}/gs) {
+    my ($b, $p) = ($1, $2); my ($e) = $b =~ /exclude:\s*\x27([^\x27]+)\x27/; $e //= "";
+    s/\\\\/\\/g for $p, $e; print "$p\t$e\n" }'
+}
+
 cmd_ground() {
   local key; key="$(_key "$1")"
   local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO"
@@ -1548,12 +1556,13 @@ cmd_ground() {
       fi
     done <<< "$paths"
     echo; echo "## Frozen paths (from _scripts/check-frozen.ts on origin/main)"; echo
-    local frozen pat p
-    frozen="$(git -C "$repo" show origin/main:_scripts/check-frozen.ts 2>/dev/null | grep -oE "pattern: '[^']+'" | sed -E "s/pattern: '//; s/'$//" || true)"
-    while IFS= read -r pat; do
+    local frozen pat ex p
+    frozen="$(git -C "$repo" show origin/main:_scripts/check-frozen.ts 2>/dev/null | _frozen_patterns || true)"
+    while IFS=$'\t' read -r pat ex; do
       [ -n "$pat" ] || continue
       while IFS= read -r p; do
         p="${p%%:*}"; [ -n "$p" ] || continue
+        [ -n "$ex" ] && printf '%s' "$p" | grep -qE "$ex" && continue
         if printf '%s' "$p" | grep -qE "^${pat}"; then n_frozen=$((n_frozen + 1)); echo "- FROZEN ${p}  (pattern ${pat})"; fi
       done <<< "$paths"
     done <<< "$frozen"
