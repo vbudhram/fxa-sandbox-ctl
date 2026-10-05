@@ -96,6 +96,8 @@ Every turn, including later ones:
   decisions and why, what is built and verified, open questions, and the next
   step. Rewrite it with Write before you end a turn that changed any of these.
   The next session in this thread starts from these notes, not from this conversation.
+- You cannot see this thread's earlier sessions or its spend. For a question
+  about time, turns or cost, point to `!usage`.
 - /tmp and all else outside /workspace is gone when the session pauses. Keep the
   scripts and fixtures you will run again (a harness, a seed script) in
   /workspace/.fxa-keep/, 10 MB at most and no build output, and name them in the notes.
@@ -226,6 +228,18 @@ session_thread_id() {
     *) f="$(ls "$SESSION_DIR"/thread-*-"$a".json 2>/dev/null | head -1)"
        [ -n "$f" ] && { f="${f##*/thread-}"; f="${f%.json}"; printf '%s\n' "${f/-/:}"; } ;;
   esac
+}
+
+# _thread_usage <key>   The key's Slack thread as JSON: its sessions, turns and minutes of
+# work (finished turns), for !usage. No dollars: those stay with the operator.
+_thread_usage() {
+  local tid keys k files=""; tid="$(session_get "$1" thread)"
+  _thread_ok "$tid" && keys="$(thread_get "$tid" sessions)"
+  [ -n "${keys:-}" ] || { echo null; return 0; }
+  for k in $keys; do files="$files ${SESSION_DIR}/${k}.turns.jsonl"; done
+  # shellcheck disable=SC2086  # one path per key, none with spaces
+  cat $files 2>/dev/null | jq -sc --argjson n "$(wc -w <<< "$keys" | tr -d ' ')" \
+    '{sessions: $n, turns: length, minutes: (map(.secs // 0) | add // 0 | . / 60 | floor)}'
 }
 
 # _thread_summary <thread>   The request, each session, and the cost of the whole thread.

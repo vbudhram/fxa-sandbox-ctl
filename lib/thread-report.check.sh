@@ -32,4 +32,10 @@ check "one line per session" "2" "$(grep -c '^  agent-' <<<"$out")"
 check "quick answer counts to its session" "yes" "$(grep -q 'agent-aaaaaa stopped .* llm \$2.75 ' <<<"$out" && echo yes)"
 check "thread total" "  total: 2 sessions, llm \$8.35, compute \$0.5" "$(tail -1 <<<"$out")"
 
+printf '%s\n' '{"turn":1,"secs":2124}' > "$tmp/agent-aaaaaa.turns.jsonl"
+printf '%s\n' '{"turn":1,"secs":76}' '{"turn":2,"secs":5740}' > "$tmp/agent-bbbbbb.turns.jsonl"
+check "thread usage: sessions, turns, minutes, no dollars" '{"sessions":2,"turns":3,"minutes":132}' "$(_thread_usage agent-bbbbbb)"
+echo '{"key":"agent-cccccc","state":"active"}' > "$tmp/agent-cccccc.json"
+check "no thread: null" "null" "$(_thread_usage agent-cccccc)"
+
 exit "$fail"

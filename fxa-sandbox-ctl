@@ -2397,6 +2397,7 @@ cmd_session() {
     review-comments) _session_key "${2:-}" && session_review_comments "$2" "${3:-}" ;;
     pr-ready) _session_key "${2:-}" && session_pr_ready "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
+    thread-usage) _session_key "${2:-}" && _thread_usage "$2" ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
     attach) _session_key "${2:-}" && session_attach "${@:2}" ;;
     plan) _session_key "${2:-}" && { session_live "$2" || { echo null; return 0; }
