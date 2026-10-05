@@ -18,7 +18,8 @@ check 2 'pkill -9 -f "playwright test --project=local"'
 check 0 'until grep -q DONE out.log; do sleep 3; done' true
 check 0 "pkill -f '[p]laywright test'"
 check 0 'pkill -x firefox-bin; sleep 1; ls'
-check 0 'timeout 570 tail --pid=$(pgrep -f "[p]laywright test" | head -1) -f /dev/null; tail -20 run.log'
+check 0 'timeout 270 tail --pid=$(pgrep -f "[p]laywright test" | head -1) -f /dev/null; tail -20 run.log'
+check 2 'pid=$(pgrep -f "[m]easure.js" | head -1); timeout 570 tail --pid=$pid -f /dev/null; cat out.log'
 check 0 'for f in a b; do echo $f; done'
 check 0 'grep -n "sleep" lib/x.ts; git log --oneline -3'
 check 0 'for i in $(seq 1 60); do curl -sf -m2 localhost:9000/__heartbeat__ && break; sleep 2; done'

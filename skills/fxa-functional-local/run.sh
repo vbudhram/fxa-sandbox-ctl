@@ -2,7 +2,7 @@
 # Run one functional spec on the local stack with video. See SKILL.md.
 #   run.sh <spec path under packages/functional-tests> [test title filter]
 #   run.sh --bg <spec> [filter]   start it in the background; a Bash call waits 10 min at most
-#   run.sh wait [seconds]         wait for the background run (540 s at most): its result,
+#   run.sh wait [seconds]         wait for the background run (270 s by default, under the cache's 5 min): its result,
 #                                 "still running" (exit 75), or that it died (exit 4)
 set -u
 job="${FXA_FUNCTIONAL_JOB_DIR:-/workspace/.fxa-functional-job}"
@@ -20,7 +20,7 @@ if [ "${1:-}" = --bg ]; then
 fi
 if [ "${1:-}" = wait ]; then
   [ -f "${job}/pid" ] || { echo "no background run; start one with: bash $0 --bg <spec> [filter]" >&2; exit 2; }
-  limit="${2:-540}"; t0=$(date +%s)
+  limit="${2:-270}"; t0=$(date +%s)
   while running && [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do sleep 5; done
   ran=$(( $(date +%s) - $(cat "${job}/started" 2>/dev/null || echo "$t0") ))
   if [ -f "${job}/rc" ]; then grep -E '^(PASS|FAIL|video:|no video:|[0-9]+ video)' "${job}/log"; exit "$(cat "${job}/rc")"; fi

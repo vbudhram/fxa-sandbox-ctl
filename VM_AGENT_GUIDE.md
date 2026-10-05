@@ -149,8 +149,11 @@ When a run fails and its output or log is long, give the path to the
 - If lint or a unit suite runs longer than 10 minutes, stop it and say in your
   handoff that CI covers it. CI runs lint and the full suite anyway. This does
   not apply to a functional test the engineer asked for.
-- A Bash call waits 10 minutes at most. Run a command that ends sooner in the
-  foreground, with a timeout of up to 600000 ms.
+- Keep each wait under 4.5 minutes. After 5 idle minutes the prompt cache
+  expires, and your next call writes it again: about $0.40 each time in a long
+  session. Run a command that ends sooner in the foreground. Start a longer one
+  in the background, then wait in steps of `timeout 270`. A Bash call stops at
+  10 minutes in any case.
 - For a functional run that can take longer, use
   `run.sh --bg <spec> [filter]`, then `run.sh wait` until it gives the result
   (see `/fxa-functional-local`). `wait` returns at once when the run ends or
@@ -224,7 +227,7 @@ records a video, and its `--bg` and `wait` handle a run longer than 10 minutes.
   whole spec file took 51 s on average, and most hand runs ran the whole file.
 - Run `npx playwright test` by hand only for more than one spec or project.
   Start it with `run_in_background`, then wait with
-  `timeout 570 tail --pid=<pid> -f /dev/null`.
+  `timeout 270 tail --pid=<pid> -f /dev/null`, again until it ends.
 - The projects are `local` (Firefox), `local-chromium` and
   `local-payments-next`. There is no `sandbox` project.
 - The config defaults to 4 workers. Set `PLAYWRIGHT_WORKERS=2`: with the stack

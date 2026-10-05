@@ -20,7 +20,17 @@ Blocked: an until or while loop with sleep, or a sleep of 30 s or more. It canno
 Wait on the job instead:
 - a functional run: run.sh --bg <spec>, then `bash ~/.claude/skills/fxa-functional-local/run.sh wait`
 - the stack: `bash ~/.claude/skills/fxa-stack/stack.sh wait <service>`, or `stack.sh restart <service> [KEY=VAL...]`, which waits
-- any other background job: `timeout 570 tail --pid=<pid> -f /dev/null` (it returns when the job ends)
+- any other background job: `timeout 270 tail --pid=<pid> -f /dev/null` (it returns when the job ends; call it again if not)
+EOF
+  exit 2
+fi
+
+# A wait past 5 minutes lets the prompt cache expire, and the next call writes it again.
+n="$(grep -oE 'timeout[[:space:]]+[0-9]+[[:space:]]+tail[[:space:]]+--pid' <<< "$sh" | grep -oE '[0-9]+' | sort -n | tail -1)"
+if [ -n "$n" ] && [ "$n" -gt 290 ]; then
+  cat >&2 <<'EOF'
+Blocked: a wait over 290 s. After 5 idle minutes the prompt cache expires, and the next call writes it again.
+Wait in steps: `timeout 270 tail --pid=<pid> -f /dev/null`, then call it again until the job ends.
 EOF
   exit 2
 fi

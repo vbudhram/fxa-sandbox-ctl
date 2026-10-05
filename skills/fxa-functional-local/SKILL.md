@@ -26,7 +26,7 @@ starts the stack, can take longer. Start it in the background, then wait:
     bash ~/.claude/skills/fxa-functional-local/run.sh --bg tests/settings/changePassword.spec.ts
     bash ~/.claude/skills/fxa-functional-local/run.sh wait
 
-`wait` returns within 9 minutes:
+`wait` returns within 4.5 minutes, before the prompt cache expires:
 
 - exit 0 or 1: the run ended. It prints PASS or FAIL and the video lines.
 - exit 75: still running. Call `wait` again.
