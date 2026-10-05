@@ -641,7 +641,7 @@ fxa-sandbox-ctl test auth-fix
 fxa-sandbox-ctl test auth-fix -- tests/signin/signIn.spec.ts
 ```
 
-It runs `npx playwright test --project=local` in `/workspace/packages/functional-tests`. FxA has no Playwright project for a remote stack, so the tests cannot run from the host. Start the stack first with `fxa-sandbox-ctl services`.
+It runs `npx playwright test --project=local --project=local-chromium` in `/workspace/packages/functional-tests`. FxA has no Playwright project for a remote stack, so the tests cannot run from the host. Start the stack first with `fxa-sandbox-ctl services`.
 
 ## Infrastructure Details
 

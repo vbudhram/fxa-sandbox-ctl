@@ -96,7 +96,7 @@ the closest existing test.
   them only when asked; the video shows the supplicant side only.
 - The helper drops a video that shows only a blank page, and says so. Do not
   post a blank video in its place.
-- `#chromium` tests run in the `local-chromium` project, not `local`.
+- `#chromium` tests run in the `local-chromium` project, not `local`. `run.sh` passes both projects, so it runs each test once in the correct browser.
 
 ## Notes
 

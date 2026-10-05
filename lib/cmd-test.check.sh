@@ -13,7 +13,7 @@ vm_is_running() { :; }
 vm_exec_as_agent() { echo "$2"; }
 
 got="$(cmd_test a1 -- "tests/a b.spec.ts" -g x | tail -1)"
-check "local project" "yes" "$(grep -q -- '--project=local tests/a\\ b.spec.ts -g x$' <<<"$got" && echo yes)"
+check "local project" "yes" "$(grep -q -- '--project=local-chromium tests/a\\ b.spec.ts -g x$' <<<"$got" && echo yes)"
 check "no sandbox project" "no" "$(grep -q sandbox <<<"$got" && echo yes || echo no)"
 
 exit "$fail"

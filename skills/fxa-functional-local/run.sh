@@ -46,7 +46,8 @@ export default {
 CFG
 rm -rf "$out"; mkdir -p "$media"
 cd "$ft" || exit 2
-args=(--config "$cfg" --project=local --workers=1 --retries=0 "$spec")
+# Both projects: FxA splits tests between them by the #chromium tag, so each runs once.
+args=(--config "$cfg" --project=local --project=local-chromium --workers=1 --retries=0 "$spec")
 [ -n "$filter" ] && args+=(-g "$filter")
 start=$(date +%s)
 NODE_OPTIONS="--dns-result-order=ipv4first --require $(cd "$(dirname "$0")" && pwd)/own-browser-video.cjs" npx playwright test "${args[@]}"; rc=$?

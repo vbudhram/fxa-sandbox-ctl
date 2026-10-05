@@ -949,8 +949,8 @@ cmd_test() {
   [ "${1:-}" = "--" ] && shift
   # FxA has no project for a remote stack, so the tests run in the VM against its own stack.
   local args; args="$(printf ' %q' "$@")"
-  echo "Running: npx playwright test --project=local${args} (in ${name})"
-  vm_exec_as_agent "$name" "source /etc/agent-env.sh && cd /workspace/packages/functional-tests && NODE_OPTIONS=--dns-result-order=ipv4first npx playwright test --project=local${args}"
+  echo "Running: npx playwright test --project=local --project=local-chromium${args} (in ${name})"
+  vm_exec_as_agent "$name" "source /etc/agent-env.sh && cd /workspace/packages/functional-tests && NODE_OPTIONS=--dns-result-order=ipv4first npx playwright test --project=local --project=local-chromium${args}"
 }
 
 # ── Command: ssh ───────────────────────────────────────────────
