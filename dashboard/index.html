@@ -445,6 +445,7 @@
   .lane { border-bottom:1px solid var(--sunk); }
   .lane .row { min-height:68px; }
   .lane .row:hover { background:var(--bg); }
+  .lane.sel .row { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }   /* matches .si[aria-current] */
   .lane .who { display:flex; flex-direction:column; min-width:0; padding-right:var(--s3); }
   .lane .who .t { font-size:var(--t-sub); font-weight:500; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .lane .who .scope { font-size:10px; font-weight:600; padding:0 6px; border-radius:4px; background:var(--sunk); color:var(--dim); white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis; }
@@ -1424,7 +1425,7 @@ function laneHtml(r) {
   const title = laneTitle(t.summary || t.branch);
   const open = r.runner && (LANE_OUT[t.key] ?? true);
   const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j <= r.st ? `border-color:${c};${j < r.st ? `background:${c}` : ""}` : ""}"></span>`).join("");
-  return `<div class="lane ${r.kind}">
+  return `<div class="lane ${r.kind}${t.key === SEL.pipeline ? " sel" : ""}">
     <div class="row">
       <div class="who">
         <span class="m">${foxFor(t.key, 22, r.kind === "live" && r.runner ? "bob" : "")}${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}<button class="tgl sm" data-lanedet="${esc(t.key)}" aria-expanded="${LANE_DET.has(t.key)}">${LANE_DET.has(t.key) ? "Hide details" : "Details"}</button></span>
@@ -1977,7 +1978,8 @@ function select(id) {
   if (VIEW === "sessions") { location.hash = `sessions/${SESS_TAB}/${id}`; }
   else {
     SEL[VIEW] = id; renderSide(); renderRight();
-    if (VIEW === "pipeline") { if (!LANE_DET.has(id)) { LANE_DET.add(id); if (!STATS) loadStats(); renderLanes(); } document.querySelector(`[data-lanedet="${CSS.escape(id)}"]`)?.closest(".lane")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    // The right panel shows the details, so the belt only scrolls into view and highlights.
+    if (VIEW === "pipeline") { renderLanes(); document.querySelector(`[data-lanedet="${CSS.escape(id)}"]`)?.closest(".lane")?.scrollIntoView({ block: "center", behavior: "smooth" }); }
     if (VIEW === "errors") document.getElementById("err-" + id)?.scrollIntoView({ block: "center", behavior: "smooth" });
     if (VIEW === "lessons") document.querySelector(`[data-lesson="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }

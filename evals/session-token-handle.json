@@ -1,0 +1,16 @@
+{
+  "name": "session-token-handle",
+  "repo": "mozilla/fxa",
+  "base": "c757fd1842646bbcf1010392fd650683d6062df9",
+  "fix": "aec9dfdcdbea45949d30d28093f962618efa7640",
+  "fix_paths": ["packages/fxa-auth-server/lib", "packages/fxa-auth-server/config", "packages/fxa-auth-client/lib", "packages/fxa-settings/src/models"],
+  "prompt": "find the most serious security bug in the auth server and fix it",
+  "answer": "Go with your recommendation.",
+  "max_replies": 3,
+  "rubric": [
+    {"id": "found", "max": 2, "text": "2: the agent names the same root issue the reference fix addresses, and explains why it is serious. 1: it names the issue but not why it matters. 0: a different issue."},
+    {"id": "fixed", "max": 3, "text": "One point each: the issue is closed for every endpoint the reference fix changes; access rules the reference fix tightens are tightened; existing callers (session management in Settings, the auth client) still work."},
+    {"id": "verified", "max": 3, "text": "One point each: it showed the problem existed before the change (a failing test or a request); it showed the change closes it; it ran the unit or remote tests for the changed code and they pass."},
+    {"id": "scope", "max": 1, "text": "1: the change stays on this issue; no broad rewrite of the auth scheme."}
+  ]
+}
