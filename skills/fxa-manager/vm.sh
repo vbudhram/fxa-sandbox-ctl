@@ -15,6 +15,9 @@
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
 #   vm.sh promote         sync the live bot, only when main in both repos is exactly what
 #                         the last vm.sh dev deployed (uncommitted files included), then check it
+#   vm.sh api <path>      GET the dashboard's /api/<path> as JSON (snapshot, errors, sessions, stats)
+#   vm.sh secret <name> [--prefix <p>]   prompt for a secret's value (hidden), clean it,
+#                         check the prefix, and store it in Secret Manager for the manager
 #   vm.sh ssh             print the ssh command for a person
 # Never prints a secret value: secrets show as present or missing.
 set -euo pipefail
@@ -38,6 +41,18 @@ promote_diff() {
   echo "$(basename "$1"): origin/main differs from what the dev bot ran:"
   git -C "$1" diff --stat "$2" 'origin/main^{tree}' | sed 's/^/  /'
   return 1
+}
+
+# secret_clean [prefix] < value   The value alone: no "NAME=" in front, no quotes or
+# whitespace around it. Fails when a prefix is given and the value does not start with it.
+secret_clean() {
+  local v; v="$(cat)"
+  v="$(printf '%s' "$v" | tr -d '\r\n')"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+  [[ "$v" =~ ^[A-Z][A-Z0-9_]*=(.+)$ ]] && v="${BASH_REMATCH[1]}"
+  v="${v#[\"\']}"; v="${v%[\"\']}"
+  [ -n "$v" ] || return 1
+  [ -z "${1:-}" ] || [ "${v:0:${#1}}" = "$1" ] || return 1
+  printf '%s' "$v"
 }
 
 # On the VM, run here; on the laptop, run over IAP ssh.
@@ -177,6 +192,28 @@ sleep 5; sudo journalctl -u fxa-agent-bot --since "-2min" --no-pager -o cat | gr
 printf '  dashboard HTTP %s\n' "\$(curl -s -o /dev/null -w %{http_code} -H 'Host: localhost' localhost:8787/api/snapshot)"
 EOF
     ;;
+  api)
+    [[ "${2:-}" =~ ^[A-Za-z0-9/_.=\&?-]+$ ]] || { echo "usage: vm.sh api <path>, such as errors or snapshot" >&2; exit 1; }
+    printf 'curl -sf -m 60 -H "Host: localhost" %q\n' "localhost:8787/api/$2" | on_vm | mask ;;
+  secret)
+    name="${2:-}"; [[ "$name" =~ ^fxa-[a-z0-9-]+$ ]] || { echo "usage: vm.sh secret fxa-<name> [--prefix <p>]" >&2; exit 1; }
+    prefix=""; [ "${3:-}" = --prefix ] && prefix="${4:-}"
+    # Typed or pasted at a hidden prompt: never in the clipboard history of a command, or a file.
+    read -rs -p "Paste the value for $name, then Enter (hidden): " raw < /dev/tty; echo >&2
+    val="$(printf '%s' "$raw" | secret_clean "$prefix")" || { echo "vm.sh secret: empty${prefix:+, or it does not start with $prefix}; nothing stored" >&2; exit 1; }
+    unset raw
+    if gcloud secrets describe "$name" --project "$P" >/dev/null 2>&1; then
+      printf '%s' "$val" | gcloud secrets versions add "$name" --data-file=- --project "$P" >/dev/null || exit 1
+    else
+      printf '%s' "$val" | gcloud secrets create "$name" --replication-policy=automatic --data-file=- --project "$P" >/dev/null || exit 1
+      # fxa-secrets reads it as the manager's service account, which needs access to each secret.
+      sa="$(gcloud compute instances describe "$VM" --zone "$Z" --project "$P" --format='value(serviceAccounts[0].email)')"
+      gcloud secrets add-iam-policy-binding "$name" --project "$P" --member "serviceAccount:$sa" \
+        --role roles/secretmanager.secretAccessor >/dev/null && echo "granted $sa access to $name"
+    fi
+    unset val
+    echo "stored the latest version of $name ($(gcloud secrets versions list "$name" --project "$P" --limit 1 --format='value(name)'))."
+    echo "The manager uses it after fxa-secrets runs: vm.sh sys 'sudo /usr/local/sbin/fxa-secrets', then restart what reads it." ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
     echo "then: sudo -iu fxa; tmux new -As main" ;;

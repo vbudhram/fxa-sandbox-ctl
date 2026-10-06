@@ -37,6 +37,12 @@ if [ "$MODE" = sync ]; then
     (cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev)
     for s in ~/Desktop/working2/fxa-sandbox-ctl/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
   '"'"'
+  # A changed fxa-secrets: install it as root only when it is not empty and parses, then
+  # run it once, before the restarts below read the .env files it writes.
+  f=/home/fxa/Desktop/working2/fxa-sandbox-ctl/infra/gce/fxa-secrets.sh
+  if sudo test -s $f && sudo bash -n $f && ! sudo cmp -s $f /usr/local/sbin/fxa-secrets; then
+    sudo install -m 700 -o root -g root $f /usr/local/sbin/fxa-secrets && echo "installed fxa-secrets" && sudo /usr/local/sbin/fxa-secrets | tail -1
+  fi
   for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true'
   exit 0
 fi
@@ -73,7 +79,8 @@ for f in claude.tgz ctl.env.base bot.env.base; do
   dest=/tmp/fxa-$f; [ "$f" = claude.tgz ] && dest=/tmp/fxa-claude-bundle.tgz
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done
-ssh_vm 'sudo bash -s' < "${ROOT}/infra/gce/manager-setup.sh"
+# fxa-secrets lives in its own file; setup gets it spliced in at its marker line.
+sed -e "/^__FXA_SECRETS__\$/{r ${ROOT}/infra/gce/fxa-secrets.sh" -e 'd;}' "${ROOT}/infra/gce/manager-setup.sh" | ssh_vm 'sudo bash -s'
 # The MCP gateway's connectors, when you keep them locally. Credentials stay
 # ${VAR} references filled from Secret Manager, so a literal one stops here.
 G="${HOME}/.config/fxa/mcp-gateway.json"

@@ -22,6 +22,20 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 Both repos are public. Never commit a secret, an internal URL, or a person's
 email; `.env` files stay untracked.
 
+## Before you start: your own working tree
+
+Several sessions can work in these repos at once. If `git status` shows changes you
+did not make, work in a worktree of your own, so neither of you commits the other's
+work:
+
+```bash
+git worktree add ../fxa-sandbox-ctl-<topic> -b <topic> origin/main && cd ../fxa-sandbox-ctl-<topic>
+```
+
+Stage files by name, never with `git add -A` or a whole file you share, and read
+`git diff --cached` before each commit. `vm.sh dev` and `vm.sh promote` work from
+whichever tree you run them in.
+
 ## Rules for the code
 
 1. **Two hosts.** The controller runs on macOS (bash 3.2, BSD tools) and on
@@ -47,11 +61,30 @@ email; `.env` files stay untracked.
 bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker
 bash skills/fxa-ctl-dev/test.sh mac    # quick
 cd ~/Desktop/working2/fxa-agent-bot && npm test
+bash skills/fxa-ctl-dev/prove.sh lib/x.check.sh lib/x.sh   # the check fails without your change (PROVE_BASE=<rev> once committed)
 ```
+
+Run `test.sh` before each commit, not a loop of your own: it counts a check that
+fails to start or exits nonzero as a failure. (A hand loop once reported "all pass"
+because macOS has no `timeout`, so no check ran.)
+
+A new check must fail without the change it tests. `prove.sh` runs it with the
+change, then with the named files put back to `HEAD`, and restores them.
 
 A change to a function with outside calls gets a stubbed test: define the
 outside command as a shell function that fails the first time, then check
 the retry. Put a counter in a file, not a variable: `$(...)` runs in a subshell.
+
+## Steps only the operator can run
+
+Claude Code's permission check blocks these, so write the command for the operator
+to run with `!` instead of trying it first:
+
+- IAM grants, such as `gcloud secrets add-iam-policy-binding`.
+- Changes to the live bot's access (`ALLOWED_USERS`, `ALLOWED_CHANNELS`) and its restart
+  with new tokens.
+- Printing ssh commands or keys for a person (`vm.sh ssh`).
+- Entering a secret: `vm.sh secret <name>` prompts for it without echo.
 
 ## Try a change before you deploy
 

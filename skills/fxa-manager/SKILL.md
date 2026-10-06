@@ -23,6 +23,8 @@ $H sys '<command>'     # as your own login user, who can sudo
 $H screen              # read the tmux session "main"
 $H sync                # pull both repos on the VM after a push
 $H promote             # sync, only if main is exactly what the last vm.sh dev ran; then check
+$H api errors          # the dashboard's /api/<path> as JSON: errors, snapshot, sessions, stats
+$H secret fxa-<name> --prefix xoxb-   # store a secret from a hidden prompt; grants the manager on create
 $H ssh                 # the ssh command for a person
 ```
 
