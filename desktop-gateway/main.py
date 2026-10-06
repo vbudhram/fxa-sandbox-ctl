@@ -26,7 +26,8 @@ THREAD = re.compile(r"[A-Z0-9]+:\d+\.\d+")
 IAP_KEYS_URL = "https://www.gstatic.com/iap/verify/public_key"
 NOVNC_PORT = 6080
 MANAGER_URL = os.environ.get("MANAGER_URL", "").rstrip("/")
-# Empty: anyone IAP lets in may see the dashboard. Else only these emails.
+# Anyone IAP lets in may view the dashboard. Empty: anyone may also POST. Else only these emails may POST,
+# because a POST approves lessons, which go into the agents' prompts.
 DASHBOARD_USERS = {e.strip().lower() for e in os.environ.get("DASHBOARD_USERS", "").split(",") if e.strip()}
 
 _certs = {"at": 0.0, "keys": {}}
@@ -163,8 +164,10 @@ async def dashboard(request):
     if not MANAGER_URL:
         raise web.HTTPNotFound()
     email = await iap_email(request)
-    if not email or (DASHBOARD_USERS and email not in DASHBOARD_USERS):
+    if not email:
         raise web.HTTPForbidden(text="Not allowed to see the dashboard.")
+    if request.method == "POST" and DASHBOARD_USERS and email not in DASHBOARD_USERS:
+        raise web.HTTPForbidden(text="Only dashboard admins can change things here.")
     # The dashboard accepts only loopback Host names; the gateway is its proxy.
     # A browser's cross-site signals pass through, so its CSRF check still works;
     # only the gateway's own origin is dropped, because it is same-site here.

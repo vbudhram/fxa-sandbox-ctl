@@ -140,7 +140,9 @@ async def dashboard_check():
             check("the dashboard's desktop link goes to /d/", "/d/agent-abcd12", x.headers.get("Location"))
         main.DASHBOARD_USERS = {"someone@example.com"}
         async with c.get(f"{base}/") as x:
-            check("an account not on the list: 403", 403, x.status)
+            check("an account not on the list can view", 200, x.status)
+        async with c.post(f"{base}/api/lessons", headers={"Origin": base}) as x:
+            check("an account not on the list cannot POST: 403", 403, x.status)
         t = "C0AB12CD3:1791135361.015169"
         async with c.get(f"{base}/w/{t}") as x:
             check("the watch page is open to any IAP account", (200, True), (x.status, "<title>fxa-agent</title>" in await x.text()))
