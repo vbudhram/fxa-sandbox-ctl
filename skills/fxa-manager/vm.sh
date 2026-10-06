@@ -13,6 +13,8 @@
 #                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
+#   vm.sh promote         sync the live bot, only when main in both repos is exactly what
+#                         the last vm.sh dev deployed (uncommitted files included), then check it
 #   vm.sh ssh             print the ssh command for a person
 # Never prints a secret value: secrets show as present or missing.
 set -euo pipefail
@@ -20,6 +22,23 @@ P="${FXA_GCE_PROJECT:-moz-fx-dev-vbudhram-sandbox}" Z="${FXA_MANAGER_ZONE:-us-ce
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CTL_ROOT="$(cd "$HERE/../.." && pwd)"
 mask() { sed -E 's/(sk-ant-[a-z0-9]+-)[A-Za-z0-9_-]+/\1<masked>/g; s/(xox[abpr]-|xapp-|ghs_|ghp_|github_pat_)[A-Za-z0-9_-]+/\1<masked>/g'; }
+
+# The exact content of a working tree, as a git tree id: what vm.sh dev sends (tracked and
+# untracked, not ignored), written from a scratch index so the real index is untouched.
+worktree_tree() {
+  local idx; idx="$(mktemp)"; cp "$(git -C "$1" rev-parse --absolute-git-dir)/index" "$idx" 2>/dev/null || rm -f "$idx"
+  GIT_INDEX_FILE="$idx" git -C "$1" add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git -C "$1" write-tree; local rc=$?
+  rm -f "$idx"; return $rc
+}
+BOT_ROOT="$(cd "$CTL_ROOT/../fxa-agent-bot" 2>/dev/null && pwd || true)"
+DEV_RECORD="$(git -C "$CTL_ROOT" rev-parse --git-common-dir 2>/dev/null)/fxa-dev-deployed"
+# promote_diff <repo> <recorded tree>   Nothing when origin/main is that tree; else what differs.
+promote_diff() {
+  [ "$(git -C "$1" rev-parse 'origin/main^{tree}')" = "$2" ] && return 0
+  echo "$(basename "$1"): origin/main differs from what the dev bot ran:"
+  git -C "$1" diff --stat "$2" 'origin/main^{tree}' | sed 's/^/  /'
+  return 1
+}
 
 # On the VM, run here; on the laptop, run over IAP ssh.
 on_vm() {
@@ -131,9 +150,33 @@ echo $! > $D/bot.pid
 for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; grep -q "is running" <(tail -n 5 $D/bot.log) && break; done
 kill -0 "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot up (pid $(cat $D/bot.pid))" || { echo "dev bot failed:"; tail -n 20 $D/bot.log; }
 EOF2
-        } | on_vm | mask ;;
+        } | on_vm | mask > "${TMPDIR:-/tmp}/vm-dev-up.$$"
+        cat "${TMPDIR:-/tmp}/vm-dev-up.$$"; up=0; grep -q '^dev bot up' "${TMPDIR:-/tmp}/vm-dev-up.$$" && up=1; rm -f "${TMPDIR:-/tmp}/vm-dev-up.$$"
+        [ "$up" = 1 ] || exit 1
+        # What promote compares main with: the trees this deploy sent.
+        printf 'ctl %s\nbot %s\nat %s\n' "$(worktree_tree "$CTL_ROOT")" "$(worktree_tree "$BOT_ROOT")" "$(date -u +%FT%TZ)" > "$DEV_RECORD"
+        echo "recorded for vm.sh promote" ;;
       *) echo "usage: vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]" >&2; exit 1 ;;
     esac ;;
+  promote)
+    [ -s "$DEV_RECORD" ] || { echo "vm.sh promote: no dev deploy recorded; run vm.sh dev and test first" >&2; exit 1; }
+    git -C "$CTL_ROOT" fetch -q origin main && git -C "$BOT_ROOT" fetch -q origin main || { echo "vm.sh promote: fetch failed" >&2; exit 1; }
+    ok=1
+    promote_diff "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || ok=0
+    promote_diff "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" || ok=0
+    [ "$ok" = 1 ] || { echo "Not promoted. Commit and push exactly what you tested (or vm.sh dev again from main), then promote." >&2; exit 1; }
+    echo "main matches the dev deploy of $(sed -n 's/^at //p' "$DEV_RECORD"); syncing..."
+    "$0" sync || exit 1
+    want_ctl="$(git -C "$CTL_ROOT" rev-parse --short origin/main)" want_bot="$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
+    on_vm <<EOF | mask
+echo "== after promote"
+for u in fxa-agent-bot fxa-dashboard fxa-mcp-gateway fxa-llm-proxy; do printf '  %-16s %s\n' "\$u" "\$(systemctl is-active \$u)"; done
+c=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-sandbox-ctl rev-parse --short HEAD); b=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-agent-bot rev-parse --short HEAD)
+printf '  controller %s (want $want_ctl)  bot %s (want $want_bot)\n' "\$c" "\$b"
+sleep 5; sudo journalctl -u fxa-agent-bot --since "-2min" --no-pager -o cat | grep -q "is running" && echo "  bot connected" || echo "  WARN: the bot has not logged 'is running' in 2 min"
+printf '  dashboard HTTP %s\n' "\$(curl -s -o /dev/null -w %{http_code} -H 'Host: localhost' localhost:8787/api/snapshot)"
+EOF
+    ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
     echo "then: sudo -iu fxa; tmux new -As main" ;;

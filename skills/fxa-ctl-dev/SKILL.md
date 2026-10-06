@@ -77,13 +77,18 @@ $H dev log                       # the dev bot's log;  $H dev stop
 ```
 
 Buttons cannot be pressed through the API: answer with a reply. The tokens are in
-`fxa-agent-bot/.env.dev`. When it looks right: commit, push, `vm.sh sync`.
+`fxa-agent-bot/.env.dev`. When it looks right: commit, push, `vm.sh promote`.
 
 ## Commit and deploy
 
 1. Scoped conventional commit: `fix(gce): ...`, `feat(session): ...`.
 2. Push both repos when the manager VM needs the change.
-3. `bash skills/fxa-manager/vm.sh sync` fast-forwards the VM's checkouts.
+3. `bash skills/fxa-manager/vm.sh promote` deploys to the live bot (Mozilla Slack). It
+   refuses unless `main` in both repos is exactly what the last `vm.sh dev` ran,
+   uncommitted files included, then syncs and checks the services. `vm.sh sync` alone
+   skips that check: use it only for a change the dev bot cannot exercise.
+   A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
+   secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
 
 ## Restart the bot safely
 

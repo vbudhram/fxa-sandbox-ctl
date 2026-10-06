@@ -22,6 +22,7 @@ $H runner <name> '<command>'   # as the agent user on a runner (the right key, I
 $H sys '<command>'     # as your own login user, who can sudo
 $H screen              # read the tmux session "main"
 $H sync                # pull both repos on the VM after a push
+$H promote             # sync, only if main is exactly what the last vm.sh dev ran; then check
 $H ssh                 # the ssh command for a person
 ```
 
@@ -71,7 +72,9 @@ undoes it; `sessions status` shows it. For the pipeline, use
 `fxa-sandbox-ctl pause "<reason>"`. The hard ceiling is the Anthropic
 workspace's spend limit in the Console.
 
-**Deploy a change.** Commit and push on the laptop, then `vm.sh sync`. It
+**Deploy a change.** Test it with `vm.sh dev`, commit and push, then `vm.sh promote`:
+it refuses unless `main` matches what the dev bot ran, then runs `sync` and checks
+the services, the bot's connection and the dashboard. `vm.sh sync` alone
 fast-forwards both repos, skips a repo with local edits on the VM, links new
 repo skills, and restarts the bot and dashboard only if they run.
 
