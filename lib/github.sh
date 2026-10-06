@@ -219,10 +219,17 @@ gh_feedback() {
   if [ "$sub" = "acted" ]; then
     shift 2
     [ "$#" -gt 0 ] || { echo "ERROR: feedback <KEY> acted needs at least one comment id" >&2; return 1; }
-    local acted="${PIPE_STATE_DIR}/${key}.feedback-acted"
-    printf '%s\n' "$@" >>"$acted"
+    local acted="${PIPE_STATE_DIR}/${key}.feedback-acted" id n=0
+    for id in "$@"; do
+      # thumbsup reads "outdated" as proof that this round's push changed the lines, so a
+      # comment that is outdated already would get a 👍 for a fix nobody made.
+      if [[ "$id" =~ ^[0-9]+$ ]] && [ "$(gh api "repos/${PIPE_REPO_SLUG}/pulls/comments/${id}" --jq '.line // "outdated"' 2>/dev/null)" = outdated ]; then
+        echo "$key: comment $id is outdated already, so no 👍 will follow; reply on it by hand if fixed" >&2; continue
+      fi
+      printf '%s\n' "$id" >>"$acted"; n=$((n + 1))
+    done
     sort -u -o "$acted" "$acted" 2>/dev/null || true
-    echo "recorded $# id(s) for $key"
+    echo "recorded $n id(s) for $key"
     return 0
   fi
 
@@ -258,16 +265,17 @@ gh_feedback() {
   # big asks, then review summaries. The `i` and `r` id prefixes tell the
   # endpoints apart. Our own 🤖 comments and bot chatter are not feedback.
   # An inline comment counts until its thread is resolved, also after a push moved
-  # its lines (outdated). Without the thread list, outdated ones are left out, as before.
+  # its lines (outdated). Without the thread list, stop: a different comment set would
+  # read as new comments to precheck.
   local all conv reviews resolved
   resolved="$(gh api graphql -F o="${PIPE_REPO_SLUG%/*}" -F r="${PIPE_REPO_SLUG#*/}" -F n="$pr" -f query='
     query($o: String!, $r: String!, $n: Int!) { repository(owner: $o, name: $r) { pullRequest(number: $n) {
       reviewThreads(first: 100) { nodes { isResolved comments(first: 100) { nodes { databaseId } } } } } } }' \
     --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[].databaseId | tostring]' 2>/dev/null)" \
-    && [ -n "$resolved" ] || resolved=null
+    && [ -n "$resolved" ] || { echo "ERROR: could not read the review threads of #${pr}" >&2; return 1; }
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c --argjson resolved "$resolved" '[.[]
-                       | select(if $resolved == null then .position != null else ((.id | tostring) | IN($resolved[]) | not) end)
+                       | select((.id | tostring) | IN($resolved[]) | not)
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
                           trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
                           path, line: (.line // .original_line), outdated: (.line == null), url: .html_url, body}]')"

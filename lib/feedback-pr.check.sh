@@ -36,4 +36,11 @@ check "no open questions says so" "yes" "$(grep -q 'None left open.' "$tmp/newbo
 rm -f "$tmp/newbody"; jq -n '{feedback_summary: ["Fixed: x"]}' > "$tmp/done.json"
 _finish_feedback_pr https://github.com/mozilla/fxa/pull/7 "$tmp/done.json" 2>/dev/null
 check "without open_questions the body is left alone" "no" "$([ -f "$tmp/newbody" ] && echo yes || echo no)"
+
+# A markdown heading after the questions ends the section too, and CRLF from a web edit is fine.
+printf '%s' $'**Questions for the reviewer:**\r\n\r\n1. Old?\r\n2. Kept?\r\n\r\n## Screenshots\r\n![x](y)\r\n\r\nCloses: FXA-1' > "$tmp/body"
+rm -f "$tmp/newbody"; jq -n '{open_questions: ["Kept?"]}' > "$tmp/done.json"
+_finish_feedback_pr https://github.com/mozilla/fxa/pull/7 "$tmp/done.json" 2>/dev/null
+check "a ## heading ends the section, CRLF bodies match, the rest stays" "1. Kept?|## Screenshots|![x](y)|Closes: FXA-1" \
+  "$(grep -v '^$' "$tmp/newbody" 2>/dev/null | grep -v '^\*\*Questions' | paste -sd'|' -)"
 exit "$fail"

@@ -670,10 +670,10 @@ ${summary}" >/dev/null 2>&1 || echo "  WARN: could not post the round summary on
   body="$(gh api "repos/${repo}/pulls/${num}" --jq '.body // ""' 2>/dev/null)" || return 0
   new="$(jq -c '.open_questions | map(tostring)' "$done_file" | BODY="$body" python3 -c '
 import json, os, re, sys
-qs, body = json.load(sys.stdin), os.environ["BODY"]
+qs, body = json.load(sys.stdin), os.environ["BODY"].replace("\r\n", "\n")
 m = re.search(r"^\*\*Questions for the reviewer:?\*\*[ \t]*\n", body, re.M)
 if not m: sys.exit(1)
-end = re.search(r"^\*\*[^*\n]+\*\*", body[m.end():], re.M)
+end = re.search(r"^(\*\*[^*\n]+\*\*|#{1,6}[ \t])", body[m.end():], re.M)
 stop = m.end() + end.start() if end else len(body)
 section = "\n".join(f"{i}. {q}" for i, q in enumerate(qs, 1)) if qs else "None left open."
 print(body[:m.end()] + "\n" + section + "\n" + ("\n" + body[stop:] if end else ""), end="")

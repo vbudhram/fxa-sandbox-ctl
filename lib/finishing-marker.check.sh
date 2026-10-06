@@ -13,4 +13,7 @@ touch "$tmp/fxa-auto-1.finishing"
 check "a fresh marker: finishing" "yes" "$(worktree_finishing /w/fxa-auto-1 && echo yes || echo no)"
 touch -t 202001010000 "$tmp/fxa-auto-1.finishing"
 check "a marker a crash left days ago: not finishing" "no" "$(worktree_finishing /w/fxa-auto-1 && echo yes || echo no)"
+_mtime() { return 1; }   # finish removed the marker after the -f test
+touch "$tmp/fxa-auto-1.finishing"
+check "a marker removed during the read: not finishing, and no abort" "no" "$( (set -euo pipefail; worktree_finishing /w/fxa-auto-1 && echo yes || echo no) )"
 exit "$fail"

@@ -39,6 +39,6 @@ fb="$(gh_feedback FXA-1)"
 check "an outdated open thread counts, marked outdated, at its original line" "true 8" "$(jq -r '.comments[] | select(.id == "5") | "\(.outdated) \(.line)"' <<<"$fb")"
 check "a human review summary counts, with its state" "CHANGES_REQUESTED true" "$(jq -r '.comments[] | select(.id == "r20") | "\(.state) \(.trusted)"' <<<"$fb")"
 check "Copilot's overview and an empty approval are left out" "no" "$(jq -e '.comments[] | select(.id == "r21" or .id == "r22")' <<<"$fb" >/dev/null && echo yes || echo no)"
-check "without the thread list, outdated comments are left out as before" "no" \
-  "$(NO_GRAPHQL=1 gh_feedback FXA-1 | jq -e '.comments[] | select(.id == "5")' >/dev/null && echo yes || echo no)"
+check "without the thread list it stops, so precheck sees no changed comment set" "1|" \
+  "$(out="$(NO_GRAPHQL=1 gh_feedback FXA-1 2>/dev/null)"; echo "$?|$out")"
 exit "$fail"

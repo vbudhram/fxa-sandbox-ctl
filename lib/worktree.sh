@@ -121,7 +121,8 @@ _PULL_MEMO=""
 # takes minutes; a marker over 30 min is one a crash left (its RETURN trap never ran).
 worktree_finishing() {
   local mk="${LOG_DIR}/$(basename "$1").finishing"
-  [ -f "$mk" ] && [ $(( $(date +%s) - $(_mtime "$mk") )) -lt "${FXA_FINISHING_STALE_SECONDS:-1800}" ]
+  # finish can remove the marker between the test and the read: a gone marker is not finishing.
+  [ -f "$mk" ] && [ $(( $(date +%s) - $(_mtime "$mk" 2>/dev/null || echo 0) )) -lt "${FXA_FINISHING_STALE_SECONDS:-1800}" ]
 }
 _worktree_pull_if_remote() {
   [ "${FXA_VM_BACKEND:-tart}" = "gce" ] || return 0

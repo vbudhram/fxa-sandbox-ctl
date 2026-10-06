@@ -24,6 +24,9 @@ gh() {
     *) return 1 ;;
   esac
 }
+# acted: comment 1 is outdated already when the pass records it, so it is not recorded.
+gh_feedback FXA-1 acted 1 2 i3 >/dev/null 2>"$tmp/acted-err"
+check "acted skips a comment that is outdated already" "2|i3|yes" "$(paste -sd'|' "$tmp/FXA-1.feedback-acted")|$(grep -q 'comment 1 is outdated already' "$tmp/acted-err" && echo yes)"
 printf '1\n2\ni3\n' >"$tmp/FXA-1.feedback-acted"
 
 out="$(gh_feedback FXA-1 thumbsup 2>&1)"
