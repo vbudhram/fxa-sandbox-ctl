@@ -1334,6 +1334,16 @@ cmd_precheck() {
       *)      _work "drain: $line" ;;
     esac
   done < <(cmd_drain 2>&1)
+  # Drain reads only done tickets. A blocked ticket's PR can still be merged or
+  # closed by a person, and nothing else moves the ticket then.
+  local bstate
+  for key in $(jira_keys_in_state blocked 2>/dev/null || true); do
+    read -r _ num bstate _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
+    case "$bstate" in
+      MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num while blocked (labelled, ticket closed)"; else _work "drain: $key blocked, #$num merged (label merged FAILED)"; fi ;;
+      CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num while blocked (labelled)"; else _work "drain: $key blocked, #$num closed (label rejected FAILED)"; fi ;;
+    esac
+  done
   while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
 
   # Include inflight keys with a PR: a red check keeps a ticket inflight for days.
@@ -1591,19 +1601,20 @@ cmd_feedback_bundle() {
   {
     echo "# ${key} review feedback bundle, PR #${pr}, branch ${br}, rounds used $(gh_feedback "$key" rounds 2>/dev/null)"
     echo "unhandled comments: ${n}"
-    local i=0 id author assoc trusted path line body lo hi ref rp rl nonce
+    local i=0 id author assoc trusted path line body lo hi ref rp rl nonce url
     nonce="$(openssl rand -hex 6)"
     while [ "$i" -lt "$n" ]; do
       id="$(printf '%s' "$fb" | jq -r ".comments[$i].id")"; author="$(printf '%s' "$fb" | jq -r ".comments[$i].author")"
       assoc="$(printf '%s' "$fb" | jq -r ".comments[$i].association")"; trusted="$(printf '%s' "$fb" | jq -r ".comments[$i].trusted")"
       path="$(printf '%s' "$fb" | jq -r ".comments[$i].path // \"\"")"; line="$(printf '%s' "$fb" | jq -r ".comments[$i].line // 0")"
-      body="$(printf '%s' "$fb" | jq -r ".comments[$i].body")"
+      body="$(printf '%s' "$fb" | jq -r ".comments[$i].body")"; url="$(printf '%s' "$fb" | jq -r ".comments[$i].url // \"\"")"
       local where="in the PR conversation" state outd
       state="$(printf '%s' "$fb" | jq -r ".comments[$i].state // \"\"")"; outd="$(printf '%s' "$fb" | jq -r ".comments[$i].outdated // false")"
       [ -n "$path" ] && where="on ${path}:${line}"
       [ "$outd" = true ] && where="${where} (outdated: a later push changed these lines; check the branch before acting)"
       [ -n "$state" ] && where="in a review summary (${state})"
       echo; echo "## [${id}] ${author} (${assoc}, trusted=${trusted}) ${where}"; echo
+      [ -n "$url" ] && { echo "Link: ${url}"; echo; }
       echo "<<<UNTRUSTED-${nonce}>>>"; printf '%s\n' "$body"; echo "<<</UNTRUSTED-${nonce}>>>"
       if [ -n "$path" ] && [ "$line" -gt 0 ] 2>/dev/null; then
         lo=$((line > 8 ? line - 8 : 1)); hi=$((line + 8))
