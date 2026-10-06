@@ -270,13 +270,13 @@ gh_feedback() {
                        | select(if $resolved == null then .position != null else ((.id | tostring) | IN($resolved[]) | not) end)
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
                           trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
-                          path, line: (.line // .original_line), outdated: (.line == null), body}]')"
+                          path, line: (.line // .original_line), outdated: (.line == null), url: .html_url, body}]')"
   [ -n "$all" ] || all='[]'
   conv="$(gh api "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" --paginate 2>/dev/null \
          | jq -c '[.[] | select(.user.type != "Bot" and (.body | startswith("🤖") | not))
                        | {id: ("i" + (.id|tostring)), author: .user.login, association: .author_association,
                           trusted: (.author_association | IN("OWNER","MEMBER","COLLABORATOR")),
-                          path: null, line: null, body}]')"
+                          path: null, line: null, url: .html_url, body}]')"
   [ -n "$conv" ] || conv='[]'
   # A review's own text, such as a "Request changes" summary. Copilot's overview
   # repeats its inline comments, and each new review would read as new feedback.
@@ -284,7 +284,7 @@ gh_feedback() {
          | jq -c '[.[] | select(.user.type != "Bot" and (.body // "") != "" and (.body | startswith("🤖") | not))
                        | {id: ("r" + (.id|tostring)), author: .user.login, association: .author_association,
                           trusted: (.author_association | IN("OWNER","MEMBER","COLLABORATOR")),
-                          path: null, line: null, state, body}]')"
+                          path: null, line: null, state, url: .html_url, body}]')"
   [ -n "$reviews" ] || reviews='[]'
   all="$(jq -c -n --argjson a "$all" --argjson b "$conv" --argjson c "$reviews" '$a + $b + $c')"
   # A member whose org membership is private shows as CONTRIBUTOR to this host's
