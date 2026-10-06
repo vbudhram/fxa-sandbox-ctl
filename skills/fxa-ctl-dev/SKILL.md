@@ -109,6 +109,11 @@ $H dev report "$ts"              # quick answer, boot, turns, usage by model, su
 $H dev log                       # the dev bot's log;  $H dev stop
 ```
 
+For the bot's Slack messages alone (status lines, the PR card, CI lines), use
+`FXA_DEV_FAKE=1 $H dev`: `fake-ctl.sh` plays each session on the clock, with no runner,
+no push and no real PR (a draft PR event, then CI running, then passed after 60 s).
+`!pr` stands in for Open PR. A plain `$H dev` goes back to the real controller.
+
 Buttons cannot be pressed through the API: answer with a reply. The tokens are in
 `fxa-agent-bot/.env.dev`. When it looks right: commit, push, `vm.sh promote`.
 

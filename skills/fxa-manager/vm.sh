@@ -10,6 +10,7 @@
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
 #                         (no commit, no Docker); a scratch folder, removed after
 #   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]   (FXA_SESSION_BASE_SHA=<sha> vm.sh dev: pin new sessions)
+#                         (FXA_DEV_FAKE=1 vm.sh dev: a scripted controller, no runner and no PR; see fxa-ctl-dev/fake-ctl.sh)
 #                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
@@ -156,6 +157,8 @@ printf 'FXA_CTL=%s\nERROR_DMS=0\nSLACK_CALL_LOG=%s\n' "$D/fxa-sandbox-ctl/fxa-sa
 EOF2
           # An eval pins every new session to one commit (vm.sh dev with FXA_SESSION_BASE_SHA set); unset, main.
           [[ "${FXA_SESSION_BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] && echo "echo FXA_SESSION_BASE_SHA=${FXA_SESSION_BASE_SHA} >> fxa-agent-bot/.env.devhost"
+          # FXA_DEV_FAKE=1: skills/fxa-ctl-dev/fake-ctl.sh plays each session (no runner, no PR), with its own sessions file.
+          [ "${FXA_DEV_FAKE:-}" = 1 ] && echo 'echo FXA_CTL=$D/fxa-sandbox-ctl/skills/fxa-ctl-dev/fake-ctl.sh >> fxa-agent-bot/.env.devhost; export FXA_AGENT_STATE=$HOME/.fxa-agent-dev-fake-sessions.json FAKE_CTL_DIR=$D/fake-ctl'
           cat <<'EOF2'
 [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2
 cd fxa-agent-bot
