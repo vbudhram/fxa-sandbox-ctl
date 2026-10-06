@@ -138,6 +138,9 @@ elif command -v acli >/dev/null; then
     'printf "%s\n" "$T" | acli jira auth login --site mozilla-hub.atlassian.net --email "$E" --token' >/dev/null 2>&1 \
     || echo "fxa-secrets: the acli Jira login failed" >&2
 fi
+# The same account puts merged tickets in the sprint: acli cannot write the Sprint field,
+# so the controller calls Jira's REST API with these (jira_sprint_add).
+[ -n "$j" ] && [ -n "$e" ] && [ -f "$W/fxa-sandbox-ctl/.env" ] && printf 'PIPE_JIRA_BASIC=%s:%s\n' "$e" "$j" >> "$W/fxa-sandbox-ctl/.env"
 unset j e
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
