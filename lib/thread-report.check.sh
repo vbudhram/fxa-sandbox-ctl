@@ -37,5 +37,8 @@ printf '%s\n' '{"turn":1,"secs":76}' '{"turn":2,"secs":5740}' > "$tmp/agent-bbbb
 check "thread usage: sessions, turns, minutes, no dollars" '{"sessions":2,"turns":3,"minutes":132}' "$(_thread_usage agent-bbbbbb)"
 echo '{"key":"agent-cccccc","state":"active"}' > "$tmp/agent-cccccc.json"
 check "no thread: null" "null" "$(_thread_usage agent-cccccc)"
+rm -f "$tmp/agent-aaaaaa.turns.jsonl"
+# The bot reads a non-zero exit as a failure and drops the thread line.
+check "a session with no finished turn yet still counts, under pipefail" '{"sessions":2,"turns":2,"minutes":96} rc=0' "$( (set -o pipefail; _thread_usage agent-bbbbbb; echo "rc=$?") | paste -sd" " -)"
 
 exit "$fail"

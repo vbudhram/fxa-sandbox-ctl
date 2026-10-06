@@ -14,10 +14,14 @@ W="${PERF_DIR:-/tmp/fxa-perf}" K="${PERF_KEEP:-/workspace/.fxa-keep/perf}" WS="$
 PROFILE="${PERF_PROFILE:-mobile}"
 mkdir -p "$W/builds" "$K/results"
 
-key() { [ -f "$W/builds/$1/asset-manifest.json" ] && { sha1sum 2>/dev/null || shasum; } < "$W/builds/$1/asset-manifest.json" | cut -c1-12; }
+# The manifest names every hashed asset; index.html is not hashed, so it goes in too.
+key() { [ -f "$W/builds/$1/asset-manifest.json" ] && cat "$W/builds/$1/asset-manifest.json" "$W/builds/$1/index.html" 2>/dev/null | { sha1sum 2>/dev/null || shasum; } | cut -c1-12; }
 results() { echo "$K/results/$(key "$1")-${PROFILE}-$2.jsonl"; }
 labels() { tr ',' '\n' <<< "$1" | grep .; }
 have() { local f; f="$(results "$1" "$2")"; [ -f "$f" ] && grep -c . "$f" || echo 0; }
+
+# The two paths a build checks out, back at HEAD, and no file that only <rev> had.
+back_to_head() { git -C "$WS" checkout -q --no-overlay HEAD -- packages/fxa-settings packages/fxa-react; git -C "$WS" clean -fdq -- packages/fxa-settings packages/fxa-react; }
 
 build() {
   local label="${1:?label}" rev="${2:-}" s="$WS/packages/fxa-settings" paths=(packages/fxa-settings packages/fxa-react) rc
@@ -26,13 +30,16 @@ build() {
     # The build reads the tree, so <rev> is checked out there and HEAD put back after.
     # Uncommitted edits in those paths would be lost: refuse instead.
     [ -z "$(git -C "$WS" status --porcelain -- "${paths[@]}")" ] || { echo "fxa-settings or fxa-react has uncommitted changes: commit them, or build the working tree with no rev" >&2; return 2; }
-    git -C "$WS" checkout -q "$rev" -- "${paths[@]}" || return 1
+    # --no-overlay: a file <rev> lacks is removed, and on the way back a file only <rev> has.
+    git -C "$WS" checkout -q --no-overlay "$rev" -- "${paths[@]}" || return 1
+    # A killed build (a tool timeout) must still put HEAD back.
+    trap 'back_to_head' EXIT; trap 'back_to_head; exit 130' INT TERM HUP
   fi
   ( cd "$s" && NODE_ENV=production npx tailwindcss -i ./src/styles/tailwind.css -o ./src/styles/tailwind.out.css --postcss >/dev/null 2>&1 \
     && rm -rf build/perf && SKIP_PREFLIGHT_CHECK=true INLINE_RUNTIME_CHUNK=false NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=6144" \
        BUILD_PATH=build/perf node scripts/build.js > "$W/build-$label.log" 2>&1 ); rc=$?
   # Back to HEAD, and no file that only <rev> had: the guard above made the paths clean.
-  [ -n "$rev" ] && { git -C "$WS" checkout -q HEAD -- "${paths[@]}"; git -C "$WS" clean -fdq -- "${paths[@]}"; }
+  [ -n "$rev" ] && { trap - EXIT INT TERM HUP; back_to_head; }
   [ "$rc" = 0 ] || { tail -20 "$W/build-$label.log"; return 1; }
   rm -rf "${W:?}/builds/$label"; mv "$s/build/perf" "$W/builds/$label"
   echo "built $label at ${rev:-the working tree}: key $(key "$label")"

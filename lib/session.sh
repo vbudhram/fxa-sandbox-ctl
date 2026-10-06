@@ -238,7 +238,8 @@ _thread_usage() {
   [ -n "${keys:-}" ] || { echo null; return 0; }
   for k in $keys; do files="$files ${SESSION_DIR}/${k}.turns.jsonl"; done
   # shellcheck disable=SC2086  # one path per key, none with spaces
-  cat $files 2>/dev/null | jq -sc --argjson n "$(wc -w <<< "$keys" | tr -d ' ')" \
+  # A session that has not finished a turn has no file yet; under pipefail cat would fail the line.
+  { cat $files 2>/dev/null || true; } | jq -sc --argjson n "$(wc -w <<< "$keys" | tr -d ' ')" \
     '{sessions: $n, turns: length, minutes: (map(.secs // 0) | add // 0 | . / 60 | floor)}'
 }
 
@@ -1404,7 +1405,8 @@ _session_save() {
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
     # The agent's work files are not in the patch (it leaves out .fxa-*); without them a
     # resumed runner writes its test plan and PR body again from memory. .fxa-keep holds the
-    # scripts it runs again (a perf harness): /tmp is gone at the pause. Over 10 MB, it stays behind.
+    # scripts it runs again (a perf harness): /tmp is gone at the pause. Over 9 MB it stays behind, so
+    # the archive stays under the 10 MB cut even when the files do not compress.
     _session_sh "$name" "cd /workspace && ${_SESSION_WORK_TAR}" \
       2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
     [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
@@ -1421,7 +1423,7 @@ _session_save() {
 # The saved work a resume needs lives in the bucket; this disk keeps a copy until prune,
 # so a resume here stays local, and one after a lost disk still has it.
 # The work files a pause keeps, as a gzipped tar on stdout, run in /workspace.
-_SESSION_WORK_TAR='f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -d .fxa-keep ] && [ "$(du -sk .fxa-keep | cut -f1)" -le 10240 ] && f="$f .fxa-keep"; [ -z "$f" ] || tar -czf - $f'
+_SESSION_WORK_TAR='f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -d .fxa-keep ] && [ "$(du -sk .fxa-keep | cut -f1)" -le 9216 ] && f="$f .fxa-keep"; [ -z "$f" ] || tar -czf - $f'
 _SESSION_SAVED="patch bundle full.patch claude.tgz work.tgz"
 _session_store() { printf '%s' "${FXA_SESSION_STORE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/saved}}"; }
 

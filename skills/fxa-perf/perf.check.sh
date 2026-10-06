@@ -40,4 +40,29 @@ check "the other is loaded each round" "7" "$(grep -c '^load b first' <<< "$out"
 check "report: medians" "a 7 - 900 1200" "$(grep '^a ' <<< "$out" | awk '{ print $1, $2, $3, $4, $5 }')"
 check "no build: a clear refusal" "2" "$(bash "$here/perf.sh" measure a,zz 7 >/dev/null 2>&1; echo $?)"
 
+# build <label> <rev>: a scratch repo whose branch deleted old.ts and added new.ts, and a stub build.
+R="$tmp/repo"; mkdir -p "$R/packages/fxa-settings" "$R/packages/fxa-react" "$tmp/stub"
+( cd "$R" && git init -q && git config user.email user@example.com && git config user.name t
+  echo keep > packages/fxa-settings/keep.ts; echo old > packages/fxa-settings/old.ts; echo r > packages/fxa-react/r.ts
+  git add -A && git commit -qm base && git rm -q packages/fxa-settings/old.ts && echo new > packages/fxa-settings/new.ts \
+  && git add -A && git commit -qm head )
+base="$(git -C "$R" rev-parse HEAD~1)"; real_node="$(command -v node)"
+printf '#!/bin/sh\nexit 0\n' > "$tmp/stub/npx"
+printf '#!/bin/sh\nif [ "$1" = scripts/build.js ]; then [ -n "$SLOW" ] && sleep 30; mkdir -p "$BUILD_PATH"; ls > "$BUILD_PATH/asset-manifest.json"; echo "${HTML:-a}" > "$BUILD_PATH/index.html"; exit 0; fi\nexec %s "$@"\n' "$real_node" > "$tmp/stub/node"
+chmod +x "$tmp/stub/npx" "$tmp/stub/node"
+pb() { PATH="$tmp/stub:$PATH" PERF_DIR="$tmp/w" PERF_KEEP="$tmp/keep" PERF_WS="$R" bash "$here/perf.sh" build "$@"; }
+pb base "$base" >/dev/null 2>&1
+check "a rev build puts HEAD back: the deleted file stays gone, the new one stays" "no|yes|clean" \
+  "$([ -e "$R/packages/fxa-settings/old.ts" ] && echo yes || echo no)|$([ -e "$R/packages/fxa-settings/new.ts" ] && echo yes || echo no)|$([ -z "$(git -C "$R" status --porcelain)" ] && echo clean || echo dirty)"
+# A tool timeout signals perf.sh and the build under it, and only those.
+killtree() { local c; for c in $(pgrep -P "$1"); do killtree "$c"; done; kill -TERM "$1" 2>/dev/null; }
+SLOW=1 PATH="$tmp/stub:$PATH" PERF_DIR="$tmp/w" PERF_KEEP="$tmp/keep" PERF_WS="$R" bash "$here/perf.sh" build killed "$base" >/dev/null 2>&1 & pid=$!
+sleep 1.5; killtree "$pid"; wait "$pid" 2>/dev/null
+check "a killed rev build also puts HEAD back" "no|clean" \
+  "$([ -e "$R/packages/fxa-settings/old.ts" ] && echo yes || echo no)|$([ -z "$(git -C "$R" status --porcelain)" ] && echo clean || echo dirty)"
+HTML=a pb ka >/dev/null 2>&1; HTML=b pb kb >/dev/null 2>&1
+eval "$(sed -n '/^key()/p' "$here/perf.sh")"
+ka="$(W="$tmp/w" key ka)"; kb="$(W="$tmp/w" key kb)"
+check "a change only to index.html changes the key" "yes" "$([ -n "$ka" ] && [ "$ka" != "$kb" ] && echo yes || echo no)"
+
 exit "$fail"
