@@ -145,6 +145,21 @@ jira_summary_for() {
 }
 
 # jira_normalize_key <KEY>: uppercase the project prefix, validate shape.
+# jira_card <KEY>   One JSON line for a Slack card: summary, status, assignee, type,
+# priority. Prints null for a ticket Slack must not show: another project, a security
+# level, or a HackerOne or security label (the MCP gateway's rule).
+jira_card() {
+  local key out; key="$(jira_normalize_key "${1:-}")" || return 1
+  out="$(acli jira workitem view "$key" --fields summary,status,assignee,labels,security,issuetype,priority --json 2>/dev/null \
+    | jq -c --arg p "${FXA_JIRA_CARD_PROJECT:-FXA}" '
+        if (.key | startswith($p + "-") | not) or .fields.security != null
+           or ([.fields.labels[]? | ascii_downcase] | any(. == "hackerone" or . == "security")) then null
+        else {key, summary: .fields.summary, status: .fields.status.name, category: .fields.status.statusCategory.key,
+              assignee: .fields.assignee.displayName, type: .fields.issuetype.name, priority: .fields.priority.name} end' \
+    2>/dev/null)" || true
+  printf '%s\n' "${out:-null}"
+}
+
 jira_normalize_key() {
   local key="${1:-}"
   key="$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"

@@ -16,6 +16,9 @@ Use the helper for everything it covers. It runs on the laptop or on the VM:
 H=~/Desktop/working2/fxa-sandbox-ctl/skills/fxa-manager/vm.sh
 $H status              # start here
 $H run '<command>'     # a shell command as fxa, in the controller repo
+$H run - <<'EOF'      # the same, with a multi-line script on stdin: no quoting, no base64
+EOF
+$H runner <name> '<command>'   # as the agent user on a runner (the right key, IAP retries)
 $H sys '<command>'     # as your own login user, who can sudo
 $H screen              # read the tmux session "main"
 $H sync                # pull both repos on the VM after a push

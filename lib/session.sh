@@ -1088,6 +1088,36 @@ session_pr_ready() {
   _session_history_add "$1" action "Marked ${url} ready for review"
 }
 
+# session_create_jira <key>   A Jira ticket for a session PR that has none: an FXA task
+# with the PR's title and first paragraph, the PR and Slack thread links, and the
+# agent-session label. The PR body then names it, so the PR status finds it. Prints the
+# key; a PR that names a ticket already prints that one and creates nothing.
+session_create_jira() {
+  local url pr title body key desc site="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}"
+  url="$(session_get "$1" pr_url)"; [ -n "$url" ] || { echo "no PR for $1" >&2; return 1; }
+  pr="$(gh pr view "$url" --json title,body,headRefName 2>/dev/null)" || { echo "could not read $url" >&2; return 1; }
+  key="$(printf '%s' "$pr" | jq -r '[.title, .headRefName, .body] | map(. // "") | join(" ") | [scan("(?<![A-Za-z0-9-])FXA-[0-9]+")] | first // empty')"
+  if [ -z "$key" ]; then
+    title="$(printf '%s' "$pr" | jq -r '.title | sub("^[a-z]+(\\([^)]*\\))?!?: *"; "")')"
+    body="$(printf '%s' "$pr" | jq -r '.body // ""')"
+    desc="$(mktemp)"
+    { printf '%s\n' "$body" | awk 'NF { p = 1 } p && !NF { exit } p' | cut -c1-1500
+      printf '\nPull request: %s\n' "$url"
+      [ -n "$(session_get "$1" slack_url)" ] && printf 'Slack thread: %s\n' "$(session_get "$1" slack_url)"
+      printf '\nCreated by fxa-agent from an agent session.\n'; } > "$desc"
+    key="$(acli jira workitem create --project "${FXA_JIRA_SESSION_PROJECT:-FXA}" --type Task --summary "$title" \
+             --description-file "$desc" --label agent-session --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
+    rm -f "$desc"
+    [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "could not create a Jira ticket for $url" >&2; return 1; }
+    { printf '%s' "$pr" | jq -r '.body // ""'; printf '\n\nJira: %s/browse/%s\n' "$site" "$key"; } \
+      | gh api -X PATCH "repos/$(_session_pr_parts "$1" | cut -f1)/pulls/$(_session_pr_parts "$1" | cut -f2)" -F body=@- >/dev/null 2>&1 \
+      || echo "NOTE: created $key, but could not add it to the PR body" >&2
+    _session_history_add "$1" action "Created ${key} for ${url}"
+  fi
+  session_set "$1" jira "$key"
+  printf '%s\n' "$key"
+}
+
 # session_review_ack <key> <pr_url>   After a PR update: a thumbs up on each Copilot
 # comment the agent fixed, from its /workspace/.fxa-review-outcomes.json.
 session_review_ack() {
