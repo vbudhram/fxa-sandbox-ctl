@@ -31,7 +31,9 @@ transcript: `pass`, `fixed: <what>`, or `n/a`.
 
 1. **Tests protect the change.** This was the largest group, about 50 findings.
    - For each behavior you changed, name the test that fails if you revert
-     that change. If no test would fail, write one.
+     that change. If no test would fail, write one at the lowest level that
+     fails: a unit test before a functional spec. A styling-only change needs
+     no new functional spec.
    - When you delete a test, replace its coverage or say in the PR body why
      the behavior is gone.
    - Check that the test target really runs. `fxa-settings` `test-unit` is

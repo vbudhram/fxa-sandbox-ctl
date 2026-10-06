@@ -72,6 +72,7 @@ COMMANDS:
   browser <name>               Launch Firefox configured to use an agent's VM
   test <name> [-- args]        Run Playwright functional tests against an agent's VM
   ssh <name>                   Print SSH connection info for an agent's VM
+  exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
   list                         List all agents and their status
   logs <name> [--follow]       View agent logs
   stop <name>                  Stop and remove an agent
@@ -124,6 +125,7 @@ PIPELINE COMMANDS:
   done-keys                    Keys awaiting review
   drain                        Done keys whose PR merged, closed, or went red
   ticket <ISSUE-KEY>           Ticket text INCLUDING comments
+  jira-card <ISSUE-KEY>        Summary, status and assignee as JSON for a Slack card; null for a hidden ticket
   ground <ISSUE-KEY>           Write /tmp/fxa-KEY-ground.md: ticket, cited paths checked on
                                origin/main, frozen/stories checks, overlapping open PRs
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
@@ -136,6 +138,7 @@ PIPELINE COMMANDS:
   launch-times <KEY>           When each step of the last launch happened (boot, agent, push, PR, CI)
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
   progress <ISSUE-KEY>         What the launcher did (read this first)
+  needs-you <ISSUE-KEY>        "new" the first time a ⚠️ item is reported, then "seen <date>"
   prstate <ISSUE-KEY>          PR number, state, and check tally
   conflicts <ISSUE-KEY>        Files conflicting with main, and their class
                                (lockfile | source). Empty if it merges clean.
@@ -1400,6 +1403,12 @@ cmd_feedback()  {
   if [ "${2:-}" = "bundle" ]; then cmd_feedback_bundle "$(_key "$1")"; else gh_feedback "$(_key "$1")" "${@:2}"; fi
 }
 cmd_progress()  { pipeline_progress "$(_key "$1")"; }
+# needs-you KEY   For the pass's ⚠️ list: "new" the first time (and records today), then
+# "seen <date>". A label change clears it, so the next item for the ticket is new again.
+cmd_needs_you() {
+  local key f; key="$(_key "$1")"; f="${PIPE_STATE_DIR}/${key}.needs-you"
+  if [ -f "$f" ]; then echo "seen $(cat "$f")"; else date -u +%F > "$f"; echo new; fi
+}
 cmd_lock()      { pipeline_lock; }
 cmd_unlock()    { pipeline_unlock; }
 cmd_pause()     { pipeline_pause "$@"; }
@@ -1642,6 +1651,7 @@ cmd_feedback_bundle() {
 cmd_label() {
   local key="${1:-}" state="${2:-}"
   jira_label_set "$key" "$state" || return 1
+  rm -f "${PIPE_STATE_DIR}/$(jira_normalize_key "$key" 2>/dev/null).needs-you"
   state="${state#${PIPE_LABEL_PREFIX}-}"
   [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
   # Only inflight owns a worktree, so any other state reaps the VM.
@@ -2414,6 +2424,7 @@ cmd_session() {
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     review-comments) _session_key "${2:-}" && session_review_comments "$2" "${3:-}" ;;
     pr-ready) _session_key "${2:-}" && session_pr_ready "$2" ;;
+    create-jira) _session_key "${2:-}" && session_create_jira "$2" ;;
     cost) _session_key "${2:-}" && { session_live "$2" && _session_summary_json "$2" || { session_get "$2" summary; echo; }; } ;;
     thread-usage) _session_key "${2:-}" && _thread_usage "$2" ;;
     pause) _session_key "${2:-}" && session_pause "$2" ;;
@@ -2466,6 +2477,8 @@ main() {
     browser)    cmd_browser "$@" ;;
     test)       cmd_test "$@" ;;
     ssh)        cmd_ssh "$@" ;;
+    exec)       [ -n "${1:-}" ] && [ -n "${2:-}" ] || { echo "Usage: fxa-sandbox-ctl exec <name> '<command>'" >&2; exit 1; }
+                vm_exec_as_agent "$1" "${*:2}" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;
@@ -2483,6 +2496,7 @@ main() {
     drain)      cmd_drain "$@" ;;
     label)      cmd_label "$@" ;;
     ticket)     cmd_ticket "$@" ;;
+    jira-card)  jira_card "$@" ;;
     ground)     cmd_ground "$@" ;;
     reporter)   cmd_reporter "$@" ;;
     slots)      cmd_slots "$@" ;;
@@ -2492,6 +2506,7 @@ main() {
     launch-times) _launch_times "$@" ;;
     alive)      cmd_alive "$@" ;;
     progress)   cmd_progress "$@" ;;
+    needs-you)  cmd_needs_you "$@" ;;
     prstate)    cmd_prstate "$@" ;;
     conflicts)  cmd_conflicts "$@" ;;
     relock)     cmd_relock "$@" ;;
@@ -2551,4 +2566,6 @@ main() {
   esac
 }
 
-main "$@"
+# One line, parsed before it runs: a sync that replaces this file while a long command
+# (a launch waiting on CI) runs cannot make bash read the new file from an old offset.
+main "$@"; exit $?

@@ -68,9 +68,12 @@ on `origin/main`. Most claims are confirmed or refuted from that one read.
 right and sometimes wrong; a fix built on a wrong claim is a confident change to correct code.
 
 **Act** when the fix is determinate and inside the ticket's scope: confirmed bug, missing guard,
-type tightening at a touched boundary, dead branch, test for changed code. **Report** when it
-asks a question, states a design preference, widens scope, needs a migration or frozen path, or
-failed verification (say which check). **Anti-bloat:** the fix commit must be strictly narrower
+type tightening at a touched boundary, dead branch, test for changed code. A trusted reviewer's
+explicit instruction ("drop this test", "rename X") is determinate too: act on it unless another
+trusted reviewer disagrees. **Report** when it asks a question, states a design preference, widens
+scope, needs a migration or frozen path, failed verification (say which check), or cites lines
+that are the same on `origin/main` and that the diff does not touch: list that one as a follow-up
+for the ticket, and spend no round on it. **Anti-bloat:** the fix commit must be strictly narrower
 than the original; no new files unless a comment names one.
 
 Procedure:
@@ -262,7 +265,7 @@ supporting evidence (INCIDENTS: Reconcile and CI).
 | `stalled exited-without-handoff <n>m` | Read `$CTL tail`, relaunch once. Second time → `blocked`. |
 | `stalled no-motion <n>m` | Confirm with `tail`, relaunch once. Second time → `blocked`. |
 | `watching`, VM dead | Failed launch. Relaunch once. Second → `blocked`. |
-| `error <line>` | Report the line. Do not relaunch. |
+| `error <line>` | Report the line in the first pass that sees it. Do not relaunch. For `refusing to ship` (the tooling guard), label `blocked` and post one PR comment that names the paths and says a human can relaunch with `FXA_ALLOW_TOOLING_EDITS=1`. |
 | `nolog` | Return to `public`. |
 | PR open, checks running | Leave it. |
 | PR open, all green | `label done`. Frees the slot, reaps the VM, 👍s recorded ids. |
@@ -378,3 +381,6 @@ phone number in a context file, comment, or PR.
 
 ✅ holds only PRs actually waiting on a human. List merges and closures only in the pass that
 drained them. Show a closure even though nothing is left to do about it.
+A ⚠️ item gets its full reason once. Before you list one, run `$CTL needs-you KEY`: `new` →
+the full reason; `seen <date>` → one line, `FXA-NNNNN  still waiting since <date>`, so new items
+stand out (one item was repeated in 37 reports). A label change resets it.

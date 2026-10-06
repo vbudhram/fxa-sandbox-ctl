@@ -17,6 +17,9 @@ check 2 'pkill -f snake-profile; sleep 1'
 check 2 'pkill -9 -f "playwright test --project=local"'
 check 0 'until grep -q DONE out.log; do sleep 3; done' true
 check 0 "pkill -f '[p]laywright test'"
+check 2 "sed -i 's/a/b/' serve.js && pkill -f '[s]erv'"
+check 2 "pkill -f '[/]tmp/perf/serve.js'; sleep 1; nohup node /tmp/perf/serve.js > /tmp/s.log 2>&1 &"
+check 0 "pkill -f '[s]erve.js'; echo restarted"
 check 0 'pkill -x firefox-bin; sleep 1; ls'
 check 0 'timeout 270 tail --pid=$(pgrep -f "[p]laywright test" | head -1) -f /dev/null; tail -20 run.log'
 check 2 'pid=$(pgrep -f "[m]easure.js" | head -1); timeout 570 tail --pid=$pid -f /dev/null; cat out.log'

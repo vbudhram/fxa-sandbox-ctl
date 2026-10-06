@@ -138,8 +138,9 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
   esac
   if [ "$LINT" = 1 ]; then
     add "${pre}$p lint" "$p" "npx eslint $r"
-    # The App commits through the API, so no lint-staged hook formats the change.
-    add "${pre}$p format" "$p" "npx prettier --check --ignore-unknown $(rel "$p" "${fs[@]}") || { echo 'fix with: npx prettier --write <files>'; false; }"
+    # The App commits through the API, so no lint-staged hook formats the change: format the
+    # files here, as the hook would, and say which. Exit 2 is a file Prettier cannot parse.
+    add "${pre}$p format" "$p" "f=\$(npx prettier --list-different --ignore-unknown $(rel "$p" "${fs[@]}")); rc=\$?; [ \$rc -le 1 ] || exit \$rc; [ -z \"\$f\" ] || { npx prettier --write --ignore-unknown \$f >/dev/null && echo \"formatted: \$(echo \$f)\"; }"
   fi
   if [ "$TYPES" = 1 ]; then
     case "$p" in

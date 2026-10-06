@@ -37,6 +37,7 @@ rm "$tmp/slot/.git"; cp "$tmp/pointer" "$tmp/slot/.git"
 for f in .yarnrc.yml packages/x/.npmrc .yarn/plugins/p.cjs; do
   mkdir -p "$tmp/slot/$(dirname "$f")"; echo x > "$tmp/slot/$f"; g -C "$tmp/slot" add -f -- "$f"
   check "guard refuses $f" "no" "$(_finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no)"
+  check "the ERROR line names $f" "1" "$(_finish_tooling_guard "$tmp/slot" 2>&1 | grep -c "^ERROR: refusing to ship: .*: ${f}$")"
   g -C "$tmp/slot" rm -q --cached -- "$f"
 done
 echo x > "$tmp/slot/a.ts"; g -C "$tmp/slot" add a.ts

@@ -1,6 +1,6 @@
 ---
 name: fxa-verify
-description: Verify a change in the FxA monorepo on the sandbox VM with the fastest correct checks. Maps each changed file to its package and runs only the related unit tests, lint, a Prettier check and a type-check on the changed files, then prints a verdict table. Use before saying tests pass, and before the handoff.
+description: Verify a change in the FxA monorepo on the sandbox VM with the fastest correct checks. Maps each changed file to its package and runs only the related unit tests, lint, Prettier (it formats them) and a type-check on the changed files, then prints a verdict table. Use before saying tests pass, and before the handoff.
 ---
 
 # Verify a change
@@ -29,9 +29,10 @@ the spec); `NOREL` (no spec imports that file, for example a route that only
 integration specs cover: your test plan must cover it); `CI` (left to CI);
 `TODO` (Storybook, by hand).
 
-Each touched project gets lint, a Prettier check, and a type-check. The App
-commits through the API, so no hook formats your change: fix a `format` FAIL
-with `npx prettier --write <files>`. Pass file paths to check only those. Print the verdict table in your reply: it is the evidence.
+Each touched project gets lint, Prettier, and a type-check. The App commits
+through the API, so no hook formats your change: the `format` row writes Prettier
+on your files and passes, and its log names each file it formatted. It fails only
+on a file Prettier cannot parse. Pass file paths to check only those. Print the verdict table in your reply: it is the evidence.
 
 With no file paths it checks every change in the working tree, including
 changes an earlier run left on this slot. Read `git status` first; if the plan

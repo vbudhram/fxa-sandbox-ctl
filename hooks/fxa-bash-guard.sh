@@ -42,4 +42,16 @@ Bracket the first letter of the pattern: pkill -f '[p]laywright test' matches th
 EOF
   exit 2
 fi
+# A bracketed pattern only helps when nothing else in the command spells out what it
+# matches: `pkill -f '[s]erv' && node serve.js` still kills its own shell.
+for pat in $(grep -oE "pkill[[:space:]][^;&|]*-[a-zA-Z0-9]*f[a-zA-Z0-9]*[[:space:]]+['\"]?\[[^]]\][^'\"[:space:];&|]*" <<< "$sh" | grep -oE "\[[^]]\][^'\"[:space:];&|]*$"); do
+  plain="${pat:1:1}${pat:3}"
+  if grep -qF -- "$plain" <<< "$sh"; then
+    cat >&2 <<'EOF'
+Blocked: this command also spells out what the bracketed pkill pattern matches, so pkill still
+matches this command's own shell and kills it (exit 144). Run the pkill in a Bash call of its own.
+EOF
+    exit 2
+  fi
+done
 exit 0

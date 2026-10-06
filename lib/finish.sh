@@ -927,8 +927,8 @@ _finish_tooling_guard() {
     esac
   done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
   [ -z "$hit" ] && return 0
-  echo "ERROR: refusing to ship: the change touches CI or host tooling:" >&2
-  printf '  %s\n' "$hit" >&2
+  # The paths on the ERROR line itself: progress and the pass keep only that line.
+  echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
   echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
   return 1
 }

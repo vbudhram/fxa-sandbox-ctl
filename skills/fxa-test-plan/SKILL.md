@@ -48,7 +48,10 @@ sandbox:
 - Add a `unit` line for each edge case and for the regression test: a test that
   fails if you revert the change. Write a new spec when none exists.
 - A UI change: a `functional` or `storybook` line to see it, and `unit` for its
-  states.
+  states. For a layout or styling change (CSS classes, spacing, breakpoints), run
+  the functional or storybook line to look, but do not commit a new functional spec:
+  reviewers reject them (#21380, #21305, #21209). Commit a functional spec only for
+  a user flow.
 - A route or API change: a `check` or `integration` line that calls it, and a
   `functional` line when a user flow uses it.
 
@@ -59,6 +62,11 @@ Search for existing specs before you plan a new one:
 ```bash
 git grep -ln '<route or symbol>' -- '*.spec.ts' '*.test.tsx' '*.in.spec.ts' 'packages/functional-tests/tests'
 ```
+
+Run the existing specs this finds before the handoff, not only the new ones: each spec
+that imports the changed export, renders the changed component, or spoofs the user
+agent or version your change checks. Put each in the plan as a line with its `spec` and no `new`. CI
+failures in specs nobody ran here cost 5 fix rounds in a week (#21334, #21381, #21377).
 
 A `check` is a shell command and a regular expression its output must match.
 Useful targets on the stack (see `/etc/vm-agent-guide.md`):

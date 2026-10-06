@@ -161,8 +161,9 @@ When a run fails and its output or log is long, give the path to the
 - Never write your own wait loop, such as `until grep -q DONE out; do sleep 5; done`.
   It does not see the job die, so it waits until the 10-minute timeout. A hook
   blocks it, and a `sleep` of 30 s or more.
-- Bracket the first letter in `pkill -f '[p]attern'`. A bare pattern also
-  matches your own shell, and the call kills itself (exit 144). A hook blocks it.
+- Bracket the first letter in `pkill -f '[p]attern'`, and run the pkill in a Bash call
+  of its own. A bare pattern, or a command that also names the process (`&& node
+  serve.js`), matches your own shell, and the call kills itself (exit 144). A hook blocks it.
 - Before the handoff, run `/fxa-unslop`. It checks your tests, leftovers,
   comments and PR body against what reviewers flag most often.
 

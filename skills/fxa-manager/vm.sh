@@ -2,6 +2,8 @@
 # Operate the fxa-manager VM, from the laptop or on the VM itself.
 #   vm.sh status          services, timers, pipeline, repos, disk, secrets, runners
 #   vm.sh run '<cmd>'     run a shell command as fxa in the controller repo
+#   vm.sh run - <<'EOF'   the same, with a script on stdin (no quoting, no base64)
+#   vm.sh runner <name> '<cmd>'   run a command as the agent user on a runner, through the controller
 #   vm.sh sys '<cmd>'     run as your own login user, who can sudo (systemctl, journalctl)
 #   vm.sh screen          read the tmux session "main" (read-only, secrets masked)
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
@@ -53,8 +55,16 @@ done
 EOF
     ;;
   run)
-    [ -n "${2:-}" ] || { echo "usage: vm.sh run '<command>'" >&2; exit 1; }
-    printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && $2" | on_vm | mask ;;
+    [ -n "${2:-}" ] || { echo "usage: vm.sh run '<command>' | vm.sh run - <<'EOF' ... EOF" >&2; exit 1; }
+    if [ "$2" = - ]; then
+      # The script goes in a quoted heredoc: nothing in it is expanded before fxa's shell runs it.
+      { echo "sudo -u fxa -H bash -l <<'__FXA_RUN_SCRIPT__'"; echo 'cd ~/Desktop/working2/fxa-sandbox-ctl'; cat; echo '__FXA_RUN_SCRIPT__'; } | on_vm | mask
+    else
+      printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && $2" | on_vm | mask
+    fi ;;
+  runner)
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: vm.sh runner <name> '<command>'" >&2; exit 1; }
+    printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce exec $(printf %q "$2") $(printf %q "$3")" | on_vm | mask ;;
   sys)
     [ -n "${2:-}" ] || { echo "usage: vm.sh sys '<command>'" >&2; exit 1; }
     printf '%s\n' "$2" | on_vm | mask ;;
