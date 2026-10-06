@@ -51,6 +51,13 @@ if [ -s "$done_file" ]; then
     [ "${#title}" -le 100 ] || problems+=("pr_title is ${#title} characters; keep it to 100")
     [ "$(jq -r .branch "$done_file")" = "$(git branch --show-current)" ] \
       || problems+=("branch is '$(jq -r .branch "$done_file")' but the checkout is on '$(git branch --show-current)'")
+    # The host ships only the session's own branch (agent-xxxxxx or fxa-NNNN); the reflog
+    # names it when the agent switched to a branch of its own.
+    cur="$(git branch --show-current)" sess='^(agent-[a-z0-9]+|fxa-[0-9]+)$'
+    if ! [[ "$cur" =~ $sess ]]; then
+      start="$(git reflog --format=%gs 2>/dev/null | sed -n 's/^checkout: moving from \([^ ]*\) to .*/\1/p' | grep -E "$sess" | head -1)"
+      problems+=("the checkout is on '$cur', but the host ships only the session branch${start:+ '$start'}. Move your work there with: git checkout -B ${start:-<the session branch>}, then write the handoff again")
+    fi
     while IFS= read -r m; do
       [ -n "$m" ] && [ ! -f "${m#/workspace/}" ] && problems+=("media_paths names $m, which does not exist")
     done < <(jq -r '.media_paths[]' "$done_file")

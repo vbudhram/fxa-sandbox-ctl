@@ -592,7 +592,7 @@ VMSECTION
   # A Slack session owns its git: it commits and rebases, and the host pushes. The pipeline's slots share a read-only .git.
   if [ "${FXA_SESSION_MODE:-}" = 1 ]; then
     vm_section="$(printf '%s\n' "$vm_section" | awk '
-      /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
+      /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash. Stay on the"; print "  branch you start on: do not create or switch branches, because the host ships only that one."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
       skip && /^  / { next } { skip = 0; print }')"
   fi
   # Approved lessons only: an unreviewed one could carry text the agent read from the web.

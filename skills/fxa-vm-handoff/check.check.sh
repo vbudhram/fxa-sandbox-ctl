@@ -32,6 +32,9 @@ check "a clean change and handoff pass" "handoff check: ok" "$(bash "$C")"
 handoff 'Fix the location'; bash "$C" >/dev/null; check "an unscoped title fails" 1 $?
 handoff 'fix: keep it'; check "a title with no scope is named" 1 "$(bash "$C" | grep -c "not a scoped conventional")"
 handoff 'fix(auth): x' other; check "a wrong branch is named" 1 "$(bash "$C" | grep -c "but the checkout is on 'agent-x'")"
+git checkout -q -b deng-1-own-name; handoff 'fix(auth): x' deng-1-own-name
+check "a branch of its own is refused, with the move back" 1 "$(bash "$C" | grep -c "host ships only the session branch 'agent-x'. Move your work there with: git checkout -B agent-x")"
+git checkout -q agent-x
 handoff 'fix(auth): x' agent-x '[".fxa-auto-media/gone.png"]'; check "a missing media file is named" 1 "$(bash "$C" | grep -c "gone.png, which does not exist")"
 mkdir -p .fxa-auto-media && touch .fxa-auto-media/gone.png; check "an existing media file passes" "handoff check: ok" "$(bash "$C")"
 echo '{"issue":"x"}' > .fxa-auto-done.json; check "a handoff missing keys is named" 1 "$(bash "$C" | grep -c "needs string keys")"
