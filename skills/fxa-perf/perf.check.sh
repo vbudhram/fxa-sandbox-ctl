@@ -32,7 +32,7 @@ check "no path out of the build" "yes" "$(curl -s --path-as-is 'localhost:18995/
 export PERF_DIR="$tmp" PERF_KEEP="$tmp/keep" PERF_DRY=1
 echo '{"files":{"main.js":"/a.js"}}' > "$tmp/builds/a/asset-manifest.json"
 echo '{"files":{"main.js":"/b.js"}}' > "$tmp/builds/b/asset-manifest.json"
-mkdir -p "$tmp/keep/results"; ka="$( { sha1sum 2>/dev/null || shasum; } < "$tmp/builds/a/asset-manifest.json" | cut -c1-12)"
+mkdir -p "$tmp/keep/results"; ka="$(cat "$tmp/builds/a/asset-manifest.json" "$tmp/builds/a/index.html" | { sha1sum 2>/dev/null || shasum; } | cut -c1-12)"
 for ms in 900 1000 1100 1200 1300 1400 1500; do echo "{\"shell\":null,\"fcp\":$((ms - 300)),\"form\":$ms,\"submit\":null,\"next\":null}"; done > "$tmp/keep/results/$ka-mobile-first.jsonl"
 out="$(bash "$here/perf.sh" measure a,b 7)"
 check "a kept build is not measured again" "0" "$(grep -c '^load a' <<< "$out")"
