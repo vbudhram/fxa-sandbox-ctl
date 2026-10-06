@@ -3,15 +3,15 @@
     "jira": {
       "url": "https://YOUR_RUNLAYER_HOST/YOUR_JIRA_CONNECTOR_PATH",
       "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
-      "tools": ["getJiraIssue", "searchJiraIssuesUsingJql", "getJiraIssueRemoteIssueLinks"],
+      "tools": ["getJiraIssue", "searchJiraIssuesUsingJql"],
       "rules": [
         { "tool": "searchJiraIssuesUsingJql", "arg": "jql", "jql_project": "FXA", "exclude_labels": ["HackerOne", "security"] },
         { "arg": "cloudId", "set": "mozilla-hub.atlassian.net" },
-        { "arg": "fields", "include": ["security", "labels"],
+        { "arg": "fields", "include": ["security", "labels"], "deny": ["issuelinks", "parent", "subtasks"],
           "default": ["summary", "description", "status", "issuetype", "priority", "labels", "components",
                       "assignee", "reporter", "created", "updated", "resolution", "project"] }
       ],
-      "deny_result": ["\"security\"\\s*:\\s*\\{", "\"labels\"\\s*:\\s*\\[[^\\]]*\"(HackerOne|security)\""]
+      "deny_result": ["\"security\"\\s*:\\s*\\{", "(?i)\"labels\"\\s*:\\s*\\[[^\\]]*\"(HackerOne|security)\""]
     },
     "github": {
       "url": "https://YOUR_RUNLAYER_HOST/YOUR_GITHUB_CONNECTOR_PATH",

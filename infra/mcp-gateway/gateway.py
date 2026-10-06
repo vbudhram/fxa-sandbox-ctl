@@ -164,8 +164,10 @@ def scope_jql(jql, project, exclude_labels=()):
     where, order = jql[:cut].strip(), jql[cut:].strip()
     base = "project = %s AND level IS EMPTY" % project
     if exclude_labels:
+        # Jira keeps a label's case, so each case form is its own label.
+        forms = list(dict.fromkeys(f for l in exclude_labels for f in (l, l.lower(), l.upper(), l.capitalize())))
         # NOT IN alone also drops issues with no labels.
-        base += " AND (labels IS EMPTY OR labels NOT IN (%s))" % ", ".join(json.dumps(l) for l in exclude_labels)
+        base += " AND (labels IS EMPTY OR labels NOT IN (%s))" % ", ".join(json.dumps(l) for l in forms)
     scoped = base if not where else "%s AND (%s)" % (base, where)
     return (scoped + " " + order).strip()
 
@@ -192,6 +194,13 @@ def apply_rules(rules, tool, schema, args):
         elif "include" in rule:
             # An omitted list means the upstream's defaults, so start from them, not from empty.
             have = list(val) if isinstance(val, list) and val else list(rule.get("default", []))
+            # A field such as issuelinks shows other issues without their labels, so deny_result
+            # cannot judge them; "*all" and "*navigable" include those fields.
+            bad = [str(v) for v in have if v in rule.get("deny", ()) or str(v).startswith("*")]
+            if bad:
+                raise Denied("%s may not include %s" % (arg, ", ".join(bad)))
+            # "-labels" would exclude the very field deny_result reads.
+            have = [v for v in have if not (isinstance(v, str) and v[1:] in rule["include"] and v.startswith("-"))]
             args[arg] = have + [v for v in rule["include"] if v not in have]
         elif "equals" in rule or "one_of" in rule:
             allowed = [rule["equals"]] if "equals" in rule else rule["one_of"]
