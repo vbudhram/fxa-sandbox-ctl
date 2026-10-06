@@ -266,10 +266,16 @@ _stats_add_rows() {
   [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round), model: "", pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
   # Quick answers from the answer runner (lib/answer.sh): one row each, so Spend counts them.
-  local asks='[]'
-  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc 'map({ at, src: "answer", key: .id,
+  local asks='[]' athreads='{}'
+  # The Slack thread of each answer: written since 2026-10-06, and for older ones from the LLM calls.
+  if declare -F db_on >/dev/null && db_on; then
+    athreads="$(db_json "SELECT run, max(thread) AS thread FROM llm_calls WHERE run LIKE 'ask-%' AND thread IS NOT NULL GROUP BY run;" \
+      | jq -c 'map({key: .run, value: .thread}) | from_entries' 2>/dev/null || echo '{}')"
+  fi
+  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" 'map({ at, src: "answer", key: .id,
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
-          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, model: "", pr: false })' \
+          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", pr: false,
+          thread: (.thread // $th[.id]) })' \
       "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
   # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.
   jq -c --slurpfile s <(printf '%s' "${sess:-[]}") --slurpfile j <(printf '%s' "${jobs:-[]}") --slurpfile a <(printf '%s' "${asks:-[]}") \

@@ -68,4 +68,15 @@ rm -rf "$pd"
   check "stats: more than 128 KB of sessions still builds" "61" "$(jq '[.rows[] | select(.src == "slack")] | length' <<< "$out" 2>/dev/null)"
   exit "$fail" ) || fail=1
 
+# Quick answers carry their Slack thread: their own field, else the one the LLM calls name.
+( export SESSION_DIR="$tmp/ans" PIPE_STATE_DIR="$tmp/ansps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { :; }; db_on() { true; }
+  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[{"run":"ask-old111","thread":"C1:1.000001"}]' ;; *) echo '[{"llm":"{}"}]' ;; esac; }
+  printf '%s\n' '{"at":"2026-10-06T10:00:00Z","id":"ask-new222","secs":20,"cost_usd":0.12,"turns":3,"upgrade":false,"error":false,"thread":"C2:2.000002"}' \
+    '{"at":"2026-10-05T10:00:00Z","id":"ask-old111","secs":30,"cost_usd":0.2,"turns":5,"upgrade":true,"error":false}' > "$PIPE_STATE_DIR/answers.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: an answer keeps its thread, an older one gets it from the LLM calls" "ask-new222 C2:2.000002 answered 3|ask-old111 C1:1.000001 upgraded 5" \
+    "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.thread) \(.kind) \(.turns)"] | join("|")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 exit "$fail"

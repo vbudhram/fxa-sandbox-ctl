@@ -864,7 +864,7 @@ function renderRunning() {
 const firstLine = t => String(t ?? "").split("\n\nEarlier messages")[0].split("\n")[0].slice(0, 160) || "(no request)";
 
 // Sessions: a list by state, and the selected session in detail.
-const SESS_STATES = { live: ["starting", "active", "wrapping"], paused: ["paused"], stopped: ["stopped", "failed", "pr_open"] };
+const SESS_STATES = { live: ["starting", "active", "wrapping"], paused: ["paused"], stopped: ["stopped", "failed", "pr_open"], answers: [] };  // answers: no session record
 function sessStatus(s) {
   return s.state === "starting" ? ["booting", "info"] : s.state === "wrapping" ? [s.wrap_mode === "push" ? "pushing branch" : "opening PR", "info"]
     : s.state === "pr_open" ? ["PR open", "done"] : s.state === "paused" ? ["paused · a reply resumes", "dim"] : s.state === "failed" ? ["boot failed", "bad"]
@@ -894,7 +894,36 @@ const saveSX = () => { try { localStorage.setItem("sx", JSON.stringify(SX)); } c
     h.addEventListener("dblclick", () => { root.removeProperty(v); delete saved[v]; save(); });
   }
 })();
+// Quick answers (no sandbox) from the Stats rows, newest first; each opens to its LLM calls.
+const ANS_OPEN = new Set();
+const answerRows = () => (STATS?.rows ?? []).filter(r => r.src === "answer").sort((a, b) => (b.at > a.at) - (b.at < a.at));
+function threadUrl(th) {
+  const [c, ts] = String(th || "").split(":");
+  if (!c || !ts) return "";
+  // The workspace host from a session in the same channel: another channel can be in another workspace.
+  const h = (AGENTS?.sessions ?? []).map(s => /^https:\/\/([a-z0-9.-]+\.slack\.com)\/archives\/([A-Z0-9]+)\//.exec(s.slack_url || "")).find(x => x && x[2] === c)?.[1];
+  return h ? `https://${h}/archives/${c}/p${ts.replace(".", "")}` : "";
+}
+function renderAnswers() {
+  if (!STATS) { loadStats(); return put("s-sess", `<div class="emptybox">Loading the quick answers…</div>`); }
+  const rows = answerRows();
+  const tag = { answered: "ok", upgraded: "info", failed: "bad" };
+  const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
+    ${rows.length ? `<table class="usage answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
+    ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
+      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer" aria-expanded="${open}"><td>${esc(when(r.at))}</td><td class="mono">${esc(r.key)}</td>
+        <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
+        <td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? `<span class="mono">${esc(r.thread)}</span>` : "—"}</td></tr>
+        ${open ? `<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }).join("")}</tbody></table>` : `<div class="emptybox">No quick answer in this range.</div>`}`);
+}
+document.addEventListener("click", e => {
+  const tr = e.target.closest?.("tr[data-ans]"); if (!tr || e.target.closest("a")) return;
+  const k = tr.dataset.ans; ANS_OPEN.has(k) ? ANS_OPEN.delete(k) : ANS_OPEN.add(k);
+  renderAnswers();
+});
 function renderSess() {
+  if (SESS_TAB === "answers") return renderAnswers();
   const ss = AGENTS?.sessions ?? [];
   Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? ss.filter(s => st.includes(s.state)).length : ""; });
   const list = ss.filter(s => SESS_STATES[SESS_TAB].includes(s.state));
@@ -1080,6 +1109,7 @@ async function loadStats() {
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
   renderStats(); renderNav(); if (LANE_DET.size) renderLanes();
   if (document.body.dataset.view === "stats") renderSide();
+  if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
 }
 // Errors: every failure the host and the bot recorded, one row per signature.
 let ERRS = null, ERRS_ALL = false;
@@ -1789,7 +1819,7 @@ function renderNav() {
 const VIEWS = [
   ["overview", "Overview", "What needs you, what is running, and today's cost", []],
   ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
-  ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"]]],
+  ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"], ["answers", "Answers"]]],
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
   ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
@@ -1837,7 +1867,7 @@ function panelState() {
 }
 function tabCount(t) {
   const ss = AGENTS?.sessions ?? [];
-  if (VIEW === "sessions") return AGENTS ? ss.filter(s => SESS_STATES[t].includes(s.state)).length : "";
+  if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? ss.filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
   if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length) : "";
@@ -1919,7 +1949,7 @@ async function loadUsage(key) {
   USAGE[key] = { ...(USAGE[key] ?? {}), busy: true, at: USAGE[key]?.at ?? 0 };
   try { const r = await (await fetch(`/api/usage?run=${encodeURIComponent(key)}`, { cache: "no-store" })).json(); USAGE[key] = { at: Date.now(), rows: r.models ?? [] }; }
   catch { USAGE[key] = { at: Date.now(), rows: USAGE[key]?.rows ?? [] }; }
-  renderRight();
+  renderRight(); if (ANS_OPEN.has(key)) renderAnswers();
 }
 function sessionDetails(s) {
   const a = s.agent || {}, rt = s.runtime || "claude", now = Date.now() / 1000, live = LIVE_SESSION.includes(s.state);
