@@ -581,6 +581,8 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
     fi
     finish_add_reviewers "$pr_url"
     finish_request_copilot_review "$pr_url"
+    _finish_feedback_comment "$issue" "$done_file" "$pr_url"
+    _finish_feedback_pr "$pr_url" "$done_file"
     _finish_release_runner "$worktree"
     printf '%s\n' "$pr_url"
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
@@ -634,6 +636,51 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
 
   # Archive the handoff file so the next ticket can write a fresh one.
   mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+}
+
+# _finish_feedback_comment <KEY> <done_file> <pr_url>
+#   A review-feedback round's handoff carries `feedback_summary`: one line per
+#   comment, fixed or not, with a reason. Post it on the ticket. Best effort, no
+#   retry: a repeated post would comment twice.
+_finish_feedback_comment() {
+  local key="$1" done_file="$2" pr_url="$3" summary
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || return 0
+  summary="$(jq -r '.feedback_summary // empty | if type == "array" then join("\n") else . end' "$done_file" 2>/dev/null)" || summary=""
+  [ -n "$summary" ] || return 0
+  jira_comment "$key" "🤖 Review feedback on ${pr_url}:
+${summary}" || echo "  WARN: could not post the feedback summary on ${key}." >&2
+}
+
+# _finish_feedback_pr <pr_url> <done_file>
+#   On the PR too: the round's `feedback_summary` as one comment, and, when the
+#   handoff has `open_questions`, that list in place of the body's "Questions for
+#   the reviewer" section. Only that section: the rest of the body stays.
+#   Best effort, no retry: a repeated post would comment twice.
+_finish_feedback_pr() {
+  local pr_url="$1" done_file="$2" summary repo num body new
+  repo="$(printf '%s' "$pr_url" | sed -nE 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#p')"
+  num="$(printf '%s' "$pr_url" | sed -nE 's#.*/pull/([0-9]+).*#\1#p')"
+  [ -n "$repo" ] && [ -n "$num" ] || return 0
+  summary="$(jq -r '.feedback_summary // empty | if type == "array" then map("- " + .) | join("\n") else . end' "$done_file" 2>/dev/null)" || summary=""
+  if [ -n "$summary" ]; then
+    gh api -X POST "repos/${repo}/issues/${num}/comments" -f body="🤖 This review round pushed a new commit:
+${summary}" >/dev/null 2>&1 || echo "  WARN: could not post the round summary on the PR." >&2
+  fi
+  jq -e '.open_questions | type == "array"' "$done_file" >/dev/null 2>&1 || return 0
+  body="$(gh api "repos/${repo}/pulls/${num}" --jq '.body // ""' 2>/dev/null)" || return 0
+  new="$(jq -c '.open_questions | map(tostring)' "$done_file" | BODY="$body" python3 -c '
+import json, os, re, sys
+qs, body = json.load(sys.stdin), os.environ["BODY"]
+m = re.search(r"^\*\*Questions for the reviewer:?\*\*[ \t]*\n", body, re.M)
+if not m: sys.exit(1)
+end = re.search(r"^\*\*[^*\n]+\*\*", body[m.end():], re.M)
+stop = m.end() + end.start() if end else len(body)
+section = "\n".join(f"{i}. {q}" for i, q in enumerate(qs, 1)) if qs else "None left open."
+print(body[:m.end()] + "\n" + section + "\n" + ("\n" + body[stop:] if end else ""), end="")
+')" || { echo "  NOTE: no questions section in the PR body to update." >&2; return 0; }
+  [ "$new" = "$body" ] && return 0
+  printf '%s' "$new" | gh api -X PATCH "repos/${repo}/pulls/${num}" -F body=@- >/dev/null 2>&1 \
+    || echo "  WARN: could not update the PR body's questions." >&2
 }
 
 # finish_add_reviewers <pr_url>

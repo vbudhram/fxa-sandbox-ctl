@@ -82,6 +82,19 @@ half-written file. Omit `commit_sha`: the host creates the commit.
 Write the body to `/tmp/pr-body.md` first. A here-doc inside `jq -n` loses the
 newlines, and the pull request body then arrives as one paragraph.
 
+In a review-feedback round, also add `feedback_summary`: a list with one short
+line per comment, `Fixed:` or `Not fixed:`, the point, one reason, and the
+comment's link from the context file. Add
+`--argjson fs "$(jq -R . /tmp/feedback-summary.txt | jq -s .)"` and
+`feedback_summary:$fs`. The host posts it on the Jira ticket and on the PR.
+
+In that round, also add `open_questions`: the PR body's "Questions for the reviewer"
+that are still open after your change, in their wording, as a list. Leave out the ones
+your change answers; use `[]` when none are left. The host puts this list in place of
+that section of the PR body, and changes nothing else in the body. Add
+`--argjson oq "$(jq -R . /tmp/open-questions.txt | jq -s 'map(select(length > 0))')"`
+and `open_questions:$oq`.
+
 `media_paths` is read from `.fxa-auto-media/`, so every file a capture skill
 wrote is listed and nothing is typed by hand. Do not replace it with `[]`.
 
