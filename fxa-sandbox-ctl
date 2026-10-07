@@ -2014,8 +2014,8 @@ _cmd_session_boot() {
     [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.bundle" ] && cp "${SESSION_DIR}/${from}.bundle" "${dir}/.fxa-resume.bundle"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
     [ -s "${SESSION_DIR}/${from}.work.tgz" ] && cp "${SESSION_DIR}/${from}.work.tgz" "${dir}/.fxa-resume-work.tgz"
-    _session_pack_media "$from" "${dir}/.fxa-resume-media.tgz"
   fi
+  _session_pack_media "$tid" "${dir}/.fxa-resume-media.tgz"
   nonce="$(openssl rand -hex 6)"
   cat > "${dir}/.fxa-jira-context.md" <<EOF
 # Session ${key}

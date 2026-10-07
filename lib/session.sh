@@ -1226,14 +1226,22 @@ _session_summary_json() {
       minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}'
 }
 
-# _session_pack_media <key> <tgz>   The session's saved screenshots and videos, for the
-# next session in the thread, so a later turn or the wrap-up can use them in the PR.
-# ponytail: over 100 MB they stay behind, and the agent captures them again.
+# _session_pack_media <thread> <tgz>   The screenshots and videos of every session in the
+# thread, for the next one, so a later turn or the wrap-up has them as context and for the PR.
+# Newest first, one file per name, up to 100 MB; older ones past that stay behind.
 _session_pack_media() {
-  local m="${SESSION_DIR}/${1}.media"
-  rm -f "$2"
-  [ -n "$(ls -A "$m" 2>/dev/null)" ] && [ "$(du -sk "$m" | cut -f1)" -le "${FXA_RESUME_MEDIA_KB:-102400}" ] || return 0
-  tar -czf "$2" -C "$m" . 2>/dev/null || rm -f "$2"
+  local tid="$1" out="$2" k f t kb=0 sz
+  rm -f "$out"; _thread_ok "$tid" || return 0
+  t="$(mktemp -d)"
+  for k in $(thread_get "$tid" sessions); do
+    for f in "${SESSION_DIR}/${k}.media"/*; do [ -f "$f" ] && printf '%s\t%s\n' "$(_mtime "$f")" "$f"; done
+  done | sort -rn | cut -f2- | while IFS= read -r f; do
+    [ -e "${t}/$(basename "$f")" ] && continue
+    sz="$(du -k "$f" | cut -f1)"; [ $((kb + sz)) -le "${FXA_RESUME_MEDIA_KB:-102400}" ] || continue
+    cp -p "$f" "$t/" && kb=$((kb + sz))
+  done
+  [ -n "$(ls -A "$t")" ] && { tar -czf "$out" -C "$t" . 2>/dev/null || rm -f "$out"; }
+  rm -rf "$t"
 }
 
 # _session_record_summary <key>   Before the runner goes: keep the summary the

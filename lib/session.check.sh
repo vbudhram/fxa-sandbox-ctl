@@ -621,14 +621,18 @@ check "diffstat: tracked and new files, no scratch" '{"type":"fxa_diffstat","fil
 check "diffstat: the watch turns it into a live event" '{"type":"diffstat","files":[{"file":"a.ts","added":3,"removed":1}]}' \
   "$(echo '{"type":"fxa_diffstat","files":[{"file":"a.ts","added":3,"removed":1}]}' | jq -R -c "$_SESSION_WATCH_JQ")"
 
-# A resumed session gets the earlier one's media; none, or too much, sends nothing.
-( SESSION_DIR="$tmp/pm"; mkdir -p "$SESSION_DIR/agent-pm1.media" "$SESSION_DIR/agent-pm2.media" "$tmp/pmout"
-  printf 'png' > "$SESSION_DIR/agent-pm1.media/shot.png"; head -c 4096 /dev/urandom > "$SESSION_DIR/agent-pm1.media/flow.mp4"
-  _session_pack_media agent-pm1 "$tmp/pm1.tgz"; tar -xzf "$tmp/pm1.tgz" -C "$tmp/pmout"
-  _session_pack_media agent-pm2 "$tmp/pm2.tgz"; _session_pack_media agent-none "$tmp/pm3.tgz"
-  FXA_RESUME_MEDIA_KB=1 _session_pack_media agent-pm1 "$tmp/pm4.tgz"
-  check "resume media: packed, and empty, missing or too big sends none" "flow.mp4 shot.png|no no no" \
-    "$(ls "$tmp/pmout" | tr '\n' ' ' | sed 's/ $//')|$(for n in 2 3 4; do [ -e "$tmp/pm$n.tgz" ] && printf yes || printf no; [ "$n" = 4 ] || printf ' '; done)"
+# A later session gets the media of every session in the thread: newest first, one per name, up to the cap.
+( SESSION_DIR="$tmp/pm"; mkdir -p "$SESSION_DIR/agent-pm1.media" "$SESSION_DIR/agent-pm2.media" "$tmp/pmout" "$tmp/pmcap"
+  thread_set C1:1.000001 sessions "agent-pm1 agent-pm2"
+  printf 'old' > "$SESSION_DIR/agent-pm1.media/shot.png"; touch -t 202610010000 "$SESSION_DIR/agent-pm1.media/shot.png"
+  head -c 4096 /dev/urandom > "$SESSION_DIR/agent-pm1.media/flow.mp4"; touch -t 202610010000 "$SESSION_DIR/agent-pm1.media/flow.mp4"
+  printf 'new' > "$SESSION_DIR/agent-pm2.media/shot.png"; printf 'b' > "$SESSION_DIR/agent-pm2.media/after.png"
+  _session_pack_media C1:1.000001 "$tmp/pm1.tgz"; tar -xzf "$tmp/pm1.tgz" -C "$tmp/pmout"
+  _session_pack_media C2:2.000002 "$tmp/pm2.tgz"; _session_pack_media "" "$tmp/pm3.tgz"
+  FXA_RESUME_MEDIA_KB=8 _session_pack_media C1:1.000001 "$tmp/pm4.tgz"; tar -xzf "$tmp/pm4.tgz" -C "$tmp/pmcap"
+  check "thread media: all sessions, newest name wins, the cap keeps the newest, none for an empty thread" \
+    "after.png flow.mp4 shot.png|new|after.png shot.png|no no" \
+    "$(ls "$tmp/pmout" | tr '\n' ' ' | sed 's/ $//')|$(cat "$tmp/pmout/shot.png")|$(ls "$tmp/pmcap" | tr '\n' ' ' | sed 's/ $//')|$([ -e "$tmp/pm2.tgz" ] && printf yes || printf no) $([ -e "$tmp/pm3.tgz" ] && printf yes || printf no)"
   exit "$fail" ) || fail=1
 
 exit "$fail"
