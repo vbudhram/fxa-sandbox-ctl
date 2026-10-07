@@ -23,6 +23,7 @@ check "bare ts" "$T" "$(session_thread_id 1791135361.015169)"
 check "message link" "$T" "$(session_thread_id https://example.slack.com/archives/C0AB12CD3/p1791135361015169)"
 check "reply link" "$T" "$(session_thread_id 'https://example.slack.com/archives/C0AB12CD3/p1791135999000100?thread_ts=1791135361.015169&cid=C0AB12CD3')"
 check "unknown ts" "" "$(session_thread_id 1700000000.000001)"
+check "an unknown ts is not an error under set -e" "ok" "$(set -e; t="$(session_thread_id 1700000000.000001)"; echo ok)"
 
 db_on() { return 0; }
 db_q() { printf "'%s'" "$1"; }

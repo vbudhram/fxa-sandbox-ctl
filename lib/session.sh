@@ -228,7 +228,8 @@ session_thread_id() {
       printf '%s:%s\n' "$ch" "$p" ;;
     *:*) printf '%s\n' "$a" ;;
     *) f="$(ls "$SESSION_DIR"/thread-*-"$a".json 2>/dev/null | head -1)"
-       [ -n "$f" ] && { f="${f##*/thread-}"; f="${f%.json}"; printf '%s\n' "${f/-/:}"; } ;;
+       # No thread (a quick answer): print nothing, and succeed, so `x="$(...)"` survives set -e.
+       if [ -n "$f" ]; then f="${f##*/thread-}"; f="${f%.json}"; printf '%s\n' "${f/-/:}"; fi ;;
   esac
 }
 
