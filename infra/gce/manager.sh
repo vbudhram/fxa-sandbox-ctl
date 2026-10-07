@@ -86,7 +86,7 @@ sed -e "/^__FXA_SECRETS__\$/{r ${ROOT}/infra/gce/fxa-secrets.sh" -e 'd;}' "${ROO
 G="${HOME}/.config/fxa/mcp-gateway.json"
 if [ -f "$G" ]; then
   jq -e . "$G" >/dev/null || { echo "ERROR: $G is not valid JSON." >&2; exit 1; }
-  if grep -qE 'Bearer [^$"]|xox[abpr]-|ghp_|github_pat_|sk-ant-|sntry[a-z]_' "$G"; then
+  if grep -qE 'Bearer [^$"]|xox[abpr]-|ghp_|github_pat_|sk-ant-|sntry[a-z]_|glsa_' "$G"; then
     echo "ERROR: $G holds a literal credential; use \${VAR} and Secret Manager." >&2; exit 1
   fi
   ssh_vm 'sudo install -D -m 600 -o fxa -g fxa /dev/stdin /home/fxa/.config/fxa/mcp-gateway.json && sudo systemctl restart fxa-mcp-gateway.service' < "$G"

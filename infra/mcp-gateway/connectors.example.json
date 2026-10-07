@@ -69,6 +69,11 @@
         ["(?i)\\b[0-9a-f]{64}\\b", "[token]"]
       ],
       "redact_keys": "(?i)email|ip|ip_address|(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization"
+    },
+    "grafana": {
+      "url": "http://127.0.0.1:8000/mcp",
+      "headers": { "X-Grafana-Service-Account-Token": "${GRAFANA_TOKEN}" },
+      "tools": ["search_dashboards", "get_dashboard_summary", "get_dashboard_by_uid", "get_dashboard_panel_queries", "get_dashboard_property", "list_datasources", "get_datasource", "query_prometheus", "query_prometheus_histogram", "list_prometheus_metric_names", "list_prometheus_metric_metadata", "list_prometheus_label_names", "list_prometheus_label_values", "alerting_rules_read", "get_annotations", "generate_deeplink"]
     }
   }
 }

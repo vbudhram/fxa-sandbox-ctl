@@ -60,6 +60,11 @@ Chat sessions do not have it; do not report that it is missing.
   `sentry__get_sentry_resource` (`resourceType` issue, event or trace, with a
   `resourceId` such as `FXA-AUTH-39E`) and `sentry__find_projects`. Its answers
   can hold a user's uid and location: use them in the Slack reply, never in the PR.
+  Grafana (yardstick) is readable with `grafana__search_dashboards`,
+  `grafana__get_dashboard_summary`, `grafana__list_datasources` and
+  `grafana__query_prometheus`, among others. It is read-only. The FxA datasources
+  are Google Managed Prometheus: quote a metric name that has `/` or `.`, and do
+  not use a regex on `__name__`.
 - **Firefox source:** cite it as `firefox:<path>:<line>`. It stays outside
   /workspace, so it is never part of the FxA diff.
   - **Firecracker:** `~/firefox` is a full checkout with an artifact build

@@ -551,6 +551,17 @@ Set it up:
    token belongs to one person, so Sentry stops when that person's token does.
    Its rules pin `organizationSlug` and `regionUrl`, and drop the `url` of
    `get_sentry_resource`: the server can send the token to the host those name.
+
+   The `grafana` connector reads yardstick (Mozilla's Grafana) through two
+   units on the manager: `fxa-grafana-iap` runs `mzcld` as a proxy that adds
+   the IAP token, and `fxa-grafana-mcp` runs `mcp-grafana` with no write,
+   admin or generic API tools. The gateway sends the Grafana service account
+   token from the `fxa-grafana-token` secret, and its allowlist holds only
+   read tools. For the IAP token, SRE must grant the manager's service account
+   `roles/iam.serviceAccountTokenCreator` on
+   `grafana-iap-access@moz-fx-platform-mgmt-global.iam.gserviceaccount.com`.
+   `mzcld` listens on every interface, so its unit drops port 3000 from all
+   but loopback.
 3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
    Only Slack sessions get connectors; ai-fixme pipeline runs never do. The

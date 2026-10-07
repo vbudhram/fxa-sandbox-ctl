@@ -198,6 +198,63 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT
+
+say "grafana (yardstick through IAP, read-only, for the gateway's grafana connector)"
+# mzcld gets the IAP token as this VM's service account, which SRE must allow to
+# impersonate grafana-iap-access (README, MCP gateway). It has no release binaries,
+# so build the pinned tag with the current Go, checked against go.dev, then drop Go.
+MZCLD_V=v0.3.1 MCPG_V=2.0.2
+if [ "$(cat /usr/local/lib/fxa-mzcld.version 2>/dev/null)" != "$MZCLD_V" ]; then
+  tmp="$(mktemp -d)"
+  j="$(curl -fsSL 'https://go.dev/dl/?mode=json')"
+  f="$(jq -r '[.[0].files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive")][0].filename' <<< "$j")"
+  curl -fsSL "https://go.dev/dl/$f" -o "$tmp/$f"
+  echo "$(jq -r --arg f "$f" '.[0].files[] | select(.filename == $f) | .sha256' <<< "$j")  $tmp/$f" | sha256sum -c - >/dev/null
+  tar -xzf "$tmp/$f" -C "$tmp"
+  GOPATH="$tmp/gopath" GOCACHE="$tmp/cache" GOBIN=/usr/local/bin "$tmp/go/bin/go" install "github.com/mozilla/mozcloud/tools/mzcld@$MZCLD_V"
+  echo "$MZCLD_V" > /usr/local/lib/fxa-mzcld.version
+  rm -rf "$tmp"
+fi
+if [ "$(cat /usr/local/lib/fxa-mcp-grafana.version 2>/dev/null)" != "$MCPG_V" ]; then
+  tmp="$(mktemp -d)" base="https://github.com/grafana/mcp-grafana/releases/download/v$MCPG_V"
+  curl -fsSL "$base/mcp-grafana_${MCPG_V}_checksums.txt" -o "$tmp/sums"
+  curl -fsSL "$base/mcp-grafana_Linux_x86_64.tar.gz" -o "$tmp/mcp-grafana_Linux_x86_64.tar.gz"
+  (cd "$tmp" && grep ' mcp-grafana_Linux_x86_64.tar.gz$' sums | sha256sum -c - >/dev/null)
+  tar -xzf "$tmp/mcp-grafana_Linux_x86_64.tar.gz" -C "$tmp" mcp-grafana
+  install -m 755 "$tmp/mcp-grafana" /usr/local/bin/mcp-grafana
+  echo "$MCPG_V" > /usr/local/lib/fxa-mcp-grafana.version
+  rm -rf "$tmp"
+fi
+# mzcld has no bind flag and listens on every interface, and anything that reaches it passes
+# IAP. So the unit drops port 3000 from all but loopback, on each start (a reboot clears iptables).
+cat > /etc/systemd/system/fxa-grafana-iap.service <<UNIT
+[Unit]
+Description=fxa-grafana-iap (yardstick.mozilla.org through IAP, loopback :3000 only)
+After=network-online.target
+[Service]
+User=$U
+ExecStartPre=+/bin/sh -c 'iptables -C INPUT -p tcp --dport 3000 ! -i lo -j DROP 2>/dev/null || iptables -I INPUT -p tcp --dport 3000 ! -i lo -j DROP'
+ExecStart=/usr/local/bin/mzcld iap --host yardstick.mozilla.org --proxy --port 3000 --auth-mode adc
+Restart=always
+RestartSec=60
+[Install]
+WantedBy=multi-user.target
+UNIT
+# Read-only twice over: no write or generic-API tools here, and the gateway's allowlist.
+# No token here either: the gateway sends it on each call, so it stays the only holder.
+cat > /etc/systemd/system/fxa-grafana-mcp.service <<UNIT
+[Unit]
+Description=fxa-grafana-mcp (read-only Grafana MCP for the gateway, 127.0.0.1:8000)
+After=fxa-grafana-iap.service
+[Service]
+User=$U
+Environment=GRAFANA_URL=http://127.0.0.1:3000
+ExecStart=/usr/local/bin/mcp-grafana -t streamable-http --address 127.0.0.1:8000 --disable-write --disable-api --disable-admin --disable-incident --disable-oncall --disable-asserts --disable-pyroscope --disable-loki --disable-assistant --disable-provisioning --disable-rendering --disable-snapshot
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
+UNIT
 # The two jobs the fxa-automation skill defines, with the same prompts.
 pass='Invoke /fxa-ai-fixme and run one full pass using the precheck output below as the worklist: take the lock, judge the reconcile and drain lines, sweep review feedback, fill free slots via `freeslots` at most `launchcap` launches. Never merge. Release the lock.'
 triage='FxA ai-fixme escalation triage. Read-only. Do NOT take the pass lock, do NOT launch an agent, do NOT relabel anything. Report only items that need a human decision: tickets blocked awaiting a reporter answer (re-verify each live with `fxa-sandbox-ctl ticket <KEY>`), tickets that exhausted the 2-round feedback cap, done PRs stalled in review 3+ days (name the oldest and its reviewer; lead with this), inflight tickets whose agent run died silently (check `git diff --shortstat` on the slot worktree), and structural blockers (frozen paths, missing credentials, disk below the launch floor (PIPE_MIN_FREE_GB)). Output a table of ticket, blocker type, and the decision needed. Omit empty categories. If all are empty, say so in one line.'
@@ -246,7 +303,8 @@ UNIT
 systemctl daemon-reload
 systemctl enable -q fxa-secrets.service
 systemctl enable -q fxa-llm-proxy.service
-systemctl enable -q fxa-mcp-gateway.service
+systemctl enable -q fxa-mcp-gateway.service fxa-grafana-iap.service fxa-grafana-mcp.service
+systemctl restart fxa-grafana-iap.service fxa-grafana-mcp.service
 
 say "repos (in the background: the FxA clone and yarn install take a while)"
 cat > "$C/provision-repos.sh" <<'REPOS'
