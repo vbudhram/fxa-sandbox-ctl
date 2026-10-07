@@ -1223,13 +1223,14 @@ function renderStats() {
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
-      <div class="chart"><h2>Spend by model<span class="note">pipeline runs</span></h2>${(() => {
+      <div class="chart"><h2>Spend by model<span class="note">all runs</span></h2>${(() => {
         // Subagents included where the proxy priced the run; else the run's main model only.
         const m = new Map();
-        for (const r of rows.filter(r => r.src === "pipeline")) for (const [k, v] of Object.entries(r.models ?? (r.model ? { [r.model]: r.usd } : {}))) m.set(k, (m.get(k) ?? 0) + (v || 0));
-        const t = [...m.values()].reduce((a, b) => a + b, 0) || 1;
+        for (const r of rows) for (const [k, v] of Object.entries(r.models ?? (r.model ? { [r.model]: r.usd } : {}))) m.set(k, (m.get(k) ?? 0) + (v || 0));
+        const t = [...m.values()].reduce((a, b) => a + b, 0) || 1, main = rows.filter(r => r.main_only).length, none = rows.filter(r => !r.models && !r.model).length;
         return [...m].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="kv"><span class="mono">${esc(modelName(k))}</span><b>${usd(v)} · ${Math.round(v / t * 100)}%</b></div>`).join("")
-          + (mainOnly ? `<div class="kv"><span class="note">${mainOnly} run${mainOnly === 1 ? "" : "s"} here count the main agent only</span><span></span></div>` : "");
+          + (main ? `<div class="kv"><span class="note">${main} run${main === 1 ? "" : "s"} here count all tokens at the main model</span><span></span></div>` : "")
+          + (none ? `<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>` : "");
       })() || `<div class="empty">No model recorded for these rows.</div>`}</div>
     </div>`}`);
   // Grow the bars in from zero on each draw.

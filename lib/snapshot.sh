@@ -228,6 +228,8 @@ _stats_add_rows() {
   if declare -F db_on >/dev/null && db_on; then
     llm="$(db_json "SELECT json_object(
       'runs', (SELECT json_group_object(run, u) FROM (SELECT run, round(sum(usd), 2) AS u FROM llm_calls WHERE run IS NOT NULL GROUP BY run)),
+      'run_models', (SELECT json_group_object(run, json(m)) FROM (SELECT run, json_group_object(model, u) AS m FROM
+          (SELECT run, model, round(sum(usd), 2) AS u FROM llm_calls WHERE run IS NOT NULL AND model IS NOT NULL GROUP BY run, model) GROUP BY run)),
       'days', (SELECT json_group_array(json_object('day', day, 'usd', usd, 'calls', calls, 'cache_write_usd', cw)) FROM (SELECT * FROM
                (SELECT day, round(sum(usd), 2) AS usd, sum(calls) AS calls, round(sum(usd_cache_write), 2) AS cw FROM llm_daily GROUP BY day ORDER BY day DESC LIMIT 30) ORDER BY day)),
       'gap_usd', (SELECT round(coalesce(sum(usd_cache_write), 0), 2) FROM (SELECT usd_cache_write, at, lag(at) OVER (PARTITION BY run ORDER BY at, id) AS prev
@@ -251,11 +253,14 @@ _stats_add_rows() {
                    cache_write: (map(.cache_creation_input_tokens // 0) | add), output: (map(.output_tokens // 0) | add)})) }' \
     "$usage" 2>/dev/null || echo '{}')"
   fi
-  sess="$(_session_records | jq -sc --argjson llm "$llm" '
+  # A session goes direct to the API, not through the proxy, and its cost prices every token at the
+  # main model (_snapshot_agent_json), so its spend counts there, as the main agent only.
+  sess="$(_session_records | jq -sc --argjson llm "$llm" --arg cm "${FXA_AGENT_MODEL:-claude-opus-5-5}" --arg xm "${FXA_CODEX_MODEL:-gpt-6-astra}" '
     def n: if . == null or . == "" then null else (tonumber? // null) end;
     map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s
       | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
-          min: ($s.minutes // null), model: "", pr: ((.pr_url // "") != ""), who: (.owner_name // null),
+          min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
+          main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
           backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),
           compute_usd: (.compute_usd | n), verify_runs: (.verify_runs | n), verify_full: (.verify_full | n), verify_s: (.verify_s | n),
@@ -272,9 +277,9 @@ _stats_add_rows() {
     athreads="$(db_json "SELECT run, max(thread) AS thread FROM llm_calls WHERE run LIKE 'ask-%' AND thread IS NOT NULL GROUP BY run;" \
       | jq -c 'map({key: .run, value: .thread}) | from_entries' 2>/dev/null || echo '{}')"
   fi
-  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" 'map({ at, src: "answer", key: .id,
+  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map({ at, src: "answer", key: .id,
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
-          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", pr: false,
+          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", models: ($llm.run_models[.id] // null), pr: false,
           thread: (.thread // $th[.id]) })' \
       "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
   # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.

@@ -79,4 +79,15 @@ rm -rf "$pd"
     "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.thread) \(.kind) \(.turns)"] | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# Spend by model: a session counts at its main model, an answer by the proxy's models.
+( export SESSION_DIR="$tmp/mod" PIPE_STATE_DIR="$tmp/modps" FXA_AGENT_MODEL=claude-opus-5-5; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { echo '{"key":"agent-m1","owner":"U1","created":1,"runtime":"claude","summary":"{\"cost\":2.5}"}'; }
+  db_on() { true; }
+  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[]' ;; *) echo '[{"llm":"{\"run_models\":{\"ask-m2\":{\"claude-sonnet-5-5\":0.2}}}"}]' ;; esac; }
+  echo '{"at":"2026-10-07T10:00:00Z","id":"ask-m2","secs":9,"cost_usd":0.2,"turns":2}' > "$PIPE_STATE_DIR/answers.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: a session has its main model, an answer the proxy's models" 'agent-m1 claude-opus-5-5 null true|ask-m2  {"claude-sonnet-5-5":0.2} false' \
+    "$(jq -r '[.rows[] | "\(.key) \(.model) \(.models | tojson) \(.main_only // false)"] | join("|")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 exit "$fail"
