@@ -41,7 +41,7 @@ Chat sessions do not have it; do not report that it is missing.
   tests' traces land in `/workspace/.fxa-ci/<test>/trace.zip`. Read them with
   `bash ~/.claude/skills/fxa-functional-local/trace.sh /workspace/.fxa-ci`: the
   actions with the failed one marked, console errors and failed requests.
-- **MCP:** Slack sessions have it; pipeline runs have only Bugzilla. A run has
+- **MCP:** only Slack sessions have it; pipeline runs do not. A session has
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.

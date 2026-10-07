@@ -228,6 +228,9 @@ Grounding, in order:
    `yarn check:frozen` runs in the pre-commit hook.
 5. Fetch a Figma design, but only if the ticket text contains a `figma.com` URL. **The VM has
    no MCP,** so the pass is the only place a design can enter the pipeline.
+6. Read a Bugzilla bug that the ticket cites, for the same reason. The pass writes only the
+   facts that change the work (steps to reproduce, status, a landed patch) into the context
+   file. The connector returns public bugs only.
 
 `$CTL ground <KEY>` does steps 1, 2, and 4 in shell. It writes one file,
 `/tmp/fxa-<KEY>-ground.md`, so the pass reads one file instead of one grep per tool call.
