@@ -110,7 +110,9 @@ Every turn, including later ones:
   the plan when the work changes. For the local stack, ${stack}; wait for a
   service with its 'wait' command, not a sleep loop.
 - To show the engineer a screenshot, a video or a patch, save it in /workspace/.fxa-auto-media/.
-  Files there are posted to the thread when your turn ends. For a change the engineer
+  Files there are posted to the thread when your turn ends. It also holds the files
+  from earlier sessions in this thread, which were posted already: reuse them, and
+  capture again only what changed. For a change the engineer
   can see (a page, an email, a flow), attach a screenshot or a video before you end
   with 'status: ready'.
 - Before you send a path:line, check it against the file with grep -n or sed -n.
@@ -1222,6 +1224,16 @@ _session_summary_json() {
   jq -nc --argjson u "${cost:-null}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
     '{cost: ($u.cost // null), tokens: ($u.tokens // null), diff: ($d | gsub("^\\s+"; "")), turns: ($t | tonumber? // 0),
       minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}'
+}
+
+# _session_pack_media <key> <tgz>   The session's saved screenshots and videos, for the
+# next session in the thread, so a later turn or the wrap-up can use them in the PR.
+# ponytail: over 100 MB they stay behind, and the agent captures them again.
+_session_pack_media() {
+  local m="${SESSION_DIR}/${1}.media"
+  rm -f "$2"
+  [ -n "$(ls -A "$m" 2>/dev/null)" ] && [ "$(du -sk "$m" | cut -f1)" -le "${FXA_RESUME_MEDIA_KB:-102400}" ] || return 0
+  tar -czf "$2" -C "$m" . 2>/dev/null || rm -f "$2"
 }
 
 # _session_record_summary <key>   Before the runner goes: keep the summary the

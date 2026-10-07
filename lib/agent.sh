@@ -155,7 +155,7 @@ _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-thread-notes.md .fxa-ci ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz .fxa-thread-notes.md .fxa-ci ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
@@ -194,6 +194,10 @@ _put_run_files() {
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-work.tgz" ]; then
     vm_exec "$name" sudo -u agent bash -c 'cd /workspace && tar -xzf .fxa-resume-work.tgz && rm -f .fxa-resume-work.tgz' >/dev/null 2>&1 \
       || echo "WARN: could not restore the earlier test plan and PR body." >&2
+  fi
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-media.tgz" ]; then
+    vm_exec "$name" sudo -u agent bash -c 'mkdir -p /workspace/.fxa-auto-media && tar -xzf /workspace/.fxa-resume-media.tgz -C /workspace/.fxa-auto-media && rm -f /workspace/.fxa-resume-media.tgz' >/dev/null 2>&1 \
+      || echo "WARN: could not restore the earlier screenshots and videos." >&2
   fi
   # A session's own files stay out of its commits: it runs git add -A.
   if [ "$rc" -eq 0 ] && [ "${FXA_SESSION_MODE:-}" = 1 ]; then
