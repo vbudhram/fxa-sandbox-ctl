@@ -13,7 +13,7 @@ check() { # check <name> <want> <got>
 scan() { jq -n --arg b "$1" '{pr_body: $b}' > "$tmp/p.json"; : > "$tmp/d"
   python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | sed 's/^pr_body line 1: //' | paste -sd, - | sed 's/^$/clean/'; }
 # scan_diff <added line>   The same for one added line of a diff.
-scan_diff() { echo '{}' > "$tmp/p.json"; printf '+++ b/src/a.ts\n@@ -1,0 +7 @@\n+%s\n' "$1" > "$tmp/d"
+scan_diff() { echo '{}' > "$tmp/p.json"; printf 'diff --git a/src/a.ts b/src/a.ts\n+++ b/src/a.ts\n@@ -1,0 +7 @@\n+%s\n' "$1" > "$tmp/d"
   python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | paste -sd, - | sed 's/^$/clean/'; }
 
 check "a user's email" "email" "$(scan 'reported by jane.doe@gmail.com')"
@@ -42,7 +42,22 @@ check "placeholder IPs, a fake local part, a format note pass" "clean" \
   "$(scan_diff "ip('1.2.3.4', '8.8.8.8'); to('test@aol.com'); // Bearer <prefix>_<hex>")"
 check "a real-provider email in a test" "src/a.ts:7: email" "$(scan_diff "to('bloop@gmail.com')")"
 check "an asset file is not read" "clean" "$(echo '{}' > "$tmp/p.json"
-  printf '+++ b/a/logo.svg\n@@ -0,0 +1 @@\n+<path d="M81.12.40.7"/>\n' > "$tmp/d"
+  printf 'diff --git a/a/logo.svg b/a/logo.svg\n+++ b/a/logo.svg\n@@ -0,0 +1 @@\n+<path d="M81.12.40.7"/>\n' > "$tmp/d"
+  python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | sed 's/^$/clean/')"
+check "a real name that starts like a fake one" "src/a.ts:7: email" "$(scan_diff "to('barbara@gmail.com')")"
+check "a URL-encoded email in the PR text" "email" "$(scan 'https://mozilla.sentry.io/issues/?query=user.email%3Ajane%40gmail.com')"
+check "a phone number with separators" "phone number" "$(scan 'call +44 7911 123-456')"
+check "a uid in a sentence" "FxA uid" "$(scan 'the uid of that user is a8efed57a80e4a3ddd98d0c035837c86')"
+check "an added line that starts with ++ is still read" "src/a.ts:8: email" "$(echo '{}' > "$tmp/p.json"
+  printf 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,0 +7,2 @@\n+x\n+++ jane.doe@gmail.com\n' > "$tmp/d"
+  python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | paste -sd, -)"
+check "Mozilla's public test IP, a public GCP project in code, an enum, docs IPv6 pass" "clean" \
+  "$(scan_diff "ip('63.245.221.32'); p = 'moz-fx-fxa-prod'; k = SpanKind.INTERNAL; a = '2001:0db8:85a3::7334' + 'fe80::1'")"
+check "a GCP project in the PR text" "internal host" "$(scan 'runs in moz-fx-fxa-prod')"
+check "a GCE internal host in code" "src/a.ts:7: internal host" "$(scan_diff "u = 'http://fxa-manager.us-central1-b.c.my-proj.internal:8789'")"
+check "a spaced test phone number in code passes" "clean" "$(scan_diff "phone('+33 9 87 65 43 21')")"
+check "binary bytes are not read as added lines" "clean" "$(echo '{}' > "$tmp/p.json"
+  printf 'diff --git a/f.bin b/f.bin\n--- a/f.bin\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\r+81.12.40.7\x0c+jane@gmail.com\n' > "$tmp/d"
   python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | sed 's/^$/clean/')"
 check "an email in code, with its place" "src/a.ts:7: email" "$(scan_diff "const to = 'jane.doe@gmail.com';")"
 
@@ -60,4 +75,7 @@ echo '{"feedback_summary": ["user jane.doe@gmail.com saw it"]}' > "$tmp/done2.js
 check "the round summary is checked" "1" "$(_finish_pii_guard "$wt" "$tmp/done2.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
 printf 'const ip = "81.12.40.7";\n' >> "$wt/a.ts"; git -C "$wt" add a.ts
 check "an IP in the diff stops it" "1" "$(_finish_pii_guard "$wt" "$tmp/done.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
+git -C "$wt" reset -q; printf 'export const x = 1;\n' > "$wt/a.ts"; git -C "$wt" add a.ts
+printf '*.ts -diff\n' > "$wt/.gitattributes"; printf 'const to = "jane.doe@gmail.com";\n' > "$wt/b.ts"; git -C "$wt" add .gitattributes b.ts
+check "a file marked -diff is still read" "1" "$(_finish_pii_guard "$wt" "$tmp/done.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
 exit "$fail"

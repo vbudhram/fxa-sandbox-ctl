@@ -935,7 +935,7 @@ _finish_pii_guard() {
   jq -n --arg t "$3" --arg b "$4" --arg c "$5" --slurpfile f "$2" \
     '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions} | map_values(
        if type == "array" then map(tostring) | join("\n") else (. // "" | tostring) end))' > "$d.json" \
-    && git -C "$wt" diff --cached -U0 --no-color --no-ext-diff > "$d" \
+    && git -C "$wt" diff --cached -U0 --text --no-textconv --no-color --no-ext-diff > "$d" \
     && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d")" || rc=$?
   rm -f "$d" "$d.json"
   [ "$rc" = 0 ] && return 0

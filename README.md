@@ -513,10 +513,13 @@ Every connector is read-only by construction:
 
 GitHub is public, so `finish` refuses a PR whose title, body, commit message,
 review-round text or added lines hold personal or internal data
-(`lib/pii_guard.py`): a user's email, an IP, a phone number, a secret, a GCP
-project or an `*.internal` host. The PR text also may not hold a uid, a token
-or a Sentry user dump. Links are fine: internal ones are SSO-protected. Test code may use fake
-uids and tokens. This holds for pipeline runs and Slack sessions. Check it
+(`lib/pii_guard.py`). In the added lines: an email at a mail provider such as
+gmail.com, a public or private IP, a `+` phone number, a secret, or a GCE or
+Kubernetes internal host name. In the PR text, also any email outside the test
+and Mozilla domains, a phone number with separators, a uid, a token, a GCP
+project or a Sentry user dump. Links are fine: internal ones are SSO-protected.
+Test code may use fake uids, tokens and made-up domains. The checks are
+patterns, so they can miss data in an unusual form. This holds for pipeline runs and Slack sessions. Check it
 with `bash lib/finish-pii.check.sh`.
 
 The upstream account's own permissions stay the real limit: give the Agent
