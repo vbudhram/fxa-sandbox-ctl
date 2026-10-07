@@ -24,7 +24,47 @@ TOOLS = [
     {"name": "search", "description": "Search", "inputSchema": {"type": "object", "properties": {"jql": {}}}},
     {"name": "write_issue", "description": "Write", "inputSchema": {"type": "object", "properties": {"key": {}}}},
     {"name": "get_pr", "description": "A PR", "inputSchema": {"type": "object", "properties": {"owner": {}, "repo": {}}}},
+    {"name": "get_sentry_resource", "description": "A Sentry issue", "inputSchema": {"type": "object", "properties": {"resourceId": {}}}},
 ]
+# A Sentry issue as mcp.sentry.dev formats it, with every kind of personal data seen there (fake values).
+SENTRY_TEXT = """**Event ID**: dcdf9d1d5b2f4c6cb38bbe602c10f986
+**Culprit**: POST /v1/session/destroy
+Error: account user@example.com not found for +15555550100
+**URL:** https://accounts.firefox.com/oauth?client_id=5882386c6d801776&email=other%40example.com&login_hint=x&code=abc123
+### User
+**user**: id:0123456789abcdef0123456789abcdef, email:user@example.com, ip:203.0.113.7
+**user.geo**: IR, Mashhad, 09
+**user.id**: 0123456789abcdef0123456789abcdef
+- **user.email**: user@example.com
+**release**: 1.346.7
+**request_headers**: {
+  "x-forwarded-for": "203.0.113.7, 198.51.100.2",
+  "x-sigsci-client-geo-city": "mashhad",
+  "x-sigsci-client-geo-country-code": "IR",
+  "client-ja3": "6f7889b9fb1a62a9577e685c1fcfa919",
+  "client-ja4": "t13d1717h2_5b57614c22b0_3cbfd9057e0d",
+  "ohfp": "aB:a6:aT:aR",
+  "h2fp": "1:65536;2:0",
+  "cookie": "session=abc",
+  "fastly-ff": "08cnrWzA=!FRA!cache-fra-1",
+  "x-forwarded-server": "cache-fra-1",
+  "asn": "31549",
+  "user-agent": "Mozilla/5.0 Firefox/140.0"
+}
+**hapi_event**: {"uid": "0123456789abcdef0123456789abcdef", "user": {"id": "fedcba9876543210fedcba9876543210", "name": "Pat"}}
+sessionToken 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlLXZhbHVl
+peer 2001:db8::8a2e:370:7334 and 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+/fxa/node_modules/@opentelemetry/instrumentation-hapi/build/src/instrumentation.js:257:28
+trace_id: "94addfbdc1cffcef54f4f8031488e103" at 13:03:47.566 on Debian 12.14
+"""
+SENTRY_PII = ["user@example.com", "other%40example.com", "+15555550100", "203.0.113.7", "198.51.100.2", "6f7889b9",
+              "t13d1717", "aB:a6", "65536", "session=abc", "00112233445566778899", "eyJhbGci", "2001:db8", "2001:0db8", "abc123"]
+# Slack readers debug with these, so the gateway leaves them; finish keeps them out of GitHub.
+SENTRY_KEEP = ["dcdf9d1d5b2f4c6cb38bbe602c10f986", "POST /v1/session/destroy", "1.346.7", "client_id=5882386c6d801776",
+               "Firefox/140.0", "@opentelemetry/instrumentation-hapi", "instrumentation.js:257:28",
+               "94addfbdc1cffcef54f4f8031488e103", "13:03:47.566", "Debian 12.14", "id:0123456789abcdef0123456789abcdef",
+               "IR, Mashhad, 09", "mashhad", "fedcba9876543210fedcba9876543210", "FRA", "31549"]
 
 
 class Upstream(http.server.BaseHTTPRequestHandler):
@@ -88,6 +128,10 @@ class Upstream(http.server.BaseHTTPRequestHandler):
                 text = '{"key": "FXA-h1", "fields": {"summary": "Lowercase", "labels": ["hackerone"]}}'
             if args.get("key") == "FXA-S" and "labels" in (args.get("fields") or []):
                 text = '{"key": "FXA-S", "fields": {"labels": ["security"]}}'
+            if self.path == "/sentry":
+                return self.send(200, {"jsonrpc": "2.0", "id": mid, "result": {
+                    "content": [{"type": "text", "text": SENTRY_TEXT}, {"type": "image", "data": "a+15555550100/203.0.113.7"}],
+                    "structuredContent": {"eventId": "e1", "user": {"email": "user@example.com", "id": "u1"}, "tags": [{"geo.city": "Mashhad"}]}}})
             return self.send(200, {"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": text}]}})
         self.send(200, {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "nope"}})
 
@@ -118,6 +162,8 @@ class GatewayTest(unittest.TestCase):
                        "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"},
                                  {"tool": "get_pr", "arg": "url", "drop": True}]},
             "slack": {"url": base + "/slack", "headers": {"Authorization": "Bearer ${UNSET_SLACK_TOKEN}"}, "tools": ["read_issue"]},
+            "sentry": dict(json.load(open(os.path.join(HERE, "connectors.example.json")))["connectors"]["sentry"],
+                           url=base + "/sentry", headers=auth, tools=["get_sentry_resource"]),
             "figma": {"url": base + "/oauth", "headers": {"Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}"}, "tools": ["read_issue"]},
         }}
         cls.oauth = os.path.join(cls.dir, "oauth.json")
@@ -234,6 +280,17 @@ class GatewayTest(unittest.TestCase):
     def test_a_dropped_argument_never_reaches_the_upstream(self):
         self.call(self.token("dr"), "github__get_pr", {"owner": "mozilla", "repo": "fxa", "url": "https://example.com/other"})
         self.assertNotIn("url", self.upstream_calls("/github")[-1][2]["arguments"])
+
+    def test_sentry_answers_lose_secrets_and_contact_data_and_keep_debug_data(self):
+        result = self.call(self.token("se", ("sentry",)), "sentry__get_sentry_resource", {"resourceType": "issue", "resourceId": "FXA-AUTH-1"})
+        text = result["content"][0]["text"] + json.dumps(result["structuredContent"])
+        for v in SENTRY_PII:
+            self.assertNotIn(v, text)
+        for v in SENTRY_KEEP:
+            self.assertIn(v, text)
+        self.assertEqual(result["structuredContent"]["eventId"], "e1")
+        self.assertEqual(result["structuredContent"]["user"], {"email": "[redacted]", "id": "u1"})
+        self.assertEqual(result["content"][1]["data"], "a+15555550100/203.0.113.7")  # an image is bytes, not text
 
     def test_a_matching_answer_is_withheld(self):
         result = self.call(self.token("j"), "jira__read_issue", {"key": "FXA-SEC"})

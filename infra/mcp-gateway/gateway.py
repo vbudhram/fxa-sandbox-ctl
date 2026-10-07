@@ -8,11 +8,12 @@ server (Runlayer, or any Streamable HTTP server) with the upstream credential.
 
 Every connector is read-only by construction: only the tools on its `tools`
 allowlist exist, its `rules` check or rewrite arguments before a call leaves,
-and its `deny_result` patterns withhold an answer before it reaches the runner.
+its `deny_result` patterns withhold an answer before it reaches the runner, and
+its `redact` [pattern, replacement] pairs and `redact_keys` pattern rewrite it.
 The upstream account's own permissions stay the real limit; this is the second.
 
 Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
-  {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result"}}}
+  {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys"}}}
 Header values expand ${VAR} from the environment, so secrets stay in .env.
 ${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
 MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token}}, which
@@ -211,6 +212,21 @@ def apply_rules(rules, tool, schema, args):
     return args
 
 
+def scrub(value, patterns, keys):
+    """The value with each pattern replaced in its text and each matching key's value redacted."""
+    if isinstance(value, str):
+        for p, r in patterns:
+            value = p.sub(r, value)
+        return value
+    if isinstance(value, list):
+        return [scrub(v, patterns, keys) for v in value]
+    if isinstance(value, dict):
+        if value.get("type") in ("image", "audio"):  # bytes, which a text pattern would corrupt
+            return value
+        return {k: "[redacted]" if keys and keys.fullmatch(k) else scrub(v, patterns, keys) for k, v in value.items()}
+    return value
+
+
 def withheld(result, patterns):
     """True when any text of the result matches a deny_result pattern."""
     if not patterns:
@@ -326,6 +342,8 @@ class Upstream:
         self.deny_result = list(spec.get("deny_result") or [])
         for p in self.deny_result:
             re.compile(p)
+        self.redact = [(re.compile(p), r) for p, r in spec.get("redact") or []]
+        self.redact_keys = re.compile(spec["redact_keys"]) if spec.get("redact_keys") else None
         self.session, self.protocol, self.next_id = None, None, 0
         self.tools, self.tools_at = None, 0
         self.lock = threading.Lock()
@@ -517,7 +535,7 @@ def call_tool(tok, rec, params):
                ": %s__%s %s" % (conn, tool, json.dumps(args, sort_keys=True)[:200]))
         return tool_error("the answer was withheld by policy")
     audit(run, conn, tool, "ok", ms, size, args)
-    return result
+    return scrub(result, up.redact, up.redact_keys)
 
 
 def handle(tok, rec, msg):

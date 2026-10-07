@@ -505,6 +505,19 @@ Every connector is read-only by construction:
   such as a Jira issue with a security level, or a `HackerOne` or `security` label. Jira returns
   `security` and `labels` only when `fields` asks for them, so keep the `include`
   rule with these patterns.
+- **`redact`** [pattern, replacement] pairs rewrite the text of an answer, and
+  the value of each key that **`redact_keys`** matches becomes `[redacted]`.
+  The `sentry` connector uses them to remove emails, IPs, phone numbers,
+  tokens, cookies and browser fingerprints, and reads only issues, events and
+  traces. FxA uids and location stay: Slack readers debug with them.
+
+GitHub is public, so `finish` refuses a PR whose title, body, commit message,
+review-round text or added lines hold personal or internal data
+(`lib/pii_guard.py`): a user's email, an IP, a phone number, a secret, a GCP
+project or an `*.internal` host. The PR text also may not hold a uid, a token
+or a Sentry user dump. Links are fine: internal ones are SSO-protected. Test code may use fake
+uids and tokens. This holds for pipeline runs and Slack sessions. Check it
+with `bash lib/finish-pii.check.sh`.
 
 The upstream account's own permissions stay the real limit: give the Agent
 Account read-only access, FXA only, and no security-level visibility.

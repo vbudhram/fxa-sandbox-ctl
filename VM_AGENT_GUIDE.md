@@ -56,6 +56,10 @@ Chat sessions do not have it; do not report that it is missing.
   readable with `bugzilla__get_bugzilla_bug` (`bug_id`: N). It shows public bugs
   only, and it cannot search. A Jira ticket's Bugzilla links can be in its
   description or in `jira__getJiraIssueRemoteIssueLinks`.
+  Sentry is readable with `sentry__search_issues`, `sentry__search_errors`,
+  `sentry__get_sentry_resource` (`resourceType` issue, event or trace, with a
+  `resourceId` such as `FXA-AUTH-39E`) and `sentry__find_projects`. Its answers
+  can hold a user's uid and location: use them in the Slack reply, never in the PR.
 - **Firefox source:** cite it as `firefox:<path>:<line>`. It stays outside
   /workspace, so it is never part of the FxA diff.
   - **Firecracker:** `~/firefox` is a full checkout with an artifact build

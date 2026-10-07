@@ -13,6 +13,11 @@ route your work takes to a human.
 When the file is absent or invalid, the host refuses to ship. It pushes nothing
 and opens no pull request.
 
+GitHub is public. The host also refuses a PR whose text or diff holds a user's
+data or internal details: an email, an IP, a phone number, a uid, a token, an
+internal host or a GCP project. A link is fine, a Sentry or Slack link too: do
+not paste what it shows. In tests, use `user@example.com`.
+
 ## Step 1: Confirm you have something to hand off
 
 ```bash

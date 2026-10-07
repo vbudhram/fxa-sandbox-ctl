@@ -473,6 +473,7 @@ _finish_push_and_pr() {
   _finish_check_frozen "$worktree" || return 1
   local commit_body
   commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
+  _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || return 1
 
   # As the GitHub App: GitHub authors and signs the commit, and the operator's
   # key and login stay out of the push. gh below also acts as the App.
@@ -923,6 +924,24 @@ _finish_tooling_guard() {
   # The paths on the ERROR line itself: progress and the pass keep only that line.
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
   echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  return 1
+}
+
+# _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body>   GitHub is public, so
+# refuse to ship personal or internal data in the PR's text or the staged diff (lib/pii_guard.py).
+_finish_pii_guard() {
+  local wt="$1" d hits rc=0
+  d="$(mktemp "${TMPDIR:-/tmp}/fxa-pii.XXXXXX")"
+  jq -n --arg t "$3" --arg b "$4" --arg c "$5" --slurpfile f "$2" \
+    '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions} | map_values(
+       if type == "array" then map(tostring) | join("\n") else (. // "" | tostring) end))' > "$d.json" \
+    && git -C "$wt" diff --cached -U0 --no-color --no-ext-diff > "$d" \
+    && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d")" || rc=$?
+  rm -f "$d" "$d.json"
+  [ "$rc" = 0 ] && return 0
+  # The places on the ERROR line itself: progress and the pass keep only that line.
+  echo "ERROR: refusing to ship: personal or internal data in the PR: $(printf '%s' "${hits:-the check could not run}" | paste -sd ';' - | sed 's/;/; /g')" >&2
+  echo "       GitHub is public. Remove it from the PR text and the change, then finish again." >&2
   return 1
 }
 
