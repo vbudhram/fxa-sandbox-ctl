@@ -92,8 +92,25 @@ the closest existing test.
 - Payments (`tests-payments-next`): no payments stack. Say CI covers it.
 - Sync specs launch their own Firefox. The helper records it too, as
   `<test>-own-<n>.webm`. Pairing's authority is a headless Firefox driven by
-  Marionette, which nothing can record, and pairing needs Firefox Nightly. Run
-  them only when asked; the video shows the supplicant side only.
+  Marionette, so the video shows the supplicant side only, and pairing needs
+  Firefox Nightly. Run them only when asked. For a video of both sides, add a
+  temporary `snap` to the spec and call it after each step, then join the frames:
+
+  ```ts
+  let n = 0;
+  const snap = async (label: string) => {
+    const id = String(++n).padStart(2, '0'), dir = '/workspace/.fxa-keep/frames';
+    await client.setContext('content');
+    const b64 = await (client as any).sendCommandWithRetry('WebDriver:TakeScreenshot', {});
+    require('fs').writeFileSync(`${dir}/${id}-a-${label}.png`, Buffer.from(b64?.value ?? b64, 'base64'));
+    await page.screenshot({ path: `${dir}/${id}-s-${label}.png` });
+  };
+  ```
+
+  `bash ~/.claude/skills/fxa-functional-local/pair-video.sh /workspace/.fxa-keep/frames /workspace/.fxa-auto-media/<name>.mp4`
+  puts them side by side, 3 s a step. Remove `snap` from the spec before the handoff.
+- Pairing fails on every test, 2FA or not, and the authority says `No keyFetchToken`:
+  the stack's `/v1/oauth/token` is broken, not the test. See `/fxa-stack`.
 - The helper drops a video that shows only a blank page, and says so. Do not
   post a blank video in its place.
 - `#chromium` tests run in the `local-chromium` project, not `local`. `run.sh` passes both projects, so it runs each test once in the correct browser.

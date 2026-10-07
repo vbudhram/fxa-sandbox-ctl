@@ -330,6 +330,10 @@ const apps = (base.apps || [base]).map(app => ({
     // AppleIAP also gracefully return [] when not configured.
     SUBHUB_STRIPE_APIKEY: "",
     SUBSCRIPTIONS_ENABLED: "false",
+    // The empty key no longer covers it: subscriptionCapabilities always asks the
+    // CapabilityManager, which exists only with CMS (Strapi) configured. Without it
+    // /v1/oauth/token answers 500 for Sync, Firefox gets no keys, and pairing fails.
+    JWT_ACCESS_TOKENS_ENABLED: "false",
     // No Strapi here. With CMS on, /cms/config waits on localhost:1337 until
     // the client gives up (40 s, a 499), and the CMS functional specs abort
     // instead of skipping. Off, the route answers at once and they skip.

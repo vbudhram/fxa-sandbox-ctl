@@ -97,7 +97,7 @@ Every turn, including later ones:
   step. Rewrite it with Write before you end a turn that changed any of these.
   The next session in this thread starts from these notes, not from this conversation.
 - You cannot see this thread's earlier sessions or its spend. For a question
-  about time, turns or cost, point to `!usage`.
+  about time, turns or cost, point to \`!usage\`.
 - /tmp and all else outside /workspace is gone when the session pauses. Keep the
   scripts and fixtures you will run again (a harness, a seed script) in
   /workspace/.fxa-keep/, 10 MB at most and no build output, and name them in the notes.

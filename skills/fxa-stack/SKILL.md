@@ -76,6 +76,7 @@ MySQL 3306, Redis 6379, Firestore 9090, goaws 4100, Cloud Tasks 8123.
 | `accountDestroy` returns 500 | Cloud Tasks emulator missing: `pm2 restart cloud-tasks-emulator && pm2 restart auth` |
 | Unknown table or column | `cd /workspace && node packages/db-migrations/bin/patcher.mjs` |
 | goaws-stub crash-looping on :4100 | real goaws is up: `pm2 delete goaws-stub` |
+| Pairing or a Desktop Sync sign-in fails: `/v1/oauth/token` 500 (errno 998), Firefox says `No keyFetchToken` | no CMS, so no CapabilityManager for JWT tokens; an image from before 2026-10-07 lacks the fix: `stack.sh restart auth JWT_ACCESS_TOKENS_ENABLED=false` |
 | EADDRINUSE on 3030 | nginx owns 3030; content must run on 3031 from `/tmp/content-pm2.config.js` |
 | esbuild, swc, or sass "wrong platform" | run `fxa-start` again; its first step rebuilds the native modules |
 
