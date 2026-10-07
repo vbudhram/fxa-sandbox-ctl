@@ -41,7 +41,7 @@ Chat sessions do not have it; do not report that it is missing.
   tests' traces land in `/workspace/.fxa-ci/<test>/trace.zip`. Read them with
   `bash ~/.claude/skills/fxa-functional-local/trace.sh /workspace/.fxa-ci`: the
   actions with the failed one marked, console errors and failed requests.
-- **MCP:** only Slack sessions have it; pipeline runs do not. A session has
+- **MCP:** Slack sessions have it; pipeline runs have only Bugzilla. A run has
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.
@@ -52,6 +52,10 @@ Chat sessions do not have it; do not report that it is missing.
   Slack reads only #fxa (`C4D36CAJW`) and #fxa-team (`CLV3KMZ8B`); pass the ID,
   not the name. A permalink `/archives/<C>/p1790355024144359` has
   `channel_id` `<C>` and `message_ts` `1790355024.144359` (a dot before the last 6 digits).
+  A Bugzilla bug (`bugzilla.mozilla.org/show_bug.cgi?id=N`, `bugzil.la/N`, "bug N") is
+  readable with `bugzilla__get_bugzilla_bug` (`bug_id`: N). It shows public bugs
+  only, and it cannot search. A Jira ticket's Bugzilla links can be in its
+  description or in `jira__getJiraIssueRemoteIssueLinks`.
 - **Firefox source:** cite it as `firefox:<path>:<line>`. It stays outside
   /workspace, so it is never part of the FxA diff.
   - **Firecracker:** `~/firefox` is a full checkout with an artifact build

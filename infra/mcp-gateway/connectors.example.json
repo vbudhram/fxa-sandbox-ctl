@@ -32,6 +32,11 @@
         { "arg": "channel_id", "one_of": ["YOUR_CHANNEL_ID"] }
       ]
     },
+    "bugzilla": {
+      "url": "https://YOUR_RUNLAYER_HOST/YOUR_BUGZILLA_CONNECTOR_PATH",
+      "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },
+      "tools": ["get_bugzilla_bug"]
+    },
     "figma": {
       "url": "https://YOUR_RUNLAYER_HOST/YOUR_FIGMA_CONNECTOR_PATH",
       "headers": { "Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}" },

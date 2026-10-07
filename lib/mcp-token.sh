@@ -44,8 +44,9 @@ mcp_token_revoke() {
 # nothing when there is no gateway or the run has no connectors.
 mcp_auth_lines() {
   [ -n "${FXA_MCP_GATEWAY_URL:-}" ] && [ -n "${1:-}" ] || return 0
-  # Set only by a Slack session's boot and turns, never from .env, so pipeline runs get no MCP.
-  local tok; tok="$(mcp_token_for "$1" "${_FXA_SESSION_MCP:-}")" || return 0
+  # _FXA_SESSION_MCP is set (maybe empty) only by a session or an answer, never from .env;
+  # unset means a pipeline run, which gets only the pipeline conf's PIPE_MCP_CONNECTORS.
+  local tok; tok="$(mcp_token_for "$1" "${_FXA_SESSION_MCP-${PIPE_MCP_CONNECTORS:-}}")" || return 0
   printf 'export FXA_MCP_URL=%s/mcp\nexport FXA_MCP_TOKEN=%s\n' "${FXA_MCP_GATEWAY_URL%/}" "$tok"
 }
 

@@ -533,7 +533,8 @@ Set it up:
    offers only `search_tools` and `execute_tool`, which the rules cannot check.
 3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
-   Only Slack sessions get connectors; ai-fixme pipeline runs never do.
+   ai-fixme pipeline runs get only `PIPE_MCP_CONNECTORS` from the pipeline conf
+   (`bugzilla`), never the bot's list.
 
 Each call is a line in `~/.claude/state/mcp-gateway/calls.jsonl` with its run,
 tool, outcome and time. A run is capped at `FXA_MCP_RUN_CAP_CALLS` calls (200).

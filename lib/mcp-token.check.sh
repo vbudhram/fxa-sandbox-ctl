@@ -31,6 +31,10 @@ check "a pipeline run gets none, even with connectors in .env" "export ANTHROPIC
   "$(FXA_MCP_CONNECTORS=jira _claude_auth_line fxa-3)"
 check "a session gets its own connectors" "jira" \
   "$(_FXA_SESSION_MCP=jira _claude_auth_line agent-s1 >/dev/null; jq -r '.connectors | join(",")' "$tmp/gw/tokens/$(cat "$tmp/gw/runs/agent-s1").json")"
+check "a pipeline run gets the pipeline's connectors" "bugzilla" \
+  "$(PIPE_MCP_CONNECTORS=bugzilla _claude_auth_line fxa-4 >/dev/null; jq -r '.connectors | join(",")' "$tmp/gw/tokens/$(cat "$tmp/gw/runs/fxa-4").json")"
+check "a session with no connectors gets none of the pipeline's" "export ANTHROPIC_API_KEY=sk-real" \
+  "$(_FXA_SESSION_MCP= PIPE_MCP_CONNECTORS=bugzilla _claude_auth_line agent-s2)"
 check "no credential still fails" "1" "$(ANTHROPIC_API_KEY= CLAUDE_CODE_OAUTH_TOKEN= _claude_auth_line fxa-1 >/dev/null; echo $?)"
 
 # The launch snippet and flags, run as the runner would, with the config path moved into $tmp.
