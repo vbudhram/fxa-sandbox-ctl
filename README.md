@@ -554,11 +554,11 @@ Set it up:
 
    The `grafana` connector reads yardstick (Mozilla's Grafana) through two
    units on the manager: `fxa-grafana-iap` runs `mzcld` as a proxy that adds
-   the IAP token, and `fxa-grafana-mcp` runs `mcp-grafana` with no write,
+   the IAP token (`manager.sh` builds `mzcld` with `gh` and Go: its repo is private), and `fxa-grafana-mcp` runs `mcp-grafana` with no write,
    admin or generic API tools. The gateway sends the Grafana service account
    token from the `fxa-grafana-token` secret, and its allowlist holds only
    read tools. For the IAP token, SRE must grant the manager's service account
-   `roles/iam.serviceAccountTokenCreator` on
+   `roles/iam.serviceAccountOpenIdTokenCreator` on
    `grafana-iap-access@moz-fx-platform-mgmt-global.iam.gserviceaccount.com`.
    `mzcld` listens on every interface, so its unit drops port 3000 from all
    but loopback.

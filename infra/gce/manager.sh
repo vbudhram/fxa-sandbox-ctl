@@ -75,7 +75,14 @@ if grep -qE 'xox[abpr]-|xapp-|ghp_|github_pat_|sk-ant-|PRIVATE KEY' "$tmp/ctl.en
   echo "ERROR: a secret-looking value is in the .env base files; not sending them." >&2; exit 1
 fi
 
-for f in claude.tgz ctl.env.base bot.env.base; do
+# mzcld, the yardstick IAP proxy, is in a private repo the VM cannot fetch: build the
+# pinned tag here, with gh's login (go's own fetch has none).
+if gh repo clone mozilla/mozcloud "$tmp/mozcloud" -- -q --depth 1 --branch tools/mzcld/v0.3.1 >&2 2>/dev/null \
+   && (cd "$tmp/mozcloud/tools/mzcld" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$tmp/mzcld" . >&2); then :
+else echo "WARN: could not build mzcld; the grafana connector cannot reach yardstick" >&2; fi
+
+for f in claude.tgz ctl.env.base bot.env.base mzcld; do
+  [ -f "$tmp/$f" ] || continue
   dest=/tmp/fxa-$f; [ "$f" = claude.tgz ] && dest=/tmp/fxa-claude-bundle.tgz
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done

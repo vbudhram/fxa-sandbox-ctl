@@ -201,20 +201,10 @@ UNIT
 
 say "grafana (yardstick through IAP, read-only, for the gateway's grafana connector)"
 # mzcld gets the IAP token as this VM's service account, which SRE must allow to
-# impersonate grafana-iap-access (README, MCP gateway). It has no release binaries,
-# so build the pinned tag with the current Go, checked against go.dev, then drop Go.
-MZCLD_V=v0.3.1 MCPG_V=2.0.2
-if [ "$(cat /usr/local/lib/fxa-mzcld.version 2>/dev/null)" != "$MZCLD_V" ]; then
-  tmp="$(mktemp -d)"
-  j="$(curl -fsSL 'https://go.dev/dl/?mode=json')"
-  f="$(jq -r '[.[0].files[] | select(.os == "linux" and .arch == "amd64" and .kind == "archive")][0].filename' <<< "$j")"
-  curl -fsSL "https://go.dev/dl/$f" -o "$tmp/$f"
-  echo "$(jq -r --arg f "$f" '.[0].files[] | select(.filename == $f) | .sha256' <<< "$j")  $tmp/$f" | sha256sum -c - >/dev/null
-  tar -xzf "$tmp/$f" -C "$tmp"
-  GOPATH="$tmp/gopath" GOCACHE="$tmp/cache" GOBIN=/usr/local/bin "$tmp/go/bin/go" install "github.com/mozilla/mozcloud/tools/mzcld@$MZCLD_V"
-  echo "$MZCLD_V" > /usr/local/lib/fxa-mzcld.version
-  rm -rf "$tmp"
-fi
+# impersonate grafana-iap-access (README, MCP gateway). manager.sh builds it: its repo is private.
+MCPG_V=2.0.2
+if [ -s /tmp/fxa-mzcld ]; then install -m 755 /tmp/fxa-mzcld /usr/local/bin/mzcld; rm -f /tmp/fxa-mzcld; fi
+[ -x /usr/local/bin/mzcld ] || echo "WARN: no mzcld; the grafana connector cannot reach yardstick"
 if [ "$(cat /usr/local/lib/fxa-mcp-grafana.version 2>/dev/null)" != "$MCPG_V" ]; then
   tmp="$(mktemp -d)" base="https://github.com/grafana/mcp-grafana/releases/download/v$MCPG_V"
   curl -fsSL "$base/mcp-grafana_${MCPG_V}_checksums.txt" -o "$tmp/sums"
