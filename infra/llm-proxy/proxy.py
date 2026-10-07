@@ -35,7 +35,10 @@ ALLOWED = [("POST", re.compile(r"^/v1/messages(/count_tokens)?$")), ("GET", re.c
 # $ per million tokens: input, output, cache write, cache read (as lib/telemetry.sh).
 PRICES = [("claude-fable-5-1", (10, 50, 12.5, 0.25)), ("claude-fable-5", (10, 50, 12.5, 1)),
           ("claude-opus-5-5", (4, 20, 5, 0.2)), ("claude-opus-5", (5, 25, 6.25, 0.5)),
-          ("claude-sonnet-5", (2, 10, 2.5, 0.2)), ("claude-haiku-4-5", (1, 5, 1.25, 0.1))]
+          ("claude-sonnet-5-5", (2, 10, 2.5, 0.1)), ("claude-sonnet-5", (2, 10, 2.5, 0.2)),
+          ("claude-haiku-5-5", (0.1, 0.5, 0.125, 0.01)), ("claude-haiku-4-5", (1, 5, 1.25, 0.1))]
+# A prompt (input plus cache reads and writes) over the limit is billed at the long rates.
+LONG = {"claude-haiku-5-5": (100000, (0.5, 2.5, 0.625, 0.05))}
 UNKNOWN = (10, 50, 12.5, 1)  # the dearest row: an unknown model never looks cheap
 HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization", "content-length", "host"}
 # Not asked for: a compressed stream hides the usage the proxy counts.
@@ -47,15 +50,20 @@ locks, locks_guard = {}, threading.Lock()
 POOL = queue.LifoQueue(maxsize=8)
 
 
-def price(model):
+def prompt_tokens(u):
+    return u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + u.get("cache_read_input_tokens", 0)
+
+
+def price(model, prompt=0):
     for prefix, p in PRICES:
         if model.startswith(prefix):
-            return p
+            limit, long_p = LONG.get(prefix, (None, None))
+            return long_p if limit is not None and prompt > limit else p
     return UNKNOWN
 
 
 def cost(model, u):
-    p = price(model or "")
+    p = price(model or "", prompt_tokens(u))
     return (u.get("input_tokens", 0) * p[0] + u.get("output_tokens", 0) * p[1]
             + u.get("cache_creation_input_tokens", 0) * p[2] + u.get("cache_read_input_tokens", 0) * p[3]) / 1e6
 
@@ -90,7 +98,7 @@ def charge(tok, model, usage):
     line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "model": model,
             "usd": round(usd, 6),
             # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
-            "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "")[2] / 1e6, 6),
+            "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "", prompt_tokens(usage))[2] / 1e6, 6),
             **{k: usage.get(k, 0) for k in ("input_tokens", "output_tokens",
                                                                    "cache_creation_input_tokens", "cache_read_input_tokens")}}
     with open(os.path.join(DIR, "usage.jsonl"), "a") as f:

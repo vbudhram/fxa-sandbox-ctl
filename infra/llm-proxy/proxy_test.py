@@ -148,5 +148,26 @@ class ProxyTest(unittest.TestCase):
         self.assertNotEqual(PEERS[-1], PEERS[-2])
 
 
+class PriceTest(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, HERE)
+        import proxy
+        self.cost = proxy.cost
+
+    def test_haiku_5_5_and_its_long_prompt_tier(self):
+        u = {"input_tokens": 1000, "output_tokens": 1000, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 10000}
+        self.assertAlmostEqual(self.cost("claude-haiku-5-5", u), (100 + 500 + 125 + 100) / 1e6)
+        big = dict(u, cache_read_input_tokens=200000)  # over 100K in the prompt: five times the rate
+        self.assertAlmostEqual(self.cost("claude-haiku-5-5", big), (500 + 2500 + 625 + 10000) / 1e6)
+
+    def test_sonnet_5_5_cache_reads_cost_half_of_sonnet_5(self):
+        u = {"cache_read_input_tokens": 1000000}
+        self.assertAlmostEqual(self.cost("claude-sonnet-5-5", u), 0.10)
+        self.assertAlmostEqual(self.cost("claude-sonnet-5", u), 0.20)
+
+    def test_an_unknown_model_never_looks_cheap(self):
+        self.assertAlmostEqual(self.cost("claude-new-model", {"output_tokens": 1000000}), 50)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

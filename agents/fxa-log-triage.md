@@ -1,7 +1,7 @@
 ---
 name: fxa-log-triage
 description: Use when a test, /fxa-verify, /fxa-functional-local or stack run fails and its output or log is long. Give it the log path or the command's output file; it returns the failing test, the exact error lines and the likely cause, so the log stays out of your context.
-model: haiku
+model: claude-haiku-5-5
 tools: Read, Grep, Glob, Bash
 ---
 

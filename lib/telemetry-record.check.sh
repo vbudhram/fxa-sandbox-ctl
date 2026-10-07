@@ -37,4 +37,6 @@ echo "Launched at: 1790000999" > "$(pipeline_launch_log FXA-1)"
 telemetry_record FXA-1 >/dev/null 2>&1
 check "the same run relaunched writes no second row" "1" "$(wc -l < "$PIPE_RUNS_FILE" | tr -d ' ')"
 
+check "prices: sonnet-5-5 cache reads are half of sonnet-5, haiku-5-5 has a row" "0.10|0.20|0.10 0.50 0.125 0.01" \
+  "$(_telemetry_price_for claude-sonnet-5-5 | awk '{print $4}')|$(_telemetry_price_for claude-sonnet-5 | awk '{print $4}')|$(_telemetry_price_for claude-haiku-5-5 | tr -s ' ')"
 exit "$fail"

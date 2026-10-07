@@ -106,14 +106,18 @@ telemetry_usage() {
 #
 # Order matters: the fable-5-1 row must precede the fable-5 glob. Fable 5.1 is
 # the one model whose cache reads are 0.025x input, not 0.1x. Likewise opus-5-5
-# must precede the opus-5 glob, which also matches it.
+# must precede the opus-5 glob, and sonnet-5-5 the sonnet-5 one: its cache reads
+# are 0.05x input. Haiku 5.5 bills prompts over 100K at 5x; this sums tokens
+# across calls, so it uses the base rate (the proxy prices each call).
 _telemetry_price_for() {
   case "$1" in
     claude-fable-5-1*) echo "10.00 50.00 12.50 0.25" ;;
     claude-fable-5*)   echo "10.00 50.00 12.50 1.00" ;;
     claude-opus-5-5*)  echo "4.00 20.00 5.00 0.20" ;;
     claude-opus-5*)    echo "5.00 25.00 6.25 0.50" ;;
+    claude-sonnet-5-5*) echo "2.00 10.00 2.50 0.10" ;;
     claude-sonnet-5*)  echo "2.00 10.00 2.50 0.20" ;;
+    claude-haiku-5-5*) echo "0.10  0.50 0.125 0.01" ;;
     claude-haiku-4-5*) echo "1.00  5.00 1.25 0.10" ;;
     # OpenAI list prices, developers.openai.com/api/docs/pricing (read 2026-09-15):
     # input 10, output 50, cache write 12.50, cached input 1.00.
