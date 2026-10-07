@@ -633,6 +633,10 @@ check "diffstat: the watch turns it into a live event" '{"type":"diffstat","file
   check "thread media: all sessions, newest name wins, the cap keeps the newest, none for an empty thread" \
     "after.png flow.mp4 shot.png|new|after.png shot.png|no no" \
     "$(ls "$tmp/pmout" | tr '\n' ' ' | sed 's/ $//')|$(cat "$tmp/pmout/shot.png")|$(ls "$tmp/pmcap" | tr '\n' ' ' | sed 's/ $//')|$([ -e "$tmp/pm2.tgz" ] && printf yes || printf no) $([ -e "$tmp/pm3.tgz" ] && printf yes || printf no)"
+  # As the boot runs it: a session with no media folder must not end the boot.
+  thread_set C3:3.000003 sessions "agent-pm1 agent-pm9"
+  check "thread media: a session with no media is not an error under set -e and pipefail" "0" \
+    "$( (set -eo pipefail; _session_pack_media C3:3.000003 "$tmp/pm5.tgz"; echo 0) 2>/dev/null)"  # no || here: it turns set -e off
   exit "$fail" ) || fail=1
 
 exit "$fail"

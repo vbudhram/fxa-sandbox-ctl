@@ -1237,7 +1237,8 @@ _session_pack_media() {
   rm -f "$out"; _thread_ok "$tid" || return 0
   t="$(mktemp -d)"
   for k in $(thread_get "$tid" sessions); do
-    for f in "${SESSION_DIR}/${k}.media"/*; do [ -f "$f" ] && printf '%s\t%s\n' "$(_mtime "$f")" "$f"; done
+    # if, not &&: an unmatched glob would end the loop with status 1, and pipefail would stop the boot.
+    for f in "${SESSION_DIR}/${k}.media"/*; do if [ -f "$f" ]; then printf '%s\t%s\n' "$(_mtime "$f")" "$f"; fi; done
   done | sort -rn | cut -f2- | while IFS= read -r f; do
     [ -e "${t}/$(basename "$f")" ] && continue
     sz="$(du -k "$f" | cut -f1)"; [ $((kb + sz)) -le "${FXA_RESUME_MEDIA_KB:-102400}" ] || continue
