@@ -243,6 +243,8 @@ _stats_add_rows() {
   else
   [ -s "$usage" ] && llm="$(jq -sc 'def r2: . * 100 | round / 100;
     { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
+      run_models: (map(select(.run != null and .model != null)) | group_by(.run) | map({key: .[0].run,
+               value: (group_by(.model) | map({key: .[0].model, value: (map(.usd) | add | r2)}) | from_entries)}) | from_entries),
       days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
                cache_write_usd: (map(.usd_cache_write // 0) | add | r2)}) | .[-30:]),
       gap_usd: (map(select(.run != null)) | group_by(.run) | map(sort_by(.at) | . as $c
