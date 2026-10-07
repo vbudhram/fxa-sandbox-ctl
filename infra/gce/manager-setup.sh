@@ -202,17 +202,19 @@ UNIT
 say "grafana (yardstick through IAP, read-only, for the gateway's grafana connector)"
 # mzcld gets the IAP token as this VM's service account, which SRE must allow to
 # impersonate grafana-iap-access (README, MCP gateway). manager.sh builds it: its repo is private.
-MCPG_V=2.0.2
+# The tarball's digest is pinned here, not read from the same release, so a replaced asset fails.
+MCPG_V=2.0.2 MCPG_SHA256=624e997b78bcadf236f82f8086827890ba77b6dfdc6fd6446f7c48dfd9e586f0
 if [ -s /tmp/fxa-mzcld ]; then install -m 755 /tmp/fxa-mzcld /usr/local/bin/mzcld; rm -f /tmp/fxa-mzcld; fi
 [ -x /usr/local/bin/mzcld ] || echo "WARN: no mzcld; the grafana connector cannot reach yardstick"
+# Optional: a failed download warns, and the rest of setup (units, repos, secrets) still runs.
 if [ "$(cat /usr/local/lib/fxa-mcp-grafana.version 2>/dev/null)" != "$MCPG_V" ]; then
-  tmp="$(mktemp -d)" base="https://github.com/grafana/mcp-grafana/releases/download/v$MCPG_V"
-  curl -fsSL "$base/mcp-grafana_${MCPG_V}_checksums.txt" -o "$tmp/sums"
-  curl -fsSL "$base/mcp-grafana_Linux_x86_64.tar.gz" -o "$tmp/mcp-grafana_Linux_x86_64.tar.gz"
-  (cd "$tmp" && grep ' mcp-grafana_Linux_x86_64.tar.gz$' sums | sha256sum -c - >/dev/null)
-  tar -xzf "$tmp/mcp-grafana_Linux_x86_64.tar.gz" -C "$tmp" mcp-grafana
-  install -m 755 "$tmp/mcp-grafana" /usr/local/bin/mcp-grafana
-  echo "$MCPG_V" > /usr/local/lib/fxa-mcp-grafana.version
+  tmp="$(mktemp -d)"
+  if curl -fsSL "https://github.com/grafana/mcp-grafana/releases/download/v$MCPG_V/mcp-grafana_Linux_x86_64.tar.gz" -o "$tmp/g.tgz" \
+     && echo "$MCPG_SHA256  $tmp/g.tgz" | sha256sum -c - >/dev/null \
+     && tar -xzf "$tmp/g.tgz" -C "$tmp" mcp-grafana; then
+    install -m 755 "$tmp/mcp-grafana" /usr/local/bin/mcp-grafana
+    echo "$MCPG_V" > /usr/local/lib/fxa-mcp-grafana.version
+  else echo "WARN: mcp-grafana $MCPG_V did not install; the grafana connector is off"; fi
   rm -rf "$tmp"
 fi
 # mzcld has no bind flag and listens on every interface, and anything that reaches it passes

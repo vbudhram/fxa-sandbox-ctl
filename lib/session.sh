@@ -272,7 +272,8 @@ session_report() {
     agent-*) tid="$(session_get "$key" thread)" ;;
     *) tid="$(session_thread_id "$key")"; key="$(thread_get "$tid" sessions | awk '{print $NF}')"
        # Threads from before the thread record: the bot's state file.
-       [ -n "$key" ] || key="$(jq -r --arg t "${tid#*:}" '[.[] | select(.thread_ts == $t) | .key][0] // empty' "$st" 2>/dev/null || true)" ;;
+       # With no thread record, tid is empty: look for the ts as given.
+       [ -n "$key" ] || key="$(jq -r --arg t "${tid:+${tid#*:}}" --arg a "${1##*/p}" '[.[] | select(.thread_ts == (if $t != "" then $t else $a end)) | .key][0] // empty' "$st" 2>/dev/null || true)" ;;
   esac
   [ -n "$key" ] || { echo "session report: no session for '$1'" >&2; return 1; }
   _thread_ok "$tid" && [ -n "$(thread_get "$tid" sessions)" ] && { _thread_summary "$tid"; echo; }

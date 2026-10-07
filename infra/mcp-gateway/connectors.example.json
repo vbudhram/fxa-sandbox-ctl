@@ -58,7 +58,9 @@
       ],
       "redact": [
         ["(?i)(\"(?:(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization)\"\\s*:\\s*)\"[^\"]*\"", "\\1\"[redacted]\""],
-        ["[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]"],
+        ["(?i)(\"(?:cookie|set-cookie|authorization)\"\\s*,\\s*)\"[^\"]*\"", "\\1\"[redacted]\""],
+        ["(?im)^(\\s*(?:set-cookie|cookie|authorization)):[ \\t]*\\S.*$", "\\1: [redacted]"],
+        ["(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]"],
         ["\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[jwt]"],
         ["(?i)\\b(Bearer|Basic|Hawk)\\s+\\S{8,}", "\\1 [redacted]"],
         ["(?i)([?&;](?:email|login_hint|[\\w]*token|code|state|password|key\\w*)=)[^&\\s\\\"'#)\\]]+", "\\1[redacted]"],

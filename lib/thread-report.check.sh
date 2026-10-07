@@ -24,6 +24,8 @@ check "message link" "$T" "$(session_thread_id https://example.slack.com/archive
 check "reply link" "$T" "$(session_thread_id 'https://example.slack.com/archives/C0AB12CD3/p1791135999000100?thread_ts=1791135361.015169&cid=C0AB12CD3')"
 check "unknown ts" "" "$(session_thread_id 1700000000.000001)"
 check "an unknown ts is not an error under set -e" "ok" "$(set -e; t="$(session_thread_id 1700000000.000001)"; echo ok)"
+echo '[{"key":"agent-cccccc","thread_ts":"1700000000.000002"}]' > "$tmp/bot-state.json"
+check "a thread from before the thread record is found by its ts" "# agent-cccccc" "$(FXA_AGENT_STATE="$tmp/bot-state.json" session_report 1700000000.000002 2>/dev/null | grep -m1 "^# ")"
 
 db_on() { return 0; }
 db_q() { printf "'%s'" "$1"; }

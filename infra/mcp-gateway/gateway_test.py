@@ -5,6 +5,7 @@ import http.client
 import http.server
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -57,9 +58,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlLXZhbHVl
 peer 2001:db8::8a2e:370:7334 and 2001:0db8:85a3:0000:0000:8a2e:0370:7334
 /fxa/node_modules/@opentelemetry/instrumentation-hapi/build/src/instrumentation.js:257:28
 trace_id: "94addfbdc1cffcef54f4f8031488e103" at 13:03:47.566 on Debian 12.14
+**headers**: [["Cookie", "session=xyz"], ["Authorization", "Token abcdefghijkl"]]
+Cookie: sid=qqq
 """
 SENTRY_PII = ["user@example.com", "other%40example.com", "+15555550100", "203.0.113.7", "198.51.100.2", "6f7889b9",
-              "t13d1717", "aB:a6", "65536", "session=abc", "00112233445566778899", "eyJhbGci", "2001:db8", "2001:0db8", "abc123"]
+              "t13d1717", "aB:a6", "65536", "session=abc", "00112233445566778899", "eyJhbGci", "2001:db8", "2001:0db8", "abc123", "session=xyz",
+              "abcdefghijkl", "sid=qqq"]
 # Slack readers debug with these, so the gateway leaves them; finish keeps them out of GitHub.
 SENTRY_KEEP = ["dcdf9d1d5b2f4c6cb38bbe602c10f986", "POST /v1/session/destroy", "1.346.7", "client_id=5882386c6d801776",
                "Firefox/140.0", "@opentelemetry/instrumentation-hapi", "instrumentation.js:257:28",
@@ -291,6 +295,16 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["eventId"], "e1")
         self.assertEqual(result["structuredContent"]["user"], {"email": "[redacted]", "id": "u1"})
         self.assertEqual(result["content"][1]["data"], "a+15555550100/203.0.113.7")  # an image is bytes, not text
+
+    def test_the_sentry_patterns_stay_fast_on_a_long_run(self):
+        sys.path.insert(0, HERE)
+        import gateway
+        c = json.load(open(os.path.join(HERE, "connectors.example.json")))["connectors"]["sentry"]
+        pats = [(re.compile(p), r) for p, r in c["redact"]]
+        t0 = time.time()
+        out = gateway.scrub("a" * 200000 + " x a.b@ex.com", pats, None)
+        self.assertLess(time.time() - t0, 1.0)
+        self.assertTrue(out.endswith("x [email]"))
 
     def test_a_matching_answer_is_withheld(self):
         result = self.call(self.token("j"), "jira__read_issue", {"key": "FXA-SEC"})
