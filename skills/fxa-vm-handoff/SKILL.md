@@ -60,6 +60,27 @@ Rules for the title:
 Do not commit to set the title. In a pipeline run the shared `.git` is
 read-only, so `git commit` fails. The host makes the commit.
 
+## Step 3b: Write the commit body
+
+The host uses `commit_body` as the body of the squash commit. Keep it short: the PR
+body holds the detail. Use the format of the FxA repo, at most 15 lines:
+
+```
+Because:
+
+* <why the change is needed, 1 to 3 bullets>
+
+This commit:
+
+* <what it changes, at most 5 bullets>
+
+Closes FXA-12345
+```
+
+- Write one line per bullet, under 72 characters. Name the behavior, not each file.
+- Do not list tests, checks or screenshots. Do not copy the PR body.
+- Leave out the `Closes` line when there is no ticket.
+
 ## Step 4: Write the file
 
 ```bash
@@ -69,9 +90,10 @@ jq -n \
   --arg branch "$(git branch --show-current)" \
   --arg title "fix(auth): reject an expired session token" \
   --rawfile body /tmp/pr-body.md \
+  --rawfile cbody /tmp/commit-body.txt \
   --argjson media "$(ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .)" \
   '{issue:$issue, branch:$branch, pr_title:$title,
-    pr_body:$body, media_paths:$media}' \
+    pr_body:$body, commit_body:$cbody, media_paths:$media}' \
   > /workspace/.fxa-auto-done.json.tmp \
   && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json
 ```
@@ -79,7 +101,7 @@ jq -n \
 Write to the `.tmp` file, then `mv` it into place, so the host never reads a
 half-written file. Omit `commit_sha`: the host creates the commit.
 
-Write the body to `/tmp/pr-body.md` first. A here-doc inside `jq -n` loses the
+Write the body to `/tmp/pr-body.md` and the commit body to `/tmp/commit-body.txt` first. A here-doc inside `jq -n` loses the
 newlines, and the pull request body then arrives as one paragraph.
 
 In a review-feedback round, also add `feedback_summary`: a list with one short

@@ -49,6 +49,9 @@ if [ -s "$done_file" ]; then
     [[ "$title" =~ ^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?:\ [^[:space:]] ]] \
       || problems+=("pr_title is not a scoped conventional subject like 'fix(auth): reject an expired token': $title")
     [ "${#title}" -le 100 ] || problems+=("pr_title is ${#title} characters; keep it to 100")
+    cb_lines="$(jq -r '.commit_body // ""' "$done_file" | grep -c .)"
+    [ "$cb_lines" -gt 0 ] || problems+=("commit_body is missing: write the short Because / This commit / Closes body (Step 3b)")
+    [ "$cb_lines" -le 15 ] || problems+=("commit_body has ${cb_lines} lines; keep it to 15, the PR body holds the detail")
     [ "$(jq -r .branch "$done_file")" = "$(git branch --show-current)" ] \
       || problems+=("branch is '$(jq -r .branch "$done_file")' but the checkout is on '$(git branch --show-current)'")
     # The host ships only the session's own branch (agent-xxxxxx or fxa-NNNN); the reflog

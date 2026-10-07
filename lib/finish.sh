@@ -471,15 +471,8 @@ _finish_push_and_pr() {
   # After the reset the index holds the whole change, a rebase round's merge included.
   _finish_tooling_guard "$worktree" || return 1
   _finish_check_frozen "$worktree" || return 1
-  # The PR body becomes the commit body so `git log` keeps the why. Drop the
-  # checklist and "(Optional)" template sections.
   local commit_body
-  commit_body="$(printf '%s\n' "$pr_body" | awk '
-    /^## Checklist/            { skip = 1 }
-    /^## .*\(Optional\)/       { skip = 1 }
-    /^## /                     { if ($0 !~ /Checklist|\(Optional\)/) skip = 0 }
-    !skip                      { print }
-  ' | sed -e 's/[[:space:]]*$//' | cat -s)"
+  commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
 
   # As the GitHub App: GitHub authors and signs the commit, and the operator's
   # key and login stay out of the push. gh below also acts as the App.
@@ -931,6 +924,18 @@ _finish_tooling_guard() {
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
   echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
   return 1
+}
+
+# _finish_commit_body <commit_body> <pr_body>   The squash commit's body: the agent's short
+# Because / This commit / Closes body, without the harness footer, at most 30 lines. With
+# none (an older handoff), only the PR body's closing line: the PR keeps the detail.
+_finish_commit_body() {
+  if [ -n "${1//[[:space:]]/}" ]; then
+    printf '%s\n' "$1" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' \
+      | sed -e 's/[[:space:]]*$//' | cat -s | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' | head -30 || true
+  else
+    printf '%s\n' "$2" | grep -E '^(Closes|Fixes):? +[^[:space:]]' | head -3 || true
+  fi
 }
 
 # _finish_check_frozen <worktree>

@@ -166,12 +166,13 @@ HDR
 runtime_prompt_handoff_step() {
   cat <<'STEP'
 9. Your FINAL message must be ONLY the handoff JSON object with keys
-   {issue, branch, pr_title, pr_body, media_paths}, and nothing else: no prose
+   {issue, branch, pr_title, pr_body, commit_body, media_paths}, and nothing else: no prose
    before it, none after it. The launcher captures that final message as the
    handoff, so do NOT write /workspace/.fxa-auto-done.json yourself. Omit
    commit_sha; the host creates the commit. pr_title is the commit subject the
    host will use (scoped conventional, e.g. 'fix(settings): handle cached signin
-   state'); put the Jira key in pr_body, never the title. media_paths lists
+   state'); put the Jira key in pr_body, never the title. commit_body is the
+   short commit body: 'Because:', 'This commit:' and 'Closes FXA-N', at most 15 lines. media_paths lists
    paths relative to /workspace, empty if none. Send that message only when the
    working tree holds exactly what should ship, because sending it ends the run.
 STEP

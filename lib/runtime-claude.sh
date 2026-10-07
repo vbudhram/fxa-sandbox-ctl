@@ -80,10 +80,11 @@ HDR
 runtime_prompt_handoff_step() {
   cat <<'STEP'
 9. Write /workspace/.fxa-auto-done.json LAST, once your changes are final, with
-   keys {issue, branch, pr_title, pr_body, media_paths}. Omit commit_sha; the host
+   keys {issue, branch, pr_title, pr_body, commit_body, media_paths}. Omit commit_sha; the host
    creates the commit. pr_title is the commit subject the host will use (scoped
    conventional, e.g. 'fix(settings): handle cached signin state'); put the Jira
-   key in pr_body, never the title. media_paths lists paths relative to
+   key in pr_body, never the title. commit_body is the short commit body:
+   'Because:', 'This commit:' and 'Closes FXA-N', at most 15 lines. media_paths lists paths relative to
    /workspace, empty if none. Writing this file is your DONE signal, so write it
    only when the working tree holds exactly what should ship. Write to
    /workspace/.fxa-auto-done.json.tmp then 'mv' it into place, so the host never

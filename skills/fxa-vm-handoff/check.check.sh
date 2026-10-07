@@ -25,7 +25,7 @@ chmod +x "$tmp/bin/npx"; export PATH="$tmp/bin:$PATH" FXA_WORKSPACE="$tmp/repo"
 
 mkdir -p "$tmp/repo/src" && cd "$tmp/repo" && g init -q && echo a > src/a.ts && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
 g checkout -qb agent-x
-handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",media_paths:$m}' > .fxa-auto-done.json; }
+handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",media_paths:$m}' > .fxa-auto-done.json; }
 
 echo b > src/a.ts; handoff 'fix(auth): keep the stored location'
 check "a clean change and handoff pass" "handoff check: ok" "$(bash "$C")"
@@ -38,6 +38,10 @@ git checkout -q agent-x
 handoff 'fix(auth): x' agent-x '[".fxa-auto-media/gone.png"]'; check "a missing media file is named" 1 "$(bash "$C" | grep -c "gone.png, which does not exist")"
 mkdir -p .fxa-auto-media && touch .fxa-auto-media/gone.png; check "an existing media file passes" "handoff check: ok" "$(bash "$C")"
 echo '{"issue":"x"}' > .fxa-auto-done.json; check "a handoff missing keys is named" 1 "$(bash "$C" | grep -c "needs string keys")"
+handoff 'fix(auth): x'; jq 'del(.commit_body)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+check "a missing commit body is named" 1 "$(bash "$C" | grep -c "commit_body is missing")"
+handoff 'fix(auth): x'; jq --arg c "$(seq 1 20)" '.commit_body = $c' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+check "a long commit body is named" 1 "$(bash "$C" | grep -c "commit_body has 20 lines")"
 rm .fxa-auto-done.json; check "no handoff checks the change only" "handoff check: ok" "$(bash "$C")"
 
 echo ugly > src/a.ts; check "an unformatted file is named" 1 "$(bash "$C" | grep -c "not formatted.*src/a.ts")"
@@ -56,7 +60,7 @@ bash "$C" --fix >/dev/null; check "--fix leaves a committed scratch file and rep
 
 g rm -q src/kept.tmp.ts && g commit -qm 'drop kept'
 # STE in the PR text: named, exit 3 on style alone, so the host asks once and still ships.
-body() { jq -n --arg b "$1" --arg t "${2:-fix(auth): keep the stored location}" '{issue:"agent-x",branch:"agent-x",pr_title:$t,pr_body:$b,media_paths:[]}' > .fxa-auto-done.json; }
+body() { jq -n --arg b "$1" --arg t "${2:-fix(auth): keep the stored location}" '{issue:"agent-x",branch:"agent-x",pr_title:$t,pr_body:$b,commit_body:"Because:\n\n* why",media_paths:[]}' > .fxa-auto-done.json; }
 body 'We utilize the cache.'; bash "$C" >/dev/null; check "style alone exits 3" 3 $?
 check "the word and its replacement are named" 1 "$(bash "$C" | grep -c 'PR text, STE: "utilize": use "use"')"
 body 'We utilize the cache.' 'Fix it'; bash "$C" >/dev/null; check "style and a real problem exit 1" 1 $?
