@@ -187,6 +187,8 @@ def apply_rules(rules, tool, schema, args):
         arg, val = rule["arg"], args.get(rule["arg"])
         if "set" in rule:
             args[arg] = rule["set"]
+        elif rule.get("drop"):
+            args.pop(arg, None)
         elif "jql_project" in rule:
             if not isinstance(val, str):
                 raise Denied("%s needs a jql string" % arg)

@@ -495,7 +495,7 @@ Every connector is read-only by construction:
 
 - **`tools`** is an allowlist. A tool not on it does not exist for the runner.
 - **`rules`** check or rewrite arguments before a call leaves: `equals` and
-  `one_of` pin a value (`owner` must be `mozilla`), `set` forces one,
+  `one_of` pin a value (`owner` must be `mozilla`), `set` forces one, `drop` removes one,
   `include` adds values to a list (`fields` always asks for `security` and `labels`; its
   `deny` refuses fields such as `issuelinks` that show other issues without their labels),
   and `jql_project` wraps a JQL search as `project = FXA AND level IS EMPTY AND (...)`,
@@ -531,6 +531,13 @@ Set it up:
    Runlayer binds each sign-in to one URL, so each connector's proxy URL
    asks for its own. Do not use the plugin URL (`/mcp`): to this client it
    offers only `search_tools` and `execute_tool`, which the rules cannot check.
+
+   The `sentry` connector goes straight to `mcp.sentry.dev`. Store a read-only
+   Sentry user auth token as the `fxa-sentry-token` secret. The header scheme is
+   `Sentry-Bearer`, because `Bearer` is only for Sentry's own OAuth tokens. The
+   token belongs to one person, so Sentry stops when that person's token does.
+   Its rules pin `organizationSlug` and `regionUrl`, and drop the `url` of
+   `get_sentry_resource`: the server can send the token to the host those name.
 3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
    Only Slack sessions get connectors; ai-fixme pipeline runs never do. The

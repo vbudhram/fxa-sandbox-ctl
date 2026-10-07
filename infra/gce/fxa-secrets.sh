@@ -18,10 +18,12 @@ if [ -d "$W/fxa-agent-bot" ]; then
     printf 'SLACK_BOT_TOKEN=%s\n' "$(get fxa-slack-bot-token)"
     printf 'SLACK_APP_TOKEN=%s\n' "$(get fxa-slack-app-token)"; } > "$W/fxa-agent-bot/.env"
 fi
-# The MCP gateway's upstream credential, in its own file: no other service reads it.
-r="$(get fxa-runlayer-agent-token || true)"
-if [ -n "$r" ]; then printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r" > "$C/mcp-gateway.env"; else rm -f "$C/mcp-gateway.env"; fi
-unset r
+# The MCP gateway's upstream credentials, in their own file: no other service reads it.
+r="$(get fxa-runlayer-agent-token || true)" s="$(get fxa-sentry-token || true)"
+{ [ -z "$r" ] || printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r"
+  [ -z "$s" ] || printf 'SENTRY_ACCESS_TOKEN=%s\n' "$s"; } > "$C/mcp-gateway.env"
+[ -s "$C/mcp-gateway.env" ] || rm -f "$C/mcp-gateway.env"
+unset r s
 # acli keeps its Jira login in its own config, so log it in from the secrets.
 j="$(get fxa-jira-token || true)" e="$(get fxa-jira-email || true)"
 if [ -z "$j" ] || [ -z "$e" ]; then

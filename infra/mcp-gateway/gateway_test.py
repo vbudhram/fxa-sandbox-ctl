@@ -115,7 +115,8 @@ class GatewayTest(unittest.TestCase):
                                {"arg": "fields", "include": ["security", "labels"], "deny": ["issuelinks"], "default": ["summary"]}],
                      "deny_result": ["\"security\"\\s*:\\s*\\{", "(?i)\"labels\"\\s*:\\s*\\[[^\\]]*\"(HackerOne|security)\""]},
             "github": {"url": base + "/github", "headers": auth, "tools": ["get_pr"],
-                       "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"}]},
+                       "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"},
+                                 {"tool": "get_pr", "arg": "url", "drop": True}]},
             "slack": {"url": base + "/slack", "headers": {"Authorization": "Bearer ${UNSET_SLACK_TOKEN}"}, "tools": ["read_issue"]},
             "figma": {"url": base + "/oauth", "headers": {"Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}"}, "tools": ["read_issue"]},
         }}
@@ -229,6 +230,10 @@ class GatewayTest(unittest.TestCase):
         self.assertFalse(self.call(tok, "github__get_pr", {"owner": "Mozilla", "repo": "fxa"}).get("isError"))
         self.assertTrue(self.call(tok, "github__get_pr", {"owner": "mozilla", "repo": "other"})["isError"])
         self.assertTrue(self.call(tok, "github__get_pr", {"repo": "fxa"})["isError"])  # a missing owner is not a pass
+
+    def test_a_dropped_argument_never_reaches_the_upstream(self):
+        self.call(self.token("dr"), "github__get_pr", {"owner": "mozilla", "repo": "fxa", "url": "https://example.com/other"})
+        self.assertNotIn("url", self.upstream_calls("/github")[-1][2]["arguments"])
 
     def test_a_matching_answer_is_withheld(self):
         result = self.call(self.token("j"), "jira__read_issue", {"key": "FXA-SEC"})

@@ -45,6 +45,16 @@
       "rules": [
         { "tool": "get_screenshot", "arg": "enableBase64Response", "set": true }
       ]
+    },
+    "sentry": {
+      "url": "https://mcp.sentry.dev/mcp",
+      "headers": { "Authorization": "Sentry-Bearer ${SENTRY_ACCESS_TOKEN}" },
+      "tools": ["find_projects", "search_issues", "search_errors", "get_sentry_resource"],
+      "rules": [
+        { "arg": "organizationSlug", "set": "mozilla" },
+        { "arg": "regionUrl", "set": "https://us.sentry.io" },
+        { "tool": "get_sentry_resource", "arg": "url", "drop": true }
+      ]
     }
   }
 }
