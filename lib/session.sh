@@ -769,6 +769,7 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
 # end; {type: "text_start"} and {type: "text", text} as the main agent writes;
 # {type: "step", text} per tool call or message; then the live-status events.
 _SESSION_WATCH_JQ="fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
+  elif .type == \"fxa_diffstat\" then {type: \"diffstat\", files: .files}
   elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
     | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
       elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
@@ -780,13 +781,23 @@ _session_activity() {
   jq -R -s -r "split(\"\\n\") | map(fromjson? | ${_SESSION_STEPS_JQ}) | last // \"\"" 2>/dev/null
 }
 
+# The change so far as one line, run in /workspace with the base sha as $1: tracked
+# files from git, new files by their line count, never the .fxa-* scratch files.
+# The live file count reads it, because the agent also edits with scripts, not only Edit.
+_SESSION_DIFFSTAT_SH='{ git diff --numstat "$1" -- . ":(exclude).fxa-*"
+  git ls-files -o --exclude-standard -- . ":(exclude).fxa-*" | while IFS= read -r f; do printf "%s\t0\t%s\n" "$(wc -l < "$f" | tr -d " ")" "$f"; done; } 2>/dev/null \
+  | jq -Rsc "{type: \"fxa_diffstat\", files: [split(\"\n\")[] | select(length > 0) | split(\"\t\") | {file: .[2], added: (.[0] | tonumber? // 0), removed: (.[1] | tonumber? // 0)}]}"'
+
 # _session_watch <key>   Stream the running turn as JSON lines, as they happen:
 # {type: "step", text} per tool call or message, {type: "result"} at the turn's end.
 # Runs until the caller kills it or the runner goes away.
 # Also {type: "text", text} for each piece of the reply as Claude writes it, and
 # {type: "text_start"} when a new block of text begins (not a subagent's).
 _session_watch() {
-  _session_sh "$(worktree_branch_for "$1")" 'timeout 1800 tail -q -n 0 -F /workspace/.fxa-auto-claude.jsonl /workspace/.fxa-auto-stream.jsonl 2>/dev/null' \
+  local base; base="$(session_get "$1" base_sha)"
+  # Beside the tail, the diffstat every 15 s, printed only when it changed.
+  local loop="p=; while :; do n=\"\$(bash -c $(printf %q "$_SESSION_DIFFSTAT_SH") _ $(printf %q "${base:-HEAD}"))\"; [ \"\$n\" = \"\$p\" ] || { p=\$n; printf '%s\\n' \"\$n\"; }; sleep 15; done"
+  _session_sh "$(worktree_branch_for "$1")" "cd /workspace && { timeout 1800 tail -q -n 0 -F .fxa-auto-claude.jsonl .fxa-auto-stream.jsonl & timeout 1800 bash -c $(printf %q "$loop") & wait; } 2>/dev/null" \
     | jq --unbuffered -R -c "$_SESSION_WATCH_JQ" \
     || true # the watch ends when its runner stops or after 30 min; neither is a failure
 }

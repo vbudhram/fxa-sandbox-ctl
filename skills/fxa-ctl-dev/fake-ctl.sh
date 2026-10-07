@@ -28,6 +28,7 @@ script() {
         | {at: ($T + 1), ev: {type: "step", text: "Reading packages/fxa-settings/src/index.tsx"}},
           {at: ($T + 3), ev: {type: "step", text: "Running grep -rn useAccount packages/fxa-settings/src"}},
           {at: ($T + 5), ev: {type: "step", text: "Editing packages/fxa-settings/src/index.tsx"}},
+          {at: ($T + 6), ev: {type: "diffstat", files: [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}]}},
           {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}},
           {at: ($T + 10), ev: ({type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."}
@@ -46,7 +47,7 @@ events() {
   local k="$1" since="${3:-0}"
   [ -f "$DIR/$k/t0" ] || { jq -n --argjson c "$since" '{cursor: $c, state: "stopped", events: []}'; return; }
   script "$k" | jq --argjson since "$since" '
-    (.evs | map(select(.ev.type != "step") | .ev)) as $e
+    (.evs | map(select(.ev.type != "step" and .ev.type != "diffstat") | .ev)) as $e
     | (.evs | map(select(.ev.type == "step")) | last | .ev.text) as $last
     | {cursor: ($e | length), state, events: $e[$since:],
        activity: {busy: (.state == "starting" or .state == "wrapping" or (.state == "active" and .inturn)),
@@ -77,7 +78,7 @@ case "$cmd" in
   watch) k="$1"; n=0
     # Like the real watch: it stays open between turns, and each step prints once.
     for _ in $(seq 1 1800); do
-      out="$(script "$k" | jq -c '[.evs[] | select(.ev.type == "step" or .ev.type == "turn_end") | if .ev.type == "step" then .ev else {type: "result"} end]')"
+      out="$(script "$k" | jq -c '[.evs[] | select(.ev.type == "step" or .ev.type == "diffstat" or .ev.type == "turn_end") | if .ev.type == "turn_end" then {type: "result"} else .ev end]')"
       jq -c --argjson n "$n" '.[$n:][]' <<< "$out"; n="$(jq length <<< "$out")"
       sleep 1
     done ;;

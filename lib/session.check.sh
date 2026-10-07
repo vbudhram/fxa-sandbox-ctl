@@ -612,5 +612,14 @@ runtime_skill_ref() { printf '/%s' "$1"; }
 check "the first prompt carries the voice" "1" "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt | grep -c 'helpful fox')"
 check "the first prompt names !usage and runs nothing" "1|" "$(SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)" _session_first_prompt 2>"$tmp/fp.err" | grep -c 'point to `!usage`')|$(cat "$tmp/fp.err")"
 
+# The live file count comes from git on the runner, so edits made with a script count too.
+g="$tmp/diffrepo"; git init -q "$g"; printf 'a\nb\n' > "$g/old.ts"; git -C "$g" add old.ts
+git -C "$g" -c user.email=user@example.com -c user.name=t commit -q -m base; base="$(git -C "$g" rev-parse HEAD)"
+printf 'a\nB\nc\n' > "$g/old.ts"; printf 'x\ny\n' > "$g/new.ts"; echo note > "$g/.fxa-todo.md"
+check "diffstat: tracked and new files, no scratch" '{"type":"fxa_diffstat","files":[{"file":"old.ts","added":2,"removed":1},{"file":"new.ts","added":2,"removed":0}]}' \
+  "$(cd "$g" && bash -c "$_SESSION_DIFFSTAT_SH" _ "$base")"
+check "diffstat: the watch turns it into a live event" '{"type":"diffstat","files":[{"file":"a.ts","added":3,"removed":1}]}' \
+  "$(echo '{"type":"fxa_diffstat","files":[{"file":"a.ts","added":3,"removed":1}]}' | jq -R -c "$_SESSION_WATCH_JQ")"
+
 exit "$fail"
 
