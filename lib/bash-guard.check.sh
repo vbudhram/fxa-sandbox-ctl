@@ -11,6 +11,9 @@ check() { # check <want exit> <command> [run_in_background]
   else printf 'FAIL want %s got %s: %s\n' "$1" "$got" "$2"; fail=1; fi
 }
 check 2 'until grep -q DONE out.log; do sleep 3; done; cat out.log'
+# The block names the way that passes, for a server or app the agent started.
+msg="$(jq -n '{tool_input: {command: "while ! curl -sf localhost:3000; do sleep 2; done"}}' | bash "$hook" 2>&1 >/dev/null)"
+case "$msg" in *'for i in $(seq 1 60)'*) printf 'ok   the block shows a bounded for loop\n' ;; *) printf 'FAIL the block shows no bounded for loop\n'; fail=1 ;; esac
 check 2 'while true; do curl -sf localhost:9000 && break; sleep 2; done'
 check 2 'sleep 240; cat /workspace/.fxa-cov/small.summary'
 check 2 'pkill -f snake-profile; sleep 1'

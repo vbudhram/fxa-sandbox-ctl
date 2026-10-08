@@ -174,6 +174,11 @@ When a run fails and its output or log is long, give the path to the
 - Never write your own wait loop, such as `until grep -q DONE out; do sleep 5; done`.
   It does not see the job die, so it waits until the 10-minute timeout. A hook
   blocks it, and a `sleep` of 30 s or more.
+- To wait for a server or an app you started (a dev server, Firefox), use a
+  bounded loop: `for i in $(seq 1 60); do curl -sf -m2 <url> && break; sleep 2; done`.
+  A `for` loop passes the hook.
+- Run `rm` in a Bash call of its own. In a compound command (`sed -i … && rm …`)
+  it needs an approval that nobody can give, so the whole call is refused.
 - Bracket the first letter in `pkill -f '[p]attern'`, and run the pkill in a Bash call
   of its own. A bare pattern, or a command that also names the process (`&& node
   serve.js`), matches your own shell, and the call kills itself (exit 144). A hook blocks it.

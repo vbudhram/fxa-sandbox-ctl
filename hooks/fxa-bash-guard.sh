@@ -21,6 +21,7 @@ Wait on the job instead:
 - a functional run: run.sh --bg <spec>, then `bash ~/.claude/skills/fxa-functional-local/run.sh wait`
 - the stack: `bash ~/.claude/skills/fxa-stack/stack.sh wait <service>`, or `stack.sh restart <service> [KEY=VAL...]`, which waits
 - any other background job: `timeout 270 tail --pid=<pid> -f /dev/null` (it returns when the job ends; call it again if not)
+- a server or app you started: `for i in $(seq 1 60); do curl -sf -m2 <url> && break; sleep 2; done` (a bounded for loop passes)
 EOF
   exit 2
 fi

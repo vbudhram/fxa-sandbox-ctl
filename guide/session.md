@@ -24,6 +24,9 @@ Rules that follow from this:
 - When the session pauses, the host saves the commits on `HEAD` and the
   working tree. Other branches, stashes and worktrees are lost. Merge or
   cherry-pick what you need onto the shipping branch first.
+- Files outside `/workspace`, and the databases, are lost too. Keep a setup
+  script in `/workspace/.fxa-keep/` that rebuilds what you added there, such as
+  an OAuth client row, a test account or a downloaded tool.
 - There is no editor, so interactive commands stop. In place of
   `git rebase -i`, use `git commit --fixup <sha>` and then
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/main`.
@@ -41,6 +44,9 @@ There is no `/goal`. A person steers you turn by turn.
   prints a short plan: the cause, the files you will change and how you will
   verify. Then make the change and verify it. Nobody approves the plan first.
   A question or an investigation needs no plan.
+- A demo or a prototype that changes nothing under `packages/` needs no
+  `/fxa-test-plan` and no `/fxa-verify`. Check it with its own small test, such
+  as a script that signs in and checks the result.
 - To ask for a decision, put 2 to 4 answers on lines that start with
   `OPTION: `. For several decisions at once (at most 5), put
   `QUESTION: <the question>` on its own line before each group.
