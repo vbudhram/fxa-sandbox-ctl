@@ -461,6 +461,7 @@ _finish_push_and_pr() {
     echo "ERROR: could not find merge-base with ${base_ref}." >&2
     return 1
   fi
+  merge_base="$(_finish_squash_base "$worktree" "$branch" "$merge_base" "$merging")"
   local commit_count
   commit_count="$(git -C "$worktree" rev-list --count "${merge_base}..HEAD")"
   echo "Squashing ${commit_count} commit(s) and re-signing on host..." >&2
@@ -721,6 +722,22 @@ finish_add_reviewers() {
   else
     echo "  NOTE: no reporter assigned (FXA_PR_ASSIGNEE unset or unresolved)." >&2
   fi
+}
+
+# _finish_squash_base <worktree> <branch> <merge_base> <merging>
+#   Where the squash starts. A person's commits on the PR stay theirs: the change
+#   goes on top of the PR's head. A rebase round (merging) rewrites anyway.
+_finish_squash_base() {
+  local wt="$1" branch="$2" base="$3" merging="${4:-}" head people
+  head="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" 2>/dev/null || true)"
+  if [ -z "$merging" ] && [ -n "$head" ] && git -C "$wt" merge-base --is-ancestor "$base" "$head" 2>/dev/null; then
+    people="$(git -C "$wt" log --format=%an "${base}..${head}" 2>/dev/null | grep -v '\[bot\]$' || true)"
+    if [ -n "$people" ]; then
+      echo "  The PR has commits from a person, so this change goes on top of them." >&2
+      echo "$head"; return 0
+    fi
+  fi
+  echo "$base"
 }
 
 # finish_request_copilot_review <pr_url>
