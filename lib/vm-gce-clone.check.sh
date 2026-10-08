@@ -42,4 +42,16 @@ printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=out c4a-standard-4@z-c=o
 out="$(FXA_GCE_MACHINE_FALLBACK= vm_clone r3 2>&1)"; rc=$?
 check "no fallback: fails after the zones, and says which types" "1|3|1" "$rc|$(wc -l < "$calls" | tr -d ' ')|$(grep -c 'stocked out for c4a-standard-4\.' <<< "$out")"
 check "no runner at all: one capacity error" "all_zones_out" "$(paste -sd, "$tmp/errors")"
+# The image build: c4a in every zone, then the Arm fallback with the disk type it takes.
+( pat='/^vm_image_build() {/,/^}/p'; eval "$(sed -n "$pat" "$here/vm-gce.sh")"
+  set -o pipefail; rm -f "$LOG_DIR/last-good-zone"  # as the controller runs it, and no zone first
+  SANDBOX_ROOT="$tmp/root" FXA_GCE_PROJECT=p; mkdir -p "$SANDBOX_ROOT/packer"; vm_guide_build() { :; }; : > "$calls"
+  packer() { case "$1" in init) return 0 ;; esac
+    local a mt="" zone="" disk=""; for a in "$@"; do case "$a" in machine_type=*) mt="${a#*=}" ;; zone=*) zone="${a#*=}" ;; disk_type=*) disk="${a#*=}" ;; esac; done
+    echo "$mt $zone $disk" >> "$calls"
+    case "$mt" in c4a-*) echo "does not have enough resources available"; return 1 ;; *) return 0 ;; esac; }
+  vm_image_build >/dev/null 2>&1; rc=$?
+  check "image build: every zone on c4a, then t2a on pd-balanced" "0|c4a-highcpu-4 z-a hyperdisk-balanced,c4a-highcpu-4 z-b hyperdisk-balanced,c4a-highcpu-4 z-c hyperdisk-balanced,t2a-standard-4 z-a pd-balanced" \
+    "$rc|$(paste -sd, "$calls")"
+  exit "$fail" ) || fail=1
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

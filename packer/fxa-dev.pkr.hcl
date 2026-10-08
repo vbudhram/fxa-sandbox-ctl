@@ -33,6 +33,17 @@ variable "disk_size_gb" {
 
 # GCE: same scripts, stock arm64 Ubuntu, built over IAP with no external IP.
 # N4A and C4A need Hyperdisk; the plugin's pd-standard default fails the build.
+# The build machine: the build tries c4a, then the runners' Arm fallback (lib/vm-gce.sh vm_image_build).
+variable "machine_type" {
+  type    = string
+  default = "c4a-highcpu-4"
+}
+
+variable "disk_type" {
+  type    = string
+  default = "hyperdisk-balanced"
+}
+
 variable "project" {
   type    = string
   default = ""
@@ -46,9 +57,9 @@ variable "zone" {
 source "googlecompute" "ubuntu" {
   project_id          = var.project
   zone                = var.zone
-  machine_type        = "c4a-highcpu-4"
+  machine_type        = var.machine_type
   source_image_family = "ubuntu-2404-lts-arm64"
-  disk_type           = "hyperdisk-balanced"
+  disk_type           = var.disk_type
   disk_size           = var.disk_size_gb
   # Unique name, stable family: a rebuild never collides with the image the
   # runners boot from, and vm_clone picks the newest in the family.

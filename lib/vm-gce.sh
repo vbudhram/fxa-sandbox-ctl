@@ -103,19 +103,23 @@ vm_image_build() {
   vm_guide_build pipeline > "${SANDBOX_ROOT}/packer/.vm-agent-guide.md" || return 1
   cd "${SANDBOX_ROOT}/packer"
   packer init fxa-dev.pkr.hcl
-  # Only a stockout moves the build on to the next zone.
-  local zone log; log="$(mktemp)"
-  for zone in $(_gce_zone_order); do
-    echo "Building in ${zone}..."
-    # One statement, so errexit does not stop the stockout check below.
-    local rc=0
-    packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" fxa-dev.pkr.hcl 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
-    [ "$rc" -eq 0 ] && { rm -f "$log"; return 0; }
-    grep -q 'STOCKOUT\|does not have enough resources' "$log" || { rm -f "$log"; return 1; }
-    echo "  ${zone} is stocked out; trying the next zone."
+  # Only a stockout moves the build on: to the next zone, then to the runners' Arm
+  # fallback type (c4a ran out in every us-central1 zone on 2026-10-03 and 10-08).
+  local zone mt log; log="$(mktemp)"
+  for mt in c4a-highcpu-4 ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}; do
+    for zone in $(_gce_zone_order); do
+      echo "Building in ${zone} on ${mt}..."
+      # One statement, so errexit does not stop the stockout check below.
+      local rc=0
+      packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" \
+        -var "machine_type=${mt}" -var "disk_type=$(_gce_disk_type "$mt")" fxa-dev.pkr.hcl 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+      [ "$rc" -eq 0 ] && { rm -f "$log"; return 0; }
+      grep -q 'STOCKOUT\|does not have enough resources' "$log" || { rm -f "$log"; return 1; }
+      echo "  ${zone} is stocked out for ${mt}; trying the next."
+    done
   done
   rm -f "$log"
-  echo "ERROR: every zone in FXA_GCE_ZONES is stocked out." >&2
+  echo "ERROR: every zone in FXA_GCE_ZONES is stocked out for every build machine type." >&2
   return 1
 }
 
