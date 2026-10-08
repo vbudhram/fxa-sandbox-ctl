@@ -35,6 +35,7 @@ source "${SCRIPT_DIR}/lib/vm.sh"
 source "${SCRIPT_DIR}/lib/agent.sh"
 source "${SCRIPT_DIR}/lib/pipeline.sh"
 source "${SCRIPT_DIR}/lib/jira.sh"
+source "${SCRIPT_DIR}/lib/sentry.sh"
 source "${SCRIPT_DIR}/lib/worktree.sh"
 source "${SCRIPT_DIR}/lib/github.sh"
 source "${SCRIPT_DIR}/lib/telemetry.sh"
@@ -126,6 +127,7 @@ PIPELINE COMMANDS:
   drain                        Done keys whose PR merged, closed, or went red
   ticket <ISSUE-KEY>           Ticket text INCLUDING comments
   jira-card <ISSUE-KEY>        Summary, status and assignee as JSON for a Slack card; null for a hidden ticket
+  sentry-card <ID|SHORT-ID>    A Sentry issue as JSON for a Slack card (no user data); null when unreadable
   ground <ISSUE-KEY>           Write /tmp/fxa-KEY-ground.md: ticket, cited paths checked on
                                origin/main, frozen/stories checks, overlapping open PRs
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
@@ -2506,6 +2508,7 @@ main() {
     label)      cmd_label "$@" ;;
     ticket)     cmd_ticket "$@" ;;
     jira-card)  jira_card "$@" ;;
+    sentry-card) sentry_card "$@" ;;
     ground)     cmd_ground "$@" ;;
     reporter)   cmd_reporter "$@" ;;
     slots)      cmd_slots "$@" ;;
