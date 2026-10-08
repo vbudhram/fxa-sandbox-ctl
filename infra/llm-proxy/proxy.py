@@ -45,6 +45,16 @@ HOP = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrad
 DROP = HOP | {"x-api-key", "authorization", "accept-encoding"}
 TOKEN_RE = re.compile(r"^fxl_[A-Za-z0-9]{32}$")
 
+# A Slack session waits minutes for a reply, longer than the 5-minute cache. While its
+# token is valid, resend its last request with max_tokens 0 (a cache read, no output)
+# just before the cache goes cold, at most WARM_MAX times: two cover the 10 minutes
+# before the idle sweep pauses the session (lib/session.sh, FXA_SESSION_IDLE_SECONDS).
+WARM_RUNS = re.compile(os.environ.get("LLM_PROXY_WARM_RUNS", r"^agent-"))
+WARM_SECONDS = float(os.environ.get("LLM_PROXY_WARM_SECONDS", "270"))
+WARM_MAX = int(os.environ.get("LLM_PROXY_WARM_MAX", "2"))
+WARM_TICK = float(os.environ.get("LLM_PROXY_WARM_TICK", "15"))
+warm, warm_guard = {}, threading.Lock()  # token -> {body, headers, at, pings}
+
 locks, locks_guard = {}, threading.Lock()
 # Idle upstream connections: a call reuses one and skips the TCP and TLS handshake.
 POOL = queue.LifoQueue(maxsize=8)
@@ -85,7 +95,63 @@ def load(tok):
     return rec if rec.get("expires", 0) > time.time() else None
 
 
-def charge(tok, model, usage):
+def warmable(doc):
+    """A request the API takes with max_tokens 0 (prompt caching guide, rejected combinations)."""
+    return (isinstance(doc, dict) and (doc.get("thinking") or {}).get("type") != "enabled"
+            and "format" not in (doc.get("output_config") or {})
+            and (doc.get("tool_choice") or {}).get("type") not in ("any", "tool"))
+
+
+def remember(tok, rec, path, body, headers):
+    if path != "/v1/messages" or not WARM_RUNS.match(rec.get("run") or ""):
+        return
+    try:
+        doc = json.loads(body)
+    except ValueError:
+        return
+    if warmable(doc):
+        doc["max_tokens"] = 0
+        doc.pop("stream", None)  # max_tokens 0 rejects stream; streaming is not part of the cached prefix
+        with warm_guard:
+            warm[tok] = {"body": json.dumps(doc).encode(), "headers": headers, "at": time.time(), "pings": 0}
+
+
+def warm_once(tok, w):
+    conn = connect()
+    try:
+        conn.request("POST", "/v1/messages", body=w["body"], headers=w["headers"])
+        resp = conn.getresponse()
+        doc = json.loads(resp.read())
+    except (http.client.HTTPException, OSError, ValueError):
+        return False
+    finally:
+        conn.close()
+    if resp.status != 200:
+        return False
+    charge(tok, doc.get("model"), doc.get("usage", {}), warm=True)
+    return True
+
+
+def warm_loop():
+    while True:
+        time.sleep(WARM_TICK)
+        with warm_guard:
+            due = [(t, w) for t, w in warm.items() if time.time() - w["at"] >= WARM_SECONDS]
+        for tok, w in due:
+            rec = load(tok)  # None once the session stops and its token is revoked
+            live = rec is not None and not (rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"])
+            ok = live and w["pings"] < WARM_MAX and warm_once(tok, w)
+            with warm_guard:
+                if warm.get(tok) is not w:
+                    continue  # a real call came in meanwhile and starts the count again
+                if ok:
+                    w["pings"] += 1
+                    w["at"] = time.time()
+                else:
+                    del warm[tok]
+
+
+def charge(tok, model, usage, warm=False):
     usd = cost(model, usage)
     with token_lock(tok):
         rec = load(tok)
@@ -96,7 +162,7 @@ def charge(tok, model, usage):
                 json.dump(rec, f)
             os.replace(path + ".tmp", path)
     line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "model": model,
-            "usd": round(usd, 6),
+            "usd": round(usd, 6), **({"warm": True} if warm else {}),
             # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
             "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "", prompt_tokens(usage))[2] / 1e6, 6),
             **{k: usage.get(k, 0) for k in ("input_tokens", "output_tokens",
@@ -177,6 +243,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             conn.close()
             raise
         give(conn, resp)
+        if resp.status == 200:
+            remember(auth, rec, path, body, headers)
 
     def relay(self, resp, tok, path):
         """Pass the answer through as it arrives, and read its usage on the way."""
@@ -233,6 +301,7 @@ def main():
     host, port = LISTEN.rsplit(":", 1)
     server = http.server.ThreadingHTTPServer((host, int(port)), Handler)
     server.daemon_threads = True
+    threading.Thread(target=warm_loop, daemon=True).start()
     sys.stderr.write("fxa-llm-proxy on %s, upstream %s\n" % (LISTEN, UPSTREAM.geturl()))
     server.serve_forever()
 

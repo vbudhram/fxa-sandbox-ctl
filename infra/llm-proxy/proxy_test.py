@@ -14,6 +14,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEEN = []  # the headers the fake upstream received
+BODIES = []  # the request bodies the fake upstream received
 PEERS = []  # the client address of each call, one per upstream connection
 DROP = []  # when set, the fake upstream closes the connection after its answer
 
@@ -27,6 +28,7 @@ class Upstream(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["content-length"])))
         SEEN.append(dict(self.headers))
+        BODIES.append(body)
         PEERS.append(self.client_address)
         if DROP:
             DROP.clear()
@@ -67,7 +69,8 @@ class ProxyTest(unittest.TestCase):
         threading.Thread(target=up.serve_forever, daemon=True).start()
         cls.port = free_port()
         env = dict(os.environ, LLM_PROXY_DIR=cls.dir, LLM_PROXY_UPSTREAM="http://127.0.0.1:%d" % up.server_port,
-                   ANTHROPIC_API_KEY="sk-real-key", LLM_PROXY_LISTEN="127.0.0.1:%d" % cls.port)
+                   ANTHROPIC_API_KEY="sk-real-key", LLM_PROXY_LISTEN="127.0.0.1:%d" % cls.port,
+                   LLM_PROXY_WARM_SECONDS="1", LLM_PROXY_WARM_TICK="0.2", LLM_PROXY_WARM_MAX="2")
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "proxy.py")], env=env, stderr=subprocess.DEVNULL)
         for _ in range(50):
             try:
@@ -146,6 +149,47 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.call(tok)[0], 200)  # the upstream closes after this answer
         self.assertEqual(self.call(tok)[0], 200)  # the pooled socket is dead: one retry on a new one
         self.assertNotEqual(PEERS[-1], PEERS[-2])
+
+
+    # A waiting Slack session's cache is kept warm with max_tokens 0 resends, and nothing else is.
+    def warm_calls(self, since):
+        return [b for b in BODIES[since:] if b.get("max_tokens") == 0]
+
+    def usage_rows(self, run):
+        with open(os.path.join(self.dir, "usage.jsonl")) as f:
+            return [json.loads(l) for l in f if json.loads(l).get("run") == run]
+
+    def test_a_session_is_resent_with_max_tokens_0_without_stream_up_to_the_max(self):
+        tok, n = self.token("w", run="agent-warm"), len(BODIES)
+        self.call(tok, body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 32000, "thinking": {"type": "adaptive"},
+                             "messages": [{"role": "user", "content": "hi"}]})
+        time.sleep(3.5)
+        warm = self.warm_calls(n)
+        self.assertEqual(len(warm), 2)  # LLM_PROXY_WARM_MAX
+        self.assertNotIn("stream", warm[0])
+        self.assertEqual((warm[0]["thinking"], warm[0]["messages"]), ({"type": "adaptive"}, [{"role": "user", "content": "hi"}]))
+        self.assertEqual([r.get("warm") for r in self.usage_rows("agent-warm")], [None, True, True])
+
+    def test_a_new_call_starts_the_count_again(self):
+        tok, n = self.token("r", run="agent-again"), len(BODIES)
+        for _ in range(2):
+            self.call(tok, body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 10, "messages": []})
+            time.sleep(2.6)
+        self.assertEqual(len(self.warm_calls(n)), 4)
+
+    def test_other_runs_and_unwarmable_requests_are_not_resent(self):
+        n = len(BODIES)
+        self.call(self.token("p", run="FXA-1"), body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 10, "messages": []})
+        self.call(self.token("f", run="agent-format"), body={"model": "claude-opus-5-5", "max_tokens": 10, "messages": [],
+                                                              "output_config": {"format": {"type": "json_schema"}}})
+        tok = self.token("x", run="agent-revoked")
+        self.call(tok, body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 10, "messages": []})
+        with open(os.path.join(self.dir, "tokens", tok + ".json")) as f:
+            rec = json.load(f)
+        with open(os.path.join(self.dir, "tokens", tok + ".json"), "w") as f:
+            json.dump(dict(rec, expires=0), f)  # the session stopped
+        time.sleep(2.5)
+        self.assertEqual(self.warm_calls(n), [])
 
 
 class PriceTest(unittest.TestCase):
