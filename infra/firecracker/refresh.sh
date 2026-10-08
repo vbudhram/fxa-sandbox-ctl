@@ -7,10 +7,13 @@ set -euo pipefail
 exec 9> /fc/run/refresh.lock
 flock -n 9 || { echo "a refresh is already running"; exit 0; }
 fc=/usr/local/sbin/fc
+# Claude Code in the guest: the same pin as packer/scripts/04-claude.sh (lib/claude-pin.check.sh).
+CLAUDE_CODE_VERSION=2.1.293
 cur="$(cat /fc/snap/latest/commit 2>/dev/null || echo none)"
+cur_cc="$(cat /fc/snap/latest/claude-code 2>/dev/null || echo none)"
 new="$(git ls-remote https://github.com/mozilla/fxa.git refs/heads/main | cut -f1)"
 [[ "$new" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read main" >&2; exit 1; }
-[ "$new" = "$cur" ] && [ "${1:-}" != --force ] && { echo "snapshot is at main (${new:0:10})"; exit 0; }
+[ "$new" = "$cur" ] && [ "$cur_cc" = "$CLAUDE_CODE_VERSION" ] && [ "${1:-}" != --force ] && { echo "snapshot is at main (${new:0:10})"; exit 0; }
 echo "main moved: ${cur:0:10} -> ${new:0:10}"
 
 # Start from the newest snapshot's disk: it was synced just before the snapshot,
@@ -34,6 +37,10 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
   sha256sum yarn.lock | cut -d' ' -f1 > /home/agent/.image-lock-hash
 fi
 echo "clone at $(git rev-parse --short HEAD)"
+GUEST
+"$fc" ssh 0 "sudo bash -s -- $CLAUDE_CODE_VERSION" <<'GUEST'
+[ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$1" ] || npm install -g --silent "@anthropic-ai/claude-code@$1"
+echo "claude code $(claude --version 2>/dev/null | cut -d' ' -f1)"
 GUEST
 # The snapshot's stack uses CI's location override; images before it lack the line.
 "$fc" ssh 0 'sudo bash -s' <<'GUEST'
@@ -71,6 +78,7 @@ sleep 8
 name="$(date -u +%Y%m%d-%H%M)"
 /usr/local/sbin/fc-make-snapshot "$name"
 echo "$new" > "/fc/snap/${name}/commit"
+echo "$CLAUDE_CODE_VERSION" > "/fc/snap/${name}/claude-code"
 # Keep the two newest; a slot already restored keeps its memory and disk copy.
 ls -1dt /fc/snap/2*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 [ -d /fc/snap/v1 ] && [ "$(readlink /fc/snap/latest)" != /fc/snap/v1 ] && rm -rf /fc/snap/v1
