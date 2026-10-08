@@ -24,6 +24,10 @@ timeout() { echo x >> "$probes"; return 0; }      # the host is back
 rm -f "$tmp"/fxa-fc-down-*
 check "a host that answers is up, and clears the miss" "0|0" "$(_fc_up; echo $?)|$(ls "$tmp" | grep -c fxa-fc-down)"
 
+# A start GCE refuses says why, so the fallback to GCE is not a mystery.
+_gce() { echo "ERROR: (gcloud.compute.instances.start) ZONE_RESOURCE_POOL_EXHAUSTED" >&2; return 1; }
+check "a refused start names the reason" "1" "$(_fc_wake 2>&1 >/dev/null | grep -c 'did not start (ERROR: (gcloud.compute.instances.start) ZONE_RESOURCE_POOL_EXHAUSTED)')"
+
 # A session runner: up → a slot; down → wake, then a slot; no wake or no slot → GCE.
 _fc_vm_clone() { echo fc-clone; }
 _fc_up() { [ "$UP" = 1 ]; }; _fc_wake() { echo wake; [ "$WAKE" = 1 ]; }

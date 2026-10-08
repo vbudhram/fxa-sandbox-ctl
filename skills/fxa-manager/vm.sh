@@ -9,7 +9,7 @@
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
 #                         (no commit, no Docker); a scratch folder, removed after
-#   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]   (FXA_SESSION_BASE_SHA=<sha> vm.sh dev: pin new sessions)
+#   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]   (FXA_SESSION_BASE_SHA=<sha> vm.sh dev: pin new sessions; FXA_FC_HOST=<ip>: Firecracker slots)
 #                         (FXA_DEV_FAKE=1 vm.sh dev: a scripted controller, no runner and no PR; see fxa-ctl-dev/fake-ctl.sh)
 #                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
@@ -157,6 +157,8 @@ printf 'FXA_CTL=%s\nERROR_DMS=0\nSLACK_CALL_LOG=%s\n' "$D/fxa-sandbox-ctl/fxa-sa
 EOF2
           # An eval pins every new session to one commit (vm.sh dev with FXA_SESSION_BASE_SHA set); unset, main.
           [[ "${FXA_SESSION_BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] && echo "echo FXA_SESSION_BASE_SHA=${FXA_SESSION_BASE_SHA} >> fxa-agent-bot/.env.devhost"
+          # FXA_FC_HOST=<ip> vm.sh dev: the dev bot's sessions run as Firecracker slots on that host.
+          [[ "${FXA_FC_HOST:-}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] && echo "echo FXA_FC_HOST=${FXA_FC_HOST} >> fxa-agent-bot/.env.devhost"
           # FXA_DEV_FAKE=1: skills/fxa-ctl-dev/fake-ctl.sh plays each session (no runner, no PR), with its own sessions file.
           [ "${FXA_DEV_FAKE:-}" = 1 ] && echo 'echo FXA_CTL=$D/fxa-sandbox-ctl/skills/fxa-ctl-dev/fake-ctl.sh >> fxa-agent-bot/.env.devhost; export FXA_AGENT_STATE=$HOME/.fxa-agent-dev-fake-sessions.json FAKE_CTL_DIR=$D/fake-ctl'
           cat <<'EOF2'

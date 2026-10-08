@@ -35,8 +35,9 @@ _fc_up() {
 _fc_wake() {
   local end=$(( $(date +%s) + ${FXA_FC_WAKE_SECONDS:-150} ))
   echo "Starting the runner host..."
-  _gce compute instances start "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --quiet >/dev/null 2>&1 \
-    || { echo "  The runner host did not start; using GCE." >&2; return 1; }
+  local err
+  err="$(_gce compute instances start "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --quiet 2>&1 >/dev/null)" \
+    || { echo "  The runner host did not start ($(printf '%s' "$err" | grep -v '^ *$' | tail -1)); using GCE." >&2; return 1; }
   while [ "$(date +%s)" -lt "$end" ]; do
     timeout 3 bash -c ": </dev/tcp/${FXA_FC_HOST}/22" 2>/dev/null && _fc_raw list >/dev/null 2>&1 \
       && { rm -f "${TMPDIR:-/tmp}/fxa-fc-down-${USER:-u}-${FXA_FC_HOST}"; return 0; }
