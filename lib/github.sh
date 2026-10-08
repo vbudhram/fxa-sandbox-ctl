@@ -563,3 +563,25 @@ github_app_commit() {
     git -C "$wt" reset -q --soft "$commit" && git -C "$wt" branch -q --set-upstream-to "origin/${branch}" >/dev/null 2>&1
   printf '%s\n' "$commit"
 }
+
+# pr_card <PR url>   One mozilla/fxa pull request as JSON, for the bot's Work Object card:
+#   {number, title, url, state, draft, author, review, approvers, changers, ci, checks, failed, running,
+#    failing, additions, deletions, files, updated, jira}; null for another repo or when gh cannot read it.
+pr_card() {
+  local url="${1:-}"
+  [[ "$url" =~ ^https://github\.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/[0-9]+/?$ ]] || { echo null; return 0; }
+  gh pr view "${url%/}" --json number,title,url,state,isDraft,author,reviewDecision,latestReviews,statusCheckRollup,additions,deletions,changedFiles,updatedAt,headRefName,body 2>/dev/null \
+    | jq -c '
+      [.statusCheckRollup[]? | {name: (.name // .context), r: (.conclusion // .state // "")}] as $c
+      | ($c | map(select(.r | IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED")))) as $bad
+      | ($c | map(select(.r | IN("", "PENDING", "EXPECTED", "IN_PROGRESS", "QUEUED")))) as $run
+      | [.latestReviews[]? | select(.author.login | test("\\[bot\\]$|^copilot"; "i") | not)] as $rv
+      | {number, title, url, state, draft: (.isDraft == true), author: (.author.login | sub("^app/"; "")),
+         review: .reviewDecision, approvers: [$rv[] | select(.state == "APPROVED") | .author.login],
+         changers: [$rv[] | select(.state == "CHANGES_REQUESTED") | .author.login],
+         ci: (if ($c | length) == 0 then "none" elif ($bad | length) > 0 then "fail" elif ($run | length) > 0 then "running" else "pass" end),
+         checks: ($c | length), failed: ($bad | length), running: ($run | length), failing: [$bad[].name][0:3],
+         additions, deletions, files: .changedFiles, updated: .updatedAt,
+         jira: ([.title, .headRefName, .body] | map(. // "") | join(" ") | [scan("(?<![A-Za-z0-9-])FXA-[0-9]+")] | first // null)}' 2>/dev/null \
+    || echo null
+}
