@@ -90,4 +90,14 @@ rm -rf "$pd"
     "$(jq -r '[.rows[] | "\(.key) \(.model) \(.models | tojson) \(.main_only // false)"] | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# The stats are production's: a session or an answer from the dev bot (env "dev") is left out.
+( export SESSION_DIR="$tmp/env" PIPE_STATE_DIR="$tmp/envps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { echo '{"key":"agent-p1","owner":"U1","created":1}'; echo '{"key":"agent-d1","owner":"U1","created":2,"env":"dev"}'; }
+  db_on() { false; }
+  printf '%s\n' '{"at":"2026-10-07T10:00:00Z","id":"ask-p2","secs":9,"cost_usd":0.2,"turns":2}' \
+    '{"at":"2026-10-07T11:00:00Z","id":"ask-d2","secs":9,"cost_usd":0.2,"turns":2,"env":"dev"}' > "$PIPE_STATE_DIR/answers.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: the dev bot's sessions and answers are left out" "agent-p1 ask-p2" "$(jq -r '[.rows[].key] | sort | join(" ")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 exit "$fail"

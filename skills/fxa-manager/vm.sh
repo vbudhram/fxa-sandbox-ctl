@@ -121,7 +121,7 @@ EOF
     } | on_vm | mask ;;
   dev)
     # Each dev path, and what the dev bot runs with, as fxa on the VM.
-    vars='D=$HOME/dev; S=$HOME/.claude/state/agent-sessions-dev; export FXA_SESSION_DIR=$S FXA_AGENT_STATE=$HOME/.fxa-agent-dev-sessions.json'
+    vars='D=$HOME/dev; S=$HOME/.claude/state/agent-sessions-dev; export FXA_SESSION_DIR=$S FXA_AGENT_STATE=$HOME/.fxa-agent-dev-sessions.json FXA_ENV=dev'
     case "${2:-up}" in
       stop) printf 'exec sudo -u fxa -H bash -s\n%s\n%s\n' "$vars" '[ -f $D/bot.pid ] && kill "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot stopped" || echo "dev bot not running"' | on_vm ;;
       log) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/bot.log\n' "$vars" "${3:-40}" | on_vm | mask ;;

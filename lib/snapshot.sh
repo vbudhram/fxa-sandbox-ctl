@@ -259,7 +259,7 @@ _stats_add_rows() {
   # main model (_snapshot_agent_json), so its spend counts there, as the main agent only.
   sess="$(_session_records | jq -sc --argjson llm "$llm" --arg cm "${FXA_AGENT_MODEL:-claude-opus-5-5}" --arg xm "${FXA_CODEX_MODEL:-gpt-6-astra}" '
     def n: if . == null or . == "" then null else (tonumber? // null) end;
-    map(select(.owner != "U-DRYRUN") | ((.summary // "{}") | fromjson? // {}) as $s
+    map(select(.owner != "U-DRYRUN" and .env != "dev") | ((.summary // "{}") | fromjson? // {}) as $s
       | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
           min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
           main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
@@ -279,7 +279,7 @@ _stats_add_rows() {
     athreads="$(db_json "SELECT run, max(thread) AS thread FROM llm_calls WHERE run LIKE 'ask-%' AND thread IS NOT NULL GROUP BY run;" \
       | jq -c 'map({key: .run, value: .thread}) | from_entries' 2>/dev/null || echo '{}')"
   fi
-  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map({ at, src: "answer", key: .id,
+  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map(select(.env != "dev")) | map({ at, src: "answer", key: .id,
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
           usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", models: ($llm.run_models[.id] // null), pr: false,
           thread: (.thread // $th[.id]) })' \
