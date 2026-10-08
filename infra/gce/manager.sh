@@ -81,6 +81,24 @@ if gh repo clone mozilla/mozcloud "$tmp/mozcloud" -- -q --depth 1 --branch tools
    && (cd "$tmp/mozcloud/tools/mzcld" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$tmp/mzcld" . >&2); then :
 else echo "WARN: could not build mzcld; the grafana connector cannot reach yardstick" >&2; fi
 
+# _env_guard <dir> <file>...   The VM's own settings win over a stale laptop: a change made
+# on the VM (the bot moved to #fxa and #fxa-team on 2026-10-06) was undone by this copy on
+# 10-07, and the bot went silent there. Refuse to replace a file that differs on the VM.
+_env_guard() {
+  local d="$1" f rc=0; shift
+  for f in "$@"; do
+    ssh_vm "sudo cat /home/fxa/.config/fxa/$f 2>/dev/null || true" > "$d/$f.vm" 2>/dev/null || true
+    [ -s "$d/$f.vm" ] && ! diff -q <(sort "$d/$f.vm") <(sort "$d/$f") >/dev/null || continue
+    echo "The VM's $f differs from this laptop's (< VM, > laptop):" >&2
+    diff <(sort "$d/$f.vm") <(sort "$d/$f") | grep '^[<>]' >&2 || true
+    rc=1
+  done
+  [ "$rc" = 0 ] || [ "${FXA_ENV_OVERWRITE:-}" = 1 ] || {
+    echo "ERROR: not replacing the VM's settings. Copy its change into this laptop's .env (the bot's .env or .env.retired), or rerun with FXA_ENV_OVERWRITE=1." >&2
+    return 1; }
+}
+_env_guard "$tmp" ctl.env.base bot.env.base || exit 1
+
 for f in claude.tgz ctl.env.base bot.env.base mzcld; do
   [ -f "$tmp/$f" ] || continue
   dest=/tmp/fxa-$f; [ "$f" = claude.tgz ] && dest=/tmp/fxa-claude-bundle.tgz
