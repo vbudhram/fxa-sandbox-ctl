@@ -524,6 +524,23 @@ _gh_app_api() {
 # the branch may still have moved, so read it back.
 _gh_app_ref_is() { [ "$(printf '' | _gh_app_api GET "git/ref/heads/$1" 2>/dev/null | jq -r '.object.sha // empty')" = "$2" ]; }
 
+# _gh_app_rebuild <worktree> <branch> <expected_sha> <remote_sha>
+#   Three-way merge of the staged change with the commits pushed since <expected_sha>.
+#   Clean: the index holds the result. A clash or a rewritten branch returns 1.
+_gh_app_rebuild() {
+  local wt="$1" branch="$2" expect="$3" remote="$4" ours merged
+  _retry git -C "$wt" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" || return 1
+  [ "$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}")" = "$remote" ] || return 1
+  git -C "$wt" merge-base --is-ancestor "$expect" "$remote" || return 1
+  ours="$(git -C "$wt" commit-tree "$(git -C "$wt" write-tree)" -p "$expect" -m ours)" || return 1
+  if ! merged="$(git -C "$wt" merge-tree --write-tree --merge-base="$expect" "$ours" "$remote" 2>/dev/null)"; then
+    echo "ERROR: someone pushed to ${branch}, and their commits conflict with this change. Reply !restart to start again from the PR's head." >&2
+    return 1
+  fi
+  git -C "$wt" read-tree "${merged%%$'\n'*}" || return 1
+  echo "  ${branch} moved to ${remote:0:10}: rebuilt this change on top of it." >&2
+}
+
 # github_app_commit <worktree> <branch> <parent_sha> <message>
 #   Create the staged change as one commit through the API, so the App is its
 #   author and GitHub signs it, then move <branch> to it. An existing branch must
@@ -555,7 +572,13 @@ github_app_commit() {
       || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
   else
     expect="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" || true)"
-    [ "$remote" = "$expect" ] || { echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1; }
+    if [ "$remote" != "$expect" ]; then
+      # Someone pushed to the branch: rebuild this change on top of their commits, once.
+      if [ -n "$expect" ] && [ -z "${_GH_APP_REBUILT:-}" ] && _gh_app_rebuild "$wt" "$branch" "$expect" "$remote"; then
+        _GH_APP_REBUILT=1 github_app_commit "$wt" "$branch" "$remote" "$msg"; return
+      fi
+      echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1
+    fi
     jq -nc --arg s "$commit" '{sha: $s, force: true}' | _gh_app_api PATCH "git/refs/heads/${branch}" >/dev/null \
       || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not move ${branch} as the App." >&2; return 1; }
   fi

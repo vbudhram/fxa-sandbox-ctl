@@ -46,6 +46,30 @@ check "moved branch refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
 REMOTE_SHA="$base" github_app_commit "$tmp/r" fxa-1 "$base" "m" >/dev/null 2>&1
 check "expected branch is moved" "true" "$(grep '^PATCH git/refs/heads/fxa-1' "$tmp/calls" | cut -d' ' -f3- | jq -r .force)"
 
+# A person pushed to the branch: this change is rebuilt on top of their commit.
+eval "$(sed -n '/^_gh_app_rebuild() {/,/^}/p' "$here/github.sh")"
+_retry() { "$@"; }
+g init -q --bare "$tmp/origin.git"; git remote add origin "$tmp/origin.git"
+g clone -q "$tmp/origin.git" "$tmp/them" 2>/dev/null; git push -q origin "$base:refs/heads/fxa-2"
+( cd "$tmp/them" && g fetch -q origin && g checkout -q -b fxa-2 origin/fxa-2 && echo b > b.txt && g add b.txt && g commit -qm theirs && g push -q origin fxa-2 )
+theirs="$(git -C "$tmp/them" rev-parse HEAD)"
+git update-ref refs/remotes/origin/fxa-2 "$base"
+: > "$tmp/calls"
+REMOTE_SHA="$theirs" github_app_commit "$tmp/r" fxa-2 "$base" "m" >/dev/null 2>&1
+check "rebuilt commit sits on their commit" "$theirs" "$(grep '^POST git/commits' "$tmp/calls" | tail -1 | cut -d' ' -f3- | jq -r '.parents | join(",")')"
+check "rebuilt tree sits on their tree" "$(git -C "$tmp/them" rev-parse "${theirs}^{tree}")" "$(grep '^POST git/trees' "$tmp/calls" | tail -1 | cut -d' ' -f3- | jq -r .base_tree)"
+check "their file is kept, ours are sent" "a.txt,c.txt,d.txt,run.sh" "$(grep '^POST git/trees' "$tmp/calls" | tail -1 | cut -d' ' -f3- | jq -r '[.tree[].path] | join(",")')"
+check "the branch moves once" "1" "$(grep -c '^PATCH git/refs/heads/fxa-2' "$tmp/calls")"
+
+# Their commit changes the same line as ours: refused, nothing moves.
+( cd "$tmp/them" && echo a3 > a.txt && g commit -qam clash && g push -q origin fxa-2 )
+git fetch -q origin fxa-2; git update-ref refs/remotes/origin/fxa-2 "$theirs"; git reset -q --soft "$base"
+git read-tree "$(git -C "$tmp/r" rev-parse "${base}^{tree}")"; echo a2 > a.txt; git add a.txt
+: > "$tmp/calls"
+err="$(REMOTE_SHA="$(git -C "$tmp/them" rev-parse HEAD)" github_app_commit "$tmp/r" fxa-2 "$base" "m" 2>&1 >/dev/null)"
+check "a clash is refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
+check "a clash says how to recover" "1" "$(grep -c 'conflict with this change.*!restart' <<< "$err")"
+
 # Media goes to the bucket: references rewritten in place, the rest appended.
 eval "$(sed -n '/^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
 eval "$(sed -n '/^slot_write() /p' "$here/worktree.sh")"
