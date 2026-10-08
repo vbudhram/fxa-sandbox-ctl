@@ -21,6 +21,8 @@ job() { false || { handler; return 1; }; }
 expected() { local x; x="\$(grep nothing "$tmp/empty.log" | head -1 || true)"; return 0; }
 refuse() { echo "ERROR: refused" >&2; return 1; }
 handled() { true && refuse; }
+assigned() { local k; k="\$(refuse)"; }
+grepped() { local k; k="\$(grep x "$tmp/nope")"; }
 piped() { yes | head -1 >/dev/null; }
 main() { _ERR_CONTEXT="\$*"; set -E; trap 'errors_err_trap \$? "\$BASH_COMMAND"' ERR; expected; "\$@"; }
 main "\$@"
@@ -37,6 +39,13 @@ check "crash fields" "ctl|crash|agent-abc123|handler" "$(jq -r '"\(.source)|\(.k
 rm -f "$FXA_ERRORS_FILE"
 bash "$tmp/prog.sh" handled >/dev/null 2>&1
 check "a function returning its own error is not a crash" "0" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
+
+rm -f "$FXA_ERRORS_FILE"
+bash "$tmp/prog.sh" assigned >/dev/null 2>&1
+check "x=\"\$(own_function)\" returning its error is not a crash" "0" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
+rm -f "$FXA_ERRORS_FILE"
+bash "$tmp/prog.sh" grepped >/dev/null 2>&1
+check "x=\"\$(grep ...)\" failing is still a crash" "1" "$( [ -f "$FXA_ERRORS_FILE" ] && wc -l < "$FXA_ERRORS_FILE" | tr -d ' ' || echo 0)"
 
 rm -f "$FXA_ERRORS_FILE"
 bash "$tmp/prog.sh" expected >/dev/null 2>&1

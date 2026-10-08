@@ -1001,6 +1001,15 @@ cmd_ssh() {
 
 # ── Command: list ──────────────────────────────────────────────
 
+# cmd_exec <name> '<command>'   Run a command on a runner as the agent user. The name
+# works with or without the prefix; an unknown runner is a clear error, not a crash.
+cmd_exec() {
+  [ -n "${1:-}" ] && [ -n "${2:-}" ] || { echo "Usage: fxa-sandbox-ctl exec <name> '<command>'" >&2; return 1; }
+  local n="${1#"${VM_PREFIX}"-}"
+  vm_exists "$n" || { echo "ERROR: no runner '$(vm_name "$n")'; see fxa-sandbox-ctl list" >&2; return 1; }
+  vm_exec_as_agent "$n" "${*:2}"
+}
+
 cmd_list() {
   agent_list
 }
@@ -2478,8 +2487,7 @@ main() {
     browser)    cmd_browser "$@" ;;
     test)       cmd_test "$@" ;;
     ssh)        cmd_ssh "$@" ;;
-    exec)       [ -n "${1:-}" ] && [ -n "${2:-}" ] || { echo "Usage: fxa-sandbox-ctl exec <name> '<command>'" >&2; exit 1; }
-                vm_exec_as_agent "$1" "${*:2}" ;;
+    exec)       cmd_exec "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;
