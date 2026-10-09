@@ -25,6 +25,11 @@ systemctl is-active --quiet fc-refresh.service && busy=1
 pgrep -f fc-make-snapshot >/dev/null && busy=1
 if [ "$busy" = 1 ]; then touch "$mark"; exit 0; fi
 if [ $(( now - $(stat -c %Y "$mark") )) -ge $(( idle * 60 )) ]; then
+  # Decide under the claim lock, and leave a marker claim refuses: a claim in the
+  # same seconds once restored a slot on a host that was shutting down.
+  exec 9> "$FC/run/claim.lock"; flock 9
+  compgen -G "$FC/slots/*/meta" >/dev/null && { touch "$mark"; exit 0; }
+  touch "${FC_OFF_MARK:-/run/fc-powering-off}"
   logger -t fc-idle-stop "no slot in use for ${idle} min; powering off"
   ${FC_POWEROFF:-systemctl poweroff}
 fi

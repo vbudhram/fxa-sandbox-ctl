@@ -27,4 +27,12 @@ printf 'agent-dev-monitor\t-\t0\n' > "$tmp/fc/slots/1/meta"; touch -d "@$(( $(da
 printf 'agent-dev-fxa\t-\t0\n' > "$tmp/fc/slots/2/meta"
 printf 'agent-agent-1a2b3c\t-\t0\n' > "$tmp/fc/slots/3/meta"; touch -d "@$(( $(date +%s) - 9000 ))" "$tmp/fc/slots/3/meta"
 FC_CMD="$tmp/bin/fc" run; check "only the idle dev slot is stopped" "stop 1" "$(cat "$tmp/fccalls" 2>/dev/null)"
+# Power-off and a claim are serialized: the power-off leaves a marker that claim refuses.
+rm -rf "$tmp/fc/slots"; touch -d "@$(( $(date +%s) - 1900 ))" "$tmp/fc/run/last-busy"; rm -f "$tmp/offmark"
+FC_OFF_MARK="$tmp/offmark" run; check "a power-off leaves the marker" "yes|yes" "$([ -e "$tmp/off" ] && echo yes)|$([ -e "$tmp/offmark" ] && echo yes)"
+eval "$(sed -n '/^cmd_claim() {/,/^}/p' "$(dirname "$S")/fc")"
+FC="$tmp/fc" SLOTS=2 FC_OFF_MARK="$tmp/offmark"; cmd_start() { echo started; }; slot_ip() { echo "10.0.0.$1"; }
+check "a claim during a power-off is refused, and takes no slot" "1|0" "$(cmd_claim x >/dev/null 2>&1; echo $?)|$(ls "$tmp/fc/slots" 2>/dev/null | wc -l | tr -d ' ')"
+rm -f "$tmp/offmark"
+check "a claim with no power-off takes a slot" "1 10.0.0.1" "$(cmd_claim x 2>/dev/null)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

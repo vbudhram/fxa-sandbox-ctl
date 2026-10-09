@@ -164,6 +164,8 @@ cmd_start() {
 cmd_claim() {
   local label="$1" n
   exec 9> "$FC/run/claim.lock"; flock 9
+  # fc-idle-stop decided to power off (under this lock); /run clears at boot.
+  [ -e "${FC_OFF_MARK:-/run/fc-powering-off}" ] && { echo "ERROR: the host is powering off" >&2; return 1; }
   for n in $(seq "$SLOTS"); do
     [ -f "$FC/slots/$n/meta" ] && continue
     mkdir -p "$FC/slots/$n"; printf '%s\t-\t%s\n' "$label" "$(date +%s)" > "$FC/slots/$n/meta"
