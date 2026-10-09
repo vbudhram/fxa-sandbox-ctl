@@ -37,8 +37,15 @@ attach() { # attach <thread ts or new> <file> <text>
     -d "$(jq -n --arg id "$id" --arg c "$CH" --arg t "$text" --arg th "$th" '{files: [{id: $id}], channel_id: $c, initial_comment: $t} + (if $th != "" then {thread_ts: $th} else {} end)')")"
   jq -e .ok >/dev/null <<< "$r" || { echo "slack-drive: $(jq -r .error <<< "$r")" >&2; exit 1; }
   [ -n "$th" ] && { echo "$th"; return; }
-  # The share posts after the call returns: the new thread is my newest message in the channel.
-  sleep 3; api "$USER_TOKEN" conversations.history -G --data-urlencode "channel=$CH" --data-urlencode limit=1 | jq -r '.messages[0].ts'
+  # The share posts after the call returns: wait for my message that carries this file.
+  local me i ts; me="$(api "$USER_TOKEN" auth.test | jq -r .user_id)"
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 2
+    ts="$(api "$USER_TOKEN" conversations.history -G --data-urlencode "channel=$CH" --data-urlencode limit=10 \
+      | jq -r --arg me "$me" --arg id "$id" '[.messages[] | select(.user == $me and any(.files[]?; .id == $id))][0].ts // empty')"
+    [ -n "$ts" ] && { echo "$ts"; return; }
+  done
+  echo "slack-drive: the file share did not show up in 20 s" >&2; exit 1
 }
 replies() { api "$USER_TOKEN" conversations.replies -G --data-urlencode "channel=$CH" --data-urlencode "ts=$1" --data-urlencode limit=200; }
 
