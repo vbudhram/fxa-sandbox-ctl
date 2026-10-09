@@ -133,5 +133,25 @@ check "the other trees are checked for tracked changes, the work tree is not" "/
 : > "$tmp/dirtycmd"; check "a profile with no repo rows checks nothing" "|0" "$(_session_dirty_trees r1)|$(wc -c < "$tmp/dirtycmd" | tr -d ' ')"
 unset -f _session_sh
 
+# A profile's boot.sh is shipped and started as root, detached; FxA has none.
+eval "$(sed -n '/^_gce_profile_boot() {/,/^}/p' "$root/lib/agent.sh")"
+vm_exec() { printf '%s\n' "${*: -1}" >> "$tmp/bootx"; }
+: > "$tmp/bootx"; SANDBOX_ROOT="$root" PIPE_PROFILE=monitor _gce_profile_boot r1 >/dev/null
+check "monitor's boot.sh goes to the runner and starts detached" "1|1" \
+  "$(grep -c "base64 -d > /usr/local/sbin/profile-boot" "$tmp/bootx")|$(grep -c 'nohup setsid /usr/local/sbin/profile-boot > /var/log/profile-boot.log 2>&1 < /dev/null &' "$tmp/bootx")"
+check "the shipped script is the profile's own" "same" "$([ "$(sed -n "s/^echo '\([^']*\)'.*/\1/p" "$tmp/bootx" | base64 -d)" = "$(cat "$root/profiles/monitor/boot.sh")" ] && echo same)"
+: > "$tmp/bootx"; SANDBOX_ROOT="$root" PIPE_PROFILE=fxa _gce_profile_boot r1 >/dev/null
+check "fxa has no boot.sh, so nothing runs" "0" "$(wc -l < "$tmp/bootx" | tr -d ' ')"
+check "monitor's boot.sh is valid bash" "0" "$(bash -n "$root/profiles/monitor/boot.sh"; echo $?)"
+
+# Extra egress hosts come from the profile, and only plain host names.
+eval "$(sed -n '/^_profile_egress_extra() {/,/^}/p' "$root/lib/agent.sh")"
+check "a profile adds plain host names to the allowlist" " fonts.gstatic.com a.example" "$(PIPE_EGRESS_EXTRA="fonts.gstatic.com a.example" _profile_egress_extra)"
+check "a host that is not plain is refused" "1" "$(PIPE_EGRESS_EXTRA='a.example;rm' _profile_egress_extra >/dev/null 2>&1; echo $?)"
+
+# The profile's guide.md follows the FxA guide, after the repo list.
+g="$(cd "$root" && SANDBOX_ROOT="$root" PIPE_PROFILE=monitor bash -c 'source lib/config.sh >/dev/null 2>&1; source lib/agent.sh >/dev/null 2>&1; vm_guide_build session')"
+check "the monitor guide is added to the session guide" "1" "$(grep -c '^# Monitor' <<< "$g")"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

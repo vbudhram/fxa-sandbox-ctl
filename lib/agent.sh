@@ -47,6 +47,10 @@ vm_guide_build() {
   awk -v part="${SANDBOX_ROOT}/guide/$1.md" '/^<!-- The host puts guide\// { while ((getline l < part) > 0) print l; next } { print }' \
     "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md"
   _profile_guide_trees
+  # A profile's own guide: its stack, commands and checks, after FxA's.
+  local own="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/guide.md"
+  [ -n "${PIPE_PROFILE:-}" ] && [ -f "$own" ] && { echo; cat "$own"; }
+  return 0
 }
 
 _vm_skill_allowlist() {
@@ -226,6 +230,28 @@ _put_run_files() {
   return $rc
 }
 
+# _gce_profile_boot <name>   Ship the profile's boot.sh and start it as root, detached:
+# it sets up the profile's stack while the agent reads code, and writes
+# /home/agent/.profile-ready or .profile-failed. Nothing for a profile without one.
+_gce_profile_boot() {
+  local name="$1" f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/boot.sh" b64
+  [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || return 0
+  b64="$(base64 < "$f" | tr -d '\n')"
+  echo "Setting up the ${PIPE_PROFILE} stack in the background..."
+  vm_exec "$name" sudo bash -c "echo '${b64}' | base64 -d > /usr/local/sbin/profile-boot && chmod 755 /usr/local/sbin/profile-boot && umask 022 && nohup setsid /usr/local/sbin/profile-boot > /var/log/profile-boot.log 2>&1 < /dev/null &"
+}
+
+# _profile_egress_extra   The profile's extra egress hosts (PIPE_EGRESS_EXTRA), each a
+# plain host name, with a leading space; fails on anything else.
+_profile_egress_extra() {
+  local h out=""
+  for h in ${PIPE_EGRESS_EXTRA:-}; do
+    [[ "$h" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$ ]] || { echo "ERROR: PIPE_EGRESS_EXTRA has a host that is not plain: ${h}" >&2; return 1; }
+    out="${out} ${h}"
+  done
+  printf '%s' "$out"
+}
+
 # _gce_profile_workspace <name>   A profile with its own repo (PIPE_WORKSPACE): clone it
 # beside FxA, whose stack keeps running from /home/agent/fxa, and point /workspace at it.
 _gce_profile_workspace() {
@@ -375,7 +401,9 @@ _setup_egress_firewall() {
   # The allowlist is per runtime: Codex talks to OpenAI, not Anthropic. Without
   # these three hosts a Codex runner boots, stages its auth, and every model
   # call is rejected, which reads as a silent stall.
-  local hosts="$FXA_EGRESS_HOSTS"
+  local hosts="$FXA_EGRESS_HOSTS" extra
+  extra="$(_profile_egress_extra)" || return 1
+  hosts="${hosts}${extra}"
   case "${FXA_AGENT_RUNTIME:-claude}" in
     codex) hosts="$hosts api.openai.com chatgpt.com auth.openai.com" ;;
   esac
@@ -909,6 +937,8 @@ agent_run() {
   fi
   echo "Applying security hardening..."
   _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  # After the firewall, before the agent: the profile's stack sets up while the agent reads.
+  if [ "$FXA_VM_BACKEND" = "gce" ]; then _gce_profile_boot "$name" || echo "WARN: the ${PIPE_PROFILE} stack setup did not start; the agent can run boot.sh" >&2; fi
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
 
   # The runtime owns the launch string and how the prompt reaches the agent.

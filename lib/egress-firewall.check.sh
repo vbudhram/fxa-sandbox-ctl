@@ -8,7 +8,7 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 
-eval "$(sed -n '/^_setup_egress_firewall() {/,/^}/p' "$(dirname "$0")/agent.sh")"
+eval "$(sed -n '/^_setup_egress_firewall() {/,/^}/p;/^_profile_egress_extra() {/,/^}/p' "$(dirname "$0")/agent.sh")"
 FXA_EGRESS_ALLOW_ALL=0 FXA_EGRESS_CIDRS="" FXA_EGRESS_HOSTS="github.com"
 _github_meta_cidrs() { :; } # offline: no fetch of GitHub's published ranges
 
