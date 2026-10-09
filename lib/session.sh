@@ -432,6 +432,16 @@ EOF
 # _session_sh <name> <script>   Run a script on the runner as the agent user.
 # vm_exec_as_agent goes through `sudo -i`, which blanks $vars in the script.
 _session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
+# _session_dirty_trees <runner>   The read-only trees (PIPE_REPOS rows that are not the
+# work repo) with changes to tracked files. A ship carries only the work tree.
+_session_dirty_trees() {
+  local row s p r paths=""
+  for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
+    read -r s p r <<< "$row"; [ "$r" = work ] || paths="${paths} ${p}"
+  done
+  [ -n "$paths" ] || return 0
+  _session_sh "$1" "for p in${paths}; do [ -n \"\$(git -C \$p status --porcelain --untracked-files=no 2>/dev/null)\" ] && echo \$p; done; true"
+}
 
 # _session_media_scrub <dir>   Leave only plain media files with safe names and
 # a sane size. Symlinks would let a sandbox point ffmpeg's output at a host file;
@@ -1110,6 +1120,10 @@ session_pr_ready() {
 # key; a PR that names a ticket already prints that one and creates nothing.
 session_create_jira() {
   local url pr title body key desc site="${FXA_JIRA_SITE_URL:-https://mozilla-hub.atlassian.net}"
+  # Another team's session files only in its own project; FXA is FxA's.
+  local project="${PIPE_JIRA_PROJECT:-}"
+  [ -z "$project" ] && [ "${PIPE_PROFILE:-fxa}" = fxa ] && project="${FXA_JIRA_SESSION_PROJECT:-FXA}"
+  [ -n "$project" ] || { echo "the ${PIPE_PROFILE} profile has no Jira project (PIPE_JIRA_PROJECT); no ticket filed" >&2; return 1; }
   url="$(session_get "$1" pr_url)"; [ -n "$url" ] || { echo "no PR for $1" >&2; return 1; }
   pr="$(gh pr view "$url" --json title,body,headRefName 2>/dev/null)" || { echo "could not read $url" >&2; return 1; }
   key="$(printf '%s' "$pr" | jq -r '[.title, .headRefName, .body] | map(. // "") | join(" ") | [scan("(?<![A-Za-z0-9-])FXA-[0-9]+")] | first // empty')"
@@ -1121,7 +1135,7 @@ session_create_jira() {
       printf '\nPull request: %s\n' "$url"
       [ -n "$(session_get "$1" slack_url)" ] && printf 'Slack thread: %s\n' "$(session_get "$1" slack_url)"
       printf '\nCreated by fxa-agent from an agent session.\n'; } > "$desc"
-    key="$(acli jira workitem create --project "${FXA_JIRA_SESSION_PROJECT:-FXA}" --type Task --summary "$title" \
+    key="$(acli jira workitem create --project "$project" --type Task --summary "$title" \
              --description-file "$desc" --label agent-session --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
     rm -f "$desc"
     [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "could not create a Jira ticket for $url" >&2; return 1; }

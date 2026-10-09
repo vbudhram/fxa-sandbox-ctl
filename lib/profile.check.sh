@@ -116,5 +116,22 @@ mkdir -p "$tmp/have/.git"; PIPE_REPO="$tmp/have" PIPE_REPO_SLUG=mozilla/x pipeli
 check "a missing manager clone is made once, an existing one is kept" "git clone --quiet https://github.com/mozilla/blurts-server.git $tmp/nope/blurts-server" "$(cat "$tmp/gitc")"
 unset -f git
 
+# A ticket for another team's session goes to its own Jira project, or nowhere.
+eval "$(sed -n '/^session_create_jira() {/,/^}/p' "$root/lib/session.sh")"
+session_get() { echo "https://github.com/x/y/pull/1"; }; gh() { echo '{"title":"fix(x): y","body":"b","headRefName":"agent-1"}'; }
+acli() { echo acli >> "$tmp/acli"; }
+: > "$tmp/acli"; out="$(PIPE_PROFILE=monitor session_create_jira agent-q1 2>&1)"; rc=$?
+check "a profile with no Jira project files no ticket" "1|0|1" "$rc|$(wc -l < "$tmp/acli" | tr -d ' ')|$(grep -c 'no Jira project' <<< "$out")"
+unset -f session_get gh acli
+
+# A ship refuses while a read-only tree has changes: only the work tree is shipped.
+eval "$(sed -n '/^_session_dirty_trees() {/,/^}/p' "$root/lib/session.sh")"
+_session_sh() { printf '%s\n' "$2" > "$tmp/dirtycmd"; echo /home/agent/content; }
+d="$( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data" "mozilla/fxa /home/agent/fxa dep"); _session_dirty_trees r1 )"
+check "the other trees are checked for tracked changes, the work tree is not" "/home/agent/content|1|1|0" \
+  "$d|$(grep -c '/home/agent/content' "$tmp/dirtycmd")|$(grep -c 'untracked-files=no' "$tmp/dirtycmd")|$(grep -c '/home/agent/rari' "$tmp/dirtycmd")"
+: > "$tmp/dirtycmd"; check "a profile with no repo rows checks nothing" "|0" "$(_session_dirty_trees r1)|$(wc -c < "$tmp/dirtycmd" | tr -d ' ')"
+unset -f _session_sh
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

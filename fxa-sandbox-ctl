@@ -2394,6 +2394,10 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
     printf '%s\n' "$chk" >&2
     [ "$crc" = 1 ] && { _session_finish_fail "$key" "$(grep -m1 '^handoff check:' <<<"$chk")" "$mode"; return 1; }
   fi
+  local dirty; dirty="$(_session_dirty_trees "$name" | tr '\n' ' ')" || dirty=""
+  if [ -n "${dirty// /}" ]; then
+    _session_finish_fail "$key" "these read-only repos have changes, and only the work repo is shipped: ${dirty% }. Move the change to the work repo, or undo it, then try again" "$mode"; return 1
+  fi
   lessons_collect "$key" "$name"
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
