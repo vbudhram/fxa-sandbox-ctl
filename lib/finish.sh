@@ -302,6 +302,11 @@ finish_push_and_pr() {
 }
 
 _finish_push_and_pr() {
+  # A read-only profile (PIPE_PR_OPEN=0) never writes to its repo.
+  if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+    echo "ERROR: the ${PIPE_PROFILE:-} profile is read-only: it pushes no branch and opens no PR." >&2
+    return 1
+  fi
   if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not installed on the host. Install with: brew install gh" >&2
     return 1

@@ -2463,14 +2463,15 @@ cmd_session() {
 
 # ── Main dispatch ──────────────────────────────────────────────
 
-# _profile_from_args <args>   The profile named by the record of the first session key in
-# the arguments (a resume names the session it resumes); empty for none or an old record.
+# _profile_from_args <args>   The profile named by the first session record in the
+# arguments that has one: a new session's own key has no record yet, and a resume
+# names the session it resumes. Empty for none or an old record.
 _profile_from_args() {
-  local a
+  local a p
   for a in "$@"; do
     [[ "$a" =~ ^agent-[a-z0-9]{4,12}$ ]] || continue
-    jq -r '.profile // empty' "$(_session_file "$a")" 2>/dev/null || true
-    return 0
+    p="$(jq -r '.profile // empty' "$(_session_file "$a")" 2>/dev/null || true)"
+    [ -n "$p" ] && { echo "$p"; return 0; }
   done
 }
 
