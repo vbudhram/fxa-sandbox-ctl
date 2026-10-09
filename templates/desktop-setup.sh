@@ -7,6 +7,9 @@
 # The agent cannot reach the VNC ports, so it cannot watch or drive the desktop.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# The page Firefox opens ($3): the profile's PIPE_DESKTOP_URL, else FxA.
+home="${3:-http://localhost:3030/}"
+[[ "$home" =~ ^http://localhost:[0-9]+/$ ]] || { echo "ERROR: the desktop page must be http://localhost:<port>/" >&2; exit 1; }
 
 if ! command -v Xtigervnc >/dev/null || ! command -v firefox >/dev/null || ! command -v wmctrl >/dev/null; then
   install -d -m 0755 /etc/apt/keyrings
@@ -65,14 +68,14 @@ pw="$(cat /root/.desktop-password)"
 # the home page (the Home button), and its other pages on the bookmarks toolbar,
 # each opening in a new tab so the page under test stays open.
 mkdir -p /usr/lib/firefox/distribution
-cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
+cat > /usr/lib/firefox/distribution/policies.json <<POLICIES
 {"policies": {
   "SkipTermsOfUse": true,
   "OverrideFirstRunPage": "",
   "OverridePostUpdatePage": "",
   "DontCheckDefaultBrowser": true,
   "DisableAppUpdate": true,
-  "Homepage": {"URL": "http://localhost:3030/", "StartPage": "homepage"},
+  "Homepage": {"URL": "${home}", "StartPage": "homepage"},
   "DisplayBookmarksToolbar": "always",
   "NoDefaultBookmarks": true,
   "Preferences": {"browser.tabs.loadBookmarksInTabs": {"Value": true, "Status": "default"},
@@ -85,7 +88,7 @@ cat > /usr/lib/firefox/distribution/policies.json <<'POLICIES'
 }}
 POLICIES
 
-sudo -u viewer -H bash -s "$pw" <<'VIEWER'
+sudo -u viewer -H bash -s "$pw" "$home" <<'VIEWER'
 set -euo pipefail
 cd ~
 mkdir -p ~/.vnc ~/Desktop
@@ -101,11 +104,11 @@ MJS
 # foxfire also adds an empty argument, which Firefox opens as file:///; drop it.
 printf '#!/bin/bash\na=(); for x in "$@"; do [ -n "$x" ] && a+=("$x"); done\nexec /usr/bin/firefox "${a[@]}"\n' > ~/firefox-bin
 # Firefox opens at once on this page, which goes to the stack when it answers.
-cat > ~/starting.html <<'HTML'
+cat > ~/starting.html <<HTML
 <!doctype html><title>Starting</title>
 <body style="background:#1c1b22;color:#fbfbfe;font:20px sans-serif;display:grid;place-items:center;height:90vh">
-<p>Starting the FxA stack, about 2 minutes&hellip;</p>
-<script>setInterval(()=>fetch('http://localhost:3030/',{mode:'no-cors'}).then(()=>location='http://localhost:3030/',()=>{}),3000)</script>
+<p>Starting the local stack, about 2 minutes&hellip;</p>
+<script>setInterval(()=>fetch('$2',{mode:'no-cors'}).then(()=>location='$2',()=>{}),3000)</script>
 HTML
 printf '#!/bin/bash\nFIREFOX_BIN=%s/firefox-bin exec node %s/fxa-firefox.mjs\n' "$HOME" "$HOME" > ~/fxa-firefox
 chmod +x ~/firefox-bin ~/fxa-firefox

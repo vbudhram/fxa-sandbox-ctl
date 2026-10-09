@@ -153,5 +153,14 @@ check "a host that is not plain is refused" "1" "$(PIPE_EGRESS_EXTRA='a.example;
 g="$(cd "$root" && SANDBOX_ROOT="$root" PIPE_PROFILE=monitor bash -c 'source lib/config.sh >/dev/null 2>&1; source lib/agent.sh >/dev/null 2>&1; vm_guide_build session')"
 check "the monitor guide is added to the session guide" "1" "$(grep -c '^# Monitor' <<< "$g")"
 
+# "Try it in Firefox" opens the profile's page; FxA keeps :3030 (the script's default).
+check "a desktop command loads the session's profile" "monitor" "$(_profile_from_args session desktop agent-mon1 user@example.com)"
+eval "$(sed -n '/^session_desktop() {/,/^}/p' "$root/lib/session.sh")"
+desk() { ( worktree_branch_for() { echo b; }; session_live() { :; }; vm_is_running() { :; }; session_set() { :; }; ssh() { :; }; vm_name() { :; }
+  vm_exec() { echo "page=${!#}" > "$tmp/desk"; printf 'ip=10.0.0.9\npassword=abcd1234\n'; }
+  SANDBOX_ROOT="$root"; eval "$(loaded "$root" "$1" | grep '^PIPE_DESKTOP_URL=')"; session_desktop agent-x >/dev/null; cat "$tmp/desk" ); }
+check "monitor's desktop opens Monitor" "page=http://localhost:6060/" "$(desk monitor)"
+check "fxa's desktop gets no page, so the script opens :3030" "page=" "$(desk fxa)"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"
