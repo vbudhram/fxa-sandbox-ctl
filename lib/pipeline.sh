@@ -1,11 +1,12 @@
 #!/bin/bash
 # pipeline.sh: pass state and settings for a ticket-to-PR pipeline.
 #
-# A pipeline is one config file under pipelines/. It names the repo, the label
-# family, the queue JQL, and where durable pass state lives.
+# A pipeline is a profile: profiles/<name>/profile.conf, or the older
+# pipelines/<name>.conf. It names the repo, the label family, the queue JQL,
+# and where durable pass state lives.
 #
 # Public API:
-#   pipeline_load [NAME]        Source pipelines/<NAME>.conf (default: fxa-ai-fixme)
+#   pipeline_load [NAME]        Source profiles/<NAME>/profile.conf or pipelines/<NAME>.conf (default: fxa-ai-fixme)
 #   pipeline_label_for STATE    Print the label for a lifecycle state
 #   pipeline_free_gb            Free GB on /
 #   pipeline_lock / _unlock     One pass at a time
@@ -23,16 +24,27 @@ _FXA_PIPELINE_LOADED=1
 
 # Env overrides win over the config, so old cron and shell overrides still work.
 pipeline_load() {
-  local name="${1:-$FXA_PIPELINE}"
-  local conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
+  local name="${1:-$FXA_PIPELINE}" conf
+  [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
+  conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
+  [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
   if [ ! -f "$conf" ]; then
-    echo "ERROR: no pipeline config at ${conf}" >&2
-    echo "Available: $(ls "${SANDBOX_ROOT}/pipelines" 2>/dev/null | sed 's/\.conf$//' | tr '\n' ' ')" >&2
+    echo "ERROR: no profile '${name}' in ${SANDBOX_ROOT}/profiles or pipelines" >&2
+    echo "Available: $(ls "${SANDBOX_ROOT}/profiles" "${SANDBOX_ROOT}/pipelines" 2>/dev/null | grep -v ':$' | sed 's/\.conf$//' | sort -u | tr '\n' ' ')" >&2
     return 1
   fi
   # shellcheck disable=SC1090
   source "$conf"
   PIPE_NAME="$name"
+  # Defaults for the keys a profile may leave out. FxA sets them all.
+  PIPE_PROFILE="${PIPE_PROFILE:-$name}"
+  PIPE_BASE_BRANCH="${PIPE_BASE_BRANCH:-main}"
+  PIPE_REPO="${PIPE_REPO:-${HOME}/Desktop/working2/${PIPE_REPO_SLUG##*/}}"
+  PIPE_STATE_DIR="${PIPE_STATE_DIR:-${HOME}/.claude/state/${PIPE_PROFILE}}"
+  PIPE_RUNS_FILE="${PIPE_RUNS_FILE:-${PIPE_STATE_DIR}/agent-runs.jsonl}"
+  PIPE_COSTS_FILE="${PIPE_COSTS_FILE:-${PIPE_STATE_DIR}/agent-costs.json}"
+  PIPE_MIN_FREE_GB="${PIPE_MIN_FREE_GB:-5}"
+  PIPE_STALL_MINUTES="${PIPE_STALL_MINUTES:-20}"
 
   PIPE_REPO="${FXA_REPO:-$PIPE_REPO}"
   PIPE_STATE_DIR="${FXA_FIXME_STATE:-$PIPE_STATE_DIR}"
