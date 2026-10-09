@@ -793,6 +793,12 @@ redundant. A ticket that leaves
 refuses to mount a workspace another VM already holds. Reporting such a slot as claimable makes a
 pass burn its launch on a guaranteed abort, which is what happened to FXA-14371 on 2026-08-24.
 
+A third condition applies on every backend: the slot has no unshipped changes. After a refused
+ship the runner is gone and nothing reached `origin`, so the slot is the only copy. On 2026-10-09
+FXA-14727's ship was refused, the pass gave its slot to FXA-14580, and the change survived only
+in the index until that run's handoff dropped it. Such a slot stays out of the pool until its
+own ticket resumes there or a person cleans it.
+
 **Reaping is mandatory, and it hangs off the label write.** A finished agent sits at its prompt
 at 0% CPU and holds 8 to 13GB indefinitely. With two slots the pool deadlocks after two launches.
 On 2026-08-24 two VMs idled for four hours and eight consecutive passes did nothing.

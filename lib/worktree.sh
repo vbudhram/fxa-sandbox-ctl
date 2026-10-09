@@ -217,6 +217,9 @@ worktree_free_slots() {
     if [ -n "$(_worktree_agent_for_workspace "$path")" ]; then
       continue                      # a VM still runs here; a launch would abort
     fi
+    # Unshipped changes (a refused ship) are the only copy once the runner is gone,
+    # and another ticket would inherit them. Its own ticket still resumes here.
+    [ -n "$(worktree_filtered_status "$path")" ] && continue
     printf '%s\n' "$slot"
   done <<< "$(worktree_pool_slot_names)"
 }
