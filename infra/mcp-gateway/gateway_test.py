@@ -417,6 +417,19 @@ class Trim(unittest.TestCase):
                          "annotations": {"team": "fxa"}}, "items": [{"liveState": "a"}]}})
         self.assertEqual(out["content"][1]["text"], "not json")
 
+    def test_list_entries_that_match_a_pattern_go(self):
+        res = [{"kind": "A", "status": "Synced", "health": {"status": "Healthy"}},
+               {"kind": "B", "status": "Synced"},
+               {"kind": "C", "health": {"status": "Healthy"}},
+               {"kind": "D", "status": "Synced", "health": {"status": "Degraded", "message": "x"}},
+               {"kind": "E", "status": "OutOfSync", "health": {"status": "Healthy"}}]
+        pats = [{"status": "Synced", "health": {"status": "Healthy"}}, {"status": "Synced", "health": None},
+                {"status": None, "health": {"status": "Healthy"}}]
+        result = {"content": [{"type": "text", "text": json.dumps({"body": {"status": {"resources": res, "health": {"status": "Degraded"}}}})}]}
+        out = json.loads(self.g.prune(result, None, pats)["content"][0]["text"])
+        self.assertEqual([r["kind"] for r in out["body"]["status"]["resources"]], ["D", "E"])
+        self.assertEqual(out["body"]["status"]["health"], {"status": "Degraded"})  # only list entries go
+
     def test_an_answer_over_the_limit_becomes_an_error_with_the_hint(self):
         big = {"content": [{"type": "text", "text": "x" * 5000}]}
         out = self.g.capped(big, 1000, "Ask for one resource.")

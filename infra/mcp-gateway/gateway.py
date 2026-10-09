@@ -11,13 +11,14 @@ allowlist exist, its `rules` check or rewrite arguments before a call leaves,
 its `deny_result` patterns withhold an answer before it reaches the runner, and
 its `redact` [pattern, replacement] pairs and `redact_keys` pattern rewrite it.
 Its `prune_keys` pattern removes keys at any depth from a JSON answer (noise such
-as Kubernetes managedFields), and `max_result_bytes` turns a bigger answer into
+as Kubernetes managedFields), its `prune_items` patterns remove list entries that
+fit them (ArgoCD resources that are Healthy and Synced), and `max_result_bytes` turns a bigger answer into
 an error with `max_result_hint`, so one call cannot fill an agent's context.
 The upstream account's own permissions stay the real limit; this is the second.
 
 Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
   {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys",
-                             "prune_keys", "max_result_bytes", "max_result_hint", "tool_note"}}}
+                             "prune_keys", "prune_items", "max_result_bytes", "max_result_hint", "tool_note"}}}
 Header values expand ${VAR} from the environment, so secrets stay in .env.
 ${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
 MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token},
@@ -237,31 +238,40 @@ def scrub(value, patterns, keys):
     return value
 
 
-def _drop(value, keys):
+def _fits(value, pat):
+    """value has every key and value of pat; a None in pat means the key is absent."""
+    if isinstance(pat, dict):
+        return isinstance(value, dict) and all(
+            (k not in value) if p is None else (k in value and _fits(value[k], p)) for k, p in pat.items())
+    return value == pat
+
+
+def _drop(value, keys, items=()):
     if isinstance(value, list):
-        return [_drop(v, keys) for v in value]
+        return [_drop(v, keys, items) for v in value if not any(_fits(v, p) for p in items)]
     if isinstance(value, dict):
-        return {k: _drop(v, keys) for k, v in value.items() if not keys.fullmatch(k)}
+        return {k: _drop(v, keys, items) for k, v in value.items() if not (keys and keys.fullmatch(k))}
     return value
 
 
-def prune(result, keys):
-    """The result with each key matching keys removed, in structuredContent and in text content that is JSON."""
-    if not keys or not isinstance(result, dict):
+def prune(result, keys, items=()):
+    """The result with each key matching keys, and each list entry that fits one of items, removed:
+    in structuredContent and in text content that is JSON."""
+    if not (keys or items) or not isinstance(result, dict):
         return result
     out = dict(result)
     if "structuredContent" in out:
-        out["structuredContent"] = _drop(out["structuredContent"], keys)
-    items = []
+        out["structuredContent"] = _drop(out["structuredContent"], keys, items)
+    content = []
     for c in out.get("content") or []:
         if isinstance(c, dict) and c.get("type") == "text":
             try:
-                c = dict(c, text=json.dumps(_drop(json.loads(c["text"]), keys), separators=(",", ":")))
+                c = dict(c, text=json.dumps(_drop(json.loads(c["text"]), keys, items), separators=(",", ":")))
             except (ValueError, TypeError):
                 pass
-        items.append(c)
+        content.append(c)
     if "content" in out:
-        out["content"] = items
+        out["content"] = content
     return out
 
 
@@ -392,6 +402,7 @@ class Upstream:
         self.redact = [(re.compile(p), r) for p, r in spec.get("redact") or []]
         self.redact_keys = re.compile(spec["redact_keys"]) if spec.get("redact_keys") else None
         self.prune_keys = re.compile(spec["prune_keys"]) if spec.get("prune_keys") else None
+        self.prune_items = list(spec.get("prune_items") or [])
         # Facts the agent needs that do not belong in a public repo (ArgoCD's app names).
         self.note = (spec.get("tool_note") or "").strip()
         self.max_result = int(spec.get("max_result_bytes") or 0)
@@ -588,7 +599,7 @@ def call_tool(tok, rec, params):
                ": %s__%s %s" % (conn, tool, json.dumps(args, sort_keys=True)[:200]))
         return tool_error("the answer was withheld by policy")
     audit(run, conn, tool, "ok", ms, size, args)
-    return capped(scrub(prune(result, up.prune_keys), up.redact, up.redact_keys), up.max_result, up.max_hint)
+    return capped(scrub(prune(result, up.prune_keys, up.prune_items), up.redact, up.redact_keys), up.max_result, up.max_hint)
 
 
 def handle(tok, rec, msg):
