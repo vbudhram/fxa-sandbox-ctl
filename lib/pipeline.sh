@@ -25,6 +25,8 @@ _FXA_PIPELINE_LOADED=1
 # Env overrides win over the config, so old cron and shell overrides still work.
 pipeline_load() {
   local name="${1:-$FXA_PIPELINE}" conf
+  # A child inherits the FXA_REPO its parent's load exported; only a repo set by hand overrides.
+  [ -n "${FXA_REPO:-}" ] && [ "$FXA_REPO" = "${_FXA_REPO_LOADED:-}" ] && unset FXA_REPO
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
   conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
   [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
@@ -52,7 +54,7 @@ pipeline_load() {
   PIPE_COSTS_FILE="${FXA_FIXME_COSTS:-$PIPE_COSTS_FILE}"
   PIPE_MIN_FREE_GB="${FXA_MIN_FREE_GB:-$PIPE_MIN_FREE_GB}"
   # worktree.sh and the rest of ctl read FXA_REPO, so keep the two in step.
-  export FXA_REPO="$PIPE_REPO"
+  export FXA_REPO="$PIPE_REPO" _FXA_REPO_LOADED="$PIPE_REPO"
 
   mkdir -p "$PIPE_STATE_DIR"
   PIPE_LOCK_DIR="${PIPE_STATE_DIR}/pass.lock"

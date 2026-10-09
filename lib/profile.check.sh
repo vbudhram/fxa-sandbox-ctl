@@ -29,5 +29,20 @@ check "a small profile gets its own state dir and the defaults" \
   "$(grep -E '^PIPE_(BASE_BRANCH|MIN_FREE_GB|PROFILE|REPO|STALL_MINUTES|STATE_DIR)=' <<< "$demo" | tr -d "'" | sort | paste -sd'|' -)"
 check "a small profile's state dir is made" "yes" "$([ -d "$tmp/home/.claude/state/demo" ] && echo yes)"
 
+# A session's command loads the profile its record names, whatever --pipeline said.
+eval "$(sed -n '/^_profile_from_args() {/,/^}/p' "$root/fxa-sandbox-ctl")"
+SESSION_DIR="$tmp/sess"; mkdir -p "$SESSION_DIR"; _session_file() { printf '%s/%s.json' "$SESSION_DIR" "$1"; }
+echo '{"key":"agent-mon1","profile":"monitor"}' > "$SESSION_DIR/agent-mon1.json"
+echo '{"key":"agent-old1"}' > "$SESSION_DIR/agent-old1.json"
+check "a session key's record sets the profile" "monitor" "$(_profile_from_args session-finish agent-mon1 --pr)"
+check "a resume takes the resumed session's profile" "monitor" "$(_profile_from_args task --source slack --resume-from agent-mon1)"
+check "an old record, or no key, keeps the default" "|" "$(_profile_from_args turn agent-old1)|$(_profile_from_args queue)"
+
+# A child must not take the repo its parent's load exported; a repo set by hand still wins.
+child_repo() { ( export HOME="$tmp/home" FXA_REPO="$1" _FXA_REPO_LOADED="$2"; SANDBOX_ROOT="$tmp/r"; _FXA_PIPELINE_LOADED=
+  source "$root/lib/pipeline.sh"; pipeline_load demo >/dev/null 2>&1; echo "$PIPE_REPO" ); }
+check "a repo exported by the parent's load is ignored" "$tmp/home/Desktop/working2/demo" "$(child_repo /x/fxa /x/fxa)"
+check "a repo set by hand wins" "/y/mine" "$(child_repo /y/mine /x/fxa)"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

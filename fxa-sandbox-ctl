@@ -1913,8 +1913,8 @@ cmd_task() {
       head -c 20000 "$findings_file"; printf '\n</findings-%s>\n' "$fnonce"; } >> "${SESSION_DIR}/${key}.prompt.md"
   fi
   # FXA_ENV=dev: the dev bot's session, which the stats leave out.
-  jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" \
-    '{key: $key, owner: $owner, source: "slack", branch: $key, base: "main",
+  jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" --arg profile "${PIPE_PROFILE:-}" --arg base "${PIPE_BASE_BRANCH:-main}" \
+    '{key: $key, owner: $owner, source: "slack", branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)' > "$(_session_file "$key")"
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
@@ -2463,6 +2463,17 @@ cmd_session() {
 
 # ── Main dispatch ──────────────────────────────────────────────
 
+# _profile_from_args <args>   The profile named by the record of the first session key in
+# the arguments (a resume names the session it resumes); empty for none or an old record.
+_profile_from_args() {
+  local a
+  for a in "$@"; do
+    [[ "$a" =~ ^agent-[a-z0-9]{4,12}$ ]] || continue
+    jq -r '.profile // empty' "$(_session_file "$a")" 2>/dev/null || true
+    return 0
+  done
+}
+
 main() {
   # Record where an unexpected failure ends a command; set -E hands the trap to functions.
   _ERR_CONTEXT="$*"
@@ -2476,6 +2487,8 @@ main() {
       *) break ;;
     esac
   done
+  # A session's commands run with the profile its record names: the record wins over --pipeline.
+  local rp; rp="$(_profile_from_args "$@")"; [ -n "$rp" ] && FXA_PIPELINE="$rp"
   pipeline_load "$FXA_PIPELINE" || return 1
   vm_backend_load || return 1
 

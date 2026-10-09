@@ -315,6 +315,9 @@ check "a Codex session is refused unless the host opts in" "Codex sessions are t
 check "and no record is written" "no" "$( [ -f "$tmp/agent-cdx1.json" ] && echo yes || echo no)"
 # !restart on an open PR: a fresh round on its branch at its head. A closed PR starts from main.
 nohup() { :; }; gh() { echo "$GH_STATE"; }
+# The record names the profile and its base branch, so later commands load the same one.
+PIPE_PROFILE=demo PIPE_BASE_BRANCH=trunk FXA_VM_BACKEND=gce cmd_task --source slack --id agent-prof1 --owner U1 --prompt-file "$tmp/p.md" >/dev/null 2>&1
+check "the record names the profile and base" "demo trunk" "$(session_get agent-prof1 profile) $(session_get agent-prof1 base)"
 echo '{"key":"agent-prr1","state":"stopped","branch":"agent-prr1","pr_url":"https://github.com/mozilla/fxa/pull/9"}' > "$tmp/agent-prr1.json"
 GH_STATE=OPEN FXA_VM_BACKEND=gce cmd_task --source slack --id agent-fre1 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-prr1 --fresh >/dev/null 2>&1
 check "fresh on an open PR keeps its branch and PR" "agent-prr1 https://github.com/mozilla/fxa/pull/9 1 agent-prr1 https://github.com/mozilla/fxa/pull/9" \
