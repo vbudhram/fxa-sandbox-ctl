@@ -5,6 +5,7 @@
 #
 #   slack-drive.sh start "<request>"        @mention the dev bot in a new thread; prints the thread ts
 #   slack-drive.sh reply <ts> "<text>"      a reply in the thread
+#   slack-drive.sh attach <ts|new> <file> "<text>"   a file with a message: a reply, or (new) a tag in a new thread; prints the thread ts
 #   slack-drive.sh wait <ts> [seconds]      wait until the bot finishes with the last message (✅ or ⚠️), then show
 #   slack-drive.sh show <ts>                the thread: seconds from the request, who, text, buttons, reactions
 #
@@ -24,6 +25,20 @@ post() { # post <text> [thread ts]
     -d "$(jq -n --arg c "$CH" --arg t "$1" --arg th "${2:-}" '{channel: $c, text: $t} + (if $th != "" then {thread_ts: $th} else {} end)')")"
   jq -e .ok >/dev/null <<< "$r" || { echo "slack-drive: $(jq -r .error <<< "$r")" >&2; exit 1; }
   jq -r .ts <<< "$r"
+}
+attach() { # attach <thread ts or new> <file> <text>
+  local th="$1" f="$2" text="$3" r id
+  [ "$th" = new ] && { th=""; text="<@$(api "$BOT_TOKEN" auth.test | jq -r .user_id)> $text"; }
+  r="$(api "$USER_TOKEN" files.getUploadURLExternal -G --data-urlencode "filename=$(basename "$f")" --data-urlencode "length=$(wc -c < "$f" | tr -d ' ')")"
+  jq -e .ok >/dev/null <<< "$r" || { echo "slack-drive: $(jq -r .error <<< "$r")" >&2; exit 1; }
+  id="$(jq -r .file_id <<< "$r")"
+  curl -sSf -o /dev/null -F "file=@$f" "$(jq -r .upload_url <<< "$r")"
+  r="$(api "$USER_TOKEN" files.completeUploadExternal -H 'Content-Type: application/json; charset=utf-8' \
+    -d "$(jq -n --arg id "$id" --arg c "$CH" --arg t "$text" --arg th "$th" '{files: [{id: $id}], channel_id: $c, initial_comment: $t} + (if $th != "" then {thread_ts: $th} else {} end)')")"
+  jq -e .ok >/dev/null <<< "$r" || { echo "slack-drive: $(jq -r .error <<< "$r")" >&2; exit 1; }
+  [ -n "$th" ] && { echo "$th"; return; }
+  # The share posts after the call returns: the new thread is my newest message in the channel.
+  sleep 3; api "$USER_TOKEN" conversations.history -G --data-urlencode "channel=$CH" --data-urlencode limit=1 | jq -r '.messages[0].ts'
 }
 replies() { api "$USER_TOKEN" conversations.replies -G --data-urlencode "channel=$CH" --data-urlencode "ts=$1" --data-urlencode limit=200; }
 
@@ -46,6 +61,8 @@ case "${1:-}" in
     post "<@$(api "$BOT_TOKEN" auth.test | jq -r .user_id)> $2" ;;
   reply) [ -n "${3:-}" ] || { echo "usage: slack-drive.sh reply <ts> \"<text>\"" >&2; exit 2; }
     post "$3" "$2" ;;
+  attach) [ -f "${3:-}" ] && [ -n "${4:-}" ] || { echo "usage: slack-drive.sh attach <ts|new> <file> \"<text>\"" >&2; exit 2; }
+    attach "$2" "$3" "$4" ;;
   show) show "$2" ;;
   wait)
     # The bot puts 👀 on each message it takes, and swaps it for ✅ or ⚠️ when it is done with it.
@@ -57,5 +74,5 @@ case "${1:-}" in
       sleep 10
     done
     show "$2" ;;
-  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
