@@ -37,6 +37,9 @@ check "sync needs an absolute dir" "1" "$(printf x | cmd_devslot sync monitor re
 check "run executes as agent and reports the exit" "bash ready.sh|1" "$(grep '^exec dev-monitor echo' "$tmp/calls" | awk '{print $4}' | base64 -d)|$(grep -c '^── exit 0 after' <<< "$out")"
 : > "$tmp/calls"; cmd_devslot run monitor "$(printf 'a "b" $c\nd')" >/dev/null
 check "a multi-line script with quotes arrives intact" 'a "b" $c|d' "$(grep '^exec dev-monitor echo' "$tmp/calls" | awk '{print $4}' | base64 -d | paste -sd'|' -)"
+vm_exec() { echo "root $1 ${*: -1}" >> "$tmp/calls"; }
+: > "$tmp/calls"; cmd_devslot root monitor "$(printf 'id\nwhoami')" >/dev/null
+check "root runs the script as root, intact" "id|whoami" "$(grep '^root dev-monitor' "$tmp/calls" | sed 's/.*echo \([^ ]*\) .*/\1/' | base64 -d | paste -sd'|' -)"
 vm_exec_as_agent() { [ "$2" = "free -m" ] && echo "Mem: 16016 7390 100 1 2000 8626"; [ "$(awk '{print $2}' <<< "$2" | base64 -d 2>/dev/null)" = fail ] && return 7; return 0; }
 check "run reports the memory" "7390 MB used, 8626 MB available" "$(cmd_devslot run monitor true | sed -n 's/.* · //p')"
 check "run passes the command's exit code" "7" "$(cmd_devslot run monitor fail >/dev/null 2>&1; echo $?)"

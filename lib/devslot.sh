@@ -33,17 +33,20 @@ cmd_devslot() {
       _fc_vm_exists "$name" || { rm -f "$t"; echo "ERROR: $name is not up; run devslot up first" >&2; return 1; }
       local rc=0; vm_put "$name" "$t" "$dir" || rc=$?; rm -f "$t"
       _devslot_touch "$name"; [ "$rc" = 0 ] && echo "synced to $dir"; return "$rc" ;;
-    run)
-      # run <profile> '<command>': as agent, with the time and the memory after.
-      [ -n "${1:-}" ] || { echo "usage: devslot run <profile> '<command>'" >&2; return 1; }
+    run|root)
+      # run|root <profile> '<command>': as agent (or root, as a profile's boot.sh runs),
+      # with the time and the memory after.
+      [ -n "${1:-}" ] || { echo "usage: devslot ${sub} <profile> '<command>'" >&2; return 1; }
       _fc_vm_exists "$name" || { echo "ERROR: $name is not up; run devslot up first" >&2; return 1; }
       _devslot_touch "$name"
       local t0 rc=0; t0="$(date +%s)"
       # sudo -i mangles newlines and quotes, so the script travels as base64.
-      vm_exec_as_agent "$name" "echo $(printf '%s\n' "$*" | base64 | tr -d '\n') | base64 -d | bash" || rc=$?
+      local b64; b64="$(printf '%s\n' "$*" | base64 | tr -d '\n')"
+      if [ "$sub" = root ]; then vm_exec "$name" sudo bash -c "echo ${b64} | base64 -d | bash" || rc=$?
+      else vm_exec_as_agent "$name" "echo ${b64} | base64 -d | bash" || rc=$?; fi
       local mem; mem="$(vm_exec_as_agent "$name" "free -m" 2>/dev/null | awk '/^Mem:/ {print $3 " MB used, " $7 " MB available"}')" || true
       echo "── exit $rc after $(( $(date +%s) - t0 ))s · ${mem:-memory unknown}"
       _devslot_touch "$name"; return "$rc" ;;
-    *) echo "usage: devslot up|down|reset|run|sync <profile> ... | devslot list" >&2; return 1 ;;
+    *) echo "usage: devslot up|down|reset|run|root|sync <profile> ... | devslot list" >&2; return 1 ;;
   esac
 }

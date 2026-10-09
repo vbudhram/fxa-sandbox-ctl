@@ -6,6 +6,7 @@
 #                                              (not ignored ones); removed files stay
 #   devslot.sh run <profile> '<command>'      run as agent; prints exit, time and memory
 #   devslot.sh run <profile> - < script.sh    the same, with a local script
+#   devslot.sh root <profile> - < boot.sh     as root, as the controller runs a profile's boot.sh
 #   devslot.sh list
 # FXA_FC_HOST: the Firecracker host's address (required).
 set -euo pipefail
@@ -16,10 +17,10 @@ ctl() { printf 'FXA_FC_HOST=%q ./fxa-sandbox-ctl --backend gce devslot%s 2>&1\n'
 sub="${1:-}"; shift || true
 case "$sub" in
   up|down|reset|list) ctl "$sub" "$@" | bash "$H" run - ;;
-  run)
-    [ $# -eq 2 ] || { echo "usage: devslot.sh run <profile> '<command>' | -" >&2; exit 1; }
+  run|root)
+    [ $# -eq 2 ] || { echo "usage: devslot.sh $sub <profile> '<command>' | -" >&2; exit 1; }
     cmd="$2"; [ "$cmd" = - ] && cmd="$(cat)"
-    ctl run "$1" "$cmd" | bash "$H" run - ;;
+    ctl "$sub" "$1" "$cmd" | bash "$H" run - ;;
   sync)
     p="${1:?profile}"; shift
     [ $# -gt 0 ] || { echo "usage: devslot.sh sync <profile> <guest dir>=<local dir>..." >&2; exit 1; }
