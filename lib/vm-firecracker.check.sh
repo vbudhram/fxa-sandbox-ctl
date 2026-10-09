@@ -54,4 +54,6 @@ _fc() { return 1; }
 check "the host answers but cannot list: the stop fails" "1" "$(UP=1 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
 _gce() { echo RUNNING; }
 check "the probe misses but GCE says the host runs: the stop fails" "1" "$(UP=0 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
+_gce() { return 1; }
+check "the probe misses and GCE cannot say: the stop fails" "1" "$(UP=0 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

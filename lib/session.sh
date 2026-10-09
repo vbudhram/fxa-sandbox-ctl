@@ -578,6 +578,12 @@ session_idle_sweep() {
   for f in "$SESSION_DIR"/agent-*.json; do
     [ -f "$f" ] || continue
     key="$(basename "$f" .json)"
+    # A stop whose runner delete failed: try the delete again until the runner goes.
+    if [ "$(jq -r '.runner_left // ""' "$f")" = 1 ]; then
+      _session_lock "$key" || continue
+      agent_stop "$(worktree_branch_for "$key")" >/dev/null 2>&1 && session_set "$key" runner_left 0 && echo "deleted the runner of ${key}"
+      _session_unlock "$key"; continue
+    fi
     # A pause nobody came back to in a day is over: stopped. A reply still resumes it from the saved work.
     if [ "$(jq -r .state "$f")" = paused ] && [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "${FXA_SESSION_PAUSED_SECONDS:-86400}" ]; then
       _session_lock "$key" || continue
@@ -1460,8 +1466,9 @@ session_stop() {
   session_set "$key" state stopped
   _session_save "$key"
   _session_desktop_close "$key"
-  # No runner yet (still booting) is fine; a runner that will not go away is not.
-  agent_stop "$name" >&2 || { vm_exists "$name" 2>/dev/null && return 1; }
+  # No runner yet (still booting) is fine. A delete that failed is an error, and
+  # the idle sweep tries it again (runner_left): the state is stopped already.
+  agent_stop "$name" >&2 || { session_set "$key" runner_left 1; return 1; }
   return 0
 }
 

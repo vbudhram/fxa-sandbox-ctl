@@ -232,7 +232,7 @@ _put_run_files() {
 
 # _gce_profile_boot <name>   Ship the profile's boot.sh and start it as root, detached:
 # it sets up the profile's stack while the agent reads code, and writes
-# /home/agent/.profile-ready or .profile-failed. Nothing for a profile without one.
+# /run/fxa-profile/ready or failed. Nothing for a profile without one.
 _gce_profile_boot() {
   local name="$1" f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/boot.sh" b64
   [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || return 0
@@ -1421,14 +1421,15 @@ INBOXPROXY
 agent_stop_all() {
   echo "Stopping all agents..."
 
-  local found=false
+  local found=false rc=0
   for meta_file in "${LOG_DIR}"/*.meta; do
     [ -f "$meta_file" ] || continue
     found=true
 
     local NAME
     source "$meta_file"
-    agent_stop "$NAME"
+    # One runner that will not go must not leave the others up.
+    agent_stop "$NAME" || rc=1
   done
 
   if [ "$found" = false ]; then
@@ -1437,7 +1438,8 @@ agent_stop_all() {
 
   rm -rf "${LOG_DIR}/ssh"
 
-  echo "All agents stopped."
+  [ "$rc" -eq 0 ] && echo "All agents stopped." || echo "ERROR: a runner did not stop; see above." >&2
+  return "$rc"
 }
 
 # ── Run-state introspection ────────────────────────────────────

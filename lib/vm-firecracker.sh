@@ -93,8 +93,12 @@ _fc_vm_delete() {
       [ -z "$n" ] || { echo "Stopping slot ${n} ($(vm_name "$name"))..."; _fc stop "$n" >/dev/null; } \
         || { echo "ERROR: could not stop slot ${n} on ${FXA_FC_HOST}" >&2; rc=1; }
     else echo "ERROR: could not list the slots on ${FXA_FC_HOST}" >&2; rc=1; fi
-  elif [ "$(_gce compute instances describe "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --format 'value(status)' 2>/dev/null)" = RUNNING ]; then
-    echo "ERROR: the runner host ${FXA_FC_HOST} runs but did not answer; slot $(vm_name "$name") may be left" >&2; rc=1
+  else
+    # Only a host GCE says is stopped has no slots: an error or RUNNING may leave one.
+    local st; st="$(_gce compute instances describe "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --format 'value(status)' 2>/dev/null)" || st=unknown
+    case "$st" in TERMINATED|STOPPING|STOPPED|SUSPENDED) ;;
+      *) echo "ERROR: the runner host ${FXA_FC_HOST} did not answer and GCE says '${st:-unknown}'; slot $(vm_name "$name") may be left" >&2; rc=1 ;;
+    esac
   fi
   rm -f "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
   return "$rc"
