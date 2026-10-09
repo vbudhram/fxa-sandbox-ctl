@@ -216,7 +216,7 @@ snapshot_stats_json() {
         median_min: mins,
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load | _stats_add_prs
 }
 
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the
@@ -263,6 +263,7 @@ _stats_add_rows() {
       | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
           min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
           main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
+          prn: ([.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
           backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),
           compute_usd: (.compute_usd | n), verify_runs: (.verify_runs | n), verify_full: (.verify_full | n), verify_s: (.verify_s | n),
@@ -287,6 +288,23 @@ _stats_add_rows() {
   # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.
   jq -c --slurpfile s <(printf '%s' "${sess:-[]}") --slurpfile j <(printf '%s' "${jobs:-[]}") --slurpfile a <(printf '%s' "${asks:-[]}") \
     --slurpfile l <(printf '%s' "$llm") '.rows += $s[0] + $j[0] + $a[0] | .llm = $l[0]'
+}
+
+# _stats_add_prs   Every PR with the pipeline's label and its outcome, for the PRs tab.
+# The list takes about 6 s to read, so it is read at most every 10 minutes.
+_stats_add_prs() {
+  local f="${PIPE_STATE_DIR}/prs.json" t
+  if [ ! -s "$f" ] || [ $(( $(date +%s) - $(_mtime "$f") )) -gt 600 ]; then
+    t="$(mktemp "${f}.XXXXXX")"
+    if gh pr list --repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --label "${FXA_PR_LABEL:-auto}" --state all --limit 1000 \
+         --json number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" 2>/dev/null \
+       && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
+  fi
+  jq -c --slurpfile p <(jq -c 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
+      by: (.mergedBy.login // null), add: .additions, del: .deletions,
+      src: (if (.headRefName | startswith("agent-")) then "slack" else "pipeline" end),
+      key: (if (.headRefName | test("^[A-Za-z][A-Za-z0-9]+-[0-9]+$")) and (.headRefName | startswith("agent-") | not) then (.headRefName | ascii_upcase) else .headRefName end) })' \
+      "$f" 2>/dev/null || echo '[]') '.prs = $p[0]'
 }
 
 # _stats_add_load   Slack sessions per day: the most live at once (from start and stop

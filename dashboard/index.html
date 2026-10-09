@@ -1190,16 +1190,17 @@ function renderStats() {
   const byDay = (end - Math.min(start, end)) <= 45 * DAY;
   const bucketOf = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); if (!byDay) d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const buckets = new Map();
-  for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0 });
+  for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0, merged: 0 });
   rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; } });
+  (st.prs ?? []).forEach(p => { const b = p.merged && (SF.src === "all" || p.src === SF.src) && buckets.get(bucketOf(Date.parse(p.merged))); if (b) b.merged++; });
   const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
   const lbl = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   // A month of days does not fit 30 labels: with many bars, label about every fifth day and
   // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
   const many = bl.length > 14, step = Math.ceil(bl.length / 7);
   const showDay = i => !many || i === bl.length - 1 || (i % step === 0 && bl.length - 1 - i >= step / 2);
-  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}</span>
-      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : ms) * H))}" style="background:${k === "runs" ? "var(--info)" : "var(--purple)"};transition:height 400ms"></div>
+  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${k === "merged" ? `${b.merged} merged` : `${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
+      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
       <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
   const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
   const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
@@ -1209,8 +1210,8 @@ function renderStats() {
   const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
-  put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2></div>
-    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : ""}
+  put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2></div>
+    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, q, bars, byDay, kpi) : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
@@ -1235,6 +1236,41 @@ function renderStats() {
     </div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
+}
+// PRs tab: the outcome of each PR opened in the range, and its cost from every run on it.
+function prsTab(st, lo, hi, q, bars, byDay, kpi) {
+  const repo = SNAP?.repo || "mozilla/fxa", all = st.prs ?? [], rows = st.rows ?? [];
+  const prs = all.filter(p => { const t = Date.parse(p.created); return t >= lo && t < hi
+    && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
+  if (!prs.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened in this range matches these filters." : "No PR list yet."}</div>`;
+  const cost = p => rows.reduce((x, r) => x + (r.prn === p.n || (r.src === "pipeline" && r.key === p.key) ? r.usd || 0 : 0), 0);
+  const hrs = p => (Date.parse(p.merged) - Date.parse(p.created)) / 3600000, dur = h => h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`;
+  const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  const by = s => prs.filter(p => p.state === s), merged = by("MERGED"), closed = by("CLOSED"), open = by("OPEN");
+  const rate = (m, c) => m + c ? `${Math.round(m / (m + c) * 100)}%` : "—";
+  const mc = merged.map(cost), SRC = { pipeline: "Pipeline", slack: "Slack sessions" };
+  const kv = (k, v) => `<div class="kv">${k}<span>${v}</span></div>`;
+  const line = p => `<div title="${esc(p.title)}">${kv(`<span>${prl(repo, p.n)} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? jira(p.key) : `<span class="mono">${esc(p.key)}</span>`}</span>`,
+    (p.state === "MERGED" ? `${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>`
+      : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed") + ` · <b>${usd(cost(p))}</b>`)}</div>`;
+  const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
+  const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
+  const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
+  return `<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
+      ${kpi("Merged", merged.length, `${rate(merged.length, closed.length)} of those merged or closed`)}
+      ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
+      ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : "&nbsp;")}
+      ${kpi("Cost per merged PR", merged.length ? usd(med(mc)) : "—", merged.length ? `median · ${usd(mc.reduce((a, b) => a + b, 0))} in all` : "&nbsp;")}</div>
+    <div class="charts"><div class="chart"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div></div>
+      <div class="chart"><h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
+        return a.length ? kv(`<b>${l}</b>`, `${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; }).join("")}
+        <h2 style="margin-top:var(--s4)">Merged by</h2>${who.map(([k, n]) => kv(`<span class="mono">${esc(k)}</span>`, `<b>${n}</b>`)).join("") || `<div class="empty">None merged.</div>`}</div></div>
+    <div class="three">
+      <div class="chart"><h2>Recently merged<span class="note">time to merge · lines · cost</span></h2>${list(merged.slice().sort((a, b) => newest(a, b, "merged")), "None merged.")}</div>
+      <div class="chart"><h2>Still open<span class="note">oldest first</span></h2>${list(open.slice().sort((a, b) => -newest(a, b, "created")), "None open.")}</div>
+      <div class="chart"><h2>Costliest merged<span class="note">every run on the PR</span></h2>${list(merged.slice().sort((a, b) => cost(b) - cost(a)), "None merged.")}
+        ${closed.length ? `<h2 style="margin-top:var(--s4)">Closed, not merged</h2>${list(closed, "")}` : ""}</div>
+    </div>`;
 }
 // The Stats filters, in the list panel.
 function statsFilters() {
@@ -1821,7 +1857,7 @@ const VIEWS = [
   ["overview", "Overview", "What needs you, what is running, and today's cost", []],
   ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
   ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"], ["answers", "Answers"]]],
-  ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
+  ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["prs", "PRs"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
   ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
   ["runners", "Sandboxes", "Slots, sandboxes and what they cost", []],

@@ -100,4 +100,19 @@ rm -rf "$pd"
   check "stats: the dev bot's sessions and answers are left out" "agent-p1 ask-p2" "$(jq -r '[.rows[].key] | sort | join(" ")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# Agent PRs for the PRs tab: the source and key come from the branch, a session row
+# names its PR, and a failed read keeps the last list.
+( export SESSION_DIR="$tmp/prs" PIPE_STATE_DIR="$tmp/prsps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  gh() { echo '[{"number":7,"title":"t7","headRefName":"fxa-12","state":"MERGED","createdAt":"2026-10-01T10:00:00Z","mergedAt":"2026-10-02T10:00:00Z","closedAt":"2026-10-02T10:00:00Z","mergedBy":{"login":"rev1"},"additions":5,"deletions":2},
+    {"number":8,"title":"t8","headRefName":"agent-ab12","state":"OPEN","createdAt":"2026-10-03T10:00:00Z","mergedAt":null,"closedAt":null,"mergedBy":null,"additions":1,"deletions":0}]'; }
+  out="$(echo '{}' | _stats_add_prs)"
+  check "prs: source, key and outcome from the branch" "7 pipeline FXA-12 MERGED rev1|8 slack agent-ab12 OPEN null" \
+    "$(jq -r '[.prs[] | "\(.n) \(.src) \(.key) \(.state) \(.by)"] | join("|")' <<< "$out")"
+  gh() { return 1; }; touch -t 202001010000 "$PIPE_STATE_DIR/prs.json"
+  check "prs: a failed read keeps the last list" "2" "$(echo '{}' | _stats_add_prs | jq '.prs | length')"
+  _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
+  db_on() { false; }
+  check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"
+  exit "$fail" ) || fail=1
+
 exit "$fail"
