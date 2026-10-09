@@ -98,6 +98,9 @@ FXA_MCP_CONFIG=""
 if [ -n "\${FXA_MCP_URL:-}" ] && [ -n "\${FXA_MCP_TOKEN:-}" ]; then
   FXA_MCP_CONFIG=/home/agent/.fxa-mcp-${id}.json
   ( umask 077; printf '{"mcpServers":{"fxa":{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}}}\n' "\$FXA_MCP_URL" "\$FXA_MCP_TOKEN" > "\$FXA_MCP_CONFIG" )
+  # The gateway caps each answer (max_result_bytes); an answer under the cap arrives whole,
+  # since this agent may not read the file Claude Code spills a bigger one to.
+  export MAX_MCP_OUTPUT_TOKENS=50000
 fi
 cd /workspace || exit 1
 # Main, at most 5 minutes old; one fetch at a time. origin/main and a stamp, not FETCH_HEAD,

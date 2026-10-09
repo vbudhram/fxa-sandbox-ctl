@@ -78,7 +78,7 @@
       "oauth_callback_port": 9382,
       "headers": { "Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}" },
       "tools": ["search_operations", "execute_operation"],
-      "tool_note": "Apps: YOUR_APP_NAMES.",
+      "tool_note": "Apps: YOUR_APP_NAMES. Recipes, all GET under /api/v1/applications/<app>: version, health, sync and last sync: the app itself (status.summary.images, status.health, status.sync, status.operationState, status.conditions); why it is unhealthy: the status.resources entries whose health is not Healthy, then <app>/events; one resource: <app>/resource with query_params {\"namespace\":...,\"resourceName\":...,\"kind\":...,\"group\":...,\"version\":...}; pod logs: <app>/pods/<pod>/logs with {\"container\":...,\"tailLines\":\"200\"}. Never <app>/resource-tree or <app>/managed-resources: they are over the size limit.",
       "prune_keys": "managedFields|notified\\.notifications\\.argoproj\\.io|kubectl\\.kubernetes\\.io/last-applied-configuration|normalizedLiveState|predictedLiveState|syncResult|resourceVersion|uid|creationTimestamp|generation",
       "max_result_bytes": 122880,
       "max_result_hint": "Ask for less: the app itself, its /events, one resource with /resource?namespace=...&resourceName=...&kind=...&group=...&version=..., or pod logs with tailLines. Not /resource-tree or /managed-resources of a whole app.",
@@ -86,7 +86,7 @@
         { "tool": "execute_operation", "arg": "method", "set": "GET" },
         { "tool": "execute_operation", "arg": "body", "drop": true },
         { "tool": "execute_operation", "arg": "path", "match": "/api/v1/applications/fxa-[a-z0-9-]+(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*" },
-        { "tool": "execute_operation", "arg": "query_params", "optional": true, "match": "(?is)(?!.*refresh).*" }
+        { "tool": "execute_operation", "arg": "query_params", "optional": true, "match": "(?is)(?!.*refresh[\"']?\\s*:(?!\\s*[\"']?false[\"'\\s,}])).*" }
       ],
       "redact": [["(?i)(\"(?:(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization)\"\\s*:\\s*)\"[^\"]*\"", "\\1\"[redacted]\""], ["(?i)(\"(?:cookie|set-cookie|authorization)\"\\s*,\\s*)\"[^\"]*\"", "\\1\"[redacted]\""], ["(?im)^(\\s*(?:set-cookie|cookie|authorization)):[ \\t]*\\S.*$", "\\1: [redacted]"], ["(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]"], ["\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[jwt]"], ["(?i)\\b(Bearer|Basic|Hawk)\\s+\\S{8,}", "\\1 [redacted]"], ["(?i)([?&;](?:email|login_hint|[\\w]*token|code|state|password|key\\w*)=)[^&\\s\\\"'#)\\]]+", "\\1[redacted]"], ["(?<![\\w+])\\+\\d{8,15}\\b", "[phone]"], ["(?<![\\d.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?![\\d.])", "[ip]"], ["(?i)(?<![\\w:])(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(?![\\w:])", "[ip]"], ["(?i)(?<![\\w:])(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,5})?(?![\\w:])", "[ip]"], ["(?i)\\b[0-9a-f]{64}\\b", "[token]"]],
       "redact_keys": "(?i)email|ip|ip_address|(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization"

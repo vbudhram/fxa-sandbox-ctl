@@ -451,6 +451,7 @@ class ArgoRules(unittest.TestCase):
                 self.run_rules({"method": "GET", "path": path, "query_params": q})
         self.assertEqual(self.run_rules({"method": "GET", "path": path + "/pods/p1/logs", "query_params": '{"tailLines":"50"}'})["query_params"], '{"tailLines":"50"}')
         self.assertNotIn("query_params", self.run_rules({"method": "GET", "path": path}))
+        self.assertEqual(self.run_rules({"method": "GET", "path": path, "query_params": '{"refresh": "false"}'})["query_params"], '{"refresh": "false"}')
 
     def test_other_apps_a_list_and_a_climb_out_are_refused(self):
         for path in ("/api/v1/applications/other-example-app", "/api/v1/applications",
