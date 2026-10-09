@@ -96,7 +96,7 @@ COMMANDS:
   help                         Show this help message
 
 SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend gce):
-  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key> [--fresh]] [--thread <channel:ts> [--new]] [--mcp jira,github]
+  task --source slack --id <agent-xxxx> --owner <user> --prompt-file <f> [--runtime claude|codex] [--resume-from <key> [--fresh]] [--thread <channel:ts> [--new]] [--mcp jira,github] [--inbox-dir <dir>]
                                WRITE: claim a slot and boot a runner in the background
   steer <key> --message-file <f>  WRITE: run one resumed turn, or queue it mid-turn
   events <key> --since <n>     JSON {cursor, state, events, activity} from the runner transcript
@@ -1841,7 +1841,7 @@ _session_key() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
@@ -1853,6 +1853,7 @@ cmd_task() {
       --link) link="$2"; shift 2 ;;
       --queued-s) queued_s="$2"; shift 2 ;;
       --findings-file) findings_file="$2"; shift 2 ;;
+      --inbox-dir) inbox_dir="$2"; shift 2 ;;
       --owner-name) owner_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
@@ -1907,6 +1908,8 @@ cmd_task() {
     errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
   mkdir -p "$SESSION_DIR"
   cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
+  # Files sent with the request, copied now: the caller removes its directory when task returns.
+  [ -n "$inbox_dir" ] && { _inbox_copy "${SESSION_DIR}/${key}.inbox" "$inbox_dir"/* >/dev/null || echo "WARN: no file from ${inbox_dir} could be kept" >&2; }
   # An upgrade from a quick answer: what that read-only agent found, so this one does not search again.
   if [ -n "$findings_file" ] && [ -s "$findings_file" ]; then
     local fnonce; fnonce="$(openssl rand -hex 6 2>/dev/null || date +%s%N)"
@@ -2023,6 +2026,8 @@ _cmd_session_boot() {
   fi
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"
+  # The files sent with the request ship with the run files, so the first turn has them.
+  rm -rf "${dir}/.fxa-inbox"; [ -d "${SESSION_DIR}/${key}.inbox" ] && mv "${SESSION_DIR}/${key}.inbox" "${dir}/.fxa-inbox"
   rm -f "${dir}/.fxa-thread-notes.md"; [ -n "$notes" ] && cp "$notes" "${dir}/.fxa-thread-notes.md"
   # The run dir is no worktree, so the stack's gitignored secrets (123done's client secret) come over here.
   worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
@@ -2093,6 +2098,7 @@ what code you are on. Do not pull: a newer main needs a new thread."
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz" "${dir}/.fxa-resume-media.tgz"
   rm -f "${dir}/.fxa-auto-token" "${dir}/.fxa-auto-codex-auth.json" # the runner has its copy; none stays on the host
+  rm -rf "${dir}/.fxa-inbox"
   [ "$rc" -eq 0 ] || { [ "$(session_get "$key" state)" = stopped ] || session_set "$key" state failed; return 1; }
   # Stopped while the runner booted: take it down instead of going active.
   if [ "$(session_get "$key" state)" != starting ]; then agent_stop "$name" >&2 || true; return 0; fi

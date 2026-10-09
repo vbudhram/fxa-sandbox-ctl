@@ -160,7 +160,7 @@ _put_run_files() {
   local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz .fxa-thread-notes.md .fxa-ci ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz .fxa-thread-notes.md .fxa-ci .fxa-inbox ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done

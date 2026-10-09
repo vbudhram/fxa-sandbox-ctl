@@ -1374,12 +1374,11 @@ session_tunnel() {
   vm_forward "$(worktree_branch_for "$key")" "$port" 6080
 }
 
-# session_attach <key> <file>...   Put files a person attached in Slack into the
-# runner's /workspace/.fxa-inbox/. Plain files only, safe names, 25 MB each.
-session_attach() {
-  local key="$1" d f b n=0 rc=0; shift
-  session_live "$key" || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
-  d="$(mktemp -d)"
+# _inbox_copy <dir> <file>...   Copy the files a person sent in Slack into <dir>:
+# plain files only, safe names, 25 MB each. Prints the count; fails when none.
+_inbox_copy() {
+  local d="$1" f b n=0; shift
+  mkdir -p "$d"
   for f in "$@"; do
     b="$(basename "$f")"
     [[ "$b" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$ ]] || { echo "skipped ${b}: name" >&2; continue; }
@@ -1387,7 +1386,17 @@ session_attach() {
     [ "$(_fsize "$f")" -le 26214400 ] || { echo "skipped ${b}: over 25 MB" >&2; continue; }
     cp "$f" "${d}/${b}" && n=$((n + 1))
   done
-  [ "$n" -gt 0 ] || { rm -rf "$d"; echo "ERROR: no file to attach" >&2; return 1; }
+  [ "$n" -gt 0 ] || { echo "ERROR: no file to attach" >&2; return 1; }
+  echo "$n"
+}
+
+# session_attach <key> <file>...   Put files a person attached in Slack into the
+# runner's /workspace/.fxa-inbox/.
+session_attach() {
+  local key="$1" d n rc=0; shift
+  session_live "$key" || { echo "ERROR: ${key} has no running sandbox" >&2; return 1; }
+  d="$(mktemp -d)"
+  n="$(_inbox_copy "$d" "$@")" || { rm -rf "$d"; return 1; }
   COPYFILE_DISABLE=1 tar -czf "${d}.tgz" -C "$d" . && vm_put "$(worktree_branch_for "$key")" "${d}.tgz" /workspace/.fxa-inbox || rc=$?
   rm -rf "$d" "${d}.tgz"
   [ "$rc" -eq 0 ] && echo "attached ${n}"
