@@ -113,6 +113,8 @@ rm -rf "$pd"
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
   db_on() { false; }
   check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"
+  _session_records() { echo '{"key":"agent-q2","owner":"U1","created":1,"profile":"monitor"}'; echo '{"key":"agent-q3","owner":"U1","created":2}'; }
+  check "stats: a session row names its team; an old record is fxa" "monitor fxa" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r '[.rows[].profile] | join(" ")')"
   exit "$fail" ) || fail=1
 
 exit "$fail"
