@@ -75,6 +75,7 @@
     "argocd": {
       "url": "https://webservices.argocd.mcp.mozilla.cloud/mcp",
       "oauth_issuer": "https://webservices.argocd.mcp.mozilla.cloud",
+      "oauth_callback_port": 9382,
       "headers": { "Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}" },
       "tools": ["search_operations", "execute_operation"],
       "rules": [

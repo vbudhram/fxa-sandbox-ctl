@@ -54,6 +54,8 @@ def main():
     if not mine or (only and set(only) - set(mine)):
         sys.exit("oauth-login: no OAuth connector named %s in %s" % (" ".join(sorted(set(only) - set(mine))) or "", CONFIG))
     issuer_of = {s["url"]: s.get("oauth_issuer") or ISSUER for n, s in connectors.items() if n in mine}
+    # A server that allows only a registered callback (ArgoCD's Dex: localhost:9382) names its port.
+    port_of = {s.get("oauth_issuer") or ISSUER: int(s.get("oauth_callback_port") or 0) for n, s in connectors.items() if n in mine}
 
     got = {}
 
@@ -69,13 +71,13 @@ def main():
             self.end_headers()
             self.wfile.write(b"fxa-mcp-gateway: signed in. You can close this tab.")
 
-    srv = http.server.HTTPServer(("127.0.0.1", 0), Callback)
-    redirect = "http://127.0.0.1:%d/callback" % srv.server_port
     servers = {}
     for issuer in sorted(set(issuer_of.values())):
+        srv = http.server.HTTPServer(("127.0.0.1", port_of[issuer]), Callback)
+        redirect = "http://%s:%d/callback" % ("localhost" if port_of[issuer] else "127.0.0.1", srv.server_port)
         with urllib.request.urlopen(issuer + "/.well-known/oauth-authorization-server", timeout=30) as r:
             meta = json.load(r)
-        servers[issuer] = (meta, post(meta["registration_endpoint"], {
+        servers[issuer] = (meta, srv, redirect, post(meta["registration_endpoint"], {
             "client_name": "fxa-mcp-gateway", "redirect_uris": [redirect], "grant_types": ["authorization_code", "refresh_token"],
             "response_types": ["code"], "token_endpoint_auth_method": "none"}))
     resources = sorted(issuer_of)
@@ -84,7 +86,7 @@ def main():
     refresh = {}
     # The server binds a sign-in to one resource, so each URL gets its own.
     for i, resource in enumerate(resources, 1):
-        meta, client = servers[issuer_of[resource]]
+        meta, srv, redirect, client = servers[issuer_of[resource]]
         got.clear()
         verifier = secrets.token_urlsafe(64)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -123,9 +125,9 @@ def main():
 
     out = {"refresh_tokens": refresh,
            "clients": {r: {"token_endpoint": servers[issuer_of[r]][0]["token_endpoint"],
-                           "client_id": servers[issuer_of[r]][1]["client_id"]} for r in resources if issuer_of[r] != ISSUER}}
+                           "client_id": servers[issuer_of[r]][3]["client_id"]} for r in resources if issuer_of[r] != ISSUER}}
     if ISSUER in servers:  # the top-level pair stays Runlayer's, for the connectors with no clients entry
-        out.update(token_endpoint=servers[ISSUER][0]["token_endpoint"], client_id=servers[ISSUER][1]["client_id"])
+        out.update(token_endpoint=servers[ISSUER][0]["token_endpoint"], client_id=servers[ISSUER][3]["client_id"])
     json.dump(out, sys.stdout)
 
 
