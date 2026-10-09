@@ -10,10 +10,14 @@ Every connector is read-only by construction: only the tools on its `tools`
 allowlist exist, its `rules` check or rewrite arguments before a call leaves,
 its `deny_result` patterns withhold an answer before it reaches the runner, and
 its `redact` [pattern, replacement] pairs and `redact_keys` pattern rewrite it.
+Its `prune_keys` pattern removes keys at any depth from a JSON answer (noise such
+as Kubernetes managedFields), and `max_result_bytes` turns a bigger answer into
+an error with `max_result_hint`, so one call cannot fill an agent's context.
 The upstream account's own permissions stay the real limit; this is the second.
 
 Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
-  {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys"}}}
+  {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys",
+                             "prune_keys", "max_result_bytes", "max_result_hint", "tool_note"}}}
 Header values expand ${VAR} from the environment, so secrets stay in .env.
 ${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
 MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token},
@@ -233,6 +237,42 @@ def scrub(value, patterns, keys):
     return value
 
 
+def _drop(value, keys):
+    if isinstance(value, list):
+        return [_drop(v, keys) for v in value]
+    if isinstance(value, dict):
+        return {k: _drop(v, keys) for k, v in value.items() if not keys.fullmatch(k)}
+    return value
+
+
+def prune(result, keys):
+    """The result with each key matching keys removed, in structuredContent and in text content that is JSON."""
+    if not keys or not isinstance(result, dict):
+        return result
+    out = dict(result)
+    if "structuredContent" in out:
+        out["structuredContent"] = _drop(out["structuredContent"], keys)
+    items = []
+    for c in out.get("content") or []:
+        if isinstance(c, dict) and c.get("type") == "text":
+            try:
+                c = dict(c, text=json.dumps(_drop(json.loads(c["text"]), keys), separators=(",", ":")))
+            except (ValueError, TypeError):
+                pass
+        items.append(c)
+    if "content" in out:
+        out["content"] = items
+    return out
+
+
+def capped(result, limit, hint):
+    """The result, or an error when it is over limit bytes (0: no limit)."""
+    size = len(json.dumps(result))
+    if not limit or size <= limit:
+        return result
+    return tool_error("the answer is %d KB, over this connector's %d KB limit. %s" % (size // 1024, limit // 1024, hint))
+
+
 def withheld(result, patterns):
     """True when any text of the result matches a deny_result pattern."""
     if not patterns:
@@ -351,6 +391,11 @@ class Upstream:
             re.compile(p)
         self.redact = [(re.compile(p), r) for p, r in spec.get("redact") or []]
         self.redact_keys = re.compile(spec["redact_keys"]) if spec.get("redact_keys") else None
+        self.prune_keys = re.compile(spec["prune_keys"]) if spec.get("prune_keys") else None
+        # Facts the agent needs that do not belong in a public repo (ArgoCD's app names).
+        self.note = (spec.get("tool_note") or "").strip()
+        self.max_result = int(spec.get("max_result_bytes") or 0)
+        self.max_hint = spec.get("max_result_hint") or "Ask for less."
         self.session, self.protocol, self.next_id = None, None, 0
         self.tools, self.tools_at = None, 0
         self.lock = threading.Lock()
@@ -497,7 +542,8 @@ def list_tools(rec):
             continue
         for name, t in sorted(found.items()):
             tools.append({**t, "name": c + SEP + name,
-                          "description": "[%s, read-only] %s" % (c, t.get("description", ""))})
+                          "description": "[%s, read-only] %s%s" % (c, UPSTREAMS[c].note + " " if UPSTREAMS[c].note else "",
+                                                                    t.get("description", ""))})
     return tools
 
 
@@ -542,7 +588,7 @@ def call_tool(tok, rec, params):
                ": %s__%s %s" % (conn, tool, json.dumps(args, sort_keys=True)[:200]))
         return tool_error("the answer was withheld by policy")
     audit(run, conn, tool, "ok", ms, size, args)
-    return scrub(result, up.redact, up.redact_keys)
+    return capped(scrub(prune(result, up.prune_keys), up.redact, up.redact_keys), up.max_result, up.max_hint)
 
 
 def handle(tok, rec, msg):

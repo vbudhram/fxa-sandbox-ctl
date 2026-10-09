@@ -73,11 +73,15 @@
       "redact_keys": "(?i)email|ip|ip_address|(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization"
     },
     "argocd": {
-      "url": "https://webservices.argocd.mcp.mozilla.cloud/mcp",
-      "oauth_issuer": "https://webservices.argocd.mcp.mozilla.cloud",
+      "url": "https://YOUR_ARGOCD_MCP_HOST/mcp",
+      "oauth_issuer": "https://YOUR_ARGOCD_MCP_HOST",
       "oauth_callback_port": 9382,
       "headers": { "Authorization": "Bearer ${RUNLAYER_OAUTH_TOKEN}" },
       "tools": ["search_operations", "execute_operation"],
+      "tool_note": "Apps: YOUR_APP_NAMES.",
+      "prune_keys": "managedFields|notified\\.notifications\\.argoproj\\.io|kubectl\\.kubernetes\\.io/last-applied-configuration|normalizedLiveState|predictedLiveState|syncResult|resourceVersion|uid|creationTimestamp|generation",
+      "max_result_bytes": 122880,
+      "max_result_hint": "Ask for less: the app itself, its /events, one resource with /resource?namespace=...&resourceName=...&kind=...&group=...&version=..., or pod logs with tailLines. Not /resource-tree or /managed-resources of a whole app.",
       "rules": [
         { "tool": "execute_operation", "arg": "method", "set": "GET" },
         { "tool": "execute_operation", "arg": "body", "drop": true },

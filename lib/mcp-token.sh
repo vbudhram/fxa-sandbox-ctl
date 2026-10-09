@@ -56,6 +56,8 @@ _MCP_LAUNCH_SNIPPET='FXA_MCP_CONFIG=""
 if [ -n "${FXA_MCP_URL:-}" ] && [ -n "${FXA_MCP_TOKEN:-}" ]; then
   FXA_MCP_CONFIG=/home/agent/.fxa-mcp.json
   ( umask 077; printf "{\"mcpServers\":{\"fxa\":{\"type\":\"http\",\"url\":\"%s\",\"headers\":{\"Authorization\":\"Bearer %s\"}}}}\n" "$FXA_MCP_URL" "$FXA_MCP_TOKEN" > "$FXA_MCP_CONFIG" )
+  # The gateway caps each answer (max_result_bytes); an answer under the cap arrives whole.
+  export MAX_MCP_OUTPUT_TOKENS=40000
 fi'
 # --strict-mcp-config: the gateway is the only MCP server the agent gets.
 _MCP_CLAUDE_FLAGS=' ${FXA_MCP_CONFIG:+--mcp-config "$FXA_MCP_CONFIG" --strict-mcp-config}'

@@ -158,7 +158,7 @@ class GatewayTest(unittest.TestCase):
         base = "http://127.0.0.1:%d" % up.server_port
         auth = {"Authorization": "Bearer ${RUNLAYER_AGENT_TOKEN}"}
         conf = {"connectors": {
-            "jira": {"url": base + "/jira", "headers": auth, "tools": ["read_issue", "search"],
+            "jira": {"url": base + "/jira", "headers": auth, "tools": ["read_issue", "search"], "tool_note": "Projects: FXA.",
                      "rules": [{"tool": "search", "arg": "jql", "jql_project": "FXA", "exclude_labels": ["HackerOne", "security"]},
                                {"arg": "fields", "include": ["security", "labels"], "deny": ["issuelinks"], "default": ["summary"]}],
                      "deny_result": ["\"security\"\\s*:\\s*\\{", "(?i)\"labels\"\\s*:\\s*\\[[^\\]]*\"(HackerOne|security)\""]},
@@ -241,6 +241,8 @@ class GatewayTest(unittest.TestCase):
     def test_tools_list_is_the_granted_allowlist_only(self):
         names = [t["name"] for t in self.rpc(self.token("b", ["jira"]), "tools/list")[1]["result"]["tools"]]
         self.assertEqual(names, ["jira__read_issue", "jira__search"])  # no write_issue, no github
+        desc = self.rpc(self.token("bn", ["jira"]), "tools/list")[1]["result"]["tools"][0]["description"]
+        self.assertTrue(desc.startswith("[jira, read-only] Projects: FXA. "), desc)  # the private note leads
         names = [t["name"] for t in self.rpc(self.token("c"), "tools/list")[1]["result"]["tools"]]
         self.assertNotIn("slack__read_issue", names)  # its credential is unset, so the connector is off
 
@@ -395,6 +397,35 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual([l["outcome"] for l in mine], ["denied:tool", "ok"])
 
 
+class Trim(unittest.TestCase):
+    """prune_keys and max_result_bytes: the same answer is cut the same way every time."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, HERE)
+        import gateway
+        cls.g = gateway
+
+    def test_pruned_keys_go_at_any_depth_and_the_rest_stays(self):
+        body = {"status": 200, "body": {"metadata": {"name": "fxa", "managedFields": [{"x": 1}],
+                "annotations": {"kubectl.kubernetes.io/last-applied-configuration": "{...}", "team": "fxa"}},
+                "items": [{"liveState": "a", "normalizedLiveState": "a"}]}}
+        result = {"content": [{"type": "text", "text": json.dumps(body)}, {"type": "text", "text": "not json"}]}
+        keys = re.compile("managedFields|kubectl\\.kubernetes\\.io/last-applied-configuration|normalizedLiveState")
+        out = self.g.prune(result, keys)
+        self.assertEqual(json.loads(out["content"][0]["text"]), {"status": 200, "body": {"metadata": {"name": "fxa",
+                         "annotations": {"team": "fxa"}}, "items": [{"liveState": "a"}]}})
+        self.assertEqual(out["content"][1]["text"], "not json")
+
+    def test_an_answer_over_the_limit_becomes_an_error_with_the_hint(self):
+        big = {"content": [{"type": "text", "text": "x" * 5000}]}
+        out = self.g.capped(big, 1000, "Ask for one resource.")
+        self.assertTrue(out["isError"])
+        self.assertIn("Ask for one resource.", out["content"][0]["text"])
+        self.assertIs(self.g.capped(big, 0, ""), big)
+        self.assertIs(self.g.capped(big, 10000, ""), big)
+
+
 class ArgoRules(unittest.TestCase):
     """The ArgoCD connector's rules from connectors.example.json: reads of FxA apps only."""
 
@@ -410,11 +441,11 @@ class ArgoRules(unittest.TestCase):
         return self.g.apply_rules(self.rules, "execute_operation", self.schema, args)
 
     def test_a_read_of_an_fxa_app_passes_as_a_get_with_no_body(self):
-        out = self.run_rules({"method": "POST", "path": "/api/v1/applications/fxa-stage-us-west1-fxa/sync", "body": "{}"})
+        out = self.run_rules({"method": "POST", "path": "/api/v1/applications/fxa-example-app/sync", "body": "{}"})
         self.assertEqual((out["method"], "body" in out), ("GET", False))
 
     def test_a_refresh_is_refused_and_other_query_params_pass(self):
-        path = "/api/v1/applications/fxa-stage-us-west1-fxa"
+        path = "/api/v1/applications/fxa-example-app"
         for q in ('{"refresh":"hard"}', '{"Refresh": "normal"}'):
             with self.assertRaises(self.g.Denied, msg=q):
                 self.run_rules({"method": "GET", "path": path, "query_params": q})
@@ -422,8 +453,8 @@ class ArgoRules(unittest.TestCase):
         self.assertNotIn("query_params", self.run_rules({"method": "GET", "path": path}))
 
     def test_other_apps_a_list_and_a_climb_out_are_refused(self):
-        for path in ("/api/v1/applications/monitor-prod-us-west1-monitor-www", "/api/v1/applications",
-                     "/api/v1/applications/fxa-stage-us-west1-fxa/../../clusters", "/api/v1/clusters", None):
+        for path in ("/api/v1/applications/other-example-app", "/api/v1/applications",
+                     "/api/v1/applications/fxa-example-app/../../clusters", "/api/v1/clusters", None):
             with self.assertRaises(self.g.Denied, msg=path):
                 self.run_rules({"method": "GET", "path": path})
 

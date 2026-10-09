@@ -65,11 +65,22 @@ Chat sessions do not have it; do not report that it is missing.
   `grafana__query_prometheus`, among others. It is read-only. The FxA datasources
   are Google Managed Prometheus: quote a metric name that has `/` or `.`, and do
   not use a regex on `__name__`.
-  ArgoCD (webservices) is readable with `argocd__search_operations` (find an
-  endpoint) and `argocd__execute_operation` (call it). Every call is a GET, and
-  only paths under `/api/v1/applications/fxa-<app>` pass, for example
-  `fxa-stage-us-west1-fxa`. There is no list of apps: name one. Its pod logs can
-  hold user data: use them in the Slack reply, never in the PR.
+  ArgoCD is readable with `argocd__execute_operation`: `method` GET, a `path`
+  under `/api/v1/applications/<app>`, and optional `query_params` as a JSON
+  string. The tool description names the apps; there is no list call. Every
+  call is a GET, and an answer over the gateway's limit comes back as an error
+  that says what to ask for. Use `argocd__search_operations` only for an
+  endpoint that is not below. Pod logs can hold user data: use them in the
+  Slack reply, never in the PR.
+  - Deployed version, health, sync, last sync: the app itself. Read
+    `status.summary.images`, `status.health`, `status.sync`, `status.operationState`
+    and `status.conditions`.
+  - Why it is unhealthy: the app's `status.resources` entries whose health is not
+    Healthy, then `<app>/events`.
+  - One resource's live manifest: `<app>/resource` with `query_params`
+    `{"namespace":…,"resourceName":…,"kind":…,"group":…,"version":…}`.
+  - Pod logs: `<app>/pods/<pod>/logs` with `{"container":…,"tailLines":"200"}`.
+  - Never `<app>/resource-tree` or `<app>/managed-resources`: they are megabytes.
 - **Files from the thread:** a message that says "Attached from the thread" names files in
   `/workspace/.fxa-inbox/`. Open each one before you answer. Read images and PDFs with
   the Read tool. For a video, take frames with
