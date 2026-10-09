@@ -162,5 +162,8 @@ desk() { ( worktree_branch_for() { echo b; }; session_live() { :; }; vm_is_runni
 check "monitor's desktop opens Monitor" "page=http://localhost:6060/" "$(desk monitor)"
 check "fxa's desktop gets no page, so the script opens :3030" "page=" "$(desk fxa)"
 
+# A boot.sh runs as root beside the agent: its markers must be where the agent cannot plant a link.
+check "every boot.sh writes its markers outside the agent's home" "" \
+  "$(grep -HE '^[A-Z ]*(READY|FAIL)=' "$root"/profiles/*/boot.sh | grep -oE '(READY|FAIL)=[^ ]+' | grep -v '=/run/' || true)"
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

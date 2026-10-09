@@ -3,11 +3,12 @@
 # runs it once as root on the runner, detached, after the egress firewall and before
 # the agent edits anything. Steps from the spike (ai/docs/004); each one is skipped
 # when its result is already there. Repo code runs only as agent, behind the firewall.
-# Log: /var/log/profile-boot.log. Done: /home/agent/.profile-ready, or .profile-failed.
+# Log: /var/log/profile-boot.log. Done: /run/fxa-profile/ready, or failed.
 set -uo pipefail
 M=/home/agent/monitor N=/opt/node20 S=/home/agent/.monitor-oauth
-READY=/home/agent/.profile-ready FAIL=/home/agent/.profile-failed
-rm -f "$READY" "$FAIL"
+# Root writes the markers where the agent cannot plant a link: it runs beside this script.
+R=/run/fxa-profile READY=/run/fxa-profile/ready FAIL=/run/fxa-profile/failed
+install -d -m 755 -o root -g root "$R"; rm -f "$READY" "$FAIL"
 step() { echo "$(date -u +%T) $*"; }
 die() { step "FAILED: $*"; echo "$*" > "$FAIL"; chmod 644 "$FAIL"; exit 1; }
 as_agent() { sudo -u agent -H bash -c "cd $M && export PATH=$N/bin:\$PATH && $1" < /dev/null; }

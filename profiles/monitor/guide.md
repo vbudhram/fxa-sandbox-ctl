@@ -6,8 +6,8 @@ This session works on Mozilla Monitor (`mozilla/blurts-server`), a Next.js app. 
 
 The host sets Monitor up in the background when the session starts. It takes about 2 minutes.
 
-- Before you run anything, check that `/home/agent/.profile-ready` exists. If it does not, wait, and read the progress in `/var/log/profile-boot.log`.
-- If `/home/agent/.profile-failed` exists, it says what failed. Tell the person, and do not try to install things yourself.
+- Before you run anything, check that `/run/fxa-profile/ready` exists. If it does not, wait, and read the progress in `/var/log/profile-boot.log`.
+- If `/run/fxa-profile/failed` exists, it says what failed. Tell the person, and do not try to install things yourself.
 
 ## Commands
 
