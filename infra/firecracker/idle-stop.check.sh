@@ -21,12 +21,22 @@ run; check "idle 31 min during a refresh: still up" "no" "$([ -e "$tmp/off" ] &&
 touch -d "@$(( $(date +%s) - 1900 ))" "$tmp/fc/run/last-busy"; printf '#!/bin/sh\nexit 3\n' > "$tmp/bin/systemctl"
 run; check "idle 31 min: powers off" "yes" "$([ -e "$tmp/off" ] && echo yes || echo no)"
 # A dev slot idle 31 min is stopped; a fresh one and a session slot stay.
-printf '#!/bin/sh\nexit 3\n' > "$tmp/bin/systemctl"; printf '#!/bin/sh\necho "$*" >> %s/fccalls\n' "$tmp" > "$tmp/bin/fc"; chmod +x "$tmp/bin/fc"
+printf '#!/bin/sh\nexit 3\n' > "$tmp/bin/systemctl"; printf '#!/bin/sh\n[ "$1" = list ] && exit 0\necho "$*" >> %s/fccalls\n' "$tmp" > "$tmp/bin/fc"; chmod +x "$tmp/bin/fc"
 mkdir -p "$tmp/fc/slots/1" "$tmp/fc/slots/2" "$tmp/fc/slots/3"
 printf 'agent-dev-monitor\t-\t0\n' > "$tmp/fc/slots/1/meta"; touch -d "@$(( $(date +%s) - 1900 ))" "$tmp/fc/slots/1/meta"
 printf 'agent-dev-fxa\t-\t0\n' > "$tmp/fc/slots/2/meta"
 printf 'agent-agent-1a2b3c\t-\t0\n' > "$tmp/fc/slots/3/meta"; touch -d "@$(( $(date +%s) - 9000 ))" "$tmp/fc/slots/3/meta"
 FC_CMD="$tmp/bin/fc" run; check "only the idle dev slot is stopped" "stop 1" "$(cat "$tmp/fccalls" 2>/dev/null)"
+# A slot whose guest stops answering ssh is stopped after FC_DEAD_MIN; one that answers, or is new, stays.
+rm -f "$tmp/fccalls"; rm -rf "$tmp/fc/slots"; mkdir -p "$tmp/fc/slots/1" "$tmp/fc/slots/2" "$tmp/fc/slots/3"
+for n in 1 2 3; do printf 'agent-agent-%s\t-\t0\n' "$n" > "$tmp/fc/slots/$n/meta"; done
+printf '#!/bin/sh\n[ "$1" = list ] && printf "1\\tagent-agent-1\\t10.0.0.1\\t900\\n2\\tagent-agent-2\\t10.0.0.2\\t900\\n3\\tagent-agent-3\\t10.0.0.3\\t30\\n" && exit 0\necho "$*" >> %s/fccalls\n' "$tmp" > "$tmp/bin/fc"
+printf '#!/bin/sh\n[ "$1" = 10.0.0.2 ]\n' > "$tmp/bin/probe"; chmod +x "$tmp/bin/probe"
+FC_CMD="$tmp/bin/fc" FC_PROBE="$tmp/bin/probe" run
+check "a guest that stops answering is marked, not stopped at once" "|yes" "$(cat "$tmp/fccalls" 2>/dev/null)|$([ -f "$tmp/fc/slots/1/dead-since" ] && echo yes)"
+touch -d "@$(( $(date +%s) - 700 ))" "$tmp/fc/slots/1/dead-since"
+FC_CMD="$tmp/bin/fc" FC_PROBE="$tmp/bin/probe" run
+check "silent for 10 min: stopped; the live and the new slot stay" "stop 1" "$(cat "$tmp/fccalls" 2>/dev/null)"
 # Power-off and a claim are serialized: the power-off leaves a marker that claim refuses.
 rm -rf "$tmp/fc/slots"; touch -d "@$(( $(date +%s) - 1900 ))" "$tmp/fc/run/last-busy"; rm -f "$tmp/offmark"
 FC_OFF_MARK="$tmp/offmark" run; check "a power-off leaves the marker" "yes|yes" "$([ -e "$tmp/off" ] && echo yes)|$([ -e "$tmp/offmark" ] && echo yes)"

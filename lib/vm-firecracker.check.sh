@@ -41,10 +41,17 @@ touch "$LOG_DIR/agent-a2.zone"
 check "a runner already on GCE stays there" "gce-vm_clone" "$(UP=1 vm_clone agent-a2 2>/dev/null)"
 
 # A stop when the host has stopped itself: its slots are gone, so the stop succeeds.
-vm_name() { echo "$1"; }; _gce_ssh_forget() { :; }
+vm_name() { echo "$1"; }; _gce_ssh_forget() { :; }; _gce() { echo TERMINATED; }
 _fc() { echo "fc $*" >> "$tmp/fc-calls"; return 1; }
 check "host down: the stop succeeds and asks the host nothing" "0|0" \
   "$(UP=0; (set -e; vm_stop agent-a1 >/dev/null); echo "$?|$( [ -f "$tmp/fc-calls" ] && wc -l < "$tmp/fc-calls" | tr -d ' ' || echo 0)")"
 _fc() { case "$1" in list) printf '3\tagent-a1\tx\ty\n' ;; *) echo "fc $*" >> "$tmp/fc-calls" ;; esac; }
 check "host up: the slot is stopped" "fc stop 3" "$(UP=1 vm_stop agent-a1 >/dev/null; cat "$tmp/fc-calls")"
+# A slot that cannot be stopped is an error, not a quiet skip: it keeps the host up.
+_fc() { case "$1" in list) printf '3\tagent-a1\tx\ty\n' ;; *) return 1 ;; esac; }
+check "the host refuses the stop: the stop fails" "1" "$(UP=1 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
+_fc() { return 1; }
+check "the host answers but cannot list: the stop fails" "1" "$(UP=1 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
+_gce() { echo RUNNING; }
+check "the probe misses but GCE says the host runs: the stop fails" "1" "$(UP=0 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

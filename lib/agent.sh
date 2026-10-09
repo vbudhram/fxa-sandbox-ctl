@@ -1249,12 +1249,15 @@ agent_stop() {
   vm_exec "$name" sudo -u agent screen -S "${VM_SCREEN_SESSION}" -X quit 2>/dev/null || true
   sleep 2
 
-  vm_stop "$name"
-  vm_delete "$name"
+  # The delete decides: on Firecracker it retries a stop that failed, and its error reaches session_stop.
+  local rc=0
+  vm_stop "$name" || true
+  vm_delete "$name" || rc=$?
   rm -rf "${LOG_DIR}/ssh/${name}" "${LOG_DIR}/profiles/${name}"
   rm -f "${LOG_DIR}/${name}.meta"
 
-  echo "Agent '${name}' stopped and cleaned up."
+  [ "$rc" -eq 0 ] && echo "Agent '${name}' stopped and cleaned up."
+  return "$rc"
 }
 
 agent_browser() {

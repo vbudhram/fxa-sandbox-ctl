@@ -18,6 +18,19 @@ for m in "$FC"/slots/*/meta; do
     ${FC_CMD:-/usr/local/sbin/fc} stop "$(basename "$(dirname "$m")")" || true
   fi
 done
+# A slot whose guest has not answered ssh for FC_DEAD_MIN is stopped: a hung guest that
+# its controller failed to delete would keep the host up for good. Not in its first 2 min.
+probe() { timeout 3 bash -c ": </dev/tcp/$1/22" 2>/dev/null; }
+${FC_CMD:-/usr/local/sbin/fc} list | while IFS=$'\t' read -r n label ip age; do
+  [ "$age" -ge 120 ] 2>/dev/null || continue
+  d="$FC/slots/$n"
+  if ${FC_PROBE:-probe} "$ip"; then rm -f "$d/dead-since"; continue; fi
+  [ -f "$d/dead-since" ] || { touch "$d/dead-since"; continue; }
+  if [ $(( now - $(stat -c %Y "$d/dead-since") )) -ge $(( ${FC_DEAD_MIN:-10} * 60 )) ]; then
+    logger -t fc-idle-stop "slot ${n} (${label}) has not answered ssh for ${FC_DEAD_MIN:-10} min; stopping it"
+    ${FC_CMD:-/usr/local/sbin/fc} stop "$n" || true
+  fi
+done
 busy=0
 compgen -G "$FC/slots/*/meta" >/dev/null && busy=1
 # Never during a snapshot refresh: a cut one leaves no snapshot to restore.

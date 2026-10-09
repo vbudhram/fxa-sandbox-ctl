@@ -84,11 +84,20 @@ _fc_vm_clone() {
 _fc_vm_start() { _fc_vm_is_running "$1" || _fc_vm_clone "$1"; }
 _fc_vm_stop() { _fc_vm_delete "$1"; }
 _fc_vm_delete() {
-  local name="$1" n=""
-  # A stopped host has no slots, so there is nothing to stop.
-  _fc_up && n="$(_fc_slot_of "$name")"
-  [ -n "$n" ] && { echo "Stopping slot ${n} ($(vm_name "$name"))..."; _fc stop "$n" >/dev/null; }
+  local name="$1" n="" list rc=0
+  # A stopped host has no slots, so there is nothing to stop. Any other miss is an
+  # error: a slot left behind keeps the host up (fc-idle-stop sees it in use).
+  if _fc_up; then
+    if list="$(_fc list)"; then
+      n="$(printf '%s\n' "$list" | awk -F'\t' -v n="$(vm_name "$name")" '$2 == n { print $1 }')"
+      [ -z "$n" ] || { echo "Stopping slot ${n} ($(vm_name "$name"))..."; _fc stop "$n" >/dev/null; } \
+        || { echo "ERROR: could not stop slot ${n} on ${FXA_FC_HOST}" >&2; rc=1; }
+    else echo "ERROR: could not list the slots on ${FXA_FC_HOST}" >&2; rc=1; fi
+  elif [ "$(_gce compute instances describe "$FXA_FC_INSTANCE" --zone "$FXA_FC_ZONE" --format 'value(status)' 2>/dev/null)" = RUNNING ]; then
+    echo "ERROR: the runner host ${FXA_FC_HOST} runs but did not answer; slot $(vm_name "$name") may be left" >&2; rc=1
+  fi
   rm -f "${LOG_DIR}/${name}.ssh-ok"; _gce_ssh_forget "$name"
+  return "$rc"
 }
 # The GCE list plus the slots, in the same name, status, age form; a slot row
 # adds a fourth column, firecracker.
