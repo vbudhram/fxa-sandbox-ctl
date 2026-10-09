@@ -16,8 +16,9 @@ Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
   {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys"}}}
 Header values expand ${VAR} from the environment, so secrets stay in .env.
 ${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
-MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token}}, which
-oauth-login.py writes.
+MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token},
+clients: {url: {token_endpoint, client_id}}}, which oauth-login.py writes. A URL
+in clients signs in to its own server (ArgoCD); the others use the top-level one.
 
 Tokens: <dir>/tokens/<token>.json  {run, created, expires, connectors, cap_calls, calls}
 written by the controller (lib/mcp-token.sh), updated here. One line per call
@@ -205,6 +206,9 @@ def apply_rules(rules, tool, schema, args):
             # "-labels" would exclude the very field deny_result reads.
             have = [v for v in have if not (isinstance(v, str) and v[1:] in rule["include"] and v.startswith("-"))]
             args[arg] = have + [v for v in rule["include"] if v not in have]
+        elif "match" in rule:
+            if not isinstance(val, str) or not re.fullmatch(rule["match"], val):
+                raise Denied("%s is outside what this connector may read" % arg)
         elif "equals" in rule or "one_of" in rule:
             allowed = [rule["equals"]] if "equals" in rule else rule["one_of"]
             if not isinstance(val, str) or val.lower() not in [a.lower() for a in allowed]:
@@ -284,14 +288,15 @@ class OAuth:
             with open(self.path) as f:
                 st = json.load(f)
             old = st["refresh_tokens"][resource]
+            client = st.get("clients", {}).get(resource, st)
             body = urllib.parse.urlencode({"grant_type": "refresh_token", "refresh_token": old,
-                                           "client_id": st["client_id"], "resource": resource}).encode()
-            req = urllib.request.Request(st["token_endpoint"], body, {"accept": "application/json"})
+                                           "client_id": client["client_id"], "resource": resource}).encode()
+            req = urllib.request.Request(client["token_endpoint"], body, {"accept": "application/json"})
             with urllib.request.urlopen(req, timeout=UPSTREAM_TIMEOUT) as r:
                 doc = json.load(r)
             self.access[resource] = doc["access_token"]
         except urllib.error.HTTPError as e:
-            report("oauth", None, "Runlayer refused the gateway's refresh token; run infra/gce/manager.sh oauth",
+            report("oauth", None, "the OAuth server refused the gateway's refresh token; run infra/gce/manager.sh oauth",
                    " (HTTP %d for %s)" % (e.code, resource))
             raise UpstreamError("oauth: the token endpoint answered HTTP %d; run manager.sh oauth again" % e.code)
         except KeyError:

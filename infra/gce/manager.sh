@@ -3,7 +3,7 @@
 #   bash infra/gce/manager.sh [project] [zone]
 #   bash infra/gce/manager.sh sync [project] [zone]   pull both repos on the VM
 #     after a push from the laptop; restarts only the services already running.
-#   bash infra/gce/manager.sh oauth [project] [zone]  sign the MCP gateway in to
+#   bash infra/gce/manager.sh oauth [project] [zone]  (FXA_OAUTH_ONLY=<connector>: only that one) sign the MCP gateway in to
 #     Runlayer in your browser; the refresh token goes straight to the VM.
 # Sends your Claude setup (CLAUDE.md, settings, hooks, skills) and the .env
 # files without their secrets, then runs manager-setup.sh on the VM as root.
@@ -19,7 +19,12 @@ if [ "$MODE" = oauth ]; then
   # The refresh token stays in this variable and goes straight to the VM.
   j="$(python3 "$ROOT/infra/mcp-gateway/oauth-login.py")"
   [ -n "$j" ] || { echo "ERROR: no sign-in result; the VM keeps its old token." >&2; exit 1; }
-  printf '%s' "$j" | ssh_vm 'sudo install -D -m 600 -o fxa -g fxa /dev/stdin /home/fxa/.config/fxa/mcp-gateway-oauth.json && sudo systemctl restart fxa-mcp-gateway.service'
+  if [ -n "${FXA_OAUTH_ONLY:-}" ]; then
+    # Only some connectors signed in: merge them in, so the others keep their sign-in.
+    printf '%s' "$j" | ssh_vm 'f=/home/fxa/.config/fxa/mcp-gateway-oauth.json; n=$(mktemp) && cat > "$n" && sudo -u fxa test -s "$f" && sudo jq -s ".[0] * .[1]" "$f" "$n" | sudo install -m 600 -o fxa -g fxa /dev/stdin "$f.new" && sudo mv "$f.new" "$f"; rc=$?; rm -f "$n"; [ $rc = 0 ] && sudo systemctl restart fxa-mcp-gateway.service'
+  else
+    printf '%s' "$j" | ssh_vm 'sudo install -D -m 600 -o fxa -g fxa /dev/stdin /home/fxa/.config/fxa/mcp-gateway-oauth.json && sudo systemctl restart fxa-mcp-gateway.service'
+  fi
   echo "gateway signed in; the VM renews its access token from now on"
   exit 0
 fi

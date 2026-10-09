@@ -65,6 +65,11 @@ Chat sessions do not have it; do not report that it is missing.
   `grafana__query_prometheus`, among others. It is read-only. The FxA datasources
   are Google Managed Prometheus: quote a metric name that has `/` or `.`, and do
   not use a regex on `__name__`.
+  ArgoCD (webservices) is readable with `argocd__search_operations` (find an
+  endpoint) and `argocd__execute_operation` (call it). Every call is a GET, and
+  only paths under `/api/v1/applications/fxa-<app>` pass, for example
+  `fxa-stage-us-west1-fxa`. There is no list of apps: name one. Its pod logs can
+  hold user data: use them in the Slack reply, never in the PR.
 - **Files from the thread:** a message that says "Attached from the thread" names files in
   `/workspace/.fxa-inbox/`. Open each one before you answer. Read images and PDFs with
   the Read tool. For a video, take frames with

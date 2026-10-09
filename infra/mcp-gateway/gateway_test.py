@@ -96,7 +96,7 @@ class Upstream(http.server.BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers["content-length"]))
         if self.path == "/token":
             form = urllib.parse.parse_qs(body.decode())
-            if (form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]]
+            if (form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]] or form.get("client_id") != ["c2"]
                     or not form.get("resource", [""])[0].endswith("/oauth")):
                 return self.send(400, {"error": "invalid_grant"})
             OAUTH["n"] += 1
@@ -172,7 +172,8 @@ class GatewayTest(unittest.TestCase):
         }}
         cls.oauth = os.path.join(cls.dir, "oauth.json")
         with open(cls.oauth, "w") as f:
-            json.dump({"token_endpoint": base + "/token", "client_id": "c1", "refresh_tokens": {base + "/oauth": "rt-0"}}, f)
+            json.dump({"token_endpoint": base + "/no-token", "client_id": "c1", "refresh_tokens": {base + "/oauth": "rt-0"},
+                       "clients": {base + "/oauth": {"token_endpoint": base + "/token", "client_id": "c2"}}}, f)
         cfg = os.path.join(cls.dir, "gateway.json")
         with open(cfg, "w") as f:
             json.dump(conf, f)
@@ -392,6 +393,31 @@ class GatewayTest(unittest.TestCase):
         with open(os.path.join(self.dir, "calls.jsonl")) as f:
             mine = [json.loads(l) for l in f if '"run": "n"' in l]
         self.assertEqual([l["outcome"] for l in mine], ["denied:tool", "ok"])
+
+
+class ArgoRules(unittest.TestCase):
+    """The ArgoCD connector's rules from connectors.example.json: reads of FxA apps only."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, HERE)
+        import gateway
+        cls.g = gateway
+        cls.rules = json.load(open(os.path.join(HERE, "connectors.example.json")))["connectors"]["argocd"]["rules"]
+        cls.schema = {"properties": {"method": {}, "path": {}, "query_params": {}, "body": {}}}
+
+    def run_rules(self, args):
+        return self.g.apply_rules(self.rules, "execute_operation", self.schema, args)
+
+    def test_a_read_of_an_fxa_app_passes_as_a_get_with_no_body(self):
+        out = self.run_rules({"method": "POST", "path": "/api/v1/applications/fxa-stage-us-west1-fxa/sync", "body": "{}"})
+        self.assertEqual((out["method"], "body" in out), ("GET", False))
+
+    def test_other_apps_a_list_and_a_climb_out_are_refused(self):
+        for path in ("/api/v1/applications/monitor-prod-us-west1-monitor-www", "/api/v1/applications",
+                     "/api/v1/applications/fxa-stage-us-west1-fxa/../../clusters", "/api/v1/clusters", None):
+            with self.assertRaises(self.g.Denied, msg=path):
+                self.run_rules({"method": "GET", "path": path})
 
 
 if __name__ == "__main__":
