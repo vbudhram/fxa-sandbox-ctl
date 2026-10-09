@@ -75,6 +75,7 @@ COMMANDS:
   test <name> [-- args]        Run Playwright functional tests against an agent's VM
   ssh <name>                   Print SSH connection info for an agent's VM
   exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
+  profile show                 The loaded profile's repos and write access, as JSON (pick one with --pipeline)
   devslot up|down|reset <profile> | run <profile> '<cmd>' | sync <profile> <dir> < tar.gz | list
                                A warm Firecracker slot for building a profile (needs FXA_FC_HOST)
   list                         List all agents and their status
@@ -2509,6 +2510,7 @@ main() {
     ssh)        cmd_ssh "$@" ;;
     exec)       cmd_exec "$@" ;;
     devslot)    cmd_devslot "$@" ;;
+    profile)    [ "${1:-}" = show ] && pipeline_profile_json || { echo "usage: fxa-sandbox-ctl --pipeline <profile> profile show" >&2; return 1; } ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

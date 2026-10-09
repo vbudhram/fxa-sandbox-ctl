@@ -66,5 +66,20 @@ check "a workspace or slug that is not plain is refused" "1|1" \
 check "the monitor profile works in its own clone, with FxA's stack beside it" "PIPE_STACK_DIR=/home/agent/fxa|PIPE_WORKSPACE=/home/agent/monitor" \
   "$(loaded "$root" monitor | grep -E '^PIPE_(STACK_DIR|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
+# profile show: each repo's effective access, from the profile and the GitHub App.
+eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p' "$root/lib/pipeline.sh")"
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+PIPE_STATE_DIR="$tmp/ps"; mkdir -p "$PIPE_STATE_DIR"
+gh() { echo "call" >> "$tmp/ghcalls"; printf '%s\n' mozilla/fxa; }
+pj() { PIPE_PROFILE="$1" PIPE_REPO_SLUG="$2" PIPE_DEP_REPOS="$3" PIPE_PR_OPEN="$4" pipeline_profile_json | jq -c '[.read_only, (.repos[] | "\(.slug):\(.role):\(.write)")]'; }
+check "fxa can write to its repo" '[false,"mozilla/fxa:work:true"]' "$(pj fxa mozilla/fxa '' 1)"
+check "a read-only profile writes nowhere, deps included" '[true,"mozilla/blurts-server:work:false","mozilla/fxa:dep:false"]' "$(pj monitor mozilla/blurts-server mozilla/fxa 0)"
+check "no App on the work repo: no write" '"the agent'"'"'s GitHub App is not installed on this repo"' \
+  "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/other PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
+check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR/app-repos.txt"; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"
+gh() { return 1; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
+check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
+unset -f gh
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"
