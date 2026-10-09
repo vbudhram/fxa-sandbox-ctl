@@ -8,6 +8,7 @@
 #   fc stop <slot>            kill the slot's VM and drop its disk
 #   fc list                   slot, label, ip, age
 #   fc ssh <slot> [cmd]       ssh into a slot's guest as fxa
+#   fc touch <slot>           mark a slot used now (a dev slot's idle stop counts from it)
 # Every guest has the same inside address (172.16.0.2, it is in the snapshot's
 # memory); each slot has its own network namespace that maps it to a routable
 # 10.42.16.(10+slot), which the VPC routes to this host.
@@ -195,6 +196,7 @@ case "${1:-}" in
   claim) cmd_claim "${2:?label}" ;;
   stop) cmd_stop "${2:?slot}" ;;
   list) cmd_list ;;
+  touch) [[ "${2:?slot}" =~ ^[0-9]+$ ]] && [ -f "$FC/slots/$2/meta" ] && touch "$FC/slots/$2/meta" ;;
   ssh) n="${2:?slot}"; shift 2; exec ssh "${SSHO[@]}" -o ConnectTimeout=10 "fxa@$(slot_ip "$n")" "$@" ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;
 esac

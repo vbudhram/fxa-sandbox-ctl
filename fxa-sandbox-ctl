@@ -50,6 +50,7 @@ source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
+source "${SCRIPT_DIR}/lib/devslot.sh"
 
 # ── Usage / Help ───────────────────────────────────────────────
 
@@ -74,6 +75,8 @@ COMMANDS:
   test <name> [-- args]        Run Playwright functional tests against an agent's VM
   ssh <name>                   Print SSH connection info for an agent's VM
   exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
+  devslot up|down|reset <profile> | run <profile> '<cmd>' | sync <profile> <dir> < tar.gz | list
+                               A warm Firecracker slot for building a profile (needs FXA_FC_HOST)
   list                         List all agents and their status
   logs <name> [--follow]       View agent logs
   stop <name>                  Stop and remove an agent
@@ -2491,6 +2494,7 @@ main() {
     test)       cmd_test "$@" ;;
     ssh)        cmd_ssh "$@" ;;
     exec)       cmd_exec "$@" ;;
+    devslot)    cmd_devslot "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;
