@@ -34,8 +34,10 @@ check "a second up keeps the warm slot and touches it" "0|fc touch 3" "$(grep -c
 check "sync sends stdin to the guest dir and touches the slot" "put dev-monitor /home/agent/monitor 3|1" "$(grep '^put' "$tmp/calls")|$(grep -c '^fc touch' "$tmp/calls")"
 check "sync needs an absolute dir" "1" "$(printf x | cmd_devslot sync monitor rel >/dev/null 2>&1; echo $?)"
 : > "$tmp/calls"; out="$(cmd_devslot run monitor 'bash ready.sh')"
-check "run executes as agent and reports the exit" "exec dev-monitor bash ready.sh|1" "$(grep '^exec dev-monitor bash' "$tmp/calls")|$(grep -c '^── exit 0 after' <<< "$out")"
-vm_exec_as_agent() { [ "$2" = "free -m" ] && echo "Mem: 16016 7390 100 1 2000 8626"; [ "$2" = fail ] && return 7; return 0; }
+check "run executes as agent and reports the exit" "bash ready.sh|1" "$(grep '^exec dev-monitor echo' "$tmp/calls" | awk '{print $4}' | base64 -d)|$(grep -c '^── exit 0 after' <<< "$out")"
+: > "$tmp/calls"; cmd_devslot run monitor "$(printf 'a "b" $c\nd')" >/dev/null
+check "a multi-line script with quotes arrives intact" 'a "b" $c|d' "$(grep '^exec dev-monitor echo' "$tmp/calls" | awk '{print $4}' | base64 -d | paste -sd'|' -)"
+vm_exec_as_agent() { [ "$2" = "free -m" ] && echo "Mem: 16016 7390 100 1 2000 8626"; [ "$(awk '{print $2}' <<< "$2" | base64 -d 2>/dev/null)" = fail ] && return 7; return 0; }
 check "run reports the memory" "7390 MB used, 8626 MB available" "$(cmd_devslot run monitor true | sed -n 's/.* · //p')"
 check "run passes the command's exit code" "7" "$(cmd_devslot run monitor fail >/dev/null 2>&1; echo $?)"
 : > "$tmp/calls"; cmd_devslot reset monitor >/dev/null

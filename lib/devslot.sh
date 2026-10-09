@@ -39,7 +39,8 @@ cmd_devslot() {
       _fc_vm_exists "$name" || { echo "ERROR: $name is not up; run devslot up first" >&2; return 1; }
       _devslot_touch "$name"
       local t0 rc=0; t0="$(date +%s)"
-      vm_exec_as_agent "$name" "$*" || rc=$?
+      # sudo -i mangles newlines and quotes, so the script travels as base64.
+      vm_exec_as_agent "$name" "echo $(printf '%s\n' "$*" | base64 | tr -d '\n') | base64 -d | bash" || rc=$?
       local mem; mem="$(vm_exec_as_agent "$name" "free -m" 2>/dev/null | awk '/^Mem:/ {print $3 " MB used, " $7 " MB available"}')" || true
       echo "── exit $rc after $(( $(date +%s) - t0 ))s · ${mem:-memory unknown}"
       _devslot_touch "$name"; return "$rc" ;;

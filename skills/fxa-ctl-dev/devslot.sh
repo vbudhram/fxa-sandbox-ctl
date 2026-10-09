@@ -28,7 +28,7 @@ case "$sub" in
       t0=$(date +%s)
       { printf 'base64 -d <<"B64" | %s\n' "$(ctl sync "$p" "$g")"
         ( cd "$l" && { git ls-files -co --exclude-standard 2>/dev/null || find . -type f; } \
-          | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done | COPYFILE_DISABLE=1 tar -czf - -T - ) | base64
+          | while IFS= read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done | COPYFILE_DISABLE=1 tar --no-xattrs -czf - -T - ) | base64
         echo B64; } | bash "$H" run -
       echo "  $l -> $g ($(( $(date +%s) - t0 ))s)"
     done ;;
