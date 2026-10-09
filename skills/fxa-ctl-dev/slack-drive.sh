@@ -30,10 +30,13 @@ replies() { api "$USER_TOKEN" conversations.replies -G --data-urlencode "channel
 show() {
   local me bot; me="$(api "$USER_TOKEN" auth.test | jq -r .user_id)"; bot="$(api "$BOT_TOKEN" auth.test | jq -r .user_id)"
   replies "$1" | jq -r --arg me "$me" --arg bot "$bot" --argjson t0 "${1%%.*}" '
-    def blocktext: [.. | objects | select(.type == "mrkdwn" or .type == "plain_text" or .type == "markdown" or .type == "text") | .text? // empty] | map(select(type == "string")) | unique | join(" / ");
+    def btext: if .type == "rich_text" then [.. | objects | select(.type == "text" or .type == "link" or .type == "emoji") | if .type == "emoji" then ":\(.name):" else (.text // .url) end] | join("")
+      else [.. | objects | select(.type == "mrkdwn" or .type == "plain_text" or .type == "markdown") | .text? // empty | strings] | join(" ") end;
     .messages[] |
     "+\(((.ts | tonumber) - $t0) | floor)s \(if .user == $me then "me" elif (.user == $bot or .bot_id) then "bot" else .user end)\(if .edited then " (edited)" else "" end): \(.text // "" | gsub("\n"; " ⏎ ") | .[0:600])",
-    (if (.text // "") == "" and ((.blocks // []) | length > 0) then "    blocks: \(.blocks | map(select(.type != "actions")) | blocktext | gsub("\n"; " ⏎ ") | .[0:600])" else empty end),
+    # The text of a bot message is a one-line fallback: the reply is in the blocks.
+    (select(.user != $me) | (.text // "" | gsub("[_*`]"; "")) as $t | (.blocks // []) | map(select(.type != "actions") | btext | select(. != "")) | join(" / ")
+      | if . != "" and . != $t then "    blocks: \(gsub("\n"; " ⏎ ") | .[0:1500])" else empty end),
     ((.blocks // []) | map(select(.type == "actions") | .elements[] | "[\(.text.text // .action_id)]") | if length > 0 then "    buttons: \(join(" "))" else empty end),
     ((.reactions // []) | map(":\(.name):") | if length > 0 then "    reactions: \(join(" "))" else empty end)'
 }
