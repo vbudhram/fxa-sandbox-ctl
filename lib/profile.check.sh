@@ -81,5 +81,40 @@ gh() { return 1; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
 check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
 unset -f gh
 
+# PIPE_REPOS: one row per repo (slug path role); the old single values come from it.
+mkdir -p "$tmp/r/profiles/multi" "$tmp/r/profiles/badrole"
+cat > "$tmp/r/profiles/multi/profile.conf" <<'CONF'
+PIPE_REPOS=(
+  "mdn/rari    /home/agent/rari    work"
+  "mdn/content /home/agent/content data"
+  "mdn/fred    /home/agent/fred    ref"
+  "mozilla/fxa /home/agent/fxa     dep"
+)
+CONF
+printf 'PIPE_REPOS=("a/b /home/agent/b work" "c/d /home/agent/d boss")\n' > "$tmp/r/profiles/badrole/profile.conf"
+check "the work row sets the repo and workspace, dep rows the dep list" \
+  "PIPE_DEP_REPOS=mozilla/fxa|PIPE_REPO_SLUG=mdn/rari|PIPE_WORKSPACE=/home/agent/rari" \
+  "$(loaded "$tmp/r" multi | grep -E '^PIPE_(DEP_REPOS|REPO_SLUG|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+check "a row with an unknown role is refused" "1" "$(loaded "$tmp/r" badrole >/dev/null; echo $?)"
+check "fxa sets no repo rows" "" "$(loaded "$root" fxa | grep '^PIPE_REPOS=')"
+
+# Every tree but the work tree is cloned beside it by role, and named in the guide as read-only.
+: > "$tmp/vmx"; ( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data" "mdn/fred /home/agent/fred ref" "mozilla/fxa /home/agent/fxa dep")
+  PIPE_WORKSPACE=/home/agent/rari PIPE_REPO_SLUG=mdn/rari _gce_profile_workspace r1 >/dev/null )
+check "data is a blobless clone, ref a shallow one, and a baked dep is kept" "1|1|1" \
+  "$(grep -c '\[ -d /home/agent/content/.git \] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/mdn/content.git /home/agent/content' "$tmp/vmx")|$(grep -c 'git clone --quiet --depth 1 https://github.com/mdn/fred.git /home/agent/fred' "$tmp/vmx")|$(grep -c '\[ -d /home/agent/fxa/.git \] ||' "$tmp/vmx")"
+eval "$(sed -n '/^_profile_guide_trees() {/,/^}/p' "$root/lib/agent.sh")"
+g="$( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data"); _profile_guide_trees )"
+check "the guide names the work tree and marks the others read-only" "2|1" "$(grep -c '^- `/home/agent/' <<< "$g")|$(grep -c 'content.*read-only' <<< "$g")"
+check "fxa adds nothing to the guide" "" "$(_profile_guide_trees)"
+
+# The manager clones a profile's work repo the first time it needs it.
+eval "$(sed -n '/^pipeline_ensure_clone() {/,/^}/p' "$root/lib/pipeline.sh")"
+git() { echo "git $*" >> "$tmp/gitc"; }
+: > "$tmp/gitc"; PIPE_REPO="$tmp/nope/blurts-server" PIPE_REPO_SLUG=mozilla/blurts-server pipeline_ensure_clone >/dev/null 2>&1
+mkdir -p "$tmp/have/.git"; PIPE_REPO="$tmp/have" PIPE_REPO_SLUG=mozilla/x pipeline_ensure_clone >/dev/null 2>&1
+check "a missing manager clone is made once, an existing one is kept" "git clone --quiet https://github.com/mozilla/blurts-server.git $tmp/nope/blurts-server" "$(cat "$tmp/gitc")"
+unset -f git
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

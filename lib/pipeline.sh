@@ -38,6 +38,21 @@ pipeline_load() {
   # shellcheck disable=SC1090
   source "$conf"
   PIPE_NAME="$name"
+  # PIPE_REPOS: one row per repo, "slug path role", role work, dep, data or ref. The
+  # first work row is the session's repo; the old single values come from the rows.
+  if [ -n "${PIPE_REPOS+x}" ]; then
+    local row slug path role deps=""
+    for row in "${PIPE_REPOS[@]}"; do
+      read -r slug path role <<< "$row"
+      [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$path" =~ ^/home/agent/[a-z0-9-]+$ ]] && [[ "$role" =~ ^(work|dep|data|ref)$ ]] \
+        || { echo "ERROR: profile ${name}: bad repo row '${row}' (slug path role; role is work, dep, data or ref)" >&2; return 1; }
+      case "$role" in
+        work) [ -n "${PIPE_REPO_SLUG:-}" ] || { PIPE_REPO_SLUG="$slug"; PIPE_WORKSPACE="$path"; } ;;
+        dep) deps="${deps:+$deps }$slug" ;;
+      esac
+    done
+    PIPE_DEP_REPOS="${PIPE_DEP_REPOS:-$deps}"
+  fi
   # Defaults for the keys a profile may leave out. FxA sets them all.
   PIPE_PROFILE="${PIPE_PROFILE:-$name}"
   PIPE_BASE_BRANCH="${PIPE_BASE_BRANCH:-main}"
@@ -492,4 +507,13 @@ pipeline_profile_json() {
                        elif ($installed | index($work)) == null then "the agent'"'"'s GitHub App is not installed on this repo"
                        else null end) } | . + { write: (.why == null) }]
               + ($deps | split(" ") | map(select(. != "")) | map({ slug: ., role: "dep", write: false, why: "it runs beside the work repo" }))) }'
+}
+
+# pipeline_ensure_clone   Clone the profile's work repo on this host the first time a
+# session needs it (the manager has only FxA's clone from setup).
+pipeline_ensure_clone() {
+  [ -e "${PIPE_REPO}/.git" ] && return 0
+  [[ "${PIPE_REPO_SLUG:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  echo "Cloning ${PIPE_REPO_SLUG} into ${PIPE_REPO}..." >&2
+  mkdir -p "$(dirname "$PIPE_REPO")" && git clone --quiet "https://github.com/${PIPE_REPO_SLUG}.git" "$PIPE_REPO"
 }

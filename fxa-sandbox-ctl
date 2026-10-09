@@ -1977,6 +1977,7 @@ _cmd_session_boot() {
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   export _FXA_SESSION_MCP="$(session_get "$key" mcp)" # only a session sets this
   runtime_load || { session_set "$key" state failed; return 1; }
+  pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   _retry git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
     || { echo "ERROR: could not fetch origin/main" >&2; session_set "$key" state failed; return 1; }
