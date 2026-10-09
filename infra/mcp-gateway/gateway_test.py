@@ -413,6 +413,14 @@ class ArgoRules(unittest.TestCase):
         out = self.run_rules({"method": "POST", "path": "/api/v1/applications/fxa-stage-us-west1-fxa/sync", "body": "{}"})
         self.assertEqual((out["method"], "body" in out), ("GET", False))
 
+    def test_a_refresh_is_refused_and_other_query_params_pass(self):
+        path = "/api/v1/applications/fxa-stage-us-west1-fxa"
+        for q in ('{"refresh":"hard"}', '{"Refresh": "normal"}'):
+            with self.assertRaises(self.g.Denied, msg=q):
+                self.run_rules({"method": "GET", "path": path, "query_params": q})
+        self.assertEqual(self.run_rules({"method": "GET", "path": path + "/pods/p1/logs", "query_params": '{"tailLines":"50"}'})["query_params"], '{"tailLines":"50"}')
+        self.assertNotIn("query_params", self.run_rules({"method": "GET", "path": path}))
+
     def test_other_apps_a_list_and_a_climb_out_are_refused(self):
         for path in ("/api/v1/applications/monitor-prod-us-west1-monitor-www", "/api/v1/applications",
                      "/api/v1/applications/fxa-stage-us-west1-fxa/../../clusters", "/api/v1/clusters", None):

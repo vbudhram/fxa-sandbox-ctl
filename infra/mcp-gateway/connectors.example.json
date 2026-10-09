@@ -81,7 +81,8 @@
       "rules": [
         { "tool": "execute_operation", "arg": "method", "set": "GET" },
         { "tool": "execute_operation", "arg": "body", "drop": true },
-        { "tool": "execute_operation", "arg": "path", "match": "/api/v1/applications/fxa-[a-z0-9-]+(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*" }
+        { "tool": "execute_operation", "arg": "path", "match": "/api/v1/applications/fxa-[a-z0-9-]+(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*" },
+        { "tool": "execute_operation", "arg": "query_params", "optional": true, "match": "(?is)(?!.*refresh).*" }
       ],
       "redact": [["(?i)(\"(?:(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization)\"\\s*:\\s*)\"[^\"]*\"", "\\1\"[redacted]\""], ["(?i)(\"(?:cookie|set-cookie|authorization)\"\\s*,\\s*)\"[^\"]*\"", "\\1\"[redacted]\""], ["(?im)^(\\s*(?:set-cookie|cookie|authorization)):[ \\t]*\\S.*$", "\\1: [redacted]"], ["(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}", "[email]"], ["\\beyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+", "[jwt]"], ["(?i)\\b(Bearer|Basic|Hawk)\\s+\\S{8,}", "\\1 [redacted]"], ["(?i)([?&;](?:email|login_hint|[\\w]*token|code|state|password|key\\w*)=)[^&\\s\\\"'#)\\]]+", "\\1[redacted]"], ["(?<![\\w+])\\+\\d{8,15}\\b", "[phone]"], ["(?<![\\d.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?![\\d.])", "[ip]"], ["(?i)(?<![\\w:])(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(?![\\w:])", "[ip]"], ["(?i)(?<![\\w:])(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,5})?(?![\\w:])", "[ip]"], ["(?i)\\b[0-9a-f]{64}\\b", "[token]"]],
       "redact_keys": "(?i)email|ip|ip_address|(?:client-)?ja[34][\\w-]*|[\\w-]*ohfp|h2fp|cookie|set-cookie|authorization"

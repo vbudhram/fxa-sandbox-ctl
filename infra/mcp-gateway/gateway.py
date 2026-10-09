@@ -207,6 +207,8 @@ def apply_rules(rules, tool, schema, args):
             have = [v for v in have if not (isinstance(v, str) and v[1:] in rule["include"] and v.startswith("-"))]
             args[arg] = have + [v for v in rule["include"] if v not in have]
         elif "match" in rule:
+            if val is None and rule.get("optional"):
+                continue
             if not isinstance(val, str) or not re.fullmatch(rule["match"], val):
                 raise Denied("%s is outside what this connector may read" % arg)
         elif "equals" in rule or "one_of" in rule:
