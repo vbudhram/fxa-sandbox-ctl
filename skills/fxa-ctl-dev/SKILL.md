@@ -92,6 +92,7 @@ to run with `!` instead of trying it first:
 |---|---|
 | A runner prompt, a subagent, a skill | `skills/fxa-ctl-dev/agent-try.sh "<request>"`: on the laptop, about 20 s; no stack |
 | Anything a runner does | `fxa-sandbox-ctl session try --prompt "<request>"` on the manager: a real runner, no Slack |
+| A profile's guest scripts (provision, boot, ready) | `FXA_FC_HOST=<host> skills/fxa-ctl-dev/devslot.sh up <profile>`, then `sync <profile> <guest dir>=<local dir>`, `run <profile> - < script.sh`, `reset`, `down`: a warm Firecracker slot. About 7 s for each run or reset, 17 s to sync 24 MB. The host stops an unused dev slot after 30 min |
 | The bot, or the whole path from Slack | the dev bot, below |
 
 The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` copies
