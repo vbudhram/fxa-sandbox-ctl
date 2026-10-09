@@ -2400,7 +2400,9 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
     printf '%s\n' "$chk" >&2
     [ "$crc" = 1 ] && { _session_finish_fail "$key" "$(grep -m1 '^handoff check:' <<<"$chk")" "$mode"; return 1; }
   fi
-  local dirty; dirty="$(_session_dirty_trees "$name" | tr '\n' ' ')" || dirty=""
+  # Fail closed: a check that could not reach the runner must not read as "no changes".
+  local dirty; dirty="$(_session_dirty_trees "$name" | tr '\n' ' ')" \
+    || { _session_finish_fail "$key" "could not check the read-only repos for changes; try again" "$mode"; return 1; }
   if [ -n "${dirty// /}" ]; then
     _session_finish_fail "$key" "these read-only repos have changes, and only the work repo is shipped: ${dirty% }. Move the change to the work repo, or undo it, then try again" "$mode"; return 1
   fi
