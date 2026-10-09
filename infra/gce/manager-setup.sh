@@ -78,11 +78,14 @@ RC
 '
 
 # gh acts as the fxa-agent GitHub App: a fresh installation token each call
-# (the controller caches it for 50 minutes).
+# (the controller caches it for 50 minutes). A caller's GH_TOKEN wins: finish mints
+# one for the session's own repo, and a token is limited to one repo.
 cat > "$H/bin/gh" <<'GH'
 #!/bin/bash
-GH_TOKEN="$(cd ~/Desktop/working2/fxa-sandbox-ctl 2>/dev/null && ./fxa-sandbox-ctl app-token 2>/dev/null)"
-[ -n "$GH_TOKEN" ] && export GH_TOKEN
+if [ -z "${GH_TOKEN:-}" ]; then
+  GH_TOKEN="$(cd ~/Desktop/working2/fxa-sandbox-ctl 2>/dev/null && ./fxa-sandbox-ctl ${FXA_PIPELINE:+--pipeline "$FXA_PIPELINE"} app-token 2>/dev/null)"
+  [ -n "$GH_TOKEN" ] && export GH_TOKEN
+fi
 exec /usr/bin/gh "$@"
 GH
 chown "$U:$U" "$H/bin/gh"; chmod 755 "$H/bin/gh"
