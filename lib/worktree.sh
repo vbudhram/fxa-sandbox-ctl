@@ -234,6 +234,16 @@ worktree_release_branch() {
     [ -z "$wt" ] && continue
     [ "$(git -C "$wt" symbolic-ref --quiet --short HEAD 2>/dev/null)" = "$branch" ] || continue
     [ -n "$(_worktree_agent_for_workspace "$wt")" ] && continue
+    # Unshipped changes: save them as a patch, then clean the slot. Kept, they would
+    # strand the slot (freeslots skips it) or reach the next ticket.
+    if [ -n "$(worktree_filtered_status "$wt")" ]; then
+      local out; out="${PIPE_STATE_DIR:-$LOG_DIR}/$(worktree_key_for "$branch").leftover-$(date +%s).patch"
+      git -C "$wt" add -A -N -- . ':(exclude).fxa-*' ':(exclude).claude' >&2 \
+        && git -C "$wt" diff --binary HEAD -- . ':(exclude).fxa-*' ':(exclude).claude' > "$out" \
+        && [ -s "$out" ] || { echo "ERROR: could not save the unshipped changes in ${wt}" >&2; return 1; }
+      echo "Saved the unshipped changes of ${branch} to ${out}" >&2
+      git -C "$wt" reset --quiet --hard >&2 && git -C "$wt" clean -qfd -e '.fxa-*' -e .claude >&2 || return 1
+    fi
     git -C "$wt" -c core.hooksPath=/dev/null checkout --quiet --detach >&2 || return 1
   done <<< "$(_worktree_pool_list)"
 }

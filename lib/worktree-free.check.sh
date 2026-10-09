@@ -21,4 +21,12 @@ git -C "$tmp/fxa-auto-1" checkout -q -b fxa-14727; git -C "$tmp/fxa-auto-2" chec
 check "clean idle slots are free" "fxa-auto-1 fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
 echo '{"a":1}' > "$tmp/fxa-auto-1/package.json"; git -C "$tmp/fxa-auto-1" add package.json
 check "a slot with a staged, unshipped change is not free" "fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
+# A ticket that leaves inflight: its unshipped changes are saved, and its slot goes back to the pool.
+eval "$(sed -n '/^worktree_release_branch() {/,/^}/p' "$here/worktree.sh")"
+_worktree_pool_list() { printf '%s\n' "$tmp/fxa-auto-1" "$tmp/fxa-auto-2"; }
+PIPE_STATE_DIR="$tmp/state"; mkdir -p "$PIPE_STATE_DIR"
+echo new > "$tmp/fxa-auto-1/notes.txt"
+worktree_release_branch fxa-14727 >/dev/null 2>&1
+check "the release saves the staged and the new file, then frees the slot" "1|1|1|fxa-auto-1 fxa-auto-2" \
+  "$(grep -c '"a":1' "$PIPE_STATE_DIR"/FXA-14727.leftover-*.patch)|$(grep -c '^+new$' "$PIPE_STATE_DIR"/FXA-14727.leftover-*.patch)|$(git -C "$tmp/fxa-auto-1" rev-parse --abbrev-ref HEAD | grep -cx HEAD)|$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
