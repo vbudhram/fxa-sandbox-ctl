@@ -53,5 +53,18 @@ unset -f gh git
 check "the monitor profile is read-only for now" "PIPE_PROFILE=monitor|PIPE_PR_OPEN=0|PIPE_REPO_SLUG=mozilla/blurts-server" \
   "$(loaded "$root" monitor | grep -E '^PIPE_(PR_OPEN|PROFILE|REPO_SLUG)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
+# A profile with its own repo: cloned beside FxA, and /workspace points at it.
+eval "$(sed -n '/^_gce_profile_workspace() {/,/^}/p' "$root/lib/agent.sh")"
+vm_exec() { shift; printf '%s\n' "$*" >> "$tmp/vmx"; }
+: > "$tmp/vmx"; PIPE_WORKSPACE=/home/agent/monitor PIPE_REPO_SLUG=mozilla/blurts-server _gce_profile_workspace r1 >/dev/null
+check "a profile repo is cloned and /workspace points at it" "1|1" \
+  "$(grep -c 'git clone --quiet --filter=blob:none https://github.com/mozilla/blurts-server.git /home/agent/monitor' "$tmp/vmx")|$(grep -c 'ln -sfn /home/agent/monitor /workspace' "$tmp/vmx")"
+: > "$tmp/vmx"; _gce_profile_workspace r1 >/dev/null; PIPE_WORKSPACE=/home/agent/fxa _gce_profile_workspace r1 >/dev/null
+check "FxA keeps the baked clone, with no call" "0" "$(wc -l < "$tmp/vmx" | tr -d ' ')"
+check "a workspace or slug that is not plain is refused" "1|1" \
+  "$(PIPE_WORKSPACE='/home/agent/x;rm' PIPE_REPO_SLUG=a/b _gce_profile_workspace r1 >/dev/null 2>&1; echo $?)|$(PIPE_WORKSPACE=/home/agent/x PIPE_REPO_SLUG='a/b c' _gce_profile_workspace r1 >/dev/null 2>&1; echo $?)"
+check "the monitor profile works in its own clone, with FxA's stack beside it" "PIPE_STACK_DIR=/home/agent/fxa|PIPE_WORKSPACE=/home/agent/monitor" \
+  "$(loaded "$root" monitor | grep -E '^PIPE_(STACK_DIR|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

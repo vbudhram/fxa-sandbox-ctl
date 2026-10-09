@@ -225,6 +225,18 @@ _put_run_files() {
   return $rc
 }
 
+# _gce_profile_workspace <name>   A profile with its own repo (PIPE_WORKSPACE): clone it
+# beside FxA, whose stack keeps running from /home/agent/fxa, and point /workspace at it.
+_gce_profile_workspace() {
+  local name="$1" ws="${PIPE_WORKSPACE:-/home/agent/fxa}" slug="${PIPE_REPO_SLUG:-}"
+  [ "$ws" = /home/agent/fxa ] && return 0
+  # These go into a remote bash -c string unquoted.
+  [[ "$ws" =~ ^/home/agent/[a-z0-9-]+$ ]] && [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+    || { echo "ERROR: PIPE_WORKSPACE or PIPE_REPO_SLUG is not a plain path or repo name." >&2; return 1; }
+  echo "Cloning ${slug} into ${ws}..."
+  vm_exec "$name" sudo bash -c "[ -d ${ws}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
+}
+
 # _gce_pin_runner_tree <name> <slot>
 #   Fetch the slot's HEAD by sha into the runner and check it out on the branch.
 #   GitHub serves any reachable sha, so this works before the branch is pushed.
@@ -270,7 +282,7 @@ _gce_pin_runner_tree() {
       rm -f \"\$(git rev-parse --git-dir)/FETCH_HEAD\" \"\$(git rev-parse --git-dir)/ORIG_HEAD\"
       git reflog expire --expire=now --all
     fi
-    if [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
+    if [ -f yarn.lock ] && [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
       echo 'yarn.lock differs from the image; installing dependencies...' >&2
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
       (cd packages/functional-tests && npx playwright install chromium firefox > /tmp/fxa-pin-playwright.log 2>&1) || true
@@ -814,6 +826,10 @@ agent_run() {
   # It runs beside the hardening and config steps below, which do not touch the
   # tree; the egress firewall waits for it, because its reset would cut a fetch.
   local pin_pid="" pin_out=""
+  # Before the steps below: the trust setting and the keys read where /workspace points.
+  if [ "$FXA_VM_BACKEND" = "gce" ] && ! _gce_profile_workspace "$name"; then
+    echo "ERROR: could not set up the profile's repo on the runner." >&2; vm_delete "$name"; return 1
+  fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     pin_out="$(mktemp)"
     echo "Checking out the commit, and installing keys and settings beside it..."
@@ -1009,9 +1025,12 @@ agent_prewarm_stack() {
     workspace="${WORKSPACE:-}"
   fi
 
+  # PIPE_STACK_DIR: where FxA runs when the profile's own repo is /workspace.
+  local dir="${PIPE_STACK_DIR:-/workspace}"
+  [[ "$dir" =~ ^/[a-z0-9/-]+$ ]] || { echo "ERROR: PIPE_STACK_DIR is not a plain path" >&2; return 1; }
   # nohup + setsid, so fxa-start outlives the exec that started it.
   vm_exec "$name" sudo -u agent bash -c '
-    cd /workspace || exit 1
+    cd '"$dir"' || exit 1
     # Timed until auth answers (5 min at most), into the same record stack.sh writes.
     nohup setsid bash -c "t0=\$(date +%s); source /etc/agent-env.sh && fxa-start; ok=false
       for i in \$(seq 100); do curl -sf -o /dev/null --max-time 3 http://localhost:9000/__heartbeat__ && { ok=true; break; }; sleep 3; done
