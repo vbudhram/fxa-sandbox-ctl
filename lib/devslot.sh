@@ -28,8 +28,9 @@ cmd_devslot() {
       # sync <profile> <guest dir>: a tar.gz on stdin, extracted as agent. Removed files stay.
       local dir="${1:-}" t
       [[ "$dir" == /* ]] || { echo "ERROR: sync needs an absolute guest dir" >&2; return 1; }
-      _fc_vm_exists "$name" || { echo "ERROR: $name is not up; run devslot up first" >&2; return 1; }
+      # Read stdin first: the ssh in _fc_vm_exists reads it too.
       t="$(mktemp)"; cat > "$t"
+      _fc_vm_exists "$name" || { rm -f "$t"; echo "ERROR: $name is not up; run devslot up first" >&2; return 1; }
       local rc=0; vm_put "$name" "$t" "$dir" || rc=$?; rm -f "$t"
       _devslot_touch "$name"; [ "$rc" = 0 ] && echo "synced to $dir"; return "$rc" ;;
     run)
@@ -39,7 +40,8 @@ cmd_devslot() {
       _devslot_touch "$name"
       local t0 rc=0; t0="$(date +%s)"
       vm_exec_as_agent "$name" "$*" || rc=$?
-      echo "── exit $rc after $(( $(date +%s) - t0 ))s · $(vm_exec_as_agent "$name" "free -m | awk '/^Mem:/ {print \$3 \" MB used, \" \$7 \" MB available\"}'" 2>/dev/null)"
+      local mem; mem="$(vm_exec_as_agent "$name" "free -m" 2>/dev/null | awk '/^Mem:/ {print $3 " MB used, " $7 " MB available"}')" || true
+      echo "── exit $rc after $(( $(date +%s) - t0 ))s · ${mem:-memory unknown}"
       _devslot_touch "$name"; return "$rc" ;;
     *) echo "usage: devslot up|down|reset|run|sync <profile> ... | devslot list" >&2; return 1 ;;
   esac

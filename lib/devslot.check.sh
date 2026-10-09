@@ -7,6 +7,7 @@ check() { # check <name> <want> <got>
   if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
+exec < /dev/null  # the stubs read stdin, as ssh does
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd -P)"
 source "$here/devslot.sh"
@@ -15,7 +16,7 @@ vm_name() { echo "agent-$1"; }
 # The host: slots in $tmp/slots as "<n>\t<label>"; each call is logged.
 : > "$tmp/slots"
 _fc_up() { true; }; _fc_wake() { echo wake >> "$tmp/calls"; }
-_fc() { echo "fc $*" >> "$tmp/calls"; [ "$1" = list ] && cat "$tmp/slots"; return 0; }
+_fc() { cat > /dev/null; echo "fc $*" >> "$tmp/calls"; [ "$1" = list ] && cat "$tmp/slots"; return 0; }  # ssh reads stdin, like the real one
 _fc_vm_clone() { echo "clone $1" >> "$tmp/calls"; printf '3\tagent-%s\t10.0.0.3\t0\n' "$1" >> "$tmp/slots"; }
 _fc_vm_delete() { echo "delete $1" >> "$tmp/calls"; : > "$tmp/slots"; }
 _gce_vm_clone() { echo "gce $1" >> "$tmp/calls"; }
@@ -34,7 +35,8 @@ check "sync sends stdin to the guest dir and touches the slot" "put dev-monitor 
 check "sync needs an absolute dir" "1" "$(printf x | cmd_devslot sync monitor rel >/dev/null 2>&1; echo $?)"
 : > "$tmp/calls"; out="$(cmd_devslot run monitor 'bash ready.sh')"
 check "run executes as agent and reports the exit" "exec dev-monitor bash ready.sh|1" "$(grep '^exec dev-monitor bash' "$tmp/calls")|$(grep -c '^── exit 0 after' <<< "$out")"
-vm_exec_as_agent() { [ "$2" = fail ] && return 7; return 0; }
+vm_exec_as_agent() { [ "$2" = "free -m" ] && echo "Mem: 16016 7390 100 1 2000 8626"; [ "$2" = fail ] && return 7; return 0; }
+check "run reports the memory" "7390 MB used, 8626 MB available" "$(cmd_devslot run monitor true | sed -n 's/.* · //p')"
 check "run passes the command's exit code" "7" "$(cmd_devslot run monitor fail >/dev/null 2>&1; echo $?)"
 : > "$tmp/calls"; cmd_devslot reset monitor >/dev/null
 check "reset drops the slot and restores a clean one" "delete dev-monitor,clone dev-monitor" "$(grep -E '^(delete|clone)' "$tmp/calls" | paste -sd, -)"

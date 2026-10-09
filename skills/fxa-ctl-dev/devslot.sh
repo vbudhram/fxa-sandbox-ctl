@@ -11,7 +11,8 @@
 set -euo pipefail
 H="$(cd "$(dirname "$0")/../fxa-manager" && pwd)/vm.sh"
 : "${FXA_FC_HOST:?set FXA_FC_HOST to the Firecracker host address}"
-ctl() { printf 'FXA_FC_HOST=%q ./fxa-sandbox-ctl --backend gce devslot%s\n' "$FXA_FC_HOST" "$(printf ' %q' "$@")"; }
+# vm.sh run drops the remote stderr, so it comes back on stdout.
+ctl() { printf 'FXA_FC_HOST=%q ./fxa-sandbox-ctl --backend gce devslot%s 2>&1\n' "$FXA_FC_HOST" "$(printf ' %q' "$@")"; }
 sub="${1:-}"; shift || true
 case "$sub" in
   up|down|reset|list) ctl "$sub" "$@" | bash "$H" run - ;;
