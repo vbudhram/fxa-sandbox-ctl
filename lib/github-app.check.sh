@@ -85,5 +85,22 @@ check "unreferenced image appended" "1" "$(grep -cE '^!\[other.png\]\(https://st
 check "video appended as a link" "1" "$(grep -cE '^\[run.mp4\]\(https://.*/3/run.mp4\)$' "$tmp/body.md")"
 check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.googleapis.com')"
 
+# The App token is limited to the work repo, from that repo's own installation.
+( eval "$(sed -n '/^github_app_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p' "$here/github.sh")"
+  export TMPDIR="$tmp/tok"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111
+  github_app_jwt() { echo jwt; }; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  curl() { local url="${*: -1}" body=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && body="$2"; shift; done
+    echo "$url $body" >> "$tmp/curls"
+    case "$url" in */repos/mdn/rari/installation) echo '{"id":222}' ;; */installation) return 22 ;; */access_tokens) echo '{"token":"t-'"${url//[^0-9]/}"'"}' ;; esac; }
+  : > "$tmp/curls"
+  t1="$(PIPE_REPO_SLUG=mdn/rari github_app_token)"
+  check "the token is minted on the repo's installation, for that repo only" "t-222|1" \
+    "$t1|$(grep -c '/app/installations/222/access_tokens {"repositories":\["rari"\]}' "$tmp/curls")"
+  t2="$(PIPE_REPO_SLUG=mozilla/fxa github_app_token)"
+  check "an unknown installation falls back to the configured one" "t-111" "$t2"
+  : > "$tmp/curls"; PIPE_REPO_SLUG=mdn/rari github_app_token >/dev/null; PIPE_REPO_SLUG=mozilla/fxa github_app_token >/dev/null
+  check "each repo's token is cached on its own" "0" "$(grep -c access_tokens "$tmp/curls")"
+  exit "$fail" ) || fail=1
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

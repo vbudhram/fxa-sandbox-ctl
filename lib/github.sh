@@ -487,17 +487,33 @@ github_app_jwt() {
     "$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" | _gh_b64url)"
 }
 
+# _gh_app_installation   The App installation on PIPE_REPO_SLUG, cached for a day: each
+# org has its own. When the lookup fails, the configured one; GitHub then refuses a
+# repo that installation does not cover.
+_gh_app_installation() {
+  local slug="${PIPE_REPO_SLUG:-}" cache id
+  cache="${TMPDIR:-/tmp}/fxa-github-app-inst.${slug//\//_}"
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 86400 ]; then cat "$cache"; return 0; fi
+  id="$(curl -sf --max-time 30 -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/${slug}/installation" | jq -r '.id // empty' 2>/dev/null)" || id=""
+  if [[ "$id" =~ ^[0-9]+$ ]]; then printf '%s' "$id" > "$cache"; printf '%s' "$id"
+  else printf '%s' "$GITHUB_APP_INSTALLATION_ID"; fi
+}
+
 # github_app_token
-#   An installation token: what `gh` and git use to act as the bot. It lives 60
-#   minutes, so mint it at handoff, never at launch. Cached for 50 minutes.
+#   An installation token: what `gh` and git use to act as the bot. It covers only
+#   the work repo (PIPE_REPO_SLUG). It lives 60 minutes, so mint it at handoff,
+#   never at launch. Cached for 50 minutes for each installation and repo.
 github_app_token() {
-  local cache="${TMPDIR:-/tmp}/fxa-github-app-token.${GITHUB_APP_INSTALLATION_ID}"
+  local inst repo="${PIPE_REPO_SLUG#*/}" cache
+  inst="$(_gh_app_installation)"
+  cache="${TMPDIR:-/tmp}/fxa-github-app-token.${inst}.${repo}"
   if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 3000 ]; then
     cat "$cache"; return 0
   fi
   local tok
   tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/app/installations/${GITHUB_APP_INSTALLATION_ID}/access_tokens" | jq -r '.token // empty')"
+    -d "{\"repositories\":[\"${repo}\"]}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')"
   [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token." >&2; return 1; }
   ( umask 077; printf '%s' "$tok" > "$cache" )
   printf '%s' "$tok"
