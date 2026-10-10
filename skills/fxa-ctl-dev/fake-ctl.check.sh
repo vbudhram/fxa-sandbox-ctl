@@ -51,7 +51,8 @@ check "a steer after the turns is not queued" "" "$(f steer agent-dd4 --message-
 cat > "$tmp/tape.json" <<'T'
 {"sessions": [{"turns": [
   {"steps": ["Reading a.ts", "Running yarn test a"], "diff": [{"file": "a.ts", "added": 2, "removed": 1}], "end": {"status": "ready", "text": "Recorded reply one."}},
-  {"end": {"type": "question", "text": "Which one?", "options": ["X (recommended)", "Y"]}}]},
+  {"end": {"type": "question", "text": "Which one?", "options": ["X (recommended)", "Y"]}},
+  {"end": {"status": "ready", "text": "No new files this turn."}}]},
  {"turns": [{"end": {"status": "needs-input", "text": "Second session reply."}}]}]}
 T
 export FAKE_TAPE="$tmp/tape.json"; echo 3000 > "$FAKE_NOW_FILE"
@@ -61,8 +62,10 @@ check "a tape turn ends with the recorded reply, with changes" "turn_end|ready|1
 f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3025 > "$FAKE_NOW_FILE"
 check "the second turn is the recorded question" "question|Which one?|2" "$(f events agent-ee5 | jq -r '.events[1] | "\(.type)|\(.text)|\(.options | length)"')"
 f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3035 > "$FAKE_NOW_FILE"
-check "past the tape: a canned turn, logged" "Fake turn 3|1" "$(f events agent-ee5 | jq -r '.events[2].text[0:11]')|$(grep -c replay_exhausted "$FAKE_CTL_LOG")"
-f task --id agent-ff6 --owner UA --resume-from agent-ee5 --prompt-file "$tmp/p.md" >/dev/null; echo 3050 > "$FAKE_NOW_FILE"
+check "a later turn with no diff of its own still has the branch's changes" "No new files this turn.|1" "$(f events agent-ee5 | jq -r '.events[2] | "\(.text)|\(.changes)"')"
+f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3045 > "$FAKE_NOW_FILE"
+check "past the tape: a canned turn, logged" "Fake turn 4|1" "$(f events agent-ee5 | jq -r '.events[3].text[0:11]')|$(grep -c replay_exhausted "$FAKE_CTL_LOG")"
+f task --id agent-ff6 --owner UA --resume-from agent-ee5 --prompt-file "$tmp/p.md" >/dev/null; echo 3060 > "$FAKE_NOW_FILE"
 check "the next task plays the tape's next session" "needs-input|Second session reply." "$(f events agent-ff6 | jq -r '.events[0] | "\(.status)|\(.text)"')"
 unset FAKE_TAPE
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

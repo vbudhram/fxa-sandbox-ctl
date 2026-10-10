@@ -19,7 +19,7 @@
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
 #   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
 #                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
-#                  event as the real controller emits it). Past the tape: canned turns, logged as replay_exhausted.
+#                  event as the real controller emits it; changes counts the branch so far). Past the tape: canned turns, logged as replay_exhausted.
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
@@ -62,7 +62,7 @@ script() {
                 {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
           (if $tt and ($tt.diff | not) then empty else
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
-          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if $tt.diff then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
+          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | .diff] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T) then {pr: $pr} else {} end)
                else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,
