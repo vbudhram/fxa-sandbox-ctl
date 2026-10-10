@@ -1880,7 +1880,7 @@ _task_carry() {
   local co; co="$(session_get "$from" checkout)"
   if [ -n "$co" ] && { [ "$co" = "$(session_get "$key" pr_url)" ] || [ "$co" = "$(session_get "$key" review_pr)" ]; }; then
     session_set "$key" checkout "$co" checkout_author "$(session_get "$from" checkout_author)" \
-      checkout_person "$(session_get "$from" checkout_person)" checkout_fork "$(session_get "$from" checkout_fork)"
+      checkout_person "$(session_get "$from" checkout_person)"
   fi
   return 0
 }
@@ -1892,6 +1892,8 @@ _task_checkout() {
   slug="$(sed -E 's|^https://github\.com/([^/]+/[^/]+)/pull/.*|\1|' <<< "$url")"
   info="$(gh pr view "$url" --json state,headRefName,isCrossRepository,author 2>/dev/null)" || { echo "ERROR: could not read ${url}" >&2; return 1; }
   [ "$(jq -r .state <<< "$info")" = OPEN ] || { echo "ERROR: ${url} is not open" >&2; return 1; }
+  # A fork's CLAUDE.md, rules and skills would reach the agent, and the App cannot push there.
+  [ "$(jq -r .isCrossRepository <<< "$info")" != true ] || { echo "ERROR: ${url} is from a fork. Ask for a PR from a branch of ${slug} instead" >&2; return 1; }
   head="$(jq -r .headRefName <<< "$info")"; author="$(jq -r .author.login <<< "$info")"
   [[ "$head" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "ERROR: ${url} has a branch name this cannot use" >&2; return 1; }
   if trees_on "$key"; then
@@ -1903,8 +1905,7 @@ _task_checkout() {
     session_set "$key" branch "$head" review_pr "$url" pr_url "$url" pr_announced 1
   fi
   session_set "$key" fresh 1 checkout "$url" checkout_author "$author" \
-    checkout_person "$([ "$(jq -r '.author.is_bot // false' <<< "$info")" = true ] && echo 0 || echo 1)" \
-    checkout_fork "$([ "$(jq -r .isCrossRepository <<< "$info")" = true ] && echo 1 || echo 0)"
+    checkout_person "$([ "$(jq -r '.author.is_bot // false' <<< "$info")" = true ] && echo 0 || echo 1)"
 }
 
 # _checkout_gate_on <key>   The session pushes to a person's PR it took over (task --checkout):
@@ -2546,7 +2547,6 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   fi
   # A person's PR (task --checkout) gets a push only after its author agrees on GitHub.
   if _checkout_gate_on "$key"; then
-    [ "$(session_get "$key" checkout_fork)" != 1 ] || { _session_finish_fail "$key" "this PR's branch is in a fork, and the App cannot push there. Ask for a new PR on top of it instead" "$mode"; return 1; }
     _checkout_consent "$(session_get "$key" checkout)" "$(session_get "$key" checkout_author)" \
       || { _session_finish_fail "$key" "$(session_get "$key" checkout_author) made this PR. I push to it only after they comment 'push ok' on it" "$mode"; return 1; }
   fi
