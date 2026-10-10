@@ -19,7 +19,7 @@ llm_token_for() {
   if [ -n "$tok" ] && jq -e '.expires > now' "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" >/dev/null 2>&1; then
     printf '%s\n' "$tok"; return 0
   fi
-  tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+  tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
   ( umask 077
     jq -n --arg r "$run" --arg th "$thread" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
       --argjson cap "${FXA_LLM_RUN_CAP_USD:-50}" \

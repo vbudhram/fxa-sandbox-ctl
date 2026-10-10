@@ -21,7 +21,7 @@ mcp_token_for() {
   [ -n "$connectors" ] || return 1
   [[ "$connectors" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: MCP connectors must look like jira,github" >&2; return 1; }
   mkdir -p "${FXA_MCP_GATEWAY_DIR}/tokens" "${FXA_MCP_GATEWAY_DIR}/runs" || return 1
-  tok="fxm_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+  tok="fxm_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
   ( umask 077
     jq -n --arg r "$run" --arg c "$connectors" --argjson now "$(date +%s)" \
       --argjson ttl "${FXA_MCP_TOKEN_TTL:-86400}" --argjson cap "${FXA_MCP_RUN_CAP_CALLS:-200}" \

@@ -191,7 +191,7 @@ session_try() {
     esac
   done
   [ -n "$prompt" ] || { echo "ERROR: session try needs --prompt or --prompt-file" >&2; return 1; }
-  key="agent-try$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5)"
+  key="agent-try$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
   f="$(mktemp)"; printf '%s\n' "$prompt" > "$f"
   echo "== ${key}: starting"
   "$ctl" --backend gce task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1 \

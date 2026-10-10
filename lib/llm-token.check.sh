@@ -32,4 +32,6 @@ check "no run name: the old key line" "export ANTHROPIC_API_KEY=sk-real" "$(_cla
 llm_token_revoke fxa-1
 check "revoke expires the token and keeps its spend" "0 0" "$(jq -r '"\(.expires) \(.spent_usd)"' "$tmp/tokens/$t1.json")"
 check "a revoked run gets a new token" "no" "$([ "$(llm_token_for fxa-1)" = "$t1" ] && echo yes || echo no)"
+# The controller runs with set -euo pipefail: minting must not die of SIGPIPE when head stops tr.
+check "a token mints under pipefail, called bare" "ok" "$(set -euo pipefail; tok=""; tok="$(llm_token_for fxa-pf1)"; llm_token_for fxa-pf2 >/dev/null; echo ok)"
 exit "$fail"
