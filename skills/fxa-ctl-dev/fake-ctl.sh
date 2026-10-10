@@ -118,7 +118,7 @@ case "$cmd" in
   task) k="$(opt --id "$@")"; [[ "$k" =~ ^agent-[a-z0-9]+$ ]] || { echo "fake-ctl: task needs --id" >&2; exit 1; }
     mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
     # A tape: the nth task plays the tape's nth session.
-    [ -n "${FAKE_TAPE:-}" ] && { ls -d "$DIR"/agent-*/tape_idx 2>/dev/null | wc -l | tr -d ' ' > "$DIR/$k/tape_idx"; }
+    [ -n "${FAKE_TAPE:-}" ] && { n="$(find "$DIR" -path '*/agent-*/tape_idx' | wc -l | tr -d ' ')"; echo "$n" > "$DIR/$k/tape_idx"; }
     opt --owner "$@" > "$DIR/$k/owner"; r="$(opt --repos "$@")"; from="$(opt --resume-from "$@")"; co="$(opt --checkout "$@")"
     # A resume carries the repos and PRs; carried PRs are not announced again.
     if [[ "$from" =~ ^agent-[a-z0-9]+$ ]]; then [ -n "$r" ] || r="$(get "$from" repos)"

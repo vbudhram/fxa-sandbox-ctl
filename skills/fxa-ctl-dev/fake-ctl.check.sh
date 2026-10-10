@@ -55,7 +55,8 @@ cat > "$tmp/tape.json" <<'T'
  {"turns": [{"end": {"status": "needs-input", "text": "Second session reply."}}]}]}
 T
 export FAKE_TAPE="$tmp/tape.json"; echo 3000 > "$FAKE_NOW_FILE"
-f task --id agent-ee5 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 3015 > "$FAKE_NOW_FILE"
+rm -rf "$FAKE_CTL_DIR"
+check "the first task with a tape succeeds" "0" "$(f task --id agent-ee5 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo $?)"; echo 3015 > "$FAKE_NOW_FILE"
 check "a tape turn ends with the recorded reply, with changes" "turn_end|ready|1|Recorded reply one." "$(f events agent-ee5 | jq -r '.events[0] | "\(.type)|\(.status)|\(.changes)|\(.text)"')"
 f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3025 > "$FAKE_NOW_FILE"
 check "the second turn is the recorded question" "question|Which one?|2" "$(f events agent-ee5 | jq -r '.events[1] | "\(.type)|\(.text)|\(.options | length)"')"
