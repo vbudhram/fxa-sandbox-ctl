@@ -789,6 +789,9 @@ finish_approve_functional_gate() {
     echo "WARN: couldn't parse owner/repo from ${pr_url}; skipping gate approval." >&2
     return 0
   fi
+  # Only the repos whose CI the operator trusts with agent code: the gate runs CI with its secrets.
+  case " ${FXA_GATE_REPOS:-mozilla/fxa} " in *" ${owner_repo} "*) ;; *)
+    echo "No gate auto-approval for ${owner_repo} (FXA_GATE_REPOS)." >&2; return 0 ;; esac
   slug="gh/${owner_repo}"
   branch="$(gh pr view "$pr_url" --json headRefName -q .headRefName 2>/dev/null)" || branch=""
   if [ -z "$branch" ]; then

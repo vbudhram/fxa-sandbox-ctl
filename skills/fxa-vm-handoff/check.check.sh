@@ -23,7 +23,7 @@ done; exit $rc
 NPX
 chmod +x "$tmp/bin/npx"; export PATH="$tmp/bin:$PATH" FXA_WORKSPACE="$tmp/repo"
 
-mkdir -p "$tmp/repo/src" && cd "$tmp/repo" && g init -q && echo a > src/a.ts && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
+mkdir -p "$tmp/repo/src" && cd "$tmp/repo" && g init -q && echo a > src/a.ts && echo '{}' > package.json && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
 g checkout -qb agent-x
 handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",media_paths:$m}' > .fxa-auto-done.json; }
 
@@ -80,4 +80,9 @@ eval "$(grep -m1 "local conv=" "$(dirname "$C")/../../lib/finish.sh" | sed 's/^ 
 for t in 'fix(auth): x' 'feat(settings)!: y' 'chore(deps, ci): z'; do check "host takes: $t" yes "$([[ "$t" =~ $conv ]] && echo yes)"; done
 for t in 'fix: x' 'Fix(auth): x' 'fix(auth):x' 'update stuff'; do check "host refuses: $t" no "$([[ "$t" =~ $conv ]] || echo no)"; done
 
+# A repo with no package.json (a Python repo) gets no prettier; a PR's own branch is the session's when the host says so.
+mkdir -p "$tmp/py" && cd "$tmp/py" && g init -q && echo ugly > a.py && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
+g checkout -qb deng-2407-fix && echo ugly2 > a.py && handoff 'fix(py): keep it' deng-2407-fix
+check "no package.json: no prettier, and a PR branch the host names passes" "handoff check: ok" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C")"
+check "a PR branch the host does not name fails" "1" "$(FXA_WORKSPACE="$tmp/py" bash "$C" >/dev/null; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

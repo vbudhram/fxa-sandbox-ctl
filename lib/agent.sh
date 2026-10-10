@@ -164,6 +164,8 @@ _put_run_files() {
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
+  # A team stack's saved work, one patch and bundle for each repo (_trees_restore).
+  for f in "$slot"/.fxa-resume.*.patch "$slot"/.fxa-resume.*.bundle; do [ -s "$f" ] && items+=("${f##*/}"); done
   # The slot's own changes too, so a relaunch resumes a cut-off run instead of
   # starting over. The runner is pinned to the slot's HEAD; this is the diff on
   # top. Deletions travel as a list, since a tar cannot carry an absence.
@@ -204,6 +206,8 @@ _put_run_files() {
     vm_exec "$name" sudo -u agent bash -c 'mkdir -p /workspace/.fxa-auto-media && tar -xzf /workspace/.fxa-resume-media.tgz -C /workspace/.fxa-auto-media && rm -f /workspace/.fxa-resume-media.tgz' >/dev/null 2>&1 \
       || echo "WARN: could not restore the earlier screenshots and videos." >&2
   fi
+  # A team stack: each repo gets its exclude and its saved work; FxA's files go into FxA.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-trees.tsv" ]; then _trees_restore "$name" "${slot}/.fxa-trees.tsv"; return 0; fi
   # A session's own files stay out of its commits: it runs git add -A.
   if [ "$rc" -eq 0 ] && [ "${FXA_SESSION_MODE:-}" = 1 ]; then
     vm_exec "$name" sudo -u agent bash -c 'cd /workspace && grep -qxF ".fxa-*" .git/info/exclude 2>/dev/null || printf "%s\n" ".fxa-*" "ai/" "artifacts/" >> .git/info/exclude' >/dev/null 2>&1 || true
@@ -315,8 +319,11 @@ _gce_pin_runner_tree() {
   # vm_wait_ready skips the wait for the checkout unit when one ssh flakes, and
   # parallel launches then pinned before /workspace existed. Poll for it here.
   local deadline=$(( $(date +%s) + ${GCE_CHECKOUT_TIMEOUT:-600} ))
-  until vm_exec "$name" test -e /workspace/.git >/dev/null 2>&1; do
-    [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: /workspace never appeared on the runner." >&2; return 1; }
+  # A team stack pins each tree at its own path (FXA_TREE_PATH, checked by _trees_workspace).
+  local at="${FXA_TREE_PATH:-/workspace}"
+  [[ "$at" =~ ^/[a-z0-9/-]+$ ]] || { echo "ERROR: refusing to pin: the tree path is not plain." >&2; return 1; }
+  until vm_exec "$name" test -e "${at}/.git" >/dev/null 2>&1; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: ${at} never appeared on the runner." >&2; return 1; }
     sleep 5
   done
   # One ssh: fetch, check out, install only when yarn.lock differs from the
@@ -327,7 +334,7 @@ _gce_pin_runner_tree() {
   # which reads as an empty answer, so retry that instead of failing the launch.
   local try
   for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+  got="$(vm_exec "$name" sudo -u agent bash -c "cd ${at} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
     fi
@@ -699,6 +706,11 @@ data[\"projects\"][\"/workspace\"] = trust
 data[\"projects\"][\"/mnt/shared/workspace\"] = trust
 # Claude trusts the resolved path. On gce /workspace links to the baked clone.
 data[\"projects\"][os.path.realpath(\"/workspace\")] = trust
+# A team stack: /workspace links to each repo, and Claude trusts each by its real path.
+for e in os.listdir(\"/workspace\"):
+    p = os.path.join(\"/workspace\", e)
+    if os.path.islink(p) and os.path.isdir(os.path.join(os.path.realpath(p), \".git\")):
+        data[\"projects\"][os.path.realpath(p)] = trust
 data[\"hasCompletedOnboarding\"] = True
 data[\"bypassPermissionsModeAccepted\"] = True
 with open(path, \"w\") as f:
@@ -885,13 +897,17 @@ agent_run() {
   # tree; the egress firewall waits for it, because its reset would cut a fetch.
   local pin_pid="" pin_out=""
   # Before the steps below: the trust setting and the keys read where /workspace points.
-  if [ "$FXA_VM_BACKEND" = "gce" ] && ! _gce_profile_workspace "$name"; then
-    echo "ERROR: could not set up the profile's repo on the runner." >&2; vm_delete "$name"; return 1
+  # A team stack (.fxa-trees.tsv in the run dir) clones and pins each of its repos.
+  local trees="${workspace_dir}/.fxa-trees.tsv"; [ -s "$trees" ] || trees=""
+  if [ "$FXA_VM_BACKEND" = "gce" ]; then
+    if [ -n "$trees" ]; then _trees_workspace "$name" "$trees"; else _gce_profile_workspace "$name"; fi \
+      || { echo "ERROR: could not set up the profile's repo on the runner." >&2; vm_delete "$name"; return 1; }
   fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     pin_out="$(mktemp)"
     echo "Checking out the commit, and installing keys and settings beside it..."
-    ( _gce_pin_runner_tree "$name" "$workspace_dir" > "$pin_out" 2>&1 && printf '%s' "${_PINNED_BASE:-}" > "${pin_out}.base" ) &
+    ( if [ -n "$trees" ]; then _trees_pin "$name" "$trees"; else _gce_pin_runner_tree "$name" "$workspace_dir"; fi > "$pin_out" 2>&1 \
+        && printf '%s' "${_PINNED_BASE:-}" > "${pin_out}.base" ) &
     pin_pid=$!
   fi
   # A failed step below takes the runner down; the pin must not outlive it.

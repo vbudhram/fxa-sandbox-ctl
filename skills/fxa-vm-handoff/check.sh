@@ -29,7 +29,8 @@ for f in ${kept[@]+"${kept[@]}"}; do
 done
 
 # The App commits through the API, so no lint-staged hook formats the change.
-if [ "${#kept[@]}" -gt 0 ]; then
+# Only a Node repo has prettier: npx would download it for any other (a Python repo).
+if [ "${#kept[@]}" -gt 0 ] && [ -f package.json ]; then
   if [ "$fix" = 1 ]; then
     out="$(npx prettier --list-different --ignore-unknown -- "${kept[@]}" 2>/dev/null || true)"
     [ -n "$out" ] && npx prettier --write --ignore-unknown -- $out >/dev/null 2>&1 && printf 'formatted: %s\n' $out
@@ -56,13 +57,14 @@ if [ -s "$done_file" ]; then
       || problems+=("branch is '$(jq -r .branch "$done_file")' but the checkout is on '$(git branch --show-current)'")
     # The host ships only the session's own branch (agent-xxxxxx or fxa-NNNN); the reflog
     # names it when the agent switched to a branch of its own.
+    # FXA_SESSION_BRANCH: the host's name for it, when the session continues a PR's own branch.
     cur="$(git branch --show-current)" sess='^(agent-[a-z0-9]+|fxa-[0-9]+)$'
-    if ! [[ "$cur" =~ $sess ]]; then
+    if ! [[ "$cur" =~ $sess ]] && [ "$cur" != "${FXA_SESSION_BRANCH:-}" ]; then
       start="$(git reflog --format=%gs 2>/dev/null | sed -n 's/^checkout: moving from \([^ ]*\) to .*/\1/p' | grep -E "$sess" | head -1)"
       problems+=("the checkout is on '$cur', but the host ships only the session branch${start:+ '$start'}. Move your work there with: git checkout -B ${start:-<the session branch>}, then write the handoff again")
     fi
     while IFS= read -r m; do
-      [ -n "$m" ] && [ ! -f "${m#/workspace/}" ] && problems+=("media_paths names $m, which does not exist")
+      [ -n "$m" ] && [ ! -f "${m#/workspace/}" ] && [ ! -f "/workspace/${m#/workspace/}" ] && problems+=("media_paths names $m, which does not exist")
     done < <(jq -r '.media_paths[]' "$done_file")
     # STE in the PR text. A script can be wrong about style, so these never stop a ship (exit 3).
     while IFS= read -r m; do style+=("$m"); done < <(jq -r '.pr_title, "", .pr_body' "$done_file" \

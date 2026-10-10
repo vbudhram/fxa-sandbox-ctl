@@ -97,6 +97,8 @@ _session_unlock agent-t1
 
 # cmd_events against a stubbed runner.
 eval "$(sed -n '/^cmd_events() {/,/^}/p;/^cmd_diff() {/,/^}/p;/^_session_key() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_session_announce() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+trees_on() { return 1; }
 _session_key() { :; }
 RUNNER=""; RUNNING=1; TURNS_FILE="$tmp/turns"
 # One ssh answers both: the agent process count, then the transcript lines.
@@ -301,6 +303,10 @@ check "not paused at first" "no" "$(sessions_paused >/dev/null && echo yes || ec
 sessions_pause "costs are high" >/dev/null
 check "paused, with the reason" "costs are high" "$(sessions_paused)"
 eval "$(sed -n '/^cmd_task() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_task_carry() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_task_open_pr() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(grep '^_task_abort()' "$(dirname "$0")/../fxa-sandbox-ctl")"
+trees_on() { return 1; }
 printf 'hi\n' > "$tmp/p.md"
 check "a new session is refused while paused" "agent sessions are paused by the operator: costs are high" \
   "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-kill1 --owner U1 --prompt-file "$tmp/p.md" 2>&1 >/dev/null | sed 's/^ERROR: //')"
@@ -473,6 +479,7 @@ check "watch: the todo file is not an edit, and its step says so" 'Updating the 
 
 # Open PR: the runner's handoff check gets one repair turn; a second failure stops the ship.
 eval "$(sed -n '/^_cmd_session_finish() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_session_finish_one() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 HC="$tmp/hc-exits" # not $tmp: _cmd_session_finish has a local tmp
 finish_case() { # finish_case <check exits...>   prints the turns, then pushed or the error
   ( echo '{"key":"agent-hc1","state":"wrapping","runtime":"claude"}' > "$SESSION_DIR/agent-hc1.json"

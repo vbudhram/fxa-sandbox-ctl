@@ -8,7 +8,16 @@ SESSION_DIR="${FXA_SESSION_DIR:-${HOME}/.claude/state/agent-sessions}"
 
 _session_file() { printf '%s/%s.json' "$SESSION_DIR" "$1"; }
 session_exists() { [ -f "$(_session_file "$1")" ]; }
-session_get() { jq -r --arg f "$2" '.[$f] // empty' "$(_session_file "$1")" 2>/dev/null; }
+# A session with several repos keeps the fields of each in .trees[]. While _TREE_IDX is set
+# (trees_each), session_get and session_set read and write those fields of that tree, so the
+# one-repo code works on each tree unchanged.
+# ponytail: a global selector, not a tree argument on every function; pass it explicitly if this grows.
+_TREE_FIELDS=" branch base base_sha push_lease pr_url review_pr pr_announced pr_updated pushed_branch pushed_announced finish_notes "
+_tree_field() { [ -n "${_TREE_IDX:-}" ] && [[ "$_TREE_FIELDS" == *" $1 "* ]]; }
+session_get() {
+  if _tree_field "$2"; then jq -r --argjson i "$_TREE_IDX" --arg f "$2" '.trees[$i][$f] // empty' "$(_session_file "$1")" 2>/dev/null
+  else jq -r --arg f "$2" '.[$f] // empty' "$(_session_file "$1")" 2>/dev/null; fi
+}
 # _session_db_sync <key>   Mirror the record to the store, or drop its row when the file is gone.
 _session_db_sync() { declare -F db_session >/dev/null && db_session "$1" "$(_session_file "$1")"; return 0; }
 # _session_records   Every record, one JSON per line, in key order: from the store when it is up.
@@ -23,9 +32,16 @@ session_set() {
   local args=() filter='.last_activity = now'
   while [ $# -ge 2 ]; do
     args+=(--arg "k$#" "$1" --arg "v$#" "$2")
-    filter="${filter} | .[\$k$#] = \$v$#"
+    if _tree_field "$1"; then filter="${filter} | .trees[${_TREE_IDX}][\$k$#] = \$v$#"
+    else filter="${filter} | .[\$k$#] = \$v$#"; fi
     shift 2
   done
+  _session_write "$key" "$filter" ${args[@]+"${args[@]}"}
+}
+# _session_write <key> <jq filter> [jq args...]   The locked rewrite under session_set.
+_session_write() {
+  local key="$1" filter="$2" f; f="$(_session_file "$key")"; shift 2
+  local args=(); [ $# -gt 0 ] && args=("$@")
   # Serialized: events, steer, and the finish job all write the record, and a
   # lost write can reopen a closed turn. A lock older than 10 s belongs to a dead writer.
   local lock="${f}.wlock" tmp rc=0
@@ -34,7 +50,7 @@ session_set() {
     sleep 0.1
   done
   tmp="$(mktemp "${f}.XXXXXX")"
-  jq "${args[@]}" "$filter" "$f" > "$tmp" && mv "$tmp" "$f" && _session_db_sync "$key" || { rc=1; rm -f "$tmp"; }
+  jq ${args[@]+"${args[@]}"} "$filter" "$f" > "$tmp" && mv "$tmp" "$f" && _session_db_sync "$key" || { rc=1; rm -f "$tmp"; }
   rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
@@ -372,6 +388,19 @@ _session_repo_url() {
 }
 
 _session_wrapup_prompt() {
+  # A team stack ships one repo: the same steps, in that repo's tree.
+  if [ -n "${FXA_TREE_PATH:-}" ]; then
+    local t="/workspace/${FXA_TREE_NAME}"
+    printf 'This is for one repo only: %s (%s). Run every step below in %s; leave the other repos as they are.\n\n' "$t" "$PIPE_REPO_SLUG" "$t"
+    _session_wrapup_steps "$@" | sed -e "s#/workspace/.fxa-auto-done.json#${t}/.fxa-auto-done.json#g" \
+      -e "s#/workspace/.github/PULL_REQUEST_TEMPLATE.md#${t}/.github/PULL_REQUEST_TEMPLATE.md (when it exists)#g" \
+      -e "s#origin/main#origin/${FXA_WORKTREE_BASE}#g" \
+      -e "s#bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#FXA_WORKSPACE=${FXA_TREE_PATH} FXA_WORKTREE_BASE=${FXA_WORKTREE_BASE} FXA_SESSION_BRANCH=\$(git -C ${FXA_TREE_PATH} branch --show-current) bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#g"
+    return
+  fi
+  _session_wrapup_steps "$@"
+}
+_session_wrapup_steps() {
   # A push is a checkpoint: the review and PR write-up run once, at Open PR.
   # The host checks (tooling guard, frozen paths, markers) still run on the push.
   if [ "${2:-}" = --no-pr ]; then
@@ -527,6 +556,7 @@ codex exec resume ${sid} --json --dangerously-bypass-approvals-and-sandbox --ski
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
     else
+    local trees; trees="$(jq -r '(.trees // [])[] | [.name, .slug, .path] | @tsv' "$(_session_file "$key")" | trees_claude_flags)"
     # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude
@@ -534,8 +564,9 @@ test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f
 source /etc/agent-env.sh
 ${_MCP_LAUNCH_SNIPPET}
 cd /workspace
+${trees:+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1}
 : > /workspace/.fxa-auto-stream.jsonl
-claude -p --resume ${sid} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS} \\
+claude -p --resume ${sid} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS}${trees} \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose${_SESSION_CLAUDE_PARTIAL} -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
   | ${out}
 STEER
@@ -1024,13 +1055,22 @@ session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 # (commits and edits), plus untracked files, without the session's own files.
 _SESSION_COUNT='{ git diff --name-only "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" 2>/dev/null; git ls-files -o --exclude-standard; } | grep -vE "^(\.fxa-|ai/|artifacts/)" | sort -u | wc -l'
 
+# A team stack: "name=count" for each repo that /workspace links to, run on the runner.
+_SESSION_TREES_COUNT='for d in /workspace/*; do [ -L "$d" ] && [ -d "$d/.git" ] || continue; printf "%s=%s " "${d##*/}" "$(cd "$d" && '"$_SESSION_COUNT"' | tr -dc 0-9)"; done'
+
 # _session_changes <key>   How many files the runner has changed, not counting
 # the .fxa-* scratch files, ai/ and artifacts/, which never ship. Empty when the
 # runner did not answer.
 _session_changes() {
   # shellcheck disable=SC2016  # expanded on the runner
-  _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && '"$_SESSION_COUNT" 2>/dev/null | tr -dc '0-9'
+  if trees_on "$1"; then
+    _session_sh "$(worktree_branch_for "$1")" "$_SESSION_TREES_COUNT" 2>/dev/null | _trees_sum
+  else
+    _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && '"$_SESSION_COUNT" 2>/dev/null | tr -dc '0-9'
+  fi
 }
+# _trees_sum < "a=1 b=2"   The total; empty when the runner gave nothing.
+_trees_sum() { tr ' ' '\n' | sed -n 's/^[a-z0-9-]*=\([0-9]*\)$/\1/p' | awk '{ t += $1; n++ } END { if (n) print t }'; }
 
 # _session_finish_notes <key>   What a handoff could not do, in plain lines for the
 # thread: the PR link alone hid that none of its screenshots uploaded.
@@ -1174,19 +1214,25 @@ _session_end_facts() {
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
     printf "@@changes %s\n" "$(cd /workspace && '"$_SESSION_COUNT"')"
+    printf "@@trees %s\n" "$('"$_SESSION_TREES_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
     printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"
     printf "@@res %s %s %s\n" "$(cut -d" " -f1 /proc/loadavg)" "$(free -m | awk "/^Mem:/ {print \$3}")" "$(df --output=pcent /workspace 2>/dev/null | tail -1 | tr -dc 0-9)"
     printf "@@vr %s\n" "$(jq -rs "map(select(.at >= '"$b"')) | [length, (map(select(.mode == \"full\")) | length), (map(.secs) | add // 0), (map(select(.fail > 0)) | length)] | @tsv" /workspace/.fxa-verify-runs.jsonl 2>/dev/null)"
     printf "@@st %s\n" "$(jq -rs "map(select(.at >= '"$b"')) | [length, (map(.secs) | add // 0), (map(select(.ok | not)) | length)] | @tsv" /workspace/.fxa-stack-times.jsonl 2>/dev/null)"' > "$t" 2>/dev/null || true
   n="$(sed -n 's/^@@changes *\([0-9]*\)$/\1/p' "$t" | tail -1)"
+  # A team stack counts each repo; /workspace itself is no repo.
+  if trees_on "$1"; then
+    local tc; tc="$(sed -n 's/^@@trees //p' "$t" | tail -1)"
+    n="$(_trees_sum <<< "$tc")"; session_set "$1" tree_changes "$tc"
+  fi
   # The notes ride in the same ssh, saved at every turn end: a crash or the runner's time limit loses none.
   grep '^@@notes ' "$t" | tail -1 | cut -c9- | openssl base64 -d -A > "${t}.n" 2>/dev/null || true
   _thread_save_notes "$1" "${t}.n"; rm -f "${t}.n"
   session_set "$1" round_fixed "$(sed -n 's/^@@fixed *\([0-9]*\)$/\1/p' "$t" | tail -1)"
   _session_res_peaks "$1" "$(sed -n 's/^@@res \([0-9.]* [0-9]* [0-9]*\)$/\1/p' "$t" | tail -1)"
   _session_work_times "$1" "$(grep '^@@vr ' "$t" | tail -1 | cut -c6-)" "$(grep '^@@st ' "$t" | tail -1 | cut -c6-)"
-  grep -v '^@@changes \|^@@notes \|^@@fixed \|^@@res \|^@@vr \|^@@st ' "$t" > "${t}.j" || true
+  grep -v '^@@changes \|^@@trees \|^@@notes \|^@@fixed \|^@@res \|^@@vr \|^@@st ' "$t" > "${t}.j" || true
   cost="$(_snapshot_agent_json "${t}.j" "$(date +%s)" 2>/dev/null \
     | jq -c 'select(.cost_so_far != null) | {cost: .cost_so_far, tokens: (.tokens | [.in, .out, .cache_read, .cache_write] | map(. // 0) | add)}' 2>/dev/null || true)"
   cost="$(_session_proxy_cost "$1" "$cost")"
@@ -1243,7 +1289,15 @@ _session_summary_json() {
   local key="$1" name cost diff
   name="$(worktree_branch_for "$key")"
   cost="$(_session_cost "$key")"
-  diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat \"\$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)\" -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1 || true)"
+  if trees_on "$key"; then
+    # A team stack: each repo's stat, named.
+    # shellcheck disable=SC2016  # expanded on the runner
+    diff="$(_session_sh "$name" 'for d in /workspace/*; do [ -L "$d" ] && [ -d "$d/.git" ] || continue
+      s="$(cd "$d" && git add -A -N -- . ":(exclude).fxa-*" ":(exclude)ai" && git diff --shortstat "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*" ":(exclude)ai" | tail -1)"
+      [ -n "$s" ] && printf "%s:%s; " "${d##*/}" "$s"; done' 2>/dev/null | sed 's/; $//' || true)"
+  else
+    diff="$(_session_sh "$name" "cd /workspace && git add -A -N -- . ':(exclude).fxa-*' ':(exclude)ai' && git diff --shortstat \"\$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)\" -- . ':(exclude).fxa-*' ':(exclude)ai'" 2>/dev/null | tail -1 || true)"
+  fi
   jq -nc --argjson u "${cost:-null}" --arg d "${diff:-}" --arg t "$(session_get "$key" turns)" --arg c0 "$(session_get "$key" created)" \
     '{cost: ($u.cost // null), tokens: ($u.tokens // null), diff: ($d | gsub("^\\s+"; "")), turns: ($t | tonumber? // 0),
       minutes: (if ($c0 | tonumber? // null) == null then null else ((now - ($c0 | tonumber)) / 60 | floor) end)}'
@@ -1478,23 +1532,27 @@ _session_save() {
   local key="$1" name; name="$(worktree_branch_for "$key")"
   if vm_is_running "$name" 2>/dev/null; then
     _session_record_summary "$key" || true
-    # ai/ is ignored on the host but not in the runner's clone; the runner is going away.
-    vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
-      > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
-    [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
-    # The agent's commits since the session's base, for a resume; empty (no commits) makes no file.
-    local base; base="$(session_get "$key" base_sha)"
-    if [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
-      # A fresh file, not a fixed /tmp path: another user's file there refused the write.
-      _session_sh "$name" "cd /workspace && b=\$(mktemp) && git bundle create \"\$b\" HEAD ^${base} >/dev/null 2>&1 && cat \"\$b\"; rm -f \"\$b\"" \
-        2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.bundle" || true
+    # A team stack saves each repo's work under its own name (_tree_save).
+    if trees_on "$key"; then trees_each "$key" _tree_save "$key" "$name" || true
+    else
+      # ai/ is ignored on the host but not in the runner's clone; the runner is going away.
+      vm_exec_as_agent "$name" "cd /workspace && rm -rf ai && git add -A -N -- . ':(exclude).fxa-*' && git diff --binary HEAD -- . ':(exclude).fxa-*'" \
+        > "${SESSION_DIR}/${key}.patch" 2>/dev/null || rm -f "${SESSION_DIR}/${key}.patch"
+      [ -s "${SESSION_DIR}/${key}.patch" ] || rm -f "${SESSION_DIR}/${key}.patch"
+      # The agent's commits since the session's base, for a resume; empty (no commits) makes no file.
+      local base; base="$(session_get "$key" base_sha)"
+      if [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+        # A fresh file, not a fixed /tmp path: another user's file there refused the write.
+        _session_sh "$name" "cd /workspace && b=\$(mktemp) && git bundle create \"\$b\" HEAD ^${base} >/dev/null 2>&1 && cat \"\$b\"; rm -f \"\$b\"" \
+          2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.bundle" || true
+      fi
+      [ -s "${SESSION_DIR}/${key}.bundle" ] || rm -f "${SESSION_DIR}/${key}.bundle"
+      # The whole change, commits included, for !diff once the runner is gone.
+      # shellcheck disable=SC2016  # expanded on the runner
+      _session_sh "$name" 'cd /workspace && git diff --binary "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*"' \
+        > "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || true
+      [ -s "${SESSION_DIR}/${key}.full.patch" ] || rm -f "${SESSION_DIR}/${key}.full.patch"
     fi
-    [ -s "${SESSION_DIR}/${key}.bundle" ] || rm -f "${SESSION_DIR}/${key}.bundle"
-    # The whole change, commits included, for !diff once the runner is gone.
-    # shellcheck disable=SC2016  # expanded on the runner
-    _session_sh "$name" 'cd /workspace && git diff --binary "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*"' \
-      > "${SESSION_DIR}/${key}.full.patch" 2>/dev/null || true
-    [ -s "${SESSION_DIR}/${key}.full.patch" ] || rm -f "${SESSION_DIR}/${key}.full.patch"
     local media; media="$(mktemp -d)"; session_media "$key" "$media" >/dev/null 2>&1 || true; rm -rf "$media"
     _session_sh "$name" 'cd /home/agent && tar -czf - $(ls -d .claude/projects .codex/sessions 2>/dev/null)' 2>/dev/null | head -c 1073741824 > "${SESSION_DIR}/${key}.claude.tgz" || true
     [ -s "${SESSION_DIR}/${key}.claude.tgz" ] || rm -f "${SESSION_DIR}/${key}.claude.tgz"
@@ -1526,6 +1584,8 @@ _session_store() { printf '%s' "${FXA_SESSION_STORE_URI-${FXA_GCE_PROJECT:+gs://
 _session_upload() {
   local uri n files=(); uri="$(_session_store)"; [ -n "$uri" ] || return 0
   for n in $_SESSION_SAVED; do [ -s "${SESSION_DIR}/$1.$n" ] && files+=("${SESSION_DIR}/$1.$n"); done
+  # A team stack's work, one set for each repo.
+  trees_on "$1" && for n in "${SESSION_DIR}/$1".*.patch "${SESSION_DIR}/$1".*.bundle; do [ -s "$n" ] && files+=("$n"); done
   [ "${#files[@]}" -gt 0 ] || return 0
   gcloud storage cp -q "${files[@]}" "${uri}/" >/dev/null 2>&1 \
     || { errors_record session upload_failed "$1" "_session_upload" "the saved work did not reach ${uri}; it stays on this disk" "" 2>/dev/null || true; return 1; }
@@ -1535,6 +1595,7 @@ _session_upload() {
 _session_fetch() {
   local uri n; uri="$(_session_store)"; [ -n "$uri" ] || return 0
   for n in $_SESSION_SAVED; do [ -s "${SESSION_DIR}/$1.$n" ] && return 0; done
+  trees_on "$1" && for n in "${SESSION_DIR}/$1".*.patch; do [ -s "$n" ] && return 0; done
   gcloud storage cp -q "${uri}/$1.*" "${SESSION_DIR}/" >/dev/null 2>&1 || true
 }
 
@@ -1569,11 +1630,13 @@ session_checkout() {
   local branch base; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; base="$(session_get "$key" base_sha)"
   # The agent commits and rebases, so the PR's base is where its HEAD leaves the
   # latest main, not the base it started on. The tree below holds the whole change.
+  # A team stack: the selected tree's path and base (lib/trees.sh); else /workspace and main.
+  local at="${FXA_TREE_PATH:-/workspace}" mb=main; [ -n "${FXA_TREE_PATH:-}" ] && mb="$FXA_WORKTREE_BASE"
   local main work=""
-  _retry git -C "$root" fetch -q origin main 2>/dev/null || true
-  main="$(git -C "$root" rev-parse -q --verify origin/main 2>/dev/null || true)"
+  _retry git -C "$root" fetch -q origin "$mb" 2>/dev/null || true
+  main="$(git -C "$root" rev-parse -q --verify "origin/${mb}" 2>/dev/null || true)"
   if [[ "$main" =~ ^[0-9a-f]{40}$ ]]; then
-    work="$(_session_sh "$name" "cd /workspace && { git cat-file -e ${main}^{commit} 2>/dev/null || git fetch -q origin ${main}; } && git merge-base HEAD ${main}" 2>/dev/null | tail -1 || true)"
+    work="$(_session_sh "$name" "cd ${at} && { git cat-file -e ${main}^{commit} 2>/dev/null || git fetch -q origin ${main}; } && git merge-base HEAD ${main}" 2>/dev/null | tail -1 || true)"
     [[ "$work" =~ ^[0-9a-f]{40}$ ]] && git -C "$root" merge-base --is-ancestor "$work" "$main" 2>/dev/null || work=""
   fi
   git -C "$root" -c core.hooksPath=/dev/null worktree add --quiet -B "$branch" "$dir" "${work:-$base}" >&2 || return 1
@@ -1582,8 +1645,8 @@ session_checkout() {
   # push_lease: the PR head after this session pushed, which base_sha no longer is.
   local lease; lease="$(session_get "$key" push_lease)"
   [ -n "$(session_get "$key" review_pr)" ] && git -C "$root" update-ref "refs/remotes/origin/${branch}" "${lease:-$base}"
-  ln -s "${root}/node_modules" "${dir}/node_modules"
-  vm_pull_tree "$name" /workspace "$dir"
+  [ -d "${root}/node_modules" ] && ln -s "${root}/node_modules" "${dir}/node_modules"
+  vm_pull_tree "$name" "$at" "$dir"
 }
 
 session_checkout_remove() {

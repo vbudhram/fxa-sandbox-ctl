@@ -40,14 +40,19 @@ pipeline_load() {
   PIPE_NAME="$name"
   # PIPE_REPOS: one row per repo, "slug path role", role work, dep, data or ref. The
   # first work row is the session's repo; the old single values come from the rows.
+  # Every work row goes in PIPE_WORK_ROWS ("slug path"): the repos a team stack may pick.
+  PIPE_WORK_ROWS=()
   if [ -n "${PIPE_REPOS+x}" ]; then
-    local row slug path role deps=""
+    local row slug path role deps="" paths=" "
     for row in "${PIPE_REPOS[@]}"; do
       read -r slug path role <<< "$row"
       [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$path" =~ ^/home/agent/[a-z0-9-]+$ ]] && [[ "$role" =~ ^(work|dep|data|ref)$ ]] \
         || { echo "ERROR: profile ${name}: bad repo row '${row}' (slug path role; role is work, dep, data or ref)" >&2; return 1; }
+      [[ "$paths" == *" $path "* ]] && { echo "ERROR: profile ${name}: two repo rows use ${path}" >&2; return 1; }
+      paths="${paths}${path} "
       case "$role" in
-        work) [ -n "${PIPE_REPO_SLUG:-}" ] || { PIPE_REPO_SLUG="$slug"; PIPE_WORKSPACE="$path"; } ;;
+        work) PIPE_WORK_ROWS+=("$slug $path")
+          [ -n "${PIPE_REPO_SLUG:-}" ] || { PIPE_REPO_SLUG="$slug"; PIPE_WORKSPACE="$path"; } ;;
         dep) deps="${deps:+$deps }$slug" ;;
       esac
     done
