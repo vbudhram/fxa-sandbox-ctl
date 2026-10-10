@@ -8,11 +8,16 @@
 #   finish     wrap-up 12 s, then a draft PR event (a PR number that does not exist)
 #   pr-status  CI running for FAKE_CI_S seconds (default 60), then passed
 #   answer     busy (exit 3), so the bot starts a session at once
+#   stacks     --repos gives each turn_end a row per repo; finish --repo opens that repo's fake PR
+#              (mozilla/fxa ships a PR, others a diff); find-pr and --resume-from carry the PRs
+#   profile    passed to the real controller
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
 PR_URL="https://github.com/mozilla/fxa/pull/999999"
-[ "${1:-}" = --backend ] && shift 2
+all=("$@") pipe="" REAL="$(cd "$(dirname "$0")/../.." && pwd)/fxa-sandbox-ctl"
+while :; do case "${1:-}" in --backend) shift 2 ;; --pipeline) pipe="$2"; shift 2 ;; *) break ;; esac; done
+[ "${1:-}" = profile ] && exec "$REAL" "${all[@]}"
 now() { date +%s; }
 get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 
@@ -21,9 +26,11 @@ get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 script() {
   local k="$1" t; t="$(now)"
   jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" \
-    --arg fin "$(get "$k" fin)" --arg mode "$(get "$k" mode)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" '
+    --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" '
+    def url($s): if $s == "" then $pr else "https://github.com/\($s)/pull/999999" end;
     ($turns | split("\n") | map(select(. != "") | tonumber)) as $ts
-    | ($fin | if . == "" then null else tonumber end) as $f
+    | ($fins | split("\n") | map(select(. != "") | split(" ") | {at: (.[0] | tonumber), mode: .[1], slug: (if .[2] == "-" then "" else .[2] end)})) as $fs
+    | ($repos | split(",") | map(select(. != ""))) as $rs
     | [ $ts | to_entries[] | .value as $T | .key as $n
         | {at: ($T + 1), ev: {type: "step", text: "Reading packages/fxa-settings/src/index.tsx"}},
           {at: ($T + 3), ev: {type: "step", text: "Running grep -rn useAccount packages/fxa-settings/src"}},
@@ -32,14 +39,17 @@ script() {
           {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}},
           {at: ($T + 10), ev: ({type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."}
-            + (if $f != null and $f < $T then {pr: $pr} else {} end))} ]
-      + (if $f == null then [] elif $mode == "push" then
-          [{at: ($f + 12), ev: {type: "pushed", branch: "agent-fake", url: "https://github.com/mozilla/fxa/compare/main...agent-fake?expand=1", notes: []}}]
-        else [{at: ($f + 12), ev: {type: "pr", url: $pr, updated: false, notes: [], summary: null}}] end)
+            + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T) then {pr: $pr} else {} end)
+               else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,
+                 out: (if $s == "mozilla/fxa" then "pr" else "diff" end),
+                 pr: (if any($fs[]; .slug == $s and .at < $T and (.mode | startswith("pr"))) then url($s) else null end)}]} end))} ]
+      + [$fs[] | select(.mode == "pr" or .mode == "push") | {at: (.at + 12), ev: ((if .mode == "push" then
+          {type: "pushed", branch: "agent-fake", url: "https://github.com/\(if .slug == "" then "mozilla/fxa" else .slug end)/compare/main...agent-fake?expand=1", notes: []}
+          else {type: "pr", url: url(.slug), updated: false, notes: [], summary: null} end) + (if .slug == "" then {} else {repo: .slug} end))}]
     | map(select(.at <= $now)) | sort_by(.at) as $evs
     | ($ts | map(select(. <= $now and $now < . + 10)) | length > 0) as $inturn
     | (if $over != "" then $over elif $now < $t0 + 5 then "starting"
-       elif $f != null and $now < $f + 12 then "wrapping" else "active" end) as $state
+       elif any($fs[]; (.mode == "pr" or .mode == "push") and $now < .at + 12) then "wrapping" else "active" end) as $state
     | {now: $now, state: $state, inturn: $inturn, evs: $evs, t0: $t0}'
 }
 
@@ -59,10 +69,12 @@ events() {
                 , total: 5, done: (.state != "starting")} end)}'
 }
 
+# prstatus <key> [--repo <slug>]
 prstatus() {
-  local f; f="$(get "$1" fin)"
-  [ -n "$f" ] && [ "$(get "$1" mode)" != push ] && [ "$(now)" -ge $(( f + 12 )) ] || { echo null; return; }
-  jq -n --arg u "$PR_URL" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" \
+  local s="${3:--}" f u="$PR_URL"; f="$(get "$1" fins | awk -v s="$s" '$3 == s && $2 ~ /^pr/ {print $1; exit}')"
+  [ "$s" = - ] || u="https://github.com/$s/pull/999999"
+  [ -n "$f" ] && [ "$(now)" -ge $(( f + 12 )) ] || { echo null; return; }
+  jq -n --arg u "$u" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" \
     '{state: "OPEN", draft: true, url: $u, ci: (if $ci == 1 then "pass" else "running" end), running: ($ci == 0),
       reviews: [], mergeable: "MERGEABLE", failing: [], infra: [], links: [], jira: null}'
 }
@@ -72,7 +84,15 @@ opt() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { e
 cmd="${1:-}"; shift || true
 case "$cmd" in
   task) k="$(opt --id "$@")"; [[ "$k" =~ ^agent-[a-z0-9]+$ ]] || { echo "fake-ctl: task needs --id" >&2; exit 1; }
-    mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"; echo "started $k (fake)" ;;
+    mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
+    opt --owner "$@" > "$DIR/$k/owner"; r="$(opt --repos "$@")"; from="$(opt --resume-from "$@")"; co="$(opt --checkout "$@")"
+    # A resume carries the repos and PRs; carried PRs are not announced again.
+    if [[ "$from" =~ ^agent-[a-z0-9]+$ ]]; then [ -n "$r" ] || r="$(get "$from" repos)"
+      get "$from" fins | awk '{sub(/-c$/, "", $2); print $1, $2 "-c", $3}' > "$DIR/$k/fins"; fi
+    # Like the real task: a team with default repos starts a stack without a pick.
+    [ -z "$r" ] && [ -n "$pipe" ] && r="$("$REAL" --pipeline "$pipe" profile show 2>/dev/null | jq -r '(.defaults // []) | join(",")' || true)"
+    [ -z "$r" ] && [[ "$co" =~ ^https://github\.com/([^/]+/[^/]+)/pull/ ]] && r="${BASH_REMATCH[1]}"
+    echo "$r" > "$DIR/$k/repos"; echo "started $k (fake)" ;;
   steer) k="$1"; now >> "$DIR/$k/turns"; rm -f "$DIR/$k/over" ;;
   events) events "$@" ;;
   watch) k="$1"; n=0
@@ -83,18 +103,26 @@ case "$cmd" in
       sleep 1
     done ;;
   finish) k="$(opt --session "$@")"; [ -f "$DIR/$k/t0" ] || { echo "ERROR: no session $k" >&2; exit 1; }
-    [ -n "$(get "$k" fin)" ] && { echo "ERROR: the fake opens one PR per session" >&2; exit 1; }
-    now > "$DIR/$k/fin"; case " $* " in *" --no-pr "*) echo push > "$DIR/$k/mode" ;; esac ;;
+    s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac
+    get "$k" fins | awk -v s="$s" '$3 == s {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
+    echo "$(now) $m $s" >> "$DIR/$k/fins" ;;
   stop) echo stopped > "$DIR/$1/over" ;;
   interrupt) ;;
-  diff) printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' ;;
+  diff) s="$(opt --repo "$@")"; [ -n "$s" ] && { n="$(printf %s "${s#*/}" | tr A-Z a-z)"; printf -- '--- a/%s/README.md\n+++ b/%s/README.md\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' "$n" "$n"; exit 0; }
+    printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' ;;
   media) ;;
   answer) exit 3 ;;
   jira-card) echo null ;;
   errors) case "${1:-}" in --json) echo '[]' ;; esac ;;
   session) sub="${1:-}"; shift || true
     case "$sub" in
-      pr-status) prstatus "$1" ;;
+      pr-status) prstatus "$@" ;;
+      find-pr) for d in "$DIR"/agent-*; do k="${d##*/}"
+          get "$k" fins | while read -r _ m s; do case "$m" in pr*) [ "$s" = - ] && u="$PR_URL" || u="https://github.com/$s/pull/999999"
+            [ "$u" = "$1" ] && echo "$(get "$k" t0) $k"; esac; done; done | sort -rn | awk 'NR == 1 {print $2}' | {
+          read -r k || { echo null; exit 0; }
+          jq -nc --arg k "$k" --arg o "$(get "$k" owner)" --arg over "$(get "$k" over)" \
+            '{key: $k, state: (if $over == "" then "active" else $over end), profile: "", thread: null, owner: $o, live: ($over == "")}'; } ;;
       pause) echo paused > "$DIR/$1/over" ;;
       history|copilot-comments|review-comments) echo '[]' ;;
       summary|cost|plan|thread-usage) echo null ;;
