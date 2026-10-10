@@ -68,4 +68,6 @@ check "past the tape: a canned turn, logged" "Fake turn 4|1" "$(f events agent-e
 f task --id agent-ff6 --owner UA --resume-from agent-ee5 --prompt-file "$tmp/p.md" >/dev/null; echo 3060 > "$FAKE_NOW_FILE"
 check "the next task plays the tape's next session" "needs-input|Second session reply." "$(f events agent-ff6 | jq -r '.events[0] | "\(.status)|\(.text)"')"
 unset FAKE_TAPE
+check "the quick look is busy by default" "3" "$(f answer ask --id q1 --prompt-file "$tmp/p.md" --stream >/dev/null; echo $?)"
+check "FAKE_ANSWER: the quick look answers, after a step" "step|answer|It was removed." "$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --prompt-file "$tmp/p.md" --stream | jq -r '.type' | paste -sd'|' -)|$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --stream | tail -1 | jq -r .answer)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

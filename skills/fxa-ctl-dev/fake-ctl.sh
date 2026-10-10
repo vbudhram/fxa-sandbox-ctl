@@ -16,7 +16,8 @@
 #   FAKE_NOW_FILE  the clock: epoch seconds in a file that the harness moves, else the real clock
 #   FAKE_TICK      the watch loop's sleep, default 1 s
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
-#   FAKE_ANSWER_S  seconds the quick look takes before it says busy (exit 3), so a test can talk during it
+#   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
+#   FAKE_ANSWER    the quick look's answer text; unset, the quick look says busy (exit 3) and a session starts
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
 #   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
 #                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
@@ -151,7 +152,10 @@ case "$cmd" in
   diff) s="$(opt --repo "$@")"; [ -n "$s" ] && { n="$(printf %s "${s#*/}" | tr A-Z a-z)"; printf -- '--- a/%s/README.md\n+++ b/%s/README.md\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' "$n" "$n"; exit 0; }
     printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' ;;
   media) ;;
-  answer) sleep "${FAKE_ANSWER_S:-0}"; exit 3 ;;
+  answer) sleep "${FAKE_ANSWER_S:-0}"; [ -n "${FAKE_ANSWER:-}" ] || exit 3
+    # The quick look's stream (ctl.js askStream): steps, then the answer.
+    jq -nc '{type: "step", text: "Reading packages/fxa-settings/src/components/FormVerifyCode/index.tsx"}'
+    jq -nc --arg a "$FAKE_ANSWER" --arg id "$(opt --id "$@")" '{type: "answer", id: $id, answer: $a, question: null, upgrade: null, secs: 3, run_ms: 3000, api_ms: 2500, cost_usd: 0.01, turns: 2, error: null}' ;;
   profile) profile "$@" ;;
   jira-card) echo null ;;
   errors) case "${1:-}" in --json) echo '[]' ;; esac ;;
