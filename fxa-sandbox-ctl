@@ -2042,7 +2042,9 @@ cmd_task() {
   # ponytail: a team stack loads each repo's config through Claude's --add-dir; Codex has no such flag yet.
   if [ "$runtime" = codex ] && trees_on "$key"; then echo "ERROR: a session with several repos runs on Claude only" >&2; _task_abort "$key"; return 1; fi
   session_set "$key" runtime "$runtime"
-  # MCP connectors: --mcp, else the resumed session's. Sessions only: pipeline runs never get them.
+  # MCP connectors: a new session takes its team profile's (PIPE_MCP) or --mcp; a resume keeps its
+  # session's. Sessions only: pipeline runs never get them.
+  [ -z "$resume_from" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
     [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; rm -f "$(_session_file "$key")"; _session_db_sync "$key"; return 1; }

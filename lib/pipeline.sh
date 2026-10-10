@@ -500,14 +500,20 @@ _profile_app_repos() {
 
 # pipeline_profile_json   The loaded profile's repos and the effective write access of
 # each, for the bot's team card: the profile must allow it and the App must be on the repo.
+# pipeline_mcp <asked>   The MCP connectors for a new session: the profile's PIPE_MCP when it sets
+# one (empty: none), else the asked list (the bot's MCP_CONNECTORS). The gateway must serve each.
+pipeline_mcp() { if [ -n "${PIPE_MCP+x}" ]; then printf '%s' "$PIPE_MCP"; else printf '%s' "$1"; fi; }
+
 pipeline_profile_json() {
   local app ok=1; app="$(_profile_app_repos)" || ok=0
   # The work rows a team stack may pick: every work row, or the one repo of a profile without rows.
   local works; works="$(trees_allowed 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ')"; works="${works:-${PIPE_REPO_SLUG:-}}"
   jq -nc --arg p "${PIPE_PROFILE:-}" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
-    --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" '
+    --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" \
+    --arg mcp "${PIPE_MCP:-}" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" '
     ($ro == "0") as $read_only | ($app | split("\n") | map(ascii_downcase)) as $installed |
     { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only,
+      mcp: (if $mcp_set then ($mcp | split(",") | map(select(. != ""))) else null end),
       defaults: ($defaults | split(" ") | map(select(. != ""))),
       repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",
                  why: (if $read_only then "the profile is read-only"

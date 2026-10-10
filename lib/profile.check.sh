@@ -84,7 +84,7 @@ check "the monitor profile works in its own clone, with FxA's stack beside it" "
   "$(loaded "$root" monitor | grep -E '^PIPE_(STACK_DIR|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
 # profile show: each repo's effective access, from the profile and the GitHub App.
-eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p' "$root/lib/pipeline.sh")"
+eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p;/^pipeline_mcp() {/p' "$root/lib/pipeline.sh")"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 PIPE_STATE_DIR="$tmp/ps"; mkdir -p "$PIPE_STATE_DIR"
 gh() { echo "call" >> "$tmp/ghcalls"; printf '%s\n' mozilla/fxa; }
@@ -95,6 +95,12 @@ check "no App on the work repo: no write" '"the agent'"'"'s GitHub App is not in
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/other PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
 check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR/app-repos.txt"; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"
 gh() { return 1; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
+check "a profile's PIPE_MCP replaces the bot's list" "github,jira" "$(PIPE_MCP=github,jira pipeline_mcp jira,slack)"
+check "an empty PIPE_MCP means none" "" "$(PIPE_MCP= pipeline_mcp jira,slack)"
+check "no PIPE_MCP: the bot's list" "jira,slack" "$(unset PIPE_MCP; pipeline_mcp jira,slack)"
+check "the profile JSON names the team's connectors" '["github","jira"]|null' \
+  "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_MCP=github,jira pipeline_profile_json | jq -c .mcp)|$(unset PIPE_MCP; PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa pipeline_profile_json | jq -c .mcp)"
+check "pyfxa-team sets its connectors" "github,jira" "$( ( source "$root/profiles/pyfxa-team/profile.conf"; echo "$PIPE_MCP" ) )"
 check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
 unset -f gh
 
