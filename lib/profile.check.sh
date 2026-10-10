@@ -160,8 +160,14 @@ unset -f _session_sh
 eval "$(sed -n '/^_gce_profile_boot() {/,/^}/p' "$root/lib/agent.sh")"
 vm_exec() { printf '%s\n' "${*: -1}" >> "$tmp/bootx"; }
 : > "$tmp/bootx"; SANDBOX_ROOT="$root" PIPE_PROFILE=monitor _gce_profile_boot r1 >/dev/null
-check "monitor's boot.sh goes to the runner and starts detached" "1|1" \
-  "$(grep -c "base64 -d > /usr/local/sbin/profile-boot" "$tmp/bootx")|$(grep -c 'nohup setsid /usr/local/sbin/profile-boot > /var/log/profile-boot.log 2>&1 < /dev/null &' "$tmp/bootx")"
+check "monitor's boot.sh goes to the runner" "1" "$(grep -c "base64 -d > /usr/local/sbin/profile-boot" "$tmp/bootx")"
+# Detached for real: the command returns while the script still runs, even with its output on a
+# pipe that ssh holds open. (setsid is Linux only: the docker leg of test.sh runs this.)
+if command -v setsid >/dev/null; then
+  slow="$(printf '#!/bin/bash\nsleep 3\n' | base64 | tr -d '\n')"
+  c="$(sed -e "s#^echo '[^']*'#echo '$slow'#" -e "s#/usr/local/sbin/profile-boot#$tmp/pb#g" -e "s#/var/log/profile-boot.log#$tmp/pb.log#" "$tmp/bootx")"
+  t0=$(date +%s); bash -c "$c" | cat; check "the boot command returns before boot.sh ends" "fast" "$([ $(( $(date +%s) - t0 )) -lt 2 ] && echo fast || echo "waited $(( $(date +%s) - t0 ))s")"
+fi
 check "the shipped script is the profile's own" "same" "$([ "$(sed -n "s/^echo '\([^']*\)'.*/\1/p" "$tmp/bootx" | base64 -d)" = "$(cat "$root/profiles/monitor/boot.sh")" ] && echo same)"
 : > "$tmp/bootx"; SANDBOX_ROOT="$root" PIPE_PROFILE=fxa _gce_profile_boot r1 >/dev/null
 check "fxa has no boot.sh, so nothing runs" "0" "$(wc -l < "$tmp/bootx" | tr -d ' ')"

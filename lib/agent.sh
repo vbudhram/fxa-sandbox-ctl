@@ -244,7 +244,9 @@ _gce_profile_boot() {
   [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || return 0
   b64="$(base64 < "$f" | tr -d '\n')"
   echo "Setting up the ${PIPE_PROFILE} stack in the background..."
-  vm_exec "$name" sudo bash -c "echo '${b64}' | base64 -d > /usr/local/sbin/profile-boot && chmod 755 /usr/local/sbin/profile-boot && umask 022 && nohup setsid /usr/local/sbin/profile-boot > /var/log/profile-boot.log 2>&1 < /dev/null &"
+  # exec setsid -f: the script forks off at once and the shell is gone, so nothing holds the ssh
+  # session open. A trailing "&" on the && chain left a subshell that did: the boot waited ~2 min.
+  vm_exec "$name" sudo bash -c "echo '${b64}' | base64 -d > /usr/local/sbin/profile-boot && chmod 755 /usr/local/sbin/profile-boot && umask 022 && exec setsid -f /usr/local/sbin/profile-boot > /var/log/profile-boot.log 2>&1 < /dev/null"
 }
 
 # _profile_egress_extra   The profile's extra egress hosts (PIPE_EGRESS_EXTRA), each a

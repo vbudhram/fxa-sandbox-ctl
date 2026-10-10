@@ -46,7 +46,7 @@ runtime_write_prompt() {
   local partial="" out="tee -a /workspace/.fxa-auto-claude.jsonl"
   [ "${FXA_SESSION_MODE:-}" = 1 ] && { partial="$_SESSION_CLAUDE_PARTIAL"; out=": > /workspace/.fxa-auto-stream.jsonl; ${_SESSION_CLAUDE_SPLIT}"; }
   # A team stack: each repo's CLAUDE.md, rules, skills and agents load (lib/trees.sh).
-  local trees; trees="$(trees_claude_flags < "${workspace_dir}/.fxa-trees.tsv" 2>/dev/null || true)"
+  local trees; trees="$({ trees_claude_flags < "${workspace_dir}/.fxa-trees.tsv"; } 2>/dev/null || true)"
   slot_write "${workspace_dir}/.fxa-auto-launch.sh" <<LAUNCH
 test -f /workspace/.fxa-auto-token && source /workspace/.fxa-auto-token && rm -f /workspace/.fxa-auto-token
 source /etc/agent-env.sh
