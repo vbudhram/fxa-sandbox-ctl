@@ -502,15 +502,18 @@ _profile_app_repos() {
 # each, for the bot's team card: the profile must allow it and the App must be on the repo.
 pipeline_profile_json() {
   local app ok=1; app="$(_profile_app_repos)" || ok=0
-  jq -nc --arg p "${PIPE_PROFILE:-}" --arg work "${PIPE_REPO_SLUG:-}" --arg deps "${PIPE_DEP_REPOS:-}" \
-    --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" '
-    ($ro == "0") as $read_only | ($app | split("\n")) as $installed |
-    { profile: $p, read_only: $read_only,
-      repos: ([{ slug: $work, role: "work",
+  # The work rows a team stack may pick: every work row, or the one repo of a profile without rows.
+  local works; works="$(trees_allowed 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ')"; works="${works:-${PIPE_REPO_SLUG:-}}"
+  jq -nc --arg p "${PIPE_PROFILE:-}" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
+    --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" '
+    ($ro == "0") as $read_only | ($app | split("\n") | map(ascii_downcase)) as $installed |
+    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only,
+      defaults: ($defaults | split(" ") | map(select(. != ""))),
+      repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",
                  why: (if $read_only then "the profile is read-only"
                        elif ($ok | not) then "the GitHub App check failed"
-                       elif ($installed | index($work)) == null then "the agent'"'"'s GitHub App is not installed on this repo"
-                       else null end) } | . + { write: (.why == null) }]
+                       elif ($installed | index($s | ascii_downcase)) == null then "the agent'"'"'s GitHub App is not installed on this repo"
+                       else null end) } | . + { write: (.why == null) }))
               + ($deps | split(" ") | map(select(. != "")) | map({ slug: ., role: "dep", write: false, why: "it runs beside the work repo" }))) }'
 }
 

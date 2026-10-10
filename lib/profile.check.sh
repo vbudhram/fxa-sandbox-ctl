@@ -29,6 +29,23 @@ check "a small profile gets its own state dir and the defaults" \
   "$(grep -E '^PIPE_(BASE_BRANCH|MIN_FREE_GB|PROFILE|REPO|STALL_MINUTES|STATE_DIR)=' <<< "$demo" | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 check "a small profile's state dir is made" "yes" "$([ -d "$tmp/home/.claude/state/demo" ] && echo yes)"
 
+# A team stack: every work row can be picked; the first is the profile's own repo.
+py="$(loaded "$root" pyfxa-team)"
+check "pyfxa-team loads, PyFxA first, both repos as work rows" "PIPE_REPO_SLUG=mozilla/PyFxA|PIPE_STACK_DEFAULT=mozilla/PyFxA mozilla/fxa" \
+  "$(grep -E '^PIPE_(REPO_SLUG|STACK_DEFAULT)=' <<< "$py" | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+check "pyfxa-team's work rows" "mozilla/PyFxA /home/agent/pyfxa|mozilla/fxa /home/agent/fxa" \
+  "$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$root"; source "$root/lib/pipeline.sh"; pipeline_load pyfxa-team >/dev/null 2>&1; printf '%s\n' "${PIPE_WORK_ROWS[@]}" ) | paste -sd'|' -)"
+mkdir -p "$tmp/r/profiles/dup"; printf 'PIPE_REPOS=(\n "mozilla/a /home/agent/a work"\n "mozilla/b /home/agent/a work"\n)\n' > "$tmp/r/profiles/dup/profile.conf"
+check "two work rows on one path are refused" "1" "$(loaded "$tmp/r" dup >/dev/null; echo $?)"
+# A team skill is a directory with a SKILL.md that names it, and its scripts parse.
+bad=""
+for d in "$root"/profiles/*/skills/*/; do
+  n="$(basename "$d")"
+  grep -q "^name: ${n}\$" "${d}SKILL.md" 2>/dev/null || bad="${bad} ${n}:name"
+  for f in "$d"*.sh; do [ -f "$f" ] && { bash -n "$f" 2>/dev/null || bad="${bad} ${n}:$(basename "$f")"; }; done
+done
+check "every team skill names itself and its scripts parse" "" "${bad# }"
+
 # A session's command loads the profile its record names, whatever --pipeline said.
 eval "$(sed -n '/^_profile_from_args() {/,/^}/p' "$root/fxa-sandbox-ctl")"
 SESSION_DIR="$tmp/sess"; mkdir -p "$SESSION_DIR"; _session_file() { printf '%s/%s.json' "$SESSION_DIR" "$1"; }

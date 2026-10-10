@@ -2018,6 +2018,8 @@ cmd_task() {
   fi
   # A team stack: the resumed session's repos, then any repo picked now.
   [ -n "$resume_from" ] && trees_on "$resume_from" && { trees_carry "$resume_from" "$key" || { _task_abort "$key"; return 1; }; }
+  # A team's profile can name the repos a session gets when nobody picks (PIPE_STACK_DEFAULT).
+  [ -z "$repos" ] && ! trees_on "$key" && [ -n "${PIPE_STACK_DEFAULT:-}" ] && repos="$(tr -s ' ' ',' <<< "$PIPE_STACK_DEFAULT")"
   [ -n "$repos" ] && { trees_init "$key" "$repos" || { _task_abort "$key"; return 1; }; }
   if trees_on "$key"; then
     [ -n "$resume_from" ] && trees_each "$key" _task_carry "$key" "$resume_from" "$fresh_pr"
@@ -2666,7 +2668,13 @@ main() {
     ssh)        cmd_ssh "$@" ;;
     exec)       cmd_exec "$@" ;;
     devslot)    cmd_devslot "$@" ;;
-    profile)    [ "${1:-}" = show ] && pipeline_profile_json || { echo "usage: fxa-sandbox-ctl --pipeline <profile> profile show" >&2; return 1; } ;;
+    profile)    case "${1:-}" in
+                  show) pipeline_profile_json ;;
+                  # Every team, for the bot's !stack picker: one profile_show each, in its own shell.
+                  list) local d; for d in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
+                          ( pipeline_load "$(basename "$(dirname "$d")")" >/dev/null 2>&1 && pipeline_profile_json ); done | jq -cs . ;;
+                  *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | profile list" >&2; return 1 ;;
+                esac ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

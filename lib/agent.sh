@@ -67,6 +67,8 @@ _vm_skill_blocklist() {
   printf '%s\n' \
     fxa-ai-fixme-create-issue fxa-changelog fxa-dep-triage fxa-docs-sync fxa-dot-release \
     fxa-issue-verification fxa-pr-debug fxa-pr-open fxa-pr-status fxa-run-functional-tests fxa-triage
+  # A team's own: skills in its repos that need what the runner lacks.
+  [ -z "${PIPE_SKILLS_DENY:-}" ] || printf '%s\n' $PIPE_SKILLS_DENY
 }
 
 # _vm_settings_json <host-settings-file>   The runner's Claude settings: an
@@ -288,7 +290,9 @@ _profile_guide_trees() {
   for row in "${PIPE_REPOS[@]}"; do
     read -r slug path role <<< "$row"
     case "$role" in
-      work) echo "- \`${path}\` (\`${slug}\`): your work repo. \`/workspace\` links here, and only changes here are shipped." ;;
+      work) if [ -n "${PIPE_WORK_ROWS+x}" ] && [ "${#PIPE_WORK_ROWS[@]}" -gt 1 ]; then
+              echo "- \`${path}\` (\`${slug}\`), linked as \`/workspace/${path##*/}\` when the session picks it: you may change it, and it ships on its own."
+            else echo "- \`${path}\` (\`${slug}\`): your work repo. \`/workspace\` links here, and only changes here are shipped."; fi ;;
       dep)  echo "- \`${path}\` (\`${slug}\`): runs beside your repo. It is read-only: do not edit it, because its changes are not shipped. If it needs a change, say so." ;;
       data) echo "- \`${path}\` (\`${slug}\`): test data, read-only." ;;
       ref)  echo "- \`${path}\` (\`${slug}\`): for reference, read-only." ;;
@@ -618,6 +622,9 @@ _setup_claude_config() {
        && [ -s "$config_tar" ]; then
       # The subagents runners get (agents/ in this repo, such as fxa-explore), beside the skills.
       [ -d "${SANDBOX_ROOT}/agents" ] && COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" agents 2>/dev/null
+      # The team's own skills (profiles/<team>/skills), beside the shared ones.
+      [ -n "${PIPE_PROFILE:-}" ] && [ -d "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}/skills" ] \
+        && COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}" skills 2>/dev/null
       # The runner's own hooks (hooks/ in this repo), which its settings.json names.
       COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" hooks/fxa-bash-guard.sh 2>/dev/null
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"

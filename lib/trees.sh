@@ -47,7 +47,7 @@ trees_each() {
 # trees_allowed   The repos the loaded profile lets a stack pick, one "slug path" per line.
 # A profile with no PIPE_REPOS (FxA) offers its one repo.
 trees_allowed() {
-  if [ "${#PIPE_WORK_ROWS[@]}" -gt 0 ] 2>/dev/null; then printf '%s\n' "${PIPE_WORK_ROWS[@]}"
+  if [ -n "${PIPE_WORK_ROWS+x}" ] && [ "${#PIPE_WORK_ROWS[@]}" -gt 0 ]; then printf '%s\n' "${PIPE_WORK_ROWS[@]}"
   else printf '%s /home/agent/fxa\n' "${PIPE_REPO_SLUG:-mozilla/fxa}"; fi
 }
 
