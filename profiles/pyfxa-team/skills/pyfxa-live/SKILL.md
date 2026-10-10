@@ -12,7 +12,8 @@ bash ~/.claude/skills/pyfxa-live/live.sh fxa/tests/test_core.py -k password
 
 1. It starts FxA when the auth server does not answer (`fxa-start` in `/workspace/fxa`, a few minutes).
 2. It runs the tests with `FXA_RUN_LIVE_TESTS=1`, and sets `FXA_TEST_SERVER_URL` and
-   `FXA_TEST_MAIL_URL` to the local servers.
+   `FXA_TEST_MAIL_URL` to the local servers. The mail URL is `http://127.0.0.1:9001`, not
+   `localhost`: the tests make the address from the mail host, and FxA refuses a domain with no dot.
 3. PyFxA's tests read those two variables only after a change that makes them do so.
    Until then they call stage and restmail.net, which the runner's network refuses:
    the script says so when every test fails to connect.

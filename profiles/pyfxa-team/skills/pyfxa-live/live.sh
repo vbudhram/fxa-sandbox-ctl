@@ -11,7 +11,7 @@ fi
 bash ~/.claude/skills/pyfxa-verify/verify.sh --setup || exit 2
 v="${PYFXA_VENV:-/home/agent/.pyfxa-venv}"
 cd "${PYFXA_DIR:-/home/agent/pyfxa}" || exit 2
-out="$(FXA_RUN_LIVE_TESTS=1 FXA_TEST_SERVER_URL="${auth}/v1" FXA_TEST_MAIL_URL="http://localhost:9001" \
+out="$(FXA_RUN_LIVE_TESTS=1 FXA_TEST_SERVER_URL="${auth}/v1" FXA_TEST_MAIL_URL="http://127.0.0.1:9001" \
   "$v/bin/python" -m pytest -q "${@:-fxa/tests/test_core.py}" 2>&1)"; rc=$?
 printf '%s\n' "$out" | tail -30
 if [ "$rc" != 0 ] && grep -q 'stage.mozaws.net\|restmail.net' <<< "$out"; then
