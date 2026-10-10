@@ -10,15 +10,34 @@
 #   answer     busy (exit 3), so the bot starts a session at once
 #   stacks     --repos gives each turn_end a row per repo; finish --repo opens that repo's fake PR
 #              (mozilla/fxa ships a PR, others a diff); find-pr and --resume-from carry the PRs
-#   profile    passed to the real controller
+#   profile    passed to the real controller, unless FAKE_PROFILES is set
+#
+# For the e2e harness (fxa-agent-bot/e2e), all opt-in:
+#   FAKE_NOW_FILE  the clock: epoch seconds in a file that the harness moves, else the real clock
+#   FAKE_TICK      the watch loop's sleep, default 1 s
+#   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
+#   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
 PR_URL="https://github.com/mozilla/fxa/pull/999999"
 all=("$@") pipe="" REAL="$(cd "$(dirname "$0")/../.." && pwd)/fxa-sandbox-ctl"
 while :; do case "${1:-}" in --backend) shift 2 ;; --pipeline) pipe="$2"; shift 2 ;; *) break ;; esac; done
-[ "${1:-}" = profile ] && exec "$REAL" "${all[@]}"
-now() { date +%s; }
+# profile list | profile show (with --pipeline)
+profile() {
+  [ -n "${FAKE_PROFILES:-}" ] || { "$REAL" "${all[@]}"; return; }
+  case "${1:-}" in list) jq -c . "$FAKE_PROFILES" ;; show) jq -c --arg p "${pipe:-fxa}" '.[] | select(.profile == $p)' "$FAKE_PROFILES" ;; esac
+}
+now() { if [ -n "${FAKE_NOW_FILE:-}" ]; then cat "$FAKE_NOW_FILE"; else date +%s; fi; }
+if [ -n "${FAKE_CTL_LOG:-}" ]; then
+  # The bot deletes each file after the call, so keep its text here.
+  _files='{}' _prev=""
+  for a in "${all[@]}"; do
+    case "$_prev" in --*-file) [ -f "$a" ] && _files="$(jq -c --arg k "${_prev#--}" --rawfile v "$a" '. + {($k): $v}' <<< "$_files")" ;; esac
+    _prev="$a"
+  done
+  printf '%s\0' "$@" | jq -cRs --argjson at "$(now)" --argjson files "$_files" '{at: $at, argv: (split("\u0000")[:-1]), files: $files}' >> "$FAKE_CTL_LOG"
+fi
 get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 
 # The session's script as JSON: every event with its time, and the state now.
@@ -90,28 +109,34 @@ case "$cmd" in
     if [[ "$from" =~ ^agent-[a-z0-9]+$ ]]; then [ -n "$r" ] || r="$(get "$from" repos)"
       get "$from" fins | awk '{sub(/-c$/, "", $2); print $1, $2 "-c", $3}' > "$DIR/$k/fins"; fi
     # Like the real task: a team with default repos starts a stack without a pick.
-    [ -z "$r" ] && [ -n "$pipe" ] && r="$("$REAL" --pipeline "$pipe" profile show 2>/dev/null | jq -r '(.defaults // []) | join(",")' || true)"
+    [ -z "$r" ] && [ -n "$pipe" ] && r="$(all=(--pipeline "$pipe" profile show); profile show 2>/dev/null | jq -r '(.defaults // []) | join(",")' || true)"
     [ -z "$r" ] && [[ "$co" =~ ^https://github\.com/([^/]+/[^/]+)/pull/ ]] && r="${BASH_REMATCH[1]}"
     echo "$r" > "$DIR/$k/repos"; echo "started $k (fake)" ;;
-  steer) k="$1"; now >> "$DIR/$k/turns"; rm -f "$DIR/$k/over" ;;
+  # Like the real steer: during a turn (or the boot) the message waits, and its turn starts when that one ends.
+  steer) k="$1"; t="$(now)"; last="$(sort -n "$DIR/$k/turns" | tail -1)"
+    if [ -z "$(get "$k" over)" ] && [ "$t" -lt $(( last + 10 )) ]; then echo $(( last + 10 )) >> "$DIR/$k/turns"; echo queued
+    else echo "$t" >> "$DIR/$k/turns"; fi
+    rm -f "$DIR/$k/over" ;;
   events) events "$@" ;;
   watch) k="$1"; n=0
     # Like the real watch: it stays open between turns, and each step prints once.
     for _ in $(seq 1 1800); do
       out="$(script "$k" | jq -c '[.evs[] | select(.ev.type == "step" or .ev.type == "diffstat" or .ev.type == "turn_end") | if .ev.type == "turn_end" then {type: "result"} else .ev end]')"
       jq -c --argjson n "$n" '.[$n:][]' <<< "$out"; n="$(jq length <<< "$out")"
-      sleep 1
+      sleep "${FAKE_TICK:-1}"
     done ;;
   finish) k="$(opt --session "$@")"; [ -f "$DIR/$k/t0" ] || { echo "ERROR: no session $k" >&2; exit 1; }
     s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac
     get "$k" fins | awk -v s="$s" '$3 == s {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
     echo "$(now) $m $s" >> "$DIR/$k/fins" ;;
   stop) echo stopped > "$DIR/$1/over" ;;
-  interrupt) ;;
+  interrupt) k="$1"; last="$(sort -n "$DIR/$k/turns" 2>/dev/null | tail -1)"
+    [ -n "$last" ] && [ "$(now)" -lt $(( last + 10 )) ] && echo interrupted || true ;;
   diff) s="$(opt --repo "$@")"; [ -n "$s" ] && { n="$(printf %s "${s#*/}" | tr A-Z a-z)"; printf -- '--- a/%s/README.md\n+++ b/%s/README.md\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' "$n" "$n"; exit 0; }
     printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' ;;
   media) ;;
   answer) exit 3 ;;
+  profile) profile "$@" ;;
   jira-card) echo null ;;
   errors) case "${1:-}" in --json) echo '[]' ;; esac ;;
   session) sub="${1:-}"; shift || true
