@@ -716,7 +716,7 @@ data[\"projects\"][\"/mnt/shared/workspace\"] = trust
 # Claude trusts the resolved path. On gce /workspace links to the baked clone.
 data[\"projects\"][os.path.realpath(\"/workspace\")] = trust
 # A team stack: /workspace links to each repo, and Claude trusts each by its real path.
-for e in os.listdir(\"/workspace\"):
+for e in (os.listdir(\"/workspace\") if os.path.isdir(\"/workspace\") else []):
     p = os.path.join(\"/workspace\", e)
     if os.path.islink(p) and os.path.isdir(os.path.join(os.path.realpath(p), \".git\")):
         data[\"projects\"][os.path.realpath(p)] = trust

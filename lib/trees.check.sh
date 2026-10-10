@@ -54,4 +54,9 @@ echo '{"key":"agent-cd34"}' > "$tmp/agent-cd34.json"
 trees_carry "$k" agent-cd34
 check "a resume carries the repos, each on the new branch" "fxa:agent-cd34:pr pyfxa:agent-cd34:diff|" \
   "$(jq -r '[.trees[] | "\(.name):\(.branch):\(.out)"] | join(" ")' "$tmp/agent-cd34.json")|$(jq -r '.trees[1].pr_url // ""' "$tmp/agent-cd34.json")"
+# A one-repo session resumed as a stack keeps its fields at the top; only FxA's tree takes them.
+echo '{"key":"agent-one1","branch":"b-one","pr_url":"https://github.com/mozilla/fxa/pull/5","base_sha":"abc"}' > "$tmp/agent-one1.json"
+check "a one-repo resume gives its PR and base to FxA's tree only" "https://github.com/mozilla/fxa/pull/5|abc|" \
+  "$( _tree_enter "$k" 0 && trees_from_get agent-one1 pr_url)|$( _tree_enter "$k" 0 && trees_from_get agent-one1 base_sha)|$( _tree_enter "$k" 1 && trees_from_get agent-one1 pr_url)"
+check "a stack resume reads each tree's own field" "https://github.com/mozilla/PyFxA/pull/7" "$( _tree_enter "$k" 1 && trees_from_get "$k" pr_url)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

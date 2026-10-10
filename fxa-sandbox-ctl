@@ -1857,7 +1857,7 @@ _task_open_pr() {
 # branch and head. For a team stack it runs once for each tree (trees_each), on that tree's fields.
 _task_carry() {
   local key="$1" from="$2" fresh="$3" pb pu rv pst
-  pb="$(session_get "$from" branch)"; pu="$(session_get "$from" pr_url)"; rv="$(session_get "$from" review_pr)"
+  pb="$(trees_from_get "$from" branch)"; pu="$(trees_from_get "$from" pr_url)"; rv="$(trees_from_get "$from" review_pr)"
   # A session after Open PR works on that PR: its branch, its head, its reviews.
   # So does one after a stopped PR round, which has the PR too.
   if [ -n "$fresh" ]; then
@@ -1875,6 +1875,12 @@ _task_carry() {
     # merged or closed PR: its Open PR would make a second one. gh failing keeps it.
     pst="$(gh pr view "$pu" --json state -q .state 2>/dev/null || true)"
     case "$pst" in MERGED|CLOSED) ;; *) session_set "$key" branch "${pb:-$from}" pr_url "$pu" pr_announced 1 ;; esac
+  fi
+  # A person's PR taken over with --checkout: the author's consent gate goes with it.
+  local co; co="$(session_get "$from" checkout)"
+  if [ -n "$co" ] && { [ "$co" = "$(session_get "$key" pr_url)" ] || [ "$co" = "$(session_get "$key" review_pr)" ]; }; then
+    session_set "$key" checkout "$co" checkout_author "$(session_get "$from" checkout_author)" \
+      checkout_person "$(session_get "$from" checkout_person)" checkout_fork "$(session_get "$from" checkout_fork)"
   fi
   return 0
 }
@@ -1899,6 +1905,14 @@ _task_checkout() {
   session_set "$key" fresh 1 checkout "$url" checkout_author "$author" \
     checkout_person "$([ "$(jq -r '.author.is_bot // false' <<< "$info")" = true ] && echo 0 || echo 1)" \
     checkout_fork "$([ "$(jq -r .isCrossRepository <<< "$info")" = true ] && echo 1 || echo 0)"
+}
+
+# _checkout_gate_on <key>   The session pushes to a person's PR it took over (task --checkout):
+# its review PR, or after a pause its pr_url. Finish then needs the author's consent.
+_checkout_gate_on() {
+  local co; co="$(session_get "$1" checkout)"
+  [ -n "$co" ] && [ "$(session_get "$1" checkout_person)" = 1 ] \
+    && { [ "$(session_get "$1" review_pr)" = "$co" ] || [ "$(session_get "$1" pr_url)" = "$co" ]; }
 }
 
 # _session_announce <key>   The pr and pushed events not announced yet, as a JSON array, and
@@ -2410,7 +2424,7 @@ _finish_session() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-pr) mode=--no-pr; shift ;;
-      --repo) repo="${2:-}"; shift 2 || true ;;
+      --repo) [ $# -ge 2 ] || { echo "ERROR: --repo needs a repo" >&2; return 1; }; repo="$2"; shift 2 ;;
       *) echo "ERROR: Unknown option: $1" >&2; return 1 ;;
     esac
   done
@@ -2432,7 +2446,7 @@ _finish_session() {
   fi
   # A wrap-up turn costs minutes and dollars, and with no changed file it can
   # only end in "nothing to ship".
-  local nch; if [ -n "$idx" ]; then nch="$( _tree_enter "$key" "$idx" && _tree_changes "$key")"; else nch="$(_session_changes "$key" || true)"; fi
+  local nch; if [ -n "$idx" ]; then nch="$( { _tree_enter "$key" "$idx" && _tree_changes "$key"; } || true)"; else nch="$(_session_changes "$key" || true)"; fi
   if [ "$nch" = 0 ]; then
     echo "ERROR: nothing to push: no files changed in ${key}${repo:+ (${repo})}" >&2
     _session_unlock "$key"; return 1
@@ -2511,7 +2525,7 @@ _session_finish_one() {
   # 1 is a problem; 3 is only the PR text's style, which gets the same one repair turn but never stops the ship.
   if [ "$crc" = 1 ] || [ "$crc" = 3 ]; then
     _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write
-${at/#\/home\/agent/\/workspace}/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
+/workspace${at#/home/agent}/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
 $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key" "the repair turn did not start" "$mode"; return 1; }
     sleep 20
     while _session_turn_running "$key"; do
@@ -2531,7 +2545,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
     _session_finish_fail "$key" "these read-only repos have changes, and only the work repo is shipped: ${dirty% }. Move the change to the work repo, or undo it, then try again" "$mode"; return 1
   fi
   # A person's PR (task --checkout) gets a push only after its author agrees on GitHub.
-  if [ "$(session_get "$key" checkout_person)" = 1 ] && [ "$(session_get "$key" review_pr)" = "$(session_get "$key" checkout)" ]; then
+  if _checkout_gate_on "$key"; then
     [ "$(session_get "$key" checkout_fork)" != 1 ] || { _session_finish_fail "$key" "this PR's branch is in a fork, and the App cannot push there. Ask for a new PR on top of it instead" "$mode"; return 1; }
     _checkout_consent "$(session_get "$key" checkout)" "$(session_get "$key" checkout_author)" \
       || { _session_finish_fail "$key" "$(session_get "$key" checkout_author) made this PR. I push to it only after they comment 'push ok' on it" "$mode"; return 1; }

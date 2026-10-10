@@ -81,6 +81,15 @@ trees_carry() {
   _session_write "$2" '.trees = $t' --argjson t "$(jq -c --arg b "$2" '[.trees[] | {name, slug, path, out, base, branch: $b}]' "$(_session_file "$1")")"
 }
 
+# trees_from_get <from> <field>   A field of the session a new one resumes. A one-repo session
+# keeps its fields at the top, so the new session's tree index must not route the read, and
+# only FxA's tree takes them (its work is FxA's, as _tree_boot's patch rule says).
+trees_from_get() {
+  if trees_on "$1"; then session_get "$1" "$2"
+  elif [ -z "${_TREE_IDX:-}" ] || [ "${PIPE_REPO_SLUG:-}" = mozilla/fxa ]; then ( unset _TREE_IDX; session_get "$1" "$2" ); fi
+  return 0
+}
+
 # ── On the runner ──────────────────────────────────────────────
 # The run dir's .fxa-trees.tsv lists each tree for boot, one line each:
 #   name slug path sha base base_sha branch   (tab-separated)
@@ -164,8 +173,8 @@ _tree_boot() {
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read the head of ${review}" >&2; return 1; }
     base_sha="$sha"
     echo "${FXA_TREE_NAME}: continuing ${review} at ${sha:0:10}"
-  elif [ -n "$from" ] && [ -n "$(session_get "$from" base_sha)" ]; then
-    sha="$(session_get "$from" base_sha)"
+  elif [ -n "$from" ] && [ -n "$(trees_from_get "$from" base_sha)" ]; then
+    sha="$(trees_from_get "$from" base_sha)"
     echo "${FXA_TREE_NAME}: resuming ${from} at ${sha:0:10}"
   else
     echo "${FXA_TREE_NAME}: on ${FXA_WORKTREE_BASE} at ${sha:0:10}"

@@ -267,6 +267,7 @@ check "ready turn carries the count" "0" "$(cmd_events agent-t2 --since 0 | jq -
 eval "$(sed -n '/^_finish_session() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 session_set agent-t2 state active turn_open 0
 check "no changed file: Open PR refuses" "nothing to push" "$(_finish_session agent-t2 2>&1 | grep -o 'nothing to push' || true)"
+check "--repo with no value is refused, not a loop" "ERROR: --repo needs a repo" "$(_finish_session agent-t2 --repo 2>&1)"
 check "and the session stays active" "active" "$(session_get agent-t2 state)"
 
 # A review round: trusted reviewers' words are copied, others only named, and
@@ -304,6 +305,8 @@ sessions_pause "costs are high" >/dev/null
 check "paused, with the reason" "costs are high" "$(sessions_paused)"
 eval "$(sed -n '/^cmd_task() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_task_carry() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_checkout_gate_on() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^trees_from_get() {/,/^}/p' "$(dirname "$0")/trees.sh")"
 eval "$(sed -n '/^_task_open_pr() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(grep '^_task_abort()' "$(dirname "$0")/../fxa-sandbox-ctl")"
 trees_on() { return 1; }
@@ -338,6 +341,17 @@ check "a legacy fresh session's PR carries over" "https://github.com/mozilla/fxa
 echo '{"key":"agent-mrg1","state":"paused","branch":"agent-mrg1","pr_url":"https://github.com/mozilla/fxa/pull/8"}' > "$tmp/agent-mrg1.json"
 GH_STATE=MERGED FXA_VM_BACKEND=gce FXA_SESSION_MAX=20 cmd_task --source slack --id agent-mrg2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-mrg1 >/dev/null 2>&1
 check "a merged PR is not carried to the resume" "agent-mrg2|" "$(session_get agent-mrg2 branch)|$(session_get agent-mrg2 pr_url)"
+# A person's PR taken over with --checkout keeps its consent gate when a reply resumes it.
+co=https://github.com/mozilla/fxa/pull/77
+echo "{\"key\":\"agent-cox1\",\"state\":\"paused\",\"branch\":\"alice-fix\",\"pr_url\":\"$co\",\"review_pr\":\"$co\",\"checkout\":\"$co\",\"checkout_author\":\"alice\",\"checkout_person\":\"1\",\"checkout_fork\":\"0\"}" > "$tmp/agent-cox1.json"
+GH_STATE=OPEN FXA_VM_BACKEND=gce FXA_SESSION_MAX=20 cmd_task --source slack --id agent-cox2 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-cox1 >/dev/null 2>&1
+check "a resumed checkout keeps the author and the gate" "$co alice 1 0 on" \
+  "$(session_get agent-cox2 checkout) $(session_get agent-cox2 checkout_author) $(session_get agent-cox2 checkout_person) $(session_get agent-cox2 checkout_fork) $(_checkout_gate_on agent-cox2 && echo on)"
+# Paused after its PR with no review_pr: it pushes to the PR's branch, so the gate holds too.
+echo "{\"key\":\"agent-cox3\",\"state\":\"paused\",\"branch\":\"alice-fix\",\"pr_url\":\"$co\",\"checkout\":\"$co\",\"checkout_author\":\"alice\",\"checkout_person\":\"1\",\"checkout_fork\":\"0\"}" > "$tmp/agent-cox3.json"
+GH_STATE=OPEN FXA_VM_BACKEND=gce FXA_SESSION_MAX=20 cmd_task --source slack --id agent-cox4 --owner U1 --prompt-file "$tmp/p.md" --resume-from agent-cox3 >/dev/null 2>&1
+check "a paused checkout with only pr_url keeps the gate" "alice-fix|$co|on" "$(session_get agent-cox4 branch)|$(session_get agent-cox4 pr_url)|$(_checkout_gate_on agent-cox4 && echo on)"
+check "a bot's PR has no gate" "off" "$(session_set agent-cox4 checkout_person 0; _checkout_gate_on agent-cox4 || echo off)"
 # The thread record: the first request, its sessions, and its open PR for later sessions.
 export FXA_SESSION_MAX=20 # the earlier checks left sessions live
 printf 'Build the tests\n\nEarlier messages in this Slack thread, for context:\n> owner: hi\n' > "$tmp/t.md"
