@@ -102,6 +102,8 @@ check "the profile JSON names the team's connectors" '["github","jira"]|null' \
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_MCP=github,jira pipeline_profile_json | jq -c .mcp)|$(unset PIPE_MCP; PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa pipeline_profile_json | jq -c .mcp)"
 check "pyfxa-team sets its connectors" "github,jira" "$( ( source "$root/profiles/pyfxa-team/profile.conf"; echo "$PIPE_MCP" ) )"
 check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
+check "a failed App check says so, not 'not installed'" '"the GitHub App check failed"' \
+  "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
 unset -f gh
 
 # PIPE_REPOS: one row per repo (slug path role); the old single values come from it.
@@ -120,6 +122,9 @@ check "the work row sets the repo and workspace, dep rows the dep list" \
   "$(loaded "$tmp/r" multi | grep -E '^PIPE_(DEP_REPOS|REPO_SLUG|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 check "a row with an unknown role is refused" "1" "$(loaded "$tmp/r" badrole >/dev/null; echo $?)"
 check "fxa sets no repo rows" "" "$(loaded "$root" fxa | grep '^PIPE_REPOS=')"
+# The dashboard finds a broken team by its directory name, so each must load under that name.
+bad=""; for d in "$root"/profiles/*/; do n="$(basename "$d")"; [ "$(loaded "$root" "$n" | grep '^PIPE_PROFILE=' | tr -d "'")" = "PIPE_PROFILE=$n" ] || bad="$bad $n"; done
+check "every profile loads, and PIPE_PROFILE is its directory name" "" "${bad# }"
 
 # Every tree but the work tree is cloned beside it by role, and named in the guide as read-only.
 : > "$tmp/vmx"; ( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data" "mdn/fred /home/agent/fred ref" "mozilla/fxa /home/agent/fxa dep")

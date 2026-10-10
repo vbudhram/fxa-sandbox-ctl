@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parent
 CTL = ROOT.parent / "fxa-sandbox-ctl"
 SESSION_DIR = Path(os.environ.get("FXA_SESSION_DIR") or Path.home() / ".claude/state/agent-sessions")
 ERRORS_FILE = os.environ.get("FXA_ERRORS_FILE") or str(Path.home() / ".claude/state/fxa-ai-fixme/errors.jsonl")
+PROFILES_DIR = ROOT.parent / "profiles"
 sys.path.insert(0, str(ROOT.parent / "lib"))
 import fxadb  # noqa: E402  the controller's store: sessions as they change
 
@@ -245,6 +246,77 @@ def watch_session(thread):
         return key, json.loads((SESSION_DIR / f"{key}.json").read_text()).get("state")
     except (OSError, ValueError, IndexError):
         return None
+
+
+# Only these keys are read: the file also holds the bot's tokens.
+ACCESS_LINE = re.compile(r"^PROFILE_(USERS|OPEN|CHANNELS|JIRA)=(.*)$")
+
+
+def _pairs(v):
+    """Like the bot's profile.js pairs(): comma-separated k:v, empty parts dropped."""
+    out = {}
+    for part in v.split(","):
+        kv = part.strip().split(":")
+        if len(kv) == 2 and kv[0] and kv[1]:
+            out[kv[0]] = kv[1]
+    return out
+
+
+def read_access():
+    """The bot's PROFILE_* team rules from bot.env.base, as (rules, None) or (None, error)."""
+    path = os.environ.get("FXA_BOT_ENV_BASE") or str(Path.home() / ".config/fxa/bot.env.base")
+    try:
+        with open(path) as f:
+            raw = {m.group(1): m.group(2).strip().strip("'\"") for m in map(ACCESS_LINE.match, f) if m}
+        mtime = int(os.path.getmtime(path))
+    except (OSError, ValueError) as exc:
+        return None, type(exc).__name__
+    return {"open": {x.strip() for x in raw.get("OPEN", "").split(",") if x.strip()},
+            "users": {k: [u for u in v.split("+") if u] for k, v in _pairs(raw.get("USERS", "")).items()},
+            "channels": _pairs(raw.get("CHANNELS", "")), "jira": _pairs(raw.get("JIRA", "")),
+            "path": path, "mtime": mtime}, None
+
+
+def team_access(profile, access):
+    """One team's rules; users is a count, so no Slack user ID leaves the server."""
+    if access is None:
+        return None
+    return {"open": "built-in" if profile == "fxa" else profile in access["open"],
+            "users": len(access["users"].get(profile, [])),
+            "channels": sum(1 for p in access["channels"].values() if p == profile),
+            "jira": sorted(k for k, p in access["jira"].items() if p == profile)}
+
+
+def team_issues(teams, access):
+    """(issues per team, in order; top-level issues). Pure, so the offline check can prove the rules."""
+    per = []
+    for t in teams:
+        if t.get("load_error"):
+            per.append([{"level": "bad", "text": "profile.conf did not load", "key": "profile.conf"}])
+            continue
+        out = []
+        if not t.get("read_only"):
+            for r in t.get("repos") or []:
+                if r.get("role") == "work" and not r.get("write"):
+                    why = r.get("why") or "no write"
+                    out.append({"level": "info", "text": f"{r.get('slug')}: " + ("GitHub App check failed; write unknown"
+                                if why == "the GitHub App check failed" else why),
+                                "key": "PIPE_REPO_SLUG" if t["profile"] == "fxa" else "PIPE_REPOS"})
+        a = team_access(t["profile"], access)
+        if a and t["profile"] != "fxa" and not a["open"] and not a["users"]:
+            out.append({"level": "warn", "text": "nobody can start it", "key": "PROFILE_USERS"})
+        per.append(out)
+    top = []
+    if access is not None:
+        names = {t["profile"] for t in teams}
+        # A name that is not profile-shaped may be a Slack user ID typed in the wrong place, so never show it.
+        orphan = lambda key, p: {"level": "warn", "key": key, "text": f"{key} names unknown team '{p}'"
+                                 if re.fullmatch(r"[a-z0-9][a-z0-9_-]*", p) else f"{key} has an entry that is not a team name"}
+        top += [orphan("PROFILE_OPEN", p) for p in sorted(access["open"] - names)]
+        top += [orphan("PROFILE_USERS", p) for p in sorted(set(access["users"]) - names)]
+        for key in ("CHANNELS", "JIRA"):
+            top += [orphan("PROFILE_" + key, p) for p in sorted(access[key.lower()].values()) if p not in names]
+    return per, top
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -488,6 +560,20 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stats":
             data = STATS.read()[0]
             self._json(200, data if data is not None else {"error": "stats unavailable"})
+        elif path == "/api/teams":
+            data, age, err, busy = TEAMS.read()
+            access, access_err = read_access()
+            teams = []
+            if data is not None:  # the diff needs the list; before it, every dir would look broken
+                listed = {t.get("profile") for t in data}
+                teams = [dict(t, access=team_access(t.get("profile"), access)) for t in data]
+                teams += [{"profile": d, "load_error": True}
+                          for d in sorted(p.parent.name for p in PROFILES_DIR.glob("*/profile.conf")) if d not in listed]
+            per, top = team_issues(teams, access if data is not None else None)
+            self._json(200, {"teams": [dict(t, issues=i) for t, i in zip(teams, per)], "issues": top,
+                             "access_source": access and {"path": access["path"], "mtime": access["mtime"]},
+                             "access_error": access_err, "age_seconds": age, "error": err,
+                             "refreshing": busy, "interval": TEAMS.interval})
         elif path == "/api/lessons":
             try:
                 proc = ctl_run(["lessons", "--json"], timeout=15)
@@ -528,6 +614,9 @@ if __name__ == "__main__":
     STATS = Feed("stats", ["--pipeline", PIPELINE, "snapshot", "--stats"], 60, 30)
     threading.Thread(target=AGENTS.loop, daemon=True).start()
     threading.Thread(target=STATS.loop, daemon=True).start()
+    # Each team runs pipeline_load and the App check; outside CTL_SLOTS like the other feeds.
+    TEAMS = Feed("teams", ["profile", "list"], 300, 600)
+    threading.Thread(target=TEAMS.loop, daemon=True).start()
     print(f"FxA Agent dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
           f"tickets every {INTERVAL}s, agents every {AGENTS_INTERVAL}s)")
     print("Ctrl-C to stop.")
