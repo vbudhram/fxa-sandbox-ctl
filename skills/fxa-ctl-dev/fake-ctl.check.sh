@@ -48,4 +48,20 @@ check "the queued turn starts when the first ends, not beside it" "1" "$(f event
 echo 2025 > "$FAKE_NOW_FILE"
 check "then it ends 10 s later" "2" "$(f events agent-dd4 | jq '[.events[] | select(.type == "turn_end")] | length')"
 check "a steer after the turns is not queued" "" "$(f steer agent-dd4 --message-file "$tmp/m.md")"
+cat > "$tmp/tape.json" <<'T'
+{"sessions": [{"turns": [
+  {"steps": ["Reading a.ts", "Running yarn test a"], "diff": [{"file": "a.ts", "added": 2, "removed": 1}], "end": {"status": "ready", "text": "Recorded reply one."}},
+  {"end": {"type": "question", "text": "Which one?", "options": ["X (recommended)", "Y"]}}]},
+ {"turns": [{"end": {"status": "needs-input", "text": "Second session reply."}}]}]}
+T
+export FAKE_TAPE="$tmp/tape.json"; echo 3000 > "$FAKE_NOW_FILE"
+f task --id agent-ee5 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 3015 > "$FAKE_NOW_FILE"
+check "a tape turn ends with the recorded reply, with changes" "turn_end|ready|1|Recorded reply one." "$(f events agent-ee5 | jq -r '.events[0] | "\(.type)|\(.status)|\(.changes)|\(.text)"')"
+f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3025 > "$FAKE_NOW_FILE"
+check "the second turn is the recorded question" "question|Which one?|2" "$(f events agent-ee5 | jq -r '.events[1] | "\(.type)|\(.text)|\(.options | length)"')"
+f steer agent-ee5 --message-file "$tmp/m.md" >/dev/null; echo 3035 > "$FAKE_NOW_FILE"
+check "past the tape: a canned turn, logged" "Fake turn 3|1" "$(f events agent-ee5 | jq -r '.events[2].text[0:11]')|$(grep -c replay_exhausted "$FAKE_CTL_LOG")"
+f task --id agent-ff6 --owner UA --resume-from agent-ee5 --prompt-file "$tmp/p.md" >/dev/null; echo 3050 > "$FAKE_NOW_FILE"
+check "the next task plays the tape's next session" "needs-input|Second session reply." "$(f events agent-ff6 | jq -r '.events[0] | "\(.status)|\(.text)"')"
+unset FAKE_TAPE
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

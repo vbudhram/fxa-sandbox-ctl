@@ -17,6 +17,9 @@
 #   FAKE_TICK      the watch loop's sleep, default 1 s
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
+#   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
+#                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
+#                  event as the real controller emits it). Past the tape: canned turns, logged as replay_exhausted.
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
@@ -43,25 +46,29 @@ get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 # The session's script as JSON: every event with its time, and the state now.
 # Steps go to watch only; turn_end, pr and pushed go to events.
 script() {
-  local k="$1" t; t="$(now)"
-  jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" \
+  local k="$1" t tape=null; t="$(now)"
+  [ -n "${FAKE_TAPE:-}" ] && [ -n "$(get "$k" tape_idx)" ] && tape="$(jq -c --argjson i "$(get "$k" tape_idx)" '.sessions[$i] // null' "$FAKE_TAPE")"
+  jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" --argjson tape "$tape" \
     --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" '
     def url($s): if $s == "" then $pr else "https://github.com/\($s)/pull/999999" end;
     ($turns | split("\n") | map(select(. != "") | tonumber)) as $ts
     | ($fins | split("\n") | map(select(. != "") | split(" ") | {at: (.[0] | tonumber), mode: .[1], slug: (if .[2] == "-" then "" else .[2] end)})) as $fs
     | ($repos | split(",") | map(select(. != ""))) as $rs
-    | [ $ts | to_entries[] | .value as $T | .key as $n
-        | {at: ($T + 1), ev: {type: "step", text: "Reading packages/fxa-settings/src/index.tsx"}},
-          {at: ($T + 3), ev: {type: "step", text: "Running grep -rn useAccount packages/fxa-settings/src"}},
-          {at: ($T + 5), ev: {type: "step", text: "Editing packages/fxa-settings/src/index.tsx"}},
-          {at: ($T + 6), ev: {type: "diffstat", files: [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}]}},
-          {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}},
-          {at: ($T + 10), ev: ({type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
-            text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."}
+    | [ $ts | to_entries[] | .value as $T | .key as $n | ($tape.turns[$n] // null) as $tt
+        | (if $tt then (($tt.steps // []) as $st | $st | to_entries[] | {at: ($T + 1 + (.key * 7 / ([$st | length, 1] | max) | floor)), ev: {type: "step", text: .value}})
+           else {at: ($T + 1), ev: {type: "step", text: "Reading packages/fxa-settings/src/index.tsx"}},
+                {at: ($T + 3), ev: {type: "step", text: "Running grep -rn useAccount packages/fxa-settings/src"}},
+                {at: ($T + 5), ev: {type: "step", text: "Editing packages/fxa-settings/src/index.tsx"}},
+                {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
+          (if $tt and ($tt.diff | not) then empty else
+           {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
+          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if $tt.diff then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
+            text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T) then {pr: $pr} else {} end)
                else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,
                  out: (if $s == "mozilla/fxa" then "pr" else "diff" end),
-                 pr: (if any($fs[]; .slug == $s and .at < $T and (.mode | startswith("pr"))) then url($s) else null end)}]} end))} ]
+                 pr: (if any($fs[]; .slug == $s and .at < $T and (.mode | startswith("pr"))) then url($s) else null end)}]} end)
+            | if .type != "turn_end" then del(.changes, .pr, .trees) else . end)} ]
       + [$fs[] | select(.mode == "pr" or .mode == "push") | {at: (.at + 12), ev: ((if .mode == "push" then
           {type: "pushed", branch: "agent-fake", url: "https://github.com/\(if .slug == "" then "mozilla/fxa" else .slug end)/compare/main...agent-fake?expand=1", notes: []}
           else {type: "pr", url: url(.slug), updated: false, notes: [], summary: null} end) + (if .slug == "" then {} else {repo: .slug} end))}]
@@ -69,13 +76,19 @@ script() {
     | ($ts | map(select(. <= $now and $now < . + 10)) | length > 0) as $inturn
     | (if $over != "" then $over elif $now < $t0 + 5 then "starting"
        elif any($fs[]; (.mode == "pr" or .mode == "push") and $now < .at + 12) then "wrapping" else "active" end) as $state
-    | {now: $now, state: $state, inturn: $inturn, evs: $evs, t0: $t0}'
+    | {now: $now, state: $state, inturn: $inturn, evs: $evs, t0: $t0,
+       exhausted: (if $tape then [$ts[] | select(. + 10 <= $now)] | length - ($tape.turns | length) else 0 end)}'
 }
 
 events() {
-  local k="$1" since="${3:-0}"
+  local k="$1" since="${3:-0}" sc
   [ -f "$DIR/$k/t0" ] || { jq -n --argjson c "$since" '{cursor: $c, state: "stopped", events: []}'; return; }
-  script "$k" | jq --argjson since "$since" '
+  sc="$(script "$k")"
+  # A run that went past the tape: say so once, so the results show where it left the recording.
+  if [ "$(jq .exhausted <<< "$sc")" -gt 0 ] && [ ! -f "$DIR/$k/exhausted" ] && [ -n "${FAKE_CTL_LOG:-}" ]; then
+    touch "$DIR/$k/exhausted"; jq -nc --arg k "$k" --argjson n "$(jq .exhausted <<< "$sc")" '{replay_exhausted: $n, session: $k}' >> "$FAKE_CTL_LOG"
+  fi
+  jq --argjson since "$since" '
     (.evs | map(select(.ev.type != "step" and .ev.type != "diffstat") | .ev)) as $e
     | (.evs | map(select(.ev.type == "step")) | last | .ev.text) as $last
     | {cursor: ($e | length), state, events: $e[$since:],
@@ -85,7 +98,7 @@ events() {
                          elif .state == "active" and .inturn then $last else null end)},
        boot: (if .now - .t0 > 600 then null else
               {steps: [{step: "cloning the runner", s: 2}, {step: "restoring the snapshot", s: 3}]
-                , total: 5, done: (.state != "starting")} end)}'
+                , total: 5, done: (.state != "starting")} end)}' <<< "$sc"
 }
 
 # prstatus <key> [--repo <slug>]
@@ -104,6 +117,8 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   task) k="$(opt --id "$@")"; [[ "$k" =~ ^agent-[a-z0-9]+$ ]] || { echo "fake-ctl: task needs --id" >&2; exit 1; }
     mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
+    # A tape: the nth task plays the tape's nth session.
+    [ -n "${FAKE_TAPE:-}" ] && { ls -d "$DIR"/agent-*/tape_idx 2>/dev/null | wc -l | tr -d ' ' > "$DIR/$k/tape_idx"; }
     opt --owner "$@" > "$DIR/$k/owner"; r="$(opt --repos "$@")"; from="$(opt --resume-from "$@")"; co="$(opt --checkout "$@")"
     # A resume carries the repos and PRs; carried PRs are not announced again.
     if [[ "$from" =~ ^agent-[a-z0-9]+$ ]]; then [ -n "$r" ] || r="$(get "$from" repos)"
