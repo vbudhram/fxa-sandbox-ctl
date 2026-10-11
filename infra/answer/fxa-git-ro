@@ -9,7 +9,7 @@ die() { echo "fxa-git-ro: $*" >&2; exit 2; }
 cd /workspace
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 GIT_PAGER=cat PAGER=cat
 unset GIT_EXTERNAL_DIFF GIT_DIR GIT_WORK_TREE GIT_EXEC_PATH GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
-G=(git --no-pager -c core.pager=cat -c core.fsmonitor=false -c core.hooksPath=/dev/null -c diff.external= -c protocol.ext.allow=never -c protocol.file.allow=never)
+G=(git --no-pager -c core.pager=cat -c core.fsmonitor=false -c core.hooksPath=/dev/null -c protocol.ext.allow=never -c protocol.file.allow=never)
 sub="${1:-}"; [ $# -gt 0 ] && shift
 case "$sub" in
   fetch-pr)
@@ -20,7 +20,12 @@ case "$sub" in
 esac
 # Options from a fixed list; everything after the subcommand, so no global option (-c, -C <dir>) fits.
 ok='^(--|-[0-9]+|-[npiwlcEFPWsuzMCh]+|-[ABCU][0-9]*|-[LSG].+|-e|--(oneline|stat|numstat|shortstat|name-only|name-status|patch|no-patch|follow|word-diff|abbrev-commit|no-color|decorate|graph|first-parent|merges|no-merges|reverse|all|cached|staged|function-context|ignore-all-space|ignore-space-change|relative|summary|source|heading|break|porcelain|show-toplevel|verify|abbrev-ref|others|exclude-standard|full-name|line-number|count|files-with-matches|ignore-case|word-regexp|extended-regexp|fixed-strings|perl-regexp|short)|--(format|pretty|max-count|since|until|after|before|author|committer|grep|diff-filter|date|unified|abbrev|max-depth)=.*)$'
+# A path outside the tree turns git diff into a compare of any two files (an implicit --no-index),
+# so no argument may be absolute or climb out with "..". Revision ranges (a..b) keep working.
 for a in "$@"; do
-  case "$a" in -*) [[ "$a" =~ $ok ]] || die "option not allowed: $a" ;; esac
+  case "$a" in -*) [[ "$a" =~ $ok ]] || die "option not allowed: $a" ;;
+    /*|..|../*|*/..|*/../*) die "path outside /workspace: $a" ;; esac
 done
+# --no-ext-diff in place of an empty diff.external, which made every patch fail ("cannot run").
+case "$sub" in diff|show|log) set -- --no-ext-diff --no-textconv "$@" ;; esac
 exec "${G[@]}" "$sub" "$@"

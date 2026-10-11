@@ -19,4 +19,13 @@ check "--ext-diff and --textconv are refused" "2|2" "$(r diff --ext-diff HEAD)|$
 check "a global option after the subcommand is refused" "2" "$(r log --exec-path=/tmp)"
 check "fetch-pr takes only a number" "2|2" "$(r fetch-pr '1;id')|$(r fetch-pr 12 extra)"
 check "unknown subcommands are refused" "2|2" "$(r config core.pager)|$(r checkout -f)"
+# A path outside the tree makes git diff compare files with no repo (an implicit --no-index):
+# another answer's token file could be listed, searched with -S, or printed.
+mkdir -p "$tmp/empty" "$tmp/secret-dir"; echo tok-abc123 > "$tmp/secret-dir/.fxa-mcp-x.json"
+check "diff of a directory outside the tree is refused, and lists nothing" "2|0" "$(r diff --name-only "$tmp/empty" "$tmp/secret-dir")|$(grep -c fxa-mcp "$tmp/out")"
+check "-S cannot search a file outside the tree" "2" "$(r diff -Stok --name-only /dev/null "$tmp/secret-dir/.fxa-mcp-x.json")"
+check "a relative path up and out of the tree is refused" "2" "$(r diff --name-only ../empty ../secret-dir)"
+( cd "$tmp/repo" && echo world >> a.txt && git -c user.email=t@example.com -c user.name=t commit -qam second )
+check "diff between two commits shows the patch" "0|1" "$(r diff HEAD~1 HEAD)|$(grep -c '^+world' "$tmp/out")"
+check "revision ranges with .. still work" "0" "$(r log --oneline HEAD~1..HEAD)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
