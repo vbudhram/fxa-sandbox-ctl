@@ -5,6 +5,8 @@
 #   vm.sh run - <<'EOF'   the same, with a script on stdin (no quoting, no base64)
 #   vm.sh runner <name> '<cmd>'   run a command as the agent user on a runner, through the controller
 #   vm.sh sys '<cmd>'     run as your own login user, who can sudo (systemctl, journalctl)
+#   vm.sh fc [status|log [n]|install|refresh]   the Firecracker snapshot: its commit, versions and last
+#                         refresh, the refresh log, or a refresh with the repo's scripts (starts the host)
 #   vm.sh screen          read the tmux session "main" (read-only, secrets masked)
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
@@ -100,6 +102,11 @@ EOF
   runner)
     [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: vm.sh runner <name> '<command>'" >&2; exit 1; }
     printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce exec $(printf %q "$2") $(printf %q "$3")" | on_vm | mask ;;
+  fc)
+    # The Firecracker snapshot: status, the refresh log, or a refresh with the repo's scripts.
+    case "${2:-status}" in status|log|install|refresh) ;; *) echo "usage: vm.sh fc status | log [lines] | install | refresh" >&2; exit 1 ;; esac
+    [[ "${3:-80}" =~ ^[0-9]+$ ]] || { echo "usage: vm.sh fc log [lines]" >&2; exit 1; }
+    printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc ${2:-status} ${3:-}" | on_vm | mask ;;
   sys)
     [ -n "${2:-}" ] || { echo "usage: vm.sh sys '<command>'" >&2; exit 1; }
     printf '%s\n' "$2" | on_vm | mask ;;

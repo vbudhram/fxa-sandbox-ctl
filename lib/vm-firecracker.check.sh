@@ -56,4 +56,15 @@ _gce() { echo RUNNING; }
 check "the probe misses but GCE says the host runs: the stop fails" "1" "$(UP=0 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
 _gce() { return 1; }
 check "the probe misses and GCE cannot say: the stop fails" "1" "$(UP=0 vm_stop agent-a1 >/dev/null 2>&1; echo $?)"
+# fc install sends the repo's refresh and toolchain scripts, each to its path on the host.
+SANDBOX_ROOT="$(cd "$here/.." && pwd)"; sent="$tmp/sent"; : > "$sent"
+_fc_ssh() { printf '%s %s\n' "$(grep -o '/usr/local/[a-z/.0-9-]*' <<< "$1" | head -1)" "$(cksum | cut -d' ' -f1)" >> "$sent"; }
+fc_install
+check "fc install sends both scripts to their paths" \
+  "/usr/local/sbin/fc-refresh $(cksum < "$SANDBOX_ROOT/infra/firecracker/refresh.sh" | cut -d' ' -f1)|/usr/local/share/fxa/03b-toolchain.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/03b-toolchain.sh" | cut -d' ' -f1)" \
+  "$(paste -sd'|' "$sent")"
+# fc status with the host off shows the last read, which the alerts also use.
+SESSION_DIR="$tmp/s"; mkdir -p "$SESSION_DIR"; printf 'refresh=success\n' > "$SESSION_DIR/.fc-status"
+_fc_up() { return 1; }
+check "fc status with the host off shows the last read" "1" "$(cmd_fc status | grep -c '^refresh=success')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

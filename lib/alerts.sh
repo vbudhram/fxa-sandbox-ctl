@@ -8,7 +8,8 @@
 #   alerts_maybe          alerts_check at most once an hour (the idle sweep calls it)
 #
 # Thresholds (env): FXA_ALERT_IDLE_HOURS (6), FXA_ALERT_DAILY_USD (150, alert at 80%),
-# FXA_ALERT_BOOT_S (60, median of 3+ boots), FXA_ALERT_CAPACITY (3 capacity errors).
+# FXA_ALERT_BOOT_S (60, median of 3+ boots), FXA_ALERT_CAPACITY (3 capacity errors),
+# FXA_ALERT_SNAPSHOT_DAYS (3, the Firecracker snapshot's age).
 
 [ -n "${_FXA_ALERTS_LOADED:-}" ] && return 0
 _FXA_ALERTS_LOADED=1
@@ -50,6 +51,17 @@ alerts_check() {
     "the median boot in the last 24 h is $(awk -v b="$boot" 'BEGIN { printf "%.0f", b }') s, over ${bs} s"
   _alert capacity "$([ "${cap:-0}" -ge "$cn" ] && echo 1 || echo 0)" \
     "${cap} capacity failures (zone stockouts or the session cap) in the last 24 h"
+  # The snapshot refresh fails on the host, where nothing else sees it: sessions keep
+  # booting from the old snapshot, only slower. fc_status reads it when the host is up.
+  if declare -F fc_status >/dev/null && _fc_up; then fc_status >/dev/null 2>&1 || true; fi
+  local fcs="${SESSION_DIR}/.fc-status" result made sd="${FXA_ALERT_SNAPSHOT_DAYS:-3}"
+  if [ -f "$fcs" ]; then
+    result="$(sed -n 's/^refresh=//p' "$fcs")"; made="$(sed -n 's/^made=//p' "$fcs")"
+    _alert snapshot_refresh "$([ -n "$result" ] && [ "$result" != success ] && echo 1 || echo 0)" \
+      "the Firecracker snapshot refresh failed; fxa-sandbox-ctl fc log shows why"
+    _alert snapshot_age "$([[ "$made" =~ ^[0-9]+$ ]] && [ $(( $(date +%s) - made )) -gt $(( sd * 86400 )) ] && echo 1 || echo 0)" \
+      "the Firecracker snapshot is $(( ($(date +%s) - ${made:-0}) / 86400 )) days old, over ${sd}"
+  fi
 }
 
 alerts_maybe() {

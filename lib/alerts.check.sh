@@ -28,4 +28,14 @@ check "spend under the threshold again: resolved" "cleared: daily_spend" "$(aler
 echo "{\"at\":\"$(date -u +%FT%TZ)\",\"usd\":200}" > "$tmp/proxy/usage.jsonl"; sleep 1
 check "a new breach raises again, so the operator gets a DM" "1" "$(alerts_check | grep -c '^alert: LLM spend')"
 check "alerts_maybe runs at most once an hour" "" "$(touch "$SESSION_DIR/.alerts-at"; alerts_maybe)"
+# The Firecracker snapshot: a failed refresh and an old snapshot, read from the status
+# file that fc_status keeps while the host is off.
+rm -f "$SESSION_DIR/.alerts-at"
+printf 'refresh=exit-code\nmade=%s\n' "$(( now - 5 * 86400 ))" > "$SESSION_DIR/.fc-status"
+out="$(alerts_check)"
+check "a failed refresh and a 5-day-old snapshot raise" "1|1" \
+  "$(grep -c '^alert: the Firecracker snapshot refresh failed' <<< "$out")|$(grep -c '^alert: the Firecracker snapshot is 5 days old' <<< "$out")"
+printf 'refresh=success\nmade=%s\n' "$now" > "$SESSION_DIR/.fc-status"
+out="$(alerts_check)"
+check "a good refresh clears both" "1|1" "$(grep -c '^cleared: snapshot_refresh' <<< "$out")|$(grep -c '^cleared: snapshot_age' <<< "$out")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

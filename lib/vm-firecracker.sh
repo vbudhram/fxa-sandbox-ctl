@@ -13,11 +13,12 @@ _FXA_VM_FC_LOADED=1
 FXA_FC_INSTANCE="${FXA_FC_INSTANCE:-fxa-fc-spike}"
 FXA_FC_ZONE="${FXA_FC_ZONE:-us-central1-a}"
 
-_fc_raw() {
+_fc_ssh() {
   # shellcheck disable=SC2029  # the arguments are ours, expanded on purpose
   ssh -i "$FXA_GCE_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
-    -o ConnectTimeout=20 "${USER}@${FXA_FC_HOST}" "sudo /usr/local/sbin/fc $*"
+    -o ConnectTimeout=20 "${USER}@${FXA_FC_HOST}" "$@"
 }
+_fc_raw() { _fc_ssh "sudo /usr/local/sbin/fc $*"; }
 # A stopped host has no slots: say so at once, not after a 20 s ssh timeout.
 _fc() { _fc_up && _fc_raw "$@"; }
 
@@ -108,4 +109,40 @@ _fc_vm_delete() {
 vm_list() {
   _gce_vm_list
   _fc list 2>/dev/null | awk -F'\t' '{ printf "%s\tRUNNING\t%s\tfirecracker\n", $2, $4 }' || true
+}
+
+# The snapshot refresh (infra/firecracker/refresh.sh) runs on the host from copies:
+# fc_install puts the repo's versions there, so the host cannot drift from main.
+fc_install() {
+  local src dest
+  for src in infra/firecracker/refresh.sh:/usr/local/sbin/fc-refresh packer/scripts/03b-toolchain.sh:/usr/local/share/fxa/03b-toolchain.sh; do
+    dest="${src#*:}"; src="${SANDBOX_ROOT}/${src%%:*}"
+    _fc_ssh "t=\$(mktemp) && cat > \$t && { sudo cmp -s \$t ${dest} || { sudo install -D -m 755 \$t ${dest} && echo 'installed ${dest}'; }; }; rc=\$?; rm -f \$t; exit \$rc" < "$src" || return 1
+  done
+}
+
+# fc_status   The newest snapshot and the last refresh, as key=value lines. Each read
+# is kept in SESSION_DIR/.fc-status, so the hourly alerts see it while the host is off.
+fc_status() {
+  local out
+  out="$(_fc_ssh 'l=$(readlink -f /fc/snap/latest); echo "snapshot=${l##*/}"; echo "commit=$(cat "$l/commit")"
+    echo "claude=$(cat "$l/claude-code" 2>/dev/null)"; echo "made=$(stat -c %Y "$l/commit")"
+    echo "refresh=$(systemctl show fc-refresh -p Result --value)"; echo "refresh_at=$(systemctl show fc-refresh -p ExecMainExitTimestamp --value)"')" || return 1
+  printf '%s\nread=%s\n' "$out" "$(date +%s)" > "${SESSION_DIR}/.fc-status"
+  printf '%s\n' "$out"
+}
+
+cmd_fc() {
+  case "${1:-status}" in
+    status)
+      if _fc_up; then fc_status
+      elif [ -f "${SESSION_DIR}/.fc-status" ]; then echo "# the runner host is stopped; last read:"; cat "${SESSION_DIR}/.fc-status"
+      else echo "the runner host is stopped, and no status was read yet"; fi ;;
+    log) _fc_up || { echo "the runner host is stopped; fxa-sandbox-ctl fc refresh starts it" >&2; return 1; }
+      _fc_ssh "sudo journalctl -u fc-refresh --no-pager -o cat -n ${2:-80}" | grep -vE '^ *[0-9]+:[0-9.]+ W ' ;;
+    install) if _fc_up; then fc_install; else echo "the runner host is stopped; the refresh scripts install on the next fc refresh"; fi ;;
+    refresh) { _fc_up || _fc_wake; } && fc_install && _fc_ssh 'sudo systemctl start --no-block fc-refresh' \
+      && echo "refresh started; fxa-sandbox-ctl fc log follows it" ;;
+    *) echo "Usage: fxa-sandbox-ctl fc status | log [lines] | install | refresh" >&2; return 1 ;;
+  esac
 }
