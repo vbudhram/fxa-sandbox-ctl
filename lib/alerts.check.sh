@@ -38,4 +38,10 @@ check "a failed refresh and a 5-day-old snapshot raise" "1|1" \
 printf 'refresh=success\nmade=%s\n' "$now" > "$SESSION_DIR/.fc-status"
 out="$(alerts_check)"
 check "a good refresh clears both" "1|1" "$(grep -c '^cleared: snapshot_refresh' <<< "$out")|$(grep -c '^cleared: snapshot_age' <<< "$out")"
+# A made= value is data from the host: bash arithmetic would run a $(...) inside it.
+rm -f "$SESSION_DIR/.alerts-at"
+# A set variable name (PATH) gets past set -u, so the subscript's $(...) runs.
+printf 'refresh=success\nmade=PATH[$(touch %s/pwned)]\n' "$tmp" > "$SESSION_DIR/.fc-status"
+( alerts_check ) >/dev/null 2>&1; rc=$?
+check "a made= value with a command in it runs nothing, and the alerts still finish" "no|0" "$([ -e "$tmp/pwned" ] && echo yes || echo no)|$rc"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

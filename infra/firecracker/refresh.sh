@@ -34,7 +34,8 @@ until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/
 want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/${new}/.nvmrc")"
 tc="$("$fc" ssh 0 "sudo bash -s -- ${want//[^0-9.v]/}" < "$toolchain")"
 echo "$tc"
-cc="$(sed -n 's/^claude //p' <<< "$tc")"; cx="$(sed -n 's/^codex //p' <<< "$tc")"
+# The guest's stdout is not trusted: keep only plain versions, which the controller's alerts read.
+cc="$(sed -n 's/^claude \([0-9][0-9.]*\)$/\1/p' <<< "$tc" | head -1)"; cx="$(sed -n 's/^codex \([0-9][0-9.]*\)$/\1/p' <<< "$tc" | head -1)"
 "$fc" ssh 0 "sudo -u agent bash -s -- $new" <<'GUEST'
 set -euo pipefail
 cd /home/agent/fxa && source /etc/agent-env.sh

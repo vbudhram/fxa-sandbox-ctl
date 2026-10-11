@@ -67,4 +67,9 @@ check "fc install sends both scripts to their paths" \
 SESSION_DIR="$tmp/s"; mkdir -p "$SESSION_DIR"; printf 'refresh=success\n' > "$SESSION_DIR/.fc-status"
 _fc_up() { return 1; }
 check "fc status with the host off shows the last read" "1" "$(cmd_fc status | grep -c '^refresh=success')"
+# fc status keeps only well-formed key=value lines from the host: the alerts read this file.
+_fc_ssh() { printf 'snapshot=20261011-1700\nclaude=2.1.296\nclaude made=a[$(id)]\nmade=a[$(id)]\nmade=1791738213\nrefresh=success\n'; }
+fc_status >/dev/null
+check "fc status drops lines that are not plain key=value" "snapshot=20261011-1700|claude=2.1.296|made=1791738213|refresh=success" \
+  "$(grep -v '^read=' "$SESSION_DIR/.fc-status" | paste -sd'|' -)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
