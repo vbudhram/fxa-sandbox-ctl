@@ -160,7 +160,7 @@ vm_clone() {
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
         ${run_limit[@]+"${run_limit[@]}"} \
-        --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
+        --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER:-$(id -un)}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
         --labels "fxa-agent=${name},fxa-controller=$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | cut -c1-63)" \
         > "${LOG_DIR}/${name}-vm.log" 2>&1; then
       [ "$mt" = "$FXA_GCE_MACHINE_TYPE" ] || echo "  Created as ${mt}: ${FXA_GCE_MACHINE_TYPE} is stocked out." >&2
