@@ -127,9 +127,10 @@ fc_status() {
   local out
   out="$(_fc_ssh 'l=$(readlink -f /fc/snap/latest); echo "snapshot=${l##*/}"; echo "commit=$(cat "$l/commit")"
     echo "claude=$(cat "$l/claude-code" 2>/dev/null)"; echo "codex=$(cat "$l/codex" 2>/dev/null)"; echo "made=$(stat -c %Y "$l/commit")"
-    echo "refresh=$(systemctl show fc-refresh -p Result --value)"; echo "refresh_at=$(systemctl show fc-refresh -p ExecMainExitTimestamp --value)"')" || return 1
+    echo "refresh=$(sed -n "s/^result=//p" /fc/run/refresh.status 2>/dev/null)"; echo "refresh_at=$(sed -n "s/^at=//p" /fc/run/refresh.status 2>/dev/null)"
+    echo "ok_at=$(stat -c %Y /fc/run/refresh.ok 2>/dev/null)"')" || return 1
   # The alerts read this file: keep only plain key=value lines from the host.
-  out="$(grep -E '^(snapshot|commit|claude|codex|made|refresh|refresh_at)=[A-Za-z0-9 :._-]*$' <<< "$out" || true)"
+  out="$(grep -E '^(snapshot|commit|claude|codex|made|refresh|refresh_at|ok_at)=[A-Za-z0-9 :._-]*$' <<< "$out" || true)"
   printf '%s\nread=%s\n' "$out" "$(date +%s)" > "${SESSION_DIR}/.fc-status"
   printf '%s\n' "$out"
 }

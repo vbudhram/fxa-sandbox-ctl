@@ -6,6 +6,10 @@
 set -euo pipefail
 exec 9> /fc/run/refresh.lock
 flock -n 9 || { echo "a refresh is already running"; exit 0; }
+# Each run's outcome, for fxa-sandbox-ctl fc status: systemd's Result reads success again after
+# every boot, and the host boots on demand. refresh.ok marks the last good run.
+outcome() { printf 'result=%s\nat=%s\n' "$([ "$1" = 0 ] && echo success || echo failed)" "$(date +%s)" > /fc/run/refresh.status; [ "$1" != 0 ] || touch /fc/run/refresh.ok; }
+trap 'outcome $?' EXIT
 fc=/usr/local/sbin/fc
 # The guest's Node and Claude Code come from the image's own toolchain script, which
 # fxa-sandbox-ctl fc install puts beside this one; it holds the Claude Code pin.
@@ -25,7 +29,7 @@ echo "main moved: ${cur:0:10} -> ${new:0:10}"
 # so it is known good. A build disk kept between runs was left damaged by a kill.
 cp --reflink=always "$(readlink -f /fc/snap/latest)/rootfs.ext4" /fc/build/rootfs.ext4
 # On any failure, shut the guest down cleanly; systemd would kill it mid-write.
-trap '"$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; sleep 8' EXIT
+trap 'rc=$?; "$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; sleep 8; outcome $rc' EXIT
 "$fc" boot
 # agent-init appends to /etc/agent-env.sh at boot: wait until it has finished.
 until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done

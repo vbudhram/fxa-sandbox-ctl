@@ -34,10 +34,17 @@ rm -f "$SESSION_DIR/.alerts-at"
 printf 'refresh=exit-code\nmade=%s\n' "$(( now - 5 * 86400 ))" > "$SESSION_DIR/.fc-status"
 out="$(alerts_check)"
 check "a failed refresh and a 5-day-old snapshot raise" "1|1" \
-  "$(grep -c '^alert: the Firecracker snapshot refresh failed' <<< "$out")|$(grep -c '^alert: the Firecracker snapshot is 5 days old' <<< "$out")"
+  "$(grep -c '^alert: the Firecracker snapshot refresh failed' <<< "$out")|$(grep -c '^alert: the Firecracker snapshot has had no good refresh for 5 days' <<< "$out")"
 printf 'refresh=success\nmade=%s\n' "$now" > "$SESSION_DIR/.fc-status"
 out="$(alerts_check)"
 check "a good refresh clears both" "1|1" "$(grep -c '^cleared: snapshot_refresh' <<< "$out")|$(grep -c '^cleared: snapshot_age' <<< "$out")"
+# A snapshot made long ago with a good refresh since (main did not move) is not stale.
+rm -f "$SESSION_DIR/.alerts-at"
+printf 'refresh=success\nmade=%s\nok_at=%s\n' "$(( now - 9 * 86400 ))" "$now" > "$SESSION_DIR/.fc-status"
+check "an old snapshot with a recent good refresh raises nothing" "0" "$(alerts_check | grep -c '^alert: the Firecracker snapshot')"
+printf 'refresh=failed\nmade=%s\nok_at=%s\n' "$now" "$(( now - 4 * 86400 ))" > "$SESSION_DIR/.fc-status"
+check "a failed refresh and no good one for 4 days raise both" "2" "$(alerts_check | grep -c '^alert: the Firecracker snapshot')"
+printf 'refresh=success\nmade=%s\n' "$now" > "$SESSION_DIR/.fc-status"; alerts_check >/dev/null
 # A made= value is data from the host: bash arithmetic would run a $(...) inside it.
 rm -f "$SESSION_DIR/.alerts-at"
 # A set variable name (PATH) gets past set -u, so the subscript's $(...) runs.

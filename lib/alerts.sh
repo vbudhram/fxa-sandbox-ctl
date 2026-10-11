@@ -57,12 +57,14 @@ alerts_check() {
   local fcs="${SESSION_DIR}/.fc-status" result made sd="${FXA_ALERT_SNAPSHOT_DAYS:-3}"
   if [ -f "$fcs" ]; then
     # Data from the host: only a plain number reaches arithmetic, which would run a $(...) in it.
-    result="$(sed -n 's/^refresh=//p' "$fcs")"; made="$(sed -n 's/^made=\([0-9][0-9]*\)$/\1/p' "$fcs" | head -1)"
+    # The age counts from the last good refresh (ok_at), not from the snapshot: main can stay put for days.
+    result="$(sed -n 's/^refresh=//p' "$fcs")"; made="$(sed -n 's/^ok_at=\([0-9][0-9]*\)$/\1/p' "$fcs" | head -1)"
+    [ -n "$made" ] || made="$(sed -n 's/^made=\([0-9][0-9]*\)$/\1/p' "$fcs" | head -1)"
     _alert snapshot_refresh "$([ -n "$result" ] && [ "$result" != success ] && echo 1 || echo 0)" \
       "the Firecracker snapshot refresh failed; fxa-sandbox-ctl fc log shows why"
     made="${made:-$(date +%s)}"
     _alert snapshot_age "$([ $(( $(date +%s) - made )) -gt $(( sd * 86400 )) ] && echo 1 || echo 0)" \
-      "the Firecracker snapshot is $(( ($(date +%s) - made) / 86400 )) days old, over ${sd}"
+      "the Firecracker snapshot has had no good refresh for $(( ($(date +%s) - made) / 86400 )) days, over ${sd}"
   fi
 }
 
