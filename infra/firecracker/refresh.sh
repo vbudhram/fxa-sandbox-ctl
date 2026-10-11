@@ -64,7 +64,7 @@ GUEST
 # Firefox, so a session can change it and hand back a diff: an artifact build
 # (prebuilt C++, local front end), rebuilt when Firefox main moved. A failure
 # keeps the snapshot's earlier build and never blocks the FxA refresh.
-"$fc" ssh 0 'sudo apt-get install -y -qq make perl unzip watchman > /dev/null 2>&1' || true
+"$fc" ssh 0 'sudo apt-get install -y -qq make perl unzip watchman dnsmasq-base > /dev/null 2>&1' || true
 "$fc" ssh 0 'sudo -u agent bash -s' <<'GUEST' || echo "WARN: the Firefox build failed; the snapshot keeps the earlier one"
 set -euo pipefail
 cd /home/agent

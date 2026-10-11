@@ -34,6 +34,7 @@ apt-get install -y -qq \
   curl \
   wget \
   jq \
+  dnsmasq-base \
   unzip \
   openssh-server \
   screen \

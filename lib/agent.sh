@@ -509,9 +509,18 @@ _setup_egress_firewall() {
   else break; fi
   sleep 10
   done
-  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 0 ] && { [ "$FXA_EGRESS_ALLOW_ALL" = 1 ] || _setup_agent_dns "$name" $hosts; return; }
   printf '%s\n' "${err:-egress: no reason given (exit $rc); ssh may have failed}" | tail -3 >&2
   return "$rc"
+}
+
+# _setup_agent_dns <name> <host>...   The agent user's DNS answers only names it may connect
+# to (templates/agent-dns.sh): a lookup cannot carry data out to a name server outside the list.
+_setup_agent_dns() {
+  local name="$1" err rc=0; shift
+  err="$(vm_exec "$name" sudo bash -s -- "$@" < "${SANDBOX_ROOT}/templates/agent-dns.sh" 2>&1 >/dev/null)" || rc=$?
+  grep -m1 'WARN' <<< "$err" >&2 || true
+  [ "$rc" -eq 0 ] || { printf '%s\n' "${err:-egress: the agent DNS step failed (exit $rc)}" | tail -2 >&2; return "$rc"; }
 }
 
 # Egress the agent user may reach: Anthropic's API range, GitHub's published
