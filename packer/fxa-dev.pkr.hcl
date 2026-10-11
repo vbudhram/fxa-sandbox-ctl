@@ -107,6 +107,12 @@ build {
   }
 
   provisioner "shell" {
+    script            = "${path.root}/scripts/03b-toolchain.sh"
+    execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
+  }
+
+  provisioner "shell" {
     script            = "${path.root}/scripts/04-claude.sh"
     execute_command   = "sudo bash -c '{{ .Path }}'"
     expect_disconnect = false

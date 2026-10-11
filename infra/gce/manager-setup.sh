@@ -41,7 +41,7 @@ corepack enable
 node --version
 
 say "claude, codex, acli"
-# CLAUDE_CODE_VERSION comes from manager.sh (packer/scripts/04-claude.sh), so the
+# CLAUDE_CODE_VERSION comes from manager.sh (packer/scripts/03b-toolchain.sh), so the
 # manager runs the runners' version and a reprovision upgrades it.
 if [ -n "${CLAUDE_CODE_VERSION:-}" ] && [ "$(claude --version 2>/dev/null | cut -d' ' -f1)" != "$CLAUDE_CODE_VERSION" ]; then
   npm install -g --silent "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"

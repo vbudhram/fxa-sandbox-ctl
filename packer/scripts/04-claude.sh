@@ -1,14 +1,6 @@
 #!/bin/bash
-# 04-claude.sh — Install Claude Code CLI + Bun
+# 04-claude.sh — Bun for Claude Code's plugins (03b-toolchain.sh installs Claude Code)
 set -euo pipefail
-
-# The one pin for Claude Code: manager.sh reads it for the manager, and
-# infra/firecracker/refresh.sh carries the same number (lib/claude-pin.check.sh).
-CLAUDE_CODE_VERSION=2.1.296
-echo "==> Installing Claude Code CLI ${CLAUDE_CODE_VERSION}..."
-npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
-
-echo "==> Claude Code version: $(claude --version 2>/dev/null || echo 'installed')"
 
 # Install Bun system-wide. Several Claude Code plugins (e.g. claude-mem) ship
 # hooks that shell out to `bun`. Without it, every tool call spams a
@@ -34,4 +26,4 @@ echo "==> Bun version: $(bun --version 2>/dev/null || echo 'install failed')"
 # Note: Claude config directories for the 'agent' user are created
 # in the final provisioner step (after the agent user exists).
 
-echo "==> Claude Code + Bun installed."
+echo "==> Bun installed."

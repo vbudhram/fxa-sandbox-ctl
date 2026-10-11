@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Offline check that every place that installs Claude Code pins the same version.
+# Offline check that Claude Code has one pin, in packer/scripts/03b-toolchain.sh, which the
+# image, the snapshot refresh and the manager all read.
 #   bash lib/claude-pin.check.sh
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
-pins="$(grep -h '^CLAUDE_CODE_VERSION=' "$root/packer/scripts/04-claude.sh" "$root/infra/firecracker/refresh.sh" | sort -u)"
-if [ "$(printf '%s\n' "$pins" | grep -c .)" = 1 ] && [[ "$pins" =~ ^CLAUDE_CODE_VERSION=[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ok   one Claude Code pin: ${pins#*=}"
+pin="$(grep -h '^CLAUDE_CODE_VERSION=' "$root/packer/scripts/03b-toolchain.sh")"
+others="$(grep -rlE '^CLAUDE_CODE_VERSION=[0-9]' "$root/packer" "$root/infra" "$root/lib" | grep -v '/03b-toolchain.sh$')"
+if [[ "$pin" =~ ^CLAUDE_CODE_VERSION=[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -z "$others" ]; then
+  echo "ok   one Claude Code pin: ${pin#*=}"
 else
-  echo "FAIL Claude Code pins differ or are missing: $(printf '%s' "$pins" | tr '\n' ' ')"; exit 1
+  echo "FAIL Claude Code pin missing or set elsewhere: [${pin}] ${others}"; exit 1
 fi

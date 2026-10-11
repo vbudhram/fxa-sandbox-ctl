@@ -41,6 +41,8 @@ if [ "$MODE" = sync ]; then
     done
     (cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev)
     for s in ~/Desktop/working2/fxa-sandbox-ctl/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
+    # The snapshot refresh runs from copies on the Firecracker host; a stopped host gets them on its next fc refresh.
+    (cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc install) || echo "fc install failed; run vm.sh fc install"
   '"'"'
   # A changed fxa-secrets: install it as root only when it is not empty and parses, then
   # run it once, before the restarts below read the .env files it writes.
@@ -110,7 +112,7 @@ for f in claude.tgz ctl.env.base bot.env.base mzcld; do
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done
 # fxa-secrets lives in its own file; setup gets it spliced in at its marker line.
-{ grep -m1 '^CLAUDE_CODE_VERSION=' "${ROOT}/packer/scripts/04-claude.sh"
+{ grep -m1 '^CLAUDE_CODE_VERSION=' "${ROOT}/packer/scripts/03b-toolchain.sh"
   sed -e "/^__FXA_SECRETS__\$/{r ${ROOT}/infra/gce/fxa-secrets.sh" -e 'd;}' "${ROOT}/infra/gce/manager-setup.sh"; } | ssh_vm 'sudo bash -s'
 # The MCP gateway's connectors, when you keep them locally. Credentials stay
 # ${VAR} references filled from Secret Manager, so a literal one stops here.

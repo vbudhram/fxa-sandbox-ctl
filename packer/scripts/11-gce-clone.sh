@@ -7,11 +7,9 @@ set -euo pipefail
 echo "==> Cloning mozilla/fxa into /home/agent/fxa"
 sudo -u agent git clone --quiet https://github.com/mozilla/fxa.git /home/agent/fxa
 cd /home/agent/fxa
-# FxA's preinstall refuses any Node but the one in .nvmrc. NodeSource gives the
-# newest 24.x, so pin the exact version into /usr/local/bin, which wins on PATH.
-npm install -g n >/dev/null
-n "$(cat .nvmrc)"
-hash -r; echo "==> Node pinned: $(node --version) (.nvmrc $(cat .nvmrc))"
+# 03b-toolchain.sh installed main's .nvmrc Node; FxA's preinstall refuses any other.
+[ "$(node -v | tr -d v)" = "$(tr -d 'v \n' < .nvmrc)" ] || { echo "==> ERROR: node $(node -v) is not .nvmrc $(cat .nvmrc); main moved during the build, run it again"; exit 1; }
+echo "==> Node: $(node --version) (.nvmrc $(cat .nvmrc))"
 sudo -u agent bash -c 'source /etc/agent-env.sh && yarn install --immutable' || {
   echo '==> yarn install failed; build logs:'; cat /tmp/xfs-*/build.log 2>/dev/null | tail -60; exit 1
 }

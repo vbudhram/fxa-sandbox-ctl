@@ -7,8 +7,11 @@ set -euo pipefail
 exec 9> /fc/run/refresh.lock
 flock -n 9 || { echo "a refresh is already running"; exit 0; }
 fc=/usr/local/sbin/fc
-# Claude Code in the guest: the same pin as packer/scripts/04-claude.sh (lib/claude-pin.check.sh).
-CLAUDE_CODE_VERSION=2.1.296
+# The guest's Node and Claude Code come from the image's own toolchain script, which
+# fxa-sandbox-ctl fc install puts beside this one; it holds the Claude Code pin.
+toolchain=/usr/local/share/fxa/03b-toolchain.sh
+CLAUDE_CODE_VERSION="$(sed -n 's/^CLAUDE_CODE_VERSION=//p' "$toolchain")"
+[ -n "$CLAUDE_CODE_VERSION" ] || { echo "ERROR: no Claude Code pin in ${toolchain}" >&2; exit 1; }
 cur="$(cat /fc/snap/latest/commit 2>/dev/null || echo none)"
 cur_cc="$(cat /fc/snap/latest/claude-code 2>/dev/null || echo none)"
 new="$(git ls-remote https://github.com/mozilla/fxa.git refs/heads/main | cut -f1)"
@@ -26,21 +29,10 @@ trap '"$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; 
 until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done
 # The image build wrote the lock hash as root; the agent keeps it current from here.
 "$fc" ssh 0 'sudo chown agent:agent /home/agent/.image-lock-hash'
-# fxa's preinstall refuses a Node other than its .nvmrc, and apt lags it: install that release from nodejs.org.
-"$fc" ssh 0 "sudo bash -s -- $new" <<'GUEST'
-set -euo pipefail
-want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/$1/.nvmrc" | tr -d 'v \n')"
-[[ "$want" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ERROR: .nvmrc is not a plain version: ${want}" >&2; exit 1; }
-# The marker, not node -v: a release unpacked over another leaves a mixed npm that cannot install.
-if [ "$(cat /usr/local/.node-release 2>/dev/null)" != "$want" ]; then
-  a="$(uname -m)"; case "$a" in x86_64) a=x64 ;; aarch64) a=arm64 ;; esac
-  rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack
-  curl -fsSL "https://nodejs.org/dist/v${want}/node-v${want}-linux-${a}.tar.xz" \
-    | tar -xJ -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE
-  echo "$want" > /usr/local/.node-release
-fi
-echo "node $(node -v)"
-GUEST
+want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/${new}/.nvmrc")"
+tc="$("$fc" ssh 0 "sudo bash -s -- ${want//[^0-9.v]/}" < "$toolchain")"
+echo "$tc"
+cc="$(sed -n 's/^claude //p' <<< "$tc")"
 "$fc" ssh 0 "sudo -u agent bash -s -- $new" <<'GUEST'
 set -euo pipefail
 cd /home/agent/fxa && source /etc/agent-env.sh
@@ -55,15 +47,6 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
 fi
 echo "clone at $(git rev-parse --short HEAD)"
 GUEST
-# --prefix /usr: /usr/bin/claude points there, but the /usr/local npm installs under /usr/local.
-cc="$("$fc" ssh 0 "sudo bash -s -- $CLAUDE_CODE_VERSION" <<'GUEST'
-[ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$1" ] || npm install -g --prefix /usr --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@$1" >&2
-claude --version 2>/dev/null | cut -d' ' -f1
-GUEST
-)" || true
-echo "claude code ${cc}"
-# The snapshot records what it has, so a failed update is tried again on the next refresh.
-[ "$cc" = "$CLAUDE_CODE_VERSION" ] || echo "WARN: claude code is ${cc:-missing}, not ${CLAUDE_CODE_VERSION}"
 # The snapshot's stack uses CI's location override; images before it lack the line.
 "$fc" ssh 0 'sudo bash -s' <<'GUEST'
 grep -q GEODB_LOCATION_OVERRIDE /etc/agent-env.sh || cat >> /etc/agent-env.sh <<'ENV'
