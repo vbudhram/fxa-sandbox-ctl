@@ -71,4 +71,26 @@ check "someone else's 'push ok' does not" "no" "$(c "$(printf 'bo\tpush ok')" an
 check "'push okay' is not 'push ok'" "no" "$(c "$(printf 'ana\tpush okay')" ana)"
 check "an author name that is not a plain login is refused before gh runs" "no" "$(c "$(printf 'ana\tpush ok')" 'ana") or (true')"
 check "gh failing refuses, it does not consent" "no" "$(c "$(printf 'ana\tpush ok')" ana 1)"
+# _trees_workspace and _trees_pin run on the runner: vm_exec and the pin are stubs that record what
+# each tree line would send. A bad line stops both before anything reaches the runner.
+A=$(printf 'a%.0s' {1..40}); B=$(printf 'b%.0s' {1..40})
+printf 'fxa\tmozilla/fxa\t/home/agent/fxa\t%s\tmain\t%s\tagent-x1\npyfxa\tmozilla/PyFxA\t/home/agent/pyfxa\t%s\tmain\t%s\tagent-x1-pyfxa\n' "$A" "$B" "$B" "$A" > "$tmp/trees.tsv"
+vm_exec() { printf '%s\n' "$*" >> "$tmp/vm.log"; }
+: > "$tmp/vm.log"; _trees_workspace run1 "$tmp/trees.tsv" >/dev/null
+w="$(cat "$tmp/vm.log")"
+check "the workspace step clones each repo the image lacks, into its own path" "1|1" \
+  "$(grep -c 'git clone --quiet --filter=blob:none https://github.com/mozilla/fxa.git /home/agent/fxa' <<< "$w")|$(grep -c 'https://github.com/mozilla/PyFxA.git /home/agent/pyfxa' <<< "$w")"
+check "it links each tree under the stack root, and /workspace to the root" "1|1|1" \
+  "$(grep -c 'ln -sfn /home/agent/fxa /home/agent/stack/fxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/pyfxa /home/agent/stack/pyfxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/stack /workspace' <<< "$w")"
+check "only the fxa tree writes FXA_WORKSPACE, to its own path" "echo 'export FXA_WORKSPACE=/home/agent/fxa'" "$(grep -o "echo 'export FXA_WORKSPACE=[^']*'" <<< "$w" | paste -sd, -)"
+printf 'evil;rm\tmozilla/fxa\t/home/agent/fxa\t%s\tmain\t%s\tb\n' "$A" "$B" > "$tmp/bad.tsv"
+: > "$tmp/vm.log"
+check "a tree line with a shell character is refused, and nothing reaches the runner" "1|0" \
+  "$(_trees_workspace run1 "$tmp/bad.tsv" >/dev/null 2>&1; echo $?)|$(wc -l < "$tmp/vm.log" | tr -d ' ')"
+_gce_pin_runner_tree() { printf '%s %s %s %s %s\n' "$FXA_TREE_PATH" "$FXA_PIN_SHA" "$FXA_PIN_BASE_SHA" "$FXA_PIN_BRANCH" "$FXA_WORKTREE_BASE" >> "$tmp/pin.log"; _PINNED_BASE="$FXA_PIN_SHA"; }
+: > "$tmp/pin.log"; _trees_pin run1 "$tmp/trees.tsv"
+check "each tree pins at its own path, commit, base and branch; the first tree's commit is the run's base" \
+  "/home/agent/fxa $A $B agent-x1 main|/home/agent/pyfxa $B $A agent-x1-pyfxa main|$A" "$(paste -sd'|' "$tmp/pin.log")|$_PINNED_BASE"
+: > "$tmp/pin.log"
+check "a bad line stops the pin before any tree" "1|0" "$(_trees_pin run1 "$tmp/bad.tsv" >/dev/null 2>&1; echo $?)|$(wc -l < "$tmp/pin.log" | tr -d ' ')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
