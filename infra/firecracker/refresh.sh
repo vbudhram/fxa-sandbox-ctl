@@ -31,10 +31,13 @@ until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/
 set -euo pipefail
 want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/$1/.nvmrc" | tr -d 'v \n')"
 [[ "$want" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "ERROR: .nvmrc is not a plain version: ${want}" >&2; exit 1; }
-if [ "$(node -v | tr -d v)" != "$want" ]; then
+# The marker, not node -v: a release unpacked over another leaves a mixed npm that cannot install.
+if [ "$(cat /usr/local/.node-release 2>/dev/null)" != "$want" ]; then
   a="$(uname -m)"; case "$a" in x86_64) a=x64 ;; aarch64) a=arm64 ;; esac
+  rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack
   curl -fsSL "https://nodejs.org/dist/v${want}/node-v${want}-linux-${a}.tar.xz" \
     | tar -xJ -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE
+  echo "$want" > /usr/local/.node-release
 fi
 echo "node $(node -v)"
 GUEST
@@ -54,7 +57,7 @@ echo "clone at $(git rev-parse --short HEAD)"
 GUEST
 # --prefix /usr: /usr/bin/claude points there, but the /usr/local npm installs under /usr/local.
 cc="$("$fc" ssh 0 "sudo bash -s -- $CLAUDE_CODE_VERSION" <<'GUEST'
-[ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$1" ] || npm install -g --prefix /usr "@anthropic-ai/claude-code@$1" >&2
+[ "$(claude --version 2>/dev/null | cut -d' ' -f1)" = "$1" ] || npm install -g --prefix /usr --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@$1" >&2
 claude --version 2>/dev/null | cut -d' ' -f1
 GUEST
 )" || true
