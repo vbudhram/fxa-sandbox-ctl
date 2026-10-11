@@ -107,7 +107,7 @@ EOF
     # The Firecracker snapshot: status, the refresh log, or a refresh with the repo's scripts.
     case "${2:-status}" in status|log|install|refresh) ;; *) echo "usage: vm.sh fc status | log [lines] | install | refresh" >&2; exit 1 ;; esac
     [[ "${3:-80}" =~ ^[0-9]+$ ]] || { echo "usage: vm.sh fc log [lines]" >&2; exit 1; }
-    printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc ${2:-status} ${3:-}" | on_vm | mask ;;
+    printf 'sudo -u fxa -H bash -lc %q\n' "cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc ${2:-status} ${3:-} 2>&1" | on_vm | mask ;;  # on_vm drops stderr: keep the reason a start failed
   sys)
     [ -n "${2:-}" ] || { echo "usage: vm.sh sys '<command>'" >&2; exit 1; }
     printf '%s\n' "$2" | on_vm | mask ;;

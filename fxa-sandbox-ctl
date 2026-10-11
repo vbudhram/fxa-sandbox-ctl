@@ -2768,7 +2768,7 @@ main() {
     errors)     cmd_errors "$@" ;;
     lessons)    cmd_lessons "$@" ;;
     alerts)     alerts_check ;;
-    fc)         declare -F cmd_fc >/dev/null || { echo "ERROR: FXA_FC_HOST is not set" >&2; exit 1; }; cmd_fc "$@" ;;
+    fc)         declare -F cmd_fc >/dev/null || { echo "ERROR: fc needs FXA_FC_HOST and the gce backend (FXA_VM_BACKEND=gce)" >&2; exit 1; }; cmd_fc "$@" ;;
     db)         cmd_db "$@" ;;
     help|--help|-h)
       usage

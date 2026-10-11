@@ -142,9 +142,14 @@ cmd_fc() {
     status)
       if _fc_up; then fc_status
       elif [ -f "${SESSION_DIR}/.fc-status" ]; then echo "# the runner host is stopped; last read:"; cat "${SESSION_DIR}/.fc-status"
-      else echo "the runner host is stopped, and no status was read yet"; fi ;;
-    log) _fc_up || { echo "the runner host is stopped; fxa-sandbox-ctl fc refresh starts it" >&2; return 1; }
-      _fc_ssh "sudo journalctl -u fc-refresh --no-pager -o cat -n ${2:-80}" | grep -vE '^ *[0-9]+:[0-9.]+ W ' ;;
+      else echo "the runner host is stopped, and no status was read yet"; return 0; fi
+      # The hours since the last good refresh, or since the snapshot was made: what snapshot_age counts.
+      local t; t="$(sed -n 's/^ok_at=\([0-9][0-9]*\)$/\1/p' "${SESSION_DIR}/.fc-status" | head -1)"
+      [ -n "$t" ] || t="$(sed -n 's/^made=\([0-9][0-9]*\)$/\1/p' "${SESSION_DIR}/.fc-status" | head -1)"
+      [ -z "$t" ] || echo "age=$(( ($(date +%s) - t) / 3600 ))h" ;;
+    log) [[ "${2:-80}" =~ ^[0-9]+$ ]] || { echo "Usage: fxa-sandbox-ctl fc log [lines]" >&2; return 1; }
+      _fc_up || { echo "the runner host is stopped; fxa-sandbox-ctl fc refresh starts it" >&2; return 1; }
+      _fc_ssh "sudo journalctl -u fc-refresh --no-pager -o cat -n ${2:-80}" | grep -vE '^ *[0-9]+:[0-9.]+ W ' || true ;;
     install) if _fc_up; then fc_install; else echo "the runner host is stopped; the refresh scripts install on the next fc refresh"; fi ;;
     refresh) { _fc_up || _fc_wake; } && fc_install && _fc_ssh 'sudo systemctl start --no-block fc-refresh' \
       && echo "refresh started; fxa-sandbox-ctl fc log follows it" ;;

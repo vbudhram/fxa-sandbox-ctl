@@ -80,4 +80,12 @@ check "with no status file, fc status reads systemd's result" "refresh=exit-code
 { echo 'outcome() { echo "$1" > "$OUT"; }'; grep -E "^trap 'outcome|^trap 'exit 143' TERM" "$SANDBOX_ROOT/infra/firecracker/refresh.sh"; echo 'sleep 5'; } > "$tmp/trap.sh"
 set -m; OUT="$tmp/outcome" bash "$tmp/trap.sh" & tp=$!; set +m; sleep 1; kill -TERM -- "-$tp" 2>/dev/null || kill -TERM "$tp"; wait "$tp" 2>/dev/null
 check "a refresh stopped by SIGTERM records a failure" "143" "$(cat "$tmp/outcome" 2>/dev/null)"
+# fc log takes only a number of lines, before anything reaches the host; an empty journal is not an error.
+_fc_up() { return 0; }; sent="$tmp/fclog"; : > "$sent"
+_fc_ssh() { echo "$1" >> "$sent"; }
+check "fc log refuses a line count that is not a number, and sends nothing" "1|0" "$(cmd_fc log '1; id' >/dev/null 2>&1; echo $?)|$(wc -l < "$sent" | tr -d ' ')"
+check "fc log with an empty journal succeeds" "0" "$(cmd_fc log 20 >/dev/null 2>&1; echo $?)"
+# fc status ends with the hours since the last good refresh.
+_fc_ssh() { printf 'snapshot=s\nmade=%s\nok_at=%s\nrefresh=success\n' "$(( $(date +%s) - 90000 ))" "$(( $(date +%s) - 7200 ))"; }
+check "fc status prints the hours since the last good refresh" "age=2h" "$(cmd_fc status | tail -1)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
