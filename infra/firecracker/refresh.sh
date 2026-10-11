@@ -34,7 +34,7 @@ want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/$1/.nvmrc" | t
 if [ "$(node -v | tr -d v)" != "$want" ]; then
   a="$(uname -m)"; case "$a" in x86_64) a=x64 ;; aarch64) a=arm64 ;; esac
   curl -fsSL "https://nodejs.org/dist/v${want}/node-v${want}-linux-${a}.tar.xz" \
-    | tar -xJ -C /usr --strip-components=1 --exclude='*.md' --exclude=LICENSE
+    | tar -xJ -C /usr/local --strip-components=1 --exclude='*.md' --exclude=LICENSE
 fi
 echo "node $(node -v)"
 GUEST
