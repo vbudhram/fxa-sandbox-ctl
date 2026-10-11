@@ -145,3 +145,41 @@ Never run a second copy of the bot beside the first.
 the bot; `errors show <sig>` gives each occurrence; `errors resolve <sig> "<note>"`
 closes one after a fix (it reopens if it happens again). A crash entry from a
 handled failure is a bug in the ERR trap's filter or a missing `|| true`.
+
+## The Firecracker snapshot
+
+Slack sessions restore a snapshot with the FxA stack running. On the Firecracker
+host, `fc-refresh.timer` runs `infra/firecracker/refresh.sh` every 30 minutes
+while the host is up. It brings the clone to fxa main, installs when `yarn.lock`
+moved, and takes a new snapshot. A failed refresh keeps the old snapshot, so
+sessions still boot, but each one repeats the install and takes about 30 s more.
+The `snapshot_refresh` and `snapshot_age` alerts report it.
+
+```bash
+H=skills/fxa-manager/vm.sh
+$H fc              # the snapshot's fxa commit, Claude Code version, age, and the last refresh result
+$H fc log 120      # the last refresh's log
+$H fc refresh      # start the host if it is stopped, install the repo's scripts, start a refresh
+```
+
+The host runs copies of `refresh.sh` and `packer/scripts/03b-toolchain.sh`.
+`vm.sh sync` and `vm.sh fc refresh` install the repo's versions. A change to
+either file reaches the host only through those two commands.
+
+`03b-toolchain.sh` owns Node and Claude Code for the image and the snapshot. It
+installs both in `/usr/local`, the prefix that comes first on PATH. It also holds
+the one Claude Code pin, which `lib/claude-pin.check.sh` checks.
+
+Causes of a failed refresh, and their fixes:
+
+| Log line | Cause | Fix |
+|---|---|---|
+| `fxa@workspace:. couldn't be built` with an old `node v…` | fxa changed `.nvmrc`; the preinstall refuses another Node | `03b-toolchain.sh` installs the `.nvmrc` release. Check the `node` line in the log. |
+| `Class extends value undefined is not a constructor` | A Node release unpacked over another mixed two npm trees | `03b-toolchain.sh` removes npm and corepack first. Delete `/usr/local/.node-release` in the guest to force a clean install. |
+| `esbuild … couldn't be built`, and `bin/esbuild:1` then ELF bytes in the build log | A rebuild ran esbuild's `install.js` on its native `bin/esbuild` | `refresh.sh` deletes `node_modules/.yarn-state.yml` so yarn relinks from its cache |
+| `The CLOBBER file has been updated` | Firefox main needs a clobber build | The mozconfig has `AUTOCLOBBER=1` |
+| A tool shows an old version after an install | Another copy comes earlier on PATH (`/usr/local/bin` before `/usr/bin`) | Find every copy with `which -a <tool>`, or read the snapshot disk with `debugfs -R "stat <path>" rootfs.ext4` |
+
+Yarn writes each package's build log to `/tmp/xfs-*/build.log` in the guest, and
+the guest's `/tmp` is gone after the refresh. `refresh.sh` prints those logs when
+the install fails. Read them before you change anything.
