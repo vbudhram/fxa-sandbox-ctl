@@ -36,7 +36,8 @@ pipeline_load() {
     return 1
   fi
   # shellcheck disable=SC1090
-  source "$conf"
+  # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
+  source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }
   PIPE_NAME="$name"
   # PIPE_REPOS: one row per repo, "slug path role", role work, dep, data or ref. The
   # first work row is the session's repo; the old single values come from the rows.

@@ -138,7 +138,8 @@ EOF
         [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
         { echo 'exec sudo -u fxa -H bash -s'
           echo "$vars"
-          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && base64 -d <<"B64" | tar -xzf -'
+          # Stop the old dev bot first: its timers ran ctl against a half-extracted tree ("Permission denied").
+          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && { [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2; true; } && base64 -d <<"B64" | tar -xzf -'
           # Tracked and new files of both repos (not ignored ones: .env, ai/, logs/, node_modules), and the dev env.
           ( cd "$CTL_ROOT/.." && for r in fxa-sandbox-ctl fxa-agent-bot; do
               git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s/%s\n' "$r" "$f"; done
@@ -162,7 +163,6 @@ EOF2
           # FXA_DEV_FAKE=1: skills/fxa-ctl-dev/fake-ctl.sh plays each session (no runner, no PR), with its own sessions file.
           [ "${FXA_DEV_FAKE:-}" = 1 ] && echo 'echo FXA_CTL=$D/fxa-sandbox-ctl/skills/fxa-ctl-dev/fake-ctl.sh >> fxa-agent-bot/.env.devhost; export FXA_AGENT_STATE=$HOME/.fxa-agent-dev-fake-sessions.json FAKE_CTL_DIR=$D/fake-ctl'
           cat <<'EOF2'
-[ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2
 cd fxa-agent-bot
 # The real bot's settings, then the dev app's, then the dev paths: the last file wins.
 setsid nohup node --env-file=$R/fxa-agent-bot/.env --env-file=.env.dev --env-file=.env.devhost src/app.js >> $D/bot.log 2>&1 < /dev/null &

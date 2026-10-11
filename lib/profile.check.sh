@@ -37,6 +37,10 @@ check "pyfxa-team's work rows" "mozilla/PyFxA /home/agent/pyfxa|mozilla/fxa /hom
   "$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$root"; source "$root/lib/pipeline.sh"; pipeline_load pyfxa-team >/dev/null 2>&1; printf '%s\n' "${PIPE_WORK_ROWS[@]}" ) | paste -sd'|' -)"
 mkdir -p "$tmp/r/profiles/dup"; printf 'PIPE_REPOS=(\n "mozilla/a /home/agent/a work"\n "mozilla/b /home/agent/a work"\n)\n' > "$tmp/r/profiles/dup/profile.conf"
 check "two work rows on one path are refused" "1" "$(loaded "$tmp/r" dup >/dev/null; echo $?)"
+# A profile.conf that does not source (unreadable mid-deploy, or broken) is refused, not an unbound-variable crash.
+mkdir -p "$tmp/r/profiles/broken"; printf 'if then\n' > "$tmp/r/profiles/broken/profile.conf"
+check "a profile.conf that does not source is refused with a reason" "rc=1 ERROR: could not read profile broken" \
+  "$(err="$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$tmp/r"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load broken ) 2>&1 >/dev/null)"; echo "rc=$? $(grep -o 'ERROR: could not read profile broken' <<< "$err")")"
 # A team skill is a directory with a SKILL.md that names it, and its scripts parse.
 bad=""
 for d in "$root"/profiles/*/skills/*/; do
