@@ -604,6 +604,20 @@ session_interrupt() {
 # queued, and no activity for FXA_SESSION_IDLE_SECONDS (10 min: the prompt cache
 # is cold after 5, so waiting longer saves nothing on resume). Stop saves the work
 # and the conversation, and deletes the runner; a reply resumes it.
+# session_boots [days]   Each boot in the last days (default 2), oldest first, with its steps of
+# 4 s or more, then the median: what the slow_boot alert counts.
+session_boots() {
+  local days="${1:-2}"
+  [[ "$days" =~ ^[0-9]+$ ]] || { echo "usage: session boots [days]" >&2; return 1; }
+  _session_records | jq -rs --argjson d "$days" '
+    def n: (. // 0 | tonumber? // 0);
+    [.[] | select((.booted_at | n) > (now - $d * 86400) and (.boot_s | n) > 0)] | sort_by(.booted_at | n)
+    | (.[] | "\(.booted_at | n | floor | todate | .[5:16]) \(.key) \(.profile // "fxa") \(.boot_backend // "-") \(.boot_s)s"
+        + ([(.boot_steps | if type == "string" then (fromjson? // []) else (. // []) end)[]? | select((.s | n) >= 4)
+            | "\n  \(.step | .[0:40]) \(.s)s"] | join(""))),
+      ([.[].boot_s | n] | sort | if length > 0 then "median \(.[length / 2 | floor])s over \(length) boots" else "no boots in \($d) days" end)'
+}
+
 session_idle_sweep() {
   local f key now idle="${FXA_SESSION_IDLE_SECONDS:-600}"; now="$(date +%s)"
   for f in "$SESSION_DIR"/agent-*.json; do

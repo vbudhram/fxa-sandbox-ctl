@@ -670,5 +670,16 @@ check "diffstat: the watch turns it into a live event" '{"type":"diffstat","file
     "$( (set -eo pipefail; _session_pack_media C3:3.000003 "$tmp/pm5.tgz"; echo 0) 2>/dev/null)"  # no || here: it turns set -e off
   exit "$fail" ) || fail=1
 
+# session_boots: recent boots with their slow steps (4 s or more), newest last, and the median.
+now_s=$(date +%s)
+printf '{"key":"agent-bt01","profile":"fxa","boot_backend":"firecracker","booted_at":"%s","boot_s":"45.2","boot_steps":"[{\\"step\\":\\"restoring\\",\\"s\\":3},{\\"step\\":\\"checking out the commit\\",\\"s\\":36.1}]"}' "$(( now_s - 7200 ))" > "$tmp/agent-bt01.json"
+printf '{"key":"agent-bt02","profile":"monitor","boot_backend":"firecracker","booted_at":"%s","boot_s":"12.5","boot_steps":[{"step":"restoring","s":2.8}]}' "$(( now_s - 3600 ))" > "$tmp/agent-bt02.json"
+printf '{"key":"agent-bt03","booted_at":"%s","boot_s":"99"}' "$(( now_s - 9 * 86400 ))" > "$tmp/agent-bt03.json"
+b="$(session_boots 2 2>&1)"
+check "session boots lists the window's boots, with each slow step and the median" "1|1|0|0|1" \
+  "$(grep -c 'agent-bt01 fxa firecracker 45.2s' <<< "$b")|$(grep -c '^  checking out the commit 36.1s' <<< "$b")|$(grep -c 'restoring' <<< "$b")|$(grep -c agent-bt03 <<< "$b")|$(grep -c '^median 45.2s over 2 boots' <<< "$b")"
+check "session boots refuses a day count that is not a number" "1" "$(session_boots x >/dev/null 2>&1; echo $?)"
+rm -f "$tmp"/agent-bt0*.json
+
 exit "$fail"
 

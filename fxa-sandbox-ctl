@@ -2605,6 +2605,7 @@ cmd_session() {
     show) _session_key "${2:-}" && jq . "$(_session_file "$2")" ;;
     history) _session_key "${2:-}" && session_history "$2" ;;
     report) [ -n "${2:-}" ] || { echo "usage: session report <key | thread ID | Slack link>" >&2; exit 2; }; session_report "$2" ;;
+    boots) session_boots "${2:-2}" ;;
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     # The newest session that made or worked on a PR, for !stack checkout: null for none.
     find-pr) [[ "${2:-}" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "usage: session find-pr <PR link>" >&2; return 2; }
@@ -2632,7 +2633,7 @@ cmd_session() {
     times) _session_key "${2:-}" && _session_boot_times "$2" | jq -r 'if . == null then "no boot timings" else
       (.steps[] | "\(.s | tostring | .[0:6])s\t\(.step)"), "total: \(.total // "running, \(.elapsed)s so far")s"
       + (if .restore then "  (snapshot load \(.restore.restore_ms) ms, ssh at \(.restore.ssh_ms) ms)" else "" end) end' ;;
-    *) echo "Usage: session list | session show <key> | session times <key> | session idle-sweep | session prune | session backup | session try --prompt <text> [--then <text>]... [--keep]" >&2; return 1 ;;
+    *) echo "Usage: session list | session show <key> | session times <key> | session boots [days] | session idle-sweep | session prune | session backup | session try --prompt <text> [--then <text>]... [--keep]" >&2; return 1 ;;
   esac
 }
 
