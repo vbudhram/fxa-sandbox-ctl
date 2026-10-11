@@ -26,6 +26,8 @@ trap '"$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; 
 until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done
 # The image build wrote the lock hash as root; the agent keeps it current from here.
 "$fc" ssh 0 'sudo chown agent:agent /home/agent/.image-lock-hash'
+# fxa's preinstall refuses a Node older than its .nvmrc; take the newest of the image's major.
+"$fc" ssh 0 'sudo apt-get update -qq && sudo apt-get install -y -qq --only-upgrade nodejs > /dev/null && echo "node $(node -v)"'
 "$fc" ssh 0 "sudo -u agent bash -s -- $new" <<'GUEST'
 set -euo pipefail
 cd /home/agent/fxa && source /etc/agent-env.sh
