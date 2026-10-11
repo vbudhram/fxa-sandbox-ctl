@@ -17,7 +17,8 @@
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
 #   vm.sh promote         sync the live bot, only when main in both repos is exactly what
-#                         the last vm.sh dev deployed (uncommitted files included), then check it
+#                         the last vm.sh dev deployed (uncommitted files included) and the bot's
+#                         npm test and e2e pass (FXA_PROMOTE_SKIP_TESTS=1 skips them), then check it
 #   vm.sh api <path>      GET the dashboard's /api/<path> as JSON (snapshot, errors, sessions, stats)
 #   vm.sh secret <name> [--prefix <p>]   prompt for a secret's value (hidden), clean it,
 #                         check the prefix, and store it in Secret Manager for the manager
@@ -192,7 +193,15 @@ EOF2
     promote_diff "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || ok=0
     promote_diff "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" || ok=0
     [ "$ok" = 1 ] || { echo "Not promoted. Commit and push exactly what you tested (or vm.sh dev again from main), then promote." >&2; exit 1; }
-    echo "main matches the dev deploy of $(sed -n 's/^at //p' "$DEV_RECORD"); syncing..."
+    echo "main matches the dev deploy of $(sed -n 's/^at //p' "$DEV_RECORD")."
+    # The bot's tests and fake-Slack e2e, on the tree that dev ran (about 5 min). FXA_PROMOTE_SKIP_TESTS=1 for an emergency.
+    if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
+      echo "Running the bot's tests and e2e..."
+      ( cd "$BOT_ROOT" && npm test --silent >/tmp/fxa-promote-test.log 2>&1 && npm run e2e --silent >>/tmp/fxa-promote-test.log 2>&1 ) \
+        || { tail -20 /tmp/fxa-promote-test.log >&2; echo "Not promoted: the bot's tests or e2e failed (log: /tmp/fxa-promote-test.log)." >&2; exit 1; }
+      echo "  $(grep -m1 -oE '[0-9]+/[0-9]+ pass' /tmp/fxa-promote-test.log | tail -1) e2e"
+    fi
+    echo "Syncing..."
     "$0" sync || exit 1
     want_ctl="$(git -C "$CTL_ROOT" rev-parse --short origin/main)" want_bot="$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
     on_vm <<EOF | mask

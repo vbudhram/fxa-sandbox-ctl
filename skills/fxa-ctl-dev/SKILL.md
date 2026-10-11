@@ -124,7 +124,9 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 2. Push both repos when the manager VM needs the change.
 3. `bash skills/fxa-manager/vm.sh promote` deploys to the live bot (Mozilla Slack). It
    refuses unless `main` in both repos is exactly what the last `vm.sh dev` ran,
-   uncommitted files included, then syncs and checks the services. `vm.sh sync` alone
+   uncommitted files included, and unless the bot's `npm test` and `npm run e2e` pass
+   on that tree (about 5 min; `FXA_PROMOTE_SKIP_TESTS=1` skips them in an emergency).
+   Then it syncs and checks the services. `vm.sh sync` alone
    skips that check: use it only for a change the dev bot cannot exercise.
    A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
    secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
