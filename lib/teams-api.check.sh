@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check of /api/teams: the profile diff, the bot.env.base access read, and the team issues.
+# Offline check of /api/teams: the profile diff, the bot .env access read, and the team issues.
 #   bash lib/teams-api.check.sh
 set -u
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
@@ -19,7 +19,7 @@ PROFILE_USERS=crew:U0AAAA111+U0AAAA222,x:,monitor:U0BBBB333,U0CCCC444:crew
 PROFILE_CHANNELS=C123:ghost,C456:U0DDDD555
 PROFILE_JIRA=PY:pyfxa-team
 ENV
-FXA_BOT_ENV_BASE="$tmp/bot.env.base" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
+FXA_BOT_ENV="$tmp/bot.env.base" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
 import json, os, sys, threading, urllib.error, urllib.request
 from pathlib import Path
 sys.path.insert(0, sys.argv[1]); import server
@@ -66,7 +66,7 @@ check("a failed App check is info, write unknown", [("info", "mozilla/solo: GitH
 check("a read-only team's no-write repo is no issue", [], [x for x in lv("crew") if x[0] == "info"])
 check("the access source is the file and its mtime", (f"{tmp}/bot.env.base", None), (b["access_source"]["path"], b["access_error"]))
 
-os.environ["FXA_BOT_ENV_BASE"] = f"{tmp}/missing.env"
+os.environ["FXA_BOT_ENV"] = f"{tmp}/missing.env"
 b = json.loads(get()[1]); t = {x["profile"]: x for x in b["teams"]}
 check("an unreadable bot env: access null, the error set, no nobody rule, no orphans",
       (None, "FileNotFoundError", None, [], []),

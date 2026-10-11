@@ -1243,11 +1243,11 @@ function teamDetails(t) {
     ${(t.issues ?? []).map(i => kvr(`<span class="tag ${esc(i.level)}">${esc(i.level)}</span>`, `${esc(i.text)} · <span class="mono">${esc(i.key)}</span>`)).join("")}</div>`;
   if (t.load_error) return out + `<div><h4>Check it</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl --pipeline ${p} profile show</div></div>`;
   const a = t.access, src = TEAMS?.access_source, use = teamUse(), u = use?.[t.profile] ?? NO_USE, repos = t.repos ?? [];
-  out += `<div>${h("Access", "bot.env.base PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${t.profile === "fxa" || a?.open === "built-in" ? kvr("Who", "everyone (built into the bot)")
+  out += `<div>${h("Access", "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${t.profile === "fxa" || a?.open === "built-in" ? kvr("Who", "everyone (built into the bot)")
       : !a ? `<p class="unknown" title="${esc(TEAMS?.access_error)}">access unknown (bot env not readable)</p>`
       : kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`)
         + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length)}
-    <p class="empty">Team rule; the global gates (ALLOWED_USERS, ALLOWED_CHANNELS, CHANNEL_GATES) also apply.${src ? ` From ${esc(src.path)}, saved ${stamp(src.mtime)}, not the rules of the running bot.` : ""}</p></div>
+    <p class="empty">Team rule; the global gates (ALLOWED_USERS, ALLOWED_CHANNELS, CHANNEL_GATES) also apply.${src ? ` From ${esc(src.path)}, saved ${stamp(src.mtime)}; the bot reads it when it starts, so an edit after its last restart is not live yet.` : ""}</p></div>
     <div>${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.map(r => kvr(`<span class="mono">${esc(r.slug)}</span>`, `${esc(r.role)}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${esc(r.why)}` : ""}`)).join("") || kvr("Repos", "none", 1)}
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>

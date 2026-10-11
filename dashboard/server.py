@@ -263,8 +263,9 @@ def _pairs(v):
 
 
 def read_access():
-    """The bot's PROFILE_* team rules from bot.env.base, as (rules, None) or (None, error)."""
-    path = os.environ.get("FXA_BOT_ENV_BASE") or str(Path.home() / ".config/fxa/bot.env.base")
+    """The bot's PROFILE_* team rules from the .env it starts with, as (rules, None) or (None, error)."""
+    # The running bot's file (node --env-file=.env), not bot.env.base: an edit on the VM goes only there.
+    path = os.environ.get("FXA_BOT_ENV") or str(ROOT.parent.parent / "fxa-agent-bot" / ".env")
     try:
         with open(path) as f:
             raw = {m.group(1): m.group(2).strip().strip("'\"") for m in map(ACCESS_LINE.match, f) if m}
