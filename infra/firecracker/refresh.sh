@@ -44,6 +44,8 @@ cd /home/agent/fxa && source /etc/agent-env.sh
 git fetch -q origin main && git checkout -q -B main "$1"
 if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-hash 2>/dev/null)" ]; then
   echo "yarn.lock moved: installing"
+  # A rebuild over the old tree runs esbuild's install.js on its already-swapped native bin/esbuild, which fails: relink from the cache.
+  rm -f node_modules/.yarn-state.yml
   yarn install --immutable > /tmp/refresh-yarn.log 2>&1 || { tail -30 /tmp/refresh-yarn.log; tail -n 15 /tmp/xfs-*/build.log 2>/dev/null; exit 1; }
   (cd packages/functional-tests && npx playwright install chromium firefox > /dev/null 2>&1) || true
   sha256sum yarn.lock | cut -d' ' -f1 > /home/agent/.image-lock-hash
