@@ -130,9 +130,9 @@ EOF
           '"\(.at / 1000 | strftime("%H:%M:%S")) \(.method) \(.args.ts // .args.thread_ts // "")" + ([(.args.chunks // [])[] | if .type == "task_update" then "\n    [\(.id) \(.status)] \(.title)\(if .details then " | " + (.details | gsub("\n"; " ⏎ ")) else "" end)" else "\n    text: \(.text // "" | gsub("\n"; " ⏎ ") | .[0:120])" end] | join("")) + (if .args.text and (.args.chunks | not) then "\n    \(.args.text | gsub("\n"; " ⏎ ") | .[0:160])" else "" end) + (if .args.name then " :\(.args.name):" else "" end)' | on_vm | mask ;;
       # The dev controller, with its own sessions folder: vm.sh dev ctl diff <key>, ctl stop <key>.
       ctl) shift 2; [ $# -gt 0 ] || { echo "usage: vm.sh dev ctl <args>" >&2; exit 1; }
-        printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce%s\n' "$vars" "$(printf ' %q' "$@")" | on_vm | mask ;;
+        printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce%s 2>&1\n' "$vars" "$(printf ' %q' "$@")" | on_vm | mask ;;
       report) [ -n "${3:-}" ] || { echo "usage: vm.sh dev report <thread ts | key>" >&2; exit 1; }
-        printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q\n' "$vars" "$3" | on_vm | mask ;;
+        printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q 2>&1\n' "$vars" "$3" | on_vm | mask ;;
       up)
         BOT_ROOT="$(cd "$CTL_ROOT/../fxa-agent-bot" && pwd)"
         [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
