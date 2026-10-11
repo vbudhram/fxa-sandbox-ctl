@@ -4,7 +4,7 @@ set -euo pipefail
 
 # The one pin for Claude Code: manager.sh reads it for the manager, and
 # infra/firecracker/refresh.sh carries the same number (lib/claude-pin.check.sh).
-CLAUDE_CODE_VERSION=2.1.293
+CLAUDE_CODE_VERSION=2.1.296
 echo "==> Installing Claude Code CLI ${CLAUDE_CODE_VERSION}..."
 npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
 
