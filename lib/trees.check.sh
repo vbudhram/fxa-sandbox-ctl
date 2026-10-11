@@ -59,4 +59,16 @@ echo '{"key":"agent-one1","branch":"b-one","pr_url":"https://github.com/mozilla/
 check "a one-repo resume gives its PR and base to FxA's tree only" "https://github.com/mozilla/fxa/pull/5|abc|" \
   "$( _tree_enter "$k" 0 && trees_from_get agent-one1 pr_url)|$( _tree_enter "$k" 0 && trees_from_get agent-one1 base_sha)|$( _tree_enter "$k" 1 && trees_from_get agent-one1 pr_url)"
 check "a stack resume reads each tree's own field" "https://github.com/mozilla/PyFxA/pull/7" "$( _tree_enter "$k" 1 && trees_from_get "$k" pr_url)"
+# _checkout_consent: only the PR author's own "push ok" counts. gh is a stub that applies the jq
+# filter's author to a fixed comment list, as gh pr view --json comments -q does.
+gh() { local q="${*: -1}" who; who="$(sed -n 's/.*author.login == "\([^"]*\)".*/\1/p' <<< "$q")"
+  [ -n "${GH_FAIL:-}" ] && return 1
+  printf '%s\n' "${COMMENTS:-}" | awk -F'\t' -v w="$who" '$1 == w { print $2 }'; }
+c() { COMMENTS="$1" GH_FAIL="${3:-}" _checkout_consent https://github.com/mozilla/fxa/pull/1 "$2" && echo yes || echo no; }
+check "the author's 'push ok' consents" "yes" "$(c "$(printf 'ana\tlooks good, push ok')" ana)"
+check "'Push OK.' in any case consents" "yes" "$(c "$(printf 'ana\tPush OK.')" ana)"
+check "someone else's 'push ok' does not" "no" "$(c "$(printf 'bo\tpush ok')" ana)"
+check "'push okay' is not 'push ok'" "no" "$(c "$(printf 'ana\tpush okay')" ana)"
+check "an author name that is not a plain login is refused before gh runs" "no" "$(c "$(printf 'ana\tpush ok')" 'ana") or (true')"
+check "gh failing refuses, it does not consent" "no" "$(c "$(printf 'ana\tpush ok')" ana 1)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
