@@ -72,4 +72,12 @@ _fc_ssh() { printf 'snapshot=20261011-1700\nclaude=2.1.296\nclaude made=a[$(id)]
 fc_status >/dev/null
 check "fc status drops lines that are not plain key=value" "snapshot=20261011-1700|claude=2.1.296|made=1791738213|refresh=success|ok_at=1791738300" \
   "$(grep -v '^read=' "$SESSION_DIR/.fc-status" | paste -sd'|' -)"
+# A host on an older refresh.sh has no status file: fc status reads systemd's Result instead.
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho exit-code\n' > "$tmp/bin/systemctl"; chmod +x "$tmp/bin/systemctl"
+_fc_ssh() { PATH="$tmp/bin:$PATH" bash -c "$1" 2>/dev/null; }
+check "with no status file, fc status reads systemd's result" "refresh=exit-code" "$(fc_status | grep '^refresh=')"
+# refresh.sh's traps: a refresh stopped by a signal records a failure, not success.
+{ echo 'outcome() { echo "$1" > "$OUT"; }'; grep -E "^trap 'outcome|^trap 'exit 143' TERM" "$SANDBOX_ROOT/infra/firecracker/refresh.sh"; echo 'sleep 5'; } > "$tmp/trap.sh"
+set -m; OUT="$tmp/outcome" bash "$tmp/trap.sh" & tp=$!; set +m; sleep 1; kill -TERM -- "-$tp" 2>/dev/null || kill -TERM "$tp"; wait "$tp" 2>/dev/null
+check "a refresh stopped by SIGTERM records a failure" "143" "$(cat "$tmp/outcome" 2>/dev/null)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

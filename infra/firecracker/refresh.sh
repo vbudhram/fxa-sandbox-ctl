@@ -10,6 +10,8 @@ flock -n 9 || { echo "a refresh is already running"; exit 0; }
 # every boot, and the host boots on demand. refresh.ok marks the last good run.
 outcome() { printf 'result=%s\nat=%s\n' "$([ "$1" = 0 ] && echo success || echo failed)" "$(date +%s)" > /fc/run/refresh.status; [ "$1" != 0 ] || touch /fc/run/refresh.ok; }
 trap 'outcome $?' EXIT
+# A stop (systemctl stop, the host shutting down) is a failed run: without these, the EXIT trap saw 0.
+trap 'exit 143' TERM; trap 'exit 130' INT
 fc=/usr/local/sbin/fc
 # The guest's Node and Claude Code come from the image's own toolchain script, which
 # fxa-sandbox-ctl fc install puts beside this one; it holds the Claude Code pin.
