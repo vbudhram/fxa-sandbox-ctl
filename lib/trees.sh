@@ -96,10 +96,11 @@ trees_from_get() {
 
 # _trees_line_ok <name> <slug> <path> <sha> <base> <base_sha> <branch>   The values go into
 # remote bash -c strings, so each must be a plain name.
+# check-ref-format needs no repo; from / it also works where git cannot read this one (a copied worktree).
 _trees_line_ok() {
   [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [[ "$2" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$3" =~ ^/home/agent/[a-z0-9-]+$ ]] \
     && [[ "$4" =~ ^[0-9a-f]{40}$ ]] && [[ "$6" =~ ^[0-9a-f]{40}$ ]] \
-    && git check-ref-format --branch "$5" >/dev/null 2>&1 && git check-ref-format --branch "$7" >/dev/null 2>&1
+    && git -C / check-ref-format --branch "$5" >/dev/null 2>&1 && git -C / check-ref-format --branch "$7" >/dev/null 2>&1
 }
 
 # _trees_workspace <name> <trees.tsv>   Clone the repos the image lacks, and make /workspace
