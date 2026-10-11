@@ -157,7 +157,7 @@ The `snapshot_refresh` and `snapshot_age` alerts report it.
 
 ```bash
 H=skills/fxa-manager/vm.sh
-$H fc              # the snapshot's fxa commit, Claude Code version, age, and the last refresh result
+$H fc              # the snapshot's fxa commit, Claude Code and Codex versions, age, and the last refresh result
 $H fc log 120      # the last refresh's log
 $H fc refresh      # start the host if it is stopped, install the repo's scripts, start a refresh
 ```
@@ -166,9 +166,10 @@ The host runs copies of `refresh.sh` and `packer/scripts/03b-toolchain.sh`.
 `vm.sh sync` and `vm.sh fc refresh` install the repo's versions. A change to
 either file reaches the host only through those two commands.
 
-`03b-toolchain.sh` owns Node and Claude Code for the image and the snapshot. It
-installs both in `/usr/local`, the prefix that comes first on PATH. It also holds
-the one Claude Code pin, which `lib/claude-pin.check.sh` checks.
+`03b-toolchain.sh` owns Node, Claude Code and Codex for the image and the snapshot.
+It installs them in `/usr/local`, the prefix that comes first on PATH. It holds the
+one pin for Claude Code and for Codex, which `lib/claude-pin.check.sh` checks. A
+changed pin makes the next refresh run even when fxa main has not moved.
 
 Causes of a failed refresh, and their fixes:
 

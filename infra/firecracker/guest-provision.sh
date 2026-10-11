@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 S=packer/scripts
-for s in 01-base 02-node 03-infra 03b-toolchain 04-claude 04b-codex 05-proxy 06-agent-init 08-playwright 09-fxa-services; do
+for s in 01-base 02-node 03-infra 03b-toolchain 04-claude 05-proxy 06-agent-init 08-playwright 09-fxa-services; do
   echo "=== $s"; bash "$S/$s.sh"
 done
 cp packer/.vm-agent-guide.md /tmp/vm-agent-guide.md

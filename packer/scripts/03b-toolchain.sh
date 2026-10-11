@@ -1,15 +1,16 @@
 #!/bin/bash
-# 03b-toolchain.sh — the runner's Node and Claude Code, in /usr/local, the one prefix
+# 03b-toolchain.sh — the runner's Node, Claude Code and Codex, in /usr/local, the one prefix
 # that wins on PATH. The Packer build runs it, and infra/firecracker/refresh.sh runs it
 # in the snapshot guest. Run as root: 03b-toolchain.sh [node-version], fxa main's
 # .nvmrc when it is not given.
-# Prints "node <version>" and "claude <version>", and fails when either is not what
-# was asked for.
+# Prints "node <version>", "claude <version>" and "codex <version>", and fails when one
+# is not what was asked for.
 set -euo pipefail
 
-# The one pin for Claude Code: manager.sh reads it for the manager, and refresh.sh
+# The one pin for each runtime: manager.sh reads them for the manager, and refresh.sh
 # for the snapshot (lib/claude-pin.check.sh).
 CLAUDE_CODE_VERSION=2.1.296
+CODEX_VERSION=0.162.1
 
 want="${1:-$(curl -fsSL https://raw.githubusercontent.com/mozilla/fxa/main/.nvmrc)}"
 want="$(printf '%s' "$want" | tr -d 'v \n')"
@@ -28,17 +29,19 @@ fi
 hash -r
 corepack enable
 
-# One copy of Claude Code: an older image put another under /usr, beside the apt Node.
-rm -rf /usr/lib/node_modules/@anthropic-ai/claude-code /usr/bin/claude
+# One copy of each: an older image put another under /usr, beside the apt Node.
+rm -rf /usr/lib/node_modules/@anthropic-ai/claude-code /usr/bin/claude /usr/lib/node_modules/@openai/codex /usr/bin/codex
 cc() { /usr/local/bin/claude --version 2>/dev/null | cut -d' ' -f1; }
-if [ "$(cc)" != "$CLAUDE_CODE_VERSION" ]; then
-  # npm 11 skips install scripts unless they are allowed by name.
-  npm install -g --prefix /usr/local --allow-scripts=@anthropic-ai/claude-code \
-    "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" >&2
-fi
+cx() { /usr/local/bin/codex --version 2>/dev/null | awk '{ print $NF }'; }
+# npm 11 skips install scripts unless they are allowed by name.
+[ "$(cc)" = "$CLAUDE_CODE_VERSION" ] || npm install -g --prefix /usr/local --allow-scripts=@anthropic-ai/claude-code \
+  "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" >&2
+[ "$(cx)" = "$CODEX_VERSION" ] || npm install -g --prefix /usr/local --allow-scripts=@openai/codex "@openai/codex@${CODEX_VERSION}" >&2
 
 echo "node $(node -v | tr -d v)"
 echo "claude $(cc)"
+echo "codex $(cx)"
 [ "$(node -v | tr -d v)" = "$want" ] || { echo "ERROR: node is $(node -v), not ${want}" >&2; exit 1; }
 [ "$(cc)" = "$CLAUDE_CODE_VERSION" ] || { echo "ERROR: claude is '$(cc)', not ${CLAUDE_CODE_VERSION}" >&2; exit 1; }
+[ "$(cx)" = "$CODEX_VERSION" ] || { echo "ERROR: codex is '$(cx)', not ${CODEX_VERSION}" >&2; exit 1; }
 npm -v > /dev/null || { echo "ERROR: npm does not run" >&2; exit 1; }

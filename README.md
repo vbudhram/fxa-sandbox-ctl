@@ -737,8 +737,8 @@ fxa-sandbox-ctl/               # Repo root
 │       ├── 01-base.sh           # System packages, SSH hardening
 │       ├── 02-node.sh           # Node.js toolchain
 │       ├── 03-infra.sh          # MySQL, Redis, Firestore, goaws
-│       ├── 04-claude.sh         # Claude Code CLI
-│       ├── 04b-codex.sh         # OpenAI Codex CLI
+│       ├── 03b-toolchain.sh     # Node, Claude Code and Codex, pinned
+│       ├── 04-claude.sh         # Bun for Claude Code plugins
 │       ├── 05-proxy.sh          # Network config (no proxy)
 │       ├── 06-agent-init.sh     # Systemd boot service + egress firewall
 │       ├── 07-cleanup.sh        # Image trim

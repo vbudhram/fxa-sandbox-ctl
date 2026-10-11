@@ -126,7 +126,7 @@ fc_install() {
 fc_status() {
   local out
   out="$(_fc_ssh 'l=$(readlink -f /fc/snap/latest); echo "snapshot=${l##*/}"; echo "commit=$(cat "$l/commit")"
-    echo "claude=$(cat "$l/claude-code" 2>/dev/null)"; echo "made=$(stat -c %Y "$l/commit")"
+    echo "claude=$(cat "$l/claude-code" 2>/dev/null)"; echo "codex=$(cat "$l/codex" 2>/dev/null)"; echo "made=$(stat -c %Y "$l/commit")"
     echo "refresh=$(systemctl show fc-refresh -p Result --value)"; echo "refresh_at=$(systemctl show fc-refresh -p ExecMainExitTimestamp --value)"')" || return 1
   printf '%s\nread=%s\n' "$out" "$(date +%s)" > "${SESSION_DIR}/.fc-status"
   printf '%s\n' "$out"

@@ -112,7 +112,7 @@ for f in claude.tgz ctl.env.base bot.env.base mzcld; do
   ssh_vm "umask 077; cat > $dest" < "$tmp/$f"
 done
 # fxa-secrets lives in its own file; setup gets it spliced in at its marker line.
-{ grep -m1 '^CLAUDE_CODE_VERSION=' "${ROOT}/packer/scripts/03b-toolchain.sh"
+{ grep -E '^(CLAUDE_CODE|CODEX)_VERSION=' "${ROOT}/packer/scripts/03b-toolchain.sh"
   sed -e "/^__FXA_SECRETS__\$/{r ${ROOT}/infra/gce/fxa-secrets.sh" -e 'd;}' "${ROOT}/infra/gce/manager-setup.sh"; } | ssh_vm 'sudo bash -s'
 # The MCP gateway's connectors, when you keep them locally. Credentials stay
 # ${VAR} references filled from Secret Manager, so a literal one stops here.

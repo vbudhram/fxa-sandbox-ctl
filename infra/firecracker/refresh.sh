@@ -11,12 +11,14 @@ fc=/usr/local/sbin/fc
 # fxa-sandbox-ctl fc install puts beside this one; it holds the Claude Code pin.
 toolchain=/usr/local/share/fxa/03b-toolchain.sh
 CLAUDE_CODE_VERSION="$(sed -n 's/^CLAUDE_CODE_VERSION=//p' "$toolchain")"
-[ -n "$CLAUDE_CODE_VERSION" ] || { echo "ERROR: no Claude Code pin in ${toolchain}" >&2; exit 1; }
+CODEX_VERSION="$(sed -n 's/^CODEX_VERSION=//p' "$toolchain")"
+[ -n "$CLAUDE_CODE_VERSION" ] && [ -n "$CODEX_VERSION" ] || { echo "ERROR: no Claude Code or Codex pin in ${toolchain}" >&2; exit 1; }
 cur="$(cat /fc/snap/latest/commit 2>/dev/null || echo none)"
 cur_cc="$(cat /fc/snap/latest/claude-code 2>/dev/null || echo none)"
+cur_cx="$(cat /fc/snap/latest/codex 2>/dev/null || echo none)"
 new="$(git ls-remote https://github.com/mozilla/fxa.git refs/heads/main | cut -f1)"
 [[ "$new" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read main" >&2; exit 1; }
-[ "$new" = "$cur" ] && [ "$cur_cc" = "$CLAUDE_CODE_VERSION" ] && [ "${1:-}" != --force ] && { echo "snapshot is at main (${new:0:10})"; exit 0; }
+[ "$new" = "$cur" ] && [ "$cur_cc" = "$CLAUDE_CODE_VERSION" ] && [ "$cur_cx" = "$CODEX_VERSION" ] && [ "${1:-}" != --force ] && { echo "snapshot is at main (${new:0:10})"; exit 0; }
 echo "main moved: ${cur:0:10} -> ${new:0:10}"
 
 # Start from the newest snapshot's disk: it was synced just before the snapshot,
@@ -32,7 +34,7 @@ until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/
 want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/${new}/.nvmrc")"
 tc="$("$fc" ssh 0 "sudo bash -s -- ${want//[^0-9.v]/}" < "$toolchain")"
 echo "$tc"
-cc="$(sed -n 's/^claude //p' <<< "$tc")"
+cc="$(sed -n 's/^claude //p' <<< "$tc")"; cx="$(sed -n 's/^codex //p' <<< "$tc")"
 "$fc" ssh 0 "sudo -u agent bash -s -- $new" <<'GUEST'
 set -euo pipefail
 cd /home/agent/fxa && source /etc/agent-env.sh
@@ -84,6 +86,7 @@ name="$(date -u +%Y%m%d-%H%M)"
 /usr/local/sbin/fc-make-snapshot "$name"
 echo "$new" > "/fc/snap/${name}/commit"
 echo "$cc" > "/fc/snap/${name}/claude-code"
+echo "$cx" > "/fc/snap/${name}/codex"
 # Keep the two newest; a slot already restored keeps its memory and disk copy.
 ls -1dt /fc/snap/2*/ 2>/dev/null | tail -n +3 | xargs -r rm -rf
 [ -d /fc/snap/v1 ] && [ "$(readlink /fc/snap/latest)" != /fc/snap/v1 ] && rm -rf /fc/snap/v1
