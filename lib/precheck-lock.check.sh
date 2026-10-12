@@ -9,10 +9,11 @@ eval "$(sed -n '/^cmd_precheck() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")
 PIPE_LOCK_DIR="$tmp/pass.lock" PIPE_STATE_DIR="$tmp"
 pipeline_lock() { mkdir "$PIPE_LOCK_DIR" && echo $$ > "$PIPE_LOCK_DIR/pid"; }
 cmd_reconcile() { :; }; cmd_drain() { :; }; cmd_reap() { :; }
-jira_done_keys() { return 1; }   # acli logged out
+jira_login_ok() { :; }   # the login works; the read after it fails
+jira_done_keys() { echo x >> "$tmp/reads"; return 1; }
 
 ( set -e; cmd_precheck ) >/dev/null 2>&1
-check "a failed Jira read releases the lock" "no" "$([ -d "$PIPE_LOCK_DIR" ] && echo yes || echo no)"
+check "a failed Jira read releases the lock" "1|no" "$(wc -l < "$tmp/reads" 2>/dev/null | tr -d ' ')|$([ -d "$PIPE_LOCK_DIR" ] && echo yes || echo no)"
 
 mkdir "$PIPE_LOCK_DIR"; echo 99999 > "$PIPE_LOCK_DIR/pid"
 ( pipeline_lock() { :; }; set -e; cmd_precheck ) >/dev/null 2>&1

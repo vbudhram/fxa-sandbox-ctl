@@ -88,7 +88,13 @@ mkdir -p "$tmp/rec"; deploy_record_script 'a b' 'c b' | HOME="$tmp/rec" bash; de
 check "record: each promote that moved a commit appends one promote line" "2|promote a b c b" \
   "$(wc -l < "$tmp/rec/.fxa-deploys.log" | tr -d ' ')|$(tail -1 "$tmp/rec/.fxa-deploys.log" | cut -d' ' -f2-)"
 check "record: no heads (a failed read) writes no line" "" "$(deploy_record_script '' 'c b')"
-check "rollback: the commits it moved to, from its own output" "aaa1111 bbb2222" \
-  "$(rollback_targets "$(printf 'fxa-sandbox-ctl: ccc3333 -> aaa1111\nfxa-agent-bot: ddd4444 -> bbb2222\n')")"
+check "rollback: the commits it moved to, from its own output" "aaa1111|bbb2222" \
+  "$(rollback_targets "$(printf 'fxa-sandbox-ctl: ccc3333 -> aaa1111\nfxa-agent-bot: ddd4444 -> bbb2222\n')" | paste -sd'|' -)"
+{ read -r c; read -r b; } <<< "$(rollback_targets "$(printf 'fxa-agent-bot: ddd4444 -> bbb2222\n')")"
+check "rollback: only the bot moved, so its sha stays the bot's" "|bbb2222" "$c|$b"
+eval "$(sed -n '/^promote_ci() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+check "promote_ci: red anywhere refuses, before running" "red|red" "$(promote_ci red running)|$(promote_ci green red)"
+check "promote_ci: running refuses, green in both skips the tests, no result tests" "running|skip-tests|test|test" \
+  "$(promote_ci running green)|$(promote_ci green green)|$(promote_ci green none)|$(promote_ci none none)"
 check "rollback: re-links the skills, as sync does" "yes" "$(rollback_script | grep -q 'ln -sfn' && echo yes)"
 exit "$fail"

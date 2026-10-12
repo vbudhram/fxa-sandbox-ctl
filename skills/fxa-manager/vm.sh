@@ -78,6 +78,10 @@ secret_clean() {
   printf '%s' "$v"
 }
 
+# promote_ci <ctl state> <bot state>   What promote does with CI on main: red, running, skip-tests or test.
+promote_ci() {
+  case "$1 $2" in *red*) echo red ;; *running*) echo running ;; "green green") echo skip-tests ;; *) echo test ;; esac
+}
 # ci_state <repo dir> <sha>   green, red, running, or none: the GitHub check runs of that commit.
 ci_state() {
   local slug; slug="$(git -C "$1" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
@@ -128,9 +132,10 @@ deploy_record_script() {
   printf 'echo %q >> ~/.fxa-deploys.log\n' "$(date -u +%FT%TZ) promote $1 $2"
 }
 
-# rollback_targets <rollback output>   "<ctl sha> <bot sha>": the commits the rollback moved to.
+# rollback_targets <rollback output>   Two lines, the ctl sha then the bot sha the rollback moved to;
+# a line is empty when its repo did not move.
 rollback_targets() {
-  printf '%s %s\n' "$(printf '%s\n' "$1" | sed -n 's/^fxa-sandbox-ctl: .* -> //p')" "$(printf '%s\n' "$1" | sed -n 's/^fxa-agent-bot: .* -> //p')"
+  printf '%s\n%s\n' "$(printf '%s\n' "$1" | sed -n 's/^fxa-sandbox-ctl: .* -> //p')" "$(printf '%s\n' "$1" | sed -n 's/^fxa-agent-bot: .* -> //p')"
 }
 
 # deploy_check <want ctl> <want bot>   The services, the live commits, the bot's connection and the dashboard.
@@ -309,10 +314,10 @@ EOF2
     if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
       cs="$(ci_state "$CTL_ROOT" "$(git -C "$CTL_ROOT" rev-parse origin/main)")" bs="$(ci_state "$BOT_ROOT" "$(git -C "$BOT_ROOT" rev-parse origin/main)")"
       echo "CI on main: controller $cs, bot $bs."
-      case "$cs $bs" in
-        *red*) echo "Not promoted: CI failed on main. Fix it first (gh run list -b main)." >&2; exit 1 ;;
-        *running*) echo "Not promoted: CI is still running on main. Promote again when it is done." >&2; exit 1 ;;
-        "green green") echo "CI passed on both commits, so the bot's tests do not run again here." ;;
+      case "$(promote_ci "$cs" "$bs")" in
+        red) echo "Not promoted: CI failed on main. Fix it first (gh run list -b main)." >&2; exit 1 ;;
+        running) echo "Not promoted: CI is still running on main. Promote again when it is done." >&2; exit 1 ;;
+        skip-tests) echo "CI passed on both commits, so the bot's tests do not run again here." ;;
         *) promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1 ;;
       esac
     fi
@@ -352,7 +357,7 @@ EOF2
     on_vm <<'EOF'
 for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true
 EOF
-    deploy_check $(rollback_targets "$out")
+    { read -r c; read -r b; } <<< "$(rollback_targets "$out")"; deploy_check "$c" "$b"
     echo "Rolled back. main still has the change: revert it there, then dev and promote as usual. fxa-secrets is not rolled back."
     ;;
   api)
