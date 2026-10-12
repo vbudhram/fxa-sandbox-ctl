@@ -1434,6 +1434,15 @@ cmd_precheck() {
 
 # Every key reaches JQL, file paths, and a python argv. One gate, applied once.
 _key() { local k; k="$(jira_normalize_key "${1:-}")" || exit 1; printf '%s' "$k"; }
+# cmd_jira_state KEY...   Save each ticket's assignee and status for the Stats PRs tab (a backfill).
+# Only ticket keys: the key becomes a file name in the state dir.
+cmd_jira_state() {
+  local a k
+  for a in "$@"; do
+    k="$(_key "$a" 2>/dev/null)" || { echo "$a: not a ticket key" >&2; continue; }
+    if jira_record_state "$k"; then echo "$k ok"; else echo "$k failed"; fi
+  done
+}
 cmd_ticket()    { jira_ticket "$(_key "$1")"; }
 cmd_reporter()  { jira_reporter_login "$(_key "$1")"; }
 cmd_drain()     { gh_drain "$(jira_done_keys)"; }
@@ -2737,7 +2746,7 @@ main() {
     label)      cmd_label "$@" ;;
     ticket)     cmd_ticket "$@" ;;
     # jira-state KEY...: save each ticket's assignee and status for the Stats PRs tab (a backfill).
-    jira-state) pipeline_require; for k in "$@"; do jira_record_state "$k" && echo "$k ok" || echo "$k failed"; done ;;
+    jira-state) pipeline_require; cmd_jira_state "$@" ;;
     jira-card)  jira_card "$@" ;;
     sentry-card) sentry_card "$@" ;;
     ground)     cmd_ground "$@" ;;

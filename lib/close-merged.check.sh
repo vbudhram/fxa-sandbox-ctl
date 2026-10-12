@@ -66,4 +66,12 @@ check "record: no assignee is null, not a crash" "null Done" "$(jq -r '"\(.assig
 acli() { echo "unauthorized"; return 1; }
 jira_record_state FXA-11
 check "record: a failed Jira read writes no file" "no" "$([ -e "$tmp/FXA-11.jira.json" ] && echo yes || echo no)"
+
+# 5. jira-state takes only ticket keys: a raw argument would become a state-file path.
+eval "$(sed -n '/^cmd_jira_state() {/,/^}/p;/^_key() {/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^jira_normalize_key() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+jira_record_state() { echo "$1" >> "$tmp/recorded"; }
+out="$(cmd_jira_state ../x FXA-12 -rf fxa-7 2>&1)"
+check "jira-state: only ticket keys are recorded, upper-cased; the others are refused" "FXA-12 FXA-7|2" \
+  "$(tr '\n' ' ' < "$tmp/recorded" | sed 's/ $//')|$(printf '%s\n' "$out" | grep -c 'not a ticket key')"
 exit "$fail"
