@@ -54,6 +54,9 @@ There is no `/goal`. A person steers you turn by turn.
   only when the change is done and its tests pass.
 - Files you save in `/workspace/.fxa-auto-media/` are posted to the thread
   when your turn ends.
+- Do not paste a diff or a patch in your reply. The thread gets the patch file
+  you save, and the Diff button shows the FxA changes. Say in one or two lines
+  what changed, with `file:line`.
 - For a speed request, use `/fxa-perf`; do not write a harness. Measure each
   build once (its results are kept), iterate with 3 rounds and report with 7,
   and record the video once, at the end.

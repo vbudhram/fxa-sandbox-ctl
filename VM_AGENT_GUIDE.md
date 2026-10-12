@@ -84,7 +84,8 @@ Chat sessions do not have it; do not report that it is missing.
     built here. Open it on the local stack with
     `FIREFOX_BIN=$HOME/Nightly/firefox yarn firefox` from /workspace. To hand
     the change back, run `git -C ~/firefox diff > /workspace/.fxa-auto-media/firefox.patch`;
-    the file is posted to the thread. Nothing is pushed to any Firefox repo.
+    the file is posted to the thread, so do not paste the diff in your reply.
+    Nothing is pushed to any Firefox repo.
     The checkout is at the commit `git -C ~/firefox log -1` shows; it cannot
     update from here, so say which commit the patch is against.
   - **GCE, or no `~/firefox`:** read it from a sparse clone, about 10 s:
