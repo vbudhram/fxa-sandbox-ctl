@@ -5,7 +5,12 @@
 set -uo pipefail
 job="${1:?job name}" prompt="${2:?prompt file}"
 state="${PIPE_STATE_DIR:-$HOME/.claude/state/fxa-ai-fixme}"
-out="$(mktemp)"; trap 'rm -f "$out"' EXIT
+lib="$(dirname "$0")/../../lib"
+# Runs on a kill too (systemd's timeout, a stop), so no run token outlives its job.
+cleanup() { rm -f "$out" "${cfg:-}"
+  [ -z "${mcp_tok:-}" ] || ( source "$lib/mcp-token.sh" && mcp_token_revoke "$run" )
+  [ -z "${llm_tok:-}" ] || ( source "$lib/llm-token.sh" && llm_token_revoke "$run" ); }
+out="$(mktemp)"; trap cleanup EXIT
 # A pass runs precheck in shell first: a quiet pass then costs no model turn.
 # Claude gets precheck's output and must not run it again: a second run would
 # not report review comments the first one already marked as noted.
@@ -21,8 +26,9 @@ ${pre}
 </precheck>"
   # A pass that may launch or must judge (queue, reconcile, feedback lines) keeps the default model
   # (Opus): the launch-or-skip call and the grounding need it. One that can only report (drain and
-  # reap lines) runs on FXA_PASS_REPORT_MODEL; empty keeps the default for those too.
-  if ! printf '%s\n' "$pre" | grep -qE '^(queue|reconcile|feedback):'; then
+  # reap lines) runs on FXA_PASS_REPORT_MODEL; empty keeps the default for those too. Lines after
+  # precheck's "info:" marker were handled already and do not count.
+  if ! printf '%s\n' "$pre" | sed '/^info:/,$d' | grep -qE '^(queue|reconcile|feedback):'; then
     report_model="${FXA_PASS_REPORT_MODEL-claude-sonnet-5-5}"
   fi
 fi
@@ -32,8 +38,8 @@ model=(); [ -n "${report_model:-}" ] && model=(--model "$report_model")
 run="${job}-$(date +%s)"
 mcp=() url="${FXA_PASS_MCP_URL-http://127.0.0.1:8789}"  # set it empty to turn this off
 if [ "$job" = pass ] && [ -n "$url" ]; then
-  if tok="$(source "$(dirname "$0")/../../lib/mcp-token.sh" && FXA_MCP_TOKEN_TTL=3600 mcp_token_for "$run" figma,bugzilla)"; then
-    cfg="$(mktemp)"; trap 'rm -f "$out" "$cfg"; (source "$(dirname "$0")/../../lib/mcp-token.sh" && mcp_token_revoke "$run")' EXIT
+  if tok="$(source "$lib/mcp-token.sh" && FXA_MCP_TOKEN_TTL=3600 mcp_token_for "$run" figma,bugzilla)"; then
+    mcp_tok=1 cfg="$(mktemp)"
     printf '{"mcpServers":{"fxa":{"type":"http","url":"%s/mcp","headers":{"Authorization":"Bearer %s"}}}}\n' \
       "$url" "$tok" > "$cfg"
     # --strict-mcp-config: the gateway only, not the unauthenticated plugin servers.
@@ -44,12 +50,11 @@ fi
 # proxy logs and prices each call. No token (no proxy): the API key, as before.
 llm=()
 if [ -n "${FXA_LLM_PROXY_URL:-}" ]; then
-  if tok="$(source "$(dirname "$0")/../../lib/llm-token.sh" && FXA_LLM_TOKEN_TTL=10800 FXA_LLM_RUN_CAP_USD="${FXA_PASS_CAP_USD:-10}" llm_token_for "$run")"; then
-    llm=(ANTHROPIC_BASE_URL="$FXA_LLM_PROXY_URL" ANTHROPIC_API_KEY="$tok")
+  if tok="$(source "$lib/llm-token.sh" && FXA_LLM_TOKEN_TTL=10800 FXA_LLM_RUN_CAP_USD="${FXA_PASS_CAP_USD:-10}" llm_token_for "$run")"; then
+    llm_tok=1 llm=(ANTHROPIC_BASE_URL="$FXA_LLM_PROXY_URL" ANTHROPIC_API_KEY="$tok")
   else echo "WARN: no LLM proxy token; this ${job} uses the API key directly" >&2; fi
 fi
 env ${llm[@]+"${llm[@]}"} claude -p --permission-mode auto --output-format json ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
-[ ${#llm[@]} -eq 0 ] || ( source "$(dirname "$0")/../../lib/llm-token.sh" && llm_token_revoke "$run" )
 jq -r '.result // empty' "$out" 2>/dev/null || cat "$out"
 row="$(jq -c --arg job "$job" --arg run "$run" '{at: (now | todate), job: $job, run: $run, cost_usd: (.total_cost_usd // null), models: ((.modelUsage // {}) | keys),
   turns: (.num_turns // null), duration_ms: (.duration_ms // null), is_error: (.is_error // false)}' "$out" 2>/dev/null)"

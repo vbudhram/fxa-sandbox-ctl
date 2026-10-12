@@ -35,6 +35,11 @@ check "a failed drain keeps the notes: the same red after it stays quiet" "quiet
 cmd_drain() { :; }; q >/dev/null
 cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0 head=$(cat "$tmp/sha")"; }
 check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
+# Info lines come after work lines, under one "info:" marker: claude-job.sh routes on the lines above it.
+pipeline_focus_key() { echo FXA-1; }; echo ccc > "$tmp/sha"
+cmd_precheck > "$tmp/pre" 2>&1
+check "work, then the info marker, then the held-back info" "drain|info:|mode: focus FXA-1" "$(cut -c1-5 "$tmp/pre" | sed -n 1,2p | paste -sd'|' -)|$(sed -n 3p "$tmp/pre" | cut -c1-17)"
+pipeline_focus_key() { :; }
 # gh_drain prints the PR's head commit on a RED line, from the same query.
 eval "$(sed -n '/^gh_drain() {/,/^}/p' "$(dirname "$0")/github.sh")"
 pipeline_require() { :; }; worktree_branch_for() { echo fxa-31; }; PIPE_REPO_SLUG=mozilla/fxa _GH_ROLLUP_JQ=.

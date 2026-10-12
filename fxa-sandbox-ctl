@@ -1428,7 +1428,8 @@ cmd_precheck() {
   if [ "$work" = 0 ]; then
     echo "quiet: ${queue_n} queued ($(pipeline_holding_new && echo 'newtickets off' || echo 'all skipped, unchanged')), ${awaiting_n} awaiting review, ${inflight_n} in flight (${inflight_pr} with PR, ${infra} red on known infra)${pass}"
   else
-    [ -n "$info" ] && printf '%s\n' "$info"
+    # The marker tells claude-job.sh where the lines that need work end.
+    [ -n "$info" ] && printf 'info: the lines below were handled already, for context only\n%s\n' "$info"
   fi
 }
 

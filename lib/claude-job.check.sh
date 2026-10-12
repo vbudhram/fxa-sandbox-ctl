@@ -57,6 +57,8 @@ check "a pass that must judge a reconcile line keeps the default model" "no" "$(
 run "$(printf 'drain: FXA-6 70 RED ok=9 fail=1 running=0\nreap: agent-x stray')" >/dev/null
 check "a pass that can only report runs on Sonnet" "yes" "$(grep -q -- '--model claude-sonnet-5-5' "$tmp/claude-args" && echo yes || echo no)"
 check "the row records the models that ran" '["claude-haiku-4-5","claude-opus-5-5"]' "$(tail -1 "$tmp/state/job-costs.jsonl" | jq -c .models)"
+run "$(printf 'drain: FXA-6 70 RED ok=9 fail=1 running=0\ninfo: handled already, for context only\nreconcile: FXA-10 pr #12 open\nmode: focus FXA-1; the queue is that epic'"'"'s children')" >/dev/null
+check "info lines after precheck's info marker do not keep the default model" "yes" "$(grep -q -- '--model claude-sonnet-5-5' "$tmp/claude-args" && echo yes || echo no)"
 FXA_PASS_REPORT_MODEL= run 'drain: FXA-7 71 RED ok=1 fail=1 running=0' >/dev/null
 check "an empty FXA_PASS_REPORT_MODEL keeps the default model for reports too" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
 
@@ -66,8 +68,15 @@ FXA_LLM_PROXY_URL=http://10.0.0.2:8788 run 'queue: FXA-8 new (run: ground FXA-8)
 read -r base key < "$tmp/claude-env"; r="$(tail -1 "$tmp/state/job-costs.jsonl" | jq -r .run)"
 check "with a proxy: claude gets the proxy and a run token, not the API key" "http://10.0.0.2:8788|fxl_|no" \
   "$base|${key:0:4}|$(grep -q sk-ant-direct "$tmp/claude-env" && echo yes || echo no)"
-check "the token belongs to the row's run, has a cap, and is expired after the pass" "pass-|$r|true|true" \
-  "${r:0:5}|$(jq -r .run "$tmp/llm/tokens/$key.json")|$(jq '.cap_usd > 0' "$tmp/llm/tokens/$key.json")|$(jq '.expires <= now' "$tmp/llm/tokens/$key.json")"
+check "the token belongs to the row's run, has the pass cap of 10, and is expired after the pass" "pass-|$r|10|true" \
+  "${r:0:5}|$(jq -r .run "$tmp/llm/tokens/$key.json")|$(jq '.cap_usd' "$tmp/llm/tokens/$key.json")|$(jq '.expires <= now' "$tmp/llm/tokens/$key.json")"
+# A job killed mid-run (systemd's timeout, a stop): the EXIT trap still expires both tokens.
+cp "$tmp/bin/claude" "$tmp/claude.ok"; printf '#!/bin/bash\necho "${ANTHROPIC_API_KEY:-none}" > %s/claude-env\nkill -TERM $PPID; exit 143\n' "$tmp" > "$tmp/bin/claude"
+rm -f "$tmp/claude-mcp"; FXA_LLM_PROXY_URL=http://10.0.0.2:8788 run 'queue: FXA-11 new (run: ground FXA-11)' >/dev/null 2>&1
+key="$(cat "$tmp/claude-env")"
+check "a killed job still expires its LLM run token" "fxl_|true" "${key:0:4}|$(jq '.expires <= now' "$tmp/llm/tokens/$key.json" 2>/dev/null)"
+check "a killed job still expires its MCP token" "true" "$(n=0; for f in "$tmp"/gw/tokens/*.json; do jq -e '.expires > now' "$f" >/dev/null && n=1; done; [ $n = 0 ] && echo true)"
+cp "$tmp/claude.ok" "$tmp/bin/claude"
 run 'queue: FXA-9 new (run: ground FXA-9)' >/dev/null
 check "without a proxy: claude keeps the API key, as before" "none sk-ant-direct-key-0000" "$(cat "$tmp/claude-env")"
 unset FXA_LLM_PROXY_DIR ANTHROPIC_API_KEY
