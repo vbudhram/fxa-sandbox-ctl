@@ -1621,8 +1621,9 @@ cmd_ground() {
     echo; echo "## Open PRs touching cited files"; echo
     # Anyone can open a PR on the public repo: its title and branch are untrusted, and this section
     # is outside the fence. The number and the author's login (letters, digits, -) are enough to look it up.
+    # A file path is theirs too: one with a tab or a newline could split the line, so it is dropped.
     local prfiles; prfiles="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --limit 60 --json number,author,files \
-      --jq '.[] | .number as $n | ((.author.login // "unknown") | gsub("[^A-Za-z0-9-]"; "")) as $a | .files[].path | "\(.)\t#\($n) by \($a)"' 2>/dev/null || true)"
+      --jq '.[] | .number as $n | ((.author.login // "unknown") | gsub("[^A-Za-z0-9-]"; "")) as $a | .files[].path | select(test("[\u0000-\u001f\u007f]") | not) | "\(.)\t#\($n) by \($a)"' 2>/dev/null || true)"
     local overlaps; overlaps="$(while IFS= read -r p; do
       p="${p%%:*}"; [ -n "$p" ] || continue
       printf '%s\n' "$prfiles" | awk -F'\t' -v f="$p" '$1 == f {print "- " f "  <- " $2}'
