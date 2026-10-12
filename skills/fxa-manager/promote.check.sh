@@ -36,4 +36,28 @@ log="$(NPM_FAIL=run promote_tests "$tmp/w" "$t" "$tmp/w" "$t" 2>&1 | sed -n 's/.
 check "a failed e2e: refuse, with a private log of its own" "yes|no|yes" \
   "$([ -n "$log" ] && echo yes)|$([ "$log" = /tmp/fxa-promote-test.log ] && echo yes || echo no)|$(grep -q boom "$log" && echo yes)"
 rm -f "$log"
+
+# Rollback: the live checkouts in a scratch HOME, npm and the controller stubbed.
+eval "$(sed -n '/^deploy_heads_script() {/,/^}/p;/^rollback_script() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+H="$tmp/home"; mkdir -p "$H/Desktop/working2" "$tmp/bin"; printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/npm"; chmod +x "$tmp/bin/npm"
+for r in fxa-sandbox-ctl fxa-agent-bot; do
+  d="$H/Desktop/working2/$r"; git init -q -b main "$d"
+  printf '#!/bin/sh\nexit 0\n' > "$d/fxa-sandbox-ctl"; chmod +x "$d/fxa-sandbox-ctl"
+  git -C "$d" add -A; git -C "$d" -c user.email=user@example.com -c user.name=t commit -qm old
+  echo 2 > "$d/v"; git -C "$d" add v; git -C "$d" -c user.email=user@example.com -c user.name=t commit -qm new
+done
+live() { HOME="$H" PATH="$tmp/bin:$PATH" bash -s; }
+heads() { git -C "$H/Desktop/working2/fxa-sandbox-ctl" rev-parse "$1"; git -C "$H/Desktop/working2/fxa-agent-bot" rev-parse "$1"; }
+check "no promote recorded: rollback stops" "1" "$(rollback_script | live >/dev/null; echo $?)"
+check "deploy_heads_script prints both live heads" "$(heads HEAD | tr '\n' ' ' | sed 's/ $//')" "$(deploy_heads_script | live)"
+echo "2026-10-12T00:00:00Z promote $(heads HEAD~1 | tr '\n' ' ')$(heads HEAD | tr '\n' ' ')" > "$H/.fxa-deploys.log"
+old="$(heads HEAD~1 | tr '\n' ' ')"
+check "rollback moves both checkouts to what the promote replaced, keeps main a branch, and logs it" "0|$old|main|1" \
+  "$(rollback_script | live >/dev/null; echo $?)|$(heads HEAD | tr '\n' ' ')|$(git -C "$H/Desktop/working2/fxa-agent-bot" symbolic-ref --short HEAD)|$(grep -c ' rollback ' "$H/.fxa-deploys.log")"
+check "a second rollback stops: the checkouts are no longer at that promote" "1|$old|1" \
+  "$(rollback_script | live >/dev/null; echo $?)|$(heads HEAD | tr '\n' ' ')|$(grep -c ' rollback ' "$H/.fxa-deploys.log")"
+for r in fxa-sandbox-ctl fxa-agent-bot; do git -C "$H/Desktop/working2/$r" reset -q --hard main@{1}; done
+echo edit > "$H/Desktop/working2/fxa-agent-bot/v"
+check "a local edit on the VM: rollback stops and changes nothing" "1|edit" \
+  "$(rollback_script | live >/dev/null; echo $?)|$(cat "$H/Desktop/working2/fxa-agent-bot/v")"
 exit "$fail"

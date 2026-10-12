@@ -19,6 +19,8 @@
 #   vm.sh promote         sync the live bot, only when main in both repos is exactly what
 #                         the last vm.sh dev deployed (uncommitted files included) and the bot's
 #                         npm test and e2e pass (FXA_PROMOTE_SKIP_TESTS=1 skips them), then check it
+#   vm.sh rollback        put the live bot back on the commits the last promote replaced, then check it
+#                         (main does not change: revert there after)
 #   vm.sh api <path>      GET the dashboard's /api/<path> as JSON (snapshot, errors, sessions, stats)
 #   vm.sh secret <name> [--prefix <p>]   prompt for a secret's value (hidden), clean it,
 #                         check the prefix, and store it in Secret Manager for the manager
@@ -72,6 +74,47 @@ secret_clean() {
   [ -n "$v" ] || return 1
   [ -z "${1:-}" ] || [ "${v:0:${#1}}" = "$1" ] || return 1
   printf '%s' "$v"
+}
+
+# deploy_heads_script   A script for fxa on the VM: "<ctl sha> <bot sha>" of the live checkouts.
+deploy_heads_script() {
+  echo 'echo "$(git -C ~/Desktop/working2/fxa-sandbox-ctl rev-parse HEAD) $(git -C ~/Desktop/working2/fxa-agent-bot rev-parse HEAD)"'
+}
+
+# rollback_script   A script for fxa on the VM: move both live checkouts back to the commits the last
+# promote in ~/.fxa-deploys.log replaced. Only when they are still at what that promote deployed, so a
+# second rollback, or one after a sync by hand, stops. reset --keep keeps main a branch, so the next
+# sync fast-forwards; the bot and the dashboard need a restart after.
+rollback_script() {
+  cat <<'EOS'
+set -u
+L=~/.fxa-deploys.log
+line="$(grep ' promote ' "$L" 2>/dev/null | tail -1)"
+[ -n "$line" ] || { echo "rollback: no promote recorded in $L"; exit 1; }
+set -- $line; oc=$3 ob=$4 nc=$5 nb=$6
+for x in "fxa-sandbox-ctl $nc" "fxa-agent-bot $nb"; do
+  set -- $x; cur="$(git -C ~/Desktop/working2/$1 rev-parse HEAD)"
+  [ "$cur" = "$2" ] || { echo "rollback: $1 is at ${cur:0:7}, not at ${2:0:7} from the last promote; nothing changed"; exit 1; }
+  [ -z "$(git -C ~/Desktop/working2/$1 status --porcelain --untracked-files=no)" ] || { echo "rollback: $1 has local edits on the VM; nothing changed"; exit 1; }
+done
+git -C ~/Desktop/working2/fxa-sandbox-ctl reset -q --keep "$oc" && git -C ~/Desktop/working2/fxa-agent-bot reset -q --keep "$ob" || { echo "rollback: git reset failed"; exit 1; }
+echo "fxa-sandbox-ctl: ${nc:0:7} -> ${oc:0:7}"; echo "fxa-agent-bot: ${nb:0:7} -> ${ob:0:7}"
+(cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev) || echo "rollback: npm ci failed"
+(cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc install >/dev/null 2>&1) || echo "fc install failed; run vm.sh fc install"
+echo "$(date -u +%FT%TZ) rollback $nc $nb $oc $ob" >> "$L"
+EOS
+}
+
+# deploy_check <want ctl> <want bot>   The services, the live commits, the bot's connection and the dashboard.
+deploy_check() {
+  on_vm <<EOF | mask
+echo "== after deploy"
+for u in fxa-agent-bot fxa-dashboard fxa-mcp-gateway fxa-llm-proxy; do printf '  %-16s %s\n' "\$u" "\$(systemctl is-active \$u)"; done
+c=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-sandbox-ctl rev-parse --short HEAD); b=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-agent-bot rev-parse --short HEAD)
+printf '  controller %s (want $1)  bot %s (want $2)\n' "\$c" "\$b"
+sleep 5; sudo journalctl -u fxa-agent-bot --since "-2min" --no-pager -o cat | grep -q "is running" && echo "  bot connected" || echo "  WARN: the bot has not logged 'is running' in 2 min"
+printf '  dashboard HTTP %s\n' "\$(curl -s -o /dev/null -w %{http_code} -H 'Host: localhost' localhost:8787/api/snapshot)"
+EOF
 }
 
 # On the VM, run here; on the laptop, run over IAP ssh.
@@ -213,17 +256,25 @@ EOF2
     if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
       promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1
     fi
+    # What sync replaces and deploys, for vm.sh rollback.
+    old="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(deploy_heads_script)" | on_vm)" || old=""
     echo "Syncing..."
     "$0" sync || exit 1
-    want_ctl="$(git -C "$CTL_ROOT" rev-parse --short origin/main)" want_bot="$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
-    on_vm <<EOF | mask
-echo "== after promote"
-for u in fxa-agent-bot fxa-dashboard fxa-mcp-gateway fxa-llm-proxy; do printf '  %-16s %s\n' "\$u" "\$(systemctl is-active \$u)"; done
-c=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-sandbox-ctl rev-parse --short HEAD); b=\$(sudo -u fxa git -C /home/fxa/Desktop/working2/fxa-agent-bot rev-parse --short HEAD)
-printf '  controller %s (want $want_ctl)  bot %s (want $want_bot)\n' "\$c" "\$b"
-sleep 5; sudo journalctl -u fxa-agent-bot --since "-2min" --no-pager -o cat | grep -q "is running" && echo "  bot connected" || echo "  WARN: the bot has not logged 'is running' in 2 min"
-printf '  dashboard HTTP %s\n' "\$(curl -s -o /dev/null -w %{http_code} -H 'Host: localhost' localhost:8787/api/snapshot)"
+    new="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(deploy_heads_script)" | on_vm)" || new=""
+    if [ -n "$old" ] && [ -n "$new" ]; then
+      printf 'exec sudo -u fxa -H bash -s\necho %q >> ~/.fxa-deploys.log\n' "$(date -u +%FT%TZ) promote $old $new" | on_vm
+    else echo "WARN: the deploy was not recorded, so vm.sh rollback cannot undo it" >&2; fi
+    deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
+    ;;
+  rollback)
+    out="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(rollback_script)" | on_vm)" && rc=0 || rc=$?
+    printf '%s\n' "$out"
+    [ "$rc" = 0 ] || exit 1
+    on_vm <<'EOF'
+for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true
 EOF
+    deploy_check "$(printf '%s\n' "$out" | sed -n 's/^fxa-sandbox-ctl: .* -> //p')" "$(printf '%s\n' "$out" | sed -n 's/^fxa-agent-bot: .* -> //p')"
+    echo "Rolled back. main still has the change: revert it there, then dev and promote as usual. fxa-secrets is not rolled back."
     ;;
   api)
     [[ "${2:-}" =~ ^[A-Za-z0-9/_.=\&?-]+$ ]] || { echo "usage: vm.sh api <path>, such as errors or snapshot" >&2; exit 1; }
