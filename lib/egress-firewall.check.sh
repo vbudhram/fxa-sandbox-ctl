@@ -54,10 +54,14 @@ for t in dnsmasq iptables busctl chmod; do printf '#!/bin/sh\nexit 0\n' > "$bin/
 printf '#!/bin/sh\n[ "$1" = -u ] && shift 2\nexec "$@"\n' > "$bin/sudo"
 printf '#!/bin/sh\n[ "$2" = github.com ]\n' > "$bin/getent"
 printf '#!/bin/sh\nexit 0\n' > "$bin/resolvectl"
+# A fake varlinkctl too: the host's real one would ask the host's own resolved.
+printf '#!/bin/sh\nexit 1\n' > "$bin/varlinkctl"
 chmod +x "$bin"/*
 run_tpl() { PATH="$bin:/usr/bin:/bin" bash "$SANDBOX_ROOT/templates/agent-dns.sh" github.com 2>&1 | grep '^egress:'; }
 check "an open resolved D-Bus API fails the launch" "egress: the agent can look up any name through resolved's D-Bus API" "$(run_tpl)"
-printf '#!/bin/sh\nexit 1\n' > "$bin/resolvectl"
+printf '#!/bin/sh\nexit 1\n' > "$bin/resolvectl"; printf '#!/bin/sh\nexit 0\n' > "$bin/varlinkctl"
+check "an open resolved varlink socket fails the launch" "egress: the agent can look up any name through resolved's varlink socket" "$(run_tpl)"
+printf '#!/bin/sh\nexit 1\n' > "$bin/varlinkctl"
 check "a closed resolved API passes" "" "$(run_tpl)"
 rm -rf "$log" "$fake" "$bin"
 
