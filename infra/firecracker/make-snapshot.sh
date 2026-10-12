@@ -7,7 +7,8 @@ name="${1:?snapshot name}"; fc=/usr/local/sbin/fc
 g() { "$fc" ssh 0 "$@"; }
 "$fc" boot
 # agent-init appends to /etc/agent-env.sh at boot: wait until it has finished.
-until [ "$(g 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done
+# A failed unit stays failed and never turns active: give up after 300 s.
+w0="$(date +%s)"; until [ "$(g 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do [ $(( $(date +%s) - w0 )) -lt 300 ] || { echo "ERROR: agent-init not done after 300s: $(g 'systemctl is-active agent-init fxa-gce-checkout' 2>&1 | tr '\n' ' ')" >&2; exit 1; }; sleep 2; done
 t0="$(date +%s)"
 g 'sudo -u agent bash -c "cd /workspace && nohup setsid bash -c \"source /etc/agent-env.sh && fxa-start\" > /tmp/fxa-start.log 2>&1 < /dev/null &"'
 until g 'curl -sf -o /dev/null http://127.0.0.1:3030/ && curl -sf -o /dev/null http://127.0.0.1:9000/__heartbeat__' 2>/dev/null; do

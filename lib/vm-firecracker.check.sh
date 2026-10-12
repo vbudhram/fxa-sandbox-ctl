@@ -88,4 +88,13 @@ check "fc log with an empty journal succeeds" "0" "$(cmd_fc log 20 >/dev/null 2>
 # fc status ends with the hours since the last good refresh.
 _fc_ssh() { printf 'snapshot=s\nmade=%s\nok_at=%s\nrefresh=success\n' "$(( $(date +%s) - 90000 ))" "$(( $(date +%s) - 7200 ))"; }
 check "fc status prints the hours since the last good refresh" "age=2h" "$(cmd_fc status | tail -1)"
+# The guest's agent-init wait gives up when a unit failed, in refresh and in make-snapshot.
+for f in refresh.sh make-snapshot.sh; do
+  echo 1000 > "$tmp/clock"
+  out="$( date() { n=$(cat "$tmp/clock"); echo $((n + 100)) > "$tmp/clock"; echo "$n"; }; sleep() { :; }
+    fc=fc; fc() { printf 'failed\nactive\n'; }; g() { fc ssh 0 "$@"; }
+    eval "$(grep '^w0=' "$SANDBOX_ROOT/infra/firecracker/$f")" 2>&1; echo "rc=$?" )"
+  check "$f: a failed agent-init gives up and says which unit" "yes|yes" \
+    "$(grep -q 'not done after 300s: failed active' <<< "$out" && echo yes)|$(grep -q 'rc=' <<< "$out" || echo yes)"
+done
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

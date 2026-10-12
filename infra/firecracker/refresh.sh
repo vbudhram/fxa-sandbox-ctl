@@ -34,7 +34,8 @@ cp --reflink=always "$(readlink -f /fc/snap/latest)/rootfs.ext4" /fc/build/rootf
 trap 'rc=$?; "$fc" ssh 0 "sudo sync; sudo systemctl poweroff" >/dev/null 2>&1 || true; sleep 8; outcome $rc' EXIT
 "$fc" boot
 # agent-init appends to /etc/agent-env.sh at boot: wait until it has finished.
-until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do sleep 2; done
+# A failed unit stays failed and never turns active: give up after 300 s, so the run records a failure.
+w0="$(date +%s)"; until [ "$("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>/dev/null | grep -cx active)" = 2 ]; do [ $(( $(date +%s) - w0 )) -lt 300 ] || { echo "ERROR: agent-init not done after 300s: $("$fc" ssh 0 'systemctl is-active agent-init fxa-gce-checkout' 2>&1 | tr '\n' ' ')" >&2; exit 1; }; sleep 2; done
 # The image build wrote the lock hash as root; the agent keeps it current from here.
 "$fc" ssh 0 'sudo chown agent:agent /home/agent/.image-lock-hash'
 want="$(curl -fsSL "https://raw.githubusercontent.com/mozilla/fxa/${new}/.nvmrc")"
