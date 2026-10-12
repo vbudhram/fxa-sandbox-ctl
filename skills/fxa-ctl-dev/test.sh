@@ -27,9 +27,14 @@ run_pool() {
   local host="$1" d f n bad=0; shift
   d="$(mktemp -d "${TMPDIR:-/tmp}/fxa-checks.XXXXXX")"
   export -f check_one
+  # xargs stops starting checks when one is killed (exit 125): a check with no output never ran.
   printf '%s\n' "$@" | xargs -P "${FXA_CHECK_JOBS:-8}" -I{} bash -c \
-    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"' _ {} "$d" "$host"
-  for f in "$@"; do n="$(printf %s "$f" | tr / _)"; cat "$d/$n.out"; [ ! -e "$d/$n.bad" ] || bad=1; done
+    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"' _ {} "$d" "$host" || bad=1
+  for f in "$@"; do
+    n="$(printf %s "$f" | tr / _)"
+    if [ -e "$d/$n.out" ]; then cat "$d/$n.out"; else echo "FAIL $host: $f did not run"; bad=1; fi
+    [ ! -e "$d/$n.bad" ] || bad=1
+  done
   rm -rf "$d"; return "$bad"
 }
 
