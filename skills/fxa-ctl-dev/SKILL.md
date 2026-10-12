@@ -108,6 +108,7 @@ $D wait "$ts"                    # until ✅ or ⚠️, then the thread with tim
 $D reply "$ts" "<text>"          # a follow-up, or the answer to a question
 $H dev report "$ts"              # quick answer, boot, turns, usage by model, subagents, errors
 $H dev log                       # the dev bot's log;  $H dev stop
+$D show "$ts"                    # read a test-channel thread; the Slack MCP tools reach another workspace
 ```
 
 For the bot's Slack messages alone (status lines, the PR card, CI lines), use
