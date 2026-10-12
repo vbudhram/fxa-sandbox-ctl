@@ -49,9 +49,14 @@ run_here() {
 
 run_linux() {
   command -v docker >/dev/null || { echo "linux: skipped, no docker"; return; }
-  docker run --rm -v "$ROOT":/src:ro ubuntu:24.04 bash -c "$(declare -f check_one run_pool)"'
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq >/dev/null && apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates >/dev/null 2>&1
+  # The host's own platform (no emulation on an arm64 Mac), and an image with the packages that
+  # docker builds once and then takes from its cache, so a run does not reinstall them.
+  local plat=linux/amd64 img=fxa-sandbox-ctl-test:1
+  case "$(uname -m)" in arm64|aarch64) plat=linux/arm64 ;; esac
+  printf '%s\n' 'FROM ubuntu:24.04' 'ENV DEBIAN_FRONTEND=noninteractive' \
+    'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*' \
+    | docker build -q --platform "$plat" -t "$img" - >/dev/null || { echo "linux: the test image did not build"; rc=1; return; }
+  docker run --rm --platform "$plat" -v "$ROOT":/src:ro "$img" bash -c "$(declare -f check_one run_pool)"'
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
     run_pool linux lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
