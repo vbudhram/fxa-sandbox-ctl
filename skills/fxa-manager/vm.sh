@@ -88,6 +88,8 @@ ci_state() {
 
 # promote_new_errors <before> <after>   The open error signatures in after and not in before.
 promote_new_errors() { comm -13 <(printf '%s\n' "$1" | sort -u) <(printf '%s\n' "$2" | sort -u) | grep . || true; }
+# open_sigs   The open error signatures in the JSON list on stdin; fails when stdin is not a list.
+open_sigs() { jq -er 'if type == "array" then [.[] | select(.status != "resolved") | .sig] | join("\n") else error("not a list") end' 2>/dev/null; }
 
 # deploy_heads_script   A script for fxa on the VM: "<ctl sha> <bot sha>" of the live checkouts.
 deploy_heads_script() {
@@ -315,7 +317,7 @@ EOF2
       esac
     fi
     errs_api() { "$0" api errors 2>/dev/null; }
-    errs_before="$(errs_api | jq -r '.[] | select(.status != "resolved") | .sig' 2>/dev/null || true)"
+    errs_before="$(errs_api | open_sigs)" && errs_read=1 || errs_read=0
     # What sync replaces and deploys, for vm.sh rollback.
     old="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(deploy_heads_script)" | on_vm)" || old=""
     echo "Syncing..."
@@ -328,10 +330,12 @@ EOF2
     deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
     # The first minutes on live: a new or reopened error fails the promote, with the way back.
     w="${FXA_PROMOTE_WATCH_S:-120}"
-    if [ "$w" -gt 0 ] 2>/dev/null; then
+    if [ "$errs_read" = 0 ]; then
+      echo "WARN: the live watch is skipped: vm.sh api errors failed before the sync, so no error can be called new" >&2
+    elif [ "$w" -gt 0 ] 2>/dev/null; then
       echo "Watching live for ${w} s..."; sleep "$w"
       all="$(errs_api || true)"
-      fresh="$(promote_new_errors "$errs_before" "$(jq -r '.[] | select(.status != "resolved") | .sig' <<< "${all:-[]}" 2>/dev/null || true)")"
+      fresh="$(promote_new_errors "$errs_before" "$(open_sigs <<< "${all:-[]}" || true)")"
       if [ -n "$fresh" ]; then
         echo "WARN: new errors on live since the promote:" >&2
         for sig in $fresh; do jq -r --arg s "$sig" '.[] | select(.sig == $s) | "  \(.sig) \(.source)/\(.kind): \(.message | .[0:160])"' <<< "$all" >&2; done

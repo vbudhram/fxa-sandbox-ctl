@@ -62,7 +62,7 @@ check "a local edit on the VM: rollback stops and changes nothing" "1|edit" \
   "$(rollback_script | live >/dev/null; echo $?)|$(cat "$H/Desktop/working2/fxa-agent-bot/v")"
 
 # CI: the check runs of a main commit decide whether promote tests again, waits, or refuses.
-eval "$(sed -n '/^ci_state() {/,/^}/p;/^promote_new_errors() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+eval "$(sed -n '/^ci_state() {/,/^}/p;/^promote_new_errors() {/,/^}/p;/^open_sigs() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 gh() { echo "$*" >> "$tmp/gh.log"; jq -r "${@: -1}" <<< "$RUNS"; }
 git -C "$tmp/w" remote set-url origin git@github.com:example/fxa-thing.git
 RUNS='{"check_runs":[{"conclusion":"success"},{"conclusion":"skipped"}]}'
@@ -76,6 +76,9 @@ check "ci: no runs is none" "none" "$(ci_state "$tmp/w" abc123)"
 gh() { return 1; }
 check "ci: gh fails is none (promote then tests as before)" "none" "$(ci_state "$tmp/w" abc123)"
 check "errors: only signatures open after the promote and not before" "c3|d4" "$(promote_new_errors "$(printf 'a1\nb2\n')" "$(printf 'a1\nc3\nd4\n')" | tr '\n' '|' | sed 's/|$//')"
+check "open_sigs: the open signatures of a list" "0|a1|c3" "$(open_sigs <<< '[{"sig":"a1","status":"open"},{"sig":"b2","status":"resolved"},{"sig":"c3"}]' > "$tmp/s"; echo $?)|$(paste -sd'|' "$tmp/s")"
+check "open_sigs: an empty list is a good read" "0|" "$(open_sigs <<< '[]' > "$tmp/s"; echo $?)|$(cat "$tmp/s")"
+check "open_sigs: a failed read (empty, or an error object) fails, so promote skips the watch" "fail|fail" "$(open_sigs < /dev/null >/dev/null && echo ok || echo fail)|$(open_sigs <<< '{"error":"502"}' >/dev/null && echo ok || echo fail)"
 check "errors: none new is empty" "" "$(promote_new_errors "$(printf 'a1\n')" "$(printf 'a1\n')")"
 
 # The deploy record: a promote that moved nothing writes no line; rollback reads its own output.
