@@ -132,12 +132,13 @@ on_vm() {
 }
 
 # dev_fn_script <commands>   A script for fxa on the VM (after $vars): the dev controller's functions
-# (its entry point without the line that runs main), the GCE backend and the dev bot's FXA_FC_HOST,
+# (its entry point without the line that runs main, copied beside it, since it sources lib/ from its
+# own folder), the GCE backend and the dev bot's FXA_FC_HOST,
 # then the commands, with stderr merged. No ERR trap, set -e or pipefail: a probe that fails says so.
 dev_fn_script() {
   printf '%s\n' 'cd "$D/fxa-sandbox-ctl" || exit 1' \
-    '[ -f "$D/fxa-agent-bot/.env.devhost" ] && export $(grep -E "^FXA_FC_HOST=" "$D/fxa-agent-bot/.env.devhost")' \
-    'f="$(mktemp)" && sed "\$d" fxa-sandbox-ctl > "$f" && source "$f"; rm -f "$f"' \
+    'h="$(sed -n "s/^FXA_FC_HOST=\([0-9.]*\)$/\1/p" "$D/fxa-agent-bot/.env.devhost" 2>/dev/null | tail -1)"; [ -z "$h" ] || export FXA_FC_HOST="$h"' \
+    'f=".fn-ctl.$$"; sed "\$d" fxa-sandbox-ctl > "$f" && source "./$f"; rm -f "$f"' \
     'source lib/vm-gce.sh; trap - ERR; set +eu +o pipefail; exec 2>&1' "$1"
 }
 

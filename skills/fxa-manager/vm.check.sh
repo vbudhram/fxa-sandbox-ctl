@@ -22,10 +22,14 @@ check "a failed remote command: its status, and gcloud's noise stays hidden" "3|
 
 # dev fn: the dev controller's functions, the GCE backend and FXA_FC_HOST, then the commands.
 D="$tmp/dev"; mkdir -p "$D/fxa-sandbox-ctl/lib" "$D/fxa-agent-bot"
-printf '%s\n' '#!/bin/bash' 'set -euo pipefail' "trap 'echo crash-recorded' ERR" 'probe() { echo "probe ran"; }' 'main() { echo "main ran"; }' 'main "$@"; exit $?' > "$D/fxa-sandbox-ctl/fxa-sandbox-ctl"
-echo 'gce_fn() { echo "gce loaded"; }' > "$D/fxa-sandbox-ctl/lib/vm-gce.sh"
+printf '%s\n' '#!/bin/bash' 'set -euo pipefail' 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' 'source "$SCRIPT_DIR/lib/config.sh"' "trap 'echo crash-recorded' ERR" 'probe() { echo "probe ran"; }' 'main() { echo "main ran"; }' 'main "$@"; exit $?' > "$D/fxa-sandbox-ctl/fxa-sandbox-ctl"
+echo 'gce_fn() { echo "gce loaded"; }' > "$D/fxa-sandbox-ctl/lib/vm-gce.sh"; echo 'cfg=1' > "$D/fxa-sandbox-ctl/lib/config.sh"
 echo 'FXA_FC_HOST=10.0.0.9' > "$D/fxa-agent-bot/.env.devhost"
 out="$( { echo "D=$D"; dev_fn_script 'probe; false; gce_fn; echo "host=$FXA_FC_HOST"; echo err >&2'; } | bash 2>/dev/null)"
 check "dev fn: functions load, main does not run, a failure does not stop it or record a crash, stderr is merged" \
   "probe ran|gce loaded|host=10.0.0.9|err" "$(printf '%s\n' "$out" | tr '\n' '|' | sed 's/|$//')"
+echo 'OTHER=1' > "$D/fxa-agent-bot/.env.devhost"
+out="$( { echo "D=$D"; dev_fn_script 'echo "host=${FXA_FC_HOST:-unset}"'; } | bash 2>&1)"
+check "dev fn: a devhost file without FXA_FC_HOST leaves it unset and prints no environment" "host=unset|0" \
+  "$(printf '%s\n' "$out" | tail -1)|$(printf '%s\n' "$out" | grep -c 'declare -x')"
 exit "$fail"
