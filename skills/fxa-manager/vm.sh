@@ -46,6 +46,20 @@ promote_diff() {
   git -C "$1" diff --stat "$2" 'origin/main^{tree}' | sed 's/^/  /'
   return 1
 }
+# promote_tests <bot repo> <its recorded tree> <ctl repo> <its recorded tree>   The bot's tests and
+# fake-Slack e2e (which runs the controller tree's fake-ctl), only on the trees that dev ran.
+promote_tests() {
+  local log
+  [ "$(worktree_tree "$1")" = "$2" ] && [ "$(worktree_tree "$3")" = "$4" ] \
+    || { echo "Not promoted: a working tree changed since the dev deploy, so the tests would not run what dev ran. vm.sh dev again." >&2; return 1; }
+  log="$(mktemp)"
+  echo "Running the bot's tests and e2e..."
+  if ( cd "$1" && npm test --silent > "$log" 2>&1 && npm run e2e --silent >> "$log" 2>&1 ); then
+    echo "  $(grep -m1 -oE '[0-9]+/[0-9]+ pass' "$log" | tail -1) e2e"; rm -f "$log"
+  else
+    tail -20 "$log" >&2; echo "Not promoted: the bot's tests or e2e failed (log: $log)." >&2; return 1
+  fi
+}
 
 # secret_clean [prefix] < value   The value alone: no "NAME=" in front, no quotes or
 # whitespace around it. Fails when a prefix is given and the value does not start with it.
@@ -196,10 +210,7 @@ EOF2
     echo "main matches the dev deploy of $(sed -n 's/^at //p' "$DEV_RECORD")."
     # The bot's tests and fake-Slack e2e, on the tree that dev ran (about 5 min). FXA_PROMOTE_SKIP_TESTS=1 for an emergency.
     if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
-      echo "Running the bot's tests and e2e..."
-      ( cd "$BOT_ROOT" && npm test --silent >/tmp/fxa-promote-test.log 2>&1 && npm run e2e --silent >>/tmp/fxa-promote-test.log 2>&1 ) \
-        || { tail -20 /tmp/fxa-promote-test.log >&2; echo "Not promoted: the bot's tests or e2e failed (log: /tmp/fxa-promote-test.log)." >&2; exit 1; }
-      echo "  $(grep -m1 -oE '[0-9]+/[0-9]+ pass' /tmp/fxa-promote-test.log | tail -1) e2e"
+      promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1
     fi
     echo "Syncing..."
     "$0" sync || exit 1

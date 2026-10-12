@@ -97,4 +97,8 @@ for f in refresh.sh make-snapshot.sh; do
   check "$f: a failed agent-init gives up and says which unit" "yes|yes" \
     "$(grep -q 'not done after 300s: failed active' <<< "$out" && echo yes)|$(grep -q 'rc=' <<< "$out" || echo yes)"
 done
+# refresh.sh keeps only plain versions from the guest's output, which it does not trust.
+tc="$(printf '%s\n' 'claude 2.1.5' 'claude 1.0 $(touch x)' 'codex 0.9.1; rm -rf /' 'codex 0.20.0')"
+eval "$(grep '^cc="$(sed' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")"
+check "refresh keeps only plain claude and codex versions" "2.1.5|0.20.0" "$cc|$cx"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
