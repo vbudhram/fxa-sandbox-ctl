@@ -48,6 +48,12 @@ answer_up() {
     echo "fxa-answer is up" )
 }
 
+# _answer_dns_gate   The runner command that passes only while the agent's DNS filter holds.
+# resolved makes its varlink socket 0666 again when it restarts, so close it each time.
+_answer_dns_gate() {
+  echo "sudo iptables -t nat -C OUTPUT -m owner --uid-owner agent -j FXA_AGENT_DNS 2>/dev/null && sudo pgrep -F /run/fxa-agent-dns.pid -x dnsmasq >/dev/null && { sudo test ! -S /run/systemd/resolve/io.systemd.Resolve || sudo chmod 0660 /run/systemd/resolve/io.systemd.Resolve; }"
+}
+
 # _answer_git_ro   The agent's only git (infra/answer/fxa-git-ro), root-owned, and the clone's
 # config and hooks root-owned too: a planted hook or config entry ran in later answers.
 _answer_git_ro() {
@@ -169,7 +175,7 @@ answer_ask() {
   # Lines as they come: each tool use is a step (when streaming); the last line is the result.
   resf="$(mktemp)"
   printf '%s\n' "$script" | _answer_vm _gce_ssh "$ANSWER_NAME" --command \
-    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; sudo iptables -t nat -C OUTPUT -m owner --uid-owner agent -j FXA_AGENT_DNS 2>/dev/null && sudo pgrep -F /run/fxa-agent-dns.pid >/dev/null || { echo 'agent DNS filter missing' >&2; exit 10; }; sudo -u agent -i bash -s" \
+    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; $(_answer_dns_gate) || { echo 'agent DNS filter missing' >&2; exit 10; }; sudo -u agent -i bash -s" \
     | while IFS= read -r line; do
         case "$line" in
           *'"type":"result"'*) printf '%s\n' "$line" > "$resf" ;;

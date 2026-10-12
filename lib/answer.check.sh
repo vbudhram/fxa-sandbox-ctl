@@ -36,12 +36,14 @@ cat > "$tmp/bin/sudo" <<'EOF'
 #!/bin/bash
 case "$1" in
   iptables) if [ "$2" = -S ]; then [ "$FIREWALL" = 1 ] && echo '-A OUTPUT -m owner --uid-owner agent -j REJECT'; exit 0; fi; [ "$DNSF" = 1 ] ;;
-  pgrep) [ "$DNSF" = 1 ] ;;
+  pgrep) [ "$DNSF" = 1 ] && [ "${*: -2}" = "-x dnsmasq" ] ;;
+  test) [ "${SOCK:-0}" != 1 ] ;;
+  chmod) echo "$*" >> "$CHMODS" ;;
   -u) shift 3; exec "$@" ;;
 esac
 EOF
 chmod +x "$tmp/bin/sudo"
-export FIREWALL=1 DNSF=1
+export FIREWALL=1 DNSF=1 SOCK=0 CHMODS="$tmp/chmods"
 _gce_ssh() { sed "s#/workspace#$tmp/ws#g; s#/home/agent#$tmp#g" | PATH="$tmp/bin:$PATH" bash -c "$3"; }
 
 printf "%s\n" "Where is the 'password' check? \$(touch $tmp/pwned) EOF" > "$tmp/q1"
@@ -76,7 +78,9 @@ FIREWALL=0; : > "$tmp/errors"
 check "firewall: missing refuses the answer" "1|no_firewall" "$(answer_ask ask-t006 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/errors")"
 FIREWALL=1; DNSF=0; : > "$tmp/errors"
 check "no agent DNS filter: refuses the answer" "1|no_dns_filter" "$(answer_ask ask-t016 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/errors")"
-DNSF=1
+DNSF=1; SOCK=1
+check "a varlink socket that resolved made again is closed before the answer" "0|chmod 0660 /run/systemd/resolve/io.systemd.Resolve" "$(answer_ask ask-t017 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/chmods" 2>/dev/null)"
+SOCK=0
 check "no proxy: refused, never the API key" "1" "$(FXA_LLM_PROXY_URL= answer_ask ask-t007 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "id: must look like ask-xxxx" "1" "$(answer_ask agent-1234 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "prs: a linked PR comes as fenced data" "1|2" "$(_answer_prs "$tmp/q2" | grep -c '"title":"Fix it"')|$(_answer_prs "$tmp/q2" | grep -cE '^</?pr-')"
