@@ -77,4 +77,15 @@ gh() { return 1; }
 check "ci: gh fails is none (promote then tests as before)" "none" "$(ci_state "$tmp/w" abc123)"
 check "errors: only signatures open after the promote and not before" "c3|d4" "$(promote_new_errors "$(printf 'a1\nb2\n')" "$(printf 'a1\nc3\nd4\n')" | tr '\n' '|' | sed 's/|$//')"
 check "errors: none new is empty" "" "$(promote_new_errors "$(printf 'a1\n')" "$(printf 'a1\n')")"
+
+# The deploy record: a promote that moved nothing writes no line; rollback reads its own output.
+eval "$(sed -n '/^deploy_record_script() {/,/^}/p;/^rollback_targets() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+check "record: a promote that moved nothing writes no line" "" "$(deploy_record_script 'a b' 'a b')"
+mkdir -p "$tmp/rec"; deploy_record_script 'a b' 'c b' | HOME="$tmp/rec" bash; deploy_record_script 'a b' 'c b' | HOME="$tmp/rec" bash
+check "record: each promote that moved a commit appends one promote line" "2|promote a b c b" \
+  "$(wc -l < "$tmp/rec/.fxa-deploys.log" | tr -d ' ')|$(tail -1 "$tmp/rec/.fxa-deploys.log" | cut -d' ' -f2-)"
+check "record: no heads (a failed read) writes no line" "" "$(deploy_record_script '' 'c b')"
+check "rollback: the commits it moved to, from its own output" "aaa1111 bbb2222" \
+  "$(rollback_targets "$(printf 'fxa-sandbox-ctl: ccc3333 -> aaa1111\nfxa-agent-bot: ddd4444 -> bbb2222\n')")"
+check "rollback: re-links the skills, as sync does" "yes" "$(rollback_script | grep -q 'ln -sfn' && echo yes)"
 exit "$fail"

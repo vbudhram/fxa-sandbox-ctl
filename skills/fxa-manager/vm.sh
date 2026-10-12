@@ -113,9 +113,22 @@ done
 git -C ~/Desktop/working2/fxa-sandbox-ctl reset -q --keep "$oc" && git -C ~/Desktop/working2/fxa-agent-bot reset -q --keep "$ob" || { echo "rollback: git reset failed"; exit 1; }
 echo "fxa-sandbox-ctl: ${nc:0:7} -> ${oc:0:7}"; echo "fxa-agent-bot: ${nb:0:7} -> ${ob:0:7}"
 (cd ~/Desktop/working2/fxa-agent-bot && npm ci --silent --omit=dev) || echo "rollback: npm ci failed"
+for s in ~/Desktop/working2/fxa-sandbox-ctl/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done  # as sync does
 (cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc install >/dev/null 2>&1) || echo "fc install failed; run vm.sh fc install"
 echo "$(date -u +%FT%TZ) rollback $nc $nb $oc $ob" >> "$L"
 EOS
+}
+
+# deploy_record_script <old heads> <new heads>   The VM line that records a promote, or nothing: a
+# promote that moved no commit (or whose heads could not be read) must not become rollback's target.
+deploy_record_script() {
+  [ -n "$1" ] && [ -n "$2" ] && [ "$1" != "$2" ] || return 0
+  printf 'echo %q >> ~/.fxa-deploys.log\n' "$(date -u +%FT%TZ) promote $1 $2"
+}
+
+# rollback_targets <rollback output>   "<ctl sha> <bot sha>": the commits the rollback moved to.
+rollback_targets() {
+  printf '%s %s\n' "$(printf '%s\n' "$1" | sed -n 's/^fxa-sandbox-ctl: .* -> //p')" "$(printf '%s\n' "$1" | sed -n 's/^fxa-agent-bot: .* -> //p')"
 }
 
 # deploy_check <want ctl> <want bot>   The services, the live commits, the bot's connection and the dashboard.
@@ -308,9 +321,10 @@ EOF2
     echo "Syncing..."
     "$0" sync || exit 1
     new="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(deploy_heads_script)" | on_vm)" || new=""
-    if [ -n "$old" ] && [ -n "$new" ]; then
-      printf 'exec sudo -u fxa -H bash -s\necho %q >> ~/.fxa-deploys.log\n' "$(date -u +%FT%TZ) promote $old $new" | on_vm
-    else echo "WARN: the deploy was not recorded, so vm.sh rollback cannot undo it" >&2; fi
+    rec="$(deploy_record_script "$old" "$new")"
+    if [ -n "$rec" ]; then printf 'exec sudo -u fxa -H bash -s\n%s\n' "$rec" | on_vm
+    elif [ -z "$old" ] || [ -z "$new" ]; then echo "WARN: the deploy was not recorded, so vm.sh rollback cannot undo it" >&2
+    else echo "No commit moved, so nothing is recorded: vm.sh rollback still undoes the promote before."; fi
     deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
     # The first minutes on live: a new or reopened error fails the promote, with the way back.
     w="${FXA_PROMOTE_WATCH_S:-120}"
@@ -334,7 +348,7 @@ EOF2
     on_vm <<'EOF'
 for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true
 EOF
-    deploy_check "$(printf '%s\n' "$out" | sed -n 's/^fxa-sandbox-ctl: .* -> //p')" "$(printf '%s\n' "$out" | sed -n 's/^fxa-agent-bot: .* -> //p')"
+    deploy_check $(rollback_targets "$out")
     echo "Rolled back. main still has the change: revert it there, then dev and promote as usual. fxa-secrets is not rolled back."
     ;;
   api)

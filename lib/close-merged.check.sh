@@ -74,4 +74,13 @@ jira_record_state() { echo "$1" >> "$tmp/recorded"; }
 out="$(cmd_jira_state ../x FXA-12 -rf fxa-7 2>&1)"
 check "jira-state: only ticket keys are recorded, upper-cased; the others are refused" "FXA-12 FXA-7|2" \
   "$(tr '\n' ' ' < "$tmp/recorded" | sed 's/ $//')|$(printf '%s\n' "$out" | grep -c 'not a ticket key')"
+
+# 6. jira_close_merged itself saves the ticket's state after the close.
+eval "$(sed -n '/^jira_close_merged() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+pipeline_require() { :; }; gh_pr_approver() { echo pat; }; jira_login_email() { echo pat@example.com; }
+jira_active_sprint_id() { echo 7; }; jira_sprint_add() { :; }
+eval "$(sed -n '/^jira_record_state() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+acli() { case "$*" in *"view FXA-20"*) echo '{"fields":{"assignee":{"displayName":"Pat Doe","accountId":"x"},"status":{"name":"Done"},"customfield_10020":[{"id":7}]}}' ;; esac; }
+jira_close_merged FXA-20 2>/dev/null
+check "close: jira_close_merged saves the ticket's assignee and status" "Pat Doe Done" "$(jq -r '"\(.assignee) \(.status)"' "$tmp/FXA-20.jira.json" 2>/dev/null)"
 exit "$fail"
