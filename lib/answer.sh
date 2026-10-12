@@ -43,6 +43,7 @@ answer_up() {
     vm_exec "$ANSWER_NAME" systemctl disable --now mysql redis-server firestore-emulator goaws
     vm_batch_flush "$ANSWER_NAME" || exit 1
     _setup_egress_firewall "$ANSWER_NAME" || exit 1
+    _gce_ssh "$ANSWER_NAME" --command "$(_answer_dns_gate)" || { echo "ERROR: fxa-answer has no agent DNS filter (see the egress lines above); answers stay refused" >&2; exit 1; }
     _answer_git_ro || exit 1
     _answer_skills || exit 1
     echo "fxa-answer is up" )

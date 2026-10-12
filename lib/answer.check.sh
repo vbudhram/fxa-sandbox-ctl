@@ -81,6 +81,9 @@ check "no agent DNS filter: refuses the answer" "1|no_dns_filter" "$(answer_ask 
 DNSF=1; SOCK=1
 check "a varlink socket that resolved made again is closed before the answer" "0|chmod 0660 /run/systemd/resolve/io.systemd.Resolve" "$(answer_ask ask-t017 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/chmods" 2>/dev/null)"
 SOCK=0
+# answer up fails when the DNS step only warned, so no_dns_filter never asks for an answer up that cannot help.
+for f in _answer_zone vm_exists _wait_for_infra vm_batch_start _disable_proxy_in_vm _harden_ssh _restrict_sudo vm_exec vm_batch_flush _setup_egress_firewall _answer_git_ro _answer_skills; do eval "$f() { :; }"; done
+check "answer up: a missing DNS filter fails it" "1|0" "$(DNSF=0 answer_up </dev/null >/dev/null 2>&1; echo $?)|$(answer_up </dev/null >/dev/null 2>&1; echo $?)"
 check "no proxy: refused, never the API key" "1" "$(FXA_LLM_PROXY_URL= answer_ask ask-t007 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "id: must look like ask-xxxx" "1" "$(answer_ask agent-1234 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "prs: a linked PR comes as fenced data" "1|2" "$(_answer_prs "$tmp/q2" | grep -c '"title":"Fix it"')|$(_answer_prs "$tmp/q2" | grep -cE '^</?pr-')"
