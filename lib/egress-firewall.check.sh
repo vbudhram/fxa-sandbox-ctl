@@ -48,6 +48,17 @@ fake="$(mktemp -d)"; mkdir "$fake/templates"
 printf '%s\n' 'echo "egress: WARN ran with $*" >&2' > "$fake/templates/agent-dns.sh"
 vm_exec() { [ "$3" = bash ] || return 0; shift 2; "$@" < /dev/null; }
 check "the template runs on a backend with no stdin" "egress: WARN ran with github.com" "$(SANDBOX_ROOT="$fake" _setup_agent_dns vm github.com 2>&1)"
-rm -rf "$log" "$fake"
+# The template itself, with fake tools: the agent's resolved API stays open, so it must fail.
+bin="$(mktemp -d)"
+for t in dnsmasq iptables busctl chmod; do printf '#!/bin/sh\nexit 0\n' > "$bin/$t"; done
+printf '#!/bin/sh\n[ "$1" = -u ] && shift 2\nexec "$@"\n' > "$bin/sudo"
+printf '#!/bin/sh\n[ "$2" = github.com ]\n' > "$bin/getent"
+printf '#!/bin/sh\nexit 0\n' > "$bin/resolvectl"
+chmod +x "$bin"/*
+run_tpl() { PATH="$bin:/usr/bin:/bin" bash "$SANDBOX_ROOT/templates/agent-dns.sh" github.com 2>&1 | grep '^egress:'; }
+check "an open resolved D-Bus API fails the launch" "egress: the agent can look up any name through resolved's D-Bus API" "$(run_tpl)"
+printf '#!/bin/sh\nexit 1\n' > "$bin/resolvectl"
+check "a closed resolved API passes" "" "$(run_tpl)"
+rm -rf "$log" "$fake" "$bin"
 
 exit "$fail"

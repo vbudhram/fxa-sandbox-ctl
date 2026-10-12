@@ -30,6 +30,22 @@ iptables -t nat -N FXA_AGENT_DNS 2>/dev/null || true
        || iptables -t nat -A OUTPUT -m owner --uid-owner agent -j FXA_AGENT_DNS; }; } \
   || { echo "egress: the agent's DNS redirect did not apply" >&2; exit 1; }
 
+# resolved also answers over D-Bus and varlink, and sends those lookups as its own user, past the
+# redirect: close both to the agent. Nothing on the runner looks up names over varlink (hosts: files dns).
+mkdir -p /etc/dbus-1/system.d 2>/dev/null && printf '%s\n' \
+  '<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">' \
+  '<busconfig><policy user="agent"><deny send_destination="org.freedesktop.resolve1"/></policy></busconfig>' \
+  > /etc/dbus-1/system.d/fxa-agent-dns.conf 2>/dev/null \
+  && busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig >/dev/null 2>&1
+[ -S /run/systemd/resolve/io.systemd.Resolve ] && chmod 0660 /run/systemd/resolve/io.systemd.Resolve
+if command -v resolvectl >/dev/null 2>&1 && sudo -u agent resolvectl query example.com >/dev/null 2>&1; then
+  echo "egress: the agent can look up any name through resolved's D-Bus API" >&2; exit 1
+fi
+if command -v varlinkctl >/dev/null 2>&1 && sudo -u agent varlinkctl call /run/systemd/resolve/io.systemd.Resolve \
+     io.systemd.Resolve.ResolveHostname '{"name":"example.com"}' >/dev/null 2>&1; then
+  echo "egress: the agent can look up any name through resolved's varlink socket" >&2; exit 1
+fi
+
 # Assert behaviour: a real name outside the list (example.com resolves everywhere) is refused,
 # and GitHub still resolves.
 if sudo -u agent getent ahostsv4 example.com >/dev/null 2>&1; then
