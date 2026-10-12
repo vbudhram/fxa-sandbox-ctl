@@ -155,6 +155,13 @@ class ProxyTest(unittest.TestCase):
     def warm_calls(self, since):
         return [b for b in BODIES[since:] if b.get("max_tokens") == 0]
 
+    # Wait for the resends instead of sleeping a fixed time: a busy host runs the warm tick late.
+    def wait_warm(self, since, n, timeout=15):
+        end = time.time() + timeout
+        while len(self.warm_calls(since)) < n and time.time() < end:
+            time.sleep(0.1)
+        time.sleep(1.5)  # one more WARM_SECONDS: a resend past the max would show by now
+
     def usage_rows(self, run):
         with open(os.path.join(self.dir, "usage.jsonl")) as f:
             return [json.loads(l) for l in f if json.loads(l).get("run") == run]
@@ -163,7 +170,7 @@ class ProxyTest(unittest.TestCase):
         tok, n = self.token("w", run="agent-warm"), len(BODIES)
         self.call(tok, body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 32000, "thinking": {"type": "adaptive"},
                              "messages": [{"role": "user", "content": "hi"}]})
-        time.sleep(3.5)
+        self.wait_warm(n, 2)
         warm = self.warm_calls(n)
         self.assertEqual(len(warm), 2)  # LLM_PROXY_WARM_MAX
         self.assertNotIn("stream", warm[0])
@@ -172,9 +179,9 @@ class ProxyTest(unittest.TestCase):
 
     def test_a_new_call_starts_the_count_again(self):
         tok, n = self.token("r", run="agent-again"), len(BODIES)
-        for _ in range(2):
+        for i in range(2):
             self.call(tok, body={"model": "claude-opus-5-5", "stream": True, "max_tokens": 10, "messages": []})
-            time.sleep(2.6)
+            self.wait_warm(n, 2 * (i + 1))
         self.assertEqual(len(self.warm_calls(n)), 4)
 
     def test_other_runs_and_unwarmable_requests_are_not_resent(self):
