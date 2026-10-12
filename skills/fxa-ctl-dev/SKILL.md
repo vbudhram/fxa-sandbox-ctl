@@ -113,6 +113,7 @@ ts=$($D start "<request>")       # @mention it in a new thread, as you
 $D wait "$ts"                    # until ✅ or ⚠️, then the thread with times
 $D reply "$ts" "<text>"          # a follow-up, or the answer to a question
 $H dev report "$ts"              # quick answer, boot, turns, usage by model, subagents, errors
+$H dev smoke                     # before a promote: fake-mode session, !status, !stop, then a quick answer; ends on the real controller
 $H dev fn '_answer_dns_gate'     # run the dev controller's functions on the VM (or: dev fn - <<'EOF' ... EOF)
 $H dev log                       # the dev bot's log;  $H dev stop
 $D show "$ts"                    # read a test-channel thread; the Slack MCP tools reach another workspace
