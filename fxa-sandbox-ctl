@@ -1324,7 +1324,7 @@ cmd_precheck() {
   # the lock stays held, and every pass for the next 30 min stops at it.
   trap '[ "$(cat "${PIPE_LOCK_DIR}/pid" 2>/dev/null)" = "$$" ] && rm -rf "$PIPE_LOCK_DIR"' EXIT
   local work=0 info="" line key num state ids noted why
-  local inflight_pr=0 infra=0 merged_n=0 rejected_n=0
+  local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
   _work() { work=1; printf '%s\n' "$*"; }
   # Held back; printed only when some line needs judgment.
   _info() { info="${info}${info:+$'\n'}$*"; }
@@ -1345,7 +1345,15 @@ cmd_precheck() {
     case "$state" in
       MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _work "drain: $line (label merged FAILED)"; fi ;;
       CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _work "drain: $line (label rejected FAILED)"; fi ;;
-      RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"; else _work "drain: $line"; fi ;;
+      RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"
+              else
+                # The pass can only report a done PR's red, so the same red (head and failure count)
+                # wakes one pass, not every pass until a person acts.
+                red_seen="${red_seen} ${key}"
+                fp="${line#* fail=}"; fp="$num $(head -1 "${PIPE_STATE_DIR}/${key}.redinfra" 2>/dev/null || true) fail=${fp%% *}"
+                if [ "$fp" = "$(cat "${PIPE_STATE_DIR}/${key}.red-noted" 2>/dev/null || true)" ]; then _info "drain: $line (reported before, unchanged)"
+                else _work "drain: $line"; printf '%s\n' "$fp" > "${PIPE_STATE_DIR}/${key}.red-noted"; fi
+              fi ;;
       CONFLICT)
         if [ "$(gh_conflicts "$key" 2>/dev/null | cut -d' ' -f1)" = lockfile ]; then
           if gh_relock "$key" >/dev/null 2>&1; then _info "drain: $key #$num lockfile conflict fixed (main merged, yarn.lock re-resolved)"; else _work "drain: $line lockfile (relock FAILED; run: relock $key)"; fi
@@ -1353,6 +1361,11 @@ cmd_precheck() {
       *)      _work "drain: $line" ;;
     esac
   done < <(cmd_drain 2>&1)
+  # A PR that is no longer red forgets its note, so a later red wakes a pass again.
+  for line in "${PIPE_STATE_DIR}"/*.red-noted; do
+    [ -e "$line" ] || continue; key="$(basename "$line" .red-noted)"
+    case " $red_seen " in *" $key "*) ;; *) rm -f "$line" ;; esac
+  done
   # Drain reads only done tickets. A blocked ticket's PR can still be merged or
   # closed by a person, and nothing else moves the ticket then.
   local bstate
