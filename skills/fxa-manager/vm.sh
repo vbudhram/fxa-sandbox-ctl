@@ -118,10 +118,17 @@ EOF
 }
 
 # On the VM, run here; on the laptop, run over IAP ssh.
+# gcloud's stderr is noise when the call works; when it fails, say why: an expired login, or ssh's error.
 on_vm() {
-  if [ "$(hostname -s)" = "$VM" ]; then bash -s
-  else gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command 'bash -s' 2>/dev/null
+  if [ "$(hostname -s)" = "$VM" ]; then bash -s; return; fi
+  local err rc=0; err="$(mktemp "${TMPDIR:-/tmp}/vm-ssh.XXXXXX")"
+  gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command 'bash -s' 2>"$err" || rc=$?
+  if [ "$rc" != 0 ]; then
+    if grep -qiE 'reauthentication|refreshing your current auth tokens|gcloud auth login' "$err"; then
+      echo "vm.sh: the gcloud login expired: run ! gcloud auth login" >&2
+    elif [ "$rc" = 255 ]; then echo "vm.sh: ssh to $VM failed:" >&2; tail -3 "$err" >&2; fi
   fi
+  rm -f "$err"; return "$rc"
 }
 
 case "${1:-status}" in
