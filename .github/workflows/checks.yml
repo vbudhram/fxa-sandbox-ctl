@@ -19,4 +19,6 @@ jobs:
           git config --global user.email test@example.com
           git config --global user.name test
           git config --global init.defaultBranch main
-      - run: bash skills/fxa-ctl-dev/test.sh here
+      # The runner starts steps with SIGPIPE ignored, so `yes | head` exits 1, not 141, and
+      # errors.check.sh sees a crash. A shell cannot reset an ignored signal itself.
+      - run: env --default-signal=PIPE bash skills/fxa-ctl-dev/test.sh here
