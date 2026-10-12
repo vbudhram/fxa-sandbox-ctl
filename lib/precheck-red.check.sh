@@ -15,9 +15,10 @@ jira_done_keys() { echo FXA-7; }; jira_inflight_keys() { :; }; jira_queue_keys()
 pipeline_holding_new() { return 1; }; pipeline_focus_key() { :; }
 jira_login_ok() { :; }
 gh_feedback() { echo '{}'; }
-# The red is not known infra; gh_red_infra caches the head sha it read, as the real one does.
-gh_red_infra() { printf '%s\n\n' "$(cat "$tmp/sha")" > "$tmp/FXA-7.redinfra"; return 1; }
-cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=$(cat "$tmp/running")"; }
+# The red is not known infra. gh_red_infra writes no cache here, as when it returns early (no
+# PIPE_INFRA_CHECKS): the fingerprint must take the head from the drain line.
+gh_red_infra() { return 1; }
+cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=$(cat "$tmp/running") head=$(cat "$tmp/sha")"; }
 echo aaa > "$tmp/sha"; echo 1 > "$tmp/fails"; echo 0 > "$tmp/running"
 q() { cmd_precheck 2>&1 | head -1 | cut -c1-6; }
 check "the first time a done PR is red: the pass wakes" "drain:" "$(q)"
@@ -28,7 +29,15 @@ echo 2 > "$tmp/fails"
 check "another check fails on the same head: the pass wakes" "drain:" "$(q)"
 echo bbb > "$tmp/sha"
 check "a new push that is red again: the pass wakes" "drain:" "$(q)"
+cmd_drain() { echo "drain: gh pr list failed (exit 1)" >&2; return 1; }; q >/dev/null
+cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0 head=$(cat "$tmp/sha")"; }
+check "a failed drain keeps the notes: the same red after it stays quiet" "quiet:" "$(q)"
 cmd_drain() { :; }; q >/dev/null
-cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0"; }
+cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0 head=$(cat "$tmp/sha")"; }
 check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
+# gh_drain prints the PR's head commit on a RED line, from the same query.
+eval "$(sed -n '/^gh_drain() {/,/^}/p' "$(dirname "$0")/github.sh")"
+pipeline_require() { :; }; worktree_branch_for() { echo fxa-31; }; PIPE_REPO_SLUG=mozilla/fxa _GH_ROLLUP_JQ=.
+gh() { case "$*" in *headRefOid*) echo "fxa-31 310 OPEN 9 1 0 MERGEABLE 0123456789abcdef0123" ;; *) echo "fxa-31 310 OPEN 9 1 0 MERGEABLE" ;; esac; }
+check "gh_drain: a RED line carries the head commit" "FXA-31 310 RED ok=9 fail=1 running=0 head=0123456789ab" "$(gh_drain FXA-31)"
 exit "$fail"

@@ -1347,6 +1347,7 @@ cmd_precheck() {
   done < <(cmd_reconcile 2>&1)
 
   # Apply determinate drain rows here: a model turn to type `label merged` costs money.
+  local drain_out drain_rc=0 h; drain_out="$(cmd_drain 2>&1)" || drain_rc=$?
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     read -r key num state _ <<< "$line"
@@ -1358,7 +1359,9 @@ cmd_precheck() {
                 # The pass can only report a done PR's red, so the same red (head and failure count)
                 # wakes one pass, not every pass until a person acts.
                 red_seen="${red_seen} ${key}"
-                fp="${line#* fail=}"; fp="$num $(head -1 "${PIPE_STATE_DIR}/${key}.redinfra" 2>/dev/null || true) fail=${fp%% *}"
+                # The head from the drain line (gh_red_infra may not have cached one).
+                fp="${line#* fail=}"; h="${line##* head=}"; [ "$h" != "$line" ] || h="$(head -1 "${PIPE_STATE_DIR}/${key}.redinfra" 2>/dev/null || true)"
+                fp="$num ${h} fail=${fp%% *}"
                 if [ "$fp" = "$(cat "${PIPE_STATE_DIR}/${key}.red-noted" 2>/dev/null || true)" ]; then _info "drain: $line (reported before, unchanged)"
                 else _work "drain: $line"; printf '%s\n' "$fp" > "${PIPE_STATE_DIR}/${key}.red-noted"; fi
               fi ;;
@@ -1368,9 +1371,10 @@ cmd_precheck() {
         else _work "drain: $line"; fi ;;
       *)      _work "drain: $line" ;;
     esac
-  done < <(cmd_drain 2>&1)
-  # A PR that is no longer red forgets its note, so a later red wakes a pass again.
-  for line in "${PIPE_STATE_DIR}"/*.red-noted; do
+  done <<< "$drain_out"
+  # A PR that is no longer red forgets its note, so a later red wakes a pass again. Only after a
+  # drain that worked: a failed gh read shows no RED row, and would wipe every note.
+  [ "$drain_rc" = 0 ] && for line in "${PIPE_STATE_DIR}"/*.red-noted; do
     [ -e "$line" ] || continue; key="$(basename "$line" .red-noted)"
     case " $red_seen " in *" $key "*) ;; *) rm -f "$line" ;; esac
   done

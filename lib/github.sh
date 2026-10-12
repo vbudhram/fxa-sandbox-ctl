@@ -138,13 +138,13 @@ gh_drain() {
   local keys="${1:-}"
   [ -n "$keys" ] || return 0
   local map jqx rc=0
-  jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable)\""
+  jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.headRefOid)\""
   # `|| rc=$?` keeps `set -e` from killing the function before the guard below.
   # GitHub computes `mergeable` lazily and says UNKNOWN until then, but the
   # request starts the computation, so one re-poll resolves most of them.
   _gh_drain_fetch() {
     gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit 200 \
-      --json number,state,headRefName,statusCheckRollup,mergeable \
+      --json number,state,headRefName,statusCheckRollup,mergeable,headRefOid \
       -q "$jqx" 2>/dev/null
   }
   map="$(_gh_drain_fetch)" || rc=$?
@@ -160,22 +160,22 @@ gh_drain() {
     echo "drain: gh pr list failed (exit $rc) -- refusing to report 'none' for $(printf '%s\n' "$keys" | grep -c .) done key(s)" >&2
     return 1
   fi
-  local key br line num state ok bad run mrg
+  local key br line num state ok bad run mrg sha
   for key in $keys; do
     br="$(worktree_branch_for "$key")"
-    line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7; exit}')"
+    line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8; exit}')"
     if [ -z "$line" ]; then
       # Report a missing PR, do not relabel it: a human must look.
       echo "$key none -"
       continue
     fi
-    read -r num state ok bad run mrg <<<"$line"
+    read -r num state ok bad run mrg sha <<<"$line"
     case "$state" in
       OPEN)
         # Nothing else re-reads a done PR's checks or mergeability, so report
         # them here. Never relabel: the cause is often repo infrastructure.
         if [ "${bad:-0}" -gt 0 ]; then
-          echo "$key $num RED ok=$ok fail=$bad running=$run"
+          echo "$key $num RED ok=$ok fail=$bad running=$run head=${sha:0:12}"
         elif [ "$mrg" = "CONFLICTING" ]; then
           echo "$key $num CONFLICT"
         elif [ "$mrg" = "UNKNOWN" ]; then

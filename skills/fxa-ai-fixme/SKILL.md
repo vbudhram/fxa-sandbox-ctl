@@ -30,7 +30,7 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    agent starts returns its ticket to the queue on its own; `PIPE_MAX_LAUNCHES_PER_DAY` (40) caps
    retries. A relaunch on a slot that still holds a cut-off run's tree ships that tree into the
    new runner and tells the agent to resume it.
-   **Drain.** `$CTL drain` prints `KEY <pr> MERGED|CLOSED|CONFLICT|RED ok= fail= running=` or
+   **Drain.** `$CTL drain` prints `KEY <pr> MERGED|CLOSED|CONFLICT|RED ok= fail= running= head=` or
    `KEY none -`. `MERGED`→`$CTL label KEY merged`, `CLOSED`→`label KEY rejected`. **Never file a
    CLOSED PR as merged**; the label is the only record of what reviewers threw away. `none -`:
    do not relabel, report as an anomaly. `CONFLICT`: see conflicts. `CONFLICT? mergeability-
