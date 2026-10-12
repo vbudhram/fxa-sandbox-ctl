@@ -19,8 +19,8 @@ case "$1" in
 esac
 S
 chmod +x "$tmp/vm.sh" "$tmp/drive.sh"
-export SMOKE_TMP="$tmp" SMOKE_VM="$tmp/vm.sh" SMOKE_DRIVE="$tmp/drive.sh"
-printf '%s\n' '+0s me: smoke' '+1s bot: Fake turn 1: I changed one file.' '    buttons: [Diff] [Open PR] [Push branch]' '+40s bot: Session ended. 1 min.' > "$tmp/thread"
+export SMOKE_SHOW_S=0 SMOKE_TMP="$tmp" SMOKE_VM="$tmp/vm.sh" SMOKE_DRIVE="$tmp/drive.sh"
+printf '%s\n' '+0s me: smoke' '+1s bot: Fake turn 1: I changed one file.' '    buttons: [Diff] [Open PR] [Push branch]' '+20s bot: Session is working, 0 min.' '+40s bot: Session ended. 1 min.' > "$tmp/thread"
 echo white_check_mark > "$tmp/react"
 out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
 check "all good: it passes, fake mode first, and it ends on the real controller" "0|1 dev|real dev" \
@@ -38,5 +38,9 @@ check "a turn that ends with a warning reaction fails" "1|yes" "$rc|$(grep -q 'F
 printf '%s\n' '+1s bot: Fake turn 1.' '    reactions: :white_check_mark:' '    buttons: [Diff] [Open PR]' '+40s bot: Session ended.' > "$tmp/thread"
 : > "$tmp/vm.log"; echo 0 > "$tmp/n"
 out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
-check "a warning on the last turn fails, even when an earlier message has a check mark" "1|yes" "$rc|$(grep -q 'FAIL smoke: !status' <<< "$out" && echo yes)"
+check "a warning on the turn fails, even when a thread line has a check mark" "1|yes" "$rc|$(grep -q 'FAIL smoke: a fake session' <<< "$out" && echo yes)"
+echo white_check_mark > "$tmp/react"; : > "$tmp/vm.log"; echo 0 > "$tmp/n"
+printf '%s\n' '+1s bot: Fake turn 1.' '    buttons: [Diff] [Open PR]' '+40s bot: Session ended.' > "$tmp/thread"
+out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
+check "!status with no status answer fails, though the turn has a check mark" "1|yes" "$rc|$(grep -q "FAIL smoke: !status is answered: no match" <<< "$out" && echo yes)"
 exit "$fail"
