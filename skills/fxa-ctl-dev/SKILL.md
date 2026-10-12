@@ -60,6 +60,7 @@ whichever tree you run them in.
 ```bash
 bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker
 bash skills/fxa-ctl-dev/test.sh mac    # quick
+gh run list -R vbudhram/fxa-sandbox-ctl -L 3   # CI: the Ubuntu half on each push of main and improve/**; the bot's CI runs npm test and the e2e
 cd ~/Desktop/working2/fxa-agent-bot && npm test
 bash skills/fxa-ctl-dev/prove.sh lib/x.check.sh lib/x.sh   # the check fails without your change (PROVE_BASE=<rev> once committed)
 ```

@@ -1,0 +1,22 @@
+name: checks
+on:
+  push:
+    branches: [main, 'improve/**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ubuntu:
+    # The manager VM's OS. The laptop runs the macOS half: skills/fxa-ctl-dev/test.sh mac.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Packages (the same list as test.sh run_linux)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates
+      - name: Git identity for the checks that commit
+        run: |
+          git config --global user.email test@example.com
+          git config --global user.name test
+          git config --global init.defaultBranch main
+      - run: bash skills/fxa-ctl-dev/test.sh here
