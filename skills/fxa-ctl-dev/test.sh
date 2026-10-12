@@ -21,10 +21,22 @@ check_one() {
   return 1
 }
 
+# run_pool <host> <check files...>   The checks at once, FXA_CHECK_JOBS (8) at a time, each with its own
+# store and sessions folder; their output in file order. Returns 1 when one failed.
+run_pool() {
+  local host="$1" d f n bad=0; shift
+  d="$(mktemp -d "${TMPDIR:-/tmp}/fxa-checks.XXXXXX")"
+  export -f check_one
+  printf '%s\n' "$@" | xargs -P "${FXA_CHECK_JOBS:-8}" -I{} bash -c \
+    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"' _ {} "$d" "$host"
+  for f in "$@"; do n="$(printf %s "$f" | tr / _)"; cat "$d/$n.out"; [ ! -e "$d/$n.bad" ] || bad=1; done
+  rm -rf "$d"; return "$bad"
+}
+
 HOST="$( [ "$(uname -s)" = Darwin ] && echo mac || echo linux)"
 run_here() {
   local f bad=0
-  for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" "$HOST" || bad=1; done
+  run_pool "$HOST" lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
   for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
   for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; bad=1; }; done
   [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
@@ -32,12 +44,12 @@ run_here() {
 
 run_linux() {
   command -v docker >/dev/null || { echo "linux: skipped, no docker"; return; }
-  docker run --rm -v "$ROOT":/src:ro ubuntu:24.04 bash -c "$(declare -f check_one)"'
+  docker run --rm -v "$ROOT":/src:ro ubuntu:24.04 bash -c "$(declare -f check_one run_pool)"'
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq >/dev/null && apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates >/dev/null 2>&1
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
-    for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" linux || bad=1; done
+    run_pool linux lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
     for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL linux: $t"; bad=1; }; done
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
@@ -45,6 +57,8 @@ run_linux() {
 case "${1:-both}" in
   mac|here) run_here ;;
   linux) run_linux ;;
-  *) run_here; run_linux ;;
+  # Both at once: the Ubuntu half prints after this host's.
+  *) l="$(mktemp "${TMPDIR:-/tmp}/fxa-linux.XXXXXX")"; ( run_linux; exit "$rc" ) > "$l" 2>&1 & lp=$!
+     run_here; wait "$lp" || rc=1; cat "$l"; rm -f "$l" ;;
 esac
 exit "$rc"

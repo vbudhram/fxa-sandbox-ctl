@@ -50,6 +50,7 @@ check "codex command becomes a step" "Running ls packages" "$(printf '%s\n' '{"t
 eval "$(sed -n '/^worktree_filtered_status() {/,/^}/p;/^worktree_branch_for() {/,/^}/p' "$(dirname "$0")/worktree.sh")"
 _worktree_pull_if_remote() { :; }
 worktree_git_ok() { :; }
+_retry() { "$@"; }  # the scratch repo has no origin: no 3 s + 9 s backoff for each fetch
 g() { git -c init.defaultBranch=main -c core.hooksPath=/dev/null "$@"; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 g init -q "$tmp/fxa"; printf '**/node_modules\nai\n' > "$tmp/fxa/.gitignore"; printf 'a\n' > "$tmp/fxa/a.txt"
