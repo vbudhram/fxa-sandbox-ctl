@@ -32,9 +32,9 @@ check "success is silent" "" "$(_setup_egress_firewall vm 2>&1)"
 # After the firewall, the agent's DNS filter runs with the allowed hosts, from templates/agent-dns.sh.
 # The calls tell apart by their third word: env for the firewall, bash for the DNS step.
 log="$(mktemp)"
-vm_exec() { if [ "$3" = bash ]; then printf 'dns %s|%s\n' "${*:5}" "$(head -c 34 | tr '\n' ' ')" >> "$log"; else echo fw >> "$log"; fi; }
+vm_exec() { if [ "$3" = bash ]; then printf 'dns %s|%s\n' "${*:8}" "$(printf %s "$7" | base64 -d | head -c 34 | tr '\n' ' ')" >> "$log"; else echo fw >> "$log"; fi; }
 _setup_egress_firewall vm >/dev/null 2>&1
-check "the DNS filter runs after the firewall, with the hosts, from the template" "fw|dns -- github.com|#!/bin/bash # agent-dns.sh <host>." \
+check "the DNS filter runs after the firewall, with the hosts, from the template" "fw|dns github.com|#!/bin/bash # agent-dns.sh <host>." \
   "$(sed -n 1p "$log")|$(sed -n 2p "$log" | sed 's/ *$//')"
 : > "$log"; FXA_EGRESS_ALLOW_ALL=1 _setup_egress_firewall vm >/dev/null 2>&1; FXA_EGRESS_ALLOW_ALL=0
 check "an allow-all run has no DNS filter" "fw" "$(paste -sd'|' "$log")"
@@ -43,6 +43,11 @@ out="$(_setup_egress_firewall vm 2>&1)"; rc=$?
 check "a DNS filter that leaks fails the launch, and says why" "1|yes" "$rc|$(grep -q 'outside the allowlist' <<< "$out" && echo yes)"
 vm_exec() { [ "$3" = bash ] || return 0; echo "egress: WARN dnsmasq-base did not install" >&2; return 0; }
 check "a missing dnsmasq warns and goes on" "0|egress: WARN dnsmasq-base did not install" "$(out="$(_setup_egress_firewall vm 2>&1)"; echo "$?|$out")"
-rm -f "$log"
+# tart exec passes no stdin: the runner's bash still runs the template, with the hosts.
+fake="$(mktemp -d)"; mkdir "$fake/templates"
+printf '%s\n' 'echo "egress: WARN ran with $*" >&2' > "$fake/templates/agent-dns.sh"
+vm_exec() { [ "$3" = bash ] || return 0; shift 2; "$@" < /dev/null; }
+check "the template runs on a backend with no stdin" "egress: WARN ran with github.com" "$(SANDBOX_ROOT="$fake" _setup_agent_dns vm github.com 2>&1)"
+rm -rf "$log" "$fake"
 
 exit "$fail"
