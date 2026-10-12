@@ -54,7 +54,8 @@ promote_tests() {
     || { echo "Not promoted: a working tree changed since the dev deploy, so the tests would not run what dev ran. vm.sh dev again." >&2; return 1; }
   log="$(mktemp)"
   echo "Running the bot's tests and e2e..."
-  if ( cd "$1" && npm test --silent > "$log" 2>&1 && npm run e2e --silent >> "$log" 2>&1 ); then
+  # FXA_CTL_REPO: the e2e takes fake-ctl from the ctl tree checked above, not from ../fxa-sandbox-ctl.
+  if ( cd "$1" && export FXA_CTL_REPO="$3" && npm test --silent > "$log" 2>&1 && npm run e2e --silent >> "$log" 2>&1 ); then
     echo "  $(grep -m1 -oE '[0-9]+/[0-9]+ pass' "$log" | tail -1) e2e"; rm -f "$log"
   else
     tail -20 "$log" >&2; echo "Not promoted: the bot's tests or e2e failed (log: $log)." >&2; return 1

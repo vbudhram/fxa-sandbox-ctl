@@ -23,10 +23,11 @@ echo c > "$tmp/w/c.txt"; g add c.txt; g commit -qm three; g push -q origin main;
 check "a commit nobody ran on dev reached main: refuse" "1" "$(promote_diff "$tmp/w" "$t" >/dev/null; echo $?)"
 
 # The test gate: npm is a stub that logs its calls; one tree stands in for both repos.
-npm() { echo "npm $*" >> "$tmp/npm.log"; [ "$1" != "${NPM_FAIL:-}" ] || { echo "boom"; return 1; }; echo "3/3 pass"; }
+npm() { echo "npm $* ctl=${FXA_CTL_REPO:-}" >> "$tmp/npm.log"; [ "$1" != "${NPM_FAIL:-}" ] || { echo "boom"; return 1; }; echo "3/3 pass"; }
 t="$(worktree_tree "$tmp/w")"
 check "the trees dev ran: the tests run and pass" "0|2|3/3 pass" \
   "$(promote_tests "$tmp/w" "$t" "$tmp/w" "$t" > "$tmp/out" 2>&1; echo $?)|$(wc -l < "$tmp/npm.log" | tr -d ' ')|$(grep -o '3/3 pass' "$tmp/out")"
+check "the e2e runs the ctl tree that was checked" "2" "$(grep -c "ctl=$tmp/w$" "$tmp/npm.log")"
 : > "$tmp/npm.log"; echo edit > "$tmp/w/d.txt"
 check "a local edit since the dev deploy: refuse, and run no test" "1|0" \
   "$(promote_tests "$tmp/w" "$t" "$tmp/w" "$t" >/dev/null 2>&1; echo $?)|$(wc -l < "$tmp/npm.log" | tr -d ' ')"
