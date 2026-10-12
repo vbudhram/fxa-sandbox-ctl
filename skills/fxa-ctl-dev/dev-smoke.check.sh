@@ -14,7 +14,7 @@ cat > "$tmp/drive.sh" <<'S'
 case "$1" in
   start) n=$(( $(cat "$SMOKE_TMP/n" 2>/dev/null || echo 0) + 1 )); echo $n > "$SMOKE_TMP/n"; echo "17.$n" ;;
   reply) echo "$3" >> "$SMOKE_TMP/replies" ;;
-  wait) echo "== done after 3s (:$(cat "$SMOKE_TMP/react"):)" ;;
+  wait) echo "== done after 3s (:$(cat "$SMOKE_TMP/react"):)"; cat "$SMOKE_TMP/thread" ;;
   show) cat "$SMOKE_TMP/thread" ;;
 esac
 S
@@ -35,4 +35,8 @@ check "Something went wrong: it fails, names the thread, and still ends on the r
 printf '%s\n' '+1s bot: Fake turn 1.' '    buttons: [Diff] [Open PR]' '+40s bot: Session ended.' > "$tmp/thread"
 out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
 check "a turn that ends with a warning reaction fails" "1|yes" "$rc|$(grep -q 'FAIL smoke' <<< "$out" && echo yes)"
+printf '%s\n' '+1s bot: Fake turn 1.' '    reactions: :white_check_mark:' '    buttons: [Diff] [Open PR]' '+40s bot: Session ended.' > "$tmp/thread"
+: > "$tmp/vm.log"; echo 0 > "$tmp/n"
+out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
+check "a warning on the last turn fails, even when an earlier message has a check mark" "1|yes" "$rc|$(grep -q 'FAIL smoke: !status' <<< "$out" && echo yes)"
 exit "$fail"
