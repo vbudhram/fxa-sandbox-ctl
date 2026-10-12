@@ -1338,8 +1338,11 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const rate = (m, c) => m + c ? `${Math.round(m / (m + c) * 100)}%` : "—";
   const mc = merged.map(cost), SRC = { pipeline: "Pipeline", slack: "Slack sessions" };
   const kv = (k, v) => `<div class="kv">${k}<span>${v}</span></div>`;
+  // A merged pipeline PR: its ticket's assignee and status, or that the next pass has not updated it yet.
+  const ticket = p => p.src !== "pipeline" || !/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? ""
+    : p.jira ? ` · ${esc(p.jira.assignee || "unassigned")}, ${esc(p.jira.status || "?")}` : ` · <span style="color:var(--warn)">ticket not updated yet</span>`;
   const line = p => `<div title="${esc(p.title)}">${kv(`<span>${prl(repo, p.n)} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? jira(p.key) : `<span class="mono">${esc(p.key)}</span>`}</span>`,
-    (p.state === "MERGED" ? `${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>`
+    (p.state === "MERGED" ? `${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>${ticket(p)}`
       : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed") + ` · <b>${usd(cost(p))}</b>`)}</div>`;
   const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);

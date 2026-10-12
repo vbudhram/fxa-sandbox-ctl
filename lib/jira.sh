@@ -361,6 +361,16 @@ jira_close_merged() {
 
   acli jira workitem transition --key "$key" --status "${PIPE_JIRA_DONE_STATUS:-Done}" -y >/dev/null 2>&1 \
     || echo "WARN: transition of $key to ${PIPE_JIRA_DONE_STATUS:-Done} failed" >&2
+  jira_record_state "$key" || true
+}
+
+# jira_record_state <KEY>   The ticket's assignee and status, read back from Jira, in <KEY>.jira.json
+# for the Stats PRs tab. A failed read writes nothing, so the tab says the ticket is not updated.
+jira_record_state() {
+  local f="${PIPE_STATE_DIR}/$1.jira.json" j
+  j="$(acli jira workitem view "$1" --fields assignee,status --json 2>/dev/null \
+    | jq -c --arg at "$(date -u +%FT%TZ)" '{assignee: (.fields.assignee.displayName // null), status: (.fields.status.name // null), at: $at}' 2>/dev/null)" || return 1
+  [ -n "$j" ] && printf '%s\n' "$j" > "$f"
 }
 
 # jira_comment <KEY> <BODY>

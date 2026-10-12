@@ -301,10 +301,12 @@ _stats_add_prs() {
          --json number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" 2>/dev/null \
        && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
   fi
-  jq -c --slurpfile p <(jq -c 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
+  # Each merged ticket's assignee and status, as jira_close_merged saved them.
+  local jm; jm="$(for t in "${PIPE_STATE_DIR}"/*.jira.json; do [ -e "$t" ] && jq -c --arg k "$(basename "$t" .jira.json)" '{($k): .}' "$t" 2>/dev/null; done | jq -sc 'add // {}' 2>/dev/null)" || jm='{}'
+  jq -c --slurpfile p <(jq -c --argjson jm "$jm" 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
       by: (.mergedBy.login // null), add: .additions, del: .deletions,
       src: (if (.headRefName | startswith("agent-")) then "slack" else "pipeline" end),
-      key: (if (.headRefName | test("^[A-Za-z][A-Za-z0-9]+-[0-9]+$")) and (.headRefName | startswith("agent-") | not) then (.headRefName | ascii_upcase) else .headRefName end) })' \
+      key: (if (.headRefName | test("^[A-Za-z][A-Za-z0-9]+-[0-9]+$")) and (.headRefName | startswith("agent-") | not) then (.headRefName | ascii_upcase) else .headRefName end) }) | map(. + {jira: ($jm[.key] // null)})' \
       "$f" 2>/dev/null || echo '[]') '.prs = $p[0]'
 }
 

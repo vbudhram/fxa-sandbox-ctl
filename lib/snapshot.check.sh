@@ -108,6 +108,9 @@ rm -rf "$pd"
   out="$(echo '{}' | _stats_add_prs)"
   check "prs: source, key and outcome from the branch" "7 pipeline FXA-12 MERGED rev1|8 slack agent-ab12 OPEN null" \
     "$(jq -r '[.prs[] | "\(.n) \(.src) \(.key) \(.state) \(.by)"] | join("|")' <<< "$out")"
+  echo '{"assignee":"Pat Doe","status":"Done","at":"2026-10-02T10:15:00Z"}' > "$PIPE_STATE_DIR/FXA-12.jira.json"
+  check "prs: a merged PR carries its ticket's state; a PR with none gets null" "Pat Doe Done|null" \
+    "$(echo '{}' | _stats_add_prs | jq -r '[(.prs[0].jira | "\(.assignee) \(.status)"), (.prs[1].jira | tostring)] | join("|")')"
   gh() { return 1; }; touch -t 202001010000 "$PIPE_STATE_DIR/prs.json"
   check "prs: a failed read keeps the last list" "2" "$(echo '{}' | _stats_add_prs | jq '.prs | length')"
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }

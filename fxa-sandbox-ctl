@@ -2722,6 +2722,8 @@ main() {
     drain)      cmd_drain "$@" ;;
     label)      cmd_label "$@" ;;
     ticket)     cmd_ticket "$@" ;;
+    # jira-state KEY...: save each ticket's assignee and status for the Stats PRs tab (a backfill).
+    jira-state) pipeline_require; for k in "$@"; do jira_record_state "$k" && echo "$k ok" || echo "$k failed"; done ;;
     jira-card)  jira_card "$@" ;;
     sentry-card) sentry_card "$@" ;;
     ground)     cmd_ground "$@" ;;

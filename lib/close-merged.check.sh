@@ -52,4 +52,18 @@ check "unknown login" "" "$(email nobody)"
 rm -f "$map"
 
 [ "$fail" -eq 0 ] && echo "all ok" || echo "FAILURES"
+
+# 4. After the close: the ticket's assignee and status, saved for the Stats PRs tab.
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+eval "$(sed -n '/^jira_record_state() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+PIPE_STATE_DIR="$tmp"
+acli() { echo '{"fields":{"assignee":{"displayName":"Pat Doe"},"status":{"name":"Done"}}}'; }
+jira_record_state FXA-9
+check "record: assignee and status after the close" "Pat Doe Done" "$(jq -r '"\(.assignee) \(.status)"' "$tmp/FXA-9.jira.json" 2>/dev/null)"
+acli() { echo '{"fields":{"assignee":null,"status":{"name":"Done"}}}'; }
+jira_record_state FXA-10
+check "record: no assignee is null, not a crash" "null Done" "$(jq -r '"\(.assignee) \(.status)"' "$tmp/FXA-10.jira.json" 2>/dev/null)"
+acli() { echo "unauthorized"; return 1; }
+jira_record_state FXA-11
+check "record: a failed Jira read writes no file" "no" "$([ -e "$tmp/FXA-11.jira.json" ] && echo yes || echo no)"
 exit "$fail"
