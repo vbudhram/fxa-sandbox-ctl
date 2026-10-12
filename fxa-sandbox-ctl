@@ -1610,8 +1610,10 @@ cmd_ground() {
     done
     [ "$n_stories" = 0 ] && echo "- none"
     echo; echo "## Open PRs touching cited files"; echo
-    local prfiles; prfiles="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --limit 60 --json number,title,headRefName,files \
-      --jq '.[] | .number as $n | .headRefName as $b | .title as $t | .files[].path | "\(.)\t#\($n) \($b): \($t)"' 2>/dev/null || true)"
+    # Anyone can open a PR on the public repo: its title and branch are untrusted, and this section
+    # is outside the fence. The number and the author's login (letters, digits, -) are enough to look it up.
+    local prfiles; prfiles="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --limit 60 --json number,author,files \
+      --jq '.[] | .number as $n | ((.author.login // "unknown") | gsub("[^A-Za-z0-9-]"; "")) as $a | .files[].path | "\(.)\t#\($n) by \($a)"' 2>/dev/null || true)"
     local overlaps; overlaps="$(while IFS= read -r p; do
       p="${p%%:*}"; [ -n "$p" ] || continue
       printf '%s\n' "$prfiles" | awk -F'\t' -v f="$p" '$1 == f {print "- " f "  <- " $2}'
