@@ -1,5 +1,15 @@
 #!/bin/bash
 # agent.sh: agent lifecycle (run, attach, stop, list, logs)
+#
+# Map (file order; session-map.check.sh checks each name):
+#   guide, settings  runtime_load vm_guide_build _vm_skill_allowlist _vm_skill_blocklist _vm_settings_json
+#   runner boot      _wait_for_infra _install_ssh_key _put_run_files _gce_profile_boot _gce_profile_workspace
+#                    _gce_pin_runner_tree
+#   lockdown         _harden_ssh _restrict_sudo _setup_egress_firewall _setup_agent_dns _disable_proxy_in_vm
+#   Claude config    _setup_claude_config _claude_auth_line _inject_claude_auth
+#   launch           _write_screenrc _launch_in_screen _write_meta agent_run agent_switch agent_prewarm_stack
+#   operate          agent_attach agent_list agent_logs _runner_postmortem agent_stop agent_browser
+#                    agent_stop_all agent_ssh_exec agent_alive
 
 # Source dependencies
 AGENT_LIB_DIR="$(dirname "${BASH_SOURCE[0]}")"

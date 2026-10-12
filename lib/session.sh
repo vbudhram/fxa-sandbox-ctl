@@ -3,6 +3,23 @@
 # A session is one branch named after its key and one Claude session on a GCE
 # runner, with no pool slot. Each steer turn is `claude -p --resume` there.
 # The record under FXA_SESSION_DIR is the only state; the bot keeps none.
+#
+# Map (file order; session-map.check.sh checks each name):
+#   record       session_get session_set _session_write session_live _session_records
+#   prompts      _session_first_prompt _session_resume_prompt _session_wrapup_prompt _session_wrapup_steps
+#   try, report  session_try _session_try_wait session_report _session_try_report session_history
+#   threads      thread_get thread_set _thread_save_notes _thread_usage _thread_summary
+#   turns        _session_turn session_interrupt _session_turn_running _session_lock _session_unlock
+#   upkeep       session_boots session_idle_sweep session_backup session_prune
+#   watch        _session_activity _session_watch _session_view _session_parse _session_fold
+#   boot         _session_cap _session_boot_label _session_boot_step _session_boot_times
+#   PRs, finish  session_media _session_changes _session_wrap_step session_pr_status session_pr_ready
+#                session_copilot_comments session_review_comments session_create_jira session_review_ack
+#   end, cost    _session_end_facts _session_proxy_cost _session_cost _session_summary_json
+#   pause, stop  sessions_pause sessions_resume session_pause session_stop _session_save
+#   desktop      session_desktop _session_desktop_close session_tunnel session_attach
+#   store        _session_store _session_upload _session_fetch _session_review
+#   checkout     session_checkout session_checkout_remove
 
 SESSION_DIR="${FXA_SESSION_DIR:-${HOME}/.claude/state/agent-sessions}"
 
