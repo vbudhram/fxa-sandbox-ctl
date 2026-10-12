@@ -176,6 +176,14 @@ trap 'rm -rf "${_JIRA_CACHE_DIR}" 2>/dev/null' EXIT
 # These read and write the ai-fixme label family, which IS the pipeline's state
 # machine. They need a loaded pipeline config (see lib/pipeline.sh).
 
+# jira_login_ok   acli's Jira login works. An expired API token is refused at once, and every
+# Jira read then prints an error in place of JSON.
+jira_login_ok() {
+  local out; out="$(acli jira auth status 2>&1)" || true
+  case "$out" in *Authenticated*) return 0 ;; esac
+  return 1
+}
+
 _jira_keys_for_jql() {
   acli jira workitem search --jql "$1" --limit 200 --json 2>/dev/null \
     | jq -r '.[]?.key // empty'

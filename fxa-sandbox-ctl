@@ -1323,6 +1323,14 @@ cmd_precheck() {
   # Under set -e a failed read (Jira logged out) ends the process here; without this
   # the lock stays held, and every pass for the next 30 min stops at it.
   trap '[ "$(cat "${PIPE_LOCK_DIR}/pid" 2>/dev/null)" = "$$" ] && rm -rf "$PIPE_LOCK_DIR"' EXIT
+  # A refused Jira login makes every read below see an empty queue. Stop with one error the
+  # operator gets as a DM, and no model turn (claude-job.sh treats "paused:" as quiet).
+  if ! jira_login_ok; then
+    errors_record jira login "" "precheck" "the acli Jira login was refused (an expired API token?); in a real terminal: vm.sh secret fxa-jira-token, then vm.sh sys 'sudo /usr/local/sbin/fxa-secrets'" ""
+    pipeline_unlock >/dev/null
+    echo "paused: the Jira login was refused; see errors (jira/login)"
+    return 0
+  fi
   local work=0 info="" line key num state ids noted why
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
   _work() { work=1; printf '%s\n' "$*"; }

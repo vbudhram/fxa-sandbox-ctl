@@ -12,6 +12,7 @@ pipeline_lock() { :; }; pipeline_unlock() { :; }; db_ingest() { :; }
 cmd_reconcile() { :; }; cmd_drain() { :; }; cmd_reap() { :; }
 jira_done_keys() { :; }; jira_inflight_keys() { :; }; jira_queue_keys() { :; }
 pipeline_holding_new() { return 1; }; pipeline_focus_key() { :; }
+jira_login_ok() { :; }
 jira_keys_in_state() { [ "$1" = blocked ] && printf 'FXA-1\nFXA-2\nFXA-3\n'; }
 gh_pr_state() { case "$1" in FXA-1) echo "FXA-1 11 MERGED ok=1";; FXA-2) echo "FXA-2 12 CLOSED ok=1";; *) echo "FXA-3 13 OPEN ok=1";; esac; }
 cmd_label() { echo "$1 $2" >> "$tmp/labels"; }

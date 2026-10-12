@@ -13,6 +13,7 @@ pipeline_lock() { :; }; pipeline_unlock() { :; }; db_ingest() { :; }
 cmd_reconcile() { :; }; cmd_reap() { :; }; cmd_label() { :; }
 jira_done_keys() { echo FXA-7; }; jira_inflight_keys() { :; }; jira_queue_keys() { :; }; jira_keys_in_state() { :; }
 pipeline_holding_new() { return 1; }; pipeline_focus_key() { :; }
+jira_login_ok() { :; }
 gh_feedback() { echo '{}'; }
 # The red is not known infra; gh_red_infra caches the head sha it read, as the real one does.
 gh_red_infra() { printf '%s\n\n' "$(cat "$tmp/sha")" > "$tmp/FXA-7.redinfra"; return 1; }
