@@ -60,4 +60,21 @@ for r in fxa-sandbox-ctl fxa-agent-bot; do git -C "$H/Desktop/working2/$r" reset
 echo edit > "$H/Desktop/working2/fxa-agent-bot/v"
 check "a local edit on the VM: rollback stops and changes nothing" "1|edit" \
   "$(rollback_script | live >/dev/null; echo $?)|$(cat "$H/Desktop/working2/fxa-agent-bot/v")"
+
+# CI: the check runs of a main commit decide whether promote tests again, waits, or refuses.
+eval "$(sed -n '/^ci_state() {/,/^}/p;/^promote_new_errors() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+gh() { echo "$*" >> "$tmp/gh.log"; jq -r "${@: -1}" <<< "$RUNS"; }
+git -C "$tmp/w" remote set-url origin git@github.com:example/fxa-thing.git
+RUNS='{"check_runs":[{"conclusion":"success"},{"conclusion":"skipped"}]}'
+check "ci: all passed is green, from the repo's own slug" "green|yes" "$(ci_state "$tmp/w" abc123)|$(grep -q 'repos/example/fxa-thing/commits/abc123/check-runs' "$tmp/gh.log" && echo yes)"
+RUNS='{"check_runs":[{"conclusion":"success"},{"conclusion":"failure"}]}'
+check "ci: one failure is red" "red" "$(ci_state "$tmp/w" abc123)"
+RUNS='{"check_runs":[{"conclusion":null,"status":"in_progress"}]}'
+check "ci: one still running is running" "running" "$(ci_state "$tmp/w" abc123)"
+RUNS='{"check_runs":[]}'
+check "ci: no runs is none" "none" "$(ci_state "$tmp/w" abc123)"
+gh() { return 1; }
+check "ci: gh fails is none (promote then tests as before)" "none" "$(ci_state "$tmp/w" abc123)"
+check "errors: only signatures open after the promote and not before" "c3|d4" "$(promote_new_errors "$(printf 'a1\nb2\n')" "$(printf 'a1\nc3\nd4\n')" | tr '\n' '|' | sed 's/|$//')"
+check "errors: none new is empty" "" "$(promote_new_errors "$(printf 'a1\n')" "$(printf 'a1\n')")"
 exit "$fail"

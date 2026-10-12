@@ -17,8 +17,10 @@
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
 #                         the same runners, proxy and store as the real bot. Deploy for real with sync.
 #   vm.sh promote         sync the live bot, only when main in both repos is exactly what
-#                         the last vm.sh dev deployed (uncommitted files included) and the bot's
-#                         npm test and e2e pass (FXA_PROMOTE_SKIP_TESTS=1 skips them), then check it
+#                         the last vm.sh dev deployed (uncommitted files included) and CI passed on
+#                         both commits (no CI result: the bot's npm test and e2e run here;
+#                         FXA_PROMOTE_SKIP_TESTS=1 skips both), then check it and watch live for
+#                         new errors for FXA_PROMOTE_WATCH_S (120) s
 #   vm.sh rollback        put the live bot back on the commits the last promote replaced, then check it
 #                         (main does not change: revert there after)
 #   vm.sh api <path>      GET the dashboard's /api/<path> as JSON (snapshot, errors, sessions, stats)
@@ -75,6 +77,17 @@ secret_clean() {
   [ -z "${1:-}" ] || [ "${v:0:${#1}}" = "$1" ] || return 1
   printf '%s' "$v"
 }
+
+# ci_state <repo dir> <sha>   green, red, running, or none: the GitHub check runs of that commit.
+ci_state() {
+  local slug; slug="$(git -C "$1" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
+  gh api "repos/$slug/commits/$2/check-runs" --jq '[.check_runs[] | .conclusion // "running"]
+    | if length == 0 then "none" elif any(. == "running") then "running"
+      elif all(. == "success" or . == "skipped" or . == "neutral") then "green" else "red" end' 2>/dev/null || echo none
+}
+
+# promote_new_errors <before> <after>   The open error signatures in after and not in before.
+promote_new_errors() { comm -13 <(printf '%s\n' "$1" | sort -u) <(printf '%s\n' "$2" | sort -u) | grep . || true; }
 
 # deploy_heads_script   A script for fxa on the VM: "<ctl sha> <bot sha>" of the live checkouts.
 deploy_heads_script() {
@@ -274,10 +287,20 @@ EOF2
     promote_diff "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" || ok=0
     [ "$ok" = 1 ] || { echo "Not promoted. Commit and push exactly what you tested (or vm.sh dev again from main), then promote." >&2; exit 1; }
     echo "main matches the dev deploy of $(sed -n 's/^at //p' "$DEV_RECORD")."
-    # The bot's tests and fake-Slack e2e, on the tree that dev ran (about 5 min). FXA_PROMOTE_SKIP_TESTS=1 for an emergency.
+    # CI on both main commits: red or still running refuses; green in both skips the bot's tests here;
+    # no result runs them, on the tree that dev ran (about 2 min). FXA_PROMOTE_SKIP_TESTS=1 for an emergency.
     if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
-      promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1
+      cs="$(ci_state "$CTL_ROOT" "$(git -C "$CTL_ROOT" rev-parse origin/main)")" bs="$(ci_state "$BOT_ROOT" "$(git -C "$BOT_ROOT" rev-parse origin/main)")"
+      echo "CI on main: controller $cs, bot $bs."
+      case "$cs $bs" in
+        *red*) echo "Not promoted: CI failed on main. Fix it first (gh run list -b main)." >&2; exit 1 ;;
+        *running*) echo "Not promoted: CI is still running on main. Promote again when it is done." >&2; exit 1 ;;
+        "green green") echo "CI passed on both commits, so the bot's tests do not run again here." ;;
+        *) promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1 ;;
+      esac
     fi
+    errs_api() { "$0" api errors 2>/dev/null; }
+    errs_before="$(errs_api | jq -r '.[] | select(.status != "resolved") | .sig' 2>/dev/null || true)"
     # What sync replaces and deploys, for vm.sh rollback.
     old="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(deploy_heads_script)" | on_vm)" || old=""
     echo "Syncing..."
@@ -287,6 +310,20 @@ EOF2
       printf 'exec sudo -u fxa -H bash -s\necho %q >> ~/.fxa-deploys.log\n' "$(date -u +%FT%TZ) promote $old $new" | on_vm
     else echo "WARN: the deploy was not recorded, so vm.sh rollback cannot undo it" >&2; fi
     deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
+    # The first minutes on live: a new or reopened error fails the promote, with the way back.
+    w="${FXA_PROMOTE_WATCH_S:-120}"
+    if [ "$w" -gt 0 ] 2>/dev/null; then
+      echo "Watching live for ${w} s..."; sleep "$w"
+      all="$(errs_api || true)"
+      fresh="$(promote_new_errors "$errs_before" "$(jq -r '.[] | select(.status != "resolved") | .sig' <<< "${all:-[]}" 2>/dev/null || true)")"
+      if [ -n "$fresh" ]; then
+        echo "WARN: new errors on live since the promote:" >&2
+        for sig in $fresh; do jq -r --arg s "$sig" '.[] | select(.sig == $s) | "  \(.sig) \(.source)/\(.kind): \(.message | .[0:160])"' <<< "$all" >&2; done
+        echo "If this promote caused them: bash skills/fxa-manager/vm.sh rollback" >&2
+        exit 1
+      fi
+      echo "  no new errors on live"
+    fi
     ;;
   rollback)
     out="$(printf 'exec sudo -u fxa -H bash -s\n%s\n' "$(rollback_script)" | on_vm)" && rc=0 || rc=$?
