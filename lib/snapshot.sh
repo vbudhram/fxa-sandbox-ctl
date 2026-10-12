@@ -272,7 +272,7 @@ _stats_add_rows() {
           t0: (.created | n | if . then floor else null end), end: (.stopped_at | n), queued_s: (.queued_s | n),
           live: ((.state // "") | IN("starting", "active", "wrapping")) })' 2>/dev/null || echo '[]')"
   jobs='[]'
-  [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc 'map({ at, src: "pass", key: .job, kind: .job, usd: ((.cost_usd // 0) * 100 | round / 100),
+  [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc --argjson llm "$llm" 'map({ at, src: "pass", key: .job, kind: .job, usd: (($llm.runs[.run // ""] // .cost_usd // 0) * 100 | round / 100),
           min: ((.duration_ms // 0) / 60000 | round),
           model: ((((.models // []) | map(select(test("haiku") | not)) | first) // (.models // [])[0]) // ""), pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
   # Quick answers from the answer runner (lib/answer.sh): one row each, so Spend counts them.

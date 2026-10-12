@@ -89,6 +89,16 @@ rm -rf "$pd"
     "$(jq -r '[.rows[] | select(.src == "pass") | .model] | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# A pass that went through the proxy is priced from the proxy's log; one that did not keeps the CLI's figure.
+( export SESSION_DIR="$tmp/pp" PIPE_STATE_DIR="$tmp/ppps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { :; }; db_on() { true; }
+  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[]' ;; *) echo '[{"llm":"{\"runs\":{\"pass-123\":0.31}}"}]' ;; esac; }
+  printf '%s\n' '{"at":"2026-10-12T15:00:00Z","job":"pass","run":"pass-123","cost_usd":0.5}' '{"at":"2026-10-12T14:00:00Z","job":"pass","cost_usd":0.47}' > "$PIPE_STATE_DIR/job-costs.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: a pass through the proxy has the proxy's cost; an older pass the CLI's" "0.31|0.47" \
+    "$(jq -r '[.rows[] | select(.src == "pass") | .usd] | join("|")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 # Spend by model: a session counts at its main model, an answer by the proxy's models.
 ( export SESSION_DIR="$tmp/mod" PIPE_STATE_DIR="$tmp/modps" FXA_AGENT_MODEL=claude-opus-5-5; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { echo '{"key":"agent-m1","owner":"U1","created":1,"runtime":"claude","summary":"{\"cost\":2.5}"}'; }

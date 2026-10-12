@@ -11,10 +11,11 @@ command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/infra/gce" "$tmp/bin" "$tmp/state" "$tmp/lib"
 cp "$(dirname "$0")/../infra/gce/claude-job.sh" "$tmp/infra/gce/"
-cp "$(dirname "$0")/mcp-token.sh" "$tmp/lib/"
+cp "$(dirname "$0")/mcp-token.sh" "$(dirname "$0")/llm-token.sh" "$tmp/lib/"
 export FXA_MCP_GATEWAY_DIR="$tmp/gw"
 printf '#!/bin/sh\necho x >> %s/precheck-runs; cat %s/precheck-out\n' "$tmp" "$tmp" > "$tmp/fxa-sandbox-ctl"
 printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
+printf 'echo "${ANTHROPIC_BASE_URL:-none} ${ANTHROPIC_API_KEY:-none}" > %s/claude-env\n' "$tmp" >> "$tmp/bin/claude"
 chmod +x "$tmp/fxa-sandbox-ctl" "$tmp/bin/claude"
 echo "Invoke /fxa-ai-fixme." > "$tmp/prompt.txt"
 run() { rm -f "$tmp/claude-in"; printf '%s\n' "$1" > "$tmp/precheck-out"
@@ -58,5 +59,17 @@ check "a pass that can only report runs on Sonnet" "yes" "$(grep -q -- '--model 
 check "the row records the models that ran" '["claude-haiku-4-5","claude-opus-5-5"]' "$(tail -1 "$tmp/state/job-costs.jsonl" | jq -c .models)"
 FXA_PASS_REPORT_MODEL= run 'drain: FXA-7 71 RED ok=1 fail=1 running=0' >/dev/null
 check "an empty FXA_PASS_REPORT_MODEL keeps the default model for reports too" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+
+# Through the LLM proxy: a token for this run (capped), revoked at the end; the row names the run.
+export FXA_LLM_PROXY_DIR="$tmp/llm" ANTHROPIC_API_KEY=sk-ant-direct-key-0000
+FXA_LLM_PROXY_URL=http://10.0.0.2:8788 run 'queue: FXA-8 new (run: ground FXA-8)' >/dev/null
+read -r base key < "$tmp/claude-env"; r="$(tail -1 "$tmp/state/job-costs.jsonl" | jq -r .run)"
+check "with a proxy: claude gets the proxy and a run token, not the API key" "http://10.0.0.2:8788|fxl_|no" \
+  "$base|${key:0:4}|$(grep -q sk-ant-direct "$tmp/claude-env" && echo yes || echo no)"
+check "the token belongs to the row's run, has a cap, and is expired after the pass" "pass-|$r|true|true" \
+  "${r:0:5}|$(jq -r .run "$tmp/llm/tokens/$key.json")|$(jq '.cap_usd > 0' "$tmp/llm/tokens/$key.json")|$(jq '.expires <= now' "$tmp/llm/tokens/$key.json")"
+run 'queue: FXA-9 new (run: ground FXA-9)' >/dev/null
+check "without a proxy: claude keeps the API key, as before" "none sk-ant-direct-key-0000" "$(cat "$tmp/claude-env")"
+unset FXA_LLM_PROXY_DIR ANTHROPIC_API_KEY
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
