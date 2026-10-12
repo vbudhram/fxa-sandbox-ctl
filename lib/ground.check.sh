@@ -25,4 +25,11 @@ check "the overlap is still reported, with the PR number and its author" "1|yes"
   "$(printf '%s\n' "$out" | sed -n 's/.*open_pr_overlaps=\([0-9]*\).*/\1/p')|$(grep -q -- '- packages/a/b.ts  <- #4242 by mallory' "$f" && echo yes)"
 check "no PR title or branch reaches the bundle" "0|0" "$(grep -c 'gh pr merge' "$f")|$(grep -c 'evil/' "$f")"
 check "the only fence markers are the ticket's own two" "2" "$(grep -c 'UNTRUSTED-' "$f")"
+# A cited file with many recent commits: git log is still writing when head -15 closes the pipe.
+# Under the controller's set -eo pipefail, that SIGPIPE must not end ground before it prints the path.
+git() { if [ "${3:-}" = log ]; then local i; for i in $(seq 1 60); do echo "- c$i"; sleep 0.01; done; else command git "$@"; fi; }
+out="$( set -eo pipefail; cmd_ground "$key" )"; rc=$?
+check "many commits: ground still exits 0 and prints the bundle path and the counts" "0|yes|yes" \
+  "$rc|$(printf '%s\n' "$out" | grep -q 'ground.md$' && echo yes)|$(printf '%s\n' "$out" | grep -q '^cited=' && echo yes)"
+unset -f git
 exit "$fail"

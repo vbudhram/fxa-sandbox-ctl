@@ -1631,7 +1631,8 @@ cmd_ground() {
     echo; echo "## Commits to cited files in the last 30 days"; echo
     local existing; existing="$(while IFS= read -r p; do p="${p%%:*}"; [ -n "$p" ] && git -C "$repo" cat-file -e "origin/main:${p}" 2>/dev/null && printf '%s\n' "$p"; done <<< "$paths"; true)"
     if [ -n "$existing" ]; then
-      git -C "$repo" log origin/main --since=30.days --date=short --format='- %h %ad %an: %s' -- $existing 2>/dev/null | head -15
+      # head closes the pipe after 15: git's SIGPIPE must not end ground under pipefail.
+      git -C "$repo" log origin/main --since=30.days --date=short --format='- %h %ad %an: %s' -- $existing 2>/dev/null | head -15 || true
     else
       echo "- (no cited path exists on main)"
     fi
