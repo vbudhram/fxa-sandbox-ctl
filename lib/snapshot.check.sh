@@ -79,6 +79,16 @@ rm -rf "$pd"
     "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.thread) \(.kind) \(.turns)"] | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
+( export SESSION_DIR="$tmp/pm" PIPE_STATE_DIR="$tmp/pmps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { :; }; db_on() { false; }
+  printf '%s\n' '{"at":"2026-10-12T15:00:00Z","job":"pass","cost_usd":0.2,"models":["claude-haiku-4-5","claude-sonnet-5-5"]}' \
+    '{"at":"2026-10-12T14:00:00Z","job":"pass","cost_usd":0.47}' > "$PIPE_STATE_DIR/job-costs.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: a pass row has its recorded main model; an old one has none" "claude-sonnet-5-5|" \
+    "$(jq -r '[.rows[] | select(.src == "pass") | .model] | join("|")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 # Spend by model: a session counts at its main model, an answer by the proxy's models.
 ( export SESSION_DIR="$tmp/mod" PIPE_STATE_DIR="$tmp/modps" FXA_AGENT_MODEL=claude-opus-5-5; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { echo '{"key":"agent-m1","owner":"U1","created":1,"runtime":"claude","summary":"{\"cost\":2.5}"}'; }

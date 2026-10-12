@@ -14,7 +14,7 @@ cp "$(dirname "$0")/../infra/gce/claude-job.sh" "$tmp/infra/gce/"
 cp "$(dirname "$0")/mcp-token.sh" "$tmp/lib/"
 export FXA_MCP_GATEWAY_DIR="$tmp/gw"
 printf '#!/bin/sh\necho x >> %s/precheck-runs; cat %s/precheck-out\n' "$tmp" "$tmp" > "$tmp/fxa-sandbox-ctl"
-printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5}'" > "$tmp/bin/claude"
+printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
 chmod +x "$tmp/fxa-sandbox-ctl" "$tmp/bin/claude"
 echo "Invoke /fxa-ai-fixme." > "$tmp/prompt.txt"
 run() { rm -f "$tmp/claude-in"; printf '%s\n' "$1" > "$tmp/precheck-out"
@@ -46,5 +46,17 @@ check "its token is figma and bugzilla only, and expired after the run" '["figma
   "$(jq -c .connectors "$tmp/gw/tokens/$tok.json")|$(jq '.expires <= now' "$tmp/gw/tokens/$tok.json")"
 FXA_PASS_MCP_URL= run 'queue: FXA-3 new (run: ground FXA-3)' >/dev/null
 check "an empty FXA_PASS_MCP_URL turns it off" "no" "$(grep -q -- --mcp-config "$tmp/claude-args" && echo yes || echo no)"
+
+# The model: Opus when the pass may launch or must judge (queue, reconcile, feedback lines), Sonnet
+# when it can only report (drain, reap). Each row records the models that ran.
+run 'queue: FXA-4 new (run: ground FXA-4)' >/dev/null
+check "a pass that may launch keeps the default model" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+run 'reconcile: FXA-5 dead-runner' >/dev/null
+check "a pass that must judge a reconcile line keeps the default model" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+run "$(printf 'drain: FXA-6 70 RED ok=9 fail=1 running=0\nreap: agent-x stray')" >/dev/null
+check "a pass that can only report runs on Sonnet" "yes" "$(grep -q -- '--model claude-sonnet-5-5' "$tmp/claude-args" && echo yes || echo no)"
+check "the row records the models that ran" '["claude-haiku-4-5","claude-opus-5-5"]' "$(tail -1 "$tmp/state/job-costs.jsonl" | jq -c .models)"
+FXA_PASS_REPORT_MODEL= run 'drain: FXA-7 71 RED ok=1 fail=1 running=0' >/dev/null
+check "an empty FXA_PASS_REPORT_MODEL keeps the default model for reports too" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

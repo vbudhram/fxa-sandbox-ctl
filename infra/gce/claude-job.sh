@@ -19,7 +19,14 @@ precheck already ran for this pass. Its output is below; do not run precheck aga
 <precheck>
 ${pre}
 </precheck>"
+  # A pass that may launch or must judge (queue, reconcile, feedback lines) keeps the default model
+  # (Opus): the launch-or-skip call and the grounding need it. One that can only report (drain and
+  # reap lines) runs on FXA_PASS_REPORT_MODEL; empty keeps the default for those too.
+  if ! printf '%s\n' "$pre" | grep -qE '^(queue|reconcile|feedback):'; then
+    report_model="${FXA_PASS_REPORT_MODEL-claude-sonnet-5-5}"
+  fi
 fi
+model=(); [ -n "${report_model:-}" ] && model=(--model "$report_model")
 # A pass reads a ticket's Figma design and Bugzilla bugs through the MCP gateway on this host,
 # which holds the Runlayer credential: a token for this run, those two only, expired when the run ends.
 mcp=() url="${FXA_PASS_MCP_URL-http://127.0.0.1:8789}"  # set it empty to turn this off
@@ -33,9 +40,9 @@ if [ "$job" = pass ] && [ -n "$url" ]; then
     mcp=(--mcp-config "$cfg" --strict-mcp-config)
   else echo "WARN: no MCP gateway token; this pass cannot read Figma or Bugzilla" >&2; fi
 fi
-claude -p --permission-mode auto --output-format json ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
+claude -p --permission-mode auto --output-format json ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
 jq -r '.result // empty' "$out" 2>/dev/null || cat "$out"
-row="$(jq -c --arg job "$job" '{at: (now | todate), job: $job, cost_usd: (.total_cost_usd // null),
+row="$(jq -c --arg job "$job" '{at: (now | todate), job: $job, cost_usd: (.total_cost_usd // null), models: ((.modelUsage // {}) | keys),
   turns: (.num_turns // null), duration_ms: (.duration_ms // null), is_error: (.is_error // false)}' "$out" 2>/dev/null)"
 if [ -n "$row" ] && printf '%s\n' "$row" >> "${state}/job-costs.jsonl" 2>/dev/null; then
   ( source "$(dirname "$0")/../../lib/db.sh" && db_ingest job_costs "$row" )
