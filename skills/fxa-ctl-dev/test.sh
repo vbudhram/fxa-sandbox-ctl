@@ -25,8 +25,8 @@ HOST="$( [ "$(uname -s)" = Darwin ] && echo mac || echo linux)"
 run_here() {
   local f bad=0
   for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" "$HOST" || bad=1; done
-  for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/gce/*.sh skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
-  python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL $HOST: infra/llm-proxy/proxy_test.py"; bad=1; }
+  for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
+  for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; bad=1; }; done
   [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
 }
 
@@ -38,7 +38,7 @@ run_linux() {
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
     for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do check_one "$f" linux || bad=1; done
-    python3 infra/llm-proxy/proxy_test.py >/dev/null 2>&1 || { echo "FAIL linux: infra/llm-proxy/proxy_test.py"; bad=1; }
+    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL linux: $t"; bad=1; }; done
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
 
