@@ -46,6 +46,9 @@ answer_up() {
     _gce_ssh "$ANSWER_NAME" --command "$(_answer_dns_gate)" || { echo "ERROR: fxa-answer has no agent DNS filter (see the egress lines above); answers stay refused" >&2; exit 1; }
     _answer_git_ro || exit 1
     _answer_skills || exit 1
+    # Firefox's FxA and Sync code, so an answer reads it in place of recalling it. A failed clone
+    # leaves answers about FxA code working.
+    _answer_firefox || echo "WARN: no Firefox source on fxa-answer; answers cannot read it" >&2
     echo "fxa-answer is up" )
 }
 
@@ -54,6 +57,34 @@ answer_up() {
 _answer_dns_gate() {
   echo "sudo iptables -t nat -C OUTPUT -m owner --uid-owner agent -j FXA_AGENT_DNS 2>/dev/null && sudo pgrep -F /run/fxa-agent-dns.pid -x dnsmasq >/dev/null && { sudo test ! -S /run/systemd/resolve/io.systemd.Resolve || sudo chmod 0660 /run/systemd/resolve/io.systemd.Resolve; }"
 }
+
+# _answer_firefox_script   A root script for the runner: a sparse, read-only checkout of Firefox main
+# at /srv/firefox (the folders FxA questions reach), and a daily refresh of it. Root clones, so the
+# agent's egress firewall stays as it is; the agent can read the files, not change them.
+ANSWER_FIREFOX_DIRS="services/fxaccounts services/sync toolkit/modules browser/components/preferences browser/base/content"
+_answer_firefox_script() {
+  cat <<EOS
+cat > /usr/local/sbin/fxa-firefox-src <<'SRC'
+#!/bin/bash
+set -eu
+d=/srv/firefox
+if [ ! -d \$d/.git ]; then
+  rm -rf \$d.new && git clone -q --depth 1 --filter=blob:none --sparse https://github.com/mozilla-firefox/firefox \$d.new
+  git -C \$d.new sparse-checkout set $ANSWER_FIREFOX_DIRS && mv \$d.new \$d
+else
+  git -C \$d sparse-checkout set $ANSWER_FIREFOX_DIRS
+  git -C \$d fetch -q --depth 1 origin main && git -C \$d reset -q --hard FETCH_HEAD
+fi
+git -C \$d log -1 --format='%H %cs' > \$d/.fxa-commit
+chown -R root:root \$d && chmod -R a+rX,go-w \$d
+SRC
+chmod 755 /usr/local/sbin/fxa-firefox-src
+ln -sf /usr/local/sbin/fxa-firefox-src /etc/cron.daily/fxa-firefox-src
+/usr/local/sbin/fxa-firefox-src
+EOS
+}
+
+_answer_firefox() { _gce_ssh "$ANSWER_NAME" --command "sudo bash -s" < <(_answer_firefox_script); }
 
 # _answer_git_ro   The agent's only git (infra/answer/fxa-git-ro), root-owned, and the clone's
 # config and hooks root-owned too: a planted hook or config entry ran in later answers.
@@ -85,7 +116,7 @@ _answer_slot() {
 }
 
 _ANSWER_RULES='You are the FxA agent, answering in a Slack thread about the mozilla/fxa code. The person sees one agent.
-Your tools: search and read files in /workspace (a clone of main); git through "fxa-git-ro" only (fxa-git-ro log, show, diff, blame, grep, ls-files or rev-parse with their usual options; "fxa-git-ro fetch-pr N" fetches pull request N, then compare origin/main...refs/fxa/pr-N); and Jira or Slack reads when you have them. Run each command alone, not chained with && or ;.
+Your tools: search and read files in /workspace (a clone of main) and in /srv/firefox (Firefox main, read-only, its FxA and Sync folders: services/fxaccounts, services/sync, toolkit/modules, browser/components/preferences, browser/base/content; its commit is in /srv/firefox/.fxa-commit, name it when you cite Firefox code); git through "fxa-git-ro" only (fxa-git-ro log, show, diff, blame, grep, ls-files or rev-parse with their usual options; "fxa-git-ro fetch-pr N" fetches pull request N, then compare origin/main...refs/fxa/pr-N); and Jira or Slack reads when you have them. Run each command alone, not chained with && or ;.
 Answer briefly. Give file paths and line numbers.
 When the message holds no question and no task (a greeting, "test", a few words), say in one line that you are ready, then show how to use you, in at most 6 short lines with one example each:
 - ask about the code: how a flow works, where something is, why a test fails;
@@ -121,7 +152,7 @@ cd /workspace || exit 1
   && git fetch -q origin main && git checkout -q -f --detach origin/main && touch .git/fxa-main-fetched ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
   --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s\n\n%s' "$_ANSWER_RULES" "$(cat "${SANDBOX_ROOT}/guide/voice.md")" | base64 | tr -d '\n')' | base64 -d)" \\
-  --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
+  --add-dir /srv/firefox --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
     'Bash(git:*)' 'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\
   \${FXA_MCP_CONFIG:+--mcp-config "\$FXA_MCP_CONFIG" --strict-mcp-config}
