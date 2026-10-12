@@ -11,7 +11,7 @@
 #   vm.sh sync            pull both repos on the VM (after a push from the laptop)
 #   vm.sh test [file]     the controller's checks (or one check file) on the VM's Ubuntu, from this working tree
 #                         (no commit, no Docker); a scratch folder, removed after
-#   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]   (FXA_SESSION_BASE_SHA=<sha> vm.sh dev: pin new sessions; FXA_FC_HOST=<ip>: Firecracker slots)
+#   vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>|fn <commands>]   (FXA_SESSION_BASE_SHA=<sha> vm.sh dev: pin new sessions; FXA_FC_HOST=<ip>: Firecracker slots)
 #                         (FXA_DEV_FAKE=1 vm.sh dev: a scripted controller, no runner and no PR; see fxa-ctl-dev/fake-ctl.sh)
 #                         the dev bot (app fxa-agent-dev) on the VM, from this laptop's working trees of
 #                         both repos: uncommitted changes included. Its own sessions folder and thread map;
@@ -131,6 +131,16 @@ on_vm() {
   rm -f "$err"; return "$rc"
 }
 
+# dev_fn_script <commands>   A script for fxa on the VM (after $vars): the dev controller's functions
+# (its entry point without the line that runs main), the GCE backend and the dev bot's FXA_FC_HOST,
+# then the commands, with stderr merged. No ERR trap, set -e or pipefail: a probe that fails says so.
+dev_fn_script() {
+  printf '%s\n' 'cd "$D/fxa-sandbox-ctl" || exit 1' \
+    '[ -f "$D/fxa-agent-bot/.env.devhost" ] && export $(grep -E "^FXA_FC_HOST=" "$D/fxa-agent-bot/.env.devhost")' \
+    'f="$(mktemp)" && sed "\$d" fxa-sandbox-ctl > "$f" && source "$f"; rm -f "$f"' \
+    'source lib/vm-gce.sh; trap - ERR; set +eu +o pipefail; exec 2>&1' "$1"
+}
+
 case "${1:-status}" in
   status)
     on_vm <<'EOF' | mask
@@ -204,6 +214,10 @@ EOF
       # The dev controller, with its own sessions folder: vm.sh dev ctl diff <key>, ctl stop <key>.
       ctl) shift 2; [ $# -gt 0 ] || { echo "usage: vm.sh dev ctl <args>" >&2; exit 1; }
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce%s 2>&1\n' "$vars" "$(printf ' %q' "$@")" | on_vm | mask ;;
+      # The dev controller's functions on the VM: vm.sh dev fn '_answer_dns_gate', or a script with -.
+      fn) [ -n "${3:-}" ] || { echo "usage: vm.sh dev fn '<commands>' | vm.sh dev fn - <<'EOF' ... EOF" >&2; exit 1; }
+        cmds="$3"; [ "$cmds" = - ] && cmds="$(cat)"
+        printf 'exec sudo -u fxa -H bash -s\n%s\n%s\n' "$vars" "$(dev_fn_script "$cmds")" | on_vm | mask ;;
       report) [ -n "${3:-}" ] || { echo "usage: vm.sh dev report <thread ts | key>" >&2; exit 1; }
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q 2>&1\n' "$vars" "$3" | on_vm | mask ;;
       up)
@@ -249,7 +263,7 @@ EOF2
         # What promote compares main with: the trees this deploy sent.
         printf 'ctl %s\nbot %s\nat %s\n' "$(worktree_tree "$CTL_ROOT")" "$(worktree_tree "$BOT_ROOT")" "$(date -u +%FT%TZ)" > "$DEV_RECORD"
         echo "recorded for vm.sh promote" ;;
-      *) echo "usage: vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>]" >&2; exit 1 ;;
+      *) echo "usage: vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>|fn <commands>]" >&2; exit 1 ;;
     esac ;;
   promote)
     [ -s "$DEV_RECORD" ] || { echo "vm.sh promote: no dev deploy recorded; run vm.sh dev and test first" >&2; exit 1; }
