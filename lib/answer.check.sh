@@ -31,8 +31,18 @@ jq -nc --arg r "$r" --arg a "$args" '{type: "result", result: $r, total_cost_usd
 EOF
 chmod +x "$tmp/bin/claude"
 for c in git flock timeout; do printf '#!/bin/bash\n%s\n' "$( [ $c = timeout ] && echo 'shift; exec "$@"' || echo 'exit 0')" > "$tmp/bin/$c"; chmod +x "$tmp/bin/$c"; done
-FIREWALL=1
-_gce_ssh() { [ "$FIREWALL" = 1 ] || exit 9; sed "s#/workspace#$tmp/ws#g; s#/home/agent#$tmp#g" | PATH="$tmp/bin:$PATH" bash -s; }
+# The gate command runs for real; a fake sudo plays the firewall (FIREWALL) and the DNS filter (DNSF).
+cat > "$tmp/bin/sudo" <<'EOF'
+#!/bin/bash
+case "$1" in
+  iptables) if [ "$2" = -S ]; then [ "$FIREWALL" = 1 ] && echo '-A OUTPUT -m owner --uid-owner agent -j REJECT'; exit 0; fi; [ "$DNSF" = 1 ] ;;
+  pgrep) [ "$DNSF" = 1 ] ;;
+  -u) shift 3; exec "$@" ;;
+esac
+EOF
+chmod +x "$tmp/bin/sudo"
+export FIREWALL=1 DNSF=1
+_gce_ssh() { sed "s#/workspace#$tmp/ws#g; s#/home/agent#$tmp#g" | PATH="$tmp/bin:$PATH" bash -c "$3"; }
 
 printf "%s\n" "Where is the 'password' check? \$(touch $tmp/pwned) EOF" > "$tmp/q1"
 script="$(_answer_script ask-t001 "$tmp/q1" "")"
@@ -64,7 +74,9 @@ rmdir "$PIPE_STATE_DIR/answer-slots"/*
 
 FIREWALL=0; : > "$tmp/errors"
 check "firewall: missing refuses the answer" "1|no_firewall" "$(answer_ask ask-t006 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/errors")"
-FIREWALL=1
+FIREWALL=1; DNSF=0; : > "$tmp/errors"
+check "no agent DNS filter: refuses the answer" "1|no_dns_filter" "$(answer_ask ask-t016 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/errors")"
+DNSF=1
 check "no proxy: refused, never the API key" "1" "$(FXA_LLM_PROXY_URL= answer_ask ask-t007 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "id: must look like ask-xxxx" "1" "$(answer_ask agent-1234 "$tmp/q1" >/dev/null 2>&1; echo $?)"
 check "prs: a linked PR comes as fenced data" "1|2" "$(_answer_prs "$tmp/q2" | grep -c '"title":"Fix it"')|$(_answer_prs "$tmp/q2" | grep -cE '^</?pr-')"

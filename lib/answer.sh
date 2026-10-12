@@ -169,7 +169,7 @@ answer_ask() {
   # Lines as they come: each tool use is a step (when streaming); the last line is the result.
   resf="$(mktemp)"
   printf '%s\n' "$script" | _answer_vm _gce_ssh "$ANSWER_NAME" --command \
-    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; sudo -u agent -i bash -s" \
+    "sudo iptables -S OUTPUT | grep -qE -- '--uid-owner (agent|[0-9]+) -j REJECT' || { echo 'egress firewall missing' >&2; exit 9; }; sudo iptables -t nat -C OUTPUT -m owner --uid-owner agent -j FXA_AGENT_DNS 2>/dev/null && sudo pgrep -F /run/fxa-agent-dns.pid >/dev/null || { echo 'agent DNS filter missing' >&2; exit 10; }; sudo -u agent -i bash -s" \
     | while IFS= read -r line; do
         case "$line" in
           *'"type":"result"'*) printf '%s\n' "$line" > "$resf" ;;
@@ -182,6 +182,7 @@ answer_ask() {
   rm -f "$full"; rmdir "$slot" 2>/dev/null
   llm_token_revoke "$id" >/dev/null 2>&1 || true; mcp_token_revoke "$id" >/dev/null 2>&1 || true
   [ "$rc" = 9 ] && { errors_record answer no_firewall "" "answer_ask" "fxa-answer has no egress firewall; run: fxa-sandbox-ctl answer up" ""; return 1; }
+  [ "$rc" = 10 ] && { errors_record answer no_dns_filter "" "answer_ask" "fxa-answer has no agent DNS filter, so a lookup could carry data out; run: fxa-sandbox-ctl answer up" ""; return 1; }
   res="$(_answer_result "$id" "$(( $(date +%s) - t0 ))" "$out")"
   [ "$(jq -r .error <<< "$res")" = true ] && errors_record answer failed "" "answer_ask" "an answer failed (ssh status ${rc}): $(printf '%s' "$out" | tail -c 200 | tr '\n' ' ')" ""
   # Where the time went: init_s is ssh, setup, the main fetch and Claude's start with its MCP servers;
