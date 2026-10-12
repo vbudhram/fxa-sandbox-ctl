@@ -16,6 +16,7 @@
 #   FAKE_NOW_FILE  the clock: epoch seconds in a file that the harness moves, else the real clock
 #   FAKE_TICK      the watch loop's sleep, default 1 s
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
+#   FAKE_MERGE_S   seconds after a repo's PR opens that it reads as merged; unset, it stays open
 #   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
 #   FAKE_ANSWER    the quick look's answer text; unset, the quick look says busy (exit 3) and a session starts
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
@@ -108,8 +109,9 @@ prstatus() {
   local s="${3:--}" f u="$PR_URL"; f="$(get "$1" fins | awk -v s="$s" '$3 == s && $2 ~ /^pr/ {print $1; exit}')"
   [ "$s" = - ] || u="https://github.com/$s/pull/999999"
   [ -n "$f" ] && [ "$(now)" -ge $(( f + 12 )) ] || { echo null; return; }
-  jq -n --arg u "$u" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" \
-    '{state: "OPEN", draft: true, url: $u, ci: (if $ci == 1 then "pass" else "running" end), running: ($ci == 0),
+  local st=OPEN; [ -n "${FAKE_MERGE_S:-}" ] && [ "$(now)" -ge $(( f + 12 + FAKE_MERGE_S )) ] && st=MERGED
+  jq -n --arg u "$u" --arg st "$st" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" \
+    '{state: $st, draft: ($st == "OPEN"), url: $u, ci: (if $ci == 1 then "pass" else "running" end), running: ($ci == 0),
       reviews: [], mergeable: "MERGEABLE", failing: [], infra: [], links: [], jira: null}'
 }
 

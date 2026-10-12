@@ -28,6 +28,10 @@ check "finish wraps up" "wrapping" "$(st agent-aa1)"
 echo 1030 > "$FAKE_NOW_FILE"
 check "then a PR event" "pr" "$(f events agent-aa1 | jq -r '.events[-1].type')"
 check "a second finish is refused" "1" "$(f finish --session agent-aa1 >/dev/null 2>&1; echo $?)"
+check "the PR stays open without FAKE_MERGE_S" "OPEN" "$(echo 1100 > "$FAKE_NOW_FILE"; f session pr-status agent-aa1 | jq -r .state)"
+check "FAKE_MERGE_S merges it that long after it opened" "OPEN|MERGED" \
+  "$(echo 1030 > "$FAKE_NOW_FILE"; FAKE_MERGE_S=10 f session pr-status agent-aa1 | jq -r .state)|$(echo 1040 > "$FAKE_NOW_FILE"; FAKE_MERGE_S=10 f session pr-status agent-aa1 | jq -r .state)"
+echo 1030 > "$FAKE_NOW_FILE"
 
 f --pipeline pyfxa-team task --id agent-bb2 --owner UA --repos mozilla/PyFxA,mozilla/fxa --prompt-file "$tmp/p.md" >/dev/null
 echo 1045 > "$FAKE_NOW_FILE"
