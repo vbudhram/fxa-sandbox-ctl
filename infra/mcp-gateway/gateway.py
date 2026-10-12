@@ -316,6 +316,7 @@ class OAuth:
 
     def __init__(self, path):
         self.path, self.access, self.until = path, {}, {}
+        self.names = {}  # resource URL -> connector name, for the sign-in command in an error
         self.lock = threading.Lock()
 
     def signed_in(self, resource):
@@ -348,8 +349,15 @@ class OAuth:
                 doc = json.load(r)
             self.access[resource] = doc["access_token"]
         except urllib.error.HTTPError as e:
-            report("oauth", None, "the OAuth server refused the gateway's refresh token; run infra/gce/manager.sh oauth",
-                   " (HTTP %d for %s)" % (e.code, resource))
+            # The server's reason (an expired, revoked or reused token) tells a lifetime from a bug.
+            try:
+                doc = json.loads(e.read(4000) or b"{}")
+                why = str(doc.get("error") or "") + (": " + str(doc["error_description"]) if doc.get("error_description") else "")
+            except (ValueError, OSError, AttributeError):
+                why = ""
+            name = self.names.get(resource, "<connector>")
+            report("oauth", None, "%s: the OAuth server refused the gateway's refresh token; run FXA_OAUTH_ONLY=%s bash infra/gce/manager.sh oauth" % (name, name),
+                   " (HTTP %d%s for %s)" % (e.code, " " + why.strip()[:200] if why.strip() else "", resource))
             raise UpstreamError("oauth: the token endpoint answered HTTP %d; run manager.sh oauth again" % e.code)
         except KeyError:
             report("oauth", None, "the gateway has no sign-in for a connector; run infra/gce/manager.sh oauth", " (%s)" % resource)
@@ -357,6 +365,8 @@ class OAuth:
         except (OSError, ValueError) as e:
             raise UpstreamError("oauth: %s" % e.__class__.__name__)
         self.until[resource] = time.time() + int(doc.get("expires_in") or 300)
+        if doc.get("refresh_expires_in"):
+            sys.stderr.write("fxa-mcp-gateway: %s signed in; its refresh token lasts %s s\n" % (self.names.get(resource, resource), doc["refresh_expires_in"]))
         if doc.get("refresh_token") and doc["refresh_token"] != old:
             st["refresh_tokens"][resource] = doc["refresh_token"]
             fd = os.open(self.path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -392,6 +402,7 @@ class Upstream:
     def __init__(self, name, spec):
         self.name, self.url = name, urllib.parse.urlsplit(spec["url"])
         self.resource, self.headers = spec["url"], dict(spec.get("headers") or {})
+        OAUTH.names[self.resource] = name
         for v in self.headers.values():
             expand(v, resource=self.resource)
         self.tools_allowed = list(spec.get("tools") or [])

@@ -98,7 +98,7 @@ class Upstream(http.server.BaseHTTPRequestHandler):
             form = urllib.parse.parse_qs(body.decode())
             if (form.get("grant_type") != ["refresh_token"] or form.get("refresh_token") != [OAUTH["refresh"]] or form.get("client_id") != ["c2"]
                     or not form.get("resource", [""])[0].endswith("/oauth")):
-                return self.send(400, {"error": "invalid_grant"})
+                return self.send(400, {"error": "invalid_grant", "error_description": "Refresh token expired"})
             OAUTH["n"] += 1
             OAUTH.update(refresh="rt-%d" % OAUTH["n"], access="at-%d" % OAUTH["n"])
             return self.send(200, {"access_token": OAUTH["access"], "refresh_token": OAUTH["refresh"], "expires_in": 3600})
@@ -386,6 +386,11 @@ class GatewayTest(unittest.TestCase):
         rows = [r for r in map(json.loads, lines) if r["key"] in ("s", None)]  # other tests withhold too
         self.assertEqual([(r["source"], r["kind"], r["key"]) for r in rows], [("gateway", "withheld", "s"), ("gateway", "oauth", None)])
         self.assertIn("manager.sh oauth", rows[1]["message"])
+        # It names the connector and its exact sign-in command first (the DM shows 180 characters),
+        # then why the server refused, and never a refresh token.
+        self.assertTrue(rows[1]["message"].startswith("figma: the OAuth server refused the gateway's refresh token; run FXA_OAUTH_ONLY=figma bash infra/gce/manager.sh oauth"))
+        self.assertIn("HTTP 400 invalid_grant: Refresh token expired", rows[1]["message"])
+        self.assertNotIn("gone", rows[1]["message"])
         self.assertTrue(all('"sig":"' in l for l in lines))  # errors resolve greps compact JSON
 
     def test_every_call_is_audited(self):
