@@ -18,7 +18,8 @@ head -c 300000 /dev/urandom > "$tmp/builds/a/static/js/main.js"
 printf '<meta name="fxa-config" content="CFG42"><div data-flow-id="F1"></div>' > "$tmp/live.html"
 ln -s "$tmp/builds/a" "$tmp/current"
 node "$here/serve.js" "$tmp" mobile 18995 > "$tmp/serve.log" 2>&1 & srv=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf -o /dev/null localhost:18995/ 2>/dev/null && break; sleep 0.3; done
+# Up to 10 s: test.sh runs 8 checks at once, and node can take more than 3 s to start then.
+for _ in $(seq 1 50); do curl -sf -o /dev/null localhost:18995/ 2>/dev/null && break; sleep 0.2; done
 
 t0=$(date +%s); n="$(curl -s localhost:18995/static/js/main.js | wc -c | tr -d ' ')"; secs=$(( $(date +%s) - t0 ))
 check "a file arrives whole" "300000" "$n"
