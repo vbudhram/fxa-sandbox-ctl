@@ -8,6 +8,7 @@ check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; key=FXA-990011; trap 'rm -rf "$tmp" "/tmp/fxa-${key}-ground.md"' EXIT
 eval "$(sed -n '/^cmd_ground() {/,/^}/p;/^_ground_paths() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^pipeline_ensure_clone() {/,/^}/p' "$(dirname "$0")/pipeline.sh")"
 g() { git -C "$tmp/repo" -c user.email=user@example.com -c user.name=t "$@"; }
 git init -q -b main "$tmp/repo"; mkdir -p "$tmp/repo/packages/a"; echo one > "$tmp/repo/packages/a/b.ts"
 g add -A; g commit -qm one; g update-ref refs/remotes/origin/main HEAD
@@ -39,4 +40,8 @@ out="$( set -eo pipefail; cmd_ground "$key" )"; rc=$?
 check "many commits: ground still exits 0 and prints the bundle path and the counts" "0|yes|yes" \
   "$rc|$(printf '%s\n' "$out" | grep -q 'ground.md$' && echo yes)|$(printf '%s\n' "$out" | grep -q '^cited=' && echo yes)"
 unset -f git
+# A profile whose base is master: the cited path is read from origin/master, not origin/main.
+g update-ref refs/remotes/origin/master HEAD; g update-ref -d refs/remotes/origin/main
+f="$(PIPE_BASE_BRANCH=master cmd_ground "$key" | head -1)"
+check "ground reads the profile's base branch" "1|0" "$(grep -c '^## Cited paths on origin/master' "$f")|$(grep -c 'MISSING' "$f")"
 exit "$fail"

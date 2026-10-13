@@ -353,6 +353,7 @@ cmd_jira() {
   key="$(jira_normalize_key "$key")" || return 1
   # Resolve the runtime before any Jira or VM work, so a bad name fails at once.
   runtime_load || return 1
+  pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
 
   # finish_push_and_pr reads FXA_WORKTREE_BASE for `gh pr create --base`, so the
   # PR targets main unless --base is written back here.
@@ -1578,41 +1579,42 @@ _frozen_patterns() {
 
 cmd_ground() {
   local key; key="$(_key "$1")"
-  local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO"
-  git -C "$repo" fetch -q origin main 2>/dev/null || true
+  local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO" b="${PIPE_BASE_BRANCH:-main}"
+  pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
+  git -C "$repo" fetch -q origin "$b" 2>/dev/null || true
   local ticket; ticket="$(jira_ticket "$key" 2>/dev/null)"
   local reporter; reporter="$(jira_reporter_login "$key" 2>/dev/null || true)"
   local skiprec; skiprec="$(pipeline_skipped "$key" 2>/dev/null || true)"
   local paths; paths="$(_ground_paths "$ticket" || true)"
   local n_cited=0 n_missing=0 n_frozen=0 n_stories=0 n_prs=0
   {
-    echo "# ${key} grounding bundle, origin/main $(git -C "$repo" rev-parse --short origin/main) at $(date -u +%FT%TZ)"
+    echo "# ${key} grounding bundle, origin/${b} $(git -C "$repo" rev-parse --short origin/${b}) at $(date -u +%FT%TZ)"
     echo "reporter_login: ${reporter:-<unmapped>}"
     echo "skip record: ${skiprec:-none}"
     # A ticket that holds a closing marker cannot guess the nonce, so it cannot forge the sections below.
     local nonce; nonce="$(openssl rand -hex 6)"
     echo; echo "## Ticket (untrusted, between the markers)"; echo; echo "<<<UNTRUSTED-${nonce}>>>"; printf '%s\n' "$ticket"; echo "<<</UNTRUSTED-${nonce}>>>"
-    echo; echo "## Cited paths on origin/main"; echo
+    echo; echo "## Cited paths on origin/${b}"; echo
     local ref path lines lo hi
     while IFS= read -r ref; do
       [ -n "$ref" ] || continue
       n_cited=$((n_cited + 1))
       path="${ref%%:*}"; lines="${ref#*:}"; [ "$lines" = "$ref" ] && lines=""
-      if git -C "$repo" cat-file -e "origin/main:${path}" 2>/dev/null; then
+      if git -C "$repo" cat-file -e "origin/${b}:${path}" 2>/dev/null; then
         echo "- exists  ${ref}"
         if [ -n "$lines" ]; then
           lo="${lines%%-*}"; hi="${lines##*-}"; [ "$hi" -ge "$lo" ] 2>/dev/null || hi="$lo"
-          git -C "$repo" show "origin/main:${path}" | sed -n "${lo},${hi}p" | sed 's/^/      | /'
+          git -C "$repo" show "origin/${b}:${path}" | sed -n "${lo},${hi}p" | sed 's/^/      | /'
         fi
       else
         n_missing=$((n_missing + 1)); echo "- MISSING ${ref}"
         local base; base="$(basename "$path")"
-        git -C "$repo" ls-tree -r --name-only origin/main | grep -F "/${base}" | head -3 | sed 's/^/      maybe: /' || true
+        git -C "$repo" ls-tree -r --name-only origin/${b} | grep -F "/${base}" | head -3 | sed 's/^/      maybe: /' || true
       fi
     done <<< "$paths"
-    echo; echo "## Frozen paths (from _scripts/check-frozen.ts on origin/main)"; echo
+    echo; echo "## Frozen paths (from _scripts/check-frozen.ts on origin/${b})"; echo
     local frozen pat ex p
-    frozen="$(git -C "$repo" show origin/main:_scripts/check-frozen.ts 2>/dev/null | _frozen_patterns || true)"
+    frozen="$(git -C "$repo" show origin/${b}:_scripts/check-frozen.ts 2>/dev/null | _frozen_patterns || true)"
     while IFS=$'\t' read -r pat ex; do
       [ -n "$pat" ] || continue
       while IFS= read -r p; do
@@ -1625,7 +1627,7 @@ cmd_ground() {
     echo; echo "## Stories beside cited files"; echo
     local d
     for d in $(printf '%s\n' "$paths" | sed -E 's/:.*$//' | xargs -n1 dirname 2>/dev/null | sort -u); do
-      if git -C "$repo" ls-tree -r --name-only origin/main -- "$d" 2>/dev/null | grep -q '\.stories\.tsx$'; then
+      if git -C "$repo" ls-tree -r --name-only origin/${b} -- "$d" 2>/dev/null | grep -q '\.stories\.tsx$'; then
         n_stories=$((n_stories + 1)); echo "- ${d} has *.stories.tsx: ask for /fxa-storybook-capture if rendered output changes"
       fi
     done
@@ -1642,10 +1644,10 @@ cmd_ground() {
     done <<< "$paths" | sort -u)"
     if [ -n "$overlaps" ]; then printf '%s\n' "$overlaps"; else echo "- none"; fi
     echo; echo "## Commits to cited files in the last 30 days"; echo
-    local existing; existing="$(while IFS= read -r p; do p="${p%%:*}"; [ -n "$p" ] && git -C "$repo" cat-file -e "origin/main:${p}" 2>/dev/null && printf '%s\n' "$p"; done <<< "$paths"; true)"
+    local existing; existing="$(while IFS= read -r p; do p="${p%%:*}"; [ -n "$p" ] && git -C "$repo" cat-file -e "origin/${b}:${p}" 2>/dev/null && printf '%s\n' "$p"; done <<< "$paths"; true)"
     if [ -n "$existing" ]; then
       # head closes the pipe after 15: git's SIGPIPE must not end ground under pipefail.
-      git -C "$repo" log origin/main --since=30.days --date=short --format='- %h %ad %an: %s' -- $existing 2>/dev/null | head -15 || true
+      git -C "$repo" log origin/${b} --since=30.days --date=short --format='- %h %ad %an: %s' -- $existing 2>/dev/null | head -15 || true
     else
       echo "- (no cited path exists on main)"
     fi
