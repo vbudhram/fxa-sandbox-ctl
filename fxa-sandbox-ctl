@@ -162,6 +162,8 @@ PIPELINE COMMANDS:
   skipped [KEY]                List recorded skips
   skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
                                or changed since it; silent otherwise. Read-only.
+  unskip <KEY>                 Drop the skip record, so the next pass judges the ticket again
+                               (after a 🤖 note, which the skip fingerprint ignores)
   attempts <KEY> [bump]        Read or increment the real-fix attempt counter
   lock / unlock                One pass at a time
   pause [reason] / resume      Kill switch: lock prints `paused` until resume.
@@ -1492,6 +1494,7 @@ cmd_skip_changed() {
   local key; key="$(_key "$1")"; local why
   if why="$(pipeline_skip_changed "$key")"; then echo "$key $why"; fi
 }
+cmd_unskip()    { pipeline_skip_clear "$(_key "$1")"; }
 cmd_skipped()   { if [ -n "${1:-}" ]; then pipeline_skipped "$(_key "$1")"; else pipeline_skipped; fi; }
 cmd_attempts()  { pipeline_attempts "$(_key "$1")" "${@:2}"; }
 cmd_usage_tokens() { telemetry_usage "$@"; }
@@ -2792,6 +2795,7 @@ main() {
     skip)       cmd_skip "$@" ;;
     skipped)    cmd_skipped "$@" ;;
     skip-changed) cmd_skip_changed "$@" ;;
+    unskip)     cmd_unskip "$@" ;;
     attempts)   cmd_attempts "$@" ;;
     lock)       cmd_lock "$@" ;;
     snapshot)   cmd_snapshot "$@" ;;
