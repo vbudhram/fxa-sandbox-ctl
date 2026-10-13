@@ -17,6 +17,7 @@
 #   FAKE_TICK      the watch loop's sleep, default 1 s
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
 #   FAKE_MERGE_S   seconds after a repo's PR opens that it reads as merged; unset, it stays open
+#   FAKE_FINISH_REFUSE  the first this many finishes refuse at once, as a busy session does
 #   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
 #   FAKE_ANSWER    the quick look's answer text; unset, the quick look says busy (exit 3) and a session starts
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
@@ -145,6 +146,8 @@ case "$cmd" in
       sleep "${FAKE_TICK:-1}"
     done ;;
   finish) k="$(opt --session "$@")"; [ -f "$DIR/$k/t0" ] || { echo "ERROR: no session $k" >&2; exit 1; }
+    if [ "$(cat "$DIR/$k/refused" 2>/dev/null | wc -l)" -lt "${FAKE_FINISH_REFUSE:-0}" ]; then
+      echo x >> "$DIR/$k/refused"; echo "ERROR: $k is busy; try again in a moment" >&2; exit 1; fi
     s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac
     get "$k" fins | awk -v s="$s" '$3 == s {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
     echo "$(now) $m $s" >> "$DIR/$k/fins" ;;

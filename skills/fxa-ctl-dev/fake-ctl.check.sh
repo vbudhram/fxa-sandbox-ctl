@@ -23,7 +23,9 @@ check "the turn ends at +10 s" "turn_end|ready" "$(f events agent-aa1 | jq -r '.
 echo "use approach 2" > "$tmp/m.md"
 f steer agent-aa1 --message-file "$tmp/m.md" >/dev/null
 check "a steer is logged with its text" "use approach 2" "$(tail -1 "$tmp/log" | jq -r '.files["message-file"] | rtrimstr("\n")')"
-f finish --session agent-aa1 >/dev/null
+check "FAKE_FINISH_REFUSE: the first finish refuses as busy, and the session stays as it was" "1|busy; try again|active" \
+  "$(FAKE_FINISH_REFUSE=1 f finish --session agent-aa1 2> "$FAKE_CTL_DIR/err" >/dev/null; echo $?)|$(grep -o 'busy; try again' "$FAKE_CTL_DIR/err")|$(st agent-aa1)"
+FAKE_FINISH_REFUSE=1 f finish --session agent-aa1 >/dev/null
 check "finish wraps up" "wrapping" "$(st agent-aa1)"
 echo 1030 > "$FAKE_NOW_FILE"
 check "then a PR event" "pr" "$(f events agent-aa1 | jq -r '.events[-1].type')"
