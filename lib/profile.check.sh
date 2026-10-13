@@ -28,6 +28,17 @@ check "a small profile gets its own state dir and the defaults" \
   "PIPE_BASE_BRANCH=main|PIPE_MIN_FREE_GB=5|PIPE_PROFILE=demo|PIPE_REPO=$tmp/home/Desktop/working2/demo|PIPE_STALL_MINUTES=20|PIPE_STATE_DIR=$tmp/home/.claude/state/demo" \
   "$(grep -E '^PIPE_(BASE_BRANCH|MIN_FREE_GB|PROFILE|REPO|STALL_MINUTES|STATE_DIR)=' <<< "$demo" | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 check "a small profile's state dir is made" "yes" "$([ -d "$tmp/home/.claude/state/demo" ] && echo yes)"
+check "a small profile gets the one label, a queue, and its own pool" \
+  'PIPE_LABEL_PREFIX=ai-fixme|PIPE_POOL_NAME=demo-auto|PIPE_QUEUE_JQL=labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' \
+  "$(grep -E '^PIPE_(LABEL_PREFIX|POOL_NAME|QUEUE_JQL)=' <<< "$demo" | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+check "fxa keeps its pool" "PIPE_POOL_NAME=fxa-auto" "$(grep '^PIPE_POOL_NAME=' <<< "$fxa")"
+# What the rest of ctl reads: the pool name and the base branch, and FxA's state override only for fxa.
+envs() { ( export HOME="$tmp/home" FXA_FIXME_STATE="$tmp/fxstate"; unset FXA_REPO; SANDBOX_ROOT="$1"; _FXA_PIPELINE_LOADED=
+  source "$root/lib/pipeline.sh"; pipeline_load "$2" >/dev/null 2>&1 || exit 1
+  printf '%s|%s|%s' "$FXA_SHARED_WORKTREE_NAME" "$FXA_WORKTREE_BASE" "${PIPE_STATE_DIR#"$tmp"/}" ); }
+echo 'PIPE_BASE_BRANCH=master' >> "$tmp/r/profiles/demo/profile.conf"
+check "another profile gets its pool and base, and keeps its own state" "demo-auto|master|home/.claude/state/demo" "$(envs "$tmp/r" demo)"
+check "fxa keeps its pool and base, and FxA's state override" "fxa-auto|main|fxstate" "$(envs "$root" fxa)"
 
 # A team stack: every work row can be picked; the first is the profile's own repo.
 py="$(loaded "$root" pyfxa-team)"

@@ -68,14 +68,25 @@ pipeline_load() {
   PIPE_COSTS_FILE="${PIPE_COSTS_FILE:-${PIPE_STATE_DIR}/agent-costs.json}"
   PIPE_MIN_FREE_GB="${PIPE_MIN_FREE_GB:-5}"
   PIPE_STALL_MINUTES="${PIPE_STALL_MINUTES:-20}"
+  # One label for every team: pipeline_jira_scope keeps each queue to its own project.
+  PIPE_LABEL_PREFIX="${PIPE_LABEL_PREFIX:-ai-fixme}"
+  PIPE_QUEUE_JQL="${PIPE_QUEUE_JQL:-labels = \"${PIPE_LABEL_PREFIX}\" AND statusCategory != Done ORDER BY created ASC}"
+  # The pool sits beside the repo's clone, and every clone is in ~/Desktop/working2: each
+  # profile needs its own name, or a second team's slots are FxA's.
+  PIPE_POOL_NAME="${PIPE_POOL_NAME:-${PIPE_PROFILE}-auto}"
 
+  # A repo set by hand wins for any profile. The FXA_FIXME_* state overrides are the FxA
+  # pipeline's: they must not move another team's state into FxA's.
   PIPE_REPO="${FXA_REPO:-$PIPE_REPO}"
-  PIPE_STATE_DIR="${FXA_FIXME_STATE:-$PIPE_STATE_DIR}"
-  PIPE_RUNS_FILE="${FXA_FIXME_RUNS:-$PIPE_RUNS_FILE}"
-  PIPE_COSTS_FILE="${FXA_FIXME_COSTS:-$PIPE_COSTS_FILE}"
-  PIPE_MIN_FREE_GB="${FXA_MIN_FREE_GB:-$PIPE_MIN_FREE_GB}"
-  # worktree.sh and the rest of ctl read FXA_REPO, so keep the two in step.
-  export FXA_REPO="$PIPE_REPO" _FXA_REPO_LOADED="$PIPE_REPO"
+  if [ "$PIPE_PROFILE" = fxa ]; then
+    PIPE_STATE_DIR="${FXA_FIXME_STATE:-$PIPE_STATE_DIR}"
+    PIPE_RUNS_FILE="${FXA_FIXME_RUNS:-$PIPE_RUNS_FILE}"
+    PIPE_COSTS_FILE="${FXA_FIXME_COSTS:-$PIPE_COSTS_FILE}"
+    PIPE_MIN_FREE_GB="${FXA_MIN_FREE_GB:-$PIPE_MIN_FREE_GB}"
+  fi
+  # worktree.sh, finish and the rest of ctl read the FXA_* names, so keep them in step.
+  export FXA_REPO="$PIPE_REPO" _FXA_REPO_LOADED="$PIPE_REPO" \
+    FXA_SHARED_WORKTREE_NAME="$PIPE_POOL_NAME" FXA_WORKTREE_BASE="$PIPE_BASE_BRANCH"
 
   mkdir -p "$PIPE_STATE_DIR"
   PIPE_LOCK_DIR="${PIPE_STATE_DIR}/pass.lock"
