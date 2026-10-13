@@ -589,6 +589,7 @@ The VM is the security boundary. Each agent runs inside an isolated Linux VM wit
 - **Access the host filesystem** beyond the workspace (no `~/.claude` history, no `~/Library`, no other projects)
 - **Reach the host machine**: iptables blocks all traffic to `192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12` (only DNS to the gateway and resolvers, the LLM proxy, and the MCP gateway are allowed)
 - **Reach other public hosts**: the agent user can reach only the allowlist above
+- **Reach the metadata server or use IPv6**: the agent user cannot reach `169.254.0.0/16`, and over IPv6 it reaches only loopback. The launch fails if either is reachable
 - **Escalate to root freely**: sudo is restricted to `systemctl start|stop|restart|status` for `mysql`, `redis-server`, `firestore-emulator`, and `goaws`, and `tee /etc/hosts`
 - **Read the OAuth token from disk** — the token is injected via an ephemeral file that is deleted immediately after Claude reads it; it only exists in process memory
 - **SSH to other agent VMs** — each agent has a unique SSH key pair; password authentication is disabled

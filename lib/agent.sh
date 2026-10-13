@@ -470,6 +470,13 @@ _setup_egress_firewall() {
     # Link-local is the metadata server. The guest agent needs it to deliver the
     # ssh key; only the agent user is cut off.
     iptables -A OUTPUT -d 169.254.0.0/16 -m owner --uid-owner agent -j DROP
+    # The rules here are IPv4 only, so over IPv6 the agent user gets loopback alone.
+    # A guest without ip6tables has no IPv6 table to hold traffic.
+    if ip6tables -S OUTPUT >/dev/null 2>&1; then
+      ip6tables -F OUTPUT
+      ip6tables -A OUTPUT -o lo -j ACCEPT
+      [ "$FXA_EGRESS_ALLOW_ALL" = "1" ] || ip6tables -A OUTPUT -m owner --uid-owner agent -j REJECT
+    fi
 
     # Root (the guest agent, systemd units) keeps the internet. The agent user
     # gets an allowlist: a prompt-injected agent must not be able to post the
@@ -500,6 +507,17 @@ _setup_egress_firewall() {
       iptables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || { echo "egress: REJECT rule missing" >&2; exit 1; }
       if sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/1.1.1.1/443" 2>/dev/null; then
         echo "egress: agent user reached a non-allowlisted host; allowlist is not enforced" >&2; exit 1
+      fi
+      if ip6tables -S OUTPUT >/dev/null 2>&1; then
+        ip6tables -S OUTPUT | grep -qE -- "--uid-owner (agent|[0-9]+) -j REJECT" || { echo "egress: IPv6 REJECT rule missing" >&2; exit 1; }
+      fi
+      if sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/2606:4700:4700::1111/443" 2>/dev/null; then
+        echo "egress: agent user reached a host over IPv6" >&2; exit 1
+      fi
+      # The metadata server holds the ssh keys and the service-account token of the VM. A DROP
+      # never answers, so the probe always waits its full timeout: keep it short.
+      if sudo -u agent timeout 3 bash -c "exec 3<>/dev/tcp/169.254.169.254/80" 2>/dev/null; then
+        echo "egress: agent user reached the metadata server" >&2; exit 1
       fi
       # Twice: a DNS change between the allow and the check is not a failure.
       { sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null || { sleep 2; sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/github.com/443" 2>/dev/null; }; } \

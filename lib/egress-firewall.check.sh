@@ -63,6 +63,43 @@ printf '#!/bin/sh\nexit 1\n' > "$bin/resolvectl"; printf '#!/bin/sh\nexit 0\n' >
 check "an open resolved varlink socket fails the launch" "egress: the agent can look up any name through resolved's varlink socket" "$(run_tpl)"
 printf '#!/bin/sh\nexit 1\n' > "$bin/varlinkctl"
 check "a closed resolved API passes" "" "$(run_tpl)"
-rm -rf "$log" "$fake" "$bin"
+
+# The remote script itself, with fake firewall tools. The fake sudo decides what the agent reaches.
+fw="$(mktemp -d)"
+for t in iptables ip6tables; do cat > "$fw/$t" <<'FAKE'
+#!/bin/sh
+f="$0.rules"
+case "$1" in
+  -F) : > "$f" ;;
+  -A) shift; echo "-A $*" >> "$f" ;;
+  -S) [ -n "${NO_V6:-}" ] && [ "${0##*/}" = ip6tables ] && exit 1; cat "$f" 2>/dev/null ;;
+  -D) exit 1 ;;
+esac
+exit 0
+FAKE
+done
+printf '#!/bin/sh\necho "default via 10.0.0.1 dev eth0"\n' > "$fw/ip"
+printf '#!/bin/sh\necho "140.82.112.3 STREAM github.com"\n' > "$fw/getent"
+cat > "$fw/sudo" <<'FAKE'
+#!/bin/sh
+[ "$1" = -u ] && shift 2
+case "$*" in
+  *github.com*) exit 0 ;;
+  *169.254.169.254*) [ -n "${META_OPEN:-}" ] ;;
+  *::*) [ -n "${V6_OPEN:-}" ] ;;
+  *) exit 1 ;;
+esac
+FAKE
+chmod +x "$fw"/*
+vm_exec() { [ "$3" = env ] || return 0; shift 2; PATH="$fw:/usr/bin:/bin" "$@"; }
+fw_run() { rm -f "$fw"/*.rules; out="$(_setup_egress_firewall vm 2>&1)"; echo "$?|$out"; }
+check "the remote script passes with fake tools" "0|" "$(fw_run)"
+check "over IPv6 the agent user gets loopback alone" "-A OUTPUT -o lo -j ACCEPT|-A OUTPUT -m owner --uid-owner agent -j REJECT" "$(paste -sd'|' "$fw/ip6tables.rules")"
+check "a reachable metadata server fails the launch" "1|egress: agent user reached the metadata server" "$(META_OPEN=1 fw_run)"
+check "a host reached over IPv6 fails the launch" "1|egress: agent user reached a host over IPv6" "$(V6_OPEN=1 fw_run)"
+check "a guest without ip6tables still passes" "0|" "$(NO_V6=1 fw_run)"
+FXA_EGRESS_ALLOW_ALL=1 fw_run >/dev/null; FXA_EGRESS_ALLOW_ALL=0
+check "an allow-all run leaves IPv6 open" "-A OUTPUT -o lo -j ACCEPT" "$(paste -sd'|' "$fw/ip6tables.rules")"
+rm -rf "$log" "$fake" "$bin" "$fw"
 
 exit "$fail"
