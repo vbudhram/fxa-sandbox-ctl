@@ -92,6 +92,21 @@ ci_state() {
 
 # promote_new_errors <before> <after>   The open error signatures in after and not in before.
 promote_new_errors() { comm -13 <(printf '%s\n' "$1" | sort -u) <(printf '%s\n' "$2" | sort -u) | grep . || true; }
+# promote_watch <signatures before>   After the watch: fails on a new open error, or when the read fails,
+# since a promote that broke the dashboard also breaks the read.
+promote_watch() {
+  local all after fresh sig
+  all="$(errs_api)" && after="$(open_sigs <<< "$all")" || {
+    echo "WARN: vm.sh api errors failed after the promote, so the watch saw nothing. If this promote broke the dashboard: bash skills/fxa-manager/vm.sh rollback" >&2; return 1; }
+  fresh="$(promote_new_errors "$1" "$after")"
+  if [ -n "$fresh" ]; then
+    echo "WARN: new errors on live since the promote:" >&2
+    for sig in $fresh; do jq -r --arg s "$sig" '.[] | select(.sig == $s) | "  \(.sig) \(.source)/\(.kind): \(.message | .[0:160])"' <<< "$all" >&2; done
+    echo "If this promote caused them: bash skills/fxa-manager/vm.sh rollback" >&2
+    return 1
+  fi
+  echo "  no new errors on live"
+}
 # open_sigs   The open error signatures in the JSON list on stdin; fails when stdin is not a list.
 open_sigs() { jq -er 'if type == "array" then [.[] | select(.status != "resolved") | .sig] | join("\n") else error("not a list") end' 2>/dev/null; }
 
@@ -339,15 +354,7 @@ EOF2
       echo "WARN: the live watch is skipped: vm.sh api errors failed before the sync, so no error can be called new" >&2
     elif [ "$w" -gt 0 ] 2>/dev/null; then
       echo "Watching live for ${w} s..."; sleep "$w"
-      all="$(errs_api || true)"
-      fresh="$(promote_new_errors "$errs_before" "$(open_sigs <<< "${all:-[]}" || true)")"
-      if [ -n "$fresh" ]; then
-        echo "WARN: new errors on live since the promote:" >&2
-        for sig in $fresh; do jq -r --arg s "$sig" '.[] | select(.sig == $s) | "  \(.sig) \(.source)/\(.kind): \(.message | .[0:160])"' <<< "$all" >&2; done
-        echo "If this promote caused them: bash skills/fxa-manager/vm.sh rollback" >&2
-        exit 1
-      fi
-      echo "  no new errors on live"
+      promote_watch "$errs_before" || exit 1
     fi
     ;;
   rollback)

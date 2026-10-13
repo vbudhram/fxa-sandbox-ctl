@@ -79,6 +79,14 @@ check "errors: only signatures open after the promote and not before" "c3|d4" "$
 check "open_sigs: the open signatures of a list" "0|a1|c3" "$(open_sigs <<< '[{"sig":"a1","status":"open"},{"sig":"b2","status":"resolved"},{"sig":"c3"}]' > "$tmp/s"; echo $?)|$(paste -sd'|' "$tmp/s")"
 check "open_sigs: an empty list is a good read" "0|" "$(open_sigs <<< '[]' > "$tmp/s"; echo $?)|$(cat "$tmp/s")"
 check "open_sigs: a failed read (empty, or an error object) fails, so promote skips the watch" "fail|fail" "$(open_sigs < /dev/null >/dev/null && echo ok || echo fail)|$(open_sigs <<< '{"error":"502"}' >/dev/null && echo ok || echo fail)"
+eval "$(sed -n '/^promote_watch() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+errs_api() { echo '[{"sig":"a1","status":"open"},{"sig":"c3","status":"open","source":"bot","kind":"crash","message":"boom"}]'; }
+check "watch: a new open error fails, and names it" "1|yes" "$(promote_watch a1 2> "$tmp/watch.out" >/dev/null; echo $?)|$(grep -q 'c3 bot/crash: boom' "$tmp/watch.out" && echo yes)"
+check "watch: nothing new passes" "0|  no new errors on live" "$(promote_watch "$(printf 'a1\nc3')" > "$tmp/watch.out" 2>/dev/null; echo $?)|$(cat "$tmp/watch.out")"
+errs_api() { return 22; }
+check "watch: a failed read after the watch fails, with the rollback hint" "1|yes" "$(promote_watch a1 2> "$tmp/watch.out" >/dev/null; echo $?)|$(grep -q 'failed after the promote.*rollback' "$tmp/watch.out" && echo yes)"
+errs_api() { echo '{"error":"502"}'; }
+check "watch: an error object after the watch fails too" "1" "$(promote_watch a1 >/dev/null 2>&1; echo $?)"
 check "errors: none new is empty" "" "$(promote_new_errors "$(printf 'a1\n')" "$(printf 'a1\n')")"
 
 # The deploy record: a promote that moved nothing writes no line; rollback reads its own output.
