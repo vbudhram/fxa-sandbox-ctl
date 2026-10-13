@@ -84,6 +84,9 @@ pipeline_load() {
     PIPE_COSTS_FILE="${FXA_FIXME_COSTS:-$PIPE_COSTS_FILE}"
     PIPE_MIN_FREE_GB="${FXA_MIN_FREE_GB:-$PIPE_MIN_FREE_GB}"
   fi
+  # Another team's PR asks the repo's default reviewers (CODEOWNERS), not fxa-devs, unless its
+  # profile names a team. FxA, and a team set by hand, keep finish's own default.
+  [ "$PIPE_PROFILE" = fxa ] || [ -n "${FXA_PR_TEAM+x}" ] || export FXA_PR_TEAM="${PIPE_PR_TEAM:-}"
   # worktree.sh, finish and the rest of ctl read the FXA_* names, so keep them in step.
   export FXA_REPO="$PIPE_REPO" _FXA_REPO_LOADED="$PIPE_REPO" \
     FXA_SHARED_WORKTREE_NAME="$PIPE_POOL_NAME" FXA_WORKTREE_BASE="$PIPE_BASE_BRANCH"

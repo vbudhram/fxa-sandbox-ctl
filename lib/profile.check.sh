@@ -39,6 +39,12 @@ envs() { ( export HOME="$tmp/home" FXA_FIXME_STATE="$tmp/fxstate"; unset FXA_REP
 echo 'PIPE_BASE_BRANCH=master' >> "$tmp/r/profiles/demo/profile.conf"
 check "another profile gets its pool and base, and keeps its own state" "demo-auto|master|home/.claude/state/demo" "$(envs "$tmp/r" demo)"
 check "fxa keeps its pool and base, and FxA's state override" "fxa-auto|main|fxstate" "$(envs "$root" fxa)"
+team() { ( export HOME="$tmp/home"; unset FXA_PR_TEAM; SANDBOX_ROOT="$1"; _FXA_PIPELINE_LOADED=
+  source "$root/lib/pipeline.sh"; pipeline_load "$2" >/dev/null 2>&1 || exit 1; echo "${FXA_PR_TEAM-unset}" ); }
+check "another team's PR asks the repo's own reviewers" "" "$(team "$tmp/r" demo)"
+check "fxa keeps fxa-devs (finish's default)" "unset" "$(team "$root" fxa)"
+echo 'PIPE_PR_TEAM=demo-devs' >> "$tmp/r/profiles/demo/profile.conf"
+check "a profile can name its team" "demo-devs" "$(team "$tmp/r" demo)"
 
 # A team stack: every work row can be picked; the first is the profile's own repo.
 py="$(loaded "$root" pyfxa-team)"
