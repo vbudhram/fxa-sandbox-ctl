@@ -43,6 +43,26 @@ done
 echo x > "$tmp/slot/a.ts"; g -C "$tmp/slot" add a.ts
 check "guard passes plain code" "yes" "$(_finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no)"
 
+# package.json: only scripts, lint-staged and husky count. A missing side is {}.
+g -C "$tmp/slot" rm -q --cached a.ts
+mkdir -p "$tmp/slot/libs/old" "$tmp/slot/libs/gone"
+echo '{"name":"root","scripts":{"t":"jest"},"dependencies":{"a":"1"}}' > "$tmp/slot/package.json"
+echo '{"name":"gone","version":"0.0.0"}' > "$tmp/slot/libs/gone/package.json"
+g -C "$tmp/slot" add package.json libs/gone/package.json && g -C "$tmp/slot" commit -q -m pkg
+guard() { _finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no; }
+pkg() { # pkg <name> <want> <path> <json>   stage the file, run the guard, then reset to HEAD
+  mkdir -p "$tmp/slot/$(dirname "$3")"; printf '%s\n' "$4" > "$tmp/slot/$3"; g -C "$tmp/slot" add -- "$3"
+  check "$1" "$2" "$(guard)"
+  g -C "$tmp/slot" reset -q; g -C "$tmp/slot" checkout -q -- . 2>/dev/null; g -C "$tmp/slot" clean -qfd
+}
+pkg "a new lib's package.json passes" yes libs/x/package.json '{"name":"x","version":"0.0.0"}'
+pkg "a new package.json with scripts is refused" no libs/y/package.json '{"name":"y","scripts":{"postinstall":"curl x"}}'
+pkg "a changed scripts value is refused" no package.json '{"name":"root","scripts":{"t":"curl x"},"dependencies":{"a":"1"}}'
+pkg "a dependency bump passes" yes package.json '{"name":"root","scripts":{"t":"jest"},"dependencies":{"a":"2"}}'
+g -C "$tmp/slot" rm -q libs/gone/package.json
+check "a deleted package.json with no scripts passes" yes "$(guard)"
+g -C "$tmp/slot" reset -q; g -C "$tmp/slot" checkout -q -- .
+
 # The sandbox gets only the allowlisted sections of the operator's CLAUDE.md.
 mkdir -p "$tmp/home"
 printf '# Global\nintro line\n## Writing Style\nshort sentences\n### ASD-STE100 in practice\nuse, not utilize\n## FxA Triage\nhttps://internal.example.com/secret-page\n## Git Commits\nscoped commits\n' > "$tmp/home/CLAUDE.md"

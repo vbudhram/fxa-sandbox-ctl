@@ -938,9 +938,10 @@ _finish_tooling_guard() {
       .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc)
         hit="${hit}${f}"$'\n' ;;
       package.json|*/package.json)
-        # Only the parts a hook or CI executes. A dependency bump is fine.
-        if [ "$(git -C "$wt" show ":$f" 2>/dev/null | jq -cS '{scripts, "lint-staged", husky}')" != \
-             "$(git -C "$wt" show "HEAD:$f" 2>/dev/null | jq -cS '{scripts, "lint-staged", husky}')" ]; then
+        # Only the parts a hook or CI executes. A dependency bump is fine. A missing side (a new
+        # or deleted file) counts as {}, so a new lib's package.json passes unless it adds scripts.
+        if [ "$({ git -C "$wt" show ":$f" 2>/dev/null || echo '{}'; } | jq -cS '{scripts, "lint-staged", husky}')" != \
+             "$({ git -C "$wt" show "HEAD:$f" 2>/dev/null || echo '{}'; } | jq -cS '{scripts, "lint-staged", husky}')" ]; then
           hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'
         fi ;;
     esac
