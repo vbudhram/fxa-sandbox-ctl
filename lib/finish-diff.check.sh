@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^finish_diff_only() {/,/^}/p;/^finish_done_file_path() {/,/^}/p;/^_finish_pii_guard() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^finish_diff_only() {/,/^}/p;/^finish_done_file_path() {/,/^}/p;/^_finish_pii_guard() {/,/^}/p;/^_finish_push_and_pr() {/,/^}/p' "$here/finish.sh")"
 FINISH_LIB_DIR="$here"
 FXA_DONE_FILENAME=.fxa-auto-done.json PIPE_STATE_DIR="$tmp/state" PIPE_PROFILE=monitor FXA_WORKTREE_BASE=main
 jira_comment() { printf '%s|%s\n' "$1" "$2" > "$tmp/comment"; }
@@ -39,5 +39,24 @@ echo '{"pr_title":"fix(x): mail","pr_body":"Body names ops-secret.internal.examp
 out="$(finish_diff_only MNTOR-4 "$tmp/wt" 2>/dev/null)"
 check "a guard hit keeps the patch and posts only host text" "$tmp/state/diffs/MNTOR-4.patch|1|0|0" \
   "$out|$(grep -c 'personal-data check refused' "$tmp/comment")|$(grep -c 'fix(x): mail' "$tmp/comment")|$(grep -c 'zq7x9k' "$tmp/comment")"
+
+g -C "$tmp/wt" stash -q -u 2>/dev/null; rm -f "$tmp/comment"
+printf 'dash\n' > "$tmp/wt/-R"
+echo '{"pr_title":"fix(x): dash","pr_body":"A dash file."}' > "$tmp/wt/.fxa-auto-done.json"
+finish_diff_only MNTOR-5 "$tmp/wt" >/dev/null 2>&1
+check "a file whose name starts with a dash is in the patch" "1" "$(grep -c '^+++ b/-R' "$tmp/state/diffs/MNTOR-5.patch")"
+
+# `fxa-sandbox-ctl finish` on a read-only profile: the patch, never a push.
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho "$@" >> %s/gh-calls\n' "$tmp" > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
+PATH="$tmp/bin:$PATH"; git() { case "$*" in *push*) echo push >> "$tmp/pushes"; return 1 ;; esac; command git "$@"; }
+g -C "$tmp/wt" checkout -q -b mntor-6
+echo '{"issue":"MNTOR-6","pr_title":"fix(x): ro","pr_body":"Read-only."}' > "$tmp/wt/.fxa-auto-done.json"
+out="$(PIPE_PR_OPEN=0 _finish_push_and_pr "$tmp/wt" true 2>/dev/null)"; rc=$?
+check "finish on a read-only profile keeps the patch and pushes nothing" "0|yes|no|no" \
+  "$rc|$([ -s "$tmp/state/diffs/MNTOR-6.patch" ] && echo yes || echo no)|$([ -f "$tmp/pushes" ] && echo yes || echo no)|$([ -f "$tmp/gh-calls" ] && echo yes || echo no)"
+echo '{"issue":"FXA-1","pr_title":"fix(x): ro","pr_body":"Read-only."}' > "$tmp/wt/.fxa-auto-done.json"
+check "a handoff key that is not the slot's branch is refused" "1|no" \
+  "$(PIPE_PR_OPEN=0 _finish_push_and_pr "$tmp/wt" true >/dev/null 2>&1; echo $?)|$([ -f "$tmp/state/diffs/FXA-1.patch" ] && echo yes || echo no)"
+unset -f git
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

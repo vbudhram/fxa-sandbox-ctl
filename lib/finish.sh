@@ -306,7 +306,7 @@ finish_diff_only() {
   # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files.
   ( cd "$wt" && git diff --binary --no-ext-diff --no-textconv "$mb" -- . ':(exclude).fxa-*' \
       && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' \
-        | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index /dev/null "$f" || true; done ) > "$patch" \
+        | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index -- /dev/null "$f" || true; done ) > "$patch" \
     || { echo "ERROR: could not write ${patch}" >&2; return 1; }
   [ -s "$patch" ] || { rm -f "$patch"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
   stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -15)"
@@ -336,11 +336,6 @@ finish_push_and_pr() {
 }
 
 _finish_push_and_pr() {
-  # A read-only profile (PIPE_PR_OPEN=0) never writes to its repo.
-  if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
-    echo "ERROR: the ${PIPE_PROFILE:-} profile is read-only: it pushes no branch and opens no PR." >&2
-    return 1
-  fi
   if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not installed on the host. Install with: brew install gh" >&2
     return 1
@@ -377,6 +372,20 @@ _finish_push_and_pr() {
     echo "ERROR: handoff file not found at ${done_file}." >&2
     echo "       The agent hasn't finished yet, or it failed before writing it." >&2
     return 1
+  fi
+
+  # A read-only profile (PIPE_PR_OPEN=0) never writes to its repo: `finish` keeps the patch, as
+  # the watch does. The runner wrote the handoff, so its key must be the slot's own branch.
+  if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+    local key; key="$(jq -r '.issue // empty' "$done_file")"
+    if ! [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] \
+       || [ "$(git -C "$worktree" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$(printf '%s' "$key" | tr 'A-Z' 'a-z')" ]; then
+      echo "ERROR: the ${PIPE_PROFILE:-} profile is read-only, and the handoff's ticket key does not match the slot's branch." >&2
+      return 1
+    fi
+    finish_diff_only "$key" "$worktree" >&2 || return 1
+    echo "Read-only profile: no push and no PR. Label it with: fxa-sandbox-ctl label ${key} diff" >&2
+    printf '\n'; return 0
   fi
 
   local issue branch commit_sha pr_title pr_body
