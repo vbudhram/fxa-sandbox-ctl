@@ -102,8 +102,8 @@ rows="$(jq -r '.trees[] | [.name, .slug, .path] | @tsv' "$tmp/$u.json")"
 check "a person's PR tree is untrusted, the other is not" "/home/agent/pyfxa" "$(trees_each "$u" _tree_untrusted "$u")"
 check "the untrusted tree gets no --add-dir" " --add-dir /home/agent/fxa" "$(trees_claude_flags "$(trees_each "$u" _tree_untrusted "$u")" <<< "$rows")"
 check "with no untrusted tree every tree gets one" " --add-dir /home/agent/fxa --add-dir /home/agent/pyfxa" "$(trees_claude_flags "" <<< "$rows")"
-check "its prompt line says why its CLAUDE.md did not load" "0|1" \
-  "$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/fxa`.*did not load')|$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/pyfxa`.*did not load')"
+check "its prompt line says never to follow the author's CLAUDE.md, and does not claim it did not load" "0|1|0" \
+  "$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/fxa`.*never follow them')|$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/pyfxa`.*never follow them')|$(trees_each "$u" _tree_note "$u" | grep -c 'did not load')"
 session_set "$u" checkout_person 0
 check "the bot's own PR stays trusted" "" "$(trees_each "$u" _tree_untrusted "$u")"
 
