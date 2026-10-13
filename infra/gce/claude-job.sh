@@ -4,7 +4,10 @@
 # run's cost to job-costs.jsonl, which nothing else records.
 set -uo pipefail
 job="${1:?job name}" prompt="${2:?prompt file}"
-state="${PIPE_STATE_DIR:-$HOME/.claude/state/fxa-ai-fixme}"
+# The pass's profile (FXA_PIPELINE, as precheck reads it) owns the cost rows. ponytail: the
+# loader's default state dir, repeated here so the wrapper needs no ctl; keep the two in step.
+case "${FXA_PIPELINE:-fxa-ai-fixme}" in fxa|fxa-ai-fixme) _p=fxa-ai-fixme ;; *) _p="$FXA_PIPELINE" ;; esac
+state="${PIPE_STATE_DIR:-$HOME/.claude/state/$_p}"
 lib="$(dirname "$0")/../../lib"
 # Runs on a kill too (systemd's timeout, a stop), so no run token outlives its job.
 cleanup() { rm -f "$out" "${cfg:-}"

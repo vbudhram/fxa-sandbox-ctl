@@ -31,6 +31,9 @@ check "a pass with work runs Claude" "did the pass" "$(run 'queue: FXA-1 new (ru
 check "Claude gets the prompt and precheck's output" "Invoke /fxa-ai-fixme.|queue: FXA-1 new (run: ground FXA-1)|do not run precheck again" \
   "$(head -1 "$tmp/claude-in")|$(grep '^queue:' "$tmp/claude-in")|$(grep -o 'do not run precheck again' "$tmp/claude-in")"
 check "the work pass records its cost" "pass 0.5" "$(tail -1 "$tmp/state/job-costs.jsonl" | jq -r '"\(.job) \(.cost_usd)"')"
+mkdir -p "$tmp/home/.claude/state/monitor"; printf 'queue: MNTOR-1 new\n' > "$tmp/precheck-out"
+HOME="$tmp/home" FXA_PIPELINE=monitor PATH="$tmp/bin:$PATH" bash "$tmp/infra/gce/claude-job.sh" pass "$tmp/prompt.txt" >/dev/null
+check "another profile's pass records its cost in that profile's state" "1" "$(wc -l < "$tmp/home/.claude/state/monitor/job-costs.jsonl" | tr -d ' ')"
 
 : > "$tmp/precheck-runs"; run 'quiet' triage >/dev/null
 check "triage does not run precheck" "0" "$(wc -l < "$tmp/precheck-runs" | tr -d ' ')"
