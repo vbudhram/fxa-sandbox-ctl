@@ -198,8 +198,8 @@ jira_queue_keys() {
 # Keys in one lifecycle state, oldest first.
 jira_keys_in_state() {
   pipeline_require || return 1
-  local label; label="$(pipeline_label_for "${1:?state required}")"
-  _jira_keys_for_jql "labels = \"${label}\" ORDER BY created ASC"
+  local label s; label="$(pipeline_label_for "${1:?state required}")"; s="$(pipeline_jira_scope)" || return 1
+  _jira_keys_for_jql "${s} AND labels = \"${label}\" ORDER BY created ASC"
 }
 
 jira_inflight_keys()  { jira_keys_in_state inflight; }
@@ -218,7 +218,8 @@ jira_items_json() {
 jira_queue_items()    { pipeline_require || return 1; jira_items_json "$(pipeline_queue_jql)"; }
 jira_items_in_state() {
   pipeline_require || return 1
-  jira_items_json "labels = \"$(pipeline_label_for "${1:?state required}")\" ORDER BY created ASC"
+  local s; s="$(pipeline_jira_scope)" || return 1
+  jira_items_json "${s} AND labels = \"$(pipeline_label_for "${1:?state required}")\" ORDER BY created ASC"
 }
 jira_done_keys()      { jira_keys_in_state done; }
 

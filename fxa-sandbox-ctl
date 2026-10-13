@@ -1236,8 +1236,9 @@ _reap_key() {
 # in `label` misses. A live run is safe: its inflight label covers the whole run.
 _reap_stray_vms() {
   if [ "${FXA_NO_REAP:-}" = "1" ]; then echo "reapstray skipped (FXA_NO_REAP=1)"; return 0; fi
-  local owned; owned="$(jira_owning_keys)"
-  if [ "$owned" = "UNKNOWN" ]; then
+  local owned project; owned="$(jira_owning_keys)"
+  project="$(pipeline_jira_scope 2>/dev/null | sed -E 's/^project = ([A-Z0-9]+) .*/\1/')"
+  if [ "$owned" = "UNKNOWN" ] || [ -z "$project" ]; then
     echo "ERROR: cannot list inflight tickets; refusing to stop any VM." >&2
     return 1
   fi
@@ -1251,6 +1252,8 @@ _reap_stray_vms() {
     esac
     session_live "$name" && continue   # an owner-steered session, no Jira label
     key="$(worktree_key_for "$name")"
+    # Another profile's ticket runner: its own pass owns it, and this profile cannot see its labels.
+    case "$name" in agent-*) ;; *) [[ "$key" == "${project}"-* ]] || continue ;; esac
     if printf '%s\n' "$owned" | grep -qx "$key"; then
       continue                        # live run, protected by its label
     fi
@@ -1311,7 +1314,7 @@ cmd_reconcile() {
     esac
   done
   # Prune against the whole queue: a ticket hidden by the epic focus has not left it.
-  _jira_keys_for_jql "$PIPE_QUEUE_JQL" 2>/dev/null | pipeline_skip_prune
+  local scope; scope="$(pipeline_jira_scope 2>/dev/null)" && _jira_keys_for_jql "${scope} AND ${PIPE_QUEUE_JQL}" 2>/dev/null | pipeline_skip_prune || true
 }
 cmd_done_keys() { jira_done_keys; }
 

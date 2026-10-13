@@ -195,8 +195,9 @@ anywhere else.
 
 #### Stage 1: Queued
 
-`$CTL queue` runs the JQL `labels = "ai-fixme" AND statusCategory != Done`, ordered oldest
-first. The ticket appears there and stays until a pass admits it.
+`$CTL queue` runs the JQL `project = FXA AND level IS EMPTY AND labels = "ai-fixme" AND
+statusCategory != Done`, ordered oldest first. Every queue and state read starts with the
+profile's project and `level IS EMPTY` (`pipeline_jira_scope`). The ticket appears there and stays until a pass admits it.
 
 A ticket can sit here indefinitely, and that is by design. Three things hold it:
 
@@ -952,9 +953,10 @@ slot means adding a worktree and nothing else.
 
 ### Extending to another Jira project
 
-The queue is label-driven, not project-driven. `$CTL queue` runs
-`labels = "ai-fixme" AND statusCategory != Done` with no project clause, so a ticket in any
-project enters stage 1 as soon as it carries the label.
+The queue is label-driven and limited to the profile's Jira project (`PIPE_JIRA_PROJECT`,
+FXA for the fxa profile). A ticket in another project with the label `ai-fixme` does not
+enter this queue. A ticket with a security level never enters a queue, because its fix would
+go into a public PR. A profile with no Jira project has no queue.
 
 One thing then needs attention:
 

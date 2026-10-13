@@ -573,7 +573,7 @@ snapshot_json() {
   queue_items="$(jira_queue_items)"
   # Skips are checked against the whole queue: with an epic focus the list above
   # holds only its children, and every other skip looked stale.
-  local all_queue_items; all_queue_items="$(jira_items_json "$PIPE_QUEUE_JQL")"
+  local all_queue_items; all_queue_items="$(jira_items_json "$(pipeline_jira_scope) AND ${PIPE_QUEUE_JQL}")"
   inflight_items="$(jira_items_in_state inflight)"
   done_items="$(jira_items_in_state done)"
   blocked_items="$(jira_items_in_state blocked)"

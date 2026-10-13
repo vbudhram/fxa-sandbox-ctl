@@ -135,8 +135,19 @@ pipeline_newtickets() {
 pipeline_focus_marker() { printf '%s' "${PIPE_STATE_DIR}/FOCUS"; }
 pipeline_focus_key() { [ -f "$(pipeline_focus_marker)" ] && head -1 "$(pipeline_focus_marker)"; }
 pipeline_queue_jql() {
-  local k; k="$(pipeline_focus_key || true)"
-  if [ -n "$k" ]; then printf 'parent = %s AND %s' "$k" "$PIPE_QUEUE_JQL"; else printf '%s' "$PIPE_QUEUE_JQL"; fi
+  local k s; s="$(pipeline_jira_scope)" || return 1; k="$(pipeline_focus_key || true)"
+  if [ -n "$k" ]; then printf 'parent = %s AND %s AND %s' "$k" "$s" "$PIPE_QUEUE_JQL"; else printf '%s AND %s' "$s" "$PIPE_QUEUE_JQL"; fi
+}
+
+# pipeline_jira_scope   The clause in front of every queue and state read: the profile's own
+# Jira project (FXA for fxa), so another team's ticket with the same label never runs against
+# this repo, and no ticket with a security level, whose fix would go into a public PR.
+# It goes first: the profile's JQL ends with ORDER BY.
+pipeline_jira_scope() {
+  local p="${PIPE_JIRA_PROJECT:-}"
+  [ -z "$p" ] && [ "${PIPE_PROFILE:-}" = fxa ] && p=FXA
+  [[ "$p" =~ ^[A-Z][A-Z0-9]*$ ]] || { echo "ERROR: profile ${PIPE_PROFILE:-?} has no Jira project (PIPE_JIRA_PROJECT), so it has no queue" >&2; return 1; }
+  printf 'project = %s AND level IS EMPTY' "$p"
 }
 pipeline_focus() {
   pipeline_require || return 1
