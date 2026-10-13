@@ -14,6 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Packages (the same list as test.sh run_linux)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates
+      - name: The desktop gateway's packages, so test.sh runs its check
+        run: sudo apt-get install -y -qq python3-pip && python3 -m pip install -q --break-system-packages -r desktop-gateway/requirements.txt
       - name: Git identity for the checks that commit
         run: |
           git config --global user.email test@example.com

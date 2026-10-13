@@ -44,6 +44,9 @@ run_here() {
   run_pool "$HOST" lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
   for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
   for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; bad=1; }; done
+  # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
+  if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then python3 desktop-gateway/check.py >/dev/null 2>&1 || { echo "FAIL $HOST: desktop-gateway/check.py"; bad=1; }
+  else echo "skip $HOST: desktop-gateway/check.py (pip install -r desktop-gateway/requirements.txt to run it)"; fi
   [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
 }
 
@@ -51,16 +54,17 @@ run_linux() {
   command -v docker >/dev/null || { echo "linux: skipped, no docker"; return; }
   # The host's own platform (no emulation on an arm64 Mac), and an image with the packages that
   # docker builds once and then takes from its cache, so a run does not reinstall them.
-  local plat=linux/amd64 img=fxa-sandbox-ctl-test:1
+  local plat=linux/amd64 img=fxa-sandbox-ctl-test:2
   case "$(uname -m)" in arm64|aarch64) plat=linux/arm64 ;; esac
   printf '%s\n' 'FROM ubuntu:24.04' 'ENV DEBIAN_FRONTEND=noninteractive' \
-    'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*' \
+    'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 python3-pip openssl perl rsync ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*' \
+    "RUN pip3 install -q --break-system-packages $(tr '\n' ' ' < "$ROOT/desktop-gateway/requirements.txt")" \
     | docker build -q --platform "$plat" -t "$img" - >/dev/null || { echo "linux: the test image did not build"; rc=1; return; }
   docker run --rm --platform "$plat" -v "$ROOT":/src:ro "$img" bash -c "$(declare -f check_one run_pool)"'
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
     run_pool linux lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
-    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL linux: $t"; bad=1; }; done
+    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py desktop-gateway/check.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL linux: $t"; bad=1; }; done
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
 
