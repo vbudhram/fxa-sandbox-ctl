@@ -82,10 +82,12 @@ secret_clean() {
 promote_ci() {
   case "$1 $2" in *red*) echo red ;; *running*) echo running ;; "green green") echo skip-tests ;; *) echo test ;; esac
 }
-# ci_state <repo dir> <sha>   green, red, running, or none: the GitHub check runs of that commit.
+# ci_state <repo dir> <sha>   green, red, running, or none: the CI runs of that commit on main.
+# Only main's runs: after a fast-forward the same commit also has its improve branch's run,
+# and a flaky red there must not block a green main.
 ci_state() {
   local slug; slug="$(git -C "$1" remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')"
-  gh api "repos/$slug/commits/$2/check-runs" --jq '[.check_runs[] | .conclusion // "running"]
+  gh api "repos/$slug/actions/runs?head_sha=$2&branch=main" --jq '[.workflow_runs[] | if .status == "completed" then .conclusion else "running" end]
     | if length == 0 then "none" elif any(. == "running") then "running"
       elif all(. == "success" or . == "skipped" or . == "neutral") then "green" else "red" end' 2>/dev/null || echo none
 }

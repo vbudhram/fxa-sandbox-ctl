@@ -61,17 +61,17 @@ echo edit > "$H/Desktop/working2/fxa-agent-bot/v"
 check "a local edit on the VM: rollback stops and changes nothing" "1|edit" \
   "$(rollback_script | live >/dev/null; echo $?)|$(cat "$H/Desktop/working2/fxa-agent-bot/v")"
 
-# CI: the check runs of a main commit decide whether promote tests again, waits, or refuses.
+# CI: main's runs of a commit decide whether promote tests again, waits, or refuses.
 eval "$(sed -n '/^ci_state() {/,/^}/p;/^promote_new_errors() {/,/^}/p;/^open_sigs() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 gh() { echo "$*" >> "$tmp/gh.log"; jq -r "${@: -1}" <<< "$RUNS"; }
 git -C "$tmp/w" remote set-url origin git@github.com:example/fxa-thing.git
-RUNS='{"check_runs":[{"conclusion":"success"},{"conclusion":"skipped"}]}'
-check "ci: all passed is green, from the repo's own slug" "green|yes" "$(ci_state "$tmp/w" abc123)|$(grep -q 'repos/example/fxa-thing/commits/abc123/check-runs' "$tmp/gh.log" && echo yes)"
-RUNS='{"check_runs":[{"conclusion":"success"},{"conclusion":"failure"}]}'
+RUNS='{"workflow_runs":[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"skipped"}]}'
+check "ci: all passed is green, from the repo's own slug and main's runs only" "green|yes" "$(ci_state "$tmp/w" abc123)|$(grep -q 'repos/example/fxa-thing/actions/runs?head_sha=abc123&branch=main' "$tmp/gh.log" && echo yes)"
+RUNS='{"workflow_runs":[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"failure"}]}'
 check "ci: one failure is red" "red" "$(ci_state "$tmp/w" abc123)"
-RUNS='{"check_runs":[{"conclusion":null,"status":"in_progress"}]}'
+RUNS='{"workflow_runs":[{"conclusion":null,"status":"in_progress"}]}'
 check "ci: one still running is running" "running" "$(ci_state "$tmp/w" abc123)"
-RUNS='{"check_runs":[]}'
+RUNS='{"workflow_runs":[]}'
 check "ci: no runs is none" "none" "$(ci_state "$tmp/w" abc123)"
 gh() { return 1; }
 check "ci: gh fails is none (promote then tests as before)" "none" "$(ci_state "$tmp/w" abc123)"
@@ -100,6 +100,16 @@ check "rollback: the commits it moved to, from its own output" "aaa1111|bbb2222"
   "$(rollback_targets "$(printf 'fxa-sandbox-ctl: ccc3333 -> aaa1111\nfxa-agent-bot: ddd4444 -> bbb2222\n')" | paste -sd'|' -)"
 { read -r c; read -r b; } <<< "$(rollback_targets "$(printf 'fxa-agent-bot: ddd4444 -> bbb2222\n')")"
 check "rollback: only the bot moved, so its sha stays the bot's" "|bbb2222" "$c|$b"
+# ci_state reads only main's runs: a flaky red run on the improve branch of the same commit does not count.
+eval "$(sed -n '/^ci_state() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+git init -q "$tmp/ci" && git -C "$tmp/ci" remote add origin https://github.com/o/r.git
+gh() { [ "$1" = api ] || return 1; printf '%s\n' "$2" > "$tmp/gh-url"; jq -r "$4" "$tmp/runs.json"; }
+runs() { printf '{"workflow_runs":[%s]}' "$1" > "$tmp/runs.json"; ci_state "$tmp/ci" abc123; }
+check "ci_state asks for main's runs of the commit" "green|repos/o/r/actions/runs?head_sha=abc123&branch=main" \
+  "$(runs '{"status":"completed","conclusion":"success"}')|$(cat "$tmp/gh-url")"
+check "ci_state: running, red, none" "running|red|none" \
+  "$(runs '{"status":"in_progress","conclusion":null}')|$(runs '{"status":"completed","conclusion":"failure"}')|$(runs '')"
+unset -f gh
 eval "$(sed -n '/^promote_ci() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 check "promote_ci: red anywhere refuses, before running" "red|red" "$(promote_ci red running)|$(promote_ci green red)"
 check "promote_ci: running refuses, green in both skips the tests, no result tests" "running|skip-tests|test|test" \
