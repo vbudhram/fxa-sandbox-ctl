@@ -39,6 +39,10 @@ envs() { ( export HOME="$tmp/home" FXA_FIXME_STATE="$tmp/fxstate"; unset FXA_REP
 echo 'PIPE_BASE_BRANCH=master' >> "$tmp/r/profiles/demo/profile.conf"
 check "another profile gets its pool and base, and keeps its own state" "demo-auto|master|home/.claude/state/demo" "$(envs "$tmp/r" demo)"
 check "fxa keeps its pool and base, and FxA's state override" "fxa-auto|main|fxstate" "$(envs "$root" fxa)"
+check "a base and a pool set by hand win (README; --private sets the pool)" "mypool|release-1|fxstate" \
+  "$(FXA_WORKTREE_BASE=release-1 FXA_SHARED_WORKTREE_NAME=mypool envs "$root" fxa)"
+check "a child does not keep the base and pool its parent's profile exported" "demo-auto|master" \
+  "$(FXA_WORKTREE_BASE=main _FXA_BASE_LOADED=main FXA_SHARED_WORKTREE_NAME=fxa-auto _FXA_POOL_LOADED=fxa-auto envs "$tmp/r" demo | cut -d'|' -f1-2)"
 team() { ( export HOME="$tmp/home"; unset FXA_PR_TEAM; SANDBOX_ROOT="$1"; _FXA_PIPELINE_LOADED=
   source "$root/lib/pipeline.sh"; pipeline_load "$2" >/dev/null 2>&1 || exit 1; echo "${FXA_PR_TEAM-unset}" ); }
 check "another team's PR asks the repo's own reviewers" "" "$(team "$tmp/r" demo)"
@@ -86,7 +90,8 @@ check "a repo set by hand wins" "/y/mine" "$(child_repo /y/mine /x/fxa)"
 eval "$(sed -n '/^_finish_push_and_pr() {/,/^}/p' "$root/lib/finish.sh")"
 gh() { echo gh >> "$tmp/gh"; }; git() { echo git >> "$tmp/gh"; }
 : > "$tmp/gh"; out="$(PIPE_PR_OPEN=0 PIPE_PROFILE=monitor _finish_push_and_pr "$tmp" true 2>&1)"; rc=$?
-check "a read-only profile refuses to push or open a PR" "1|0|1" "$rc|$(wc -l < "$tmp/gh" | tr -d ' ')|$(grep -c 'read-only' <<< "$out")"
+# With no handoff it stops before any git or gh call; with one, finish-diff.check.sh shows the patch path.
+check "a read-only profile with no handoff pushes nothing" "1|0" "$rc|$(wc -l < "$tmp/gh" | tr -d ' ')"
 unset -f gh git
 check "the monitor profile is read-only for now" "PIPE_PROFILE=monitor|PIPE_PR_OPEN=0|PIPE_REPO_SLUG=mozilla/blurts-server" \
   "$(loaded "$root" monitor | grep -E '^PIPE_(PR_OPEN|PROFILE|REPO_SLUG)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
