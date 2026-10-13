@@ -2042,12 +2042,16 @@ cmd_task() {
     esac
   fi
   # ponytail: one cap for all sessions, separate from the pool's; per-owner caps when a second engineer joins.
-  local live=0 f
+  # One task at a time from the count to the record: two at once both counted a free slot.
+  local live=0 f w=0
+  mkdir -p "$SESSION_DIR"
+  until _session_lock .task-cap; do
+    w=$(( w + 1 )); [ "$w" -lt 120 ] || { echo "ERROR: another session start holds the cap lock; try again" >&2; return 1; }; sleep 0.5
+  done
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
   local cap; cap="$(_session_cap)"
-  [ "$live" -lt "$cap" ] || { echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
+  [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
     errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
-  mkdir -p "$SESSION_DIR"
   cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
   # Files sent with the request, copied now: the caller removes its directory when task returns.
   [ -n "$inbox_dir" ] && { _inbox_copy "${SESSION_DIR}/${key}.inbox" "$inbox_dir"/* >/dev/null || echo "WARN: no file from ${inbox_dir} could be kept" >&2; }
@@ -2061,6 +2065,7 @@ cmd_task() {
   jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" --arg profile "${PIPE_PROFILE:-}" --arg base "${PIPE_BASE_BRANCH:-main}" \
     '{key: $key, owner: $owner, source: "slack", branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)' > "$(_session_file "$key")"
+  _session_unlock .task-cap
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   if [ -n "$thread" ]; then

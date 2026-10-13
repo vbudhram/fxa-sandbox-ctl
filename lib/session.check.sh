@@ -682,5 +682,15 @@ check "session boots lists the window's boots, with each slow step and the media
 check "session boots refuses a day count that is not a number" "1" "$(session_boots x >/dev/null 2>&1; echo $?)"
 rm -f "$tmp"/agent-bt0*.json
 
+# The cap: two requests at once with one slot left start one session, not two. A slow cap read
+# holds both between the count and the record, where the race was.
+nohup() { :; }; n_live=0
+for f in "$tmp"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && n_live=$(( n_live + 1 )); done
+( _session_cap() { sleep 1; echo $(( n_live + 1 )); }
+  for k in agent-cap1 agent-cap2; do FXA_VM_BACKEND=gce cmd_task --source slack --id "$k" --owner U1 --prompt-file "$tmp/p.md" > "$tmp/$k.out" 2>&1 & done; wait )
+check "two requests for the last slot: one starts, one is refused at the cap" "1|1" \
+  "$(ls "$tmp"/agent-cap[12].json 2>/dev/null | wc -l | tr -d ' ')|$(cat "$tmp"/agent-cap[12].out | grep -c 'cap ')"
+rm -f "$tmp"/agent-cap*
+
 exit "$fail"
 
