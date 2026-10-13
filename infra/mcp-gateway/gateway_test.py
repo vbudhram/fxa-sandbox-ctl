@@ -231,6 +231,18 @@ class GatewayTest(unittest.TestCase):
             json.dump({"run": "x", "expires": 0, "connectors": ["jira"]}, f)
         self.assertEqual(self.rpc(tok, "tools/list")[0], 401)
 
+    def test_an_llm_proxy_token_is_refused_and_no_token_reaches_a_log(self):
+        tok = self.token("l")
+        self.assertEqual(self.rpc(tok, "tools/list")[0], 200)
+        llm = "fxl_" + tok[4:]
+        os.rename(os.path.join(self.dir, "tokens", tok + ".json"), os.path.join(self.dir, "tokens", llm + ".json"))
+        self.assertEqual(self.rpc(llm, "tools/list")[0], 401)
+        for root, _, files in os.walk(self.dir):
+            for n in files:
+                if os.path.basename(root) != "tokens":
+                    with open(os.path.join(root, n), errors="replace") as f:
+                        self.assertNotIn(tok[4:], f.read(), n)
+
     def test_initialize_and_notifications(self):
         tok = self.token("a")
         status, doc = self.rpc(tok, "initialize", {"protocolVersion": "2025-03-26"})

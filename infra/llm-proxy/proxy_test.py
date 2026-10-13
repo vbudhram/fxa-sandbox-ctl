@@ -127,6 +127,18 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.call("fxl_" + "z" * 32)[0], 401)
         self.assertEqual(self.call("sk-real-key")[0], 401)
 
+    def test_an_mcp_gateway_token_is_refused_and_no_token_reaches_a_log(self):
+        tok = self.token("m")
+        self.assertEqual(self.call(tok)[0], 200)
+        mcp = "fxm_" + tok[4:]
+        os.rename(os.path.join(self.dir, "tokens", tok + ".json"), os.path.join(self.dir, "tokens", mcp + ".json"))
+        self.assertEqual(self.call(mcp)[0], 401)
+        for root, _, files in os.walk(self.dir):
+            for n in files:
+                if os.path.basename(root) != "tokens":
+                    with open(os.path.join(root, n), errors="replace") as f:
+                        self.assertNotIn(tok[4:], f.read(), n)
+
     def test_other_paths_are_refused(self):
         self.assertEqual(self.call(self.token("c"), path="/v1/files")[0], 403)
 
