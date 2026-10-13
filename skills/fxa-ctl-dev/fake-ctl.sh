@@ -18,6 +18,8 @@
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
 #   FAKE_MERGE_S   seconds after a repo's PR opens that it reads as merged; unset, it stays open
 #   FAKE_FINISH_REFUSE  the first this many finishes refuse at once, as a busy session does
+#   FAKE_COPILOT_AT  seconds after a PR opens at which Copilot reviews it ("5 60"): pr-status shows
+#                  the latest review so far, and copilot-comments one comment
 #   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
 #   FAKE_ANSWER    the quick look's answer text; unset, the quick look says busy (exit 3) and a session starts
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
@@ -111,9 +113,11 @@ prstatus() {
   [ "$s" = - ] || u="https://github.com/$s/pull/999999"
   [ -n "$f" ] && [ "$(now)" -ge $(( f + 12 )) ] || { echo null; return; }
   local st=OPEN; [ -n "${FAKE_MERGE_S:-}" ] && [ "$(now)" -ge $(( f + 12 + FAKE_MERGE_S )) ] && st=MERGED
-  jq -n --arg u "$u" --arg st "$st" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" \
+  local o rv=""; for o in ${FAKE_COPILOT_AT:-}; do [ "$(now)" -ge $(( f + 12 + o )) ] && rv="$(( f + 12 + o ))"; done  # the latest only, like latestReviews
+  jq -n --arg u "$u" --arg st "$st" --argjson ci "$(( $(now) - f - 12 < CI_S ? 0 : 1 ))" --arg rv "$rv" \
     '{state: $st, draft: ($st == "OPEN"), url: $u, ci: (if $ci == 1 then "pass" else "running" end), running: ($ci == 0),
-      reviews: [], mergeable: "MERGEABLE", failing: [], infra: [], links: [], jira: null}'
+      reviews: [$rv | splits(" ") | select(. != "") | {login: "copilot-pull-request-reviewer", state: "COMMENTED", at: (tonumber | todate)}],
+      mergeable: "MERGEABLE", failing: [], infra: [], links: [], jira: null}'
 }
 
 opt() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { echo "${2:-}"; return; }; shift; done; }
@@ -174,7 +178,9 @@ case "$cmd" in
           jq -nc --arg k "$k" --arg o "$(get "$k" owner)" --arg over "$(get "$k" over)" \
             '{key: $k, state: (if $over == "" then "active" else $over end), profile: "", thread: null, owner: $o, live: ($over == "")}'; } ;;
       pause) echo paused > "$DIR/$1/over" ;;
-      history|copilot-comments|review-comments) echo '[]' ;;
+      copilot-comments) [ -n "${FAKE_COPILOT_AT:-}" ] || { echo '[]'; exit 0; }
+        jq -nc '[{path: "packages/fxa-settings/src/index.tsx", line: 1, body: "Fake Copilot: this line needs a null check."}]' ;;
+      history|review-comments) echo '[]' ;;
       summary|cost|plan|thread-usage) echo null ;;
       prune|idle-sweep|attach|pr-ready) ;;
       *) echo "fake-ctl: session $sub is not faked" >&2; exit 1 ;;

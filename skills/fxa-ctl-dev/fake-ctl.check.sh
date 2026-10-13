@@ -34,6 +34,12 @@ check "the PR stays open without FAKE_MERGE_S" "OPEN" "$(echo 1100 > "$FAKE_NOW_
 check "FAKE_MERGE_S merges it that long after it opened" "OPEN|MERGED" \
   "$(echo 1030 > "$FAKE_NOW_FILE"; FAKE_MERGE_S=10 f session pr-status agent-aa1 | jq -r .state)|$(echo 1040 > "$FAKE_NOW_FILE"; FAKE_MERGE_S=10 f session pr-status agent-aa1 | jq -r .state)"
 echo 1030 > "$FAKE_NOW_FILE"
+cop() { echo "$1" > "$FAKE_NOW_FILE"; FAKE_COPILOT_AT="20 60" f session pr-status agent-aa1 | jq -r '[.reviews[] | .login + "@" + .at] | join(",")'; }
+check "FAKE_COPILOT_AT: no review yet, then only the latest Copilot review (like latestReviews)" "0|1|1|yes" \
+  "$(cop 1030 | grep -c copilot)|$(cop 1060 | grep -o copilot | wc -l | tr -d ' ')|$(cop 1200 | grep -o copilot | wc -l | tr -d ' ')|$([ "$(cop 1060)" != "$(cop 1200)" ] && echo yes)"
+check "FAKE_COPILOT_AT: copilot-comments has one comment; without it, none" "1|0" \
+  "$(FAKE_COPILOT_AT=5 f session copilot-comments agent-aa1 | jq length)|$(f session copilot-comments agent-aa1 | jq length)"
+echo 1030 > "$FAKE_NOW_FILE"
 
 f --pipeline pyfxa-team task --id agent-bb2 --owner UA --repos mozilla/PyFxA,mozilla/fxa --prompt-file "$tmp/p.md" >/dev/null
 echo 1045 > "$FAKE_NOW_FILE"
