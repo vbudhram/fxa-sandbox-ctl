@@ -570,13 +570,14 @@ snapshot_json() {
 
   # One call per state returns keys and summaries, so titles cost no extra request.
   local queue_items inflight_items done_items blocked_items
-  queue_items="$(jira_queue_items)"
+  # A profile whose scope fails (no Jira project) shows no tickets; the rest of the snapshot still runs.
+  queue_items="$(jira_queue_items)" || queue_items=null
   # Skips are checked against the whole queue: with an epic focus the list above
   # holds only its children, and every other skip looked stale.
-  local all_queue_items; all_queue_items="$(jira_items_json "$(pipeline_jira_scope) AND ${PIPE_QUEUE_JQL}")"
-  inflight_items="$(jira_items_in_state inflight)"
-  done_items="$(jira_items_in_state done)"
-  blocked_items="$(jira_items_in_state blocked)"
+  local all_queue_items q; q="$(pipeline_queue_jql all)" && all_queue_items="$(jira_items_json "$q")" || all_queue_items=null
+  inflight_items="$(jira_items_in_state inflight)" || inflight_items=null
+  done_items="$(jira_items_in_state done)" || done_items=null
+  blocked_items="$(jira_items_in_state blocked)" || blocked_items=null
 
   local queue inflight_keys done_keys
   queue="$(printf '%s' "$queue_items" | jq -r '.[]?.key // empty' 2>/dev/null || echo '')"

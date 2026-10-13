@@ -17,9 +17,9 @@ PIPE_STATE_DIR="$tmp" PIPE_QUEUE_JQL='labels = "ai-fixme" AND statusCategory != 
 PIPE_PROFILE=fxa
 check "fxa reads only FXA tickets with no security level" 'project = FXA AND level IS EMPTY' "$(pipeline_jira_scope)"
 check "the scope goes in front, so ORDER BY stays last" \
-  'project = FXA AND level IS EMPTY AND labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' "$(pipeline_queue_jql)"
+  'project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
 echo FXA-9 > "$tmp/FOCUS"
-check "an epic focus keeps the scope" 'parent = FXA-9 AND project = FXA AND level IS EMPTY AND labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' "$(pipeline_queue_jql)"
+check "an epic focus keeps the scope" 'parent = FXA-9 AND project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
 echo 'FXA-1 OR key = SEC-5 OR key = FXA-0' > "$tmp/FOCUS"
 check "a focus marker that is not one key refuses the queue" "1" "$(pipeline_queue_jql >/dev/null 2>&1; echo $?)"
 rm "$tmp/FOCUS"
@@ -31,6 +31,11 @@ check "a key outside the scope (or with a security level) may not" "1" "$(pipeli
 check "a key with a JQL tail may not" "1" "$(pipeline_key_in_scope 'FXA-7 OR key = SEC-5'; echo $?)"
 check "jira gates the launch outside --private" "1" "$(grep -c 'if \[ "\$private" != "true" \] && ! pipeline_key_in_scope "\$key"' "$here/../fxa-sandbox-ctl")"
 _jira_keys_for_jql() { printf '%s\n' "$1"; }
+check "a top-level OR in the profile's JQL stays inside the scope" 'project = FXA AND level IS EMPTY AND (labels = "a" OR labels = "b") ORDER BY created ASC' \
+  "$(PIPE_QUEUE_JQL='labels = "a" OR labels = "b" ORDER BY created ASC' pipeline_queue_jql)"
+echo FXA-9 > "$tmp/FOCUS"
+check "the whole queue ignores the focus" 'project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql all)"
+rm "$tmp/FOCUS"
 check "a state read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
 check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
 check "a profile's own project wins" 'project = MNTOR AND level IS EMPTY' "$(PIPE_PROFILE=monitor PIPE_JIRA_PROJECT=MNTOR pipeline_jira_scope)"
@@ -48,5 +53,7 @@ _reap_stray_vms >/dev/null
 check "the reap leaves another project's runner" "fxa-2 agent-ab12" "$(paste -sd' ' "$tmp/stopped")"
 : > "$tmp/stopped"
 check "no project, no reap" "1|" "$(PIPE_PROFILE=monitor _reap_stray_vms >/dev/null 2>&1; echo "$?|$(cat "$tmp/stopped")")"
+check "no project: the reap says why under set -e and pipefail" "1|1" \
+  "$( (set -eo pipefail; PIPE_PROFILE=monitor _reap_stray_vms) >/dev/null 2>"$tmp/reap.err"; echo "$?|$(grep -c 'refusing to stop any VM' "$tmp/reap.err")")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

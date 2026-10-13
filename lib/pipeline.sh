@@ -155,11 +155,15 @@ pipeline_newtickets() {
 # epic's children. In the state dir, so `state push` mirrors it.
 pipeline_focus_marker() { printf '%s' "${PIPE_STATE_DIR}/FOCUS"; }
 pipeline_focus_key() { [ -f "$(pipeline_focus_marker)" ] && head -1 "$(pipeline_focus_marker)"; }
+# pipeline_queue_jql [all]   The scope, the profile's filter in parentheses (a top-level OR in it
+# must not escape the scope), then its ORDER BY. An epic focus narrows it, unless "all".
 pipeline_queue_jql() {
-  local k s; s="$(pipeline_jira_scope)" || return 1; k="$(pipeline_focus_key || true)"
+  local k="" s f o=""; s="$(pipeline_jira_scope)" || return 1
+  [ "${1:-}" = all ] || k="$(pipeline_focus_key || true)"
   # The marker is spliced into JQL, so it must be one key: `FXA-1 OR key = X` would OR past the scope.
   [ -z "$k" ] || [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "ERROR: the focus marker is not one epic key" >&2; return 1; }
-  if [ -n "$k" ]; then printf 'parent = %s AND %s AND %s' "$k" "$s" "$PIPE_QUEUE_JQL"; else printf '%s AND %s' "$s" "$PIPE_QUEUE_JQL"; fi
+  f="${PIPE_QUEUE_JQL%% ORDER BY *}"; [ "$f" = "$PIPE_QUEUE_JQL" ] || o=" ORDER BY ${PIPE_QUEUE_JQL#* ORDER BY }"
+  printf '%s%s AND (%s)%s' "${k:+parent = $k AND }" "$s" "$f" "$o"
 }
 
 # pipeline_jira_scope   The clause in front of every queue and state read: the profile's own
