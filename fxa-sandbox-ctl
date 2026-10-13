@@ -2171,7 +2171,7 @@ _cmd_session_boot() {
   session_set "$key" base_sha "$sha"
   mkdir -p "$dir"
   # A team stack: each repo's commit, saved work and pin line (lib/trees.sh).
-  rm -f "${dir}/.fxa-trees.tsv" "${dir}"/.fxa-resume.*.patch "${dir}"/.fxa-resume.*.bundle
+  rm -f "${dir}/.fxa-trees.tsv" "${dir}/.fxa-trees-untrusted" "${dir}"/.fxa-resume.*.patch "${dir}"/.fxa-resume.*.bundle
   local stack=""; trees_on "$key" && stack=1
   if [ -n "$stack" ]; then
     trees_each "$key" _tree_boot "$key" "$from" "$fresh_pr" "$dir" || { session_set "$key" state failed; return 1; }

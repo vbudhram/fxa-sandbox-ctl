@@ -93,4 +93,25 @@ check "each tree pins at its own path, commit, base and branch; the first tree's
   "/home/agent/fxa $A $B agent-x1 main|/home/agent/pyfxa $B $A agent-x1-pyfxa main|$A" "$(paste -sd'|' "$tmp/pin.log")|$_PINNED_BASE"
 : > "$tmp/pin.log"
 check "a bad line stops the pin before any tree" "1|0" "$(_trees_pin run1 "$tmp/bad.tsv" >/dev/null 2>&1; echo $?)|$(wc -l < "$tmp/pin.log" | tr -d ' ')"
+
+# A tree on a person's PR gets no --add-dir: its CLAUDE.md and skills are the PR author's text.
+eval "$(sed -n '/^_checkout_gate_on() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
+u=agent-un1; pr=https://github.com/mozilla/PyFxA/pull/9
+echo "{\"key\":\"$u\",\"checkout\":\"$pr\",\"checkout_person\":\"1\",\"trees\":[{\"name\":\"fxa\",\"slug\":\"mozilla/fxa\",\"path\":\"/home/agent/fxa\",\"out\":\"pr\"},{\"name\":\"pyfxa\",\"slug\":\"mozilla/PyFxA\",\"path\":\"/home/agent/pyfxa\",\"out\":\"pr\",\"review_pr\":\"$pr\"}]}" > "$tmp/$u.json"
+rows="$(jq -r '.trees[] | [.name, .slug, .path] | @tsv' "$tmp/$u.json")"
+check "a person's PR tree is untrusted, the other is not" "/home/agent/pyfxa" "$(trees_each "$u" _tree_untrusted "$u")"
+check "the untrusted tree gets no --add-dir" " --add-dir /home/agent/fxa" "$(trees_claude_flags "$(trees_each "$u" _tree_untrusted "$u")" <<< "$rows")"
+check "with no untrusted tree every tree gets one" " --add-dir /home/agent/fxa --add-dir /home/agent/pyfxa" "$(trees_claude_flags "" <<< "$rows")"
+check "its prompt line says why its CLAUDE.md did not load" "0|1" \
+  "$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/fxa`.*did not load')|$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/pyfxa`.*did not load')"
+session_set "$u" checkout_person 0
+check "the bot's own PR stays trusted" "" "$(trees_each "$u" _tree_untrusted "$u")"
+
+# The launch script reads the run dir's untrusted list (_tree_boot writes it).
+eval "$(sed -n '/^runtime_write_prompt() {/,/^}/p' "$here/runtime-claude.sh")"
+slot_write() { cat > "$1"; }; _MCP_LAUNCH_SNIPPET="" _MCP_CLAUDE_FLAGS=""
+ws="$tmp/ws"; mkdir -p "$ws"; printf '%s\n' "$rows" > "$ws/.fxa-trees.tsv"; echo /home/agent/pyfxa > "$ws/.fxa-trees-untrusted"
+runtime_write_prompt hi "$ws"
+check "the launch skips the untrusted tree" "1|0" "$(grep -c -- '--add-dir /home/agent/fxa' "$ws/.fxa-auto-launch.sh")|$(grep -c -- '--add-dir /home/agent/pyfxa' "$ws/.fxa-auto-launch.sh")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
