@@ -82,4 +82,5 @@ check "the next task plays the tape's next session" "needs-input|Second session 
 unset FAKE_TAPE
 check "the quick look is busy by default" "3" "$(f answer ask --id q1 --prompt-file "$tmp/p.md" --stream >/dev/null; echo $?)"
 check "FAKE_ANSWER: the quick look answers, after a step" "step|answer|It was removed." "$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --prompt-file "$tmp/p.md" --stream | jq -r '.type' | paste -sd'|' -)|$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --stream | tail -1 | jq -r .answer)"
+check "FAKE_DIFF_LINE adds one line to the one-repo diff, and is off by default" "1|0" "$(FAKE_DIFF_LINE='KEY=x' f diff FXA-1 | grep -c '^+KEY=x$')|$(f diff FXA-1 | grep -c '^+KEY=')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

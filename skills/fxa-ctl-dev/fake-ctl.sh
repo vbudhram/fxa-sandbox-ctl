@@ -18,6 +18,7 @@
 #   FAKE_CTL_LOG   one JSON line per call: argv, and the text of each *-file argument
 #   FAKE_MERGE_S   seconds after a repo's PR opens that it reads as merged; unset, it stays open
 #   FAKE_FINISH_REFUSE  the first this many finishes refuse at once, as a busy session does
+#   FAKE_DIFF_LINE one more added line in the one-repo diff (a token, to test the upload mask)
 #   FAKE_COPILOT_AT  seconds after a PR opens at which Copilot reviews it ("5 60"): pr-status shows
 #                  the latest review so far, and copilot-comments one comment
 #   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
@@ -159,7 +160,8 @@ case "$cmd" in
   interrupt) k="$1"; last="$(sort -n "$DIR/$k/turns" 2>/dev/null | tail -1)"
     [ -n "$last" ] && [ "$(now)" -lt $(( last + 10 )) ] && echo interrupted || true ;;
   diff) s="$(opt --repo "$@")"; [ -n "$s" ] && { n="$(printf %s "${s#*/}" | tr A-Z a-z)"; printf -- '--- a/%s/README.md\n+++ b/%s/README.md\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' "$n" "$n"; exit 0; }
-    printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' ;;
+    printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n'
+    [ -z "${FAKE_DIFF_LINE:-}" ] || printf '+%s\n' "$FAKE_DIFF_LINE" ;;
   media) ;;
   answer) sleep "${FAKE_ANSWER_S:-0}"; [ -n "${FAKE_ANSWER:-}" ] || exit 3
     # The quick look's stream (ctl.js askStream): steps, then the answer.
