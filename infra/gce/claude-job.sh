@@ -38,7 +38,7 @@ fi
 model=(); [ -n "${report_model:-}" ] && model=(--model "$report_model")
 # A pass reads a ticket's Figma design and Bugzilla bugs through the MCP gateway on this host,
 # which holds the Runlayer credential: a token for this run, those two only, expired when the run ends.
-run="${job}-$(date +%s)"
+run="${job}-${_p}-$(date +%s)-$$"  # unique, so one job's revoke never ends another's token
 mcp=() url="${FXA_PASS_MCP_URL-http://127.0.0.1:8789}"  # set it empty to turn this off
 if [ "$job" = pass ] && [ -n "$url" ]; then
   if tok="$(source "$lib/mcp-token.sh" && FXA_MCP_TOKEN_TTL=3600 mcp_token_for "$run" figma,bugzilla)"; then
@@ -51,13 +51,13 @@ if [ "$job" = pass ] && [ -n "$url" ]; then
 fi
 # Through the LLM proxy, as sessions are: a token for this run, capped and revoked at the end, so the
 # proxy logs and prices each call. No token (no proxy): the API key, as before.
-llm=()
 if [ -n "${FXA_LLM_PROXY_URL:-}" ]; then
   if tok="$(source "$lib/llm-token.sh" && FXA_LLM_TOKEN_TTL=10800 FXA_LLM_RUN_CAP_USD="${FXA_PASS_CAP_USD:-10}" llm_token_for "$run")"; then
-    llm_tok=1 llm=(ANTHROPIC_BASE_URL="$FXA_LLM_PROXY_URL" ANTHROPIC_API_KEY="$tok")
+    # Exported, not passed through env's argv, where ps shows the token.
+    llm_tok=1; export ANTHROPIC_BASE_URL="$FXA_LLM_PROXY_URL" ANTHROPIC_API_KEY="$tok"
   else echo "WARN: no LLM proxy token; this ${job} uses the API key directly" >&2; fi
 fi
-env ${llm[@]+"${llm[@]}"} claude -p --permission-mode auto --output-format json ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
+claude -p --permission-mode auto --output-format json ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
 jq -r '.result // empty' "$out" 2>/dev/null || cat "$out"
 row="$(jq -c --arg job "$job" --arg run "$run" '{at: (now | todate), job: $job, run: $run, cost_usd: (.total_cost_usd // null), models: ((.modelUsage // {}) | keys),
   turns: (.num_turns // null), duration_ms: (.duration_ms // null), is_error: (.is_error // false)}' "$out" 2>/dev/null)"

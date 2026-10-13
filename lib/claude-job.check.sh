@@ -83,5 +83,8 @@ cp "$tmp/claude.ok" "$tmp/bin/claude"
 run 'queue: FXA-9 new (run: ground FXA-9)' >/dev/null
 check "without a proxy: claude keeps the API key, as before" "none sk-ant-direct-key-0000" "$(cat "$tmp/claude-env")"
 unset FXA_LLM_PROXY_DIR ANTHROPIC_API_KEY
+j="$(dirname "$0")/../infra/gce/claude-job.sh"
+check "the run token never goes in a command's argv, where ps shows it" "0" "$(grep -c 'env \${llm\|ANTHROPIC_API_KEY="\$tok" claude' "$j")"
+check "a run name is unique per process, so one job's revoke never ends another's token" "1" "$(grep -c '^run="\${job}-\${_p}-\$(date +%s)-\$\$"' "$j")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
