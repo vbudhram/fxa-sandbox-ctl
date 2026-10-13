@@ -225,7 +225,9 @@ any removal, rename, or signature change. Copy these four rules verbatim:
 Ground only the ticket you are about to launch. Take the oldest key, launch it or skip it, and
 leave every other label alone. Record every skip with `$CTL skip KEY "<reason>"`; post the 🤖
 comment only when it prints `comment`, never when it prints `silent <n>`. The fingerprint hashes
-the whole ticket, so an answer in a comment re-opens it. Do not decide repetition by judgment
+the whole ticket, so an answer in a comment re-opens it. Precheck lists only the queued tickets that are
+new or changed. Do not run `skip` or `skip-changed` for the others: their records stay as they
+are. Run each `skip` as its own command, not in a loop. Do not decide repetition by judgment
 (INCIDENTS: Admission). Do not label `blocked` unless the operator asks.
 
 Skip when any of these hold: no statable acceptance criteria or an open product question; spans
@@ -368,7 +370,7 @@ phone number in a context file, comment, or PR.
 | `conflicts KEY` | conflict class and files |
 | `launch KEY <slot> --rebase` | resolve a source conflict |
 | `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup]` | review comments |
-| `skip KEY "<reason>"` / `skipped [KEY]` | record and list admission skips |
+| `skip KEY "<reason>"` / `skipped [KEY]` / `unskip KEY` | record, list and drop admission skips (operator: `unskip` after a 🤖 note) |
 | `attempts KEY [bump]` | real-fix counter |
 | `ticket KEY` / `reporter KEY` | ground; resolve the assignee |
 | `lock` / `unlock` / `pause` / `resume` / `paused` | one pass at a time; kill switch |
