@@ -304,12 +304,18 @@ finish_diff_only() {
     || { echo "ERROR: no merge-base with origin/${FXA_WORKTREE_BASE:-main} in ${wt}" >&2; return 1; }
   dir="${PIPE_STATE_DIR}/diffs"; patch="${dir}/${key}.patch"; mkdir -p "$dir" || return 1
   # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files.
-  ( cd "$wt" && git diff --binary "$mb" -- . ':(exclude).fxa-*' \
+  ( cd "$wt" && git diff --binary --no-ext-diff --no-textconv "$mb" -- . ':(exclude).fxa-*' \
       && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' \
-        | while IFS= read -r -d '' f; do git diff --binary --no-index /dev/null "$f" || true; done ) > "$patch" \
+        | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index /dev/null "$f" || true; done ) > "$patch" \
     || { echo "ERROR: could not write ${patch}" >&2; return 1; }
   [ -s "$patch" ] || { rm -f "$patch"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
   stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -15)"
+  # The runner wrote the title, body and patch: the PR path's guard runs before any of it is posted.
+  if ! _finish_pii_guard "$wt" "$done_file" "$title" "$body" "" "$patch"; then
+    jira_comment "$key" "🤖 Diff-only run: the patch is kept in the pipeline's state dir (diffs/${key}.patch). Its summary is not posted, because the personal-data check refused it. A person must review the patch." \
+      || echo "WARN: could not post the diff comment on ${key}" >&2
+    printf '%s\n' "$patch"; return 0
+  fi
   jira_comment "$key" "🤖 Diff-only run: the ${PIPE_PROFILE:-} pipeline opens no PR yet, so the change is a patch for a person to review (diffs/${key}.patch in the pipeline's state dir).
 
 ${title:-No title.}
@@ -1000,15 +1006,15 @@ _finish_tooling_guard() {
   return 1
 }
 
-# _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body>   GitHub is public, so
-# refuse to ship personal or internal data in the PR's text or the staged diff (lib/pii_guard.py).
+# _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body> [patch]   GitHub is public, so
+# refuse to ship personal or internal data in the PR's text or the staged diff (or <patch>) (lib/pii_guard.py).
 _finish_pii_guard() {
   local wt="$1" d hits rc=0
   d="$(mktemp "${TMPDIR:-/tmp}/fxa-pii.XXXXXX")"
   jq -n --arg t "$3" --arg b "$4" --arg c "$5" --slurpfile f "$2" \
     '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions} | map_values(
        if type == "array" then map(tostring) | join("\n") else (. // "" | tostring) end))' > "$d.json" \
-    && git -C "$wt" diff --cached -U0 --text --no-textconv --no-color --no-ext-diff > "$d" \
+    && { if [ -n "${6:-}" ]; then cat "$6"; else git -C "$wt" diff --cached -U0 --text --no-textconv --no-color --no-ext-diff; fi; } > "$d" \
     && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d")" || rc=$?
   rm -f "$d" "$d.json"
   [ "$rc" = 0 ] && return 0
