@@ -192,7 +192,8 @@ _jira_keys_for_jql() {
 # Keys waiting in the queue, oldest first.
 jira_queue_keys() {
   pipeline_require || return 1
-  _jira_keys_for_jql "$(pipeline_queue_jql)"
+  local q; q="$(pipeline_queue_jql)" || return 1
+  _jira_keys_for_jql "$q"
 }
 
 # Keys in one lifecycle state, oldest first.
@@ -215,7 +216,7 @@ jira_items_json() {
   printf '%s' "$raw" | jq '[.[]? | {key, summary: (.fields.summary // "")}]' 2>/dev/null || echo 'null'
 }
 
-jira_queue_items()    { pipeline_require || return 1; jira_items_json "$(pipeline_queue_jql)"; }
+jira_queue_items()    { pipeline_require || return 1; local q; q="$(pipeline_queue_jql)" || return 1; jira_items_json "$q"; }
 jira_items_in_state() {
   pipeline_require || return 1
   local s; s="$(pipeline_jira_scope)" || return 1
