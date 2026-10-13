@@ -494,6 +494,7 @@ _finish_push_and_pr() {
     echo "ERROR: could not find merge-base with ${base_ref}." >&2
     return 1
   fi
+  local cut_base="$merge_base"
   merge_base="$(_finish_squash_base "$worktree" "$branch" "$merge_base" "$merging")"
   local commit_count
   commit_count="$(git -C "$worktree" rev-list --count "${merge_base}..HEAD")"
@@ -509,9 +510,20 @@ _finish_push_and_pr() {
   commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
   _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || return 1
 
+  local as_is=""
+  if _finish_as_is "$worktree" "$merge_base" "$cut_base"; then
+    as_is=1
+    echo "  The run added nothing on top of them; the PR is their commits as they are." >&2
+  fi
+
   # As the GitHub App: GitHub authors and signs the commit, and the operator's
   # key and login stay out of the push. gh below also acts as the App.
-  if github_app_enabled; then
+  if [ -n "$as_is" ]; then
+    if github_app_enabled; then
+      local GH_TOKEN; GH_TOKEN="$(github_app_token)" || return 1
+      export GH_TOKEN
+    fi
+  elif github_app_enabled; then
     local new_sha GH_TOKEN
     echo "Committing and pushing ${branch} as the GitHub App..." >&2
     new_sha="$(github_app_commit "$worktree" "$branch" "$merge_base" \
@@ -755,6 +767,13 @@ finish_add_reviewers() {
   else
     echo "  NOTE: no reporter assigned (FXA_PR_ASSIGNEE unset or unresolved)." >&2
   fi
+}
+
+# _finish_as_is <worktree> <squash_base> <cut_base>   True when the squash moved onto a
+#   person's commits and the index adds nothing to them: open the PR on them as they are.
+#   An App commit of an empty change is refused (422), and a local one would add nothing.
+_finish_as_is() {
+  [ "$2" != "$3" ] && git -C "$1" diff --cached --quiet "$2" 2>/dev/null
 }
 
 # _finish_squash_base <worktree> <branch> <merge_base> <merging>
