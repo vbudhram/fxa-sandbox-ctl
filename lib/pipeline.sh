@@ -151,6 +151,8 @@ pipeline_focus_marker() { printf '%s' "${PIPE_STATE_DIR}/FOCUS"; }
 pipeline_focus_key() { [ -f "$(pipeline_focus_marker)" ] && head -1 "$(pipeline_focus_marker)"; }
 pipeline_queue_jql() {
   local k s; s="$(pipeline_jira_scope)" || return 1; k="$(pipeline_focus_key || true)"
+  # The marker is spliced into JQL, so it must be one key: `FXA-1 OR key = X` would OR past the scope.
+  [ -z "$k" ] || [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "ERROR: the focus marker is not one epic key" >&2; return 1; }
   if [ -n "$k" ]; then printf 'parent = %s AND %s AND %s' "$k" "$s" "$PIPE_QUEUE_JQL"; else printf '%s AND %s' "$s" "$PIPE_QUEUE_JQL"; fi
 }
 
@@ -164,13 +166,22 @@ pipeline_jira_scope() {
   [[ "$p" =~ ^[A-Z][A-Z0-9]*$ ]] || { echo "ERROR: profile ${PIPE_PROFILE:-?} has no Jira project (PIPE_JIRA_PROJECT), so it has no queue" >&2; return 1; }
   printf 'project = %s AND level IS EMPTY' "$p"
 }
+# pipeline_key_in_scope <KEY>   The queue's scope also gates a direct launch: a pass that a
+# ticket's text steered could name any key. A Jira read that fails refuses.
+pipeline_key_in_scope() {
+  local s got; s="$(pipeline_jira_scope)" || return 1
+  [[ "$1" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || return 1
+  got="$(_jira_keys_for_jql "${s} AND key = $1")" || return 1
+  [ "$got" = "$1" ]
+}
 pipeline_focus() {
   pipeline_require || return 1
   case "${1:-}" in
     off) rm -f "$(pipeline_focus_marker)"; echo "focus off: whole queue" ;;
     "")  local k; k="$(pipeline_focus_key || true)"; echo "${k:-off}" ;;
-    FXA-[0-9]*) printf '%s\n' "$1" >"$(pipeline_focus_marker)"; echo "focus $1: queue is that epic's children only" ;;
-    *)   echo "ERROR: focus FXA-<epic>|off" >&2; return 1 ;;
+    [A-Z]*-[0-9]*) [[ "$1" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "ERROR: focus takes one epic key" >&2; return 1; }
+                printf '%s\n' "$1" >"$(pipeline_focus_marker)"; echo "focus $1: queue is that epic's children only" ;;
+    *)   echo "ERROR: focus <EPIC-KEY>|off" >&2; return 1 ;;
   esac
 }
 

@@ -357,6 +357,13 @@ cmd_jira() {
   runtime_load || return 1
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
 
+  # A security ticket's fix must not reach a public PR; it runs only with --private.
+  if [ "$private" != "true" ] && ! pipeline_key_in_scope "$key"; then
+    echo "ERROR: ${key} is outside this profile's Jira scope ($(pipeline_jira_scope 2>/dev/null)), or the Jira read failed." >&2
+    echo "       A ticket with a security level runs only with --private." >&2
+    return 1
+  fi
+
   # finish_push_and_pr reads FXA_WORKTREE_BASE for `gh pr create --base`, so the
   # PR targets main unless --base is written back here.
   FXA_WORKTREE_BASE="$base"
