@@ -251,7 +251,7 @@ jira_label_set() {
   [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
   state="${state#${PIPE_LABEL_PREFIX}-}"
   case "$state" in
-    public|queued|inflight|done|blocked|merged|rejected) ;;
+    public|queued|inflight|done|blocked|merged|rejected|diff) ;;
     *) echo "ERROR: bad state '$state'" >&2; return 1 ;;
   esac
   local want; want="$(pipeline_label_for "$state")"

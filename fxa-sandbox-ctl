@@ -137,7 +137,7 @@ PIPELINE COMMANDS:
                                origin/main, frozen/stories checks, overlapping open PRs
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
   label <ISSUE-KEY> <state>    WRITE: move the ticket; also reaps its VM
-                               states: public inflight done blocked merged rejected
+                               states: public inflight done blocked merged rejected diff
   slots                        Pool slots, and any VM running on each
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
   freeslots                    Slots a ticket can claim (use this, not `slots`)
@@ -523,6 +523,14 @@ EOF
     if ! finish_attach_and_wait "$name"; then
       echo "When the agent finishes, run: fxa-sandbox-ctl finish" >&2
       return 1
+    fi
+    # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
+    if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+      finish_diff_only "$key" "$worktree_path" || return 1
+      cmd_label "$key" diff >/dev/null || echo "WARN: could not label ${key} diff" >&2
+      finish_notify "Diff ready for ${key}" ""
+      echo "Diff-only: ${PIPE_STATE_DIR}/diffs/${key}.patch" >&2
+      return 0
     fi
     local pr_url
     pr_url="$(finish_push_and_pr "$worktree_path" "$create_pr")" || return 1

@@ -255,6 +255,7 @@ body say what was not verified. Skip only when the unverifiable part *is* the ch
 | `ai-fixme-merged` | Archive. |
 | `ai-fixme-rejected` | PR closed unmerged. Archive, worth reading. |
 | `ai-fixme-blocked` | Needs a human. |
+| `ai-fixme-diff` | A read-only profile's run (`PIPE_PR_OPEN=0`) ended as a patch in `<state dir>/diffs/KEY.patch`, with a summary comment on the ticket. No PR. A person reviews it. The launcher sets it; the pass never relabels it. |
 
 `$CTL label KEY <state>` swaps the label and removes every other in the family; `public` means
 the bare label. Never read or write Jira status to decide pipeline state; the label is the state

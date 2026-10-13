@@ -292,6 +292,34 @@ finish_media_args() {
   echo "media: ${listed} listed, ${attached} attached${why}" >&2
 }
 
+# finish_diff_only <key> <worktree>   A pipeline run on a read-only profile (PIPE_PR_OPEN=0)
+# pushes nothing. Keep the change as <state dir>/diffs/<key>.patch, which `state push`
+# mirrors, and post the agent's summary and the diffstat to the ticket. The caller labels it.
+finish_diff_only() {
+  local key="$1" wt="$2" done_file title body mb dir patch stat
+  done_file="$(finish_done_file_path "$wt")"
+  [ -s "$done_file" ] || { echo "ERROR: handoff file not found at ${done_file}." >&2; return 1; }
+  title="$(jq -r '.pr_title // empty' "$done_file")"; body="$(jq -r '.pr_body // empty' "$done_file")"
+  mb="$(git -C "$wt" merge-base HEAD "origin/${FXA_WORKTREE_BASE:-main}" 2>/dev/null)" \
+    || { echo "ERROR: no merge-base with origin/${FXA_WORKTREE_BASE:-main} in ${wt}" >&2; return 1; }
+  dir="${PIPE_STATE_DIR}/diffs"; patch="${dir}/${key}.patch"; mkdir -p "$dir" || return 1
+  # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files.
+  ( cd "$wt" && git diff --binary "$mb" -- . ':(exclude).fxa-*' \
+      && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' \
+        | while IFS= read -r -d '' f; do git diff --binary --no-index /dev/null "$f" || true; done ) > "$patch" \
+    || { echo "ERROR: could not write ${patch}" >&2; return 1; }
+  [ -s "$patch" ] || { rm -f "$patch"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
+  stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -15)"
+  jira_comment "$key" "🤖 Diff-only run: the ${PIPE_PROFILE:-} pipeline opens no PR yet, so the change is a patch for a person to review (diffs/${key}.patch in the pipeline's state dir).
+
+${title:-No title.}
+
+${body}
+
+${stat}" || echo "WARN: could not post the diff comment on ${key}" >&2
+  printf '%s\n' "$patch"
+}
+
 # finish_push_and_pr [worktree] [create_pr]
 #   Commit the agent's change, push the branch and open or update the PR.
 #   Prints the PR URL on stdout (an empty line without create_pr). Progress on stderr.

@@ -105,7 +105,8 @@ pipeline_label_for() {
   esac
 }
 
-pipeline_states() { printf '%s\n' public inflight done blocked merged rejected; }
+# diff: a read-only profile's run finished as a patch for a person to review (finish_diff_only).
+pipeline_states() { printf '%s\n' public inflight done blocked merged rejected diff; }
 
 pipeline_free_gb() {
   _free_gb / 2>/dev/null
