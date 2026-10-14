@@ -5,7 +5,7 @@
 # result is there. Repo code runs only as agent. Log: /var/log/profile-boot.log.
 # Done: /run/fxa-profile/ready, or failed.
 set -uo pipefail
-S=/home/agent/syncstorage RH=/opt/rust/rustup CH=/opt/rust/cargo V=/home/agent/.syncstorage-venv
+S=/home/agent/syncstorage RH=/opt/rust/rustup CH=/opt/rust/cargo V=/home/agent/.syncstorage-venv IT=/home/agent/.syncstorage-it-venv
 CONF=/home/agent/.syncstorage.toml LOG=/home/agent/.syncstorage.log
 FEATURES="--no-default-features --features=syncstorage-db/mysql --features=py_verifier"
 R=/run/fxa-profile READY=/run/fxa-profile/ready FAIL=/run/fxa-profile/failed
@@ -37,24 +37,36 @@ step "rustc $(RUSTUP_HOME=$RH $CH/bin/rustc --version | cut -d' ' -f2), as the r
 [ -x "$CH/bin/cargo-nextest" ] || { curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$CH/bin" && chmod a+rx "$CH/bin/cargo-nextest"; } \
   || die "could not install cargo-nextest"
 
-# The verifier is PyFxA inside the server's Python, at the versions the repo's poetry.lock pins.
-# A current pyOpenSSL too: Ubuntu's own (python3-openssl) breaks against the pinned cryptography.
-# marionette-driver drives Firefox for the sync-e2e skill.
-step "Python for the token verifier"
-deps="$(python3 - "$S/poetry.lock" <<'PY'
-import sys, tomllib
-pk = {p["name"].lower(): p for p in tomllib.load(open(sys.argv[1], "rb"))["package"]}
+# locked <poetry.lock> <name>...   pip pins for the named packages and their dependencies, at the
+# versions a poetry.lock fixes; with no name, the main dependencies of the pyproject.toml beside it.
+locked() { python3 - "$@" <<'PY'
+import os, sys, tomllib
+lock = sys.argv[1]
+pk = {p["name"].lower(): p for p in tomllib.load(open(lock, "rb"))["package"]}
+roots = sys.argv[2:] or list(tomllib.load(open(os.path.join(os.path.dirname(lock), "pyproject.toml"), "rb"))["tool"]["poetry"]["dependencies"])
 seen = set()
 def walk(n):
     n = n.lower()
     if n in seen or n not in pk: return
     seen.add(n); [walk(d) for d in pk[n].get("dependencies", {})]
-for n in ("pyfxa", "tokenlib", "cryptography"): walk(n)
+for n in roots: walk(n)
 print(" ".join(f"{n}=={pk[n]['version']}" for n in sorted(seen)))
 PY
-)" || die "could not read poetry.lock"
+}
+
+# The verifier is PyFxA inside the server's Python, at the versions the repo's poetry.lock pins.
+# A current pyOpenSSL too: Ubuntu's own (python3-openssl) breaks against the pinned cryptography.
+# marionette-driver drives Firefox for the sync-e2e skill.
+step "Python for the token verifier"
+deps="$(locked "$S/poetry.lock" pyfxa tokenlib cryptography)" || die "could not read poetry.lock"
 sudo -u agent -H bash -c "[ -x $V/bin/python ] || python3 -m venv $V; $V/bin/pip install -q $deps pyopenssl marionette-driver" < /dev/null \
   || die "could not set up the Python venv"
+
+# The repo's own e2e tests (tools/integration_tests), at their own lock: no poetry on the runner.
+step "Python for the integration tests"
+deps="$(locked "$S/tools/integration_tests/poetry.lock")" || die "could not read the integration tests' poetry.lock"
+sudo -u agent -H bash -c "[ -x $IT/bin/python ] || python3 -m venv $IT; $IT/bin/pip install -q $deps" < /dev/null \
+  || die "could not set up the integration tests' venv"
 
 # The server's databases, and a pair for the tests: they expect tables nobody else wrote to.
 step "MySQL databases"
@@ -83,7 +95,6 @@ master_secret = "$(openssl rand -hex 32)"
 host = "127.0.0.1"
 port = 8000
 human_logs = 1
-cors_allowed_origin = "localhost"
 syncstorage.database_url = "mysql://sync:test@127.0.0.1:3306/syncstorage"
 syncstorage.enabled = true
 syncstorage.enable_quota = 0

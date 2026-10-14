@@ -36,6 +36,12 @@ if [ "$server" = 1 ] || [ -n "$plan" ]; then
     while IFS=$'\t' read -r n c; do [ -n "$c" ] && row "plan: $n" "$c"; done \
       < <(jq -r '.checks[]? | [.name, .cmd] | @tsv' "$plan")
   fi
+  # The repo's own e2e suite against this server; its tokenserver tests need CI's mock FxA, so not here.
+  row "integration tests" "cd $W && SYNC_SERVER_URL=http://localhost:8000 \
+SYNC_MASTER_SECRET=\$(sed -n 's/^master_secret *= *\"\\(.*\\)\"/\\1/p' \$HOME/.syncstorage.toml) \
+SYNC_SYNCSTORAGE__DATABASE_URL=mysql://sync:test@127.0.0.1:3306/syncstorage \
+SYNC_TOKENSERVER__DATABASE_URL=mysql://sync:test@127.0.0.1:3306/tokenserver \
+PYTHONPATH=$W $HOME/.syncstorage-it-venv/bin/python -m pytest tools/integration_tests -q -p no:cacheprovider --ignore=tools/integration_tests/tokenserver --ignore=tools/integration_tests/test_payload_link_reconciliation.py"
   row "sync protocol" "cd $SK/../sync-e2e && $PY e2e.py"
   [ "$ff" = 1 ] && row "firefox sync" "cd $SK/../sync-e2e && $PY firefox.py"
 fi
