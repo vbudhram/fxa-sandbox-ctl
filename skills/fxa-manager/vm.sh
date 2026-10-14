@@ -82,6 +82,18 @@ secret_clean() {
 promote_ci() {
   case "$1 $2" in *red*) echo red ;; *running*) echo running ;; "green green") echo skip-tests ;; *) echo test ;; esac
 }
+# promote_ci_wait <ctl dir> <ctl sha> <bot dir> <bot sha>   "<ctl state> <bot state>", after waiting up to
+# FXA_PROMOTE_CI_WAIT_S (600) for runs still going: a promote right after a push need not be run again.
+promote_ci_wait() {
+  local cs bs said="" end=$(( $(date +%s) + ${FXA_PROMOTE_CI_WAIT_S:-600} ))
+  while :; do
+    cs="$(ci_state "$1" "$2")" bs="$(ci_state "$3" "$4")"
+    [ "$(promote_ci "$cs" "$bs")" = running ] && [ "$(date +%s)" -lt "$end" ] || break
+    [ -n "$said" ] || { echo "Waiting for CI on main (controller $cs, bot $bs)..." >&2; said=1; }
+    sleep "${FXA_PROMOTE_CI_POLL_S:-10}"
+  done
+  echo "$cs $bs"
+}
 # ci_state <repo dir> <sha>   green, red, running, or none: the CI runs of that commit on main.
 # Only main's runs: after a fast-forward the same commit also has its improve branch's run,
 # and a flaky red there must not block a green main.
@@ -329,11 +341,11 @@ EOF2
     # CI on both main commits: red or still running refuses; green in both skips the bot's tests here;
     # no result runs them, on the tree that dev ran (about 2 min). FXA_PROMOTE_SKIP_TESTS=1 for an emergency.
     if [ "${FXA_PROMOTE_SKIP_TESTS:-}" != 1 ]; then
-      cs="$(ci_state "$CTL_ROOT" "$(git -C "$CTL_ROOT" rev-parse origin/main)")" bs="$(ci_state "$BOT_ROOT" "$(git -C "$BOT_ROOT" rev-parse origin/main)")"
+      read -r cs bs <<< "$(promote_ci_wait "$CTL_ROOT" "$(git -C "$CTL_ROOT" rev-parse origin/main)" "$BOT_ROOT" "$(git -C "$BOT_ROOT" rev-parse origin/main)")"
       echo "CI on main: controller $cs, bot $bs."
       case "$(promote_ci "$cs" "$bs")" in
         red) echo "Not promoted: CI failed on main. Fix it first (gh run list -b main)." >&2; exit 1 ;;
-        running) echo "Not promoted: CI is still running on main. Promote again when it is done." >&2; exit 1 ;;
+        running) echo "Not promoted: CI on main still runs after ${FXA_PROMOTE_CI_WAIT_S:-600} s. Promote again when it is done." >&2; exit 1 ;;
         skip-tests) echo "CI passed on both commits, so the bot's tests do not run again here." ;;
         *) promote_tests "$BOT_ROOT" "$(sed -n 's/^bot //p' "$DEV_RECORD")" "$CTL_ROOT" "$(sed -n 's/^ctl //p' "$DEV_RECORD")" || exit 1 ;;
       esac
@@ -351,7 +363,7 @@ EOF2
     else echo "No commit moved, so nothing is recorded: vm.sh rollback still undoes the promote before."; fi
     deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
     # The first minutes on live: a new or reopened error fails the promote, with the way back.
-    w="${FXA_PROMOTE_WATCH_S:-120}"
+    w="${FXA_PROMOTE_WATCH_S:-60}"
     if [ "$errs_read" = 0 ]; then
       echo "WARN: the live watch is skipped: vm.sh api errors failed before the sync, so no error can be called new" >&2
     elif [ "$w" -gt 0 ] 2>/dev/null; then

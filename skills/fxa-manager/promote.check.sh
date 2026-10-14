@@ -115,4 +115,11 @@ check "promote_ci: red anywhere refuses, before running" "red|red" "$(promote_ci
 check "promote_ci: running refuses, green in both skips the tests, no result tests" "running|skip-tests|test|test" \
   "$(promote_ci running green)|$(promote_ci green green)|$(promote_ci green none)|$(promote_ci none none)"
 check "rollback: re-links the skills, as sync does" "yes" "$(rollback_script | grep -q 'ln -sfn' && echo yes)"
+# promote_ci_wait waits while a run is going, then returns both states; past its limit it returns running.
+eval "$(sed -n '/^promote_ci_wait() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+n="$tmp/ci-calls"; : > "$n"
+ci_state() { echo x >> "$n"; [ "$(wc -l < "$n")" -le 2 ] && echo running || echo green; }
+check "promote_ci_wait: waits out a running CI, then green" "green green" "$(FXA_PROMOTE_CI_POLL_S=0 promote_ci_wait c 1 b 2 2>/dev/null)"
+ci_state() { echo running; }
+check "promote_ci_wait: past its limit, still running" "running running" "$(FXA_PROMOTE_CI_WAIT_S=0 FXA_PROMOTE_CI_POLL_S=0 promote_ci_wait c 1 b 2 2>/dev/null)"
 exit "$fail"
