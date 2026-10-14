@@ -1,0 +1,11 @@
+# The sandbox skills (skills/ in this repo) that only work on FxA code. A runner gets them
+# when its profile has an mozilla/fxa row.
+fxa-verify
+fxa-stack
+fxa-functional-local
+fxa-storybook-capture
+fxa-page-shot
+fxa-perf
+fxa-vm-selfcheck
+fxa-unslop
+fxa-save-investigation

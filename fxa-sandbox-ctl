@@ -78,7 +78,7 @@ COMMANDS:
   ssh <name>                   Print SSH connection info for an agent's VM
   exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
   profile show                 The loaded profile's repos and write access, as JSON (pick one with --pipeline)
-  profile lint                 Check every profile: only assignments, and no key the code never reads
+  profile lint                 Check every profile and repos/*/notes.md: only assignments, no unread key, sizes
   devslot up|down|reset <profile> | run <profile> '<cmd>' | sync <profile> <dir> < tar.gz | list
                                A warm Firecracker slot for building a profile (needs FXA_FC_HOST)
   list                         List all agents and their status
@@ -2825,6 +2825,9 @@ main() {
                             grep -rqw --include='*.sh' --include='*.py' --exclude='*.check.sh' "$k" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/infra" "${SCRIPT_DIR}/dashboard" \
                               || grep -qw "$k" "${SCRIPT_DIR}/fxa-sandbox-ctl" || { echo "${f#"${SCRIPT_DIR}"/profiles/}: ${k} is read nowhere (a typo?)"; rc=1; }
                           done
+                        done
+                        for f in "${SCRIPT_DIR}"/repos/*/notes.md; do
+                          [ ! -f "$f" ] || [ "$(_fsize "$f")" -le 8192 ] || { echo "${f#"${SCRIPT_DIR}"/}: over 8 KB"; rc=1; }
                         done; [ "$rc" = 0 ] && echo "profiles: ok"; return "$rc" ;;
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | profile list | profile lint" >&2; return 1 ;;
                 esac ;;

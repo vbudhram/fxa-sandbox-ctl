@@ -65,9 +65,21 @@ vm_guide_build() {
 
 _vm_skill_allowlist() {
   printf '%s\n' \
-    code-simplifier create-pr-description fxa-save-investigation \
-    fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
-    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot fxa-jira-link fxa-perf fxa-end
+    code-simplifier create-pr-description fxa-vm-handoff humanizer ponytail-review pr-review-typescript \
+    quick-review squash-commit fxa-test-plan fxa-jira-link fxa-end
+  # Each repo's own sandbox skills (repos/<owner>__<name>/skills.txt), for the repos of the profile.
+  local d; for d in $(_vm_repo_dirs); do [ -f "$d/skills.txt" ] && grep -vE '^(#|$)' "$d/skills.txt"; done
+  return 0
+}
+
+# _vm_repo_dirs   repos/<owner>__<name> for each repo of the profile that has one. Notes and
+# skills follow the repo, as the team memory does, so every team with that repo gets them.
+_vm_repo_dirs() {
+  local s
+  for s in $( { declare -F memory_profile_slugs >/dev/null && memory_profile_slugs; } || echo "${PIPE_REPO_SLUG:-mozilla/fxa}"); do
+    [[ "$s" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [ -d "${SANDBOX_ROOT}/repos/${s/\//__}" ] && printf '%s\n' "${SANDBOX_ROOT}/repos/${s/\//__}"
+  done
+  return 0
 }
 
 # Skills from the FxA repo's own .claude/skills that need what the runner lacks
@@ -615,12 +627,17 @@ _vm_session_git_rule() {
     skip && /^  / { next } { skip = 0; print }'
 }
 
-# _vm_team_rules   The team's own rules (profiles/<team>/CLAUDE.md), after the sandbox section in
-# both runtimes. The sandbox rules win where the two differ.
+# _vm_team_rules   What a runner gets after the sandbox section, in both runtimes: the notes of
+# each repo of the profile (repos/<owner>__<name>/notes.md), then the team's own rules
+# (profiles/<team>/CLAUDE.md). The sandbox rules win over both; the team wins over a repo note.
 _vm_team_rules() {
-  local f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/CLAUDE.md"
-  [ -s "$f" ] || return 0
-  printf '\n\n# Team rules: %s\n\nThe sandbox rules above win over these.\n\n%s\n' "${PIPE_LABEL:-${PIPE_PROFILE:-fxa}}" "$(head -c 8192 "$f")"
+  local d f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/CLAUDE.md"
+  for d in $(_vm_repo_dirs); do
+    [ -s "$d/notes.md" ] && printf '\n\n# Repo notes: %s\n\n%s\n' "$(basename "$d" | sed 's#__#/#')" "$(head -c 8192 "$d/notes.md")"
+  done
+  [ -s "$f" ] && printf '\n\n# Team rules: %s\n\nThe sandbox rules above win over these, and these win over the repo notes.\n\n%s\n' \
+    "${PIPE_LABEL:-${PIPE_PROFILE:-fxa}}" "$(head -c 8192 "$f")"
+  return 0
 }
 
 # _vm_team_context <name>   What every runtime gets after its guide: the approved lessons (an

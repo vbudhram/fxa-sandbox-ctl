@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p;/^_vm_team_rules() {/,/^}/p' "$here/agent.sh")"
+eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p;/^_vm_team_rules() {/,/^}/p;/^_vm_repo_dirs() {/,/^}/p' "$here/agent.sh")"
 source "$here/runtime-codex.sh"
 # Each vm_exec's command, one file per call; the VM, scp and ssh do nothing.
 vm_exec() { shift; printf '%s\n' "$*" > "$tmp/exec.$(ls "$tmp" | grep -c '^exec\.')"; }
@@ -34,11 +34,21 @@ check "~/.claude/skills points at the Codex skills, so the guides' paths work" "
 rm -f "$tmp"/exec.* "$tmp/synced"
 PIPE_PROFILE=fxa runtime_setup_config vm2 2>/dev/null
 check "the pipeline keeps the no-commit rule" "1" "$(agents | grep -c 'You cannot commit or push')"
-# The team's own rules: FxA's lines reach an FxA runner only, after the sandbox section.
+# Notes and skills follow the repo: every profile with an fxa row gets FxA's, and only those.
 rm -f "$tmp"/exec.*; PIPE_PROFILE=fxa runtime_setup_config vm3 2>/dev/null; a="$(agents)"
-check "an FxA runner gets FxA's team rules, after the sandbox section" "1|1|yes" \
-  "$(grep -c '^# Team rules: fxa' <<< "$a")|$(grep -c 'fxa-start' <<< "$a")|$( [ "$(grep -n '^# Sandbox VM' <<< "$a" | cut -d: -f1)" -lt "$(grep -n '^# Team rules' <<< "$a" | cut -d: -f1)" ] && echo yes)"
-rm -f "$tmp"/exec.*; PIPE_PROFILE=pyfxa-team runtime_setup_config vm4 2>/dev/null; a="$(agents)"
-check "a team with no CLAUDE.md gets no FxA-only line" "0|0|0" \
-  "$(grep -c 'Team rules' <<< "$a")|$(grep -c 'fxa-start\|fxa-verify\|ai/AGENTS.md' <<< "$a")|$(grep -ci 'FxA sandbox' <<< "$a")"
+check "an fxa row gets FxA's repo notes, after the sandbox section" "1|1|yes" \
+  "$(grep -c '^# Repo notes: mozilla/fxa' <<< "$a")|$(grep -c 'fxa-start' <<< "$a")|$( [ "$(grep -n '^# Sandbox VM' <<< "$a" | cut -d: -f1)" -lt "$(grep -n '^# Repo notes' <<< "$a" | cut -d: -f1)" ] && echo yes)"
+memory_profile_slugs() { echo mozilla/blurts-server; }
+rm -f "$tmp"/exec.*; PIPE_PROFILE=other runtime_setup_config vm4 2>/dev/null; a="$(agents)"
+check "a profile with no fxa row gets no FxA-only line" "0|0|0" \
+  "$(grep -c 'Repo notes\|Team rules' <<< "$a")|$(grep -c 'fxa-start\|fxa-verify\|ai/AGENTS.md' <<< "$a")|$(grep -ci 'FxA sandbox' <<< "$a")"
+eval "$(sed -n '/^_vm_skill_allowlist() {/,/^}/p' "$here/agent.sh")"
+check "the FxA skills ship only with an fxa row; the shared ones always" "0|1" \
+  "$(_vm_skill_allowlist | grep -c '^fxa-verify$')|$(_vm_skill_allowlist | grep -c '^fxa-vm-handoff$')"
+memory_profile_slugs() { printf '%s\n' mozilla/PyFxA mozilla/fxa; }
+check "a two-repo team with fxa gets FxA's skills" "1|1" "$(_vm_skill_allowlist | grep -c '^fxa-verify$')|$(_vm_skill_allowlist | grep -c '^fxa-stack$')"
+# A team's own rules come after the repo notes, which they override.
+mkdir -p "$tmp/root/profiles/t" "$tmp/root/repos/mozilla__fxa"; echo "Run fxa-start." > "$tmp/root/repos/mozilla__fxa/notes.md"; echo "Never run fxa-start." > "$tmp/root/profiles/t/CLAUDE.md"
+check "team rules follow the repo notes" "Repo notes: mozilla/fxa|Team rules: t" \
+  "$(SANDBOX_ROOT="$tmp/root" PIPE_PROFILE=t _vm_team_rules | grep -o 'Repo notes: mozilla/fxa\|Team rules: t' | paste -sd'|' -)"
 exit "$fail"
