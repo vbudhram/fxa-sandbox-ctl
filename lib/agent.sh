@@ -365,6 +365,8 @@ _gce_pin_runner_tree() {
   got="$(vm_exec "$name" sudo -u agent bash -c "cd ${at} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
+      # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.
+      [ '${base}' = main ] || git rev-parse -q --verify refs/remotes/origin/main >/dev/null || git update-ref refs/remotes/origin/main ${base_sha}
     fi
     # An eval (FXA_PIN_HIDE): no ref, reflog or fetch record that reaches past the base.
     if [ '${FXA_PIN_HIDE:-}' = 1 ]; then

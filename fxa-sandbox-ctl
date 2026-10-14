@@ -2190,8 +2190,9 @@ _cmd_session_boot() {
   runtime_load || { session_set "$key" state failed; return 1; }
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
-  _retry git -C "$root" fetch --quiet origin main && sha="$(git -C "$root" rev-parse origin/main)" \
-    || { echo "ERROR: could not fetch origin/main" >&2; session_set "$key" state failed; return 1; }
+  local base="${FXA_WORKTREE_BASE:-main}"
+  _retry git -C "$root" fetch --quiet origin "$base" && sha="$(git -C "$root" rev-parse "origin/${base}")" \
+    || { echo "ERROR: could not fetch origin/${base}" >&2; session_set "$key" state failed; return 1; }
   # An eval (FXA_SESSION_BASE_SHA, the dev bot only): every session starts at that
   # commit, as if it were main, and the runner's clone keeps no ref past it.
   local pin_hide=""
