@@ -287,9 +287,9 @@ done
 # Runs already going finish on their own; reconcile waits for the morning.
 cat > /etc/systemd/system/fxa-pass.timer <<'UNIT'
 [Unit]
-Description=fxa-ai-fixme pass at :04, :19, :34 and :49, 07:04-19:49 New York
+Description=fxa-ai-fixme pass every 5 min, 07:04-19:59 New York
 [Timer]
-OnCalendar=*-*-* 07..19:04,19,34,49:00 America/New_York
+OnCalendar=*-*-* 07..19:04/5:00 America/New_York
 Persistent=false
 [Install]
 WantedBy=timers.target
