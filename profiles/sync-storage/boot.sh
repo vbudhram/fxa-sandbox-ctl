@@ -113,7 +113,8 @@ step "cargo build (the first build takes several minutes)"
 as_agent "cargo build -q --bin syncserver $FEATURES" > /var/log/syncstorage-build.log 2>&1 || die "cargo build failed (see /var/log/syncstorage-build.log)"
 
 step "syncserver on :8000"
-pysite="$($V/bin/python -c 'import site; print(site.getsitepackages()[0])')"
+# As agent: the venv is the agent's, so its python (or a .pth file in it) must never run as root.
+pysite="$(sudo -u agent -H $V/bin/python -c 'import site; print(site.getsitepackages()[0])' < /dev/null)"
 # By name, never -f: the agent's own command line holds the guide, which names this binary.
 pkill -u agent -x syncserver; sleep 1
 as_agent "PYTHONPATH=$pysite RUST_LOG=info nohup setsid target/debug/syncserver --config $CONF > $LOG 2>&1 < /dev/null &"

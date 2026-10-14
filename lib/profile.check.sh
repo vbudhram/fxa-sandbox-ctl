@@ -247,5 +247,8 @@ check "a base set by hand still wins" "dev dev sync-storage-auto" "$(bp sync-sto
 # The agent's own command line holds the guide: a pkill -f with plain text from it stops the agent.
 check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" \
   "$(grep -HnE "p(kill|grep)[^|;]* -f +['\"]?[^['\" ]" "$root"/profiles/*/boot.sh "$root"/profiles/*/*.md "$root"/profiles/*/skills/*/SKILL.md 2>/dev/null || true)"
+# boot.sh runs as root: an agent-owned venv's python runs a .pth file the agent wrote, so it runs as agent.
+check "a team's boot runs the agent's venv only as agent" "" \
+  "$(grep -HnE '\$\{?(V|IT)\}?/bin/' "$root"/profiles/*/boot.sh 2>/dev/null | grep -v 'sudo -u agent' || true)"
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"
