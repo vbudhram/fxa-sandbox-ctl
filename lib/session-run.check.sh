@@ -190,6 +190,7 @@ check "a fresh pause stays paused" "0|paused" "$(grep -c 'agent-day2' <<< "$out"
 #!/bin/bash
 shift 2   # --backend gce
 echo "\$*" >> "$log"
+[ "\$1" = --pipeline ] && shift 2
 case "\$1" in
   task) [ -f "$tmp/try-fail" ] && exit 1; exit 0 ;;
   steer|stop) exit 0 ;;
@@ -206,6 +207,8 @@ STUB
   check "try: two turns, each reply, then a stop" "2|2|1|1" "$(grep -c '^the reply$' <<< "$out")|$(grep -c '^== turn [12],' <<< "$out")|$(grep -c '^steer agent-try' "$log")|$(grep -c '^stop agent-try' "$log")"
   check "try: it waits through steps, polling from the last cursor" "events agent-try" "$(grep -m1 -o '^events agent-try' "$log")"
   check "try: a dry-run owner" "1" "$(grep -c -- '--owner U-DRYRUN' "$log")"
+  : > "$log"; PIPE_PROFILE=pyfxa-team session_try --prompt "x" >/dev/null 2>&1
+  check "try: the session starts on the loaded profile" "1" "$(grep -c -- '^--pipeline pyfxa-team task ' "$log")"
   : > "$log"; out="$(session_try --prompt "x" --keep 2>&1)"
   check "try --keep: no stop, and says how" "0|1" "$(grep -c '^stop' "$log")|$(grep -c 'kept: fxa-sandbox-ctl stop' <<< "$out")"
   : > "$log"; touch "$tmp/try-ends"; out="$(session_try --prompt "x" 2>&1)"; rc=$?; rm -f "$tmp/try-ends"

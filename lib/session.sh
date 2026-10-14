@@ -211,7 +211,8 @@ session_try() {
   key="agent-try$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
   f="$(mktemp)"; printf '%s\n' "$prompt" > "$f"
   echo "== ${key}: starting"
-  "$ctl" --backend gce task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1 \
+  # The loaded profile, so a try can test any team; later commands follow the session's record.
+  "$ctl" --backend gce --pipeline "${PIPE_PROFILE:-fxa}" task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1 \
     || { rm -f "$f"; echo "ERROR: ${key} did not start; see ${SESSION_DIR}/${key}.log" >&2; return 1; }
   _TRY_CUR=0
   for msg in "" ${then[@]+"${then[@]}"}; do
