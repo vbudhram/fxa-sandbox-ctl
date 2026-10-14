@@ -96,7 +96,9 @@ _worktree_each_active_agent() {
     NAME=""; WORKSPACE=""
     source "$meta" 2>/dev/null
     [ -z "$NAME" ] || [ -z "$WORKSPACE" ] && continue
-    if vm_is_running "$NAME" 2>/dev/null; then
+    # </dev/null: callers loop over a slot list on stdin, and an ssh (a Firecracker runner) or
+    # gcloud here read the rest of it, so the loop saw only the first slot.
+    if vm_is_running "$NAME" 2>/dev/null </dev/null; then
       printf '%s %s\n' "$NAME" "$WORKSPACE"
     fi
   done
