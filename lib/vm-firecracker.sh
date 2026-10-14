@@ -137,6 +137,22 @@ fc_status() {
   printf '%s\n' "$out"
 }
 
+# fc_refresh_maybe   Wake the stopped host for a refresh when main changed yarn.lock after the
+# snapshot: else the first session after a quiet spell installs for 40 s or more. Once for each main.
+fc_refresh_maybe() {
+  _fc_up && return 0  # a running host refreshes on its own timer
+  local snap root main mark="${SESSION_DIR}/.fc-refresh-main"
+  snap="$(sed -n 's/^commit=\([0-9a-f]\{40\}\)$/\1/p' "${SESSION_DIR}/.fc-status" 2>/dev/null | head -1)"
+  [ -n "$snap" ] || return 0
+  root="$(worktree_repo_root 2>/dev/null)" || return 0
+  _retry git -C "$root" fetch --quiet origin main >/dev/null 2>&1 || return 0
+  main="$(git -C "$root" rev-parse origin/main 2>/dev/null)" || return 0
+  [ "$(cat "$mark" 2>/dev/null)" != "$main" ] || return 0
+  git -C "$root" diff --quiet "$snap" "$main" -- yarn.lock 2>/dev/null && return 0
+  echo "$main" > "$mark"
+  cmd_fc refresh
+}
+
 cmd_fc() {
   case "${1:-status}" in
     status)

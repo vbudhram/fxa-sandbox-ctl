@@ -54,6 +54,7 @@ alerts_check() {
   # The snapshot refresh fails on the host, where nothing else sees it: sessions keep
   # booting from the old snapshot, only slower. fc_status reads it when the host is up.
   if declare -F fc_status >/dev/null && _fc_up; then fc_status >/dev/null 2>&1 || true; fi
+  if declare -F fc_refresh_maybe >/dev/null; then fc_refresh_maybe >/dev/null 2>&1 || true; fi
   local fcs="${SESSION_DIR}/.fc-status" result made sd="${FXA_ALERT_SNAPSHOT_DAYS:-3}"
   if [ -f "$fcs" ]; then
     # Data from the host: only a plain number reaches arithmetic, which would run a $(...) in it.

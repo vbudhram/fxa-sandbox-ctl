@@ -101,4 +101,19 @@ done
 tc="$(printf '%s\n' 'claude 2.1.5' 'claude 1.0 $(touch x)' 'codex 0.9.1; rm -rf /' 'codex 0.20.0')"
 eval "$(grep '^cc="$(sed' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")"
 check "refresh keeps only plain claude and codex versions" "2.1.5|0.20.0" "$cc|$cx"
+# A stopped host wakes for a refresh only when main changed yarn.lock, and once for each main.
+g="$tmp/g"; git init -q "$g"; git -C "$g" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m a
+echo a > "$g/yarn.lock"; git -C "$g" add yarn.lock; git -C "$g" -c user.name=t -c user.email=t@example.com commit -q -m b
+snap="$(git -C "$g" rev-parse HEAD)"; git -C "$g" update-ref refs/remotes/origin/main "$snap"
+SESSION_DIR="$tmp/sd"; mkdir -p "$SESSION_DIR"; echo "commit=$snap" > "$SESSION_DIR/.fc-status"
+worktree_repo_root() { echo "$g"; }; _retry() { :; }; _fc_up() { return 1; }; cmd_fc() { echo "refresh $1"; }
+echo b > "$g/README"; git -C "$g" add README; git -C "$g" -c user.name=t -c user.email=t@example.com commit -q -m c
+git -C "$g" update-ref refs/remotes/origin/main HEAD
+check "main moved, yarn.lock did not: no wake" "" "$(fc_refresh_maybe)"
+echo c > "$g/yarn.lock"; git -C "$g" -c user.name=t -c user.email=t@example.com commit -qam d
+git -C "$g" update-ref refs/remotes/origin/main HEAD
+check "yarn.lock changed: wake and refresh" "refresh refresh" "$(fc_refresh_maybe)"
+check "the same main does not wake again" "" "$(fc_refresh_maybe)"
+_fc_up() { return 0; }; rm -f "$SESSION_DIR/.fc-refresh-main"
+check "a running host is left to its own timer" "" "$(fc_refresh_maybe)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
