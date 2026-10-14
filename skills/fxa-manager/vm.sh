@@ -319,6 +319,8 @@ EOF2
           [[ "${FXA_FC_HOST:-}" =~ ^[0-9]+(\.[0-9]+){3}$ ]] && echo "echo FXA_FC_HOST=${FXA_FC_HOST} >> fxa-agent-bot/.env.devhost"
           # FXA_DEV_FAKE=1: skills/fxa-ctl-dev/fake-ctl.sh plays each session (no runner, no PR), with its own sessions file.
           [ "${FXA_DEV_FAKE:-}" = 1 ] && echo 'echo FXA_CTL=$D/fxa-sandbox-ctl/skills/fxa-ctl-dev/fake-ctl.sh >> fxa-agent-bot/.env.devhost; export FXA_AGENT_STATE=$HOME/.fxa-agent-dev-fake-sessions.json FAKE_CTL_DIR=$D/fake-ctl'
+          # FAKE_TICK=<s>: a faster fake clock, for the smoke.
+          [ "${FXA_DEV_FAKE:-}" = 1 ] && [[ "${FAKE_TICK:-}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && echo "export FAKE_TICK=${FAKE_TICK}"
           cat <<'EOF2'
 cd fxa-agent-bot
 # The real bot's settings, then the dev app's, then the dev paths: the last file wins.
