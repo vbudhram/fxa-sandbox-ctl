@@ -835,10 +835,15 @@ cmd_finish() {
     finish_wait_for_done "$worktree" || return 1
   fi
 
-  local pr_url
+  # Read before the ship: the handoff names the ticket whose launch log the dashboard reads.
+  local pr_url key=""
+  [ -n "$worktree" ] && key="$(jq -r '.issue // empty' "$(finish_done_file_path "$worktree")" 2>/dev/null || true)"
   pr_url="$(finish_push_and_pr "$worktree" "$create_pr")" || return 1
   if [ -n "$pr_url" ]; then
     finish_notify "PR opened" "$pr_url"
+    # A recovery finish: without this line, progress keeps the run's old error.
+    [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -f "$(pipeline_launch_log "$key")" ] \
+      && echo "PR opened: ${pr_url}" >> "$(pipeline_launch_log "$key")"
     echo "$pr_url"
     if [ "$ci_watch" = "true" ]; then
       finish_watch_ci "$pr_url" || true
