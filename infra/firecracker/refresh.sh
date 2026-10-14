@@ -64,10 +64,13 @@ grep -q GEODB_LOCATION_OVERRIDE /etc/agent-env.sh || cat >> /etc/agent-env.sh <<
 export GEODB_LOCATION_OVERRIDE='{"location": {"countryCode": "US", "postalCode": "85001"}}'
 ENV
 GUEST
+# The image has no apt lists: without the update, the install finds no package, and each boot
+# then installs dnsmasq itself (about 30 s).
+"$fc" ssh 0 'sudo bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq make perl unzip watchman dnsmasq-base" > /dev/null 2>&1' \
+  || echo "WARN: the snapshot's packages did not install; each boot installs dnsmasq itself"
 # Firefox, so a session can change it and hand back a diff: an artifact build
 # (prebuilt C++, local front end), rebuilt when Firefox main moved. A failure
 # keeps the snapshot's earlier build and never blocks the FxA refresh.
-"$fc" ssh 0 'sudo apt-get install -y -qq make perl unzip watchman dnsmasq-base > /dev/null 2>&1' || true
 "$fc" ssh 0 'sudo -u agent bash -s' <<'GUEST' || echo "WARN: the Firefox build failed; the snapshot keeps the earlier one"
 set -euo pipefail
 cd /home/agent
