@@ -44,6 +44,7 @@ source "${SCRIPT_DIR}/lib/circleci.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/lessons.sh"
+source "${SCRIPT_DIR}/lib/memory.sh"
 source "${SCRIPT_DIR}/lib/alerts.sh"
 source "${SCRIPT_DIR}/lib/db.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
@@ -533,6 +534,12 @@ EOF
     if ! finish_attach_and_wait "$name"; then
       echo "When the agent finishes, run: fxa-sandbox-ctl finish" >&2
       return 1
+    fi
+    # The run's notes and learnings, before the diff or PR split, so a read-only team's run counts too.
+    if [ -s "${worktree_path}/.fxa-memory.json" ]; then
+      # shellcheck disable=SC2046  # one slug per word
+      memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
+      rm -f "${worktree_path}/.fxa-memory.json"
     fi
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
@@ -2627,6 +2634,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
       || { _session_finish_fail "$key" "$(session_get "$key" checkout_author) made this PR. I push to it only after they comment 'push ok' on it" "$mode"; return 1; }
   fi
   lessons_collect "$key" "$name"
+  memory_collect_session "$key" "$name" ship
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
@@ -2702,7 +2710,7 @@ cmd_session() {
     desktop) _session_key "${2:-}" && session_desktop "$2" "${3:-}" ;;
     tunnel) _session_key "${2:-}" && session_tunnel "$2" "${3:-}" ;;
     # The alerts ride on the sweep the bot runs every minute, once an hour; their lines go to stderr, as the bot reads "paused" lines.
-    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true; db_backup >&2 || true; session_backup >&2 || true ;;
+    idle-sweep) session_idle_sweep; alerts_maybe >&2 || true; db_backup >&2 || true; session_backup >&2 || true; memory_pull_maybe >&2 || true ;;
     backup) session_backup --now && echo "backed up the session folder" ;;
     prune) session_prune ;;
     try) shift; session_try "$@" ;;

@@ -67,7 +67,7 @@ _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-save-investigation \
     fxa-storybook-capture fxa-vm-handoff fxa-vm-selfcheck fxa-verify fxa-stack fxa-functional-local humanizer \
-    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot fxa-jira-link fxa-perf
+    ponytail-review pr-review-typescript quick-review squash-commit fxa-unslop fxa-test-plan fxa-page-shot fxa-jira-link fxa-perf fxa-end
 }
 
 # Skills from the FxA repo's own .claude/skills that need what the runner lacks
@@ -727,6 +727,14 @@ VMSECTION
   # Approved lessons only: an unreviewed one could carry text the agent read from the web.
   declare -F lessons_approved_md >/dev/null && vm_section="${vm_section}
 $(lessons_approved_md)"
+  # Team memory: the reviewed index in the prompt, the files beside it (lib/memory.sh). Off when unset.
+  if declare -F memory_index_md >/dev/null && memory_on; then
+    # shellcheck disable=SC2046  # one slug per word
+    vm_section="${vm_section}
+$(memory_index_md "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs))"
+    # shellcheck disable=SC2046
+    memory_sync "$name" "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs)
+  fi
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "

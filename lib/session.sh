@@ -165,7 +165,7 @@ _SESSION_HANDOFF_PROMPT='This session is about to pause. Update /workspace/.fxa-
 session in this thread can continue from it alone: the goal, decisions and why,
 what is built and verified, open questions, and the next step, at most 25 lines.
 Copy any script in /tmp that the next session will run again into /workspace/.fxa-keep/,
-and name it in the notes. Do nothing else. Nobody reads your reply.'
+and name it in the notes. Then run /fxa-end. Do nothing else. Nobody reads your reply.'
 
 # _session_notes_note   The first turn of a session whose thread has notes:
 # a new conversation, with the earlier work in the notes and the checkout.
@@ -472,6 +472,8 @@ straight to step 4.
    /workspace/.fxa-lessons.json as [{"lesson": "...", "why": "..."}]: at most 3,
    one sentence each, about the repo or the sandbox, never about this change.
    Write none when there is nothing new. The operator reviews each one first.
+7. Run /fxa-end: it writes /workspace/.fxa-memory.json, this work's notes and
+   learnings for the team's memory.
 EOF
 }
 
@@ -1594,6 +1596,8 @@ _session_save() {
     _session_sh "$name" "cd /workspace && ${_SESSION_WORK_TAR}" \
       2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
     [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
+    # Every stop (pause, idle, cost cap, !stop): the last point at which the runner exists.
+    declare -F memory_collect_session >/dev/null && memory_collect_session "$key" "$name" stop
     local notes; notes="$(mktemp)"
     _session_sh "$name" 'head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null' > "$notes" 2>/dev/null || true
     _thread_save_notes "$key" "$notes"; rm -f "$notes"

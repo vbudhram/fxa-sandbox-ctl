@@ -20,7 +20,7 @@ only explains the files around it.
 | `/workspace/.fxa-auto-prompt.txt`, `.fxa-auto-launch.sh`, `.fxa-auto-claude.jsonl` | How you were started, and your transcript. Ignore them. |
 | `/workspace/.fxa-auto-token` | Read and deleted before you start. Never recreate it. |
 
-When the work is done, write the handoff with `/fxa-vm-handoff`. The file is
+When the work is done, run `/fxa-end` (the notes and learnings for the team's memory), then write the handoff with `/fxa-vm-handoff`. The file is
 `/workspace/.fxa-auto-done.json`:
 
 ```json
