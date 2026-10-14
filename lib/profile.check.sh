@@ -238,6 +238,12 @@ printf 'PIPE_REPO_SLUG="mozilla/t"\nPIPE_STAK_DIR="/home/agent/t"\n' > "$tmp/lr/
 check "a key that no code reads is named" "t/profile.conf: PIPE_STAK_DIR is read nowhere (a typo?)" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep STAK)"
 head -c 9000 /dev/zero | tr '\0' x > "$tmp/lr/profiles/t/CLAUDE.md"
 check "a team CLAUDE.md over 8 KB is named" "1" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep -c 't/profile.conf: CLAUDE.md is over 8 KB')"
+# worktree.sh loads first (as ctl sources it) and sets its own defaults: a profile's base and pool win over them.
+bp() { ( export HOME="$tmp/home"; unset FXA_WORKTREE_BASE FXA_SHARED_WORKTREE_NAME _FXA_BASE_LOADED _FXA_POOL_LOADED; [ -n "${2:-}" ] && export FXA_WORKTREE_BASE="$2"
+  SANDBOX_ROOT="$root"; source "$root/lib/pipeline.sh"; source "$root/lib/worktree.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
+  echo "$PIPE_BASE_BRANCH $FXA_WORKTREE_BASE $FXA_SHARED_WORKTREE_NAME" ); }
+check "a master-branch team gets its base and its own pool; FxA keeps main and fxa-auto" "master master sync-storage-auto|main main fxa-auto" "$(bp sync-storage)|$(bp fxa)"
+check "a base set by hand still wins" "dev dev sync-storage-auto" "$(bp sync-storage dev)"
 # The agent's own command line holds the guide: a pkill -f with plain text from it stops the agent.
 check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" \
   "$(grep -HnE "p(kill|grep)[^|;]* -f +['\"]?[^['\" ]" "$root"/profiles/*/boot.sh "$root"/profiles/*/*.md "$root"/profiles/*/skills/*/SKILL.md 2>/dev/null || true)"
