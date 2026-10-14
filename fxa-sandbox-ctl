@@ -2609,6 +2609,8 @@ _session_finish_one() {
   local chk crc=0
   chk="$(_session_sh "$name" "$chk_cmd" 2>&1)" || crc=$?
   printf '%s\n' "$chk" >&2
+  # 126 or 127: the check itself is missing on the runner. Shipping without it is not a pass.
+  if [ "$crc" = 126 ] || [ "$crc" = 127 ]; then _session_finish_fail "$key" "the host's handoff check is missing on the runner, so nothing was pushed" "$mode"; return 1; fi
   # 1 is a problem; 3 is only the PR text's style, which gets the same one repair turn but never stops the ship.
   if [ "$crc" = 1 ] || [ "$crc" = 3 ]; then
     _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write

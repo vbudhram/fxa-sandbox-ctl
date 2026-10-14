@@ -110,6 +110,14 @@ session_set agent-thr1 state active turn_open 0 notes_stale 1 runtime claude
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
 check "stale notes: a handoff, no pause yet" "handoff agent-thr1|active|running" "$(session_idle_sweep 2>/dev/null | grep -v '^stopped ')|$(session_get agent-thr1 state)|$(session_get agent-thr1 handoff)"
 check "after the handoff it pauses at once" "paused agent-thr1|paused" "$(session_idle_sweep 2>/dev/null | grep -v '^stopped ')|$(session_get agent-thr1 state)"
+# Codex gets the same quiet handoff turn, with the skill named in words: it has no slash commands.
+_session_turn() { [ "${3:-}" = quiet ] && { session_set "$1" handoff running handoff_at "$(date +%s)"; printf '%s' "$2" > "$tmp/hp"; }; }
+session_set agent-thr1 state active handoff "" turn_open 0 notes_stale 1 runtime codex
+jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
+check "codex stale notes: a handoff too, with the fxa-end skill by name" "handoff agent-thr1|1|0" \
+  "$(session_idle_sweep 2>/dev/null | grep -v '^stopped ')|$(grep -c 'the fxa-end skill' "$tmp/hp")|$(grep -c '/fxa-end' "$tmp/hp")"
+session_set agent-thr1 runtime claude
+session_idle_sweep >/dev/null 2>&1
 _session_turn() { return 1; } # the handoff cannot start
 session_set agent-thr1 state active handoff "" notes_stale 1
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"

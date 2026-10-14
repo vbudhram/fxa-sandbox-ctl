@@ -593,6 +593,42 @@ _disable_proxy_in_vm() {
 
 # ── Security: Minimal Claude config (not full directory) ──────
 
+# _vm_git_identity <name>   The host's git name and email for the agent user, so commits have the right author.
+_vm_git_identity() {
+  local git_name git_email
+  git_name="$(git config --global user.name 2>/dev/null || true)"
+  git_email="$(git config --global user.email 2>/dev/null || true)"
+  [ -n "$git_name" ] || [ -n "$git_email" ] || return 0
+  vm_exec "$1" sudo -u agent bash -c "
+    git config --global user.name '${git_name}'
+    git config --global user.email '${git_email}'
+  " 2>/dev/null || echo "  WARN: Could not set git config"
+}
+
+# _vm_session_git_rule   stdin → stdout: in a Slack session, the agent owns its git (it commits and
+# rebases, and the host pushes), so the "You cannot commit or push" rule becomes that one.
+# The pipeline's slots share a read-only .git, so its text stays.
+_vm_session_git_rule() {
+  [ "${FXA_SESSION_MODE:-}" = 1 ] || { cat; return; }
+  awk '
+    /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash. Stay on the"; print "  branch you start on: do not create or switch branches, because the host ships only that one."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
+    skip && /^  / { next } { skip = 0; print }'
+}
+
+# _vm_team_context <name>   What every runtime gets after its guide: the approved lessons (an
+# unreviewed one could carry text the agent read from the web) and the team memory's reviewed
+# index, with the memory files synced beside it (lib/memory.sh; off when unset).
+_vm_team_context() {
+  declare -F lessons_approved_md >/dev/null && printf '\n%s' "$(lessons_approved_md)"
+  if declare -F memory_index_md >/dev/null && memory_on; then
+    # shellcheck disable=SC2046  # one slug per word
+    printf '\n%s' "$(memory_index_md "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs))"
+    # shellcheck disable=SC2046
+    memory_sync "$1" "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs) >&2
+  fi
+  return 0
+}
+
 _setup_claude_config() {
   local name="$1"
   # Only named files, never all of ~/.claude: it holds history, paths and session data.
@@ -615,16 +651,7 @@ _setup_claude_config() {
     chown agent:agent /home/agent/.claude/settings.json
   " 2>/dev/null || echo "  WARN: Could not copy settings.json"
 
-  # The host identity, so commits have the correct author.
-  local git_name git_email
-  git_name="$(git config --global user.name 2>/dev/null || true)"
-  git_email="$(git config --global user.email 2>/dev/null || true)"
-  if [ -n "$git_name" ] || [ -n "$git_email" ]; then
-    vm_exec "$name" sudo -u agent bash -c "
-      git config --global user.name '${git_name}'
-      git config --global user.email '${git_email}'
-    " 2>/dev/null || echo "  WARN: Could not set git config"
-  fi
+  _vm_git_identity "$name"
 
   # CLAUDE.md: only the operator rules for code and writing, never the whole file
   # (it names internal links and host workflows the sandbox must not see).
@@ -718,23 +745,7 @@ What trips agents most often:
 - Save screenshots and videos in `/workspace/.fxa-auto-media/`.
 VMSECTION
 )"
-  # A Slack session owns its git: it commits and rebases, and the host pushes. The pipeline's slots share a read-only .git.
-  if [ "${FXA_SESSION_MODE:-}" = 1 ]; then
-    vm_section="$(printf '%s\n' "$vm_section" | awk '
-      /^- You cannot commit or push/ { print "- Use git as you like: commit, amend, fetch, rebase onto origin/main, stash. Stay on the"; print "  branch you start on: do not create or switch branches, because the host ships only that one."; print "  You cannot push, and there is no `gh`: the host pushes your branch, squashed"; print "  to one commit. Revert a file with `git checkout \"$(git merge-base HEAD origin/main)\" -- <path>`."; skip = 1; next }
-      skip && /^  / { next } { skip = 0; print }')"
-  fi
-  # Approved lessons only: an unreviewed one could carry text the agent read from the web.
-  declare -F lessons_approved_md >/dev/null && vm_section="${vm_section}
-$(lessons_approved_md)"
-  # Team memory: the reviewed index in the prompt, the files beside it (lib/memory.sh). Off when unset.
-  if declare -F memory_index_md >/dev/null && memory_on; then
-    # shellcheck disable=SC2046  # one slug per word
-    vm_section="${vm_section}
-$(memory_index_md "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs))"
-    # shellcheck disable=SC2046
-    memory_sync "$name" "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs)
-  fi
+  vm_section="$(printf '%s\n' "$vm_section" | _vm_session_git_rule)$(_vm_team_context "$name")"
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "

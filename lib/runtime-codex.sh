@@ -35,8 +35,8 @@ TOML
 )"
   # AGENTS.md is Codex's CLAUDE.md. The operator rules come first, the same ones
   # a Claude runner gets, then the pointers to the one guide both runtimes read.
-  local agents_b64 host_agents; host_agents="$(_vm_operator_rules)"
-  agents_b64="$(printf '%s\n\n%s\n' "$host_agents" '# FxA sandbox VM
+  local agents_b64 host_agents guide; host_agents="$(_vm_operator_rules)"
+  guide="$(printf '%s\n' '# FxA sandbox VM
 
 You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 16GB RAM). The FxA
 checkout is /workspace. First read /etc/vm-agent-guide.md, the operations
@@ -48,12 +48,22 @@ What trips agents most often:
 - The network is an allowlist (OpenAI, npm and yarn, PyPI, GitHub, Playwright).
 - Verify with the fxa-verify skill, never a whole package suite (it can run
   the machine out of memory). nx test-unit fxa-settings runs no tests.
-- The FxA services are not running. Start them with fxa-start only when needed.' | base64 | tr -d '\n')"
+- The FxA services are not running. Start them with fxa-start only when needed.
+- Skills are in ~/.codex/skills (also reachable as ~/.claude/skills, the path the
+  guides use). The skills of the repo are in /workspace/.claude/skills/<name>/SKILL.md:
+  read the file to use one. If /workspace/CLAUDE.md exists, read it first.' | _vm_session_git_rule)"
+  # The same approved lessons and team memory a Claude runner gets.
+  guide="${guide}$(_vm_team_context "$name")"
+  agents_b64="$(printf '%s\n\n%s\n' "$host_agents" "$guide" | base64 | tr -d '\n')"
+  _vm_git_identity "$name"
 
   # Its own ssh, outside agent_run's batch: a failed write must stop the launch,
   # and a batched vm_exec always returns 0.
   _VM_BATCH= vm_exec "$name" sudo bash -c "
-    mkdir -p /home/agent/.codex/skills
+    mkdir -p /home/agent/.codex/skills /home/agent/.claude
+    # The guides, the host's handoff check and the skills themselves call ~/.claude/skills/...
+    rm -rf /home/agent/.claude/skills && ln -s /home/agent/.codex/skills /home/agent/.claude/skills
+    chown -h agent:agent /home/agent/.claude/skills
     echo '${config_b64}' | base64 -d > /home/agent/.codex/config.toml
     echo '${agents_b64}' | base64 -d > /home/agent/.codex/AGENTS.md
     chown -R agent:agent /home/agent/.codex
@@ -67,7 +77,10 @@ What trips agents most often:
     [ -d "${CLAUDE_HOME_DIR}/skills/${s}" ] && tar_items+=("skills/${s}")
   done
   if [ "${#tar_items[@]}" -gt 0 ] \
-     && tar --dereference -cf "$skills_tar" -C "$CLAUDE_HOME_DIR" "${tar_items[@]}" 2>/dev/null; then
+     && COPYFILE_DISABLE=1 tar --dereference -cf "$skills_tar" -C "$CLAUDE_HOME_DIR" "${tar_items[@]}" 2>/dev/null; then
+    # The team's own skills (profiles/<team>/skills), beside the shared ones, as Claude gets them.
+    [ -n "${PIPE_PROFILE:-}" ] && [ -d "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}/skills" ] \
+      && COPYFILE_DISABLE=1 tar -rf "$skills_tar" -C "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}" skills 2>/dev/null
     local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519" ip
     ip="$(vm_ip "$name")"
     if _retry scp -i "$ssh_key" ${VM_SSH_OPTS} "$skills_tar" "${VM_SSH_USER}@${ip}:/tmp/fxa-codex-skills.tar" 2>/dev/null; then

@@ -65,6 +65,8 @@ check "watch: tool results are marked done" 't1:true t2:true t3:false t4:true' "
 check "watch: a script that writes a file is an edit, one that reads is not" 'Editing with a script: python3 - <<EOF|Running python3 -c print(1)' \
   "$(printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"p1","name":"Bash","input":{"command":"python3 - <<EOF\np=\"a.tsx\"; s=open(p).read()\nopen(p, \"w\").write(s.replace(\"a\", \"b\"))\nEOF"}},{"type":"tool_use","id":"p2","name":"Bash","input":{"command":"python3 -c print(1)"}}]}}' \
     | jq -R -c "$_SESSION_WATCH_JQ" | jq -r 'select(.type == "step") | .text' | sed 's/^\(Editing with a script: python3 - <<EOF\).*/\1/' | paste -sd'|' -)"
+check "watch: a codex message streams as a block of text, as Claude's reply does" '{"type":"text_start"}|{"type":"text","text":"I will trace the cache first."}' \
+  "$(echo '{"type":"item.completed","item":{"type":"agent_message","text":"I will trace the cache first."}}' | jq -R -c "$_SESSION_WATCH_JQ" | paste -sd'|' -)"
 check "watch: a codex item is a step only" '{"type":"step","text":"Editing b.ts"}' "$(echo '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"a/b.ts"}]}}' | jq -R -c "$_SESSION_WATCH_JQ")"
 check "watch: the result ends it" "result" "$(jq -r 'last | .type' <<< "$w")"
 todo="$(jq -n -c '{type: "assistant", parent_tool_use_id: null, message: {content: [{type: "tool_use", id: "w1", name: "Write",
@@ -94,6 +96,8 @@ check "a second failure stops the ship and says why" "turn:The engineer|turn:The
 Open PR failed: handoff check: pr_title is not a scoped conventional subject" "$(finish_case 1 1)"
 check "style alone gets one repair turn and ships even if it stays" "turn:The engineer|turn:The host's c|pushed" "$(finish_case 3 3)"
 check "an unreachable runner skips the check" "turn:The engineer|pushed" "$(finish_case 255)"
+check "a check missing on the runner stops the ship (a Codex runner once had none)" "turn:The engineer
+Open PR failed: the host's handoff check is missing on the runner, so nothing was pushed" "$(finish_case 127)"
 
 # Usage records: one line per turn, and at stop the runner, busy and idle seconds with the reason.
 echo '{"key":"agent-us01","state":"active","turns":"2"}' > "$SESSION_DIR/agent-us01.json"

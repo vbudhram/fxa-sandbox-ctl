@@ -472,7 +472,7 @@ straight to step 4.
    /workspace/.fxa-lessons.json as [{"lesson": "...", "why": "..."}]: at most 3,
    one sentence each, about the repo or the sandbox, never about this change.
    Write none when there is nothing new. The operator reviews each one first.
-7. Run /fxa-end: it writes /workspace/.fxa-memory.json, this work's notes and
+7. Run $(runtime_skill_ref fxa-end): it writes /workspace/.fxa-memory.json, this work's notes and
    learnings for the team's memory.
 EOF
 }
@@ -547,6 +547,8 @@ _session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
 _session_turn() {
   local key="$1" msg="$2" quiet="${3:-}" name sid tmp out="${_SESSION_CLAUDE_SPLIT}"
   [ -n "$quiet" ] && out='cat > /workspace/.fxa-handoff.jsonl'
+  # Codex writes plain JSON lines (no stream split); a quiet turn stays out of the transcript too.
+  local cx_out='tee -a /workspace/.fxa-auto-claude.jsonl'; [ -n "$quiet" ] && cx_out="$out"
   name="$(worktree_branch_for "$key")"
   sid="$(session_get "$key" claude_session_id)"
   if [ -z "$sid" ]; then
@@ -572,7 +574,7 @@ export HOME=/home/agent
 source /etc/agent-env.sh
 cd /workspace
 codex exec resume ${sid} --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-steer-msg.txt 2>&1 \\
-  | tee -a /workspace/.fxa-auto-claude.jsonl
+  | ${cx_out}
 STEER
     else
     local trees; trees="$(trees_session_flags "$key")"
@@ -664,11 +666,13 @@ session_idle_sweep() {
     # So is a test or verify run the agent left in the background (run.sh --bg).
     if _session_job_running "$key"; then session_set "$key" last_activity "$now"; continue; fi
     # Notes the last turn did not update: one quiet turn writes them, and the next sweep pauses.
-    if [ "$(jq -r '.notes_stale // ""' "$f")" = 1 ] && [ -z "$(jq -r '.handoff // ""' "$f")" ] && [ "$(jq -r '.runtime // "claude"' "$f")" = claude ]; then
+    if [ "$(jq -r '.notes_stale // ""' "$f")" = 1 ] && [ -z "$(jq -r '.handoff // ""' "$f")" ]; then
       if _session_lock "$key"; then
         # A handoff that cannot start must not hold the pause off: the next sweep pauses.
         if [ "$(session_get "$key" turn_open)" != 1 ]; then
-          if _session_turn "$key" "$_SESSION_HANDOFF_PROMPT" quiet >/dev/null 2>&1; then echo "handoff ${key}"; else session_set "$key" handoff done; fi
+          # Codex has no slash commands: it gets the skill by name.
+          local hp="$_SESSION_HANDOFF_PROMPT"; [ "$(session_get "$key" runtime)" = codex ] && hp="${hp//\/fxa-end/the fxa-end skill}"
+          if _session_turn "$key" "$hp" quiet >/dev/null 2>&1; then echo "handoff ${key}"; else session_set "$key" handoff done; fi
         fi
         _session_unlock "$key"
       fi
@@ -855,6 +859,7 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
 # {type: "step", text} per tool call or message; then the live-status events.
 _SESSION_WATCH_JQ="fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
   elif .type == \"fxa_diffstat\" then {type: \"diffstat\", files: .files}
+  elif .type == \"item.completed\" and .item.type == \"agent_message\" then ({type: \"text_start\"}, {type: \"text\", text: .item.text})
   elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
     | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
       elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
