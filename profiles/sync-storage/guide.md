@@ -43,10 +43,11 @@ cargo nextest run --workspace -E 'package(tokenserver-auth)'   # one crate, the 
 cargo nextest run --workspace                                   # everything
 ```
 
-Restart the server after a build:
+Restart the server after a build. Stop it by name with `-x`, never with `-f`: your own command
+line holds this guide, so `pkill -f` with any text from it stops you too.
 
 ```
-pkill -u agent -f target/debug/syncserver
+pkill -u agent -x syncserver
 PYTHONPATH=$(~/.syncstorage-venv/bin/python -c 'import site; print(site.getsitepackages()[0])') \
   nohup setsid target/debug/syncserver --config ~/.syncstorage.toml > ~/.syncstorage.log 2>&1 < /dev/null &
 ```

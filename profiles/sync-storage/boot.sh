@@ -90,7 +90,8 @@ as_agent "cargo build -q --bin syncserver $FEATURES" > /var/log/syncstorage-buil
 
 step "syncserver on :8000"
 pysite="$($V/bin/python -c 'import site; print(site.getsitepackages()[0])')"
-pkill -u agent -f target/debug/syncserver; sleep 1
+# By name, never -f: the agent's own command line holds the guide, which names this binary.
+pkill -u agent -x syncserver; sleep 1
 as_agent "PYTHONPATH=$pysite RUST_LOG=info nohup setsid target/debug/syncserver --config $CONF > $LOG 2>&1 < /dev/null &"
 for i in $(seq 90); do [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' localhost:8000/__heartbeat__)" = 200 ] && break; sleep 2; done
 [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' localhost:8000/__heartbeat__)" = 200 ] || die "syncserver did not answer on :8000 (see $LOG)"
