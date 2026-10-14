@@ -54,6 +54,8 @@ PYTHONPATH=$(~/.syncstorage-venv/bin/python -c 'import site; print(site.getsitep
 
 ## Proof
 
+`/sync-verify` is the one command to prove a change. It runs the steps below and `/sync-e2e`.
+
 `/sync-e2e` runs two checks:
 1. `e2e.py`: a new FxA account gets a Sync token as Firefox does, the token server assigns a
    node, and a Hawk-signed record goes into storage and back.

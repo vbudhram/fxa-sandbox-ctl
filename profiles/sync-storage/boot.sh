@@ -23,16 +23,19 @@ pk="build-essential pkg-config cmake libmysqlclient-dev libpq-dev libssl-dev pyt
 dpkg -s $pk > /dev/null 2>&1 || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q $pk; } > /dev/null || die "could not install the build packages"
 
 step "Rust"
+# CI's toolchain: the repo's rust-version line (RUST_VER) names it. A newer clippy flags code CI passes.
 want="$(sed -n 's/^rust-version *= *"\([0-9.]*\)".*/\1/p' "$S/Cargo.toml" | head -1)"
-if [ ! -x "$CH/bin/cargo" ]; then
-  curl -sSf https://sh.rustup.rs | RUSTUP_HOME=$RH CARGO_HOME=$CH sh -s -- -y -q --no-modify-path --profile minimal --default-toolchain stable > /dev/null \
-    || die "could not install Rust"
-  chmod -R a+rX /opt/rust
-fi
+ru() { RUSTUP_HOME=$RH CARGO_HOME=$CH "$CH/bin/rustup" "$@"; }
+[ -x "$CH/bin/rustup" ] || curl -sSf https://sh.rustup.rs | RUSTUP_HOME=$RH CARGO_HOME=$CH sh -s -- -y -q --no-modify-path --profile minimal --default-toolchain none > /dev/null \
+  || die "could not install rustup"
+# fmt and clippy are the repo's lint, as its CI runs them.
+ru toolchain install "${want:-stable}" --profile minimal -c rustfmt -c clippy > /dev/null 2>&1 && ru default "${want:-stable}" > /dev/null 2>&1 \
+  || die "could not install Rust ${want:-stable}"
+chmod -R a+rX /opt/rust
+step "rustc $(RUSTUP_HOME=$RH $CH/bin/rustc --version | cut -d' ' -f2), as the repo's CI (${want:-stable})"
 # The repo's tests run under nextest, as its CI does; a plain cargo test fails some of them.
 [ -x "$CH/bin/cargo-nextest" ] || { curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$CH/bin" && chmod a+rx "$CH/bin/cargo-nextest"; } \
   || die "could not install cargo-nextest"
-step "rustc $(RUSTUP_HOME=$RH $CH/bin/rustc --version | cut -d' ' -f2), the repo wants ${want:-any}"
 
 # The verifier is PyFxA inside the server's Python, at the versions the repo's poetry.lock pins.
 # A current pyOpenSSL too: Ubuntu's own (python3-openssl) breaks against the pinned cryptography.
@@ -64,6 +67,15 @@ my "CREATE USER IF NOT EXISTS 'sync'@'%' IDENTIFIED BY 'test'; CREATE USER IF NO
   || die "could not create the sync databases"
 
 # Outside the repo: the repo's own config/local.toml is a path its rules keep agents out of.
+# Full debug info put 24 GB in target/ and filled the runner's disk; line tables keep backtraces.
+step "cargo config"
+sudo -u agent bash -c "mkdir -p /home/agent/.cargo && cat > /home/agent/.cargo/config.toml" <<'CARGO' || die "could not write the cargo config"
+[profile.dev]
+debug = "line-tables-only"
+[profile.test]
+debug = "line-tables-only"
+CARGO
+
 step "config"
 [ -f "$CONF" ] || sudo -u agent bash -c "umask 077; cat > $CONF" <<TOML || die "could not write $CONF"
 # syncstorage-rs for the sandbox: storage and token server on :8000, FxA's auth server on :9000.
