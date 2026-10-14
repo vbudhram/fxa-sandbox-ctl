@@ -7,6 +7,8 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
+# Out of the repo: a mounted checkout reads as dubious ownership to git in the Linux test run.
+cd "$tmp"
 eval "$(sed -n '/^_gce_pin_runner_tree() {/,/^}/p' "$here/agent.sh")"
 # The runner: the pin's one command goes to a file, and the runner answers with the pinned sha.
 vm_exec() { shift; case "$1" in test) return 0 ;; esac; printf '%s\n' "$*" > "$tmp/pin.cmd"; echo "$FXA_PIN_SHA"; }
