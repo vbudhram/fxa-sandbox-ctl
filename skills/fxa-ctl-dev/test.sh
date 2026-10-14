@@ -45,16 +45,22 @@ run_here() {
   local i="${sh%/*}" n="${sh#*/}"
   # Largest first (a rough measure of time): the slow ones spread across the jobs and start first in each.
   for f in $(ls -S lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh); do [ $(( k++ % n )) -eq $(( i - 1 )) ] && picked+=("$f"); done
+  # The Python tests run beside the pool: the proxy's alone takes 14 s.
+  local py="" pyp=""
+  if [ "$i" = "$n" ]; then
+    py="$(mktemp "${TMPDIR:-/tmp}/fxa-py.XXXXXX")"
+    ( b=0
+      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; b=1; }; done
+      # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
+      if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then python3 desktop-gateway/check.py >/dev/null 2>&1 || { echo "FAIL $HOST: desktop-gateway/check.py"; b=1; }
+      else echo "skip $HOST: desktop-gateway/check.py (pip install -r desktop-gateway/requirements.txt to run it)"; fi
+      exit "$b" ) > "$py" 2>&1 & pyp=$!
+  fi
   run_pool "$HOST" "${picked[@]}" || bad=1
   if [ "$i" = 1 ]; then
     for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
   fi
-  if [ "$i" = "$n" ]; then
-    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; bad=1; }; done
-    # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
-    if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then python3 desktop-gateway/check.py >/dev/null 2>&1 || { echo "FAIL $HOST: desktop-gateway/check.py"; bad=1; }
-    else echo "skip $HOST: desktop-gateway/check.py (pip install -r desktop-gateway/requirements.txt to run it)"; fi
-  fi
+  if [ -n "$py" ]; then wait "$pyp" || bad=1; cat "$py"; rm -f "$py"; fi
   [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
 }
 
