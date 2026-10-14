@@ -708,6 +708,25 @@ and /ponytail-review too; apply each cut it reports or decline it in one line.
 Run step 8 in the fxa-writer subagent. Print each verdict and its 'Skills run:'
 line here: the goal evaluator reads only this transcript."
 
+  # Another team's own steps 1-8 (profiles/<team>/goal.md): FxA's steps name FxA's skills, lint and PR template.
+  local own="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/goal.md"
+  if [ "${PIPE_PROFILE:-fxa}" != fxa ] && [ -s "$own" ]; then
+    runtime_prompt_header "$key" "$summary"
+    cat <<EOF
+
+The goal is met only when ALL of these are TRUE and visible in this conversation:
+
+$(cat "$own")
+$(runtime_prompt_handoff_step)
+
+DO NOT push and DO NOT run 'gh' — the host does that once it sees the handoff
+file. No GitHub credentials in this VM.
+
+Or stop after 30 turns.
+EOF
+    return 0
+  fi
+
   runtime_prompt_header "$key" "$summary"
   cat <<EOF
 
@@ -1458,7 +1477,7 @@ cmd_precheck() {
 
   # Two Jira reads per key were slow in series. xargs -P fans them out, since bash
   # 3.2 has no `wait -n`. Only a new or changed key prints a line.
-  local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c .)"
+  local queue queue_n; queue="$(jira_queue_keys)"; queue_n="$(printf '%s\n' $queue | grep -c . || true)"
   # When each ticket first entered the queue, for the queue wait on the Stats page.
   local qk; for qk in $queue; do [[ "$qk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ ! -f "${PIPE_STATE_DIR}/${qk}.queued-at" ] && date +%s > "${PIPE_STATE_DIR}/${qk}.queued-at"; done
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi

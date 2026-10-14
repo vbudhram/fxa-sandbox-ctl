@@ -26,4 +26,6 @@ check "it records one jira/login error that names the fix, and releases the lock
 printf '✓ Authenticated\n  Site: example.atlassian.net\n' > "$tmp/auth"
 out="$(cmd_precheck 2>&1)"
 check "a good login: precheck reads Jira as before" "quiet:|1" "$(printf '%s' "$out" | head -1 | cut -c1-6)|$(cat "$tmp/reads" | wc -l | tr -d ' ')"
+# ctl runs under set -euo pipefail: a team with an empty queue (no ai-fixme tickets yet) is quiet, not a crash.
+check "an empty queue under the script's shell options: quiet" "quiet:" "$( (set -euo pipefail; cmd_precheck 2>&1) | head -1 | cut -c1-6)"
 exit "$fail"

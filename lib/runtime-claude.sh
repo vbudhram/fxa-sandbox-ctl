@@ -86,7 +86,7 @@ runtime_prompt_handoff_step() {
    pr_body, commit_body, media_paths}. pr_title is the scoped conventional commit
    subject (e.g. 'fix(settings): handle cached signin state'); the Jira key goes in
    pr_body, never the title. commit_body: 'Because:', 'This commit:' and
-   'Closes FXA-N', at most 15 lines. media_paths: paths relative to /workspace, or
+   'Closes <the Jira key>', at most 15 lines. media_paths: paths relative to /workspace, or
    []. This file is your DONE signal: write it only when the working tree holds
    exactly what should ship. Write it to /workspace/.fxa-auto-done.json.tmp, run
    'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' and fix what it prints,
