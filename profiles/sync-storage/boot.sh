@@ -36,6 +36,7 @@ step "rustc $(RUSTUP_HOME=$RH $CH/bin/rustc --version | cut -d' ' -f2), the repo
 
 # The verifier is PyFxA inside the server's Python, at the versions the repo's poetry.lock pins.
 # A current pyOpenSSL too: Ubuntu's own (python3-openssl) breaks against the pinned cryptography.
+# marionette-driver drives Firefox for the sync-e2e skill.
 step "Python for the token verifier"
 deps="$(python3 - "$S/poetry.lock" <<'PY'
 import sys, tomllib
@@ -49,7 +50,7 @@ for n in ("pyfxa", "tokenlib", "cryptography"): walk(n)
 print(" ".join(f"{n}=={pk[n]['version']}" for n in sorted(seen)))
 PY
 )" || die "could not read poetry.lock"
-sudo -u agent -H bash -c "[ -x $V/bin/python ] || python3 -m venv $V; $V/bin/pip install -q $deps pyopenssl" < /dev/null \
+sudo -u agent -H bash -c "[ -x $V/bin/python ] || python3 -m venv $V; $V/bin/pip install -q $deps pyopenssl marionette-driver" < /dev/null \
   || die "could not set up the Python venv"
 
 # The server's databases, and a pair for the tests: they expect tables nobody else wrote to.
