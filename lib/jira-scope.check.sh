@@ -8,7 +8,7 @@ check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
-eval "$(sed -n '/^jira_keys_in_state() {/,/^}/p;/^jira_items_in_state() {/,/^}/p;/^jira_queue_keys() {/,/^}/p;/^jira_queue_items() /p' "$here/jira.sh")"
+eval "$(sed -n '/^jira_keys_in_state() {/,/^}/p;/^jira_items_in_state() {/,/^}/p;/^jira_queue_keys() {/,/^}/p;/^jira_queue_items() /p;/^jira_secured_keys() {/,/^}/p' "$here/jira.sh")"
 eval "$(sed -n '/^_reap_stray_vms() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
 _jira_keys_for_jql() { printf '%s\n' "$1"; }; jira_items_json() { printf '%s\n' "$1"; }
@@ -36,6 +36,10 @@ check "a top-level OR in the profile's JQL stays inside the scope" 'project = FX
 echo FXA-9 > "$tmp/FOCUS"
 check "the whole queue ignores the focus" 'project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql all)"
 rm "$tmp/FOCUS"
+pipeline_states() { printf '%s\n' inflight done; }
+check "a pipeline ticket that got a security level is found, in the project" 'project = FXA AND level IS NOT EMPTY AND labels in ("ai-fixme-inflight", "ai-fixme-done")' "$(jira_secured_keys)"
+check "precheck reports it once, and the pass gets an info line" "1|1|1" \
+  "$(grep -c 'for sk in $(jira_secured_keys' "$here/../fxa-sandbox-ctl")|$(grep -c 'secured-noted" \] && continue' "$here/../fxa-sandbox-ctl")|$(grep -c '_info "security level: ' "$here/../fxa-sandbox-ctl")"
 check "a state read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
 check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
 check "a profile's own project wins" 'project = MNTOR AND level IS EMPTY' "$(PIPE_PROFILE=monitor PIPE_JIRA_PROJECT=MNTOR pipeline_jira_scope)"

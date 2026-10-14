@@ -1433,6 +1433,14 @@ cmd_precheck() {
   local qk; for qk in $queue; do [[ "$qk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ ! -f "${PIPE_STATE_DIR}/${qk}.queued-at" ] && date +%s > "${PIPE_STATE_DIR}/${qk}.queued-at"; done
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
+  # The pass posts nothing to a security ticket: tell the operator once for each, and let a person move it.
+  local sk; for sk in $(jira_secured_keys 2>/dev/null || true); do
+    [[ "$sk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || continue
+    _info "security level: ${sk} has a pipeline label; a person moves it (the pass does not touch it)"
+    [ -f "${PIPE_STATE_DIR}/${sk}.secured-noted" ] && continue
+    errors_record pipeline secured "$sk" "precheck" "${sk} got a security level while it has a pipeline label; move or relabel it by hand" ""
+    : > "${PIPE_STATE_DIR}/${sk}.secured-noted"
+  done
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
     printf '%s\n' $queue | grep . \
       | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
