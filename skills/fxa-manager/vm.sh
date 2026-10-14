@@ -373,12 +373,19 @@ EOF
     [[ "${2:-}" =~ ^[A-Za-z0-9/_.=\&?-]+$ ]] || { echo "usage: vm.sh api <path>, such as errors or snapshot" >&2; exit 1; }
     printf 'curl -sf -m 60 -H "Host: localhost" %q\n' "localhost:8787/api/$2" | on_vm | mask ;;
   secret)
-    name="${2:-}"; [[ "$name" =~ ^fxa-[a-z0-9-]+$ ]] || { echo "usage: vm.sh secret fxa-<name> [--prefix <p>]" >&2; exit 1; }
-    prefix=""; [ "${3:-}" = --prefix ] && prefix="${4:-}"
-    # Typed or pasted at a hidden prompt: never in the clipboard history of a command, or a file.
-    read -rs -p "Paste the value for $name, then Enter (hidden): " raw < /dev/tty; echo >&2
-    val="$(printf '%s' "$raw" | secret_clean "$prefix")" || { echo "vm.sh secret: empty${prefix:+, or it does not start with $prefix}; nothing stored" >&2; exit 1; }
-    unset raw
+    name="${2:-}"; [[ "$name" =~ ^fxa-[a-z0-9-]+$ ]] || { echo "usage: vm.sh secret fxa-<name> [--prefix <p> | --from-vm /home/fxa/<file>]" >&2; exit 1; }
+    if [ "${3:-}" = --from-vm ]; then
+      # A file made on the manager (a deploy key: several lines), streamed over ssh and never printed.
+      [[ "${4:-}" =~ ^/home/fxa/[A-Za-z0-9._/-]+$ ]] && [[ "$4" != *..* ]] || { echo "vm.sh secret: --from-vm takes a file under /home/fxa" >&2; exit 1; }
+      val="$(printf 'sudo -u fxa -H cat -- %q\n' "$4" | on_vm)"
+      [ -n "$val" ] || { echo "vm.sh secret: $4 is empty or missing on the manager; nothing stored" >&2; exit 1; }
+    else
+      prefix=""; [ "${3:-}" = --prefix ] && prefix="${4:-}"
+      # Typed or pasted at a hidden prompt: never in the clipboard history of a command, or a file.
+      read -rs -p "Paste the value for $name, then Enter (hidden): " raw < /dev/tty; echo >&2
+      val="$(printf '%s' "$raw" | secret_clean "$prefix")" || { echo "vm.sh secret: empty${prefix:+, or it does not start with $prefix}; nothing stored" >&2; exit 1; }
+      unset raw
+    fi
     if gcloud secrets describe "$name" --project "$P" >/dev/null 2>&1; then
       printf '%s' "$val" | gcloud secrets versions add "$name" --data-file=- --project "$P" >/dev/null || exit 1
     else

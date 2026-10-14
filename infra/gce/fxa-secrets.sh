@@ -39,6 +39,13 @@ fi
 # so the controller calls Jira's REST API with these (jira_sprint_add).
 [ -n "$j" ] && [ -n "$e" ] && [ -f "$W/fxa-sandbox-ctl/.env" ] && printf 'PIPE_JIRA_BASIC=%s:%s\n' "$e" "$j" >> "$W/fxa-sandbox-ctl/.env"
 unset j e
+# The team memory repo's deploy key (lib/memory.sh), when the secret exists; a rebuilt manager keeps writing.
+m="$(get fxa-agent-memory-key || true)"
+if [ -n "$m" ]; then
+  mkdir -p "$H/.ssh" && printf '%s\n' "$m" > "$H/.ssh/fxa-agent-memory"
+  chown fxa:fxa "$H/.ssh" "$H/.ssh/fxa-agent-memory"; chmod 700 "$H/.ssh"; chmod 600 "$H/.ssh/fxa-agent-memory"
+fi
+unset m
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
 [ -f "$W/fxa-agent-bot/.env" ] && chown fxa:fxa "$W/fxa-agent-bot/.env"
