@@ -573,7 +573,7 @@ codex exec resume ${sid} --json --dangerously-bypass-approvals-and-sandbox --ski
   | tee -a /workspace/.fxa-auto-claude.jsonl
 STEER
     else
-    local trees; trees="$(jq -r '(.trees // [])[] | [.name, .slug, .path] | @tsv' "$(_session_file "$key")" | trees_claude_flags "$(trees_each "$key" _tree_untrusted "$key")")"
+    local trees; trees="$(trees_session_flags "$key")"
     # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude

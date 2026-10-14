@@ -228,6 +228,11 @@ trees_claude_flags() {
   return 0
 }
 
+# trees_session_flags <key>   A session's " --add-dir" flags (a steer or resume), less its untrusted trees.
+trees_session_flags() {
+  jq -r '(.trees // [])[] | [.name, .slug, .path] | @tsv' "$(_session_file "$1")" | trees_claude_flags "$(trees_each "$1" _tree_untrusted "$1")"
+}
+
 # _tree_untrusted <key>   The tree's runner path when it is on a person's PR (task --checkout).
 _tree_untrusted() { _checkout_gate_on "$1" && printf '%s\n' "$FXA_TREE_PATH"; return 0; }
 

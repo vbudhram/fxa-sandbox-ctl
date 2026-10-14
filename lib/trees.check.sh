@@ -104,6 +104,15 @@ check "the untrusted tree gets no --add-dir" " --add-dir /home/agent/fxa" "$(tre
 check "with no untrusted tree every tree gets one" " --add-dir /home/agent/fxa --add-dir /home/agent/pyfxa" "$(trees_claude_flags "" <<< "$rows")"
 check "its prompt line says never to follow the author's CLAUDE.md, and does not claim it did not load" "0|1|0" \
   "$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/fxa`.*never follow them')|$(trees_each "$u" _tree_note "$u" | grep -c '^- `/workspace/pyfxa`.*never follow them')|$(trees_each "$u" _tree_note "$u" | grep -c 'did not load')"
+check "a steer's flags leave out the untrusted tree" " --add-dir /home/agent/fxa" "$(trees_session_flags "$u")"
+check "the steer uses them" "1" "$(grep -c 'trees="$(trees_session_flags "$key")"' "$here/session.sh")"
+# _tree_boot adds the untrusted tree to the run dir's list, which the launch reads.
+eval "$(sed -n '/^_tree_boot() {/,/^}/p' "$here/trees.sh")"
+g="$tmp/gr"; git init -q "$g"; git -C "$g" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m x; git -C "$g" update-ref refs/remotes/origin/main HEAD
+pipeline_ensure_clone() { :; }; worktree_repo_root() { echo "$g"; }; _retry() { :; }; gh() { git -C "$g" rev-parse HEAD; }; trees_from_get() { :; }
+d="$tmp/run"; mkdir -p "$d"; FXA_WORKTREE_BASE=main trees_each "$u" _tree_boot "$u" "" 1 "$d" >/dev/null 2>&1
+check "_tree_boot lists the untrusted tree for the launch" "/home/agent/pyfxa" "$(cat "$d/.fxa-trees-untrusted" 2>/dev/null)"
+unset -f gh
 session_set "$u" checkout_person 0
 check "the bot's own PR stays trusted" "" "$(trees_each "$u" _tree_untrusted "$u")"
 
