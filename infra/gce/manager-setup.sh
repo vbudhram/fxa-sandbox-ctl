@@ -303,7 +303,31 @@ Persistent=false
 [Install]
 WantedBy=timers.target
 UNIT
+# Another team's pass: the same job on its own profile (FXA_PIPELINE), queue, lock and state, on the
+# same schedule. Each profile with a Jira project gets one; FxA keeps fxa-pass. .env must not set FXA_PIPELINE.
+cat > /etc/systemd/system/fxa-pass@.service <<UNIT
+[Unit]
+Description=fxa-ai-fixme pass for %i (claude -p)
+Requires=fxa-secrets.service
+After=fxa-secrets.service
+[Service]
+Type=oneshot
+User=$U
+WorkingDirectory=$W/fxa-sandbox-ctl
+Environment=$path
+Environment=FXA_PIPELINE=%i
+EnvironmentFile=-$W/fxa-sandbox-ctl/.env
+ExecStart=$W/fxa-sandbox-ctl/infra/gce/claude-job.sh pass $C/pass-prompt.txt
+TimeoutStartSec=3h
+KillMode=process
+UNIT
+sed 's/^Description=.*/Description=fxa-ai-fixme pass for %i every 5 min, 07:04-19:59 New York/' \
+  /etc/systemd/system/fxa-pass.timer > /etc/systemd/system/fxa-pass@.timer
 systemctl daemon-reload
+for f in "$W"/fxa-sandbox-ctl/profiles/*/profile.conf; do
+  t="$(basename "$(dirname "$f")")"
+  [ "$t" != fxa ] && grep -q '^PIPE_JIRA_PROJECT=' "$f" && systemctl enable -q --now "fxa-pass@${t}.timer"
+done
 systemctl enable -q fxa-secrets.service
 systemctl enable -q fxa-llm-proxy.service
 systemctl enable -q fxa-mcp-gateway.service fxa-grafana-iap.service fxa-grafana-mcp.service
