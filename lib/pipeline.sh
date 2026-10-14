@@ -85,6 +85,8 @@ pipeline_load() {
   PIPE_COSTS_FILE="${PIPE_COSTS_FILE:-${PIPE_STATE_DIR}/agent-costs.json}"
   PIPE_MIN_FREE_GB="${PIPE_MIN_FREE_GB:-5}"
   PIPE_STALL_MINUTES="${PIPE_STALL_MINUTES:-20}"
+  # Every team's tickets are on one Jira site; the REST calls (sprint, attachments) need it.
+  PIPE_JIRA_SITE="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}"
   # One label for every team: pipeline_jira_scope keeps each queue to its own project.
   PIPE_LABEL_PREFIX="${PIPE_LABEL_PREFIX:-ai-fixme}"
   PIPE_QUEUE_JQL="${PIPE_QUEUE_JQL:-labels = \"${PIPE_LABEL_PREFIX}\" AND statusCategory != Done ORDER BY created ASC}"

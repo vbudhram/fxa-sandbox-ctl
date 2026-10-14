@@ -296,27 +296,34 @@ finish_media_args() {
 # pushes nothing. Keep the change as <state dir>/diffs/<key>.patch, which `state push`
 # mirrors, and post the agent's summary and the diffstat to the ticket. The caller labels it.
 finish_diff_only() {
-  local key="$1" wt="$2" done_file title body mb dir patch stat
+  local key="$1" wt="$2" done_file title body cb mb dir patch stat
   done_file="$(finish_done_file_path "$wt")"
   [ -s "$done_file" ] || { echo "ERROR: handoff file not found at ${done_file}." >&2; return 1; }
   title="$(jq -r '.pr_title // empty' "$done_file")"; body="$(jq -r '.pr_body // empty' "$done_file")"
+  cb="$(jq -r '.commit_body // empty' "$done_file")"
   mb="$(git -C "$wt" merge-base HEAD "origin/${FXA_WORKTREE_BASE:-main}" 2>/dev/null)" \
     || { echo "ERROR: no merge-base with origin/${FXA_WORKTREE_BASE:-main} in ${wt}" >&2; return 1; }
   dir="${PIPE_STATE_DIR}/diffs"; patch="${dir}/${key}.patch"; mkdir -p "$dir" || return 1
   # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files.
   ( cd "$wt" && git diff --binary --no-ext-diff --no-textconv "$mb" -- . ':(exclude).fxa-*' \
       && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' \
-        | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index -- /dev/null "$f" || true; done ) > "$patch" \
+        | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index -- /dev/null "$f" || true; done ) > "${patch}.diff" \
+    || { rm -f "${patch}.diff"; echo "ERROR: could not write ${patch}" >&2; return 1; }
+  [ -s "${patch}.diff" ] || { rm -f "$patch" "${patch}.diff"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
+  # A mail header over the diff, so `git am` makes the commit with the run's subject and body.
+  { printf 'From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\nFrom: %s agent <noreply@example.invalid>\nSubject: [PATCH] %s\n\n%s\n---\n\n' \
+      "${PIPE_PROFILE:-FxA}" "${title:-Change from the agent}" "${cb:-$key}"; cat "${patch}.diff"; } > "$patch" && rm -f "${patch}.diff" \
     || { echo "ERROR: could not write ${patch}" >&2; return 1; }
-  [ -s "$patch" ] || { rm -f "$patch"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
   stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -15)"
   # The runner wrote the title, body and patch: the PR path's guard runs before any of it is posted.
-  if ! _finish_pii_guard "$wt" "$done_file" "$title" "$body" "" "$patch"; then
+  if ! _finish_pii_guard "$wt" "$done_file" "$title" "$body" "$cb" "$patch"; then
     jira_comment "$key" "🤖 Diff-only run: the patch is kept in the pipeline's state dir (diffs/${key}.patch). Its summary is not posted, because the personal-data check refused it. A person must review the patch." \
       || echo "WARN: could not post the diff comment on ${key}" >&2
     printf '%s\n' "$patch"; return 0
   fi
-  jira_comment "$key" "🤖 Diff-only run: the ${PIPE_PROFILE:-} pipeline opens no PR yet, so the change is a patch for a person to review (diffs/${key}.patch in the pipeline's state dir).
+  local where="diffs/${key}.patch in the pipeline's state dir"
+  jira_attach "$key" "$patch" && where="attached as ${key}.patch; apply it with: git am ${key}.patch"
+  jira_comment "$key" "🤖 Diff-only run: the ${PIPE_PROFILE:-} pipeline opens no PR yet, so the change is a patch for a person to review (${where}).
 
 ${title:-No title.}
 

@@ -348,6 +348,17 @@ jira_sprint_add() {
   [ "$code" = "204" ] || echo "WARN: sprint add for $key returned HTTP $code" >&2
 }
 
+# jira_attach <KEY> <file>   WRITE: attach a file to the ticket. acli cannot upload, so this calls
+#   Jira's REST API. The login goes to curl on stdin, so `ps` never shows it. A POST: no retry.
+jira_attach() {
+  [[ "${1:-}" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -s "${2:-}" ] || { echo "usage: jira_attach <KEY> <file>" >&2; return 1; }
+  [ -n "${PIPE_JIRA_BASIC:-}" ] || { echo "WARN: PIPE_JIRA_BASIC unset; nothing attached to $1" >&2; return 1; }
+  local code
+  code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sS -K - -o /dev/null -w '%{http_code}' -X POST \
+            -H 'X-Atlassian-Token: no-check' -F "file=@${2}" "${PIPE_JIRA_SITE}/rest/api/3/issue/${1}/attachments" 2>/dev/null)" || code=000
+  [ "$code" = 200 ] || { echo "WARN: attaching ${2##*/} to $1 returned HTTP $code" >&2; return 1; }
+}
+
 # jira_close_merged <KEY>
 #   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
 #   approved, add it to the active sprint, transition it to Done.
