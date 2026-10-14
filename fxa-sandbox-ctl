@@ -2818,6 +2818,9 @@ main() {
                   # Every profile: only assignments, and no key that the code never reads (a typo).
                   lint) local f k rc=0; for f in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
                           pipeline_conf_lint "$f" || rc=1
+                          # The team rules go in every runner's CLAUDE.md, which loads on every turn.
+                          [ "$(_fsize "$(dirname "$f")/CLAUDE.md" 2>/dev/null || echo 0)" -le 8192 ] \
+                            || { echo "${f#"${SCRIPT_DIR}"/profiles/}: CLAUDE.md is over 8 KB; move the detail to guide.md"; rc=1; }
                           for k in $(grep -oE '^PIPE_[A-Z0-9_]+=' "$f" | tr -d =); do
                             grep -rqw --include='*.sh' --include='*.py' --exclude='*.check.sh' "$k" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/infra" "${SCRIPT_DIR}/dashboard" \
                               || grep -qw "$k" "${SCRIPT_DIR}/fxa-sandbox-ctl" || { echo "${f#"${SCRIPT_DIR}"/profiles/}: ${k} is read nowhere (a typo?)"; rc=1; }

@@ -236,5 +236,7 @@ check "every shipped profile lints clean, with no key the code never reads" "pro
 mkdir -p "$tmp/lr/profiles/t" "$tmp/lr/lib"; cp "$root/fxa-sandbox-ctl" "$tmp/lr/"; cp "$root"/lib/*.sh "$tmp/lr/lib/"; cp -R "$root/profiles/fxa" "$tmp/lr/profiles/"; cp -R "$root/pipelines" "$tmp/lr/"
 printf 'PIPE_REPO_SLUG="mozilla/t"\nPIPE_STAK_DIR="/home/agent/t"\n' > "$tmp/lr/profiles/t/profile.conf"
 check "a key that no code reads is named" "t/profile.conf: PIPE_STAK_DIR is read nowhere (a typo?)" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep STAK)"
+head -c 9000 /dev/zero | tr '\0' x > "$tmp/lr/profiles/t/CLAUDE.md"
+check "a team CLAUDE.md over 8 KB is named" "1" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep -c 't/profile.conf: CLAUDE.md is over 8 KB')"
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

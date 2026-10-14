@@ -615,6 +615,14 @@ _vm_session_git_rule() {
     skip && /^  / { next } { skip = 0; print }'
 }
 
+# _vm_team_rules   The team's own rules (profiles/<team>/CLAUDE.md), after the sandbox section in
+# both runtimes. The sandbox rules win where the two differ.
+_vm_team_rules() {
+  local f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/CLAUDE.md"
+  [ -s "$f" ] || return 0
+  printf '\n\n# Team rules: %s\n\nThe sandbox rules above win over these.\n\n%s\n' "${PIPE_LABEL:-${PIPE_PROFILE:-fxa}}" "$(head -c 8192 "$f")"
+}
+
 # _vm_team_context <name>   What every runtime gets after its guide: the approved lessons (an
 # unreviewed one could carry text the agent read from the web) and the team memory's reviewed
 # index, with the memory files synced beside it (lib/memory.sh; off when unset).
@@ -724,12 +732,11 @@ _setup_claude_config() {
 
 # Sandbox VM
 
-You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM).
+You are inside a sandbox VM (Ubuntu 24.04, ARM64, 4 vCPU, 16GB RAM).
 
 First, read `/etc/vm-agent-guide.md`, the operations manual. It covers the
 backend you are on, the network allowlist, what the host refuses to ship, the
-stack and its ports, and how to verify. For FxA itself, read
-`/workspace/ai/AGENTS.md` (if it exists) and the rules in `/workspace/.claude/rules/`.
+stack and its ports, and how to verify.
 
 What trips agents most often:
 - You cannot commit or push, and there is no `gh`. The host commits, signs and
@@ -738,14 +745,12 @@ What trips agents most often:
   `.husky/`, `_scripts/`, `package.json` scripts) and to frozen paths.
 - The network is an allowlist (Anthropic, npm and yarn, PyPI, GitHub, Playwright).
   Any other host is refused.
-- Verify with `/fxa-verify --run`, never a whole package suite: it can run the
-  16GB machine out of memory. `nx test-unit fxa-settings` runs no tests.
-- The FxA services are not running. Start them with `fxa-start` only when you
-  need them. Set `PLAYWRIGHT_WORKERS=2` for functional tests.
+- Run only the tests for what you changed, never a whole suite: it can run the
+  16GB machine out of memory.
 - Save screenshots and videos in `/workspace/.fxa-auto-media/`.
 VMSECTION
 )"
-  vm_section="$(printf '%s\n' "$vm_section" | _vm_session_git_rule)$(_vm_team_context "$name")"
+  vm_section="$(printf '%s\n' "$vm_section" | _vm_session_git_rule)$(_vm_team_rules)$(_vm_team_context "$name")"
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"
   vm_exec "$name" sudo bash -c "

@@ -36,24 +36,22 @@ TOML
   # AGENTS.md is Codex's CLAUDE.md. The operator rules come first, the same ones
   # a Claude runner gets, then the pointers to the one guide both runtimes read.
   local agents_b64 host_agents guide; host_agents="$(_vm_operator_rules)"
-  guide="$(printf '%s\n' '# FxA sandbox VM
+  guide="$(printf '%s\n' '# Sandbox VM
 
-You are inside the FxA sandbox VM (Ubuntu 24.04, ARM64, 16GB RAM). The FxA
-checkout is /workspace. First read /etc/vm-agent-guide.md, the operations
-manual. Project conventions: /workspace/ai/AGENTS.md and /workspace/.claude/rules/.
+You are inside a sandbox VM (Ubuntu 24.04, ARM64, 16GB RAM). Your repo is
+/workspace. First read /etc/vm-agent-guide.md, the operations manual.
 
 What trips agents most often:
 - You cannot commit or push, and there is no gh. The host commits your tree.
 - The host refuses changes to CI and tooling files and to frozen paths.
 - The network is an allowlist (OpenAI, npm and yarn, PyPI, GitHub, Playwright).
-- Verify with the fxa-verify skill, never a whole package suite (it can run
-  the machine out of memory). nx test-unit fxa-settings runs no tests.
-- The FxA services are not running. Start them with fxa-start only when needed.
+- Run only the tests for what you changed, never a whole suite: it can run the
+  machine out of memory.
 - Skills are in ~/.codex/skills (also reachable as ~/.claude/skills, the path the
   guides use). The skills of the repo are in /workspace/.claude/skills/<name>/SKILL.md:
   read the file to use one. If /workspace/CLAUDE.md exists, read it first.' | _vm_session_git_rule)"
   # The same approved lessons and team memory a Claude runner gets.
-  guide="${guide}$(_vm_team_context "$name")"
+  guide="${guide}$(_vm_team_rules)$(_vm_team_context "$name")"
   agents_b64="$(printf '%s\n\n%s\n' "$host_agents" "$guide" | base64 | tr -d '\n')"
   _vm_git_identity "$name"
 

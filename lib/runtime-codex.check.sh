@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p' "$here/agent.sh")"
+eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p;/^_vm_team_rules() {/,/^}/p' "$here/agent.sh")"
 source "$here/runtime-codex.sh"
 # Each vm_exec's command, one file per call; the VM, scp and ssh do nothing.
 vm_exec() { shift; printf '%s\n' "$*" > "$tmp/exec.$(ls "$tmp" | grep -c '^exec\.')"; }
@@ -18,7 +18,7 @@ memory_on() { return 0; }; memory_profile_slugs() { echo mozilla/fxa; }
 memory_index_md() { echo "# Team memory for $1: settings tests need the l10n build"; }
 memory_sync() { echo "synced $*" > "$tmp/synced"; }
 git() { case "$*" in *user.name*) echo "Test Person" ;; *user.email*) echo test@example.com ;; esac; }
-CLAUDE_HOME_DIR="$tmp/none" SANDBOX_ROOT="$tmp" LOG_DIR="$tmp"
+CLAUDE_HOME_DIR="$tmp/none" SANDBOX_ROOT="$(cd "$here/.." && pwd)" LOG_DIR="$tmp"
 
 agents() { grep -h "codex/AGENTS.md" "$tmp"/exec.* | sed -n "s/.*echo '\([A-Za-z0-9+/=]*\)' | base64 -d > \/home\/agent\/.codex\/AGENTS.md.*/\1/p" | base64 -d; }
 PIPE_PROFILE=fxa FXA_SESSION_MODE=1 runtime_setup_config vm1 2>/dev/null
@@ -34,4 +34,11 @@ check "~/.claude/skills points at the Codex skills, so the guides' paths work" "
 rm -f "$tmp"/exec.* "$tmp/synced"
 PIPE_PROFILE=fxa runtime_setup_config vm2 2>/dev/null
 check "the pipeline keeps the no-commit rule" "1" "$(agents | grep -c 'You cannot commit or push')"
+# The team's own rules: FxA's lines reach an FxA runner only, after the sandbox section.
+rm -f "$tmp"/exec.*; PIPE_PROFILE=fxa runtime_setup_config vm3 2>/dev/null; a="$(agents)"
+check "an FxA runner gets FxA's team rules, after the sandbox section" "1|1|yes" \
+  "$(grep -c '^# Team rules: fxa' <<< "$a")|$(grep -c 'fxa-start' <<< "$a")|$( [ "$(grep -n '^# Sandbox VM' <<< "$a" | cut -d: -f1)" -lt "$(grep -n '^# Team rules' <<< "$a" | cut -d: -f1)" ] && echo yes)"
+rm -f "$tmp"/exec.*; PIPE_PROFILE=pyfxa-team runtime_setup_config vm4 2>/dev/null; a="$(agents)"
+check "a team with no CLAUDE.md gets no FxA-only line" "0|0|0" \
+  "$(grep -c 'Team rules' <<< "$a")|$(grep -c 'fxa-start\|fxa-verify\|ai/AGENTS.md' <<< "$a")|$(grep -ci 'FxA sandbox' <<< "$a")"
 exit "$fail"
