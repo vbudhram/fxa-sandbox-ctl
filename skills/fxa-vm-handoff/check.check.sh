@@ -85,4 +85,12 @@ mkdir -p "$tmp/py" && cd "$tmp/py" && g init -q && echo ugly > a.py && g add . &
 g checkout -qb deng-2407-fix && echo ugly2 > a.py && handoff 'fix(py): keep it' deng-2407-fix
 check "no package.json: no prettier, and a PR branch the host names passes" "handoff check: ok" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C")"
 check "a PR branch the host does not name fails" "1" "$(FXA_WORKSPACE="$tmp/py" bash "$C" >/dev/null; echo $?)"
+# Personal or internal data: the host refuses it at ship time, so the check names it first.
+printf "it('x', () => geo('194.12.187.0'));\n" > new.spec.ts
+check "a public IP in a new test is named, with the safe ranges" "1|1" \
+  "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" >/dev/null; echo $?)|$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" | grep -c 'new.spec.ts:1: IP address.*203.0.113.x')"
+printf "it('x', () => geo('203.0.113.0'));\n" > new.spec.ts
+check "a documentation IP passes" "handoff check: ok" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C")"
+jq '.pr_body = "Reported by zq7x9k.notreal@gmail.com"' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+check "a real email in the PR body is named" "1" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" | grep -c 'personal or internal data')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

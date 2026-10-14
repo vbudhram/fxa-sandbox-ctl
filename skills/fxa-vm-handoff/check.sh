@@ -40,6 +40,20 @@ if [ "${#kept[@]}" -gt 0 ] && [ -f package.json ]; then
 fi
 
 done_file=.fxa-auto-done.json; [ -s "$done_file" ] || done_file=.fxa-auto-done.json.tmp
+
+# GitHub is public, and the host refuses personal or internal data at ship time: find it here first.
+guard="$(dirname "$0")/pii_guard.py"
+if [ -f "$guard" ] && command -v python3 >/dev/null; then
+  prose="$(mktemp)" diff="$(mktemp)"
+  { [ -s "$done_file" ] && jq '{pr_title, pr_body, commit_body} | map_values(. // "" | tostring)' "$done_file" 2>/dev/null; } > "$prose" || echo '{}' > "$prose"
+  { git diff -U0 --text --no-color --no-ext-diff "$base" -- . ':(exclude).fxa-*' ':(exclude)ai'
+    git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' ':(exclude)ai' \
+      | while IFS= read -r -d '' f; do git diff -U0 --text --no-color --no-index -- /dev/null "$f"; done; } > "$diff" 2>/dev/null
+  while IFS= read -r h; do
+    [ -n "$h" ] && problems+=("personal or internal data, which GitHub must not get: $h (in a test, use example.com, or 192.0.2.x or 203.0.113.x for an IP)")
+  done < <(python3 "$guard" "$prose" "$diff" 2>/dev/null || true)
+  rm -f "$prose" "$diff"
+fi
 if [ -s "$done_file" ]; then
   if ! jq -e 'type == "object" and (.issue|type) == "string" and (.branch|type) == "string"
       and (.pr_title|type) == "string" and (.pr_body|type) == "string" and (.pr_body|length) > 0
