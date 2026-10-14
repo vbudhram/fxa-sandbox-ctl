@@ -195,6 +195,7 @@ gh_drain() {
 #   rounds [bump]   read or increment the feedback-round counter
 #   acted <id>...   WRITE(local): record the ids this round will fix
 #   thumbsup        WRITE(PR): react 👍 to those ids a later push made outdated, then clear them
+#   decline <id> <reason>   WRITE(PR): reply "🤖 Not changed: <reason>" on that comment, once
 #
 # Two filters matter. `position: null` means the comment sits on a diff hunk
 # that a later push replaced, so it is stale and acting on it edits code that
@@ -261,6 +262,24 @@ gh_feedback() {
           -q '.[0].number' 2>/dev/null)"
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
+  # A declined comment gets a one-line 🤖 reply, so a reviewer sees why it is still open.
+  # A post is not safe to repeat: no retry, and an id replied to once is never replied to again.
+  if [ "$sub" = "decline" ]; then
+    local id="${3:-}" why declined="${PIPE_STATE_DIR}/${key}.feedback-declined" body
+    why="$(printf '%s' "${*:4}" | tr '\n' ' ' | cut -c1-300)"
+    [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> decline <id> <reason>" >&2; return 1; }
+    grep -qx "$id" "$declined" 2>/dev/null && { echo "$key: already replied on $id"; return 0; }
+    body="🤖 Not changed: ${why}"
+    case "$id" in
+      [0-9]*) gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments/${id}/replies" -f body="$body" >/dev/null 2>&1 ;;
+      *) local url; url="$(gh api "repos/${PIPE_REPO_SLUG}/$( [ "${id:0:1}" = i ] && echo "issues/comments/${id#i}" || echo "pulls/${pr}/reviews/${id#r}")" --jq .html_url 2>/dev/null)" \
+           && [ -n "$url" ] && gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})" >/dev/null 2>&1 ;;
+    esac || { echo "ERROR: could not reply on $id; check the PR before you try again" >&2; return 1; }
+    printf '%s\n' "$id" >>"$declined"; printf '%s\n' "$id" >>"$seen"; sort -u -o "$seen" "$seen" 2>/dev/null || true
+    echo "replied on $id: Not changed"
+    return 0
+  fi
+
   # Inline comments, then conversation comments, where reviewers often put the
   # big asks, then review summaries. The `i` and `r` id prefixes tell the
   # endpoints apart. Our own 🤖 comments and bot chatter are not feedback.
@@ -276,6 +295,7 @@ gh_feedback() {
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c --argjson resolved "$resolved" '[.[]
                        | select((.id | tostring) | IN($resolved[]) | not)
+                       | select(.body | startswith("🤖") | not)
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
                           trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
                           path, line: (.line // .original_line), outdated: (.line == null), url: .html_url, body}]')"

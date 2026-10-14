@@ -104,9 +104,13 @@ Procedure:
    re-requests Copilot's review on that push itself (`FXA_PR_COPILOT`, empty disables).
 7. `label KEY done` fires `thumbsup` on the recorded ids and clears them.
 
-**Stay silent on the PR except the 👍.** Never reply to a review comment, never resolve a thread.
-React 👍 only to comments the round fixed, never to declined ones, and only after the push
-(`label done` does it). The Jira comment says what was declined and why.
+**On the PR, only the 👍 and the decline reply.** For each comment you decline, run
+`$CTL feedback KEY decline <id> "<reason>"` once. Declined means it failed verification, or it is
+out of the ticket's scope. A question or a design preference is for a person: report it, no
+reply. The reason is one short sentence, under 200 characters, with the fact that refutes or
+defers it (for example "nx.json's eslint plugin adds the lint target from .eslintrc.json"). It
+posts `🤖 Not changed: <reason>` on that comment and marks it seen. Never resolve a thread. React 👍 only to comments the round fixed, never to declined ones,
+and only after the push (`label done` does it). The Jira comment says what was declined and why.
 
 ## Merge conflicts
 
@@ -372,7 +376,7 @@ phone number in a context file, comment, or PR.
 | `progress KEY` / `alive KEY` / `prstate KEY` | launcher log; live process; PR state |
 | `conflicts KEY` | conflict class and files |
 | `launch KEY <slot> --rebase` | resolve a source conflict |
-| `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup]` | review comments |
+| `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup\|decline <id> <reason>]` | review comments |
 | `hold KEY BLOCKER "<reason>"` | record that KEY waits for BLOCKER to merge (both edit the same files, or the ticket says so); quiet until then, then a pass looks again |
 | `skip KEY "<reason>"` / `skipped [KEY]` / `unskip KEY` | record, list and drop admission skips (operator: `unskip` after a 🤖 note) |
 | `attempts KEY [bump]` | real-fix counter |
