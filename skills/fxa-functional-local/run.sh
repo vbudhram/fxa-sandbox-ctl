@@ -21,7 +21,7 @@ fi
 if [ "${1:-}" = wait ]; then
   [ -f "${job}/pid" ] || { echo "no background run; start one with: bash $0 --bg <spec> [filter]" >&2; exit 2; }
   limit="${2:-270}"; t0=$(date +%s)
-  while running && [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do sleep 5; done
+  while running && [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do sleep "${FXA_FUNCTIONAL_POLL_S:-5}"; done
   ran=$(( $(date +%s) - $(cat "${job}/started" 2>/dev/null || echo "$t0") ))
   if [ -f "${job}/rc" ]; then grep -E '^(PASS|FAIL|video:|no video:|[0-9]+ video)' "${job}/log"; exit "$(cat "${job}/rc")"; fi
   if running; then echo "still running after ${ran}s. Last line: $(tail -1 "${job}/log" | cut -c1-200). Call: bash $0 wait"; exit 75; fi

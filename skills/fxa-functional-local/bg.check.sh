@@ -8,7 +8,7 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-export FXA_FUNCTIONAL_JOB_DIR="$tmp/job"
+export FXA_FUNCTIONAL_JOB_DIR="$tmp/job" FXA_FUNCTIONAL_POLL_S=0.2  # poll fast: the real 5 s made this check 22 s
 # The real run after the wait block becomes: sleep <spec seconds>, then PASS, or FAIL for "fail".
 awk '/^if \[ "\$\{1:-\}" = wait \]/ { w = 1 } { print } w && /^fi$/ { exit }' "$(dirname "$0")/run.sh" > "$tmp/run.sh"
 cat >> "$tmp/run.sh" <<'FAKE'
@@ -16,8 +16,8 @@ sleep "$1"; [ "${2:-}" = fail ] && { echo "FAIL fake"; exit 1; }; echo "video: /
 FAKE
 R="bash $tmp/run.sh"
 check "wait with no run says so" 2 "$($R wait 1 >/dev/null 2>&1; echo $?)"
-$R --bg 12 >/dev/null
-check "a second start while one runs is refused" 2 "$($R --bg 12 >/dev/null 2>&1; echo $?)"
+$R --bg 3 >/dev/null
+check "a second start while one runs is refused" 2 "$($R --bg 3 >/dev/null 2>&1; echo $?)"
 out="$($R wait 1)"; rc=$?
 check "a short wait on a long run: still running, exit 75" "75|1" "$rc|$(grep -c 'still running' <<< "$out")"
 out="$($R wait 20)"; rc=$?
