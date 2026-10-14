@@ -13,7 +13,12 @@ MODE=provision; case "${1:-}" in sync|oauth) MODE="$1"; shift ;; esac
 P="${1:-moz-fx-dev-vbudhram-sandbox}" Z="${2:-us-central1-b}" VM=fxa-manager
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BOT="${ROOT}/../fxa-agent-bot"
-ssh_vm() { gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command "$1"; }
+# The shared connection vm.sh opens (on_vm) when it is up: plain ssh over it, not a new 5 s gcloud ssh.
+ssh_vm() {
+  local m="$HOME/.ssh/fxa-mux-$VM"
+  if ssh -S "$m" -O check x 2>/dev/null; then ssh -S "$m" -o ControlMaster=no x "$1"
+  else gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet --command "$1"; fi
+}
 
 if [ "$MODE" = oauth ]; then
   # The refresh token stays in this variable and goes straight to the VM.
