@@ -43,7 +43,8 @@ run_here() {
   local f bad=0 k=0 picked=() sh="${FXA_CHECK_SHARD:-1/1}"
   # FXA_CHECK_SHARD=i/n: CI's jobs each run every n-th check; the first also runs the syntax checks, the last the Python ones.
   local i="${sh%/*}" n="${sh#*/}"
-  for f in lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh; do [ $(( k++ % n )) -eq $(( i - 1 )) ] && picked+=("$f"); done
+  # Largest first (a rough measure of time): the slow ones spread across the jobs and start first in each.
+  for f in $(ls -S lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh); do [ $(( k++ % n )) -eq $(( i - 1 )) ] && picked+=("$f"); done
   run_pool "$HOST" "${picked[@]}" || bad=1
   if [ "$i" = 1 ]; then
     for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
