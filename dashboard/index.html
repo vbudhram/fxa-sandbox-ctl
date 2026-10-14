@@ -1822,8 +1822,11 @@ function renderTickets() {
   // A skip outside the epic focus is still in the queue; the focus hides it from the launch list.
   const skipRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span>${k.in_focus === false && k.in_queue !== false ? `<span class="tag">outside the focus</span>` : ""}<span class="tag">${k.passes}×</span></span></div>
              <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
-  const liveSkips = skipped.filter(k => k.in_queue !== false), staleSkips = skipped.filter(k => k.in_queue === false);
-  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length, q.fetch_failed ? "" : `${ready.length} launchable`, "labelled ai-fixme") +
+  // A hold waits for another ticket to merge (pipeline_hold); it is not launchable, and not a skip a person must answer.
+  const held = skipped.filter(k => k.in_queue !== false && k.held_by), liveSkips = skipped.filter(k => k.in_queue !== false && !k.held_by), staleSkips = skipped.filter(k => k.in_queue === false);
+  const heldRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span><span class="tag info">waiting on ${esc(k.held_by)}</span></span></div>
+             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
+  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, "labelled ai-fixme") +
     (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
      : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>` +
           (ready.length ? `<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
@@ -1831,6 +1834,8 @@ function renderTickets() {
      : ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
         : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
           (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
+       (held.length ? `<details data-k="held" open><summary>${held.length} held, waiting on another ticket to merge</summary><div class="body">${
+          held.map(heldRow).join("")}</div></details>` : "") +
        (liveSkips.length ? `<details data-k="skipped"><summary>${liveSkips.length} skipped, and why</summary><div class="body">${
           liveSkips.slice().sort((a, b) => a.passes - b.passes).map(skipRow).join("")}</div></details>` : "") +
        (staleSkips.length ? `<details data-k="staleskips"><summary>${staleSkips.length} skip record${staleSkips.length > 1 ? "s" : ""} for tickets that left the queue (resolved or unlabelled); pruned on the next reconcile</summary><div class="body">${

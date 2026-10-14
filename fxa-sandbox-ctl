@@ -160,6 +160,7 @@ PIPELINE COMMANDS:
   record <ISSUE-KEY>           Append the run to the telemetry log
   costs [--reprice]            Rebuild the per-issue cost rollup; --reprice prices old runs from the LLM proxy
   skip <KEY> [reason]          Record an admission skip; prints comment|silent <n>
+  hold <KEY> <BLOCKER> [reason] A skip that waits for BLOCKER to merge; quiet until then
   skipped [KEY]                List recorded skips
   skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
                                or changed since it; silent otherwise. Read-only.
@@ -1535,6 +1536,7 @@ cmd_skip_changed() {
   if why="$(pipeline_skip_changed "$key")"; then echo "$key $why"; fi
 }
 cmd_unskip()    { pipeline_skip_clear "$(_key "$1")"; }
+cmd_hold()      { pipeline_hold "$(_key "$1")" "$(_key "${2:-}")" "${@:3}"; }
 cmd_skipped()   { if [ -n "${1:-}" ]; then pipeline_skipped "$(_key "$1")"; else pipeline_skipped; fi; }
 cmd_attempts()  { pipeline_attempts "$(_key "$1")" "${@:2}"; }
 cmd_usage_tokens() { telemetry_usage "$@"; }
@@ -2838,6 +2840,7 @@ main() {
     record)     cmd_record "$@" ;;
     costs)      cmd_costs "$@" ;;
     skip)       cmd_skip "$@" ;;
+    hold)       cmd_hold "$@" ;;
     skipped)    cmd_skipped "$@" ;;
     skip-changed) cmd_skip_changed "$@" ;;
     unskip)     cmd_unskip "$@" ;;

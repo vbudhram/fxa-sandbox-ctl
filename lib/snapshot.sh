@@ -29,10 +29,15 @@ _snapshot_pool() {
 # Recorded admission skips. The reason is free text and holds spaces, so split
 # on the first three fields only.
 _snapshot_skipped() {
+  # The ticket each hold waits on (pipeline_hold), by key.
+  local f held='{}'
+  for f in "${PIPE_STATE_DIR}"/*.held; do
+    [ -f "$f" ] && held="$(jq -c --arg k "$(basename "$f" .held)" --arg b "$(head -1 "$f")" '. + {($k): $b}' <<< "$held")"
+  done
   pipeline_skipped 2>/dev/null \
-  | jq -R -s 'split("\n") | map(select(length > 0)
+  | jq -R -s --argjson held "$held" 'split("\n") | map(select(length > 0)
       | capture("^(?<key>[^ ]+) (?<passes>[0-9]+) (?<last>[^ ]+) (?<reason>.*)$"))
-      | map(.passes |= tonumber)'
+      | map(.passes |= tonumber | .held_by = ($held[.key] // null))'
 }
 
 # Per-ticket detail for the runs in flight. One SSH per live VM, so the pool size bounds it.

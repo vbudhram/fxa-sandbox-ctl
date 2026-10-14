@@ -306,6 +306,7 @@ pipeline_skip() {
   shift || true
   local reason="$*"
   local f="${PIPE_STATE_DIR}/${key}.skipped"
+  rm -f "${PIPE_STATE_DIR}/${key}.held"  # a plain skip replaces a hold; pipeline_hold writes it again after
   local fp; fp="$(_pipeline_skip_fingerprint "$key")"
   # An empty hash means the ticket read failed. Comment rather than record a
   # fingerprint that would silence a real change later.
@@ -323,6 +324,26 @@ pipeline_skip() {
   fi
   printf '%s\t%s\t%s\t%s\n' "$fp" "$(date +%s)" 1 "$reason" > "$f"
   echo "comment"
+}
+
+# pipeline_hold <KEY> <BLOCKER> [reason...]
+#   A skip that waits on another ticket (both edit the same files, or the ticket says so). Quiet
+#   until BLOCKER is merged or closed in Jira, or KEY changes; then one pass looks again. Prints
+#   what pipeline_skip prints. Unrecorded, a held ticket woke the model on every pass.
+pipeline_hold() {
+  local key="${1:-}" blocker="${2:-}"
+  [[ "$blocker" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ "$blocker" != "$key" ] \
+    || { echo "ERROR: hold needs <KEY> <BLOCKER-KEY> [reason]" >&2; return 1; }
+  shift 2
+  local out; out="$(pipeline_skip "$key" "held until ${blocker} merges: $*")" || return 1
+  printf '%s\n' "$blocker" > "${PIPE_STATE_DIR}/${key}.held"
+  printf '%s\n' "$out"
+}
+
+# _pipeline_blocker_done <KEY>   0 when the ticket's PR merged (the merged label) or Jira closed it.
+_pipeline_blocker_done() {
+  acli jira workitem view "$1" --fields labels,status --json 2>/dev/null \
+    | jq -e --arg m "$(pipeline_label_for merged)" '((.fields.labels // []) | index($m)) != null or .fields.status.statusCategory.key == "done"' >/dev/null
 }
 
 # strftime() is a GNU awk extension and this host runs BSD awk, so format the
@@ -362,15 +383,18 @@ pipeline_skip_changed() {
   fp="$(_pipeline_skip_fingerprint "$key")"
   [ -n "$fp" ] || { echo "changed"; return 0; }
   old="$(awk -F'\t' 'NR==1{print $1}' "$f")"
-  [ "$old" = "$fp" ] && return 1
-  echo "changed"
+  [ "$old" = "$fp" ] || { echo "changed"; return 0; }
+  # A hold wakes a pass once its blocker is merged or closed.
+  local b; b="$(cat "${PIPE_STATE_DIR}/${key}.held" 2>/dev/null || true)"
+  if [ -n "$b" ] && _pipeline_blocker_done "$b"; then echo "unblocked: ${b} is merged"; return 0; fi
+  return 1
 }
 
 # Launching clears the fingerprint: a later admission skip on this same key must
 # not be silenced by a stale match.
 pipeline_skip_clear() {
   pipeline_require || return 1
-  rm -f "${PIPE_STATE_DIR}/${1}.skipped"
+  rm -f "${PIPE_STATE_DIR}/${1}.skipped" "${PIPE_STATE_DIR}/${1}.held"
 }
 
 # Drop skip records for tickets that left the queue (keys on stdin). An empty
