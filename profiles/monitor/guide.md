@@ -27,7 +27,7 @@ export PATH=/opt/node20/bin:$PATH; unset NODE_ENV
 ## The running app
 
 - The dev server runs on http://localhost:6060. Its log is `/home/agent/.monitor-dev.log`.
-- To restart it, run `pkill -u agent -f next-server; pkill -u agent -f 'next dev'`, then `cd /workspace && nohup setsid npm run dev > /home/agent/.monitor-dev.log 2>&1 < /dev/null &`. Start it fully detached, or your shell hangs.
+- To restart it, run `pkill -u agent -f '[n]ext-server'; pkill -u agent -f '[n]ext dev'`, then `cd /workspace && nohup setsid npm run dev > /home/agent/.monitor-dev.log 2>&1 < /dev/null &`. Start it fully detached, or your shell hangs.
 - The database is Postgres: `postgres://blurts:blurts@localhost:5432/blurts`, and `test-blurts` for tests.
 - HIBP, Redis, Sentry and email use local mocks or are off. Do not call real services.
 

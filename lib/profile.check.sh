@@ -238,5 +238,8 @@ printf 'PIPE_REPO_SLUG="mozilla/t"\nPIPE_STAK_DIR="/home/agent/t"\n' > "$tmp/lr/
 check "a key that no code reads is named" "t/profile.conf: PIPE_STAK_DIR is read nowhere (a typo?)" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep STAK)"
 head -c 9000 /dev/zero | tr '\0' x > "$tmp/lr/profiles/t/CLAUDE.md"
 check "a team CLAUDE.md over 8 KB is named" "1" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep -c 't/profile.conf: CLAUDE.md is over 8 KB')"
+# The agent's own command line holds the guide: a pkill -f with plain text from it stops the agent.
+check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" \
+  "$(grep -HnE "p(kill|grep)[^|;]* -f +['\"]?[^['\" ]" "$root"/profiles/*/boot.sh "$root"/profiles/*/*.md "$root"/profiles/*/skills/*/SKILL.md 2>/dev/null || true)"
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"
