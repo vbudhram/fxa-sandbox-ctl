@@ -8,6 +8,9 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^on_vm() {/,/^}/p;/^dev_fn_script() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 VM=fxa-manager Z=z P=p
 hostname() { echo laptop; }
+# No shared connection, so the gcloud stub below answers: a live one on this laptop must never be used.
+HOME="$tmp"; MUX=down
+ssh() { case " $* " in *" -O check "*) [ "$MUX" = up ] ;; *) cat >/dev/null; echo "via-mux"; return 0 ;; esac; }
 # gcloud fails the way an expired login does, the way a lost connection does, or the remote command fails.
 gcloud() { cat >/dev/null; case "$MODE" in
   login) echo "ERROR: (gcloud.compute.ssh) There was a problem refreshing your current auth tokens: Reauthentication failed. cannot prompt during non-interactive execution." >&2; return 1 ;;
@@ -19,6 +22,8 @@ MODE=ssh; err="$(echo true | on_vm 2>&1 >/dev/null)"; rc=$?
 check "a failed ssh: 255, and its error is shown" "255|yes" "$rc|$(grep -q 'Connection timed out' <<< "$err" && echo yes)"
 MODE=remote; err="$(echo true | on_vm 2>&1 >/dev/null)"; rc=$?
 check "a failed remote command: its status, and gcloud's noise stays hidden" "3|" "$rc|$err"
+MUX=up; out="$(echo true | on_vm 2>/dev/null)"
+check "a shared connection that is up: plain ssh over it, no gcloud" "via-mux" "$out"
 
 # dev fn: the dev controller's functions, the GCE backend and FXA_FC_HOST, then the commands.
 D="$tmp/dev"; mkdir -p "$D/fxa-sandbox-ctl/lib" "$D/fxa-agent-bot"

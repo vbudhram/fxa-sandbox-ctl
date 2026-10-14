@@ -10,6 +10,10 @@ jobs:
     # The manager VM's OS. The laptop runs the macOS half: skills/fxa-ctl-dev/test.sh mac.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
     steps:
       - uses: actions/checkout@v4
       - name: Packages (the same list as test.sh run_linux)
@@ -24,3 +28,5 @@ jobs:
       # The runner starts steps with SIGPIPE ignored, so `yes | head` exits 1, not 141, and
       # errors.check.sh sees a crash. A shell cannot reset an ignored signal itself.
       - run: env --default-signal=PIPE bash skills/fxa-ctl-dev/test.sh here
+        env:
+          FXA_CHECK_SHARD: ${{ matrix.shard }}
