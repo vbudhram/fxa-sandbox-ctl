@@ -229,6 +229,8 @@ memory_collect() {
     done
   fi
   for dir in $(printf '%s\n' $touched | sort -u); do _memory_index "$dir"; done
+  # A confirmation on the day of the last one changes nothing: then there is nothing to commit.
+  [ -n "$(_memory_git status --porcelain 2>/dev/null)" ] || n=0
   if [ "$n" -gt 0 ]; then
     _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d tickets inbox repos 2>/dev/null) 2>/dev/null
     _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: ${run} (${trig})" \
