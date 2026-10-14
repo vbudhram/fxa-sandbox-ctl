@@ -8,6 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 g() { git -c init.defaultBranch=main -c user.name=t -c user.email=t@example.com "$@"; }
 _retry() { "$@"; }
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/memory.sh"
 
 check "off: no index and no save" "|0" "$(memory_index_md fxa mozilla/fxa)|$(memory_collect r /dev/null t fxa 0 FXA-1 mozilla/fxa; echo $?)"
@@ -114,5 +115,43 @@ check "the digest branch moves the inbox into repos/ and lists it" "0|1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/.*mem-')|$(g -C "$tmp/clone" show "origin/${br}:repos/mozilla__fxa/trap.md" | grep -c 'patch level bump')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'From the inbox')"
 check "main keeps its inbox until a person merges; the operator gets the compare link" "1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only origin/main | grep -c 'inbox/mozilla__fxa/mem-' | sed 's/^[1-9][0-9]*$/1/')|$(grep -c "compare/main...${br}" "$tmp/digest.msg")"
+
+
+# One ticket, the same run key twice in a day (a second pipeline run, or a ship then a stop): two files.
+echo '{"episode": {"goal": "first try", "outcome": "red"}}' > "$tmp/e1.json"; echo '{"episode": {"goal": "second try", "outcome": "PR"}}' > "$tmp/e2.json"
+memory_collect FXA-300 "$tmp/e1.json" pipeline fxa 1 FXA-300 mozilla/fxa 2>/dev/null; sleep 1
+memory_collect FXA-300 "$tmp/e2.json" pipeline fxa 1 FXA-300 mozilla/fxa 2>/dev/null
+check "a second run on a ticket the same day keeps the first run's notes" "2|1|1" \
+  "$(ls "$tmp/clone/tickets/FXA-300" | grep -c .)|$(cat "$tmp/clone/tickets/FXA-300"/*.md | grep -c 'first try')|$(cat "$tmp/clone/tickets/FXA-300"/*.md | grep -c 'second try')"
+
+# A repo whose default branch is master: the cite is read there.
+g -c init.defaultBranch=master init -q --bare "$tmp/ss-origin.git"; g -c init.defaultBranch=master clone -q "$tmp/ss-origin.git" "$tmp/ss-seed" 2>/dev/null
+mkdir -p "$tmp/ss-seed/src"; printf 'fn a() {}\nfn do_append() {}\n' > "$tmp/ss-seed/src/batch.rs"
+g -C "$tmp/ss-seed" add -A && g -C "$tmp/ss-seed" commit -qm x && g -C "$tmp/ss-seed" push -q origin master 2>/dev/null
+g clone -q "$tmp/ss-origin.git" "$tmp/ss" 2>/dev/null
+_tree_host_root() { case "$1" in mozilla-services/*) echo "$tmp/ss" ;; *) echo "$tmp/fxa" ;; esac; }
+check "a cite on a master-only repo checks out" "0" "$(_memory_cite_ok mozilla-services/syncstorage-rs src/batch.rs:2 do_append; echo $?)"
+check "a cite on a main repo still checks out, and a bad anchor does not" "0|1" \
+  "$(_memory_cite_ok mozilla/fxa packages/fxa-settings/package.json:4 test-unit; echo $?)|$(_memory_cite_ok mozilla-services/syncstorage-rs src/batch.rs:2 nothere; echo $?)"
+
+# One writer at a time: while a save holds the lock, the digest and the pull wait their turn.
+mkdir "${FXA_MEMORY_DIR}.lock"; rm -f "${FXA_MEMORY_DIR}.pulled" "${FXA_MEMORY_DIR}.digest"
+memory_digest_maybe 2>/dev/null; memory_pull_maybe 2>/dev/null
+check "the digest and the pull skip a held lock, and try again next sweep" "main|no|no" \
+  "$(g -C "$tmp/clone" rev-parse --abbrev-ref HEAD)|$([ -f "${FXA_MEMORY_DIR}.digest" ] && echo yes || echo no)|$([ -f "${FXA_MEMORY_DIR}.pulled" ] && echo yes || echo no)"
+touch -t 200001010000 "${FXA_MEMORY_DIR}.lock"
+check "a lock from a process that died is taken over" "0" "$(_memory_lock; echo $?)"; _memory_unlock
+
+# A rebase that conflicts is undone, so the next pull still works.
+g -C "$tmp/check" pull -q 2>/dev/null; echo theirs > "$tmp/check/profiles/monitor.md"
+g -C "$tmp/check" commit -qam theirs && g -C "$tmp/check" push -q origin HEAD:main 2>/dev/null
+echo ours > "$tmp/clone/profiles/monitor.md"; g -C "$tmp/clone" commit -qam ours
+memory_pull 2>/dev/null
+check "a pull whose rebase conflicts leaves the clone out of the rebase" "no" \
+  "$([ -d "$tmp/clone/.git/rebase-merge" ] || [ -d "$tmp/clone/.git/rebase-apply" ] && echo yes || echo no)"
+g -C "$tmp/clone" rebase -q origin/main >/dev/null 2>&1
+memory_pull 2>/dev/null
+check "a clone a crash left in a rebase is freed by the next pull" "no" \
+  "$([ -d "$tmp/clone/.git/rebase-merge" ] || [ -d "$tmp/clone/.git/rebase-apply" ] && echo yes || echo no)"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

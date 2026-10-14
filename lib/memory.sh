@@ -37,20 +37,33 @@ memory_pull() {
     GIT_SSH_COMMAND="ssh -i ${FXA_MEMORY_KEY} -o IdentitiesOnly=yes -o BatchMode=yes" _retry git clone -q "$FXA_MEMORY_REMOTE" "$FXA_MEMORY_DIR" 2>/dev/null
     return
   fi
+  # A rebase a crash left open blocks every later pull: drop it, the local commits stay.
+  [ -d "${FXA_MEMORY_DIR}/.git/rebase-merge" ] || [ -d "${FXA_MEMORY_DIR}/.git/rebase-apply" ] && _memory_git rebase --abort 2>/dev/null
   _retry _memory_git fetch -q origin 2>/dev/null || return 1
   _memory_git rev-parse -q --verify origin/main >/dev/null || return 0   # an empty repo
   # A clone of the empty repo has no main yet: take origin's, then keep local commits on top.
   _memory_git rev-parse -q --verify main >/dev/null || { _memory_git checkout -q -B main origin/main; return; }
-  _memory_git merge -q --ff-only origin/main 2>/dev/null || _memory_git rebase -q origin/main 2>/dev/null
+  _memory_git merge -q --ff-only origin/main 2>/dev/null || _memory_git rebase -q origin/main >/dev/null 2>&1 \
+    || { _memory_git rebase --abort 2>/dev/null; return 1; }
 }
+
+# _memory_lock / _memory_unlock   One writer of the clone at a time: a save, a pull or the digest.
+# A lock older than 10 min is from a process that died.
+_memory_lock() {
+  local l="${FXA_MEMORY_DIR}.lock"
+  [ -d "$l" ] && [ $(( $(date +%s) - $(_mtime "$l" 2>/dev/null || date +%s) )) -gt 600 ] && rmdir "$l" 2>/dev/null
+  mkdir "$l" 2>/dev/null || { sleep 2; mkdir "$l" 2>/dev/null; }
+}
+_memory_unlock() { rmdir "${FXA_MEMORY_DIR}.lock" 2>/dev/null; return 0; }
 
 # memory_pull_maybe   From the idle sweep, at most every 15 min, so a boot never waits on GitHub.
 memory_pull_maybe() {
   memory_on || return 0
   local stamp="${FXA_MEMORY_DIR}.pulled"
   [ -f "$stamp" ] && [ $(( $(date +%s) - $(_mtime "$stamp" 2>/dev/null || echo 0) )) -lt 900 ] && return 0
+  _memory_lock || return 0
   touch "$stamp"; memory_pull || echo "  memory: pull failed; runners keep this host's copy" >&2
-  return 0
+  _memory_unlock
 }
 
 _memory_dir_of() { printf '%s' "${1/\//__}"; }
@@ -129,15 +142,16 @@ _memory_suspect() { grep -qiE 'ignore (all|any|previous|prior)|disregard|you (mu
 _memory_md() { printf -- '---\n'; printf '%s\n' "$@"; printf -- '---\n'; }
 
 # _memory_cite_ok <slug> <cite> <anchor>   The fact is in the code: path:line exists on the
-# host clone's origin/main, and the anchor text is within 3 lines of it.
+# host clone's default branch (origin/HEAD: master for some repos), and the anchor is within 3 lines of it.
 _memory_cite_ok() {
-  local root path line lo
+  local root path line lo ref
   [[ "$2" =~ ^([A-Za-z0-9_./@+-]+):([0-9]{1,6})$ ]] || return 1
   path="${BASH_REMATCH[1]}"; line="${BASH_REMATCH[2]}"
   [[ "$path" != *..* ]] && [ "${#3}" -ge 4 ] || return 1
   root="$(_tree_host_root "$1" 2>/dev/null)" && [ -d "$root/.git" ] || return 1
   lo=$(( line > 3 ? line - 3 : 1 ))
-  git -C "$root" show "origin/main:${path}" 2>/dev/null | sed -n "${lo},$(( line + 3 ))p" | grep -qF -- "$3"
+  ref=origin/HEAD; git -C "$root" rev-parse -q --verify origin/HEAD >/dev/null || ref=origin/main
+  git -C "$root" show "${ref}:${path}" 2>/dev/null | sed -n "${lo},$(( line + 3 ))p" | grep -qF -- "$3"
 }
 
 # _memory_entry <id> <learning json> <run> <ticket> <taint> <date>   One reviewed entry, as a block.
@@ -174,7 +188,7 @@ _memory_index() {
 # memory_collect <run> <json> <trigger> <profile> <taint> <ticket|""> <slug...>
 memory_collect() {
   memory_on || return 0
-  local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 lock now d n=0 f id
+  local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 now d n=0 f id
   shift 6
   [ -s "$json" ] || return 0
   norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; return 0; }
@@ -185,12 +199,14 @@ memory_collect() {
   hits="$(python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$prose" "${prose}.diff" 2>/dev/null)" || rc=$?
   rm -f "$prose" "${prose}.diff"
   if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; return 0; fi
-  memory_pull || { echo "  memory: could not reach the memory repo; nothing saved" >&2; return 0; }
-  lock="${FXA_MEMORY_DIR}.lock"; mkdir "$lock" 2>/dev/null || { sleep 2; mkdir "$lock" 2>/dev/null; } || { echo "  memory: another save holds the lock; nothing saved" >&2; return 0; }
+  _memory_lock || { echo "  memory: another save holds the lock; nothing saved" >&2; return 0; }
+  memory_pull || { _memory_unlock; echo "  memory: could not reach the memory repo; nothing saved" >&2; return 0; }
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # The episode: only for a ticket key, written once per run.
   if [[ "$ticket" =~ $_MEMORY_KEY_RE ]] && [ -n "$(jq -r '.episode | [.goal, .outcome] | map(select(. != "")) | .[0] // empty' <<< "$norm")" ]; then
     d="${FXA_MEMORY_DIR}/tickets/${ticket}"; mkdir -p "$d"; f="${d}/${now%%T*}-${run}.md"
+    # The same run key again that day (a second pipeline run, or a ship then a stop) gets its own file.
+    [ -e "$f" ] && f="${f%.md}-${now:11:2}${now:14:2}${now:17:2}.md"
     { _memory_md "ticket: ${ticket}" "run: ${run}" "trigger: ${trig}" "profile: ${prof}" "taint: ${taint}" "at: ${now}"
       jq -r '.episode | "# \(.goal)\n", (if .decisions | length > 0 then "## Decisions", (.decisions[] | "- \(.)"), "" else empty end),
         (if .dead_ends | length > 0 then "## Dead ends", (.dead_ends[] | "- \(.)"), "" else empty end), "## Outcome", .outcome' <<< "$norm"
@@ -234,12 +250,11 @@ memory_collect() {
   if [ "$n" -gt 0 ]; then
     _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d tickets inbox repos 2>/dev/null) 2>/dev/null
     _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: ${run} (${trig})" \
-      && { _memory_git push -q origin HEAD:main 2>/dev/null || { _memory_git fetch -q origin && _memory_git rebase -q origin/main 2>/dev/null && _memory_git push -q origin HEAD:main 2>/dev/null; }; } \
+      && { _memory_git push -q origin HEAD:main 2>/dev/null || { _memory_git fetch -q origin && { _memory_git rebase -q origin/main >/dev/null 2>&1 || { _memory_git rebase --abort 2>/dev/null; false; }; } && _memory_git push -q origin HEAD:main 2>/dev/null; }; } \
       && echo "  memory: saved ${n} file(s) for ${run}" >&2 \
       || echo "  memory: the commit or push failed; the files stay in ${FXA_MEMORY_DIR} for the next save" >&2
   fi
-  rmdir "$lock" 2>/dev/null
-  return 0
+  _memory_unlock
 }
 
 # memory_collect_session <key> <runner> <trigger>   A Slack session: read and delete its file on the
@@ -279,13 +294,18 @@ memory_digest_maybe() {
   memory_on || return 0
   local stamp="${FXA_MEMORY_DIR}.digest"
   [ -f "$stamp" ] && [ $(( $(date +%s) - $(_mtime "$stamp" 2>/dev/null || echo 0) )) -lt 604800 ] && return 0
-  touch "$stamp"; memory_digest
+  touch "$stamp"; memory_digest || { [ $? = 75 ] && rm -f "$stamp"; }; return 0
 }
 
 # memory_digest   The inbox, promoted on a branch, plus the week's entries from tainted runs, listed.
 # A person opens the PR from the compare link and merges it (or edits it first): that approves them.
 memory_digest() {
   memory_on || return 0
+  _memory_lock || return 75   # busy: the next sweep tries again
+  local rc=0; _memory_digest || rc=$?
+  _memory_unlock; return "$rc"
+}
+_memory_digest() {
   memory_pull || return 1
   local week f n=0 t=0 dir br list="" kind id replaces body
   week="$(date -u -v-7d +%F 2>/dev/null || date -u -d '7 days ago' +%F)"
