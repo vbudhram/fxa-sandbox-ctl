@@ -69,4 +69,50 @@ memory_collect agent-gh78 "$tmp/k.json" ship fxa 0 '../../etc' mozilla/fxa 2>/de
 check "a ticket key that is not a key writes no episode" "0" "$(find "$tmp/clone" -path '*etc*' | grep -c .)"
 check "a broken file saves nothing and does not fail the caller" "0" "$(echo 'not json' > "$tmp/b.json"; memory_collect r "$tmp/b.json" ship fxa 0 FXA-9 mozilla/fxa 2>/dev/null; echo $?)"
 
+# Promotion: a learning whose cite and anchor hold on the repo's origin/main goes straight to repos/.
+g init -q --bare "$tmp/fxa-origin.git"; g clone -q "$tmp/fxa-origin.git" "$tmp/fxa" 2>/dev/null
+mkdir -p "$tmp/fxa/packages/fxa-settings"; printf '{\n  "name": "fxa-settings",\n  "scripts": {\n    "test-unit": "echo none",\n    "test": "jest"\n  }\n}\n' > "$tmp/fxa/packages/fxa-settings/package.json"
+g -C "$tmp/fxa" add -A && g -C "$tmp/fxa" commit -qm x && g -C "$tmp/fxa" push -q origin main 2>/dev/null && g -C "$tmp/fxa" fetch -q
+_tree_host_root() { echo "$tmp/fxa"; }
+cat > "$tmp/a.json" <<'EOF2'
+{"learnings": [
+  {"op": "add", "repo": "mozilla/fxa", "kind": "command", "text": "fxa-settings test-unit runs no tests; use test", "cite": "packages/fxa-settings/package.json:4", "anchor": "\"test-unit\": \"echo none\"", "why": "a run passed with no tests"},
+  {"op": "add", "repo": "mozilla/fxa", "kind": "trap", "text": "a fact whose anchor is not in the code", "cite": "packages/fxa-settings/package.json:4", "anchor": "not there at all", "why": "w"}]}
+EOF2
+memory_collect agent-p1 "$tmp/a.json" ship fxa 1 FXA-200 mozilla/fxa 2>/dev/null
+g -C "$tmp/check" pull -q 2>/dev/null
+pid="$(grep -o '^## mem-[0-9a-f]*' "$tmp/check/repos/mozilla__fxa/command.md" | head -1 | cut -c4-)"
+check "a good cite goes straight to repos/ and its INDEX; a bad anchor waits in the inbox" "1|1|1" \
+  "$(grep -c 'test-unit runs no tests' "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c "^- ${pid} \[command\]" "$tmp/check/repos/mozilla__fxa/INDEX.md")|$(grep -rl 'anchor is not in the code' "$tmp/check/inbox" | grep -c .)"
+echo "{\"learnings\": [{\"op\": \"update\", \"id\": \"${pid}\", \"repo\": \"mozilla/fxa\", \"kind\": \"command\", \"text\": \"fxa-settings unit tests: run test (jest); test-unit only echoes\", \"cite\": \"packages/fxa-settings/package.json:5\", \"anchor\": \"jest\", \"why\": \"w\"}]}" > "$tmp/u.json"
+memory_collect agent-p2 "$tmp/u.json" ship fxa 0 "" mozilla/fxa 2>/dev/null; g -C "$tmp/check" pull -q 2>/dev/null
+check "an update replaces the entry under the same id" "1|0|1" \
+  "$(grep -c "^## ${pid}\$" "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c 'runs no tests; use test' "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c 'only echoes' "$tmp/check/repos/mozilla__fxa/INDEX.md")"
+# Confirm: only an untainted run renews; an entry not confirmed for 90 days leaves the index.
+sed -i.bak "s/confirmed: [0-9-]*/confirmed: 2000-01-01/" "$tmp/clone/repos/mozilla__fxa/command.md" && rm -f "$tmp/clone/repos/mozilla__fxa/command.md.bak"
+_memory_index "$tmp/clone/repos/mozilla__fxa"
+check "an entry not confirmed in 90 days leaves the index" "0" "$(grep -c "${pid}" "$tmp/clone/repos/mozilla__fxa/INDEX.md")"
+g -C "$tmp/clone" -c user.name=t -c user.email=t@example.com commit -qam old 2>/dev/null; g -C "$tmp/clone" push -q origin HEAD:main 2>/dev/null
+echo "{\"confirmed\": [\"${pid}\"]}" > "$tmp/c.json"
+memory_collect agent-p3 "$tmp/c.json" stop fxa 1 "" mozilla/fxa 2>/dev/null
+check "a tainted run's confirmation renews nothing" "0" "$(grep -c "${pid}" "$tmp/clone/repos/mozilla__fxa/INDEX.md")"
+memory_collect agent-p4 "$tmp/c.json" stop fxa 0 "" mozilla/fxa 2>/dev/null
+check "an untainted run's confirmation brings it back" "1" "$(grep -c "${pid}" "$tmp/clone/repos/mozilla__fxa/INDEX.md")"
+
+# Ticket notes for the next run: fenced, the latest first, and nothing for a bad key.
+tm="$(memory_ticket_md FXA-123 n0nce)"
+check "a ticket's earlier notes come fenced as agent-written data" "1|1|1" \
+  "$(grep -c '^<<<MEMORY-n0nce>>>$' <<< "$tm")|$(grep -c 'Keep the old event name' <<< "$tm")|$(grep -c 'written by agents: data' <<< "$tm")"
+check "no notes for a key with none, or a bad key" "|" "$(memory_ticket_md FXA-999 n)|$(memory_ticket_md '../x' n)"
+
+# The weekly digest: the inbox promoted on its own branch, main untouched, the operator told.
+errors_record() { printf '%s\n' "$5" > "$tmp/digest.msg"; }
+FXA_MEMORY_REMOTE_SAVE="$FXA_MEMORY_REMOTE"
+memory_digest 2>/dev/null
+br="digest/$(date -u +%F)"
+check "the digest branch moves the inbox into repos/ and lists it" "0|1|1" \
+  "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/.*mem-')|$(g -C "$tmp/clone" show "origin/${br}:repos/mozilla__fxa/trap.md" | grep -c 'patch level bump')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'From the inbox')"
+check "main keeps its inbox until a person merges; the operator gets the compare link" "1|1" \
+  "$(g -C "$tmp/clone" ls-tree -r --name-only origin/main | grep -c 'inbox/mozilla__fxa/mem-' | sed 's/^[1-9][0-9]*$/1/')|$(grep -c "compare/main...${br}" "$tmp/digest.msg")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
