@@ -246,6 +246,15 @@ session_set agent-t2 state active turn_open 0
 check "no changed file: Open PR refuses" "nothing to push" "$(_finish_session agent-t2 2>&1 | grep -o 'nothing to push' || true)"
 check "--repo with no value is refused, not a loop" "ERROR: --repo needs a repo" "$(_finish_session agent-t2 --repo 2>&1)"
 check "and the session stays active" "active" "$(session_get agent-t2 state)"
+# The job's refusals come before the wrap-up turn, so they cost no LLM spend.
+CHANGES=2
+check "a read-only profile refuses Open PR at once" "read-only|active" \
+  "$(PIPE_PR_OPEN=0 _finish_session agent-t2 2>&1 | grep -o 'read-only' | head -1)|$(session_get agent-t2 state)"
+_checkout_consent() { [ "$CONSENT" = 1 ]; }; CONSENT=0
+session_set agent-t2 checkout https://github.com/o/r/pull/9 checkout_person 1 checkout_author alice review_pr https://github.com/o/r/pull/9
+check "a person's PR without 'push ok' refuses at once" "alice made this PR|active" \
+  "$(_finish_session agent-t2 2>&1 | grep -o 'alice made this PR')|$(session_get agent-t2 state)"
+session_set agent-t2 checkout "" checkout_person 0 checkout_author "" review_pr ""; unset -f _checkout_consent
 
 # A review round: trusted reviewers' words are copied, others only named, and
 # outdated inline comments are left out.

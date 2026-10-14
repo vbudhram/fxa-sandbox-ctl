@@ -2556,6 +2556,18 @@ _finish_session() {
     echo "ERROR: nothing to push: no files changed in ${key}${repo:+ (${repo})}" >&2
     _session_unlock "$key"; return 1
   fi
+  # Refuse before the wrap-up turn what the job would refuse after it. A stack's repo has its own out.
+  if [ -z "$idx" ] && [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+    echo "ERROR: the ${PIPE_PROFILE:-} profile is read-only: it pushes nothing and opens no PR. Use Diff." >&2
+    _session_unlock "$key"; return 1
+  fi
+  local author; author="$( { [ -z "$idx" ] || _tree_enter "$key" "$idx"; } && _checkout_gate_on "$key" \
+    && ! _checkout_consent "$(session_get "$key" checkout)" "$(session_get "$key" checkout_author)" \
+    && session_get "$key" checkout_author || true)"
+  if [ -n "$author" ]; then
+    echo "ERROR: ${author} made this PR. I push to it only after they comment 'push ok' on it." >&2
+    _session_unlock "$key"; return 1
+  fi
   _session_history_add "$key" action "$( [ "$mode" = --no-pr ] && echo "Push branch" || echo "Open PR" )"
   session_set "$key" state wrapping wrap_mode "$( [ "$mode" = --no-pr ] && echo push || echo pr )"
   _session_unlock "$key"
