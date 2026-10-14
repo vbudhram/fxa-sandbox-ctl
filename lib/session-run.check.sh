@@ -45,7 +45,7 @@ w="$(printf '%s\n' \
   '{"type":"assistant","parent_tool_use_id":null,"message":{"content":[{"type":"tool_use","id":"e1","name":"Edit","input":{"file_path":"/workspace/libs/a.ts","old_string":"x\ny","new_string":"x\ny\nz"}},{"type":"tool_use","id":"e2","name":"Write","input":{"file_path":"/home/agent/fxa/b.ts","content":"1\n2"}}]}}' \
   '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"PASS\nTests:       1 failed, 44 passed, 45 total\n"}]}}' \
   '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":[{"type":"text","text":"  12 passing (3s)\n  2 failing\n"}]}]}}' \
-  '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t3","is_error":true,"content":"✖ 3 problems (2 errors, 1 warning)\nFound 4 errors in 2 files."}]}}' \
+  '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t3","is_error":true,"content":"✖ 3 problems (2 errors, 1 warning)\nsrc/a.ts:1:2 - error TS2322: Type string is not assignable.\nFound 4 errors in 2 files."}]}}' \
   "{\"type\":\"user\",\"parent_tool_use_id\":null,\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t4\",\"content\":\"Tests: 9 passed $long\"}]}}" \
   '{"type":"user","parent_tool_use_id":"s1","message":{"content":[{"type":"tool_result","tool_use_id":"b2","content":"Tests: 3 passed"}]}}' \
   '{"type":"item.completed","item":{"type":"file_change","changes":[{"path":"a/b.ts"}]}}' \
@@ -59,6 +59,9 @@ check "watch: a subagent starts" 's1 fxa-explore find the limiter' "$(jq -r '.[]
 check "watch: edits with line counts" 'libs/a.ts +3 -2|b.ts +2 -0' "$(jq -r '[.[] | select(.type == "edit") | "\(.file) +\(.added) -\(.removed)"] | join("|")' <<< "$w")"
 check "watch: jest and mocha counts" '44/1|12/2' "$(jq -r '[.[] | select(.type == "tests") | "\(.passed)/\(.failed)"] | join("|")' <<< "$w")"
 check "watch: lint and type-check counts" 'lint 2/1 types 4' "$(jq -r '"lint \(.[] | select(.type == "lint") | "\(.errors)/\(.warnings)") types \(.[] | select(.type == "types") | .errors)"' <<< "$w")"
+# Another tool's "Found N errors" (a Rust session's output) is not a type-check count.
+w2="$(printf '%s\n' '{"type":"user","parent_tool_use_id":null,"message":{"content":[{"type":"tool_result","tool_use_id":"t9","content":"Found 60 errors while scanning the batch tables"}]}}' | jq -R -c "$_SESSION_WATCH_JQ" | jq -s -c .)"
+check "watch: no type-check count without a TypeScript error" "0" "$(jq '[.[] | select(.type == "types")] | length' <<< "$w2")"
 check "watch: only the last 4 KB of output is read" "0" "$(jq '[.[] | select(.type == "tests" and .passed == 9)] | length' <<< "$w")"
 check "watch: a subagent's tool output is not counted" "0" "$(jq '[.[] | select(.type == "tests" and .passed == 3)] | length' <<< "$w")"
 check "watch: tool results are marked done" 't1:true t2:true t3:false t4:true' "$(jq -r '[.[] | select(.type == "tool_done") | "\(.id):\(.ok)"] | join(" ")' <<< "$w")"

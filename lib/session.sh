@@ -852,7 +852,8 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
            else empty end),
         (([$o | scan("(\\d+) problems? \\((\\d+) errors?, (\\d+) warnings?\\)")] | last) as $l
          | select($l) | {type: "lint", errors: ($l[1] | tonumber), warnings: ($l[2] | tonumber)}),
-        (([$o | scan("Found (\\d+) errors?")] | last) as $t | select($t) | {type: "types", errors: ($t[0] | tonumber)}))
+        (([$o | scan("Found (\\d+) errors?")] | last) as $t | select($t and ($o | test("error TS\\d+")))
+         | {type: "types", errors: ($t[0] | tonumber)}))
     else empty end'
 
 # The watch: one runner line in, its events out. {type: "result"} at the turn's
