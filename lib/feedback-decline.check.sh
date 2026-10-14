@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check that a declined review comment gets one short 🤖 reply, and that the reply
+# Offline check that a declined review comment gets one short reply, and that the reply
 # never reads as new feedback.
 #   bash lib/feedback-decline.check.sh
 set -u
@@ -18,7 +18,7 @@ gh() {
     *"--method POST"*) [ -n "${POST_FAILS:-}" ] && return 1; printf '%s\n' "$*" >> "$tmp/posts" ;;
     *issues/comments/55*) echo https://github.com/mozilla/fxa/pull/7#issuecomment-55 ;;
     *pulls/7/comments*) echo '[{"id":1,"user":{"login":"Copilot","type":"Bot"},"author_association":"CONTRIBUTOR","path":"a.ts","line":3,"body":"no lint target"},
-      {"id":2,"in_reply_to_id":1,"user":{"login":"fxa-bot[bot]","type":"Bot"},"author_association":"NONE","path":"a.ts","line":3,"body":"🤖 Not changed: the plugin adds it"}]' ;;
+      {"id":2,"in_reply_to_id":1,"user":{"login":"fxa-bot[bot]","type":"Bot"},"author_association":"NONE","path":"a.ts","line":3,"body":"Not changed: the plugin adds it"}]' ;;
     *graphql*) echo '[]' ;;
     *pulls/7/reviews*|*issues/7/comments*) echo '[]' ;;
     *) return 1 ;;
@@ -27,7 +27,7 @@ gh() {
 posts() { cat "$tmp/posts" 2>/dev/null; }
 
 check "a decline replies on the inline thread" "1|yes" \
-  "$(gh_feedback FXA-1 decline 1 "the eslint plugin adds the lint target" >/dev/null; posts | grep -c 'pulls/7/comments/1/replies')|$(posts | grep -q 'body=🤖 Not changed: the eslint plugin adds the lint target' && echo yes)"
+  "$(gh_feedback FXA-1 decline 1 "the eslint plugin adds the lint target" >/dev/null; posts | grep -c 'pulls/7/comments/1/replies')|$(posts | grep -q 'body=Not changed: the eslint plugin adds the lint target' && echo yes)"
 check "it marks the comment seen, and our own reply is not feedback" "0" "$(gh_feedback FXA-1 | jq '.comments | length')"
 check "a second decline on the same id posts nothing" "1" "$(gh_feedback FXA-1 decline 1 again >/dev/null; posts | wc -l | tr -d ' ')"
 check "a conversation comment gets a PR comment that links it" "yes" \

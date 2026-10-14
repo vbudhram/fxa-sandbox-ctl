@@ -718,7 +718,7 @@ _finish_feedback_pr() {
   [ -n "$repo" ] && [ -n "$num" ] || return 0
   summary="$(jq -r '.feedback_summary // empty | if type == "array" then map("- " + .) | join("\n") else . end' "$done_file" 2>/dev/null)" || summary=""
   if [ -n "$summary" ]; then
-    gh api -X POST "repos/${repo}/issues/${num}/comments" -f body="🤖 This review round pushed a new commit:
+    gh api -X POST "repos/${repo}/issues/${num}/comments" -f body="This review round pushed a new commit:
 ${summary}" >/dev/null 2>&1 || echo "  WARN: could not post the round summary on the PR." >&2
   fi
   jq -e '.open_questions | type == "array"' "$done_file" >/dev/null 2>&1 || return 0

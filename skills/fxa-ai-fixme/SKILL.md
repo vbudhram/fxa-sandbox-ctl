@@ -109,7 +109,7 @@ Procedure:
 out of the ticket's scope. A question or a design preference is for a person: report it, no
 reply. The reason is one short sentence, under 200 characters, with the fact that refutes or
 defers it (for example "nx.json's eslint plugin adds the lint target from .eslintrc.json"). It
-posts `🤖 Not changed: <reason>` on that comment and marks it seen. Never resolve a thread. React 👍 only to comments the round fixed, never to declined ones,
+posts `Not changed: <reason>` on that comment and marks it seen. Never resolve a thread. React 👍 only to comments the round fixed, never to declined ones,
 and only after the push (`label done` does it). The Jira comment says what was declined and why.
 
 ## Merge conflicts
@@ -312,7 +312,9 @@ Jira skip comment, only when `skip` prints `comment`; (6) one 👍 per fixed rev
 `thumbsup`; (7) the merge telemetry comment, written by `label KEY merged` itself; (8) the Jira
 assignee, sprint and Done transition, also written by `label KEY merged`; (9) the 🤖 PR-ready
 Jira comment, written once per PR by `label KEY done`; (10) the 🤖 review-feedback Jira
-comment, written by the host when a feedback round pushes. Never skip the
+comment, written by the host when a feedback round pushes; (11) one `Not changed` reply per
+declined review comment, via `feedback KEY decline`. PR comments carry no 🤖: the bot account
+already says who wrote them. Never skip the
 `done` step on the way to `merged`; it records the run.
 
 Nothing else. No Slack, no @-mentions, no Jira transitions, no release advice, never reap another
