@@ -23,6 +23,18 @@ _FXA_PIPELINE_LOADED=1
 : "${FXA_PIPELINE:=fxa-ai-fixme}"
 
 # Env overrides win over the config, so old cron and shell overrides still work.
+# pipeline_conf_lint <conf>   A profile may hold only comments, KEY=value with one word or one
+# quoted string, and the rows of a KEY=( ... ) array. No command substitution, no second command.
+pipeline_conf_lint() {
+  local bad
+  bad="$(grep -nvE "^[[:space:]]*(#.*)?\$|^(PIPE_[A-Z0-9_]+|_pipe_[a-z0-9_]+)=(\"[^\"]*\"|'[^']*'|[^[:space:]\"'#;&|<>()]*|\\()([[:space:]]+#.*)?\$|^[[:space:]]*\"[^\"]*\"[[:space:]]*\$|^\\)[[:space:]]*\$" "$1")" || true
+  bad="$(printf '%s\n' "$bad"; grep -nE '^[^#]*(\$\(|`)' "$1" | sed 's/^/command substitution: /')" || true
+  bad="$(printf '%s\n' "$bad" | grep . || true)"
+  [ -z "$bad" ] && return 0
+  printf '%s\n' "$bad" | sed "s#^#${1##*/profiles/}: #" | head -5
+  return 1
+}
+
 pipeline_load() {
   local name="${1:-$FXA_PIPELINE}" conf
   # A child inherits the FXA_REPO its parent's load exported; only a repo set by hand overrides.
@@ -38,6 +50,8 @@ pipeline_load() {
     echo "Available: $(ls "${SANDBOX_ROOT}/profiles" "${SANDBOX_ROOT}/pipelines" 2>/dev/null | grep -v ':$' | sed 's/\.conf$//' | sort -u | tr '\n' ' ')" >&2
     return 1
   fi
+  # The file is sourced as bash: refuse a line that would run a command before it runs.
+  pipeline_conf_lint "$conf" >&2 || { echo "ERROR: profile ${name} (${conf}) holds more than assignments" >&2; return 1; }
   # shellcheck disable=SC1090
   # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
   source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }

@@ -60,8 +60,8 @@ mkdir -p "$tmp/r/profiles/dup"; printf 'PIPE_REPOS=(\n "mozilla/a /home/agent/a 
 check "two work rows on one path are refused" "1" "$(loaded "$tmp/r" dup >/dev/null; echo $?)"
 # A profile.conf that does not source (unreadable mid-deploy, or broken) is refused, not an unbound-variable crash.
 mkdir -p "$tmp/r/profiles/broken"; printf 'if then\n' > "$tmp/r/profiles/broken/profile.conf"
-check "a profile.conf that does not source is refused with a reason" "rc=1 ERROR: could not read profile broken" \
-  "$(err="$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$tmp/r"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load broken ) 2>&1 >/dev/null)"; echo "rc=$? $(grep -o 'ERROR: could not read profile broken' <<< "$err")")"
+check "a profile.conf that does not source is refused with a reason" "rc=1 ERROR: profile broken" \
+  "$(err="$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$tmp/r"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load broken ) 2>&1 >/dev/null)"; echo "rc=$? $(grep -oE 'ERROR: profile broken' <<< "$err")")"
 # A team skill is a directory with a SKILL.md that names it, and its scripts parse.
 bad=""
 for d in "$root"/profiles/*/skills/*/; do
@@ -225,5 +225,16 @@ check "fxa's desktop gets no page, so the script opens :3030" "page=" "$(desk fx
 # A boot.sh runs as root beside the agent: its markers must be where the agent cannot plant a link.
 check "every boot.sh writes its markers outside the agent's home" "" \
   "$(grep -HE '^[A-Z ]*(READY|FAIL)=' "$root"/profiles/*/boot.sh | grep -oE '(READY|FAIL)=[^ ]+' | grep -v '=/run/' || true)"
+# A profile is sourced as bash: a line that runs a command is refused before it runs.
+mkdir -p "$tmp/r/profiles/evil"; printf 'PIPE_REPO_SLUG="mozilla/demo"\nPIPE_X="$(touch %s/ran)"\n' "$tmp" > "$tmp/r/profiles/evil/profile.conf"
+check "a command substitution is refused and never runs" "1|no" "$(loaded "$tmp/r" evil >/dev/null; echo $?)|$([ -e "$tmp/ran" ] && echo yes || echo no)"
+printf 'PIPE_REPO_SLUG=mozilla/demo; touch %s/ran2\n' "$tmp" > "$tmp/r/profiles/evil/profile.conf"
+check "a second command on a line is refused" "1|no" "$(loaded "$tmp/r" evil >/dev/null; echo $?)|$([ -e "$tmp/ran2" ] && echo yes || echo no)"
+printf 'PIPE_LABEL=demo team\n' > "$tmp/r/profiles/evil/profile.conf"
+check "an unquoted value with a space (it runs 'team') is refused" "1" "$(loaded "$tmp/r" evil >/dev/null; echo $?)"
+check "every shipped profile lints clean, with no key the code never reads" "profiles: ok" "$("$root/fxa-sandbox-ctl" profile lint 2>&1)"
+mkdir -p "$tmp/lr/profiles/t" "$tmp/lr/lib"; cp "$root/fxa-sandbox-ctl" "$tmp/lr/"; cp "$root"/lib/*.sh "$tmp/lr/lib/"; cp -R "$root/profiles/fxa" "$tmp/lr/profiles/"; cp -R "$root/pipelines" "$tmp/lr/"
+printf 'PIPE_REPO_SLUG="mozilla/t"\nPIPE_STAK_DIR="/home/agent/t"\n' > "$tmp/lr/profiles/t/profile.conf"
+check "a key that no code reads is named" "t/profile.conf: PIPE_STAK_DIR is read nowhere (a typo?)" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep STAK)"
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

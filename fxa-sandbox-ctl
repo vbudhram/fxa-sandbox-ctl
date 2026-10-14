@@ -78,6 +78,7 @@ COMMANDS:
   ssh <name>                   Print SSH connection info for an agent's VM
   exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
   profile show                 The loaded profile's repos and write access, as JSON (pick one with --pipeline)
+  profile lint                 Check every profile: only assignments, and no key the code never reads
   devslot up|down|reset <profile> | run <profile> '<cmd>' | sync <profile> <dir> < tar.gz | list
                                A warm Firecracker slot for building a profile (needs FXA_FC_HOST)
   list                         List all agents and their status
@@ -2809,7 +2810,15 @@ main() {
                   # Every team, for the bot's !stack picker: one profile_show each, in its own shell.
                   list) local d; for d in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
                           ( pipeline_load "$(basename "$(dirname "$d")")" >/dev/null 2>&1 && pipeline_profile_json ); done | jq -cs . ;;
-                  *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | profile list" >&2; return 1 ;;
+                  # Every profile: only assignments, and no key that the code never reads (a typo).
+                  lint) local f k rc=0; for f in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
+                          pipeline_conf_lint "$f" || rc=1
+                          for k in $(grep -oE '^PIPE_[A-Z0-9_]+=' "$f" | tr -d =); do
+                            grep -rqw --include='*.sh' --include='*.py' --exclude='*.check.sh' "$k" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/infra" "${SCRIPT_DIR}/dashboard" \
+                              || grep -qw "$k" "${SCRIPT_DIR}/fxa-sandbox-ctl" || { echo "${f#"${SCRIPT_DIR}"/profiles/}: ${k} is read nowhere (a typo?)"; rc=1; }
+                          done
+                        done; [ "$rc" = 0 ] && echo "profiles: ok"; return "$rc" ;;
+                  *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | profile list | profile lint" >&2; return 1 ;;
                 esac ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
