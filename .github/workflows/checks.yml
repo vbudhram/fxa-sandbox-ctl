@@ -23,7 +23,7 @@ jobs:
           [ -z "${miss:-}" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq git jq curl python3 openssl perl rsync ca-certificates; }
       # Only the last job runs the desktop gateway's check (test.sh, FXA_CHECK_SHARD).
       - name: The desktop gateway's packages, so test.sh runs its check
-        if: endsWith(matrix.shard, format('{0}', '3/3'))
+        if: matrix.shard == '3/3'
         run: python3 -m pip install -q --break-system-packages -r desktop-gateway/requirements.txt
       - name: Git identity for the checks that commit
         run: |
