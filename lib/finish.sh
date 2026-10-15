@@ -997,20 +997,27 @@ finish_watch_ci() {
 
 # _finish_tooling_guard <worktree>
 #   Refuse CI or host tooling edits: CI runs with secrets before review, and
-#   hooks run on the operator's Mac. FXA_ALLOW_TOOLING_EDITS=1 allows them.
+#   hooks run on the operator's Mac. FXA_ALLOW_TOOLING_EDITS=1 allows them all.
+#   FXA_ALLOW_TOOLING_SCOPE=scripts (the launch sets it from an approved Jira label)
+#   allows package.json scripts and _scripts/ only.
 _finish_tooling_guard() {
-  local wt="$1" f hit=""
+  local wt="$1" f hit="" scope="${FXA_ALLOW_TOOLING_SCOPE:-}" keys
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
+  # A recovery finish has no launch env: use the scope the launch recorded for this key.
+  [ -n "$scope" ] || scope="$(_finish_tooling_scope_of "$wt")"
+  keys='{scripts, "lint-staged", husky}'; [ "$scope" = scripts ] && keys='{"lint-staged", husky}'
   while IFS= read -r -d '' f; do
     case "$f" in
-      .github/*|.circleci/*|.husky/*|_scripts/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*|\
+      _scripts/*)
+        [ "$scope" = scripts ] || hit="${hit}${f}"$'\n' ;;
+      .github/*|.circleci/*|.husky/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*|\
       .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc)
         hit="${hit}${f}"$'\n' ;;
       package.json|*/package.json)
         # Only the parts a hook or CI executes. A dependency bump is fine. A missing side (a new
         # or deleted file) counts as {}, so a new lib's package.json passes unless it adds scripts.
-        if [ "$({ git -C "$wt" show ":$f" 2>/dev/null || echo '{}'; } | jq -cS '{scripts, "lint-staged", husky}')" != \
-             "$({ git -C "$wt" show "HEAD:$f" 2>/dev/null || echo '{}'; } | jq -cS '{scripts, "lint-staged", husky}')" ]; then
+        if [ "$({ git -C "$wt" show ":$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" != \
+             "$({ git -C "$wt" show "HEAD:$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" ]; then
           hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'
         fi ;;
     esac
@@ -1018,8 +1025,17 @@ _finish_tooling_guard() {
   [ -z "$hit" ] && return 0
   # The paths on the ERROR line itself: progress and the pass keep only that line.
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
-  echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  echo "       For package.json scripts or _scripts/ only, an approver adds the label ${PIPE_TOOLING_LABEL:-ai-fixme-allow-tooling} and relaunches." >&2
+  echo "       For anything else, relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
   return 1
+}
+
+# _finish_tooling_scope_of <worktree>   The tooling scope that cmd_launch recorded for the
+#   worktree's ticket (PIPE_STATE_DIR/tooling/<KEY>), or nothing.
+_finish_tooling_scope_of() {
+  local key; key="$(worktree_key_for "$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)")"
+  [ -n "${PIPE_STATE_DIR:-}" ] && [ -n "$key" ] || return 0
+  awk 'NR == 1 { print $1 }' "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true
 }
 
 # _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body> [patch]   GitHub is public, so

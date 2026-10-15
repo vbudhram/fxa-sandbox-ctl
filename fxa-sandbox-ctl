@@ -1936,6 +1936,15 @@ cmd_launch() {
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
   # One line in the context asks for the full stack, the only route to a flow video.
   [ -n "$ctx" ] && grep -q '^Launch with --functional-tests' "$ctx" && args+=(--functional-tests)
+  # An approved Jira label lets this launch change package.json scripts and _scripts/ (the finish
+  # guard). Recorded for the key too, so a recovery finish without this env gets the same scope.
+  local tooling_by="" tscope="${PIPE_STATE_DIR}/tooling/${key}"
+  rm -f "$tscope"
+  if tooling_by="$(jira_tooling_approver "$key")"; then
+    mkdir -p "${tscope%/*}" && printf 'scripts %s\n' "$tooling_by" > "$tscope"
+  else
+    tooling_by=""
+  fi
   local log; log="$(pipeline_launch_log "$key")"
   # Record the run this slot holds before the launch overwrites its transcript:
   # a ticket that never reached `done` lost it. telemetry_record is idempotent.
@@ -1950,12 +1959,13 @@ cmd_launch() {
   # Delete, not truncate: APFS keeps the inode's birth time, which telemetry reads as the start.
   rm -f "$log"
   echo "Launched at: $(date +%s)" > "$log"
+  [ -n "$tooling_by" ] && echo "tooling: scripts allowed by ${tooling_by} (label ${PIPE_TOOLING_LABEL})" >> "$log"
   # Each line also lands in <KEY>.launch.tsv with its seconds since launch; see launch-times.
-  nohup "$0" "${args[@]}" 2>&1 < /dev/null \
+  env ${tooling_by:+FXA_ALLOW_TOOLING_SCOPE=scripts} nohup "$0" "${args[@]}" 2>&1 < /dev/null \
     | nohup perl -e "$_SESSION_STAMP_PL" "$log" "${log%.log}.tsv" > /dev/null 2>&1 &
   # A stale skip fingerprint would silence a later skip of this key.
   pipeline_skip_clear "$key"
-  echo "$key launched on $slot (log ${log})"
+  echo "$key launched on $slot (log ${log})${tooling_by:+ tooling=scripts}"
 }
 
 # launch-times <KEY>   When each milestone of the last launch happened, in

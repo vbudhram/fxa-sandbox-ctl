@@ -506,9 +506,11 @@ pipeline_progress() {
   [ -f "$log" ] || { echo "$key nolog"; return 0; }
   # Every grep here needs `|| true`: pipefail makes a no-match grep fail the
   # whole pipeline, and set -e then kills the function before it can report.
-  local pr err
+  local pr err t=""
+  # A launch with an approved tooling label says so on every line (cmd_launch).
+  grep -q '^tooling: scripts allowed' "$log" && t=" tooling=scripts"
   pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" || true; } | tail -1)"
-  if [ -n "$pr" ]; then echo "$key pr $pr"; return 0; fi
+  if [ -n "$pr" ]; then echo "$key pr $pr${t}"; return 0; fi
   # A feedback round's first push is rejected, then forced with a lease, so
   # "rejected" is routine when a "(forced update)" follows it.
   if grep -q '(forced update)' "$log"; then
@@ -516,9 +518,9 @@ pipeline_progress() {
   else
     err="$(grep -m1 -E '^ERROR|fatal:|rejected' "$log" || true)"
   fi
-  if [ -n "$err" ]; then echo "$key error ${err}"; return 0; fi
-  if grep -qE "Pushing |Committing and pushing" "$log"; then echo "$key pushed"; return 0; fi
-  if grep -q "Squashing " "$log"; then echo "$key squashing"; return 0; fi
+  if [ -n "$err" ]; then echo "$key error ${err}${t}"; return 0; fi
+  if grep -qE "Pushing |Committing and pushing" "$log"; then echo "$key pushed${t}"; return 0; fi
+  if grep -q "Squashing " "$log"; then echo "$key squashing${t}"; return 0; fi
   if grep -q "Watching for" "$log"; then
     # Stall detection lives here because reconcile reads `progress` for every
     # inflight key, so it cannot be skipped.
@@ -527,10 +529,10 @@ pipeline_progress() {
     elapsed=$(( $(date +%s) - started ))
     reason="$(_pipeline_stalled_reason "$key" "$elapsed" || true)"
     if [ -n "$reason" ]; then
-      echo "$key stalled ${reason} $(( elapsed / 60 ))m"; return 0
+      echo "$key stalled ${reason} $(( elapsed / 60 ))m${t}"; return 0
     fi
     local secs; secs="$( { grep -o '\[ *[0-9]*s\]' "$log" || true; } | tail -1 | tr -dc '0-9')"
-    echo "$key watching ${secs:-0}s"; return 0
+    echo "$key watching ${secs:-0}s${t}"; return 0
   fi
   # Before the launcher watches for the handoff, say which boot step it is on.
   # On gce this stage lasts minutes, and "starting" alone hid all of them.
@@ -539,7 +541,7 @@ pipeline_progress() {
   grep -q "Infrastructure ready" "$log"      && sub="hardening"
   grep -q "^Shipping \|Setting up .* config" "$log" && sub="config"
   grep -q "is running ===" "$log"            && sub="launching"
-  echo "$key starting ${sub}"
+  echo "$key starting ${sub}${t}"
 }
 
 # pipeline_health_json

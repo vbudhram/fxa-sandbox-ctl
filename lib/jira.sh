@@ -359,6 +359,36 @@ jira_attach() {
   [ "$code" = 200 ] || { echo "WARN: attaching ${2##*/} to $1 returned HTTP $code" >&2; return 1; }
 }
 
+# _jira_rest_get <path>   A GET on Jira's REST API; the login goes to curl on stdin.
+_jira_rest_get() {
+  printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "${PIPE_JIRA_SITE}$1" 2>/dev/null
+}
+
+# jira_tooling_approver <KEY>   The account ID that added PIPE_TOOLING_LABEL, when the ticket has
+#   the label and the newest change that added it came from PIPE_TOOLING_APPROVERS. Anyone with
+#   edit access can add a label, and CI runs the pushed branch with secrets before review, so any
+#   unknown (no approvers, no login, a failed read) returns 1: the label does not count.
+jira_tooling_approver() {
+  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" page last who
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "$label" ] && [ -n "${PIPE_TOOLING_APPROVERS:-}" ] \
+    && [ -n "${PIPE_JIRA_BASIC:-}" ] || return 1
+  _retry _jira_rest_get "/rest/api/3/issue/${key}?fields=labels" \
+    | jq -e --arg l "$label" '.fields.labels | index($l)' >/dev/null 2>&1 || return 1
+  page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100")" || return 1
+  # The changelog is oldest first, so the newest change sits on the last page. A label added more
+  # than 100 changes ago is not on it and does not count: an approver adds it again.
+  last="$(jq -r 'if .isLast == false then ([.total - 100, 0] | max) else empty end' <<< "$page" 2>/dev/null)" || return 1
+  if [ -n "$last" ]; then
+    page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100&startAt=${last}")" || return 1
+  fi
+  who="$(jq -r --arg l "$label" '[.values[]
+      | select(any(.items[]?; .field == "labels"
+          and ((.toString // "") | split(" ") | index($l)) and (((.fromString // "") | split(" ") | index($l)) | not)))
+      | .author.accountId // ""] | last // ""' <<< "$page" 2>/dev/null)" || return 1
+  [ -n "$who" ] && [[ ",${PIPE_TOOLING_APPROVERS// /}," == *",${who},"* ]] || return 1
+  printf '%s\n' "$who"
+}
+
 # jira_close_merged <KEY>
 #   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
 #   approved, add it to the active sprint, transition it to Done.
