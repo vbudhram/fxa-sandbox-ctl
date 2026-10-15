@@ -1768,7 +1768,8 @@ function laneTitle(raw) {
 function laneHtml(r) {
   const t = r.t, x = (r.st + 0.5) / 9 * 100, c = LANE_COLOR[r.kind], repo = SNAP?.repo ?? "";
   const title = laneTitle(t.summary || t.branch);
-  const open = r.runner && (LANE_OUT[t.key] ?? true);
+  // Closed until a reader opens it: open, a few belts made the page a wall of console text on a phone.
+  const open = r.runner && (LANE_OUT[t.key] ?? false);
   // Passed stops stay neutral; the kind's colour marks the current stop and the card.
   const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j < r.st ? "border-color:var(--line2);background:var(--line2)" : j === r.st ? `border-color:${c};background:${c}` : ""}"></span>`).join("");
   return `<div class="lane ${r.kind}${t.key === SEL.pipeline ? " sel" : ""}" data-belt="${esc(t.key)}">
