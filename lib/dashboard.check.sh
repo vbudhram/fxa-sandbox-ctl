@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check of the dashboard's helpers: session titles, owners, conversation counts, Slack PR belts, the outcome card.
+# Offline check of the dashboard's helpers: session titles, owners, conversation counts, Slack PR belts, the outcome card, Needs you counts, queue groups.
 #   bash lib/dashboard.check.sh
 set -u
 command -v node >/dev/null || { echo "skip: needs node"; exit 0; }
@@ -27,9 +27,6 @@ globalThis.STATS = { rows: [{ src: "slack", key: "agent-a", usd: 10.19 }] };
 for (const [name, ss, want] of [["a stopped session has the Stats row cost, not the transcript cost", { key: "agent-a", summary: JSON.stringify({ cost: 15.1 }) }, 10.19],
   ["a live session has its runner cost", { key: "agent-a", agent: { cost_so_far: 3 } }, 3], ["no Stats row: the summary cost", { key: "agent-b", summary: JSON.stringify({ cost: 2 }) }, 2]]) {
   const got = sessUsd(ss); if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } }
-STATS.rows.push({ src: "pipeline", at: "2026-10-14T10:00:00Z", usd: 2 }, { src: "answer", at: "2026-10-15T10:00:00Z", usd: 0.5 });
-for (const [from, want] of [[undefined, 12.69], ["2026-10-15", 0.5]]) { const got = Math.round(rowSpend(from) * 100) / 100;
-  if (got === want) console.log("ok   spend from every source since " + from); else { console.log(`FAIL spend since ${from}: want [${want}] got [${got}]`); fail = 1; } }
 globalThis.NO_USE = { n: 0, live: 0, usd: 0, last: 0 };
 const nowIso = new Date().toISOString();
 STATS.rows = [{ src: "slack", profile: "sync-storage", t0: Date.now() / 1000, usd: 1 }, { src: "pipeline", profile: "sync-storage", at: nowIso, usd: 2 },
@@ -59,5 +56,23 @@ AGENTS.sessions = [{ key: "agent-c2", resume_from: "agent-b1", pr_url: "https://
 STATS.prs = [{ n: 9, state: "MERGED" }];
 t("outcome: the PR from any session in the conversation, with its state", /#9[\s\S]*merged/.test(outcomeHtml(AGENTS.sessions[0])), true);
 t("the conversation title is the first session\u2019s request", convTitle(AGENTS.sessions[0]), "First ask");
+for (const [i, want] of [["Can you work on <https://mozilla-hub.atlassian.net/browse/FXA-14767>", "Can you work on FXA-14767"],
+  ["review this <https://github.com/mozilla/fxa/pull/21480|the PR> :sweat_smile:", "review this the PR"],
+  ["checkout this branch <https://github.com/mozilla/fxa/pull/21391", "checkout this branch mozilla/fxa#21391"],
+  ["<@U0C4MF0C79U> look at <https://example.com/x/y>", "look at example.com"],
+  ["review this https://github.com/mozilla/fxa/pull/21371 please", "review this mozilla/fxa#21371 please"],
+  ["work on <https://mozilla-hub.atlassian.net/browse/STOR-460|mozilla-hub.atlassian.net/browse/STOR-460>", "work on STOR-460"], ["fix: keep a:b:c as it is", "fix: keep a:b:c as it is"]])
+  t("title without Slack markup: " + want, firstLine(i), want);
+t("a conversation\u2019s PR and its state, from any of its sessions", JSON.stringify(convPr(AGENTS.sessions[0])), JSON.stringify({ url: "https://github.com/mozilla/fxa/pull/9", n: 9, state: "MERGED" }));
+t("no PR in the conversation", convPr({ key: "x" }), null);
+globalThis.NEEDS = [{ chip: "Failing" }, { chip: "Conflicts" }, { chip: "Review" }, { chip: "Decide" }, { chip: "Decide", n: 21 }, { chip: "Blocked" }];
+{ const c = needCounts(); t("needs you counts items: a \"N more\" row counts N", `${c.total}|${c.parts}`, "26|Fix 2 · Review 1 · Decide 22 · Blocked 1"); }
+t("skips group by their reason, most passes first", JSON.stringify(skipGroups([{ key: "A", passes: 1, reason: "blocked: x" }, { key: "B", passes: 9, reason: "open design question" },
+  { key: "C", passes: 5, reason: "Underspecified: y" }, { key: "D", passes: 3, reason: "Blocked: z" }]).map(([g, ks]) => g + ":" + ks.map(k => k.key).join(""))), JSON.stringify(["Needs a decision:B", "Underspecified:C", "Blocked:DA"]));
+STATS.rows = [{ src: "slack", profile: "fxa", key: "s", t0: Date.now() / 1000, usd: 1 }, { src: "answer", profile: "fxa", at: nowIso, usd: 0.5 },
+  { src: "pipeline", profile: "fxa", at: nowIso, usd: 2 }, { src: "pass", profile: "fxa", at: nowIso, usd: 0.25 }];
+{ const u = teamUse().fxa; t("team cost: Slack and the pipeline apart", `${u.slack_usd}|${u.pipe_usd}|${u.usd}`, "1.5|2.25|3.75"); }
+{ const lo = Date.parse("2026-10-02T00:00"), hi = Date.parse("2026-10-04T00:00");
+  t("day rows inside the Stats range", inRange([{ day: "2026-10-01" }, { day: "2026-10-02" }, { day: "2026-10-03" }, { day: "2026-10-04" }], lo, hi).map(d => d.day).join(","), "2026-10-02,2026-10-03"); }
 process.exit(fail);
-' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function rowSpend(from) {/,/^}/p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p' "$page")"
+' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p' "$page")"
