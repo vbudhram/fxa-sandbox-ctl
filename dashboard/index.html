@@ -258,11 +258,12 @@
   .right h4 { margin:0 0 var(--s2); font:700 var(--t-label) var(--sans); color:var(--dim); }
   .right .kvr { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
   .right .kvr:first-of-type { border-top:0; } .right .kvr > span { color:var(--dim); } .right .kvr b { font-weight:600; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
-  .right .kvr b.na { font-weight:400; color:var(--faint); }
+  .right .kvr b.na, .right .kvr .na { font-weight:400; color:var(--faint); }
   .right .acts2 { display:flex; gap:var(--s2); flex-wrap:wrap; } .right .acts2 a { color:var(--link); font-weight:600; }
   .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
   .right .ldet { margin:0; flex-direction:column; } .right .ldet .links { margin-left:0; }
   .drawer-close { display:none; }
+  .sowner { display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font:600 var(--t-label) var(--sans); color:var(--dim); } .sowner select { flex:1; min-width:0; min-height:28px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); padding:0 8px; font:400 var(--t-sub) var(--sans); }
   #side .sfilters { flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0 var(--s4) var(--s4); margin:0; gap:var(--s3); }
   #side .sfilters label, #side .sfilters .fl { align-items:stretch; text-align:left; display:flex; flex-direction:column; gap:6px; font:700 var(--t-label) var(--sans); color:var(--dim); }
   #side .sfilters select, #side .sfilters input { font:400 var(--t-body) var(--sans); color:var(--ink); width:100%; }
@@ -272,6 +273,7 @@
   .status { grid-area:status; background:var(--panel); border-top:1px solid var(--line); display:flex; align-items:center; gap:var(--s3); padding:0 var(--s4); font-size:var(--t-label); color:var(--dim); white-space:nowrap; overflow:hidden; }
   .status .sp { flex:1; } .status button { padding:2px 10px; font-size:var(--t-label); }
   #cells { display:flex; align-items:center; gap:var(--s3); overflow:hidden; }
+  .status a.cell { color:inherit; text-decoration:none; } .status a.cell:hover b { text-decoration:underline; }
   .status .cell { display:inline-flex; align-items:baseline; gap:5px; white-space:nowrap; }
   .status .cell b { color:var(--ink); font-weight:700; font-variant-numeric:tabular-nums; }
   .status .cell.bad b { color:var(--bad); } .status .cell.warn b { color:var(--warn); } .status .cell.ok b { color:var(--ok); }
@@ -296,7 +298,9 @@
     .rail { flex-direction:row; justify-content:flex-start; overflow-x:auto; border-right:0; border-top:1px solid var(--line); padding:0 4px; gap:0; scrollbar-width:none; }
     .rail .logo, .rail .grow, .rail button.rb { display:none; }
     .rail a { flex:0 0 64px; width:auto; min-height:56px; font-size:11px; } .rail .n { right:2px; }
-    .status { display:none; } .side, .right { left:0; right:0; width:auto; bottom:64px; }
+    .side, .right { left:0; right:0; width:auto; bottom:64px; }
+    .status { position:fixed; bottom:72px; right:8px; height:26px; z-index:13; border:1px solid var(--line); border-radius:999px; padding:0 10px; }
+    .status > :not(#dot):not(#health) { display:none; }
     .mh, .mc { padding-left:var(--s4); padding-right:var(--s4); } .mh .vsub { display:none; }
     button, .iconbtn { min-height:44px; } .iconbtn { width:44px; }
   }
@@ -332,7 +336,8 @@
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
   .need { display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-top:1px solid var(--sunk); }
   .need .chip { width:92px; flex:none; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:999px; }
-  .need .body { flex:1; min-width:0; } .need .body .t { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .need .body { flex:1; min-width:0; } .need .body a.t { display:block; color:inherit; } .need .body a.t:hover { color:var(--link); }
+  .need .body .t { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .need .body .m { font-size:var(--t-sub); color:var(--faint); } .need > a { font-size:var(--t-sub); font-weight:600; color:var(--link); white-space:nowrap; }
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
@@ -358,6 +363,9 @@
   .media img, .media video { display:block; width:100%; max-height:200px; object-fit:contain; background:#15141A; }
   .media figcaption { font:11px var(--mono); color:var(--dim); padding:4px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sx .sxbar { display:flex; align-items:center; gap:var(--s2); min-height:36px; padding-bottom:var(--s2); border-bottom:1px solid var(--line); }
+  .sx .sxout { margin:var(--s3) 0; padding:var(--s3) var(--s4); border:1px solid var(--line); border-radius:var(--r-lg); background:var(--panel); }
+  .sx .sxout .kvs { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); font-size:var(--t-sub); } .sx .sxout .kvs b { color:var(--dim); font-weight:600; margin-right:6px; }
+  .sx .sxout .notes { margin-top:var(--s2); white-space:pre-wrap; color:var(--dim); font-size:var(--t-sub); max-height:6.5em; overflow:auto; }
   .sx .sxt { font-weight:600; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .sx .sxm { color:var(--faint); font-size:var(--t-sub); white-space:nowrap; } .sx .sp { flex:1; }
   .sx .lnk { font-size:var(--t-sub); color:var(--link); white-space:nowrap; } .sx .lnk a { color:var(--link); }
@@ -416,7 +424,7 @@
   .sfilters { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); margin-top:var(--s3); }
   .sfilters select, .sfilters input { min-height:32px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:inherit; padding:0 8px; font:inherit; }
   .sfilters label { display:inline-flex; align-items:center; gap:6px; color:var(--dim); }
-  .kpis { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:var(--s3); margin:var(--s4) 0; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--s3); margin:var(--s4) 0; }
   @media (max-width:900px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   .charts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s3); }
   @media (max-width:900px) { .charts { grid-template-columns:minmax(0,1fr); } }
@@ -737,10 +745,12 @@ function renderStatus() {
   const sp = h.seconds_since_pass, dead = !paused && (sp == null || sp > 7200), quiet = !paused && sp != null && sp > 1500;
   const lowDisk = h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb;
   const stale = STATE.age_seconds == null || STATE.age_seconds > 300;
-  const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet ? "warn" : "";
+  // Nothing launchable while tickets wait on a person: the pipeline is idle for a reason a person can fix.
+  const q = s?.queue, ready = q?.ready?.length ?? 0, waits = queueWaits().length, starved = !q?.fetch_failed && ready === 0 && waits > 0;
+  const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet || starved ? "warn" : "";
   document.getElementById("dot").className = "dot " + level;
   const hl = document.getElementById("health");
-  hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? "degraded" : paused ? "paused" : "healthy";
+  hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
   if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
   const cells = [];
@@ -751,6 +761,7 @@ function renderStatus() {
   const m = s?.mode;
   if (m?.newtickets === "off") cells.push(`<span class="cell warn" title="${esc(m.newtickets_note ?? "")}"><b>intake off</b> · PR rounds only</span>`);
   else if (g) cells.push(`<span class="cell">launchcap <b>${g.launchcap}</b></span>`);
+  if (q) cells.push(`<a class="cell ${starved ? "warn" : ""}" href="#pipeline/queue" title="queue: launchable, and skipped tickets that wait on a person">queue <b>${q.fetch_failed ? "?" : ready} ready</b>${waits ? ` · <b>${waits}</b> wait on you` : ""}</a>`);
   if (m?.focus) cells.push(`<span class="cell">focus ${jira(m.focus)}</span>`);
   cells.push(`<span class="cell ${lowDisk ? "bad" : ""}"><b>${h.free_gb ?? "?"}GB</b> free</span>`);
   if (g) cells.push(`<span class="cell" title="sandboxes now plus always-on hosts, at list prices">burn <b>${usd((g.runner_hourly_usd ?? 0) + (g.infra_hourly_usd ?? 0))}/h</b></span>`);
@@ -783,7 +794,7 @@ function renderAlerts() {
   const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
   // Ticket-level items: urgency first (lower sorts first), each with one link out.
   const needs = [];
-  const need = (prio, chip, cls, title, meta, href, link) => needs.push({ prio, chip, cls, title, meta, href, link });
+  const need = (prio, chip, cls, title, meta, href, link, key) => needs.push({ prio, chip, cls, title, meta, href, link, key });
   const staleFeed = (name, age, every) => age != null && every && age > 3 * every &&
     add("bad", `<b class="key">${name}</b>`, `feed is ${ago(age).replace(" ago", "")} old, refreshes every ${every}s; the page is showing history`);
   staleFeed("agents", STATE.agents_age_seconds, STATE.agents_interval);
@@ -796,26 +807,31 @@ function renderAlerts() {
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
   const tix = k => JIRA + encodeURIComponent(k), pr = n => `https://github.com/${repo}/pull/${n}`;
-  (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, `${b.key} · needs a human decision`, tix(b.key), "View ticket"));
+  (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, `${b.key} · needs a human decision`, tix(b.key), "View ticket", b.key));
+  // Skipped queue tickets wait on a person's answer in Jira; the next pass reads it. Most-skipped first.
+  const decide = (s?.queue?.skipped ?? []).filter(k => k.in_queue !== false && !k.held_by).sort((x, y) => y.passes - x.passes);
+  decide.slice(0, 5).forEach(k => need(2.5, "Decide", "warn", k.summary || k.key, `${k.key} · skipped ${k.passes}× · ${k.reason || "no reason recorded"}`, tix(k.key), "Answer in Jira"));
+  if (decide.length > 5) need(2.6, "Decide", "dim", `${decide.length - 5} more skipped tickets wait on a decision`, "the Queue tab lists each with its reason", "#pipeline/queue", "Open queue");
   const { cards, waiting } = merged();
   cards.forEach(t => {
     const a = t.agent || {}, title = t.summary || t.key;
-    if (t.base_ok === false) need(0, "Wrong base", "bad", title, `${t.key} · sandbox is not on the slot's commit; stop ${t.name}`, tix(t.key), "View ticket");
-    if (t.stage === "stalled") need(0, "Stalled", "bad", title, `${t.key} · ${t.detail || ""}`, tix(t.key), "View ticket");
-    else if (!t.agent_alive && t.stage === "watching" && !t.handoff) need(0, "Agent exited", "bad", title, `${t.key} · exited without a handoff`, tix(t.key), "View ticket");
-    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) need(1, "Idle agent", "warn", title, `${t.key} · idle ${short(a.idle_seconds)}: ${a.last_tool || a.last_text || "no output"}`, tix(t.key), "View ticket");
-    if (a.num_turns === 0) need(0, "Goal rejected", "bad", title, `${t.key} · the rendered prompt is over 4000 chars`, tix(t.key), "View ticket");
+    if (t.base_ok === false) need(0, "Wrong base", "bad", title, `${t.key} · sandbox is not on the slot's commit; stop ${t.name}`, tix(t.key), "View ticket", t.key);
+    if (t.stage === "stalled") need(0, "Stalled", "bad", title, `${t.key} · ${t.detail || ""}`, tix(t.key), "View ticket", t.key);
+    else if (!t.agent_alive && t.stage === "watching" && !t.handoff) need(0, "Agent exited", "bad", title, `${t.key} · exited without a handoff`, tix(t.key), "View ticket", t.key);
+    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) need(1, "Idle agent", "warn", title, `${t.key} · idle ${short(a.idle_seconds)}: ${a.last_tool || a.last_text || "no output"}`, tix(t.key), "View ticket", t.key);
+    if (a.num_turns === 0) need(0, "Goal rejected", "bad", title, `${t.key} · the rendered prompt is over 4000 chars`, tix(t.key), "View ticket", t.key);
   });
-  waiting.forEach(t => need(0, "No sandbox", "bad", t.summary || t.key, `${t.key} · ${t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no sandbox"}`, tix(t.key), "View ticket"));
+  waiting.forEach(t => need(0, "No sandbox", "bad", t.summary || t.key, `${t.key} · ${t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no sandbox"}`, tix(t.key), "View ticket", t.key));
   (s?.review ?? []).forEach(r => {
     const title = r.title || r.key, d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
-    if (r.state === "MERGED" || r.state === "CLOSED") need(6, "Drain", "done", `#${r.pr} ${r.state.toLowerCase()}, but ${r.key} is still labelled done`, "the next pass files it", pr(r.pr), "View PR");
-    else if (r.mergeable === "CONFLICTING") need(3, "Conflicts", "bad", title, `${r.key} · #${r.pr} · ${r.last_human_review ? "a human reviewed, so they rebase" : "no human review yet, so a rebase round is safe"}`, pr(r.pr), "View PR");
-    else if (r.fail > 0 && r.infra) need(4, "Infra red", "warn", title, `${r.key} · #${r.pr} · ${r.infra}, repo infrastructure, not the PR code`, pr(r.pr) + "/checks", "See job");
-    else if (r.fail > 0) need(3, "Failing", "bad", title, `${r.key} · #${r.pr} · ${r.fail} check${r.fail > 1 ? "s" : ""} failing`, pr(r.pr) + "/checks", "See job");
-    else if (r.review === "CHANGES_REQUESTED") need(3, "Changes", "bad", title, `${r.key} · #${r.pr} · changes requested`, pr(r.pr), "View PR");
-    else if (isWaitingOnHuman(r)) need(5 - Math.min(d, 30) / 100, "Review", d >= 3 ? "warn" : "dim", title, `${r.key} · #${r.pr} · ${r.last_human_review ? `since ${r.last_human_review.login}'s review` : "no human review"} in ${d} day${d === 1 ? "" : "s"}`, pr(r.pr), "View PR");
+    if (r.state === "MERGED" || r.state === "CLOSED") need(6, "Drain", "done", `#${r.pr} ${r.state.toLowerCase()}, but ${r.key} is still labelled done`, "the next pass files it", pr(r.pr), "View PR", r.key);
+    else if (r.mergeable === "CONFLICTING") need(3, "Conflicts", "bad", title, `${r.key} · #${r.pr} · ${r.last_human_review ? "a human reviewed, so they rebase" : "no human review yet, so a rebase round is safe"}`, pr(r.pr), "View PR", r.key);
+    else if (r.fail > 0 && r.infra) need(4, "Infra red", "warn", title, `${r.key} · #${r.pr} · ${r.infra}, repo infrastructure, not the PR code`, pr(r.pr) + "/checks", "See job", r.key);
+    else if (r.fail > 0) need(3, "Failing", "bad", title, `${r.key} · #${r.pr} · ${r.fail} check${r.fail > 1 ? "s" : ""} failing`, pr(r.pr) + "/checks", "See job", r.key);
+    else if (r.review === "CHANGES_REQUESTED") need(3, "Changes", "bad", title, `${r.key} · #${r.pr} · changes requested`, pr(r.pr), "View PR", r.key);
+    else if (isWaitingOnHuman(r)) need(5 - Math.min(d, 30) / 100, "Review", d >= 3 ? "warn" : "dim", title, `${r.key} · #${r.pr} · ${r.last_human_review ? `since ${r.last_human_review.login}'s review` : "no human review"} in ${d} day${d === 1 ? "" : "s"}`, pr(r.pr), "View PR", r.key);
   });
+  laneRows().filter(r => r.t.slack && r.age >= 3).forEach(r => need(5, "Review", "warn", r.t.summary, `Slack PR #${r.t.pr} · ${r.t.owner || "owner unknown"} · no ticket · open ${r.age} days`, pr(r.t.pr), "View PR", r.t.key));
   const known = new Set(cards.map(c => c.name));
   (g?.sessions ?? []).forEach(x => known.add(x.key));
   (g?.instances ?? []).forEach(v => {
@@ -846,11 +862,12 @@ function renderAgents() {
 }
 
 function renderNeeds() {
+  const belts = new Set(laneRows().map(r => r.t.key));
   put("s-needs", head("needs you", NEEDS.length, NEEDS.length ? "most urgent first" : "") +
     (NEEDS.length === 0 ? `<div class="emptybox">Nothing needs you right now.</div>` : NEEDS.map(n => `<div class="need">
       <span class="chip ${n.cls}">${esc(n.chip)}</span>
-      <div class="body"><div class="t" title="${esc(n.title)}">${esc(n.title)}</div><div class="m">${esc(n.meta)}</div></div>
-      <a href="${esc(n.href)}" target="_blank" rel="noopener">${n.link}</a></div>`).join("")));
+      <div class="body">${n.key && belts.has(n.key) ? `<a class="t" href="#pipeline/belts/${encodeURIComponent(n.key)}" title="Open the belt: ${esc(n.title)}">${esc(n.title)}</a>` : `<div class="t" title="${esc(n.title)}">${esc(n.title)}</div>`}<div class="m">${esc(n.meta)}</div></div>
+      <a href="${esc(n.href)}"${n.href.startsWith("#") ? "" : ' target="_blank" rel="noopener"'}>${n.link}</a></div>`).join("")));
 }
 function renderRunning() {
   const { cards } = merged(), ss = AGENTS?.sessions ?? [], med = SNAP?.telemetry?.median_minutes;
@@ -898,11 +915,22 @@ function sessHeads(ss) {
   const older = new Set(ss.map(s => s.resume_from).filter(Boolean));
   return ss.filter(s => !older.has(s.key));
 }
+// A conversation's title: what the person first asked, in the chain's first session.
+const convTitle = s => { const ch = chainOf(s, AGENTS?.sessions ?? []); return firstLine(ch[ch.length - 1].request); };
 function chainOf(s, ss) {
   const by = new Map(ss.map(x => [x.key, x])), out = [];
   for (let x = s; x && out.length < 50; x = by.get(x.resume_from)) out.push(x);
   return out;
 }
+// The queue tickets that wait on a person: skipped, still labelled, not held by another ticket.
+const queueWaits = () => (SNAP?.queue?.skipped ?? []).filter(k => k.in_queue !== false && !k.held_by);
+// A session's owner: its own name, else the name another session of the same Slack user recorded.
+function ownerName(s) {
+  if (s.owner_name) return s.owner_name;
+  return (AGENTS?.sessions ?? []).find(x => x.owner === s.owner && x.owner_name)?.owner_name || s.owner || "";
+}
+const sessTabOf = s => s.state === "paused" ? "paused" : LIVE_SESSION.includes(s.state) ? "live" : "stopped";
+const sessLink = (s, label) => s ? `<a class="key" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(label)}</a>` : `<span class="key">${esc(label)}</span>`;
 // The list's day groups, from a session's start (seconds).
 function sessDay(c) {
   const d = new Date().setHours(0, 0, 0, 0) / 1000 - Number(c || 0);
@@ -983,7 +1011,7 @@ function renderSess() {
       <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : " hidden"}></div>
       <div class="sxbody">
         ${SX.list ? `<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
-        <div class="convo">${sel ? `<div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session.</div>`}</div>
+        <div class="convo">${sel ? `<div class="sxout" id="sx-outcome"></div><div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session.</div>`}</div>
         ${showTerm ? `<aside class="tty" id="tty-${esc(sel.key)}" aria-label="Agent output">
           <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(sel.key)}</span><b class="state"></b></div>
           <div class="screen" tabindex="0"></div></aside>` : ""}
@@ -1001,27 +1029,44 @@ function renderSess() {
     const branch = sel.pr_url ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>`
       : sel.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : "";
     put("sx-bar", `<span class="sdot ${cls}"></span><span class="key">${esc(sel.key)}</span>
-      <span class="sxt" title="${esc(firstLine(sel.request))}">${esc(firstLine(sel.request))}</span>
+      <span class="sxt" title="${esc(convTitle(sel))}">${esc(convTitle(sel))}</span>
       <span class="sxm">${esc(st)}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
       <span class="sp"></span>
       ${sel.slack_url ? `<a class="lnk" href="${esc(sel.slack_url)}" target="_blank" rel="noopener">Slack ↗</a>` : ""}${branch ? `<span class="lnk">${branch}</span>` : ""}
       ${isLive ? tgl("term", "Terminal", SX.term) : ""}`);
     if (SX.details) put("sx-details", [
       ["Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`],
-      [cost ? "Cost" : "Tokens", cost ? usd(cost) : tok ? `${(tok / 1000).toFixed(0)}k` : "—"],
-      ["Steer turns", esc(sel.turns ?? 0)],
+      ...(() => { const ch = chainOf(sel, AGENTS?.sessions ?? []), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), n = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
+        return [[c ? "Cost" : "Tokens", c ? usd(c) + (ch.length > 1 ? ` (${ch.length} sessions)` : "") : tok ? `${(tok / 1000).toFixed(0)}k` : "—"], ["Steer turns", esc(n)]]; })(),
       ["Started", stamp(sel.created)],
       ["Resumed from", sel.resume_from ? `<a href="#sessions/${SESS_TAB}/${esc(sel.resume_from)}">${esc(sel.resume_from)}</a>` : "—"],
       ["Branch or PR", branch || "not pushed"],
       ...(pauseIn != null ? [["Idle pause in", short(pauseIn)]] : []),
       ...(endsIn != null ? [["Sandbox ends in", short(endsIn)]] : []),
     ].map(([k, v]) => `<span><b>${k}</b>${v}</span>`).join(""));
+    put("sx-outcome", outcomeHtml(sel));
     HIST_OPEN.add(sel.key); if (!HIST[sel.key]) loadHist(sel.key);
     put("sx-thread", threadHtmlCached(sel));
   }
   if (SX.list) put("sx-list", list.map(s => `<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${esc(s.key)}"><span class="k">${esc(s.key)}<span>${stamp(s.created)}</span></span>
       <span class="r">${esc(firstLine(s.request))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${esc(s.turns ?? 0)} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`).join("") || `<div class="empty">none</div>`);
   if (showTerm) paintTty(sel.key, sel.agent_alive);
+}
+// What the conversation produced, at the top of the center: the PR and its state, the diff, notes and media.
+const sessSummary = s => { try { return JSON.parse(s.summary || "{}"); } catch { return {}; } };
+function outcomeHtml(s) {
+  const ss = AGENTS?.sessions ?? [], ch = chainOf(s, ss), pick = f => ch.map(f).find(Boolean);
+  const prUrl = pick(x => x.pr_url), pushed = pick(x => x.pushed_branch), diff = pick(x => sessSummary(x).diff), notes = pick(x => x.finish_notes);
+  const media = ch.reduce((n, x) => n + (Array.isArray(x.media) ? x.media.length : 0), 0);
+  const n = Number(prUrl?.match(/\/pull\/(\d+)/)?.[1]), repo = SNAP?.repo ?? "mozilla/fxa";
+  const p = n && prUrl.includes(`/${repo}/`) ? (STATS?.prs ?? []).find(x => x.n === n) : null;
+  const state = p?.state ?? ((SNAP?.open_prs ?? []).some(o => o.number === n) && prUrl.includes(`/${repo}/`) ? "OPEN" : "");
+  const ro = (TEAMS?.teams ?? []).find(t => t.profile === (s.profile || "fxa"))?.read_only;
+  const result = prUrl ? `<a href="${esc(prUrl)}" target="_blank" rel="noopener">${esc(prUrl.replace(/.*github\.com\//, "").replace("/pull/", " #"))} ↗</a>${state ? ` <span class="tag ${state === "MERGED" ? "ok" : state === "OPEN" ? "info" : ""}">${esc(state.toLowerCase())}</span>` : ""}`
+    : pushed ? `branch <a href="https://github.com/${esc(repo)}/tree/${esc(pushed)}" target="_blank" rel="noopener">${esc(pushed)} ↗</a>`
+    : diff ? (ro ? "diff posted in Slack (read-only team)" : "changed files, not pushed") : "no code change";
+  return `<div class="kvs"><span><b>Result</b>${result}</span>${diff ? `<span><b>Change</b>${esc(diff)}</span>` : ""}${media ? `<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
+    ${ch.length > 1 ? `<span><b>Conversation</b>${ch.length} sessions</span>` : ""}</div>${notes ? `<div class="notes">${esc(String(notes).slice(0, 600))}</div>` : ""}`;
 }
 // Markdown for a whole thread is the costly part: rebuild only when it changes.
 const THREAD_CACHE = {};
@@ -1228,6 +1273,13 @@ async function loadTeams() {
 }
 const APP_FAIL = "the GitHub App check failed", NO_USE = { n: 0, live: 0, usd: 0, last: 0 };
 const teamName = t => t.label || t.profile;
+const teamLabel = p => { const t = (TEAMS?.teams ?? []).find(x => x.profile === p); return t ? teamName(t) : p; };
+// A team link sets that view's filter, then the link's hash opens the view.
+let STEAM = "";
+document.addEventListener("click", e => {
+  const a = e.target.closest?.("[data-team-stats], [data-team-sess]"); if (!a) return;
+  if (a.dataset.teamStats) setStatsFilter({ team: a.dataset.teamStats }); else { STEAM = a.dataset.teamSess; renderSide(); }
+});
 const teamLevel = t => ["bad", "warn"].find(l => (t.issues ?? []).some(i => i.level === l));
 // The table names how many need a look; the right panel holds the texts, so a row stays one line.
 const teamIssueCount = t => { const n = (t.issues ?? []).filter(i => i.level !== "info").length; return `${n} issue${n === 1 ? "" : "s"}`; };
@@ -1249,7 +1301,7 @@ function teamUse() {
     x.usd += r.usd || 0;
     if (r.src === "pipeline") x.runs = (x.runs ?? 0) + 1;
     if (r.src !== "slack") continue;
-    x.n++; x.live += r.live ? 1 : 0; x.last = Math.max(x.last, t);
+    (x.convs ??= new Set()).add(r.conv ?? r.key); x.n = x.convs.size; x.live += r.live ? 1 : 0; x.last = Math.max(x.last, t);
   }
   return u;
 }
@@ -1281,7 +1333,7 @@ function renderTeams() {
     (T.error ? `<p class="unknown">last refresh failed: ${esc(T.error)}; showing data from ${age}</p>` : "") +
     (T.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("") +
     (!ts.length ? `<div class="emptybox">No profiles/*/profile.conf found</div>` : !rows.length ? `<div class="emptybox">Nothing matches.</div>`
-      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th${L}>Mode</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th><th>30d</th><th title="every source: Slack sessions, pipeline runs and passes">$ 30d</th><th>Live</th></tr></thead>
+      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th${L}>Mode</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th><th title="Slack conversations; a resumed thread counts once">Conversations, 30d</th><th title="every source: Slack sessions, pipeline runs and passes">Spend, 30d</th><th>Live</th></tr></thead>
         <tbody>${rows.map(row).join("")}</tbody></table></div>`) +
     `<p class="empty" style="margin-top:var(--s3)">Usage covers the last 30 days. Usage leaves out dry-run and dev sessions.</p>`);
 }
@@ -1301,8 +1353,8 @@ function teamDetails(t) {
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
     <div>${h("Mode", `${conf} PIPE_PR_OPEN, PIPE_LABEL`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}${kvr("Label", esc(teamName(t)))}</div>
-    <div><h4>Usage (30 days)</h4>${use ? kvr("Sessions", u.n) + kvr("Live", u.live) + (u.runs ? kvr("Pipeline runs", u.runs) : "") + (STATS?.team_passes?.[t.profile] ? kvr("Passes, 7 days", `${STATS.team_passes[t.profile].passes} · ${STATS.team_passes[t.profile].work} with work`) : "") + kvr("Cost", usd(u.usd)) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
-      <p class="empty"><a href="#stats/spend">Spend in Stats</a>. Usage leaves out dry-run and dev sessions.</p></div>`;
+    <div><h4>Usage (30 days)</h4>${use ? kvr("Conversations", u.n) + kvr("Live", u.live) + (u.runs ? kvr("Pipeline runs", u.runs) : "") + (STATS?.team_passes?.[t.profile] ? kvr("Passes, 7 days", `${STATS.team_passes[t.profile].passes} · ${STATS.team_passes[t.profile].work} with work`) : "") + kvr("Cost", usd(u.usd)) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
+      <p class="empty"><a href="#sessions/${(() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })()}" data-team-sess="${p}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${p}">Its spend in Stats</a>. Usage leaves out dry-run and dev sessions.</p></div>`;
   return out;
 }
 
@@ -1315,10 +1367,12 @@ function renderStats() {
   const q = SF.q.trim().toLowerCase();
   const rows = all.filter(r => { const t = Date.parse(r.at); return t >= lo && t < hi
     && (SF.src === "all" || r.src === SF.src) && (SF.kind === "all" || r.kind === SF.kind)
-    && (SF.model === "all" || r.model === SF.model) && (!q || r.key.toLowerCase().includes(q)); });
+    && (SF.model === "all" || r.model === SF.model) && (SF.team === "all" || (r.profile || "fxa") === SF.team) && (!q || r.key.toLowerCase().includes(q)); });
   const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   // A Slack conversation counts once: its resumes share conv, the chain's first session.
-  const spend = sum(rows), keys = new Set(rows.map(r => r.conv ?? r.key)), compute = rows.reduce((x, r) => x + (r.compute_usd || 0), 0);
+  // Passes and triage (src "pass") are pipeline overhead: not a ticket, so out of the ticket counts and the top list.
+  const work = rows.filter(r => r.src !== "pass"), over = rows.filter(r => r.src === "pass");
+  const spend = sum(rows), keys = new Set(work.map(r => r.conv ?? r.key)), compute = rows.reduce((x, r) => x + (r.compute_usd || 0), 0);
   // Pipeline runs priced before the proxy (cost_source) count the main agent only: about half their cost.
   const mainOnly = rows.filter(r => r.src === "pipeline" && r.main_only).length;
   // Buckets: days for a short range, weeks (from Monday) for a long one.
@@ -1353,20 +1407,21 @@ function renderStats() {
     ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, q, bars, byDay, kpi) : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
-      ${kpi("Tickets and conversations", keys.size, `up to ${Math.max(...group(conv).map(g => g.rs.length))} runs on one`)}
+      ${kpi("Tickets and conversations", keys.size, work.length ? `up to ${Math.max(...group(conv).filter(g => g.rs[0].src !== "pass").map(g => g.rs.length))} runs on one${over.length ? ` · passes and triage left out` : ""}` : "&nbsp;")}
       ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
-      ${kpi("Per run", usd(spend / rows.length), `median ${usd(med(rows.map(r => r.usd)) ?? 0)}`)}
+      ${kpi("Per run", usd(spend / rows.length), Object.entries(SRC).map(([v, l]) => { const a = rows.filter(r => r.src === v); return a.length ? `${({ answer: "answers", pass: "passes" })[v] ?? v} ${usd(sum(a) / a.length)}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
     <div class="charts"><div class="chart"><h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div></div>
       <div class="chart"><h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div></div></div>
     <div class="three">
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
-        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}` : ""}
+        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
+          return `<div class="kv"><b>${esc(teamLabel(g.name))}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""}
         ${(() => { const ps = group(r => r.src === "slack" ? (r.who || "name not recorded") : null).filter(g => g.name);
           return ps.length ? `<h2 style="margin-top:var(--s4)">By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
             return `<div class="kv"><b>${esc(g.name)}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""; })()}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
-      <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group(conv).sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
+      <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${over.length ? `<div class="kv"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Spend by model<span class="note">all runs</span></h2>${(() => {
         // Subagents included where the proxy priced the run; else the run's main model only.
         const m = new Map();
@@ -1403,11 +1458,18 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
       : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed") + ` · <b>${usd(cost(p))}</b>`)}</div>`;
   const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
+  // All-in: every run in the range, any source (passes, sessions, answers too), over the PRs merged in it.
+  const inR = t => t >= lo && t < hi, allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
+  const mergedIn = all.filter(p => p.merged && inR(Date.parse(p.merged))), spentIn = rows.filter(r => inR(Date.parse(r.at))).reduce((x, r) => x + allUsd(r), 0);
+  const WK = 7 * 86400000, mon = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
+  const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
+    return m ? usd(rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
   const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
   return `<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Merged", merged.length, `${rate(merged.length, closed.length)} of those merged or closed`)}
       ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
       ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : "&nbsp;")}
+      ${kpi("All-in per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `${usd(spentIn)} over ${mergedIn.length} merged · last 4 weeks ${weeks.join(" → ")}`)}
       ${kpi("Cost per merged PR", merged.length ? usd(med(mc)) : "—", merged.length ? `median · ${usd(mc.reduce((a, b) => a + b, 0))} in all · LLM and session compute` : "&nbsp;")}</div>
     <div class="charts"><div class="chart"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div></div>
       <div class="chart"><h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
@@ -1422,7 +1484,8 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
 }
 // The Stats filters, in the list panel.
 function statsFilters() {
-  const all = STATS?.rows ?? [], SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", pass: "Passes and triage" };
+  const all = STATS?.rows ?? [], SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
+  const teams = [...new Set(all.map(r => r.profile || "fxa"))].sort();
   const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
   const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
   return `<div class="sfilters">
@@ -1430,6 +1493,7 @@ function statsFilters() {
       ${SF.range === "custom" ? `<label>From <input type="date" data-f="from" value="${esc(SF.from)}"></label><label>To <input type="date" data-f="to" value="${esc(SF.to)}"></label>` : ""}
       <label>Source<select data-f="src">${opt("src", "all", "All sources")}${Object.entries(SRC).map(([v, l]) => opt("src", v, l)).join("")}</select></label>
       <label>Kind<select data-f="kind">${opt("kind", "all", "All kinds")}${kinds.map(k => opt("kind", k, KIND[k] ?? k)).join("")}</select></label>
+      ${teams.length > 1 ? `<label>Team<select data-f="team">${opt("team", "all", "All teams")}${teams.map(t => opt("team", t, teamLabel(t))).join("")}</select></label>` : ""}
       <label>Model<select data-f="model">${opt("model", "all", "All models")}${models.map(m => opt("model", m, m)).join("")}</select></label>
       <label>Ticket or session<input type="search" data-f="q" placeholder="FXA-… or agent-…" value="${esc(SF.q)}"></label>
       ${statsFiltered() ? `<button type="button" data-reset>Clear filters</button>` : ""}</div>`;
@@ -1510,7 +1574,7 @@ function memoryCard(m) {
 }
 // Stats filters, remembered per viewer in this browser.
 const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
-const SF_DEFAULT = { range: "30d", from: "", to: "", src: "all", kind: "all", model: "all", q: "" };
+const SF_DEFAULT = { range: "30d", from: "", to: "", src: "all", kind: "all", model: "all", team: "all", q: "" };
 let SF = { ...SF_DEFAULT, ...(() => { try { return JSON.parse(localStorage.getItem("statsFilter")) || {}; } catch { return {}; } })() };
 const statsFiltered = () => Object.keys(SF_DEFAULT).some(k => SF[k] !== SF_DEFAULT[k]);
 function statsBounds(r) {
@@ -1637,6 +1701,14 @@ function laneRows() {
     const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : "Not in the pipeline";
     rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d });
   });
+  // Open PRs that no ticket owns: a Slack session opened them from its branch (agent-xxxxxx).
+  const ss = AGENTS?.sessions ?? [];
+  (SNAP?.open_prs ?? []).filter(p => !p.key).forEach(p => {
+    const d = Math.round(days(p.created) ?? 0), s = sessHeads(ss).find(x => chainOf(x, ss).some(y => y.branch === p.branch || y.key === p.branch));
+    const owner = s ? ownerName(s) : "";
+    rows.push({ t: { key: p.branch, pr: p.number, summary: p.title, slack: true, owner, sess: s }, st: 7, kind: d >= 3 ? "warn" : "wait",
+      l1: `Waiting ${d} day${d === 1 ? "" : "s"}`, l2: owner ? `${owner}'s session` : "Slack session", age: d });
+  });
   const order = { live:0, fix:1, warn:2, wait:3, done:4 };
   return rows.sort((x, y) => order[x.kind] - order[y.kind] || (y.age ?? 0) - (x.age ?? 0));
 }
@@ -1654,7 +1726,7 @@ function laneHtml(r) {
   return `<div class="lane ${r.kind}${t.key === SEL.pipeline ? " sel" : ""}">
     <div class="row">
       <div class="who">
-        <span class="m">${foxFor(t.key, 22, r.kind === "live" && r.runner ? "bob" : "")}${jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}<button class="tgl sm" data-lanedet="${esc(t.key)}" aria-expanded="${LANE_DET.has(t.key)}">${LANE_DET.has(t.key) ? "Hide details" : "Details"}</button></span>
+        <span class="m">${foxFor(t.key, 22, r.kind === "live" && r.runner ? "bob" : "")}${t.slack ? sessLink(t.sess, t.key) : jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}<button class="tgl sm" data-lanedet="${esc(t.key)}" aria-expanded="${LANE_DET.has(t.key)}">${LANE_DET.has(t.key) ? "Hide details" : "Details"}</button></span>
         <span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span>
       </div>
       <div class="track">
@@ -1676,6 +1748,8 @@ function laneDetails(r) {
   const kv = (label, v) => v == null || v === "" ? "" : `<span><b>${label}</b>${v}</span>`;
   const kinds = k ? Object.entries(k.kinds).map(([n, c]) => `${c} ${esc(KIND[n] ?? n).toLowerCase()}`).join(" · ") : "";
   const rv = t.review === "APPROVED" ? "approved" : t.review === "CHANGES_REQUESTED" ? "changes requested" : t.review === "REVIEW_REQUIRED" ? "review required" : t.review;
+  if (t.slack) return `<div class="ldet"><div><h3>Slack session</h3><div class="kvs">${kv("Session", sessLink(t.sess, t.key))}${kv("Owner", esc(t.owner || "unknown"))}${kv("Opened", ago(Math.round((Date.now() - Date.parse(SNAP?.open_prs?.find(p => p.number === t.pr)?.created ?? Date.now())) / 1000)))}</div></div>
+    <div class="links"><a href="https://github.com/${esc(repo)}/pull/${t.pr}" target="_blank" rel="noopener">PR ↗</a>${t.sess?.slack_url ? `<a href="${esc(t.sess.slack_url)}" target="_blank" rel="noopener">Slack thread ↗</a>` : ""}</div></div>`;
   const groups = [
     ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Turns", k.turns || ""), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
       kv("Median run", `${k.median_min} min`), kv("Files changed", k.files), kv("Last run", ago(Math.round((Date.now() - Date.parse(k.last)) / 1000))),
@@ -1716,8 +1790,8 @@ function renderLanes() {
   assignFoxes(rows.map(r => r.t.key));
   const live = rows.some(r => r.kind === "live" && r.runner);
   const q = SNAP?.queue ?? {}, ready = q.ready ?? [];
-  const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length);
-  counts[0] = ready.length;
+  const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length), wait = queueWaits().length;
+  counts[0] = ready.length + (wait ? ` · ${wait} wait` : "");
   const head = `<div style="display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)">
       <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
       <span class="sub" style="color:var(--dim)">One belt per ticket.</span>
@@ -2027,6 +2101,8 @@ const VIEWS = [
   ["runners", "Sandboxes", "Slots, sandboxes and what they cost", []],
   ["teams", "Teams", "Which teams exist, what each gets, who can start one, and use", []],
 ];
+// The Sessions list's person filter ("mine"), kept per browser.
+let SOWNER = ""; try { SOWNER = localStorage.getItem("sowner") || ""; } catch {}
 let VIEW = "overview", TAB = "", SESS_TAB = "live", SESS_SEL = "", STATS_TAB = "spend", LESSONS_TAB = "pending", Q = "", CUR = -1;
 const SEL = {};
 let KEYS = false; try { KEYS = localStorage.getItem("keys") === "1"; } catch {}
@@ -2073,7 +2149,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {
@@ -2093,18 +2169,19 @@ function sideGroups() {
   const q = Q.trim().toLowerCase(), hit = t => !q || String(t).toLowerCase().includes(q);
   if (VIEW === "sessions") {
     const all = AGENTS?.sessions ?? [];
-    const list = sessHeads(all).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => hit(s.key + " " + (s.request ?? "")));
+    const list = sessHeads(all).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => !SOWNER || ownerName(s) === SOWNER).filter(s => !STEAM || (s.profile || "fxa") === STEAM)
+      .filter(s => hit(s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
     const items = list.map(s => { const [st, cls] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0);
       // The title is what the person first asked: the chain's first session's request.
       const turns = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
       return { day: sessDay(s.created), id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(ch[ch.length - 1].request),
-        m: [stamp(s.created), st, ch.length > 1 ? `${ch.length} sessions` : "", `${turns} turn${turns === 1 ? "" : "s"}`, c ? usd(c) : ""] }; });
+        m: [stamp(s.created), SOWNER ? "" : ownerName(s), st, ch.length > 1 ? `${ch.length} sessions` : "", `${turns} turn${turns === 1 ? "" : "s"}`, c ? usd(c) : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "pipeline") {
     const rows = laneRows().filter(r => hit(r.t.key + " " + (r.t.summary ?? "")));
-    const label = { live: "Working", fix: "Needs a fix", warn: "Needs attention", wait: "Waiting", done: "Done" };
-    return Object.keys(label).map(k => ({ group: label[k], items: rows.filter(r => r.kind === k).map(r => ({ id: r.t.key, d: r.kind, t: laneTitle(r.t.summary || r.t.branch).text || r.t.key, m: [r.t.key, r.l1] })) })).filter(g => g.items.length);
+    const label = { live: "Working", fix: "Needs a fix", warn: "Needs attention", wait: "Waiting", done: "Done", slack: "Slack PRs" };
+    return Object.keys(label).map(k => ({ group: label[k], items: rows.filter(r => k === "slack" ? r.t.slack : !r.t.slack && r.kind === k).map(r => ({ id: r.t.key, d: r.kind, t: laneTitle(r.t.summary || r.t.branch).text || r.t.key, m: [r.t.key, r.l1] })) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [`${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
   if (VIEW === "lessons") return [{ items: (LESSONS ?? []).filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).filter(l => hit(l.text)).map(l => ({ id: l.id, d: l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : "", t: l.text, m: [l.status, l.session] })) }];
@@ -2128,8 +2205,10 @@ function renderSide() {
   const groups = sideGroups(), total = groups.reduce((n, g) => n + g.items.length, 0), name = VIEWS.find(x => x[0] === VIEW)[1];
   const sel = VIEW === "sessions" ? SESS_SEL || currentSession()?.key : SEL[VIEW];
   const active = document.activeElement?.id === "q";
+  const people = VIEW === "sessions" ? [...new Set((AGENTS?.sessions ?? []).map(ownerName).filter(Boolean))].sort() : [];
+  const who = people.length ? `<label class="sowner">Person<select id="sowner"><option value="">Everyone</option>${people.map(p => `<option${p === SOWNER ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>` : "";
   side.innerHTML = `<div class="sh"><h2>${esc(name)} <span class="n">${total}</span></h2>
-      <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div></div>
+      <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div>${who}${VIEW === "sessions" && STEAM ? `<button type="button" class="tgl sm" data-steam-clear style="margin-top:var(--s2)">Team: ${esc(teamLabel(STEAM))} ×</button>` : ""}</div>
     <div class="slist2">${groups.map(g => (g.group ? `<h3 class="sgroup">${esc(g.group)}</h3>` : "") + `<ul>${g.items.map(it =>
       `<li><button type="button" class="si" data-id="${esc(it.id)}"${it.id === sel ? ' aria-current="true"' : ""}><span class="d ${it.d}" aria-hidden="true"></span><span class="t">${esc(it.t)}</span>
         <span class="m">${it.m.filter(Boolean).map(esc).join(" · ")}</span></button></li>`).join("")}</ul>`).join("") || `<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
@@ -2169,14 +2248,16 @@ function sessionDetails(s) {
   const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
   const sm = (() => { try { return JSON.parse(s.summary || "{}"); } catch { return {}; } })();
   const cost = sessUsd(s), [st] = sessStatus(s), repo = SNAP?.repo ?? "mozilla/fxa";
+  const ch = chainOf(s, AGENTS?.sessions ?? []), convUsd = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), convTurns = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
+  const one = ch.length > 1 ? ` <span class="na">· this session ${cost ? usd(cost) : "—"}</span>` : "";
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
   const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
   const nr = "not recorded for this session", rs = num(s.runner_s), peak = (() => { try { return JSON.parse(s.res_peak || "null"); } catch { return null; } })();
   const branch = s.pr_url ? `<a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>`
     : s.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">${esc(s.pushed_branch)} ↗</a>` : "not pushed";
-  return `${closeBtn}<h2 class="rh">${esc(firstLine(s.request))}<small>${esc(s.key)}</small></h2>
-    <div><h4>Session</h4>${kvr("State", esc(st))}${kvr("Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`)}${kvr("Cost", cost ? usd(cost) : "—")}
-      ${kvr("Turns", esc(s.turns ?? 0))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
+  return `${closeBtn}<h2 class="rh">${esc(convTitle(s))}<small>${esc(s.key)}</small></h2>
+    <div><h4>Session</h4>${kvr("State", esc(st))}${kvr("Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`)}${kvr(ch.length > 1 ? `Cost, ${ch.length} sessions` : "Cost", (convUsd ? usd(convUsd) : "—") + one)}
+      ${kvr("Turns", esc(convTurns) + (ch.length > 1 ? ` <span class="na">· this session ${esc(s.turns ?? 0)}</span>` : ""))}${kvr("Owner", esc(ownerName(s) || "unknown"))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
       ${kvr("Branch or PR", branch)}${sm.diff ? kvr("Change", esc(sm.diff)) : ""}${pauseIn != null ? kvr("Idle pause in", short(pauseIn)) : ""}${endsIn != null ? kvr("Sandbox ends in", short(endsIn)) : ""}</div>
     <div><h4>Usage by model</h4>${usageHtml(s.key)}</div>
     <div><h4>Runner</h4>${s.boot_s ? kvr("Boot", `${Math.round(num(s.boot_s))} s${s.boot_backend ? ` · ${esc(s.boot_backend)}` : ""}`) : ""}
@@ -2245,6 +2326,8 @@ document.addEventListener("click", e => {
   if (e.target.closest?.("#help-close") || e.target.id === "help") openHelp(false);
   if (e.target.closest?.("#theme")) cycleTheme();
 });
+document.addEventListener("click", e => { if (e.target.closest?.("[data-steam-clear]")) { STEAM = ""; renderSide(); } });
+document.addEventListener("change", e => { if (e.target.id === "sowner") { SOWNER = e.target.value; try { localStorage.setItem("sowner", SOWNER); } catch {} renderSide(); } });
 document.addEventListener("change", e => { if (e.target.id === "keys-on") { KEYS = e.target.checked; try { localStorage.setItem("keys", KEYS ? "1" : "0"); } catch {} renderSide(); } });
 document.addEventListener("input", e => { if (e.target.id === "q") { Q = e.target.value; CUR = -1; renderSide(); if (VIEW === "teams") renderTeams(); } });
 document.addEventListener("keydown", e => {
