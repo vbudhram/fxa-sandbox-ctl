@@ -103,6 +103,14 @@ def session_row(rec, d):
     return {**rec, "agent": None, "agent_alive": False, "request": req, "media": media}
 
 
+_LIVE = {"starting", "active", "wrapping"}
+
+
+def is_over_test(rec):
+    """A dev bot or dry-run session that is over: the session pages leave it out, as Stats does."""
+    return rec.get("state") not in _LIVE and (rec.get("owner") == "U-DRYRUN" or rec.get("env") == "dev")
+
+
 def sessions_since(con, since, d, limit=200):
     """{cursor, rows}: the sessions written after change `since`, as session_row()s, and
     {key, deleted} for one that is gone. With since None, only the cursor to start from."""
@@ -113,7 +121,8 @@ def sessions_since(con, since, d, limit=200):
     for (key,) in con.execute("SELECT DISTINCT key FROM changes WHERE tbl = 'sessions' AND version > ? AND version <= ? LIMIT ?",
                               (since, cur, limit)).fetchall():
         r = con.execute("SELECT data FROM sessions WHERE key = ?", (key,)).fetchone()
-        rows.append(session_row(json.loads(r[0]), d) if r else {"key": key, "deleted": True})
+        rec = json.loads(r[0]) if r else None
+        rows.append(session_row(rec, d) if rec and not is_over_test(rec) else {"key": key, "deleted": True})
     return {"cursor": cur, "rows": rows}
 
 

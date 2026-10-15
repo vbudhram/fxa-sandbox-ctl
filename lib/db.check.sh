@@ -117,6 +117,15 @@ c = fxadb.connect(sys.argv[2], readonly=True); print(json.dumps(fxadb.sessions_s
   check "since: a changed session, with its request" "agent-c|stopped|a request" "$(since "$cur" | jq -r '.rows[] | "\(.key)|\(.state)|\(.request)"')"
   next="$(since "$cur" | jq .cursor)"
   check "since: nothing new after the new cursor" "[]" "$(since "$next" | jq -c .rows)"
+  # A dev bot or dry-run session shows only while it is live.
+  echo '{"key":"agent-d","owner":"U1","env":"dev","state":"active","created":1}' > "$SESSION_DIR/agent-d.json"; _session_db_sync agent-d
+  echo '{"key":"agent-e","owner":"U-DRYRUN","state":"stopped","created":1}' > "$SESSION_DIR/agent-e.json"; _session_db_sync agent-e
+  check "since: a live dev session is listed, a stopped dry run is not" "agent-d|active|null agent-e|null|true" "$(since "$next" | jq -r '[.rows[] | "\(.key)|\(.state)|\(.deleted)"] | sort | join(" ")')"
+  check "quiet rows: a stopped dry run is left out" "0" "$(_snapshot_quiet_rows "$FXA_DB" | grep -c agent-e)"
+  session_set agent-d state stopped
+  check "since: the dev session, once stopped, is marked deleted" "agent-d|true" "$(since "$next" | jq -r '.rows[] | select(.key == "agent-d") | "\(.key)|\(.deleted)"')"
+  rm -f "$SESSION_DIR"/agent-[de].json; _session_db_sync agent-d; _session_db_sync agent-e
+  next="$(since - | jq .cursor)"
   rm -f "$SESSION_DIR/agent-c.json"; _session_db_sync agent-c
   check "since: a removed session is marked deleted" "agent-c|true" "$(since "$next" | jq -r '.rows[] | "\(.key)|\(.deleted)"')"
   db_on() { false; }; rm -rf "$SESSION_DIR"/*

@@ -417,7 +417,8 @@ _snapshot_runner_row() {
 
 # _snapshot_sessions <now>   Session records plus what each agent is doing.
 # Every session the host keeps is listed: paused and PR-open ones are not over,
-# and session_prune bounds the list at FXA_SESSION_RETAIN_DAYS.
+# and session_prune bounds the list at FXA_SESSION_RETAIN_DAYS. A dev or dry-run
+# session is listed only while it is live (fxadb.is_over_test).
 _snapshot_sessions() {
   local now="$1" f tmp live db=""; tmp="$(mktemp -d)"
   # Only a live session needs its own shell (it probes the runner over ssh).
@@ -459,7 +460,7 @@ def records():
             except (OSError, ValueError):
                 pass
 for rec in records():
-    if rec.get("state") not in live:
+    if rec.get("state") not in live and not fxadb.is_over_test(rec):
         print(json.dumps(fxadb.session_row(rec, d)))
 ' "$SESSION_DIR" "${1:-}" "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 }
