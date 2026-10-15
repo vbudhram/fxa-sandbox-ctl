@@ -56,6 +56,8 @@ pipeline_load() {
   # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
   source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }
   PIPE_NAME="$name"
+  # A team that works on Android (PIPE_ANDROID=1): every runner it starts is an Android runner.
+  if [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
   # PIPE_REPOS: one row per repo, "slug path role", role work, dep, data or ref. The
   # first work row is the session's repo; the old single values come from the rows.
   # Every work row goes in PIPE_WORK_ROWS ("slug path"): the repos a team stack may pick.

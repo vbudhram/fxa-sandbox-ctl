@@ -381,11 +381,8 @@ cmd_jira() {
     # The stack plus Firefox workers needs more memory than a queue run.
     export FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL}"
   fi
-  # No Arm fallback: the image is amd64, and only an x86 type with nested virtualization runs the emulator.
-  if [ "$android" = "true" ]; then
-    export FXA_GCE_MACHINE_TYPE="$FXA_GCE_MACHINE_TYPE_ANDROID" FXA_GCE_IMAGE="$FXA_GCE_IMAGE_ANDROID" \
-      FXA_GCE_NESTED=1 FXA_GCE_MACHINE_FALLBACK="" FXA_GCE_DISK_GB="$FXA_GCE_DISK_GB_ANDROID"
-  fi
+  # After the functional type, so it wins: an x86 runner with nested virtualization, never Arm.
+  if [ "$android" = "true" ] || [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
 
   # Push and PR follow the private worktree's origin; secrets come from the public checkout.
   if [ "$private" = "true" ]; then
@@ -697,7 +694,11 @@ _jira_render_prompt() {
   fi
 
   local step4
-  if [ "$functional_tests" = "true" ]; then
+  if [ "${FXA_ANDROID:-}" = 1 ]; then
+    step4="4. Android verification is REQUIRED: $(runtime_skill_ref android-verify) passes on the
+   emulator, and its evidence (screenshots, logcat lines) is in /workspace/.fxa-auto-media/.
+   A change a user sees in desktop Firefox also passes the functional spec for it."
+  elif [ "$functional_tests" = "true" ]; then
     step4="4. Functional tests are REQUIRED: your test plan names the one spec that
    covers the changed flow, and the step 2 run must PASS it. It records video
    into /workspace/.fxa-auto-media/."
@@ -1170,7 +1171,7 @@ cmd_image() {
         echo "Run: brew install hashicorp/tap/packer"
         return 1
       fi
-      vm_image_build
+      vm_image_build "${2:-}"
       ;;
     status)
       if vm_image_exists; then

@@ -157,6 +157,15 @@ report it for closing with evidence.
 Write `/tmp/fxa-KEY-context.md` with scope, likely files, acceptance criteria, out-of-scope
 paths. Pass it as the third `launch` argument. **Cap grounding at 10 tool calls.**
 
+**Decide the team: FxA, or FxA Android.** Both work from the FXA project. Put
+`Launch with --android` on its own line in the context file when an acceptance criterion needs
+Firefox for Android itself: QR pairing with a phone, a push or device command that reaches the
+phone, Fenix sign-in or sign-out state, an App Link, or a linked bug in a Firefox for Android
+component. The run then gets an x86 runner with an emulator, Fenix and the FxA Android team's
+rules, and it must pass `/android-verify`. An `[Android]` title alone is not enough: a page on a
+phone's screen size is a desktop run with a mobile viewport. When unsure, launch without it and
+have the PR body say what was not checked on Android.
+
 ### Frozen paths
 
 `_scripts/check-frozen.ts` lists paths the pre-commit hook refuses. Read it from the repo, never

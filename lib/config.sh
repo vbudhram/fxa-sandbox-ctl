@@ -73,8 +73,25 @@ FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-standard
 # --android: the Android emulator needs KVM, which no Arm or Firecracker runner has. An x86
 # type with nested virtualization, its own image (amd64, the SDK and a Fenix build), a bigger disk.
 FXA_GCE_MACHINE_TYPE_ANDROID="${FXA_GCE_MACHINE_TYPE_ANDROID:-n2-standard-8}"
+# n2 and c3 ran out in every us-central1 zone on 2026-10-15 while n1 had room. An n1 needs a
+# Haswell or newer CPU for nested virtualization (vm_clone asks for it).
+FXA_GCE_MACHINE_FALLBACK_ANDROID="${FXA_GCE_MACHINE_FALLBACK_ANDROID-n1-standard-8}"
 FXA_GCE_IMAGE_ANDROID="${FXA_GCE_IMAGE_ANDROID:-fxa-dev-android}"
 FXA_GCE_DISK_GB_ANDROID="${FXA_GCE_DISK_GB_ANDROID:-150}"
+# The FxA Android team (profiles/<this>): an Android run on another team (the FXA pass with
+# --android) also gets its rules, guide and boot.sh, so it has the same context as that team.
+FXA_ANDROID_TEAM="${FXA_ANDROID_TEAM:-fxa-android}"
+# android_overlay <file>   The Android team's <file> for an Android run on another team, or nothing.
+android_overlay() {
+  [ "${FXA_ANDROID:-}" = 1 ] && [ "${PIPE_PROFILE:-fxa}" != "$FXA_ANDROID_TEAM" ] || return 0
+  [ -f "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1" ] && printf '%s' "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1"
+  return 0
+}
+# android_runner_env   The runner an Android run needs: --android, or a team with PIPE_ANDROID=1.
+android_runner_env() {
+  export FXA_ANDROID=1 FXA_GCE_MACHINE_TYPE="$FXA_GCE_MACHINE_TYPE_ANDROID" FXA_GCE_IMAGE="$FXA_GCE_IMAGE_ANDROID" \
+    FXA_GCE_NESTED=1 FXA_GCE_MACHINE_FALLBACK="$FXA_GCE_MACHINE_FALLBACK_ANDROID" FXA_GCE_DISK_GB="$FXA_GCE_DISK_GB_ANDROID"
+}
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
 # Manager service account from infra/gce/setup.sh. gcloud reads this variable
 # on every call, ssh's IAP ProxyCommand included, so one export covers them all.

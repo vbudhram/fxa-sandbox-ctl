@@ -60,6 +60,7 @@ vm_guide_build() {
   # A profile's own guide: its stack, commands and checks, after FxA's.
   local own="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/guide.md"
   [ -n "${PIPE_PROFILE:-}" ] && [ -f "$own" ] && { echo; cat "$own"; }
+  own="$(android_overlay guide.md)"; [ -n "$own" ] && { echo; cat "$own"; }
   return 0
 }
 
@@ -67,6 +68,8 @@ _vm_skill_allowlist() {
   printf '%s\n' \
     code-simplifier create-pr-description fxa-vm-handoff humanizer ponytail-review pr-review-typescript \
     quick-review squash-commit fxa-test-plan fxa-jira-link fxa-end
+  # An Android run (--android, or a team with PIPE_ANDROID=1) proves its change on the emulator.
+  [ "${FXA_ANDROID:-}" = 1 ] && echo android-verify
   # Each repo's own sandbox skills (repos/<owner>__<name>/skills.txt), for the repos of the profile.
   local d; for d in $(_vm_repo_dirs); do [ -f "$d/skills.txt" ] && grep -vE '^(#|$)' "$d/skills.txt"; done
   return 0
@@ -263,7 +266,8 @@ _put_run_files() {
 # /run/fxa-profile/ready or failed. Nothing for a profile without one.
 _gce_profile_boot() {
   local name="$1" f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/boot.sh" b64
-  [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || return 0
+  [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || f="$(android_overlay boot.sh)"
+  [ -n "$f" ] && [ -f "$f" ] || return 0
   b64="$(base64 < "$f" | tr -d '\n')"
   echo "Setting up the ${PIPE_PROFILE} stack in the background..."
   # exec setsid -f: the script forks off at once and the shell is gone, so nothing holds the ssh
@@ -639,6 +643,8 @@ _vm_team_rules() {
   done
   [ -s "$f" ] && printf '\n\n# Team rules: %s\n\nThe sandbox rules above win over these, and these win over the repo notes.\n\n%s\n' \
     "${PIPE_LABEL:-${PIPE_PROFILE:-fxa}}" "$(head -c 8192 "$f")"
+  f="$(android_overlay CLAUDE.md)"
+  [ -n "$f" ] && printf '\n\n# Team rules: FxA Android (this run uses Android)\n\n%s\n' "$(head -c 8192 "$f")"
   return 0
 }
 
