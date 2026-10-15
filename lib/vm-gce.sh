@@ -148,7 +148,6 @@ vm_clone() {
   local -a image_flags=(--image-family "$FXA_GCE_IMAGE")
   # --android sets FXA_GCE_NESTED: the emulator inside needs /dev/kvm.
   local -a nested=(); [ "${FXA_GCE_NESTED:-}" = 1 ] && nested=(--enable-nested-virtualization)
-  local -a cpu=()
   # 0 means no run limit: the long-lived answer runner. Session and pipeline runners always get one.
   local -a run_limit=(--max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE)
   [ "$FXA_GCE_MAX_RUN_SECONDS" = 0 ] && run_limit=()
@@ -162,13 +161,12 @@ vm_clone() {
   for mt in $FXA_GCE_MACHINE_TYPE ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}; do
   for zone in $(_gce_zone_order); do
     echo "Creating GCE instance '$(vm_name "$name")' (${mt}, ${zone})..."
-    cpu=(); [ "${#nested[@]}" -gt 0 ] && [[ "$mt" == n1-* ]] && cpu=(--min-cpu-platform "Intel Haswell")
     # Only the host key logs in: a project-wide key reaches every VM, and the guest
     # agent gives each metadata key user passwordless sudo.
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
         --machine-type "$mt" \
         "${image_flags[@]}" \
-        --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size "${FXA_GCE_DISK_GB:-50}GB" ${nested[@]+"${nested[@]}"} ${cpu[@]+"${cpu[@]}"} \
+        --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size "${FXA_GCE_DISK_GB:-50}GB" ${nested[@]+"${nested[@]}"} \
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
         ${run_limit[@]+"${run_limit[@]}"} \

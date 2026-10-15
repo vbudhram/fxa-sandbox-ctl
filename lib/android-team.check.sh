@@ -9,7 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # Each load in its own shell, as the controller runs one profile per process.
 load() { bash -c 'cd "$1/.." && source lib/config.sh >/dev/null 2>&1; source lib/pipeline.sh; pipeline_load "$2" >/dev/null 2>&1 || exit 1
   printf "%s|%s|%s|%s|%s" "${FXA_ANDROID:-}" "${FXA_GCE_NESTED:-}" "${FXA_GCE_MACHINE_TYPE:-}" "${FXA_GCE_IMAGE:-}" "${FXA_GCE_MACHINE_FALLBACK-}"' _ "$here" "$1"; }
-check "the FxA Android team runs on the Android runner" "1|1|n2-standard-8|fxa-dev-android|n1-standard-8" "$(load fxa-android)"
+check "the FxA Android team runs on the Android runner" "1|1|n2-standard-8|fxa-dev-android|c3-standard-8" "$(load fxa-android)"
 check "the FxA team keeps its runner" "||c4a-standard-4|fxa-dev-base|" "$(load fxa | cut -d'|' -f1-4)|"
 
 # The pattern goes through a variable: bash 3.2 brace-expands it inside "$(...)".

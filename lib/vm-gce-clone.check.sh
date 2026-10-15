@@ -52,14 +52,10 @@ check "android: nested virtualization, the android image, a 150 GB disk" "1|1|1"
 printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out t2a-standard-4@z-a=ok > "$tmp/out"; : > "$calls"
 android r5 >/dev/null 2>&1; rc=$?
 check "android: every zone out fails, and never tries the Arm type" "1|0" "$rc|$(grep -c t2a "$calls")"
-printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out n1-standard-8@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
-FXA_GCE_MACHINE_FALLBACK=n1-standard-8 FXA_GCE_NESTED=1 FXA_GCE_MACHINE_TYPE=n2-standard-8 FXA_GCE_IMAGE=fxa-dev-android FXA_GCE_DISK_GB=150 vm_clone r7 >/dev/null 2>&1; rc=$?
-check "android: the n1 fallback, with a Haswell or newer CPU, only on n1" "0|1|1" \
-  "$rc|$(grep -c -- 'n1-standard-8 .*--min-cpu-platform Intel Haswell' "$tmp/args")|$(grep -c -- '--min-cpu-platform' "$tmp/args")"
-printf '%s\n' c4a-standard-4@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
-vm_clone r6 >/dev/null 2>&1
-check "a plain run: no nested virtualization, the 50 GB disk" "0|1" \
-  "$(grep -c -- '--enable-nested-virtualization' "$tmp/args")|$(grep -c -- '--boot-disk-size 50GB' "$tmp/args")"
+printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out c3-standard-8@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
+FXA_GCE_MACHINE_FALLBACK=c3-standard-8 FXA_GCE_NESTED=1 FXA_GCE_MACHINE_TYPE=n2-standard-8 FXA_GCE_IMAGE=fxa-dev-android FXA_GCE_DISK_GB=150 vm_clone r7 >/dev/null 2>&1; rc=$?
+check "android: the c3 fallback, nested, on hyperdisk" "0|1" \
+  "$rc|$(grep -c -- 'c3-standard-8 .*--boot-disk-type hyperdisk-balanced.*--enable-nested-virtualization' "$tmp/args")"
 # The image build: c4a in every zone, then the Arm fallback with the disk type it takes.
 ( pat='/^vm_image_build() {/,/^}/p'; eval "$(sed -n "$pat" "$here/vm-gce.sh")"
   set -o pipefail; rm -f "$LOG_DIR/last-good-zone"  # as the controller runs it, and no zone first

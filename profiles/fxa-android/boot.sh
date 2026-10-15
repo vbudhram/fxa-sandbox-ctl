@@ -25,7 +25,7 @@ if ! as_agent "adb devices" | grep -q '^emulator-.*device$'; then
 fi
 until [ "$(adb_ shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do
   [ $(( $(date +%s) - t0 )) -lt 300 ] || die "the emulator did not boot in 300 s (see $A/.emulator.log)"
-  grep -qE 'FATAL|Could not open' "$A/.emulator.log" 2>/dev/null && die "the emulator stopped: $(grep -m1 -E 'FATAL|Could not open' "$A/.emulator.log")"
+  grep -qE 'FATAL|give up' "$A/.emulator.log" 2>/dev/null && die "the emulator stopped: $(grep -m1 -E 'FATAL|give up' "$A/.emulator.log")"
   sleep 3
 done
 step "booted after $(( $(date +%s) - t0 ))s"
