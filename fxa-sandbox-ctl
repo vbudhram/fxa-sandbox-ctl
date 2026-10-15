@@ -1337,8 +1337,14 @@ cmd_reconcile() {
           MERGED) cmd_label "$key" merged >/dev/null && echo "$key merged #$pr" ;;
           CLOSED) cmd_label "$key" rejected >/dev/null && echo "$key rejected #$pr" ;;
           OPEN)
-            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "$settled" = 1 ]; then
-              cmd_label "$key" done >/dev/null && echo "$key done #$pr green"
+            # A green PR with fewer checks (a gate that never reported) is done once it stays so for 3 h.
+            local gf="${PIPE_STATE_DIR}/${key}.green-at"
+            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "$settled" = 0 ]; then
+              [ -s "$gf" ] || date +%s > "$gf"
+              [ $(( $(date +%s) - $(tr -dc 0-9 < "$gf") )) -ge "${FXA_UNSETTLED_DONE_S:-10800}" ] && settled=2
+            else rm -f "$gf"; fi
+            if [ "${fail#fail=}" = 0 ] && [ "${run#running=}" = 0 ] && [ "$settled" != 0 ]; then
+              cmd_label "$key" done >/dev/null && { rm -f "$gf"; echo "$key done #$pr green$([ "$settled" = 2 ] && echo ", ${ok#ok=} checks and no change for 3 h")"; }
             elif url="$(gh_gate_stuck "$key" 0)"; then
               # Every push resets the gate and the launcher approves only its first push.
               finish_approve_functional_gate "$url" 2>/dev/null
