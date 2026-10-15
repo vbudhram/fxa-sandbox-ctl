@@ -108,6 +108,20 @@ rm -rf "$pd"
     "$(echo '{}' | _stats_add_memory | jq -r '.memory | "\(.saves | tojson)|\(.added)|\(.inbox)|\(.dropped)|\(.last_digest.result)"')"
   exit "$fail" ) || fail=1
 
+# Every team's runs and passes: rows tagged with their team, and each team's passes in 7 days.
+( export HOME="$tmp/th" FXA_PROFILES_DIR="$tmp/tp" PIPE_PROFILE=fxa PIPE_STATE_DIR="$tmp/th/.claude/state/fxa-ai-fixme"
+  mkdir -p "$FXA_PROFILES_DIR/fxa" "$FXA_PROFILES_DIR/sync-storage" "$FXA_PROFILES_DIR/monitor" "$HOME/.claude/state/sync-storage" "$PIPE_STATE_DIR"
+  touch "$FXA_PROFILES_DIR"/{fxa,sync-storage,monitor}/profile.conf
+  echo '{"recorded_at":"2026-10-14T10:00:00Z","issue":"STOR-1","kind":"fix","cost_usd":2.5,"cost_source":"proxy"}' > "$HOME/.claude/state/sync-storage/agent-runs.jsonl"
+  echo '{"at":"2026-10-14T10:00:00Z","job":"pass","run":"pass-s1","cost_usd":0.9}' > "$HOME/.claude/state/sync-storage/job-costs.jsonl"
+  printf '%s\n' "{\"at\":$(date +%s),\"work\":true}" "{\"at\":$(date +%s),\"work\":false}" '{"at":1,"work":true}' > "$HOME/.claude/state/sync-storage/passes.jsonl"
+  out="$(echo '{"rows":[{"src":"pipeline","key":"FXA-1","usd":1},{"src":"slack","key":"agent-a","usd":1,"profile":"monitor"}],"llm":{"runs":{"pass-s1":0.4}}}' | _stats_add_teams)"
+  check "teams: each row has its team, and another team's run and pass join at the proxy's price" "FXA-1 fxa 1|agent-a monitor 1|STOR-1 sync-storage 2.5|pass sync-storage 0.4" \
+    "$(jq -r '[.rows[] | "\(.key) \(.profile) \(.usd)"] | join("|")' <<< "$out")"
+  check "teams: a team's passes in 7 days, and one with no state folder is left out" '{"sync-storage":{"passes":2,"work":1}}' \
+    "$(jq -c '.team_passes | map_values(del(.last))' <<< "$out")"
+  exit "$fail" ) || fail=1
+
 # A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
 ( export SESSION_DIR="$tmp/pm" PIPE_STATE_DIR="$tmp/pmps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { false; }

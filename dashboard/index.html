@@ -1226,9 +1226,13 @@ function teamUse() {
   if (!STATS?.rows) return null;
   const cut = Date.now() / 1000 - 30 * 86400, u = {};
   for (const r of STATS.rows) {
-    const t = r.t0; if (r.src !== "slack" || !(t >= cut)) continue;
+    // Cost from every source; the count is Slack sessions, and pipeline runs are their own count.
+    const t = r.t0 ?? Date.parse(r.at) / 1000; if (!(t >= cut)) continue;
     const x = u[r.profile || "fxa"] ??= { ...NO_USE };
-    x.n++; x.live += r.live ? 1 : 0; x.usd += r.usd || 0; x.last = Math.max(x.last, t);
+    x.usd += r.usd || 0;
+    if (r.src === "pipeline") x.runs = (x.runs ?? 0) + 1;
+    if (r.src !== "slack") continue;
+    x.n++; x.live += r.live ? 1 : 0; x.last = Math.max(x.last, t);
   }
   return u;
 }
@@ -1260,7 +1264,7 @@ function renderTeams() {
     (T.error ? `<p class="unknown">last refresh failed: ${esc(T.error)}; showing data from ${age}</p>` : "") +
     (T.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("") +
     (!ts.length ? `<div class="emptybox">No profiles/*/profile.conf found</div>` : !rows.length ? `<div class="emptybox">Nothing matches.</div>`
-      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th${L}>Mode</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th><th>30d</th><th>$ 30d</th><th>Live</th></tr></thead>
+      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th${L}>Mode</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th><th>30d</th><th title="every source: Slack sessions, pipeline runs and passes">$ 30d</th><th>Live</th></tr></thead>
         <tbody>${rows.map(row).join("")}</tbody></table></div>`) +
     `<p class="empty" style="margin-top:var(--s3)">Usage covers the last 30 days. Usage leaves out dry-run and dev sessions.</p>`);
 }
@@ -1280,7 +1284,7 @@ function teamDetails(t) {
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
     <div>${h("Mode", `${conf} PIPE_PR_OPEN, PIPE_LABEL`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}${kvr("Label", esc(teamName(t)))}</div>
-    <div><h4>Usage (30 days)</h4>${use ? kvr("Sessions", u.n) + kvr("Live", u.live) + kvr("Cost", usd(u.usd)) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
+    <div><h4>Usage (30 days)</h4>${use ? kvr("Sessions", u.n) + kvr("Live", u.live) + (u.runs ? kvr("Pipeline runs", u.runs) : "") + (STATS?.team_passes?.[t.profile] ? kvr("Passes, 7 days", `${STATS.team_passes[t.profile].passes} · ${STATS.team_passes[t.profile].work} with work`) : "") + kvr("Cost", usd(u.usd)) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
       <p class="empty"><a href="#stats/spend">Spend in Stats</a>. Usage leaves out dry-run and dev sessions.</p></div>`;
   return out;
 }
@@ -1337,7 +1341,7 @@ function renderStats() {
       <div class="chart"><h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div></div></div>
     <div class="three">
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
-        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">Slack sessions</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}` : ""}
+        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}` : ""}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Spend by model<span class="note">all runs</span></h2>${(() => {

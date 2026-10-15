@@ -175,13 +175,20 @@ _snapshot_agent_json() {
     end' "$f" 2>/dev/null || echo null
 }
 
+# One pipeline run and one pass or triage job as a Stats row: for this pipeline and for each other team's.
+_STATS_RUN_ROW='def runrow: { at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
+  usd: (.cost_usd // 0 | . * 100 | round / 100), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // "" | if . == "<synthetic>" then "" else . end),
+  models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"), pr: ((.pr // "") != "") };'
+_STATS_JOB_ROW='def jobrow($llm): { at, src: "pass", key: .job, kind: .job, usd: (($llm.runs[.run // ""] // .cost_usd // 0) * 100 | round / 100),
+  min: ((.duration_ms // 0) / 60000 | round), model: ((((.models // []) | map(select(test("haiku") | not)) | first) // (.models // [])[0]) // ""), pr: false };'
+
 # snapshot_stats_json   Run-log totals for the Stats page: weekly runs and
 # spend, three ranges of whole Monday weeks, run kinds, costliest tickets and
 # models. Cost is the log's token-based estimate; billing is left out.
 snapshot_stats_json() {
   pipeline_require || return 1
   [ -s "$PIPE_RUNS_FILE" ] || { echo 'null'; return 0; }
-  jq -s -c '
+  jq -s -c "$_STATS_RUN_ROW"'
     def med: sort | if length == 0 then null else .[length / 2 | floor] end;
     # A run with no recorded length (0: Linux runs before 3d4e006) is left out, not counted as 0.
     def mins: map(.wall_seconds // 0 | select(. > 0)) | med | if . == null then null else . / 60 | round end;
@@ -198,11 +205,8 @@ snapshot_stats_json() {
       from: ($r | map(.wk) | min | strftime("%b %-d")), to: ($r | map(.recorded_at) | max | .[0:10]) };
     {
       # One row per run, for the page to filter by date, source, kind and model.
-      rows: ($all | map({ at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
-               usd: (.cost_usd // 0 | r2), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // "" | if . == "<synthetic>" then "" else . end),
-               # The split by model when the proxy priced the run; else the main agent only (no subagents).
-               models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"),
-               pr: ((.pr // "") != "") })),
+      # The split by model when the proxy priced the run; else the main agent only (no subagents).
+      rows: ($all | map(runrow)),
       weeks: ($all | group_by(.wk) | map({ start: (.[0].wk | strftime("%Y-%m-%d")), label: (.[0].wk | strftime("%b %-d")),
                                            runs: length, spend: (map(.cost_usd // 0) | add | r2) })),
       ranges: {
@@ -221,7 +225,23 @@ snapshot_stats_json() {
         median_min: mins,
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_prs | _stats_add_pipeline | _stats_add_load | _stats_add_memory
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_teams | _stats_add_prs | _stats_add_pipeline | _stats_add_load | _stats_add_memory
+}
+
+# _stats_add_teams   Every row gets its team (profile). The other teams' pipeline runs and passes
+# join the rows from their own state folders, and team_passes has each team's passes in 7 days.
+_stats_add_teams() {
+  local f p d in; in="$(mktemp)"; cat > "$in"
+  for f in "${FXA_PROFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles}"/*/profile.conf; do
+    p="$(basename "$(dirname "$f")")"; d="${HOME}/.claude/state/${p}"
+    [[ "$p" =~ ^[a-z0-9-]+$ ]] && [ "$p" != "${PIPE_PROFILE:-fxa}" ] && [ -d "$d" ] && [ "$d" != "$PIPE_STATE_DIR" ] || continue
+    jq -c --arg p "$p" --slurpfile r <(cat "$d/agent-runs.jsonl" 2>/dev/null || true) --slurpfile j <(cat "$d/job-costs.jsonl" 2>/dev/null || true) \
+      --slurpfile ps <(cat "$d/passes.jsonl" 2>/dev/null || true) "$_STATS_RUN_ROW$_STATS_JOB_ROW"'
+      (.llm // {}) as $llm | .rows += ($r | map(runrow + {profile: $p})) + ($j | map(jobrow($llm) + {profile: $p}))
+      | (now - 7 * 86400) as $c | ($ps | map(select((.at // 0) >= $c))) as $w
+      | .team_passes[$p] = {passes: ($w | length), work: ($w | map(select(.work)) | length), last: ($ps | map(.at) | max)}' "$in" > "${in}.n" && mv "${in}.n" "$in"
+  done
+  jq -c --arg me "${PIPE_PROFILE:-fxa}" '.rows |= map(.profile //= $me)' "$in"; rm -f "$in"
 }
 
 # _stats_add_memory   Team memory saves in the last 30 days by result, the learnings they
@@ -297,9 +317,7 @@ _stats_add_rows() {
           t0: (.created | n | if . then floor else null end), end: (.stopped_at | n), queued_s: (.queued_s | n),
           live: ((.state // "") | IN("starting", "active", "wrapping")) })' 2>/dev/null || echo '[]')"
   jobs='[]'
-  [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc --argjson llm "$llm" 'map({ at, src: "pass", key: .job, kind: .job, usd: (($llm.runs[.run // ""] // .cost_usd // 0) * 100 | round / 100),
-          min: ((.duration_ms // 0) / 60000 | round),
-          model: ((((.models // []) | map(select(test("haiku") | not)) | first) // (.models // [])[0]) // ""), pr: false })' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
+  [ -s "${PIPE_STATE_DIR}/job-costs.jsonl" ] && jobs="$(jq -sc --argjson llm "$llm" "$_STATS_JOB_ROW"'map(jobrow($llm))' "${PIPE_STATE_DIR}/job-costs.jsonl" 2>/dev/null || echo '[]')"
   # Quick answers from the answer runner (lib/answer.sh): one row each, so Spend counts them.
   local asks='[]' athreads='{}'
   # The Slack thread of each answer: written since 2026-10-06, and for older ones from the LLM calls.
