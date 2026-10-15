@@ -94,6 +94,16 @@ rm -rf "$pd"
   check "stats: the LLM days and models leave out test runs" "1.25|1.25" "$(jq -r '"\(.llm.days | map(.usd) | add)|\(.llm.models | map(.usd) | add)"' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# Team memory: saves by result and the learnings they moved in the last 30 days, and the last digest.
+( export FXA_MEMORY_LOG="$tmp/mem.jsonl"
+  printf '%s\n' "{\"at\":\"$(date -u +%FT%TZ)\",\"run\":\"agent-a\",\"result\":\"saved\",\"added\":1,\"inbox\":2,\"dropped\":1}" \
+    "{\"at\":\"$(date -u +%FT%TZ)\",\"run\":\"agent-b\",\"result\":\"pii_blocked\",\"added\":0,\"inbox\":0,\"dropped\":0}" \
+    '{"at":"2020-01-01T00:00:00Z","run":"agent-old","result":"saved","added":9,"inbox":9,"dropped":9}' \
+    "{\"at\":\"$(date -u +%FT%TZ)\",\"run\":\"digest\",\"result\":\"opened\",\"added\":3,\"inbox\":1,\"dropped\":0}" > "$FXA_MEMORY_LOG"
+  check "stats: memory saves and learnings in 30 days, and the last digest" '{"pii_blocked":1,"saved":1}|1|2|1|opened' \
+    "$(echo '{}' | _stats_add_memory | jq -r '.memory | "\(.saves | tojson)|\(.added)|\(.inbox)|\(.dropped)|\(.last_digest.result)"')"
+  exit "$fail" ) || fail=1
+
 # A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
 ( export SESSION_DIR="$tmp/pm" PIPE_STATE_DIR="$tmp/pmps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { false; }

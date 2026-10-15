@@ -186,21 +186,28 @@ _memory_index() {
 }
 
 # memory_collect <run> <json> <trigger> <profile> <taint> <ticket|""> <slug...>
+# _memory_log <run> <result> [added] [inbox] [dropped]   One line per save or digest, for the Stats page.
+_memory_log() {
+  local f="${FXA_MEMORY_LOG:-$HOME/.claude/state/memory.jsonl}"
+  mkdir -p "${f%/*}" 2>/dev/null || true
+  jq -nc --arg run "$1" --arg r "$2" --argjson a "${3:-0}" --argjson i "${4:-0}" --argjson d "${5:-0}" \
+    '{at: (now | todate), run: $run, result: $r, added: $a, inbox: $i, dropped: $d}' >> "$f" 2>/dev/null || true
+}
 memory_collect() {
   memory_on || return 0
-  local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 now d n=0 f id
+  local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 now d n=0 f id added=0 inbox=0 dropped=0
   shift 6
   [ -s "$json" ] || return 0
-  norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; return 0; }
+  norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; _memory_log "$run" invalid; return 0; }
   [ -n "$norm" ] || return 0
   # Personal or internal data anywhere in it: nothing is saved.
   prose="$(mktemp)"; : > "${prose}.diff"
   jq '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' <<< "$norm" > "$prose"
   hits="$(python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$prose" "${prose}.diff" 2>/dev/null)" || rc=$?
   rm -f "$prose" "${prose}.diff"
-  if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; return 0; fi
-  _memory_lock || { echo "  memory: another save holds the lock; nothing saved" >&2; return 0; }
-  memory_pull || { _memory_unlock; echo "  memory: could not reach the memory repo; nothing saved" >&2; return 0; }
+  if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; _memory_log "$run" pii_blocked; return 0; fi
+  _memory_lock || { echo "  memory: another save holds the lock; nothing saved" >&2; _memory_log "$run" lock_busy; return 0; }
+  memory_pull || { _memory_unlock; echo "  memory: could not reach the memory repo; nothing saved" >&2; _memory_log "$run" unreachable; return 0; }
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # The episode: only for a ticket key, written once per run.
   if [[ "$ticket" =~ $_MEMORY_KEY_RE ]] && [ -n "$(jq -r '.episode | [.goal, .outcome] | map(select(. != "")) | .[0] // empty' <<< "$norm")" ]; then
@@ -216,7 +223,7 @@ memory_collect() {
   # else to the inbox, for the weekly digest. A tainted run's entries are listed there for a look too.
   local touched="" dir today="${now%%T*}"
   while IFS= read -r l; do
-    _memory_suspect "$(jq -r '.text + " " + .why + " " + .anchor' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; continue; }
+    _memory_suspect "$(jq -r '.text + " " + .why + " " + .anchor' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; dropped=$((dropped + 1)); continue; }
     local repo op; repo="$(jq -r .repo <<< "$l")"; op="$(jq -r .op <<< "$l")"; dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$repo")"
     if [ "$op" = update ]; then id="$(jq -r .id <<< "$l")"
     else id="mem-$(jq -r '.repo + "\n" + .text' <<< "$l" | shasum | cut -c1-8)"; fi
@@ -227,13 +234,13 @@ memory_collect() {
       [ "$op" = add ] || _memory_drop "$dir" "$(jq -r .id <<< "$l")"
       _memory_entry "$id" "$l" "$run" "$ticket" "$taint" "$today" >> "${dir}/$(jq -r .kind <<< "$l").md"
       rm -f "${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")/${id}.md"
-      touched="${touched} ${dir}"; n=$((n + 1))
+      touched="${touched} ${dir}"; n=$((n + 1)); added=$((added + 1))
     else
       d="${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")"; mkdir -p "$d"
       [ -f "${d}/${id}.md" ] && continue
       { _memory_md "id: ${id}" "op: ${op}" "replaces: $(jq -r .id <<< "$l")" "kind: $(jq -r .kind <<< "$l")" "repo: ${repo}" "path: $(jq -r .path <<< "$l")" \
           "cite: $(jq -r .cite <<< "$l")" "anchor: $(jq -r .anchor <<< "$l")" "run: ${run}" "ticket: ${ticket}" "profile: ${prof}" "taint: ${taint}" "created: ${now}"
-        jq -r '.text, "", "Why: \(.why)"' <<< "$l"; } > "${d}/${id}.md"; n=$((n + 1))
+        jq -r '.text, "", "Why: \(.why)"' <<< "$l"; } > "${d}/${id}.md"; n=$((n + 1)); inbox=$((inbox + 1))
     fi
   done < <(jq -c '.learnings[]' <<< "$norm")
   # Entries the run checked again stay in the index another 90 days. Only an untainted run renews.
@@ -247,13 +254,16 @@ memory_collect() {
   for dir in $(printf '%s\n' $touched | sort -u); do _memory_index "$dir"; done
   # A confirmation on the day of the last one changes nothing: then there is nothing to commit.
   [ -n "$(_memory_git status --porcelain 2>/dev/null)" ] || n=0
+  local result=nothing
   if [ "$n" -gt 0 ]; then
+    result=push_failed
     _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d tickets inbox repos 2>/dev/null) 2>/dev/null
     _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: ${run} (${trig})" \
       && { _memory_git push -q origin HEAD:main 2>/dev/null || { _memory_git fetch -q origin && { _memory_git rebase -q origin/main >/dev/null 2>&1 || { _memory_git rebase --abort 2>/dev/null; false; }; } && _memory_git push -q origin HEAD:main 2>/dev/null; }; } \
-      && echo "  memory: saved ${n} file(s) for ${run}" >&2 \
+      && { result=saved; echo "  memory: saved ${n} file(s) for ${run}" >&2; } \
       || echo "  memory: the commit or push failed; the files stay in ${FXA_MEMORY_DIR} for the next save" >&2
   fi
+  _memory_log "$run" "$result" "$added" "$inbox" "$dropped"
   _memory_unlock
 }
 
@@ -330,7 +340,7 @@ _memory_digest() {
       if (m ~ /taint: 1/ && m !~ /digest: 1/) { c = m; sub(/.*confirmed: /, "", c); sub(/ .*/, "", c); if (c >= week) print "- " id " (auto, tainted run): " substr(x, 1, 160) } }' "$f"
   done < <(find "${FXA_MEMORY_DIR}/repos" -name '*.md' ! -name INDEX.md 2>/dev/null) > "${FXA_MEMORY_DIR}.tainted"
   t="$(grep -c . "${FXA_MEMORY_DIR}.tainted" || true)"
-  if [ "$n" -eq 0 ] && [ "$t" -eq 0 ]; then _memory_git checkout -q main 2>/dev/null; rm -f "${FXA_MEMORY_DIR}.tainted"; return 0; fi
+  if [ "$n" -eq 0 ] && [ "$t" -eq 0 ]; then _memory_git checkout -q main 2>/dev/null; rm -f "${FXA_MEMORY_DIR}.tainted"; _memory_log digest nothing; return 0; fi
   { printf '# Memory digest %s\n\nMerge this PR to keep these entries. Delete a block from its topic file (and the INDEX line) to reject it.\n\n' "$(date -u +%F)"
     [ "$n" -gt 0 ] && printf '## From the inbox (now in repos/)\n\n%s\n' "$list"
     [ "$t" -gt 0 ] && printf '## Added this week by runs that read untrusted text (already live)\n\n%s\n' "$(cat "${FXA_MEMORY_DIR}.tainted")"
@@ -339,6 +349,7 @@ _memory_digest() {
   _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d repos inbox DIGEST.md 2>/dev/null) 2>/dev/null
   _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: digest $(date -u +%F) (${n} from the inbox, ${t} to look at)" \
     && _memory_git push -q origin "$br" 2>/dev/null \
+    && _memory_log digest opened "$n" "$t" \
     && errors_record memory digest "" "memory" "memory digest: ${n} inbox entries and ${t} auto entries to look at; open https://github.com/$(_memory_slug_of_remote)/compare/main...${br}?expand=1 and merge" "" 2>/dev/null
   _memory_git checkout -q main 2>/dev/null
   return 0

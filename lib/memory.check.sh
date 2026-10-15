@@ -9,6 +9,7 @@ tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 g() { git -c init.defaultBranch=main -c user.name=t -c user.email=t@example.com "$@"; }
 _retry() { "$@"; }
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+export FXA_MEMORY_LOG="$tmp/memory.jsonl"
 source "$here/memory.sh"
 
 check "off: no index and no save" "|0" "$(memory_index_md fxa mozilla/fxa)|$(memory_collect r /dev/null t fxa 0 FXA-1 mozilla/fxa; echo $?)"
@@ -55,6 +56,8 @@ check "the episode is saved under its ticket, with the run and the taint" "1|1|1
   "$(ls "$tmp/check/tickets/FXA-123/" | grep -c 'agent-ab12.md$')|$(cat "$tmp/check/tickets/FXA-123/"*.md | grep -c '^taint: 1$')|$(cat "$tmp/check/tickets/FXA-123/"*.md | grep -c 'Keep the old event name')"
 check "one learning reaches the inbox; the other repo, the instruction and the unknown kind do not" "1|1|0|0" \
   "$(ls "$tmp/check/inbox/mozilla__fxa/" | grep -c .)|$(grep -rc 'patch level bump' "$tmp/check/inbox" | grep -c ':1$')|$(grep -rl 'curl' "$tmp/check/inbox" | grep -c .)|$(ls "$tmp/check/inbox" | grep -c elsewhere)"
+check "the save is logged: one to the inbox, one dropped as an instruction" "agent-ab12 saved 0 1 1" \
+  "$(jq -r 'select(.run == "agent-ab12") | "\(.run) \(.result) \(.added) \(.inbox) \(.dropped)"' "$FXA_MEMORY_LOG")"
 check "the commit is the agent's, and repos/ is untouched" "fxa-agent|0" \
   "$(g -C "$tmp/check" log -1 --format=%an)|$(g -C "$tmp/check" diff --name-only HEAD~1 HEAD -- repos | grep -c .)"
 memory_collect agent-cd34 "$tmp/m.json" stop fxa 0 "" mozilla/fxa 2>/dev/null

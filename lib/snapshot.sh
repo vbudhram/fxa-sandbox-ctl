@@ -221,7 +221,18 @@ snapshot_stats_json() {
         median_min: mins,
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load | _stats_add_prs
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load | _stats_add_prs | _stats_add_memory
+}
+
+# _stats_add_memory   Team memory saves in the last 30 days by result, the learnings they
+# added, sent to the inbox or dropped, and the last digest (lib/memory.sh _memory_log).
+_stats_add_memory() {
+  local f="${FXA_MEMORY_LOG:-$HOME/.claude/state/memory.jsonl}" m=null
+  [ -s "$f" ] && m="$(jq -sc '(now - 30 * 86400) as $c | (map(select(.run != "digest"))) as $s | ($s | map(select((.at | fromdate? // 0) >= $c))) as $r
+    | { saves: ($r | group_by(.result) | map({key: .[0].result, value: length}) | from_entries),
+        added: ($r | map(.added) | add // 0), inbox: ($r | map(.inbox) | add // 0), dropped: ($r | map(.dropped) | add // 0),
+        last_digest: (map(select(.run == "digest")) | last // null) }' "$f" 2>/dev/null || echo null)"
+  jq -c --argjson m "${m:-null}" '.memory = $m'
 }
 
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the

@@ -1326,7 +1326,7 @@ function renderStats() {
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2></div>
-    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, q, bars, byDay, kpi) : ""}
+    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, q, bars, byDay, kpi) : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
@@ -1467,6 +1467,14 @@ function pipelineCard(p) {
     ${w.length ? `<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>` : ""}
     <div class="kv"><b>Tickets retried</b><span>${p.retried} of ${p.tickets}</span></div>
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.passes} passes · ${d.work} with work · queue up to ${d.max_queued} · ${d.inflight} in flight</span></div>`).join("")}</div>`;
+}
+function memoryCard(m) {
+  if (!m) return `<div class="chart"><h2>Team memory<span class="note">30 days</span></h2><div class="empty">No save recorded yet.</div></div>`;
+  const saves = Object.entries(m.saves ?? {}), d = m.last_digest;
+  return `<div class="chart"><h2>Team memory<span class="note">30 days</span></h2>
+    <div class="kv"><b>Saves</b><span>${saves.length ? saves.map(([k, n]) => `${n} ${esc(k.replace(/_/g, " "))}`).join(" · ") : "none"}</span></div>
+    <div class="kv"><b>Learnings</b><span>${m.added} live at once · ${m.inbox} to the inbox · ${m.dropped} dropped as instructions</span></div>
+    <div class="kv"><b>Last digest</b><span>${d ? `${esc(d.at.slice(0, 10))} · ${esc(d.result)}${d.result === "opened" ? ` · ${d.added} from the inbox, ${d.inbox} to look at` : ""}` : "none yet"}</span></div></div>`;
 }
 // Stats filters, remembered per viewer in this browser.
 const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
