@@ -100,7 +100,22 @@ check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.g
   check "an unknown installation falls back to the configured one" "t-111" "$t2"
   : > "$tmp/curls"; PIPE_REPO_SLUG=mdn/rari github_app_token >/dev/null; PIPE_REPO_SLUG=mozilla/fxa github_app_token >/dev/null
   check "each repo's token is cached on its own" "0" "$(grep -c access_tokens "$tmp/curls")"
+  # A repo the installation does not cover: GitHub refuses, and curl -f exits 22.
+  curl() { case "${*: -1}" in */access_tokens) return 22 ;; */installation) return 22 ;; esac; }
+  # The controller's ERR trap (lib/errors.sh) skips a `return`; any other failing command is a crash.
+  out="$( (set -eE; trap 'echo "TRAPPED $BASH_COMMAND"' ERR; PIPE_REPO_SLUG=mozilla-services/syncstorage-rs github_app_token) 2>&1)"; rc=$?
+  check "a refused mint is a handled failure with its own line, not a crash" "1|ERROR: could not mint a GitHub App installation token for syncstorage-rs.|0" \
+    "$rc|$(grep -v '^TRAPPED' <<< "$out")|$(grep '^TRAPPED' <<< "$out" | grep -vc '^TRAPPED return')"
   exit "$fail" ) || fail=1
+
+# A read-only profile's gh wrapper asks for no App token at all.
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho "$@" >> "%s/curl-calls"\necho "{\\"id\\":1,\\"token\\":\\"t\\"}"\n' "$tmp" > "$tmp/bin/curl"; chmod +x "$tmp/bin/curl"
+app_token() { PATH="$tmp/bin:$PATH" TMPDIR="$tmp/at" GITHUB_APP_ID=1 GITHUB_APP_PEM="$tmp/no.pem" GITHUB_APP_INSTALLATION_ID=111 \
+  "$here/../fxa-sandbox-ctl" --pipeline "$1" app-token 2>/dev/null; }
+mkdir -p "$tmp/at"; : > "$tmp/curl-calls"
+check "app-token for a read-only profile prints nothing and calls no GitHub API" "|0" "$(app_token sync-storage)|$(grep -c api.github.com "$tmp/curl-calls")"
+: > "$tmp/curl-calls"; app_token fxa-ai-fixme >/dev/null
+check "app-token for a PR profile still asks GitHub" "1" "$([ -s "$tmp/curl-calls" ] && echo 1 || echo 0)"
 
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

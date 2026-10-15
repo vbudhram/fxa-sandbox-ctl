@@ -538,8 +538,9 @@ github_app_token() {
   fi
   local tok
   tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
-    -d "{\"repositories\":[\"${repo}\"]}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')"
-  [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token." >&2; return 1; }
+    -d "{\"repositories\":[\"${repo}\"]}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')" || tok=""
+  # A refusal (the App is not installed on the repo) is handled here, not left to the crash trap.
+  [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token for ${repo}." >&2; return 1; }
   ( umask 077; printf '%s' "$tok" > "$cache" )
   printf '%s' "$tok"
 }
