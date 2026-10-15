@@ -44,6 +44,17 @@ variable "disk_type" {
   default = "hyperdisk-balanced"
 }
 
+# The android image (vm_image_build --android): amd64, for an x86 runner with nested virtualization.
+variable "source_image_family" {
+  type    = string
+  default = "ubuntu-2404-lts-arm64"
+}
+
+variable "android" {
+  type    = bool
+  default = false
+}
+
 variable "project" {
   type    = string
   default = ""
@@ -58,7 +69,7 @@ source "googlecompute" "ubuntu" {
   project_id          = var.project
   zone                = var.zone
   machine_type        = var.machine_type
-  source_image_family = "ubuntu-2404-lts-arm64"
+  source_image_family = var.source_image_family
   disk_type           = var.disk_type
   disk_size           = var.disk_size_gb
   # Unique name, stable family: a rebuild never collides with the image the
@@ -188,6 +199,15 @@ build {
     only              = ["googlecompute.ubuntu"]
     script            = "${path.root}/scripts/11-gce-clone.sh"
     execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
+  }
+
+  # The android image only; the script exits at once without FXA_ANDROID=true.
+  provisioner "shell" {
+    only              = ["googlecompute.ubuntu"]
+    script            = "${path.root}/scripts/13-android.sh"
+    environment_vars  = ["FXA_ANDROID=${var.android}"]
+    execute_command   = "sudo bash -c '{{ .Vars }} {{ .Path }}'"
     expect_disconnect = false
   }
 

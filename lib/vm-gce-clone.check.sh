@@ -52,6 +52,10 @@ check "android: nested virtualization, the android image, a 150 GB disk" "1|1|1"
 printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out t2a-standard-4@z-a=ok > "$tmp/out"; : > "$calls"
 android r5 >/dev/null 2>&1; rc=$?
 check "android: every zone out fails, and never tries the Arm type" "1|0" "$rc|$(grep -c t2a "$calls")"
+printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out n1-standard-8@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
+FXA_GCE_MACHINE_FALLBACK=n1-standard-8 FXA_GCE_NESTED=1 FXA_GCE_MACHINE_TYPE=n2-standard-8 FXA_GCE_IMAGE=fxa-dev-android FXA_GCE_DISK_GB=150 vm_clone r7 >/dev/null 2>&1; rc=$?
+check "android: the n1 fallback, with a Haswell or newer CPU, only on n1" "0|1|1" \
+  "$rc|$(grep -c -- 'n1-standard-8 .*--min-cpu-platform Intel Haswell' "$tmp/args")|$(grep -c -- '--min-cpu-platform' "$tmp/args")"
 printf '%s\n' c4a-standard-4@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
 vm_clone r6 >/dev/null 2>&1
 check "a plain run: no nested virtualization, the 50 GB disk" "0|1" \
@@ -67,5 +71,11 @@ check "a plain run: no nested virtualization, the 50 GB disk" "0|1" \
   vm_image_build >/dev/null 2>&1; rc=$?
   check "image build: every zone on c4a, then t2a on pd-balanced" "0|c4a-highcpu-4 z-a hyperdisk-balanced,c4a-highcpu-4 z-b hyperdisk-balanced,c4a-highcpu-4 z-c hyperdisk-balanced,t2a-standard-4 z-a pd-balanced" \
     "$rc|$(paste -sd, "$calls")"
+  # The android image: only the x86 type, amd64 Ubuntu, the android provisioner, the bigger disk.
+  packer() { case "$1" in init) return 0 ;; esac; echo "$*" >> "$tmp/pk"; return 0; }; : > "$tmp/pk"
+  FXA_GCE_IMAGE_ANDROID=fxa-dev-android FXA_GCE_MACHINE_TYPE_ANDROID=n2-standard-8 FXA_GCE_MACHINE_FALLBACK_ANDROID= FXA_GCE_DISK_GB_ANDROID=150 vm_image_build --android >/dev/null 2>&1
+  a="$(cat "$tmp/pk")"
+  check "android image: n2 on pd-balanced, amd64, android=true, its own family and disk" "1|1|1|1|1|1" \
+    "$(wc -l < "$tmp/pk" | tr -d ' ')|$(grep -c 'machine_type=n2-standard-8 -var disk_type=pd-balanced' <<< "$a")|$(grep -c 'source_image_family=ubuntu-2404-lts-amd64' <<< "$a")|$(grep -c 'android=true' <<< "$a")|$(grep -c 'vm_name=fxa-dev-android' <<< "$a")|$(grep -c 'disk_size_gb=150' <<< "$a")"
   exit "$fail" ) || fail=1
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

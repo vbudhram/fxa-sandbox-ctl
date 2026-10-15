@@ -97,7 +97,15 @@ _gce_zone_order() {
 
 vm_image_list()   { _gce compute images list --filter "family=${FXA_GCE_IMAGE}" --format 'value(name,creationTimestamp)'; }
 vm_image_exists() { _gce compute images describe-from-family "$FXA_GCE_IMAGE" >/dev/null 2>&1; }
+# vm_image_build [--android]   --android: the fxa-dev-android image (amd64, the Android SDK, an
+#   emulator and a Fenix build), on an x86 build machine with a bigger disk.
 vm_image_build() {
+  local -a extra=() types=(c4a-highcpu-4 ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4})
+  if [ "${1:-}" = --android ]; then
+    extra=(-var "vm_name=${FXA_GCE_IMAGE_ANDROID}" -var source_image_family=ubuntu-2404-lts-amd64
+           -var android=true -var "disk_size_gb=${FXA_GCE_DISK_GB_ANDROID}")
+    types=("$FXA_GCE_MACHINE_TYPE_ANDROID" ${FXA_GCE_MACHINE_FALLBACK_ANDROID-})
+  fi
   command -v packer &>/dev/null || { echo "ERROR: Packer not installed. Run: brew install hashicorp/tap/packer" >&2; return 1; }
   # Pipeline mode: the stricter rules, for the rare launch that cannot send its own guide.
   vm_guide_build pipeline > "${SANDBOX_ROOT}/packer/.vm-agent-guide.md" || return 1
@@ -106,13 +114,13 @@ vm_image_build() {
   # Only a stockout moves the build on: to the next zone, then to the runners' Arm
   # fallback type (c4a ran out in every us-central1 zone on 2026-10-03 and 10-08).
   local zone mt log; log="$(mktemp)"
-  for mt in c4a-highcpu-4 ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}; do
+  for mt in "${types[@]}"; do
     for zone in $(_gce_zone_order); do
       echo "Building in ${zone} on ${mt}..."
       # One statement, so errexit does not stop the stockout check below.
       local rc=0
       packer build -only 'googlecompute.*' -var "project=${FXA_GCE_PROJECT}" -var "zone=${zone}" \
-        -var "machine_type=${mt}" -var "disk_type=$(_gce_disk_type "$mt")" fxa-dev.pkr.hcl 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+        -var "machine_type=${mt}" -var "disk_type=$(_gce_disk_type "$mt")" ${extra[@]+"${extra[@]}"} fxa-dev.pkr.hcl 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
       [ "$rc" -eq 0 ] && { rm -f "$log"; return 0; }
       grep -q 'STOCKOUT\|does not have enough resources' "$log" || { rm -f "$log"; return 1; }
       echo "  ${zone} is stocked out for ${mt}; trying the next."
@@ -140,6 +148,7 @@ vm_clone() {
   local -a image_flags=(--image-family "$FXA_GCE_IMAGE")
   # --android sets FXA_GCE_NESTED: the emulator inside needs /dev/kvm.
   local -a nested=(); [ "${FXA_GCE_NESTED:-}" = 1 ] && nested=(--enable-nested-virtualization)
+  local -a cpu=()
   # 0 means no run limit: the long-lived answer runner. Session and pipeline runners always get one.
   local -a run_limit=(--max-run-duration "${FXA_GCE_MAX_RUN_SECONDS}s" --instance-termination-action DELETE)
   [ "$FXA_GCE_MAX_RUN_SECONDS" = 0 ] && run_limit=()
@@ -153,12 +162,13 @@ vm_clone() {
   for mt in $FXA_GCE_MACHINE_TYPE ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4}; do
   for zone in $(_gce_zone_order); do
     echo "Creating GCE instance '$(vm_name "$name")' (${mt}, ${zone})..."
+    cpu=(); [ "${#nested[@]}" -gt 0 ] && [[ "$mt" == n1-* ]] && cpu=(--min-cpu-platform "Intel Haswell")
     # Only the host key logs in: a project-wide key reaches every VM, and the guest
     # agent gives each metadata key user passwordless sudo.
     if _gce compute instances create "$(vm_name "$name")" --zone "$zone" \
         --machine-type "$mt" \
         "${image_flags[@]}" \
-        --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size "${FXA_GCE_DISK_GB:-50}GB" ${nested[@]+"${nested[@]}"} \
+        --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size "${FXA_GCE_DISK_GB:-50}GB" ${nested[@]+"${nested[@]}"} ${cpu[@]+"${cpu[@]}"} \
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
         --no-service-account --no-scopes \
         ${run_limit[@]+"${run_limit[@]}"} \
