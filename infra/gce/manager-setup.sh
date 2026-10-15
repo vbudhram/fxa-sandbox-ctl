@@ -211,6 +211,8 @@ WantedBy=multi-user.target
 UNIT
 
 say "grafana (yardstick through IAP, read-only, for the gateway's grafana connector)"
+# An operator who disabled grafana-iap (say its credentials expired, so it loops on restart) keeps it off.
+iap_state="$(systemctl is-enabled fxa-grafana-iap.service 2>/dev/null || true)"
 # mzcld gets the IAP token as this VM's service account, which SRE must allow to
 # impersonate grafana-iap-access (README, MCP gateway). manager.sh builds it: its repo is private.
 # The tarball's digest is pinned here, not read from the same release, so a replaced asset fails.
@@ -330,8 +332,10 @@ for f in "$W"/fxa-sandbox-ctl/profiles/*/profile.conf; do
 done
 systemctl enable -q fxa-secrets.service
 systemctl enable -q fxa-llm-proxy.service
-systemctl enable -q fxa-mcp-gateway.service fxa-grafana-iap.service fxa-grafana-mcp.service
-systemctl restart fxa-grafana-iap.service fxa-grafana-mcp.service
+systemctl enable -q fxa-mcp-gateway.service fxa-grafana-mcp.service
+if [ "$iap_state" = disabled ]; then echo "  grafana-iap stays disabled: systemctl enable --now fxa-grafana-iap turns it back on"
+else systemctl enable -q fxa-grafana-iap.service; systemctl restart fxa-grafana-iap.service; fi
+systemctl restart fxa-grafana-mcp.service
 
 say "repos (in the background: the FxA clone and yarn install take a while)"
 cat > "$C/provision-repos.sh" <<'REPOS'
