@@ -1313,7 +1313,8 @@ _session_proxy_cost() {
   local j="${2:-}" usd; [ -n "$j" ] || j='{}'
   usd="$( { declare -F db_on >/dev/null && db_on && db_value "SELECT round(sum(usd), 2) FROM llm_calls WHERE run = $(db_q "$1");"; } 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)?$' || true)"
   [ -n "$usd" ] || { printf '%s\n' "${2:-}"; return 0; }
-  jq -c --argjson u "$usd" 'if has("cost_so_far") then .cost_so_far = $u else .cost = $u end' <<< "$j"
+  # cost_usd too: the result event's figure prices every token at the main model.
+  jq -c --argjson u "$usd" '(if has("cost_so_far") then .cost_so_far = $u else .cost = $u end) | if .cost_usd != null then .cost_usd = $u else . end' <<< "$j"
 }
 
 # _session_cost <key>   {cost, tokens} so far, from the runner's

@@ -50,6 +50,7 @@ for j in '{"at":"2026-10-02T10:00:00Z","run":"agent-x","model":"opus","usd":0.5,
 eval "$(sed -n '/^_session_proxy_cost() {/,/^}/p' "$here/session.sh")"
 check "session cost: the proxy's total replaces the transcript's" '{"cost":1.5,"tokens":10}' "$(_session_proxy_cost agent-x '{"cost":0.4,"tokens":10}')"
 check "session cost: a live card's cost_so_far too" '{"turns":3,"cost_so_far":1.5}' "$(_session_proxy_cost agent-x '{"turns":3,"cost_so_far":0.4}')"
+check "session cost: a finished turn's cost_usd too" '{"cost_usd":1.5,"cost_so_far":1.5}' "$(_session_proxy_cost agent-x '{"cost_usd":0.4,"cost_so_far":0.4}')"
 check "session cost: unchanged when the proxy never saw it" '{"cost":0.4}' "$(_session_proxy_cost agent-none '{"cost":0.4}')"
 check "session cost: the proxy's even with no transcript price" '{"cost":1.5}' "$(_session_proxy_cost agent-x '')"
 check "llm_daily: calls and spend per day" "2026-10-02|2|0.75|2026-10-03|1|1.0" "$(db_value "SELECT group_concat(day || '|' || calls || '|' || usd, '|') FROM (SELECT * FROM llm_daily ORDER BY day);")"

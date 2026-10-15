@@ -875,6 +875,14 @@ function firstLine(t) {
   if (!/\w/.test(line) || /^The host uses these drafts/.test(line)) line = owner || line;
   return line.slice(0, 160) || "(no request)";
 }
+// One cost per session on every view: the live runner's (the proxy's total so far), else the Stats row's.
+let STAT_USD = new Map(), STAT_SRC = null;
+function sessUsd(s) {
+  if (STAT_SRC !== STATS) { STAT_SRC = STATS; STAT_USD = new Map((STATS?.rows ?? []).filter(r => r.src === "slack").map(r => [r.key, r.usd])); }
+  const a = s.agent || {};
+  let sm = {}; try { sm = JSON.parse(s.summary || "{}"); } catch {}
+  return a.cost_usd ?? a.cost_so_far ?? STAT_USD.get(s.key) ?? sm.cost;
+}
 // The list's day groups, from a session's start (seconds).
 function sessDay(c) {
   const d = new Date().setHours(0, 0, 0, 0) / 1000 - Number(c || 0);
@@ -965,7 +973,7 @@ function renderSess() {
   else {
     const a = sel.agent || {}, rt = sel.runtime || "claude", now = Date.now() / 1000;
     const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
-    const [st, cls] = sessStatus(sel), cost = a.cost_usd ?? a.cost_so_far, tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
+    const [st, cls] = sessStatus(sel), cost = sessUsd(sel), tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
     const pauseIn = sel.state === "active" && !sel.agent_alive && sel.turn_open !== "1" && sel.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - sel.last_activity))) : null;
     const endsIn = isLive && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
     const repo = SNAP?.repo ?? "mozilla/fxa";
@@ -1733,7 +1741,7 @@ function sessionCard(s) {
     : `<span class="tag info">waiting on owner</span>`;
   const rt = s.runtime || "claude";
   const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
-  const cost = a.cost_usd ?? a.cost_so_far;
+  const cost = sessUsd(s);
   const tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
   const age = now - (s.created ?? now);
   // Idle sessions pause after session_idle_seconds; the runner stops at session_max_run_seconds.
@@ -2041,7 +2049,7 @@ function sideGroups() {
   const q = Q.trim().toLowerCase(), hit = t => !q || String(t).toLowerCase().includes(q);
   if (VIEW === "sessions") {
     const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => hit(s.key + " " + (s.request ?? "")));
-    const items = list.map(s => { const [st, cls] = sessStatus(s), c = s.agent?.cost_usd ?? s.agent?.cost_so_far ?? (JSON.parse(s.summary || "{}").cost);
+    const items = list.map(s => { const [st, cls] = sessStatus(s), c = sessUsd(s);
       return { day: sessDay(s.created), id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(s.request), m: [stamp(s.created), st, `${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}`, c ? usd(c) : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
@@ -2112,7 +2120,7 @@ function sessionDetails(s) {
   const a = s.agent || {}, rt = s.runtime || "claude", now = Date.now() / 1000, live = LIVE_SESSION.includes(s.state);
   const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
   const sm = (() => { try { return JSON.parse(s.summary || "{}"); } catch { return {}; } })();
-  const cost = a.cost_usd ?? a.cost_so_far ?? sm.cost, [st] = sessStatus(s), repo = SNAP?.repo ?? "mozilla/fxa";
+  const cost = sessUsd(s), [st] = sessStatus(s), repo = SNAP?.repo ?? "mozilla/fxa";
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
   const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
   const nr = "not recorded for this session", rs = num(s.runner_s), peak = (() => { try { return JSON.parse(s.res_peak || "null"); } catch { return null; } })();

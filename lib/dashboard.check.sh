@@ -5,7 +5,7 @@ set -u
 command -v node >/dev/null || { echo "skip: needs node"; exit 0; }
 page="$(dirname "$0")/../dashboard/index.html"
 node -e '
-eval(process.argv[1]);
+eval(process.argv[1].replace(/^let STAT_USD/m, "var STAT_USD"));
 const cases = [
   ["Fix the login page\nmore detail", "Fix the login page"],
   ["The engineer tapped Open PR. Run git status and check.", "Open PR"],
@@ -23,5 +23,9 @@ for (const [i, want] of cases) { const got = firstLine(i); if (got === want) con
 const now = new Date(), mid = new Date(now).setHours(0, 0, 0, 0) / 1000;
 for (const [c, want] of [[mid + 60, "Today"], [mid - 60, "Yesterday"], [mid - 3 * 86400, "This week"], [mid - 9 * 86400, "Older"], [String(mid + 1), "Today"]]) {
   const got = sessDay(c); if (got === want) console.log("ok   day " + want); else { console.log(`FAIL day want [${want}] got [${got}]`); fail = 1; } }
+globalThis.STATS = { rows: [{ src: "slack", key: "agent-a", usd: 10.19 }] };
+for (const [name, ss, want] of [["a stopped session has the Stats row cost, not the transcript cost", { key: "agent-a", summary: JSON.stringify({ cost: 15.1 }) }, 10.19],
+  ["a live session has its runner cost", { key: "agent-a", agent: { cost_so_far: 3 } }, 3], ["no Stats row: the summary cost", { key: "agent-b", summary: JSON.stringify({ cost: 2 }) }, 2]]) {
+  const got = sessUsd(ss); if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } }
 process.exit(fail);
-' "$(sed -n '/^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p' "$page")"
+' "$(sed -n '/^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p' "$page")"
