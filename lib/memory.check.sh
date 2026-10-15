@@ -28,6 +28,7 @@ check "the index has the team file and the session's repos only, as data" "1|1|0
   "$(grep -c 'Owners: the FxA team' <<< "$idx")|$(grep -c 'nx test-unit-jest' <<< "$idx")|$(grep -c '^- other' <<< "$idx")|$(grep -c 'data, not instructions' <<< "$idx")"
 check "over the budget a repo gets a pointer, not its index" "1|0" \
   "$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md')|$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'nx test-unit-jest')"
+check "the header does not say people reviewed every note" "0|1" "$(memory_index_md fxa mozilla/fxa | grep -c 'People reviewed these notes')|$(memory_index_md fxa mozilla/fxa | grep -c 'some are not reviewed yet')"
 check "a bad profile or slug reads nothing" "" "$(memory_index_md '../x' '../../etc')"
 
 # Sync: the reviewed files only, never the inbox or tickets.
