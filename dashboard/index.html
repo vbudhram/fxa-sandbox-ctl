@@ -1387,7 +1387,8 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
   if (!prs.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened in this range matches these filters." : "No PR list yet."}</div>`;
   // LLM and the session's runner compute, where it was recorded.
-  const cost = p => rows.reduce((x, r) => x + (r.prn === p.n || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
+  // A session's PR number counts only in this repo's list: a team repo has its own #123.
+  const cost = p => rows.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
   const hrs = p => (Date.parse(p.merged) - Date.parse(p.created)) / 3600000, dur = h => h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`;
   const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   const by = s => prs.filter(p => p.state === s), merged = by("MERGED"), closed = by("CLOSED"), open = by("OPEN");

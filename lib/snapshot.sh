@@ -312,6 +312,7 @@ _stats_add_rows() {
           min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
           main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
           prn: ([.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
+          prr: ([.pr_url // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null),
           profile: (.profile // "fxa"),
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
           backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),

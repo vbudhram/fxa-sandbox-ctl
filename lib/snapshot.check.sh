@@ -130,6 +130,12 @@ rm -rf "$pd"
     "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r '[.rows[] | "\(.key) \(.conv)"] | join("|")')"
   exit "$fail" ) || fail=1
 
+# A session's PR keeps its repo, so the PR list matches its number only in that repo.
+( export SESSION_DIR="$tmp/pr" PIPE_STATE_DIR="$tmp/prps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"; db_on() { false; }
+  _session_records() { echo '{"key":"agent-p1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/PyFxA/pull/12"}'; }
+  check "stats: a session PR has its number and its repo" "12|mozilla/PyFxA" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r '.rows[0] | "\(.prn)|\(.prr)"')"
+  exit "$fail" ) || fail=1
+
 # A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
 ( export SESSION_DIR="$tmp/pm" PIPE_STATE_DIR="$tmp/pmps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { false; }
