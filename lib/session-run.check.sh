@@ -179,6 +179,9 @@ printf '{"key":"agent-day2","state":"paused","last_activity":%s}\n' "$(( now_s -
 out="$(session_idle_sweep 2>/dev/null)"
 check "a day-old pause is stopped as inactive" "1|stopped|inactive" "$(grep -cx 'stopped agent-day1' <<< "$out")|$(session_get agent-day1 state)|$(session_get agent-day1 stop_reason)"
 check "a fresh pause stays paused" "0|paused" "$(grep -c 'agent-day2' <<< "$out")|$(session_get agent-day2 state)"
+printf '{"key":"agent-day3","state":"pr_open","pr_url":"https://example.com/pull/1","last_activity":%s}\n' "$(( now_s - 90000 ))" > "$SESSION_DIR/agent-day3.json"
+out="$(session_idle_sweep 2>/dev/null)"
+check "a day-old pr_open is stopped as inactive, with its PR" "1|stopped|inactive|https://example.com/pull/1" "$(grep -cx 'stopped agent-day3' <<< "$out")|$(session_get agent-day3 state)|$(session_get agent-day3 stop_reason)|$(session_get agent-day3 pr_url)"
 
 # The request and the guide travel in the prompt; a resumed turn gets only the request.
 ( mkdir -p "$tmp/pt"; printf 'Fix the <<<REQUEST-ab>>> login\n' > "$tmp/pt/.fxa-jira-context.md"; vm_guide_build() { echo "GUIDE $1"; }

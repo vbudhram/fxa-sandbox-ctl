@@ -641,7 +641,7 @@ session_boots() {
 }
 
 session_idle_sweep() {
-  local f key now idle="${FXA_SESSION_IDLE_SECONDS:-600}"; now="$(date +%s)"
+  local f key st now idle="${FXA_SESSION_IDLE_SECONDS:-600}"; now="$(date +%s)"
   for f in "$SESSION_DIR"/agent-*.json; do
     [ -f "$f" ] || continue
     key="$(basename "$f" .json)"
@@ -652,9 +652,11 @@ session_idle_sweep() {
       _session_unlock "$key"; continue
     fi
     # A pause nobody came back to in a day is over: stopped. A reply still resumes it from the saved work.
-    if [ "$(jq -r .state "$f")" = paused ] && [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "${FXA_SESSION_PAUSED_SECONDS:-86400}" ]; then
+    # So is pr_open, which older code wrote after Open PR: a resume from stopped keeps the PR's branch.
+    st="$(jq -r .state "$f")"
+    if { [ "$st" = paused ] || [ "$st" = pr_open ]; } && [ $(( now - $(jq -r '.last_activity // 0 | floor' "$f") )) -ge "${FXA_SESSION_PAUSED_SECONDS:-86400}" ]; then
       _session_lock "$key" || continue
-      [ "$(session_get "$key" state)" = paused ] && session_set "$key" state stopped stop_reason inactive && echo "stopped ${key}"
+      [ "$(session_get "$key" state)" = "$st" ] && session_set "$key" state stopped stop_reason inactive && echo "stopped ${key}"
       _session_unlock "$key"; continue
     fi
     [ "$(jq -r .state "$f")" = active ] && [ "$(jq -r '.turn_open // "0"' "$f")" != 1 ] || continue
