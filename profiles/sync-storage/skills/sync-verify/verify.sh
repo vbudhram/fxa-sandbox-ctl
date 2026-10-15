@@ -49,7 +49,7 @@ fi
 echo "changed: $(wc -w <<< "$changed" | tr -d ' ') file(s); crates: ${crates:-none}; server code: $([ "$server" = 1 ] && echo yes || echo no)"
 if [ "$run" = 0 ]; then printf '%s\n' "${rows[@]}" | sed 's/^/  /'; echo "(the plan; --run runs it)"; exit 0; fi
 
-verdict="" fail=0 log="$(mktemp)"
+verdict="" fail=0 log="$(mktemp)" vstart=$(date +%s)
 for r in "${rows[@]}"; do
   n="${r%%$'\t'*}" c="${r#*$'\t'}" t0=$(date +%s)
   if timeout 1200 bash -c "$c" > "$log" 2>&1; then v=PASS; else v=FAIL; fail=1
@@ -60,5 +60,8 @@ for r in "${rows[@]}"; do
 done
 rm -f "$log"
 printf '\n%s' "$verdict" | tee "$W/.fxa-verify-verdict.txt"
+# One line per run, in fxa-verify's shape, for the host's verify counts (_session_end_facts).
+printf '{"at":%s,"mode":"full","rows":%s,"fail":%s,"secs":%s}\n' "$(date +%s)" "${#rows[@]}" "$(grep -c '^FAIL' <<< "$verdict")" \
+  "$(( $(date +%s) - vstart ))" >> "$W/.fxa-verify-runs.jsonl" 2>/dev/null || true
 [ "$fail" = 0 ] && echo "sync-verify: PASS" || echo "sync-verify: FAIL"
 exit "$fail"
