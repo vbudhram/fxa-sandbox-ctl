@@ -10,8 +10,12 @@ A=/home/agent
 
 echo "==> Emulator libraries"
 # The emulator loads X11 and GL libraries even with -no-window.
+# 07-cleanup.sh already removed the apt lists, so fetch them again and remove them after.
+apt-get update -qq
 apt-get install -y -qq libx11-xcb1 libxcb1 libxcb-cursor0 libgl1 libegl1 libpulse0 libnss3 libxcomposite1 \
   libxcursor1 libxdamage1 libxi6 libxtst6 libxkbfile1 libasound2t64 libxkbcommon-x11-0 xvfb > /dev/null
+apt-get clean
+rm -rf /var/lib/apt/lists/*
 # /dev/kvm is root:kvm on a runner with nested virtualization.
 getent group kvm >/dev/null || groupadd -r kvm
 usermod -aG kvm agent
