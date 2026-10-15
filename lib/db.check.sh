@@ -85,6 +85,14 @@ db_import >/dev/null
   source "$here/session.sh"; source "$here/snapshot.sh"; a="$(echo '{}' | _stats_add_rows | jq -c '.llm | .. |= (if type == "number" then . + 0 else . end)')"
   db_on() { false; }; b="$(echo '{}' | _stats_add_rows | jq -c .llm)"
   check "stats: the store's LLM rollup equals the file's" "$b" "$a"; exit "$fail" ) || fail=1
+# The store's LLM days, models and gap leave out a dry-run session's calls (agent-a: all of them).
+( sqlite3 "$FXA_DB" ".backup '$tmp/dry.db'"; export FXA_DB="$tmp/dry.db" SESSION_DIR="$tmp/dryss" PIPE_STATE_DIR="$tmp/dryps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  source "$here/session.sh"; source "$here/snapshot.sh"
+  before="$(echo '{}' | _stats_add_rows | jq -c '[(.llm.days | map(.usd) | add), (.llm.models | map(.usd) | add)]')"
+  db_exec "INSERT OR REPLACE INTO sessions (key, data) VALUES ('agent-a', json_object('key', 'agent-a', 'owner', 'U-DRYRUN', 'created', 1));"
+  check "stats: the store's LLM days and models leave out a dry run" "[2.1,2.1]|[0,0]" \
+    "$before|$(echo '{}' | _stats_add_rows | jq -c '[(.llm.days | map(.usd) | add // 0), (.llm.models | map(.usd) | add // 0)]')"
+  exit "$fail" ) || fail=1
 check "usage by model: tokens and cost per model, costliest first" '[{"model":"m","calls":2,"input":3,"cache_read":1500,"cache_write":200,"output":25,"usd":2.0},{"model":"h","calls":1,"input":0,"cache_read":50,"cache_write":0,"output":7,"usd":0.1}]' \
   "$(python3 -c 'import json, sys; sys.path.insert(0, sys.argv[1]); import fxadb; print(json.dumps(fxadb.usage_by_model(fxadb.connect(sys.argv[2], readonly=True), "agent-a"), separators=(",", ":")))' "$here" "$FXA_DB")"
 

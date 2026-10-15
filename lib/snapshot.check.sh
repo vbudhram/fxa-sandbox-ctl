@@ -71,12 +71,27 @@ rm -rf "$pd"
 # Quick answers carry their Slack thread: their own field, else the one the LLM calls name.
 ( export SESSION_DIR="$tmp/ans" PIPE_STATE_DIR="$tmp/ansps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { true; }
-  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[{"run":"ask-old111","thread":"C1:1.000001"}]' ;; *) echo '[{"llm":"{}"}]' ;; esac; }
-  printf '%s\n' '{"at":"2026-10-06T10:00:00Z","id":"ask-new222","secs":20,"cost_usd":0.12,"turns":3,"upgrade":false,"error":false,"thread":"C2:2.000002"}' \
-    '{"at":"2026-10-05T10:00:00Z","id":"ask-old111","secs":30,"cost_usd":0.2,"turns":5,"upgrade":true,"error":false}' > "$PIPE_STATE_DIR/answers.jsonl"
+  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[{"run":"ask-bbb111","thread":"C1:1.000001"}]' ;; *) echo '[{"llm":"{}"}]' ;; esac; }
+  printf '%s\n' '{"at":"2026-10-06T10:00:00Z","id":"ask-aaa222","secs":20,"cost_usd":0.12,"turns":3,"upgrade":false,"error":false,"thread":"C2:2.000002"}' \
+    '{"at":"2026-10-05T10:00:00Z","id":"ask-bbb111","secs":30,"cost_usd":0.2,"turns":5,"upgrade":true,"error":false}' > "$PIPE_STATE_DIR/answers.jsonl"
   out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
-  check "stats: an answer keeps its thread, an older one gets it from the LLM calls" "ask-new222 C2:2.000002 answered 3|ask-old111 C1:1.000001 upgraded 5" \
+  check "stats: an answer keeps its thread, an older one gets it from the LLM calls" "ask-aaa222 C2:2.000002 answered 3|ask-bbb111 C1:1.000001 upgraded 5" \
     "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.thread) \(.kind) \(.turns)"] | join("|")' <<< "$out")"
+  exit "$fail" ) || fail=1
+
+# Test runs stay out of every total: an answer is priced by the proxy, and the LLM days and models
+# leave out dev and dry-run sessions, dev answers and hand-run CLI asks (no ask-<6 hex> id).
+( export SESSION_DIR="$tmp/tr" PIPE_STATE_DIR="$tmp/trps" FXA_LLM_PROXY_DIR="$tmp/trp"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR" "$FXA_LLM_PROXY_DIR"
+  _session_records() { printf '%s\n' '{"key":"agent-dev001","owner":"U1","env":"dev","created":1}' '{"key":"agent-try001","owner":"U-DRYRUN","created":1}' '{"key":"agent-abc001","owner":"U1","created":1}'; }
+  db_on() { false; }
+  printf '%s\n' '{"at":"2026-10-14T10:00:00Z","id":"ask-abc123","secs":9,"cost_usd":0.5}' '{"at":"2026-10-14T10:00:00Z","id":"ask-def456","env":"dev","cost_usd":0.4}' \
+    '{"at":"2026-10-14T10:00:00Z","id":"timing1","cost_usd":0.3}' > "$PIPE_STATE_DIR/answers.jsonl"
+  { for r in agent-dev001 agent-try001 ask-def456 timing1; do printf '{"at":"2026-10-14T10:00:00Z","run":"%s","model":"m","usd":10}\n' "$r"; done
+    printf '%s\n' '{"at":"2026-10-14T10:00:00Z","run":"agent-abc001","model":"m","usd":1}' '{"at":"2026-10-14T10:00:00Z","run":"ask-abc123","model":"m","usd":0.2}' \
+      '{"at":"2026-10-14T10:00:00Z","run":null,"model":"m","usd":0.05}'; } > "$FXA_LLM_PROXY_DIR/usage.jsonl"
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: one answer row, at the proxy's price" "ask-abc123 0.2" "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.usd)"] | join("|")' <<< "$out")"
+  check "stats: the LLM days and models leave out test runs" "1.25|1.25" "$(jq -r '"\(.llm.days | map(.usd) | add)|\(.llm.models | map(.usd) | add)"' <<< "$out")"
   exit "$fail" ) || fail=1
 
 # A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
@@ -103,10 +118,10 @@ rm -rf "$pd"
 ( export SESSION_DIR="$tmp/mod" PIPE_STATE_DIR="$tmp/modps" FXA_AGENT_MODEL=claude-opus-5-5; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { echo '{"key":"agent-m1","owner":"U1","created":1,"runtime":"claude","summary":"{\"cost\":2.5}"}'; }
   db_on() { true; }
-  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[]' ;; *) echo '[{"llm":"{\"run_models\":{\"ask-m2\":{\"claude-sonnet-5-5\":0.2}}}"}]' ;; esac; }
-  echo '{"at":"2026-10-07T10:00:00Z","id":"ask-m2","secs":9,"cost_usd":0.2,"turns":2}' > "$PIPE_STATE_DIR/answers.jsonl"
+  db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[]' ;; *) echo '[{"llm":"{\"run_models\":{\"ask-ccc002\":{\"claude-sonnet-5-5\":0.2}}}"}]' ;; esac; }
+  echo '{"at":"2026-10-07T10:00:00Z","id":"ask-ccc002","secs":9,"cost_usd":0.2,"turns":2}' > "$PIPE_STATE_DIR/answers.jsonl"
   out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
-  check "stats: a session has its main model, an answer the proxy's models" 'agent-m1 claude-opus-5-5 null true|ask-m2  {"claude-sonnet-5-5":0.2} false' \
+  check "stats: a session has its main model, an answer the proxy's models" 'agent-m1 claude-opus-5-5 null true|ask-ccc002  {"claude-sonnet-5-5":0.2} false' \
     "$(jq -r '[.rows[] | "\(.key) \(.model) \(.models | tojson) \(.main_only // false)"] | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
@@ -114,10 +129,10 @@ rm -rf "$pd"
 ( export SESSION_DIR="$tmp/env" PIPE_STATE_DIR="$tmp/envps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { echo '{"key":"agent-p1","owner":"U1","created":1}'; echo '{"key":"agent-d1","owner":"U1","created":2,"env":"dev"}'; }
   db_on() { false; }
-  printf '%s\n' '{"at":"2026-10-07T10:00:00Z","id":"ask-p2","secs":9,"cost_usd":0.2,"turns":2}' \
+  printf '%s\n' '{"at":"2026-10-07T10:00:00Z","id":"ask-ddd002","secs":9,"cost_usd":0.2,"turns":2}' \
     '{"at":"2026-10-07T11:00:00Z","id":"ask-d2","secs":9,"cost_usd":0.2,"turns":2,"env":"dev"}' > "$PIPE_STATE_DIR/answers.jsonl"
   out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
-  check "stats: the dev bot's sessions and answers are left out" "agent-p1 ask-p2" "$(jq -r '[.rows[].key] | sort | join(" ")' <<< "$out")"
+  check "stats: the dev bot's sessions and answers are left out" "agent-p1 ask-ddd002" "$(jq -r '[.rows[].key] | sort | join(" ")' <<< "$out")"
   exit "$fail" ) || fail=1
 
 # Agent PRs for the PRs tab: the source and key come from the branch, a session row

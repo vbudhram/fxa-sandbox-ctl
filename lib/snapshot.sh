@@ -227,27 +227,36 @@ snapshot_stats_json() {
 # Slack sessions (not dry runs) and the passes themselves, as rows beside the
 # pipeline's runs, so the page can show the whole spend.
 _stats_add_rows() {
-  local sess jobs f llm='{}' usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl"
+  local sess jobs f llm='{}' usage="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/usage.jsonl" test
+  # Test runs: dev bot and dry-run sessions, dev answers and hand-run CLI asks (the bot's ids are
+  # ask-<6 hex>). The rows leave them out, so the LLM totals below do too.
+  test="$( { _session_records | jq -r 'select(.owner == "U-DRYRUN" or .env == "dev") | .key' 2>/dev/null
+      [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && jq -r 'select(.env == "dev" or (.id | test("^ask-[0-9a-f]{6}$") | not)) | .id' "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null
+    } | grep -E '^[A-Za-z0-9._-]+$' | jq -R . | jq -sc . )" || test='[]'
   # The LLM proxy's per-call log is the one cost source where it has the run. gap_usd: cache
   # writes on calls more than 5 min after the run's previous call, when the prompt cache had expired.
   if declare -F db_on >/dev/null && db_on; then
+    # Ids are checked above, so the list is safe inside the quotes.
+    local keep="(run IS NULL OR run NOT IN (SELECT value FROM json_each('${test:-[]}')))"
     llm="$(db_json "SELECT json_object(
       'runs', (SELECT json_group_object(run, u) FROM (SELECT run, round(sum(usd), 2) AS u FROM llm_calls WHERE run IS NOT NULL GROUP BY run)),
       'run_models', (SELECT json_group_object(run, json(m)) FROM (SELECT run, json_group_object(model, u) AS m FROM
           (SELECT run, model, round(sum(usd), 2) AS u FROM llm_calls WHERE run IS NOT NULL AND model IS NOT NULL GROUP BY run, model) GROUP BY run)),
       'days', (SELECT json_group_array(json_object('day', day, 'usd', usd, 'calls', calls, 'cache_write_usd', cw)) FROM (SELECT * FROM
-               (SELECT day, round(sum(usd), 2) AS usd, sum(calls) AS calls, round(sum(usd_cache_write), 2) AS cw FROM llm_daily GROUP BY day ORDER BY day DESC LIMIT 30) ORDER BY day)),
+               (SELECT substr(at, 1, 10) AS day, round(sum(usd), 2) AS usd, count(*) AS calls, round(sum(coalesce(usd_cache_write, 0)), 2) AS cw
+                FROM llm_calls WHERE $keep GROUP BY 1 ORDER BY 1 DESC LIMIT 30) ORDER BY day)),
       'gap_usd', (SELECT round(coalesce(sum(usd_cache_write), 0), 2) FROM (SELECT usd_cache_write, at, lag(at) OVER (PARTITION BY run ORDER BY at, id) AS prev
-               FROM llm_calls WHERE run IS NOT NULL) WHERE (unixepoch(at) - unixepoch(prev)) > 300),
+               FROM llm_calls WHERE run IS NOT NULL AND $keep) WHERE (unixepoch(at) - unixepoch(prev)) > 300),
       'models', (SELECT json_group_array(json_object('day', day, 'model', model, 'calls', calls, 'usd', usd, 'input', i, 'cache_read', cr, 'cache_write', cw, 'output', o))
                FROM (SELECT substr(at, 1, 10) AS day, coalesce(model, '') AS model, count(*) AS calls, round(sum(coalesce(usd, 0)), 2) AS usd,
                  sum(coalesce(input_tokens, 0)) AS i, sum(coalesce(cache_read_input_tokens, 0)) AS cr, sum(coalesce(cache_creation_input_tokens, 0)) AS cw,
                  sum(coalesce(output_tokens, 0)) AS o FROM llm_calls
-                 WHERE substr(at, 1, 10) IN (SELECT DISTINCT substr(at, 1, 10) FROM llm_calls ORDER BY 1 DESC LIMIT 14)
+                 WHERE $keep AND substr(at, 1, 10) IN (SELECT DISTINCT substr(at, 1, 10) FROM llm_calls ORDER BY 1 DESC LIMIT 14)
                  GROUP BY 1, 2 ORDER BY 1, 2))) AS llm;" | jq -c '.[0].llm | fromjson')" || llm='{}'
   else
-  [ -s "$usage" ] && llm="$(jq -sc 'def r2: . * 100 | round / 100;
-    { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
+  [ -s "$usage" ] && llm="$(jq -sc --argjson test "${test:-[]}" 'def r2: . * 100 | round / 100;
+    map(select(.run == null or (.run as $r | $test | index($r) | not)))
+    | { runs: (map(select(.run != null)) | group_by(.run) | map({key: .[0].run, value: (map(.usd) | add | r2)}) | from_entries),
       run_models: (map(select(.run != null and .model != null)) | group_by(.run) | map({key: .[0].run,
                value: (group_by(.model) | map({key: .[0].model, value: (map(.usd) | add | r2)}) | from_entries)}) | from_entries),
       days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
@@ -287,9 +296,9 @@ _stats_add_rows() {
     athreads="$(db_json "SELECT run, max(thread) AS thread FROM llm_calls WHERE run LIKE 'ask-%' AND thread IS NOT NULL GROUP BY run;" \
       | jq -c 'map({key: .run, value: .thread}) | from_entries' 2>/dev/null || echo '{}')"
   fi
-  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map(select(.env != "dev")) | map({ at, src: "answer", key: .id,
+  [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map(select(.env != "dev" and (.id | test("^ask-[0-9a-f]{6}$")))) | map({ at, src: "answer", key: .id,
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
-          usd: ((.cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", models: ($llm.run_models[.id] // null), pr: false,
+          usd: (($llm.runs[.id] // .cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", models: ($llm.run_models[.id] // null), pr: false,
           thread: (.thread // $th[.id]) })' \
       "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
   # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.
