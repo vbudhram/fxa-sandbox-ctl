@@ -879,6 +879,11 @@ function firstLine(t) {
 function rowSpend(from) {
   return (STATS?.rows ?? []).filter(r => !from || (r.at ?? "") >= from).reduce((x, r) => x + (r.usd || 0), 0);
 }
+// LLM spend in the last 7 UTC days: a day with only test runs has no row, so count by date, not rows.
+function llmWeek(days) {
+  const since = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  return days.filter(x => x.day >= since).reduce((a, x) => a + x.usd, 0);
+}
 // One cost per session on every view: the live runner's (the proxy's total so far), else the Stats row's.
 let STAT_USD = new Map(), STAT_SRC = null;
 function sessUsd(s) {
@@ -1993,7 +1998,7 @@ function renderNav() {
     tile("#pipeline", "waiting on review", waiting, waiting ? `oldest waits ${oldest} day${oldest === 1 ? "" : "s"}` : "none waiting", waiting ? "warn" : ""),
     tile("#pipeline", "needs a fix", SNAP ? fix : null, [infra && `${infra} infra red`, conflicts && `${conflicts} conflicts`].filter(Boolean).join(" · ") || "nothing red", fix ? "bad" : ""),
     tile("#sessions/live", "sessions", AGENTS ? `${liveS}/${AGENTS.session_cap}` : null, `${ss.filter(s => s.state === "paused").length} paused, a reply resumes`),
-    (() => { const d = STATS?.llm?.days ?? [], today = new Date().toISOString().slice(0, 10), td = d.find(x => x.day === today), wk = d.slice(-7).reduce((x, y) => x + y.usd, 0);
+    (() => { const d = STATS?.llm?.days ?? [], today = new Date().toISOString().slice(0, 10), td = d.find(x => x.day === today), wk = llmWeek(d);
       return tile("#stats/spend", "LLM spend today", STATS ? usd(td?.usd ?? 0) : null, STATS ? `${usd(wk)} in the last 7 days` : "loading"); })(),
   ].join(""));
 }
