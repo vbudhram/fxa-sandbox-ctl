@@ -51,4 +51,11 @@ rm -f "$SESSION_DIR/.alerts-at"
 printf 'refresh=success\nmade=PATH[$(touch %s/pwned)]\n' "$tmp" > "$SESSION_DIR/.fc-status"
 ( alerts_check ) >/dev/null 2>&1; rc=$?
 check "a made= value with a command in it runs nothing, and the alerts still finish" "no|0" "$([ -e "$tmp/pwned" ] && echo yes || echo no)|$rc"
+# A manager unit in a restart loop raises one alert for that unit, and clears when it runs again.
+rm -f "$SESSION_DIR/.fc-status"
+_alert_units() { echo "fxa-grafana-iap.service activating auto-restart"; echo "fxa-agent-bot.service active running"; }
+out="$(alerts_check)"
+check "a unit in a restart loop raises, a running one does not" "1|0" "$(grep -c '^alert: the fxa-grafana-iap.service unit is failed or in a restart loop' <<< "$out")|$(grep -c 'fxa-agent-bot' <<< "$out")"
+_alert_units() { echo "fxa-grafana-iap.service active running"; echo "fxa-agent-bot.service active running"; }
+check "the unit running again clears it" "1" "$(alerts_check | grep -c '^cleared: unit')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

@@ -9,7 +9,7 @@
 #
 # Thresholds (env): FXA_ALERT_IDLE_HOURS (6), FXA_ALERT_DAILY_USD (150, alert at 80%),
 # FXA_ALERT_BOOT_S (60, median of 3+ boots), FXA_ALERT_CAPACITY (3 capacity errors),
-# FXA_ALERT_SNAPSHOT_DAYS (3, the Firecracker snapshot's age).
+# FXA_ALERT_SNAPSHOT_DAYS (3, the Firecracker snapshot's age). A failed or restarting fxa-* unit always alerts.
 
 [ -n "${_FXA_ALERTS_LOADED:-}" ] && return 0
 _FXA_ALERTS_LOADED=1
@@ -51,6 +51,13 @@ alerts_check() {
     "the median boot in the last 24 h is $(awk -v b="$boot" 'BEGIN { printf "%.0f", b }') s, over ${bs} s"
   _alert capacity "$([ "${cap:-0}" -ge "$cn" ] && echo 1 || echo 0)" \
     "${cap} capacity failures (zone stockouts or the session cap) in the last 24 h"
+  # A manager unit in a restart loop or failed: nothing else reads systemd (grafana-iap looped for a week unseen).
+  local u act sub
+  while read -r u act sub; do
+    [ -n "$u" ] || continue
+    _alert unit "$([ "$act" = failed ] || [ "$sub" = auto-restart ] && echo 1 || echo 0)" \
+      "the ${u} unit is failed or in a restart loop; journalctl -u ${u} shows why"
+  done <<< "$(_alert_units)"
   # The snapshot refresh fails on the host, where nothing else sees it: sessions keep
   # booting from the old snapshot, only slower. fc_status reads it when the host is up.
   if declare -F fc_status >/dev/null && _fc_up; then fc_status >/dev/null 2>&1 || true; fi
@@ -67,6 +74,12 @@ alerts_check() {
     _alert snapshot_age "$([ $(( $(date +%s) - made )) -gt $(( sd * 86400 )) ] && echo 1 || echo 0)" \
       "the Firecracker snapshot has had no good refresh for $(( ($(date +%s) - made) / 86400 )) days, over ${sd}"
   fi
+}
+
+# _alert_units   "<unit> <active> <sub>" for each fxa-* service on this host; nothing where there is no systemd.
+_alert_units() {
+  command -v systemctl >/dev/null || return 0
+  systemctl list-units 'fxa-*.service' --all --no-legend --plain 2>/dev/null | awk '{print $1, $3, $4}' || true
 }
 
 alerts_maybe() {
