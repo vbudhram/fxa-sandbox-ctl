@@ -1462,11 +1462,14 @@ function loadCard(l) {
 }
 function pipelineCard(p) {
   const days = (p?.days ?? []).slice().reverse(), w = (p?.waits ?? []).map(x => x.hours).sort((a, b) => a - b);
+  const medOf = k => { const v = (p?.waits ?? []).map(x => x[k]).filter(x => x != null).sort((a, b) => a - b); return v.length ? `median ${v[Math.floor(v.length / 2)]} h · ${v.length} tickets` : "none yet"; };
   if (!days.length && !w.length) return `<div class="chart"><h2>Pipeline queue<span class="note">passes</span></h2><div class="empty">No pass recorded yet.</div></div>`;
   return `<div class="chart"><h2>Pipeline queue<span class="note">passes, all time</span></h2>
-    ${w.length ? `<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>` : ""}
+    ${w.length ? `<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>
+      <div class="kv"><b>Queued to PR</b><span>${medOf("pr_hours")}</span></div><div class="kv"><b>Queued to merge</b><span>${medOf("merge_hours")}</span></div>` : ""}
     <div class="kv"><b>Tickets retried</b><span>${p.retried} of ${p.tickets}</span></div>
-    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.passes} passes · ${d.work} with work · queue up to ${d.max_queued} · ${d.inflight} in flight</span></div>`).join("")}</div>`;
+    ${days.map(d => { const wk = Object.entries(d.woke ?? {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${esc(k)} ${n}`).join(", ");
+      return `<div class="kv"><span class="mono">${esc(d.day)}</span><span title="${wk ? `woke: ${wk}` : ""}">${d.passes} passes · ${d.work} with work${wk ? ` (${wk})` : ""} · queue up to ${d.max_queued} · ${d.inflight} in flight${d.merged ? ` · ${d.merged} merged` : ""}${d.rejected ? ` · ${d.rejected} rejected` : ""}${d.usd ? ` · ${usd(d.usd)}` : ""}</span></div>`; }).join("")}</div>`;
 }
 function memoryCard(m) {
   if (!m) return `<div class="chart"><h2>Team memory<span class="note">30 days</span></h2><div class="empty">No save recorded yet.</div></div>`;

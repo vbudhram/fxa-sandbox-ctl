@@ -221,7 +221,7 @@ snapshot_stats_json() {
         median_min: mins,
         files: (sort_by(.recorded_at) | last | .files_changed // null),
         last: (map(.recorded_at) | max) } }) | from_entries)
-    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_pipeline | _stats_add_load | _stats_add_prs | _stats_add_memory
+    }' "$PIPE_RUNS_FILE" | _stats_add_rounds | _stats_add_rows | _stats_add_prs | _stats_add_pipeline | _stats_add_load | _stats_add_memory
 }
 
 # _stats_add_memory   Team memory saves in the last 30 days by result, the learnings they
@@ -356,20 +356,27 @@ _stats_add_load() {
         | map({day: ., peak: ($peak[.] // 0), queued: ($q[.].queued // 0), wait_max_s: ($q[.].wait_max_s // 0), dropped: ($dr[.] // 0)}))}'
 }
 
-# The pipeline's passes by day (from passes.jsonl), and each ticket's wait from
-# first queued to first run (queued-at files against the run log).
+# The pipeline's passes by day (from passes.jsonl): what woke them, merges and rejects, and the
+# passes' own spend; and each ticket's wait from first queued to first run, PR and merge
+# (queued-at files against the run log and .prs, so _stats_add_prs runs first).
 _stats_add_pipeline() {
   local passes='[]' waits='[]' f k q r
   [ -s "${PIPE_STATE_DIR}/passes.jsonl" ] && passes="$(jq -sc 'group_by(.at | todate | .[0:10]) | map({day: (.[0].at | todate | .[0:10]),
       passes: length, work: (map(select(.work)) | length), max_queued: (map(.queued) | max), inflight: (last | .inflight),
-      awaiting: (last | .awaiting)}) | .[-14:]' "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || echo '[]')"
+      awaiting: (last | .awaiting), merged: (map(.merged // 0) | add), rejected: (map(.rejected // 0) | add),
+      woke: (map(.woke // {} | to_entries[]) | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries)}) | .[-14:]' "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null || echo '[]')"
   for f in "${PIPE_STATE_DIR}"/*.queued-at; do
     [ -f "$f" ] || continue
     k="$(basename "$f" .queued-at)"; q="$(tr -dc 0-9 < "$f")"
     r="$(jq -r --arg k "$k" 'select(.issue == $k) | .recorded_at' "$PIPE_RUNS_FILE" 2>/dev/null | sort | head -1)"
-    [ -n "$q" ] && [ -n "$r" ] && waits="$(jq -c --arg k "$k" --argjson q "$q" --arg r "$r" '. + [{key: $k, hours: ((($r | fromdate? // $q) - $q) / 3600 | . * 10 | round / 10)}]' <<< "$waits")"
+    [ -n "$q" ] && [ -n "$r" ] && waits="$(jq -c --arg k "$k" --argjson q "$q" --arg r "$r" '. + [{key: $k, q: $q, hours: ((($r | fromdate? // $q) - $q) / 3600 | . * 10 | round / 10)}]' <<< "$waits")"
   done
-  jq -c --argjson p "${passes:-[]}" --argjson w "$waits" '.pipeline = {days: $p, waits: ($w | map(select(.hours >= 0))),
+  jq -c --argjson p "${passes:-[]}" --argjson w "$waits" '
+    def h($t; $q): if $t == null then null else ((($t | fromdate? // null) // $q) - $q) / 3600 | if . < 0 then null else . * 10 | round / 10 end end;
+    ((.prs // []) | map({key: .key, value: .}) | from_entries) as $pr
+    | ([.rows[]? | select(.src == "pass" and .kind == "pass")] | group_by(.at[0:10]) | map({key: .[0].at[0:10], value: (map(.usd // 0) | add | . * 100 | round / 100)}) | from_entries) as $pu
+    | .pipeline = {days: ($p | map(. + {usd: ($pu[.day] // 0)})),
+    waits: ($w | map(select(.hours >= 0) | $pr[.key] as $r | . + {pr_hours: h($r.created; .q), merge_hours: h($r.merged; .q)} | del(.q))),
     retried: ([.tickets[]? | select((.attempts // 0) > 1)] | length), tickets: (.tickets | length)}'
 }
 
