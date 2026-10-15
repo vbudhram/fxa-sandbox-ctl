@@ -1301,7 +1301,7 @@ function renderStats() {
     && (SF.model === "all" || r.model === SF.model) && (!q || r.key.toLowerCase().includes(q)); });
   const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   // A Slack conversation counts once: its resumes share conv, the chain's first session.
-  const spend = sum(rows), keys = new Set(rows.map(r => r.conv ?? r.key));
+  const spend = sum(rows), keys = new Set(rows.map(r => r.conv ?? r.key)), compute = rows.reduce((x, r) => x + (r.compute_usd || 0), 0);
   // Pipeline runs priced before the proxy (cost_source) count the main agent only: about half their cost.
   const mainOnly = rows.filter(r => r.src === "pipeline" && r.main_only).length;
   // Buckets: days for a short range, weeks (from Monday) for a long one.
@@ -1337,7 +1337,7 @@ function renderStats() {
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and conversations", keys.size, `up to ${Math.max(...group(conv).map(g => g.rs.length))} runs on one`)}
-      ${kpi("Spend", usd(spend), mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "estimated from tokens")}
+      ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
       ${kpi("Per run", usd(spend / rows.length), `median ${usd(med(rows.map(r => r.usd)) ?? 0)}`)}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
     <div class="charts"><div class="chart"><h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div></div>
@@ -1345,6 +1345,9 @@ function renderStats() {
     <div class="three">
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
         ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}` : ""}
+        ${(() => { const ps = group(r => r.src === "slack" ? (r.who || "name not recorded") : null).filter(g => g.name);
+          return ps.length ? `<h2 style="margin-top:var(--s4)">By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
+            return `<div class="kv"><b>${esc(g.name)}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""; })()}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
       <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group(conv).sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Spend by model<span class="note">all runs</span></h2>${(() => {
@@ -1366,7 +1369,8 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const prs = all.filter(p => { const t = Date.parse(p.created); return t >= lo && t < hi
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
   if (!prs.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened in this range matches these filters." : "No PR list yet."}</div>`;
-  const cost = p => rows.reduce((x, r) => x + (r.prn === p.n || (r.src === "pipeline" && r.key === p.key) ? r.usd || 0 : 0), 0);
+  // LLM and the session's runner compute, where it was recorded.
+  const cost = p => rows.reduce((x, r) => x + (r.prn === p.n || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
   const hrs = p => (Date.parse(p.merged) - Date.parse(p.created)) / 3600000, dur = h => h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`;
   const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
   const by = s => prs.filter(p => p.state === s), merged = by("MERGED"), closed = by("CLOSED"), open = by("OPEN");
@@ -1386,7 +1390,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
       ${kpi("Merged", merged.length, `${rate(merged.length, closed.length)} of those merged or closed`)}
       ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
       ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : "&nbsp;")}
-      ${kpi("Cost per merged PR", merged.length ? usd(med(mc)) : "—", merged.length ? `median · ${usd(mc.reduce((a, b) => a + b, 0))} in all` : "&nbsp;")}</div>
+      ${kpi("Cost per merged PR", merged.length ? usd(med(mc)) : "—", merged.length ? `median · ${usd(mc.reduce((a, b) => a + b, 0))} in all · LLM and session compute` : "&nbsp;")}</div>
     <div class="charts"><div class="chart"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div></div>
       <div class="chart"><h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
         return a.length ? kv(`<b>${l}</b>`, `${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; }).join("")}
