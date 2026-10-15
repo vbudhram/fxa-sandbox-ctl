@@ -863,7 +863,23 @@ function renderRunning() {
     (recent.length ? `<h2 style="margin:var(--s4) 0 var(--s2)">Recent sessions<a class="note" href="#sessions/paused" style="color:var(--link)">All sessions</a></h2>` +
       recent.map(s => `<a class="runrow" href="#sessions/${s.state === "paused" ? "paused" : "stopped"}/${esc(s.key)}"><span class="ldot"></span><span class="t">${esc(firstLine(s.request))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${esc(s.state)}</span></a>`).join("") : ""));
 }
-const firstLine = t => String(t ?? "").split("\n\nEarlier messages")[0].split("\n")[0].slice(0, 160) || "(no request)";
+// A session's title: the person's words, not the prompt the host wrapped them in.
+function firstLine(t) {
+  const [head, ctx = ""] = String(t ?? "").split("\n\nEarlier messages");
+  const owner = (ctx.match(/^> owner: (.+)$/m)?.[1] ?? "").replace(/^(@\S+\s+)+/, "");
+  const ci = head.match(/^CI failed on the PR: ([^\n]+)/), ans = head.match(/^My answer: (.+)$/m);
+  let line = ci ? `CI failed: ${ci[1]}` : /^Copilot reviewed the PR/.test(head) ? "Copilot review round"
+    : /^The engineer tapped Open PR/.test(head) ? "Open PR" : ans ? ans[1]
+    : /^\(From someone else/.test(head) ? head.split("\n")[1] ?? ""
+    : /^Messages in the thread that were not for you/.test(head) ? "Reply in the thread" : head.split("\n")[0];
+  if (!/\w/.test(line) || /^The host uses these drafts/.test(line)) line = owner || line;
+  return line.slice(0, 160) || "(no request)";
+}
+// The list's day groups, from a session's start (seconds).
+function sessDay(c) {
+  const d = new Date().setHours(0, 0, 0, 0) / 1000 - Number(c || 0);
+  return d <= 0 ? "Today" : d <= 86400 ? "Yesterday" : d <= 6 * 86400 ? "This week" : "Older";
+}
 
 // Sessions: a list by state, and the selected session in detail.
 const SESS_STATES = { live: ["starting", "active", "wrapping"], paused: ["paused"], stopped: ["stopped", "failed", "pr_open"], answers: [] };  // answers: no session record
@@ -2025,8 +2041,9 @@ function sideGroups() {
   const q = Q.trim().toLowerCase(), hit = t => !q || String(t).toLowerCase().includes(q);
   if (VIEW === "sessions") {
     const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => hit(s.key + " " + (s.request ?? "")));
-    return [{ items: list.map(s => { const [st, cls] = sessStatus(s), c = s.agent?.cost_usd ?? s.agent?.cost_so_far ?? (JSON.parse(s.summary || "{}").cost);
-      return { id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(s.request), m: [stamp(s.created), st, `${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}`, c ? usd(c) : ""] }; }) }];
+    const items = list.map(s => { const [st, cls] = sessStatus(s), c = s.agent?.cost_usd ?? s.agent?.cost_so_far ?? (JSON.parse(s.summary || "{}").cost);
+      return { day: sessDay(s.created), id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(s.request), m: [stamp(s.created), st, `${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}`, c ? usd(c) : ""] }; });
+    return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "pipeline") {
     const rows = laneRows().filter(r => hit(r.t.key + " " + (r.t.summary ?? "")));
