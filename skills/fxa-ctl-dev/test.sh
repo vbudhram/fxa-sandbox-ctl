@@ -58,7 +58,7 @@ run_here() {
   fi
   run_pool "$HOST" "${picked[@]}" || bad=1
   if [ "$i" = 1 ]; then
-    for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
+    for f in fxa-sandbox-ctl lib/*.sh templates/*.sh infra/*/*.sh infra/firecracker/fc infra/answer/fxa-git-ro skills/*/*.sh profiles/*/boot.sh profiles/*/skills/*/*.sh; do bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; }; done
   fi
   if [ -n "$py" ]; then wait "$pyp" || bad=1; cat "$py"; rm -f "$py"; fi
   [ "$bad" = 0 ] && echo "$HOST: all checks pass" || rc=1
