@@ -42,7 +42,7 @@ check "another key's record does not count" refused "$(guard)"
 g -C "$tmp/wt" reset -q --hard
 
 # ── The approver check ──
-PIPE_TOOLING_LABEL=ai-fixme-allow-tooling PIPE_TOOLING_APPROVERS="acct-boss, acct-lead" PIPE_JIRA_BASIC=u:t PIPE_JIRA_SITE=https://jira.example
+PIPE_TOOLING_LABEL=ai-fixme-allow-tooling PIPE_TOOLING_APPROVERS="Boss Person:acct-boss, Lead Person:acct-lead,acct-bare" PIPE_JIRA_BASIC=u:t PIPE_JIRA_SITE=https://jira.example
 add() { printf '{"author":{"accountId":"%s"},"items":[{"field":"labels","fromString":"%s","toString":"%s"}]}' "$1" "$2" "$3"; }
 labels='{"fields":{"labels":["ai-fixme","ai-fixme-allow-tooling"]}}'
 log_by() { printf '{"isLast":true,"total":2,"values":[%s,%s]}' "$(add acct-x '' ai-fixme)" "$(add "$1" ai-fixme 'ai-fixme ai-fixme-allow-tooling')"; }
@@ -53,7 +53,9 @@ _jira_rest_get() {
   esac
 }
 approver() { jira_tooling_approver "$1" 2>/dev/null || echo none; }
-changelog="$(log_by acct-lead)"; check "the label added by an approver counts" acct-lead "$(approver FXA-7)"
+changelog="$(log_by acct-lead)"; check "the label added by an approver counts, with the name from the list" "acct-lead Lead Person" "$(approver FXA-7)"
+changelog="$(log_by acct-bare)"; check "an approver listed by ID alone shows the ID as the name" "acct-bare acct-bare" "$(approver FXA-7)"
+changelog="$(log_by "Lead Person")"; check "an author whose ID is a listed name does not count" none "$(approver FXA-7)"
 changelog="$(log_by acct-other)"; check "the label added by another account does not count" none "$(approver FXA-7)"
 changelog="$(log_by acct-lead)"
 check "a failed changelog read does not count" none "$(LOG_FAILS=1 approver FXA-7)"
@@ -85,15 +87,15 @@ launch() {
     _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_holding_new() { return 1; }
     pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
     worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
-    jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo acct-lead; }
+    jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-lead Lead Person"; }
     cmd_launch FXA-7 fxa-1 >/dev/null
   ' "$tmp/fakectl" "$here" "$tmp"
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/child" ] && break; sleep 0.3; done
   printf '%s|%s|%s' "$(cat "$tmp/child" 2>/dev/null)" \
-    "$(grep -c '^tooling: scripts allowed by acct-lead (label ai-fixme-allow-tooling)$' "$tmp/state/FXA-7.launch.log")" \
+    "$(grep -c '^tooling: scripts allowed by Lead Person \[acct-lead\] (label ai-fixme-allow-tooling)$' "$tmp/state/FXA-7.launch.log")" \
     "$(cat "$tmp/state/tooling/FXA-7" 2>/dev/null || echo -)"
 }
-check "an approved label: the child gets the scope, the log says who, the key records it" "scripts|1|scripts acct-lead" "$(APPROVED=1 launch)"
+check "an approved label: the child gets the scope, the log says who, the key records it" "scripts|1|scripts acct-lead Lead Person" "$(APPROVED=1 launch)"
 check "no approved label: no scope, no log line, no record" "none|0|-" "$(launch)"
 
 # ── progress shows the scope ──

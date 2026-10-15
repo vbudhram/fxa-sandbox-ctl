@@ -364,12 +364,14 @@ _jira_rest_get() {
   printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "${PIPE_JIRA_SITE}$1" 2>/dev/null
 }
 
-# jira_tooling_approver <KEY>   The account ID that added PIPE_TOOLING_LABEL, when the ticket has
-#   the label and the newest change that added it came from PIPE_TOOLING_APPROVERS. Anyone with
-#   edit access can add a label, and CI runs the pushed branch with secrets before review, so any
-#   unknown (no approvers, no login, a failed read) returns 1: the label does not count.
+# jira_tooling_approver <KEY>   "<accountId> <name>" of the approver who added PIPE_TOOLING_LABEL,
+#   when the ticket has the label and the newest change that added it came from an account in
+#   PIPE_TOOLING_APPROVERS ("Name:accountId" or "accountId", comma separated). The match is on the
+#   ID: anyone can take a display name. Anyone with edit access can add a label, and CI runs the
+#   pushed branch with secrets before review, so any unknown (no approvers, no login, a failed
+#   read) returns 1: the label does not count.
 jira_tooling_approver() {
-  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" page last who
+  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" page last who entry name
   [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "$label" ] && [ -n "${PIPE_TOOLING_APPROVERS:-}" ] \
     && [ -n "${PIPE_JIRA_BASIC:-}" ] || return 1
   _retry _jira_rest_get "/rest/api/3/issue/${key}?fields=labels" \
@@ -385,8 +387,14 @@ jira_tooling_approver() {
       | select(any(.items[]?; .field == "labels"
           and ((.toString // "") | split(" ") | index($l)) and (((.fromString // "") | split(" ") | index($l)) | not)))
       | .author.accountId // ""] | last // ""' <<< "$page" 2>/dev/null)" || return 1
-  [ -n "$who" ] && [[ ",${PIPE_TOOLING_APPROVERS// /}," == *",${who},"* ]] || return 1
-  printf '%s\n' "$who"
+  [ -n "$who" ] || return 1
+  while IFS= read -r entry; do
+    entry="$(printf '%s' "$entry" | sed 's/^ *//; s/ *$//')"
+    [ "${entry##*:}" = "$who" ] || continue
+    name="${entry%:*}"; [ "$name" = "$entry" ] && name="$who"
+    printf '%s %s\n' "$who" "$name"; return 0
+  done < <(tr ',' '\n' <<< "$PIPE_TOOLING_APPROVERS")
+  return 1
 }
 
 # jira_close_merged <KEY>

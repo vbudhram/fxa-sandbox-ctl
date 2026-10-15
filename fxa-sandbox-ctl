@@ -1959,7 +1959,7 @@ cmd_launch() {
   # Delete, not truncate: APFS keeps the inode's birth time, which telemetry reads as the start.
   rm -f "$log"
   echo "Launched at: $(date +%s)" > "$log"
-  [ -n "$tooling_by" ] && echo "tooling: scripts allowed by ${tooling_by} (label ${PIPE_TOOLING_LABEL})" >> "$log"
+  [ -n "$tooling_by" ] && echo "tooling: scripts allowed by ${tooling_by#* } [${tooling_by%% *}] (label ${PIPE_TOOLING_LABEL})" >> "$log"
   # Each line also lands in <KEY>.launch.tsv with its seconds since launch; see launch-times.
   env ${tooling_by:+FXA_ALLOW_TOOLING_SCOPE=scripts} nohup "$0" "${args[@]}" 2>&1 < /dev/null \
     | nohup perl -e "$_SESSION_STAMP_PL" "$log" "${log%.log}.tsv" > /dev/null 2>&1 &
