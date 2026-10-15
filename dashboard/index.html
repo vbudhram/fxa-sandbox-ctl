@@ -1453,7 +1453,7 @@ function llmCard(l) {
     for (const k of ["calls", "usd", "input", "cache_read", "cache_write", "output"]) x[k] += r[k] || 0; return m; }, {})).sort((a, b) => b.usd - a.usd);
   const all = bm.reduce((x, r) => x + r.usd, 0) || 1;
   const models = bm.length ? `<div class="kv"><b>By model, these days</b><span></span></div>${bm.map(r => `<div class="kv"><span>${esc(modelName(r.model))}</span><span><b>${usd(r.usd)}</b> · ${Math.round(r.usd / all * 100)}% · ${r.calls} calls · ${tokn(r.cache_read)} cache read · ${tokn(r.cache_write)} written · ${tokn(r.output)} out</span></div>`).join("")}` : "";
-  return `<div class="chart"><h2>LLM spend<span class="note">proxy log, all runs</span></h2>
+  return `<div class="chart"><h2>LLM spend<span class="note">proxy log, test runs left out</span></h2>
     ${models}
     <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
     ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
