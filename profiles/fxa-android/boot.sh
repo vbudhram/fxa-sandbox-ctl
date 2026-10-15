@@ -10,7 +10,8 @@ R=/run/fxa-profile READY=/run/fxa-profile/ready FAIL=/run/fxa-profile/failed
 install -d -m 755 -o root -g root "$R"; rm -f "$READY" "$FAIL"
 step() { echo "$(date -u +%T) $*"; }
 die() { step "FAILED: $*"; echo "$*" > "$FAIL"; chmod 644 "$FAIL"; exit 1; }
-as_agent() { sudo -u agent -H bash -c "source /etc/agent-env.sh && $1" < /dev/null; }
+# cd: the caller's directory is the ssh user's home, which agent cannot read, and there the emulator's QEMU exits at start.
+as_agent() { sudo -u agent -H bash -c "cd && source /etc/agent-env.sh && $1" < /dev/null; }
 adb_() { as_agent "adb $*"; }
 t0=$(date +%s)
 
@@ -23,9 +24,10 @@ if ! as_agent "adb devices" | grep -q '^emulator-.*device$'; then
   as_agent "setsid nohup emulator -avd fxa -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save \
     -memory 4096 -cores 2 > $A/.emulator.log 2>&1 < /dev/null &"
 fi
+STOP='FATAL|give up|exits abnormally'
 until [ "$(adb_ shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; do
   [ $(( $(date +%s) - t0 )) -lt 300 ] || die "the emulator did not boot in 300 s (see $A/.emulator.log)"
-  grep -qE 'FATAL|give up' "$A/.emulator.log" 2>/dev/null && die "the emulator stopped: $(grep -m1 -E 'FATAL|give up' "$A/.emulator.log")"
+  grep -qE "$STOP" "$A/.emulator.log" 2>/dev/null && die "the emulator stopped: $(grep -m1 -E "$STOP" "$A/.emulator.log")"
   sleep 3
 done
 step "booted after $(( $(date +%s) - t0 ))s"

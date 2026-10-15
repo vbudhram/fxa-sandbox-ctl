@@ -73,8 +73,7 @@ FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-standard
 # --android: the Android emulator needs KVM, which no Arm or Firecracker runner has. An x86
 # type with nested virtualization, its own image (amd64, the SDK and a Fenix build), a bigger disk.
 FXA_GCE_MACHINE_TYPE_ANDROID="${FXA_GCE_MACHINE_TYPE_ANDROID:-n2-standard-8}"
-# Then c3 (nested virtualization too). Not n1: on an n1 (Haswell) the emulator's QEMU exits at
-# start, with or without KVM, where the same AVD boots on n2 (tested 2026-10-15).
+# Then c3 (nested virtualization too).
 FXA_GCE_MACHINE_FALLBACK_ANDROID="${FXA_GCE_MACHINE_FALLBACK_ANDROID-c3-standard-8}"
 FXA_GCE_IMAGE_ANDROID="${FXA_GCE_IMAGE_ANDROID:-fxa-dev-android}"
 FXA_GCE_DISK_GB_ANDROID="${FXA_GCE_DISK_GB_ANDROID:-150}"
