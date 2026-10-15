@@ -892,6 +892,17 @@ function sessUsd(s) {
   let sm = {}; try { sm = JSON.parse(s.summary || "{}"); } catch {}
   return a.cost_usd ?? a.cost_so_far ?? STAT_USD.get(s.key) ?? sm.cost;
 }
+// One row per Slack conversation: a resume's newer session stands for the ones it resumed.
+// sessHeads: the sessions no other session resumes; chainOf: a head and the sessions behind it, newest first.
+function sessHeads(ss) {
+  const older = new Set(ss.map(s => s.resume_from).filter(Boolean));
+  return ss.filter(s => !older.has(s.key));
+}
+function chainOf(s, ss) {
+  const by = new Map(ss.map(x => [x.key, x])), out = [];
+  for (let x = s; x && out.length < 50; x = by.get(x.resume_from)) out.push(x);
+  return out;
+}
 // The list's day groups, from a session's start (seconds).
 function sessDay(c) {
   const d = new Date().setHours(0, 0, 0, 0) / 1000 - Number(c || 0);
@@ -960,9 +971,10 @@ document.addEventListener("click", e => {
 function renderSess() {
   if (SESS_TAB === "answers") return renderAnswers();
   const ss = AGENTS?.sessions ?? [];
-  Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? ss.filter(s => st.includes(s.state)).length : ""; });
-  const list = ss.filter(s => SESS_STATES[SESS_TAB].includes(s.state));
-  const sel = list.find(s => s.key === SESS_SEL) || list[0];
+  const hs = sessHeads(ss);
+  Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? hs.filter(s => st.includes(s.state)).length : ""; });
+  const list = hs.filter(s => SESS_STATES[SESS_TAB].includes(s.state));
+  const sel = ss.find(s => s.key === SESS_SEL && SESS_STATES[SESS_TAB].includes(s.state)) || list[0];
   const isLive = sel && live(sel), showTerm = isLive && SX.term;
   // The frame changes only with the selection or a toggle, so the thread and
   // terminal inside it keep their DOM, scroll and loaded images between polls.
@@ -2057,7 +2069,7 @@ function panelState() {
 }
 function tabCount(t) {
   const ss = AGENTS?.sessions ?? [];
-  if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? ss.filter(s => SESS_STATES[t].includes(s.state)).length : "";
+  if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
   if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length) : "";
@@ -2079,9 +2091,13 @@ function renderHeader() {
 function sideGroups() {
   const q = Q.trim().toLowerCase(), hit = t => !q || String(t).toLowerCase().includes(q);
   if (VIEW === "sessions") {
-    const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => hit(s.key + " " + (s.request ?? "")));
-    const items = list.map(s => { const [st, cls] = sessStatus(s), c = sessUsd(s);
-      return { day: sessDay(s.created), id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(s.request), m: [stamp(s.created), st, `${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}`, c ? usd(c) : ""] }; });
+    const all = AGENTS?.sessions ?? [];
+    const list = sessHeads(all).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => hit(s.key + " " + (s.request ?? "")));
+    const items = list.map(s => { const [st, cls] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0);
+      // The title is what the person first asked: the chain's first session's request.
+      const turns = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
+      return { day: sessDay(s.created), id: s.key, d: cls === "info" && LIVE_SESSION.includes(s.state) ? "live" : s.pr_url ? "pr" : cls, t: firstLine(ch[ch.length - 1].request),
+        m: [stamp(s.created), st, ch.length > 1 ? `${ch.length} sessions` : "", `${turns} turn${turns === 1 ? "" : "s"}`, c ? usd(c) : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "pipeline") {
