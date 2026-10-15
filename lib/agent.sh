@@ -1318,7 +1318,9 @@ _runner_postmortem() {
     free -m | awk "/^Mem:/ {print \"memory: \" \$3 \" of \" \$2 \" MB used\"} /^Swap:/ {print \"swap: \" \$3 \" MB used\"}"
     df -h /workspace 2>/dev/null | awk "NR == 2 {print \"disk: \" \$3 \" of \" \$2 \" used (\" \$5 \")\"}"
     dmesg 2>/dev/null | grep -E "Out of memory: Killed process" | tail -3
-    journalctl -u ssh --no-pager -o cat 2>/dev/null | grep -E "MaxStartups throttling|past MaxStartups" | tail -2' 2>/dev/null)" || return 0
+    journalctl -u ssh --no-pager -o cat 2>/dev/null | grep -E "MaxStartups throttling|past MaxStartups" | tail -2
+    if [ -f /run/fxa-profile/failed ]; then echo "profile boot failed: $(head -c 300 /run/fxa-profile/failed | tr "\n" " ")"
+      tail -n 5 /var/log/profile-boot.log 2>/dev/null | sed "s/^/  boot: /"; fi' 2>/dev/null)" || return 0
   [ -n "$out" ] || return 0
   echo "Runner '${name}' before it goes:"
   printf '%s\n' "$out" | sed 's/^/  /'
@@ -1327,6 +1329,9 @@ _runner_postmortem() {
   { date -u +%FT%TZ; printf '%s\n' "$out"; } > "$keep" 2>/dev/null || true
   local oom; oom="$(printf '%s\n' "$out" | grep -m1 'Out of memory' || true)"
   [ -z "$oom" ] || errors_record runner oom "$name" "runner memory" "${oom}" "" 2>/dev/null || true
+  # A team profile's boot failure is on the runner only, and goes with it.
+  local pb; pb="$(printf '%s\n' "$out" | grep -m1 '^profile boot failed:' || true)"
+  [ -z "$pb" ] || errors_record runner profile_boot "$name" "runner profile boot" "${pb:0:300}" "$keep" 2>/dev/null || true
   return 0
 }
 
