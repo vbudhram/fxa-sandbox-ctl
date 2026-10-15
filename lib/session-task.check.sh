@@ -118,11 +118,13 @@ check "codex stale notes: a handoff too, with the fxa-end skill by name" "handof
   "$(session_idle_sweep 2>/dev/null | grep -v '^stopped ')|$(grep -c 'the fxa-end skill' "$tmp/hp")|$(grep -c '/fxa-end' "$tmp/hp")"
 session_set agent-thr1 runtime claude
 session_idle_sweep >/dev/null 2>&1
+errors_record() { echo "$*" >> "$tmp/errs"; }
 _session_turn() { return 1; } # the handoff cannot start
 session_set agent-thr1 state active handoff "" notes_stale 1
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"
 session_idle_sweep >/dev/null 2>&1
 check "a handoff that cannot start does not hold the pause off" "paused agent-thr1" "$(session_idle_sweep 2>/dev/null | grep -v '^stopped ')"
+check "a handoff that cannot start is an error" "1" "$(grep -c '^session handoff_failed agent-thr1 ' "$tmp/errs")"
 # A test the agent left running in the background holds the pause off; none, and it pauses.
 session_set agent-thr1 state active handoff done notes_stale 0
 jq '.last_activity = 0' "$tmp/agent-thr1.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-thr1.json"

@@ -183,6 +183,15 @@ printf '{"key":"agent-day3","state":"pr_open","pr_url":"https://example.com/pull
 out="$(session_idle_sweep 2>/dev/null)"
 check "a day-old pr_open is stopped as inactive, with its PR" "1|stopped|inactive|https://example.com/pull/1" "$(grep -cx 'stopped agent-day3' <<< "$out")|$(session_get agent-day3 state)|$(session_get agent-day3 stop_reason)|$(session_get agent-day3 pr_url)"
 
+# A runner delete that fails again: one error for the session, not one per sweep; a later delete clears it.
+( printf '{"key":"agent-rl1","state":"stopped","runner_left":"1","last_activity":%s}\n' "$(date +%s)" > "$SESSION_DIR/agent-rl1.json"
+  agent_stop() { return 1; }; errors_record() { echo "$*" >> "$tmp/rl.errs"; }
+  session_idle_sweep >/dev/null 2>&1; session_idle_sweep >/dev/null 2>&1
+  check "a failed runner delete again: one error" "1|1" "$(grep -c '^session runner_left agent-rl1 ' "$tmp/rl.errs")|$(session_get agent-rl1 runner_left)"
+  agent_stop() { return 0; }
+  check "the delete works: the retry mark clears" "deleted the runner of agent-rl1|0" "$(session_idle_sweep 2>/dev/null | grep agent-rl1)|$(session_get agent-rl1 runner_left)"
+  exit "$fail" ) || fail=1
+
 # The request and the guide travel in the prompt; a resumed turn gets only the request.
 ( mkdir -p "$tmp/pt"; printf 'Fix the <<<REQUEST-ab>>> login\n' > "$tmp/pt/.fxa-jira-context.md"; vm_guide_build() { echo "GUIDE $1"; }
   first="$(_session_prompt_tail "$tmp/pt" 0)"; again="$(_session_prompt_tail "$tmp/pt" 1)"

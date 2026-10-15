@@ -648,7 +648,12 @@ session_idle_sweep() {
     # A stop whose runner delete failed: try the delete again until the runner goes.
     if [ "$(jq -r '.runner_left // ""' "$f")" = 1 ]; then
       _session_lock "$key" || continue
-      agent_stop "$(worktree_branch_for "$key")" >/dev/null 2>&1 && session_set "$key" runner_left 0 && echo "deleted the runner of ${key}"
+      if agent_stop "$(worktree_branch_for "$key")" >/dev/null 2>&1; then session_set "$key" runner_left 0 && echo "deleted the runner of ${key}"
+      # Once per session: the sweep retries every minute.
+      elif [ "$(jq -r '.runner_left_logged // ""' "$f")" != 1 ]; then
+        errors_record session runner_left "$key" "idle sweep" "the runner delete failed again; each sweep retries it" "" 2>/dev/null || true
+        session_set "$key" runner_left_logged 1
+      fi
       _session_unlock "$key"; continue
     fi
     # A pause nobody came back to in a day is over: stopped. A reply still resumes it from the saved work.
@@ -675,7 +680,8 @@ session_idle_sweep() {
         if [ "$(session_get "$key" turn_open)" != 1 ]; then
           # Codex has no slash commands: it gets the skill by name.
           local hp="$_SESSION_HANDOFF_PROMPT"; [ "$(session_get "$key" runtime)" = codex ] && hp="${hp//\/fxa-end/the fxa-end skill}"
-          if _session_turn "$key" "$hp" quiet >/dev/null 2>&1; then echo "handoff ${key}"; else session_set "$key" handoff done; fi
+          if _session_turn "$key" "$hp" quiet >/dev/null 2>&1; then echo "handoff ${key}"
+          else session_set "$key" handoff done; errors_record session handoff_failed "$key" "idle sweep" "the notes turn before the pause could not start; it pauses without new notes" "" 2>/dev/null || true; fi
         fi
         _session_unlock "$key"
       fi
