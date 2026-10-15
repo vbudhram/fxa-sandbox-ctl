@@ -6,7 +6,7 @@
    shows no FAIL, and you printed its verdict table. A fix has a unit test that fails without it.
    Run long commands in the foreground with a timeout: a reply that waits on a background
    command ends the run.
-4. /code-simplifier, /ponytail-review, then /sync-review have run on
+4. /code-simplifier, then /sync-review (it runs /ponytail-review itself) have run on
    'git diff $(git merge-base HEAD origin/main)' plus untracked files, in one subagent that
    returns only its findings. You fixed each BLOCKER, and applied or declined (one line) the rest.
    After a fix, step 3 passes again.

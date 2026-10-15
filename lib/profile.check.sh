@@ -187,6 +187,9 @@ check "the other trees are checked for tracked changes, the work tree is not" "/
 : > "$tmp/dirtycmd"; check "a profile with no repo rows checks nothing" "|0" "$(_session_dirty_trees r1)|$(wc -c < "$tmp/dirtycmd" | tr -d ' ')"
 unset -f _session_sh
 
+# Sync Storage runs ponytail-review once: /sync-review runs it, and nothing else asks for it again.
+check "sync-storage asks for ponytail-review only through sync-review" "1|0|0" \
+  "$(grep -c '/ponytail-review' "$root/profiles/sync-storage/skills/sync-review/SKILL.md")|$(grep -c '/ponytail-review, then' "$root/profiles/sync-storage/goal.md")|$(grep -c 'and `/ponytail-review`' "$root/profiles/sync-storage/CLAUDE.md")"
 # A profile's boot.sh is shipped and started as root, detached; FxA has none.
 eval "$(sed -n '/^_gce_profile_boot() {/,/^}/p' "$root/lib/agent.sh")"
 vm_exec() { printf '%s\n' "${*: -1}" >> "$tmp/bootx"; }

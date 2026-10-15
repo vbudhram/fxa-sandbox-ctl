@@ -12,5 +12,5 @@ full manual is the Sync Storage section of `/etc/vm-agent-guide.md`.
 - The server runs on :8000 with `~/.syncstorage.toml`; its log is `~/.syncstorage.log`.
 - Prove a change with `/sync-verify`: build, lint, the changed crates' tests, then your own
   reproduction checks, the protocol check and a real Firefox sync on the running server.
-- Review it with `/sync-review` (the repo's own review skills, then a Sync checklist) and `/ponytail-review`.
+- Review it with `/sync-review`: the repo's own review skills, a Sync checklist, then `/ponytail-review`. Do not run `/ponytail-review` again on its own.
 - This profile is read-only: the host ships the change as a patch, not a PR.
