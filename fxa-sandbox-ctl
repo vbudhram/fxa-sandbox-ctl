@@ -1418,8 +1418,16 @@ cmd_precheck() {
     case " $judged " in *" $key "*) ;; *) rm -f "$line" ;; esac
   done
 
+  # Inflight keys with a PR: a red check, or a gate that never reports, keeps a ticket inflight for days.
+  local inpr=""
+  for key in $(jira_inflight_keys); do
+    [ "$(pipeline_progress "$key" 2>/dev/null | awk '{print $2}')" = "pr" ] && inpr="${inpr}${inpr:+ }${key}"
+  done
   # Apply determinate drain rows here: a model turn to type `label merged` costs money.
   local drain_out drain_rc=0 h; drain_out="$(cmd_drain 2>&1)" || drain_rc=$?
+  # An inflight PR's conflict too: reconcile reads its checks, merge and close, but not its conflicts.
+  [ -z "$inpr" ] || drain_out="${drain_out}
+$(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     read -r key num state _ <<< "$line"
@@ -1462,11 +1470,8 @@ cmd_precheck() {
   done
   while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
 
-  # Include inflight keys with a PR: a red check keeps a ticket inflight for days.
-  local done_keys sweep; done_keys="$(jira_done_keys)"; sweep="$done_keys"
-  for key in $(jira_inflight_keys); do
-    [ "$(pipeline_progress "$key" 2>/dev/null | awk '{print $2}')" = "pr" ] && sweep="${sweep}${sweep:+ }${key}"
-  done
+  # Include inflight keys with a PR (inpr, above).
+  local done_keys sweep; done_keys="$(jira_done_keys)"; sweep="${done_keys}${done_keys:+${inpr:+ }}${inpr}"
   for key in $sweep; do
     ids="$(gh_feedback "$key" 2>/dev/null | jq -r '(.comments // [])[].id' | sort)"
     noted="${PIPE_STATE_DIR}/${key}.feedback-noted"

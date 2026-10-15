@@ -35,6 +35,12 @@ check "a failed drain keeps the notes: the same red after it stays quiet" "quiet
 cmd_drain() { :; }; q >/dev/null
 cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0 head=$(cat "$tmp/sha")"; }
 check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
+# An inflight PR's conflict wakes the pass too; its red stays reconcile's.
+( jira_done_keys() { :; }; jira_inflight_keys() { echo FXA-9; }; pipeline_progress() { echo "$1 pr 1"; }; gh_conflicts() { echo "source a.ts"; }
+  gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }
+  out="$(cmd_precheck 2>&1)"
+  check "an inflight PR's conflict wakes the pass, and its red does not come from the drain" "1|0" "$(grep -c '^drain: FXA-9 90 CONFLICT' <<< "$out")|$(grep -c 'FXA-9 90 RED' <<< "$out")"
+  exit "$fail" ) || fail=1
 # Info lines come after work lines, under one "info:" marker: claude-job.sh routes on the lines above it.
 pipeline_focus_key() { echo FXA-1; }; echo ccc > "$tmp/sha"
 cmd_precheck > "$tmp/pre" 2>&1
