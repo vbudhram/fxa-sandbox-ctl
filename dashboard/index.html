@@ -1305,8 +1305,8 @@ function renderStats() {
   const byDay = (end - Math.min(start, end)) <= 45 * DAY;
   const bucketOf = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); if (!byDay) d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const buckets = new Map();
-  for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0, merged: 0 });
-  rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; } });
+  for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0, merged: 0, low: 0 });
+  rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; if (r.src === "pipeline" && r.main_only) b.low++; } });
   (st.prs ?? []).forEach(p => { const b = p.merged && (SF.src === "all" || p.src === SF.src) && buckets.get(bucketOf(Date.parse(p.merged))); if (b) b.merged++; });
   const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
   const lbl = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -1314,8 +1314,8 @@ function renderStats() {
   // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
   const many = bl.length > 14, step = Math.ceil(bl.length / 7);
   const showDay = i => !many || i === bl.length - 1 || (i % step === 0 && bl.length - 1 - i >= step / 2);
-  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${k === "merged" ? `${b.merged} merged` : `${b.runs} runs · ${usd(b.spend)}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
-      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
+  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${k === "merged" ? `${b.merged} merged` : `${b.runs} runs · ${usd(b.spend)}${k === "spend" && b.low ? `<br>${b.low} priced at the main agent only, about half` : ""}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
+      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "spend" && b.low ? "repeating-linear-gradient(135deg, var(--purple) 0 4px, transparent 4px 7px)" : k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
       <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
   const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
   const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
