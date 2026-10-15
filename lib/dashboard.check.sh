@@ -27,5 +27,8 @@ globalThis.STATS = { rows: [{ src: "slack", key: "agent-a", usd: 10.19 }] };
 for (const [name, ss, want] of [["a stopped session has the Stats row cost, not the transcript cost", { key: "agent-a", summary: JSON.stringify({ cost: 15.1 }) }, 10.19],
   ["a live session has its runner cost", { key: "agent-a", agent: { cost_so_far: 3 } }, 3], ["no Stats row: the summary cost", { key: "agent-b", summary: JSON.stringify({ cost: 2 }) }, 2]]) {
   const got = sessUsd(ss); if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } }
+STATS.rows.push({ src: "pipeline", at: "2026-10-14T10:00:00Z", usd: 2 }, { src: "answer", at: "2026-10-15T10:00:00Z", usd: 0.5 });
+for (const [from, want] of [[undefined, 12.69], ["2026-10-15", 0.5]]) { const got = Math.round(rowSpend(from) * 100) / 100;
+  if (got === want) console.log("ok   spend from every source since " + from); else { console.log(`FAIL spend since ${from}: want [${want}] got [${got}]`); fail = 1; } }
 process.exit(fail);
-' "$(sed -n '/^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p' "$page")"
+' "$(sed -n '/^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function rowSpend(from) {/,/^}/p' "$page")"

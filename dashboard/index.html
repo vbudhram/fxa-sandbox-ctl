@@ -875,6 +875,10 @@ function firstLine(t) {
   if (!/\w/.test(line) || /^The host uses these drafts/.test(line)) line = owner || line;
   return line.slice(0, 160) || "(no request)";
 }
+// Spend from every source (pipeline runs, passes, Slack sessions, answers) since an ISO date, from the Stats rows.
+function rowSpend(from) {
+  return (STATS?.rows ?? []).filter(r => !from || (r.at ?? "") >= from).reduce((x, r) => x + (r.usd || 0), 0);
+}
 // One cost per session on every view: the live runner's (the proxy's total so far), else the Stats row's.
 let STAT_USD = new Map(), STAT_SRC = null;
 function sessUsd(s) {
@@ -1866,7 +1870,7 @@ function renderTickets() {
           staleSkips.map(skipRow).join("")}</div></details>` : "")));
 
   const t = s.telemetry;
-  put("footer", (t ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span><span><b>${usd(t.cost_usd)}</b> spend</span>
+  put("footer", (t ? `<span>all time: <b>${t.runs}</b> runs</span><span><b>${t.tickets}</b> tickets</span><span title="pipeline runs, passes, Slack sessions and quick answers"><b>${usd(STATS ? rowSpend() : t.cost_usd)}</b> spend</span>
       <span>median <b>${t.median_minutes}m</b></span><span>last recorded ${esc((t.last_recorded || "").slice(0, 10))}</span>` : `<span>no run telemetry yet</span>`) +
     `<span style="flex:1"></span><span>tickets snapshot took ${s.took_seconds}s</span>`);
 }
@@ -1913,7 +1917,7 @@ function renderToday() {
      : `<div class="stats" style="gap:var(--s4)">
           <span><b>${t.prs}</b> PR${t.prs === 1 ? "" : "s"} opened</span>
           <span><b>${t.tickets}</b> ticket${t.tickets === 1 ? "" : "s"}</span>
-          <span><b>${usd(t.cost_usd)}</b> spent</span>
+          <span title="pipeline runs, passes, Slack sessions and quick answers"><b>${usd(STATS ? rowSpend(new Date().toISOString().slice(0, 10)) : t.cost_usd)}</b> spent</span>
           ${t.jobs?.runs ? `<span title="the passes and triage runs themselves"><b>${usd(t.jobs.cost_usd)}</b> on ${t.jobs.runs} pass${t.jobs.runs === 1 ? "" : "es"}</span>` : ""}
           ${t.median_minutes != null ? `<span>median <b>${t.median_minutes}m</b></span>` : ""}
           <span class="sep"></span><span>runners now <b>${usd(g.runner_hourly_usd)}</b>/h</span>
