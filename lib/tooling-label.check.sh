@@ -97,6 +97,24 @@ launch() {
 }
 check "an approved label: the child gets the scope, the log says who, the key records it" "scripts|1|scripts acct-lead Lead Person" "$(APPROVED=1 launch)"
 check "no approved label: no scope, no log line, no record" "none|0|-" "$(launch)"
+# The context file asks for the Android runner with one line, as it does for the functional tests.
+cat > "$tmp/fakectl" <<'EOF2'
+#!/bin/bash
+printf '%s\n' "$*" > "$CHILD_OUT"
+EOF2
+printf 'Ground truth.\nLaunch with --android\n' > "$tmp/ctx.md"
+args_of() { rm -f "$tmp/child"; CHILD_OUT="$tmp/child" bash -c '
+    set -euo pipefail; source "$2/cmd_launch.sh"
+    PIPE_STATE_DIR="$2/state" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$2" PIPE_MIN_FREE_GB=1 _SESSION_STAMP_PL="while (<STDIN>) {}"
+    _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_holding_new() { return 1; }
+    pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
+    worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
+    jira_tooling_approver() { return 1; }
+    cmd_launch FXA-7 fxa-1 "$3" >/dev/null 2>&1' "$tmp/fakectl" "$here" "$tmp" "$1"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/child" ] && break; sleep 0.3; done; cat "$tmp/child" 2>/dev/null; }
+check "a context line Launch with --android passes --android to the run" 1 "$(args_of "$tmp/ctx.md" | grep -c -- ' --android')"
+printf 'Ground truth.\n' > "$tmp/ctx2.md"
+check "no line: no --android" 0 "$(args_of "$tmp/ctx2.md" | grep -c -- '--android')"
 
 # ── progress shows the scope ──
 eval "$(sed -n '/^pipeline_progress() {/,/^}/p' "$here/pipeline.sh")"

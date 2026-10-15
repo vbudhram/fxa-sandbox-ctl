@@ -70,6 +70,11 @@ FXA_GCE_IMAGE="${FXA_GCE_IMAGE:-fxa-dev-base}"
 # manager's connections while it did.
 FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE:-c4a-standard-4}"
 FXA_GCE_MACHINE_TYPE_FUNCTIONAL="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL:-c4a-standard-4}"
+# --android: the Android emulator needs KVM, which no Arm or Firecracker runner has. An x86
+# type with nested virtualization, its own image (amd64, the SDK and a Fenix build), a bigger disk.
+FXA_GCE_MACHINE_TYPE_ANDROID="${FXA_GCE_MACHINE_TYPE_ANDROID:-n2-standard-8}"
+FXA_GCE_IMAGE_ANDROID="${FXA_GCE_IMAGE_ANDROID:-fxa-dev-android}"
+FXA_GCE_DISK_GB_ANDROID="${FXA_GCE_DISK_GB_ANDROID:-150}"
 FXA_GCE_NETWORK="${FXA_GCE_NETWORK:-fxa-sandbox}"
 # Manager service account from infra/gce/setup.sh. gcloud reads this variable
 # on every call, ssh's IAP ProxyCommand included, so one export covers them all.

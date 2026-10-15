@@ -50,6 +50,8 @@ _fc_wake() {
 # session started before the spike was turned on must be deleted as an instance.
 _fc_owns() {
   [ -f "${LOG_DIR}/$1.zone" ] && return 1
+  # An Android run needs KVM inside the runner, which a Firecracker guest does not have.
+  [ "${FXA_GCE_NESTED:-}" = 1 ] && return 1
   case "$1" in ${FXA_FC_NAMES:-agent-*}) return 0 ;; *) return 1 ;; esac
 }
 _fc_slot_of() { _fc list | awk -F'\t' -v n="$(vm_name "$1")" '$2 == n { print $1 }'; }

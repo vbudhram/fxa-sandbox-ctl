@@ -37,6 +37,9 @@ check "host will not start: GCE" "wake|gce-vm_clone" "$(UP=0 WAKE=0 vm_clone age
 _fc_vm_clone() { return 1; }
 check "every slot taken: GCE" "gce-vm_clone" "$(UP=1 vm_clone agent-a1 2>/dev/null)"
 check "a pipeline runner never wakes the host" "gce-vm_clone" "$(UP=0 WAKE=1 vm_clone fxa-auto-3 2>/dev/null)"
+_fc_vm_clone() { echo fc-clone; }
+check "an Android session never takes a slot, even with the host up" "gce-vm_clone" "$(FXA_GCE_NESTED=1 UP=1 vm_clone agent-a3 2>/dev/null)"
+_fc_vm_clone() { return 1; }
 touch "$LOG_DIR/agent-a2.zone"
 check "a runner already on GCE stays there" "gce-vm_clone" "$(UP=1 vm_clone agent-a2 2>/dev/null)"
 

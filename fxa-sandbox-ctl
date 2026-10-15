@@ -313,6 +313,7 @@ cmd_jira() {
   local create_pr="false"
   local worktree_slot=""
   local functional_tests="false"
+  local android="false"
   local private="false"
   local guardrails_file=""
   local rebase="false"
@@ -333,6 +334,8 @@ cmd_jira() {
       --create-pr)  create_pr="true"; shift ;;
       --functional-tests|--with-stack)
                     functional_tests="true"; shift ;;
+      # The stack, desktop Firefox and an Android emulator with Fenix, on an x86 runner.
+      --android)    android="true"; functional_tests="true"; shift ;;
       --runtime)    export FXA_AGENT_RUNTIME="$2"; shift 2 ;;
       --rebase)     rebase="true"; shift ;;
       -*)
@@ -377,6 +380,11 @@ cmd_jira() {
     export FXA_COPY_SECRETS=true
     # The stack plus Firefox workers needs more memory than a queue run.
     export FXA_GCE_MACHINE_TYPE="${FXA_GCE_MACHINE_TYPE_FUNCTIONAL}"
+  fi
+  # No Arm fallback: the image is amd64, and only an x86 type with nested virtualization runs the emulator.
+  if [ "$android" = "true" ]; then
+    export FXA_GCE_MACHINE_TYPE="$FXA_GCE_MACHINE_TYPE_ANDROID" FXA_GCE_IMAGE="$FXA_GCE_IMAGE_ANDROID" \
+      FXA_GCE_NESTED=1 FXA_GCE_MACHINE_FALLBACK="" FXA_GCE_DISK_GB="$FXA_GCE_DISK_GB_ANDROID"
   fi
 
   # Push and PR follow the private worktree's origin; secrets come from the public checkout.
@@ -1936,6 +1944,8 @@ cmd_launch() {
   [ -n "$ctx" ] && args+=(--guardrails "$ctx")
   # One line in the context asks for the full stack, the only route to a flow video.
   [ -n "$ctx" ] && grep -q '^Launch with --functional-tests' "$ctx" && args+=(--functional-tests)
+  # And one asks for the Android emulator with Fenix beside them (the fxa-android runner).
+  [ -n "$ctx" ] && grep -q '^Launch with --android' "$ctx" && args+=(--android)
   # An approved Jira label lets this launch change package.json scripts and _scripts/ (the finish
   # guard). Recorded for the key too, so a recovery finish without this env gets the same scope.
   local tooling_by="" tscope="${PIPE_STATE_DIR}/tooling/${key}"

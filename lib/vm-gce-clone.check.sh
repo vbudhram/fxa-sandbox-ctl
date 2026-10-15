@@ -18,7 +18,7 @@ calls="$tmp/calls"
 _gce() {
   case "$2 $3" in "instances describe") return 1 ;; esac
   local mt="" zone="" disk="" a prev=""; for a in "$@"; do case "$prev" in --machine-type) mt="$a" ;; --zone) zone="$a" ;; --boot-disk-type) disk="$a" ;; esac; prev="$a"; done
-  echo "$mt $zone $disk" >> "$calls"
+  echo "$mt $zone $disk" >> "$calls"; echo "$*" >> "$tmp/args"
   case "$(grep "^${mt}@${zone}=" "$tmp/out" | cut -d= -f2)" in
     ok) return 0 ;;
     out) echo "ZONE_RESOURCE_POOL_EXHAUSTED"; return 1 ;;
@@ -42,6 +42,20 @@ printf '%s\n' c4a-standard-4@z-a=out c4a-standard-4@z-b=out c4a-standard-4@z-c=o
 out="$(FXA_GCE_MACHINE_FALLBACK= vm_clone r3 2>&1)"; rc=$?
 check "no fallback: fails after the zones, and says which types" "1|3|1" "$rc|$(wc -l < "$calls" | tr -d ' ')|$(grep -c 'stocked out for c4a-standard-4\.' <<< "$out")"
 check "no runner at all: one capacity error" "all_zones_out" "$(paste -sd, "$tmp/errors")"
+# --android: an x86 type with nested virtualization, its own image and disk, and no Arm fallback.
+android() { FXA_GCE_NESTED=1 FXA_GCE_MACHINE_TYPE=n2-standard-8 FXA_GCE_MACHINE_FALLBACK= FXA_GCE_IMAGE=fxa-dev-android FXA_GCE_DISK_GB=150 vm_clone "$@"; }
+printf '%s\n' n2-standard-8@z-a=ok > "$tmp/out"; : > "$calls"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
+android r4 >/dev/null 2>&1
+a="$(cat "$tmp/args")"
+check "android: nested virtualization, the android image, a 150 GB disk" "1|1|1" \
+  "$(grep -c -- '--enable-nested-virtualization' <<< "$a")|$(grep -c -- '--image-family fxa-dev-android' <<< "$a")|$(grep -c -- '--boot-disk-size 150GB' <<< "$a")"
+printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out t2a-standard-4@z-a=ok > "$tmp/out"; : > "$calls"
+android r5 >/dev/null 2>&1; rc=$?
+check "android: every zone out fails, and never tries the Arm type" "1|0" "$rc|$(grep -c t2a "$calls")"
+printf '%s\n' c4a-standard-4@z-a=ok > "$tmp/out"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
+vm_clone r6 >/dev/null 2>&1
+check "a plain run: no nested virtualization, the 50 GB disk" "0|1" \
+  "$(grep -c -- '--enable-nested-virtualization' "$tmp/args")|$(grep -c -- '--boot-disk-size 50GB' "$tmp/args")"
 # The image build: c4a in every zone, then the Arm fallback with the disk type it takes.
 ( pat='/^vm_image_build() {/,/^}/p'; eval "$(sed -n "$pat" "$here/vm-gce.sh")"
   set -o pipefail; rm -f "$LOG_DIR/last-good-zone"  # as the controller runs it, and no zone first
