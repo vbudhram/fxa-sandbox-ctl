@@ -15,9 +15,11 @@ PIPE_STATE_DIR="$tmp" PIPE_REPO_SLUG="mozilla/fxa"
 gh() {
   case "$*" in
     "pr list"*) echo 7 ;;
-    *"--method POST"*) [ -n "${POST_FAILS:-}" ] && { echo "HTTP 403: Resource not accessible by integration" >&2; return 1; }; printf '%s\n' "$*" >> "$tmp/posts" ;;
+    *"--method POST"*) [ -n "${POST_FAILS:-}" ] && { echo "HTTP 403: Resource not accessible by integration" >&2; return 1; }; printf '%s\n' "$*" >> "$tmp/posts"
+      case "$*" in *replies*) echo 901 ;; *) echo i902 ;; esac ;;
     *issues/comments/55*) echo https://github.com/mozilla/fxa/pull/7#issuecomment-55 ;;
-    *pulls/7/comments*) echo '[{"id":1,"user":{"login":"Copilot","type":"Bot"},"author_association":"CONTRIBUTOR","path":"a.ts","line":3,"body":"no lint target"},
+    *pulls/7/comments*) [ -n "${AS_PERSON:-}" ] && { echo '[{"id":901,"in_reply_to_id":1,"user":{"login":"vbudhram","type":"User"},"author_association":"MEMBER","path":"a.ts","line":3,"body":"Not changed: the plugin adds it"}]'; return 0; }
+      echo '[{"id":1,"user":{"login":"Copilot","type":"Bot"},"author_association":"CONTRIBUTOR","path":"a.ts","line":3,"body":"no lint target"},
       {"id":2,"in_reply_to_id":1,"user":{"login":"fxa-bot[bot]","type":"Bot"},"author_association":"NONE","path":"a.ts","line":3,"body":"Not changed: the plugin adds it"}]' ;;
     *graphql*) echo '[]' ;;
     *pulls/7/reviews*|*issues/7/comments*) echo '[]' ;;
@@ -39,6 +41,8 @@ check "no reason, or a bad id, is refused" "1|1" \
   "$(gh_feedback FXA-1 decline 4 "" >/dev/null 2>&1; echo $?)|$(gh_feedback FXA-1 decline 'x;y' why >/dev/null 2>&1; echo $?)"
 check "a failed post records nothing, so the next pass can reply" "1|no" \
   "$(POST_FAILS=1 gh_feedback FXA-1 decline 5 why >/dev/null 2>&1; echo $?)|$(grep -qx 5 "$tmp/FXA-1.feedback-declined" && echo yes || echo no)"
+check "our reply is seen at once: posted as a person, it is still not feedback" "1|0" \
+  "$(grep -cx 901 "$tmp/FXA-1.feedback-seen")|$(AS_PERSON=1 gh_feedback FXA-1 | jq '.comments | length')"
 check "a failed post says why, and goes to the error store" "1|1" \
   "$(POST_FAILS=1 gh_feedback FXA-1 decline 6 why 2>&1 >/dev/null | grep -c 'could not reply on 6: HTTP 403: Resource not accessible')|$(grep -c '^github decline_failed FXA-1 feedback decline could not reply on 6: HTTP 403' "$tmp/errs")"
 exit "$fail"

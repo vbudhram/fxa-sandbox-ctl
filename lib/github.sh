@@ -270,15 +270,17 @@ gh_feedback() {
     [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> decline <id> <reason>" >&2; return 1; }
     grep -qx "$id" "$declined" 2>/dev/null && { echo "$key: already replied on $id"; return 0; }
     body="Not changed: ${why}"
-    local err=""
+    # rid: our reply's own id, seen at once, so it is never feedback, also when gh posts as a person, not the App.
+    local err="" rid="" ef; ef="$(mktemp)"
     case "$id" in
-      [0-9]*) err="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments/${id}/replies" -f body="$body" 2>&1 >/dev/null)" ;;
+      [0-9]*) rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments/${id}/replies" -f body="$body" --jq .id 2>"$ef")" ;;
       *) local url; url="$(gh api "repos/${PIPE_REPO_SLUG}/$( [ "${id:0:1}" = i ] && echo "issues/comments/${id#i}" || echo "pulls/${pr}/reviews/${id#r}")" --jq .html_url 2>/dev/null)" \
-           && [ -n "$url" ] && err="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})" 2>&1 >/dev/null)" ;;
-    esac || { err="$(printf '%s' "$err" | tr '\n' ' ' | cut -c1-200)"
+           && [ -n "$url" ] && rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})" --jq '"i\(.id)"' 2>"$ef")" ;;
+    esac || { err="$(tr '\n' ' ' < "$ef" | cut -c1-200)"; rm -f "$ef"
       echo "ERROR: could not reply on $id${err:+: $err}; check the PR before you try again" >&2
       errors_record github decline_failed "$key" "feedback decline" "could not reply on ${id}${err:+: $err}" "" 2>/dev/null || true; return 1; }
-    printf '%s\n' "$id" >>"$declined"; printf '%s\n' "$id" >>"$seen"; sort -u -o "$seen" "$seen" 2>/dev/null || true
+    rm -f "$ef"
+    printf '%s\n' "$id" >>"$declined"; printf '%s\n' "$id" ${rid:+"$rid"} >>"$seen"; sort -u -o "$seen" "$seen" 2>/dev/null || true
     echo "replied on $id: Not changed"
     return 0
   fi
