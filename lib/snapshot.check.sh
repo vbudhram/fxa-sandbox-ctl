@@ -122,6 +122,14 @@ rm -rf "$pd"
     "$(jq -c '.team_passes | map_values(del(.last))' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# A resume chain is one conversation: each row names the chain's first session.
+( export SESSION_DIR="$tmp/cv" PIPE_STATE_DIR="$tmp/cvps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"; db_on() { false; }
+  _session_records() { printf '%s\n' '{"key":"agent-c1","owner":"U1","created":1}' '{"key":"agent-c2","owner":"U1","created":2,"resume_from":"agent-c1"}' \
+    '{"key":"agent-c3","owner":"U1","created":3,"resume_from":"agent-c2"}' '{"key":"agent-c4","owner":"U1","created":4}' '{"key":"agent-c5","owner":"U1","created":5,"resume_from":"agent-c5"}'; }
+  check "stats: a resume chain is one conversation" "agent-c1 agent-c1|agent-c2 agent-c1|agent-c3 agent-c1|agent-c4 agent-c4|agent-c5 agent-c5" \
+    "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r '[.rows[] | "\(.key) \(.conv)"] | join("|")')"
+  exit "$fail" ) || fail=1
+
 # A pass row has the main model the job recorded (Haiku runs Claude Code's small steps); an old row has none.
 ( export SESSION_DIR="$tmp/pm" PIPE_STATE_DIR="$tmp/pmps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { false; }

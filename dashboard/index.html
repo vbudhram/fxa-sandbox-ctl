@@ -1300,7 +1300,8 @@ function renderStats() {
     && (SF.src === "all" || r.src === SF.src) && (SF.kind === "all" || r.kind === SF.kind)
     && (SF.model === "all" || r.model === SF.model) && (!q || r.key.toLowerCase().includes(q)); });
   const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
-  const spend = sum(rows), keys = new Set(rows.map(r => r.key));
+  // A Slack conversation counts once: its resumes share conv, the chain's first session.
+  const spend = sum(rows), keys = new Set(rows.map(r => r.conv ?? r.key));
   // Pipeline runs priced before the proxy (cost_source) count the main agent only: about half their cost.
   const mainOnly = rows.filter(r => r.src === "pipeline" && r.main_only).length;
   // Buckets: days for a short range, weeks (from Monday) for a long one.
@@ -1322,7 +1323,9 @@ function renderStats() {
       <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "spend" && b.low ? "repeating-linear-gradient(135deg, var(--purple) 0 4px, transparent 4px 7px)" : k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
       <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
   const kpi = (l, v, sub) => `<div class="scard"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
-  const group = (k) => [...rows.reduce((m, r) => m.set(r[k], [...(m.get(r[k]) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) }));
+  const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
+    return [...rows.reduce((m, r) => m.set(v(r), [...(m.get(v(r)) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
+  const conv = r => r.conv ?? r.key;
   const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
   const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? jira(r.name) : `<span class="mono">${esc(r.name)}</span>`;
   const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
@@ -1333,7 +1336,7 @@ function renderStats() {
     ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, q, bars, byDay, kpi) : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
-      ${kpi("Tickets and sessions", keys.size, `up to ${Math.max(...group("key").map(g => g.rs.length))} runs on one`)}
+      ${kpi("Tickets and conversations", keys.size, `up to ${Math.max(...group(conv).map(g => g.rs.length))} runs on one`)}
       ${kpi("Spend", usd(spend), mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "estimated from tokens")}
       ${kpi("Per run", usd(spend / rows.length), `median ${usd(med(rows.map(r => r.usd)) ?? 0)}`)}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
@@ -1343,7 +1346,7 @@ function renderStats() {
       <div class="chart"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
         ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => `<div class="kv"><b>${esc(g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}` : ""}
         <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
-      <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group("key").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} run${g.rs.length > 1 ? "s" : ""} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
+      <div class="chart"><h2>Most expensive<span class="note">in this view</span></h2>${group(conv).sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}</div>
       <div class="chart"><h2>Spend by model<span class="note">all runs</span></h2>${(() => {
         // Subagents included where the proxy priced the run; else the run's main model only.
         const m = new Map();

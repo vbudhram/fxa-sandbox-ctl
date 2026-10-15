@@ -304,8 +304,11 @@ _stats_add_rows() {
   # main model (_snapshot_agent_json), so its spend counts there, as the main agent only.
   sess="$(_session_records | jq -sc --argjson llm "$llm" --arg cm "${FXA_AGENT_MODEL:-claude-opus-5-5}" --arg xm "${FXA_CODEX_MODEL:-gpt-6-astra}" '
     def n: if . == null or . == "" then null else (tonumber? // null) end;
+    # conv: the first session of a resume chain, so one Slack conversation counts once.
+    (map({key: .key, value: (.resume_from // null)}) | from_entries) as $rf
+    | def root($d): if $d < 50 and ($rf[.] // null) != null and $rf[.] != . then $rf[.] | root($d + 1) else . end;
     map(select(.owner != "U-DRYRUN" and .env != "dev") | ((.summary // "{}") | fromjson? // {}) as $s
-      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
+      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, conv: (.key | root(0)), kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
           min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
           main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
           prn: ([.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
