@@ -308,7 +308,7 @@ _gce_profile_workspace() {
   local cmd="[ -d ${ws}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
   local row s p r
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
-    read -r s p r <<< "$row"
+    read -r s p r _ <<< "$row"
     case "$r" in
       dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}" ;;
       ref) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent git clone --quiet --depth 1 https://github.com/${s}.git ${p}" ;;

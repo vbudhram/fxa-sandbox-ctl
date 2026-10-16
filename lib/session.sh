@@ -486,7 +486,7 @@ _session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
 _session_dirty_trees() {
   local row s p r paths=""
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
-    read -r s p r <<< "$row"; [ "$r" = work ] || paths="${paths} ${p}"
+    read -r s p r _ <<< "$row"; [ "$r" = work ] || paths="${paths} ${p}"
   done
   [ -n "$paths" ] || return 0
   _session_sh "$1" "for p in${paths}; do [ -n \"\$(git -C \$p status --porcelain --untracked-files=no 2>/dev/null)\" ] && echo \$p; done; true"

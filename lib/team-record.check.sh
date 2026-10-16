@@ -84,6 +84,13 @@ check "the runner gets the pinned script; a stale pin runs nothing" "0|1|1|0" \
   "$(boot "$now")|$(grep -c "$(base64 < "$R/boot/rusty.sh" | tr -d '\n' | cut -c1-30)" "$tmp/vm")|$(boot "$pin")|$(wc -c < "$tmp/vm" | tr -d ' ')"
 check "a record's skills are in the runner's allowlist" "1" "$(PIPE_TEAM_SKILLS="android-verify" _vm_skill_allowlist | grep -cx android-verify)"
 rm -f "$T/cd.json" "$T/cd.gen"; rm -rf "$T/cd"
+# A row's fourth field (its base) must not leak into its role: every row reader takes four fields.
+eval "$(sed -n '/^_session_dirty_trees() {/,/^}/p' "$root/lib/session.sh")"
+_session_sh() { printf '%s' "$2"; }
+check "a dep row with a base is still a dep (the read-only trees list it)" "1" \
+  "$(PIPE_REPOS=("example/w /home/agent/w work main" "example/d /home/agent/d dep master"); _session_dirty_trees r | grep -c 'for p in /home/agent/d;')"
+check "every reader of a repo row takes the fourth field apart" "" \
+  "$(grep -nE 'read -r [a-z_]+ [a-z_]+ [a-z_]+ <<< "\$row"' "$root"/lib/*.sh "$root/fxa-sandbox-ctl" | grep -v check.sh || true)"
 
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
