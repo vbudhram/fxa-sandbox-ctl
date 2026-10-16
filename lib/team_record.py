@@ -32,7 +32,7 @@ DESKTOP = re.compile(r"^http://localhost:[0-9]{2,5}/$")
 STAMP = re.compile(r"^[0-9T:.Z+-]{10,32}$")
 
 KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack", "runner",
-        "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "created", "updated"}
+        "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "secrets", "created", "updated"}
 # A record names code only from this repo, where it is reviewed: skills/<name> on the catalog, and
 # boot/<script>.sh pinned by its SHA-256, so an edit to the script needs a new pin.
 REPO = os.environ.get("FXA_TEAM_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -231,6 +231,12 @@ def check(rec, name=None):
         elif file_sha(path) != pin:
             bad.append(f"boot/{sc}.sh changed since it was pinned: review it, then pin {file_sha(path)}")
 
+    # Secrets are names in Secret Manager, never values, and only the team's own: fxa-team-<name>-<what>.
+    sec = obj(rec.get("secrets", {}), "secrets", {"jira"})
+    if "jira" in sec and isinstance(n, str):
+        if not re.match(rf"^fxa-team-{re.escape(n)}-[a-z0-9-]{{1,40}}$", str(sec["jira"])):
+            bad.append(f"secrets.jira must be a Secret Manager name fxa-team-{n}-<what>")
+
     for k in ("created", "updated"):
         if k in rec:
             st = obj(rec[k], k, {"by", "at"})
@@ -277,6 +283,8 @@ def env(rec):
     if rec.get("boot"):
         yield "PIPE_BOOT_SCRIPT", rec["boot"]["script"]
         yield "PIPE_BOOT_SHA256", rec["boot"]["sha256"]
+    if rec.get("secrets", {}).get("jira"):
+        yield "PIPE_JIRA_SECRET", rec["secrets"]["jira"]
     if "launches_per_day" in rec.get("caps", {}):
         yield "PIPE_MAX_LAUNCHES_PER_DAY", str(rec["caps"]["launches_per_day"])
 

@@ -92,6 +92,33 @@ check "a dep row with a base is still a dep (the read-only trees list it)" "1" \
 check "every reader of a repo row takes the fourth field apart" "" \
   "$(grep -nE 'read -r [a-z_]+ [a-z_]+ [a-z_]+ <<< "\$row"' "$root"/lib/*.sh "$root/fxa-sandbox-ctl" | grep -v check.sh || true)"
 
+# A team's own Jira credential: a Secret Manager name of its own; the loader reads it, logs acli in once.
+check "secrets.jira must be the team's own fxa-team-<name>-* name" "0|1" \
+  "$(code ', "secrets": { "jira": "fxa-team-cd-jira" }' | grep -c 'secrets.jira')|$(code ', "secrets": { "jira": "fxa-team-other-jira" }' | grep -c 'secrets.jira')"
+mkdir -p "$tmp/fake"; cat > "$tmp/fake/gcloud" <<G
+#!/bin/bash
+echo "\$*" >> "$tmp/gcloud.calls"; cat "$tmp/secret"
+G
+cat > "$tmp/fake/acli" <<G
+#!/bin/bash
+echo "HOME=\$HOME \$* token=\$(cat)" >> "$tmp/acli.calls"
+G
+chmod +x "$tmp/fake/gcloud" "$tmp/fake/acli"
+printf '{ "schema": 1, "name": "jt", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "secrets": { "jira": "fxa-team-jt-jira" } }' > "$T/jt.json"
+printf 'bot@example.com:tok123' > "$tmp/secret"
+jl() { ( PATH="$tmp/fake:$PATH" FXA_TEAMS_SECRET_DIR="$tmp/tsec" loaded jt | grep -E '^PIPE_JIRA_BASIC=' ); }
+first="$(jl)"; second="$(jl)"; acli_logins="$(grep -c 'jira auth login' "$tmp/acli.calls")"
+check "the team's credential becomes its PIPE_JIRA_BASIC; acli logs in once, in the team's home" \
+  "PIPE_JIRA_BASIC=bot@example.com:tok123|1|1|1" \
+  "$(tr -d "'" <<< "$first")|$acli_logins|$(grep -c "HOME=$tmp/tsec/jt/acli-home jira auth login --site mozilla-hub.atlassian.net --email bot@example.com --token token=tok123" "$tmp/acli.calls")|$([ "$first" = "$second" ] && echo 1)"
+check "the cached credential is private and outside the mirrored state dir" "600" \
+  "$(stat -c %a "$tmp/tsec/jt/jira.basic" 2>/dev/null || stat -f %Lp "$tmp/tsec/jt/jira.basic")"
+printf 'not-a-credential' > "$tmp/secret"; rm -f "$tmp/tsec/jt/jira.basic"
+check "a secret that is not email:token stops the load" "1" "$(PATH="$tmp/fake:$PATH" FXA_TEAMS_SECRET_DIR="$tmp/tsec" loaded jt >/dev/null; echo $?)"
+check "acli runs in the team's home when one is set, else in the real one" "HOME=/x/home a b|HOME=$HOME c" \
+  "$( : > "$tmp/acli.calls"; ( eval "$(sed -n '/^acli() {/,/}$/p' "$root/lib/jira.sh")"; PATH="$tmp/fake:$PATH"; FXA_ACLI_HOME=/x/home acli a b < /dev/null; unset FXA_ACLI_HOME; acli c < /dev/null ); sed 's/ token=$//' "$tmp/acli.calls" | paste -sd'|' -)"
+rm -f "$T/jt.json"
+
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
 lint() { printf '%s\n' "$@" > "$f/profile.conf"; ( source "$root/lib/pipeline.sh"; pipeline_conf_lint "$f/profile.conf" >/dev/null; echo $? ); }

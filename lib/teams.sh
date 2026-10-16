@@ -74,6 +74,16 @@ _teams_live() {
     esac
   done
   proj="$(jq -r '.jira.project // empty' "$f")"; [ -n "$proj" ] || return 0
+  st="$(jq -r '.status // "draft"' "$f")"; queue="$(jq -r '.jira.queue // false' "$f")"
+  # The team's own Jira credential when it names one (secrets.jira), else the shared login.
+  local sec PIPE_JIRA_BASIC="${PIPE_JIRA_BASIC:-}"; sec="$(jq -r '.secrets.jira // empty' "$f")"
+  if [ -n "$sec" ]; then
+    PIPE_JIRA_BASIC="$(gcloud secrets versions access latest --secret "$sec" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" || PIPE_JIRA_BASIC=""
+    if [ -z "$PIPE_JIRA_BASIC" ]; then
+      [ "$st" = active ] && [ "$queue" = true ] && { echo "ERROR: cannot read the team's Jira credential ${sec}: store it with vm.sh secret ${sec} (email:token)" >&2; return 1; }
+      echo "WARN: cannot read the team's Jira credential ${sec} yet: store it with vm.sh secret ${sec} (email:token)"; return 0
+    fi
+  fi
   [ -n "${PIPE_JIRA_BASIC:-}" ] || { echo "WARN: no Jira login on this host (PIPE_JIRA_BASIC), so Jira project ${proj} was not checked"; return 0; }
   code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - -o /dev/null -w '%{http_code}' --max-time 20 "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/rest/api/3/project/${proj}" 2>/dev/null)" || code=000
   case "$code" in
@@ -86,7 +96,6 @@ _teams_live() {
     | jq -r '[.permissions // {} | to_entries[] | select(.value.havePermission) | .key] | join(" ")' 2>/dev/null)" || have=""
   for p in BROWSE_PROJECTS EDIT_ISSUES TRANSITION_ISSUES; do grep -qw "$p" <<< "$have" || miss="${miss} ${p}"; done
   [ -n "$miss" ] || return 0
-  st="$(jq -r '.status // "draft"' "$f")"; queue="$(jq -r '.jira.queue // false' "$f")"
   if [ "$st" = active ] && [ "$queue" = true ]; then
     echo "ERROR: the pipeline's Jira login lacks${miss} on ${proj}, so an active queue there would lose track of its tickets; turn the queue off, or get the login those rights" >&2; rc=1
   else

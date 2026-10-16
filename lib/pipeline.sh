@@ -54,6 +54,29 @@ pipeline_profile_names() {
   { ls "${SANDBOX_ROOT}/profiles" 2>/dev/null; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p' | grep -vx index || true; } | awk '!seen[$0]++'
 }
 
+# _pipeline_team_jira <name>   A team with its own Jira credential (secrets.jira, "email:token" in Secret
+# Manager): PIPE_JIRA_BASIC for its REST calls, and FXA_ACLI_HOME, a home that holds its own acli login.
+# Both live under ~/.config/fxa/teams/<name> (mode 700), not in the state dir, which is mirrored to GCS.
+# The secret is read again after an hour; acli logs in again only when the credential changed.
+_pipeline_team_jira() {
+  local d="${FXA_TEAMS_SECRET_DIR:-${HOME}/.config/fxa/teams}/$1" basic sum
+  ( umask 077; mkdir -p "$d/acli-home" ) || return 1
+  if [ ! -s "$d/jira.basic" ] || [ "$(( $(date +%s) - $(_mtime "$d/jira.basic" 2>/dev/null || echo 0) ))" -gt 3600 ]; then
+    basic="$(gcloud secrets versions access latest --secret "$PIPE_JIRA_SECRET" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" \
+      && [[ "$basic" =~ ^[^:@[:space:]]+@[^:[:space:]]+:[^[:space:]]+$ ]] \
+      || { echo "ERROR: team $1: could not read its Jira credential (${PIPE_JIRA_SECRET}, email:token)" >&2; return 1; }
+    ( umask 077; printf '%s' "$basic" > "$d/jira.basic" )
+  fi
+  basic="$(cat "$d/jira.basic")"
+  sum="$(printf '%s' "$basic" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)"
+  if [ "$(cat "$d/acli.sum" 2>/dev/null)" != "$sum" ]; then
+    printf '%s' "${basic#*:}" | HOME="$d/acli-home" command acli jira auth login --site "$(s="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}"; echo "${s#https://}")" --email "${basic%%:*}" --token >/dev/null 2>&1 \
+      || { echo "ERROR: team $1: acli refused its Jira credential (${PIPE_JIRA_SECRET})" >&2; return 1; }
+    printf '%s' "$sum" > "$d/acli.sum"
+  fi
+  export PIPE_JIRA_BASIC="$basic" FXA_ACLI_HOME="$d/acli-home"
+}
+
 # _pipeline_load_record <name>   A team record: validated and mapped by team_record.py, then set
 # key by key from an allowlist. Never sourced or eval'd. Its prompts go beside the record.
 _pipeline_load_record() {
@@ -65,12 +88,13 @@ _pipeline_load_record() {
   while IFS=$'\t' read -r k v; do
     case "$k" in
       REPO) PIPE_REPOS+=("$v") ;;
-      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256)
+      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256|PIPE_JIRA_SECRET)
         printf -v "$k" '%s' "$v" ;;
       *) echo "ERROR: team record ${name}: unexpected key ${k}" >&2; return 1 ;;
     esac
   done <<< "$out"
   PIPE_PROFILE="$name"
+  [ -z "${PIPE_JIRA_SECRET:-}" ] || _pipeline_team_jira "$name" || return 1
   python3 -I "${SANDBOX_ROOT}/lib/team_record.py" prompts "$rec" "${FXA_TEAMS_DIR}/${name}" \
     || { echo "ERROR: could not write the prompts of team ${name}" >&2; return 1; }
 }

@@ -79,6 +79,9 @@ read -r -d '' _JIRA_SLUG_JQ <<'JQ' || true
 | gsub("-+$"; "")
 JQ
 
+# acli as the loaded team: a team with its own Jira credential has its own acli login, in its home.
+acli() { if [ -n "${FXA_ACLI_HOME:-}" ]; then HOME="$FXA_ACLI_HOME" command acli "$@"; else command acli "$@"; fi; }
+
 _jira_require_acli() {
   if ! command -v acli &>/dev/null; then
     echo "ERROR: acli is not installed. Install with: brew install --cask atlassian-cli" >&2

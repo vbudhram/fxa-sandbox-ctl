@@ -73,7 +73,13 @@ check "an active queue where the login cannot edit is refused; a draft or no que
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv4 Live ', "status": "active", "jira": { "project": "RO", "queue": true }')" lv4 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv5 Live ', "status": "draft", "jira": { "project": "RO", "queue": true }')" lv5 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv6 Live ', "status": "active", "jira": { "project": "RO" }')" lv6 >/dev/null 2>&1; echo $?)|$(live lv5 ', "status": "draft", "jira": { "project": "RO", "queue": true }' | grep -c 'lacks EDIT_ISSUES TRANSITION_ISSUES on RO')"
 check "full rights and an active queue: valid, no warning" "0|0" \
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv7 Live ', "status": "active", "jira": { "project": "OK", "queue": true }')" lv7 >/dev/null 2>&1; echo $?)|$(live lv7 ', "status": "active", "jira": { "project": "OK", "queue": true }' | grep -c WARN)"
-unset -f curl github_app_jwt
+gcloud() { return 1; }   # the team's credential is not stored yet
+check "a team credential that is not stored yet: refused for an active queue, a warning for a draft" "1|1" \
+  "$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv8 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv8-jira" }')" lv8 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv9 Live ', "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv9-jira" }')" lv9 2>&1 | grep -c 'store it with vm.sh secret fxa-team-lv9-jira')"
+gcloud() { echo "bot@example.com:tok"; }
+check "with the team credential stored, an active queue with full rights is valid" "0" \
+  "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC= teams_validate "$(rec lv10 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv10-jira" }')" lv10 >/dev/null 2>&1; echo $?)"
+unset -f curl github_app_jwt gcloud
 
 # The checks a test runs on the runner, from the loaded team.
 probe() { ( PIPE_PROFILE=pt PIPE_REPOS=("example/w /home/agent/w work main" "mozilla/fxa /home/agent/fxa dep"); PIPE_STACK_DIR=/home/agent/fxa
