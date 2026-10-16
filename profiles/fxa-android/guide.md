@@ -66,8 +66,16 @@ video before you share it (the skill says how), and attach it to the PR.
 - The phone stays on "One last step to sync" while the desktop shows "Your device is connected",
   and logcat shows `Unexpected state change: complete`: the supplicant finished before the
   approve_signin page subscribed (FXA-14793). Not your change; the device is paired.
-- The first run on a new runner can pass the pairing and still fail with `Test timeout of 300000ms
-  exceeded`: the checks after pairing run on a cold stack. Run it again.
+- The pairing passes, then "Connected Services lists the Android device" fails or hangs until
+  `Test timeout of 300000ms exceeded`, often on every other try. The desktop's device name holds
+  the runner's hostname, which contains "android". Two bugs in the specs then act on that name:
+  1. `isMobileDevice` in the pairing specs matches the name, so the spec picks the desktop when the
+     API lists it first.
+  2. `sendCommand` in `functional-tests/lib/marionette.ts` sends `msg.length` (UTF-16 units) as the
+     length prefix, not bytes. The `’` in the name makes the prefix wrong, and Marionette waits forever.
+
+  Not your change, unless your tree fixes both: the spec should check `d.type === 'mobile'`, and
+  the prefix should use `Buffer.byteLength`.
 - These are not the cause of a failed pairing, so do not spend time on them: the channel server
   (when a try reaches it, a round trip takes under a second), the minimum versions (none are set),
   and the emulator's CPU (`-cores 4` did not help).

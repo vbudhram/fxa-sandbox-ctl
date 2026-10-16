@@ -75,9 +75,9 @@ run() {
 verdict=FAIL
 if run 1; then verdict=PASS; row PASS "$spec"
 else
-  row FAIL "$spec, try 1: $(grep -m1 -E 'Error:|skipped|Timeout' /tmp/android-verify-1.log | cut -c1-120)"
+  row FAIL "$spec, try 1: $(grep -m1 -iE 'error:|skipped|timeout' /tmp/android-verify-1.log | cut -c1-120)"
   if run 2; then verdict=PASS; row PASS "$spec, try 2 (try 1 failed; see the traps in the FxA Android guide)"
-  else row FAIL "$spec, try 2: $(grep -m1 -E 'Error:|skipped|Timeout' /tmp/android-verify-2.log | cut -c1-120)"; fi
+  else row FAIL "$spec, try 2: $(grep -m1 -iE 'error:|skipped|timeout' /tmp/android-verify-2.log | cut -c1-120)"; fi
 fi
 
 adb exec-out screencap -p > "$MEDIA/android-${spec}.png" 2>/dev/null && row INFO "screen: $MEDIA/android-${spec}.png"
