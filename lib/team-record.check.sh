@@ -119,6 +119,17 @@ check "acli runs in the team's home when one is set, else in the real one" "HOME
   "$( : > "$tmp/acli.calls"; ( eval "$(sed -n '/^acli() {/,/}$/p' "$root/lib/jira.sh")"; PATH="$tmp/fake:$PATH"; FXA_ACLI_HOME=/x/home acli a b < /dev/null; unset FXA_ACLI_HOME; acli c < /dev/null ); sed 's/ token=$//' "$tmp/acli.calls" | paste -sd'|' -)"
 rm -f "$T/jt.json"
 
+# Spend caps for each team: the record's caps, inside the operator ceilings, reach the proxy's team file.
+check "a team's dollar caps must be above 0 and within the ceilings" "0|1|1" \
+  "$(code ', "caps": { "usd_per_day": 25, "usd_per_month": 400 }' | grep -c 'caps\.')|$(code ', "caps": { "usd_per_day": 0 }' | grep -c 'caps.usd_per_day')|$(code ', "caps": { "usd_per_month": 99999 }' | grep -c 'caps.usd_per_month')"
+check "the caps reach the loader" "25|400" \
+  "$(code ', "caps": { "usd_per_day": 25, "usd_per_month": 400 }' | awk -F'\t' '/^PIPE_TEAM_USD_DAY/{d=$2} /^PIPE_TEAM_USD_MONTH/{m=$2} END{print d "|" m}')"
+tok() { ( source "$root/lib/llm-token.sh"; FXA_LLM_PROXY_DIR="$tmp/proxy" PIPE_PROFILE="$1" PIPE_TEAM_USD_DAY="$2" PIPE_TEAM_USD_MONTH="$3" llm_token_for "run-$1" ) >/dev/null; }
+tok capped 25 400; tok plain "" ""
+check "a run token names its team, and the team file holds the record's caps (none for a team without)" \
+  "capped|{\"day_usd\":25,\"month_usd\":400}|{}" \
+  "$(jq -r .team "$tmp"/proxy/tokens/$(cat "$tmp/proxy/runs/run-capped").json)|$(jq -c . "$tmp/proxy/teams/capped.json")|$(jq -c . "$tmp/proxy/teams/plain.json")"
+
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
 lint() { printf '%s\n' "$@" > "$f/profile.conf"; ( source "$root/lib/pipeline.sh"; pipeline_conf_lint "$f/profile.conf" >/dev/null; echo $? ); }

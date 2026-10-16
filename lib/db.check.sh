@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "4|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "5|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"

@@ -205,7 +205,12 @@ def check(rec, name=None):
     if "reviewers" in pr and not REVIEWERS.match(str(pr["reviewers"])):
         bad.append("pr.reviewers must be a GitHub team or user name")
 
-    caps = obj(rec.get("caps", {}), "caps", {"launches_per_day"})
+    caps = obj(rec.get("caps", {}), "caps", {"launches_per_day", "usd_per_day", "usd_per_month"})
+    for k, env_key, default in (("usd_per_day", "TEAM_CAP_USD_PER_DAY", 200), ("usd_per_month", "TEAM_CAP_USD_PER_MONTH", 3000)):
+        if k in caps:
+            most, v = ceiling(env_key, default), caps[k]
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or not 0 < v <= most:
+                bad.append(f"caps.{k} must be more than 0 and at most {most}")
     if "launches_per_day" in caps:
         most = ceiling("TEAM_CAP_LAUNCHES_PER_DAY", 40)
         v = caps["launches_per_day"]
@@ -287,6 +292,10 @@ def env(rec):
         yield "PIPE_JIRA_SECRET", rec["secrets"]["jira"]
     if "launches_per_day" in rec.get("caps", {}):
         yield "PIPE_MAX_LAUNCHES_PER_DAY", str(rec["caps"]["launches_per_day"])
+    if "usd_per_day" in rec.get("caps", {}):
+        yield "PIPE_TEAM_USD_DAY", str(rec["caps"]["usd_per_day"])
+    if "usd_per_month" in rec.get("caps", {}):
+        yield "PIPE_TEAM_USD_MONTH", str(rec["caps"]["usd_per_month"])
 
 
 def unique(rec, folder):

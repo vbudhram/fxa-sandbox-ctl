@@ -147,6 +147,48 @@ class ProxyTest(unittest.TestCase):
         self.assertEqual(self.call(tok)[0], 200)  # this call takes it to $2
         self.assertEqual(self.call(tok)[0], 403)  # not 429, which a client retries
 
+    def team_caps(self, team, **caps):
+        os.makedirs(os.path.join(self.dir, "teams"), exist_ok=True)
+        with open(os.path.join(self.dir, "teams", team + ".json"), "w") as f:
+            json.dump(caps, f)
+
+    def team_spent(self, team):
+        with open(os.path.join(self.dir, "teams", team + ".spend.json")) as f:
+            return json.load(f)
+
+    def test_a_team_spend_adds_up_over_its_runs_and_its_usage_lines_name_it(self):
+        a, b = self.token("ta1", team="tsum"), self.token("ta2", team="tsum")
+        self.assertEqual(self.call(a)[0], 200)
+        self.assertEqual(self.call(b)[0], 200)
+        s = self.team_spent("tsum")
+        self.assertAlmostEqual(s["day_usd"], 4.0)
+        self.assertAlmostEqual(s["month_usd"], 4.0)
+        with open(os.path.join(self.dir, "usage.jsonl")) as f:
+            self.assertEqual([json.loads(ln)["team"] for ln in f if '"run": "ta2"' in ln][-1], "tsum")
+
+    def test_a_team_at_its_daily_cap_is_refused_and_another_team_is_not(self):
+        self.team_caps("tcap", day_usd=3)
+        a, other = self.token("tc1", team="tcap"), self.token("tc2", team="tfree")
+        self.assertEqual(self.call(a)[0], 200)  # $2 of $3
+        self.assertEqual(self.call(self.token("tc3", team="tcap"))[0], 200)  # starts below the cap: $4 after
+        status, body = self.call(self.token("tc4", team="tcap"))  # a fresh run of the same team
+        self.assertEqual(status, 403)
+        self.assertIn(b"team tcap reached its daily spend cap of $3", body)
+        self.assertEqual(self.call(other)[0], 200)
+
+    def test_a_monthly_cap_holds_and_yesterday_does_not_count_for_today(self):
+        self.team_caps("tmon", day_usd=3, month_usd=100)
+        with open(os.path.join(self.dir, "teams", "tmon.spend.json"), "w") as f:
+            json.dump({"day": "2000-01-01", "day_usd": 50, "month": time.strftime("%Y-%m", time.gmtime()), "month_usd": 99}, f)
+        self.assertEqual(self.call(self.token("tm1", team="tmon"))[0], 200)  # yesterday's 50 is gone; the month is at 99
+        status, body = self.call(self.token("tm2", team="tmon"))
+        self.assertEqual(status, 403)
+        self.assertIn(b"monthly spend cap", body)
+
+    def test_a_team_with_no_caps_or_a_bad_name_is_never_capped_by_team(self):
+        self.assertEqual(self.call(self.token("tn1", team="tnone"))[0], 200)
+        self.assertEqual(self.call(self.token("tn2", team="../x"))[0], 200)
+
     def test_calls_reuse_one_upstream_connection(self):
         tok = self.token("e")
         del PEERS[:]

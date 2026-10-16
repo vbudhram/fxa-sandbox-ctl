@@ -7,7 +7,8 @@ the token, allows only the Messages and Models API, swaps in the real key, and
 streams the answer back as it arrives. It counts each run's tokens and cost,
 and refuses a run past its cap.
 
-Tokens: <dir>/tokens/<token>.json  {run, thread?, created, expires, cap_usd, spent_usd}
+Tokens: <dir>/tokens/<token>.json  {run, thread?, team?, created, expires, cap_usd, spent_usd}
+Teams: <dir>/teams/<team>.json {day_usd?, month_usd?} caps from the team's record; <team>.spend.json its UTC day and month totals.
 written by the controller (lib/llm-token.sh), updated here. Usage lines go to
 <dir>/usage.jsonl. Standard library only.
 """
@@ -78,6 +79,58 @@ def cost(model, u):
             + u.get("cache_creation_input_tokens", 0) * p[2] + u.get("cache_read_input_tokens", 0) * p[3]) / 1e6
 
 
+TEAM_RE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
+team_guard = threading.Lock()
+
+
+def team_files(team):
+    d = os.path.join(DIR, "teams")
+    return os.path.join(d, team + ".json"), os.path.join(d, team + ".spend.json")
+
+
+def team_spend(team, now=None):
+    """The team's spend this UTC day and month: {day, day_usd, month, month_usd}, reset when either turns."""
+    t = time.gmtime(now or time.time())
+    day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
+    try:
+        with open(team_files(team)[1]) as f:
+            s = json.load(f)
+    except (OSError, ValueError):
+        s = {}
+    return {"day": day, "day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
+            "month": month, "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0}
+
+
+def team_capped(team):
+    """Why the team may spend no more, or None. Its caps come from its record, through the controller."""
+    if not TEAM_RE.match(team or ""):
+        return None
+    try:
+        with open(team_files(team)[0]) as f:
+            caps = json.load(f)
+    except (OSError, ValueError):
+        return None
+    s = team_spend(team)
+    for k, label in (("day_usd", "daily"), ("month_usd", "monthly")):
+        cap = caps.get(k)
+        if isinstance(cap, (int, float)) and cap > 0 and s[k] >= cap:
+            return f"team {team} reached its {label} spend cap of ${cap}"
+    return None
+
+
+def team_charge(team, usd):
+    if not TEAM_RE.match(team or ""):
+        return
+    with team_guard:
+        s = team_spend(team)
+        s["day_usd"], s["month_usd"] = round(s["day_usd"] + usd, 6), round(s["month_usd"] + usd, 6)
+        path = team_files(team)[1]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path + ".tmp", "w") as f:
+            json.dump(s, f)
+        os.replace(path + ".tmp", path)
+
+
 def token_lock(tok):
     with locks_guard:
         return locks.setdefault(tok, threading.Lock())
@@ -139,7 +192,7 @@ def warm_loop():
             due = [(t, w) for t, w in warm.items() if time.time() - w["at"] >= WARM_SECONDS]
         for tok, w in due:
             rec = load(tok)  # None once the session stops and its token is revoked
-            live = rec is not None and not (rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"])
+            live = rec is not None and not (rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"]) and not team_capped(rec.get("team"))
             ok = live and w["pings"] < WARM_MAX and warm_once(tok, w)
             with warm_guard:
                 if warm.get(tok) is not w:
@@ -161,7 +214,9 @@ def charge(tok, model, usage, warm=False):
             with open(path + ".tmp", "w") as f:
                 json.dump(rec, f)
             os.replace(path + ".tmp", path)
-    line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "model": model,
+    team = (rec or {}).get("team")
+    team_charge(team, usd)
+    line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "team": team, "model": model,
             "usd": round(usd, 6), **({"warm": True} if warm else {}),
             # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
             "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "", prompt_tokens(usage))[2] / 1e6, 6),
@@ -219,6 +274,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if rec.get("cap_usd") and rec.get("spent_usd", 0) >= rec["cap_usd"]:
             # 403, not 429: a client retries a 429, and a capped run must stop, not hang.
             return self.refuse(403, "permission_error", "fxa-llm-proxy: this run reached its spend cap of $%s" % rec["cap_usd"])
+        why = team_capped(rec.get("team"))
+        if why:
+            return self.refuse(403, "permission_error", "fxa-llm-proxy: " + why)
         body = self.rfile.read(int(self.headers.get("content-length", 0) or 0))
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         headers["x-api-key"] = KEY

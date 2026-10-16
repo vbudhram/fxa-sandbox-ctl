@@ -20,10 +20,17 @@ llm_token_for() {
     printf '%s\n' "$tok"; return 0
   fi
   tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
+  # The team's caps for the proxy, from its record (none for a team without them): written at each new token.
+  local team="${PIPE_PROFILE:-fxa}"
+  if [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]]; then
+    mkdir -p "${FXA_LLM_PROXY_DIR}/teams" && jq -n --arg d "${PIPE_TEAM_USD_DAY:-}" --arg m "${PIPE_TEAM_USD_MONTH:-}" \
+      '{} + (if $d != "" then {day_usd: ($d | tonumber)} else {} end) + (if $m != "" then {month_usd: ($m | tonumber)} else {} end)' \
+      > "${FXA_LLM_PROXY_DIR}/teams/${team}.json.$$" && mv -f "${FXA_LLM_PROXY_DIR}/teams/${team}.json.$$" "${FXA_LLM_PROXY_DIR}/teams/${team}.json"
+  fi
   ( umask 077
-    jq -n --arg r "$run" --arg th "$thread" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
+    jq -n --arg r "$run" --arg th "$thread" --arg tm "$team" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
       --argjson cap "${FXA_LLM_RUN_CAP_USD:-50}" \
-      '{run: $r, created: $now, expires: ($now + $ttl), cap_usd: $cap, spent_usd: 0} + (if $th != "" then {thread: $th} else {} end)' \
+      '{run: $r, team: $tm, created: $now, expires: ($now + $ttl), cap_usd: $cap, spent_usd: 0} + (if $th != "" then {thread: $th} else {} end)' \
       > "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" ) || return 1
   printf '%s\n' "$tok" > "$map"
   printf '%s\n' "$tok"
