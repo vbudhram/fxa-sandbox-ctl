@@ -490,5 +490,43 @@ class ArgoRules(unittest.TestCase):
                 self.run_rules({"method": "GET", "path": path})
 
 
+class TeamScope(unittest.TestCase):
+    """A team's token scope: its own Jira projects and repos replace the connector's FxA ones."""
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, HERE)
+        import gateway
+        cls.g = gateway
+        conns = json.load(open(os.path.join(HERE, "connectors.example.json")))["connectors"]
+        cls.jira, cls.github = conns["jira"]["rules"], conns["github"]["rules"]
+        cls.gschema = {"properties": {"owner": {}, "repo": {}}}
+
+    def test_no_scope_keeps_the_rules_as_written(self):
+        self.assertIs(self.g.team_rules(self.github, None), self.github)
+        out = self.g.apply_rules(self.g.team_rules(self.jira, None), "searchJiraIssuesUsingJql", {}, {"jql": "status = Open"})
+        self.assertTrue(out["jql"].startswith("project = FXA AND level IS EMPTY"))
+
+    def test_a_team_searches_its_own_projects_and_keeps_the_label_and_security_rules(self):
+        rules = self.g.team_rules(self.jira, {"jira_projects": ["PAY", "ENT"]})
+        out = self.g.apply_rules(rules, "searchJiraIssuesUsingJql", {}, {"jql": "status = Open"})
+        self.assertTrue(out["jql"].startswith("project in (PAY, ENT) AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN"))
+        self.assertIn("(status = Open)", out["jql"])
+
+    def test_a_bad_project_in_the_scope_is_ignored(self):
+        rules = self.g.team_rules(self.jira, {"jira_projects": ["PAY) OR (project = SEC"]})
+        out = self.g.apply_rules(rules, "searchJiraIssuesUsingJql", {}, {"jql": "x = 1"})
+        self.assertTrue(out["jql"].startswith("project = FXA "))
+
+    def test_a_team_reads_its_repos_as_owner_and_repo_together(self):
+        rules = self.g.team_rules(self.github, {"repos": ["mozilla/PyFxA", "mozilla-services/syncstorage-rs"]})
+        ok = lambda o, r: self.g.apply_rules(rules, "get_file_contents", self.gschema, {"owner": o, "repo": r})
+        self.assertEqual(ok("mozilla", "pyfxa")["repo"], "pyfxa")
+        self.assertEqual(ok("mozilla-services", "syncstorage-rs")["owner"], "mozilla-services")
+        for o, r in (("mozilla", "fxa"), ("mozilla", "syncstorage-rs"), ("mozilla-services", "PyFxA")):
+            with self.assertRaises(self.g.Denied):
+                ok(o, r)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

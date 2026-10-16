@@ -147,6 +147,13 @@ check "a short read fails and leaves no file" "1|no|0" \
   "$rc|$([ -e "$R2/home/agent/fxa/config/.env.db" ] && echo yes || echo no)|$(ls -A "$R2/home/agent/fxa/config" | grep -c fxa-secret)"
 unset -f gcloud vm_exec
 
+# MCP: another team's token carries its own Jira project and repos; FxA's carries none (the rules as written).
+mt() { ( source "$root/lib/mcp-token.sh"; FXA_MCP_GATEWAY_DIR="$tmp/mcp" PIPE_PROFILE="$1" PIPE_JIRA_PROJECT="$2"; PIPE_REPOS=(); [ -z "$3" ] || eval "PIPE_REPOS=($3)"
+  t="$(mcp_token_for "mt-$1" jira,github)" && jq -c '.scope // "none"' "$tmp/mcp/tokens/$t.json" ); }
+check "an MCP token names the team's Jira project and repos; FxA's names none" \
+  '{"jira_projects":["PAY"],"repos":["mozilla/fxa","mozilla/PyFxA"]}|"none"' \
+  "$(mt ent PAY '"mozilla/fxa /home/agent/fxa work" "mozilla/PyFxA /home/agent/pyfxa dep"')|$(mt fxa '' '')"
+
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
 lint() { printf '%s\n' "$@" > "$f/profile.conf"; ( source "$root/lib/pipeline.sh"; pipeline_conf_lint "$f/profile.conf" >/dev/null; echo $? ); }

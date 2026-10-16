@@ -169,7 +169,8 @@ def scope_jql(jql, project, exclude_labels=()):
     jql = (jql or "").strip()
     cut = jql_scan(jql)
     where, order = jql[:cut].strip(), jql[cut:].strip()
-    base = "project = %s AND level IS EMPTY" % project
+    projects = [project] if isinstance(project, str) else list(project)
+    base = ("project = %s" % projects[0] if len(projects) == 1 else "project in (%s)" % ", ".join(projects)) + " AND level IS EMPTY"
     if exclude_labels:
         # Jira keeps a label's case, so each case form is its own label.
         forms = list(dict.fromkeys(f for l in exclude_labels for f in (l, l.lower(), l.upper(), l.capitalize())))
@@ -177,6 +178,30 @@ def scope_jql(jql, project, exclude_labels=()):
         base += " AND (labels IS EMPTY OR labels NOT IN (%s))" % ", ".join(json.dumps(l) for l in forms)
     scoped = base if not where else "%s AND (%s)" % (base, where)
     return (scoped + " " + order).strip()
+
+
+PROJECT_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
+SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def team_rules(rules, scope):
+    """A team's run reads its own Jira projects and repos, not the connector's FxA ones (the token's
+    scope, from the controller). No scope: the connector's rules as written."""
+    if not isinstance(scope, dict):
+        return rules
+    projects = [p for p in scope.get("jira_projects") or [] if isinstance(p, str) and PROJECT_RE.match(p)]
+    repos = [r.lower() for r in scope.get("repos") or [] if isinstance(r, str) and SLUG_RE.match(r)]
+    out, pair = [], False
+    for rule in rules:
+        if "jql_project" in rule and projects:
+            rule = dict(rule, jql_project=projects)
+        elif repos and rule.get("arg") in ("owner", "repo") and ("equals" in rule or "one_of" in rule):
+            if not pair:  # owner and repo together, so a mix of two allowed repos is not allowed
+                out.append({"tool": rule.get("tool", "*"), "arg": "repo", "pair": "owner", "one_of": repos})
+                pair = True
+            continue
+        out.append(rule)
+    return out
 
 
 def applies(rule, tool, schema):
@@ -211,6 +236,10 @@ def apply_rules(rules, tool, schema, args):
             # "-labels" would exclude the very field deny_result reads.
             have = [v for v in have if not (isinstance(v, str) and v[1:] in rule["include"] and v.startswith("-"))]
             args[arg] = have + [v for v in rule["include"] if v not in have]
+        elif "pair" in rule:
+            owner = args.get(rule["pair"])
+            if not isinstance(owner, str) or not isinstance(val, str) or ("%s/%s" % (owner, val)).lower() not in rule["one_of"]:
+                raise Denied("%s/%s is outside what this team may read" % (rule["pair"], arg))
         elif "match" in rule:
             if val is None and rule.get("optional"):
                 continue
@@ -590,7 +619,7 @@ def call_tool(tok, rec, params):
         audit(run, conn, tool, "denied:tool", args=args)
         return tool_error("%s is not an allowed tool" % full)
     try:
-        args = apply_rules(up.rules, tool, schema, args)
+        args = apply_rules(team_rules(up.rules, rec.get("scope")), tool, schema, args)
     except Denied as e:
         audit(run, conn, tool, "denied:rule", args=args)
         return tool_error(str(e))

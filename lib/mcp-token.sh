@@ -22,10 +22,19 @@ mcp_token_for() {
   [[ "$connectors" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: MCP connectors must look like jira,github" >&2; return 1; }
   mkdir -p "${FXA_MCP_GATEWAY_DIR}/tokens" "${FXA_MCP_GATEWAY_DIR}/runs" || return 1
   tok="fxm_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
+  # Another team reads its own Jira project and repos, not FxA's (the gateway's team_rules); FxA keeps the rules as written.
+  local projects="" repos="" row
+  if [ "${PIPE_PROFILE:-fxa}" != fxa ]; then
+    projects="${PIPE_JIRA_PROJECT:-}"
+    for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do repos="${repos} ${row%% *}"; done
+    [ -n "$repos" ] || repos="${PIPE_REPO_SLUG:-}"
+  fi
   ( umask 077
     jq -n --arg r "$run" --arg c "$connectors" --argjson now "$(date +%s)" \
       --argjson ttl "${FXA_MCP_TOKEN_TTL:-86400}" --argjson cap "${FXA_MCP_RUN_CAP_CALLS:-200}" \
-      '{run: $r, created: $now, expires: ($now + $ttl), connectors: ($c | split(",")), cap_calls: $cap, calls: 0}' \
+      --arg p "$projects" --arg rp "$repos" \
+      '{run: $r, created: $now, expires: ($now + $ttl), connectors: ($c | split(",")), cap_calls: $cap, calls: 0}
+       + (if ($p + $rp | gsub(" "; "")) != "" then {scope: {jira_projects: ($p | split(" ") | map(select(. != ""))), repos: ($rp | split(" ") | map(select(. != "")))}} else {} end)' \
       > "${FXA_MCP_GATEWAY_DIR}/tokens/${tok}.json" ) || return 1
   printf '%s\n' "$tok" > "$map"
   printf '%s\n' "$tok"
