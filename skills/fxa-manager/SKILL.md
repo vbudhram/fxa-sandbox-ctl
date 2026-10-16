@@ -58,7 +58,9 @@ Runners are reached on the private network (`FXA_GCE_SSH_DIRECT=1`), not through
 
 **Dashboard:** https://fxa-desktop-82056944052.us-central1.run.app/ (the Cloud
 Run gateway, behind IAP; `DASHBOARD_USERS` on the service lists who may see
-it). Desktops are at `/d/<session>` on the same host. `/w/<channel>:<thread ts>`
+it). `bash infra/gce/gateway.sh plan|deploy|users <emails>` deploys it and its :8787
+firewall rule; keep the users in the controller .env as `FXA_DASHBOARD_USERS`.
+`TEAM_ADMINS` in that .env names who may change teams there. Desktops are at `/d/<session>` on the same host. `/w/<channel>:<thread ts>`
 shows the newest session's output for a Slack thread, read-only, to anyone IAP
 admits (`!watch` gives the link). The gateway reaches the
 VM at `MANAGER_URL=http://10.42.2.2:8787`; if the VM is rebuilt and its private
