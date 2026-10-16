@@ -1420,7 +1420,8 @@ function renderTeams() {
     const used = use && x.n + x.usd > 0, money = v => !use ? "—" : used ? usd(v ?? 0) : "-";
     return `<tr data-team="${esc(t.profile)}"${sel} style="cursor:pointer"><td><b>${esc(teamName(t))}</b>${t.read_only ? ` <span class="tag">read-only</span>` : ""}${x.live ? ` <span class="tag info">${x.live} live</span>` : ""}${teamLevel(t) ? ` <span class="tag ${teamLevel(t)}">${teamIssueCount(t)}</span>` : ""}</td>
       <td>${!use ? "—" : used ? x.n : "-"}</td><td>${money(x.slack_usd)}</td><td>${money(x.pipe_usd)}</td><td${L}>${!use ? "—" : x.last ? ago(Math.round(Date.now() / 1000 - x.last)) : "-"}</td>
-      <td${L}>${slugs("work").map(r => esc(r.slug.split("/").pop()) + (t.read_only ? "" : repoTag(r))).join(", ") || "-"}</td>
+      <td${L}>${[...slugs("work").map(r => esc(r.slug.split("/").pop()) + (t.read_only ? "" : repoTag(r))),
+        ...slugs("dep").map(r => `<span style="color:var(--faint)" title="${esc(r.slug)} runs beside the work repos, read-only: its changes do not ship">${esc(r.slug.split("/").pop())} <span class="tag">dep</span></span>`)].join(", ") || "-"}</td>
       <td${L}>${esc(teamTools(t.mcp, true))}</td>
       <td${L} title="${esc(teamAccess(t)[1])}">${t.profile !== "fxa" && !t.access ? `<span class="unknown">${teamAccess(t)[0]}</span>` : esc(teamAccess(t)[0])}</td></tr>`; };
   const rows = teamRows();
@@ -1428,7 +1429,7 @@ function renderTeams() {
     (T.error ? `<p class="unknown">last refresh failed: ${esc(T.error)}; showing data from ${age}</p>` : "") +
     (T.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("") +
     (!ts.length ? `<div class="emptybox">No profiles/*/profile.conf found</div>` : !rows.length ? `<div class="emptybox">Nothing matches.</div>`
-      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th title="Slack conversations in 30 days; a resumed thread counts once. Leaves out dry-run and dev sessions.">Conversations, 30d</th><th title="Slack sessions and quick answers, 30 days">Slack, 30d</th><th title="pipeline runs and passes, 30 days">Pipeline, 30d</th><th${L}>Last used</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th></tr></thead>
+      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th title="Slack conversations in 30 days; a resumed thread counts once. Leaves out dry-run and dev sessions.">Conversations, 30d</th><th title="Slack sessions and quick answers, 30 days">Slack, 30d</th><th title="pipeline runs and passes, 30 days">Pipeline, 30d</th><th${L}>Last used</th><th${L} title="Work repos: a session can change them. A dep repo runs beside them, read-only.">Repos</th><th${L}>Tools</th><th${L}>Access</th></tr></thead>
         <tbody>${rows.map(row).join("")}</tbody></table></div>`) +
     (TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><button data-team-new>New team</button><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""));
 }
