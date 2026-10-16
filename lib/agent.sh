@@ -313,10 +313,10 @@ _gce_profile_workspace() {
 # is the work repo and which are read-only. Nothing for a profile without PIPE_REPOS.
 _profile_guide_trees() {
   [ -n "${PIPE_REPOS+x}" ] || return 0
-  local row slug path role
+  local row slug path role base
   printf '\n## Repos in this session\n\n'
   for row in "${PIPE_REPOS[@]}"; do
-    read -r slug path role <<< "$row"
+    read -r slug path role base <<< "$row"
     case "$role" in
       work) if [ -n "${PIPE_WORK_ROWS+x}" ] && [ "${#PIPE_WORK_ROWS[@]}" -gt 1 ]; then
               echo "- \`${path}\` (\`${slug}\`), linked as \`/workspace/${path##*/}\` when the session picks it: you may change it, and it ships on its own."

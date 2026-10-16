@@ -12,7 +12,7 @@ mkdir -p "$HOME/.ssh"
 SESSION_DIR="$tmp/sessions"; mkdir -p "$SESSION_DIR"
 source "$root/lib/pipeline.sh"
 FXA_TEAMS_URI=""; source "$root/lib/teams.sh"
-rec() { printf '{ "schema": 1, "name": "%s", "label": "%s", "repos": [ { "slug": "example/%s", "role": "work" } ]%s }' "$1" "$2" "$1" "${3:-}" > "$tmp/$1.json"; echo "$tmp/$1.json"; }
+rec() { printf '{ "schema": 1, "name": "%s", "label": "%s", "repos": [ { "slug": "example/%s", "role": "work" } ], "prompts": { "goal_md": "Run make test." }%s }' "$1" "$2" "$1" "${3:-}" > "$tmp/$1.json"; echo "$tmp/$1.json"; }
 gen() { cat "$FXA_TEAMS_DIR/$1.gen"; }
 
 # The local store (no bucket).

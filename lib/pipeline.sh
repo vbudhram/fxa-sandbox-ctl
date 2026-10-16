@@ -101,20 +101,21 @@ pipeline_load() {
   PIPE_NAME="$name"
   # A team that works on Android (PIPE_ANDROID=1): every runner it starts is an Android runner.
   if [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
-  # PIPE_REPOS: one row per repo, "slug path role", role work, dep, data or ref. The
-  # first work row is the session's repo; the old single values come from the rows.
-  # Every work row goes in PIPE_WORK_ROWS ("slug path"): the repos a team stack may pick.
+  # PIPE_REPOS: one row per repo, "slug path role [base]", role work, dep, data or ref; base
+  # defaults to PIPE_BASE_BRANCH. The first work row is the session's repo; the old single values
+  # come from the rows. Every work row goes in PIPE_WORK_ROWS ("slug path [base]"): what a stack may pick.
   PIPE_WORK_ROWS=()
   if [ -n "${PIPE_REPOS+x}" ]; then
-    local row slug path role deps="" paths=" "
+    local row slug path role base deps="" paths=" "
     for row in "${PIPE_REPOS[@]}"; do
-      read -r slug path role <<< "$row"
+      read -r slug path role base <<< "$row"
       [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$path" =~ ^/home/agent/[a-z0-9-]+$ ]] && [[ "$role" =~ ^(work|dep|data|ref)$ ]] \
-        || { echo "ERROR: profile ${name}: bad repo row '${row}' (slug path role; role is work, dep, data or ref)" >&2; return 1; }
+        && [[ -z "$base" || "$base" =~ ^[A-Za-z0-9._/-]{1,60}$ ]] \
+        || { echo "ERROR: profile ${name}: bad repo row '${row}' (slug path role [base]; role is work, dep, data or ref)" >&2; return 1; }
       [[ "$paths" == *" $path "* ]] && { echo "ERROR: profile ${name}: two repo rows use ${path}" >&2; return 1; }
       paths="${paths}${path} "
       case "$role" in
-        work) PIPE_WORK_ROWS+=("$slug $path")
+        work) PIPE_WORK_ROWS+=("$slug $path${base:+ $base}")
           [ -n "${PIPE_REPO_SLUG:-}" ] || { PIPE_REPO_SLUG="$slug"; PIPE_WORKSPACE="$path"; } ;;
         dep) deps="${deps:+$deps }$slug" ;;
       esac
@@ -138,6 +139,12 @@ pipeline_load() {
   # The pool sits beside the repo's clone, and every clone is in ~/Desktop/working2: each
   # profile needs its own name, or a second team's slots are FxA's.
   PIPE_POOL_NAME="${PIPE_POOL_NAME:-${PIPE_PROFILE}-auto}"
+  # Every other team mirrors its state and has its own pause marker beside FxA's, from its name.
+  if [ "$PIPE_PROFILE" != fxa ]; then
+    local bucket="${PIPE_STATE_BUCKET:-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme}}"
+    PIPE_STATE_URI="${bucket:+${bucket}/teams-state/${PIPE_PROFILE}/state}"
+    PIPE_PAUSE_URI="${bucket:+${bucket}/teams-state/${PIPE_PROFILE}/PAUSED}"
+  fi
 
   # A repo set by hand wins for any profile. The FXA_FIXME_* state overrides are the FxA
   # pipeline's: they must not move another team's state into FxA's.

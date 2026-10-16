@@ -44,7 +44,7 @@ trees_each() {
   return "$rc"
 }
 
-# trees_allowed   The repos the loaded profile lets a stack pick, one "slug path" per line.
+# trees_allowed   The repos the loaded profile lets a stack pick, one "slug path [base]" per line.
 # A profile with no PIPE_REPOS (FxA) offers its one repo.
 trees_allowed() {
   if [ -n "${PIPE_WORK_ROWS+x}" ] && [ "${#PIPE_WORK_ROWS[@]}" -gt 0 ]; then printf '%s\n' "${PIPE_WORK_ROWS[@]}"
@@ -55,12 +55,12 @@ trees_allowed() {
 # the session has already is skipped. Each must be on the profile's list. The output kind
 # comes from the App's repositories.
 trees_init() {
-  local key="$1" want="$2" app json s slug path out found
+  local key="$1" want="$2" app json s slug path base out found
   json="$(jq -c '.trees // []' "$(_session_file "$key")")"
   app="$(_profile_app_repos 2>/dev/null || true)"
   for s in $(tr ',' ' ' <<< "$want"); do
     found=""
-    while read -r slug path; do
+    while read -r slug path base; do
       [ -n "$slug" ] || continue
       [ "$(tr 'A-Z' 'a-z' <<< "$slug")" = "$(tr 'A-Z' 'a-z' <<< "$s")" ] && { found=1; break; }
     done <<< "$(trees_allowed)"
@@ -68,7 +68,7 @@ trees_init() {
     jq -e --arg p "$path" 'any(.[]; .path == $p)' <<< "$json" >/dev/null && continue
     out=diff
     [ "${PIPE_PR_OPEN:-1}" != 0 ] && grep -qixF "$slug" <<< "$app" && out=pr
-    json="$(jq -c --arg n "${path##*/}" --arg s "$slug" --arg p "$path" --arg o "$out" --arg b "$key" --arg base "${PIPE_BASE_BRANCH:-main}" \
+    json="$(jq -c --arg n "${path##*/}" --arg s "$slug" --arg p "$path" --arg o "$out" --arg b "$key" --arg base "${base:-${PIPE_BASE_BRANCH:-main}}" \
       '. + [{name: $n, slug: $s, path: $p, out: $o, branch: $b, base: $base}]' <<< "$json")"
   done
   [ "$(jq length <<< "$json")" -gt 0 ] || { echo "ERROR: no repo picked" >&2; return 1; }

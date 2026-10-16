@@ -33,13 +33,16 @@ check "only approved egress reaches the firewall, PR off, Jira project set" "sta
   "$(get PIPE_EGRESS_EXTRA)|$(get PIPE_PR_OPEN)|$(get PIPE_JIRA_PROJECT)"
 check "a record with no connectors gets none, not the bot's FxA set" "1|" "$(printf '%s\n' "$v" | grep -c '^PIPE_MCP=')|$(get PIPE_MCP)"
 check "the host keys are derived from the name, not read" "$tmp/home/.claude/state/rusty|rusty-auto" "$(get PIPE_STATE_DIR)|$(get PIPE_POOL_NAME)"
+check "a team's state mirror and pause marker come from its name, in the state bucket" \
+  "gs://p1-fxa-ai-fixme/teams-state/rusty/state|gs://p1-fxa-ai-fixme/teams-state/rusty/PAUSED|" \
+  "$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_STATE_URI=//p" | tr -d "'")|$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_PAUSE_URI=//p" | tr -d "'")|$(get PIPE_STATE_URI)"
 check "its prompts land beside the record, as text that never runs" "Run cargo test. \$(touch /tmp/team-record-ran)|# Rusty|no" \
   "$(cat "$T/rusty/CLAUDE.md")|$(cat "$T/rusty/guide.md")|$([ -e /tmp/team-record-ran ] && echo yes || echo no)"
 check "profile_file finds a record's prompt, and a folder team's own file first" "$T/rusty/CLAUDE.md|$root/profiles/monitor/CLAUDE.md" \
   "$( export FXA_TEAMS_DIR="$T"; SANDBOX_ROOT="$root"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file rusty CLAUDE.md)|$( SANDBOX_ROOT="$root"; FXA_TEAMS_DIR="$T"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file monitor CLAUDE.md)"
 
 # The validator: each rule refuses, and a refused record never loads.
-bad() { printf '%s' "$2" > "$T/$1.json"; py validate "$T/$1.json" "$1" 2>&1 | head -1; }
+bad() { printf '%s' "$2" > "$T/$1.json"; py validate "$T/$1.json" "$1" 2>&1; }
 check "a host key in a record is refused" "1" "$(bad hk '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "hk", "state_uri": "gs://x" }' | grep -c 'state_uri is not a known key')"
 check "a name that is not the file's is refused" "1" "$(bad n1 '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "other" }' | grep -c 'does not match')"
 check "a built-in team's name is refused" "1" "$(bad fxa '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "fxa" }' | grep -c 'reserved')"
@@ -54,7 +57,9 @@ check "an egress host that is not a hostname is refused" "1" "$(bad eg '{ "schem
 check "a refused record does not load" "1" "$(loaded hk >/dev/null; echo $?)"
 check "a folder profile wins over a record of the same name" "Monitor Team" \
   "$(printf '%s' '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "monitor", "label": "Not Monitor" }' > "$T/monitor.json"; loaded monitor | sed -n "s/^PIPE_LABEL=//p" | tr -d "'")"
-rm -f "$T"/hk.json "$T"/n1.json "$T"/fxa.json "$T"/lb.json "$T"/sl.json "$T"/pa.json "$T"/nw.json "$T"/sk.json "$T"/cp.json "$T"/eg.json "$T"/monitor.json
+check "a team without the FxA stack must bring its own goal" "1" "$(bad ng '{ "schema": 1, "name": "ng", "repos": [ { "slug": "a/b", "role": "work" } ] }' | grep -c 'goal_md')"
+check "a repo row keeps its own base branch, for that tree" "example/rusty /home/agent/rusty work master" "$(printf '%s\n' "$v" | grep -o 'example/rusty /home/agent/rusty work master')"
+rm -f "$T"/ng.json "$T"/hk.json "$T"/n1.json "$T"/fxa.json "$T"/lb.json "$T"/sl.json "$T"/pa.json "$T"/nw.json "$T"/sk.json "$T"/cp.json "$T"/eg.json "$T"/monitor.json
 
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
