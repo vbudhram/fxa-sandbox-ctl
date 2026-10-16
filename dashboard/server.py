@@ -614,6 +614,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         query = parse_qs(urlparse(self.path).query)
         arg = lambda name: (query.get(name) or [""])[0]
+        # Who the page is for: the signed user and whether they may change teams (the editor shows only then).
+        if path == "/api/team-admin":
+            user = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time()))
+            self._json(200, {"user": user, "admin": bool(user and user in team_admins())})
+            return
         # One team's full record and its audit: admins only, since a record names Slack users.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit)?", path)
         if m:

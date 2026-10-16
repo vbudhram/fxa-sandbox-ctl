@@ -72,6 +72,9 @@ check("a form post is refused (JSON only); a record over 64 KB too", (415, 413),
       (call("POST", "/api/teams", headers={**sig(A, "POST", "/api/teams"), "Content-Type": "application/x-www-form-urlencoded"}, raw=b"a=1")[0],
        call("POST", "/api/teams", headers=sig(A, "POST", "/api/teams"), raw=b"x" * 70000)[0]))
 check("a cross-site request is refused before the signature counts", 403, call("POST", "/api/teams", {"record": rec}, {**sig(A, "POST", "/api/teams"), "Origin": "https://evil.test"})[0])
+check("the page learns who it is for: an admin, a viewer, nobody signed",
+      ({"user": A, "admin": True}, {"user": "viewer@example.com", "admin": False}, {"user": None, "admin": False}),
+      tuple(call("GET", "/api/team-admin", headers=h)[1] for h in (sig(A, "GET", "/api/team-admin"), sig("viewer@example.com", "GET", "/api/team-admin"), {})))
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")

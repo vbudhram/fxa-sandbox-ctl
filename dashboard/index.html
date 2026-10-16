@@ -1292,6 +1292,64 @@ document.addEventListener("click", async e => {
   } catch (err) { msg.textContent = `failed: ${err.message}`; row.querySelectorAll("button").forEach(b => b.disabled = false); }
 });
 
+// Team records: a JSON editor for team admins (/api/team-admin says who). The server checks every
+// write again: the gateway's signed user, TEAM_ADMINS, the validator and the store's generation.
+let TEAM_ADMIN = null, TED = null;   // TED: the open editor { name, text, gen, msg, ok, audit, arm }
+const TEAM_TEMPLATE = { schema: 1, name: "new-team", label: "New Team", status: "draft",
+  repos: [{ slug: "mozilla/fxa", role: "work", default: true }], stack: { kind: "fxa" },
+  access: { open: false, users: [], channels: [], jira_prefixes: [] }, mcp: [], prompts: { claude_md: "" } };
+async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; } }
+function teamEditor(name, isRecord) {
+  if (!TEAM_ADMIN?.admin) return "";
+  if (!isRecord) return `<div><h4>Edit</h4><p class="empty">A folder team: change it in <span class="mono">profiles/${esc(name)}/</span>, then promote.</p></div>`;
+  const e = TED?.name === name ? TED : null;
+  if (!e) return `<div><h4>Edit</h4><div class="acts2"><button data-team-load="${esc(name)}">${name === "__new" ? "Start from the template" : "Load the record"}</button></div></div>`;
+  const acts = name === "__new" ? `<button data-tact="create">Create as draft</button>`
+    : `<button data-tact="save">Save</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
+  return `<div data-team-ed="${esc(name)}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + esc(e.gen) : "new record"}</span></h4>
+    <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${esc(e.text)}</textarea>
+    <div class="acts2" style="margin-top:var(--s2)"><button data-tact="validate">Validate</button>${acts}</div>
+    <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${esc(e.msg || "")}</p>
+    ${e.audit ? `<table class="usage"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
+}
+async function teamRecord(n) {
+  const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
+  if (!r.ok) return { name: n, text: "", gen: "", msg: j.error || String(r.status), ok: false };
+  const { generation, ...rec } = j; return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, msg: "", ok: true };
+}
+document.addEventListener("input", e => { if (TED && e.target.classList?.contains("team-json")) TED.text = e.target.value; });
+document.addEventListener("click", async e => {
+  if (e.target.closest?.("[data-team-new]")) { SEL.teams = "__new"; TED = null; renderRight(); return; }
+  const load = e.target.closest?.("[data-team-load]");
+  if (load) {
+    const n = load.dataset.teamLoad;
+    TED = n === "__new" ? { name: n, text: JSON.stringify(TEAM_TEMPLATE, null, 2), gen: "", ok: true, msg: "Name the team and set its repos, then create it. It starts as a draft: nobody can start it until you activate it." } : await teamRecord(n);
+    renderRight(); return;
+  }
+  const btn = e.target.closest?.("[data-team-ed] button[data-tact]"); if (!btn || !TED) return;
+  const act = btn.dataset.tact, n = TED.name, say = (msg, ok) => { Object.assign(TED, { msg, ok }); renderRight(); };
+  if (act === "delete" && !TED.arm) { TED.arm = true; return say(`Click Delete again to delete ${n}. It is refused while one of its sessions can resume.`, false); }
+  TED.arm = false;
+  if (act === "audit") {
+    const r = await fetch(`/api/teams/${encodeURIComponent(n)}/audit`, { cache: "no-store" }), j = await r.json().catch(() => []);
+    TED.audit = r.ok ? j : null; return say(r.ok ? "" : j.error || String(r.status), r.ok);
+  }
+  let rec;
+  if (["validate", "create", "save"].includes(act)) { try { rec = JSON.parse(TED.text); } catch (err) { return say(`Not JSON: ${err.message}`, false); } }
+  const [url, body] = { validate: ["/api/teams/validate", { record: rec }], create: ["/api/teams", { record: rec }],
+    save: [`/api/teams/${n}`, { record: rec, generation: TED.gen }], active: [`/api/teams/${n}/status`, { status: "active" }],
+    disabled: [`/api/teams/${n}/status`, { status: "disabled" }], delete: [`/api/teams/${n}/delete`, {}] }[act];
+  btn.closest("[data-team-ed]").querySelectorAll("button").forEach(b => b.disabled = true);
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  const j = await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" };
+  if (!r?.ok) return say((r?.status === 409 ? "Someone changed this team after you loaded it. Load the record again and redo your edit.\n" : "") + (j.error || r?.status), false);
+  if (act === "delete") { TED = null; SEL.teams = null; }
+  else if (act === "create") { SEL.teams = rec.name; TED = { ...(await teamRecord(rec.name)), msg: j.out, ok: true }; }
+  else if (act !== "validate") { TED = { ...(await teamRecord(n)), msg: j.out, ok: true }; }
+  else return say(j.out || "valid", true);
+  await loadTeams(); renderRight();
+});
+
 // Teams: each profile, what it gets, and who can start one. Read-only; the server rebuilds it every 5 min.
 let TEAMS = null;
 async function loadTeams() {
@@ -1367,7 +1425,8 @@ function renderTeams() {
     (T.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("") +
     (!ts.length ? `<div class="emptybox">No profiles/*/profile.conf found</div>` : !rows.length ? `<div class="emptybox">Nothing matches.</div>`
       : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th title="Slack conversations in 30 days; a resumed thread counts once. Leaves out dry-run and dev sessions.">Conversations, 30d</th><th title="Slack sessions and quick answers, 30 days">Slack, 30d</th><th title="pipeline runs and passes, 30 days">Pipeline, 30d</th><th${L}>Last used</th><th${L} title="Work repos: a session can change them">Repos</th><th${L}>Tools</th><th${L}>Access</th></tr></thead>
-        <tbody>${rows.map(row).join("")}</tbody></table></div>`));
+        <tbody>${rows.map(row).join("")}</tbody></table></div>`) +
+    (TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><button data-team-new>New team</button><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""));
 }
 function teamDetails(t) {
   const p = esc(t.profile), conf = `profiles/${p}/profile.conf`;
@@ -1385,7 +1444,7 @@ function teamDetails(t) {
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
     <div>${h("Mode", `${conf} PIPE_PR_OPEN`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>`;
-  return out;
+  return out + teamEditor(t.profile, t.access?.record);
 }
 // A team's use in 30 days, and the two places that show its sessions and its spend.
 function teamUsage(t) {
@@ -2316,7 +2375,10 @@ function renderRight() {
     if (v) { const s = (AGENTS?.sessions ?? []).find(x => x.key === v.name.replace(/^agent-/, ""));
       html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${kvr("Up for", short(v.age_seconds))}${v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : ""}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
         ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : kvr("Session", "pipeline run")}</div>`; } }
-  else if (VIEW === "teams") { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams); if (t) html = teamDetails(t); }
+  else if (VIEW === "teams") {
+    if (document.activeElement?.classList?.contains("team-json")) return;   // a refresh must not wipe an edit in progress
+    if (SEL.teams === "__new") html = `${closeBtn}<h2 class="rh">New team<small>a team record</small></h2>` + teamEditor("__new", true);
+    else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams); if (t) html = teamDetails(t); } }
   el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
   document.body.classList.toggle("noitem", !html && ["sessions", "runners"].includes(VIEW));
 }
@@ -2399,7 +2461,7 @@ async function poll() {
   overlay();
   render();
   HIST_OPEN.forEach(loadHist);
-  loadErrors(); loadLessons(); loadStats(); loadTeams();
+  loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin();
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }
