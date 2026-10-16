@@ -57,7 +57,46 @@ _teams_pull() {
   rm -f "$tmp"; return $rc
 }
 
-# teams_validate <file> [<name>]   The record's own rules, then its clashes with the other teams.
+# _teams_live <file>   Facts outside the record, checked live: the GitHub App on each work repo, and
+# the Jira project and what the pipeline's login may do there. WARN lines (stdout) do not refuse a
+# write; ERROR lines (stderr) do: an active queue whose login cannot edit or transition its tickets
+# would lose track of them and launch one again on every pass. FXA_TEAMS_LIVE=0 skips the checks.
+_teams_live() {
+  [ "${FXA_TEAMS_LIVE:-1}" = 1 ] || return 0
+  local f="$1" s code proj st queue have p miss="" rc=0
+  for s in $(jq -r '.repos[]? | select(.role == "work") | .slug' "$f"); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
+      -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
+    case "$code" in
+      200) ;;
+      404) echo "WARN: the agent's GitHub App is not installed on ${s}, so its changes ship as a diff" ;;
+      *) echo "WARN: could not check the GitHub App on ${s} (HTTP ${code})" ;;
+    esac
+  done
+  proj="$(jq -r '.jira.project // empty' "$f")"; [ -n "$proj" ] || return 0
+  [ -n "${PIPE_JIRA_BASIC:-}" ] || { echo "WARN: no Jira login on this host (PIPE_JIRA_BASIC), so Jira project ${proj} was not checked"; return 0; }
+  code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - -o /dev/null -w '%{http_code}' --max-time 20 "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/rest/api/3/project/${proj}" 2>/dev/null)" || code=000
+  case "$code" in
+    200) ;;
+    404) echo "ERROR: there is no Jira project ${proj}, or the pipeline's login cannot see it" >&2; return 1 ;;
+    *) echo "WARN: could not check Jira project ${proj} (HTTP ${code})"; return 0 ;;
+  esac
+  have="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - --max-time 20 \
+    "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/rest/api/3/mypermissions?projectKey=${proj}&permissions=BROWSE_PROJECTS,EDIT_ISSUES,TRANSITION_ISSUES" 2>/dev/null \
+    | jq -r '[.permissions // {} | to_entries[] | select(.value.havePermission) | .key] | join(" ")' 2>/dev/null)" || have=""
+  for p in BROWSE_PROJECTS EDIT_ISSUES TRANSITION_ISSUES; do grep -qw "$p" <<< "$have" || miss="${miss} ${p}"; done
+  [ -n "$miss" ] || return 0
+  st="$(jq -r '.status // "draft"' "$f")"; queue="$(jq -r '.jira.queue // false' "$f")"
+  if [ "$st" = active ] && [ "$queue" = true ]; then
+    echo "ERROR: the pipeline's Jira login lacks${miss} on ${proj}, so an active queue there would lose track of its tickets; turn the queue off, or get the login those rights" >&2; rc=1
+  else
+    echo "WARN: the pipeline's Jira login lacks${miss} on ${proj}; turning its queue on is refused until it has them"
+  fi
+  return $rc
+}
+
+# teams_validate <file> [<name>]   The record's own rules, then its clashes with the other teams,
+# then the live checks.
 teams_validate() {
   local f="$1" name="${2:-}" builtin="" p
   [ -n "$name" ] || name="$(jq -r '.name // empty' "$f" 2>/dev/null)"
@@ -67,7 +106,8 @@ teams_validate() {
     p="$( ( pipeline_load "$(basename "$(dirname "$p")")" >/dev/null 2>&1 && printf '%s:%s' "${PIPE_JIRA_PROJECT:-$([ "$PIPE_PROFILE" = fxa ] && echo FXA)}" "$PIPE_PROFILE" ) )"
     [[ "$p" =~ ^[A-Z][A-Z0-9]*: ]] && builtin="${builtin} ${p}"
   done
-  FXA_BUILTIN_JIRA="$builtin" _TEAMS_PY unique "$f" "$FXA_TEAMS_DIR"
+  FXA_BUILTIN_JIRA="$builtin" _TEAMS_PY unique "$f" "$FXA_TEAMS_DIR" || return 1
+  _teams_live "$f"
 }
 
 # _teams_write <name> <file> <gen>   Write the record if the store still holds <gen> (0: no record yet).

@@ -7,7 +7,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-export HOME="$tmp/home" SANDBOX_ROOT="$root" FXA_TEAMS_DIR="$tmp/cache" FXA_TEAM_ACTOR=owner@example.com
+export HOME="$tmp/home" SANDBOX_ROOT="$root" FXA_TEAMS_DIR="$tmp/cache" FXA_TEAM_ACTOR=owner@example.com FXA_TEAMS_LIVE=0
 mkdir -p "$HOME/.ssh"
 SESSION_DIR="$tmp/sessions"; mkdir -p "$SESSION_DIR"
 source "$root/lib/pipeline.sh"
@@ -50,6 +50,26 @@ check "profile lint passes with records and the index in the cache" "profiles: o
   "$(teams_create "$(rec linted Linted)" >/dev/null; cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
 check "the index is not a team, and no record can be named index" "0|1" \
   "$(pipeline_profile_names | grep -cx index)|$(teams_create "$(rec index Index)" 2>&1 | grep -c reserved)"
+
+# The live checks, with GitHub and Jira faked: a curl that answers by URL.
+curl() { local u="${@: -1}"
+  case "$u" in
+    *repos/example/noapp/installation) echo 404 ;; *installation) echo 200 ;;
+    *project/NOPE) echo 404 ;; *project/*) echo 200 ;;
+    *mypermissions*projectKey=RO*) echo '{"permissions":{"BROWSE_PROJECTS":{"havePermission":true},"EDIT_ISSUES":{"havePermission":false},"TRANSITION_ISSUES":{"havePermission":false}}}' ;;
+    *mypermissions*) echo '{"permissions":{"BROWSE_PROJECTS":{"havePermission":true},"EDIT_ISSUES":{"havePermission":true},"TRANSITION_ISSUES":{"havePermission":true}}}' ;;
+  esac; }
+github_app_jwt() { echo jwt; }
+live() { FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC="u@example.com:t" teams_validate "$(rec "$1" Live "$2")" "$1" 2>&1; }
+check "a work repo without the GitHub App is a warning, and the record is still valid" "1|0" \
+  "$(sed -i.bak 's#example/lv2#example/noapp#' "$(rec lv2 Live)"; FXA_TEAMS_LIVE=1 teams_validate "$tmp/lv2.json" lv2 2>&1 | grep -c 'App is not installed on example/noapp')|$(FXA_TEAMS_LIVE=1 teams_validate "$tmp/lv2.json" lv2 >/dev/null 2>&1; echo $?)"
+check "an unknown Jira project is refused" "1|1" \
+  "$(live lv3 ', "jira": { "project": "NOPE" }' | grep -c 'no Jira project NOPE')|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv3 Live ', "jira": { "project": "NOPE" }')" lv3 >/dev/null 2>&1; echo $?)"
+check "an active queue where the login cannot edit is refused; a draft or no queue only warns" "1|0|0|1" \
+  "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv4 Live ', "status": "active", "jira": { "project": "RO", "queue": true }')" lv4 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv5 Live ', "status": "draft", "jira": { "project": "RO", "queue": true }')" lv5 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv6 Live ', "status": "active", "jira": { "project": "RO" }')" lv6 >/dev/null 2>&1; echo $?)|$(live lv5 ', "status": "draft", "jira": { "project": "RO", "queue": true }' | grep -c 'lacks EDIT_ISSUES TRANSITION_ISSUES on RO')"
+check "full rights and an active queue: valid, no warning" "0|0" \
+  "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv7 Live ', "status": "active", "jira": { "project": "OK", "queue": true }')" lv7 >/dev/null 2>&1; echo $?)|$(live lv7 ', "status": "active", "jira": { "project": "OK", "queue": true }' | grep -c WARN)"
+unset -f curl github_app_jwt
 
 # The bucket: a fake gcloud keeps each object and its generation under $B.
 B="$tmp/bucket"; mkdir -p "$B"; FXA_TEAMS_URI="gs://test/teams"; rm -rf "$FXA_TEAMS_DIR"; next=100
