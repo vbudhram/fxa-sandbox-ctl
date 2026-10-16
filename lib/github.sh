@@ -529,7 +529,17 @@ _gh_app_installation() {
 #   An installation token: what `gh` and git use to act as the bot. It covers only
 #   the work repo (PIPE_REPO_SLUG). It lives 60 minutes, so mint it at handoff,
 #   never at launch. Cached for 50 minutes for each installation and repo.
+# _gh_claimed <slug>   The loaded team claims the repo as a work row (or has no rows: its one repo).
+# A record names any repo, so the mint checks the claim, not only the session's tree list.
+_gh_claimed() {
+  local r
+  [ -n "${PIPE_WORK_ROWS+x}" ] && [ "${#PIPE_WORK_ROWS[@]}" -gt 0 ] || return 0
+  for r in "${PIPE_WORK_ROWS[@]}"; do [ "$(tr 'A-Z' 'a-z' <<< "${r%% *}")" = "$(tr 'A-Z' 'a-z' <<< "$1")" ] && return 0; done
+  return 1
+}
+
 github_app_token() {
+  _gh_claimed "${PIPE_REPO_SLUG:-}" || { echo "ERROR: team ${PIPE_PROFILE:-?} does not claim ${PIPE_REPO_SLUG:-?} as a work repo, so no token is minted for it." >&2; return 1; }
   local inst repo="${PIPE_REPO_SLUG#*/}" cache
   inst="$(_gh_app_installation)"
   cache="${TMPDIR:-/tmp}/fxa-github-app-token.${inst}.${repo}"

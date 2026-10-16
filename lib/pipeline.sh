@@ -654,14 +654,22 @@ pipeline_health_json() {
 
 # _profile_app_repos   The repos the GitHub App is installed on, one per line, cached
 # for 10 minutes. Fails when the list cannot be read.
+# The profile's work repos that the agent's GitHub App is installed on, one a line, cached 10 minutes.
+# Asked of each repo with the App's JWT (200 or 404): the installation token's own list names only
+# its installation's repos, so a repo under another installation read as "not installed".
 _profile_app_repos() {
-  local f="${PIPE_STATE_DIR}/app-repos.txt" t
+  local f="${PIPE_STATE_DIR}/app-repos.txt" t s code
   if [ ! -s "$f" ] || [ $(( $(date +%s) - $(_mtime "$f") )) -gt 600 ]; then
     t="$(mktemp "${f}.XXXXXX")" || return 1
-    if gh api /installation/repositories --paginate -q '.repositories[].full_name' > "$t" 2>/dev/null && [ -s "$t" ]; then mv "$t" "$f"
-    else rm -f "$t"; return 1; fi
+    echo "# checked" > "$t"
+    for s in $( { trees_allowed 2>/dev/null || echo "${PIPE_REPO_SLUG:-}"; } | cut -d' ' -f1 ); do
+      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
+        -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
+      case "$code" in 200) echo "$s" >> "$t" ;; 404) ;; *) rm -f "$t"; return 1 ;; esac
+    done
+    mv "$t" "$f"
   fi
-  cat "$f"
+  grep -v '^#' "$f" || true
 }
 
 # pipeline_profile_json   The loaded profile's repos and the effective write access of

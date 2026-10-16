@@ -86,7 +86,7 @@ check "video appended as a link" "1" "$(grep -cE '^\[run.mp4\]\(https://.*/3/run
 check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.googleapis.com')"
 
 # The App token is limited to the work repo, from that repo's own installation.
-( eval "$(sed -n '/^github_app_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p' "$here/github.sh")"
+( eval "$(sed -n '/^github_app_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p;/^_gh_claimed() {/,/^}/p' "$here/github.sh")"
   export TMPDIR="$tmp/tok"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111
   github_app_jwt() { echo jwt; }; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
   curl() { local url="${*: -1}" body=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && body="$2"; shift; done
@@ -106,6 +106,11 @@ check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.g
   out="$( (set -eE; trap 'echo "TRAPPED $BASH_COMMAND"' ERR; PIPE_REPO_SLUG=mozilla-services/syncstorage-rs github_app_token) 2>&1)"; rc=$?
   check "a refused mint is a handled failure with its own line, not a crash" "1|ERROR: could not mint a GitHub App installation token for syncstorage-rs.|0" \
     "$rc|$(grep -v '^TRAPPED' <<< "$out")|$(grep '^TRAPPED' <<< "$out" | grep -vc '^TRAPPED return')"
+  # A team mints only for a repo it claims as a work row; a team with no rows keeps its one repo.
+  curl() { case "${*: -1}" in */installation) return 22 ;; */access_tokens) echo '{"token":"t-ok"}' ;; esac; }
+  rm -rf "$TMPDIR"; mkdir -p "$TMPDIR"
+  check "a claimed repo mints; an unclaimed one is refused with a reason" "t-ok|1|1" \
+    "$(PIPE_WORK_ROWS=("mozilla/fxa /home/agent/fxa"); PIPE_REPO_SLUG=Mozilla/FXA github_app_token)|$(PIPE_WORK_ROWS=("mozilla/fxa /home/agent/fxa"); PIPE_PROFILE=t PIPE_REPO_SLUG=evil/repo github_app_token >/dev/null 2>&1; echo $?)|$(PIPE_WORK_ROWS=("mozilla/fxa /home/agent/fxa"); PIPE_PROFILE=t PIPE_REPO_SLUG=evil/repo github_app_token 2>&1 | grep -c 'does not claim evil/repo')"
   exit "$fail" ) || fail=1
 
 # A read-only profile's gh wrapper asks for no App token at all.

@@ -113,14 +113,17 @@ check "the monitor profile works in its own clone, with FxA's stack beside it" "
 eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p;/^pipeline_mcp() {/p' "$root/lib/pipeline.sh")"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 PIPE_STATE_DIR="$tmp/ps"; mkdir -p "$PIPE_STATE_DIR"
-gh() { echo "call" >> "$tmp/ghcalls"; printf '%s\n' mozilla/fxa; }
+github_app_jwt() { echo jwt; }
+curl() { echo "call" >> "$tmp/ghcalls"; case "${*: -1}" in */repos/mozilla/fxa/installation) echo 200 ;; *) echo 404 ;; esac; }
 pj() { PIPE_PROFILE="$1" PIPE_REPO_SLUG="$2" PIPE_DEP_REPOS="$3" PIPE_PR_OPEN="$4" pipeline_profile_json | jq -c '[.read_only, (.repos[] | "\(.slug):\(.role):\(.write)")]'; }
 check "fxa can write to its repo" '[false,"mozilla/fxa:work:true"]' "$(pj fxa mozilla/fxa '' 1)"
 check "a read-only profile writes nowhere, deps included" '[true,"mozilla/blurts-server:work:false","mozilla/fxa:dep:false"]' "$(pj monitor mozilla/blurts-server mozilla/fxa 0)"
 check "no App on the work repo: no write" '"the agent'"'"'s GitHub App is not installed on this repo"' \
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/other PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
 check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR/app-repos.txt"; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"
-gh() { return 1; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
+check "a repo under another installation counts as installed (asked per repo, not from one token's list)" '"mozilla/fxa:work:true"' \
+  "$(rm -f "$PIPE_STATE_DIR/app-repos.txt"; PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
+curl() { echo 500; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
 check "a profile's PIPE_MCP replaces the bot's list" "github,jira" "$(PIPE_MCP=github,jira pipeline_mcp jira,slack)"
 check "an empty PIPE_MCP means none" "" "$(PIPE_MCP= pipeline_mcp jira,slack)"
 check "no PIPE_MCP: the bot's list" "jira,slack" "$(unset PIPE_MCP; pipeline_mcp jira,slack)"
@@ -130,7 +133,7 @@ check "pyfxa-team sets its connectors" "github,jira" "$( ( source "$root/profile
 check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
 check "a failed App check says so, not 'not installed'" '"the GitHub App check failed"' \
   "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
-unset -f gh
+unset -f gh curl github_app_jwt
 
 # PIPE_REPOS: one row per repo (slug path role); the old single values come from it.
 mkdir -p "$tmp/r/profiles/multi" "$tmp/r/profiles/badrole"
