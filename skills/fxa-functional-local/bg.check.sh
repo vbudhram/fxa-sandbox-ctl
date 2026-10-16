@@ -25,7 +25,7 @@ check "the result once it ends: PASS and the video" "0|PASS fake|1" "$rc|$(grep 
 $R --bg 1 fail >/dev/null; out="$($R wait 20)"; rc=$?
 check "a failed run returns its exit code" "1|FAIL fake" "$rc|$out"
 # The run dies whole: the wrapper first, so it cannot write an exit code.
-$R --bg 30 >/dev/null; sleep 1; kill "$(cat "$tmp/job/pid")" 2>/dev/null; pkill -f "sleep 30"
+$R --bg 30 >/dev/null; sleep 1; kill "$(cat "$tmp/job/pid")" 2>/dev/null; pkill -xf "sleep 30"   # -x: not a "sleep 300" of a check beside it
 t0=$(date +%s); out="$($R wait 20)"; rc=$?
 check "a run that dies is reported at once, not at the time limit" "4|1|yes" "$rc|$(grep -c 'died' <<< "$out")|$([ $(( $(date +%s) - t0 )) -lt 10 ] && echo yes)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

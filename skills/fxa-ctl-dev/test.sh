@@ -68,10 +68,10 @@ run_linux() {
   command -v docker >/dev/null || { echo "linux: skipped, no docker"; return; }
   # The host's own platform (no emulation on an arm64 Mac), and an image with the packages that
   # docker builds once and then takes from its cache, so a run does not reinstall them.
-  local plat=linux/amd64 img=fxa-sandbox-ctl-test:2
+  local plat=linux/amd64 img=fxa-sandbox-ctl-test:3
   case "$(uname -m)" in arm64|aarch64) plat=linux/arm64 ;; esac
   printf '%s\n' 'FROM ubuntu:24.04' 'ENV DEBIAN_FRONTEND=noninteractive' \
-    'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 python3-pip openssl perl rsync ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*' \
+    'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 python3-pip openssl perl rsync sqlite3 ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*' \
     "RUN pip3 install -q --break-system-packages $(tr '\n' ' ' < "$ROOT/desktop-gateway/requirements.txt")" \
     | docker build -q --platform "$plat" -t "$img" - >/dev/null || { echo "linux: the test image did not build"; rc=1; return; }
   docker run --rm --platform "$plat" -v "$ROOT":/src:ro "$img" bash -c "$(declare -f check_one run_pool)"'
