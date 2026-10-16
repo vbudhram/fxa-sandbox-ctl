@@ -237,10 +237,23 @@ def check(rec, name=None):
             bad.append(f"boot/{sc}.sh changed since it was pinned: review it, then pin {file_sha(path)}")
 
     # Secrets are names in Secret Manager, never values, and only the team's own: fxa-team-<name>-<what>.
-    sec = obj(rec.get("secrets", {}), "secrets", {"jira"})
+    sec = obj(rec.get("secrets", {}), "secrets", {"jira", "runtime"})
     if "jira" in sec and isinstance(n, str):
         if not re.match(rf"^fxa-team-{re.escape(n)}-[a-z0-9-]{{1,40}}$", str(sec["jira"])):
             bad.append(f"secrets.jira must be a Secret Manager name fxa-team-{n}-<what>")
+    runtime = sec.get("runtime", [])
+    if not isinstance(runtime, list) or len(runtime) > 10:
+        bad.append("secrets.runtime must list at most 10 secrets")
+        runtime = []
+    for i, r in enumerate(runtime):
+        r = obj(r, f"secrets.runtime[{i}]", {"secret", "path"})
+        sp, pp = str(r.get("secret", "")), str(r.get("path", ""))
+        if not isinstance(n, str) or not re.match(rf"^fxa-team-{re.escape(n)}-[a-z0-9-]{{1,40}}$", sp):
+            bad.append(f"secrets.runtime[{i}].secret must be a Secret Manager name fxa-team-{n}-<what>")
+        # Inside one of the team's own repo folders, so it lands where the stack reads it and nowhere else.
+        if not re.match(r"^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]{1,150}$", pp) or ".." in pp \
+                or "/".join(pp.split("/")[:4]) not in paths:
+            bad.append(f"secrets.runtime[{i}].path must be a file inside one of the team's repo folders")
 
     for k in ("created", "updated"):
         if k in rec:
@@ -288,6 +301,8 @@ def env(rec):
     if rec.get("boot"):
         yield "PIPE_BOOT_SCRIPT", rec["boot"]["script"]
         yield "PIPE_BOOT_SHA256", rec["boot"]["sha256"]
+    if rec.get("secrets", {}).get("runtime"):
+        yield "PIPE_RUNTIME_SECRETS", " ".join(f"{r['secret']}={r['path']}" for r in rec["secrets"]["runtime"])
     if rec.get("secrets", {}).get("jira"):
         yield "PIPE_JIRA_SECRET", rec["secrets"]["jira"]
     if "launches_per_day" in rec.get("caps", {}):

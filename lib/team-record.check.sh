@@ -130,6 +130,23 @@ check "a run token names its team, and the team file holds the record's caps (no
   "capped|{\"day_usd\":25,\"month_usd\":400}|{}" \
   "$(jq -r .team "$tmp"/proxy/tokens/$(cat "$tmp/proxy/runs/run-capped").json)|$(jq -c . "$tmp/proxy/teams/capped.json")|$(jq -c . "$tmp/proxy/teams/plain.json")"
 
+# Runtime secrets: names of the team's own, written inside its own repo folders, never on a command line.
+check "a runtime secret must be the team's own, and land inside one of its repo folders" "0|1|1|1" \
+  "$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/fxa/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other-db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
+eval "$(sed -n '/^_team_runtime_secrets() {/,/^}/p' "$root/lib/agent.sh")"
+R2="$tmp/rt"; mkdir -p "$R2/home/agent/fxa/.git/info"
+gcloud() { case "$*" in *fxa-team-cd-db*) printf 'DB=postgres://s3cret' ;; *) return 1 ;; esac; }
+# The runner: the command runs here, with /home/agent moved under $R2 and sudo -u agent dropped.
+vm_exec() { shift 4; printf '%s\n' "$*" >> "$tmp/rt.cmds"; bash -c "${*//\/home\/agent/$R2/home/agent}"; }
+PIPE_RUNTIME_SECRETS="fxa-team-cd-db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
+check "a runtime secret lands at its path, mode 600, out of git, and never on a command line" "0|DB=postgres://s3cret|600|1|0" \
+  "$rc|$(cat "$R2/home/agent/fxa/config/.env.db")|$(stat -c %a "$R2/home/agent/fxa/config/.env.db" 2>/dev/null || stat -f %Lp "$R2/home/agent/fxa/config/.env.db")|$(grep -cx '/config/.env.db' "$R2/home/agent/fxa/.git/info/exclude")|$(grep -c 's3cret' "$tmp/rt.cmds")"
+vm_exec() { shift 4; bash -c "${*//\/home\/agent/$R2/home/agent}" < /dev/null; }   # stdin used up (an ssh retry)
+rm -f "$R2/home/agent/fxa/config/.env.db"; PIPE_RUNTIME_SECRETS="fxa-team-cd-db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
+check "a short read fails and leaves no file" "1|no|0" \
+  "$rc|$([ -e "$R2/home/agent/fxa/config/.env.db" ] && echo yes || echo no)|$(ls -A "$R2/home/agent/fxa/config" | grep -c fxa-secret)"
+unset -f gcloud vm_exec
+
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
 lint() { printf '%s\n' "$@" > "$f/profile.conf"; ( source "$root/lib/pipeline.sh"; pipeline_conf_lint "$f/profile.conf" >/dev/null; echo $? ); }

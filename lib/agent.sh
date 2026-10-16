@@ -263,6 +263,27 @@ _put_run_files() {
   return $rc
 }
 
+# _team_runtime_secrets <runner>   A team record's runtime secrets (secrets.runtime, "secret=path"): each
+# read from Secret Manager and written to its path as agent, mode 600. The value goes over ssh's stdin,
+# never on a command line, and a short read (an ssh retry after a failed login) refuses instead of
+# leaving an empty file. Each path is kept out of its repo's commits (.git/info/exclude).
+_team_runtime_secrets() {
+  local name="$1" pair s p v n repo dir rc=0
+  for pair in ${PIPE_RUNTIME_SECRETS:-}; do
+    s="${pair%%=*}" p="${pair#*=}"
+    [[ "$s" =~ ^fxa-team-[a-z0-9-]+$ ]] && [[ "$p" =~ ^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]+$ ]] && [[ "$p" != *..* ]] \
+      || { echo "WARN: bad runtime secret entry ${pair}" >&2; rc=1; continue; }
+    v="$(gcloud secrets versions access latest --secret "$s" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" \
+      || { echo "WARN: could not read runtime secret ${s}" >&2; rc=1; continue; }
+    n="$(printf '%s' "$v" | wc -c | tr -d ' ')"
+    repo="$(cut -d/ -f1-4 <<< "$p")" dir="$(dirname "$p")"
+    printf '%s' "$v" | vm_exec "$name" sudo -u agent bash -c "umask 077; mkdir -p '${dir}' && t=\$(mktemp '${dir}/.fxa-secret.XXXXXX') && cat > \"\$t\" && [ \"\$(wc -c < \"\$t\" | tr -d ' ')\" = ${n} ] && mv -f \"\$t\" '${p}' || { rm -f \"\$t\"; exit 3; }
+      [ -d '${repo}/.git' ] && { grep -qxF '/${p#"$repo"/}' '${repo}/.git/info/exclude' 2>/dev/null || echo '/${p#"$repo"/}' >> '${repo}/.git/info/exclude'; }; true" >/dev/null 2>&1 \
+      || { echo "WARN: runtime secret ${s} did not reach ${p}" >&2; rc=1; }
+  done
+  return $rc
+}
+
 # _gce_profile_boot <name>   Ship the profile's boot.sh and start it as root, detached:
 # it sets up the profile's stack while the agent reads code, and writes
 # /run/fxa-profile/ready or failed. Nothing for a profile without one.
@@ -1059,6 +1080,9 @@ agent_run() {
   fi
   echo "Applying security hardening..."
   _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  # A team's runtime secrets first: its boot script may read them.
+  [ "$FXA_VM_BACKEND" != gce ] || [ -z "${PIPE_RUNTIME_SECRETS:-}" ] || _team_runtime_secrets "$name" \
+    || echo "WARN: a runtime secret of ${PIPE_PROFILE} did not reach the runner; its stack may not start" >&2
   # After the firewall, before the agent: the profile's stack sets up while the agent reads.
   if [ "$FXA_VM_BACKEND" = "gce" ]; then _gce_profile_boot "$name" || echo "WARN: the ${PIPE_PROFILE} stack setup did not start; the agent can run boot.sh" >&2; fi
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
