@@ -120,10 +120,10 @@ check "fxa can write to its repo" '[false,"mozilla/fxa:work:true"]' "$(pj fxa mo
 check "a read-only profile writes nowhere, deps included" '[true,"mozilla/blurts-server:work:false","mozilla/fxa:dep:false"]' "$(pj monitor mozilla/blurts-server mozilla/fxa 0)"
 check "no App on the work repo: no write" '"the agent'"'"'s GitHub App is not installed on this repo"' \
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/other PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
-check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR/app-repos.txt"; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"
+check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR"/app-repos.*.txt; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"
 check "a repo under another installation counts as installed (asked per repo, not from one token's list)" '"mozilla/fxa:work:true"' \
-  "$(rm -f "$PIPE_STATE_DIR/app-repos.txt"; PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
-curl() { echo 500; }; rm -f "$PIPE_STATE_DIR/app-repos.txt"
+  "$(rm -f "$PIPE_STATE_DIR"/app-repos.*.txt; PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
+curl() { echo 500; }; rm -f "$PIPE_STATE_DIR"/app-repos.*.txt
 check "a profile's PIPE_MCP replaces the bot's list" "github,jira" "$(PIPE_MCP=github,jira pipeline_mcp jira,slack)"
 check "an empty PIPE_MCP means none" "" "$(PIPE_MCP= pipeline_mcp jira,slack)"
 check "no PIPE_MCP: the bot's list" "jira,slack" "$(unset PIPE_MCP; pipeline_mcp jira,slack)"

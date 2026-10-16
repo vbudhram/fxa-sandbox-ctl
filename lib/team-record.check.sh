@@ -94,7 +94,7 @@ check "every reader of a repo row takes the fourth field apart" "" \
 
 # A team's own Jira credential: a Secret Manager name of its own; the loader reads it, logs acli in once.
 check "secrets.jira must be the team's own fxa-team-<name>-* name" "0|1" \
-  "$(code ', "secrets": { "jira": "fxa-team-cd-jira" }' | grep -c 'secrets.jira')|$(code ', "secrets": { "jira": "fxa-team-other-jira" }' | grep -c 'secrets.jira')"
+  "$(code ', "secrets": { "jira": "fxa-team-cd--jira" }' | grep -c 'secrets.jira')|$(code ', "secrets": { "jira": "fxa-team-other--jira" }' | grep -c 'secrets.jira')"
 mkdir -p "$tmp/fake"; cat > "$tmp/fake/gcloud" <<G
 #!/bin/bash
 echo "\$*" >> "$tmp/gcloud.calls"; cat "$tmp/secret"
@@ -104,7 +104,7 @@ cat > "$tmp/fake/acli" <<G
 echo "HOME=\$HOME \$* token=\$(cat)" >> "$tmp/acli.calls"
 G
 chmod +x "$tmp/fake/gcloud" "$tmp/fake/acli"
-printf '{ "schema": 1, "name": "jt", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "secrets": { "jira": "fxa-team-jt-jira" } }' > "$T/jt.json"
+printf '{ "schema": 1, "name": "jt", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "secrets": { "jira": "fxa-team-jt--jira" } }' > "$T/jt.json"
 printf 'bot@example.com:tok123' > "$tmp/secret"
 jl() { ( PATH="$tmp/fake:$PATH" FXA_TEAMS_SECRET_DIR="$tmp/tsec" loaded jt | grep -E '^PIPE_JIRA_BASIC=' ); }
 first="$(jl)"; second="$(jl)"; acli_logins="$(grep -c 'jira auth login' "$tmp/acli.calls")"
@@ -132,20 +132,34 @@ check "a run token names its team, and the team file holds the record's caps (no
 
 # Runtime secrets: names of the team's own, written inside its own repo folders, never on a command line.
 check "a runtime secret must be the team's own, and land inside one of its repo folders" "0|1|1|1" \
-  "$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/fxa/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other-db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd-db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
+  "$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/fxa/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other--db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
 eval "$(sed -n '/^_team_runtime_secrets() {/,/^}/p' "$root/lib/agent.sh")"
 R2="$tmp/rt"; mkdir -p "$R2/home/agent/fxa/.git/info"
-gcloud() { case "$*" in *fxa-team-cd-db*) printf 'DB=postgres://s3cret' ;; *) return 1 ;; esac; }
-# The runner: the command runs here, with /home/agent moved under $R2 and sudo -u agent dropped.
-vm_exec() { shift 4; printf '%s\n' "$*" >> "$tmp/rt.cmds"; bash -c "${*//\/home\/agent/$R2/home/agent}"; }
-PIPE_RUNTIME_SECRETS="fxa-team-cd-db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
+gcloud() { case "$*" in *fxa-team-cd--db*) printf 'DB=postgres://s3cret' ;; *) return 1 ;; esac; }
+# The runner: the script after "sudo -u agent bash -c" runs here, with /home/agent moved under $R2.
+vm_exec() { shift 6; printf '%s\n' "$*" >> "$tmp/rt.cmds"; bash -c "${1//\/home\/agent/$R2/home/agent}"; }
+PIPE_RUNTIME_SECRETS="fxa-team-cd--db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
 check "a runtime secret lands at its path, mode 600, out of git, and never on a command line" "0|DB=postgres://s3cret|600|1|0" \
   "$rc|$(cat "$R2/home/agent/fxa/config/.env.db")|$(stat -c %a "$R2/home/agent/fxa/config/.env.db" 2>/dev/null || stat -f %Lp "$R2/home/agent/fxa/config/.env.db")|$(grep -cx '/config/.env.db' "$R2/home/agent/fxa/.git/info/exclude")|$(grep -c 's3cret' "$tmp/rt.cmds")"
-vm_exec() { shift 4; bash -c "${*//\/home\/agent/$R2/home/agent}" < /dev/null; }   # stdin used up (an ssh retry)
-rm -f "$R2/home/agent/fxa/config/.env.db"; PIPE_RUNTIME_SECRETS="fxa-team-cd-db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
+vm_exec() { shift 6; bash -c "${1//\/home\/agent/$R2/home/agent}" < /dev/null; }   # stdin used up (an ssh retry)
+rm -f "$R2/home/agent/fxa/config/.env.db"; PIPE_RUNTIME_SECRETS="fxa-team-cd--db=/home/agent/fxa/config/.env.db"; _team_runtime_secrets r 2>/dev/null; rc=$?
 check "a short read fails and leaves no file" "1|no|0" \
   "$rc|$([ -e "$R2/home/agent/fxa/config/.env.db" ] && echo yes || echo no)|$(ls -A "$R2/home/agent/fxa/config" | grep -c fxa-secret)"
 unset -f gcloud vm_exec
+# A trailing newline survives (an ssh key, a PEM); a path git tracks is refused, since exclude would not cover it.
+gcloud() { printf 'KEY\nline2\n'; }
+vm_exec() { shift 6; bash -c "${1//\/home\/agent/$R2/home/agent}"; }
+PIPE_RUNTIME_SECRETS="fxa-team-cd--db=/home/agent/fxa/id_key"; _team_runtime_secrets r 2>/dev/null
+check "a runtime secret keeps its trailing newline" "$(printf 'KEY\nline2\n' | od -c | head -2 | tr -s ' ')" "$(od -c < "$R2/home/agent/fxa/id_key" | head -2 | tr -s ' ')"
+( cd "$R2/home/agent/fxa" && git init -q . 2>/dev/null; echo tracked > app.cfg && git add app.cfg && git -c user.email=t@example.com -c user.name=t commit -qm x )
+PIPE_RUNTIME_SECRETS="fxa-team-cd--db=/home/agent/fxa/app.cfg"; out="$(_team_runtime_secrets r 2>&1)"; rc=$?
+check "a path git tracks is refused, and the tracked file is left as it was" "1|1|tracked" \
+  "$rc|$(grep -c 'is a file git tracks' <<< "$out")|$(cat "$R2/home/agent/fxa/app.cfg")"
+unset -f gcloud vm_exec
+check "a team name may not hold -- (it separates a team's secrets)" "1" "$(bad n--x '{ "schema": 1, "name": "n--x", "repos": [ { "slug": "a/b", "role": "work" } ] }' | grep -c 'no --')"
+check "team pay cannot name a secret of team pay-x" "1" \
+  "$(printf '{ "schema": 1, "name": "pay", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "secrets": { "jira": "fxa-team-pay-x--jira" } }' > "$T/pay.json"; py validate "$T/pay.json" pay 2>&1 | grep -c 'secrets.jira')"
+rm -f "$T/pay.json" "$T/n--x.json"
 
 # MCP: another team's token carries its own Jira project and repos; FxA's carries none (the rules as written).
 mt() { ( source "$root/lib/mcp-token.sh"; FXA_MCP_GATEWAY_DIR="$tmp/mcp" PIPE_PROFILE="$1" PIPE_JIRA_PROJECT="$2"; PIPE_REPOS=(); [ -z "$3" ] || eval "PIPE_REPOS=($3)"

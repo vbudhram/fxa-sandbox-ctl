@@ -107,8 +107,8 @@ def check(rec, name=None):
         bad.append("schema must be 1")
 
     n = rec.get("name")
-    if not isinstance(n, str) or not NAME.match(n):
-        bad.append("name must match ^[a-z][a-z0-9-]{1,30}$")
+    if not isinstance(n, str) or not NAME.match(n) or "--" in n:
+        bad.append("name must match ^[a-z][a-z0-9-]{1,30}$, with no -- (it separates a team's secrets)")
     else:
         if name is not None and n != name:
             bad.append(f"name {n!r} does not match the record's file name {name!r}")
@@ -236,11 +236,12 @@ def check(rec, name=None):
         elif file_sha(path) != pin:
             bad.append(f"boot/{sc}.sh changed since it was pinned: review it, then pin {file_sha(path)}")
 
-    # Secrets are names in Secret Manager, never values, and only the team's own: fxa-team-<name>-<what>.
+    # Secrets are names in Secret Manager, never values, and only the team's own: fxa-team-<name>--<what>.
+    # The -- is not allowed in a team name, so team pay cannot name a secret of team pay-x.
     sec = obj(rec.get("secrets", {}), "secrets", {"jira", "runtime"})
     if "jira" in sec and isinstance(n, str):
-        if not re.match(rf"^fxa-team-{re.escape(n)}-[a-z0-9-]{{1,40}}$", str(sec["jira"])):
-            bad.append(f"secrets.jira must be a Secret Manager name fxa-team-{n}-<what>")
+        if not re.match(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", str(sec["jira"])):
+            bad.append(f"secrets.jira must be a Secret Manager name fxa-team-{n}--<what>")
     runtime = sec.get("runtime", [])
     if not isinstance(runtime, list) or len(runtime) > 10:
         bad.append("secrets.runtime must list at most 10 secrets")
@@ -248,8 +249,8 @@ def check(rec, name=None):
     for i, r in enumerate(runtime):
         r = obj(r, f"secrets.runtime[{i}]", {"secret", "path"})
         sp, pp = str(r.get("secret", "")), str(r.get("path", ""))
-        if not isinstance(n, str) or not re.match(rf"^fxa-team-{re.escape(n)}-[a-z0-9-]{{1,40}}$", sp):
-            bad.append(f"secrets.runtime[{i}].secret must be a Secret Manager name fxa-team-{n}-<what>")
+        if not isinstance(n, str) or not re.match(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", sp):
+            bad.append(f"secrets.runtime[{i}].secret must be a Secret Manager name fxa-team-{n}--<what>")
         # Inside one of the team's own repo folders, so it lands where the stack reads it and nowhere else.
         if not re.match(r"^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]{1,150}$", pp) or ".." in pp \
                 or "/".join(pp.split("/")[:4]) not in paths:

@@ -266,20 +266,30 @@ _put_run_files() {
 # _team_runtime_secrets <runner>   A team record's runtime secrets (secrets.runtime, "secret=path"): each
 # read from Secret Manager and written to its path as agent, mode 600. The value goes over ssh's stdin,
 # never on a command line, and a short read (an ssh retry after a failed login) refuses instead of
-# leaving an empty file. Each path is kept out of its repo's commits (.git/info/exclude).
+# leaving an empty file. The value moves in a private temp file, never a variable, so a trailing
+# newline (an ssh key, a PEM) survives. A path git tracks is refused: exclude does not cover a tracked
+# file, so the value would ship in a PR. Each other path goes in its repo's .git/info/exclude.
 _team_runtime_secrets() {
-  local name="$1" pair s p v n repo dir rc=0
+  local name="$1" pair s p f n repo rel dir rc=0 got
   for pair in ${PIPE_RUNTIME_SECRETS:-}; do
     s="${pair%%=*}" p="${pair#*=}"
     [[ "$s" =~ ^fxa-team-[a-z0-9-]+$ ]] && [[ "$p" =~ ^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]+$ ]] && [[ "$p" != *..* ]] \
       || { echo "WARN: bad runtime secret entry ${pair}" >&2; rc=1; continue; }
-    v="$(gcloud secrets versions access latest --secret "$s" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" \
-      || { echo "WARN: could not read runtime secret ${s}" >&2; rc=1; continue; }
-    n="$(printf '%s' "$v" | wc -c | tr -d ' ')"
-    repo="$(cut -d/ -f1-4 <<< "$p")" dir="$(dirname "$p")"
-    printf '%s' "$v" | vm_exec "$name" sudo -u agent bash -c "umask 077; mkdir -p '${dir}' && t=\$(mktemp '${dir}/.fxa-secret.XXXXXX') && cat > \"\$t\" && [ \"\$(wc -c < \"\$t\" | tr -d ' ')\" = ${n} ] && mv -f \"\$t\" '${p}' || { rm -f \"\$t\"; exit 3; }
-      [ -d '${repo}/.git' ] && { grep -qxF '/${p#"$repo"/}' '${repo}/.git/info/exclude' 2>/dev/null || echo '/${p#"$repo"/}' >> '${repo}/.git/info/exclude'; }; true" >/dev/null 2>&1 \
-      || { echo "WARN: runtime secret ${s} did not reach ${p}" >&2; rc=1; }
+    f="$(mktemp "${TMPDIR:-/tmp}/fxa-rt.XXXXXX")" || return 1
+    gcloud secrets versions access latest --secret "$s" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} > "$f" 2>/dev/null \
+      || { rm -f "$f"; echo "WARN: could not read runtime secret ${s}" >&2; rc=1; continue; }
+    n="$(wc -c < "$f" | tr -d ' ')"
+    repo="$(cut -d/ -f1-4 <<< "$p")" dir="$(dirname "$p")"; rel="${p#"$repo"/}"
+    got=0
+    vm_exec "$name" sudo -u agent bash -c "[ -d '${repo}/.git' ] && git -C '${repo}' ls-files --error-unmatch -- '${rel}' >/dev/null 2>&1 && exit 4
+      umask 077; mkdir -p '${dir}' && t=\$(mktemp '${dir}/.fxa-secret.XXXXXX') && cat > \"\$t\" && [ \"\$(wc -c < \"\$t\" | tr -d ' ')\" = ${n} ] && mv -f \"\$t\" '${p}' || { rm -f \"\$t\"; exit 3; }
+      [ -d '${repo}/.git' ] && { grep -qxF '/${rel}' '${repo}/.git/info/exclude' 2>/dev/null || echo '/${rel}' >> '${repo}/.git/info/exclude'; }; true" < "$f" >/dev/null 2>&1 || got=$?
+    rm -f "$f"
+    case "$got" in
+      0) ;;
+      4) echo "WARN: ${p} is a file git tracks, so runtime secret ${s} was not written there (it would ship in a PR)" >&2; rc=1 ;;
+      *) echo "WARN: runtime secret ${s} did not reach ${p}" >&2; rc=1 ;;
+    esac
   done
   return $rc
 }

@@ -75,10 +75,10 @@ check "full rights and an active queue: valid, no warning" "0|0" \
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv7 Live ', "status": "active", "jira": { "project": "OK", "queue": true }')" lv7 >/dev/null 2>&1; echo $?)|$(live lv7 ', "status": "active", "jira": { "project": "OK", "queue": true }' | grep -c WARN)"
 gcloud() { return 1; }   # the team's credential is not stored yet
 check "a team credential that is not stored yet: refused for an active queue, a warning for a draft" "1|1" \
-  "$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv8 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv8-jira" }')" lv8 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv9 Live ', "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv9-jira" }')" lv9 2>&1 | grep -c 'store it with vm.sh secret fxa-team-lv9-jira')"
+  "$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv8 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv8--jira" }')" lv8 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv9 Live ', "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv9--jira" }')" lv9 2>&1 | grep -c 'store it with vm.sh secret fxa-team-lv9--jira')"
 gcloud() { echo "bot@example.com:tok"; }
 check "with the team credential stored, an active queue with full rights is valid" "0" \
-  "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC= teams_validate "$(rec lv10 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv10-jira" }')" lv10 >/dev/null 2>&1; echo $?)"
+  "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC= teams_validate "$(rec lv10 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv10--jira" }')" lv10 >/dev/null 2>&1; echo $?)"
 unset -f curl github_app_jwt gcloud
 
 # The checks a test runs on the runner, from the loaded team.
@@ -90,19 +90,22 @@ check "the probe script is valid shell, and a host it did not approve counts as 
   "$(probe | bash -n; echo $?)"
 
 # Secrets the dashboard sets: only names the record uses, written as the writer account, value on stdin.
-teams_create "$(rec sx Sx ', "secrets": { "jira": "fxa-team-sx-jira", "runtime": [ { "secret": "fxa-team-sx-db", "path": "/home/agent/sx/.env" } ] }')" >/dev/null 2>&1 \
-  || { mkdir -p "$FXA_TEAMS_DIR"; jq -n '{schema:1,name:"sx",repos:[{slug:"example/sx",role:"work"}],prompts:{goal_md:"g"},secrets:{jira:"fxa-team-sx-jira",runtime:[{secret:"fxa-team-sx-db",path:"/home/agent/sx/.env"}]}}' > "$FXA_TEAMS_DIR/sx.json"; }
-gcloud() { printf '%s | stdin=%s\n' "$*" "$(case "$1 $2 $3" in ("secrets versions add"*|"secrets create"*) cat ;; esac)" >> "$tmp/gsec"; case "$*" in *describe*fxa-team-sx-db*) return 0 ;; *describe*) return 1 ;; *access*fxa-team-sx-db*) echo v ;; *access*) return 1 ;; esac; }
+teams_create "$(rec sx Sx ', "secrets": { "jira": "fxa-team-sx--jira", "runtime": [ { "secret": "fxa-team-sx--db", "path": "/home/agent/sx/.env" } ] }')" >/dev/null 2>&1 \
+  || { mkdir -p "$FXA_TEAMS_DIR"; jq -n '{schema:1,name:"sx",repos:[{slug:"example/sx",role:"work"}],prompts:{goal_md:"g"},secrets:{jira:"fxa-team-sx--jira",runtime:[{secret:"fxa-team-sx--db",path:"/home/agent/sx/.env"}]}}' > "$FXA_TEAMS_DIR/sx.json"; }
+gcloud() { local a d=""; for a in "$@"; do case "$a" in (--data-file=*) d="$(cat "${a#*=}")" ;; esac; done; printf '%s | stdin=%s\n' "$*" "$d" >> "$tmp/gsec"; case "$*" in *describe*fxa-team-sx--db*) return 0 ;; *describe*) return 1 ;; *access*fxa-team-sx--db*) echo v ;; *access*) return 1 ;; esac; }
 ss() { printf '%s' "$3" | FXA_TEAM_SECRETS_SA="${4-writer@p.iam.gserviceaccount.com}" FXA_TEAMS_SECRET_DIR="$tmp/tsec2" teams_secret_set "$1" "$2" 2>&1; }
 mkdir -p "$tmp/tsec2/sx"; echo cached > "$tmp/tsec2/sx/jira.basic"; : > "$tmp/gsec"
 check "a secret the record does not name is refused; no writer account is refused; a bad Jira value is refused" "1|1|1" \
-  "$(ss sx fxa-team-sx-other v | grep -c 'does not name')|$(ss sx fxa-team-sx-db v '' | grep -c 'no writer account')|$(ss sx fxa-team-sx-jira 'not-a-cred' | grep -c 'email:token')"
-out="$(ss sx fxa-team-sx-jira 'bot@example.com:tok9')"; out2="$(ss sx fxa-team-sx-db 'DB=x9')"
-check "a new secret is created, an existing one gets a version, every call as the writer, the value only on stdin" "1|1|4|0" \
-  "$(grep -c 'secrets create fxa-team-sx-jira .*--impersonate-service-account writer@p.iam.gserviceaccount.com.* | stdin=bot@example.com:tok9' "$tmp/gsec")|$(grep -c 'secrets versions add fxa-team-sx-db .*| stdin=DB=x9' "$tmp/gsec")|$(grep -c 'impersonate-service-account writer@' "$tmp/gsec")|$(cut -d'|' -f1 "$tmp/gsec" | grep -c 'tok9\|x9')"
+  "$(ss sx fxa-team-sx--other v | grep -c 'does not name')|$(ss sx fxa-team-sx--db v '' | grep -c 'no writer account')|$(ss sx fxa-team-sx--jira 'not-a-cred' | grep -c 'email:token')"
+out="$(ss sx fxa-team-sx--jira 'bot@example.com:tok9')"; out2="$(ss sx fxa-team-sx--db 'DB=x9')"
+check "a new secret is created, an existing one gets a version, every call as the writer, the value only in a file" "1|1|4|0" \
+  "$(grep -c 'secrets create fxa-team-sx--jira .*--impersonate-service-account writer@p.iam.gserviceaccount.com.* | stdin=bot@example.com:tok9' "$tmp/gsec")|$(grep -c 'secrets versions add fxa-team-sx--db .*| stdin=DB=x9' "$tmp/gsec")|$(grep -c 'impersonate-service-account writer@' "$tmp/gsec")|$(cut -d'|' -f1 "$tmp/gsec" | grep -c 'tok9\|x9')"
 check "storing drops the team's cached Jira credential, and the audit names the secret, not its value" "no|1|0" \
-  "$([ -e "$tmp/tsec2/sx/jira.basic" ] && echo yes || echo no)|$(teams_audit sx | jq '[.[] | select(.action == "secret" and .changed == "fxa-team-sx-db")] | length')|$(teams_audit sx | grep -c 'x9\|tok9')"
-check "the team's secrets read as present or missing" '{"fxa-team-sx-jira":"missing","fxa-team-sx-db":"present"}' "$(teams_secret_status sx)"
+  "$([ -e "$tmp/tsec2/sx/jira.basic" ] && echo yes || echo no)|$(teams_audit sx | jq '[.[] | select(.action == "secret" and .changed == "fxa-team-sx--db")] | length')|$(teams_audit sx | grep -c 'x9\|tok9')"
+check "the team's secrets read as present or missing" '{"fxa-team-sx--jira":"missing","fxa-team-sx--db":"present"}' "$(teams_secret_status sx)"
+gcloud() { local a; for a in "$@"; do case "$a" in (--data-file=*) od -c < "${a#*=}" | head -1 | tr -s ' ' > "$tmp/gsec.bytes" ;; esac; done; case "$*" in *describe*) return 0 ;; esac; }
+printf 'K1\n' | FXA_TEAM_SECRETS_SA=w@p FXA_TEAMS_SECRET_DIR="$tmp/tsec2" teams_secret_set sx fxa-team-sx--db >/dev/null 2>&1
+check "a value keeps its trailing newline (a key, a PEM)" "$(printf 'K1\n' | od -c | head -1 | tr -s ' ')" "$(cat "$tmp/gsec.bytes")"
 unset -f gcloud
 
 # The bucket: a fake gcloud keeps each object and its generation under $B.

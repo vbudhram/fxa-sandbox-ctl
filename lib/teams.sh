@@ -56,20 +56,24 @@ teams_secret_status() {
 teams_secret_set() {
   local team="$1" sec="$2" v
   [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "${FXA_TEAMS_DIR}/${team}.json" ] || { echo "ERROR: no team record ${team}" >&2; return 1; }
-  teams_secret_names "$team" | grep -qxF "$sec" && [[ "$sec" =~ ^fxa-team-${team}-[a-z0-9-]+$ ]] \
+  teams_secret_names "$team" | grep -qxF "$sec" && [[ "$sec" =~ ^fxa-team-${team}--[a-z0-9]+(-[a-z0-9]+)*$ ]] \
     || { echo "ERROR: team ${team}'s record does not name the secret ${sec}" >&2; return 1; }
   [ -n "${FXA_TEAM_SECRETS_SA:-}" ] || { echo "ERROR: no writer account (FXA_TEAM_SECRETS_SA) on this host; in a terminal: vm.sh secret ${sec}" >&2; return 1; }
-  v="$(cat)"
-  [ -n "$v" ] && [ "${#v}" -le 8192 ] || { echo "ERROR: the value is empty or over 8 KB" >&2; return 1; }
+  # A private temp file, not a variable: a value's trailing newline (a key, a PEM) survives.
+  local f n rc=0; f="$(mktemp "${TMPDIR:-/tmp}/fxa-sec.XXXXXX")" || return 1
+  cat > "$f"; n="$(wc -c < "$f" | tr -d ' ')"
+  { [ "$n" -gt 0 ] && [ "$n" -le 8192 ]; } || { rm -f "$f"; echo "ERROR: the value is empty or over 8 KB" >&2; return 1; }
   if [ "$sec" = "$(jq -r '.secrets.jira // empty' "${FXA_TEAMS_DIR}/${team}.json")" ]; then
-    [[ "$v" =~ ^[^:@[:space:]]+@[^:[:space:]]+:[^[:space:]]+$ ]] || { echo "ERROR: a Jira credential is email:token" >&2; return 1; }
+    [[ "$(cat "$f")" =~ ^[^:@[:space:]]+@[^:[:space:]]+:[^[:space:]]+$ ]] || { rm -f "$f"; echo "ERROR: a Jira credential is email:token" >&2; return 1; }
   fi
   local -a as=(--impersonate-service-account "$FXA_TEAM_SECRETS_SA" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"})
   if gcloud secrets describe "$sec" "${as[@]}" >/dev/null 2>&1; then
-    printf '%s' "$v" | gcloud secrets versions add "$sec" --data-file=- "${as[@]}" >/dev/null 2>&1
+    gcloud secrets versions add "$sec" --data-file="$f" "${as[@]}" >/dev/null 2>&1 || rc=1
   else
-    printf '%s' "$v" | gcloud secrets create "$sec" --replication-policy=automatic --data-file=- "${as[@]}" >/dev/null 2>&1
-  fi || { echo "ERROR: could not store ${sec} (may the writer account write fxa-team-* secrets?)" >&2; return 1; }
+    gcloud secrets create "$sec" --replication-policy=automatic --data-file="$f" "${as[@]}" >/dev/null 2>&1 || rc=1
+  fi
+  rm -f "$f"
+  [ "$rc" = 0 ] || { echo "ERROR: could not store ${sec} (may the writer account write fxa-team-* secrets?)" >&2; return 1; }
   rm -f "${FXA_TEAMS_SECRET_DIR:-${HOME}/.config/fxa/teams}/${team}/jira.basic"
   _teams_audit_note secret "$team" "$sec"
   echo "stored a new version of ${sec}"

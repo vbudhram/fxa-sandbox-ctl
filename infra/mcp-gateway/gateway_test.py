@@ -527,6 +527,19 @@ class TeamScope(unittest.TestCase):
             with self.assertRaises(self.g.Denied):
                 ok(o, r)
 
+    def test_the_pair_rule_binds_every_tool_even_when_the_first_repo_rule_is_bound_to_one(self):
+        rules = [{"tool": "get_job_logs", "arg": "repo", "one_of": ["fxa"]}, {"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"}]
+        scoped = self.g.team_rules(rules, {"repos": ["mozilla/pyfxa"]})
+        with self.assertRaises(self.g.Denied):
+            self.g.apply_rules(scoped, "get_file_contents", self.gschema, {"owner": "evil", "repo": "private"})
+
+    def test_a_team_reads_one_issue_only_in_its_projects(self):
+        rules = self.g.team_rules(self.jira, {"jira_projects": ["PAY"]})
+        schema = {"properties": {"issueIdOrKey": {}, "cloudId": {}, "fields": {}}}
+        self.assertEqual(self.g.apply_rules(rules, "getJiraIssue", schema, {"issueIdOrKey": "PAY-12"})["issueIdOrKey"], "PAY-12")
+        for key in ("FXA-1", "12345", "PAY-1 OR x"):
+            with self.assertRaises(self.g.Denied):
+                self.g.apply_rules(rules, "getJiraIssue", schema, {"issueIdOrKey": key})
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -472,8 +472,8 @@ class Handler(BaseHTTPRequestHandler):
         """Store a new version of a secret the team's record names. The value goes to the ctl on stdin and
         never comes back, in the answer, a log or the audit row."""
         sec, value = body.get("secret"), body.get("value")
-        if not (isinstance(sec, str) and re.fullmatch(rf"fxa-team-{name}-[a-z0-9-]{{1,40}}", sec)) or not isinstance(value, str) or not value:
-            self._json(400, {"error": f"send {{\"secret\": \"fxa-team-{name}-...\", \"value\": \"...\"}}"})
+        if not (isinstance(sec, str) and re.fullmatch(rf"fxa-team-{name}--[a-z0-9]+(-[a-z0-9]+)*", sec)) or not isinstance(value, str) or not value:
+            self._json(400, {"error": f"send {{\"secret\": \"fxa-team-{name}--...\", \"value\": \"...\"}}"})
             return
         try:
             proc = ctl_run(["profile", "secret-set", name, sec], timeout=60, env={"FXA_TEAM_ACTOR": user}, input=value)

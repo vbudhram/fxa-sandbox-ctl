@@ -196,11 +196,16 @@ def team_rules(rules, scope):
         if "jql_project" in rule and projects:
             rule = dict(rule, jql_project=projects)
         elif repos and rule.get("arg") in ("owner", "repo") and ("equals" in rule or "one_of" in rule):
-            if not pair:  # owner and repo together, so a mix of two allowed repos is not allowed
-                out.append({"tool": rule.get("tool", "*"), "arg": "repo", "pair": "owner", "one_of": repos})
+            # Owner and repo together, for every tool that takes them: a rule bound to one tool must not
+            # leave the others with no repo limit, and a mix of two allowed repos is not allowed.
+            if not pair:
+                out.append({"tool": "*", "arg": "repo", "pair": "owner", "one_of": repos})
                 pair = True
             continue
         out.append(rule)
+    # A read of one issue stays in the team's projects too, not only a search (keys only, not numeric IDs).
+    if projects and any("jql_project" in r for r in rules):
+        out.append({"tool": "getJiraIssue", "arg": "issueIdOrKey", "match": "(%s)-[0-9]+" % "|".join(projects)})
     return out
 
 
