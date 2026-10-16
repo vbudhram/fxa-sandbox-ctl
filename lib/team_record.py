@@ -39,7 +39,13 @@ REPO = os.environ.get("FXA_TEAM_REPO") or os.path.dirname(os.path.dirname(os.pat
 SCRIPT = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 SHA = re.compile(r"^[0-9a-f]{64}$")
 PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 16384)}
-RESERVED = {"fxa", "fxa-android", "index"}  # index.json is the cache's index
+RESERVED = {"fxa", "fxa-android", "index"}
+# Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
+# An admin may approve other hosts; these are refused even then, with every subdomain.
+EGRESS_DENY = ("pastebin.com", "paste.ee", "hastebin.com", "termbin.com", "ix.io", "dpaste.org", "rentry.co",
+               "transfer.sh", "file.io", "0x0.st", "tmpfiles.org", "gofile.io", "wetransfer.com",
+               "ngrok.io", "ngrok.app", "ngrok-free.app", "trycloudflare.com", "serveo.net", "localhost.run",
+               "webhook.site", "requestbin.com", "pipedream.net", "beeceptor.com", "requestcatcher.com", "interact.sh", "oast.fun")  # index.json is the cache's index
 
 
 def catalog():
@@ -180,7 +186,9 @@ def check(rec, name=None):
 
     eg = obj(rec.get("egress", {}), "egress", {"requested", "approved"})
     strs(eg.get("requested", []), "egress.requested", HOST, 30)
-    strs(eg.get("approved", []), "egress.approved", HOST, 30)
+    for h in strs(eg.get("approved", []), "egress.approved", HOST, 30):
+        if any(h == d or h.endswith("." + d) for d in EGRESS_DENY):
+            bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
     jira = obj(rec.get("jira", {}), "jira", {"project", "queue"})

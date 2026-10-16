@@ -57,6 +57,9 @@ check "an egress host that is not a hostname is refused" "1" "$(bad eg '{ "schem
 check "a refused record does not load" "1" "$(loaded hk >/dev/null; echo $?)"
 check "a folder profile wins over a record of the same name" "Monitor Team" \
   "$(printf '%s' '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "monitor", "label": "Not Monitor" }' > "$T/monitor.json"; loaded monitor | sed -n "s/^PIPE_LABEL=//p" | tr -d "'")"
+check "an approved egress host that takes data out is refused, with its subdomains; a normal one is fine" "1|1|0" \
+  "$(bad e1 '{ "schema": 1, "name": "e1", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["pastebin.com"] } }' | grep -c 'take data out')|$(bad e2 '{ "schema": 1, "name": "e2", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["abc.ngrok-free.app"] } }' | grep -c 'take data out')|$(bad e3 '{ "schema": 1, "name": "e3", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["static.crates.io"] } }' | grep -c .)"
+rm -f "$T"/e1.json "$T"/e2.json "$T"/e3.json
 check "a team without the FxA stack must bring its own goal" "1" "$(bad ng '{ "schema": 1, "name": "ng", "repos": [ { "slug": "a/b", "role": "work" } ] }' | grep -c 'goal_md')"
 check "a repo row keeps its own base branch, for that tree" "example/rusty /home/agent/rusty work master" "$(printf '%s\n' "$v" | grep -o 'example/rusty /home/agent/rusty work master')"
 rm -f "$T"/ng.json "$T"/hk.json "$T"/n1.json "$T"/fxa.json "$T"/lb.json "$T"/sl.json "$T"/pa.json "$T"/nw.json "$T"/sk.json "$T"/cp.json "$T"/eg.json "$T"/monitor.json
