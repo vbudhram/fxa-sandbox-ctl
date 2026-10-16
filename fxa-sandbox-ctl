@@ -2898,7 +2898,7 @@ main() {
                   set) [ -n "${2:-}" ] && [ -f "${3:-}" ] || { echo "usage: profile set <name> <record.json> [--generation <g>]" >&2; return 1; }
                        teams_set "$2" "$3" "$([ "${4:-}" = --generation ] && echo "${5:-}")" ;;
                   enable|disable|draft) [ -n "${2:-}" ] || { echo "usage: profile $1 <name>" >&2; return 1; }
-                       teams_status "$2" "$(case "$1" in enable) echo active ;; disable) echo disabled ;; *) echo draft ;; esac)" ;;
+                       teams_status "$2" "$(case "$1" in (enable) echo active ;; (disable) echo disabled ;; (*) echo draft ;; esac)" ;;
                   delete) [ -n "${2:-}" ] || { echo "usage: profile delete <name>" >&2; return 1; }; teams_delete "$2" ;;
                   sync) teams_sync ;;
                   audit) [ -n "${2:-}" ] || { echo "usage: profile audit <name>" >&2; return 1; }; teams_audit "$2" ;;

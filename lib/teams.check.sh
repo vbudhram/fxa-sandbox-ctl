@@ -33,6 +33,10 @@ check "a record cannot take a built-in team's Jira project" "1" \
 teams_create "$(rec chan1 Chan ', "access": { "channels": ["C0123ABCD"] }, "jira": { "project": "CHAN" }')" >/dev/null
 check "a channel or Jira project of another record is refused" "1|1" \
   "$(teams_create "$(rec chan2 Chan ', "access": { "channels": ["C0123ABCD"] }')" 2>&1 | grep -c 'channel C0123ABCD belongs to team chan1')|$(teams_create "$(rec chan3 Chan ', "jira": { "project": "CHAN" }')" 2>&1 | grep -c 'CHAN belongs to team chan1')"
+# The CLI's status verbs (bash 3.2 once failed to parse their case inside $(...)). No bucket: FXA_TEAMS_URI is empty.
+cli() { ( cd "$root" && FXA_TEAMS_URI= FXA_TEAMS_DIR="$FXA_TEAMS_DIR" FXA_DB="$FXA_DB" ./fxa-sandbox-ctl profile "$@" >/dev/null 2>&1; echo $? ); }
+check "profile enable, disable and draft set the status" "0|active|0|disabled|0|draft" \
+  "$(cli enable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli disable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli draft chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")"
 printf '{"profile":"rusty","state":"paused"}' > "$SESSION_DIR/agent-r1.json"
 check "delete is refused while a session of the team can resume" "1" "$(teams_delete rusty >/dev/null 2>&1; echo $?)"
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
