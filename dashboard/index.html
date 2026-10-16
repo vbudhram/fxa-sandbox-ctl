@@ -1318,6 +1318,7 @@ const teamRows = () => (TEAMS?.teams ?? []).filter(t => teamMatch(t, Q.trim().to
 const teamTools = (m, short) => m == null ? (short ? "bot default" : "bot default (MCP_CONNECTORS)") : m.length ? m.join(", ") : "none";
 // [short for the table, full for its title]: the right panel spells each case out.
 const teamAccess = t => t.profile === "fxa" || t.access?.open === "built-in" ? ["everyone", "everyone (built into the bot)"] : !t.access ? ["unknown", "access unknown (bot env not readable)"]
+  : t.access.record && t.access.status !== "active" ? [t.access.status, "a team record that is not active: nobody can start it"]
   : t.access.open === true ? ["open", "open to anyone allowed here"] : [`${t.access.users} user${t.access.users === 1 ? "" : "s"}`, "only the users PROFILE_USERS names"];
 const lastUsed = x => x.last ? `used ${ago(Math.round(Date.now() / 1000 - x.last))}` : "never used";
 // Per-team use from the Slack session rows: 30 days by t0, a row without a profile is fxa.

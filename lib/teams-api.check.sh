@@ -71,5 +71,18 @@ b = json.loads(get()[1]); t = {x["profile"]: x for x in b["teams"]}
 check("an unreadable bot env: access null, the error set, no nobody rule, no orphans",
       (None, "FileNotFoundError", None, [], []),
       (t["solo"]["access"], b["access_error"], b["access_source"], [i for i in t["solo"]["issues"] if i["level"] == "warn"], b["issues"]))
+# A team record's own rules (the teams index), as counts: active or not, never a Slack user ID.
+recs = {"rusty": {"status": "active", "jira": "RUST", "access": {"users": ["U0EEEE666", "U0FFFF777"], "channels": ["C0RUSTY1"], "jira_prefixes": ["RS"]}},
+        "drafty": {"status": "draft", "access": {"open": True, "users": ["U0EEEE666"]}}}
+check("an active record: its users, channels and Jira keys", {"open": False, "users": 2, "channels": 1, "jira": ["RS", "RUST"], "record": True, "status": "active"},
+      server.team_access("rusty", None, recs))
+check("a draft record is open to nobody, whatever it says", (False, 0, "draft"), tuple(server.team_access("drafty", None, recs)[k] for k in ("open", "users", "status")))
+check("no Slack user ID from a record reaches the access", False, "U0EEEE" in json.dumps(server.team_access("rusty", None, recs)))
+per, _ = server.team_issues([{"profile": "drafty", "repos": []}], None, recs)
+check("a draft record: nobody can start it", True, ("warn", "nobody can start it") in [(x["level"], x["text"]) for x in per[0]])
+idx = Path(tmp) / "teams"; idx.mkdir(); (idx / "index.json").write_text(json.dumps({"schema": 1, "teams": recs}))
+os.environ["FXA_TEAMS_DIR"] = str(idx)
+check("read_records reads the index; a missing one is empty", (["drafty", "rusty"], {}),
+      (sorted(server.read_records()), (os.environ.update(FXA_TEAMS_DIR=f"{tmp}/none"), server.read_records())[1]))
 srv.shutdown(); sys.exit(fail)
 PY

@@ -278,8 +278,27 @@ def read_access():
             "path": path, "mtime": mtime}, None
 
 
-def team_access(profile, access):
+def read_records():
+    """The team records' access, from the controller's teams index (lib/teams.sh), or {}."""
+    path = os.path.join(os.environ.get("FXA_TEAMS_DIR") or os.path.expanduser("~/.claude/state/teams"), "index.json")
+    try:
+        with open(path) as f:
+            teams = json.load(f).get("teams", {})
+        return teams if isinstance(teams, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def team_access(profile, access, records=None):
     """One team's rules; users is a count, so no Slack user ID leaves the server."""
+    rec = (records or {}).get(profile)
+    if isinstance(rec, dict):  # a record team: its own rules, and nobody can start it unless it is active
+        a = rec.get("access") or {}
+        active = rec.get("status") == "active"
+        return {"open": active and a.get("open") is True, "users": len(a.get("users") or []) if active else 0,
+                "channels": len(a.get("channels") or []),
+                "jira": sorted(set(a.get("jira_prefixes") or []) | ({rec["jira"]} if rec.get("jira") else set())),
+                "record": True, "status": rec.get("status") or "draft"}
     if access is None:
         return None
     return {"open": "built-in" if profile == "fxa" else profile in access["open"],
@@ -288,7 +307,7 @@ def team_access(profile, access):
             "jira": sorted(k for k, p in access["jira"].items() if p == profile)}
 
 
-def team_issues(teams, access):
+def team_issues(teams, access, records=None):
     """(issues per team, in order; top-level issues). Pure, so the offline check can prove the rules."""
     per = []
     for t in teams:
@@ -303,7 +322,7 @@ def team_issues(teams, access):
                     out.append({"level": "info", "text": f"{r.get('slug')}: " + ("GitHub App check failed; write unknown"
                                 if why == "the GitHub App check failed" else why),
                                 "key": "PIPE_REPO_SLUG" if t["profile"] == "fxa" else "PIPE_REPOS"})
-        a = team_access(t["profile"], access)
+        a = team_access(t["profile"], access, records)
         if a and t["profile"] != "fxa" and not a["open"] and not a["users"]:
             out.append({"level": "warn", "text": "nobody can start it", "key": "PROFILE_USERS"})
         per.append(out)
@@ -564,13 +583,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/teams":
             data, age, err, busy = TEAMS.read()
             access, access_err = read_access()
+            records = read_records()
             teams = []
             if data is not None:  # the diff needs the list; before it, every dir would look broken
                 listed = {t.get("profile") for t in data}
-                teams = [dict(t, access=team_access(t.get("profile"), access)) for t in data]
+                teams = [dict(t, access=team_access(t.get("profile"), access, records)) for t in data]
                 teams += [{"profile": d, "load_error": True}
                           for d in sorted(p.parent.name for p in PROFILES_DIR.glob("*/profile.conf")) if d not in listed]
-            per, top = team_issues(teams, access if data is not None else None)
+            per, top = team_issues(teams, access if data is not None else None, records)
             self._json(200, {"teams": [dict(t, issues=i) for t, i in zip(teams, per)], "issues": top,
                              "access_source": access and {"path": access["path"], "mtime": access["mtime"]},
                              "access_error": access_err, "age_seconds": age, "error": err,
