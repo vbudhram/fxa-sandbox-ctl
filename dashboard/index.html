@@ -1312,13 +1312,19 @@ function teamEditor(name, isRecord) {
     <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${esc(e.msg || "")}</p>
     ${name === "__new" ? "" : `<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
     ${e.testLog ? `<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(e.testLog)}</pre>` : ""}
+    ${e.secrets && Object.keys(e.secrets).length ? `<h4>Secrets</h4>${Object.entries(e.secrets).map(([s, st]) => `<div class="acts2" style="align-items:center;margin-bottom:var(--s1)">
+      <span class="mono">${esc(s)}</span><span class="tag ${st === "present" ? "" : "warn"}">${esc(st)}</span>
+      <input type="password" autocomplete="off" data-secret-val="${esc(s)}" placeholder="new value" aria-label="New value for ${esc(s)}">
+      <button data-tact="secret" data-secret="${esc(s)}">Set</button></div>`).join("")}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
     ${e.audit ? `<table class="usage"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
   if (!r.ok) return { name: n, text: "", gen: "", msg: j.error || String(r.status), ok: false };
+  const sr = await fetch(`/api/teams/${encodeURIComponent(n)}/secrets`, { cache: "no-store" }).catch(() => null);
+  const secrets = sr?.ok ? await sr.json().catch(() => ({})) : {};
   const { generation, tested, test_log, ...rec } = j;
-  return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, tested, testLog: test_log, msg: "", ok: true };
+  return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, tested, testLog: test_log, secrets, msg: "", ok: true };
 }
 document.addEventListener("input", e => { if (TED && e.target.classList?.contains("team-json")) TED.text = e.target.value; });
 document.addEventListener("click", async e => {
@@ -1333,6 +1339,15 @@ document.addEventListener("click", async e => {
   const act = btn.dataset.tact, n = TED.name, say = (msg, ok) => { Object.assign(TED, { msg, ok }); renderRight(); };
   if (act === "delete" && !TED.arm) { TED.arm = true; return say(`Click Delete again to delete ${n}. It is refused while one of its sessions can resume.`, false); }
   TED.arm = false;
+  if (act === "secret") {
+    const s = btn.dataset.secret, input = btn.closest("[data-team-ed]").querySelector(`[data-secret-val="${CSS.escape(s)}"]`), value = input?.value ?? "";
+    if (!value) return say(`Type a new value for ${s} first.`, false);
+    const r = await fetch(`/api/teams/${n}/secret`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secret: s, value }) }).catch(() => null);
+    input.value = "";
+    const j = await r?.json().catch(() => ({})) ?? {};
+    if (!r?.ok) return say(j.error || "the dashboard did not answer", false);
+    TED = { ...(await teamRecord(n)), msg: j.out, ok: true }; renderRight(); return;
+  }
   if (act === "audit") {
     const r = await fetch(`/api/teams/${encodeURIComponent(n)}/audit`, { cache: "no-store" }), j = await r.json().catch(() => []);
     TED.audit = r.ok ? j : null; return say(r.ok ? "" : j.error || String(r.status), r.ok);
@@ -2381,7 +2396,7 @@ function renderRight() {
       html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${kvr("Up for", short(v.age_seconds))}${v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : ""}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
         ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : kvr("Session", "pipeline run")}</div>`; } }
   else if (VIEW === "teams") {
-    if (document.activeElement?.classList?.contains("team-json")) return;   // a refresh must not wipe an edit in progress
+    if (document.activeElement?.matches?.(".team-json, [data-secret-val]")) return;   // a refresh must not wipe an edit in progress
     if (SEL.teams === "__new") html = `${closeBtn}<h2 class="rh">New team<small>a team record</small></h2>` + teamEditor("__new", true);
     else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams); if (t) html = teamDetails(t); } }
   el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`;

@@ -10,6 +10,8 @@ cat > "$tmp/ctl" <<EOF
 printf '%s\n' "\$*" >> "$tmp/args"; printf '%s\n' "\${FXA_TEAM_ACTOR:-}" >> "$tmp/actor"
 for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$tmp/recfile"; }; done
 [ "\$2" = test ] && sleep 2
+# secret-set: keep stdin, and echo it back, so a check can see the answer leaves it out.
+[ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
 case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
 [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
 EOF
@@ -83,6 +85,14 @@ s3 = call("POST", "/api/teams/ghost/test", {}, sig(A, "POST", "/api/teams/ghost/
 time.sleep(3)
 check("a test starts in the background (202); a second one while it runs is refused (409); no record is 404",
       (202, 409, 404, "profile test rusty"), (s1, s2, s3, [l for l in open(f"{tmp}/args").read().splitlines() if "test" in l][-1]))
+st, b = call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-rusty-jira", "value": "bot@example.com:s3cr3t"}, sig(A, "POST", "/api/teams/rusty/secret"))
+check("a secret goes to profile secret-set on stdin, and the answer never carries the value",
+      (200, "profile secret-set rusty fxa-team-rusty-jira", "bot@example.com:s3cr3t", False, True),
+      (st, args(), open(f"{tmp}/secretval").read(), "s3cr3t" in json.dumps(b), "<value>" in json.dumps(b)))
+check("a secret of another team, or with no value, is refused before any command", (400, 400),
+      (call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-other-jira", "value": "x"}, sig(A, "POST", "/api/teams/rusty/secret"))[0],
+       call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-rusty-jira", "value": ""}, sig(A, "POST", "/api/teams/rusty/secret"))[0]))
+check("a viewer cannot set a secret", 403, call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-rusty-jira", "value": "x"}, sig("viewer@example.com", "POST", "/api/teams/rusty/secret"))[0])
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")

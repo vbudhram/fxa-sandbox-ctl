@@ -2904,6 +2904,9 @@ main() {
                   sync) teams_sync ;;
                   audit) [ -n "${2:-}" ] || { echo "usage: profile audit <name>" >&2; return 1; }; teams_audit "$2" ;;
                   test) [ -n "${2:-}" ] || { echo "usage: profile test <name>" >&2; return 1; }; teams_test "$2" ;;
+                  # The value on stdin, never in argv: printf '%s' "$value" | profile secret-set <name> <secret>
+                  secret-set) [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: profile secret-set <name> <secret> < value" >&2; return 1; }; teams_secret_set "$2" "$3" ;;
+                  secrets) [ -n "${2:-}" ] || { echo "usage: profile secrets <name>" >&2; return 1; }; teams_secret_status "$2" ;;
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
     list|ls)    cmd_list "$@" ;;

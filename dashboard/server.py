@@ -147,12 +147,12 @@ EXTRA_HOSTS = tuple(h.strip().lower() for h in os.environ.get("FXA_DASHBOARD_HOS
 SERVED_AS = LOOPBACK + EXTRA_HOSTS
 
 
-def ctl_run(args, timeout, env=None):
+def ctl_run(args, timeout, env=None, input=None):
     if not CTL_SLOTS.acquire(timeout=20):
         raise TimeoutError("dashboard busy")
     try:
         return subprocess.run([str(CTL), *args], capture_output=True, text=True, timeout=timeout, errors="replace",
-                              env={**os.environ, **env} if env else None)
+                              env={**os.environ, **env} if env else None, input=input)
     finally:
         CTL_SLOTS.release()
 
@@ -468,6 +468,21 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return user
 
+    def _team_secret(self, user, name, body):
+        """Store a new version of a secret the team's record names. The value goes to the ctl on stdin and
+        never comes back, in the answer, a log or the audit row."""
+        sec, value = body.get("secret"), body.get("value")
+        if not (isinstance(sec, str) and re.fullmatch(rf"fxa-team-{name}-[a-z0-9-]{{1,40}}", sec)) or not isinstance(value, str) or not value:
+            self._json(400, {"error": f"send {{\"secret\": \"fxa-team-{name}-...\", \"value\": \"...\"}}"})
+            return
+        try:
+            proc = ctl_run(["profile", "secret-set", name, sec], timeout=60, env={"FXA_TEAM_ACTOR": user}, input=value)
+        except Exception as exc:
+            self._json(503, {"error": type(exc).__name__})
+            return
+        out = (proc.stdout if proc.returncode == 0 else proc.stderr or "failed").strip().replace(value, "<value>")[-500:]
+        self._json(200 if proc.returncode == 0 else 400, {"ok": True, "out": out} if proc.returncode == 0 else {"error": out})
+
     def _team_ctl(self, user, args, record=None, read=False):
         """Run a profile command as the admin, the record in a private temp file; 409 for a stale generation.
         A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
@@ -517,7 +532,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _team_write(self, path):
         """POST /api/teams[/validate|/<name>[/status|/delete]]: a signed admin's change, JSON only, 64 KB at most."""
-        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete|test))?)?", path)
+        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete|test|secret))?)?", path)
         if not m:
             self._json(404, {"error": "not found"})
             return
@@ -540,6 +555,8 @@ class Handler(BaseHTTPRequestHandler):
         rec, gen = body.get("record"), str(body.get("generation") or "")
         if verb == "test":
             self._team_test(user, name)
+        elif verb == "secret":
+            self._team_secret(user, name, body)
         elif verb == "delete":
             self._team_ctl(user, ["delete", name])
         elif verb == "status":
@@ -641,11 +658,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"user": user, "admin": bool(user and user in team_admins())})
             return
         # One team's full record and its audit: admins only, since a record names Slack users.
-        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit)?", path)
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit|/secrets)?", path)
         if m:
             user = self._admin("GET", path)
             if user:
-                self._team_ctl(user, ["audit" if m.group(2) else "get", m.group(1)], read=True)
+                self._team_ctl(user, [{"/audit": "audit", "/secrets": "secrets"}.get(m.group(2) or "", "get"), m.group(1)], read=True)
             return
         if path in ("/", "/index.html"):
             page = (ROOT / "index.html").read_text()

@@ -89,6 +89,22 @@ check "the test checks each repo, the boot, the stack, each approved host, a blo
 check "the probe script is valid shell, and a host it did not approve counts as blocked only when the request fails" "0" \
   "$(probe | bash -n; echo $?)"
 
+# Secrets the dashboard sets: only names the record uses, written as the writer account, value on stdin.
+teams_create "$(rec sx Sx ', "secrets": { "jira": "fxa-team-sx-jira", "runtime": [ { "secret": "fxa-team-sx-db", "path": "/home/agent/sx/.env" } ] }')" >/dev/null 2>&1 \
+  || { mkdir -p "$FXA_TEAMS_DIR"; jq -n '{schema:1,name:"sx",repos:[{slug:"example/sx",role:"work"}],prompts:{goal_md:"g"},secrets:{jira:"fxa-team-sx-jira",runtime:[{secret:"fxa-team-sx-db",path:"/home/agent/sx/.env"}]}}' > "$FXA_TEAMS_DIR/sx.json"; }
+gcloud() { printf '%s | stdin=%s\n' "$*" "$(case "$1 $2 $3" in ("secrets versions add"*|"secrets create"*) cat ;; esac)" >> "$tmp/gsec"; case "$*" in *describe*fxa-team-sx-db*) return 0 ;; *describe*) return 1 ;; *access*fxa-team-sx-db*) echo v ;; *access*) return 1 ;; esac; }
+ss() { printf '%s' "$3" | FXA_TEAM_SECRETS_SA="${4-writer@p.iam.gserviceaccount.com}" FXA_TEAMS_SECRET_DIR="$tmp/tsec2" teams_secret_set "$1" "$2" 2>&1; }
+mkdir -p "$tmp/tsec2/sx"; echo cached > "$tmp/tsec2/sx/jira.basic"; : > "$tmp/gsec"
+check "a secret the record does not name is refused; no writer account is refused; a bad Jira value is refused" "1|1|1" \
+  "$(ss sx fxa-team-sx-other v | grep -c 'does not name')|$(ss sx fxa-team-sx-db v '' | grep -c 'no writer account')|$(ss sx fxa-team-sx-jira 'not-a-cred' | grep -c 'email:token')"
+out="$(ss sx fxa-team-sx-jira 'bot@example.com:tok9')"; out2="$(ss sx fxa-team-sx-db 'DB=x9')"
+check "a new secret is created, an existing one gets a version, every call as the writer, the value only on stdin" "1|1|4|0" \
+  "$(grep -c 'secrets create fxa-team-sx-jira .*--impersonate-service-account writer@p.iam.gserviceaccount.com.* | stdin=bot@example.com:tok9' "$tmp/gsec")|$(grep -c 'secrets versions add fxa-team-sx-db .*| stdin=DB=x9' "$tmp/gsec")|$(grep -c 'impersonate-service-account writer@' "$tmp/gsec")|$(cut -d'|' -f1 "$tmp/gsec" | grep -c 'tok9\|x9')"
+check "storing drops the team's cached Jira credential, and the audit names the secret, not its value" "no|1|0" \
+  "$([ -e "$tmp/tsec2/sx/jira.basic" ] && echo yes || echo no)|$(teams_audit sx | jq '[.[] | select(.action == "secret" and .changed == "fxa-team-sx-db")] | length')|$(teams_audit sx | grep -c 'x9\|tok9')"
+check "the team's secrets read as present or missing" '{"fxa-team-sx-jira":"missing","fxa-team-sx-db":"present"}' "$(teams_secret_status sx)"
+unset -f gcloud
+
 # The bucket: a fake gcloud keeps each object and its generation under $B.
 B="$tmp/bucket"; mkdir -p "$B"; FXA_TEAMS_URI="gs://test/teams"; rm -rf "$FXA_TEAMS_DIR"; next=100
 gcloud() {

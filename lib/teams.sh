@@ -27,6 +27,54 @@ _teams_audit() {
     || echo "WARN: the audit row for team $2 was not written" >&2
 }
 
+# _teams_audit_note <action> <name> <what>   An audit row that names what changed, with no record diff
+# (a secret's new version: its name only, never its value).
+_teams_audit_note() {
+  declare -F db_exec >/dev/null && command -v sqlite3 >/dev/null || return 0
+  db_exec "INSERT INTO team_audit (at, actor, team, action, old_gen, new_gen, changed) VALUES ($(date +%s), $(db_q "$(_teams_actor)"), $(db_q "$2"), $(db_q "$1"), '', '', $(db_q "$3"));" >/dev/null 2>&1 \
+    || echo "WARN: the audit row for team $2 was not written" >&2
+}
+
+# teams_secret_names <name>   The Secret Manager names the team's record uses (jira, runtime), one a line.
+teams_secret_names() { jq -r '[.secrets.jira // empty] + [.secrets.runtime[]?.secret] | .[]' "${FXA_TEAMS_DIR}/$1.json" 2>/dev/null; }
+
+# teams_secret_status <name>   {"<secret>": "present" | "missing"} for the team's secrets, as the manager reads them.
+teams_secret_status() {
+  local s out="{}"
+  for s in $(teams_secret_names "$1"); do
+    if gcloud secrets versions access latest --secret "$s" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} >/dev/null 2>&1; then
+      out="$(jq -c --arg s "$s" '. + {($s): "present"}' <<< "$out")"
+    else out="$(jq -c --arg s "$s" '. + {($s): "missing"}' <<< "$out")"; fi
+  done
+  printf '%s\n' "$out"
+}
+
+# teams_secret_set <name> <secret>   WRITE: store stdin as the new version of a secret the team's record
+# names. It writes as FXA_TEAM_SECRETS_SA, an account that IAM lets touch fxa-team-* secrets only, so
+# a misused caller reaches no other secret. The value is never on a command line, in a log or in the
+# audit row, and the team's cached Jira credential is dropped so the next load reads the new one.
+teams_secret_set() {
+  local team="$1" sec="$2" v
+  [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "${FXA_TEAMS_DIR}/${team}.json" ] || { echo "ERROR: no team record ${team}" >&2; return 1; }
+  teams_secret_names "$team" | grep -qxF "$sec" && [[ "$sec" =~ ^fxa-team-${team}-[a-z0-9-]+$ ]] \
+    || { echo "ERROR: team ${team}'s record does not name the secret ${sec}" >&2; return 1; }
+  [ -n "${FXA_TEAM_SECRETS_SA:-}" ] || { echo "ERROR: no writer account (FXA_TEAM_SECRETS_SA) on this host; in a terminal: vm.sh secret ${sec}" >&2; return 1; }
+  v="$(cat)"
+  [ -n "$v" ] && [ "${#v}" -le 8192 ] || { echo "ERROR: the value is empty or over 8 KB" >&2; return 1; }
+  if [ "$sec" = "$(jq -r '.secrets.jira // empty' "${FXA_TEAMS_DIR}/${team}.json")" ]; then
+    [[ "$v" =~ ^[^:@[:space:]]+@[^:[:space:]]+:[^[:space:]]+$ ]] || { echo "ERROR: a Jira credential is email:token" >&2; return 1; }
+  fi
+  local -a as=(--impersonate-service-account "$FXA_TEAM_SECRETS_SA" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"})
+  if gcloud secrets describe "$sec" "${as[@]}" >/dev/null 2>&1; then
+    printf '%s' "$v" | gcloud secrets versions add "$sec" --data-file=- "${as[@]}" >/dev/null 2>&1
+  else
+    printf '%s' "$v" | gcloud secrets create "$sec" --replication-policy=automatic --data-file=- "${as[@]}" >/dev/null 2>&1
+  fi || { echo "ERROR: could not store ${sec} (may the writer account write fxa-team-* secrets?)" >&2; return 1; }
+  rm -f "${FXA_TEAMS_SECRET_DIR:-${HOME}/.config/fxa/teams}/${team}/jira.basic"
+  _teams_audit_note secret "$team" "$sec"
+  echo "stored a new version of ${sec}"
+}
+
 # teams_audit <name>   The team's audit rows, newest first, as JSON.
 teams_audit() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
