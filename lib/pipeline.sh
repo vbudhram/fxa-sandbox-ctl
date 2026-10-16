@@ -29,6 +29,11 @@ pipeline_conf_lint() {
   local bad
   bad="$(grep -nvE "^[[:space:]]*(#.*)?\$|^(PIPE_[A-Z0-9_]+|_pipe_[a-z0-9_]+)=(\"[^\"]*\"|'[^']*'|[^[:space:]\"'#;&|<>()]*|\\()([[:space:]]+#.*)?\$|^[[:space:]]*\"[^\"]*\"[[:space:]]*\$|^\\)[[:space:]]*\$" "$1")" || true
   bad="$(printf '%s\n' "$bad"; grep -nE '^[^#]*(\$\(|`)' "$1" | sed 's/^/command substitution: /')" || true
+  # A team value never expands: "$PIPE_JIRA_BASIC" would copy a host secret into the runner's prompt.
+  # Only the built-in fxa profile (operator code, with its env overrides) may use $.
+  local d root; d="$(cd "$(dirname "$1")" && pwd -P)"; root="${d%/profiles/*}"; root="${root%/pipelines}"
+  [ "$1" -ef "${root}/profiles/fxa/profile.conf" ] \
+    || bad="$(printf '%s\n' "$bad"; grep -nE '^[[:space:]]*[^#[:space:]].*\$' "$1" | sed 's/^/expansion: /')" || true
   bad="$(printf '%s\n' "$bad" | grep . || true)"
   [ -z "$bad" ] && return 0
   printf '%s\n' "$bad" | sed "s#^#${1##*/profiles/}: #" | head -5
