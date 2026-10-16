@@ -51,6 +51,7 @@ source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/trees.sh"
+source "${SCRIPT_DIR}/lib/teams.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
 source "${SCRIPT_DIR}/lib/devslot.sh"
 
@@ -2883,13 +2884,24 @@ main() {
                           done
                         done
                         for f in "${FXA_TEAMS_DIR}"/*.json; do
-                          [ -f "$f" ] || continue
+                          [ -f "$f" ] && [ "${f##*/}" != index.json ] || continue
                           FXA_RESERVED_TEAMS="$(ls "${SCRIPT_DIR}/profiles" | tr '\n' ' ')" python3 -I "${SCRIPT_DIR}/lib/team_record.py" validate "$f" "$(basename "$f" .json)" 2>&1 || rc=1
                         done
                         for f in "${SCRIPT_DIR}"/repos/*/notes.md; do
                           [ ! -f "$f" ] || [ "$(_fsize "$f")" -le 8192 ] || { echo "${f#"${SCRIPT_DIR}"/}: over 8 KB"; rc=1; }
                         done; [ "$rc" = 0 ] && echo "profiles: ok"; return "$rc" ;;
-                  *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | profile list | profile lint" >&2; return 1 ;;
+                  # Team records (lib/teams.sh): the store is the GCS state bucket, the cache is FXA_TEAMS_DIR.
+                  get) [ -n "${2:-}" ] && [ -f "${FXA_TEAMS_DIR}/$2.json" ] || { echo "ERROR: no team record ${2:-}; run profile sync" >&2; return 1; }
+                       jq --arg g "$(cat "${FXA_TEAMS_DIR}/$2.gen" 2>/dev/null)" '. + {generation: $g}' "${FXA_TEAMS_DIR}/$2.json" ;;
+                  validate) [ -f "${2:-}" ] || { echo "usage: profile validate <record.json>" >&2; return 1; }; teams_validate "$2" && echo "valid" ;;
+                  create) [ -f "${2:-}" ] || { echo "usage: profile create <record.json>" >&2; return 1; }; teams_create "$2" ;;
+                  set) [ -n "${2:-}" ] && [ -f "${3:-}" ] || { echo "usage: profile set <name> <record.json> [--generation <g>]" >&2; return 1; }
+                       teams_set "$2" "$3" "$([ "${4:-}" = --generation ] && echo "${5:-}")" ;;
+                  enable|disable|draft) [ -n "${2:-}" ] || { echo "usage: profile $1 <name>" >&2; return 1; }
+                       teams_status "$2" "$(case "$1" in enable) echo active ;; disable) echo disabled ;; *) echo draft ;; esac)" ;;
+                  delete) [ -n "${2:-}" ] || { echo "usage: profile delete <name>" >&2; return 1; }; teams_delete "$2" ;;
+                  sync) teams_sync ;;
+                  *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;

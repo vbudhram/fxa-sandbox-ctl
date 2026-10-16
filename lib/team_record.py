@@ -4,6 +4,9 @@
   team_record.py validate <record.json> [<name>]   the problems, one a line; exit 1 when there is one
   team_record.py env <record.json> <name>          KEY<TAB>VALUE lines for pipeline_load (REPO for each repo row)
   team_record.py prompts <record.json> <dir>       write the team's CLAUDE.md, guide.md and goal.md into <dir>
+  team_record.py unique <record.json> <dir>        clashes with the other records in <dir> and the built-in teams
+  team_record.py stamp <record.json> <actor> <at> [<old record>]   the record with created and updated set
+  team_record.py index <dir>                       the index of the records in <dir>, for the bot and the dashboard
 
 A record names no host key (state, lock, URIs, credentials): pipeline_load derives those from the name.
 """
@@ -30,7 +33,7 @@ STAMP = re.compile(r"^[0-9T:.Z+-]{10,32}$")
 KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack", "runner",
         "egress", "mcp", "jira", "pr", "caps", "prompts", "created", "updated"}
 PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 16384)}
-RESERVED = {"fxa", "fxa-android"}
+RESERVED = {"fxa", "fxa-android", "index"}  # index.json is the cache's index
 
 
 def ceiling(key, default):
@@ -227,6 +230,68 @@ def env(rec):
         yield "PIPE_MAX_LAUNCHES_PER_DAY", str(rec["caps"]["launches_per_day"])
 
 
+def unique(rec, folder):
+    """Clashes with the other teams. FXA_BUILTIN_JIRA holds the built-in teams' "PROJECT:team" pairs."""
+    bad, mine = [], rec["name"]
+    taken = dict(p.split(":", 1) for p in os.environ.get("FXA_BUILTIN_JIRA", "").split() if ":" in p)
+    chans = {}
+    for f in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if not f.endswith(".json") or f == "index.json" or f[:-5] == mine:
+            continue
+        try:
+            other = load(os.path.join(folder, f))
+        except SystemExit:
+            continue
+        for p in [other.get("jira", {}).get("project")] + other.get("access", {}).get("jira_prefixes", []):
+            if p:
+                taken.setdefault(p, other.get("name", f[:-5]))
+        for c in other.get("access", {}).get("channels", []):
+            chans.setdefault(c, other.get("name", f[:-5]))
+    acc = rec.get("access", {})
+    for p in {rec.get("jira", {}).get("project")} | set(acc.get("jira_prefixes", [])):
+        if p and taken.get(p, mine) != mine:
+            bad.append(f"Jira project {p} belongs to team {taken[p]}")
+    for c in acc.get("channels", []):
+        if chans.get(c, mine) != mine:
+            bad.append(f"channel {c} belongs to team {chans[c]}")
+    return bad
+
+
+def stamp(rec, actor, at, old=None):
+    by = {"by": actor, "at": at} if EMAIL.match(actor) and STAMP.match(at) else None
+    if old and "created" in old:
+        rec["created"] = old["created"]
+    elif by:
+        rec["created"] = by
+    if by:
+        rec["updated"] = by
+    return rec
+
+
+def index(folder):
+    """One entry for each valid record: what the bot and the dashboard read without loading a team."""
+    teams = {}
+    for f in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if not f.endswith(".json") or f == "index.json":
+            continue
+        try:
+            rec = load(os.path.join(folder, f))
+        except SystemExit:
+            continue
+        if check(rec, f[:-5]):
+            continue
+        gen = ""
+        try:
+            with open(os.path.join(folder, f[:-5] + ".gen"), encoding="utf-8") as g:
+                gen = g.read().strip()
+        except OSError:
+            pass
+        teams[rec["name"]] = {"label": rec.get("label", rec["name"]), "status": rec.get("status", "draft"),
+                              "generation": gen, "access": rec.get("access", {}),
+                              "jira": rec.get("jira", {}).get("project", "")}
+    return {"schema": 1, "teams": teams}
+
+
 def load(path):
     try:
         with open(path, encoding="utf-8") as f:
@@ -236,16 +301,27 @@ def load(path):
 
 
 def main(argv):
-    if len(argv) < 3 or argv[1] not in ("validate", "env", "prompts"):
+    if len(argv) < 3 or argv[1] not in ("validate", "env", "prompts", "unique", "stamp", "index"):
         sys.exit(__doc__)
     cmd, path = argv[1], argv[2]
+    if cmd == "index":
+        print(json.dumps(index(path), indent=1, sort_keys=True))
+        return 0
     rec = load(path)
-    name = argv[3] if len(argv) > 3 and cmd != "prompts" else None
+    name = argv[3] if len(argv) > 3 and cmd in ("validate", "env") else None
     bad = check(rec, name)
     if bad:
         print("\n".join(f"{os.path.basename(path)}: {b}" for b in bad), file=sys.stderr)
         return 1
-    if cmd == "env":
+    if cmd == "unique":
+        clash = unique(rec, argv[3])
+        if clash:
+            print("\n".join(f"{os.path.basename(path)}: {c}" for c in clash), file=sys.stderr)
+            return 1
+    elif cmd == "stamp":
+        old = load(argv[5]) if len(argv) > 5 and os.path.exists(argv[5]) else None
+        print(json.dumps(stamp(rec, argv[3], argv[4], old), indent=1))
+    elif cmd == "env":
         for k, v in env(rec):
             print(f"{k}\t{v}")
     elif cmd == "prompts":

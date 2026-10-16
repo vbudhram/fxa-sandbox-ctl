@@ -51,7 +51,7 @@ pipeline_conf_lint() {
 
 # pipeline_profile_names   Every team: the folders under profiles/, then the records in FXA_TEAMS_DIR.
 pipeline_profile_names() {
-  { ls "${SANDBOX_ROOT}/profiles" 2>/dev/null; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p'; } | awk '!seen[$0]++'
+  { ls "${SANDBOX_ROOT}/profiles" 2>/dev/null; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p' | grep -vx index || true; } | awk '!seen[$0]++'
 }
 
 # _pipeline_load_record <name>   A team record: validated and mapped by team_record.py, then set
