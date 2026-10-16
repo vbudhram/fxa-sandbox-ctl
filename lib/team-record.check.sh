@@ -61,6 +61,27 @@ check "a team without the FxA stack must bring its own goal" "1" "$(bad ng '{ "s
 check "a repo row keeps its own base branch, for that tree" "example/rusty /home/agent/rusty work master" "$(printf '%s\n' "$v" | grep -o 'example/rusty /home/agent/rusty work master')"
 rm -f "$T"/ng.json "$T"/hk.json "$T"/n1.json "$T"/fxa.json "$T"/lb.json "$T"/sl.json "$T"/pa.json "$T"/nw.json "$T"/sk.json "$T"/cp.json "$T"/eg.json "$T"/monitor.json
 
+# Code a record names: skills from the catalog, a boot script of the repo pinned by its hash.
+R="$tmp/repo"; mkdir -p "$R/boot" "$R/skills"; printf 'android-verify\n# a comment\n' > "$R/skills/team-catalog.txt"
+printf '#!/bin/bash\necho boot\n' > "$R/boot/rusty.sh"; pin="$( { sha256sum "$R/boot/rusty.sh" 2>/dev/null || shasum -a 256 "$R/boot/rusty.sh"; } | cut -d' ' -f1)"
+code() { printf '{ "schema": 1, "name": "cd", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }%s }' "$1" > "$T/cd.json"; FXA_TEAM_REPO="$R" py env "$T/cd.json" cd 2>&1; }
+check "a catalog skill and a pinned boot script reach the loader" "android-verify|rusty|$pin" \
+  "$(code ", \"skills\": [\"android-verify\"], \"boot\": { \"script\": \"rusty\", \"sha256\": \"$pin\" }" | awk -F'\t' '/^PIPE_TEAM_SKILLS|^PIPE_BOOT_SCRIPT|^PIPE_BOOT_SHA256/{print $2}' | paste -sd'|' -)"
+check "a skill off the catalog is refused" "1" "$(code ', "skills": ["fxa-manager"]' | grep -c "not on skills/team-catalog.txt")"
+check "a boot script outside boot/ is refused" "1" "$(code ', "boot": { "script": "../x", "sha256": "'"$pin"'" }' | grep -c 'boot.script')"
+printf 'echo edited\n' >> "$R/boot/rusty.sh"
+check "a boot script edited since its pin is refused, with the new hash to review" "1" \
+  "$(code ", \"boot\": { \"script\": \"rusty\", \"sha256\": \"$pin\" }" | grep -c 'changed since it was pinned: review it, then pin [0-9a-f]\{64\}')"
+# The runner: the pinned version runs; an edited one does not reach the runner.
+eval "$(sed -n '/^_gce_profile_boot() {/,/^}/p;/^_vm_skill_allowlist() {/,/^}/p' "$root/lib/agent.sh")"
+android_overlay() { :; }; _vm_repo_dirs() { :; }; vm_exec() { printf '%s' "$*" > "$tmp/vm"; }
+boot() { : > "$tmp/vm"; ( SANDBOX_ROOT="$R"; PIPE_PROFILE=cd PIPE_BOOT_SCRIPT=rusty PIPE_BOOT_SHA256="$1"; _gce_profile_boot r >/dev/null 2>&1; echo $? ); }
+now="$( { sha256sum "$R/boot/rusty.sh" 2>/dev/null || shasum -a 256 "$R/boot/rusty.sh"; } | cut -d' ' -f1)"
+check "the runner gets the pinned script; a stale pin runs nothing" "0|1|1|0" \
+  "$(boot "$now")|$(grep -c "$(base64 < "$R/boot/rusty.sh" | tr -d '\n' | cut -c1-30)" "$tmp/vm")|$(boot "$pin")|$(wc -c < "$tmp/vm" | tr -d ' ')"
+check "a record's skills are in the runner's allowlist" "1" "$(PIPE_TEAM_SKILLS="android-verify" _vm_skill_allowlist | grep -cx android-verify)"
+rm -f "$T/cd.json" "$T/cd.gen"; rm -rf "$T/cd"
+
 # A folder profile may not set a host key, or name another team.
 f="$tmp/r/profiles/evil"; mkdir -p "$f"
 lint() { printf '%s\n' "$@" > "$f/profile.conf"; ( source "$root/lib/pipeline.sh"; pipeline_conf_lint "$f/profile.conf" >/dev/null; echo $? ); }

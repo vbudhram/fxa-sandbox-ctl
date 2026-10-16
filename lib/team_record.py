@@ -10,6 +10,7 @@
 
 A record names no host key (state, lock, URIs, credentials): pipeline_load derives those from the name.
 """
+import hashlib
 import json
 import os
 import re
@@ -31,9 +32,29 @@ DESKTOP = re.compile(r"^http://localhost:[0-9]{2,5}/$")
 STAMP = re.compile(r"^[0-9T:.Z+-]{10,32}$")
 
 KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack", "runner",
-        "egress", "mcp", "jira", "pr", "caps", "prompts", "created", "updated"}
+        "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "created", "updated"}
+# A record names code only from this repo, where it is reviewed: skills/<name> on the catalog, and
+# boot/<script>.sh pinned by its SHA-256, so an edit to the script needs a new pin.
+REPO = os.environ.get("FXA_TEAM_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+SHA = re.compile(r"^[0-9a-f]{64}$")
 PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 16384)}
 RESERVED = {"fxa", "fxa-android", "index"}  # index.json is the cache's index
+
+
+def catalog():
+    try:
+        with open(os.path.join(REPO, "skills", "team-catalog.txt"), encoding="utf-8") as f:
+            return {l.strip() for l in f if l.strip() and not l.startswith("#")}
+    except OSError:
+        return set()
+
+
+def file_sha(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        h.update(f.read())
+    return h.hexdigest()
 
 
 def ceiling(key, default):
@@ -188,6 +209,20 @@ def check(rec, name=None):
         if k in pro and (not isinstance(pro[k], str) or len(pro[k].encode()) > most):
             bad.append(f"prompts.{k} must be text of at most {most // 1024} KB")
 
+    skills = strs(rec.get("skills", []), "skills", SCRIPT, 20)
+    for k in sorted(set(skills) - catalog()):
+        bad.append(f"skill {k!r} is not on skills/team-catalog.txt")
+    if "boot" in rec:
+        boot = obj(rec["boot"], "boot", {"script", "sha256"})
+        sc, pin = str(boot.get("script", "")), str(boot.get("sha256", ""))
+        path = os.path.join(REPO, "boot", sc + ".sh")
+        if not SCRIPT.match(sc) or not os.path.isfile(path):
+            bad.append("boot.script must name a script in boot/ of this repo")
+        elif not SHA.match(pin):
+            bad.append("boot.sha256 must be the script's SHA-256")
+        elif file_sha(path) != pin:
+            bad.append(f"boot/{sc}.sh changed since it was pinned: review it, then pin {file_sha(path)}")
+
     for k in ("created", "updated"):
         if k in rec:
             st = obj(rec[k], k, {"by", "at"})
@@ -229,6 +264,11 @@ def env(rec):
     yield "PIPE_PR_OPEN", "1" if pr.get("open", True) else "0"
     if pr.get("reviewers"):
         yield "PIPE_PR_TEAM", pr["reviewers"]
+    if rec.get("skills"):
+        yield "PIPE_TEAM_SKILLS", " ".join(rec["skills"])
+    if rec.get("boot"):
+        yield "PIPE_BOOT_SCRIPT", rec["boot"]["script"]
+        yield "PIPE_BOOT_SHA256", rec["boot"]["sha256"]
     if "launches_per_day" in rec.get("caps", {}):
         yield "PIPE_MAX_LAUNCHES_PER_DAY", str(rec["caps"]["launches_per_day"])
 

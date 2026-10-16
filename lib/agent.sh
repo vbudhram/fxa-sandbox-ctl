@@ -70,6 +70,8 @@ _vm_skill_allowlist() {
     quick-review squash-commit fxa-test-plan fxa-jira-link fxa-end
   # An Android run (--android, or a team with PIPE_ANDROID=1) proves its change on the emulator.
   [ "${FXA_ANDROID:-}" = 1 ] && echo android-verify
+  # A team record's skills, by name from skills/team-catalog.txt (team_record.py checks the list).
+  [ -z "${PIPE_TEAM_SKILLS:-}" ] || printf '%s\n' $PIPE_TEAM_SKILLS
   # Each repo's own sandbox skills (repos/<owner>__<name>/skills.txt), for the repos of the profile.
   local d; for d in $(_vm_repo_dirs); do [ -f "$d/skills.txt" ] && grep -vE '^(#|$)' "$d/skills.txt"; done
   return 0
@@ -265,8 +267,15 @@ _put_run_files() {
 # it sets up the profile's stack while the agent reads code, and writes
 # /run/fxa-profile/ready or failed. Nothing for a profile without one.
 _gce_profile_boot() {
-  local name="$1" f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/boot.sh" b64
+  local name="$1" f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/boot.sh" b64 got
   [ -n "${PIPE_PROFILE:-}" ] && [ -f "$f" ] || f="$(android_overlay boot.sh)"
+  # A team record's boot: a script of this repo, run only while it is the version the record pinned.
+  if [ -n "${PIPE_BOOT_SCRIPT:-}" ]; then
+    f="${SANDBOX_ROOT}/boot/${PIPE_BOOT_SCRIPT}.sh"
+    got="$({ sha256sum "$f" 2>/dev/null || shasum -a 256 "$f" 2>/dev/null; } | cut -d' ' -f1)"
+    [[ "$PIPE_BOOT_SCRIPT" =~ ^[a-z0-9][a-z0-9-]{0,39}$ ]] && [ -n "$got" ] && [ "$got" = "${PIPE_BOOT_SHA256:-}" ] \
+      || { echo "ERROR: boot/${PIPE_BOOT_SCRIPT}.sh is not the version team ${PIPE_PROFILE} pinned; it did not run" >&2; return 1; }
+  fi
   [ -n "$f" ] && [ -f "$f" ] || return 0
   b64="$(base64 < "$f" | tr -d '\n')"
   echo "Setting up the ${PIPE_PROFILE} stack in the background..."

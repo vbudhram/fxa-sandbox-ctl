@@ -1,0 +1,7 @@
+# Skills a team record may add by name (team_record.py "skills"). Each is a folder under skills/,
+# reviewed like the rest of this repo, and the runner gets it as it gets the base skills.
+android-verify
+fxa-stack
+fxa-verify
+fxa-page-shot
+fxa-functional-local
