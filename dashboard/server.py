@@ -496,9 +496,28 @@ class Handler(BaseHTTPRequestHandler):
             if TEAMS.claim():
                 threading.Thread(target=TEAMS.refresh, args=(True,), daemon=True).start()
 
+    def _team_test(self, user, name):
+        """Start profile test in the background (it boots a runner for minutes); its log goes beside the record."""
+        teams = Path(os.environ.get("FXA_TEAMS_DIR") or Path.home() / ".claude/state/teams")
+        pidf, log = teams / f"{name}.test.pid", teams / f"{name}.test.log"
+        try:
+            os.kill(int(pidf.read_text()), 0)
+            self._json(409, {"error": "a test of this team is already running"})
+            return
+        except (OSError, ValueError):
+            pass
+        if not (teams / f"{name}.json").exists():
+            self._json(404, {"error": f"no team record {name}"})
+            return
+        with open(log, "w") as out:
+            p = subprocess.Popen([str(CTL), "profile", "test", name], stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                 start_new_session=True, env={**os.environ, "FXA_TEAM_ACTOR": user})
+        pidf.write_text(str(p.pid))
+        self._json(202, {"ok": True, "out": f"testing {name}: it boots one runner, a few minutes. Load the record again to see the result."})
+
     def _team_write(self, path):
         """POST /api/teams[/validate|/<name>[/status|/delete]]: a signed admin's change, JSON only, 64 KB at most."""
-        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete))?)?", path)
+        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete|test))?)?", path)
         if not m:
             self._json(404, {"error": "not found"})
             return
@@ -519,7 +538,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "bad JSON"})
             return
         rec, gen = body.get("record"), str(body.get("generation") or "")
-        if verb == "delete":
+        if verb == "test":
+            self._team_test(user, name)
+        elif verb == "delete":
             self._team_ctl(user, ["delete", name])
         elif verb == "status":
             st = {"active": "enable", "disabled": "disable", "draft": "draft"}.get(body.get("status"))

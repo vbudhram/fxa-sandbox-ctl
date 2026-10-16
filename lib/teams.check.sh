@@ -35,8 +35,12 @@ check "a channel or Jira project of another record is refused" "1|1" \
   "$(teams_create "$(rec chan2 Chan ', "access": { "channels": ["C0123ABCD"] }')" 2>&1 | grep -c 'channel C0123ABCD belongs to team chan1')|$(teams_create "$(rec chan3 Chan ', "jira": { "project": "CHAN" }')" 2>&1 | grep -c 'CHAN belongs to team chan1')"
 # The CLI's status verbs (bash 3.2 once failed to parse their case inside $(...)). No bucket: FXA_TEAMS_URI is empty.
 cli() { ( cd "$root" && FXA_TEAMS_URI= FXA_TEAMS_DIR="$FXA_TEAMS_DIR" FXA_DB="$FXA_DB" ./fxa-sandbox-ctl profile "$@" >/dev/null 2>&1; echo $? ); }
+check "a record turns active only after a passed test of its generation" "1|draft|0|active" \
+  "$(cli enable chan1)|$(jq -r '.status // "draft"' "$FXA_TEAMS_DIR/chan1.json")|$(cp "$FXA_TEAMS_DIR/chan1.gen" "$FXA_TEAMS_DIR/chan1.tested"; cli enable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")"
+check "a test of an older generation does not count" "1" \
+  "$(cli draft chan1 >/dev/null; echo 1 > "$FXA_TEAMS_DIR/chan1.tested"; cli enable chan1)"
 check "profile enable, disable and draft set the status" "0|active|0|disabled|0|draft" \
-  "$(cli enable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli disable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli draft chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")"
+  "$(cp "$FXA_TEAMS_DIR/chan1.gen" "$FXA_TEAMS_DIR/chan1.tested"; cli enable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli disable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli draft chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")"
 printf '{"profile":"rusty","state":"paused"}' > "$SESSION_DIR/agent-r1.json"
 check "delete is refused while a session of the team can resume" "1" "$(teams_delete rusty >/dev/null 2>&1; echo $?)"
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
@@ -70,6 +74,14 @@ check "an active queue where the login cannot edit is refused; a draft or no que
 check "full rights and an active queue: valid, no warning" "0|0" \
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv7 Live ', "status": "active", "jira": { "project": "OK", "queue": true }')" lv7 >/dev/null 2>&1; echo $?)|$(live lv7 ', "status": "active", "jira": { "project": "OK", "queue": true }' | grep -c WARN)"
 unset -f curl github_app_jwt
+
+# The checks a test runs on the runner, from the loaded team.
+probe() { ( PIPE_PROFILE=pt PIPE_REPOS=("example/w /home/agent/w work main" "mozilla/fxa /home/agent/fxa dep"); PIPE_STACK_DIR=/home/agent/fxa
+  PIPE_EGRESS_EXTRA="static.crates.io"; PIPE_TEAM_SKILLS="fxa-stack"; PIPE_BOOT_SCRIPT=pt; _teams_probe_script ); }
+check "the test checks each repo, the boot, the stack, each approved host, a blocked host and each skill" "2|1|1|1|1|1" \
+  "$(probe | grep -c "^r 'repo ")|$(probe | grep -c 'the boot script finished ready')|$(probe | grep -c ':9000/__heartbeat__.;')|$(probe | grep -c 'egress to static.crates.io')|$(probe | grep -c 'example.com')|$(probe | grep -c 'skill fxa-stack')"
+check "the probe script is valid shell, and a host it did not approve counts as blocked only when the request fails" "0" \
+  "$(probe | bash -n; echo $?)"
 
 # The bucket: a fake gcloud keeps each object and its generation under $B.
 B="$tmp/bucket"; mkdir -p "$B"; FXA_TEAMS_URI="gs://test/teams"; rm -rf "$FXA_TEAMS_DIR"; next=100

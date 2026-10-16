@@ -2892,7 +2892,8 @@ main() {
                         done; [ "$rc" = 0 ] && echo "profiles: ok"; return "$rc" ;;
                   # Team records (lib/teams.sh): the store is the GCS state bucket, the cache is FXA_TEAMS_DIR.
                   get) [ -n "${2:-}" ] && [ -f "${FXA_TEAMS_DIR}/$2.json" ] || { echo "ERROR: no team record ${2:-}; run profile sync" >&2; return 1; }
-                       jq --arg g "$(cat "${FXA_TEAMS_DIR}/$2.gen" 2>/dev/null)" '. + {generation: $g}' "${FXA_TEAMS_DIR}/$2.json" ;;
+                       jq --arg g "$(cat "${FXA_TEAMS_DIR}/$2.gen" 2>/dev/null)" --arg t "$(cat "${FXA_TEAMS_DIR}/$2.tested" 2>/dev/null)" \
+                         --arg l "$(tail -n 25 "${FXA_TEAMS_DIR}/$2.test.log" 2>/dev/null)" '. + {generation: $g, tested: $t, test_log: $l}' "${FXA_TEAMS_DIR}/$2.json" ;;
                   validate) [ -f "${2:-}" ] || { echo "usage: profile validate <record.json>" >&2; return 1; }; teams_validate "$2" && echo "valid" ;;
                   create) [ -f "${2:-}" ] || { echo "usage: profile create <record.json>" >&2; return 1; }; teams_create "$2" ;;
                   set) [ -n "${2:-}" ] && [ -f "${3:-}" ] || { echo "usage: profile set <name> <record.json> [--generation <g>]" >&2; return 1; }
@@ -2902,6 +2903,7 @@ main() {
                   delete) [ -n "${2:-}" ] || { echo "usage: profile delete <name>" >&2; return 1; }; teams_delete "$2" ;;
                   sync) teams_sync ;;
                   audit) [ -n "${2:-}" ] || { echo "usage: profile audit <name>" >&2; return 1; }; teams_audit "$2" ;;
+                  test) [ -n "${2:-}" ] || { echo "usage: profile test <name>" >&2; return 1; }; teams_test "$2" ;;
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
     list|ls)    cmd_list "$@" ;;

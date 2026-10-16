@@ -1305,17 +1305,20 @@ function teamEditor(name, isRecord) {
   const e = TED?.name === name ? TED : null;
   if (!e) return `<div><h4>Edit</h4><div class="acts2"><button data-team-load="${esc(name)}">${name === "__new" ? "Start from the template" : "Load the record"}</button></div></div>`;
   const acts = name === "__new" ? `<button data-tact="create">Create as draft</button>`
-    : `<button data-tact="save">Save</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
+    : `<button data-tact="save">Save</button><button data-tact="test">Test</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
   return `<div data-team-ed="${esc(name)}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + esc(e.gen) : "new record"}</span></h4>
     <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${esc(e.text)}</textarea>
     <div class="acts2" style="margin-top:var(--s2)"><button data-tact="validate">Validate</button>${acts}</div>
     <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${esc(e.msg || "")}</p>
+    ${name === "__new" ? "" : `<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
+    ${e.testLog ? `<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(e.testLog)}</pre>` : ""}
     ${e.audit ? `<table class="usage"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
   if (!r.ok) return { name: n, text: "", gen: "", msg: j.error || String(r.status), ok: false };
-  const { generation, ...rec } = j; return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, msg: "", ok: true };
+  const { generation, tested, test_log, ...rec } = j;
+  return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, tested, testLog: test_log, msg: "", ok: true };
 }
 document.addEventListener("input", e => { if (TED && e.target.classList?.contains("team-json")) TED.text = e.target.value; });
 document.addEventListener("click", async e => {
@@ -1338,13 +1341,14 @@ document.addEventListener("click", async e => {
   if (["validate", "create", "save"].includes(act)) { try { rec = JSON.parse(TED.text); } catch (err) { return say(`Not JSON: ${err.message}`, false); } }
   const [url, body] = { validate: ["/api/teams/validate", { record: rec }], create: ["/api/teams", { record: rec }],
     save: [`/api/teams/${n}`, { record: rec, generation: TED.gen }], active: [`/api/teams/${n}/status`, { status: "active" }],
-    disabled: [`/api/teams/${n}/status`, { status: "disabled" }], delete: [`/api/teams/${n}/delete`, {}] }[act];
+    disabled: [`/api/teams/${n}/status`, { status: "disabled" }], delete: [`/api/teams/${n}/delete`, {}], test: [`/api/teams/${n}/test`, {}] }[act];
   btn.closest("[data-team-ed]").querySelectorAll("button").forEach(b => b.disabled = true);
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
   const j = await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" };
   if (!r?.ok) return say((r?.status === 409 ? "Someone changed this team after you loaded it. Load the record again and redo your edit.\n" : "") + (j.error || r?.status), false);
   if (act === "delete") { TED = null; SEL.teams = null; }
   else if (act === "create") { SEL.teams = rec.name; TED = { ...(await teamRecord(rec.name)), msg: j.out, ok: true }; }
+  else if (act === "test") { return say(j.out, true); }
   else if (act !== "validate") { TED = { ...(await teamRecord(n)), msg: j.out, ok: true }; }
   else return say(j.out || "valid", true);
   await loadTeams(); renderRight();

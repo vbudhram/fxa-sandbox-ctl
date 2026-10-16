@@ -9,11 +9,13 @@ cat > "$tmp/ctl" <<EOF
 #!/bin/bash
 printf '%s\n' "\$*" >> "$tmp/args"; printf '%s\n' "\${FXA_TEAM_ACTOR:-}" >> "$tmp/actor"
 for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$tmp/recfile"; }; done
+[ "\$2" = test ] && sleep 2
 case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
 [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
 EOF
 chmod +x "$tmp/ctl"; printf 'k1' > "$tmp/hmac"
-FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
+mkdir -p "$tmp/teams"; echo '{}' > "$tmp/teams/rusty.json"
+FXA_TEAMS_DIR="$tmp/teams" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
 import hashlib, hmac, json, os, sys, threading, time, urllib.error, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
 from http.server import ThreadingHTTPServer
@@ -75,6 +77,12 @@ check("a cross-site request is refused before the signature counts", 403, call("
 check("the page learns who it is for: an admin, a viewer, nobody signed",
       ({"user": A, "admin": True}, {"user": "viewer@example.com", "admin": False}, {"user": None, "admin": False}),
       tuple(call("GET", "/api/team-admin", headers=h)[1] for h in (sig(A, "GET", "/api/team-admin"), sig("viewer@example.com", "GET", "/api/team-admin"), {})))
+s1 = call("POST", "/api/teams/rusty/test", {}, sig(A, "POST", "/api/teams/rusty/test"))[0]
+s2 = call("POST", "/api/teams/rusty/test", {}, sig(A, "POST", "/api/teams/rusty/test"))[0]
+s3 = call("POST", "/api/teams/ghost/test", {}, sig(A, "POST", "/api/teams/ghost/test"))[0]
+time.sleep(3)
+check("a test starts in the background (202); a second one while it runs is refused (409); no record is 404",
+      (202, 409, 404, "profile test rusty"), (s1, s2, s3, [l for l in open(f"{tmp}/args").read().splitlines() if "test" in l][-1]))
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")

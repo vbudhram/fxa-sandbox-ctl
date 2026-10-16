@@ -161,11 +161,64 @@ teams_set() {
   return $rc
 }
 
+# _teams_probe_script   The checks a test runs on the runner as agent, from the loaded team; one
+# "ok <what>" or "FAIL <what>" line each. Every value went through the loader's checks.
+_teams_probe_script() {
+  local row s p r b h k
+  echo 'r() { if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; fi; }'
+  echo 'wait_for() { local i; for i in $(seq "$1"); do eval "$2" >/dev/null 2>&1 && return 0; sleep 5; done; return 1; }'
+  for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
+    read -r s p r b <<< "$row"; echo "r 'repo ${s} is checked out at ${p}' 'git -C ${p} rev-parse --verify HEAD'"
+  done
+  if [ -n "${PIPE_BOOT_SCRIPT:-}" ] || [ -f "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}/boot.sh" ]; then
+    echo "wait_for 120 '[ -f /run/fxa-profile/ready ] || [ -f /run/fxa-profile/failed ]'; r 'the boot script finished ready' '[ -f /run/fxa-profile/ready ]'"
+  fi
+  [ -n "${PIPE_STACK_DIR:-}" ] && echo "wait_for 84 'curl -sf --max-time 5 http://localhost:9000/__heartbeat__'; r 'the FxA stack answers on :9000' 'curl -sf --max-time 5 http://localhost:9000/__heartbeat__'"
+  for h in ${PIPE_EGRESS_EXTRA:-}; do echo "r 'egress to ${h} is open' 'curl -s -o /dev/null --max-time 10 https://${h}'"; done
+  echo "r 'a host the team did not approve is blocked' '! curl -s -o /dev/null --max-time 8 https://example.com'"
+  for k in ${PIPE_TEAM_SKILLS:-}; do echo "r 'skill ${k} is installed' '[ -d ~/.claude/skills/${k} ]'"; done
+}
+
+# teams_test <name>   Boot one runner as the team, check what it needs, and stop it. A pass records
+# the generation it tested (<name>.tested): a record turns active only at a tested generation.
+teams_test() {
+  local name="$1" ctl="${SCRIPT_DIR:-.}/fxa-sandbox-ctl" key f gen out rc=0
+  [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team record ${name}; run profile sync" >&2; return 1; }
+  gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)"
+  key="agent-tst$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
+  f="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
+  echo 'This is a test boot of the team. Reply with the one word: ready. Change nothing and run nothing.' > "$f"
+  echo "== ${name} at generation ${gen}: booting ${key} (a few minutes)"
+  if ! "$ctl" --backend gce --pipeline "$name" task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1; then
+    rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; return 1
+  fi
+  rm -f "$f"
+  if FXA_TRY_TURN_SECONDS="${FXA_TEAMS_TEST_SECONDS:-1200}" _session_try_wait "$ctl" "$key"; then
+    echo "ok   the runner booted and the agent answered"
+    out="$( ( pipeline_load "$name" >/dev/null 2>&1 && _session_sh "$(worktree_branch_for "$key")" "$(_teams_probe_script)" ) 2>&1)"
+    printf '%s\n' "$out" | grep -E '^(ok|FAIL) '
+    grep -qE '^ok ' <<< "$out" && ! grep -q '^FAIL ' <<< "$out" || rc=1
+  else
+    echo "FAIL the runner did not finish its first turn; see ${SESSION_DIR}/${key}.log"; rc=1
+  fi
+  "$ctl" --backend gce stop "$key" >/dev/null 2>&1; echo "== stopped ${key}"
+  if [ "$rc" = 0 ]; then printf '%s\n' "$gen" > "${FXA_TEAMS_DIR}/${name}.tested"; echo "passed: team ${name} may be activated at generation ${gen}"
+  else echo "failed: team ${name} stays as it is"; fi
+  return $rc
+}
+
 # teams_status <name> <draft|active|disabled>
 teams_status() {
   local name="$1" st="$2" tmp rc
   case "$st" in draft|active|disabled) ;; *) echo "ERROR: status is draft, active or disabled" >&2; return 1 ;; esac
   [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team ${name} here; run profile sync" >&2; return 1; }
+  # Turning active needs a passed test of this very generation: an edit since then needs a new one.
+  if [ "$st" = active ] && [ "$(jq -r '.status // "draft"' "${FXA_TEAMS_DIR}/${name}.json")" != active ] \
+     && [ "$(cat "${FXA_TEAMS_DIR}/${name}.tested" 2>/dev/null)" != "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)" ] \
+     && [ "${FXA_TEAMS_SKIP_TEST:-}" != 1 ]; then
+    echo "ERROR: team ${name} has no passed test at its generation: run profile test ${name} (it boots one runner), then enable it" >&2
+    return 1
+  fi
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   jq --arg s "$st" '.status = $s' "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" && teams_set "$name" "$tmp"; rc=$?
   rm -f "$tmp"; return $rc
