@@ -41,7 +41,7 @@ check "codex command becomes a step" "Running ls packages" "$(printf '%s\n' '{"t
 g init -q "$tmp/fxa"; printf '**/node_modules\nai\n' > "$tmp/fxa/.gitignore"; printf 'a\n' > "$tmp/fxa/a.txt"
 mkdir "$tmp/fxa/node_modules"
 g -C "$tmp/fxa" add . && g -C "$tmp/fxa" commit -qm base
-worktree_repo_root() { printf '%s\n' "$tmp/fxa"; }
+pipeline_ensure_clone() { :; }; worktree_repo_root() { printf '%s\n' "$tmp/fxa"; }
 # The runner's tree: one edit, one new file, orchestration files.
 mkdir -p "$tmp/runner"; printf 'a\nedit\n' > "$tmp/runner/a.txt"; printf 'new\n' > "$tmp/runner/b.txt"
 printf '{}' > "$tmp/runner/.fxa-auto-done.json"

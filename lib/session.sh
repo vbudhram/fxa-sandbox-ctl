@@ -1678,6 +1678,7 @@ _session_review() {
 # the check-frozen step; **/node_modules in .gitignore keeps the link out of git.
 session_checkout() {
   local key="$1" dir="$2" root name
+  pipeline_ensure_clone || return 1  # a team tree that booted without a host clone
   root="$(worktree_repo_root)" || return 1
   name="$(worktree_branch_for "$key")"
   local branch base; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; base="$(session_get "$key" base_sha)"

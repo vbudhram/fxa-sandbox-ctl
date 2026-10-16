@@ -165,10 +165,15 @@ _trees_restore() {
 # into the run dir and add its line to .fxa-trees.tsv.
 _tree_boot() {
   local key="$1" from="$2" fresh="$3" dir="$4" root sha base_sha branch review
-  pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
-  root="$(worktree_repo_root)" || return 1
-  _retry git -C "$root" fetch --quiet origin "$FXA_WORKTREE_BASE" && sha="$(git -C "$root" rev-parse "origin/${FXA_WORKTREE_BASE}")" \
-    || { echo "ERROR: could not fetch ${PIPE_REPO_SLUG} origin/${FXA_WORKTREE_BASE}" >&2; return 1; }
+  if [ -e "${PIPE_REPO}/.git" ]; then
+    root="$(worktree_repo_root)" || return 1
+    _retry git -C "$root" fetch --quiet origin "$FXA_WORKTREE_BASE" && sha="$(git -C "$root" rev-parse "origin/${FXA_WORKTREE_BASE}")" \
+      || { echo "ERROR: could not fetch ${PIPE_REPO_SLUG} origin/${FXA_WORKTREE_BASE}" >&2; return 1; }
+  else
+    # No clone here (Firefox: 5.5 GB, already in the Android image): the tip only. A PR clones it (session_checkout).
+    sha="$(_retry git ls-remote "https://github.com/${PIPE_REPO_SLUG}.git" "refs/heads/${FXA_WORKTREE_BASE}" | cut -f1)"
+    [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read ${PIPE_REPO_SLUG} ${FXA_WORKTREE_BASE}" >&2; return 1; }
+  fi
   base_sha="$sha"
   branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; review="$(session_get "$key" review_pr)"
   [ -n "$review" ] && [ "$(session_get "$from" state 2>/dev/null)" != pr_open ] && [ "$fresh" != 1 ] && review=""

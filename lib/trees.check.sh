@@ -114,8 +114,16 @@ check "the steer uses them" "1" "$(grep -c 'trees="$(trees_session_flags "$key")
 eval "$(sed -n '/^_tree_boot() {/,/^}/p' "$here/trees.sh")"
 g="$tmp/gr"; git init -q "$g"; git -C "$g" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m x; git -C "$g" update-ref refs/remotes/origin/main HEAD
 pipeline_ensure_clone() { :; }; worktree_repo_root() { echo "$g"; }; _retry() { :; }; gh() { git -C "$g" rev-parse HEAD; }; trees_from_get() { :; }
+_tree_host_root() { echo "$g"; }
 d="$tmp/run"; mkdir -p "$d"; FXA_WORKTREE_BASE=main trees_each "$u" _tree_boot "$u" "" 1 "$d" >/dev/null 2>&1
 check "_tree_boot lists the untrusted tree for the launch" "/home/agent/pyfxa" "$(cat "$d/.fxa-trees-untrusted" 2>/dev/null)"
+# A tree with no clone on the host (Firefox) reads its tip with ls-remote and never clones.
+_tree_host_root() { echo "$tmp/none/$1"; }; _retry() { "$@"; }
+git() { if [ "$1" = ls-remote ]; then echo "$2" > "$tmp/lsr"; printf '%s\trefs/heads/main\n' "$A"; else command git "$@"; fi; }
+d="$tmp/run2"; mkdir -p "$d"; FXA_WORKTREE_BASE=main trees_each "$u" _tree_boot "$u" "" 0 "$d" >/dev/null 2>&1
+check "a tree with no host clone pins at the ls-remote tip, with no clone" "$A|https://github.com/mozilla/PyFxA.git|no" \
+  "$(awk -F'\t' '$1=="pyfxa"{print $4}' "$d/.fxa-trees.tsv")|$(cat "$tmp/lsr")|$([ -e "$tmp/none" ] && echo yes || echo no)"
+unset -f git; _retry() { :; }; _tree_host_root() { echo "$g"; }
 unset -f gh
 session_set "$u" checkout_person 0
 check "the bot's own PR stays trusted" "" "$(trees_each "$u" _tree_untrusted "$u")"

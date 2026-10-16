@@ -24,7 +24,7 @@ cd "$tmp/ws" && g checkout -qb agent-gt01 && printf '%s\n' ".fxa-*" "ai/" "artif
 # The runner: commands run in the runner clone in place of /workspace.
 _session_sh() { (cd "$tmp/ws" && bash -c "${2//\/workspace/$tmp/ws}"); }
 vm_exec_as_agent() { _session_sh "$1" "$2"; }
-worktree_repo_root() { echo "$tmp/host"; }; worktree_branch_for() { echo "agent-$1"; }
+pipeline_ensure_clone() { :; }; worktree_repo_root() { echo "$tmp/host"; }; worktree_branch_for() { echo "agent-$1"; }
 _retry() { "$@"; }
 eval "$(sed -n '/^cmd_diff() {/,/^}/p;/^_session_key() {/,/^}/p' "$HERE/../fxa-sandbox-ctl")"
 vm_pull_tree() { rsync -a -c --delete --exclude .git --exclude node_modules "$tmp/ws/" "$3/"; }
