@@ -13,3 +13,5 @@ The full manual is the FxA Android section of `/etc/vm-agent-guide.md`.
   Fenix talk to the local stack (the localhost match in `fxawebchannel/manifest.template.json`,
   marked skip-worktree). Do not edit that file or undo the mark.
 - Put screenshots in `/workspace/.fxa-auto-media/`: `adb exec-out screencap -p > <file>.png`.
+- For a pairing or sign-in change, run `/android-verify --record`, review the video, and attach it to
+  the PR. A failed try that matches a trap in the guide is not your change; say which trap it was.
