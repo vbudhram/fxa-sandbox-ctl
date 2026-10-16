@@ -15,6 +15,7 @@ cat > "$tmp/bin/systemctl" <<EOF
 echo "\$*" >> "$tmp/calls"
 u="\${@: -1}"
 case "\$*" in
+  *show*MainPID*) cat "$tmp/mainpid" 2>/dev/null || echo 0 ;;
   *is-enabled*) [ -e "$S/timers.target.wants/\$u" ] ;;
   *enable*) : > "$S/timers.target.wants/\$u" ;;
   *disable*) rm -f "$S/timers.target.wants/\$u" ;;
@@ -40,5 +41,16 @@ check "no index stops every record pass, and keeps the folder team's" "sync-stor
   "$(index '{ "rusty": { "status": "active", "jira": "RUST", "queue": true } }'; run >/dev/null; rm -f "$H/.claude/state/teams/index.json"; run >/dev/null; wants)"
 check "a run with nothing to change makes no enable or disable" "0" \
   "$(: > "$tmp/calls"; run >/dev/null; grep -cE '^(enable|disable)' "$tmp/calls")"
+
+# A team turned off mid-pass: its running pass ends, and a run it launched (adopted by PID 1) does not.
+index '{ "busy": { "status": "active", "jira": "BZ", "queue": true } }'; run >/dev/null
+bash -c 'sleep 300 & sleep 300 & wait' >/dev/null 2>&1 & echo $! > "$tmp/mainpid"
+( nohup sleep 301 >/dev/null 2>&1 & echo $! > "$tmp/launched" )
+sleep 1; kids="$(ps -eo pid=,ppid= | awk -v p="$(cat "$tmp/mainpid")" '$2 == p { print $1 }' | tr '\n' ' ')"
+index '{ "busy": { "status": "disabled", "jira": "BZ", "queue": true } }'; run > "$tmp/out2"; sleep 1
+alive() { kill -0 "$1" 2>/dev/null && echo up || echo gone; }
+check "turning a team off ends its running pass and the pass's children, not a run it launched" "gone|gone gone |up|1" \
+  "$(alive "$(cat "$tmp/mainpid")")|$(for k in $kids; do printf '%s ' "$(alive "$k")"; done)|$(alive "$(cat "$tmp/launched")")|$(grep -c 'ended the running pass of busy' "$tmp/out2")"
+kill "$(cat "$tmp/launched")" "$(cat "$tmp/mainpid")" $kids 2>/dev/null; rm -f "$tmp/mainpid"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

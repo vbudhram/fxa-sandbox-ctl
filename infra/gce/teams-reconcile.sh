@@ -32,6 +32,22 @@ UNIT
   systemctl enable -q --now fxa-teams.path
 fi
 
+# _stop_pass <team>   End a pass that is running now: the process tree under the unit's main PID
+# (claude-job.sh, its precheck, claude -p and its tools). Not systemctl kill: KillMode=process keeps
+# the runs a pass launched in the same cgroup, and those are adopted by PID 1, outside this tree.
+_stop_pass() {
+  local main all frontier next
+  main="$(systemctl show -p MainPID --value "fxa-pass@$1.service" 2>/dev/null)"
+  [[ "$main" =~ ^[1-9][0-9]*$ ]] || return 0
+  all="$main" frontier="$main"
+  while [ -n "$frontier" ]; do
+    next="$(ps -eo pid=,ppid= | awk -v f=" $frontier " 'index(f, " " $2 " ") { print $1 }' | tr '\n' ' ')"
+    all="$all $next" frontier="$(echo $next)"
+  done
+  kill $all 2>/dev/null && echo "ended the running pass of $1"
+  return 0
+}
+
 # The record teams that should run a pass, then the folder teams that keep theirs.
 want="$(jq -r '.teams // {} | to_entries[] | select(.value.status == "active" and .value.queue == true and (.value.jira // "") != "") | .key' "$I" 2>/dev/null | grep -E "$NAME" || true)"
 keep="$want"
@@ -45,6 +61,6 @@ done
 for u in "$S"/timers.target.wants/fxa-pass@*.timer; do
   [ -e "$u" ] || continue
   t="${u##*/fxa-pass@}"; t="${t%.timer}"
-  grep -qx "$t" <<< "$keep" || { systemctl disable -q --now "fxa-pass@${t}.timer" && echo "stopped the pass of ${t}"; }
+  grep -qx "$t" <<< "$keep" || { systemctl disable -q --now "fxa-pass@${t}.timer" && echo "stopped the pass of ${t}"; _stop_pass "$t"; }
 done
 exit 0
