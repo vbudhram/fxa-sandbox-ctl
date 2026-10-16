@@ -7,6 +7,8 @@ runner IP, VNC password) and relays noVNC's pages and WebSocket to the runner.
 Every other path goes to the manager VM's dashboard (MANAGER_URL).
 """
 import asyncio
+import hashlib
+import hmac
 import html
 import json
 import os
@@ -28,6 +30,14 @@ NOVNC_PORT = 6080
 MANAGER_URL = os.environ.get("MANAGER_URL", "").rstrip("/")
 # Empty: anyone IAP lets in may see the dashboard. Else only these emails.
 DASHBOARD_USERS = {e.strip().lower() for e in os.environ.get("DASHBOARD_USERS", "").split(",") if e.strip()}
+# The key the dashboard checks the signed user with (secret fxa-dashboard-hmac). Empty: no user is
+# signed, so the dashboard refuses every write that needs one.
+DASHBOARD_HMAC = os.environ.get("DASHBOARD_HMAC", "").strip().encode()
+
+
+def sign_user(key, email, ts, method, path):
+    """The signature dashboard/server.py checks: the user, the time, and this request's method and path."""
+    return hmac.new(key, f"{email}|{ts}|{method}|{path}".encode(), hashlib.sha256).hexdigest()
 
 _certs = {"at": 0.0, "keys": {}}
 _records = {}  # key -> (fetched at, record or None)
@@ -175,6 +185,10 @@ async def dashboard(request):
     origin = request.headers.get("Origin")
     if origin and origin.split("//", 1)[-1] != request.host:
         headers["Origin"] = origin
+    # Only the gateway names the user: a client's own X-Fxa-* headers are never in the list above.
+    if DASHBOARD_HMAC:
+        ts = str(int(time.time()))
+        headers.update({"X-Fxa-User": email, "X-Fxa-Time": ts, "X-Fxa-Sig": sign_user(DASHBOARD_HMAC, email, ts, request.method, request.path)})
     body = await request.read() if request.method == "POST" else None
     async with request.app["http"].request(request.method, f"{MANAGER_URL}{request.path_qs}", headers=headers, data=body) as r:
         keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-security-policy", "cache-control", "x-content-type-options", "referrer-policy")}

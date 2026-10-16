@@ -113,7 +113,8 @@ async def record_check():
 async def dashboard_check():
     seen = {}
     async def dash(request):
-        seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method, query=request.query.get("thread"))
+        seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method, query=request.query.get("thread"),
+                    user=request.headers.get("X-Fxa-User"), ts=request.headers.get("X-Fxa-Time"), sig=request.headers.get("X-Fxa-Sig"), path=request.path)
         return web.Response(text="dash " + request.path, content_type="text/html", headers={"Content-Security-Policy": "default-src 'self'"})
     app = web.Application(); app.router.add_route("*", "/{tail:.*}", dash)
     r = web.AppRunner(app); await r.setup(); await web.TCPSite(r, "127.0.0.1", 18767).start()
@@ -136,6 +137,12 @@ async def dashboard_check():
             check("a same-site POST drops the gateway's own origin", None, seen["origin"])
         async with c.post(f"{base}/api/refresh", headers={"Origin": "https://evil.test"}) as x:
             check("a cross-site origin passes through for the dashboard to refuse", "https://evil.test", seen["origin"])
+        check("with no key, no user is signed", None, seen["user"])
+        main.DASHBOARD_HMAC = b"k1"
+        async with c.post(f"{base}/api/teams", headers={"Origin": base, "X-Fxa-User": "evil@example.com", "X-Fxa-Sig": "forged"}) as x:
+            check("the gateway signs the IAP user for this method and path, not the client's copy",
+                  ("owner@example.com", main.sign_user(b"k1", "owner@example.com", seen["ts"], "POST", "/api/teams")), (seen["user"], seen["sig"]))
+        main.DASHBOARD_HMAC = b""
         async with c.get(f"{base}/desktop/agent-abcd12", allow_redirects=False) as x:
             check("the dashboard's desktop link goes to /d/", "/d/agent-abcd12", x.headers.get("Location"))
         main.DASHBOARD_USERS = {"someone@example.com"}
