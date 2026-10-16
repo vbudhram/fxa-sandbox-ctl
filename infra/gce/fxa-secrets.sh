@@ -46,6 +46,10 @@ if [ -n "$m" ]; then
   chown fxa:fxa "$H/.ssh" "$H/.ssh/fxa-agent-memory"; chmod 700 "$H/.ssh"; chmod 600 "$H/.ssh/fxa-agent-memory"
 fi
 unset m
+# The key the dashboard gateway signs each user with (dashboard/server.py); none means no team writes.
+h="$(get fxa-dashboard-hmac || true)"
+if [ -n "$h" ]; then printf '%s' "$h" > "$C/dashboard-hmac"; else rm -f "$C/dashboard-hmac"; fi
+unset h
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
 [ -f "$W/fxa-agent-bot/.env" ] && chown fxa:fxa "$W/fxa-agent-bot/.env"

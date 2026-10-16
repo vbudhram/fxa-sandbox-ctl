@@ -11,6 +11,7 @@ result rather than blanking the page.
 import atexit
 import base64
 import hashlib
+import hmac
 import json
 import os
 import queue
@@ -18,6 +19,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
@@ -145,11 +147,12 @@ EXTRA_HOSTS = tuple(h.strip().lower() for h in os.environ.get("FXA_DASHBOARD_HOS
 SERVED_AS = LOOPBACK + EXTRA_HOSTS
 
 
-def ctl_run(args, timeout):
+def ctl_run(args, timeout, env=None):
     if not CTL_SLOTS.acquire(timeout=20):
         raise TimeoutError("dashboard busy")
     try:
-        return subprocess.run([str(CTL), *args], capture_output=True, text=True, timeout=timeout, errors="replace")
+        return subprocess.run([str(CTL), *args], capture_output=True, text=True, timeout=timeout, errors="replace",
+                              env={**os.environ, **env} if env else None)
     finally:
         CTL_SLOTS.release()
 
@@ -276,6 +279,34 @@ def read_access():
             "users": {k: [u for u in v.split("+") if u] for k, v in _pairs(raw.get("USERS", "")).items()},
             "channels": _pairs(raw.get("CHANNELS", "")), "jira": _pairs(raw.get("JIRA", "")),
             "path": path, "mtime": mtime}, None
+
+
+# The key the gateway signs each request's user with (secret fxa-dashboard-hmac, written by fxa-secrets).
+HMAC_FILE = Path(os.environ.get("FXA_DASHBOARD_HMAC_FILE") or Path.home() / ".config/fxa/dashboard-hmac")
+SIGN_WINDOW_S = 60
+EMAIL = re.compile(r"[^@\s|]{1,64}@[A-Za-z0-9.-]{1,190}\.[A-Za-z]{2,}")
+TEAM_NAME = r"[a-z][a-z0-9-]{1,30}"
+
+
+def read_hmac_key():
+    try:
+        return HMAC_FILE.read_bytes().strip()
+    except OSError:
+        return b""
+
+
+def signed_user(headers, method, path, key, now):
+    """The email the gateway signed for this method and path (desktop-gateway sign_user), or None."""
+    email, ts, sig = (headers.get(h) or "" for h in ("X-Fxa-User", "X-Fxa-Time", "X-Fxa-Sig"))
+    if not key or not EMAIL.fullmatch(email) or not ts.isdigit() or abs(now - int(ts)) > SIGN_WINDOW_S:
+        return None
+    want = hmac.new(key, f"{email}|{ts}|{method}|{path}".encode(), hashlib.sha256).hexdigest()
+    return email.lower() if hmac.compare_digest(want, sig) else None
+
+
+def team_admins():
+    """TEAM_ADMINS from the ctl .env: the emails that may change teams. Empty: nobody."""
+    return {e.strip().lower() for e in os.environ.get("TEAM_ADMINS", "").split(",") if e.strip()}
 
 
 def read_records():
@@ -426,12 +457,93 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(200, {"ok": True})
 
+    def _admin(self, method, path):
+        """The signed team admin of this request, or None once the refusal is sent."""
+        user = signed_user(self.headers, method, path, read_hmac_key(), int(time.time()))
+        if not user:
+            self._json(401, {"error": "no signed user: open the dashboard through the gateway"})
+            return None
+        if user not in team_admins():
+            self._json(403, {"error": "not a team admin"})
+            return None
+        return user
+
+    def _team_ctl(self, user, args, record=None, read=False):
+        """Run a profile command as the admin, the record in a private temp file; 409 for a stale generation.
+        A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
+        f = None
+        try:
+            if record is not None:
+                fd, f = tempfile.mkstemp(suffix=".json")
+                with os.fdopen(fd, "w") as out:
+                    json.dump(record, out)
+            proc = ctl_run(["profile", *[f if a is None else a for a in args]], timeout=120, env={"FXA_TEAM_ACTOR": user})
+        except Exception as exc:
+            self._json(503, {"error": type(exc).__name__})
+            return
+        finally:
+            if f:
+                os.unlink(f)
+        if proc.returncode != 0:
+            self._json(409 if proc.returncode == 2 else 400, {"error": (proc.stderr or proc.stdout or "failed").strip()[-2000:]})
+        elif read:
+            try:
+                self._json(200, json.loads(proc.stdout or "null"))
+            except ValueError:
+                self._json(502, {"error": "the profile command did not answer JSON"})
+        else:
+            self._json(200, {"ok": True, "out": proc.stdout.strip()[-2000:]})
+            if TEAMS.claim():
+                threading.Thread(target=TEAMS.refresh, args=(True,), daemon=True).start()
+
+    def _team_write(self, path):
+        """POST /api/teams[/validate|/<name>[/status|/delete]]: a signed admin's change, JSON only, 64 KB at most."""
+        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete))?)?", path)
+        if not m:
+            self._json(404, {"error": "not found"})
+            return
+        user = self._admin("POST", path)
+        if not user:
+            return
+        validate, name, verb = m.groups()
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._json(415, {"error": "send JSON"})
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 65536:
+            self._json(413, {"error": "the record is over 64 KB"})
+            return
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "bad JSON"})
+            return
+        rec, gen = body.get("record"), str(body.get("generation") or "")
+        if verb == "delete":
+            self._team_ctl(user, ["delete", name])
+        elif verb == "status":
+            st = {"active": "enable", "disabled": "disable", "draft": "draft"}.get(body.get("status"))
+            self._json(400, {"error": "status is active, disabled or draft"}) if not st else self._team_ctl(user, [st, name])
+        elif not isinstance(rec, dict):
+            self._json(400, {"error": "send {\"record\": {...}}"})
+        elif validate:
+            self._team_ctl(user, ["validate", None], rec)
+        elif not name:
+            self._team_ctl(user, ["create", None], rec)
+        elif not gen.isdigit():
+            self._json(400, {"error": "send the generation you edited"})
+        else:
+            self._team_ctl(user, ["set", name, None, "--generation", gen], rec)
+
     def do_POST(self):
         path = self.path.split("?")[0]
         if not self._allowed(True):
             return
         if path == "/api/lessons":
             self._lesson_decide()
+            return
+        if path.startswith("/api/teams"):
+            self._team_write(path)
             return
         if path != "/api/refresh":
             self._json(404, {"error": "not found"})
@@ -502,6 +614,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         query = parse_qs(urlparse(self.path).query)
         arg = lambda name: (query.get(name) or [""])[0]
+        # One team's full record and its audit: admins only, since a record names Slack users.
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit)?", path)
+        if m:
+            user = self._admin("GET", path)
+            if user:
+                self._team_ctl(user, ["audit" if m.group(2) else "get", m.group(1)], read=True)
+            return
         if path in ("/", "/index.html"):
             page = (ROOT / "index.html").read_text()
             self._send(200, page, "text/html; charset=utf-8", csp_for(page))

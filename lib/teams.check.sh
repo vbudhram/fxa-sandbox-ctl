@@ -12,6 +12,7 @@ mkdir -p "$HOME/.ssh"
 SESSION_DIR="$tmp/sessions"; mkdir -p "$SESSION_DIR"
 source "$root/lib/pipeline.sh"
 FXA_TEAMS_URI=""; source "$root/lib/teams.sh"
+FXA_DB="$tmp/fxa.db"; source "$root/lib/db.sh"
 rec() { printf '{ "schema": 1, "name": "%s", "label": "%s", "repos": [ { "slug": "example/%s", "role": "work" } ], "prompts": { "goal_md": "Run make test." }%s }' "$1" "$2" "$1" "${3:-}" > "$tmp/$1.json"; echo "$tmp/$1.json"; }
 gen() { cat "$FXA_TEAMS_DIR/$1.gen"; }
 
@@ -38,6 +39,9 @@ printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
 check "delete removes the record, its prompts and its index entry" "0|no|null" \
   "$(teams_delete rusty >/dev/null; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")"
 check "a built-in team cannot be deleted" "1" "$(teams_delete monitor >/dev/null 2>&1; echo $?)"
+check "each write leaves an audit row: who, what, the generations and the keys that changed" \
+  "delete|owner@example.com|3||created,label,name,prompts,repos,schema,status|set|other@example.com|1|2|label|create|owner@example.com|0|1|created,label,name,prompts,repos,schema" \
+  "$(teams_audit rusty | jq -r '.[] | [.action, .actor, .old_gen, .new_gen, .changed] | join("|")' | grep -vE '^set\|owner@example.com\|[23]\|' | paste -sd'|' -)"
 check "profile lint passes with records and the index in the cache" "profiles: ok" \
   "$(teams_create "$(rec linted Linted)" >/dev/null; cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
 check "the index is not a team, and no record can be named index" "0|1" \

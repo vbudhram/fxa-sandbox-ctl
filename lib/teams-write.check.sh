@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Offline check of the dashboard's team routes (dashboard/server.py): a write needs the gateway's
+# signed user and a TEAM_ADMINS email, and each route runs the matching profile command as that admin.
+#   bash lib/teams-write.check.sh
+set -u
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+# A fake ctl: logs its args, the actor and the record it was given; exits with $tmp/rc.
+cat > "$tmp/ctl" <<EOF
+#!/bin/bash
+printf '%s\n' "\$*" >> "$tmp/args"; printf '%s\n' "\${FXA_TEAM_ACTOR:-}" >> "$tmp/actor"
+for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$tmp/recfile"; }; done
+case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
+[ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
+EOF
+chmod +x "$tmp/ctl"; printf 'k1' > "$tmp/hmac"
+FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
+import hashlib, hmac, json, os, sys, threading, time, urllib.error, urllib.request
+sys.path.insert(0, sys.argv[1]); import server
+from http.server import ThreadingHTTPServer
+tmp = sys.argv[2]
+server.CTL = f"{tmp}/ctl"
+server.TEAMS = server.Feed("teams", ["profile", "list"], 300, 600)
+srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+fail = 0
+def check(name, want, got):
+    global fail
+    print(("ok   " if want == got else "FAIL ") + name + ("" if want == got else f": want {want!r} got {got!r}")); fail |= want != got
+def sig(user, method, path, ts=None, key=b"k1"):
+    ts = str(int(time.time()) if ts is None else ts)
+    return {"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(key, f"{user}|{ts}|{method}|{path}".encode(), hashlib.sha256).hexdigest()}
+def call(method, path, body=None, headers=None, raw=None):
+    data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+    h = {"Host": "localhost", "Content-Type": "application/json", **(headers or {})}
+    req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{path}", data=data, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req) as r: return r.status, json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b"null")
+# The last command a route ran; the teams list refresh that follows a write runs in the background, so skip it.
+def args(): return ([l for l in open(f"{tmp}/args").read().splitlines() if l != "profile list"] or [""])[-1] if os.path.exists(f"{tmp}/args") else ""
+rec = {"schema": 1, "name": "rusty", "repos": [{"slug": "a/b", "role": "work"}]}
+A = "admin@example.com"
+
+check("a write with no signed user: 401, and no command runs", (401, ""), (call("POST", "/api/teams", {"record": rec})[0], args()))
+check("a forged signature: 401", 401, call("POST", "/api/teams", {"record": rec}, {**sig(A, "POST", "/api/teams"), "X-Fxa-Sig": "00"})[0])
+check("a signature older than a minute: 401", 401, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams", time.time() - 120))[0])
+check("a signature for another path: 401", 401, call("POST", "/api/teams/rusty/delete", {}, sig(A, "POST", "/api/teams"))[0])
+check("a signature by another key: 401", 401, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams", key=b"k2"))[0])
+check("a signed user who is not a team admin: 403, and no command runs", (403, ""),
+      (call("POST", "/api/teams", {"record": rec}, sig("viewer@example.com", "POST", "/api/teams"))[0], args()))
+s, b = call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))
+check("an admin's create runs profile create as that admin, with the record, then removes the file",
+      (200, "profile create", A, rec, False),
+      (s, args().rsplit(" ", 1)[0], open(f"{tmp}/actor").read().split()[-1], json.load(open(f"{tmp}/record")), os.path.exists(open(f"{tmp}/recfile").read().strip())))
+check("an admin email matches whatever its case", 200, call("POST", "/api/teams", {"record": rec}, sig("Boss@Example.com", "POST", "/api/teams"))[0])
+check("a change with no generation is refused before any command", (400, "profile create"),
+      (call("POST", "/api/teams/rusty", {"record": rec}, sig(A, "POST", "/api/teams/rusty"))[0], args().rsplit(" ", 1)[0]))
+s, _ = call("POST", "/api/teams/rusty", {"record": rec, "generation": "7"}, sig(A, "POST", "/api/teams/rusty"))
+check("a change runs profile set with the generation it edited", (200, "set rusty --generation 7"),
+      (s, " ".join(w for w in args().split() if not w.endswith(".json"))[len("profile "):]))
+open(f"{tmp}/rc", "w").write("2")
+check("a stale generation comes back as 409", 409, call("POST", "/api/teams/rusty", {"record": rec, "generation": "6"}, sig(A, "POST", "/api/teams/rusty"))[0])
+open(f"{tmp}/rc", "w").write("0")
+check("a bad status is refused; active runs enable", (400, 200, "profile enable rusty"),
+      (call("POST", "/api/teams/rusty/status", {"status": "on"}, sig(A, "POST", "/api/teams/rusty/status"))[0],
+       call("POST", "/api/teams/rusty/status", {"status": "active"}, sig(A, "POST", "/api/teams/rusty/status"))[0], args()))
+check("delete runs profile delete", (200, "profile delete rusty"), (call("POST", "/api/teams/rusty/delete", {}, sig(A, "POST", "/api/teams/rusty/delete"))[0], args()))
+check("validate runs profile validate", (200, "profile validate"), (call("POST", "/api/teams/validate", {"record": rec}, sig(A, "POST", "/api/teams/validate"))[0], args().rsplit(" ", 1)[0]))
+check("an admin reads a record and its audit as JSON", ((200, {"name": "rusty", "generation": "7"}), (200, [{"action": "create"}])),
+      (call("GET", "/api/teams/rusty", headers=sig(A, "GET", "/api/teams/rusty")), call("GET", "/api/teams/rusty/audit", headers=sig(A, "GET", "/api/teams/rusty/audit"))))
+check("a viewer cannot read a record, which names Slack users", 403, call("GET", "/api/teams/rusty", headers=sig("viewer@example.com", "GET", "/api/teams/rusty"))[0])
+check("a form post is refused (JSON only); a record over 64 KB too", (415, 413),
+      (call("POST", "/api/teams", headers={**sig(A, "POST", "/api/teams"), "Content-Type": "application/x-www-form-urlencoded"}, raw=b"a=1")[0],
+       call("POST", "/api/teams", headers=sig(A, "POST", "/api/teams"), raw=b"x" * 70000)[0]))
+check("a cross-site request is refused before the signature counts", 403, call("POST", "/api/teams", {"record": rec}, {**sig(A, "POST", "/api/teams"), "Origin": "https://evil.test"})[0])
+os.environ["TEAM_ADMINS"] = ""
+check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
+os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")
+check("no key on the server: no write, even signed", 401, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
+srv.shutdown(); sys.exit(fail)
+PY

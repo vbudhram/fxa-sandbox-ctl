@@ -17,6 +17,22 @@ _teams_remote_gen() {
   gcloud storage objects describe "${FXA_TEAMS_URI}/$1.json" --format='value(generation)' 2>/dev/null
 }
 
+# _teams_audit <action> <name> <old gen> <new gen> <old file> <new file>   One team_audit row (lib/db.sh):
+# the actor, and the top-level keys that changed. A failed write warns; it never undoes the change.
+_teams_audit() {
+  declare -F db_exec >/dev/null && command -v sqlite3 >/dev/null || return 0
+  local changed; changed="$(jq -nr --slurpfile a "${5:-/dev/null}" --slurpfile b "${6:-/dev/null}" \
+    '($a[0] // {}) as $o | ($b[0] // {}) as $n | [($o + $n | keys[]) | select(. != "updated" and $o[.] != $n[.])] | join(",")' 2>/dev/null)"
+  db_exec "INSERT INTO team_audit (at, actor, team, action, old_gen, new_gen, changed) VALUES ($(date +%s), $(db_q "$(_teams_actor)"), $(db_q "$2"), $(db_q "$1"), $(db_q "$3"), $(db_q "$4"), $(db_q "$changed"));" >/dev/null 2>&1 \
+    || echo "WARN: the audit row for team $2 was not written" >&2
+}
+
+# teams_audit <name>   The team's audit rows, newest first, as JSON.
+teams_audit() {
+  [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
+  db_json "SELECT at, actor, action, old_gen, new_gen, changed FROM team_audit WHERE team = $(db_q "$1") ORDER BY id DESC LIMIT 200;"
+}
+
 # teams_index   Rebuild index.json from the cached records, in one rename.
 teams_index() {
   mkdir -p "$FXA_TEAMS_DIR"
@@ -78,7 +94,9 @@ teams_create() {
   teams_validate "$f" "$name" || return 1
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" || { rm -f "$tmp"; return 1; }
-  _teams_write "$name" "$tmp" 0; rc=$?; rm -f "$tmp"
+  _teams_write "$name" "$tmp" 0; rc=$?
+  [ "$rc" = 0 ] && _teams_audit create "$name" 0 "$(cat "${FXA_TEAMS_DIR}/${name}.gen")" "" "$tmp"
+  rm -f "$tmp"
   [ "$rc" = 2 ] && echo "ERROR: team ${name} already exists; use profile set" >&2
   [ "$rc" = 0 ] && echo "created team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen"))"
   return $rc
@@ -95,7 +113,10 @@ teams_set() {
   teams_validate "$f" "$name" || return 1
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" || { rm -f "$tmp"; return 1; }
-  _teams_write "$name" "$tmp" "$gen"; rc=$?; rm -f "$tmp"
+  local old; old="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"; cp "${FXA_TEAMS_DIR}/${name}.json" "$old"
+  _teams_write "$name" "$tmp" "$gen"; rc=$?
+  [ "$rc" = 0 ] && _teams_audit set "$name" "$gen" "$(cat "${FXA_TEAMS_DIR}/${name}.gen")" "$old" "$tmp"
+  rm -f "$tmp" "$old"
   [ "$rc" = 0 ] && echo "updated team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen"))"
   return $rc
 }
@@ -125,6 +146,7 @@ teams_delete() {
     gcloud storage rm -q "${FXA_TEAMS_URI}/${name}.json" --if-generation-match="$gen" >/dev/null 2>&1 \
       || { echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync" >&2; return 1; }
   fi
+  _teams_audit delete "$name" "$gen" "" "${FXA_TEAMS_DIR}/${name}.json" ""
   rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}"
   teams_index && echo "deleted team ${name}"
 }

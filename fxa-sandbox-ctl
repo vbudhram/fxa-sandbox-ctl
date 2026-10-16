@@ -2901,6 +2901,7 @@ main() {
                        teams_status "$2" "$(case "$1" in enable) echo active ;; disable) echo disabled ;; *) echo draft ;; esac)" ;;
                   delete) [ -n "${2:-}" ] || { echo "usage: profile delete <name>" >&2; return 1; }; teams_delete "$2" ;;
                   sync) teams_sync ;;
+                  audit) [ -n "${2:-}" ] || { echo "usage: profile audit <name>" >&2; return 1; }; teams_audit "$2" ;;
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
     list|ls)    cmd_list "$@" ;;
