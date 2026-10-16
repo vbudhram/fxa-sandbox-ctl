@@ -82,7 +82,11 @@ check "the workspace step clones each repo the image lacks, into its own path" "
   "$(grep -c 'git clone --quiet --filter=blob:none https://github.com/mozilla/fxa.git /home/agent/fxa' <<< "$w")|$(grep -c 'https://github.com/mozilla/PyFxA.git /home/agent/pyfxa' <<< "$w")"
 check "it links each tree under the stack root, and /workspace to the root" "1|1|1" \
   "$(grep -c 'ln -sfn /home/agent/fxa /home/agent/stack/fxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/pyfxa /home/agent/stack/pyfxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/stack /workspace' <<< "$w")"
-check "only the fxa tree writes FXA_WORKSPACE, to its own path" "echo 'export FXA_WORKSPACE=/home/agent/fxa'" "$(grep -o "echo 'export FXA_WORKSPACE=[^']*'" <<< "$w" | paste -sd, -)"
+check "only the fxa tree writes FXA_WORKSPACE and FXA_ROOT, to its own path" "echo 'export FXA_WORKSPACE=/home/agent/fxa FXA_ROOT=/home/agent/fxa'" "$(grep -o "echo 'export FXA_WORKSPACE=[^']*'" <<< "$w" | paste -sd, -)"
+check "only the fxa tree points fxa-start at its own path" "sed -i 's#/workspace#/home/agent/fxa#g' /usr/local/bin/fxa-start" "$(grep -o "sed -i '[^']*' /usr/local/bin/fxa-start" <<< "$w" | paste -sd, -)"
+: > "$tmp/vm.log"; _trees_restore run1 "$tmp/trees.tsv" >/dev/null 2>&1
+check "the restore removes the empty folders the secret moves leave in the stack root" 1 \
+  "$(grep -c 'find packages libs _dev -depth -type d -empty -delete' "$tmp/vm.log")"
 printf 'evil;rm\tmozilla/fxa\t/home/agent/fxa\t%s\tmain\t%s\tb\n' "$A" "$B" > "$tmp/bad.tsv"
 : > "$tmp/vm.log"
 check "a tree line with a shell character is refused, and nothing reaches the runner" "1|0" \

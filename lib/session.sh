@@ -1088,6 +1088,8 @@ session_media() {
 # A request about how something looks needs the stack; starting it at boot
 # saves the agent the few minutes fxa-start takes.
 _session_wants_stack() {
+  # An Android run pairs against the stack, whatever the request says.
+  [ "${FXA_ANDROID:-}" = 1 ] && return 0
   grep -qiE 'screenshot|video|record|visual|look(s)? like|page|button|\bui\b|render|layout|style|css|storybook' \
     "${SESSION_DIR}/$1.prompt.md" 2>/dev/null
 }

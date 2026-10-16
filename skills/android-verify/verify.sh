@@ -14,7 +14,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [[ "$spec" =~ ^[A-Za-z0-9]+Android$ ]] || { echo "ERROR: --spec must be an Android spec name, such as pairingFlowAndroid" >&2; exit 2; }
-FXA=/workspace FF=/home/agent/firefox PKG=org.mozilla.fenix.debug MEDIA=/workspace/.fxa-auto-media
+FXA="${FXA_WORKSPACE:-/workspace}" FF=/home/agent/firefox PKG=org.mozilla.fenix.debug MEDIA=/workspace/.fxa-auto-media
 mkdir -p "$MEDIA"
 rows=()
 row() { rows+=("$(printf '%-6s %s' "$1" "$2")"); }

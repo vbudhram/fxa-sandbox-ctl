@@ -111,7 +111,8 @@ _trees_workspace() {
   while IFS=$'\t' read -r n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || { echo "ERROR: bad tree line for ${n:-?}" >&2; return 1; }
     cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"
-    [ "$s" = mozilla/fxa ] && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p}' >> /etc/agent-env.sh"
+    # The image's fxa-start and stack.sh read FxA from /workspace, which here holds only links.
+    [ "$s" = mozilla/fxa ] && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p} FXA_ROOT=${p}' >> /etc/agent-env.sh; sed -i 's#/workspace#${p}#g' /usr/local/bin/fxa-start"
   done < "$2"
   echo "Setting up the stack's repos on the runner..."
   vm_exec "$name" sudo bash -c "${cmd}; ln -sfn ${TREES_ROOT} /workspace"
@@ -139,7 +140,9 @@ _trees_restore() {
   while IFS=$'\t' read -r -u 3 n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || return 1
     if [ "$s" = mozilla/fxa ]; then
+      # The moves leave empty packages/ folders, which make /workspace look like an FxA tree.
       vm_exec "$name" sudo -u agent bash -c "cd ${TREES_ROOT} && for f in ${moves}; do [ -e \"\$f\" ] || continue; mkdir -p \"${p}/\$(dirname \"\$f\")\" && rm -rf \"${p}/\$f\" && mv \"\$f\" \"${p}/\$f\"; done
+        find packages libs _dev -depth -type d -empty -delete 2>/dev/null
         [ -s ${p}/packages/123done/secrets.json ] && source /etc/agent-env.sh && pm2 describe 123done >/dev/null 2>&1 && pm2 restart 123done >/dev/null 2>&1; true" >/dev/null 2>&1 || true
     fi
     vm_exec "$name" sudo -u agent bash -c "cd ${p} && { grep -qxF '.fxa-*' .git/info/exclude 2>/dev/null || printf '%s\n' '.fxa-*' 'ai/' 'artifacts/' >> .git/info/exclude; }" >/dev/null 2>&1 || true

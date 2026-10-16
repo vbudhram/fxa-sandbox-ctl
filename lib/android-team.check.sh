@@ -36,4 +36,9 @@ check "the FXA pass's Android run: Android rules, guide and boot" "1|1|1" "$(exp
 check "a plain FxA run gets none of them" "0|0|0" "$(export PIPE_PROFILE=fxa; unset FXA_ANDROID; echo "$(rules)|$(guide)|$(boot)")"
 check "the Android team itself: its guide once, its rules once" "1|1" "$(export FXA_ANDROID=1 PIPE_PROFILE=fxa-android PIPE_LABEL='FxA Android Team'; echo "$(_vm_team_rules | grep -c '^# Team rules:')|$(guide)")"
 
+pat='/^_session_wants_stack() {/,/^}/p'; eval "$(sed -n "$pat" "$here/session.sh")"
+SESSION_DIR="$tmp"; echo "run the pairing spec" > "$tmp/k1.prompt.md"
+check "an Android session starts the stack for a request with no UI words" "0|1" \
+  "$(FXA_ANDROID=1 _session_wants_stack k1; printf '%s|' $?; unset FXA_ANDROID; _session_wants_stack k1; printf '%s' $?)"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
