@@ -55,6 +55,11 @@ if [ "$MODE" = sync ]; then
   if sudo test -s $f && sudo bash -n $f && ! sudo cmp -s $f /usr/local/sbin/fxa-secrets; then
     sudo install -m 700 -o root -g root $f /usr/local/sbin/fxa-secrets && echo "installed fxa-secrets" && sudo /usr/local/sbin/fxa-secrets | tail -1
   fi
+  # The team pass reconciler runs as root too (systemctl): the same install-when-changed rule.
+  f=/home/fxa/Desktop/working2/fxa-sandbox-ctl/infra/gce/teams-reconcile.sh
+  if sudo test -s $f && sudo bash -n $f && ! sudo cmp -s $f /usr/local/sbin/fxa-teams-reconcile; then
+    sudo install -m 700 -o root -g root $f /usr/local/sbin/fxa-teams-reconcile && echo "installed fxa-teams-reconcile" && sudo /usr/local/sbin/fxa-teams-reconcile --install
+  fi
   for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true'
   exit 0
 fi

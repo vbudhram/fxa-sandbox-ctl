@@ -330,6 +330,9 @@ for f in "$W"/fxa-sandbox-ctl/profiles/*/profile.conf; do
   t="$(basename "$(dirname "$f")")"
   [ "$t" != fxa ] && grep -q '^PIPE_JIRA_PROJECT=' "$f" && systemctl enable -q --now "fxa-pass@${t}.timer"
 done
+# A record team's pass: fxa-teams-reconcile starts and stops fxa-pass@<team> from the teams index.
+r="$W/fxa-sandbox-ctl/infra/gce/teams-reconcile.sh"
+[ -s "$r" ] && install -m 700 -o root -g root "$r" /usr/local/sbin/fxa-teams-reconcile && /usr/local/sbin/fxa-teams-reconcile --install
 systemctl enable -q fxa-secrets.service
 systemctl enable -q fxa-llm-proxy.service
 systemctl enable -q fxa-mcp-gateway.service fxa-grafana-mcp.service

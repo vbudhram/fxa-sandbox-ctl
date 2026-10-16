@@ -146,6 +146,8 @@ def check(rec, name=None):
         bad.append("stack.kind must be fxa or none")
     if stack.get("kind") == "fxa" and "mozilla/fxa" not in slugs:
         bad.append("stack.kind fxa needs a mozilla/fxa repo row")
+    if stack.get("kind", "none") != "fxa" and not str(rec.get("prompts", {}).get("goal_md", "")).strip():
+        bad.append("a team without the FxA stack needs prompts.goal_md: FxA's goal names FxA's skills, lint and PR template")
 
     run = obj(rec.get("runner", {}), "runner", {"backend", "android", "desktop_url"})
     if run.get("backend", "gce") not in ("gce", "firecracker"):
@@ -203,7 +205,8 @@ def env(rec):
     repos = rec["repos"]
     yield "PIPE_LABEL", rec.get("label", rec["name"])
     for r in repos:
-        yield "REPO", f"{r['slug']} {r.get('path', default_path(r['slug']))} {r['role']}"
+        base = f" {r['base']}" if r.get("base") else ""
+        yield "REPO", f"{r['slug']} {r.get('path', default_path(r['slug']))} {r['role']}{base}"
     work = [r for r in repos if r["role"] == "work"]
     yield "PIPE_BASE_BRANCH", work[0].get("base", "main")
     yield "PIPE_STACK_DEFAULT", " ".join(r["slug"] for r in repos if r.get("default")) or work[0]["slug"]
@@ -288,7 +291,7 @@ def index(folder):
             pass
         teams[rec["name"]] = {"label": rec.get("label", rec["name"]), "status": rec.get("status", "draft"),
                               "generation": gen, "access": rec.get("access", {}),
-                              "jira": rec.get("jira", {}).get("project", "")}
+                              "jira": rec.get("jira", {}).get("project", ""), "queue": rec.get("jira", {}).get("queue") is True}
     return {"schema": 1, "teams": teams}
 
 
