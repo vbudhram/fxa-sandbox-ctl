@@ -122,4 +122,11 @@ ci_state() { echo x >> "$n"; [ "$(wc -l < "$n")" -le 2 ] && echo running || echo
 check "promote_ci_wait: waits out a running CI, then green" "green green" "$(FXA_PROMOTE_CI_POLL_S=0 promote_ci_wait c 1 b 2 2>/dev/null)"
 ci_state() { echo running; }
 check "promote_ci_wait: past its limit, still running" "running running" "$(FXA_PROMOTE_CI_WAIT_S=0 FXA_PROMOTE_CI_POLL_S=0 promote_ci_wait c 1 b 2 2>/dev/null)"
+# A promote ships code, not the bots' access: name a team open in dev but closed live.
+eval "$(sed -n '/^promote_access_teams() {/,/^}/p;/^promote_access_drift() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+printf 'X=1\nPROFILE_OPEN=monitor,pyfxa-team,fxa-android\nPROFILE_USERS=sync-storage:U1+U2\n' > "$tmp/dev.env"
+printf 'PROFILE_OPEN="monitor,pyfxa-team"\nPROFILE_USERS=sync-storage:U9\n' > "$tmp/live.env"
+check "a team open in dev and closed live is named; one open in both, or by users, is not" "fxa-android" "$(promote_access_drift "$tmp/dev.env" "$tmp/live.env" | paste -sd, -)"
+check "the same access in both: nothing" "" "$(promote_access_drift "$tmp/dev.env" "$tmp/dev.env")"
+check "a missing live env names every dev team" "fxa-android,monitor,pyfxa-team,sync-storage" "$(promote_access_drift "$tmp/dev.env" "$tmp/none.env" | paste -sd, -)"
 exit "$fail"

@@ -122,6 +122,15 @@ promote_watch() {
   echo "  no new errors on live"
 }
 # open_sigs   The open error signatures in the JSON list on stdin; fails when stdin is not a list.
+# promote_access_teams <bot env>   The teams that env lets someone start (PROFILE_OPEN, PROFILE_USERS), one a line.
+promote_access_teams() {
+  sed -n 's/^PROFILE_OPEN=//p; s/^PROFILE_USERS=//p' "$1" 2>/dev/null | tr ',' '\n' | cut -d: -f1 | tr -d ' "' | grep . | sort -u
+}
+# promote_access_drift <dev env> <live env>   Teams open in dev but not live: a promote ships code, not access.
+promote_access_drift() {
+  comm -23 <(promote_access_teams "$1") <(promote_access_teams "$2")
+}
+
 open_sigs() { jq -er 'if type == "array" then [.[] | select(.status != "resolved") | .sig] | join("\n") else error("not a list") end' 2>/dev/null; }
 
 # deploy_heads_script   A script for fxa on the VM: "<ctl sha> <bot sha>" of the live checkouts.
@@ -369,6 +378,10 @@ EOF2
     elif [ -z "$old" ] || [ -z "$new" ]; then echo "WARN: the deploy was not recorded, so vm.sh rollback cannot undo it" >&2
     else echo "No commit moved, so nothing is recorded: vm.sh rollback still undoes the promote before."; fi
     deploy_check "$(git -C "$CTL_ROOT" rev-parse --short origin/main)" "$(git -C "$BOT_ROOT" rev-parse --short origin/main)"
+    # A team that worked on the dev bot is refused live when only .env.dev opens it.
+    drift="$(printf 'exec sudo -u fxa -H bash -s\n%s\npromote_access_drift ~/dev/fxa-agent-bot/.env.dev ~/Desktop/working2/fxa-agent-bot/.env\n' \
+      "$(declare -f promote_access_teams promote_access_drift)" | on_vm)" || drift=""
+    [ -z "$drift" ] || echo "WARN: open on the dev bot but not live: $(echo $drift). Add it to PROFILE_OPEN or PROFILE_USERS in the live .env and ~fxa/.config/fxa/bot.env.base, then restart the bot." >&2
     # The first minutes on live: a new or reopened error fails the promote, with the way back.
     w="${FXA_PROMOTE_WATCH_S:-30}"
     if [ "$errs_read" = 0 ]; then
