@@ -718,7 +718,7 @@ Run step 8 in the fxa-writer subagent. Print each verdict and its 'Skills run:'
 line here: the goal evaluator reads only this transcript."
 
   # Another team's own steps 1-8 (profiles/<team>/goal.md): FxA's steps name FxA's skills, lint and PR template.
-  local own="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/goal.md"
+  local own; own="$(profile_file "${PIPE_PROFILE:-fxa}" goal.md)"
   if [ "${PIPE_PROFILE:-fxa}" != fxa ] && [ -s "$own" ]; then
     runtime_prompt_header "$key" "$summary"
     cat <<EOF
@@ -2866,8 +2866,11 @@ main() {
     profile)    case "${1:-}" in
                   show) pipeline_profile_json ;;
                   # Every team, for the bot's !stack picker: one profile_show each, in its own shell.
-                  list) local d; for d in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
-                          ( pipeline_load "$(basename "$(dirname "$d")")" >/dev/null 2>&1 && pipeline_profile_json ); done | jq -cs . ;;
+                  # A team that does not load is named on stderr, not dropped without a word.
+                  list) local n out; for n in $(pipeline_profile_names); do
+                          out="$( ( pipeline_load "$n" >/dev/null 2>&1 && pipeline_profile_json ) )" && printf '%s\n' "$out" \
+                            || echo "profile list: ${n} does not load (fxa-sandbox-ctl --pipeline ${n} profile show says why)" >&2
+                        done | jq -cs . ;;
                   # Every profile: only assignments, and no key that the code never reads (a typo).
                   lint) local f k rc=0; for f in "${SCRIPT_DIR}"/profiles/*/profile.conf; do
                           pipeline_conf_lint "$f" || rc=1
@@ -2878,6 +2881,10 @@ main() {
                             grep -rqw --include='*.sh' --include='*.py' --exclude='*.check.sh' "$k" "${SCRIPT_DIR}/lib" "${SCRIPT_DIR}/infra" "${SCRIPT_DIR}/dashboard" \
                               || grep -qw "$k" "${SCRIPT_DIR}/fxa-sandbox-ctl" || { echo "${f#"${SCRIPT_DIR}"/profiles/}: ${k} is read nowhere (a typo?)"; rc=1; }
                           done
+                        done
+                        for f in "${FXA_TEAMS_DIR}"/*.json; do
+                          [ -f "$f" ] || continue
+                          FXA_RESERVED_TEAMS="$(ls "${SCRIPT_DIR}/profiles" | tr '\n' ' ')" python3 -I "${SCRIPT_DIR}/lib/team_record.py" validate "$f" "$(basename "$f" .json)" 2>&1 || rc=1
                         done
                         for f in "${SCRIPT_DIR}"/repos/*/notes.md; do
                           [ ! -f "$f" ] || [ "$(_fsize "$f")" -le 8192 ] || { echo "${f#"${SCRIPT_DIR}"/}: over 8 KB"; rc=1; }

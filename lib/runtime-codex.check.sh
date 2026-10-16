@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p;/^_vm_team_rules() {/,/^}/p;/^_vm_repo_dirs() {/,/^}/p' "$here/agent.sh")"
+eval "$(sed -n '/^_vm_git_identity() {/,/^}/p;/^_vm_session_git_rule() {/,/^}/p;/^_vm_team_context() {/,/^}/p;/^_vm_team_rules() {/,/^}/p;/^_vm_repo_dirs() {/,/^}/p' "$here/agent.sh"; sed -n '/^profile_file() {/,/^}/p' "$here/config.sh")"
 source "$here/runtime-codex.sh"
 # Each vm_exec's command, one file per call; the VM, scp and ssh do nothing.
 vm_exec() { shift; printf '%s\n' "$*" > "$tmp/exec.$(ls "$tmp" | grep -c '^exec\.')"; }

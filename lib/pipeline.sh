@@ -21,8 +21,13 @@
 _FXA_PIPELINE_LOADED=1
 
 : "${FXA_PIPELINE:=fxa-ai-fixme}"
+# Team records (lib/team_record.py), cached on this host; config.sh sets the same default.
+: "${FXA_TEAMS_DIR:=${HOME}/.claude/state/teams}"
 
 # Env overrides win over the config, so old cron and shell overrides still work.
+# Keys only the controller sets: a team that set them would move its state, locks or mirror,
+# read a credential, or run a command on the host. pipeline_load derives them from the name.
+PIPE_HOST_KEYS="PIPE_NAME PIPE_STATE_DIR PIPE_LOCK_DIR PIPE_POOL_NAME PIPE_REPO PIPE_RUNS_FILE PIPE_COSTS_FILE PIPE_STATE_URI PIPE_PAUSE_URI PIPE_JIRA_BASIC PIPE_TOOLING_APPROVERS PIPE_RELOCK_CMD PIPE_RELOCK_SIGN PIPE_LOCK_STALE_SECONDS PIPE_JIRA_SITE"
 # pipeline_conf_lint <conf>   A profile may hold only comments, KEY=value with one word or one
 # quoted string, and the rows of a KEY=( ... ) array. No command substitution, no second command.
 pipeline_conf_lint() {
@@ -32,12 +37,42 @@ pipeline_conf_lint() {
   # A team value never expands: "$PIPE_JIRA_BASIC" would copy a host secret into the runner's prompt.
   # Only the built-in fxa profile (operator code, with its env overrides) may use $.
   local d root; d="$(cd "$(dirname "$1")" && pwd -P)"; root="${d%/profiles/*}"; root="${root%/pipelines}"
-  [ "$1" -ef "${root}/profiles/fxa/profile.conf" ] \
-    || bad="$(printf '%s\n' "$bad"; grep -nE '^[[:space:]]*[^#[:space:]].*\$' "$1" | sed 's/^/expansion: /')" || true
+  if ! [ "$1" -ef "${root}/profiles/fxa/profile.conf" ]; then
+    bad="$(printf '%s\n' "$bad"; grep -nE '^[[:space:]]*[^#[:space:]].*\$' "$1" | sed 's/^/expansion: /')" || true
+    # Host and credential keys come from the controller, and a team is only the folder it is in.
+    bad="$(printf '%s\n' "$bad"; grep -nE "^(${PIPE_HOST_KEYS// /|})=" "$1" | sed 's/^/host key: /')" || true
+    bad="$(printf '%s\n' "$bad"; grep -nE '^PIPE_PROFILE=' "$1" | grep -vE "^[0-9]+:PIPE_PROFILE=\"?${d##*/}\"?([[:space:]]+#.*)?\$" | sed 's/^/another team: /')" || true
+  fi
   bad="$(printf '%s\n' "$bad" | grep . || true)"
   [ -z "$bad" ] && return 0
   printf '%s\n' "$bad" | sed "s#^#${1##*/profiles/}: #" | head -5
   return 1
+}
+
+# pipeline_profile_names   Every team: the folders under profiles/, then the records in FXA_TEAMS_DIR.
+pipeline_profile_names() {
+  { ls "${SANDBOX_ROOT}/profiles" 2>/dev/null; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p'; } | awk '!seen[$0]++'
+}
+
+# _pipeline_load_record <name>   A team record: validated and mapped by team_record.py, then set
+# key by key from an allowlist. Never sourced or eval'd. Its prompts go beside the record.
+_pipeline_load_record() {
+  local name="$1" rec out k v
+  rec="${FXA_TEAMS_DIR}/${name}.json"
+  out="$(FXA_RESERVED_TEAMS="$(ls "${SANDBOX_ROOT}/profiles" 2>/dev/null | tr '\n' ' ')" \
+    python3 -I "${SANDBOX_ROOT}/lib/team_record.py" env "$rec" "$name")" || { echo "ERROR: team record ${name} is not valid" >&2; return 1; }
+  PIPE_REPOS=()
+  while IFS=$'\t' read -r k v; do
+    case "$k" in
+      REPO) PIPE_REPOS+=("$v") ;;
+      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY)
+        printf -v "$k" '%s' "$v" ;;
+      *) echo "ERROR: team record ${name}: unexpected key ${k}" >&2; return 1 ;;
+    esac
+  done <<< "$out"
+  PIPE_PROFILE="$name"
+  python3 -I "${SANDBOX_ROOT}/lib/team_record.py" prompts "$rec" "${FXA_TEAMS_DIR}/${name}" \
+    || { echo "ERROR: could not write the prompts of team ${name}" >&2; return 1; }
 }
 
 pipeline_load() {
@@ -50,16 +85,19 @@ pipeline_load() {
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
   conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
   [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
-  if [ ! -f "$conf" ]; then
-    echo "ERROR: no profile '${name}' in ${SANDBOX_ROOT}/profiles or pipelines" >&2
-    echo "Available: $(ls "${SANDBOX_ROOT}/profiles" "${SANDBOX_ROOT}/pipelines" 2>/dev/null | grep -v ':$' | sed 's/\.conf$//' | sort -u | tr '\n' ' ')" >&2
+  if [ ! -f "$conf" ] && [ -f "${FXA_TEAMS_DIR}/${name}.json" ]; then
+    _pipeline_load_record "$name" || return 1
+  elif [ ! -f "$conf" ]; then
+    echo "ERROR: no profile '${name}' in ${SANDBOX_ROOT}/profiles, pipelines or ${FXA_TEAMS_DIR}" >&2
+    echo "Available: $(pipeline_profile_names | tr '\n' ' ')" >&2
     return 1
+  else
+    # The file is sourced as bash: refuse a line that would run a command before it runs.
+    pipeline_conf_lint "$conf" >&2 || { echo "ERROR: profile ${name} (${conf}) holds more than assignments" >&2; return 1; }
+    # shellcheck disable=SC1090
+    # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
+    source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }
   fi
-  # The file is sourced as bash: refuse a line that would run a command before it runs.
-  pipeline_conf_lint "$conf" >&2 || { echo "ERROR: profile ${name} (${conf}) holds more than assignments" >&2; return 1; }
-  # shellcheck disable=SC1090
-  # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
-  source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }
   PIPE_NAME="$name"
   # A team that works on Android (PIPE_ANDROID=1): every runner it starts is an Android runner.
   if [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi

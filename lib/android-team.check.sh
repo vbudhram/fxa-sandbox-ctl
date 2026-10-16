@@ -25,7 +25,7 @@ check "an Android run's step 4 is /android-verify" 1 "$(FXA_ANDROID=1 PIPE_PROFI
 check "a functional run's step 4 stays the functional spec" 1 "$(PIPE_PROFILE=fxa _jira_render_prompt FXA-1 b s c true 2>/dev/null | grep -c '^4\. Functional tests are REQUIRED')"
 
 # An Android run on the FxA team (the FXA pass) gets the Android team's rules, guide and boot.
-for f in android_overlay vm_guide_build _vm_team_rules _gce_profile_boot; do
+for f in android_overlay profile_file vm_guide_build _vm_team_rules _gce_profile_boot; do
   pat="/^${f}() {/,/^}/p"; eval "$(sed -n "$pat" "$here/config.sh" "$here/agent.sh")"; done
 FXA_ANDROID_TEAM=fxa-android; _profile_guide_trees() { :; }
 rules() { _vm_team_rules | grep -c '^# Team rules: FxA Android'; }

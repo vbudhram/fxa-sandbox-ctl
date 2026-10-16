@@ -58,8 +58,8 @@ vm_guide_build() {
     "${SANDBOX_ROOT}/VM_AGENT_GUIDE.md"
   _profile_guide_trees
   # A profile's own guide: its stack, commands and checks, after FxA's.
-  local own="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-}/guide.md"
-  [ -n "${PIPE_PROFILE:-}" ] && [ -f "$own" ] && { echo; cat "$own"; }
+  local own; own="$(profile_file "${PIPE_PROFILE:-}" guide.md)"
+  [ -n "$own" ] && { echo; cat "$own"; }
   own="$(android_overlay guide.md)"; [ -n "$own" ] && { echo; cat "$own"; }
   return 0
 }
@@ -637,7 +637,7 @@ _vm_session_git_rule() {
 # each repo of the profile (repos/<owner>__<name>/notes.md), then the team's own rules
 # (profiles/<team>/CLAUDE.md). The sandbox rules win over both; the team wins over a repo note.
 _vm_team_rules() {
-  local d f="${SANDBOX_ROOT}/profiles/${PIPE_PROFILE:-fxa}/CLAUDE.md"
+  local d f; f="$(profile_file "${PIPE_PROFILE:-fxa}" CLAUDE.md)"
   for d in $(_vm_repo_dirs); do
     [ -s "$d/notes.md" ] && printf '\n\n# Repo notes: %s\n\n%s\n' "$(basename "$d" | sed 's#__#/#')" "$(head -c 8192 "$d/notes.md")"
   done

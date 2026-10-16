@@ -86,6 +86,15 @@ android_overlay() {
   [ -f "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1" ] && printf '%s' "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1"
   return 0
 }
+# Team records (data, never sourced; lib/team_record.py), cached on this host. Each record's prompts go beside it.
+FXA_TEAMS_DIR="${FXA_TEAMS_DIR:-${HOME}/.claude/state/teams}"
+# profile_file <team> <file>   The team's own <file>: profiles/<team>/<file>, else its record's copy, else nothing.
+profile_file() {
+  local f="${SANDBOX_ROOT}/profiles/$1/$2"
+  [ -f "$f" ] || f="${FXA_TEAMS_DIR}/$1/$2"
+  [ -n "$1" ] && [ -f "$f" ] && printf '%s' "$f"
+  return 0
+}
 # android_runner_env   The runner an Android run needs: --android, or a team with PIPE_ANDROID=1.
 android_runner_env() {
   export FXA_ANDROID=1 FXA_GCE_MACHINE_TYPE="$FXA_GCE_MACHINE_TYPE_ANDROID" FXA_GCE_IMAGE="$FXA_GCE_IMAGE_ANDROID" \
