@@ -50,7 +50,9 @@ memory_pull() {
 # _memory_lock [wait] / _memory_unlock   One writer of the clone at a time: a save, a pull or the digest.
 # A lock older than 10 min is from a process that died. It waits up to <wait> seconds (2).
 _memory_lock() {
-  local l="${FXA_MEMORY_DIR}.lock" end=$(( $(date +%s) + ${1:-2} ))
+  local l="${FXA_MEMORY_DIR}.lock" w="${1:-2}" end
+  case "$w" in ''|*[!0-9]*) w=2 ;; esac   # a typo such as 60s would end the whole command in the arithmetic
+  end=$(( $(date +%s) + w ))
   [ -d "$l" ] && [ $(( $(date +%s) - $(_mtime "$l" 2>/dev/null || date +%s) )) -gt 600 ] && rmdir "$l" 2>/dev/null
   until mkdir "$l" 2>/dev/null; do [ "$(date +%s)" -lt "$end" ] || return 1; sleep 2; done
 }
