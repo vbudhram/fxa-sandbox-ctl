@@ -3,6 +3,7 @@
 # a Slack session keeps main.
 #   bash lib/finish-base.check.sh
 source "$(dirname "$0")/session-check-head.sh"
+source "$(dirname "$0")/routines.sh"
 BASES="$tmp/bases"
 finish() { # finish <record json>   the base finish_push_and_pr got, or the error
   ( echo "$1" > "$SESSION_DIR/agent-fb1.json"; : > "$SESSION_DIR/agent-fb1.finish.log"; : > "$BASES"

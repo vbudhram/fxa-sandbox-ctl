@@ -2289,7 +2289,7 @@ _cmd_session_boot() {
   # A routine run starts at its own branch (the validator checked it); any other session at the team's base.
   if [ "$(session_get "$key" source)" = routine ]; then
     base="$(session_get "$key" base)"
-    git check-ref-format --branch "${base:-x}" >/dev/null 2>&1 || { echo "ERROR: ${key} has no valid base branch" >&2; session_set "$key" state failed; return 1; }
+    _routine_branch_ok "$base" || { echo "ERROR: ${key} has no valid base branch" >&2; session_set "$key" state failed; return 1; }
   fi
   _retry git -C "$root" fetch --quiet origin "$base" && sha="$(git -C "$root" rev-parse "origin/${base}")" \
     || { echo "ERROR: could not fetch origin/${base}" >&2; session_set "$key" state failed; return 1; }
@@ -2710,7 +2710,7 @@ _session_finish_one() {
   if [ -z "${FXA_TREE_PATH:-}" ] && [ "$(session_get "$key" source)" = routine ]; then
     local rb; rb="$(session_get "$key" base)"
     if [ -n "$rb" ]; then
-      git check-ref-format --branch "$rb" >/dev/null 2>&1 || { echo "ERROR: ${key} has a base branch that is not valid; nothing shipped" >&2; return 1; }
+      _routine_branch_ok "$rb" || { echo "ERROR: ${key} has a base branch that is not valid; nothing shipped" >&2; return 1; }
       base="$rb"
     fi
   fi

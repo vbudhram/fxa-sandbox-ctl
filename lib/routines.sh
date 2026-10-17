@@ -17,6 +17,8 @@ _routine_profile() { ( pipeline_load "$1" >/dev/null 2>&1 && pipeline_profile_js
 
 # No leading zero: bash reads 08 as octal, and $((08 + 1)) fails.
 _ROUTINE_NUM='^(0|[1-9][0-9]{0,8})$'
+# _routine_branch_ok <name>   The validator's branch rule (lib/routine.py BRANCH), for the host paths that read it back.
+_routine_branch_ok() { [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,59}$ ]] && [[ "$1" != *..* ]]; }
 _routine_id() { [[ "${1:-}" =~ $_ROUTINE_NUM ]] || { echo "ERROR: bad routine id" >&2; return 1; }; }
 _routine_row() { local j; j="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE id = $1;")" || return 1; jq -c '.[0] // empty' <<< "$j"; }
 # _routine_of <team> <id>   The row, only when it belongs to that team.
