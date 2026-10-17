@@ -547,6 +547,14 @@ _session_valid_sid() { [[ "${1:-}" =~ ^[A-Za-z0-9-]{8,64}$ ]]; }
 # _session_turn <key> <message> [quiet]   Start one resumed turn on the runner and return.
 # quiet: the handoff before a pause. Its output stays out of the transcript, so
 # the thread never sees it, and it opens no turn.
+# _session_run_cap <key>   The run's LLM cap in USD: the session's own (a routine's max_usd), at most the
+# host's FXA_LLM_RUN_CAP_USD (D21). No own cap: the host's. A bad value fails, not a silent ceiling.
+_session_run_cap() {
+  local c m="${FXA_LLM_RUN_CAP_USD:-50}"; c="$(session_get "$1" cap_usd 2>/dev/null || true)"
+  [ -n "$c" ] || { printf '%s\n' "$m"; return 0; }
+  awk -v c="$c" -v m="$m" 'BEGIN { if (c !~ /^[0-9]+(\.[0-9]+)?$/ || c + 0 <= 0) exit 1; print (c + 0 < m + 0 ? c : m) }'
+}
+
 _session_turn() {
   local key="$1" msg="$2" quiet="${3:-}" name sid tmp out="${_SESSION_CLAUDE_SPLIT}"
   [ -n "$quiet" ] && out='cat > /workspace/.fxa-handoff.jsonl'
@@ -560,6 +568,7 @@ _session_turn() {
     _session_valid_sid "$sid" || { echo "ERROR: ${key}: the runner reported a malformed session id" >&2; return 1; }
     session_set "$key" claude_session_id "$sid"
   fi
+  local runcap; runcap="$(_session_run_cap "$key")" || { echo "ERROR: ${key} has a cost limit that is not a number" >&2; return 1; }
   tmp="$(mktemp -d)"
   # A CircleCI link in a later message: the host reads it, and its traces ride in the tar below.
   local ci; ci="$(circleci_digests "$msg" "$(openssl rand -hex 6)" "${tmp}/.fxa-ci" 2>/dev/null || true)"
@@ -568,7 +577,7 @@ _session_turn() {
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"
     # The session's own connectors: an empty --mcp stays off.
-    _FXA_SESSION_MCP="$(session_get "$key" mcp)" _claude_auth_line "$name" > "${tmp}/.fxa-auto-token" || [ "$(session_get "$key" runtime)" = codex ] \
+    FXA_LLM_RUN_CAP_USD="$runcap" _FXA_SESSION_MCP="$(session_get "$key" mcp)" _claude_auth_line "$name" > "${tmp}/.fxa-auto-token" || [ "$(session_get "$key" runtime)" = codex ] \
       || { echo "ERROR: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN on the host" >&2; exit 1; }
     if [ "$(session_get "$key" runtime)" = codex ]; then
       # Codex keeps its login in ~/.codex/auth.json on the runner; no token ships.

@@ -32,7 +32,7 @@ eval "$(sed -n '/^_task_carry() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_checkout_gate_on() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^trees_from_get() {/,/^}/p' "$(dirname "$0")/trees.sh")"
 eval "$(sed -n '/^_task_open_pr() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
-eval "$(grep '^_task_abort()' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_task_abort() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 trees_on() { return 1; }
 eval "$(sed -n '/^_task_checkout() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_cmd_session_finish() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"

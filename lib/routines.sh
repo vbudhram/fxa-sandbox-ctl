@@ -146,3 +146,30 @@ cmd_routine() {
     *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete <team> <id>" >&2; return 1 ;;
   esac
 }
+
+# routine_run_read <run> <team>   The claimed run's row ({id, routine_id, team, config, heads}), for cmd_task
+# (D7: ctl reads what to run from the row, never from the caller). Refuses a run of another team, one that
+# is not claimed, or one that already has a session. A store error says so.
+routine_run_read() {
+  _routine_id "$1" || return 1
+  local j r; j="$(db_json "SELECT r.id, r.routine_id, t.team, r.state, r.session, r.config, r.heads FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = $1;")" \
+    || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  r="$(jq -c '.[0] // empty' <<< "$j")"
+  [ -n "$r" ] || { echo "ERROR: no routine run $1" >&2; return 1; }
+  [ "$(jq -r .team <<< "$r")" = "$2" ] || { echo "ERROR: routine run $1 is not a run of team $2" >&2; return 1; }
+  [ "$(jq -r '"\(.state)|\(.session // "")"' <<< "$r")" = "claimed|" ] || { echo "ERROR: routine run $1 is not claimed" >&2; return 1; }
+  jq -c '{id, routine_id, team, config: (.config // "null" | fromjson), heads: (.heads // "null" | fromjson)}' <<< "$r" 2>/dev/null \
+    || { echo "ERROR: routine run $1 has no readable config" >&2; return 1; }
+}
+
+# routine_run_start <run> <key>   Take the claimed run for this session: one guarded UPDATE, so of two
+# callers at once only one gets it.
+routine_run_start() {
+  local n; n="$(db_value "UPDATE routine_runs SET state = 'started', session = $(db_q "$2"), started_at = $(date +%s) WHERE id = $1 AND state = 'claimed' AND session IS NULL; SELECT changes();")" || n=""
+  case "$n" in 1) ;; 0) echo "ERROR: routine run $1 is not claimed" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+}
+
+# routine_run_fail <run> <reason>   A started run whose session could not start.
+routine_run_fail() {
+  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN ('claimed','started');" >/dev/null
+}

@@ -1999,7 +1999,12 @@ _session_key() {
 }
 
 # _task_abort <key>   Drop a record that task wrote before it failed.
-_task_abort() { rm -f "$(_session_file "$1")"; _session_db_sync "$1"; }
+_task_abort() {
+  # A routine run that cannot start ends failed, so its routine does not wait for it.
+  local r; r="$(session_get "$1" routine_run 2>/dev/null || true)"
+  [ -z "$r" ] || routine_run_fail "$r" "the session could not start" || true
+  rm -f "$(_session_file "$1")"; _session_db_sync "$1"
+}
 
 # _task_open_pr <key>   The session has an open PR: its own, the one it reviewed, or a tree's.
 _task_open_pr() {
@@ -2095,8 +2100,10 @@ _session_announce() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout=""
+  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
   while [ $# -gt 0 ]; do
+    # A routine run takes only these; any other option is the caller's say, which it must not have.
+    case "$1" in --id|--thread|--link|--queued-s|--runtime|--source|--routine-run) ;; *) caller=1 ;; esac
     case "$1" in
       --resume-from) resume_from="$2"; shift 2 ;;
       --repos) repos="$2"; shift 2 ;;
@@ -2113,14 +2120,35 @@ cmd_task() {
       --owner-name) owner_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
+      --routine-run) rrun="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
       --owner) owner="$2"; shift 2 ;;
       --prompt-file) prompt_file="$2"; shift 2 ;;
       *) echo "ERROR: unknown task option: $1" >&2; return 1 ;;
     esac
   done
-  [ "$source" = slack ] || { echo "ERROR: task needs --source slack" >&2; return 1; }
+  # A routine run (epic i168): what it runs comes from its claimed row, never from the caller (D7).
+  case "$source" in
+    slack) [ -z "$rrun" ] || { echo "ERROR: --routine-run needs --source routine" >&2; return 1; } ;;
+    routine) [ -n "$rrun" ] || { echo "ERROR: --source routine needs --routine-run" >&2; return 1; }
+             [ -z "$caller" ] || { echo "ERROR: a routine run takes its owner, prompt, repos and connectors from its row, not from options" >&2; return 1; } ;;
+    *) echo "ERROR: task needs --source slack" >&2; return 1 ;;
+  esac
   [[ "$key" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like agent-7f3a" >&2; return 1; }
+  local run_json="" run_prompt="" routine_cfg=""
+  if [ "$source" = routine ]; then
+    run_json="$(routine_run_read "$rrun" "${PIPE_PROFILE:-fxa}")" || return 1
+    routine_cfg="$(jq -c .config <<< "$run_json")"
+    owner="routine:${PIPE_PROFILE:-fxa}/$(jq -r .routine_id <<< "$run_json")"
+    run_prompt="$(mktemp "${TMPDIR:-/tmp}/fxa-routine-prompt.XXXXXX")"
+    local nonce; nonce="$(openssl rand -hex 6)"
+    _ROUTINE_PY prompt <(printf '%s' "$routine_cfg") <(jq -c .heads <<< "$run_json") "${PIPE_PROFILE:-fxa}" "$nonce" > "$run_prompt" \
+      || { rm -f "$run_prompt"; echo "ERROR: routine run ${rrun} cannot start: its row is not valid" >&2; return 1; }
+    prompt_file="$run_prompt"
+    # One repo that is the team's own work repo needs no stack; any other pick is a team stack.
+    local rr; rr="$(jq -r '.repos | join(",")' <<< "$routine_cfg")"
+    [ "$(tr '[:upper:]' '[:lower:]' <<< "$rr")" = "$(tr '[:upper:]' '[:lower:]' <<< "${PIPE_REPO_SLUG:-}")" ] || repos="$rr"
+  fi
   [ -n "$owner" ] && [ -s "$prompt_file" ] || { echo "ERROR: task needs --owner and a non-empty --prompt-file" >&2; return 1; }
   [ -z "$thread" ] || _thread_ok "$thread" || { echo "ERROR: --thread must look like C0123:1790000000.000100" >&2; return 1; }
   [ -z "$repos" ] || [[ "$repos" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)*$ ]] || { echo "ERROR: --repos must look like mozilla/fxa,mozilla/PyFxA" >&2; return 1; }
@@ -2168,9 +2196,12 @@ cmd_task() {
   done
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
   local cap; cap="$(_session_cap)"
-  [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
+  [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; [ -z "$run_prompt" ] || rm -f "$run_prompt"; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
     errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
+  # The run is this session's only now: a second caller with the same run is refused here, before any record.
+  if [ -n "$rrun" ]; then routine_run_start "$rrun" "$key" || { _session_unlock .task-cap; rm -f "$run_prompt"; return 1; }; fi
   cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
+  [ -z "$run_prompt" ] || rm -f "$run_prompt"
   # Files sent with the request, copied now: the caller removes its directory when task returns.
   [ -n "$inbox_dir" ] && { _inbox_copy "${SESSION_DIR}/${key}.inbox" "$inbox_dir"/* >/dev/null || echo "WARN: no file from ${inbox_dir} could be kept" >&2; }
   # An upgrade from a quick answer: what that read-only agent found, so this one does not search again.
@@ -2180,9 +2211,14 @@ cmd_task() {
       head -c 20000 "$findings_file"; printf '\n</findings-%s>\n' "$fnonce"; } >> "${SESSION_DIR}/${key}.prompt.md"
   fi
   # FXA_ENV=dev: the dev bot's session, which the stats leave out.
+  # A routine run: its branch is the base, its text is untrusted (D18), and a security review is
+  # narrowed: watch_narrow for the watch page, no team memory (D9).
   jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" --arg profile "${PIPE_PROFILE:-}" --arg base "${PIPE_BASE_BRANCH:-main}" \
-    '{key: $key, owner: $owner, source: "slack", branch: $key, base: $base, profile: $profile,
-      state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)' > "$(_session_file "$key")"
+    --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" \
+    '{key: $key, owner: $owner, source: $source, branch: $key, base: $base, profile: $profile,
+      state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)
+     + (if $cfg == null then {} else {routine_run: $run, routine_mode: $cfg.mode, untrusted: "1", cap_usd: ($cfg.max_usd // 10),
+          base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end) end)' > "$(_session_file "$key")"
   _session_unlock .task-cap
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
@@ -2217,7 +2253,7 @@ cmd_task() {
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
-  case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; rm -f "$(_session_file "$key")"; _session_db_sync "$key"; return 1 ;; esac
+  case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; _task_abort "$key"; return 1 ;; esac
   # ponytail: a team stack loads each repo's config through Claude's --add-dir; Codex has no such flag yet.
   if [ "$runtime" = codex ] && trees_on "$key"; then echo "ERROR: a session with several repos runs on Claude only" >&2; _task_abort "$key"; return 1; fi
   session_set "$key" runtime "$runtime"
@@ -2226,7 +2262,7 @@ cmd_task() {
   [ -z "$resume_from" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
-    [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; rm -f "$(_session_file "$key")"; _session_db_sync "$key"; return 1; }
+    [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; _task_abort "$key"; return 1; }
     if [ "$runtime" = claude ]; then session_set "$key" mcp "$mcp"
     else echo "NOTE: MCP connectors need the claude runtime; this ${runtime} session gets none" >&2; fi
   fi
@@ -2244,9 +2280,17 @@ _cmd_session_boot() {
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   export _FXA_SESSION_MCP="$(session_get "$key" mcp)" # only a session sets this
   runtime_load || { session_set "$key" state failed; return 1; }
+  # The run's cap reaches the token minted below (D21).
+  FXA_LLM_RUN_CAP_USD="$(_session_run_cap "$key")" || { echo "ERROR: ${key} has a cost limit that is not a number" >&2; session_set "$key" state failed; return 1; }
+  export FXA_LLM_RUN_CAP_USD
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   local base="${FXA_WORKTREE_BASE:-main}"
+  # A routine run starts at its own branch (the validator checked it); any other session at the team's base.
+  if [ "$(session_get "$key" source)" = routine ]; then
+    base="$(session_get "$key" base)"
+    git check-ref-format --branch "${base:-x}" >/dev/null 2>&1 || { echo "ERROR: ${key} has no valid base branch" >&2; session_set "$key" state failed; return 1; }
+  fi
   _retry git -C "$root" fetch --quiet origin "$base" && sha="$(git -C "$root" rev-parse "origin/${base}")" \
     || { echo "ERROR: could not fetch origin/${base}" >&2; session_set "$key" state failed; return 1; }
   # An eval (FXA_SESSION_BASE_SHA, the dev bot only): every session starts at that
