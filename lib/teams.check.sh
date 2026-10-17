@@ -178,8 +178,9 @@ check "a write after another host's change is refused (412), and the cache keeps
 check "sync brings the other host's change and its generation" "Theirs|150" "$(teams_sync >/dev/null; jq -r .label "$FXA_TEAMS_DIR/web.json")|$(gen web)"
 check "set after the sync writes" "0|Mine" "$(teams_set web "$(rec web Mine)" >/dev/null 2>&1; echo $?)|$(jq -r .label "$B/web.json")"
 n0="$(teams_audit web | jq '[.[] | select(.action == "set")] | length')"
-check "a write whose read-back fails succeeds, warns to sync, and still writes the audit row" "0|1|$((n0 + 1))|Again" \
-  "$(DESCRIBE_FAILS=1 teams_set web "$(rec web Again)" >/dev/null 2>"$tmp/rb.err"; echo $?)|$(grep -c 'could not read it back' "$tmp/rb.err")|$(teams_audit web | jq '[.[] | select(.action == "set")] | length')|$(jq -r .label "$B/web.json")"
+check "a write whose read-back fails succeeds, warns to sync, and writes an audit row with an unknown new generation" "0|1|$((n0 + 1))|Again|unknown" \
+  "$(DESCRIBE_FAILS=1 teams_set web "$(rec web Again)" >/dev/null 2>"$tmp/rb.err"; echo $?)|$(grep -c 'could not read it back' "$tmp/rb.err")|$(teams_audit web | jq '[.[] | select(.action == "set")] | length')|$(jq -r .label "$B/web.json")|$(teams_audit web | jq -r '[.[] | select(.action == "set")] | .[0].new_gen')"
+check "the next edit then asks for a sync, not a 409 for its own write" "1" "$(teams_set web "$(rec web Later)" 2>&1 | grep -c 'run profile sync')"
 rm -f "$B/web.json" "$B/web.json.gen"
 check "sync removes a team that left the store" "no|null" "$(teams_sync >/dev/null; [ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)|$(jq -r .teams.web "$FXA_TEAMS_DIR/index.json")"
 

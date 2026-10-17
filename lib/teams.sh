@@ -195,7 +195,8 @@ _teams_write() {
     echo "ERROR: could not write team ${name}: $(tail -1 <<< "$out")" >&2; return 1
   fi
   # The store has the change: a failed read-back is a warning, so the caller still writes the audit row.
-  _teams_pull "$name" && teams_index || echo "WARN: wrote team ${name}, but could not read it back; run profile sync before the next edit" >&2
+  # The cached generation is now stale: drop it, so the audit says unknown and the next edit asks for a sync.
+  _teams_pull "$name" && teams_index || { rm -f "${FXA_TEAMS_DIR}/${name}.gen"; echo "WARN: wrote team ${name}, but could not read it back; run profile sync before the next edit" >&2; }
   return 0
 }
 
@@ -210,10 +211,10 @@ teams_create() {
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" || { rm -f "$tmp"; return 1; }
   _teams_write "$name" "$tmp" 0; rc=$?
-  [ "$rc" = 0 ] && _teams_audit create "$name" 0 "$(cat "${FXA_TEAMS_DIR}/${name}.gen")" "" "$tmp"
+  [ "$rc" = 0 ] && _teams_audit create "$name" 0 "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown)" "" "$tmp"
   rm -f "$tmp"
   [ "$rc" = 2 ] && echo "ERROR: team ${name} already exists; use profile set" >&2
-  [ "$rc" = 0 ] && echo "created team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen"))"
+  [ "$rc" = 0 ] && echo "created team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown))"
   return $rc
 }
 
@@ -239,9 +240,9 @@ teams_set() {
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" || { rm -f "$tmp"; return 1; }
   local old; old="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"; cp "${FXA_TEAMS_DIR}/${name}.json" "$old"
   _teams_write "$name" "$tmp" "$gen"; rc=$?
-  [ "$rc" = 0 ] && _teams_audit set "$name" "$gen" "$(cat "${FXA_TEAMS_DIR}/${name}.gen")" "$old" "$tmp"
+  [ "$rc" = 0 ] && _teams_audit set "$name" "$gen" "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown)" "$old" "$tmp"
   rm -f "$tmp" "$old"
-  [ "$rc" = 0 ] && echo "updated team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen"))"
+  [ "$rc" = 0 ] && echo "updated team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown))"
   return $rc
 }
 
