@@ -195,11 +195,13 @@ _routine_head() {
 # _routine_team_paused <team>   The pause reason of the team's pipeline (exit 0), nothing (exit 1), or exit 2
 # when the team does not load (fail closed: the caller skips it).
 _routine_team_paused() {
-  local out; out="$( ( pipeline_load "$1" >/dev/null 2>&1 || exit 2; pipeline_paused ) )"; local rc=$?
+  local out rc=0; out="$( ( pipeline_load "$1" >/dev/null 2>&1 || exit 2; pipeline_paused ) )" || rc=$?
   [ "$rc" = 2 ] && return 2; [ "$rc" = 0 ] && { printf '%s\n' "${out:-paused}"; return 0; }; return 1
 }
 # _routine_free_slots   Session slots left under the cap.
 _routine_free_slots() {
+# _routine_sessions_paused   The operator's sessions pause reason, or nothing.
+_routine_sessions_paused() { local w=""; w="$(sessions_paused 2>/dev/null)" || w=""; printf '%s' "$w"; }
   local f live=0; for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$((live + 1)); done
   echo $(( $(_session_cap) - live ))
 }
@@ -271,7 +273,8 @@ routine_tick() {
     if [ "$st" != active ]; then why="$st"
     elif [ -n "$spaused" ]; then why="agent sessions are paused: ${spaused}"
     else
-      tp="$(_routine_team_paused "$team")"; case $? in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
+      local prc=0; tp="$(_routine_team_paused "$team")" || prc=$?
+      case $prc in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
     fi
     [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
     [ -n "$why" ] || [ "$(jq -r .paused <<< "$r")" = 0 ] || why="the routine is paused"
@@ -280,7 +283,8 @@ routine_tick() {
       [ "$n" = 0 ] || why="a run of this routine is still in progress"
     fi
     if [ -z "$why" ]; then
-      heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)"; case $? in 0) ;; 3) why="cannot read the branch head" ;; *) rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+      local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
+      case $hrc in 0) ;; 3) why="cannot read the branch head" ;; *) rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
     fi
     if [ -z "$why" ] && [ "$(jq -r '.skip_no_commits // true' <<< "$cfg")" = true ] \
         && [ "$(jq -r '[.[] | .start == .head] | all' <<< "$heads")" = true ]; then why="no new commits since the last run"; fi
@@ -422,11 +426,15 @@ routine_runnow() {
   row="$(_routine_of "$team" "$id")" || return 1
   cfg="$(jq -c '.data | fromjson' <<< "$row")"; now="$(_routine_now)"
   why="$(_routine_team_state "$team")"; [ "$why" = active ] && why=""
-  [ -n "$why" ] || { why="$(sessions_paused 2>/dev/null)" && why="agent sessions are paused: ${why}" || why=""; }
-  if [ -z "$why" ]; then tp="$(_routine_team_paused "$team")"; case $? in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac; fi
+  [ -n "$why" ] || { why="$(_routine_sessions_paused)"; [ -z "$why" ] || why="agent sessions are paused: ${why}"; }
+  if [ -z "$why" ]; then
+    local prc=0; tp="$(_routine_team_paused "$team")" || prc=$?
+    case $prc in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
+  fi
   [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
   [ -z "$why" ] || { echo "ERROR: routine ${id} cannot run now: ${why}" >&2; return 1; }
-  heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)"; case $? in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+  local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
+  case $hrc in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
       SELECT $id, 'manual-$((now / 60))', 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "$heads")), $now
       WHERE NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES})); SELECT changes() || '|' || last_insert_rowid();")" || n=""
