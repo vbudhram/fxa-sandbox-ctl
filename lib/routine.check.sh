@@ -109,6 +109,7 @@ check "each template has a prompt and a skip flag" "4" "$(python3 -I "$here/rout
 # The CRUD commands, with the real store and the team profile stubbed.
 SANDBOX_ROOT="$(cd "$here/.." && pwd)" FXA_GCE_PROJECT="" FXA_TEAMS_URI="" SESSION_DIR="$tmp/sessions" FXA_TEAMS_DIR="$tmp/teams"
 mkdir -p "$SESSION_DIR" "$FXA_TEAMS_DIR"; cp "$tmp/index.json" "$FXA_TEAMS_DIR/index.json"
+echo '{"name":"secret"}' > "$FXA_TEAMS_DIR/secret.json"; echo '{"name":"second"}' > "$FXA_TEAMS_DIR/second.json"
 source "$here/teams.sh"; source "$here/routines.sh"
 pipeline_folder_teams() { echo fxa; }
 _routine_profile() { cat "$tmp/priv.json"; }
@@ -136,6 +137,16 @@ db_exec "INSERT INTO routines (team, data) VALUES ('secret','{}'),('secret','{}'
 got="$( db_value() { case "$1" in ("SELECT count(*) FROM routines WHERE team"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; routine_set secret "$tmp/new.json" 2>&1)"; rc=$?
 check "the 8-routine cap holds in the INSERT, even after a stale count" "1|routine: A team has at most 8 routines|8" "$rc|$got|$(db_value "SELECT count(*) FROM routines WHERE team = 'secret';")"
 db_exec "DELETE FROM routines WHERE id > 1;"
+check "a version with a leading zero is refused" "1|ERROR: an edit needs --id and --version (a number)" "$(cmd_routine set secret "$tmp/edit.json" --id 1 --version 08 >/dev/null 2>&1; echo $?)|$(cmd_routine set secret "$tmp/edit.json" --id 1 --version 08 2>&1)"
+check "a version with no --id is refused" "1|ERROR: an edit needs --id" "$(cmd_routine set secret "$tmp/edit.json" --version 2 >/dev/null 2>&1; echo $?)|$(cmd_routine set secret "$tmp/edit.json" --version 2 2>&1)"
+check "a team with no record (and not a folder team) takes no routine" "ERROR: no team ghost" "$(routine_set ghost "$tmp/new.json" 2>&1)"
+touch "$FXA_TEAMS_DIR/secret.deleting"
+check "a team being deleted takes no new routine" "ERROR: no team secret|1" "$(routine_set secret "$tmp/new.json" 2>&1)|$(db_value "SELECT count(*) FROM routines;")"
+rm -f "$FXA_TEAMS_DIR/secret.deleting"
+got="$( db_value() { case "$1" in ("SELECT count(*) FROM routines WHERE team"*) return 1 ;; (*) _db -list "$1" ;; esac; }; set -euo pipefail; routine_set secret "$tmp/new.json" 2>&1)"; rc=$?
+check "a failed count read is the store error line, even under set -euo pipefail" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again" "$rc|$got"
+got="$( db_json() { return 1; }; routine_state secret 1 pause 2>&1)"
+check "a store failure reading a routine is the store error, not 'no routine'" "ERROR: the routine store did not answer (busy or failed); nothing changed, try again" "$got"
 check "pause, then resume" "1|0" "$(routine_state secret 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state secret 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
 check "pause, delete and history of another team's routine are refused" "ERROR: team second has no routine 1|ERROR: team second has no routine 1|ERROR: team second has no routine 1|0|1" \
   "$(routine_state second 1 pause 2>&1)|$(routine_state second 1 delete 2>&1)|$(routine_history second 1 2>&1)|$(db_value "SELECT paused FROM routines WHERE id = 1;")|$(db_value "SELECT count(*) FROM routines;")"
@@ -143,7 +154,9 @@ check "pause, delete and history of another team's routine are refused" "ERROR: 
 check "cmd_routine set takes --id and --version in either order" "saved routine 1 (version 5)|saved routine 1 (version 6)" \
   "$(cmd_routine set secret "$tmp/edit.json" --id 1 --version 4 2>&1)|$(cmd_routine set secret "$tmp/edit.json" --version 5 --id 1 2>&1)"
 db_exec "INSERT INTO routine_runs (routine_id, period, state) VALUES (1, '2026-10-19', 'started');"
-check "delete is refused while a run is live" "ERROR: a run of routine 1 is in progress; stop it first|1" "$(routine_state secret 1 delete 2>&1)|$(db_value "SELECT count(*) FROM routines;")"
+# A check before the DELETE that reads 0 (a run claimed just after it) must not let the delete through.
+got="$( db_value() { case "$1" in ("SELECT count(*) FROM routine_runs"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; routine_state secret 1 delete 2>&1)"
+check "delete is refused while a run is live, by the DELETE itself" "ERROR: a run of routine 1 is in progress; stop it first|1" "$got|$(db_value "SELECT count(*) FROM routines;")"
 db_exec "UPDATE routine_runs SET state = 'ok';"
 check "delete removes the routine and keeps its history" "0|1|routine-delete" \
   "$(routine_state secret 1 delete >/dev/null; db_value "SELECT count(*) FROM routines;")|$(db_value "SELECT count(*) FROM routine_runs;")|$(db_value "SELECT action FROM team_audit ORDER BY id DESC LIMIT 1;")"

@@ -15,12 +15,14 @@ _ROUTINE_STORE="ERROR: the routine store did not answer (busy or failed); nothin
 # _routine_profile <team>   The team's profile show (repos, private, read_only), in its own shell.
 _routine_profile() { ( pipeline_load "$1" >/dev/null 2>&1 && pipeline_profile_json ); }
 
-_routine_id() { [[ "${1:-}" =~ ^[0-9]{1,9}$ ]] || { echo "ERROR: bad routine id" >&2; return 1; }; }
-_routine_row() { db_json "SELECT id, team, env, paused, version, data FROM routines WHERE id = $1;" | jq -c '.[0] // empty'; }
+# No leading zero: bash reads 08 as octal, and $((08 + 1)) fails.
+_ROUTINE_NUM='^(0|[1-9][0-9]{0,8})$'
+_routine_id() { [[ "${1:-}" =~ $_ROUTINE_NUM ]] || { echo "ERROR: bad routine id" >&2; return 1; }; }
+_routine_row() { local j; j="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE id = $1;")" || return 1; jq -c '.[0] // empty' <<< "$j"; }
 # _routine_of <team> <id>   The row, only when it belongs to that team.
 _routine_of() {
   _routine_id "$2" || return 1
-  local r; r="$(_routine_row "$2")"
+  local r; r="$(_routine_row "$2")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   [ -n "$r" ] && [ "$(jq -r .team <<< "$r")" = "$1" ] || { echo "ERROR: team $1 has no routine $2" >&2; return 1; }
   printf '%s
 ' "$r"
@@ -46,13 +48,20 @@ routine_get() { _routine_id "$1" || return 1; local r; r="$(_routine_row "$1")";
 routine_set() {
   local team="$1" file="$2" id="${3:-}" ver="${4:-}" prof idx out n row old
   [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "$file" ] || { echo "usage: routine set <team> <file> [--id <id> --version <v>]" >&2; return 1; }
+  [ -n "$id" ] || [ -z "$ver" ] || { echo "ERROR: an edit needs --id" >&2; return 1; }
+  # A team record that is gone, or that teams_delete is removing, takes no new routine.
+  if [ -e "${FXA_TEAMS_DIR}/${team}.deleting" ] || { [ ! -f "${FXA_TEAMS_DIR}/${team}.json" ] && ! pipeline_folder_teams | grep -qx "$team"; }; then
+    echo "ERROR: no team ${team}" >&2; return 1
+  fi
   if [ -n "$id" ]; then
-    _routine_id "$id" && [[ "$ver" =~ ^[0-9]{1,9}$ ]] || { echo "ERROR: an edit needs --id and --version" >&2; return 1; }
+    _routine_id "$id" && [[ "$ver" =~ $_ROUTINE_NUM ]] || { echo "ERROR: an edit needs --id and --version (a number)" >&2; return 1; }
     row="$(_routine_of "$team" "$id")" || return 1
   fi
   prof="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   _routine_profile "$team" > "$prof" && [ -s "$prof" ] || { rm -f "$prof"; echo "ERROR: team ${team} does not load" >&2; return 1; }
-  n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$team") AND id != ${id:-0};")"
+  # For the validator's field line only: the INSERT holds the cap itself.
+  n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$team") AND id != ${id:-0};")" && [[ "$n" =~ ^[0-9]+$ ]] \
+    || { rm -f "$prof"; echo "$_ROUTINE_STORE" >&2; return 1; }
   local rc=0; out="$(_ROUTINE_PY validate "$file" "$team" --profile "$prof" --index "${FXA_TEAMS_DIR:-/nonexistent}/index.json" \
     --bot-env "${FXA_BOT_ENV:-${SANDBOX_ROOT}/../fxa-agent-bot/.env}" --count "${n:-8}")" || rc=$?
   rm -f "$prof"; [ "$rc" = 0 ] || return 1
@@ -97,7 +106,9 @@ routines_drop_team() {
   local n; n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$1");")" && [[ "$n" =~ ^[0-9]+$ ]] \
     || { echo "ERROR: could not read team $1's routines from the store" >&2; return 1; }
   [ "$n" -gt 0 ] || return 0
-  db_exec "DELETE FROM routines WHERE team = $(db_q "$1");" >/dev/null || { echo "ERROR: could not delete team $1's routines from the store" >&2; return 1; }
+  # The count in the audit row is what the one DELETE removed, not the read before it.
+  n="$(db_value "DELETE FROM routines WHERE team = $(db_q "$1"); SELECT changes();")" && [[ "$n" =~ ^[0-9]+$ ]] \
+    || { echo "ERROR: could not delete team $1's routines from the store" >&2; return 1; }
   _teams_audit_note routine-delete "$1" "all ${n} routines, with the team"
 }
 
