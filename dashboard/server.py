@@ -269,6 +269,24 @@ def team_private(profile):
     return private
 
 
+def watch_narrow(profile, channel, access, records, gates):
+    """True when the session's team is not open (FxA always is) or its channel is in the bot's CHANNEL_GATES."""
+    t = team_access(profile, access, records)
+    gated = profile != "fxa" and not (t or {}).get("open")
+    return gated or channel in gates
+
+
+def read_gates():
+    """The channels the bot's CHANNEL_GATES lists (channel:source pairs). No file: none."""
+    path = os.environ.get("FXA_BOT_ENV") or str(ROOT.parent.parent / "fxa-agent-bot" / ".env")
+    try:
+        with open(path) as f:
+            line = next((l.split("=", 1)[1].strip().strip("'\"") for l in f if l.startswith("CHANNEL_GATES=")), "")
+    except OSError:
+        return set()
+    return set(_pairs(line))
+
+
 # Only these keys are read: the file also holds the bot's tokens.
 ACCESS_LINE = re.compile(r"^PROFILE_(USERS|OPEN|CHANNELS|JIRA)=(.*)$")
 
@@ -624,6 +642,13 @@ class Handler(BaseHTTPRequestHandler):
         if team_private(found[2]):
             self._json(403, {"error": "this team has a private repo, so its sessions cannot be watched"})
             return
+        # A gated team or a gated channel: only a dashboard user (signed by the gateway) may watch it.
+        access, _ = read_access()
+        if watch_narrow(found[2], thread.split(":", 1)[0], access, read_records(), read_gates()):
+            viewer = signed_user(self.headers, "GET", "/api/watch/events", read_hmac_key(), int(time.time()))
+            if not viewer:
+                self._json(403, {"error": "this session's team or channel is gated, so only dashboard users can watch it"})
+                return
         if not WATCHERS.acquire(blocking=False):
             self._json(503, {"error": "too many watchers; try again soon"})
             return
