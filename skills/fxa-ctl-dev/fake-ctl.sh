@@ -46,7 +46,7 @@ if [ -n "${FAKE_CTL_LOG:-}" ]; then
     case "$_prev" in --*-file) [ -f "$a" ] && _files="$(jq -c --arg k "${_prev#--}" --rawfile v "$a" '. + {($k): $v}' <<< "$_files")" ;; esac
     _prev="$a"
   done
-  printf '%s\0' "$@" | jq -cRs --argjson at "$(now)" --argjson files "$_files" '{at: $at, argv: (split("\u0000")[:-1]), files: $files}' >> "$FAKE_CTL_LOG"
+  printf '%s\0' "$@" | jq -cRs --argjson at "$(now)" --argjson files "$_files" --arg pipe "$pipe" '{at: $at, argv: (split("\u0000")[:-1]), files: $files} + (if $pipe != "" then {pipeline: $pipe} else {} end)' >> "$FAKE_CTL_LOG"
 fi
 get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 
