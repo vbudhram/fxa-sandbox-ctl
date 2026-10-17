@@ -425,7 +425,7 @@ _finish_push_and_pr() {
   local current_branch
   current_branch="$(git -C "$worktree" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   if [ "$current_branch" != "$branch" ]; then
-    echo "ERROR: worktree is on '${current_branch}' but handoff says '${branch}'." >&2
+    echo "ERROR: worktree is on '${current_branch}' but handoff says '$(printf '%s' "${branch:0:60}" | tr -cd 'A-Za-z0-9._/-')'." >&2
     return 1
   fi
 

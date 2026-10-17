@@ -23,7 +23,7 @@ if [ "$job" = pass ]; then
   case "$pre" in quiet*|locked*|paused*) printf '%s\n' "$pre" | head -1; exit 0 ;; esac
   # Its lines can quote runner text (a launch error with the agent's PR title), so a per-run nonce
   # fences them: a line cannot close the tag it does not know.
-  n="$(openssl rand -hex 6)"
+  n="$(openssl rand -hex 6)"; [[ "$n" =~ ^[0-9a-f]{12}$ ]] || { echo "pass: no nonce for the precheck fence (openssl rand failed)" >&2; exit 1; }
   input="${input}
 
 precheck already ran for this pass. Its output is below; do not run precheck again.
