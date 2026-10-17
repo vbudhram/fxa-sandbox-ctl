@@ -343,6 +343,7 @@ teams_delete() {
       || { echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync" >&2; return 1; }
   fi
   _teams_audit delete "$name" "$gen" "" "${FXA_TEAMS_DIR}/${name}.json" ""
+  routines_drop_team "$name"
   rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}"
   teams_index && echo "deleted team ${name}"
 }

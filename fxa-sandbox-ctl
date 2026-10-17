@@ -52,6 +52,7 @@ source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/trees.sh"
 source "${SCRIPT_DIR}/lib/teams.sh"
+source "${SCRIPT_DIR}/lib/routines.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
 source "${SCRIPT_DIR}/lib/devslot.sh"
 
@@ -2911,6 +2912,7 @@ main() {
                   secrets) [ -n "${2:-}" ] || { echo "usage: profile secrets <name>" >&2; return 1; }; teams_secret_status "$2" ;;
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
+    routine)    cmd_routine "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

@@ -69,4 +69,40 @@ check "routine templates lists four templates, and security-review is locked to 
   "$(python3 -I "$here/routine.py" templates | jq -r '[.[].template] | join(" ")')|$(python3 -I "$here/routine.py" templates | jq -r '.[] | select(.template == "security-review") | "\(.mode)|\(.locked_mode)"')"
 check "each template has a prompt and a skip flag" "4" "$(python3 -I "$here/routine.py" templates | jq '[.[] | select((.prompt | length) > 100 and (.skip_no_commits | type) == "boolean")] | length')"
 
+# The CRUD commands, with the real store and the team profile stubbed.
+SANDBOX_ROOT="$(cd "$here/.." && pwd)" FXA_GCE_PROJECT="" FXA_TEAMS_URI="" SESSION_DIR="$tmp/sessions" FXA_TEAMS_DIR="$tmp/teams"
+mkdir -p "$SESSION_DIR" "$FXA_TEAMS_DIR"; cp "$tmp/index.json" "$FXA_TEAMS_DIR/index.json"
+source "$here/teams.sh"; source "$here/routines.sh"
+pipeline_folder_teams() { echo fxa; }
+_routine_profile() { cat "$tmp/priv.json"; }
+export FXA_TEAM_ACTOR=admin@example.com
+jq -cn --argjson b "$base" '$b + {prompt: "SECRET-PROMPT-TEXT review"}' > "$tmp/new.json"
+check "an admin creates a routine" "created routine 1" "$(routine_set secret "$tmp/new.json" 2>&1)"
+check "the list has it, active, with its next three run times" "1|0|3" "$(routine_list secret | jq -r '.[0] | "\(.id)|\(.paused)|\(.next | length)"')"
+check "the create audit row names the admin and the routine, not the prompt" "admin@example.com|routine-create|routine 1|0" \
+  "$(db_value "SELECT actor || '|' || action || '|' || changed FROM team_audit ORDER BY id DESC LIMIT 1;")|$(db_value "SELECT count(*) FROM team_audit WHERE changed LIKE '%SECRET-PROMPT%';")"
+jq -c '.name = "Code review 2" | .prompt = "SECRET-PROMPT-TEXT two"' "$tmp/new.json" > "$tmp/edit.json"
+check "an edit at the current version saves version 2" "saved routine 1 (version 2)" "$(routine_set secret "$tmp/edit.json" 1 1 2>&1)"
+got="$(routine_set secret "$tmp/edit.json" 1 1 2>&1)"; rc=$?
+check "a second edit at version 1 is stale: exit 2 and the stale text" "2|ERROR: Someone changed this routine since you opened it. Load it again to see their change." "$rc|$got"
+check "the edit audit row names the changed fields, never the prompt" "routine 1: name,prompt|0" \
+  "$(db_value "SELECT changed FROM team_audit WHERE action = 'routine-set';")|$(db_value "SELECT count(*) FROM team_audit WHERE changed LIKE '%SECRET-PROMPT%';")"
+jq -c '.channel = "C0SECOND"' "$tmp/new.json" > "$tmp/bad.json"
+got="$(routine_set secret "$tmp/bad.json" 2>&1)"; rc=$?
+check "a refused save: exit 1, the field line, and no row" "1|channel: Channel C0SECOND belongs to team second|1" "$rc|$got|$(db_value "SELECT count(*) FROM routines;")"
+check "an edit of another team's routine is refused" "ERROR: team second has no routine 1" "$(routine_set second "$tmp/edit.json" 1 2 2>&1)"
+check "pause, then resume" "1|0" "$(routine_state 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
+db_exec "INSERT INTO routine_runs (routine_id, period, state) VALUES (1, '2026-10-19', 'started');"
+check "delete is refused while a run is live" "ERROR: a run of routine 1 is in progress; stop it first|1" "$(routine_state 1 delete 2>&1)|$(db_value "SELECT count(*) FROM routines;")"
+db_exec "UPDATE routine_runs SET state = 'ok';"
+check "delete removes the routine and keeps its history" "0|1|routine-delete" \
+  "$(routine_state 1 delete >/dev/null; db_value "SELECT count(*) FROM routines;")|$(db_value "SELECT count(*) FROM routine_runs;")|$(db_value "SELECT action FROM team_audit ORDER BY id DESC LIMIT 1;")"
+# teams_delete takes the team's routines with it, with an audit row.
+echo '{"name":"rusty"}' > "$FXA_TEAMS_DIR/rusty.json"
+db_exec "INSERT INTO routines (team, data) VALUES ('rusty', '{}'), ('rusty', '{}');"
+teams_index() { :; }
+teams_delete rusty >/dev/null 2>&1
+check "teams_delete leaves no routine of the team, and audits it" "0|all 2 routines, with the team" \
+  "$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")|$(db_value "SELECT changed FROM team_audit WHERE team = 'rusty' AND action = 'routine-delete';")"
+
 exit "$fail"
