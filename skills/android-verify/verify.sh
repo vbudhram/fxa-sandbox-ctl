@@ -59,18 +59,23 @@ rec_stop() {
     && row INFO "video: $out" || row WARN "recording: the combine failed (see $R)"
 }
 
+# _pw_passed <exit> <log>   Playwright passed: it exited 0, and its summary has a passed count and no
+# failed one. A grep for "1 passed" alone took "1 failed, 1 passed" as a pass, and "2 passed" as a fail.
+_pw_passed() { [ "$1" = 0 ] && grep -qE '^ *[0-9]+ passed' "$2" && ! grep -qE '^ *[0-9]+ (failed|flaky)' "$2"; }
+
 run() {
+  local rc=0
   local -a vars=(ANDROID_PAIRING_ENABLED=1 ANDROID_PAIRING_V2_ENABLED=1) x=(xvfb-run -a)
   [ -n "$record" ] && { rec_start "$1"; vars+=(DISPLAY=:99 MARIONETTE_HEADLESS=false); x=(); }
   ( cd "$FXA/packages/functional-tests" && env "${vars[@]}" \
-      timeout 600 ${x[@]+"${x[@]}"} npx playwright test "$spec" --project=local --reporter=list ) > "/tmp/android-verify-$1.log" 2>&1
+      timeout 600 ${x[@]+"${x[@]}"} npx playwright test "$spec" --project=local --reporter=list ) > "/tmp/android-verify-$1.log" 2>&1 || rc=$?
   [ -n "$record" ] && rec_stop "$1"
   # Per try: the next try's reset clears the device log. The page's pairing lines too, since
   # "Unexpected state change: complete" was how a dropped state showed.
   adb logcat -d -v time 2>/dev/null | grep -E 'FirefoxAccountStateMachine|mozac-fxawebchannel|fxa_client|Firefox WebChannel|pairing message|state change' \
     | tail -300 > "$MEDIA/android-${spec}-try$1-logcat.txt" && row INFO "logcat: $MEDIA/android-${spec}-try$1-logcat.txt"
   cp "/tmp/android-verify-$1.log" "$MEDIA/android-${spec}-try$1-spec.log"
-  grep -qE '^ *1 passed' "/tmp/android-verify-$1.log"
+  _pw_passed "$rc" "/tmp/android-verify-$1.log"
 }
 verdict=FAIL
 if run 1; then verdict=PASS; row PASS "$spec"
