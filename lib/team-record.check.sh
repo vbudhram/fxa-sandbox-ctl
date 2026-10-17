@@ -148,8 +148,10 @@ check "a runtime secret must be the team's own, and land inside one of its repo 
   "$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work" }, { "slug": "mozilla/cfg", "role": "dep" } ], "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/cfg/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other--db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
 check "a value that ends in a newline is refused (slug, base)" "1|1" \
   "$(code ', "repos": [ { "slug": "mozilla/fxa\n", "role": "work" } ]' | grep -c 'slug must be owner/name')|$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work", "base": "main\n" } ]' | grep -c 'base is not a branch name')"
-check "Mozilla/fxa with the FxA stack validates and loads, as GitHub reads slugs without case" "0|1" \
-  "$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -cE 'Error|Traceback|must|needs')|$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -c '^PIPE_STACK_DIR')"
+check "Mozilla/fxa with the FxA stack validates and loads as mozilla/fxa, as GitHub reads slugs without case" "0|1|1" \
+  "$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -cE 'Error|Traceback|must|needs')|$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -c '^PIPE_STACK_DIR')|$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -c '^REPO	mozilla/fxa ')"
+check "a label or a repo path that ends in a newline is refused too" "1|1" \
+  "$(code ', "label": "Team\n"' | grep -c 'label')|$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work", "path": "/home/agent/fxa\n" } ]' | grep -c 'path must')"
 check "a pipelines/<name>.conf alias is a reserved name" "1" \
   "$(bad fxa-ai-fixme '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "fxa-ai-fixme", "prompts": { "goal_md": "g" } }' | grep -c reserved)"
 check "a slug part of . or .. is refused" "1" \
