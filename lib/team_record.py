@@ -119,7 +119,7 @@ def check(rec, name=None):
         aliases = {f[:-5] for f in os.listdir(os.path.join(REPO, "pipelines")) if f.endswith(".conf")} if os.path.isdir(os.path.join(REPO, "pipelines")) else set()
         reserved = RESERVED | aliases | set(os.environ.get("FXA_RESERVED_TEAMS", "").split())
         if n in reserved:
-            bad.append(f"name {n!r} is reserved (a built-in team)")
+            bad.append(f"name {n!r} is reserved (a built-in team, or a folder the host keeps under ~/.claude/state)")
 
     if "label" in rec and (not isinstance(rec["label"], str) or not LABEL.fullmatch(rec["label"])):
         bad.append("label must be 1 to 40 letters, digits, spaces or ._()-")
