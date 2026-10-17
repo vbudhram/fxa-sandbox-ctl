@@ -344,7 +344,8 @@ jira_sprint_add() {
     return 0
   fi
   local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' -u "$PIPE_JIRA_BASIC" \
+  # The login goes in on stdin (-K -), never on curl's command line, where ps shows it.
+  code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sS -K - -o /dev/null -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg k "$key" '{issues: [$k]}')" \
             "${PIPE_JIRA_SITE}/rest/agile/1.0/sprint/${sid}/issue" 2>/dev/null)" || code="000"

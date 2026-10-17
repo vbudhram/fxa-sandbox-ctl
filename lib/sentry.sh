@@ -13,10 +13,11 @@ sentry_card() {
   base="${FXA_SENTRY_API:-https://us.sentry.io/api/0}/organizations/${FXA_SENTRY_ORG:-mozilla}"
   id="$ref"
   if ! [[ "$ref" =~ ^[0-9]+$ ]]; then
-    id="$(curl -sf -m 15 -H "Authorization: Bearer ${tok}" "${base}/shortids/$(printf '%s' "$ref" | tr '[:lower:]' '[:upper:]')/" \
+    # The token goes in on stdin (-K -), never on curl's command line, where ps shows it.
+    id="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sf -m 15 -K - "${base}/shortids/$(printf '%s' "$ref" | tr '[:lower:]' '[:upper:]')/" \
       | jq -r '.groupId // empty' 2>/dev/null || true)"
   fi
-  [[ "$id" =~ ^[0-9]+$ ]] && out="$(curl -sf -m 15 -H "Authorization: Bearer ${tok}" "${base}/issues/${id}/" | jq -c '
+  [[ "$id" =~ ^[0-9]+$ ]] && out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sf -m 15 -K - "${base}/issues/${id}/" | jq -c '
       def scrub: tostring | gsub("[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}"; "[email]");
       {id, shortId, title: (.title | scrub), culprit: (.culprit // "" | scrub), status, level, project: .project.slug,
        count: (.count | tonumber? // 0), userCount, firstSeen, lastSeen, permalink, release: (.lastRelease.version // null),
