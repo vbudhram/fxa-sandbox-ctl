@@ -73,10 +73,15 @@ def price(model, prompt=0):
     return UNKNOWN
 
 
+def cache_write_usd(p, u):
+    """A 1-hour cache write costs twice the base input; the rest are 5-minute writes (p[2])."""
+    hour = min((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0), u.get("cache_creation_input_tokens", 0))
+    return ((u.get("cache_creation_input_tokens", 0) - hour) * p[2] + hour * 2 * p[0]) / 1e6
+
+
 def cost(model, u):
     p = price(model or "", prompt_tokens(u))
-    return (u.get("input_tokens", 0) * p[0] + u.get("output_tokens", 0) * p[1]
-            + u.get("cache_creation_input_tokens", 0) * p[2] + u.get("cache_read_input_tokens", 0) * p[3]) / 1e6
+    return (u.get("input_tokens", 0) * p[0] + u.get("output_tokens", 0) * p[1] + u.get("cache_read_input_tokens", 0) * p[3]) / 1e6 + cache_write_usd(p, u)
 
 
 TEAM_RE = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
@@ -219,7 +224,7 @@ def charge(tok, model, usage, warm=False):
     line = {"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run": (rec or {}).get("run"), "thread": (rec or {}).get("thread"), "team": team, "model": model,
             "usd": round(usd, 6), **({"warm": True} if warm else {}),
             # The cache-write part on its own: the largest share of spend, and what an idle gap costs.
-            "usd_cache_write": round(usage.get("cache_creation_input_tokens", 0) * price(model or "", prompt_tokens(usage))[2] / 1e6, 6),
+            "usd_cache_write": round(cache_write_usd(price(model or "", prompt_tokens(usage)), usage), 6),
             **{k: usage.get(k, 0) for k in ("input_tokens", "output_tokens",
                                                                    "cache_creation_input_tokens", "cache_read_input_tokens")}}
     with open(os.path.join(DIR, "usage.jsonl"), "a") as f:

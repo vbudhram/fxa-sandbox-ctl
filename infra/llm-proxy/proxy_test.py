@@ -270,6 +270,10 @@ class PriceTest(unittest.TestCase):
         self.assertAlmostEqual(self.cost("claude-sonnet-5-5", u), 0.10)
         self.assertAlmostEqual(self.cost("claude-sonnet-5", u), 0.20)
 
+    def test_a_1_hour_cache_write_costs_twice_the_base_input(self):
+        u = {"cache_creation_input_tokens": 1000000, "cache_creation": {"ephemeral_5m_input_tokens": 400000, "ephemeral_1h_input_tokens": 600000}}
+        self.assertAlmostEqual(self.cost("claude-opus-5-5", u), 0.4 * 5 + 0.6 * 8)
+
     def test_an_unknown_model_never_looks_cheap(self):
         self.assertAlmostEqual(self.cost("claude-new-model", {"output_tokens": 1000000}), 50)
 
