@@ -782,8 +782,9 @@ session_prune() {
 # _session_lock <key>   One writer per session: steer, the queue drain, and Open PR
 # all start turns. A lock older than 2 min belongs to a crashed holder.
 _session_lock() {
-  local d="${SESSION_DIR}/$1.lock"
-  [ -d "$d" ] && [ $(( $(date +%s) - $(_mtime "$d") )) -gt 120 ] && rmdir "$d" 2>/dev/null
+  local d="${SESSION_DIR}/$1.lock" m
+  # The holder can remove the lock between the -d and the stat: no time then means not stale.
+  [ -d "$d" ] && m="$(_mtime "$d" 2>/dev/null)" && [ -n "$m" ] && [ $(( $(date +%s) - m )) -gt 120 ] && rmdir "$d" 2>/dev/null
   mkdir "$d" 2>/dev/null
 }
 _session_unlock() { rmdir "${SESSION_DIR}/$1.lock" 2>/dev/null; }

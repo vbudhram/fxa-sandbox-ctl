@@ -103,13 +103,13 @@ _answer_skills() {
 
 # _answer_slot   A free slot (a lock dir), or fail when FXA_ANSWER_MAX answers already run.
 _answer_slot() {
-  local d="${PIPE_STATE_DIR}/answer-slots" n
+  local d="${PIPE_STATE_DIR}/answer-slots" n m
   mkdir -p "$d" || return 1
   # 10: a load test on 2026-10-03 ran 8 at once on c4a-standard-1 at 32% CPU, 1.2 GB free, no
   # slower; each answer takes about 120 MB, so 10 leaves about 0.9 GB.
   for n in $(seq "${FXA_ANSWER_MAX:-10}"); do
     # A slot older than 10 min belongs to a dead answer.
-    [ -d "$d/$n" ] && [ $(( $(date +%s) - $(_mtime "$d/$n") )) -gt 600 ] && rmdir "$d/$n" 2>/dev/null
+    [ -d "$d/$n" ] && m="$(_mtime "$d/$n" 2>/dev/null)" && [ -n "$m" ] && [ $(( $(date +%s) - m )) -gt 600 ] && rmdir "$d/$n" 2>/dev/null
     mkdir "$d/$n" 2>/dev/null && { echo "$d/$n"; return 0; }
   done
   return 1

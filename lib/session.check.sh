@@ -80,6 +80,10 @@ check "second lock loses" "no" "$(_session_lock agent-t1 && echo yes || echo no)
 touch -t 202001010000 "$tmp/agent-t1.lock"
 check "stale lock is taken over" "yes" "$(_session_lock agent-t1 && echo yes)"
 _session_unlock agent-t1
+# The holder removes the lock between the -d test and the stat: busy, with no shell error.
+mkdir "$tmp/agent-t2.lock"
+check "a lock removed during the stale test: busy, and no error" "1|" "$( _mtime() { return 1; }; e="$(_session_lock agent-t2 2>&1)"; echo "$?|$e")"
+rmdir "$tmp/agent-t2.lock"
 
 # cmd_events against a stubbed runner.
 RUNNER=""; RUNNING=1; TURNS_FILE="$tmp/turns"
