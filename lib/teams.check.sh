@@ -188,10 +188,9 @@ check "a write whose read-back fails succeeds, warns to sync, and writes an audi
 check "the next edit then asks for a sync, not a 409 for its own write" "1" "$(teams_set web "$(rec web Later)" 2>&1 | grep -c 'run profile sync')"
 # A delete that is refused (no generation in the cache) keeps the team's routines.
 db_exec "INSERT INTO routines (team, data) VALUES ('web', '{}');"
-mv "$FXA_TEAMS_DIR/web.gen" "$tmp/web.gen"
+# The read-back failure above dropped web's cached generation, so a delete is refused here.
 check "a refused delete (no generation) keeps the team's routines and leaves no marker" "1|1|no" \
   "$(teams_delete web >/dev/null 2>&1; echo $?)|$(db_value "SELECT count(*) FROM routines WHERE team = 'web';")|$([ -e "$FXA_TEAMS_DIR/web.deleting" ] && echo yes || echo no)"
-mv "$tmp/web.gen" "$FXA_TEAMS_DIR/web.gen"
 rm -f "$B/web.json" "$B/web.json.gen"
 check "sync with a store error keeps a team that left the store, and fails" "1|yes" \
   "$( (db_value() { return 1; }; teams_sync >/dev/null 2>&1); echo $?)|$([ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)"
