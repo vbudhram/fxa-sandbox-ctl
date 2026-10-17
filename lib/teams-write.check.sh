@@ -12,6 +12,12 @@ for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$t
 [ "\$2" = test ] && sleep 2
 # secret-set: keep stdin, and echo it back, so a check can see the answer leaves it out.
 [ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
+# routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
+if [ "\$1" = routine ]; then
+  case "\$2" in list|history|templates) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
+  [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: Someone changed this routine since you opened it. Load it again to see their change." >&2; exit "\$(cat "$tmp/rc")"; }
+  exit 0
+fi
 case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
 [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
 EOF
@@ -93,6 +99,33 @@ check("a secret of another team, or with no value, is refused before any command
       (call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-other--jira", "value": "x"}, sig(A, "POST", "/api/teams/rusty/secret"))[0],
        call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-rusty--jira", "value": ""}, sig(A, "POST", "/api/teams/rusty/secret"))[0]))
 check("a viewer cannot set a secret", 403, call("POST", "/api/teams/rusty/secret", {"secret": "fxa-team-rusty--jira", "value": "x"}, sig("viewer@example.com", "POST", "/api/teams/rusty/secret"))[0])
+# Routines (epic i168): admins only, for reads too; each route runs its routine command as the admin.
+ran = lambda: [l for l in open(f"{tmp}/args").read().splitlines() if l.startswith("routine")] if os.path.exists(f"{tmp}/args") else []
+R = {"name": "Code review", "template": "code-review", "prompt": "Review.", "schedule": "weekdays 09:00", "zone": "America/New_York",
+     "repos": ["a/b"], "channel": "C0OWN00", "mode": "report"}
+L, V = "/api/teams/rusty/routines", "viewer@example.com"
+check("routines: unsigned gets 401, a signed non-admin 403, for a read and a write, and no routine command runs",
+      (401, 403, 401, 403, "not a team admin", []),
+      (call("GET", L)[0], call("GET", L, headers=sig(V, "GET", L))[0], call("POST", L, {"routine": R})[0], call("POST", L, {"routine": R}, sig(V, "POST", L))[0],
+       call("POST", L, {"routine": R}, sig(V, "POST", L))[1].get("error"), ran()))
+check("an admin reads the list, the templates and a history", ((200, [{"id": 5}]), (200, [{"id": 5}]), (200, [{"id": 5}]), ["routine list rusty", "routine templates", "routine history 5"]),
+      (call("GET", L, headers=sig(A, "GET", L)), call("GET", "/api/routine-templates", headers=sig(A, "GET", "/api/routine-templates")),
+       call("GET", L + "/5/history", headers=sig(A, "GET", L + "/5/history")), ran()))
+st, _ = call("POST", L, {"routine": R}, sig(A, "POST", L))
+check("an admin creates one: routine set with the routine in a file, as that admin", (200, "routine set rusty", R, A),
+      (st, ran()[-1].rsplit(" ", 1)[0], json.load(open(f"{tmp}/record")), open(f"{tmp}/actor").read().splitlines()[-1]))
+st, _ = call("POST", L + "/5", {"routine": R, "version": 3}, sig(A, "POST", L + "/5"))
+check("an edit sends the version it edited", (200, "--id 5 --version 3"), (st, ran()[-1].split(".json ", 1)[-1]))
+check("an edit with no version is refused before any command", (400, 1), (call("POST", L + "/5", {"routine": R}, sig(A, "POST", L + "/5"))[0], len([l for l in ran() if "--version" in l])))
+open(f"{tmp}/rc", "w").write("2")
+st, b = call("POST", L + "/5", {"routine": R, "version": 3}, sig(A, "POST", L + "/5"))
+check("a stale version comes back as 409 with the stale-edit text", (409, True), (st, "Someone changed this routine since you opened it" in b.get("error", "")))
+open(f"{tmp}/rc", "w").write("0")
+check("pause, resume and delete run their routine command", (200, 200, 200, ["routine pause 5", "routine resume 5", "routine delete 5"]),
+      (call("POST", L + "/5/pause", {}, sig(A, "POST", L + "/5/pause"))[0], call("POST", L + "/5/resume", {}, sig(A, "POST", L + "/5/resume"))[0],
+       call("POST", L + "/5/delete", {}, sig(A, "POST", L + "/5/delete"))[0], ran()[-3:]))
+check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),
+      (call("POST", L, raw=b"x", headers={**sig(A, "POST", L), "Content-Type": "text/plain"})[0], call("POST", L, raw=b"{" + b" " * 70000 + b"}", headers=sig(A, "POST", L))[0]))
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")

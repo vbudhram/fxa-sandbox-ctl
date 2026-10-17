@@ -523,16 +523,16 @@ class Handler(BaseHTTPRequestHandler):
         out = (proc.stdout if proc.returncode == 0 else proc.stderr or "failed").strip().replace(value, "<value>")[-500:]
         self._json(200 if proc.returncode == 0 else 400, {"ok": True, "out": out} if proc.returncode == 0 else {"error": out})
 
-    def _team_ctl(self, user, args, record=None, read=False):
-        """Run a profile command as the admin, the record in a private temp file; 409 for a stale generation.
-        A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
+    def _team_ctl(self, user, args, record=None, read=False, cmd="profile"):
+        """Run a profile (or routine) command as the admin, the record in a private temp file; 409 for a stale
+        generation or version. A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
         f = None
         try:
             if record is not None:
                 fd, f = tempfile.mkstemp(suffix=".json")
                 with os.fdopen(fd, "w") as out:
                     json.dump(record, out)
-            proc = ctl_run(["profile", *[f if a is None else a for a in args]], timeout=120, env={"FXA_TEAM_ACTOR": user})
+            proc = ctl_run([cmd, *[f if a is None else a for a in args]], timeout=120, env={"FXA_TEAM_ACTOR": user})
         except Exception as exc:
             self._json(503, {"error": type(exc).__name__})
             return
@@ -548,7 +548,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(502, {"error": "the profile command did not answer JSON"})
         else:
             self._json(200, {"ok": True, "out": proc.stdout.strip()[-2000:]})
-            if TEAMS.claim():
+            if cmd == "profile" and TEAMS.claim():
                 threading.Thread(target=TEAMS.refresh, args=(True,), daemon=True).start()
 
     def _team_test(self, user, name):
@@ -569,6 +569,37 @@ class Handler(BaseHTTPRequestHandler):
                                  start_new_session=True, env={**os.environ, "FXA_TEAM_ACTOR": user})
         pidf.write_text(str(p.pid))
         self._json(202, {"ok": True, "out": f"testing {name}: it boots one runner, a few minutes. Load the record again to see the result."})
+
+    def _routine_write(self, path):
+        """POST /api/teams/<name>/routines[/<id>[/pause|resume|delete]]: a signed admin's change, JSON only, 64 KB at most."""
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})(?:/(pause|resume|delete))?)?", path)
+        user = self._admin("POST", path)
+        if not user:
+            return
+        name, rid, verb = m.groups()
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._json(415, {"error": "send JSON"})
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > 65536:
+            self._json(413, {"error": "the routine is over 64 KB"})
+            return
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "bad JSON"})
+            return
+        rec, ver = body.get("routine"), str(body.get("version") or "")
+        if verb:
+            self._team_ctl(user, [verb, rid], cmd="routine")
+        elif not isinstance(rec, dict):
+            self._json(400, {"error": "send {\"routine\": {...}}"})
+        elif not rid:
+            self._team_ctl(user, ["set", name, None], rec, cmd="routine")
+        elif not ver.isdigit():
+            self._json(400, {"error": "send the version you edited"})
+        else:
+            self._team_ctl(user, ["set", name, None, "--id", rid, "--version", ver], rec, cmd="routine")
 
     def _team_write(self, path):
         """POST /api/teams[/validate|/<name>[/status|/delete]]: a signed admin's change, JSON only, 64 KB at most."""
@@ -619,6 +650,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/lessons":
             self._lesson_decide()
+            return
+        if re.fullmatch(rf"/api/teams/{TEAM_NAME}/routines(/[0-9]{{1,9}}(/(pause|resume|delete))?)?", path):
+            self._routine_write(path)
             return
         if path.startswith("/api/teams"):
             self._team_write(path)
@@ -707,6 +741,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/team-admin":
             user = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time()))
             self._json(200, {"user": user, "admin": bool(user and user in team_admins())})
+            return
+        # Routines: admins only, for reading too (the design's D1).
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})/history)?", path)
+        if m or path == "/api/routine-templates":
+            user = self._admin("GET", path)
+            if user:
+                args = ["templates"] if not m else ["history", m.group(2)] if m.group(2) else ["list", m.group(1)]
+                self._team_ctl(user, args, read=True, cmd="routine")
             return
         # One team's full record and its audit: admins only, since a record names Slack users.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit|/secrets)?", path)
