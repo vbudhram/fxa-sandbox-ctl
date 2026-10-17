@@ -18,7 +18,7 @@ USER_TOKEN="$(get SLACK_USER_TOKEN)"; BOT_TOKEN="$(get SLACK_BOT_TOKEN)"; CH="$(
 
 api() { # api <token> <method> [curl args]
   local t="$1" m="$2"; shift 2
-  curl -sS -H "Authorization: Bearer $t" "$@" "https://slack.com/api/$m"
+  printf 'header = "Authorization: Bearer %s"\n' "$t" | curl -sS -K - "$@" "https://slack.com/api/$m"
 }
 post() { # post <text> [thread ts]
   local r; r="$(api "$USER_TOKEN" chat.postMessage -H 'Content-Type: application/json; charset=utf-8' \
