@@ -110,6 +110,9 @@ github_repo_private() { [ "$1" = mozilla/secret ]; }
 : > "$tmp/vmx"; PIPE_WORKSPACE=/home/agent/secret PIPE_REPO_SLUG=mozilla/secret _gce_profile_workspace r1 >/dev/null
 check "a private repo gets a full clone, since its token is gone before the agent reads old files" "1" \
   "$(grep -c 'git clone --quiet  https://github.com/mozilla/secret.git /home/agent/secret' "$tmp/vmx")"
+( : > "$tmp/vmx"; PIPE_REPOS=("mozilla/blurts-server /home/agent/monitor work" "mozilla/secret /home/agent/s dep")
+  PIPE_WORKSPACE=/home/agent/monitor PIPE_REPO_SLUG=mozilla/blurts-server _gce_profile_workspace r1 >/dev/null )
+check "a private dep row gets a full clone too" "1" "$(grep -c 'git clone --quiet  https://github.com/mozilla/secret.git /home/agent/s' "$tmp/vmx")"
 unset -f github_repo_private
 : > "$tmp/vmx"; _gce_profile_workspace r1 >/dev/null; PIPE_WORKSPACE=/home/agent/fxa _gce_profile_workspace r1 >/dev/null
 check "FxA keeps the baked clone, with no call" "0" "$(wc -l < "$tmp/vmx" | tr -d ' ')"
@@ -276,7 +279,6 @@ check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" 
 # boot.sh runs as root: an agent-owned venv's python runs a .pth file the agent wrote, so it runs as agent.
 check "a team's boot runs the agent's venv only as agent" "" \
   "$(grep -HnE '\$\{?(V|IT)\}?/bin/' "$root"/profiles/*/boot.sh 2>/dev/null | grep -v 'sudo -u agent' || true)"
-[ "$fail" = 0 ] && echo "all ok"
 
 # The host clone of a repo: ~/Desktop/working2/<repo>, unless a clone of another repo has that name.
 ( HOME="$tmp/hc"; eval "$(sed -n '/^pipeline_host_clone() {/,/^}/p' "$root/lib/pipeline.sh")"
@@ -286,4 +288,9 @@ check "a team's boot runs the agent's venv only as agent" "" \
     "$(pipeline_host_clone mozilla/fxa)|$(pipeline_host_clone acme/fxa)|$(pipeline_host_clone acme/web)"
   exit "$fail" ) || fail=1
 
+# pipeline_load names the host clone by pipeline_host_clone: a repo whose name another clone has gets its own.
+mkdir -p "$tmp/r/profiles/acme"; echo 'PIPE_REPO_SLUG="acme/fxa"' > "$tmp/r/profiles/acme/profile.conf"
+git init -q "$tmp/home/Desktop/working2/fxa" 2>/dev/null; git -C "$tmp/home/Desktop/working2/fxa" remote add origin https://github.com/mozilla/fxa.git 2>/dev/null
+check "a folder team on acme/fxa does not reuse FxA's clone" "PIPE_REPO=$tmp/home/Desktop/working2/.repos/acme/fxa" "$(loaded "$tmp/r" acme | grep '^PIPE_REPO=' | tr -d "'")"
+[ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

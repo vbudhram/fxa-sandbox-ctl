@@ -57,6 +57,21 @@ changelog="$(log_by acct-lead)"; check "the label added by an approver counts, w
 changelog="$(log_by acct-bare)"; check "an approver listed by ID alone shows the ID as the name" "acct-bare acct-bare" "$(approver FXA-7)"
 changelog="$(log_by "Lead Person")"; check "an author whose ID is a listed name does not count" none "$(approver FXA-7)"
 changelog="$(log_by acct-other)"; check "the label added by another account does not count" none "$(approver FXA-7)"
+# A long ticket: the first page is not the last, so the reader asks for the last 100 changes (startAt=total-100).
+_jira_rest_get() {
+  case "$1" in
+    *fields=labels) printf '%s' "$labels" ;;
+    *startAt=150) printf '{"isLast":true,"total":250,"values":[%s]}' "$(add acct-lead ai-fixme 'ai-fixme ai-fixme-allow-tooling')" ;;
+    *changelog*) printf '{"isLast":false,"total":250,"values":[%s]}' "$(add acct-other ai-fixme 'ai-fixme ai-fixme-allow-tooling')" ;;
+  esac
+}
+check "on a long ticket the last page decides who added the label" "acct-lead Lead Person" "$(approver FXA-7)"
+_jira_rest_get() {
+  case "$1" in
+    *fields=labels) [ -n "${READ_FAILS:-}" ] && return 22; printf '%s' "$labels" ;;
+    *changelog*) [ -n "${LOG_FAILS:-}" ] && return 22; printf '%s' "$changelog" ;;
+  esac
+}
 changelog="$(log_by acct-lead)"
 check "a failed changelog read does not count" none "$(LOG_FAILS=1 approver FXA-7)"
 check "a failed label read does not count" none "$(READ_FAILS=1 approver FXA-7)"
