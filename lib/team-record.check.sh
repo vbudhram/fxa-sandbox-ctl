@@ -146,6 +146,8 @@ check "a run token names its team, and the team file holds the record's caps (no
 # Runtime secrets: names of the team's own, written inside its own repo folders, never on a command line.
 check "a runtime secret must be the team's own, and land inside one of its repo folders" "0|1|1|1" \
   "$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work" }, { "slug": "mozilla/cfg", "role": "dep" } ], "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/cfg/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other--db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
+check "a slug part of . or .. is refused" "1" \
+  "$(code ', "repos": [ { "slug": "mozilla/..", "role": "work" } ]' | grep -c 'slug must be owner/name')"
 check "a runtime secret in a work repo is refused, since its files can ship in a PR" "1" \
   "$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/fxa/.env.db" } ] }' | grep -c 'is in a work repo')"
 eval "$(sed -n '/^_team_runtime_secrets() {/,/^}/p' "$root/lib/agent.sh")"

@@ -202,6 +202,8 @@ teams_create() {
   local f="$1" name tmp rc
   name="$(jq -r '.name // empty' "$f" 2>/dev/null)"
   [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: the record needs a name" >&2; return 1; }
+  [ "$(jq -r '.status // "draft"' "$f")" != active ] || [ "${FXA_TEAMS_SKIP_TEST:-}" = 1 ] \
+    || { echo "ERROR: a new team starts as draft: create it, run profile test ${name}, then enable it" >&2; return 1; }
   teams_validate "$f" "$name" || return 1
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" || { rm -f "$tmp"; return 1; }
@@ -221,6 +223,15 @@ teams_set() {
   [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team ${name} here; run profile sync, or profile create" >&2; return 1; }
   gen="${gen:-$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)}"
   [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
+  # Active only through profile enable (a passed test), and an active team keeps its test only for
+  # changes a runner never reads.
+  if [ "$(jq -r '.status // "draft"' "$f")" = active ] && [ "${FXA_TEAMS_SKIP_TEST:-}" != 1 ]; then
+    local k
+    [ "$(jq -r '.status // "draft"' "${FXA_TEAMS_DIR}/${name}.json")" = active ] || [ -n "${_TEAMS_ENABLING:-}" ] \
+      || { echo "ERROR: turn team ${name} active with profile enable, after profile test ${name} passes" >&2; return 1; }
+    k="$(_teams_runner_keys "${FXA_TEAMS_DIR}/${name}.json" "$f")"
+    [ -z "$k" ] || { echo "ERROR: team ${name} is active, and a change to ${k} needs a new test: save it with status draft, run profile test ${name}, then enable it" >&2; return 1; }
+  fi
   teams_validate "$f" "$name" || return 1
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" || { rm -f "$tmp"; return 1; }
@@ -230,6 +241,15 @@ teams_set() {
   rm -f "$tmp" "$old"
   [ "$rc" = 0 ] && echo "updated team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen"))"
   return $rc
+}
+
+# _teams_runner_keys <old.json> <new.json>   The top-level keys that changed, other than the ones a
+# runner never reads (text, people, caps, Jira, PR rules, stamps).
+_teams_runner_keys() {
+  jq -nr --slurpfile a "$1" --slurpfile b "$2" '$a[0] as $o | $b[0] as $n
+    | [(($o | keys) + ($n | keys)) | unique[]
+       | select(IN("schema", "name", "label", "status", "admins", "access", "jira", "pr", "caps", "prompts", "created", "updated") | not)
+       | select($o[.] != $n[.])] | join(" ")'
 }
 
 # _teams_probe_script   The checks a test runs on the runner as agent, from the loaded team; one
@@ -266,13 +286,14 @@ teams_test() {
     rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; return 1
   fi
   rm -f "$f"
-  if FXA_TRY_TURN_SECONDS="${FXA_TEAMS_TEST_SECONDS:-1200}" _session_try_wait "$ctl" "$key"; then
+  if FXA_TRY_TURN_SECONDS="${FXA_TEAMS_TEST_SECONDS:-1200}" _session_try_wait "$ctl" "$key" && [ "${_TRY_LAST:-}" != error ]; then
     echo "ok   the runner booted and the agent answered"
-    out="$( ( pipeline_load "$name" >/dev/null 2>&1 && _session_sh "$(worktree_branch_for "$key")" "$(_teams_probe_script)" ) 2>&1)"
+    # A failed probe ssh fails the test here; under set -e it would end the command and leave the runner up.
+    out="$( ( pipeline_load "$name" >/dev/null 2>&1 && _session_sh "$(worktree_branch_for "$key")" "$(_teams_probe_script)" ) 2>&1)" || true
     printf '%s\n' "$out" | grep -E '^(ok|FAIL) '
     grep -qE '^ok ' <<< "$out" && ! grep -q '^FAIL ' <<< "$out" || rc=1
   else
-    echo "FAIL the runner did not finish its first turn; see ${SESSION_DIR}/${key}.log"; rc=1
+    echo "FAIL the runner did not finish its first turn${_TRY_LAST:+ (it ended in ${_TRY_LAST})}; see ${SESSION_DIR}/${key}.log"; rc=1
   fi
   "$ctl" --backend gce stop "$key" >/dev/null 2>&1; echo "== stopped ${key}"
   if [ "$rc" = 0 ]; then printf '%s\n' "$gen" > "${FXA_TEAMS_DIR}/${name}.tested"; echo "passed: team ${name} may be activated at generation ${gen}"
@@ -293,7 +314,9 @@ teams_status() {
     return 1
   fi
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
-  jq --arg s "$st" '.status = $s' "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" && teams_set "$name" "$tmp"; rc=$?
+  # Turning a team off skips the live checks: a broken GitHub App or Jira project must not keep it on.
+  local live="${FXA_TEAMS_LIVE:-1}"; [ "$st" = active ] || live=0
+  jq --arg s "$st" '.status = $s' "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" && _TEAMS_ENABLING=1 FXA_TEAMS_LIVE="$live" teams_set "$name" "$tmp"; rc=$?
   rm -f "$tmp"; return $rc
 }
 

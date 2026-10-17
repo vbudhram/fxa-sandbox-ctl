@@ -240,7 +240,9 @@ _session_try_wait() {
   while [ "$(date +%s)" -lt "$end" ]; do
     if out="$("$1" --backend gce events "$2" --since "${_TRY_CUR:-0}" 2>/dev/null)"; then
       _TRY_CUR="$(jq -r ".cursor // ${_TRY_CUR:-0}" <<< "$out" 2>/dev/null || echo "${_TRY_CUR:-0}")"
-      jq -e '[.events[]? | select(.type == "turn_end" or .type == "question" or .type == "error")] | length > 0' <<< "$out" >/dev/null 2>&1 && return 0
+      # _TRY_LAST: the event that ended the wait, so a caller can tell an answer from an error.
+      _TRY_LAST="$(jq -r '[.events[]? | select(.type == "turn_end" or .type == "question" or .type == "error")] | last | .type // empty' <<< "$out" 2>/dev/null || true)"
+      [ -n "$_TRY_LAST" ] && return 0
       jq -e '.state == "failed" or .state == "stopped"' <<< "$out" >/dev/null 2>&1 && { echo "ERROR: the session ended: $(jq -r .state <<< "$out")" >&2; return 1; }
     fi
     sleep "${FXA_TRY_POLL_SECONDS:-10}"

@@ -277,4 +277,13 @@ check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" 
 check "a team's boot runs the agent's venv only as agent" "" \
   "$(grep -HnE '\$\{?(V|IT)\}?/bin/' "$root"/profiles/*/boot.sh 2>/dev/null | grep -v 'sudo -u agent' || true)"
 [ "$fail" = 0 ] && echo "all ok"
+
+# The host clone of a repo: ~/Desktop/working2/<repo>, unless a clone of another repo has that name.
+( HOME="$tmp/hc"; eval "$(sed -n '/^pipeline_host_clone() {/,/^}/p' "$root/lib/pipeline.sh")"
+  git init -q "$HOME/Desktop/working2/fxa" && git -C "$HOME/Desktop/working2/fxa" remote add origin https://github.com/mozilla/fxa.git
+  w="$HOME/Desktop/working2"
+  check "the same repo keeps its clone; another repo of that name gets its own; a new name keeps the plain path" "$w/fxa|$w/.repos/acme/fxa|$w/web" \
+    "$(pipeline_host_clone mozilla/fxa)|$(pipeline_host_clone acme/fxa)|$(pipeline_host_clone acme/web)"
+  exit "$fail" ) || fail=1
+
 exit "$fail"

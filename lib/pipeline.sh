@@ -152,7 +152,7 @@ pipeline_load() {
   # Defaults for the keys a profile may leave out. FxA sets them all.
   PIPE_PROFILE="${PIPE_PROFILE:-$name}"
   PIPE_BASE_BRANCH="${PIPE_BASE_BRANCH:-main}"
-  PIPE_REPO="${PIPE_REPO:-${HOME}/Desktop/working2/${PIPE_REPO_SLUG##*/}}"
+  PIPE_REPO="${PIPE_REPO:-$(pipeline_host_clone "${PIPE_REPO_SLUG:-}")}"
   PIPE_STATE_DIR="${PIPE_STATE_DIR:-${HOME}/.claude/state/${PIPE_PROFILE}}"
   PIPE_RUNS_FILE="${PIPE_RUNS_FILE:-${PIPE_STATE_DIR}/agent-runs.jsonl}"
   PIPE_COSTS_FILE="${PIPE_COSTS_FILE:-${PIPE_STATE_DIR}/agent-costs.json}"
@@ -706,6 +706,16 @@ pipeline_profile_json() {
                        elif ($installed | index($s | ascii_downcase)) == null then "the agent'"'"'s GitHub App is not installed on this repo"
                        else null end) } | . + { write: (.why == null) }))
               + ($deps | split(" ") | map(select(. != "")) | map({ slug: ., role: "dep", write: false, why: "it runs beside the work repo" }))) }'
+}
+
+# pipeline_host_clone <owner/repo>   This host's clone of a repo: ~/Desktop/working2/<repo>, unless a
+# clone of another repo has that name (acme/fxa beside mozilla/fxa); then .repos/<owner>/<repo> there.
+pipeline_host_clone() {
+  local d="${HOME}/Desktop/working2/${1##*/}" u
+  u="$(git -C "$d" config --get remote.origin.url 2>/dev/null || true)"
+  u="${u%.git}"; u="${u#https://github.com/}"; u="${u#git@github.com:}"
+  if [ -z "$u" ] || [ "$(tr 'A-Z' 'a-z' <<< "$u")" = "$(tr 'A-Z' 'a-z' <<< "$1")" ]; then printf '%s' "$d"
+  else printf '%s/Desktop/working2/.repos/%s' "$HOME" "$1"; fi
 }
 
 # pipeline_ensure_clone   Clone the profile's work repo on this host the first time a

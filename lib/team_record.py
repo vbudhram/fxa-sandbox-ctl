@@ -148,7 +148,7 @@ def check(rec, name=None):
     for i, r in enumerate(repos):
         r = obj(r, f"repos[{i}]", {"slug", "path", "role", "base", "default"})
         s = r.get("slug")
-        if not isinstance(s, str) or not SLUG.match(s):
+        if not isinstance(s, str) or not SLUG.match(s) or any(x in (".", "..") for x in s.split("/")):
             bad.append(f"repos[{i}].slug must be owner/name")
             continue
         p = r.get("path", default_path(s))

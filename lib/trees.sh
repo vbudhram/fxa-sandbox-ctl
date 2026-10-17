@@ -18,7 +18,7 @@ trees_rows() { jq -r '(.trees // []) | to_entries[] | [.key, .value.name, .value
 # else beside it, by the same rule pipeline_load uses.
 _tree_host_root() {
   if [ "$1" = "${PIPE_REPO_SLUG:-}" ]; then printf '%s' "$PIPE_REPO"
-  else printf '%s/Desktop/working2/%s' "$HOME" "${1##*/}"; fi
+  else pipeline_host_clone "$1"; fi
 }
 
 # _tree_enter <key> <idx>   Select a tree: session_get/session_set use its fields, and the

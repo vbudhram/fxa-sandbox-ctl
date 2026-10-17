@@ -41,6 +41,14 @@ check "a test of an older generation does not count" "1" \
   "$(cli draft chan1 >/dev/null; echo 1 > "$FXA_TEAMS_DIR/chan1.tested"; cli enable chan1)"
 check "profile enable, disable and draft set the status" "0|active|0|disabled|0|draft" \
   "$(cp "$FXA_TEAMS_DIR/chan1.gen" "$FXA_TEAMS_DIR/chan1.tested"; cli enable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli disable chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")|$(cli draft chan1)|$(jq -r .status "$FXA_TEAMS_DIR/chan1.json")"
+# The test gate: create and set cannot make a team active; an active team keeps its test only for text and people.
+check "create with status active is refused; set cannot turn a draft active" "1|1" \
+  "$(teams_create "$(rec ga1 Ga1 ', "status": "active"')" 2>&1 | grep -c 'starts as draft')|$(teams_create "$(rec ga2 Ga2)" >/dev/null; jq '.status = "active"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" 2>&1 | grep -c 'with profile enable')"
+cp "$FXA_TEAMS_DIR/ga2.gen" "$FXA_TEAMS_DIR/ga2.tested"; teams_status ga2 active >/dev/null
+check "an active team: a guide edit stays active, a repo change is refused" "0|1" \
+  "$(jq '.prompts.guide_md = "new"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" >/dev/null 2>&1; echo $?)|$(jq '.repos += [{slug: "example/more", role: "dep"}]' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" 2>&1 | grep -c 'a change to repos needs a new test')"
+check "disable works while the live checks fail" "0|disabled" \
+  "$( (_teams_live() { [ "${FXA_TEAMS_LIVE:-1}" = 1 ] || return 0; echo "ERROR: down" >&2; return 1; }; FXA_TEAMS_LIVE=1 teams_status ga2 disabled >/dev/null 2>&1; echo $?) )|$(jq -r .status "$FXA_TEAMS_DIR/ga2.json")"
 printf '{"profile":"rusty","state":"paused"}' > "$SESSION_DIR/agent-r1.json"
 check "delete is refused while a session of the team can resume" "1" "$(teams_delete rusty >/dev/null 2>&1; echo $?)"
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
@@ -120,7 +128,17 @@ mkdir -p "$tmp/sd"; printf '#!/bin/bash\n[ "$3" = --pipeline ] && echo "$4 stack
 cp "$(rec ts1 Ts1)" "$FXA_TEAMS_DIR/ts1.json"; jq '.stack = {kind: "fxa"} | .repos += [{slug: "mozilla/fxa", role: "dep"}]' "$(rec ts2 Ts2)" > "$FXA_TEAMS_DIR/ts2.json"
 ( SCRIPT_DIR="$tmp/sd"; _session_try_wait() { return 1; }; teams_test ts1; teams_test ts2 ) >/dev/null 2>&1
 check "profile test starts a team's stack only when it has one" "ts1 stack=|ts2 stack=1" "$(paste -sd'|' - < "$tmp/tcalls")"
+out="$( (SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=error; return 0; }; teams_test ts1; echo "rc=$?") 2>&1)"
+check "a first turn that ends in an error fails the test, and records no pass" "1|rc=1|0" \
+  "$(grep -c 'it ended in error' <<< "$out")|$(tail -1 <<< "$out")|$(ls "$FXA_TEAMS_DIR"/ts1.tested 2>/dev/null | grep -c .)"
+out="$( (set -e; SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { return 255; }; worktree_branch_for() { echo "$1"; }; teams_test ts1 || true; echo end) 2>&1)"
+check "a failed probe ssh under set -e still stops the runner and fails" "1|1|end" \
+  "$(grep -c '== stopped' <<< "$out")|$(grep -c 'failed: team ts1' <<< "$out")|$(tail -1 <<< "$out")"
 rm -f "$FXA_TEAMS_DIR/ts1.json" "$FXA_TEAMS_DIR/ts2.json"
+( eval "$(sed -n '/^_session_try_wait() {/,/^}/p' "$root/lib/session.sh")"
+  printf '#!/bin/sh\necho "{\\"cursor\\":2,\\"events\\":[{\\"type\\":\\"text\\"},{\\"type\\":\\"error\\"}]}"\n' > "$tmp/evctl"; chmod +x "$tmp/evctl"
+  check "the try wait says which event ended it" "error" "$(FXA_TRY_POLL_SECONDS=0 _session_try_wait "$tmp/evctl" k >/dev/null 2>&1; echo "${_TRY_LAST:-}")"
+  exit "$fail" ) || fail=1
 
 # The bucket: a fake gcloud keeps each object and its generation under $B.
 B="$tmp/bucket"; mkdir -p "$B"; FXA_TEAMS_URI="gs://test/teams"; rm -rf "$FXA_TEAMS_DIR"; next=100
