@@ -79,6 +79,39 @@ echo '{"key":"agent-sl01","state":"stopped","source":"slack"}' > "$tmp/agent-sl0
 check "a Slack session still resumes" "agent-rs04 starting" \
   "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs04 --owner U1 --prompt-file "$tmp/go.md" --resume-from agent-sl01 2>/dev/null)"
 
+# A routine run never takes the thread's PR: no resume_from, no fresh round, and not the Slack session's connectors (D7).
+echo '{"key":"agent-slk9","state":"stopped","source":"slack","mcp":"slackonly","pr_url":"https://github.com/mozilla/PyFxA/pull/4"}' > "$tmp/agent-slk9.json"
+thread_set C0OWN00:1790000000.000200 pr_url https://github.com/mozilla/PyFxA/pull/4 pr_session agent-slk9
+r7="$(run pyfxa claimed)"
+gh() { echo OPEN; }   # the thread's PR is open, so a carry would hold
+task pyfxa agent-rt20 --routine-run "$r7" --thread C0OWN00:1790000000.000200 >/dev/null 2>&1
+unset -f gh
+check "a routine run in a thread with an open PR takes nothing from that thread's session" "agent-rt20|||" \
+  "$(jq -r '"\(.key)|\(.resume_from // "")|\(.fresh // "")|\(.mcp // "")"' "$tmp/agent-rt20.json")"
+# Its repos come only from its row: the team's default stack does not apply.
+r8="$(run pyfxa claimed)"; : > "$tmp/trees-init"
+trees_init() { echo "$2" >> "$tmp/trees-init"; }
+PIPE_STACK_DEFAULT="mozilla/PyFxA mozilla/fxa" task pyfxa agent-rt21 --routine-run "$r8" >/dev/null 2>&1
+check "a one-repo routine on the team repo is no stack, even with PIPE_STACK_DEFAULT" "agent-rt21|" "$(jq -r .key "$tmp/agent-rt21.json")|$(cat "$tmp/trees-init")"
+unset -f trees_init
+# A multi-repo routine has no branch: each repo is named at its default branch; a row with both is refused.
+jq -cn '{name: "Code review", template: "code-review", prompt: "x", mode: "report", repos: ["mozilla/PyFxA", "mozilla/fxa"]}' > "$tmp/multi.json"
+jq -cn --arg a "$A" --arg b "$B" '{"mozilla/PyFxA": {start: $a, head: $b}, "mozilla/fxa": {start: null, head: $b}}' > "$tmp/multi-heads.json"
+check "a multi-repo routine names each repo at its default branch" "2|0" \
+  "$(python3 -I "$SANDBOX_ROOT/lib/routine.py" prompt "$tmp/multi.json" "$tmp/multi-heads.json" pyfxa 0123456789ab | grep -c ', its default branch: ')|$(python3 -I "$SANDBOX_ROOT/lib/routine.py" prompt "$tmp/multi.json" "$tmp/multi-heads.json" pyfxa 0123456789ab | grep -c ', branch ')"
+jq '.branch = "release-1"' "$tmp/multi.json" > "$tmp/multi-br.json"
+check "a row with a branch and two repos is refused" "ERROR: the run's branch is not valid (a branch goes with exactly one repo)" \
+  "$(python3 -I "$SANDBOX_ROOT/lib/routine.py" prompt "$tmp/multi-br.json" "$tmp/multi-heads.json" pyfxa 0123456789ab 2>&1 >/dev/null)"
+# --resume-from a session that does not exist: the resume path's own error, not the routine one.
+got="$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs09 --owner U1 --prompt-file "$tmp/go.md" --resume-from agent-nope99 2>&1)"
+check "--resume-from a missing session is not reported as a routine run" "no|none" "$(grep -c 'routine run cannot be continued' <<< "$got" | sed 's/^0$/no/')|$(none agent-rs09)"
+# No return path leaves a prompt temp file: a bad row, and a full session cap.
+mkdir -p "$tmp/t"; r9="$(run pyfxa claimed code-review '{"mozilla/PyFxA": {"start": null, "head": "zz"}}')"; r10="$(run pyfxa claimed)"
+TMPDIR="$tmp/t" task pyfxa agent-rt22 --routine-run "$r9" >/dev/null 2>&1
+TMPDIR="$tmp/t" FXA_SESSION_MAX=0 task pyfxa agent-rt23 --routine-run "$r10" >/dev/null 2>&1
+TMPDIR="$tmp/t" task pyfxa agent-rt10 --routine-run "$r10" >/dev/null 2>&1   # a key that exists: an early return
+check "a refused routine run leaves no temp file, and the capped one stays claimed" "0|claimed" "$(ls -A "$tmp/t" | wc -l | tr -d ' ')|$(db_value "SELECT state FROM routine_runs WHERE id = $r10;")"
+
 # The cap: the run's own, at most the host's (D21); a bad one fails.
 echo '{"cap_usd": 7}' > "$tmp/agent-cap1.json"; echo '{"cap_usd": 70}' > "$tmp/agent-cap2.json"; echo '{}' > "$tmp/agent-cap3.json"; echo '{"cap_usd": "x"}' > "$tmp/agent-cap4.json"
 check "the run cap is min(the run's, the host's), the host's when none, and a bad one fails" "7|50|50|1" \

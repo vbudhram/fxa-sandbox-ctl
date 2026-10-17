@@ -246,8 +246,8 @@ def prompt(cfg, heads, team, nonce):
     if not isinstance(heads, dict):
         raise ValueError("the run has no commit SHAs")
     branch = cfg.get("branch")
-    if branch is not None and (not BRANCH.fullmatch(branch) or ".." in branch):
-        raise ValueError("the run's branch is not valid")
+    if branch is not None and (not BRANCH.fullmatch(branch) or ".." in branch or len(cfg["repos"]) != 1):
+        raise ValueError("the run's branch is not valid (a branch goes with exactly one repo)")
     lines = []
     for slug in cfg["repos"]:
         h = heads.get(slug)

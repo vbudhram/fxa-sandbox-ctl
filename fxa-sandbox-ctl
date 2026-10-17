@@ -2135,21 +2135,21 @@ cmd_task() {
     *) echo "ERROR: task needs --source slack" >&2; return 1 ;;
   esac
   [[ "$key" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like agent-7f3a" >&2; return 1; }
-  local run_json="" run_prompt="" routine_cfg=""
+  local run_json="" run_text="" routine_cfg=""
   if [ "$source" = routine ]; then
     run_json="$(routine_run_read "$rrun" "${PIPE_PROFILE:-fxa}")" || return 1
     routine_cfg="$(jq -c .config <<< "$run_json")"
     owner="routine:${PIPE_PROFILE:-fxa}/$(jq -r .routine_id <<< "$run_json")"
-    run_prompt="$(mktemp "${TMPDIR:-/tmp}/fxa-routine-prompt.XXXXXX")"
+    # Built now, so a bad row is refused before anything is written; kept in memory, so no return path
+    # leaves a temp file. It goes to the session's prompt file under the cap lock below.
     local nonce; nonce="$(openssl rand -hex 6)"
-    _ROUTINE_PY prompt <(printf '%s' "$routine_cfg") <(jq -c .heads <<< "$run_json") "${PIPE_PROFILE:-fxa}" "$nonce" > "$run_prompt" \
-      || { rm -f "$run_prompt"; echo "ERROR: routine run ${rrun} cannot start: its row is not valid" >&2; return 1; }
-    prompt_file="$run_prompt"
+    run_text="$(_ROUTINE_PY prompt <(printf '%s' "$routine_cfg") <(jq -c .heads <<< "$run_json") "${PIPE_PROFILE:-fxa}" "$nonce")" && [ -n "$run_text" ] \
+      || { echo "ERROR: routine run ${rrun} cannot start: its row is not valid" >&2; return 1; }
     # One repo that is the team's own work repo needs no stack; any other pick is a team stack.
     local rr; rr="$(jq -r '.repos | join(",")' <<< "$routine_cfg")"
     [ "$(tr '[:upper:]' '[:lower:]' <<< "$rr")" = "$(tr '[:upper:]' '[:lower:]' <<< "${PIPE_REPO_SLUG:-}")" ] || repos="$rr"
   fi
-  [ -n "$owner" ] && [ -s "$prompt_file" ] || { echo "ERROR: task needs --owner and a non-empty --prompt-file" >&2; return 1; }
+  [ -n "$owner" ] && { [ -n "$run_text" ] || [ -s "$prompt_file" ]; } || { echo "ERROR: task needs --owner and a non-empty --prompt-file" >&2; return 1; }
   [ -z "$thread" ] || _thread_ok "$thread" || { echo "ERROR: --thread must look like C0123:1790000000.000100" >&2; return 1; }
   [ -z "$repos" ] || [[ "$repos" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)*$ ]] || { echo "ERROR: --repos must look like mozilla/fxa,mozilla/PyFxA" >&2; return 1; }
   if [ -n "$checkout" ]; then
@@ -2168,14 +2168,16 @@ cmd_task() {
   # The thread's open PR carries over to any new session in it, unless --new
   # (start from main): the bot may have lost track of it, as after a restart.
   local tpu; [ -n "$thread" ] && tpu="$(thread_get "$thread" pr_url)"
-  if [ -n "${tpu:-}" ] && [ -z "$resume_from" ] && [ -z "$new_pr" ] && [ -z "$checkout" ]; then
+  # Never for a routine run: nothing (a PR head, notes, a runtime, connectors) comes from a session in its thread (D7).
+  if [ -n "${tpu:-}" ] && [ -z "$resume_from" ] && [ -z "$new_pr" ] && [ -z "$checkout" ] && [ "$source" != routine ]; then
     local tkey; tkey="$(thread_get "$thread" pr_session)"
     [ -n "$tkey" ] && session_exists "$tkey" && { resume_from="$tkey"; fresh_pr=1; }
   fi
   # A routine run is not continued (by --resume-from, !restart, a move, or a tag in its thread that would
   # carry its PR): a new session would lose its memory off, watch_narrow and cap. Fail closed.
   # Only a Slack session (or an old record with no source) carries forward; an unreadable one does not.
-  local from_src; [ -z "$resume_from" ] || from_src="$(session_get "$resume_from" source 2>/dev/null || echo unreadable)"
+  # A missing record gets the resume path's own error below.
+  local from_src; [ -n "$resume_from" ] && session_exists "$resume_from" && from_src="$(session_get "$resume_from" source 2>/dev/null || echo unreadable)"
   case "${from_src:-slack}" in slack) ;; *)
     echo "ERROR: a routine run cannot be continued; tag me in a new thread with the PR link or the finding" >&2; return 1 ;; esac
   # --fresh: a new conversation on the earlier session's open PR, at its head.
@@ -2202,12 +2204,15 @@ cmd_task() {
   done
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
   local cap; cap="$(_session_cap)"
-  [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; [ -z "$run_prompt" ] || rm -f "$run_prompt"; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
+  [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
     errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
   # The run is this session's only now: a second caller with the same run is refused here, before any record.
-  if [ -n "$rrun" ]; then routine_run_start "$rrun" "$key" || { _session_unlock .task-cap; rm -f "$run_prompt"; return 1; }; fi
-  cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
-  [ -z "$run_prompt" ] || rm -f "$run_prompt"
+  if [ -n "$rrun" ]; then
+    routine_run_start "$rrun" "$key" || { _session_unlock .task-cap; return 1; }
+    printf '%s\n' "$run_text" > "${SESSION_DIR}/${key}.prompt.md"
+  else
+    cp "$prompt_file" "${SESSION_DIR}/${key}.prompt.md"
+  fi
   # Files sent with the request, copied now: the caller removes its directory when task returns.
   [ -n "$inbox_dir" ] && { _inbox_copy "${SESSION_DIR}/${key}.inbox" "$inbox_dir"/* >/dev/null || echo "WARN: no file from ${inbox_dir} could be kept" >&2; }
   # An upgrade from a quick answer: what that read-only agent found, so this one does not search again.
@@ -2240,7 +2245,8 @@ cmd_task() {
   # A team stack: the resumed session's repos, then any repo picked now.
   [ -n "$resume_from" ] && trees_on "$resume_from" && { trees_carry "$resume_from" "$key" || { _task_abort "$key"; return 1; }; }
   # A team's profile can name the repos a session gets when nobody picks (PIPE_STACK_DEFAULT).
-  [ -z "$repos" ] && ! trees_on "$key" && [ -n "${PIPE_STACK_DEFAULT:-}" ] && repos="$(tr -s ' ' ',' <<< "$PIPE_STACK_DEFAULT")"
+  # Not for a routine run: its repos come only from its row.
+  [ -z "$repos" ] && [ "$source" != routine ] && ! trees_on "$key" && [ -n "${PIPE_STACK_DEFAULT:-}" ] && repos="$(tr -s ' ' ',' <<< "$PIPE_STACK_DEFAULT")"
   [ -n "$repos" ] && { trees_init "$key" "$repos" || { _task_abort "$key"; return 1; }; }
   if trees_on "$key"; then
     [ -n "$resume_from" ] && trees_each "$key" _task_carry "$key" "$resume_from" "$fresh_pr"
@@ -2292,8 +2298,9 @@ _cmd_session_boot() {
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; session_set "$key" state failed; return 1; }
   root="$(worktree_repo_root)" || { session_set "$key" state failed; return 1; }
   local base="${FXA_WORKTREE_BASE:-main}"
-  # A routine run starts at its own branch (the validator checked it); any other session at the team's base.
-  if [ "$(session_get "$key" source)" = routine ]; then
+  # A one-repo routine run starts at its own branch (the validator checked it). A stack's trees boot at
+  # their own default branches (a routine names a branch only with one repo); any other session at the team's base.
+  if [ "$(session_get "$key" source)" = routine ] && ! trees_on "$key"; then
     base="$(session_get "$key" base)"
     _routine_branch_ok "$base" || { echo "ERROR: ${key} has no valid base branch" >&2; session_set "$key" state failed; return 1; }
   fi
