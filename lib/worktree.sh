@@ -407,7 +407,10 @@ worktree_copy_secrets() {
   for rel in $(worktree_secret_files); do
     src="${root}/${rel}"
     dest="${path}/${rel}"
-    if [ -f "$src" ]; then
+    # A file the repo tracks (Monitor's .env) comes from the runner's checkout; the host's copy can be old.
+    if git -C "$root" ls-files --error-unmatch -- "$rel" >/dev/null 2>&1; then
+      skipped=$((skipped + 1))
+    elif [ -f "$src" ]; then
       mkdir -p "$(dirname "$dest")"
       # The agent can plant a link in the slot (Tart); never copy a secret through one.
       case "$(cd "$(dirname "$dest")" && pwd -P)/" in "$(cd "$path" && pwd -P)/"*) ;; *)
@@ -428,7 +431,7 @@ worktree_copy_secrets() {
     copied=$((copied + 1))
   fi
 
-  echo "  Synced ${copied} secret/config file(s) into ${path} (${skipped} not present in source)." >&2
+  echo "  Synced ${copied} secret/config file(s) into ${path} (${skipped} not present in source, or tracked)." >&2
 }
 
 # worktree_copy_ai_docs <path>
