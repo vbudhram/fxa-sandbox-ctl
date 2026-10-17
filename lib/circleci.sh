@@ -21,7 +21,8 @@ circleci_token() {
   printf '%s' "$t"
 }
 
-_circleci_get() { curl -sf -m 30 -H "Circle-Token: $1" "$2"; }
+# The token goes in on stdin (-K -), never on curl's command line, where ps shows it.
+_circleci_get() { printf 'header = "Circle-Token: %s"\n' "$1" | curl -sf -m 30 -K - "$2"; }
 
 # _circleci_job <token> <number> [dir]   One job: its name and status, failed tests,
 # failed steps' tails, Playwright error contexts, and with [dir] their traces.
@@ -50,7 +51,7 @@ _circleci_job() {
     [ -n "$dest" ] || continue
     tu="$(awk -F'\t' -v want="$(dirname "$p")/trace.zip" '$1 == want { print $2 }' <<< "$arts")"
     [ -n "$tu" ] && mkdir -p "$dest/$d" || continue
-    if curl -sfL --max-filesize 20000000 -m 120 -H "Circle-Token: $t" -o "$dest/$d/trace.zip" "$tu"; then
+    if printf 'header = "Circle-Token: %s"\n' "$t" | curl -sfL --max-filesize 20000000 -m 120 -K - -o "$dest/$d/trace.zip" "$tu"; then
       printf 'Trace: /workspace/.fxa-ci/%s/trace.zip\n' "$d"
     else rm -rf "${dest:?}/$d"; fi
   done < <(awk -F'\t' '$1 ~ /\/error-context\.md$/' <<< "$arts")

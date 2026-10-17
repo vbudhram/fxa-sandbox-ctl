@@ -19,4 +19,8 @@ pipeline_require() { :; }
 PIPE_JIRA_BASIC='bot@example.com:jtok-9z' PIPE_JIRA_SITE=https://jira.example jira_sprint_add FXA-1 7 >/dev/null 2>&1
 check "jira_sprint_add: the login is on stdin as a user line, not on curl's command line" "0|1|1" \
   "$(grep -c jtok-9z "$tmp/args")|$(grep -cx 'user = "bot@example.com:jtok-9z"' "$tmp/stdin")|$(grep -c -- '-K -' "$tmp/args")"
+eval "$(sed -n '/^_circleci_get() {/p' "$here/circleci.sh")"
+: > "$tmp/args"; : > "$tmp/stdin"; _circleci_get cci-tok-9z https://circleci.example/x >/dev/null 2>&1
+check "_circleci_get: the CircleCI token is on stdin as a header line, not on curl's command line" "0|1|1" \
+  "$(grep -c cci-tok-9z "$tmp/args")|$(grep -cx 'header = "Circle-Token: cci-tok-9z"' "$tmp/stdin")|$(grep -c -- '-K -' "$tmp/args")"
 exit "$fail"
