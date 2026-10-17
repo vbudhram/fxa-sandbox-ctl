@@ -253,6 +253,10 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - Memory: agents propose, people approve, and memory is scoped by repo first. A run on a private repo
   saves nothing to shared memory.
 - Private repos: no agent fetch after start, a full clone, code only in private channels, no watch page.
+- A team with the Jira connector and no Jira project of its own reads FxA's Jira project, as FxA does.
+  Most teams that work beside FxA need its tickets. A team with a project reads only that project.
+- Team records are the norm for every team but FxA. `PROFILE_OPEN` and `PROFILE_USERS` in the bot env count
+  only for a team name that has no record.
 - Not now: AI review of human PRs (no data that people want it), caps for each person (sessions have
   caps), best-of-N runs (twice the cost), fleet migrations (almost no session uses several trees), a
   multiplayer IDE (the watch page covers it).
@@ -274,9 +278,6 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 
 Read these before you build in the area. They are the owner's to decide.
 
-- **Jira scope for a team with no project.** Today such a team reads FxA's Jira project through the
-  connector (fxa-android, monitor, pyfxa-team). Proposed: a read-only `jira.read` list, and no Jira for a
-  team that names none.
 - **Phase 3:** teams that are not FxA run well (recipes, images, a generic pass, scoped lessons). It
   waits on a decision about how a team's own stack recipe runs.
 - **Phase 4:** owners who are not admins create teams through requests.

@@ -25,6 +25,7 @@ mcp_token_for() {
   # Another team reads its own Jira project and repos, not FxA's (the gateway's team_rules); FxA keeps the rules as written.
   local projects="" repos="" row
   if [ "${PIPE_PROFILE:-fxa}" != fxa ]; then
+    # No project of its own: the connector keeps FxA's Jira scope, by design (PRODUCT.md, decisions taken).
     projects="${PIPE_JIRA_PROJECT:-}"
     for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do repos="${repos} ${row%% *}"; done
     [ -n "$repos" ] || repos="${PIPE_REPO_SLUG:-}"
