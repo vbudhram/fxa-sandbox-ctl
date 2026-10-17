@@ -146,6 +146,32 @@ stale="[{\"id\": $g9, \"state\": \"started\", \"session\": \"agent-gone02\", \"s
 ( db_json() { case "$1" in ("SELECT id, state, coalesce(session"*) echo "$stale" ;; (*) _db_ready && _db -json "$1" | sed 's/^$/[]/' ;; esac; }; routine_reconcile "$N" )
 check "reconcile does not undo a done call that raced it" "ok||$n0" "$(s_of "$g9")|$(wc -l < "$tmp/errs" | tr -d ' ')"
 
+# routine done: idempotent, the cost from the run's token, and the PII guard on a report (D10).
+mkdir -p "$FXA_LLM_PROXY_DIR/runs" "$FXA_LLM_PROXY_DIR/tokens"
+TOK="fxl_$(printf 'a%.0s' $(seq 32))"
+echo "$TOK" > "$FXA_LLM_PROXY_DIR/runs/$(worktree_branch_for agent-done01)"; echo '{"spent_usd": 1.25}' > "$FXA_LLM_PROXY_DIR/tokens/$TOK.json"
+d1="$(st started agent-done01 $((N - 60)))"
+printf 'Finding: the handler logs user@realcompany.com and ghp_abcdefghijklmnop1234 in plain text.\n' > "$tmp/report.md"
+a1="$(FXA_ROUTINE_NOW=$N routine_done "$d1" --state report --session agent-done01 --report-file "$tmp/report.md")"
+check "a report with an email and a token: post false, and the row keeps the report and the cost" "true|report|false|1|1.25" \
+  "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a1")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $d1 AND report LIKE '%realcompany%';")|$(db_value "SELECT cost_usd FROM routine_runs WHERE id = $d1;")"
+a2="$(FXA_ROUTINE_NOW=$((N + 9)) routine_done "$d1" --state failed --session agent-done01 --reason "late")"
+check "a second done call changes nothing" "false|report|false|report||$N" \
+  "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a2")|$(db_value "SELECT state || '|' || coalesce(reason, '') || '|' || ended_at FROM routine_runs WHERE id = $d1;")"
+d2="$(st started agent-done02 $((N - 60)))"; printf 'No issue found in 6 commits.\n' > "$tmp/clean.md"
+check "a clean report posts" "true" "$(FXA_ROUTINE_NOW=$N routine_done "$d2" --state report --session agent-done02 --report-file "$tmp/clean.md" | jq -r .post)"
+d3="$(st started agent-done03 $((N - 60)))"
+check "done for another session's run is refused, and the run stays started" "ERROR: routine run ${d3} is not session agent-other1's|started" \
+  "$(routine_done "$d3" --state ok --session agent-other1 2>&1)|$(db_value "SELECT state FROM routine_runs WHERE id = $d3;")"
+check "done after the tick failed the run changes nothing" "false|failed" "$(routine_done "$g1" --state ok --session agent-gone01 | jq -r '"\(.changed)|\(.state)"')"
+check "a bad --state is refused" "ERROR: --state must be ok, report, nochange, failed or stopped" "$(routine_done "$d3" --state merged --session agent-done03 2>&1)"
+got="$(db_value() { case "$1" in (UPDATE*) return 1 ;; (*) _db -list "$1" ;; esac; }; routine_done "$d3" --state ok --session agent-done03 2>&1)"
+check "a store error in done is the store line" "ERROR: the routine store did not answer (busy or failed); nothing changed, try again|started" "$got|$(db_value "SELECT state FROM routine_runs WHERE id = $d3;")"
+# routine posted: only a skip or a failure.
+sk="$(db_value "SELECT id FROM routine_runs WHERE state = 'skipped' AND posted = 0 LIMIT 1;")"
+check "posted marks a skip; a started run is refused" "posted ${sk}|1|ERROR: routine run ${d3} is not a skip or a failure" \
+  "$(routine_posted "$sk")|$(db_value "SELECT posted FROM routine_runs WHERE id = $sk;")|$(routine_posted "$d3" 2>&1)"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

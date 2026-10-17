@@ -139,6 +139,8 @@ cmd_routine() {
     history) routine_history "${2:-}" "${3:-}" ;;
     templates) _ROUTINE_PY templates ;;
     tick) shift; routine_tick "$@" ;;
+    done) shift; routine_done "$@" ;;
+    posted) routine_posted "${2:-}" ;;
     set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
          while [ $# -gt 0 ]; do
            case "$1" in --id) id="${2:-}"; shift 2 2>/dev/null || shift ;; --version) ver="${2:-}"; shift 2 2>/dev/null || shift ;;
@@ -351,4 +353,61 @@ routine_reconcile() {
     sst=""
   done < <(jq -c '.[]' <<< "$rows")
   return 0
+}
+
+# _routine_session_cost <key>   What the session's run token spent (the LLM proxy's count), or nothing.
+_routine_session_cost() {
+  local d="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}" tok
+  tok="$(cat "${d}/runs/$(worktree_branch_for "$1")" 2>/dev/null)" && [[ "$tok" =~ ^fxl_[A-Za-z0-9]{32}$ ]] || return 0
+  jq -r '.spent_usd // empty' "${d}/tokens/${tok}.json" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)?$' || true
+}
+
+# routine done <run> --state ok|report|nochange|failed|stopped --session <key> [--pr <url>] [--reason <text>]
+#   [--report-file <f>]   The bot's result. Idempotent: a run in an end state does not change. A report goes
+#   through lib/pii_guard.py: a finding answers post false, and the report stays only in the row (D10).
+#   Answers {changed, state, post, next}.
+routine_done() {
+  local run="${1:-}" state="" sess="" pr="" reason="" rf=""; shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in --state) state="${2:-}" ;; --session) sess="${2:-}" ;; --pr) pr="${2:-}" ;; --reason) reason="${2:-}" ;; --report-file) rf="${2:-}" ;;
+      *) echo "ERROR: unknown option $1" >&2; return 1 ;; esac
+    shift 2 2>/dev/null || { echo "ERROR: $1 needs a value" >&2; return 1; }
+  done
+  _routine_id "$run" || return 1
+  [[ "$state" =~ ^(ok|report|nochange|failed|stopped)$ ]] || { echo "ERROR: --state must be ok, report, nochange, failed or stopped" >&2; return 1; }
+  [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
+  [ -z "$pr" ] || [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "ERROR: --pr must be a GitHub PR link" >&2; return 1; }
+  [ ${#reason} -le 300 ] && [[ "$reason" != *$'\n'* ]] || { echo "ERROR: --reason is one line of at most 300 characters" >&2; return 1; }
+  local j r; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
+    || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
+  [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess}'s" >&2; return 1; }
+  local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)"; fi
+  local post=true report="" n
+  if [ -n "$rf" ]; then
+    [ -f "$rf" ] || { rm -f "$f"; echo "ERROR: no report file ${rf}" >&2; return 1; }
+    report="$(head -c 65536 "$rf")"
+    # Any finding, or a guard that does not answer, keeps the report off Slack (fail closed).
+    jq -n --arg t "$report" '{report: $t}' > "$f" && : > "$f.diff"
+    python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f" "$f.diff" >/dev/null 2>&1 || post=false
+    rm -f "$f.diff"
+  fi
+  rm -f "$f"
+  n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
+      pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
+      cost_usd = $(_routine_session_cost "$sess" | grep . || echo cost_usd), ended_at = $(_routine_now)
+      WHERE id = ${run} AND state IN (${_ROUTINE_LIVE_STATES}); SELECT changes();")" || n=""
+  case "$n" in
+    1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)}' ;;
+    0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)}' ;;
+    *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
+  esac
+}
+
+# routine posted <run>   The bot posted this skip: a later skip with the same reason stays quiet (D23).
+routine_posted() {
+  _routine_id "${1:-}" || return 1
+  local n; n="$(db_value "UPDATE routine_runs SET posted = 1 WHERE id = $1 AND state IN ('skipped','failed'); SELECT changes();")" || n=""
+  case "$n" in 1) echo "posted ${1}" ;; 0) echo "ERROR: routine run $1 is not a skip or a failure" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
 }
