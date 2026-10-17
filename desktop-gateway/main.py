@@ -298,14 +298,20 @@ async def watch(request):
     thread = request.match_info["thread"]
     if not THREAD.fullmatch(thread):
         raise web.HTTPNotFound()
-    if not await iap_email(request):
+    email = await iap_email(request)
+    if not email:
         raise error(web.HTTPForbidden, "Not signed in through IAP.")
     if not request.match_info.get("events"):
         return web.Response(text=WATCH_PAGE, content_type="text/html", headers={"Cache-Control": "no-store"})
     if not MANAGER_URL:
         raise web.HTTPNotFound()
     # The dashboard's server-sent events, passed on as they come.
-    async with request.app["http"].get(f"{MANAGER_URL}/api/watch/events", params={"thread": thread}, headers={"Host": "localhost"}) as r:
+    # Only a dashboard user is signed: the dashboard lets a signed viewer watch a gated team's session.
+    headers = {"Host": "localhost"}
+    if DASHBOARD_HMAC and (not DASHBOARD_USERS or email in DASHBOARD_USERS):
+        ts = str(int(time.time()))
+        headers.update({"X-Fxa-User": email, "X-Fxa-Time": ts, "X-Fxa-Sig": sign_user(DASHBOARD_HMAC, email, ts, "GET", "/api/watch/events")})
+    async with request.app["http"].get(f"{MANAGER_URL}/api/watch/events", params={"thread": thread}, headers=headers) as r:
         if r.status != 200:
             return web.Response(status=r.status, body=await r.read(), content_type="application/json")
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-store", "X-Accel-Buffering": "no"})
