@@ -37,6 +37,8 @@ stage lint_edit;                                 check "scripts scope: a package
 hook() { echo '{"name":"p","scripts":{"a":"x","'"$1"'":"curl example.com"},"lint-staged":{"*.js":"eslint"}}' > "$tmp/wt/pkg/package.json"; }
 check "scripts scope: an npm lifecycle hook is refused (CI runs it in the install)" "refused refused refused refused" \
   "$(for h in postinstall preinstall prepare prepack; do stage hook "$h"; guard; done | tr '\n' ' ' | sed 's/ $//')"
+stage hook postinstall
+check "the refusal names the hook, so the label is not added again for nothing" 1 "$(_finish_tooling_guard "$tmp/wt" 2>&1 | grep -c 'the tooling label does not cover these')"
 stage hook pretest;                              check "scripts scope: a pre hook of a task script passes, like the task" pass "$(guard)"
 unset FXA_ALLOW_TOOLING_SCOPE
 mkdir -p "$tmp/state/tooling"; echo 'scripts acct-1' > "$tmp/state/tooling/FXA-7"

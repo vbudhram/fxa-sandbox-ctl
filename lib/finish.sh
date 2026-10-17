@@ -1020,7 +1020,8 @@ _finish_tooling_guard() {
         # or deleted file) counts as {}, so a new lib's package.json passes unless it adds scripts.
         if [ "$({ git -C "$wt" show ":$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" != \
              "$({ git -C "$wt" show "HEAD:$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" ]; then
-          hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'
+          if [ "$scope" = scripts ]; then hit="${hit}${f} (an npm install, prepare or publish hook, lint-staged or husky: the tooling label does not cover these)"$'\n'
+          else hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'; fi
         fi ;;
     esac
   done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
