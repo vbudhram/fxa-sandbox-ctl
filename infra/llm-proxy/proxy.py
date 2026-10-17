@@ -75,7 +75,7 @@ def price(model, prompt=0):
 
 def cache_write_usd(p, u):
     """A 1-hour cache write costs twice the base input; the rest are 5-minute writes (p[2])."""
-    hour = min((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens", 0), u.get("cache_creation_input_tokens", 0))
+    hour = min((u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens") or 0, u.get("cache_creation_input_tokens", 0))
     return ((u.get("cache_creation_input_tokens", 0) - hour) * p[2] + hour * 2 * p[0]) / 1e6
 
 
