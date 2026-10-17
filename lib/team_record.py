@@ -42,7 +42,7 @@ PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "g
 # The goal is the team's steps plus a shared tail of about 1200 chars, and Claude refuses a /goal over 4000.
 # A team's state dir is ~/.claude/state/<name>, so a name the host uses there would give a team the
 # host's own store (llm-proxy holds the run tokens) and each pass would mirror it to GCS.
-RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "memory", "teams"}
+RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "teams"}
 # Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
 # An admin may approve other hosts; these are refused even then, with every subdomain.
 EGRESS_DENY = ("pastebin.com", "paste.ee", "hastebin.com", "termbin.com", "ix.io", "dpaste.org", "rentry.co",
