@@ -135,7 +135,8 @@ _worktree_pull_if_remote() {
   # So does a launch: a --delete pull before the runner had the token removed
   # it from the slot, and the agent died at turn 1. Ignore markers over 20 min.
   local mk="${LOG_DIR}/$(basename "$1").launching"
-  [ -f "$mk" ] && [ $(( $(date +%s) - $(_mtime "$mk") )) -lt 1200 ] && return 0
+  # The launch can remove the marker between the -f and the stat: no time then means no marker.
+  local m; [ -f "$mk" ] && m="$(_mtime "$mk" 2>/dev/null)" && [ -n "$m" ] && [ $(( $(date +%s) - m )) -lt 1200 ] && return 0
   # Once per 20 s per slot; a string cache because macOS ships bash 3.2.
   local now hit; now="$(date +%s)"
   hit="$(printf '%s\n' "$_PULL_MEMO" | grep -m1 "^$1 " || true)"

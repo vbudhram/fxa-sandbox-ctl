@@ -73,6 +73,11 @@ check "result: no JSON is an error, not a crash" "true" "$(_answer_result ask-t0
 mkdir -p "$PIPE_STATE_DIR/answer-slots"; for n in 1 2; do mkdir "$PIPE_STATE_DIR/answer-slots/$n"; done
 check "busy: no free slot returns 3" "3" "$(FXA_ANSWER_MAX=2 answer_ask ask-t005 "$tmp/q1" 2>/dev/null; echo $?)"
 rmdir "$PIPE_STATE_DIR/answer-slots"/*
+# Slot 1 is freed between the -d test and the stat: the next free slot, with no shell error.
+mkdir "$PIPE_STATE_DIR/answer-slots/1"
+check "a slot freed during the stale test: slot 2, and no error" "$PIPE_STATE_DIR/answer-slots/2|" \
+  "$( _mtime() { return 1; }; e="$(FXA_ANSWER_MAX=2 _answer_slot 2>&1 >"$tmp/slot")"; echo "$(cat "$tmp/slot")|$e")"
+rm -rf "$PIPE_STATE_DIR/answer-slots"/*
 
 FIREWALL=0; : > "$tmp/errors"
 check "firewall: missing refuses the answer" "1|no_firewall" "$(answer_ask ask-t006 "$tmp/q1" >/dev/null 2>&1; echo $?)|$(cat "$tmp/errors")"
