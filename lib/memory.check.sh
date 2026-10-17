@@ -150,6 +150,10 @@ check "the digest and the pull skip a held lock, and try again next sweep" "main
   "$(g -C "$tmp/clone" rev-parse --abbrev-ref HEAD)|$([ -f "${FXA_MEMORY_DIR}.digest" ] && echo yes || echo no)|$([ -f "${FXA_MEMORY_DIR}.pulled" ] && echo yes || echo no)"
 touch -t 200001010000 "${FXA_MEMORY_DIR}.lock"
 check "a lock from a process that died is taken over" "0" "$(_memory_lock; echo $?)"; _memory_unlock
+mkdir "${FXA_MEMORY_DIR}.lock"; ( sleep 3; rmdir "${FXA_MEMORY_DIR}.lock" ) &
+check "a save waits for a pull that holds the lock, then takes it" "0" "$(_memory_lock 20; echo $?)"; _memory_unlock; wait
+mkdir "${FXA_MEMORY_DIR}.lock"
+check "a held lock past the wait is refused" "1" "$(_memory_lock 2; echo $?)"; _memory_unlock
 
 # A rebase that conflicts is undone, so the next pull still works.
 g -C "$tmp/check" pull -q 2>/dev/null; echo theirs > "$tmp/check/profiles/monitor.md"
