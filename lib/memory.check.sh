@@ -163,4 +163,13 @@ memory_pull 2>/dev/null
 check "a clone a crash left in a rebase is freed by the next pull" "no" \
   "$([ -d "$tmp/clone/.git/rebase-merge" ] || [ -d "$tmp/clone/.git/rebase-apply" ] && echo yes || echo no)"
 
+# A session's taint: the untrusted flag (boot added a ticket or a CI log) or a PR (review and CI rounds) taint it.
+( memory_on() { true; }; memory_collect() { printf 'taint=%s ' "$5" >> "$tmp/mcs"; }; _session_sh() { echo '{"episode":{}}'; }
+  _session_file() { echo "$tmp/sess-$1.json"; }; session_get() { :; }; memory_profile_slugs() { echo mozilla/fxa; }
+  : > "$tmp/mcs"; i=0
+  for c in '{}' '{"untrusted":"1"}' '{"pr_url":"https://github.com/mozilla/fxa/pull/1"}'; do i=$((i + 1)); echo "$c" > "$tmp/sess-k$i.json"; memory_collect_session "k$i" r1 stop; done
+  check "a session with a ticket, a CI log or a PR saves its memory tainted" "taint=0 taint=1 taint=1" "$(sed 's/ $//' "$tmp/mcs")"
+  exit "$fail" ) || fail=1
+
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
