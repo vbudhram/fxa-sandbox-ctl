@@ -64,4 +64,9 @@ check "the next three weekday 09:00 times in the routine's zone" "2026-10-19T09:
 check "after the DST change, still 09:00 local" "2026-11-02T09:00:00-05:00" "$(python3 -I "$here/routine.py" next "$tmp/r.json" --from 1793372400 --n 1)"
 check "the period is the local date" "2026-10-19" "$(python3 -I "$here/routine.py" period "$tmp/r.json" 1792414800)"
 
+# The built-in templates: four, and the security review is locked to report.
+check "routine templates lists four templates, and security-review is locked to report" "code-review perf-review security-review ux-review|report|report" \
+  "$(python3 -I "$here/routine.py" templates | jq -r '[.[].template] | join(" ")')|$(python3 -I "$here/routine.py" templates | jq -r '.[] | select(.template == "security-review") | "\(.mode)|\(.locked_mode)"')"
+check "each template has a prompt and a skip flag" "4" "$(python3 -I "$here/routine.py" templates | jq '[.[] | select((.prompt | length) > 100 and (.skip_no_commits | type) == "boolean")] | length')"
+
 exit "$fail"

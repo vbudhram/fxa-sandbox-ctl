@@ -6,6 +6,7 @@
       Prints the normalized routine on success; else one "<field>: <reason>" line for each problem, exit 1.
   routine.py next <routine.json> [--from <epoch>] [--n <count>]   the next run times, as local ISO times
   routine.py period <routine.json> <epoch>                         the period key: the local date of that time
+  routine.py templates [<dir>]                                     the built-in templates (templates/routines), as JSON
 
 Run with python3 -I. The DST rules live only here: a time is a wall-clock time in the routine's zone.
 """
@@ -191,6 +192,22 @@ def runs(r, start, n):
     return out
 
 
+def templates(folder):
+    """Each templates/routines/<name>.md: its header (name, mode, skip_no_commits, locked_mode) and prompt."""
+    out = []
+    for f in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if not f.endswith(".md") or f[:-3] not in TEMPLATES:
+            continue
+        with open(os.path.join(folder, f), encoding="utf-8") as fh:
+            _, head, prompt = fh.read().split("---\n", 2)
+        t = {"template": f[:-3], "prompt": prompt.strip()}
+        for line in head.splitlines():
+            k, _, v = line.partition(": ")
+            t[k] = v == "true" if k == "skip_no_commits" else v
+        out.append(t)
+    return out
+
+
 def opt(argv, flag, default=None):
     return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
 
@@ -204,6 +221,10 @@ def load(path):
 
 
 def main(argv):
+    if len(argv) >= 2 and argv[1] == "templates":
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        print(json.dumps(templates(argv[2] if len(argv) > 2 else os.path.join(here, "templates", "routines"))))
+        return 0
     if len(argv) < 3 or argv[1] not in ("validate", "next", "period"):
         sys.exit(__doc__)
     cmd, r = argv[1], load(argv[2])
