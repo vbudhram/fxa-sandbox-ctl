@@ -177,6 +177,9 @@ check "a clone a crash left in a rebase is freed by the next pull" "no" \
   : > "$tmp/mcs"; i=0
   for c in '{}' '{"untrusted":"1"}' '{"pr_url":"https://github.com/mozilla/fxa/pull/1"}' '{"trees":[{"slug":"mozilla/fxa","pr_url":"https://github.com/mozilla/fxa/pull/2"}]}'; do i=$((i + 1)); echo "$c" > "$tmp/sess-k$i.json"; memory_collect_session "k$i" r1 stop; done
   check "a session with a ticket, a CI log or a PR saves its memory tainted" "taint=0 taint=1 taint=1 taint=1" "$(sed 's/ $//' "$tmp/mcs")"
+  : > "$tmp/mcs"; echo '{"memory":"off","untrusted":"1"}' > "$tmp/sess-off.json"
+  for mode in stop ship; do memory_collect_session off r1 "$mode"; done; memory_collect_session nofile r1 stop
+  check "a session with memory off, or with no readable record, saves no memory note on stop or ship" "" "$(cat "$tmp/mcs")"
   exit "$fail" ) || fail=1
 
 

@@ -276,7 +276,11 @@ memory_collect() {
 # runner, so a ship and a later stop do not save it twice. Taint: it read text no person on the team wrote.
 memory_collect_session() {
   memory_on || return 0
-  local key="$1" f taint=0 ticket slugs
+  local key="$1" f taint=0 ticket slugs mem
+  # A session with memory off (a routine's security review, D9) writes no team memory, and one whose
+  # record cannot be read writes none either: its notes go with the runner.
+  mem="$(jq -r '.memory // "on"' "$(_session_file "$key")" 2>/dev/null)" && [ "$mem" != off ] || {
+    _session_sh "$2" 'rm -f /workspace/.fxa-memory.json' >/dev/null 2>&1 || true; return 0; }
   f="$(mktemp)"
   _session_sh "$2" 'head -c 16000 /workspace/.fxa-memory.json 2>/dev/null; rm -f /workspace/.fxa-memory.json' > "$f" 2>/dev/null || true
   [ -s "$f" ] || { rm -f "$f"; return 0; }
