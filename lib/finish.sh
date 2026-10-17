@@ -1005,7 +1005,9 @@ _finish_tooling_guard() {
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
   # A recovery finish has no launch env: use the scope the launch recorded for this key.
   [ -n "$scope" ] || scope="$(_finish_tooling_scope_of "$wt")"
-  keys='{scripts, "lint-staged", husky}'; [ "$scope" = scripts ] && keys='{"lint-staged", husky}'
+  # The scripts scope allows named task scripts, not npm's lifecycle hooks: CI runs those in the install.
+  keys='{scripts, "lint-staged", husky}'
+  [ "$scope" = scripts ] && keys='{hooks: ((.scripts // {}) | with_entries(select(.key | test("^(pre|post)?(install|prepare|publish|pack|version|uninstall|shrinkwrap|dependencies)$|^prepublishOnly$")))), "lint-staged", husky}'
   while IFS= read -r -d '' f; do
     case "$f" in
       _scripts/*)
@@ -1031,11 +1033,14 @@ _finish_tooling_guard() {
 }
 
 # _finish_tooling_scope_of <worktree>   The tooling scope that cmd_launch recorded for the
-#   worktree's ticket (PIPE_STATE_DIR/tooling/<KEY>), or nothing.
+#   worktree's ticket (PIPE_STATE_DIR/tooling/<KEY>), or nothing. It counts only while an approver's
+#   label is still on the ticket: a label removed since the launch, or no answer from Jira, gives nothing.
 _finish_tooling_scope_of() {
-  local key; key="$(worktree_key_for "$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)")"
+  local key s; key="$(worktree_key_for "$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)")"
   [ -n "${PIPE_STATE_DIR:-}" ] && [ -n "$key" ] || return 0
-  awk 'NR == 1 { print $1 }' "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true
+  s="$(awk 'NR == 1 { print $1 }' "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true)"
+  [ -n "$s" ] && jira_tooling_approver "$key" >/dev/null 2>&1 && printf '%s\n' "$s"
+  return 0
 }
 
 # _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body> [patch]   GitHub is public, so

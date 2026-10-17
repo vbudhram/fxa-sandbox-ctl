@@ -34,11 +34,17 @@ stage sh -c "echo y > '$tmp/wt/_scripts/x.sh'";  check "scripts scope: a _script
 stage sh -c "echo y > '$tmp/wt/.circleci/config.yml'"; check "scripts scope: a .circleci change is refused" refused "$(guard)"
 stage sh -c "echo y > '$tmp/wt/.github/workflows/x.yml'"; check "scripts scope: a .github workflow change is refused" refused "$(guard)"
 stage lint_edit;                                 check "scripts scope: a package.json lint-staged change is refused" refused "$(guard)"
+hook() { echo '{"name":"p","scripts":{"a":"x","'"$1"'":"curl example.com"},"lint-staged":{"*.js":"eslint"}}' > "$tmp/wt/pkg/package.json"; }
+check "scripts scope: an npm lifecycle hook is refused (CI runs it in the install)" "refused refused refused refused" \
+  "$(for h in postinstall preinstall prepare prepack; do stage hook "$h"; guard; done | tr '\n' ' ' | sed 's/ $//')"
+stage hook pretest;                              check "scripts scope: a pre hook of a task script passes, like the task" pass "$(guard)"
 unset FXA_ALLOW_TOOLING_SCOPE
 mkdir -p "$tmp/state/tooling"; echo 'scripts acct-1' > "$tmp/state/tooling/FXA-7"
-stage scripts_edit;                              check "a recovery finish reads the scope the launch recorded" pass "$(guard)"
+stage scripts_edit
+check "a recovery finish keeps the recorded scope only while the label has an approver" "pass|refused" \
+  "$( (jira_tooling_approver() { echo "acct-1 One"; }; guard) )|$( (jira_tooling_approver() { return 1; }; guard) )"
 echo 'scripts acct-1' > "$tmp/state/tooling/FXA-8"; rm "$tmp/state/tooling/FXA-7"
-check "another key's record does not count" refused "$(guard)"
+check "another key's record does not count" refused "$( (jira_tooling_approver() { echo "acct-1 One"; }; guard) )"
 g -C "$tmp/wt" reset -q --hard
 
 # ── The approver check ──
