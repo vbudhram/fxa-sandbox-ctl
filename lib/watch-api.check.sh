@@ -15,6 +15,9 @@ echo '{"state":"active","profile":"secret"}' > "$tmp/agent-dddddd.json"
 # A gated team (not open), and a channel in CHANNEL_GATES: only a viewer the gateway signs may watch.
 echo '{"sessions":"agent-eeeeee"}' > "$tmp/thread-C0AB12CD3-1790000000.000003.json"
 echo '{"state":"paused","profile":"closed"}' > "$tmp/agent-eeeeee.json"
+# An FxA security-review routine session in an open channel: narrowed by its own record (D9).
+echo '{"sessions":"agent-nrrw01"}' > "$tmp/thread-C0AB12CD3-1790000000.000007.json"
+echo '{"state":"paused","watch_narrow":"1"}' > "$tmp/agent-nrrw01.json"
 echo '{"sessions":"agent-ffffff"}' > "$tmp/thread-CGATED0001-1790000000.000004.json"
 echo '{"state":"paused"}' > "$tmp/agent-ffffff.json"
 echo '{"sessions":"agent-hhhhhh"}' > "$tmp/thread-COLD000001-1790000000.000006.json"
@@ -52,6 +55,10 @@ check("a paused session: its state and the end, no view", 'event: session\ndata:
 check("a team with a private repo: 403, and no view", 403, get("C0AB12CD3:1790000000.000002")[0])
 check("a gated team, no signed viewer: 403", 403, get("C0AB12CD3:1790000000.000003")[0])
 check("a gated team, a signed dashboard user: watched", 200, get("C0AB12CD3:1790000000.000003", "user@example.com")[0])
+check("an FxA session with watch_narrow 1, no signed viewer: 403", 403, get("C0AB12CD3:1790000000.000007")[0])
+check("an FxA session with watch_narrow 1, a signed dashboard user: watched", 200, get("C0AB12CD3:1790000000.000007", "user@example.com")[0])
+check("watch_narrow: an FxA session with the flag is narrow, one without is not",
+      (True, False), (server.watch_narrow("fxa", "C0OPEN", None, {}, set(), True), server.watch_narrow("fxa", "C0OPEN", None, {}, set(), False)))
 check("a gated channel, no signed viewer: 403", 403, get("CGATED0001:1790000000.000004")[0])
 check("a gated channel, a signature with another key: 403", 403, get("CGATED0001:1790000000.000004", "user@example.com", b"other")[0])
 check("a gated channel, a signed dashboard user: watched", 200, get("CGATED0001:1790000000.000004", "user@example.com")[0])

@@ -242,12 +242,13 @@ WATCHERS = threading.BoundedSemaphore(16)  # each is one ssh to a runner
 
 
 def watch_session(thread):
-    """A Slack thread's newest session as (key, state, profile), or None."""
+    """A Slack thread's newest session as (key, state, profile, narrow), or None. narrow: the record's own
+    watch_narrow (a routine's security review, D9)."""
     try:
         rec = json.loads((SESSION_DIR / f"thread-{thread.replace(':', '-', 1)}.json").read_text())
         key = (rec.get("sessions") or "").split()[-1]
         s = json.loads((SESSION_DIR / f"{key}.json").read_text())
-        return key, s.get("state"), s.get("profile") or "fxa"
+        return key, s.get("state"), s.get("profile") or "fxa", str(s.get("watch_narrow") or "") == "1"
     except (OSError, ValueError, IndexError):
         return None
 
@@ -269,12 +270,12 @@ def team_private(profile):
     return private
 
 
-def watch_narrow(profile, channel, access, records, gates):
-    """True when the session's team is not open (FxA always is) or its channel is in the bot's CHANNEL_GATES.
-    gates None (the bot .env unreadable) counts as gated."""
+def watch_narrow(profile, channel, access, records, gates, narrow=False):
+    """True when the session itself is narrowed (its record has watch_narrow 1), its team is not open (FxA
+    always is), or its channel is in the bot's CHANNEL_GATES. gates None (the bot .env unreadable) counts as gated."""
     t = team_access(profile, access, records)
     gated = profile != "fxa" and not (t or {}).get("open")
-    return gated or gates is None or channel in gates
+    return narrow or gated or gates is None or channel in gates
 
 
 def read_gates():
@@ -692,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         # A gated team or a gated channel: only a dashboard user (signed by the gateway) may watch it.
         access, _ = read_access()
-        if watch_narrow(found[2], thread.split(":", 1)[0], access, read_records(), read_gates()):
+        if watch_narrow(found[2], thread.split(":", 1)[0], access, read_records(), read_gates(), found[3]):
             viewer = signed_user(self.headers, "GET", "/api/watch/events", read_hmac_key(), int(time.time()))
             if not viewer:
                 self._json(403, {"error": "this session's team or channel is gated, so only dashboard users can watch it"})
@@ -700,7 +701,7 @@ class Handler(BaseHTTPRequestHandler):
         if not WATCHERS.acquire(blocking=False):
             self._json(503, {"error": "too many watchers; try again soon"})
             return
-        key, state, _ = found
+        key, state = found[0], found[1]
         proc = None
         try:
             self.send_response(200)
