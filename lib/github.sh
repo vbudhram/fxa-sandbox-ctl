@@ -512,6 +512,9 @@ github_app_jwt() {
     "$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$GITHUB_APP_PEM" | _gh_b64url)"
 }
 
+# The App JWT as a curl config line, for `_gh_jwt_conf | curl -K - ...`: on stdin, so `ps` never shows it.
+_gh_jwt_conf() { printf 'header = "Authorization: Bearer %s"\n' "$(github_app_jwt)"; }
+
 # _gh_app_installation   The App installation on PIPE_REPO_SLUG, cached for a day: each
 # org has its own. When the lookup fails, the configured one; GitHub then refuses a
 # repo that installation does not cover.
@@ -519,7 +522,7 @@ _gh_app_installation() {
   local slug="${PIPE_REPO_SLUG:-}" cache id
   cache="${TMPDIR:-/tmp}/fxa-github-app-inst.${slug//\//_}"
   if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 86400 ]; then cat "$cache"; return 0; fi
-  id="$(curl -sf --max-time 30 -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+  id="$(_gh_jwt_conf | curl -sf --max-time 30 -K - -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${slug}/installation" | jq -r '.id // empty' 2>/dev/null)" || id=""
   if [[ "$id" =~ ^[0-9]+$ ]]; then printf '%s' "$id" > "$cache"; printf '%s' "$id"
   else printf '%s' "$GITHUB_APP_INSTALLATION_ID"; fi
@@ -547,7 +550,7 @@ github_app_token() {
     cat "$cache"; return 0
   fi
   local tok
-  tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+  tok="$(_gh_jwt_conf | curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -K - -H "Accept: application/vnd.github+json" \
     -d "{\"repositories\":[\"${repo}\"]}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')" || tok=""
   # A refusal (the App is not installed on the repo) is handled here, not left to the crash trap.
   [ -n "$tok" ] || { echo "ERROR: could not mint a GitHub App installation token for ${repo}." >&2; return 1; }
@@ -563,7 +566,7 @@ github_read_token() {
   inst="$(PIPE_REPO_SLUG="$slug" _gh_app_installation)"
   cache="${TMPDIR:-/tmp}/fxa-github-read-token.${inst}.${slug//\//_}"
   if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 3000 ]; then cat "$cache"; return 0; fi
-  tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+  tok="$(_gh_jwt_conf | curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -K - -H "Accept: application/vnd.github+json" \
     -d "{\"repositories\":[\"${slug#*/}\"],\"permissions\":{\"contents\":\"read\"}}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')" || tok=""
   [ -n "$tok" ] || return 1
   ( umask 077; printf '%s' "$tok" > "$cache" )

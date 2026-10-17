@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check that the Jira login and the Sentry token reach curl on stdin, never on its command line.
+# Offline check that the Jira login, the Sentry, CircleCI and App JWT tokens reach curl on stdin, never on its command line.
 #   bash lib/token-argv.check.sh
 set -u
 fail=0
@@ -23,4 +23,15 @@ eval "$(sed -n '/^_circleci_get() {/p' "$here/circleci.sh")"
 : > "$tmp/args"; : > "$tmp/stdin"; _circleci_get cci-tok-9z https://circleci.example/x >/dev/null 2>&1
 check "_circleci_get: the CircleCI token is on stdin as a header line, not on curl's command line" "0|1|1" \
   "$(grep -c cci-tok-9z "$tmp/args")|$(grep -cx 'header = "Circle-Token: cci-tok-9z"' "$tmp/stdin")|$(grep -c -- '-K -' "$tmp/args")"
+( eval "$(sed -n '/^_gh_jwt_conf() {/p;/^github_app_token() {/,/^}/p;/^github_read_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p;/^_gh_claimed() {/,/^}/p' "$here/github.sh")"
+  export TMPDIR="$tmp/gh"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111 PIPE_REPO_SLUG=mozilla/fxa
+  github_app_jwt() { echo eyJ-jwt-9z; }; _mtime() { echo 0; }
+  curl() { printf '%s\n' "$*" >> "$tmp/args"; case "$*" in *"-K -"*) cat >> "$tmp/stdin" ;; esac
+    case "$*" in */installation*) echo '{"id":222}' ;; */access_tokens*) echo '{"token":"t"}' ;; esac; }
+  : > "$tmp/args"; : > "$tmp/stdin"
+  _gh_app_installation mozilla/fxa >/dev/null; github_app_token fxa >/dev/null 2>&1; github_read_token mozilla/fxa >/dev/null
+  k=$(grep -c -- '-K -' "$tmp/args"); h=$(grep -cx 'header = "Authorization: Bearer eyJ-jwt-9z"' "$tmp/stdin")
+  check "the App JWT: on stdin as a header line for every lookup and mint, never on curl's command line" "0|yes|$(wc -l < "$tmp/args" | tr -d ' ')" \
+    "$(grep -c eyJ-jwt-9z "$tmp/args")|$([ "$k" -ge 3 ] && [ "$k" = "$h" ] && echo yes)|$k" ) || fail=1
+check "no curl in lib/ puts the App JWT in a -H argument" 0 "$(grep -c 'Bearer \$(github_app_jwt' "$here"/*.sh | awk -F: '{n+=$2} END{print n+0}')"
 exit "$fail"
