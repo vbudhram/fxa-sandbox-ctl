@@ -8,7 +8,10 @@ echo '{"state":"active"}' > "$tmp/agent-bbbbbb.json"
 echo '{"sessions":"agent-cccccc"}' > "$tmp/thread-C0AB12CD3-1790000000.000001.json"
 echo '{"state":"paused"}' > "$tmp/agent-cccccc.json"
 # The ctl's view: two events, as `fxa-sandbox-ctl view <key>` prints them.
-printf '#!/bin/sh\necho "{\\"t\\":\\"text\\",\\"text\\":\\"$4\\"}"\necho "{\\"t\\":\\"turn_end\\"}"\n' > "$tmp/ctl"; chmod +x "$tmp/ctl"
+# profile show: the team "secret" has a private repo, the others do not.
+printf '#!/bin/sh\nif [ "$3" = profile ]; then [ "$2" = secret ] && echo "{\\"private\\":true}" || echo "{\\"private\\":false}"; exit 0; fi\necho "{\\"t\\":\\"text\\",\\"text\\":\\"$4\\"}"\necho "{\\"t\\":\\"turn_end\\"}"\n' > "$tmp/ctl"; chmod +x "$tmp/ctl"
+echo '{"sessions":"agent-dddddd"}' > "$tmp/thread-C0AB12CD3-1790000000.000002.json"
+echo '{"state":"active","profile":"secret"}' > "$tmp/agent-dddddd.json"
 FXA_SESSION_DIR="$tmp" python3 - "$(dirname "$0")/../dashboard" "$tmp/ctl" <<'PY'
 import sys, threading, urllib.error, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
@@ -31,6 +34,7 @@ check("the newest session, then its view, then the end", 'event: session\ndata: 
       'data: {"t":"text","text":"agent-bbbbbb"}\n\ndata: {"t":"turn_end"}\n\nevent: end\ndata: {}\n\n', body)
 check("a paused session: its state and the end, no view", 'event: session\ndata: {"key": "agent-cccccc", "state": "paused"}\n\nevent: end\ndata: {}\n\n',
       get("C0AB12CD3:1790000000.000001")[2])
+check("a team with a private repo: 403, and no view", 403, get("C0AB12CD3:1790000000.000002")[0])
 check("an unknown thread: 404", 404, get("C0AB12CD3:1700000000.000001")[0])
 check("a bad thread: 400", 400, get("..%2Fx")[0])
 srv.shutdown(); sys.exit(fail)

@@ -688,11 +688,16 @@ pipeline_profile_json() {
   local app ok=1; app="$(_profile_app_repos)" || ok=0
   # The work rows a team stack may pick: every work row, or the one repo of a profile without rows.
   local works; works="$(trees_allowed 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ')"; works="${works:-${PIPE_REPO_SLUG:-}}"
-  jq -nc --arg p "${PIPE_PROFILE:-}" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
+  # Any private repo, of any role: the bot keeps its code out of public channels and the watch page.
+  local r priv=false
+  for r in ${PIPE_REPO_SLUG:-} ${PIPE_DEP_REPOS:-} $(for r in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do echo "${r%% *}"; done); do
+    github_repo_private "$r" && { priv=true; break; }
+  done
+  jq -nc --arg p "${PIPE_PROFILE:-}" --argjson private "$priv" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
     --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" \
     --arg mcp "${PIPE_MCP:-}" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" '
     ($ro == "0") as $read_only | ($app | split("\n") | map(ascii_downcase)) as $installed |
-    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only,
+    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only, private: $private,
       mcp: (if $mcp_set then ($mcp | split(",") | map(select(. != ""))) else null end),
       defaults: ($defaults | split(" ") | map(select(. != ""))),
       repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",

@@ -294,6 +294,44 @@ _team_runtime_secrets() {
   return $rc
 }
 
+# The runner's clone and pin git calls read a private repo's token through fxa-git-cred. Only the token
+# file holds the value: no command line, no .git/config. With no token file the helper says nothing.
+_RUNNER_GIT_ENV='GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=/usr/local/sbin/fxa-git-cred GIT_CONFIG_KEY_1=credential.useHttpPath GIT_CONFIG_VALUE_1=true'
+# As root on the runner: the helper, then one "<owner>_<repo> <token>" line a file from stdin.
+_RUNNER_GIT_SETUP='install -d -m 700 -o agent -g agent /run/fxa-git && cat > /usr/local/sbin/fxa-git-cred <<"H" && chmod 755 /usr/local/sbin/fxa-git-cred &&
+#!/bin/sh
+[ "$1" = get ] || exit 0
+p=""; while IFS= read -r l && [ -n "$l" ]; do case "$l" in path=*) p="${l#path=}" ;; esac; done
+f="/run/fxa-git/$(printf %s "${p%.git}" | tr / _)"
+[ -f "$f" ] && printf "username=x-access-token\npassword=%s\n" "$(cat "$f")"
+exit 0
+H
+while read -r n t; do case "$n" in ""|*[!A-Za-z0-9_.-]*) continue ;; esac; (umask 077; printf %s "$t" > "/run/fxa-git/$n") && chown agent:agent "/run/fxa-git/$n" || exit 1; done'
+
+# _runner_git_tokens <name> <owner/repo>...   A read token on the runner for each private repo, for the
+# clone and the pin. The agent never sees one: _runner_git_tokens_drop runs before the firewall.
+_runner_git_tokens() {
+  local name="$1" s f n=0 tok rc; shift
+  f="$(mktemp "${TMPDIR:-/tmp}/fxa-gt.XXXXXX")" || return 1
+  for s in "$@"; do
+    github_repo_private "$s" || continue
+    tok="$(github_read_token "$s")" || { echo "WARN: no read token for private repo ${s}: is the GitHub App installed on it?" >&2; continue; }
+    printf '%s %s\n' "${s//\//_}" "$tok" >> "$f"; n=$((n + 1))
+  done
+  [ "$n" -gt 0 ] || { rm -f "$f"; return 0; }
+  rc=0; vm_exec "$name" bash -c "$_RUNNER_GIT_SETUP" < "$f" >/dev/null 2>&1 || rc=$?
+  rm -f "$f"
+  [ "$rc" -eq 0 ] && _RUNNER_GIT_TOKENS=1
+  return "$rc"
+}
+
+# _runner_git_tokens_drop <name>   Remove the tokens. A failure stops the start, so no token outlives the pin.
+_runner_git_tokens_drop() {
+  [ -n "${_RUNNER_GIT_TOKENS:-}" ] || return 0
+  vm_exec "$1" rm -rf /run/fxa-git || return 1
+  _RUNNER_GIT_TOKENS=""
+}
+
 # _gce_profile_boot <name>   Ship the profile's boot.sh and start it as root, detached:
 # it sets up the profile's stack while the agent reads code, and writes
 # /run/fxa-profile/ready or failed. Nothing for a profile without one.
@@ -336,13 +374,13 @@ _gce_profile_workspace() {
     || { echo "ERROR: PIPE_WORKSPACE or PIPE_REPO_SLUG is not a plain path or repo name." >&2; return 1; }
   # The other trees go beside it, never inside /workspace, so the agent loads no
   # CLAUDE.md, skills or hooks from them. The loader checked each row.
-  local cmd="[ -d ${ws}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
+  local cmd="[ -d ${ws}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --filter=blob:none https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
   local row s p r
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
     read -r s p r _ <<< "$row"
     case "$r" in
-      dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}" ;;
-      ref) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent git clone --quiet --depth 1 https://github.com/${s}.git ${p}" ;;
+      dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}" ;;
+      ref) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --depth 1 https://github.com/${s}.git ${p}" ;;
     esac
   done
   echo "Cloning ${slug} into ${ws}..."
@@ -406,7 +444,7 @@ _gce_pin_runner_tree() {
   # which reads as an empty answer, so retry that instead of failing the launch.
   local try
   for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "cd ${at} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
       # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.
@@ -1037,6 +1075,10 @@ agent_run() {
   # A team stack (.fxa-trees.tsv in the run dir) clones and pins each of its repos.
   local trees="${workspace_dir}/.fxa-trees.tsv"; [ -s "$trees" ] || trees=""
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
+    # A private repo's read token, for the clone and the pin only.
+    if [ -n "$trees" ]; then _runner_git_tokens "$name" $(cut -f2 "$trees")
+    else _runner_git_tokens "$name" ${PIPE_REPO_SLUG:-} $(for r in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do echo "${r%% *}"; done); fi \
+      || echo "WARN: the read tokens for the private repos did not reach the runner; their clone will fail" >&2
     if [ -n "$trees" ]; then _trees_workspace "$name" "$trees"; else _gce_profile_workspace "$name"; fi \
       || { echo "ERROR: could not set up the profile's repo on the runner." >&2; vm_delete "$name"; return 1; }
   fi
@@ -1088,6 +1130,7 @@ agent_run() {
     grep -v '^Pinning the runner' "$pin_out" || true; _PINNED_BASE="$(cat "${pin_out}.base" 2>/dev/null || true)"; rm -f "$pin_out" "${pin_out}.base"
     [ "$pin_rc" -eq 0 ] || { vm_delete "$name"; return 1; }
   fi
+  _runner_git_tokens_drop "$name" || { echo "ERROR: could not remove the read tokens from the runner; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
   echo "Applying security hardening..."
   _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
   # A team's runtime secrets first: its boot script may read them.

@@ -122,5 +122,32 @@ check "app-token for a read-only profile prints nothing and calls no GitHub API"
 : > "$tmp/curl-calls"; app_token fxa-ai-fixme >/dev/null
 check "app-token for a PR profile still asks GitHub" "1" "$([ -s "$tmp/curl-calls" ] && echo 1 || echo 0)"
 
+
+# The git credential helper: a read-only token for the asked repo; nothing for another host or op.
+( eval "$(sed -n '/^github_read_token() {/,/^}/p;/^github_git_credential() {/,/^}/p;/^_gh_app_installation() {/,/^}/p' "$here/github.sh")"
+  export TMPDIR="$tmp/cred"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111 GITHUB_APP_ID=1 GITHUB_APP_PEM=k
+  github_app_enabled() { true; }; github_app_jwt() { echo jwt; }; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  curl() { local url="${*: -1}" body=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && body="$2"; shift; done
+    echo "$url $body" >> "$tmp/ccurls"
+    case "$url" in */repos/mozilla/fxa-private/installation) echo '{"id":333}' ;; */installation) return 22 ;; */333/access_tokens) echo '{"token":"t-read"}' ;; *) return 22 ;; esac; }
+  : > "$tmp/ccurls"
+  out="$(printf 'protocol=https\nhost=github.com\npath=mozilla/fxa-private.git\n\n' | github_git_credential get)"
+  check "the helper answers with a token that reads only the asked repo" "username=x-access-token password=t-read|1" \
+    "$(tr '\n' ' ' <<< "$out" | sed 's/ $//')|$(grep -c '/app/installations/333/access_tokens {"repositories":\["fxa-private"\],"permissions":{"contents":"read"}}' "$tmp/ccurls")"
+  check "nothing for another host, a repo the App lacks, or a store" "||" \
+    "$(printf 'host=gitlab.com\npath=a/b\n\n' | github_git_credential get)|$(printf 'host=github.com\npath=evil/repo.git\n\n' | github_git_credential get)|$(printf 'host=github.com\npassword=x\n\n' | github_git_credential store)"
+  exit "$fail" ) || fail=1
+
+
+# A repo is private when an anonymous read gets 404; an unclear answer is public. Cached for a day.
+( eval "$(sed -n '/^github_repo_private() {/,/^}/p' "$here/github.sh")"
+  export TMPDIR="$tmp/vis"; mkdir -p "$TMPDIR"; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+  curl() { echo "${*: -1}" >> "$tmp/vcurls"; case "${*: -1}" in */a/priv) echo 404 ;; */a/pub) echo 200 ;; *) echo 502 ;; esac; }
+  r() { github_repo_private "$1" && echo y || echo n; }
+  check "private on 404, public on 200 or an error" "y n n" "$(r a/priv) $(r a/pub) $(r a/flaky)"
+  : > "$tmp/vcurls"; r a/priv >/dev/null; r a/pub >/dev/null
+  check "a known answer is cached, an error is asked again" "0 1" "$(grep -c . "$tmp/vcurls") $(r a/flaky >/dev/null; grep -c . "$tmp/vcurls")"
+  exit "$fail" ) || fail=1
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

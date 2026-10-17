@@ -69,6 +69,9 @@ sudo -u "$U" bash -c '
   git config --global user.name fxa-agent
   git config --global user.email fxa-agent@users.noreply.github.com
   git config --global init.defaultBranch main
+  # A private repo the GitHub App is installed on: a read token from the controller (git asks only after a 401).
+  git config --global credential.https://github.com.helper "!~/Desktop/working2/fxa-sandbox-ctl/fxa-sandbox-ctl git-credential"
+  git config --global credential.https://github.com.useHttpPath true
   grep -q "fxa manager" ~/.bashrc || cat >> ~/.bashrc <<"RC"
 # fxa manager: the gh shim first, then the controller.
 export PATH="$HOME/bin:$PATH"

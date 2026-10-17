@@ -58,12 +58,14 @@ check "the index is not a team, and no record can be named index" "0|1" \
 # The live checks, with GitHub and Jira faked: a curl that answers by URL.
 curl() { local u="${@: -1}"
   case "$u" in
-    *repos/example/noapp/installation) echo 404 ;; *installation) echo 200 ;;
+    *repos/example/noapp/installation|*repos/example/pv2/installation) echo 404 ;; *installation) echo 200 ;;
+    */repos/example/pv1|*/repos/example/pv2|*/repos/example/pv3) echo 404 ;;
     *project/NOPE) echo 404 ;; *project/*) echo 200 ;;
     *mypermissions*projectKey=RO*) echo '{"permissions":{"BROWSE_PROJECTS":{"havePermission":true},"EDIT_ISSUES":{"havePermission":false},"TRANSITION_ISSUES":{"havePermission":false}}}' ;;
     *mypermissions*) echo '{"permissions":{"BROWSE_PROJECTS":{"havePermission":true},"EDIT_ISSUES":{"havePermission":true},"TRANSITION_ISSUES":{"havePermission":true}}}' ;;
   esac; }
 github_app_jwt() { echo jwt; }
+eval "$(sed -n '/^github_repo_private() {/,/^}/p' "$root/lib/github.sh")"; export TMPDIR="$tmp"
 live() { FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC="u@example.com:t" teams_validate "$(rec "$1" Live "$2")" "$1" 2>&1; }
 check "a work repo without the GitHub App is a warning, and the record is still valid" "1|0" \
   "$(sed -i.bak 's#example/lv2#example/noapp#' "$(rec lv2 Live)"; FXA_TEAMS_LIVE=1 teams_validate "$tmp/lv2.json" lv2 2>&1 | grep -c 'App is not installed on example/noapp')|$(FXA_TEAMS_LIVE=1 teams_validate "$tmp/lv2.json" lv2 >/dev/null 2>&1; echo $?)"
@@ -73,6 +75,9 @@ check "an active queue where the login cannot edit is refused; a draft or no que
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv4 Live ', "status": "active", "jira": { "project": "RO", "queue": true }')" lv4 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv5 Live ', "status": "draft", "jira": { "project": "RO", "queue": true }')" lv5 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv6 Live ', "status": "active", "jira": { "project": "RO" }')" lv6 >/dev/null 2>&1; echo $?)|$(live lv5 ', "status": "draft", "jira": { "project": "RO", "queue": true }' | grep -c 'lacks EDIT_ISSUES TRANSITION_ISSUES on RO')"
 check "full rights and an active queue: valid, no warning" "0|0" \
   "$(FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC=u:t teams_validate "$(rec lv7 Live ', "status": "active", "jira": { "project": "OK", "queue": true }')" lv7 >/dev/null 2>&1; echo $?)|$(live lv7 ', "status": "active", "jira": { "project": "OK", "queue": true }' | grep -c WARN)"
+pv() { local o; o="$(live "$1" "$2"; echo "rc=$?")"; printf '%s/%s' "$(grep -c "$3" <<< "$o")" "${o##*rc=}"; }
+check "a private repo: refused without the App or with access.open; valid for listed users" "1/1|1/1|0/0" \
+  "$(pv pv2 '' 'pv2 is private, and the agent.s GitHub App is not installed')|$(pv pv1 ', "access": { "open": true }' 'cannot be open to everyone')|$(pv pv3 ', "access": { "users": ["U012345"] }' ERROR)"
 gcloud() { return 1; }   # the team's credential is not stored yet
 check "a team credential that is not stored yet: refused for an active queue, a warning for a draft" "1|1" \
   "$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv8 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv8--jira" }')" lv8 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv9 Live ', "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv9--jira" }')" lv9 2>&1 | grep -c 'store it with vm.sh secret fxa-team-lv9--jira')"

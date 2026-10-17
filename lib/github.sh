@@ -555,6 +555,50 @@ github_app_token() {
   printf '%s' "$tok"
 }
 
+# github_read_token <owner/repo>   An installation token that can only read that one repo, for a git
+# clone or fetch of a private repo. Fails when the App is not installed there. Cached for 50 minutes.
+github_read_token() {
+  local slug="$1" inst cache tok
+  [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  inst="$(PIPE_REPO_SLUG="$slug" _gh_app_installation)"
+  cache="${TMPDIR:-/tmp}/fxa-github-read-token.${inst}.${slug//\//_}"
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 3000 ]; then cat "$cache"; return 0; fi
+  tok="$(curl -sf --retry 3 --retry-connrefused --max-time 30 -X POST -H "Authorization: Bearer $(github_app_jwt)" -H "Accept: application/vnd.github+json" \
+    -d "{\"repositories\":[\"${slug#*/}\"],\"permissions\":{\"contents\":\"read\"}}" "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')" || tok=""
+  [ -n "$tok" ] || return 1
+  ( umask 077; printf '%s' "$tok" > "$cache" )
+  printf '%s' "$tok"
+}
+
+# github_repo_private <owner/repo>   True when GitHub hides the repo from an anonymous read (private, or
+# gone). An unclear answer is public, as before. Cached for a day.
+github_repo_private() {
+  local slug="$1" cache code
+  [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  cache="${TMPDIR:-/tmp}/fxa-github-vis.${slug//\//_}"
+  if [ -s "$cache" ] && [ "$(( $(date +%s) - $(_mtime "$cache") ))" -lt 86400 ]; then [ "$(cat "$cache")" = private ]; return; fi
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://api.github.com/repos/${slug}")" || code=""
+  case "$code" in
+    200) echo public > "$cache"; return 1 ;;
+    404) echo private > "$cache"; return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# github_git_credential <operation>   A git credential helper (git asks only after a 401, so only for a
+# private repo): a read token for github.com/<owner>/<repo>, from the request on stdin. Needs
+# credential.useHttpPath. Prints nothing when it has no token, and git then fails as before.
+github_git_credential() {
+  local line host="" path="" tok
+  [ "${1:-}" = get ] || { cat > /dev/null; return 0; }
+  while IFS= read -r line && [ -n "$line" ]; do
+    case "$line" in host=*) host="${line#host=}" ;; path=*) path="${line#path=}" ;; esac
+  done
+  [ "$host" = github.com ] && github_app_enabled || return 0
+  tok="$(github_read_token "${path%.git}" 2>/dev/null)" || return 0
+  printf 'username=x-access-token\npassword=%s\n' "$tok"
+}
+
 # _gh_app_api <METHOD> <path>
 #   Call the REST API as the App with the JSON body on stdin. The token goes in a
 #   0600 header file, not argv, so `ps` never shows it.

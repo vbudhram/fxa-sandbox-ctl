@@ -198,6 +198,8 @@ memory_collect() {
   local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 now d n=0 f id added=0 inbox=0 dropped=0
   shift 6
   [ -s "$json" ] || return 0
+  # The memory repo is shared by every team: a run on a private repo leaves nothing in it.
+  for f in "$@"; do github_repo_private "$f" && { echo "  memory: ${f} is private; nothing saved" >&2; _memory_log "$run" private; return 0; }; done
   norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; _memory_log "$run" invalid; return 0; }
   [ -n "$norm" ] || return 0
   # Personal or internal data anywhere in it: nothing is saved.

@@ -115,6 +115,9 @@ check "a team works in its own clone, with FxA's stack beside it" "PIPE_STACK_DI
 
 # profile show: each repo's effective access, from the profile and the GitHub App.
 eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p;/^pipeline_mcp() {/p' "$root/lib/pipeline.sh")"
+github_repo_private() { [ "$1" = mozilla/secret ]; }
+check "a team with a private repo of any role is marked private" "false|true|true" \
+  "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)|$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_DEP_REPOS=mozilla/secret PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)|$(PIPE_REPOS=("mozilla/fxa /home/agent/fxa work" "mozilla/secret /home/agent/s ref"); PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 PIPE_STATE_DIR="$tmp/ps"; mkdir -p "$PIPE_STATE_DIR"
 github_app_jwt() { echo jwt; }
@@ -163,7 +166,7 @@ check "every profile loads, and PIPE_PROFILE is its directory name" "" "${bad# }
 : > "$tmp/vmx"; ( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data" "mdn/fred /home/agent/fred ref" "mozilla/fxa /home/agent/fxa dep")
   PIPE_WORKSPACE=/home/agent/rari PIPE_REPO_SLUG=mdn/rari _gce_profile_workspace r1 >/dev/null )
 check "data is a blobless clone, ref a shallow one, and a baked dep is kept" "1|1|1" \
-  "$(grep -c '\[ -d /home/agent/content/.git \] || sudo -u agent git clone --quiet --filter=blob:none https://github.com/mdn/content.git /home/agent/content' "$tmp/vmx")|$(grep -c 'git clone --quiet --depth 1 https://github.com/mdn/fred.git /home/agent/fred' "$tmp/vmx")|$(grep -c '\[ -d /home/agent/fxa/.git \] ||' "$tmp/vmx")"
+  "$(grep -c '\[ -d /home/agent/content/.git \] || sudo -u agent env [^;]*git clone --quiet --filter=blob:none https://github.com/mdn/content.git /home/agent/content' "$tmp/vmx")|$(grep -c 'git clone --quiet --depth 1 https://github.com/mdn/fred.git /home/agent/fred' "$tmp/vmx")|$(grep -c '\[ -d /home/agent/fxa/.git \] ||' "$tmp/vmx")"
 eval "$(sed -n '/^_profile_guide_trees() {/,/^}/p' "$root/lib/agent.sh")"
 g="$( PIPE_REPOS=("mdn/rari /home/agent/rari work" "mdn/content /home/agent/content data"); _profile_guide_trees )"
 check "the guide names the work tree and marks the others read-only" "2|1" "$(grep -c '^- `/home/agent/' <<< "$g")|$(grep -c 'content.*read-only' <<< "$g")"

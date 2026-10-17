@@ -242,13 +242,31 @@ WATCHERS = threading.BoundedSemaphore(16)  # each is one ssh to a runner
 
 
 def watch_session(thread):
-    """A Slack thread's newest session as (key, state), or None."""
+    """A Slack thread's newest session as (key, state, profile), or None."""
     try:
         rec = json.loads((SESSION_DIR / f"thread-{thread.replace(':', '-', 1)}.json").read_text())
         key = (rec.get("sessions") or "").split()[-1]
-        return key, json.loads((SESSION_DIR / f"{key}.json").read_text()).get("state")
+        s = json.loads((SESSION_DIR / f"{key}.json").read_text())
+        return key, s.get("state"), s.get("profile") or "fxa"
     except (OSError, ValueError, IndexError):
         return None
+
+
+_PRIVATE = {}  # profile -> (when, private)
+
+
+def team_private(profile):
+    """True when the team has a private repo (profile show), cached 10 minutes. No answer counts as private."""
+    hit = _PRIVATE.get(profile)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    try:
+        out = subprocess.run([str(CTL), "--pipeline", profile, "profile", "show"], capture_output=True, text=True, timeout=60)
+        private = out.returncode != 0 or json.loads(out.stdout).get("private") is not False
+    except (OSError, ValueError, subprocess.SubprocessError):
+        private = True
+    _PRIVATE[profile] = (time.time(), private)
+    return private
 
 
 # Only these keys are read: the file also holds the bot's tokens.
@@ -602,10 +620,14 @@ class Handler(BaseHTTPRequestHandler):
         if not found:
             self._json(404, {"error": "no session in this thread yet"})
             return
+        # The watch page is open to anyone IAP admits, so a private repo's code never goes there.
+        if team_private(found[2]):
+            self._json(403, {"error": "this team has a private repo, so its sessions cannot be watched"})
+            return
         if not WATCHERS.acquire(blocking=False):
             self._json(503, {"error": "too many watchers; try again soon"})
             return
-        key, state = found
+        key, state, _ = found
         proc = None
         try:
             self.send_response(200)
