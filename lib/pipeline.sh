@@ -669,7 +669,7 @@ _profile_app_repos() {
     t="$(mktemp "${f}.XXXXXX")" || return 1
     echo "# checked" > "$t"
     for s in $slugs; do
-      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
+      code="$(_gh_jwt_conf 2>/dev/null | curl -s -o /dev/null -w '%{http_code}' --max-time 20 -K - \
         -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
       case "$code" in 200) echo "$s" >> "$t" ;; 404) ;; *) rm -f "$t"; return 1 ;; esac
     done

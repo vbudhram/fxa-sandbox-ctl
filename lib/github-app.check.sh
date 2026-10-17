@@ -86,7 +86,7 @@ check "video appended as a link" "1" "$(grep -cE '^\[run.mp4\]\(https://.*/3/run
 check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.googleapis.com')"
 
 # The App token is limited to the work repo, from that repo's own installation.
-( eval "$(sed -n '/^github_app_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p;/^_gh_claimed() {/,/^}/p' "$here/github.sh")"
+( eval "$(sed -n '/^_gh_jwt_conf() {/p;/^github_app_token() {/,/^}/p;/^_gh_app_installation() {/,/^}/p;/^_gh_claimed() {/,/^}/p' "$here/github.sh")"
   export TMPDIR="$tmp/tok"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111
   github_app_jwt() { echo jwt; }; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
   curl() { local url="${*: -1}" body=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && body="$2"; shift; done
@@ -124,7 +124,7 @@ check "app-token for a PR profile still asks GitHub" "1" "$([ -s "$tmp/curl-call
 
 
 # The git credential helper: a read-only token for the asked repo; nothing for another host or op.
-( eval "$(sed -n '/^github_read_token() {/,/^}/p;/^github_git_credential() {/,/^}/p;/^_gh_app_installation() {/,/^}/p' "$here/github.sh")"
+( eval "$(sed -n '/^_gh_jwt_conf() {/p;/^github_read_token() {/,/^}/p;/^github_git_credential() {/,/^}/p;/^_gh_app_installation() {/,/^}/p' "$here/github.sh")"
   export TMPDIR="$tmp/cred"; mkdir -p "$TMPDIR"; GITHUB_APP_INSTALLATION_ID=111 GITHUB_APP_ID=1 GITHUB_APP_PEM=k
   github_app_enabled() { true; }; github_app_jwt() { echo jwt; }; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
   curl() { local url="${*: -1}" body=""; while [ $# -gt 0 ]; do [ "$1" = -d ] && body="$2"; shift; done

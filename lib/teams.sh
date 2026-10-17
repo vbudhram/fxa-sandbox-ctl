@@ -118,7 +118,7 @@ _teams_live() {
   [ "${FXA_TEAMS_LIVE:-1}" = 1 ] || return 0
   local f="$1" s code proj st queue have p miss="" rc=0
   for s in $(jq -r '.repos[]? | select(.role == "work") | .slug' "$f"); do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
+    code="$(_gh_jwt_conf 2>/dev/null | curl -s -o /dev/null -w '%{http_code}' --max-time 20 -K - \
       -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
     case "$code" in
       200) ;;
@@ -129,7 +129,7 @@ _teams_live() {
   # A private repo, of any role: only the App's read token clones it, and its code must not reach everyone.
   for s in $(jq -r '.repos[]?.slug' "$f"); do
     github_repo_private "$s" || continue
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
+    code="$(_gh_jwt_conf 2>/dev/null | curl -s -o /dev/null -w '%{http_code}' --max-time 20 -K - \
       -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
     [ "$code" = 200 ] || { echo "ERROR: ${s} is private (or GitHub did not answer), and the agent's GitHub App is not installed on it (HTTP ${code}), so a runner cannot clone it" >&2; rc=1; }
     [ "$(jq -r '.access.open // false' "$f")" != true ] || { echo "ERROR: ${s} is private, so the team cannot be open to everyone: set access.users instead of access.open" >&2; rc=1; }
