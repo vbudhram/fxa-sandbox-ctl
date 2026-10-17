@@ -9,7 +9,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # Each load in its own shell, as the controller runs one profile per process.
 load() { bash -c 'cd "$1/.." && source lib/config.sh >/dev/null 2>&1; source lib/pipeline.sh; pipeline_load "$2" >/dev/null 2>&1 || exit 1
   printf "%s|%s|%s|%s|%s" "${FXA_ANDROID:-}" "${FXA_GCE_NESTED:-}" "${FXA_GCE_MACHINE_TYPE:-}" "${FXA_GCE_IMAGE:-}" "${FXA_GCE_MACHINE_FALLBACK-}"' _ "$here" "$1"; }
-check "the FxA Android team runs on the Android runner" "1|1|n2-standard-8|fxa-dev-android|c3-standard-8" "$(load fxa-android)"
+# An Android team as a record (runner.android), as fxa-android is one.
+lt="$(mktemp -d)"; printf '{ "schema": 1, "name": "andr", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "runner": { "android": true } }' > "$lt/andr.json"
+check "an Android team runs on the Android runner" "1|1|n2-standard-8|fxa-dev-android|c3-standard-8" "$(HOME="$lt" FXA_TEAMS_DIR="$lt" load andr)"; rm -rf "$lt"
 check "the FxA team keeps its runner" "||c4a-standard-4|fxa-dev-base|" "$(load fxa | cut -d'|' -f1-4)|"
 
 # The pattern goes through a variable: bash 3.2 brace-expands it inside "$(...)".
@@ -31,9 +33,13 @@ FXA_ANDROID_TEAM=fxa-android; _profile_guide_trees() { :; }
 rules() { _vm_team_rules | grep -c '^# Team rules: FxA Android'; }
 guide() { vm_guide_build pipeline 2>/dev/null | grep -c '^# FxA Android$'; }
 vm_exec() { printf '%s' "$*" > "$tmp/boot"; }; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+# The Android team's prompts as its record's copies; a folder copy, while there is one, wins with the same headings.
+export FXA_TEAMS_DIR="$tmp/at"; mkdir -p "$tmp/at/fxa-android"; printf '# FxA Android rules\n' > "$tmp/at/fxa-android/CLAUDE.md"; printf '# FxA Android\n' > "$tmp/at/fxa-android/guide.md"
 boot() { : > "$tmp/boot"; _gce_profile_boot r >/dev/null; grep -c "$(base64 < "$SANDBOX_ROOT/profiles/fxa-android/boot.sh" | tr -d '\n' | cut -c1-40)" "$tmp/boot"; }
 check "the FXA pass's Android run: Android rules, guide and boot" "1|1|1" "$(export FXA_ANDROID=1 PIPE_PROFILE=fxa; echo "$(rules)|$(guide)|$(boot)")"
 check "a plain FxA run gets none of them" "0|0|0" "$(export PIPE_PROFILE=fxa; unset FXA_ANDROID; echo "$(rules)|$(guide)|$(boot)")"
+check "with its prompts in a record, an Android run on FxA gets the record's copy" "$tmp/t/fxa-android/CLAUDE.md|" \
+  "$(mkdir -p "$tmp/t/fxa-android"; echo r > "$tmp/t/fxa-android/CLAUDE.md"; export FXA_ANDROID=1 PIPE_PROFILE=fxa SANDBOX_ROOT="$tmp/nofolder" FXA_TEAMS_DIR="$tmp/t"; echo "$(android_overlay CLAUDE.md)|$(android_overlay boot.sh)")"
 check "the Android team itself: its guide once, its rules once" "1|1" "$(export FXA_ANDROID=1 PIPE_PROFILE=fxa-android PIPE_LABEL='FxA Android Team'; echo "$(_vm_team_rules | grep -c '^# Team rules:')|$(guide)")"
 
 pat='/^_session_wants_stack() {/,/^}/p'; eval "$(sed -n "$pat" "$here/session.sh")"

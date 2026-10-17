@@ -38,8 +38,9 @@ check "a team's state mirror and pause marker come from its name, in the state b
   "$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_STATE_URI=//p" | tr -d "'")|$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_PAUSE_URI=//p" | tr -d "'")|$(get PIPE_STATE_URI)"
 check "its prompts land beside the record, as text that never runs" "Run cargo test. \$(touch /tmp/team-record-ran)|# Rusty|no" \
   "$(cat "$T/rusty/CLAUDE.md")|$(cat "$T/rusty/guide.md")|$([ -e /tmp/team-record-ran ] && echo yes || echo no)"
-check "profile_file finds a record's prompt, and a folder team's own file first" "$T/rusty/CLAUDE.md|$root/profiles/monitor/CLAUDE.md" \
-  "$( export FXA_TEAMS_DIR="$T"; SANDBOX_ROOT="$root"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file rusty CLAUDE.md)|$( SANDBOX_ROOT="$root"; FXA_TEAMS_DIR="$T"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file monitor CLAUDE.md)"
+mkdir -p "$tmp/pf/profiles/foldy"; echo f > "$tmp/pf/profiles/foldy/CLAUDE.md"
+check "profile_file finds a record's prompt, and a folder team's own file first" "$T/rusty/CLAUDE.md|$tmp/pf/profiles/foldy/CLAUDE.md" \
+  "$( export FXA_TEAMS_DIR="$T"; SANDBOX_ROOT="$root"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file rusty CLAUDE.md)|$( SANDBOX_ROOT="$tmp/pf"; FXA_TEAMS_DIR="$T"; eval "$(sed -n '/^profile_file() {/,/^}/p' "$root/lib/config.sh")"; profile_file foldy CLAUDE.md)"
 
 # The validator: each rule refuses, and a refused record never loads.
 bad() { printf '%s' "$2" > "$T/$1.json"; py validate "$T/$1.json" "$1" 2>&1; }
@@ -55,8 +56,16 @@ check "an FxA stack with no mozilla/fxa row is refused" "1" "$(bad sk '{ "schema
 check "a launch cap over the operator ceiling is refused" "1" "$(bad cp '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "cp", "caps": { "launches_per_day": 500 } }' | grep -c 'launches_per_day')"
 check "an egress host that is not a hostname is refused" "1" "$(bad eg '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "eg", "egress": { "approved": ["x.com;curl"] } }' | grep -c 'egress')"
 check "a refused record does not load" "1" "$(loaded hk >/dev/null; echo $?)"
-check "a folder profile wins over a record of the same name" "Monitor Team" \
-  "$(printf '%s' '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "monitor", "label": "Not Monitor" }' > "$T/monitor.json"; loaded monitor | sed -n "s/^PIPE_LABEL=//p" | tr -d "'")"
+# A folder is a folder team only with a profile.conf: one that holds only boot.sh or skills reserves no name.
+FR="$tmp/fr"; mkdir -p "$FR/profiles/foldt" "$FR/profiles/assets"; ln -s "$root/lib" "$FR/lib"
+printf 'PIPE_PROFILE="foldt"\nPIPE_LABEL="Fold T"\nPIPE_REPOS=(\n  "example/x /home/agent/x work"\n)\n' > "$FR/profiles/foldt/profile.conf"; echo 'echo boot' > "$FR/profiles/assets/boot.sh"
+for n in assets foldt; do printf '{ "schema": 1, "name": "%s", "label": "Rec %s", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" } }' $n $n > "$T/$n.json"; done
+fl() { ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; SANDBOX_ROOT="$FR"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load "$1" >/dev/null 2>&1 && echo "$PIPE_LABEL" ); }
+check "a folder with only boot.sh lets its record load; a folder with profile.conf still wins; only that one is a folder team" "Rec assets|Fold T|foldt" \
+  "$(fl assets)|$(fl foldt)|$( SANDBOX_ROOT="$FR"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_folder_teams | paste -sd, -)"
+check "the index has no reserved names, so a host with the folder writes the index a host without writes; fxa-android is free" "Rec foldt|0" \
+  "$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$T" | jq -r '.teams.foldt.label')|$(bad fxa-android '{ "schema": 1, "name": "fxa-android", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" } }' | grep -c reserved)"
+rm -f "$T/assets.json" "$T/foldt.json" "$T/fxa-android.json"
 check "an approved egress host that takes data out is refused, with its subdomains; a normal one is fine" "1|1|0" \
   "$(bad e1 '{ "schema": 1, "name": "e1", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["pastebin.com"] } }' | grep -c 'take data out')|$(bad e2 '{ "schema": 1, "name": "e2", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["abc.ngrok-free.app"] } }' | grep -c 'take data out')|$(bad e3 '{ "schema": 1, "name": "e3", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "egress": { "approved": ["static.crates.io"] } }' | grep -c .)"
 rm -f "$T"/e1.json "$T"/e2.json "$T"/e3.json
@@ -68,6 +77,10 @@ rm -f "$T"/ng.json "$T"/hk.json "$T"/n1.json "$T"/fxa.json "$T"/lb.json "$T"/sl.
 R="$tmp/repo"; mkdir -p "$R/boot" "$R/skills"; printf 'android-verify\n# a comment\n' > "$R/skills/team-catalog.txt"
 printf '#!/bin/bash\necho boot\n' > "$R/boot/rusty.sh"; pin="$( { sha256sum "$R/boot/rusty.sh" 2>/dev/null || shasum -a 256 "$R/boot/rusty.sh"; } | cut -d' ' -f1)"
 code() { printf '{ "schema": 1, "name": "cd", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }%s }' "$1" > "$T/cd.json"; FXA_TEAM_REPO="$R" py env "$T/cd.json" cd 2>&1; }
+check "a goal that would push the rendered /goal over Claude's 4000 chars is refused; 2500 fits" "1|0" \
+  "$(code ", \"prompts\": { \"goal_md\": \"$(printf 'x%.0s' $(seq 1 2600))\" }" | grep -c 'goal_md must be text')|$(code ", \"prompts\": { \"goal_md\": \"$(printf 'y%.0s' $(seq 1 2500))\" }" | grep -c 'goal_md must be text')"
+check "a record with no row marked default sets no stack default, so its sessions are not trees sessions" "0|1" \
+  "$(code '' | grep -c '^PIPE_STACK_DEFAULT')|$(code '' | grep -c '^PIPE_BASE_BRANCH')"
 check "a catalog skill and a pinned boot script reach the loader" "android-verify|rusty|$pin" \
   "$(code ", \"skills\": [\"android-verify\"], \"boot\": { \"script\": \"rusty\", \"sha256\": \"$pin\" }" | awk -F'\t' '/^PIPE_TEAM_SKILLS|^PIPE_BOOT_SCRIPT|^PIPE_BOOT_SHA256/{print $2}' | paste -sd'|' -)"
 check "a skill off the catalog is refused" "1" "$(code ', "skills": ["fxa-manager"]' | grep -c "not on skills/team-catalog.txt")"

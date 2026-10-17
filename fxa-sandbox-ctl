@@ -2885,7 +2885,7 @@ main() {
                         done
                         for f in "${FXA_TEAMS_DIR}"/*.json; do
                           [ -f "$f" ] && [ "${f##*/}" != index.json ] || continue
-                          FXA_RESERVED_TEAMS="$(ls "${SCRIPT_DIR}/profiles" | tr '\n' ' ')" python3 -I "${SCRIPT_DIR}/lib/team_record.py" validate "$f" "$(basename "$f" .json)" 2>&1 || rc=1
+                          FXA_RESERVED_TEAMS="$(pipeline_folder_teams | tr '\n' ' ')" python3 -I "${SCRIPT_DIR}/lib/team_record.py" validate "$f" "$(basename "$f" .json)" 2>&1 || rc=1
                         done
                         for f in "${SCRIPT_DIR}"/repos/*/notes.md; do
                           [ ! -f "$f" ] || [ "$(_fsize "$f")" -le 8192 ] || { echo "${f#"${SCRIPT_DIR}"/}: over 8 KB"; rc=1; }

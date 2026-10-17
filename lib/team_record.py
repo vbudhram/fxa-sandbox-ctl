@@ -38,8 +38,9 @@ KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack
 REPO = os.environ.get("FXA_TEAM_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 SHA = re.compile(r"^[0-9a-f]{64}$")
-PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 16384)}
-RESERVED = {"fxa", "fxa-android", "index"}
+PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 2560)}
+# The goal is the team's steps plus a shared tail of about 1200 chars, and Claude refuses a /goal over 4000.
+RESERVED = {"fxa", "index"}
 # Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
 # An admin may approve other hosts; these are refused even then, with every subdomain.
 EGRESS_DENY = ("pastebin.com", "paste.ee", "hastebin.com", "termbin.com", "ix.io", "dpaste.org", "rentry.co",
@@ -220,7 +221,7 @@ def check(rec, name=None):
     pro = obj(rec.get("prompts", {}), "prompts", set(PROMPTS))
     for k, (_, most) in PROMPTS.items():
         if k in pro and (not isinstance(pro[k], str) or len(pro[k].encode()) > most):
-            bad.append(f"prompts.{k} must be text of at most {most // 1024} KB")
+            bad.append(f"prompts.{k} must be text of at most {most} bytes")
 
     skills = strs(rec.get("skills", []), "skills", SCRIPT, 20)
     for k in sorted(set(skills) - catalog()):
@@ -277,7 +278,10 @@ def env(rec):
         yield "REPO", f"{r['slug']} {r.get('path', default_path(r['slug']))} {r['role']}{base}"
     work = [r for r in repos if r["role"] == "work"]
     yield "PIPE_BASE_BRANCH", work[0].get("base", "main")
-    yield "PIPE_STACK_DEFAULT", " ".join(r["slug"] for r in repos if r.get("default")) or work[0]["slug"]
+    # Only rows marked default: a value makes every session a trees session, which a one-repo team is not.
+    default = " ".join(r["slug"] for r in repos if r.get("default"))
+    if default:
+        yield "PIPE_STACK_DEFAULT", default
     if rec.get("stack", {}).get("kind") == "fxa":
         fxa = next(r for r in repos if r["slug"] == "mozilla/fxa")
         yield "PIPE_STACK_DIR", fxa.get("path", default_path(fxa["slug"]))

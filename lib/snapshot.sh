@@ -232,8 +232,9 @@ snapshot_stats_json() {
 # join the rows from their own state folders, and team_passes has each team's passes in 7 days.
 _stats_add_teams() {
   local f p d in; in="$(mktemp)"; cat > "$in"
-  for f in "${FXA_PROFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles}"/*/profile.conf; do
-    p="$(basename "$(dirname "$f")")"; d="${HOME}/.claude/state/${p}"
+  # The folder teams and the record teams.
+  for p in $( { ls "${FXA_PROFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles}"; ls "${FXA_TEAMS_DIR:-${HOME}/.claude/state/teams}" 2>/dev/null | sed -n 's/\.json$//p'; } 2>/dev/null | sort -u); do
+    d="${HOME}/.claude/state/${p}"
     [[ "$p" =~ ^[a-z0-9-]+$ ]] && [ "$p" != "${PIPE_PROFILE:-fxa}" ] && [ -d "$d" ] && [ "$d" != "$PIPE_STATE_DIR" ] || continue
     jq -c --arg p "$p" --slurpfile r <(cat "$d/agent-runs.jsonl" 2>/dev/null || true) --slurpfile j <(cat "$d/job-costs.jsonl" 2>/dev/null || true) \
       --slurpfile ps <(cat "$d/passes.jsonl" 2>/dev/null || true) "$_STATS_RUN_ROW$_STATS_JOB_ROW"'

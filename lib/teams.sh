@@ -6,7 +6,7 @@
 # With no FXA_GCE_PROJECT (a laptop, a check), the cache is the store.
 
 FXA_TEAMS_URI="${FXA_TEAMS_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/teams}}"
-_TEAMS_PY() { FXA_RESERVED_TEAMS="$(ls "${SANDBOX_ROOT}/profiles" 2>/dev/null | tr '\n' ' ')" python3 -I "${SANDBOX_ROOT}/lib/team_record.py" "$@"; }
+_TEAMS_PY() { FXA_RESERVED_TEAMS="$(pipeline_folder_teams | tr '\n' ' ')" python3 -I "${SANDBOX_ROOT}/lib/team_record.py" "$@"; }
 
 # _teams_actor   Who writes: FXA_TEAM_ACTOR, else the git email of this host.
 _teams_actor() { printf '%s' "${FXA_TEAM_ACTOR:-$(git config user.email 2>/dev/null || true)}"; }
@@ -88,7 +88,8 @@ teams_audit() {
 # teams_index   Rebuild index.json from the cached records, in one rename.
 teams_index() {
   mkdir -p "$FXA_TEAMS_DIR"
-  _TEAMS_PY index "$FXA_TEAMS_DIR" > "${FXA_TEAMS_DIR}/index.json.$$" && mv -f "${FXA_TEAMS_DIR}/index.json.$$" "${FXA_TEAMS_DIR}/index.json"
+  # No reserved names: a host whose tree still has a team's folder writes the same index as one without.
+  FXA_RESERVED_TEAMS= python3 -I "${SANDBOX_ROOT}/lib/team_record.py" index "$FXA_TEAMS_DIR" > "${FXA_TEAMS_DIR}/index.json.$$" && mv -f "${FXA_TEAMS_DIR}/index.json.$$" "${FXA_TEAMS_DIR}/index.json"
 }
 
 # _teams_cache <name> <file> <gen>   Put a record in the cache with its generation and prompts.

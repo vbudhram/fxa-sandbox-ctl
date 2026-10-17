@@ -49,9 +49,12 @@ pipeline_conf_lint() {
   return 1
 }
 
-# pipeline_profile_names   Every team: the folders under profiles/, then the records in FXA_TEAMS_DIR.
+# pipeline_folder_teams   The folder teams: a folder under profiles/ with a profile.conf. A folder with
+# only a record team's boot.sh or skills is not one, and does not reserve its name.
+pipeline_folder_teams() { local f; for f in "${SANDBOX_ROOT}"/profiles/*/profile.conf; do [ -f "$f" ] && basename "$(dirname "$f")"; done; return 0; }
+# pipeline_profile_names   Every team: the folder teams, then the records in FXA_TEAMS_DIR.
 pipeline_profile_names() {
-  { ls "${SANDBOX_ROOT}/profiles" 2>/dev/null; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p' | grep -vx index || true; } | awk '!seen[$0]++'
+  { pipeline_folder_teams; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p' | grep -vx index || true; } | awk '!seen[$0]++'
 }
 
 # _pipeline_team_jira <name>   A team with its own Jira credential (secrets.jira, "email:token" in Secret
@@ -82,7 +85,7 @@ _pipeline_team_jira() {
 _pipeline_load_record() {
   local name="$1" rec out k v
   rec="${FXA_TEAMS_DIR}/${name}.json"
-  out="$(FXA_RESERVED_TEAMS="$(ls "${SANDBOX_ROOT}/profiles" 2>/dev/null | tr '\n' ' ')" \
+  out="$(FXA_RESERVED_TEAMS="$(pipeline_folder_teams | tr '\n' ' ')" \
     python3 -I "${SANDBOX_ROOT}/lib/team_record.py" env "$rec" "$name")" || { echo "ERROR: team record ${name} is not valid" >&2; return 1; }
   PIPE_REPOS=()
   while IFS=$'\t' read -r k v; do

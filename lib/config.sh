@@ -83,8 +83,8 @@ FXA_ANDROID_TEAM="${FXA_ANDROID_TEAM:-fxa-android}"
 # android_overlay <file>   The Android team's <file> for an Android run on another team, or nothing.
 android_overlay() {
   [ "${FXA_ANDROID:-}" = 1 ] && [ "${PIPE_PROFILE:-fxa}" != "$FXA_ANDROID_TEAM" ] || return 0
-  [ -f "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1" ] && printf '%s' "${SANDBOX_ROOT}/profiles/${FXA_ANDROID_TEAM}/$1"
-  return 0
+  # The folder's file (boot.sh), else the record's copy (its prompts).
+  profile_file "$FXA_ANDROID_TEAM" "$1"
 }
 # Team records (data, never sourced; lib/team_record.py), cached on this host. Each record's prompts go beside it.
 FXA_TEAMS_DIR="${FXA_TEAMS_DIR:-${HOME}/.claude/state/teams}"
