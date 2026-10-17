@@ -21,4 +21,8 @@ check "the token is not in the git env or a command line" "0" "$(printf '%s %s' 
 _runner_git_tokens_drop agent-1
 check "the drop removes the tokens once, and a start with none skips it" "rm -rf /run/fxa-git|" \
   "$(cat "$tmp/execs")|$(: > "$tmp/execs"; _runner_git_tokens_drop agent-1; cat "$tmp/execs")"
+# A setup that fails after it wrote a token: the drop still runs.
+: > "$tmp/execs"; vm_exec() { shift; [ "$1" = bash ] && return 255; echo "$*" >> "$tmp/execs"; }
+_runner_git_tokens agent-2 mozilla/fxa-private; _runner_git_tokens_drop agent-2
+check "a failed setup still gets the drop" "rm -rf /run/fxa-git" "$(cat "$tmp/execs")"
 exit "$fail"

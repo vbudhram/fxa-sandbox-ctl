@@ -101,11 +101,16 @@ check "a read-only profile loads with PR off" "PIPE_PROFILE=ro|PIPE_PR_OPEN=0|PI
   "$(loaded "$tmp/r" ro | grep -E '^PIPE_(PR_OPEN|PROFILE|REPO_SLUG)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
 # A profile with its own repo: cloned beside FxA, and /workspace points at it.
-eval "$(sed -n '/^_gce_profile_workspace() {/,/^}/p' "$root/lib/agent.sh")"
+eval "$(sed -n '/^_gce_profile_workspace() {/,/^}/p;/^_clone_filter() {/p' "$root/lib/agent.sh")"
 vm_exec() { shift; printf '%s\n' "$*" >> "$tmp/vmx"; }
 : > "$tmp/vmx"; PIPE_WORKSPACE=/home/agent/monitor PIPE_REPO_SLUG=mozilla/blurts-server _gce_profile_workspace r1 >/dev/null
 check "a profile repo is cloned and /workspace points at it" "1|1" \
   "$(grep -c 'git clone --quiet --filter=blob:none https://github.com/mozilla/blurts-server.git /home/agent/monitor' "$tmp/vmx")|$(grep -c 'ln -sfn /home/agent/monitor /workspace' "$tmp/vmx")"
+github_repo_private() { [ "$1" = mozilla/secret ]; }
+: > "$tmp/vmx"; PIPE_WORKSPACE=/home/agent/secret PIPE_REPO_SLUG=mozilla/secret _gce_profile_workspace r1 >/dev/null
+check "a private repo gets a full clone, since its token is gone before the agent reads old files" "1" \
+  "$(grep -c 'git clone --quiet  https://github.com/mozilla/secret.git /home/agent/secret' "$tmp/vmx")"
+unset -f github_repo_private
 : > "$tmp/vmx"; _gce_profile_workspace r1 >/dev/null; PIPE_WORKSPACE=/home/agent/fxa _gce_profile_workspace r1 >/dev/null
 check "FxA keeps the baked clone, with no call" "0" "$(wc -l < "$tmp/vmx" | tr -d ' ')"
 check "a workspace or slug that is not plain is refused" "1|1" \

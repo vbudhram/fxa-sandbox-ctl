@@ -139,12 +139,12 @@ check "app-token for a PR profile still asks GitHub" "1" "$([ -s "$tmp/curl-call
   exit "$fail" ) || fail=1
 
 
-# A repo is private when an anonymous read gets 404; an unclear answer is public. Cached for a day.
+# A repo is private when an anonymous read gets 404 or no clear answer. A clear answer is cached for a day.
 ( eval "$(sed -n '/^github_repo_private() {/,/^}/p' "$here/github.sh")"
   export TMPDIR="$tmp/vis"; mkdir -p "$TMPDIR"; _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
   curl() { echo "${*: -1}" >> "$tmp/vcurls"; case "${*: -1}" in */a/priv) echo 404 ;; */a/pub) echo 200 ;; *) echo 502 ;; esac; }
   r() { github_repo_private "$1" && echo y || echo n; }
-  check "private on 404, public on 200 or an error" "y n n" "$(r a/priv) $(r a/pub) $(r a/flaky)"
+  check "private on 404 or an unclear answer, public only on 200" "y n y" "$(r a/priv) $(r a/pub) $(r a/flaky)"
   : > "$tmp/vcurls"; r a/priv >/dev/null; r a/pub >/dev/null
   check "a known answer is cached, an error is asked again" "0 1" "$(grep -c . "$tmp/vcurls") $(r a/flaky >/dev/null; grep -c . "$tmp/vcurls")"
   exit "$fail" ) || fail=1

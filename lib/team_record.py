@@ -144,7 +144,7 @@ def check(rec, name=None):
     if not isinstance(repos, list) or not 1 <= len(repos) <= 8:
         bad.append("repos must list 1 to 8 repos")
         repos = []
-    slugs, paths = set(), set()
+    slugs, paths, work = set(), set(), set()
     for i, r in enumerate(repos):
         r = obj(r, f"repos[{i}]", {"slug", "path", "role", "base", "default"})
         s = r.get("slug")
@@ -166,6 +166,8 @@ def check(rec, name=None):
             bad.append(f"two repos use {p}")
         slugs.add(s.lower())
         paths.add(p)
+        if r.get("role") == "work":
+            work.add(p)
     if repos and not any(isinstance(r, dict) and r.get("role") == "work" for r in repos):
         bad.append("repos needs at least one work repo")
 
@@ -256,6 +258,9 @@ def check(rec, name=None):
         if not re.match(r"^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]{1,150}$", pp) or ".." in pp \
                 or "/".join(pp.split("/")[:4]) not in paths:
             bad.append(f"secrets.runtime[{i}].path must be a file inside one of the team's repo folders")
+        # A work repo's files go back to the host and into its PR; a runner's .git/info/exclude does not.
+        elif "/".join(pp.split("/")[:4]) in work:
+            bad.append(f"secrets.runtime[{i}].path is in a work repo, whose files can ship in a PR: use a dep, data or ref repo")
 
     for k in ("created", "updated"):
         if k in rec:

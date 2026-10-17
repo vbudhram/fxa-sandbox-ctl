@@ -110,7 +110,7 @@ _trees_workspace() {
   local name="$1" cmd="mkdir -p ${TREES_ROOT}/.fxa-auto-media && chown -R agent:agent ${TREES_ROOT}" n s p sha base bsha br
   while IFS=$'\t' read -r n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || { echo "ERROR: bad tree line for ${n:-?}" >&2; return 1; }
-    cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"
+    cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"
     # The image's fxa-start and stack.sh read FxA from /workspace, which here holds only links.
     [ "$s" = mozilla/fxa ] && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p} FXA_ROOT=${p}' >> /etc/agent-env.sh; sed -i 's#/workspace#${p}#g' /usr/local/bin/fxa-start"
   done < "$2"

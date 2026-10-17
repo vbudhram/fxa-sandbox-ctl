@@ -571,7 +571,7 @@ github_read_token() {
 }
 
 # github_repo_private <owner/repo>   True when GitHub hides the repo from an anonymous read (private, or
-# gone). An unclear answer is public, as before. Cached for a day.
+# gone). An unclear answer (a rate limit, an outage) is private and is not cached: the gates fail closed.
 github_repo_private() {
   local slug="$1" cache code
   [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
@@ -581,7 +581,7 @@ github_repo_private() {
   case "$code" in
     200) echo public > "$cache"; return 1 ;;
     404) echo private > "$cache"; return 0 ;;
-    *) return 1 ;;
+    *) return 0 ;;
   esac
 }
 

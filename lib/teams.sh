@@ -131,7 +131,7 @@ _teams_live() {
     github_repo_private "$s" || continue
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $(github_app_jwt 2>/dev/null)" \
       -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${s}/installation" 2>/dev/null)" || code=000
-    [ "$code" = 200 ] || { echo "ERROR: ${s} is private, and the agent's GitHub App is not installed on it (HTTP ${code}), so a runner cannot clone it" >&2; rc=1; }
+    [ "$code" = 200 ] || { echo "ERROR: ${s} is private (or GitHub did not answer), and the agent's GitHub App is not installed on it (HTTP ${code}), so a runner cannot clone it" >&2; rc=1; }
     [ "$(jq -r '.access.open // false' "$f")" != true ] || { echo "ERROR: ${s} is private, so the team cannot be open to everyone: set access.users instead of access.open" >&2; rc=1; }
   done
   [ "$rc" -eq 0 ] || return 1

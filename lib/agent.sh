@@ -308,6 +308,10 @@ exit 0
 H
 while read -r n t; do case "$n" in ""|*[!A-Za-z0-9_.-]*) continue ;; esac; (umask 077; printf %s "$t" > "/run/fxa-git/$n") && chown agent:agent "/run/fxa-git/$n" || exit 1; done'
 
+# _clone_filter <owner/repo>   A blobless clone, but not for a private repo: its read token is gone before
+# the agent asks git for an old file, so that clone takes every blob now.
+_clone_filter() { github_repo_private "$1" && return 0; printf '%s' --filter=blob:none; }
+
 # _runner_git_tokens <name> <owner/repo>...   A read token on the runner for each private repo, for the
 # clone and the pin. The agent never sees one: _runner_git_tokens_drop runs before the firewall.
 _runner_git_tokens() {
@@ -319,9 +323,10 @@ _runner_git_tokens() {
     printf '%s %s\n' "${s//\//_}" "$tok" >> "$f"; n=$((n + 1))
   done
   [ "$n" -gt 0 ] || { rm -f "$f"; return 0; }
+  # Set before the ssh: a setup that fails after it wrote a token still gets the drop.
+  _RUNNER_GIT_TOKENS=1
   rc=0; vm_exec "$name" bash -c "$_RUNNER_GIT_SETUP" < "$f" >/dev/null 2>&1 || rc=$?
   rm -f "$f"
-  [ "$rc" -eq 0 ] && _RUNNER_GIT_TOKENS=1
   return "$rc"
 }
 
@@ -374,12 +379,12 @@ _gce_profile_workspace() {
     || { echo "ERROR: PIPE_WORKSPACE or PIPE_REPO_SLUG is not a plain path or repo name." >&2; return 1; }
   # The other trees go beside it, never inside /workspace, so the agent loads no
   # CLAUDE.md, skills or hooks from them. The loader checked each row.
-  local cmd="[ -d ${ws}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --filter=blob:none https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
+  local cmd="[ -d ${ws}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$slug") https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
   local row s p r
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
     read -r s p r _ <<< "$row"
     case "$r" in
-      dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --filter=blob:none https://github.com/${s}.git ${p}" ;;
+      dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}" ;;
       ref) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --depth 1 https://github.com/${s}.git ${p}" ;;
     esac
   done

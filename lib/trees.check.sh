@@ -17,6 +17,7 @@ eval "$(sed -n '/^session_set() {/,/^}/p' "$here/session.sh")"
 eval "$(sed -n '/^_session_write() {/,/^}/p' "$here/session.sh")"
 # shellcheck disable=SC1091
 source "$here/trees.sh"
+eval "$(sed -n '/^_clone_filter() {/p' "$here/agent.sh")"
 
 k=agent-ab12
 echo '{"key":"agent-ab12","branch":"agent-ab12","pr_url":""}' > "$tmp/$k.json"
