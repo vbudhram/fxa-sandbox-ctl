@@ -32,6 +32,7 @@ check "_circleci_get: the CircleCI token is on stdin as a header line, not on cu
   _gh_app_installation mozilla/fxa >/dev/null; github_app_token fxa >/dev/null 2>&1; github_read_token mozilla/fxa >/dev/null
   k=$(grep -c -- '-K -' "$tmp/args"); h=$(grep -cx 'header = "Authorization: Bearer eyJ-jwt-9z"' "$tmp/stdin")
   check "the App JWT: on stdin as a header line for every lookup and mint, never on curl's command line" "0|yes|$(wc -l < "$tmp/args" | tr -d ' ')" \
-    "$(grep -c eyJ-jwt-9z "$tmp/args")|$([ "$k" -ge 3 ] && [ "$k" = "$h" ] && echo yes)|$k" ) || fail=1
+    "$(grep -c eyJ-jwt-9z "$tmp/args")|$([ "$k" -ge 3 ] && [ "$k" = "$h" ] && echo yes)|$k"
+  exit "$fail" ) || fail=1
 check "no curl in lib/ puts the App JWT in a -H argument" 0 "$(grep -c 'Bearer \$(github_app_jwt' "$here"/*.sh | awk -F: '{n+=$2} END{print n+0}')"
 exit "$fail"
