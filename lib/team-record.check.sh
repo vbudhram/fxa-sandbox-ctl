@@ -36,6 +36,12 @@ check "the host keys are derived from the name, not read" "$tmp/home/.claude/sta
 check "a team's state mirror and pause marker come from its name, in the state bucket" \
   "gs://p1-fxa-ai-fixme/teams-state/rusty/state|gs://p1-fxa-ai-fixme/teams-state/rusty/PAUSED|" \
   "$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_STATE_URI=//p" | tr -d "'")|$(FXA_GCE_PROJECT=p1 loaded rusty | sed -n "s/^PIPE_PAUSE_URI=//p" | tr -d "'")|$(get PIPE_STATE_URI)"
+ino() { ls -i "$1" | awk '{print $1}'; }
+i1="$(ino "$T/rusty/CLAUDE.md")"; py prompts "$T/rusty.json" "$T/rusty" >/dev/null 2>&1
+jq '.prompts.claude_md = "# Rusty 2"' "$T/rusty.json" > "$tmp/rusty2.json"; cp "$T/rusty/CLAUDE.md" "$tmp/before.md"
+check "prompts leave an unchanged file alone, and replace a changed one whole, with no temp left" "$i1|# Rusty 2|0" \
+  "$(ino "$T/rusty/CLAUDE.md")|$(py prompts "$tmp/rusty2.json" "$T/rusty" >/dev/null 2>&1; head -1 "$T/rusty/CLAUDE.md")|$(ls "$T/rusty" | grep -c tmp)"
+py prompts "$T/rusty.json" "$T/rusty" >/dev/null 2>&1
 check "its prompts land beside the record, as text that never runs" "Run cargo test. \$(touch /tmp/team-record-ran)|# Rusty|no" \
   "$(cat "$T/rusty/CLAUDE.md")|$(cat "$T/rusty/guide.md")|$([ -e /tmp/team-record-ran ] && echo yes || echo no)"
 mkdir -p "$tmp/pf/profiles/foldy"; echo f > "$tmp/pf/profiles/foldy/CLAUDE.md"
