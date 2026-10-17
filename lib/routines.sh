@@ -98,18 +98,34 @@ routine_state() {
   echo "routine $1: $2 done"
 }
 
+_ROUTINE_LIVE="EXISTS (SELECT 1 FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = %s AND r.state IN ('claimed','started'))"
+
 # routines_drop_team <team>   A deleted team's routines go with it, so a later team of that name gets none;
-# their history stays. A store error fails: the caller then deletes nothing more.
+# their history stays. Refused while one of them has a live run. A store error fails: the caller then
+# deletes nothing more.
 routines_drop_team() {
   # No store on this host (no sqlite3): no routine can exist here.
   declare -F db_exec >/dev/null && command -v sqlite3 >/dev/null || return 0
-  local n; n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$1");")" && [[ "$n" =~ ^[0-9]+$ ]] \
+  local q live n; q="$(db_q "$1")"; live="$(printf "$_ROUTINE_LIVE" "$q")"
+  n="$(db_value "SELECT count(*) FROM routines WHERE team = $q; SELECT $live;")" && [[ "$n" =~ ^[0-9]+$'\n'[01]$ ]] \
     || { echo "ERROR: could not read team $1's routines from the store" >&2; return 1; }
-  [ "$n" -gt 0 ] || return 0
-  # The count in the audit row is what the one DELETE removed, not the read before it.
-  n="$(db_value "DELETE FROM routines WHERE team = $(db_q "$1"); SELECT changes();")" && [[ "$n" =~ ^[0-9]+$ ]] \
+  [ "${n#*$'\n'}" = 0 ] || { echo "ERROR: team $1 has a routine run in progress; stop it first" >&2; return 1; }
+  [ "${n%$'\n'*}" -gt 0 ] || return 0
+  # One statement, with the live-run guard in it; the audit count is what it removed.
+  n="$(db_value "DELETE FROM routines WHERE team = $q AND NOT $live; SELECT changes();")" && [[ "$n" =~ ^[0-9]+$ ]] \
     || { echo "ERROR: could not delete team $1's routines from the store" >&2; return 1; }
   _teams_audit_note routine-delete "$1" "all ${n} routines, with the team"
+}
+
+# routines_clear_name <team> <since epoch>   A new team, or a record this host sees for the first time:
+# routines saved under the name before that time belong to an earlier team of the name (a save that raced
+# its delete), and a .deleting marker is stale. A team never inherits them.
+routines_clear_name() {
+  rm -f "${FXA_TEAMS_DIR}/$1.deleting"
+  declare -F db_exec >/dev/null && command -v sqlite3 >/dev/null && [[ "${2:-}" =~ ^[0-9]+$ ]] || return 0
+  local n; n="$(db_value "DELETE FROM routines WHERE team = $(db_q "$1") AND coalesce(updated_at, 0) < $2; SELECT changes();")" && [[ "$n" =~ ^[0-9]+$ ]] \
+    || { echo "ERROR: could not clear old routines under the name $1" >&2; return 1; }
+  [ "$n" = 0 ] || _teams_audit_note routine-delete "$1" "${n} routines of an earlier team of this name"
 }
 
 routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }

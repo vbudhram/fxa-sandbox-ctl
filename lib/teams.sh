@@ -209,12 +209,15 @@ teams_create() {
     || { echo "ERROR: a new team starts as draft: create it, run profile test ${name}, then enable it" >&2; return 1; }
   teams_validate "$f" "$name" || return 1
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
+  local at; at="$(date +%s)"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" || { rm -f "$tmp"; return 1; }
   _teams_write "$name" "$tmp" 0; rc=$?
   [ "$rc" = 0 ] && _teams_audit create "$name" 0 "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown)" "" "$tmp"
   rm -f "$tmp"
   [ "$rc" = 2 ] && echo "ERROR: team ${name} already exists; use profile set" >&2
   [ "$rc" = 0 ] && echo "created team ${name} (generation $(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown))"
+  # Only after the write: a refused create must not touch the routines of the team that holds the name.
+  [ "$rc" = 0 ] && { routines_clear_name "$name" "$((at + 1))" || { echo "ERROR: team ${name} is created, but old routines under its name remain; delete them" >&2; rc=1; }; }
   return $rc
 }
 
@@ -336,7 +339,7 @@ teams_delete() {
       && case "$(jq -r '.state // empty' "$f")" in stopped|failed) ;; *) n=$((n + 1)) ;; esac
   done
   [ "$n" = 0 ] || { echo "ERROR: team ${name} has ${n} session(s) that can resume; stop them first" >&2; return 1; }
-  gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)"
+  gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || true)"
   [ -z "$FXA_TEAMS_URI" ] || [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
   # Every refusal is above. The marker stops a routine save from racing the drop; then its routines go,
   # so a later team of this name never inherits them. A store error stops the delete with nothing gone.
@@ -362,7 +365,15 @@ teams_sync() {
     names=""
   fi
   names="$(printf '%s\n' "$names" | sed -n 's#^.*/##; s#\.json$##p' | grep -E '^[a-z][a-z0-9-]{1,30}$' | sort -u || true)"
-  for n in $names; do _teams_pull "$n" || echo "WARN: could not fetch team ${n}" >&2; done
+  local seen at
+  for n in $names; do
+    seen=0; [ -f "${FXA_TEAMS_DIR}/${n}.json" ] && seen=1
+    _teams_pull "$n" || { echo "WARN: could not fetch team ${n}" >&2; continue; }
+    [ "$seen" = 1 ] && continue
+    # A record new to this host: rows from before its created time are an earlier team's.
+    at="$(jq -r '.created.at // empty' "${FXA_TEAMS_DIR}/${n}.json")"; [ -z "$at" ] || at="$(_epoch_of "$at" 2>/dev/null || true)"
+    routines_clear_name "$n" "$at" || rc=1
+  done
   for f in "$FXA_TEAMS_DIR"/*.json; do
     n="$(basename "$f" .json)"; [ -f "$f" ] && [ "$n" != index ] || continue
     grep -qx "$n" <<< "$names" && continue

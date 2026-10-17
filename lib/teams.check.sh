@@ -57,6 +57,24 @@ check "a store error on the team's routines stops the delete, and keeps the reco
   "$( (db_value() { return 1; }; teams_delete rusty >/dev/null 2>"$tmp/del.err"); echo $?)|$(head -1 "$tmp/del.err")|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")"
 check "delete removes the record, its prompts, its index entry and its routines, with no shell error" "0|no|null|0|0" \
   "$(teams_delete rusty >/dev/null 2>"$tmp/del.err"; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")|$(grep -c 'command not found' "$tmp/del.err")"
+# A new team never inherits routines left under its name (a save that raced a delete), nor a stale marker.
+db_exec "INSERT INTO routines (team, data, updated_at) VALUES ('ghost', '{}', $(( $(date +%s) - 100 )));"; touch "$FXA_TEAMS_DIR/ghost.deleting"
+check "creating team ghost clears the old routines and the stale marker, with an audit row" "0|0|no|1" \
+  "$(FXA_TEAMS_LIVE=0 teams_create "$(rec ghost Ghost)" >/dev/null 2>&1; echo $?)|$(db_value "SELECT count(*) FROM routines WHERE team = 'ghost';")|$([ -e "$FXA_TEAMS_DIR/ghost.deleting" ] && echo yes || echo no)|$(db_value "SELECT count(*) FROM team_audit WHERE team = 'ghost' AND action = 'routine-delete';")"
+printf 'PROFILE_OPEN=\n' > "$tmp/bot.env"
+jq -cn '{name: "Code review", template: "code-review", prompt: "Review.", schedule: "weekdays 09:00", zone: "America/New_York", repos: ["example/ghost"], channel: "C0GHOST1", mode: "report"}' > "$tmp/ghost-r.json"
+check "routine_set then works for the new team" "created routine" \
+  "$( (_routine_profile() { echo '{"profile":"ghost","read_only":false,"private":false,"repos":[{"slug":"example/ghost","role":"work"}]}'; }; FXA_BOT_ENV="$tmp/bot.env" routine_set ghost "$tmp/ghost-r.json" 2>&1) | sed 's/ [0-9]*$//')"
+# Delete and sync refuse while one of the team's routines has a run in progress.
+db_exec "INSERT INTO routine_runs (routine_id, period, state) SELECT id, '2026-10-19', 'started' FROM routines WHERE team = 'ghost';"
+check "delete refuses while a routine run of the team is in progress, and keeps everything" "1|ERROR: team ghost has a routine run in progress; stop it first|yes|1|no" \
+  "$(teams_delete ghost >/dev/null 2>"$tmp/del.err"; echo $?)|$(head -1 "$tmp/del.err")|$([ -e "$FXA_TEAMS_DIR/ghost.json" ] && echo yes || echo no)|$(db_value "SELECT count(*) FROM routines WHERE team = 'ghost';")|$([ -e "$FXA_TEAMS_DIR/ghost.deleting" ] && echo yes || echo no)"
+db_exec "UPDATE routine_runs SET state = 'ok';"
+check "after the run ends, delete takes the team and its routines" "0|0" "$(teams_delete ghost >/dev/null 2>&1; echo $?)|$(db_value "SELECT count(*) FROM routines WHERE team = 'ghost';")"
+# From the CLI, under set -euo pipefail: a team with no cached generation gets the sync line, not a silent exit.
+FXA_TEAMS_LIVE=0 teams_create "$(rec nogen Nogen)" >/dev/null 2>&1; rm -f "$FXA_TEAMS_DIR/nogen.gen"
+check "the CLI delete of a team with no generation prints the sync line" "1|1" \
+  "$( (cd "$root" && FXA_TEAMS_URI=gs://example-test/teams FXA_TEAMS_DIR="$FXA_TEAMS_DIR" FXA_DB="$FXA_DB" FXA_SESSION_DIR="$SESSION_DIR" ./fxa-sandbox-ctl profile delete nogen >/dev/null 2>"$tmp/cli.err"); echo $?)|$(grep -c 'no generation for team nogen; run profile sync' "$tmp/cli.err")"
 check "a folder team cannot be deleted" "1" "$(teams_delete fxa >/dev/null 2>&1; echo $?)"
 # monitor is a record whose profiles/monitor/ keeps only its boot.sh.
 check "a record team that keeps a folder for its boot.sh can be deleted" "0|no" \
