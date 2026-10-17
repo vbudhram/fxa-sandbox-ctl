@@ -157,7 +157,8 @@ case "$cmd" in
     get "$k" fins | awk -v s="$s" '$3 == s {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
     echo "$(now) $m $s" >> "$DIR/$k/fins" ;;
   stop) echo stopped > "$DIR/$1/over" ;;
-  interrupt) k="$1"; last="$(sort -n "$DIR/$k/turns" 2>/dev/null | tail -1)"
+  # FAKE_INTERRUPT_FAILS=1: the interrupt fails, as when the runner does not answer.
+  interrupt) [ -n "${FAKE_INTERRUPT_FAILS:-}" ] && exit 1; k="$1"; last="$(sort -n "$DIR/$k/turns" 2>/dev/null | tail -1)"
     [ -n "$last" ] && [ "$(now)" -lt $(( last + 10 )) ] && echo interrupted || true ;;
   diff) s="$(opt --repo "$@")"; [ -n "$s" ] && { n="$(printf %s "${s#*/}" | tr A-Z a-z)"; printf -- '--- a/%s/README.md\n+++ b/%s/README.md\n@@ -1 +1 @@\n-old line\n+new line (fake)\n' "$n" "$n"; exit 0; }
     printf -- '--- a/packages/fxa-settings/src/index.tsx\n+++ b/packages/fxa-settings/src/index.tsx\n@@ -1 +1 @@\n-old line\n+new line (fake)\n'
