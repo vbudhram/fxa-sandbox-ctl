@@ -51,7 +51,7 @@ pipeline_conf_lint() {
 
 # pipeline_folder_teams   The folder teams: a folder under profiles/ with a profile.conf. A folder with
 # only a record team's boot.sh or skills is not one, and does not reserve its name.
-pipeline_folder_teams() { local f; for f in "${SANDBOX_ROOT}"/profiles/*/profile.conf; do [ -f "$f" ] && basename "$(dirname "$f")"; done; return 0; }
+pipeline_folder_teams() { local f; for f in "${SANDBOX_ROOT}"/profiles/*/profile.conf; do [ -f "$f" ] && basename "$(dirname "$f")"; done | LC_ALL=C sort; return 0; }
 # pipeline_profile_names   Every team: the folder teams, then the records in FXA_TEAMS_DIR.
 pipeline_profile_names() {
   { pipeline_folder_teams; ls "$FXA_TEAMS_DIR" 2>/dev/null | sed -n 's/\.json$//p' | grep -vx index || true; } | awk '!seen[$0]++'

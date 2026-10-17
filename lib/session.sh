@@ -1090,6 +1090,8 @@ session_media() {
 _session_wants_stack() {
   # An Android run pairs against the stack, whatever the request says.
   [ "${FXA_ANDROID:-}" = 1 ] && return 0
+  # profile test: a team's stack must come up, though its prompt asks for nothing.
+  [ "${FXA_SESSION_STACK:-}" = 1 ] && return 0
   grep -qiE 'screenshot|video|record|visual|look(s)? like|page|button|\bui\b|render|layout|style|css|storybook' \
     "${SESSION_DIR}/$1.prompt.md" 2>/dev/null
 }

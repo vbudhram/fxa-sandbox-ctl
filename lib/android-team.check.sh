@@ -47,4 +47,5 @@ SESSION_DIR="$tmp"; echo "run the pairing spec" > "$tmp/k1.prompt.md"
 check "an Android session starts the stack for a request with no UI words" "0|1" \
   "$(FXA_ANDROID=1 _session_wants_stack k1; printf '%s|' $?; unset FXA_ANDROID; _session_wants_stack k1; printf '%s' $?)"
 
+check "profile test's boot (FXA_SESSION_STACK=1) starts the stack too" "0" "$(FXA_SESSION_STACK=1 _session_wants_stack k1; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

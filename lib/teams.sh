@@ -251,7 +251,9 @@ teams_test() {
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   echo 'This is a test boot of the team. Reply with the one word: ready. Change nothing and run nothing.' > "$f"
   echo "== ${name} at generation ${gen}: booting ${key} (a few minutes)"
-  if ! "$ctl" --backend gce --pipeline "$name" task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1; then
+  # A team with a stack gets it started, so the probe's stack check has something to find.
+  local stack=""; stack="$( (pipeline_load "$name" >/dev/null 2>&1 && [ -n "${PIPE_STACK_DIR:-}" ] && echo 1) || true)"
+  if ! FXA_SESSION_STACK="$stack" "$ctl" --backend gce --pipeline "$name" task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1; then
     rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; return 1
   fi
   rm -f "$f"

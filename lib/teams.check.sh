@@ -108,6 +108,13 @@ printf 'K1\n' | FXA_TEAM_SECRETS_SA=w@p FXA_TEAMS_SECRET_DIR="$tmp/tsec2" teams_
 check "a value keeps its trailing newline (a key, a PEM)" "$(printf 'K1\n' | od -c | head -1 | tr -s ' ')" "$(cat "$tmp/gsec.bytes")"
 unset -f gcloud
 
+# profile test asks the boot for the stack only when the team has one.
+mkdir -p "$tmp/sd"; printf '#!/bin/bash\n[ "$3" = --pipeline ] && echo "$4 stack=${FXA_SESSION_STACK:-}" >> "%s/tcalls"; exit 0\n' "$tmp" > "$tmp/sd/fxa-sandbox-ctl"; chmod +x "$tmp/sd/fxa-sandbox-ctl"
+cp "$(rec ts1 Ts1)" "$FXA_TEAMS_DIR/ts1.json"; jq '.stack = {kind: "fxa"} | .repos += [{slug: "mozilla/fxa", role: "dep"}]' "$(rec ts2 Ts2)" > "$FXA_TEAMS_DIR/ts2.json"
+( SCRIPT_DIR="$tmp/sd"; _session_try_wait() { return 1; }; teams_test ts1; teams_test ts2 ) >/dev/null 2>&1
+check "profile test starts a team's stack only when it has one" "ts1 stack=|ts2 stack=1" "$(paste -sd'|' - < "$tmp/tcalls")"
+rm -f "$FXA_TEAMS_DIR/ts1.json" "$FXA_TEAMS_DIR/ts2.json"
+
 # The bucket: a fake gcloud keeps each object and its generation under $B.
 B="$tmp/bucket"; mkdir -p "$B"; FXA_TEAMS_URI="gs://test/teams"; rm -rf "$FXA_TEAMS_DIR"; next=100
 gcloud() {
