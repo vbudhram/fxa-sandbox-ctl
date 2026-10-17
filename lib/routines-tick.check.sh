@@ -36,8 +36,8 @@ check "the claimed run has the config snapshot and heads in slice 2's format" "c
   "$(db_value "SELECT state || '|' || json_extract(config, '$.prompt') || '|' || json_extract(heads, '$.\"mozilla/fxa\".head') || '|' || coalesce(json_extract(heads, '$.\"mozilla/fxa\".start'), 'null') FROM routine_runs WHERE routine_id = $r1;")"
 # The second of two ticks read the period as free (a count read before the first one's INSERT): its INSERT OR
 # IGNORE writes nothing, so it answers nothing.
-check "a tick whose free read raced another's claim answers no run" "0|1" \
-  "$(db_value() { case "$1" in ("SELECT count(*) FROM routine_runs WHERE routine_id = $r1 AND period"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; tick $((T + 100)) | jq '.runs | length')|$(rows "$r1")"
+check "a tick whose free read raced another's claim answers nothing for that routine, run or skip" "0|1" \
+  "$(db_value() { case "$1" in ("SELECT count(*) FROM routine_runs WHERE routine_id = $r1 AND period"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; tick $((T + 100)) | jq --argjson r "$r1" '[.runs[], .skips[] | select(.routine == $r)] | length')|$(rows "$r1")"
 db_exec "UPDATE routine_runs SET state = 'ok';"
 
 # A late period is missed, not run (D17).
@@ -117,7 +117,8 @@ check "a tick in each 01:30 of the DST fold claims one run for the date" "1" "$(
 
 # Reconcile (D14): runs the bot never reported on still end, from their session records.
 : > "$tmp/errs"
-session_stop() { echo "$1" >> "$tmp/stopped"; session_set "$1" state stopped; }; : > "$tmp/stopped"
+# It reads stdin, as GCE ssh does: reconcile must not let it eat the rows still to read.
+session_stop() { cat >/dev/null 2>&1 || true; echo "$1" >> "$tmp/stopped"; session_set "$1" state stopped; }; : > "$tmp/stopped"
 rr="$(mk fxa "weekly sun 03:00")"
 st() { db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rr, 'r$RANDOM$RANDOM', $(db_q "$1"), $( [ -n "$2" ] && db_q "$2" || echo NULL ), $3); SELECT last_insert_rowid();"; }
 N=$((T + 50000))
@@ -152,10 +153,10 @@ mkdir -p "$FXA_LLM_PROXY_DIR/runs" "$FXA_LLM_PROXY_DIR/tokens"
 TOK="fxl_$(printf 'a%.0s' $(seq 32))"
 echo "$TOK" > "$FXA_LLM_PROXY_DIR/runs/$(worktree_branch_for agent-done01)"; echo '{"spent_usd": 1.25}' > "$FXA_LLM_PROXY_DIR/tokens/$TOK.json"
 d1="$(st started agent-done01 $((N - 60)))"
-printf 'Finding: the handler logs user@realcompany.com and ghp_abcdefghijklmnop1234 in plain text.\n' > "$tmp/report.md"
+printf 'Finding: the handler logs user@example.com and ghp_abcdefghijklmnop1234 in plain text.\n' > "$tmp/report.md"
 a1="$(FXA_ROUTINE_NOW=$N routine_done "$d1" --state report --session agent-done01 --report-file "$tmp/report.md")"
 check "a report with an email and a token: post false, and the row keeps the report and the cost" "true|report|false|1|1.25" \
-  "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a1")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $d1 AND report LIKE '%realcompany%';")|$(db_value "SELECT cost_usd FROM routine_runs WHERE id = $d1;")"
+  "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a1")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $d1 AND report LIKE '%ghp_abcdef%';")|$(db_value "SELECT cost_usd FROM routine_runs WHERE id = $d1;")"
 a2="$(FXA_ROUTINE_NOW=$((N + 9)) routine_done "$d1" --state failed --session agent-done01 --reason "late")"
 check "a second done call changes nothing" "false|report|false|report||$N" \
   "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a2")|$(db_value "SELECT state || '|' || coalesce(reason, '') || '|' || ended_at FROM routine_runs WHERE id = $d1;")"
@@ -177,7 +178,7 @@ check "posted marks a skip; a started run is refused" "posted ${sk}|1|ERROR: rou
 : > "$tmp/audit"; rn="$(mk fxa "weekly sat 23:00")"
 q1="$(FXA_ROUTINE_NOW=$N FXA_TEAM_ACTOR=admin@example.com routine_runnow fxa "$rn")"
 qid="$(db_value "SELECT id FROM routine_runs WHERE routine_id = $rn;")"
-check "run-now queues a manual run, by that admin, with an audit row" "queued run ${qid}: it starts within a minute|queued|manual-$((N / 60))|admin@example.com|routine-run|fxa|routine ${rn}: run ${qid}" \
+check "run-now queues a manual run, by that admin, with an audit row" "queued run ${qid}: it starts within a minute|queued|manual-${N}|admin@example.com|routine-run|fxa|routine ${rn}: run ${qid}" \
   "$q1|$(db_value "SELECT state || '|' || period || '|' || actor FROM routine_runs WHERE id = $qid;")|$(tail -1 "$tmp/audit")"
 check "run-now with a run already live is refused" "ERROR: a run of routine ${rn} is in progress" "$(FXA_ROUTINE_NOW=$((N + 60)) routine_runnow fxa "$rn" 2>&1)"
 check "run-now of another team's routine is refused" "ERROR: team drafty has no routine ${rn}" "$(routine_runnow drafty "$rn" 2>&1)"
@@ -196,6 +197,44 @@ got="$(db_json() { case "$1" in ("SELECT id, state, coalesce(session"*) echo "$s
 check "two admins stop at once: the second stops nothing and audits nothing (two real stops, two rows)" "ERROR: no run of routine ${rn} is in progress|2" "$got|$(grep -c '^routine-stop' "$tmp/audit")"
 check "run-now on a team at its cap is refused, with no row" "ERROR: routine ${r5} cannot run now: the team's spend cannot be read|0" \
   "$(routine_runnow spendy "$r5" 2>&1)|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $r5 AND trigger = 'manual';")"
+
+# Stop then Run now in the same minute: no period clash (epoch seconds).
+FXA_ROUTINE_NOW=$((N + 300)) routine_runnow fxa "$rn" >/dev/null; FXA_ROUTINE_NOW=$((N + 301)) routine_stop fxa "$rn" >/dev/null
+check "stop then run now in the same minute queues a new run" "queued" \
+  "$(FXA_ROUTINE_NOW=$((N + 330)) routine_runnow fxa "$rn" >/dev/null; db_value "SELECT state FROM routine_runs WHERE routine_id = $rn ORDER BY id DESC LIMIT 1;")"
+FXA_ROUTINE_NOW=$((N + 340)) routine_stop fxa "$rn" >/dev/null
+check "a run now in the same second as the last one says try again, not in progress" "ERROR: routine ${rn} ran in this same second; try again in a second" \
+  "$(FXA_ROUTINE_NOW=$((N + 330)) routine_runnow fxa "$rn" 2>&1)"
+# A queued run waits for a slot too, and takes one.
+FXA_ROUTINE_NOW=$((N + 400)) routine_runnow fxa "$rn" >/dev/null; qw="$(db_value "SELECT max(id) FROM routine_runs WHERE routine_id = $rn;")"
+echo 1 > "$tmp/free"
+check "a queued run waits while slots are full" "queued" "$(tick $((N + 420)) >/dev/null; db_value "SELECT state FROM routine_runs WHERE id = $qw;")"
+echo 5 > "$tmp/free"; tick $((N + 480)) >/dev/null; routine_stop fxa "$rn" >/dev/null
+# 'queued' is live for delete, the team drop and routine_run_fail.
+FXA_ROUTINE_NOW=$((N + 500)) routine_runnow fxa "$rn" >/dev/null; qd="$(db_value "SELECT max(id) FROM routine_runs WHERE routine_id = $rn;")"
+check "delete is refused while a queued run waits" "ERROR: a run of routine ${rn} is in progress; stop it first" "$(routine_state fxa "$rn" delete 2>&1)"
+check "the team drop is refused while a queued run waits" "ERROR: team fxa has a routine run in progress; stop it first" "$(routines_drop_team fxa 2>&1)"
+routine_run_fail "$qd" "x"
+check "routine_run_fail ends a queued run" "failed|x" "$(db_value "SELECT state || '|' || reason FROM routine_runs WHERE id = $qd;")"
+# Reconcile: a live session with a pr_url is still the bot's (it calls done); a stopped one with no result fails.
+echo '{"key":"agent-prlv01","state":"active","pr_url":"https://github.com/mozilla/fxa/pull/8"}' > "$tmp/agent-prlv01.json"; g10="$(st started agent-prlv01 $((N - 60)))"
+echo '{"key":"agent-stpd01","state":"stopped"}' > "$tmp/agent-stpd01.json"; g11="$(st started agent-stpd01 $((N - 60)))"
+routine_reconcile "$N"
+check "a live session with a PR stays started for the bot's done call; a stopped one with no result fails" "started||failed|the session stopped with no result" \
+  "$(s_of "$g10")|$(s_of "$g11")"
+check "the bot's done call then stores its report and cost on that run" "true|report|1" \
+  "$(routine_done "$g10" --state report --session agent-prlv01 --report-file "$tmp/clean.md" | jq -r '"\(.changed)|\(.state)"')|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $g10 AND report IS NOT NULL;")"
+# budget: any wrong shape fails closed.
+for bad in 'null' '[1]' '{"day_usd": "ten"}' '{"day_usd": true}'; do
+  echo "$bad" > "$tmp/caps.json"; echo '{}' > "$tmp/spend.json"
+  check "budget: caps $bad cannot be read" "the team's spend cannot be read" "$(python3 -I "$SANDBOX_ROOT/lib/routine.py" budget "$tmp/caps.json" "$tmp/spend.json" "$N")"
+done
+echo '{"day_usd": 10}' > "$tmp/caps.json"; echo '{"day": "2026-10-20", "day_usd": "x"}' > "$tmp/spend.json"
+check "budget: a spend that is not a number cannot be read" "the team's spend cannot be read" "$(python3 -I "$SANDBOX_ROOT/lib/routine.py" budget "$tmp/caps.json" "$tmp/spend.json" 1792501200)"
+# A routine saved after today's time runs at the next one, with no missed row for a period before it.
+rs="$(mk fxa "daily 06:00")"; db_exec "UPDATE routines SET saved_at = $((T + 60)) WHERE id = $rs;"
+check "a routine saved after today's time records nothing today" "0|0" "$(tick $((T + 120)) | jq --argjson r "$rs" '[.runs[], .skips[] | select(.routine == $r)] | length')|$(rows "$rs")"
+check "and runs at the next day's time" "1" "$(tick $((T + 86400 - 3 * 3600 + 30)) | jq --argjson r "$rs" '[.runs[] | select(.routine == $r)] | length')"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?

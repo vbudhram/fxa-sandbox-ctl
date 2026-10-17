@@ -5,10 +5,14 @@
 #
 #   routine list <team> | get <id> | history <team> <id> | templates
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
-#   routine pause | resume | delete <team> <id>
+#   routine pause | resume | delete | run-now | stop <team> <id>
+#   routine tick --env live|dev                            the bot's 60 s pass: gates, claims, reconcile
+#   routine done <run> --state <s> --session <key> [...] | posted <run>   the bot's results
 # A command that names a team refuses a routine of another team.
 
 _ROUTINE_PY() { python3 -I "${SANDBOX_ROOT}/lib/routine.py" "$@"; }
+# The states of a run that is not over: Run now's queued, the tick's claimed, cmd_task's started.
+_ROUTINE_LIVE_STATES="'queued','claimed','started'"
 _ROUTINE_STALE="Someone changed this routine since you opened it. Load it again to see their change."
 _ROUTINE_STORE="ERROR: the routine store did not answer (busy or failed); nothing changed, try again"
 
@@ -70,14 +74,14 @@ routine_set() {
   local who env; who="$(_teams_actor)"; env="$(jq -r .env <<< "$out")"
   if [ -z "$id" ]; then
     # The cap in the INSERT itself: two saves at once cannot both pass a count read before them.
-    id="$(db_value "INSERT INTO routines (team, data, env, created_by, updated_by, updated_at) SELECT $(db_q "$team"), json($(db_q "$out")), $(db_q "$env"), $(db_q "$who"), $(db_q "$who"), $(date +%s)
+    id="$(db_value "INSERT INTO routines (team, data, env, created_by, updated_by, updated_at, saved_at) SELECT $(db_q "$team"), json($(db_q "$out")), $(db_q "$env"), $(db_q "$who"), $(db_q "$who"), $(date +%s), $(_routine_now)
       WHERE (SELECT count(*) FROM routines WHERE team = $(db_q "$team")) < 8; SELECT CASE WHEN changes() = 1 THEN last_insert_rowid() ELSE 0 END;")" || id=""
     case "$id" in ''|*[!0-9]*) echo "$_ROUTINE_STORE" >&2; return 1 ;; 0) echo "routine: A team has at most 8 routines" >&2; return 1 ;; esac
     _teams_audit_note routine-create "$team" "routine ${id}"
     echo "created routine ${id}"; return 0
   fi
   old="$(jq -c '.data | fromjson' <<< "$row")"
-  local n_up; n_up="$(db_value "UPDATE routines SET data = json($(db_q "$out")), env = $(db_q "$env"), version = version + 1, updated_by = $(db_q "$who"), updated_at = $(date +%s) WHERE id = ${id} AND version = ${ver}; SELECT changes();")" || n_up=""
+  local n_up; n_up="$(db_value "UPDATE routines SET data = json($(db_q "$out")), env = $(db_q "$env"), version = version + 1, updated_by = $(db_q "$who"), updated_at = $(date +%s), saved_at = $(_routine_now) WHERE id = ${id} AND version = ${ver}; SELECT changes();")" || n_up=""
   case "$n_up" in 1) ;; 0) echo "ERROR: ${_ROUTINE_STALE}" >&2; return 2 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   # The names of the changed fields, never their values: a prompt is the team's text.
   _teams_audit_note routine-set "$team" "routine ${id}: $(jq -nr --argjson a "$old" --argjson b "$out" '[($a + $b | keys[]) | select($a[.] != $b[.])] | join(",")')"
@@ -93,14 +97,14 @@ routine_state() {
     delete)
       # A live run keeps its row: it reports back to this routine when it ends. One statement, so a run
       # claimed between a check and the delete cannot lose its routine.
-      local n_del; n_del="$(db_value "DELETE FROM routines WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $1 AND state IN ('queued','claimed','started')); SELECT changes();")" || n_del=""
+      local n_del; n_del="$(db_value "DELETE FROM routines WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $1 AND state IN (${_ROUTINE_LIVE_STATES})); SELECT changes();")" || n_del=""
       case "$n_del" in 1) ;; 0) echo "ERROR: a run of routine $1 is in progress; stop it first" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac ;;
   esac
   _teams_audit_note "routine-$2" "$team" "routine $1"
   echo "routine $1: $2 done"
 }
 
-_ROUTINE_LIVE="EXISTS (SELECT 1 FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = %s AND r.state IN ('queued','claimed','started'))"
+_ROUTINE_LIVE="EXISTS (SELECT 1 FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = %s AND r.state IN (${_ROUTINE_LIVE_STATES}))"
 
 # routines_drop_team <team>   A deleted team's routines go with it, so a later team of that name gets none;
 # their history stays. Refused while one of them has a live run. A store error fails: the caller then
@@ -150,7 +154,7 @@ cmd_routine() {
          done
          routine_set "$team" "$file" "$id" "$ver" ;;
     pause|resume|delete) routine_state "${2:-}" "${3:-}" "$1" ;;
-    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete <team> <id>" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now|stop <team> <id> | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
   esac
 }
 
@@ -178,12 +182,10 @@ routine_run_start() {
 
 # routine_run_fail <run> <reason>   A started run whose session could not start.
 routine_run_fail() {
-  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN ('queued','claimed','started');" >/dev/null
+  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES});" >/dev/null
 }
 
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
-_ROUTINE_LIVE_STATES="'queued','claimed','started'"
-_ROUTINE_END_STATES="'ok','report','nochange','failed','stopped','skipped','missed'"
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.
 _routine_now() { if [[ "${FXA_ROUTINE_NOW:-}" =~ ^[0-9]{9,11}$ ]]; then echo "$FXA_ROUTINE_NOW"; else date +%s; fi; }
@@ -240,23 +242,27 @@ routine_tick() {
   local env="$2" now; now="$(_routine_now)"
   db_exec "INSERT INTO routine_tick (id, at) VALUES (1, $now) ON CONFLICT (id) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
   routine_reconcile "$now" || return 1
-  local rows; rows="$(db_json "SELECT id, team, paused, data FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
+  local free; free="$(_routine_free_slots)"
   local queued q runs="[]" skips="[]"
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
+    # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
+    [ "$free" -ge 2 ] || continue
     [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'; SELECT changes();")" = 1 ] || continue
+    free=$((free - 1))
     runs="$(jq -c --argjson q "$q" '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)}]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
-  local free r f; free="$(_routine_free_slots)"; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
-  local spaused=""; spaused="$(sessions_paused 2>/dev/null)" || spaused=""
+  local r f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  local spaused; spaused="$(_routine_sessions_paused)"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     local id team cfg due period at next age why heads n post st tp
     id="$(jq -r .id <<< "$r")"; team="$(jq -r .team <<< "$r")"; cfg="$(jq -c '.data | fromjson' <<< "$r")"
     printf '%s' "$cfg" > "$f"
-    due="$(_ROUTINE_PY due "$f" "$now")" || continue
+    due="$(_ROUTINE_PY due "$f" "$now" "$(jq -r '.saved_at // 0' <<< "$r")")" || continue
     [ "$due" != null ] || continue
     period="$(jq -r .period <<< "$due")"; at="$(jq -r .at <<< "$due")"; next="$(jq -r '.next // empty' <<< "$due")"
     n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND period = $(db_q "$period");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
@@ -336,13 +342,14 @@ routine_reconcile() {
         elif ! sst="$(jq -r '"\(.state // "")\t\(.pr_url // "")"' "$rec" 2>/dev/null)"; then why="the run's session record cannot be read"
         else
           pr="${sst#*$'\t'}"; sst="${sst%%$'\t'*}"
-          if [ -n "$pr" ] || [ "$sst" = pr_open ]; then :
+          if { [ -n "$pr" ] || [ "$sst" = pr_open ]; } && ! session_live "$sess"; then :
           else
             pr=""
             case "$sst" in
-              paused) session_stop "$sess" >/dev/null 2>&1 || true; why="the session paused with no result" ;;
+              starting|active|wrapping) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
+              paused) session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the session paused with no result" ;;
               stopped|failed) why="the session ${sst} with no result" ;;
-              *) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
+              *) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
             esac
             [ -n "$why" ] || continue
           fi
@@ -418,7 +425,7 @@ routine_posted() {
   case "$n" in 1) echo "posted ${1}" ;; 0) echo "ERROR: routine run $1 is not a skip or a failure" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
 }
 
-# routine run-now <team> <id>   Queue a manual run (period manual-<epoch minute>, D15) when no run of the routine
+# routine run-now <team> <id>   Queue a manual run (period manual-<epoch second>, D15) when no run of the routine
 # is live: the next tick hands it to the bot. The team's gates still apply; the routine's pause and the
 # no-new-commits rule do not (an admin asked for it). One guarded INSERT: two admins at once queue one run.
 routine_runnow() {
@@ -436,11 +443,13 @@ routine_runnow() {
   local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
   case $hrc in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
-      SELECT $id, 'manual-$((now / 60))', 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "$heads")), $now
+      SELECT $id, 'manual-${now}', 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "$heads")), $now
       WHERE NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES})); SELECT changes() || '|' || last_insert_rowid();")" || n=""
   case "${n%%|*}" in
     1) _teams_audit_note routine-run "$team" "routine ${id}: run ${n#*|}"; echo "queued run ${n#*|}: it starts within a minute" ;;
-    0) echo "ERROR: a run of routine ${id} is in progress" >&2; return 1 ;;
+    0) if [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES});")" = 0 ]; then
+         echo "ERROR: routine ${id} ran in this same second; try again in a second" >&2
+       else echo "ERROR: a run of routine ${id} is in progress" >&2; fi; return 1 ;;
     *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
   esac
 }
@@ -457,6 +466,6 @@ routine_stop() {
   n="$(db_value "UPDATE routine_runs SET state = 'stopped', reason = 'stopped by a team admin', ended_at = $(_routine_now) WHERE id = $run AND state = '$st'; SELECT changes();")" || n=""
   case "$n" in 1) ;; 0) echo "ERROR: no run of routine ${id} is in progress" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   _teams_audit_note routine-stop "$team" "routine ${id}: run ${run}"
-  [ -z "$sess" ] || session_stop "$sess" >/dev/null 2>&1 || echo "WARN: run ${run} is stopped, but its session ${sess} did not stop; stop it with session stop" >&2
+  [ -z "$sess" ] || session_stop "$sess" </dev/null >/dev/null 2>&1 || echo "WARN: run ${run} is stopped, but its session ${sess} did not stop; stop it with session stop" >&2
   echo "stopped run ${run}"
 }

@@ -222,9 +222,10 @@ def runs(r, start, n):
     return out
 
 
-def due(r, now):
+def due(r, now, since=0):
     """The routine's latest run time at or before now: {period (its local date), at, next} in epoch seconds,
-    or None when it had none in the last 8 days."""
+    or None when it had none in the last 8 days, or that time is before the routine was saved (since): a
+    routine saved after today's time runs at the next one, with no missed row for a period before it."""
     m = SCHEDULE.fullmatch(r["schedule"])
     tz = zoneinfo.ZoneInfo(r["zone"])
     day = datetime.datetime.fromtimestamp(now, tz).date()
@@ -232,6 +233,8 @@ def due(r, now):
         if on(m, day):
             at = wall(day, int(m.group(3)), int(m.group(4)), tz)
             if at.timestamp() <= now:
+                if at.timestamp() < since:
+                    return None
                 nxt = runs(r, now, 1)
                 return {"period": day.isoformat(), "at": int(at.timestamp()), "next": int(nxt[0].timestamp()) if nxt else None}
         day -= datetime.timedelta(days=1)
@@ -240,25 +243,31 @@ def due(r, now):
 
 def budget(caps_path, spend_path, now):
     """Why the team may not spend, as the LLM proxy's team_capped() reads it, or "". A missing caps or spend
-    file is no cap or no spend, as there; one that cannot be parsed refuses (fail closed)."""
+    file is no cap or no spend, as there; any other error, or a value of the wrong shape, refuses (fail closed)."""
     def read(p):
         try:
             with open(p, encoding="utf-8") as f:
-                return json.load(f)
+                v = json.load(f)
         except FileNotFoundError:
             return {}
+        if not isinstance(v, dict):
+            raise ValueError("not an object")
+        return v
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
     try:
         caps, s = read(caps_path), read(spend_path)
-    except (OSError, ValueError):
+        t = time.gmtime(now)
+        day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
+        spent = {"day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
+                 "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0}
+        for k, label in (("day_usd", "daily"), ("month_usd", "monthly")):
+            cap = caps.get(k)
+            if (cap is not None and not num(cap)) or not num(spent[k]):
+                raise ValueError("not a number")
+            if cap is not None and cap > 0 and spent[k] >= cap:
+                return f"the team reached its {label} spend cap"
+    except Exception:  # noqa: BLE001  fail closed on anything
         return "the team's spend cannot be read"
-    t = time.gmtime(now)
-    day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
-    spent = {"day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
-             "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0}
-    for k, label in (("day_usd", "daily"), ("month_usd", "monthly")):
-        cap = caps.get(k)
-        if isinstance(cap, (int, float)) and cap > 0 and spent[k] >= cap:
-            return f"the team reached its {label} spend cap"
     return ""
 
 
@@ -355,7 +364,7 @@ def main(argv):
         return 0
     if len(argv) >= 4 and argv[1] == "due":
         try:
-            print(json.dumps(due(load(argv[2]), int(argv[3]))))
+            print(json.dumps(due(load(argv[2]), int(argv[3]), int(argv[4]) if len(argv) > 4 else 0)))
         except (KeyError, TypeError, ValueError, AttributeError, zoneinfo.ZoneInfoNotFoundError) as e:
             print(f"ERROR: the routine's schedule cannot be read: {e}", file=sys.stderr)
             return 1
