@@ -270,20 +270,24 @@ def team_private(profile):
 
 
 def watch_narrow(profile, channel, access, records, gates):
-    """True when the session's team is not open (FxA always is) or its channel is in the bot's CHANNEL_GATES."""
+    """True when the session's team is not open (FxA always is) or its channel is in the bot's CHANNEL_GATES.
+    gates None (the bot .env unreadable) counts as gated."""
     t = team_access(profile, access, records)
     gated = profile != "fxa" and not (t or {}).get("open")
-    return gated or channel in gates
+    return gated or gates is None or channel in gates
 
 
 def read_gates():
-    """The channels the bot's CHANNEL_GATES lists (channel:source pairs). No file: none."""
+    """The channels the bot's CHANNEL_GATES lists (channel:source pairs), or None when the .env cannot be read."""
     path = os.environ.get("FXA_BOT_ENV") or str(ROOT.parent.parent / "fxa-agent-bot" / ".env")
+    line = ""
     try:
         with open(path) as f:
-            line = next((l.split("=", 1)[1].strip().strip("'\"") for l in f if l.startswith("CHANNEL_GATES=")), "")
-    except OSError:
-        return set()
+            for l in f:  # the last one wins, as in node --env-file
+                if l.startswith("CHANNEL_GATES="):
+                    line = l.split("=", 1)[1].strip().strip("'\"")
+    except (OSError, ValueError):
+        return None
     return set(_pairs(line))
 
 

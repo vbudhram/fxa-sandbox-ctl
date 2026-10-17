@@ -17,10 +17,14 @@ echo '{"sessions":"agent-eeeeee"}' > "$tmp/thread-C0AB12CD3-1790000000.000003.js
 echo '{"state":"paused","profile":"closed"}' > "$tmp/agent-eeeeee.json"
 echo '{"sessions":"agent-ffffff"}' > "$tmp/thread-CGATED0001-1790000000.000004.json"
 echo '{"state":"paused"}' > "$tmp/agent-ffffff.json"
-printf 'PROFILE_OPEN=team-a\nCHANNEL_GATES=CGATED0001:CPRIV00001\n' > "$tmp/bot.env"
+echo '{"sessions":"agent-hhhhhh"}' > "$tmp/thread-COLD000001-1790000000.000006.json"
+echo '{"state":"paused"}' > "$tmp/agent-hhhhhh.json"
+echo '{"sessions":"agent-gggggg"}' > "$tmp/thread-C0AB12CD3-1790000000.000005.json"
+echo '{"state":"paused","profile":"team-a"}' > "$tmp/agent-gggggg.json"
+printf 'PROFILE_OPEN=team-a\nCHANNEL_GATES=COLD000001:CPRIV00001\nCHANNEL_GATES=CGATED0001:CPRIV00001\n' > "$tmp/bot.env"
 printf 'k3y' > "$tmp/hmac"
 FXA_SESSION_DIR="$tmp" FXA_BOT_ENV="$tmp/bot.env" FXA_TEAMS_DIR="$tmp/none" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" python3 - "$(dirname "$0")/../dashboard" "$tmp/ctl" <<'PY'
-import hashlib, hmac, sys, threading, time, urllib.error, urllib.request
+import hashlib, hmac, os, sys, threading, time, urllib.error, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
 from http.server import ThreadingHTTPServer
 server.CTL, server.PIPELINE = sys.argv[2], "test"
@@ -51,6 +55,10 @@ check("a gated team, a signed dashboard user: watched", 200, get("C0AB12CD3:1790
 check("a gated channel, no signed viewer: 403", 403, get("CGATED0001:1790000000.000004")[0])
 check("a gated channel, a signature with another key: 403", 403, get("CGATED0001:1790000000.000004", "user@example.com", b"other")[0])
 check("a gated channel, a signed dashboard user: watched", 200, get("CGATED0001:1790000000.000004", "user@example.com")[0])
+check("an open team, no signed viewer: watched", 200, get("C0AB12CD3:1790000000.000005")[0])
+check("the last CHANNEL_GATES line wins, as in the bot", 200, get("COLD000001:1790000000.000006")[0])
+os.environ["FXA_BOT_ENV"] = "/nonexistent"
+check("no bot .env: a FxA session is gated", 403, get("C0AB12CD3:1791135361.015169")[0])
 check("an unknown thread: 404", 404, get("C0AB12CD3:1700000000.000001")[0])
 check("a bad thread: 400", 400, get("..%2Fx")[0])
 srv.shutdown(); sys.exit(fail)
