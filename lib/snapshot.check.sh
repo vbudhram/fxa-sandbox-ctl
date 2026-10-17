@@ -177,6 +177,14 @@ rm -rf "$pd"
   check "stats: the dev bot's sessions and answers are left out" "agent-p1 ask-ddd002" "$(jq -r '[.rows[].key] | sort | join(" ")' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# With no answers file yet, the dev bot's sessions still leave the LLM totals (under the ctl's pipefail).
+( set -o pipefail; export SESSION_DIR="$tmp/noans" PIPE_STATE_DIR="$tmp/noansps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
+  _session_records() { echo '{"key":"agent-d9","owner":"U1","created":2,"env":"dev"}'; }
+  db_on() { true; }; db_json() { printf '%s\n' "$1" >> "$tmp/noans.sql"; echo '[]'; }
+  echo '{"rows":[]}' | _stats_add_rows >/dev/null 2>&1
+  check "stats: with no answers file, a dev session is still left out of the LLM totals" "yes" "$(grep -q 'agent-d9' "$tmp/noans.sql" && echo yes || echo no)"
+  exit "$fail" ) || fail=1
+
 # Agent PRs for the PRs tab: the source and key come from the branch, a session row
 # names its PR, and a failed read keeps the last list.
 ( export SESSION_DIR="$tmp/prs" PIPE_STATE_DIR="$tmp/prsps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
