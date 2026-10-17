@@ -134,9 +134,11 @@ check "profile test starts a team's stack only when it has one" "ts1 stack=|ts2 
 out="$( (SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=error; return 0; }; teams_test ts1; echo "rc=$?") 2>&1)"
 check "a first turn that ends in an error fails the test, and records no pass" "1|rc=1|0" \
   "$(grep -c 'it ended in error' <<< "$out")|$(tail -1 <<< "$out")|$(ls "$FXA_TEAMS_DIR"/ts1.tested 2>/dev/null | grep -c .)"
-out="$( (set -e; SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { return 255; }; worktree_branch_for() { echo "$1"; }; teams_test ts1 || true; echo end) 2>&1)"
-check "a failed probe ssh under set -e still stops the runner and fails" "1|1|end" \
-  "$(grep -c '== stopped' <<< "$out")|$(grep -c 'failed: team ts1' <<< "$out")|$(tail -1 <<< "$out")"
+# A plain call, as the profile command makes it: on the left of || bash would turn set -e off.
+echo 7 > "$FXA_TEAMS_DIR/ts1.gen"   # a real team always has its generation
+out="$( (set -eo pipefail; SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { return 255; }; worktree_branch_for() { echo "$1"; }; teams_test ts1) 2>&1)"
+check "a failed probe ssh under set -e still stops the runner and fails" "1|1" \
+  "$(grep -c '== stopped' <<< "$out")|$(grep -c 'failed: team ts1' <<< "$out")"
 rm -f "$FXA_TEAMS_DIR/ts1.json" "$FXA_TEAMS_DIR/ts2.json"
 ( eval "$(sed -n '/^_session_try_wait() {/,/^}/p' "$root/lib/session.sh")"
   printf '#!/bin/sh\necho "{\\"cursor\\":2,\\"events\\":[{\\"type\\":\\"text\\"},{\\"type\\":\\"error\\"}]}"\n' > "$tmp/evctl"; chmod +x "$tmp/evctl"

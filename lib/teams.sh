@@ -290,7 +290,7 @@ teams_test() {
     echo "ok   the runner booted and the agent answered"
     # A failed probe ssh fails the test here; under set -e it would end the command and leave the runner up.
     out="$( ( pipeline_load "$name" >/dev/null 2>&1 && _session_sh "$(worktree_branch_for "$key")" "$(_teams_probe_script)" ) 2>&1)" || true
-    printf '%s\n' "$out" | grep -E '^(ok|FAIL) '
+    printf '%s\n' "$out" | grep -E '^(ok|FAIL) ' || true
     grep -qE '^ok ' <<< "$out" && ! grep -q '^FAIL ' <<< "$out" || rc=1
   else
     echo "FAIL the runner did not finish its first turn${_TRY_LAST:+ (it ended in ${_TRY_LAST})}; see ${SESSION_DIR}/${key}.log"; rc=1
