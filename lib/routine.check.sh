@@ -115,12 +115,17 @@ jq -c '.channel = "C0SECOND"' "$tmp/new.json" > "$tmp/bad.json"
 got="$(routine_set secret "$tmp/bad.json" 2>&1)"; rc=$?
 check "a refused save: exit 1, the field line, and no row" "1|channel: Channel C0SECOND belongs to team second|1" "$rc|$got|$(db_value "SELECT count(*) FROM routines;")"
 check "an edit of another team's routine is refused" "ERROR: team second has no routine 1" "$(routine_set second "$tmp/edit.json" 1 2 2>&1)"
-check "pause, then resume" "1|0" "$(routine_state 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
+check "pause, then resume" "1|0" "$(routine_state secret 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state secret 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
+check "pause, delete and history of another team's routine are refused" "ERROR: team second has no routine 1|ERROR: team second has no routine 1|ERROR: team second has no routine 1|0|1" \
+  "$(routine_state second 1 pause 2>&1)|$(routine_state second 1 delete 2>&1)|$(routine_history second 1 2>&1)|$(db_value "SELECT paused FROM routines WHERE id = 1;")|$(db_value "SELECT count(*) FROM routines;")"
+# The dashboard sends --id then --version; the other order works the same.
+check "cmd_routine set takes --id and --version in either order" "saved routine 1 (version 5)|saved routine 1 (version 6)" \
+  "$(cmd_routine set secret "$tmp/edit.json" --id 1 --version 4 2>&1)|$(cmd_routine set secret "$tmp/edit.json" --version 5 --id 1 2>&1)"
 db_exec "INSERT INTO routine_runs (routine_id, period, state) VALUES (1, '2026-10-19', 'started');"
-check "delete is refused while a run is live" "ERROR: a run of routine 1 is in progress; stop it first|1" "$(routine_state 1 delete 2>&1)|$(db_value "SELECT count(*) FROM routines;")"
+check "delete is refused while a run is live" "ERROR: a run of routine 1 is in progress; stop it first|1" "$(routine_state secret 1 delete 2>&1)|$(db_value "SELECT count(*) FROM routines;")"
 db_exec "UPDATE routine_runs SET state = 'ok';"
 check "delete removes the routine and keeps its history" "0|1|routine-delete" \
-  "$(routine_state 1 delete >/dev/null; db_value "SELECT count(*) FROM routines;")|$(db_value "SELECT count(*) FROM routine_runs;")|$(db_value "SELECT action FROM team_audit ORDER BY id DESC LIMIT 1;")"
+  "$(routine_state secret 1 delete >/dev/null; db_value "SELECT count(*) FROM routines;")|$(db_value "SELECT count(*) FROM routine_runs;")|$(db_value "SELECT action FROM team_audit ORDER BY id DESC LIMIT 1;")"
 # teams_delete takes the team's routines with it, with an audit row.
 echo '{"name":"rusty"}' > "$FXA_TEAMS_DIR/rusty.json"
 db_exec "INSERT INTO routines (team, data) VALUES ('rusty', '{}'), ('rusty', '{}');"

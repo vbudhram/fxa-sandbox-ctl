@@ -591,7 +591,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         rec, ver = body.get("routine"), str(body.get("version") or "")
         if verb:
-            self._team_ctl(user, [verb, rid], cmd="routine")
+            self._team_ctl(user, [verb, name, rid], cmd="routine")
         elif not isinstance(rec, dict):
             self._json(400, {"error": "send {\"routine\": {...}}"})
         elif not rid:
@@ -747,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
         if m or path == "/api/routine-templates":
             user = self._admin("GET", path)
             if user:
-                args = ["templates"] if not m else ["history", m.group(2)] if m.group(2) else ["list", m.group(1)]
+                args = ["templates"] if not m else ["history", m.group(1), m.group(2)] if m.group(2) else ["list", m.group(1)]
                 self._team_ctl(user, args, read=True, cmd="routine")
             return
         # One team's full record and its audit: admins only, since a record names Slack users.

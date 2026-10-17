@@ -108,7 +108,7 @@ check("routines: unsigned gets 401, a signed non-admin 403, for a read and a wri
       (401, 403, 401, 403, "not a team admin", []),
       (call("GET", L)[0], call("GET", L, headers=sig(V, "GET", L))[0], call("POST", L, {"routine": R})[0], call("POST", L, {"routine": R}, sig(V, "POST", L))[0],
        call("POST", L, {"routine": R}, sig(V, "POST", L))[1].get("error"), ran()))
-check("an admin reads the list, the templates and a history", ((200, [{"id": 5}]), (200, [{"id": 5}]), (200, [{"id": 5}]), ["routine list rusty", "routine templates", "routine history 5"]),
+check("an admin reads the list, the templates and a history", ((200, [{"id": 5}]), (200, [{"id": 5}]), (200, [{"id": 5}]), ["routine list rusty", "routine templates", "routine history rusty 5"]),
       (call("GET", L, headers=sig(A, "GET", L)), call("GET", "/api/routine-templates", headers=sig(A, "GET", "/api/routine-templates")),
        call("GET", L + "/5/history", headers=sig(A, "GET", L + "/5/history")), ran()))
 st, _ = call("POST", L, {"routine": R}, sig(A, "POST", L))
@@ -121,7 +121,7 @@ open(f"{tmp}/rc", "w").write("2")
 st, b = call("POST", L + "/5", {"routine": R, "version": 3}, sig(A, "POST", L + "/5"))
 check("a stale version comes back as 409 with the stale-edit text", (409, True), (st, "Someone changed this routine since you opened it" in b.get("error", "")))
 open(f"{tmp}/rc", "w").write("0")
-check("pause, resume and delete run their routine command", (200, 200, 200, ["routine pause 5", "routine resume 5", "routine delete 5"]),
+check("pause, resume and delete run their routine command", (200, 200, 200, ["routine pause rusty 5", "routine resume rusty 5", "routine delete rusty 5"]),
       (call("POST", L + "/5/pause", {}, sig(A, "POST", L + "/5/pause"))[0], call("POST", L + "/5/resume", {}, sig(A, "POST", L + "/5/resume"))[0],
        call("POST", L + "/5/delete", {}, sig(A, "POST", L + "/5/delete"))[0], ran()[-3:]))
 check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),

@@ -3,9 +3,10 @@
 # store (lib/db/006-routines.sql). lib/routine.py is the one validator. Each write checks the version (a stale
 # one exits 2) and writes a team_audit row that names the routine and the changed fields, never the prompt.
 #
-#   routine list <team> | get <id> | history <id> | templates
+#   routine list <team> | get <id> | history <team> <id> | templates
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
-#   routine pause | resume | delete <id>
+#   routine pause | resume | delete <team> <id>
+# A command that names a team refuses a routine of another team.
 
 _ROUTINE_PY() { python3 -I "${SANDBOX_ROOT}/lib/routine.py" "$@"; }
 _ROUTINE_STALE="Someone changed this routine since you opened it. Load it again to see their change."
@@ -15,6 +16,14 @@ _routine_profile() { ( pipeline_load "$1" >/dev/null 2>&1 && pipeline_profile_js
 
 _routine_id() { [[ "${1:-}" =~ ^[0-9]{1,9}$ ]] || { echo "ERROR: bad routine id" >&2; return 1; }; }
 _routine_row() { db_json "SELECT id, team, env, paused, version, data FROM routines WHERE id = $1;" | jq -c '.[0] // empty'; }
+# _routine_of <team> <id>   The row, only when it belongs to that team.
+_routine_of() {
+  _routine_id "$2" || return 1
+  local r; r="$(_routine_row "$2")"
+  [ -n "$r" ] && [ "$(jq -r .team <<< "$r")" = "$1" ] || { echo "ERROR: team $1 has no routine $2" >&2; return 1; }
+  printf '%s
+' "$r"
+}
 
 # routine_list <team>   The team's routines, each with its config and next three run times.
 routine_list() {
@@ -38,7 +47,7 @@ routine_set() {
   [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "$file" ] || { echo "usage: routine set <team> <file> [--id <id> --version <v>]" >&2; return 1; }
   if [ -n "$id" ]; then
     _routine_id "$id" && [[ "$ver" =~ ^[0-9]{1,9}$ ]] || { echo "ERROR: an edit needs --id and --version" >&2; return 1; }
-    row="$(_routine_row "$id")"; [ -n "$row" ] && [ "$(jq -r .team <<< "$row")" = "$team" ] || { echo "ERROR: team ${team} has no routine ${id}" >&2; return 1; }
+    row="$(_routine_of "$team" "$id")" || return 1
   fi
   prof="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   _routine_profile "$team" > "$prof" && [ -s "$prof" ] || { rm -f "$prof"; echo "ERROR: team ${team} does not load" >&2; return 1; }
@@ -60,11 +69,10 @@ routine_set() {
   echo "saved routine ${id} (version $((ver + 1)))"
 }
 
-# routine_state <id> <pause|resume|delete>
+# routine_state <team> <id> <pause|resume|delete>
 routine_state() {
-  _routine_id "$1" || return 1
-  local row team; row="$(_routine_row "$1")"; [ -n "$row" ] || { echo "ERROR: no routine $1" >&2; return 1; }
-  team="$(jq -r .team <<< "$row")"
+  local team="$1"; shift
+  _routine_of "$team" "$1" >/dev/null || return 1
   case "$2" in
     pause|resume) db_exec "UPDATE routines SET paused = $([ "$2" = pause ] && echo 1 || echo 0), version = version + 1, updated_by = $(db_q "$(_teams_actor)"), updated_at = $(date +%s) WHERE id = $1;" || return 1 ;;
     delete)
@@ -84,16 +92,21 @@ routines_drop_team() {
   db_exec "DELETE FROM routines WHERE team = $(db_q "$1");" && _teams_audit_note routine-delete "$1" "all ${n} routines, with the team"
 }
 
-routine_history() { _routine_id "$1" || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, started_at, ended_at FROM routine_runs WHERE routine_id = $1 ORDER BY id DESC LIMIT 20;"; }
+routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }
 
 cmd_routine() {
   case "${1:-}" in
     list) routine_list "${2:-}" ;;
     get) routine_get "${2:-}" ;;
-    history) routine_history "${2:-}" ;;
+    history) routine_history "${2:-}" "${3:-}" ;;
     templates) _ROUTINE_PY templates ;;
-    set) routine_set "${2:-}" "${3:-}" "$([ "${4:-}" = --id ] && echo "${5:-}")" "$([ "${6:-}" = --version ] && echo "${7:-}")" ;;
-    pause|resume|delete) routine_state "${2:-}" "$1" ;;
-    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete <id>" >&2; return 1 ;;
+    set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
+         while [ $# -gt 0 ]; do
+           case "$1" in --id) id="${2:-}"; shift 2 2>/dev/null || shift ;; --version) ver="${2:-}"; shift 2 2>/dev/null || shift ;;
+             *) echo "ERROR: unknown option $1" >&2; return 1 ;; esac
+         done
+         routine_set "$team" "$file" "$id" "$ver" ;;
+    pause|resume|delete) routine_state "${2:-}" "${3:-}" "$1" ;;
+    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete <team> <id>" >&2; return 1 ;;
   esac
 }
