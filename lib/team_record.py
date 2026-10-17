@@ -40,7 +40,9 @@ SCRIPT = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 SHA = re.compile(r"^[0-9a-f]{64}$")
 PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "goal_md": ("goal.md", 2560)}
 # The goal is the team's steps plus a shared tail of about 1200 chars, and Claude refuses a /goal over 4000.
-RESERVED = {"fxa", "index"}
+# A team's state dir is ~/.claude/state/<name>, so a name the host uses there would give a team the
+# host's own store (llm-proxy holds the run tokens) and each pass would mirror it to GCS.
+RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "memory", "teams"}
 # Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
 # An admin may approve other hosts; these are refused even then, with every subdomain.
 EGRESS_DENY = ("pastebin.com", "paste.ee", "hastebin.com", "termbin.com", "ix.io", "dpaste.org", "rentry.co",
