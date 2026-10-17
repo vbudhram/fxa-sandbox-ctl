@@ -2706,6 +2706,14 @@ _session_finish_one() {
   local key="$1" mode="${2:-}" name deadline tmp pr_url rc create=true
   # The tree's path and base in a team stack; /workspace and main for one repo.
   local at="${FXA_TREE_PATH:-/workspace}" base="main"; [ -n "${FXA_TREE_PATH:-}" ] && base="$FXA_WORKTREE_BASE"
+  # A one-repo routine run's draft PR targets its routine branch (D13); a Slack session keeps main.
+  if [ -z "${FXA_TREE_PATH:-}" ] && [ "$(session_get "$key" source)" = routine ]; then
+    local rb; rb="$(session_get "$key" base)"
+    if [ -n "$rb" ]; then
+      git check-ref-format --branch "$rb" >/dev/null 2>&1 || { echo "ERROR: ${key} has a base branch that is not valid; nothing shipped" >&2; return 1; }
+      base="$rb"
+    fi
+  fi
   local sb; sb="$(session_get "$key" branch)"; git check-ref-format --branch "${sb:-x}" >/dev/null 2>&1 || sb=""
   local chk_cmd="FXA_WORKSPACE=${at} FXA_WORKTREE_BASE=${base} FXA_SESSION_BRANCH=${sb} bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix"
   # The wrap-up prompt names skills the way the session's agent invokes them.
