@@ -1421,7 +1421,7 @@ cmd_precheck() {
     case "$line" in *" pr #"*) inflight_pr=$((inflight_pr + 1)) ;; esac
     case "$line" in *RED-INFRA*) infra=$((infra + 1)) ;; esac
     if printf '%s' "$line" | grep -qE "$judge_re"; then
-      key="${line%% *}"; fp="$(printf '%s' "$line" | sed -E 's/ (ok|running)=[0-9]+//g; s/ (stalled .*) [0-9]+m$/ \1/')"; noted="${PIPE_STATE_DIR}/${key}.judge-noted"
+      key="${line%% *}"; fp="$(printf '%s' "$line" | sed -E 's/ (ok|running)=[0-9]+//g; s/ (stalled .*) [0-9]+m( tooling=[a-z]+)?$/ \1\2/')"; noted="${PIPE_STATE_DIR}/${key}.judge-noted"
       judged="${judged} ${key}"
       if [ "$fp" = "$(cat "$noted" 2>/dev/null || true)" ] && [ $(( now_s - $(_mtime "$noted") )) -lt "${FXA_PASS_REJUDGE_S:-3600}" ]; then
         _info "reconcile: $line (reported before, unchanged)"
