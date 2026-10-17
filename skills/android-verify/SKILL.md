@@ -12,8 +12,8 @@ One command proves that FxA, desktop Firefox and Fenix still work together, and 
     bash ~/.claude/skills/android-verify/verify.sh --spec pairingFlowAndroid   # another Android spec
 
 It checks that the emulator and Fenix are up and the stack serves pairing v2. It runs the spec
-with `ANDROID_PAIRING_V2_ENABLED=1` on `--project=local`. It counts only `1 passed`: a skipped spec
-is a FAIL. On a fail it runs the spec once more, because the pairing page can give up on
+with `ANDROID_PAIRING_V2_ENABLED=1` on `--project=local`. It passes only when Playwright exits 0 and its summary has a passed count and no failed or
+flaky one: a skipped spec is a FAIL. On a fail it runs the spec once more, because the pairing page can give up on
 `fxa_status` before it sends it (a trap in the FxA Android guide), and it says so.
 
 Evidence goes to `/workspace/.fxa-auto-media/`: `android-<spec>.png` (the phone's screen at the
