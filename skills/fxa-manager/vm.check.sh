@@ -5,7 +5,7 @@ set -u
 fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^on_vm() {/,/^}/p;/^dev_fn_script() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+eval "$(sed -n '/^on_vm() {/,/^}/p;/^dev_fn_script() {/,/^}/p;/^dev_prune() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 VM=fxa-manager Z=z P=p
 hostname() { echo laptop; }
 # No shared connection, so the gcloud stub below answers: a live one on this laptop must never be used.
@@ -37,4 +37,10 @@ echo 'OTHER=1' > "$D/fxa-agent-bot/.env.devhost"
 out="$( { echo "D=$D"; dev_fn_script 'echo "host=${FXA_FC_HOST:-unset}"'; } | bash 2>&1)"
 check "dev fn: a devhost file without FXA_FC_HOST leaves it unset and prints no environment" "host=unset|0" \
   "$(printf '%s\n' "$out" | tail -1)|$(printf '%s\n' "$out" | grep -c 'declare -x')"
+# dev prune: a file the last deploy copied and this one did not goes; a file no deploy copied stays.
+P2="$tmp/prune"; mkdir -p "$P2/src/r" "$P2/dst"; (cd "$P2/src" && echo a > r/keep && echo b > r/gone && tar -czf ../t1 r/keep r/gone)
+rm "$P2/src/r/gone"; (cd "$P2/src" && tar -czf ../t2 r/keep)
+( cd "$P2/dst" && tar -xzf ../t1 && dev_prune ../t1 && echo x > r/local && tar -xzf ../t2 && dev_prune ../t2 && : > ../bad && dev_prune ../bad )
+check "dev prune: removed file goes, kept and local files stay, a bad tarball changes nothing" "r/keep r/local|r/keep" \
+  "$(cd "$P2/dst" && find r -type f | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')|$(cat "$P2/dst/.dev-files")"
 exit "$fail"

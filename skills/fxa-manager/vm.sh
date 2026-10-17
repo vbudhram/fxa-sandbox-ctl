@@ -218,6 +218,15 @@ dev_fn_script() {
     'source lib/vm-gce.sh; trap - ERR; set +eu +o pipefail; exec 2>&1' "$1"
 }
 
+# dev_prune <tarball>   In $D: remove the files the last vm.sh dev copied that this tarball no longer has
+# (tar never deletes), then keep its list for the next deploy. Files no deploy copied stay.
+dev_prune() {
+  tar -tzf "$1" 2>/dev/null | LC_ALL=C sort > .dev-files.new
+  [ -s .dev-files.new ] || { rm -f .dev-files.new; return 0; }
+  [ -f .dev-files ] && LC_ALL=C comm -23 .dev-files .dev-files.new | while IFS= read -r f; do rm -f -- "$f"; done
+  mv .dev-files.new .dev-files
+}
+
 case "${1:-status}" in
   status)
     on_vm <<'EOF' | mask
@@ -305,12 +314,13 @@ EOF
         { echo 'exec sudo -u fxa -H bash -s'
           echo "$vars"
           # Stop the old dev bot first: its timers ran ctl against a half-extracted tree ("Permission denied").
-          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && { [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2; true; } && base64 -d <<"B64" | tar -xzf -'
+          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && { [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2; true; } && t=$(mktemp) && base64 -d <<"B64" > "$t" && tar -xzf "$t"'
           # Tracked and new files of both repos (not ignored ones: .env, ai/, logs/, node_modules), and the dev env.
           ( cd "$CTL_ROOT/.." && for r in fxa-sandbox-ctl fxa-agent-bot; do
               git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s/%s\n' "$r" "$f"; done
             done; echo fxa-agent-bot/.env.dev ) | ( cd "$CTL_ROOT/.." && COPYFILE_DISABLE=1 tar -czf - -T - ) | base64
           echo 'B64'
+          declare -f dev_prune; echo 'dev_prune "$t"; rm -f "$t"'
           cat <<'EOF2'
 chmod 600 fxa-agent-bot/.env.dev
 R=$HOME/Desktop/working2
