@@ -126,6 +126,15 @@ check("pause, resume and delete run their routine command", (200, 200, 200, ["ro
        call("POST", L + "/5/delete", {}, sig(A, "POST", L + "/5/delete"))[0], ran()[-3:]))
 check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),
       (call("POST", L, raw=b"x", headers={**sig(A, "POST", L), "Content-Type": "text/plain"})[0], call("POST", L, raw=b"{" + b" " * 70000 + b"}", headers=sig(A, "POST", L))[0]))
+import http.client
+def raw_len(length):
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=5)
+    c.putrequest("POST", L); c.putheader("Host", "localhost"); c.putheader("Content-Type", "application/json"); c.putheader("Content-Length", length)
+    for k, v in sig(A, "POST", L).items(): c.putheader(k, v)
+    c.endheaders(); r = c.getresponse(); return r.status
+n_ran = len(ran())
+check("a negative or bad Content-Length, and a body that is not an object, get 400 and run nothing", (400, 400, 400, 400, n_ran),
+      (raw_len("-1"), raw_len("x"), call("POST", L, raw=b"[1]", headers=sig(A, "POST", L))[0], call("POST", L + "/5", raw=b'"x"', headers=sig(A, "POST", L + "/5"))[0], len(ran())))
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")

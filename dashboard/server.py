@@ -580,7 +580,14 @@ class Handler(BaseHTTPRequestHandler):
         if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
             self._json(415, {"error": "send JSON"})
             return
-        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        # A negative length would make read() wait for the end of the stream.
+        if n < 0:
+            self._json(400, {"error": "bad Content-Length"})
+            return
         if n > 65536:
             self._json(413, {"error": "the routine is over 64 KB"})
             return
@@ -588,6 +595,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError):
             self._json(400, {"error": "bad JSON"})
+            return
+        if not isinstance(body, dict):
+            self._json(400, {"error": "send a JSON object"})
             return
         rec, ver = body.get("routine"), str(body.get("version") or "")
         if verb:
