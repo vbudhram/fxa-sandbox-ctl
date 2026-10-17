@@ -6,6 +6,8 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 
 # Change the controller or the bot
 
+Before a product decision (a new setting, message, button, team feature or guard), read `PRODUCT.md`: its goals, principles and defaults decide.
+
 ## Where things are
 
 | | Path |

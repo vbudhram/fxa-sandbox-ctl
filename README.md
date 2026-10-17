@@ -1,5 +1,7 @@
 # FxA Agent Sandbox
 
+What the product is for, its goals, and how product decisions are made: [PRODUCT.md](PRODUCT.md).
+
 Run multiple Claude Code agents in self-contained Linux VMs on macOS. Each agent gets its own MySQL, Redis, Firestore, and full Node.js toolchain. A host directory (git worktree) is mounted via VirtioFS. Interact with agents through `screen` sessions (multi-attach with `screen -x`).
 
 Two main modes:
