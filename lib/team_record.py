@@ -278,7 +278,8 @@ def default_path(slug):
 
 def env(rec):
     """The PIPE_* values the controller reads today, from a valid record."""
-    repos = rec["repos"]
+    # FxA's slug goes out as mozilla/fxa however the record wrote it: the runner's tree setup compares it as written.
+    repos = [dict(r, slug="mozilla/fxa") if r["slug"].lower() == "mozilla/fxa" else r for r in rec["repos"]]
     yield "PIPE_LABEL", rec.get("label", rec["name"])
     for r in repos:
         base = f" {r['base']}" if r.get("base") else ""
