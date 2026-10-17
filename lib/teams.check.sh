@@ -68,6 +68,8 @@ check "the index is not a team, and no record can be named index" "0|1" \
 
 # The live checks, with GitHub and Jira faked: a curl that answers by URL.
 curl() { local u="${@: -1}"
+  # The App JWT must come on stdin (-K -), never in the args: else GitHub would answer 401.
+  case "$u" in *installation) case " $* " in *" -K - "*) [ "$(cat)" = 'header = "Authorization: Bearer jwt"' ] || { echo 401; return; } ;; *) echo 401; return ;; esac ;; esac
   case "$u" in
     *repos/example/noapp/installation|*repos/example/pv2/installation) echo 404 ;; *installation) echo 200 ;;
     */repos/example/pv1|*/repos/example/pv2|*/repos/example/pv3) echo 404 ;;
@@ -77,7 +79,7 @@ curl() { local u="${@: -1}"
     *mypermissions*) echo '{"permissions":{"BROWSE_PROJECTS":{"havePermission":true},"EDIT_ISSUES":{"havePermission":true},"TRANSITION_ISSUES":{"havePermission":true}}}' ;;
   esac; }
 github_app_jwt() { echo jwt; }
-eval "$(sed -n '/^github_repo_private() {/,/^}/p' "$root/lib/github.sh")"; export TMPDIR="$tmp"
+eval "$(sed -n '/^github_repo_private() {/,/^}/p;/^_gh_jwt_conf() {/p' "$root/lib/github.sh")"; export TMPDIR="$tmp"
 type _mtime >/dev/null 2>&1 || _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 live() { FXA_TEAMS_LIVE=1 PIPE_JIRA_BASIC="u@example.com:t" teams_validate "$(rec "$1" Live "$2")" "$1" 2>&1; }
 check "a work repo without the GitHub App is a warning, and the record is still valid" "1|0" \

@@ -128,8 +128,11 @@ check "a team with a private repo of any role is marked private" "false|true|tru
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)|$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_DEP_REPOS=mozilla/secret PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)|$(PIPE_REPOS=("mozilla/fxa /home/agent/fxa work" "mozilla/secret /home/agent/s ref"); PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c .private)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 PIPE_STATE_DIR="$tmp/ps"; mkdir -p "$PIPE_STATE_DIR"
-github_app_jwt() { echo jwt; }
-curl() { echo "call" >> "$tmp/ghcalls"; case "${*: -1}" in */repos/mozilla/fxa/installation) echo 200 ;; *) echo 404 ;; esac; }
+github_app_jwt() { echo jwt; }; eval "$(sed -n '/^_gh_jwt_conf() {/p' "$root/lib/github.sh")"
+curl() { echo "call" >> "$tmp/ghcalls"; local u="${*: -1}"
+  # The App JWT must come on stdin (-K -), never in the args: else GitHub would answer 401.
+  case "$u" in *installation) case " $* " in *" -K - "*) [ "$(cat)" = 'header = "Authorization: Bearer jwt"' ] || { echo 401; return; } ;; *) echo 401; return ;; esac ;; esac
+  case "$u" in */repos/mozilla/fxa/installation) echo 200 ;; *) echo 404 ;; esac; }
 pj() { PIPE_PROFILE="$1" PIPE_REPO_SLUG="$2" PIPE_DEP_REPOS="$3" PIPE_PR_OPEN="$4" pipeline_profile_json | jq -c '[.read_only, (.repos[] | "\(.slug):\(.role):\(.write)")]'; }
 check "fxa can write to its repo" '[false,"mozilla/fxa:work:true"]' "$(pj fxa mozilla/fxa '' 1)"
 check "a read-only profile writes nowhere, deps included" '[true,"mozilla/blurts-server:work:false","mozilla/fxa:dep:false"]' "$(pj monitor mozilla/blurts-server mozilla/fxa 0)"
