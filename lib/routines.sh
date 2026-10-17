@@ -322,7 +322,7 @@ routine_reconcile() {
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
-    why=""; pr=""
+    why=""; pr=""; sst=""
     case "$st" in
       queued) [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ] && why="no tick started it within 60 min" ;;
       claimed) [ -z "$sess" ] && [ "$since" -gt 0 ] && [ $((now - since)) -gt 600 ] && why="no session started within 10 min" ;;
