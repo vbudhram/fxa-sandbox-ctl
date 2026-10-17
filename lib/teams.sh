@@ -336,17 +336,18 @@ teams_delete() {
       && case "$(jq -r '.state // empty' "$f")" in stopped|failed) ;; *) n=$((n + 1)) ;; esac
   done
   [ "$n" = 0 ] || { echo "ERROR: team ${name} has ${n} session(s) that can resume; stop them first" >&2; return 1; }
-  # Its routines first: a store error stops the delete before anything is gone, and a later team of
-  # this name never inherits them. (A failed record delete below then leaves the team with no routines.)
-  routines_drop_team "$name" || { echo "ERROR: team ${name} is not deleted" >&2; return 1; }
   gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)"
+  [ -z "$FXA_TEAMS_URI" ] || [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
+  # Every refusal is above. The marker stops a routine save from racing the drop; then its routines go,
+  # so a later team of this name never inherits them. A store error stops the delete with nothing gone.
+  touch "${FXA_TEAMS_DIR}/${name}.deleting"
+  routines_drop_team "$name" || { rm -f "${FXA_TEAMS_DIR}/${name}.deleting"; echo "ERROR: team ${name} is not deleted" >&2; return 1; }
   if [ -n "$FXA_TEAMS_URI" ]; then
-    [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
     gcloud storage rm -q "${FXA_TEAMS_URI}/${name}.json" --if-generation-match="$gen" >/dev/null 2>&1 \
-      || { echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync" >&2; return 1; }
+      || { rm -f "${FXA_TEAMS_DIR}/${name}.deleting"; echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync. Its routines are already removed." >&2; return 1; }
   fi
   _teams_audit delete "$name" "$gen" "" "${FXA_TEAMS_DIR}/${name}.json" ""
-  rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}"
+  rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}" "${FXA_TEAMS_DIR:?}/${name}.deleting"
   teams_index && echo "deleted team ${name}"
 }
 

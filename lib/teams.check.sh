@@ -186,8 +186,13 @@ n0="$(teams_audit web | jq '[.[] | select(.action == "set")] | length')"
 check "a write whose read-back fails succeeds, warns to sync, and writes an audit row with an unknown new generation" "0|1|$((n0 + 1))|Again|unknown" \
   "$(DESCRIBE_FAILS=1 teams_set web "$(rec web Again)" >/dev/null 2>"$tmp/rb.err"; echo $?)|$(grep -c 'could not read it back' "$tmp/rb.err")|$(teams_audit web | jq '[.[] | select(.action == "set")] | length')|$(jq -r .label "$B/web.json")|$(teams_audit web | jq -r '[.[] | select(.action == "set")] | .[0].new_gen')"
 check "the next edit then asks for a sync, not a 409 for its own write" "1" "$(teams_set web "$(rec web Later)" 2>&1 | grep -c 'run profile sync')"
-rm -f "$B/web.json" "$B/web.json.gen"
+# A delete that is refused (no generation in the cache) keeps the team's routines.
 db_exec "INSERT INTO routines (team, data) VALUES ('web', '{}');"
+mv "$FXA_TEAMS_DIR/web.gen" "$tmp/web.gen"
+check "a refused delete (no generation) keeps the team's routines and leaves no marker" "1|1|no" \
+  "$(teams_delete web >/dev/null 2>&1; echo $?)|$(db_value "SELECT count(*) FROM routines WHERE team = 'web';")|$([ -e "$FXA_TEAMS_DIR/web.deleting" ] && echo yes || echo no)"
+mv "$tmp/web.gen" "$FXA_TEAMS_DIR/web.gen"
+rm -f "$B/web.json" "$B/web.json.gen"
 check "sync with a store error keeps a team that left the store, and fails" "1|yes" \
   "$( (db_value() { return 1; }; teams_sync >/dev/null 2>&1); echo $?)|$([ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)"
 check "sync removes a team that left the store, with its routines and an audit row" "no|null|0|1" \
