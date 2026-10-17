@@ -129,16 +129,24 @@ unset -f gcloud
 # profile test asks the boot for the stack only when the team has one.
 mkdir -p "$tmp/sd"; printf '#!/bin/bash\n[ "$3" = --pipeline ] && echo "$4 stack=${FXA_SESSION_STACK:-}" >> "%s/tcalls"; exit 0\n' "$tmp" > "$tmp/sd/fxa-sandbox-ctl"; chmod +x "$tmp/sd/fxa-sandbox-ctl"
 cp "$(rec ts1 Ts1)" "$FXA_TEAMS_DIR/ts1.json"; jq '.stack = {kind: "fxa"} | .repos += [{slug: "mozilla/fxa", role: "dep"}]' "$(rec ts2 Ts2)" > "$FXA_TEAMS_DIR/ts2.json"
+echo 7 > "$FXA_TEAMS_DIR/ts1.gen"; echo 7 > "$FXA_TEAMS_DIR/ts2.gen"   # a real team always has its generation
 ( SCRIPT_DIR="$tmp/sd"; _session_try_wait() { return 1; }; teams_test ts1; teams_test ts2 ) >/dev/null 2>&1
 check "profile test starts a team's stack only when it has one" "ts1 stack=|ts2 stack=1" "$(paste -sd'|' - < "$tmp/tcalls")"
 out="$( (SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=error; return 0; }; teams_test ts1; echo "rc=$?") 2>&1)"
 check "a first turn that ends in an error fails the test, and records no pass" "1|rc=1|0" \
   "$(grep -c 'it ended in error' <<< "$out")|$(tail -1 <<< "$out")|$(ls "$FXA_TEAMS_DIR"/ts1.tested 2>/dev/null | grep -c .)"
 # A plain call, as the profile command makes it: on the left of || bash would turn set -e off.
-echo 7 > "$FXA_TEAMS_DIR/ts1.gen"   # a real team always has its generation
-out="$( (set -eo pipefail; SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { return 255; }; worktree_branch_for() { echo "$1"; }; teams_test ts1) 2>&1)"
+echo 7 > "$FXA_TEAMS_DIR/ts1.gen"
+out="$( (set -euo pipefail; SCRIPT_DIR="$tmp/sd"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { return 255; }; worktree_branch_for() { echo "$1"; }; teams_test ts1) 2>&1)"
 check "a failed probe ssh under set -e still stops the runner and fails" "1|1" \
   "$(grep -c '== stopped' <<< "$out")|$(grep -c 'failed: team ts1' <<< "$out")"
+printf '#!/bin/bash\n[ "$3" = stop ] && exit 1; exit 0\n' > "$tmp/sd2"; mkdir -p "$tmp/sd2d"; mv "$tmp/sd2" "$tmp/sd2d/fxa-sandbox-ctl"; chmod +x "$tmp/sd2d/fxa-sandbox-ctl"
+out="$( (set -euo pipefail; SCRIPT_DIR="$tmp/sd2d"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { echo "ok   x"; }; worktree_branch_for() { echo "$1"; }; teams_test ts1) 2>&1)"
+check "a failed stop still prints the result, says so, and records the pass" "1|1|7" \
+  "$(grep -c 'the stop of agent-tst.* failed' <<< "$out")|$(grep -c 'passed: team ts1' <<< "$out")|$(cat "$FXA_TEAMS_DIR/ts1.tested" 2>/dev/null)"
+rm -f "$FXA_TEAMS_DIR/ts1.gen" "$FXA_TEAMS_DIR/ts1.tested"
+out="$( (set -euo pipefail; SCRIPT_DIR="$tmp/sd"; teams_test ts1) 2>&1)"
+check "a team with no generation is refused before a runner boots" "1|0" "$(grep -c 'no generation for team ts1' <<< "$out")|$(grep -c 'booting' <<< "$out")"
 rm -f "$FXA_TEAMS_DIR/ts1.json" "$FXA_TEAMS_DIR/ts2.json"
 ( eval "$(sed -n '/^_session_try_wait() {/,/^}/p' "$root/lib/session.sh")"
   printf '#!/bin/sh\necho "{\\"cursor\\":2,\\"events\\":[{\\"type\\":\\"text\\"},{\\"type\\":\\"error\\"}]}"\n' > "$tmp/evctl"; chmod +x "$tmp/evctl"

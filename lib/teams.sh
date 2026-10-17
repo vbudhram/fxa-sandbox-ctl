@@ -275,7 +275,9 @@ _teams_probe_script() {
 teams_test() {
   local name="$1" ctl="${SCRIPT_DIR:-.}/fxa-sandbox-ctl" key f gen out rc=0
   [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team record ${name}; run profile sync" >&2; return 1; }
-  gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)"
+  # A pass records the generation it tested, so a test with none is refused, not run.
+  gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || true)"
+  [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
   key="agent-tst$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   echo 'This is a test boot of the team. Reply with the one word: ready. Change nothing and run nothing.' > "$f"
@@ -295,7 +297,8 @@ teams_test() {
   else
     echo "FAIL the runner did not finish its first turn${_TRY_LAST:+ (it ended in ${_TRY_LAST})}; see ${SESSION_DIR}/${key}.log"; rc=1
   fi
-  "$ctl" --backend gce stop "$key" >/dev/null 2>&1; echo "== stopped ${key}"
+  "$ctl" --backend gce stop "$key" >/dev/null 2>&1 || echo "WARN: the stop of ${key} failed; fxa-sandbox-ctl stop ${key}" >&2
+  echo "== stopped ${key}"
   if [ "$rc" = 0 ]; then printf '%s\n' "$gen" > "${FXA_TEAMS_DIR}/${name}.tested"; echo "passed: team ${name} may be activated at generation ${gen}"
   else echo "failed: team ${name} stays as it is"; fi
   return $rc
