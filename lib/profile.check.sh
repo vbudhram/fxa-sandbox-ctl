@@ -51,11 +51,15 @@ echo 'PIPE_PR_TEAM=demo-devs' >> "$tmp/r/profiles/demo/profile.conf"
 check "a profile can name its team" "demo-devs" "$(team "$tmp/r" demo)"
 
 # A team stack: every work row can be picked; the first is the profile's own repo.
-py="$(loaded "$root" pyfxa-team)"
-check "pyfxa-team loads, PyFxA first, both repos as work rows" "PIPE_REPO_SLUG=mozilla/PyFxA|PIPE_STACK_DEFAULT=mozilla/PyFxA mozilla/fxa" \
+# Fixtures in $tmp/r: a two-repo team (pyt) and a read-only one beside FxA (ro), as folder teams.
+mkdir -p "$tmp/r/profiles/pyt" "$tmp/r/profiles/ro"
+printf 'PIPE_PROFILE="pyt"\nPIPE_REPOS=(\n  "mozilla/PyFxA /home/agent/pyfxa work"\n  "mozilla/fxa   /home/agent/fxa   work"\n)\nPIPE_STACK_DEFAULT="mozilla/PyFxA mozilla/fxa"\nPIPE_STACK_DIR="/home/agent/fxa"\nPIPE_MCP="github,jira"\n' > "$tmp/r/profiles/pyt/profile.conf"
+printf 'PIPE_PROFILE="ro"\nPIPE_PR_OPEN=0\nPIPE_REPOS=(\n  "mozilla/blurts-server /home/agent/monitor work"\n  "mozilla/fxa           /home/agent/fxa     dep"\n)\nPIPE_STACK_DIR="/home/agent/fxa"\nPIPE_DESKTOP_URL="http://localhost:6060/"\n' > "$tmp/r/profiles/ro/profile.conf"
+py="$(loaded "$tmp/r" pyt)"
+check "a two-repo team loads, PyFxA first, both repos as work rows" "PIPE_REPO_SLUG=mozilla/PyFxA|PIPE_STACK_DEFAULT=mozilla/PyFxA mozilla/fxa" \
   "$(grep -E '^PIPE_(REPO_SLUG|STACK_DEFAULT)=' <<< "$py" | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
-check "pyfxa-team's work rows" "mozilla/PyFxA /home/agent/pyfxa|mozilla/fxa /home/agent/fxa" \
-  "$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$root"; source "$root/lib/pipeline.sh"; pipeline_load pyfxa-team >/dev/null 2>&1; printf '%s\n' "${PIPE_WORK_ROWS[@]}" ) | paste -sd'|' -)"
+check "a two-repo team's work rows" "mozilla/PyFxA /home/agent/pyfxa|mozilla/fxa /home/agent/fxa" \
+  "$( ( export HOME="$tmp/home"; SANDBOX_ROOT="$tmp/r"; source "$root/lib/pipeline.sh"; pipeline_load pyt >/dev/null 2>&1; printf '%s\n' "${PIPE_WORK_ROWS[@]}" ) | paste -sd'|' -)"
 mkdir -p "$tmp/r/profiles/dup"; printf 'PIPE_REPOS=(\n "mozilla/a /home/agent/a work"\n "mozilla/b /home/agent/a work"\n)\n' > "$tmp/r/profiles/dup/profile.conf"
 check "two work rows on one path are refused" "1" "$(loaded "$tmp/r" dup >/dev/null; echo $?)"
 # A profile.conf that does not source (unreadable mid-deploy, or broken) is refused, not an unbound-variable crash.
@@ -93,8 +97,8 @@ gh() { echo gh >> "$tmp/gh"; }; git() { echo git >> "$tmp/gh"; }
 # With no handoff it stops before any git or gh call; with one, finish-diff.check.sh shows the patch path.
 check "a read-only profile with no handoff pushes nothing" "1|0" "$rc|$(wc -l < "$tmp/gh" | tr -d ' ')"
 unset -f gh git
-check "the monitor profile is read-only for now" "PIPE_PROFILE=monitor|PIPE_PR_OPEN=0|PIPE_REPO_SLUG=mozilla/blurts-server" \
-  "$(loaded "$root" monitor | grep -E '^PIPE_(PR_OPEN|PROFILE|REPO_SLUG)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+check "a read-only profile loads with PR off" "PIPE_PROFILE=ro|PIPE_PR_OPEN=0|PIPE_REPO_SLUG=mozilla/blurts-server" \
+  "$(loaded "$tmp/r" ro | grep -E '^PIPE_(PR_OPEN|PROFILE|REPO_SLUG)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
 # A profile with its own repo: cloned beside FxA, and /workspace points at it.
 eval "$(sed -n '/^_gce_profile_workspace() {/,/^}/p' "$root/lib/agent.sh")"
@@ -106,8 +110,8 @@ check "a profile repo is cloned and /workspace points at it" "1|1" \
 check "FxA keeps the baked clone, with no call" "0" "$(wc -l < "$tmp/vmx" | tr -d ' ')"
 check "a workspace or slug that is not plain is refused" "1|1" \
   "$(PIPE_WORKSPACE='/home/agent/x;rm' PIPE_REPO_SLUG=a/b _gce_profile_workspace r1 >/dev/null 2>&1; echo $?)|$(PIPE_WORKSPACE=/home/agent/x PIPE_REPO_SLUG='a/b c' _gce_profile_workspace r1 >/dev/null 2>&1; echo $?)"
-check "the monitor profile works in its own clone, with FxA's stack beside it" "PIPE_STACK_DIR=/home/agent/fxa|PIPE_WORKSPACE=/home/agent/monitor" \
-  "$(loaded "$root" monitor | grep -E '^PIPE_(STACK_DIR|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
+check "a team works in its own clone, with FxA's stack beside it" "PIPE_STACK_DIR=/home/agent/fxa|PIPE_WORKSPACE=/home/agent/monitor" \
+  "$(loaded "$tmp/r" ro | grep -E '^PIPE_(STACK_DIR|WORKSPACE)=' | tr -d "'" | LC_ALL=C sort | paste -sd'|' -)"
 
 # profile show: each repo's effective access, from the profile and the GitHub App.
 eval "$(sed -n '/^pipeline_profile_json() {/,/^}/p;/^_profile_app_repos() {/,/^}/p;/^pipeline_mcp() {/p' "$root/lib/pipeline.sh")"
@@ -129,7 +133,7 @@ check "an empty PIPE_MCP means none" "" "$(PIPE_MCP= pipeline_mcp jira,slack)"
 check "no PIPE_MCP: the bot's list" "jira,slack" "$(unset PIPE_MCP; pipeline_mcp jira,slack)"
 check "the profile JSON names the team's connectors" '["github","jira"]|null' \
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa PIPE_MCP=github,jira pipeline_profile_json | jq -c .mcp)|$(unset PIPE_MCP; PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/fxa pipeline_profile_json | jq -c .mcp)"
-check "pyfxa-team sets its connectors" "github,jira" "$( ( source "$root/profiles/pyfxa-team/profile.conf"; echo "$PIPE_MCP" ) )"
+check "a team sets its connectors" "github,jira" "$( ( source "$tmp/r/profiles/pyt/profile.conf"; echo "$PIPE_MCP" ) )"
 check "a failed App check means no write" '"mozilla/fxa:work:false"' "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
 check "a failed App check says so, not 'not installed'" '"the GitHub App check failed"' \
   "$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
@@ -152,7 +156,7 @@ check "the work row sets the repo and workspace, dep rows the dep list" \
 check "a row with an unknown role is refused" "1" "$(loaded "$tmp/r" badrole >/dev/null; echo $?)"
 check "fxa sets no repo rows" "" "$(loaded "$root" fxa | grep '^PIPE_REPOS=')"
 # The dashboard finds a broken team by its directory name, so each must load under that name.
-bad=""; for d in "$root"/profiles/*/; do n="$(basename "$d")"; [ "$(loaded "$root" "$n" | grep '^PIPE_PROFILE=' | tr -d "'")" = "PIPE_PROFILE=$n" ] || bad="$bad $n"; done
+bad=""; for d in "$root"/profiles/*/profile.conf; do n="$(basename "$(dirname "$d")")"; [ "$(loaded "$root" "$n" | grep '^PIPE_PROFILE=' | tr -d "'")" = "PIPE_PROFILE=$n" ] || bad="$bad $n"; done
 check "every profile loads, and PIPE_PROFILE is its directory name" "" "${bad# }"
 
 # Every tree but the work tree is cloned beside it by role, and named in the guide as read-only.
@@ -192,7 +196,7 @@ unset -f _session_sh
 
 # Sync Storage runs ponytail-review once: /sync-review runs it, and nothing else asks for it again.
 check "sync-storage asks for ponytail-review only through sync-review" "1|0|0" \
-  "$(grep -c '/ponytail-review' "$root/profiles/sync-storage/skills/sync-review/SKILL.md")|$(grep -c '/ponytail-review, then' "$root/profiles/sync-storage/goal.md")|$(grep -c 'and `/ponytail-review`' "$root/profiles/sync-storage/CLAUDE.md")"
+  "$(grep -c '/ponytail-review' "$root/profiles/sync-storage/skills/sync-review/SKILL.md")|$(cat "$root/profiles/sync-storage/goal.md" 2>/dev/null | grep -c '/ponytail-review, then')|$(cat "$root/profiles/sync-storage/CLAUDE.md" 2>/dev/null | grep -c 'and `/ponytail-review`')"
 # A profile's boot.sh is shipped and started as root, detached; FxA has none.
 eval "$(sed -n '/^_gce_profile_boot() {/,/^}/p' "$root/lib/agent.sh")"
 vm_exec() { printf '%s\n' "${*: -1}" >> "$tmp/bootx"; }
@@ -216,17 +220,19 @@ check "a profile adds plain host names to the allowlist" " fonts.gstatic.com a.e
 check "a host that is not plain is refused" "1" "$(PIPE_EGRESS_EXTRA='a.example;rm' _profile_egress_extra >/dev/null 2>&1; echo $?)"
 
 # The profile's guide.md follows the FxA guide, after the repo list.
-g="$(cd "$root" && SANDBOX_ROOT="$root" PIPE_PROFILE=monitor bash -c 'source lib/config.sh >/dev/null 2>&1; source lib/agent.sh >/dev/null 2>&1; vm_guide_build session')"
-check "the monitor guide is added to the session guide" "1" "$(grep -c '^# Monitor' <<< "$g")"
+# A record team's guide.md is its record's copy (profile_file).
+mkdir -p "$tmp/gt/gd"; printf '# Gd team guide\n' > "$tmp/gt/gd/guide.md"
+g="$(cd "$root" && SANDBOX_ROOT="$root" FXA_TEAMS_DIR="$tmp/gt" PIPE_PROFILE=gd bash -c 'source lib/config.sh >/dev/null 2>&1; source lib/agent.sh >/dev/null 2>&1; vm_guide_build session')"
+check "a team's guide is added to the session guide" "1" "$(grep -c '^# Gd team guide' <<< "$g")"
 
 # "Try it in Firefox" opens the profile's page; FxA keeps :3030 (the script's default).
 check "a desktop command loads the session's profile" "monitor" "$(_profile_from_args session desktop agent-mon1 user@example.com)"
 eval "$(sed -n '/^session_desktop() {/,/^}/p' "$root/lib/session.sh")"
 desk() { ( worktree_branch_for() { echo b; }; session_live() { :; }; vm_is_running() { :; }; session_set() { :; }; ssh() { :; }; vm_name() { :; }
   vm_exec() { echo "page=${!#}" > "$tmp/desk"; printf 'ip=10.0.0.9\npassword=abcd1234\n'; }
-  SANDBOX_ROOT="$root"; eval "$(loaded "$root" "$1" | grep '^PIPE_DESKTOP_URL=')"; session_desktop agent-x >/dev/null; cat "$tmp/desk" ); }
-check "monitor's desktop opens Monitor" "page=http://localhost:6060/" "$(desk monitor)"
-check "fxa's desktop gets no page, so the script opens :3030" "page=" "$(desk fxa)"
+  SANDBOX_ROOT="$root"; eval "$(loaded "$2" "$1" | grep '^PIPE_DESKTOP_URL=')"; session_desktop agent-x >/dev/null; cat "$tmp/desk" ); }
+check "a team's desktop opens its page" "page=http://localhost:6060/" "$(desk ro "$tmp/r")"
+check "fxa's desktop gets no page, so the script opens :3030" "page=" "$(desk fxa "$root")"
 
 # A boot.sh runs as root beside the agent: its markers must be where the agent cannot plant a link.
 check "every boot.sh writes its markers outside the agent's home" "" \
@@ -252,10 +258,10 @@ head -c 9000 /dev/zero | tr '\0' x > "$tmp/lr/profiles/t/CLAUDE.md"
 check "a team CLAUDE.md over 8 KB is named" "1" "$("$tmp/lr/fxa-sandbox-ctl" profile lint 2>&1 | grep -c 't/profile.conf: CLAUDE.md is over 8 KB')"
 # worktree.sh loads first (as ctl sources it) and sets its own defaults: a profile's base and pool win over them.
 bp() { ( export HOME="$tmp/home"; unset FXA_WORKTREE_BASE FXA_SHARED_WORKTREE_NAME _FXA_BASE_LOADED _FXA_POOL_LOADED; [ -n "${2:-}" ] && export FXA_WORKTREE_BASE="$2"
-  SANDBOX_ROOT="$root"; source "$root/lib/pipeline.sh"; source "$root/lib/worktree.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
+  SANDBOX_ROOT="${BPR:-$root}"; source "$root/lib/pipeline.sh"; source "$root/lib/worktree.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
   echo "$PIPE_BASE_BRANCH $FXA_WORKTREE_BASE $FXA_SHARED_WORKTREE_NAME" ); }
-check "a master-branch team gets its base and its own pool; FxA keeps main and fxa-auto" "master master sync-storage-auto|main main fxa-auto" "$(bp sync-storage)|$(bp fxa)"
-check "a base set by hand still wins" "dev dev sync-storage-auto" "$(bp sync-storage dev)"
+check "a master-branch team gets its base and its own pool; FxA keeps main and fxa-auto" "master master demo-auto|main main fxa-auto" "$(BPR="$tmp/r" bp demo)|$(bp fxa)"
+check "a base set by hand still wins" "dev dev demo-auto" "$(BPR="$tmp/r" bp demo dev)"
 # The agent's own command line holds the guide: a pkill -f with plain text from it stops the agent.
 check "no team file kills by a plain -f pattern ([x]yz form, or -x by name)" "" \
   "$(grep -HnE "p(kill|grep)[^|;]* -f +['\"]?[^['\" ]" "$root"/profiles/*/boot.sh "$root"/profiles/*/*.md "$root"/profiles/*/skills/*/SKILL.md 2>/dev/null || true)"
