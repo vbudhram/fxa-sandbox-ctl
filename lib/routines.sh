@@ -198,10 +198,10 @@ _routine_team_paused() {
   local out rc=0; out="$( ( pipeline_load "$1" >/dev/null 2>&1 || exit 2; pipeline_paused ) )" || rc=$?
   [ "$rc" = 2 ] && return 2; [ "$rc" = 0 ] && { printf '%s\n' "${out:-paused}"; return 0; }; return 1
 }
-# _routine_free_slots   Session slots left under the cap.
-_routine_free_slots() {
 # _routine_sessions_paused   The operator's sessions pause reason, or nothing.
 _routine_sessions_paused() { local w=""; w="$(sessions_paused 2>/dev/null)" || w=""; printf '%s' "$w"; }
+# _routine_free_slots   Session slots left under the cap.
+_routine_free_slots() {
   local f live=0; for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$((live + 1)); done
   echo $(( $(_session_cap) - live ))
 }
