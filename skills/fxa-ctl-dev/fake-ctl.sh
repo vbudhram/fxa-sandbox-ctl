@@ -36,7 +36,7 @@ while :; do case "${1:-}" in --backend) shift 2 ;; --pipeline) pipe="$2"; shift 
 # profile list | profile show (with --pipeline)
 profile() {
   [ -n "${FAKE_PROFILES:-}" ] || { "$REAL" "${all[@]}"; return; }
-  case "${1:-}" in list) jq -c . "$FAKE_PROFILES" ;; show) jq -c --arg p "${pipe:-fxa}" '.[] | select(.profile == $p)' "$FAKE_PROFILES" ;; esac
+  case "${1:-}" in list) jq -c . "$FAKE_PROFILES" ;; show) jq -c --arg p "${pipe:-fxa}" '.[] | select(.profile == $p) | .private //= false' "$FAKE_PROFILES" ;; esac
 }
 now() { if [ -n "${FAKE_NOW_FILE:-}" ]; then cat "$FAKE_NOW_FILE"; else date +%s; fi; }
 if [ -n "${FAKE_CTL_LOG:-}" ]; then
