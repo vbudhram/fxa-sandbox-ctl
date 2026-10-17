@@ -416,7 +416,8 @@ _finish_push_and_pr() {
   fi
   local conv='^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?: [^[:space:]]'
   if ! [[ "$pr_title" =~ $conv ]]; then
-    echo "ERROR: pr_title is not a scoped conventional subject, e.g. 'fix(auth): reject an expired token': ${pr_title}" >&2
+    # Only its start, and plain characters: this line reaches the manager pass through the launch log.
+    echo "ERROR: pr_title is not a scoped conventional subject, e.g. 'fix(auth): reject an expired token': $(printf '%s' "${pr_title:0:60}" | tr -cd 'A-Za-z0-9 ._/:(),!-')" >&2
     return 1
   fi
 
