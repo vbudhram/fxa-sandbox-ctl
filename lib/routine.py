@@ -19,7 +19,7 @@ import zoneinfo
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,39}$")
 SCHEDULE = re.compile(r"^(daily|weekdays|weekly (mon|tue|wed|thu|fri|sat|sun)) ([01][0-9]|2[0-3]):([0-5][0-9])$")
-BRANCH = re.compile(r"^[A-Za-z0-9._/-]{1,60}$")
+BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,59}$")
 CHANNEL = re.compile(r"^[CG][A-Z0-9]{6,}$")
 LINK = re.compile(r"^https://[a-z0-9.-]+\.slack\.com/archives/([CG][A-Z0-9]{6,})/?(\?.*)?$")
 ZONE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$")
@@ -50,7 +50,8 @@ def pairs(v):
 
 
 def bot_access(path):
-    """PROFILE_* from the bot's .env: {key: raw value}. No file: none."""
+    """PROFILE_* from the bot's .env: {key: raw value}, or None when it cannot be read (as the dashboard's
+    read_access(): the channel rules then are unknown, so a save fails closed)."""
     out = {}
     try:
         with open(path, encoding="utf-8") as f:
@@ -59,7 +60,7 @@ def bot_access(path):
                 if m:
                     out[m.group(1)] = m.group(2).strip().strip("'\"")
     except (OSError, UnicodeDecodeError):
-        pass
+        return None
     return out
 
 
@@ -236,7 +237,11 @@ def main(argv):
             count = int(opt(argv, "--count", "0"))
         except ValueError:
             count = MOST  # fail closed
-        bad, out = check(r, argv[3], load(opt(argv, "--profile")), index, bot_access(opt(argv, "--bot-env", "")), count)
+        env = bot_access(opt(argv, "--bot-env", ""))
+        if env is None:
+            print("channel: cannot read the bot access rules", file=sys.stderr)
+            return 1
+        bad, out = check(r, argv[3], load(opt(argv, "--profile")), index, env, count)
         if bad:
             print("\n".join(bad), file=sys.stderr)
             return 1

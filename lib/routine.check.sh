@@ -28,9 +28,11 @@ J
 cat > "$tmp/index.json" <<'J'
 {"schema":1,"teams":{"secret":{"status":"active","access":{"channels":["C0OWN00"]}},"second":{"status":"active","access":{"channels":["C0SECOND"]}}}}
 J
+# The bot's access rules: team envy is an env-access team (PROFILE_CHANNELS), with its own channel.
+printf 'PROFILE_CHANNELS=C0ENVY0:envy\nPROFILE_OPEN=envy\n' > "$tmp/bot.env"
 v() { # v <team> <profile> <override json> [count]   the validator's first stderr line for the base routine plus the override, or "ok"
   jq -cn --argjson b "$base" --argjson x "$3" '$b + $x' > "$tmp/r.json"
-  python3 -I "$here/routine.py" validate "$tmp/r.json" "$1" --profile "$tmp/$2" --index "$tmp/index.json" --bot-env "$tmp/none" --count "${4:-0}" 2>&1 >/dev/null | head -1 | grep . || echo ok; }
+  python3 -I "$here/routine.py" validate "$tmp/r.json" "$1" --profile "$tmp/$2" --index "$tmp/index.json" --bot-env "$tmp/bot.env" --count "${4:-0}" 2>&1 >/dev/null | head -1 | grep . || echo ok; }
 base='{"name":"Code review","template":"code-review","prompt":"Review the commits.","schedule":"weekdays 09:00","zone":"America/New_York","mode":"report","repos":["mozilla/secret"],"channel":"C0OWN00"}'
 check "a pr mode on a diff-only team" "mode: Draft PR is not possible: this team gets diffs only, so a routine can only report" \
   "$(v pyfxa ro.json '{"repos":["mozilla/PyFxA"],"channel":"C0ANY00","mode":"pr"}')"
@@ -52,17 +54,39 @@ echo '{"profile":"second","read_only":false,"private":false,"repos":[{"slug":"mo
 check "a security review on a record team, on a channel it does not bind" "channel: A security review posts only to one of this team's channels" \
   "$(v second open.json '{"template":"security-review","repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
 check "a code review on that team's other channel passes" "ok" "$(v second open.json '{"repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
+check "an unknown field" "colour: is not a routine field" "$(v secret priv.json '{"colour":"red"}')"
+check "a bad template" "template: must be one of code-review, ux-review, perf-review, security-review, blank" "$(v secret priv.json '{"template":"x"}')"
+check "an empty prompt" "prompt: The prompt is empty" "$(v secret priv.json '{"prompt":"  "}')"
+check "no repos" "repos: Pick at least one of this team's repos" "$(v secret priv.json '{"repos":[]}')"
+for b in '-x' 'a..b' 'a b'; do
+  check "a bad branch ($b)" "branch: Use letters, digits and . _ / - in the branch, at most 60 characters" "$(v secret priv.json "$(jq -cn --arg b "$b" '{branch: $b}')")"
+done
+check "a bad mode" "mode: must be report, pr or pr+notes" "$(v secret priv.json '{"mode":"merge"}')"
+check "a malformed channel" "channel: Use a Slack channel ID (C0123ABCD) or a link to the channel" "$(v secret priv.json '{"channel":"#general"}')"
+check "a pr mode on the team's dep repo, not its work repo (D27)" "mode: A draft PR mode needs exactly one work repo" "$(v secret priv.json '{"repos":["mozilla/fxa"],"mode":"pr"}')"
+echo '{"profile":"envy","read_only":false,"private":false,"repos":[{"slug":"mozilla/envy","role":"work"}]}' > "$tmp/envy.json"
+check "an env-access team: a security review on a channel it does not own is refused" "channel: A security review posts only to one of this team's channels" \
+  "$(v envy envy.json '{"template":"security-review","repos":["mozilla/envy"],"channel":"C0PUBLIC"}')"
+check "an env-access team: its PROFILE_CHANNELS channel counts as its own" "ok" "$(v envy envy.json '{"template":"security-review","repos":["mozilla/envy"],"channel":"C0ENVY0"}')"
+check "another team cannot use an env-access team's channel" "channel: Channel C0ENVY0 belongs to team envy" "$(v secret priv.json '{"channel":"C0ENVY0"}')"
+jq -cn --argjson b "$base" '$b' > "$tmp/r.json"
+check "an unreadable bot .env fails closed" "channel: cannot read the bot access rules" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/missing.env" 2>&1 >/dev/null)"
 check "a valid routine on the team's own channel passes" "ok" "$(v secret priv.json '{}')"
 jq -cn --argjson b "$base" '$b + {channel: "https://example.slack.com/archives/C0OWN00"}' > "$tmp/r.json"
 check "a pasted channel link is stored as the channel ID" "C0OWN00" \
-  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" | jq -r .channel)"
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" | jq -r .channel)"
 # Weekdays 09:00 in New York from Saturday 2026-10-17: Monday, Tuesday, Wednesday. From Friday 2026-10-30 11:00,
 # across the DST end on 1 November: Monday 09:00 at the new offset.
 printf '%s' "$base" > "$tmp/r.json"
 check "the next three weekday 09:00 times in the routine's zone" "2026-10-19T09:00:00-04:00 2026-10-20T09:00:00-04:00 2026-10-21T09:00:00-04:00" \
   "$(python3 -I "$here/routine.py" next "$tmp/r.json" --from 1792260000 | tr '\n' ' ' | sed 's/ $//')"
 check "after the DST change, still 09:00 local" "2026-11-02T09:00:00-05:00" "$(python3 -I "$here/routine.py" next "$tmp/r.json" --from 1793372400 --n 1)"
-check "the period is the local date" "2026-10-19" "$(python3 -I "$here/routine.py" period "$tmp/r.json" 1792414800)"
+check "the period is the local date, not the UTC one (23:30 in New York is the next day in UTC)" "2026-10-19" "$(python3 -I "$here/routine.py" period "$tmp/r.json" 1792467000)"
+# A time in the hour a DST start skips (02:30 on Sunday 2027-03-14 in New York) runs once, at 03:30 local.
+jq -c '.schedule = "daily 02:30"' "$tmp/r.json" > "$tmp/gap.json"
+check "a time in the DST gap runs once that day, at the wall clock it lands on" "2027-03-13T02:30:00-05:00 2027-03-14T03:30:00-04:00 2027-03-15T02:30:00-04:00" \
+  "$(python3 -I "$here/routine.py" next "$tmp/gap.json" --from 1804914000 | tr '\n' ' ' | sed 's/ $//')"
 
 # The built-in templates: four, and the security review is locked to report.
 check "routine templates lists four templates, and security-review is locked to report" "code-review perf-review security-review ux-review|report|report" \
@@ -75,7 +99,7 @@ mkdir -p "$SESSION_DIR" "$FXA_TEAMS_DIR"; cp "$tmp/index.json" "$FXA_TEAMS_DIR/i
 source "$here/teams.sh"; source "$here/routines.sh"
 pipeline_folder_teams() { echo fxa; }
 _routine_profile() { cat "$tmp/priv.json"; }
-export FXA_TEAM_ACTOR=admin@example.com
+export FXA_TEAM_ACTOR=admin@example.com FXA_BOT_ENV="$tmp/bot.env"
 jq -cn --argjson b "$base" '$b + {prompt: "SECRET-PROMPT-TEXT review"}' > "$tmp/new.json"
 check "an admin creates a routine" "created routine 1" "$(routine_set secret "$tmp/new.json" 2>&1)"
 check "the list has it, active, with its next three run times" "1|0|3" "$(routine_list secret | jq -r '.[0] | "\(.id)|\(.paused)|\(.next | length)"')"
