@@ -6,6 +6,8 @@
       Prints the normalized routine on success; else one "<field>: <reason>" line for each problem, exit 1.
   routine.py next <routine.json> [--from <epoch>] [--n <count>]   the next run times, as local ISO times
   routine.py period <routine.json> <epoch>                         the period key: the local date of that time
+  routine.py due <routine.json> <epoch>                            {period, at, next} of the latest run time at or before then
+  routine.py budget <caps.json> <spend.json> <epoch>               why the team may not spend now (the proxy's rule), or nothing
   routine.py templates [<dir>]                                     the built-in templates (templates/routines), as JSON
   routine.py prompt <run config.json> <heads.json> <team> <nonce>  the session prompt for a claimed run (D18): the
       host's rules, the verified commit SHAs, then the admin's prompt in a nonce fence; exit 1 when an input is bad
@@ -17,6 +19,7 @@ import json
 import os
 import re
 import sys
+import time
 import zoneinfo
 
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,39}$")
@@ -184,26 +187,79 @@ def check(r, team, profile, index, env, count):
     return bad, r
 
 
+def wall(day, hh, mm, tz):
+    """The day's run time at hh:mm local. In a DST fold, the first of the two; in a DST gap (the time does not
+    exist), the first valid minute after the gap (D15)."""
+    t = datetime.datetime(day.year, day.month, day.day, hh, mm)
+    for _ in range(240):
+        at = t.replace(tzinfo=tz)
+        back = datetime.datetime.fromtimestamp(at.timestamp(), tz)
+        if back.replace(tzinfo=None) == t:
+            return back
+        t += datetime.timedelta(minutes=1)
+    raise ValueError("no valid local time")
+
+
+def on(m, day):
+    wd = day.weekday()
+    return m.group(1) == "daily" or (m.group(1) == "weekdays" and wd < 5) or m.group(2) == DAYS[wd]
+
+
 def runs(r, start, n):
     """The next n run times after start (epoch), as aware datetimes in the routine's zone."""
     m = SCHEDULE.fullmatch(r["schedule"])
     tz = zoneinfo.ZoneInfo(r["zone"])
-    hh, mm = int(m.group(3)), int(m.group(4))
     day = datetime.datetime.fromtimestamp(start, tz).date()
     out = []
     for _ in range(400):
-        wd = day.weekday()
-        if m.group(1) == "daily" or (m.group(1) == "weekdays" and wd < 5) or m.group(2) == DAYS[wd]:
-            at = datetime.datetime(day.year, day.month, day.day, hh, mm, tzinfo=tz)
-            # A time a DST change skips does not exist: zoneinfo reads it with the earlier offset,
-            # and the round trip gives the wall clock it lands on, once.
-            at = datetime.datetime.fromtimestamp(at.timestamp(), tz)
+        if on(m, day):
+            at = wall(day, int(m.group(3)), int(m.group(4)), tz)
             if at.timestamp() > start:
                 out.append(at)
                 if len(out) == n:
                     break
         day += datetime.timedelta(days=1)
     return out
+
+
+def due(r, now):
+    """The routine's latest run time at or before now: {period (its local date), at, next} in epoch seconds,
+    or None when it had none in the last 8 days."""
+    m = SCHEDULE.fullmatch(r["schedule"])
+    tz = zoneinfo.ZoneInfo(r["zone"])
+    day = datetime.datetime.fromtimestamp(now, tz).date()
+    for _ in range(9):
+        if on(m, day):
+            at = wall(day, int(m.group(3)), int(m.group(4)), tz)
+            if at.timestamp() <= now:
+                nxt = runs(r, now, 1)
+                return {"period": day.isoformat(), "at": int(at.timestamp()), "next": int(nxt[0].timestamp()) if nxt else None}
+        day -= datetime.timedelta(days=1)
+    return None
+
+
+def budget(caps_path, spend_path, now):
+    """Why the team may not spend, as the LLM proxy's team_capped() reads it, or "". A missing caps or spend
+    file is no cap or no spend, as there; one that cannot be parsed refuses (fail closed)."""
+    def read(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+    try:
+        caps, s = read(caps_path), read(spend_path)
+    except (OSError, ValueError):
+        return "the team's spend cannot be read"
+    t = time.gmtime(now)
+    day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
+    spent = {"day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
+             "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0}
+    for k, label in (("day_usd", "daily"), ("month_usd", "monthly")):
+        cap = caps.get(k)
+        if isinstance(cap, (int, float)) and cap > 0 and spent[k] >= cap:
+            return f"the team reached its {label} spend cap"
+    return ""
 
 
 def templates(folder):
@@ -285,11 +341,23 @@ def main(argv):
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         print(json.dumps(templates(argv[2] if len(argv) > 2 else os.path.join(here, "templates", "routines"))))
         return 0
+    if len(argv) >= 5 and argv[1] == "budget":
+        why = budget(argv[2], argv[3], int(argv[4]))
+        if why:
+            print(why)
+        return 0
     if len(argv) >= 6 and argv[1] == "prompt":
         try:
             print(prompt(load(argv[2]), load(argv[3]), argv[4], argv[5]), end="")
         except ValueError as e:
             print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        return 0
+    if len(argv) >= 4 and argv[1] == "due":
+        try:
+            print(json.dumps(due(load(argv[2]), int(argv[3]))))
+        except (KeyError, TypeError, ValueError, AttributeError, zoneinfo.ZoneInfoNotFoundError) as e:
+            print(f"ERROR: the routine's schedule cannot be read: {e}", file=sys.stderr)
             return 1
         return 0
     if len(argv) < 3 or argv[1] not in ("validate", "next", "period"):

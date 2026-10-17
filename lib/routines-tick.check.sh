@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Offline check of the routine tick (epic i168, slice 3), on a fixed clock (FXA_ROUTINE_NOW).
+#   bash lib/routines-tick.check.sh
+source "$(dirname "$0")/session-check-head.sh"
+command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
+export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
+mkdir -p "$FXA_TEAMS_DIR" "$FXA_LLM_PROXY_DIR/teams"; : > "$FXA_BOT_ENV"
+source "$(dirname "$0")/db.sh"; source "$(dirname "$0")/routines.sh"
+db_init >/dev/null
+_SESSIONS_PAUSE_URI=""
+pipeline_folder_teams() { echo fxa; }
+_teams_audit_note() { echo "$1|$2|$3" >> "$tmp/audit"; }
+H1="1111111111111111111111111111111111111111"
+_routine_head() { cat "$tmp/head" 2>/dev/null || echo "$H1"; }
+_routine_team_paused() { return 1; }
+_routine_free_slots() { cat "$tmp/free" 2>/dev/null || echo 5; }
+T=1792414800   # Monday 2026-10-19 09:00 in New York
+# mk <team> [schedule] [extra json]   A routine row (the validator's shape); prints its id.
+mk() { local x="${3:-}"; [ -n "$x" ] || x='{}'
+  db_value "INSERT INTO routines (team, data) VALUES ($(db_q "$1"), json($(db_q "$(jq -cn --arg s "${2:-daily 09:00}" --argjson x "$x" \
+  '{name: "Code review", template: "code-review", prompt: "x", schedule: $s, zone: "America/New_York", repos: ["mozilla/fxa"], channel: "C0OWN00",
+    mode: "report", max_usd: 5, skip_no_commits: true, env: "live"} + $x')"))); SELECT last_insert_rowid();"; }
+tick() { FXA_ROUTINE_NOW="$1" routine_tick --env live; }
+rows() { db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $1;"; }
+
+# Two ticks at once, and one a minute later: one run, one row (D15).
+r1="$(mk fxa)"
+( tick $((T + 30)) > "$tmp/t1" ) & ( tick $((T + 30)) > "$tmp/t2" ) & wait
+tick $((T + 90)) > "$tmp/t3"
+check "two ticks at once and one a minute later answer one run, with one row" "1|1" \
+  "$(cat "$tmp/t1" "$tmp/t2" "$tmp/t3" | jq -s '[.[].runs[]] | length')|$(rows "$r1")"
+check "the heartbeat is the last tick's time" "$((T + 90))" "$(db_value "SELECT at FROM routine_tick;")"
+check "the claimed run has the config snapshot and heads in slice 2's format" "claimed|x|$H1|null" \
+  "$(db_value "SELECT state || '|' || json_extract(config, '$.prompt') || '|' || json_extract(heads, '$.\"mozilla/fxa\".head') || '|' || coalesce(json_extract(heads, '$.\"mozilla/fxa\".start'), 'null') FROM routine_runs WHERE routine_id = $r1;")"
+# The second of two ticks read the period as free (a count read before the first one's INSERT): its INSERT OR
+# IGNORE writes nothing, so it answers nothing.
+check "a tick whose free read raced another's claim answers no run" "0|1" \
+  "$(db_value() { case "$1" in ("SELECT count(*) FROM routine_runs WHERE routine_id = $r1 AND period"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; tick $((T + 100)) | jq '.runs | length')|$(rows "$r1")"
+db_exec "UPDATE routine_runs SET state = 'ok';"
+
+# A late period is missed, not run (D17).
+r2="$(mk fxa "daily 07:59")"
+check "a 61-min-old period answers no run and writes one missed row" "0|missed" \
+  "$(tick $((T + 60)) | jq '.runs | length')|$(db_value "SELECT group_concat(state) FROM routine_runs WHERE routine_id = $r2;")"
+
+# A routine of a team that is gone is never claimed and records nothing.
+r3="$(mk ghost)"
+check "a team with no record (and not a folder team) records nothing" "0" "$(tick $((T + 60)) >/dev/null; rows "$r3")"
+
+# Gates skip with a reason and the next run time; a disabled team and a team at its daily cap.
+echo '{"name":"drafty","status":"draft"}' > "$FXA_TEAMS_DIR/drafty.json"
+echo '{"name":"spendy","status":"active"}' > "$FXA_TEAMS_DIR/spendy.json"
+echo '{"day_usd": 10}' > "$FXA_LLM_PROXY_DIR/teams/spendy.json"
+echo "{\"day\": \"2026-10-19\", \"day_usd\": 12, \"month\": \"2026-10\", \"month_usd\": 12}" > "$FXA_LLM_PROXY_DIR/teams/spendy.spend.json"
+r4="$(mk drafty)"; r5="$(mk spendy)"
+out="$(tick $((T + 60)))"
+check "a disabled team and a team at its daily cap: skipped with the reason, the next run time, post true, and no run" \
+  "the team is not active|true|1792501200|the team reached its daily spend cap|true|0" \
+  "$(jq -r --argjson a "$r4" --argjson b "$r5" '[(.skips[] | select(.routine == $a) | .reason, .post, .next), (.skips[] | select(.routine == $b) | .reason, .post), (.runs | length)] | map(tostring) | join("|")' <<< "$out")"
+echo 'not json' > "$FXA_LLM_PROXY_DIR/teams/spendy.spend.json"
+check "a spend file that cannot be read skips (fail closed)" "the team's spend cannot be read" \
+  "$(tick $((T + 86400 + 60)) | jq -r --argjson b "$r5" '.skips[] | select(.routine == $b) | .reason')"
+
+# No new commits on three days: post on day 1; day 1's post is marked; days 2 and 3 stay quiet.
+r6="$(mk fxa "daily 10:00")"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($r6, '2026-10-18', 'ok', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"$H1\"}}'), $((T - 86400)));"
+d1="$(tick $((T + 3600 + 60)))"; s1="$(jq -r --argjson r "$r6" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)|\(.run)"' <<< "$d1")"
+db_exec "UPDATE routine_runs SET posted = 1 WHERE id = ${s1##*|};"
+d2="$(tick $((T + 86400 + 3600 + 60)))"; d3="$(tick $((T + 2 * 86400 + 3600 + 60)))"
+check "no new commits: post true on day 1, false on day 2, false on day 3 (day 1 was posted)" \
+  "no new commits since the last run|true|false|false" \
+  "${s1%|*}|$(jq -r --argjson r "$r6" '.skips[] | select(.routine == $r) | .post' <<< "$d2")|$(jq -r --argjson r "$r6" '.skips[] | select(.routine == $r) | .post' <<< "$d3")"
+
+# A routine an admin paused: skipped, and not posted.
+r7="$(mk fxa "daily 11:00")"; db_exec "UPDATE routines SET paused = 1 WHERE id = $r7;"
+check "a paused routine is skipped with post false" "the routine is paused|false" \
+  "$(tick $((T + 7200 + 60)) | jq -r --argjson r "$r7" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')"
+# A head that cannot be read: skipped, never run (fail closed).
+r8="$(mk fxa "daily 12:00")"; _routine_head() { return 1; }
+check "a head that cannot be read is skipped" "cannot read the branch head|0" \
+  "$(tick $((T + 10800 + 60)) | jq -r --argjson r "$r8" '"\(.skips[] | select(.routine == $r) | .reason)|\(.runs | length)"')"
+_routine_head() { cat "$tmp/head" 2>/dev/null || echo "$H1"; }
+
+# A run waits for a slot: unclaimed for 20 min, then starts; another's slots stay full and it fails at 30 min (D16).
+r9="$(mk fxa "daily 13:00")"; echo 1 > "$tmp/free"
+check "a run with no free slot stays unclaimed at 20 min" "0|0" "$(tick $((T + 14400 + 1200)) | jq '.runs | length')|$(rows "$r9")"
+echo 5 > "$tmp/free"
+check "then starts when slots are free, and is not failed" "1|claimed" \
+  "$(tick $((T + 14400 + 1260)) | jq --argjson r "$r9" '[.runs[] | select(.routine == $r)] | length')|$(db_value "SELECT state FROM routine_runs WHERE routine_id = $r9;")"
+r10="$(mk fxa "daily 14:00")"; echo 1 > "$tmp/free"
+tick $((T + 18000 + 1200)) >/dev/null
+p10="$(tick $((T + 18000 + 1860)) | jq -r --argjson r "$r10" '.skips[] | select(.routine == $r) | .post')"
+check "slots full for 31 min: failed 'no runner free', in the skips with post true" "failed|no runner free|true" \
+  "$(db_value "SELECT state || '|' || reason FROM routine_runs WHERE routine_id = $r10;")|$p10"
+echo 5 > "$tmp/free"
+
+# DST: 01:30 and 02:30 daily run once each date; 02:30 on 2027-03-14 starts at 03:00, the first valid minute.
+python3 -I - "$SANDBOX_ROOT/lib" <<'PY' > "$tmp/dst"
+import sys; sys.path.insert(0, sys.argv[1]); import routine
+for sched, start in (("daily 01:30", 1793505600), ("daily 02:30", 1793505600), ("daily 01:30", 1805000400), ("daily 02:30", 1805000400)):
+    r = {"schedule": sched, "zone": "America/New_York"}
+    seen = {}
+    for now in range(start, start + 2 * 86400, 60):  # every minute for two days around the change
+        d = routine.due(r, now)
+        if d and now - d["at"] <= 3600:
+            seen.setdefault(d["period"], set()).add(d["at"])
+    print(sched, " ".join(f"{p}:{len(a)}" for p, a in sorted(seen.items())), routine.due(r, 1805011200 + 3600)["at"] if sched == "daily 02:30" and start == 1805000400 else "")
+PY
+check "the DST walk: one run time for each date, both ways" "2026-11-01:1 2026-11-02:1|2026-11-01:1 2026-11-02:1|2027-03-14:1 2027-03-15:1|2027-03-14:1 2027-03-15:1" \
+  "$(sed -E 's/^daily [0-9:]+ //; s/ [0-9]*$//' "$tmp/dst" | paste -sd'|' -)"
+check "the 02:30 run on 2027-03-14 is at 03:00 New York time, the first valid minute" "1805007600" "$(sed -n 4p "$tmp/dst" | awk '{print $NF}')"
+r11="$(mk fxa "daily 01:30")"
+tick 1793511060 >/dev/null; tick 1793514660 >/dev/null   # 01:31 EDT, then 01:31 EST: the same date
+check "a tick in each 01:30 of the DST fold claims one run for the date" "1" "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $r11 AND period = '2026-11-01';")"
+
+# A store error is no answer, not a domain error.
+got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
+check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
+
+exit "$fail"

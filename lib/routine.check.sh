@@ -96,9 +96,9 @@ check "the next three weekday 09:00 times in the routine's zone" "2026-10-19T09:
   "$(python3 -I "$here/routine.py" next "$tmp/r.json" --from 1792260000 | tr '\n' ' ' | sed 's/ $//')"
 check "after the DST change, still 09:00 local" "2026-11-02T09:00:00-05:00" "$(python3 -I "$here/routine.py" next "$tmp/r.json" --from 1793372400 --n 1)"
 check "the period is the local date, not the UTC one (23:30 in New York is the next day in UTC)" "2026-10-19" "$(python3 -I "$here/routine.py" period "$tmp/r.json" 1792467000)"
-# A time in the hour a DST start skips (02:30 on Sunday 2027-03-14 in New York) runs once, at 03:30 local.
+# A time in the hour a DST start skips (02:30 on Sunday 2027-03-14 in New York) runs once, at 03:00 local (D15).
 jq -c '.schedule = "daily 02:30"' "$tmp/r.json" > "$tmp/gap.json"
-check "a time in the DST gap runs once that day, at the wall clock it lands on" "2027-03-13T02:30:00-05:00 2027-03-14T03:30:00-04:00 2027-03-15T02:30:00-04:00" \
+check "a time in the DST gap runs once that day, at the first valid minute after the gap (D15)" "2027-03-13T02:30:00-05:00 2027-03-14T03:00:00-04:00 2027-03-15T02:30:00-04:00" \
   "$(python3 -I "$here/routine.py" next "$tmp/gap.json" --from 1804914000 | tr '\n' ' ' | sed 's/ $//')"
 
 # The built-in templates: four, and the security review is locked to report.

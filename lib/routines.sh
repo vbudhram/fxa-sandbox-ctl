@@ -138,6 +138,7 @@ cmd_routine() {
     get) routine_get "${2:-}" ;;
     history) routine_history "${2:-}" "${3:-}" ;;
     templates) _ROUTINE_PY templates ;;
+    tick) shift; routine_tick "$@" ;;
     set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
          while [ $# -gt 0 ]; do
            case "$1" in --id) id="${2:-}"; shift 2 2>/dev/null || shift ;; --version) ver="${2:-}"; shift 2 2>/dev/null || shift ;;
@@ -175,3 +176,135 @@ routine_run_start() {
 routine_run_fail() {
   db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN ('claimed','started');" >/dev/null
 }
+
+# ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
+_ROUTINE_LIVE_STATES="'queued','claimed','started'"
+_ROUTINE_END_STATES="'ok','report','nochange','failed','stopped','skipped','missed'"
+
+# The clock: FXA_ROUTINE_NOW in a check, else the host's.
+_routine_now() { if [[ "${FXA_ROUTINE_NOW:-}" =~ ^[0-9]{9,11}$ ]]; then echo "$FXA_ROUTINE_NOW"; else date +%s; fi; }
+
+# _routine_head <slug> <branch or "">   The branch head's 40-hex SHA (the default branch when none), or fail.
+_routine_head() {
+  local sha; sha="$(gh api "repos/$1/commits/${2:-HEAD}" --jq .sha 2>/dev/null)" && [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && echo "$sha"
+}
+# _routine_team_paused <team>   The pause reason of the team's pipeline (exit 0), nothing (exit 1), or exit 2
+# when the team does not load (fail closed: the caller skips it).
+_routine_team_paused() {
+  local out; out="$( ( pipeline_load "$1" >/dev/null 2>&1 || exit 2; pipeline_paused ) )"; local rc=$?
+  [ "$rc" = 2 ] && return 2; [ "$rc" = 0 ] && { printf '%s\n' "${out:-paused}"; return 0; }; return 1
+}
+# _routine_free_slots   Session slots left under the cap.
+_routine_free_slots() {
+  local f live=0; for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$((live + 1)); done
+  echo $(( $(_session_cap) - live ))
+}
+# _routine_team_state <team>   active, or why not; "" when no such team (no record and no folder).
+_routine_team_state() {
+  if [ -f "${FXA_TEAMS_DIR}/$1.json" ]; then
+    local st; st="$(jq -r '.status // "draft"' "${FXA_TEAMS_DIR}/$1.json" 2>/dev/null)" || { echo "the team's record cannot be read"; return 0; }
+    [ "$st" = active ] && echo active || echo "the team is not active"
+  elif pipeline_folder_teams | grep -qx "$1"; then echo active; fi
+}
+# _routine_post <routine> <reason>   true unless the last posted skip of this routine had the same reason and no
+# result came after it (D23).
+_routine_post() {
+  local last; last="$(db_value "SELECT state || char(9) || coalesce(reason, '') FROM routine_runs WHERE routine_id = $1 AND ((posted = 1 AND state IN ('skipped','failed')) OR state IN ('ok','report','nochange')) ORDER BY id DESC LIMIT 1;")" || return 1
+  case "$last" in skipped$'\t'"$2"|failed$'\t'"$2") echo false ;; *) echo true ;; esac
+}
+# _routine_heads <config json> <routine id>   {"<slug>": {start, head}}: each head read live (fail closed), each
+# start the head of this routine's last started run.
+_routine_heads() {
+  local slug br head start out="{}" prev
+  prev="$(db_value "SELECT heads FROM routine_runs WHERE routine_id = $2 AND heads IS NOT NULL AND started_at IS NOT NULL AND state NOT IN ('skipped','missed') ORDER BY id DESC LIMIT 1;")" || return 1
+  [ -n "$prev" ] || prev='{}'
+  br="$(jq -r '.branch // ""' <<< "$1")"
+  for slug in $(jq -r '.repos[]' <<< "$1"); do
+    head="$(_routine_head "$slug" "$br")" || { echo "cannot read the head of ${slug}" >&2; return 3; }
+    start="$(jq -r --arg s "$slug" '.[$s].head // empty' <<< "$prev" 2>/dev/null || true)"
+    out="$(jq -c --arg s "$slug" --arg h "$head" --arg st "$start" '. + {($s): {start: (if $st == "" then null else $st end), head: $h}}' <<< "$out")"
+  done
+  printf '%s\n' "$out"
+}
+
+# routine_tick --env <live|dev>   One pass: heartbeat, reconcile, then each routine of that env's latest period.
+# Answers {"runs": [...], "skips": [...]} for the bot. A store error answers nothing and exits 1.
+routine_tick() {
+  [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
+  local env="$2" now; now="$(_routine_now)"
+  db_exec "INSERT INTO routine_tick (id, at) VALUES (1, $now) ON CONFLICT (id) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  routine_reconcile "$now" || return 1
+  local rows; rows="$(db_json "SELECT id, team, paused, data FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
+  local queued q runs="[]" skips="[]"
+  queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  while IFS= read -r q; do
+    [ -n "$q" ] || continue
+    [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'; SELECT changes();")" = 1 ] || continue
+    runs="$(jq -c --argjson q "$q" '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)}]' <<< "$runs")"
+  done < <(jq -c '.[]' <<< "$queued")
+  local free r f; free="$(_routine_free_slots)"; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  local spaused=""; spaused="$(sessions_paused 2>/dev/null)" || spaused=""
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    local id team cfg due period at next age why heads n post st tp
+    id="$(jq -r .id <<< "$r")"; team="$(jq -r .team <<< "$r")"; cfg="$(jq -c '.data | fromjson' <<< "$r")"
+    printf '%s' "$cfg" > "$f"
+    due="$(_ROUTINE_PY due "$f" "$now")" || continue
+    [ "$due" != null ] || continue
+    period="$(jq -r .period <<< "$due")"; at="$(jq -r .at <<< "$due")"; next="$(jq -r '.next // empty' <<< "$due")"
+    n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND period = $(db_q "$period");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
+    [ "$n" = 0 ] || continue
+    age=$((now - at))
+    # A late period is not caught up (D17).
+    if [ "$age" -gt 3600 ]; then
+      db_exec "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, state, reason, ended_at) VALUES ($id, $(db_q "$period"), 'schedule', 'missed', 'the tick did not run within 60 min of the time', $now);" >/dev/null
+      continue
+    fi
+    # A routine of a team that is gone is never claimed, and records nothing.
+    st="$(_routine_team_state "$team")"; [ -n "$st" ] || continue
+    why=""; heads=""
+    if [ "$st" != active ]; then why="$st"
+    elif [ -n "$spaused" ]; then why="agent sessions are paused: ${spaused}"
+    else
+      tp="$(_routine_team_paused "$team")"; case $? in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
+    fi
+    [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
+    [ -n "$why" ] || [ "$(jq -r .paused <<< "$r")" = 0 ] || why="the routine is paused"
+    if [ -z "$why" ]; then
+      n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES});")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
+      [ "$n" = 0 ] || why="a run of this routine is still in progress"
+    fi
+    if [ -z "$why" ]; then
+      heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)"; case $? in 0) ;; 3) why="cannot read the branch head" ;; *) rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+    fi
+    if [ -z "$why" ] && [ "$(jq -r '.skip_no_commits // true' <<< "$cfg")" = true ] \
+        && [ "$(jq -r '[.[] | .start == .head] | all' <<< "$heads")" = true ]; then why="no new commits since the last run"; fi
+    if [ -z "$why" ] && [ "$free" -lt 2 ]; then
+      # Waiting for a slot stays unclaimed; 30 min after the time it fails (D16).
+      [ "$age" -ge 1800 ] || continue
+      why="no runner free"; st=failed
+    elif [ -n "$why" ]; then st=skipped
+    else st=claimed; fi
+    n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, state, reason, config, heads, started_at, ended_at)
+      VALUES ($id, $(db_q "$period"), 'schedule', '$st', $( [ -n "$why" ] && db_q "$why" || echo NULL ), json($(db_q "$cfg")), $( [ -n "$heads" ] && echo "json($(db_q "$heads"))" || echo NULL ),
+      $( [ "$st" = claimed ] && echo "$now" || echo NULL ), $( [ "$st" = claimed ] && echo NULL || echo "$now" )); SELECT changes() || '|' || last_insert_rowid();")" \
+      || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
+    # Only the tick whose INSERT wrote the row answers it: two ticks at once answer one run (D15).
+    [ "${n%%|*}" = 1 ] || continue
+    if [ "$st" = claimed ]; then
+      free=$((free - 1))
+      runs="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" '. + [{run: $id, routine: $rid, team: $t, trigger: "schedule", channel: $c.channel}]' <<< "$runs")"
+    else
+      post="$(_routine_post "$id" "$why")" || post=false
+      [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
+      skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
+        '. + [{run: $id, routine: $rid, team: $t, channel: $c.channel, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
+    fi
+  done < <(jq -c '.[]' <<< "$rows")
+  rm -f "$f"
+  jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
+}
+
+# routine_reconcile <now>   Filled in by the reconcile step.
+routine_reconcile() { :; }
