@@ -999,7 +999,8 @@ finish_watch_ci() {
 #   Refuse CI or host tooling edits: CI runs with secrets before review, and
 #   hooks run on the operator's Mac. FXA_ALLOW_TOOLING_EDITS=1 allows them all.
 #   FXA_ALLOW_TOOLING_SCOPE=scripts (the launch sets it from an approved Jira label)
-#   allows package.json scripts and _scripts/ only.
+#   allows package.json task scripts and _scripts/ only: not npm's install, prepare or publish
+#   hooks, and not a _scripts/ file that such a hook runs.
 _finish_tooling_guard() {
   local wt="$1" f hit="" scope="${FXA_ALLOW_TOOLING_SCOPE:-}" keys
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
@@ -1011,7 +1012,11 @@ _finish_tooling_guard() {
   while IFS= read -r -d '' f; do
     case "$f" in
       _scripts/*)
-        [ "$scope" = scripts ] || hit="${hit}${f}"$'\n' ;;
+        if [ "$scope" != scripts ]; then hit="${hit}${f}"$'\n'
+        # A hook at HEAD that names the file runs it in CI's install (FxA's preinstall runs _scripts/check-package-manager.sh).
+        elif git -C "$wt" grep -qE "\"(pre|post)?(install|prepare|publish|pack|version|uninstall|shrinkwrap|dependencies|publishOnly)\" *:.*${f//./\\.}" HEAD -- '*package.json' 2>/dev/null; then
+          hit="${hit}${f} (an npm install, prepare or publish hook runs it: the tooling label does not cover it)"$'\n'
+        fi ;;
       .github/*|.circleci/*|.husky/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*|\
       .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc)
         hit="${hit}${f}"$'\n' ;;

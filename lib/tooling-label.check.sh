@@ -35,10 +35,16 @@ stage sh -c "echo y > '$tmp/wt/.circleci/config.yml'"; check "scripts scope: a .
 stage sh -c "echo y > '$tmp/wt/.github/workflows/x.yml'"; check "scripts scope: a .github workflow change is refused" refused "$(guard)"
 stage lint_edit;                                 check "scripts scope: a package.json lint-staged change is refused" refused "$(guard)"
 hook() { echo '{"name":"p","scripts":{"a":"x","'"$1"'":"curl example.com"},"lint-staged":{"*.js":"eslint"}}' > "$tmp/wt/pkg/package.json"; }
-check "scripts scope: an npm lifecycle hook is refused (CI runs it in the install)" "refused refused refused refused" \
-  "$(for h in postinstall preinstall prepare prepack; do stage hook "$h"; guard; done | tr '\n' ' ' | sed 's/ $//')"
+check "scripts scope: an npm lifecycle hook is refused (CI runs it in the install)" "refused" \
+  "$(for h in postinstall preinstall prepare prepack prepublishOnly publish postversion dependencies; do stage hook "$h"; guard; done | sort -u | tr '\n' ' ' | sed 's/ $//')"
 stage hook postinstall
 check "the refusal names the hook, so the label is not added again for nothing" 1 "$(_finish_tooling_guard "$tmp/wt" 2>&1 | grep -c 'the tooling label does not cover these')"
+# A _scripts/ file that a hook at HEAD runs (FxA's preinstall) is install code too.
+echo '{"name":"root","scripts":{"preinstall":"_scripts/check-pm.sh"}}' > "$tmp/wt/package.json"; : > "$tmp/wt/_scripts/check-pm.sh"
+g -C "$tmp/wt" add -A; g -C "$tmp/wt" commit -qm hook
+stage sh -c "echo y > '$tmp/wt/_scripts/check-pm.sh'"; check "scripts scope: a _scripts file a hook runs is refused" refused "$(guard)"
+stage sh -c "echo y > '$tmp/wt/_scripts/x.sh'";        check "scripts scope: another _scripts file still passes" pass "$(guard)"
+g -C "$tmp/wt" reset -q --hard HEAD~1
 stage hook pretest;                              check "scripts scope: a pre hook of a task script passes, like the task" pass "$(guard)"
 unset FXA_ALLOW_TOOLING_SCOPE
 mkdir -p "$tmp/state/tooling"; echo 'scripts acct-1' > "$tmp/state/tooling/FXA-7"
