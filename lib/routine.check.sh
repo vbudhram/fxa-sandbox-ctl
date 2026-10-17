@@ -111,10 +111,18 @@ got="$(routine_set secret "$tmp/edit.json" 1 1 2>&1)"; rc=$?
 check "a second edit at version 1 is stale: exit 2 and the stale text" "2|ERROR: Someone changed this routine since you opened it. Load it again to see their change." "$rc|$got"
 check "the edit audit row names the changed fields, never the prompt" "routine 1: name,prompt|0" \
   "$(db_value "SELECT changed FROM team_audit WHERE action = 'routine-set';")|$(db_value "SELECT count(*) FROM team_audit WHERE changed LIKE '%SECRET-PROMPT%';")"
+got="$( db_value() { case "$1" in (UPDATE*) return 1 ;; (*) _db -list "$1" ;; esac; }; routine_set secret "$tmp/edit.json" 1 2 2>&1)"; rc=$?
+check "a store that fails on the update is a store error, not a stale version" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|2" \
+  "$rc|$got|$(db_value "SELECT version FROM routines WHERE id = 1;")"
 jq -c '.channel = "C0SECOND"' "$tmp/new.json" > "$tmp/bad.json"
 got="$(routine_set secret "$tmp/bad.json" 2>&1)"; rc=$?
 check "a refused save: exit 1, the field line, and no row" "1|channel: Channel C0SECOND belongs to team second|1" "$rc|$got|$(db_value "SELECT count(*) FROM routines;")"
 check "an edit of another team's routine is refused" "ERROR: team second has no routine 1" "$(routine_set second "$tmp/edit.json" 1 2 2>&1)"
+# Eight routines exist, and the count the validator read was stale (another save raced it): the INSERT refuses.
+db_exec "INSERT INTO routines (team, data) VALUES ('secret','{}'),('secret','{}'),('secret','{}'),('secret','{}'),('secret','{}'),('secret','{}'),('secret','{}');"
+got="$( db_value() { case "$1" in ("SELECT count(*) FROM routines WHERE team"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; routine_set secret "$tmp/new.json" 2>&1)"; rc=$?
+check "the 8-routine cap holds in the INSERT, even after a stale count" "1|routine: A team has at most 8 routines|8" "$rc|$got|$(db_value "SELECT count(*) FROM routines WHERE team = 'secret';")"
+db_exec "DELETE FROM routines WHERE id > 1;"
 check "pause, then resume" "1|0" "$(routine_state secret 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state secret 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
 check "pause, delete and history of another team's routine are refused" "ERROR: team second has no routine 1|ERROR: team second has no routine 1|ERROR: team second has no routine 1|0|1" \
   "$(routine_state second 1 pause 2>&1)|$(routine_state second 1 delete 2>&1)|$(routine_history second 1 2>&1)|$(db_value "SELECT paused FROM routines WHERE id = 1;")|$(db_value "SELECT count(*) FROM routines;")"

@@ -10,6 +10,7 @@
 
 _ROUTINE_PY() { python3 -I "${SANDBOX_ROOT}/lib/routine.py" "$@"; }
 _ROUTINE_STALE="Someone changed this routine since you opened it. Load it again to see their change."
+_ROUTINE_STORE="ERROR: the routine store did not answer (busy or failed); nothing changed, try again"
 
 # _routine_profile <team>   The team's profile show (repos, private, read_only), in its own shell.
 _routine_profile() { ( pipeline_load "$1" >/dev/null 2>&1 && pipeline_profile_json ); }
@@ -57,13 +58,16 @@ routine_set() {
   rm -f "$prof"; [ "$rc" = 0 ] || return 1
   local who env; who="$(_teams_actor)"; env="$(jq -r .env <<< "$out")"
   if [ -z "$id" ]; then
-    id="$(db_value "INSERT INTO routines (team, data, env, created_by, updated_by, updated_at) VALUES ($(db_q "$team"), json($(db_q "$out")), $(db_q "$env"), $(db_q "$who"), $(db_q "$who"), $(date +%s)); SELECT last_insert_rowid();")" || return 1
+    # The cap in the INSERT itself: two saves at once cannot both pass a count read before them.
+    id="$(db_value "INSERT INTO routines (team, data, env, created_by, updated_by, updated_at) SELECT $(db_q "$team"), json($(db_q "$out")), $(db_q "$env"), $(db_q "$who"), $(db_q "$who"), $(date +%s)
+      WHERE (SELECT count(*) FROM routines WHERE team = $(db_q "$team")) < 8; SELECT CASE WHEN changes() = 1 THEN last_insert_rowid() ELSE 0 END;")" || id=""
+    case "$id" in ''|*[!0-9]*) echo "$_ROUTINE_STORE" >&2; return 1 ;; 0) echo "routine: A team has at most 8 routines" >&2; return 1 ;; esac
     _teams_audit_note routine-create "$team" "routine ${id}"
     echo "created routine ${id}"; return 0
   fi
   old="$(jq -c '.data | fromjson' <<< "$row")"
-  [ "$(db_value "UPDATE routines SET data = json($(db_q "$out")), env = $(db_q "$env"), version = version + 1, updated_by = $(db_q "$who"), updated_at = $(date +%s) WHERE id = ${id} AND version = ${ver}; SELECT changes();")" = 1 ] \
-    || { echo "ERROR: ${_ROUTINE_STALE}" >&2; return 2; }
+  local n_up; n_up="$(db_value "UPDATE routines SET data = json($(db_q "$out")), env = $(db_q "$env"), version = version + 1, updated_by = $(db_q "$who"), updated_at = $(date +%s) WHERE id = ${id} AND version = ${ver}; SELECT changes();")" || n_up=""
+  case "$n_up" in 1) ;; 0) echo "ERROR: ${_ROUTINE_STALE}" >&2; return 2 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   # The names of the changed fields, never their values: a prompt is the team's text.
   _teams_audit_note routine-set "$team" "routine ${id}: $(jq -nr --argjson a "$old" --argjson b "$out" '[($a + $b | keys[]) | select($a[.] != $b[.])] | join(",")')"
   echo "saved routine ${id} (version $((ver + 1)))"
@@ -76,10 +80,10 @@ routine_state() {
   case "$2" in
     pause|resume) db_exec "UPDATE routines SET paused = $([ "$2" = pause ] && echo 1 || echo 0), version = version + 1, updated_by = $(db_q "$(_teams_actor)"), updated_at = $(date +%s) WHERE id = $1;" || return 1 ;;
     delete)
-      # A live run keeps its row: it reports back to this routine when it ends.
-      [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $1 AND state IN ('claimed','started');")" = 0 ] \
-        || { echo "ERROR: a run of routine $1 is in progress; stop it first" >&2; return 1; }
-      db_exec "DELETE FROM routines WHERE id = $1;" || return 1 ;;
+      # A live run keeps its row: it reports back to this routine when it ends. One statement, so a run
+      # claimed between a check and the delete cannot lose its routine.
+      local n_del; n_del="$(db_value "DELETE FROM routines WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $1 AND state IN ('claimed','started')); SELECT changes();")" || n_del=""
+      case "$n_del" in 1) ;; 0) echo "ERROR: a run of routine $1 is in progress; stop it first" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac ;;
   esac
   _teams_audit_note "routine-$2" "$team" "routine $1"
   echo "routine $1: $2 done"
