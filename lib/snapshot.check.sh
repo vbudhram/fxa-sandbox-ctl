@@ -183,6 +183,8 @@ rm -rf "$pd"
   db_on() { true; }; db_json() { printf '%s\n' "$1" >> "$tmp/noans.sql"; echo '[]'; }
   echo '{"rows":[]}' | _stats_add_rows >/dev/null 2>&1
   check "stats: with no answers file, a dev session is still left out of the LLM totals" "yes" "$(grep -q 'agent-d9' "$tmp/noans.sql" && echo yes || echo no)"
+  : > "$tmp/noans.sql"; echo '{bad' > "$PIPE_STATE_DIR/answers.jsonl"; echo '{"rows":[]}' | _stats_add_rows >/dev/null 2>&1
+  check "stats: nor with a malformed answers line" "yes" "$(grep -q 'agent-d9' "$tmp/noans.sql" && echo yes || echo no)"
   exit "$fail" ) || fail=1
 
 # Agent PRs for the PRs tab: the source and key come from the branch, a session row

@@ -263,7 +263,7 @@ _stats_add_rows() {
   # Test runs: dev bot and dry-run sessions, dev answers and hand-run CLI asks (the bot's ids are
   # ask-<6 hex>). The rows leave them out, so the LLM totals below do too.
   test="$( { _session_records | jq -r 'select(.owner == "U-DRYRUN" or .env == "dev") | .key' 2>/dev/null
-      [ ! -s "${PIPE_STATE_DIR}/answers.jsonl" ] || jq -r 'select(.env == "dev" or (.id | test("^ask-[0-9a-f]{6}$") | not)) | .id' "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null
+      [ ! -s "${PIPE_STATE_DIR}/answers.jsonl" ] || jq -r 'select(.env == "dev" or (.id | test("^ask-[0-9a-f]{6}$") | not)) | .id' "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
     } | grep -E '^[A-Za-z0-9._-]+$' | jq -R . | jq -sc . )" || test='[]'
   # The LLM proxy's per-call log is the one cost source where it has the run. gap_usd: cache
   # writes on calls more than 5 min after the run's previous call, when the prompt cache had expired.

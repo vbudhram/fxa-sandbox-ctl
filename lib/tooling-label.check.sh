@@ -75,6 +75,7 @@ _jira_rest_get() {
 changelog="$(log_by 557058:aa11)"; check "a legacy account ID with a colon matches, by name or alone" "557058:aa11 Old Lead|557058:bb22 557058:bb22" \
   "$(PIPE_TOOLING_APPROVERS="Old Lead:557058:aa11" approver FXA-7)|$(changelog="$(log_by 557058:bb22)"; PIPE_TOOLING_APPROVERS="557058:bb22" approver FXA-7)"
 changelog="$(log_by aa11)"; check "the tail of a legacy ID alone does not match it" none "$(PIPE_TOOLING_APPROVERS="Old Lead:557058:aa11" approver FXA-7)"
+changelog="$(log_by bb22)"; check "nor does it match a legacy ID listed alone" none "$(PIPE_TOOLING_APPROVERS="557058:bb22" approver FXA-7)"
 changelog="$(log_by acct-lead)"
 check "a failed changelog read does not count" none "$(LOG_FAILS=1 approver FXA-7)"
 check "a failed label read does not count" none "$(READ_FAILS=1 approver FXA-7)"
