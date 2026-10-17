@@ -93,14 +93,14 @@ routine_state() {
     delete)
       # A live run keeps its row: it reports back to this routine when it ends. One statement, so a run
       # claimed between a check and the delete cannot lose its routine.
-      local n_del; n_del="$(db_value "DELETE FROM routines WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $1 AND state IN ('claimed','started')); SELECT changes();")" || n_del=""
+      local n_del; n_del="$(db_value "DELETE FROM routines WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $1 AND state IN ('queued','claimed','started')); SELECT changes();")" || n_del=""
       case "$n_del" in 1) ;; 0) echo "ERROR: a run of routine $1 is in progress; stop it first" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac ;;
   esac
   _teams_audit_note "routine-$2" "$team" "routine $1"
   echo "routine $1: $2 done"
 }
 
-_ROUTINE_LIVE="EXISTS (SELECT 1 FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = %s AND r.state IN ('claimed','started'))"
+_ROUTINE_LIVE="EXISTS (SELECT 1 FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = %s AND r.state IN ('queued','claimed','started'))"
 
 # routines_drop_team <team>   A deleted team's routines go with it, so a later team of that name gets none;
 # their history stays. Refused while one of them has a live run. A store error fails: the caller then
@@ -141,6 +141,8 @@ cmd_routine() {
     tick) shift; routine_tick "$@" ;;
     done) shift; routine_done "$@" ;;
     posted) routine_posted "${2:-}" ;;
+    run-now) routine_runnow "${2:-}" "${3:-}" ;;
+    stop) routine_stop "${2:-}" "${3:-}" ;;
     set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
          while [ $# -gt 0 ]; do
            case "$1" in --id) id="${2:-}"; shift 2 2>/dev/null || shift ;; --version) ver="${2:-}"; shift 2 2>/dev/null || shift ;;
@@ -176,7 +178,7 @@ routine_run_start() {
 
 # routine_run_fail <run> <reason>   A started run whose session could not start.
 routine_run_fail() {
-  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN ('claimed','started');" >/dev/null
+  db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN ('queued','claimed','started');" >/dev/null
 }
 
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
@@ -410,4 +412,43 @@ routine_posted() {
   _routine_id "${1:-}" || return 1
   local n; n="$(db_value "UPDATE routine_runs SET posted = 1 WHERE id = $1 AND state IN ('skipped','failed'); SELECT changes();")" || n=""
   case "$n" in 1) echo "posted ${1}" ;; 0) echo "ERROR: routine run $1 is not a skip or a failure" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+}
+
+# routine run-now <team> <id>   Queue a manual run (period manual-<epoch minute>, D15) when no run of the routine
+# is live: the next tick hands it to the bot. The team's gates still apply; the routine's pause and the
+# no-new-commits rule do not (an admin asked for it). One guarded INSERT: two admins at once queue one run.
+routine_runnow() {
+  local team="$1" id="$2" row cfg why tp now heads n
+  row="$(_routine_of "$team" "$id")" || return 1
+  cfg="$(jq -c '.data | fromjson' <<< "$row")"; now="$(_routine_now)"
+  why="$(_routine_team_state "$team")"; [ "$why" = active ] && why=""
+  [ -n "$why" ] || { why="$(sessions_paused 2>/dev/null)" && why="agent sessions are paused: ${why}" || why=""; }
+  if [ -z "$why" ]; then tp="$(_routine_team_paused "$team")"; case $? in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac; fi
+  [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
+  [ -z "$why" ] || { echo "ERROR: routine ${id} cannot run now: ${why}" >&2; return 1; }
+  heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)"; case $? in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+  n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
+      SELECT $id, 'manual-$((now / 60))', 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "$heads")), $now
+      WHERE NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES})); SELECT changes() || '|' || last_insert_rowid();")" || n=""
+  case "${n%%|*}" in
+    1) _teams_audit_note routine-run "$team" "routine ${id}: run ${n#*|}"; echo "queued run ${n#*|}: it starts within a minute" ;;
+    0) echo "ERROR: a run of routine ${id} is in progress" >&2; return 1 ;;
+    *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
+  esac
+}
+
+# routine stop <team> <id>   Stop the routine's live run: the row first (guarded, so two admins stop it once),
+# then its session.
+routine_stop() {
+  local team="$1" id="$2" r run st sess n
+  _routine_of "$team" "$id" >/dev/null || return 1
+  r="$(db_json "SELECT id, state, coalesce(session, '') AS session FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES}) ORDER BY id DESC LIMIT 1;")" \
+    || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  run="$(jq -r '.[0].id // empty' <<< "$r")"; [ -n "$run" ] || { echo "ERROR: no run of routine ${id} is in progress" >&2; return 1; }
+  st="$(jq -r '.[0].state' <<< "$r")"; sess="$(jq -r '.[0].session' <<< "$r")"
+  n="$(db_value "UPDATE routine_runs SET state = 'stopped', reason = 'stopped by a team admin', ended_at = $(_routine_now) WHERE id = $run AND state = '$st'; SELECT changes();")" || n=""
+  case "$n" in 1) ;; 0) echo "ERROR: no run of routine ${id} is in progress" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+  _teams_audit_note routine-stop "$team" "routine ${id}: run ${run}"
+  [ -z "$sess" ] || session_stop "$sess" >/dev/null 2>&1 || echo "WARN: run ${run} is stopped, but its session ${sess} did not stop; stop it with session stop" >&2
+  echo "stopped run ${run}"
 }

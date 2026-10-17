@@ -573,7 +573,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _routine_write(self, path):
         """POST /api/teams/<name>/routines[/<id>[/pause|resume|delete]]: a signed admin's change, JSON only, 64 KB at most."""
-        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})(?:/(pause|resume|delete))?)?", path)
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})(?:/(pause|resume|delete|run|stop))?)?", path)
         user = self._admin("POST", path)
         if not user:
             return
@@ -602,7 +602,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         rec, ver = body.get("routine"), str(body.get("version") or "")
         if verb:
-            self._team_ctl(user, [verb, name, rid], cmd="routine")
+            self._team_ctl(user, [{"run": "run-now"}.get(verb, verb), name, rid], cmd="routine")
         elif not isinstance(rec, dict):
             self._json(400, {"error": "send {\"routine\": {...}}"})
         elif not rid:
@@ -662,7 +662,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/lessons":
             self._lesson_decide()
             return
-        if re.fullmatch(rf"/api/teams/{TEAM_NAME}/routines(/[0-9]{{1,9}}(/(pause|resume|delete))?)?", path):
+        if re.fullmatch(rf"/api/teams/{TEAM_NAME}/routines(/[0-9]{{1,9}}(/(pause|resume|delete|run|stop))?)?", path):
             self._routine_write(path)
             return
         if path.startswith("/api/teams"):

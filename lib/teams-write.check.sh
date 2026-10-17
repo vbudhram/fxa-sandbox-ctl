@@ -124,6 +124,10 @@ open(f"{tmp}/rc", "w").write("0")
 check("pause, resume and delete run their routine command", (200, 200, 200, ["routine pause rusty 5", "routine resume rusty 5", "routine delete rusty 5"]),
       (call("POST", L + "/5/pause", {}, sig(A, "POST", L + "/5/pause"))[0], call("POST", L + "/5/resume", {}, sig(A, "POST", L + "/5/resume"))[0],
        call("POST", L + "/5/delete", {}, sig(A, "POST", L + "/5/delete"))[0], ran()[-3:]))
+check("run and stop: a non-admin gets 403 and nothing runs; an admin's run runs run-now, stop runs stop, with the URL team",
+      (403, 200, 200, ["routine run-now rusty 5", "routine stop rusty 5"]),
+      (call("POST", L + "/5/run", {}, sig(V, "POST", L + "/5/run"))[0], call("POST", L + "/5/run", {}, sig(A, "POST", L + "/5/run"))[0],
+       call("POST", L + "/5/stop", {}, sig(A, "POST", L + "/5/stop"))[0], ran()[-2:]))
 check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),
       (call("POST", L, raw=b"x", headers={**sig(A, "POST", L), "Content-Type": "text/plain"})[0], call("POST", L, raw=b"{" + b" " * 70000 + b"}", headers=sig(A, "POST", L))[0]))
 import http.client

@@ -10,6 +10,7 @@ db_init >/dev/null
 _SESSIONS_PAUSE_URI=""
 pipeline_folder_teams() { echo fxa; }
 errors_record() { echo "$1|$2|$3|$5" >> "$tmp/errs"; }
+_teams_actor() { printf '%s' "${FXA_TEAM_ACTOR:-}"; }
 _teams_audit_note() { echo "$1|$2|$3" >> "$tmp/audit"; }
 H1="1111111111111111111111111111111111111111"
 _routine_head() { cat "$tmp/head" 2>/dev/null || echo "$H1"; }
@@ -171,6 +172,30 @@ check "a store error in done is the store line" "ERROR: the routine store did no
 sk="$(db_value "SELECT id FROM routine_runs WHERE state = 'skipped' AND posted = 0 LIMIT 1;")"
 check "posted marks a skip; a started run is refused" "posted ${sk}|1|ERROR: routine run ${d3} is not a skip or a failure" \
   "$(routine_posted "$sk")|$(db_value "SELECT posted FROM routine_runs WHERE id = $sk;")|$(routine_posted "$d3" 2>&1)"
+
+# Run now and Stop: a queued manual run that the next tick hands out once; Stop stops the row, then the session.
+: > "$tmp/audit"; rn="$(mk fxa "weekly sat 23:00")"
+q1="$(FXA_ROUTINE_NOW=$N FXA_TEAM_ACTOR=admin@example.com routine_runnow fxa "$rn")"
+qid="$(db_value "SELECT id FROM routine_runs WHERE routine_id = $rn;")"
+check "run-now queues a manual run, by that admin, with an audit row" "queued run ${qid}: it starts within a minute|queued|manual-$((N / 60))|admin@example.com|routine-run|fxa|routine ${rn}: run ${qid}" \
+  "$q1|$(db_value "SELECT state || '|' || period || '|' || actor FROM routine_runs WHERE id = $qid;")|$(tail -1 "$tmp/audit")"
+check "run-now with a run already live is refused" "ERROR: a run of routine ${rn} is in progress" "$(FXA_ROUTINE_NOW=$((N + 60)) routine_runnow fxa "$rn" 2>&1)"
+check "run-now of another team's routine is refused" "ERROR: team drafty has no routine ${rn}" "$(routine_runnow drafty "$rn" 2>&1)"
+( tick $((N + 20)) > "$tmp/m1" ) & ( tick $((N + 20)) > "$tmp/m2" ) & wait
+check "two ticks hand the queued run to the bot once, as claimed" "1|claimed" \
+  "$(cat "$tmp/m1" "$tmp/m2" | jq -s --argjson q "$qid" '[.[].runs[] | select(.run == $q)] | length')|$(db_value "SELECT state FROM routine_runs WHERE id = $qid;")"
+: > "$tmp/stopped"
+db_exec "UPDATE routine_runs SET state = 'started', session = 'agent-stop01' WHERE id = $qid;"; echo '{"key":"agent-stop01","state":"active"}' > "$tmp/agent-stop01.json"
+check "stop records stopped with an audit row, then stops the session" "stopped run ${qid}|stopped|stopped by a team admin|routine-stop|agent-stop01" \
+  "$(FXA_ROUTINE_NOW=$((N + 120)) routine_stop fxa "$rn")|$(db_value "SELECT state || '|' || reason FROM routine_runs WHERE id = $qid;")|$(tail -1 "$tmp/audit" | cut -d'|' -f1)|$(cat "$tmp/stopped")"
+check "stop with no live run is refused" "ERROR: no run of routine ${rn} is in progress" "$(routine_stop fxa "$rn" 2>&1)"
+# Two admins stop at once: the second's read saw the run live, but its guarded UPDATE stops nothing.
+FXA_ROUTINE_NOW=$((N + 180)) routine_runnow fxa "$rn" >/dev/null; q2="$(db_value "SELECT max(id) FROM routine_runs WHERE routine_id = $rn;")"
+seen="$(db_json "SELECT id, state, coalesce(session, '') AS session FROM routine_runs WHERE id = $q2;")"; routine_stop fxa "$rn" >/dev/null; : > "$tmp/stopped"
+got="$(db_json() { case "$1" in ("SELECT id, state, coalesce(session"*) echo "$seen" ;; (*) _db_ready && _db -json "$1" | sed 's/^$/[]/' ;; esac; }; routine_stop fxa "$rn" 2>&1)"
+check "two admins stop at once: the second stops nothing and audits nothing (two real stops, two rows)" "ERROR: no run of routine ${rn} is in progress|2" "$got|$(grep -c '^routine-stop' "$tmp/audit")"
+check "run-now on a team at its cap is refused, with no row" "ERROR: routine ${r5} cannot run now: the team's spend cannot be read|0" \
+  "$(routine_runnow spendy "$r5" 2>&1)|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $r5 AND trigger = 'manual';")"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
