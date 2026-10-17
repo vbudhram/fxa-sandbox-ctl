@@ -323,7 +323,8 @@ teams_status() {
 # teams_delete <name>   Remove a team. Refused while one of its sessions can still resume.
 teams_delete() {
   local name="$1" gen f n=0
-  [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ ! -d "${SANDBOX_ROOT}/profiles/${name}" ] || { echo "ERROR: ${name} is not a team record" >&2; return 1; }
+  # A record team may keep profiles/<name>/ for its boot.sh and skills; only a profile.conf makes a folder team.
+  [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ ! -f "${SANDBOX_ROOT}/profiles/${name}/profile.conf" ] || { echo "ERROR: ${name} is not a team record" >&2; return 1; }
   for f in "$SESSION_DIR"/agent-*.json; do
     [ -f "$f" ] && [ "$(jq -r '.profile // empty' "$f" 2>/dev/null)" = "$name" ] \
       && case "$(jq -r '.state // empty' "$f")" in stopped|failed) ;; *) n=$((n + 1)) ;; esac

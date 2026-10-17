@@ -54,7 +54,10 @@ check "delete is refused while a session of the team can resume" "1" "$(teams_de
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
 check "delete removes the record, its prompts and its index entry" "0|no|null" \
   "$(teams_delete rusty >/dev/null; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")"
-check "a built-in team cannot be deleted" "1" "$(teams_delete monitor >/dev/null 2>&1; echo $?)"
+check "a folder team cannot be deleted" "1" "$(teams_delete fxa >/dev/null 2>&1; echo $?)"
+# monitor is a record whose profiles/monitor/ keeps only its boot.sh.
+check "a record team that keeps a folder for its boot.sh can be deleted" "0|no" \
+  "$(jq '.name = "monitor"' "$(rec monitor Monitor)" > "$tmp/mon.json"; FXA_TEAMS_LIVE=0 teams_create "$tmp/mon.json" >/dev/null 2>&1; teams_delete monitor >/dev/null 2>&1; echo $?)|$([ -e "$FXA_TEAMS_DIR/monitor.json" ] && echo yes || echo no)"
 check "each write leaves an audit row: who, what, the generations and the keys that changed" \
   "delete|owner@example.com|3||created,label,name,prompts,repos,schema,status|set|other@example.com|1|2|label|create|owner@example.com|0|1|created,label,name,prompts,repos,schema" \
   "$(teams_audit rusty | jq -r '.[] | [.action, .actor, .old_gen, .new_gen, .changed] | join("|")' | grep -vE '^set\|owner@example.com\|[23]\|' | paste -sd'|' -)"
