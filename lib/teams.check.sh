@@ -163,7 +163,7 @@ gcloud() {
     ls) ls "$B"/*.json >/dev/null 2>&1 || { echo "ERROR: One or more URLs matched no objects." >&2; return 1; }
         for a in "$B"/*.json; do echo "gs://test/teams/${a##*/}"; done ;;
     # The real bucket keeps old versions: list names them (and deleted teams), describe gives the live one.
-    objects) [ "$1" = describe ] && cat "$B/$o.gen" 2>/dev/null
+    objects) [ "$1" = describe ] && { [ -z "${DESCRIBE_FAILS:-}" ] || return 1; cat "$B/$o.gen" 2>/dev/null; }
              [ "$1" = list ] && { echo "teams/gone.json"; echo 1; cat "$B/$o.gen" 2>/dev/null; } ;;
     cat) [ "${uri##*#}" = "$(cat "$B/$o.gen" 2>/dev/null)" ] && cat "$B/$o" ;;
     cp) [ "$want" = "$(cat "$B/$o.gen" 2>/dev/null || echo 0)" ] || { echo "ERROR: HTTPError 412: Precondition Failed" >&2; return 1; }
@@ -177,6 +177,9 @@ check "a write after another host's change is refused (412), and the cache keeps
   "$(cp "$B/web.json" "$B/web.tmp"; jq '.label = "Theirs"' "$B/web.tmp" > "$B/web.json"; echo 150 > "$B/web.json.gen"; teams_set web "$(rec web Mine)" >/dev/null 2>&1; echo $?)|$(jq -r .label "$FXA_TEAMS_DIR/web.json")"
 check "sync brings the other host's change and its generation" "Theirs|150" "$(teams_sync >/dev/null; jq -r .label "$FXA_TEAMS_DIR/web.json")|$(gen web)"
 check "set after the sync writes" "0|Mine" "$(teams_set web "$(rec web Mine)" >/dev/null 2>&1; echo $?)|$(jq -r .label "$B/web.json")"
+n0="$(teams_audit web | jq '[.[] | select(.action == "set")] | length')"
+check "a write whose read-back fails succeeds, warns to sync, and still writes the audit row" "0|1|$((n0 + 1))|Again" \
+  "$(DESCRIBE_FAILS=1 teams_set web "$(rec web Again)" >/dev/null 2>"$tmp/rb.err"; echo $?)|$(grep -c 'could not read it back' "$tmp/rb.err")|$(teams_audit web | jq '[.[] | select(.action == "set")] | length')|$(jq -r .label "$B/web.json")"
 rm -f "$B/web.json" "$B/web.json.gen"
 check "sync removes a team that left the store" "no|null" "$(teams_sync >/dev/null; [ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)|$(jq -r .teams.web "$FXA_TEAMS_DIR/index.json")"
 

@@ -194,7 +194,9 @@ _teams_write() {
       && { echo "ERROR: team ${name} changed since generation ${gen}; run profile sync and edit again" >&2; return 2; }
     echo "ERROR: could not write team ${name}: $(tail -1 <<< "$out")" >&2; return 1
   fi
-  _teams_pull "$name" && teams_index
+  # The store has the change: a failed read-back is a warning, so the caller still writes the audit row.
+  _teams_pull "$name" && teams_index || echo "WARN: wrote team ${name}, but could not read it back; run profile sync before the next edit" >&2
+  return 0
 }
 
 # teams_create <file>   A new team. Refused when the name is a built-in team or already has a record.

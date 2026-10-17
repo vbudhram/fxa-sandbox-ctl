@@ -427,8 +427,19 @@ def main(argv):
             target = os.path.join(out, fname)
             text = rec.get("prompts", {}).get(k, "")
             if text:
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(text if text.endswith("\n") else text + "\n")
+                # A launch can read the file while a load rewrites it: write beside it and rename,
+                # and leave an unchanged file alone.
+                body = text if text.endswith("\n") else text + "\n"
+                try:
+                    with open(target, encoding="utf-8") as f:
+                        if f.read() == body:
+                            continue
+                except OSError:
+                    pass
+                tmp = f"{target}.tmp{os.getpid()}"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(body)
+                os.replace(tmp, target)
             elif os.path.exists(target):
                 os.remove(target)
     return 0
