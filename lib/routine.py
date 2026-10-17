@@ -85,6 +85,15 @@ def kind(team, index, env):
     return "folder"
 
 
+def valid_text(s):
+    """False for a lone surrogate (JSON lets one through as \\ud800), which has no UTF-8 form."""
+    try:
+        s.encode()
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def check(r, team, profile, index, env, count):
     """([field: reason lines], the normalized routine)."""
     if not isinstance(r, dict):
@@ -100,6 +109,8 @@ def check(r, team, profile, index, env, count):
     prompt = r.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         bad.append("prompt: The prompt is empty")
+    elif not valid_text(prompt):
+        bad.append("prompt: The prompt is not valid text")
     elif len(prompt.encode()) > PROMPT_BYTES:
         bad.append("prompt: The prompt is over 4 KB")
     sched = r.get("schedule")
@@ -232,7 +243,15 @@ def main(argv):
     if cmd == "validate":
         if len(argv) < 4 or not opt(argv, "--profile"):
             sys.exit(__doc__)
-        index = load(opt(argv, "--index")) if opt(argv, "--index") and os.path.exists(opt(argv, "--index")) else {}
+        # The channel rules need the teams index: none, or one that cannot be read, refuses (fail closed).
+        try:
+            with open(opt(argv, "--index") or "", encoding="utf-8") as f:
+                index = json.load(f)
+            if not isinstance(index, dict):
+                raise ValueError
+        except (OSError, ValueError):
+            print("channel: cannot read the teams index", file=sys.stderr)
+            return 1
         try:
             count = int(opt(argv, "--count", "0"))
         except ValueError:

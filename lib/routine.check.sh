@@ -70,6 +70,19 @@ check "an env-access team: a security review on a channel it does not own is ref
 check "an env-access team: its PROFILE_CHANNELS channel counts as its own" "ok" "$(v envy envy.json '{"template":"security-review","repos":["mozilla/envy"],"channel":"C0ENVY0"}')"
 check "another team cannot use an env-access team's channel" "channel: Channel C0ENVY0 belongs to team envy" "$(v secret priv.json '{"channel":"C0ENVY0"}')"
 jq -cn --argjson b "$base" '$b' > "$tmp/r.json"
+check "a missing teams index fails closed" "channel: cannot read the teams index" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/missing.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"
+echo 'not json' > "$tmp/badindex.json"
+check "an unreadable teams index fails closed" "channel: cannot read the teams index" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/badindex.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"
+jq -c '.prompt = "SURROGATE"' <<< "$base" | sed 's/SURROGATE/review \\ud800 this/' > "$tmp/sur.json"
+check "a prompt with a lone surrogate is a field error, not a traceback" "prompt: The prompt is not valid text" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/sur.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"
+check "skip_no_commits that is not a bool" "skip_no_commits: must be true or false" "$(v secret priv.json '{"skip_no_commits":"yes"}')"
+check "an env that is not live or dev" "env: must be live or dev" "$(v secret priv.json '{"env":"prod"}')"
+echo '[1]' > "$tmp/arr.json"
+check "a routine that is not a JSON object" "routine: must be a JSON object" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/arr.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"
 check "an unreadable bot .env fails closed" "channel: cannot read the bot access rules" \
   "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/missing.env" 2>&1 >/dev/null)"
 check "a valid routine on the team's own channel passes" "ok" "$(v secret priv.json '{}')"
