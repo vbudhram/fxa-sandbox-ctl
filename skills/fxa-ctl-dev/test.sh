@@ -50,7 +50,7 @@ run_here() {
   if [ "$i" = "$n" ]; then
     py="$(mktemp "${TMPDIR:-/tmp}/fxa-py.XXXXXX")"
     ( b=0
-      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL $HOST: $t"; b=1; }; done
+      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR):" <<< "$o" | head -3 | sed "s/^/  /"; b=1; }; done
       # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
       if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then python3 desktop-gateway/check.py >/dev/null 2>&1 || { echo "FAIL $HOST: desktop-gateway/check.py"; b=1; }
       else echo "skip $HOST: desktop-gateway/check.py (pip install -r desktop-gateway/requirements.txt to run it)"; fi
@@ -78,7 +78,7 @@ run_linux() {
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
     run_pool linux lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
-    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py desktop-gateway/check.py; do python3 "$t" >/dev/null 2>&1 || { echo "FAIL linux: $t"; bad=1; }; done
+    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py desktop-gateway/check.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL linux: $t"; grep -E "^(FAIL|ERROR):" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }; done
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
 
