@@ -117,7 +117,7 @@ def check(rec, name=None):
             bad.append(f"name {n!r} does not match the record's file name {name!r}")
         reserved = RESERVED | set(os.environ.get("FXA_RESERVED_TEAMS", "").split())
         if n in reserved:
-            bad.append(f"name {n!r} is reserved (a built-in team)")
+            bad.append(f"name {n!r} is reserved (a built-in team, or a folder the host keeps under ~/.claude/state)")
 
     if "label" in rec and (not isinstance(rec["label"], str) or not LABEL.match(rec["label"])):
         bad.append("label must be 1 to 40 letters, digits, spaces or ._()-")
