@@ -89,11 +89,16 @@ routine_state() {
   echo "routine $1: $2 done"
 }
 
-# routines_drop_team <team>   teams_delete: the team's routines go with it; their history stays.
+# routines_drop_team <team>   A deleted team's routines go with it, so a later team of that name gets none;
+# their history stays. A store error fails: the caller then deletes nothing more.
 routines_drop_team() {
-  local n; n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$1");" 2>/dev/null)"
-  [ "${n:-0}" -gt 0 ] || return 0
-  db_exec "DELETE FROM routines WHERE team = $(db_q "$1");" && _teams_audit_note routine-delete "$1" "all ${n} routines, with the team"
+  # No store on this host (no sqlite3): no routine can exist here.
+  declare -F db_exec >/dev/null && command -v sqlite3 >/dev/null || return 0
+  local n; n="$(db_value "SELECT count(*) FROM routines WHERE team = $(db_q "$1");")" && [[ "$n" =~ ^[0-9]+$ ]] \
+    || { echo "ERROR: could not read team $1's routines from the store" >&2; return 1; }
+  [ "$n" -gt 0 ] || return 0
+  db_exec "DELETE FROM routines WHERE team = $(db_q "$1");" >/dev/null || { echo "ERROR: could not delete team $1's routines from the store" >&2; return 1; }
+  _teams_audit_note routine-delete "$1" "all ${n} routines, with the team"
 }
 
 routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }

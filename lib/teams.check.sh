@@ -12,7 +12,7 @@ mkdir -p "$HOME/.ssh"
 SESSION_DIR="$tmp/sessions"; mkdir -p "$SESSION_DIR"
 source "$root/lib/pipeline.sh"
 FXA_TEAMS_URI=""; source "$root/lib/teams.sh"
-FXA_DB="$tmp/fxa.db"; source "$root/lib/db.sh"
+FXA_DB="$tmp/fxa.db"; source "$root/lib/db.sh"; source "$root/lib/routines.sh"
 rec() { printf '{ "schema": 1, "name": "%s", "label": "%s", "repos": [ { "slug": "example/%s", "role": "work" } ], "prompts": { "goal_md": "Run make test." }%s }' "$1" "$2" "$1" "${3:-}" > "$tmp/$1.json"; echo "$tmp/$1.json"; }
 gen() { cat "$FXA_TEAMS_DIR/$1.gen"; }
 
@@ -52,14 +52,17 @@ check "disable works while the live checks fail" "0|disabled" \
 printf '{"profile":"rusty","state":"paused"}' > "$SESSION_DIR/agent-r1.json"
 check "delete is refused while a session of the team can resume" "1" "$(teams_delete rusty >/dev/null 2>&1; echo $?)"
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
-check "delete removes the record, its prompts and its index entry" "0|no|null" \
-  "$(teams_delete rusty >/dev/null; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")"
+db_exec "INSERT INTO routines (team, data) VALUES ('rusty', '{}');"
+check "a store error on the team's routines stops the delete, and keeps the record" "1|ERROR: could not read team rusty's routines from the store|yes|1" \
+  "$( (db_value() { return 1; }; teams_delete rusty >/dev/null 2>"$tmp/del.err"); echo $?)|$(head -1 "$tmp/del.err")|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")"
+check "delete removes the record, its prompts, its index entry and its routines, with no shell error" "0|no|null|0|0" \
+  "$(teams_delete rusty >/dev/null 2>"$tmp/del.err"; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")|$(grep -c 'command not found' "$tmp/del.err")"
 check "a folder team cannot be deleted" "1" "$(teams_delete fxa >/dev/null 2>&1; echo $?)"
 # monitor is a record whose profiles/monitor/ keeps only its boot.sh.
 check "a record team that keeps a folder for its boot.sh can be deleted" "0|no" \
   "$(jq '.name = "monitor"' "$(rec monitor Monitor)" > "$tmp/mon.json"; FXA_TEAMS_LIVE=0 teams_create "$tmp/mon.json" >/dev/null 2>&1; teams_delete monitor >/dev/null 2>&1; echo $?)|$([ -e "$FXA_TEAMS_DIR/monitor.json" ] && echo yes || echo no)"
 check "each write leaves an audit row: who, what, the generations and the keys that changed" \
-  "delete|owner@example.com|3||created,label,name,prompts,repos,schema,status|set|other@example.com|1|2|label|create|owner@example.com|0|1|created,label,name,prompts,repos,schema" \
+  "delete|owner@example.com|3||created,label,name,prompts,repos,schema,status|routine-delete|owner@example.com|||all 1 routines, with the team|set|other@example.com|1|2|label|create|owner@example.com|0|1|created,label,name,prompts,repos,schema" \
   "$(teams_audit rusty | jq -r '.[] | [.action, .actor, .old_gen, .new_gen, .changed] | join("|")' | grep -vE '^set\|owner@example.com\|[23]\|' | paste -sd'|' -)"
 check "profile lint passes with records and the index in the cache" "profiles: ok" \
   "$(teams_create "$(rec linted Linted)" >/dev/null; cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
@@ -184,6 +187,10 @@ check "a write whose read-back fails succeeds, warns to sync, and writes an audi
   "$(DESCRIBE_FAILS=1 teams_set web "$(rec web Again)" >/dev/null 2>"$tmp/rb.err"; echo $?)|$(grep -c 'could not read it back' "$tmp/rb.err")|$(teams_audit web | jq '[.[] | select(.action == "set")] | length')|$(jq -r .label "$B/web.json")|$(teams_audit web | jq -r '[.[] | select(.action == "set")] | .[0].new_gen')"
 check "the next edit then asks for a sync, not a 409 for its own write" "1" "$(teams_set web "$(rec web Later)" 2>&1 | grep -c 'run profile sync')"
 rm -f "$B/web.json" "$B/web.json.gen"
-check "sync removes a team that left the store" "no|null" "$(teams_sync >/dev/null; [ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)|$(jq -r .teams.web "$FXA_TEAMS_DIR/index.json")"
+db_exec "INSERT INTO routines (team, data) VALUES ('web', '{}');"
+check "sync with a store error keeps a team that left the store, and fails" "1|yes" \
+  "$( (db_value() { return 1; }; teams_sync >/dev/null 2>&1); echo $?)|$([ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)"
+check "sync removes a team that left the store, with its routines and an audit row" "no|null|0|1" \
+  "$(teams_sync >/dev/null; [ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)|$(jq -r .teams.web "$FXA_TEAMS_DIR/index.json")|$(db_value "SELECT count(*) FROM routines WHERE team = 'web';")|$(db_value "SELECT count(*) FROM team_audit WHERE team = 'web' AND action = 'routine-delete';")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

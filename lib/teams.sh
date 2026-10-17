@@ -336,6 +336,9 @@ teams_delete() {
       && case "$(jq -r '.state // empty' "$f")" in stopped|failed) ;; *) n=$((n + 1)) ;; esac
   done
   [ "$n" = 0 ] || { echo "ERROR: team ${name} has ${n} session(s) that can resume; stop them first" >&2; return 1; }
+  # Its routines first: a store error stops the delete before anything is gone, and a later team of
+  # this name never inherits them. (A failed record delete below then leaves the team with no routines.)
+  routines_drop_team "$name" || { echo "ERROR: team ${name} is not deleted" >&2; return 1; }
   gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)"
   if [ -n "$FXA_TEAMS_URI" ]; then
     [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
@@ -343,7 +346,6 @@ teams_delete() {
       || { echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync" >&2; return 1; }
   fi
   _teams_audit delete "$name" "$gen" "" "${FXA_TEAMS_DIR}/${name}.json" ""
-  routines_drop_team "$name"
   rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}"
   teams_index && echo "deleted team ${name}"
 }
@@ -351,7 +353,7 @@ teams_delete() {
 # teams_sync   Make the cache match the bucket: every record at its current generation, none extra.
 teams_sync() {
   [ -n "$FXA_TEAMS_URI" ] || { teams_index; echo "no team store (FXA_GCE_PROJECT is unset): the cache is the store"; return 0; }
-  local names n f
+  local names n f rc=0
   # ls names live objects only (objects list also names a deleted team's old versions).
   # An empty store is not an error: GCS says "matched no objects".
   if ! names="$(gcloud storage ls "${FXA_TEAMS_URI}/*.json" 2>&1)"; then
@@ -362,7 +364,11 @@ teams_sync() {
   for n in $names; do _teams_pull "$n" || echo "WARN: could not fetch team ${n}" >&2; done
   for f in "$FXA_TEAMS_DIR"/*.json; do
     n="$(basename "$f" .json)"; [ -f "$f" ] && [ "$n" != index ] || continue
-    grep -qx "$n" <<< "$names" || { rm -rf "${FXA_TEAMS_DIR:?}/${n}.json" "${FXA_TEAMS_DIR:?}/${n}.gen" "${FXA_TEAMS_DIR:?}/${n}"; echo "removed team ${n} (no longer in the store)"; }
+    grep -qx "$n" <<< "$names" && continue
+    # A team deleted on another host: its routines go too, as teams_delete does. A store error keeps the
+    # cached record, so the next sync tries again.
+    routines_drop_team "$n" || { rc=1; continue; }
+    rm -rf "${FXA_TEAMS_DIR:?}/${n}.json" "${FXA_TEAMS_DIR:?}/${n}.gen" "${FXA_TEAMS_DIR:?}/${n}"; echo "removed team ${n} (no longer in the store)"
   done
-  teams_index && echo "teams: $(printf '%s\n' "$names" | grep -c . || true) in the store"
+  teams_index && echo "teams: $(printf '%s\n' "$names" | grep -c . || true) in the store" && return "$rc"
 }
