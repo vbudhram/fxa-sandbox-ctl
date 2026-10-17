@@ -146,6 +146,12 @@ check "a run token names its team, and the team file holds the record's caps (no
 # Runtime secrets: names of the team's own, written inside its own repo folders, never on a command line.
 check "a runtime secret must be the team's own, and land inside one of its repo folders" "0|1|1|1" \
   "$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work" }, { "slug": "mozilla/cfg", "role": "dep" } ], "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/cfg/.env.db" } ] }' | grep -c 'secrets.runtime')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-other--db", "path": "/home/agent/fxa/.env" } ] }' | grep -c 'secrets.runtime\[0\].secret')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/.bashrc" } ] }' | grep -c 'secrets.runtime\[0\].path')|$(code ', "secrets": { "runtime": [ { "secret": "fxa-team-cd--db", "path": "/home/agent/other/x" } ] }' | grep -c 'secrets.runtime\[0\].path')"
+check "a value that ends in a newline is refused (slug, base)" "1|1" \
+  "$(code ', "repos": [ { "slug": "mozilla/fxa\n", "role": "work" } ]' | grep -c 'slug must be owner/name')|$(code ', "repos": [ { "slug": "mozilla/fxa", "role": "work", "base": "main\n" } ]' | grep -c 'base is not a branch name')"
+check "Mozilla/fxa with the FxA stack validates and loads, as GitHub reads slugs without case" "0|1" \
+  "$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -cE 'Error|Traceback|must|needs')|$(code ', "repos": [ { "slug": "Mozilla/fxa", "role": "work" } ]' | grep -c '^PIPE_STACK_DIR')"
+check "a pipelines/<name>.conf alias is a reserved name" "1" \
+  "$(bad fxa-ai-fixme '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "fxa-ai-fixme", "prompts": { "goal_md": "g" } }' | grep -c reserved)"
 check "a slug part of . or .. is refused" "1" \
   "$(code ', "repos": [ { "slug": "mozilla/..", "role": "work" } ]' | grep -c 'slug must be owner/name')"
 check "a runtime secret in a work repo is refused, since its files can ship in a PR" "1" \

@@ -90,7 +90,7 @@ def check(rec, name=None):
         if len(v) > most:
             bad.append(f"{where} has more than {most} items")
         for x in v:
-            if not pat.match(x):
+            if not pat.fullmatch(x):
                 bad.append(f"{where}: {x!r} is not valid")
         if len(set(v)) != len(v):
             bad.append(f"{where} lists an item twice")
@@ -108,16 +108,18 @@ def check(rec, name=None):
         bad.append("schema must be 1")
 
     n = rec.get("name")
-    if not isinstance(n, str) or not NAME.match(n) or "--" in n:
+    if not isinstance(n, str) or not NAME.fullmatch(n) or "--" in n:
         bad.append("name must match ^[a-z][a-z0-9-]{1,30}$, with no -- (it separates a team's secrets)")
     else:
         if name is not None and n != name:
             bad.append(f"name {n!r} does not match the record's file name {name!r}")
-        reserved = RESERVED | set(os.environ.get("FXA_RESERVED_TEAMS", "").split())
+        # pipeline_load reads pipelines/<name>.conf before a record, so an alias name would load that team.
+        aliases = {f[:-5] for f in os.listdir(os.path.join(REPO, "pipelines")) if f.endswith(".conf")} if os.path.isdir(os.path.join(REPO, "pipelines")) else set()
+        reserved = RESERVED | aliases | set(os.environ.get("FXA_RESERVED_TEAMS", "").split())
         if n in reserved:
             bad.append(f"name {n!r} is reserved (a built-in team)")
 
-    if "label" in rec and (not isinstance(rec["label"], str) or not LABEL.match(rec["label"])):
+    if "label" in rec and (not isinstance(rec["label"], str) or not LABEL.fullmatch(rec["label"])):
         bad.append("label must be 1 to 40 letters, digits, spaces or ._()-")
     if rec.get("status", "draft") not in ("draft", "active", "disabled"):
         bad.append("status must be draft, active or disabled")
@@ -128,9 +130,9 @@ def check(rec, name=None):
         admins = []
     for i, a in enumerate(admins):
         a = obj(a, f"admins[{i}]", {"slack", "email"})
-        if not USER.match(str(a.get("slack", ""))):
+        if not USER.fullmatch(str(a.get("slack", ""))):
             bad.append(f"admins[{i}].slack must be a Slack user ID")
-        if not EMAIL.match(str(a.get("email", ""))):
+        if not EMAIL.fullmatch(str(a.get("email", ""))):
             bad.append(f"admins[{i}].email must be an email address")
 
     acc = obj(rec.get("access", {}), "access", {"open", "users", "channels", "jira_prefixes"})
@@ -148,15 +150,15 @@ def check(rec, name=None):
     for i, r in enumerate(repos):
         r = obj(r, f"repos[{i}]", {"slug", "path", "role", "base", "default"})
         s = r.get("slug")
-        if not isinstance(s, str) or not SLUG.match(s) or any(x in (".", "..") for x in s.split("/")):
+        if not isinstance(s, str) or not SLUG.fullmatch(s) or any(x in (".", "..") for x in s.split("/")):
             bad.append(f"repos[{i}].slug must be owner/name")
             continue
         p = r.get("path", default_path(s))
-        if not isinstance(p, str) or not PATH.match(p):
+        if not isinstance(p, str) or not PATH.fullmatch(p):
             bad.append(f"repos[{i}].path must match ^/home/agent/[a-z0-9-]+$")
         if r.get("role") not in ("work", "dep", "data", "ref"):
             bad.append(f"repos[{i}].role must be work, dep, data or ref")
-        if not BRANCH.match(str(r.get("base", "main"))):
+        if not BRANCH.fullmatch(str(r.get("base", "main"))):
             bad.append(f"repos[{i}].base is not a branch name")
         if "default" in r:
             flag(r["default"], f"repos[{i}].default")
@@ -184,7 +186,7 @@ def check(rec, name=None):
         bad.append("runner.backend must be gce or firecracker")
     if "android" in run:
         flag(run["android"], "runner.android")
-    if "desktop_url" in run and not DESKTOP.match(str(run["desktop_url"])):
+    if "desktop_url" in run and not DESKTOP.fullmatch(str(run["desktop_url"])):
         bad.append("runner.desktop_url must be http://localhost:<port>/")
 
     eg = obj(rec.get("egress", {}), "egress", {"requested", "approved"})
@@ -195,7 +197,7 @@ def check(rec, name=None):
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
     jira = obj(rec.get("jira", {}), "jira", {"project", "queue"})
-    if "project" in jira and not PROJECT.match(str(jira["project"])):
+    if "project" in jira and not PROJECT.fullmatch(str(jira["project"])):
         bad.append("jira.project must be a Jira project key")
     if "queue" in jira:
         flag(jira["queue"], "jira.queue")
@@ -205,7 +207,7 @@ def check(rec, name=None):
     pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers"})
     if "open" in pr:
         flag(pr["open"], "pr.open")
-    if "reviewers" in pr and not REVIEWERS.match(str(pr["reviewers"])):
+    if "reviewers" in pr and not REVIEWERS.fullmatch(str(pr["reviewers"])):
         bad.append("pr.reviewers must be a GitHub team or user name")
 
     caps = obj(rec.get("caps", {}), "caps", {"launches_per_day", "usd_per_day", "usd_per_month"})
@@ -232,9 +234,9 @@ def check(rec, name=None):
         boot = obj(rec["boot"], "boot", {"script", "sha256"})
         sc, pin = str(boot.get("script", "")), str(boot.get("sha256", ""))
         path = os.path.join(REPO, "boot", sc + ".sh")
-        if not SCRIPT.match(sc) or not os.path.isfile(path):
+        if not SCRIPT.fullmatch(sc) or not os.path.isfile(path):
             bad.append("boot.script must name a script in boot/ of this repo")
-        elif not SHA.match(pin):
+        elif not SHA.fullmatch(pin):
             bad.append("boot.sha256 must be the script's SHA-256")
         elif file_sha(path) != pin:
             bad.append(f"boot/{sc}.sh changed since it was pinned: review it, then pin {file_sha(path)}")
@@ -243,7 +245,7 @@ def check(rec, name=None):
     # The -- is not allowed in a team name, so team pay cannot name a secret of team pay-x.
     sec = obj(rec.get("secrets", {}), "secrets", {"jira", "runtime"})
     if "jira" in sec and isinstance(n, str):
-        if not re.match(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", str(sec["jira"])):
+        if not re.fullmatch(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", str(sec["jira"])):
             bad.append(f"secrets.jira must be a Secret Manager name fxa-team-{n}--<what>")
     runtime = sec.get("runtime", [])
     if not isinstance(runtime, list) or len(runtime) > 10:
@@ -252,10 +254,10 @@ def check(rec, name=None):
     for i, r in enumerate(runtime):
         r = obj(r, f"secrets.runtime[{i}]", {"secret", "path"})
         sp, pp = str(r.get("secret", "")), str(r.get("path", ""))
-        if not isinstance(n, str) or not re.match(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", sp):
+        if not isinstance(n, str) or not re.fullmatch(rf"^fxa-team-{re.escape(n)}--[a-z0-9]+(-[a-z0-9]+)*$", sp):
             bad.append(f"secrets.runtime[{i}].secret must be a Secret Manager name fxa-team-{n}--<what>")
         # Inside one of the team's own repo folders, so it lands where the stack reads it and nowhere else.
-        if not re.match(r"^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]{1,150}$", pp) or ".." in pp \
+        if not re.fullmatch(r"^/home/agent/[a-z0-9-]+/[A-Za-z0-9._/-]{1,150}$", pp) or ".." in pp \
                 or "/".join(pp.split("/")[:4]) not in paths:
             bad.append(f"secrets.runtime[{i}].path must be a file inside one of the team's repo folders")
         # A work repo's files go back to the host and into its PR; a runner's .git/info/exclude does not.
@@ -265,7 +267,7 @@ def check(rec, name=None):
     for k in ("created", "updated"):
         if k in rec:
             st = obj(rec[k], k, {"by", "at"})
-            if not EMAIL.match(str(st.get("by", ""))) or not STAMP.match(str(st.get("at", ""))):
+            if not EMAIL.fullmatch(str(st.get("by", ""))) or not STAMP.fullmatch(str(st.get("at", ""))):
                 bad.append(f"{k} needs by (an email) and at (a UTC time)")
     return bad
 
@@ -288,7 +290,7 @@ def env(rec):
     if default:
         yield "PIPE_STACK_DEFAULT", default
     if rec.get("stack", {}).get("kind") == "fxa":
-        fxa = next(r for r in repos if r["slug"] == "mozilla/fxa")
+        fxa = next(r for r in repos if r["slug"].lower() == "mozilla/fxa")  # check() compares lowercase too
         yield "PIPE_STACK_DIR", fxa.get("path", default_path(fxa["slug"]))
     run = rec.get("runner", {})
     yield "PIPE_VM_BACKEND", run.get("backend", "gce")
@@ -351,7 +353,7 @@ def unique(rec, folder):
 
 
 def stamp(rec, actor, at, old=None):
-    by = {"by": actor, "at": at} if EMAIL.match(actor) and STAMP.match(at) else None
+    by = {"by": actor, "at": at} if EMAIL.fullmatch(actor) and STAMP.fullmatch(at) else None
     if old and "created" in old:
         rec["created"] = old["created"]
     elif by:
