@@ -393,8 +393,10 @@ jira_tooling_approver() {
   [ -n "$who" ] || return 1
   while IFS= read -r entry; do
     entry="$(printf '%s' "$entry" | sed 's/^ *//; s/ *$//')"
-    [ "${entry##*:}" = "$who" ] || continue
-    name="${entry%:*}"; [ "$name" = "$entry" ] && name="$who"
+    # The ID is the whole entry, or all of it after the first colon ("Name:ID"); a legacy ID has a colon of its own (557058:uuid).
+    if [ "$entry" = "$who" ]; then name="$who"
+    elif [ "${entry#*:}" = "$who" ]; then name="${entry%%:*}"
+    else continue; fi
     printf '%s %s\n' "$who" "$name"; return 0
   done < <(tr ',' '\n' <<< "$PIPE_TOOLING_APPROVERS")
   return 1
