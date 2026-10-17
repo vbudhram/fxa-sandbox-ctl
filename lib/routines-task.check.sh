@@ -64,6 +64,21 @@ r5="$(run pyfxa claimed)"
 check "a session that cannot start ends its run failed" "failed|the session could not start|none" \
   "$(task pyfxa agent-rt13 --routine-run "$r5" --runtime nope >/dev/null 2>&1; db_value "SELECT state || '|' || reason FROM routine_runs WHERE id = $r5;")|$(none agent-rt13)"
 
+# A routine run is not continued: --resume-from, a fresh restart, or a tag in its thread that would carry its PR.
+printf 'go on\n' > "$tmp/go.md"
+MSG="ERROR: a routine run cannot be continued; tag me in a new thread with the PR link or the finding"
+check "--resume-from a routine session is refused, with no session" "${MSG}|none" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs01 --owner U1 --prompt-file "$tmp/go.md" --resume-from agent-rt12 2>&1)|$(none agent-rs01)"
+check "a fresh restart of a routine session is refused, with no session" "${MSG}|none" \
+  "$(gh() { echo OPEN; }; jq '.pr_url = "https://github.com/mozilla/PyFxA/pull/3"' "$tmp/agent-rt10.json" > "$tmp/x" && mv "$tmp/x" "$tmp/agent-rt10.json"
+     FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs02 --owner U1 --prompt-file "$tmp/go.md" --resume-from agent-rt10 --fresh 2>&1)|$(none agent-rs02)"
+thread_set C0OWN00:1790000000.000100 pr_url https://github.com/mozilla/PyFxA/pull/3 pr_session agent-rt10
+check "a tag in a routine's thread that would carry its PR is refused, with no session" "${MSG}|none" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs03 --owner U1 --prompt-file "$tmp/go.md" --thread C0OWN00:1790000000.000100 2>&1)|$(none agent-rs03)"
+echo '{"key":"agent-sl01","state":"stopped","source":"slack"}' > "$tmp/agent-sl01.json"
+check "a Slack session still resumes" "agent-rs04 starting" \
+  "$(FXA_VM_BACKEND=gce cmd_task --source slack --id agent-rs04 --owner U1 --prompt-file "$tmp/go.md" --resume-from agent-sl01 2>/dev/null)"
+
 # The cap: the run's own, at most the host's (D21); a bad one fails.
 echo '{"cap_usd": 7}' > "$tmp/agent-cap1.json"; echo '{"cap_usd": 70}' > "$tmp/agent-cap2.json"; echo '{}' > "$tmp/agent-cap3.json"; echo '{"cap_usd": "x"}' > "$tmp/agent-cap4.json"
 check "the run cap is min(the run's, the host's), the host's when none, and a bad one fails" "7|50|50|1" \

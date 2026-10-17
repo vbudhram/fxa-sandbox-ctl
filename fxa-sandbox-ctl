@@ -2172,6 +2172,12 @@ cmd_task() {
     local tkey; tkey="$(thread_get "$thread" pr_session)"
     [ -n "$tkey" ] && session_exists "$tkey" && { resume_from="$tkey"; fresh_pr=1; }
   fi
+  # A routine run is not continued (by --resume-from, !restart, a move, or a tag in its thread that would
+  # carry its PR): a new session would lose its memory off, watch_narrow and cap. Fail closed.
+  # Only a Slack session (or an old record with no source) carries forward; an unreadable one does not.
+  local from_src; [ -z "$resume_from" ] || from_src="$(session_get "$resume_from" source 2>/dev/null || echo unreadable)"
+  case "${from_src:-slack}" in slack) ;; *)
+    echo "ERROR: a routine run cannot be continued; tag me in a new thread with the PR link or the finding" >&2; return 1 ;; esac
   # --fresh: a new conversation on the earlier session's open PR, at its head.
   # With no open PR there is nothing to keep, so it starts from main.
   if [ -n "$fresh_pr" ] && [ -n "$resume_from" ]; then
