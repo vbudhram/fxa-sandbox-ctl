@@ -306,5 +306,49 @@ routine_tick() {
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }
 
-# routine_reconcile <now>   Filled in by the reconcile step.
-routine_reconcile() { :; }
+# routine_reconcile <now>   Live runs, from their session records (D14): a run the bot never reported on still
+# ends. pr_open or a pr_url is ok with that PR; a session that is gone, unreadable, paused, stopped or failed with
+# no done call fails (a paused one is stopped first: nobody will answer it); a started run past 120 min is stopped
+# and fails; a claimed run with no session after 10 min, or a queued one after 60, fails. Each change is one
+# UPDATE guarded on the state it read, so a done call or a second tick at the same time cannot be undone.
+routine_reconcile() {
+  local now="$1" rows r id st sess since rec sst pr why
+  rows="$(db_json "SELECT id, state, coalesce(session, '') AS session, coalesce(started_at, 0) AS since FROM routine_runs WHERE state IN (${_ROUTINE_LIVE_STATES});")" \
+    || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
+    why=""; pr=""
+    case "$st" in
+      queued) [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ] && why="no tick started it within 60 min" ;;
+      claimed) [ -z "$sess" ] && [ "$since" -gt 0 ] && [ $((now - since)) -gt 600 ] && why="no session started within 10 min" ;;
+      started)
+        rec="${SESSION_DIR}/${sess}.json"
+        if ! [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || [ ! -f "$rec" ]; then why="the run's session is gone"
+        elif ! sst="$(jq -r '"\(.state // "")\t\(.pr_url // "")"' "$rec" 2>/dev/null)"; then why="the run's session record cannot be read"
+        else
+          pr="${sst#*$'\t'}"; sst="${sst%%$'\t'*}"
+          if [ -n "$pr" ] || [ "$sst" = pr_open ]; then :
+          else
+            pr=""
+            case "$sst" in
+              paused) session_stop "$sess" >/dev/null 2>&1 || true; why="the session paused with no result" ;;
+              stopped|failed) why="the session ${sst} with no result" ;;
+              *) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
+            esac
+            [ -n "$why" ] || continue
+          fi
+        fi ;;
+    esac
+    if [ -n "$pr" ] || [ "$st:$sst" = "started:pr_open" ]; then
+      db_exec "UPDATE routine_runs SET state = 'ok', pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo NULL ), ended_at = $now WHERE id = $id AND state = 'started';" >/dev/null \
+        || { echo "$_ROUTINE_STORE" >&2; return 1; }
+    elif [ -n "$why" ]; then
+      local n; n="$(db_value "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$why"), ended_at = $now WHERE id = $id AND state = '$st'; SELECT changes();")" \
+        || { echo "$_ROUTINE_STORE" >&2; return 1; }
+      [ "$n" = 1 ] && errors_record routine run_failed "$sess" "routine tick" "routine run ${id}: ${why}" ""
+    fi
+    sst=""
+  done < <(jq -c '.[]' <<< "$rows")
+  return 0
+}

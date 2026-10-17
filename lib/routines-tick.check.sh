@@ -9,6 +9,7 @@ source "$(dirname "$0")/db.sh"; source "$(dirname "$0")/routines.sh"
 db_init >/dev/null
 _SESSIONS_PAUSE_URI=""
 pipeline_folder_teams() { echo fxa; }
+errors_record() { echo "$1|$2|$3|$5" >> "$tmp/errs"; }
 _teams_audit_note() { echo "$1|$2|$3" >> "$tmp/audit"; }
 H1="1111111111111111111111111111111111111111"
 _routine_head() { cat "$tmp/head" 2>/dev/null || echo "$H1"; }
@@ -112,6 +113,38 @@ check "the 02:30 run on 2027-03-14 is at 03:00 New York time, the first valid mi
 r11="$(mk fxa "daily 01:30")"
 tick 1793511060 >/dev/null; tick 1793514660 >/dev/null   # 01:31 EDT, then 01:31 EST: the same date
 check "a tick in each 01:30 of the DST fold claims one run for the date" "1" "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $r11 AND period = '2026-11-01';")"
+
+# Reconcile (D14): runs the bot never reported on still end, from their session records.
+: > "$tmp/errs"
+session_stop() { echo "$1" >> "$tmp/stopped"; session_set "$1" state stopped; }; : > "$tmp/stopped"
+rr="$(mk fxa "weekly sun 03:00")"
+st() { db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rr, 'r$RANDOM$RANDOM', $(db_q "$1"), $( [ -n "$2" ] && db_q "$2" || echo NULL ), $3); SELECT last_insert_rowid();"; }
+N=$((T + 50000))
+g1="$(st started agent-gone01 $((N - 60)))"
+echo '{"key":"agent-paus01","state":"paused"}' > "$tmp/agent-paus01.json"; g2="$(st started agent-paus01 $((N - 60)))"
+echo '{"key":"agent-prok01","state":"pr_open","pr_url":"https://github.com/mozilla/fxa/pull/7"}' > "$tmp/agent-prok01.json"; g3="$(st started agent-prok01 $((N - 60)))"
+echo '{"key":"agent-long01","state":"active"}' > "$tmp/agent-long01.json"; g4="$(st started agent-long01 $((N - 7300)))"
+echo '{"key":"agent-fine01","state":"active"}' > "$tmp/agent-fine01.json"; g5="$(st started agent-fine01 $((N - 60)))"
+g6="$(st claimed "" $((N - 660)))"; g7="$(st claimed "" $((N - 540)))"
+echo 'not json' > "$tmp/agent-junk01.json"; g8="$(st started agent-junk01 $((N - 60)))"
+tick "$N" >/dev/null; tick $((N + 30)) >/dev/null
+s_of() { db_value "SELECT state || '|' || coalesce(reason, pr_url, '') FROM routine_runs WHERE id = $1;"; }
+check "a started run whose session is gone fails, with one error row" "failed|the run's session is gone|1" \
+  "$(s_of "$g1")|$(grep -c "routine run ${g1}: " "$tmp/errs")"
+check "a started run whose session paused is stopped and fails, with one error row" "failed|the session paused with no result|agent-paus01|1" \
+  "$(s_of "$g2")|$(cat "$tmp/stopped" | grep -x agent-paus01)|$(grep -c "routine run ${g2}: " "$tmp/errs")"
+check "a session at pr_open with a pr_url: the run is ok with that PR, and no error" "ok|https://github.com/mozilla/fxa/pull/7|0" \
+  "$(s_of "$g3")|$(grep -c "routine run ${g3}: " "$tmp/errs")"
+check "a started run past 120 min is stopped and fails" "failed|the run took over 120 min|agent-long01" "$(s_of "$g4")|$(grep -x agent-long01 "$tmp/stopped")"
+check "a recent active run is left alone" "started|" "$(s_of "$g5")"
+check "a claimed run with no session after 11 min fails; one after 9 min waits" "failed|no session started within 10 min|claimed|" "$(s_of "$g6")|$(s_of "$g7")"
+check "a session record that cannot be read fails the run (fail closed)" "failed|the run's session record cannot be read" "$(s_of "$g8")"
+
+# A done call that lands between reconcile's read and its UPDATE wins: the run stays ok, with no error row.
+g9="$(st ok agent-gone02 $((N - 60)))"; n0="$(wc -l < "$tmp/errs" | tr -d ' ')"
+stale="[{\"id\": $g9, \"state\": \"started\", \"session\": \"agent-gone02\", \"since\": $((N - 60))}]"
+( db_json() { case "$1" in ("SELECT id, state, coalesce(session"*) echo "$stale" ;; (*) _db_ready && _db -json "$1" | sed 's/^$/[]/' ;; esac; }; routine_reconcile "$N" )
+check "reconcile does not undo a done call that raced it" "ok||$n0" "$(s_of "$g9")|$(wc -l < "$tmp/errs" | tr -d ' ')"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
