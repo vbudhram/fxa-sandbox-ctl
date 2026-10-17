@@ -280,7 +280,9 @@ memory_collect_session() {
   f="$(mktemp)"
   _session_sh "$2" 'head -c 16000 /workspace/.fxa-memory.json 2>/dev/null; rm -f /workspace/.fxa-memory.json' > "$f" 2>/dev/null || true
   [ -s "$f" ] || { rm -f "$f"; return 0; }
-  jq -e '(.checkout_person // "") != "" or (.review_pr // "") != "" or (.jira // "") != "" or ([.trees[]?.review_pr // empty] | length > 0)' \
+  # untrusted: boot added a ticket or a CI log. A PR: review, Copilot and CI rounds steer the session with outside text.
+  jq -e '(.checkout_person // "") != "" or (.review_pr // "") != "" or (.jira // "") != "" or ([.trees[]?.review_pr // empty] | length > 0)
+      or (.untrusted // "" | tostring) == "1" or (.pr_url // "") != ""' \
     "$(_session_file "$key")" >/dev/null 2>&1 && taint=1
   ticket="$(session_get "$key" jira 2>/dev/null || true)"
   slugs="$(jq -r '[.trees[]?.slug] | .[]' "$(_session_file "$key")" 2>/dev/null)"
