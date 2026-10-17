@@ -47,12 +47,12 @@ memory_pull() {
     || { _memory_git rebase --abort 2>/dev/null; return 1; }
 }
 
-# _memory_lock / _memory_unlock   One writer of the clone at a time: a save, a pull or the digest.
-# A lock older than 10 min is from a process that died.
+# _memory_lock [wait] / _memory_unlock   One writer of the clone at a time: a save, a pull or the digest.
+# A lock older than 10 min is from a process that died. It waits up to <wait> seconds (2).
 _memory_lock() {
-  local l="${FXA_MEMORY_DIR}.lock"
+  local l="${FXA_MEMORY_DIR}.lock" end=$(( $(date +%s) + ${1:-2} ))
   [ -d "$l" ] && [ $(( $(date +%s) - $(_mtime "$l" 2>/dev/null || date +%s) )) -gt 600 ] && rmdir "$l" 2>/dev/null
-  mkdir "$l" 2>/dev/null || { sleep 2; mkdir "$l" 2>/dev/null; }
+  until mkdir "$l" 2>/dev/null; do [ "$(date +%s)" -lt "$end" ] || return 1; sleep 2; done
 }
 _memory_unlock() { rmdir "${FXA_MEMORY_DIR}.lock" 2>/dev/null; return 0; }
 
@@ -208,7 +208,8 @@ memory_collect() {
   hits="$(python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$prose" "${prose}.diff" 2>/dev/null)" || rc=$?
   rm -f "$prose" "${prose}.diff"
   if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; _memory_log "$run" pii_blocked; return 0; fi
-  _memory_lock || { echo "  memory: another save holds the lock; nothing saved" >&2; _memory_log "$run" lock_busy; return 0; }
+  # A save waits out a pull or the digest: the runner's file is already gone, so a skip loses the session's notes.
+  _memory_lock "${FXA_MEMORY_SAVE_WAIT:-60}" || { echo "  memory: another save holds the lock; nothing saved" >&2; _memory_log "$run" lock_busy; return 0; }
   memory_pull || { _memory_unlock; echo "  memory: could not reach the memory repo; nothing saved" >&2; _memory_log "$run" unreachable; return 0; }
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # The episode: only for a ticket key, written once per run.
