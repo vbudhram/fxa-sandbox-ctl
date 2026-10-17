@@ -154,6 +154,14 @@ async def dashboard_check():
         async with c.get(f"{base}/w/{t}/events") as x:
             check("the watch events stream from the dashboard for that thread", ("dash /api/watch/events", t, "text/event-stream"),
                   (await x.text(), seen["query"], x.headers.get("Content-Type")))
+        main.DASHBOARD_HMAC = b"k1"
+        async with c.get(f"{base}/w/{t}/events") as x:
+            check("a watcher not on DASHBOARD_USERS is not signed", None, seen["user"])
+        who["email"] = "someone@example.com"
+        async with c.get(f"{base}/w/{t}/events") as x:
+            check("a watcher on DASHBOARD_USERS is signed for the watch stream",
+                  ("someone@example.com", main.sign_user(b"k1", "someone@example.com", seen["ts"], "GET", "/api/watch/events")), (seen["user"], seen["sig"]))
+        main.DASHBOARD_HMAC, who["email"] = b"", "owner@example.com"
         async with c.get(f"{base}/w/not-a-thread") as x:
             check("a bad thread: 404", 404, x.status)
         main.DASHBOARD_USERS = set()
