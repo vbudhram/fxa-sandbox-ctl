@@ -279,7 +279,7 @@ memory_collect_session() {
   [ -s "$f" ] || { rm -f "$f"; return 0; }
   # untrusted: boot added a ticket or a CI log. A PR: review, Copilot and CI rounds steer the session with outside text.
   jq -e '(.checkout_person // "") != "" or (.review_pr // "") != "" or (.jira // "") != "" or ([.trees[]?.review_pr // empty] | length > 0)
-      or (.untrusted // "" | tostring) == "1" or (.pr_url // "") != ""' \
+      or (.untrusted // "" | tostring) == "1" or (.pr_url // "") != "" or ([.trees[]?.pr_url // empty] | length > 0)' \
     "$(_session_file "$key")" >/dev/null 2>&1 && taint=1
   ticket="$(session_get "$key" jira 2>/dev/null || true)"
   slugs="$(jq -r '[.trees[]?.slug] | .[]' "$(_session_file "$key")" 2>/dev/null)"

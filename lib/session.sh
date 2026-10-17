@@ -562,7 +562,8 @@ _session_turn() {
   fi
   tmp="$(mktemp -d)"
   # A CircleCI link in a later message: the host reads it, and its traces ride in the tar below.
-  msg="${msg}$(circleci_digests "$msg" "$(openssl rand -hex 6)" "${tmp}/.fxa-ci" 2>/dev/null || true)"
+  local ci; ci="$(circleci_digests "$msg" "$(openssl rand -hex 6)" "${tmp}/.fxa-ci" 2>/dev/null || true)"
+  [ -z "$ci" ] || { msg="${msg}${ci}"; session_set "$key" untrusted 1; }
   # Every exit below removes $tmp: it holds a copy of the Claude credential.
   ( umask 077
     printf '%s\n' "$msg" > "${tmp}/.fxa-steer-msg.txt"

@@ -2185,6 +2185,8 @@ cmd_task() {
   _session_unlock .task-cap
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
+  # The resumed transcript holds what the earlier session read, so its taint carries over.
+  [ -n "$resume_from" ] && [ "$(session_get "$resume_from" untrusted 2>/dev/null || true)" = 1 ] && session_set "$key" untrusted 1
   if [ -n "$thread" ]; then
     session_set "$key" thread "$thread"
     [ -n "$new_pr" ] && session_set "$key" new 1
