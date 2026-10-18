@@ -19,9 +19,22 @@ rm -f "$root/.env"
 mkdir -p "$tmp/bin" "$tmp/teams" "$tmp/sessions" "$tmp/proxy/teams" "$tmp/state" "$tmp/home"
 # GitHub: the branch head of any repo.
 printf '#!/bin/sh\necho 2222222222222222222222222222222222222222\n' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
+# The GitHub API, offline: each repo is public (or private while $tmp/private exists), and the App is installed.
+cat > "$tmp/bin/curl" <<EOF
+#!/bin/sh
+for a; do url="\$a"; done
+case "\$url" in
+  */installation) echo '{"id": 1}' ;;
+  https://api.github.com/repos/*) if [ -e "$tmp/private" ]; then printf 404; else printf 200; fi ;;
+  *) exit 7 ;;
+esac
+EOF
+chmod +x "$tmp/bin/curl"
+# _retry waits 3 s and 9 s between tries of a GitHub call that fails: no wait here.
+printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/sleep"; chmod +x "$tmp/bin/sleep"
 : > "$tmp/bot.env"; echo '{"teams": {}}' > "$tmp/teams/index.json"
 T=1792414800   # Monday 2026-10-19 09:00 in New York
-ctl() { ( cd "$root" && env PATH="$tmp/bin:$PATH" HOME="$tmp/home" FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" \
+ctl() { ( cd "$root" && env PATH="$tmp/bin:$PATH" TMPDIR="$tmp" HOME="$tmp/home" FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" \
   FXA_SESSION_DIR="$tmp/sessions" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_FIXME_STATE="$tmp/state" FXA_BOT_ENV="$tmp/bot.env" \
   FXA_ERRORS_FILE="$tmp/errors.jsonl" FXA_GCE_PROJECT="" FXA_SESSIONS_PAUSE_URI="" FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" \
   FXA_TEAM_ACTOR=admin@example.com FXA_ROUTINE_NOW="${NOW:-$T}" ./fxa-sandbox-ctl "$@" ); }
@@ -64,4 +77,10 @@ run="$(sqlite3 "$tmp/fxa.db" "INSERT INTO routine_runs (routine_id, period, stat
 out="$(NOW=$((T + 240)) ctl routine done "$run" --state nochange --session agent-cli001 2>&1)"; rc=$?
 check "the CLI done with a schedule that cannot be read: exit 0, the result stored, no next run" "0|nochange|null" \
   "$rc|$(sqlite3 "$tmp/fxa.db" "SELECT state FROM routine_runs WHERE id = $run;")|$(jq -r .next <<< "$out" 2>/dev/null)"
+# A repo GitHub hides (404) makes the team private: the real CLI keeps the run out of a channel it does not bind.
+rp="$(mk "daily 10:00")"; touch "$tmp/private"; rm -f "$tmp"/fxa-github-vis.*   # the 200 answers above are cached for a day
+out="$(NOW=$((T + 3600 + 30)) ctl routine tick --env live 2>"$tmp/err")"; rc=$?
+check "the CLI tick, a repo GitHub hides: exit 0 and the channel refusal, not posted" "0|channel|false" \
+  "$rc|$(jq -r --argjson r "$rp" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"' <<< "$out" 2>/dev/null)"
+rm -f "$tmp/private"
 exit "$fail"
