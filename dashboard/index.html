@@ -276,6 +276,14 @@
   .ttable .num, .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
   .tbud { min-width:180px; } .tbar { display:block; height:6px; border-radius:3px; background:var(--sunk); margin-top:4px; overflow:hidden; } .tbar i { display:block; height:100%; background:var(--ok); } .tbar i.warn { background:var(--warn); } .tbar i.bad { background:var(--bad); }
   #s-teams.wide { background:none; border:0; box-shadow:none; padding:0; }
+  .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
+  .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
+  .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
+  .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
+  .tsub2 { border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s2) var(--s3); } .tsub2.bad { border-color:var(--bad); background:var(--badbg); }
+  .titem { display:flex; justify-content:space-between; gap:var(--s3); padding:var(--s2) 0; border-bottom:1px solid var(--line); font-size:var(--t-sub); min-width:0; } .titem:last-child { border-bottom:0; } .titem > span:first-child { min-width:0; overflow-wrap:anywhere; }
+  .tchart { width:100%; height:80px; } .tchart rect { fill:var(--line2); } .tchart rect.on { fill:var(--link); } .tchart line { stroke:var(--line); }
+  .tchartl { display:flex; justify-content:space-between; font-size:var(--t-label); color:var(--dim); }
   .iconbtn.tlist-btn { display:none; } @media (max-width:900px) { .iconbtn.tlist-btn { display:flex; } }
   .right { grid-area:right; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
   .right .rh { display:block; font:700 16px/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
@@ -1486,14 +1494,6 @@ function repoTag(r) {
   const [cls, s, l] = repoShip(r);
   return s ? ` <span class="tag ${cls}" title="${esc(l)}">${s}</span>` : "";
 }
-// A team's use in 30 days, and the two places that show its sessions and its spend.
-function teamUsage(t) {
-  const use = teamUse(), u = use?.[t.profile] ?? NO_USE, p = esc(t.profile), tp = STATS?.team_passes?.[t.profile];
-  const tab = (() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })();
-  return `<div><h4 title="Leaves out dry-run and dev sessions">Usage, 30 days</h4>${use ? kvr("Conversations", u.n) + (u.live ? kvr("Live", u.live) : "") + (u.runs ? kvr("Pipeline runs", u.runs) : "") + (tp ? kvr("Passes, 7 days", `${tp.passes} · ${tp.work} with work`) : "")
-      + kvr("Cost", `${usd(u.usd)} <span class="na">· Slack ${usd(u.slack_usd ?? 0)} · pipeline ${usd(u.pipe_usd ?? 0)}</span>`) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
-    <div class="acts2" style="margin-top:var(--s2)"><a class="tile" style="padding:6px 12px" href="#sessions/${tab}" data-team-sess="${p}">Its sessions</a><a class="tile" style="padding:6px 12px" href="#stats/spend" data-team-stats="${p}">Its spend in Stats</a></div></div>`;
-}
 
 // ── Teams (epic i275): a list at the left, All teams or the selected team in main, with Overview, Routines
 // and Settings tabs. Routine facts come only from the admin routes; a non-admin sees none (i168 D1).
@@ -1575,6 +1575,66 @@ function teamSettingsHtml(t) {
     <div class="tcard">${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvr("Connectors", esc(teamTools(t.mcp)))}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>
     <div class="tcard" id="t-record">${teamEditor(t.profile, t.access?.record)}</div>`;
 }
+// A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.
+function teamBanner(t) {
+  const adm = !!TEAM_ADMIN?.admin, base = `#teams/${esc(t.profile)}`, has = re => (t.issues ?? []).some(i => re.test(i.text)), r = rtSum(t.profile), out = [];
+  if (has(/spend cap reached/)) out.push(["The team reached its spend cap", "Every new session and routine run of the team is refused until the cap resets or the operator raises it.", null]);
+  if (t.access?.record && t.access.status !== "active") out.push([`The team is ${esc(t.access.status)}`, "Nobody can start it until it is tested and active.", [`${base}/settings`, "Test and activate"]]);
+  else if (has(/nobody can start it/)) out.push(["Nobody can start this team", "It has no users and no channel rules, and it is not open.", [`${base}/settings`, "Add users"]]);
+  if (adm && r?.routines && has(/spend cannot be read/)) out.push(["Routines are skipped", "The team's spend cannot be read, so each run is refused (fail closed).", null]);
+  if (adm && r?.failed) out.push([`${r.failed} routine${r.failed === 1 ? "" : "s"} failed`, r.last_failed ? `${esc(r.last_failed.name ?? "")}: ${esc(r.last_failed.reason ?? "no reason recorded")}` : "", [`${base}/routines`, "Open Routines"]]);
+  if (!out.length) return "";
+  const [h, why, act] = out[0], more = out.length > 1 ? ` <span class="na">and ${out.length - 1} more</span>` : "";
+  return `<div class="tbanner" role="alert"><div><b>${h}</b>${more}<div>${why}${!adm && act ? " A team admin can fix this. Ask the operator." : ""}</div></div>${adm && act ? `<a class="tile" style="padding:6px 12px" href="${act[0]}">${act[1]}</a>` : ""}</div>`;
+}
+// Recent work: the team's 5 newest runs; a routine run is named only for an admin (i168 D1).
+function teamRecent(p) {
+  const ss = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s])), rows = (STATS?.rows ?? []).filter(r => (r.profile || "fxa") === p).sort((a, b) => (b.t0 ?? Date.parse(b.at) / 1000) - (a.t0 ?? Date.parse(a.at) / 1000)).slice(0, 5);
+  if (!STATS) return `<p class="na">—</p>`;
+  if (!rows.length) return `<p class="na">No sessions or runs in 30 days.</p>`;
+  return rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
+    const k = sessHref(r.key) ? `<a href="${sessHref(r.key)}">${esc(name)}</a>` : esc(name), pr = r.pr ? (prHref(`https://github.com/${SNAP?.repo ?? "mozilla/fxa"}/pull/${r.pr}`) ? `<a href="https://github.com/${esc(SNAP?.repo ?? "mozilla/fxa")}/pull/${esc(r.pr)}" target="_blank" rel="noopener">PR #${esc(r.pr)}</a>` : "") : "";
+    return `<div class="titem"><span>${k} ${r.src === "pass" ? "" : `<span class="na">· ${esc(r.src)}</span>`}</span><span>${pr || `<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? Date.parse(r.at) / 1000)))}</span>`}</span></div>`; }).join("");
+}
+function teamActivity(p) {
+  if (!STATS?.rows) return `<p class="na">—</p>`;
+  const now = Date.now() / 1000, n = Array(30).fill(0);
+  STATS.rows.forEach(r => { if ((r.profile || "fxa") !== p) return; const d = Math.floor((now - (r.t0 ?? Date.parse(r.at) / 1000)) / 86400); if (d >= 0 && d < 30) n[29 - d]++; });
+  const max = Math.max(1, ...n), total = n.reduce((a, b) => a + b, 0);
+  return `<svg viewBox="0 0 300 64" class="tchart" role="img" aria-label="${total} sessions and runs in 30 days, at most ${max} a day">${n.map((v, i) => `<rect x="${i * 10 + 1}" y="${60 - Math.round(v / max * 56)}" width="8" height="${Math.max(1, Math.round(v / max * 56))}" rx="1" class="${v ? "on" : ""}"></rect>`).join("")}<line x1="0" y1="60.5" x2="300" y2="60.5"></line></svg>
+    <div class="tchartl"><span>30 days ago</span><span>${total} sessions and runs</span><span>today</span></div>`;
+}
+function teamReadiness(t) {
+  const has = re => (t.issues ?? []).some(i => re.test(i.text)), work = (t.repos ?? []).filter(r => r.role === "work");
+  const access = t.profile === "fxa" || t.access?.open === "built-in" ? "good" : !t.access ? "unknown" : (t.access.record && t.access.status !== "active") || has(/nobody can start it/) ? "required" : "good";
+  const rows = [["Config", t.load_error ? "required" : "good", "profile.conf loads"], ["Access", access, teamAccess(t)[1]], ["Repos", work.length ? "good" : "required", work.map(r => r.slug).join(", ") || "no work repo"],
+    ["Tools", "good", teamTools(t.mcp)], ["Mode", "good", t.read_only ? "read-only" : "read and write"]];
+  const good = rows.filter(r => r[1] === "good").length, set = `#teams/${esc(t.profile)}/settings`;
+  if (good === rows.length) return `<div class="tcard"><span class="trd"><b>Readiness</b> 5 of 5 good</span> <a href="${set}">Settings</a></div>`;
+  return `<div class="tcard"><h3>Readiness <span class="na">${good} of ${rows.length} good</span></h3>${rows.map(([k, st, d]) => `<div class="titem"><span><b>${k}</b> <span class="na">${esc(d)}</span></span><span><span class="tag ${st === "good" ? "ok" : st === "required" ? "warn" : ""}">${st}</span> <a href="${set}" aria-label="Edit ${k.toLowerCase()}">Edit</a></span></div>`).join("")}</div>`;
+}
+function teamOverview(t) {
+  const use = teamUse(), u = use?.[t.profile], er = teamErrs(), b = t.budget, r = rtSum(t.profile), base = `#teams/${esc(t.profile)}`;
+  const cost = t.budget_error ? `<div class="tl">Cost this month</div><div class="tv">—</div><div class="unknown">budget unknown: the spend file cannot be read</div>`
+    : b ? `<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? ` <span class="tm">of ${usd(b.month_cap)}</span>` : ` <span class="tm">no cap</span>`}</div>${b.month_cap ? `<span class="tbar"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}`
+    : `<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
+  const split = use ? `<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
+  const test = t.test?.result ? testCell(t) : `<span class="na">${t.access?.record ? "never run" : "no record to test"}</span>`;
+  const tested = (t.issues ?? []).find(i => /^last passed at generation/.test(i.text));
+  const tab = (() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })();
+  return teamBanner(t) + `<div class="tcards4">
+      <div class="tcard">${cost}${split}</div>
+      <div class="tcard"><div class="tl">Active now</div><div class="tv">${use ? u?.live ?? 0 : "—"}</div><a href="#sessions/${tab}" data-team-sess="${esc(t.profile)}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${esc(t.profile)}">Its spend in Stats</a></div>
+      <div class="tcard"><div class="tl">Open errors</div><div class="tv">${er ? er[t.profile] ?? 0 : "—"}</div><a href="#errors">Open in Errors</a></div>
+      <div class="tcard"><div class="tl">Last profile test</div><div class="tv">${test}</div>${tested ? `<div class="na">${esc(tested.text)}</div>` : ""}</div></div>
+    <div class="tcols"><div class="tcard"><h3>Activity, 30 days</h3>${teamActivity(t.profile)}</div><div class="tcard"><h3>Recent work</h3>${teamRecent(t.profile)}</div></div>
+    ${r ? `<div class="tcard"><h3>Routines <a href="${base}/routines" class="na">All ${r.routines} routine${r.routines === 1 ? "" : "s"}</a></h3><div class="tcards3">
+      <div class="tsub2 ${r.failed ? "bad" : ""}"><div class="tl">${r.failed ? "Failed last run" : "Failed runs"}</div><b>${r.last_failed ? esc(r.last_failed.name ?? "") : "none"}</b>${r.last_failed ? `<div class="tm">${ago(Math.round(Date.now() / 1000 - r.last_failed.at))} · ${esc(r.last_failed.reason ?? "")}</div>` : ""}</div>
+      <div class="tsub2"><div class="tl">Routines</div><b>${r.routines}</b><div class="tm">${r.paused} paused · ${r.live} running</div></div>
+      <div class="tsub2"><div class="tl">Routine cost, 30 days</div><b>${usd(r.cost_30d)}</b><div class="tm">${r.runs_30d} run${r.runs_30d === 1 ? "" : "s"}</div></div></div></div>`
+      : TEAM_ADMIN?.admin && RTSUM_ERR ? `<div class="tcard"><p class="unknown">Routine status unknown: ${esc(RTSUM_ERR)}</p></div>` : ""}
+    ${teamReadiness(t)}`;
+}
 function teamPageHtml(p) {
   const t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null;
   if (!t) return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${esc(p)}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
@@ -1583,7 +1643,7 @@ function teamPageHtml(p) {
   const body = t.load_error ? `<div class="tcard"><p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${esc(t.profile)} profile show</span></p></div>`
     : TTAB === "routines" ? (TEAM_ADMIN?.admin ? routinesGroup(t, Date.now() / 1000) : `<div class="tcard"><p>Only a team admin can see and change routines.</p></div>`)
     : TTAB === "settings" ? teamSettingsHtml(t)
-    : `<div class="tcard">${(t.issues ?? []).length ? (t.issues ?? []).map(i => kvr(`<span class="tag ${esc(i.level)}">${esc(i.level)}</span>`, esc(i.text))).join("") : kvr("Status", "no issues")}</div><div class="tcard">${teamUsage(t)}</div>`;
+    : teamOverview(t);
   return `<div class="tpage"><div class="thead"><div><h2 class="th" id="team-h" tabindex="-1">${esc(teamName(t))} <span class="tag ${teamLevel(t) || "ok"}">${esc(teamAccess(t)[0])}</span></h2>
       <div class="tkey">${esc(t.profile)} · ${src}</div></div></div>
     <nav class="ttabs" aria-label="Team">${tabs}</nav>${body}</div>`;
