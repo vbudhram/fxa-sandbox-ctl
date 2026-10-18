@@ -34,6 +34,7 @@ ERRORS_FILE = os.environ.get("FXA_ERRORS_FILE") or str(Path.home() / ".claude/st
 PROFILES_DIR = ROOT.parent / "profiles"
 sys.path.insert(0, str(ROOT.parent / "lib"))
 import fxadb  # noqa: E402  the controller's store: sessions as they change
+import routine  # noqa: E402  the one reader of a team's spend against its caps
 
 
 class Feed:
@@ -361,6 +362,55 @@ def read_records():
         return {}
 
 
+TEST_TIMEOUT = 3600  # a profile test boots one runner; a log older than this is not a test that runs
+
+
+def team_budget(profile, now):
+    """(this month's and today's spend against the caps, or None; a fixed error word, or None). The path is
+    built only for a profile-shaped name, and an error never carries its text (it may name a path)."""
+    if not re.fullmatch(TEAM_NAME, profile or ""):
+        return None, None
+    d = os.path.join(os.environ.get("FXA_LLM_PROXY_DIR") or os.path.expanduser("~/.claude/state/llm-proxy"), "teams")
+    if not os.path.isdir(d):
+        return None, None
+    try:
+        return routine.spend_state(f"{d}/{profile}.json", f"{d}/{profile}.spend.json", now), None
+    except Exception:  # noqa: BLE001
+        return None, "unreadable"
+
+
+def team_test(name, now):
+    """The last profile test of a record team: {result, at, generation, tested}, or None for a team with no
+    record. Only the exact final lines of teams.sh count, and only from a log not older than the record's
+    generation: test output can carry runner text, and old files survive a delete and re-create."""
+    teams = Path(os.environ.get("FXA_TEAMS_DIR") or Path.home() / ".claude/state/teams")
+    if not re.fullmatch(TEAM_NAME, name or "") or not (teams / f"{name}.json").exists():
+        return None
+    mt = lambda p: p.stat().st_mtime if p.exists() else None
+    num = lambda p: int(p.read_text().strip()) if p.exists() and p.read_text().strip().isdigit() else None
+    gen_p, log, pidf, tp = (teams / f"{name}{e}" for e in (".gen", ".test.log", ".test.pid", ".tested"))
+    gen, gm = num(gen_p), mt(gen_p) or 0
+    out = {"result": None, "at": None, "generation": None, "tested": num(tp) if (mt(tp) or -1) >= gm else None}
+    lm = mt(log)
+    if lm is None or lm < gm:
+        return out
+    lines = [x for x in log.read_text(errors="replace").splitlines() if x.strip()]
+    last = lines[-1] if lines else ""
+    m = re.fullmatch(rf"passed: team {re.escape(name)} may be activated at generation (\d+)", last)
+    if m:
+        if gen is not None and int(m.group(1)) == gen:
+            out.update(result="passed", at=int(lm), generation=gen)
+    elif last == f"failed: team {name} stays as it is":
+        out.update(result="failed", at=int(lm))
+    elif lm > now - TEST_TIMEOUT:
+        try:
+            os.kill(int(pidf.read_text()), 0)
+            out.update(result="running", at=int(lm))
+        except (OSError, ValueError):
+            pass
+    return out
+
+
 def team_access(profile, access, records=None):
     """One team's rules; users is a count, so no Slack user ID leaves the server."""
     rec = (records or {}).get(profile)
@@ -397,6 +447,20 @@ def team_issues(teams, access, records=None):
         a = team_access(t["profile"], access, records)
         if a and t["profile"] != "fxa" and not a["open"] and not a["users"]:
             out.append({"level": "warn", "text": "nobody can start it", "key": "PROFILE_USERS"})
+        # Spend: a reached cap refuses every session and run of the team; 90% is a heads-up.
+        b = t.get("budget")
+        if t.get("budget_error"):
+            out.append({"level": "info", "text": "spend cannot be read", "key": "llm-proxy/teams"})
+        elif b:
+            for k, label in (("day", "daily"), ("month", "monthly")):
+                cap = b.get(f"{k}_cap")
+                if cap and b[f"{k}_usd"] >= cap:
+                    out.append({"level": "warn", "text": f"{label} spend cap reached", "key": "llm-proxy/teams"})
+                elif cap and b[f"{k}_usd"] >= 0.9 * cap:
+                    out.append({"level": "info", "text": f"{label} spend at {round(100 * b[k + '_usd'] / cap)}% of the cap", "key": "llm-proxy/teams"})
+        tst, rec = t.get("test") or {}, (records or {}).get(t["profile"])
+        if isinstance(rec, dict) and rec.get("status") == "active" and tst.get("tested") is not None and str(rec.get("generation") or "") not in ("", str(tst["tested"])):
+            out.append({"level": "info", "text": f"last passed at generation {tst['tested']}; later edits did not change what a runner uses", "key": "profile test"})
         per.append(out)
     top = []
     if access is not None:
@@ -866,7 +930,9 @@ class Handler(BaseHTTPRequestHandler):
             teams = []
             if data is not None:  # the diff needs the list; before it, every dir would look broken
                 listed = {t.get("profile") for t in data}
-                teams = [dict(t, access=team_access(t.get("profile"), access, records)) for t in data]
+                now = int(time.time())
+                teams = [dict(t, access=team_access(t.get("profile"), access, records), test=team_test(t.get("profile"), now),
+                              **dict(zip(("budget", "budget_error"), team_budget(t.get("profile"), now)))) for t in data]
                 teams += [{"profile": d, "load_error": True}
                           for d in sorted(p.parent.name for p in PROFILES_DIR.glob("*/profile.conf")) if d not in listed]
             per, top = team_issues(teams, access if data is not None else None, records)

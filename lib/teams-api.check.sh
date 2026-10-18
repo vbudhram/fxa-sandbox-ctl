@@ -84,5 +84,52 @@ idx = Path(tmp) / "teams"; idx.mkdir(); (idx / "index.json").write_text(json.dum
 os.environ["FXA_TEAMS_DIR"] = str(idx)
 check("read_records reads the index; a missing one is empty", (["drafty", "rusty"], {}),
       (sorted(server.read_records()), (os.environ.update(FXA_TEAMS_DIR=f"{tmp}/none"), server.read_records())[1]))
+# Spend against the caps (the LLM proxy's files), and the issues it raises; nothing about an error leaks.
+import time as _t
+month = _t.strftime("%Y-%m", _t.gmtime()); now = int(_t.time())
+px = Path(tmp) / "proxy" / "teams"; px.mkdir(parents=True)
+(px / "pyfxa-team.json").write_text(json.dumps({"month_usd": 10})); (px / "pyfxa-team.spend.json").write_text(json.dumps({"month": month, "month_usd": 10}))
+(px / "crew.json").write_text(json.dumps({"month_usd": 100})); (px / "crew.spend.json").write_text(json.dumps({"month": month, "month_usd": 92}))
+(px / "solo.json").write_text("[1]")
+os.environ["FXA_LLM_PROXY_DIR"] = str(px.parent)
+check("a team's spend this month against its cap", (10, 10, None), tuple(server.team_budget("pyfxa-team", now)[0][k] for k in ("month_usd", "month_cap", "day_cap")))
+check("a caps file of the wrong shape: no budget, the fixed word", (None, "unreadable"), server.team_budget("solo", now))
+check("a name that is not a profile builds no path", (None, None), server.team_budget("../x", now))
+os.environ["FXA_LLM_PROXY_DIR"] = f"{tmp}/no-proxy"
+check("no proxy teams folder: no budget, no error", (None, None), server.team_budget("crew", now))
+os.environ["FXA_LLM_PROXY_DIR"] = str(px.parent)
+iss = lambda t: [(x["level"], x["text"]) for x in server.team_issues([dict({"profile": t, "repos": []}, **dict(zip(("budget", "budget_error"), server.team_budget(t, now))))], None)[0][0]]
+check("a reached cap is a warn", True, ("warn", "monthly spend cap reached") in iss("pyfxa-team"))
+check("92% of the cap is info", True, ("info", "monthly spend at 92% of the cap") in iss("crew"))
+check("unreadable spend is info, not a warn", (True, False), (("info", "spend cannot be read") in iss("solo"), any(l == "warn" for l, _ in iss("solo"))))
+b = json.loads(get()[1]); raw = json.dumps(b)
+check("the body names no host path or exception", (False, False, False), ("/home/" in raw, "/Users/" in raw, "ValueError" in raw))
+check("a profile that did not load has no budget", None, {x["profile"]: x for x in b["teams"]}["broken"].get("budget"))
+# The last profile test, from the exact final lines of teams.sh and fresh files only.
+td = Path(tmp) / "tteams"; td.mkdir(); os.environ["FXA_TEAMS_DIR"] = str(td)
+(td / "rusty.json").write_text("{}")
+def files(gen, log=None, tested=None, pid=None, log_age=0):
+    for e in (".gen", ".test.log", ".tested", ".test.pid"):
+        (td / f"rusty{e}").unlink(missing_ok=True)
+    (td / "rusty.gen").write_text(f"{gen}\n"); os.utime(td / "rusty.gen", (now - 100, now - 100))
+    if log is not None:
+        (td / "rusty.test.log").write_text(log); os.utime(td / "rusty.test.log", (now - log_age, now - log_age))
+    if tested is not None: (td / "rusty.tested").write_text(f"{tested}\n")
+    if pid is not None: (td / "rusty.test.pid").write_text(str(pid))
+    return server.team_test("rusty", now)
+r = files(14, "SECRETLINE\nfailed: team rusty stays as it is\n", tested=12)
+check("a failed test", ("failed", None), (r["result"], r["tested"] if False else None))
+check("running: a live pid, no final line, a fresh log", "running", files(14, "booting\n", pid=os.getpid())["result"])
+check("a forged passed line for another team is not a result", None, files(14, "passed: team x may be activated at generation 14\n")["result"])
+check("a log older than the generation is not a result", None, files(14, "failed: team rusty stays as it is\n", log_age=500)["result"])
+check("passed at the current generation", ("passed", 14), tuple(files(14, "passed: team rusty may be activated at generation 14\n")[k] for k in ("result", "generation")))
+check("passed at an older generation is not passed", None, files(15, "passed: team rusty may be activated at generation 14\n")["result"])
+check("tested counts when it is not older than the generation", 14, files(14, tested=14)["tested"])
+check("a team with no record has no test", None, server.team_test("crew", now))
+recs2 = {"rusty": {"status": "active", "generation": "13"}}
+per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": {"tested": 12}}], None, recs2)
+check("an active team tested at an older generation: info", True, ("info", "last passed at generation 12; later edits did not change what a runner uses") in [(x["level"], x["text"]) for x in per[0]])
+os.environ["FXA_TEAMS_DIR"] = str(td); files(14, "SECRETLINE\nfailed: team rusty stays as it is\n")
+check("no test log text reaches /api/teams", False, "SECRETLINE" in get()[1])
 srv.shutdown(); sys.exit(fail)
 PY

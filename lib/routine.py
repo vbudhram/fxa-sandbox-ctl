@@ -243,9 +243,10 @@ def due(r, now, since=0):
     return None
 
 
-def budget(caps_path, spend_path, now):
-    """Why the team may not spend, as the LLM proxy's team_capped() reads it, or "". A missing caps or spend
-    file is no cap or no spend, as there; any other error, or a value of the wrong shape, refuses (fail closed)."""
+def spend_state(caps_path, spend_path, now):
+    """The team's spend this day and month against its caps, as the LLM proxy keeps them:
+    {month, month_usd, day_usd, month_cap, day_cap}. A missing file is no cap or no spend;
+    any other error, or a value of the wrong shape, raises."""
     def read(p):
         try:
             with open(p, encoding="utf-8") as f:
@@ -256,17 +257,26 @@ def budget(caps_path, spend_path, now):
             raise ValueError("not an object")
         return v
     num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    caps, s = read(caps_path), read(spend_path)
+    t = time.gmtime(now)
+    day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
+    out = {"month": month, "day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
+           "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0,
+           "day_cap": caps.get("day_usd"), "month_cap": caps.get("month_usd")}
+    for k in ("day_usd", "month_usd", "day_cap", "month_cap"):
+        if (out[k] is not None or k.endswith("_usd")) and not num(out[k]):
+            raise ValueError("not a number")
+    return out
+
+
+def budget(caps_path, spend_path, now):
+    """Why the team may not spend, as the LLM proxy's team_capped() reads it, or "". A missing caps or spend
+    file is no cap or no spend, as there; any other error, or a value of the wrong shape, refuses (fail closed)."""
     try:
-        caps, s = read(caps_path), read(spend_path)
-        t = time.gmtime(now)
-        day, month = time.strftime("%Y-%m-%d", t), time.strftime("%Y-%m", t)
-        spent = {"day_usd": s.get("day_usd", 0) if s.get("day") == day else 0,
-                 "month_usd": s.get("month_usd", 0) if s.get("month") == month else 0}
-        for k, label in (("day_usd", "daily"), ("month_usd", "monthly")):
-            cap = caps.get(k)
-            if (cap is not None and not num(cap)) or not num(spent[k]):
-                raise ValueError("not a number")
-            if cap is not None and cap > 0 and spent[k] >= cap:
+        st = spend_state(caps_path, spend_path, now)
+        for k, label in (("day", "daily"), ("month", "monthly")):
+            cap = st[f"{k}_cap"]
+            if cap is not None and cap > 0 and st[f"{k}_usd"] >= cap:
                 return f"the team reached its {label} spend cap"
     except Exception:  # noqa: BLE001  fail closed on anything
         return "the team's spend cannot be read"
