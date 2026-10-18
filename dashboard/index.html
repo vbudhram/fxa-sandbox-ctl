@@ -845,10 +845,12 @@ function renderAlerts() {
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
   const tix = k => JIRA + encodeURIComponent(k), pr = n => `https://github.com/${repo}/pull/${n}`;
-  (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, `${b.key} · needs a human decision`, tix(b.key), "View ticket", b.key));
+  // The Blocked, Decide, Failing, Changes and Conflicts rows read the Board's why, who acts and age, and open the Board's rail.
+  const bi = s ? Object.fromEntries(boardItems().map(i => [i.key, i])) : {}, board = k => `#pipeline/board/${encodeURIComponent(k)}`, bmeta = (k, alt) => needMeta(bi[k], alt);
+  (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, bmeta(b.key, `${b.key} · needs a human decision`), board(b.key), "Open on the Board", b.key));
   // Skipped queue tickets wait on a person's answer in Jira; the next pass reads it. Most-skipped first.
   const decide = (s?.queue?.skipped ?? []).filter(k => k.in_queue !== false && !k.held_by).sort((x, y) => y.passes - x.passes);
-  decide.slice(0, 3).forEach(k => need(3.5, "Decide", "warn", k.summary || k.key, `${k.key} · skipped ${k.passes}× · ${k.reason || "no reason recorded"}`, tix(k.key), "Answer in Jira"));
+  decide.slice(0, 3).forEach(k => need(3.5, "Decide", "warn", k.summary || k.key, bmeta(k.key, `${k.key} · skipped ${k.passes}× · ${k.reason || "no reason recorded"}`), board(k.key), "Open on the Board"));
   if (decide.length > 3) need(3.6, "Decide", "dim", `${decide.length - 3} more skipped tickets wait on a decision`, "the Queue tab lists each with its reason", "#pipeline/queue", "Open queue", undefined, decide.length - 3);
   const { cards, waiting } = merged();
   cards.forEach(t => {
@@ -863,10 +865,10 @@ function renderAlerts() {
   (s?.review ?? []).forEach(r => {
     const title = r.title || r.key, d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
     if (r.state === "MERGED" || r.state === "CLOSED") need(6, "Drain", "done", `#${r.pr} ${r.state.toLowerCase()}, but ${r.key} is still labelled done`, "the next pass files it", pr(r.pr), "View PR", r.key);
-    else if (r.mergeable === "CONFLICTING") need(3, "Conflicts", "bad", title, `${r.key} · #${r.pr} · ${r.last_human_review ? "a human reviewed, so they rebase" : "no human review yet, so a rebase round is safe"}`, pr(r.pr), "View PR", r.key);
+    else if (r.mergeable === "CONFLICTING") need(3, "Conflicts", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · ${r.last_human_review ? "a human reviewed, so they rebase" : "no human review yet, so a rebase round is safe"}`), board(r.key), "Open on the Board", r.key);
     else if (r.fail > 0 && r.infra) need(4, "Infra red", "warn", title, `${r.key} · #${r.pr} · ${r.infra}, repo infrastructure, not the PR code`, pr(r.pr) + "/checks", "See job", r.key);
-    else if (r.fail > 0) need(3, "Failing", "bad", title, `${r.key} · #${r.pr} · ${r.fail} check${r.fail > 1 ? "s" : ""} failing`, pr(r.pr) + "/checks", "See job", r.key);
-    else if (r.review === "CHANGES_REQUESTED") need(3, "Changes", "bad", title, `${r.key} · #${r.pr} · changes requested`, pr(r.pr), "View PR", r.key);
+    else if (r.fail > 0) need(3, "Failing", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · ${r.fail} check${r.fail > 1 ? "s" : ""} failing`), board(r.key), "Open on the Board", r.key);
+    else if (r.review === "CHANGES_REQUESTED") need(3, "Changes", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · changes requested`), board(r.key), "Open on the Board", r.key);
     else if (isWaitingOnHuman(r)) need(5 - Math.min(d, 30) / 100, "Review", d >= 3 ? "warn" : "dim", title, `${r.key} · #${r.pr} · ${r.last_human_review ? `since ${r.last_human_review.login}'s review` : "no human review"} in ${d} day${d === 1 ? "" : "s"}`, pr(r.pr), "View PR", r.key);
   });
   laneRows().filter(r => r.t.slack && r.age >= 3).forEach(r => need(5, "Review", "warn", r.t.summary, `Slack PR #${r.t.pr} · ${r.t.owner || "owner unknown"} · no ticket · open ${r.age} days`, pr(r.t.pr), "View PR", r.t.key));
@@ -2115,6 +2117,8 @@ function gateLine(now = Date.now() / 1000) {
   const lead = when.startsWith("the next") ? `The next pass (${hm(np)}, in ${mins(np - now)} min)` : when.charAt(0).toUpperCase() + when.slice(1) + ";";
   return { ok: true, text: `${lead} ${when.startsWith("the next") ? "offers" : "the pass offers"} ${ready[0].key} first. Up to ${g.launchcap} can launch. Feedback and rebase rounds use slots first, and the pass can still skip a ticket.` };
 }
+// A Needs you row's meta from its Board item: key, why, who acts and age; the old text when the Board has no such row.
+const needMeta = (i, alt) => i && i.column === "blocked" ? [i.key, i.why, i.person, boardAge(i.age)].filter(Boolean).join(" · ") : alt;
 const boardAct = items => items.filter(i => i.column === "blocked" && i.group === "act").length + items.filter(i => i.column === "running" && i.fault).length;
 // A column that cannot be read says so, never a zero.
 function boardState(col) {
@@ -2290,9 +2294,8 @@ function renderLanes() {
   const rows = laneRows();
   assignFoxes(rows.map(r => r.t.key));
   const live = rows.some(r => r.kind === "live" && r.runner);
-  const q = SNAP?.queue ?? {}, ready = q.ready ?? [];
-  const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length), wait = queueWaits().length;
-  counts[0] = ready.length + (wait ? ` · ${wait} wait` : "");
+  const counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length);
+  counts[0] = "";   // the Board counts the queue; the Queue stop stays on the track
   const head = `<div style="display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)">
       <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
       <span class="sub" style="color:var(--dim)">One belt per ticket.</span>
