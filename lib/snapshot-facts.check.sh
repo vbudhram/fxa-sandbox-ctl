@@ -42,9 +42,10 @@ printf 'fp\t1\t1\theld until FXA-9 merges: x\t\n' > "$PIPE_STATE_DIR/FXA-11.skip
 check "a recorded kind wins, and a hold is depends_on" "depends_on needs_decision" "$(snapshot_json 2>/dev/null | jq -r '[.queue.skipped[] | .kind] | sort | join(" ")')"
 eval "$(sed -n '/^_snapshot_slots() {/,/^}/p' "$here/snapshot.sh")"
 slots() { local free cap; _snapshot_slots; printf '%s|%s' "$cap" "$(jq -c . <<< "$free")"; }
-cmd_launchcap() { echo 2; }
+cmd_launchcap() { echo "cmd_launchcap must not run: it reads Jira again" >&2; echo 0; }
 cmd_freeslots() { echo s-1; echo s-2; }
-check "slots read: the cap and the free list" '2|["s-1","s-2"]' "$(slots)"
+check "slots read: the cap from the one free list, and no second Jira read" '2|["s-1","s-2"]' "$(FXA_VM_BACKEND=gce slots 2>&1)"
+check "the backend cap is the ceiling" '1|["s-1","s-2"]' "$(FXA_VM_BACKEND=tart slots 2>&1)"
 cmd_freeslots() { echo "ERROR: cannot list inflight tickets" >&2; return 1; }
 check "a slot read that fails: launchcap null, not 0" 'null|[]' "$(slots)"
 

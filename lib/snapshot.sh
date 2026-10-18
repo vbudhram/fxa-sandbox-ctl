@@ -574,7 +574,11 @@ _snapshot_session_row() {
 _snapshot_slots() {
   local slots frc=0; slots="$(cmd_freeslots 2>/dev/null)" || frc=$?
   free="$(printf '%s' "$slots" | jq -R -s 'split("\n") | map(select(length > 0))')"
-  if [ "$frc" = 0 ]; then cap="$(cmd_launchcap 2>/dev/null || echo 0)"; else cap=null; fi
+  # The cap from this one slot list, as cmd_launchcap computes it: a second Jira read could fail and read 0.
+  if [ "$frc" = 0 ]; then
+    cap="$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && echo "${PIPE_MAX_LAUNCHES_GCE:-5}" || echo "${PIPE_MAX_LAUNCHES_TART:-1}" )"
+    local n; n="$(printf '%s' "$slots" | grep -c . || true)"; [ "${n:-0}" -lt "$cap" ] && cap="${n:-0}"
+  else cap=null; fi
 }
 
 snapshot_agents_json() {
