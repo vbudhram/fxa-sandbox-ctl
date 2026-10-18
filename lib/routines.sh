@@ -347,6 +347,10 @@ routine_reconcile() {
         elif ! sst="$(jq -r '"\(.state // "")\t\(.pr_url // "")"' "$rec" 2>/dev/null)"; then why="the run's session record cannot be read"
         else
           pr="${sst#*$'\t'}"; sst="${sst%%$'\t'*}"
+          # A session that ended (stopped, failed or pr_open) keeps its run for 10 min from the record's last
+          # write, so the bot's own done call, a little late, still lands on a live row.
+          local ended=0; { [ -n "$pr" ] || [[ "$sst" =~ ^(stopped|failed|pr_open)$ ]]; } && ! session_live "$sess" && ended=1
+          if [ "$ended" = 1 ] && [ $((now - $(_mtime "$rec" 2>/dev/null || echo 0))) -lt 600 ]; then continue; fi
           if { [ -n "$pr" ] || [ "$sst" = pr_open ]; } && ! session_live "$sess"; then :
           else
             pr=""

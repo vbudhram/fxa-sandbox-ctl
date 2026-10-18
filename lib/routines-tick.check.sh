@@ -253,6 +253,17 @@ rp="$(mk fxa "daily 16:00")"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($rp, '2026-10-18', 'stopped', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"$H1\"}}'), $((T - 86400)));"
 check "after a stopped run with the same head, the next run still runs, from no start" "1|null" \
   "$(tick $((T + 25200 + 60)) | jq --argjson r "$rp" '[.runs[] | select(.routine == $r)] | length')|$(db_value "SELECT coalesce(json_extract(heads, '$.\"mozilla/fxa\".start'), 'null') FROM routine_runs WHERE routine_id = $rp AND state = 'claimed';")"
+# Reconcile waits 10 min after a session ends, so a late done still lands; after that it fails the run.
+NOWR="$(date +%s)"
+echo '{"key":"agent-late01","state":"stopped"}' > "$tmp/agent-late01.json"; gl="$(st started agent-late01 $((NOWR - 60)))"
+routine_reconcile "$NOWR"
+check "a session stopped just now keeps its run started" "started|" "$(s_of "$gl")"
+check "and the bot's late done stores its report" "true|report|1" \
+  "$(routine_done "$gl" --state report --session agent-late01 --report-file "$tmp/clean.md" | jq -r '"\(.changed)|\(.state)"')|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $gl AND report IS NOT NULL;")"
+echo '{"key":"agent-late02","state":"stopped"}' > "$tmp/agent-late02.json"; gm="$(st started agent-late02 $((NOWR - 60)))"
+routine_reconcile $((NOWR + 601))
+check "10 min after the session stopped, reconcile fails the run" "failed|the session stopped with no result" "$(s_of "$gm")"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
