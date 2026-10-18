@@ -102,10 +102,11 @@ Design for the owner first, and for the teammate second. Every other role is a g
    one comment that names the decision.
 3. **Routines** (the dashboard). A team admin sets a scheduled prompt on the team's page: a code, UX,
    performance or security review, or free text, with a schedule, the repos, an output mode (report,
-   draft PR, or draft PR with notes), an output channel and a cost limit. Each **routine run** is a
+   draft PR, or draft PR with notes), an optional Slack channel and a cost limit. Each **routine run** is a
    normal session with the team's profile, repos, access and budget. The bot posts only the result in
    the routine's channel: the draft PR link or the report, or why it skipped or failed, and the next run
-   time. Slack cannot create, change or start a routine, and shows no cost; the dashboard History does.
+   time. A routine with no channel posts nothing in Slack; its results are only in the dashboard History.
+   Slack cannot create, change or start a routine, and shows no cost; the dashboard History does.
 
 ### The unit of work
 
@@ -305,7 +306,7 @@ Read these before you build in the area. They are the owner's to decide.
 | Runner | The VM the agent works in (GCE or a Firecracker slot). |
 | Manager | The VM that runs the controller, the bot, the dashboard and the timers. |
 | Quick answer | A fast, read-only answer before a session. `@@upgrade` turns it into a session. |
-| Routine | A team's scheduled prompt, set by a team admin in the dashboard, that posts its result in one Slack channel. |
+| Routine | A team's scheduled prompt, set by a team admin in the dashboard, that posts its result in one Slack channel, or with no channel, only in the dashboard History. |
 | Routine run | One run of a routine: a session started by the schedule or by Run now, with its result in the routine's History. |
 | Team record | A team's JSON config in the state bucket. |
 | Folder team | A team with `profiles/<name>/profile.conf` in the repo (only FxA now). |

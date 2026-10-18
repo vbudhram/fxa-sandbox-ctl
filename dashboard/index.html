@@ -1502,7 +1502,7 @@ async function loadRoutines(team) {
 function rtDraft(data) {
   const d = data ?? { template: "blank", name: "", prompt: "", schedule: "weekdays 09:00", zone: "America/New_York", repos: [], channel: "", mode: "report", max_usd: 10, skip_no_commits: true };
   const [kind, a, b] = (d.schedule || "weekdays 09:00").split(" ");
-  return { ...d, kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "" };
+  return { ...d, kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "", channel: d.channel ?? "" };
 }
 function rtRoutine(d) {
   const r = { template: d.template, name: d.name, prompt: d.prompt, schedule: d.kind === "weekly" ? `weekly ${d.day} ${d.time}` : `${d.kind} ${d.time}`,
@@ -1525,17 +1525,18 @@ const rtWhen = (iso, zone) => { try { return new Date(iso).toLocaleString("en-GB
 const rtSched = d => { const [k, a, b] = (d.schedule || "").split(" "); return k === "weekly" ? `Weekly on ${a}, ${b}` : `${k === "daily" ? "Daily" : "Weekdays"}, ${a}`; };
 function rtState(r) {
   const v = r.live;
-  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts when a runner is free, within 60 min, and the result goes to <span class="mono">${esc(r.data.channel)}</span>.`;
+  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts when a runner is free, within 60 min, and the result goes to ${r.data.channel ? `<span class="mono">${esc(r.data.channel)}</span>` : "History only"}.`;
   if (v) return `<span class="tag info">Running</span>${v.session ? ` <a class="mono" href="#sessions/live/${esc(v.session)}">${esc(v.session)}</a>` : ""}`;
   return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
 }
 // Only a GitHub PR link becomes a link; anything else in pr_url shows as text.
 const rtPr = u => /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(u || "") ? u : "";
-function rtLast(x) {
+// d: the routine's config. A routine with no channel posts nothing, so its report is in History (D32).
+function rtLast(x, d) {
   if (!x) return "no run yet";
   const why = x.reason ? `: ${esc(x.reason)}` : "", at = x.ended_at ? ` · ${stamp(x.ended_at)}` : "";
   return ({ ok: rtPr(x.pr_url) ? `draft PR <a href="${esc(x.pr_url)}" target="_blank" rel="noopener">${esc(x.pr_url.split("/").slice(-3).join("/"))}</a>` : x.pr_url ? `ok: ${esc(x.pr_url)}` : "ok",
-    report: x.reason ? `report held: ${esc(x.reason)}. Read it in History` : "report posted", nochange: "nothing to change" }[x.state] ?? `${esc(x.state)}${why}`) + at;
+    report: !d?.channel ? "report in History" : x.reason ? `report held: ${esc(x.reason)}. Read it in History` : "report posted", nochange: "nothing to change" }[x.state] ?? `${esc(x.state)}${why}`) + at;
 }
 function rtHist(rows) {
   if (!rows.length) return `<p class="empty">No runs yet.</p>`;
@@ -1551,8 +1552,8 @@ function rtRow(r) {
   const busy = r.live || RT.busy === r.id ? ` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : "";
   return `<div class="rt-row" data-rt-row="${r.id}" style="border-top:1px solid var(--line);padding:var(--s2) 0">
     <div><b>${n}</b> ${rtState(r)}</div>
-    ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", `<span class="mono">${esc(d.channel)}</span>`)}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
-    ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last))}
+    ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", d.channel ? `<span class="mono">${esc(d.channel)}</span>` : "none, History only")}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
+    ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last, d))}
     <div class="acts2" style="margin-top:var(--s1)">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
       ${r.live ? b("stop", "Stop run") : ""}${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}${b("hist", RT.hist?.[r.id] ? "Hide history" : "History")}</div>
     ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : ""}</div>`;
@@ -1581,8 +1582,8 @@ function routineForm(t) {
     ${lab("zone", "Time zone", `<input id="rt-zone" data-rt="zone" value="${esc(d.zone)}"${bad("zone")}>`)}
     ${lab("repos", "Repos", `<span id="rt-repos" tabindex="-1"${bad("repos")}>${repos.map(s => `<label style="margin-right:var(--s2)"><input type="checkbox" data-rt-repo="${esc(s)}"${d.repos.includes(s) ? " checked" : ""}> <span class="mono">${esc(s)}</span></label>`).join("") || "this team has no repos"}</span>`)}
     ${d.repos.length === 1 ? lab("branch", "Branch", `<input id="rt-branch" data-rt="branch" placeholder="the repo's default branch" value="${esc(d.branch)}"${bad("branch")}>`) : ""}
-    ${lab("channel", "Output channel", `<input id="rt-channel" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${esc(d.channel)}"${bad("channel")}>
-      <p class="empty">Invite @fxa-agent to this channel. A team with a private repo, and every security review, needs a private channel that is not shared with another workspace. A private-repo team and a security review on a record team must use one of the team's own channels.</p>`)}
+    ${lab("channel", "Slack channel (optional)", `<input id="rt-channel" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${esc(d.channel)}"${bad("channel")}>
+      <p class="empty">With no channel, nothing posts in Slack and the results show only in History. Invite @fxa-agent to this channel. A team with a private repo, and every security review, needs a private channel that is not shared with another workspace. A private-repo team and a security review on a record team must use one of the team's own channels.</p>`)}
     ${lab("mode", "Output mode", `<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v))).join("")}</select>`)}
     ${lab("max_usd", "Cost limit for each run, USD", `<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${esc(d.max_usd)}"${bad("max_usd")}>`)}
     <div style="margin-bottom:var(--s2)"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
@@ -1671,7 +1672,7 @@ async function rtDo(act, id) {
   await loadRoutines(team);
   // A pause or resume moves the version: the admin's own open edit of this routine takes the new one.
   if (RT.form?.id === r0.id && row(r0.id)) RT.form.version = row(r0.id).version;
-  rtSay(r?.ok ? (act === "run" ? `Queued. It starts when a runner is free, within 60 min, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
+  rtSay(r?.ok ? (act === "run" ? `Queued. It starts when a runner is free, within 60 min, and the result goes to ${r0.data.channel || "History only"}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
 }
 document.addEventListener("click", e => {
   const b = e.target.closest?.("[data-routines] :is([data-rt-new], [data-rt-cancel], [data-rt-save], [data-rt-act])"); if (!b || b.disabled) return;

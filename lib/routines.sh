@@ -295,6 +295,7 @@ routine_tick() {
     if [ -n "$qwhy" ]; then
       [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "$qwhy"), ended_at = $now WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
       qpost=false; _routine_quiet "$qwhy" || qpost="$(_routine_post "$qrid" "$qwhy")" || qpost=false
+      jq -e '.data | fromjson | .channel // empty' <<< "$q" >/dev/null || qpost=false   # no channel: History only (D32)
       skips="$(jq -c --argjson q "$q" --arg why "$qwhy" --argjson post "$qpost" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
         '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: ($q.data | fromjson | .name), channel: ($q.data | fromjson | .channel), template: $i.template, private: $i.private, reason: $why, next: null, post: $post}]' <<< "$skips")"
       continue
@@ -369,6 +370,7 @@ routine_tick() {
       # The channel may no longer be one the team's results can go to, also when an earlier gate gave the reason.
       [ -n "$recheck" ] || recheck="$(_routine_recheck "$team" "$f")"
       [ -z "$recheck" ] || ! _routine_quiet "$recheck" || post=false
+      jq -e '.channel // empty' <<< "$cfg" >/dev/null || post=false   # no channel: History only (D32)
       # template and private: the bot checks the channel before it posts a skip too (D8).
       skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
         --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
@@ -468,7 +470,9 @@ routine_done() {
   fi
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
-  local post=true report="" n guard="state IN (${_ROUTINE_LIVE_STATES})"
+  local post=true report="" n guard="state IN (${_ROUTINE_LIVE_STATES})" nochan=""
+  # A routine saved with no channel posts nothing: its results are in History only (D32).
+  jq -e '.data | fromjson | has("channel") | not' <<< "$r" >/dev/null 2>&1 && nochan=1
   # A run with no session: guarded in the UPDATE too, so a session that took it meanwhile keeps it.
   [ -n "$sess" ] || guard="state IN ('claimed','queued') AND session IS NULL"
   if [ -n "$rf" ]; then
@@ -481,8 +485,9 @@ routine_done() {
     else post=false; fi
     rm -f "$f.diff"
     # The reason marks a held report, so History and the last result say where to read it.
-    [ "$post" = true ] || [ -n "$reason" ] || reason="kept off Slack: it may hold personal data or a secret"
+    [ "$post" = true ] || [ -n "$reason" ] || [ -n "$nochan" ] || reason="kept off Slack: it may hold personal data or a secret"
   fi
+  [ -z "$nochan" ] || post=false
   rm -f "$f"
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),

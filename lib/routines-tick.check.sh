@@ -362,8 +362,20 @@ check "a run claimed under live stays the live tick's after its routine moves to
 
 # A paused team that turned private: its skip does not post to a channel it does not bind.
 rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"
+# A routine with no channel (D32): its skip is recorded but never posts, and a public channel would post it.
+rnc="$(mk fxa "daily 05:00" '{"name": "Quiet look"}')"; db_exec "UPDATE routines SET data = json_remove(data, '$.channel') WHERE id = $rnc;"
+rpub="$(mk fxa "daily 05:00" '{"name": "Loud look"}')"
+out="$(_routine_profile() { echo "$PRIV"; }; _routine_team_paused() { echo held; return 0; }; tick $((T + 20 * 3600 + 30)))"
 check "a team-paused skip of a team that turned private does not post to an unbound channel" "the team is paused: held|false" \
-  "$(_routine_profile() { echo "$PRIV"; }; _routine_team_paused() { echo held; return 0; }; tick $((T + 20 * 3600 + 30)) | jq -r --argjson r "$rh" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')"
+  "$(jq -r --argjson r "$rh" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"' <<< "$out")"
+check "a skip of a routine with no channel is recorded and does not post" "the team is paused: held|false|skipped" \
+  "$(jq -r --argjson r "$rnc" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"' <<< "$out")|$(db_value "SELECT state FROM routine_runs WHERE routine_id = $rnc;")"
+check "the same skip on the team's own channel posts" "true" "$(jq -r --argjson r "$rpub" '.skips[] | select(.routine == $r) | .post' <<< "$out")"
+# done for a routine with no channel: post false, the row keeps the report, and no held reason.
+gn="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rnc, 'manual-13', 'started', 'agent-noch01', $((T - 60))); SELECT last_insert_rowid();")"
+printf 'No issue found in 2 commits.\n' > "$tmp/quiet.md"
+check "done for a routine with no channel answers post false and keeps the report with no reason" "true|false|No issue found in 2 commits.|" \
+  "$(FXA_ROUTINE_NOW=$T routine_done "$gn" --state report --session agent-noch01 --report-file "$tmp/quiet.md" | jq -r '"\(.changed)|\(.post)"')|$(db_value "SELECT trim(report, char(10)) || '|' || coalesce(reason, '') FROM routine_runs WHERE id = $gn;")"
 
 # A queued run with no free runner for 60 min fails with that reason, not one that blames the tick.
 rw="$(mk fxa "weekly sun 05:00")"

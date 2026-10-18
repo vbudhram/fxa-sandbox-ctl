@@ -150,7 +150,12 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     RT_OPEN.add("5");
     t("routines: an open report stays open on a repaint", rtHist([{ id: 5, started_at: 1, state: "report", report: "x" }]).includes(`<details data-rt-run="5" open>`), true);
     RT_OPEN.clear();
-    t("routines: a held report says to read it in History", /held.*History/.test(rtLast({ state: "report", reason: "kept off Slack" })), true);
+    t("routines: a held report says to read it in History", /held.*History/.test(rtLast({ state: "report", reason: "kept off Slack" }, { channel: "C0123ABCD" })), true);
+    t("routines: the report of a routine with no channel is in History", rtLast({ state: "report" }, {}), "report in History");
+    t("routines: a queued run of a routine with no channel goes to History only", /result goes to History only/.test(rtState({ live: { state: "queued" }, data: {} })), true);
+    t("routines: a routine with no channel shows History only for its channel", rtRow({ id: 1, version: 1, paused: 0, next: [], data: { name: "x", schedule: "daily 09:00", zone: "UTC", mode: "report" } }).includes("none, History only"), true);
+    t("routines: a saved routine with no channel edits and saves with no channel", rtRoutine(rtDraft({ name: "x", schedule: "daily 09:00", zone: "UTC", mode: "report", repos: [] })).channel, "");
+    t("routines: the channel field says it is optional", /Slack channel \(optional\)/.test(g) && /results show only in History/.test(g), true);
     t("routines: a queued run promises a free runner, not a minute", /starts when a runner is free, within 60 min/.test(rtState({ live: { state: "queued" }, data: { channel: "C0123ABCD" } })), true);
     t("routines: only a GitHub PR URL is a link", [rtLast({ state: "ok", pr_url: "javascript:alert(1)" }), rtLast({ state: "ok", pr_url: "https://evil.example.com/pull/1" }), rtLast({ state: "ok", pr_url: "https://github.com/mozilla/fxa/pull/12" })].map(h => /<a /.test(h)).join(","), "false,false,true"); }
   { const team = { profile: "fxa", repos: [] }, list = { outerHTML: "old list" }, form = { value: "typed" };

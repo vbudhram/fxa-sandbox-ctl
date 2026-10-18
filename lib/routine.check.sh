@@ -86,6 +86,12 @@ check "a routine that is not a JSON object" "routine: must be a JSON object" \
 check "an unreadable bot .env fails closed" "channel: cannot read the bot access rules" \
   "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/missing.env" 2>&1 >/dev/null)"
 check "a valid routine on the team's own channel passes" "ok" "$(v secret priv.json '{}')"
+# No channel (D32): nothing posts in Slack, so the channel rules do not apply, and the saved routine has no channel.
+check "a private-repo team with no channel passes" "ok" "$(v secret priv.json '{"channel":""}')"
+check "a security review with no channel passes" "ok" "$(v second open.json '{"template":"security-review","repos":["mozilla/two"],"channel":null}')"
+jq -cn --argjson b "$base" '$b | del(.channel)' > "$tmp/r.json"
+check "a routine with no channel saves with no channel key" "false" \
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" | jq 'has("channel")')"
 jq -cn --argjson b "$base" '$b + {channel: "https://example.slack.com/archives/C0OWN00"}' > "$tmp/r.json"
 check "a pasted channel link is stored as the channel ID" "C0OWN00" \
   "$(python3 -I "$here/routine.py" validate "$tmp/r.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" | jq -r .channel)"

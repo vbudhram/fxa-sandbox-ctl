@@ -158,7 +158,9 @@ def check(r, team, profile, index, env, count):
     m = LINK.fullmatch(ch) if isinstance(ch, str) else None
     if m:
         ch = r["channel"] = m.group(1)
-    if not isinstance(ch, str) or not CHANNEL.fullmatch(ch):
+    if ch in (None, ""):
+        r.pop("channel", None)  # no channel: nothing posts in Slack, the results are in History only (D32)
+    elif not isinstance(ch, str) or not CHANNEL.fullmatch(ch):
         bad.append("channel: Use a Slack channel ID (C0123ABCD) or a link to the channel")
     else:
         own, other = channels(team, index, env)
