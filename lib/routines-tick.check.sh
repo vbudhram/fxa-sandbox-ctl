@@ -318,6 +318,13 @@ check "run-now refuses a routine whose channel the private team does not bind" \
   "ERROR: routine ${rb} cannot run now: the routine no longer passes its checks: channel: A team with a private repo posts only to one of this team's channels|0" \
   "$(_routine_profile() { echo "$PRIV"; }; FXA_ROUTINE_NOW=$((T + 15 * 3600)) routine_runnow fxa "$rb" 2>&1)|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rb AND state = 'queued';")"
 
+# A queued Run now meets the same D8 check when the tick hands it on; only a channel refusal stays out of Slack.
+rq="$(mk fxa "daily 03:00" '{"name": "Queued look", "channel": "C0OTHER"}')"
+FXA_ROUTINE_NOW=$((T + 16 * 3600)) routine_runnow fxa "$rq" >/dev/null
+check "a queued run of a team that turned private is skipped, not claimed, and its channel refusal does not post" \
+  "the routine no longer passes its checks: channel: A team with a private repo posts only to one of this team's channels|false|skipped" \
+  "$(_routine_profile() { echo "$PRIV"; }; tick $((T + 16 * 3600 + 30)) | jq -r --argjson r "$rq" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')|$(db_value "SELECT state FROM routine_runs WHERE routine_id = $rq AND trigger = 'manual';")"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

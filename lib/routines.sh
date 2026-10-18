@@ -269,6 +269,10 @@ _routine_recheck() {
   [ "$rc" = 0 ] || echo "the routine no longer passes its checks: $(printf '%s\n' "$err" | head -1)"
 }
 
+# _routine_quiet <why>   True for a recheck refusal whose skip must not post: the channel itself, or a team that
+# does not load (its channels are unknown). Other refusals post once, as any skip (D23).
+_routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: channel:"*) return 0 ;; *) return 1 ;; esac; }
+
 routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
   local env="$2" now; now="$(_routine_now)"
@@ -277,19 +281,29 @@ routine_tick() {
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
-  local queued q recheck runs="[]" skips="[]"
-  queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  local queued q qid qrid qt qwhy qpost recheck runs="[]" skips="[]"
+  local r f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
     [ "$free" -ge 2 ] || continue
+    # The saved routine against its team as it is now (D8), as for a scheduled run.
+    qid="$(jq -r .id <<< "$q")"; qrid="$(jq -r .routine_id <<< "$q")"; qt="$(jq -r .team <<< "$q")"
+    jq -j '.data' <<< "$q" > "$f"; qwhy="$(_routine_recheck "$qt" "$f")"
+    if [ -n "$qwhy" ]; then
+      [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "$qwhy"), ended_at = $now WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
+      qpost=false; _routine_quiet "$qwhy" || qpost="$(_routine_post "$qrid" "$qwhy")" || qpost=false
+      skips="$(jq -c --argjson q "$q" --arg why "$qwhy" --argjson post "$qpost" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+        '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: ($q.data | fromjson | .name), channel: ($q.data | fromjson | .channel), template: $i.template, private: $i.private, reason: $why, next: null, post: $post}]' <<< "$skips")"
+      continue
+    fi
     [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'
       AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $(jq -r .routine_id <<< "$q") AND o.id != $(jq -r .id <<< "$q") AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
     free=$((free - 1))
     runs="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
       '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
-  local r f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   local spaused; spaused="$(_routine_sessions_paused)"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
