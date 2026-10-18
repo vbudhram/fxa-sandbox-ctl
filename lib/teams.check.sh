@@ -138,11 +138,11 @@ ss() { printf '%s' "$3" | FXA_TEAM_SECRETS_SA="${4-writer@p.iam.gserviceaccount.
 mkdir -p "$tmp/tsec2/sx"; echo cached > "$tmp/tsec2/sx/jira.basic"; : > "$tmp/gsec"
 check "a secret the record does not name is refused; no writer account is refused; a bad Jira value is refused" "1|1|1" \
   "$(ss sx fxa-team-sx--other v | grep -c 'does not name')|$(ss sx fxa-team-sx--db v '' | grep -c 'no writer account')|$(ss sx fxa-team-sx--jira 'not-a-cred' | grep -c 'email:token')"
-out="$(ss sx fxa-team-sx--jira 'bot@example.com:tok9')"; out2="$(ss sx fxa-team-sx--db 'DB=x9')"
+out="$(ss sx fxa-team-sx--jira 'bot@example.com:tok-s9')"; out2="$(ss sx fxa-team-sx--db 'DB=val-x9')"
 check "a new secret is created, an existing one gets a version, every call as the writer, the value only in a file" "1|1|4|0" \
-  "$(grep -c 'secrets create fxa-team-sx--jira .*--impersonate-service-account writer@p.iam.gserviceaccount.com.* | stdin=bot@example.com:tok9' "$tmp/gsec")|$(grep -c 'secrets versions add fxa-team-sx--db .*| stdin=DB=x9' "$tmp/gsec")|$(grep -c 'impersonate-service-account writer@' "$tmp/gsec")|$(cut -d'|' -f1 "$tmp/gsec" | grep -c 'tok9\|x9')"
+  "$(grep -c 'secrets create fxa-team-sx--jira .*--impersonate-service-account writer@p.iam.gserviceaccount.com.* | stdin=bot@example.com:tok-s9' "$tmp/gsec")|$(grep -c 'secrets versions add fxa-team-sx--db .*| stdin=DB=val-x9' "$tmp/gsec")|$(grep -c 'impersonate-service-account writer@' "$tmp/gsec")|$(cut -d'|' -f1 "$tmp/gsec" | grep -c 'tok-s9\|val-x9')"
 check "storing drops the team's cached Jira credential, and the audit names the secret, not its value" "no|1|0" \
-  "$([ -e "$tmp/tsec2/sx/jira.basic" ] && echo yes || echo no)|$(teams_audit sx | jq '[.[] | select(.action == "secret" and .changed == "fxa-team-sx--db")] | length')|$(teams_audit sx | grep -c 'x9\|tok9')"
+  "$([ -e "$tmp/tsec2/sx/jira.basic" ] && echo yes || echo no)|$(teams_audit sx | jq '[.[] | select(.action == "secret" and .changed == "fxa-team-sx--db")] | length')|$(teams_audit sx | grep -c 'val-x9\|tok-s9')"
 check "the team's secrets read as present or missing" '{"fxa-team-sx--jira":"missing","fxa-team-sx--db":"present"}' "$(teams_secret_status sx)"
 gcloud() { local a; for a in "$@"; do case "$a" in (--data-file=*) od -c < "${a#*=}" | head -1 | tr -s ' ' > "$tmp/gsec.bytes" ;; esac; done; case "$*" in *describe*) return 0 ;; esac; }
 printf 'K1\n' | FXA_TEAM_SECRETS_SA=w@p FXA_TEAMS_SECRET_DIR="$tmp/tsec2" teams_secret_set sx fxa-team-sx--db >/dev/null 2>&1
