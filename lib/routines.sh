@@ -7,7 +7,7 @@
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
 #   routine pause | resume | delete | run-now | stop <team> <id>
 #   routine tick --env live|dev                            the bot's 60 s pass: gates, claims, reconcile
-#   routine done <run> --state <s> --session <key> [...] | posted <run>   the bot's results
+#   routine done <run> --state <s> [--session <key>] [...] | posted <run>   the bot's results
 # A command that names a team refuses a routine of another team.
 
 _ROUTINE_PY() { python3 -I "${SANDBOX_ROOT}/lib/routine.py" "$@"; }
@@ -236,6 +236,18 @@ _routine_heads() {
   printf '%s\n' "$out"
 }
 
+# _routine_run_info <routine id> <team> <config json>   What the bot posts and checks for a run: the name, mode,
+# template, repos and branch, private (the team has a private repo; true when the team does not load, so the
+# bot's private-channel check fails closed), and since (the start of the last run with a result, or null).
+_routine_run_info() {
+  local priv since
+  priv="$(_routine_profile "$2" 2>/dev/null | jq -r 'if .private == false then "false" else "true" end' 2>/dev/null)" || priv=true
+  [ "$priv" = false ] || priv=true
+  since="$(db_value "SELECT started_at FROM routine_runs WHERE routine_id = $1 AND state IN ('ok','report','nochange') ORDER BY id DESC LIMIT 1;")" || since=""
+  jq -c --argjson p "$priv" --arg s "$since" '{name, mode, template: (.template // "blank"), repos, branch: (.branch // null), private: $p,
+    since: (if $s == "" then null else ($s | tonumber) end)}' <<< "$3"
+}
+
 # routine_tick --env <live|dev>   One pass: heartbeat, reconcile, then each routine of that env's latest period.
 # Answers {"runs": [...], "skips": [...]} for the bot. A store error answers nothing and exits 1.
 routine_tick() {
@@ -255,7 +267,8 @@ routine_tick() {
     [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'
       AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $(jq -r .routine_id <<< "$q") AND o.id != $(jq -r .id <<< "$q") AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
     free=$((free - 1))
-    runs="$(jq -c --argjson q "$q" '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)}]' <<< "$runs")"
+    runs="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
+      '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
   local r f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   local spaused; spaused="$(_routine_sessions_paused)"
@@ -313,12 +326,13 @@ routine_tick() {
     [ "${n%%|*}" = 1 ] || continue
     if [ "$st" = claimed ]; then
       free=$((free - 1))
-      runs="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" '. + [{run: $id, routine: $rid, team: $t, trigger: "schedule", channel: $c.channel}]' <<< "$runs")"
+      runs="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
+        '. + [{run: $id, routine: $rid, team: $t, trigger: "schedule", channel: $c.channel} + $i]' <<< "$runs")"
     else
       post="$(_routine_post "$id" "$why")" || post=false
       [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
       skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
-        '. + [{run: $id, routine: $rid, team: $t, channel: $c.channel, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
+        '. + [{run: $id, routine: $rid, team: $t, name: $c.name, channel: $c.channel, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
     fi
   done < <(jq -c '.[]' <<< "$rows")
   rm -f "$f"
@@ -383,7 +397,7 @@ _routine_session_cost() {
   jq -r '.spent_usd // empty' "${d}/tokens/${tok}.json" 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+)?$' || true
 }
 
-# routine done <run> --state ok|report|nochange|failed|stopped --session <key> [--pr <url>] [--reason <text>]
+# routine done <run> --state ok|report|nochange|failed|stopped [--session <key>] [--pr <url>] [--reason <text>]
 #   [--report-file <f>]   The bot's result. Idempotent: a run in an end state does not change. A report goes
 #   through lib/pii_guard.py: a finding answers post false, and the report stays only in the row (D10).
 #   Answers {changed, state, post, next}.
@@ -396,13 +410,14 @@ routine_done() {
   done
   _routine_id "$run" || return 1
   [[ "$state" =~ ^(ok|report|nochange|failed|stopped)$ ]] || { echo "ERROR: --state must be ok, report, nochange, failed or stopped" >&2; return 1; }
-  [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
+  # No --session: a run the bot refused before any session (its channel check), so the row must have none.
+  [ -z "$sess" ] || [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
   [ -z "$pr" ] || [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "ERROR: --pr must be a GitHub PR link" >&2; return 1; }
   [ ${#reason} -le 300 ] && [[ "$reason" != *$'\n'* ]] || { echo "ERROR: --reason is one line of at most 300 characters" >&2; return 1; }
   local j r; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
-  [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess}'s" >&2; return 1; }
+  [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; return 1; }
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
   local post=true report="" n
@@ -419,7 +434,7 @@ routine_done() {
   rm -f "$f"
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
-      cost_usd = $(_routine_session_cost "$sess" | grep . || echo cost_usd), ended_at = $(_routine_now)
+      cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now)
       WHERE id = ${run} AND state IN (${_ROUTINE_LIVE_STATES}); SELECT changes();")" || n=""
   case "$n" in
     1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)}' ;;

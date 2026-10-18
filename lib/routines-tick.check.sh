@@ -264,6 +264,25 @@ echo '{"key":"agent-late02","state":"stopped"}' > "$tmp/agent-late02.json"; gm="
 routine_reconcile $((NOWR + 601))
 check "10 min after the session stopped, reconcile fails the run" "failed|the session stopped with no result" "$(s_of "$gm")"
 
+# What the bot posts and checks comes with each run: name, mode, template, repos, branch, the team's private
+# flag (true when the team does not load: fail closed), and the start of the last run with a result.
+ri="$(mk fxa "daily 20:00" '{"branch": "main"}')"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($ri, '2026-10-18', 'ok', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"2222222222222222222222222222222222222222\"}}'), $((T - 3600)));"
+check "a run carries name, mode, template, repos, branch, private and since" \
+  '{"name":"Code review","mode":"report","template":"code-review","repos":["mozilla/fxa"],"branch":"main","private":false,"since":'"$((T - 3600))"'}' \
+  "$(_routine_profile() { echo '{"private": false}'; }; tick $((T + 11 * 3600 + 30)) | jq -c --argjson r "$ri" '.runs[] | select(.routine == $r) | {name, mode, template, repos, branch, private, since}')"
+rj="$(mk fxa "daily 20:30")"
+check "a team that does not load marks the run private, and a first run has no since" "true|null" \
+  "$(_routine_profile() { return 1; }; tick $((T + 11 * 3600 + 1830)) | jq -r --argjson r "$rj" '.runs[] | select(.routine == $r) | "\(.private)|\(.since)"')"
+# A run the bot refused before any session (its channel check): done with no --session fails it; a run with a
+# session still needs that session.
+nc="$(db_value "SELECT id FROM routine_runs WHERE routine_id = $rj AND state = 'claimed';")"
+check "done with no --session fails a claimed run that has no session" "true|failed|private channel" \
+  "$(routine_done "$nc" --state failed --reason "private channel" | jq -r '"\(.changed)|\(.state)"')|$(db_value "SELECT reason FROM routine_runs WHERE id = $nc;")"
+ns="$(st started agent-sess01 $((N - 60)))"
+check "done with no --session is refused for a run with a session" "ERROR: routine run ${ns} is not session (none)'s|started" \
+  "$(routine_done "$ns" --state failed --reason x 2>&1)|$(s_of "$ns" | cut -d'|' -f1)"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
