@@ -58,6 +58,8 @@ check "a built-in team's name is refused" "1" "$(bad fxa '{ "schema": 1, "repos"
 hostname_rec() { printf '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "%s" }' "$1"; }
 r=""; for hn in agent-sessions agent-sessions-dev fxa-ai-fixme llm-proxy mcp-gateway teams; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
 check "a name the host uses under ~/.claude/state is refused (the team would get that store)" "1 1 1 1 1 1" "${r# }"
+r=""; for hn in new all routines; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
+check "the dashboard route words new, all and routines are refused as team names" "1 1 1" "${r# }"
 check "a label with a command is refused, and nothing runs" "1|no" \
   "$(bad lb '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "lb", "label": "$(touch /tmp/team-record-lb)" }' | grep -c 'label')|$([ -e /tmp/team-record-lb ] && echo yes || echo no)"
 check "a repo slug with a shell character is refused" "1" "$(bad sl '{ "schema": 1, "name": "sl", "repos": [ { "slug": "a/b;rm", "role": "work" } ] }' | grep -c 'slug')"
