@@ -956,6 +956,9 @@ function ownerName(s) {
   if (s.owner_name) return s.owner_name;
   return (AGENTS?.sessions ?? []).find(x => x.owner === s.owner && x.owner_name)?.owner_name || s.owner || "";
 }
+// A routine's run: its name and team, linked to the team's Routines group (D31).
+const sessRoutine = s => s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
+const sessRoutineLink = s => s.routine_run ? `<a href="#teams/routines/${esc(s.profile || "fxa")}">${esc(sessRoutine(s))}</a>` : "";
 const sessTabOf = s => s.state === "paused" ? "paused" : LIVE_SESSION.includes(s.state) ? "live" : "stopped";
 const sessLink = (s, label) => s ? `<a class="key" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(label)}</a>` : `<span class="key">${esc(label)}</span>`;
 // The list's day groups, from a session's start (seconds).
@@ -2496,7 +2499,7 @@ function sideGroups() {
     const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s);
       // The title is what the person first asked: the chain's first session's request.
       return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: firstLine(ch[ch.length - 1].request),
-        tip: stamp(s.created), m: [c ? usd(c) : "", SOWNER ? "" : ownerName(s), ageOf(s.created), SESS_TAB === "live" ? st : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
+        tip: stamp(s.created), m: [c ? usd(c) : "", sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [`${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
@@ -2569,7 +2572,7 @@ function sessionDetails(s) {
   const nr = "not recorded for this session", rs = num(s.runner_s), peak = (() => { try { return JSON.parse(s.res_peak || "null"); } catch { return null; } })();
   return `${closeBtn}
     <div><h4>Session</h4>${kvr("State", esc(st))}${kvr("Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`)}${kvr(ch.length > 1 ? `Cost, ${ch.length} sessions` : "Cost", (convUsd ? usd(convUsd) : "—") + one)}
-      ${kvr("Turns", esc(convTurns) + (ch.length > 1 ? ` <span class="na">· this session ${esc(s.turns ?? 0)}</span>` : ""))}${kvr("Owner", esc(ownerName(s) || "unknown"))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
+      ${kvr("Turns", esc(convTurns) + (ch.length > 1 ? ` <span class="na">· this session ${esc(s.turns ?? 0)}</span>` : ""))}${s.routine_run ? kvr("Routine", sessRoutineLink(s)) : kvr("Owner", esc(ownerName(s) || "unknown"))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
       ${pauseIn != null ? kvr("Idle pause in", short(pauseIn)) : ""}${endsIn != null ? kvr("Sandbox ends in", short(endsIn)) : ""}</div>
     <div><h4>Usage by model</h4>${usageHtml(s.key)}</div>
     <div><h4>Runner</h4>${s.boot_s ? kvr("Boot", `${Math.round(num(s.boot_s))} s${s.boot_backend ? ` · ${esc(s.boot_backend)}` : ""}`) : ""}

@@ -2228,7 +2228,7 @@ cmd_task() {
     --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" \
     '{key: $key, owner: $owner, source: $source, branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)
-     + (if $cfg == null then {} else {routine_run: $run, routine_mode: $cfg.mode, untrusted: "1", cap_usd: ($cfg.max_usd // 10),
+     + (if $cfg == null then {} else {routine_run: $run, routine_name: $cfg.name, routine_mode: $cfg.mode, untrusted: "1", cap_usd: ($cfg.max_usd // 10),
           base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end) end)' > "$(_session_file "$key")"
   _session_unlock .task-cap
   _session_db_sync "$key"

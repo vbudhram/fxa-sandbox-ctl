@@ -42,6 +42,7 @@ task pyfxa agent-rt10 --routine-run "$r1" --thread C0OWN00:1790000000.000100 >/d
 check "the session is a routine session: owner routine:<team>/<id>, untrusted, the routine branch as base, the run and the cap" \
   "routine:pyfxa/${rid1}|routine|1|release-1|${r1}|7|report" \
   "$(jq -r '[.owner, .source, .untrusted, .base, .routine_run, .cap_usd, .routine_mode] | map(tostring) | join("|")' "$tmp/agent-rt10.json")"
+check "the session keeps the routine's name for the Sessions page" "Code review" "$(jq -r .routine_name "$tmp/agent-rt10.json")"
 check "the run is started by that session" "started|agent-rt10" "$(db_value "SELECT state || '|' || session FROM routine_runs WHERE id = $r1;")"
 p="$tmp/agent-rt10.prompt.md"
 open="$(grep -o '^<routine-[0-9a-f]\{12\}>$' "$p")"; close="$(grep -o '^</routine-[0-9a-f]\{12\}>$' "$p")"
