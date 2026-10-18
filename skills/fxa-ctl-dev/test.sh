@@ -5,7 +5,8 @@
 #   test.sh mac|here   this host only (here: any OS, as vm.sh test runs it on the manager)
 #   test.sh linux      the Ubuntu container only
 #   test.sh changed [base]   this host only, only the checks for the files changed since base (origin/main):
-#                      a changed check, and each check that names a changed file. CI runs the full suite on push.
+#                      a changed check, and each check that names a changed file; a Python service's tests;
+#                      the bot e2e when fake-ctl.sh changed (FXA_BOT_REPO, default ../fxa-agent-bot). CI runs the full suite on push.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -86,7 +87,7 @@ run_linux() {
 
 # run_changed <base>   The checks that name a file changed since base (committed, staged, unstaged or new).
 run_changed() {
-  local base="${1:-origin/main}" f b c picked=() bad=0
+  local base="${1:-origin/main}" f b c picked=() bad=0 py="" e2e=""
   local files; files="$( { git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files -o --exclude-standard; } 2>/dev/null | sort -u)"
   [ -n "$files" ] || { echo "$HOST: no changed files since $base"; return; }
   local all; all="$(ls lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh 2>/dev/null)"
@@ -107,14 +108,39 @@ run_changed() {
             | sed -n 's/^@@[^@]*@@ *\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p; s/^[+-]\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p' | sort -u); do
           for c in $(grep -lw -- "$fn" $all 2>/dev/null); do picked+=("$c"); done
         done ;;
-      # Any other file: each check that names its path or its file name.
-      *) for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done ;;
+      # Any other file: each check that names its path or its file name; a Python module also by
+      # its name, since a check loads it with "import server".
+      *) for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done
+         case "$f" in *.py) b="$(basename "$f" .py)"
+           for c in $(grep -lE -- "(import [A-Za-z0-9_, ]*|from )$b([^A-Za-z0-9_]|\$)" $all 2>/dev/null); do picked+=("$c"); done ;; esac ;;
+    esac
+    # The Python services have their own tests, outside the *.check.sh pool.
+    case "$f" in
+      infra/llm-proxy/*) py+=" infra/llm-proxy/proxy_test.py" ;;
+      infra/mcp-gateway/*) py+=" infra/mcp-gateway/gateway_test.py" ;;
+      desktop-gateway/*) py+=" desktop-gateway/check.py" ;;
+      skills/fxa-ctl-dev/fake-ctl.sh) e2e=1 ;;
     esac
   done
-  [ ${#picked[@]} -gt 0 ] || { echo "$HOST: no check names the changed files; CI runs the full suite"; [ "$bad" = 0 ] || rc=1; return; }
-  picked=($(printf '%s\n' "${picked[@]}" | sort -u))
+  py="$(printf '%s\n' $py | sort -u)"
+  [ ${#picked[@]} -gt 0 ] || [ -n "$py" ] || [ -n "$e2e" ] || { echo "$HOST: no check names the changed files; CI runs the full suite"; [ "$bad" = 0 ] || rc=1; return; }
+  [ ${#picked[@]} -eq 0 ] || picked=($(printf '%s\n' "${picked[@]}" | sort -u))
   echo "$HOST: ${#picked[@]} checks for the changed files"
-  run_pool "$HOST" "${picked[@]}" || bad=1
+  [ ${#picked[@]} -eq 0 ] || run_pool "$HOST" "${picked[@]}" || bad=1
+  for t in $py; do
+    if [ "$t" = desktop-gateway/check.py ] && ! python3 -c 'import aiohttp, google.auth' 2>/dev/null; then
+      echo "skip $HOST: $t (pip install -r desktop-gateway/requirements.txt to run it)"; continue; fi
+    o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }
+  done
+  # The bot's e2e plays every scenario against fake-ctl.sh; a ctl push to main does not run it.
+  if [ -n "$e2e" ]; then
+    local bot="${FXA_BOT_REPO:-$ROOT/../fxa-agent-bot}"
+    if [ -f "$bot/package.json" ]; then
+      echo "$HOST: fake-ctl.sh changed: the bot e2e in $bot"
+      ( cd "$bot" && FXA_CTL_REPO="$ROOT" npm run -s e2e ) > "${TMPDIR:-/tmp}/fxa-e2e-$$.log" 2>&1 \
+        || { echo "FAIL $HOST: the bot e2e (log: ${TMPDIR:-/tmp}/fxa-e2e-$$.log)"; bad=1; }
+    else echo "skip $HOST: the bot e2e (no bot tree at $bot; set FXA_BOT_REPO)"; fi
+  fi
   [ "$bad" = 0 ] && echo "$HOST: the changed files' checks pass" || rc=1
 }
 
