@@ -1544,7 +1544,7 @@ function rtHist(rows) {
 }
 function rtRow(r) {
   const d = r.data, n = esc(d.name), b = (act, label, extra = "") => `<button data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
-  const busy = r.live ? ` disabled title="A run is in progress"` : "";
+  const busy = r.live || RT.busy === r.id ? ` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : "";
   return `<div class="rt-row" data-rt-row="${r.id}" style="border-top:1px solid var(--line);padding:var(--s2) 0">
     <div><b>${n}</b> ${rtState(r)}</div>
     ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", `<span class="mono">${esc(d.channel)}</span>`)}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
@@ -1582,7 +1582,7 @@ function routineForm(t) {
     ${lab("mode", "Output mode", `<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v))).join("")}</select>`)}
     ${lab("max_usd", "Cost limit for each run, USD", `<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${esc(d.max_usd)}"${bad("max_usd")}>`)}
     <div style="margin-bottom:var(--s2)"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
-    <div class="acts2"><button data-rt-save>${f.id ? "Save" : "Create"}</button><button data-rt-cancel>Cancel</button></div></div>`;
+    <div class="acts2"><button data-rt-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Create"}</button><button data-rt-cancel>Cancel</button></div></div>`;
 }
 function routinesGroup(t, now) {
   if (!TEAM_ADMIN?.admin) return `<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
@@ -1610,23 +1610,26 @@ document.addEventListener("input", e => {
     if (x) Object.assign(f.d, { name: x.name, prompt: x.prompt, mode: x.locked_mode || x.mode, skip_no_commits: x.skip_no_commits }); }
   if (["template", "kind"].includes(k)) rtPaint();
 });
-document.addEventListener("click", async e => {
-  if (!e.target.closest?.("[data-routines]")) return;
-  const team = RT.team, base = `/api/teams/${encodeURIComponent(team)}/routines`, row = id => (RT.list ?? []).find(r => String(r.id) === String(id));
+// One routine action: new, cancel, save (create or edit), or a row verb. The click handler only finds the button.
+async function rtDo(act, id) {
+  const team = RT.team, base = `/api/teams/${encodeURIComponent(team)}/routines`, row = x => (RT.list ?? []).find(r => String(r.id) === String(x));
   const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     return [r, await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" }]; };
-  if (e.target.closest("[data-rt-new]")) { RT.form = { d: rtDraft(), errs: {} }; RT.msg = ""; return rtPaint(); }
-  if (e.target.closest("[data-rt-cancel]")) { RT.form = null; return rtPaint(); }
-  if (e.target.closest("[data-rt-save]")) {
-    const f = RT.form, [r, j] = await post(f.id ? `${base}/${f.id}` : base, { routine: rtRoutine(f.d), ...(f.id ? { version: f.version } : {}) });
+  if (act === "new") { RT.form = { d: rtDraft(), errs: {} }; RT.msg = ""; return rtPaint(); }
+  if (act === "cancel") { RT.form = null; return rtPaint(); }
+  if (act === "save") {
+    // A second click while the first save is on its way must not create a second routine.
+    const f = RT.form; if (!f || f.saving) return;
+    f.saving = true; rtPaint();
+    const [r, j] = await post(f.id ? `${base}/${f.id}` : base, { routine: rtRoutine(f.d), ...(f.id ? { version: f.version } : {}) });
+    f.saving = false;
     if (r?.ok) { RT.form = null; await loadRoutines(team); return rtSay(j.out || "saved", true); }
     if (r?.status === 409) { f.errs = {}; return rtSay("Someone changed this routine since you opened it. Load it again to see their change.", false); }
     const { errs, summary } = rtErrs(j.error || r?.status); f.errs = errs; rtSay(summary, false);
     const first = RT_FIELDS.find(k => errs[k]); if (first) document.getElementById(`rt-${first}`)?.focus();
     return;
   }
-  const b = e.target.closest("[data-rt-act]"); if (!b) return;
-  const id = b.dataset.rtId, act = b.dataset.rtAct, r0 = row(id); if (!r0) return;
+  const r0 = row(id); if (!r0) return;
   if (act === "edit") { RT.form = { id: r0.id, version: r0.version, d: rtDraft(r0.data), errs: {} }; RT.msg = ""; return rtPaint(); }
   if (act === "hist") {
     if (RT.hist?.[id]) { delete RT.hist[id]; return rtPaint(); }
@@ -1635,11 +1638,16 @@ document.addEventListener("click", async e => {
     (RT.hist ??= {})[id] = j; return rtPaint();
   }
   if (act === "delete" && RT.arm !== r0.id) { RT.arm = r0.id; return rtSay(`Delete ${r0.data.name}? Its run history stays. Click Delete again.`, false); }
-  RT.arm = null;
-  b.disabled = true;
+  if (RT.busy) return;
+  RT.arm = null; RT.busy = r0.id; rtPaint();
   const [r, j] = await post(`${base}/${id}/${act}`, {});
+  RT.busy = null;
   await loadRoutines(team);
   rtSay(r?.ok ? (act === "run" ? `Queued. It starts within a minute, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest?.("[data-routines] :is([data-rt-new], [data-rt-cancel], [data-rt-save], [data-rt-act])"); if (!b || b.disabled) return;
+  rtDo(b.dataset.rtAct ?? (b.hasAttribute("data-rt-new") ? "new" : b.hasAttribute("data-rt-cancel") ? "cancel" : "save"), b.dataset.rtId);
 });
 
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
