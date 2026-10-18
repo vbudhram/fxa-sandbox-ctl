@@ -454,6 +454,25 @@
 
   /* ── pipeline lanes: one belt per ticket ── */
   #s-lanes { overflow-x:auto; }
+  /* The Board: three columns, one at 900px or less in the order Blocked, Up next, Running. */
+  .bcols { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--s4); align-items:start; }
+  @media (max-width:900px) { .bcols { grid-template-columns:minmax(0,1fr); } }
+  .bcol { background:var(--panel); border:1px solid var(--card-border); border-radius:var(--r-lg); box-shadow:var(--shadow); min-width:0; }
+  .bcol h2 { font-size:var(--t-body); margin:0; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); }
+  .bcol h2 .c { color:var(--dim); font-weight:400; margin-left:var(--s1); }
+  .bcol .empty { padding:var(--s3) var(--s4); margin:0; }
+  .bgrp { font-size:var(--t-label); text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0; padding:var(--s2) var(--s4) 0; }
+  .brow { display:grid; gap:2px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); } .brow:last-child { border-bottom:0; }
+  .brow.sel { background:var(--infobg); }
+  .brow .top { display:flex; gap:var(--s2); align-items:baseline; min-width:0; }
+  .brow .brow-k { display:flex; gap:var(--s2); align-items:baseline; min-width:0; color:inherit; text-decoration:none; } .brow .brow-k:hover .t { text-decoration:underline; }
+  .brow .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .brow .pos { font-family:var(--mono); font-size:var(--t-label); color:var(--dim); min-width:1.5em; text-align:right; font-variant-numeric:tabular-nums; }
+  .brow .meta { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; font-size:var(--t-label); color:var(--dim); } .brow .who { color:var(--ink); font-weight:600; }
+  .brow .why { font-size:var(--t-sub); overflow-wrap:anywhere; }
+  .bwait summary { cursor:pointer; padding:var(--s2) var(--s4); font-size:var(--t-sub); color:var(--dim); border-top:1px solid var(--line); }
+  .breview { color:var(--dim); font-size:var(--t-sub); }
+  .bnext { background:var(--warnbg); border-radius:var(--r-sm); padding:var(--s2) var(--s3); font-size:var(--t-sub); } .bnext b { color:var(--warn); }
   .lanes { min-width:720px; }
   .lanes .head, .lane .row { display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); align-items:center; }
   .lanes .head { border-bottom:1px solid var(--line); padding-bottom:var(--s2); }
@@ -564,6 +583,7 @@ table.usage tr.sel td { background: var(--infobg); }
   <section class="wide" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-lessons" data-views="lessons"></section>
   <section class="wide" id="s-teams" data-views="teams"></section>
+  <section class="wide" id="s-board" data-views="pipeline:board"></section>
   <section class="wide" id="s-lanes" data-views="pipeline:belts"></section>
   <section class="wide" id="s-done" data-views="pipeline:done"></section>
   <section class="wide" id="s-sessions" data-views="none"></section>
@@ -896,7 +916,7 @@ function renderRunning() {
   const { cards } = merged(), ss = AGENTS?.sessions ?? [], med = SNAP?.telemetry?.median_minutes;
   const runners = cards.filter(c => !c.ci), live = ss.filter(s => LIVE_SESSION.includes(s.state));
   const recent = sessHeads(ss).filter(s => !LIVE_SESSION.includes(s.state)).slice(0, 6);
-  const rows = runners.map(t => `<a class="runrow" href="#pipeline"><span class="ldot live"></span><span class="t">${esc(t.key)} · ${esc(plainMd(t.agent?.last_tool || t.agent?.last_text || t.stage))}</span><span class="m">${short(t.elapsed_seconds)}${med ? ` of ${med}m` : ""}</span></a>`)
+  const rows = runners.map(t => `<a class="runrow" href="#pipeline/belts"><span class="ldot live"></span><span class="t">${esc(t.key)} · ${esc(plainMd(t.agent?.last_tool || t.agent?.last_text || t.stage))}</span><span class="m">${short(t.elapsed_seconds)}${med ? ` of ${med}m` : ""}</span></a>`)
     .concat(live.map(s => `<a class="runrow" href="#sessions/live/${esc(s.key)}"><span class="ldot live"></span><span class="t">${esc(convTitle(s))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${s.agent_alive ? "working" : "waiting on owner"}</span></a>`));
   put("s-running", head("running now", rows.length, AGENTS ? `${usd(AGENTS.runner_hourly_usd)}/h` : "") +
     (rows.length ? rows.join("") : `<div class="emptybox">Nothing is running. ${AGENTS?.free_slots?.length ?? "?"} sandbox slots are free.</div>`) +
@@ -2000,6 +2020,115 @@ function foxFor(seed, size = 22, cls = "") {
 const LANE_ST = ["Queue","Boot","Agent","Squash","Push","PR","CI","Review","Merged"];
 const LANE_COLOR = { live:"var(--info)", wait:"var(--faint)", warn:"var(--warn)", fix:"var(--bad)", done:"var(--purple)" };
 const LANE_OUT = {};
+// ── the Board: what is blocked, what is up next and what runs, each ticket once (epic i198) ──
+const KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
+// One fixed next step per kind: a step from free text could carry a ticket's own words.
+const NEXT_STEP = {
+  stalled: "The run stalled twice. Read fxa-sandbox-ctl tail KEY, then relaunch it or label it rejected.",
+  dead_vm: "The sandbox died twice. Check the runner host, then relaunch the ticket.",
+  attempts: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
+  rounds: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
+  refused_ship: "An approver adds ai-fixme-allow-tooling, or a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",
+  operator: "Do what the reason says, then remove ai-fixme-blocked.",
+  jira: "Read the Jira history for who added the label.",
+  other: "Read the Jira history for who added the label.",
+  needs_decision: "Answer the open question in the ticket. The next pass reads it again.",
+  underspecified: "Add acceptance criteria to the ticket. The next pass reads it again.",
+  already_done: "Close the ticket if the change is in, or say in it what is still missing.",
+  depends_on: "Nothing to do now: a pass looks again when the blocker merges.",
+  ci_red: "Nothing to do now: the agent fixes CI on its next pass.",
+  changes: "Nothing to do now: the agent answers the review on its next pass.",
+  conflicts: "Nothing to do now: the next pass rebases the PR.",
+  infra: "Rerun the failed CI job: the failure is in CI, not in the change.",
+  fault: "Read the run's log, then relaunch the ticket or label it blocked.",
+  ready: "Nothing to do: the next pass offers it when it reaches the front and a slot is free.",
+  running: "Nothing to do: the belt shows its progress.",
+};
+const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", operator: "operator",
+  jira: "blocked in Jira", other: "other", needs_decision: "needs a decision", underspecified: "underspecified", already_done: "already done",
+  depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", infra: "infra red", fault: "fault" };
+// The old skip records have no kind: the reason's first words decide, as the Queue tab did.
+const skipKindOf = k => k.kind ?? (k.held_by ? "depends_on" : /^underspecified/i.test(k.reason ?? "") ? "underspecified" : /^already satisfied/i.test(k.reason ?? "") ? "already_done" : "needs_decision");
+const secsSince = t => t == null ? null : Math.max(0, Math.round(Date.now() / 1000 - (typeof t === "number" ? t : Date.parse(t) / 1000)));
+// classify(item): who acts and the next step from the column and the kind; "the operator" for work only the operator can do.
+function classify(i) {
+  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer",
+    operator: "the operator", jira: "the operator", other: "the operator", needs_decision: "the reporter", underspecified: "the reporter",
+    already_done: "the operator", infra: "the operator", fault: "the operator", ci_red: "the agent, next pass", changes: "the agent, next pass",
+    conflicts: "the agent, next pass" }[i.kind];
+  const waitsOn = i.kind === "depends_on" ? (i.held_by ?? null) : null;
+  const person = i.column === "blocked" ? (waitsOn ? `waits on ${waitsOn}` : who ?? "the operator") : i.column === "running" && i.fault ? "the operator" : who ?? null;
+  const group = i.column !== "blocked" ? null : waitsOn || /^the agent/.test(person ?? "") ? "wait" : "act";
+  const step = (NEXT_STEP[i.kind] ?? NEXT_STEP[i.column === "next" ? "ready" : i.column === "running" ? "running" : "other"]).replace("KEY", i.key);
+  return { ...i, person, waitsOn, group, next: step };
+}
+// boardItems(): each key once. A key's first place in this order wins: runners and CI, the blocked label,
+// review faults, inflight faults, skips and holds, ready. PRs that wait on a reviewer feed only the reviewer line.
+function boardItems() {
+  const out = [], seen = new Set(), add = i => { if (!i.key || seen.has(i.key)) return; seen.add(i.key); out.push(classify(i)); };
+  const { cards, waiting } = merged();
+  cards.forEach(c => add({ key: c.key, title: c.summary || c.branch || "", column: "running", fault: c.stage === "stalled" || c.stage === "error",
+    kind: c.stage === "stalled" || c.stage === "error" ? "fault" : null, stage: c.ci ? (c.fail > 0 ? "CI red" : c.running > 0 ? "CI running" : "CI green") : c.stage,
+    why: c.stage === "stalled" ? `stalled ${c.detail ?? ""}`.trim() : c.stage === "error" ? "the run failed" : "", age: c.elapsed_seconds ?? null, belt: true, ci: !!c.ci }));
+  (SNAP?.blocked ?? []).forEach(b => { const r = b.blocked_reason ?? { kind: "jira", text: "blocked in Jira", at: null };
+    add({ key: b.key, title: b.summary ?? "", column: "blocked", kind: r.kind || "other", why: r.text || (r.kind === "jira" ? "blocked in Jira" : ""), since: r.at ?? null, age: secsSince(r.at) }); });
+  (SNAP?.review ?? []).forEach(r => {
+    const kind = r.mergeable === "CONFLICTING" ? "conflicts" : r.fail > 0 ? (r.infra ? "infra" : "ci_red") : r.review === "CHANGES_REQUESTED" ? "changes" : null;
+    if (kind) add({ key: r.key, title: r.title ?? "", column: "blocked", kind, why: kind === "infra" ? `infra red: ${r.infra}` : kind === "ci_red" ? `CI red: ${r.fail} failing` : KIND_LABEL[kind], age: secsSince(r.created), pr: r.pr, belt: true });
+    else if (!seen.has(r.key) && r.state !== "MERGED" && r.state !== "CLOSED") { seen.add(r.key); out.push({ key: r.key, column: "review" }); } });
+  waiting.forEach(t => add({ key: t.key, title: t.summary ?? "", column: "running", fault: true, kind: "fault", stage: t.stage, why: "no sandbox is up for this run", age: t.elapsed_seconds ?? null }));
+  (SNAP?.queue?.skipped ?? []).filter(k => k.in_queue !== false).forEach(k => add({ key: k.key, title: k.summary ?? "", column: "blocked", kind: skipKindOf(k),
+    why: k.reason ?? "", held_by: k.held_by ?? null, since: k.queued_at ?? null, age: secsSince(k.last ?? null), passes: k.passes }));
+  (SNAP?.queue?.ready ?? []).forEach((k, n) => add({ key: k.key, title: k.summary ?? "", column: "next", pos: n + 1, queued_at: k.queued_at ?? null, age: secsSince(k.queued_at ?? null) }));
+  return out;
+}
+const boardAct = items => items.filter(i => i.column === "blocked" && i.group === "act").length + items.filter(i => i.column === "running" && i.fault).length;
+// A column that cannot be read says so, never a zero.
+function boardState(col) {
+  if (!SNAP) return "Loading the pipeline…";
+  if (col !== "running" && (SNAP.queue?.fetch_failed || SNAP.blocked == null)) return "unknown, Jira fetch failed";
+  if (col === "running") {
+    if (!AGENTS || STATE.agents_error) return "unknown, agents feed fetch failed";
+    if (STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval) return `unknown, agents feed ${Math.round(STATE.agents_age_seconds / 60)} min old`;
+  }
+  return "";
+}
+function boardRow(i) {
+  const k = KEY_RE.test(i.key) ? `<a class="brow-k" href="#pipeline/board/${esc(i.key)}"><span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span></a>`
+    : `<span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span>`;
+  const who = i.waitsOn ? (KEY_RE.test(i.waitsOn) ? `waits on <a href="#pipeline/board/${esc(i.waitsOn)}">${esc(i.waitsOn)}</a>` : esc(i.person)) : esc(i.person ?? "");
+  const chip = i.column === "running" ? `<span class="tag ${i.fault ? "bad" : i.ci ? "info" : "ok"} run">${esc(i.stage ?? "")}</span>` : i.kind ? `<span class="tag merged">${esc(KIND_LABEL[i.kind] ?? i.kind)}</span>` : "";
+  const age = i.column === "next" ? (i.queued_at ? `first queued ${ago(i.age)}` : "") : i.age != null ? short(i.age) : "";
+  return `<div class="brow${SEL.pipeline === i.key ? " sel" : ""}" data-key="${esc(i.key)}"><div class="top">${i.pos ? `<span class="pos">${i.pos}</span>` : ""}${k}</div>
+    <div class="meta">${chip}${who ? `<span class="who">${who}</span>` : ""}${age ? `<span>${esc(age)}</span>` : ""}</div>${i.why ? `<div class="why">${esc(i.why)}</div>` : ""}</div>`;
+}
+function boardHtml() {
+  const items = SNAP ? boardItems() : [], col = c => items.filter(i => i.column === c);
+  const act = col("blocked").filter(i => i.group === "act").sort((a, b) => (b.age ?? -1) - (a.age ?? -1)), wait = col("blocked").filter(i => i.group === "wait").sort((a, b) => (b.age ?? -1) - (a.age ?? -1));
+  const run = col("running"), next = col("next").sort((a, b) => a.pos - b.pos), reviewers = col("review").length;
+  const box = (id, title, n, body) => `<section class="bcol" aria-labelledby="bh-${id}"><h2 id="bh-${id}">${title}${n === "" ? "" : `<span class="c">${n}</span>`}</h2>${body}</section>`;
+  const st = c => boardState(c), empty = t => `<p class="empty">${esc(t)}</p>`;
+  const blocked = st("blocked") ? empty(st("blocked")) : (act.length ? `<h3 class="bgrp">A person must act</h3>${act.map(boardRow).join("")}` : empty("Nobody needs to act."))
+    + (wait.length ? `<details class="bwait"><summary>Waits (${wait.length})</summary>${wait.map(boardRow).join("")}</details>` : "");
+  return `<div class="board" id="board-gate-slot"></div><div class="bcols">`
+    + box("blocked", "Blocked", st("blocked") ? "" : act.length, blocked)
+    + box("next", "Up next", st("next") ? "" : next.length, st("next") ? empty(st("next")) : next.length ? next.map(boardRow).join("") : empty("Nothing is ready."))
+    + box("running", "Running", st("running") ? "" : run.length, st("running") ? empty(st("running")) : run.length ? run.map(boardRow).join("") : empty("Nothing is running."))
+    + `</div>${reviewers ? `<p class="breview">${reviewers} PR${reviewers === 1 ? "" : "s"} wait on a reviewer. <a href="#pipeline/queue">Queue and review</a></p>` : ""}`;
+}
+function renderBoard() { put("s-board", boardHtml()); }
+// The rail for a Board key: why, who acts, since when, attempts against the cap, and the one next step.
+function boardDetails(i) {
+  const lim = SNAP?.limits?.attempts, repo = SNAP?.repo ?? "";
+  const kv = (l, v) => v == null || v === "" ? "" : `<span><b>${l}</b>${v}</span>`;
+  return `<div class="ldet"><div><h3>${i.column === "next" ? "Up next" : i.column === "running" ? "Running" : "Blocked"}</h3><div class="kvs">
+    ${kv("Position", i.pos ? `${i.pos} in launch order` : "")}${kv("Kind", i.kind ? esc(KIND_LABEL[i.kind] ?? i.kind) : "")}${kv("Why", esc(i.why ?? ""))}
+    ${kv("Who acts", i.waitsOn && KEY_RE.test(i.waitsOn) ? `waits on <a href="#pipeline/board/${esc(i.waitsOn)}">${esc(i.waitsOn)}</a>` : esc(i.person ?? ""))}
+    ${kv("Since", i.since ? `${esc(new Date((typeof i.since === "number" ? i.since * 1000 : Date.parse(i.since))).toISOString().slice(0, 16).replace("T", " "))} UTC` : i.queued_at ? `first queued ${ago(i.age)}` : "")}
+    ${kv("Attempts", i.attempts != null && lim ? `${i.attempts} of ${lim}` : "")}${kv("Skipped", i.passes ? `${i.passes} pass${i.passes === 1 ? "" : "es"}` : "")}</div></div>
+    <div class="bnext"><b>Next step.</b> ${esc(i.next)}</div>
+    <div class="links">${KEY_RE.test(i.key) ? `<a href="${JIRA}${encodeURIComponent(i.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${i.pr ? `<a href="https://github.com/${esc(repo)}/pull/${i.pr}" target="_blank" rel="noopener">PR ↗</a>` : ""}${i.belt ? `<a href="#pipeline/belts/${esc(i.key)}">Belt</a>` : ""}</div></div>`;
+}
 function laneRows() {
   const { cards } = merged(), med = SNAP?.telemetry?.median_minutes, rows = [], seen = new Set();
   cards.forEach(t => {
@@ -2404,9 +2533,9 @@ function renderNav() {
   const t = SNAP?.telemetry;
   const opc = openPrCounts();
   put("s-tiles", [
-    tile("#pipeline", "open PRs", opc ? opc.total : null, opc ? esc(opc.parts) : "GitHub fetch failed"),
-    tile("#pipeline", "waiting on review", waiting, waiting ? `oldest waits ${oldest} day${oldest === 1 ? "" : "s"}` : "none waiting", waiting ? "warn" : ""),
-    tile("#pipeline", "needs a fix", SNAP ? fix : null, [failing && `${failing} failing`, conflicts && `${conflicts} conflicts`, changes && `${changes} changes requested`, infra && `${infra} infra red`].filter(Boolean).join(" · ") || "nothing red", fix ? "bad" : ""),
+    tile("#pipeline/belts", "open PRs", opc ? opc.total : null, opc ? esc(opc.parts) : "GitHub fetch failed"),
+    tile("#pipeline/belts", "waiting on review", waiting, waiting ? `oldest waits ${oldest} day${oldest === 1 ? "" : "s"}` : "none waiting", waiting ? "warn" : ""),
+    tile("#pipeline/belts", "needs a fix", SNAP ? fix : null, [failing && `${failing} failing`, conflicts && `${conflicts} conflicts`, changes && `${changes} changes requested`, infra && `${infra} infra red`].filter(Boolean).join(" · ") || "nothing red", fix ? "bad" : ""),
     tile("#sessions", "sessions", AGENTS ? `${liveS}/${AGENTS.session_cap}` : null, `${ss.filter(s => s.state === "paused").length} paused, a reply resumes`),
     (() => { const d = STATS?.llm?.days ?? [], today = new Date().toISOString().slice(0, 10), td = d.find(x => x.day === today), wk = llmWeek(d);
       return tile("#stats/spend", "LLM spend today", STATS ? usd(td?.usd ?? 0) : null, STATS ? `${usd(wk)} in the last 7 days` : "loading"); })(),
@@ -2416,7 +2545,7 @@ function renderNav() {
 // ── views, tabs and the selection: all in the hash, so a link opens the same screen ──
 const VIEWS = [
   ["overview", "Overview", "What needs you, what is running, and today's cost", []],
-  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
+  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["board", "Board"], ["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
   ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"], ["answers", "Answers"]]],
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["prs", "PRs"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
@@ -2459,10 +2588,12 @@ function route() {
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
   if (view === "teams") renderTeams();
-  if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
+  if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
   renderSide(); renderRight();
   document.getElementById("main").scrollTop = 0;
   if (view === "pipeline" && sel) document.querySelector(`.lane[data-belt="${CSS.escape(SEL.pipeline)}"]`)?.scrollIntoView({ block: "center" });
+  // A Board row is a link: the rail opens (a drawer at 1280px or less) and takes the focus, for keyboard and screen-reader users.
+  if (view === "pipeline" && TAB === "board" && sel) { if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright"); document.querySelector("#right .rh")?.focus(); }
 }
 window.addEventListener("hashchange", route);
 
@@ -2476,7 +2607,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "board" ? boardAct(boardItems()) : t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {
@@ -2588,9 +2719,14 @@ function sessionDetails(s) {
 function renderRight() {
   const el = document.getElementById("right"); let html = "";
   if (["errors", "lessons", "runners", "teams"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
-  if (VIEW === "pipeline" && !SEL.pipeline && (SEL.pipeline = (TAB === "done" ? doneRows() : laneRows())[0]?.t.key)) { renderLanes(); renderDone(); }
+  if (VIEW === "pipeline" && !SEL.pipeline && (SEL.pipeline = TAB === "board" ? boardItems().find(i => i.column !== "review")?.key : (TAB === "done" ? doneRows() : laneRows())[0]?.t.key)) { renderBoard(); renderLanes(); renderDone(); }
   if (VIEW === "sessions") { const s = currentSession(); if (s) html = sessionDetails(s); }
-  else if (VIEW === "pipeline") { const r = laneRows().concat(doneRows()).find(x => x.t.key === SEL.pipeline); if (r) html = `${closeBtn}<h2 class="rh">${esc(laneTitle(r.t.summary || r.t.branch).text)}<small>${esc(r.t.key)} · ${esc(r.l1)}</small></h2>${laneDetails(r)}`; }
+  else if (VIEW === "pipeline") {
+    const b = TAB === "board" ? boardItems().find(x => x.key === SEL.pipeline && x.column !== "review") : null, r = laneRows().concat(doneRows()).find(x => x.t.key === SEL.pipeline);
+    // A Board key with a belt keeps the belt's details and adds the one next step; one with no belt gets boardDetails.
+    if (b && r) html = `${closeBtn}<h2 class="rh" tabindex="-1">${esc(laneTitle(r.t.summary || r.t.branch).text)}<small>${esc(r.t.key)} · ${esc(r.l1)}</small></h2><div class="bnext"><b>Next step.</b> ${esc(b.next)}</div>${laneDetails(r)}`;
+    else if (b) html = `${closeBtn}<h2 class="rh" tabindex="-1">${esc(b.title || b.key)}<small>${esc(b.key)}</small></h2>${boardDetails(b)}`;
+    else if (r) html = `${closeBtn}<h2 class="rh">${esc(laneTitle(r.t.summary || r.t.branch).text)}<small>${esc(r.t.key)} · ${esc(r.l1)}</small></h2>${laneDetails(r)}`; }
   else if (VIEW === "errors") { const e = (ERRS ?? []).find(x => x.sig === SEL.errors);
     if (e) html = `${closeBtn}<h2 class="rh">Error<small>${esc(e.sig)}</small></h2><div><h4>Signature</h4>${kvr("Status", esc(e.status))}${kvr("Source", `${esc(e.source)}/${esc(e.kind)}`)}${kvr("Where", esc(e.where))}
       ${kvr("Seen", `${e.count} times`)}${kvr("First", esc(e.first.slice(0, 16).replace("T", " ")))}${kvr("Last", esc(e.last.slice(0, 16).replace("T", " ")))}${e.keys?.length ? kvr("Sessions", e.keys.map(k => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`).join(" ")) : ""}
@@ -2680,7 +2816,7 @@ function cycleTheme() {
 paintTheme();
 
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderLanes(); renderDone(); renderNeeds(); renderRunning(); renderSess();
+  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderBoard(); renderLanes(); renderDone(); renderNeeds(); renderRunning(); renderSess();
   renderPool(); renderNav(); renderTab(); renderHeader();
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide();
   renderRight();
