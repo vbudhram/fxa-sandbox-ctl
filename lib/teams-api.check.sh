@@ -125,12 +125,12 @@ check("a log older than the generation is not a result", None, files(14, "failed
 check("passed at the current generation", ("passed", 14), tuple(files(14, "passed: team rusty may be activated at generation 14\n")[k] for k in ("result", "generation")))
 check("passed at an older generation is not passed", None, files(15, "passed: team rusty may be activated at generation 14\n")["result"])
 check("tested counts when it is not older than the generation", 14, files(14, tested=14)["tested"])
-# Test, then Activate: Activate writes generation 15 after the test. The pass still shows, by value.
+# An edit after the pass writes generation 15. The older pass still shows, by value.
 files(14, "passed: team rusty may be activated at generation 14\n", tested=14); (td / "rusty.gen").write_text("15\n"); os.utime(td / "rusty.gen", (now, now))
 r = server.team_test("rusty", now)
-check("after Activate: no result from the older log, tested 14 at generation 15", (None, 14, 15), (r["result"], r["tested"], r["generation"]))
+check("after an edit: no result from the older log, tested 14 at generation 15", (None, 14, 15), (r["result"], r["tested"], r["generation"]))
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": r}], None, {"rusty": {"status": "active", "generation": "15"}})
-check("after Activate: the last-passed info shows", True, any(x["text"] == "last passed at generation 14; later edits did not change what a runner uses" for x in per[0]))
+check("after an edit: the last-passed info shows", True, any(x["text"] == "last passed at generation 14; later edits did not change what a runner uses" for x in per[0]))
 check("a team with no record has no test", None, server.team_test("crew", now))
 recs2 = {"rusty": {"status": "active", "generation": "13"}}
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": {"tested": 12}}], None, recs2)

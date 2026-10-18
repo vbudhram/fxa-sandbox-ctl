@@ -211,6 +211,8 @@ teams_create() {
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   local at; at="$(date +%s)"
   _TEAMS_PY stamp "$f" "$(_teams_actor)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" || { rm -f "$tmp"; return 1; }
+  # Test files from a name deleted before teams_delete removed them must not count for the new team.
+  rm -f "${FXA_TEAMS_DIR:?}/${name}.tested" "${FXA_TEAMS_DIR:?}/${name}.test.log" "${FXA_TEAMS_DIR:?}/${name}.test.pid"
   _teams_write "$name" "$tmp" 0; rc=$?
   [ "$rc" = 0 ] && _teams_audit create "$name" 0 "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || echo unknown)" "" "$tmp"
   rm -f "$tmp"
@@ -325,7 +327,12 @@ teams_status() {
   tmp="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   # Turning a team off skips the live checks: a broken GitHub App or Jira project must not keep it on.
   local live="${FXA_TEAMS_LIVE:-1}"; [ "$st" = active ] || live=0
+  local carry=""
+  [ "$st" = active ] && [ -n "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)" ] \
+    && [ "$(cat "${FXA_TEAMS_DIR}/${name}.tested" 2>/dev/null)" = "$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)" ] && carry=1
   jq --arg s "$st" '.status = $s' "${FXA_TEAMS_DIR}/${name}.json" > "$tmp" && _TEAMS_ENABLING=1 FXA_TEAMS_LIVE="$live" teams_set "$name" "$tmp"; rc=$?
+  # Activate writes a new generation that differs only in status, so the pass still holds for it.
+  if [ "$rc" = 0 ] && [ -n "$carry" ] && [ -s "${FXA_TEAMS_DIR}/${name}.gen" ]; then cp "${FXA_TEAMS_DIR}/${name}.gen" "${FXA_TEAMS_DIR}/${name}.tested"; fi
   rm -f "$tmp"; return $rc
 }
 

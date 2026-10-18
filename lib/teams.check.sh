@@ -45,10 +45,17 @@ check "profile enable, disable and draft set the status" "0|active|0|disabled|0|
 check "create with status active is refused; set cannot turn a draft active" "1|1" \
   "$(teams_create "$(rec ga1 Ga1 ', "status": "active"')" 2>&1 | grep -c 'starts as draft')|$(teams_create "$(rec ga2 Ga2)" >/dev/null; jq '.status = "active"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" 2>&1 | grep -c 'with profile enable')"
 cp "$FXA_TEAMS_DIR/ga2.gen" "$FXA_TEAMS_DIR/ga2.tested"; teams_status ga2 active >/dev/null
+check "Activate carries the pass to the new generation it writes" "same|active" \
+  "$([ "$(cat "$FXA_TEAMS_DIR/ga2.tested")" = "$(cat "$FXA_TEAMS_DIR/ga2.gen")" ] && echo same || echo differs)|$(jq -r .status "$FXA_TEAMS_DIR/ga2.json")"
 check "an active team: a guide edit stays active, a repo change is refused" "0|1" \
   "$(jq '.prompts.guide_md = "new"' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" >/dev/null 2>&1; echo $?)|$(jq '.repos += [{slug: "example/more", role: "dep"}]' "$FXA_TEAMS_DIR/ga2.json" > "$tmp/ga2.json"; teams_set ga2 "$tmp/ga2.json" 2>&1 | grep -c 'a change to repos needs a new test')"
 check "disable works while the live checks fail" "0|disabled" \
   "$( (_teams_live() { [ "${FXA_TEAMS_LIVE:-1}" = 1 ] || return 0; echo "ERROR: down" >&2; return 1; }; FXA_TEAMS_LIVE=1 teams_status ga2 disabled >/dev/null 2>&1; echo $?) )|$(jq -r .status "$FXA_TEAMS_DIR/ga2.json")"
+check "Disable does not carry the pass, so a later enable needs a new test" "differs" \
+  "$([ "$(cat "$FXA_TEAMS_DIR/ga2.tested")" = "$(cat "$FXA_TEAMS_DIR/ga2.gen")" ] && echo same || echo differs)"
+echo 1 > "$FXA_TEAMS_DIR/ga3.tested"; echo "passed: team ga3 may be activated at generation 1" > "$FXA_TEAMS_DIR/ga3.test.log"
+check "create removes test files that an older delete left under the name" "0|no|no" \
+  "$(teams_create "$(rec ga3 Ga3)" >/dev/null; echo $?)|$([ -e "$FXA_TEAMS_DIR/ga3.tested" ] && echo yes || echo no)|$([ -e "$FXA_TEAMS_DIR/ga3.test.log" ] && echo yes || echo no)"
 printf '{"profile":"rusty","state":"paused"}' > "$SESSION_DIR/agent-r1.json"
 check "delete is refused while a session of the team can resume" "1" "$(teams_delete rusty >/dev/null 2>&1; echo $?)"
 printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
