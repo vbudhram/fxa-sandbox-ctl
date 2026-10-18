@@ -8,7 +8,7 @@ check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^_pipeline_one_line() {/,/^}/p;/^_pipeline_hash() {/,/^}/p;/^_pipeline_skip_fingerprint() {/,/^}/p;/^pipeline_skip() {/,/^}/p;/^pipeline_hold() {/,/^}/p;/^_pipeline_blocker_done() {/,/^}/p;/^pipeline_skip_changed() {/,/^}/p;/^pipeline_skip_clear() {/,/^}/p;/^_pipeline_skipped_row() {/,/^}/p;/^pipeline_skipped() {/,/^}/p' "$here/pipeline.sh")"
+eval "$(sed -n '/^_PIPE_SKIP_KINDS=/p;/^_pipeline_one_line() {/,/^}/p;/^_pipeline_hash() {/,/^}/p;/^_pipeline_skip_fingerprint() {/,/^}/p;/^pipeline_skip() {/,/^}/p;/^pipeline_hold() {/,/^}/p;/^_pipeline_blocker_done() {/,/^}/p;/^pipeline_skip_changed() {/,/^}/p;/^pipeline_skip_clear() {/,/^}/p;/^_pipeline_skipped_row() {/,/^}/p;/^pipeline_skipped() {/,/^}/p' "$here/pipeline.sh")"
 eval "$(sed -n '/^_snapshot_skipped() {/,/^}/p' "$here/snapshot.sh")"
 declare -F _pipeline_hash >/dev/null || _pipeline_hash() { shasum | cut -c1-16; }
 PIPE_STATE_DIR="$tmp"
@@ -41,5 +41,12 @@ check "a key that is not a ticket key fails and writes no file" "1|0" "$(pipelin
 
 pipeline_hold fxa-6 FXA-2 x >/dev/null
 check "a hold of a lower-case key writes both files under the upper-case key" "yes|yes" "$([ -f "$tmp/FXA-6.held" ] && echo yes || echo no)|$([ -f "$tmp/FXA-6.skipped" ] && echo yes || echo no)"
+
+# The skip kind is field 5: an exact whole word only; a hold is depends_on; old readers see the same reason.
+pipeline_skip FXA-7 needs_decision pick one of two routes >/dev/null; pipeline_skip FXA-8 needs_decisions are hard >/dev/null; pipeline_hold FXA-9 FXA-2 same files >/dev/null
+check "a skip kind is field 5; a near word stays in the reason; a hold is depends_on" "needs_decision|pick one of two routes||needs_decisions are hard|depends_on" \
+  "$(cut -f5 "$tmp/FXA-7.skipped")|$(cut -f4 "$tmp/FXA-7.skipped")|$(cut -f5 "$tmp/FXA-8.skipped")|$(cut -f4 "$tmp/FXA-8.skipped")|$(cut -f5 "$tmp/FXA-9.skipped")"
+check "a repeat skip with the same ticket text is silent and keeps its kind" "silent 2|needs_decision" "$(pipeline_skip FXA-7 needs_decision pick one of two routes)|$(cut -f5 "$tmp/FXA-7.skipped")"
+check "skipped lists a 5-field record as before" "FXA-7 2" "$(pipeline_skipped FXA-7 | awk '{print $1, $2}')"
 
 exit "$fail"

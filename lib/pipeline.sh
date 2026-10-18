@@ -402,12 +402,36 @@ _pipeline_one_line() {
     | LC_ALL=C tr -d '\000-\037\177' | tr -s ' ' | cut -c1-300   # ponytail: GNU cut counts bytes, so a long non-ASCII reason can lose its last character
 }
 
+# The kinds of a blocked label and of an admission skip (the pass skill names them; lib/skill-kinds.check.sh reads these).
+_PIPE_BLOCKED_KINDS="stalled dead_vm attempts rounds refused_ship operator"
+_PIPE_SKIP_KINDS="needs_decision underspecified depends_on already_done"
+
+# pipeline_blocked_why <KEY> <state> [kind] [reason...]   Why the ticket is blocked, for the Board: one
+# "epoch<TAB>kind<TAB>reason" line in <KEY>.blocked-why, cleared by any other state. A kind is a whole
+# argument from _PIPE_BLOCKED_KINDS, else "other". It never fails the label: a problem is a WARN.
+pipeline_blocked_why() {
+  local k state="${2:-}" kind=other reason f t at; k="$(printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]')"
+  [[ "$k" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || { echo "WARN: no blocked reason kept: '${1:-}' is not a ticket key" >&2; return 0; }
+  f="${PIPE_STATE_DIR}/${k}.blocked-why"
+  [ "$state" = blocked ] || { rm -f "$f"; return 0; }
+  shift 2
+  if [ $# -gt 0 ] && [[ " $_PIPE_BLOCKED_KINDS " == *" $1 "* ]]; then kind="$1"; shift
+  elif [ $# -gt 0 ] && [[ "$1" =~ ^[a-z]+(_[a-z]+)+$ ]]; then echo "WARN: '$1' is not a blocked kind (${_PIPE_BLOCKED_KINDS}); kept as other" >&2; fi
+  reason="$(_pipeline_one_line "$*")"; at="$(date +%s)"
+  # A repeat with the same kind keeps when the ticket was first blocked.
+  [ -f "$f" ] && [ "$(cut -f2 "$f" 2>/dev/null)" = "$kind" ] && at="$(cut -f1 "$f")"
+  t="$(mktemp "${PIPE_STATE_DIR}/.blocked-why.XXXXXX" 2>/dev/null)" && printf '%s\t%s\t%s\n' "$at" "$kind" "$reason" > "$t" && mv "$t" "$f" \
+    || { rm -f "${t:-}"; echo "WARN: could not keep why $k is blocked" >&2; }
+  return 0
+}
+
 pipeline_skip() {
   pipeline_require || return 1
   local key; key="$(printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]')"
   # The key names a state file: refuse anything that is not a ticket key before a path is built.
   [[ "$key" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || { echo "ERROR: skip needs a ticket key (FXA-1234), not '${1:-}'" >&2; return 1; }
   shift || true
+  local kind=""; [ $# -gt 1 ] && [[ " $_PIPE_SKIP_KINDS " == *" ${1:-} "* ]] && { kind="$1"; shift; }
   local reason; reason="$(_pipeline_one_line "$*")"
   local f="${PIPE_STATE_DIR}/${key}.skipped"
   rm -f "${PIPE_STATE_DIR}/${key}.held"  # a plain skip replaces a hold; pipeline_hold writes it again after
@@ -421,12 +445,12 @@ pipeline_skip() {
     n="$(awk -F'\t' 'NR==1{print $3+0}' "$f")"
     if [ "$old" = "$fp" ]; then
       n=$((n + 1))
-      printf '%s\t%s\t%s\t%s\n' "$fp" "$(date +%s)" "$n" "$reason" > "$f"
+      printf '%s\t%s\t%s\t%s\t%s\n' "$fp" "$(date +%s)" "$n" "$reason" "$kind" > "$f"
       echo "silent $n"
       return 0
     fi
   fi
-  printf '%s\t%s\t%s\t%s\n' "$fp" "$(date +%s)" 1 "$reason" > "$f"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$fp" "$(date +%s)" 1 "$reason" "$kind" > "$f"
   echo "comment"
 }
 
@@ -439,7 +463,7 @@ pipeline_hold() {
   [[ "$blocker" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ "$blocker" != "$key" ] \
     || { echo "ERROR: hold needs <KEY> <BLOCKER-KEY> [reason]" >&2; return 1; }
   shift 2
-  local out; out="$(pipeline_skip "$key" "held until ${blocker} merges: $*")" || return 1
+  local out; out="$(pipeline_skip "$key" depends_on "held until ${blocker} merges: $*")" || return 1
   printf '%s\n' "$blocker" > "${PIPE_STATE_DIR}/${key}.held"
   printf '%s\n' "$out"
 }

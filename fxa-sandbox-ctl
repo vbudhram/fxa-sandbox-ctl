@@ -140,7 +140,9 @@ PIPELINE COMMANDS:
   ground <ISSUE-KEY>           Write /tmp/fxa-KEY-ground.md: ticket, cited paths checked on
                                origin/main, frozen/stories checks, overlapping open PRs
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
-  label <ISSUE-KEY> <state>    WRITE: move the ticket; also reaps its VM
+  label <ISSUE-KEY> <state> [kind] [reason]
+                               WRITE: move the ticket; also reaps its VM. For blocked, the kind
+                               (stalled dead_vm attempts rounds refused_ship operator) and reason show on the Board
                                states: public inflight done blocked merged rejected diff
   slots                        Pool slots, and any VM running on each
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
@@ -162,7 +164,7 @@ PIPELINE COMMANDS:
   tokens <ISSUE-KEY>           Token and model usage (run BEFORE the VM stops)
   record <ISSUE-KEY>           Append the run to the telemetry log
   costs [--reprice]            Rebuild the per-issue cost rollup; --reprice prices old runs from the LLM proxy
-  skip <KEY> [reason]          Record an admission skip; prints comment|silent <n>
+  skip <KEY> [kind] [reason]   Record an admission skip (kind: needs_decision underspecified depends_on already_done); prints comment|silent <n>
   hold <KEY> <BLOCKER> [reason] A skip that waits for BLOCKER to merge; quiet until then
   skipped [KEY]                List recorded skips
   skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
@@ -1815,6 +1817,7 @@ cmd_label() {
   rm -f "${PIPE_STATE_DIR}/$(jira_normalize_key "$key" 2>/dev/null).needs-you"
   state="${state#${PIPE_LABEL_PREFIX}-}"
   [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
+  pipeline_blocked_why "$key" "$state" "${@:3}"
   # Only inflight owns a worktree, so any other state reaps the VM.
   if [ "$state" != "inflight" ]; then
     _reap_key "$key"
