@@ -2084,7 +2084,8 @@ function boardItems() {
     else if (!seen.has(r.key) && r.state !== "MERGED" && r.state !== "CLOSED") { seen.add(r.key); out.push({ key: r.key, column: "review" }); } });
   waiting.forEach(t => add({ key: t.key, title: t.summary ?? "", column: "running", fault: true, kind: "fault", stage: t.stage, why: "no sandbox is up for this run", age: t.elapsed_seconds ?? null }));
   (SNAP?.queue?.skipped ?? []).filter(k => k.in_queue !== false).forEach(k => add({ key: k.key, title: k.summary ?? "", column: "blocked", kind: skipKindOf(k),
-    why: k.reason ?? "", held_by: k.held_by ?? null, since: k.queued_at ?? null, age: secsSince(k.last ?? null), passes: k.passes }));
+    // The age is how long the ticket waits (first queued), not the last pass that skipped it.
+    why: k.reason ?? "", held_by: k.held_by ?? null, since: k.queued_at ?? null, age: secsSince(k.queued_at ?? null), passes: k.passes }));
   (SNAP?.queue?.ready ?? []).forEach((k, n) => add({ key: k.key, title: k.summary ?? "", column: "next", pos: n + 1, queued_at: k.queued_at ?? null, age: secsSince(k.queued_at ?? null) }));
   return out;
 }
@@ -2645,7 +2646,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "board" ? boardAct(boardItems()) : t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "board" ? (boardState("blocked") ? "" : boardAct(boardItems())) : t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {
