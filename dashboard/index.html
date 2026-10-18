@@ -299,7 +299,6 @@
   .right .kvr b.na, .right .kvr .na, .tpage .kvr b.na, .tpage .kvr .na { font-weight:400; color:var(--faint); }
   .right .acts2 { display:flex; gap:var(--s2); flex-wrap:wrap; } .right .acts2 a { color:var(--link); font-weight:600; }
   .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
-  .right .ldet { margin:0; flex-direction:column; } .right .ldet .links { margin-left:0; }
   .drawer-close { display:none; }
   .sowner { display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font:600 var(--t-label) var(--sans); color:var(--dim); } .sowner select { flex:1; min-width:0; min-height:28px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); padding:0 8px; font:400 var(--t-sub) var(--sans); }
   #side .sfilters { flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0 var(--s4) var(--s4); margin:0; gap:var(--s3); }
@@ -490,30 +489,7 @@
   .kv.share { background:linear-gradient(90deg, color-mix(in srgb,var(--info) 14%,transparent) var(--p), transparent var(--p)); }
   .fchips { display:inline-flex; flex-wrap:wrap; gap:var(--s1); }
 
-  /* ── pipeline lanes: one belt per ticket ── */
-  /* The Board: three columns, one at 900px or less in the order Blocked, Up next, Running. */
-  .bcols { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--s4); align-items:start; }
-  @media (max-width:900px) { .bcols { grid-template-columns:minmax(0,1fr); } }
-  .bcol { background:var(--panel); border:1px solid var(--card-border); border-radius:var(--r-lg); box-shadow:var(--shadow); min-width:0; }
-  .bcol h2 { font-size:var(--t-body); margin:0; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); }
-  .bcol h2 .c { color:var(--dim); font-weight:400; margin-left:var(--s1); }
-  .bcol .empty { padding:var(--s3) var(--s4); margin:0; }
-  .bgrp { font-size:var(--t-label); text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0; padding:var(--s2) var(--s4) 0; }
-  #s-board.wide { background:none; border:0; box-shadow:none; padding:0; }
-  .brow { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); } .brow:last-child { border-bottom:0; }
-  .brow.sel { background:var(--infobg); }
-  .brow .top { display:flex; gap:var(--s2); align-items:baseline; min-width:0; }
-  .brow .brow-k { display:flex; gap:var(--s2); align-items:baseline; min-width:0; color:inherit; text-decoration:none; } .brow .brow-k:hover .t { text-decoration:underline; }
-  .brow .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .brow .pos { font-family:var(--mono); font-size:var(--t-label); color:var(--dim); min-width:1.5em; text-align:right; font-variant-numeric:tabular-nums; }
-  .brow .meta { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; font-size:var(--t-label); color:var(--dim); } .brow .who { color:var(--ink); font-weight:600; }
-  .brow .why { font-size:var(--t-sub); overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-  .bwait summary { cursor:pointer; padding:var(--s2) var(--s4); font-size:var(--t-sub); color:var(--dim); border-top:1px solid var(--line); }
-  .breview { color:var(--dim); font-size:var(--t-sub); }
-  .bgate { background:var(--panel); border:1px solid var(--card-border); border-left:4px solid var(--ok); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:var(--s3) var(--s4); margin-bottom:var(--s4); }
-  .bgate.stop { border-left-color:var(--warn); }
-  .bnext { background:var(--warnbg); border-radius:var(--r-sm); padding:var(--s2) var(--s3); font-size:var(--t-sub); } .bnext b { color:var(--warn); }
-  .lanes { min-width:720px; }
+  /* ── pipeline belts ── */
   /* Belts v2: one list in four groups. The tone of a row colours its current stop and its state. */
   .bhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin-bottom:var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .bhead .now { color:var(--info); font-weight:650; display:inline-flex; align-items:center; gap:6px; }
@@ -566,49 +542,10 @@
     .belt > a.bgrid { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"tk age" "trk trk" "st st"; row-gap:var(--s2); }
     .belt .tk { grid-area:tk; } .belt .trk { grid-area:trk; } .belt .st { grid-area:st; } .belt .age { grid-area:age; align-self:start; }
   }
-  .lanes .head, .lane .row { display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); align-items:center; }
-  .lanes .head { border-bottom:1px solid var(--line); padding-bottom:var(--s2); }
-  .lanes .cols { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); text-align:center; }
-  .lanes .cols b { display:block; font-size:var(--t-sub); } .lanes .cols span { font-size:var(--t-label); color:var(--faint); }
-  .lane { border-bottom:1px solid var(--sunk); }
-  .lane .row { min-height:68px; }
-  .lane .row { cursor:pointer; } .lane .row:hover { background:var(--bg); }
-  .lane.sel .row { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }   /* matches .si[aria-current] */
-  .lane .who { display:flex; flex-direction:column; min-width:0; padding-right:var(--s3); }
-  .lane .who .t { font-size:var(--t-sub); font-weight:500; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-  .lane .who .scope { font-size:10px; font-weight:600; padding:0 6px; border-radius:4px; background:var(--sunk); color:var(--dim); white-space:nowrap; max-width:130px; overflow:hidden; text-overflow:ellipsis; }
-  .lane .who .m { display:flex; gap:var(--s2); align-items:center; font-size:var(--t-label); color:var(--faint); }
-  svg.fox { flex:none; display:block; }
   .tgl.sm { padding:1px 6px; font-size:var(--t-label); margin-left:2px; white-space:nowrap; flex-shrink:0; }
-  .ldet { margin:0 0 var(--s3) 0; padding:var(--s3) var(--s4); border-radius:8px; background:var(--bg); border:1px solid var(--line);
-          display:flex; flex-wrap:wrap; gap:var(--s3) var(--s6); font-size:var(--t-sub); }
-  .ldet h3 { margin:0 0 4px; font:600 var(--t-label) var(--sans); color:var(--faint); text-transform:uppercase; letter-spacing:.05em; }
-  .ldet .kvs { display:flex; flex-wrap:wrap; gap:4px var(--s4); max-width:620px; } .ldet .kvs b { font-weight:600; color:var(--faint); margin-right:6px; }
-  .ldet .links { display:flex; gap:var(--s3); align-items:flex-end; margin-left:auto; } .ldet .links a { color:var(--link); }
-  .lane .track { position:relative; height:68px; }
-  .lane .rail0, .lane .rail1 { position:absolute; left:0; top:50px; height:6px; border-radius:3px; }
-  .lane .rail0 { right:0; background:var(--sunk); }
-  .lane .rail1 { transition:width .8s cubic-bezier(.16,1,.3,1); }
-  .lane .rail1.run { background-image:repeating-linear-gradient(-45deg,rgba(255,255,255,.5) 0 4px,transparent 4px 10px); background-size:14px 6px; animation:lanerun .7s linear infinite; }
-  @keyframes lanerun { to { background-position:14px 0; } }
-  .lane .stop { position:absolute; top:49px; width:8px; height:8px; margin-left:-4px; border-radius:50%; background:var(--panel); border:1px solid var(--line2); }
-  .lane .mark { position:absolute; top:6px; width:150px; box-sizing:border-box; padding:4px 9px; border-radius:8px; background:var(--panel);
-                border:1px solid var(--line); box-shadow:0 1px 2px rgba(0,0,0,.08); font-size:var(--t-label); transition:left .8s cubic-bezier(.16,1,.3,1); }
-  .lane .mark .l1 { font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:4px; align-items:center; }
-  .lane .mark .l2 { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; gap:6px; align-items:center; }
-  .lane.live .mark { border-color:var(--info); box-shadow:0 6px 16px color-mix(in srgb,var(--info) 22%,transparent); }
-  .lane.live .mark .l1 { color:var(--info); } .lane.fix .mark .l1 { color:var(--bad); } .lane.warn .mark .l1 { color:var(--warn); } .lane.done .mark .l1 { color:var(--purple); }
-  .lane.fix .mark { border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); } .lane.warn .mark { border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
-  .lane .out.tty { position:static; margin:0 0 var(--s3) 0; box-shadow:none; }
-  .lane .out summary { list-style:none; cursor:pointer; } .lane .out summary::-webkit-details-marker { display:none; }
-  .lane .out summary::before, .lane .out[open] summary::before { content:none; }
-  .lane .out:not([open]) summary { border-bottom:0; }
-  .lane .out .screen { height:220px; min-height:0; }
-  .lanes .legend { display:flex; flex-wrap:wrap; gap:var(--s4); padding-top:var(--s3); font-size:var(--t-label); color:var(--dim); }
-  .lanes .legend i { display:inline-block; width:22px; height:6px; border-radius:3px; margin-right:6px; vertical-align:1px; }
-  .mascot { width:34px; height:34px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; flex:none; background:var(--sunk); }
-  .mascot img { width:28px; height:28px; } .mascot.live { background:color-mix(in srgb,var(--info) 18%,transparent); }
-  .mascot.idle img { filter:grayscale(1) opacity(.6); }
+  .belt .out summary { list-style:none; cursor:pointer; } .belt .out summary::-webkit-details-marker { display:none; }
+  .belt .out summary::before, .belt .out[open] summary::before { content:none; }
+  .belt .out:not([open]) summary { border-bottom:0; }
   .bob { animation:bob 1.4s ease-in-out infinite; } @keyframes bob { 50% { transform:translateY(-3px); } }
 
 
@@ -675,7 +612,6 @@ table.usage tr.sel td { background: var(--infobg); }
   <section class="wide" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-lessons" data-views="lessons"></section>
   <section class="wide" id="s-teams" data-views="teams"></section>
-  <section class="wide" id="s-board" data-views="pipeline:board"></section>
   <section class="wide" id="s-lanes" data-views="pipeline:belts"></section>
   <section class="wide" id="s-done" data-views="pipeline:done"></section>
   <section class="wide" id="s-sessions" data-views="none"></section>
@@ -2426,44 +2362,6 @@ function boardState(col) {
   }
   return "";
 }
-function boardRow(i) {
-  const k = KEY_RE.test(i.key) ? `<a class="brow-k" href="#pipeline/board/${esc(i.key)}"><span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span></a>`
-    : `<span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span>`;
-  const who = i.waitsOn ? (KEY_RE.test(i.waitsOn) ? `waits on <a href="#pipeline/board/${esc(i.waitsOn)}">${esc(i.waitsOn)}</a>` : esc(i.person)) : esc(i.person ?? "");
-  const chip = i.column === "running" ? `<span class="tag ${i.fault ? "bad" : i.stage === "CI red" ? "warn" : i.ci ? "info" : "ok"} run">${esc(i.stage ?? "")}</span>` : i.kind ? `<span class="tag merged">${esc(KIND_LABEL[i.kind] ?? i.kind)}</span>` : "";
-  const age = i.column === "next" ? (i.queued_at ? `first queued ${ago(i.age)}` : "") : boardAge(i.age);
-  return `<div class="brow${SEL.pipeline === i.key ? " sel" : ""}" data-key="${esc(i.key)}"><div class="top">${i.pos ? `<span class="pos">${i.pos}</span>` : ""}${k}</div>
-    <div class="meta">${i.tag ? `<span class="tag ok">next pass</span>` : ""}${chip}${who ? `<span class="who">${who}</span>` : ""}${age ? `<span>${esc(age)}</span>` : ""}</div>${i.why ? `<div class="why">${esc(i.why)}</div>` : ""}</div>`;
-}
-function boardHtml() {
-  const items = SNAP ? boardItems() : [], col = c => items.filter(i => i.column === c);
-  const act = col("blocked").filter(i => i.group === "act").sort((a, b) => (b.age ?? -1) - (a.age ?? -1)), wait = col("blocked").filter(i => i.group === "wait").sort((a, b) => (b.age ?? -1) - (a.age ?? -1));
-  const run = col("running"), next = col("next").sort((a, b) => a.pos - b.pos), reviewers = col("review").length;
-  const box = (id, title, n, body) => `<section class="bcol" aria-labelledby="bh-${id}"><h2 id="bh-${id}">${title}${n === "" ? "" : `<span class="c">${n}</span>`}</h2>${body}</section>`;
-  const st = c => boardState(c), empty = t => `<p class="empty">${esc(t)}</p>`;
-  const blocked = st("blocked") ? empty(st("blocked")) : (act.length ? `<h3 class="bgrp">A person must act</h3>${act.map(boardRow).join("")}` : empty("Nobody needs to act."))
-    + (wait.length ? `<details class="bwait"><summary>Waits (${wait.length})</summary>${wait.map(boardRow).join("")}</details>` : "");
-  const gate = SNAP ? gateLine() : null, tags = gate?.ok ? gate.room : 0;
-  next.forEach(i => { i.tag = i.pos <= tags; });
-  return (gate ? `<div class="bgate ${gate.ok ? "ok" : "stop"}" role="status">${esc(gate.text)}</div>` : "") + `<div class="bcols">`
-    + box("blocked", "Blocked", st("blocked") ? "" : act.length, blocked)
-    + box("next", "Up next", st("next") ? "" : next.length, st("next") ? empty(st("next")) : next.length ? next.map(boardRow).join("") : empty("Nothing is ready."))
-    + box("running", "Running", st("running") ? "" : run.length, st("running") ? empty(st("running")) : run.length ? run.map(boardRow).join("") : empty("Nothing is running."))
-    + `</div>${reviewers ? `<p class="breview">${reviewers} PR${reviewers === 1 ? "" : "s"} wait on a reviewer. <a href="#pipeline/queue">Queue and review</a></p>` : ""}`;
-}
-function renderBoard() { put("s-board", boardHtml()); }
-// The rail for a Board key: why, who acts, since when, attempts against the cap, and the one next step.
-function boardDetails(i) {
-  const lim = SNAP?.limits?.attempts, repo = SNAP?.repo ?? "";
-  const kv = (l, v) => v == null || v === "" ? "" : `<span><b>${l}</b>${v}</span>`;
-  return `<div class="ldet"><div><h3>${i.column === "next" ? "Up next" : i.column === "running" ? "Running" : "Blocked"}</h3><div class="kvs">
-    ${kv("Position", i.pos ? `${i.pos} in launch order` : "")}${kv("Kind", i.kind ? esc(KIND_LABEL[i.kind] ?? i.kind) : "")}${kv("Why", esc(i.why ?? ""))}
-    ${kv("Who acts", i.waitsOn && KEY_RE.test(i.waitsOn) ? `waits on <a href="#pipeline/board/${esc(i.waitsOn)}">${esc(i.waitsOn)}</a>` : esc(i.person ?? ""))}
-    ${kv("Since", i.since ? `${esc(new Date((typeof i.since === "number" ? i.since * 1000 : Date.parse(i.since))).toISOString().slice(0, 16).replace("T", " "))} UTC` : i.queued_at ? `first queued ${ago(i.age)}` : "")}
-    ${kv("Attempts", i.attempts != null && lim ? `${i.attempts} of ${lim}` : "")}${kv("Skipped", i.passes ? `${i.passes} pass${i.passes === 1 ? "" : "es"}` : "")}</div></div>
-    <div class="bnext"><b>Next step.</b> ${esc(i.next)}</div>
-    <div class="links">${jiraHref(i.key) ? `<a href="${jiraHref(i.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${prUrl(i.pr) ? `<a href="${prUrl(i.pr)}" target="_blank" rel="noopener">PR ↗</a>` : ""}${i.belt ? `<a href="#pipeline/belts/${esc(i.key)}">Belt</a>` : ""}</div></div>`;
-}
 function laneRows() {
   const { cards } = merged(), med = SNAP?.telemetry?.median_minutes, rows = [], seen = new Set();
   cards.forEach(t => {
@@ -2910,7 +2808,7 @@ function renderNav() {
 // ── views, tabs and the selection: all in the hash, so a link opens the same screen ──
 const VIEWS = [
   ["overview", "Overview", "What needs you, what is running, and today's cost", []],
-  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],   // the Board tab is off for now (the person); add ["board", "Board"] first to bring it back
+  ["pipeline", "Pipeline", "Jira tickets from the queue to the merge", [["belts", "Belts"], ["queue", "Queue and review"], ["done", "Done"]]],
   ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"], ["answers", "Answers"]]],
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["prs", "PRs"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
@@ -2935,6 +2833,8 @@ function route() {
     if (r.sel !== SEL.teams) TED = null;
     SEL.teams = r.sel; TTAB = r.tab;
   }
+  // The Board is gone: an old Board link lands on Belts, with its key only when it is a Jira key.
+  if (v === "pipeline" && sub === "board") { let k = ""; try { k = decodeURIComponent(sel ?? ""); } catch {} return location.replace(`#pipeline/belts${KEY_RE.test(k) ? `/${k}` : ""}`); }
   const def = VIEWS.find(x => x[0] === v) || VIEWS[0], view = def[0], tabs = def[3];
   if (view !== VIEW) { Q = ""; CUR = -1; }
   const VIEW_PREV = VIEW, TAB_PREV = TAB, OPEN_PREV = SEL.pipeline;
@@ -2961,7 +2861,7 @@ function route() {
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
-  if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
+  if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
   if (view === "pipeline" && TEAM_ADMIN == null) loadTeamAdmin().then(() => VIEW === "pipeline" && SNAP && renderLanes());
   renderSide(); renderRight();
@@ -2969,8 +2869,6 @@ function route() {
   if (!(view === "pipeline" && VIEW_PREV === view && TAB_PREV === TAB)) document.getElementById("main").scrollTop = 0;
   if (view === "pipeline" && SEL.pipeline) document.getElementById(`bd-${SEL.pipeline}`)?.scrollIntoView({ block: "nearest" });
   else if (view === "pipeline" && OPEN_PREV && VIEW_PREV === view) document.querySelector(`.belt[data-belt="${CSS.escape(OPEN_PREV)}"] > a`)?.focus({ preventScroll: true });
-  // A Board row is a link: the rail opens (a drawer at 1280px or less) and takes the focus, for keyboard and screen-reader users.
-  if (view === "pipeline" && TAB === "board" && sel) { if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright"); document.querySelector("#right .rh")?.focus(); }
 }
 window.addEventListener("hashchange", route);
 document.addEventListener("keydown", e => {
@@ -2989,7 +2887,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "board" ? (boardState("blocked") ? "" : boardAct(boardItems())) : t === "belts" ? beltCount(beltGroups()) ?? "" : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? beltCount(beltGroups()) ?? "" : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {
@@ -3201,7 +3099,7 @@ function safeRender(fn, id) {
   try { fn(); } catch (e) { console.error(e); if (id) put(id, `<div class="emptybox">This section did not render: ${esc(e?.message ?? String(e))}. Reload, or run vm.sh rollback.</div>`); }
 }
 function render() {
-  [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"], [renderBoard, "s-board"],
+  [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
    [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderNeeds, "s-needs"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
    [renderNav, "s-tiles"], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
