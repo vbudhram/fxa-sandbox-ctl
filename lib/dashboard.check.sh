@@ -146,6 +146,8 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     const g = routinesGroup(team, 1700000000);
     t("routines: markup in every field renders inert", `${/<img/.test(g)}|${(g.match(/<\/textarea>/g) ?? []).length}`, "false|1");
     t("routines: the prompt textarea holds the text escaped", g.includes(`>${esc(X)}</textarea>`), true);
+    t("routines: History shows a report escaped, in a disclosure", rtHist([{ started_at: 1, state: "report", report: "<b>x</b>" }]).includes("<details><summary>Report</summary><pre style=\"white-space:pre-wrap\">&lt;b&gt;x&lt;/b&gt;</pre></details>"), true);
+    t("routines: a held report says to read it in History", /held.*History/.test(rtLast({ state: "report", reason: "kept off Slack" })), true);
     t("routines: a queued run promises a free runner, not a minute", /within a minute/.test(rtState({ live: { state: "queued" }, data: { channel: "C0123ABCD" } })), false);
     t("routines: only a GitHub PR URL is a link", [rtLast({ state: "ok", pr_url: "javascript:alert(1)" }), rtLast({ state: "ok", pr_url: "https://evil.example.com/pull/1" }), rtLast({ state: "ok", pr_url: "https://github.com/mozilla/fxa/pull/12" })].map(h => /<a /.test(h)).join(","), "false,false,true"); }
   { const team = { profile: "fxa", repos: [] }, list = { outerHTML: "old list" }, form = { value: "typed" };

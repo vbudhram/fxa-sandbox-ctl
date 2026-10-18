@@ -141,7 +141,7 @@ routines_clear_name() {
   [ "$n" = 0 ] || _teams_audit_note routine-delete "$1" "${n} routines of an earlier team of this name"
 }
 
-routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }
+routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, report, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }
 
 cmd_routine() {
   case "${1:-}" in
@@ -477,6 +477,8 @@ routine_done() {
       : > "$f.diff"; python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f" "$f.diff" >/dev/null 2>&1 || post=false
     else post=false; fi
     rm -f "$f.diff"
+    # The reason marks a held report, so History and the last result say where to read it.
+    [ "$post" = true ] || [ -n "$reason" ] || reason="kept off Slack: it may hold personal data or a secret"
   fi
   rm -f "$f"
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),

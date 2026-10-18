@@ -161,8 +161,10 @@ printf 'Finding: the handler logs user@example.com and ghp_abcdefghijklmnop1234 
 a1="$(FXA_ROUTINE_NOW=$N routine_done "$d1" --state report --session agent-done01 --report-file "$tmp/report.md")"
 check "a report with an email and a token: post false, and the row keeps the report and the cost" "true|report|false|1|1.25" \
   "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a1")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $d1 AND report LIKE '%ghp_abcdef%';")|$(db_value "SELECT cost_usd FROM routine_runs WHERE id = $d1;")"
+check "History shows the held report and why it was held" "true|kept off Slack: it may hold personal data or a secret" \
+  "$(routine_history fxa "$rr" | jq -r --argjson d "$d1" '.[] | select(.id == $d) | "\(.report | contains("ghp_abcdef"))|\(.reason)"')"
 a2="$(FXA_ROUTINE_NOW=$((N + 9)) routine_done "$d1" --state failed --session agent-done01 --reason "late")"
-check "a second done call changes nothing" "false|report|false|report||$N" \
+check "a second done call changes nothing" "false|report|false|report|kept off Slack: it may hold personal data or a secret|$N" \
   "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a2")|$(db_value "SELECT state || '|' || coalesce(reason, '') || '|' || ended_at FROM routine_runs WHERE id = $d1;")"
 d2="$(st started agent-done02 $((N - 60)))"; printf 'No issue found in 6 commits.\n' > "$tmp/clean.md"
 check "a clean report posts" "true" "$(FXA_ROUTINE_NOW=$N routine_done "$d2" --state report --session agent-done02 --report-file "$tmp/clean.md" | jq -r .post)"
