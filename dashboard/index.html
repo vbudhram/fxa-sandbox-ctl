@@ -654,15 +654,19 @@ table.usage tr.sel td { background: var(--infobg); }
 
 <script>
 "use strict";
-const JIRA = "https://mozilla-hub.atlassian.net/browse/";
+// Links come from the snapshot's team block and fail closed: a bad site, repo, key or number gives plain text.
+const REPO_RE = /^(?!.*\.\.)[\w-][\w.-]*\/[\w-][\w.-]*$/;
+function teamRepo() { const r = SNAP?.team?.repo ?? SNAP?.repo ?? ""; return REPO_RE.test(r) ? r : ""; }
+function jiraHref(k) { const s = String(SNAP?.team?.jira_site ?? "").replace(/\/+$/, ""); return /^https:\/\/[\w-]+(\.[\w-]+)+(:\d+)?$/.test(s) && /^[A-Z][A-Z0-9]+-\d+$/.test(k ?? "") ? `${s}/browse/${encodeURIComponent(k)}` : ""; }
+function prUrl(n) { const r = teamRepo(); return r && /^\d+$/.test(String(n ?? "")) ? `https://github.com/${r}/pull/${n}` : ""; }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 const ago = s => s == null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
   : s < 172800 ? `${Math.round(s/3600)}h ago` : `${Math.round(s/86400)}d ago`;
 const short = s => s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s/60)}m` : `${(s/3600).toFixed(1)}h`;
 const stamp = e => e == null ? "" : new Date(e * 1000).toLocaleString(undefined, { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
 const days = iso => iso == null ? null : (Date.now() - Date.parse(iso)) / 86400000;
-const jira = k => `<a class="key" href="${JIRA}${encodeURIComponent(k)}" target="_blank" rel="noreferrer">${esc(k)}</a>`;
-const prl = (repo, n) => `<a class="key" href="https://github.com/${encodeURI(repo)}/pull/${n}" target="_blank" rel="noreferrer">#${n}</a>`;
+const jira = k => jiraHref(k) ? `<a class="key" href="${jiraHref(k)}" target="_blank" rel="noreferrer">${esc(k)}</a>` : `<span class="key">${esc(k)}</span>`;
+const prl = (_, n) => prUrl(n) ? `<a class="key" href="${prUrl(n)}" target="_blank" rel="noreferrer">#${esc(n)}</a>` : `<span class="key">#${esc(n)}</span>`;
 const TICKET = /^[A-Z][A-Z0-9]+-\d+$/;
 const usd = n => n == null ? "—" : "$" + Number(n).toFixed(2);
 
@@ -882,7 +886,7 @@ function renderAlerts() {
   else if (sp > 1500) add("warn", `<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
-  const tix = k => JIRA + encodeURIComponent(k), pr = n => `https://github.com/${repo}/pull/${n}`;
+  const tix = jiraHref, pr = prUrl;
   // The Blocked, Decide, Failing, Changes and Conflicts rows read the Board's why, who acts and age, and open the Board's rail.
   const bi = s ? Object.fromEntries(boardItems().map(i => [i.key, i])) : {}, bmeta = (k, alt) => needMeta(bi[k], alt);
   (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, bmeta(b.key, `${b.key} · needs a human decision`), tix(b.key), "View ticket", b.key));
@@ -1125,9 +1129,9 @@ function renderSess() {
     const [st, cls] = sessStatus(sel), cost = sessUsd(sel), tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
     const pauseIn = sel.state === "active" && !sel.agent_alive && sel.turn_open !== "1" && sel.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - sel.last_activity))) : null;
     const endsIn = isLive && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
-    const repo = SNAP?.repo ?? "mozilla/fxa";
+    const repo = teamRepo();
     const branch = prHref(sel.pr_url) ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : sel.pr_url ? esc(sel.pr_url)
-      : sel.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : "";
+      : sel.pushed_branch ? (repo ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : esc(sel.pushed_branch)) : "";
     put("sx-bar", `<span class="sdot ${cls}"></span><span class="key">${esc(sel.key)}</span>
       <span class="sxt" title="${esc(convTitle(sel))}">${esc(convTitle(sel))}</span>
       <span class="sxm">${esc(st)}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
@@ -1157,17 +1161,17 @@ const sessSummary = s => { try { return JSON.parse(s.summary || "{}"); } catch {
 // A conversation's PR, from any of its sessions, with its state when this repo's lists know it.
 function convPr(s) {
   const prUrl = chainOf(s, AGENTS?.sessions ?? []).map(x => x.pr_url).find(Boolean); if (!prHref(prUrl)) return null;
-  const n = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]), mine = prUrl.includes(`/${SNAP?.repo ?? "mozilla/fxa"}/`);
+  const n = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]), mine = !!teamRepo() && prUrl.includes(`/${teamRepo()}/`);
   const p = n && mine ? (STATS?.prs ?? []).find(x => x.n === n) : null;
   return { url: prUrl, n, state: p?.state ?? (mine && (SNAP?.open_prs ?? []).some(o => o.number === n) ? "OPEN" : "") };
 }
 function outcomeHtml(s) {
   const ss = AGENTS?.sessions ?? [], ch = chainOf(s, ss), pick = f => ch.map(f).find(Boolean);
   const pr = convPr(s), prUrl = pr?.url, state = pr?.state, pushed = pick(x => x.pushed_branch), diff = pick(x => sessSummary(x).diff), notes = pick(x => x.finish_notes);
-  const media = ch.reduce((n, x) => n + (Array.isArray(x.media) ? x.media.length : 0), 0), repo = SNAP?.repo ?? "mozilla/fxa";
+  const media = ch.reduce((n, x) => n + (Array.isArray(x.media) ? x.media.length : 0), 0), repo = teamRepo();
   const ro = (TEAMS?.teams ?? []).find(t => t.profile === (s.profile || "fxa"))?.read_only;
   const result = prUrl ? `<a href="${esc(prUrl)}" target="_blank" rel="noopener">${esc(prUrl.replace(/.*github\.com\//, "").replace("/pull/", " #"))} ↗</a>${state ? ` <span class="tag ${state === "MERGED" ? "ok" : state === "OPEN" ? "info" : ""}">${esc(state.toLowerCase())}</span>` : ""}`
-    : pushed ? `branch <a href="https://github.com/${esc(repo)}/tree/${esc(pushed)}" target="_blank" rel="noopener">${esc(pushed)} ↗</a>`
+    : pushed ? (repo ? `branch <a href="https://github.com/${esc(repo)}/tree/${esc(pushed)}" target="_blank" rel="noopener">${esc(pushed)} ↗</a>` : `branch ${esc(pushed)}`)
     : diff ? (ro ? "diff posted in Slack (read-only team)" : "changed files, not pushed") : "no code change";
   return `<div class="kvs"><span><b>Result</b>${result}</span>${diff ? `<span><b>Change</b>${esc(diff)}</span>` : ""}${media ? `<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
     ${ch.length > 1 ? `<span><b>Conversation</b>${ch.length} sessions</span>` : ""}</div>${notes ? `<div class="notes">${esc(String(notes).slice(0, 600))}</div>` : ""}`;
@@ -1606,7 +1610,7 @@ function teamRecent(p) {
   if (!STATS) return `<p class="na">—</p>`;
   if (!rows.length) return `<p class="na">No sessions or runs in 30 days.</p>`;
   return rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
-    const k = sessHref(r.key) ? `<a href="${sessHref(r.key)}">${esc(name)}</a>` : esc(name), pr = r.pr ? (prHref(`https://github.com/${SNAP?.repo ?? "mozilla/fxa"}/pull/${r.pr}`) ? `<a href="https://github.com/${esc(SNAP?.repo ?? "mozilla/fxa")}/pull/${esc(r.pr)}" target="_blank" rel="noopener">PR #${esc(r.pr)}</a>` : "") : "";
+    const k = sessHref(r.key) ? `<a href="${sessHref(r.key)}">${esc(name)}</a>` : esc(name), pr = r.pr ? (prUrl(r.pr) ? `<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${esc(r.pr)}</a>` : `PR #${esc(r.pr)}`) : "";
     return `<div class="titem"><span>${k} ${r.src === "pass" ? "" : `<span class="na">· ${esc(r.src)}</span>`}</span><span>${pr || `<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? Date.parse(r.at) / 1000)))}</span>`}</span></div>`; }).join("");
 }
 function teamActivity(p) {
@@ -1780,7 +1784,7 @@ function rtState(r) {
   return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
 }
 // Only a GitHub PR link becomes a link; anything else in pr_url shows as text.
-const rtPr = u => /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(u || "") ? u : "";
+const rtPr = u => { const m = String(u || "").match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+$/); return m && REPO_RE.test(m[1]) ? u : ""; };
 // Links built from feed data: only a GitHub PR link or a session key becomes an href; any other value shows as text.
 const prHref = rtPr;
 const sessHref = k => /^agent-[a-z0-9]{4,12}$/.test(k || "") ? `#sessions/stopped/${k}` : "";
@@ -2052,7 +2056,7 @@ function renderStats() {
 }
 // PRs tab: the outcome of each PR opened in the range, and its cost from every run on it.
 function prsTab(st, lo, hi, q, bars, byDay, kpi) {
-  const repo = SNAP?.repo || "mozilla/fxa", all = st.prs ?? [], rows = st.rows ?? [];
+  const repo = teamRepo(), all = st.prs ?? [], rows = st.rows ?? [];
   const prs = all.filter(p => { const t = Date.parse(p.created); return t >= lo && t < hi
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
   if (!prs.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened in this range matches these filters." : "No PR list yet."}</div>`;
@@ -2287,7 +2291,7 @@ const LANE_ST = ["Queue","Boot","Agent","Squash","Push","PR","CI","Review","Merg
 const LANE_COLOR = { live:"var(--info)", wait:"var(--faint)", warn:"var(--warn)", fix:"var(--bad)", done:"var(--purple)" };
 const LANE_OUT = {};
 // ── the Board: what is blocked, what is up next and what runs, each ticket once (epic i198) ──
-const KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/;
+const KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/, BELT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 // One fixed next step per kind: a step from free text could carry a ticket's own words.
 const NEXT_STEP = {
   stalled: "The run stalled twice. Read fxa-sandbox-ctl tail KEY, then relaunch it or label it rejected.",
@@ -2430,7 +2434,7 @@ function boardDetails(i) {
     ${kv("Since", i.since ? `${esc(new Date((typeof i.since === "number" ? i.since * 1000 : Date.parse(i.since))).toISOString().slice(0, 16).replace("T", " "))} UTC` : i.queued_at ? `first queued ${ago(i.age)}` : "")}
     ${kv("Attempts", i.attempts != null && lim ? `${i.attempts} of ${lim}` : "")}${kv("Skipped", i.passes ? `${i.passes} pass${i.passes === 1 ? "" : "es"}` : "")}</div></div>
     <div class="bnext"><b>Next step.</b> ${esc(i.next)}</div>
-    <div class="links">${KEY_RE.test(i.key) ? `<a href="${JIRA}${encodeURIComponent(i.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${i.pr ? `<a href="https://github.com/${esc(repo)}/pull/${i.pr}" target="_blank" rel="noopener">PR ↗</a>` : ""}${i.belt ? `<a href="#pipeline/belts/${esc(i.key)}">Belt</a>` : ""}</div></div>`;
+    <div class="links">${jiraHref(i.key) ? `<a href="${jiraHref(i.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${prUrl(i.pr) ? `<a href="${prUrl(i.pr)}" target="_blank" rel="noopener">PR ↗</a>` : ""}${i.belt ? `<a href="#pipeline/belts/${esc(i.key)}">Belt</a>` : ""}</div></div>`;
 }
 function laneRows() {
   const { cards } = merged(), med = SNAP?.telemetry?.median_minutes, rows = [], seen = new Set();
@@ -2474,7 +2478,7 @@ function laneRows() {
   const ss = AGENTS?.sessions ?? [];
   (SNAP?.open_prs ?? []).filter(p => !p.key).forEach(p => {
     const d = Math.round(days(p.created) ?? 0), s = sessHeads(ss).find(x => chainOf(x, ss).some(y => y.branch === p.branch || y.key === p.branch));
-    const owner = s ? sessRoutine(s) || ownerName(s) : "";
+    const owner = s ? (sessRoutine(s) ? (TEAM_ADMIN?.admin ? sessRoutine(s) : "scheduled run") : ownerName(s)) : "";
     rows.push({ t: { key: p.branch, pr: p.number, summary: p.title, slack: true, owner, sess: s }, st: 7, kind: d >= 3 ? "warn" : "wait",
       l1: `Waiting ${d} day${d === 1 ? "" : "s"}`, l2: owner ? (s.routine_run ? owner : `${owner}'s session`) : "Slack session", age: d });
   });
@@ -2518,7 +2522,7 @@ function laneDetails(r) {
   const kinds = k ? Object.entries(k.kinds).map(([n, c]) => `${c} ${esc(KIND[n] ?? n).toLowerCase()}`).join(" · ") : "";
   const rv = t.review === "APPROVED" ? "approved" : t.review === "CHANGES_REQUESTED" ? "changes requested" : t.review === "REVIEW_REQUIRED" ? "review required" : t.review;
   if (t.slack) return `<div class="ldet"><div><h3>Slack session</h3><div class="kvs">${kv("Session", sessLink(t.sess, t.key))}${kv("Owner", esc(t.owner || "unknown"))}${kv("Opened", ago(Math.round((Date.now() - Date.parse(SNAP?.open_prs?.find(p => p.number === t.pr)?.created ?? Date.now())) / 1000)))}</div></div>
-    <div class="links"><a href="https://github.com/${esc(repo)}/pull/${t.pr}" target="_blank" rel="noopener">PR ↗</a>${t.sess?.slack_url ? `<a href="${esc(t.sess.slack_url)}" target="_blank" rel="noopener">Slack thread ↗</a>` : ""}</div></div>`;
+    <div class="links">${prUrl(t.pr) ? `<a href="${prUrl(t.pr)}" target="_blank" rel="noopener">PR ↗</a>` : ""}${t.sess?.slack_url ? `<a href="${esc(t.sess.slack_url)}" target="_blank" rel="noopener">Slack thread ↗</a>` : ""}</div></div>`;
   const groups = [
     ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Turns", k.turns || ""), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
       kv("Median run", `${k.median_min} min`), kv("Files changed", k.files), kv("Last run", ago(Math.round((Date.now() - Date.parse(k.last)) / 1000))),
@@ -2532,7 +2536,7 @@ function laneDetails(r) {
       kv("Opened", t.created ? ago(Math.round((Date.now() - Date.parse(t.created)) / 1000)) : ""), kv("Mergeable", esc((t.mergeable ?? "").toLowerCase()))]]] : []),
   ];
   return `<div class="ldet">${groups.map(([h, items]) => `<div><h3>${h}</h3><div class="kvs">${items.join("")}</div></div>`).join("")}
-    <div class="links"><a href="${JIRA}${encodeURIComponent(t.key)}" target="_blank" rel="noopener">Jira ↗</a>${t.pr ? `<a href="https://github.com/${esc(repo)}/pull/${t.pr}" target="_blank" rel="noopener">PR ↗</a><a href="https://github.com/${esc(repo)}/pull/${t.pr}/checks" target="_blank" rel="noopener">Checks ↗</a>` : ""}</div></div>`;
+    <div class="links">${jiraHref(t.key) ? `<a href="${jiraHref(t.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${prUrl(t.pr) ? `<a href="${prUrl(t.pr)}" target="_blank" rel="noopener">PR ↗</a><a href="${prUrl(t.pr)}/checks" target="_blank" rel="noopener">Checks ↗</a>` : ""}</div></div>`;
 }
 // A click on a belt row (not on its links) opens the belt's details in the right panel.
 document.addEventListener("click", e => {
@@ -2552,7 +2556,8 @@ function openPrCounts() {
 function openPrLine() {
   const c = openPrCounts();
   if (!c) return "";
-  return `<span class="sub" style="color:var(--dim)"><a href="https://github.com/${esc(SNAP.repo ?? "")}/pulls?q=is%3Apr+state%3Aopen+label%3Aauto" target="_blank" rel="noreferrer">${c.total} open PR${c.total === 1 ? "" : "s"}</a>: ${esc(c.parts)}</span>`;
+  const repo = teamRepo(), lbl = SNAP.team?.pr_label, n = `${c.total} open PR${c.total === 1 ? "" : "s"}`;
+  return `<span class="sub" style="color:var(--dim)">${repo && lbl ? `<a href="https://github.com/${esc(repo)}/pulls?q=is%3Apr+state%3Aopen+label%3A${encodeURIComponent(lbl)}" target="_blank" rel="noreferrer">${n}</a>` : n}: ${esc(c.parts)}</span>`;
 }
 function renderLanes() {
   const rows = laneRows();
@@ -2634,7 +2639,7 @@ function sessionCard(s) {
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity
     ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
   const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
-  const repo = SNAP?.repo ?? "mozilla/fxa";
+  const repo = teamRepo();
   const last = plainMd(a.last_text || a.last_tool);
   return `<div class="fac">
     <div class="top"><span class="key" title="owner ${esc(s.owner || "?")}">${esc(s.key)}</span>${titled(s.request || "")}
@@ -2731,7 +2736,7 @@ function renderTickets() {
   const held = skipped.filter(k => k.in_queue !== false && k.held_by), liveSkips = skipped.filter(k => k.in_queue !== false && !k.held_by), staleSkips = skipped.filter(k => k.in_queue === false);
   const heldRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span><span class="tag info">waiting on ${esc(k.held_by)}</span></span></div>
              <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
-  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, "labelled ai-fixme") +
+  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, SNAP?.team?.queue_label ? `labelled ${esc(SNAP.team.queue_label)}` : "in the queue") +
     (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
      : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>` +
           (ready.length ? `<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
@@ -2877,7 +2882,8 @@ function route() {
   const VIEW_PREV = VIEW;
   TAB = tabs.some(t => t[0] === sub) ? sub : view === VIEW && tabs.some(t => t[0] === TAB) ? TAB : tabs[0]?.[0] ?? "";
   VIEW = view;
-  if (sel && view !== "teams") SEL[view] = decodeURIComponent(sel);
+  // A pipeline key is a Jira key or a branch name: anything else in a link is dropped, never echoed.
+  if (sel && view !== "teams") { let k = ""; try { k = decodeURIComponent(sel); } catch {} SEL[view] = view === "pipeline" && !BELT_KEY_RE.test(k) ? "" : k; }
   if (view === "sessions") { SESS_AUTO = !tabs.some(t => t[0] === sub) && view !== VIEW_PREV; SESS_TAB = TAB; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(SEL.sessions ?? "") ? SEL.sessions : ""; }
   if (view === "stats") STATS_TAB = TAB;
   if (view === "errors") ERRS_ALL = TAB === "all";
@@ -2897,6 +2903,8 @@ function route() {
   if (view === "stats") renderStats();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
+  // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
+  if (view === "pipeline" && TEAM_ADMIN == null) loadTeamAdmin().then(() => VIEW === "pipeline" && SNAP && renderLanes());
   renderSide(); renderRight();
   document.getElementById("main").scrollTop = 0;
   if (view === "pipeline" && sel) document.querySelector(`.lane[data-belt="${CSS.escape(SEL.pipeline)}"]`)?.scrollIntoView({ block: "center" });
