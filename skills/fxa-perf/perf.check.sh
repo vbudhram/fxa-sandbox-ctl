@@ -49,7 +49,7 @@ R="$tmp/repo"; mkdir -p "$R/packages/fxa-settings" "$R/packages/fxa-react" "$tmp
   && git add -A && git commit -qm head )
 base="$(git -C "$R" rev-parse HEAD~1)"; real_node="$(command -v node)"
 printf '#!/bin/sh\nexit 0\n' > "$tmp/stub/npx"
-printf '#!/bin/sh\nif [ "$1" = scripts/build.js ]; then [ -n "$SLOW" ] && sleep 30; mkdir -p "$BUILD_PATH"; ls > "$BUILD_PATH/asset-manifest.json"; echo "${HTML:-a}" > "$BUILD_PATH/index.html"; exit 0; fi\nexec %s "$@"\n' "$real_node" > "$tmp/stub/node"
+printf '#!/bin/sh\nif [ "$1" = scripts/build.js ]; then [ -n "$SLOW" ] && { : > "$SLOW"; sleep 30; }; mkdir -p "$BUILD_PATH"; ls > "$BUILD_PATH/asset-manifest.json"; echo "${HTML:-a}" > "$BUILD_PATH/index.html"; exit 0; fi\nexec %s "$@"\n' "$real_node" > "$tmp/stub/node"
 chmod +x "$tmp/stub/npx" "$tmp/stub/node"
 pb() { PATH="$tmp/stub:$PATH" PERF_DIR="$tmp/w" PERF_KEEP="$tmp/keep" PERF_WS="$R" bash "$here/perf.sh" build "$@"; }
 pb base "$base" >/dev/null 2>&1
@@ -57,8 +57,9 @@ check "a rev build puts HEAD back: the deleted file stays gone, the new one stay
   "$([ -e "$R/packages/fxa-settings/old.ts" ] && echo yes || echo no)|$([ -e "$R/packages/fxa-settings/new.ts" ] && echo yes || echo no)|$([ -z "$(git -C "$R" status --porcelain)" ] && echo clean || echo dirty)"
 # A tool timeout signals perf.sh and the build under it, and only those.
 killtree() { local c; for c in $(pgrep -P "$1"); do killtree "$c"; done; kill -TERM "$1" 2>/dev/null; }
-SLOW=1 PATH="$tmp/stub:$PATH" PERF_DIR="$tmp/w" PERF_KEEP="$tmp/keep" PERF_WS="$R" bash "$here/perf.sh" build killed "$base" >/dev/null 2>&1 & pid=$!
-sleep 1.5; killtree "$pid"; wait "$pid" 2>/dev/null
+SLOW="$tmp/building" PATH="$tmp/stub:$PATH" PERF_DIR="$tmp/w" PERF_KEEP="$tmp/keep" PERF_WS="$R" bash "$here/perf.sh" build killed "$base" >/dev/null 2>&1 & pid=$!
+# Kill once the build runs (perf.sh has checked out the rev and set its trap), not after a fixed sleep.
+for _ in $(seq 1 200); do [ -e "$tmp/building" ] && break; sleep 0.1; done; killtree "$pid"; wait "$pid" 2>/dev/null
 check "a killed rev build also puts HEAD back" "no|clean" \
   "$([ -e "$R/packages/fxa-settings/old.ts" ] && echo yes || echo no)|$([ -z "$(git -C "$R" status --porcelain)" ] && echo clean || echo dirty)"
 HTML=a pb ka >/dev/null 2>&1; HTML=b pb kb >/dev/null 2>&1

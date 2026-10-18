@@ -39,7 +39,8 @@ build() {
     && rm -rf build/perf && SKIP_PREFLIGHT_CHECK=true INLINE_RUNTIME_CHUNK=false NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=6144" \
        BUILD_PATH=build/perf node scripts/build.js > "$W/build-$label.log" 2>&1 ); rc=$?
   # Back to HEAD, and no file that only <rev> had: the guard above made the paths clean.
-  [ -n "$rev" ] && { trap - EXIT INT TERM HUP; back_to_head; }
+  # A signal that comes while HEAD goes back (a timeout kills the build, then perf.sh) must not stop it halfway.
+  [ -n "$rev" ] && { trap '' INT TERM HUP; trap - EXIT; back_to_head; trap - INT TERM HUP; }
   [ "$rc" = 0 ] || { tail -20 "$W/build-$label.log"; return 1; }
   rm -rf "${W:?}/builds/$label"; mv "$s/build/perf" "$W/builds/$label"
   echo "built $label at ${rev:-the working tree}: key $(key "$label")"
