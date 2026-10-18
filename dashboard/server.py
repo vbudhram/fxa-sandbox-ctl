@@ -390,7 +390,9 @@ def team_test(name, now):
     num = lambda p: int(p.read_text().strip()) if p.exists() and p.read_text().strip().isdigit() else None
     gen_p, log, pidf, tp = (teams / f"{name}{e}" for e in (".gen", ".test.log", ".test.pid", ".tested"))
     gen, gm = num(gen_p), mt(gen_p) or 0
-    out = {"result": None, "at": None, "generation": None, "tested": num(tp) if (mt(tp) or -1) >= gm else None}
+    # tested is read by value: Activate writes a new generation after the test, so its file is older by design.
+    # A delete removes the test files, so a re-created name starts with none.
+    out = {"result": None, "at": None, "generation": gen, "tested": num(tp)}
     lm = mt(log)
     if lm is None or lm < gm:
         return out
@@ -399,7 +401,7 @@ def team_test(name, now):
     m = re.fullmatch(rf"passed: team {re.escape(name)} may be activated at generation (\d+)", last)
     if m:
         if gen is not None and int(m.group(1)) == gen:
-            out.update(result="passed", at=int(lm), generation=gen)
+            out.update(result="passed", at=int(lm))
     elif last == f"failed: team {name} stays as it is":
         out.update(result="failed", at=int(lm))
     elif lm > now - TEST_TIMEOUT:
@@ -937,7 +939,8 @@ class Handler(BaseHTTPRequestHandler):
                           for d in sorted(p.parent.name for p in PROFILES_DIR.glob("*/profile.conf")) if d not in listed]
             per, top = team_issues(teams, access if data is not None else None, records)
             self._json(200, {"teams": [dict(t, issues=i) for t, i in zip(teams, per)], "issues": top,
-                             "access_source": access and {"path": access["path"], "mtime": access["mtime"]},
+                             # The file name only: the path names the operator's home directory.
+                             "access_source": access and {"file": os.path.basename(access["path"]), "mtime": access["mtime"]},
                              "access_error": access_err, "age_seconds": age, "error": err,
                              "refreshing": busy, "interval": TEAMS.interval})
         elif path == "/api/lessons":

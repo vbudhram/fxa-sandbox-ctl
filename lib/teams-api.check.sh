@@ -64,7 +64,7 @@ check("a team with no open and no users: nobody can start it", True, ("warn", "n
 check("a failed App check is info, write unknown", [("info", "mozilla/solo: GitHub App check failed; write unknown")],
       [x for x in lv("solo") if x[0] == "info"])
 check("a read-only team's no-write repo is no issue", [], [x for x in lv("crew") if x[0] == "info"])
-check("the access source is the file and its mtime", (f"{tmp}/bot.env.base", None), (b["access_source"]["path"], b["access_error"]))
+check("the access source is the file name only, with no host path", ("bot.env.base", None, False), (b["access_source"]["file"], b["access_error"], tmp in raw))
 
 os.environ["FXA_BOT_ENV"] = f"{tmp}/missing.env"
 b = json.loads(get()[1]); t = {x["profile"]: x for x in b["teams"]}
@@ -125,6 +125,12 @@ check("a log older than the generation is not a result", None, files(14, "failed
 check("passed at the current generation", ("passed", 14), tuple(files(14, "passed: team rusty may be activated at generation 14\n")[k] for k in ("result", "generation")))
 check("passed at an older generation is not passed", None, files(15, "passed: team rusty may be activated at generation 14\n")["result"])
 check("tested counts when it is not older than the generation", 14, files(14, tested=14)["tested"])
+# Test, then Activate: Activate writes generation 15 after the test. The pass still shows, by value.
+files(14, "passed: team rusty may be activated at generation 14\n", tested=14); (td / "rusty.gen").write_text("15\n"); os.utime(td / "rusty.gen", (now, now))
+r = server.team_test("rusty", now)
+check("after Activate: no result from the older log, tested 14 at generation 15", (None, 14, 15), (r["result"], r["tested"], r["generation"]))
+per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": r}], None, {"rusty": {"status": "active", "generation": "15"}})
+check("after Activate: the last-passed info shows", True, any(x["text"] == "last passed at generation 14; later edits did not change what a runner uses" for x in per[0]))
 check("a team with no record has no test", None, server.team_test("crew", now))
 recs2 = {"rusty": {"status": "active", "generation": "13"}}
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": {"tested": 12}}], None, recs2)
