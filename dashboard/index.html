@@ -281,6 +281,8 @@
   .ttable tr.sel td { background:var(--infobg); }
   .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
   .rtshow button[aria-pressed="true"], .tsw[aria-pressed="true"] { color:var(--link); border-color:var(--link); background:var(--infobg); }
+  .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
+  .tchk { display:flex; gap:var(--s2); align-items:center; }
   .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
   .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
@@ -292,9 +294,9 @@
   .right { grid-area:right; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
   .right .rh { display:block; font:700 16px/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
   .right h4 { margin:0 0 var(--s2); font:700 var(--t-label) var(--sans); color:var(--dim); }
-  .right .kvr { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
-  .right .kvr:first-of-type { border-top:0; } .right .kvr > span { color:var(--dim); } .right .kvr b { font-weight:600; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
-  .right .kvr b.na, .right .kvr .na { font-weight:400; color:var(--faint); }
+  .right .kvr, .tpage .kvr { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
+  .right .kvr:first-of-type, .tpage .kvr:first-of-type { border-top:0; } .right .kvr > span, .tpage .kvr > span { color:var(--dim); } .right .kvr b, .tpage .kvr b { font-weight:600; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
+  .right .kvr b.na, .right .kvr .na, .tpage .kvr b.na, .tpage .kvr .na { font-weight:400; color:var(--faint); }
   .right .acts2 { display:flex; gap:var(--s2); flex-wrap:wrap; } .right .acts2 a { color:var(--link); font-weight:600; }
   .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
   .right .ldet { margin:0; flex-direction:column; } .right .ldet .links { margin-left:0; }
@@ -1570,26 +1572,24 @@ function allTeamsHtml() {
 function teamSettingsHtml(t) {
   const p = esc(t.profile), conf = `profiles/${p}/profile.conf`, a = t.access, src = TEAMS?.access_source, repos = t.repos ?? [];
   const h = (title, key) => `<h3>${title}<span class="tkey">${key}</span></h3>`;
-  return `<div class="tcard${(t.issues ?? []).some(i => i.text === "nobody can start it") ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record access" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${t.profile === "fxa" || a?.open === "built-in" ? kvr("Who", "everyone (built into the bot)")
-      : !a ? `<p class="unknown">access unknown (bot env not readable)</p>`
-      : kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`) + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length)}
-      <p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">Team rule; the global gates (ALLOWED_USERS, ALLOWED_CHANNELS, CHANNEL_GATES) also apply.</p></div>
+  const req = (t.issues ?? []).some(i => i.text === "nobody can start it") || (t.access?.record && t.access.status !== "active");
+  return `<div class="tcard${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
     <div class="tcard">${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.map(r => kvr(`<span class="mono">${esc(r.slug)}</span>`, `${esc(r.role)}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${esc(r.why)}` : ""}`)).join("") || kvr("Repos", "none", 1)}
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div class="tcard">${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvr("Connectors", esc(teamTools(t.mcp)))}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>
-    <div class="tcard" id="t-record">${teamEditor(t.profile, t.access?.record)}</div>`;
+    <div class="tcard" id="t-record">${TACT === t.profile && TED?.name === t.profile ? `<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
 }
 // A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.
 function teamBanner(t) {
   const adm = !!TEAM_ADMIN?.admin, base = `#teams/${esc(t.profile)}`, has = re => (t.issues ?? []).some(i => re.test(i.text)), r = rtSum(t.profile), out = [];
   if (has(/spend cap reached/)) out.push(["The team reached its spend cap", "Every new session and routine run of the team is refused until the cap resets or the operator raises it.", null]);
-  if (t.access?.record && t.access.status !== "active") out.push([`The team is ${esc(t.access.status)}`, "Nobody can start it until it is tested and active.", [`${base}/settings`, "Test and activate"]]);
+  if (t.access?.record && t.access.status !== "active") out.push([`The team is ${esc(t.access.status)}`, "Nobody can start it until it is tested and active.", [`${base}/settings`, "Test and activate", t.profile]]);
   else if (has(/nobody can start it/)) out.push(["Nobody can start this team", "It has no users and no channel rules, and it is not open.", [`${base}/settings`, "Add users"]]);
   if (adm && r?.routines && has(/spend cannot be read/)) out.push(["Routines are skipped", "The team's spend cannot be read, so each run is refused (fail closed).", null]);
   if (adm && r?.failed) out.push([`${r.failed} routine${r.failed === 1 ? "" : "s"} failed`, r.last_failed ? `${esc(r.last_failed.name ?? "")}: ${esc(r.last_failed.reason ?? "no reason recorded")}` : "", [`${base}/routines`, "Open Routines"]]);
   if (!out.length) return "";
   const [h, why, act] = out[0], more = out.length > 1 ? ` <span class="na">and ${out.length - 1} more</span>` : "";
-  return `<div class="tbanner" role="alert"><div><b>${h}</b>${more}<div>${why}${!adm && act ? " A team admin can fix this. Ask the operator." : ""}</div></div>${adm && act ? `<a class="tile" style="padding:6px 12px" href="${act[0]}">${act[1]}</a>` : ""}</div>`;
+  return `<div class="tbanner" role="alert"><div><b>${h}</b>${more}<div>${why}${!adm && act ? " A team admin can fix this. Ask the operator." : ""}</div></div>${adm && act ? `<a class="tile" style="padding:6px 12px" href="${act[0]}"${act[2] ? ` data-team-activate="${esc(act[2])}"` : ""}>${act[1]}</a>` : ""}</div>`;
 }
 // Recent work: the team's 5 newest runs; a routine run is named only for an admin (i168 D1).
 function teamRecent(p) {
@@ -1639,6 +1639,48 @@ function teamOverview(t) {
       : TEAM_ADMIN?.admin && RTSUM_ERR ? `<div class="tcard"><p class="unknown">Routine status unknown: ${esc(RTSUM_ERR)}</p></div>` : ""}
     ${teamReadiness(t)}`;
 }
+// Access: a record team's admin edits users, channels and open here; FxA, env and folder teams say where it is set.
+let ACCESS_DRAFT = null, TACT = "", TEAM_LOADING = "", TACT_FOCUSED = false;
+const accessList = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))];
+function teamAccessCard(t) {
+  const a = t.access, adm = !!TEAM_ADMIN?.admin, src = TEAMS?.access_source;
+  if (t.profile === "fxa" || a?.open === "built-in") return kvr("Who", "everyone (built into the bot)");
+  if (!a) return `<p class="unknown">access unknown (bot env not readable)</p>`;
+  const rows = kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`) + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length);
+  if (!a.record) return rows + `<p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
+  if (!adm) return rows + `<p class="empty">A team admin adds users. Ask the operator.</p>`;
+  if (TED?.name !== t.profile) return rows + `<p class="empty">loading the record…</p>`;
+  let rec; try { rec = JSON.parse(TED.text); } catch { return rows + `<p class="unknown">The record in the editor below is not JSON; fix it there.</p>`; }
+  const d = ACCESS_DRAFT?.team === t.profile ? ACCESS_DRAFT : { team: t.profile, users: (rec.access?.users ?? []).join(", "), channels: (rec.access?.channels ?? []).join(", "), open: !!rec.access?.open };
+  return `<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${esc(d.users)}" autocomplete="off">
+    <label for="t-channels">Channels <span class="na">Slack channel IDs</span></label><input id="t-channels" data-acc="channels" value="${esc(d.channels)}" autocomplete="off">
+    <label class="tchk"><input type="checkbox" id="t-open" data-acc="open"${d.open ? " checked" : ""}> Open to anyone the bot allows</label>
+    <div class="acts2"><button type="button" data-acc-save${ACCESS_DRAFT?.busy ? " disabled" : ""}>Save access</button></div>
+    <p role="status" class="${ACCESS_DRAFT?.ok === false ? "unknown" : "empty"}">${esc(ACCESS_DRAFT?.msg || "")}</p></div>`;
+}
+document.addEventListener("input", e => {
+  const k = e.target.dataset?.acc; if (!k || !TEAM_RE.test(SEL.teams ?? "")) return;
+  ACCESS_DRAFT = { ...(ACCESS_DRAFT?.team === SEL.teams ? ACCESS_DRAFT : { team: SEL.teams, users: document.getElementById("t-users")?.value ?? "", channels: document.getElementById("t-channels")?.value ?? "", open: !!document.getElementById("t-open")?.checked }),
+    [k]: k === "open" ? e.target.checked : e.target.value, msg: "" };
+});
+document.addEventListener("change", e => { if (e.target.dataset?.acc === "open") e.target.dispatchEvent(new Event("input", { bubbles: true })); });
+// Save access: the kept record and generation, so an edit someone else saved meanwhile is refused (409), not lost.
+async function accessSave(team) {
+  if (ACCESS_DRAFT?.busy || TED?.name !== team) return;
+  let rec; try { rec = JSON.parse(TED.text); } catch { return; }
+  const d = ACCESS_DRAFT?.team === team ? ACCESS_DRAFT : { users: (rec.access?.users ?? []).join(","), channels: (rec.access?.channels ?? []).join(","), open: !!rec.access?.open };
+  rec.access = { ...(rec.access ?? {}), users: accessList(d.users), channels: accessList(d.channels), open: !!d.open };
+  ACCESS_DRAFT = { ...d, team, busy: true, msg: "saving…" }; renderTeams();
+  const r = await fetch(`/api/teams/${encodeURIComponent(team)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ record: rec, generation: TED.gen }) }).catch(() => null);
+  const j = await r?.json().catch(() => ({})) ?? {};
+  if (!r?.ok) { ACCESS_DRAFT = { ...ACCESS_DRAFT, busy: false, ok: false, msg: r?.status === 409 ? "Someone changed this team after you loaded it. Load it again and redo your edit." : j.error || "the dashboard did not answer" }; return renderTeams(); }
+  TED = await teamRecord(team); ACCESS_DRAFT = { team, users: (JSON.parse(TED.text).access?.users ?? []).join(", "), channels: (JSON.parse(TED.text).access?.channels ?? []).join(", "), open: !!JSON.parse(TED.text).access?.open, busy: false, ok: true, msg: `saved: generation ${TED.gen}` };
+  await loadTeams(); renderTeams();
+}
+document.addEventListener("click", e => {
+  if (e.target.closest?.("[data-acc-save]")) return accessSave(SEL.teams);
+  const act = e.target.closest?.("[data-team-activate]"); if (act) { TACT = act.dataset.teamActivate; TACT_FOCUSED = false; }
+});
 function teamPageHtml(p) {
   const t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null;
   if (!t) return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${esc(p)}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
@@ -1661,7 +1703,13 @@ function renderTeams() {
   if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
+  if (TTAB === "settings" && t?.access?.record && TEAM_ADMIN?.admin && TED?.name !== t.profile && TEAM_LOADING !== t.profile) {
+    TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; ACCESS_DRAFT = null; renderTeams(); } });
+  }
+  if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
   rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
+  // Test and activate: once the record is in the card, the focus goes to Test.
+  if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) { TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); }
 }
 
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
