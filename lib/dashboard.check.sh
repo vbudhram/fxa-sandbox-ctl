@@ -251,7 +251,9 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   load(); AGENTS.sessions[0].state = "paused"; const so = beltGroups().outside.find(r => r.t.slack), sd = beltDetails(so);
   t("belt details: a Slack belt opens its session on the session's own tab", `${/class="main"[^>]*href="#sessions\/paused\/agent-abc123"/.test(sd)}|${/#sessions\/stopped\//.test(sd)}`, "true|false");
   load(); SNAP.review = null; SNAP.done_fetch_failed = true; const gn = beltGroups(), hn = beltsHtml(gn);
-  t("belts: with no review list, a pipeline PR is never called outside the pipeline", `${gn.outside.map(r => r.t.key).join(",")}|${/not in the pipeline/.test(hn)}|${/state unknown/.test(hn)}`, "agent-abc123|false|true");
+  t("belts: with no review list, a pipeline PR is never called outside the pipeline", `${gn.outside.filter(r => !r.t.slack).map(r => r.l1).join(",")}|${/not in the pipeline/i.test(hn)}|${/state unknown/.test(hn)}`, "State unknown,State unknown|false|true");
+  load(); SNAP.inflight_fetch_failed = true; const gk = beltGroups();
+  t("belts: a failed in-flight read keeps a stray PR on the page as State unknown, and the PR count agrees", `${gk.outside.find(r => r.t.key === "FXA-41")?.l1}|${/not in the pipeline/.test(openPrCounts().parts)}`, "State unknown|false");
   SEL.pipeline = ""; globalThis.BAD_LINK = true; t("a bad pipeline link says so and echoes nothing", /That link names no ticket\./.test(beltsHtml(beltGroups())), true); globalThis.BAD_LINK = false;
   load(); SNAP.inflight = []; SNAP.review = []; SNAP.blocked = []; SNAP.queue.skipped = []; SNAP.queue.ready = []; SNAP.open_prs = []; AGENTS.runners = []; AGENTS.sessions = [];
   const ge = beltGroups(), he = beltsHtml(ge);

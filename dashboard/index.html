@@ -2399,10 +2399,10 @@ function laneRows() {
   // rounds, a blocked one, or one outside the pipeline. GitHub lists them all.
   (SNAP?.open_prs ?? []).filter(p => p.key && !rows.some(r => r.t.key === p.key)).forEach(p => {
     const blocked = (SNAP?.blocked ?? []).some(b => b.key === p.key), d = Math.round(days(p.created) ?? 0);
-    const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : "Not in the pipeline";
-    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d,
-      // A PR is outside the pipeline only when every feed that could claim its key was read.
-      outside: l1 === "Not in the pipeline" && SNAP.review != null && SNAP.blocked != null && !SNAP.inflight_fetch_failed });
+    // "Not in the pipeline" only when every feed that could claim the key was read; else the state is unknown.
+    const known = SNAP.review != null && SNAP.blocked != null && !SNAP.inflight_fetch_failed;
+    const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : known ? "Not in the pipeline" : "State unknown";
+    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d, outside: l1 === "Not in the pipeline" || l1 === "State unknown" });
   });
   // Open PRs that no ticket owns: a Slack session opened them from its branch (agent-xxxxxx).
   const ss = AGENTS?.sessions ?? [];
@@ -2426,7 +2426,8 @@ function openPrCounts() {
   const s = SNAP, open = s?.open_prs;
   if (!s || open == null) return null;
   const stateOf = k => !k ? "Slack or by hand" : s.review == null ? "state unknown" : s.review.some(r => r.key === k) ? "awaiting review"
-    : (s.inflight ?? []).some(r => r.key === k) ? "in flight" : (s.blocked ?? []).some(r => r.key === k) ? "blocked" : "not in the pipeline";
+    : (s.inflight ?? []).some(r => r.key === k) ? "in flight" : (s.blocked ?? []).some(r => r.key === k) ? "blocked"
+    : s.blocked == null || s.inflight_fetch_failed ? "state unknown" : "not in the pipeline";
   const n = {}; open.forEach(p => { const k = stateOf(p.key); n[k] = (n[k] ?? 0) + 1; });
   return { total: open.length, parts: Object.entries(n).map(([k, c]) => `${c} ${k}`).join(" · ") || "none" };
 }
@@ -2448,7 +2449,7 @@ function beltGroups() {
   laneRows().forEach(r => {
     const i = byKey[r.t.key];
     if (r.outside && !i) return add("outside", { ...r, tone: r.age >= 3 ? "k-warn" : "k-wait",
-      l1: r.t.slack ? (r.t.routine ? `Routine · ${TEAM_ADMIN?.admin && r.t.owner ? r.t.owner : "scheduled run"}` : `Slack · ${r.t.owner ? `${r.t.owner}'s session` : "a session"}`) : "Not in the pipeline", l2: `open ${r.age} day${r.age === 1 ? "" : "s"}` });
+      l1: r.t.slack ? (r.t.routine ? `Routine · ${TEAM_ADMIN?.admin && r.t.owner ? r.t.owner : "scheduled run"}` : `Slack · ${r.t.owner ? `${r.t.owner}'s session` : "a session"}`) : r.l1, l2: `open ${r.age} day${r.age === 1 ? "" : "s"}` });
     if (!i) return;   // a merged or closed review row, a hold or a ready ticket has no belt
     if (i.column === "running") {
       if (i.fault) return add("needs", { ...r, tone: "k-bad" });
