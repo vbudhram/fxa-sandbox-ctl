@@ -31,6 +31,7 @@
 #   FAKE_FINISH_FAIL  a finish ends 12 s later with this error and the session active, as a failed wrap-up does
 #   FAKE_WRAP_REPLY   a finish's wrap-up turn replies with this text 6 s in (needs-input), as ctl's wrap_reply does
 #   FAKE_FAIL_S       the session's state is failed from this many seconds after its start
+#   FAKE_ROUTINE_TASK_FAIL  task --source routine exits 1 with this error and no session, as ctl refusing the run does
 #   FAKE_ROUTINE_DONE fail: routine done exits 1, as a store error does; stopped: it answers changed false, state stopped
 #   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
 #                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
@@ -137,6 +138,11 @@ opt() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { e
 cmd="${1:-}"; shift || true
 case "$cmd" in
   task) k="$(opt --id "$@")"; [[ "$k" =~ ^agent-[a-z0-9]+$ ]] || { echo "fake-ctl: task needs --id" >&2; exit 1; }
+    # A routine run's task that ctl refuses (a bad row, a cap, a team mismatch) leaves the run with no session.
+    if [ "$(opt --source "$@")" = routine ]; then
+      [ -z "${FAKE_ROUTINE_TASK_FAIL:-}" ] || { echo "ERROR: ${FAKE_ROUTINE_TASK_FAIL}" >&2; exit 1; }
+      echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
+    fi
     mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
     # A tape: the nth task plays the tape's nth session.
     [ -n "${FAKE_TAPE:-}" ] && { n="$(find "$DIR" -path '*/agent-*/tape_idx' | wc -l | tr -d ' ')"; echo "$n" > "$DIR/$k/tape_idx"; }
@@ -193,6 +199,9 @@ case "$cmd" in
       done) run="${1:-}"
         case "${FAKE_ROUTINE_DONE:-}" in fail) echo "ERROR: the routine store did not answer (busy or failed); nothing changed, try again" >&2; exit 1 ;;
           stopped) jq -nc --argjson n "$(( $(now) + 86400 ))" '{changed: false, state: "stopped", post: false, next: $n}'; exit 0 ;; esac
+        # Like the real one: done names the run's own session, or none for a run that has none.
+        sess="$(opt --session "$@")"; [ "$sess" = "$(cat "$DIR/routine-session-$run" 2>/dev/null)" ] \
+          || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; exit 1; }
         [ -f "$DIR/routine-done-$run" ] && { jq -nc --arg s "$(cat "$DIR/routine-done-$run")" '{changed: false, state: $s, post: false, next: null}'; exit 0; }
         opt --state "$@" > "$DIR/routine-done-$run"
         jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" '{changed: true, state: $s, post: $p, next: $n}' ;;

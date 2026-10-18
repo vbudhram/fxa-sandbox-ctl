@@ -94,4 +94,11 @@ check "after a failed finish the next turn has no PR, and a new finish is taken"
   "$(f events agent-gg7 | jq -r '[.events[] | select(.type == "turn_end")][-1].pr')|$(f finish --session agent-gg7 >/dev/null 2>&1; echo $?)"
 check "FAKE_ROUTINE_DONE: fail exits 1; stopped answers no change" "1|false|stopped" \
   "$(FAKE_ROUTINE_DONE=fail f routine done 9 --state report --session agent-gg7 >/dev/null 2>&1; echo $?)|$(FAKE_ROUTINE_DONE=stopped f routine done 9 --state report --session agent-gg7 | jq -r '"\(.changed)|\(.state)"')"
+check "FAKE_ROUTINE_TASK_FAIL: a routine task exits 1 with the error and starts nothing" "1|ERROR: team fxa does not load|no" \
+  "$(FAKE_ROUTINE_TASK_FAIL="team fxa does not load" f --pipeline fxa task --id agent-rr1 --source routine --routine-run 31 2>"$tmp/e" >/dev/null; echo $?)|$(cat "$tmp/e")|$([ -d "$FAKE_CTL_DIR/agent-rr1" ] && echo yes || echo no)"
+check "routine done for a refused run takes no --session, and refuses one" "ERROR: routine run 31 is not session agent-rr1's|true" \
+  "$(f routine done 31 --state failed --session agent-rr1 2>&1 >/dev/null)|$(f routine done 31 --state failed --reason x | jq -r .changed)"
+f --pipeline fxa task --id agent-rr2 --source routine --routine-run 32 >/dev/null
+check "routine done for a run with a session needs that session" "ERROR: routine run 32 is not session (none)'s|true" \
+  "$(f routine done 32 --state report 2>&1 >/dev/null)|$(f routine done 32 --state report --session agent-rr2 | jq -r .changed)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
