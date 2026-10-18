@@ -34,16 +34,23 @@ _routine_of() {
 ' "$r"
 }
 
-# routine_list <team>   The team's routines, each with its config and next three run times.
+# routine_list <team>   The team's routines, each with its config, next three run times, its live run and last
+# result, and the scheduler's last tick (the dashboard warns when it is old).
 routine_list() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
-  local rows r f out="[]"; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
+  local rows r f out="[]" runs tick; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
+  runs="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, r.state IN (${_ROUTINE_LIVE_STATES}) AS live
+    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.id IN
+    (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN (${_ROUTINE_LIVE_STATES}));")" || return 1
+  tick="$(db_value "SELECT at FROM routine_tick WHERE id = 1;")" || return 1
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     jq -c '.data | fromjson' <<< "$r" > "$f"
-    out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" \
-      '. + [$r + {data: ($r.data | fromjson), next: $next}]' <<< "$out")"
+    out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --arg tick "$tick" \
+      '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine
+       | . + [$r + {data: ($r.data | fromjson), next: $next, live: ($mine | map(select(.live == 1)) | first),
+          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | tonumber? // null)}]' <<< "$out")"
   done < <(jq -c '.[]' <<< "$rows")
   rm -f "$f"; printf '%s\n' "$out"
 }

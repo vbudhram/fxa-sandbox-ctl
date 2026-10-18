@@ -117,6 +117,14 @@ export FXA_TEAM_ACTOR=admin@example.com FXA_BOT_ENV="$tmp/bot.env"
 jq -cn --argjson b "$base" '$b + {prompt: "SECRET-PROMPT-TEXT review"}' > "$tmp/new.json"
 check "an admin creates a routine" "created routine 1" "$(routine_set secret "$tmp/new.json" 2>&1)"
 check "the list has it, active, with its next three run times" "1|0|3" "$(routine_list secret | jq -r '.[0] | "\(.id)|\(.paused)|\(.next | length)"')"
+check "a routine with no run has no live run, no last result and no tick" "null|null|null" "$(routine_list secret | jq -r '.[0] | "\(.live)|\(.last)|\(.tick)"')"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-01', 'failed', 'no runner free'), (1, '2026-10-02', 'ok', NULL);
+  INSERT INTO routine_runs (routine_id, period, state, session) VALUES (1, '2026-10-03', 'started', 'agent-ab12');
+  INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-04', 'skipped', 'a run of this routine is still live');
+  INSERT OR REPLACE INTO routine_tick (id, at) VALUES (1, 1700000000);"
+check "the list has the live run with its session, the newest ended run, and the tick" "started|agent-ab12|skipped|a run of this routine is still live|1700000000" \
+  "$(routine_list secret | jq -r '.[0] | "\(.live.state)|\(.live.session)|\(.last.state)|\(.last.reason)|\(.tick)"')"
+db_exec "DELETE FROM routine_runs; DELETE FROM routine_tick;"
 check "the create audit row names the admin and the routine, not the prompt" "admin@example.com|routine-create|routine 1|0" \
   "$(db_value "SELECT actor || '|' || action || '|' || changed FROM team_audit ORDER BY id DESC LIMIT 1;")|$(db_value "SELECT count(*) FROM team_audit WHERE changed LIKE '%SECRET-PROMPT%';")"
 jq -c '.name = "Code review 2" | .prompt = "SECRET-PROMPT-TEXT two"' "$tmp/new.json" > "$tmp/edit.json"

@@ -74,5 +74,24 @@ STATS.rows = [{ src: "slack", profile: "fxa", key: "s", t0: Date.now() / 1000, u
 { const u = teamUse().fxa; t("team cost: Slack and the pipeline apart", `${u.slack_usd}|${u.pipe_usd}|${u.usd}`, "1.5|2.25|3.75"); }
 { const lo = Date.parse("2026-10-02T00:00"), hi = Date.parse("2026-10-04T00:00");
   t("day rows inside the Stats range", inRange([{ day: "2026-10-01" }, { day: "2026-10-02" }, { day: "2026-10-03" }, { day: "2026-10-04" }], lo, hi).map(d => d.day).join(","), "2026-10-02,2026-10-03"); }
+globalThis.TEAM_ADMIN = { admin: true, user: "admin@example.com" };
+{ const now = 1700000000, row = (id, extra) => ({ id, version: 1, paused: 0, next: ["2026-10-21T09:00:00-04:00"], tick: now - 600, last: null, live: null,
+    data: { name: `Review ${id}`, template: "code-review", prompt: "p", schedule: "weekdays 09:00", zone: "America/New_York", repos: ["mozilla/fxa"], channel: "C0123ABCD", mode: "report", max_usd: 10, skip_no_commits: true }, ...extra });
+  const team = { profile: "fxa", repos: [{ slug: "mozilla/fxa", role: "work" }] };
+  RT = { team: "fxa", list: [row(1)] };
+  t("routines: a 10 min old tick says the scheduler is not running", /The scheduler last ran 10 min ago\. Routines are not running\./.test(routineListHtml(team, now)), true);
+  RT.list = [row(1, { tick: now - 60 })];
+  t("routines: a fresh tick shows no warning", /scheduler/.test(routineListHtml(team, now)), false);
+  RT.list = [];
+  t("routines: no routine is the empty state, with no warning", /No routines yet\. A routine runs a prompt on a schedule[\s\S]*/.test(routineListHtml(team, now)) && !/scheduler/.test(routineListHtml(team, now)), true);
+  RT.list = [row(1), row(2, { live: { id: 9, state: "started", session: "agent-ab12" } })];
+  RT.form = { id: 1, version: 1, d: { ...rtDraft(RT.list[0].data), name: "My unsaved name" }, dirty: true, errs: {} };
+  const g = routinesGroup(team, now);
+  t("routines: a repaint keeps the dirty draft while another row turns Running", /value="My unsaved name"/.test(g) && /Running<\/span> <a class="mono" href="#sessions\/live\/agent-ab12"/.test(g), true);
+  t("routines: a live run turns Run now off", /data-rt-act="run" data-rt-id="2"[^>]*disabled/.test(g), true);
+  t("routines: a weekly draft goes back to the same schedule", rtRoutine(rtDraft({ ...RT.list[0].data, schedule: "weekly fri 17:30" })).schedule, "weekly fri 17:30");
+  TEAM_ADMIN = { admin: false };
+  t("routines: a non-admin sees only that admins manage them", /Only a team admin can see and change routines\./.test(routinesGroup(team, now)) && !/Review 1/.test(routinesGroup(team, now)), true);
+  TEAM_ADMIN = { admin: true }; RT.form = null; }
 process.exit(fail);
-' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p' "$page")"
+' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p; /^const kvr = /p; /^const stamp = /p; /^const usd = /p; /^let RT = /p; /^const RT_/p; /^function rtDraft(/,/^}/p; /^function rtRoutine(/,/^}/p; /^function rtErrs(/,/^}/p; /^const rtWhen = /p; /^const rtSched = /p; /^function rtState(/,/^}/p; /^function rtLast(/,/^}/p; /^function rtHist(/,/^}/p; /^function rtRow(/,/^}/p; /^function routineListHtml(/,/^}/p; /^function routineForm(/,/^}/p; /^function routinesGroup(/,/^}/p' "$page")"

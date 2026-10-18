@@ -1464,7 +1464,8 @@ function teamDetails(t) {
       ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
     <div>${h("Mode", `${conf} PIPE_PR_OPEN`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>`;
-  return out + teamEditor(t.profile, t.access?.record);
+  const rts = routinesGroup(t, Date.now() / 1000);
+  return TAB === "routines" ? out.replace(/(<\/h2>)/, `$1${rts}`) + teamEditor(t.profile, t.access?.record) : out + rts + teamEditor(t.profile, t.access?.record);
 }
 // A team's use in 30 days, and the two places that show its sessions and its spend.
 function teamUsage(t) {
@@ -1474,6 +1475,164 @@ function teamUsage(t) {
       + kvr("Cost", `${usd(u.usd)} <span class="na">· Slack ${usd(u.slack_usd ?? 0)} · pipeline ${usd(u.pipe_usd ?? 0)}</span>`) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
     <div class="acts2" style="margin-top:var(--s2)"><a class="tile" style="padding:6px 12px" href="#sessions/${tab}" data-team-sess="${p}">Its sessions</a><a class="tile" style="padding:6px 12px" href="#stats/spend" data-team-stats="${p}">Its spend in Stats</a></div></div>`;
 }
+
+// Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
+// again: the signed user, TEAM_ADMINS, the validator and the version. RT holds one team's list and the open form,
+// whose draft object each input updates, so a poll that repaints the list keeps what the admin typed.
+let RT = { team: null };
+const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_MODES = [["report", "Report"], ["pr", "Draft PR"], ["pr+notes", "Draft PR with notes"]];
+const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits"];
+const RT_STALE_S = 300;
+async function loadRoutines(team) {
+  const r = await fetch(`/api/teams/${encodeURIComponent(team)}/routines`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+  if (RT.team !== team) RT = { team };
+  Object.assign(RT, r?.ok && Array.isArray(j) ? { list: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
+  if (!RT.tpls) { const t = await fetch("/api/routine-templates", { cache: "no-store" }).catch(() => null); RT.tpls = t?.ok ? await t.json().catch(() => []) : []; }
+}
+// A routine's config as form fields, and back.
+function rtDraft(data) {
+  const d = data ?? { template: "blank", name: "", prompt: "", schedule: "weekdays 09:00", zone: "America/New_York", repos: [], channel: "", mode: "report", max_usd: 10, skip_no_commits: true };
+  const [kind, a, b] = (d.schedule || "weekdays 09:00").split(" ");
+  return { ...d, kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "" };
+}
+function rtRoutine(d) {
+  const r = { template: d.template, name: d.name, prompt: d.prompt, schedule: d.kind === "weekly" ? `weekly ${d.day} ${d.time}` : `${d.kind} ${d.time}`,
+    zone: d.zone, repos: d.repos, channel: d.channel.trim(), mode: d.mode, max_usd: Number(d.max_usd), skip_no_commits: !!d.skip_no_commits };
+  if (d.branch.trim() && d.repos.length === 1) r.branch = d.branch.trim();
+  if (d.env) r.env = d.env;
+  return r;
+}
+// The validator answers one "field: reason" line for each bad field; the rest is the summary.
+function rtErrs(text) {
+  const errs = {}, other = [];
+  for (const l of String(text || "").split("\n").map(s => s.replace(/^ERROR: /, "").trim()).filter(Boolean)) {
+    const m = l.match(/^([a-z_]+): (.*)$/);
+    if (m && RT_FIELDS.includes(m[1])) errs[m[1]] ??= m[2]; else other.push(l);
+  }
+  const n = Object.keys(errs).length;
+  return { errs, summary: [n ? `${n} field${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} a change: ${Object.values(errs).join(". ")}.` : "", ...other].filter(Boolean).join(" ") };
+}
+const rtWhen = (iso, zone) => { try { return new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: zone }) + ` ${zone}`; } catch { return iso; } };
+const rtSched = d => { const [k, a, b] = (d.schedule || "").split(" "); return k === "weekly" ? `Weekly on ${a}, ${b}` : `${k === "daily" ? "Daily" : "Weekdays"}, ${a}`; };
+function rtState(r) {
+  const v = r.live;
+  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts within a minute, and the result goes to <span class="mono">${esc(r.data.channel)}</span>.`;
+  if (v) return `<span class="tag info">Running</span>${v.session ? ` <a class="mono" href="#sessions/live/${esc(v.session)}">${esc(v.session)}</a>` : ""}`;
+  return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
+}
+function rtLast(x) {
+  if (!x) return "no run yet";
+  const why = x.reason ? `: ${esc(x.reason)}` : "", at = x.ended_at ? ` · ${stamp(x.ended_at)}` : "";
+  return ({ ok: x.pr_url ? `draft PR <a href="${esc(x.pr_url)}" target="_blank" rel="noopener">${esc(x.pr_url.split("/").slice(-3).join("/"))}</a>` : "ok",
+    report: "report posted", nochange: "nothing to change" }[x.state] ?? `${esc(x.state)}${why}`) + at;
+}
+function rtHist(rows) {
+  if (!rows.length) return `<p class="empty">No runs yet.</p>`;
+  const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
+  return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
+    `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
+      ${cell("Reason", esc(x.reason || ""))}${cell("PR", x.pr_url ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : "")}
+      ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", x.session ? `<a class="mono" href="#sessions/stopped/${esc(x.session)}">${esc(x.session)}</a>` : "")}</tr>`).join("")}</tbody></table>`;
+}
+function rtRow(r) {
+  const d = r.data, n = esc(d.name), b = (act, label, extra = "") => `<button data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
+  const busy = r.live ? ` disabled title="A run is in progress"` : "";
+  return `<div class="rt-row" data-rt-row="${r.id}" style="border-top:1px solid var(--line);padding:var(--s2) 0">
+    <div><b>${n}</b> ${rtState(r)}</div>
+    ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", `<span class="mono">${esc(d.channel)}</span>`)}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
+    ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last))}
+    <div class="acts2" style="margin-top:var(--s1)">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
+      ${r.live ? b("stop", "Stop run") : ""}${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}${b("hist", RT.hist?.[r.id] ? "Hide history" : "History")}</div>
+    ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : ""}</div>`;
+}
+// The part a poll repaints, also while a dirty form is open.
+function routineListHtml(t, now) {
+  const L = RT.list ?? [], tick = L[0]?.tick, age = tick == null ? null : Math.max(0, Math.round(now - tick));
+  const stale = L.length && (age == null || age > RT_STALE_S)
+    ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
+  return `<div data-routine-list>${stale}${L.length ? L.map(rtRow).join("") : `<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p>`}</div>`;
+}
+function routineForm(t) {
+  const f = RT.form, d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
+  const locked = tpl?.locked_mode, bad = k => e[k] ? ` aria-invalid="true" aria-describedby="rt-${k}-err"` : "";
+  const err = k => e[k] ? `<p class="unknown" id="rt-${k}-err">${esc(e[k])}</p>` : "";
+  const lab = (k, l, input) => `<div style="margin-bottom:var(--s2)"><label for="rt-${k}"><b>${l}</b></label><br>${input}${err(k)}</div>`;
+  const opt = (v, l, cur, dis) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${dis ? ` disabled title="${esc(dis)}"` : ""}>${esc(l)}${dis ? ` (${esc(dis)})` : ""}</option>`;
+  const modeOff = m => m === "report" ? "" : locked ? "a security review only reports" : t.read_only ? "this team gets diffs only" : "";
+  return `<div data-routine-form style="margin-top:var(--s3)"><h4>${f.id ? `Edit ${esc(d.name)}` : "New routine"}</h4>
+    ${lab("template", "Template", `<select id="rt-template" data-rt="template"${bad("template")}>${[...(RT.tpls ?? []).map(x => [x.template, x.name]), ["blank", "Blank"]].map(([v, l]) => opt(v, l, d.template)).join("")}</select>`)}
+    ${lab("name", "Name", `<input id="rt-name" data-rt="name" maxlength="40" value="${esc(d.name)}"${bad("name")}>`)}
+    ${lab("prompt", `Prompt <span class="empty" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, `<textarea id="rt-prompt" data-rt="prompt" rows="8" style="width:100%;box-sizing:border-box"${bad("prompt")}>${esc(d.prompt)}</textarea>`)}
+    ${lab("schedule", "Schedule", `<select id="rt-schedule" data-rt="kind" aria-label="How often"${bad("schedule")}>${[["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"]].map(([v, l]) => opt(v, l, d.kind)).join("")}</select>
+      ${d.kind === "weekly" ? `<select data-rt="day" aria-label="Day">${RT_DAYS.map(x => opt(x, x, d.day)).join("")}</select>` : ""}
+      <input type="time" data-rt="time" aria-label="Time" value="${esc(d.time)}">`)}
+    ${lab("zone", "Time zone", `<input id="rt-zone" data-rt="zone" value="${esc(d.zone)}"${bad("zone")}>`)}
+    ${lab("repos", "Repos", `<span id="rt-repos" tabindex="-1"${bad("repos")}>${repos.map(s => `<label style="margin-right:var(--s2)"><input type="checkbox" data-rt-repo="${esc(s)}"${d.repos.includes(s) ? " checked" : ""}> <span class="mono">${esc(s)}</span></label>`).join("") || "this team has no repos"}</span>`)}
+    ${d.repos.length === 1 ? lab("branch", "Branch", `<input id="rt-branch" data-rt="branch" placeholder="the repo's default branch" value="${esc(d.branch)}"${bad("branch")}>`) : ""}
+    ${lab("channel", "Output channel", `<input id="rt-channel" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${esc(d.channel)}"${bad("channel")}>
+      <p class="empty">Invite @fxa-agent to this channel. A team with a private repo, and every security review, needs a private channel that is not shared with another workspace. A private-repo team and a security review on a record team must use one of the team's own channels.</p>`)}
+    ${lab("mode", "Output mode", `<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v))).join("")}</select>`)}
+    ${lab("max_usd", "Cost limit for each run, USD", `<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${esc(d.max_usd)}"${bad("max_usd")}>`)}
+    <div style="margin-bottom:var(--s2)"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
+    <div class="acts2"><button data-rt-save>${f.id ? "Save" : "Create"}</button><button data-rt-cancel>Cancel</button></div></div>`;
+}
+function routinesGroup(t, now) {
+  if (!TEAM_ADMIN?.admin) return `<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
+  if (RT.team !== t.profile || (!RT.list && !RT.err)) return `<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
+  const off = t.access?.record && t.access.status !== "active" ? `<p class="unknown">Routines run only while the team is active.</p>` : "";
+  return `<div data-routines><h4>Routines</h4>${off}${RT.err ? `<p class="unknown">${esc(RT.err)}</p>` : ""}
+    <p role="status" data-rt-msg class="${RT.ok === false ? "unknown" : "empty"}">${esc(RT.msg || "")}</p>
+    ${routineListHtml(t, now)}
+    ${RT.form ? routineForm(t) : `<div class="acts2" style="margin-top:var(--s2)"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
+}
+// Repaint only the Routines group, so the rest of the panel and the focus stay.
+function rtPaint() {
+  const t = (TEAMS?.teams ?? []).find(x => x.profile === RT.team), el = document.querySelector("[data-routines]");
+  if (t && el) el.outerHTML = routinesGroup(t, Date.now() / 1000); else renderRight();
+}
+const rtSay = (msg, ok) => { Object.assign(RT, { msg, ok }); rtPaint(); };
+document.addEventListener("input", e => {
+  const f = RT.form, k = e.target.dataset?.rt; if (!f || !e.target.closest?.("[data-routine-form]")) return;
+  f.dirty = true;
+  if (e.target.dataset.rtRepo) { const s = e.target.dataset.rtRepo; f.d.repos = e.target.checked ? [...new Set([...f.d.repos, s])] : f.d.repos.filter(x => x !== s); return rtPaint(); }
+  if (!k) return;
+  f.d[k] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  if (k === "prompt") { const c = document.querySelector("[data-rt-count]"); if (c) c.textContent = `${new Blob([f.d.prompt]).size} of 4096 bytes`; }
+  if (k === "template") { const x = (RT.tpls ?? []).find(y => y.template === f.d.template);
+    if (x) Object.assign(f.d, { name: x.name, prompt: x.prompt, mode: x.locked_mode || x.mode, skip_no_commits: x.skip_no_commits }); }
+  if (["template", "kind"].includes(k)) rtPaint();
+});
+document.addEventListener("click", async e => {
+  if (!e.target.closest?.("[data-routines]")) return;
+  const team = RT.team, base = `/api/teams/${encodeURIComponent(team)}/routines`, row = id => (RT.list ?? []).find(r => String(r.id) === String(id));
+  const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    return [r, await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" }]; };
+  if (e.target.closest("[data-rt-new]")) { RT.form = { d: rtDraft(), errs: {} }; RT.msg = ""; return rtPaint(); }
+  if (e.target.closest("[data-rt-cancel]")) { RT.form = null; return rtPaint(); }
+  if (e.target.closest("[data-rt-save]")) {
+    const f = RT.form, [r, j] = await post(f.id ? `${base}/${f.id}` : base, { routine: rtRoutine(f.d), ...(f.id ? { version: f.version } : {}) });
+    if (r?.ok) { RT.form = null; await loadRoutines(team); return rtSay(j.out || "saved", true); }
+    if (r?.status === 409) { f.errs = {}; return rtSay("Someone changed this routine since you opened it. Load it again to see their change.", false); }
+    const { errs, summary } = rtErrs(j.error || r?.status); f.errs = errs; rtSay(summary, false);
+    const first = RT_FIELDS.find(k => errs[k]); if (first) document.getElementById(`rt-${first}`)?.focus();
+    return;
+  }
+  const b = e.target.closest("[data-rt-act]"); if (!b) return;
+  const id = b.dataset.rtId, act = b.dataset.rtAct, r0 = row(id); if (!r0) return;
+  if (act === "edit") { RT.form = { id: r0.id, version: r0.version, d: rtDraft(r0.data), errs: {} }; RT.msg = ""; return rtPaint(); }
+  if (act === "hist") {
+    if (RT.hist?.[id]) { delete RT.hist[id]; return rtPaint(); }
+    const r = await fetch(`${base}/${id}/history`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+    if (!r?.ok) return rtSay(j?.error || "the dashboard did not answer", false);
+    (RT.hist ??= {})[id] = j; return rtPaint();
+  }
+  if (act === "delete" && RT.arm !== r0.id) { RT.arm = r0.id; return rtSay(`Delete ${r0.data.name}? Its run history stays. Click Delete again.`, false); }
+  RT.arm = null;
+  b.disabled = true;
+  const [r, j] = await post(`${base}/${id}/${act}`, {});
+  await loadRoutines(team);
+  rtSay(r?.ok ? (act === "run" ? `Queued. It starts within a minute, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
+});
 
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
@@ -2212,7 +2371,7 @@ const VIEWS = [
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
   ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
   ["runners", "Sandboxes", "Slots, sandboxes and what they cost", []],
-  ["teams", "Teams", "Which teams exist, what each gets, who can start one, and use", []],
+  ["teams", "Teams", "Which teams exist, what each gets, who can start one, and use", [["all", "All teams"], ["routines", "Routines"]]],
 ];
 // The Sessions list's person filter ("mine"), kept per browser.
 let SOWNER = ""; try { SOWNER = localStorage.getItem("sowner") || ""; } catch {}
@@ -2398,7 +2557,11 @@ function renderRight() {
   else if (VIEW === "teams") {
     if (document.activeElement?.matches?.(".team-json, [data-secret-val]")) return;   // a refresh must not wipe an edit in progress
     if (SEL.teams === "__new") html = `${closeBtn}<h2 class="rh">New team<small>a team record</small></h2>` + teamEditor("__new", true);
-    else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams); if (t) html = teamDetails(t); } }
+    else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams);
+      // An open form the admin changed stays as it is: the poll repaints only the routine list.
+      if (t && RT.team === t.profile && RT.form?.dirty && el.querySelector("[data-routine-form]")) { el.querySelector("[data-routine-list]").outerHTML = routineListHtml(t, Date.now() / 1000); return; }
+      if (t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
+      if (t) html = teamDetails(t); } }
   el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
   document.body.classList.toggle("noitem", !html && ["sessions", "runners"].includes(VIEW));
 }
@@ -2482,6 +2645,7 @@ async function poll() {
   render();
   HIST_OPEN.forEach(loadHist);
   loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin();
+  if (VIEW === "teams" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && renderRight());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }
