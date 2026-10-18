@@ -147,6 +147,15 @@ got="$( db_value() { case "$1" in ("SELECT count(*) FROM routines WHERE team"*) 
 check "a failed count read is the store error line, even under set -euo pipefail" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again" "$rc|$got"
 got="$( db_json() { return 1; }; routine_state secret 1 pause 2>&1)"
 check "a store failure reading a routine is the store error, not 'no routine'" "ERROR: the routine store did not answer (busy or failed); nothing changed, try again" "$got"
+# saved_at: the save time on a create and on an edit, never on a pause or resume.
+jq -c '.name = "Saved at"' "$tmp/new.json" > "$tmp/sv.json"
+sid="$(FXA_ROUTINE_NOW=1792000000 routine_set secret "$tmp/sv.json" | grep -o '[0-9]*$')"
+sv1="$(db_value "SELECT saved_at FROM routines WHERE id = $sid;")"
+FXA_ROUTINE_NOW=1792000100 routine_set secret "$tmp/sv.json" "$sid" 1 >/dev/null
+sv2="$(db_value "SELECT saved_at FROM routines WHERE id = $sid;")"
+FXA_ROUTINE_NOW=1792000200 routine_state secret "$sid" pause >/dev/null
+check "saved_at is set on create and on edit, and a pause leaves it" "1792000000|1792000100|1792000100" "$sv1|$sv2|$(db_value "SELECT saved_at FROM routines WHERE id = $sid;")"
+db_exec "DELETE FROM routines WHERE id = $sid;"
 check "pause, then resume" "1|0" "$(routine_state secret 1 pause >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")|$(routine_state secret 1 resume >/dev/null; db_value "SELECT paused FROM routines WHERE id = 1;")"
 check "pause, delete and history of another team's routine are refused" "ERROR: team second has no routine 1|ERROR: team second has no routine 1|ERROR: team second has no routine 1|0|1" \
   "$(routine_state second 1 pause 2>&1)|$(routine_state second 1 delete 2>&1)|$(routine_history second 1 2>&1)|$(db_value "SELECT paused FROM routines WHERE id = 1;")|$(db_value "SELECT count(*) FROM routines;")"
