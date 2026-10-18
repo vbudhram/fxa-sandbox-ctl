@@ -518,6 +518,13 @@ table.usage th, table.usage td { text-align: right; padding: 3px 4px; border-bot
 table.usage th:first-child, table.usage td:first-child { text-align: left; }
 table.usage th { font-weight: 600; color: var(--dim); }
 table.usage tr.tot td { border-bottom: 0; }
+/* Routine History at phone width: each run is a stacked block, each value under its label. */
+@media (max-width:640px) {
+  table.rt-hist thead { display: none; }
+  table.rt-hist tr { display: block; padding: var(--s1) 0; border-bottom: 1px solid var(--line); }
+  table.rt-hist td { display: block; text-align: left; border: 0; white-space: normal; }
+  table.rt-hist td::before { content: attr(data-l) ": "; color: var(--dim); }
+}
 table.usage tr.sel td { background: var(--infobg); }
 </style>
 </head>
@@ -1549,7 +1556,7 @@ function rtRow(r) {
 function routineListHtml(t, now) {
   const L = RT.list ?? [], tick = L[0]?.tick, age = tick == null ? null : Math.max(0, Math.round(now - tick));
   const stale = L.length && (age == null || age > RT_STALE_S)
-    ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
+    ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
   return `<div data-routine-list>${stale}${L.length ? L.map(rtRow).join("") : `<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p>`}</div>`;
 }
 function routineForm(t) {
