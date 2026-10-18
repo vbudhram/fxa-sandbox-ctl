@@ -325,6 +325,8 @@ EOF
 chmod 600 fxa-agent-bot/.env.dev
 R=$HOME/Desktop/working2
 ln -sfn $R/fxa-sandbox-ctl/.env fxa-sandbox-ctl/.env
+# The routine tick reads the bot's access rules from the sibling tree, as the dashboard did at the save.
+ln -sfn $R/fxa-agent-bot/.env fxa-agent-bot/.env
 # The real bot's packages, unless this tree changed them.
 if cmp -s fxa-agent-bot/package-lock.json $R/fxa-agent-bot/package-lock.json; then
   [ -d fxa-agent-bot/node_modules ] && [ ! -L fxa-agent-bot/node_modules ] && rm -rf fxa-agent-bot/node_modules

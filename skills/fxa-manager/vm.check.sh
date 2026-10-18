@@ -37,6 +37,8 @@ echo 'OTHER=1' > "$D/fxa-agent-bot/.env.devhost"
 out="$( { echo "D=$D"; dev_fn_script 'echo "host=${FXA_FC_HOST:-unset}"'; } | bash 2>&1)"
 check "dev fn: a devhost file without FXA_FC_HOST leaves it unset and prints no environment" "host=unset|0" \
   "$(printf '%s\n' "$out" | tail -1)|$(printf '%s\n' "$out" | grep -c 'declare -x')"
+# dev up: the dev ctl tree's sibling bot .env is the real one, so the routine tick can read the access rules.
+check "dev up links the real bot .env next to the dev ctl" "1" "$(grep -cx 'ln -sfn $R/fxa-agent-bot/.env fxa-agent-bot/.env' "$(dirname "$0")/vm.sh")"
 # dev prune: a file the last deploy copied and this one did not goes; a file no deploy copied stays.
 P2="$tmp/prune"; mkdir -p "$P2/src/r" "$P2/dst"; (cd "$P2/src" && echo a > r/keep && echo b > r/gone && tar -czf ../t1 r/keep r/gone)
 rm "$P2/src/r/gone"; (cd "$P2/src" && tar -czf ../t2 r/keep)
