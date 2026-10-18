@@ -491,7 +491,6 @@
   .fchips { display:inline-flex; flex-wrap:wrap; gap:var(--s1); }
 
   /* ── pipeline lanes: one belt per ticket ── */
-  #s-lanes { overflow-x:auto; }
   /* The Board: three columns, one at 900px or less in the order Blocked, Up next, Running. */
   .bcols { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--s4); align-items:start; }
   @media (max-width:900px) { .bcols { grid-template-columns:minmax(0,1fr); } }
@@ -515,6 +514,49 @@
   .bgate.stop { border-left-color:var(--warn); }
   .bnext { background:var(--warnbg); border-radius:var(--r-sm); padding:var(--s2) var(--s3); font-size:var(--t-sub); } .bnext b { color:var(--warn); }
   .lanes { min-width:720px; }
+  /* Belts v2: one list in four groups. The tone of a row colours its current stop and its state. */
+  .bhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin-bottom:var(--s3); font-size:var(--t-sub); color:var(--dim); }
+  .bhead .now { color:var(--info); font-weight:650; display:inline-flex; align-items:center; gap:6px; }
+  .bhead .now i { width:8px; height:8px; border-radius:50%; background:var(--info); } .bhead .now i.live { animation:bpulse 1.6s infinite; }
+  @keyframes bpulse { 50% { opacity:.35; } }
+  .bwrap { background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+  .bgrid { display:grid; grid-template-columns:minmax(160px,280px) minmax(0,1fr) minmax(120px,220px) 44px; gap:var(--s3); align-items:center; padding:0 var(--s3); }
+  .bstops { position:sticky; top:0; z-index:2; background:var(--panel); border-bottom:1px solid var(--line); border-radius:10px 10px 0 0; padding-top:var(--s2); padding-bottom:var(--s2); font-size:var(--t-label); color:var(--dim); font-weight:650; }
+  .bstops .cols { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); text-align:center; } .bstops .cols b { display:block; color:var(--ink); font-size:var(--t-label); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bstops .cols span { font-weight:400; color:var(--faint); } .bstops .r { text-align:right; }
+  .bgh { display:flex; align-items:center; flex-wrap:wrap; gap:6px 8px; margin:0; padding:var(--s3) var(--s3) 4px; font-size:var(--t-label); font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); }
+  .bgh > i { width:8px; height:8px; border-radius:50%; background:var(--tone); } .bgh .why { font-weight:400; text-transform:none; letter-spacing:0; color:var(--faint); }
+  .bgh .cnt { font-size:11px; font-weight:700; background:var(--sunk); color:var(--ink); border-radius:9px; padding:0 6px; line-height:18px; letter-spacing:0; }
+  ul.belts { list-style:none; margin:0; padding:0; }
+  .belt > a { text-decoration:none; color:var(--ink); padding-top:var(--s2); padding-bottom:var(--s2); border-top:1px solid var(--sunk); min-height:44px; }
+  .belt > a:hover { background:var(--bg); } .belt.sel > a { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
+  .belt .tk { min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .belt .tk .m { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:var(--t-label); color:var(--faint); }
+  .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk .scope { font-size:10px; font-weight:600; padding:0 5px; border-radius:4px; background:var(--sunk); color:var(--dim); max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .belt .tk .t { font-size:var(--t-sub); font-weight:600; line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .belt .trk { position:relative; height:24px; }
+  .belt .trk .base, .belt .trk .fill { position:absolute; top:11px; height:2px; left:5.55%; } .belt .trk .base { right:5.55%; background:var(--line); } .belt .trk .fill { background:var(--tone-fill); }
+  .belt .trk .nodes { position:absolute; inset:0; display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); align-items:center; justify-items:center; }
+  .belt .n { width:8px; height:8px; border-radius:50%; box-sizing:border-box; background:var(--panel); border:2px solid var(--line2); z-index:1; }
+  .belt .n.done { background:var(--tone-fill); border:0; }
+  .belt .n.cur { width:14px; height:14px; background:var(--tone); border:3px solid var(--panel); box-shadow:0 0 0 2px var(--tone); } .belt .n.cur.live { animation:bpulse 1.6s infinite; }
+  .belt .st { min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .belt .st .l1 { font-weight:700; font-size:var(--t-sub); color:var(--tone-text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .belt .st .l2 { font-size:var(--t-label); color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .belt .age { font-size:var(--t-label); color:var(--dim); text-align:right; white-space:nowrap; }
+  .belt .out.tty { margin:0 var(--s3) var(--s3); box-shadow:none; } .belt .out .screen { height:220px; min-height:0; }
+  .k-live { --tone:var(--info); --tone-fill:color-mix(in srgb,var(--info) 55%,var(--panel)); --tone-text:var(--info); }
+  .k-bad { --tone:var(--bad); --tone-fill:var(--faint); --tone-text:var(--bad); }
+  .k-warn { --tone:var(--warn); --tone-fill:var(--faint); --tone-text:var(--warn); }
+  .k-wait { --tone:var(--faint); --tone-fill:var(--faint); --tone-text:var(--dim); }
+  .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .bempty { margin:0; padding:4px var(--s3) var(--s3); color:var(--faint); font-size:var(--t-sub); }
+  details.bout { border-top:1px solid var(--line); } details.bout > summary { cursor:pointer; padding:var(--s3); font-size:var(--t-label); font-weight:700; color:var(--dim); }
+  @media (max-width:720px) {
+    .bstops { display:none; }
+    .belt > a.bgrid { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"tk age" "trk trk" "st st"; row-gap:var(--s2); }
+    .belt .tk { grid-area:tk; } .belt .trk { grid-area:trk; } .belt .st { grid-area:st; } .belt .age { grid-area:age; align-self:start; }
+  }
   .lanes .head, .lane .row { display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); align-items:center; }
   .lanes .head { border-bottom:1px solid var(--line); padding-bottom:var(--s2); }
   .lanes .cols { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); text-align:center; }
@@ -952,7 +994,7 @@ function needCounts() {
   return { total: Object.values(c).reduce((a, b) => a + b, 0), parts: ["Fix", "Infra red", "Review", "Decide", "Blocked", "Drain"].filter(k => c[k]).map(k => `${k} ${c[k]}`).join(" · ") };
 }
 function renderNeeds() {
-  const belts = new Set(laneRows().map(r => r.t.key)), nc = needCounts();
+  const bg = beltGroups(), belts = new Set(["working", "needs", "fixes", "review", "outside"].flatMap(k => bg[k].map(r => r.t.key))), nc = needCounts();
   put("s-needs", head("needs you", nc.total, nc.parts) +
     (NEEDS.length === 0 ? `<div class="emptybox">Nothing needs you right now.</div>` : NEEDS.map(n => `<div class="need">
       <span class="chip ${n.cls}">${esc(n.chip)}</span>
@@ -2472,14 +2514,14 @@ function laneRows() {
   (SNAP?.open_prs ?? []).filter(p => p.key && !rows.some(r => r.t.key === p.key)).forEach(p => {
     const blocked = (SNAP?.blocked ?? []).some(b => b.key === p.key), d = Math.round(days(p.created) ?? 0);
     const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : "Not in the pipeline";
-    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d });
+    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d, outside: l1 === "Not in the pipeline" });
   });
   // Open PRs that no ticket owns: a Slack session opened them from its branch (agent-xxxxxx).
   const ss = AGENTS?.sessions ?? [];
   (SNAP?.open_prs ?? []).filter(p => !p.key).forEach(p => {
     const d = Math.round(days(p.created) ?? 0), s = sessHeads(ss).find(x => chainOf(x, ss).some(y => y.branch === p.branch || y.key === p.branch));
     const owner = s ? (sessRoutine(s) ? (TEAM_ADMIN?.admin ? sessRoutine(s) : "scheduled run") : ownerName(s)) : "";
-    rows.push({ t: { key: p.branch, pr: p.number, summary: p.title, slack: true, owner, sess: s }, st: 7, kind: d >= 3 ? "warn" : "wait",
+    rows.push({ t: { key: p.branch, pr: p.number, summary: p.title, slack: true, routine: !!s?.routine_run, owner, sess: s }, st: 7, kind: d >= 3 ? "warn" : "wait", outside: true,
       l1: `Waiting ${d} day${d === 1 ? "" : "s"}`, l2: owner ? (s.routine_run ? owner : `${owner}'s session`) : "Slack session", age: d });
   });
   const order = { live:0, fix:1, warn:2, wait:3, done:4 };
@@ -2559,33 +2601,71 @@ function openPrLine() {
   const repo = teamRepo(), lbl = SNAP.team?.pr_label, n = `${c.total} open PR${c.total === 1 ? "" : "s"}`;
   return `<span class="sub" style="color:var(--dim)">${repo && lbl ? `<a href="https://github.com/${esc(repo)}/pulls?q=is%3Apr+state%3Aopen+label%3A${encodeURIComponent(lbl)}" target="_blank" rel="noreferrer">${n}</a>` : n}: ${esc(c.parts)}</span>`;
 }
-function renderLanes() {
-  const rows = laneRows();
-  assignFoxes(rows.map(r => r.t.key));
-  const live = rows.some(r => r.kind === "live" && r.runner);
-  const ready = SNAP?.queue?.ready ?? [], counts = LANE_ST.map((_, j) => rows.filter(r => r.st === j).length), wait = queueWaits().length;
-  counts[0] = ready.length + (wait ? ` · ${wait} wait` : "");
-  const head = `<div style="display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)">
-      <span class="mascot ${live ? "live" : "idle"}" title="${live ? "working" : "idle"}"><img class="${live ? "bob" : ""}" src="/icon.png" alt="FxA Agent mascot, ${live ? "working" : "idle"}"></span>
-      <span class="sub" style="color:var(--dim)">One belt per ticket.</span>
-      ${openPrLine()}
-      <span class="sub" style="color:var(--dim)">${live ? `FxA Agent is working on ${rows.filter(r => r.runner).length}` : "FxA Agent is idle"}</span>
-    </div>`;
-  put("s-lanes", head + `<div class="lanes">
-      <div class="head"><span class="empty">Ticket</span><div class="cols">${LANE_ST.map((n, j) => `<div><b>${n}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div>
-      ${rows.length ? rows.map(laneHtml).join("") : `<div class="empty" style="padding:var(--s4) 0">no ticket in flight or in review</div>`}
-      <div class="legend">
-        <span><i style="background:var(--info)"></i>live: agent working, belt moves</span>
-        <span><i style="background:var(--faint)"></i>waiting on a person or CI</span>
-        <span><i style="background:var(--warn)"></i>needs attention</span>
-        <span><i style="background:var(--bad)"></i>blocked: conflicts, failed checks</span>
-        <span><i style="background:var(--purple)"></i>merged</span>
-        <span>Output shows only while a sandbox is up.</span>
-      </div></div>`);
-  rows.filter(r => r.runner).forEach(r => paintTail(r.t.key, true));
-  // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
-  TAIL_KEYS = [...new Set([...TAIL_KEYS, ...rows.filter(r => r.runner).map(r => r.t.key)])];
+// Belts v2 groups. Each key goes to one group, from classify() through boardItems(), so the groups,
+// the tab count and Needs you agree. The first rule that matches wins (design D2).
+let OUTSIDE_OPEN = false;
+const BELT_GROUPS = [["working", "Working now", "an agent runs in a sandbox", "k-live", "No agent works now."], ["needs", "Needs you", "only a person can move these", "k-warn", "Nobody needs to act."],
+  ["fixes", "The agent fixes it", "on the next pass", "k-bad", "Nothing for the agent to fix."], ["review", "Waits on review", "oldest first", "k-wait", "No PR waits on review."]];
+function beltGroups() {
+  const items = SNAP ? boardItems() : [], byKey = Object.fromEntries(items.map(i => [i.key, i]));
+  const g = { working: [], needs: [], fixes: [], review: [], outside: [] }, placed = new Set();
+  const add = (to, r) => { placed.add(r.t.key); g[to].push({ ...r, group: to }); };
+  laneRows().forEach(r => {
+    const i = byKey[r.t.key];
+    if (r.outside && !i) return add("outside", { ...r, tone: r.age >= 3 ? "k-warn" : "k-wait",
+      l1: r.t.slack ? (r.t.routine ? `Routine · ${TEAM_ADMIN?.admin && r.t.owner ? r.t.owner : "scheduled run"}` : `Slack · ${r.t.owner ? `${r.t.owner}'s session` : "a session"}`) : "Not in the pipeline", l2: `open ${r.age} day${r.age === 1 ? "" : "s"}` });
+    if (!i) return;   // a merged or closed review row, a hold or a ready ticket has no belt
+    if (i.column === "running") {
+      if (i.fault) return add("needs", { ...r, tone: "k-bad" });
+      if (i.ci) return r.t.fail > 0 ? add("fixes", { ...r, tone: "k-bad" }) : add("review", { ...r, tone: "k-wait", l1: r.t.running > 0 ? "CI running" : r.l1 });
+      const min = Math.round((r.t.elapsed_seconds ?? 0) / 60), a = r.t.agent || {};
+      return add("working", { ...r, tone: "k-live", l1: `${LANE_ST[r.st]} · ${min} min`, l2: r.st === 1 ? r.t.detail || "the sandbox boots" : plainMd(a.last_tool || a.last_text || "") || r.l2 });
+    }
+    if (i.column === "blocked") return i.group === "act" ? add("needs", { ...r, tone: "k-warn", l2: i.why || r.l2 }) : /^the agent/.test(i.person ?? "") ? add("fixes", { ...r, tone: "k-bad", l2: i.next || r.l2 }) : undefined;
+    if (i.column === "review") add("review", { ...r, tone: r.kind === "warn" ? "k-warn" : "k-wait" });
+  });
+  // Needs you items with no PR or run get a row at the Queue stop, so the group equals boardAct().
+  items.filter(i => !placed.has(i.key) && ((i.column === "blocked" && i.group === "act") || (i.column === "running" && i.fault))).forEach(i =>
+    add("needs", { t: { key: i.key, summary: i.title, pr: i.pr }, st: i.column === "running" ? 2 : 0, tone: i.fault ? "k-bad" : "k-warn",
+      l1: i.fault ? "Run fault" : { needs_decision: "Needs a decision", underspecified: "Needs detail", already_done: "Maybe done" }[i.kind] ?? "Blocked", l2: i.why || i.next || "", ageText: boardAge(i.age) }));
+  g.review.sort((x, y) => (y.age ?? 0) - (x.age ?? 0));
+  const gh = !SNAP ? "Loading the pipeline…" : SNAP.review == null ? `unknown, ${SNAP.open_prs == null ? "GitHub" : "Jira"} fetch failed` : "";
+  g.unknown = { working: boardState("running"), needs: boardState("blocked"), fixes: gh, review: gh };
+  return g;
 }
+const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working.length + g.needs.length + g.fixes.length + g.review.length;
+function beltRow(r) {
+  const t = r.t, title = laneTitle(t.summary || t.branch), live = r.group === "working" && t.agent_alive;
+  const nodes = LANE_ST.map((_, j) => `<span class="n${j < r.st ? " done" : j === r.st ? ` cur${live ? " live" : ""}` : ""}"></span>`).join("");
+  const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds));
+  return `<li class="belt ${r.tone}${t.key === SEL.pipeline ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" href="#pipeline/belts/${encodeURIComponent(t.key)}" aria-expanded="false">
+    <span class="tk"><span class="m"><span class="key mono">${esc(t.key)}</span>${t.pr ? `<span class="mono">#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
+    <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
+    <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
+    <span class="age">${esc(age)}</span></a>
+    ${t.agent_alive ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${LANE_OUT[t.key] ? " open" : ""}><summary class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : ""}</li>`;
+}
+function beltsHtml(g) {
+  if (!SNAP) return `<p class="bempty">Loading the pipeline…</p>`;
+  const n = beltCount(g), q = x => x == null ? "?" : x, live = g.working.some(r => r.t.agent_alive);
+  const counts = LANE_ST.map((_, j) => BELT_GROUPS.reduce((c, [k]) => c + g[k].filter(r => r.st === j).length, 0));
+  const old = g.outside.filter(r => r.age >= 3).length;
+  const head = `<div class="bhead"><span class="now"><i class="${live ? "live" : ""}"></i>${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
+    <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
+  const group = ([k, name, why, tone, empty]) => `<div role="group" aria-labelledby="bg-${k}"><h2 class="bgh ${tone}" id="bg-${k}"><i></i>${name} <span class="cnt">${g.unknown[k] ? "?" : g[k].length}</span><span class="why">${why}</span></h2>
+    ${g.unknown[k] ? `<p class="bempty">${esc(g.unknown[k])}</p>` : g[k].length ? `<ul class="belts">${g[k].map(beltRow).join("")}</ul>` : `<p class="bempty">${empty}</p>`}</div>`;
+  return head + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div><span>Status</span><span class="r">Age</span></div>
+    ${BELT_GROUPS.map(group).join("")}
+    ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
+}
+function renderLanes() {
+  const g = beltGroups(), live = g.working.filter(r => r.t.agent_alive);
+  put("s-lanes", beltsHtml(g));
+  live.forEach(r => paintTail(r.t.key, true));
+  // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
+  TAIL_KEYS = [...new Set([...TAIL_KEYS, ...live.map(r => r.t.key)])];
+}
+document.addEventListener("toggle", e => { if (e.target.matches?.("details.bout")) OUTSIDE_OPEN = e.target.open; }, true);
 // Merged pipeline PRs on full belts, newest first.
 function doneRows() {
   return (SNAP?.merged_prs ?? []).filter(p => p.key).map(p => {
@@ -2822,7 +2902,7 @@ function renderNav() {
   const ss = AGENTS?.sessions ?? [];
   const liveS = ss.filter(s => LIVE_SESSION.includes(s.state)).length;
   // Review waits as Needs you lists them: pipeline PRs, and Slack PRs open 3 days or more.
-  const slackOld = laneRows().filter(r => r.t.slack && r.age >= 3);
+  const slackOld = beltGroups().outside.filter(r => r.t.slack && r.age >= 3);
   const waiting = SNAP?.review ? SNAP.review.filter(isWaitingOnHuman).length + slackOld.length : null;
   const bad = document.querySelectorAll("#attn .alert.bad").length + NEEDS.filter(n => n.cls === "bad").length, alerts = document.querySelectorAll("#attn .alert").length + needCounts().total;
   const runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
@@ -2928,7 +3008,7 @@ function tabCount(t) {
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
   if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "board" ? (boardState("blocked") ? "" : boardAct(boardItems())) : t === "belts" ? laneRows().length : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
+  if (VIEW === "pipeline") return SNAP ? (t === "board" ? (boardState("blocked") ? "" : boardAct(boardItems())) : t === "belts" ? beltCount(beltGroups()) ?? "" : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {

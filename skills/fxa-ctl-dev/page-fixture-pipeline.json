@@ -1,0 +1,227 @@
+{
+ "/api/snapshot": {
+  "snapshot": {
+   "generated_at": "2026-10-18T19:00:00Z",
+   "pipeline": "example",
+   "repo": "example/app",
+   "team": {
+    "profile": "example",
+    "name": "Example",
+    "jira_site": "https://jira.example.com",
+    "queue_label": "ai-queue",
+    "pr_label": "bot-pr",
+    "repo": "example/app"
+   },
+   "limits": {
+    "attempts": 2,
+    "feedback_rounds": 2,
+    "merged_prs": 30
+   },
+   "queue": {
+    "total": 3,
+    "fetch_failed": false,
+    "ready": [
+     {
+      "key": "FXA-30",
+      "summary": "feat(auth): sample ready ticket"
+     }
+    ],
+    "skipped": [
+     {
+      "key": "FXA-6",
+      "summary": "fix(settings): sample ticket that needs a decision",
+      "passes": 2,
+      "reason": "pick a route",
+      "kind": "needs_decision",
+      "in_queue": true,
+      "queued_at": 1792000000
+     },
+     {
+      "key": "FXA-7",
+      "summary": "chore(deps): sample hold",
+      "passes": 1,
+      "reason": "held until FXA-2 merges",
+      "kind": "depends_on",
+      "held_by": "FXA-2",
+      "in_queue": true
+     }
+    ]
+   },
+   "blocked": [
+    {
+     "key": "FXA-1",
+     "summary": "fix(auth): sample blocked ticket",
+     "blocked_reason": {
+      "kind": "operator",
+      "text": "Blocked: needs a person to approve the tooling change before the next run",
+      "at": 1792200000
+     }
+    }
+   ],
+   "inflight": [
+    {
+     "key": "FXA-20",
+     "stage": "watching",
+     "summary": "feat(auth): sample live agent run"
+    },
+    {
+     "key": "FXA-21",
+     "stage": "starting",
+     "summary": "fix(settings): sample run that boots"
+    },
+    {
+     "key": "FXA-22",
+     "stage": "pr",
+     "summary": "fix(content): sample PR in CI",
+     "pr": 22,
+     "ok": 10,
+     "fail": 0,
+     "running": 3
+    }
+   ],
+   "inflight_fetch_failed": false,
+   "review": [
+    {
+     "key": "FXA-3",
+     "pr": 3,
+     "title": "fix(auth): sample PR with a failing check",
+     "state": "OPEN",
+     "fail": 1,
+     "ok": 21,
+     "running": 0,
+     "created": "2026-10-15T10:00:00Z"
+    },
+    {
+     "key": "FXA-4",
+     "pr": 4,
+     "title": "chore(deps): sample PR with conflicts",
+     "state": "OPEN",
+     "mergeable": "CONFLICTING",
+     "fail": 0,
+     "ok": 5,
+     "running": 0,
+     "created": "2026-10-14T10:00:00Z"
+    },
+    {
+     "key": "FXA-10",
+     "pr": 10,
+     "title": "feat(metrics): sample PR waiting on review",
+     "state": "OPEN",
+     "fail": 0,
+     "ok": 22,
+     "running": 0,
+     "review": "REVIEW_REQUIRED",
+     "created": "2026-10-08T10:00:00Z"
+    },
+    {
+     "key": "FXA-11",
+     "pr": 11,
+     "title": "fix(auth): another sample PR waiting on review",
+     "state": "OPEN",
+     "fail": 0,
+     "ok": 22,
+     "running": 0,
+     "created": "2026-10-16T10:00:00Z"
+    },
+    {
+     "key": "FXA-12",
+     "pr": 12,
+     "title": "merged sample",
+     "state": "MERGED",
+     "fail": 0,
+     "ok": 22,
+     "running": 0,
+     "created": "2026-10-10T10:00:00Z"
+    }
+   ],
+   "open_prs": [
+    {
+     "number": 3,
+     "key": "FXA-3",
+     "title": "x",
+     "created": "2026-10-15T10:00:00Z",
+     "branch": "FXA-3"
+    },
+    {
+     "number": 40,
+     "key": null,
+     "title": "fix: sample Slack PR",
+     "created": "2026-10-12T10:00:00Z",
+     "branch": "agent-abc123"
+    },
+    {
+     "number": 41,
+     "key": "FXA-41",
+     "title": "docs: sample PR outside the pipeline",
+     "created": "2026-10-17T10:00:00Z",
+     "branch": "FXA-41"
+    }
+   ],
+   "merged_prs": [
+    {
+     "number": 50,
+     "key": "FXA-50",
+     "title": "fix(auth): sample merged PR",
+     "created": "2026-10-10T10:00:00Z",
+     "merged": "2026-10-17T10:00:00Z",
+     "merged_by": "sample-reviewer"
+    }
+   ],
+   "health": {},
+   "pool": [],
+   "free_slots": [],
+   "instances": [],
+   "mode": {
+    "newtickets": "on"
+   },
+   "telemetry": {
+    "median_minutes": 20
+   }
+  },
+  "agents": {
+   "runners": [
+    {
+     "key": "FXA-20",
+     "name": "fxa-20",
+     "stage": "watching",
+     "agent_alive": true,
+     "elapsed_seconds": 720,
+     "agent": {
+      "last_tool": "yarn test example-server",
+      "turns": 23
+     }
+    },
+    {
+     "key": "FXA-21",
+     "name": "fxa-21",
+     "stage": "starting",
+     "agent_alive": true,
+     "elapsed_seconds": 60,
+     "detail": "the sandbox boots"
+    }
+   ],
+   "sessions": [
+    {
+     "key": "agent-abc123",
+     "branch": "agent-abc123",
+     "owner": "U000SAMPLE",
+     "owner_name": "Sample Person",
+     "state": "stopped",
+     "created": 1792000000
+    }
+   ]
+  },
+  "age_seconds": 30,
+  "agents_age_seconds": 20,
+  "agents_interval": 30
+ },
+ "/api/team-admin": {
+  "user": "admin@example.com",
+  "admin": false
+ },
+ "/api/teams": {
+  "age_seconds": 5,
+  "teams": []
+ },
+ "/api/stats": {}
+}
