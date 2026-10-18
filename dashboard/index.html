@@ -1595,6 +1595,12 @@ function routinesGroup(t, now) {
     ${routineListHtml(t, now)}
     ${RT.form ? routineForm(t) : `<div class="acts2" style="margin-top:var(--s2)"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
 }
+// An open form the admin changed stays as it is: a poll repaints only the routine list. True when it did.
+function rtKeepForm(el, t) {
+  if (!t || RT.team !== t.profile || !RT.form?.dirty || !el.querySelector("[data-routine-form]")) return false;
+  const l = el.querySelector("[data-routine-list]"); if (l) l.outerHTML = routineListHtml(t, Date.now() / 1000);
+  return true;
+}
 // Repaint only the Routines group, so the rest of the panel and the focus stay.
 function rtPaint() {
   const t = (TEAMS?.teams ?? []).find(x => x.profile === RT.team), el = document.querySelector("[data-routines]");
@@ -2582,8 +2588,7 @@ function renderRight() {
     if (document.activeElement?.matches?.(".team-json, [data-secret-val]")) return;   // a refresh must not wipe an edit in progress
     if (SEL.teams === "__new") html = `${closeBtn}<h2 class="rh">New team<small>a team record</small></h2>` + teamEditor("__new", true);
     else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams);
-      // An open form the admin changed stays as it is: the poll repaints only the routine list.
-      if (t && RT.team === t.profile && RT.form?.dirty && el.querySelector("[data-routine-form]")) { el.querySelector("[data-routine-list]").outerHTML = routineListHtml(t, Date.now() / 1000); return; }
+      if (rtKeepForm(el, t)) return;
       if (t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
       if (t) html = teamDetails(t); } }
   el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
