@@ -385,16 +385,19 @@ routine_tick() {
 # and fails; a claimed run with no session after 10 min, or a queued one with no free runner after 60, fails. Each change is one
 # UPDATE guarded on the state it read, so a done call or a second tick at the same time cannot be undone.
 routine_reconcile() {
-  local now="$1" env="$2" rows r id st sess since rec sst pr why
+  local now="$1" env="$2" rows r id st sess since rec sst pr why free=""
   rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since FROM routine_runs r
-    LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(t.env, 'live') = $(db_q "$env");")" \
+    LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(json_extract(r.config, '$.env'), t.env, 'live') = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
     why=""; pr=""; sst=""
     case "$st" in
-      queued) [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ] && why="no runner free within 60 min" ;;
+      queued) if [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ]; then
+          [ -n "$free" ] || free="$(_routine_free_slots)"
+          if [ "$free" -ge 2 ]; then why="no tick started it within 60 min"; else why="no runner free within 60 min"; fi
+        fi ;;
       claimed) [ -z "$sess" ] && [ "$since" -gt 0 ] && [ $((now - since)) -gt 600 ] && why="no session started within 10 min" ;;
       started)
         rec="${SESSION_DIR}/${sess}.json"

@@ -353,6 +353,12 @@ go="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, st
 db_exec "DELETE FROM routines WHERE id = $ro;"
 FXA_ROUTINE_NOW=$((NOWR + 603)) routine_tick --env live >/dev/null
 check "the live tick ends a run whose routine row is gone" "failed|the run's session is gone" "$(s_of "$go")"
+# A run belongs to the env it was claimed under, even after an edit moves its routine to the other env.
+re_="$(mk fxa "weekly sun 02:00")"
+ge="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($re_, 'manual-11', 'started', 'agent-envx01', $((NOWR - 60)), json('{\"env\": \"live\"}')); SELECT last_insert_rowid();")"
+db_exec "UPDATE routines SET env = 'dev' WHERE id = $re_;"
+FXA_ROUTINE_NOW=$((NOWR + 604)) routine_tick --env dev >/dev/null
+check "a run claimed under live stays the live tick's after its routine moves to dev" "started|" "$(s_of "$ge")"
 
 # A paused team that turned private: its skip does not post to a channel it does not bind.
 rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"
@@ -364,6 +370,9 @@ rw="$(mk fxa "weekly sun 05:00")"
 qn="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rw, 'manual-8', 'manual', 'queued', $((T - 3660))); SELECT last_insert_rowid();")"
 echo 1 > "$tmp/free"; tick "$T" >/dev/null; echo 5 > "$tmp/free"
 check "a queued run with no free runner after 60 min fails as no runner free" "failed|no runner free within 60 min" "$(s_of "$qn")"
+qf="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rw, 'manual-12', 'manual', 'queued', $((T - 3660))); SELECT last_insert_rowid();")"
+FXA_ROUTINE_NOW=$T routine_reconcile "$T" live
+check "a queued run that waited 60 min with free runners does not blame the runners" "failed|no tick started it within 60 min" "$(s_of "$qf")"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
