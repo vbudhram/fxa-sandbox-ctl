@@ -288,13 +288,14 @@ TimeoutStartSec=3h
 KillMode=process
 UNIT
 done
-# Quiet hours 20:00-07:00 New York: no pass starts, so nothing new launches.
+# Quiet hours 20:00-07:00 New York: no pass starts, so nothing new launches. On weekends a pass starts once an hour.
 # Runs already going finish on their own; reconcile waits for the morning.
 cat > /etc/systemd/system/fxa-pass.timer <<'UNIT'
 [Unit]
-Description=fxa-ai-fixme pass every 5 min, 07:04-19:59 New York
+Description=fxa-ai-fixme pass every 5 min on weekdays and every hour on weekends, 07:04-19:59 New York
 [Timer]
-OnCalendar=*-*-* 07..19:04/5:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 07..19:04/5:00 America/New_York
+OnCalendar=Sat,Sun *-*-* 07..19:04:00 America/New_York
 Persistent=false
 [Install]
 WantedBy=timers.target
@@ -326,7 +327,7 @@ ExecStart=$W/fxa-sandbox-ctl/infra/gce/claude-job.sh pass $C/pass-prompt.txt
 TimeoutStartSec=3h
 KillMode=process
 UNIT
-sed 's/^Description=.*/Description=fxa-ai-fixme pass for %i every 5 min, 07:04-19:59 New York/' \
+sed 's/^Description=.*/Description=fxa-ai-fixme pass for %i every 5 min on weekdays and every hour on weekends, 07:04-19:59 New York/' \
   /etc/systemd/system/fxa-pass.timer > /etc/systemd/system/fxa-pass@.timer
 systemctl daemon-reload
 for f in "$W"/fxa-sandbox-ctl/profiles/*/profile.conf; do
