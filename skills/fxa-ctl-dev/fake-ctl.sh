@@ -27,6 +27,11 @@
 #   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
 #                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
 #                  event as the real controller emits it; changes counts the branch so far). Past the tape: canned turns, logged as replay_exhausted.
+#   FAKE_CHANGES   the canned turn_end's changes count (default 1)
+#   FAKE_FINISH_FAIL  a finish ends 12 s later with this error and the session active, as a failed wrap-up does
+#   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
+#                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
+#                  routine done answers {changed, state, post, next}, once per run; posted says posted.
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
@@ -56,7 +61,8 @@ script() {
   local k="$1" t tape=null; t="$(now)"
   [ -n "${FAKE_TAPE:-}" ] && [ -n "$(get "$k" tape_idx)" ] && tape="$(jq -c --argjson i "$(get "$k" tape_idx)" '.sessions[$i] // null' "$FAKE_TAPE")"
   jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" --argjson tape "$tape" \
-    --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" '
+    --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" \
+    --argjson ch "${FAKE_CHANGES:-1}" --arg ferr "${FAKE_FINISH_FAIL:-}" '
     def url($s): if $s == "" then $pr else "https://github.com/\($s)/pull/999999" end;
     ($turns | split("\n") | map(select(. != "") | tonumber)) as $ts
     | ($fins | split("\n") | map(select(. != "") | split(" ") | {at: (.[0] | tonumber), mode: .[1], slug: (if .[2] == "-" then "" else .[2] end)})) as $fs
@@ -69,20 +75,21 @@ script() {
                 {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
           (if $tt and ($tt.diff | not) then empty else
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
-          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | .diff] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: 1, cost: (0.1 * ($n + 1)),
+          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | .diff] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T) then {pr: $pr} else {} end)
                else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,
                  out: (if $s == "mozilla/fxa" then "pr" else "diff" end),
                  pr: (if any($fs[]; .slug == $s and .at < $T and (.mode | startswith("pr"))) then url($s) else null end)}]} end)
             | if .type != "turn_end" then del(.changes, .pr, .trees) else . end)} ]
+      + [$fs[] | select(.mode == "fail") | {at: (.at + 12), ev: {type: "error", text: $ferr}}]
       + [$fs[] | select(.mode == "pr" or .mode == "push") | {at: (.at + 12), ev: ((if .mode == "push" then
           {type: "pushed", branch: "agent-fake", url: "https://github.com/\(if .slug == "" then "mozilla/fxa" else .slug end)/compare/main...agent-fake?expand=1", notes: []}
           else {type: "pr", url: url(.slug), updated: false, notes: [], summary: null} end) + (if .slug == "" then {} else {repo: .slug} end))}]
     | map(select(.at <= $now)) | sort_by(.at) as $evs
     | ($ts | map(select(. <= $now and $now < . + 10)) | length > 0) as $inturn
     | (if $over != "" then $over elif $now < $t0 + 5 then "starting"
-       elif any($fs[]; (.mode == "pr" or .mode == "push") and $now < .at + 12) then "wrapping" else "active" end) as $state
+       elif any($fs[]; (.mode == "pr" or .mode == "push" or .mode == "fail") and $now < .at + 12) then "wrapping" else "active" end) as $state
     | {now: $now, state: $state, inturn: $inturn, evs: $evs, t0: $t0,
        exhausted: (if $tape then [$ts[] | select(. + 10 <= $now)] | length - ($tape.turns | length) else 0 end)}'
 }
@@ -129,7 +136,9 @@ case "$cmd" in
     mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
     # A tape: the nth task plays the tape's nth session.
     [ -n "${FAKE_TAPE:-}" ] && { n="$(find "$DIR" -path '*/agent-*/tape_idx' | wc -l | tr -d ' ')"; echo "$n" > "$DIR/$k/tape_idx"; }
-    opt --owner "$@" > "$DIR/$k/owner"; r="$(opt --repos "$@")"; from="$(opt --resume-from "$@")"; co="$(opt --checkout "$@")"
+    # A routine run's owner is its sentinel, from the run row in the real controller.
+    if [ "$(opt --source "$@")" = routine ]; then echo "routine:${pipe:-fxa}/$(opt --routine-run "$@")" > "$DIR/$k/owner"; else opt --owner "$@" > "$DIR/$k/owner"; fi
+    r="$(opt --repos "$@")"; from="$(opt --resume-from "$@")"; co="$(opt --checkout "$@")"
     # A resume carries the repos and PRs; carried PRs are not announced again.
     if [[ "$from" =~ ^agent-[a-z0-9]+$ ]]; then [ -n "$r" ] || r="$(get "$from" repos)"
       get "$from" fins | awk '{sub(/-c$/, "", $2); print $1, $2 "-c", $3}' > "$DIR/$k/fins"; fi
@@ -153,7 +162,7 @@ case "$cmd" in
   finish) k="$(opt --session "$@")"; [ -f "$DIR/$k/t0" ] || { echo "ERROR: no session $k" >&2; exit 1; }
     if [ "$(cat "$DIR/$k/refused" 2>/dev/null | wc -l)" -lt "${FAKE_FINISH_REFUSE:-0}" ]; then
       echo x >> "$DIR/$k/refused"; echo "ERROR: $k is busy; try again in a moment" >&2; exit 1; fi
-    s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac
+    s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac; [ -z "${FAKE_FINISH_FAIL:-}" ] || m=fail
     get "$k" fins | awk -v s="$s" '$3 == s {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
     echo "$(now) $m $s" >> "$DIR/$k/fins" ;;
   stop) echo stopped > "$DIR/$1/over" ;;
@@ -169,6 +178,20 @@ case "$cmd" in
     jq -nc '{type: "step", text: "Reading packages/fxa-settings/src/components/FormVerifyCode/index.tsx"}'
     jq -nc --arg a "$FAKE_ANSWER" --arg id "$(opt --id "$@")" '{type: "answer", id: $id, answer: $a, question: null, upgrade: null, secs: 3, run_ms: 3000, api_ms: 2500, cost_usd: 0.01, turns: 2, error: null}' ;;
   profile) profile "$@" ;;
+  routine) sub="${1:-}"; shift || true; mkdir -p "$DIR"; touch "$DIR/routine-answered"
+    case "$sub" in
+      tick) [ -n "${FAKE_ROUTINES:-}" ] || { echo '{"runs":[],"skips":[]}'; exit 0; }
+        jq -c --arg env "$(opt --env "$@")" --argjson now "$(now)" --rawfile seen "$DIR/routine-answered" '
+          ($seen | split("\n")) as $d
+          | map(select((.env // "live") == $env and (.at // 0) <= $now and ((.run | tostring) as $r | $d | index($r) | not)) | del(.env, .at))
+          | {runs: map(select(.reason == null)), skips: map(select(.reason != null))}' "$FAKE_ROUTINES" > "$DIR/tick.out"
+        jq -r '.runs[], .skips[] | .run' "$DIR/tick.out" >> "$DIR/routine-answered"; cat "$DIR/tick.out" ;;
+      done) run="${1:-}"; [ -f "$DIR/routine-done-$run" ] && { jq -nc --arg s "$(cat "$DIR/routine-done-$run")" '{changed: false, state: $s, post: false, next: null}'; exit 0; }
+        opt --state "$@" > "$DIR/routine-done-$run"
+        jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" '{changed: true, state: $s, post: $p, next: $n}' ;;
+      posted) echo "posted ${1:-}" ;;
+      *) echo "fake-ctl: routine $sub is not faked" >&2; exit 1 ;;
+    esac ;;
   jira-card) echo null ;;
   errors) case "${1:-}" in --json) echo '[]' ;; esac ;;
   session) sub="${1:-}"; shift || true
