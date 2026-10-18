@@ -149,7 +149,7 @@ check "a session record that cannot be read fails the run (fail closed)" "failed
 # A done call that lands between reconcile's read and its UPDATE wins: the run stays ok, with no error row.
 g9="$(st ok agent-gone02 $((N - 60)))"; n0="$(wc -l < "$tmp/errs" | tr -d ' ')"
 stale="[{\"id\": $g9, \"state\": \"started\", \"session\": \"agent-gone02\", \"since\": $((N - 60))}]"
-( db_json() { case "$1" in ("SELECT id, state, coalesce(session"*) echo "$stale" ;; (*) _db_ready && _db -json "$1" | sed 's/^$/[]/' ;; esac; }; routine_reconcile "$N" )
+( db_json() { case "$1" in ("SELECT r.id AS id"*) echo "$stale" ;; (*) _db_ready && _db -json "$1" | sed 's/^$/[]/' ;; esac; }; routine_reconcile "$N" live )
 check "reconcile does not undo a done call that raced it" "ok||$n0" "$(s_of "$g9")|$(wc -l < "$tmp/errs" | tr -d ' ')"
 
 # routine done: idempotent, the cost from the run's token, and the PII guard on a report (D10).
@@ -223,7 +223,7 @@ check "routine_run_fail ends a queued run" "failed|x" "$(db_value "SELECT state 
 # Reconcile: a live session with a pr_url is still the bot's (it calls done); a stopped one with no result fails.
 echo '{"key":"agent-prlv01","state":"active","pr_url":"https://github.com/mozilla/fxa/pull/8"}' > "$tmp/agent-prlv01.json"; g10="$(st started agent-prlv01 $((N - 60)))"
 echo '{"key":"agent-stpd01","state":"stopped"}' > "$tmp/agent-stpd01.json"; g11="$(st started agent-stpd01 $((N - 60)))"
-routine_reconcile "$N"
+routine_reconcile "$N" live
 check "a live session with a PR stays started for the bot's done call; a stopped one with no result fails" "started||failed|the session stopped with no result" \
   "$(s_of "$g10")|$(s_of "$g11")"
 check "the bot's done call then stores its report and cost on that run" "true|report|1" \
@@ -260,12 +260,12 @@ check "after a stopped run with the same head, the next run still runs, from no 
 # Reconcile waits 10 min after a session ends, so a late done still lands; after that it fails the run.
 NOWR="$(date +%s)"
 echo '{"key":"agent-late01","state":"stopped"}' > "$tmp/agent-late01.json"; gl="$(st started agent-late01 $((NOWR - 60)))"
-routine_reconcile "$NOWR"
+routine_reconcile "$NOWR" live
 check "a session stopped just now keeps its run started" "started|" "$(s_of "$gl")"
 check "and the bot's late done stores its report" "true|report|1" \
   "$(routine_done "$gl" --state report --session agent-late01 --report-file "$tmp/clean.md" | jq -r '"\(.changed)|\(.state)"')|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $gl AND report IS NOT NULL;")"
 echo '{"key":"agent-late02","state":"stopped"}' > "$tmp/agent-late02.json"; gm="$(st started agent-late02 $((NOWR - 60)))"
-routine_reconcile $((NOWR + 601))
+routine_reconcile $((NOWR + 601)) live
 check "10 min after the session stopped, reconcile fails the run" "failed|the session stopped with no result" "$(s_of "$gm")"
 
 # What the bot posts and checks comes with each run: name, mode, template, repos, branch, the team's private
@@ -337,6 +337,12 @@ ry="$(mk fxa "daily 04:00" '{"name": "Two queued", "channel": "C0OTHER"}')"
 FXA_ROUTINE_NOW=$((T + 17 * 3600)) routine_runnow fxa "$ry" >/dev/null
 check "a queued run refused on repos and channel gives the channel line and does not post" "channel|false" \
   "$(_routine_profile() { echo "$BOTH"; }; tick $((T + 17 * 3600 + 30)) | jq -r --argjson r "$ry" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"')"
+
+# Each env's tick reconciles only its own runs: the dev bot has its own session records (D5).
+rv="$(mk fxa "weekly sun 04:00")"; db_exec "UPDATE routines SET env = 'dev' WHERE id = $rv;"
+gv="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rv, 'manual-9', 'started', 'agent-devr01', $((NOWR - 60))); SELECT last_insert_rowid();")"
+FXA_ROUTINE_NOW=$((NOWR + 601)) routine_tick --env live >/dev/null
+check "the live tick leaves a dev run with no live session record alone" "started|" "$(s_of "$gv")"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?

@@ -278,7 +278,7 @@ routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
   local env="$2" now; now="$(_routine_now)"
   db_exec "INSERT INTO routine_tick (id, at) VALUES (1, $now) ON CONFLICT (id) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
-  routine_reconcile "$now" || return 1
+  routine_reconcile "$now" "$env" || return 1
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
@@ -377,14 +377,15 @@ routine_tick() {
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }
 
-# routine_reconcile <now>   Live runs, from their session records (D14): a run the bot never reported on still
+# routine_reconcile <now> <env>   Live runs of that env's routines (the other env's bot has other session records), from their session records (D14): a run the bot never reported on still
 # ends. pr_open or a pr_url is ok with that PR; a session that is gone, unreadable, paused, stopped or failed with
 # no done call fails (a paused one is stopped first: nobody will answer it); a started run past 120 min is stopped
 # and fails; a claimed run with no session after 10 min, or a queued one after 60, fails. Each change is one
 # UPDATE guarded on the state it read, so a done call or a second tick at the same time cannot be undone.
 routine_reconcile() {
-  local now="$1" rows r id st sess since rec sst pr why
-  rows="$(db_json "SELECT id, state, coalesce(session, '') AS session, coalesce(started_at, 0) AS since FROM routine_runs WHERE state IN (${_ROUTINE_LIVE_STATES});")" \
+  local now="$1" env="$2" rows r id st sess since rec sst pr why
+  rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since FROM routine_runs r
+    JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND t.env = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
     [ -n "$r" ] || continue
