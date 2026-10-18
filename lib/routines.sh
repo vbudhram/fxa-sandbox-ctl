@@ -396,7 +396,7 @@ routine_done() {
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
   [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess}'s" >&2; return 1; }
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
-  if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)"; fi
+  if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
   local post=true report="" n
   if [ -n "$rf" ]; then
     [ -f "$rf" ] || { rm -f "$f"; echo "ERROR: no report file ${rf}" >&2; return 1; }

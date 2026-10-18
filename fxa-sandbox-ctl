@@ -2896,6 +2896,8 @@ _profile_from_args() {
     p="$(jq -r '.profile // empty' "$(_session_file "$a")" 2>/dev/null || true)"
     [ -n "$p" ] && { echo "$p"; return 0; }
   done
+  # No record names a profile: the default one. Not a failure, which set -e would turn into a silent exit.
+  return 0
 }
 
 main() {

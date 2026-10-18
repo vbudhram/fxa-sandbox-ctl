@@ -7,9 +7,15 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-root="$(cd "$(dirname "$0")/.." && pwd)"
-# The CLI loads .env for any variable that is empty here: a developer's .env could point it at real buckets.
-[ ! -f "$root/.env" ] || { echo "skip: $root/.env exists, and the CLI would read it"; exit 0; }
+src="$(cd "$(dirname "$0")/.." && pwd)" root="$tmp/tree"
+# The CLI loads .env for any variable that is empty here, so it runs from a copy of the tree with no .env:
+# the tracked and new files, without the ignored ones (.env is one).
+mkdir -p "$root"
+if ( cd "$src" && git ls-files -co --exclude-standard -z ) > "$tmp/files" 2>/dev/null && [ -s "$tmp/files" ]; then
+  ( cd "$src" && xargs -0 tar cf - < "$tmp/files" ) | ( cd "$root" && tar xf - )
+else cp -R "$src/." "$root/"; fi
+rm -f "$root/.env"
+[ ! -f "$root/.env" ] || { echo "FAIL the copied tree still has a .env"; exit 1; }
 mkdir -p "$tmp/bin" "$tmp/teams" "$tmp/sessions" "$tmp/proxy/teams" "$tmp/state" "$tmp/home"
 # GitHub: the branch head of any repo.
 printf '#!/bin/sh\necho 2222222222222222222222222222222222222222\n' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
@@ -51,4 +57,11 @@ check "the CLI tick, a head that cannot be read: exit 0 and the skip" "0|cannot 
 r7="$(mk "weekly sat 23:00")"
 out="$(NOW=$((T + 210)) ctl routine run-now fxa "$r7" 2>&1)"; rc=$?
 check "the CLI run-now, a head that cannot be read: exit 1 and why" "1|ERROR: routine ${r7} cannot run now: cannot read the branch head" "$rc|$out"
+# done under set -euo pipefail, with a routine whose schedule cannot be read: the result is still stored.
+printf '#!/bin/sh\necho 2222222222222222222222222222222222222222\n' > "$tmp/bin/gh"
+rz="$(sqlite3 "$tmp/fxa.db" "INSERT INTO routines (team, data) VALUES ('fxa', json('{\"name\":\"x\",\"schedule\":\"daily 09:00\",\"zone\":\"Mars/Base\"}')); SELECT last_insert_rowid();")"
+run="$(sqlite3 "$tmp/fxa.db" "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rz, 'p1', 'started', 'agent-cli001', $T); SELECT last_insert_rowid();")"
+out="$(NOW=$((T + 240)) ctl routine done "$run" --state nochange --session agent-cli001 2>&1)"; rc=$?
+check "the CLI done with a schedule that cannot be read: exit 0, the result stored, no next run" "0|nochange|null" \
+  "$rc|$(sqlite3 "$tmp/fxa.db" "SELECT state FROM routine_runs WHERE id = $run;")|$(jq -r .next <<< "$out" 2>/dev/null)"
 exit "$fail"
