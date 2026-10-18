@@ -1487,6 +1487,7 @@ function teamUsage(t) {
 // again: the signed user, TEAM_ADMINS, the validator and the version. RT holds one team's list and the open form,
 // whose draft object each input updates, so a poll that repaints the list keeps what the admin typed.
 let RT = { team: null };
+const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_MODES = [["report", "Report"], ["pr", "Draft PR"], ["pr+notes", "Draft PR with notes"]];
 const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits"];
 const RT_STALE_S = 300;
@@ -1539,11 +1540,11 @@ function rtLast(x) {
 function rtHist(rows) {
   if (!rows.length) return `<p class="empty">No runs yet.</p>`;
   const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
-  return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th><th>Report</th></tr></thead><tbody>${rows.map(x =>
+  return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
     `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
       ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
       ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", x.session ? `<a class="mono" href="#sessions/stopped/${esc(x.session)}">${esc(x.session)}</a>` : "")}
-      ${cell("Report", x.report ? `<details><summary>Report</summary><pre style="white-space:pre-wrap">${esc(x.report)}</pre></details>` : "")}</tr>`).join("")}</tbody></table>`;
+</tr>${x.report ? `<tr><td colspan="7" style="text-align:left;white-space:normal"><details data-rt-run="${esc(x.id)}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre style="white-space:pre-wrap">${esc(x.report)}</pre></details></td></tr>` : ""}`).join("")}</tbody></table>`;
 }
 function rtRow(r) {
   const d = r.data, n = esc(d.name), b = (act, label, extra = "") => `<button data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
@@ -1617,6 +1618,8 @@ function rtFocus(paint) {
   const n = document.querySelector(`[data-routines] ${q}`);
   (n && !n.disabled ? n : document.querySelector("[data-rt-msg]"))?.focus();
 }
+// An open History report stays open through the 15 s repaint.
+document.addEventListener("toggle", e => { const k = e.target.dataset?.rtRun; if (k) RT_OPEN[e.target.open ? "add" : "delete"](k); }, true);
 const rtSay = (msg, ok) => { Object.assign(RT, { msg, ok }); rtPaint(); };
 document.addEventListener("input", e => {
   const f = RT.form, k = e.target.dataset?.rt; if (!f || !e.target.closest?.("[data-routine-form]")) return;
