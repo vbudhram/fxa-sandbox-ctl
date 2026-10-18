@@ -1520,7 +1520,9 @@ const spendSkip = t => !!(rtSum(t.profile)?.routines && (t.issues ?? []).some(i 
 const teamNeeds = t => !!(teamLevel(t) || rtSum(t.profile)?.failed || spendSkip(t));
 function teamReason(t) {
   const i = (t.issues ?? []).find(x => x.level === "bad") ?? (t.issues ?? []).find(x => x.level === "warn"), r = rtSum(t.profile);
-  return [i?.text ?? (spendSkip(t) ? "routines are skipped: the team's spend cannot be read" : ""), r?.routines ? `${r.routines} routine${r.routines === 1 ? "" : "s"}` : "", r?.failed ? `${r.failed} failed` : ""].filter(Boolean).join(" · ");
+  // A record team that is not active leads with its status: users do not help until it is tested and active.
+  const st = t.access?.record && t.access.status !== "active" ? t.access.status : "";
+  return [st || i?.text || (spendSkip(t) ? "routines are skipped: the team's spend cannot be read" : ""), r?.routines ? `${r.routines} routine${r.routines === 1 ? "" : "s"}` : "", r?.failed ? `${r.failed} failed` : ""].filter(Boolean).join(" · ");
 }
 function teamItem(t, use) {
   if (t.load_error) return { id: t.profile, d: "bad", t: t.profile, m: ["profile.conf did not load"] };
@@ -1652,6 +1654,7 @@ function teamAccessCard(t) {
   if (!a.record) return rows + `<p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
   if (!adm) return rows + `<p class="empty">A team admin adds users. Ask the operator.</p>`;
   if (TED?.name !== t.profile) return rows + `<p class="empty">loading the record…</p>`;
+  if (!TED.ok || !TED.rec) return rows + `<p class="unknown">The record did not load: ${esc(TED.msg || "no answer")}</p><div class="acts2"><button data-team-load="${esc(t.profile)}">Load the record</button></div>`;
   const rec = TED.rec ?? {};   // the record as loaded, not the editor's unsaved text
   const d = ACCESS_DRAFT?.team === t.profile ? ACCESS_DRAFT : { team: t.profile, users: (rec.access?.users ?? []).join(", "), channels: (rec.access?.channels ?? []).join(", "), open: !!rec.access?.open };
   return `<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${esc(d.users)}" autocomplete="off">
@@ -1668,7 +1671,7 @@ document.addEventListener("input", e => {
 document.addEventListener("change", e => { if (e.target.dataset?.acc === "open") e.target.dispatchEvent(new Event("input", { bubbles: true })); });
 // Save access: the kept record and generation, so an edit someone else saved meanwhile is refused (409), not lost.
 async function accessSave(team) {
-  if (ACCESS_DRAFT?.busy || TED?.name !== team) return;
+  if (ACCESS_DRAFT?.busy || TED?.name !== team || !TED.ok || !TED.rec) return;
   // The record as loaded, with only access replaced: unsaved text in the record editor is not posted.
   const rec = structuredClone(TED.rec ?? {});
   const d = ACCESS_DRAFT?.team === team ? ACCESS_DRAFT : { users: (rec.access?.users ?? []).join(","), channels: (rec.access?.channels ?? []).join(","), open: !!rec.access?.open };
@@ -1708,7 +1711,8 @@ function renderTeams() {
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
   if (TTAB === "settings" && t?.access?.record && TEAM_ADMIN?.admin && TED?.name !== t.profile && TEAM_LOADING !== t.profile) {
-    TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; ACCESS_DRAFT = null; renderTeams(); } });
+    TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; ACCESS_DRAFT = null; renderTeams(); } })
+      .catch(() => { TEAM_LOADING = ""; TED = { name: t.profile, ok: false, msg: "the dashboard did not answer" }; renderTeams(); });
   }
   if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
   // A repaint keeps the keyboard focus on the same heading, tab link, link or button (the routines list has its own).
@@ -1890,7 +1894,7 @@ function rtPaint() {
 function rtFocus(paint) {
   const a = document.activeElement, d = a?.closest?.("[data-routines]") ? a.dataset ?? {} : null, v = x => `"${String(x).replace(/["\\]/g, "\\$&")}"`;
   const flag = d && ["rt-save", "rt-cancel", "rt-new"].find(k => a.hasAttribute?.(`data-${k}`));
-  const q = !d ? "" : d.rtAct ? `[data-rt-act=${v(d.rtAct)}][data-rt-id=${v(d.rtId)}]` : d.rtRepo ? `[data-rt-repo=${v(d.rtRepo)}]` : d.rt ? `[data-rt=${v(d.rt)}]` : flag ? `[data-${flag}]` : "";
+  const q = !d ? "" : d.rtAct ? `[data-rt-act=${v(d.rtAct)}][data-rt-id=${v(d.rtId)}]` : d.rtSel ? `[data-rt-sel=${v(d.rtSel)}]` : d.rtShow ? `[data-rt-show=${v(d.rtShow)}]` : d.rtRepo ? `[data-rt-repo=${v(d.rtRepo)}]` : d.rt ? `[data-rt=${v(d.rt)}]` : flag ? `[data-${flag}]` : "";
   paint();
   if (!q) return;
   const n = document.querySelector(`[data-routines] ${q}`);

@@ -126,10 +126,10 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   RTSUM = { teams: { crew: { routines: 3, failed: 1, paused: 0 }, ent: { routines: 4, failed: 0, paused: 1 } } };
   globalThis.TEAM_ADMIN = { admin: true };
   t("teams: a failed routine puts a team in Needs attention for an admin", `${teamNeeds(TEAMS.teams[2])}|${teamReason(TEAMS.teams[2])}`, "true|3 routines · 1 failed");
-  t("teams: the reason leads with the issue", teamReason(TEAMS.teams[1]), "nobody can start it · 4 routines");
+  t("teams: a team that is not active leads with its status", teamReason(TEAMS.teams[1]), "disabled · 4 routines");
   t("teams: the badge is warn for a failed routine", teamBadge([TEAMS.teams[0], TEAMS.teams[2]]), " warn");
   globalThis.TEAM_ADMIN = { admin: false };
-  t("teams: a viewer who is not an admin gets no routine facts", `${teamNeeds(TEAMS.teams[2])}|${teamReason(TEAMS.teams[1])}|${teamBadge([TEAMS.teams[2]])}`, "false|nobody can start it|");
+  t("teams: a viewer who is not an admin gets no routine facts", `${teamNeeds(TEAMS.teams[2])}|${teamReason(TEAMS.teams[1])}|${teamBadge([TEAMS.teams[2]])}`, "false|disabled|");
   globalThis.TEAM_ADMIN = { admin: true };
   globalThis.ERRS = null; globalThis.STATS = null; const all = allTeamsHtml();
   t("all teams: four tiles and one row per team, names escaped", `${(all.match(/class="ttile[ "]/g) || []).length}|${(all.match(/<tr><td>/g) || []).length}|${/<img src=x>/.test(all)}`, "4|3|false");
@@ -177,9 +177,10 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
     const fx = { profile: "fxa", repos: [], issues: [], access: { open: "built-in" } }, env = { profile: "pyfxa", repos: [], issues: [], access: { open: false, users: 2, channels: 0, jira: [] } };
     t("access: FxA and an env team render no input and no Save access", `${/<input|Save access/.test(teamAccessCard(fx))}|${/<input|Save access/.test(teamAccessCard(env))}|${/Set in the bot \.env by the operator/.test(teamAccessCard(env))}`, "false|false|true");
     const rt = { profile: "rusty", repos: [], issues: [], access: { record: true, status: "active", open: false, users: 1, channels: 0, jira: [] } };
-    globalThis.TED = { name: "rusty", gen: "7", rec: { name: "rusty", access: { users: ["U0AAA1111"], channels: [] } }, text: "{}" }; ACCESS_DRAFT = null;
+    globalThis.TED = { name: "rusty", gen: "7", ok: true, rec: { name: "rusty", access: { users: ["U0AAA1111"], channels: [] } }, text: "{}" }; ACCESS_DRAFT = null;
     t("access: the form fills from the record", /id="t-users" data-acc="users" value="U0AAA1111"/.test(teamAccessCard(rt)), true);
     globalThis.TEAM_ADMIN = { admin: false }; t("access: a viewer who is not an admin gets the text, no form", `${/A team admin adds users/.test(teamAccessCard(rt))}|${/<input/.test(teamAccessCard(rt))}`, "true|false"); globalThis.TEAM_ADMIN = { admin: true };
+    globalThis.TED = { name: "rusty", ok: false, msg: "HTTP 500" }; t("access: a record that did not load says so, with no empty form", `${/The record did not load: HTTP 500/.test(teamAccessCard(rt))}|${/id="t-users"/.test(teamAccessCard(rt))}`, "true|false");
     t("access: a list keeps each ID once", accessList("U1, U2  U1,,U3").join(" "), "U1 U2 U3"); }
   { globalThis.TEAM_ADMIN = { admin: true }; RTSUM = { teams: { solo: { routines: 1, failed: 0 } } };
     const solo = { profile: "solo", repos: [], issues: [{ level: "info", text: "spend cannot be read" }], access: { open: true } };
@@ -191,9 +192,9 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
 (async () => {
   globalThis.fetch = async url => ({ ok: true, json: async () => url.includes("templates") ? [{ template: "x" }] : [{ id: 7, data: {} }] });
   { const calls = []; globalThis.renderTeams = () => {}; globalThis.loadTeams = async () => {};
-    globalThis.teamRecord = async n => ({ name: n, gen: "8", rec: { name: n, access: { users: ["U0AAA1111", "U0BBB2222"], channels: [] } }, text: "" });
+    globalThis.teamRecord = async n => ({ name: n, gen: "8", ok: true, rec: { name: n, access: { users: ["U0AAA1111", "U0BBB2222"], channels: [] } }, text: "" });
     // The record editor holds an unsaved edit (status active): Save access must not post it.
-    globalThis.TED = { name: "rusty", gen: "7", rec: { name: "rusty", status: "draft", access: { users: ["U0AAA1111"], channels: [] }, repos: [] }, text: JSON.stringify({ name: "rusty", status: "active" }) };
+    globalThis.TED = { name: "rusty", gen: "7", ok: true, rec: { name: "rusty", status: "draft", access: { users: ["U0AAA1111"], channels: [] }, repos: [] }, text: JSON.stringify({ name: "rusty", status: "active" }) };
     ACCESS_DRAFT = { team: "rusty", users: "U0AAA1111, U0BBB2222", channels: "", open: false };
     globalThis.fetch = async (url, o) => { calls.push([url, o?.method || "GET", o?.body]); return { ok: true, status: 200, json: async () => ({ ok: true }) }; };
     const p1 = accessSave("rusty"), p2 = accessSave("rusty"); await p1; await p2;
