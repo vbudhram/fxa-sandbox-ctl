@@ -364,6 +364,21 @@ def main(argv):
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
         return 0
+    # due-rows <rows.json> <now>: the tick's routines in one start; for each due one, a line of
+    # id, team, paused, period, at, next (or empty) and the config as JSON, separated by \x1f
+    # (not a tab: read merges two tabs in a row, so an empty field would shift the rest).
+    if len(argv) >= 4 and argv[1] == "due-rows":
+        for x in load(argv[2]):
+            try:
+                r = json.loads(x["data"])
+                d = due(r, int(argv[3]), int(x.get("saved_at") or 0))
+            except (KeyError, TypeError, ValueError, AttributeError, zoneinfo.ZoneInfoNotFoundError) as e:
+                print(f"ERROR: routine {x.get('id')}: the routine's schedule cannot be read: {e}", file=sys.stderr)
+                continue
+            if d:
+                print("\x1f".join(str(v) for v in (x["id"], x["team"], x["paused"], d["period"], d["at"], d["next"] or "",
+                                                  json.dumps(r, separators=(",", ":")))))
+        return 0
     if len(argv) >= 4 and argv[1] == "due":
         try:
             print(json.dumps(due(load(argv[2]), int(argv[3]), int(argv[4]) if len(argv) > 4 else 0)))

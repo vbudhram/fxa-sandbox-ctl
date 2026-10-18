@@ -283,7 +283,7 @@ routine_tick() {
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
   local queued q qid qrid qt qwhy qpost recheck runs="[]" skips="[]"
-  local r f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  local f id team paused period at next cfg; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
@@ -307,14 +307,13 @@ routine_tick() {
       '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
   local spaused; spaused="$(_routine_sessions_paused)"
-  while IFS= read -r r; do
-    [ -n "$r" ] || continue
-    local id team cfg due period at next age why heads n post st tp
-    id="$(jq -r .id <<< "$r")"; team="$(jq -r .team <<< "$r")"; cfg="$(jq -c '.data | fromjson' <<< "$r")"
+  # One routine.py start finds the due routines, so a tick costs no process for a routine that is not due.
+  local rf="$f.rows"; printf '%s' "$rows" > "$rf"
+  local dues; dues="$(_ROUTINE_PY due-rows "$rf" "$now")" || dues=""; rm -f "$rf"
+  while IFS=$'\x1f' read -r id team paused period at next cfg; do
+    [ -n "$id" ] || continue
+    local age why heads n post st tp
     printf '%s' "$cfg" > "$f"
-    due="$(_ROUTINE_PY due "$f" "$now" "$(jq -r '.saved_at // 0' <<< "$r")")" || continue
-    [ "$due" != null ] || continue
-    period="$(jq -r .period <<< "$due")"; at="$(jq -r .at <<< "$due")"; next="$(jq -r '.next // empty' <<< "$due")"
     n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND period = $(db_q "$period");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
     [ "$n" = 0 ] || continue
     age=$((now - at))
@@ -333,7 +332,7 @@ routine_tick() {
       case $prc in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
     fi
     [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
-    [ -n "$why" ] || [ "$(jq -r .paused <<< "$r")" = 0 ] || why="the routine is paused"
+    [ -n "$why" ] || [ "$paused" = 0 ] || why="the routine is paused"
     recheck=""; [ -n "$why" ] || { why="$(_routine_recheck "$team" "$f")"; recheck="$why"; }
     if [ -z "$why" ]; then
       n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES});")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
@@ -366,7 +365,7 @@ routine_tick() {
         '. + [{run: $id, routine: $rid, team: $t, trigger: "schedule", channel: $c.channel} + $i]' <<< "$runs")"
     else
       post="$(_routine_post "$id" "$why")" || post=false
-      [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
+      [ "$paused" = 0 ] || post=false   # an admin's own pause is not news in Slack
       # The channel may no longer be one the team's results can go to, also when an earlier gate gave the reason.
       [ -n "$recheck" ] || recheck="$(_routine_recheck "$team" "$f")"
       [ -z "$recheck" ] || ! _routine_quiet "$recheck" || post=false
@@ -376,7 +375,7 @@ routine_tick() {
         --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
         '. + [{run: $id, routine: $rid, team: $t, name: $c.name, channel: $c.channel, template: $i.template, private: $i.private, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
     fi
-  done < <(jq -c '.[]' <<< "$rows")
+  done <<< "$dues"
   rm -f "$f"
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }
