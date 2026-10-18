@@ -1472,7 +1472,7 @@ function teamDetails(t) {
     <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
     <div>${h("Mode", `${conf} PIPE_PR_OPEN`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>`;
   const rts = routinesGroup(t, Date.now() / 1000);
-  return TAB === "routines" ? out.replace(/(<\/h2>)/, `$1${rts}`) + teamEditor(t.profile, t.access?.record) : out + rts + teamEditor(t.profile, t.access?.record);
+  return TAB === "routines" ? out.replace("</h2>", m => m + rts) + teamEditor(t.profile, t.access?.record) : out + rts + teamEditor(t.profile, t.access?.record);
 }
 // A team's use in 30 days, and the two places that show its sessions and its spend.
 function teamUsage(t) {
