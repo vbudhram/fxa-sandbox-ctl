@@ -204,9 +204,9 @@
            grid-template-columns:var(--rail) var(--side) minmax(0,1fr) var(--right);
            grid-template-areas:"rail side main right" "status status status status"; }
   body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.bare .shell { --side:0px; }
-  body.noright .shell, body.v-overview .shell, body.v-stats .shell, body.v-teams .shell, body.bare .shell, body.noitem .shell { --right:0px; }
+  body.noright .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-stats .shell, body.v-teams .shell, body.bare .shell, body.noitem .shell { --right:0px; }
   body.noside .side, body.v-overview .side, body.v-pipeline .side, body.bare .side,
-  body.noright .right, body.v-overview .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { visibility:hidden; }
+  body.noright .right, body.v-overview .right, body.v-pipeline .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { visibility:hidden; }
   .rail { grid-area:rail; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:var(--s3) 0; gap:2px; z-index:11; }
   .rail .logo { width:40px; height:40px; margin-bottom:var(--s3); }
   .rail a, .rail button.rb { position:relative; width:60px; min-height:52px; padding:8px 0 6px; border-radius:var(--r-sm); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
@@ -255,7 +255,7 @@
   .rsz-side { grid-area:side; justify-self:end; margin-right:-4px; }
   .rsz-right { grid-area:right; justify-self:start; margin-left:-4px; }
   body.noside .rsz-side, body.v-overview .rsz-side, body.v-pipeline .rsz-side, body.bare .rsz-side,
-  body.noright .rsz-right, body.v-overview .rsz-right, body.v-stats .rsz-right, body.v-teams .rsz-right, body.bare .rsz-right, body.noitem .rsz-right { display:none; }
+  body.noright .rsz-right, body.v-overview .rsz-right, body.v-pipeline .rsz-right, body.v-stats .rsz-right, body.v-teams .rsz-right, body.bare .rsz-right, body.noitem .rsz-right { display:none; }
   @media (max-width:1280px) { .rsz-right { display:none; } }
   @media (max-width:900px) { .rsz-side { display:none; } }
   /* Teams pages (epic i275) */
@@ -324,7 +324,7 @@
   @media (max-width:1280px) {
     .shell { --right:0px !important; }
     .right { position:fixed; right:0; top:0; bottom:32px; width:340px; z-index:12; transform:translateX(105%); transition:transform .2s; box-shadow:-10px 0 30px rgb(0 0 0 / .18); visibility:visible !important; }
-    body.showright .right { transform:none; } body.v-overview .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { display:none; } .drawer-close { display:inline-block; align-self:flex-end; }
+    body.showright .right { transform:none; } body.v-overview .right, body.v-pipeline .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { display:none; } .drawer-close { display:inline-block; align-self:flex-end; }
   }
   @media (max-width:900px) {
     .shell { --side:0px !important; }
@@ -549,6 +549,13 @@
   .k-bad { --tone:var(--bad); --tone-fill:var(--faint); --tone-text:var(--bad); }
   .k-warn { --tone:var(--warn); --tone-fill:var(--faint); --tone-text:var(--warn); }
   .k-wait { --tone:var(--faint); --tone-fill:var(--faint); --tone-text:var(--dim); }
+  .bdet { padding:0 var(--s3) var(--s3); display:flex; flex-direction:column; gap:var(--s2); background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
+  .bdet .blks { display:flex; flex-wrap:wrap; gap:var(--s2); } .bdet .blk { flex:1 1 200px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--panel); }
+  .bdet .blk h3 { margin:0; font-size:var(--t-sub); font-weight:700; } .bdet .blk p { margin:2px 0 0; font-size:var(--t-label); line-height:1.45; color:var(--dim); }
+  .bdet .blk.bad { border-color:color-mix(in srgb,var(--bad) 40%,var(--line)); } .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
+  .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
+  .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:6px; padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
+  .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .bempty { margin:0; padding:4px var(--s3) var(--s3); color:var(--faint); font-size:var(--t-sub); }
   details.bout { border-top:1px solid var(--line); } details.bout > summary { cursor:pointer; padding:var(--s3); font-size:var(--t-label); font-weight:700; color:var(--dim); }
@@ -1349,7 +1356,7 @@ let STATS = null, STATS_AT = 0;
 async function loadStats() {
   if (STATS && Date.now() - STATS_AT < 60000) { renderStats(); return; }
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
-  renderStats(); renderNav(); if (VIEW === "pipeline") renderRight();
+  renderStats(); renderNav(); if (VIEW === "pipeline") renderLanes();
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
@@ -2557,35 +2564,6 @@ function laneHtml(r) {
     ${r.runner ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : ""}
   </div>`;
 }
-// Per-ticket details: the run log (via /api/stats), the PR, and a live agent.
-function laneDetails(r) {
-  const t = r.t, k = STATS?.tickets?.[t.key], a = t.agent || {}, repo = SNAP?.repo ?? "";
-  const kv = (label, v) => v == null || v === "" ? "" : `<span><b>${label}</b>${v}</span>`;
-  const kinds = k ? Object.entries(k.kinds).map(([n, c]) => `${c} ${esc(KIND[n] ?? n).toLowerCase()}`).join(" · ") : "";
-  const rv = t.review === "APPROVED" ? "approved" : t.review === "CHANGES_REQUESTED" ? "changes requested" : t.review === "REVIEW_REQUIRED" ? "review required" : t.review;
-  if (t.slack) return `<div class="ldet"><div><h3>Slack session</h3><div class="kvs">${kv("Session", sessLink(t.sess, t.key))}${kv("Owner", esc(t.owner || "unknown"))}${kv("Opened", ago(Math.round((Date.now() - Date.parse(SNAP?.open_prs?.find(p => p.number === t.pr)?.created ?? Date.now())) / 1000)))}</div></div>
-    <div class="links">${prUrl(t.pr) ? `<a href="${prUrl(t.pr)}" target="_blank" rel="noopener">PR ↗</a>` : ""}${t.sess?.slack_url ? `<a href="${esc(t.sess.slack_url)}" target="_blank" rel="noopener">Slack thread ↗</a>` : ""}</div></div>`;
-  const groups = [
-    ["Agent runs", k ? [kv("Runs", `${k.runs}${kinds ? ` (${kinds})` : ""}`), kv("Turns", k.turns || ""), kv("Spend", usd(k.cost)), kv("Model", k.models.map(m => `<span class="mono">${esc(m)}</span>`).join(", ")),
-      kv("Median run", `${k.median_min} min`), kv("Files changed", k.files), kv("Last run", ago(Math.round((Date.now() - Date.parse(k.last)) / 1000))),
-      kv("Fix attempts", k.attempts), kv("Feedback rounds", k.feedback_rounds)] : [STATS ? `<span class="empty">not in the run log: a run records only when it reaches handoff</span>` : `<span class="empty">loading…</span>`]],
-    ...(r.runner ? [["Now", [kv("Sandbox", `<span class="mono">${esc(t.name)}</span>${t.slot ? ` · ${esc(t.slot)}` : ""}`), kv("Elapsed", short(t.elapsed_seconds)),
-      kv("Model", a.model ? `<span class="mono">${esc(a.model)}</span>` : ""), kv("Cost so far", a.cost_so_far ? usd(a.cost_so_far) : ""),
-      kv("Tokens", a.tokens ? `${Math.round((a.tokens.in + a.tokens.out) / 1000)}k` : ""), kv("Turns", a.turns)]]] : []),
-    ...(t.pr ? [["Pull request", [kv("PR", prl(repo, t.pr)), kv("Checks", `${t.ok ?? 0} passed · ${t.fail ?? 0} failed · ${t.running ?? 0} running`),
-      kv("Review", esc(rv ?? "")), kv("Requested", esc((t.reviewers ?? []).map(x => x.replace(/^mozilla\//, "")).join(", "))),
-      kv("Last human review", t.last_human_review ? `${esc(t.last_human_review.login)} · ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : "none"),
-      kv("Opened", t.created ? ago(Math.round((Date.now() - Date.parse(t.created)) / 1000)) : ""), kv("Mergeable", esc((t.mergeable ?? "").toLowerCase()))]]] : []),
-  ];
-  return `<div class="ldet">${groups.map(([h, items]) => `<div><h3>${h}</h3><div class="kvs">${items.join("")}</div></div>`).join("")}
-    <div class="links">${jiraHref(t.key) ? `<a href="${jiraHref(t.key)}" target="_blank" rel="noopener">Jira ↗</a>` : ""}${prUrl(t.pr) ? `<a href="${prUrl(t.pr)}" target="_blank" rel="noopener">PR ↗</a><a href="${prUrl(t.pr)}/checks" target="_blank" rel="noopener">Checks ↗</a>` : ""}</div></div>`;
-}
-// A click on a belt row (not on its links) opens the belt's details in the right panel.
-document.addEventListener("click", e => {
-  const row = e.target.closest?.(".lane .row"); if (!row || e.target.closest("a, button, summary")) return;
-  location.hash = `pipeline/${TAB}/${encodeURIComponent(row.parentElement.dataset.belt)}`;
-  if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright");
-});
 // "7 open PRs labelled auto: 4 awaiting review · 2 in flight · 1 blocked", as GitHub counts them.
 function openPrCounts() {
   const s = SNAP, open = s?.open_prs;
@@ -2603,13 +2581,13 @@ function openPrLine() {
 }
 // Belts v2 groups. Each key goes to one group, from classify() through boardItems(), so the groups,
 // the tab count and Needs you agree. The first rule that matches wins (design D2).
-let OUTSIDE_OPEN = false;
+let OUTSIDE_OPEN = false, BAD_LINK = false;
 const BELT_GROUPS = [["working", "Working now", "an agent runs in a sandbox", "k-live", "No agent works now."], ["needs", "Needs you", "only a person can move these", "k-warn", "Nobody needs to act."],
   ["fixes", "The agent fixes it", "on the next pass", "k-bad", "Nothing for the agent to fix."], ["review", "Waits on review", "oldest first", "k-wait", "No PR waits on review."]];
 function beltGroups() {
   const items = SNAP ? boardItems() : [], byKey = Object.fromEntries(items.map(i => [i.key, i]));
   const g = { working: [], needs: [], fixes: [], review: [], outside: [] }, placed = new Set();
-  const add = (to, r) => { placed.add(r.t.key); g[to].push({ ...r, group: to }); };
+  const add = (to, r) => { placed.add(r.t.key); g[to].push({ ...r, group: to, item: r.item ?? byKey[r.t.key] }); };
   laneRows().forEach(r => {
     const i = byKey[r.t.key];
     if (r.outside && !i) return add("outside", { ...r, tone: r.age >= 3 ? "k-warn" : "k-wait",
@@ -2637,13 +2615,45 @@ const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working
 function beltRow(r) {
   const t = r.t, title = laneTitle(t.summary || t.branch), live = r.group === "working" && t.agent_alive;
   const nodes = LANE_ST.map((_, j) => `<span class="n${j < r.st ? " done" : j === r.st ? ` cur${live ? " live" : ""}` : ""}"></span>`).join("");
-  const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds));
-  return `<li class="belt ${r.tone}${t.key === SEL.pipeline ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" href="#pipeline/belts/${encodeURIComponent(t.key)}" aria-expanded="false">
+  const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds)), open = TAB === "belts" && t.key === SEL.pipeline;
+  return `<li class="belt ${r.tone}${open ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${open}" aria-controls="bd-${esc(t.key)}">
     <span class="tk"><span class="m"><span class="key mono">${esc(t.key)}</span>${t.pr ? `<span class="mono">#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
     <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
-    <span class="age">${esc(age)}</span></a>
-    ${t.agent_alive ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${LANE_OUT[t.key] ? " open" : ""}><summary class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : ""}</li>`;
+    <span class="age">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
+}
+// The open row's details: four blocks, one main action and the links, each link checked or plain text.
+function beltDetails(r) {
+  const t = r.t, i = r.item ?? {}, k = STATS?.tickets?.[t.key], a = t.agent || {}, pr = prUrl(t.pr), lim = SNAP?.limits?.attempts ?? 2;
+  const blk = (h, body, bad) => `<div class="blk${bad ? " bad" : ""}"><h3>${h}</h3>${body}</div>`, p = x => `<p>${x}</p>`;
+  const total = (t.ok ?? 0) + (t.fail ?? 0) + (t.running ?? 0);
+  const ci = !t.pr ? blk("CI: no PR yet", p("Checks start after the agent opens the PR."))
+    : t.fail > 0 ? blk(`CI: ${t.fail} of ${total} checks failed`, p(esc(t.infra ? `Known infra failure: ${t.infra}` : `${t.ok ?? 0} passed.`)), true)
+    : t.running > 0 ? blk(`CI: ${t.running} of ${total} running`, p(`${t.ok ?? 0} passed so far.`)) : blk(`CI: ${t.ok ?? 0} checks passed`, p(t.mergeable === "CONFLICTING" ? "The branch has merge conflicts." : "Nothing failed."));
+  const term = t.agent_alive ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${LANE_OUT[t.key] ? " open" : ""}><summary class="bar" data-focus="term"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : "";
+  const agent = t.agent_alive ? blk(`Agent: ${esc(LANE_ST[r.st])} · ${Math.round((t.elapsed_seconds ?? 0) / 60)} min`, p([a.model && `<span class="mono">${esc(a.model)}</span>`, a.cost_so_far && `${usd(a.cost_so_far)} so far`, a.turns && `${esc(a.turns)} turns`].filter(Boolean).join(" · ") || "working") + term)
+    : blk(`Agent: ${esc(i.next || r.l1 || "")}`, p(t.attempts != null || r.group === "fixes" ? `Fix attempts ${esc(t.attempts ?? 0)} of ${esc(lim)}. Then it moves to Needs you.` : esc(r.l2 ?? "")));
+  const rv = { APPROVED: "approved", CHANGES_REQUESTED: "changes requested", REVIEW_REQUIRED: "review required" }[t.review] ?? t.review;
+  const review = !t.pr ? blk("Review: none yet", p("A reviewer gets it after CI passes."))
+    : blk(`Review: ${esc(rv || "none yet")}`, p(t.last_human_review ? `${esc(t.last_human_review.login)} reviewed ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : `no human review${(t.reviewers ?? []).length ? ` · requested ${esc(t.reviewers.map(x => x.replace(/^mozilla\//, "")).join(", "))}` : ""}`));
+  const runs = blk(`Agent runs: ${k ? esc(k.runs) : STATS ? "none" : "…"}`, p(k ? [`${esc(k.turns)} turns`, `${esc(k.median_min)} min`, usd(k.cost), `${esc(k.files)} files`].join(" · ") : STATS ? "not in the run log: a run records only when it reaches handoff" : "loading…"));
+  const sess = t.sess ? sessHref(t.sess.key) : "";
+  const [label, href] = t.slack ? ["Open the session", sess] : t.agent_alive ? ["Watch the agent", ""] : t.fail > 0 && pr ? ["Open the failing check", `${pr}/checks`]
+    : pr ? ["Open the PR", pr] : jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)] : ["", ""];
+  const main = t.agent_alive ? `<button type="button" class="main" data-focus="main" data-watch="${esc(t.key)}">Watch the agent</button>`
+    : href ? `<a class="main" data-focus="main" href="${esc(href)}"${href.startsWith("#") ? "" : ' target="_blank" rel="noopener"'}>${label}</a>` : "";
+  const links = [jiraHref(t.key) && `<a data-focus="jira" href="${jiraHref(t.key)}" target="_blank" rel="noopener">Jira ↗</a>`, pr && `<a data-focus="pr" href="${pr}" target="_blank" rel="noopener">PR ↗</a>`,
+    pr && `<a data-focus="checks" href="${pr}/checks" target="_blank" rel="noopener">Checks ↗</a>`, sess && `<a data-focus="sess" href="${sess}">Session</a>`].filter(Boolean).join("");
+  return `<div class="bdet" id="bd-${esc(t.key)}" role="region" aria-label="Details of ${esc(t.key)}"><div class="blks">${ci}${agent}${review}${runs}</div><div class="acts">${main}${links}</div></div>`;
+}
+// Where a key from a link is when it has no belt: a hold, the queue, Done, or nowhere.
+function beltWhere(g) {
+  if (BAD_LINK) return "That link names no ticket.";
+  const k = SEL.pipeline; if (!k || ["working", "needs", "fixes", "review", "outside"].some(x => g[x].some(r => r.t.key === k))) return "";
+  const i = SNAP ? boardItems().find(x => x.key === k) : null, d = doneRows().find(x => x.t.key === k);
+  const q = `(<a href="#pipeline/queue">Queue and review</a>)`;
+  return i?.waitsOn ? `${esc(k)} waits on ${esc(i.waitsOn)} ${q}` : i?.column === "next" ? `${esc(k)} is ready in the queue ${q}` : i ? `${esc(k)} is in the queue ${q}`
+    : d ? `${esc(k)} ${esc(d.l1.replace(/^Merged/, "merged"))} (<a href="#pipeline/done">Done</a>)` : `${esc(k)} is not on a belt now. Look in <a href="#pipeline/queue">Queue and review</a> or <a href="#pipeline/done">Done</a>.`;
 }
 function beltsHtml(g) {
   if (!SNAP) return `<p class="bempty">Loading the pipeline…</p>`;
@@ -2654,18 +2664,28 @@ function beltsHtml(g) {
     <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
   const group = ([k, name, why, tone, empty]) => `<div role="group" aria-labelledby="bg-${k}"><h2 class="bgh ${tone}" id="bg-${k}"><i></i>${name} <span class="cnt">${g.unknown[k] ? "?" : g[k].length}</span><span class="why">${why}</span></h2>
     ${g.unknown[k] ? `<p class="bempty">${esc(g.unknown[k])}</p>` : g[k].length ? `<ul class="belts">${g[k].map(beltRow).join("")}</ul>` : `<p class="bempty">${empty}</p>`}</div>`;
-  return head + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div><span>Status</span><span class="r">Age</span></div>
+  const where = beltWhere(g);
+  return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div><span>Status</span><span class="r">Age</span></div>
     ${BELT_GROUPS.map(group).join("")}
     ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
 }
 function renderLanes() {
   const g = beltGroups(), live = g.working.filter(r => r.t.agent_alive);
+  // A poll rewrites the list: put the focus back on the same row and control.
+  const ae = document.activeElement, fk = ae?.closest?.(".belt")?.dataset.belt, ff = ae?.dataset?.focus;
   put("s-lanes", beltsHtml(g));
+  if (fk && !document.activeElement?.closest?.(".belt")) { const li = document.querySelector(`.belt[data-belt="${CSS.escape(fk)}"]`); (li?.querySelector(`[data-focus="${ff}"]`) ?? li?.querySelector("a"))?.focus({ preventScroll: true }); }
   live.forEach(r => paintTail(r.t.key, true));
   // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
   TAIL_KEYS = [...new Set([...TAIL_KEYS, ...live.map(r => r.t.key)])];
 }
 document.addEventListener("toggle", e => { if (e.target.matches?.("details.bout")) OUTSIDE_OPEN = e.target.open; }, true);
+// A row opens and closes in place: replace the hash, so Back leaves the page and not each toggle.
+document.addEventListener("click", e => {
+  const w = e.target.closest?.("[data-watch]"); if (w) { const d = document.getElementById(`lane-term-${w.dataset.watch}`); if (d) { d.open = true; d.querySelector("summary")?.focus(); } return; }
+  const a = e.target.closest?.(".belt > a"); if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+  e.preventDefault(); location.replace(a.getAttribute("href"));
+});
 // Merged pipeline PRs on full belts, newest first.
 function doneRows() {
   return (SNAP?.merged_prs ?? []).filter(p => p.key).map(p => {
@@ -2959,11 +2979,12 @@ function route() {
   }
   const def = VIEWS.find(x => x[0] === v) || VIEWS[0], view = def[0], tabs = def[3];
   if (view !== VIEW) { Q = ""; CUR = -1; }
-  const VIEW_PREV = VIEW;
+  const VIEW_PREV = VIEW, TAB_PREV = TAB, OPEN_PREV = SEL.pipeline;
   TAB = tabs.some(t => t[0] === sub) ? sub : view === VIEW && tabs.some(t => t[0] === TAB) ? TAB : tabs[0]?.[0] ?? "";
   VIEW = view;
   // A pipeline key is a Jira key or a branch name: anything else in a link is dropped, never echoed.
   if (sel && view !== "teams") { let k = ""; try { k = decodeURIComponent(sel); } catch {} SEL[view] = view === "pipeline" && !BELT_KEY_RE.test(k) ? "" : k; }
+  if (view === "pipeline") { BAD_LINK = !!sel && !SEL.pipeline; if (!sel) SEL.pipeline = ""; }
   if (view === "sessions") { SESS_AUTO = !tabs.some(t => t[0] === sub) && view !== VIEW_PREV; SESS_TAB = TAB; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(SEL.sessions ?? "") ? SEL.sessions : ""; }
   if (view === "stats") STATS_TAB = TAB;
   if (view === "errors") ERRS_ALL = TAB === "all";
@@ -2986,8 +3007,10 @@ function route() {
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
   if (view === "pipeline" && TEAM_ADMIN == null) loadTeamAdmin().then(() => VIEW === "pipeline" && SNAP && renderLanes());
   renderSide(); renderRight();
-  document.getElementById("main").scrollTop = 0;
-  if (view === "pipeline" && sel) document.querySelector(`.lane[data-belt="${CSS.escape(SEL.pipeline)}"]`)?.scrollIntoView({ block: "center" });
+  // Opening or closing a row inside one tab keeps the place; a new view or tab starts at the top.
+  if (!(view === "pipeline" && VIEW_PREV === view && TAB_PREV === TAB)) document.getElementById("main").scrollTop = 0;
+  if (view === "pipeline" && SEL.pipeline) document.getElementById(`bd-${SEL.pipeline}`)?.scrollIntoView({ block: "nearest" });
+  else if (view === "pipeline" && OPEN_PREV && VIEW_PREV === view) document.querySelector(`.belt[data-belt="${CSS.escape(OPEN_PREV)}"] > a`)?.focus({ preventScroll: true });
   // A Board row is a link: the rail opens (a drawer at 1280px or less) and takes the focus, for keyboard and screen-reader users.
   if (view === "pipeline" && TAB === "board" && sel) { if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright"); document.querySelector("#right .rh")?.focus(); }
 }
@@ -3017,7 +3040,7 @@ function renderHeader() {
   document.getElementById("vsub").textContent = def[2];
   const sideLbl = VIEW === "stats" ? "Filters" : "List";
   document.getElementById("vacts").innerHTML = (VIEW === "teams" ? `<button type="button" class="iconbtn lbl tlist-btn" id="tlist" aria-expanded="${!document.body.classList.contains("tlist-closed")}" aria-controls="side">${svgI(ICO_SIDE)}List</button>` : "") + (["overview", "pipeline", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
-    + (["overview", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") || (VIEW === "runners" && !(AGENTS?.instances ?? []).length) ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
+    + (["overview", "pipeline", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") || (VIEW === "runners" && !(AGENTS?.instances ?? []).length) ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
   const tabs = document.getElementById("vtabs");
   tabs.hidden = !def[3].length;
   tabs.setAttribute("aria-label", `${def[1]} tabs`);
@@ -3121,14 +3144,7 @@ function sessionDetails(s) {
 function renderRight() {
   const el = document.getElementById("right"); let html = "";
   if (["errors", "lessons", "runners"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
-  if (VIEW === "pipeline" && !SEL.pipeline && (SEL.pipeline = TAB === "board" ? boardItems().find(i => i.column !== "review")?.key : (TAB === "done" ? doneRows() : laneRows())[0]?.t.key)) { renderBoard(); renderLanes(); renderDone(); }
   if (VIEW === "sessions") { const s = currentSession(); if (s) html = sessionDetails(s); }
-  else if (VIEW === "pipeline") {
-    const b = TAB === "board" ? boardItems().find(x => x.key === SEL.pipeline && x.column !== "review") : null, r = laneRows().concat(doneRows()).find(x => x.t.key === SEL.pipeline);
-    // A Board key with a belt keeps the belt's details and adds the one next step; one with no belt gets boardDetails.
-    if (b && r) html = `${closeBtn}<h2 class="rh" tabindex="-1">${esc(laneTitle(r.t.summary || r.t.branch).text)}<small>${esc(r.t.key)} · ${esc(r.l1)}</small></h2><div class="bnext"><b>Next step.</b> ${esc(b.next)}</div>${laneDetails(r)}`;
-    else if (b) html = `${closeBtn}<h2 class="rh" tabindex="-1">${esc(b.title || b.key)}<small>${esc(b.key)}</small></h2>${boardDetails(b)}`;
-    else if (r) html = `${closeBtn}<h2 class="rh">${esc(laneTitle(r.t.summary || r.t.branch).text)}<small>${esc(r.t.key)} · ${esc(r.l1)}</small></h2>${laneDetails(r)}`; }
   else if (VIEW === "errors") { const e = (ERRS ?? []).find(x => x.sig === SEL.errors);
     if (e) html = `${closeBtn}<h2 class="rh">Error<small>${esc(e.sig)}</small></h2><div><h4>Signature</h4>${kvr("Status", esc(e.status))}${kvr("Source", `${esc(e.source)}/${esc(e.kind)}`)}${kvr("Where", esc(e.where))}
       ${kvr("Seen", `${e.count} times`)}${kvr("First", esc(e.first.slice(0, 16).replace("T", " ")))}${kvr("Last", esc(e.last.slice(0, 16).replace("T", " ")))}${e.keys?.length ? kvr("Sessions", e.keys.map(k => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`).join(" ")) : ""}
@@ -3197,6 +3213,7 @@ document.addEventListener("change", e => { if (e.target.id === "keys-on") { KEYS
 document.addEventListener("input", e => { if (e.target.id === "q") { Q = e.target.value; CUR = -1; renderSide(); if (VIEW === "teams") renderTeams(); } });
 document.addEventListener("keydown", e => {
   const help = document.getElementById("help");
+  if (e.key === "Escape" && VIEW === "pipeline" && TAB === "belts" && SEL.pipeline) { location.replace("#pipeline/belts"); return; }
   if (e.key === "Escape") { openHelp(false); document.body.classList.remove("showside", "showright"); if (e.target.id === "q") e.target.blur(); renderHeader(); return; }
   if (help.classList.contains("on")) { if (e.key === "Tab") { e.preventDefault(); document.getElementById(document.activeElement.id === "help-close" ? "keys-on" : "help-close").focus(); } return; }
   if (!KEYS || e.metaKey || e.ctrlKey || e.altKey || e.target.matches?.("input, select, textarea")) return;
