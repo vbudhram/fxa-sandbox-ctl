@@ -555,6 +555,8 @@
   .bdet .blk.bad { border-color:color-mix(in srgb,var(--bad) 40%,var(--line)); } .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
   .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
   .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:6px; padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
+  .dtab { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .dtab th { text-align:left; font-size:var(--t-label); color:var(--dim); font-weight:650; padding:var(--s2); border-bottom:1px solid var(--line); }
+  .dtab td { padding:var(--s2); border-bottom:1px solid var(--sunk); vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .bempty { margin:0; padding:4px var(--s3) var(--s3); color:var(--faint); font-size:var(--t-sub); }
@@ -2310,34 +2312,11 @@ const foxHash = seed => { let h = 0; for (const c of String(seed)) h = (h * 31 +
 // them), then the accent; each agent starts from its hashed choice. Sorted
 // keys keep the result the same from one refresh to the next.
 let FOX_SLOT = {};
-function assignFoxes(keys) {
-  FOX_SLOT = {}; const used = new Set(), bodies = new Map();
-  const P = FOX_PALETTES.length, A = 3;
-  [...new Set(keys)].sort().forEach(k => {
-    const h = foxHash(k);
-    let body = h % P;
-    const least = Math.min(...FOX_PALETTES.map((_, i) => bodies.get(i) ?? 0));
-    for (let n = 0; (bodies.get(body) ?? 0) > least && n < P; n++) body = (body + 1) % P;
-    let acc = Math.floor(h / P) % A;
-    for (let n = 0; used.has(body * A + acc) && n < A; n++) acc = (acc + 1) % A;
-    used.add(body * A + acc); bodies.set(body, (bodies.get(body) ?? 0) + 1);
-    FOX_SLOT[k] = body * A + acc;
-  });
-}
 let FOX_N = 0;
-function foxFor(seed, size = 22, cls = "") {
-  const look = FOX_LOOKS[FOX_SLOT[seed] ?? foxHash(seed) % FOX_LOOKS.length];
-  const style = Object.entries(foxVars(look)).map(([k, v]) => `${k}:${v}`).join(";");
-  // Gradient ids must be unique per copy, or every fox paints with the first one's colours.
-  const uid = `${String(seed).replace(/[^A-Za-z0-9]/g, "")}-${FOX_N++}`;
-  return FOX_SVG.replace(/id="(fox-[\w-]+)"/g, `id="$1-${uid}"`).replace(/url\(#(fox-[\w-]+)\)/g, `url(#$1-${uid})`).replace(/href="#(fox-[\w-]+)"/g, `href="#$1-${uid}"`)
-    .replace("<svg ", `<svg class="fox ${cls}" width="${size}" height="${size}" style="${style}" `);
-}
 
 // Pipeline lanes: one belt per ticket, from queue to merge. Runners come from
 // the agents feed; PRs past their runner come from the review feed.
 const LANE_ST = ["Queue","Boot","Agent","Squash","Push","PR","CI","Review","Merged"];
-const LANE_COLOR = { live:"var(--info)", wait:"var(--faint)", warn:"var(--warn)", fix:"var(--bad)", done:"var(--purple)" };
 const LANE_OUT = {};
 // ── the Board: what is blocked, what is up next and what runs, each ticket once (epic i198) ──
 const KEY_RE = /^[A-Z][A-Z0-9]+-\d+$/, BELT_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
@@ -2540,30 +2519,6 @@ function laneTitle(raw) {
   if (!m) return { text: raw ?? "", tag: "" };
   return { text: m[3].charAt(0).toUpperCase() + m[3].slice(1), tag: m[2] || m[1] };
 }
-function laneHtml(r) {
-  const t = r.t, x = (r.st + 0.5) / 9 * 100, c = LANE_COLOR[r.kind], repo = SNAP?.repo ?? "";
-  const title = laneTitle(t.summary || t.branch);
-  // Closed until a reader opens it: open, a few belts made the page a wall of console text on a phone.
-  const open = r.runner && (LANE_OUT[t.key] ?? false);
-  // Passed stops stay neutral; the kind's colour marks the current stop and the card.
-  const stops = LANE_ST.map((_, j) => `<span class="stop" style="left:${(j + 0.5) / 9 * 100}%;${j < r.st ? "border-color:var(--line2);background:var(--line2)" : j === r.st ? `border-color:${c};background:${c}` : ""}"></span>`).join("");
-  return `<div class="lane ${r.kind}${t.key === SEL.pipeline ? " sel" : ""}" data-belt="${esc(t.key)}">
-    <div class="row">
-      <div class="who">
-        <span class="m">${foxFor(t.key, 22, r.kind === "live" && r.runner ? "bob" : "")}${t.slack ? sessLink(t.sess, t.key) : jira(t.key)}${t.pr ? prl(repo, t.pr) : ""}${title.tag ? `<span class="scope" title="${esc(title.tag)}">${esc(title.tag)}</span>` : ""}${(t.attempts ?? 0) > 0 ? `<span>attempt ${t.attempts + 1}</span>` : ""}${r.late ? `<span class="tag warn">late</span>` : ""}</span>
-        <span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span>
-      </div>
-      <div class="track">
-        <span class="rail0"></span><span class="rail1${r.kind === "live" ? " run" : ""}" style="width:${x}%;background-color:var(--line2)"></span>${stops}
-        <div class="mark" style="left:clamp(0px, calc(${x}% - 75px), calc(100% - 150px))">
-          <div class="l1">${r.kind === "live" && r.runner ? foxFor(t.key, 16, "bob") : ""}${esc(r.l1)}</div>
-          <div class="l2">${esc(r.l2)}${r.checks ? checkBars(t) : ""}</div>
-        </div>
-      </div>
-    </div>
-    ${r.runner ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${open ? " open" : ""}><summary class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : ""}
-  </div>`;
-}
 // "7 open PRs labelled auto: 4 awaiting review · 2 in flight · 1 blocked", as GitHub counts them.
 function openPrCounts() {
   const s = SNAP, open = s?.open_prs;
@@ -2692,18 +2647,21 @@ function doneRows() {
     const ago = Math.round(days(p.merged) ?? 0), took = Math.round((Date.parse(p.merged) - Date.parse(p.created)) / 86400000);
     return { t: { key: p.key, pr: p.number, summary: p.title, created: p.created }, st: 8, kind: "done",
       l1: ago === 0 ? "Merged today" : `Merged ${ago} day${ago === 1 ? "" : "s"} ago`,
-      l2: `${took}d to merge${p.merged_by ? ` · by ${p.merged_by}` : ""}`, merged: p.merged };
+      l2: `${took}d to merge${p.merged_by ? ` · by ${p.merged_by}` : ""}`, merged: p.merged, by: p.merged_by ?? null };
   }).sort((x, y) => Date.parse(y.merged) - Date.parse(x.merged));
 }
-function renderDone() {
-  const rows = doneRows();
-  assignFoxes(rows.map(r => r.t.key));
-  put("s-done", `<div style="margin-bottom:var(--s3)"><span class="sub" style="color:var(--dim)">${rows.length} tickets from the last ${(SNAP?.merged_prs ?? []).length} merged PRs with the pipeline label, newest first.</span></div>
-    <div class="lanes">
-      <div class="head"><span class="empty">Ticket</span><div class="cols">${LANE_ST.map(n => `<div><b>${n}</b><span>·</span></div>`).join("")}</div></div>
-      ${rows.length ? rows.map(laneHtml).join("") : `<div class="empty" style="padding:var(--s4) 0">${SNAP?.merged_prs == null ? "could not read merged PRs" : "no merged ticket yet"}</div>`}
-    </div>`);
+// Done: one compact row per merged ticket, newest first, with the cap and the label in the header.
+function doneHtml() {
+  const prs = SNAP?.merged_prs, rows = doneRows(), lbl = SNAP?.team?.pr_label, cap = SNAP?.limits?.merged_prs ?? prs?.length ?? 0;
+  if (prs == null) return `<p class="bempty">Could not read merged PRs from GitHub.</p>`;
+  if (!rows.length) return `<p class="bempty">No merged ticket yet.</p>`;
+  return `<p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${esc(cap)} merged PRs${lbl ? ` labelled ${esc(lbl)}` : ""}, newest first.</p>
+    <div class="tscroll"><table class="dtab"><thead><tr><th scope="col">Ticket</th><th scope="col">Title</th><th scope="col">Merged</th><th scope="col">Days to merge</th><th scope="col">Merged by</th></tr></thead><tbody>
+    ${rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
+      return `<tr><td>${jira(t.key)}${t.pr ? ` ${prl("", t.pr)}` : ""}</td><td>${esc(laneTitle(t.summary).text)}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${esc(r.by || "—")}</td></tr>`; }).join("")}
+    </tbody></table></div>`;
 }
+function renderDone() { put("s-done", doneHtml()); }
 document.addEventListener("toggle", e => {
   const d = e.target;
   if (d.matches?.("details[data-lane]")) LANE_OUT[d.dataset.lane] = d.open;
