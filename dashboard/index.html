@@ -1624,7 +1624,11 @@ async function rtDo(act, id) {
     const [r, j] = await post(f.id ? `${base}/${f.id}` : base, { routine: rtRoutine(f.d), ...(f.id ? { version: f.version } : {}) });
     f.saving = false;
     if (r?.ok) { RT.form = null; await loadRoutines(team); return rtSay(j.out || "saved", true); }
-    if (r?.status === 409) { f.errs = {}; return rtSay("Someone changed this routine since you opened it. Load it again to see their change.", false); }
+    if (r?.status === 409) {
+      // Keep the draft and take the current version, so a second Save replaces their change on purpose.
+      f.errs = {}; await loadRoutines(team); const cur = row(f.id); if (cur) f.version = cur.version;
+      return rtSay(`Someone changed this routine since you opened it.${cur ? " Save again to replace their change with yours, or Cancel and Edit to see theirs." : " It is gone."}`, false);
+    }
     const { errs, summary } = rtErrs(j.error || r?.status); f.errs = errs; rtSay(summary, false);
     const first = RT_FIELDS.find(k => errs[k]); if (first) document.getElementById(`rt-${first}`)?.focus();
     return;
@@ -1643,6 +1647,8 @@ async function rtDo(act, id) {
   const [r, j] = await post(`${base}/${id}/${act}`, {});
   RT.busy = null;
   await loadRoutines(team);
+  // A pause or resume moves the version: the admin's own open edit of this routine takes the new one.
+  if (RT.form?.id === r0.id && row(r0.id)) RT.form.version = row(r0.id).version;
   rtSay(r?.ok ? (act === "run" ? `Queued. It starts within a minute, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
 }
 document.addEventListener("click", e => {

@@ -124,6 +124,18 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     RT = { team: "fxa", list: [], tpls: [], form: { d: { ...rtDraft(), name: "Code review", repos: ["mozilla/fxa"], channel: "C0123ABCD" }, errs: {} } };
     const a = rtDo("save"), b = rtDo("save"); await Promise.resolve(); done(); globalThis.fetch = async () => ({ ok: true, json: async () => [] }); await Promise.all([a, b]);
     t("routines: a double click on Create sends one POST", calls.filter(c => c[0] === "/api/teams/fxa/routines").length, 1); }
+  { const sent = []; let list = [{ id: 4, version: 3, paused: 0, data: { name: "UX review", channel: "C0123ABCD" } }];
+    globalThis.fetch = async (url, o) => { if (o?.method === "POST") sent.push([url, JSON.parse(o.body)]);
+      if (url.endsWith("/routines/4") && sent.length === 1) return { ok: false, status: 409, json: async () => ({ error: "stale" }) };
+      if (url.endsWith("/pause")) list = [{ ...list[0], paused: 1, version: list[0].version + 1 }];
+      return { ok: true, status: 200, json: async () => /routines$/.test(url) && o?.method !== "POST" ? list : { out: "ok" } }; };
+    RT = { team: "fxa", list, tpls: [], form: { id: 4, version: 2, d: { ...rtDraft(list[0].data), name: "UX review 2" }, errs: {} } };
+    await rtDo("save");
+    t("routines: after a 409 the draft stays and the form takes the current version", `${RT.form?.d.name}|${RT.form?.version}|${/Save again to replace/.test(RT.msg)}`, "UX review 2|3|true");
+    await rtDo("pause", 4);
+    t("routines: the admin\u2019s own pause moves the open edit to the new version", RT.form?.version, 4);
+    await rtDo("save");
+    t("routines: the next Save sends the current version and succeeds", `${JSON.stringify(sent.at(-1))}|${RT.form}`, `${JSON.stringify(["/api/teams/fxa/routines/4", { routine: rtRoutine({ ...rtDraft(list[0].data), name: "UX review 2" }), version: 4 }])}|null`); }
   process.exit(fail);
 })();
 ' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p; /^const kvr = /p; /^const stamp = /p; /^const usd = /p; /^let RT = /p; /^const RT_/p; /^function rtDraft(/,/^}/p; /^function rtRoutine(/,/^}/p; /^function rtErrs(/,/^}/p; /^const rtWhen = /p; /^const rtSched = /p; /^function rtState(/,/^}/p; /^function rtLast(/,/^}/p; /^function rtHist(/,/^}/p; /^function rtRow(/,/^}/p; /^function routineListHtml(/,/^}/p; /^function routineForm(/,/^}/p; /^function routinesGroup(/,/^}/p; /^function teamDetails(t) {/,/^}/p; /^const kvr = /p; /^let TAB/p; /^async function loadRoutines(/,/^}/p; /^async function rtDo(/,/^}/p; /^function rtKeepForm(/,/^}/p; /^const rtSay = /p' "$page")" "$page"
