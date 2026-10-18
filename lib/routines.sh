@@ -42,15 +42,15 @@ routine_list() {
   runs="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, r.state IN (${_ROUTINE_LIVE_STATES}) AS live
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.id IN
     (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN (${_ROUTINE_LIVE_STATES}));")" || return 1
-  tick="$(db_value "SELECT at FROM routine_tick WHERE id = 1;")" || return 1
+  tick="$(db_json "SELECT env, at FROM routine_tick_env;")" || return 1
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     jq -c '.data | fromjson' <<< "$r" > "$f"
-    out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --arg tick "$tick" \
+    out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --argjson tick "$tick" \
       '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine
        | . + [$r + {data: ($r.data | fromjson), next: $next, live: ($mine | map(select(.live == 1)) | first),
-          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | tonumber? // null)}]' <<< "$out")"
+          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | map(select(.env == $r.env)) | first | .at // null)}]' <<< "$out")"
   done < <(jq -c '.[]' <<< "$rows")
   rm -f "$f"; printf '%s\n' "$out"
 }
@@ -277,7 +277,7 @@ _routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: ch
 routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
   local env="$2" now; now="$(_routine_now)"
-  db_exec "INSERT INTO routine_tick (id, at) VALUES (1, $now) ON CONFLICT (id) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  db_exec "INSERT INTO routine_tick_env (env, at) VALUES ($(db_q "$env"), $now) ON CONFLICT (env) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
   routine_reconcile "$now" "$env" || return 1
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.

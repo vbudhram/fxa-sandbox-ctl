@@ -1563,7 +1563,8 @@ function rtRow(r) {
 }
 // The part a poll repaints, also while a dirty form is open.
 function routineListHtml(t, now) {
-  const L = RT.list ?? [], tick = L[0]?.tick, age = tick == null ? null : Math.max(0, Math.round(now - tick));
+  // The oldest heartbeat of the envs these routines use: a fresh dev tick does not hide a live one that stopped.
+  const L = RT.list ?? [], tick = L.some(r => r.tick == null) ? null : Math.min(...L.map(r => r.tick)), age = tick == null ? null : Math.max(0, Math.round(now - tick));
   const stale = L.length && (age == null || age > RT_STALE_S)
     ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
   return `<div data-routine-list>${stale}${L.length ? L.map(rtRow).join("") : `<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p>`}</div>`;

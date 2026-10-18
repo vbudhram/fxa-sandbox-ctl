@@ -80,6 +80,8 @@ globalThis.TEAM_ADMIN = { admin: true, user: "admin@example.com" };
   const team = { profile: "fxa", repos: [{ slug: "mozilla/fxa", role: "work" }] };
   RT = { team: "fxa", list: [row(1)] };
   t("routines: a 10 min old tick says the scheduler is not running", /The scheduler last ran 10 min ago\. Routines are not running\./.test(routineListHtml(team, now)), true);
+  RT.list = [row(1, { tick: now - 60 }), row(2, { tick: now - 600 })];
+  t("routines: a fresh tick of one env does not hide a stale one", /last ran 10 min ago/.test(routineListHtml(team, now)), true);
   RT.list = [row(1, { tick: now - 60 })];
   t("routines: a fresh tick shows no warning", /scheduler/.test(routineListHtml(team, now)), false);
   RT.list = [];

@@ -12,7 +12,7 @@ source "$here/db.sh"
 
 # The tables: db_init creates them, and one (routine, period) is claimed once.
 db_init >/dev/null
-check "db_init creates the three routine tables" "routine_runs routine_tick routines" \
+check "db_init creates the routine tables" "routine_runs routine_tick routine_tick_env routines" \
   "$(db_value "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'routine%' ORDER BY name;" | tr '\n' ' ' | sed 's/ $//')"
 db_exec "INSERT OR IGNORE INTO routine_runs (routine_id, period) VALUES (1, '2026-10-20'); INSERT OR IGNORE INTO routine_runs (routine_id, period) VALUES (1, '2026-10-20');"
 check "a second claim of one (routine, period) is ignored" "1" "$(db_value "SELECT count(*) FROM routine_runs;")"
@@ -127,10 +127,12 @@ check "a routine with no run has no live run, no last result and no tick" "true|
 db_exec "INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-01', 'failed', 'no runner free'), (1, '2026-10-02', 'ok', NULL);
   INSERT INTO routine_runs (routine_id, period, state, session) VALUES (1, '2026-10-03', 'started', 'agent-ab12');
   INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-04', 'skipped', 'a run of this routine is still live');
-  INSERT OR REPLACE INTO routine_tick (id, at) VALUES (1, 1700000000);"
+  INSERT OR REPLACE INTO routine_tick_env (env, at) VALUES ('live', 1700000000), ('dev', 1700000999);"
 check "the list has the live run with its session, the newest ended run, and the tick" "started|agent-ab12|skipped|a run of this routine is still live|1700000000" \
   "$(routine_list secret | jq -r '.[0] | "\(.live.state)|\(.live.session)|\(.last.state)|\(.last.reason)|\(.tick)"')"
-db_exec "DELETE FROM routine_runs; DELETE FROM routine_tick;"
+check "a routine reads the heartbeat of its own env" "1700000999" \
+  "$(db_exec "UPDATE routines SET env = 'dev' WHERE id = 1;"; routine_list secret | jq -r '.[0].tick'; db_exec "UPDATE routines SET env = 'live' WHERE id = 1;")"
+db_exec "DELETE FROM routine_runs; DELETE FROM routine_tick_env;"
 check "the create audit row names the admin and the routine, not the prompt" "admin@example.com|routine-create|routine 1|0" \
   "$(db_value "SELECT actor || '|' || action || '|' || changed FROM team_audit ORDER BY id DESC LIMIT 1;")|$(db_value "SELECT count(*) FROM team_audit WHERE changed LIKE '%SECRET-PROMPT%';")"
 jq -c '.name = "Code review 2" | .prompt = "SECRET-PROMPT-TEXT two"' "$tmp/new.json" > "$tmp/edit.json"

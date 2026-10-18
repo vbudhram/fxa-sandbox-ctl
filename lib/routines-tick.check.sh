@@ -35,7 +35,9 @@ r1="$(mk fxa)"
 tick $((T + 90)) > "$tmp/t3"
 check "two ticks at once and one a minute later answer one run, with one row" "1|1" \
   "$(cat "$tmp/t1" "$tmp/t2" "$tmp/t3" | jq -s '[.[].runs[]] | length')|$(rows "$r1")"
-check "the heartbeat is the last tick's time" "$((T + 90))" "$(db_value "SELECT at FROM routine_tick;")"
+check "the heartbeat is the last tick's time" "$((T + 90))" "$(db_value "SELECT at FROM routine_tick_env WHERE env = 'live';")"
+FXA_ROUTINE_NOW=$((T + 95)) routine_tick --env dev >/dev/null
+check "a dev tick moves only the dev heartbeat" "$((T + 90))|$((T + 95))" "$(db_value "SELECT group_concat(at, '|') FROM (SELECT at FROM routine_tick_env ORDER BY env = 'dev');")"
 check "the claimed run has the config snapshot and heads in slice 2's format" "claimed|x|$H1|null" \
   "$(db_value "SELECT state || '|' || json_extract(config, '$.prompt') || '|' || json_extract(heads, '$.\"mozilla/fxa\".head') || '|' || coalesce(json_extract(heads, '$.\"mozilla/fxa\".start'), 'null') FROM routine_runs WHERE routine_id = $r1;")"
 # The second of two ticks read the period as free (a count read before the first one's INSERT): its INSERT OR
