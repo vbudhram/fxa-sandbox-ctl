@@ -473,6 +473,8 @@
   .brow .why { font-size:var(--t-sub); overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .bwait summary { cursor:pointer; padding:var(--s2) var(--s4); font-size:var(--t-sub); color:var(--dim); border-top:1px solid var(--line); }
   .breview { color:var(--dim); font-size:var(--t-sub); }
+  .bgate { background:var(--panel); border:1px solid var(--card-border); border-left:4px solid var(--ok); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:var(--s3) var(--s4); margin-bottom:var(--s4); }
+  .bgate.stop { border-left-color:var(--warn); }
   .bnext { background:var(--warnbg); border-radius:var(--r-sm); padding:var(--s2) var(--s3); font-size:var(--t-sub); } .bnext b { color:var(--warn); }
   .lanes { min-width:720px; }
   .lanes .head, .lane .row { display:grid; grid-template-columns:minmax(200px,260px) minmax(0,1fr); align-items:center; }
@@ -2084,6 +2086,35 @@ function boardItems() {
   (SNAP?.queue?.ready ?? []).forEach((k, n) => add({ key: k.key, title: k.summary ?? "", column: "next", pos: n + 1, queued_at: k.queued_at ?? null, age: secsSince(k.queued_at ?? null) }));
   return out;
 }
+// gateLine(): the first gate that stops the next pass from offering ticket 1, with its next step, or the green
+// line. It is never green on a fact it cannot read (a stale feed, Jira, the slots or the budget); the next
+// pass time alone is a note. launchcap only: on GCE free_slots can read 0 while a pool launch is possible.
+function gateLine(now = Date.now() / 1000) {
+  const s = SNAP, g = AGENTS, h = s?.health ?? {}, mins = x => Math.max(1, Math.round(x / 60)), hm = e => new Date(e * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const stop = text => ({ ok: false, text }), stale = (age, every) => age != null && every && age > 3 * every;
+  if (!s) return stop("Loading the pipeline…");
+  if (s.queue?.fetch_failed) return stop("Cannot tell: Jira could not be read. The next snapshot tries again.");
+  if (stale(STATE.age_seconds, STATE.interval)) return stop(`Cannot tell: the tickets feed is ${mins(STATE.age_seconds)} min old.`);
+  if (!g || STATE.agents_error) return stop("Cannot tell: the agents feed could not be read.");
+  if (stale(STATE.agents_age_seconds, STATE.agents_interval)) return stop(`Cannot tell: the agents feed is ${mins(STATE.agents_age_seconds)} min old.`);
+  if (h.paused) return stop(`Passes are paused: ${h.paused}. Run fxa-sandbox-ctl resume to start them again.`);
+  const lockStale = h.lock_stale_seconds ?? 1800;
+  if (h.lock_age_seconds != null && h.lock_age_seconds > lockStale) return stop(`A pass lock is ${mins(h.lock_age_seconds)} min old. The next pass clears it after ${mins(lockStale)} min, or run fxa-sandbox-ctl unlock.`);
+  if (s.mode?.newtickets === "off") return stop("Intake is off: passes work on open PRs only. Run fxa-sandbox-ctl newtickets on to launch from the queue.");
+  if (h.free_gb != null && h.min_free_gb && h.free_gb < h.min_free_gb) return stop(`Only ${h.free_gb} GB is free, and a launch needs ${h.min_free_gb} GB. Free space on the host.`);
+  if (h.launches_24h == null || h.max_launches_per_day == null) return stop("Cannot tell: this snapshot has no launch budget. The next snapshot adds it.");
+  if (h.launches_24h >= h.max_launches_per_day) return stop(`The 24 h launch budget is used: ${h.launches_24h} of ${h.max_launches_per_day}.${h.launch_frees_at ? ` The next launch is allowed at ${hm(h.launch_frees_at)}.` : ""}`);
+  if (g.launchcap == null) return stop("Slots unknown: the Jira inflight read failed, so no slot counts as free.");
+  if (g.launchcap <= 0) return stop("No slot is free. A slot frees when a run ends, and feedback rounds take free slots first.");
+  if (h.pass_timer === "off") return stop("The pass timer is off, so no pass runs. Start fxa-pass.timer on the manager.");
+  const np = h.next_pass_epoch;
+  if (np != null && np - now > 65 * 60) return stop(`Outside pass hours: the next pass is at ${hm(np)} (in ${short(Math.round(np - now))}).`);
+  const ready = s.queue?.ready ?? [];
+  if (!ready.length) return stop("Nothing is ready: the queue is empty, or every queued ticket is skipped or held.");
+  const when = h.lock_age_seconds != null ? "a pass runs now" : np == null ? "next pass time unknown" : np <= now ? `a pass is due now (the snapshot is ${mins(STATE.age_seconds ?? 0)} min old)` : `the next pass (${hm(np)}, in ${mins(np - now)} min)`;
+  const lead = when.startsWith("the next") ? `The next pass (${hm(np)}, in ${mins(np - now)} min)` : when.charAt(0).toUpperCase() + when.slice(1) + ";";
+  return { ok: true, text: `${lead} ${when.startsWith("the next") ? "offers" : "the pass offers"} ${ready[0].key} first. Up to ${g.launchcap} can launch. Feedback and rebase rounds use slots first, and the pass can still skip a ticket.` };
+}
 const boardAct = items => items.filter(i => i.column === "blocked" && i.group === "act").length + items.filter(i => i.column === "running" && i.fault).length;
 // A column that cannot be read says so, never a zero.
 function boardState(col) {
@@ -2102,7 +2133,7 @@ function boardRow(i) {
   const chip = i.column === "running" ? `<span class="tag ${i.fault ? "bad" : i.stage === "CI red" ? "warn" : i.ci ? "info" : "ok"} run">${esc(i.stage ?? "")}</span>` : i.kind ? `<span class="tag merged">${esc(KIND_LABEL[i.kind] ?? i.kind)}</span>` : "";
   const age = i.column === "next" ? (i.queued_at ? `first queued ${ago(i.age)}` : "") : boardAge(i.age);
   return `<div class="brow${SEL.pipeline === i.key ? " sel" : ""}" data-key="${esc(i.key)}"><div class="top">${i.pos ? `<span class="pos">${i.pos}</span>` : ""}${k}</div>
-    <div class="meta">${chip}${who ? `<span class="who">${who}</span>` : ""}${age ? `<span>${esc(age)}</span>` : ""}</div>${i.why ? `<div class="why">${esc(i.why)}</div>` : ""}</div>`;
+    <div class="meta">${i.tag ? `<span class="tag ok">next pass</span>` : ""}${chip}${who ? `<span class="who">${who}</span>` : ""}${age ? `<span>${esc(age)}</span>` : ""}</div>${i.why ? `<div class="why">${esc(i.why)}</div>` : ""}</div>`;
 }
 function boardHtml() {
   const items = SNAP ? boardItems() : [], col = c => items.filter(i => i.column === c);
@@ -2112,7 +2143,9 @@ function boardHtml() {
   const st = c => boardState(c), empty = t => `<p class="empty">${esc(t)}</p>`;
   const blocked = st("blocked") ? empty(st("blocked")) : (act.length ? `<h3 class="bgrp">A person must act</h3>${act.map(boardRow).join("")}` : empty("Nobody needs to act."))
     + (wait.length ? `<details class="bwait"><summary>Waits (${wait.length})</summary>${wait.map(boardRow).join("")}</details>` : "");
-  return `<div class="board" id="board-gate-slot"></div><div class="bcols">`
+  const gate = SNAP ? gateLine() : null, tags = gate?.ok ? (AGENTS?.launchcap ?? 0) : 0;
+  next.forEach(i => { i.tag = i.pos <= tags; });
+  return (gate ? `<div class="bgate ${gate.ok ? "ok" : "stop"}" role="status">${esc(gate.text)}</div>` : "") + `<div class="bcols">`
     + box("blocked", "Blocked", st("blocked") ? "" : act.length, blocked)
     + box("next", "Up next", st("next") ? "" : next.length, st("next") ? empty(st("next")) : next.length ? next.map(boardRow).join("") : empty("Nothing is ready."))
     + box("running", "Running", st("running") ? "" : run.length, st("running") ? empty(st("running")) : run.length ? run.map(boardRow).join("") : empty("Nothing is running."))
