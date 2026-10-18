@@ -324,6 +324,9 @@ FXA_ROUTINE_NOW=$((T + 16 * 3600)) routine_runnow fxa "$rq" >/dev/null
 check "a queued run of a team that turned private is skipped, not claimed, and its channel refusal does not post" \
   "the routine no longer passes its checks: channel: A team with a private repo posts only to one of this team's channels|false|skipped" \
   "$(_routine_profile() { echo "$PRIV"; }; tick $((T + 16 * 3600 + 30)) | jq -r --argjson r "$rq" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')|$(db_value "SELECT state FROM routine_runs WHERE routine_id = $rq AND trigger = 'manual';")"
+rr="$(mk fxa "daily 21:10" '{"name": "Repo look"}')"
+check "a recheck refusal that is not the channel posts once (D23)" "repos|true" \
+  "$(_routine_profile() { echo '{"private": false, "read_only": false, "repos": [{"slug": "mozilla/other", "role": "work"}]}'; }; tick $((T + 12 * 3600 + 10 * 60 + 30)) | jq -r --argjson r "$rr" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"')"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?

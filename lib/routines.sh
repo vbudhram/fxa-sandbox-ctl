@@ -365,7 +365,7 @@ routine_tick() {
     else
       post="$(_routine_post "$id" "$why")" || post=false
       [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
-      [ -z "$recheck" ] || post=false   # the channel may no longer be one the team's results can go to
+      [ -z "$recheck" ] || ! _routine_quiet "$recheck" || post=false   # the channel may no longer be one the team's results can go to
       # template and private: the bot checks the channel before it posts a skip too (D8).
       skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
         --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
