@@ -27,13 +27,14 @@ mkdir "$PIPE_LOCK_DIR"; touch -t "$(date -r $((now - 2400)) +%Y%m%d%H%M.%S 2>/de
 a="$(h .lock_age_seconds)"; check "a lock made 40 min ago is about 2400 s old" "yes" "$([ "$a" -ge 2395 ] && [ "$a" -le 2460 ] && echo yes || echo "no ($a)")"
 
 # The pass timer, from a systemctl on PATH.
-mkdir "$tmp/bin"; printf '#!/bin/sh\ncase "$1" in is-active) [ -e "%s/on" ] ;; show) cat "%s/next" ;; esac\n' "$tmp" "$tmp" > "$tmp/bin/systemctl"; chmod +x "$tmp/bin/systemctl"
+mkdir "$tmp/bin"; printf '#!/bin/sh\ncase "$1" in is-active) [ -e "%s/on" ] && [ "$3" = fxa-pass.timer ] ;; show) cat "%s/next" ;; esac\n' "$tmp" "$tmp" > "$tmp/bin/systemctl"; chmod +x "$tmp/bin/systemctl"
 echo "@$((now + 600))" > "$tmp/next"; touch "$tmp/on"
 check "an active timer gives its next time and on" "$((now + 600))|on" "$(PATH="$tmp/bin:$PATH" h '"\(.next_pass_epoch)|\(.pass_timer)"')"
 if date -d "@0" +%s >/dev/null 2>&1; then
   date -u -d "@$((now + 900))" '+%a %Y-%m-%d %H:%M:%S UTC' > "$tmp/next"
   check "systemd's own date text reads as its epoch (GNU date)" "$((now + 900))" "$(PATH="$tmp/bin:$PATH" h .next_pass_epoch)"
 fi
+check "FxA's pass under its pipeline name reads fxa-pass.timer" "on" "$(FXA_PIPELINE=fxa-ai-fixme PATH="$tmp/bin:$PATH" h .pass_timer)"
 rm "$tmp/on"; check "a timer that is not active: off, no time" "null|off" "$(PATH="$tmp/bin:$PATH" h '"\(.next_pass_epoch)|\(.pass_timer)"')"
 check "no systemctl: both unknown" "null|null" "$(PATH="/usr/bin:/bin" command -v systemctl >/dev/null && echo "null|null" || PATH="/usr/bin:/bin" h '"\(.next_pass_epoch)|\(.pass_timer)"')"
 check "one round cap" "2" "$_FXA_ROUND_CAP"

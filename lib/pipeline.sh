@@ -673,7 +673,8 @@ pipeline_launches_24h() {
 # nothing when this host has no systemd or the time cannot be read.
 _pipeline_next_pass() {
   command -v systemctl >/dev/null 2>&1 || return 0
-  local u="fxa-pass.timer" v; [ -z "${FXA_PIPELINE:-}" ] || u="fxa-pass@${FXA_PIPELINE}.timer"
+  # FxA's pass is fxa-pass.timer (FXA_PIPELINE empty, fxa or fxa-ai-fixme, as claude-job.sh reads it); a team's is fxa-pass@<team>.
+  local u="fxa-pass.timer" v; case "${FXA_PIPELINE:-}" in ''|fxa|fxa-ai-fixme) ;; *) u="fxa-pass@${FXA_PIPELINE}.timer" ;; esac
   systemctl is-active -q "$u" 2>/dev/null || { echo off; return 0; }
   # Only Linux hosts have systemctl, so GNU date reads its "Sun 2026-10-18 17:04:00 UTC"; @<epoch> also works.
   v="$(systemctl show -p NextElapseUSecRealtime --value "$u" 2>/dev/null)" || return 0
