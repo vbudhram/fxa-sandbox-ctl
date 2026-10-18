@@ -148,6 +148,18 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
    A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
    secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
 
+## After a promote that changed the dashboard
+
+Render the live data once with the new page:
+
+```bash
+bash skills/fxa-manager/vm.sh api snapshot > "$SCRATCH/snap.json"
+jq '{"/api/snapshot": .}' "$SCRATCH/snap.json" > "$SCRATCH/fx.json"
+bash skills/fxa-ctl-dev/page.sh '#pipeline/belts' --fixture "$SCRATCH/fx.json" --probe 'return document.getElementById("s-lanes").textContent.slice(0, 300)'
+```
+
+A section that throws shows "This section did not render". If it does, run `vm.sh rollback`, or revert the slices in reverse order and promote again.
+
 ## Restart the bot safely
 
 The bot runs on the manager VM. On the laptop its `.env` is now `.env.retired`,

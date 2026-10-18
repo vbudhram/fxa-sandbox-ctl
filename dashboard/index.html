@@ -3141,11 +3141,16 @@ function cycleTheme() {
 }
 paintTheme();
 
+// One section that throws (a snapshot shape no check has) says so in place; the rest of the page still renders.
+function safeRender(fn, id) {
+  try { fn(); } catch (e) { console.error(e); if (id) put(id, `<div class="emptybox">This section did not render: ${esc(e?.message ?? String(e))}. Reload, or run vm.sh rollback.</div>`); }
+}
 function render() {
-  renderStatus(); renderAlerts(); renderAgents(); renderSessions(); renderTickets(); renderBoard(); renderLanes(); renderDone(); renderNeeds(); renderRunning(); renderSess();
-  renderPool(); renderNav(); renderTab(); renderHeader();
-  if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide();
-  renderRight();
+  [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"], [renderBoard, "s-board"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderNeeds, "s-needs"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderNav, "s-tiles"], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
+  if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
+  safeRender(renderRight);
 }
 
 async function poll() {
