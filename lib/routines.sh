@@ -257,6 +257,18 @@ _routine_run_info() {
 
 # routine_tick --env <live|dev>   One pass: heartbeat, reconcile, then each routine of that env's latest period.
 # Answers {"runs": [...], "skips": [...]} for the bot. A store error answers nothing and exits 1.
+# _routine_recheck <team> <cfg file>   The saved routine against the team as it is now (D8: a team that
+# turns private, or a channel unbound since the save): the first refusal, or nothing. A team that does not load refuses.
+_routine_recheck() {
+  local prof err rc=0
+  prof="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")" || { echo "the team does not load"; return 0; }
+  _routine_profile "$1" > "$prof" && [ -s "$prof" ] || { rm -f "$prof"; echo "the team does not load"; return 0; }
+  err="$(_ROUTINE_PY validate "$2" "$1" --profile "$prof" --index "${FXA_TEAMS_DIR:-/nonexistent}/index.json" \
+    --bot-env "${FXA_BOT_ENV:-${SANDBOX_ROOT}/../fxa-agent-bot/.env}" --count 0 2>&1 >/dev/null)" || rc=$?
+  rm -f "$prof"
+  [ "$rc" = 0 ] || echo "the routine no longer passes its checks: $(printf '%s\n' "$err" | head -1)"
+}
+
 routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
   local env="$2" now; now="$(_routine_now)"
@@ -265,7 +277,7 @@ routine_tick() {
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
-  local queued q runs="[]" skips="[]"
+  local queued q recheck runs="[]" skips="[]"
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
@@ -306,6 +318,7 @@ routine_tick() {
     fi
     [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
     [ -n "$why" ] || [ "$(jq -r .paused <<< "$r")" = 0 ] || why="the routine is paused"
+    recheck=""; [ -n "$why" ] || { why="$(_routine_recheck "$team" "$f")"; recheck="$why"; }
     if [ -z "$why" ]; then
       n="$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES});")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
       [ "$n" = 0 ] || why="a run of this routine is still in progress"
@@ -338,6 +351,7 @@ routine_tick() {
     else
       post="$(_routine_post "$id" "$why")" || post=false
       [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
+      [ -z "$recheck" ] || post=false   # the channel may no longer be one the team's results can go to
       # template and private: the bot checks the channel before it posts a skip too (D8).
       skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
         --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
@@ -479,6 +493,10 @@ routine_runnow() {
     case $prc in 0) why="the team is paused: ${tp}" ;; 2) why="the team does not load" ;; esac
   fi
   [ -n "$why" ] || why="$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/${team}.spend.json" "$now")"
+  if [ -z "$why" ]; then
+    local f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")" && printf '%s' "$cfg" > "$f" && why="$(_routine_recheck "$team" "$f")" || why="the routine cannot be checked"
+    rm -f "$f"
+  fi
   [ -z "$why" ] || { echo "ERROR: routine ${id} cannot run now: ${why}" >&2; return 1; }
   local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
   case $hrc in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac

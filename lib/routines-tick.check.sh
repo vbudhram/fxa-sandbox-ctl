@@ -4,7 +4,7 @@
 source "$(dirname "$0")/session-check-head.sh"
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
 export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
-mkdir -p "$FXA_TEAMS_DIR" "$FXA_LLM_PROXY_DIR/teams"; : > "$FXA_BOT_ENV"
+mkdir -p "$FXA_TEAMS_DIR" "$FXA_LLM_PROXY_DIR/teams"; echo "PROFILE_CHANNELS=C0OWN00:fxa" > "$FXA_BOT_ENV"; echo '{"teams": {}}' > "$FXA_TEAMS_DIR/index.json"
 source "$(dirname "$0")/db.sh"; source "$(dirname "$0")/routines.sh"
 db_init >/dev/null
 _SESSIONS_PAUSE_URI=""
@@ -15,6 +15,10 @@ _teams_audit_note() { echo "$1|$2|$3" >> "$tmp/audit"; }
 H1="1111111111111111111111111111111111111111"
 _routine_head() { cat "$tmp/head" 2>/dev/null || echo "$H1"; }
 _routine_team_paused() { return 1; }
+# The team's profile as the validator reads it, for the tick's D8 check of the saved routine.
+OPEN='{"private": false, "read_only": false, "repos": [{"slug": "mozilla/fxa", "role": "work"}]}'
+PRIV='{"private": true, "read_only": false, "repos": [{"slug": "mozilla/fxa", "role": "work"}]}'
+_routine_profile() { echo "$OPEN"; }
 _routine_free_slots() { cat "$tmp/free" 2>/dev/null || echo 5; }
 T=1792414800   # Monday 2026-10-19 09:00 in New York
 # mk <team> [schedule] [extra json]   A routine row (the validator's shape); prints its id.
@@ -270,10 +274,10 @@ ri="$(mk fxa "daily 20:00" '{"branch": "main"}')"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($ri, '2026-10-18', 'ok', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"2222222222222222222222222222222222222222\"}}'), $((T - 3600)));"
 check "a run carries name, mode, template, repos, branch, private and since" \
   '{"name":"Code review","mode":"report","template":"code-review","repos":["mozilla/fxa"],"branch":"main","private":false,"since":'"$((T - 3600))"'}' \
-  "$(_routine_profile() { echo '{"private": false}'; }; tick $((T + 11 * 3600 + 30)) | jq -c --argjson r "$ri" '.runs[] | select(.routine == $r) | {name, mode, template, repos, branch, private, since}')"
+  "$(_routine_profile() { echo "$OPEN"; }; tick $((T + 11 * 3600 + 30)) | jq -c --argjson r "$ri" '.runs[] | select(.routine == $r) | {name, mode, template, repos, branch, private, since}')"
 rj="$(mk fxa "daily 20:30")"
-check "a team that does not load marks the run private, and a first run has no since" "true|null" \
-  "$(_routine_profile() { return 1; }; tick $((T + 11 * 3600 + 1830)) | jq -r --argjson r "$rj" '.runs[] | select(.routine == $r) | "\(.private)|\(.since)"')"
+check "a team that stops loading after the D8 check marks the run private, and a first run has no since" "true|null" \
+  "$(_routine_profile() { [ -e "$tmp/p1" ] && return 1; : > "$tmp/p1"; echo "$OPEN"; }; tick $((T + 11 * 3600 + 1830)) | jq -r --argjson r "$rj" '.runs[] | select(.routine == $r) | "\(.private)|\(.since)"')"
 # A run the bot refused before any session (its channel check): done with no --session fails it; a run with a
 # session still needs that session.
 nc="$(db_value "SELECT id FROM routine_runs WHERE routine_id = $rj AND state = 'claimed';")"
@@ -295,11 +299,24 @@ rm_="$(mk fxa "daily 23:00" '{"name": "Perf look", "template": "perf-review"}')"
 db_exec "UPDATE routine_runs SET state = 'ok' WHERE state IN ('queued','claimed','started');"
 FXA_ROUTINE_NOW=$((T + 12 * 3600)) routine_runnow fxa "$rm_" >/dev/null
 check "a manual run carries name, mode, template, private and since" '{"trigger":"manual","name":"Perf look","mode":"report","template":"perf-review","private":true,"since":null}' \
-  "$(_routine_profile() { echo '{"private": true}'; }; tick $((T + 12 * 3600 + 30)) | jq -c --argjson r "$rm_" '.runs[] | select(.routine == $r) | {trigger, name, mode, template, private, since}')"
+  "$(_routine_profile() { echo "$PRIV"; }; tick $((T + 12 * 3600 + 30)) | jq -c --argjson r "$rm_" '.runs[] | select(.routine == $r) | {trigger, name, mode, template, private, since}')"
 echo '{"name":"drafty2","status":"draft"}' > "$FXA_TEAMS_DIR/drafty2.json"
 rk="$(mk drafty2 "daily 23:30" '{"name": "Sec look", "template": "security-review"}')"
 check "a skip carries the routine's name, template and private flag" '{"name":"Sec look","template":"security-review","private":false}' \
-  "$(_routine_profile() { echo '{"private": false}'; }; tick $((T + 14 * 3600 + 1830)) | jq -c --argjson r "$rk" '.skips[] | select(.routine == $r) | {name, template, private}')"
+  "$(_routine_profile() { echo "$OPEN"; }; tick $((T + 14 * 3600 + 1830)) | jq -c --argjson r "$rk" '.skips[] | select(.routine == $r) | {name, template, private}')"
+
+# D8 again at run time: a team that turned private after the save, or that does not load, does not run, and the skip
+# does not post in a channel its results may no longer go to.
+rb="$(mk fxa "daily 23:40" '{"name": "Bound look", "channel": "C0OTHER"}')"
+check "a team that turned private skips a routine whose channel it does not bind, with no claim and no post" \
+  "skipped|the routine no longer passes its checks: channel: A team with a private repo posts only to one of this team's channels|false|0" \
+  "$(_routine_profile() { echo "$PRIV"; }; tick $((T + 14 * 3600 + 2430)) | jq -r --argjson r "$rb" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"' | sed 's/^/skipped|/')|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rb AND state = 'claimed';")"
+rd="$(mk fxa "daily 23:50")"
+check "a team that does not load skips the routine, with no claim" "the team does not load|0" \
+  "$(_routine_profile() { return 1; }; tick $((T + 14 * 3600 + 3030)) | jq -r --argjson r "$rd" '.skips[] | select(.routine == $r) | .reason')|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rd AND state = 'claimed';")"
+check "run-now refuses a routine whose channel the private team does not bind" \
+  "ERROR: routine ${rb} cannot run now: the routine no longer passes its checks: channel: A team with a private repo posts only to one of this team's channels|0" \
+  "$(_routine_profile() { echo "$PRIV"; }; FXA_ROUTINE_NOW=$((T + 15 * 3600)) routine_runnow fxa "$rb" 2>&1)|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rb AND state = 'queued';")"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?

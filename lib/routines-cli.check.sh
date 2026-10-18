@@ -19,7 +19,7 @@ rm -f "$root/.env"
 mkdir -p "$tmp/bin" "$tmp/teams" "$tmp/sessions" "$tmp/proxy/teams" "$tmp/state" "$tmp/home"
 # GitHub: the branch head of any repo.
 printf '#!/bin/sh\necho 2222222222222222222222222222222222222222\n' > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
-: > "$tmp/bot.env"
+: > "$tmp/bot.env"; echo '{"teams": {}}' > "$tmp/teams/index.json"
 T=1792414800   # Monday 2026-10-19 09:00 in New York
 ctl() { ( cd "$root" && env PATH="$tmp/bin:$PATH" HOME="$tmp/home" FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" \
   FXA_SESSION_DIR="$tmp/sessions" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_FIXME_STATE="$tmp/state" FXA_BOT_ENV="$tmp/bot.env" \
