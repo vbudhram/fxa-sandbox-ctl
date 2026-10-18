@@ -1492,9 +1492,10 @@ const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "b
 const RT_STALE_S = 300;
 async function loadRoutines(team) {
   const r = await fetch(`/api/teams/${encodeURIComponent(team)}/routines`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
-  if (RT.team !== team) RT = { team };
+  if (RT.team !== team) return;   // the admin opened another team while this answer was on its way
   Object.assign(RT, r?.ok && Array.isArray(j) ? { list: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
-  if (!RT.tpls) { const t = await fetch("/api/routine-templates", { cache: "no-store" }).catch(() => null); RT.tpls = t?.ok ? await t.json().catch(() => []) : []; }
+  if (!RT.tpls) { const t = await fetch("/api/routine-templates", { cache: "no-store" }).catch(() => null), tj = t?.ok ? await t.json().catch(() => []) : [];
+    if (RT.team === team) RT.tpls = tj; }
 }
 // A routine's config as form fields, and back.
 function rtDraft(data) {
