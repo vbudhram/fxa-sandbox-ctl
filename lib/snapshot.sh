@@ -684,7 +684,8 @@ snapshot_json() {
       printf '%s' "$skipped" | jq -r '.[]?.key // empty' 2>/dev/null; } | grep -E '^[A-Z][A-Z0-9]+-[0-9]+$' | sort -u))"
   [ -n "$facts" ] || facts='{}'
   inflight="$(_snapshot_inflight "$inflight_keys")"
-  review="$(gh_pr_states_json "$done_keys")"
+  # A failed Jira read of a state is unknown (null), not an empty list, so the page never shows a false 0.
+  if [ "$done_items" = "null" ]; then review=null; else review="$(gh_pr_states_json "$done_keys")"; fi
   # Every open PR with the pipeline's label, whatever its ticket's state: the
   # review list holds only `done` tickets, so the page looked short of GitHub's.
   local open_prs; open_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state open --limit 100 \
@@ -692,11 +693,11 @@ snapshot_json() {
     | jq -c 'map({number, title, created: .createdAt, branch: .headRefName,
         key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
   # Recently merged PRs with the label, for the page's Done tab.
-  local merged_prs; merged_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state merged --limit 30 \
+  local merged_cap=30 merged_prs; merged_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state merged --limit "$merged_cap" \
     --json number,headRefName,title,createdAt,mergedAt,mergedBy 2>/dev/null \
     | jq -c 'map({number, title, created: .createdAt, merged: .mergedAt, merged_by: (.mergedBy.login // null),
         key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
-  local inflight_prs; inflight_prs="$(gh_pr_states_json "$inflight_keys")"
+  local inflight_prs=null; [ "$inflight_items" = "null" ] || inflight_prs="$(gh_pr_states_json "$inflight_keys")"
   telem="$(_snapshot_telemetry)"
   # Known repo-infrastructure reds, so the page groups them instead of blaming
   # each PR. gh_red_infra caches per head sha, so this reads each log once.
@@ -742,11 +743,18 @@ snapshot_json() {
     --argjson instances "$instances" \
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
-    '($skipped | map(.key)) as $skipkeys
+    --argjson mcap "$merged_cap" \
+    --arg t_profile "${PIPE_PROFILE:-}" --arg t_name "${PIPE_LABEL:-${PIPE_PROFILE:-}}" --arg t_site "${PIPE_JIRA_SITE:-}" \
+    --arg t_queue "${PIPE_LABEL_PREFIX:-}" --arg t_pr "${FXA_PR_LABEL:-auto}" --arg t_repo "${PIPE_REPO_SLUG:-}" \
+    'def nn: if . == "" then null else . end;
+     ($skipped | map(.key)) as $skipkeys
      | ($items // []) as $q
      | { generated_at: $at, pipeline: $pipeline, repo: $repo, took_seconds: $secs,
          backend: $backend, zone: (if $zone == "" then null else $zone end),
          instances: $instances,
+         # The page names and links the pipeline from this allowlist only: jira_site is its one host value.
+         team: { profile: ($t_profile | nn), name: ($t_name | nn), jira_site: ($t_site | nn),
+                 queue_label: ($t_queue | nn), pr_label: ($t_pr | nn), repo: ($t_repo | nn) },
          queue: { total: (if $items == null then null else ($q | length) end),
                   fetch_failed: ($items == null),
                   ready:   [$q[] | select(.key as $k | ($skipkeys | index($k)) == null) | . + {queued_at: ($facts[.key].queued_at // null)}],
@@ -766,7 +774,7 @@ snapshot_json() {
          open_prs: $openprs,
          merged_prs: $mergedprs,
          health: $health,
-         limits: { attempts: $roundcap, feedback_rounds: $roundcap },
+         limits: { attempts: $roundcap, feedback_rounds: $roundcap, merged_prs: $mcap },
          last_pass: $lastpass,
          inflight_fetch_failed: ($inflight_items == null),
          pool: $pool, free_slots: $freeslots,

@@ -40,6 +40,19 @@ check "300 stale state files cost no jq call" "$n0" "$n1"
 printf 'fp\t1\t1\tpick a route\tneeds_decision\n' > "$PIPE_STATE_DIR/FXA-12.skipped"; echo FXA-9 > "$PIPE_STATE_DIR/FXA-11.held"
 printf 'fp\t1\t1\theld until FXA-9 merges: x\t\n' > "$PIPE_STATE_DIR/FXA-11.skipped"
 check "a recorded kind wins, and a hold is depends_on" "depends_on needs_decision" "$(snapshot_json 2>/dev/null | jq -r '[.queue.skipped[] | .kind] | sort | join(" ")')"
+# The team block: exactly six keys from PIPE_*, no other host value; unset values fall back or are null.
+tm="$(PIPE_PROFILE=t1 PIPE_LABEL='Team One' PIPE_JIRA_SITE=https://jira.example.com PIPE_LABEL_PREFIX=ai-x FXA_PR_LABEL=lbl PIPE_JIRA_BASIC=secretmark1 PIPE_RELOCK_SIGN=secretmark2 PIPE_STATE_URI=gs://secretmark3 snapshot_json 2>/dev/null)"
+check "team: six keys with the PIPE values" "jira_site,name,pr_label,profile,queue_label,repo|t1|Team One|https://jira.example.com|ai-x|lbl|mozilla/fxa" \
+  "$(jq -r '(.team | keys | join(",")) + "|" + ([.team.profile, .team.name, .team.jira_site, .team.queue_label, .team.pr_label, .team.repo] | join("|"))' <<< "$tm")"
+check "team: no other host value reaches the snapshot" "0" "$(grep -c secretmark <<< "$tm")"
+check "team: no label gives the profile as the name, and pr_label auto" "t1|auto|null" "$( (unset PIPE_LABEL FXA_PR_LABEL PIPE_JIRA_SITE; PIPE_PROFILE=t1 snapshot_json 2>/dev/null) | jq -r '"\(.team.name)|\(.team.pr_label)|\(.team.jira_site)"')"
+check "the Done cap is in limits" "30" "$(jq -r .limits.merged_prs <<< "$tm")"
+# A failed Jira read of done or inflight is unknown: review is null, and no PR state is read for it.
+snap_states_fail() { jira_items_in_state() { if [ "$1" = blocked ]; then items FXA-5; else return 1; fi; }
+  gh_pr_states_json() { echo x >> "$tmp/prs-calls"; echo '[]'; }; snapshot_json 2>/dev/null; }
+check "a failed done and inflight read: review null, inflight unknown, no PR state read" "null|true|0" \
+  "$(rm -f "$tmp/prs-calls"; snap_states_fail | jq -r '"\(.review)|\(.inflight_fetch_failed)"')|$(cat "$tmp/prs-calls" 2>/dev/null | wc -l | tr -d ' ')"
+check "a good read: review is a list" "[]" "$(snapshot_json 2>/dev/null | jq -c .review)"
 eval "$(sed -n '/^_snapshot_slots() {/,/^}/p' "$here/snapshot.sh")"
 slots() { local free cap; _snapshot_slots; printf '%s|%s' "$cap" "$(jq -c . <<< "$free")"; }
 cmd_launchcap() { echo "cmd_launchcap must not run: it reads Jira again" >&2; echo 0; }
