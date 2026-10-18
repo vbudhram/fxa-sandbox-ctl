@@ -2895,7 +2895,7 @@ function route() {
   if (view === "errors") renderErrors();
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
-  if (view === "teams") { renderTeams(); if (sub && !(TACT === SEL.teams && TTAB === "settings")) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
+  if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
   renderSide(); renderRight();
   document.getElementById("main").scrollTop = 0;
