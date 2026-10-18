@@ -117,7 +117,7 @@ launch() {
     source "$2/cmd_launch.sh"
     PIPE_STATE_DIR="$2/state" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$2" PIPE_MIN_FREE_GB=1 PIPE_TOOLING_LABEL=ai-fixme-allow-tooling
     _SESSION_STAMP_PL="while (<STDIN>) {}"
-    _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_holding_new() { return 1; }
+    _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_launches_24h() { :; }; pipeline_holding_new() { return 1; }
     pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
     worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
     jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-lead Lead Person"; }
@@ -139,7 +139,7 @@ printf 'Ground truth.\nLaunch with --android\n' > "$tmp/ctx.md"
 args_of() { rm -f "$tmp/child"; CHILD_OUT="$tmp/child" bash -c '
     set -euo pipefail; source "$2/cmd_launch.sh"
     PIPE_STATE_DIR="$2/state" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$2" PIPE_MIN_FREE_GB=1 _SESSION_STAMP_PL="while (<STDIN>) {}"
-    _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_holding_new() { return 1; }
+    _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_launches_24h() { :; }; pipeline_holding_new() { return 1; }
     pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
     worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
     jira_tooling_approver() { return 1; }

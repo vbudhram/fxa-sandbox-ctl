@@ -19,6 +19,8 @@
 
 [ -n "${_FXA_PIPELINE_LOADED:-}" ] && return 0
 _FXA_PIPELINE_LOADED=1
+# Automatic rounds per PR (rebase attempts, review rounds): PRODUCT.md says they stop at 2. Not a profile key.
+_FXA_ROUND_CAP=2
 
 : "${FXA_PIPELINE:=fxa-ai-fixme}"
 # Team records (lib/team_record.py), cached on this host; config.sh sets the same default.
@@ -659,6 +661,25 @@ pipeline_progress() {
 # pipeline_health_json
 #   Is the pipeline alive, not merely idle? The cron is session-scoped, so there
 #   is no direct signal; use the newest trace a pass leaves.
+# pipeline_launches_24h   The launch ledger's epochs from the last 24 h, oldest first (cmd_launch's budget).
+pipeline_launches_24h() {
+  local ledger="${PIPE_STATE_DIR}/launches.log"
+  # awk exits 2 on a missing file, and under set -e that killed the launch silently.
+  [ -f "$ledger" ] || return 0
+  awk -v t="$(( $(date +%s) - 86400 ))" '$1 >= t { print $1 }' "$ledger" | sort -n
+}
+
+# _pipeline_next_pass   The pass timer's next run as an epoch; "off" for a timer that is not active;
+# nothing when this host has no systemd or the time cannot be read.
+_pipeline_next_pass() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  local u="fxa-pass.timer" v; [ -z "${FXA_PIPELINE:-}" ] || u="fxa-pass@${FXA_PIPELINE}.timer"
+  systemctl is-active -q "$u" 2>/dev/null || { echo off; return 0; }
+  # Only Linux hosts have systemctl, so GNU date reads its "Sun 2026-10-18 17:04:00 UTC"; @<epoch> also works.
+  v="$(systemctl show -p NextElapseUSecRealtime --value "$u" 2>/dev/null)" || return 0
+  case "$v" in @*) v="${v#@}"; [[ "$v" =~ ^[0-9]+$ ]] && echo "$v" ;; ?*) date -d "$v" +%s 2>/dev/null ;; esac || true
+}
+
 pipeline_health_json() {
   pipeline_require || return 1
   local last_pass last_launch lock free stamped newest_skip
@@ -671,6 +692,12 @@ pipeline_health_json() {
   last_pass="$(printf '%s\n%s\n%s\n' "$stamped" "$newest_skip" "$last_launch" \
                | grep -E '^[0-9]+$' | sort -rn | head -1)"
   [ -d "$PIPE_LOCK_DIR" ] && lock=true || lock=false
+  local lock_age=""; [ -d "$PIPE_LOCK_DIR" ] && lock_age="$(( $(date +%s) - $(_mtime "$PIPE_LOCK_DIR" 2>/dev/null || date +%s) ))"
+  local launches max="${PIPE_MAX_LAUNCHES_PER_DAY:-20}" frees="" np timer=""; launches="$(pipeline_launches_24h)"
+  local n; n="$(grep -c . <<< "$launches" || true)"
+  # The budget frees when the oldest launch that keeps it full leaves the window: row n-max+1.
+  [ "$n" -ge "$max" ] && frees="$(( $(sed -n "$((n - max + 1))p" <<< "$launches") + 86400 ))"
+  np="$(_pipeline_next_pass)"; case "$np" in off) timer=off; np="" ;; '') ;; *) timer=on ;; esac
   free="$(pipeline_free_gb)"
   # The local marker only: the GCS one costs a round trip per snapshot, and a
   # pause from this machine writes both.
@@ -679,13 +706,21 @@ pipeline_health_json() {
   jq -n --arg lp "${last_pass:-}" --arg ll "${last_launch:-}" --arg paused "$paused" \
         --argjson lock "$lock" --arg free "${free:-}" \
         --argjson floor "${PIPE_MIN_FREE_GB:-0}" --argjson now "$(date +%s)" \
+        --argjson n "$n" --argjson max "$max" --arg frees "$frees" --arg lage "$lock_age" \
+        --argjson lstale "${PIPE_LOCK_STALE_SECONDS:-1800}" --arg np "$np" --arg timer "$timer" \
     '{ last_pass_epoch:   (if $lp == "" then null else ($lp | tonumber) end),
        last_launch_epoch: (if $ll == "" then null else ($ll | tonumber) end),
        seconds_since_pass: (if $lp == "" then null else ($now - ($lp | tonumber)) end),
        lock_held: $lock,
        free_gb:   (if $free == "" then null else ($free | tonumber) end),
        min_free_gb: $floor,
-       paused: (if $paused == "" then null else $paused end) }'
+       paused: (if $paused == "" then null else $paused end),
+       launches_24h: $n, max_launches_per_day: $max,
+       launch_frees_at: (if $frees == "" then null else ($frees | tonumber) end),
+       lock_age_seconds: (if $lage == "" then null else ($lage | tonumber) end),
+       lock_stale_seconds: $lstale,
+       next_pass_epoch: (if $np == "" then null else ($np | tonumber) end),
+       pass_timer: (if $timer == "" then null else $timer end) }'
 }
 
 # _profile_app_repos   The repos the GitHub App is installed on, one per line, cached

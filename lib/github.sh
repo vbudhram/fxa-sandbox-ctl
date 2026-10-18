@@ -405,8 +405,8 @@ gh_relock() {
     *) echo "ERROR: ${key} conflicts outside the lockfile (${conf}); it needs a rebase round." >&2; return 1 ;;
   esac
   n="$(pipeline_attempts "$key")"
-  if [ "${n:-0}" -ge 2 ]; then
-    echo "ERROR: ${key} has ${n} attempts recorded; the cap is 2." >&2; return 1
+  if [ "${n:-0}" -ge "${_FXA_ROUND_CAP:-2}" ]; then
+    echo "ERROR: ${key} has ${n} attempts recorded; the cap is ${_FXA_ROUND_CAP:-2}." >&2; return 1
   fi
 
   wt="$(mktemp -d "${TMPDIR:-/tmp}/relock-${br}.XXXXXX")"

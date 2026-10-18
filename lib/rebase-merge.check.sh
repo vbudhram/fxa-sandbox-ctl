@@ -6,6 +6,7 @@ set -u
 fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+_FXA_ROUND_CAP=2
 eval "$(sed -n '/^_jira_rebase_merge() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 worktree_filtered_status() { git -C "$1" status --porcelain | grep -v ' \.fxa-' || true; }
 pipeline_attempts() { echo 0; }
