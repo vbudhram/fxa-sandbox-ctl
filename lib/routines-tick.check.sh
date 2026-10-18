@@ -328,6 +328,16 @@ rr="$(mk fxa "daily 21:10" '{"name": "Repo look"}')"
 check "a recheck refusal that is not the channel posts once (D23)" "repos|true" \
   "$(_routine_profile() { echo '{"private": false, "read_only": false, "repos": [{"slug": "mozilla/other", "role": "work"}]}'; }; tick $((T + 12 * 3600 + 10 * 60 + 30)) | jq -r --argjson r "$rr" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"')"
 
+# A refusal on the repos and on the channel names the channel and stays out of Slack, scheduled or queued.
+BOTH='{"private": true, "read_only": false, "repos": [{"slug": "mozilla/other", "role": "work"}]}'
+rx="$(mk fxa "daily 21:20" '{"name": "Two look", "channel": "C0OTHER"}')"
+check "a refusal on repos and channel gives the channel line and does not post" "channel|false" \
+  "$(_routine_profile() { echo "$BOTH"; }; tick $((T + 12 * 3600 + 20 * 60 + 30)) | jq -r --argjson r "$rx" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"')"
+ry="$(mk fxa "daily 04:00" '{"name": "Two queued", "channel": "C0OTHER"}')"
+FXA_ROUTINE_NOW=$((T + 17 * 3600)) routine_runnow fxa "$ry" >/dev/null
+check "a queued run refused on repos and channel gives the channel line and does not post" "channel|false" \
+  "$(_routine_profile() { echo "$BOTH"; }; tick $((T + 17 * 3600 + 30)) | jq -r --argjson r "$ry" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"')"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

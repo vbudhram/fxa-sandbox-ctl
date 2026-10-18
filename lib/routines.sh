@@ -266,7 +266,8 @@ _routine_recheck() {
   err="$(_ROUTINE_PY validate "$2" "$1" --profile "$prof" --index "${FXA_TEAMS_DIR:-/nonexistent}/index.json" \
     --bot-env "${FXA_BOT_ENV:-${SANDBOX_ROOT}/../fxa-agent-bot/.env}" --count 0 2>&1 >/dev/null)" || rc=$?
   rm -f "$prof"
-  [ "$rc" = 0 ] || echo "the routine no longer passes its checks: $(printf '%s\n' "$err" | head -1)"
+  # A channel refusal comes first, so _routine_quiet keeps the skip out of a channel the results may not go to.
+  [ "$rc" = 0 ] || echo "the routine no longer passes its checks: $(printf '%s\n' "$err" | grep -m1 '^channel:' || printf '%s\n' "$err" | head -1)"
 }
 
 # _routine_quiet <why>   True for a recheck refusal whose skip must not post: the channel itself, or a team that
