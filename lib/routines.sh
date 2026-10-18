@@ -402,8 +402,10 @@ routine_done() {
     [ -f "$rf" ] || { rm -f "$f"; echo "ERROR: no report file ${rf}" >&2; return 1; }
     report="$(head -c 65536 "$rf")"
     # Any finding, or a guard that does not answer, keeps the report off Slack (fail closed).
-    jq -n --arg t "$report" '{report: $t}' > "$f" && : > "$f.diff"
-    python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f" "$f.diff" >/dev/null 2>&1 || post=false
+    # A report that cannot be written for the guard is not scanned, so it is not posted.
+    if jq -n --arg t "$report" '{report: $t}' > "$f" 2>/dev/null; then
+      : > "$f.diff"; python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f" "$f.diff" >/dev/null 2>&1 || post=false
+    else post=false; fi
     rm -f "$f.diff"
   fi
   rm -f "$f"

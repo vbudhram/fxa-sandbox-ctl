@@ -236,6 +236,10 @@ rs="$(mk fxa "daily 06:00")"; db_exec "UPDATE routines SET saved_at = $((T + 60)
 check "a routine saved after today's time records nothing today" "0|0" "$(tick $((T + 120)) | jq --argjson r "$rs" '[.runs[], .skips[] | select(.routine == $r)] | length')|$(rows "$rs")"
 check "and runs at the next day's time" "1" "$(tick $((T + 86400 - 3 * 3600 + 30)) | jq --argjson r "$rs" '[.runs[] | select(.routine == $r)] | length')"
 
+# done: a report that cannot be written for the PII guard is not scanned, so it is not posted.
+d9="$(st started agent-jqf001 $((N - 60)))"
+check "a report the guard cannot read is not posted" "true|false" \
+  "$(jq() { case "$*" in (*'{report: $t}'*) return 1 ;; (*) command jq "$@" ;; esac; }; routine_done "$d9" --state report --session agent-jqf001 --report-file "$tmp/clean.md" | command jq -r '"\(.changed)|\(.post)"')"
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
