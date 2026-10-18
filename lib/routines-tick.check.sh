@@ -58,7 +58,7 @@ echo '{"name":"drafty","status":"draft"}' > "$FXA_TEAMS_DIR/drafty.json"
 echo '{"name":"spendy","status":"active"}' > "$FXA_TEAMS_DIR/spendy.json"
 echo '{"day_usd": 10}' > "$FXA_LLM_PROXY_DIR/teams/spendy.json"
 echo "{\"day\": \"2026-10-19\", \"day_usd\": 12, \"month\": \"2026-10\", \"month_usd\": 12}" > "$FXA_LLM_PROXY_DIR/teams/spendy.spend.json"
-r4="$(mk drafty)"; r5="$(mk spendy)"
+r4="$(mk drafty "daily 09:00" '{"channel": "C0DRAFT"}')"; r5="$(mk spendy "daily 09:00" '{"channel": "C0SPEND"}')"
 out="$(tick $((T + 60)))"
 check "a disabled team and a team at its daily cap: skipped with the reason, the next run time, post true, and no run" \
   "the team is not active|true|1792501200|the team reached its daily spend cap|true|0" \
@@ -343,6 +343,11 @@ rv="$(mk fxa "weekly sun 04:00")"; db_exec "UPDATE routines SET env = 'dev' WHER
 gv="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rv, 'manual-9', 'started', 'agent-devr01', $((NOWR - 60))); SELECT last_insert_rowid();")"
 FXA_ROUTINE_NOW=$((NOWR + 601)) routine_tick --env live >/dev/null
 check "the live tick leaves a dev run with no live session record alone" "started|" "$(s_of "$gv")"
+
+# A paused team that turned private: its skip does not post to a channel it does not bind.
+rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"
+check "a team-paused skip of a team that turned private does not post to an unbound channel" "the team is paused: held|false" \
+  "$(_routine_profile() { echo "$PRIV"; }; _routine_team_paused() { echo held; return 0; }; tick $((T + 20 * 3600 + 30)) | jq -r --argjson r "$rh" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
