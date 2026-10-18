@@ -1591,20 +1591,30 @@ function routinesGroup(t, now) {
   if (RT.team !== t.profile || (!RT.list && !RT.err)) return `<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
   const off = t.access?.record && t.access.status !== "active" ? `<p class="unknown">Routines run only while the team is active.</p>` : "";
   return `<div data-routines><h4>Routines</h4>${off}${RT.err ? `<p class="unknown">${esc(RT.err)}</p>` : ""}
-    <p role="status" data-rt-msg class="${RT.ok === false ? "unknown" : "empty"}">${esc(RT.msg || "")}</p>
+    <p role="status" data-rt-msg tabindex="-1" class="${RT.ok === false ? "unknown" : "empty"}">${esc(RT.msg || "")}</p>
     ${routineListHtml(t, now)}
     ${RT.form ? routineForm(t) : `<div class="acts2" style="margin-top:var(--s2)"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
 }
 // An open form the admin changed stays as it is: a poll repaints only the routine list. True when it did.
 function rtKeepForm(el, t) {
   if (!t || RT.team !== t.profile || !RT.form?.dirty || !el.querySelector("[data-routine-form]")) return false;
-  const l = el.querySelector("[data-routine-list]"); if (l) l.outerHTML = routineListHtml(t, Date.now() / 1000);
+  const l = el.querySelector("[data-routine-list]"); if (l) rtFocus(() => { l.outerHTML = routineListHtml(t, Date.now() / 1000); });
   return true;
 }
-// Repaint only the Routines group, so the rest of the panel and the focus stay.
+// Repaint only the Routines group, so the rest of the panel stays.
 function rtPaint() {
   const t = (TEAMS?.teams ?? []).find(x => x.profile === RT.team), el = document.querySelector("[data-routines]");
-  if (t && el) el.outerHTML = routinesGroup(t, Date.now() / 1000); else renderRight();
+  if (t && el) rtFocus(() => { el.outerHTML = routinesGroup(t, Date.now() / 1000); }); else renderRight();
+}
+// A repaint keeps keyboard focus on the same Routines control; one that is gone or off hands it to the status line.
+function rtFocus(paint) {
+  const a = document.activeElement, d = a?.closest?.("[data-routines]") ? a.dataset ?? {} : null, v = x => `"${String(x).replace(/["\\]/g, "\\$&")}"`;
+  const flag = d && ["rt-save", "rt-cancel", "rt-new"].find(k => a.hasAttribute?.(`data-${k}`));
+  const q = !d ? "" : d.rtAct ? `[data-rt-act=${v(d.rtAct)}][data-rt-id=${v(d.rtId)}]` : d.rtRepo ? `[data-rt-repo=${v(d.rtRepo)}]` : d.rt ? `[data-rt=${v(d.rt)}]` : flag ? `[data-${flag}]` : "";
+  paint();
+  if (!q) return;
+  const n = document.querySelector(`[data-routines] ${q}`);
+  (n && !n.disabled ? n : document.querySelector("[data-rt-msg]"))?.focus();
 }
 const rtSay = (msg, ok) => { Object.assign(RT, { msg, ok }); rtPaint(); };
 document.addEventListener("input", e => {
@@ -2591,7 +2601,7 @@ function renderRight() {
       if (rtKeepForm(el, t)) return;
       if (t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
       if (t) html = teamDetails(t); } }
-  el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
+  rtFocus(() => { el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`; });
   document.body.classList.toggle("noitem", !html && ["sessions", "runners"].includes(VIEW));
 }
 
