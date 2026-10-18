@@ -2116,7 +2116,9 @@ function gateLine(now = Date.now() / 1000) {
   if (!ready.length) return stop("Nothing is ready: the queue is empty, or every queued ticket is skipped or held.");
   const when = h.lock_age_seconds != null ? "a pass runs now" : np == null ? "next pass time unknown" : np <= now ? `a pass is due now (the snapshot is ${mins(STATE.age_seconds ?? 0)} min old)` : `the next pass (${hm(np)}, in ${mins(np - now)} min)`;
   const lead = when.startsWith("the next") ? `The next pass (${hm(np)}, in ${mins(np - now)} min)` : when.charAt(0).toUpperCase() + when.slice(1) + ";";
-  return { ok: true, text: `${lead} ${when.startsWith("the next") ? "offers" : "the pass offers"} ${ready[0].key} first. Up to ${g.launchcap} can launch. Feedback and rebase rounds use slots first, and the pass can still skip a ticket.` };
+  // The budget can allow fewer launches than there are slots: cmd_launch refuses each one past it.
+  const room = Math.min(g.launchcap, h.max_launches_per_day - h.launches_24h);
+  return { ok: true, room, text: `${lead} ${when.startsWith("the next") ? "offers" : "the pass offers"} ${ready[0].key} first. Up to ${room} can launch. Feedback and rebase rounds use slots first, and the pass can still skip a ticket.` };
 }
 // A Needs you row's meta from its Board item: key, why, who acts and age; the old text when the Board has no such row.
 const needMeta = (i, alt) => i && i.column === "blocked" ? [i.key, i.why, i.person, boardAge(i.age)].filter(Boolean).join(" · ") : alt;
@@ -2148,7 +2150,7 @@ function boardHtml() {
   const st = c => boardState(c), empty = t => `<p class="empty">${esc(t)}</p>`;
   const blocked = st("blocked") ? empty(st("blocked")) : (act.length ? `<h3 class="bgrp">A person must act</h3>${act.map(boardRow).join("")}` : empty("Nobody needs to act."))
     + (wait.length ? `<details class="bwait"><summary>Waits (${wait.length})</summary>${wait.map(boardRow).join("")}</details>` : "");
-  const gate = SNAP ? gateLine() : null, tags = gate?.ok ? (AGENTS?.launchcap ?? 0) : 0;
+  const gate = SNAP ? gateLine() : null, tags = gate?.ok ? gate.room : 0;
   next.forEach(i => { i.tag = i.pos <= tags; });
   return (gate ? `<div class="bgate ${gate.ok ? "ok" : "stop"}" role="status">${esc(gate.text)}</div>` : "") + `<div class="bcols">`
     + box("blocked", "Blocked", st("blocked") ? "" : act.length, blocked)
@@ -2787,7 +2789,11 @@ function renderRight() {
       if (rtKeepForm(el, t)) return;
       if (t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
       if (t) html = teamDetails(t); } }
-  rtFocus(() => { el.innerHTML = html || `<p class="rempty">Select an item in the list to see its details.</p>`; });
+  const out = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
+  // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.
+  if (VIEW === "pipeline" && el.dataset.h === out) return;
+  el.dataset.h = out;
+  rtFocus(() => { el.innerHTML = out; });
   document.body.classList.toggle("noitem", !html && ["sessions", "runners"].includes(VIEW));
 }
 
