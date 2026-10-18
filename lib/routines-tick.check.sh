@@ -376,6 +376,19 @@ gn="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, st
 printf 'No issue found in 2 commits.\n' > "$tmp/quiet.md"
 check "done for a routine with no channel answers post false and keeps the report with no reason" "true|false|No issue found in 2 commits.|" \
   "$(FXA_ROUTINE_NOW=$T routine_done "$gn" --state report --session agent-noch01 --report-file "$tmp/quiet.md" | jq -r '"\(.changed)|\(.post)"')|$(db_value "SELECT trim(report, char(10)) || '|' || coalesce(reason, '') FROM routine_runs WHERE id = $gn;")"
+gh_="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rnc, 'manual-14', 'started', 'agent-noch02', $((T - 60))); SELECT last_insert_rowid();")"
+check "a report the guard flags, of a routine with no channel, gets no held reason" "false|" \
+  "$(FXA_ROUTINE_NOW=$T routine_done "$gh_" --state report --session agent-noch02 --report-file "$tmp/report.md" | jq -r .post)|$(db_value "SELECT coalesce(reason, '') FROM routine_runs WHERE id = $gh_;")"
+# The run's config snapshot decides, not the routine as it is now.
+gc1="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rpub, 'manual-15', 'started', 'agent-noch03', $((T - 60)), json('{}')); SELECT last_insert_rowid();")"
+gc2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rnc, 'manual-16', 'started', 'agent-noch04', $((T - 60)), json('{\"channel\": \"C0OWN00\"}')); SELECT last_insert_rowid();")"
+check "done follows the channel the run started with" "false|true" \
+  "$(FXA_ROUTINE_NOW=$T routine_done "$gc1" --state report --session agent-noch03 --report-file "$tmp/quiet.md" | jq -r .post)|$(FXA_ROUTINE_NOW=$T routine_done "$gc2" --state report --session agent-noch04 --report-file "$tmp/quiet.md" | jq -r .post)"
+# A queued Run now of a routine with no channel that the recheck refuses: recorded, never posted.
+rqn="$(mk fxa "weekly sun 01:00" '{"name": "Quiet queue"}')"; db_exec "UPDATE routines SET data = json_remove(data, '$.channel') WHERE id = $rqn;"
+FXA_ROUTINE_NOW=$((T + 21 * 3600)) routine_runnow fxa "$rqn" >/dev/null
+check "a refused queued run of a routine with no channel does not post" "false" \
+  "$(_routine_profile() { echo "$BOTH"; }; tick $((T + 21 * 3600 + 30)) | jq -r --argjson r "$rqn" '.skips[] | select(.routine == $r) | .post')"
 
 # A queued run with no free runner for 60 min fails with that reason, not one that blames the tick.
 rw="$(mk fxa "weekly sun 05:00")"

@@ -460,7 +460,7 @@ routine_done() {
   [ -z "$sess" ] || [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
   [ -z "$pr" ] || [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "ERROR: --pr must be a GitHub PR link" >&2; return 1; }
   [ ${#reason} -le 300 ] && [[ "$reason" != *$'\n'* ]] || { echo "ERROR: --reason is one line of at most 300 characters" >&2; return 1; }
-  local j r; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
+  local j r; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data, coalesce(r.config, t.data) AS cfg FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
   [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; return 1; }
@@ -471,8 +471,9 @@ routine_done() {
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
   local post=true report="" n guard="state IN (${_ROUTINE_LIVE_STATES})" nochan=""
-  # A routine saved with no channel posts nothing: its results are in History only (D32).
-  jq -e '.data | fromjson | has("channel") | not' <<< "$r" >/dev/null 2>&1 && nochan=1
+  # A run of a routine with no channel posts nothing: its results are in History only (D32). The run's own
+  # config decides, as for its start, so a channel edit or a delete during the run does not change it.
+  jq -e '(.cfg // "{}") | fromjson | has("channel") | not' <<< "$r" >/dev/null 2>&1 && nochan=1
   # A run with no session: guarded in the UPDATE too, so a session that took it meanwhile keeps it.
   [ -n "$sess" ] || guard="state IN ('claimed','queued') AND session IS NULL"
   if [ -n "$rf" ]; then

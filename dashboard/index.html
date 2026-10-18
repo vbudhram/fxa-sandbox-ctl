@@ -899,7 +899,7 @@ function renderRunning() {
   put("s-running", head("running now", rows.length, AGENTS ? `${usd(AGENTS.runner_hourly_usd)}/h` : "") +
     (rows.length ? rows.join("") : `<div class="emptybox">Nothing is running. ${AGENTS?.free_slots?.length ?? "?"} sandbox slots are free.</div>`) +
     (recent.length ? `<h2 style="margin:var(--s4) 0 var(--s2)">Recent sessions<a class="note" href="#sessions" style="color:var(--link)">All sessions</a></h2>` +
-      recent.map(s => `<a class="runrow" href="#sessions/${sessTabOf(s)}/${esc(s.key)}"><span class="ldot"></span><span class="t" title="${esc(convTitle(s))}">${esc(convTitle(s))}</span><span class="m">${esc([ownerName(s), ageOf(s.last_activity ?? s.created), s.state === "paused" ? "paused" : ""].filter(Boolean).join(" · "))}</span></a>`).join("") : ""));
+      recent.map(s => `<a class="runrow" href="#sessions/${sessTabOf(s)}/${esc(s.key)}"><span class="ldot"></span><span class="t" title="${esc(convTitle(s))}">${esc(convTitle(s))}</span><span class="m">${esc([sessRoutine(s) || ownerName(s), ageOf(s.last_activity ?? s.created), s.state === "paused" ? "paused" : ""].filter(Boolean).join(" · "))}</span></a>`).join("") : ""));
 }
 // A session's title: the person's words, not the prompt the host wrapped them in.
 function firstLine(t) {
@@ -2039,9 +2039,9 @@ function laneRows() {
   const ss = AGENTS?.sessions ?? [];
   (SNAP?.open_prs ?? []).filter(p => !p.key).forEach(p => {
     const d = Math.round(days(p.created) ?? 0), s = sessHeads(ss).find(x => chainOf(x, ss).some(y => y.branch === p.branch || y.key === p.branch));
-    const owner = s ? ownerName(s) : "";
+    const owner = s ? sessRoutine(s) || ownerName(s) : "";
     rows.push({ t: { key: p.branch, pr: p.number, summary: p.title, slack: true, owner, sess: s }, st: 7, kind: d >= 3 ? "warn" : "wait",
-      l1: `Waiting ${d} day${d === 1 ? "" : "s"}`, l2: owner ? `${owner}'s session` : "Slack session", age: d });
+      l1: `Waiting ${d} day${d === 1 ? "" : "s"}`, l2: owner ? (s.routine_run ? owner : `${owner}'s session`) : "Slack session", age: d });
   });
   const order = { live:0, fix:1, warn:2, wait:3, done:4 };
   return rows.sort((x, y) => order[x.kind] - order[y.kind] || (y.age ?? 0) - (x.age ?? 0));
