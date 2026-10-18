@@ -203,10 +203,10 @@
   .shell { height:100vh; display:grid; grid-template-rows:minmax(0,1fr) 32px;
            grid-template-columns:var(--rail) var(--side) minmax(0,1fr) var(--right);
            grid-template-areas:"rail side main right" "status status status status"; }
-  body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-teams .shell, body.bare .shell { --side:0px; }
-  body.noright .shell, body.v-overview .shell, body.v-stats .shell, body.bare .shell, body.noitem .shell { --right:0px; }
-  body.noside .side, body.v-overview .side, body.v-pipeline .side, body.v-teams .side, body.bare .side,
-  body.noright .right, body.v-overview .right, body.v-stats .right, body.bare .right, body.noitem .right { visibility:hidden; }
+  body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.bare .shell { --side:0px; }
+  body.noright .shell, body.v-overview .shell, body.v-stats .shell, body.v-teams .shell, body.bare .shell, body.noitem .shell { --right:0px; }
+  body.noside .side, body.v-overview .side, body.v-pipeline .side, body.bare .side,
+  body.noright .right, body.v-overview .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { visibility:hidden; }
   .rail { grid-area:rail; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:var(--s3) 0; gap:2px; z-index:11; }
   .rail .logo { width:40px; height:40px; margin-bottom:var(--s3); }
   .rail a, .rail button.rb { position:relative; width:60px; min-height:52px; padding:8px 0 6px; border-radius:var(--r-sm); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
@@ -254,10 +254,29 @@
   .rsz:hover, .rsz.on { background:var(--line); }
   .rsz-side { grid-area:side; justify-self:end; margin-right:-4px; }
   .rsz-right { grid-area:right; justify-self:start; margin-left:-4px; }
-  body.noside .rsz-side, body.v-overview .rsz-side, body.v-pipeline .rsz-side, body.v-teams .rsz-side, body.bare .rsz-side,
-  body.noright .rsz-right, body.v-overview .rsz-right, body.v-stats .rsz-right, body.bare .rsz-right, body.noitem .rsz-right { display:none; }
+  body.noside .rsz-side, body.v-overview .rsz-side, body.v-pipeline .rsz-side, body.bare .rsz-side,
+  body.noright .rsz-right, body.v-overview .rsz-right, body.v-stats .rsz-right, body.v-teams .rsz-right, body.bare .rsz-right, body.noitem .rsz-right { display:none; }
   @media (max-width:1280px) { .rsz-right { display:none; } }
   @media (max-width:900px) { .rsz-side { display:none; } }
+  /* Teams pages (epic i275) */
+  .tpage { display:flex; flex-direction:column; gap:var(--s4); max-width:1100px; }
+  .th { font:700 22px/1.25 var(--sans); margin:0; display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; } .th:focus { outline:none; } .th:focus-visible { outline:2px solid var(--link); }
+  .tsub { color:var(--dim); margin:0; } .tkey { font:400 var(--t-label) var(--mono); color:var(--faint); margin-left:var(--s2); } .thead .tkey { margin:4px 0 0; }
+  .ttabs { display:flex; gap:var(--s1); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .ttab { padding:var(--s2) var(--s3); color:var(--dim); text-decoration:none; border-bottom:2px solid transparent; font-weight:600; min-height:40px; display:inline-flex; align-items:center; gap:6px; }
+  .ttab[aria-current] { color:var(--link); border-color:var(--link); }
+  .tcard { background:var(--panel); border:1px solid var(--card-border); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:var(--s4); min-width:0; }
+  .tcard.req { outline:2px solid var(--warn); } .tcard h3 { margin:0 0 var(--s2); font-size:var(--t-body); }
+  .tscroll { overflow-x:auto; padding:0; }
+  .ttiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
+  .ttile { background:var(--panel); border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s2) var(--s3); } .ttile.warn { background:var(--warnbg); }
+  .ttile .tl { font-size:var(--t-label); color:var(--dim); } .ttile .tv { font-size:var(--t-head); font-weight:700; font-variant-numeric:tabular-nums; } .ttile .tm { font-size:var(--t-label); font-weight:400; color:var(--dim); }
+  .ttable { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .ttable th { text-align:left; font-size:var(--t-label); color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
+  .ttable td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .ttable tr:last-child td { border-bottom:0; }
+  .ttable .num, .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
+  .tbud { min-width:180px; } .tbar { display:block; height:6px; border-radius:3px; background:var(--sunk); margin-top:4px; overflow:hidden; } .tbar i { display:block; height:100%; background:var(--ok); } .tbar i.warn { background:var(--warn); } .tbar i.bad { background:var(--bad); }
+  #s-teams.wide { background:none; border:0; box-shadow:none; padding:0; }
+  .iconbtn.tlist-btn { display:none; } @media (max-width:900px) { .iconbtn.tlist-btn { display:flex; } }
   .right { grid-area:right; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
   .right .rh { display:block; font:700 16px/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
   .right h4 { margin:0 0 var(--s2); font:700 var(--t-label) var(--sans); color:var(--dim); }
@@ -291,12 +310,16 @@
   @media (max-width:1280px) {
     .shell { --right:0px !important; }
     .right { position:fixed; right:0; top:0; bottom:32px; width:340px; z-index:12; transform:translateX(105%); transition:transform .2s; box-shadow:-10px 0 30px rgb(0 0 0 / .18); visibility:visible !important; }
-    body.showright .right { transform:none; } body.v-overview .right, body.v-stats .right, body.bare .right, body.noitem .right { display:none; } .drawer-close { display:inline-block; align-self:flex-end; }
+    body.showright .right { transform:none; } body.v-overview .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { display:none; } .drawer-close { display:inline-block; align-self:flex-end; }
   }
   @media (max-width:900px) {
     .shell { --side:0px !important; }
     .side { position:fixed; left:var(--rail); top:0; bottom:32px; width:300px; z-index:12; transform:translateX(-120%); transition:transform .2s; box-shadow:10px 0 30px rgb(0 0 0 / .18); visibility:visible !important; }
-    body.showside .side { transform:none; } body.v-overview .side, body.v-pipeline .side, body.v-teams .side, body.bare .side { display:none; }
+    body.showside .side { transform:none; } body.v-overview .side, body.v-pipeline .side, body.bare .side { display:none; }
+    /* Teams: the list is a static block above the team, toggled by List, not a drawer. */
+    body.v-teams .shell { grid-template-rows:auto minmax(0,1fr) 32px; grid-template-areas:"rail side side side" "rail main main main" "status status status status"; }
+    body.v-teams .side { position:static; transform:none; width:auto; max-height:40vh; overflow:auto; box-shadow:none; border-right:0; border-bottom:1px solid var(--line); }
+    body.v-teams.tlist-closed .side { display:none; }
   }
   @media (max-width:640px) {
     .shell { grid-template-columns:minmax(0,1fr) !important; grid-template-rows:minmax(0,1fr) 64px; grid-template-areas:"main" "rail"; }
@@ -304,6 +327,7 @@
     .rail .logo, .rail .grow, .rail button.rb { display:none; }
     .rail a { flex:1 1 0; min-width:44px; width:auto; min-height:56px; font-size:10px; } .rail .n { right:2px; font-size:10px; }
     .side, .right { left:0; right:0; width:auto; bottom:64px; }
+    body.v-teams .shell { grid-template-rows:auto minmax(0,1fr) 64px; grid-template-areas:"side" "main" "rail"; }
     .status { position:fixed; bottom:72px; right:8px; height:26px; z-index:13; border:1px solid var(--line); border-radius:999px; padding:0 10px; }
     .status > :not(#dot):not(#health) { display:none; }
     .mh, .mc { padding-left:var(--s4); padding-right:var(--s4); } .mh .vsub { display:none; }
@@ -1365,7 +1389,7 @@ async function teamRecord(n) {
 }
 document.addEventListener("input", e => { if (TED && e.target.classList?.contains("team-json")) TED.text = e.target.value; });
 document.addEventListener("click", async e => {
-  if (e.target.closest?.("[data-team-new]")) { SEL.teams = "__new"; TED = null; renderRight(); return; }
+  if (e.target.closest?.("[data-team-new]")) { e.preventDefault(); TED = null; location.hash = "teams/new"; return; }
   const load = e.target.closest?.("[data-team-load]");
   if (load) {
     const n = load.dataset.teamLoad;
@@ -1398,8 +1422,8 @@ document.addEventListener("click", async e => {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
   const j = await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" };
   if (!r?.ok) return say((r?.status === 409 ? "Someone changed this team after you loaded it. Load the record again and redo your edit.\n" : "") + (j.error || r?.status), false);
-  if (act === "delete") { TED = null; SEL.teams = null; }
-  else if (act === "create") { SEL.teams = rec.name; TED = { ...(await teamRecord(rec.name)), msg: j.out, ok: true }; }
+  if (act === "delete") { TED = null; location.hash = "teams"; }
+  else if (act === "create") { TED = { ...(await teamRecord(rec.name)), msg: j.out, ok: true }; location.hash = `teams/${rec.name}/settings`; }
   else if (act === "test") { return say(j.out, true); }
   else if (act !== "validate") { TED = { ...(await teamRecord(n)), msg: j.out, ok: true }; }
   else return say(j.out || "valid", true);
@@ -1410,8 +1434,12 @@ document.addEventListener("click", async e => {
 let TEAMS = null;
 async function loadTeams() {
   try { const r = await fetch("/api/teams", { cache:"no-store" }); if (!r.ok) return; TEAMS = await r.json(); } catch { return; }
-  const ts = TEAMS.teams ?? [], has = l => ts.some(t => teamLevel(t) === l);
-  const b = document.getElementById("n-teams"); b.textContent = ts.length || ""; b.className = "n" + (has("bad") ? " bad" : has("warn") ? " warn" : "");
+  if (TEAM_ADMIN == null) await loadTeamAdmin();   // routine facts need to know the viewer is an admin, also on the first load
+  if (TEAM_ADMIN?.admin) {
+    const r = await fetch("/api/routines/summary", { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+    if (r?.ok && j?.teams) { RTSUM = j; RTSUM_ERR = ""; } else { RTSUM = null; RTSUM_ERR = j?.error || "the dashboard did not answer"; }
+  }
+  const b = document.getElementById("n-teams"); b.textContent = (TEAMS.teams ?? []).length || ""; b.className = "n" + teamBadge(TEAMS.teams ?? []);
   if (document.body.dataset.view === "teams") { renderTeams(); if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide(); renderRight(); }
   if (VIEW === "stats") renderStats();   // team names replace profile ids
 }
@@ -1425,8 +1453,9 @@ document.addEventListener("click", e => {
   if (a.dataset.teamStats) setStatsFilter({ team: a.dataset.teamStats }); else { STEAM = a.dataset.teamSess; renderSide(); }
 });
 const teamLevel = t => ["bad", "warn"].find(l => (t.issues ?? []).some(i => i.level === l));
+// The rail badge: bad for a bad issue, warn for a warn issue or (admins) a failed routine that is not paused.
+const teamBadge = ts => ts.some(t => t.load_error || teamLevel(t) === "bad") ? " bad" : ts.some(t => teamLevel(t) === "warn" || rtSum(t.profile)?.failed) ? " warn" : "";
 // The table names how many need a look; the right panel holds the texts, so a row stays one line.
-const teamIssueCount = t => { const n = (t.issues ?? []).filter(i => i.level !== "info").length; return `${n} issue${n === 1 ? "" : "s"}`; };
 const teamMatch = (t, q) => !q || [t.profile, t.label, ...(t.repos ?? []).map(r => r.slug), ...(t.mcp ?? []), ...(t.access?.jira ?? [])].join(" ").toLowerCase().includes(q);
 const teamRows = () => (TEAMS?.teams ?? []).filter(t => teamMatch(t, Q.trim().toLowerCase())).sort((a, b) => !!teamLevel(b) - !!teamLevel(a) || teamName(a).localeCompare(teamName(b)));
 const teamTools = (m, short) => m == null ? (short ? "bot default" : "bot default (MCP_CONNECTORS)") : m.length ? m.join(", ") : "none";
@@ -1457,53 +1486,6 @@ function repoTag(r) {
   const [cls, s, l] = repoShip(r);
   return s ? ` <span class="tag ${cls}" title="${esc(l)}">${s}</span>` : "";
 }
-function teamItem(t, use) {
-  if (t.load_error) return { id: t.profile, d: "bad", t: t.profile, m: [t.profile, "profile.conf did not load"] };
-  const x = use?.[t.profile] ?? NO_USE, n = (t.repos ?? []).length;
-  return { id: t.profile, d: teamLevel(t) || (x.live ? "live" : "ok"), t: teamName(t),
-    m: [t.profile, `${n} repo${n === 1 ? "" : "s"}`, t.read_only ? "read-only" : "read and write", !use ? "" : x.live ? `${x.live} live` : lastUsed(x)] };
-}
-function renderTeams() {
-  const T = TEAMS, ts = T?.teams ?? [];
-  if (!T || T.age_seconds == null) { put("s-teams", head("teams") + `<div class="emptybox">${T?.error ? esc(T.error) : "loading teams… the first profile list can take a minute"}</div>`); return; }
-  const use = teamUse(), age = ago(Math.round(T.age_seconds)), L = ' style="text-align:left"';
-  const row = t => { const x = use?.[t.profile] ?? NO_USE, slugs = role => (t.repos ?? []).filter(r => r.role === role), sel = t.profile === SEL.teams ? ' class="sel"' : "";
-    if (t.load_error) return `<tr data-team="${esc(t.profile)}"${sel} style="cursor:pointer"><td colspan="8"><span class="tag bad">bad</span> <b>${esc(t.profile)}</b>: profile.conf did not load. Run <span class="mono">fxa-sandbox-ctl --pipeline ${esc(t.profile)} profile show</span></td></tr>`;
-    const used = use && x.n + x.usd > 0, money = v => !use ? "—" : used ? usd(v ?? 0) : "-";
-    return `<tr data-team="${esc(t.profile)}"${sel} style="cursor:pointer"><td><b>${esc(teamName(t))}</b>${t.read_only ? ` <span class="tag">read-only</span>` : ""}${x.live ? ` <span class="tag info">${x.live} live</span>` : ""}${teamLevel(t) ? ` <span class="tag ${teamLevel(t)}">${teamIssueCount(t)}</span>` : ""}</td>
-      <td>${!use ? "—" : used ? x.n : "-"}</td><td>${money(x.slack_usd)}</td><td>${money(x.pipe_usd)}</td><td${L}>${!use ? "—" : x.last ? ago(Math.round(Date.now() / 1000 - x.last)) : "-"}</td>
-      <td${L}>${[...slugs("work").map(r => esc(r.slug.split("/").pop()) + (t.read_only ? "" : repoTag(r))),
-        ...slugs("dep").map(r => `<span style="color:var(--faint)" title="${esc(r.slug)} runs beside the work repos, read-only: its changes do not ship">${esc(r.slug.split("/").pop())} <span class="tag">dep</span></span>`)].join(", ") || "-"}</td>
-      <td${L}>${esc(teamTools(t.mcp, true))}</td>
-      <td${L} title="${esc(teamAccess(t)[1])}">${t.profile !== "fxa" && !t.access ? `<span class="unknown">${teamAccess(t)[0]}</span>` : esc(teamAccess(t)[0])}</td></tr>`; };
-  const rows = teamRows();
-  put("s-teams", head("teams", ts.length, `<span title="the server rebuilds the list every ${Math.round((T.interval || 300) / 60)} min; Refresh does not re-run it">refreshed ${age}</span>`) +
-    (T.error ? `<p class="unknown">last refresh failed: ${esc(T.error)}; showing data from ${age}</p>` : "") +
-    (T.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("") +
-    (!ts.length ? `<div class="emptybox">No profiles/*/profile.conf found</div>` : !rows.length ? `<div class="emptybox">Nothing matches.</div>`
-      : `<div style="overflow-x:auto"><table class="usage"><thead><tr><th>Team</th><th title="Slack conversations in 30 days; a resumed thread counts once. Leaves out dry-run and dev sessions.">Conversations, 30d</th><th title="Slack sessions and quick answers, 30 days">Slack, 30d</th><th title="pipeline runs and passes, 30 days">Pipeline, 30d</th><th${L}>Last used</th><th${L} title="Work repos: a session can change them. A dep repo runs beside them, read-only.">Repos</th><th${L}>Tools</th><th${L}>Access</th></tr></thead>
-        <tbody>${rows.map(row).join("")}</tbody></table></div>`) +
-    (TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><button data-team-new>New team</button><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""));
-}
-function teamDetails(t) {
-  const p = esc(t.profile), conf = `profiles/${p}/profile.conf`;
-  const h = (title, key) => `<h4>${title}<span class="mono" style="font-weight:400;margin-left:var(--s2)">${key}</span></h4>`;
-  let out = `${closeBtn}<h2 class="rh">${esc(teamName(t))}<small>${p}</small></h2>${t.load_error ? "" : teamUsage(t)}<div>${h("Status", "computed")}${kvr("Config", t.load_error ? "did not load" : "loads")}
-    ${(t.issues ?? []).map(i => kvr(`<span class="tag ${esc(i.level)}">${esc(i.level)}</span>`, `${esc(i.text)} · <span class="mono">${esc(i.key)}</span>`)).join("")}</div>`;
-  if (t.load_error) return out + `<div><h4>Check it</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl --pipeline ${p} profile show</div></div>`;
-  const a = t.access, src = TEAMS?.access_source, repos = t.repos ?? [];
-  out += `<div>${h("Access", "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${t.profile === "fxa" || a?.open === "built-in" ? kvr("Who", "everyone (built into the bot)")
-      : !a ? `<p class="unknown" title="${esc(TEAMS?.access_error)}">access unknown (bot env not readable)</p>`
-      : kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`)
-        + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length)}
-    <p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}. The bot reads it when it starts, so an edit after its last restart is not live yet.` : ""}">Team rule; the global gates (ALLOWED_USERS, ALLOWED_CHANNELS, CHANNEL_GATES) also apply.</p></div>
-    <div>${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.map(r => kvr(`<span class="mono">${esc(r.slug)}</span>`, `${esc(r.role)}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${esc(r.why)}` : ""}`)).join("") || kvr("Repos", "none", 1)}
-      ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
-    <div>${h("Tools", `${conf} PIPE_MCP`)}${kvr("Connectors", esc(teamTools(t.mcp)))}</div>
-    <div>${h("Mode", `${conf} PIPE_PR_OPEN`)}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>`;
-  const rts = routinesGroup(t, Date.now() / 1000);
-  return TAB === "routines" ? out.replace("</h2>", m => m + rts) + teamEditor(t.profile, t.access?.record) : out + rts + teamEditor(t.profile, t.access?.record);
-}
 // A team's use in 30 days, and the two places that show its sessions and its spend.
 function teamUsage(t) {
   const use = teamUse(), u = use?.[t.profile] ?? NO_USE, p = esc(t.profile), tp = STATS?.team_passes?.[t.profile];
@@ -1511,6 +1493,110 @@ function teamUsage(t) {
   return `<div><h4 title="Leaves out dry-run and dev sessions">Usage, 30 days</h4>${use ? kvr("Conversations", u.n) + (u.live ? kvr("Live", u.live) : "") + (u.runs ? kvr("Pipeline runs", u.runs) : "") + (tp ? kvr("Passes, 7 days", `${tp.passes} · ${tp.work} with work`) : "")
       + kvr("Cost", `${usd(u.usd)} <span class="na">· Slack ${usd(u.slack_usd ?? 0)} · pipeline ${usd(u.pipe_usd ?? 0)}</span>`) + kvr("Last used", lastUsed(u)) : kvr("Sessions", "—", 1)}
     <div class="acts2" style="margin-top:var(--s2)"><a class="tile" style="padding:6px 12px" href="#sessions/${tab}" data-team-sess="${p}">Its sessions</a><a class="tile" style="padding:6px 12px" href="#stats/spend" data-team-stats="${p}">Its spend in Stats</a></div></div>`;
+}
+
+// ── Teams (epic i275): a list at the left, All teams or the selected team in main, with Overview, Routines
+// and Settings tabs. Routine facts come only from the admin routes; a non-admin sees none (i168 D1).
+const TEAM_RE = /^[a-z][a-z0-9-]{1,30}$/;
+let TTAB = "overview", RTSUM = null, RTSUM_ERR = "";
+const TTABS = [["overview", "Overview"], ["routines", "Routines"], ["settings", "Settings"]];
+// #teams, #teams/<team>, #teams/<team>/routines|settings. The raw segment is used as it is, never decoded;
+// the old forms (#teams/routines/<team> in Slack History links, #teams/all) are replaced, so Back does not loop.
+function teamRoute(sub, sel) {
+  if (sub === "routines" && TEAM_RE.test(sel ?? "")) return { replace: `#teams/${sel}/routines` };
+  if (sub === "all" || sub === "routines") return { replace: "#teams" };
+  return { sel: !sub ? "__all" : sub === "new" ? "__new" : sub, tab: ["routines", "settings"].includes(sel) ? sel : "overview" };
+}
+const rtSum = p => TEAM_ADMIN?.admin ? RTSUM?.teams?.[p] ?? null : null;
+// A team needs attention for a bad or warn issue, or (admins) a failed routine that is not paused.
+const teamNeeds = t => !!(teamLevel(t) || rtSum(t.profile)?.failed);
+function teamReason(t) {
+  const i = (t.issues ?? []).find(x => x.level === "bad") ?? (t.issues ?? []).find(x => x.level === "warn"), r = rtSum(t.profile);
+  return [i?.text, r?.routines ? `${r.routines} routine${r.routines === 1 ? "" : "s"}` : "", r?.failed ? `${r.failed} failed` : ""].filter(Boolean).join(" · ");
+}
+function teamItem(t, use) {
+  if (t.load_error) return { id: t.profile, d: "bad", t: t.profile, m: ["profile.conf did not load"] };
+  const x = use?.[t.profile] ?? NO_USE;
+  return { id: t.profile, d: teamNeeds(t) ? (teamLevel(t) || "warn") : x.live ? "live" : "ok", t: teamName(t),
+    m: teamNeeds(t) ? [teamReason(t)] : [teamAccess(t)[0], t.read_only ? "read-only" : "", use ? usd(x.usd) : "", use ? (x.last ? ago(Math.round(Date.now() / 1000 - x.last)) : "never used") : ""] };
+}
+// Per team: open errors through their sessions, and PRs in 7 days from the run rows.
+function teamErrs() {
+  if (!ERRS) return null;
+  const prof = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s.profile || "fxa"])), out = {};
+  ERRS.filter(e => e.status !== "resolved").forEach(e => { const ps = new Set((e.keys ?? []).map(k => prof.get(k)).filter(Boolean)); ps.forEach(p => { out[p] = (out[p] ?? 0) + 1; }); });
+  return out;
+}
+function teamWeek() {
+  if (!STATS?.rows) return null;
+  const cut = Date.now() / 1000 - 7 * 86400, out = {};
+  STATS.rows.forEach(r => { const t = r.t0 ?? Date.parse(r.at) / 1000; if (!(t >= cut)) return; const x = out[r.profile || "fxa"] ??= { runs: 0, prs: new Set() }; x.runs++; if (r.pr) x.prs.add(r.pr); });
+  return out;
+}
+function budgetCell(t) {
+  return t.budget_error ? `<span class="unknown">budget unknown: the spend file cannot be read</span>` : !t.budget ? `<span class="na">budget unknown on this host</span>`
+  : t.budget.month_cap ? `<span class="num">${usd(t.budget.month_usd)} <span class="na">of ${usd(t.budget.month_cap)}</span></span><span class="tbar" role="img" aria-label="${Math.round(100 * t.budget.month_usd / t.budget.month_cap)}% of the budget"><i class="${t.budget.month_usd >= t.budget.month_cap ? "bad" : t.budget.month_usd >= 0.9 * t.budget.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * t.budget.month_usd / t.budget.month_cap))}%"></i></span>`
+  : `<span class="num">${usd(t.budget.month_usd)}</span> <span class="na">no cap</span>`;
+}
+function testCell(t) {
+  const x = t.test; if (!x || !x.result) return `<span class="na">${t.access?.record ? "never run" : "—"}</span>`;
+  return `<span class="tag ${x.result === "passed" ? "ok" : x.result === "failed" ? "bad" : "info"}">${esc(x.result)}${x.at ? ` ${ago(Math.round(Date.now() / 1000 - x.at))}` : ""}</span>`;
+}
+function allTeamsHtml() {
+  const ts = TEAMS?.teams ?? [], use = teamUse(), wk = teamWeek(), er = teamErrs(), ok = ts.filter(t => !t.load_error);
+  const live = use ? ok.reduce((n, t) => n + (use[t.profile]?.live ?? 0), 0) : null, runs = wk ? Object.values(wk).reduce((n, x) => n + x.runs, 0) : null, prs = wk ? Object.values(wk).reduce((n, x) => n + x.prs.size, 0) : null;
+  const bt = ok.filter(t => t.budget), spent = bt.reduce((n, t) => n + t.budget.month_usd, 0), caps = bt.reduce((n, t) => n + (t.budget.month_cap ?? 0), 0);
+  const needs = ts.filter(t => t.load_error || teamNeeds(t)).length, errs = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null, dash = v => v == null ? "—" : v;
+  const tile = (l, v, m, cls = "") => `<div class="ttile ${cls}"><div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div></div>`;
+  const row = t => { const x = use?.[t.profile], w = wk?.[t.profile], st = t.load_error ? ["bad", "did not load"] : t.access?.record && t.access.status !== "active" ? ["bad", t.access.status] : t.read_only ? ["", "read-only"] : ["ok", "active"];
+    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
+      <td><span class="tag ${st[0]}">${esc(st[1])}</span></td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
+      <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
+      <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
+  return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
+    ${TEAMS?.error ? `<p class="unknown">last refresh failed: ${esc(TEAMS.error)}; showing data from ${ago(Math.round(TEAMS.age_seconds))} ago</p>` : ""}
+    ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
+    <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
+      ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
+    <div class="tcard tscroll"><table class="ttable"><thead><tr><th>Team</th><th>Status</th><th>Active now</th><th>Last 7 days</th><th>Cost this month, of budget</th><th>Open errors</th><th>Last test</th></tr></thead>
+      <tbody>${ts.map(row).join("")}</tbody></table></div>
+    ${TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><a class="tile" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""}</div>`;
+}
+// The Settings sections: what the team gets, each with its config key in gray, then the record editor.
+function teamSettingsHtml(t) {
+  const p = esc(t.profile), conf = `profiles/${p}/profile.conf`, a = t.access, src = TEAMS?.access_source, repos = t.repos ?? [];
+  const h = (title, key) => `<h3>${title}<span class="tkey">${key}</span></h3>`;
+  return `<div class="tcard${(t.issues ?? []).some(i => i.text === "nobody can start it") ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record access" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${t.profile === "fxa" || a?.open === "built-in" ? kvr("Who", "everyone (built into the bot)")
+      : !a ? `<p class="unknown">access unknown (bot env not readable)</p>`
+      : kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`) + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length)}
+      <p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">Team rule; the global gates (ALLOWED_USERS, ALLOWED_CHANNELS, CHANNEL_GATES) also apply.</p></div>
+    <div class="tcard">${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.map(r => kvr(`<span class="mono">${esc(r.slug)}</span>`, `${esc(r.role)}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${esc(r.why)}` : ""}`)).join("") || kvr("Repos", "none", 1)}
+      ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
+    <div class="tcard">${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvr("Connectors", esc(teamTools(t.mcp)))}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>
+    <div class="tcard" id="t-record">${teamEditor(t.profile, t.access?.record)}</div>`;
+}
+function teamPageHtml(p) {
+  const t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null;
+  if (!t) return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${esc(p)}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
+  const r = rtSum(t.profile), base = `#teams/${esc(t.profile)}`, src = t.access?.record ? "team record" : `profiles/${esc(t.profile)}/profile.conf`;
+  const tabs = TTABS.map(([k, l]) => `<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${TTAB === k ? ' aria-current="page"' : ""}>${l}${k === "routines" && r ? `<span class="n">${r.routines}</span>${r.failed ? `<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`).join("");
+  const body = t.load_error ? `<div class="tcard"><p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${esc(t.profile)} profile show</span></p></div>`
+    : TTAB === "routines" ? (TEAM_ADMIN?.admin ? routinesGroup(t, Date.now() / 1000) : `<div class="tcard"><p>Only a team admin can see and change routines.</p></div>`)
+    : TTAB === "settings" ? teamSettingsHtml(t)
+    : `<div class="tcard">${(t.issues ?? []).length ? (t.issues ?? []).map(i => kvr(`<span class="tag ${esc(i.level)}">${esc(i.level)}</span>`, esc(i.text))).join("") : kvr("Status", "no issues")}</div><div class="tcard">${teamUsage(t)}</div>`;
+  return `<div class="tpage"><div class="thead"><div><h2 class="th" id="team-h" tabindex="-1">${esc(teamName(t))} <span class="tag ${teamLevel(t) || "ok"}">${esc(teamAccess(t)[0])}</span></h2>
+      <div class="tkey">${esc(t.profile)} · ${src}</div></div></div>
+    <nav class="ttabs" aria-label="Team">${tabs}</nav>${body}</div>`;
+}
+// A poll must not wipe an edit in progress: the record JSON, a secret value, or a routine form someone changed.
+const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val], #t-access input") || !!RT.form?.dirty;
+function renderTeams() {
+  const T = TEAMS;
+  if (!T || T.age_seconds == null) { put("s-teams", `<div class="emptybox">${T?.error ? esc(T.error) : "loading teams… the first profile list can take a minute"}</div>`); return; }
+  const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
+  if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
+  if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
+  rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
 }
 
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
@@ -2595,7 +2681,7 @@ const VIEWS = [
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
   ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
   ["runners", "Sandboxes", "Slots, sandboxes and what they cost", []],
-  ["teams", "Teams", "Which teams exist, what each gets, who can start one, and use", [["all", "All teams"], ["routines", "Routines"]]],
+  ["teams", "Teams", "Which teams exist, what each gets, who can start one, and how each is doing", []],
 ];
 // The Sessions list's person filter ("mine"), kept per browser.
 let SOWNER = ""; try { SOWNER = localStorage.getItem("sowner") || ""; } catch {}
@@ -2608,12 +2694,18 @@ const ICO_SIDE = '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4
 
 function route() {
   const [v, sub, sel] = location.hash.slice(1).split("/");
+  if (v === "teams") {
+    const r = teamRoute(sub, sel);
+    if (r.replace) return location.replace(r.replace);
+    if (r.sel !== SEL.teams) TED = null;
+    SEL.teams = r.sel; TTAB = r.tab;
+  }
   const def = VIEWS.find(x => x[0] === v) || VIEWS[0], view = def[0], tabs = def[3];
   if (view !== VIEW) { Q = ""; CUR = -1; }
   const VIEW_PREV = VIEW;
   TAB = tabs.some(t => t[0] === sub) ? sub : view === VIEW && tabs.some(t => t[0] === TAB) ? TAB : tabs[0]?.[0] ?? "";
   VIEW = view;
-  if (sel) SEL[view] = decodeURIComponent(sel);
+  if (sel && view !== "teams") SEL[view] = decodeURIComponent(sel);
   if (view === "sessions") { SESS_AUTO = !tabs.some(t => t[0] === sub) && view !== VIEW_PREV; SESS_TAB = TAB; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(SEL.sessions ?? "") ? SEL.sessions : ""; }
   if (view === "stats") STATS_TAB = TAB;
   if (view === "errors") ERRS_ALL = TAB === "all";
@@ -2631,7 +2723,7 @@ function route() {
   if (view === "errors") renderErrors();
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
-  if (view === "teams") renderTeams();
+  if (view === "teams") { renderTeams(); if (sub) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
   renderSide(); renderRight();
   document.getElementById("main").scrollTop = 0;
@@ -2640,6 +2732,11 @@ function route() {
   if (view === "pipeline" && TAB === "board" && sel) { if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright"); document.querySelector("#right .rh")?.focus(); }
 }
 window.addEventListener("hashchange", route);
+document.addEventListener("keydown", e => {
+  if (VIEW !== "teams" || !KEYS || !TEAM_RE.test(SEL.teams ?? "") || !["h", "l"].includes(e.key) || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  const i = TTABS.findIndex(x => x[0] === TTAB), n = TTABS[(i + (e.key === "l" ? 1 : TTABS.length - 1)) % TTABS.length][0];
+  location.hash = `teams/${SEL.teams}${n === "overview" ? "" : "/" + n}`;
+});
 
 function panelState() {
   const b = document.body.classList;
@@ -2659,8 +2756,8 @@ function renderHeader() {
   document.getElementById("vtitle").textContent = def[1];
   document.getElementById("vsub").textContent = def[2];
   const sideLbl = VIEW === "stats" ? "Filters" : "List";
-  document.getElementById("vacts").innerHTML = (["overview", "pipeline", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
-    + (["overview", "stats"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") || (VIEW === "runners" && !(AGENTS?.instances ?? []).length) ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
+  document.getElementById("vacts").innerHTML = (VIEW === "teams" ? `<button type="button" class="iconbtn lbl tlist-btn" id="tlist" aria-expanded="${!document.body.classList.contains("tlist-closed")}" aria-controls="side">${svgI(ICO_SIDE)}List</button>` : "") + (["overview", "pipeline", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
+    + (["overview", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") || (VIEW === "runners" && !(AGENTS?.instances ?? []).length) ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
   const tabs = document.getElementById("vtabs");
   tabs.hidden = !def[3].length;
   tabs.setAttribute("aria-label", `${def[1]} tabs`);
@@ -2688,9 +2785,10 @@ function sideGroups() {
         return { id: v.name, d: "live", t: s ? convTitle(s) : TICKET.test(k.toUpperCase()) ? k.toUpperCase() : v.name, m: [v.where === "firecracker" ? "Firecracker" : "GCE", s ? "Slack" : "pipeline", short(v.age_seconds)] }; }) }].filter(g => g.items.length);
   }
   if (VIEW === "teams") {
-    const use = teamUse(), rows = teamRows();
-    return [{ group: "Needs attention", items: rows.filter(t => teamLevel(t)).map(t => teamItem(t, use)) },
-      { group: "Teams", items: rows.filter(t => !teamLevel(t)).map(t => teamItem(t, use)) }].filter(g => g.items.length);
+    const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
+    const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
+    return [{ group: "", items: Q ? [] : [all] }, { group: "Needs attention", items: rows.filter(t => t.load_error || teamNeeds(t)).map(t => teamItem(t, use)) },
+      { group: "Teams", items: rows.filter(t => !t.load_error && !teamNeeds(t)).map(t => teamItem(t, use)) }].filter(g => g.items.length);
   }
   return [];
 }
@@ -2762,7 +2860,7 @@ function sessionDetails(s) {
 }
 function renderRight() {
   const el = document.getElementById("right"); let html = "";
-  if (["errors", "lessons", "runners", "teams"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
+  if (["errors", "lessons", "runners"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
   if (VIEW === "pipeline" && !SEL.pipeline && (SEL.pipeline = TAB === "board" ? boardItems().find(i => i.column !== "review")?.key : (TAB === "done" ? doneRows() : laneRows())[0]?.t.key)) { renderBoard(); renderLanes(); renderDone(); }
   if (VIEW === "sessions") { const s = currentSession(); if (s) html = sessionDetails(s); }
   else if (VIEW === "pipeline") {
@@ -2785,13 +2883,7 @@ function renderRight() {
     if (v) { const s = (AGENTS?.sessions ?? []).find(x => x.key === v.name.replace(/^agent-/, ""));
       html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${kvr("Up for", short(v.age_seconds))}${v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : ""}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
         ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : kvr("Session", "pipeline run")}</div>`; } }
-  else if (VIEW === "teams") {
-    if (document.activeElement?.matches?.(".team-json, [data-secret-val]")) return;   // a refresh must not wipe an edit in progress
-    if (SEL.teams === "__new") html = `${closeBtn}<h2 class="rh">New team<small>a team record</small></h2>` + teamEditor("__new", true);
-    else { const t = (TEAMS?.teams ?? []).find(x => x.profile === SEL.teams);
-      if (rtKeepForm(el, t)) return;
-      if (t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
-      if (t) html = teamDetails(t); } }
+  else if (VIEW === "teams") { renderTeams(); return; }
   const out = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
   // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.
   if (VIEW === "pipeline" && el.dataset.h === out) return;
@@ -2809,6 +2901,11 @@ function toggle(which) {
 }
 function select(id) {
   if (VIEW === "sessions") { location.hash = `sessions/${SESS_TAB}/${id}`; }
+  else if (VIEW === "teams") {
+    location.hash = id === "__all" ? "teams" : `teams/${id}`;
+    if (matchMedia("(max-width:900px)").matches) { document.body.classList.add("tlist-closed"); renderHeader(); }
+    return;
+  }
   else {
     SEL[VIEW] = id; renderSide(); renderRight();
     if (VIEW === "teams") renderTeams();
@@ -2827,6 +2924,7 @@ function openHelp(on) {
 document.addEventListener("click", e => {
   const it = e.target.closest?.(".si, [data-team]"); if (it) { select(it.dataset.id ?? it.dataset.team); return; }
   if (e.target.closest?.("#tside")) toggle("side");
+  if (e.target.closest?.("#tlist")) { document.body.classList.toggle("tlist-closed"); renderHeader(); }
   if (e.target.closest?.("#tright")) toggle("right");
   if (e.target.closest?.("#rclose")) { document.body.classList.remove("showright"); renderHeader(); }
   if (e.target.closest?.("#helpbtn")) openHelp(true);
@@ -2879,7 +2977,7 @@ async function poll() {
   render();
   HIST_OPEN.forEach(loadHist);
   loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin();
-  if (VIEW === "teams" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && renderRight());
+  if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }

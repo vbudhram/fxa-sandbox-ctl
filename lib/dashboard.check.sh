@@ -108,13 +108,37 @@ globalThis.TEAM_ADMIN = { admin: true, user: "admin@example.com" };
   t("routines: each row button has an aria-label that names the routine", btns.length >= 5 && btns.every(b => /aria-label="[^"]* UX review"/.test(b)), true); }
 t("routines: History is stacked blocks at max-width 640px", /@media \(max-width:640px\) \{\s*table\.rt-hist thead \{ display: none; \}/.test(require("fs").readFileSync(process.argv[2], "utf8")), true);
 { globalThis.teamUsage = () => ""; globalThis.teamEditor = () => ""; globalThis.closeBtn = ""; globalThis.teamName = x => x.label || x.profile; globalThis.repoShip = () => ["ok", "", ""];
-  globalThis.teamTools = () => "none"; globalThis.TEAMS = { teams: [] }; globalThis.TEAM_ADMIN = { admin: true };
-  const team = { profile: "fxa", repos: [], issues: [] }, p = "echo $1 and $$HOME $& $` $\u0027 done";
+  globalThis.teamTools = () => "none"; globalThis.TEAMS = { teams: [{ profile: "fxa", repos: [], issues: [] }] }; globalThis.TEAM_ADMIN = { admin: true };
+  const p = "echo $1 and $$HOME $& $` $\u0027 done";
   RT = { team: "fxa", list: [], tpls: [], form: { d: { ...rtDraft(), prompt: p }, errs: {}, dirty: true } };
-  for (const tab of ["routines", "all"]) { TAB = tab; const h = teamDetails(team);
-    t(`routines (${tab} tab): a prompt with $ patterns renders unchanged`, h.includes(`>${esc(p)}</textarea>`), true); }
-  TAB = "routines"; const h = teamDetails(team);
-  t("routines: the Routines tab puts the group first in the panel", h.indexOf("data-routines") < h.indexOf("<h4>Access"), true); }
+  TTAB = "routines"; const h = teamPageHtml("fxa");
+  t("routines (Routines tab): a prompt with $ patterns renders unchanged", h.includes(`>${esc(p)}</textarea>`), true);
+  t("routines: the Routines tab holds the routines group", h.includes("data-routines"), true);
+  globalThis.TEAM_ADMIN = { admin: false }; t("routines: a viewer who is not an admin sees no routines", /Only a team admin can see and change routines/.test(teamPageHtml("fxa")) && !teamPageHtml("fxa").includes("data-routines"), true);
+  globalThis.TEAM_ADMIN = { admin: true }; TTAB = "overview"; RT = { team: null }; }
+// The Teams page (epic i275 slice 4): URLs, the side list, the badge, All teams and the team heading.
+t("teams route: the new forms", JSON.stringify([teamRoute(undefined), teamRoute("fxa"), teamRoute("fxa", "routines"), teamRoute("fxa", "settings"), teamRoute("new")].map(r => `${r.sel}/${r.tab}`)),
+  JSON.stringify(["__all/overview", "fxa/overview", "fxa/routines", "fxa/settings", "__new/overview"]));
+t("teams route: old links are replaced", `${teamRoute("routines", "fxa").replace}|${teamRoute("all").replace}|${teamRoute("routines", "../x").replace}`, "#teams/fxa/routines|#teams|#teams");
+t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "%E0");
+{ globalThis.TEAMS = { teams: [{ profile: "fxa", label: "FxA", repos: [], issues: [], access: { open: "built-in" } }, { profile: "ent", label: "Entitlements", repos: [], issues: [{ level: "warn", text: "nobody can start it" }], access: { record: true, status: "disabled" } },
+    { profile: "crew", label: "Crew <img src=x>", repos: [], issues: [], access: { open: true } }] };
+  RTSUM = { teams: { crew: { routines: 3, failed: 1, paused: 0 }, ent: { routines: 4, failed: 0, paused: 1 } } };
+  globalThis.TEAM_ADMIN = { admin: true };
+  t("teams: a failed routine puts a team in Needs attention for an admin", `${teamNeeds(TEAMS.teams[2])}|${teamReason(TEAMS.teams[2])}`, "true|3 routines · 1 failed");
+  t("teams: the reason leads with the issue", teamReason(TEAMS.teams[1]), "nobody can start it · 4 routines");
+  t("teams: the badge is warn for a failed routine", teamBadge([TEAMS.teams[0], TEAMS.teams[2]]), " warn");
+  globalThis.TEAM_ADMIN = { admin: false };
+  t("teams: a viewer who is not an admin gets no routine facts", `${teamNeeds(TEAMS.teams[2])}|${teamReason(TEAMS.teams[1])}|${teamBadge([TEAMS.teams[2]])}`, "false|nobody can start it|");
+  globalThis.TEAM_ADMIN = { admin: true };
+  globalThis.ERRS = null; globalThis.STATS = null; const all = allTeamsHtml();
+  t("all teams: four tiles and one row per team, names escaped", `${(all.match(/class="ttile[ "]/g) || []).length}|${(all.match(/<tr><td>/g) || []).length}|${/<img src=x>/.test(all)}`, "4|3|false");
+  t("all teams: an unknown feed shows a dash, never a zero", /Active now<\/div><div class="tv">— /.test(all), true);
+  TTAB = "overview"; const pg = teamPageHtml("ent");
+  t("team page: a heading to focus, the source, and three tab links", `${/<h2 class="th" id="team-h" tabindex="-1">Entitlements/.test(pg)}|${(pg.match(/class="ttab"/g) || []).length}|${/href="#teams\/ent\/routines"/.test(pg)}`, "true|3|true");
+  t("team page: the current tab has aria-current", /href="#teams\/ent" aria-current="page">Overview/.test(pg), true);
+  t("team page: an unknown team says so, escaped", /No team &lt;b&gt;/.test(teamPageHtml("<b>")), true);
+  globalThis.TEAMS = { teams: [] }; RTSUM = null; }
 // A hung await would end node with code 0 and no FAIL line: the guard keeps the loop alive and fails.
 setTimeout(() => { console.log("FAIL the async checks did not finish"); process.exit(1); }, 10000);
 (async () => {
@@ -192,8 +216,8 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
       ...["run", "stop", "pause", "resume", "delete"].map(a => `/api/teams/fxa/routines/6/${a} application/json {}`)].join("\n"));
     t("routines: the first Delete click only asks", armed, 6);
     t("routines: a branch goes with one repo, and the channel link stays for the server to read", `${rtRoutine(d).branch}|${rtRoutine({ ...d, repos: ["a", "b"] }).branch}|${rtRoutine(d).channel}`, "main|undefined|https://x.slack.com/archives/C0123ABCD"); }
-  { const teams = VIEWS.find(v => v[0] === "teams"), [v, sub, sel] = "teams/routines/sync-storage".split("/");
-    t("routines: #teams/routines/<team> names the Routines tab and the team", `${v === teams[0]}|${teams[3].some(x => x[0] === sub)}|${sel}`, "true|true|sync-storage"); }
+  { const [, sub, sel] = "teams/routines/sync-storage".split("/");
+    t("routines: an old #teams/routines/<team> History link opens the team Routines tab", teamRoute(sub, sel).replace, "#teams/sync-storage/routines"); }
   process.exit(fail);
 })();
 t("agents: a null launchcap says slots unknown, not null", `${agentsMore(false, { launchcap: null })}|${agentsMore(false, null)}|${agentsMore(false, { launchcap: 2 })}`, "slots unknown|slots unknown|2 more may launch");
@@ -286,4 +310,4 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
     globalThis.AGENTS = { launchcap: 3, runners: [], sessions: [] }; globalThis.STATE = { age_seconds: 30, interval: 120, agents_age_seconds: 10, agents_interval: 30 };
     t("gate: 1 launch left in the budget says up to 1, and tags 1", `${/Up to 1 can launch/.test(gateLine(now).text)}|${(boardHtml().match(/>next pass</g) || []).length}`, "true|1"); }
   t("board: the Board tab is off, and Pipeline opens on Belts", VIEWS.find(v => v[0] === "pipeline")[3].map(x => x[0]).join(","), "belts,queue,done"); }
-' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessRoutine = /p; /^const sessRoutineLink = /p; /^const teamName = /p; /^const teamLabel = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p; /^const kvr = /p; /^const stamp = /p; /^const usd = /p; /^let RT = /p; /^const RT_/p; /^function rtDraft(/,/^}/p; /^function rtRoutine(/,/^}/p; /^function rtErrs(/,/^}/p; /^const rtWhen = /p; /^const rtSched = /p; /^function rtState(/,/^}/p; /^function rtLast(/,/^}/p; /^function rtHist(/,/^}/p; /^function rtRow(/,/^}/p; /^function routineListHtml(/,/^}/p; /^function routineForm(/,/^}/p; /^function routinesGroup(/,/^}/p; /^function teamDetails(t) {/,/^}/p; /^const kvr = /p; /^let TAB/p; /^async function loadRoutines(/,/^}/p; /^async function rtDo(/,/^}/p; /^function rtKeepForm(/,/^}/p; /^function rtFocus(/,/^}/p; /^const rtSay = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const VIEWS = \[/,/^\];/p' "$page"; sed -n '/^const agentsMore = /p; /^const KEY_RE = /p; /^const NEXT_STEP = {/,/^};/p; /^const KIND_LABEL = {/,/fault: "fault" }/p; /^const skipKindOf = /p; /^const boardAge = /p; /^const secsSince = /p; /^function classify(i) {/,/^}/p; /^function boardItems() {/,/^}/p; /^function gateLine(/,/^}/p; /^const needMeta = /p; /^const boardAct = /p; /^function boardState(col) {/,/^}/p; /^function boardRow(i) {/,/^}/p; /^function boardHtml() {/,/^}/p; /^function boardDetails(i) {/,/^}/p; /^function tabCount(t) {/,/^}/p; /^const JIRA = /p; /^const ago = /,/^const short = /p' "$page")" "$page"
+' "$(sed -n '/^const esc = /p; /^const days = /p; /^const plainMd = /p; /^const queueWaits = /p; /^function ownerName(s) {/,/^}/p; /^const sessTabOf = /p; /^const sessRoutine = /p; /^const sessRoutineLink = /p; /^const teamName = /p; /^const teamLabel = /p; /^const sessLink = /p; /^const convTitle = /p; /^const sessSummary = /p; /^function outcomeHtml(s) {/,/^}/p; /^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p; /^function firstLine(t) {/,/^}/p; /^function sessDay(c) {/,/^}/p; /^let STAT_USD/p; /^function sessUsd(s) {/,/^}/p; /^function slackText(t) {/,/^}/p; /^const ageOf = /p; /^function convPr(s) {/,/^}/p; /^const NEED_KIND = /p; /^function needCounts() {/,/^}/p; /^function skipGroups(ks) {/,/^}/p; /^const inRange = /p; /^function teamUse() {/,/^}/p; /^function llmWeek(days) {/,/^}/p; /^function sessHeads(ss) {/,/^}/p; /^function chainOf(s, ss) {/,/^}/p; /^const kvr = /p; /^const stamp = /p; /^const usd = /p; /^let RT = /p; /^const RT_/p; /^function rtDraft(/,/^}/p; /^function rtRoutine(/,/^}/p; /^function rtErrs(/,/^}/p; /^const rtWhen = /p; /^const rtSched = /p; /^function rtState(/,/^}/p; /^function rtLast(/,/^}/p; /^function rtHist(/,/^}/p; /^function rtRow(/,/^}/p; /^function routineListHtml(/,/^}/p; /^function routineForm(/,/^}/p; /^function routinesGroup(/,/^}/p; /^function teamDetails(t) {/,/^}/p; /^const kvr = /p; /^let TAB/p; /^async function loadRoutines(/,/^}/p; /^async function rtDo(/,/^}/p; /^function rtKeepForm(/,/^}/p; /^function rtFocus(/,/^}/p; /^const rtSay = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const VIEWS = \[/,/^\];/p' "$page"; sed -n '/^const agentsMore = /p; /^const KEY_RE = /p; /^const TEAM_RE = /p; /^let TTAB = /p; /^const TTABS = /p; /^function teamRoute(/,/^}/p; /^const rtSum = /p; /^const teamNeeds = /p; /^function teamReason(/,/^}/p; /^function teamItem(/,/^}/p; /^function teamErrs(/,/^}/p; /^function teamWeek(/,/^}/p; /^function budgetCell(t) {/,/^}/p; /^function testCell(t) {/,/^}/p; /^function allTeamsHtml(/,/^}/p; /^function teamSettingsHtml(/,/^}/p; /^function teamPageHtml(/,/^}/p; /^const teamLevel = /p; /^const teamBadge = /p; /^const teamAccess = /,/;$/p; /^const NEXT_STEP = {/,/^};/p; /^const KIND_LABEL = {/,/fault: "fault" }/p; /^const skipKindOf = /p; /^const boardAge = /p; /^const secsSince = /p; /^function classify(i) {/,/^}/p; /^function boardItems() {/,/^}/p; /^function gateLine(/,/^}/p; /^const needMeta = /p; /^const boardAct = /p; /^function boardState(col) {/,/^}/p; /^function boardRow(i) {/,/^}/p; /^function boardHtml() {/,/^}/p; /^function boardDetails(i) {/,/^}/p; /^function tabCount(t) {/,/^}/p; /^const JIRA = /p; /^const ago = /,/^const short = /p' "$page")" "$page"
