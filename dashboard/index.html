@@ -1549,7 +1549,12 @@ function budgetCell(t) {
   : `<span class="num">${usd(t.budget.month_usd)}</span> <span class="na">no cap</span>`;
 }
 function testCell(t) {
-  const x = t.test; if (!x || !x.result) return `<span class="na">${t.access?.record ? "never run" : "—"}</span>`;
+  const x = t.test;
+  if (!x) return `<span class="na">—</span>`;
+  // No final line to show (Activate wrote a newer generation, or there is no log): tested says what passed.
+  if (!x.result) return x.tested != null && x.tested === x.generation ? `<span class="tag ok">passed at generation ${esc(x.tested)}</span>`
+    : x.tested != null ? `<span class="na">last passed at generation ${esc(x.tested)}</span>`
+    : `<span class="na">${t.access?.record && t.access.status !== "active" ? "not tested at this generation" : "never tested"}</span>`;
   return `<span class="tag ${x.result === "passed" ? "ok" : x.result === "failed" ? "bad" : "info"}">${esc(x.result)}${x.at ? ` ${ago(Math.round(Date.now() / 1000 - x.at))}` : ""}</span>`;
 }
 function allTeamsHtml() {
@@ -1627,7 +1632,7 @@ function teamOverview(t) {
     : b ? `<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? ` <span class="tm">of ${usd(b.month_cap)}</span>` : ` <span class="tm">no cap</span>`}</div>${b.month_cap ? `<span class="tbar"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}`
     : `<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
   const split = use ? `<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
-  const test = t.test?.result ? testCell(t) : `<span class="na">${t.access?.record ? "never run" : "no record to test"}</span>`;
+  const test = t.access?.record || t.test ? testCell(t) : `<span class="na">no record to test</span>`;
   const tested = (t.issues ?? []).find(i => /^last passed at generation/.test(i.text));
   const tab = (() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })();
   return teamBanner(t) + `<div class="tcards4">
@@ -1651,7 +1656,7 @@ function teamAccessCard(t) {
   if (t.profile === "fxa" || a?.open === "built-in") return kvr("Who", "everyone (built into the bot)");
   if (!a) return `<p class="unknown">access unknown (bot env not readable)</p>`;
   const rows = kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`) + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length);
-  if (!a.record) return rows + `<p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
+  if (!a.record) return rows + `<p class="empty" title="${src ? `From the bot ${esc(src.file)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
   if (!adm) return rows + `<p class="empty">A team admin adds users. Ask the operator.</p>`;
   if (TED?.name !== t.profile) return rows + `<p class="empty">loading the record…</p>`;
   if (!TED.ok || !TED.rec) return rows + `<p class="unknown">The record did not load: ${esc(TED.msg || "no answer")}</p><div class="acts2"><button data-team-load="${esc(t.profile)}">Load the record</button></div>`;
@@ -1715,6 +1720,10 @@ function renderTeams() {
       .catch(() => { TEAM_LOADING = ""; TED = { name: t.profile, ok: false, msg: "the dashboard did not answer" }; renderTeams(); });
   }
   if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
+  // Test and activate: once the record is in the card, the focus goes to Test (before any other focus rule).
+  if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) {
+    put("s-teams", teamPageHtml(id)); TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); return;
+  }
   // A repaint keeps the keyboard focus on the same heading, tab link, link or button (the routines list has its own).
   const a = document.activeElement, inMain = a && a !== document.body && el?.contains(a) && !a.closest?.("[data-routines]");
   const key = !inMain ? "" : a.id ? `#${CSS.escape(a.id)}` : a.matches("a[href]") ? `a[href="${CSS.escape(a.getAttribute("href"))}"]`
@@ -1722,8 +1731,6 @@ function renderTeams() {
   if (key && !put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id))) return;
   if (key) { el.querySelector(key)?.focus({ preventScroll: true }); return; }
   rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
-  // Test and activate: once the record is in the card, the focus goes to Test.
-  if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) { TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); }
 }
 
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
@@ -2888,7 +2895,7 @@ function route() {
   if (view === "errors") renderErrors();
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
-  if (view === "teams") { renderTeams(); if (sub) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
+  if (view === "teams") { renderTeams(); if (sub && !(TACT === SEL.teams && TTAB === "settings")) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderBoard(); renderLanes(); renderDone(); }
   renderSide(); renderRight();
   document.getElementById("main").scrollTop = 0;

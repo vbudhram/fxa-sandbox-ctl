@@ -186,6 +186,10 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
     const solo = { profile: "solo", repos: [], issues: [{ level: "info", text: "spend cannot be read" }], access: { open: true } };
     t("teams: unreadable spend with routines needs attention, with the reason and a warn badge", `${teamNeeds(solo)}|${teamReason(solo)}|${teamBadge([solo])}`, "true|routines are skipped: the team\u0027s spend cannot be read · 1 routine| warn");
     RTSUM = null; t("teams: without routines it stays under Teams", `${teamNeeds(solo)}|${teamBadge([solo])}`, "false|"); }
+  t("last test: a pass at the current generation with no log", testCell({ access: { record: true, status: "active" }, test: { result: null, tested: 14, generation: 14 } }), "\u003cspan class=\"tag ok\">passed at generation 14\u003c/span>");
+  t("last test: a pass at an older generation", /last passed at generation 12/.test(testCell({ access: { record: true, status: "active" }, test: { result: null, tested: 12, generation: 13 } })), true);
+  t("last test: a draft with no pass", /not tested at this generation/.test(testCell({ access: { record: true, status: "draft" }, test: { result: null, tested: null, generation: 2 } })), true);
+  t("last test: never says never run", /never run/.test([12, null].map(x => testCell({ access: { record: true, status: "active" }, test: { result: null, tested: x, generation: 13 } })).join("")), false);
   globalThis.TEAMS = { teams: [] }; RTSUM = null; }
 // A hung await would end node with code 0 and no FAIL line: the guard keeps the loop alive and fails.
 setTimeout(() => { console.log("FAIL the async checks did not finish"); process.exit(1); }, 10000);
