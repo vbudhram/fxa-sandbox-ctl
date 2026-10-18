@@ -167,6 +167,10 @@ printf '#!/bin/bash\n[ "$3" = stop ] && exit 1; exit 0\n' > "$tmp/sd2"; mkdir -p
 out="$( (set -euo pipefail; SCRIPT_DIR="$tmp/sd2d"; _session_try_wait() { _TRY_LAST=turn_end; return 0; }; _session_sh() { echo "ok   x"; }; worktree_branch_for() { echo "$1"; }; teams_test ts1) 2>&1)"
 check "a failed stop still prints the result, says so, and records the pass" "1|1|7" \
   "$(grep -c 'the stop of agent-tst.* failed' <<< "$out")|$(grep -c 'passed: team ts1' <<< "$out")|$(cat "$FXA_TEAMS_DIR/ts1.tested" 2>/dev/null)"
+# A runner that does not start ends with the final line, so the dashboard shows failed, not never run.
+mkdir -p "$tmp/sdf"; printf '#!/bin/bash\nexit 1\n' > "$tmp/sdf/fxa-sandbox-ctl"; chmod +x "$tmp/sdf/fxa-sandbox-ctl"
+out="$( (SCRIPT_DIR="$tmp/sdf"; teams_test ts1; echo "rc=$?") 2>&1)"
+check "a runner that does not start ends with the failed final line" "failed: team ts1 stays as it is|rc=1" "$(tail -2 <<< "$out" | paste -sd'|' -)"
 rm -f "$FXA_TEAMS_DIR/ts1.gen" "$FXA_TEAMS_DIR/ts1.tested"
 out="$( (set -euo pipefail; SCRIPT_DIR="$tmp/sd"; teams_test ts1) 2>&1)"
 check "a team with no generation is refused before a runner boots" "1|0" "$(grep -c 'no generation for team ts1' <<< "$out")|$(grep -c 'booting' <<< "$out")"

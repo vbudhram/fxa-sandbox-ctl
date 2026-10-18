@@ -291,7 +291,7 @@ teams_test() {
   # A team with a stack gets it started, so the probe's stack check has something to find.
   local stack=""; stack="$( (pipeline_load "$name" >/dev/null 2>&1 && [ -n "${PIPE_STACK_DIR:-}" ] && echo 1) || true)"
   if ! FXA_SESSION_STACK="$stack" "$ctl" --backend gce --pipeline "$name" task --source slack --id "$key" --owner U-DRYRUN --prompt-file "$f" >/dev/null 2>&1; then
-    rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; return 1
+    rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; echo "failed: team ${name} stays as it is"; return 1
   fi
   rm -f "$f"
   if FXA_TRY_TURN_SECONDS="${FXA_TEAMS_TEST_SECONDS:-1200}" _session_try_wait "$ctl" "$key" && [ "${_TRY_LAST:-}" != error ]; then
