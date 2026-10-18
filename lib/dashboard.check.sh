@@ -246,6 +246,12 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belts: an agent that exited with no handoff needs a person, and is not counted as working", `${gx.working.map(r => r.t.key).join(",")}|${gx.needs.some(r => r.t.key === "FXA-20")}|${gx.needs.length === boardAct(boardItems())}|${/1 agent works now/.test(beltsHtml(gx))}`, "FXA-21|true|true|true");
   load(); SNAP.review = null; const gr = beltGroups(); SNAP.done_fetch_failed = true; const gj = beltGroups();
   t("belts: a null review list names GitHub, or Jira when the done read failed", `${gr.unknown.review}|${gj.unknown.review}`, "unknown, GitHub fetch failed|unknown, Jira fetch failed");
+  load(); SNAP.inflight_fetch_failed = true; SNAP.inflight_prs_failed = true; const gf = beltGroups();
+  t("belts: a failed in-flight Jira read names Jira", `${gf.unknown.fixes}|${gf.unknown.review}`, "unknown, Jira fetch failed|unknown, Jira fetch failed");
+  load(); AGENTS.sessions[0].state = "paused"; const so = beltGroups().outside.find(r => r.t.slack), sd = beltDetails(so);
+  t("belt details: a Slack belt opens its session on the session's own tab", `${/class="main"[^>]*href="#sessions\/paused\/agent-abc123"/.test(sd)}|${/#sessions\/stopped\//.test(sd)}`, "true|false");
+  load(); SNAP.review = null; SNAP.done_fetch_failed = true; const gn = beltGroups(), hn = beltsHtml(gn);
+  t("belts: with no review list, a pipeline PR is never called outside the pipeline", `${gn.outside.map(r => r.t.key).join(",")}|${/not in the pipeline/.test(hn)}|${/state unknown/.test(hn)}`, "agent-abc123|false|true");
   SEL.pipeline = ""; globalThis.BAD_LINK = true; t("a bad pipeline link says so and echoes nothing", /That link names no ticket\./.test(beltsHtml(beltGroups())), true); globalThis.BAD_LINK = false;
   load(); SNAP.inflight = []; SNAP.review = []; SNAP.blocked = []; SNAP.queue.skipped = []; SNAP.queue.ready = []; SNAP.open_prs = []; AGENTS.runners = []; AGENTS.sessions = [];
   const ge = beltGroups(), he = beltsHtml(ge);

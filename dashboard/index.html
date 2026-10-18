@@ -2400,7 +2400,9 @@ function laneRows() {
   (SNAP?.open_prs ?? []).filter(p => p.key && !rows.some(r => r.t.key === p.key)).forEach(p => {
     const blocked = (SNAP?.blocked ?? []).some(b => b.key === p.key), d = Math.round(days(p.created) ?? 0);
     const l1 = blocked ? "Blocked: needs a person" : (SNAP?.inflight ?? []).some(i => i.key === p.key) ? "In flight: no agent running" : "Not in the pipeline";
-    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d, outside: l1 === "Not in the pipeline" });
+    rows.push({ t: { key: p.key, pr: p.number, summary: p.title }, st: blocked ? 7 : 5, kind: blocked ? "warn" : "wait", l1, l2: `${d}d open`, age: d,
+      // A PR is outside the pipeline only when every feed that could claim its key was read.
+      outside: l1 === "Not in the pipeline" && SNAP.review != null && SNAP.blocked != null && !SNAP.inflight_fetch_failed });
   });
   // Open PRs that no ticket owns: a Slack session opened them from its branch (agent-xxxxxx).
   const ss = AGENTS?.sessions ?? [];
@@ -2423,7 +2425,7 @@ function laneTitle(raw) {
 function openPrCounts() {
   const s = SNAP, open = s?.open_prs;
   if (!s || open == null) return null;
-  const stateOf = k => !k ? "Slack or by hand" : (s.review ?? []).some(r => r.key === k) ? "awaiting review"
+  const stateOf = k => !k ? "Slack or by hand" : s.review == null ? "state unknown" : s.review.some(r => r.key === k) ? "awaiting review"
     : (s.inflight ?? []).some(r => r.key === k) ? "in flight" : (s.blocked ?? []).some(r => r.key === k) ? "blocked" : "not in the pipeline";
   const n = {}; open.forEach(p => { const k = stateOf(p.key); n[k] = (n[k] ?? 0) + 1; });
   return { total: open.length, parts: Object.entries(n).map(([k, c]) => `${c} ${k}`).join(" · ") || "none" };
@@ -2493,7 +2495,8 @@ function beltDetails(r) {
   const review = !t.pr ? blk("Review: none yet", p("A reviewer gets it after CI passes."))
     : blk(`Review: ${esc(rv || "none yet")}`, p(t.last_human_review ? `${esc(t.last_human_review.login)} reviewed ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : `no human review${(t.reviewers ?? []).length ? ` · requested ${esc(t.reviewers.map(x => x.replace(/^mozilla\//, "")).join(", "))}` : ""}`));
   const runs = blk(`Agent runs: ${k ? esc(k.runs) : STATS ? "none" : "…"}`, p(k ? [`${esc(k.turns)} turns`, `${esc(k.median_min)} min`, usd(k.cost), `${esc(k.files)} files`].join(" · ") : STATS ? "not in the run log: a run records only when it reaches handoff" : "loading…"));
-  const sess = t.sess ? sessHref(t.sess.key) : "";
+  // The session's own tab: the Sessions view shows a key only on the tab of its state.
+  const sess = t.sess && sessHref(t.sess.key) ? `#sessions/${sessTabOf(t.sess)}/${t.sess.key}` : "";
   const [label, href] = t.slack ? ["Open the session", sess] : t.agent_alive ? ["Watch the agent", ""] : t.fail > 0 && pr ? ["Open the failing check", `${pr}/checks`]
     : r.group === "needs" && i.column === "blocked" && jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)]
     : pr ? ["Open the PR", pr] : jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)] : ["", ""];
