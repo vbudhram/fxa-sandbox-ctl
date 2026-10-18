@@ -395,11 +395,20 @@ _pipeline_skip_fingerprint() {
 #   Record an admission skip. Print "comment" the first time or when the ticket
 #   changed, else "silent <n>" (passes that skipped it), so a skip gets one
 #   comment, not one per pass. Keep the hash: a comment count misses edits.
+# _pipeline_one_line <text...>   One clean line for a state file: escape sequences and other control
+# characters go, tabs and newlines become one space, and it is cut at 300 characters.
+_pipeline_one_line() {
+  printf '%s' "$*" | LC_ALL=C sed $'s/\x1b\\[[0-9;?]*[ -/]*[@-~]//g; s/\x1b[@-_]//g' | tr '\t\n\r' '   ' \
+    | LC_ALL=C tr -d '\000-\037\177' | tr -s ' ' | cut -c1-300
+}
+
 pipeline_skip() {
   pipeline_require || return 1
-  local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: skip needs <KEY>" >&2; return 1; }
+  local key; key="$(printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]')"
+  # The key names a state file: refuse anything that is not a ticket key before a path is built.
+  [[ "$key" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || { echo "ERROR: skip needs a ticket key (FXA-1234), not '${1:-}'" >&2; return 1; }
   shift || true
-  local reason="$*"
+  local reason; reason="$(_pipeline_one_line "$*")"
   local f="${PIPE_STATE_DIR}/${key}.skipped"
   rm -f "${PIPE_STATE_DIR}/${key}.held"  # a plain skip replaces a hold; pipeline_hold writes it again after
   local fp; fp="$(_pipeline_skip_fingerprint "$key")"
