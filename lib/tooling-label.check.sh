@@ -165,4 +165,16 @@ removed="$(grep -o -- '--remove-labels [^ ]*' "$tmp/acli" | cut -d' ' -f2)"
 check "label inflight -> done removes ai-fixme-inflight" 1 "$(tr ',' '\n' <<< "$removed" | grep -cx ai-fixme-inflight)"
 check "label inflight -> done keeps ai-fixme-allow-tooling" 0 "$(tr ',' '\n' <<< "$removed" | grep -cx ai-fixme-allow-tooling)"
 
+# The 24 h budget refuses a launch, with the ledger read by the real pipeline_launches_24h.
+mkdir -p "$tmp/budget"; for n in 1 2 3; do echo "$(date +%s) FXA-$n s" >> "$tmp/budget/launches.log"; done
+plh="$(sed -n '/^pipeline_launches_24h() {/,/^}/p' "$here/pipeline.sh")"
+out="$(bash -c '
+  set -euo pipefail
+  source "$2/cmd_launch.sh"; eval "$3"
+  PIPE_STATE_DIR="$1/budget" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$1" PIPE_MIN_FREE_GB=1 PIPE_MAX_LAUNCHES_PER_DAY=3
+  _launch_slot_for() { echo s; }; pipeline_free_gb() { echo 99; }; pipeline_holding_new() { return 1; }; jira_tooling_approver() { :; }
+  pipeline_launch_log() { echo "$PIPE_STATE_DIR/x.log"; }; worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
+  cmd_launch FXA-7 s' _ "$tmp" "$tmp" "$plh" 2>&1; echo "rc=$?")"
+check "a full 24 h budget refuses the launch with the budget text" "1|rc=1" "$(grep -c 'refusing to launch FXA-7: 3 launches in 24 h, budget 3' <<< "$out")|$(tail -1 <<< "$out")"
+
 exit "$fail"
