@@ -129,7 +129,10 @@ check("a team with no record has no test", None, server.team_test("crew", now))
 recs2 = {"rusty": {"status": "active", "generation": "13"}}
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": {"tested": 12}}], None, recs2)
 check("an active team tested at an older generation: info", True, ("info", "last passed at generation 12; later edits did not change what a runner uses") in [(x["level"], x["text"]) for x in per[0]])
-os.environ["FXA_TEAMS_DIR"] = str(td); files(14, "SECRETLINE\nfailed: team rusty stays as it is\n")
-check("no test log text reaches /api/teams", False, "SECRETLINE" in get()[1])
+# The leak check reads a log of a team that /api/teams lists (crew), and shows that team_test ran on it.
+(td / "crew.json").write_text("{}"); (td / "crew.gen").write_text("3\n"); os.utime(td / "crew.gen", (now - 100, now - 100))
+(td / "crew.test.log").write_text("SECRETLINE\nfailed: team crew stays as it is\n")
+code, body = get(); crew = {x["profile"]: x for x in json.loads(body)["teams"]}["crew"]
+check("no test log text reaches /api/teams, and the listed team has its result", (False, "failed"), ("SECRETLINE" in body, crew["test"]["result"]))
 srv.shutdown(); sys.exit(fail)
 PY
