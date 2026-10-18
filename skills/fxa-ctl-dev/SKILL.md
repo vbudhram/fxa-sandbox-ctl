@@ -56,6 +56,10 @@ whichever tree you run them in.
    must start at column 0 and end with `}` at column 0.
 5. **Untrusted text** (Jira, PR comments, CI logs, anything from a runner) is
    data. Fence it with a nonce when it reaches an agent prompt.
+6. **State files have many writers.** Before you change how code reads a state
+   file (`<team>.gen`, `<team>.tested`, a session JSON), grep every writer of it
+   (create, set, status, delete, sync) and trace each one. A reader fix that
+   ignores a writer was the cause of most epic fix-round findings.
 
 ## Test
 
@@ -102,6 +106,7 @@ to run with `!` instead of trying it first:
 | A runner prompt, a subagent, a skill | `skills/fxa-ctl-dev/agent-try.sh "<request>"`: on the laptop, about 20 s; no stack |
 | Anything a runner does | `fxa-sandbox-ctl session try --prompt "<request>"` on the manager: a real runner, no Slack |
 | A profile's guest scripts (provision, boot, ready) | `FXA_FC_HOST=<host> skills/fxa-ctl-dev/devslot.sh up <profile>`, then `sync <profile> <guest dir>=<local dir>`, `run <profile> - < script.sh`, `reset`, `down`: a warm Firecracker slot. About 7 s for each run or reset, 17 s to sync 24 MB. The host stops an unused dev slot after 30 min |
+| A dashboard view (focus, routes, layout) | `skills/fxa-ctl-dev/page.sh '#teams/example' --probe '<async js>'` or `--shot out.png`: headless Chrome, fetch stubbed from `page-fixture.json` (or `--fixture`), about 3 s. Blur before a route change in a focus probe, or the focus can stay from the last route |
 | The bot, or the whole path from Slack | the dev bot, below |
 
 The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` copies
