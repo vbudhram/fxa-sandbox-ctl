@@ -277,6 +277,10 @@
   .tbud { min-width:180px; } .tbar { display:block; height:6px; border-radius:3px; background:var(--sunk); margin-top:4px; overflow:hidden; } .tbar i { display:block; height:100%; background:var(--ok); } .tbar i.warn { background:var(--warn); } .tbar i.bad { background:var(--bad); }
   #s-teams.wide { background:none; border:0; box-shadow:none; padding:0; }
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
+  .tlink { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .tlink:hover { text-decoration:underline; }
+  .ttable tr.sel td { background:var(--infobg); }
+  .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
+  .rtshow button[aria-pressed="true"], .tsw[aria-pressed="true"] { color:var(--link); border-color:var(--link); background:var(--infobg); }
   .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
   .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
@@ -1656,6 +1660,7 @@ function renderTeams() {
   const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
   if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
+  if (TTAB === "routines") setTimeout(rtEnsureHist);
   rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
 }
 
@@ -1735,7 +1740,23 @@ function rtRow(r) {
     ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last, d))}
     <div class="acts2" style="margin-top:var(--s1)">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
       ${r.live ? b("stop", "Stop run") : ""}${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}${b("hist", RT.hist?.[r.id] ? "Hide history" : "History")}</div>
-    ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : ""}</div>`;
+    ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : RT.histErr?.[r.id] ? `<p class="unknown">Runs did not load: ${esc(RT.histErr[r.id])} <button data-rt-act="hist" data-rt-id="${r.id}">Retry</button></p>` : RT.histLoading === r.id ? `<p class="empty">loading runs…</p>` : ""}</div>`;
+}
+// The routine the Routines tab opens on: the one picked, else the one with the newest ended run, else the
+// first failed, else the first. Its runs load at once.
+function rtSelected(L) {
+  const sum = RTSUM?.routines ?? {}, end = r => sum[r.id]?.last_end ?? r.last?.ended_at ?? 0;
+  return L.find(r => r.id === RT.sel) ?? [...L].sort((a, b) => end(b) - end(a)).find(r => end(r) > 0) ?? L.find(r => rtFailed(r)) ?? L[0];
+}
+const rtFailed = r => !!RTSUM?.routines?.[r.id]?.failed || ["failed", "missed"].includes(r.last?.state);
+async function rtLoadHist(team, id) {
+  if (RT.hist?.[id] || RT.histLoading === id) return;
+  RT.histLoading = id; delete (RT.histErr ??= {})[id];
+  const r = await fetch(`/api/teams/${encodeURIComponent(team)}/routines/${id}/history`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+  if (RT.team !== team) return;
+  RT.histLoading = null;
+  if (r?.ok && Array.isArray(j)) (RT.hist ??= {})[id] = j; else RT.histErr[id] = j?.error || "the dashboard did not answer";
+  rtPaint();
 }
 // The part a poll repaints, also while a dirty form is open.
 function routineListHtml(t, now) {
@@ -1743,7 +1764,19 @@ function routineListHtml(t, now) {
   const L = RT.list ?? [], tick = L.some(r => r.tick == null) ? null : Math.min(...L.map(r => r.tick)), age = tick == null ? null : Math.max(0, Math.round(now - tick));
   const stale = L.length && (age == null || age > RT_STALE_S)
     ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
-  return `<div data-routine-list>${stale}${L.length ? L.map(rtRow).join("") : `<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p>`}</div>`;
+  if (!L.length) return `<div data-routine-list>${stale}<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p></div>`;
+  const sum = RTSUM?.routines ?? {}, show = RT.show || "all", rows = L.filter(r => show === "all" || (show === "failed" ? rtFailed(r) : !!r.paused)), sel = rtSelected(L);
+  const tr = r => { const d = r.data;
+    return `<tr${r.id === sel?.id ? ' class="sel"' : ""}><td><button type="button" class="tlink" data-rt-sel="${r.id}">${esc(d.name)}</button><div class="na">${esc(d.template || "")}</div></td>
+      <td>${esc(rtSched(d))}<div class="na">${esc(d.zone)}</div></td><td>${esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1])}</td>
+      <td>${d.channel ? `<span class="mono">${esc(d.channel)}</span>` : `<span class="na">History only</span>`}</td><td>${r.live ? rtState(r) : rtLast(r.last, d)}</td>
+      <td>${r.paused ? `<span class="na">paused</span>` : esc((r.next ?? []).slice(0, 1).map(x => rtWhen(x, d.zone)).join("") || "none")}</td>
+      <td class="num">${sum[r.id] ? usd(sum[r.id].cost_30d) : "—"}</td>
+      <td><button type="button" class="tsw" data-rt-act="${r.paused ? "resume" : "pause"}" data-rt-id="${r.id}" aria-pressed="${!r.paused}" aria-label="Routine ${esc(d.name)} on"${RT.busy === r.id ? " disabled" : ""}>${r.paused ? "Off" : "On"}</button></td></tr>`; };
+  return `<div data-routine-list>${stale}<div class="rtshow" role="group" aria-label="Show">Show ${["all", "failed", "paused"].map(k => `<button type="button" data-rt-show="${k}" aria-pressed="${show === k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
+    <div class="tscroll"><table class="ttable"><thead><tr><th>Name</th><th>Schedule</th><th>Mode</th><th>Channel</th><th>Last run</th><th>Next run</th><th>Cost, 30 days</th><th>On</th></tr></thead>
+      <tbody>${rows.map(tr).join("") || `<tr><td colspan="8" class="na">No ${show} routines.</td></tr>`}</tbody></table></div>
+    ${sel ? `${RT.sel ? "" : `<p class="na">Showing the routine that ran last. Select a row to see another.</p>`}<div class="tcard">${rtRow(sel)}</div>` : ""}</div>`;
 }
 function routineForm(t) {
   const f = RT.form, d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
@@ -1785,7 +1818,13 @@ function rtKeepForm(el, t) {
   return true;
 }
 // Repaint only the Routines group, so the rest of the panel stays.
+// The selected routine's runs load once its row shows (not while the page renders, so a render stays pure).
+function rtEnsureHist() {
+  const L = RT.list ?? [], sel = TTAB === "routines" && L.length ? rtSelected(L) : null;
+  if (sel && RT.team && !RT.hist?.[sel.id] && !RT.histErr?.[sel.id]) rtLoadHist(RT.team, sel.id);
+}
 function rtPaint() {
+  setTimeout(rtEnsureHist);
   const t = (TEAMS?.teams ?? []).find(x => x.profile === RT.team), el = document.querySelector("[data-routines]");
   if (t && el) rtFocus(() => { el.outerHTML = routinesGroup(t, Date.now() / 1000); }); else renderRight();
 }
@@ -1840,6 +1879,7 @@ async function rtDo(act, id) {
   if (act === "edit") { RT.form = { id: r0.id, version: r0.version, d: rtDraft(r0.data), errs: {} }; RT.msg = ""; return rtPaint(); }
   if (act === "hist") {
     if (RT.hist?.[id]) { delete RT.hist[id]; return rtPaint(); }
+    if (RT.histErr?.[id]) { delete RT.histErr[id]; return rtLoadHist(team, Number(id)); }
     const r = await fetch(`${base}/${id}/history`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
     if (!r?.ok) return rtSay(j?.error || "the dashboard did not answer", false);
     (RT.hist ??= {})[id] = j; return rtPaint();
@@ -1855,6 +1895,9 @@ async function rtDo(act, id) {
   rtSay(r?.ok ? (act === "run" ? `Queued. It starts when a runner is free, within 60 min, and the result goes to ${r0.data.channel || "History only"}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
 }
 document.addEventListener("click", e => {
+  const pick = e.target.closest?.("[data-routines] [data-rt-sel]"), show = e.target.closest?.("[data-routines] [data-rt-show]");
+  if (pick) { RT.sel = Number(pick.dataset.rtSel); return rtPaint(); }
+  if (show) { RT.show = show.dataset.rtShow; return rtPaint(); }
   const b = e.target.closest?.("[data-routines] :is([data-rt-new], [data-rt-cancel], [data-rt-save], [data-rt-act])"); if (!b || b.disabled) return;
   rtDo(b.dataset.rtAct ?? (b.hasAttribute("data-rt-new") ? "new" : b.hasAttribute("data-rt-cancel") ? "cancel" : "save"), b.dataset.rtId);
 });
