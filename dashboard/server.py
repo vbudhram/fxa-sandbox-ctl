@@ -753,6 +753,19 @@ class Handler(BaseHTTPRequestHandler):
             user = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time()))
             self._json(200, {"user": user, "admin": bool(user and user in team_admins())})
             return
+        # Each team's routine counts and failures for the Teams page: admins only (i168 D1). A store that
+        # cannot be read is an error, never an empty summary that would read as "no routines".
+        if path == "/api/routines/summary":
+            if self._admin("GET", path):
+                try:
+                    con = fxadb.connect(readonly=True)
+                    try:
+                        self._json(200, fxadb.routine_summary(con, int(time.time())))
+                    finally:
+                        con.close()
+                except Exception:  # noqa: BLE001  a fixed text: the error may name a path
+                    self._json(503, {"error": "the routine store cannot be read"})
+            return
         # Routines: admins only, for reading too (the design's D1).
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})/history)?", path)
         if m or path == "/api/routine-templates":

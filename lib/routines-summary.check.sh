@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Offline check of /api/routines/summary for the Teams page: admins only, counts that leave a paused
+# routine out of its team, a fixed 503 when the store cannot be read, and no prompt, report or channel.
+#   bash lib/routines-summary.check.sh
+set -u
+command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+here="$(cd "$(dirname "$0")" && pwd)"
+export FXA_DB="$tmp/fxa.db"; source "$here/config.sh"; source "$here/db.sh"; db_init >/dev/null
+now=$(date +%s); old=$((now - 40 * 86400))
+d() { printf '{"name":"%s","prompt":"SECRET-PROMPT","channel":"C0SECRET"}' "$1"; }
+sqlite3 "$FXA_DB" "
+INSERT INTO routines (id, team, data, paused) VALUES (1,'fxa','$(d A)',0),(2,'fxa','$(d B)',0),(3,'fxa','$(d C)',0),(4,'fxa','$(d D)',0),(5,'fxa','$(d E)',1),(6,'crew','$(d F)',0);
+INSERT INTO routine_runs (routine_id, period, state, reason, session, cost_usd, report, ended_at) VALUES
+ (1,'p1','report',NULL,'agent-a1',0.5,'SECRET-REPORT',$((now-3600))),
+ (2,'p1','ok',NULL,'agent-b0',1.0,NULL,$((now-7200))),(2,'p2','failed','the turn stopped','agent-b1',0.25,NULL,$((now-600))),
+ (3,'p1','failed','x','agent-c1',0.1,NULL,$((now-9000))),(3,'p2','ok',NULL,'agent-c2',0.2,NULL,$((now-60))),
+ (5,'p1','missed','the tick did not run',NULL,NULL,NULL,$((now-100))),
+ (6,'p0','ok',NULL,'agent-f0',9.0,NULL,$old);
+INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES (4,'p1','started','agent-d1',$((now-30)));"
+printf k1 > "$tmp/hmac"
+FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com" python3 - "$here/../dashboard" "$tmp" <<'PY'
+import hashlib, hmac, json, os, sys, threading, time, urllib.error, urllib.request
+sys.path.insert(0, sys.argv[1]); import server, fxadb
+from http.server import ThreadingHTTPServer
+tmp = sys.argv[2]
+srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+fail = 0
+def check(name, want, got):
+    global fail
+    print(("ok   " if want == got else "FAIL ") + name + ("" if want == got else f": want {want!r} got {got!r}")); fail |= want != got
+def sig(user, path):
+    ts = str(int(time.time()))
+    return {"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(b"k1", f"{user}|{ts}|GET|{path}".encode(), hashlib.sha256).hexdigest()}
+def get(headers=None):
+    req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/routines/summary", headers={"Host": "localhost", **(headers or {})})
+    try:
+        with urllib.request.urlopen(req) as r: return r.status, r.read().decode()
+    except urllib.error.HTTPError as e: return e.code, e.read().decode()
+P = "/api/routines/summary"
+check("no signed user: 401", 401, get()[0])
+check("a signed user who is not a team admin: 403", 403, get(sig("other@example.com", P))[0])
+code, body = get(sig("admin@example.com", P)); s = json.loads(body); t = s["teams"]["fxa"]
+check("an admin gets the summary", 200, code)
+check("the team counts routines, paused, live and failed (a paused failed routine is left out)", (5, 1, 1, 1), (t["routines"], t["paused"], t["live"], t["failed"]))
+check("the last failed run is B's newest", ("B", "the turn stopped", "agent-b1"), (t["last_failed"]["name"], t["last_failed"]["reason"], t["last_failed"]["session"]))
+check("a routine whose newest run is ok is not failed; the paused one stays failed for itself", (False, True, False), (s["routines"]["3"]["failed"], s["routines"]["5"]["failed"], s["routines"]["1"]["failed"]))
+check("runs and cost count the last 30 days only", (0, 0.0), (s["routines"]["6"]["runs_30d"], s["routines"]["6"]["cost_30d"]))
+check("the 30-day team cost", 2.05, t["cost_30d"])
+check("no prompt, report or channel in the body", (False, False, False), ("SECRET-PROMPT" in body, "SECRET-REPORT" in body, "C0SECRET" in body))
+fxadb.PATH = f"{tmp}/missing/fxa.db"
+code, body = get(sig("admin@example.com", P))
+check("a store that cannot be read: 503 with a fixed text, no path", (503, "the routine store cannot be read", False), (code, json.loads(body)["error"], "missing" in body))
+srv.shutdown(); sys.exit(fail)
+PY

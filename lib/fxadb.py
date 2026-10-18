@@ -47,6 +47,45 @@ def rows(con, sql, params=()):
     return [dict(r) for r in con.execute(sql, params)]
 
 
+def routine_summary(con, now):
+    """For the Teams page (admins only): per team and per routine, the 30-day runs and cost, and whether
+    the routine failed (its newest ended run is failed or missed). A paused routine stays failed for
+    itself, but is left out of its team's failed count and last failed run. No prompt, report or channel."""
+    since = now - 30 * 86400
+    rts = rows(con, "SELECT id, team, paused, json_extract(data, '$.name') AS name FROM routines")
+    ended = rows(con, """SELECT r.routine_id AS rid, r.state, r.reason, r.session, coalesce(r.ended_at, r.started_at, 0) AS at, r.cost_usd
+        FROM routine_runs r WHERE r.state NOT IN ('queued', 'claimed', 'started') ORDER BY at, r.id""")
+    live = {r["routine_id"] for r in rows(con, "SELECT DISTINCT routine_id FROM routine_runs WHERE state IN ('queued', 'claimed', 'started')")}
+    per, teams = {}, {}
+    for r in rts:
+        per[r["id"]] = {"runs_30d": 0, "cost_30d": 0.0, "failed": False, "last_end": None}
+    last = {}
+    for x in ended:
+        p = per.get(x["rid"])
+        if p is None:
+            continue
+        last[x["rid"]] = x
+        p["last_end"] = x["at"] or None
+        if x["at"] >= since:
+            p["runs_30d"] += 1
+            p["cost_30d"] += x["cost_usd"] or 0.0
+    for r in rts:
+        p, x = per[r["id"]], last.get(r["id"])
+        p["failed"] = bool(x and x["state"] in ("failed", "missed"))
+        p["cost_30d"] = round(p["cost_30d"], 4)
+        t = teams.setdefault(r["team"], {"routines": 0, "paused": 0, "failed": 0, "live": 0, "last_failed": None, "runs_30d": 0, "cost_30d": 0.0})
+        t["routines"] += 1
+        t["paused"] += 1 if r["paused"] else 0
+        t["live"] += 1 if r["id"] in live else 0
+        t["runs_30d"] += p["runs_30d"]
+        t["cost_30d"] = round(t["cost_30d"] + p["cost_30d"], 4)
+        if p["failed"] and not r["paused"]:
+            t["failed"] += 1
+            if not t["last_failed"] or x["at"] > t["last_failed"]["at"]:
+                t["last_failed"] = {"id": r["id"], "name": r["name"], "at": x["at"], "reason": x["reason"], "session": x["session"]}
+    return {"teams": teams, "routines": {str(k): v for k, v in per.items()}}
+
+
 def import_files(con, files):
     """Rebuild log tables from their files, one transaction: the files are complete
     (each writer appends to its file first), so the table matches them exactly.
