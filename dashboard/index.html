@@ -1399,7 +1399,7 @@ async function teamRecord(n) {
   const sr = await fetch(`/api/teams/${encodeURIComponent(n)}/secrets`, { cache: "no-store" }).catch(() => null);
   const secrets = sr?.ok ? await sr.json().catch(() => ({})) : {};
   const { generation, tested, test_log, ...rec } = j;
-  return { name: n, text: JSON.stringify(rec, null, 2), gen: generation, tested, testLog: test_log, secrets, msg: "", ok: true };
+  return { name: n, rec, text: JSON.stringify(rec, null, 2), gen: generation, tested, testLog: test_log, secrets, msg: "", ok: true };
 }
 document.addEventListener("input", e => { if (TED && e.target.classList?.contains("team-json")) TED.text = e.target.value; });
 document.addEventListener("click", async e => {
@@ -1468,7 +1468,7 @@ document.addEventListener("click", e => {
 });
 const teamLevel = t => ["bad", "warn"].find(l => (t.issues ?? []).some(i => i.level === l));
 // The rail badge: bad for a bad issue, warn for a warn issue or (admins) a failed routine that is not paused.
-const teamBadge = ts => ts.some(t => t.load_error || teamLevel(t) === "bad") ? " bad" : ts.some(t => teamLevel(t) === "warn" || rtSum(t.profile)?.failed) ? " warn" : "";
+const teamBadge = ts => ts.some(t => t.load_error || teamLevel(t) === "bad") ? " bad" : ts.some(t => teamLevel(t) === "warn" || rtSum(t.profile)?.failed || spendSkip(t)) ? " warn" : "";
 // The table names how many need a look; the right panel holds the texts, so a row stays one line.
 const teamMatch = (t, q) => !q || [t.profile, t.label, ...(t.repos ?? []).map(r => r.slug), ...(t.mcp ?? []), ...(t.access?.jira ?? [])].join(" ").toLowerCase().includes(q);
 const teamRows = () => (TEAMS?.teams ?? []).filter(t => teamMatch(t, Q.trim().toLowerCase())).sort((a, b) => !!teamLevel(b) - !!teamLevel(a) || teamName(a).localeCompare(teamName(b)));
@@ -1515,10 +1515,12 @@ function teamRoute(sub, sel) {
 }
 const rtSum = p => TEAM_ADMIN?.admin ? RTSUM?.teams?.[p] ?? null : null;
 // A team needs attention for a bad or warn issue, or (admins) a failed routine that is not paused.
-const teamNeeds = t => !!(teamLevel(t) || rtSum(t.profile)?.failed);
+// Routines are skipped when the team's spend cannot be read (fail closed): for an admin that needs attention.
+const spendSkip = t => !!(rtSum(t.profile)?.routines && (t.issues ?? []).some(i => i.text === "spend cannot be read"));
+const teamNeeds = t => !!(teamLevel(t) || rtSum(t.profile)?.failed || spendSkip(t));
 function teamReason(t) {
   const i = (t.issues ?? []).find(x => x.level === "bad") ?? (t.issues ?? []).find(x => x.level === "warn"), r = rtSum(t.profile);
-  return [i?.text, r?.routines ? `${r.routines} routine${r.routines === 1 ? "" : "s"}` : "", r?.failed ? `${r.failed} failed` : ""].filter(Boolean).join(" · ");
+  return [i?.text ?? (spendSkip(t) ? "routines are skipped: the team's spend cannot be read" : ""), r?.routines ? `${r.routines} routine${r.routines === 1 ? "" : "s"}` : "", r?.failed ? `${r.failed} failed` : ""].filter(Boolean).join(" · ");
 }
 function teamItem(t, use) {
   if (t.load_error) return { id: t.profile, d: "bad", t: t.profile, m: ["profile.conf did not load"] };
@@ -1650,7 +1652,7 @@ function teamAccessCard(t) {
   if (!a.record) return rows + `<p class="empty" title="${src ? `From ${esc(src.path)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
   if (!adm) return rows + `<p class="empty">A team admin adds users. Ask the operator.</p>`;
   if (TED?.name !== t.profile) return rows + `<p class="empty">loading the record…</p>`;
-  let rec; try { rec = JSON.parse(TED.text); } catch { return rows + `<p class="unknown">The record in the editor below is not JSON; fix it there.</p>`; }
+  const rec = TED.rec ?? {};   // the record as loaded, not the editor's unsaved text
   const d = ACCESS_DRAFT?.team === t.profile ? ACCESS_DRAFT : { team: t.profile, users: (rec.access?.users ?? []).join(", "), channels: (rec.access?.channels ?? []).join(", "), open: !!rec.access?.open };
   return `<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${esc(d.users)}" autocomplete="off">
     <label for="t-channels">Channels <span class="na">Slack channel IDs</span></label><input id="t-channels" data-acc="channels" value="${esc(d.channels)}" autocomplete="off">
@@ -1667,14 +1669,16 @@ document.addEventListener("change", e => { if (e.target.dataset?.acc === "open")
 // Save access: the kept record and generation, so an edit someone else saved meanwhile is refused (409), not lost.
 async function accessSave(team) {
   if (ACCESS_DRAFT?.busy || TED?.name !== team) return;
-  let rec; try { rec = JSON.parse(TED.text); } catch { return; }
+  // The record as loaded, with only access replaced: unsaved text in the record editor is not posted.
+  const rec = structuredClone(TED.rec ?? {});
   const d = ACCESS_DRAFT?.team === team ? ACCESS_DRAFT : { users: (rec.access?.users ?? []).join(","), channels: (rec.access?.channels ?? []).join(","), open: !!rec.access?.open };
   rec.access = { ...(rec.access ?? {}), users: accessList(d.users), channels: accessList(d.channels), open: !!d.open };
   ACCESS_DRAFT = { ...d, team, busy: true, msg: "saving…" }; renderTeams();
   const r = await fetch(`/api/teams/${encodeURIComponent(team)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ record: rec, generation: TED.gen }) }).catch(() => null);
   const j = await r?.json().catch(() => ({})) ?? {};
   if (!r?.ok) { ACCESS_DRAFT = { ...ACCESS_DRAFT, busy: false, ok: false, msg: r?.status === 409 ? "Someone changed this team after you loaded it. Load it again and redo your edit." : j.error || "the dashboard did not answer" }; return renderTeams(); }
-  TED = await teamRecord(team); ACCESS_DRAFT = { team, users: (JSON.parse(TED.text).access?.users ?? []).join(", "), channels: (JSON.parse(TED.text).access?.channels ?? []).join(", "), open: !!JSON.parse(TED.text).access?.open, busy: false, ok: true, msg: `saved: generation ${TED.gen}` };
+  TED = await teamRecord(team); const ac = TED.rec?.access ?? {};
+  ACCESS_DRAFT = { team, users: (ac.users ?? []).join(", "), channels: (ac.channels ?? []).join(", "), open: !!ac.open, busy: false, ok: true, msg: `saved: generation ${TED.gen}` };
   await loadTeams(); renderTeams();
 }
 document.addEventListener("click", e => {
@@ -1707,6 +1711,12 @@ function renderTeams() {
     TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; ACCESS_DRAFT = null; renderTeams(); } });
   }
   if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
+  // A repaint keeps the keyboard focus on the same heading, tab link, link or button (the routines list has its own).
+  const a = document.activeElement, inMain = a && a !== document.body && el?.contains(a) && !a.closest?.("[data-routines]");
+  const key = !inMain ? "" : a.id ? `#${CSS.escape(a.id)}` : a.matches("a[href]") ? `a[href="${CSS.escape(a.getAttribute("href"))}"]`
+    : ["data-tact", "data-acc-save", "data-team-load", "data-rt-sel"].map(n => a.hasAttribute(n) ? `[${n}="${CSS.escape(a.getAttribute(n))}"]` : "").find(Boolean) ?? "";
+  if (key && !put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id))) return;
+  if (key) { el.querySelector(key)?.focus({ preventScroll: true }); return; }
   rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
   // Test and activate: once the record is in the card, the focus goes to Test.
   if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) { TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); }
