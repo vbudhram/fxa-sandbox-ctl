@@ -117,7 +117,7 @@ export FXA_TEAM_ACTOR=admin@example.com FXA_BOT_ENV="$tmp/bot.env"
 jq -cn --argjson b "$base" '$b + {prompt: "SECRET-PROMPT-TEXT review"}' > "$tmp/new.json"
 check "an admin creates a routine" "created routine 1" "$(routine_set secret "$tmp/new.json" 2>&1)"
 check "the list has it, active, with its next three run times" "1|0|3" "$(routine_list secret | jq -r '.[0] | "\(.id)|\(.paused)|\(.next | length)"')"
-check "a routine with no run has no live run, no last result and no tick" "null|null|null" "$(routine_list secret | jq -r '.[0] | "\(.live)|\(.last)|\(.tick)"')"
+check "a routine with no run has no live run, no last result and no tick" "true|true|true|null|null|null" "$(routine_list secret | jq -r '.[0] | "\(has("live"))|\(has("last"))|\(has("tick"))|\(.live)|\(.last)|\(.tick)"')"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-01', 'failed', 'no runner free'), (1, '2026-10-02', 'ok', NULL);
   INSERT INTO routine_runs (routine_id, period, state, session) VALUES (1, '2026-10-03', 'started', 'agent-ab12');
   INSERT INTO routine_runs (routine_id, period, state, reason) VALUES (1, '2026-10-04', 'skipped', 'a run of this routine is still live');
