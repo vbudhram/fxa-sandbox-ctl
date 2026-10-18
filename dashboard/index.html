@@ -1528,10 +1528,12 @@ function rtState(r) {
   if (v) return `<span class="tag info">Running</span>${v.session ? ` <a class="mono" href="#sessions/live/${esc(v.session)}">${esc(v.session)}</a>` : ""}`;
   return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
 }
+// Only a GitHub PR link becomes a link; anything else in pr_url shows as text.
+const rtPr = u => /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(u || "") ? u : "";
 function rtLast(x) {
   if (!x) return "no run yet";
   const why = x.reason ? `: ${esc(x.reason)}` : "", at = x.ended_at ? ` · ${stamp(x.ended_at)}` : "";
-  return ({ ok: x.pr_url ? `draft PR <a href="${esc(x.pr_url)}" target="_blank" rel="noopener">${esc(x.pr_url.split("/").slice(-3).join("/"))}</a>` : "ok",
+  return ({ ok: rtPr(x.pr_url) ? `draft PR <a href="${esc(x.pr_url)}" target="_blank" rel="noopener">${esc(x.pr_url.split("/").slice(-3).join("/"))}</a>` : x.pr_url ? `ok: ${esc(x.pr_url)}` : "ok",
     report: "report posted", nochange: "nothing to change" }[x.state] ?? `${esc(x.state)}${why}`) + at;
 }
 function rtHist(rows) {
@@ -1539,7 +1541,7 @@ function rtHist(rows) {
   const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
   return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
     `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
-      ${cell("Reason", esc(x.reason || ""))}${cell("PR", x.pr_url ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : "")}
+      ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
       ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", x.session ? `<a class="mono" href="#sessions/stopped/${esc(x.session)}">${esc(x.session)}</a>` : "")}</tr>`).join("")}</tbody></table>`;
 }
 function rtRow(r) {
