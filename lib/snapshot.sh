@@ -777,6 +777,7 @@ snapshot_json() {
          limits: { attempts: $roundcap, feedback_rounds: $roundcap, merged_prs: $mcap },
          last_pass: $lastpass,
          inflight_fetch_failed: ($inflight_items == null),
+         inflight_prs_failed: ($inflight_prs == null),
          pool: $pool, free_slots: $freeslots,
          inflight: [$inflight[] as $i
                     | $i

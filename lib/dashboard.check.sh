@@ -238,6 +238,10 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belts: text from feeds is escaped", `${/&lt;img/.test(hx)}|${/<img src=x/.test(hx)}`, "true|false");
   load(); SNAP.review[0].infra = "<img src=x>"; SNAP.review[0].fail = 1; SEL.pipeline = "FXA-3"; const gd = beltGroups(), dh = beltDetails([...gd.needs, ...gd.fixes].find(r => r.t.key === "FXA-3")), oh = beltsHtml(gd);
   t("belt details: escaped, with the failing check as the main action, and only the open row has details", `${/&lt;img/.test(dh)}|${/<img src=x/.test(dh)}|${/class="main"[^>]*href="https:\/\/github.com\/example\/app\/pull\/3\/checks"/.test(dh)}|${(oh.match(/class="bdet"/g) || []).length}`, "true|false|true|1");
+  load(); SNAP.open_prs.push({ number: 7, key: "FXA-1", title: "x", created: "2026-10-15T10:00:00Z", branch: "FXA-1" }); const gb = beltGroups(), b1 = gb.needs.find(r => r.t.key === "FXA-1");
+  t("belt details: a Jira-blocked ticket with an open PR answers in Jira", `${b1.t.pr}|${/class="main"[^>]*href="https:\/\/jira\.example\.com\/browse\/FXA-1"[^>]*>Answer in Jira</.test(beltDetails(b1))}`, "7|true");
+  load(); SNAP.inflight_prs_failed = true; const gi = beltGroups();
+  t("belts: a failed in-flight PR read makes fixes and review unknown, from GitHub", `${gi.unknown.fixes}|${gi.unknown.review}|${beltCount(gi)}`, "unknown, GitHub fetch failed|unknown, GitHub fetch failed|null");
   SEL.pipeline = ""; globalThis.BAD_LINK = true; t("a bad pipeline link says so and echoes nothing", /That link names no ticket\./.test(beltsHtml(beltGroups())), true); globalThis.BAD_LINK = false;
   load(); SNAP.inflight = []; SNAP.review = []; SNAP.blocked = []; SNAP.queue.skipped = []; SNAP.queue.ready = []; SNAP.open_prs = []; AGENTS.runners = []; AGENTS.sessions = [];
   const ge = beltGroups(), he = beltsHtml(ge);

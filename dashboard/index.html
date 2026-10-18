@@ -2460,7 +2460,8 @@ function beltGroups() {
     add("needs", { t: { key: i.key, summary: i.title, pr: i.pr }, st: i.column === "running" ? 2 : 0, tone: i.fault ? "k-bad" : "k-warn",
       l1: i.fault ? "Run fault" : { needs_decision: "Needs a decision", underspecified: "Needs detail", already_done: "Maybe done" }[i.kind] ?? "Blocked", l2: i.why || i.next || "", ageText: boardAge(i.age) }));
   g.review.sort((x, y) => (y.age ?? 0) - (x.age ?? 0));
-  const gh = !SNAP ? "Loading the pipeline…" : SNAP.review == null ? `unknown, ${SNAP.open_prs == null ? "GitHub" : "Jira"} fetch failed` : "";
+  // A failed read of the review list or of the in-flight PR states is unknown, never a confident count.
+  const gh = !SNAP ? "Loading the pipeline…" : SNAP.review == null || SNAP.inflight_prs_failed ? `unknown, ${SNAP.open_prs == null || (SNAP.inflight_prs_failed && !SNAP.inflight_fetch_failed) ? "GitHub" : "Jira"} fetch failed` : "";
   g.unknown = { working: boardState("running"), needs: boardState("blocked"), fixes: gh, review: gh };
   return g;
 }
@@ -2492,6 +2493,7 @@ function beltDetails(r) {
   const runs = blk(`Agent runs: ${k ? esc(k.runs) : STATS ? "none" : "…"}`, p(k ? [`${esc(k.turns)} turns`, `${esc(k.median_min)} min`, usd(k.cost), `${esc(k.files)} files`].join(" · ") : STATS ? "not in the run log: a run records only when it reaches handoff" : "loading…"));
   const sess = t.sess ? sessHref(t.sess.key) : "";
   const [label, href] = t.slack ? ["Open the session", sess] : t.agent_alive ? ["Watch the agent", ""] : t.fail > 0 && pr ? ["Open the failing check", `${pr}/checks`]
+    : r.group === "needs" && i.column === "blocked" && jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)]
     : pr ? ["Open the PR", pr] : jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)] : ["", ""];
   const main = t.agent_alive ? `<button type="button" class="main" data-focus="main" data-watch="${esc(t.key)}">Watch the agent</button>`
     : href ? `<a class="main" data-focus="main" href="${esc(href)}"${href.startsWith("#") ? "" : ' target="_blank" rel="noopener"'}>${label}</a>` : "";
@@ -2520,7 +2522,7 @@ function beltsHtml(g) {
   const where = beltWhere(g);
   return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div><span>Status</span><span class="r">Age</span></div>
     ${BELT_GROUPS.map(group).join("")}
-    ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
+    ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
 }
 function renderLanes() {
   const g = beltGroups(), live = g.working.filter(r => r.t.agent_alive);

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # page.sh renders the dashboard from the fixture: a probe sees the team heading, and a probe error is printed, not lost.
+# It renders dashboard/index.html, so test.sh changed runs it for a change to the page.
 #   bash skills/fxa-ctl-dev/page.check.sh
 set -u
 p="$(dirname "$0")/page.sh"; fail=0
@@ -44,4 +45,5 @@ flow='const w = () => new Promise(r => setTimeout(r, 250)), bad = () => [...docu
   location.hash = "#pipeline/board/FXA-3"; await w(); await w(); step("board alias", location.hash === "#pipeline/belts/FXA-3");
   return fails.join(",") || "ok"'
 ck "the whole Pipeline flow at 1280 px and 390 px" "ok|ok" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$flow")|$(bash "$p" '#overview' --fixture "$F" --width 390 --probe "$flow")"
+ck "a link to an Outside row opens the Outside group and shows the row" "true|true" "$(bash "$p" '#pipeline/belts/agent-abc123' --fixture "$F" --probe 'return document.querySelector("details.bout").open + "|" + document.getElementById("bd-agent-abc123").checkVisibility()')"
 exit $fail
