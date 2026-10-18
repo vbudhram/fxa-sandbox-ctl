@@ -33,6 +33,24 @@ _snapshot_last_pass() {
   tail -n 1 "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null | jq -c . 2>/dev/null | grep . || echo null
 }
 
+# _snapshot_facts <key...>   For the listed keys only: why each is blocked, when it was first queued and
+# its skip kind, from <KEY>.blocked-why, <KEY>.queued-at and field 5 of <KEY>.skipped, in one awk and
+# one jq, so hundreds of stale state files cost nothing. Prints {KEY: {why, queued_at, skip_kind}}.
+_snapshot_facts() {
+  local k e files=()
+  for k in "$@"; do for e in blocked-why queued-at skipped; do [ -f "${PIPE_STATE_DIR}/${k}.${e}" ] && files+=("${PIPE_STATE_DIR}/${k}.${e}"); done; done
+  [ ${#files[@]} -gt 0 ] || { echo '{}'; return 0; }
+  awk -F'\t' 'FNR == 1 { n = split(FILENAME, p, "/"); f = p[n]; i = index(f, "."); k = substr(f, 1, i - 1); e = substr(f, i + 1)
+      if (e == "blocked-why") print k "\twhy\t" $1 "\t" $2 "\t" $3
+      else if (e == "queued-at") print k "\tq\t" $1
+      else if (e == "skipped") print k "\tskip\t" $5 }' "${files[@]}" 2>/dev/null \
+  | jq -R -s 'split("\n") | map(select(length > 0) | split("\t")) | reduce .[] as $r ({};
+      if $r[1] == "why" then .[$r[0]].why = (if ($r[2] | test("^[0-9]+$")) and (($r[3] // "") != "")
+                                            then {kind: $r[3], text: ($r[4] // ""), at: ($r[2] | tonumber)} else null end)
+      elif $r[1] == "q" then .[$r[0]].queued_at = ($r[2] | tonumber? // null)
+      else .[$r[0]].skip_kind = (if ($r[2] // "") == "" then null else $r[2] end) end)'
+}
+
 _snapshot_skipped() {
   # The ticket each hold waits on (pipeline_hold), by key.
   local f held='{}'
@@ -550,6 +568,14 @@ _snapshot_session_row() {
 # snapshot_agents_json   The fast feed: runners, pool and instances, with no Jira
 # or GitHub, so it can run every 30 s while the slow full snapshot runs every few
 # minutes. The page merges the two by key.
+# _snapshot_slots   Sets the caller's free (a JSON list) and cap. A slot read that fails (the Jira inflight
+# read) is "slots unknown": cap null, not 0, so the page does not say no slot is free.
+_snapshot_slots() {
+  local slots frc=0; slots="$(cmd_freeslots 2>/dev/null)" || frc=$?
+  free="$(printf '%s' "$slots" | jq -R -s 'split("\n") | map(select(length > 0))')"
+  if [ "$frc" = 0 ]; then cap="$(cmd_launchcap 2>/dev/null || echo 0)"; else cap=null; fi
+}
+
 snapshot_agents_json() {
   local started now; started="$(date +%s)"; now="$started"
   # Fill the instance-state memo here, in the parent shell, so every $(...)
@@ -580,8 +606,7 @@ snapshot_agents_json() {
   pool="$(_snapshot_pool)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "pool: $(( $(date +%s) - started ))s" >&2
   # jq -R -s prints [] even on empty input: a fallback after it gave "[] []" under pipefail.
-  free="$( { cmd_freeslots 2>/dev/null || true; } | jq -R -s 'split("\n") | map(select(length > 0))')"
-  cap="$(cmd_launchcap 2>/dev/null || echo 0)"
+  _snapshot_slots
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
   today="$(_snapshot_today)"
   # sessions goes to jq as a file below: as an argument it passed the 128 KB limit (exit 126).
@@ -649,6 +674,10 @@ snapshot_json() {
   pool="$(_snapshot_pool)"
   instances="$(_snapshot_instances)"
   skipped="$(_snapshot_skipped)"
+  # The facts for the keys the page lists: Jira-blocked, ready and skipped (never another key's files).
+  local facts; facts="$(_snapshot_facts $( { printf '%s' "$blocked_items" | jq -r '.[]?.key // empty' 2>/dev/null; printf '%s' "$queue_items" | jq -r '.[]?.key // empty' 2>/dev/null
+      printf '%s' "$skipped" | jq -r '.[]?.key // empty' 2>/dev/null; } | grep -E '^[A-Z][A-Z0-9]+-[0-9]+$' | sort -u))"
+  [ -n "$facts" ] || facts='{}'
   inflight="$(_snapshot_inflight "$inflight_keys")"
   review="$(gh_pr_states_json "$done_keys")"
   # Every open PR with the pipeline's label, whatever its ticket's state: the
@@ -693,6 +722,7 @@ snapshot_json() {
     --argjson blocked "$blocked_items" \
     --argjson health "$(pipeline_health_json)" \
     --argjson roundcap "${_FXA_ROUND_CAP:-2}" \
+    --argjson facts "$facts" \
     --argjson lastpass "$(_snapshot_last_pass)" \
     --argjson skipped "$skipped" \
     --argjson pool "$pool" \
@@ -714,13 +744,20 @@ snapshot_json() {
          instances: $instances,
          queue: { total: (if $items == null then null else ($q | length) end),
                   fetch_failed: ($items == null),
-                  ready:   [$q[] | select(.key as $k | ($skipkeys | index($k)) == null)],
+                  ready:   [$q[] | select(.key as $k | ($skipkeys | index($k)) == null) | . + {queued_at: ($facts[.key].queued_at // null)}],
                   skipped: [($allitems // $q) as $all | ($all | map(.key)) as $ak | ($q | map(.key)) as $qk
                             | $skipped[] as $s
                             | $s + {summary: (($all[] | select(.key == $s.key) | .summary) // null),
+                                    queued_at: ($facts[$s.key].queued_at // null),
+                                    # An old record has no kind: the regex the page used before, and a hold is depends_on.
+                                    kind: ($facts[$s.key].skip_kind // (if $s.held_by != null then "depends_on"
+                                            elif ($s.reason | test("^underspecified"; "i")) then "underspecified"
+                                            elif ($s.reason | test("^already satisfied"; "i")) then "already_done"
+                                            elif ($s.reason | test("^blocked"; "i")) then null else "needs_decision" end)),
                                     in_queue: (($ak | index($s.key)) != null),
                                     in_focus: (($qk | index($s.key)) != null)}] },
-         blocked: $blocked,
+         blocked: (if $blocked == null then null else [$blocked[] | . + {blocked_reason:
+                    ($facts[.key].why // {kind: "jira", text: "blocked in Jira", at: null})}] end),
          open_prs: $openprs,
          merged_prs: $mergedprs,
          health: $health,
