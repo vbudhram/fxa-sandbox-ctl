@@ -4,6 +4,8 @@
 #   test.sh            both
 #   test.sh mac|here   this host only (here: any OS, as vm.sh test runs it on the manager)
 #   test.sh linux      the Ubuntu container only
+#   test.sh changed [base]   this host only, only the checks for the files changed since base (origin/main):
+#                      a changed check, and each check that names a changed file. CI runs the full suite on push.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -82,8 +84,39 @@ run_linux() {
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
 
+# run_changed <base>   The checks that name a file changed since base (committed, staged, unstaged or new).
+run_changed() {
+  local base="${1:-origin/main}" f b c picked=() bad=0
+  local files; files="$( { git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files -o --exclude-standard; } 2>/dev/null | sort -u)"
+  [ -n "$files" ] || { echo "$HOST: no changed files since $base"; return; }
+  local all; all="$(ls lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh 2>/dev/null)"
+  for f in $files; do
+    [ -f "$f" ] || continue
+    case "$f" in *.check.sh) picked+=("$f"); continue ;; esac
+    case "$f" in *.sh|fxa-sandbox-ctl) bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; } ;; esac
+    case "$f" in
+      # A shell file: the checks named after it, and each check that names a function the diff changed.
+      *.sh|fxa-sandbox-ctl)
+        b="$(basename "$f" .sh)"
+        for c in $all; do case "$(basename "$c")" in "$b".check.sh|"$b"-*.check.sh) picked+=("$c") ;; esac; done
+        for fn in $( { git diff -U0 "$base"...HEAD -- "$f"; git diff -U0 HEAD -- "$f"; } 2>/dev/null \
+            | sed -n 's/^@@[^@]*@@ *\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p; s/^[+-]\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p' | sort -u); do
+          for c in $(grep -lw -- "$fn" $all 2>/dev/null); do picked+=("$c"); done
+        done ;;
+      # Any other file: each check that names its path or its file name.
+      *) for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done ;;
+    esac
+  done
+  [ ${#picked[@]} -gt 0 ] || { echo "$HOST: no check names the changed files; CI runs the full suite"; [ "$bad" = 0 ] || rc=1; return; }
+  picked=($(printf '%s\n' "${picked[@]}" | sort -u))
+  echo "$HOST: ${#picked[@]} checks for the changed files"
+  run_pool "$HOST" "${picked[@]}" || bad=1
+  [ "$bad" = 0 ] && echo "$HOST: the changed files' checks pass" || rc=1
+}
+
 case "${1:-both}" in
   mac|here) run_here ;;
+  changed) run_changed "${2:-}" ;;
   linux) run_linux ;;
   # Both at once: the Ubuntu half prints after this host's.
   *) l="$(mktemp "${TMPDIR:-/tmp}/fxa-linux.XXXXXX")"; ( run_linux; exit "$rc" ) > "$l" 2>&1 & lp=$!
