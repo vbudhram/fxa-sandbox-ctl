@@ -39,4 +39,7 @@ pipeline_skip fxa-5 x >/dev/null
 check "a lower-case key is upper-cased" "yes" "$([ -f "$tmp/FXA-5.skipped" ] && echo yes || echo no)"
 check "a key that is not a ticket key fails and writes no file" "1|0" "$(pipeline_skip ../x x >/dev/null 2>&1; echo $?)|$(ls "$tmp" | grep -c '^\.\.\|^x\.skipped')"
 
+pipeline_hold fxa-6 FXA-2 x >/dev/null
+check "a hold of a lower-case key writes both files under the upper-case key" "yes|yes" "$([ -f "$tmp/FXA-6.held" ] && echo yes || echo no)|$([ -f "$tmp/FXA-6.skipped" ] && echo yes || echo no)"
+
 exit "$fail"

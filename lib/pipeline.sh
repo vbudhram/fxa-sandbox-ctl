@@ -399,7 +399,7 @@ _pipeline_skip_fingerprint() {
 # characters go, tabs and newlines become one space, and it is cut at 300 characters.
 _pipeline_one_line() {
   printf '%s' "$*" | LC_ALL=C sed $'s/\x1b\\[[0-9;?]*[ -/]*[@-~]//g; s/\x1b[@-_]//g' | tr '\t\n\r' '   ' \
-    | LC_ALL=C tr -d '\000-\037\177' | tr -s ' ' | cut -c1-300
+    | LC_ALL=C tr -d '\000-\037\177' | tr -s ' ' | cut -c1-300   # ponytail: GNU cut counts bytes, so a long non-ASCII reason can lose its last character
 }
 
 pipeline_skip() {
@@ -435,7 +435,7 @@ pipeline_skip() {
 #   until BLOCKER is merged or closed in Jira, or KEY changes; then one pass looks again. Prints
 #   what pipeline_skip prints. Unrecorded, a held ticket woke the model on every pass.
 pipeline_hold() {
-  local key="${1:-}" blocker="${2:-}"
+  local key blocker="${2:-}"; key="$(printf '%s' "${1:-}" | tr '[:lower:]' '[:upper:]')"
   [[ "$blocker" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] && [ "$blocker" != "$key" ] \
     || { echo "ERROR: hold needs <KEY> <BLOCKER-KEY> [reason]" >&2; return 1; }
   shift 2
