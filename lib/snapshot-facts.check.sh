@@ -48,4 +48,11 @@ check "slots read: the cap and the free list" '2|["s-1","s-2"]' "$(slots)"
 cmd_freeslots() { echo "ERROR: cannot list inflight tickets" >&2; return 1; }
 check "a slot read that fails: launchcap null, not 0" 'null|[]' "$(slots)"
 
+# A file that goes away between the listing and the read gives no row, and the rest still parses.
+rf() { _snapshot_facts FXA-5 FXA-77; }
+printf '1\toperator\tx\n' > "$PIPE_STATE_DIR/FXA-77.blocked-why"
+awk() { rm -f "$PIPE_STATE_DIR/FXA-77.blocked-why"; command awk "$@"; }
+check "a state file removed during the read: no failure, the other key still reads" "0|operator" "$(set -o pipefail; out="$(rf)"; echo "$?|$(jq -r '.["FXA-5"].why.kind' <<< "$out")")"
+unset -f awk
+
 exit "$fail"

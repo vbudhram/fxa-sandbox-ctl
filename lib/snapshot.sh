@@ -40,10 +40,11 @@ _snapshot_facts() {
   local k e files=()
   for k in "$@"; do for e in blocked-why queued-at skipped; do [ -f "${PIPE_STATE_DIR}/${k}.${e}" ] && files+=("${PIPE_STATE_DIR}/${k}.${e}"); done; done
   [ ${#files[@]} -gt 0 ] || { echo '{}'; return 0; }
-  awk -F'\t' 'FNR == 1 { n = split(FILENAME, p, "/"); f = p[n]; i = index(f, "."); k = substr(f, 1, i - 1); e = substr(f, i + 1)
+  # A file the pass removes meanwhile gives no row, not a failed snapshot (awk exits 2 on it).
+  { awk -F'\t' 'FNR == 1 { n = split(FILENAME, p, "/"); f = p[n]; i = index(f, "."); k = substr(f, 1, i - 1); e = substr(f, i + 1)
       if (e == "blocked-why") print k "\twhy\t" $1 "\t" $2 "\t" $3
       else if (e == "queued-at") print k "\tq\t" $1
-      else if (e == "skipped") print k "\tskip\t" $5 }' "${files[@]}" 2>/dev/null \
+      else if (e == "skipped") print k "\tskip\t" $5 }' "${files[@]}" 2>/dev/null || true; } \
   | jq -R -s 'split("\n") | map(select(length > 0) | split("\t")) | reduce .[] as $r ({};
       if $r[1] == "why" then .[$r[0]].why = (if ($r[2] | test("^[0-9]+$")) and (($r[3] // "") != "")
                                             then {kind: $r[3], text: ($r[4] // ""), at: ($r[2] | tonumber)} else null end)
