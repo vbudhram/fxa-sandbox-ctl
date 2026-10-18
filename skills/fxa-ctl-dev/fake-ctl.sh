@@ -77,7 +77,7 @@ script() {
                 {at: ($T + 3), ev: {type: "step", text: "Running grep -rn useAccount packages/fxa-settings/src"}},
                 {at: ($T + 5), ev: {type: "step", text: "Editing packages/fxa-settings/src/index.tsx"}},
                 {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
-          (if $tt and ($tt.diff | not) then empty else
+          (if $tt and (($tt.diff // []) | length == 0) then empty else
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
           {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | (.diff // []) | length > 0] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
@@ -141,7 +141,7 @@ case "$cmd" in
     # A routine run's task that ctl refuses (a bad row, a cap, a team mismatch) leaves the run with no session.
     if [ "$(opt --source "$@")" = routine ]; then
       [ -z "${FAKE_ROUTINE_TASK_FAIL:-}" ] || { echo "ERROR: ${FAKE_ROUTINE_TASK_FAIL}" >&2; exit 1; }
-      echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
+      mkdir -p "$DIR"; echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
     fi
     mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
     # A tape: the nth task plays the tape's nth session.

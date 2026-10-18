@@ -105,4 +105,8 @@ echo '{"sessions": [{"turns": [{"steps": ["Reading a.ts"], "diff": [], "end": {"
 export FAKE_CTL_DIR="$tmp/s0"   # the nth tape task plays the nth session: a new store starts at the first
 echo 9000 > "$FAKE_NOW_FILE"; FAKE_TAPE="$tmp/tape0.json" f task --id agent-tp1 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 9020 > "$FAKE_NOW_FILE"
 check "a tape turn with an empty diff ends with no change" "0|Not fixed: x" "$(FAKE_TAPE="$tmp/tape0.json" f events agent-tp1 | jq -r '[.events[] | select(.type == "turn_end")][0] | "\(.changes)|\(.text)"')"
+FAKE_TICK=0.2 FAKE_TAPE="$tmp/tape0.json" bash "$F" watch agent-tp1 > "$tmp/w" & wp=$!; sleep 1; kill "$wp" 2>/dev/null; wait "$wp" 2>/dev/null
+check "a tape turn with an empty diff has no diffstat in the watch" "1|0" "$(grep -c '"step"' "$tmp/w")|$(grep -c diffstat "$tmp/w")"
+export FAKE_CTL_DIR="$tmp/s1"   # a routine task is the first call on an empty store
+check "a routine task as the first call starts its session" "started agent-rr9 (fake)" "$(f --pipeline fxa task --id agent-rr9 --source routine --routine-run 39 2>&1)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
