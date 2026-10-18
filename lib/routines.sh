@@ -418,9 +418,15 @@ routine_done() {
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
   [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; return 1; }
+  if [ -z "$sess" ]; then
+    [ "$state" = failed ] || { echo "ERROR: done with no --session only fails a run" >&2; return 1; }
+    [[ "$(jq -r .state <<< "$r")" =~ ^(claimed|queued)$ ]] || { echo "ERROR: routine run ${run} is $(jq -r .state <<< "$r"): done with no --session takes only a claimed or queued run" >&2; return 1; }
+  fi
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
-  local post=true report="" n
+  local post=true report="" n guard="state IN (${_ROUTINE_LIVE_STATES})"
+  # A run with no session: guarded in the UPDATE too, so a session that took it meanwhile keeps it.
+  [ -n "$sess" ] || guard="state IN ('claimed','queued') AND session IS NULL"
   if [ -n "$rf" ]; then
     [ -f "$rf" ] || { rm -f "$f"; echo "ERROR: no report file ${rf}" >&2; return 1; }
     report="$(head -c 65536 "$rf")"
@@ -435,7 +441,7 @@ routine_done() {
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
       cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now)
-      WHERE id = ${run} AND state IN (${_ROUTINE_LIVE_STATES}); SELECT changes();")" || n=""
+      WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
   case "$n" in
     1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)}' ;;
     0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)}' ;;

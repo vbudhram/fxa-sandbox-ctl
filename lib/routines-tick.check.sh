@@ -283,6 +283,13 @@ ns="$(st started agent-sess01 $((N - 60)))"
 check "done with no --session is refused for a run with a session" "ERROR: routine run ${ns} is not session (none)'s|started" \
   "$(routine_done "$ns" --state failed --reason x 2>&1)|$(s_of "$ns" | cut -d'|' -f1)"
 
+nc2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, started_at) VALUES ($rj, 'x-claimed', 'claimed', $N); SELECT last_insert_rowid();")"
+check "done with no --session takes only --state failed" "ERROR: done with no --session only fails a run|claimed" \
+  "$(routine_done "$nc2" --state report --reason x 2>&1)|$(db_value "SELECT state FROM routine_runs WHERE id = $nc2;")"
+ns2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, started_at) VALUES ($rj, 'x-started', 'started', $N); SELECT last_insert_rowid();")"
+check "done with no --session refuses a run that is not claimed or queued" "ERROR: routine run ${ns2} is started: done with no --session takes only a claimed or queued run|started" \
+  "$(routine_done "$ns2" --state failed --reason x 2>&1)|$(db_value "SELECT state FROM routine_runs WHERE id = $ns2;")"
+db_exec "UPDATE routine_runs SET state = 'ok' WHERE id IN ($nc2, $ns2);"
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
