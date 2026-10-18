@@ -50,8 +50,8 @@ check "the Done cap is in limits" "30" "$(jq -r .limits.merged_prs <<< "$tm")"
 # A failed Jira read of done or inflight is unknown: review is null, and no PR state is read for it.
 snap_states_fail() { jira_items_in_state() { if [ "$1" = blocked ]; then items FXA-5; else return 1; fi; }
   gh_pr_states_json() { echo x >> "$tmp/prs-calls"; echo '[]'; }; snapshot_json 2>/dev/null; }
-check "a failed done and inflight read: review null, inflight unknown, no PR state read" "null|true|0" \
-  "$(rm -f "$tmp/prs-calls"; snap_states_fail | jq -r '"\(.review)|\(.inflight_fetch_failed)"')|$(cat "$tmp/prs-calls" 2>/dev/null | wc -l | tr -d ' ')"
+check "a failed done and inflight read: review null, both flagged, no PR state read" "null|true|true|0" \
+  "$(rm -f "$tmp/prs-calls"; snap_states_fail | jq -r '"\(.review)|\(.inflight_fetch_failed)|\(.done_fetch_failed)"')|$(cat "$tmp/prs-calls" 2>/dev/null | wc -l | tr -d ' ')"
 check "a good read: review is a list" "[]" "$(snapshot_json 2>/dev/null | jq -c .review)"
 check "a failed in-flight PR read is flagged; a good one is not" "true|false" "$( (gh_pr_states_json() { echo null; }; snapshot_json 2>/dev/null) | jq -r .inflight_prs_failed)|$(snapshot_json 2>/dev/null | jq -r .inflight_prs_failed)"
 eval "$(sed -n '/^_snapshot_slots() {/,/^}/p' "$here/snapshot.sh")"

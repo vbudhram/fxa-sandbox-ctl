@@ -725,6 +725,7 @@ snapshot_json() {
     --argjson openprs "${open_prs:-null}" \
     --argjson mergedprs "${merged_prs:-null}" \
     --argjson inflight_items "$inflight_items" \
+    --argjson done_items "$done_items" \
     --argjson blocked "$blocked_items" \
     --argjson health "$(pipeline_health_json)" \
     --argjson roundcap "${_FXA_ROUND_CAP:-2}" \
@@ -778,6 +779,7 @@ snapshot_json() {
          last_pass: $lastpass,
          inflight_fetch_failed: ($inflight_items == null),
          inflight_prs_failed: ($inflight_prs == null),
+         done_fetch_failed: ($done_items == null),
          pool: $pool, free_slots: $freeslots,
          inflight: [$inflight[] as $i
                     | $i

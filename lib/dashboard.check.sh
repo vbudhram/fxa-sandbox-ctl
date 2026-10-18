@@ -242,11 +242,15 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belt details: a Jira-blocked ticket with an open PR answers in Jira", `${b1.t.pr}|${/class="main"[^>]*href="https:\/\/jira\.example\.com\/browse\/FXA-1"[^>]*>Answer in Jira</.test(beltDetails(b1))}`, "7|true");
   load(); SNAP.inflight_prs_failed = true; const gi = beltGroups();
   t("belts: a failed in-flight PR read makes fixes and review unknown, from GitHub", `${gi.unknown.fixes}|${gi.unknown.review}|${beltCount(gi)}`, "unknown, GitHub fetch failed|unknown, GitHub fetch failed|null");
+  load(); AGENTS.runners[0].agent_alive = false; const gx = beltGroups();
+  t("belts: an agent that exited with no handoff needs a person, and is not counted as working", `${gx.working.map(r => r.t.key).join(",")}|${gx.needs.some(r => r.t.key === "FXA-20")}|${gx.needs.length === boardAct(boardItems())}|${/1 agent works now/.test(beltsHtml(gx))}`, "FXA-21|true|true|true");
+  load(); SNAP.review = null; const gr = beltGroups(); SNAP.done_fetch_failed = true; const gj = beltGroups();
+  t("belts: a null review list names GitHub, or Jira when the done read failed", `${gr.unknown.review}|${gj.unknown.review}`, "unknown, GitHub fetch failed|unknown, Jira fetch failed");
   SEL.pipeline = ""; globalThis.BAD_LINK = true; t("a bad pipeline link says so and echoes nothing", /That link names no ticket\./.test(beltsHtml(beltGroups())), true); globalThis.BAD_LINK = false;
   load(); SNAP.inflight = []; SNAP.review = []; SNAP.blocked = []; SNAP.queue.skipped = []; SNAP.queue.ready = []; SNAP.open_prs = []; AGENTS.runners = []; AGENTS.sessions = [];
   const ge = beltGroups(), he = beltsHtml(ge);
   t("belts: empty groups say so, with no Outside group", `${["No agent works now.", "Nobody needs to act.", "Nothing for the agent to fix.", "No PR waits on review."].every(x => he.includes(x))}|${/bout/.test(he)}|${beltCount(ge)}`, "true|false|0");
-  const unk = [() => { globalThis.SNAP = null; }, () => { SNAP.queue.fetch_failed = true; SNAP.blocked = null; }, () => { SNAP.review = null; SNAP.open_prs = null; }, () => { SNAP.review = null; },
+  const unk = [() => { globalThis.SNAP = null; }, () => { SNAP.queue.fetch_failed = true; SNAP.blocked = null; }, () => { SNAP.review = null; SNAP.open_prs = null; }, () => { SNAP.review = null; SNAP.done_fetch_failed = true; },
     () => { STATE.agents_error = "x"; }, () => { STATE.agents_age_seconds = 900; STATE.agents_interval = 60; }].map(f => { load(); f(); const gg = beltGroups(), hh = beltsHtml(gg); return [hh, beltCount(gg)]; });
   t("belts: before a snapshot, loading with no counts", `${/Loading the pipeline/.test(unk[0][0])}|${/\d belts/.test(unk[0][0])}`, "true|false");
   t("belts: an unknown feed shows ? and its reason, never 0", [

@@ -2302,9 +2302,11 @@ function classify(i) {
 function boardItems() {
   const out = [], seen = new Set(), add = i => { if (!i.key || seen.has(i.key)) return; seen.add(i.key); out.push(classify(i)); };
   const { cards, waiting } = merged();
-  cards.forEach(c => add({ key: c.key, title: c.summary || c.branch || "", column: "running", fault: c.stage === "stalled" || c.stage === "error",
-    kind: c.stage === "stalled" || c.stage === "error" ? "fault" : null, stage: c.ci ? (c.fail > 0 ? "CI red" : c.running > 0 ? "CI running" : "CI green") : c.stage,
-    why: c.stage === "stalled" ? `stalled ${c.detail ?? ""}`.trim() : c.stage === "error" ? "the run failed" : "", age: c.elapsed_seconds ?? null, belt: true, ci: !!c.ci }));
+  // An agent that exited with no handoff is a fault, the same rule as the Overview "Agent exited" row.
+  const exited = c => !c.ci && !c.agent_alive && c.stage === "watching" && !c.handoff;
+  cards.forEach(c => add({ key: c.key, title: c.summary || c.branch || "", column: "running", fault: c.stage === "stalled" || c.stage === "error" || exited(c),
+    kind: c.stage === "stalled" || c.stage === "error" || exited(c) ? "fault" : null, stage: c.ci ? (c.fail > 0 ? "CI red" : c.running > 0 ? "CI running" : "CI green") : c.stage,
+    why: c.stage === "stalled" ? `stalled ${c.detail ?? ""}`.trim() : c.stage === "error" ? "the run failed" : exited(c) ? "exited without a handoff" : "", age: c.elapsed_seconds ?? null, belt: true, ci: !!c.ci }));
   (SNAP?.blocked ?? []).forEach(b => { const r = b.blocked_reason ?? { kind: "jira", text: "blocked in Jira", at: null };
     add({ key: b.key, title: b.summary ?? "", column: "blocked", kind: r.kind || "other", why: r.text || (r.kind === "jira" ? "blocked in Jira" : ""), since: r.at ?? null, age: secsSince(r.at) }); });
   (SNAP?.review ?? []).forEach(r => {
@@ -2461,7 +2463,7 @@ function beltGroups() {
       l1: i.fault ? "Run fault" : { needs_decision: "Needs a decision", underspecified: "Needs detail", already_done: "Maybe done" }[i.kind] ?? "Blocked", l2: i.why || i.next || "", ageText: boardAge(i.age) }));
   g.review.sort((x, y) => (y.age ?? 0) - (x.age ?? 0));
   // A failed read of the review list or of the in-flight PR states is unknown, never a confident count.
-  const gh = !SNAP ? "Loading the pipeline…" : SNAP.review == null || SNAP.inflight_prs_failed ? `unknown, ${SNAP.open_prs == null || (SNAP.inflight_prs_failed && !SNAP.inflight_fetch_failed) ? "GitHub" : "Jira"} fetch failed` : "";
+  const gh = !SNAP ? "Loading the pipeline…" : SNAP.review == null || SNAP.inflight_prs_failed ? `unknown, ${SNAP.done_fetch_failed || (SNAP.review != null && SNAP.inflight_fetch_failed) ? "Jira" : "GitHub"} fetch failed` : "";
   g.unknown = { working: boardState("running"), needs: boardState("blocked"), fixes: gh, review: gh };
   return g;
 }
@@ -2678,7 +2680,7 @@ function renderTickets() {
   const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
   const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
   // The open PR list is on the Belts tab; here only the tickets in review.
-  put("s-review", (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">GitHub fetch failed; unknown, not zero</span></div>`
+  put("s-review", (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">${SNAP?.done_fetch_failed ? "Jira" : "GitHub"} fetch failed; unknown, not zero</span></div>`
       : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
          <span class="rest">${review.length} in review · oldest wait first</span></div>`) +
     (review == null ? "" : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
