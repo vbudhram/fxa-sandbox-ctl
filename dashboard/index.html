@@ -462,14 +462,15 @@
   .bcol h2 .c { color:var(--dim); font-weight:400; margin-left:var(--s1); }
   .bcol .empty { padding:var(--s3) var(--s4); margin:0; }
   .bgrp { font-size:var(--t-label); text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0; padding:var(--s2) var(--s4) 0; }
-  .brow { display:grid; gap:2px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); } .brow:last-child { border-bottom:0; }
+  #s-board.wide { background:none; border:0; box-shadow:none; padding:0; }
+  .brow { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); } .brow:last-child { border-bottom:0; }
   .brow.sel { background:var(--infobg); }
   .brow .top { display:flex; gap:var(--s2); align-items:baseline; min-width:0; }
   .brow .brow-k { display:flex; gap:var(--s2); align-items:baseline; min-width:0; color:inherit; text-decoration:none; } .brow .brow-k:hover .t { text-decoration:underline; }
   .brow .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .brow .pos { font-family:var(--mono); font-size:var(--t-label); color:var(--dim); min-width:1.5em; text-align:right; font-variant-numeric:tabular-nums; }
   .brow .meta { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; font-size:var(--t-label); color:var(--dim); } .brow .who { color:var(--ink); font-weight:600; }
-  .brow .why { font-size:var(--t-sub); overflow-wrap:anywhere; }
+  .brow .why { font-size:var(--t-sub); overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .bwait summary { cursor:pointer; padding:var(--s2) var(--s4); font-size:var(--t-sub); color:var(--dim); border-top:1px solid var(--line); }
   .breview { color:var(--dim); font-size:var(--t-sub); }
   .bnext { background:var(--warnbg); border-radius:var(--r-sm); padding:var(--s2) var(--s3); font-size:var(--t-sub); } .bnext b { color:var(--warn); }
@@ -2049,6 +2050,7 @@ const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts
   depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", infra: "infra red", fault: "fault" };
 // The old skip records have no kind: the reason's first words decide, as the Queue tab did.
 const skipKindOf = k => k.kind ?? (k.held_by ? "depends_on" : /^underspecified/i.test(k.reason ?? "") ? "underspecified" : /^already satisfied/i.test(k.reason ?? "") ? "already_done" : "needs_decision");
+const boardAge = s => s == null ? "" : s >= 2 * 86400 ? `${Math.round(s / 86400)}d` : short(s);
 const secsSince = t => t == null ? null : Math.max(0, Math.round(Date.now() / 1000 - (typeof t === "number" ? t : Date.parse(t) / 1000)));
 // classify(item): who acts and the next step from the column and the kind; "the operator" for work only the operator can do.
 function classify(i) {
@@ -2097,8 +2099,8 @@ function boardRow(i) {
   const k = KEY_RE.test(i.key) ? `<a class="brow-k" href="#pipeline/board/${esc(i.key)}"><span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span></a>`
     : `<span class="key">${esc(i.key)}</span><span class="t">${esc(i.title || "")}</span>`;
   const who = i.waitsOn ? (KEY_RE.test(i.waitsOn) ? `waits on <a href="#pipeline/board/${esc(i.waitsOn)}">${esc(i.waitsOn)}</a>` : esc(i.person)) : esc(i.person ?? "");
-  const chip = i.column === "running" ? `<span class="tag ${i.fault ? "bad" : i.ci ? "info" : "ok"} run">${esc(i.stage ?? "")}</span>` : i.kind ? `<span class="tag merged">${esc(KIND_LABEL[i.kind] ?? i.kind)}</span>` : "";
-  const age = i.column === "next" ? (i.queued_at ? `first queued ${ago(i.age)}` : "") : i.age != null ? short(i.age) : "";
+  const chip = i.column === "running" ? `<span class="tag ${i.fault ? "bad" : i.stage === "CI red" ? "warn" : i.ci ? "info" : "ok"} run">${esc(i.stage ?? "")}</span>` : i.kind ? `<span class="tag merged">${esc(KIND_LABEL[i.kind] ?? i.kind)}</span>` : "";
+  const age = i.column === "next" ? (i.queued_at ? `first queued ${ago(i.age)}` : "") : boardAge(i.age);
   return `<div class="brow${SEL.pipeline === i.key ? " sel" : ""}" data-key="${esc(i.key)}"><div class="top">${i.pos ? `<span class="pos">${i.pos}</span>` : ""}${k}</div>
     <div class="meta">${chip}${who ? `<span class="who">${who}</span>` : ""}${age ? `<span>${esc(age)}</span>` : ""}</div>${i.why ? `<div class="why">${esc(i.why)}</div>` : ""}</div>`;
 }
