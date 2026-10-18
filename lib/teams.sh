@@ -350,7 +350,9 @@ teams_delete() {
       || { rm -f "${FXA_TEAMS_DIR}/${name}.deleting"; echo "ERROR: could not delete team ${name} (changed since generation ${gen}?); run profile sync. Its routines are already removed." >&2; return 1; }
   fi
   _teams_audit delete "$name" "$gen" "" "${FXA_TEAMS_DIR}/${name}.json" ""
-  rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}" "${FXA_TEAMS_DIR:?}/${name}.deleting"
+  # The test files go too, so a team re-created under this name never shows the old team's test.
+  rm -rf "${FXA_TEAMS_DIR:?}/${name}.json" "${FXA_TEAMS_DIR:?}/${name}.gen" "${FXA_TEAMS_DIR:?}/${name}" "${FXA_TEAMS_DIR:?}/${name}.deleting" \
+    "${FXA_TEAMS_DIR:?}/${name}.tested" "${FXA_TEAMS_DIR:?}/${name}.test.log" "${FXA_TEAMS_DIR:?}/${name}.test.pid"
   teams_index && echo "deleted team ${name}"
 }
 

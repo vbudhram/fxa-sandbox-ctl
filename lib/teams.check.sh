@@ -55,8 +55,10 @@ printf '{"profile":"rusty","state":"stopped"}' > "$SESSION_DIR/agent-r1.json"
 db_exec "INSERT INTO routines (team, data) VALUES ('rusty', '{}');"
 check "a store error on the team's routines stops the delete, and keeps the record" "1|ERROR: could not read team rusty's routines from the store|yes|1" \
   "$( (db_value() { return 1; }; teams_delete rusty >/dev/null 2>"$tmp/del.err"); echo $?)|$(head -1 "$tmp/del.err")|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")"
+echo 3 > "$FXA_TEAMS_DIR/rusty.tested"; echo x > "$FXA_TEAMS_DIR/rusty.test.log"
 check "delete removes the record, its prompts, its index entry and its routines, with no shell error" "0|no|null|0|0" \
   "$(teams_delete rusty >/dev/null 2>"$tmp/del.err"; echo $?)|$([ -e "$FXA_TEAMS_DIR/rusty.json" ] && echo yes || echo no)|$(jq -r .teams.rusty "$FXA_TEAMS_DIR/index.json")|$(db_value "SELECT count(*) FROM routines WHERE team = 'rusty';")|$(grep -c 'command not found' "$tmp/del.err")"
+check "delete removes the test files too, so a new team of the name has no old test" "no|no" "$([ -e "$FXA_TEAMS_DIR/rusty.tested" ] && echo yes || echo no)|$([ -e "$FXA_TEAMS_DIR/rusty.test.log" ] && echo yes || echo no)"
 # A new team never inherits routines left under its name (a save that raced a delete), nor a stale marker.
 db_exec "INSERT INTO routines (team, data, updated_at) VALUES ('ghost', '{}', $(( $(date +%s) - 100 )));"; touch "$FXA_TEAMS_DIR/ghost.deleting"
 check "creating team ghost clears the old routines and the stale marker, with an audit row" "0|0|no|1" \
