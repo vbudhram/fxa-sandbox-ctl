@@ -322,8 +322,9 @@ anywhere else.
 
 #### Stage 1: Queued
 
-`$CTL queue` runs the JQL `labels = "ai-fixme" AND statusCategory != Done`, ordered oldest
-first. The ticket appears there and stays until a pass admits it.
+`$CTL queue` runs the JQL `project = FXA AND level IS EMPTY AND labels = "ai-fixme" AND
+statusCategory != Done`, ordered oldest first. Every queue and state read starts with the
+profile's project and `level IS EMPTY` (`pipeline_jira_scope`). The ticket appears there and stays until a pass admits it.
 
 A ticket can sit here indefinitely, and that is by design. Three things hold it:
 
@@ -394,7 +395,7 @@ authoritative record of what the host did.** Read `$CTL progress <KEY>` before y
 conclusion from process state.
 
 `launch` refuses below `FXA_MIN_FREE_GB`, 5GB by default (`PIPE_MIN_FREE_GB`). It also refuses
-after `PIPE_MAX_LAUNCHES_PER_DAY` launches (40) in a rolling 24 hours, and refuses a ticket with no
+after `PIPE_MAX_LAUNCHES_PER_DAY` launches (the profile value: FxA 40, default 20) in a rolling 24 hours, and refuses a ticket with no
 PR while `$CTL newtickets` is `off`. It deletes the skip fingerprint, so a later skip on the same
 key is never silenced by a stale match.
 
@@ -920,6 +921,12 @@ redundant. A ticket that leaves
 refuses to mount a workspace another VM already holds. Reporting such a slot as claimable makes a
 pass burn its launch on a guaranteed abort, which is what happened to FXA-14371 on 2026-08-24.
 
+A third condition applies on every backend: the slot has no unshipped changes. After a refused
+ship the runner is gone and nothing reached `origin`, so the slot is the only copy. On 2026-10-09
+FXA-14727's ship was refused, the pass gave its slot to FXA-14580, and the change survived only
+in the index until that run's handoff dropped it. Such a slot stays out of the pool until its
+own ticket resumes there or a person cleans it.
+
 **Reaping is mandatory, and it hangs off the label write.** A finished agent sits at its prompt
 at 0% CPU and holds 8 to 13GB indefinitely. With two slots the pool deadlocks after two launches.
 On 2026-08-24 two VMs idled for four hours and eight consecutive passes did nothing.
@@ -1012,7 +1019,8 @@ marker, and `reporters.tsv`.
 |---|---|---|
 | `<KEY>.launch.log` | The launcher's full output | `progress` reports `nolog`, and the pass returns the ticket to the queue |
 | `<KEY>.attempts` | Real-fix counter | The 2-attempt cap resets |
-| `<KEY>.skipped` | Skip fingerprint, pass count, reason | The ticket gets one more skip comment |
+| `<KEY>.skipped` | Skip fingerprint, time, pass count, reason, and the kind (needs_decision, underspecified, depends_on, already_done, or empty) | The ticket gets one more skip comment |
+| `<KEY>.blocked-why` | When the ticket was blocked, the kind (stalled, dead_vm, attempts, rounds, refused_ship, operator, other) and the reason, from `label KEY blocked`; any other label removes it | The Board shows "blocked in Jira" with no reason |
 | `<KEY>.feedback-seen` | Handled review comment IDs | Handled comments reappear as new |
 | `<KEY>.feedback-rounds` | Round counter | The 2-round cap resets |
 | `<KEY>.feedback-acted` | IDs this round will fix | The 👍 reactions are lost |
@@ -1073,9 +1081,10 @@ slot means adding a worktree and nothing else.
 
 ### Extending to another Jira project
 
-The queue is label-driven, not project-driven. `$CTL queue` runs
-`labels = "ai-fixme" AND statusCategory != Done` with no project clause, so a ticket in any
-project enters stage 1 as soon as it carries the label.
+The queue is label-driven and limited to the profile's Jira project (`PIPE_JIRA_PROJECT`,
+FXA for the fxa profile). A ticket in another project with the label `ai-fixme` does not
+enter this queue. A ticket with a security level never enters a queue, because its fix would
+go into a public PR. A profile with no Jira project has no queue.
 
 One thing then needs attention:
 

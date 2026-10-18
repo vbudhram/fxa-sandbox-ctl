@@ -402,7 +402,7 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `ticket <ISSUE-KEY>` | Ticket text **including comments** — ground with this |
 | `reporter <ISSUE-KEY>` | Reporter's GitHub login, empty if unmapped |
 | `ground <ISSUE-KEY>` | Write `/tmp/fxa-KEY-ground.md`: ticket, cited paths checked on origin/main, frozen and stories checks, overlapping open PRs, recent commits |
-| `label <ISSUE-KEY> <state>` | WRITE: move the ticket; also reaps its VM, and on `merged` assigns the approver, sprints it, and closes it |
+| `label <ISSUE-KEY> <state> [kind] [reason]` | WRITE: move the ticket; also reaps its VM; for `blocked`, keeps the kind and reason for the Board, and on `merged` assigns the approver, sprints it, and closes it |
 | `slots` | Pool slots, and any VM running on each |
 | `freeslots` | Slots a ticket can claim — **use this, not `slots`** |
 | `launch <KEY> <slot> [ctx]` | WRITE: start an agent VM in the background |
@@ -413,7 +413,7 @@ See [AI_FIXME_PIPELINE.md](AI_FIXME_PIPELINE.md) for the lifecycle these command
 | `tokens <ISSUE-KEY>` | Token and model usage — run **before** the VM stops |
 | `record <ISSUE-KEY>` | Append the run to the telemetry log |
 | `costs` | Rebuild the per-issue cost rollup |
-| `skip <KEY> [reason]` | Record an admission skip; prints `comment` or `silent <n>` |
+| `skip <KEY> [kind] [reason]` | Record an admission skip, with an optional kind (needs_decision, underspecified, depends_on, already_done); prints `comment` or `silent <n>` |
 | `skipped [KEY]` | List recorded skips |
 | `attempts <KEY> [bump]` | Read or increment the real-fix attempt counter |
 | `lock` / `unlock` | One pass at a time |

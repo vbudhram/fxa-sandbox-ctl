@@ -268,7 +268,7 @@ authoritative record of what the host did.** Read `$CTL progress <KEY>` before y
 conclusion from process state.
 
 `launch` refuses below `FXA_MIN_FREE_GB`, 5GB by default (`PIPE_MIN_FREE_GB`). It also refuses
-after `PIPE_MAX_LAUNCHES_PER_DAY` launches (40) in a rolling 24 hours, and refuses a ticket with no
+after `PIPE_MAX_LAUNCHES_PER_DAY` launches (the profile value: FxA 40, default 20) in a rolling 24 hours, and refuses a ticket with no
 PR while `$CTL newtickets` is `off`. It deletes the skip fingerprint, so a later skip on the same
 key is never silenced by a stale match.
 
@@ -892,7 +892,8 @@ marker, and `reporters.tsv`.
 |---|---|---|
 | `<KEY>.launch.log` | The launcher's full output | `progress` reports `nolog`, and the pass returns the ticket to the queue |
 | `<KEY>.attempts` | Real-fix counter | The 2-attempt cap resets |
-| `<KEY>.skipped` | Skip fingerprint, pass count, reason | The ticket gets one more skip comment |
+| `<KEY>.skipped` | Skip fingerprint, time, pass count, reason, and the kind (needs_decision, underspecified, depends_on, already_done, or empty) | The ticket gets one more skip comment |
+| `<KEY>.blocked-why` | When the ticket was blocked, the kind (stalled, dead_vm, attempts, rounds, refused_ship, operator, other) and the reason, from `label KEY blocked`; any other label removes it | The Board shows "blocked in Jira" with no reason |
 | `<KEY>.feedback-seen` | Handled review comment IDs | Handled comments reappear as new |
 | `<KEY>.feedback-rounds` | Round counter | The 2-round cap resets |
 | `<KEY>.feedback-acted` | IDs this round will fix | The 👍 reactions are lost |
