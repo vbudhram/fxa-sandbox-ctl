@@ -768,7 +768,7 @@ function renderStatus() {
   hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
   if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
-  hl.title = [`${g?.backend ?? s?.backend ?? "?"}${g?.zone ? ` ${g.zone}` : ""}`, h.lock_held ? "lock held" : "lock free", g ? `launchcap ${g.launchcap}` : "",
+  hl.title = [`${g?.backend ?? s?.backend ?? "?"}${g?.zone ? ` ${g.zone}` : ""}`, h.lock_held ? "lock held" : "lock free", g ? `launchcap ${g.launchcap ?? "unknown"}` : "",
     `${h.free_gb ?? "?"}GB free`, s ? `tickets snapshot took ${s.took_seconds}s` : "", g ? `agents feed took ${g.took_seconds}s` : ""].filter(Boolean).join(" · ");
   const cells = [];
   cells.push(`<span class="cell ${dead ? "bad" : quiet ? "warn" : paused ? "" : "ok"}">last pass <b>${sp == null ? "never" : ago(sp)}</b></span>`);
@@ -858,6 +858,8 @@ function renderAlerts() {
   put("attn", alerts.join(""));
 }
 
+// A null launchcap means the slot read failed: say so, never "null more may launch".
+const agentsMore = (intakeOff, g) => intakeOff ? "intake off, no new tickets launch" : g?.launchcap == null ? "slots unknown" : `${g.launchcap} more may launch`;
 function renderAgents() {
   const { cards, waiting } = merged();
   const sec = document.getElementById("s-agents");
@@ -867,7 +869,7 @@ function renderAgents() {
   const repo = SNAP?.repo ?? "";
   const nRunners = cards.filter(c => !c.ci).length;
   const intakeOff = SNAP?.mode?.newtickets === "off";
-  const more = intakeOff ? "intake off, no new tickets launch" : `${AGENTS?.launchcap} more may launch`;
+  const more = agentsMore(intakeOff, AGENTS);
   put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} sandbox${nRunners === 1 ? "" : "es"} up · ${more}` : "agents feed not loaded", "in flight") +
     (cards.length === 0 ? `<div class="empty">no sandbox is up</div>` : cards.map(card).join("")) +
     (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
