@@ -240,6 +240,14 @@ check "and runs at the next day's time" "1" "$(tick $((T + 86400 - 3 * 3600 + 30
 d9="$(st started agent-jqf001 $((N - 60)))"
 check "a report the guard cannot read is not posted" "true|false" \
   "$(jq() { case "$*" in (*'{report: $t}'*) return 1 ;; (*) command jq "$@" ;; esac; }; routine_done "$d9" --state report --session agent-jqf001 --report-file "$tmp/clean.md" | command jq -r '"\(.changed)|\(.post)"')"
+# The claim checks for a live run in the same statement: a gate read that raced a run-now claims nothing.
+echo '{"key":"agent-live01","state":"active"}' > "$tmp/agent-live01.json"
+rl="$(mk fxa "daily 15:00")"; db_exec "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rl, 'manual-1', 'started', 'agent-live01', $((T + 21600)));"
+got="$(db_value() { case "$1" in ("SELECT count(*) FROM routine_runs WHERE routine_id = $rl AND state IN"*) echo 0 ;; (*) _db -list "$1" ;; esac; }; tick $((T + 21600 + 60)) | jq --argjson r "$rl" '[.runs[] | select(.routine == $r)] | length')"
+check "a scheduled claim with a run of the routine live claims nothing" "0|0" "$got|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rl AND state = 'claimed';")"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, started_at) VALUES ($rl, 'manual-2', 'queued', $((T + 21600)));"
+check "a queued run is not handed out while another run of the routine is live" "queued" \
+  "$(tick $((T + 21600 + 120)) >/dev/null; db_value "SELECT state FROM routine_runs WHERE routine_id = $rl AND period = 'manual-2';")"
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

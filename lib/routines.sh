@@ -251,7 +251,8 @@ routine_tick() {
     [ -n "$q" ] || continue
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
     [ "$free" -ge 2 ] || continue
-    [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'; SELECT changes();")" = 1 ] || continue
+    [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'
+      AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $(jq -r .routine_id <<< "$q") AND o.id != $(jq -r .id <<< "$q") AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
     free=$((free - 1))
     runs="$(jq -c --argjson q "$q" '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)}]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
@@ -300,9 +301,12 @@ routine_tick() {
       why="no runner free"; st=failed
     elif [ -n "$why" ]; then st=skipped
     else st=claimed; fi
+    # A claim also checks, in the same statement, that no run of the routine is live (a run-now raced it).
     n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, state, reason, config, heads, started_at, ended_at)
-      VALUES ($id, $(db_q "$period"), 'schedule', '$st', $( [ -n "$why" ] && db_q "$why" || echo NULL ), json($(db_q "$cfg")), $( [ -n "$heads" ] && echo "json($(db_q "$heads"))" || echo NULL ),
-      $( [ "$st" = claimed ] && echo "$now" || echo NULL ), $( [ "$st" = claimed ] && echo NULL || echo "$now" )); SELECT changes() || '|' || last_insert_rowid();")" \
+      SELECT $id, $(db_q "$period"), 'schedule', '$st', $( [ -n "$why" ] && db_q "$why" || echo NULL ), json($(db_q "$cfg")), $( [ -n "$heads" ] && echo "json($(db_q "$heads"))" || echo NULL ),
+      $( [ "$st" = claimed ] && echo "$now" || echo NULL ), $( [ "$st" = claimed ] && echo NULL || echo "$now" )
+      WHERE '$st' != 'claimed' OR NOT EXISTS (SELECT 1 FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES}));
+      SELECT changes() || '|' || last_insert_rowid();")" \
       || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
     # Only the tick whose INSERT wrote the row answers it: two ticks at once answer one run (D15).
     [ "${n%%|*}" = 1 ] || continue
