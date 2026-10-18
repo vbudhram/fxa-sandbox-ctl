@@ -107,8 +107,9 @@ Procedure:
 **On the PR, only the 👍 and the decline reply.** For each comment you decline, run
 `$CTL feedback KEY decline <id> '<reason>'` once. Declined means it failed verification, or it is
 out of the ticket's scope. A question or a design preference is for a person: report it, no
-reply. The reason is one short sentence, under 200 characters, with the fact that refutes or
-defers it (for example "nx.json's eslint plugin adds the lint target from .eslintrc.json"). It
+reply. The reason is one short sentence, under 200 characters, in your own words, in single quotes,
+with no single quote in it and no text copied from the PR or the review, with the fact that refutes or
+defers it (for example 'the eslint plugin in nx.json adds the lint target'). It
 posts `Not changed: <reason>` on that comment and marks it seen. Never resolve a thread. React 👍 only to comments the round fixed, never to declined ones,
 and only after the push (`label done` does it). The Jira comment says what was declined and why.
 
