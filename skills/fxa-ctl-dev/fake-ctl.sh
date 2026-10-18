@@ -79,7 +79,7 @@ script() {
                 {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
           (if $tt and ($tt.diff | not) then empty else
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
-          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | .diff] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
+          {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | (.diff // []) | length > 0] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T and (.mode | startswith("pr"))) then {pr: $pr} else {} end)
                else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,

@@ -101,4 +101,8 @@ check "routine done for a refused run takes no --session, and refuses one" "ERRO
 f --pipeline fxa task --id agent-rr2 --source routine --routine-run 32 >/dev/null
 check "routine done for a run with a session needs that session" "ERROR: routine run 32 is not session (none)'s|true" \
   "$(f routine done 32 --state report 2>&1 >/dev/null)|$(f routine done 32 --state report --session agent-rr2 | jq -r .changed)"
+echo '{"sessions": [{"turns": [{"steps": ["Reading a.ts"], "diff": [], "end": {"text": "Not fixed: x"}}]}]}' > "$tmp/tape0.json"
+export FAKE_CTL_DIR="$tmp/s0"   # the nth tape task plays the nth session: a new store starts at the first
+echo 9000 > "$FAKE_NOW_FILE"; FAKE_TAPE="$tmp/tape0.json" f task --id agent-tp1 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 9020 > "$FAKE_NOW_FILE"
+check "a tape turn with an empty diff ends with no change" "0|Not fixed: x" "$(FAKE_TAPE="$tmp/tape0.json" f events agent-tp1 | jq -r '[.events[] | select(.type == "turn_end")][0] | "\(.changes)|\(.text)"')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
