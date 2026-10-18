@@ -74,7 +74,7 @@ within their budget. Nobody asked the operator for anything, and FxA sessions di
 | **Owner** of a thread | The person who started the thread, or the first allowed person who tagged the bot in it. | Everything in the thread. Only the owner ships (Open PR, Push, `!pr`), stops, pauses, restarts, diffs, rebases, and opens the desktop. |
 | **Teammate** in the thread | Any allowed person in the channel. | Steer by tagging, answer the agent's questions, see status, watch, interrupt (unless the channel limits it), resume a paused session. The agent knows each line's author, so a teammate cannot pass as the owner. |
 | **Outsider** | Anyone not allowed. | Nothing. Taps and tags are refused. A link card does not unfurl for them. |
-| **Team admin** | An email in `TEAM_ADMINS`. | Creates, edits, tests, enables and disables team records in the dashboard. Sets team secrets. Every write is audited. |
+| **Team admin** | An email in `TEAM_ADMINS`. | Creates, edits, tests, enables and disables team records in the dashboard. Sets team secrets. Creates, edits, pauses, runs now, stops and deletes the team's routines in the dashboard. Every write is audited. |
 | **Jira reporter** | Anyone who can label a ticket. | Puts work in a team's queue with the `ai-fixme` label. |
 | **Reviewer** | People, and Copilot. | Review and merge the agent's PRs. A Copilot review or a failed CI run starts an automatic fix round, at most 2 for each PR. |
 | **Operator** | Vijay. | Holds the secrets, IAM, the live bot's access, the kill switches, lesson approval and promote. The guards are the operator's. |
@@ -85,7 +85,7 @@ Design for the owner first, and for the teammate second. Every other role is a g
 
 ## 4. How the product works
 
-### Two ways in
+### Three ways in
 
 1. **Slack sessions** (most use). A person tags `@fxa-agent` in a thread.
    - A **quick answer** comes first when the request reads like a question. A long-lived, read-only,
@@ -100,6 +100,12 @@ Design for the owner first, and for the teammate second. Every other role is a g
    runs, ships one squashed and signed commit as a draft PR, follows CI, and runs feedback rounds. The
    label is the only durable state. A ticket that needs a decision a person should make is skipped with
    one comment that names the decision.
+3. **Routines** (the dashboard). A team admin sets a scheduled prompt on the team's page: a code, UX,
+   performance or security review, or free text, with a schedule, the repos, an output mode (report,
+   draft PR, or draft PR with notes), an output channel and a cost limit. Each **routine run** is a
+   normal session with the team's profile, repos, access and budget. The bot posts only the result in
+   the routine's channel: the draft PR link or the report, or why it skipped or failed, and the next run
+   time. Slack cannot create, change or start a routine, and shows no cost; the dashboard History does.
 
 ### The unit of work
 
@@ -299,6 +305,8 @@ Read these before you build in the area. They are the owner's to decide.
 | Runner | The VM the agent works in (GCE or a Firecracker slot). |
 | Manager | The VM that runs the controller, the bot, the dashboard and the timers. |
 | Quick answer | A fast, read-only answer before a session. `@@upgrade` turns it into a session. |
+| Routine | A team's scheduled prompt, set by a team admin in the dashboard, that posts its result in one Slack channel. |
+| Routine run | One run of a routine: a session started by the schedule or by Run now, with its result in the routine's History. |
 | Team record | A team's JSON config in the state bucket. |
 | Folder team | A team with `profiles/<name>/profile.conf` in the repo (only FxA now). |
 | Role | `work` (ships), `dep`, `data`, `ref` (read-only) for each repo of a team. |
