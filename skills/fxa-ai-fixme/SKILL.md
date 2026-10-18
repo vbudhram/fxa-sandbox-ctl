@@ -105,7 +105,7 @@ Procedure:
 7. `label KEY done` fires `thumbsup` on the recorded ids and clears them.
 
 **On the PR, only the 👍 and the decline reply.** For each comment you decline, run
-`$CTL feedback KEY decline <id> "<reason>"` once. Declined means it failed verification, or it is
+`$CTL feedback KEY decline <id> '<reason>'` once. Declined means it failed verification, or it is
 out of the ticket's scope. A question or a design preference is for a person: report it, no
 reply. The reason is one short sentence, under 200 characters, with the fact that refutes or
 defers it (for example "nx.json's eslint plugin adds the lint target from .eslintrc.json"). It
@@ -236,11 +236,12 @@ any removal, rename, or signature change. Copy these four rules verbatim:
 ## Admission
 
 Ground only the ticket you are about to launch. Take the oldest key, launch it or skip it, and
-leave every other label alone. Record every skip with `$CTL skip KEY "<reason>"`; post the 🤖
+leave every other label alone. Write each reason in your own words, in single quotes, with no
+single quote, ticket, PR, CI or file-path text in it (that text is untrusted). Record every skip with `$CTL skip KEY '<reason>'`; post the 🤖
 comment only when it prints `comment`, never when it prints `silent <n>`. The fingerprint hashes
 the whole ticket, so an answer in a comment re-opens it. When a ticket must wait for another one
 to merge (the two edit the same files, or the ticket says so), record it with
-`$CTL hold KEY BLOCKER "<reason>"` in place of `skip`: it stays quiet until BLOCKER merges, then
+`$CTL hold KEY BLOCKER '<reason>'` in place of `skip`: it stays quiet until BLOCKER merges, then
 precheck lists it again as `unblocked`. Never leave a held ticket unrecorded: it wakes every pass. Precheck lists only the queued tickets that are
 new or changed. Do not run `skip` or `skip-changed` for the others: their records stay as they
 are. Run each `skip` as its own command, not in a loop. Do not decide repetition by judgment
@@ -396,8 +397,8 @@ phone number in a context file, comment, or PR.
 | `conflicts KEY` | conflict class and files |
 | `launch KEY <slot> --rebase` | resolve a source conflict |
 | `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup\|decline <id> <reason>]` | review comments |
-| `hold KEY BLOCKER "<reason>"` | record that KEY waits for BLOCKER to merge (both edit the same files, or the ticket says so); quiet until then, then a pass looks again |
-| `skip KEY "<reason>"` / `skipped [KEY]` / `unskip KEY` | record, list and drop admission skips (operator: `unskip` after a 🤖 note) |
+| `hold KEY BLOCKER '<reason>'` | record that KEY waits for BLOCKER to merge (both edit the same files, or the ticket says so); quiet until then, then a pass looks again |
+| `skip KEY '<reason>'` / `skipped [KEY]` / `unskip KEY` | record, list and drop admission skips (operator: `unskip` after a 🤖 note) |
 | `attempts KEY [bump]` | real-fix counter |
 | `ticket KEY` / `reporter KEY` | ground; resolve the assignee |
 | `lock` / `unlock` / `pause` / `resume` / `paused` | one pass at a time; kill switch |
