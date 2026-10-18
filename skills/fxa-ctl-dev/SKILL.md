@@ -60,14 +60,15 @@ whichever tree you run them in.
 ## Test
 
 ```bash
-bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker
-bash skills/fxa-ctl-dev/test.sh mac    # quick
+bash skills/fxa-ctl-dev/test.sh changed   # the default before a push: the checks for the changed files and functions
+bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker (about 2.5 min each; CI runs the same in about 1 min)
+bash skills/fxa-ctl-dev/test.sh mac    # this host only
 gh run list -R vbudhram/fxa-sandbox-ctl -L 3   # CI: the Ubuntu half on each push of main and improve/**; the bot's CI runs npm test and the e2e
 cd ~/Desktop/working2/fxa-agent-bot && npm test
 bash skills/fxa-ctl-dev/prove.sh lib/x.check.sh lib/x.sh   # the check fails without your change (PROVE_BASE=<rev> once committed)
 ```
 
-Run `test.sh` before each commit, not a loop of your own: it counts a check that
+Run `test.sh changed` before each push, and let CI run the full suite. Use `test.sh`, not a loop of your own: it counts a check that
 fails to start or exits nonzero as a failure. (A hand loop once reported "all pass"
 because macOS has no `timeout`, so no check ran.)
 
