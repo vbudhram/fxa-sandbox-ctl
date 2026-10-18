@@ -83,4 +83,15 @@ unset FAKE_TAPE
 check "the quick look is busy by default" "3" "$(f answer ask --id q1 --prompt-file "$tmp/p.md" --stream >/dev/null; echo $?)"
 check "FAKE_ANSWER: the quick look answers, after a step" "step|answer|It was removed." "$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --prompt-file "$tmp/p.md" --stream | jq -r '.type' | paste -sd'|' -)|$(FAKE_ANSWER='It was removed.' f answer ask --id q1 --stream | tail -1 | jq -r .answer)"
 check "FAKE_DIFF_LINE adds one line to the one-repo diff, and is off by default" "1|0" "$(FAKE_DIFF_LINE='KEY=x' f diff FXA-1 | grep -c '^+KEY=x$')|$(f diff FXA-1 | grep -c '^+KEY=')"
+# A failed finish (FAKE_FINISH_FAIL) is no PR: a later turn carries none, and a second finish is not refused as a second PR.
+echo 5000 > "$FAKE_NOW_FILE"; f task --id agent-gg7 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 5015 > "$FAKE_NOW_FILE"
+FAKE_FINISH_FAIL="the handoff check did not pass" f finish --session agent-gg7 >/dev/null
+check "FAKE_WRAP_REPLY: the wrap-up replies 6 s in; FAKE_FINISH_FAIL: then the error, and the session is active" "needs-input|Which base?|error|the handoff check did not pass|active" \
+  "$(echo 5027 > "$FAKE_NOW_FILE"; FAKE_WRAP_REPLY="Which base?" FAKE_FINISH_FAIL="the handoff check did not pass" f events agent-gg7 --since 1 | jq -r '"\(.events[0].status)|\(.events[0].text)|\(.events[1].type)|\(.events[1].text)|\(.state)"')"
+f steer agent-gg7 --message-file "$tmp/m.md" >/dev/null; echo 5040 > "$FAKE_NOW_FILE"
+check "FAKE_FAIL_S: the session is failed from then on" "active|failed" "$(FAKE_FAIL_S=50 st agent-gg7)|$(echo 5050 > "$FAKE_NOW_FILE"; FAKE_FAIL_S=50 st agent-gg7)"
+check "after a failed finish the next turn has no PR, and a new finish is taken" "null|0" \
+  "$(f events agent-gg7 | jq -r '[.events[] | select(.type == "turn_end")][-1].pr')|$(f finish --session agent-gg7 >/dev/null 2>&1; echo $?)"
+check "FAKE_ROUTINE_DONE: fail exits 1; stopped answers no change" "1|false|stopped" \
+  "$(FAKE_ROUTINE_DONE=fail f routine done 9 --state report --session agent-gg7 >/dev/null 2>&1; echo $?)|$(FAKE_ROUTINE_DONE=stopped f routine done 9 --state report --session agent-gg7 | jq -r '"\(.changed)|\(.state)"')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
