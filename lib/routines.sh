@@ -355,7 +355,6 @@ routine_reconcile() {
           else
             pr=""
             case "$sst" in
-              starting|active|wrapping) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
               paused) session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the session paused with no result" ;;
               stopped|failed) why="the session ${sst} with no result" ;;
               *) [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] && { session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the run took over 120 min"; } ;;
