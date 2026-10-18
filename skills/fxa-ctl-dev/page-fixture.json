@@ -1,0 +1,9 @@
+{
+  "/api/team-admin": { "user": "admin@example.com", "admin": true },
+  "/api/teams": { "age_seconds": 5, "teams": [
+    { "profile": "example", "label": "Example", "repos": ["example/app"],
+      "access": { "record": true, "status": "active", "open": false, "users": ["U000EXAMPLE"] },
+      "test": { "result": null, "at": null, "generation": 3, "tested": 3 } }
+  ] },
+  "/api/routines/summary": { "teams": {} }
+}
