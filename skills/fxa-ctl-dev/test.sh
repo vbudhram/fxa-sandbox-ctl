@@ -101,6 +101,8 @@ run_changed() {
       *.sh|fxa-sandbox-ctl)
         b="$(basename "$f" .sh)"
         for c in $all; do case "$(basename "$c")" in "$b".check.sh|"$b"-*.check.sh) picked+=("$c") ;; esac; done
+        # A check that reads the file as text (a grep of snapshot.sh) names it.
+        for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done
         for fn in $( { git diff -U0 "$base"...HEAD -- "$f"; git diff -U0 HEAD -- "$f"; } 2>/dev/null \
             | sed -n 's/^@@[^@]*@@ *\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p; s/^[+-]\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p' | sort -u); do
           for c in $(grep -lw -- "$fn" $all 2>/dev/null); do picked+=("$c"); done
