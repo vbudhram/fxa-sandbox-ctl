@@ -182,7 +182,7 @@ check "posted marks a skip; a started run is refused" "posted ${sk}|1|ERROR: rou
 : > "$tmp/audit"; rn="$(mk fxa "weekly sat 23:00")"
 q1="$(FXA_ROUTINE_NOW=$N FXA_TEAM_ACTOR=admin@example.com routine_runnow fxa "$rn")"
 qid="$(db_value "SELECT id FROM routine_runs WHERE routine_id = $rn;")"
-check "run-now queues a manual run, by that admin, with an audit row" "queued run ${qid}: it starts within a minute|queued|manual-${N}|admin@example.com|routine-run|fxa|routine ${rn}: run ${qid}" \
+check "run-now queues a manual run, by that admin, with an audit row" "queued run ${qid}: it starts when a runner is free, within 60 min|queued|manual-${N}|admin@example.com|routine-run|fxa|routine ${rn}: run ${qid}" \
   "$q1|$(db_value "SELECT state || '|' || period || '|' || actor FROM routine_runs WHERE id = $qid;")|$(tail -1 "$tmp/audit")"
 check "run-now with a run already live is refused" "ERROR: a run of routine ${rn} is in progress" "$(FXA_ROUTINE_NOW=$((N + 60)) routine_runnow fxa "$rn" 2>&1)"
 check "run-now of another team's routine is refused" "ERROR: team drafty has no routine ${rn}" "$(routine_runnow drafty "$rn" 2>&1)"
@@ -348,6 +348,12 @@ check "the live tick leaves a dev run with no live session record alone" "starte
 rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"
 check "a team-paused skip of a team that turned private does not post to an unbound channel" "the team is paused: held|false" \
   "$(_routine_profile() { echo "$PRIV"; }; _routine_team_paused() { echo held; return 0; }; tick $((T + 20 * 3600 + 30)) | jq -r --argjson r "$rh" '.skips[] | select(.routine == $r) | "\(.reason)|\(.post)"')"
+
+# A queued run with no free runner for 60 min fails with that reason, not one that blames the tick.
+rw="$(mk fxa "weekly sun 05:00")"
+qn="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rw, 'manual-8', 'manual', 'queued', $((T - 3660))); SELECT last_insert_rowid();")"
+echo 1 > "$tmp/free"; tick "$T" >/dev/null; echo 5 > "$tmp/free"
+check "a queued run with no free runner after 60 min fails as no runner free" "failed|no runner free within 60 min" "$(s_of "$qn")"
 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?

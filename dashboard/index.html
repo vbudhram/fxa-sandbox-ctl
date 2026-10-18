@@ -1524,7 +1524,7 @@ const rtWhen = (iso, zone) => { try { return new Date(iso).toLocaleString("en-GB
 const rtSched = d => { const [k, a, b] = (d.schedule || "").split(" "); return k === "weekly" ? `Weekly on ${a}, ${b}` : `${k === "daily" ? "Daily" : "Weekdays"}, ${a}`; };
 function rtState(r) {
   const v = r.live;
-  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts within a minute, and the result goes to <span class="mono">${esc(r.data.channel)}</span>.`;
+  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts when a runner is free, within 60 min, and the result goes to <span class="mono">${esc(r.data.channel)}</span>.`;
   if (v) return `<span class="tag info">Running</span>${v.session ? ` <a class="mono" href="#sessions/live/${esc(v.session)}">${esc(v.session)}</a>` : ""}`;
   return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
 }
@@ -1667,7 +1667,7 @@ async function rtDo(act, id) {
   await loadRoutines(team);
   // A pause or resume moves the version: the admin's own open edit of this routine takes the new one.
   if (RT.form?.id === r0.id && row(r0.id)) RT.form.version = row(r0.id).version;
-  rtSay(r?.ok ? (act === "run" ? `Queued. It starts within a minute, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
+  rtSay(r?.ok ? (act === "run" ? `Queued. It starts when a runner is free, within 60 min, and the result goes to ${r0.data.channel}.` : j.out || "done") : j.error || String(r?.status), !!r?.ok);
 }
 document.addEventListener("click", e => {
   const b = e.target.closest?.("[data-routines] :is([data-rt-new], [data-rt-cancel], [data-rt-save], [data-rt-act])"); if (!b || b.disabled) return;
