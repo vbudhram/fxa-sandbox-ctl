@@ -1088,7 +1088,7 @@ function renderSess() {
     const pauseIn = sel.state === "active" && !sel.agent_alive && sel.turn_open !== "1" && sel.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - sel.last_activity))) : null;
     const endsIn = isLive && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
     const repo = SNAP?.repo ?? "mozilla/fxa";
-    const branch = sel.pr_url ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>`
+    const branch = prHref(sel.pr_url) ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : sel.pr_url ? esc(sel.pr_url)
       : sel.pushed_branch ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : "";
     put("sx-bar", `<span class="sdot ${cls}"></span><span class="key">${esc(sel.key)}</span>
       <span class="sxt" title="${esc(convTitle(sel))}">${esc(convTitle(sel))}</span>
@@ -1118,7 +1118,7 @@ function renderSess() {
 const sessSummary = s => { try { return JSON.parse(s.summary || "{}"); } catch { return {}; } };
 // A conversation's PR, from any of its sessions, with its state when this repo's lists know it.
 function convPr(s) {
-  const prUrl = chainOf(s, AGENTS?.sessions ?? []).map(x => x.pr_url).find(Boolean); if (!prUrl) return null;
+  const prUrl = chainOf(s, AGENTS?.sessions ?? []).map(x => x.pr_url).find(Boolean); if (!prHref(prUrl)) return null;
   const n = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]), mine = prUrl.includes(`/${SNAP?.repo ?? "mozilla/fxa"}/`);
   const p = n && mine ? (STATS?.prs ?? []).find(x => x.n === n) : null;
   return { url: prUrl, n, state: p?.state ?? (mine && (SNAP?.open_prs ?? []).some(o => o.number === n) ? "OPEN" : "") };
@@ -1561,6 +1561,9 @@ function rtState(r) {
 }
 // Only a GitHub PR link becomes a link; anything else in pr_url shows as text.
 const rtPr = u => /^https?:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(u || "") ? u : "";
+// Links built from feed data: only a GitHub PR link or a session key becomes an href; any other value shows as text.
+const prHref = rtPr;
+const sessHref = k => /^agent-[a-z0-9]{4,12}$/.test(k || "") ? `#sessions/stopped/${k}` : "";
 // d: the routine's config. A routine with no channel posts nothing, so its report is in History (D32).
 function rtLast(x, d) {
   if (!x) return "no run yet";
@@ -1574,7 +1577,7 @@ function rtHist(rows) {
   return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
     `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
       ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
-      ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", x.session ? `<a class="mono" href="#sessions/stopped/${esc(x.session)}">${esc(x.session)}</a>` : "")}
+      ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", sessHref(x.session) ? `<a class="mono" href="${sessHref(x.session)}">${esc(x.session)}</a>` : esc(x.session || ""))}
 </tr>${x.report ? `<tr><td colspan="7" style="text-align:left;white-space:normal"><details data-rt-run="${esc(x.id)}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre style="white-space:pre-wrap">${esc(x.report)}</pre></details></td></tr>` : ""}`).join("")}</tbody></table>`;
 }
 function rtRow(r) {
@@ -2387,7 +2390,7 @@ function sessionCard(s) {
       ${endsIn != null ? `<span class="${endsIn < 1800 ? "warnt" : ""}">sandbox ends in ${short(endsIn)}</span>` : ""}
       ${s.resume_from ? `<span>resumed from <span class="mono">${esc(s.resume_from)}</span></span>` : ""}
       ${s.pushed_branch && !s.pr_url ? `<span class="sep"></span><a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">branch ${esc(s.pushed_branch)} ↗</a>` : ""}
-      ${s.pr_url ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : ""}
+      ${prHref(s.pr_url) ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : s.pr_url ? `<span class="sep"></span>${esc(s.pr_url)}` : ""}
     </div>
     ${last ? `<div class="stats"><span class="last" title="${esc(last)}">${esc(last)}</span></div>` : ""}
     <details class="hist" data-key="${esc(s.key)}"${HIST_OPEN.has(s.key) ? " open" : ""}><summary>Conversation</summary><div class="chat body">${histHtml(s.key)}</div></details>
