@@ -345,6 +345,14 @@ rv="$(mk fxa "weekly sun 04:00")"; db_exec "UPDATE routines SET env = 'dev' WHER
 gv="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rv, 'manual-9', 'started', 'agent-devr01', $((NOWR - 60))); SELECT last_insert_rowid();")"
 FXA_ROUTINE_NOW=$((NOWR + 601)) routine_tick --env live >/dev/null
 check "the live tick leaves a dev run with no live session record alone" "started|" "$(s_of "$gv")"
+FXA_ROUTINE_NOW=$((NOWR + 602)) routine_tick --env dev >/dev/null
+check "the dev tick fails its own run with no session record" "failed|the run's session is gone" "$(s_of "$gv")"
+# A run whose routine row is gone (routines_clear_name) is still the live tick's to end.
+ro="$(mk fxa "weekly sun 03:00")"
+go="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($ro, 'manual-10', 'started', 'agent-orph01', $((NOWR - 60))); SELECT last_insert_rowid();")"
+db_exec "DELETE FROM routines WHERE id = $ro;"
+FXA_ROUTINE_NOW=$((NOWR + 603)) routine_tick --env live >/dev/null
+check "the live tick ends a run whose routine row is gone" "failed|the run's session is gone" "$(s_of "$go")"
 
 # A paused team that turned private: its skip does not post to a channel it does not bind.
 rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"

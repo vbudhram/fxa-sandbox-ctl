@@ -387,7 +387,7 @@ routine_tick() {
 routine_reconcile() {
   local now="$1" env="$2" rows r id st sess since rec sst pr why
   rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since FROM routine_runs r
-    JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND t.env = $(db_q "$env");")" \
+    LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(t.env, 'live') = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
     [ -n "$r" ] || continue
