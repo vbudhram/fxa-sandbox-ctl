@@ -290,6 +290,17 @@ ns2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, started_at
 check "done with no --session refuses a run that is not claimed or queued" "ERROR: routine run ${ns2} is started: done with no --session takes only a claimed or queued run|started" \
   "$(routine_done "$ns2" --state failed --reason x 2>&1)|$(db_value "SELECT state FROM routine_runs WHERE id = $ns2;")"
 db_exec "UPDATE routine_runs SET state = 'ok' WHERE id IN ($nc2, $ns2);"
+# A manual run carries the same fields as a scheduled one; a skip names its routine, template and private flag.
+rm_="$(mk fxa "daily 23:00" '{"name": "Perf look", "template": "perf-review"}')"
+db_exec "UPDATE routine_runs SET state = 'ok' WHERE state IN ('queued','claimed','started');"
+FXA_ROUTINE_NOW=$((T + 12 * 3600)) routine_runnow fxa "$rm_" >/dev/null
+check "a manual run carries name, mode, template, private and since" '{"trigger":"manual","name":"Perf look","mode":"report","template":"perf-review","private":true,"since":null}' \
+  "$(_routine_profile() { echo '{"private": true}'; }; tick $((T + 12 * 3600 + 30)) | jq -c --argjson r "$rm_" '.runs[] | select(.routine == $r) | {trigger, name, mode, template, private, since}')"
+echo '{"name":"drafty2","status":"draft"}' > "$FXA_TEAMS_DIR/drafty2.json"
+rk="$(mk drafty2 "daily 23:30" '{"name": "Sec look", "template": "security-review"}')"
+check "a skip carries the routine's name, template and private flag" '{"name":"Sec look","template":"security-review","private":false}' \
+  "$(_routine_profile() { echo '{"private": false}'; }; tick $((T + 14 * 3600 + 1830)) | jq -c --argjson r "$rk" '.skips[] | select(.routine == $r) | {name, template, private}')"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

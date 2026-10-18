@@ -331,8 +331,10 @@ routine_tick() {
     else
       post="$(_routine_post "$id" "$why")" || post=false
       [ "$(jq -r .paused <<< "$r")" = 0 ] || post=false   # an admin's own pause is not news in Slack
+      # template and private: the bot checks the channel before it posts a skip too (D8).
       skips="$(jq -c --argjson id "${n#*|}" --argjson rid "$id" --arg t "$team" --argjson c "$cfg" --arg why "$why" --arg next "$next" --argjson post "$post" \
-        '. + [{run: $id, routine: $rid, team: $t, name: $c.name, channel: $c.channel, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
+        --argjson i "$(_routine_run_info "$id" "$team" "$cfg")" \
+        '. + [{run: $id, routine: $rid, team: $t, name: $c.name, channel: $c.channel, template: $i.template, private: $i.private, reason: $why, next: (if $next == "" then null else ($next | tonumber) end), post: $post}]' <<< "$skips")"
     fi
   done < <(jq -c '.[]' <<< "$rows")
   rm -f "$f"
