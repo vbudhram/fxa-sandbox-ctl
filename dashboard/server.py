@@ -540,6 +540,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _lesson_decide(self):
+        # An approved lesson goes into every new runner's guide, so only a signed team admin may decide one.
+        user = self._admin("POST", "/api/lessons")
+        if not user:
+            return
         # JSON only: a cross-site form cannot send it without a preflight, which this server never answers.
         if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
             self._json(415, {"error": "send JSON"})
@@ -555,7 +559,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": "bad request"})
             return
         try:
-            proc = ctl_run(["lessons", action, lid] + (["--text", text] if text.strip() and action == "approve" else []), timeout=15)
+            proc = ctl_run(["lessons", action, lid] + (["--text", text] if text.strip() and action == "approve" else []), timeout=15,
+                           env={"FXA_TEAM_ACTOR": user})
         except Exception as exc:
             self._json(503, {"error": type(exc).__name__})
             return
