@@ -93,6 +93,8 @@ run_changed() {
   for f in $files; do
     [ -f "$f" ] || continue
     case "$f" in *.check.sh) picked+=("$f"); continue ;; esac
+    # The check named after the file's folder: lib/db/008-x.sql is lib/db.check.sh's.
+    c="$(dirname "$(dirname "$f")")/$(basename "$(dirname "$f")").check.sh"; [ -f "$c" ] && picked+=("$c")
     case "$f" in *.sh|fxa-sandbox-ctl) bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; } ;; esac
     case "$f" in
       # A shell file: the checks named after it, and each check that names a function the diff changed.
