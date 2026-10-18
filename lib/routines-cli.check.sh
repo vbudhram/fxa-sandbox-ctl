@@ -24,7 +24,7 @@ cat > "$tmp/bin/curl" <<EOF
 #!/bin/sh
 for a; do url="\$a"; done
 case "\$url" in
-  */installation) echo '{"id": 1}' ;;
+  */installation) printf 200 ;;   # teams.sh reads only the HTTP code
   https://api.github.com/repos/*) if [ -e "$tmp/private" ]; then printf 404; else printf 200; fi ;;
   *) exit 7 ;;
 esac
