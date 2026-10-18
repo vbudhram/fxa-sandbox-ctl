@@ -224,7 +224,8 @@ _routine_post() {
 # start the head of this routine's last started run.
 _routine_heads() {
   local slug br head start out="{}" prev
-  prev="$(db_value "SELECT heads FROM routine_runs WHERE routine_id = $2 AND heads IS NOT NULL AND started_at IS NOT NULL AND state NOT IN ('skipped','missed') ORDER BY id DESC LIMIT 1;")" || return 1
+  # Only a run that reached a result: a stopped or failed one reviewed nothing, so it moves no start.
+  prev="$(db_value "SELECT heads FROM routine_runs WHERE routine_id = $2 AND heads IS NOT NULL AND state IN ('ok','report','nochange') ORDER BY id DESC LIMIT 1;")" || return 1
   [ -n "$prev" ] || prev='{}'
   br="$(jq -r '.branch // ""' <<< "$1")"
   for slug in $(jq -r '.repos[]' <<< "$1"); do

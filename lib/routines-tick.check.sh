@@ -248,6 +248,11 @@ check "a scheduled claim with a run of the routine live claims nothing" "0|0" "$
 db_exec "INSERT INTO routine_runs (routine_id, period, state, started_at) VALUES ($rl, 'manual-2', 'queued', $((T + 21600)));"
 check "a queued run is not handed out while another run of the routine is live" "queued" \
   "$(tick $((T + 21600 + 120)) >/dev/null; db_value "SELECT state FROM routine_runs WHERE routine_id = $rl AND period = 'manual-2';")"
+# The start comes only from a run with a result: a stopped run does not make the next run skip.
+rp="$(mk fxa "daily 16:00")"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($rp, '2026-10-18', 'stopped', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"$H1\"}}'), $((T - 86400)));"
+check "after a stopped run with the same head, the next run still runs, from no start" "1|null" \
+  "$(tick $((T + 25200 + 60)) | jq --argjson r "$rp" '[.runs[] | select(.routine == $r)] | length')|$(db_value "SELECT coalesce(json_extract(heads, '$.\"mozilla/fxa\".start'), 'null') FROM routine_runs WHERE routine_id = $rp AND state = 'claimed';")"
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
