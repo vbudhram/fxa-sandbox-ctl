@@ -1409,6 +1409,15 @@ cmd_precheck() {
   local work=0 info="" line key num state ids noted why kinds=""
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
   _work() { work=1; kinds="${kinds}${kinds:+ }${1%%:*}"; printf '%s\n' "$*"; }
+  # A drain line the pass can only report (a source conflict, no PR, a failed label): the same line
+  # wakes one pass, then one each FXA_PASS_REJUDGE_S while it stays, as reconcile's lines do.
+  local drain_seen=""
+  _drain_wake() {
+    local key="$1" fp="$2" noted="${PIPE_STATE_DIR}/$1.drain-noted"; drain_seen="${drain_seen} ${key}"
+    if [ "$fp" = "$(cat "$noted" 2>/dev/null || true)" ] && [ $(( $(date +%s) - $(_mtime "$noted") )) -lt "${FXA_PASS_REJUDGE_S:-3600}" ]; then
+      _info "drain: $fp (reported before, unchanged)"
+    else _work "drain: $fp"; printf '%s\n' "$fp" > "$noted"; fi
+  }
   # Held back; printed only when some line needs judgment.
   _info() { info="${info}${info:+$'\n'}$*"; }
   # Reconcile lines that need judgment. The rest were applied or are progress.
@@ -1451,8 +1460,8 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
     [ -n "$line" ] || continue
     read -r key num state _ <<< "$line"
     case "$state" in
-      MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _work "drain: $line (label merged FAILED)"; fi ;;
-      CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _work "drain: $line (label rejected FAILED)"; fi ;;
+      MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _drain_wake "$key" "$line (label merged FAILED)"; fi ;;
+      CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _drain_wake "$key" "$line (label rejected FAILED)"; fi ;;
       RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"
               else
                 # The pass can only report a done PR's red, so the same red (head and failure count)
@@ -1466,9 +1475,9 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
               fi ;;
       CONFLICT)
         if [ "$(gh_conflicts "$key" 2>/dev/null | cut -d' ' -f1)" = lockfile ]; then
-          if gh_relock "$key" >/dev/null 2>&1; then _info "drain: $key #$num lockfile conflict fixed (main merged, yarn.lock re-resolved)"; else _work "drain: $line lockfile (relock FAILED; run: relock $key)"; fi
-        else _work "drain: $line"; fi ;;
-      *)      _work "drain: $line" ;;
+          if gh_relock "$key" >/dev/null 2>&1; then _info "drain: $key #$num lockfile conflict fixed (main merged, yarn.lock re-resolved)"; else _drain_wake "$key" "$line lockfile (relock FAILED; run: relock $key)"; fi
+        else _drain_wake "$key" "$line"; fi ;;
+      *)      _drain_wake "${key:-none}" "$line" ;;
     esac
   done <<< "$drain_out"
   # A PR that is no longer red forgets its note, so a later red wakes a pass again. Only after a
@@ -1476,6 +1485,10 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   [ "$drain_rc" = 0 ] && for line in "${PIPE_STATE_DIR}"/*.red-noted; do
     [ -e "$line" ] || continue; key="$(basename "$line" .red-noted)"
     case " $red_seen " in *" $key "*) ;; *) rm -f "$line" ;; esac
+  done
+  [ "$drain_rc" = 0 ] && for line in "${PIPE_STATE_DIR}"/*.drain-noted; do
+    [ -e "$line" ] || continue; key="$(basename "$line" .drain-noted)"
+    case " $drain_seen " in *" $key "*) ;; *) rm -f "$line" ;; esac
   done
   # Drain reads only done tickets. A blocked ticket's PR can still be merged or
   # closed by a person, and nothing else moves the ticket then.

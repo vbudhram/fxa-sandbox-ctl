@@ -9,6 +9,7 @@ command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^cmd_precheck() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 PIPE_LOCK_DIR="$tmp/pass.lock" PIPE_STATE_DIR="$tmp" PIPE_NAME=test
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 pipeline_lock() { :; }; pipeline_unlock() { :; }; db_ingest() { :; }
 cmd_reconcile() { :; }; cmd_reap() { :; }; cmd_label() { :; }
 jira_done_keys() { echo FXA-7; }; jira_inflight_keys() { :; }; jira_queue_keys() { :; }; jira_keys_in_state() { :; }
@@ -40,6 +41,11 @@ check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
   gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }
   out="$(cmd_precheck 2>&1)"
   check "an inflight PR's conflict wakes the pass, and its red does not come from the drain" "1|0" "$(grep -c '^drain: FXA-9 90 CONFLICT' <<< "$out")|$(grep -c 'FXA-9 90 RED' <<< "$out")"
+  # The same conflict on the next pass stays quiet; a changed line wakes it again; an hour later it wakes again.
+  check "the same conflict again is quiet" "0" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-9')"
+  gh_drain() { echo "FXA-9 91 CONFLICT"; }
+  check "a changed drain line (a new PR) wakes the pass" "1" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-9 91 CONFLICT')"
+  check "the same line after the rejudge time wakes it again" "1" "$(FXA_PASS_REJUDGE_S=0 cmd_precheck 2>&1 | grep -c '^drain: FXA-9 91 CONFLICT')"
   exit "$fail" ) || fail=1
 # Info lines come after work lines, under one "info:" marker: claude-job.sh routes on the lines above it.
 pipeline_focus_key() { echo FXA-1; }; echo ccc > "$tmp/sha"
