@@ -28,6 +28,11 @@ _snapshot_pool() {
 
 # Recorded admission skips. The reason is free text and holds spaces, so split
 # on the first three fields only.
+# _snapshot_last_pass   The last passes.jsonl row as JSON, or null when there is none or it does not parse.
+_snapshot_last_pass() {
+  tail -n 1 "${PIPE_STATE_DIR}/passes.jsonl" 2>/dev/null | jq -c . 2>/dev/null | grep . || echo null
+}
+
 _snapshot_skipped() {
   # The ticket each hold waits on (pipeline_hold), by key.
   local f held='{}'
@@ -687,6 +692,8 @@ snapshot_json() {
     --argjson inflight_items "$inflight_items" \
     --argjson blocked "$blocked_items" \
     --argjson health "$(pipeline_health_json)" \
+    --argjson roundcap "${_FXA_ROUND_CAP:-2}" \
+    --argjson lastpass "$(_snapshot_last_pass)" \
     --argjson skipped "$skipped" \
     --argjson pool "$pool" \
     --argjson freeslots "$freeslots" \
@@ -717,6 +724,8 @@ snapshot_json() {
          open_prs: $openprs,
          merged_prs: $mergedprs,
          health: $health,
+         limits: { attempts: $roundcap, feedback_rounds: $roundcap },
+         last_pass: $lastpass,
          inflight_fetch_failed: ($inflight_items == null),
          pool: $pool, free_slots: $freeslots,
          inflight: [$inflight[] as $i
