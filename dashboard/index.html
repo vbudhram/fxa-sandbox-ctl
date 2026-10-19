@@ -279,7 +279,7 @@
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
   .tlink { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .tlink:hover { text-decoration:underline; }
   .ttable tr.sel td { background:var(--infobg); }
-  #sb-done h2 { font:600 var(--t-sub) var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #sb-done .sbd-scroll { overflow-x:auto; } #sb-done .ttable td { white-space:nowrap; } #sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
+  #sb-done h2 { font:600 var(--t-sub) var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #sb-done .sbd-scroll { overflow-x:auto; } #sb-done .ttable td { white-space:nowrap; } #sb-done .ttable td.sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } #sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
   .rtshow button[aria-pressed="true"], .tsw[aria-pressed="true"] { color:var(--link); border-color:var(--link); background:var(--infobg); }
   .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
@@ -3458,7 +3458,7 @@ function route() {
   if (view === "stats") renderStats();
   if (view === "overview" && view !== VIEW_PREV) loadRuns();
   if (view === "runners") renderSb();
-  if (view === "runners" && view !== VIEW_PREV) loadSbDone();
+  if (view === "runners" && (view !== VIEW_PREV || TAB !== TAB_PREV)) loadSbDone();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
@@ -3736,9 +3736,10 @@ paintTheme();
 let SB_DONE = null, SB_DONE_SEQ = 0;
 async function loadSbDone() {
   if (VIEW !== "runners") return;
-  const seq = ++SB_DONE_SEQ;
+  // The tab's source goes to the server, which filters before its limit of 100.
+  const seq = ++SB_DONE_SEQ, src = { pipeline: "pipeline", slack: "slack", routines: "routine" }[TAB] ?? "";
   try {
-    const r = await fetch("/api/runs/recent?ended=1&limit=100", { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
+    const r = await fetch(`/api/runs/recent?ended=1&limit=100${src ? `&src=${src}` : ""}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
     if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
     if (j.error) throw new Error(j.error);
     if (seq !== SB_DONE_SEQ) return;
@@ -3764,8 +3765,10 @@ function renderSbDone() {
     const where = pipe ? "GCE" : { firecracker: "Firecracker", gce: "GCE" }[r.where] ?? "—";
     const mem = Number.isFinite(r.mem_mb) ? `${(r.mem_mb / 1024).toFixed(1)} GB` : "—";
     const res = `${runBadge(r)}${r.stop && r.outcome !== "pr" ? ` <span class="sbd-stop">${esc(r.stop)}</span>` : ""}`;
-    return `<tr data-sbdone="${esc(r.key)}"><td>${esc(when)}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for">${who}</td><td>${esc(teamLabel(r.team || "fxa"))}</td><td>${where}</td>
-      <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${usd(r.usd)}</td><td>${res}</td></tr>`;
+    // A gated routine run comes with no team and no cost: a dash, not FxA and $0.00.
+    const full = r.routine && !r.key ? "Routine · scheduled run" : `${r.key ? `${r.key} ` : ""}${plainMd(r.title || "")}`;
+    return `<tr data-sbdone="${esc(r.key)}"><td>${esc(when)}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for" title="${esc(full)}">${who}</td><td>${r.team ? esc(teamLabel(r.team)) : "—"}</td><td>${where}</td>
+      <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${r.usd == null ? "—" : usd(r.usd)}</td><td>${res}</td></tr>`;
   };
   putOv("sb-done", `${h}${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${rows.length ? `<div class="sbd-scroll"><table class="ttable"><thead><tr><th>Ended</th><th>Source</th><th>For</th><th>Team</th><th>Where</th><th>Boot</th><th>Peak memory</th><th>Time</th><th>LLM cost</th><th>Result</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : `<div class="emptybox">No run has ended yet.</div>`}
     <div class="sbd-more"><a href="#sessions">All sessions ›</a><a href="#stats">Stats ›</a></div>`, rows.map(r => `${r.key}:${r.end}:${r.outcome}`).join(",") + note);

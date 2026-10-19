@@ -423,4 +423,12 @@ ck "Sandboxes Recently completed: ended runs newest first, the PR link, and a ph
   const box = d.querySelector(".sbd-scroll");
   return [[...d.querySelectorAll("[data-sbdone]")].map(x => x.dataset.sbdone).join(","), !!d.querySelector("a[href=\"https://github.com/example/repo/pull/41\"]"),
     !!box && box.scrollWidth > box.clientWidth && getComputedStyle(box).overflowX === "auto", document.documentElement.scrollWidth <= innerWidth].join("|")')"
+ck "Sandboxes review: at 1440 px a long For title ends in an ellipsis and every column, the Result too, fits without a side scroll" "true|true" "$(bash "$p" '#runners' --fixture "$D" --width 1440 --probe '
+  await loadSbDone(); SB_DONE.runs[0].title = "A very long sample request that keeps going and going so that it would push every later column of the table off to the right side"; renderSbDone();
+  const box = document.querySelector("#sb-done .sbd-scroll"), res = document.querySelector("#sb-done tbody tr td:last-child");
+  return [box.scrollWidth <= box.clientWidth, res.getBoundingClientRect().right <= box.getBoundingClientRect().right + 1].join("|")')"
+ck "Overview review: a routine run the server gated (no key, team or cost) still renders in Recent runs" "true|false" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  RUNS = [{ at: new Date().toISOString(), src: "slack", kind: "session", key: "", title: "Scheduled run", team: "", outcome: "answered", pr_url: null, pr_number: null, pr_state: null, usd: null, min: null, routine: true }]; RUNS_ERR = null;
+  safeRender(renderOvRuns, "ov-runs"); const t = document.getElementById("ov-runs").textContent;
+  return [/Scheduled run/.test(t), /undefined|NaN|\$0\.00|did not render/.test(t)].join("|")')"
 exit $fail

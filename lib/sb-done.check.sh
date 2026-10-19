@@ -19,7 +19,7 @@ globalThis.TEAMS = null; globalThis.SNAP = { team: { jira_site: "https://example
 globalThis.TEAM_ADMIN = { admin: false };
 const runs = [
   { src: "slack", key: "agent-sl0001", title: "Why does <img src=x> fail?", team: "fxa", outcome: "answered", end: now - 3600, where: "firecracker", boot_s: 38, mem_mb: 6144, stop: "idle", min: 12, usd: 0.9, routine: false },
-  { src: "slack", key: "", title: "Scheduled run", team: "fxa", outcome: "answered", end: now - 7200, where: "gce", stop: "<b>x</b>", min: 4, usd: 0.3, routine: true },
+  { src: "slack", key: "", title: "Scheduled run", team: "", outcome: "answered", end: now - 7200, where: "gce", stop: "<b>x</b>", min: null, usd: null, routine: true },
   { src: "pipeline", key: "EX-1", title: "Fix the sample", team: "fxa", outcome: "pr", pr_url: "https://github.com/example/repo/pull/41", pr_number: 41, pr_state: "open", end: now - 86400, min: 25, usd: 3.5, routine: false }];
 let answer = { runs, error: null }, asked = "";
 globalThis.fetch = async u => { asked = String(u); return typeof answer === "number" ? { ok: false, status: answer, json: async () => null } : { ok: true, status: 200, json: async () => answer }; };
@@ -34,10 +34,13 @@ globalThis.fetch = async u => { asked = String(u); return typeof answer === "num
   t("feed text is escaped", OUT.includes("&lt;img src=x&gt;") && !OUT.includes("<img src=x>") && OUT.includes("&lt;b&gt;x&lt;/b&gt;"), true);
   t("pipeline row: dash with its title, GCE, the Jira and PR links", /title="not recorded for pipeline runs">—<\/span>/.test(OUT) && /<td>GCE<\/td>/.test(OUT) && OUT.includes('href="https://example.atlassian.net/browse/EX-1"') && OUT.includes('href="https://github.com/example/repo/pull/41"'), true);
   t("a routine run the server gated: no name, no session link", OUT.includes("Routine · scheduled run") && (OUT.match(/#sessions\//g) || []).length === 1, true);
+  const rt = OUT.split('data-sbdone=""')[1].split("</tr>")[0];
+  t("a gated routine run shows a dash for its team and its cost, not FxA and $0.00", /<td>—<\/td><td>GCE<\/td>/.test(rt) && /<td class="num">—<\/td><td>/.test(rt) && !/\$0\.00|FxA|fxa/.test(rt), true);
+  t("the For cell carries the full text in its title", /<td class="sbd-for" title="agent-sl0001 Why does &lt;img src=x&gt; fail\?">/.test(OUT), true);
   globalThis.sbTabHas = r => r.src === "pipeline"; renderSbDone();
   t("Pipeline tab: only the pipeline row", keys(), "EX-1");
   globalThis.sbTabHas = r => r.src === "routine"; globalThis.TEAM_ADMIN = { admin: true }; renderSbDone();
-  t("Routines tab (admin): only the routine row", keys(), "");
+  t("Routines tab (admin): only the routine row", `${(OUT.match(/<tr data-sbdone=/g) || []).length}|${OUT.includes("Routine · scheduled run")}`, "1|true");
   delete globalThis.sbTabHas; globalThis.TEAM_ADMIN = { admin: false }; globalThis.TAB = "routines"; renderSbDone();
   t("non-admin Routines tab: the admin-only text, no rows", OUT.includes("Only a team admin can see routine runs.") && !/data-sbdone/.test(OUT), true);
   globalThis.TAB = "";
@@ -47,6 +50,9 @@ globalThis.fetch = async u => { asked = String(u); return typeof answer === "num
   t("a failed first read: unknown, no rows", OUT.includes("Recently completed unknown: stats unavailable.") && !/data-sbdone/.test(OUT), true);
   answer = { runs: [], error: null }; await loadSbDone();
   t("empty: No run has ended yet.", OUT.includes("No run has ended yet."), true);
+  globalThis.TAB = "pipeline"; await loadSbDone(); t("the Pipeline tab asks the server for pipeline runs, so the limit applies after the filter", asked, "/api/runs/recent?ended=1&limit=100&src=pipeline");
+  globalThis.TAB = "routines"; await loadSbDone(); t("the Routines tab asks for routine runs", asked, "/api/runs/recent?ended=1&limit=100&src=routine");
+  globalThis.TAB = "";
   globalThis.VIEW = "overview"; asked = ""; await loadSbDone();
   t("no fetch off the Sandboxes page", asked, "");
   process.exit(fail);
