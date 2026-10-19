@@ -65,6 +65,18 @@ ck "Sandboxes as a non-admin: no routine name, no routine link, the Routines tab
 ck "Sandboxes: feed text never becomes markup, and a command shows only for a safe name" "true|false|true|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.instances.push({ name: "agent-x;rm -rf ~", state: "terminated", age_seconds: 9000, where: "gce" }); AGENTS.sessions[0].request = "<img src=x onerror=alert(1)>"; render();
   const t = L().innerHTML; return [/&lt;img/.test(t), /<img src=x/.test(t), /agent-x;rm -rf ~/.test(L().textContent), codes().some(c => /rm -rf/.test(c))].join("|")')"
+ck "Sandboxes review: an instance on its way up or down (provisioning, staging, stopping) behind a live or stopped session or a card gets no command and no badge count" "starting|stopping|starting|0|2|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  const set = (n, s) => { AGENTS.instances.find(v => v.name === n).state = s; };
+  AGENTS.instances.push({ name: "agent-agent-ex0001", state: "provisioning", age_seconds: 400, where: "gce" }); set("agent-agent-ex0004", "stopping"); set("agent-ex-101", "staging");
+  render(); const r = sbRows(), row = id => r.live.find(x => x.id === id)?.state;
+  return [row("sess:agent-ex0001"), row("sess:agent-ex0004"), r.live.find(x => x.key === "EX-101")?.state, codes().filter(c => /ex0001|ex0004|ex-101/.test(c)).length, r.fix.length,
+    !r.unknown.some(u => /ex0001|ex0004|ex-101/.test(u.slot))].join("|")')"
+ck "Sandboxes review: a stopped session with an unsafe key gets no command, and nothing says 'stop null'" "false|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  AGENTS.sessions[3].key = "x;rm -rf ~"; AGENTS.instances.push({ name: "agent-x;rm -rf ~", state: "running", age_seconds: 9000, where: "gce" }); render();
+  return [codes().some(c => /rm -rf/.test(c)), /stop null/.test(L().textContent)].join("|")')"
+ck "Sandboxes review: a non-admin sees no request, routine name or cost of a stopped routine session with a runner left" "true|false|false|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  Object.assign(AGENTS.sessions[3], { routine_run: 7, routine_name: "Secret weekly", cost: 9.87, summary: JSON.stringify({ cost: 9.87 }) }); TEAM_ADMIN = { admin: false }; render(); const t = L().textContent;
+  return [/Routine · scheduled run/.test(t), /another sample question/.test(t), /Secret weekly/.test(t), /9\.87/.test(t)].join("|")')"
 ck "Sandboxes: a normal stop is 'stopping' with no command; 10 min later it is a fix row" "stopping|false|true|4" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   const st = () => [...L().querySelectorAll("li")].find(li => li.querySelector("[data-sbsel=\"sess:agent-ex0003\"], [data-sbsel=\"fix:agent-agent-ex0003\"]"));
   const a = st().querySelector(".f:nth-of-type(2)")?.textContent.replace(/^Now: /, ""), b = codes().includes("fxa-sandbox-ctl stop agent-ex0003");
@@ -74,7 +86,7 @@ ck "Sandboxes: a stale feed shows the rows with a warning, no command, '? in use
   STATE.agents_age_seconds = 600; render(); return [H(), /The agents feed is 10 min old: these rows may be out of date\./.test(L().textContent), codes().length, N().textContent, N().getAttribute("aria-label")].join("|")')"
 ck "Sandboxes: a held slot names a ticket only when it is one, and an old snapshot is not checked yet" "true|true|?|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.pool[3] = { ...AGENTS.pool[3], key: "HEAD", branch: "HEAD" }; render(); const a = /ex-auto-4 is not free for a launch \(branch HEAD\)/.test(L().textContent);
-  AGENTS.pool[3] = { ...AGENTS.pool[3], key: "EX-130", branch: "ex-130" }; SNAP.generated_at = AGENTS.generated_at - 9999; render();
+  AGENTS.pool[3] = { ...AGENTS.pool[3], key: "EX-130", branch: "ex-130" }; SNAP.generated_at = new Date(Date.parse(AGENTS.generated_at) - 9999e3).toISOString(); render();
   return [a, /ex-auto-4 held by EX-130 · in flight not checked yet/.test(L().textContent), N().textContent, /Its last ticket EX-130/.test(L().textContent)].join("|")')"
 ck "Sandboxes: the tabs filter the list" "EX-101,EX-102,agent-agent-41c0e6,EX-130|agent-ex0001,agent-ex0003,agent-ex0004|Nightly review" "$(bash "$p" '#runners/pipeline' --fixture "$B" --width 1280 --probe "$sbw"'
   render(); const keys = () => [...L().querySelectorAll("[data-sbsel]")].map(b => b.textContent.replace(/^(Pipeline|Slack) /, "")).join(",");

@@ -16,7 +16,7 @@
     "pr_label": "auto",
     "repo": "example/repo"
    },
-   "generated_at": "@epoch-30",
+   "generated_at": "@iso-30",
    "mode": {},
    "limits": {
     "attempts": 2,
@@ -354,7 +354,7 @@
     }
    ],
    "launchcap": 3,
-   "generated_at": "@epoch-12",
+   "generated_at": "@iso-12",
    "session_cap": 4,
    "session_max_run_seconds": 5400
   }

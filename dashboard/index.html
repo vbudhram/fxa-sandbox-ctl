@@ -3216,6 +3216,9 @@ function renderTickets() {
 // A sandbox is up only while its instance runs. A stopped GCE instance (terminated) keeps its disk
 // and its name until it is deleted: it needs a fix, not a lifetime meter.
 const instUp = v => v.state === "running";
+// GCE moves an instance through provisioning, staging and stopping: it is not down, so it gets no stop command.
+const instMoving = v => !!v && !instUp(v) && !["terminated", "suspended"].includes(v.state);
+const movingWord = v => v.state === "stopping" ? "stopping" : "starting";
 // ── Sandboxes (i407): one list of every sandbox, built on the floor rows ──
 // A fix row bills with no run, or holds a slot no run uses. A command shows only on a fresh feed and only
 // for a name stopName() accepts; a session runner's command names the session, so the stop saves the work (D3-D6).
@@ -3224,9 +3227,8 @@ function sbTabHas(row) {
   const t = TAB || "all";
   return t === "all" || (t === "pipeline" && row.src === "pipeline") || (t === "slack" && row.src === "slack") || (t === "routines" && row.src === "routine");
 }
-const sbStale = () => { const f = floorRows(); return f.stale || f.unknown; };
 // The one source of a stop command: a fresh feed, and a name that passes stopName() (an instance's run name first).
-function fixCmd(row, stale = sbStale()) {
+function fixCmd(row, stale) {
   const t = row?.fix?.target; if (stale || !t) return null;
   const name = row.fix.kind === "instance" ? strayRun(t) : t;
   return stopName(name) ? `fxa-sandbox-ctl stop ${name}` : null;
@@ -3239,34 +3241,38 @@ function sbRows() {
   const base = { slot: "", key: "", title: "", team: "", where: null, started: null, age: null, cap: null, max_seconds: null, cost: null, usd: null, session: null, pr: null, routine_run: null, routine_name: null, boot_s: null, boot_steps: null, res_peak: null, fault: "", fix: null };
   const withFix = (row, fix) => { const r = { ...row, fix }; r.fix.cmd = fixCmd(r, stale); return r; };
   fr.rows.filter(t => t.kind !== "free").forEach(t => {
-    if (t.kind === "pipe") { const cap = instBy.get(`agent-${t.name}`)?.max_seconds ?? null;
+    if (t.kind === "pipe") { const v = instBy.get(`agent-${t.name}`), cap = v?.max_seconds ?? null;
       return out.live.push({ ...base, id: `pipe:${t.slot || t.key}`, src: "pipeline", slot: t.slot || "", key: t.key, title: t.title, team: t.team, where: "gce",
-        state: t.fault || t.idle || `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}`, fault: t.fault || t.idle || "", age: t.age ?? null, cap, max_seconds: cap, cost: t.cost ?? null, usd: t.cost ?? null }); }
-    const x = byKey.get(t.key), open = admin || t.kind !== "routine";
-    out.live.push({ ...base, id: `sess:${t.key}`, src: t.kind, key: t.key, title: t.title, team: t.team, where: t.where, started: t.started, state: t.waits ? `waits on ${t.waits}` : "working",
+        state: instMoving(v) ? movingWord(v) : t.fault || t.idle || `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}`, fault: t.fault || t.idle || "", age: t.age ?? null, cap, max_seconds: cap, cost: t.cost ?? null, usd: t.cost ?? null }); }
+    const x = byKey.get(t.key), open = admin || t.kind !== "routine", v = instBy.get(`agent-${t.key}`);
+    out.live.push({ ...base, id: `sess:${t.key}`, src: t.kind, key: t.key, title: t.title, team: t.team, where: t.where, started: t.started, state: instMoving(v) ? movingWord(v) : t.waits ? `waits on ${t.waits}` : "working",
       age: t.started ? Math.max(0, Math.round(now - t.started)) : null, cap: g.session_max_run_seconds ?? null, cost: t.cost ?? null, usd: t.cost ?? null, session: t.key,
       routine_run: x?.routine_run ?? null, routine_name: open ? x?.routine_name ?? null : null, boot_s: t.boot_s, boot_steps: t.boot_steps, res_peak: t.res_peak });
   });
   // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1 or after 10 min (D5).
   const known = new Set();
   ss.filter(x => !LIVE_SESSION.includes(x.state)).forEach(x => {
-    const v = instBy.get(`agent-${x.key}`); if (!v || !instUp(v)) return;
+    const v = instBy.get(`agent-${x.key}`); if (!v || !(instUp(v) || instMoving(v))) return;
     known.add(v.name);
     const routine = !!x.routine_run, open = admin || !routine, since = x.stopped_at ? now - x.stopped_at : null;
     const row = { ...base, src: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
       started: x.created ?? null, age: v.age_seconds ?? null, cap: v.max_seconds ?? null, cost: open ? sessUsd(x) : null, session: x.key, routine_run: x.routine_run ?? null, routine_name: open ? x.routine_name ?? null : null,
       boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
     row.usd = row.cost;
-    if (String(x.runner_left) === "1" || (since != null && since >= SB_GRACE))
+    if (instUp(v) && (String(x.runner_left) === "1" || (since != null && since >= SB_GRACE)))
       out.fix.push(withFix({ ...row, id: `fix:${v.name}`, state: "stopped, runner still up" }, { kind: "session", target: x.key, steps: null,
         why: `The session ${x.state}${since != null ? ` ${short(Math.round(since))} ago` : ""}, and its runner still bills. Stop it: the stop saves the work.` }));
     else out.live.push({ ...row, id: `sess:${x.key}`, state: "stopping" });
   });
   // A stopped instance, or one with no run behind it (the i408 rule and strays()). One whose run name a pool slot
   // says it runs is unknown: the slot and the agents feed disagree, so no command.
-  const stray = new Set(strays()), slotAgents = new Set(pool.map(p => p.agent).filter(Boolean));
+  const stray = new Set(strays()), slotAgents = new Set(pool.map(p => p.agent).filter(Boolean)), pipeNames = new Set(fr.rows.filter(t => t.kind === "pipe").map(t => t.name));
   inst.filter(v => !known.has(v.name) && (!instUp(v) || stray.has(v))).forEach(v => {
     const run = strayRun(v.name);
+    // On its way up or down: a known run's or slot's live row says 'starting' or 'stopping'; with no run behind it,
+    // no command until GCE says where it went.
+    if (instMoving(v)) return byKey.has(run) || pipeNames.has(run) || slotAgents.has(run) || v.age_seconds <= 120 ? undefined
+      : out.unknown.push({ slot: v.name, why: `${v.name} is ${v.state}, with no run behind it` });
     if (run && slotAgents.has(run)) return out.unknown.push({ slot: v.name, why: `${v.name}: the slot says it runs, but the agents feed has no run row` });
     out.fix.push(withFix({ ...base, id: `fix:${v.name}`, src: byKey.has(run) ? "slack" : "pipeline", key: v.name, where: v.where === "firecracker" ? "firecracker" : "gce", state: v.state, age: v.age_seconds ?? null },
       { kind: "instance", target: v.name, steps: stopName(run) ? null : "Its name is not a runner name: delete it in the GCE console.", why: `${v.state} with no run behind it (${short(v.age_seconds)} old); it bills until deleted.` }));
@@ -3275,7 +3281,9 @@ function sbRows() {
   // the in-flight read worked, and the snapshot is not older than the agents feed by more than one interval (D10, D11).
   const inflight = new Set((SNAP?.inflight ?? []).map(t => t.key));
   // ponytail: the snapshot interval from the feed, 300 s when it is missing.
-  const snapFresh = SNAP?.generated_at != null && g.generated_at != null && SNAP.generated_at >= g.generated_at - (STATE.interval || 300);
+  // Both feeds write generated_at as ISO text; a time that does not parse is not fresh.
+  const ms = t => typeof t === "number" ? t * 1000 : Date.parse(t);
+  const snapFresh = ms(SNAP?.generated_at) >= ms(g.generated_at) - (STATE.interval || 300) * 1000;
   fr.rows.filter(t => t.kind === "free").forEach(t => {
     if (t.state === "free") return out.free.push({ slot: t.slot });
     if (t.state === "unknown") return out.unknown.push({ slot: t.slot, why: `${t.slot}: slots unknown: the slot read failed` });
