@@ -61,7 +61,7 @@ cmd_freeslots() { echo s-1; echo s-2; }
 check "slots read: the cap from the one free list, and no second Jira read" '2|["s-1","s-2"]' "$(FXA_VM_BACKEND=gce slots 2>&1)"
 check "the backend cap is the ceiling" '1|["s-1","s-2"]' "$(FXA_VM_BACKEND=tart slots 2>&1)"
 cmd_freeslots() { echo "ERROR: cannot list inflight tickets" >&2; return 1; }
-check "a slot read that fails: launchcap null, not 0" 'null|[]' "$(slots)"
+check "a slot read that fails: launchcap and free_slots null, not 0 and []" 'null|null' "$(slots)"
 
 # A file that goes away between the listing and the read gives no row, and the rest still parses.
 rf() { _snapshot_facts FXA-5 FXA-77; }

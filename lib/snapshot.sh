@@ -575,7 +575,7 @@ _snapshot_session_row() {
 # or GitHub, so it can run every 30 s while the slow full snapshot runs every few
 # minutes. The page merges the two by key.
 # _snapshot_slots   Sets the caller's free (a JSON list) and cap. A slot read that fails (the Jira inflight
-# read) is "slots unknown": cap null, not 0, so the page does not say no slot is free.
+# read) is "slots unknown": cap and free null, not 0 and [], so the page says neither "no slot is free" nor "held".
 _snapshot_slots() {
   local slots frc=0; slots="$(cmd_freeslots 2>/dev/null)" || frc=$?
   free="$(printf '%s' "$slots" | jq -R -s 'split("\n") | map(select(length > 0))')"
@@ -583,7 +583,7 @@ _snapshot_slots() {
   if [ "$frc" = 0 ]; then
     cap="$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && echo "${PIPE_MAX_LAUNCHES_GCE:-5}" || echo "${PIPE_MAX_LAUNCHES_TART:-1}" )"
     local n; n="$(printf '%s' "$slots" | grep -c . || true)"; [ "${n:-0}" -lt "$cap" ] && cap="${n:-0}"
-  else cap=null; fi
+  else cap=null; free=null; fi
 }
 
 snapshot_agents_json() {
