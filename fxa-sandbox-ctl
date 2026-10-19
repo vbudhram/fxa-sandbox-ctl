@@ -1345,7 +1345,8 @@ cmd_reconcile() {
       pr)
         read -r _ pr state ok fail run <<< "$(gh_pr_state "$key")"
         # A full FxA PR has 18 to 21 checks. Fewer means the gated jobs do not exist yet.
-        settled=0; [ $(( ${ok#ok=} + ${fail#fail=} )) -ge 15 ] 2>/dev/null && settled=1
+        # No PR, or a failed read, gives "none - -": no counts, and arithmetic on them would end the loop.
+        settled=0; [[ "${ok#ok=}" =~ ^[0-9]+$ && "${fail#fail=}" =~ ^[0-9]+$ ]] && [ $(( ${ok#ok=} + ${fail#fail=} )) -ge 15 ] && settled=1
         case "$state" in
           MERGED) cmd_label "$key" merged >/dev/null && echo "$key merged #$pr" ;;
           CLOSED) cmd_label "$key" rejected >/dev/null && echo "$key rejected #$pr" ;;

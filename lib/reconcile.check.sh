@@ -33,4 +33,11 @@ echo $(( $(date +%s) - 3 * 3600 - 1 )) > "$tmp/FXA-1.green-at"
 check "thin green for 3 h: done, the clock is gone" "FXA-1 done|0" "$(run 'ok=13 fail=0 running=0')|$(ls "$tmp" | grep -c 'FXA-1.green-at')"
 echo $(( $(date +%s) - 4 * 3600 )) > "$tmp/FXA-1.green-at"
 check "a running check stops the clock" "|0" "$(run 'ok=13 fail=0 running=2')|$(ls "$tmp" | grep -c 'FXA-1.green-at')"
+# A PR read that gives "none - -" (no PR, or gh failed) must not stop the keys after it.
+( jira_inflight_keys() { printf '%s\n' FXA-1 FXA-2; }
+  gh_pr_state() { case "$1" in FXA-1) echo "FXA-1 none - -" ;; *) echo "FXA-2 12 MERGED ok=20 fail=0 running=0" ;; esac; }
+  : >"$tmp/labels"; out="$(cmd_reconcile 2>&1)"
+  check "a 'none - -' read: that key says so, and the next key still merges" "yes|FXA-2 merged" \
+    "$(grep -q 'FXA-1 pr none - (could not read the PR)' <<< "$out" && echo yes)|$(cat "$tmp/labels")"
+  exit "$fail" ) || fail=1
 exit "$fail"
