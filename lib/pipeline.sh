@@ -263,15 +263,28 @@ pipeline_queue_jql() {
   printf '%s%s AND (%s)%s' "${k:+parent = $k AND }" "$s" "$f" "$o"
 }
 
+# _pipeline_secret_labels   The labels that mark a ticket secret, as a quoted JQL list: PIPE_SECRET_LABELS
+# (a team may set its own), else security and hackerone, the MCP gateway's and the Slack card's rule.
+# An empty setting is not "none": every team keeps these two. A bad label fails the read.
+_pipeline_secret_labels() {
+  local l out="" seen=" "
+  for l in security hackerone ${PIPE_SECRET_LABELS:-}; do
+    [[ "$l" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "ERROR: PIPE_SECRET_LABELS has a bad label: ${l}" >&2; return 1; }
+    case "$seen" in *" $l "*) continue ;; esac; seen="${seen}${l} "; out="${out:+$out, }\"$l\""
+  done
+  printf '%s' "$out"
+}
+
 # pipeline_jira_scope   The clause in front of every queue and state read: the profile's own
 # Jira project (FXA for fxa), so another team's ticket with the same label never runs against
-# this repo, and no ticket with a security level, whose fix would go into a public PR.
+# this repo, and no secret ticket (a security level or a secret label), whose fix would go into a public PR.
 # It goes first: the profile's JQL ends with ORDER BY.
 pipeline_jira_scope() {
-  local p="${PIPE_JIRA_PROJECT:-}"
+  local p="${PIPE_JIRA_PROJECT:-}" sl
   [ -z "$p" ] && [ "${PIPE_PROFILE:-}" = fxa ] && p=FXA
   [[ "$p" =~ ^[A-Z][A-Z0-9]*$ ]] || { echo "ERROR: profile ${PIPE_PROFILE:-?} has no Jira project (PIPE_JIRA_PROJECT), so it has no queue" >&2; return 1; }
-  printf 'project = %s AND level IS EMPTY' "$p"
+  sl="$(_pipeline_secret_labels)" || return 1
+  printf 'project = %s AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN (%s))' "$p" "$sl"
 }
 # pipeline_key_in_scope <KEY>   The queue's scope also gates a direct launch: a pass that a
 # ticket's text steered could name any key. A Jira read that fails refuses.

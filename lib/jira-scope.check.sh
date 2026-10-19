@@ -7,7 +7,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
+eval "$(sed -n '/^_pipeline_secret_labels() {/,/^}/p;/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
 eval "$(sed -n '/^jira_keys_in_state() {/,/^}/p;/^jira_items_in_state() {/,/^}/p;/^jira_queue_keys() {/,/^}/p;/^jira_queue_items() /p;/^jira_secured_keys() {/,/^}/p' "$here/jira.sh")"
 eval "$(sed -n '/^_reap_stray_vms() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
@@ -15,11 +15,11 @@ _jira_keys_for_jql() { printf '%s\n' "$1"; }; jira_items_json() { printf '%s\n' 
 PIPE_STATE_DIR="$tmp" PIPE_QUEUE_JQL='labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC'
 
 PIPE_PROFILE=fxa
-check "fxa reads only FXA tickets with no security level" 'project = FXA AND level IS EMPTY' "$(pipeline_jira_scope)"
+check "fxa reads only FXA tickets with no security level and no secret label" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone"))' "$(pipeline_jira_scope)"
 check "the scope goes in front, so ORDER BY stays last" \
-  'project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
+  'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
 echo FXA-9 > "$tmp/FOCUS"
-check "an epic focus keeps the scope" 'parent = FXA-9 AND project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
+check "an epic focus keeps the scope" 'parent = FXA-9 AND project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql)"
 echo 'FXA-1 OR key = SEC-5 OR key = FXA-0' > "$tmp/FOCUS"
 check "a focus marker that is not one key refuses the queue" "1" "$(pipeline_queue_jql >/dev/null 2>&1; echo $?)"
 rm "$tmp/FOCUS"
@@ -31,18 +31,18 @@ check "a key outside the scope (or with a security level) may not" "1" "$(pipeli
 check "a key with a JQL tail may not" "1" "$(pipeline_key_in_scope 'FXA-7 OR key = SEC-5'; echo $?)"
 check "jira gates the launch outside --private" "1" "$(grep -c 'if \[ "\$private" != "true" \] && ! pipeline_key_in_scope "\$key"' "$here/../fxa-sandbox-ctl")"
 _jira_keys_for_jql() { printf '%s\n' "$1"; }
-check "a top-level OR in the profile's JQL stays inside the scope" 'project = FXA AND level IS EMPTY AND (labels = "a" OR labels = "b") ORDER BY created ASC' \
+check "a top-level OR in the profile's JQL stays inside the scope" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "a" OR labels = "b") ORDER BY created ASC' \
   "$(PIPE_QUEUE_JQL='labels = "a" OR labels = "b" ORDER BY created ASC' pipeline_queue_jql)"
 echo FXA-9 > "$tmp/FOCUS"
-check "the whole queue ignores the focus" 'project = FXA AND level IS EMPTY AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql all)"
+check "the whole queue ignores the focus" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql all)"
 rm "$tmp/FOCUS"
 pipeline_states() { printf '%s\n' inflight done; }
-check "a pipeline ticket that got a security level is found, in the project" 'project = FXA AND level IS NOT EMPTY AND labels in ("ai-fixme-inflight", "ai-fixme-done")' "$(jira_secured_keys)"
+check "a pipeline ticket that got a security level or a secret label is found, in the project" 'project = FXA AND (level IS NOT EMPTY OR labels IN ("security", "hackerone")) AND labels in ("ai-fixme-inflight", "ai-fixme-done")' "$(jira_secured_keys)"
 check "precheck reports it once, and the pass gets an info line" "1|1|1" \
-  "$(grep -c 'for sk in $(jira_secured_keys' "$here/../fxa-sandbox-ctl")|$(grep -c 'secured-noted" \] && continue' "$here/../fxa-sandbox-ctl")|$(grep -c '_info "security level: ' "$here/../fxa-sandbox-ctl")"
-check "a state read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
-check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
-check "a profile's own project wins" 'project = MNTOR AND level IS EMPTY' "$(PIPE_PROFILE=monitor PIPE_JIRA_PROJECT=MNTOR pipeline_jira_scope)"
+  "$(grep -c 'for sk in $(jira_secured_keys' "$here/../fxa-sandbox-ctl")|$(grep -c 'secured-noted" \] && continue' "$here/../fxa-sandbox-ctl")|$(grep -c '_info "security level or label: ' "$here/../fxa-sandbox-ctl")"
+check "a state read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
+check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
+check "a profile's own project wins" 'project = MNTOR AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone"))' "$(PIPE_PROFILE=monitor PIPE_JIRA_PROJECT=MNTOR pipeline_jira_scope)"
 check "a profile with no project has no queue" "1|" "$(PIPE_PROFILE=monitor pipeline_jira_scope 2>/dev/null; echo "$?|$(PIPE_PROFILE=monitor pipeline_queue_jql 2>/dev/null)")"
 check "a profile with no project reads no queue, and says so with an error" "1|1|" \
   "$(PIPE_PROFILE=monitor jira_queue_keys 2>/dev/null; echo "$?|")$(PIPE_PROFILE=monitor jira_queue_items 2>/dev/null; echo "$?|")"
@@ -60,4 +60,7 @@ check "no project, no reap" "1|" "$(PIPE_PROFILE=monitor _reap_stray_vms >/dev/n
 check "no project: the reap says why under set -e and pipefail" "1|1" \
   "$( (set -eo pipefail; PIPE_PROFILE=monitor _reap_stray_vms) >/dev/null 2>"$tmp/reap.err"; echo "$?|$(grep -c 'refusing to stop any VM' "$tmp/reap.err")")"
 
-[ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
+[ "$fail" = 0 ] && echo "all checks pass"; check "a team adds its own secret labels; security and hackerone always stay" 'project = PAY AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone", "sec-high"))' \
+  "$(PIPE_PROFILE=pay PIPE_JIRA_PROJECT=PAY PIPE_SECRET_LABELS="sec-high security" pipeline_jira_scope)"
+check "a secret label that could break the JQL fails the read" "1|" "$(PIPE_SECRET_LABELS='x") OR (1' pipeline_jira_scope 2>/dev/null; echo "$?|")"
+exit "$fail"
