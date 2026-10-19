@@ -1257,14 +1257,16 @@ function renderOvMini() {
   const why = !STATS ? "Loading the stats…" : STATS.prs == null ? "the PR list is not read yet" : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at))} old` : "";
   const prsOk = STATS?.prs != null, k = STATS ? ovKpis(OV_RANGE, now) : null, before = `against the ${n} before`;
   const tile = (focus, href, range, lbl, big, kk, how, low, sub) => { const c = kk ? kpiChange(kk, how, low) : { t: "" };
-    return `<a class="ovc ovk" href="${href}" data-sfrange="${range}" data-focus="${focus}"><div class="lbl">${lbl}</div><div class="vs"><span class="big">${big}</span>${kk ? spark(kk.line) : ""}</div><div class="sub">${c.t ? `<span class="chg ${c.c}">${c.t}</span> ` : ""}${esc(sub)}</div></a>`; };
+    const inner = `<div class="lbl">${lbl}</div><div class="vs"><span class="big">${big}</span>${kk ? spark(kk.line) : ""}</div><div class="sub">${c.t ? `<span class="chg ${c.c}">${c.t}</span> ` : ""}${esc(sub)}</div>`;
+    // No Stats page shows the pipeline-only rate or median, so those tiles open nothing rather than a page that disagrees.
+    return href ? `<a class="ovc ovk" href="${href}" data-sfrange="${range}" data-focus="${focus}">${inner}</a>` : `<div class="ovc ovk" data-focus="${focus}">${inner}</div>`; };
   const pct = v => v == null ? "—" : `${Math.round(v * 100)}%`, mins = v => v == null ? "—" : `${Math.round(v)} min`;
   putOv("ov-mini", `${note ? `<div class="ovknote">${esc(note)}</div>` : ""}
     ${tile("ov-spend-k", "#stats/spend", OV_RANGE, `Spend, ${n}`, k ? usd(k.spend.v) : "—", k?.spend, "pct", true, k ? before : "Loading the stats…")}
     ${tile("ov-merged", "#stats/prs", "7d", "Merged, 7 days", prsOk ? k.merged.v : "—", why ? null : k?.merged, "pct", false, why || "PRs merged in 7 days")}
     ${tile("ov-cost", "#stats/prs", "7d", "Cost per merged PR", prsOk && k.cost.v != null ? usd(k.cost.v) : "—", why ? null : k?.cost, "pct", true, why || (k.cost.v == null ? "no PR merged in 7 days" : `${usd(k.cost.spent)} all-in over ${k.merged.v}`))}
-    ${tile("ov-rate", "#stats/pipeline", OV_RANGE, "Runs that made a PR", k ? pct(k.rate.v) : "—", k?.rate, "pts", false, k ? `${k.rate.n} pipeline run${k.rate.n === 1 ? "" : "s"}` : "")}
-    ${tile("ov-median", "#stats/pipeline", OV_RANGE, "Median run", k ? mins(k.med.v) : "—", k?.med, "min", true, k ? "per pipeline run" : "")}`);
+    ${tile("ov-rate", "", OV_RANGE, "Runs that made a PR", k ? pct(k.rate.v) : "—", k?.rate, "pts", false, k ? `${k.rate.n} pipeline run${k.rate.n === 1 ? "" : "s"}` : "")}
+    ${tile("ov-median", "", OV_RANGE, "Median run", k ? mins(k.med.v) : "—", k?.med, "min", true, k ? "per pipeline run" : "")}`);
 }
 // Teams (O6): one row per team, with its access, the work on the floor now, its runs, PRs and spend in the range
 // from the stats rows (a row with no profile is fxa), and this month's spend against its budget.
@@ -1279,7 +1281,8 @@ function ovTeams(range) {
 function renderOvTeams() {
   const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1];
   if (!TEAMS) return putOv("ov-teams", `<h2>Teams, last ${n}</h2><div class="emptybox">Loading the teams…</div>`);
-  const rows = ovTeams(OV_RANGE), st = !!STATS;
+  // A failed or stale stats feed: the runs, PRs and spend say unknown, as the KPI tiles do.
+  const rows = ovTeams(OV_RANGE), note = statsNote(), st = !!STATS && !note;
   const row = ({ t, u, now }) => {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
@@ -1287,19 +1290,21 @@ function renderOvTeams() {
     const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="ovpill ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
   };
-  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>
+  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${note ? `<div class="ovknote">${esc(note)}</div>` : ""}
     ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row).join("")}` : `<div class="emptybox">No team.</div>`}`);
 }
 // Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
-let RUNS = null, RUNS_ERR = null;
+let RUNS = null, RUNS_ERR = null, RUNS_SEQ = 0;
 async function loadRuns() {
   if (VIEW !== "overview") return;
+  const seq = ++RUNS_SEQ;
   try {
     const d = { "7d": 7, "30d": 30, "90d": 90 }[OV_RANGE], r = await fetch(`/api/runs/recent?limit=12&days=${d}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
     if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
     if (j.error) throw new Error(j.error);
+    if (seq !== RUNS_SEQ) return;
     RUNS = j.runs; RUNS_ERR = null;
-  } catch (e) { RUNS = null; RUNS_ERR = e.message; }
+  } catch (e) { if (seq !== RUNS_SEQ) return; RUNS = null; RUNS_ERR = e.message; }
   safeRender(renderOvRuns, "ov-runs");
 }
 const RUN_SRC = { pipeline: ["var(--info)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--ok)", "M4 5h16v11H8l-4 4z", "Slack session"],
@@ -1314,19 +1319,21 @@ function runBadge(r) {
 function renderOvRuns() {
   if (RUNS_ERR) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Recent runs unavailable: ${esc(RUNS_ERR)}. The next poll tries again.</div>`);
   if (!RUNS) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Loading the recent runs…</div>`);
-  const today = localDay(Date.now()), td = RUNS.filter(r => localDay(Date.parse(r.at)) === today), c = k => td.filter(r => r.outcome === k).length;
-  const sum = td.length ? `${td.length} today${[["pr", "PR opened", "PRs opened"], ["no_pr", "with no change", "with no change"], ["failed", "failed", "failed"], ["answered", "answered", "answered"], ["running", "running", "running"]]
-    .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : "none today";
+  // Today's count from every stats row, not only the runs on this card; passes are the system card's.
+  const today = localDay(Date.now()), td = STATS ? (STATS.rows ?? []).filter(r => r.src !== "pass" && localDay(Date.parse(r.at)) === today) : null;
+  const out = r => r.src === "pipeline" ? (r.pr ? "pr" : "no_pr") : "answered", c = k => td.filter(r => out(r) === k).length;
+  const sum = !td ? "" : td.length ? `${td.length} today${[["pr", "PR opened", "PRs opened"], ["no_pr", "with no change", "with no change"], ["answered", "answered", "answered"]]
+    .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : "none today", note = statsNote();
   const row = r => {
     const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = Date.parse(r.at), d = new Date(t);
     const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
-    const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
+    const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
     return `<div class="ovrun" data-run="${esc(r.key)}"><time datetime="${esc(r.at)}">${esc(when)}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${esc(kind)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
       <span class="t">${key}${esc(plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : "")))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
       <span class="d">${r.team ? `<span class="ovpill">${esc(r.team)}</span>` : ""}<span>${esc(r.kind || kind)}</span></span></div>`;
   };
-  putOv("ov-runs", `<h2>Recent runs<span class="note">${esc(sum)}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${RUNS.length ? RUNS.map(row).join("") : `<div class="emptybox">No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.</div>`}`,
-    RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(","));
+  putOv("ov-runs", `<h2>Recent runs<span class="note">${esc(sum)}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${RUNS.length ? RUNS.map(row).join("") : `<div class="emptybox">No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.</div>`}`,
+    RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(",") + note + sum);
 }
 // The sandbox part moves the focus to the #attn strip on this page.
 document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
@@ -1670,7 +1677,7 @@ async function loadStats() {
     STATS = j; STATS_AT = Date.now(); STATS_ERR = null;
   } catch (e) { STATS_ERR = `the stats feed could not be read (${e.message})`; }
   safeRender(renderStats, "s-stats"); safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
-  if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"]].forEach(([f, id]) => safeRender(f, id));
+  if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvRuns, "ov-runs"]].forEach(([f, id]) => safeRender(f, id));
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }

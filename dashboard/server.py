@@ -226,7 +226,7 @@ TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cad
 JOB_TITLES = {"pass": "Pipeline pass", "triage": "Triage", "merge-watch": "Merge watch"}
 
 
-def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide):
+def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False):
     """The newest runs of the stats feed's rows, with a title and an outcome each.
     Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run."""
     titles, prs = {}, {}
@@ -265,6 +265,14 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide):
             except OSError:
                 title = "Slack session"
             num = r.get("prn")
+            # A routine's prompt and session are a team admin's, as on Running now and Stats.
+            try:
+                with open(os.path.join(sess_dir, key + ".json")) as f:
+                    routine = bool(json.load(f).get("routine_run"))
+            except (OSError, ValueError):
+                routine = False
+            if routine and not admin:
+                title, key, num = "Scheduled run", "", None
             outcome = "running" if r.get("live") else "pr" if num else "answered"
         elif src == "answer":
             title, outcome = "Quick answer", "failed" if kind == "failed" else "answered"
@@ -998,7 +1006,7 @@ class Handler(BaseHTTPRequestHandler):
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
             runs = recent_runs(rows, FULL.read()[0], int(time.time()), min(int(lim), 100) if lim.isdigit() and int(lim) else 20,
                                min(int(days), 90) if days.isdigit() and int(days) else 7, os.path.dirname(ERRORS_FILE), str(SESSION_DIR),
-                               lambda t: not admin and team_private(t))
+                               lambda t: not admin and team_private(t), admin)
             self._json(200, {"runs": runs, "error": None if rows is not None else "stats unavailable"})
         elif path == "/api/stats":
             data = STATS.read()[0]

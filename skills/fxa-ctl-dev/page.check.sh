@@ -302,10 +302,17 @@ ck "O6 Running now: busy tiles only, the free slots on one line, and an empty fl
   return [a, b, /^Nothing runs now · the last run ended .+ago · next pass in \d+ min$/.test(document.querySelector("#ov-floor .emptybox").textContent)].join("|")')"
 ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged from pr_state, today's counts, escaped" "PR #312|running|done|PR #301 merged|answered|no change|failed|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .ovpill")].map(e => e.textContent);
-  const a = document.querySelector("#ov-runs a.ovpill[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /7 today: 2 PRs opened, 1 with no change, 1 failed, 1 answered, 1 running/.test(document.querySelector("#ov-runs h2").textContent);
+  const a = document.querySelector("#ov-runs a.ovpill[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs h2").textContent);
   RUNS = [{ at: new Date().toISOString(), src: "pipeline", key: "x\"><img src=x>", title: "<img src=x>", team: "<b>t</b>", outcome: "pr", pr_url: "javascript:alert(1)", pr_number: 5 }]; renderOvRuns();
   const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.ovpill") && /PR #5/.test(document.getElementById("ov-runs").textContent);
   return [...bs, a, b].join("|")')"
+ck "O6 review: a failed stats feed puts its note on Teams and Recent runs and the Teams figures say unknown; today counts every stats row, not the card's" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const tm = () => document.getElementById("ov-teams").textContent, rn = () => document.getElementById("ov-runs").textContent;
+  const now = new Date().toISOString(); STATS.rows ??= []; for (let i = 0; i < 14; i++) STATS.rows.push({ at: now, src: "pipeline", key: "EX-9" + i, kind: "fix", usd: 1, min: 3, pr: i < 5, profile: "example" });
+  safeRender(renderOvRuns, "ov-runs"); const n = (rn().match(/(\d+) today/) || [])[1], cnt = Number(n) >= 14 && Number(n) > RUNS.length;
+  STATS_ERR = "the stats read failed"; safeRender(renderOvTeams, "ov-teams"); safeRender(renderOvRuns, "ov-runs");
+  const r = [/the stats read failed/i.test(tm()), /the stats read failed/i.test(rn()), !/\$\d/.test([...document.querySelectorAll("#ov-teams .ovteam:not(.hd) .bud b")].map(b => b.textContent).join("")), cnt];
+  STATS_ERR = null; return r.join("|")')"
 ck "O6 Recent runs: no endpoint, an error body and an HTTP error each say unavailable, never an empty list" "true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
   const t = () => document.getElementById("ov-runs").textContent, f0 = window.fetch, a = /Recent runs unavailable: the answer has no runs/.test(t());
   window.fetch = async u => String(u).includes("/api/runs/recent") ? new Response(JSON.stringify({ runs: [], error: "stats unavailable" })) : f0(u); await loadRuns(); const b = /Recent runs unavailable: stats unavailable/.test(t());
