@@ -968,6 +968,9 @@ class Handler(BaseHTTPRequestHandler):
             })
         elif path == "/api/tail":
             key = arg("key")
+            # agent_tail lowercases the key, so the private check must see the same session: AGENT-123456 is agent-123456.
+            if key.lower().startswith("agent-"):
+                key = key.lower()
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*-\d+|agent-[a-z0-9]{4,12}", key):
                 self._json(400, {"error": "bad key"})
             elif key.startswith("agent-") and session_private(key) and not self._team_admin(path):

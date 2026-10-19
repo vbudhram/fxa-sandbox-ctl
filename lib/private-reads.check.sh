@@ -48,6 +48,7 @@ def get(pq, user=None):
         return e.code, None
 codes = lambda key, user=None: [get(p, user)[0] for p in (f"/api/history?key={key}", f"/api/tail?key={key}", f"/api/media?key={key}&name=a.png")]
 check("a non-admin gets 403 from history, tail and media of a private team's session", [403, 403, 403], codes("agent-priv01", "other@example.com"))
+check("an upper-case key reaches the same session: AGENT-PRIV01 is refused on tail", 403, get("/api/tail?key=AGENT-PRIV01", "other@example.com")[0])
 check("with no signed user too", [403, 403, 403], codes("agent-priv01"))
 check("a session whose record cannot be read counts as private", 403, get("/api/history?key=agent-none01")[0])
 check("a team admin reads them", [200, 200, 200], codes("agent-priv01", "admin@example.com"))
