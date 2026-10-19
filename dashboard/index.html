@@ -379,6 +379,7 @@
   .ft { border:1px solid var(--card-border); border-radius:var(--r-md, 8px); padding:var(--s2) var(--s3); min-width:0; background:var(--panel); }
   .ft > a, .ft > .ftb { display:flex; gap:var(--s2); align-items:center; color:inherit; min-width:0; } .ft > a:hover { text-decoration:none; }
   .ft .ftk { font:600 var(--t-sub) var(--mono, monospace); } .ft .ftt { font-size:var(--t-sub); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ft .ftl { font:var(--t-label, 11px)/1.4 var(--mono, monospace); color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ft .ftm { font-size:var(--t-label, 11px); color:var(--faint); margin-top:2px; } .ft .ftm .w { color:var(--warn); }
   .ft .ring { width:30px; height:30px; flex:none; border-radius:50%; background:conic-gradient(var(--info) var(--p), var(--sunk) 0); }
   .ft.bad { border-color:var(--bad); } .ft.bad .ring { background:conic-gradient(var(--bad) var(--p), var(--sunk) 0); }
@@ -1033,13 +1034,13 @@ function ovFloor() {
     const fault = c.stage === "stalled" ? "stalled" : c.stage === "error" ? "run failed" : exited ? "agent exited" : "";
     const idle = c.agent_alive && (a.idle_seconds ?? 0) >= 600 ? `idle ${Math.floor(a.idle_seconds / 60)} min` : "";
     tiles.push({ kind: "pipe", key: c.key, slot: p.slot, title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
-      time: short(c.elapsed_seconds), cost: a.cost_so_far, href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
+      time: short(c.elapsed_seconds), cost: a.cost_so_far, out: a.last_tool || a.last_text || "", href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
   });
   (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
     tiles.push({ kind: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
-      turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
+      turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, out: open ? (x.agent?.last_tool || x.agent?.last_text || "") : "", href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
   });
   return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
 }
@@ -1058,7 +1059,7 @@ function renderOvFloor() {
     const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? `<span class="w">waits on ${esc(t.waits)}</span>` : "working";
     const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).map(esc).join(" · ");
     return `<div class="ft ${t.fault ? "bad" : ""}">${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
-      <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div></div>`;
+      <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div>${t.out ? `<div class="ftl" title="${esc(plainMd(t.out))}">${esc(plainMd(t.out))}</div>` : ""}</div>`;
   };
   putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`,
     headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));

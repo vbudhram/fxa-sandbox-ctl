@@ -177,10 +177,10 @@ ck "floor: stops from the belts, the header, the chip, the routine tile for a no
   const e = document.querySelector(".ovchip").textContent.startsWith("3 at work now");
   TEAM_ADMIN = { admin: true }; render(); const f = /plus 1 Slack session and 1 scheduled run/.test(document.querySelector("#ov-floor h2 .note").textContent);
   return [a, b, c, d, e, f].join("|")')"
-ck "floor: bad keys get no link, no tile shows a last output line, focus and its name survive a poll, an unknown feed is ?" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
-  AGENTS.runners[0].agent.last_text = "SECRET OUTPUT LINE"; AGENTS.runners.push({ key: "x\"><b>", name: "fxa-auto-9", agent_alive: true, stage: "watching", agent: {} });
+ck "floor: bad keys get no link, the last output line shows escaped and outside the link, focus and its name survive a poll, an unknown feed is ?" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
+  AGENTS.runners[0].agent.last_tool = "curl -H \"Authorization: Bearer fxm_<masked>\" <img src=x>"; AGENTS.runners.push({ key: "x\"><b>", name: "fxa-auto-9", agent_alive: true, stage: "watching", agent: {} });
   AGENTS.sessions.push({ key: "javascript:alert(1)", state: "active", agent_alive: true, request: "x" }); render();
-  const a = !!ft("x\"><b>") && !ft("x\"><b>").querySelector("a") && !document.querySelector("#ov-floor b") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && !/SECRET OUTPUT/.test(document.getElementById("ov-floor").textContent);
+  const a = !!ft("x\"><b>") && !ft("x\"><b>").querySelector("a") && !document.querySelector("#ov-floor b") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && /Bearer fxm_<masked>/.test(ft("FXA-1").querySelector(".ftl").textContent) && !document.querySelector("#ov-floor img") && !ft("FXA-1").querySelector("a").contains(ft("FXA-1").querySelector(".ftl"));
   const l = () => ft("FXA-1").querySelector("a"); l().focus(); const n0 = l(); AGENTS.runners[0].agent.cost_so_far = 9; render(); const b = document.activeElement === n0 && n0.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent";
   AGENTS.sessions.push({ key: "agent-new001", state: "active", agent_alive: true, request: "y" }); render(); const c = document.activeElement?.dataset.focus === "ft-FXA-1" && !!ft("agent-new001");
   STATE.agents_error = "agents failed"; render(); const d = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed could not be read/.test(document.getElementById("ov-floor").textContent) && !document.querySelector("#ov-floor .ft.free");
