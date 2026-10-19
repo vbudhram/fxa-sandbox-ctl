@@ -405,8 +405,8 @@ _finish_push_and_pr() {
   pr_body="$(printf '%s\n' "$pr_body" | grep -vE 'Generated with \[?Claude Code|^https://claude\.ai/code/session_|^Claude-Session:' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
 
   if [ -z "$branch" ] || [ -z "$pr_title" ] || [ -z "$pr_body" ]; then
-    echo "ERROR: handoff file is missing required keys (branch, pr_title, pr_body):" >&2
-    cat "$done_file" >&2
+    # Only the names: the file is runner-written text, and a PR URL in it read as this run's PR.
+    echo "ERROR: handoff file is missing required keys: $([ -n "$branch" ] || printf 'branch ')$([ -n "$pr_title" ] || printf 'pr_title ')$([ -n "$pr_body" ] || printf 'pr_body')" >&2
     return 1
   fi
   # The title becomes a commit subject and a gh argument. One line, printable.

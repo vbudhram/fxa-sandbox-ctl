@@ -623,7 +623,9 @@ pipeline_progress() {
   local pr err t=""
   # A launch with an approved tooling label says so on every line (cmd_launch).
   grep -q '^tooling: scripts allowed' "$log" && t=" tooling=scripts"
-  pr="$( { grep -o 'https://github.com/[^ ]*/pull/[0-9]*' "$log" || true; } | tail -1)"
+  # Only the launcher's own PR line ("PR opened: <url>", "PR updated: <url>", or the bare URL gh
+  # prints): a push hint (".../pull/new/<branch>") or a dumped handoff citing another PR is not it.
+  pr="$( { grep -E '^(PR (opened|updated): )?https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$' "$log" || true; } | tail -1 | sed -E 's/^PR (opened|updated): //')"
   if [ -n "$pr" ]; then echo "$key pr $pr${t}"; return 0; fi
   # A feedback round's first push is rejected, then forced with a lease, so
   # "rejected" is routine when a "(forced update)" follows it.

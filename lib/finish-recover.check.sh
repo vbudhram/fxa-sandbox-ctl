@@ -26,4 +26,12 @@ check "a ticket with no launch log gets none" "no" "$([ -f "$PIPE_STATE_DIR/FXA-
 echo '{"issue":"../x"}' > "$tmp/wt/.fxa-auto-done.json"
 PR_URL=https://github.com/mozilla/fxa/pull/9 cmd_finish --worktree "$tmp/wt" --create-pr --no-ci-watch >/dev/null
 check "an issue that is not a key writes nothing" "" "$(ls "$PIPE_STATE_DIR")"
+# Only the launcher's own PR line counts: not a push hint, and not a dumped handoff that cites a PR.
+L="$PIPE_STATE_DIR/FXA-9.launch.log"
+printf '%s\n' 'remote: Create a pull request for fxa-9 on GitHub by visiting:' 'remote:      https://github.com/mozilla/fxa/pull/new/fxa-9' 'ERROR: gh pr create failed:' > "$L"
+check "a push hint is not the PR: the error shows" "FXA-9 error ERROR: gh pr create failed:" "$(pipeline_progress FXA-9 2>/dev/null)"
+printf '%s\n' 'ERROR: handoff file is missing required keys: pr_title' '{"pr_body":"Follows https://github.com/mozilla/fxa/pull/18000 closely"}' > "$L"
+check "a PR cited in runner text is not the PR" "FXA-9 error ERROR: handoff file is missing required keys: pr_title" "$(pipeline_progress FXA-9 2>/dev/null)"
+printf '%s\n' 'remote:      https://github.com/mozilla/fxa/pull/new/fxa-9' 'PR opened: https://github.com/mozilla/fxa/pull/7' 'PR updated: https://github.com/mozilla/fxa/pull/7' > "$L"
+check "the launcher's own PR line still counts" "FXA-9 pr https://github.com/mozilla/fxa/pull/7" "$(pipeline_progress FXA-9 2>/dev/null)"
 exit "$fail"

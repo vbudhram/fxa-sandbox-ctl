@@ -1454,7 +1454,7 @@ agent_stop() {
   pgrep -f "jira ${key} " 2>/dev/null | while read -r pid; do
     [ "$pid" = "$$" ] && continue
     [ -n "$mypg" ] && [ "$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')" = "$mypg" ] && continue
-    grep -q 'pull/' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    grep -qE '^(PR (opened|updated): )?https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$' "$(pipeline_launch_log "$key" 2>/dev/null)" 2>/dev/null || kill "$pid" 2>/dev/null || true
   done || true  # no launcher: pgrep exits 1, and under pipefail and set -e that ended stop before the VM went
 
   echo "Stopping agent '${name}'..."
