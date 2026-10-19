@@ -866,7 +866,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/snapshot":
             snap, age, err, busy = FULL.read()
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
+            # The stats feed's age and error, so a page tells live figures from old ones; /api/stats stays as it is.
+            _, st_age, st_err, _ = STATS.read()
             self._json(200, {
+                "stats_age_seconds": st_age, "stats_error": st_err, "stats_interval": STATS.interval,
                 "snapshot": snap, "age_seconds": age, "error": err,
                 "agents": ag, "agents_age_seconds": ag_age, "agents_error": ag_err,
                 "refreshing": busy or ag_busy,
