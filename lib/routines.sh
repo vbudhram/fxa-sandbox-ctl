@@ -310,10 +310,11 @@ routine_tick() {
   done < <(jq -c '.[]' <<< "$queued")
   # A claimed run with no session is in a bot's hands only in memory: after a restart it starts again, inside the
   # 10 min that reconcile gives it. The claimed to started UPDATE in the task still lets one start take it.
+  # A run this tick claimed above has started_at = now: it is in runs already.
   if [ -n "$resume" ]; then
     local orphans o
     orphans="$(db_json "SELECT r.id, r.routine_id, r.trigger, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id
-      WHERE r.state = 'claimed' AND r.session IS NULL AND r.started_at > $((now - 600)) AND coalesce(json_extract(r.config, '$.env'), t.env) = $(db_q "$env");")" \
+      WHERE r.state = 'claimed' AND r.session IS NULL AND r.started_at > $((now - 600)) AND r.started_at < $now AND coalesce(json_extract(r.config, '$.env'), t.env) = $(db_q "$env");")" \
       || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
     while IFS= read -r o; do
       [ -n "$o" ] || continue

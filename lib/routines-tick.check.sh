@@ -373,6 +373,10 @@ rcd="$(mk fxa "weekly sun 01:30")"; db_exec "UPDATE routines SET env = 'dev' WHE
 gd="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rcd, 'manual-13', 'schedule', 'claimed', $((NC - 60))); SELECT last_insert_rowid();")"
 check "--resume on live leaves a dev run alone, and one past 10 min fails" "0|failed|no session started within 10 min" \
   "$(FXA_ROUTINE_NOW=$((NC + 500)) routine_tick --env live --resume | jq --argjson g "$gd" '[.runs[] | select(.run == $g)] | length')|$(db_value "SELECT state || '|' || reason FROM routine_runs WHERE id = $gc;")"
+rq="$(mk fxa "weekly sun 03:00")"
+gq="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rq, 'manual-14', 'manual', 'queued', $((NC + 400))); SELECT last_insert_rowid();")"
+check "--resume lists a queued run that this tick claims once, not again as an orphan" "1|claimed" \
+  "$(FXA_ROUTINE_NOW=$((NC + 510)) routine_tick --env live --resume | jq --argjson g "$gq" '[.runs[] | select(.run == $g)] | length')|$(db_value "SELECT state FROM routine_runs WHERE id = $gq;")"
 check "a bad flag after --env is refused" "1" "$(FXA_ROUTINE_NOW=$NC routine_tick --env live --bogus >/dev/null 2>&1; echo $?)"
 
 # A paused team that turned private: its skip does not post to a channel it does not bind.
