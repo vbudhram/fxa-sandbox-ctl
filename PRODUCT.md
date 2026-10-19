@@ -124,6 +124,25 @@ Overview is the control room: what needs a person, what runs, and what it costs.
   Routine times show to team admins only.
 - A figure that the page cannot read says unknown, never 0.
 
+### The dashboard Sandboxes page
+
+Sandboxes (`#runners`) shows every sandbox in one list: pipeline runners on GCE, Slack sessions and
+scheduled (routine) runs, on GCE or Firecracker.
+
+- The chip says what is in use with the same words as the Overview floor, for example
+  `2 of 8 pipeline sandboxes in use, plus 1 Slack session`.
+- Three cards: pipeline slots, session slots and cost (the always-on manager, the Firecracker host while up,
+  and the GCE sandboxes now). The 7 day figures read the Stats feed.
+- **Needs a fix** lists each sandbox that bills with no run behind it, with the one command that stops it.
+  A command shows only on a fresh agents feed and for a name the page checks. A held slot gets the steps to
+  free it, never a host path.
+- The rail badge counts the rows that need a fix, with the label `3 sandboxes need a fix`; it shows `?` when
+  the agents feed is stale or a slot is unknown.
+- Recently completed lists the last ended runs from the same server rules as Overview Recent runs: a
+  secured ticket, a private team and a routine stay gated.
+- Rows show no agent output line. A viewer who is not a team admin sees a routine run only as a scheduled
+  run, with no team, cost or link.
+
 ### The unit of work
 
 `thread → session → runner → change → PR → CI → review → merge`
