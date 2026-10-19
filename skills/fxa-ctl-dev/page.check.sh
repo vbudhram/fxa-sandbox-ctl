@@ -173,14 +173,14 @@ ck "floor: stops from the belts, the header, the chip, the routine tile for a no
   const b = a1.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent" && a1.getAttribute("href") === "#pipeline/belts/FXA-1" && /idle 11 min/.test(ft("FXA-1").textContent) && /Stop 2 of 9, Boot/.test(ft("FXA-2").textContent);
   const c = ft("FXA-3").classList.contains("bad") && /stalled/.test(ft("FXA-3").textContent) && document.querySelectorAll("#ov-floor .ft.free").length === 4;
   const s1 = ft("agent-abc123"), r = ft("scheduled run");
-  const d = /turn 8/.test(s1.textContent) && s1.querySelector("a").getAttribute("href") === "#sessions/live/agent-abc123" && !r.querySelector("a") && !/Nightly|SECRET/.test(document.getElementById("ov-floor").innerHTML) && /waits on/.test(r.textContent);
+  const d = /turn 8/.test(s1.textContent) && s1.querySelector("a").getAttribute("href") === "#sessions/live/agent-abc123" && !r.querySelector("a") && !/Nightly|SECRET/.test(document.getElementById("ov-floor").innerHTML) && /waits on its owner/.test(r.textContent) && !/U2/.test(r.textContent);
   const e = document.querySelector(".ovchip").textContent.startsWith("3 at work now");
   TEAM_ADMIN = { admin: true }; render(); const f = /plus 1 Slack session and 1 scheduled run/.test(document.querySelector("#ov-floor h2 .note").textContent);
   return [a, b, c, d, e, f].join("|")')"
 ck "floor: bad keys get no link, no tile shows a last output line, focus and its name survive a poll, an unknown feed is ?" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
   AGENTS.runners[0].agent.last_text = "SECRET OUTPUT LINE"; AGENTS.runners.push({ key: "x\"><b>", name: "fxa-auto-9", agent_alive: true, stage: "watching", agent: {} });
   AGENTS.sessions.push({ key: "javascript:alert(1)", state: "active", agent_alive: true, request: "x" }); render();
-  const a = !ft("fxa-auto-9")?.querySelector("a") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && !/SECRET OUTPUT/.test(document.getElementById("ov-floor").textContent);
+  const a = !!ft("x\"><b>") && !ft("x\"><b>").querySelector("a") && !document.querySelector("#ov-floor b") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && !/SECRET OUTPUT/.test(document.getElementById("ov-floor").textContent);
   const l = () => ft("FXA-1").querySelector("a"); l().focus(); const n0 = l(); AGENTS.runners[0].agent.cost_so_far = 9; render(); const b = document.activeElement === n0 && n0.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent";
   AGENTS.sessions.push({ key: "agent-new001", state: "active", agent_alive: true, request: "y" }); render(); const c = document.activeElement?.dataset.focus === "ft-FXA-1" && !!ft("agent-new001");
   STATE.agents_error = "agents failed"; render(); const d = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed could not be read/.test(document.getElementById("ov-floor").textContent) && !document.querySelector("#ov-floor .ft.free");
@@ -189,4 +189,14 @@ ck "floor: a throwing card leaves the others, and Running now is gone" "true|tru
   const f = renderOvFloor; renderOvFloor = () => { throw new Error("boom"); }; LAST["ov-floor"] = ""; render(); renderOvFloor = f;
   return [/This section did not render: boom/.test(document.getElementById("ov-floor").textContent) && !!document.querySelector("#ov-mini .big") && !!document.querySelector("#ov-head .seg"),
     !document.getElementById("s-running") && !/Running now/.test(document.getElementById("main").innerText) && typeof renderRunning === "undefined"].join("|")')"
+ck "floor: held and unknown slots, a failed run and an exited agent, the chip's LLM hour, a fault repaints under focus" "true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
+  AGENTS.free_slots = ["fxa-auto-4"]; render(); const a = /fxa-auto-5 · held/.test(document.getElementById("ov-floor").textContent) && /fxa-auto-4 · free/.test(document.getElementById("ov-floor").textContent);
+  AGENTS.free_slots = null; render(); const b = /fxa-auto-5 · unknown/.test(document.getElementById("ov-floor").textContent) && !/fxa-auto-4 · free/.test(document.getElementById("ov-floor").textContent);
+  AGENTS.free_slots = ["fxa-auto-4", "fxa-auto-5", "fxa-auto-6", "fxa-auto-7"]; AGENTS.runners[1].stage = "error"; AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: false, handoff: false }; render();
+  const c = /run failed/.test(ft("FXA-2").textContent) && ft("FXA-2").classList.contains("bad") && /agent exited/.test(ft("FXA-1").textContent);
+  STATS = { rows: [], prs: [], llm: { hour_usd: 0.42 } }; STATS_ERR = null; render(); const d = /at work now · LLM \$0\.42 in the last hour/.test(document.querySelector(".ovchip").textContent);
+  AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: true, stage: "watching" }; AGENTS.runners[1].stage = "watching"; render();
+  ft("FXA-1").querySelector("a").focus(); AGENTS.runners[1].stage = "stalled"; render();
+  const e = ft("FXA-2").classList.contains("bad") && /\(2 stalled\)/.test(document.querySelector("#ov-floor h2 .note").textContent) && document.activeElement?.dataset.focus === "ft-FXA-1";
+  return [a, b, c, d, e].join("|")')"
 exit $fail

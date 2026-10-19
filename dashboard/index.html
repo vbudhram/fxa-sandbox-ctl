@@ -375,7 +375,7 @@
   /* ── overview: what needs you, what is running ── */
   .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
   .ovtiles { display:grid; gap:var(--s2); grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:var(--s2); }
-  @media (max-width:640px) { .ovtiles { grid-template-columns:repeat(2,minmax(0,1fr)); } } @media (max-width:420px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
+  @media (max-width:420px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
   .ft { border:1px solid var(--card-border); border-radius:var(--r-md, 8px); padding:var(--s2) var(--s3); min-width:0; background:var(--panel); }
   .ft > a, .ft > .ftb { display:flex; gap:var(--s2); align-items:center; color:inherit; min-width:0; } .ft > a:hover { text-decoration:none; }
   .ft .ftk { font:600 var(--t-sub) var(--mono, monospace); } .ft .ftt { font-size:var(--t-sub); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -399,11 +399,6 @@
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
   .chip.dim { background:var(--sunk); color:var(--dim); } .chip.ok { background:var(--okbg); color:var(--ok); }
-  .runrow { display:flex; align-items:center; gap:var(--s3); padding:var(--s2) 0; border-top:1px solid var(--sunk); color:inherit; }
-  .runrow:hover { text-decoration:none; background:var(--bg); }
-  .runrow .t { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .runrow .m { font-size:var(--t-label); color:var(--faint); white-space:nowrap; }
-  .ldot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--line2); } .ldot.live { background:var(--info); }
   .emptybox { padding:var(--s4); border-radius:8px; border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
   .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
@@ -944,9 +939,10 @@ function costPerMerged(lo, hi, prs, rows) {
 // goes back to the link with the same data-focus id.
 const focusKey = html => [...html.matchAll(/data-focus="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => `${m[1]}=${m[2]}`)
   .concat([...html.matchAll(/class="big">([^<]*)</g)].map(m => m[1])).join("|");
-function putOv(id, html) {
+// extra: a digest of state that sits outside the links (a fault, a status) and must repaint even under focus.
+function putOv(id, html, extra = "") {
   const node = document.getElementById(id); if (!node) return false;
-  const a = document.activeElement, f = node.contains(a) ? a.dataset?.focus : null, fk = focusKey(html);
+  const a = document.activeElement, f = node.contains(a) ? a.dataset?.focus : null, fk = focusKey(html) + "|" + extra;
   if (f && node.dataset.fk === fk) return false;
   const changed = put(id, html); node.dataset.fk = fk;
   if (changed && f) node.querySelector(`[data-focus="${CSS.escape(f)}"]`)?.focus();
@@ -1021,24 +1017,25 @@ function renderOvToday() {
 // on its owner is on the floor but not at work. A non-admin sees a routine run as a scheduled run, no more.
 function ovFloor() {
   const g = AGENTS; if (!g || STATE.agents_error) return { unknown: true, atWork: 0, tiles: [] };
-  const rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => beltGroups()[k]).map(r => [r.t.key, r]));
-  const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
+  const bg = beltGroups(), rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => bg[k]).map(r => [r.t.key, r]));
+  // free_slots null: the slot read failed, so an empty slot is unknown, never a confident free.
+  const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), known = Array.isArray(g.free_slots), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
   const tiles = [], pool = g.pool ?? [];
   // A runner that no pool slot holds (another pool, a hand-started run) still gets its tile.
   const slots = pool.map(p => ({ slot: p.slot, c: p.agent ? cards.get(p.agent) : null, agent: p.agent })).concat([...cards.values()].filter(c => !pool.some(p => p.agent === c.name)).map(c => ({ slot: "", c })));
   slots.forEach(p => {
     const c = p.c;
-    if (!c) return tiles.push({ kind: "free", slot: p.slot, held: !free.has(p.slot) && p.agent });
+    if (!c) return tiles.push({ kind: "free", slot: p.slot, state: !known ? "unknown" : free.has(p.slot) ? "free" : "held" });
     const r = rowBy.get(c.key), st = r?.st ?? 2, a = c.agent || {}, exited = !c.agent_alive && c.stage === "watching" && !c.handoff;
     const fault = c.stage === "stalled" ? "stalled" : c.stage === "error" ? "run failed" : exited ? "agent exited" : "";
     const idle = c.agent_alive && (a.idle_seconds ?? 0) >= 600 ? `idle ${Math.floor(a.idle_seconds / 60)} min` : "";
     tiles.push({ kind: "pipe", key: c.key, slot: p.slot, title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
       time: short(c.elapsed_seconds), cost: a.cost_so_far, href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
   });
-  (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f }));
+  (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
-    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? ownerName(x) : "",
+    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
       turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
   });
   return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
@@ -1051,7 +1048,7 @@ function renderOvFloor() {
   const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
   const headTxt = `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
   const tile = t => {
-    if (t.kind === "free") return `<div class="ft free">${esc(t.slot)} · ${t.held ? "held" : "free"}</div>`;
+    if (t.kind === "free") return `<div class="ft free">${esc(t.slot)} · ${t.state}</div>`;
     const stop = t.kind === "pipe" ? `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}` : t.kind === "routine" ? "Routine" : "Slack session";
     const name = t.kind === "routine" && !t.title ? "Routine · scheduled run" : t.key, label = `${name}, ${stop}`;
     const body = `<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${esc(name)}</span><div class="ftt">${esc(plainMd(t.title))}</div></span>`;
@@ -1060,7 +1057,8 @@ function renderOvFloor() {
     return `<div class="ft ${t.fault ? "bad" : ""}">${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
       <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div></div>`;
   };
-  putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`);
+  putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`,
+    headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
