@@ -14,11 +14,11 @@ server.ERRORS_FILE, server.SESSION_DIR = t + "/state/errors.jsonl", t + "/sess"
 server.team_private = lambda team: team == "secret-team"
 now = time.time(); iso = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - ago))
 rows = [
-    {"at": iso(600), "src": "pipeline", "key": "FXA-1", "kind": "fix", "usd": 3.5, "min": 20, "pr": True, "profile": "fxa"},
+    {"at": iso(600), "src": "pipeline", "key": "FXA-1", "end": int(now - 100), "kind": "fix", "usd": 3.5, "min": 20, "pr": True, "profile": "fxa"},
     {"at": iso(500), "src": "pipeline", "key": "FXA-2", "kind": "fix", "usd": 1.0, "min": 9, "pr": False, "profile": "fxa"},
     {"at": iso(400), "src": "pipeline", "key": "FXA-3", "kind": "fix", "usd": 2.0, "min": 12, "pr": True, "profile": "fxa"},
-    {"at": iso(300), "src": "slack", "key": "agent-aaaa11", "kind": "session", "usd": 0.4, "min": 5, "pr": False, "prn": None, "profile": "fxa"},
-    {"at": iso(200), "src": "pipeline", "key": "PRIV-1", "kind": "fix", "usd": 1.0, "min": 5, "pr": True, "profile": "secret-team"},
+    {"at": iso(300), "src": "slack", "key": "agent-aaaa11", "end": int(now - 200), "backend": "firecracker", "boot_s": 38, "peak": {"mem_mb": 6144}, "stop": "idle", "kind": "session", "usd": 0.4, "min": 5, "pr": False, "prn": None, "profile": "fxa"},
+    {"at": iso(200), "src": "pipeline", "key": "PRIV-1", "end": int(now - 50), "kind": "fix", "usd": 1.0, "min": 5, "pr": True, "profile": "secret-team"},
     {"at": iso(150), "src": "slack", "key": "agent-rout01", "kind": "session", "usd": 0.3, "min": 4, "pr": False, "prn": None, "profile": "fxa"},
     {"at": iso(100), "src": "pass", "key": "pass", "kind": "pass", "usd": 0.5, "min": 2, "pr": False, "profile": "fxa"},
     {"at": iso(9 * 86400), "src": "pipeline", "key": "FXA-9", "kind": "fix", "usd": 1, "min": 1, "pr": False, "profile": "fxa"},
@@ -54,6 +54,11 @@ check("a pass is left out: the system card shows passes", False, "pass" in by)
 check("limit", 2, len(get("/api/runs/recent?limit=2")["runs"]))
 check("days=30 takes the older run", "FXA-9", get("/api/runs/recent?days=30&limit=100")["runs"][-1]["key"])
 check("an admin sees the private team's run", True, any(r["key"] == "PRIV-1" for r in server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False)))
+e = get("/api/runs/recent?ended=1&limit=100")["runs"]
+check("ended=1: ended pipeline and Slack runs, newest end first, the private team's run still hidden", ["FXA-1", "agent-aaaa11"], [r["key"] for r in e])
+check("ended=1: the Slack run's where, boot, memory, stop and end", ("firecracker", 38, 6144, "idle", int(now - 200), False), tuple(e[1][k] for k in ("where", "boot_s", "mem_mb", "stop", "end", "routine")))
+check("a routine run in ended mode keeps its gate: no prompt, no key, routine true", ("Scheduled run", "", True), (lambda x: (x["title"], x["key"], x["routine"]))(server.recent_runs(rows + [dict(next(r for r in rows if r["key"] == "agent-rout01"), end=int(now - 10))], snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, False, True)[0]))
+check("a run with no end: end from at", int(now - 500), by["FXA-2"]["end"])
 server.STATS.data = None
 check("no stats feed: empty with an error", ([], "stats unavailable"), (lambda x: (x["runs"], x["error"]))(get("/api/runs/recent")))
 sys.exit(fail)

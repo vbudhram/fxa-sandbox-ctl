@@ -10,6 +10,7 @@ result rather than blanking the page.
 """
 import atexit
 import base64
+import calendar
 import hashlib
 import hmac
 import json
@@ -226,9 +227,10 @@ TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cad
 JOB_TITLES = {"pass": "Pipeline pass", "triage": "Triage", "merge-watch": "Merge watch"}
 
 
-def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False):
+def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False, ended=False):
     """The newest runs of the stats feed's rows, with a title and an outcome each.
-    Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run."""
+    Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run.
+    ended: only pipeline and Slack runs that ended, newest end first (the Sandboxes page's Recently completed)."""
     titles, prs = {}, {}
     for k in ("blocked", "inflight", "review", "open_prs", "merged_prs"):
         for i in (snap or {}).get(k) or []:
@@ -243,14 +245,26 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
                 titles.setdefault(i["key"], i.get("summary"))
     repo = (snap or {}).get("repo") or "mozilla/fxa"
     since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - days * 86400))
+    def end_of(r):
+        e = r.get("end")
+        if isinstance(e, (int, float)) and not isinstance(e, bool) and e > 0:
+            return int(e)
+        try:
+            return calendar.timegm(time.strptime(r.get("at") or "", "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            return None
+    pick = (r for r in rows or [] if (r.get("at") or "") >= since)
+    if ended:
+        pick = (r for r in pick if r.get("src") in ("pipeline", "slack") and not r.get("live") and isinstance(r.get("end"), (int, float)) and r["end"] > 0)
     out = []
-    for r in sorted((r for r in rows or [] if (r.get("at") or "") >= since), key=lambda r: r["at"], reverse=True):
+    for r in sorted(pick, key=(lambda r: r["end"]) if ended else (lambda r: r["at"]), reverse=True):
         team = r.get("profile") or "fxa"
         # Passes run every 5 min and would fill the list; the system card shows them.
         if hide(team) or r.get("src") == "pass":
             continue
         src, key, kind = r.get("src"), r.get("key") or "", r.get("kind") or ""
         num = state = None
+        routine = False
         if src == "pipeline":
             title = titles.get(key) or key
             if r.get("pr") and key in prs:
@@ -280,7 +294,9 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             title, outcome = JOB_TITLES.get(kind, kind.capitalize() or "Job"), "done"
         url = num and f"https://github.com/{r.get('prr') or repo}/pull/{num}"
         out.append({"at": r["at"], "src": src, "kind": kind, "key": key, "title": title, "team": team, "outcome": outcome,
-                    "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": r.get("usd"), "min": r.get("min")})
+                    "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": r.get("usd"), "min": r.get("min"),
+                    "end": end_of(r), "where": r.get("backend") if src == "slack" else None, "boot_s": r.get("boot_s"),
+                    "mem_mb": (r.get("peak") or {}).get("mem_mb") if isinstance(r.get("peak"), dict) else None, "stop": r.get("stop"), "routine": routine})
         if len(out) >= limit:
             break
     return out
@@ -1038,13 +1054,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json(200, {"run": run, "models": [], "error": type(exc).__name__})
         elif path == "/api/runs/recent":
-            lim, days = arg("limit"), arg("days")
+            lim, days, ended = arg("limit"), arg("days"), arg("ended") == "1"
             rows = (STATS.read()[0] or {}).get("rows")
             # A private team's runs name its tickets: only a signed team admin sees them, as with lessons.
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
             runs = recent_runs(rows, FULL.read()[0], int(time.time()), min(int(lim), 100) if lim.isdigit() and int(lim) else 20,
                                min(int(days), 90) if days.isdigit() and int(days) else 7, os.path.dirname(ERRORS_FILE), str(SESSION_DIR),
-                               lambda t: not admin and team_private(t), admin)
+                               lambda t: not admin and team_private(t), admin, ended)
             self._json(200, {"runs": runs, "error": None if rows is not None else "stats unavailable"})
         elif path == "/api/stats":
             data = STATS.read()[0]
