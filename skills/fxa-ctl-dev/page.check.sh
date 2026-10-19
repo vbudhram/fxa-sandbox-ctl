@@ -395,6 +395,15 @@ ck "i407 cards: 7 day runs and sessions, the cost lines, the host state from fc_
 ck "i407 cards: an old agents feed gives ? on each card, not a 0" "3|false" "$(bash "$p" '#runners' --fixture "$C" --width 1280 --probe '
   const n = document.getElementById("sb-cards"); STATE.agents_age_seconds = 99999; renderSbCards();
   return [...n.querySelectorAll(".big")].filter(b => b.textContent === "?").length + "|" + /\b0 of|\$0\.00/.test(n.textContent)')"
+ck "i407 cards review: the stats load repaints Sandboxes; an open row with no end adds no host hours; the strip label says free slots unknown; no peak is '?'; before the first stats poll it says Loading" "true|true|true|true|true" "$(bash "$p" '#runners' --fixture "$C" --width 1280 --probe '
+  await new Promise(r => setTimeout(r, 400)); const n = document.getElementById("sb-cards"), t = () => n.textContent.replace(/\s+/g, " "), now = Date.now() / 1000;
+  const loaded = /7 days: \d+ runs/.test(t());
+  STATS.rows = [{ at: new Date((now - 3600) * 1000).toISOString(), src: "slack", key: "agent-s1", backend: "firecracker", t0: now - 3 * 86400, end: null, live: false }]; STATS_ERR = null; STATE.stats_age_seconds = 1; renderSbCards();
+  const noOpen = !/Sessions used the host [1-9]/.test(t());
+  AGENTS.free_slots = null; renderSbCards(); const aria = /free slots unknown/.test(n.querySelector(".sbstrip")?.getAttribute("aria-label") || "");
+  AGENTS.free_slots = []; STATS.load = undefined; renderSbCards(); const pk = /peak \? of/.test(t()) && !/peak (0|NaN)/.test(t());
+  STATS = null; STATS_ERR = null; renderSbCards(); const ld = /7 days: Loading the stats…/.test(t()) && !/could not be read/.test(t());
+  return [loaded, noOpen, aria, pk, ld].join("|")')"
 # Sandboxes panel (i407 sb-panel): a selected row opens the panel; when a poll drops it, the selection clears, the drawer closes
 # and the focus goes to the list. sbRows() is stubbed here until sb-list-fixes builds it.
 SP="$(dirname "$0")/page-fixture-sb-panel.json"

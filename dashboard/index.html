@@ -1725,6 +1725,7 @@ async function loadStats() {
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
+  if (VIEW === "runners") renderSb();   // the cards read the 7 day rows
 }
 // Errors: every failure the host and the bot recorded, one row per signature.
 let ERRS = null, ERRS_ALL = false;
@@ -1791,7 +1792,8 @@ let TEAM_ADMIN = null, TED = null;   // TED: the open editor { name, text, gen, 
 const TEAM_TEMPLATE = { schema: 1, name: "new-team", label: "New Team", status: "draft",
   repos: [{ slug: "mozilla/fxa", role: "work", default: true }], stack: { kind: "fxa" },
   access: { open: false, users: [], channels: [], jira_prefixes: [] }, mcp: [], prompts: { claude_md: "" } };
-async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; } }
+async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; }
+  if (VIEW === "runners") renderSb(); }
 function teamEditor(name, isRecord) {
   if (!TEAM_ADMIN?.admin) return "";
   if (!isRecord) return `<div><h4>Edit</h4><p class="empty">A folder team: change it in <span class="mono">profiles/${esc(name)}/</span>, then promote.</p></div>`;
@@ -1876,6 +1878,7 @@ async function loadTeams() {
   const b = document.getElementById("n-teams"); b.textContent = (TEAMS.teams ?? []).length || ""; b.className = "n" + teamBadge(TEAMS.teams ?? []);
   if (document.body.dataset.view === "teams") { renderTeams(); if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide(); renderRight(); }
   if (VIEW === "stats") renderStats();   // team names replace profile ids
+  if (VIEW === "runners") renderSb();    // team names, and the admin gate on routine rows
 }
 const APP_FAIL = "the GitHub App check failed", NO_USE = { n: 0, live: 0, usd: 0, last: 0 };
 const teamName = t => t.label || t.profile;
@@ -2594,15 +2597,17 @@ function sbHostState(g) {
 }
 // Hours the host ran sessions: the union of [t0, end or now] over firecracker rows, so parallel sessions count once.
 function sbHostHours(rows, lo, now) {
-  const sp = rows.filter(r => r.src === "slack" && r.backend === "firecracker" && r.t0 != null).map(r => [Math.max(r.t0, lo), Math.min(r.end ?? now, now)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  // A row with no end that is not live has no known stop: leave it out, as the Stats load does (_stats_add_load).
+  const sp = rows.filter(r => r.src === "slack" && r.backend === "firecracker" && r.t0 != null && (r.end != null || r.live)).map(r => [Math.max(r.t0, lo), Math.min(r.end ?? now, now)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
   let tot = 0, cs = null, ce = null;
   sp.forEach(([a, b]) => { if (ce == null || a > ce) { if (ce != null) tot += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); });
   if (ce != null) tot += ce - cs;
   return tot / 3600;
 }
 function sbCards() {
-  const g = AGENTS, f = ovFloor(), now = Date.now() / 1000, lo = now - 7 * 86400, note = STATS ? statsNote() : "the stats feed could not be read", statsOk = !note;
-  const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && Date.parse(r.at) / 1000 >= lo) : [], unk = `unknown: ${note.replace(/\.$/, "")}`;
+  // Before the first stats poll the lines say Loading, as on Overview; a failed or old feed says unknown.
+  const g = AGENTS, f = ovFloor(), now = Date.now() / 1000, lo = now - 7 * 86400, loading = !STATS && !STATS_ERR, note = loading ? "" : statsNote() || (STATS ? "" : "the stats feed could not be read"), statsOk = !!STATS && !note;
+  const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && Date.parse(r.at) / 1000 >= lo) : [], unk = loading ? "Loading the stats…" : `unknown: ${note.replace(/\.$/, "")}`;
   const hrs = h => `${+h.toFixed(1)} h`, seg = (cls, t) => `<i class="${cls}" title="${esc(t)}"></i>`;
   // Pipeline slots: one segment for each slot.
   const pt = f.unknown ? [] : f.tiles.filter(t => t.kind === "pipe" || t.slot), busy = pt.filter(t => t.kind === "pipe").length;
@@ -2610,12 +2615,14 @@ function sbCards() {
   const pipeRows = rows.filter(r => r.src === "pipeline"), pipeLine = statsOk ? `7 days: ${pipeRows.length} runs, ${hrs(pipeRows.reduce((n, r) => n + (r.min || 0), 0) / 60)}` : `7 days: ${unk}`;
   const pipe = f.unknown ? `<div class="big">?</div><div class="sub">Slots unknown: the agents feed is not current.</div>`
     : `<div class="big">${busy} of ${pt.length} busy</div><div class="sub">${slotsUnk ? "free slots unknown" : `${freeN} free${held ? ` · ${held} held` : ""}`}</div>
-      <div class="sbstrip" role="img" aria-label="${busy} busy, ${freeN} free, ${held} held">${pt.map(t => seg(t.kind === "pipe" ? "busy" : t.state, `${t.slot || t.key}: ${t.kind === "pipe" ? t.key : t.state}`)).join("")}</div>
+      <div class="sbstrip" role="img" aria-label="${busy} busy, ${slotsUnk ? "free slots unknown" : `${freeN} free, ${held} held`}">${pt.map(t => seg(t.kind === "pipe" ? "busy" : t.state, `${t.slot || t.key}: ${t.kind === "pipe" ? t.key : t.state}`)).join("")}</div>
       <div class="sub">${esc(pipeLine)}</div><div class="sub">${esc(agentsMore(SNAP?.mode?.newtickets === "off", g))}</div>`;
   // Session slots: session_cap segments; a session on GCE is marked.
   const cap = g?.session_cap, live = (g?.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)), gce = live.filter(x => x.boot_backend === "gce").length;
   const sl = rows.filter(r => r.src === "slack"), boots = sl.map(r => r.boot_s).filter(x => x != null).sort((a, b) => a - b);
-  const peak = statsOk ? Math.max(0, ...(STATS.load?.days ?? []).filter(d => Date.parse(d.day) / 1000 >= lo - 86400).map(d => d.peak)) : null;
+  // A UTC day bucket counts when it ends inside the window; no known peak gives '?', never 0.
+  const peaks = statsOk ? (STATS.load?.days ?? []).filter(d => Date.parse(d.day) / 1000 + 86400 > lo && Number.isFinite(d.peak)).map(d => d.peak) : [];
+  const peak = peaks.length ? Math.max(...peaks) : "?";
   const sessLine = statsOk ? `7 days: ${sl.length} sessions, peak ${peak} of ${STATS.load?.cap ?? cap ?? "?"}${boots.length ? ` · boot median ${Math.round(boots[Math.floor(boots.length / 2)])} s` : ""}` : `7 days: ${unk}`;
   const host = f.unknown ? null : sbHostState(g);
   const sess = f.unknown || cap == null ? `<div class="big">?</div><div class="sub">Session slots unknown: the agents feed is not current.</div>`
