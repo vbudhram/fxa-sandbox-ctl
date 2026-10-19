@@ -199,4 +199,38 @@ ck "floor: held and unknown slots, a failed run and an exited agent, the chip's 
   ft("FXA-1").querySelector("a").focus(); AGENTS.runners[1].stage = "stalled"; render();
   const e = ft("FXA-2").classList.contains("bad") && /\(2 stalled\)/.test(document.querySelector("#ov-floor h2 .note").textContent) && document.activeElement?.dataset.focus === "ft-FXA-1";
   return [a, b, c, d, e].join("|")')"
+# What the system is doing (ov-system slice), with a fixed date in New York.
+SYS='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(...(a.length ? a : [FIX])); } static now() { return FIX; } } window.Date = D;
+  const now = Math.round(FIX / 1000), at = (h, m, dd = 0) => { const d = new R(FIX); d.setDate(d.getDate() + dd); d.setHours(h, m, 0, 0); return Math.round(d.getTime() / 1000); };
+  const pt = []; for (let m = 0; at(15, 4) + m * 60 <= at(19, 59); m += 5) pt.push(at(15, 4) + m * 60);
+  SNAP.health = { ...SNAP.health, lock_age_seconds: 40, lock_stale_seconds: 1800, pass_timer: "on", paused: null, pass_times: [now - 60, ...pt, ...__NEXT__] };
+  SNAP.review = Array.from({ length: 6 }, (_, i) => ({ key: `FXA-${70 + i}`, pr: 70 + i, state: "OPEN", ok: 20, fail: 0, running: 0, created: new R(FIX - (12 - i) * 86400000).toISOString() }));
+  SNAP.inflight = [{ key: "FXA-60", stage: "pr", pr: 77, pr_url: "https://github.com/mozilla/fxa/pull/77", ok: 18, fail: 0, running: 4 }]; AGENTS.runners = []; AGENTS.sessions = [];
+  SNAP.queue = { ...(SNAP.queue ?? {}), ready: Array.from({ length: 27 }, (_, i) => ({ key: `FXA-${i + 1}` })) };
+  STATE.age_seconds = 44; STATE.interval = 120; STATE.agents_age_seconds = 18;
+  RTSUM = { teams: {}, routines: { 1: { name: "Nightly <img src=x> report", team: "fxa", next: at(2, 0, 1), runs_30d: 10, cost_30d: 30 }, 2: { name: "Old", team: "../x", next: now - 30 } } }; RTSUM_ERR = ""; RTSUM_AT = Date.now();
+  const txt = () => document.getElementById("ov-sys").innerText, html = () => document.getElementById("ov-sys").innerHTML;'
+WED='new Date(2026, 9, 21, 15, 0).getTime()'; FRI='new Date(2026, 9, 23, 15, 0).getTime()'
+ck "system: Wednesday 15:00 reads the real facts; an admin sees the routine, escaped; a non-admin sees none" "true|true|true|true|true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$WED/; s/__NEXT__/[at(7, 4, 1)]/")"'
+  TEAM_ADMIN = { admin: true }; render(); const t = txt(), h = html();
+  const a = /Pipeline pass · runs now · 40s/.test(t) && /checks 18 of 22 done/.test(t) && /width:82%/.test(h) && /href="https:\/\/github\.com\/mozilla\/fxa\/pull\/77\/checks"/.test(h);
+  const b = /Merge watch · 6 PRs wait on a human review · the oldest is 12 days/.test(t);
+  const c = /3:04 PM Pipeline pass, then every 5 min until 7:59 PM/.test(t) && /Quiet hours start 7:59 PM/.test(t) && /First pass of the day 7:04 AM · 27 tickets are ready/.test(t);
+  const d = document.querySelectorAll("#ov-sys svg line").length === 60 && document.querySelectorAll("#ov-sys svg rect").length === 1 && document.querySelectorAll("#ov-sys svg circle").length === 1;
+  const e = /2:00 AM Routine Nightly <img src=x> report · about \$3\.00/.test(t) && !document.querySelector("#ov-sys img") && !/Old/.test(t) && !/\.\.\/x/.test(h);
+  TEAM_ADMIN = { admin: false }; render(); const f = !/Nightly|routine run|circle/.test(html().replace("Team admins see the routine runs here.", "")) && /Team admins see the routine runs here\./.test(txt());
+  return [a, b, c, d, e, f].join("|")')"
+ck "system: Friday afternoon names the weekday of the first pass" "true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$FRI/; s/__NEXT__/[at(7, 4, 1), at(8, 4, 1)]/")"'
+  TEAM_ADMIN = { admin: false }; render(); return /First pass of the day Sat 7:04 AM/.test(txt()) && /Quiet hours start 7:59 PM/.test(txt())')"
+ck "system: it says when it cannot tell, and shows no false time" "true|true|true|true|true|true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$WED/; s/__NEXT__/[]/")"'
+  const st = (patch, f) => { Object.assign(SNAP.health, patch); render(); return f(txt()); };
+  TEAM_ADMIN = { admin: true };
+  const a = st({ pass_times: null, next_pass_epoch: now + 600 }, t => /Pass times unknown on this host\./.test(t) && /3:10 PM Next pipeline pass/.test(t) && !document.querySelector("#ov-sys svg line"));
+  const b = st({ pass_timer: "off", lock_age_seconds: null }, t => /The pass timer is off, so no pass runs\./.test(t));
+  const c = st({ pass_timer: "on", lock_age_seconds: 4000 }, t => /A pass lock is 67 min old/.test(t));
+  const d = st({ paused: "deploy" }, t => /Passes are paused: deploy/.test(t));
+  SNAP.review = null; const e = st({}, t => /CI watch and Merge watch: unknown, GitHub fetch failed/.test(t) && !/checks 18/.test(t));
+  RTSUM_AT = Date.now() - 50000; const f = st({}, t => /Routine times unknown: the routine store cannot be read/.test(t) && !/2:00 AM/.test(t));
+  STATE.age_seconds = 900; const g = st({ pass_times: [now + 300] }, t => /Pass times unknown: the snapshot is 15 min old/.test(t) && !document.querySelector("#ov-sys svg line"));
+  return [a, b, c, d, e, f, g].join("|")')"
 exit $fail

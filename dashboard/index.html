@@ -383,6 +383,9 @@
   .ft .ring { width:30px; height:30px; flex:none; border-radius:50%; background:conic-gradient(var(--info) var(--p), var(--sunk) 0); }
   .ft.bad { border-color:var(--bad); } .ft.bad .ring { background:conic-gradient(var(--bad) var(--p), var(--sunk) 0); }
   .ft.free { border-style:dashed; background:none; color:var(--faint); font-size:var(--t-sub); }
+  #ov-sys h3 { font:600 var(--t-sub) var(--head); color:var(--dim); margin:var(--s3) 0 var(--s1); }
+  #ov-sys .row { font-size:var(--t-sub); padding:2px 0; } #ov-sys .row .w { color:var(--warn); } #ov-sys .bar { height:4px; background:var(--sunk); border-radius:2px; margin:2px 0 4px; }
+  #ov-sys .bar i { display:block; height:100%; background:var(--info); border-radius:2px; } #ov-sys svg { width:100%; height:34px; display:block; }
   .ovchip { display:inline-flex; align-items:center; gap:6px; font-size:var(--t-sub); color:var(--dim); } .ovchip i { width:8px; height:8px; border-radius:50%; background:var(--faint); }
   .ovchip i.on { background:var(--ok); animation:pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.35; } }
   #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; background:none; border:0; box-shadow:none; padding:0; }
@@ -610,7 +613,7 @@ table.usage tr.sel td { background: var(--infobg); }
   <div class="ov" data-views="overview">
     <section id="ov-head"></section>
     <div class="ovl"><section id="ov-spend"></section><section id="ov-today"></section><section id="ov-mini"></section></div>
-    <section id="ov-floor"></section>
+    <div class="ovl"><section id="ov-floor"></section><section id="ov-sys"></section></div>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
   <section class="wide" id="s-sess" data-views="sessions"></section>
@@ -1059,6 +1062,74 @@ function renderOvFloor() {
   };
   putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`,
     headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));
+}
+// What the system is doing (i356): Now from the health facts, the in-flight CI and the review list; Next 12 hours
+// from the pass timer's times (pass_times) and, for a team admin, each routine's next run. A fact that is old
+// or missing says so, and no time shows that is not later than now.
+const hmOf = e => new Date(e * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+// The weekday shows unless the time is today or tomorrow on a weekday: a weekend runs on its own schedule.
+function dayOf(e, now) {
+  const d = new Date(e * 1000), t = new Date(now * 1000); t.setDate(t.getDate() + 1);
+  const plain = d.toDateString() === new Date(now * 1000).toDateString() || (d.toDateString() === t.toDateString() && d.getDay() % 6 !== 0);
+  return plain ? hmOf(e) : `${d.toLocaleDateString([], { weekday: "short" })} ${hmOf(e)}`;
+}
+function ovSys(now = Math.round(Date.now() / 1000)) {
+  const h = SNAP?.health ?? {}, admin = !!TEAM_ADMIN?.admin, mins = x => Math.max(1, Math.round(x / 60)), out = { now: [], next: [], ticks: [], quiet: [], pins: [] };
+  // Now: the pass.
+  if (h.paused) out.now.push(["w", `Passes are paused: ${h.paused}`]);
+  else if (h.pass_timer === "off") out.now.push(["w", "The pass timer is off, so no pass runs."]);
+  else if (h.lock_age_seconds != null && h.lock_age_seconds > (h.lock_stale_seconds ?? 1800)) out.now.push(["w", `A pass lock is ${mins(h.lock_age_seconds)} min old. The next pass clears it, or run fxa-sandbox-ctl unlock.`]);
+  else if (h.lock_age_seconds != null) out.now.push(["", `Pipeline pass · runs now · ${short(h.lock_age_seconds)}`]);
+  else out.now.push(["", `Pipeline pass · last ${ago(h.seconds_since_pass)} · ${gateLine(now).text}`]);
+  if (admin) (AGENTS?.sessions ?? []).filter(x => x.routine_run && LIVE_SESSION.includes(x.state)).forEach(x => out.now.push(["", `Routine ${x.routine_name || `run ${x.routine_run}`} runs now`]));
+  // CI and merge watch: the PR states; a failed read is unknown, never a confident empty.
+  const gh = SNAP && (SNAP.review == null || SNAP.inflight_prs_failed);
+  if (gh) out.now.push(["w", "CI watch and Merge watch: unknown, GitHub fetch failed"]);
+  else {
+    merged().cards.filter(c => c.ci && c.running > 0).forEach(c => { const done = (c.ok ?? 0) + (c.fail ?? 0), tot = done + (c.running ?? 0), u = prHref(c.pr_url || prUrl(c.pr));
+      out.now.push(["ci", { n: c.pr, key: c.key, href: u ? `${u}/checks` : "", done, tot, pct: tot ? Math.round(done / tot * 100) : 0 }]); });
+    const wait = (SNAP?.review ?? []).filter(isWaitingOnHuman), old = Math.max(0, ...wait.map(r => Math.round(days(r.last_human_review?.at ?? r.created) ?? 0)));
+    out.now.push(["", wait.length ? `Merge watch · ${wait.length} PR${wait.length === 1 ? "" : "s"} wait on a human review · the oldest is ${old} day${old === 1 ? "" : "s"}` : "Merge watch · no PR waits on a review"]);
+  }
+  out.feeds = `Feeds: tickets ${ago(STATE.age_seconds)} · agents ${ago(STATE.agents_age_seconds)} · stats ${STATS_AT ? ago(Math.round((Date.now() - STATS_AT) / 1000)) : "not read"}`;
+  // Next 12 hours: the pass times.
+  const H12 = now + 12 * 3600;
+  if (STATE.age_seconds != null && STATE.interval && STATE.age_seconds > 3 * STATE.interval) out.next.push(["w", `Pass times unknown: the snapshot is ${mins(STATE.age_seconds)} min old`]);
+  else if (!Array.isArray(h.pass_times)) {
+    out.next.push(["w", "Pass times unknown on this host."]);
+    if (h.next_pass_epoch > now) out.next.push(["", `${hmOf(h.next_pass_epoch)} Next pipeline pass`]);
+  } else {
+    const t = h.pass_times.filter(x => x > now).sort((a, b) => a - b), runs = [];
+    t.forEach((x, i) => { if (!i || x - t[i - 1] > 65 * 60) runs.push([x]); else runs[runs.length - 1].push(x); });
+    out.ticks = t.filter(x => x <= H12);
+    if (!runs.length) out.next.push(["", "No pass in the next 24 hours."]);
+    else {
+      const r0 = runs[0], gaps = r0.slice(1).map((x, i) => Math.round((x - r0[i]) / 60)), every = gaps.sort((a, b) => gaps.filter(v => v === b).length - gaps.filter(v => v === a).length)[0];
+      out.next.push(["", r0.length > 1 ? `${hmOf(r0[0])} Pipeline pass, then every ${every} min until ${hmOf(r0[r0.length - 1])}` : `${hmOf(r0[0])} Pipeline pass`]);
+      if (runs[1]) {
+        out.quiet.push([r0[r0.length - 1], runs[1][0]]);
+        out.next.push(["", `Quiet hours start ${hmOf(r0[r0.length - 1])}`]);
+        out.next.push(["", `First pass of the day ${dayOf(runs[1][0], now)} · ${(SNAP?.queue?.ready ?? []).length} tickets are ready`]);
+      }
+    }
+  }
+  // The routines: team admins only.
+  if (!admin) out.routines = "Team admins see the routine runs here.";
+  else if (RTSUM_ERR || !RTSUM || Date.now() - RTSUM_AT > 2 * 15000) out.routines = "Routine times unknown: the routine store cannot be read";
+  else out.pins = Object.entries(RTSUM.routines ?? {}).filter(([, r]) => r.next > now && r.next <= H12 && !r.paused)
+    .map(([, r]) => ({ at: r.next, name: r.name, team: r.team, usd: r.runs_30d ? r.cost_30d / r.runs_30d : null })).sort((a, b) => a.at - b.at);
+  return out;
+}
+function renderOvSys() {
+  if (!SNAP) return putOv("ov-sys", `<h2>What the system is doing</h2><div class="emptybox">Loading the pipeline…</div>`);
+  const now = Math.round(Date.now() / 1000), o = ovSys(now), W = 600, x = e => ((e - now) / (12 * 3600) * W).toFixed(1);
+  const row = ([k, v]) => k === "ci" ? `<div class="row">CI watch · ${v.href ? `<a href="${esc(v.href)}" target="_blank" rel="noreferrer" data-focus="ci-${esc(v.n)}">#${esc(v.n)}</a>` : `#${esc(v.n)}`} · checks ${v.done} of ${v.tot} done<div class="bar"><i style="width:${v.pct}%"></i></div></div>`
+    : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
+  const strip = o.ticks.length || o.pins.length ? `<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => `<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`).join("")}${o.ticks.map(e => `<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`).join("")}${o.pins.map(p => `<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${esc(p.name)}</title></circle>`).join("")}</svg>` : "";
+  const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
+  putOv("ov-sys", `<h2>What the system is doing</h2><h3>Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(--faint)">${esc(o.feeds)}</div>
+    <h3>Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
+    JSON.stringify([o.now, o.next, o.routines]));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
@@ -1567,12 +1638,14 @@ document.addEventListener("click", async e => {
 // Teams: each profile, what it gets, and who can start one. Read-only; the server rebuilds it every 5 min.
 let TEAMS = null;
 async function loadTeams() {
-  try { const r = await fetch("/api/teams", { cache:"no-store" }); if (!r.ok) return; TEAMS = await r.json(); } catch { return; }
+  try { const r = await fetch("/api/teams", { cache:"no-store" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); TEAMS = await r.json(); }
+  catch { RTSUM_ERR = "the routine store cannot be read"; if (VIEW === "overview") safeRender(renderOvSys, "ov-sys"); return; }
   if (TEAM_ADMIN == null) await loadTeamAdmin();   // routine facts need to know the viewer is an admin, also on the first load
   if (TEAM_ADMIN?.admin) {
     const r = await fetch("/api/routines/summary", { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
-    if (r?.ok && j?.teams) { RTSUM = j; RTSUM_ERR = ""; } else { RTSUM = null; RTSUM_ERR = j?.error || "the dashboard did not answer"; }
+    if (r?.ok && j?.teams) { RTSUM = j; RTSUM_ERR = ""; RTSUM_AT = Date.now(); } else { RTSUM = null; RTSUM_ERR = j?.error || "the dashboard did not answer"; }
   }
+  if (VIEW === "overview") safeRender(renderOvSys, "ov-sys");
   const b = document.getElementById("n-teams"); b.textContent = (TEAMS.teams ?? []).length || ""; b.className = "n" + teamBadge(TEAMS.teams ?? []);
   if (document.body.dataset.view === "teams") { renderTeams(); if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide(); renderRight(); }
   if (VIEW === "stats") renderStats();   // team names replace profile ids
@@ -1624,7 +1697,7 @@ function repoTag(r) {
 // ── Teams (epic i275): a list at the left, All teams or the selected team in main, with Overview, Routines
 // and Settings tabs. Routine facts come only from the admin routes; a non-admin sees none (i168 D1).
 const TEAM_RE = /^[a-z][a-z0-9-]{1,30}$/;
-let TTAB = "overview", RTSUM = null, RTSUM_ERR = "";
+let TTAB = "overview", RTSUM = null, RTSUM_ERR = "", RTSUM_AT = 0;
 const TTABS = [["overview", "Overview"], ["routines", "Routines"], ["settings", "Settings"]];
 // #teams, #teams/<team>, #teams/<team>/routines|settings. The raw segment is used as it is, never decoded;
 // the old forms (#teams/routines/<team> in Slack History links, #teams/all) are replaced, so Back does not loop.
@@ -3244,7 +3317,7 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvFloor, "ov-floor"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderSess, "s-sess"], [renderPool, "s-pool"],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
