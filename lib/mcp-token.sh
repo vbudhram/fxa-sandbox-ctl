@@ -15,7 +15,11 @@ mcp_token_for() {
   [[ "$run" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "ERROR: bad run name for a token" >&2; return 1; }
   map="${FXA_MCP_GATEWAY_DIR}/runs/${run}"
   tok="$(cat "$map" 2>/dev/null || true)"
-  if [ -n "$tok" ] && jq -e '.expires > now' "${FXA_MCP_GATEWAY_DIR}/tokens/${tok}.json" >/dev/null 2>&1; then
+  # A GCE runner's deadline (llm-token.sh run_tokens_deadline); claude-job.sh loads only this file.
+  local dl; dl="$(tr -dc 0-9 2>/dev/null < "${map}.deadline" || true)"; [ -n "$dl" ] && [ "$dl" -gt "$(date +%s)" ] || dl=""
+  local f="${FXA_MCP_GATEWAY_DIR}/tokens/${tok}.json"
+  if [ -n "$tok" ] && jq -e '.expires > now' "$f" >/dev/null 2>&1; then
+    [ -z "$dl" ] || { jq --argjson e "$dl" '.expires = $e' "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"; }
     printf '%s\n' "$tok"; return 0
   fi
   [ -n "$connectors" ] || return 1
@@ -33,8 +37,8 @@ mcp_token_for() {
   ( umask 077
     jq -n --arg r "$run" --arg c "$connectors" --argjson now "$(date +%s)" \
       --argjson ttl "${FXA_MCP_TOKEN_TTL:-86400}" --argjson cap "${FXA_MCP_RUN_CAP_CALLS:-200}" \
-      --arg p "$projects" --arg rp "$repos" \
-      '{run: $r, created: $now, expires: ($now + $ttl), connectors: ($c | split(",")), cap_calls: $cap, calls: 0}
+      --arg p "$projects" --arg rp "$repos" --argjson dl "${dl:-0}" \
+      '{run: $r, created: $now, expires: (if $dl > 0 then $dl else $now + $ttl end), connectors: ($c | split(",")), cap_calls: $cap, calls: 0}
        + (if ($p + $rp | gsub(" "; "")) != "" then {scope: {jira_projects: ($p | split(" ") | map(select(. != ""))), repos: ($rp | split(" ") | map(select(. != "")))}} else {} end)' \
       > "${FXA_MCP_GATEWAY_DIR}/tokens/${tok}.json" ) || return 1
   printf '%s\n' "$tok" > "$map"

@@ -74,4 +74,12 @@ check "android: the c3 fallback, nested, on hyperdisk" "0|1" \
   check "android image: n2 on pd-balanced, amd64, android=true, its own family and disk" "1|1|1|1|1|1" \
     "$(wc -l < "$tmp/pk" | tr -d ' ')|$(grep -c 'machine_type=n2-standard-8 -var disk_type=pd-balanced' <<< "$a")|$(grep -c 'source_image_family=ubuntu-2404-lts-amd64' <<< "$a")|$(grep -c 'android=true' <<< "$a")|$(grep -c 'vm_name=fxa-dev-android' <<< "$a")|$(grep -c 'disk_size_gb=150' <<< "$a")"
   exit "$fail" ) || fail=1
+# A created runner sets its tokens' deadline: the run limit + 10 min; the answer runner (limit 0) sets none.
+run_tokens_deadline() { echo "$1 $2" > "$tmp/deadline"; }
+printf '%s\n' c4a-standard-4@z-a=ok > "$tmp/out"; rm -f "$tmp/deadline"; now="$(date +%s)"
+vm_clone dl1 >/dev/null 2>&1
+check "a created runner sets the deadline of its tokens" "dl1 yes" "$(read -r n e < "$tmp/deadline"; echo "$n $([ "$e" -ge $(( now + 6000 )) ] && [ "$e" -le $(( now + 6010 )) ] && echo yes)")"
+rm -f "$tmp/deadline"; FXA_GCE_MAX_RUN_SECONDS=0 vm_clone dl2 >/dev/null 2>&1
+check "no run limit: no deadline" "no" "$([ -e "$tmp/deadline" ] && echo yes || echo no)"
+unset -f run_tokens_deadline
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

@@ -34,4 +34,18 @@ check "revoke expires the token and keeps its spend" "0 0" "$(jq -r '"\(.expires
 check "a revoked run gets a new token" "no" "$([ "$(llm_token_for fxa-1)" = "$t1" ] && echo yes || echo no)"
 # The controller runs with set -euo pipefail: minting must not die of SIGPIPE when head stops tr.
 check "a token mints under pipefail, called bare" "ok" "$(set -euo pipefail; tok=""; tok="$(llm_token_for fxa-pf1)"; llm_token_for fxa-pf2 >/dev/null; echo ok)"
+# A GCE runner's deadline: vm_clone sets it; both tokens of the run end then, a run with none keeps 24 h.
+FXA_MCP_GATEWAY_DIR="$tmp/gw"; now="$(date +%s)"; dl=$(( now + 6000 ))
+tg="$(llm_token_for gce-1)"; mg="$(mcp_token_for gce-1 jira)"
+run_tokens_deadline gce-1 "$dl"
+check "the deadline moves the run's live LLM and MCP tokens" "$dl $dl" "$(jq -r .expires "$tmp/tokens/$tg.json") $(jq -r .expires "$tmp/gw/tokens/$mg.json")"
+check "a run with no deadline keeps the 24 h default" "yes" "$(e="$(jq -r .expires "$tmp/tokens/$(llm_token_for fc-1).json")"; [ "$e" -ge $(( now + 86000 )) ] && echo yes)"
+run_tokens_deadline gce-2 "$dl"
+check "a token made after the deadline was set expires at it" "$dl $dl" "$(jq -r .expires "$tmp/tokens/$(llm_token_for gce-2).json") $(jq -r .expires "$tmp/gw/tokens/$(mcp_token_for gce-2 jira).json")"
+dl2=$(( now + 9000 )); run_tokens_deadline gce-1 "$dl2"
+check "a new runner for the run (a resume) moves the token on, same token" "$tg $dl2" "$(llm_token_for gce-1) $(jq -r .expires "$tmp/tokens/$tg.json")"
+llm_token_revoke gce-1; run_tokens_deadline gce-1 "$dl2"
+check "a revoked token stays revoked" "0" "$(jq -r .expires "$tmp/tokens/$tg.json")"
+printf '%s\n' $(( now - 10 )) > "$tmp/runs/gce-3.deadline"
+check "a past deadline is ignored" "yes" "$(e="$(jq -r .expires "$tmp/tokens/$(llm_token_for gce-3).json")"; [ "$e" -ge $(( now + 86000 )) ] && echo yes)"
 exit "$fail"

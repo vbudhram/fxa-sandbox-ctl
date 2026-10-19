@@ -16,7 +16,9 @@ llm_token_for() {
   map="${FXA_LLM_PROXY_DIR}/runs/${run}"
   mkdir -p "${FXA_LLM_PROXY_DIR}/tokens" "${FXA_LLM_PROXY_DIR}/runs" || return 1
   tok="$(cat "$map" 2>/dev/null || true)"
+  local dl; dl="$(_run_deadline "$FXA_LLM_PROXY_DIR" "$run")"
   if [ -n "$tok" ] && jq -e '.expires > now' "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" >/dev/null 2>&1; then
+    [ -z "$dl" ] || _tok_expires "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" "$dl"
     printf '%s\n' "$tok"; return 0
   fi
   tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
@@ -30,10 +32,35 @@ llm_token_for() {
   ( umask 077
     jq -n --arg r "$run" --arg th "$thread" --arg tm "$team" --argjson now "$(date +%s)" --argjson ttl "${FXA_LLM_TOKEN_TTL:-86400}" \
       --argjson cap "${FXA_LLM_RUN_CAP_USD:-50}" \
-      '{run: $r, team: $tm, created: $now, expires: ($now + $ttl), cap_usd: $cap, spent_usd: 0} + (if $th != "" then {thread: $th} else {} end)' \
+      --argjson dl "${dl:-0}" \
+      '{run: $r, team: $tm, created: $now, expires: (if $dl > 0 then $dl else $now + $ttl end), cap_usd: $cap, spent_usd: 0} + (if $th != "" then {thread: $th} else {} end)' \
       > "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" ) || return 1
   printf '%s\n' "$tok" > "$map"
   printf '%s\n' "$tok"
+}
+
+# A GCE runner is deleted at a fixed time (max-run-duration), with no agent_stop to revoke its
+# tokens. vm_clone writes runs/<run>.deadline (that time + 10 min) in each token dir; a token made
+# or reused for the run expires then, not after the 24 h default.
+# _run_deadline <dir> <run>   The run's deadline when it is still ahead, else nothing.
+_run_deadline() {
+  local d; d="$(tr -dc 0-9 2>/dev/null < "$1/runs/$2.deadline" || true)"
+  [ -n "$d" ] && [ "$d" -gt "$(date +%s)" ] && printf '%s\n' "$d"; return 0
+}
+# _tok_expires <token file> <epoch>
+_tok_expires() { jq --argjson e "$2" '.expires = $e' "$1" > "$1.tmp" && mv -f "$1.tmp" "$1"; }
+
+# run_tokens_deadline <run> <epoch>   Set the run's deadline, and move its live tokens to it.
+run_tokens_deadline() {
+  local d tok
+  for d in "$FXA_LLM_PROXY_DIR" "${FXA_MCP_GATEWAY_DIR:-}"; do
+    [ -n "$d" ] && mkdir -p "$d/runs" || continue
+    printf '%s\n' "$2" > "$d/runs/$1.deadline"
+    # Only a mapped token: revoke removes the map, so a revoked token is never revived.
+    tok="$(cat "$d/runs/$1" 2>/dev/null || true)"
+    [ -n "$tok" ] && [ -f "$d/tokens/$tok.json" ] && _tok_expires "$d/tokens/$tok.json" "$2"
+  done
+  return 0
 }
 
 # llm_token_revoke <run>   Expire the run's token. The file stays, with its spend.

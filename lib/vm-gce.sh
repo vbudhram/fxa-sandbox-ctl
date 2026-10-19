@@ -178,6 +178,9 @@ vm_clone() {
       printf '%s' "$zone" > "${LOG_DIR}/last-good-zone"
       # The IAP ProxyCommand needs the zone too; a per-host entry wins over the wildcard.
       _gce_ssh_host_entry "$(vm_name "$name")" "$zone" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
+      # GCE deletes it at the run limit with no agent_stop: its tokens end 10 min after that.
+      [ "$FXA_GCE_MAX_RUN_SECONDS" = 0 ] || ! declare -F run_tokens_deadline >/dev/null \
+        || run_tokens_deadline "$name" "$(( $(date +%s) + FXA_GCE_MAX_RUN_SECONDS + 600 ))"
       return 0
     fi
     if grep -q 'ZONE_RESOURCE_POOL_EXHAUSTED' "${LOG_DIR}/${name}-vm.log"; then
