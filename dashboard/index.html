@@ -373,19 +373,53 @@
   .ovc.bad .big { color:var(--bad); } .ovc.warn .big { color:var(--warn); } .ovc .sub a { color:var(--link); }
 
   /* ── overview: what needs you, what is running ── */
-  .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
-  /* The tile columns follow the floor card's own width: 2 wide, 1 wide on a phone. */
+  .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); align-items:start; }
+  /* The tile columns follow the floor card's own width: as many 260 px tiles as fit, 1 wide on a phone. */
   #ov-floor { container-type:inline-size; }
-  .ovtiles { display:grid; gap:var(--s2); grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:var(--s2); }
+  .ovtiles { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); margin-top:var(--s2); }
   @container (max-width:360px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
-  .ovrow { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); }
-  @media (min-width:1200px) { .ovrow { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }
+  .ovfree { font-size:var(--t-sub); color:var(--dim); } .ovfree .mono { font-family:var(--mono); }
+  /* Overview at a glance (O6): the Needs you banner, the KPI tiles, Teams and Recent runs. */
+  #ov-needs { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); background:var(--warnbg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); box-shadow:none; padding:var(--s2) var(--s4); font-size:var(--t-sub); }
+  #ov-needs .big { font:700 18px/1.2 var(--head); } #ov-needs b { font-family:var(--head); } #ov-needs .sub a, #ov-needs .sub { color:inherit; } #ov-needs .go { margin-left:auto; font-weight:600; color:inherit; }
+  #ov-needs.calm { background:var(--panel); color:var(--dim); border-color:var(--card-border); }
+  #ov-kpis { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
+  #ov-mini { display:contents; } #ov-mini > * { order:3; } #ov-mini > .ovk:first-of-type { order:1; } #ov-today { order:2; } #ov-mini > .ovknote { order:0; grid-column:1/-1; font-size:var(--t-sub); color:var(--warn); }
+  .ovk { display:flex !important; flex-direction:column; gap:4px; min-width:0; }
+  .ovk .lbl { text-transform:uppercase; letter-spacing:.05em; font-size:var(--t-label, 11px); }
+  .ovk .vs { display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s2); } .ovk svg { width:72px; height:26px; flex:none; overflow:visible; }
+  .ovk .chg { font-weight:600; } .ovk .chg.good { color:var(--ok); } .ovk .chg.bad { color:var(--bad); }
+  #ov-today { padding:var(--s3) var(--s4); } #ov-today h2 { font:600 var(--t-label, 11px) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:0 0 4px; display:flex; justify-content:space-between; gap:var(--s2); }
+  #ov-today h2 .note { text-transform:none; letter-spacing:0; font-weight:600; } #ov-today .ovtoday { gap:var(--s3); align-items:flex-start; } #ov-today .ovtoday svg { width:40px; height:40px; margin-top:2px; } #ov-today .big { font-size:24px; } #ov-today .sub { font-size:var(--t-label, 11px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #ov-today .ovtoday > div { min-width:0; }
+  .ovpill { display:inline-block; font-size:var(--t-label, 11px); font-weight:600; border-radius:999px; padding:1px 8px; white-space:nowrap; background:var(--sunk); color:var(--dim); }
+  .ovpill.ok { background:var(--okbg); color:var(--ok); } .ovpill.info { background:var(--infobg); color:var(--info); } .ovpill.bad { background:var(--badbg); color:var(--bad); } .ovpill.warn { background:var(--warnbg); color:var(--warn); }
+  .ovteam { display:grid; grid-template-columns:minmax(0,1.4fr) 44px 56px 44px minmax(0,1.5fr); gap:var(--s2); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); font-size:var(--t-sub); color:inherit; }
+  a.ovteam:hover { text-decoration:none; background:var(--hover); } .ovteam.hd { border-top:0; font-size:var(--t-label, 11px); color:var(--dim); padding-bottom:2px; }
+  .ovteam .n { display:flex; align-items:center; gap:var(--s2); min-width:0; font-weight:600; } .ovteam .n span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ovteam .num { text-align:right; font-variant-numeric:tabular-nums; } .ovteam .bud { display:flex; flex-direction:column; gap:3px; min-width:0; } .ovteam .bud > span:first-child { display:flex; justify-content:space-between; gap:var(--s1); font-size:var(--t-label, 11px); color:var(--dim); } .ovteam .bud b { color:var(--ink, inherit); }
+  .ovbar { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; } .ovbar i { display:block; height:100%; background:var(--info); } .ovbar i.warn { background:var(--warn); } .ovbar i.bad { background:var(--bad); }
+  @container (max-width:420px) { .ovteam { grid-template-columns:minmax(0,1fr) 40px 52px; } .ovteam > :nth-child(4), .ovteam > :nth-child(5) { display:none; } }
+  #ov-teams, #ov-runs { container-type:inline-size; }
+  .ovrun { display:grid; grid-template-columns:62px 28px minmax(0,1fr) auto; gap:2px var(--s3); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); }
+  .ovrun time { font-size:var(--t-label, 11px); color:var(--dim); grid-row:span 2; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .ovrun .ic { width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; grid-row:span 2; } .ovrun .ic svg { width:14px; height:14px; }
+  .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ovrun .t .key { margin-right:6px; }
+  .ovrun .d { font-size:var(--t-label, 11px); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
+  .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label, 11px); color:var(--dim); font-variant-numeric:tabular-nums; }
+  @container (max-width:420px) { .ovrun { grid-template-columns:56px minmax(0,1fr) auto; } .ovrun .ic { display:none; } .ovrun .d { grid-column:2; } }
+  .ovchip { padding:3px 12px; border-radius:999px; background:var(--sunk); } .ovchip.live { background:var(--infobg); color:var(--info); font-weight:600; } .ovchip.live i { background:var(--info); }
+  .ovwho { font-size:var(--t-sub); color:var(--dim); }
+  .ft { display:flex; flex-direction:column; gap:var(--s1); padding:var(--s3); } .ft.live { border-color:color-mix(in srgb,var(--info) 55%,transparent); box-shadow:0 0 0 1px color-mix(in srgb,var(--info) 35%,transparent); }
+  .ft .fth { display:flex; justify-content:space-between; align-items:center; gap:var(--s2); font-size:var(--t-label, 11px); color:var(--dim); } .ft .fth > span:first-child { display:flex; gap:6px; align-items:center; min-width:0; font-family:var(--mono); }
+  .ft .ftl { background:var(--sunk); border-radius:6px; padding:4px 8px; }
+  .ovrow { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); align-items:start; }
+  @media (min-width:1100px) { .ovrow { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }
   .ft { border:1px solid var(--card-border); border-radius:var(--r-md, 8px); padding:var(--s2) var(--s3); min-width:0; background:var(--panel); }
   .ft > a, .ft > .ftb { display:flex; gap:var(--s2); align-items:center; color:inherit; min-width:0; } .ft > a:hover { text-decoration:none; }
   .ft .ftk { font:600 var(--t-sub) var(--mono, monospace); } .ft .ftt { font-size:var(--t-sub); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ft .ftl { font:var(--t-label, 11px)/1.4 var(--mono, monospace); color:var(--dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ft .ftm { font-size:var(--t-label, 11px); color:var(--faint); margin-top:2px; } .ft .ftm .w { color:var(--warn); }
-  .ft .ring { width:30px; height:30px; flex:none; border-radius:50%; background:conic-gradient(var(--info) var(--p), var(--sunk) 0); }
+  .ft .ring { width:40px; height:40px; flex:none; border-radius:50%; background:conic-gradient(var(--info) var(--p), var(--sunk) 0); }
   .ft.bad { border-color:var(--bad); } .ft.bad .ring { background:conic-gradient(var(--bad) var(--p), var(--sunk) 0); }
   .ft.free { border-style:dashed; background:none; color:var(--faint); font-size:var(--t-sub); }
   #ov-sys h3 { font:600 var(--t-sub) var(--head); color:var(--dim); margin:var(--s3) 0 var(--s1); }
@@ -617,8 +651,11 @@ table.usage tr.sel td { background: var(--infobg); }
 <div class="grid">
   <div class="ov" data-views="overview">
     <section id="ov-head"></section>
-    <div class="ovl"><div class="ovrow"><section id="ov-spend"></section><section id="ov-today"></section></div><section id="ov-mini"></section></div>
-    <div class="ovl"><section id="ov-floor"></section><section id="ov-sys"></section></div>
+    <section id="ov-needs"></section>
+    <div id="ov-kpis"><section id="ov-mini"></section><section id="ov-today"></section></div>
+    <div class="ovrow"><section id="ov-spend"></section><section id="ov-teams"></section></div>
+    <section id="ov-floor"></section>
+    <div class="ovrow"><section id="ov-runs"></section><section id="ov-sys"></section></div>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
   <section class="wide" id="s-sess" data-views="sessions"></section>
@@ -969,9 +1006,11 @@ function statsNote() {
 const localDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 function renderOvHead() {
   const f = ovFloor(), hr = STATS?.llm?.hour_usd, llm = typeof hr === "number" && !statsNote() ? ` · LLM ${usd(hr)} in the last hour` : "";
-  putOv("ov-head", `<span class="ovchip"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span><div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}`);
+  const live = f.tiles.filter(t => t.kind !== "free" && t.alive), np = live.filter(t => t.kind === "pipe").length, ns = live.length - np, pl = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const who = f.unknown || !live.length ? "" : [np && pl(np, "agent"), ns && pl(ns, "session")].filter(Boolean).join(" and ");
+  putOv("ov-head", `<span class="ovchip${f.atWork ? " live" : ""}"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span>${who ? `<span class="ovwho">${esc(who)}</span>` : ""}<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}|${who}`);
 }
-document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; safeRender(renderOvHead, "ov-head"); safeRender(renderOvSpend, "ov-spend"); } });
+document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"]].forEach(([f, id]) => safeRender(f, id)); loadRuns(); } });
 // Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
 const daysBack = (from, n) => [...Array(n)].map((_, i) => { const d = new Date(from); d.setDate(d.getDate() - i); return localDay(d.getTime()); });
 // ovSpend(range): spend by local day and source in the Stats range, with the Stats rules (usd, every row).
@@ -1038,36 +1077,54 @@ function ovFloor() {
     const r = rowBy.get(c.key), st = r?.st ?? 2, a = c.agent || {}, exited = !c.agent_alive && c.stage === "watching" && !c.handoff;
     const fault = c.stage === "stalled" ? "stalled" : c.stage === "error" ? "run failed" : exited ? "agent exited" : "";
     const idle = c.agent_alive && (a.idle_seconds ?? 0) >= 600 ? `idle ${Math.floor(a.idle_seconds / 60)} min` : "";
-    tiles.push({ kind: "pipe", key: c.key, slot: p.slot, title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
+    tiles.push({ kind: "pipe", key: c.key, slot: p.slot, team: c.profile || SNAP?.team?.profile || "", title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
       time: short(c.elapsed_seconds), cost: a.cost_so_far, out: a.last_tool || a.last_text || "", href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
   });
   (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
-    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
+    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
       turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, out: open ? (x.agent?.last_tool || x.agent?.last_text || "") : "", href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
   });
   return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
 }
 function renderOvFloor() {
   const f = ovFloor();
-  if (f.unknown) return putOv("ov-floor", `<h2>On the floor</h2><div class="emptybox">${!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read."}</div>`);
+  if (f.unknown) return putOv("ov-floor", `<h2>Running now</h2><div class="emptybox">${!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read."}</div>`);
   const pipe = f.tiles.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = f.tiles.filter(t => t.kind === "slack"), rt = f.tiles.filter(t => t.kind === "routine");
   const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
   const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
   const headTxt = `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
   const tile = t => {
-    if (t.kind === "free") return `<div class="ft free">${esc(t.slot)} · ${t.state}</div>`;
     const stop = t.kind === "pipe" ? `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}` : t.kind === "routine" ? "Routine" : "Slack session";
     const name = t.kind === "routine" && !t.title ? "Routine · scheduled run" : t.key, label = `${name}, ${stop}`;
     const body = `<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${esc(name)}</span><div class="ftt">${esc(plainMd(t.title))}</div></span>`;
     const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? `<span class="w">waits on ${esc(t.waits)}</span>` : "working";
     const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).map(esc).join(" · ");
-    return `<div class="ft ${t.fault ? "bad" : ""}">${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
+    const head = `<div class="fth"><span>${esc(t.slot || (t.kind === "pipe" ? "" : t.kind === "routine" ? "Routine" : "Slack"))}${t.team ? `<span class="ovpill">${esc(t.team)}</span>` : ""}</span></div>`;
+    return `<div class="ft ${t.fault ? "bad" : t.alive ? "live" : ""}">${head}${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
       <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div>${t.out ? `<div class="ftl" title="${esc(plainMd(t.out))}">${esc(plainMd(t.out))}</div>` : ""}</div>`;
   };
-  putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`,
+  const busy = f.tiles.filter(t => t.kind !== "free"), idle = f.tiles.filter(t => t.kind === "free"), by = k => idle.filter(t => t.state === k).map(t => t.slot);
+  const free = [["free", by("free")], ["held", by("held")], ["slots unknown", by("unknown")]].filter(([, l]) => l.length)
+    .map(([k, l]) => k === "free" ? `${l.length} free: <span class="mono">${esc(slotList(l))}</span>` : `${k}: <span class="mono">${esc(slotList(l))}</span>`).join(" · ");
+  const nx = ovNextPass(), last = ovLastRun();
+  const empty = `<div class="emptybox">Nothing runs now${last ? ` · the last run ended ${esc(last)}` : ""}${nx ? ` · next pass ${esc(nx)}` : ""}</div>`;
+  putOv("ov-floor", `<h2>Running now<span class="note">${esc(headTxt)}</span></h2>${busy.length ? `<div class="ovtiles">${busy.map(tile).join("")}</div>` : empty}${free ? `<div class="ovfree" style="margin-top:var(--s2)">${free}${busy.length && nx ? ` · next pass ${esc(nx)}` : ""}</div>` : ""}`,
     headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));
+}
+// "fxa-auto-4, 5, 6": a run of slot names with one prefix shows the prefix once.
+function slotList(l) {
+  const m = l.map(x => String(x).match(/^(.*?)(\d+)$/)), pre = m[0]?.[1];
+  return l.length > 1 && m.every(x => x && x[1] === pre) ? [l[0], ...m.slice(1).map(x => x[2])].join(", ") : l.join(", ");
+}
+function ovNextPass() {
+  const h = SNAP?.health ?? {}, now = Date.now() / 1000, t = (Array.isArray(h.pass_times) ? h.pass_times : [h.next_pass_epoch]).filter(x => x > now).sort((a, b) => a - b)[0];
+  return t ? `in ${Math.max(1, Math.round((t - now) / 60))} min` : "";
+}
+function ovLastRun() {
+  const t = Math.max(0, ...(STATS?.rows ?? []).map(r => Date.parse(r.at)).filter(x => x > 0));
+  return t ? ago(Math.max(0, Math.round((Date.now() - t) / 1000))) : "";
 }
 // What the system is doing (i356): Now from the health facts, the in-flight CI and the review list; Next 12 hours
 // from the pass timer's times (pass_times) and, for a team admin, each routine's next run. A fact that is old
@@ -1154,18 +1211,121 @@ function ovNeeds() {
   const by = {}; bg.needs.forEach(r => { const p = r.item?.person ?? "the operator"; by[p] = (by[p] ?? 0) + 1; });
   return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
 }
-function renderOvMini() {
+function renderOvNeeds() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
     .concat(n.sandbox ? [`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
+  const node = document.getElementById("ov-needs"); if (node) { node.dataset.empty = !n.unknown && !n.total; node.classList.toggle("calm", !!n.unknown); }
+  putOv("ov-needs", `<b>Needs you</b><span class="big">${n.unknown ? "?" : n.total}</span><span class="sub">${n.unknown ? esc(n.unknown) : parts.join(" · ")}</span><a class="go" href="#pipeline/belts" data-focus="need-open">Open the list ›</a>`);
+}
+// The KPI tiles (O6): each figure in the range, its change against the period of the same length before it, and a
+// small line of its values over the range. Merged and Cost keep the Stats '7 days' window, so each equals Stats PRs.
+const median = a => { const s = a.filter(v => typeof v === "number").sort((x, y) => x - y), m = s.length >> 1; return !s.length ? null : s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+function ovKpis(range, now = Date.now()) {
+  const rows = STATS?.rows ?? [], prs = STATS?.prs ?? [], [lo] = statsBounds(range), len = now - lo, [lo7] = statsBounds("7d"), len7 = now - lo7;
+  const at = (a, b) => rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; });
+  const spend = rs => rs.reduce((x, r) => x + (r.usd || 0), 0), pipe = rs => rs.filter(r => r.src === "pipeline");
+  const rate = rs => { const p = pipe(rs); return p.length ? p.filter(r => r.pr).length / p.length : null; };
+  const med = rs => median(pipe(rs).map(r => r.min));
+  // 8 equal buckets over [a, b): the values for the small line.
+  const line = (a, b, f) => [...Array(8)].map((_, i) => f(a + i * (b - a) / 8, a + (i + 1) * (b - a) / 8));
+  const merged = (a, b) => prs.filter(p => { const t = p.merged && Date.parse(p.merged); return t >= a && t < b; }).length;
+  const c7 = costPerMerged(lo7, Infinity, prs, rows), p7 = costPerMerged(lo7 - len7, lo7, prs, rows);
+  return {
+    spend: { v: spend(at(lo, Infinity)), p: spend(at(lo - len, lo)), line: line(lo, now, (a, b) => spend(at(a, b))) },
+    merged: { v: c7.mergedIn.length, p: p7.mergedIn.length, line: line(lo7, now, merged) },
+    cost: { v: c7.per, p: p7.per, spent: c7.spentIn, line: line(lo7, now, (a, b) => { const m = merged(a, b); return m ? spend(at(a, b)) / m : null; }) },
+    rate: { v: rate(at(lo, Infinity)), p: rate(at(lo - len, lo)), n: pipe(at(lo, Infinity)).length, line: line(lo, now, (a, b) => rate(at(a, b))) },
+    med: { v: med(at(lo, Infinity)), p: med(at(lo - len, lo)), line: line(lo, now, (a, b) => med(at(a, b))) },
+  };
+}
+// The change text and whether it is good: per cent for money and counts, points for a share, minutes for a time.
+function kpiChange(k, how, lowerIsGood) {
+  if (k.v == null || k.p == null || (how === "pct" && !k.p)) return { t: "", c: "" };
+  const d = how === "pct" ? Math.round((k.v - k.p) / k.p * 100) : how === "pts" ? Math.round((k.v - k.p) * 100) : Math.round(k.v - k.p);
+  const t = `${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}${how === "pct" ? "%" : how === "pts" ? " pts" : " min"}`;
+  return { t, c: !d ? "" : (d < 0) === lowerIsGood ? "good" : "bad" };
+}
+function spark(vals) {
+  const v = vals.map((x, i) => [i, x]).filter(([, x]) => typeof x === "number" && isFinite(x));
+  if (v.length < 2) return "";
+  const max = Math.max(...v.map(([, x]) => x)), min = Math.min(...v.map(([, x]) => x)), r = max - min || 1;
+  return `<svg viewBox="0 0 72 26" aria-hidden="true"><polyline points="${v.map(([i, x]) => `${(i / (vals.length - 1) * 72).toFixed(1)},${(23 - (x - min) / r * 20).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--info)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+}
+function renderOvMini() {
   // Merged in 7 days and its cost per PR: '—' with the reason when the PR list is unread or old (it refreshes every 10 min).
-  // The Stats '7 days' window, so each card equals the Stats PRs figure it opens.
-  const now = Date.now(), c = costPerMerged(statsBounds("7d")[0], Infinity, STATS?.prs, STATS?.rows), at = STATS?.prs_at;
+  const now = Date.now(), at = STATS?.prs_at, note = statsNote(), n = OV_RANGES.find(([k]) => k === OV_RANGE)[1];
   const why = !STATS ? "Loading the stats…" : STATS.prs == null ? "the PR list is not read yet" : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at))} old` : "";
-  const prsOk = STATS?.prs != null;
-  putOv("ov-mini", `<div class="ovc ${n.unknown ? "" : n.total ? "warn" : ""}"><div class="lbl">Needs you</div><div class="big">${n.unknown ? "?" : n.total}</div>
-    <div class="sub">${n.unknown ? esc(n.unknown) : n.total ? parts.join(" · ") : "Nobody needs to act."}</div></div>
-    <a class="ovc" href="#stats/prs" data-sfrange="7d" data-focus="ov-merged"><div class="lbl">Merged, 7 days</div><div class="big">${prsOk ? c.mergedIn.length : "—"}</div><div class="sub">${why ? esc(why) : "PRs merged in 7 days"}</div></a>
-    <a class="ovc" href="#stats/prs" data-sfrange="7d" data-focus="ov-cost"><div class="lbl">Cost per merged PR</div><div class="big">${prsOk && c.per != null ? usd(c.per) : "—"}</div><div class="sub">${why ? esc(why) : c.per == null ? "no PR merged in 7 days" : `${usd(c.spentIn)} all-in over ${c.mergedIn.length}`}</div></a>`);
+  const prsOk = STATS?.prs != null, k = STATS ? ovKpis(OV_RANGE, now) : null, before = `against the ${n} before`;
+  const tile = (focus, href, range, lbl, big, kk, how, low, sub) => { const c = kk ? kpiChange(kk, how, low) : { t: "" };
+    return `<a class="ovc ovk" href="${href}" data-sfrange="${range}" data-focus="${focus}"><div class="lbl">${lbl}</div><div class="vs"><span class="big">${big}</span>${kk ? spark(kk.line) : ""}</div><div class="sub">${c.t ? `<span class="chg ${c.c}">${c.t}</span> ` : ""}${esc(sub)}</div></a>`; };
+  const pct = v => v == null ? "—" : `${Math.round(v * 100)}%`, mins = v => v == null ? "—" : `${Math.round(v)} min`;
+  putOv("ov-mini", `${note ? `<div class="ovknote">${esc(note)}</div>` : ""}
+    ${tile("ov-spend-k", "#stats/spend", OV_RANGE, `Spend, ${n}`, k ? usd(k.spend.v) : "—", k?.spend, "pct", true, k ? before : "Loading the stats…")}
+    ${tile("ov-merged", "#stats/prs", "7d", "Merged, 7 days", prsOk ? k.merged.v : "—", why ? null : k?.merged, "pct", false, why || "PRs merged in 7 days")}
+    ${tile("ov-cost", "#stats/prs", "7d", "Cost per merged PR", prsOk && k.cost.v != null ? usd(k.cost.v) : "—", why ? null : k?.cost, "pct", true, why || (k.cost.v == null ? "no PR merged in 7 days" : `${usd(k.cost.spent)} all-in over ${k.merged.v}`))}
+    ${tile("ov-rate", "#stats/pipeline", OV_RANGE, "Runs that made a PR", k ? pct(k.rate.v) : "—", k?.rate, "pts", false, k ? `${k.rate.n} pipeline run${k.rate.n === 1 ? "" : "s"}` : "")}
+    ${tile("ov-median", "#stats/pipeline", OV_RANGE, "Median run", k ? mins(k.med.v) : "—", k?.med, "min", true, k ? "per pipeline run" : "")}`);
+}
+// Teams (O6): one row per team, with its access, the work on the floor now, its runs, PRs and spend in the range
+// from the stats rows (a row with no profile is fxa), and this month's spend against its budget.
+function ovTeams(range) {
+  const [lo] = statsBounds(range), by = {}, f = ovFloor();
+  (STATS?.rows ?? []).forEach(r => { if (!(Date.parse(r.at) >= lo)) return; const x = by[r.profile || "fxa"] ??= { runs: 0, prs: 0, usd: 0 };
+    x.runs++; x.usd += r.usd || 0; if (r.src === "pipeline" && r.pr) x.prs++; });
+  const now = {}; f.tiles.filter(t => t.kind !== "free" && t.team).forEach(t => { now[t.team] = (now[t.team] ?? 0) + 1; });
+  return (TEAMS?.teams ?? []).filter(t => !t.load_error).map(t => ({ t, u: by[t.profile] ?? { runs: 0, prs: 0, usd: 0 }, now: f.unknown ? null : now[t.profile] ?? 0 }))
+    .sort((a, b) => b.u.usd - a.u.usd || teamName(a.t).localeCompare(teamName(b.t)));
+}
+function renderOvTeams() {
+  const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1];
+  if (!TEAMS) return putOv("ov-teams", `<h2>Teams, last ${n}</h2><div class="emptybox">Loading the teams…</div>`);
+  const rows = ovTeams(OV_RANGE), st = !!STATS;
+  const row = ({ t, u, now }) => {
+    const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
+    const bud = t.budget_error ? `<span><b>—</b><span>budget unknown</span></span>` : b ? `<span><b>${usd(b.month_usd)}</b><span>${b.month_cap ? `of ${usd(b.month_cap)}` : "no cap"}</span></span>${b.month_cap ? `<span class="ovbar"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}` : `<span><b>${st ? usd(u.usd) : "—"}</b><span>in ${n}</span></span>`;
+    const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="ovpill ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
+    return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
+  };
+  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>
+    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>This month</span></div>${rows.map(row).join("")}` : `<div class="emptybox">No team.</div>`}`);
+}
+// Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
+let RUNS = null, RUNS_ERR = null;
+async function loadRuns() {
+  if (VIEW !== "overview") return;
+  try {
+    const d = { "7d": 7, "30d": 30, "90d": 90 }[OV_RANGE], r = await fetch(`/api/runs/recent?limit=12&days=${d}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
+    if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
+    if (j.error) throw new Error(j.error);
+    RUNS = j.runs; RUNS_ERR = null;
+  } catch (e) { RUNS = null; RUNS_ERR = e.message; }
+  safeRender(renderOvRuns, "ov-runs");
+}
+const RUN_SRC = { pipeline: ["var(--info)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--ok)", "M4 5h16v11H8l-4 4z", "Slack session"],
+  answer: ["var(--amber)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--purple)", "M12 4v16M4 12h16", "pass"] };
+const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
+function runBadge(r) {
+  if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
+    return PR_URL_RE.test(r.pr_url ?? "") ? `<a class="ovpill ${m ? "ok" : "info"}" href="${esc(r.pr_url)}" target="_blank" rel="noreferrer">${txt}</a>` : `<span class="ovpill ${m ? "ok" : "info"}">${txt}</span>`; }
+  const [c, t] = { no_pr: ["", "no change"], failed: ["bad", "failed"], answered: ["ok", "answered"], running: ["info", "running"], done: ["", "done"] }[r.outcome] ?? ["", String(r.outcome ?? "unknown")];
+  return `<span class="ovpill ${c}">${esc(t)}</span>`;
+}
+function renderOvRuns() {
+  if (RUNS_ERR) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Recent runs unavailable: ${esc(RUNS_ERR)}. The next poll tries again.</div>`);
+  if (!RUNS) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Loading the recent runs…</div>`);
+  const today = localDay(Date.now()), td = RUNS.filter(r => localDay(Date.parse(r.at)) === today), c = k => td.filter(r => r.outcome === k).length;
+  const sum = td.length ? `${td.length} today${[["pr", "PR opened", "PRs opened"], ["no_pr", "with no change", "with no change"], ["failed", "failed", "failed"], ["answered", "answered", "answered"], ["running", "running", "running"]]
+    .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : "none today";
+  const row = r => {
+    const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = Date.parse(r.at), d = new Date(t);
+    const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
+    const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
+    return `<div class="ovrun" data-run="${esc(r.key)}"><time datetime="${esc(r.at)}">${esc(when)}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${esc(kind)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
+      <span class="t">${key}${esc(plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : "")))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
+      <span class="d">${r.team ? `<span class="ovpill">${esc(r.team)}</span>` : ""}<span>${esc(r.kind || kind)}</span></span></div>`;
+  };
+  putOv("ov-runs", `<h2>Recent runs<span class="note">${esc(sum)}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${RUNS.length ? RUNS.map(row).join("") : `<div class="emptybox">No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.</div>`}`,
+    RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(","));
 }
 // The sandbox part moves the focus to the #attn strip on this page.
 document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
@@ -1509,7 +1669,7 @@ async function loadStats() {
     STATS = j; STATS_AT = Date.now(); STATS_ERR = null;
   } catch (e) { STATS_ERR = `the stats feed could not be read (${e.message})`; }
   safeRender(renderStats, "s-stats"); safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
-  if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"]].forEach(([f, id]) => safeRender(f, id));
+  if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"]].forEach(([f, id]) => safeRender(f, id));
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
@@ -1660,7 +1820,7 @@ async function loadTeams() {
     const r = await fetch("/api/routines/summary", { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
     if (r?.ok && j?.teams) { RTSUM = j; RTSUM_ERR = ""; RTSUM_AT = Date.now(); } else { RTSUM = null; RTSUM_ERR = j?.error || "the dashboard did not answer"; }
   }
-  if (VIEW === "overview") safeRender(renderOvSys, "ov-sys");
+  if (VIEW === "overview") { safeRender(renderOvSys, "ov-sys"); safeRender(renderOvTeams, "ov-teams"); }
   const b = document.getElementById("n-teams"); b.textContent = (TEAMS.teams ?? []).length || ""; b.className = "n" + teamBadge(TEAMS.teams ?? []);
   if (document.body.dataset.view === "teams") { renderTeams(); if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) renderSide(); renderRight(); }
   if (VIEW === "stats") renderStats();   // team names replace profile ids
@@ -3093,6 +3253,7 @@ function route() {
   if (view === "errors") renderErrors();
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
+  if (view === "overview" && view !== VIEW_PREV) loadRuns();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
@@ -3334,7 +3495,7 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvNeeds, "ov-needs"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderOvRuns, "ov-runs"], [renderSess, "s-sess"], [renderPool, "s-pool"],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
@@ -3348,7 +3509,7 @@ async function poll() {
   overlay();
   render();
   HIST_OPEN.forEach(loadHist);
-  loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin();
+  loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
   if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }

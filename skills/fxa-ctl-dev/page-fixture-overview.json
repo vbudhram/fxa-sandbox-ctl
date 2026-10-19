@@ -282,7 +282,9 @@
     "key": "EX-0",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 8
    },
    {
     "at": "@iso-3600",
@@ -314,7 +316,9 @@
     "key": "EX-1",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 11
    },
    {
     "at": "@iso-90000",
@@ -346,7 +350,9 @@
     "key": "EX-2",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 14
    },
    {
     "at": "@iso-176400",
@@ -378,7 +384,9 @@
     "key": "EX-3",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 17
    },
    {
     "at": "@iso-262800",
@@ -410,7 +418,9 @@
     "key": "EX-4",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 20
    },
    {
     "at": "@iso-349200",
@@ -442,7 +452,9 @@
     "key": "EX-5",
     "usd": 11,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 23
    },
    {
     "at": "@iso-435600",
@@ -474,7 +486,9 @@
     "key": "EX-6",
     "usd": 12,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 26
    },
    {
     "at": "@iso-522000",
@@ -506,7 +520,9 @@
     "key": "EX-7",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 29
    },
    {
     "at": "@iso-608400",
@@ -538,7 +554,9 @@
     "key": "EX-8",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 32
    },
    {
     "at": "@iso-694800",
@@ -570,7 +588,9 @@
     "key": "EX-9",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 10
    },
    {
     "at": "@iso-781200",
@@ -602,7 +622,9 @@
     "key": "EX-10",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 13
    },
    {
     "at": "@iso-867600",
@@ -634,7 +656,9 @@
     "key": "EX-11",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 16
    },
    {
     "at": "@iso-954000",
@@ -666,7 +690,9 @@
     "key": "EX-12",
     "usd": 11,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 19
    },
    {
     "at": "@iso-1040400",
@@ -698,7 +724,9 @@
     "key": "EX-13",
     "usd": 12,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 22
    },
    {
     "at": "@iso-1126800",
@@ -730,7 +758,9 @@
     "key": "EX-14",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 25
    },
    {
     "at": "@iso-1213200",
@@ -762,7 +792,9 @@
     "key": "EX-15",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 28
    },
    {
     "at": "@iso-1299600",
@@ -794,7 +826,9 @@
     "key": "EX-16",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 31
    },
    {
     "at": "@iso-1386000",
@@ -826,7 +860,9 @@
     "key": "EX-17",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 9
    },
    {
     "at": "@iso-1472400",
@@ -858,7 +894,9 @@
     "key": "EX-18",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 12
    },
    {
     "at": "@iso-1558800",
@@ -890,7 +928,9 @@
     "key": "EX-19",
     "usd": 11,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 15
    },
    {
     "at": "@iso-1645200",
@@ -922,7 +962,9 @@
     "key": "EX-20",
     "usd": 12,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 18
    },
    {
     "at": "@iso-1731600",
@@ -954,7 +996,9 @@
     "key": "EX-21",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 21
    },
    {
     "at": "@iso-1818000",
@@ -986,7 +1030,9 @@
     "key": "EX-22",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 24
    },
    {
     "at": "@iso-1904400",
@@ -1018,7 +1064,9 @@
     "key": "EX-23",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 27
    },
    {
     "at": "@iso-1990800",
@@ -1050,7 +1098,9 @@
     "key": "EX-24",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 30
    },
    {
     "at": "@iso-2077200",
@@ -1082,7 +1132,9 @@
     "key": "EX-25",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 8
    },
    {
     "at": "@iso-2163600",
@@ -1114,7 +1166,9 @@
     "key": "EX-26",
     "usd": 11,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 11
    },
    {
     "at": "@iso-2250000",
@@ -1146,7 +1200,9 @@
     "key": "EX-27",
     "usd": 12,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 14
    },
    {
     "at": "@iso-2336400",
@@ -1178,7 +1234,9 @@
     "key": "EX-28",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 17
    },
    {
     "at": "@iso-2422800",
@@ -1210,7 +1268,9 @@
     "key": "EX-29",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 20
    },
    {
     "at": "@iso-2509200",
@@ -1242,7 +1302,9 @@
     "key": "EX-30",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 23
    },
    {
     "at": "@iso-2595600",
@@ -1274,7 +1336,9 @@
     "key": "EX-31",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 26
    },
    {
     "at": "@iso-2682000",
@@ -1306,7 +1370,9 @@
     "key": "EX-32",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 29
    },
    {
     "at": "@iso-2768400",
@@ -1338,7 +1404,9 @@
     "key": "EX-33",
     "usd": 11,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 32
    },
    {
     "at": "@iso-2854800",
@@ -1370,7 +1438,9 @@
     "key": "EX-34",
     "usd": 12,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 10
    },
    {
     "at": "@iso-2941200",
@@ -1402,7 +1472,9 @@
     "key": "EX-35",
     "usd": 6,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 13
    },
    {
     "at": "@iso-3027600",
@@ -1434,7 +1506,9 @@
     "key": "EX-36",
     "usd": 7,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 16
    },
    {
     "at": "@iso-3114000",
@@ -1466,7 +1540,9 @@
     "key": "EX-37",
     "usd": 8,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 19
    },
    {
     "at": "@iso-3200400",
@@ -1498,7 +1574,9 @@
     "key": "EX-38",
     "usd": 9,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": true,
+    "min": 22
    },
    {
     "at": "@iso-3286800",
@@ -1530,7 +1608,9 @@
     "key": "EX-39",
     "usd": 10,
     "model": "claude-opus-5-5",
-    "profile": "example"
+    "profile": "example",
+    "pr": false,
+    "min": 25
    },
    {
     "at": "@iso-3373200",
@@ -1555,6 +1635,38 @@
     "usd": 4.4,
     "model": "claude-haiku-5-5",
     "profile": "example"
+   },
+   {
+    "at": "@iso-3600",
+    "src": "slack",
+    "key": "agent-ex2609",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-7200",
+    "src": "slack",
+    "key": "agent-ex2221",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-90000",
+    "src": "slack",
+    "key": "agent-ex2270",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-400000",
+    "src": "slack",
+    "key": "agent-ex2203",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
    }
   ],
   "prs": [
@@ -1639,7 +1751,23 @@
    {
     "profile": "example",
     "label": "Example",
-    "issues": []
+    "issues": [],
+    "budget": {
+     "month_usd": 412.5,
+     "month_cap": null
+    }
+   },
+   {
+    "profile": "sample-two",
+    "label": "Sample Two",
+    "issues": [],
+    "access": {
+     "open": true
+    },
+    "budget": {
+     "month_usd": 46.2,
+     "month_cap": 50
+    }
    }
   ]
  },
@@ -1656,5 +1784,108 @@
     "failed": false
    }
   }
+ },
+ "/api/runs/recent": {
+  "error": null,
+  "runs": [
+   {
+    "at": "@iso-600",
+    "src": "pipeline",
+    "kind": "fix",
+    "key": "EX-310",
+    "title": "[Sample] Keep the code field focused after an error",
+    "team": "example",
+    "outcome": "pr",
+    "pr_url": "https://github.com/example/repo/pull/312",
+    "pr_number": 312,
+    "pr_state": "open",
+    "usd": 1.12,
+    "min": 16
+   },
+   {
+    "at": "@iso-1500",
+    "src": "slack",
+    "kind": "session",
+    "key": "agent-ex0001",
+    "title": "[Sample] Why does the batch upload return 409?",
+    "team": "sample-two",
+    "outcome": "running",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.3,
+    "min": 4
+   },
+   {
+    "at": "@iso-2400",
+    "src": "pass",
+    "kind": "pass",
+    "key": "pass",
+    "title": "",
+    "team": "example",
+    "outcome": "done",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.55,
+    "min": 2
+   },
+   {
+    "at": "@iso-3300",
+    "src": "pipeline",
+    "kind": "feedback",
+    "key": "EX-298",
+    "title": "[Sample] Address the review on the recovery key copy",
+    "team": "example",
+    "outcome": "pr",
+    "pr_url": "https://github.com/example/repo/pull/301",
+    "pr_number": 301,
+    "pr_state": "merged",
+    "usd": 0.64,
+    "min": 9
+   },
+   {
+    "at": "@iso-4200",
+    "src": "answer",
+    "kind": "answered",
+    "key": "ask-ex0002",
+    "title": "[Sample] Where is the quota error raised?",
+    "team": "sample-two",
+    "outcome": "answered",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.08,
+    "min": 1
+   },
+   {
+    "at": "@iso-5400",
+    "src": "pipeline",
+    "kind": "fix",
+    "key": "EX-290",
+    "title": "[Sample] Remove the old experiment flag",
+    "team": "example",
+    "outcome": "no_pr",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 1.86,
+    "min": 24
+   },
+   {
+    "at": "@iso-6600",
+    "src": "answer",
+    "kind": "failed",
+    "key": "ask-ex0003",
+    "title": "[Sample] Summarize the open login bugs",
+    "team": "example",
+    "outcome": "failed",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.02,
+    "min": 1
+   }
+  ]
  }
 }
