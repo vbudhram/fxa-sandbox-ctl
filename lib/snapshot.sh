@@ -203,9 +203,7 @@ _snapshot_agent_json() {
 _STATS_RUN_ROW='def runrow: { at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
   usd: (.cost_usd // 0 | . * 100 | round / 100), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // "" | if . == "<synthetic>" then "" else . end),
   models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"), pr: ((.pr // "") != ""),
-  end: (if (.launched_at // 0) > 0 and (.wall_seconds // 0) > 0 then (.launched_at + .wall_seconds | floor) else (.recorded_at // "" | try fromdateiso8601 catch null) end),
-  prn: ([.pr // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
-  prr: ([.pr // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null) };'
+  end: (if (.launched_at // 0) > 0 and (.wall_seconds // 0) > 0 then (.launched_at + .wall_seconds | floor) else (.recorded_at // "" | try fromdateiso8601 catch null) end) };'
 _STATS_JOB_ROW='def jobrow($llm): { at, src: "pass", key: .job, kind: .job, usd: (($llm.runs[.run // ""] // .cost_usd // 0) * 100 | round / 100),
   min: ((.duration_ms // 0) / 60000 | round), model: ((((.models // []) | map(select(test("haiku") | not)) | first) // (.models // [])[0]) // ""), pr: false };'
 
