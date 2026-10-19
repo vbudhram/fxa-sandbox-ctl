@@ -1024,7 +1024,8 @@ function renderOvToday() {
 // takes its stop from its belt row; 'at work' counts only agents that are alive, so a session that waits
 // on its owner is on the floor but not at work. A non-admin sees a routine run as a scheduled run, no more.
 function ovFloor() {
-  const g = AGENTS; if (!g || STATE.agents_error) return { unknown: true, atWork: 0, tiles: [] };
+  const g = AGENTS, stale = STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval;
+  if (!g || STATE.agents_error || stale) return { unknown: true, stale, atWork: 0, tiles: [] };
   const bg = beltGroups(), rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => bg[k]).map(r => [r.t.key, r]));
   // free_slots null: the slot read failed, so an empty slot is unknown, never a confident free.
   const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), known = Array.isArray(g.free_slots), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
@@ -1050,7 +1051,7 @@ function ovFloor() {
 }
 function renderOvFloor() {
   const f = ovFloor();
-  if (f.unknown) return putOv("ov-floor", `<h2>On the floor</h2><div class="emptybox">${AGENTS ? "Sandboxes unknown: the agents feed could not be read." : "Loading the sandboxes…"}</div>`);
+  if (f.unknown) return putOv("ov-floor", `<h2>On the floor</h2><div class="emptybox">${!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read."}</div>`);
   const pipe = f.tiles.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = f.tiles.filter(t => t.kind === "slack"), rt = f.tiles.filter(t => t.kind === "routine");
   const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
   const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
@@ -1115,7 +1116,7 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
       if (runs[1]) {
         out.quiet.push([r0[r0.length - 1], runs[1][0]]);
         out.next.push(["", `Quiet hours start ${hmOf(r0[r0.length - 1])}`]);
-        out.next.push(["", `First pass of the day ${dayOf(runs[1][0], now)} · ${(n => `${n} ticket${n === 1 ? " is" : "s are"} ready`)((SNAP?.queue?.ready ?? []).length)}`]);
+        out.next.push(["", `First pass of the day ${dayOf(runs[1][0], now)} · ${SNAP?.queue?.fetch_failed ? "ready tickets unknown, Jira fetch failed" : (n => `${n} ticket${n === 1 ? " is" : "s are"} ready`)((SNAP?.queue?.ready ?? []).length)}`]);
       }
     }
   }
@@ -1150,13 +1151,14 @@ function renderOvMini() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
     .concat(n.sandbox ? [`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
   // Merged in 7 days and its cost per PR: '—' with the reason when the PR list is unread or old (it refreshes every 10 min).
-  const now = Date.now(), c = costPerMerged(now - 7 * 86400000, now, STATS?.prs, STATS?.rows), at = STATS?.prs_at;
+  // The Stats '7 days' window, so each card equals the Stats PRs figure it opens.
+  const now = Date.now(), c = costPerMerged(statsBounds("7d")[0], Infinity, STATS?.prs, STATS?.rows), at = STATS?.prs_at;
   const why = !STATS ? "Loading the stats…" : STATS.prs == null ? "the PR list is not read yet" : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at))} old` : "";
   const prsOk = STATS?.prs != null;
   putOv("ov-mini", `<div class="ovc ${n.unknown ? "" : n.total ? "warn" : ""}"><div class="lbl">Needs you</div><div class="big">${n.unknown ? "?" : n.total}</div>
     <div class="sub">${n.unknown ? esc(n.unknown) : n.total ? parts.join(" · ") : "Nobody needs to act."}</div></div>
-    <a class="ovc" href="#stats/prs" data-focus="ov-merged"><div class="lbl">Merged, 7 days</div><div class="big">${prsOk ? c.mergedIn.length : "—"}</div><div class="sub">${why ? esc(why) : "PRs merged in the last 7 days"}</div></a>
-    <a class="ovc" href="#stats/spend" data-focus="ov-cost"><div class="lbl">Cost per merged PR</div><div class="big">${prsOk && c.per != null ? usd(c.per) : "—"}</div><div class="sub">${why ? esc(why) : c.per == null ? "no PR merged in 7 days" : `${usd(c.spentIn)} all-in over ${c.mergedIn.length}`}</div></a>`);
+    <a class="ovc" href="#stats/prs" data-sfrange="7d" data-focus="ov-merged"><div class="lbl">Merged, 7 days</div><div class="big">${prsOk ? c.mergedIn.length : "—"}</div><div class="sub">${why ? esc(why) : "PRs merged in 7 days"}</div></a>
+    <a class="ovc" href="#stats/prs" data-sfrange="7d" data-focus="ov-cost"><div class="lbl">Cost per merged PR</div><div class="big">${prsOk && c.per != null ? usd(c.per) : "—"}</div><div class="sub">${why ? esc(why) : c.per == null ? "no PR merged in 7 days" : `${usd(c.spentIn)} all-in over ${c.mergedIn.length}`}</div></a>`);
 }
 // The sandbox part moves the focus to the #attn strip on this page.
 document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
@@ -2425,7 +2427,7 @@ document.addEventListener("click", e => {
     e.preventDefault();
     const range = a.dataset.sfrange, src = a.dataset.sfsrc ?? "all";
     if (!STATS_RANGES.some(([k]) => k === range) || !(src === "all" || Object.hasOwn(SF_SRC, src))) return;
-    SF_FROM_OV = true; setStatsFilter({ ...SF_DEFAULT, range, src }, false); location.hash = "#stats/spend"; return;
+    SF_FROM_OV = true; setStatsFilter({ ...SF_DEFAULT, range, src }, false); location.hash = a.getAttribute("href") === "#stats/prs" ? "#stats/prs" : "#stats/spend"; return;
   }
   if (e.target.closest?.("[data-sfrestore]")) { SF_FROM_OV = false; SF = { ...SF_DEFAULT, ...sfSaved() }; LAST["s-stats"] = ""; renderStats(); renderSide(); }
   if (e.target.closest?.("[data-sfkeep]")) { SF_FROM_OV = false; setStatsFilter({}, true); }

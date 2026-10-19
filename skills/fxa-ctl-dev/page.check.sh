@@ -240,7 +240,7 @@ ck "system: it says when it cannot tell, and shows no false time" "true|true|tru
 O="$(dirname "$0")/page-fixture-overview.json"
 ck "overview fixture: every card heading, no section error, relative times read as recent" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const hs = ["ov-spend", "ov-today", "ov-floor", "ov-sys", "ov-mini"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
-  return [hs, !document.getElementById("main").innerText.includes("did not render"), /PRs merged in the last 7 days/.test(document.getElementById("ov-mini").textContent) && document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent === "6"].join("|")')"
+  return [hs, !document.getElementById("main").innerText.includes("did not render"), /PRs merged in 7 days/.test(document.getElementById("ov-mini").textContent) && document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent === "6"].join("|")')"
 # Overview layout: no sideways scroll at 500 (the smallest headless width) and 640; the tiles go 1 wide in a
 # phone-sized floor card; Spend and Today share a row at 1280 and stack at 640; Belts and Teams still fit.
 LAY='const cols = () => getComputedStyle(document.querySelector("#ov-floor .ovtiles")).gridTemplateColumns.split(" ").length;
@@ -253,4 +253,16 @@ ck "overview at 1280 px: Spend and Today share a row" "true|2|1|true" "$(bash "$
 for r in '#pipeline/belts' '#teams'; do
   ck "$r at 500 px still has no sideways scroll" "true" "$(bash "$p" "$r" --fixture "$F" --width 500 --probe 'return document.documentElement.scrollWidth <= innerWidth')"
 done
+# Epic review 1 fixes: the Merged and Cost cards open Stats PRs on 7 days and agree with it; a failed Jira queue
+# read is not '0 ready'; a stale agents feed is unknown on the chip and the floor too.
+ck "review 1: the Cost card opens Stats PRs on 7 days with the same figure; a Jira outage is not 0 ready; a stale agents feed is unknown everywhere" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const w = () => new Promise(r => setTimeout(r, 150)); localStorage.setItem("statsFilter", JSON.stringify({ ...SF_DEFAULT, range: "30d" })); SF = { ...SF_DEFAULT, range: "30d" };
+  const card = document.querySelector("#ov-mini [data-focus=\"ov-cost\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-cost\"]").click(); await w();
+  const kpi = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Cost per merged PR")?.querySelector(".v").textContent;
+  const a = location.hash === "#stats/prs" && SF.range === "7d" && kpi === card;
+  location.hash = "#overview"; await w(); SNAP.queue = { fetch_failed: true, ready: [], skipped: [] }; render();
+  const b = /ready tickets unknown, Jira fetch failed/.test(document.getElementById("ov-sys").innerText) && !/0 tickets are ready/.test(document.getElementById("ov-sys").innerText);
+  STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
+  const c = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed is 20 min old/.test(document.getElementById("ov-floor").textContent) && /\?/.test(document.querySelector("#ov-mini .big").textContent);
+  return [a, b, c].join("|")')"
 exit $fail

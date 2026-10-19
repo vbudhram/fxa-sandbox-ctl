@@ -154,13 +154,16 @@ Render the live data once with the new page:
 
 ```bash
 H=skills/fxa-manager/vm.sh
-jq -n --slurpfile a <($H api snapshot) --slurpfile b <($H api stats) '{"/api/snapshot": $a[0], "/api/stats": $b[0]}' > "$SCRATCH/fx.json"
+jq -n --slurpfile a <($H api snapshot) --slurpfile b <($H api stats) --slurpfile c <($H run 'python3 -c "import sys,json,time; sys.path.insert(0,\"lib\"); import fxadb; print(json.dumps(fxadb.routine_summary(fxadb.connect(readonly=True), int(time.time()))))"' | tail -1) \
+  '{"/api/snapshot": $a[0], "/api/stats": $b[0], "/api/routines/summary": $c[0], "/api/team-admin": {"admin": true}}' > "$SCRATCH/fx.json"
 for r in '#overview' '#pipeline/belts' '#runners' '#stats/spend'; do
   bash skills/fxa-ctl-dev/page.sh "$r" --fixture "$SCRATCH/fx.json" --probe 'return document.getElementById("main").innerText.includes("did not render")'
 done
-# Overview as a viewer who is not a team admin: no routine name may show.
+# The routine summary comes from the store on the manager: /api/routines/summary needs a signed team admin.
+# Overview as a viewer who is not a team admin: prints false when no routine name from the summary shows.
 jq '. + {"/api/team-admin": {"admin": false}}' "$SCRATCH/fx.json" > "$SCRATCH/fx-user.json"
-bash skills/fxa-ctl-dev/page.sh '#overview' --fixture "$SCRATCH/fx-user.json" --probe 'return document.getElementById("ov-sys").innerText'
+names="$(jq -c '[."/api/routines/summary".routines[]?.name]' "$SCRATCH/fx.json")"
+bash skills/fxa-ctl-dev/page.sh '#overview' --fixture "$SCRATCH/fx-user.json" --probe "const n = $names, t = document.getElementById('ov-sys').innerText + document.getElementById('ov-floor').innerText; return n.some(x => t.includes(x))"
 ```
 
 `page-fixture-overview.json` is a sample-data fixture for the Overview; it takes `@iso-3600` and
