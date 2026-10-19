@@ -306,6 +306,9 @@ ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged f
   RUNS = [{ at: new Date().toISOString(), src: "pipeline", key: "x\"><img src=x>", title: "<img src=x>", team: "<b>t</b>", outcome: "pr", pr_url: "javascript:alert(1)", pr_number: 5 }]; renderOvRuns();
   const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.ovpill") && /PR #5/.test(document.getElementById("ov-runs").textContent);
   return [...bs, a, b].join("|")')"
+ck "O6 review: the KPI tiles keep their order, Spend then Today then the rest, when a tile is not a link" "ov-spend-k|ov-today|ov-merged" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const t = [...document.querySelectorAll("#ov-mini > .ovk, #ov-today")].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+  return t.slice(0, 3).map(x => x.id || x.dataset.focus).join("|")')"
 ck "O6 review: a failed stats feed puts its note on Teams and Recent runs and the Teams figures say unknown; today counts every stats row, not the card's" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const tm = () => document.getElementById("ov-teams").textContent, rn = () => document.getElementById("ov-runs").textContent;
   const now = new Date().toISOString(); STATS.rows ??= []; for (let i = 0; i < 14; i++) STATS.rows.push({ at: now, src: "pipeline", key: "EX-9" + i, kind: "fix", usd: 1, min: 3, pr: i < 5, profile: "example" });
