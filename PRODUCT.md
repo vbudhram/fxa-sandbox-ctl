@@ -108,6 +108,22 @@ Design for the owner first, and for the teammate second. Every other role is a g
    time. A routine with no channel posts nothing in Slack; its results are only in the dashboard History.
    Slack cannot create, change or start a routine, and shows no cost; the dashboard History does.
 
+### The dashboard Overview
+
+Overview is the control room: what needs a person, what runs, and what it costs.
+
+- **Needs you** is one number: the Pipeline belts that need a person, plus the sandbox alerts that name a
+  fix (a stray instance, a wrong base, a rejected goal), each key once. The rail badge and the tab title
+  show the same number. At 0 the badge shows `!` when the alert strip has an alert. A ticket that waits on
+  its reporter, or a PR that waits on a reviewer, is not in it (the Pipeline badge counts review waits).
+- **Spend** and **Today** read the Stats feed with the Stats rules, so a range total equals Stats. A spend
+  link sets the Stats filter for that visit only; the person keeps it with Keep these.
+- **On the floor** shows a tile for each sandbox slot and each live session, with its belt stop. A viewer
+  who is not a team admin sees a routine run only as a scheduled run.
+- **What the system is doing** shows the pass now, CI and the merge watch, and the next 12 hours of passes.
+  Routine times show to team admins only.
+- A figure that the page cannot read says unknown, never 0.
+
 ### The unit of work
 
 `thread → session → runner → change → PR → CI → review → merge`

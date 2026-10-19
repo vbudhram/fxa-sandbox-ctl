@@ -153,10 +153,18 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 Render the live data once with the new page:
 
 ```bash
-bash skills/fxa-manager/vm.sh api snapshot > "$SCRATCH/snap.json"
-jq '{"/api/snapshot": .}' "$SCRATCH/snap.json" > "$SCRATCH/fx.json"
-bash skills/fxa-ctl-dev/page.sh '#pipeline/belts' --fixture "$SCRATCH/fx.json" --probe 'return document.getElementById("s-lanes").textContent.slice(0, 300)'
+H=skills/fxa-manager/vm.sh
+jq -n --slurpfile a <($H api snapshot) --slurpfile b <($H api stats) '{"/api/snapshot": $a[0], "/api/stats": $b[0]}' > "$SCRATCH/fx.json"
+for r in '#overview' '#pipeline/belts' '#runners' '#stats/spend'; do
+  bash skills/fxa-ctl-dev/page.sh "$r" --fixture "$SCRATCH/fx.json" --probe 'return document.getElementById("main").innerText.includes("did not render")'
+done
+# Overview as a viewer who is not a team admin: no routine name may show.
+jq '. + {"/api/team-admin": {"admin": false}}' "$SCRATCH/fx.json" > "$SCRATCH/fx-user.json"
+bash skills/fxa-ctl-dev/page.sh '#overview' --fixture "$SCRATCH/fx-user.json" --probe 'return document.getElementById("ov-sys").innerText'
 ```
+
+`page-fixture-overview.json` is a sample-data fixture for the Overview; it takes `@iso-3600` and
+`@epoch+600` style times relative to the run. Headless Chrome keeps the window at least 500 px wide.
 
 A section that throws shows "This section did not render". If it does, run `vm.sh rollback`, or revert the slices in reverse order and promote again.
 
