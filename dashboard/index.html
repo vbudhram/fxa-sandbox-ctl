@@ -203,9 +203,9 @@
   .shell { height:100vh; display:grid; grid-template-rows:minmax(0,1fr) 32px;
            grid-template-columns:var(--rail) var(--side) minmax(0,1fr) var(--right);
            grid-template-areas:"rail side main right" "status status status status"; }
-  body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.bare .shell { --side:0px; }
+  body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-runners .shell, body.bare .shell { --side:0px; }
   body.noright .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-stats .shell, body.v-teams .shell, body.bare .shell, body.noitem .shell { --right:0px; }
-  body.noside .side, body.v-overview .side, body.v-pipeline .side, body.bare .side,
+  body.noside .side, body.v-overview .side, body.v-pipeline .side, body.v-runners .side, body.bare .side,
   body.noright .right, body.v-overview .right, body.v-pipeline .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { visibility:hidden; }
   .rail { grid-area:rail; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:var(--s3) 0; gap:2px; z-index:11; }
   .rail .logo { width:40px; height:40px; margin-bottom:var(--s3); }
@@ -254,7 +254,7 @@
   .rsz:hover, .rsz.on { background:var(--line); }
   .rsz-side { grid-area:side; justify-self:end; margin-right:-4px; }
   .rsz-right { grid-area:right; justify-self:start; margin-left:-4px; }
-  body.noside .rsz-side, body.v-overview .rsz-side, body.v-pipeline .rsz-side, body.bare .rsz-side,
+  body.noside .rsz-side, body.v-overview .rsz-side, body.v-pipeline .rsz-side, body.v-runners .rsz-side, body.bare .rsz-side,
   body.noright .rsz-right, body.v-overview .rsz-right, body.v-pipeline .rsz-right, body.v-stats .rsz-right, body.v-teams .rsz-right, body.bare .rsz-right, body.noitem .rsz-right { display:none; }
   @media (max-width:1280px) { .rsz-right { display:none; } }
   @media (max-width:900px) { .rsz-side { display:none; } }
@@ -622,6 +622,22 @@ table.usage tr.tot td { border-bottom: 0; }
   table.rt-hist td::before { content: attr(data-l) ": "; color: var(--dim); }
 }
 table.usage tr.sel td { background: var(--infobg); }
+/* Sandboxes list (i407 sb-list-fixes) */
+#s-sb #sb-head { margin-bottom:var(--s3); }
+#s-sb #sb-list .sbl { list-style:none; margin:0; padding:0; }
+#s-sb #sb-list .sbl li { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); padding:var(--s2) var(--s2); border-top:1px solid var(--line); font-size:var(--t-sub); min-width:0; }
+#s-sb #sb-list .sbl li[aria-current] { background:var(--sunk); }
+#s-sb #sb-list .sbl li.fixr { border-left:3px solid var(--warn); }
+#s-sb #sb-list .sbl li.bad > button { color:var(--bad); }
+#s-sb #sb-list .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; }
+#s-sb #sb-list .sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
+#s-sb #sb-list .sbl .tb .bar { display:inline-block; width:60px; height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; vertical-align:middle; margin-right:4px; }
+#s-sb #sb-list .sbl .tb .bar i { display:block; height:100%; background:var(--info); }
+#s-sb #sb-list .sbl .tb.over { color:var(--bad); } #s-sb #sb-list .sbl .tb.over .bar i { background:var(--bad); }
+#s-sb #sb-list .sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:4px; overflow-wrap:anywhere; user-select:all; }
+#s-sb #sb-list .sbh { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:var(--s4) 0 var(--s1); }
+#s-sb #sb-list .sbfree, #s-sb #sb-list .sbage, #s-sb #sb-list .sbstale { font-size:var(--t-sub); color:var(--dim); margin:var(--s2) 0; overflow-wrap:anywhere; }
+#s-sb #sb-list .sbfree { font-family:var(--mono); } #s-sb #sb-list .sbstale { color:var(--warn); }
 </style>
 </head>
 <body>
@@ -669,7 +685,7 @@ table.usage tr.sel td { background: var(--infobg); }
   <section class="wide" id="s-sessions-off" data-views="none"></section>
   <section class="wide" id="s-review" data-views="pipeline:queue"></section>
   <section class="wide" id="s-queue" data-views="pipeline:queue"></section>
-  <section class="wide" id="s-pool" data-views="runners"></section>
+  <section class="wide" id="s-sb" data-views="runners"><div id="sb-head"></div><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done"></div></section>
 </div>
 </div>
 </main>
@@ -1059,42 +1075,61 @@ function renderOvToday() {
       <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${esc(note || "the proxy log is not read")}`}</div>
       <div class="sub">${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, u]) => `${esc(modelName(m))} ${usd(u)}`).join(" · ")}</div></div></div>`);
 }
-// On the floor (i356 D5, D35-D37, D41): a tile for each pool slot and each live session. A pipeline tile
+// On the floor (i356 D5, D35-D37, D41): a row for each pool slot and each live session. A pipeline row
 // takes its stop from its belt row; 'at work' counts only agents that are alive, so a session that waits
 // on its owner is on the floor but not at work. A non-admin sees a routine run as a scheduled run, no more.
-function ovFloor() {
-  const g = AGENTS, stale = STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval;
-  if (!g || STATE.agents_error || stale) return { unknown: true, stale, atWork: 0, tiles: [] };
+// floorRows() carries no agent output; on a stale feed it keeps the last rows with stale true (Sandboxes, i407).
+function floorRows() {
+  const g = AGENTS, stale = !!(STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval);
+  if (!g || STATE.agents_error) return { unknown: true, stale, rows: [], slots: 0, admin: !!TEAM_ADMIN?.admin };
   const bg = beltGroups(), rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => bg[k]).map(r => [r.t.key, r]));
   // free_slots null: the slot read failed, so an empty slot is unknown, never a confident free.
   const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), known = Array.isArray(g.free_slots), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
-  const tiles = [], pool = g.pool ?? [];
-  // A runner that no pool slot holds (another pool, a hand-started run) still gets its tile.
+  const rows = [], pool = g.pool ?? [];
+  // A runner that no pool slot holds (another pool, a hand-started run) still gets its row.
   const slots = pool.map(p => ({ slot: p.slot, c: p.agent ? cards.get(p.agent) : null, agent: p.agent })).concat([...cards.values()].filter(c => !pool.some(p => p.agent === c.name)).map(c => ({ slot: "", c })));
   slots.forEach(p => {
     const c = p.c;
-    if (!c) return tiles.push({ kind: "free", slot: p.slot, state: !known ? "unknown" : free.has(p.slot) ? "free" : "held" });
+    if (!c) return rows.push({ kind: "free", slot: p.slot, state: !known ? "unknown" : free.has(p.slot) ? "free" : "held" });
     const r = rowBy.get(c.key), st = r?.st ?? 2, a = c.agent || {}, exited = !c.agent_alive && c.stage === "watching" && !c.handoff;
     const fault = c.stage === "stalled" ? "stalled" : c.stage === "error" ? "run failed" : exited ? "agent exited" : "";
     const idle = c.agent_alive && (a.idle_seconds ?? 0) >= 600 ? `idle ${Math.floor(a.idle_seconds / 60)} min` : "";
-    tiles.push({ kind: "pipe", key: c.key, slot: p.slot, team: c.profile || SNAP?.team?.profile || "", title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
-      time: short(c.elapsed_seconds), cost: a.cost_so_far, out: a.last_tool || a.last_text || "", href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
+    rows.push({ kind: "pipe", key: c.key, slot: p.slot, name: c.name, age: c.elapsed_seconds ?? null, team: c.profile || SNAP?.team?.profile || "", title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
+      time: short(c.elapsed_seconds), cost: a.cost_so_far, href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
   });
-  (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f, state: "free" }));
+  (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => rows.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
-    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
-      turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, out: open ? (x.agent?.last_tool || x.agent?.last_text || "") : "", href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
+    rows.push({ kind: routine ? "routine" : "slack", key: x.key, team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
+      turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "",
+      where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : null, boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null, started: x.created ?? null });
   });
-  return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
+  return { rows, stale, unknown: false, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
+}
+// The Overview floor: unknown on a failed or stale feed, else the rows with the agent's last output line.
+function ovFloor() {
+  const f = floorRows();
+  if (f.unknown || f.stale) return { unknown: true, stale: f.stale, atWork: 0, tiles: [] };
+  const cards = new Map(merged().cards.map(c => [c.name, c])), ss = new Map((AGENTS.sessions ?? []).map(x => [x.key, x]));
+  const tiles = f.rows.map(t => {
+    if (t.kind === "pipe") { const a = cards.get(t.name)?.agent || {}; return { ...t, out: a.last_tool || a.last_text || "" }; }
+    if (t.kind === "free") return t;
+    const x = ss.get(t.key), open = f.admin || t.kind !== "routine";
+    return { ...t, out: open ? (x?.agent?.last_tool || x?.agent?.last_text || "") : "" };
+  });
+  return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: f.slots, admin: f.admin };
+}
+// The floor header (i356 D5, D35): Overview Running now and the Sandboxes chip say the same words.
+function floorHead(f) {
+  const ts = f.tiles ?? f.rows, pipe = ts.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = ts.filter(t => t.kind === "slack"), rt = ts.filter(t => t.kind === "routine");
+  const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
+  return `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
 }
 function renderOvFloor() {
   const f = ovFloor();
   if (f.unknown) return putOv("ov-floor", `<h2>Running now</h2><div class="emptybox">${!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read."}</div>`);
-  const pipe = f.tiles.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = f.tiles.filter(t => t.kind === "slack"), rt = f.tiles.filter(t => t.kind === "routine");
-  const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
-  const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
-  const headTxt = `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
+  const headTxt = floorHead(f);
   const tile = t => {
     const stop = t.kind === "pipe" ? `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}` : t.kind === "routine" ? "Routine" : "Slack session";
     const name = t.kind === "routine" && !t.title ? "Routine · scheduled run" : t.key, label = `${name}, ${stop}`;
@@ -3122,50 +3157,133 @@ function renderTickets() {
 // A sandbox is up only while its instance runs. A stopped GCE instance (terminated) keeps its disk
 // and its name until it is deleted: it needs a fix, not a lifetime meter.
 const instUp = v => v.state === "running";
-const instFix = v => `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`;
-function renderPool() {
-  const g = AGENTS; if (!g) return;
-  const pool = g.pool ?? [], free = g.free_slots ?? [], all = g.instances ?? [], inst = all.filter(instUp), down = all.filter(v => !instUp(v));
-  const { cards } = merged();
-  const runnerByName = Object.fromEntries(inst.map(v => [v.name, v]));
-  const cardByName = Object.fromEntries(cards.map(c => ["agent-" + c.name, c]));
-  // The bar shows a sandbox's age against its lifetime cap; a slot with no sandbox has none.
-  const meter = v => v?.max_seconds ? `<span class="meter"><i style="width:${Math.min(100, Math.round(v.age_seconds / v.max_seconds * 100))}%"></i></span>` : `<span class="meter none"></span>`;
-  const rows = [], freeChips = [];
-  pool.forEach(p => {
-    const busy = !!p.agent, v = p.agent ? runnerByName["agent-" + p.agent] : null;
-    const c = p.agent ? cardByName["agent-" + p.agent] : null;
-    const over = v && v.max_seconds && v.age_seconds >= v.max_seconds;
-    const cls = over ? "over" : busy ? "busy" : free.includes(p.slot) ? "free" : "held";
-    const holder = TICKET.test(p.key ?? "") ? p.key : null;
-    if (cls === "free") return freeChips.push(`<span class="tag ok" title="${holder ? `the last ticket left its worktree on ${esc(holder)}` : "free"}">${esc(p.slot)}${holder ? ` · last ${esc(holder)}` : ""}</span>`);
-    rows.push({ rank: over ? 0 : cls === "held" ? 2 : 3, html: `<div class="slot ${cls}"><span class="nm">${esc(p.slot)}</span>${meter(v)}
-      <span class="r">${busy ? `${jira(holder || p.agent)}${v ? `<span class="tag ${over ? "bad" : "info"}">pipeline · ${short(v.age_seconds)}${over ? " · over cap" : ""}</span>` : ""}${
-          c?.agent?.cost_so_far ? `<span class="tag">${usd(c.agent.cost_so_far)}</span>` : ""}`
-        : holder ? `<span class="tag warn">on ${esc(holder)}</span>` : `<span class="tag">held${p.branch && p.branch !== "HEAD" ? ` on ${esc(p.branch)}` : ""}</span>`}</span></div>` });
-  });
-  const virtual = free.filter(f => !pool.some(p => p.slot === f));
-  virtual.forEach(f => freeChips.push(`<span class="tag" title="the worktree is created on launch">${esc(f)}</span>`));
-  // Each runner says what it is for (Slack or the pipeline) and where it runs.
-  const sessionBy = new Map((g.sessions ?? []).map(x => [x.key, x]));
-  inst.filter(v => !pool.some(p => "agent-" + p.agent === v.name)).forEach(v => {
-    const key = v.name.replace(/^agent-/, ""), s = sessionBy.get(key);
-    const where = v.where === "firecracker" ? "Firecracker" : "GCE";
-    if (s) {
-      // A runner still up after its session ended is billing for nothing.
-      const live = LIVE_SESSION.includes(s.state);
-      return rows.push({ rank: live ? 3 : 1, html: `<div class="slot ${live ? "busy" : "held"}"><a class="nm" href="#sessions/${sessTabOf(s)}/${esc(s.key)}" title="${esc(v.name)}">${esc(key)}</a>${meter(v)}<span class="tag ${live ? "info" : "warn"}">Slack · ${where} · ${live ? "" : `${esc(s.state)}, runner still up · `}${short(v.age_seconds)}</span></div>` });
-    }
-    const ticket = TICKET.test(key.toUpperCase()) ? key.toUpperCase() : null;
-    rows.push({ rank: 1, html: `<div class="slot held"><span class="nm">${ticket ? jira(ticket) : esc(v.name)}</span>${meter(v)}<span class="tag warn">pipeline · ${where} · no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>` });
-  });
-  down.forEach(v => rows.push({ rank: 0, html: `<div class="slot over"><span class="nm">${esc(v.name)}</span><span class="meter none"></span><span class="tag bad">stopped · ${v.where === "firecracker" ? "Firecracker" : "GCE"} · ${esc(v.state)} · made ${short(v.age_seconds)} ago · delete it: <code>${esc(instFix(v))}</code></span></div>` }));
-  const burn = (g.runner_hourly_usd ?? 0) + (g.infra_hourly_usd ?? 0), total = pool.length + virtual.length;
-  const infra = g.infra_hourly_usd ? `sandboxes ${usd(g.runner_hourly_usd)}/h, always on ${usd(g.infra_hourly_usd)}/h (manager ${usd(g.infra?.manager)}/h, Firecracker host ${usd(g.infra?.firecracker_host)}/h), at list prices` : "";
-  put("s-pool", `<h2>${free.length} of ${total} slots free · ${inst.length} sandbox${inst.length === 1 ? "" : "es"} up${down.length ? ` · ${down.length} stopped` : ""}<span class="note" title="${esc(infra)}">burn ${usd(burn)}/h · ${usd(burn * 24)}/day</span></h2>` +
-    (rows.length + freeChips.length === 0 ? `<div class="empty">no pool worktrees found</div>`
-      : rows.sort((x, y) => x.rank - y.rank).map(r => r.html).join("") + (freeChips.length ? `<div class="freeslots"><span>Free</span>${freeChips.join("")}</div>` : "")));
+// ── Sandboxes (i407): one list of every sandbox, built on the floor rows ──
+// A fix row bills with no run, or holds a slot no run uses. A command shows only on a fresh feed and only
+// for a name stopName() accepts; a session runner's command names the session, so the stop saves the work (D3-D6).
+const SB_GRACE = 600;
+function sbTabHas(row) {
+  const t = TAB || "all";
+  return t === "all" || (t === "pipeline" && row.src === "pipeline") || (t === "slack" && row.src === "slack") || (t === "routines" && row.src === "routine");
 }
+const sbStale = () => { const f = floorRows(); return f.stale || f.unknown; };
+// The one source of a stop command: a fresh feed, and a name that passes stopName() (an instance's run name first).
+function fixCmd(row, stale = sbStale()) {
+  const t = row?.fix?.target; if (stale || !t) return null;
+  const name = row.fix.kind === "instance" ? strayRun(t) : t;
+  return stopName(name) ? `fxa-sandbox-ctl stop ${name}` : null;
+}
+function sbRows() {
+  const g = AGENTS, fr = floorRows(), stale = fr.stale || fr.unknown, out = { live: [], fix: [], free: [], unknown: [], stale, err: null, sessionFree: null };
+  if (fr.unknown) { out.err = g ? STATE.agents_error || "the agents feed could not be read" : null; return out; }
+  const now = Date.now() / 1000, admin = fr.admin, ss = g.sessions ?? [], byKey = new Map(ss.map(x => [x.key, x]));
+  const inst = g.instances ?? [], instBy = new Map(inst.map(v => [v.name, v])), pool = g.pool ?? [];
+  const base = { slot: "", key: "", title: "", team: "", where: null, started: null, age: null, cap: null, max_seconds: null, cost: null, usd: null, session: null, pr: null, routine_run: null, routine_name: null, boot_s: null, boot_steps: null, res_peak: null, fault: "", fix: null };
+  const withFix = (row, fix) => { const r = { ...row, fix }; r.fix.cmd = fixCmd(r, stale); return r; };
+  fr.rows.filter(t => t.kind !== "free").forEach(t => {
+    if (t.kind === "pipe") { const cap = instBy.get(`agent-${t.name}`)?.max_seconds ?? null;
+      return out.live.push({ ...base, id: `pipe:${t.slot || t.key}`, src: "pipeline", slot: t.slot || "", key: t.key, title: t.title, team: t.team, where: "gce",
+        state: t.fault || t.idle || `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}`, fault: t.fault || t.idle || "", age: t.age ?? null, cap, max_seconds: cap, cost: t.cost ?? null, usd: t.cost ?? null }); }
+    const x = byKey.get(t.key), open = admin || t.kind !== "routine";
+    out.live.push({ ...base, id: `sess:${t.key}`, src: t.kind, key: t.key, title: t.title, team: t.team, where: t.where, started: t.started, state: t.waits ? `waits on ${t.waits}` : "working",
+      age: t.started ? Math.max(0, Math.round(now - t.started)) : null, cap: g.session_max_run_seconds ?? null, cost: t.cost ?? null, usd: t.cost ?? null, session: t.key,
+      routine_run: x?.routine_run ?? null, routine_name: open ? x?.routine_name ?? null : null, boot_s: t.boot_s, boot_steps: t.boot_steps, res_peak: t.res_peak });
+  });
+  // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1 or after 10 min (D5).
+  const known = new Set();
+  ss.filter(x => !LIVE_SESSION.includes(x.state)).forEach(x => {
+    const v = instBy.get(`agent-${x.key}`); if (!v || !instUp(v)) return;
+    known.add(v.name);
+    const routine = !!x.routine_run, open = admin || !routine, since = x.stopped_at ? now - x.stopped_at : null;
+    const row = { ...base, src: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
+      started: x.created ?? null, age: v.age_seconds ?? null, cap: v.max_seconds ?? null, cost: open ? sessUsd(x) : null, session: x.key, routine_run: x.routine_run ?? null, routine_name: open ? x.routine_name ?? null : null,
+      boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
+    row.usd = row.cost;
+    if (String(x.runner_left) === "1" || (since != null && since >= SB_GRACE))
+      out.fix.push(withFix({ ...row, id: `fix:${v.name}`, state: "stopped, runner still up" }, { kind: "session", target: x.key, steps: null,
+        why: `The session ${x.state}${since != null ? ` ${short(Math.round(since))} ago` : ""}, and its runner still bills. Stop it: the stop saves the work.` }));
+    else out.live.push({ ...row, id: `sess:${x.key}`, state: "stopping" });
+  });
+  // A stopped instance, or one with no run behind it (the i408 rule and strays()). One whose run name a pool slot
+  // says it runs is unknown: the slot and the agents feed disagree, so no command.
+  const stray = new Set(strays()), slotAgents = new Set(pool.map(p => p.agent).filter(Boolean));
+  inst.filter(v => !known.has(v.name) && (!instUp(v) || stray.has(v))).forEach(v => {
+    const run = strayRun(v.name);
+    if (run && slotAgents.has(run)) return out.unknown.push({ slot: v.name, why: `${v.name}: the slot says it runs, but the agents feed has no run row` });
+    out.fix.push(withFix({ ...base, id: `fix:${v.name}`, src: byKey.has(run) ? "slack" : "pipeline", key: v.name, where: v.where === "firecracker" ? "firecracker" : "gce", state: v.state, age: v.age_seconds ?? null },
+      { kind: "instance", target: v.name, steps: stopName(run) ? null : "Its name is not a runner name: delete it in the GCE console.", why: `${v.state} with no run behind it (${short(v.age_seconds)} old); it bills until deleted.` }));
+  });
+  // A slot that is not free and has no agent: a fix row only when the slot read worked, its last ticket is one,
+  // the in-flight read worked, and the snapshot is not older than the agents feed by more than one interval (D10, D11).
+  const inflight = new Set((SNAP?.inflight ?? []).map(t => t.key));
+  // ponytail: the snapshot interval from the feed, 300 s when it is missing.
+  const snapFresh = SNAP?.generated_at != null && g.generated_at != null && SNAP.generated_at >= g.generated_at - (STATE.interval || 300);
+  fr.rows.filter(t => t.kind === "free").forEach(t => {
+    if (t.state === "free") return out.free.push({ slot: t.slot });
+    if (t.state === "unknown") return out.unknown.push({ slot: t.slot, why: `${t.slot}: slots unknown: the slot read failed` });
+    const p = pool.find(q => q.slot === t.slot) ?? {}, k = p.key ?? "";
+    if (!KEY_RE.test(k)) return out.unknown.push({ slot: t.slot, why: `${t.slot} is not free for a launch (branch ${p.branch ?? "none"})` });
+    if (!SNAP || SNAP.inflight_fetch_failed) return out.unknown.push({ slot: t.slot, why: `${t.slot} held by ${k} · in flight unknown: the Jira read failed` });
+    if (!snapFresh) return out.unknown.push({ slot: t.slot, why: `${t.slot} held by ${k} · in flight not checked yet` });
+    if (inflight.has(k)) return out.free.push({ slot: t.slot, held: k });
+    out.fix.push(withFix({ ...base, id: `held:${t.slot}`, src: "pipeline", slot: t.slot, key: k, where: "gce", state: "not free for a launch" },
+      { kind: "slot", target: null, steps: `Run fxa-sandbox-ctl slots on the manager to find the ${t.slot} worktree, and look at git status there. Save or drop the changes, and the slot is free on the next poll.`,
+        why: `${t.slot} is not free for a launch. Its last ticket ${k} is not in flight.` }));
+  });
+  const nSess = out.live.filter(x => x.src !== "pipeline" && x.state !== "stopping").length;
+  out.sessionFree = g.session_cap != null ? Math.max(0, g.session_cap - nSess) : null;
+  return out;
+}
+// The rail badge: the fix rows, with words a screen reader says; '?' when the page cannot tell (D15).
+function sbBadge() {
+  if (!AGENTS) return { n: "", cls: "", label: "" };
+  const r = sbRows();
+  if (r.err || r.stale || r.unknown.length) return { n: "?", cls: "warn", label: "Sandbox fixes unknown: the agents feed could not be read" };
+  const n = r.fix.length;
+  return n ? { n, cls: "warn", label: `${n} sandbox${n === 1 ? " needs" : "es need"} a fix` } : { n: "", cls: "", label: "" };
+}
+// The chip: the floor header's words; '? in use' on a failed or stale feed, whatever the snapshot says.
+function renderSbHead() {
+  if (!AGENTS) return put("sb-head", `<span class="ovchip">Loading…</span>`);
+  const f = floorRows(), bad = f.stale || f.unknown, n = bad ? 0 : f.rows.filter(t => t.kind !== "free").length;
+  const txt = bad ? "? in use" : n ? floorHead(f) : "No sandbox in use";
+  put("sb-head", `<span class="ovchip${n ? " live" : ""}"><i class="${n ? "on" : ""}" aria-hidden="true"></i>${esc(txt)}</span>`);
+}
+function renderSbList() {
+  if (!AGENTS) return put("sb-list", `<div class="emptybox">Loading…</div>`);
+  const r = sbRows(), admin = !!TEAM_ADMIN?.admin, t = TAB || "all";
+  if (r.err) return put("sb-list", `<div class="emptybox">Sandboxes unknown: the agents feed could not be read.</div>`);
+  if (t === "routines" && !admin) return put("sb-list", `<div class="emptybox">Only a team admin can see routine runs.</div>`);
+  const SRC = { pipeline: "Pipeline", slack: "Slack", routine: "Routine" };
+  const whereTxt = x => x.src === "pipeline" ? (x.slot ? `${x.slot} · GCE slot` : x.where === "firecracker" ? "Firecracker" : "GCE") : `session · ${x.where === "gce" ? "GCE" : x.where === "firecracker" ? "Firecracker" : "starting"}`;
+  const forTxt = x => x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
+  const fld = (l, v) => v ? `<span class="f"><span class="vh">${l}: </span>${v}</span>` : "";
+  const bar = x => { if (x.age == null || !x.cap) return ""; const over = x.age >= x.cap;
+    return `<span class="f tb${over ? " over" : ""}"><span class="vh">Time: </span><span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(x.age / x.cap * 100))}%"></i></span>${esc(short(x.age))} of ${esc(short(x.cap))}${over ? " · over cap" : ""}</span>`; };
+  const row = x => `<li class="${x.fix ? "fixr" : x.fault ? "bad" : ""}"${x.id === SEL.runners ? ' aria-current="true"' : ""}><button type="button" data-sbsel="${esc(x.id)}" aria-label="${esc(forTxt(x))}, details">${esc(forTxt(x))}</button>
+    ${fld("What", esc(plainMd(x.title)))}${fld("Now", esc(x.fix ? x.fix.why : x.state))}${fld("Team", x.team ? esc(teamLabel(x.team)) : "")}${fld("Where", esc(whereTxt(x)))}${x.fix ? "" : bar(x)}${fld("LLM cost", x.cost != null ? usd(x.cost) : "")}
+    ${x.fix?.cmd ? `<code>${esc(x.fix.cmd)}</code>` : x.fix?.steps && !r.stale ? `<span class="f steps">${esc(x.fix.steps)}</span>` : ""}</li>`;
+  const live = r.live.filter(sbTabHas), fix = r.fix.filter(sbTabHas), pool = t === "all" || t === "pipeline";
+  const none = !(AGENTS.pool ?? []).length && !(AGENTS.free_slots ?? []).length && !r.live.length ? "No sandbox slot is set up, and no Slack session is live." : "No sandbox runs now.";
+  // A stale feed keeps its last rows under the warning, with no free line: a free slot may be taken by now.
+  const freeLine = r.stale ? "" : [pool && r.free.some(x => !x.held) ? slotList(r.free.filter(x => !x.held).map(x => x.slot)) : "", pool && r.free.some(x => x.held) ? `held for a run in flight: ${r.free.filter(x => x.held).map(x => `${x.slot} (${x.held})`).join(", ")}` : "",
+    ...(pool ? r.unknown.map(u => u.why) : []), r.sessionFree != null && (t === "all" || t === "slack") ? `${r.sessionFree} session slot${r.sessionFree === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  const a = STATE.agents_age_seconds, i = STATE.agents_interval;
+  put("sb-list", `${r.stale ? `<p class="sbstale">The agents feed is ${Math.round(a / 60)} min old: these rows may be out of date.</p>` : ""}${live.length ? `<ul class="sbl">${live.map(row).join("")}</ul>` : r.stale ? "" : `<div class="emptybox">${none}</div>`}
+    ${fix.length ? `<h3 class="sbh">Needs a fix · ${fix.length}</h3><ul class="sbl">${fix.map(row).join("")}</ul>` : ""}
+    ${freeLine ? `<h3 class="sbh">Free slots</h3><p class="sbfree">${esc(freeLine)}</p>` : ""}
+    ${a != null ? `<p class="sbage">Agents read ${esc(ago(a))}${i ? ` · the next read in about ${Math.max(0, Math.round(i - a))} s` : ""}</p>` : ""}`);
+}
+// The other slices add renderSbCards and renderSbDone; each part fails alone (i356 D26).
+function renderSb() {
+  safeRender(renderSbHead, "sb-head"); safeRender(renderSbList, "sb-list");
+  typeof renderSbCards === "function" && safeRender(renderSbCards, "sb-cards");
+  typeof renderSbDone === "function" && safeRender(renderSbDone, "sb-done");
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest?.("[data-sbsel]"); if (!b) return;
+  const id = b.dataset.sbsel; select(id); safeRender(renderSbList, "sb-list");
+  document.querySelector(`[data-sbsel="${CSS.escape(id)}"]`)?.focus();
+});
 
 // The icon, with a status dot in the corner when something is wrong.
 const ICON = new Image(); ICON.src = "/icon.png";
@@ -3198,12 +3316,13 @@ function renderNav() {
   const waiting = SNAP?.review ? SNAP.review.filter(isWaitingOnHuman).length + slackOld.length : null;
   // The rail badge is the Needs you number; at 0 a #attn alert still shows as '!' (i356 D3).
   const nv = ovNeeds(), bad = document.querySelectorAll("#attn .alert.bad").length, attn = document.querySelectorAll("#attn .alert").length;
-  const runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
   const badge = (id, n, cls) => { const e = document.getElementById(id); e.textContent = n ? n : ""; e.className = "n" + (cls ? " " + cls : ""); };
   badge("n-overview", nv.unknown ? "?" : nv.total || (attn ? "!" : ""), bad ? "bad" : "warn");
   badge("n-pipeline", waiting, "info");
   badge("n-sessions", liveS, "info");
-  badge("n-runners", AGENTS ? runners : "", "");
+  const sb = sbBadge(), nr = document.getElementById("n-runners");
+  badge("n-runners", sb.n, sb.cls);
+  if (sb.label) { nr.setAttribute("aria-label", sb.label); nr.title = sb.label; } else { nr.removeAttribute("aria-label"); nr.removeAttribute("title"); }
 }
 
 // ── views, tabs and the selection: all in the hash, so a link opens the same screen ──
@@ -3214,7 +3333,7 @@ const VIEWS = [
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["prs", "PRs"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
   ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
-  ["runners", "Sandboxes", "Slots, sandboxes and what they cost", []],
+  ["runners", "Sandboxes", "Where the agents run, who uses them, and what it costs", [["all", "All"], ["pipeline", "Pipeline"], ["slack", "Slack"], ["routines", "Routines"]]],
   ["teams", "Teams", "Which teams exist, what each gets, who can start one, and how each is doing", []],
 ];
 // The Sessions list's person filter ("mine"), kept per browser.
@@ -3262,6 +3381,7 @@ function route() {
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
   if (view === "overview" && view !== VIEW_PREV) loadRuns();
+  if (view === "runners") renderSb();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
@@ -3297,8 +3417,8 @@ function renderHeader() {
   document.getElementById("vtitle").textContent = def[1];
   document.getElementById("vsub").textContent = def[2];
   const sideLbl = VIEW === "stats" ? "Filters" : "List";
-  document.getElementById("vacts").innerHTML = (VIEW === "teams" ? `<button type="button" class="iconbtn lbl tlist-btn" id="tlist" aria-expanded="${!document.body.classList.contains("tlist-closed")}" aria-controls="side">${svgI(ICO_SIDE)}List</button>` : "") + (["overview", "pipeline", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
-    + (["overview", "pipeline", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") || (VIEW === "runners" && !(AGENTS?.instances ?? []).length) ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
+  document.getElementById("vacts").innerHTML = (VIEW === "teams" ? `<button type="button" class="iconbtn lbl tlist-btn" id="tlist" aria-expanded="${!document.body.classList.contains("tlist-closed")}" aria-controls="side">${svgI(ICO_SIDE)}List</button>` : "") + (["overview", "pipeline", "teams", "runners"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
+    + (["overview", "pipeline", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
   const tabs = document.getElementById("vtabs");
   tabs.hidden = !def[3].length;
   tabs.setAttribute("aria-label", `${def[1]} tabs`);
@@ -3320,12 +3440,6 @@ function sideGroups() {
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [`${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
   if (VIEW === "lessons") return [{ items: (LESSONS ?? []).filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).filter(l => hit(l.text)).map(l => ({ id: l.id, d: l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : "", t: l.text, m: [l.status, l.session] })) }];
-  if (VIEW === "runners") {
-    const inst = AGENTS?.instances ?? [], sessions = new Map((AGENTS?.sessions ?? []).map(x => [x.key, x]));
-    return [{ group: "Stopped, needs a fix", items: inst.filter(v => !instUp(v) && hit(v.name)).map(v => ({ id: v.name, d: "bad", t: v.name, m: [v.where === "firecracker" ? "Firecracker" : "GCE", v.state, `made ${short(v.age_seconds)} ago`] })) },
-      { group: "Sandboxes up", items: inst.filter(v => instUp(v) && hit(v.name)).map(v => { const k = v.name.replace(/^agent-/, ""), s = sessions.get(k);
-        return { id: v.name, d: "live", t: s ? convTitle(s) : TICKET.test(k.toUpperCase()) ? k.toUpperCase() : v.name, m: [v.where === "firecracker" ? "Firecracker" : "GCE", s ? "Slack" : "pipeline", short(v.age_seconds)] }; }) }].filter(g => g.items.length);
-  }
   if (VIEW === "teams") {
     const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
     const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
@@ -3336,7 +3450,7 @@ function sideGroups() {
 }
 function renderSide() {
   const side = document.getElementById("side");
-  if (VIEW === "overview") { side.innerHTML = ""; return; }
+  if (VIEW === "overview" || VIEW === "runners") { side.innerHTML = ""; return; }
   if (VIEW === "stats") { side.innerHTML = `<div class="sh"><h2>Filters</h2></div>${STATS ? statsFilters() : `<div class="sgroup">loading…</div>`}`; return; }
   const groups = sideGroups(), total = groups.reduce((n, g) => n + g.items.length, 0), name = VIEWS.find(x => x[0] === VIEW)[1];
   const sel = VIEW === "sessions" ? SESS_SEL || currentSession()?.key : SEL[VIEW];
@@ -3503,7 +3617,7 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvNeeds, "ov-needs"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderOvRuns, "ov-runs"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvNeeds, "ov-needs"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderOvRuns, "ov-runs"], [renderSess, "s-sess"], [renderSb],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);

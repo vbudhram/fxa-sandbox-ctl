@@ -1,0 +1,1976 @@
+{
+ "/api/snapshot": {
+  "age_seconds": 30,
+  "interval": 120,
+  "agents_age_seconds": 12,
+  "agents_interval": 30,
+  "stats_age_seconds": 40,
+  "stats_interval": 60,
+  "snapshot": {
+   "repo": "example/repo",
+   "team": {
+    "profile": "example",
+    "name": "Example",
+    "jira_site": "https://jira.example.com",
+    "queue_label": "ai-fixme",
+    "pr_label": "auto",
+    "repo": "example/repo"
+   },
+   "generated_at": "@epoch-30",
+   "mode": {},
+   "limits": {
+    "attempts": 2,
+    "merged_prs": 30
+   },
+   "health": {
+    "seconds_since_pass": 240,
+    "last_pass_epoch": "@epoch-240",
+    "next_pass_epoch": "@epoch+60",
+    "pass_timer": "on",
+    "pass_times": [
+     "@epoch+60",
+     "@epoch+360",
+     "@epoch+660",
+     "@epoch+960",
+     "@epoch+1260",
+     "@epoch+1560",
+     "@epoch+1860",
+     "@epoch+2160",
+     "@epoch+2460",
+     "@epoch+2760",
+     "@epoch+3060",
+     "@epoch+3360",
+     "@epoch+3660",
+     "@epoch+3960",
+     "@epoch+4260",
+     "@epoch+4560",
+     "@epoch+4860",
+     "@epoch+5160",
+     "@epoch+5460",
+     "@epoch+5760",
+     "@epoch+6060",
+     "@epoch+6360",
+     "@epoch+6660",
+     "@epoch+6960",
+     "@epoch+7260",
+     "@epoch+7560",
+     "@epoch+7860",
+     "@epoch+8160",
+     "@epoch+8460",
+     "@epoch+8760",
+     "@epoch+9060",
+     "@epoch+9360",
+     "@epoch+9660",
+     "@epoch+9960",
+     "@epoch+10260",
+     "@epoch+10560",
+     "@epoch+10860",
+     "@epoch+11160",
+     "@epoch+11460",
+     "@epoch+11760",
+     "@epoch+12060",
+     "@epoch+12360",
+     "@epoch+12660",
+     "@epoch+12960",
+     "@epoch+13260",
+     "@epoch+13560",
+     "@epoch+13860",
+     "@epoch+14160",
+     "@epoch+53760",
+     "@epoch+54060",
+     "@epoch+54360",
+     "@epoch+54660",
+     "@epoch+54960",
+     "@epoch+55260",
+     "@epoch+55560",
+     "@epoch+55860",
+     "@epoch+56160",
+     "@epoch+56460",
+     "@epoch+56760",
+     "@epoch+57060"
+    ],
+    "launches_24h": 3,
+    "max_launches_per_day": 40,
+    "lock_stale_seconds": 1800,
+    "free_gb": 80,
+    "min_free_gb": 20
+   },
+   "inflight": [
+    {
+     "key": "EX-101",
+     "summary": "Fix the sample login button",
+     "stage": "watching",
+     "branch": "ex-101"
+    },
+    {
+     "key": "EX-102",
+     "summary": "Sample settings page copy",
+     "stage": "starting",
+     "branch": "ex-102"
+    },
+    {
+     "key": "EX-103",
+     "summary": "Sample PR in CI",
+     "stage": "pr",
+     "pr": 42,
+     "ok": 18,
+     "fail": 0,
+     "running": 4
+    }
+   ],
+   "blocked": [
+    {
+     "key": "EX-104",
+     "summary": "Sample ticket that needs the operator",
+     "blocked_reason": {
+      "kind": "operator",
+      "text": "pick a route",
+      "at": "@epoch-7200"
+     }
+    }
+   ],
+   "review": [
+    {
+     "key": "EX-105",
+     "pr": 43,
+     "title": "Sample review wait",
+     "state": "OPEN",
+     "ok": 20,
+     "fail": 0,
+     "running": 0,
+     "created": "@iso-500000"
+    }
+   ],
+   "queue": {
+    "ready": [
+     {
+      "key": "EX-106",
+      "summary": "Sample ready ticket"
+     }
+    ],
+    "skipped": []
+   },
+   "pool": [
+    {
+     "slot": "ex-auto-1",
+     "agent": "ex-101",
+     "key": "EX-101",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-2",
+     "agent": "ex-102",
+     "key": "EX-102",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-3",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-4",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-5",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    }
+   ],
+   "free_slots": [
+    "ex-auto-3",
+    "ex-auto-4",
+    "ex-auto-5"
+   ],
+   "instances": [],
+   "open_prs": [],
+   "merged_prs": [],
+   "telemetry": {
+    "median_minutes": 20
+   },
+   "pipeline": {}
+  },
+  "agents": {
+   "runners": [
+    {
+     "key": "EX-101",
+     "name": "ex-101",
+     "agent_alive": true,
+     "stage": "watching",
+     "elapsed_seconds": 900,
+     "agent": {
+      "idle_seconds": 30,
+      "cost_so_far": 1.25,
+      "last_tool": "Bash npm test -- sample"
+     }
+    },
+    {
+     "key": "EX-102",
+     "name": "ex-102",
+     "agent_alive": true,
+     "stage": "starting",
+     "elapsed_seconds": 60,
+     "agent": {}
+    }
+   ],
+   "sessions": [
+    {
+     "key": "agent-ex0001",
+     "state": "active",
+     "agent_alive": true,
+     "turns": 4,
+     "created": "@epoch-1200",
+     "owner": "U0EXAMPLE",
+     "owner_name": "Sample Person",
+     "request": "make the sample page faster",
+     "profile": "fxa",
+     "boot_backend": "firecracker",
+     "agent": {
+      "last_text": "Reading the sample page."
+     }
+    },
+    {
+     "key": "agent-ex0002",
+     "state": "active",
+     "agent_alive": true,
+     "turns": 2,
+     "created": "@epoch-600",
+     "owner": "U-ROUTINE",
+     "routine_run": 7,
+     "routine_name": "Nightly review",
+     "request": "review the sample commits",
+     "profile": "fxa",
+     "boot_backend": "gce",
+     "agent": {
+      "last_text": "Reading the routine diff."
+     }
+    },
+    {
+     "key": "agent-ex0003",
+     "state": "stopped",
+     "agent_alive": false,
+     "created": "@epoch-3600",
+     "stopped_at": "@epoch-20",
+     "owner": "U0EXAMPLE",
+     "owner_name": "Sample Person",
+     "request": "a sample question",
+     "profile": "fxa",
+     "boot_backend": "firecracker"
+    },
+    {
+     "key": "agent-ex0004",
+     "state": "stopped",
+     "agent_alive": false,
+     "created": "@epoch-7200",
+     "stopped_at": "@epoch-1800",
+     "runner_left": "1",
+     "owner": "U0EXAMPLE",
+     "owner_name": "Sample Person",
+     "request": "another sample question",
+     "profile": "fxa",
+     "boot_backend": "gce"
+    }
+   ],
+   "pool": [
+    {
+     "slot": "ex-auto-1",
+     "agent": "ex-101",
+     "key": "EX-101",
+     "branch": "ex-101",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-2",
+     "agent": "ex-102",
+     "key": "EX-102",
+     "branch": "ex-102",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-3",
+     "agent": null,
+     "key": null,
+     "branch": null,
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-4",
+     "agent": null,
+     "key": "EX-130",
+     "branch": "ex-130",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-5",
+     "agent": null,
+     "key": "EX-103",
+     "branch": "ex-103",
+     "busy": false
+    }
+   ],
+   "free_slots": [
+    "ex-auto-3"
+   ],
+   "instances": [
+    {
+     "name": "agent-ex-101",
+     "state": "running",
+     "age_seconds": 900,
+     "max_seconds": 5400,
+     "where": "gce"
+    },
+    {
+     "name": "agent-ex-102",
+     "state": "running",
+     "age_seconds": 60,
+     "max_seconds": 5400,
+     "where": "gce"
+    },
+    {
+     "name": "agent-agent-ex0003",
+     "state": "running",
+     "age_seconds": 3600,
+     "max_seconds": 14400,
+     "where": "firecracker"
+    },
+    {
+     "name": "agent-agent-ex0004",
+     "state": "running",
+     "age_seconds": 7200,
+     "max_seconds": 14400,
+     "where": "gce"
+    },
+    {
+     "name": "agent-agent-41c0e6",
+     "state": "terminated",
+     "age_seconds": 213277,
+     "max_seconds": 5400,
+     "where": "gce"
+    }
+   ],
+   "launchcap": 3,
+   "generated_at": "@epoch-12",
+   "session_cap": 4,
+   "session_max_run_seconds": 5400
+  }
+ },
+ "/api/stats": {
+  "rows": [
+   {
+    "at": "@iso-3600",
+    "src": "pipeline",
+    "key": "EX-0",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 8
+   },
+   {
+    "at": "@iso-3600",
+    "src": "pass",
+    "key": "agent-ex000p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3600",
+    "src": "slack",
+    "key": "agent-ex000s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3600",
+    "src": "answer",
+    "key": "agent-ex000a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-90000",
+    "src": "pipeline",
+    "key": "EX-1",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 11
+   },
+   {
+    "at": "@iso-90000",
+    "src": "pass",
+    "key": "agent-ex001p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-90000",
+    "src": "slack",
+    "key": "agent-ex001s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-90000",
+    "src": "answer",
+    "key": "agent-ex001a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-176400",
+    "src": "pipeline",
+    "key": "EX-2",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 14
+   },
+   {
+    "at": "@iso-176400",
+    "src": "pass",
+    "key": "agent-ex002p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-176400",
+    "src": "slack",
+    "key": "agent-ex002s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-176400",
+    "src": "answer",
+    "key": "agent-ex002a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-262800",
+    "src": "pipeline",
+    "key": "EX-3",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 17
+   },
+   {
+    "at": "@iso-262800",
+    "src": "pass",
+    "key": "agent-ex003p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-262800",
+    "src": "slack",
+    "key": "agent-ex003s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-262800",
+    "src": "answer",
+    "key": "agent-ex003a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-349200",
+    "src": "pipeline",
+    "key": "EX-4",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 20
+   },
+   {
+    "at": "@iso-349200",
+    "src": "pass",
+    "key": "agent-ex004p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-349200",
+    "src": "slack",
+    "key": "agent-ex004s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-349200",
+    "src": "answer",
+    "key": "agent-ex004a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-435600",
+    "src": "pipeline",
+    "key": "EX-5",
+    "usd": 11,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 23
+   },
+   {
+    "at": "@iso-435600",
+    "src": "pass",
+    "key": "agent-ex005p",
+    "usd": 7,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-435600",
+    "src": "slack",
+    "key": "agent-ex005s",
+    "usd": 8,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-435600",
+    "src": "answer",
+    "key": "agent-ex005a",
+    "usd": 5.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-522000",
+    "src": "pipeline",
+    "key": "EX-6",
+    "usd": 12,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 26
+   },
+   {
+    "at": "@iso-522000",
+    "src": "pass",
+    "key": "agent-ex006p",
+    "usd": 8,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-522000",
+    "src": "slack",
+    "key": "agent-ex006s",
+    "usd": 9,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-522000",
+    "src": "answer",
+    "key": "agent-ex006a",
+    "usd": 6.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-608400",
+    "src": "pipeline",
+    "key": "EX-7",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 29
+   },
+   {
+    "at": "@iso-608400",
+    "src": "pass",
+    "key": "agent-ex007p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-608400",
+    "src": "slack",
+    "key": "agent-ex007s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-608400",
+    "src": "answer",
+    "key": "agent-ex007a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-694800",
+    "src": "pipeline",
+    "key": "EX-8",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 32
+   },
+   {
+    "at": "@iso-694800",
+    "src": "pass",
+    "key": "agent-ex008p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-694800",
+    "src": "slack",
+    "key": "agent-ex008s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-694800",
+    "src": "answer",
+    "key": "agent-ex008a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-781200",
+    "src": "pipeline",
+    "key": "EX-9",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 10
+   },
+   {
+    "at": "@iso-781200",
+    "src": "pass",
+    "key": "agent-ex009p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-781200",
+    "src": "slack",
+    "key": "agent-ex009s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-781200",
+    "src": "answer",
+    "key": "agent-ex009a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-867600",
+    "src": "pipeline",
+    "key": "EX-10",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 13
+   },
+   {
+    "at": "@iso-867600",
+    "src": "pass",
+    "key": "agent-ex010p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-867600",
+    "src": "slack",
+    "key": "agent-ex010s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-867600",
+    "src": "answer",
+    "key": "agent-ex010a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-954000",
+    "src": "pipeline",
+    "key": "EX-11",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 16
+   },
+   {
+    "at": "@iso-954000",
+    "src": "pass",
+    "key": "agent-ex011p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-954000",
+    "src": "slack",
+    "key": "agent-ex011s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-954000",
+    "src": "answer",
+    "key": "agent-ex011a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1040400",
+    "src": "pipeline",
+    "key": "EX-12",
+    "usd": 11,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 19
+   },
+   {
+    "at": "@iso-1040400",
+    "src": "pass",
+    "key": "agent-ex012p",
+    "usd": 7,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1040400",
+    "src": "slack",
+    "key": "agent-ex012s",
+    "usd": 8,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1040400",
+    "src": "answer",
+    "key": "agent-ex012a",
+    "usd": 5.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1126800",
+    "src": "pipeline",
+    "key": "EX-13",
+    "usd": 12,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 22
+   },
+   {
+    "at": "@iso-1126800",
+    "src": "pass",
+    "key": "agent-ex013p",
+    "usd": 8,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1126800",
+    "src": "slack",
+    "key": "agent-ex013s",
+    "usd": 9,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1126800",
+    "src": "answer",
+    "key": "agent-ex013a",
+    "usd": 6.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1213200",
+    "src": "pipeline",
+    "key": "EX-14",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 25
+   },
+   {
+    "at": "@iso-1213200",
+    "src": "pass",
+    "key": "agent-ex014p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1213200",
+    "src": "slack",
+    "key": "agent-ex014s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1213200",
+    "src": "answer",
+    "key": "agent-ex014a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1299600",
+    "src": "pipeline",
+    "key": "EX-15",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 28
+   },
+   {
+    "at": "@iso-1299600",
+    "src": "pass",
+    "key": "agent-ex015p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1299600",
+    "src": "slack",
+    "key": "agent-ex015s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1299600",
+    "src": "answer",
+    "key": "agent-ex015a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1386000",
+    "src": "pipeline",
+    "key": "EX-16",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 31
+   },
+   {
+    "at": "@iso-1386000",
+    "src": "pass",
+    "key": "agent-ex016p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1386000",
+    "src": "slack",
+    "key": "agent-ex016s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1386000",
+    "src": "answer",
+    "key": "agent-ex016a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1472400",
+    "src": "pipeline",
+    "key": "EX-17",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 9
+   },
+   {
+    "at": "@iso-1472400",
+    "src": "pass",
+    "key": "agent-ex017p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1472400",
+    "src": "slack",
+    "key": "agent-ex017s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1472400",
+    "src": "answer",
+    "key": "agent-ex017a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1558800",
+    "src": "pipeline",
+    "key": "EX-18",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 12
+   },
+   {
+    "at": "@iso-1558800",
+    "src": "pass",
+    "key": "agent-ex018p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1558800",
+    "src": "slack",
+    "key": "agent-ex018s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1558800",
+    "src": "answer",
+    "key": "agent-ex018a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1645200",
+    "src": "pipeline",
+    "key": "EX-19",
+    "usd": 11,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 15
+   },
+   {
+    "at": "@iso-1645200",
+    "src": "pass",
+    "key": "agent-ex019p",
+    "usd": 7,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1645200",
+    "src": "slack",
+    "key": "agent-ex019s",
+    "usd": 8,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1645200",
+    "src": "answer",
+    "key": "agent-ex019a",
+    "usd": 5.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1731600",
+    "src": "pipeline",
+    "key": "EX-20",
+    "usd": 12,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 18
+   },
+   {
+    "at": "@iso-1731600",
+    "src": "pass",
+    "key": "agent-ex020p",
+    "usd": 8,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1731600",
+    "src": "slack",
+    "key": "agent-ex020s",
+    "usd": 9,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1731600",
+    "src": "answer",
+    "key": "agent-ex020a",
+    "usd": 6.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1818000",
+    "src": "pipeline",
+    "key": "EX-21",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 21
+   },
+   {
+    "at": "@iso-1818000",
+    "src": "pass",
+    "key": "agent-ex021p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1818000",
+    "src": "slack",
+    "key": "agent-ex021s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1818000",
+    "src": "answer",
+    "key": "agent-ex021a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1904400",
+    "src": "pipeline",
+    "key": "EX-22",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 24
+   },
+   {
+    "at": "@iso-1904400",
+    "src": "pass",
+    "key": "agent-ex022p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1904400",
+    "src": "slack",
+    "key": "agent-ex022s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1904400",
+    "src": "answer",
+    "key": "agent-ex022a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1990800",
+    "src": "pipeline",
+    "key": "EX-23",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 27
+   },
+   {
+    "at": "@iso-1990800",
+    "src": "pass",
+    "key": "agent-ex023p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1990800",
+    "src": "slack",
+    "key": "agent-ex023s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-1990800",
+    "src": "answer",
+    "key": "agent-ex023a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2077200",
+    "src": "pipeline",
+    "key": "EX-24",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 30
+   },
+   {
+    "at": "@iso-2077200",
+    "src": "pass",
+    "key": "agent-ex024p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2077200",
+    "src": "slack",
+    "key": "agent-ex024s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2077200",
+    "src": "answer",
+    "key": "agent-ex024a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2163600",
+    "src": "pipeline",
+    "key": "EX-25",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 8
+   },
+   {
+    "at": "@iso-2163600",
+    "src": "pass",
+    "key": "agent-ex025p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2163600",
+    "src": "slack",
+    "key": "agent-ex025s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2163600",
+    "src": "answer",
+    "key": "agent-ex025a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2250000",
+    "src": "pipeline",
+    "key": "EX-26",
+    "usd": 11,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 11
+   },
+   {
+    "at": "@iso-2250000",
+    "src": "pass",
+    "key": "agent-ex026p",
+    "usd": 7,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2250000",
+    "src": "slack",
+    "key": "agent-ex026s",
+    "usd": 8,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2250000",
+    "src": "answer",
+    "key": "agent-ex026a",
+    "usd": 5.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2336400",
+    "src": "pipeline",
+    "key": "EX-27",
+    "usd": 12,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 14
+   },
+   {
+    "at": "@iso-2336400",
+    "src": "pass",
+    "key": "agent-ex027p",
+    "usd": 8,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2336400",
+    "src": "slack",
+    "key": "agent-ex027s",
+    "usd": 9,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2336400",
+    "src": "answer",
+    "key": "agent-ex027a",
+    "usd": 6.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2422800",
+    "src": "pipeline",
+    "key": "EX-28",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 17
+   },
+   {
+    "at": "@iso-2422800",
+    "src": "pass",
+    "key": "agent-ex028p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2422800",
+    "src": "slack",
+    "key": "agent-ex028s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2422800",
+    "src": "answer",
+    "key": "agent-ex028a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2509200",
+    "src": "pipeline",
+    "key": "EX-29",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 20
+   },
+   {
+    "at": "@iso-2509200",
+    "src": "pass",
+    "key": "agent-ex029p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2509200",
+    "src": "slack",
+    "key": "agent-ex029s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2509200",
+    "src": "answer",
+    "key": "agent-ex029a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2595600",
+    "src": "pipeline",
+    "key": "EX-30",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 23
+   },
+   {
+    "at": "@iso-2595600",
+    "src": "pass",
+    "key": "agent-ex030p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2595600",
+    "src": "slack",
+    "key": "agent-ex030s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2595600",
+    "src": "answer",
+    "key": "agent-ex030a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2682000",
+    "src": "pipeline",
+    "key": "EX-31",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 26
+   },
+   {
+    "at": "@iso-2682000",
+    "src": "pass",
+    "key": "agent-ex031p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2682000",
+    "src": "slack",
+    "key": "agent-ex031s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2682000",
+    "src": "answer",
+    "key": "agent-ex031a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2768400",
+    "src": "pipeline",
+    "key": "EX-32",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 29
+   },
+   {
+    "at": "@iso-2768400",
+    "src": "pass",
+    "key": "agent-ex032p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2768400",
+    "src": "slack",
+    "key": "agent-ex032s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2768400",
+    "src": "answer",
+    "key": "agent-ex032a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2854800",
+    "src": "pipeline",
+    "key": "EX-33",
+    "usd": 11,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 32
+   },
+   {
+    "at": "@iso-2854800",
+    "src": "pass",
+    "key": "agent-ex033p",
+    "usd": 7,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2854800",
+    "src": "slack",
+    "key": "agent-ex033s",
+    "usd": 8,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2854800",
+    "src": "answer",
+    "key": "agent-ex033a",
+    "usd": 5.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2941200",
+    "src": "pipeline",
+    "key": "EX-34",
+    "usd": 12,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 10
+   },
+   {
+    "at": "@iso-2941200",
+    "src": "pass",
+    "key": "agent-ex034p",
+    "usd": 8,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2941200",
+    "src": "slack",
+    "key": "agent-ex034s",
+    "usd": 9,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-2941200",
+    "src": "answer",
+    "key": "agent-ex034a",
+    "usd": 6.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3027600",
+    "src": "pipeline",
+    "key": "EX-35",
+    "usd": 6,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 13
+   },
+   {
+    "at": "@iso-3027600",
+    "src": "pass",
+    "key": "agent-ex035p",
+    "usd": 2,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3027600",
+    "src": "slack",
+    "key": "agent-ex035s",
+    "usd": 3,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3027600",
+    "src": "answer",
+    "key": "agent-ex035a",
+    "usd": 0.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3114000",
+    "src": "pipeline",
+    "key": "EX-36",
+    "usd": 7,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 16
+   },
+   {
+    "at": "@iso-3114000",
+    "src": "pass",
+    "key": "agent-ex036p",
+    "usd": 3,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3114000",
+    "src": "slack",
+    "key": "agent-ex036s",
+    "usd": 4,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3114000",
+    "src": "answer",
+    "key": "agent-ex036a",
+    "usd": 1.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3200400",
+    "src": "pipeline",
+    "key": "EX-37",
+    "usd": 8,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 19
+   },
+   {
+    "at": "@iso-3200400",
+    "src": "pass",
+    "key": "agent-ex037p",
+    "usd": 4,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3200400",
+    "src": "slack",
+    "key": "agent-ex037s",
+    "usd": 5,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3200400",
+    "src": "answer",
+    "key": "agent-ex037a",
+    "usd": 2.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3286800",
+    "src": "pipeline",
+    "key": "EX-38",
+    "usd": 9,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": true,
+    "min": 22
+   },
+   {
+    "at": "@iso-3286800",
+    "src": "pass",
+    "key": "agent-ex038p",
+    "usd": 5,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3286800",
+    "src": "slack",
+    "key": "agent-ex038s",
+    "usd": 6,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3286800",
+    "src": "answer",
+    "key": "agent-ex038a",
+    "usd": 3.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3373200",
+    "src": "pipeline",
+    "key": "EX-39",
+    "usd": 10,
+    "model": "claude-opus-5-5",
+    "profile": "example",
+    "pr": false,
+    "min": 25
+   },
+   {
+    "at": "@iso-3373200",
+    "src": "pass",
+    "key": "agent-ex039p",
+    "usd": 6,
+    "model": "claude-sonnet-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3373200",
+    "src": "slack",
+    "key": "agent-ex039s",
+    "usd": 7,
+    "model": "claude-opus-5-5[1m]",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3373200",
+    "src": "answer",
+    "key": "agent-ex039a",
+    "usd": 4.4,
+    "model": "claude-haiku-5-5",
+    "profile": "example"
+   },
+   {
+    "at": "@iso-3600",
+    "src": "slack",
+    "key": "agent-ex2609",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-7200",
+    "src": "slack",
+    "key": "agent-ex2221",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-90000",
+    "src": "slack",
+    "key": "agent-ex2270",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   },
+   {
+    "at": "@iso-400000",
+    "src": "slack",
+    "key": "agent-ex2203",
+    "usd": 0.8,
+    "model": "claude-sonnet-5-5",
+    "profile": "sample-two"
+   }
+  ],
+  "prs": [
+   {
+    "n": 40,
+    "key": "EX-200",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-172800",
+    "merged": "@iso-86400",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 41,
+    "key": "EX-201",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-259200",
+    "merged": "@iso-172800",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 42,
+    "key": "EX-202",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-345600",
+    "merged": "@iso-259200",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 43,
+    "key": "EX-203",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-432000",
+    "merged": "@iso-345600",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 44,
+    "key": "EX-204",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-518400",
+    "merged": "@iso-432000",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 45,
+    "key": "EX-205",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-604800",
+    "merged": "@iso-518400",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   }
+  ],
+  "prs_at": "@epoch-120",
+  "llm": {
+   "hour_usd": 0.42
+  }
+ },
+ "/api/team-admin": {
+  "admin": true,
+  "user": "admin@example.com"
+ },
+ "/api/teams": {
+  "teams": [
+   {
+    "profile": "example",
+    "label": "Example",
+    "issues": [],
+    "budget": {
+     "month_usd": 412.5,
+     "month_cap": null
+    }
+   },
+   {
+    "profile": "sample-two",
+    "label": "Sample Two",
+    "issues": [],
+    "access": {
+     "open": true
+    },
+    "budget": {
+     "month_usd": 46.2,
+     "month_cap": 50
+    }
+   }
+  ]
+ },
+ "/api/routines/summary": {
+  "teams": {},
+  "routines": {
+   "1": {
+    "name": "Sample nightly report",
+    "team": "example",
+    "paused": false,
+    "next": "@epoch+18000",
+    "runs_30d": 10,
+    "cost_30d": 30,
+    "failed": false
+   }
+  }
+ },
+ "/api/runs/recent": {
+  "error": null,
+  "runs": [
+   {
+    "at": "@iso-600",
+    "src": "pipeline",
+    "kind": "fix",
+    "key": "EX-310",
+    "title": "[Sample] Keep the code field focused after an error",
+    "team": "example",
+    "outcome": "pr",
+    "pr_url": "https://github.com/example/repo/pull/312",
+    "pr_number": 312,
+    "pr_state": "open",
+    "usd": 1.12,
+    "min": 16
+   },
+   {
+    "at": "@iso-1500",
+    "src": "slack",
+    "kind": "session",
+    "key": "agent-ex0001",
+    "title": "[Sample] Why does the batch upload return 409?",
+    "team": "sample-two",
+    "outcome": "running",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.3,
+    "min": 4
+   },
+   {
+    "at": "@iso-2400",
+    "src": "pass",
+    "kind": "pass",
+    "key": "pass",
+    "title": "",
+    "team": "example",
+    "outcome": "done",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.55,
+    "min": 2
+   },
+   {
+    "at": "@iso-3300",
+    "src": "pipeline",
+    "kind": "feedback",
+    "key": "EX-298",
+    "title": "[Sample] Address the review on the recovery key copy",
+    "team": "example",
+    "outcome": "pr",
+    "pr_url": "https://github.com/example/repo/pull/301",
+    "pr_number": 301,
+    "pr_state": "merged",
+    "usd": 0.64,
+    "min": 9
+   },
+   {
+    "at": "@iso-4200",
+    "src": "answer",
+    "kind": "answered",
+    "key": "ask-ex0002",
+    "title": "[Sample] Where is the quota error raised?",
+    "team": "sample-two",
+    "outcome": "answered",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.08,
+    "min": 1
+   },
+   {
+    "at": "@iso-5400",
+    "src": "pipeline",
+    "kind": "fix",
+    "key": "EX-290",
+    "title": "[Sample] Remove the old experiment flag",
+    "team": "example",
+    "outcome": "no_pr",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 1.86,
+    "min": 24
+   },
+   {
+    "at": "@iso-6600",
+    "src": "answer",
+    "kind": "failed",
+    "key": "ask-ex0003",
+    "title": "[Sample] Summarize the open login bugs",
+    "team": "example",
+    "outcome": "failed",
+    "pr_url": null,
+    "pr_number": null,
+    "pr_state": null,
+    "usd": 0.02,
+    "min": 1
+   }
+  ]
+ }
+}
