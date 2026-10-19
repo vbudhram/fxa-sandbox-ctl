@@ -32,6 +32,7 @@
 #   FAKE_WRAP_REPLY   a finish's wrap-up turn replies with this text 6 s in (needs-input), as ctl's wrap_reply does
 #   FAKE_FAIL_S       the session's state is failed from this many seconds after its start
 #   FAKE_ROUTINE_TASK_FAIL  task --source routine exits 1 with this error and no session, as ctl refusing the run does
+#   FAKE_TASK_CAP  the first n tasks (not routine runs) exit 1 at the session cap, as ctl does when every runner is busy
 #   FAKE_ROUTINE_DONE fail: routine done exits 1, as a store error does; stopped: it answers changed false, state stopped
 #   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
 #                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
@@ -139,6 +140,10 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   task) k="$(opt --id "$@")"; [[ "$k" =~ ^agent-[a-z0-9]+$ ]] || { echo "fake-ctl: task needs --id" >&2; exit 1; }
     # A routine run's task that ctl refuses (a bad row, a cap, a team mismatch) leaves the run with no session.
+    if [ "$(opt --source "$@")" != routine ] && [ -n "${FAKE_TASK_CAP:-}" ]; then
+      mkdir -p "$DIR"; c="$(cat "$DIR/cap_refused" 2>/dev/null || echo 0)"
+      [ "$c" -ge "$FAKE_TASK_CAP" ] || { echo $(( c + 1 )) > "$DIR/cap_refused"; echo "ERROR: 4 sessions running, cap 4 (FXA_SESSION_MAX)" >&2; exit 1; }
+    fi
     if [ "$(opt --source "$@")" = routine ]; then
       [ -z "${FAKE_ROUTINE_TASK_FAIL:-}" ] || { echo "ERROR: ${FAKE_ROUTINE_TASK_FAIL}" >&2; exit 1; }
       mkdir -p "$DIR"; echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
