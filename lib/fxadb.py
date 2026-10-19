@@ -50,15 +50,25 @@ def rows(con, sql, params=()):
 def routine_summary(con, now):
     """For the Teams page (admins only): per team and per routine, the 30-day runs and cost, and whether
     the routine failed (its newest ended run is failed or missed). A paused routine stays failed for
-    itself, but is left out of its team's failed count and last failed run. No prompt, report or channel."""
+    itself, but is left out of its team's failed count and last failed run. No prompt, report or channel.
+    Each routine also has its name, team, paused and next run (epoch; null when paused or unreadable)."""
+    import routine  # the one reader of a schedule; the dashboard loads it from lib/ beside this file
     since = now - 30 * 86400
-    rts = rows(con, "SELECT id, team, paused, json_extract(data, '$.name') AS name FROM routines")
+    rts = rows(con, """SELECT id, team, paused, json_extract(data, '$.name') AS name,
+        json_extract(data, '$.schedule') AS schedule, json_extract(data, '$.zone') AS zone FROM routines""")
     ended = rows(con, """SELECT r.routine_id AS rid, r.state, r.reason, r.session, coalesce(r.ended_at, r.started_at, 0) AS at, r.cost_usd
         FROM routine_runs r WHERE r.state NOT IN ('queued', 'claimed', 'started') ORDER BY at, r.id""")
     live = {r["routine_id"] for r in rows(con, "SELECT DISTINCT routine_id FROM routine_runs WHERE state IN ('queued', 'claimed', 'started')")}
     per, teams = {}, {}
     for r in rts:
-        per[r["id"]] = {"runs_30d": 0, "cost_30d": 0.0, "failed": False, "last_end": None}
+        nxt = None
+        if not r["paused"]:
+            try:
+                nxt = int(routine.runs(r, now, 1)[0].timestamp())
+            except Exception:  # noqa: BLE001  a bad schedule or zone shows no next run, not a failed page
+                nxt = None
+        per[r["id"]] = {"name": r["name"], "team": r["team"], "paused": bool(r["paused"]), "next": nxt,
+                        "runs_30d": 0, "cost_30d": 0.0, "failed": False, "last_end": None}
     last = {}
     for x in ended:
         p = per.get(x["rid"])

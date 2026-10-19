@@ -8,9 +8,9 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
 export FXA_DB="$tmp/fxa.db"; source "$here/config.sh"; source "$here/db.sh"; db_init >/dev/null
 now=$(date +%s); old=$((now - 40 * 86400))
-d() { printf '{"name":"%s","prompt":"SECRET-PROMPT","channel":"C0SECRET"}' "$1"; }
+d() { printf '{"name":"%s","prompt":"SECRET-PROMPT","channel":"C0SECRET"%s}' "$1" "${2:-}"; }
 sqlite3 "$FXA_DB" "
-INSERT INTO routines (id, team, data, paused) VALUES (1,'fxa','$(d A)',0),(2,'fxa','$(d B)',0),(3,'fxa','$(d C)',0),(4,'fxa','$(d D)',0),(5,'fxa','$(d E)',1),(6,'crew','$(d F)',0);
+INSERT INTO routines (id, team, data, paused) VALUES (1,'fxa','$(d A ',"schedule":"daily 09:00","zone":"UTC"')',0),(2,'fxa','$(d B ',"schedule":"daily 09:00","zone":"Nowhere/Bad"')',0),(3,'fxa','$(d C)',0),(4,'fxa','$(d D)',0),(5,'fxa','$(d E)',1),(6,'crew','$(d F)',0);
 INSERT INTO routine_runs (routine_id, period, state, reason, session, cost_usd, report, ended_at) VALUES
  (1,'p1','report',NULL,'agent-a1',0.5,'SECRET-REPORT',$((now-3600))),
  (2,'p1','ok',NULL,'agent-b0',1.0,NULL,$((now-7200))),(2,'p2','failed','the turn stopped','agent-b1',0.25,NULL,$((now-600))),
@@ -47,6 +47,10 @@ check("the last failed run is B's newest", ("B", "the turn stopped", "agent-b1")
 check("a routine whose newest run is ok is not failed; the paused one stays failed for itself", (False, True, False), (s["routines"]["3"]["failed"], s["routines"]["5"]["failed"], s["routines"]["1"]["failed"]))
 check("runs and cost count the last 30 days only", (0, 0.0), (s["routines"]["6"]["runs_30d"], s["routines"]["6"]["cost_30d"]))
 check("the 30-day team cost", 2.05, t["cost_30d"])
+r = s["routines"]; nx = r["1"]["next"]
+check("A's next run is its next 09:00 UTC, within a day", (True, True), (isinstance(nx, int) and 0 < nx - time.time() <= 86400, time.gmtime(nx)[3:5] == (9, 0) if nx else False))
+check("no next run for a bad zone, no schedule, or a paused routine", (None, None, None, None), (r["2"]["next"], r["3"]["next"], r["4"]["next"], r["5"]["next"]))
+check("each routine has its name, team and paused", ("E", "fxa", True), (r["5"]["name"], r["5"]["team"], r["5"]["paused"]))
 check("no prompt, report or channel in the body", (False, False, False), ("SECRET-PROMPT" in body, "SECRET-REPORT" in body, "C0SECRET" in body))
 fxadb.PATH = f"{tmp}/missing/fxa.db"
 code, body = get(sig("admin@example.com", P))
