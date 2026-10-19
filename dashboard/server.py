@@ -227,10 +227,11 @@ TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cad
 JOB_TITLES = {"pass": "Pipeline pass", "triage": "Triage", "merge-watch": "Merge watch"}
 
 
-def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False, ended=False):
+def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False, ended=False, src_only=None):
     """The newest runs of the stats feed's rows, with a title and an outcome each.
     Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run.
-    ended: only pipeline and Slack runs that ended, newest end first (the Sandboxes page's Recently completed)."""
+    ended: only pipeline and Slack runs that ended, newest end first (the Sandboxes page's Recently completed).
+    src_only: pipeline, slack or routine (a Slack run of a routine), applied before the limit."""
     titles, prs = {}, {}
     for k in ("blocked", "inflight", "review", "open_prs", "merged_prs"):
         for i in (snap or {}).get(k) or []:
@@ -286,17 +287,23 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             except (OSError, ValueError):
                 routine = False
             if routine and not admin:
-                title, key, num = "Scheduled run", "", None
+                num = None
             outcome = "running" if r.get("live") else "pr" if num else "answered"
         elif src == "answer":
             title, outcome = "Quick answer", "failed" if kind == "failed" else "answered"
         else:
             title, outcome = JOB_TITLES.get(kind, kind.capitalize() or "Job"), "done"
+        if src_only and src_only != ("routine" if routine else src):
+            continue
+        usd_, min_, stop = r.get("usd"), r.get("min"), r.get("stop")
+        if routine and not admin:
+            # A routine run tells a non-admin only that it ran: no prompt, session, PR, team or cost.
+            title, key, num, team, usd_, min_, stop = "Scheduled run", "", None, "", None, None, None
         url = num and f"https://github.com/{r.get('prr') or repo}/pull/{num}"
         out.append({"at": r["at"], "src": src, "kind": kind, "key": key, "title": title, "team": team, "outcome": outcome,
-                    "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": r.get("usd"), "min": r.get("min"),
+                    "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": usd_, "min": min_,
                     "end": end_of(r), "where": r.get("backend") if src == "slack" else None, "boot_s": r.get("boot_s"),
-                    "mem_mb": (r.get("peak") or {}).get("mem_mb") if isinstance(r.get("peak"), dict) else None, "stop": r.get("stop"), "routine": routine})
+                    "mem_mb": (r.get("peak") or {}).get("mem_mb") if isinstance(r.get("peak"), dict) else None, "stop": stop, "routine": routine})
         if len(out) >= limit:
             break
     return out
@@ -1054,13 +1061,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json(200, {"run": run, "models": [], "error": type(exc).__name__})
         elif path == "/api/runs/recent":
-            lim, days, ended = arg("limit"), arg("days"), arg("ended") == "1"
+            lim, days, ended, src = arg("limit"), arg("days"), arg("ended") == "1", arg("src")
             rows = (STATS.read()[0] or {}).get("rows")
             # A private team's runs name its tickets: only a signed team admin sees them, as with lessons.
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
             runs = recent_runs(rows, FULL.read()[0], int(time.time()), min(int(lim), 100) if lim.isdigit() and int(lim) else 20,
                                min(int(days), 90) if days.isdigit() and int(days) else 7, os.path.dirname(ERRORS_FILE), str(SESSION_DIR),
-                               lambda t: not admin and team_private(t), admin, ended)
+                               lambda t: not admin and team_private(t), admin, ended, src if src in ("pipeline", "slack", "routine") else None)
             self._json(200, {"runs": runs, "error": None if rows is not None else "stats unavailable"})
         elif path == "/api/stats":
             data = STATS.read()[0]

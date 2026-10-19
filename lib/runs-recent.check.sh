@@ -59,6 +59,12 @@ check("ended=1: ended pipeline and Slack runs, newest end first, the private tea
 check("ended=1: the Slack run's where, boot, memory, stop and end", ("firecracker", 38, 6144, "idle", int(now - 200), False), tuple(e[1][k] for k in ("where", "boot_s", "mem_mb", "stop", "end", "routine")))
 check("a routine run in ended mode keeps its gate: no prompt, no key, routine true", ("Scheduled run", "", True), (lambda x: (x["title"], x["key"], x["routine"]))(server.recent_runs(rows + [dict(next(r for r in rows if r["key"] == "agent-rout01"), end=int(now - 10))], snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, False, True)[0]))
 check("a run with no end: end from at", int(now - 500), by["FXA-2"]["end"])
+check("a routine run for a non-admin sends no team, cost, minutes or stop reason", ("", None, None, None), (lambda x: (x["team"], x["usd"], x["min"], x["stop"]))(b["runs"][0]))
+many = rows + [{"at": iso(10 + i), "src": "slack", "key": f"agent-zz{i:04d}", "kind": "session", "usd": 0.1, "min": 1, "end": int(now - 10 - i), "profile": "fxa"} for i in range(120)]
+s = server.recent_runs(many, snap, int(now), 100, 7, t + "/state", t + "/sess", lambda team: False, True, True, "pipeline")
+check("src=pipeline filters before the limit: 120 newer Slack runs do not push the pipeline runs out", ["PRIV-1", "FXA-1"], [r["key"] for r in s])
+check("src=routine keeps only routine runs", [True], [r["routine"] for r in server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True, False, "routine")])
+check("the route passes src", ["FXA-1"], [r["key"] for r in get("/api/runs/recent?ended=1&src=pipeline&limit=100")["runs"]])
 server.STATS.data = None
 check("no stats feed: empty with an error", ([], "stats unavailable"), (lambda x: (x["runs"], x["error"]))(get("/api/runs/recent")))
 sys.exit(fail)
