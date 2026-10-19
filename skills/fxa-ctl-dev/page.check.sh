@@ -236,4 +236,9 @@ ck "system: it says when it cannot tell, and shows no false time" "true|true|tru
   RTSUM_AT = Date.now() - 50000; const f = st({}, t => /Routine times unknown: the routine store cannot be read/.test(t) && !/2:00 AM/.test(t));
   STATE.age_seconds = 900; const g = st({ pass_times: [now + 300] }, t => /Pass times unknown: the snapshot is 15 min old/.test(t) && !document.querySelector("#ov-sys svg line"));
   return [a, b, c, d, e, f, g].join("|")')"
+# The Overview fixture (sample data only, times relative to the run): every card renders, none errors.
+O="$(dirname "$0")/page-fixture-overview.json"
+ck "overview fixture: every card heading, no section error, relative times read as recent" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const hs = ["ov-spend", "ov-today", "ov-floor", "ov-sys", "ov-mini"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
+  return [hs, !document.getElementById("main").innerText.includes("did not render"), /PRs merged in the last 7 days/.test(document.getElementById("ov-mini").textContent) && document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent === "6"].join("|")')"
 exit $fail

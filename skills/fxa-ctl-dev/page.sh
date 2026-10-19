@@ -21,6 +21,16 @@ python3 - "$page" "$fixture" "$probe" "$dir/p.html" <<'PY'
 import json, sys
 page, fixture, probe, out = sys.argv[1:]
 fx = json.load(open(fixture))
+# Times relative to the run: "@iso-3600" is an ISO time an hour ago, "@epoch+600" an epoch 10 min ahead.
+import re, time, datetime
+def rel(v):
+    if isinstance(v, dict): return {k: rel(x) for k, x in v.items()}
+    if isinstance(v, list): return [rel(x) for x in v]
+    m = re.fullmatch(r"@(iso|epoch)([+-]\d+)", v) if isinstance(v, str) else None
+    if not m: return v
+    t = time.time() + int(m.group(2))
+    return int(t) if m.group(1) == "epoch" else datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+fx = rel(fx)
 # The longest fixture key that the URL path starts with wins; a miss answers [] for a list-like path, else {}.
 stub = """<script>const __F=%s;window.fetch=async(u)=>{const p=new URL(String(u),location.href).pathname;
 const k=Object.keys(__F).filter(k=>p===k||p.startsWith(k+"/")).sort((a,b)=>b.length-a.length)[0];
