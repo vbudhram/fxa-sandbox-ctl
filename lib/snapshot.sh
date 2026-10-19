@@ -202,7 +202,10 @@ _snapshot_agent_json() {
 # One pipeline run and one pass or triage job as a Stats row: for this pipeline and for each other team's.
 _STATS_RUN_ROW='def runrow: { at: .recorded_at, src: "pipeline", key: .issue, kind: (.kind // "not recorded"),
   usd: (.cost_usd // 0 | . * 100 | round / 100), min: (if (.wall_seconds // 0) > 0 then (.wall_seconds / 60 | round) else null end), model: (.model // "" | if . == "<synthetic>" then "" else . end),
-  models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"), pr: ((.pr // "") != "") };'
+  models: (.cost_models // null), main_only: ((.cost_source // "") != "proxy"), pr: ((.pr // "") != ""),
+  end: (if (.launched_at // 0) > 0 and (.wall_seconds // 0) > 0 then (.launched_at + .wall_seconds | floor) else (.recorded_at // "" | try fromdateiso8601 catch null) end),
+  prn: ([.pr // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
+  prr: ([.pr // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null) };'
 _STATS_JOB_ROW='def jobrow($llm): { at, src: "pass", key: .job, kind: .job, usd: (($llm.runs[.run // ""] // .cost_usd // 0) * 100 | round / 100),
   min: ((.duration_ms // 0) / 60000 | round), model: ((((.models // []) | map(select(test("haiku") | not)) | first) // (.models // [])[0]) // ""), pr: false };'
 
@@ -620,20 +623,20 @@ snapshot_agents_json() {
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "slots: $(( $(date +%s) - started ))s" >&2
   today="$(_snapshot_today)"
   # sessions goes to jq as a file below: as an argument it passed the 128 KB limit (exit 126).
-  local sessions; sessions="$(_snapshot_sessions "$now")"
+  local sessions fcs; sessions="$(_snapshot_sessions "$now")"; fcs="$(_fc_state)"
   [ -n "${FXA_SNAPSHOT_TIMING:-}" ] && echo "sessions: $(( $(date +%s) - started ))s" >&2
   jq -n --arg at "$(date -u +%FT%TZ)" --argjson secs "$(( $(date +%s) - started ))" \
     --arg backend "${FXA_VM_BACKEND:-tart}" \
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     --argjson hourly "${FXA_GCE_HOURLY_USD:-0.13}" --argjson cap "${cap:-0}" \
-    --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --argjson fc "$( declare -F _fc_up >/dev/null && _fc_up && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
+    --argjson mgr "${FXA_MANAGER_HOURLY_USD:-0}" --arg fcs "$fcs" --argjson fc "$( [ "$fcs" = up ] && echo "${FXA_FC_HOURLY_USD:-1.12}" || echo 0 )" \
     --argjson runners "$runners" --argjson instances "$instances" --argjson pool "$pool" \
     --argjson free "$free" --argjson today "$today" --slurpfile sessions <(printf '%s' "${sessions:-[]}") \
     '{ generated_at: $at, took_seconds: $secs, backend: $backend,
        zone: (if $zone == "" then null else $zone end),
        launchcap: $cap, free_slots: $free, pool: $pool, instances: $instances,
        runner_hourly_usd: (if $backend == "gce" then ($instances | map(select(.state == "running" and .where != "firecracker")) | length) * $hourly else 0 end),
-       infra_hourly_usd: ($mgr + $fc), infra: {manager: $mgr, firecracker_host: $fc},
+       infra_hourly_usd: ($mgr + $fc), infra: {manager: $mgr, firecracker_host: $fc, fc_state: $fcs},
        runners: $runners, sessions: $sessions[0], session_cap: '"$(_session_cap)"',
        session_idle_seconds: '"${FXA_SESSION_IDLE_SECONDS:-600}"', session_max_run_seconds: '"${FXA_SESSION_MAX_RUN_SECONDS:-14400}"',
        session_models: { claude: "'"${FXA_AGENT_MODEL:-claude-opus-5-5}"'", codex: "'"${FXA_CODEX_MODEL:-gpt-6-astra}"'" },
@@ -797,4 +800,10 @@ snapshot_json() {
                  newtickets_note: (if $hold == "" then null else $hold end),
                  focus: (if $focus == "" then null else $focus end) },
          telemetry: $telemetry }'
+}
+
+# _fc_state   The Firecracker host for the Sandboxes page: none (no host set), up or down.
+_fc_state() {
+  [ -n "${FXA_FC_HOST:-}" ] || { echo none; return; }
+  declare -F _fc_up >/dev/null && _fc_up && echo up || echo down
 }
