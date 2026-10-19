@@ -2493,6 +2493,20 @@ cmd_steer() {
   echo "${key} started"
 }
 
+# _session_job_died <key> <state>   A boot or finish job that died (a host restart): settle the state so it
+# is not stuck, record why, and print the new state. The message names the ship the person started.
+_session_job_died() {
+  local key="$1" what="Open PR"
+  case "$2" in
+    starting) session_set "$key" state failed
+      errors_record session boot_died "$key" "session boot" "the boot job ended before the session started" "agent-sessions/${key}.log"; echo failed ;;
+    wrapping) [ "$(session_get "$key" wrap_mode)" = push ] && what="Push branch"
+      session_set "$key" state active last_error "${what} stopped before it finished. Try again."
+      errors_record session finish_died "$key" "session-finish" "the finish job ended without reporting: $(tail -c 300 "${SESSION_DIR}/${key}.finish.log" 2>/dev/null | tr '\n' ' ' || true)" "agent-sessions/${key}.finish.log"; echo active ;;
+    *) echo "$2" ;;
+  esac
+}
+
 cmd_events() {
   local key="${1:-}" since=0
   [ "${2:-}" = --since ] && since="${3:-0}"
@@ -2502,14 +2516,7 @@ cmd_events() {
   state="$(session_get "$key" state)"; name="$(worktree_branch_for "$key")"
   # A boot or finish job that died (a host restart) would leave the state stuck.
   local job; job="$(session_get "$key" job_pid)"
-  if [ -n "$job" ] && ! kill -0 "$job" 2>/dev/null; then
-    case "$state" in
-      starting) session_set "$key" state failed; state=failed
-        errors_record session boot_died "$key" "session boot" "the boot job ended before the session started" "agent-sessions/${key}.log" ;;
-      wrapping) session_set "$key" state active last_error "Open PR stopped before it finished. Try again."; state=active
-        errors_record session finish_died "$key" "session-finish" "the finish job ended without reporting: $(tail -c 300 "${SESSION_DIR}/${key}.finish.log" 2>/dev/null | tr '\n' ' ' || true)" "agent-sessions/${key}.finish.log" ;;
-    esac
-  fi
+  if [ -n "$job" ] && ! kill -0 "$job" 2>/dev/null; then state="$(_session_job_died "$key" "$state")"; fi
   case "$state" in
     starting) act="$(_session_boot_step "$key")" ;;
     failed)
