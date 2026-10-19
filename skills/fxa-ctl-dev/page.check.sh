@@ -271,4 +271,16 @@ ck "review 2: 'Merged, 7 days' on Overview equals the Stats PRs Merged card it o
   STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(1) }, { n: 2, key: "EX-2", title: "b", state: "MERGED", src: "pipeline", created: ago(2), merged: ago(1) }] };
   renderOvMini(); const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
   return [o, [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent].join("|")')"
+# Epic review 3: the range buttons keep the focus; Stats PRs shows a week of merges of older PRs; a stale agents
+# feed makes routine runs unknown.
+ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs shows merges of older PRs; routine runs unknown on a stale agents feed" "true|1|1|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
+  const b = document.querySelector("[data-ovrange=\"7d\"]"); b.focus(); b.click(); await w(); AGENTS.runners[0].agent_alive = false; render(); await w();
+  const a = document.activeElement?.dataset.focus === "ovr-7d" && document.querySelector("[data-ovrange=\"7d\"]").getAttribute("aria-pressed") === "true";
+  STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(2) }] }; renderOvMini();
+  const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
+  const k = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent;
+  location.hash = "#overview"; await w(); TEAM_ADMIN = { admin: true }; AGENTS.sessions = [{ key: "agent-rt0009", state: "active", agent_alive: true, routine_run: 9, routine_name: "Ghost run", created: Date.now() / 1000 }];
+  STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render(); const t = document.getElementById("ov-sys").innerText;
+  return [a, o, k, /Routine runs unknown/.test(t) && !/Ghost run runs now/.test(t)].join("|")')"
 exit $fail

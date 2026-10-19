@@ -969,7 +969,7 @@ function statsNote() {
 const localDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 function renderOvHead() {
   const f = ovFloor(), hr = STATS?.llm?.hour_usd, llm = typeof hr === "number" && !statsNote() ? ` · LLM ${usd(hr)} in the last hour` : "";
-  put("ov-head", `<span class="ovchip"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span><div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
+  putOv("ov-head", `<span class="ovchip"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span><div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; safeRender(renderOvHead, "ov-head"); safeRender(renderOvSpend, "ov-spend"); } });
 // Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
@@ -1090,7 +1090,9 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
   else if (h.lock_age_seconds != null && h.lock_age_seconds > (h.lock_stale_seconds ?? 1800)) out.now.push(["w", `A pass lock is ${mins(h.lock_age_seconds)} min old. The next pass clears it, or run fxa-sandbox-ctl unlock.`]);
   else if (h.lock_age_seconds != null) out.now.push(["", `Pipeline pass · runs now · ${short(h.lock_age_seconds)}`]);
   else out.now.push(["", `Pipeline pass · last ${ago(h.seconds_since_pass)} · ${gateLine(now).text}`]);
-  if (admin) (AGENTS?.sessions ?? []).filter(x => x.routine_run && LIVE_SESSION.includes(x.state)).forEach(x => out.now.push(["", `Routine ${x.routine_name || `run ${x.routine_run}`} runs now`]));
+  const agentsOld = STATE.agents_error || (STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval);
+  if (admin && agentsOld) out.now.push(["w", "Routine runs unknown: the agents feed is not current"]);
+  else if (admin) (AGENTS?.sessions ?? []).filter(x => x.routine_run && LIVE_SESSION.includes(x.state)).forEach(x => out.now.push(["", `Routine ${x.routine_name || `run ${x.routine_run}`} runs now`]));
   // CI and merge watch: the PR states; a failed read is unknown, never a confident empty.
   const gh = SNAP && (SNAP.review == null || SNAP.inflight_prs_failed);
   if (old) {}
@@ -2261,7 +2263,8 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const repo = teamRepo(), all = st.prs ?? [], rows = st.rows ?? [];
   const prs = all.filter(p => { const t = Date.parse(p.created); return t >= lo && t < hi
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
-  if (!prs.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened in this range matches these filters." : "No PR list yet."}</div>`;
+  // A PR opened before the range and merged in it still counts as merged here, as on Overview.
+  if (!prs.length && !costPerMerged(lo, hi, all, rows).mergedIn.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened or merged in this range matches these filters." : "No PR list yet."}</div>`;
   // LLM and the session's runner compute, where it was recorded.
   // A session's PR number counts only in this repo's list: a team repo has its own #123.
   const cost = p => rows.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
