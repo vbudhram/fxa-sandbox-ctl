@@ -7,8 +7,9 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/ctl" <<'SH'
 #!/bin/sh
 case "$*" in
-  *"lessons --json"*) echo '[{"id":"a1","team":"fxa","text":"an fxa lesson"},{"id":"b2","team":"privteam","text":"a private lesson"},{"id":"c3","text":"an old lesson"}]' ;;
+  *"lessons --json"*) echo '[{"id":"a1","team":"fxa","text":"an fxa lesson"},{"id":"b2","team":"privteam","text":"a private lesson"},{"id":"c3","text":"an old lesson"},{"id":"d4","team":"ghost","text":"a team profile show cannot read"}]' ;;
   *"--pipeline privteam profile show"*) echo '{"private":true}' ;;
+  *"--pipeline ghost profile show"*) exit 1 ;;
   *"profile show"*) echo '{"private":false}' ;;
 esac
 SH
@@ -31,8 +32,8 @@ def ids(user=None):
         h.update({"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(b"k1", f"{user}|{ts}|GET|/api/lessons".encode(), hashlib.sha256).hexdigest()})
     with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/lessons", headers=h), timeout=10) as r:
         return [x["id"] for x in json.loads(r.read().decode())]
-check("no signed user: no private team's lesson", ["a1", "c3"], ids())
+check("no signed user: no private team's lesson, nor one whose team cannot be read", ["a1", "c3"], ids())
 check("a signed user who is not an admin: the same", ["a1", "c3"], ids("other@example.com"))
-check("a signed team admin sees every lesson", ["a1", "b2", "c3"], ids("admin@example.com"))
+check("a signed team admin sees every lesson", ["a1", "b2", "c3", "d4"], ids("admin@example.com"))
 sys.exit(fail)
 PY

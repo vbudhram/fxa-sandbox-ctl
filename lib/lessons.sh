@@ -39,7 +39,8 @@ _lessons_add() {
   local all item id n=0; all="$(_lessons_all)"
   while IFS= read -r item; do
     [ -n "$item" ] || continue
-    id="$(jq -r .text <<<"$item" | shasum | cut -c1-8)"   # the same lesson twice is one row
+    # The same lesson twice is one row, for each team: FxA's ids stay the text's hash, as before teams.
+    id="$( { [ "${3:-fxa}" = fxa ] || printf '%s|' "$3"; jq -r .text <<<"$item"; } | shasum | cut -c1-8)"
     jq -e --arg id "$id" 'any(.[]; .id == $id)' <<<"$all" >/dev/null && continue
     all="$(jq -c --arg id "$id" --argjson x "$item" '. + [$x + {id: $id}]' <<<"$all")"; n=$((n + 1))
   done < <(jq -c '.[]' <<<"$new")

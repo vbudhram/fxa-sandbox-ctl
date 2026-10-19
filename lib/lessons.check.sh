@@ -66,5 +66,12 @@ fi
   check "the team's own run gets it" "1" "$(PIPE_PROFILE=privteam lessons_approved_md | grep -c 'make dist' || true)"
   jq -c '. + [{id: "0ld0ld00", text: "A lesson saved before teams existed.", status: "approved", session: "agent-old"}]' "$FXA_LESSONS_FILE" > "$FXA_LESSONS_FILE.t" && mv "$FXA_LESSONS_FILE.t" "$FXA_LESSONS_FILE"
   check "a lesson with no team still reaches FxA runs, and no other team's" "1|0" "$(lessons_approved_md | grep -c 'before teams existed' || true)|$(PIPE_PROFILE=privteam lessons_approved_md | grep -c 'before teams existed' || true)"
+  # The same text from FxA is FxA's own row; a bad profile value falls back to the run's team.
+  session_get() { [ "$2" = profile ] && [ "$1" = agent-fx02 ] && echo fxa; [ "$2" = profile ] && [ "$1" = agent-bad1 ] && echo 'Bad/Team'; }
+  lessons_collect agent-fx02 runner-y 2>/dev/null
+  check "the same text from two teams is two rows, each with its team" "fxa privteam" "$(cmd_lessons --json | jq -r '[.[] | select(.text | test("make dist")) | .team] | sort | join(" ")')"
+  _session_sh() { echo '[{"lesson":"A bad profile value falls back to the run team.","why":"x"}]'; }
+  PIPE_PROFILE=crew lessons_collect agent-bad1 runner-z 2>/dev/null
+  check "a profile value that is not a team name falls back to the run's team" "crew" "$(cmd_lessons --json | jq -r '.[] | select(.session == "agent-bad1") | .team')"
   exit "$fail" ) || fail=1
 exit $fail

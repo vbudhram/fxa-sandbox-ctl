@@ -194,7 +194,7 @@ cp "$here/db/003-llm-thread.sql" "$mig/"; FXA_DB="$tmp/old.db" _DB_DIR="$mig" db
 check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169 ask-ab12|C0AB12CD3:1791135361.015169 fxa-1|" \
   "$(FXA_DB="$tmp/old.db" _db "SELECT run || '|' || coalesce(thread, '') FROM llm_calls ORDER BY run;" | tr '\n' ' ' | sed 's/ $//')"
 
-[ "$fail" = 0 ] && echo "all checks pass"; # Schema 9: a lesson stored at schema 8 gets team fxa; a new one keeps its team, and an update keeps it too.
+# Schema 9: a lesson stored at schema 8 gets team fxa; a new one keeps its team, and an update keeps it too.
 ( export FXA_DB="$tmp/m9.db"; source "$here/db.sh"
   mkdir -p "$tmp/m9"; for f in "$here"/db/00[1-8]-*.sql; do cp "$f" "$tmp/m9/"; done
   real="$_DB_DIR"; _DB_DIR="$tmp/m9"; db_init >/dev/null
@@ -207,4 +207,4 @@ check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169
       "$(_db "PRAGMA user_version;")|$(db_value "SELECT team FROM lessons WHERE id = 'o1';")|$(db_value "SELECT team FROM lessons WHERE id = 'n1';")"
   else echo "FAIL schema 9: could not build a schema 8 store to migrate"; fail=1; fi
   exit "$fail" ) || fail=1
-exit "$fail"
+[ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
