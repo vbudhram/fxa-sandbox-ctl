@@ -301,6 +301,7 @@ _stats_add_rows() {
       'days', (SELECT json_group_array(json_object('day', day, 'usd', usd, 'calls', calls, 'cache_write_usd', cw)) FROM (SELECT * FROM
                (SELECT substr(at, 1, 10) AS day, round(sum(usd), 2) AS usd, count(*) AS calls, round(sum(coalesce(usd_cache_write, 0)), 2) AS cw
                 FROM llm_calls WHERE $keep GROUP BY 1 ORDER BY 1 DESC LIMIT 30) ORDER BY day)),
+      'hour_usd', (SELECT coalesce(round(sum(usd), 2), 0) FROM llm_calls WHERE $keep AND unixepoch(at) > unixepoch('now') - 3600),
       'gap_usd', (SELECT round(coalesce(sum(usd_cache_write), 0), 2) FROM (SELECT usd_cache_write, at, lag(at) OVER (PARTITION BY run ORDER BY at, id) AS prev
                FROM llm_calls WHERE run IS NOT NULL AND $keep) WHERE (unixepoch(at) - unixepoch(prev)) > 300),
       'models', (SELECT json_group_array(json_object('day', day, 'model', model, 'calls', calls, 'usd', usd, 'input', i, 'cache_read', cr, 'cache_write', cw, 'output', o))
@@ -317,6 +318,7 @@ _stats_add_rows() {
                value: (group_by(.model) | map({key: .[0].model, value: (map(.usd) | add | r2)}) | from_entries)}) | from_entries),
       days: (group_by(.at[0:10]) | map({day: .[0].at[0:10], usd: (map(.usd) | add | r2), calls: length,
                cache_write_usd: (map(.usd_cache_write // 0) | add | r2)}) | .[-30:]),
+      hour_usd: (now as $n | map(select((.at[0:19] + "Z" | fromdate? // 0) > $n - 3600) | .usd // 0) | add // 0 | r2),
       gap_usd: (map(select(.run != null)) | group_by(.run) | map(sort_by(.at) | . as $c
                | [range(1; length) | select(($c[.].at | fromdate) - ($c[. - 1].at | fromdate) > 300) | $c[.].usd_cache_write // 0] | add // 0) | add // 0 | r2),
       models: ((map(.at[0:10]) | unique | .[-14:]) as $d | map(select(.at[0:10] as $x | $d | index($x)))

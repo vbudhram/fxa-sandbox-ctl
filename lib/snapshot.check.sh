@@ -98,6 +98,25 @@ rm -rf "$pd"
   check "stats: the LLM days and models leave out test runs" "1.25|1.25" "$(jq -r '"\(.llm.days | map(.usd) | add)|\(.llm.models | map(.usd) | add)"' <<< "$out")"
   exit "$fail" ) || fail=1
 
+# llm.hour_usd: the proxy spend of the last hour, test runs left out, on the jsonl and the store paths.
+( export SESSION_DIR="$tmp/hr" PIPE_STATE_DIR="$tmp/hrps" FXA_LLM_PROXY_DIR="$tmp/hrp" FXA_DB="$tmp/hr.db"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR" "$FXA_LLM_PROXY_DIR"
+  _session_records() { printf '%s\n' '{"key":"agent-dev002","owner":"U1","env":"dev","created":1}'; }
+  ago() { date -u -r $(( $(date +%s) - $1 )) +%FT%TZ 2>/dev/null || date -u -d "@$(( $(date +%s) - $1 ))" +%FT%TZ; }
+  printf '%s\n' "{\"at\":\"$(ago 600)\",\"run\":\"agent-x\",\"usd\":0.3}" "{\"at\":\"$(ago 1200)\",\"run\":null,\"usd\":0.12}" \
+    "{\"at\":\"$(ago 900)\",\"run\":\"agent-dev002\",\"usd\":5}" "{\"at\":\"$(ago 7200)\",\"run\":\"agent-x\",\"usd\":9}" > "$FXA_LLM_PROXY_DIR/usage.jsonl"
+  db_on() { false; }
+  check "stats: hour_usd sums the last hour, with the test session left out (usage.jsonl)" "0.42" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r .llm.hour_usd)"
+  printf '%s\n' "{\"at\":\"$(ago 7200)\",\"run\":\"agent-x\",\"usd\":9}" > "$FXA_LLM_PROXY_DIR/usage.jsonl"
+  check "stats: hour_usd is 0 when the last hour was quiet (usage.jsonl)" "0" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r .llm.hour_usd)"
+  if command -v sqlite3 >/dev/null; then
+    unset -f db_on; source "$(dirname "$0")/db.sh"; db_init >/dev/null
+    sqlite3 "$FXA_DB" "INSERT INTO llm_calls (at, run, usd) VALUES ('$(ago 600)','agent-x',0.3),('$(ago 1200)',NULL,0.12),('$(ago 900)','agent-dev002',5),('$(ago 7200)','agent-x',9);"
+    check "stats: hour_usd from the store, the test session left out" "0.42" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r .llm.hour_usd)"
+    sqlite3 "$FXA_DB" "DELETE FROM llm_calls WHERE usd < 9;"
+    check "stats: hour_usd from the store is 0 when quiet" "0" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq -r .llm.hour_usd)"
+  fi
+  exit "$fail" ) || fail=1
+
 # Team memory: saves by result and the learnings they moved in the last 30 days, and the last digest.
 ( export FXA_MEMORY_LOG="$tmp/mem.jsonl"
   printf '%s\n' "{\"at\":\"$(date -u +%FT%TZ)\",\"run\":\"agent-a\",\"result\":\"saved\",\"added\":1,\"inbox\":2,\"dropped\":1}" \
