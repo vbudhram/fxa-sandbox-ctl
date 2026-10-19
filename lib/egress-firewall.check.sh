@@ -29,6 +29,15 @@ check "silent failure still reports" "yes" "$(grep -q 'exit 255' <<<"$out" && ec
 vm_exec() { return 0; }
 check "success is silent" "" "$(_setup_egress_firewall vm 2>&1)"
 
+# The local services the agent drives (Redis, MySQL, goaws as root) get loopback only, when the agent is limited.
+vm_exec() { [ "$3" = env ] && printf "%s" "${!#}" > "$tmp_s"; return 0; }
+tmp_s="$(mktemp)"; _setup_egress_firewall vm >/dev/null 2>&1
+check "the script limits redis-server, mysql and goaws to loopback" "yes|yes" \
+  "$(grep -q 'for u in redis-server mysql goaws' "$tmp_s" && echo yes)|$(grep -q 'set-property --runtime "$u.service" IPAddressDeny=any IPAddressAllow=localhost' "$tmp_s" && echo yes)"
+check "the service limit sits in the limited branch, after the agent REJECT" "yes" \
+  "$(awk '/--uid-owner agent -j REJECT --reject-with/ {r=NR} /for u in redis-server mysql goaws/ {u=NR} /if \[ "\$FXA_EGRESS_ALLOW_ALL" = "1" \]; then/ && !a {a=NR} END {print (r && u > r && a < r) ? "yes" : "no"}' "$tmp_s")"
+rm -f "$tmp_s"
+
 # After the firewall, the agent's DNS filter runs with the allowed hosts, from templates/agent-dns.sh.
 # The calls tell apart by their third word: env for the firewall, bash for the DNS step.
 log="$(mktemp)"
