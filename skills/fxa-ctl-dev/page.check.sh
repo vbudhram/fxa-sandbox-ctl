@@ -280,7 +280,8 @@ ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs 
   STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(2) }] }; renderOvMini();
   const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
   const k = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent;
+  SF = { ...SF, src: "slack" }; LAST["s-stats"] = ""; renderStats(); const k2 = /No PR opened or merged in this range matches these filters/.test(document.getElementById("s-stats").textContent);
   location.hash = "#overview"; await w(); TEAM_ADMIN = { admin: true }; AGENTS.sessions = [{ key: "agent-rt0009", state: "active", agent_alive: true, routine_run: 9, routine_name: "Ghost run", created: Date.now() / 1000 }];
   STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render(); const t = document.getElementById("ov-sys").innerText;
-  return [a, o, k, /Routine runs unknown/.test(t) && !/Ghost run runs now/.test(t)].join("|")')"
+  return [a, o, k2 ? k : "filter ignored", /Routine runs unknown/.test(t) && !/Ghost run runs now/.test(t)].join("|")')"
 exit $fail
