@@ -435,19 +435,19 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
 JS
 rc=$?
 # Sandboxes panel (i407 sb-panel): sbDetails() for a session, a pipeline row, a fix row and a routine row as a non-admin.
-fns="$(sed -n '/^const esc = /p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p; /^function sbClearGone(/,/^}/p' "$page")"
+fns="$(sed -n '/^const esc = /p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const sessTabOf = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p; /^function sbClearGone(/,/^}/p' "$page")"
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 eval(process.argv[1].replace(/^(let|const) /gm, "var "));
 let fail = 0;
 const t = (name, got, want) => { if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } };
 const now = 1790000000;
-globalThis.AGENTS = { session_max_run_seconds: 14400 }; globalThis.TEAM_ADMIN = { admin: true };
+globalThis.AGENTS = { session_max_run_seconds: 14400, sessions: [{ key: "agent-abc123", state: "active" }, { key: "agent-rout01", state: "active" }] }; globalThis.TEAM_ADMIN = { admin: true };
 const rows = { live: [
-  { id: "sess:agent-abc123", src: "slack", key: "agent-abc123", session: "agent-abc123", title: "<img src=x onerror=alert(1)>", team: "fxa", where: "firecracker", state: "active", started: now - 600, boot_s: "41", pr: "https://github.com/example/repo/pull/41",
+  { id: "sess:agent-abc123", src: "slack", key: "agent-abc123", session: "agent-abc123", title: "<img src=x onerror=alert(1)>", team: "fxa", where: "firecracker", state: "working", started: now - 600, boot_s: "41", pr: "https://github.com/example/repo/pull/41",
     boot_steps: JSON.stringify([{ step: "restoring", s: 3 }, { step: "checking out the commit", s: 30 }, { step: "starting the stack", s: 8 }]), res_peak: JSON.stringify({ load1: 3.2, mem_mb: 4812, disk_pct: 41 }) },
   { id: "pipe:fxa-auto-1", src: "pipeline", key: "FXA-1", slot: "fxa-auto-1", team: "fxa", state: "Agent", started: null, age: 1800, max_seconds: 5400, usd: 1.25 },
-  { id: "sess:agent-rout01", src: "routine", key: "agent-rout01", session: "agent-rout01", routine_run: 7, routine_name: "Nightly review", team: "fxa", where: "firecracker", state: "active", started: now - 60, pr: "https://github.com/example/repo/pull/9", res_peak: "{broken" },
+  { id: "sess:agent-rout01", src: "routine", key: "agent-rout01", session: "agent-rout01", routine_run: 7, routine_name: "Nightly review", team: "fxa", where: "firecracker", state: "working", started: now - 60, pr: "https://github.com/example/repo/pull/9", res_peak: "{broken" },
   { id: "sess:javascript:alert(1)", src: "slack", key: "javascript:alert(1)", session: "javascript:alert(1)", team: "../x", state: "active", started: now - 60 }],
   fix: [{ id: "fix:agent-def456", src: "slack", key: "agent-def456", fix: { why: "The runner is still up 10 min after its session stopped.", cmd: "fxa-sandbox-ctl stop agent-def456", steps: null } }] };
 globalThis.sbRows = () => rows; globalThis.sbTabHas = r => (globalThis.TAB_SRC ?? r.src) === r.src;
@@ -471,7 +471,7 @@ t("panel: a bad session key and team give no link", !/href="#sessions|href="#tea
 t("panel: an id that is not in the rows gives null", sbDetails("fix:gone", now), null);
 rows.stale = true; const fs = sbDetails("fix:agent-def456", now); rows.stale = false;
 t("panel: a stale feed shows the fix text and no command", fs.includes("still up 10 min") && !fs.includes("<code>") && fs.includes("feed is stale"), true);
-t("panel: the source never reads AGENTS.sessions or calls sessionDetails", /AGENTS\??\.sessions|sessionDetails\(/.test(sbDetails.toString()), false);
+t("panel: the session record gives only the Sessions tab (sessTabOf), never a name, request or output, and the panel never calls sessionDetails", /sessionDetails\(|sx\.|AGENTS\??\.sessions\??\.(?!find)/.test(sbDetails.toString()), false);
 const gated = { id: "sess:agent-rout02", src: "routine", key: "agent-rout02", session: "agent-rout02", routine_run: 8, title: "", team: "", where: "firecracker", state: "active", started: now - 60 };
 rows.live.push(gated); TEAM_ADMIN.admin = false; const g = sbDetails("sess:agent-rout02", now); TEAM_ADMIN.admin = true;
 t("panel: a routine row that arrives gated shows the gated text and no link", g.includes("Routine · scheduled run") && !/href="#/.test(g), true);
@@ -495,4 +495,8 @@ t("panel: a known row list with the row gone gives null", sbDetails("fix:agent-d
 globalThis.TAB_SRC = "pipeline"; t("panel: a row of another tab gives null", sbDetails("fix:agent-def456", now), null);
 process.exit(fail);
 JS
-[ $? = 0 ] && exit "$rc" || exit 1
+[ $? = 0 ] || exit 1
+# fixCmd() is the only source of a Sandboxes stop command: the old pool and its instFix are gone (i407).
+if grep -qE '\b(instFix|renderPool)\b' "$page"; then echo "FAIL the page still has instFix or renderPool"; exit 1; fi
+echo "ok   the page has no instFix and no renderPool"
+exit "$rc"
