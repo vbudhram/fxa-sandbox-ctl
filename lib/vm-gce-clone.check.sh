@@ -47,6 +47,7 @@ android() { FXA_GCE_NESTED=1 FXA_GCE_MACHINE_TYPE=n2-standard-8 FXA_GCE_MACHINE_
 printf '%s\n' n2-standard-8@z-a=ok > "$tmp/out"; : > "$calls"; : > "$tmp/args"; rm -f "$LOG_DIR/last-good-zone"
 android r4 >/dev/null 2>&1
 a="$(cat "$tmp/args")"
+check "a runner gets the fxa-runner tag, so the firewall rules for ssh and the desktop reach it" "1" "$(grep -c -- '--tags fxa-runner' <<< "$a")"
 check "android: nested virtualization, the android image, a 150 GB disk" "1|1|1" \
   "$(grep -c -- '--enable-nested-virtualization' <<< "$a")|$(grep -c -- '--image-family fxa-dev-android' <<< "$a")|$(grep -c -- '--boot-disk-size 150GB' <<< "$a")"
 printf '%s\n' n2-standard-8@z-a=out n2-standard-8@z-b=out n2-standard-8@z-c=out t2a-standard-4@z-a=ok > "$tmp/out"; : > "$calls"

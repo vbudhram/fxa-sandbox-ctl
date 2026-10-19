@@ -567,7 +567,7 @@ Set it up:
    `grafana-iap-access@moz-fx-platform-mgmt-global.iam.gserviceaccount.com`.
    `mzcld` listens on every interface, so its unit drops port 3000 from all
    but loopback.
-3. Open port 8789 to the runner subnets in the GCP firewall, as for 8788.
+3. Run `bash infra/gce/firewall.sh plan`, then `apply`. It opens 8788 and 8789 from the runner subnets to the manager only, and ssh and 6080 to the `fxa-runner` tag only.
 4. Pick connectors with the bot's `MCP_CONNECTORS`, which passes `task --mcp`.
    Only Slack sessions get connectors; ai-fixme pipeline runs never do. The
    pipeline's grounding pass on the host reads Figma and Bugzilla links instead.

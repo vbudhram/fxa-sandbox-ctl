@@ -168,6 +168,7 @@ vm_clone() {
         "${image_flags[@]}" \
         --boot-disk-type "$(_gce_disk_type "$mt")" --boot-disk-size "${FXA_GCE_DISK_GB:-50}GB" ${nested[@]+"${nested[@]}"} \
         --network "$FXA_GCE_NETWORK" --subnet "$FXA_GCE_NETWORK" --no-address \
+        --tags fxa-runner \
         --no-service-account --no-scopes \
         ${run_limit[@]+"${run_limit[@]}"} \
         --metadata "fxa-branch=${FXA_GCE_BRANCH:-},fxa-base=${FXA_WORKTREE_BASE:-main},block-project-ssh-keys=TRUE,ssh-keys=${USER:-$(id -un)}:$(cat "${FXA_GCE_SSH_KEY}.pub")" \
