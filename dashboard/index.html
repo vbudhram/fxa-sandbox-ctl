@@ -2716,9 +2716,13 @@ function renderTickets() {
           staleSkips.map(skipRow).join("")}</div></details>` : "")));
 }
 
+// A sandbox is up only while its instance runs. A stopped GCE instance (terminated) keeps its disk
+// and its name until it is deleted: it needs a fix, not a lifetime meter.
+const instUp = v => v.state === "running";
+const instFix = v => `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`;
 function renderPool() {
   const g = AGENTS; if (!g) return;
-  const pool = g.pool ?? [], free = g.free_slots ?? [], inst = g.instances ?? [];
+  const pool = g.pool ?? [], free = g.free_slots ?? [], all = g.instances ?? [], inst = all.filter(instUp), down = all.filter(v => !instUp(v));
   const { cards } = merged();
   const runnerByName = Object.fromEntries(inst.map(v => [v.name, v]));
   const cardByName = Object.fromEntries(cards.map(c => ["agent-" + c.name, c]));
@@ -2752,9 +2756,10 @@ function renderPool() {
     const ticket = TICKET.test(key.toUpperCase()) ? key.toUpperCase() : null;
     rows.push({ rank: 1, html: `<div class="slot held"><span class="nm">${ticket ? jira(ticket) : esc(v.name)}</span>${meter(v)}<span class="tag warn">pipeline · ${where} · no slot · ${esc(v.state)} · ${short(v.age_seconds)}</span></div>` });
   });
+  down.forEach(v => rows.push({ rank: 0, html: `<div class="slot over"><span class="nm">${esc(v.name)}</span><span class="meter none"></span><span class="tag bad">stopped · ${v.where === "firecracker" ? "Firecracker" : "GCE"} · ${esc(v.state)} · made ${short(v.age_seconds)} ago · delete it: <code>${esc(instFix(v))}</code></span></div>` }));
   const burn = (g.runner_hourly_usd ?? 0) + (g.infra_hourly_usd ?? 0), total = pool.length + virtual.length;
   const infra = g.infra_hourly_usd ? `sandboxes ${usd(g.runner_hourly_usd)}/h, always on ${usd(g.infra_hourly_usd)}/h (manager ${usd(g.infra?.manager)}/h, Firecracker host ${usd(g.infra?.firecracker_host)}/h), at list prices` : "";
-  put("s-pool", `<h2>${free.length} of ${total} slots free · ${inst.length} sandbox${inst.length === 1 ? "" : "es"} up<span class="note" title="${esc(infra)}">burn ${usd(burn)}/h · ${usd(burn * 24)}/day</span></h2>` +
+  put("s-pool", `<h2>${free.length} of ${total} slots free · ${inst.length} sandbox${inst.length === 1 ? "" : "es"} up${down.length ? ` · ${down.length} stopped` : ""}<span class="note" title="${esc(infra)}">burn ${usd(burn)}/h · ${usd(burn * 24)}/day</span></h2>` +
     (rows.length + freeChips.length === 0 ? `<div class="empty">no pool worktrees found</div>`
       : rows.sort((x, y) => x.rank - y.rank).map(r => r.html).join("") + (freeChips.length ? `<div class="freeslots"><span>Free</span>${freeChips.join("")}</div>` : "")));
 }
@@ -2928,7 +2933,8 @@ function sideGroups() {
   if (VIEW === "lessons") return [{ items: (LESSONS ?? []).filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).filter(l => hit(l.text)).map(l => ({ id: l.id, d: l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : "", t: l.text, m: [l.status, l.session] })) }];
   if (VIEW === "runners") {
     const inst = AGENTS?.instances ?? [], sessions = new Map((AGENTS?.sessions ?? []).map(x => [x.key, x]));
-    return [{ group: "Sandboxes up", items: inst.filter(v => hit(v.name)).map(v => { const k = v.name.replace(/^agent-/, ""), s = sessions.get(k);
+    return [{ group: "Stopped, needs a fix", items: inst.filter(v => !instUp(v) && hit(v.name)).map(v => ({ id: v.name, d: "bad", t: v.name, m: [v.where === "firecracker" ? "Firecracker" : "GCE", v.state, `made ${short(v.age_seconds)} ago`] })) },
+      { group: "Sandboxes up", items: inst.filter(v => instUp(v) && hit(v.name)).map(v => { const k = v.name.replace(/^agent-/, ""), s = sessions.get(k);
         return { id: v.name, d: "live", t: s ? convTitle(s) : TICKET.test(k.toUpperCase()) ? k.toUpperCase() : v.name, m: [v.where === "firecracker" ? "Firecracker" : "GCE", s ? "Slack" : "pipeline", short(v.age_seconds)] }; }) }].filter(g => g.items.length);
   }
   if (VIEW === "teams") {
@@ -3021,8 +3027,8 @@ function renderRight() {
       <p class="empty">Edit, approve or reject it in the list in the middle.</p>`; }
   else if (VIEW === "runners") { const id = SEL.runners ?? "", v = (AGENTS?.instances ?? []).find(x => x.name === id);
     if (v) { const s = (AGENTS?.sessions ?? []).find(x => x.key === v.name.replace(/^agent-/, ""));
-      html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${kvr("Up for", short(v.age_seconds))}${v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : ""}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
-        ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : kvr("Session", "pipeline run")}</div>`; } }
+      html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${instUp(v) ? kvr("Up for", short(v.age_seconds)) + (v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : "") : kvr("Made", `${short(v.age_seconds)} ago`)}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
+        ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : instUp(v) ? kvr("Session", "pipeline run") : kvr("Session", "none")}</div>${instUp(v) ? "" : `<div><h4>Fix</h4><p>The instance is stopped, not running. It keeps its disk until it is deleted. Delete it:</p><p><code>${esc(instFix(v))}</code></p></div>`}`; } }
   else if (VIEW === "teams") { renderTeams(); return; }
   const out = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
   // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.

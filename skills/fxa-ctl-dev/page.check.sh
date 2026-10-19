@@ -50,4 +50,13 @@ ck "Watch the agent opens the terminal, moves the focus there, and a poll keeps 
   const w = () => new Promise(r => setTimeout(r, 200)); document.querySelector("#bd-FXA-20 .main").click(); await w();
   const d = () => document.getElementById("lane-term-FXA-20"), o = d().open, f = !!document.activeElement?.closest("#lane-term-FXA-20");
   renderLanes(); await w(); return [o, f, d().open].join("|")')"
+# Sandboxes: a stopped GCE instance is not up. It has its own group and a fix, with no lifetime meter.
+R="$(mktemp "${TMPDIR:-/tmp}/fxa-runners.XXXXXX")"
+jq '."/api/snapshot".agents.instances = [{"name":"agent-agent-41c0e6","state":"terminated","age_seconds":213277,"max_seconds":5400,"where":"gce"},
+  {"name":"agent-fxa-9","state":"running","age_seconds":600,"max_seconds":5400,"where":"gce"}]' "$F" > "$R"
+ck "a stopped instance: its own group, a fix, not counted up, no meter" "Stopped, needs a fix;Sandboxes up|1 sandbox up · 1 stopped|true|true|1" "$(bash "$p" '#runners' --fixture "$R" --width 1280 --probe '
+  const h = [...document.querySelectorAll("#side h3, #side .grp, #side [data-group]")].map(e => e.textContent.trim()).filter(Boolean);
+  const pool = document.querySelector("#s-pool h2")?.textContent ?? "", stop = [...document.querySelectorAll("#s-pool .slot")].find(e => e.textContent.includes("41c0e6"));
+  return [h.join(";"), pool.replace(/burn.*/, "").split("free · ")[1]?.trim(), /fxa-sandbox-ctl stop agent-41c0e6/.test(stop?.textContent ?? ""), !!stop?.querySelector(".meter.none"), document.getElementById("n-runners").textContent].join("|")')"
+rm -f "$R"
 exit $fail
