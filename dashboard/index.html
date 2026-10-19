@@ -364,7 +364,7 @@
   .tabs a { font-family:var(--head); }
   .tabs a[aria-current] { color:var(--link); font-weight:700; border-bottom-color:var(--link); }
   .tabs a .n { font-size:var(--t-label); color:var(--faint); margin-left:var(--s1); font-variant-numeric:tabular-nums; }
-  .ovc { border:1px solid var(--card-border); box-shadow:var(--shadow); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
+  .tile, .ovc { border:1px solid var(--card-border); box-shadow:var(--shadow); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
   a.ovc { color:inherit; } a.ovc:hover { text-decoration:none; box-shadow:0 2px 14px rgb(58 57 68 / .2); }
   .ovc .big { font-family:var(--head); font-size:28px; font-weight:700; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .ovc .lbl { font:600 var(--t-sub) var(--head); color:var(--dim); }
@@ -921,7 +921,8 @@ function costPerMerged(lo, hi, prs, rows) {
 // putOv: put() for an Overview card. While a link in the card has the focus and the card's links and labels
 // did not change, the card is not rewritten, so a screen reader does not read it again; else the focus
 // goes back to the link with the same data-focus id.
-const focusKey = html => [...html.matchAll(/data-focus="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => `${m[1]}=${m[2]}`).join("|");
+const focusKey = html => [...html.matchAll(/data-focus="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => `${m[1]}=${m[2]}`)
+  .concat([...html.matchAll(/class="big">([^<]*)</g)].map(m => m[1])).join("|");
 function putOv(id, html) {
   const node = document.getElementById(id); if (!node) return false;
   const a = document.activeElement, f = node.contains(a) ? a.dataset?.focus : null, fk = focusKey(html);
@@ -937,7 +938,7 @@ function ovNeeds() {
   merged().cards.forEach(c => { if (!c.ci && (c.base_ok === false || c.agent?.num_turns === 0) && !belts.has(c.key)) sandbox.add(c.key); });
   strays().forEach(v => sandbox.add(v.name));
   const by = {}; bg.needs.forEach(r => { const p = r.item?.person ?? "the operator"; by[p] = (by[p] ?? 0) + 1; });
-  return { total: belts.size + sandbox.size, belts: belts.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
+  return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
 }
 function renderOvMini() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
@@ -2067,7 +2068,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
   // All-in: every run in the range, any source (passes, sessions, answers too), over the PRs merged in it.
-  const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows);
+  const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows), allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
   const WK = 7 * 86400000, mon = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
     return m ? usd(rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });

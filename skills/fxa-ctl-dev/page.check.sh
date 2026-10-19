@@ -71,8 +71,9 @@ ck "#attn: wrong base with its stop, goal rejected with its next step, idle warn
     { name: "gke-pool-1", state: "running", age_seconds: 600 }];
   renderAlerts(); const a = document.getElementById("attn"), h = a.innerHTML, row = k => [...a.querySelectorAll(".alert")].find(e => e.textContent.includes(k));
   return [/fxa-sandbox-ctl stop fxa-auto-1/.test(row("FXA-41")?.textContent), /shorten the ticket and requeue/.test(row("FXA-42")?.textContent),
-    row("FXA-45")?.classList.contains("warn"), !/fxa-sandbox-ctl stop/.test(row("FXA-46")?.textContent ?? "x"), /stop fxa-auto-9/.test(row("agent-fxa-auto-9")?.textContent),
-    !/stop/.test(row("agent-x;id")?.textContent ?? "x") && !/stop/.test(row("gke-pool-1")?.textContent ?? "x"), h.includes("&lt;img"), !h.includes("<img src=x")].join("|")')"
+    row("FXA-45")?.classList.contains("warn"), !!row("FXA-46") && !/fxa-sandbox-ctl stop/.test(row("FXA-46").textContent), /stop fxa-auto-9/.test(row("agent-fxa-auto-9")?.textContent),
+    !!row("agent-x;id") && !!row("gke-pool-1") && !/stop/.test(row("agent-x;id").textContent + row("gke-pool-1").textContent),
+    row("FXA-41").textContent.includes("<img src=x") && row("FXA-45").textContent.includes("<img src=x"), !a.querySelector("img")].join("|")')"
 # Needs you (i378, i379): one number on the card, the rail badge and the tab title; a stray adds a sandbox
 # part that moves the focus to #attn; a stale agents feed makes it unknown, never 0.
 ck "Needs you: card, badge and title agree; a stray adds a sandbox part that focuses #attn; a stale feed gives ?" "true|true|true|1 sandbox alert|attn|?|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
@@ -90,9 +91,15 @@ ck "Merged and Cost cards: Stats number, no 0 for an unread or old list, focus k
   STATS = { prs: [{ n: 1, merged: iso(1) }, { n: 2, merged: iso(2) }, { n: 3, merged: iso(20) }], prs_at: Math.round(now / 1000) - 60, rows: [{ at: iso(1), usd: 2 }, { at: iso(3), usd: 1 }, { at: iso(30), usd: 50 }] };
   renderOvMini(); const m = card("ov-merged").querySelector(".big").textContent, c = card("ov-cost").querySelector(".big").textContent;
   const same = c === usd(costPerMerged(now - 7 * 86400000, now, STATS.prs, STATS.rows).per);
-  card("ov-cost").focus(); const n0 = card("ov-cost"); renderOvMini(); const kept = document.activeElement === n0;
+  // A value outside the links changes, so the card is rewritten: the focus must come back to the same link.
+  card("ov-cost").focus(); const n0 = card("ov-cost"); AGENTS.instances = [{ name: "agent-zz8", state: "running", age_seconds: 300 }]; render();
+  const kept = document.activeElement?.dataset.focus === "ov-cost" && document.activeElement !== n0 && /sandbox alert/.test(document.querySelector("#ov-mini .sub").textContent);
   STATS = { ...STATS, prs: null }; renderOvMini(); const none = card("ov-merged").querySelector(".big").textContent;
   STATS = { ...STATS, prs: [], prs_at: Math.round(now / 1000) - 7200 }; renderOvMini(); const old = /old/.test(card("ov-cost").textContent) && !/\$0\.00/.test(card("ov-cost").textContent);
   const nav = renderNav; renderNav = () => { throw new Error("boom"); }; document.title = "x"; render(); renderNav = nav;
   return [m, c, none, same && kept, old, document.title !== "x"].join("|")')"
+ck "Stats PRs renders with a PR merged this week and a run in it" "true|false" "$(bash "$p" '#stats/prs' --fixture "$F" --width 1280 --probe '
+  const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString();
+  STATS = { ...(STATS ?? {}), prs: [{ n: 1, key: "FXA-1", title: "t", state: "MERGED", created: iso(2), merged: iso(1), add: 1, del: 0, src: "pipeline" }], rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], llm: STATS?.llm ?? {} };
+  renderStats(); const t = document.body.innerText; return [/Cost per merged PR/.test(t), /did not render|is not defined/.test(t)].join("|")')"
 exit $fail
