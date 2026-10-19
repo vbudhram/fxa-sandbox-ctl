@@ -318,6 +318,10 @@
   .help { position:fixed; inset:0; background:rgb(0 0 0 / .4); display:none; place-items:center; z-index:30; }
   .help.on { display:grid; } .help .box { background:var(--panel); border-radius:var(--r-lg); padding:var(--s6); width:min(460px,92vw); box-shadow:0 20px 60px rgb(0 0 0 / .3); }
   .help .hd { display:flex; align-items:center; margin-bottom:var(--s3); } .help h2 { margin:0; flex:1; }
+  /* Sandboxes panel (i407 sb-panel): the boot steps under the Boot row. */
+  .right .sb-panel .sbsteps { list-style:none; margin:0 0 var(--s2); padding:0 0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
+  .right .sb-panel .sbsteps li { display:flex; justify-content:space-between; gap:var(--s3); padding:2px 0; } .right .sb-panel .sbsteps b { font-weight:500; color:var(--ink); }
+  .right .sb-panel p { margin:var(--s2) 0; overflow-wrap:anywhere; }
   .help .kvr { display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); } .help .kvr:first-of-type { border-top:0; }
   .help label { display:flex; gap:var(--s2); align-items:flex-start; margin-top:var(--s4); color:var(--dim); font-size:var(--t-sub); }
   @media (max-width:1280px) {
@@ -3568,9 +3572,46 @@ function sessionDetails(s) {
       ${peak ? kvr("Peak load, memory, disk", `${peak.load1} · ${(peak.mem_mb / 1024).toFixed(1)} GB · ${peak.disk_pct}%`) : ""}
       ${s.compute_usd ? kvr("Compute, estimated", usd(num(s.compute_usd))) : ""}${s.stop_reason && s.stop_reason !== s.state ? kvr("Stopped because", esc(s.stop_reason)) : ""}</div>`;
 }
+// Sandboxes panel (i407): one row of sbRows(), by its id in the current tab; null when the row is gone. Feed values are
+// untrusted: every one goes through esc(), links only through sessHref, prHref, KEY_RE and TEAM_RE, and a routine row
+// gives a non-admin no name and no session, PR or Teams link.
+function sbDetails(id, now = Date.now() / 1000) {
+  const rs = sbRows(), r = [...(rs.live ?? []), ...(rs.fix ?? [])].find(x => x.id === id && sbTabHas(x));
+  if (!r) return null;
+  const json = v => { try { return typeof v === "string" ? JSON.parse(v) : v ?? null; } catch { return null; } };
+  const n = v => v == null || v === "" || !isFinite(Number(v)) ? null : Number(v);
+  const live = LIVE_SESSION.includes(r.state), up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : null;
+  if (r.fix) return `${closeBtn}<h2 class="rh">${esc(r.key || r.slot || id)}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${esc(r.fix.why)}</p>
+    ${r.fix.cmd && !rs.stale ? `<h4>Fix</h4><p><code>${esc(r.fix.cmd)}</code></p>` : r.fix.cmd ? `<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? `<h4>Read first</h4><p>${esc(r.fix.steps)}</p>` : ""}</div>`;
+  if (r.src === "pipeline") {
+    const cap = n(r.max_seconds), href = KEY_RE.test(r.key || "") ? `#pipeline/belts/${r.key}` : "";
+    return `${closeBtn}<h2 class="rh">${href ? `<a href="${href}">${esc(r.key)}</a>` : esc(r.key || "pipeline run")}<small>Pipeline run</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+      ${kvr("Slot", esc(r.slot || "unknown"))}${kvr("Stop", esc(r.state || "unknown"))}${up != null ? kvr("Time", `${short(up)}${cap ? ` of the ${short(cap)} cap` : ""}`) : ""}${n(r.usd) != null ? kvr("Cost", usd(n(r.usd))) : ""}
+      ${r.title ? kvr("Ticket", esc(r.title)) : ""}${TEAM_RE.test(r.team || "") ? kvr("Team", `<a href="#teams/${r.team}">${esc(r.team)}</a>`) : ""}
+      <p class="na">Boot steps and peak memory are not recorded for pipeline runs.</p></div>`;
+  }
+  const routine = r.src === "routine" || !!r.routine_run, open = !routine || !!TEAM_ADMIN?.admin;
+  const name = !open ? "Routine · scheduled run" : routine ? `Routine ${r.routine_name || `run ${r.routine_run}`}` : r.title || r.key;
+  const steps = (json(r.boot_steps) ?? []).filter(x => x && typeof x === "object"), peak = json(r.res_peak), cap = n(AGENTS?.session_max_run_seconds);
+  const sh = open && sessHref(r.session || r.key) ? `#sessions/${live ? "live" : "stopped"}/${r.session || r.key}` : "", pr = open ? prHref(r.pr) : "";
+  const team = open && TEAM_RE.test(r.team || "") ? `<a href="#teams/${routine ? "routines/" : ""}${r.team}">${esc(r.team)}</a>` : "";
+  return `${closeBtn}<h2 class="rh">${esc(name)}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+    ${kvr("State", esc(r.state || "unknown"))}${kvr("Where", esc(r.where || "unknown"))}${up != null ? kvr("Up for", `${short(up)}${cap ? ` of ${short(cap)}` : ""}`) : ""}
+    ${n(r.boot_s) != null ? kvr("Boot", `${Math.round(n(r.boot_s))} s${r.where ? ` · ${esc(r.where)}` : ""}`) : kvr("Boot", "not recorded yet", 1)}
+    ${steps.length ? `<ol class="sbsteps">${steps.map(x => `<li><span>${esc(x.step)}</span><b>${n(x.s) != null ? `${n(x.s)} s` : "—"}</b></li>`).join("")}</ol>` : ""}
+    ${peak && typeof peak === "object" ? kvr("Peak load, memory, disk", `${esc(peak.load1)} · ${n(peak.mem_mb) != null ? (n(peak.mem_mb) / 1024).toFixed(1) : "?"} GB · ${esc(peak.disk_pct)}%`) : kvr("Peak load, memory, disk", "not recorded yet", 1)}
+    ${team ? kvr("Team", team) : ""}</div>
+    ${sh || pr ? `<div class="sb-panel"><h4>Links</h4>${sh ? `<p><a href="${sh}">Open the session</a></p>` : ""}${pr ? `<p><a href="${esc(pr)}" target="_blank" rel="noopener">${esc(pr.split("/").slice(-3).join("/"))}</a></p>` : ""}</div>` : ""}`;
+}
+// A selected row that left the tab (it ended, or the tab changed): clear it, close the drawer, and put the focus in the list.
+function sbClearGone() {
+  delete SEL.runners; document.body.classList.remove("showright");
+  const a = document.activeElement, right = document.getElementById("right"), list = document.getElementById("sb-list");
+  if (list && (!a || a === document.body || right?.contains(a))) { if (!list.hasAttribute("tabindex")) list.setAttribute("tabindex", "-1"); list.focus(); }
+}
 function renderRight() {
   const el = document.getElementById("right"); let html = "";
-  if (["errors", "lessons", "runners"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
+  if (["errors", "lessons"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
   if (VIEW === "sessions") { const s = currentSession(); if (s) html = sessionDetails(s); }
   else if (VIEW === "errors") { const e = (ERRS ?? []).find(x => x.sig === SEL.errors);
     if (e) html = `${closeBtn}<h2 class="rh">Error<small>${esc(e.sig)}</small></h2><div><h4>Signature</h4>${kvr("Status", esc(e.status))}${kvr("Source", `${esc(e.source)}/${esc(e.kind)}`)}${kvr("Where", esc(e.where))}
@@ -3582,10 +3623,8 @@ function renderRight() {
     if (l) html = `${closeBtn}<h2 class="rh">Lesson<small>from ${esc(l.session)}</small></h2><div><h4>Text</h4>${esc(l.text)}</div>${l.why ? `<div><h4>Why</h4>${esc(l.why)}</div>` : ""}
       <div><h4>Record</h4>${kvr("Status", esc(l.status))}${kvr("Proposed", esc((l.at || "").slice(0, 10)))}${l.decided_at ? kvr("Decided", esc(l.decided_at.slice(0, 10))) : ""}${kvr("Session", `<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a>`)}</div>
       <p class="empty">Edit, approve or reject it in the list in the middle.</p>`; }
-  else if (VIEW === "runners") { const id = SEL.runners ?? "", v = (AGENTS?.instances ?? []).find(x => x.name === id);
-    if (v) { const s = (AGENTS?.sessions ?? []).find(x => x.key === v.name.replace(/^agent-/, ""));
-      html = `${closeBtn}<h2 class="rh">${esc(v.name)}<small>${v.where === "firecracker" ? "Firecracker slot" : "GCE instance"}</small></h2><div><h4>Sandbox</h4>${kvr("State", esc(v.state))}${instUp(v) ? kvr("Up for", short(v.age_seconds)) + (v.max_seconds ? kvr("Lifetime cap", short(v.max_seconds)) : "") : kvr("Made", `${short(v.age_seconds)} ago`)}${v.zone ? kvr("Zone", esc(v.zone)) : ""}
-        ${s ? kvr("Session", `<a class="mono" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(s.key)}</a> · ${esc(s.state)}`) : instUp(v) ? kvr("Session", "pipeline run") : kvr("Session", "none")}</div>${instUp(v) ? "" : `<div><h4>Fix</h4><p>The instance is stopped, not running. It keeps its disk until it is deleted. Delete it:</p><p><code>${esc(instFix(v))}</code></p></div>`}`; } }
+  else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = `<p class="rempty">This panel did not render: ${esc(e.message)}</p>`; }
+    if (d == null) sbClearGone(); else html = d; }
   else if (VIEW === "teams") { renderTeams(); return; }
   const out = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
   // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.
