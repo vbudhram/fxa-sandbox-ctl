@@ -954,22 +954,21 @@ function statsNote() {
 }
 const localDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 function renderOvHead() {
-  putOv("ov-head", `<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
+  put("ov-head", `<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; safeRender(renderOvHead, "ov-head"); safeRender(renderOvSpend, "ov-spend"); } });
-// ovSpend(range): spend by local day and source in the Stats range, with the Stats rules (usd, every row), memoized.
-const OV_MEMO = new WeakMap();
+// Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
+const daysBack = (from, n) => [...Array(n)].map((_, i) => { const d = new Date(from); d.setDate(d.getDate() - i); return localDay(d.getTime()); });
+// ovSpend(range): spend by local day and source in the Stats range, with the Stats rules (usd, every row).
 function ovSpend(range) {
-  const key = `${range}|${localDay(Date.now())}`, m = OV_MEMO.get(STATS) ?? {}; if (m[key]) return m[key];
-  const DAY = 86400000, [lo] = statsBounds(range), today = localDay(Date.now()), days = new Map();
-  for (let t = lo; t <= today; t += DAY) days.set(localDay(t), { t: localDay(t), by: {}, usd: 0, merged: 0 });
+  const [lo] = statsBounds(range), today = localDay(Date.now()), days = new Map();
+  for (const d = new Date(localDay(lo)); d.getTime() <= today; d.setDate(d.getDate() + 1)) days.set(d.getTime(), { t: d.getTime(), by: {}, usd: 0, merged: 0 });
   const by = {}; let total = 0;
   (STATS?.rows ?? []).forEach(r => { const t = Date.parse(r.at); if (!(t >= lo)) return; const d = days.get(localDay(t)); if (!d) return;
     const u = r.usd || 0; d.by[r.src] = (d.by[r.src] ?? 0) + u; d.usd += u; by[r.src] = (by[r.src] ?? 0) + u; total += u; });
   (STATS?.prs ?? []).forEach(p => { const d = p.merged && days.get(localDay(Date.parse(p.merged))); if (d) d.merged++; });
   const list = [...days.values()], peak = list.reduce((a, d) => d.usd > (a?.usd ?? 0) ? d : a, null);
-  m[key] = { total, by, days: list, peak, perDay: total / list.length }; OV_MEMO.set(STATS, m);
-  return m[key];
+  return { total, by, days: list, peak, perDay: total / list.length };
 }
 function renderOvSpend() {
   const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1], note = statsNote();
@@ -996,8 +995,8 @@ function renderOvToday() {
   if (!STATS) return putOv("ov-today", `<h2>Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
   const DAY = 86400000, today = localDay(Date.now()), byDay = new Map(), models = {};
   (STATS.rows ?? []).forEach(r => { const d = localDay(Date.parse(r.at)); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
-  const now = byDay.get(today) ?? 0, past = [...Array(30)].map((_, i) => byDay.get(today - (i + 1) * DAY)).filter(v => v > 0).sort((a, b) => a - b);
-  const usual = past.length >= 3 ? past[Math.floor(past.length / 2)] : null, pct = usual ? Math.round(now / usual * 100) : null;
+  const now = byDay.get(today) ?? 0, past = daysBack(today, 31).slice(1).map(d => byDay.get(d)).filter(v => v > 0).sort((a, b) => a - b);
+  const mid = past.length >= 3 ? past.length / 2 : 0, usual = mid ? (past.length % 2 ? past[Math.floor(mid)] : (past[mid - 1] + past[mid]) / 2) : null, pct = usual ? Math.round(now / usual * 100) : null;
   const hr = STATS.llm?.hour_usd, hourOk = typeof hr === "number" && !note, toMid = (today + DAY - Date.now()) / 3600000;
   const C = 2 * Math.PI * 34, arc = usual ? Math.min(1, now / usual) * C : 0;
   putOv("ov-today", `<h2>Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
@@ -2302,7 +2301,7 @@ document.addEventListener("click", e => {
   if (a) {
     e.preventDefault();
     const range = a.dataset.sfrange, src = a.dataset.sfsrc ?? "all";
-    if (!STATS_RANGES.some(([k]) => k === range) || !(src === "all" || src in SF_SRC)) return;
+    if (!STATS_RANGES.some(([k]) => k === range) || !(src === "all" || Object.hasOwn(SF_SRC, src))) return;
     SF_FROM_OV = true; setStatsFilter({ ...SF_DEFAULT, range, src }, false); location.hash = "#stats/spend"; return;
   }
   if (e.target.closest?.("[data-sfrestore]")) { SF_FROM_OV = false; SF = { ...SF_DEFAULT, ...sfSaved() }; LAST["s-stats"] = ""; renderStats(); renderSide(); }
@@ -3058,7 +3057,7 @@ const num = v => v == null || v === "" ? null : Number(v);
 // agent and subagents apart, with the token kinds that make the cost. Fetched when shown, 30 s fresh.
 const USAGE = {};
 const tokn = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);
-const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)(\[1m\])?$/, (_, a, b, l) => ` ${a}.${b}${l ? " (1M)" : ""}`).replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
+const modelName = m => { const l = /\[1m\]$/.test(m || ""); return (m || "unknown").replace(/\[1m\]$/, "").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase()) + (l ? " (1M)" : ""); };
 function usageTable(rows) {
   if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
