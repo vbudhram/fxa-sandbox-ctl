@@ -435,7 +435,7 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
 JS
 rc=$?
 # Sandboxes panel (i407 sb-panel): sbDetails() for a session, a pipeline row, a fix row and a routine row as a non-admin.
-fns="$(sed -n '/^const esc = /p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p' "$page")"
+fns="$(sed -n '/^const esc = /p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p; /^function sbClearGone(/,/^}/p' "$page")"
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 eval(process.argv[1].replace(/^(let|const) /gm, "var "));
@@ -446,7 +446,7 @@ globalThis.AGENTS = { session_max_run_seconds: 14400 }; globalThis.TEAM_ADMIN = 
 const rows = { live: [
   { id: "sess:agent-abc123", src: "slack", key: "agent-abc123", session: "agent-abc123", title: "<img src=x onerror=alert(1)>", team: "fxa", where: "firecracker", state: "active", started: now - 600, boot_s: "41", pr: "https://github.com/example/repo/pull/41",
     boot_steps: JSON.stringify([{ step: "restoring", s: 3 }, { step: "checking out the commit", s: 30 }, { step: "starting the stack", s: 8 }]), res_peak: JSON.stringify({ load1: 3.2, mem_mb: 4812, disk_pct: 41 }) },
-  { id: "pipe:fxa-auto-1", src: "pipeline", key: "FXA-1", slot: "fxa-auto-1", team: "fxa", state: "Agent", started: now - 1800, max_seconds: 5400, usd: 1.25 },
+  { id: "pipe:fxa-auto-1", src: "pipeline", key: "FXA-1", slot: "fxa-auto-1", team: "fxa", state: "Agent", started: null, age: 1800, max_seconds: 5400, usd: 1.25 },
   { id: "sess:agent-rout01", src: "routine", key: "agent-rout01", session: "agent-rout01", routine_run: 7, routine_name: "Nightly review", team: "fxa", where: "firecracker", state: "active", started: now - 60, pr: "https://github.com/example/repo/pull/9", res_peak: "{broken" },
   { id: "sess:javascript:alert(1)", src: "slack", key: "javascript:alert(1)", session: "javascript:alert(1)", team: "../x", state: "active", started: now - 60 }],
   fix: [{ id: "fix:agent-def456", src: "slack", key: "agent-def456", fix: { why: "The runner is still up 10 min after its session stopped.", cmd: "fxa-sandbox-ctl stop agent-def456", steps: null } }] };
@@ -475,6 +475,23 @@ t("panel: the source never reads AGENTS.sessions or calls sessionDetails", /AGEN
 const gated = { id: "sess:agent-rout02", src: "routine", key: "agent-rout02", session: "agent-rout02", routine_run: 8, title: "", team: "", where: "firecracker", state: "active", started: now - 60 };
 rows.live.push(gated); TEAM_ADMIN.admin = false; const g = sbDetails("sess:agent-rout02", now); TEAM_ADMIN.admin = true;
 t("panel: a routine row that arrives gated shows the gated text and no link", g.includes("Routine · scheduled run") && !/href="#/.test(g), true);
+const bad = { id: "sess:agent-bad001", src: "slack", key: "agent-bad001", session: "agent-bad001", state: "active", started: now - 60, boot_steps: "{}", res_peak: "5" };
+rows.live.push(bad); const b = sbDetails("sess:agent-bad001", now);
+t("panel: boot_steps '{}' and res_peak '5' leave the steps out and the panel renders", !b.includes("<ol") && /Peak load, memory, disk<\/span><b class="na">not recorded yet/.test(b), true);
+rows.live.push({ ...bad, id: "sess:agent-bad002", boot_steps: "5", res_peak: "{}" });
+t("panel: boot_steps '5' and res_peak '{}' too", (x => !x.includes("<ol") && x.includes("not recorded yet") && !x.includes("undefined"))(sbDetails("sess:agent-bad002", now)), true);
+sbDetails("fix:agent-def456", now); const fx = rows.fix; rows.fix = [];
+rows.err = "the agents read failed"; const u1 = sbDetails("fix:agent-def456", now); delete rows.err;
+t("panel: a failed agents read keeps the last panel with the unknown line", u1 != null && u1.includes("feed is unknown") && u1.includes("stop agent-def456"), true);
+rows.stale = true; const live0 = rows.live; rows.live = []; const u2 = sbDetails("fix:agent-def456", now); rows.live = live0; rows.stale = false;
+t("panel: a stale feed with no rows keeps the panel", u2 != null && u2.includes("feed is unknown"), true);
+const ag = AGENTS; AGENTS = null; const u3 = sbDetails("fix:agent-def456", now); AGENTS = ag;
+t("panel: before the first agents read a deep link survives", u3 != null, true);
+t("panel: a known row list with the row gone gives null", sbDetails("fix:agent-def456", now), null); rows.fix = fx;
+{ let hdr = 0; globalThis.renderHeader = () => hdr++; globalThis.SEL = { runners: "x" };
+  const el = { contains: () => false, hasAttribute: () => true, setAttribute() {}, focus() {} };
+  globalThis.document = { body: { classList: { remove() {} } }, activeElement: null, getElementById: () => el };
+  sbClearGone(); t("panel: clearing a selection repaints the header, so #tright's aria-pressed follows", `${hdr}|${SEL.runners}`, "1|undefined"); }
 globalThis.TAB_SRC = "pipeline"; t("panel: a row of another tab gives null", sbDetails("fix:agent-def456", now), null);
 process.exit(fail);
 JS

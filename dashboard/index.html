@@ -3577,37 +3577,43 @@ function sessionDetails(s) {
 // gives a non-admin no name and no session, PR or Teams link.
 function sbDetails(id, now = Date.now() / 1000) {
   const rs = sbRows(), r = [...(rs.live ?? []), ...(rs.fix ?? [])].find(x => x.id === id && sbTabHas(x));
-  if (!r) return null;
+  // Only a known row list clears a selection: before the first agents read, on a failed read, or on a stale feed with no
+  // rows, a deep link survives and the last panel stays with a warning.
+  if (!r) { if (AGENTS != null && !rs.err && !(rs.stale && !(rs.live?.length || rs.fix?.length))) return null;
+    return `${closeBtn}<p class="na">The agents feed is unknown: this panel may be out of date.</p>${sbDetails.last?.id === id ? sbDetails.last.body : ""}`; }
+  const keep = h => { sbDetails.last = { id, body: h }; return closeBtn + h; };
   const json = v => { try { return typeof v === "string" ? JSON.parse(v) : v ?? null; } catch { return null; } };
   const n = v => v == null || v === "" || !isFinite(Number(v)) ? null : Number(v);
-  const live = LIVE_SESSION.includes(r.state), up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : null;
-  if (r.fix) return `${closeBtn}<h2 class="rh">${esc(r.key || r.slot || id)}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${esc(r.fix.why)}</p>
-    ${r.fix.cmd && !rs.stale ? `<h4>Fix</h4><p><code>${esc(r.fix.cmd)}</code></p>` : r.fix.cmd ? `<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? `<h4>Read first</h4><p>${esc(r.fix.steps)}</p>` : ""}</div>`;
+  const live = LIVE_SESSION.includes(r.state), up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : n(r.age);
+  if (r.fix) return keep(`<h2 class="rh">${esc(r.key || r.slot || id)}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${esc(r.fix.why)}</p>
+    ${r.fix.cmd && !rs.stale ? `<h4>Fix</h4><p><code>${esc(r.fix.cmd)}</code></p>` : r.fix.cmd ? `<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? `<h4>Read first</h4><p>${esc(r.fix.steps)}</p>` : ""}</div>`);
   if (r.src === "pipeline") {
     const cap = n(r.max_seconds), href = KEY_RE.test(r.key || "") ? `#pipeline/belts/${r.key}` : "";
-    return `${closeBtn}<h2 class="rh">${href ? `<a href="${href}">${esc(r.key)}</a>` : esc(r.key || "pipeline run")}<small>Pipeline run</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+    return keep(`<h2 class="rh">${href ? `<a href="${href}">${esc(r.key)}</a>` : esc(r.key || "pipeline run")}<small>Pipeline run</small></h2><div class="sb-panel"><h4>Sandbox</h4>
       ${kvr("Slot", esc(r.slot || "unknown"))}${kvr("Stop", esc(r.state || "unknown"))}${up != null ? kvr("Time", `${short(up)}${cap ? ` of the ${short(cap)} cap` : ""}`) : ""}${n(r.usd) != null ? kvr("Cost", usd(n(r.usd))) : ""}
       ${r.title ? kvr("Ticket", esc(r.title)) : ""}${TEAM_RE.test(r.team || "") ? kvr("Team", `<a href="#teams/${r.team}">${esc(r.team)}</a>`) : ""}
-      <p class="na">Boot steps and peak memory are not recorded for pipeline runs.</p></div>`;
+      <p class="na">Boot steps and peak memory are not recorded for pipeline runs.</p></div>`);
   }
   const routine = r.src === "routine" || !!r.routine_run, open = !routine || !!TEAM_ADMIN?.admin;
   const name = !open ? "Routine · scheduled run" : routine ? `Routine ${r.routine_name || `run ${r.routine_run}`}` : r.title || r.key;
-  const steps = (json(r.boot_steps) ?? []).filter(x => x && typeof x === "object"), peak = json(r.res_peak), cap = n(AGENTS?.session_max_run_seconds);
+  const sj = json(r.boot_steps), pj = json(r.res_peak), cap = n(AGENTS?.session_max_run_seconds);
+  const steps = Array.isArray(sj) ? sj.filter(x => x && typeof x === "object") : [], peak = pj && typeof pj === "object" && !Array.isArray(pj) && (n(pj.load1) != null || n(pj.mem_mb) != null) ? pj : null;
   const sh = open && sessHref(r.session || r.key) ? `#sessions/${live ? "live" : "stopped"}/${r.session || r.key}` : "", pr = open ? prHref(r.pr) : "";
   const team = open && TEAM_RE.test(r.team || "") ? `<a href="#teams/${routine ? "routines/" : ""}${r.team}">${esc(r.team)}</a>` : "";
-  return `${closeBtn}<h2 class="rh">${esc(name)}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+  return keep(`<h2 class="rh">${esc(name)}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
     ${kvr("State", esc(r.state || "unknown"))}${kvr("Where", esc(r.where || "unknown"))}${up != null ? kvr("Up for", `${short(up)}${cap ? ` of ${short(cap)}` : ""}`) : ""}
     ${n(r.boot_s) != null ? kvr("Boot", `${Math.round(n(r.boot_s))} s${r.where ? ` · ${esc(r.where)}` : ""}`) : kvr("Boot", "not recorded yet", 1)}
     ${steps.length ? `<ol class="sbsteps">${steps.map(x => `<li><span>${esc(x.step)}</span><b>${n(x.s) != null ? `${n(x.s)} s` : "—"}</b></li>`).join("")}</ol>` : ""}
-    ${peak && typeof peak === "object" ? kvr("Peak load, memory, disk", `${esc(peak.load1)} · ${n(peak.mem_mb) != null ? (n(peak.mem_mb) / 1024).toFixed(1) : "?"} GB · ${esc(peak.disk_pct)}%`) : kvr("Peak load, memory, disk", "not recorded yet", 1)}
+    ${peak ? kvr("Peak load, memory, disk", `${esc(peak.load1)} · ${n(peak.mem_mb) != null ? (n(peak.mem_mb) / 1024).toFixed(1) : "?"} GB · ${esc(peak.disk_pct)}%`) : kvr("Peak load, memory, disk", "not recorded yet", 1)}
     ${team ? kvr("Team", team) : ""}</div>
-    ${sh || pr ? `<div class="sb-panel"><h4>Links</h4>${sh ? `<p><a href="${sh}">Open the session</a></p>` : ""}${pr ? `<p><a href="${esc(pr)}" target="_blank" rel="noopener">${esc(pr.split("/").slice(-3).join("/"))}</a></p>` : ""}</div>` : ""}`;
+    ${sh || pr ? `<div class="sb-panel"><h4>Links</h4>${sh ? `<p><a href="${sh}">Open the session</a></p>` : ""}${pr ? `<p><a href="${esc(pr)}" target="_blank" rel="noopener">${esc(pr.split("/").slice(-3).join("/"))}</a></p>` : ""}</div>` : ""}`);
 }
 // A selected row that left the tab (it ended, or the tab changed): clear it, close the drawer, and put the focus in the list.
 function sbClearGone() {
   delete SEL.runners; document.body.classList.remove("showright");
   const a = document.activeElement, right = document.getElementById("right"), list = document.getElementById("sb-list");
   if (list && (!a || a === document.body || right?.contains(a))) { if (!list.hasAttribute("tabindex")) list.setAttribute("tabindex", "-1"); list.focus(); }
+  renderHeader();
 }
 function renderRight() {
   const el = document.getElementById("right"); let html = "";
