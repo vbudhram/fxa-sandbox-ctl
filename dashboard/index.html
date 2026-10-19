@@ -365,10 +365,11 @@
   .tabs a[aria-current] { color:var(--link); font-weight:700; border-bottom-color:var(--link); }
   .tabs a .n { font-size:var(--t-label); color:var(--faint); margin-left:var(--s1); font-variant-numeric:tabular-nums; }
   .ovc { border:1px solid var(--card-border); box-shadow:var(--shadow); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
-  .ovc a:hover { text-decoration:none; box-shadow:0 2px 14px rgb(58 57 68 / .2); }
+  a.ovc { color:inherit; } a.ovc:hover { text-decoration:none; box-shadow:0 2px 14px rgb(58 57 68 / .2); }
   .ovc .big { font-family:var(--head); font-size:28px; font-weight:700; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .ovc .lbl { font:600 var(--t-sub) var(--head); color:var(--dim); }
   .ovc .sub { font-size:var(--t-sub); color:var(--faint); }
+  #ov-mini { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); align-content:start; background:none; border:0; box-shadow:none; padding:0; }
   .ovc.bad .big { color:var(--bad); } .ovc.warn .big { color:var(--warn); } .ovc .sub a { color:var(--link); }
 
   /* ── overview: what needs you, what is running ── */
@@ -909,6 +910,26 @@ function renderAgents() {
   TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
 }
 
+// All-in cost per merged PR: every run in [lo, hi), any source (passes, sessions, answers too), over the
+// PRs merged in it. Stats PRs and the Overview card read the same numbers.
+function costPerMerged(lo, hi, prs, rows) {
+  const inR = t => t >= lo && t < hi;
+  const mergedIn = (prs ?? []).filter(p => p.merged && inR(Date.parse(p.merged)));
+  const spentIn = (rows ?? []).filter(r => inR(Date.parse(r.at))).reduce((x, r) => x + (r.usd || 0) + (r.compute_usd || 0), 0);
+  return { mergedIn, spentIn, per: mergedIn.length ? spentIn / mergedIn.length : null };
+}
+// putOv: put() for an Overview card. While a link in the card has the focus and the card's links and labels
+// did not change, the card is not rewritten, so a screen reader does not read it again; else the focus
+// goes back to the link with the same data-focus id.
+const focusKey = html => [...html.matchAll(/data-focus="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => `${m[1]}=${m[2]}`).join("|");
+function putOv(id, html) {
+  const node = document.getElementById(id); if (!node) return false;
+  const a = document.activeElement, f = node.contains(a) ? a.dataset?.focus : null, fk = focusKey(html);
+  if (f && node.dataset.fk === fk) return false;
+  const changed = put(id, html); node.dataset.fk = fk;
+  if (changed && f) node.querySelector(`[data-focus="${CSS.escape(f)}"]`)?.focus();
+  return changed;
+}
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
 function ovNeeds() {
@@ -921,8 +942,14 @@ function ovNeeds() {
 function renderOvMini() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
     .concat(n.sandbox ? [`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
-  put("ov-mini", `<div class="ovc ${n.unknown ? "" : n.total ? "warn" : ""}"><div class="lbl">Needs you</div><div class="big">${n.unknown ? "?" : n.total}</div>
-    <div class="sub">${n.unknown ? esc(n.unknown) : n.total ? parts.join(" · ") : "Nobody needs to act."}</div></div>`);
+  // Merged in 7 days and its cost per PR: '—' with the reason when the PR list is unread or old (it refreshes every 10 min).
+  const now = Date.now(), c = costPerMerged(now - 7 * 86400000, now, STATS?.prs, STATS?.rows), at = STATS?.prs_at;
+  const why = !STATS ? "Loading the stats…" : STATS.prs == null ? "the PR list is not read yet" : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at))} old` : "";
+  const prsOk = STATS?.prs != null;
+  putOv("ov-mini", `<div class="ovc ${n.unknown ? "" : n.total ? "warn" : ""}"><div class="lbl">Needs you</div><div class="big">${n.unknown ? "?" : n.total}</div>
+    <div class="sub">${n.unknown ? esc(n.unknown) : n.total ? parts.join(" · ") : "Nobody needs to act."}</div></div>
+    <a class="ovc" href="#stats/prs" data-focus="ov-merged"><div class="lbl">Merged, 7 days</div><div class="big">${prsOk ? c.mergedIn.length : "—"}</div><div class="sub">${why ? esc(why) : "PRs merged in the last 7 days"}</div></a>
+    <a class="ovc" href="#stats/spend" data-focus="ov-cost"><div class="lbl">Cost per merged PR</div><div class="big">${prsOk && c.per != null ? usd(c.per) : "—"}</div><div class="sub">${why ? esc(why) : c.per == null ? "no PR merged in 7 days" : `${usd(c.spentIn)} all-in over ${c.mergedIn.length}`}</div></a>`);
 }
 // The sandbox part moves the focus to the #attn strip on this page.
 document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
@@ -1269,7 +1296,7 @@ let STATS = null, STATS_AT = 0;
 async function loadStats() {
   if (STATS && Date.now() - STATS_AT < 60000) { renderStats(); return; }
   try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
-  renderStats(); renderNav(); if (VIEW === "pipeline") renderLanes();
+  renderStats(); renderNav(); if (VIEW === "pipeline") renderLanes(); if (VIEW === "overview") safeRender(renderOvMini, "ov-mini");
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
@@ -2040,8 +2067,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
   // All-in: every run in the range, any source (passes, sessions, answers too), over the PRs merged in it.
-  const inR = t => t >= lo && t < hi, allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
-  const mergedIn = all.filter(p => p.merged && inR(Date.parse(p.merged))), spentIn = rows.filter(r => inR(Date.parse(r.at))).reduce((x, r) => x + allUsd(r), 0);
+  const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows);
   const WK = 7 * 86400000, mon = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
     return m ? usd(rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });

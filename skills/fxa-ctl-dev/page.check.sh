@@ -83,4 +83,16 @@ ck "Needs you: card, badge and title agree; a stray adds a sandbox part that foc
   const r2 = [sb?.textContent, document.activeElement?.id];
   STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
   return [...r1, ...r2, big(), /unknown, agents feed/.test(document.querySelector("#ov-mini .sub").textContent)].join("|")')"
+# The Merged and Cost cards (i380): the cost is the Stats PRs number; an unread or old PR list shows no 0;
+# the focus stays on a card link across a poll; a renderer that throws does not stop the others.
+ck "Merged and Cost cards: Stats number, no 0 for an unread or old list, focus kept, a throw stops nothing" "2|\$1.50|—|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
+  const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString(), card = k => document.querySelector(`#ov-mini [data-focus="${k}"]`);
+  STATS = { prs: [{ n: 1, merged: iso(1) }, { n: 2, merged: iso(2) }, { n: 3, merged: iso(20) }], prs_at: Math.round(now / 1000) - 60, rows: [{ at: iso(1), usd: 2 }, { at: iso(3), usd: 1 }, { at: iso(30), usd: 50 }] };
+  renderOvMini(); const m = card("ov-merged").querySelector(".big").textContent, c = card("ov-cost").querySelector(".big").textContent;
+  const same = c === usd(costPerMerged(now - 7 * 86400000, now, STATS.prs, STATS.rows).per);
+  card("ov-cost").focus(); const n0 = card("ov-cost"); renderOvMini(); const kept = document.activeElement === n0;
+  STATS = { ...STATS, prs: null }; renderOvMini(); const none = card("ov-merged").querySelector(".big").textContent;
+  STATS = { ...STATS, prs: [], prs_at: Math.round(now / 1000) - 7200 }; renderOvMini(); const old = /old/.test(card("ov-cost").textContent) && !/\$0\.00/.test(card("ov-cost").textContent);
+  const nav = renderNav; renderNav = () => { throw new Error("boom"); }; document.title = "x"; render(); renderNav = nav;
+  return [m, c, none, same && kept, old, document.title !== "x"].join("|")')"
 exit $fail
