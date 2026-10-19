@@ -217,8 +217,10 @@ rm -rf "$pd"
   echo '{"assignee":"Pat Doe","status":"Done","at":"2026-10-02T10:15:00Z"}' > "$PIPE_STATE_DIR/FXA-12.jira.json"
   check "prs: a merged PR carries its ticket's state; a PR with none gets null" "Pat Doe Done|null" \
     "$(echo '{}' | _stats_add_prs | jq -r '[(.prs[0].jira | "\(.assignee) \(.status)"), (.prs[1].jira | tostring)] | join("|")')"
-  gh() { return 1; }; touch -t 202001010000 "$PIPE_STATE_DIR/prs.json"
-  check "prs: a failed read keeps the last list" "2" "$(echo '{}' | _stats_add_prs | jq '.prs | length')"
+  gh() { return 1; }; touch -t 202001011200 "$PIPE_STATE_DIR/prs.json"
+  check "prs: a failed read keeps the last list, with its time" "2 1577836800" "$(echo '{}' | _stats_add_prs | TZ=UTC jq -r '"\(.prs | length) \(.prs_at - (.prs_at % 86400))"')"
+  rm -f "$PIPE_STATE_DIR/prs.json"
+  check "prs: a list never read is null, not empty, and has no time" "null null" "$(echo '{}' | _stats_add_prs | jq -r '"\(.prs) \(.prs_at)"')"
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
   db_on() { false; }
   check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"

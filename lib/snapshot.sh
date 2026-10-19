@@ -376,13 +376,16 @@ _stats_add_prs() {
          --json number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" 2>/dev/null \
        && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
   fi
+  # A list never read (no prs.json: gh failed from the start) is null, not empty; prs_at is the
+  # list's time (it refreshes every 10 min), so a page can tell an old list from a live one.
+  [ -s "$f" ] || { jq -c '.prs = null | .prs_at = null'; return; }
   # Each merged ticket's assignee and status, as jira_close_merged saved them.
   local jm; jm="$(for t in "${PIPE_STATE_DIR}"/*.jira.json; do [ -e "$t" ] && jq -c --arg k "$(basename "$t" .jira.json)" '{($k): .}' "$t" 2>/dev/null; done | jq -sc 'add // {}' 2>/dev/null)" || jm='{}'
   jq -c --slurpfile p <(jq -c --argjson jm "$jm" 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
       by: (.mergedBy.login // null), add: .additions, del: .deletions,
       src: (if (.headRefName | startswith("agent-")) then "slack" else "pipeline" end),
       key: (if (.headRefName | test("^[A-Za-z][A-Za-z0-9]+-[0-9]+$")) and (.headRefName | startswith("agent-") | not) then (.headRefName | ascii_upcase) else .headRefName end) }) | map(. + {jira: ($jm[.key] // null)})' \
-      "$f" 2>/dev/null || echo '[]') '.prs = $p[0]'
+      "$f" 2>/dev/null || echo '[]') --argjson at "$(_mtime "$f")" '.prs = $p[0] | .prs_at = $at'
 }
 
 # _stats_add_load   Slack sessions per day: the most live at once (from start and stop
