@@ -113,7 +113,6 @@
      "summary": "Sample PR in CI",
      "stage": "pr",
      "pr": 42,
-     "pr_url": "https://github.com/example/repo/pull/42",
      "ok": 18,
      "fail": 0,
      "running": 4

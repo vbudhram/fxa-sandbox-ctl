@@ -1081,8 +1081,11 @@ function dayOf(e, now) {
 }
 function ovSys(now = Math.round(Date.now() / 1000)) {
   const h = SNAP?.health ?? {}, admin = !!TEAM_ADMIN?.admin, mins = x => Math.max(1, Math.round(x / 60)), out = { now: [], next: [], ticks: [], quiet: [], pins: [] };
+  // An old snapshot: its pass, CI and merge facts are frozen at the time it was written, so none shows as now.
+  const old = STATE.age_seconds != null && STATE.interval && STATE.age_seconds > 3 * STATE.interval;
   // Now: the pass.
-  if (h.paused) out.now.push(["w", `Passes are paused: ${h.paused}`]);
+  if (old) out.now.push(["w", `Pass, CI and merge watch unknown: the snapshot is ${mins(STATE.age_seconds)} min old`]);
+  else if (h.paused) out.now.push(["w", `Passes are paused: ${h.paused}`]);
   else if (h.pass_timer === "off") out.now.push(["w", "The pass timer is off, so no pass runs."]);
   else if (h.lock_age_seconds != null && h.lock_age_seconds > (h.lock_stale_seconds ?? 1800)) out.now.push(["w", `A pass lock is ${mins(h.lock_age_seconds)} min old. The next pass clears it, or run fxa-sandbox-ctl unlock.`]);
   else if (h.lock_age_seconds != null) out.now.push(["", `Pipeline pass · runs now · ${short(h.lock_age_seconds)}`]);
@@ -1090,13 +1093,15 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
   if (admin) (AGENTS?.sessions ?? []).filter(x => x.routine_run && LIVE_SESSION.includes(x.state)).forEach(x => out.now.push(["", `Routine ${x.routine_name || `run ${x.routine_run}`} runs now`]));
   // CI and merge watch: the PR states; a failed read is unknown, never a confident empty.
   const gh = SNAP && (SNAP.review == null || SNAP.inflight_prs_failed);
-  if (gh) out.now.push(["w", "CI watch and Merge watch: unknown, GitHub fetch failed"]);
+  if (old) {}
+  else if (gh) out.now.push(["w", "CI watch and Merge watch: unknown, GitHub fetch failed"]);
   else {
     merged().cards.filter(c => c.ci && c.running > 0).forEach(c => { const done = (Number(c.ok) || 0) + (Number(c.fail) || 0), tot = done + (Number(c.running) || 0), u = prHref(c.pr_url || prUrl(c.pr));
       out.now.push(["ci", { n: c.pr, key: c.key, href: u ? `${u}/checks` : "", done, tot, pct: tot ? Math.round(done / tot * 100) : 0 }]); });
     const wait = (SNAP?.review ?? []).filter(isWaitingOnHuman), old = Math.max(0, ...wait.map(r => Math.round(days(r.last_human_review?.at ?? r.created) ?? 0)));
     out.now.push(["", wait.length ? `Merge watch · ${wait.length} PR${wait.length === 1 ? "" : "s"} wait on a human review · the oldest is ${old} day${old === 1 ? "" : "s"}` : "Merge watch · no PR waits on a review"]);
   }
+  out.feedsOld = old || (STATE.agents_age_seconds != null && STATE.agents_interval && STATE.agents_age_seconds > 3 * STATE.agents_interval) || !!statsNote();
   out.feeds = `Feeds: tickets ${ago(STATE.age_seconds)} · agents ${ago(STATE.agents_age_seconds)} · stats ${STATS_AT ? ago(Math.round((Date.now() - STATS_AT) / 1000)) : "not read"}`;
   // Next 12 hours: the pass times.
   const H12 = now + 12 * 3600;
@@ -1134,7 +1139,7 @@ function renderOvSys() {
     : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
   const strip = o.ticks.length || o.pins.length ? `<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => `<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`).join("")}${o.ticks.map(e => `<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`).join("")}${o.pins.map(p => `<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${esc(p.name)}</title></circle>`).join("")}</svg>` : "";
   const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
-  putOv("ov-sys", `<h2>What the system is doing</h2><h3>Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(--faint)">${esc(o.feeds)}</div>
+  putOv("ov-sys", `<h2>What the system is doing</h2><h3>Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(${o.feedsOld ? "--bad" : "--faint"})">${esc(o.feeds)}</div>
     <h3>Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
     JSON.stringify([o.now, o.next, o.routines, o.pins, o.ticks.length]));
 }
@@ -2281,7 +2286,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
     return m ? usd(rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
   const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
   return `<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
-      ${kpi("Merged", merged.length, `${rate(merged.length, closed.length)} of those merged or closed`)}
+      ${kpi("Merged", mergedIn.length, `by merge date · of the PRs opened in this range, ${rate(merged.length, closed.length)} merged or closed`)}
       ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
       ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : "&nbsp;")}
       ${kpi("Cost per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `${usd(spentIn)} all-in over ${mergedIn.length}${merged.length ? ` · own runs, median ${usd(med(mc))}` : ""} · by week ${weeks.join(" → ")}`)}</div>

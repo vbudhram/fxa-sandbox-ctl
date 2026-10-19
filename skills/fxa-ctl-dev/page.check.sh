@@ -205,8 +205,8 @@ SYS='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(
   const pt = []; for (let m = 0; at(15, 4) + m * 60 <= at(19, 59); m += 5) pt.push(at(15, 4) + m * 60); pt.splice(3, 1);
   SNAP.health = { ...SNAP.health, lock_age_seconds: 40, lock_stale_seconds: 1800, pass_timer: "on", paused: null, pass_times: [now - 60, ...pt, ...__NEXT__] };
   SNAP.review = Array.from({ length: 6 }, (_, i) => ({ key: `FXA-${70 + i}`, pr: 70 + i, state: "OPEN", ok: 20, fail: 0, running: 0, created: new R(FIX - (12 - i) * 86400000).toISOString() }));
-  SNAP.inflight = [{ key: "FXA-60", stage: "pr", pr: 77, pr_url: "https://github.com/mozilla/fxa/pull/77", ok: 18, fail: 0, running: 4 },
-    { key: "FXA-61", stage: "pr", pr: 5, pr_url: "https://evil.example/pull/5", ok: 1, fail: 0, running: 1 }]; AGENTS.runners = [];
+  SNAP.repo = SNAP.team.repo = "example/app";
+  SNAP.inflight = [{ key: "FXA-60", stage: "pr", pr: 77, ok: 18, fail: 0, running: 4 }, { key: "FXA-61", stage: "pr", pr: "5\"><img src=x>", ok: 1, fail: 0, running: 1 }]; AGENTS.runners = [];
   AGENTS.sessions = [{ key: "agent-rt0002", state: "active", agent_alive: true, routine_run: 5, routine_name: "Live one", created: now - 60, request: "r" }];
   SNAP.queue = { ...(SNAP.queue ?? {}), ready: Array.from({ length: 27 }, (_, i) => ({ key: `FXA-${i + 1}` })) };
   STATE.age_seconds = 44; STATE.interval = 120; STATE.agents_age_seconds = 18;
@@ -215,10 +215,10 @@ SYS='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(
 WED='new Date(2026, 9, 21, 15, 0).getTime()'; FRI='new Date(2026, 9, 23, 15, 0).getTime()'
 ck "system: Wednesday 15:00 reads the real facts; an admin sees the routine, escaped; a non-admin sees none" "true|true|true|true|true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$WED/; s/__NEXT__/[at(7, 4, 1)]/")"'
   TEAM_ADMIN = { admin: true }; render(); const t = txt(), h = html();
-  const a = /Pipeline pass · runs now · 40s/.test(t) && /checks 18 of 22 done/.test(t) && /width:82%/.test(h) && /href="https:\/\/github\.com\/mozilla\/fxa\/pull\/77\/checks"/.test(h);
+  const a = /Pipeline pass · runs now · 40s/.test(t) && /checks 18 of 22 done/.test(t) && /width:82%/.test(h) && /href="https:\/\/github\.com\/example\/app\/pull\/77\/checks"/.test(h);
   const b = /Merge watch · 6 PRs wait on a human review · the oldest is 12 days/.test(t);
   const c = /3:04 PM Pipeline pass, then every 5 min until 7:59 PM/.test(t) && /Quiet hours start 7:59 PM/.test(t) && /First pass of the day 7:04 AM · 27 tickets are ready/.test(t);
-  const a2 = /checks 1 of 2 done/.test(t) && !/evil\.example/.test(h) && /Routine Live one runs now/.test(t);
+  const a2 = /checks 1 of 2 done/.test(t) && !/pull\/5/.test(h) && !document.querySelector("#ov-sys img") && /Routine Live one runs now/.test(t);
   const d = /then every 5 min/.test(t) && document.querySelectorAll("#ov-sys svg line").length === 59 && document.querySelectorAll("#ov-sys svg rect").length === 1 && document.querySelectorAll("#ov-sys svg circle").length === 2;
   const e = /2:00 AM Routine Nightly <img src=x> report · about \$3\.00/.test(t) && !document.querySelector("#ov-sys img") && !/Routine Old/.test(t) && /4:00 PM Routine Odd team/.test(t) && !/#teams\/\.\.\/x/.test(h);
   TEAM_ADMIN = { admin: false }; render(); const f = !/Nightly|Odd team|Live one|routine run|circle/.test(html().replace("Team admins see the routine runs here.", "")) && /Team admins see the routine runs here\./.test(txt());
@@ -234,7 +234,8 @@ ck "system: it says when it cannot tell, and shows no false time" "true|true|tru
   const d = st({ paused: "deploy" }, t => /Passes are paused: deploy/.test(t));
   SNAP.review = null; const e = st({}, t => /CI watch and Merge watch: unknown, GitHub fetch failed/.test(t) && !/checks 18/.test(t));
   RTSUM_AT = Date.now() - 50000; const f = st({}, t => /Routine times unknown: the routine store cannot be read/.test(t) && !/2:00 AM/.test(t));
-  STATE.age_seconds = 900; const g = st({ pass_times: [now + 300] }, t => /Pass times unknown: the snapshot is 15 min old/.test(t) && !document.querySelector("#ov-sys svg line"));
+  STATE.age_seconds = 900; const g = st({ pass_times: [now + 300], paused: null, lock_age_seconds: 40 }, t => /Pass times unknown: the snapshot is 15 min old/.test(t) && !document.querySelector("#ov-sys svg line")
+    && /Pass, CI and merge watch unknown: the snapshot is 15 min old/.test(t) && !/Pipeline pass · runs now|Merge watch · /.test(t) && /--bad/.test(document.querySelector("#ov-sys .row[style*=\"--bad\"]")?.getAttribute("style") ?? ""));
   return [a, b, c, d, e, f, g].join("|")')"
 # The Overview fixture (sample data only, times relative to the run): every card renders, none errors.
 O="$(dirname "$0")/page-fixture-overview.json"
@@ -265,4 +266,9 @@ ck "review 1: the Cost card opens Stats PRs on 7 days with the same figure; a Ji
   STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
   const c = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed is 20 min old/.test(document.getElementById("ov-floor").textContent) && /\?/.test(document.querySelector("#ov-mini .big").textContent);
   return [a, b, c].join("|")')"
+ck "review 2: 'Merged, 7 days' on Overview equals the Stats PRs Merged card it opens, for a PR opened 10 days ago" "2|2" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
+  STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(1) }, { n: 2, key: "EX-2", title: "b", state: "MERGED", src: "pipeline", created: ago(2), merged: ago(1) }] };
+  renderOvMini(); const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
+  return [o, [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent].join("|")')"
 exit $fail
