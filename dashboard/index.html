@@ -1086,7 +1086,7 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
   const gh = SNAP && (SNAP.review == null || SNAP.inflight_prs_failed);
   if (gh) out.now.push(["w", "CI watch and Merge watch: unknown, GitHub fetch failed"]);
   else {
-    merged().cards.filter(c => c.ci && c.running > 0).forEach(c => { const done = (c.ok ?? 0) + (c.fail ?? 0), tot = done + (c.running ?? 0), u = prHref(c.pr_url || prUrl(c.pr));
+    merged().cards.filter(c => c.ci && c.running > 0).forEach(c => { const done = (Number(c.ok) || 0) + (Number(c.fail) || 0), tot = done + (Number(c.running) || 0), u = prHref(c.pr_url || prUrl(c.pr));
       out.now.push(["ci", { n: c.pr, key: c.key, href: u ? `${u}/checks` : "", done, tot, pct: tot ? Math.round(done / tot * 100) : 0 }]); });
     const wait = (SNAP?.review ?? []).filter(isWaitingOnHuman), old = Math.max(0, ...wait.map(r => Math.round(days(r.last_human_review?.at ?? r.created) ?? 0)));
     out.now.push(["", wait.length ? `Merge watch · ${wait.length} PR${wait.length === 1 ? "" : "s"} wait on a human review · the oldest is ${old} day${old === 1 ? "" : "s"}` : "Merge watch · no PR waits on a review"]);
@@ -1104,7 +1104,8 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
     out.ticks = t.filter(x => x <= H12);
     if (!runs.length) out.next.push(["", "No pass in the next 24 hours."]);
     else {
-      const r0 = runs[0], gaps = r0.slice(1).map((x, i) => Math.round((x - r0[i]) / 60)), every = gaps.sort((a, b) => gaps.filter(v => v === b).length - gaps.filter(v => v === a).length)[0];
+      const r0 = runs[0], gaps = r0.slice(1).map((x, i) => Math.round((x - r0[i]) / 60)), n = new Map(); gaps.forEach(g => n.set(g, (n.get(g) ?? 0) + 1));
+      const every = [...n].sort((a, b) => b[1] - a[1])[0]?.[0];
       out.next.push(["", r0.length > 1 ? `${hmOf(r0[0])} Pipeline pass, then every ${every} min until ${hmOf(r0[r0.length - 1])}` : `${hmOf(r0[0])} Pipeline pass`]);
       if (runs[1]) {
         out.quiet.push([r0[r0.length - 1], runs[1][0]]);
@@ -1129,7 +1130,7 @@ function renderOvSys() {
   const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
   putOv("ov-sys", `<h2>What the system is doing</h2><h3>Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(--faint)">${esc(o.feeds)}</div>
     <h3>Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
-    JSON.stringify([o.now, o.next, o.routines]));
+    JSON.stringify([o.now, o.next, o.routines, o.pins, o.ticks.length]));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
