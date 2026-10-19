@@ -364,25 +364,17 @@
   .tabs a { font-family:var(--head); }
   .tabs a[aria-current] { color:var(--link); font-weight:700; border-bottom-color:var(--link); }
   .tabs a .n { font-size:var(--t-label); color:var(--faint); margin-left:var(--s1); font-variant-numeric:tabular-nums; }
-  .tiles { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); margin-bottom:var(--s3); }
-  @media (max-width:1000px) { .tiles { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-  @media (max-width:600px) { .tiles { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-  .tile { border:1px solid var(--card-border); box-shadow:var(--shadow); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
-  .tile:hover { text-decoration:none; box-shadow:0 2px 14px rgb(58 57 68 / .2); }
-  .tile .big { font-family:var(--head); font-size:28px; font-weight:700; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-  .tile .lbl { font:600 var(--t-sub) var(--head); color:var(--dim); }
-  .tile .sub { font-size:var(--t-sub); color:var(--faint); }
-  .tile.bad .big { color:var(--bad); } .tile.warn .big { color:var(--warn); } .tile.ok .big { color:var(--ok); }
+  .ovc { border:1px solid var(--card-border); box-shadow:var(--shadow); border-radius:var(--r-lg); background:var(--panel); padding:var(--s3) var(--s4); display:block; }
+  .ovc a:hover { text-decoration:none; box-shadow:0 2px 14px rgb(58 57 68 / .2); }
+  .ovc .big { font-family:var(--head); font-size:28px; font-weight:700; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .ovc .lbl { font:600 var(--t-sub) var(--head); color:var(--dim); }
+  .ovc .sub { font-size:var(--t-sub); color:var(--faint); }
+  .ovc.bad .big { color:var(--bad); } .ovc.warn .big { color:var(--warn); } .ovc .sub a { color:var(--link); }
 
   /* ── overview: what needs you, what is running ── */
   .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
   #s-running { position:sticky; top:72px; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } #s-running { position:static; } }
-  .need { display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0; border-top:1px solid var(--sunk); }
-  .need .chip { width:92px; flex:none; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:999px; }
-  .need .body { flex:1; min-width:0; } .need .body a.t { display:block; color:inherit; } .need .body a.t:hover { color:var(--link); }
-  .need .body .t { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .need .body .m { font-size:var(--t-sub); color:var(--faint); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; } .need > a { font-size:var(--t-sub); font-weight:600; color:var(--link); white-space:nowrap; }
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
   .chip.dim { background:var(--sunk); color:var(--dim); } .chip.ok { background:var(--okbg); color:var(--ok); }
@@ -556,9 +548,7 @@
     .alert { flex-wrap:wrap; } .alert .what { white-space:normal; } .alert .fix { margin-left:0; }
     h2, .headline { flex-wrap:wrap; } h2 .note, .headline .rest { margin-left:0; flex-basis:100%; }
     .slot { grid-template-columns:84px minmax(40px,1fr) max-content; }
-    .need { flex-wrap:wrap; row-gap:var(--s1); } .need .chip { width:auto; padding:2px 10px; }
-    .need > a { order:1; margin-left:auto; } .need .body { order:2; flex:1 1 100%; }
-    .sx .sxbar { flex-wrap:wrap; } .sx .sxt { order:-1; flex:1 1 100%; white-space:normal; }
+        .sx .sxbar { flex-wrap:wrap; } .sx .sxt { order:-1; flex:1 1 100%; white-space:normal; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 table.usage { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -598,12 +588,11 @@ table.usage tr.sel td { background: var(--infobg); }
 <main class="main" id="main">
 <div class="mh"><div class="row"><h1 id="vtitle">Overview</h1><span class="vsub" id="vsub"></span><span class="acts" id="vacts"></span></div><nav class="tabs" id="vtabs" aria-label="Tabs" hidden></nav></div>
 <div class="mc">
-<div class="tiles" id="s-tiles" data-views="overview"></div>
-<div id="attn" role="status" aria-live="polite" data-views="overview"></div>
+<div id="attn" role="status" aria-live="polite" tabindex="-1" data-views="overview"></div>
 
 <div class="grid">
   <div class="ov" data-views="overview">
-    <section id="s-needs"></section>
+    <section id="ov-mini"></section>
     <section id="s-running"></section>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
@@ -660,8 +649,9 @@ const usd = n => n == null ? "—" : "$" + Number(n).toFixed(2);
 const LAST = {};
 function put(id, html) {
   if (LAST[id] === html) return false;
-  LAST[id] = html;
   const node = document.getElementById(id);
+  if (!node) return false;
+  LAST[id] = html;
   const closed = new Set([...node.querySelectorAll("details")].filter(d => !d.open && d.dataset.k).map(d => d.dataset.k));
   node.innerHTML = html;
   node.querySelectorAll("details").forEach(d => { if (d.dataset.k && closed.has(d.dataset.k)) d.open = false; });
@@ -855,17 +845,19 @@ function merged() {
   return { cards: cards.concat(ciCards), waiting: waiting.filter(t => t.stage !== "pr") };
 }
 
-let NEEDS = [];
 // One rule for a stop command a person copies (i356 D38): a slot or runner name, else no command.
 const stopName = n => /^[a-z0-9][a-z0-9-]{0,62}$/.test(n ?? "") ? n : null;
 // A stray instance's run name: the agent- prefix goes only from a name in the runner pattern.
 const strayRun = n => /^agent-[a-z0-9][a-z0-9-]{0,56}$/.test(n ?? "") ? n.slice(6) : null;
+// Instances up for 2 min with no run or session behind them: #attn and Needs you share the rule.
+function strays() {
+  const known = new Set(merged().cards.map(c => c.name));
+  (AGENTS?.sessions ?? []).forEach(x => known.add(x.key));
+  return (AGENTS?.instances ?? []).filter(v => !known.has(strayRun(v.name) ?? v.name) && v.age_seconds > 120);
+}
 function renderAlerts() {
   const s = SNAP, g = AGENTS, alerts = [], h = s?.health ?? {}, repo = s?.repo ?? "";
   const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
-  // Ticket-level items: urgency first (lower sorts first), each with one link out.
-  const needs = [];
-  const need = (prio, chip, cls, title, meta, href, link, key, n = 1) => needs.push({ prio, chip, cls, title, meta, href, link, key, n });
   const staleFeed = (name, age, every) => age != null && every && age > 3 * every &&
     add("bad", `<b class="key">${name}</b>`, `feed is ${ago(age).replace(" ago", "")} old, refreshes every ${every}s; the page is showing history`);
   staleFeed("agents", STATE.agents_age_seconds, STATE.agents_interval);
@@ -879,14 +871,6 @@ function renderAlerts() {
   else if (sp > 1500) add("warn", `<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
-  const tix = jiraHref, pr = prUrl;
-  // The Blocked, Decide, Failing, Changes and Conflicts rows read the Board's why, who acts and age, and open the Board's rail.
-  const bi = s ? Object.fromEntries(boardItems().map(i => [i.key, i])) : {}, bmeta = (k, alt) => needMeta(bi[k], alt);
-  (s?.blocked ?? []).forEach(b => need(2, "Blocked", "dim", b.summary ?? b.key, bmeta(b.key, `${b.key} · needs a human decision`), tix(b.key), "View ticket", b.key));
-  // Skipped queue tickets wait on a person's answer in Jira; the next pass reads it. Most-skipped first.
-  const decide = (s?.queue?.skipped ?? []).filter(k => k.in_queue !== false && !k.held_by).sort((x, y) => y.passes - x.passes);
-  decide.slice(0, 3).forEach(k => need(3.5, "Decide", "warn", k.summary || k.key, bmeta(k.key, `${k.key} · skipped ${k.passes}× · ${k.reason || "no reason recorded"}`), tix(k.key), "Answer in Jira"));
-  if (decide.length > 3) need(3.6, "Decide", "dim", `${decide.length - 3} more skipped tickets wait on a decision`, "the Queue tab lists each with its reason", "#pipeline/queue", "Open queue", undefined, decide.length - 3);
   const { cards, waiting } = merged();
   cards.forEach(t => {
     const a = t.agent || {}, title = t.summary || t.key;
@@ -895,31 +879,13 @@ function renderAlerts() {
     if (t.base_ok === false) add("bad", k, `${esc(title)} · the sandbox is not on the slot's commit`, stop ? `fxa-sandbox-ctl stop ${stop}` : "");
     if (a.num_turns === 0) add("bad", k, `${esc(title)} · the goal was rejected: the rendered prompt is over 4000 chars`, "Stop the run, then shorten the ticket and requeue it");
     else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) add("warn", k, `idle ${short(a.idle_seconds)}: ${esc(a.last_tool || a.last_text || "no output")}`);
-    if (t.base_ok === false) need(0, "Wrong base", "bad", title, `${t.key} · sandbox is not on the slot's commit; stop ${t.name}`, tix(t.key), "View ticket", t.key);
-    if (t.stage === "stalled") need(0, "Stalled", "bad", title, `${t.key} · ${t.detail || ""}`, tix(t.key), "View ticket", t.key);
-    else if (!t.agent_alive && t.stage === "watching" && !t.handoff) need(0, "Agent exited", "bad", title, `${t.key} · exited without a handoff`, tix(t.key), "View ticket", t.key);
-    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) need(1, "Idle agent", "warn", title, `${t.key} · idle ${short(a.idle_seconds)}: ${a.last_tool || a.last_text || "no output"}`, tix(t.key), "View ticket", t.key);
-    if (a.num_turns === 0) need(0, "Goal rejected", "bad", title, `${t.key} · the rendered prompt is over 4000 chars`, tix(t.key), "View ticket", t.key);
   });
-  waiting.forEach(t => need(0, "No sandbox", "bad", t.summary || t.key, `${t.key} · ${t.vm_running ? "labelled inflight, VM up, agent gone" : "labelled inflight with no sandbox"}`, tix(t.key), "View ticket", t.key));
-  (s?.review ?? []).forEach(r => {
-    const title = r.title || r.key, d = Math.round(days(r.last_human_review?.at ?? r.created) ?? 0);
-    if (r.state === "MERGED" || r.state === "CLOSED") need(6, "Drain", "done", `#${r.pr} ${r.state.toLowerCase()}, but ${r.key} is still labelled done`, "the next pass files it", pr(r.pr), "View PR", r.key);
-    else if (r.mergeable === "CONFLICTING") need(3, "Conflicts", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · ${r.last_human_review ? "a human reviewed, so they rebase" : "no human review yet, so a rebase round is safe"}`), pr(r.pr), "View PR", r.key);
-    else if (r.fail > 0 && r.infra) need(4, "Infra red", "warn", title, `${r.key} · #${r.pr} · ${r.infra}, repo infrastructure, not the PR code`, pr(r.pr) + "/checks", "See job", r.key);
-    else if (r.fail > 0) need(3, "Failing", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · ${r.fail} check${r.fail > 1 ? "s" : ""} failing`), pr(r.pr) + "/checks", "See job", r.key);
-    else if (r.review === "CHANGES_REQUESTED") need(3, "Changes", "bad", title, bmeta(r.key, `${r.key} · #${r.pr} · changes requested`), pr(r.pr), "View PR", r.key);
-    else if (isWaitingOnHuman(r)) need(5 - Math.min(d, 30) / 100, "Review", d >= 3 ? "warn" : "dim", title, `${r.key} · #${r.pr} · ${r.last_human_review ? `since ${r.last_human_review.login}'s review` : "no human review"} in ${d} day${d === 1 ? "" : "s"}`, pr(r.pr), "View PR", r.key);
-  });
-  laneRows().filter(r => r.t.slack && r.age >= 3).forEach(r => need(5, "Review", "warn", r.t.summary, `Slack PR #${r.t.pr} · ${r.t.owner || "owner unknown"} · no ticket · open ${r.age} days`, pr(r.t.pr), "View PR", r.t.key));
-  const known = new Set(cards.map(c => c.name));
-  (g?.sessions ?? []).forEach(x => known.add(x.key));
+  const stray = new Set(strays());
   (g?.instances ?? []).forEach(v => {
-    const run = strayRun(v.name), owned = known.has(run ?? v.name);
-    if (!owned && v.age_seconds > 120) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : "");
+    const run = strayRun(v.name);
+    if (stray.has(v)) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : "");
     else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
-  NEEDS = needs.sort((x, y) => x.prio - y.prio);
   put("attn", alerts.join(""));
 }
 
@@ -943,20 +909,23 @@ function renderAgents() {
   TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
 }
 
-// Needs you by kind, each item once: a "N more" row counts as N.
-const NEED_KIND = { Review: "Review", Decide: "Decide", Blocked: "Blocked", Drain: "Drain", "Infra red": "Infra red" };
-function needCounts() {
-  const c = {}; NEEDS.forEach(n => { const k = NEED_KIND[n.chip] ?? "Fix"; c[k] = (c[k] ?? 0) + (n.n ?? 1); });
-  return { total: Object.values(c).reduce((a, b) => a + b, 0), parts: ["Fix", "Infra red", "Review", "Decide", "Blocked", "Drain"].filter(k => c[k]).map(k => `${k} ${c[k]}`).join(" · ") };
+// Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
+// Unknown when Jira or the agents feed is unknown: never a confident zero.
+function ovNeeds() {
+  const bg = beltGroups(), belts = new Set(bg.needs.map(r => r.t.key)), sandbox = new Set();
+  merged().cards.forEach(c => { if (!c.ci && (c.base_ok === false || c.agent?.num_turns === 0) && !belts.has(c.key)) sandbox.add(c.key); });
+  strays().forEach(v => sandbox.add(v.name));
+  const by = {}; bg.needs.forEach(r => { const p = r.item?.person ?? "the operator"; by[p] = (by[p] ?? 0) + 1; });
+  return { total: belts.size + sandbox.size, belts: belts.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
 }
-function renderNeeds() {
-  const bg = beltGroups(), belts = new Set(["working", "needs", "fixes", "review", "outside"].flatMap(k => bg[k].map(r => r.t.key))), nc = needCounts();
-  put("s-needs", head("needs you", nc.total, nc.parts) +
-    (NEEDS.length === 0 ? `<div class="emptybox">Nothing needs you right now.</div>` : NEEDS.map(n => `<div class="need">
-      <span class="chip ${n.cls}">${esc(n.chip)}</span>
-      <div class="body">${n.key && belts.has(n.key) ? `<a class="t" href="#pipeline/belts/${encodeURIComponent(n.key)}" title="Open the belt: ${esc(n.title)}">${esc(n.title)}</a>` : `<div class="t" title="${esc(n.title)}">${esc(n.title)}</div>`}<div class="m" title="${esc(n.meta)}">${esc(n.meta)}</div></div>
-      <a href="${esc(n.href)}"${n.href.startsWith("#") ? "" : ' target="_blank" rel="noopener"'}>${n.link}</a></div>`).join("")));
+function renderOvMini() {
+  const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
+    .concat(n.sandbox ? [`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
+  put("ov-mini", `<div class="ovc ${n.unknown ? "" : n.total ? "warn" : ""}"><div class="lbl">Needs you</div><div class="big">${n.unknown ? "?" : n.total}</div>
+    <div class="sub">${n.unknown ? esc(n.unknown) : n.total ? parts.join(" · ") : "Nobody needs to act."}</div></div>`);
 }
+// The sandbox part moves the focus to the #attn strip on this page.
+document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
 function renderRunning() {
   const { cards } = merged(), ss = AGENTS?.sessions ?? [], med = SNAP?.telemetry?.median_minutes;
   const runners = cards.filter(c => !c.ci), live = ss.filter(s => LIVE_SESSION.includes(s.state));
@@ -990,11 +959,6 @@ function slackText(t) {
 }
 // A short age for list meta: "5m", "3h", "2d".
 const ageOf = e => e ? ago(Math.max(0, Math.round(Date.now() / 1000 - Number(e)))).replace(" ago", "") : "";
-// LLM spend in the last 7 UTC days: a day with only test runs has no row, so count by date, not rows.
-function llmWeek(days) {
-  const since = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
-  return days.filter(x => x.day >= since).reduce((a, x) => a + x.usd, 0);
-}
 // One cost per session on every view: the live runner's (the proxy's total so far), else the Stats row's.
 let STAT_USD = new Map(), STAT_SRC = null;
 function sessUsd(s) {
@@ -2363,8 +2327,6 @@ function gateLine(now = Date.now() / 1000) {
   const room = Math.min(g.launchcap, h.max_launches_per_day - h.launches_24h);
   return { ok: true, room, text: `${lead} ${when.startsWith("the next") ? "offers" : "the pass offers"} ${ready[0].key} first. Up to ${room} can launch. Feedback and rebase rounds use slots first, and the pass can still skip a ticket.` };
 }
-// A Needs you row's meta from its Board item: key, why, who acts and age; the old text when the Board has no such row.
-const needMeta = (i, alt) => i && i.column === "blocked" ? [i.key, i.why, i.person, boardAge(i.age)].filter(Boolean).join(" · ") : alt;
 const boardAct = items => items.filter(i => i.column === "blocked" && i.group === "act").length + items.filter(i => i.column === "running" && i.fault).length;
 // A column that cannot be read says so, never a zero.
 function boardState(col) {
@@ -2791,43 +2753,28 @@ function paintFavicon(dot) {
 
 // The tab says what needs you, so a background tab is worth glancing at.
 function renderTab() {
-  const n = (SNAP?.review ?? []).filter(isWaitingOnHuman).length;
+  const nv = ovNeeds(), n = nv.unknown ? 0 : nv.total;
   const bad = document.querySelectorAll("#attn .alert.bad").length;
   const level = document.getElementById("dot").className.replace("dot", "").trim();
   document.title = `${n ? `(${n}) ` : ""}${bad ? "⚠ " : ""}FxA Agent`;
   paintFavicon({ dead:"#C50042", warn:"#FFA436" }[level]);
 }
 
-// Overview tiles and sidebar counts: one number per view, each links to it.
+// Sidebar counts: one number per view.
 function renderNav() {
   const ss = AGENTS?.sessions ?? [];
   const liveS = ss.filter(s => LIVE_SESSION.includes(s.state)).length;
-  // Review waits as Needs you lists them: pipeline PRs, and Slack PRs open 3 days or more.
+  // The Pipeline badge: review waits, pipeline PRs and Slack PRs open 3 days or more.
   const slackOld = beltGroups().outside.filter(r => r.t.slack && r.age >= 3);
   const waiting = SNAP?.review ? SNAP.review.filter(isWaitingOnHuman).length + slackOld.length : null;
-  const bad = document.querySelectorAll("#attn .alert.bad").length + NEEDS.filter(n => n.cls === "bad").length, alerts = document.querySelectorAll("#attn .alert").length + needCounts().total;
+  // The rail badge is the Needs you number; at 0 a #attn alert still shows as '!' (i356 D3).
+  const nv = ovNeeds(), bad = document.querySelectorAll("#attn .alert.bad").length, attn = document.querySelectorAll("#attn .alert").length;
   const runners = (AGENTS?.instances ?? []).filter(v => v.state === "running").length;
   const badge = (id, n, cls) => { const e = document.getElementById(id); e.textContent = n ? n : ""; e.className = "n" + (cls ? " " + cls : ""); };
-  badge("n-overview", alerts, bad ? "bad" : "warn");
+  badge("n-overview", nv.unknown ? "?" : nv.total || (attn ? "!" : ""), bad ? "bad" : "warn");
   badge("n-pipeline", waiting, "info");
   badge("n-sessions", liveS, "info");
   badge("n-runners", AGENTS ? runners : "", "");
-  const tile = (href, lbl, big, sub, cls = "") => `<a class="tile ${cls}" href="${href}"><div class="lbl">${sentence(lbl)}</div><div class="big">${big ?? "?"}</div><div class="sub">${sub}</div></a>`;
-  const rv = SNAP?.review ?? [], open = rv.filter(r => r.state === "OPEN");
-  const oldest = Math.max(0, ...rv.filter(isWaitingOnHuman).map(r => Math.round(days(r.last_human_review?.at ?? r.created) ?? 0)), ...slackOld.map(r => r.age));
-  const conflicts = open.filter(r => r.mergeable === "CONFLICTING").length, infra = open.filter(r => r.fail > 0 && r.infra).length;
-  const failing = open.filter(r => r.fail > 0 && !r.infra).length, changes = open.filter(r => r.review === "CHANGES_REQUESTED").length;
-  const fix = open.filter(r => r.mergeable === "CONFLICTING" || r.fail > 0 || r.review === "CHANGES_REQUESTED").length;
-  const t = SNAP?.telemetry;
-  const opc = openPrCounts();
-  put("s-tiles", [
-    tile("#pipeline/belts", "open PRs", opc ? opc.total : null, opc ? esc(opc.parts) : "GitHub fetch failed"),
-    tile("#pipeline/belts", "waiting on review", waiting, waiting ? `oldest waits ${oldest} day${oldest === 1 ? "" : "s"}` : "none waiting", waiting ? "warn" : ""),
-    tile("#pipeline/belts", "needs a fix", SNAP ? fix : null, [failing && `${failing} failing`, conflicts && `${conflicts} conflicts`, changes && `${changes} changes requested`, infra && `${infra} infra red`].filter(Boolean).join(" · ") || "nothing red", fix ? "bad" : ""),
-    tile("#sessions", "sessions", AGENTS ? `${liveS}/${AGENTS.session_cap}` : null, `${ss.filter(s => s.state === "paused").length} paused, a reply resumes`),
-    (() => { const d = STATS?.llm?.days ?? [], today = new Date().toISOString().slice(0, 10), td = d.find(x => x.day === today), wk = llmWeek(d);
-      return tile("#stats/spend", "LLM spend today", STATS ? usd(td?.usd ?? 0) : null, STATS ? `${usd(wk)} in the last 7 days` : "loading"); })(),
-  ].join(""));
 }
 
 // ── views, tabs and the selection: all in the hash, so a link opens the same screen ──
@@ -3126,8 +3073,8 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderNeeds, "s-needs"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
-   [renderNav, "s-tiles"], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvMini, "ov-mini"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
 }

@@ -73,4 +73,14 @@ ck "#attn: wrong base with its stop, goal rejected with its next step, idle warn
   return [/fxa-sandbox-ctl stop fxa-auto-1/.test(row("FXA-41")?.textContent), /shorten the ticket and requeue/.test(row("FXA-42")?.textContent),
     row("FXA-45")?.classList.contains("warn"), !/fxa-sandbox-ctl stop/.test(row("FXA-46")?.textContent ?? "x"), /stop fxa-auto-9/.test(row("agent-fxa-auto-9")?.textContent),
     !/stop/.test(row("agent-x;id")?.textContent ?? "x") && !/stop/.test(row("gke-pool-1")?.textContent ?? "x"), h.includes("&lt;img"), !h.includes("<img src=x")].join("|")')"
+# Needs you (i378, i379): one number on the card, the rail badge and the tab title; a stray adds a sandbox
+# part that moves the focus to #attn; a stale agents feed makes it unknown, never 0.
+ck "Needs you: card, badge and title agree; a stray adds a sandbox part that focuses #attn; a stale feed gives ?" "true|true|true|1 sandbox alert|attn|?|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
+  const big = () => document.querySelector("#ov-mini .big").textContent, b = beltGroups().needs.length;
+  const r1 = [big() === String(b), document.getElementById("n-overview").textContent === (b ? String(b) : document.querySelectorAll("#attn .alert").length ? "!" : ""), document.title.startsWith(b ? `(${b}) ` : "")];
+  AGENTS.instances = [...(AGENTS.instances ?? []), { name: "agent-zz9", state: "running", age_seconds: 300 }]; render();
+  const sb = [...document.querySelectorAll("#ov-mini .sub a")].find(a => a.hasAttribute("data-attn")); sb?.click();
+  const r2 = [sb?.textContent, document.activeElement?.id];
+  STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
+  return [...r1, ...r2, big(), /unknown, agents feed/.test(document.querySelector("#ov-mini .sub").textContent)].join("|")')"
 exit $fail
