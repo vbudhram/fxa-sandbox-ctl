@@ -377,4 +377,15 @@ ck "i407 cards: 7 day runs and sessions, the cost lines, the host state from fc_
 ck "i407 cards: an old agents feed gives ? on each card, not a 0" "3|false" "$(bash "$p" '#overview' --fixture "$C" --width 1280 --probe '
   const n = document.createElement("section"); n.id = "sb-cards"; document.getElementById("main").append(n); STATE.agents_age_seconds = 99999; renderSbCards();
   return [...n.querySelectorAll(".big")].filter(b => b.textContent === "?").length + "|" + /\b0 of|\$0\.00/.test(n.textContent)')"
+# Sandboxes panel (i407 sb-panel): a selected row opens the panel; when a poll drops it, the selection clears, the drawer closes
+# and the focus goes to the list. sbRows() is stubbed here until sb-list-fixes builds it.
+SP="$(dirname "$0")/page-fixture-sb-panel.json"
+ck "sb-panel: a fix row opens with its command; when the row leaves, SEL.runners clears, showright is off, the focus is in #sb-list" "true|true|true|true" "$(bash "$p" '#runners' --fixture "$SP" --width 1200 --probe '
+  const rows = { live: [], fix: [{ id: "fix:agent-def456", src: "slack", key: "agent-def456", fix: { why: "The runner is still up 10 min after its session stopped.", cmd: "fxa-sandbox-ctl stop agent-def456", steps: null } }] };
+  window.sbRows = () => rows; window.sbTabHas = () => true;
+  if (!document.getElementById("sb-list")) { const d = document.createElement("div"); d.id = "sb-list"; document.querySelector("main").appendChild(d); }
+  SEL.runners = "fix:agent-def456"; document.body.classList.add("showright"); renderRight();
+  const open = document.getElementById("right").innerHTML.includes("<code>fxa-sandbox-ctl stop agent-def456</code>");
+  document.getElementById("rclose")?.focus(); rows.fix = []; renderRight();
+  return [open, SEL.runners === undefined, !document.body.classList.contains("showright"), document.getElementById("sb-list").contains(document.activeElement)].join("|")')"
 exit $fail
