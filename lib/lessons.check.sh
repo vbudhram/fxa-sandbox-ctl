@@ -54,4 +54,17 @@ if command -v sqlite3 >/dev/null; then
   check "lessons: the store equals the file" "$(cmd_lessons --json | jq -S 'map(del(.decided_at))')" "$from_db"
   check "lessons: the same guide section" "$(lessons_approved_md)" "$md_db"
 fi
+# Each lesson has its session's team, and a run gets only its own team's approved lessons (a lesson with no team is FxA's).
+( session_get() { [ "$2" = profile ] && [ "$1" = agent-pv01 ] && echo privteam; }
+  _session_sh() { echo '[{"lesson":"The private repo builds with make dist.","why":"seen"}]'; }
+  db_on() { return 1; }
+  lessons_collect agent-pv01 runner-x 2>/dev/null
+  pid="$(cmd_lessons --json | jq -r '.[] | select(.session == "agent-pv01") | .id')"
+  check "a collected lesson has its session's team" "privteam" "$(cmd_lessons --json | jq -r --arg i "$pid" '.[] | select(.id == $i) | .team')"
+  cmd_lessons approve "$pid" >/dev/null
+  check "an FxA run does not get another team's approved lesson" "0" "$(lessons_approved_md | grep -c 'make dist' || true)"
+  check "the team's own run gets it" "1" "$(PIPE_PROFILE=privteam lessons_approved_md | grep -c 'make dist' || true)"
+  jq -c '. + [{id: "0ld0ld00", text: "A lesson saved before teams existed.", status: "approved", session: "agent-old"}]' "$FXA_LESSONS_FILE" > "$FXA_LESSONS_FILE.t" && mv "$FXA_LESSONS_FILE.t" "$FXA_LESSONS_FILE"
+  check "a lesson with no team still reaches FxA runs, and no other team's" "1|0" "$(lessons_approved_md | grep -c 'before teams existed' || true)|$(PIPE_PROFILE=privteam lessons_approved_md | grep -c 'before teams existed' || true)"
+  exit "$fail" ) || fail=1
 exit $fail

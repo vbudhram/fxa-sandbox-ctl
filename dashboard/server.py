@@ -960,10 +960,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/lessons":
             try:
                 proc = ctl_run(["lessons", "--json"], timeout=15)
-                body = proc.stdout if proc.returncode == 0 and proc.stdout.strip() else "[]"
+                rows = json.loads(proc.stdout) if proc.returncode == 0 and proc.stdout.strip() else []
             except Exception:
-                body = "[]"
-            self._send(200, body, "application/json")
+                rows = []
+            # A private team's lessons can quote its code: only a signed team admin sees them (i358).
+            admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
+            self._json(200, [r for r in rows if isinstance(r, dict) and (admin or not team_private(r.get("team") or "fxa"))])
         elif path == "/api/errors":
             self._send(200, cached_ctl(ERRORS, ["errors", "--json"], 20, 20) or "[]", "application/json")
         elif path == "/api/history":

@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql applied 009-lessons-team.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "8|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "9|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"
@@ -194,4 +194,17 @@ cp "$here/db/003-llm-thread.sql" "$mig/"; FXA_DB="$tmp/old.db" _DB_DIR="$mig" db
 check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169 ask-ab12|C0AB12CD3:1791135361.015169 fxa-1|" \
   "$(FXA_DB="$tmp/old.db" _db "SELECT run || '|' || coalesce(thread, '') FROM llm_calls ORDER BY run;" | tr '\n' ' ' | sed 's/ $//')"
 
-[ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
+[ "$fail" = 0 ] && echo "all checks pass"; # Schema 9: a lesson stored at schema 8 gets team fxa; a new one keeps its team, and an update keeps it too.
+( export FXA_DB="$tmp/m9.db"; source "$here/db.sh"
+  mkdir -p "$tmp/m9"; for f in "$here"/db/00[1-8]-*.sql; do cp "$f" "$tmp/m9/"; done
+  real="$_DB_DIR"; _DB_DIR="$tmp/m9"; db_init >/dev/null
+  if [ "$(_db "PRAGMA user_version;")" = 8 ]; then
+    db_ingest lessons '{"id":"o1","at":"x","session":"agent-x","text":"an old lesson","status":"approved"}'
+    _DB_DIR="$real"; db_init >/dev/null
+    db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","team":"crew","text":"a crew lesson","status":"pending"}'
+    db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","text":"a crew lesson, edited","status":"approved"}'
+    check "schema 9: the old lesson is fxa's, a new one keeps its team through an update" "9|fxa|crew" \
+      "$(_db "PRAGMA user_version;")|$(db_value "SELECT team FROM lessons WHERE id = 'o1';")|$(db_value "SELECT team FROM lessons WHERE id = 'n1';")"
+  else echo "FAIL schema 9: could not build a schema 8 store to migrate"; fail=1; fi
+  exit "$fail" ) || fail=1
+exit "$fail"

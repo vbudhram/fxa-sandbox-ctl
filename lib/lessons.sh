@@ -25,16 +25,17 @@ _lessons_save() {
   jq -c '.[]' "$LESSONS_FILE" 2>/dev/null | while IFS= read -r l; do db_ingest lessons "$l"; done
 }
 
-# _lessons_add <key> <json-array>   Queue each valid {lesson, why} as pending. Prints how many.
+# _lessons_add <key> <json-array> [team]   Queue each valid {lesson, why} as pending, with the team whose
+# session proposed it (fxa when not given). Prints how many.
 _lessons_add() {
   mkdir -p "$(dirname "$LESSONS_FILE")"
   local now new; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  new="$(jq -c --arg k "$1" --arg at "$now" '
+  new="$(jq -c --arg k "$1" --arg at "$now" --arg tm "${3:-fxa}" '
     def clean: tostring | gsub("[[:cntrl:]]"; " ") | gsub("\\s+"; " ") | ltrimstr(" ") | rtrimstr(" ");
     [ (if type == "array" then .[:3] else [] end)[]
       | select(type == "object") | {text: (.lesson // "" | clean), why: (.why // "" | clean | .[:300])}
       | select((.text | length) >= 10 and (.text | length) <= 300)
-      | . + {session: $k, at: $at, status: "pending"} ]' <<<"$2" 2>/dev/null)" || { echo 0; return 0; }
+      | . + {session: $k, team: $tm, at: $at, status: "pending"} ]' <<<"$2" 2>/dev/null)" || { echo 0; return 0; }
   local all item id n=0; all="$(_lessons_all)"
   while IFS= read -r item; do
     [ -n "$item" ] || continue
@@ -50,7 +51,10 @@ lessons_collect() {
   local raw n
   raw="$(_session_sh "$2" 'head -c 8000 /workspace/.fxa-lessons.json 2>/dev/null; rm -f /workspace/.fxa-lessons.json' 2>/dev/null || true)"
   [ -n "$raw" ] || return 0
-  n="$(_lessons_add "$1" "$raw")"
+  # The session's own team: a private team's lesson must not reach another team's runners.
+  local team; team="$(session_get "$1" profile 2>/dev/null || true)"
+  [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || team="${PIPE_PROFILE:-fxa}"
+  n="$(_lessons_add "$1" "$raw" "$team")"
   [ "${n:-0}" -gt 0 ] && echo "Queued ${n} lesson(s) for review" >&2
   return 0
 }
@@ -58,13 +62,14 @@ lessons_collect() {
 # _lessons_read   For readers: the store when it is up, else the file (writes go to the file, then the store).
 _lessons_read() {
   if declare -F db_on >/dev/null && db_on; then
-    db_json "SELECT text, why, session, at, status, id, decided_at FROM lessons ORDER BY rowid;" | jq -c 'map(with_entries(select(.value != null)))'
+    db_json "SELECT text, why, session, team, at, status, id, decided_at FROM lessons ORDER BY rowid;" | jq -c 'map(with_entries(select(.value != null)))'
   else _lessons_all; fi
 }
 
+# lessons_approved_md   This run's team's approved lessons (PIPE_PROFILE; a lesson with no team is FxA's).
 lessons_approved_md() {
-  _lessons_read | jq -r --argjson max "$LESSONS_MAX" '
-    [ .[] | select(.status == "approved") ] | .[-$max:]
+  _lessons_read | jq -r --argjson max "$LESSONS_MAX" --arg tm "${PIPE_PROFILE:-fxa}" '
+    [ .[] | select(.status == "approved" and (.team // "fxa") == $tm) ] | .[-$max:]
     | if length == 0 then empty else
         "\n# Lessons from earlier sessions\n\nThe operator approved each one. Follow them unless the task says otherwise.\n", (.[] | "- \(.text)")
       end'
@@ -74,7 +79,7 @@ cmd_lessons() {
   case "${1:-list}" in
     list|--json)
       if [ "${1:-}" = --json ] || [ "${2:-}" = --json ]; then _lessons_read; return 0; fi
-      _lessons_all | jq -r '.[] | "\(.id)  \(.status)\t\(.session)  \(.text)"' ;;
+      _lessons_all | jq -r '.[] | "\(.id)  \(.status)\t\(.team // "fxa")  \(.session)  \(.text)"' ;;
     approve|reject)
       local id="${2:-}" text="" status
       [[ "$id" =~ ^[0-9a-f]{8}$ ]] || { echo "usage: lessons $1 <id> [--text <text>]" >&2; return 1; }
