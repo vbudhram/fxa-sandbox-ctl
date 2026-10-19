@@ -1,0 +1,7 @@
+{
+ "/api/team-admin": {"admin": false},
+ "/api/runs/recent": {"error": null, "runs": [
+  {"at": "@iso-4000", "src": "slack", "kind": "session", "key": "agent-sl0001", "title": "[Sample] Why does the sample sign-in page fail on a phone?", "team": "example", "outcome": "answered", "pr_url": null, "pr_number": null, "pr_state": null, "usd": 0.9, "min": 12, "end": "@epoch-3600", "where": "firecracker", "boot_s": 38, "mem_mb": 6144, "stop": "idle", "routine": false},
+  {"at": "@iso-86400", "src": "pipeline", "kind": "fix", "key": "EX-1", "title": "[Sample] Fix the sample login button", "team": "example", "outcome": "pr", "pr_url": "https://github.com/example/repo/pull/41", "pr_number": 41, "pr_state": "open", "usd": 3.5, "min": 25, "end": "@epoch-86400", "where": null, "boot_s": null, "mem_mb": null, "stop": null, "routine": false}
+ ]}
+}

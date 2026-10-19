@@ -388,4 +388,12 @@ ck "sb-panel: a fix row opens with its command; when the row leaves, SEL.runners
   const open = document.getElementById("right").innerHTML.includes("<code>fxa-sandbox-ctl stop agent-def456</code>");
   document.getElementById("rclose")?.focus(); rows.fix = []; renderRight();
   return [open, SEL.runners === undefined, !document.body.classList.contains("showright"), document.getElementById("sb-list").contains(document.activeElement)].join("|")')"
+D="$(dirname "$0")/page-fixture-sb-done.json"
+ck "Sandboxes Recently completed: ended runs newest first, the PR link, and a phone-width table scrolls in its own box" "agent-sl0001,EX-1|true|true|true" "$(bash "$p" '#runners' --fixture "$D" --width 500 --probe '
+  let s = document.getElementById("s-sb"); if (!s) { s = document.createElement("section"); s.id = "s-sb"; s.className = "wide"; document.getElementById("main").append(s); }
+  let d = document.getElementById("sb-done"); if (!d) { d = document.createElement("div"); d.id = "sb-done"; d.className = "sb-done"; s.append(d); }
+  d.style.width = "360px"; await loadSbDone();
+  const box = d.querySelector(".sbd-scroll");
+  return [[...d.querySelectorAll("[data-sbdone]")].map(x => x.dataset.sbdone).join(","), !!d.querySelector("a[href=\"https://github.com/example/repo/pull/41\"]"),
+    !!box && box.scrollWidth > box.clientWidth && getComputedStyle(box).overflowX === "auto", document.documentElement.scrollWidth <= innerWidth].join("|")')"
 exit $fail

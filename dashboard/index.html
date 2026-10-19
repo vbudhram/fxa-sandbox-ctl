@@ -279,6 +279,7 @@
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
   .tlink { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .tlink:hover { text-decoration:underline; }
   .ttable tr.sel td { background:var(--infobg); }
+  #s-sb .sb-done h2 { font:600 var(--t-sub) var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #s-sb .sb-done .sbd-scroll { overflow-x:auto; } #s-sb .sb-done .ttable td { white-space:nowrap; } #s-sb .sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
   .rtshow button[aria-pressed="true"], .tsw[aria-pressed="true"] { color:var(--link); border-color:var(--link); background:var(--infobg); }
   .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
@@ -3440,6 +3441,7 @@ function route() {
   if (view === "stats") renderStats();
   if (view === "overview" && view !== VIEW_PREV) loadRuns();
   if (view === "runners") renderSb();
+  if (view === "runners" && view !== VIEW_PREV) loadSbDone();
   if (view === "teams") { const testFocus = TACT === SEL.teams && TTAB === "settings" && !TACT_FOCUSED; renderTeams(); if (sub && !testFocus) { document.getElementById("team-h")?.focus({ preventScroll: !matchMedia("(max-width:900px)").matches }); } }
   if (view === "pipeline" && SNAP) { renderLanes(); renderDone(); }
   // Routine names on Pipeline show only to a team admin, so learn who the viewer is.
@@ -3710,6 +3712,46 @@ function cycleTheme() {
 }
 paintTheme();
 
+// Sandboxes, Recently completed: the last ended pipeline and Slack runs from /api/runs/recent?ended=1, which keeps the
+// server's gates (a secured ticket, a private team, a routine's prompt); the tab filters them; a failed read keeps the last runs.
+let SB_DONE = null, SB_DONE_SEQ = 0;
+async function loadSbDone() {
+  if (VIEW !== "runners") return;
+  const seq = ++SB_DONE_SEQ;
+  try {
+    const r = await fetch("/api/runs/recent?ended=1&limit=100", { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
+    if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
+    if (j.error) throw new Error(j.error);
+    if (seq !== SB_DONE_SEQ) return;
+    SB_DONE = { runs: j.runs, err: null, at: Date.now() };
+  } catch (e) { if (seq !== SB_DONE_SEQ) return; SB_DONE = { runs: SB_DONE?.runs ?? null, err: e.message, at: SB_DONE?.at ?? null }; }
+  safeRender(renderSbDone, "sb-done");
+}
+function sbDoneRows() {
+  return (SB_DONE?.runs ?? []).filter(r => typeof sbTabHas === "function" ? sbTabHas({ ...r, src: r.routine ? "routine" : r.src }) : true).slice(0, 20);
+}
+function renderSbDone() {
+  const h = `<h2>Recently completed</h2>`;
+  if (TAB === "routines" && !TEAM_ADMIN?.admin) return putOv("sb-done", `${h}<div class="emptybox">Only a team admin can see routine runs.</div>`);
+  if (!SB_DONE) return putOv("sb-done", `${h}<div class="emptybox">Loading the recent runs…</div>`);
+  if (!SB_DONE.runs) return putOv("sb-done", `${h}<div class="emptybox">Recently completed unknown: ${esc(SB_DONE.err)}. The next poll tries again.</div>`);
+  const rows = sbDoneRows(), today = new Date().toDateString(), na = `<span title="not recorded for pipeline runs">—</span>`;
+  const note = SB_DONE.err ? `Recently completed may be out of date: ${SB_DONE.err}. These rows are from ${ago(Math.round((Date.now() - SB_DONE.at) / 1000))}; the next poll tries again.` : "";
+  const row = r => {
+    const d = new Date(r.end * 1000), when = !(r.end > 0) ? "—" : d.toDateString() === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const pipe = r.src === "pipeline", href = pipe ? jiraHref(r.key) : sessHref(r.key);
+    const key = !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${pipe ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a> ` : `<span class="key">${esc(r.key)}</span> `;
+    const who = r.routine && !r.key ? "Routine · scheduled run" : `${key}${esc(plainMd(r.title || ""))}`;
+    const where = pipe ? "GCE" : { firecracker: "Firecracker", gce: "GCE" }[r.where] ?? "—";
+    const mem = Number.isFinite(r.mem_mb) ? `${(r.mem_mb / 1024).toFixed(1)} GB` : "—";
+    const res = `${runBadge(r)}${r.stop && r.outcome !== "pr" ? ` <span class="sbd-stop">${esc(r.stop)}</span>` : ""}`;
+    return `<tr data-sbdone="${esc(r.key)}"><td>${esc(when)}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for">${who}</td><td>${esc(teamLabel(r.team || "fxa"))}</td><td>${where}</td>
+      <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${usd(r.usd)}</td><td>${res}</td></tr>`;
+  };
+  putOv("sb-done", `${h}${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${rows.length ? `<div class="sbd-scroll"><table class="ttable"><thead><tr><th>Ended</th><th>Source</th><th>For</th><th>Team</th><th>Where</th><th>Boot</th><th>Peak memory</th><th>Time</th><th>LLM cost</th><th>Result</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : `<div class="emptybox">No run has ended yet.</div>`}
+    <div class="sbd-more"><a href="#sessions">All sessions ›</a><a href="#stats">Stats ›</a></div>`, rows.map(r => `${r.key}:${r.end}:${r.outcome}`).join(",") + note);
+}
+
 // One section that throws (a snapshot shape no check has) says so in place; the rest of the page still renders.
 function safeRender(fn, id) {
   try { fn(); } catch (e) { console.error(e); if (id) put(id, `<div class="emptybox">This section did not render: ${esc(e?.message ?? String(e))}. Reload, or run vm.sh rollback.</div>`); }
@@ -3731,6 +3773,7 @@ async function poll() {
   render();
   HIST_OPEN.forEach(loadHist);
   loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
+  loadSbDone();
   if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
