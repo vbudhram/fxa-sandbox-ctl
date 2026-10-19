@@ -246,7 +246,8 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide):
     out = []
     for r in sorted((r for r in rows or [] if (r.get("at") or "") >= since), key=lambda r: r["at"], reverse=True):
         team = r.get("profile") or "fxa"
-        if hide(team):
+        # Passes run every 5 min and would fill the list; the system card shows them.
+        if hide(team) or r.get("src") == "pass":
             continue
         src, key, kind = r.get("src"), r.get("key") or "", r.get("kind") or ""
         num = state = None

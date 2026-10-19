@@ -40,13 +40,13 @@ try:
 except Exception as e:
     print(f"FAIL /api/runs/recent: {e}"); sys.exit(1)
 by = {r["key"]: r for r in b["runs"]}
-check("newest first, 7 days, a non-admin does not see the private team's run", ["pass", "agent-aaaa11", "FXA-3", "FXA-2", "FXA-1"], [r["key"] for r in b["runs"]])
+check("newest first, 7 days, a non-admin does not see the private team's run", ["agent-aaaa11", "FXA-3", "FXA-2", "FXA-1"], [r["key"] for r in b["runs"]])
 check("a pipeline run with a merged PR", ("pr", 11, "merged", "https://github.com/mozilla/fxa/pull/11", "fix(auth): one"),
       tuple(by["FXA-1"][k] for k in ("outcome", "pr_number", "pr_state", "pr_url", "title")))
 check("a pipeline run with no PR, titled from the queue", ("no_pr", None, "Two"), tuple(by["FXA-2"][k] for k in ("outcome", "pr_url", "title")))
 check("a secured ticket shows no title and no PR", ("Secured ticket", None, None), tuple(by["FXA-3"][k] for k in ("title", "pr_url", "pr_number")))
 check("a Slack session: the request's first line, answered", ("Why does sync fail?", "answered", "fxa"), tuple(by["agent-aaaa11"][k] for k in ("title", "outcome", "team")))
-check("a pass: a job title, done", ("Pipeline pass", "done"), (by["pass"]["title"], by["pass"]["outcome"]))
+check("a pass is left out: the system card shows passes", False, "pass" in by)
 check("limit", 2, len(get("/api/runs/recent?limit=2")["runs"]))
 check("days=30 takes the older run", "FXA-9", get("/api/runs/recent?days=30&limit=100")["runs"][-1]["key"])
 check("an admin sees the private team's run", True, any(r["key"] == "PRIV-1" for r in server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False)))

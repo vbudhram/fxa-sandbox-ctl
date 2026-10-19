@@ -390,7 +390,7 @@
   .ovk .vs { display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s2); } .ovk svg { width:72px; height:26px; flex:none; overflow:visible; }
   .ovk .chg { font-weight:600; } .ovk .chg.good { color:var(--ok); } .ovk .chg.bad { color:var(--bad); }
   #ov-today { padding:var(--s3) var(--s4); } #ov-today h2 { font:600 var(--t-label, 11px) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:0 0 4px; display:flex; justify-content:space-between; gap:var(--s2); }
-  #ov-today h2 .note { text-transform:none; letter-spacing:0; font-weight:600; } #ov-today .ovtoday { gap:var(--s3); align-items:flex-start; } #ov-today .ovtoday svg { width:40px; height:40px; margin-top:2px; } #ov-today .big { font-size:24px; } #ov-today .sub { font-size:var(--t-label, 11px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } #ov-today .ovtoday > div { min-width:0; }
+  #ov-today h2 .note { text-transform:none; letter-spacing:0; font-weight:600; } #ov-today .ovtoday { gap:var(--s3); align-items:flex-start; } #ov-today .ovtoday svg { width:40px; height:40px; margin-top:2px; } #ov-today .big { font-size:24px; } #ov-today .sub { font-size:var(--t-label, 11px); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; } #ov-today .ovtoday > div { min-width:0; }
   .ovpill { display:inline-block; font-size:var(--t-label, 11px); font-weight:600; border-radius:999px; padding:1px 8px; white-space:nowrap; background:var(--sunk); color:var(--dim); }
   .ovpill.ok { background:var(--okbg); color:var(--ok); } .ovpill.info { background:var(--infobg); color:var(--info); } .ovpill.bad { background:var(--badbg); color:var(--bad); } .ovpill.warn { background:var(--warnbg); color:var(--warn); }
   .ovteam { display:grid; grid-template-columns:minmax(0,1.4fr) 44px 56px 44px minmax(0,1.5fr); gap:var(--s2); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); font-size:var(--t-sub); color:inherit; }
@@ -1282,12 +1282,13 @@ function renderOvTeams() {
   const rows = ovTeams(OV_RANGE), st = !!STATS;
   const row = ({ t, u, now }) => {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
-    const bud = t.budget_error ? `<span><b>—</b><span>budget unknown</span></span>` : b ? `<span><b>${usd(b.month_usd)}</b><span>${b.month_cap ? `of ${usd(b.month_cap)}` : "no cap"}</span></span>${b.month_cap ? `<span class="ovbar"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}` : `<span><b>${st ? usd(u.usd) : "—"}</b><span>in ${n}</span></span>`;
+    // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
+    const cap = b?.month_cap, bud = `<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? `<span class="ovbar"><i class="${b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / cap))}%"></i></span>` : ""}`;
     const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="ovpill ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
   };
   putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>
-    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>This month</span></div>${rows.map(row).join("")}` : `<div class="emptybox">No team.</div>`}`);
+    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row).join("")}` : `<div class="emptybox">No team.</div>`}`);
 }
 // Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
 let RUNS = null, RUNS_ERR = null;
