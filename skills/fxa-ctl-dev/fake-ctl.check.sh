@@ -94,6 +94,12 @@ check "after a failed finish the next turn has no PR, and a new finish is taken"
   "$(f events agent-gg7 | jq -r '[.events[] | select(.type == "turn_end")][-1].pr')|$(f finish --session agent-gg7 >/dev/null 2>&1; echo $?)"
 check "FAKE_ROUTINE_DONE: fail exits 1; stopped answers no change" "1|false|stopped" \
   "$(FAKE_ROUTINE_DONE=fail f routine done 9 --state report --session agent-gg7 >/dev/null 2>&1; echo $?)|$(FAKE_ROUTINE_DONE=stopped f routine done 9 --state report --session agent-gg7 | jq -r '"\(.changed)|\(.state)"')"
+# Its own sessions folder: the sweep looks at every session, and the checks above left some.
+idle() { FAKE_CTL_DIR="$tmp/idle" FAKE_IDLE_S=60 f "$@"; }
+idle task --id agent-id1 --owner UA --prompt-file "$tmp/p.md" >/dev/null; t1="$(cat "$FAKE_NOW_FILE")"
+check "FAKE_IDLE_S: the sweep leaves a session in its quiet time alone, then pauses it once" "|paused agent-id1|paused|" \
+  "$(idle session idle-sweep)|$(echo $(( t1 + 75 )) > "$FAKE_NOW_FILE"; idle session idle-sweep)|$(idle events agent-id1 | jq -r .state)|$(idle session idle-sweep)"
+echo "$t1" > "$FAKE_NOW_FILE"
 check "FAKE_TASK_CAP: the first task meets the cap, the next starts" "1|cap 4 (FXA_SESSION_MAX)|no|0|yes" \
   "$(FAKE_TASK_CAP=1 f task --id agent-cp1 --owner UA --prompt-file "$tmp/p.md" 2>"$tmp/e" >/dev/null; echo $?)|$(grep -o 'cap 4 (FXA_SESSION_MAX)' "$tmp/e")|$([ -d "$FAKE_CTL_DIR/agent-cp1" ] && echo yes || echo no)|$(FAKE_TASK_CAP=1 f task --id agent-cp2 --owner UA --prompt-file "$tmp/p.md" >/dev/null 2>&1; echo $?)|$([ -d "$FAKE_CTL_DIR/agent-cp2" ] && echo yes || echo no)"
 check "FAKE_ROUTINE_TASK_FAIL: a routine task exits 1 with the error and starts nothing" "1|ERROR: team fxa does not load|no" \

@@ -33,6 +33,7 @@
 #   FAKE_FAIL_S       the session's state is failed from this many seconds after its start
 #   FAKE_ROUTINE_TASK_FAIL  task --source routine exits 1 with this error and no session, as ctl refusing the run does
 #   FAKE_TASK_CAP  the first n tasks (not routine runs) exit 1 at the session cap, as ctl does when every runner is busy
+#   FAKE_IDLE_S    session idle-sweep pauses a session whose last turn ended this many seconds ago, and prints "paused <key>"
 #   FAKE_ROUTINE_DONE fail: routine done exits 1, as a store error does; stopped: it answers changed false, state stopped
 #   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
 #                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
@@ -229,7 +230,13 @@ case "$cmd" in
         jq -nc '[{path: "packages/fxa-settings/src/index.tsx", line: 1, body: "Fake Copilot: this line needs a null check."}]' ;;
       history|review-comments) echo '[]' ;;
       summary|cost|plan|thread-usage) echo null ;;
-      prune|idle-sweep|attach|pr-ready) ;;
+      idle-sweep) [ -n "${FAKE_IDLE_S:-}" ] || exit 0
+        for d in "$DIR"/agent-*; do
+          k="${d##*/}"; [ -d "$d" ] && [ -z "$(get "$k" over)" ] || continue
+          last="$(sort -n "$d/turns" 2>/dev/null | tail -1)"; [ -n "$last" ] || continue
+          [ "$(now)" -lt $(( last + 10 + FAKE_IDLE_S )) ] || { echo paused > "$d/over"; echo "paused $k"; }
+        done ;;
+      prune|attach|pr-ready) ;;
       *) echo "fake-ctl: session $sub is not faked" >&2; exit 1 ;;
     esac ;;
   *) echo "fake-ctl: $cmd is not faked" >&2; exit 1 ;;
