@@ -501,7 +501,7 @@
   .belt > a:hover { background:var(--bg); } .belt.sel > a { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .belt .tk { min-width:0; display:flex; flex-direction:column; gap:2px; }
   .belt .tk .m { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:var(--t-label); color:var(--faint); }
-  .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk .scope { font-size:10px; font-weight:600; padding:0 5px; border-radius:4px; background:var(--sunk); color:var(--dim); max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk [data-href] { cursor:pointer; } .belt .tk [data-href]:hover { text-decoration:underline; } .belt .tk .scope { font-size:10px; font-weight:600; padding:0 5px; border-radius:4px; background:var(--sunk); color:var(--dim); max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .belt .tk .t { font-size:var(--t-sub); font-weight:600; line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .belt .trk { position:relative; height:24px; }
   .belt .trk .base, .belt .trk .fill { position:absolute; top:11px; height:2px; left:5.55%; } .belt .trk .base { right:5.55%; background:var(--line); } .belt .trk .fill { background:var(--tone-fill); }
@@ -2473,11 +2473,13 @@ function beltGroups() {
 }
 const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working.length + g.needs.length + g.fixes.length + g.review.length;
 function beltRow(r) {
+  // The row is one link, so the key and the PR number carry their own URL and the click handler opens it.
+  const ext = (u, site) => u ? ` data-href="${esc(u)}" role="link" title="Open in ${site}"` : "";
   const t = r.t, title = laneTitle(t.summary || t.branch), live = r.group === "working" && t.agent_alive;
   const nodes = LANE_ST.map((_, j) => `<span class="n${j < r.st ? " done" : j === r.st ? ` cur${live ? " live" : ""}` : ""}"></span>`).join("");
   const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds)), open = TAB === "belts" && t.key === SEL.pipeline;
   return `<li class="belt ${r.tone}${open ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${open}" aria-controls="bd-${esc(t.key)}">
-    <span class="tk"><span class="m"><span class="key mono">${esc(t.key)}</span>${t.pr ? `<span class="mono">#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
+    <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${esc(t.key)}</span>${t.pr ? `<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
     <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
     <span class="age">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
@@ -2544,6 +2546,7 @@ function renderLanes() {
 document.addEventListener("toggle", e => { if (e.target.matches?.("details.bout")) OUTSIDE_OPEN = e.target.open; }, true);
 // A row opens and closes in place: replace the hash, so Back leaves the page and not each toggle.
 document.addEventListener("click", e => {
+  const x = e.target.closest?.(".belt [data-href]"); if (x) { e.preventDefault(); window.open(x.dataset.href, "_blank", "noopener"); return; }
   const w = e.target.closest?.("[data-watch]"); if (w) { const d = document.getElementById(`lane-term-${w.dataset.watch}`); if (d) { d.open = true; d.querySelector("summary")?.focus(); } return; }
   const a = e.target.closest?.(".belt > a"); if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
   e.preventDefault(); location.replace(a.getAttribute("href"));

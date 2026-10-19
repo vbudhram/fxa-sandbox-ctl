@@ -227,6 +227,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belts: the header line", /2 agents work now<\/span>\s*<span>· 8 belts<\/span><span>· 1 need you/.test(h), true);
   const row = k => beltRow(["working", "needs", "fixes", "review"].flatMap(x => g[x]).find(r => r.t.key === k));
   const f3 = row("FXA-3"), f20 = row("FXA-20");
+  t("belts: the Jira key and the PR number open their pages from the closed row", `${/class="key mono" data-href="https:\/\/jira\.example\.com\/browse\/FXA-3"/.test(f3)}|${/data-href="https:\/\/github\.com\/example\/app\/pull\/3"/.test(f3)}`, "true|true");
   t("belts: track nodes, stop text and no callout", `${(f3.match(/class="n done"/g) || []).length}|${(f3.match(/class="n cur"/g) || []).length}|${(f3.match(/class="n"/g) || []).length}|${/aria-hidden="true">/.test(f3)}|${/Stop 7 of 9, CI</.test(f3)}|${/class="mark"/.test(h)}`, "6|1|2|true|true|false");
   t("belts: a live agent pulses and says so; its terminal is in its open details", `${/class="n cur live"/.test(f20)}|${/Stop 3 of 9, Agent, agent working/.test(f20)}|${/Agent · 12 min/.test(f20)}|${/yarn test example-server/.test(f20)}|${/lane-term/.test(f20)}|${(SEL.pipeline = "FXA-20", /id="lane-term-FXA-20"/.test(row("FXA-20")))}`, "true|true|true|true|false|true"); SEL.pipeline = "";
   load(); SNAP.blocked[0].summary = "<img src=x onerror=alert(1)>"; AGENTS.runners[0].agent.last_tool = "<img src=x>"; const hx = beltsHtml(beltGroups());
