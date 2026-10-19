@@ -1402,7 +1402,7 @@ cmd_precheck() {
   # A refused Jira login makes every read below see an empty queue. Stop with one error the
   # operator gets as a DM, and no model turn (claude-job.sh treats "paused:" as quiet).
   if ! jira_login_ok; then
-    errors_record jira login "" "precheck" "the acli Jira login was refused (an expired API token?); in a real terminal: vm.sh secret fxa-jira-token, then vm.sh sys 'sudo /usr/local/sbin/fxa-secrets'" ""
+    errors_record jira login "" "precheck" "the acli Jira login was refused (an expired API token?); in a real terminal: vm.sh secret fxa-jira-token (it stores the token and logs acli in again)" ""
     pipeline_unlock >/dev/null
     echo "paused: the Jira login was refused; see errors (jira/login)"
     return 0

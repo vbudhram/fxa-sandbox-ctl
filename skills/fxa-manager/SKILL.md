@@ -89,12 +89,12 @@ $H sys 'sudo systemctl restart fxa-agent-bot'
 $H sys 'sudo journalctl -u fxa-agent-bot -n 50 --no-pager'   # timers: -u fxa-pass
 ```
 
-**Add or rotate a secret.** The person runs, on the laptop:
-`gcloud secrets versions add <name> --data-file=<file>` (or `secrets create`
-plus `add-iam-policy-binding` for the manager service account with
-`roles/secretmanager.secretAccessor`). Load values from a file, never paste
-them into a command line. Then on the VM: `sudo /usr/local/sbin/fxa-secrets`
-and restart the service that uses it. The runners' Claude credential is
+**Add or rotate a secret.** The person runs, in a real terminal on the laptop:
+`bash skills/fxa-manager/vm.sh secret fxa-<name>`. It asks for the value at a
+hidden prompt, stores it (it creates the secret and grants the manager on the
+first store), runs `fxa-secrets` on the manager, and restarts the service that
+reads the secret at start. For `fxa-llm-proxy` it prints the restart command
+instead, because a restart drops model calls in flight. The runners' Claude credential is
 `fxa-anthropic-api-key` (preferred) or `fxa-claude-token`.
 
 **State mirror.** Pipeline state and the error log are in

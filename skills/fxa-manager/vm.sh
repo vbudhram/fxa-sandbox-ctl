@@ -68,6 +68,16 @@ promote_tests() {
 
 # secret_clean [prefix] < value   The value alone: no "NAME=" in front, no quotes or
 # whitespace around it. Fails when a prefix is given and the value does not start with it.
+# secret_unit <name>   The service that reads the secret once at start, so a new value needs its restart;
+# nothing for a secret read per run or per request (the Jira login, the dashboard key, the GitHub App key).
+secret_unit() {
+  case "$1" in
+    fxa-slack-bot-token|fxa-slack-app-token) echo fxa-agent-bot ;;
+    fxa-runlayer-agent-token|fxa-sentry-token|fxa-grafana-token) echo fxa-mcp-gateway ;;
+    fxa-anthropic-api-key|fxa-claude-token) echo fxa-llm-proxy ;;
+  esac
+}
+
 secret_clean() {
   local v; v="$(cat)"
   v="$(printf '%s' "$v" | tr -d '\r\n')"; v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
@@ -441,7 +451,15 @@ EOF
     fi
     unset val
     echo "stored the latest version of $name ($(gcloud secrets versions list "$name" --project "$P" --limit 1 --format='value(name)'))."
-    echo "The manager uses it after fxa-secrets runs: vm.sh sys 'sudo /usr/local/sbin/fxa-secrets', then restart what reads it." ;;
+    # The manager writes its key and .env files from Secret Manager, then the reader starts again.
+    printf 'sudo /usr/local/sbin/fxa-secrets\n' | on_vm | mask || { echo "vm.sh secret: fxa-secrets failed on the manager; run: vm.sh sys 'sudo /usr/local/sbin/fxa-secrets'" >&2; exit 1; }
+    u="$(secret_unit "$name")"
+    if [ "$u" = fxa-llm-proxy ]; then
+      # A restart drops every model call in flight: the operator picks the moment.
+      echo "fxa-llm-proxy reads it at start. When no session is at work (vm.sh api sessions), run: vm.sh sys 'sudo systemctl restart fxa-llm-proxy'"
+    elif [ -n "$u" ]; then
+      printf 'sudo systemctl restart %s\n' "$u" | on_vm && echo "restarted $u, which reads $name at start"
+    else echo "nothing to restart: $name is read per run or per request"; fi ;;
   ssh)
     echo "gcloud compute ssh $VM --tunnel-through-iap --zone $Z --project $P -- -L 8787:localhost:8787"
     echo "then: sudo -iu fxa; tmux new -As main" ;;
