@@ -374,7 +374,17 @@
 
   /* ── overview: what needs you, what is running ── */
   .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
-  #s-running { position:sticky; top:72px; }
+  .ovtiles { display:grid; gap:var(--s2); grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:var(--s2); }
+  @media (max-width:640px) { .ovtiles { grid-template-columns:repeat(2,minmax(0,1fr)); } } @media (max-width:420px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
+  .ft { border:1px solid var(--card-border); border-radius:var(--r-md, 8px); padding:var(--s2) var(--s3); min-width:0; background:var(--panel); }
+  .ft > a, .ft > .ftb { display:flex; gap:var(--s2); align-items:center; color:inherit; min-width:0; } .ft > a:hover { text-decoration:none; }
+  .ft .ftk { font:600 var(--t-sub) var(--mono, monospace); } .ft .ftt { font-size:var(--t-sub); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ft .ftm { font-size:var(--t-label, 11px); color:var(--faint); margin-top:2px; } .ft .ftm .w { color:var(--warn); }
+  .ft .ring { width:30px; height:30px; flex:none; border-radius:50%; background:conic-gradient(var(--info) var(--p), var(--sunk) 0); }
+  .ft.bad { border-color:var(--bad); } .ft.bad .ring { background:conic-gradient(var(--bad) var(--p), var(--sunk) 0); }
+  .ft.free { border-style:dashed; background:none; color:var(--faint); font-size:var(--t-sub); }
+  .ovchip { display:inline-flex; align-items:center; gap:6px; font-size:var(--t-sub); color:var(--dim); } .ovchip i { width:8px; height:8px; border-radius:50%; background:var(--faint); }
+  .ovchip i.on { background:var(--ok); animation:pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.35; } }
   #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; background:none; border:0; box-shadow:none; padding:0; }
   #ov-head .seg { margin-left:auto; }
   .ovl { display:grid; gap:var(--s3); align-content:start; min-width:0; }
@@ -385,7 +395,7 @@
   .ovtoday { display:flex; gap:var(--s4); align-items:center; } .ovtoday svg { width:84px; height:84px; flex:none; }
   .ovtoday .big { font:700 28px/1.1 var(--head); font-variant-numeric:tabular-nums; } .ovtoday .sub, #ov-spend .sub { font-size:var(--t-sub); color:var(--faint); }
   .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; cursor:pointer; }
-  @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } #s-running { position:static; } }
+  @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
   .chip.dim { background:var(--sunk); color:var(--dim); } .chip.ok { background:var(--okbg); color:var(--ok); }
@@ -605,7 +615,7 @@ table.usage tr.sel td { background: var(--infobg); }
   <div class="ov" data-views="overview">
     <section id="ov-head"></section>
     <div class="ovl"><section id="ov-spend"></section><section id="ov-today"></section><section id="ov-mini"></section></div>
-    <section id="s-running"></section>
+    <section id="ov-floor"></section>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
   <section class="wide" id="s-sess" data-views="sessions"></section>
@@ -954,7 +964,8 @@ function statsNote() {
 }
 const localDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 function renderOvHead() {
-  put("ov-head", `<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
+  const f = ovFloor(), hr = STATS?.llm?.hour_usd, llm = typeof hr === "number" && !statsNote() ? ` · LLM ${usd(hr)} in the last hour` : "";
+  put("ov-head", `<span class="ovchip"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span><div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; safeRender(renderOvHead, "ov-head"); safeRender(renderOvSpend, "ov-spend"); } });
 // Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
@@ -1005,6 +1016,52 @@ function renderOvToday() {
       <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${esc(note || "the proxy log is not read")}`}</div>
       <div class="sub">${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, u]) => `${esc(modelName(m))} ${usd(u)}`).join(" · ")}</div></div></div>`);
 }
+// On the floor (i356 D5, D35-D37, D41): a tile for each pool slot and each live session. A pipeline tile
+// takes its stop from its belt row; 'at work' counts only agents that are alive, so a session that waits
+// on its owner is on the floor but not at work. A non-admin sees a routine run as a scheduled run, no more.
+function ovFloor() {
+  const g = AGENTS; if (!g || STATE.agents_error) return { unknown: true, atWork: 0, tiles: [] };
+  const rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => beltGroups()[k]).map(r => [r.t.key, r]));
+  const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
+  const tiles = [], pool = g.pool ?? [];
+  // A runner that no pool slot holds (another pool, a hand-started run) still gets its tile.
+  const slots = pool.map(p => ({ slot: p.slot, c: p.agent ? cards.get(p.agent) : null, agent: p.agent })).concat([...cards.values()].filter(c => !pool.some(p => p.agent === c.name)).map(c => ({ slot: "", c })));
+  slots.forEach(p => {
+    const c = p.c;
+    if (!c) return tiles.push({ kind: "free", slot: p.slot, held: !free.has(p.slot) && p.agent });
+    const r = rowBy.get(c.key), st = r?.st ?? 2, a = c.agent || {}, exited = !c.agent_alive && c.stage === "watching" && !c.handoff;
+    const fault = c.stage === "stalled" ? "stalled" : c.stage === "error" ? "run failed" : exited ? "agent exited" : "";
+    const idle = c.agent_alive && (a.idle_seconds ?? 0) >= 600 ? `idle ${Math.floor(a.idle_seconds / 60)} min` : "";
+    tiles.push({ kind: "pipe", key: c.key, slot: p.slot, title: c.summary || c.branch || "", st, fault, idle, alive: c.agent_alive && !fault,
+      time: short(c.elapsed_seconds), cost: a.cost_so_far, href: KEY_RE.test(c.key ?? "") ? `#pipeline/belts/${encodeURIComponent(c.key)}` : "" });
+  });
+  (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => tiles.push({ kind: "free", slot: f }));
+  (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
+    const routine = !!x.routine_run, open = admin || !routine;
+    tiles.push({ kind: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? ownerName(x) : "",
+      turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "" });
+  });
+  return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: slots.length + (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).length, admin };
+}
+function renderOvFloor() {
+  const f = ovFloor();
+  if (f.unknown) return putOv("ov-floor", `<h2>On the floor</h2><div class="emptybox">${AGENTS ? "Sandboxes unknown: the agents feed could not be read." : "Loading the sandboxes…"}</div>`);
+  const pipe = f.tiles.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = f.tiles.filter(t => t.kind === "slack"), rt = f.tiles.filter(t => t.kind === "routine");
+  const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
+  const headTxt = `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
+  const tile = t => {
+    if (t.kind === "free") return `<div class="ft free">${esc(t.slot)} · ${t.held ? "held" : "free"}</div>`;
+    const stop = t.kind === "pipe" ? `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}` : t.kind === "routine" ? "Routine" : "Slack session";
+    const name = t.kind === "routine" && !t.title ? "Routine · scheduled run" : t.key, label = `${name}, ${stop}`;
+    const body = `<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${esc(name)}</span><div class="ftt">${esc(plainMd(t.title))}</div></span>`;
+    const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? `<span class="w">waits on ${esc(t.waits)}</span>` : "working";
+    const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).map(esc).join(" · ");
+    return `<div class="ft ${t.fault ? "bad" : ""}">${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
+      <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div></div>`;
+  };
+  putOv("ov-floor", `<h2>On the floor<span class="note">${esc(headTxt)}</span></h2>${f.tiles.length ? `<div class="ovtiles">${f.tiles.map(tile).join("")}</div>` : `<div class="emptybox">No sandbox slot and no live session.</div>`}`);
+}
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
 function ovNeeds() {
@@ -1028,17 +1085,6 @@ function renderOvMini() {
 }
 // The sandbox part moves the focus to the #attn strip on this page.
 document.addEventListener("click", e => { if (e.target.closest?.("[data-attn]")) { e.preventDefault(); document.getElementById("attn").focus(); } });
-function renderRunning() {
-  const { cards } = merged(), ss = AGENTS?.sessions ?? [], med = SNAP?.telemetry?.median_minutes;
-  const runners = cards.filter(c => !c.ci), live = ss.filter(s => LIVE_SESSION.includes(s.state));
-  const recent = sessHeads(ss).filter(s => !LIVE_SESSION.includes(s.state)).slice(0, 6);
-  const rows = runners.map(t => `<a class="runrow" href="#pipeline/belts"><span class="ldot live"></span><span class="t">${esc(t.key)} · ${esc(plainMd(t.agent?.last_tool || t.agent?.last_text || t.stage))}</span><span class="m">${short(t.elapsed_seconds)}${med ? ` of ${med}m` : ""}</span></a>`)
-    .concat(live.map(s => `<a class="runrow" href="#sessions/live/${esc(s.key)}"><span class="ldot live"></span><span class="t">${esc(convTitle(s))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${s.agent_alive ? "working" : "waiting on owner"}</span></a>`));
-  put("s-running", head("running now", rows.length, AGENTS ? `${usd(AGENTS.runner_hourly_usd)}/h` : "") +
-    (rows.length ? rows.join("") : `<div class="emptybox">Nothing is running. ${AGENTS?.free_slots?.length ?? "?"} sandbox slots are free.</div>`) +
-    (recent.length ? `<h2 style="margin:var(--s4) 0 var(--s2)">Recent sessions<a class="note" href="#sessions" style="color:var(--link)">All sessions</a></h2>` +
-      recent.map(s => `<a class="runrow" href="#sessions/${sessTabOf(s)}/${esc(s.key)}"><span class="ldot"></span><span class="t" title="${esc(convTitle(s))}">${esc(convTitle(s))}</span><span class="m">${esc([sessRoutine(s) || ownerName(s), ageOf(s.last_activity ?? s.created), s.state === "paused" ? "paused" : ""].filter(Boolean).join(" · "))}</span></a>`).join("") : ""));
-}
 // A session's title: the person's words, not the prompt the host wrapped them in.
 function firstLine(t) {
   const [head, ctx = ""] = String(t ?? "").split("\n\nEarlier messages");
@@ -3200,7 +3246,7 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvFloor, "ov-floor"], [renderSess, "s-sess"], [renderPool, "s-pool"],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
