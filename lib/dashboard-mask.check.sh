@@ -9,9 +9,12 @@ cat > "$tmp/ctl" <<'SH'
 case "$*" in
   *tail*) echo "curl -H 'Authorization: Bearer fxm_abcdefgh12345678' http://x" ;;
   *history*) echo '[{"text":"push with ghs_abcdefgh12345678 now"}]' ;;
+  *"profile show"*) echo '{"private":false}' ;;
 esac
 SH
 chmod +x "$tmp/ctl"
+# A public team's session: a private one's history is a team admin's (lib/private-reads.check.sh).
+echo '{"key":"agent-abcd12","profile":"fxa"}' > "$tmp/agent-abcd12.json"
 FXA_SESSION_DIR="$tmp" FXA_TEAMS_DIR="$tmp/none" python3 - "$(dirname "$0")/../dashboard" "$tmp/ctl" "$(dirname "$0")/session.sh" <<'PY'
 import re, sys, threading, urllib.request
 sys.path.insert(0, sys.argv[1]); import server

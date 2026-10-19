@@ -418,6 +418,27 @@ def team_admins():
     return {e.strip().lower() for e in os.environ.get("TEAM_ADMINS", "").split(",") if e.strip()}
 
 
+# What a private team's session keeps from a viewer who is not a team admin: its words and its screen.
+PRIVATE_FIELDS = ("request", "media", "last_text", "last_tool")
+
+
+def session_private(key):
+    """True when the session's team has a private repo; a record that cannot be read counts as private."""
+    try:
+        rec = json.loads((SESSION_DIR / f"{key}.json").read_text())
+    except (OSError, ValueError):
+        return True
+    return not isinstance(rec, dict) or team_private(rec.get("profile") or "fxa")
+
+
+def redact_session(s):
+    """A copy of a session row without PRIVATE_FIELDS, also inside its live agent."""
+    out = {k: v for k, v in s.items() if k not in PRIVATE_FIELDS}
+    if isinstance(out.get("agent"), dict):
+        out["agent"] = {k: v for k, v in out["agent"].items() if k not in PRIVATE_FIELDS}
+    return out
+
+
 def read_records():
     """The team records' access, from the controller's teams index (lib/teams.sh), or {}."""
     path = os.path.join(os.environ.get("FXA_TEAMS_DIR") or os.path.expanduser("~/.claude/state/teams"), "index.json")
@@ -567,6 +588,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self, code, obj):
         self._send(code, json.dumps(obj), "application/json")
+
+    def _team_admin(self, path):
+        """True when the gateway signed this GET for a team admin, as /api/lessons checks."""
+        return signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
 
     def _allowed(self, api):
         # Bound to 127.0.0.1, but a page on any origin can still point a name it
@@ -929,6 +954,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/snapshot":
             snap, age, err, busy = FULL.read()
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
+            if isinstance(ag, dict) and not self._team_admin(path):
+                ag = dict(ag, sessions=[redact_session(s) if isinstance(s, dict) and team_private(s.get("profile") or "fxa") else s
+                                        for s in ag.get("sessions") or []])
             # The stats feed's age and error, so a page tells live figures from old ones; /api/stats stays as it is.
             _, st_age, st_err, _ = STATS.read()
             self._json(200, {
@@ -942,6 +970,8 @@ class Handler(BaseHTTPRequestHandler):
             key = arg("key")
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*-\d+|agent-[a-z0-9]{4,12}", key):
                 self._json(400, {"error": "bad key"})
+            elif key.startswith("agent-") and session_private(key) and not self._team_admin(path):
+                self._json(403, {"error": "a private team's session: team admins only"})
             else:
                 self._json(200, {"key": key, "lines": agent_tail(key)})
         elif path == "/api/watch/events":
@@ -952,6 +982,9 @@ class Handler(BaseHTTPRequestHandler):
             f = SESSION_DIR / f"{key}.media" / name
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key) or not m or not f.is_file():
                 self._json(404, {"error": "not found"})
+                return
+            if session_private(key) and not self._team_admin(path):
+                self._json(403, {"error": "a private team's session: team admins only"})
                 return
             kind = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
                     "mp4": "video/mp4", "webm": "video/webm"}[m.group(1).lower()]
@@ -984,6 +1017,8 @@ class Handler(BaseHTTPRequestHandler):
                     con.close()
             except Exception as exc:
                 body = {"cursor": None, "rows": [], "error": type(exc).__name__}
+            if body.get("rows") and not self._team_admin(path):
+                body["rows"] = [redact_session(r) if not r.get("deleted") and team_private(r.get("profile") or "fxa") else r for r in body["rows"]]
             self._json(200, body)
         elif path == "/api/usage":
             # One session's or quick answer's LLM use by model, from the proxy's calls in the store.
@@ -1044,6 +1079,9 @@ class Handler(BaseHTTPRequestHandler):
             key = arg("key")
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):
                 self._json(400, {"error": "bad key"})
+                return
+            if session_private(key) and not self._team_admin(path):
+                self._json(403, {"error": "a private team's session: team admins only"})
                 return
             try:
                 proc = ctl_run(["session", "history", key], timeout=15)
