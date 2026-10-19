@@ -241,4 +241,16 @@ O="$(dirname "$0")/page-fixture-overview.json"
 ck "overview fixture: every card heading, no section error, relative times read as recent" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const hs = ["ov-spend", "ov-today", "ov-floor", "ov-sys", "ov-mini"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
   return [hs, !document.getElementById("main").innerText.includes("did not render"), /PRs merged in the last 7 days/.test(document.getElementById("ov-mini").textContent) && document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent === "6"].join("|")')"
+# Overview layout: no sideways scroll at 500 (the smallest headless width) and 640; the tiles go 1 wide in a
+# phone-sized floor card; Spend and Today share a row at 1280 and stack at 640; Belts and Teams still fit.
+LAY='const cols = () => getComputedStyle(document.querySelector("#ov-floor .ovtiles")).gridTemplateColumns.split(" ").length;
+  const row = () => Math.abs(document.getElementById("ov-spend").getBoundingClientRect().top - document.getElementById("ov-today").getBoundingClientRect().top) < 2;
+  const fits = document.documentElement.scrollWidth <= innerWidth, c2 = cols(); document.getElementById("ov-floor").style.width = "330px"; await new Promise(r => setTimeout(r, 50));
+  return [fits, c2, cols(), row()].join("|")'
+ck "overview at 500 px: no sideways scroll, tiles 2 wide, 1 wide in a phone-sized card, cards stacked" "true|2|1|false" "$(bash "$p" '#overview' --fixture "$O" --width 500 --probe "$LAY")"
+ck "overview at 640 px: the same" "true|2|1|false" "$(bash "$p" '#overview' --fixture "$O" --width 640 --probe "$LAY")"
+ck "overview at 1280 px: Spend and Today share a row" "true|2|1|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe "$LAY")"
+for r in '#pipeline/belts' '#teams'; do
+  ck "$r at 500 px still has no sideways scroll" "true" "$(bash "$p" "$r" --fixture "$F" --width 500 --probe 'return document.documentElement.scrollWidth <= innerWidth')"
+done
 exit $fail

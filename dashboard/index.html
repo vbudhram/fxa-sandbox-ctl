@@ -374,8 +374,12 @@
 
   /* ── overview: what needs you, what is running ── */
   .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
+  /* The tile columns follow the floor card's own width: 2 wide, 1 wide on a phone. */
+  #ov-floor { container-type:inline-size; }
   .ovtiles { display:grid; gap:var(--s2); grid-template-columns:repeat(2,minmax(0,1fr)); margin-top:var(--s2); }
-  @media (max-width:420px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
+  @container (max-width:360px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
+  .ovrow { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); }
+  @media (min-width:1200px) { .ovrow { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }
   .ft { border:1px solid var(--card-border); border-radius:var(--r-md, 8px); padding:var(--s2) var(--s3); min-width:0; background:var(--panel); }
   .ft > a, .ft > .ftb { display:flex; gap:var(--s2); align-items:center; color:inherit; min-width:0; } .ft > a:hover { text-decoration:none; }
   .ft .ftk { font:600 var(--t-sub) var(--mono, monospace); } .ft .ftt { font-size:var(--t-sub); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -613,7 +617,7 @@ table.usage tr.sel td { background: var(--infobg); }
 <div class="grid">
   <div class="ov" data-views="overview">
     <section id="ov-head"></section>
-    <div class="ovl"><section id="ov-spend"></section><section id="ov-today"></section><section id="ov-mini"></section></div>
+    <div class="ovl"><div class="ovrow"><section id="ov-spend"></section><section id="ov-today"></section></div><section id="ov-mini"></section></div>
     <div class="ovl"><section id="ov-floor"></section><section id="ov-sys"></section></div>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
@@ -1111,7 +1115,7 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
       if (runs[1]) {
         out.quiet.push([r0[r0.length - 1], runs[1][0]]);
         out.next.push(["", `Quiet hours start ${hmOf(r0[r0.length - 1])}`]);
-        out.next.push(["", `First pass of the day ${dayOf(runs[1][0], now)} · ${(SNAP?.queue?.ready ?? []).length} tickets are ready`]);
+        out.next.push(["", `First pass of the day ${dayOf(runs[1][0], now)} · ${(n => `${n} ticket${n === 1 ? " is" : "s are"} ready`)((SNAP?.queue?.ready ?? []).length)}`]);
       }
     }
   }

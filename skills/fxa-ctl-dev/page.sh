@@ -2,6 +2,8 @@
 # Render the dashboard in headless Chrome with fetch stubbed from a fixture, for UI checks with no server.
 #   bash skills/fxa-ctl-dev/page.sh '#teams/example' [--fixture f.json] [--probe 'async js'] [--shot out.png] [--width 1280]
 # --probe is the body of an async function, run after the page settles; what it returns is printed.
+# Headless Chrome keeps the window at least 500 px wide: a narrower --width renders at 500. Test a phone
+# layout by the element's own width (a container query), not by --width under 500.
 # --shot writes a screenshot. With neither, it prints the rendered DOM.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"; page="$here/../../dashboard/index.html"
