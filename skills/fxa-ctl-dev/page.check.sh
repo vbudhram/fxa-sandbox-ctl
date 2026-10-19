@@ -102,4 +102,40 @@ ck "Stats PRs renders with a PR merged this week and a run in it" "true|false" "
   const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString();
   STATS = { ...(STATS ?? {}), prs: [{ n: 1, key: "FXA-1", title: "t", state: "MERGED", created: iso(2), merged: iso(1), add: 1, del: 0, src: "pipeline" }], rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], llm: STATS?.llm ?? {} };
   renderStats(); const t = document.body.innerText; return [/Cost per merged PR/.test(t), /did not render|is not defined/.test(t)].join("|")')"
+# Spend and Today (ov-spend slice). Rows over 100 days in four sources, one 95 days ago; a peak day with 3 merged PRs.
+SP='const DAY = 86400000, noon = d => { const t = new Date(); t.setHours(12, 0, 0, 0); return new Date(t.getTime() - d * DAY).toISOString(); };
+  const rows = []; for (let d = 0; d < 100; d++) [["pipeline", 1], ["pass", 0.5], ["slack", 0.25], ["answer", 0.125]].forEach(([src, u]) => rows.push({ at: noon(d), src, usd: d === 4 ? u * 20 : u, key: `K-${d}-${src}`, model: "claude-opus-5-5" }));
+  rows.push({ at: noon(95), src: "pipeline", usd: 1000, key: "OLD-1" });
+  STATS = { rows, prs: [1, 2, 3].map(n => ({ n, merged: noon(4), src: "pipeline" })), prs_at: Math.round(Date.now() / 1000) - 60, llm: { hour_usd: 0.42 } }; STATS_ERR = null;
+  const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".v").textContent; };'
+ck "Spend: equals Stats for 7, 30 and 90 days; sources add up; the 95-day row is out of 90d; the peak names 3 merged PRs" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
+  const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r));
+  const sp = ovSpend("90d"), parts = Object.values(sp.by).reduce((a, b) => a + b, 0);
+  OV_RANGE = "30d"; renderOvSpend(); const t = document.querySelector("#ov-spend").textContent;
+  return [eq, Math.abs(parts - sp.total) < 1e-9, sp.total < 1000, /3 PRs merged that day/.test(t)].join("|")')"
+ck "Today: the usual day, the last hour and midnight; 0 is \$0.00; 2 days of history is gray; a stale feed is unknown" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
+  renderOvToday(); const t1 = document.querySelector("#ov-today").textContent;
+  const a = /Usual day \$1\.88/.test(t1) && /100% of a usual day/.test(t1) && /LLM, last hour \$0\.42/.test(t1) && /By midnight about \$\d+/.test(t1) && /Opus 5\.5 \$1\.88/.test(t1);
+  STATS = { ...STATS, llm: { hour_usd: 0 } }; renderOvToday(); const b = /LLM, last hour \$0\.00/.test(document.querySelector("#ov-today").textContent);
+  STATS = { ...STATS, rows: STATS.rows.filter(r => Date.now() - Date.parse(r.at) < 2.5 * DAY) }; renderOvToday(); const c = /not enough history for a usual day/.test(document.querySelector("#ov-today").textContent);
+  STATE.stats_age_seconds = 420; STATE.stats_interval = 60; renderOvToday(); const d = /LLM, last hour unknown: The stats feed is 7 min old/.test(document.querySelector("#ov-today").textContent);
+  return [a, b, c, d].join("|")')"
+ck "A failed stats read: the cards say so, show no \$0.00, keep the last figures; a throwing card leaves the others" "true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
+  const w = () => new Promise(r => setTimeout(r, 50)), f0 = window.fetch;
+  STATS = null; window.fetch = async u => String(u).includes("/api/stats") ? new Response("not json", { status: 502 }) : f0(u); STATS_AT = 0; await loadStats(); await w();
+  const a = /could not be read/.test(document.querySelector("#ov-spend").textContent) && !/\$0\.00/.test(document.querySelector("#ov-spend").textContent + document.querySelector("#ov-today").textContent);
+  window.fetch = f0; { '"$SP"' } const keep = STATS; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response("{}", { status: 500 }) : f0(u); await loadStats(); window.fetch = f0;
+  const b = STATS === keep && /These figures are from/.test(document.querySelector("#ov-spend").textContent);
+  const sp = renderOvSpend; renderOvSpend = () => { throw new Error("boom"); }; STATS_ERR = null; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response(JSON.stringify(keep)) : f0(u);
+  await loadStats(); window.fetch = f0; renderOvSpend = sp;
+  return [a, b, /did not render: boom/.test(document.querySelector("#ov-spend").textContent) && /Today/.test(document.querySelector("#ov-today").textContent)].join("|")')"
+ck "A spend link sets Stats for the visit: totals agree, no Stats click saves, a bad value does nothing, Restore and Keep these" "true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
+  const w = () => new Promise(r => setTimeout(r, 100)); localStorage.setItem("statsFilter", JSON.stringify({ ...SF_DEFAULT, model: "m1" })); SF = { ...SF_DEFAULT, model: "m1" }; SF_FROM_OV = false;
+  OV_RANGE = "7d"; renderOvSpend(); const tot = document.querySelector("#ov-spend .tot").textContent; document.querySelector("#ov-spend .tot").click(); await w();
+  const a = location.hash === "#stats/spend" && SF.range === "7d" && SF.model === "all" && statsSpend("7d") === tot && !!document.querySelector("#s-stats .sfov");
+  SF_FROM_OV = true; setStatsFilter({ range: "30d" }); const b = JSON.parse(localStorage.getItem("statsFilter")).model === "m1";
+  const x = document.createElement("a"); x.dataset.sfrange = "x;y"; document.body.appendChild(x); const before = SF.range; x.click(); const c = SF.range === before;
+  document.querySelector("[data-sfrestore]").click(); const d = SF.model === "m1" && !SF_FROM_OV;
+  SF_FROM_OV = true; setStatsFilter({ range: "90d" }, false); document.querySelector("[data-sfkeep]").click(); const e = JSON.parse(localStorage.getItem("statsFilter")).range === "90d" && !SF_FROM_OV;
+  return [a, b, c, d, e].join("|")')"
 exit $fail

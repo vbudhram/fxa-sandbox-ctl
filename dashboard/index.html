@@ -375,6 +375,16 @@
   /* ── overview: what needs you, what is running ── */
   .ov { grid-column:1/-1; display:grid; gap:var(--s3); grid-template-columns:minmax(0,3fr) minmax(0,2fr); align-items:start; }
   #s-running { position:sticky; top:72px; }
+  #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; background:none; border:0; box-shadow:none; padding:0; }
+  #ov-head .seg { margin-left:auto; }
+  .ovl { display:grid; gap:var(--s3); align-content:start; min-width:0; }
+  #ov-spend .tot { font:700 28px/1.1 var(--head); font-variant-numeric:tabular-nums; color:inherit; }
+  #ov-spend svg { width:100%; height:120px; display:block; margin:var(--s2) 0; }
+  .ovleg { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); font-size:var(--t-sub); }
+  .ovleg a { color:inherit; display:flex; align-items:center; gap:6px; } .ovleg i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .ovtoday { display:flex; gap:var(--s4); align-items:center; } .ovtoday svg { width:84px; height:84px; flex:none; }
+  .ovtoday .big { font:700 28px/1.1 var(--head); font-variant-numeric:tabular-nums; } .ovtoday .sub, #ov-spend .sub { font-size:var(--t-sub); color:var(--faint); }
+  .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; cursor:pointer; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } #s-running { position:static; } }
   .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
   .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
@@ -593,7 +603,8 @@ table.usage tr.sel td { background: var(--infobg); }
 
 <div class="grid">
   <div class="ov" data-views="overview">
-    <section id="ov-mini"></section>
+    <section id="ov-head"></section>
+    <div class="ovl"><section id="ov-spend"></section><section id="ov-today"></section><section id="ov-mini"></section></div>
     <section id="s-running"></section>
   </div>
   <section class="wide" id="s-agents" data-views="none"></section>
@@ -930,6 +941,70 @@ function putOv(id, html) {
   const changed = put(id, html); node.dataset.fk = fk;
   if (changed && f) node.querySelector(`[data-focus="${CSS.escape(f)}"]`)?.focus();
   return changed;
+}
+// The Overview range (7, 30 or 90 days), in memory for the visit.
+let OV_RANGE = "30d";
+const OV_RANGES = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
+const OV_SRC = [["pipeline", "var(--info)"], ["pass", "var(--purple)"], ["slack", "var(--ok)"], ["answer", "var(--amber)"]];
+// Why the stats figures may be wrong, or "": a failed read keeps the last figures, with their age.
+function statsNote() {
+  if (STATS_ERR) return STATS ? `${sentence(STATS_ERR)}. These figures are from ${ago(Math.round((Date.now() - STATS_AT) / 1000))}; the next poll tries again.` : `${sentence(STATS_ERR)}. The next poll tries again.`;
+  const a = STATE.stats_age_seconds, i = STATE.stats_interval;
+  return a != null && i && a > 3 * i ? `The stats feed is ${Math.round(a / 60)} min old.` : "";
+}
+const localDay = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+function renderOvHead() {
+  putOv("ov-head", `<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`);
+}
+document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; safeRender(renderOvHead, "ov-head"); safeRender(renderOvSpend, "ov-spend"); } });
+// ovSpend(range): spend by local day and source in the Stats range, with the Stats rules (usd, every row), memoized.
+const OV_MEMO = new WeakMap();
+function ovSpend(range) {
+  const key = `${range}|${localDay(Date.now())}`, m = OV_MEMO.get(STATS) ?? {}; if (m[key]) return m[key];
+  const DAY = 86400000, [lo] = statsBounds(range), today = localDay(Date.now()), days = new Map();
+  for (let t = lo; t <= today; t += DAY) days.set(localDay(t), { t: localDay(t), by: {}, usd: 0, merged: 0 });
+  const by = {}; let total = 0;
+  (STATS?.rows ?? []).forEach(r => { const t = Date.parse(r.at); if (!(t >= lo)) return; const d = days.get(localDay(t)); if (!d) return;
+    const u = r.usd || 0; d.by[r.src] = (d.by[r.src] ?? 0) + u; d.usd += u; by[r.src] = (by[r.src] ?? 0) + u; total += u; });
+  (STATS?.prs ?? []).forEach(p => { const d = p.merged && days.get(localDay(Date.parse(p.merged))); if (d) d.merged++; });
+  const list = [...days.values()], peak = list.reduce((a, d) => d.usd > (a?.usd ?? 0) ? d : a, null);
+  m[key] = { total, by, days: list, peak, perDay: total / list.length }; OV_MEMO.set(STATS, m);
+  return m[key];
+}
+function renderOvSpend() {
+  const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1], note = statsNote();
+  if (!STATS) return putOv("ov-spend", `<h2>Spend, last ${n}</h2><div class="emptybox">${esc(note ? `Spend unknown: ${note}` : "Loading the stats…")}</div>`);
+  const sp = ovSpend(OV_RANGE), W = 600, H = 120, max = Math.max(0.01, ...sp.days.map(d => d.usd)), x = i => sp.days.length > 1 ? i / (sp.days.length - 1) * W : W / 2;
+  // Stacked areas, one per source, bottom up in OV_SRC order.
+  const base = sp.days.map(() => 0), y = v => (H - v / max * H).toFixed(1);
+  const areas = OV_SRC.map(([src, col]) => {
+    const top = sp.days.map((d, i) => base[i] + (d.by[src] ?? 0)), pts = top.map((v, i) => `${x(i).toFixed(1)},${y(v)}`), bot = base.map((v, i) => `${x(i).toFixed(1)},${y(v)}`).reverse();
+    top.forEach((v, i) => { base[i] = v; });
+    return `<polygon points="${pts.concat(bot).join(" ")}" fill="${col}" fill-opacity=".55" stroke="${col}" stroke-width="1"/>`; }).join("");
+  const pk = sp.peak, pi = pk ? sp.days.indexOf(pk) : -1, prsFresh = STATS.prs != null && !(STATS.prs_at && Date.now() / 1000 - STATS.prs_at > 1800);
+  const pkText = pk ? `Peak ${new Date(pk.t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}: ${usd(pk.usd)}${prsFresh ? `, ${pk.merged} PR${pk.merged === 1 ? "" : "s"} merged that day` : ""}` : "";
+  const leg = OV_SRC.map(([src, col]) => `<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${esc(SF_SRC[src])} ${usd(sp.by[src] ?? 0)}</a>`).join("");
+  putOv("ov-spend", `<h2>Spend, last ${n}${note ? `<span class="note">${esc(note)}</span>` : ""}</h2>
+    ${sp.total === 0 ? `<div class="emptybox">$0.00 · no runs in the last ${n}</div>` : `<a class="tot" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovs-total">${usd(sp.total)}</a>
+    <div class="sub">${usd(sp.perDay)} a day on average${pkText ? ` · ${esc(pkText)}` : ""}</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${areas}${pi >= 0 ? `<line x1="${x(pi)}" x2="${x(pi)}" y1="0" y2="${H}" stroke="var(--faint)" stroke-dasharray="3 3"/>` : ""}</svg>
+    <p class="vh">Spend in the last ${n}: ${usd(sp.total)}, ${OV_SRC.map(([src]) => `${SF_SRC[src]} ${usd(sp.by[src] ?? 0)}`).join(", ")}. ${esc(pkText)}.</p>
+    <div class="ovleg">${leg}</div>`}`);
+}
+function renderOvToday() {
+  const note = statsNote();
+  if (!STATS) return putOv("ov-today", `<h2>Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
+  const DAY = 86400000, today = localDay(Date.now()), byDay = new Map(), models = {};
+  (STATS.rows ?? []).forEach(r => { const d = localDay(Date.parse(r.at)); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
+  const now = byDay.get(today) ?? 0, past = [...Array(30)].map((_, i) => byDay.get(today - (i + 1) * DAY)).filter(v => v > 0).sort((a, b) => a - b);
+  const usual = past.length >= 3 ? past[Math.floor(past.length / 2)] : null, pct = usual ? Math.round(now / usual * 100) : null;
+  const hr = STATS.llm?.hour_usd, hourOk = typeof hr === "number" && !note, toMid = (today + DAY - Date.now()) / 3600000;
+  const C = 2 * Math.PI * 34, arc = usual ? Math.min(1, now / usual) * C : 0;
+  putOv("ov-today", `<h2>Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
+    <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="var(--sunk)" stroke-width="8"/>${usual ? `<circle cx="42" cy="42" r="34" fill="none" stroke="var(--info)" stroke-width="8" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/>` : ""}</svg>
+    <div><div class="big">${usd(now)}</div><div class="sub">${usual ? `${pct}% of a usual day · Usual day ${usd(usual)}` : "not enough history for a usual day"}</div>
+      <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${esc(note || "the proxy log is not read")}`}</div>
+      <div class="sub">${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, u]) => `${esc(modelName(m))} ${usd(u)}`).join(" · ")}</div></div></div>`);
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
 // Unknown when Jira or the agents feed is unknown: never a confident zero.
@@ -1294,10 +1369,18 @@ function threadHtml(sel) {
 
 // Stats: run-log totals, fetched on their own cadence.
 let STATS = null, STATS_AT = 0;
+// A failed read (a throw, a non-OK answer, a body that is not JSON or says error) keeps the last
+// figures and sets STATS_ERR, so no card waits on 'Loading…' for ever or shows a confident $0.00.
+let STATS_ERR = null;
 async function loadStats() {
-  if (STATS && Date.now() - STATS_AT < 60000) { renderStats(); return; }
-  try { STATS = await (await fetch("/api/stats", { cache:"no-store" })).json(); STATS_AT = Date.now(); } catch {}
-  renderStats(); renderNav(); if (VIEW === "pipeline") renderLanes(); if (VIEW === "overview") safeRender(renderOvMini, "ov-mini");
+  if (STATS && !STATS_ERR && Date.now() - STATS_AT < 60000) { safeRender(renderStats, "s-stats"); return; }
+  try {
+    const r = await fetch("/api/stats", { cache:"no-store" }), j = r.ok ? await r.json() : null;
+    if (!j || j.error) throw new Error(j?.error || `HTTP ${r.status}`);
+    STATS = j; STATS_AT = Date.now(); STATS_ERR = null;
+  } catch (e) { STATS_ERR = `the stats feed could not be read (${e.message})`; }
+  safeRender(renderStats, "s-stats"); safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
+  if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"]].forEach(([f, id]) => safeRender(f, id));
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
   if (VIEW === "sessions" && SESS_TAB === "answers") { renderAnswers(); renderTab(); }
@@ -1968,7 +2051,7 @@ document.addEventListener("click", e => {
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
   const st = STATS;
-  if (!st || st.error) { put("s-stats", head("stats") + `<div class="emptybox">${esc(st?.error || "loading the run log…")}</div>`); return; }
+  if (!st || st.error) { put("s-stats", head("stats") + `<div class="emptybox">${esc(st?.error || (STATS_ERR ? `${sentence(STATS_ERR)}. The next poll tries again.` : "loading the run log…"))}</div>`); return; }
   const all = st.rows ?? [];
   const DAY = 86400000, [lo, hi] = statsBounds(SF.range);
   const q = SF.q.trim().toLowerCase();
@@ -2012,7 +2095,7 @@ function renderStats() {
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => `<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${esc(sfLabel(f))} ×</button>`).join("");
-  put("s-stats", `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2>${chips ? `<span class="fchips">${chips}</span>` : ""}</div>
+  put("s-stats", (SF_FROM_OV ? `<div class="sfov" role="status">Filters set from Overview are not saved. <button type="button" class="linkbtn" data-sfrestore>Restore my filters</button> · <button type="button" class="linkbtn" data-sfkeep>Keep these</button></div>` : "") + `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2>${chips ? `<span class="fchips">${chips}</span>` : ""}</div>
     ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
     ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
@@ -2182,7 +2265,7 @@ function memoryCard(m) {
     <div class="kv"><b>Last digest</b><span>${d ? `${esc(d.at.slice(0, 10))} · ${esc(d.result)}${d.result === "opened" ? ` · ${d.added} from the inbox, ${d.inbox} to look at` : ""}` : "none yet"}</span></div></div>`;
 }
 // Stats filters, remembered per viewer in this browser.
-const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
+const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
 const SF_DEFAULT = { range: "30d", from: "", to: "", src: "all", kind: "all", model: "all", team: "all", q: "" };
 let SF = { ...SF_DEFAULT, ...(() => { try { return JSON.parse(localStorage.getItem("statsFilter")) || {}; } catch { return {}; } })() };
 const statsFiltered = () => Object.keys(SF_DEFAULT).some(k => SF[k] !== SF_DEFAULT[k]);
@@ -2199,17 +2282,32 @@ function statsBounds(r) {
     case "yesterday": return [t - DAY, t];
     case "7d": return [t - 6 * DAY, Infinity];
     case "30d": return [t - 29 * DAY, Infinity];
+    case "90d": return [t - 89 * DAY, Infinity];
     case "month": return [new Date(y, m, 1).getTime(), Infinity];
     case "lastmonth": return [new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime()];
     case "custom": return [SF.from ? new Date(SF.from + "T00:00").getTime() : 0, SF.to ? new Date(SF.to + "T00:00").getTime() + DAY : Infinity];
     default: return [0, Infinity];
   }
 }
-function setStatsFilter(patch) {
+// A filter that Overview set is for the visit: no Stats change saves it until the person picks Keep these.
+let SF_FROM_OV = false;
+const sfSaved = () => { try { return JSON.parse(localStorage.getItem("statsFilter")) || {}; } catch { return {}; } };
+function setStatsFilter(patch, save = !SF_FROM_OV) {
   SF = { ...SF, ...patch };
-  try { localStorage.setItem("statsFilter", JSON.stringify(SF)); } catch {}
+  if (save) try { localStorage.setItem("statsFilter", JSON.stringify(SF)); } catch {}
   LAST["s-stats"] = ""; renderStats(); renderSide();
 }
+document.addEventListener("click", e => {
+  const a = e.target.closest?.("[data-sfrange]");
+  if (a) {
+    e.preventDefault();
+    const range = a.dataset.sfrange, src = a.dataset.sfsrc ?? "all";
+    if (!STATS_RANGES.some(([k]) => k === range) || !(src === "all" || src in SF_SRC)) return;
+    SF_FROM_OV = true; setStatsFilter({ ...SF_DEFAULT, range, src }, false); location.hash = "#stats/spend"; return;
+  }
+  if (e.target.closest?.("[data-sfrestore]")) { SF_FROM_OV = false; SF = { ...SF_DEFAULT, ...sfSaved() }; LAST["s-stats"] = ""; renderStats(); renderSide(); }
+  if (e.target.closest?.("[data-sfkeep]")) { SF_FROM_OV = false; setStatsFilter({}, true); }
+});
 document.addEventListener("click", e => {
   const b = e.target.closest?.("#side [data-range]");
   if (b) setStatsFilter({ range: b.dataset.range });
@@ -2960,7 +3058,7 @@ const num = v => v == null || v === "" ? null : Number(v);
 // agent and subagents apart, with the token kinds that make the cost. Fetched when shown, 30 s fresh.
 const USAGE = {};
 const tokn = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);
-const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
+const modelName = m => (m || "unknown").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)(\[1m\])?$/, (_, a, b, l) => ` ${a}.${b}${l ? " (1M)" : ""}`).replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
 function usageTable(rows) {
   if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
@@ -3103,7 +3201,7 @@ function safeRender(fn, id) {
 }
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvMini, "ov-mini"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderRunning, "s-running"], [renderSess, "s-sess"], [renderPool, "s-pool"],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
