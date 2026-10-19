@@ -1,0 +1,368 @@
+{
+ "/api/snapshot": {
+  "age_seconds": 30,
+  "interval": 120,
+  "agents_age_seconds": 12,
+  "agents_interval": 30,
+  "stats_age_seconds": 40,
+  "stats_interval": 60,
+  "snapshot": {
+   "repo": "example/repo",
+   "team": {
+    "profile": "example",
+    "name": "Example",
+    "jira_site": "https://jira.example.com",
+    "queue_label": "ai-fixme",
+    "pr_label": "auto",
+    "repo": "example/repo"
+   },
+   "generated_at": "@iso-30",
+   "mode": {},
+   "limits": {
+    "attempts": 2,
+    "merged_prs": 30
+   },
+   "health": {
+    "seconds_since_pass": 240,
+    "last_pass_epoch": "@epoch-240",
+    "next_pass_epoch": "@epoch+60",
+    "pass_timer": "on",
+    "pass_times": [
+     "@epoch+60",
+     "@epoch+360",
+     "@epoch+660",
+     "@epoch+960",
+     "@epoch+1260",
+     "@epoch+1560",
+     "@epoch+1860",
+     "@epoch+2160",
+     "@epoch+2460",
+     "@epoch+2760",
+     "@epoch+3060",
+     "@epoch+3360",
+     "@epoch+3660",
+     "@epoch+3960",
+     "@epoch+4260",
+     "@epoch+4560",
+     "@epoch+4860",
+     "@epoch+5160",
+     "@epoch+5460",
+     "@epoch+5760",
+     "@epoch+6060",
+     "@epoch+6360",
+     "@epoch+6660",
+     "@epoch+6960",
+     "@epoch+7260",
+     "@epoch+7560",
+     "@epoch+7860",
+     "@epoch+8160",
+     "@epoch+8460",
+     "@epoch+8760",
+     "@epoch+9060",
+     "@epoch+9360",
+     "@epoch+9660",
+     "@epoch+9960",
+     "@epoch+10260",
+     "@epoch+10560",
+     "@epoch+10860",
+     "@epoch+11160",
+     "@epoch+11460",
+     "@epoch+11760",
+     "@epoch+12060",
+     "@epoch+12360",
+     "@epoch+12660",
+     "@epoch+12960",
+     "@epoch+13260",
+     "@epoch+13560",
+     "@epoch+13860",
+     "@epoch+14160",
+     "@epoch+53760",
+     "@epoch+54060",
+     "@epoch+54360",
+     "@epoch+54660",
+     "@epoch+54960",
+     "@epoch+55260",
+     "@epoch+55560",
+     "@epoch+55860",
+     "@epoch+56160",
+     "@epoch+56460",
+     "@epoch+56760",
+     "@epoch+57060"
+    ],
+    "launches_24h": 3,
+    "max_launches_per_day": 40,
+    "lock_stale_seconds": 1800,
+    "free_gb": 80,
+    "min_free_gb": 20
+   },
+   "inflight": [
+    {
+     "key": "EX-101",
+     "summary": "Fix the sample login button",
+     "stage": "watching",
+     "branch": "ex-101"
+    },
+    {
+     "key": "EX-102",
+     "summary": "Sample settings page copy",
+     "stage": "starting",
+     "branch": "ex-102"
+    },
+    {
+     "key": "EX-103",
+     "summary": "Sample PR in CI",
+     "stage": "pr",
+     "pr": 42,
+     "ok": 18,
+     "fail": 0,
+     "running": 4
+    }
+   ],
+   "blocked": [
+    {
+     "key": "EX-104",
+     "summary": "Sample ticket that needs the operator",
+     "blocked_reason": {
+      "kind": "operator",
+      "text": "pick a route",
+      "at": "@epoch-7200"
+     }
+    }
+   ],
+   "review": [
+    {
+     "key": "EX-105",
+     "pr": 43,
+     "title": "Sample review wait",
+     "state": "OPEN",
+     "ok": 20,
+     "fail": 0,
+     "running": 0,
+     "created": "@iso-500000"
+    }
+   ],
+   "queue": {
+    "ready": [
+     {
+      "key": "EX-106",
+      "summary": "Sample ready ticket"
+     }
+    ],
+    "skipped": []
+   },
+   "pool": [
+    {
+     "slot": "ex-auto-1",
+     "agent": "ex-101",
+     "key": "EX-101",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-2",
+     "agent": "ex-102",
+     "key": "EX-102",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-3",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-4",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-5",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    }
+   ],
+   "free_slots": [
+    "ex-auto-3",
+    "ex-auto-4",
+    "ex-auto-5"
+   ],
+   "instances": [],
+   "open_prs": [],
+   "merged_prs": [],
+   "telemetry": {
+    "median_minutes": 20
+   },
+   "pipeline": {}
+  },
+  "agents": {
+   "runners": [
+    {
+     "key": "EX-101",
+     "name": "ex-101",
+     "agent_alive": true,
+     "stage": "watching",
+     "elapsed_seconds": 900,
+     "agent": {
+      "idle_seconds": 30,
+      "cost_so_far": 1.25,
+      "last_tool": "Bash npm test -- sample"
+     }
+    },
+    {
+     "key": "EX-102",
+     "name": "ex-102",
+     "agent_alive": true,
+     "stage": "starting",
+     "elapsed_seconds": 60,
+     "agent": {}
+    }
+   ],
+   "sessions": [
+    {
+     "key": "agent-ex0001",
+     "state": "active",
+     "agent_alive": true,
+     "turns": 4,
+     "created": "@epoch-1200",
+     "owner": "U0EXAMPLE",
+     "owner_name": "Sample Person",
+     "request": "make the sample page faster",
+     "agent": {
+      "last_text": "Reading the sample page."
+     }
+    }
+   ],
+   "pool": [
+    {
+     "slot": "ex-auto-1",
+     "agent": "ex-101",
+     "key": "HEAD",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-2",
+     "agent": "ex-102",
+     "key": "HEAD",
+     "busy": true
+    },
+    {
+     "slot": "ex-auto-3",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-4",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    },
+    {
+     "slot": "ex-auto-5",
+     "agent": null,
+     "key": "HEAD",
+     "busy": false
+    }
+   ],
+   "free_slots": [
+    "ex-auto-3",
+    "ex-auto-4",
+    "ex-auto-5"
+   ],
+   "instances": [],
+   "launchcap": 3,
+   "session_cap": 4,
+   "runner_hourly_usd": 0.13,
+   "infra_hourly_usd": 0.21,
+   "infra": {
+    "manager": 0.21,
+    "firecracker_host": 0,
+    "fc_state": "down"
+   }
+  }
+ },
+ "/api/stats": {
+  "rows": [],
+  "prs": [
+   {
+    "n": 40,
+    "key": "EX-200",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-172800",
+    "merged": "@iso-86400",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 41,
+    "key": "EX-201",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-259200",
+    "merged": "@iso-172800",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 42,
+    "key": "EX-202",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-345600",
+    "merged": "@iso-259200",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 43,
+    "key": "EX-203",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-432000",
+    "merged": "@iso-345600",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 44,
+    "key": "EX-204",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-518400",
+    "merged": "@iso-432000",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   },
+   {
+    "n": 45,
+    "key": "EX-205",
+    "title": "Sample merged PR",
+    "state": "MERGED",
+    "created": "@iso-604800",
+    "merged": "@iso-518400",
+    "add": 10,
+    "del": 2,
+    "src": "pipeline"
+   }
+  ],
+  "prs_at": "@epoch-120",
+  "llm": {
+   "hour_usd": 0.42
+  },
+  "load": {
+   "cap": 4,
+   "days": []
+  }
+ },
+ "/api/team-admin": {
+  "admin": true,
+  "user": "admin@example.com"
+ }
+}

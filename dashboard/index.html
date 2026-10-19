@@ -404,6 +404,10 @@
   .ovrun time { font-size:var(--t-label, 11px); color:var(--dim); grid-row:span 2; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .ovrun .ic { width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; grid-row:span 2; } .ovrun .ic svg { width:14px; height:14px; }
   .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ovrun .t .key { margin-right:6px; }
+  #sb-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); } #sb-cards .sb-card { display:flex; flex-direction:column; gap:4px; min-width:0; } #sb-cards .big { font-size:22px; }
+  #sb-cards .sbstrip { display:flex; gap:3px; margin:4px 0; } #sb-cards .sbstrip i { flex:1; height:10px; border-radius:2px; background:var(--sunk); } #sb-cards .sbstrip i.busy { background:var(--info); } #sb-cards .sbstrip i.gce { background:repeating-linear-gradient(135deg,var(--info) 0 4px,var(--panel) 4px 6px); } #sb-cards .sbstrip i.held { background:var(--warn); } #sb-cards .sbstrip i.unknown { background:var(--line); }
+  #sb-cards .kv { display:flex; justify-content:space-between; gap:var(--s2); font-size:var(--t-sub); } #sb-cards .kv b { font-weight:600; } #sb-cards .sub a { color:var(--link); }
+  @media (max-width:900px) { #sb-cards { grid-template-columns:1fr; } }
   .ovrun .d { font-size:var(--t-label, 11px); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
   .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label, 11px); color:var(--dim); font-variant-numeric:tabular-nums; }
   @container (max-width:420px) { .ovrun { grid-template-columns:56px minmax(0,1fr) auto; } .ovrun .ic { display:none; } .ovrun .d { grid-column:2; } }
@@ -2574,6 +2578,56 @@ function answerCard(rows) {
     ${secs.length ? kv("Time", `median ${secs[Math.floor(secs.length / 2)]} s · slowest ${secs[secs.length - 1]} s`) : ""}
     ${kv("Cost", `${usd(a.reduce((x, r) => x + (r.usd || 0), 0))} · ${usd(a.reduce((x, r) => x + (r.usd || 0), 0) / a.length)} each`)}</div>`;
 }
+// Sandboxes cards (i407): pipeline slots, session slots and cost, from the agents feed and the 7 day Stats rows.
+// A feed that failed or is old gives '?' or 'unknown', never a 0.
+function sbHostState(g) {
+  const st = g?.infra?.fc_state, fcLive = (g?.sessions ?? []).some(x => LIVE_SESSION.includes(x.state) && x.boot_backend === "firecracker");
+  if (st === "none") return null;
+  if (st === "up") return "Firecracker host up";
+  if (st === "down" && !fcLive) return "Firecracker host stopped: it starts for the next session";
+  return "Firecracker host state unknown: the host did not answer";
+}
+// Hours the host ran sessions: the union of [t0, end or now] over firecracker rows, so parallel sessions count once.
+function sbHostHours(rows, lo, now) {
+  const sp = rows.filter(r => r.src === "slack" && r.backend === "firecracker" && r.t0 != null).map(r => [Math.max(r.t0, lo), Math.min(r.end ?? now, now)]).filter(([a, b]) => b > a).sort((a, b) => a[0] - b[0]);
+  let tot = 0, cs = null, ce = null;
+  sp.forEach(([a, b]) => { if (ce == null || a > ce) { if (ce != null) tot += ce - cs; cs = a; ce = b; } else ce = Math.max(ce, b); });
+  if (ce != null) tot += ce - cs;
+  return tot / 3600;
+}
+function sbCards() {
+  const g = AGENTS, f = ovFloor(), now = Date.now() / 1000, lo = now - 7 * 86400, note = STATS ? statsNote() : "the stats feed could not be read", statsOk = !note;
+  const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && Date.parse(r.at) / 1000 >= lo) : [], unk = `unknown: ${note.replace(/\.$/, "")}`;
+  const hrs = h => `${+h.toFixed(1)} h`, seg = (cls, t) => `<i class="${cls}" title="${esc(t)}"></i>`;
+  // Pipeline slots: one segment for each slot.
+  const pt = f.unknown ? [] : f.tiles.filter(t => t.kind === "pipe" || t.slot), busy = pt.filter(t => t.kind === "pipe").length;
+  const freeN = pt.filter(t => t.state === "free").length, held = pt.filter(t => t.state === "held").length, slotsUnk = pt.some(t => t.state === "unknown");
+  const pipeRows = rows.filter(r => r.src === "pipeline"), pipeLine = statsOk ? `7 days: ${pipeRows.length} runs, ${hrs(pipeRows.reduce((n, r) => n + (r.min || 0), 0) / 60)}` : `7 days: ${unk}`;
+  const pipe = f.unknown ? `<div class="big">?</div><div class="sub">Slots unknown: the agents feed is not current.</div>`
+    : `<div class="big">${busy} of ${pt.length} busy</div><div class="sub">${slotsUnk ? "free slots unknown" : `${freeN} free${held ? ` · ${held} held` : ""}`}</div>
+      <div class="sbstrip" role="img" aria-label="${busy} busy, ${freeN} free, ${held} held">${pt.map(t => seg(t.kind === "pipe" ? "busy" : t.state, `${t.slot || t.key}: ${t.kind === "pipe" ? t.key : t.state}`)).join("")}</div>
+      <div class="sub">${esc(pipeLine)}</div><div class="sub">${esc(agentsMore(SNAP?.mode?.newtickets === "off", g))}</div>`;
+  // Session slots: session_cap segments; a session on GCE is marked.
+  const cap = g?.session_cap, live = (g?.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)), gce = live.filter(x => x.boot_backend === "gce").length;
+  const sl = rows.filter(r => r.src === "slack"), boots = sl.map(r => r.boot_s).filter(x => x != null).sort((a, b) => a - b);
+  const peak = statsOk ? Math.max(0, ...(STATS.load?.days ?? []).filter(d => Date.parse(d.day) / 1000 >= lo - 86400).map(d => d.peak)) : null;
+  const sessLine = statsOk ? `7 days: ${sl.length} sessions, peak ${peak} of ${STATS.load?.cap ?? cap ?? "?"}${boots.length ? ` · boot median ${Math.round(boots[Math.floor(boots.length / 2)])} s` : ""}` : `7 days: ${unk}`;
+  const host = f.unknown ? null : sbHostState(g);
+  const sess = f.unknown || cap == null ? `<div class="big">?</div><div class="sub">Session slots unknown: the agents feed is not current.</div>`
+    : `<div class="big">${live.length} of ${cap} busy</div>
+      <div class="sbstrip" role="img" aria-label="${live.length} of ${cap} session slots busy${gce ? `, ${gce} on GCE` : ""}">${Array.from({ length: Math.max(cap, live.length) }, (_, i) => i < live.length ? seg(live[i].boot_backend === "gce" ? "busy gce" : "busy", live[i].boot_backend === "gce" ? "on GCE" : "busy") : seg("free", "free")).join("")}</div>
+      ${gce ? `<div class="sub">${gce} on GCE</div>` : ""}<div class="sub">${esc(sessLine)}</div>${host ? `<div class="sub">${esc(host)}</div>` : ""}`;
+  // Cost: the manager is always on; the host has a rate only while up, and no 7 day total (no up-time record).
+  const mgr = g?.infra?.manager, fc = g?.infra?.firecracker_host, hh = statsOk ? sbHostHours(rows, lo, now) : null;
+  const cost = f.unknown ? `<div class="big">?</div><div class="sub">Cost unknown: the agents feed is not current.</div>`
+    : `<div class="kv"><b>Manager</b> <span>${mgr ? `${usd(mgr)}/h · $${Math.round(mgr * 168)} in 7 days, always on` : "rate not set"}</span></div>
+      ${host ? `<div class="kv"><b>Firecracker host</b> <span>${fc > 0 ? `${usd(fc)}/h while up · up now` : esc(host.replace(/^Firecracker host /, ""))}</span></div>
+        <div class="kv"><b>Host use</b> <span>${hh == null ? esc(unk) : `Sessions used the host ${hrs(hh)} in 7 days`}</span></div>` : ""}
+      <div class="kv"><b>GCE sandboxes now</b> <span>${g?.runner_hourly_usd == null ? "?" : `${usd(g.runner_hourly_usd)}/h`}</span></div>
+      <div class="sub"><a href="#stats/spend">LLM spend is on Stats ›</a></div>`;
+  return `<div class="ovc sb-card"><div class="lbl">Pipeline slots · GCE</div>${pipe}</div><div class="ovc sb-card"><div class="lbl">Session slots</div>${sess}</div><div class="ovc sb-card"><div class="lbl">Cost</div>${cost}</div>`;
+}
+function renderSbCards() { putOv("sb-cards", sbCards()); }
 function loadCard(l, lo, hi) {
   const days = inRange(l?.days, lo, hi).reverse();
   const mins = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;

@@ -356,4 +356,25 @@ ck "O6 Recent runs: no endpoint, an error body and an HTTP error each say unavai
   window.fetch = async u => String(u).includes("/api/runs/recent") ? new Response(JSON.stringify({ runs: [], error: "stats unavailable" })) : f0(u); await loadRuns(); const b = /Recent runs unavailable: stats unavailable/.test(t());
   window.fetch = async u => String(u).includes("/api/runs/recent") ? new Response("nope", { status: 404 }) : f0(u); await loadRuns(); window.fetch = f0;
   return [a, b, /Recent runs unavailable: HTTP 404/.test(t()) && !document.querySelector("#ov-runs .ovrun")].join("|")')"
+# i407 sb-cards: the cards read the 7 day Stats rows and the agents feed, say what the host costs, and never show a 0 for an unknown feed.
+C="$(dirname "$0")/page-fixture-sb-cards.json"
+ck "i407 cards: 7 day runs and sessions, the cost lines, the host state from fc_state, a GCE session, and an unknown stats feed" "true|true|true|true|true|true|true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$C" --width 1280 --probe '
+  const now = Date.now() / 1000, iso = s => new Date((now - s) * 1000).toISOString(), n = document.createElement("section"); n.id = "sb-cards"; document.getElementById("main").append(n);
+  const rows = []; for (let i = 0; i < 41; i++) rows.push({ at: iso(3600 * (i + 1)), src: "pipeline", key: "EX-" + i, min: i ? 92 : 100, profile: "example" });
+  const sl = (i, o) => Object.assign({ at: iso(3600 * (i + 1)), src: "slack", key: "agent-s" + i, profile: "example", backend: null, t0: null, end: null, boot_s: null }, o);
+  for (let i = 0; i < 20; i++) rows.push(sl(i, i === 0 ? { boot_s: 30 } : i === 1 ? { boot_s: 41 } : i === 2 ? { boot_s: 60 } : {}));
+  rows.push(sl(20, { backend: "firecracker", t0: now - 36000, end: now - 28800 }), sl(21, { backend: "firecracker", t0: now - 32400, end: now - 25200 }), sl(22, { backend: "gce", t0: now - 18000, end: now - 14400 }), { at: iso(9 * 86400), src: "pipeline", key: "EX-OLD", min: 500 });
+  STATS.rows = rows; STATS.load = { cap: 4, days: [{ day: new Date().toISOString().slice(0, 10), peak: 3 }] }; STATS_ERR = null;
+  const t = () => n.textContent.replace(/\s+/g, " "), hostKv = () => [...n.querySelectorAll(".kv")].some(k => /Firecracker/.test(k.textContent) && /always on|%/.test(k.textContent));
+  renderSbCards(); const a = t(), noHostAlways = !hostKv() && !/%/.test(a);
+  AGENTS.sessions[0].boot_backend = "firecracker"; renderSbCards(); const b = t();
+  AGENTS.infra.fc_state = "none"; renderSbCards(); const c = t();
+  AGENTS.sessions.push({ key: "agent-ex0002", state: "active", boot_backend: "gce", created: now - 60 }); renderSbCards(); const d = t(), gseg = !!n.querySelector(".sbstrip i.gce");
+  STATS_ERR = "stats read failed"; renderSbCards(); const e = t();
+  return [/7 days: 41 runs, 63 h/.test(a), /7 days: 23 sessions, peak 3 of 4 · boot median 41 s/.test(a), /Manager \$0\.21\/h · \$35 in 7 days, always on/.test(a), /Firecracker host stopped: it starts for the next session/.test(a),
+    /Sessions used the host 3 h in 7 days/.test(a), /GCE sandboxes now \$0\.13\/h/.test(a), noHostAlways, /Firecracker host state unknown: the host did not answer/.test(b), !/Firecracker/.test(c),
+    /2 of 4 busy/.test(d) && /1 on GCE/.test(d) && gseg, /7 days: unknown: Stats read failed/.test(e) && !/7 days: 0|used the host 0/.test(e)].join("|")')"
+ck "i407 cards: an old agents feed gives ? on each card, not a 0" "3|false" "$(bash "$p" '#overview' --fixture "$C" --width 1280 --probe '
+  const n = document.createElement("section"); n.id = "sb-cards"; document.getElementById("main").append(n); STATE.agents_age_seconds = 99999; renderSbCards();
+  return [...n.querySelectorAll(".big")].filter(b => b.textContent === "?").length + "|" + /\b0 of|\$0\.00/.test(n.textContent)')"
 exit $fail
