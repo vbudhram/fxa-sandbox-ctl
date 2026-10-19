@@ -673,12 +673,39 @@ pipeline_launches_24h() {
 # nothing when this host has no systemd or the time cannot be read.
 _pipeline_next_pass() {
   command -v systemctl >/dev/null 2>&1 || return 0
-  # FxA's pass is fxa-pass.timer (FXA_PIPELINE empty, fxa or fxa-ai-fixme, as claude-job.sh reads it); a team's is fxa-pass@<team>.
-  local u="fxa-pass.timer" v; case "${FXA_PIPELINE:-}" in ''|fxa|fxa-ai-fixme) ;; *) u="fxa-pass@${FXA_PIPELINE}.timer" ;; esac
+  local u v; u="$(_pipeline_timer_unit)"
   systemctl is-active -q "$u" 2>/dev/null || { echo off; return 0; }
   # Only Linux hosts have systemctl, so GNU date reads its "Sun 2026-10-18 17:04:00 UTC"; @<epoch> also works.
   v="$(systemctl show -p NextElapseUSecRealtime --value "$u" 2>/dev/null)" || return 0
   case "$v" in @*) v="${v#@}"; [[ "$v" =~ ^[0-9]+$ ]] && echo "$v" ;; ?*) date -d "$v" +%s 2>/dev/null ;; esac || true
+}
+
+# _pipeline_timer_unit   FxA's pass is fxa-pass.timer (FXA_PIPELINE empty, fxa or fxa-ai-fixme, as
+# claude-job.sh reads it); a team's is fxa-pass@<team>.timer.
+_pipeline_timer_unit() {
+  case "${FXA_PIPELINE:-}" in ''|fxa|fxa-ai-fixme) echo fxa-pass.timer ;; *) echo "fxa-pass@${FXA_PIPELINE}.timer" ;; esac
+}
+
+# _pipeline_pass_times   The pass timer's runs in the next 24 h, a sorted JSON array of epochs: [] when
+# the timer is off, null with no systemctl or calendar tool (macOS) or when its specs do not parse.
+# Each spec ("Mon..Fri *-*-* 07..19:04/5:00 America/New_York") is one quoted argument, never a glob.
+_pipeline_pass_times() {
+  local tool="${FXA_SYSTEMD_ANALYZE:-systemd-analyze}" u line spec now ep
+  { command -v systemctl && command -v "$tool"; } >/dev/null 2>&1 || { echo null; return 0; }
+  u="$(_pipeline_timer_unit)"
+  systemctl is-active -q "$u" 2>/dev/null || { echo '[]'; return 0; }
+  local -a specs=()
+  # Each line is "{ OnCalendar=<spec> ; next_elapse=... }".
+  while IFS= read -r line; do
+    case "$line" in *'OnCalendar='*' ;'*) spec="${line#*OnCalendar=}"; specs+=("${spec%% ;*}") ;; esac
+  done < <(systemctl show -p TimersCalendar --value "$u" 2>/dev/null || true)
+  [ ${#specs[@]} -gt 0 ] || { echo null; return 0; }
+  now="$(date +%s)"
+  # One date call for every elapse line ("    Next elapse: Sat 2026-10-24 11:04:00 UTC", "Iteration #2: ...").
+  ep="$(for spec in "${specs[@]}"; do TZ=UTC "$tool" calendar --iterations=300 -- "$spec" 2>/dev/null || true; done \
+    | sed -nE 's/^ *(Next elapse|Iteration #[0-9]+): *//p' | date -u -f - +%s 2>/dev/null | grep -E '^[0-9]+$' | sort -un || true)"
+  [ -n "$ep" ] || { echo null; return 0; }
+  jq -sc --argjson now "$now" 'map(select(. > $now and . <= $now + 86400))' <<< "$ep"
 }
 
 pipeline_health_json() {
@@ -709,6 +736,7 @@ pipeline_health_json() {
         --argjson floor "${PIPE_MIN_FREE_GB:-0}" --argjson now "$(date +%s)" \
         --argjson n "$n" --argjson max "$max" --arg frees "$frees" --arg lage "$lock_age" \
         --argjson lstale "${PIPE_LOCK_STALE_SECONDS:-1800}" --arg np "$np" --arg timer "$timer" \
+        --argjson pt "$(_pipeline_pass_times)" \
     '{ last_pass_epoch:   (if $lp == "" then null else ($lp | tonumber) end),
        last_launch_epoch: (if $ll == "" then null else ($ll | tonumber) end),
        seconds_since_pass: (if $lp == "" then null else ($now - ($lp | tonumber)) end),
@@ -721,6 +749,7 @@ pipeline_health_json() {
        lock_age_seconds: (if $lage == "" then null else ($lage | tonumber) end),
        lock_stale_seconds: $lstale,
        next_pass_epoch: (if $np == "" then null else ($np | tonumber) end),
+       pass_times: $pt,
        pass_timer: (if $timer == "" then null else $timer end) }'
 }
 
