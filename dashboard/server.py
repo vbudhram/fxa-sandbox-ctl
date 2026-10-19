@@ -223,6 +223,60 @@ MASK = re.compile(r"(sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_
 
 TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cadence.
 
+JOB_TITLES = {"pass": "Pipeline pass", "triage": "Triage", "merge-watch": "Merge watch"}
+
+
+def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide):
+    """The newest runs of the stats feed's rows, with a title and an outcome each.
+    Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run."""
+    titles, prs = {}, {}
+    for k in ("blocked", "inflight", "review", "open_prs", "merged_prs"):
+        for i in (snap or {}).get(k) or []:
+            if isinstance(i, dict) and i.get("key"):
+                titles.setdefault(i["key"], i.get("summary") or i.get("title"))
+                n = i.get("number") or i.get("pr")
+                if n:
+                    prs.setdefault(i["key"], (n, "merged" if k == "merged_prs" else "open"))
+    for v in ((snap or {}).get("queue") or {}).values():
+        for i in v if isinstance(v, list) else []:
+            if isinstance(i, dict) and i.get("key"):
+                titles.setdefault(i["key"], i.get("summary"))
+    repo = (snap or {}).get("repo") or "mozilla/fxa"
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - days * 86400))
+    out = []
+    for r in sorted((r for r in rows or [] if (r.get("at") or "") >= since), key=lambda r: r["at"], reverse=True):
+        team = r.get("profile") or "fxa"
+        if hide(team):
+            continue
+        src, key, kind = r.get("src"), r.get("key") or "", r.get("kind") or ""
+        num = state = None
+        if src == "pipeline":
+            title = titles.get(key) or key
+            if r.get("pr") and key in prs:
+                num, state = prs[key]
+            outcome = "pr" if r.get("pr") else "no_pr"
+            if os.path.exists(os.path.join(state_dir, key + ".secured-noted")):
+                title, num, state = "Secured ticket", None, None
+        elif src == "slack":
+            try:
+                with open(os.path.join(sess_dir, key + ".prompt.md"), "rb") as f:
+                    title = f.read(300).decode("utf-8", "ignore").strip().split("\n")[0][:120] or "Slack session"
+            except OSError:
+                title = "Slack session"
+            num = r.get("prn")
+            outcome = "running" if r.get("live") else "pr" if num else "answered"
+        elif src == "answer":
+            title, outcome = "Quick answer", "failed" if kind == "failed" else "answered"
+        else:
+            title, outcome = JOB_TITLES.get(kind, kind.capitalize() or "Job"), "done"
+        url = num and f"https://github.com/{r.get('prr') or repo}/pull/{num}"
+        out.append({"at": r["at"], "src": src, "kind": kind, "key": key, "title": title, "team": team, "outcome": outcome,
+                    "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": r.get("usd"), "min": r.get("min")})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def agent_tail(key):
     now = time.time()
     hit = TAIL.get(key)
@@ -936,6 +990,15 @@ class Handler(BaseHTTPRequestHandler):
                     con.close()
             except Exception as exc:
                 self._json(200, {"run": run, "models": [], "error": type(exc).__name__})
+        elif path == "/api/runs/recent":
+            lim, days = arg("limit"), arg("days")
+            rows = (STATS.read()[0] or {}).get("rows")
+            # A private team's runs name its tickets: only a signed team admin sees them, as with lessons.
+            admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
+            runs = recent_runs(rows, FULL.read()[0], int(time.time()), min(int(lim), 100) if lim.isdigit() and int(lim) else 20,
+                               min(int(days), 90) if days.isdigit() and int(days) else 7, os.path.dirname(ERRORS_FILE), str(SESSION_DIR),
+                               lambda t: not admin and team_private(t))
+            self._json(200, {"runs": runs, "error": None if rows is not None else "stats unavailable"})
         elif path == "/api/stats":
             data = STATS.read()[0]
             self._json(200, data if data is not None else {"error": "stats unavailable"})
