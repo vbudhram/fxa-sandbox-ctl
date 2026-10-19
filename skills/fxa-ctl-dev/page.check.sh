@@ -77,6 +77,12 @@ ck "Sandboxes review: a stopped session with an unsafe key gets no command, and 
 ck "Sandboxes review: a non-admin sees no request, routine name or cost of a stopped routine session with a runner left" "true|false|false|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   Object.assign(AGENTS.sessions[3], { routine_run: 7, routine_name: "Secret weekly", cost: 9.87, summary: JSON.stringify({ cost: 9.87 }) }); TEAM_ADMIN = { admin: false }; render(); const t = L().textContent;
   return [/Routine · scheduled run/.test(t), /another sample question/.test(t), /Secret weekly/.test(t), /9\.87/.test(t)].join("|")')"
+ck "Sandboxes review: a failed session with no stopped_at whose runner is up is a fix row at once, with the badge" "true|true|4" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  AGENTS.sessions.push({ key: "agent-fl1", state: "failed", created: Date.now() / 1000 - 900, profile: "fxa" }); AGENTS.instances.push({ name: "agent-agent-fl1", state: "running", age_seconds: 900, where: "gce" }); render();
+  return [sbRows().fix.some(r => r.id === "fix:agent-agent-fl1"), codes().includes("fxa-sandbox-ctl stop agent-fl1"), N().textContent].join("|")')"
+ck "Sandboxes review: the panel of a real live row ('working') opens the session on the Live tab, from the session record" "working|#sessions/live/agent-ex0001" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  const id = "sess:agent-ex0001", h = document.createElement("div"); h.innerHTML = sbDetails(id) || "";
+  return [sbRows().live.find(x => x.id === id)?.state, [...h.querySelectorAll("a")].map(a => a.getAttribute("href")).find(x => /^#sessions\//.test(x || ""))].join("|")')"
 ck "Sandboxes: a normal stop is 'stopping' with no command; 10 min later it is a fix row" "stopping|false|true|4" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   const st = () => [...L().querySelectorAll("li")].find(li => li.querySelector("[data-sbsel=\"sess:agent-ex0003\"], [data-sbsel=\"fix:agent-agent-ex0003\"]"));
   const a = st().querySelector(".f:nth-of-type(2)")?.textContent.replace(/^Now: /, ""), b = codes().includes("fxa-sandbox-ctl stop agent-ex0003");

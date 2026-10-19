@@ -3249,7 +3249,8 @@ function sbRows() {
       age: t.started ? Math.max(0, Math.round(now - t.started)) : null, cap: g.session_max_run_seconds ?? null, cost: t.cost ?? null, usd: t.cost ?? null, session: t.key,
       routine_run: x?.routine_run ?? null, routine_name: open ? x?.routine_name ?? null : null, boot_s: t.boot_s, boot_steps: t.boot_steps, res_peak: t.res_peak });
   });
-  // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1 or after 10 min (D5).
+  // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1, with no
+  // stopped_at, or after 10 min (D5).
   const known = new Set();
   ss.filter(x => !LIVE_SESSION.includes(x.state)).forEach(x => {
     const v = instBy.get(`agent-${x.key}`); if (!v || !(instUp(v) || instMoving(v))) return;
@@ -3259,7 +3260,8 @@ function sbRows() {
       started: x.created ?? null, age: v.age_seconds ?? null, cap: v.max_seconds ?? null, cost: open ? sessUsd(x) : null, session: x.key, routine_run: x.routine_run ?? null, routine_name: open ? x.routine_name ?? null : null,
       boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
     row.usd = row.cost;
-    if (instUp(v) && (String(x.runner_left) === "1" || (since != null && since >= SB_GRACE)))
+    // No stopped_at (a failed boot, a job that died): nothing will stop the runner, so it is a fix at once.
+    if (instUp(v) && (String(x.runner_left) === "1" || since == null || since >= SB_GRACE))
       out.fix.push(withFix({ ...row, id: `fix:${v.name}`, state: "stopped, runner still up" }, { kind: "session", target: x.key, steps: null,
         why: `The session ${x.state}${since != null ? ` ${short(Math.round(since))} ago` : ""}, and its runner still bills. Stop it: the stop saves the work.` }));
     else out.live.push({ ...row, id: `sess:${x.key}`, state: "stopping" });
@@ -3594,7 +3596,7 @@ function sbDetails(id, now = Date.now() / 1000) {
   const keep = h => { sbDetails.last = { id, body: h }; return closeBtn + h; };
   const json = v => { try { return typeof v === "string" ? JSON.parse(v) : v ?? null; } catch { return null; } };
   const n = v => v == null || v === "" || !isFinite(Number(v)) ? null : Number(v);
-  const live = LIVE_SESSION.includes(r.state), up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : n(r.age);
+  const up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : n(r.age);
   if (r.fix) return keep(`<h2 class="rh">${esc(r.key || r.slot || id)}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${esc(r.fix.why)}</p>
     ${r.fix.cmd && !rs.stale ? `<h4>Fix</h4><p><code>${esc(r.fix.cmd)}</code></p>` : r.fix.cmd ? `<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? `<h4>Read first</h4><p>${esc(r.fix.steps)}</p>` : ""}</div>`);
   if (r.src === "pipeline") {
@@ -3608,7 +3610,9 @@ function sbDetails(id, now = Date.now() / 1000) {
   const name = !open ? "Routine · scheduled run" : routine ? `Routine ${r.routine_name || `run ${r.routine_run}`}` : r.title || r.key;
   const sj = json(r.boot_steps), pj = json(r.res_peak), cap = n(AGENTS?.session_max_run_seconds);
   const steps = Array.isArray(sj) ? sj.filter(x => x && typeof x === "object") : [], peak = pj && typeof pj === "object" && !Array.isArray(pj) && (n(pj.load1) != null || n(pj.mem_mb) != null) ? pj : null;
-  const sh = open && sessHref(r.session || r.key) ? `#sessions/${live ? "live" : "stopped"}/${r.session || r.key}` : "", pr = open ? prHref(r.pr) : "";
+  // The Sessions tab from the session record: the row's state is display text ('working', 'stopping').
+  const sk = r.session || r.key, sx = (AGENTS?.sessions ?? []).find(s => s.key === sk);
+  const sh = open && sessHref(sk) ? `#sessions/${sx ? sessTabOf(sx) : "stopped"}/${sk}` : "", pr = open ? prHref(r.pr) : "";
   const team = open && TEAM_RE.test(r.team || "") ? `<a href="#teams/${routine ? "routines/" : ""}${r.team}">${esc(r.team)}</a>` : "";
   return keep(`<h2 class="rh">${esc(name)}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
     ${kvr("State", esc(r.state || "unknown"))}${kvr("Where", esc(r.where || "unknown"))}${up != null ? kvr("Up for", `${short(up)}${cap ? ` of ${short(cap)}` : ""}`) : ""}
