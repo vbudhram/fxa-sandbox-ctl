@@ -206,7 +206,7 @@
   body.noside .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-runners .shell, body.bare .shell { --side:0px; }
   body.noright .shell, body.v-overview .shell, body.v-pipeline .shell, body.v-stats .shell, body.v-teams .shell, body.bare .shell, body.noitem .shell { --right:0px; }
   body.noside .side, body.v-overview .side, body.v-pipeline .side, body.v-runners .side, body.bare .side,
-  body.noright .right, body.v-overview .right, body.v-pipeline .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { visibility:hidden; }
+  body.noright .right, body.v-overview .right, body.v-pipeline .right, body.v-stats .right, body.v-teams .right, body.bare .right, body.noitem .right { display:none; }
   .rail { grid-area:rail; background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:var(--s3) 0; gap:2px; z-index:11; }
   .rail .logo { width:40px; height:40px; margin-bottom:var(--s3); }
   .rail a, .rail button.rb { position:relative; width:60px; min-height:52px; padding:8px 0 6px; border-radius:var(--r-sm); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
@@ -3224,8 +3224,9 @@ function renderTickets() {
 // and its name until it is deleted: it needs a fix, not a lifetime meter.
 const instUp = v => v.state === "running";
 // GCE moves an instance through provisioning, staging and stopping: it is not down, so it gets no stop command.
-const instMoving = v => !!v && !instUp(v) && !["terminated", "suspended"].includes(v.state);
-const movingWord = v => v.state === "stopping" ? "stopping" : "starting";
+// Only the short GCE states count as moving; any other state that is not running goes to the fix path as before.
+const instMoving = v => !!v && ["provisioning", "staging", "stopping", "suspending"].includes(v.state);
+const movingWord = v => ["stopping", "suspending"].includes(v.state) ? "stopping" : "starting";
 // ── Sandboxes (i407): one list of every sandbox, built on the floor rows ──
 // A fix row bills with no run, or holds a slot no run uses. A command shows only on a fresh feed and only
 // for a name stopName() accepts; a session runner's command names the session, so the stop saves the work (D3-D6).
@@ -3280,7 +3281,7 @@ function sbRows() {
     const run = strayRun(v.name);
     // On its way up or down: a known run's or slot's live row says 'starting' or 'stopping'; with no run behind it,
     // no command until GCE says where it went.
-    if (instMoving(v)) return byKey.has(run) || pipeNames.has(run) || slotAgents.has(run) || v.age_seconds <= 120 ? undefined
+    if (instMoving(v)) return byKey.has(run) || pipeNames.has(run) || slotAgents.has(run) || (v.age_seconds != null && v.age_seconds <= 120) ? undefined
       : out.unknown.push({ slot: v.name, why: `${v.name} is ${v.state}, with no run behind it` });
     if (run && slotAgents.has(run)) return out.unknown.push({ slot: v.name, why: `${v.name}: the slot says it runs, but the agents feed has no run row` });
     out.fix.push(withFix({ ...base, id: `fix:${v.name}`, src: byKey.has(run) ? "slack" : "pipeline", key: v.name, where: v.where === "firecracker" ? "firecracker" : "gce", state: v.state, age: v.age_seconds ?? null },
@@ -3737,23 +3738,25 @@ let SB_DONE = null, SB_DONE_SEQ = 0;
 async function loadSbDone() {
   if (VIEW !== "runners") return;
   // The tab's source goes to the server, which filters before its limit of 100.
-  const seq = ++SB_DONE_SEQ, src = { pipeline: "pipeline", slack: "slack", routines: "routine" }[TAB] ?? "";
+  const seq = ++SB_DONE_SEQ, src = sbDoneSrc();
   try {
     const r = await fetch(`/api/runs/recent?ended=1&limit=100${src ? `&src=${src}` : ""}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
     if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
     if (j.error) throw new Error(j.error);
     if (seq !== SB_DONE_SEQ) return;
-    SB_DONE = { runs: j.runs, err: null, at: Date.now() };
-  } catch (e) { if (seq !== SB_DONE_SEQ) return; SB_DONE = { runs: SB_DONE?.runs ?? null, err: e.message, at: SB_DONE?.at ?? null }; }
+    SB_DONE = { runs: j.runs, err: null, at: Date.now(), src };
+  } catch (e) { if (seq !== SB_DONE_SEQ) return; const same = SB_DONE?.src === src; SB_DONE = { runs: same ? SB_DONE.runs : null, err: e.message, at: same ? SB_DONE.at : null, src }; }
   safeRender(renderSbDone, "sb-done");
 }
+// The server filters by the tab's source, so runs held for another tab never stand in for this one.
+const sbDoneSrc = () => ({ pipeline: "pipeline", slack: "slack", routines: "routine" }[TAB] ?? "");
 function sbDoneRows() {
   return (SB_DONE?.runs ?? []).filter(r => typeof sbTabHas === "function" ? sbTabHas({ ...r, src: r.routine ? "routine" : r.src }) : true).slice(0, 20);
 }
 function renderSbDone() {
   const h = `<h2>Recently completed</h2>`;
   if (TAB === "routines" && !TEAM_ADMIN?.admin) return putOv("sb-done", `${h}<div class="emptybox">Only a team admin can see routine runs.</div>`);
-  if (!SB_DONE) return putOv("sb-done", `${h}<div class="emptybox">Loading the recent runs…</div>`);
+  if (!SB_DONE || SB_DONE.src !== sbDoneSrc()) return putOv("sb-done", `${h}<div class="emptybox">Loading the recent runs…</div>`);
   if (!SB_DONE.runs) return putOv("sb-done", `${h}<div class="emptybox">Recently completed unknown: ${esc(SB_DONE.err)}. The next poll tries again.</div>`);
   const rows = sbDoneRows(), today = new Date().toDateString(), na = `<span title="not recorded for pipeline runs">—</span>`;
   const note = SB_DONE.err ? `Recently completed may be out of date: ${SB_DONE.err}. These rows are from ${ago(Math.round((Date.now() - SB_DONE.at) / 1000))}; the next poll tries again.` : "";

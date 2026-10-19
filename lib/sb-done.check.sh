@@ -5,7 +5,7 @@
 set -u
 command -v node >/dev/null || { echo "skip: needs node"; exit 0; }
 page="$(dirname "$0")/../dashboard/index.html"
-fns="$(sed -n '/^const esc = /p; /^const usd = /p; /^const ago = /,/;$/p; /^function jiraHref(/p; /^const plainMd = /p; /^const sessHref = /p; /^const teamName = /p; /^const teamLabel = /p; /^const PR_URL_RE = /p; /^function runBadge(r) {/,/^}/p; /^let SB_DONE = /p; /^async function loadSbDone() {/,/^}/p; /^function sbDoneRows() {/,/^}/p; /^function renderSbDone() {/,/^}/p' "$page")"
+fns="$(sed -n '/^const esc = /p; /^const usd = /p; /^const ago = /,/;$/p; /^function jiraHref(/p; /^const plainMd = /p; /^const sessHref = /p; /^const teamName = /p; /^const teamLabel = /p; /^const PR_URL_RE = /p; /^const sbDoneSrc = /p; /^function runBadge(r) {/,/^}/p; /^let SB_DONE = /p; /^async function loadSbDone() {/,/^}/p; /^function sbDoneRows() {/,/^}/p; /^function renderSbDone() {/,/^}/p' "$page")"
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 let OUT = "";
@@ -52,6 +52,10 @@ globalThis.fetch = async u => { asked = String(u); return typeof answer === "num
   t("empty: No run has ended yet.", OUT.includes("No run has ended yet."), true);
   globalThis.TAB = "pipeline"; await loadSbDone(); t("the Pipeline tab asks the server for pipeline runs, so the limit applies after the filter", asked, "/api/runs/recent?ended=1&limit=100&src=pipeline");
   globalThis.TAB = "routines"; await loadSbDone(); t("the Routines tab asks for routine runs", asked, "/api/runs/recent?ended=1&limit=100&src=routine");
+  globalThis.TAB = "";
+  globalThis.TAB = "pipeline"; answer = { runs: [runs[2]], error: null }; await loadSbDone();
+  globalThis.TAB = "slack"; renderSbDone(); t("a tab change shows loading, not the last tab's runs", OUT.includes("Loading the recent runs") && !OUT.includes("data-sbdone"), true);
+  answer = 500; await loadSbDone(); t("a failed read for the new tab keeps no other tab's runs", OUT.includes("Recently completed unknown") && !OUT.includes("data-sbdone"), true);
   globalThis.TAB = "";
   globalThis.VIEW = "overview"; asked = ""; await loadSbDone();
   t("no fetch off the Sandboxes page", asked, "");

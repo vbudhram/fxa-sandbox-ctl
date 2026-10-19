@@ -111,7 +111,7 @@ ck "Sandboxes recheck: a stale feed keeps its rows but no 'No sandbox runs now.'
   AGENTS.free_slots = null; render(); const sl = /ex-auto-4: slots unknown: the slot read failed/.test(L().textContent) && !/Its last ticket EX-130/.test(L().textContent);
   AGENTS.free_slots = ["ex-auto-3"]; AGENTS.pool[2] = { ...AGENTS.pool[2], agent: null, busy: false }; AGENTS.instances.pop(); SNAP = null; render();
   return [...st, u, sl, !/\?/.test(H()), /\/home|\/Users|worktree path/.test(L().textContent), H() === floorHead(ovFloor())].join("|")')"
-ck "Sandboxes at 390 and 1280 px: no sideways scroll, no side list" "true|true|true" "$(bash "$p" '#runners' --fixture "$B" --width 390 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'return getComputedStyle(document.getElementById("side")).visibility === "hidden"')"
+ck "Sandboxes at 390 and 1280 px: no sideways scroll, no side list" "true|true|true" "$(bash "$p" '#runners' --fixture "$B" --width 390 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'const s = getComputedStyle(document.getElementById("side")); return s.visibility === "hidden" || s.display === "none"')"
 # #attn sandbox alerts (i376): runner faults with one stop rule, and feed text that never becomes markup.
 ck "#attn: wrong base with its stop, goal rejected with its next step, idle warn, strays by the stop rule, escaped" "true|true|true|true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
   const x = "<img src=x onerror=alert(1)>";
@@ -431,4 +431,10 @@ ck "Overview review: a routine run the server gated (no key, team or cost) still
   RUNS = [{ at: new Date().toISOString(), src: "slack", kind: "session", key: "", title: "Scheduled run", team: "", outcome: "answered", pr_url: null, pr_number: null, pr_state: null, usd: null, min: null, routine: true }]; RUNS_ERR = null;
   safeRender(renderOvRuns, "ov-runs"); const t = document.getElementById("ov-runs").textContent;
   return [/Scheduled run/.test(t), /undefined|NaN|\$0\.00|did not render/.test(t)].join("|")')"
+ck "only the short GCE states count as moving, and a moving instance with no age and no run is unknown, not hidden" "false|true|stopping|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe '
+  const m = [instMoving({ state: "stopped" }), instMoving({ state: "suspending" }), movingWord({ state: "suspending" })];
+  AGENTS.instances = [...(AGENTS.instances ?? []), { name: "agent-agent-nn0001", state: "staging", age_seconds: null }];
+  const r = sbRows(); return [...m, r.unknown.some(x => x.slot === "agent-agent-nn0001")].join("|")')"
+w=""; for v in '#overview' '#runners' '#pipeline' '#stats' '#teams' '#sessions'; do w="$w$(bash "$p" "$v" --fixture "$O" --width 1440 --probe 'return document.documentElement.scrollWidth <= innerWidth')"; done
+ck "no view scrolls sideways at 1440 px: a hidden right panel takes no width" "truetruetruetruetruetrue" "$w"
 exit $fail
