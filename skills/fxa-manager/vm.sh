@@ -409,9 +409,9 @@ EOF2
     if [ "$errs_read" = 0 ]; then
       echo "WARN: the live watch is skipped: vm.sh api errors failed before the sync, so no error can be called new" >&2
     elif [ "$w" -gt 0 ] 2>/dev/null; then
-      # A watch cut short (a TERM to the sleep, as on 2026-10-19) still checks live errors and says so.
+      # A wait cut short still checks live errors: under set -e a killed sleep once ended the promote with no verdict.
       trap 'echo "WARN: the live watch was cut short; checking live errors now" >&2; promote_watch "$errs_before"; exit $?' TERM INT
-      echo "Watching live for ${w} s..."; sleep "$w"
+      echo "Watching live for ${w} s..."; sleep "$w" || echo "WARN: the live watch wait was cut short; checking live errors now" >&2
       trap - TERM INT
       promote_watch "$errs_before" || exit 1
     fi
