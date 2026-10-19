@@ -217,6 +217,10 @@ def csp_for(page):
             "https://secure.gravatar.com; media-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 
+# Known token formats, masked in every API reply: tail, history and the snapshot carry agent text
+# and commands, and the page is open to anyone IAP admits. The same pattern as _SESSION_VIEW_JQ.
+MASK = re.compile(r"(sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}")
+
 TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cadence.
 
 def agent_tail(key):
@@ -488,6 +492,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", csp or "default-src 'none'; frame-ancestors 'none'")
 
     def _send(self, code, body, ctype, csp=None):
+        if ctype == "application/json":
+            body = MASK.sub(r"\1<masked>", body.decode("utf-8") if isinstance(body, bytes) else body)
         payload = body if isinstance(body, bytes) else body.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", ctype)
