@@ -76,6 +76,10 @@ Run `test.sh changed` before each push, and let CI run the full suite. Use `test
 fails to start or exits nonzero as a failure. (A hand loop once reported "all pass"
 because macOS has no `timeout`, so no check ran.)
 
+To replace exact text in a file, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`, each old text once, nothing written on a miss), not a hand-written heredoc.
+
+To render a dashboard view with live data and this tree's dashboard code, with no dev bot: `bash skills/fxa-ctl-dev/live-render.sh '#runners' [--admin] [--query 'ended=1&limit=100'] [page.sh options]` (about 15 s). A change to `lib/snapshot.sh` still needs `vm.sh dev`.
+
 A new check must fail without the change it tests. `prove.sh` runs it with the
 change, then with the named files put back to `HEAD`, and restores them.
 
