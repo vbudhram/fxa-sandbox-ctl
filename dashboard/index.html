@@ -856,6 +856,10 @@ function merged() {
 }
 
 let NEEDS = [];
+// One rule for a stop command a person copies (i356 D38): a slot or runner name, else no command.
+const stopName = n => /^[a-z0-9][a-z0-9-]{0,62}$/.test(n ?? "") ? n : null;
+// A stray instance's run name: the agent- prefix goes only from a name in the runner pattern.
+const strayRun = n => /^agent-[a-z0-9][a-z0-9-]{0,56}$/.test(n ?? "") ? n.slice(6) : null;
 function renderAlerts() {
   const s = SNAP, g = AGENTS, alerts = [], h = s?.health ?? {}, repo = s?.repo ?? "";
   const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
@@ -868,6 +872,8 @@ function renderAlerts() {
   staleFeed("tickets", STATE.age_seconds, STATE.interval);
   if (STATE.error) add("bad", `<b class="key">tickets</b>`, esc(STATE.error));
   if (STATE.agents_error) add("bad", `<b class="key">agents</b>`, esc(STATE.agents_error));
+  if (STATE.stats_error) add("warn", `<b class="key">stats</b>`, esc(STATE.stats_error));
+  else staleFeed("stats", STATE.stats_age_seconds, STATE.stats_interval);
   const sp = h.seconds_since_pass;
   if (s && (sp == null || sp > 7200)) add("warn", `<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pipeline pass in ${ago(sp).replace(" ago","")}; open PRs get no reconcile, feedback or rebase rounds. Read-only: automation starts from Claude Code`);
   else if (sp > 1500) add("warn", `<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
@@ -884,6 +890,11 @@ function renderAlerts() {
   const { cards, waiting } = merged();
   cards.forEach(t => {
     const a = t.agent || {}, title = t.summary || t.key;
+    const stop = stopName(t.name), k = `<b class="key">${esc(t.key)}</b>`;
+    // Runner faults a person fixes go to #attn; every feed value is escaped.
+    if (t.base_ok === false) add("bad", k, `${esc(title)} · the sandbox is not on the slot's commit`, stop ? `fxa-sandbox-ctl stop ${stop}` : "");
+    if (a.num_turns === 0) add("bad", k, `${esc(title)} · the goal was rejected: the rendered prompt is over 4000 chars`, "Stop the run, then shorten the ticket and requeue it");
+    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) add("warn", k, `idle ${short(a.idle_seconds)}: ${esc(a.last_tool || a.last_text || "no output")}`);
     if (t.base_ok === false) need(0, "Wrong base", "bad", title, `${t.key} · sandbox is not on the slot's commit; stop ${t.name}`, tix(t.key), "View ticket", t.key);
     if (t.stage === "stalled") need(0, "Stalled", "bad", title, `${t.key} · ${t.detail || ""}`, tix(t.key), "View ticket", t.key);
     else if (!t.agent_alive && t.stage === "watching" && !t.handoff) need(0, "Agent exited", "bad", title, `${t.key} · exited without a handoff`, tix(t.key), "View ticket", t.key);
@@ -904,8 +915,8 @@ function renderAlerts() {
   const known = new Set(cards.map(c => c.name));
   (g?.sessions ?? []).forEach(x => known.add(x.key));
   (g?.instances ?? []).forEach(v => {
-    const owned = known.has(v.name.replace(/^agent-/, ""));
-    if (!owned && v.age_seconds > 120) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, `fxa-sandbox-ctl stop ${v.name.replace(/^agent-/, "")}`);
+    const run = strayRun(v.name), owned = known.has(run ?? v.name);
+    if (!owned && v.age_seconds > 120) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : "");
     else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
   NEEDS = needs.sort((x, y) => x.prio - y.prio);

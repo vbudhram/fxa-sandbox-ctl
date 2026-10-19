@@ -59,4 +59,18 @@ ck "a stopped instance: its own group, a fix, not counted up, no meter" "Stopped
   const pool = document.querySelector("#s-pool h2")?.textContent ?? "", stop = [...document.querySelectorAll("#s-pool .slot")].find(e => e.textContent.includes("41c0e6"));
   return [h.join(";"), pool.replace(/burn.*/, "").split("free · ")[1]?.trim(), /fxa-sandbox-ctl stop agent-41c0e6/.test(stop?.textContent ?? ""), !!stop?.querySelector(".meter.none"), document.getElementById("n-runners").textContent].join("|")')"
 rm -f "$R"
+# #attn sandbox alerts (i376): runner faults with one stop rule, and feed text that never becomes markup.
+ck "#attn: wrong base with its stop, goal rejected with its next step, idle warn, strays by the stop rule, escaped" "true|true|true|true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
+  const x = "<img src=x onerror=alert(1)>";
+  SNAP.inflight = [{ key: "FXA-41", summary: x }, { key: "FXA-42", summary: "g" }, { key: "FXA-45", summary: "i" }, { key: "FXA-46", summary: "n" }];
+  AGENTS.runners = [{ key: "FXA-41", name: "fxa-auto-1", base_ok: false, agent_alive: true, stage: "watching", agent: {} },
+    { key: "FXA-42", name: "fxa-auto-2", agent_alive: true, stage: "watching", agent: { num_turns: 0 } },
+    { key: "FXA-45", name: "fxa-auto-5", agent_alive: true, stage: "watching", agent: { idle_seconds: 900, last_tool: x } },
+    { key: "FXA-46", name: "x;rm -rf", base_ok: false, agent_alive: true, stage: "watching", agent: {} }];
+  AGENTS.sessions = []; AGENTS.instances = [{ name: "agent-fxa-auto-9", state: "running", age_seconds: 600 }, { name: "agent-x;id", state: "running", age_seconds: 600 },
+    { name: "gke-pool-1", state: "running", age_seconds: 600 }];
+  renderAlerts(); const a = document.getElementById("attn"), h = a.innerHTML, row = k => [...a.querySelectorAll(".alert")].find(e => e.textContent.includes(k));
+  return [/fxa-sandbox-ctl stop fxa-auto-1/.test(row("FXA-41")?.textContent), /shorten the ticket and requeue/.test(row("FXA-42")?.textContent),
+    row("FXA-45")?.classList.contains("warn"), !/fxa-sandbox-ctl stop/.test(row("FXA-46")?.textContent ?? "x"), /stop fxa-auto-9/.test(row("agent-fxa-auto-9")?.textContent),
+    !/stop/.test(row("agent-x;id")?.textContent ?? "x") && !/stop/.test(row("gke-pool-1")?.textContent ?? "x"), h.includes("&lt;img"), !h.includes("<img src=x")].join("|")')"
 exit $fail
