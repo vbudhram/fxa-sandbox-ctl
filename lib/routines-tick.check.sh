@@ -362,6 +362,19 @@ db_exec "UPDATE routines SET env = 'dev' WHERE id = $re_;"
 FXA_ROUTINE_NOW=$((NOWR + 604)) routine_tick --env dev >/dev/null
 check "a run claimed under live stays the live tick's after its routine moves to dev" "started|" "$(s_of "$ge")"
 
+# A bot that restarts between the claim and the start (--resume on its first tick): a claimed run with no
+# session, in its 10 min, starts again; an old one is left to reconcile, and the other env's run is not touched.
+NC=$((NOWR + 2000)); rcl="$(mk fxa "weekly sun 01:00")"
+gc="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rcl, 'manual-12', 'schedule', 'claimed', $((NC - 120))); SELECT last_insert_rowid();")"
+check "a tick with no --resume does not answer a claimed run again" "0" "$(FXA_ROUTINE_NOW=$NC routine_tick --env live | jq --argjson g "$gc" '[.runs[] | select(.run == $g)] | length')"
+check "--resume answers it once, with its trigger and channel" "1|schedule|C0OWN00|claimed" \
+  "$(FXA_ROUTINE_NOW=$((NC + 5)) routine_tick --env live --resume | jq -r --argjson g "$gc" '[.runs[] | select(.run == $g)] | "\(length)|\(.[0].trigger)|\(.[0].channel)"')|$(db_value "SELECT state FROM routine_runs WHERE id = $gc;")"
+rcd="$(mk fxa "weekly sun 01:30")"; db_exec "UPDATE routines SET env = 'dev' WHERE id = $rcd;"
+gd="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rcd, 'manual-13', 'schedule', 'claimed', $((NC - 60))); SELECT last_insert_rowid();")"
+check "--resume on live leaves a dev run alone, and one past 10 min fails" "0|failed|no session started within 10 min" \
+  "$(FXA_ROUTINE_NOW=$((NC + 500)) routine_tick --env live --resume | jq --argjson g "$gd" '[.runs[] | select(.run == $g)] | length')|$(db_value "SELECT state || '|' || reason FROM routine_runs WHERE id = $gc;")"
+check "a bad flag after --env is refused" "1" "$(FXA_ROUTINE_NOW=$NC routine_tick --env live --bogus >/dev/null 2>&1; echo $?)"
+
 # A paused team that turned private: its skip does not post to a channel it does not bind.
 rh="$(mk fxa "daily 05:00" '{"name": "Held look", "channel": "C0OTHER"}')"
 # A routine with no channel (D32): its skip is recorded but never posts, and a public channel would post it.

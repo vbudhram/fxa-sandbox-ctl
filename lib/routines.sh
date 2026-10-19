@@ -255,7 +255,8 @@ _routine_run_info() {
     since: (if $s == "" then null else ($s | tonumber) end)}' <<< "$3"
 }
 
-# routine_tick --env <live|dev>   One pass: heartbeat, reconcile, then each routine of that env's latest period.
+# routine_tick --env <live|dev> [--resume]   One pass: heartbeat, reconcile, then each routine of that env's latest period.
+# --resume (the bot's first tick after a start) also answers each run a dead bot claimed but never started.
 # Answers {"runs": [...], "skips": [...]} for the bot. A store error answers nothing and exits 1.
 # _routine_recheck <team> <cfg file>   The saved routine against the team as it is now (D8: a team that
 # turns private, or a channel unbound since the save): the first refusal, or nothing. A team that does not load refuses.
@@ -275,8 +276,9 @@ _routine_recheck() {
 _routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: channel:"*) return 0 ;; *) return 1 ;; esac; }
 
 routine_tick() {
-  [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] || { echo "usage: routine tick --env live|dev" >&2; return 1; }
-  local env="$2" now; now="$(_routine_now)"
+  [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] && [[ "${3:-}" =~ ^(--resume)?$ ]] && [ $# -le 3 ] \
+    || { echo "usage: routine tick --env live|dev [--resume]" >&2; return 1; }
+  local env="$2" resume="${3:-}" now; now="$(_routine_now)"
   db_exec "INSERT INTO routine_tick_env (env, at) VALUES ($(db_q "$env"), $now) ON CONFLICT (env) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
   routine_reconcile "$now" "$env" || return 1
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
@@ -306,6 +308,20 @@ routine_tick() {
     runs="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
       '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
+  # A claimed run with no session is in a bot's hands only in memory: after a restart it starts again, inside the
+  # 10 min that reconcile gives it. The claimed to started UPDATE in the task still lets one start take it.
+  if [ -n "$resume" ]; then
+    local orphans o
+    orphans="$(db_json "SELECT r.id, r.routine_id, r.trigger, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id
+      WHERE r.state = 'claimed' AND r.session IS NULL AND r.started_at > $((now - 600)) AND coalesce(json_extract(r.config, '$.env'), t.env) = $(db_q "$env");")" \
+      || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
+    while IFS= read -r o; do
+      [ -n "$o" ] || continue
+      free=$((free - 1))
+      runs="$(jq -c --argjson q "$o" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$o")" "$(jq -r .team <<< "$o")" "$(jq -c '.data | fromjson' <<< "$o")")" \
+        '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
+    done < <(jq -c '.[]' <<< "$orphans")
+  fi
   local spaused; spaused="$(_routine_sessions_paused)"
   # One routine.py start finds the due routines, so a tick costs no process for a routine that is not due.
   local rf="$f.rows"; printf '%s' "$rows" > "$rf"
