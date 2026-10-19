@@ -222,14 +222,14 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   const s0 = [globalThis.SNAP, globalThis.AGENTS, globalThis.STATE, globalThis.TEAM_ADMIN];
   const load = () => { globalThis.SNAP = JSON.parse(JSON.stringify(fx.snapshot)); globalThis.AGENTS = JSON.parse(JSON.stringify(fx.agents)); globalThis.STATE = { agents_age_seconds: 20, agents_interval: 30 }; globalThis.TEAM_ADMIN = { admin: false }; globalThis.SEL = {}; globalThis.TAB = "belts"; };
   load(); const g = beltGroups(), keys = k => g[k].map(r => r.t.key).join(",");
-  t("belts: groups and keys", ["working", "needs", "fixes", "review", "outside"].map(keys).join(" | "), "FXA-20,FXA-21 | FXA-1,FXA-6 | FXA-4,FXA-3 | FXA-10,FXA-11,FXA-22 | agent-abc123,FXA-41");
+  t("belts: groups and keys", ["working", "needs", "fixes", "review", "outside"].map(keys).join(" | "), "FXA-20,FXA-21 | FXA-1 | FXA-4,FXA-3 | FXA-10,FXA-11,FXA-22 | agent-abc123,FXA-41");
   const all = ["working", "needs", "fixes", "review", "outside"].flatMap(k => g[k].map(r => r.t.key));
   t("belts: each key once; a hold, a ready ticket and a merged PR have no belt", `${new Set(all).size === all.length}|${["FXA-7", "FXA-30", "FXA-12"].some(k => all.includes(k))}`, "true|false");
-  t("belts: Needs you equals boardAct, and the belt count is the four groups", `${g.needs.length === boardAct(boardItems())}|${beltCount(g)}`, "true|9");
+  t("belts: Needs you equals boardAct, and the belt count is the four groups", `${g.needs.length === boardAct(boardItems())}|${beltCount(g)}`, "true|8");
   t("belts: the CI running PR waits on review, and the outside rows name their source", `${g.review.find(r => r.t.key === "FXA-22").l1}|${g.outside.map(r => r.l1).join(";")}`, "CI running|Slack · Sample Person's session;Not in the pipeline");
   const h = beltsHtml(g), order = [...h.matchAll(/<h2[^>]*>.*?<\/i>([^<]+) <span class="cnt">(\d+|\?)/g)].map(m => m[1] + " " + m[2]).join(", ");
-  t("belts: the headings in order with counts", order, "Working now 2, Needs you 2, The agent fixes it 2, Waits on review 3");
-  t("belts: the header line", /2 agents work now<\/span>\s*<span>· 9 belts<\/span><span>· 2 need you/.test(h), true);
+  t("belts: the headings in order with counts", order, "Working now 2, Needs you 1, The agent fixes it 2, Waits on review 3");
+  t("belts: the header line", /2 agents work now<\/span>\s*<span>· 8 belts<\/span><span>· 1 need you/.test(h), true);
   const row = k => beltRow(["working", "needs", "fixes", "review"].flatMap(x => g[x]).find(r => r.t.key === k));
   const f3 = row("FXA-3"), f20 = row("FXA-20");
   t("belts: track nodes, stop text and no callout", `${(f3.match(/class="n done"/g) || []).length}|${(f3.match(/class="n cur"/g) || []).length}|${(f3.match(/class="n"/g) || []).length}|${/aria-hidden="true">/.test(f3)}|${/Stop 7 of 9, CI</.test(f3)}|${/class="mark"/.test(h)}`, "6|1|2|true|true|false");
@@ -387,10 +387,10 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
   const items = boardItems(), by = k => items.find(i => i.key === k);
   t("board: each key once, and the first place wins (a runner is not also blocked)", `${items.filter(i => i.key === "FXA-20").length}|${by("FXA-20").column}`, "1|running");
   t("board: who acts per kind", ["FXA-1", "FXA-2", "FXA-3", "FXA-4", "FXA-6", "FXA-7", "FXA-8"].map(k => `${by(k).group}:${by(k).person}`).join(" "),
-    "act:the operator act:the operator wait:the agent, next pass act:the operator act:the reporter wait:waits on ../x act:the reporter");
+    "act:the operator act:the operator wait:the agent, next pass act:the operator wait:the reporter wait:waits on ../x wait:the reporter");
   t("board: a PR that waits on a reviewer feeds only the reviewer line", by("FXA-5").column, "review");
   t("board: a faulted runner and a run with no sandbox are Running with the operator", `${by("FXA-21").fault}|${by("FXA-22").column}|${by("FXA-22").person}`, "true|running|the operator");
-  t("board: the tab count is who must act, plus faulted runs", boardAct(items), 7);
+  t("board: the tab count is who must act, plus faulted runs; reporter waits are not in it", boardAct(items), 5);
   t("board: every kind has a next step", Object.keys(KIND_LABEL).every(k => classify({ key: "FXA-1", column: "blocked", kind: k }).next.length > 10), true);
   t("board: up next keeps launch order with positions and first queued", `${by("FXA-10").pos}|${by("FXA-11").pos}`, "1|2");
   // The gate line (slice 6): first gate wins, never green on an unknown fact.

@@ -2293,7 +2293,8 @@ function classify(i) {
     conflicts: "the agent, next pass" }[i.kind];
   const waitsOn = i.kind === "depends_on" ? (i.held_by ?? null) : null;
   const person = i.column === "blocked" ? (waitsOn ? `waits on ${waitsOn}` : who ?? "the operator") : i.column === "running" && i.fault ? "the operator" : who ?? null;
-  const group = i.column !== "blocked" ? null : waitsOn || /^the agent/.test(person ?? "") ? "wait" : "act";
+  // A reporter's answer is in Jira, not a person here (i356 D31): it waits, and Queue still lists it.
+  const group = i.column !== "blocked" ? null : waitsOn || /^the agent/.test(person ?? "") || person === "the reporter" ? "wait" : "act";
   const step = (NEXT_STEP[i.kind] ?? NEXT_STEP[i.column === "next" ? "ready" : i.column === "running" ? "running" : "other"]).replace("KEY", i.key);
   return { ...i, person, waitsOn, group, next: step };
 }
