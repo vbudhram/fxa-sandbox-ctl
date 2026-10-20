@@ -98,8 +98,6 @@ to run with `!` instead of trying it first:
 - Printing ssh commands or keys for a person (`vm.sh ssh`).
 - Entering a secret: `vm.sh secret <name>` prompts for it without echo. Run it in a real
   terminal: the `!` prefix has no tty for the hidden prompt.
-- `answer up` on the live answer runner after a ship that changed `lib/answer.sh` or the egress
-  firewall: `! bash skills/fxa-manager/vm.sh run './fxa-sandbox-ctl answer up'`.
 - The sandbox-agent transcript fetch in `ai/retro-sources.md` (it copies engineers' Slack and Jira
   text off the manager).
 

@@ -235,9 +235,21 @@ answer_ask() {
   if [ "$stream" = 1 ]; then jq -c '{type: "answer"} + .' <<< "$res"; else printf '%s\n' "$res"; fi
 }
 
+# answer_refresh_since <old sha>   After a pull: answer up again when the egress, DNS or answer code
+# changed since <old sha> and fxa-answer exists, since only answer up applies them to that runner.
+answer_refresh_since() {
+  local old="$1" changed
+  changed="$(git -C "$SANDBOX_ROOT" diff --name-only "$old"..HEAD -- lib/answer.sh lib/agent.sh templates/agent-dns.sh skills/fxa-jira-link 2>/dev/null || true)"
+  [ -n "$changed" ] || return 0
+  _answer_vm vm_exists "$ANSWER_NAME" || return 0
+  if answer_up >/dev/null 2>&1; then echo "answer up: fxa-answer has the new egress and answer code"
+  else echo "answer up failed; run: vm.sh run './fxa-sandbox-ctl answer up'"; fi
+}
+
 cmd_answer() {
   case "${1:-status}" in
     up) answer_up ;;
+    refresh) answer_refresh_since "${2:?usage: answer refresh <old sha>}" ;;
     status) _answer_vm vm_exists "$ANSWER_NAME" && echo "fxa-answer: up" || echo "fxa-answer: not created (run: fxa-sandbox-ctl answer up)" ;;
     down) _answer_vm vm_delete "$ANSWER_NAME" ;;
     ask) shift

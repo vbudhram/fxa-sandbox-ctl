@@ -109,4 +109,14 @@ r="$(_answer_result ask-t009 2 "$q")"
 check "question: the text without the control lines" "I found the heading at \`en.ftl:3\`." "$(jq -r .answer <<< "$r")"
 check "question: two groups, as a turn parses them" "2|What should the heading say?|Sign in or sign up (recommended)" "$(jq -r '"\(.question.questions | length)|\(.question.questions[0].q)|\(.question.questions[0].options[0])"' <<< "$r")"
 check "no question: null" "null" "$(_answer_result ask-t010 1 '{"type":"result","result":"Just an answer."}' | jq -c .question)"
+# After a sync: answer up again only when the egress, DNS or answer code changed and fxa-answer exists.
+r="$tmp/repo"; mkdir -p "$r/lib" "$r/dashboard"; g() { git -C "$r" -c user.email=t@example.com -c user.name=t "$@"; }
+g init -q; echo a > "$r/lib/agent.sh"; echo a > "$r/dashboard/index.html"; g add -A; g commit -qm one; one="$(g rev-parse HEAD)"
+echo b > "$r/dashboard/index.html"; g commit -qam two; two="$(g rev-parse HEAD)"
+echo b > "$r/lib/agent.sh"; g commit -qam three
+answer_up() { echo up >> "$tmp/ups"; }; vm_exists() { [ -z "${NO_VM:-}" ]; }; : > "$tmp/ups"
+( SANDBOX_ROOT="$r"; answer_refresh_since "$one" >/dev/null; answer_refresh_since "$(g rev-parse HEAD)" >/dev/null; NO_VM=1 answer_refresh_since "$two" >/dev/null )
+check "answer up runs once: for a pull that changed lib/agent.sh, not for no change or no fxa-answer" "1" "$(grep -c up "$tmp/ups")"
+( SANDBOX_ROOT="$r"; git -C "$r" checkout -q "$two"; answer_refresh_since "$one" >/dev/null )
+check "a pull that changed only dashboard/ does not run answer up" "1" "$(grep -c up "$tmp/ups")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

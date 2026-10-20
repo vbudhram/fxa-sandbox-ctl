@@ -39,6 +39,7 @@ if [ "$MODE" = sync ]; then
   # being overwritten. The bot and the dashboard load the code at start.
   ssh_vm 'sudo -u fxa -H bash -c '"'"'
     set -e
+    old="$(git -C ~/Desktop/working2/fxa-sandbox-ctl rev-parse HEAD)"
     for r in fxa-sandbox-ctl fxa-agent-bot; do
       d=~/Desktop/working2/$r
       if [ -n "$(git -C "$d" status --porcelain --untracked-files=no)" ]; then echo "$r: local edits on the VM; not pulled"; continue; fi
@@ -48,6 +49,7 @@ if [ "$MODE" = sync ]; then
     for s in ~/Desktop/working2/fxa-sandbox-ctl/skills/*/; do ln -sfn "${s%/}" ~/.claude/skills/"$(basename "$s")"; done
     # The snapshot refresh runs from copies on the Firecracker host; a stopped host gets them on its next fc refresh.
     (cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl fc install) || echo "fc install failed; run vm.sh fc install"
+    (cd ~/Desktop/working2/fxa-sandbox-ctl && ./fxa-sandbox-ctl answer refresh "$old") || true
   '"'"'
   # A changed fxa-secrets: install it as root only when it is not empty and parses, then
   # run it once, before the restarts below read the .env files it writes.
