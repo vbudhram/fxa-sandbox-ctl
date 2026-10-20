@@ -1007,6 +1007,8 @@ META
 
 # ── Agent commands ─────────────────────────────────────────────
 
+# The Claude credential a launch staged in the slot: gone once the runner has it, or once the launch fails.
+_slot_creds_rm() { rm -f "$1/.fxa-auto-token" "$1/.fxa-auto-codex-auth.json"; }
 agent_run() {
   local workspace_dir="$1"
   local name="${2:-}"
@@ -1136,22 +1138,22 @@ agent_run() {
   vm_exec "$name" sudo bash -c "echo '${guide_b64}' | base64 -d > /etc/vm-agent-guide.md && chmod 644 /etc/vm-agent-guide.md" 2>/dev/null \
     || echo "  WARN: could not send the VM guide; the image's copy stays" >&2
   runtime_setup_config "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
-  runtime_inject_auth "$workspace_dir" "$name" || { vm_batch_flush "$name" || true; _stop_pin; vm_delete "$name"; return 1; }
+  runtime_inject_auth "$workspace_dir" "$name" || { vm_batch_flush "$name" || true; _stop_pin; _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
 
   # Step 10: Start the agent inside a screen session in the VM
   _write_screenrc "$name"
-  vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; _stop_pin; vm_delete "$name"; return 1; }
+  vm_batch_flush "$name" || { echo "ERROR: agent config did not reach the runner." >&2; _stop_pin; _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
 
   # The pin, then the egress firewall. A run that starts open is worse than no
   # run; the firewall's own ssh status and stderr decide whether the run starts.
   if [ -n "$pin_pid" ]; then
     local pin_rc=0; wait "$pin_pid" || pin_rc=$?
     grep -v '^Pinning the runner' "$pin_out" || true; _PINNED_BASE="$(cat "${pin_out}.base" 2>/dev/null || true)"; rm -f "$pin_out" "${pin_out}.base"
-    [ "$pin_rc" -eq 0 ] || { vm_delete "$name"; return 1; }
+    [ "$pin_rc" -eq 0 ] || { _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
   fi
-  _runner_git_tokens_drop "$name" || { echo "ERROR: could not remove the read tokens from the runner; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  _runner_git_tokens_drop "$name" || { echo "ERROR: could not remove the read tokens from the runner; refusing to start the agent." >&2; _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
   echo "Applying security hardening..."
-  _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; vm_delete "$name"; return 1; }
+  _setup_egress_firewall "$name" || { echo "ERROR: egress firewall did not apply; refusing to start the agent." >&2; _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
   # A team's runtime secrets first: its boot script may read them.
   [ "$FXA_VM_BACKEND" != gce ] || [ -z "${PIPE_RUNTIME_SECRETS:-}" ] || _team_runtime_secrets "$name" \
     || echo "WARN: a runtime secret of ${PIPE_PROFILE} did not reach the runner; its stack may not start" >&2
@@ -1172,10 +1174,10 @@ agent_run() {
       "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json" "${workspace_dir}/.fxa-auto-token"
   fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
-    _put_run_files "$name" "$workspace_dir" || { rm -f "$launching" "${workspace_dir}/.fxa-auto-token" "${workspace_dir}/.fxa-auto-codex-auth.json"; vm_delete "$name"; return 1; }
+    _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; _slot_creds_rm "$workspace_dir"; vm_delete "$name"; return 1; }
     rm -f "$launching"
     # The runner has its copy; none stays in plain text in the slot.
-    rm -f "${workspace_dir}/.fxa-auto-token" "${workspace_dir}/.fxa-auto-codex-auth.json"
+    _slot_creds_rm "$workspace_dir"
   fi
   _launch_in_screen "$name"
 
@@ -1264,15 +1266,15 @@ agent_switch() {
 
   # Step 8: Re-stage credentials for the new workspace
   runtime_load || return 1
-  runtime_inject_auth "$new_workspace" "$name" || return 1
+  runtime_inject_auth "$new_workspace" "$name" || { _slot_creds_rm "$new_workspace"; return 1; }
 
   # Step 9: Start a new agent screen session
   echo "Starting ${FXA_AGENT_RUNTIME} in VM..."
   _write_screenrc "$name"
 
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
-    _put_run_files "$name" "$new_workspace" || return 1
-    rm -f "${new_workspace}/.fxa-auto-token" "${new_workspace}/.fxa-auto-codex-auth.json"
+    _put_run_files "$name" "$new_workspace" || { _slot_creds_rm "$new_workspace"; return 1; }
+    _slot_creds_rm "$new_workspace"
   fi
   _launch_in_screen "$name"
 

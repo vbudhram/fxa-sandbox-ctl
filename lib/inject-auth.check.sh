@@ -32,8 +32,11 @@ check "attach writes the credential only for a tart mount" "no|yes" "$([ -e "$tm
 
 # Each gce ship of the run files removes the slot's copy of the credentials right after.
 n_put="$(grep -c '_put_run_files "\$name"' "$here/agent.sh")"
-n_rm="$(awk '/_put_run_files "\$name"/{w=4} w&&/rm -f "\$\{(workspace_dir|new_workspace)\}\/\.fxa-auto-token"/{n++; w=0} w{w--} END{print n+0}' "$here/agent.sh")"
+n_rm="$(awk '/_put_run_files "\$name"/{w=4} w&&/^ *_slot_creds_rm "\$(workspace_dir|new_workspace)"$/{n++; w=0} w{w--} END{print n+0}' "$here/agent.sh")"
 check "agent_run and agent_switch leave no credential in the slot after the ship" "$n_put" "$n_rm"
+# From the credential write to the launch, every failed return removes the slot's copy too.
+left="$(awk '/runtime_inject_auth "\$(workspace_dir|new_workspace)"/{on=1} /^ *_launch_in_screen/{on=0} on&&/return 1/&&!/_slot_creds_rm/' "$here/agent.sh")"
+check "a launch that fails after the credential write leaves no credential in the slot" "" "$left"
 
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
