@@ -11,8 +11,10 @@ eval "$(sed -n '/^jira_normalize_key() {/,/^}/p' "$here/jira.sh")"
 _key() { jira_normalize_key "$1"; }
 PIPE_STATE_DIR="$tmp" PIPE_LABEL_PREFIX=ai-fixme
 jira_label_set() { :; }; _reap_key() { :; }
+d0="$(date -u +%F)"   # before the stamp: a run that crosses 00:00 UTC gets the next day, which is right too
 check "the first report is new" "new" "$(cmd_needs_you fxa-1)"
-check "later passes see it, with the date" "seen $(date -u +%F)" "$(cmd_needs_you FXA-1)"
+got="$(cmd_needs_you FXA-1)"; [ "$got" = "seen $(date -u +%F)" ] && got="seen $d0"
+check "later passes see it, with the date" "seen $d0" "$got"
 cmd_label FXA-1 blocked >/dev/null 2>&1
 check "a label change makes the next item new" "new" "$(cmd_needs_you FXA-1)"
 exit "$fail"

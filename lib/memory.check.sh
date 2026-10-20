@@ -119,7 +119,8 @@ check "no notes for a key with none, or a bad key" "|" "$(memory_ticket_md FXA-9
 errors_record() { printf '%s\n' "$5" > "$tmp/digest.msg"; }
 FXA_MEMORY_REMOTE_SAVE="$FXA_MEMORY_REMOTE"
 memory_digest 2>/dev/null
-br="digest/$(date -u +%F)"
+# The branch the digest made, read from the remote: a date read here could be the next day's after 00:00 UTC.
+br="$(g -C "$tmp/clone" fetch -q origin 2>/dev/null; g -C "$tmp/clone" branch -r --list 'origin/digest/*' | sed 's#^ *origin/##' | tail -1)"
 check "the digest branch moves the inbox into repos/ and lists it" "0|1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/.*mem-')|$(g -C "$tmp/clone" show "origin/${br}:repos/mozilla__fxa/trap.md" | grep -c 'patch level bump')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'From the inbox')"
 check "main keeps its inbox until a person merges; the operator gets the compare link" "1|1" \
