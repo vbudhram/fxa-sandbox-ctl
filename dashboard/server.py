@@ -348,7 +348,12 @@ _PRIVATE = {}  # profile -> (when, private)
 
 
 def team_private(profile):
-    """True when the team has a private repo (profile show), cached 10 minutes. No answer counts as private."""
+    """True when the team has a private repo, cached 10 minutes. No answer counts as private."""
+    # The teams feed's 'profile list' already holds each team's flag: a request never waits on 'profile show' for it.
+    teams = globals().get("TEAMS")
+    row = next((t for t in ((teams.read()[0] if teams else None) or []) if isinstance(t, dict) and t.get("profile") == profile), None)
+    if row is not None:
+        return row.get("private") is not False
     hit = _PRIVATE.get(profile)
     if hit and time.time() - hit[0] < 600:
         return hit[1]
