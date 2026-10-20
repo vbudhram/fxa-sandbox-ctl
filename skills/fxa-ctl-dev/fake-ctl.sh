@@ -24,6 +24,7 @@
 #   FAKE_ANSWER_S  seconds the quick look takes, so a test can talk during it
 #   FAKE_ANSWER    the quick look's answer text; unset, the quick look says busy (exit 3) and a session starts
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
+#   FAKE_FIND_PR_PROFILE  the team find-pr reports for the session that made the PR (default none)
 #   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
 #                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
 #                  event as the real controller emits it; changes counts the branch so far). Past the tape: canned turns, logged as replay_exhausted.
@@ -223,8 +224,8 @@ case "$cmd" in
           get "$k" fins | while read -r _ m s; do case "$m" in pr*) [ "$s" = - ] && u="$PR_URL" || u="https://github.com/$s/pull/999999"
             [ "$u" = "$1" ] && echo "$(get "$k" t0) $k"; esac; done; done | sort -rn | awk 'NR == 1 {print $2}' | {
           read -r k || { echo null; exit 0; }
-          jq -nc --arg k "$k" --arg o "$(get "$k" owner)" --arg over "$(get "$k" over)" \
-            '{key: $k, state: (if $over == "" then "active" else $over end), profile: "", thread: null, owner: $o, live: ($over == "")}'; } ;;
+          jq -nc --arg k "$k" --arg o "$(get "$k" owner)" --arg over "$(get "$k" over)" --arg p "${FAKE_FIND_PR_PROFILE:-}" \
+            '{key: $k, state: (if $over == "" then "active" else $over end), profile: $p, thread: null, owner: $o, live: ($over == "")}'; } ;;
       pause) echo paused > "$DIR/$1/over" ;;
       copilot-comments) [ -n "${FAKE_COPILOT_AT:-}" ] || { echo '[]'; exit 0; }
         jq -nc '[{path: "packages/fxa-settings/src/index.tsx", line: 1, body: "Fake Copilot: this line needs a null check."}]' ;;
