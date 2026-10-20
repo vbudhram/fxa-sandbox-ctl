@@ -3049,10 +3049,11 @@ function beltsHtml(g) {
     <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
   const where = beltWhere(g);
   const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => `<p class="bempty">${name}: ${esc(g.unknown[k])}</p>`).join("");
-  const sub = ([k, who, name, pick], lo, hi) => { const rs = g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)); return rs.length
+  // An unknown group (its feed failed) lists no rows and makes its phase count '?': never a confident figure.
+  const sub = ([k, who, name, pick], lo, hi) => { if (g.unknown[k]) return ""; const rs = g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)); return rs.length
     ? `<div role="group" aria-label="${name}"><h3 class="bsub"><span class="who">${who}</span>${name} <span class="cnt">${rs.length}</span></h3><ul class="belts">${rs.map(beltRow).join("")}</ul></div>` : ""; };
   const phases = BELT_PHASES.map(([name, why, lo, hi]) => { const body = BELT_SUBS.map(x => sub(x, lo, hi)).join(""); return body
-    ? `<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).join("");
+    ? `<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.some(([k]) => g.unknown[k]) ? "?" : BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).join("");
   return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div><div class="phs"><b style="grid-column:1/2">Queue</b><b style="grid-column:2/6">Agent run</b><b style="grid-column:6/10">PR</b></div><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div><span>Status</span><span class="r">Age</span></div>
     ${unknown}${phases || (unknown ? "" : `<p class="bempty">Nothing on the belts.</p>`)}
     ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;

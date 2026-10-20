@@ -240,6 +240,8 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belt details: a Jira-blocked ticket with an open PR answers in Jira", `${b1.t.pr}|${/class="main"[^>]*href="https:\/\/jira\.example\.com\/browse\/FXA-1"[^>]*>Answer in Jira</.test(beltDetails(b1))}`, "7|true");
   load(); SNAP.inflight_prs_failed = true; const gi = beltGroups();
   t("belts: a failed in-flight PR read makes fixes and review unknown, from GitHub", `${gi.unknown.fixes}|${gi.unknown.review}|${beltCount(gi)}`, "unknown, GitHub fetch failed|unknown, GitHub fetch failed|null");
+  const hi = beltsHtml(gi);
+  t("belts: with a feed unknown, no phase heading gives a confident count", `${[...hi.matchAll(/<h2 class="bgh"[^>]*>[^<]+ <span class="cnt">([^<]+)</g)].every(m => m[1] === "?")}|${/<h2 class="bgh"/.test(hi)}`, "true|true");
   load(); AGENTS.runners[0].agent_alive = false; const gx = beltGroups();
   t("belts: an agent that exited with no handoff needs a person, and is not counted as working", `${gx.working.map(r => r.t.key).join(",")}|${gx.needs.some(r => r.t.key === "FXA-20")}|${gx.needs.length === boardAct(boardItems())}|${/1 agent works now/.test(beltsHtml(gx))}`, "FXA-21|true|true|true");
   load(); SNAP.review = null; const gr = beltGroups(); SNAP.done_fetch_failed = true; const gj = beltGroups();
