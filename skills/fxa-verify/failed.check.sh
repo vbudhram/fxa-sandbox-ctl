@@ -10,7 +10,7 @@ check() { # check <name> <want> <got>
 }
 V="$(cd "$(dirname "$0")" && pwd)/verify.sh"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
-export FXA_WORKSPACE="$tmp"
+export FXA_WORKSPACE="$tmp" TMPDIR="$tmp"
 # verify.sh writes its records under /workspace; point that at the test dir.
 sed "s#/workspace/#${tmp}/#g" "$V" > "$tmp/verify.sh"
 cd "$tmp" && git init -q && git -c user.email=t@example.com -c user.name=t commit -q --allow-empty -m init && git update-ref refs/remotes/origin/main HEAD
