@@ -14,5 +14,7 @@ agent_stop() { return 1; }
 check "a failed delete: the stop fails, and the session is marked for a retry" "1|state stopped runner_left 1" \
   "$(session_stop a1 >/dev/null 2>&1; echo $?)|$(sed 's/ $//' "$tmp/set")"
 : > "$tmp/set"; agent_stop() { return 0; }
-check "a delete that works: the stop succeeds, with no retry mark" "0|state stopped" "$(session_stop a1 >/dev/null 2>&1; echo $?)|$(sed 's/ $//' "$tmp/set")"
+check "a delete that works: the stop succeeds, and the retry mark is cleared" "0|state stopped runner_left 1 runner_left 0" "$(session_stop a1 >/dev/null 2>&1; echo $?)|$(sed 's/ $//' "$tmp/set")"
+: > "$tmp/set"; agent_stop() { exit 9; }
+check "a stop killed inside agent_stop leaves the retry mark, so the idle sweep tries again" "state stopped runner_left 1" "$( (session_stop a1 >/dev/null 2>&1); sed 's/ $//' "$tmp/set")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
