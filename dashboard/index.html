@@ -1724,7 +1724,7 @@ let STATS = null, STATS_AT = 0;
 // figures and sets STATS_ERR, so no card waits on 'Loading…' for ever or shows a confident $0.00.
 let STATS_ERR = null;
 async function loadStats() {
-  if (STATS && !STATS_ERR && Date.now() - STATS_AT < 60000) { safeRender(renderStats, "s-stats"); return; }
+  if (STATS && !STATS_ERR && Date.now() - STATS_AT < 60000) { if (VIEW === "stats") safeRender(renderStats, "s-stats"); return; }
   try {
     const r = await fetch("/api/stats", { cache:"no-cache" }), j = r.ok ? await r.json() : null;
     if (!j || j.error) throw new Error(j?.error || `HTTP ${r.status}`);
@@ -1732,7 +1732,8 @@ async function loadStats() {
     // Each render filtered the rows by time with about 59,000 Date.parse calls: parse each row once.
     for (const r of STATS.rows ?? []) r.ms = Date.parse(r.at);
   } catch (e) { STATS_ERR = `the stats feed could not be read (${e.message})`; }
-  safeRender(renderStats, "s-stats"); safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
+  if (VIEW === "stats") safeRender(renderStats, "s-stats");
+  safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
   if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvRuns, "ov-runs"]].forEach(([f, id]) => safeRender(f, id));
   if (document.body.dataset.view === "stats") renderSide();
   if (document.body.dataset.view === "teams" && TEAMS) { renderTeams(); renderRight(); }
@@ -3497,6 +3498,7 @@ function route() {
   if (view === "errors") renderErrors();
   if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
+  if (view === "overview") OV_RENDERS.forEach(([f, id]) => safeRender(f, id));
   if (view === "overview" && view !== VIEW_PREV) loadRuns();
   if (view === "runners") renderSb();
   if (view === "runners" && (view !== VIEW_PREV || TAB !== TAB_PREV)) loadSbDone();
@@ -3823,9 +3825,13 @@ function renderSbDone() {
 function safeRender(fn, id) {
   try { fn(); } catch (e) { console.error(e); if (id) put(id, `<div class="emptybox">This section did not render: ${esc(e?.message ?? String(e))}. Reload, or run vm.sh rollback.</div>`); }
 }
+// The Overview cards draw only on the Overview: on another view they were about half of each poll's render time.
+// renderAgents, renderLanes and renderSessions still run everywhere, since they set the tail keys.
+const OV_RENDERS = [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvNeeds, "ov-needs"], [renderOvMini, "ov-mini"],
+  [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderOvRuns, "ov-runs"]];
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], [renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvNeeds, "ov-needs"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvSys, "ov-sys"], [renderOvRuns, "ov-runs"], [renderSess, "s-sess"], [renderSb],
+   [renderLanes, "s-lanes"], [renderDone, "s-done"], ...(VIEW === "overview" ? OV_RENDERS : []), [renderSess, "s-sess"], [renderSb],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
