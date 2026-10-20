@@ -271,6 +271,8 @@ check "a session stopped just now keeps its run started" "started|" "$(s_of "$gl
 check "and the bot's late done stores its report" "true|report|1" \
   "$(routine_done "$gl" --state report --session agent-late01 --report-file "$tmp/clean.md" | jq -r '"\(.changed)|\(.state)"')|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $gl AND report IS NOT NULL;")"
 echo '{"key":"agent-late02","state":"stopped"}' > "$tmp/agent-late02.json"; gm="$(st started agent-late02 $((NOWR - 60)))"
+# Its write time is NOWR, not the real clock: on a loaded host the write lands a second or more after NOWR.
+perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1]' "$NOWR" "$tmp/agent-late02.json"
 routine_reconcile $((NOWR + 601)) live
 check "10 min after the session stopped, reconcile fails the run" "failed|the session stopped with no result" "$(s_of "$gm")"
 
