@@ -60,6 +60,12 @@ if [ "$MODE" = sync ]; then
   if sudo test -s $f && sudo bash -n $f && ! sudo cmp -s $f /usr/local/sbin/fxa-teams-reconcile; then
     sudo install -m 700 -o root -g root $f /usr/local/sbin/fxa-teams-reconcile && echo "installed fxa-teams-reconcile" && sudo /usr/local/sbin/fxa-teams-reconcile --install
   fi
+  # The LLM proxy reads only llm-proxy.env once fxa-secrets wrote it: a sync moves an older unit there, not only a reprovision.
+  u=/etc/systemd/system/fxa-llm-proxy.service e=/home/fxa/.config/fxa/llm-proxy.env
+  if sudo test -s $e && sudo grep -qx "EnvironmentFile=-/home/fxa/Desktop/working2/fxa-sandbox-ctl/.env" $u; then
+    sudo sed -i "s#^EnvironmentFile=-/home/fxa/Desktop/working2/fxa-sandbox-ctl/.env\$#EnvironmentFile=-$e#" $u && sudo systemctl daemon-reload \
+      && echo "the LLM proxy unit now reads llm-proxy.env; when no session is at work: vm.sh sys sudo systemctl restart fxa-llm-proxy"
+  fi
   for u in fxa-agent-bot fxa-dashboard; do systemctl is-active -q $u && sudo systemctl restart $u && echo "restarted $u"; done; true'
   exit 0
 fi
