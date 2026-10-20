@@ -587,7 +587,7 @@ _snapshot_slots() {
   # The cap from this one slot list, as cmd_launchcap computes it: a second Jira read could fail and read 0.
   if [ "$frc" = 0 ]; then
     cap="$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && echo "${PIPE_MAX_LAUNCHES_GCE:-5}" || echo "${PIPE_MAX_LAUNCHES_TART:-1}" )"
-    local n; n="$(printf '%s' "$slots" | grep -c . || true)"; [ "${n:-0}" -lt "$cap" ] && cap="${n:-0}"
+    local n; n="$(printf '%s' "$slots" | grep -c . || true)"; if [ "${n:-0}" -lt "$cap" ]; then cap="${n:-0}"; fi
   else cap=null; free=null; fi
 }
 
