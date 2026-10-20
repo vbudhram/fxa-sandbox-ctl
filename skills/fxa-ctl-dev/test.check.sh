@@ -9,6 +9,8 @@ eval "$(sed -n '/^check_one() {/,/^}/p;/^run_pool() {/,/^}/p' "$(dirname "$0")/t
 cd "$tmp" && mkdir -p c
 echo 'echo ok' > c/a.check.sh; echo 'echo ok' > c/b.check.sh
 check "all pass: the pool passes" "0" "$(run_pool mac c/a.check.sh c/b.check.sh >/dev/null 2>&1; echo $?)"
+echo 'echo "skip: needs bash 4"; exit 0' > c/s.check.sh
+check "a check that skips itself passes, and the pool names the skip" "0|skip mac: c/s.check.sh: needs bash 4" "$(run_pool mac c/s.check.sh > out 2>&1; echo $?)|$(cat out)"
 echo 'echo "FAIL planted"' > c/a.check.sh
 check "a FAIL line fails the pool and names the check" "1|yes" "$(run_pool mac c/a.check.sh c/b.check.sh > out 2>&1; echo $?)|$(grep -q 'FAIL mac: c/a.check.sh' out && echo yes)"
 # The check kills the xargs child that runs it (its grandparent, as an OOM kill would): xargs

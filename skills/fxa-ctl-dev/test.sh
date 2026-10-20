@@ -19,7 +19,9 @@ export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" FXA_DB_BACKUP_URI=""  
 # first FAIL, the check died of SIGPIPE, and pipefail hid the failure. A nonzero exit fails too.
 check_one() {
   local out code=0; out="$(bash "$1" 2>&1)" || code=$?
-  if ! grep -q '^FAIL' <<< "$out" && [ "$code" = 0 ]; then return 0; fi
+  # A pass whose check skipped itself (a missing tool, bash 3.2) says so: a silent skip read as a pass.
+  if ! grep -q '^FAIL' <<< "$out" && [ "$code" = 0 ]; then
+    local s; s="$(grep -m1 -iE '^skip' <<< "$out" | sed -E 's/^[sS][kK][iI][pP]:? *//' || true)"; [ -z "$s" ] || echo "skip $2: $1: $s"; return 0; fi
   echo "FAIL $2: $1"; { grep '^FAIL' <<< "$out" || printf '  exit %s: %s\n' "$code" "$(tail -2 <<< "$out" | tr '\n' ' ')"; } | head -3
   return 1
 }
