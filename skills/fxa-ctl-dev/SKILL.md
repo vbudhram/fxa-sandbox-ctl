@@ -8,6 +8,9 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob
 
 Before a product decision (a new setting, message, button, team feature or guard), read `PRODUCT.md`: its goals, principles and defaults decide.
 
+Before you change `dashboard/index.html`, read `guide/dashboard-design.md`. It gives the tokens, the
+component helpers, and the checks and screenshots that verify a dashboard change.
+
 ## Where things are
 
 | | Path |
