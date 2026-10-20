@@ -73,7 +73,7 @@
   .dot.live { animation:pulse 1.6s ease-in-out infinite; }
   /* The health dot: 9px, ok unless the status sets warn, dead or paused. */
   .status .dot { width:9px; height:9px; } .status .dot:not(.warn, .dead, .paused) { background:var(--ok); }
-  #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); } #health.paused { color:var(--dim); }
+  .health { font-weight:650; color:var(--ok); } .health.warn { color:var(--warn); } .health.dead { color:var(--bad); } .health.paused { color:var(--dim); }
   /* cta-neutral */
   button { font:600 var(--t-sub) var(--head); color:var(--ink); background:var(--bg);
            border:1px solid var(--line2); border-radius:var(--r-sm); padding:6px var(--s4); cursor:pointer; }
@@ -107,7 +107,7 @@
   h2 .sub  { font:400 var(--t-sub) var(--sans); color:var(--faint); text-transform:none; }
   /* Three heading levels: h2 (heading), h3 (subheading) and the overline. */
   h3 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); color:var(--ink); }
-  .overline, .sgroup, .right h4, #ov-today h2, #ov-sys h3, .bgh, #s-sb #sb-list .sbh { font:600 var(--t-label)/1.5 var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
+  .overline, .sgroup, .right h4, .bgh, .sbh { font:600 var(--t-label)/1.5 var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
   .empty { color:var(--faint); font-size:var(--t-sub); }
   .unknown { color:var(--warn); font-size:var(--t-sub); font-weight:600; }
   .headline { display:flex; align-items:baseline; gap:var(--s3); margin:0 0 var(--s3); }
@@ -271,7 +271,7 @@
   .tbud { min-width:180px; } .tbud .meter { margin-top:4px; }
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
  
-  #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #sb-done .sbd-scroll { overflow-x:auto; } #sb-done .table td { white-space:nowrap; } #sb-done .table td.sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } #sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
+  #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } .sbd-scroll { overflow-x:auto; } .sbd-scroll .table td { white-space:nowrap; } .sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
   .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
   .tchk { display:flex; gap:var(--s2); align-items:center; }
@@ -289,11 +289,11 @@
   .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
   .drawer-close { display:none; }
   .sowner { display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font:600 var(--t-label) var(--sans); color:var(--dim); } .sowner select { flex:1; min-width:0; min-height:28px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--panel); color:var(--ink); padding:0 8px; font:400 var(--t-sub) var(--sans); }
-  #side .sfilters { flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0 var(--s4) var(--s4); margin:0; gap:var(--s3); }
-  #side .sfilters label, #side .sfilters .fl { align-items:stretch; text-align:left; display:flex; flex-direction:column; gap:6px; font:700 var(--t-label) var(--sans); color:var(--dim); }
-  #side .sfilters select, #side .sfilters input { font:400 var(--t-body) var(--sans); color:var(--ink); width:100%; }
-  #side .seg { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:0; background:none; }
-  :where(#side) .seg button { border:1px solid var(--line2); background:var(--panel); font-weight:600; }
+  .side .sfilters { flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0 var(--s4) var(--s4); margin:0; gap:var(--s3); }
+  .side .sfilters label, .side .sfilters .fl { align-items:stretch; text-align:left; display:flex; flex-direction:column; gap:6px; font:700 var(--t-label) var(--sans); color:var(--dim); }
+  .side .sfilters select, .side .sfilters input { font:400 var(--t-body) var(--sans); color:var(--ink); width:100%; }
+  .side .seg { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:0; background:none; }
+  :where(.side) .seg button { border:1px solid var(--line2); background:var(--panel); font-weight:600; }
   .status { grid-area:status; background:var(--panel); border-top:1px solid var(--line); display:flex; align-items:center; gap:var(--s3); padding:0 var(--s4); font-size:var(--t-label); color:var(--dim); white-space:nowrap; overflow:hidden; }
   .status .sp { flex:1; } .status button { padding:2px 10px; font-size:var(--t-label); }
   #cells { display:flex; align-items:center; gap:var(--s3); overflow:hidden; }
@@ -332,7 +332,7 @@
     .side, .right { left:0; right:0; width:auto; bottom:64px; }
     body.v-teams .shell { grid-template-rows:auto minmax(0,1fr) 64px; grid-template-areas:"side" "main" "rail"; }
     .status { position:fixed; bottom:72px; right:8px; height:26px; z-index:13; border:1px solid var(--line); border-radius:var(--r-pill); padding:0 10px; }
-    .status > :not(#dot):not(#health) { display:none; }
+    .status > :not(.dot, .health) { display:none; }
     .mh, .mc { padding-left:var(--s4); padding-right:var(--s4); } .mh .vsub { display:none; }
     button, .iconbtn { min-height:44px; } .iconbtn { width:44px; }
   }
@@ -366,11 +366,11 @@
   #ov-floor { container-type:inline-size; }
   .ovtiles { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); margin-top:var(--s2); }
   @container (max-width:360px) { .ovtiles { grid-template-columns:minmax(0,1fr); } }
-  .ovfree { font-size:var(--t-sub); color:var(--dim); } .ovfree .mono { font-family:var(--mono); }
+  .ovfree { margin-top:var(--s2); font-size:var(--t-sub); color:var(--dim); } .ovfree .mono { font-family:var(--mono); }
   /* Overview at a glance (O6): the Needs you banner, the KPI tiles, Teams and Recent runs. */
-  #ov-needs { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); background:var(--warnbg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); box-shadow:none; padding:var(--s2) var(--s4); font-size:var(--t-sub); }
-  #ov-needs .big { font:700 var(--t-head)/1.2 var(--head); } #ov-needs b { font-family:var(--head); } #ov-needs .sub a, #ov-needs .sub { color:inherit; } #ov-needs .go { margin-left:auto; font-weight:600; color:inherit; }
-  #ov-needs.calm { background:var(--panel); color:var(--dim); border-color:var(--card-border); }
+  .needs { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); background:var(--warnbg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent); box-shadow:none; padding:var(--s2) var(--s4); font-size:var(--t-sub); }
+  .needs .big { font:700 var(--t-head)/1.2 var(--head); } .needs b { font-family:var(--head); } .needs .sub a, .needs .sub { color:inherit; } .needs .go { margin-left:auto; font-weight:600; color:inherit; }
+  .needs.calm { background:var(--panel); color:var(--dim); border-color:var(--card-border); }
   #ov-kpis { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
   #ov-mini { display:contents; } #ov-mini > * { order:3; } #ov-mini > [data-focus="ov-spend-k"] { order:1; } #ov-today { order:2; } #ov-mini > .ovknote { order:0; grid-column:1/-1; font-size:var(--t-sub); color:var(--warn); }
   .ovk { display:flex !important; flex-direction:column; gap:4px; min-width:0; }
@@ -391,9 +391,9 @@
   .ovrun time { font-size:var(--t-label); color:var(--dim); grid-row:span 2; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .ovrun .ic { width:28px; height:28px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; grid-row:span 2; } .ovrun .ic svg { width:14px; height:14px; }
   .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ovrun .t .key { margin-right:6px; }
-  #sb-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); } #sb-cards .sb-card { display:flex; flex-direction:column; gap:4px; min-width:0; } #sb-cards .big { font-size:var(--t-page); }
-  #sb-cards .sbstrip { display:flex; gap:3px; margin:4px 0; } #sb-cards .sbstrip i { flex:1; height:10px; border-radius:2px; background:var(--sunk); } #sb-cards .sbstrip i.busy { background:var(--info); } #sb-cards .sbstrip i.gce { background:repeating-linear-gradient(135deg,var(--info) 0 4px,var(--panel) 4px 6px); } #sb-cards .sbstrip i.held { background:var(--warn); } #sb-cards .sbstrip i.unknown { background:var(--line); }
-  #sb-cards .sub a { color:var(--link); }
+  #sb-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); } .sb-card { display:flex; flex-direction:column; gap:4px; min-width:0; } .sb-card .big { font-size:var(--t-page); }
+  .sbstrip { display:flex; gap:3px; margin:4px 0; } .sbstrip i { flex:1; height:10px; border-radius:2px; background:var(--sunk); } .sbstrip i.busy { background:var(--info); } .sbstrip i.gce { background:repeating-linear-gradient(135deg,var(--info) 0 4px,var(--panel) 4px 6px); } .sbstrip i.held { background:var(--warn); } .sbstrip i.unknown { background:var(--line); }
+  .sb-card .sub a { color:var(--link); }
   @media (max-width:900px) { #sb-cards { grid-template-columns:1fr; } }
   .ovrun .d { font-size:var(--t-label); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
   .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label); color:var(--dim); font-variant-numeric:tabular-nums; }
@@ -425,6 +425,9 @@
   .ovtoday .big { font:700 var(--t-kpi)/1.1 var(--head); font-variant-numeric:tabular-nums; } .ovtoday .sub, #ov-spend .sub { font-size:var(--t-sub); color:var(--faint); }
   .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .linkbtn:hover:not(:disabled) { background:none; text-decoration:underline; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
+  /* Spacing between siblings, set by class, not by inline margins. */
+  * + .acts2, .sh .tgl { margin-top:var(--s2); } .errs + .empty, [data-routine-form], * + .charts { margin-top:var(--s3); } * + .emptybox { margin-top:var(--s4); }
+  .field, [data-routine-list] > .alert { margin-bottom:var(--s2); }
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
   .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
@@ -605,19 +608,19 @@
 }
 /* Sandboxes list (i407 sb-list-fixes) */
 #s-sb #sb-head { margin-bottom:var(--s3); }
-#s-sb #sb-list .sbl { list-style:none; margin:0; padding:0; }
-#s-sb #sb-list .sbl li { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); padding:var(--s2) var(--s2); border-top:1px solid var(--line); font-size:var(--t-sub); min-width:0; }
-#s-sb #sb-list .sbl li[aria-current] { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
-#s-sb #sb-list .sbl li.fixr { border-left:3px solid var(--warn); }
-#s-sb #sb-list .sbl li.bad > button { color:var(--bad); }
-#s-sb #sb-list .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; }
-#s-sb #sb-list .sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
-#s-sb #sb-list .sbl .tb .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
-#s-sb #sb-list .sbl .tb.over { color:var(--bad); }
-#s-sb #sb-list .sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
-#s-sb #sb-list .sbh { margin:var(--s4) 0 var(--s1); }
-#s-sb #sb-list .sbfree, #s-sb #sb-list .sbage, #s-sb #sb-list .sbstale { font-size:var(--t-sub); color:var(--dim); margin:var(--s2) 0; overflow-wrap:anywhere; }
-#s-sb #sb-list .sbfree { font-family:var(--mono); } #s-sb #sb-list .sbstale { color:var(--warn); }
+.sbl { list-style:none; margin:0; padding:0; }
+.sbl li { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); padding:var(--s2) var(--s2); border-top:1px solid var(--line); font-size:var(--t-sub); min-width:0; }
+.sbl li[aria-current] { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
+.sbl li.fixr { border-left:3px solid var(--warn); }
+.sbl li.bad > button { color:var(--bad); }
+.sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; } .sbl button:hover:not(:disabled) { background:none; text-decoration:underline; }
+.sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
+.sbl .tb .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
+.sbl .tb.over { color:var(--bad); }
+.sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
+.sbh { margin:var(--s4) 0 var(--s1); }
+.sbfree, .sbage, .sbstale { font-size:var(--t-sub); color:var(--dim); margin:var(--s2) 0; overflow-wrap:anywhere; }
+.sbfree { font-family:var(--mono); } .sbstale { color:var(--warn); }
 </style>
 </head>
 <body>
@@ -647,7 +650,7 @@
 <div class="grid">
   <div class="ov" data-views="overview">
     <section id="ov-head"></section>
-    <section class="card" id="ov-needs"></section>
+    <section class="card needs" id="ov-needs"></section>
     <div id="ov-kpis"><section id="ov-mini"></section><section class="card sm" id="ov-today"></section></div>
     <div class="ovrow"><section class="card" id="ov-spend"></section><section class="card" id="ov-teams"></section></div>
     <section class="card" id="ov-floor"></section>
@@ -672,7 +675,7 @@
 <aside class="right" id="right" aria-label="Details"></aside>
 <div class="rsz rsz-side" data-var="--side" data-min="220" data-max="640" data-dir="1" role="separator" aria-orientation="vertical" aria-label="Resize the list" title="Drag to resize; double-click to reset"></div>
 <div class="rsz rsz-right" data-var="--right" data-min="260" data-max="720" data-dir="-1" role="separator" aria-orientation="vertical" aria-label="Resize the details" title="Drag to resize; double-click to reset"></div>
-<footer class="status" aria-label="Status"><span class="dot" id="dot"></span><span id="health">healthy</span><span id="cells"></span><span class="sp"></span><span id="repo"></span><span id="age">connecting…</span><button id="refresh" type="button">Refresh</button></footer>
+<footer class="status" aria-label="Status"><span class="dot" id="dot"></span><span class="health" id="health">healthy</span><span id="cells"></span><span class="sp"></span><span id="repo"></span><span id="age">connecting…</span><button id="refresh" type="button">Refresh</button></footer>
 </div>
 <div class="help" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
   <div class="hd"><h2 id="help-title">Keyboard shortcuts</h2><button type="button" id="help-close">Close</button></div>
@@ -865,7 +868,7 @@ function renderStatus() {
   const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet || starved ? "warn" : "";
   document.getElementById("dot").className = "dot " + level;
   const hl = document.getElementById("health");
-  hl.className = level || (paused ? "paused" : ""); hl.textContent = level === "dead" ? "down" : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
+  hl.className = "health " + (level || (paused ? "paused" : "")); hl.textContent = level === "dead" ? "down" : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
   if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
   hl.title = [`${g?.backend ?? s?.backend ?? "?"}${g?.zone ? ` ${g.zone}` : ""}`, h.lock_held ? "lock held" : "lock free", g ? `launchcap ${g.launchcap ?? "unknown"}` : "",
@@ -1042,14 +1045,14 @@ function renderOvSpend() {
 }
 function renderOvToday() {
   const note = statsNote();
-  if (!STATS) return putOv("ov-today", `<h2>Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
+  if (!STATS) return putOv("ov-today", `<h2 class="overline">Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
   const DAY = 86400000, today = localDay(Date.now()), byDay = new Map(), models = {};
   (STATS.rows ?? []).forEach(r => { const d = localDay(Date.parse(r.at)); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
   const now = byDay.get(today) ?? 0, past = daysBack(today, 31).slice(1).map(d => byDay.get(d)).filter(v => v > 0).sort((a, b) => a - b);
   const mid = past.length >= 3 ? past.length / 2 : 0, usual = mid ? (past.length % 2 ? past[Math.floor(mid)] : (past[mid - 1] + past[mid]) / 2) : null, pct = usual ? Math.round(now / usual * 100) : null;
   const hr = STATS.llm?.hour_usd, hourOk = typeof hr === "number" && !note, toMid = (today + DAY - Date.now()) / 3600000;
   const C = 2 * Math.PI * 34, arc = usual ? Math.min(1, now / usual) * C : 0;
-  putOv("ov-today", `<h2>Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
+  putOv("ov-today", `<h2 class="overline">Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
     <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="var(--sunk)" stroke-width="8"/>${usual ? `<circle cx="42" cy="42" r="34" fill="none" stroke="var(--info)" stroke-width="8" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/>` : ""}</svg>
     <div><div class="big">${usd(now)}</div><div class="sub">${usual ? `${pct}% of a usual day · Usual day ${usd(usual)}` : "not enough history for a usual day"}</div>
       <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${esc(note || "the proxy log is not read")}`}</div>
@@ -1125,7 +1128,7 @@ function renderOvFloor() {
     .map(([k, l]) => k === "free" ? `${l.length} free: <span class="mono">${esc(slotList(l))}</span>` : `${k}: <span class="mono">${esc(slotList(l))}</span>`).join(" · ");
   const nx = ovNextPass(), last = ovLastRun();
   const empty = `<div class="emptybox">Nothing runs now${last ? ` · the last run ended ${esc(last)}` : ""}${nx ? ` · next pass ${esc(nx)}` : ""}</div>`;
-  putOv("ov-floor", `<h2>Running now<span class="note">${esc(headTxt)}</span></h2>${busy.length ? `<div class="ovtiles">${busy.map(tile).join("")}</div>` : empty}${free ? `<div class="ovfree" style="margin-top:var(--s2)">${free}${busy.length && nx ? ` · next pass ${esc(nx)}` : ""}</div>` : ""}`,
+  putOv("ov-floor", `<h2>Running now<span class="note">${esc(headTxt)}</span></h2>${busy.length ? `<div class="ovtiles">${busy.map(tile).join("")}</div>` : empty}${free ? `<div class="ovfree">${free}${busy.length && nx ? ` · next pass ${esc(nx)}` : ""}</div>` : ""}`,
     headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));
 }
 // "fxa-auto-4, 5, 6": a run of slot names with one prefix shows the prefix once.
@@ -1213,8 +1216,8 @@ function renderOvSys() {
     : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
   const strip = o.ticks.length || o.pins.length ? `<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => `<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`).join("")}${o.ticks.map(e => `<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`).join("")}${o.pins.map(p => `<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${esc(p.name)}</title></circle>`).join("")}</svg>` : "";
   const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
-  putOv("ov-sys", `<h2>What the system is doing</h2><h3>Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(${o.feedsOld ? "--bad" : "--faint"})">${esc(o.feeds)}</div>
-    <h3>Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
+  putOv("ov-sys", `<h2>What the system is doing</h2><h3 class="overline">Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(${o.feedsOld ? "--bad" : "--faint"})">${esc(o.feeds)}</div>
+    <h3 class="overline">Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
     JSON.stringify([o.now, o.next, o.routines, o.pins, o.ticks.length]));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
@@ -1728,7 +1731,7 @@ function renderErrors() {
         ${e.keys?.length ? ` · ${e.keys.map(key).join(" ")}` : ""}${e.log ? ` · <span class="mono">${esc(e.log)}</span>` : ""}
         ${e.resolved ? ` · resolved ${esc(e.resolved.at.slice(0, 10))}${e.resolved.note ? `: ${esc(e.resolved.note)}` : ""}` : ""}</div></div>
     </div>`).join("")}</div>
-    <p class="empty" style="margin-top:var(--s3)">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
+    <p class="empty">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
 }
 // Lessons: what sessions learned. None reaches a runner until it is approved here.
 let LESSONS = null, LESSONS_ALL = false, LESSONS_ERR = "";
@@ -1751,7 +1754,7 @@ function renderLessons() {
         <div class="meta">${l.why ? `why: ${esc(l.why)} · ` : ""}<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a> · ${esc((l.at || "").slice(0, 10))}${l.decided_at ? ` · ${esc(l.status)} ${esc(l.decided_at.slice(0, 10))}` : ""}</div>
         <div class="acts">${l.status !== "approved" ? `<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? `<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
     </div>`).join("")}</div>
-    <p class="empty" style="margin-top:var(--s3)">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`));
+    <p class="empty">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`));
 }
 document.addEventListener("click", async e => {
   const btn = e.target.closest?.("[data-lesson] button[data-act]"); if (!btn) return;
@@ -1784,7 +1787,7 @@ function teamEditor(name, isRecord) {
     : `<button data-tact="save">Save</button><button data-tact="test">Test</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
   return `<div data-team-ed="${esc(name)}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + esc(e.gen) : "new record"}</span></h4>
     <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${esc(e.text)}</textarea>
-    <div class="acts2" style="margin-top:var(--s2)"><button data-tact="validate">Validate</button>${acts}</div>
+    <div class="acts2"><button data-tact="validate">Validate</button>${acts}</div>
     <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${esc(e.msg || "")}</p>
     ${name === "__new" ? "" : `<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
     ${e.testLog ? `<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(e.testLog)}</pre>` : ""}
@@ -1981,12 +1984,12 @@ function allTeamsHtml() {
       <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
   return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
     ${TEAMS?.error ? `<p class="unknown">last refresh failed: ${esc(TEAMS.error)}; showing data from ${ago(Math.round(TEAMS.age_seconds))}</p>` : ""}
-    ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
+    ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
     <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
       ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
     <div class="tcard card tscroll"><table class="table"><thead><tr><th>Team</th><th>Status</th><th>Active now</th><th>Last 7 days</th><th>Cost this month, of budget</th><th>Open errors</th><th>Last test</th></tr></thead>
       <tbody>${ts.map(row).join("")}</tbody></table></div>
-    ${TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""}</div>`;
+    ${TEAM_ADMIN?.admin ? `<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""}</div>`;
 }
 // The Settings sections: what the team gets, each with its config key in gray, then the record editor.
 function teamSettingsHtml(t) {
@@ -2218,7 +2221,7 @@ function rtRow(r) {
     <div><b>${n}</b> ${rtState(r)}</div>
     ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", d.channel ? `<span class="mono">${esc(d.channel)}</span>` : "none, History only")}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
     ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last, d))}
-    <div class="acts2" style="margin-top:var(--s1)">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
+    <div class="acts2">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
       ${r.live ? b("stop", "Stop run") : ""}${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}${b("hist", RT.hist?.[r.id] ? "Hide history" : "History")}</div>
     ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : RT.histErr?.[r.id] ? `<p class="unknown">Runs did not load: ${esc(RT.histErr[r.id])} <button data-rt-act="hist" data-rt-id="${r.id}">Retry</button></p>` : RT.histLoading === r.id ? `<p class="empty">loading runs…</p>` : ""}</div>`;
 }
@@ -2243,7 +2246,7 @@ function routineListHtml(t, now) {
   // The oldest heartbeat of the envs these routines use: a fresh dev tick does not hide a live one that stopped.
   const L = RT.list ?? [], tick = L.some(r => r.tick == null) ? null : Math.min(...L.map(r => r.tick)), age = tick == null ? null : Math.max(0, Math.round(now - tick));
   const stale = L.length && (age == null || age > RT_STALE_S)
-    ? `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
+    ? `<div class="alert warn"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
   if (!L.length) return `<div data-routine-list>${stale}<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p></div>`;
   const sum = RTSUM?.routines ?? {}, show = RT.show || "all", rows = L.filter(r => show === "all" || (show === "failed" ? rtFailed(r) : !!r.paused)), sel = rtSelected(L);
   const tr = r => { const d = r.data;
@@ -2262,10 +2265,10 @@ function routineForm(t) {
   const f = RT.form, d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
   const locked = tpl?.locked_mode, bad = k => e[k] ? ` aria-invalid="true" aria-describedby="rt-${k}-err"` : "";
   const err = k => e[k] ? `<p class="unknown" id="rt-${k}-err">${esc(e[k])}</p>` : "";
-  const lab = (k, l, input) => `<div style="margin-bottom:var(--s2)"><label for="rt-${k}"><b>${l}</b></label><br>${input}${err(k)}</div>`;
+  const lab = (k, l, input) => `<div class="field"><label for="rt-${k}"><b>${l}</b></label><br>${input}${err(k)}</div>`;
   const opt = (v, l, cur, dis) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${dis ? ` disabled title="${esc(dis)}"` : ""}>${esc(l)}${dis ? ` (${esc(dis)})` : ""}</option>`;
   const modeOff = m => m === "report" ? "" : locked ? "a security review only reports" : t.read_only ? "this team gets diffs only" : "";
-  return `<div data-routine-form style="margin-top:var(--s3)"><h4>${f.id ? `Edit ${esc(d.name)}` : "New routine"}</h4>
+  return `<div data-routine-form><h4>${f.id ? `Edit ${esc(d.name)}` : "New routine"}</h4>
     ${lab("template", "Template", `<select id="rt-template" data-rt="template"${bad("template")}>${[...(RT.tpls ?? []).map(x => [x.template, x.name]), ["blank", "Blank"]].map(([v, l]) => opt(v, l, d.template)).join("")}</select>`)}
     ${lab("name", "Name", `<input id="rt-name" data-rt="name" maxlength="40" value="${esc(d.name)}"${bad("name")}>`)}
     ${lab("prompt", `Prompt <span class="empty" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, `<textarea id="rt-prompt" data-rt="prompt" rows="8" style="width:100%;box-sizing:border-box"${bad("prompt")}>${esc(d.prompt)}</textarea>`)}
@@ -2279,7 +2282,7 @@ function routineForm(t) {
       <p class="empty">With no channel, nothing posts in Slack and the results show only in History. Invite @fxa-agent to this channel. A team with a private repo, and every security review, needs a private channel that is not shared with another workspace. A private-repo team and a security review on a record team must use one of the team's own channels.</p>`)}
     ${lab("mode", "Output mode", `<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v))).join("")}</select>`)}
     ${lab("max_usd", "Cost limit for each run, USD", `<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${esc(d.max_usd)}"${bad("max_usd")}>`)}
-    <div style="margin-bottom:var(--s2)"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
+    <div class="field"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
     <div class="acts2"><button data-rt-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Create"}</button><button data-rt-cancel>Cancel</button></div></div>`;
 }
 function routinesGroup(t, now) {
@@ -2289,7 +2292,7 @@ function routinesGroup(t, now) {
   return `<div data-routines><h4>Routines</h4>${off}${RT.err ? `<p class="unknown">${esc(RT.err)}</p>` : ""}
     <p role="status" data-rt-msg tabindex="-1" class="${RT.ok === false ? "unknown" : "empty"}">${esc(RT.msg || "")}</p>
     ${routineListHtml(t, now)}
-    ${RT.form ? routineForm(t) : `<div class="acts2" style="margin-top:var(--s2)"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
+    ${RT.form ? routineForm(t) : `<div class="acts2"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
 }
 // An open form the admin changed stays as it is: a poll repaints only the routine list. True when it did.
 function rtKeepForm(el, t) {
@@ -2430,8 +2433,8 @@ function renderStats() {
   const spendTab = STATS_TAB === "spend";
   const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => `<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${esc(sfLabel(f))} ×</button>`).join("");
   put("s-stats", (SF_FROM_OV ? `<div class="sfov" role="status">Filters set from Overview are not saved. <button type="button" class="linkbtn" data-sfrestore>Restore my filters</button> · <button type="button" class="linkbtn" data-sfkeep>Keep these</button></div>` : "") + `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2>${chips ? `<span class="fchips">${chips}</span>` : ""}</div>
-    ${STATS_TAB === "runners" ? `<div class="charts" style="margin-top:var(--s3)">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts" style="margin-top:var(--s3)">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
-    ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox" style="margin-top:var(--s4)">Nothing matches these filters.</div>` : `
+    ${STATS_TAB === "runners" ? `<div class="charts">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
+    ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox">Nothing matches these filters.</div>` : `
     <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
       ${kpi("Tickets and conversations", keys.size, work.length ? `up to ${Math.max(...group(conv).filter(g => g.rs[0].src !== "pass").map(g => g.rs.length))} runs on one${over.length ? ` · passes and triage left out` : ""}` : "&nbsp;")}
       ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
@@ -2468,7 +2471,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
   // A PR opened before the range and merged in it still counts as merged here, as on Overview.
   const shown = p => (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q));
-  if (!prs.length && !costPerMerged(lo, hi, all.filter(shown), rows).mergedIn.length) return `<div class="emptybox" style="margin-top:var(--s4)">${all.length ? "No PR opened or merged in this range matches these filters." : "No PR list yet."}</div>`;
+  if (!prs.length && !costPerMerged(lo, hi, all.filter(shown), rows).mergedIn.length) return `<div class="emptybox">${all.length ? "No PR opened or merged in this range matches these filters." : "No PR list yet."}</div>`;
   // LLM and the session's runner compute, where it was recorded.
   // A session's PR number counts only in this repo's list: a team repo has its own #123.
   const cost = p => rows.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
@@ -3539,7 +3542,7 @@ function renderSide() {
   const people = VIEW === "sessions" ? [...new Set((AGENTS?.sessions ?? []).map(ownerName).filter(Boolean))].sort() : [];
   const who = people.length ? `<label class="sowner">Person<select id="sowner"><option value="">Everyone</option>${people.map(p => `<option${p === SOWNER ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>` : "";
   side.innerHTML = `<div class="sh"><h2>${esc(name)} <span class="n">${total}</span></h2>
-      <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div>${who}${VIEW === "sessions" && STEAM ? `<button type="button" class="tgl sm" data-steam-clear style="margin-top:var(--s2)">Team: ${esc(teamLabel(STEAM))} ×</button>` : ""}</div>
+      <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div>${who}${VIEW === "sessions" && STEAM ? `<button type="button" class="tgl sm" data-steam-clear>Team: ${esc(teamLabel(STEAM))} ×</button>` : ""}</div>
     <div class="slist2">${groups.map(g => (g.group ? `<h3 class="sgroup">${esc(g.group)}</h3>` : "") + `<ul>${g.items.map(it =>
       `<li><button type="button" class="si" data-id="${esc(it.id)}"${it.id === sel ? ' aria-current="true"' : ""}${it.tip ? ` title="${esc(it.tip)}"` : ""}><span class="dot ${it.d === "live" ? "info live" : it.d === "fix" ? "bad" : it.d}" aria-hidden="true"></span><span class="t">${esc(it.t)}</span>
         <span class="m">${it.m.filter(Boolean).map(esc).join(" · ")}</span></button></li>`).join("")}</ul>`).join("") || `<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
