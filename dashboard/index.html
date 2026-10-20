@@ -946,34 +946,34 @@ function strays() {
 }
 function renderAlerts() {
   const s = SNAP, g = AGENTS, alerts = [], h = s?.health ?? {}, repo = s?.repo ?? "";
-  const add = (cls, subj, what, fix) => alerts.push(`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? `<span class="fix">${esc(fix)}</span>` : ""}</div>`);
+  const add = (cls, subj, what, fix) => alerts.push(html`<div class="alert ${cls}">${subj}<span class="what">${what}</span>${fix ? html`<span class="fix">${fix}</span>` : ""}</div>`);
   const staleFeed = (name, age, every) => age != null && every && age > 3 * every &&
-    add("bad", `<b class="key">${name}</b>`, `feed is ${ago(age).replace(" ago", "")} old, refreshes every ${every}s; the page is showing history`);
+    add("bad", html`<b class="key">${name}</b>`, `feed is ${ago(age).replace(" ago", "")} old, refreshes every ${every}s; the page is showing history`);
   staleFeed("agents", STATE.agents_age_seconds, STATE.agents_interval);
   staleFeed("tickets", STATE.age_seconds, STATE.interval);
-  if (STATE.error) add("bad", `<b class="key">tickets</b>`, esc(STATE.error));
-  if (STATE.agents_error) add("bad", `<b class="key">agents</b>`, esc(STATE.agents_error));
-  if (STATE.stats_error) add("warn", `<b class="key">stats</b>`, esc(STATE.stats_error));
+  if (STATE.error) add("bad", html`<b class="key">tickets</b>`, STATE.error);
+  if (STATE.agents_error) add("bad", html`<b class="key">agents</b>`, STATE.agents_error);
+  if (STATE.stats_error) add("warn", html`<b class="key">stats</b>`, STATE.stats_error);
   else staleFeed("stats", STATE.stats_age_seconds, STATE.stats_interval);
   const sp = h.seconds_since_pass;
-  if (s && (sp == null || sp > 7200)) add("warn", `<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pipeline pass in ${ago(sp).replace(" ago","")}; open PRs get no reconcile, feedback or rebase rounds. Read-only: automation starts from Claude Code`);
-  else if (sp > 1500) add("warn", `<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
-  if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", `<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
-  if (s?.inflight_fetch_failed) add("warn", `<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
+  if (s && (sp == null || sp > 7200)) add("warn", html`<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pipeline pass in ${ago(sp).replace(" ago","")}; open PRs get no reconcile, feedback or rebase rounds. Read-only: automation starts from Claude Code`);
+  else if (sp > 1500) add("warn", html`<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
+  if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", html`<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
+  if (s?.inflight_fetch_failed) add("warn", html`<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
   const { cards, waiting } = merged();
   cards.forEach(t => {
     const a = t.agent || {}, title = t.summary || t.key;
-    const stop = stopName(t.name), k = `<b class="key">${esc(t.key)}</b>`;
+    const stop = stopName(t.name), k = html`<b class="key">${t.key}</b>`;
     // Runner faults a person fixes go to #attn; every feed value is escaped.
-    if (t.base_ok === false) add("bad", k, `${esc(title)} · the sandbox is not on the slot's commit`, stop ? `fxa-sandbox-ctl stop ${stop}` : "");
-    if (a.num_turns === 0) add("bad", k, `${esc(title)} · the goal was rejected: the rendered prompt is over 4000 chars`, "Stop the run, then shorten the ticket and requeue it");
-    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) add("warn", k, `idle ${short(a.idle_seconds)}: ${esc(a.last_tool || a.last_text || "no output")}`);
+    if (t.base_ok === false) add("bad", k, `${title} · the sandbox is not on the slot's commit`, stop ? `fxa-sandbox-ctl stop ${stop}` : "");
+    if (a.num_turns === 0) add("bad", k, `${title} · the goal was rejected: the rendered prompt is over 4000 chars`, "Stop the run, then shorten the ticket and requeue it");
+    else if (t.agent_alive && (a.idle_seconds ?? 0) >= 600) add("warn", k, `idle ${short(a.idle_seconds)}: ${a.last_tool || a.last_text || "no output"}`);
   });
   const stray = new Set(strays());
   (g?.instances ?? []).forEach(v => {
     const run = strayRun(v.name);
-    if (stray.has(v)) add("warn", `<span class="key">${esc(v.name)}</span>`, `${esc(v.state)} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : "");
-    else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", `<span class="key">${esc(v.name)}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
+    if (stray.has(v)) add("warn", html`<span class="key">${v.name}</span>`, `${v.state} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : "");
+    else if (v.max_seconds && v.age_seconds >= v.max_seconds) add("warn", html`<span class="key">${v.name}</span>`, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
   put("attn", alerts.join(""));
 }
@@ -1013,6 +1013,7 @@ const focusKey = html => [...html.matchAll(/data-focus="([^"]*)"[^>]*>([\s\S]*?)
   .concat([...html.matchAll(/class="big">([^<]*)</g)].map(m => m[1])).join("|");
 // extra: a digest of state that sits outside the links (a fault, a status) and must repaint even under focus.
 function putOv(id, html, extra = "") {
+  html = String(html);
   const node = document.getElementById(id); if (!node) return false;
   const a = document.activeElement, f = node.contains(a) ? a.dataset?.focus : null, fk = focusKey(html) + "|" + extra;
   if (f && node.dataset.fk === fk) return false;
@@ -1035,7 +1036,7 @@ function renderOvHead() {
   const f = ovFloor(), hr = STATS?.llm?.hour_usd, llm = typeof hr === "number" && !statsNote() ? ` · LLM ${usd(hr)} in the last hour` : "";
   const live = f.tiles.filter(t => t.kind !== "free" && t.alive), np = live.filter(t => t.kind === "pipe").length, ns = live.length - np, pl = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
   const who = f.unknown || !live.length ? "" : [np && pl(np, "agent"), ns && pl(ns, "session")].filter(Boolean).join(" and ");
-  putOv("ov-head", `<span class="tag run${f.atWork ? " info live" : ""}">${f.unknown ? "?" : f.atWork} at work now${llm}</span>${who ? `<span class="ovwho">${esc(who)}</span>` : ""}<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}|${who}`);
+  putOv("ov-head", html`${tag(`${f.unknown ? "?" : f.atWork} at work now${llm}`, f.atWork ? "info" : "", { run: true, live: f.atWork })}${who ? html`<span class="ovwho">${who}</span>` : ""}<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => html`<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${String(OV_RANGE === k)}">${l}</button>`)}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}|${who}`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"]].forEach(([f, id]) => safeRender(f, id)); loadRuns(); } });
 // Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
@@ -1053,38 +1054,38 @@ function ovSpend(range) {
 }
 function renderOvSpend() {
   const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1], note = statsNote();
-  if (!STATS) return putOv("ov-spend", `<h2>Spend, last ${n}</h2><div class="emptybox">${esc(note ? `Spend unknown: ${note}` : "Loading the stats…")}</div>`);
+  if (!STATS) return putOv("ov-spend", html`<h2>Spend, last ${n}</h2>${emptybox(note ? `Spend unknown: ${note}` : "Loading the stats…")}`);
   const sp = ovSpend(OV_RANGE), W = 600, H = 120, max = Math.max(0.01, ...sp.days.map(d => d.usd)), x = i => sp.days.length > 1 ? i / (sp.days.length - 1) * W : W / 2;
   // Stacked areas, one per source, bottom up in OV_SRC order.
   const base = sp.days.map(() => 0), y = v => (H - v / max * H).toFixed(1);
   const areas = OV_SRC.map(([src, col]) => {
     const top = sp.days.map((d, i) => base[i] + (d.by[src] ?? 0)), pts = top.map((v, i) => `${x(i).toFixed(1)},${y(v)}`), bot = base.map((v, i) => `${x(i).toFixed(1)},${y(v)}`).reverse();
     top.forEach((v, i) => { base[i] = v; });
-    return `<polygon points="${pts.concat(bot).join(" ")}" fill="${col}" fill-opacity=".55" stroke="${col}" stroke-width="1"/>`; }).join("");
+    return html`<polygon points="${pts.concat(bot).join(" ")}" fill="${col}" fill-opacity=".55" stroke="${col}" stroke-width="1"/>`; });
   const pk = sp.peak, pi = pk ? sp.days.indexOf(pk) : -1, prsFresh = STATS.prs != null && !(STATS.prs_at && Date.now() / 1000 - STATS.prs_at > 1800);
   const pkText = pk ? `Peak ${new Date(pk.t).toLocaleDateString(undefined, { month: "short", day: "numeric" })}: ${usd(pk.usd)}${prsFresh ? `, ${pk.merged} PR${pk.merged === 1 ? "" : "s"} merged that day` : ""}` : "";
-  const leg = OV_SRC.map(([src, col]) => `<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${esc(SF_SRC[src])} ${usd(sp.by[src] ?? 0)}</a>`).join("");
-  putOv("ov-spend", `<h2>Spend, last ${n}${note ? `<span class="note">${esc(note)}</span>` : ""}</h2>
-    ${sp.total === 0 ? `<div class="emptybox">$0.00 · no runs in the last ${n}</div>` : `<a class="tot" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovs-total">${usd(sp.total)}</a>
-    <div class="sub">${usd(sp.perDay)} a day on average${pkText ? ` · ${esc(pkText)}` : ""}</div>
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${areas}${pi >= 0 ? `<line x1="${x(pi)}" x2="${x(pi)}" y1="0" y2="${H}" stroke="var(--faint)" stroke-dasharray="3 3"/>` : ""}</svg>
-    <p class="vh">Spend in the last ${n}: ${usd(sp.total)}, ${OV_SRC.map(([src]) => `${SF_SRC[src]} ${usd(sp.by[src] ?? 0)}`).join(", ")}. ${esc(pkText)}.</p>
+  const leg = OV_SRC.map(([src, col]) => html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${SF_SRC[src]} ${usd(sp.by[src] ?? 0)}</a>`);
+  putOv("ov-spend", html`<h2>Spend, last ${n}${note ? html`<span class="note">${note}</span>` : ""}</h2>
+    ${sp.total === 0 ? emptybox(`$0.00 · no runs in the last ${n}`) : html`<a class="tot" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovs-total">${usd(sp.total)}</a>
+    <div class="sub">${usd(sp.perDay)} a day on average${pkText ? ` · ${pkText}` : ""}</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${areas}${pi >= 0 ? html`<line x1="${x(pi)}" x2="${x(pi)}" y1="0" y2="${H}" stroke="var(--faint)" stroke-dasharray="3 3"/>` : ""}</svg>
+    <p class="vh">Spend in the last ${n}: ${usd(sp.total)}, ${OV_SRC.map(([src]) => `${SF_SRC[src]} ${usd(sp.by[src] ?? 0)}`).join(", ")}. ${pkText}.</p>
     <div class="ovleg">${leg}</div>`}`);
 }
 function renderOvToday() {
   const note = statsNote();
-  if (!STATS) return putOv("ov-today", `<h2 class="overline">Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
+  if (!STATS) return putOv("ov-today", html`<h2 class="overline">Today</h2>${emptybox(note || "Loading the stats…")}`);
   const DAY = 86400000, today = localDay(Date.now()), byDay = new Map(), models = {};
   (STATS.rows ?? []).forEach(r => { const d = localDay((r.ms ?? Date.parse(r.at))); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
   const now = byDay.get(today) ?? 0, past = daysBack(today, 31).slice(1).map(d => byDay.get(d)).filter(v => v > 0).sort((a, b) => a - b);
   const mid = past.length >= 3 ? past.length / 2 : 0, usual = mid ? (past.length % 2 ? past[Math.floor(mid)] : (past[mid - 1] + past[mid]) / 2) : null, pct = usual ? Math.round(now / usual * 100) : null;
   const hr = STATS.llm?.hour_usd, hourOk = typeof hr === "number" && !note, toMid = (today + DAY - Date.now()) / 3600000;
   const C = 2 * Math.PI * 34, arc = usual ? Math.min(1, now / usual) * C : 0;
-  putOv("ov-today", `<h2 class="overline">Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
-    <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="var(--sunk)" stroke-width="8"/>${usual ? `<circle cx="42" cy="42" r="34" fill="none" stroke="var(--info)" stroke-width="8" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/>` : ""}</svg>
+  putOv("ov-today", html`<h2 class="overline">Today<a class="note" href="#stats/spend" data-sfrange="today" data-focus="ovt-open" style="color:var(--link)">Open in Stats</a></h2><div class="ovtoday">
+    <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="34" fill="none" stroke="var(--sunk)" stroke-width="8"/>${usual ? html`<circle cx="42" cy="42" r="34" fill="none" stroke="var(--info)" stroke-width="8" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/>` : ""}</svg>
     <div><div class="big">${usd(now)}</div><div class="sub">${usual ? `${pct}% of a usual day · Usual day ${usd(usual)}` : "not enough history for a usual day"}</div>
-      <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${esc(note || "the proxy log is not read")}`}</div>
-      <div class="sub">${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, u]) => `${esc(modelName(m))} ${usd(u)}`).join(" · ")}</div></div></div>`);
+      <div class="sub">${hourOk ? `LLM, last hour ${usd(hr)} · By midnight about $${Math.round(now + hr * toMid)} at the last hour's rate` : `LLM, last hour unknown: ${note || "the proxy log is not read"}`}</div>
+      <div class="sub">${Object.entries(models).sort((a, b) => b[1] - a[1]).map(([m, u]) => `${modelName(m)} ${usd(u)}`).join(" · ")}</div></div></div>`);
 }
 // On the floor (i356 D5, D35-D37, D41): a row for each pool slot and each live session. A pipeline row
 // takes its stop from its belt row; 'at work' counts only agents that are alive, so a session that waits
@@ -1139,24 +1140,24 @@ function floorHead(f) {
 }
 function renderOvFloor() {
   const f = ovFloor();
-  if (f.unknown) return putOv("ov-floor", `<h2>Running now</h2><div class="emptybox">${!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read."}</div>`);
+  if (f.unknown) return putOv("ov-floor", html`<h2>Running now</h2>${emptybox(!AGENTS ? "Loading the sandboxes…" : f.stale ? `Sandboxes unknown: the agents feed is ${Math.round(STATE.agents_age_seconds / 60)} min old.` : "Sandboxes unknown: the agents feed could not be read.")}`);
   const headTxt = floorHead(f);
   const tile = t => {
     const stop = t.kind === "pipe" ? `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}` : t.kind === "routine" ? "Routine" : "Slack session";
     const name = t.kind === "routine" && !t.title ? "Routine · scheduled run" : t.key, label = `${name}, ${stop}`;
-    const body = `<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${esc(name)}</span><div class="ftt">${esc(plainMd(t.title))}</div></span>`;
-    const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? `<span class="w">waits on ${esc(t.waits)}</span>` : "working";
-    const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).map(esc).join(" · ");
-    const head = `<div class="fth"><span>${esc(t.slot || (t.kind === "pipe" ? "" : t.kind === "routine" ? "Routine" : "Slack"))}${t.team ? `<span class="tag">${esc(t.team)}</span>` : ""}</span></div>`;
-    return `<div class="ft card flat sm ${t.fault ? "bad" : t.alive ? "live" : ""}">${head}${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
-      <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div>${t.out ? `<div class="ftl" title="${esc(plainMd(t.out))}">${esc(plainMd(t.out))}</div>` : ""}</div>`;
+    const body = html`<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${name}</span><div class="ftt">${plainMd(t.title)}</div></span>`;
+    const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? html`<span class="w">waits on ${t.waits}</span>` : "working";
+    const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).join(" · ");
+    const head = html`<div class="fth"><span>${t.slot || (t.kind === "pipe" ? "" : t.kind === "routine" ? "Routine" : "Slack")}${t.team ? tag(t.team) : ""}</span></div>`;
+    return card(html`${head}${t.href ? html`<a href="${t.href}" data-focus="ft-${t.key}" aria-label="${label}">${body}</a>` : html`<div class="ftb">${body}</div>`}
+      <div class="ftm">${status}${meta ? ` · ${meta}` : ""}</div>${t.out ? html`<div class="ftl" title="${plainMd(t.out)}">${plainMd(t.out)}</div>` : ""}`, { flat: true, sm: true, tone: t.fault ? "bad" : "", cls: cls("ft", { live: !t.fault && t.alive }) });
   };
   const busy = f.tiles.filter(t => t.kind !== "free"), idle = f.tiles.filter(t => t.kind === "free"), by = k => idle.filter(t => t.state === k).map(t => t.slot);
   const free = [["free", by("free")], ["held", by("held")], ["slots unknown", by("unknown")]].filter(([, l]) => l.length)
-    .map(([k, l]) => k === "free" ? `${l.length} free: <span class="mono">${esc(slotList(l))}</span>` : `${k}: <span class="mono">${esc(slotList(l))}</span>`).join(" · ");
+    .map(([k, l]) => k === "free" ? html`${l.length} free: <span class="mono">${slotList(l)}</span>` : html`${k}: <span class="mono">${slotList(l)}</span>`).join(" · ");
   const nx = ovNextPass(), last = ovLastRun();
-  const empty = `<div class="emptybox">Nothing runs now${last ? ` · the last run ended ${esc(last)}` : ""}${nx ? ` · next pass ${esc(nx)}` : ""}</div>`;
-  putOv("ov-floor", `<h2>Running now<span class="note">${esc(headTxt)}</span></h2>${busy.length ? `<div class="ovtiles">${busy.map(tile).join("")}</div>` : empty}${free ? `<div class="ovfree">${free}${busy.length && nx ? ` · next pass ${esc(nx)}` : ""}</div>` : ""}`,
+  const empty = emptybox(`Nothing runs now${last ? ` · the last run ended ${last}` : ""}${nx ? ` · next pass ${nx}` : ""}`);
+  putOv("ov-floor", html`<h2>Running now<span class="note">${headTxt}</span></h2>${busy.length ? html`<div class="ovtiles">${busy.map(tile)}</div>` : empty}${free ? html`<div class="ovfree">${raw(free)}${busy.length && nx ? ` · next pass ${nx}` : ""}</div>` : ""}`,
     headTxt + f.tiles.map(t => `${t.kind}:${t.key ?? t.slot}:${t.st ?? ""}:${t.fault ?? ""}:${t.idle ?? ""}:${t.waits ?? ""}:${t.state ?? ""}`).join(","));
 }
 // "fxa-auto-4, 5, 6": a run of slot names with one prefix shows the prefix once.
@@ -1238,14 +1239,14 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
   return out;
 }
 function renderOvSys() {
-  if (!SNAP) return putOv("ov-sys", `<h2>What the system is doing</h2><div class="emptybox">${STATE.error ? `Pipeline unknown: ${esc(STATE.error)}.` : "Loading the pipeline…"}</div>`);
+  if (!SNAP) return putOv("ov-sys", html`<h2>What the system is doing</h2>${emptybox(STATE.error ? `Pipeline unknown: ${STATE.error}.` : "Loading the pipeline…")}`);
   const now = Math.round(Date.now() / 1000), o = ovSys(now), W = 600, x = e => ((e - now) / (12 * 3600) * W).toFixed(1);
-  const row = ([k, v]) => k === "ci" ? `<div class="row">CI watch · ${v.href ? `<a href="${esc(v.href)}" target="_blank" rel="noreferrer" data-focus="ci-${esc(v.n)}">#${esc(v.n)}</a>` : `#${esc(v.n)}`} · checks ${v.done} of ${v.tot} done<div class="meter"><i style="width:${v.pct}%"></i></div></div>`
-    : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
-  const strip = o.ticks.length || o.pins.length ? `<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => `<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`).join("")}${o.ticks.map(e => `<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`).join("")}${o.pins.map(p => `<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${esc(p.name)}</title></circle>`).join("")}</svg>` : "";
-  const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
-  putOv("ov-sys", `<h2>What the system is doing</h2><h3 class="overline">Now</h3>${o.now.map(row).join("")}<div class="row" style="color:var(${o.feedsOld ? "--bad" : "--faint"})">${esc(o.feeds)}</div>
-    <h3 class="overline">Next 12 hours</h3>${strip}${o.next.map(row).join("")}${pins}${o.routines ? `<div class="row" style="color:var(--faint)">${esc(o.routines)}</div>` : ""}`,
+  const row = ([k, v]) => k === "ci" ? html`<div class="row">CI watch · ${v.href ? html`<a href="${v.href}" target="_blank" rel="noreferrer" data-focus="ci-${v.n}">#${v.n}</a>` : `#${v.n}`} · checks ${v.done} of ${v.tot} done${meter(v.pct)}</div>`
+    : html`<div class="row">${k === "w" ? html`<span class="w">${v}</span>` : v}</div>`;
+  const strip = o.ticks.length || o.pins.length ? html`<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => html`<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`)}${o.ticks.map(e => html`<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`)}${o.pins.map(p => html`<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${p.name}</title></circle>`)}</svg>` : "";
+  const pins = o.pins.map(p => html`<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? html`<a href="#teams/${p.team}/routines" data-focus="rt-${p.team}-${p.name}">Routine ${p.name}</a>` : `Routine ${p.name}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`);
+  putOv("ov-sys", html`<h2>What the system is doing</h2><h3 class="overline">Now</h3>${o.now.map(row)}<div class="row" style="color:var(${o.feedsOld ? "--bad" : "--faint"})">${o.feeds}</div>
+    <h3 class="overline">Next 12 hours</h3>${strip}${o.next.map(row)}${pins}${o.routines ? html`<div class="row" style="color:var(--faint)">${o.routines}</div>` : ""}`,
     JSON.stringify([o.now, o.next, o.routines, o.pins, o.ticks.length]));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
@@ -1259,10 +1260,10 @@ function ovNeeds() {
   return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
 }
 function renderOvNeeds() {
-  const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
-    .concat(n.sandbox ? [`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
+  const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => html`<a href="#pipeline/belts" data-focus="need-${p}">${k} for ${p}</a>`)
+    .concat(n.sandbox ? [html`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
   const node = document.getElementById("ov-needs"); if (node) { node.dataset.empty = !n.unknown && !n.total; node.classList.toggle("calm", !!n.unknown); }
-  putOv("ov-needs", `<b>Needs you</b><span class="big">${n.unknown ? "?" : n.total}</span><span class="sub">${n.unknown ? esc(n.unknown) : parts.join(" · ")}</span><a class="go" href="#pipeline/belts" data-focus="need-open">Open the list ›</a>`);
+  putOv("ov-needs", html`<b>Needs you</b><span class="big">${n.unknown ? "?" : n.total}</span><span class="sub">${n.unknown ? n.unknown : raw(parts.join(" · "))}</span><a class="go" href="#pipeline/belts" data-focus="need-open">Open the list ›</a>`);
 }
 // The KPI tiles (O6): each figure in the range, its change against the period of the same length before it, and a
 // small line of its values over the range. Merged and Cost keep the Stats '7 days' window, so each equals Stats PRs.
@@ -1296,7 +1297,7 @@ function spark(vals) {
   const v = vals.map((x, i) => [i, x]).filter(([, x]) => typeof x === "number" && isFinite(x));
   if (v.length < 2) return "";
   const max = Math.max(...v.map(([, x]) => x)), min = Math.min(...v.map(([, x]) => x)), r = max - min || 1;
-  return `<svg viewBox="0 0 72 26" aria-hidden="true"><polyline points="${v.map(([i, x]) => `${(i / (vals.length - 1) * 72).toFixed(1)},${(23 - (x - min) / r * 20).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--info)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  return html`<svg viewBox="0 0 72 26" aria-hidden="true"><polyline points="${v.map(([i, x]) => `${(i / (vals.length - 1) * 72).toFixed(1)},${(23 - (x - min) / r * 20).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--info)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
 }
 function renderOvMini() {
   // Merged in 7 days and its cost per PR: '—' with the reason when the PR list is unread or old (it refreshes every 10 min).
@@ -1304,11 +1305,11 @@ function renderOvMini() {
   const why = !STATS ? "Loading the stats…" : STATS.prs == null ? "the PR list is not read yet" : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at))} old` : "";
   const prsOk = STATS?.prs != null, k = STATS ? ovKpis(OV_RANGE, now) : null, before = `against the ${n} before`;
   const tile = (focus, href, range, lbl, big, kk, how, low, sub) => { const c = kk ? kpiChange(kk, how, low) : { t: "" };
-    const inner = `<div class="lbl">${lbl}</div><div class="vs"><span class="big">${big}</span>${kk ? spark(kk.line) : ""}</div><div class="sub">${c.t ? `<span class="chg ${c.c}">${c.t}</span> ` : ""}${esc(sub)}</div>`;
+    const inner = html`<div class="lbl">${lbl}</div><div class="vs"><span class="big">${big}</span>${kk ? spark(kk.line) : ""}</div><div class="sub">${c.t ? html`<span class="chg ${c.c}">${c.t}</span> ` : ""}${sub}</div>`;
     // No Stats page shows the pipeline-only rate or median, so those tiles open nothing rather than a page that disagrees.
-    return href ? `<a class="ovc card sm ovk" href="${href}" data-sfrange="${range}" data-focus="${focus}">${inner}</a>` : `<div class="ovc card sm ovk" data-focus="${focus}">${inner}</div>`; };
+    return href ? html`<a class="ovc card sm ovk" href="${href}" data-sfrange="${range}" data-focus="${focus}">${inner}</a>` : html`<div class="ovc card sm ovk" data-focus="${focus}">${inner}</div>`; };
   const pct = v => v == null ? "—" : `${Math.round(v * 100)}%`, mins = v => v == null ? "—" : `${Math.round(v)} min`;
-  putOv("ov-mini", `${note ? `<div class="ovknote">${esc(note)}</div>` : ""}
+  putOv("ov-mini", html`${note ? html`<div class="ovknote">${note}</div>` : ""}
     ${tile("ov-spend-k", "#stats/spend", OV_RANGE, `Spend, ${n}`, k ? usd(k.spend.v) : "—", k?.spend, "pct", true, k ? before : "Loading the stats…")}
     ${tile("ov-merged", "#stats/prs", "7d", "Merged, 7 days", prsOk ? k.merged.v : "—", why ? null : k?.merged, "pct", false, why || "PRs merged in 7 days")}
     ${tile("ov-cost", "#stats/prs", "7d", "Cost per merged PR", prsOk && k.cost.v != null ? usd(k.cost.v) : "—", why ? null : k?.cost, "pct", true, why || (k.cost.v == null ? "no PR merged in 7 days" : `${usd(k.cost.spent)} all-in over ${k.merged.v}`))}
@@ -1327,19 +1328,19 @@ function ovTeams(range) {
 }
 function renderOvTeams() {
   const n = OV_RANGES.find(([k]) => k === OV_RANGE)[1];
-  if (!TEAMS) return putOv("ov-teams", `<h2>Teams, last ${n}</h2><div class="emptybox">Loading the teams…</div>`);
+  if (!TEAMS) return putOv("ov-teams", html`<h2>Teams, last ${n}</h2>${emptybox("Loading the teams…")}`);
   // A failed or stale stats feed: the runs, PRs and spend say unknown, as the KPI tiles do.
   const rows = ovTeams(OV_RANGE), note = statsNote(), st = !!STATS && !note;
   const tnote = !TEAMS.error ? "" : rows.length ? `The teams feed failed: ${TEAMS.error}. These rows are from ${ago(Math.round(TEAMS.age_seconds))}.` : `Teams unknown: ${TEAMS.error}.`;
   const row = ({ t, u, now }) => {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
-    const cap = b?.month_cap, bud = `<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? `<span class="meter"><i class="${b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / cap))}%"></i></span>` : ""}`;
-    const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="tag ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
-    return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
+    const cap = b?.month_cap, bud = html`<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? meter(100 * b.month_usd / cap, b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : "") : ""}`;
+    const cells = html`<span class="n"><span>${teamName(t)}</span>${tag(a, cls, { title })}</span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
+    return TEAM_RE.test(t.profile ?? "") ? html`<a class="ovteam" href="#teams/${t.profile}" data-focus="ovteam-${t.profile}" data-team="${t.profile}">${cells}</a>` : html`<div class="ovteam" data-team="${t.profile}">${cells}</div>`;
   };
-  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${[note, tnote].filter(Boolean).map(t => `<div class="ovknote">${esc(t)}</div>`).join("")}
-    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row).join("")}` : TEAMS.error ? "" : `<div class="emptybox">No team.</div>`}`);
+  putOv("ov-teams", html`<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${[note, tnote].filter(Boolean).map(t => html`<div class="ovknote">${t}</div>`)}
+    ${rows.length ? html`<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row)}` : TEAMS.error ? "" : emptybox("No team.")}`);
 }
 // Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
 let RUNS = null, RUNS_ERR = null, RUNS_SEQ = 0;
@@ -1360,13 +1361,13 @@ const RUN_SRC = { pipeline: ["var(--info)", "M4 12l5 5L20 6", "pipeline run"], s
 const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 function runBadge(r) {
   if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
-    return PR_URL_RE.test(r.pr_url ?? "") ? `<a class="tag ${m ? "ok" : "info"}" href="${esc(r.pr_url)}" target="_blank" rel="noreferrer">${txt}</a>` : `<span class="tag ${m ? "ok" : "info"}">${txt}</span>`; }
+    return tag(txt, m ? "ok" : "info", { href: PR_URL_RE.test(r.pr_url ?? "") ? r.pr_url : "" }); }
   const [c, t] = { no_pr: ["", "no change"], failed: ["bad", "failed"], answered: ["ok", "answered"], running: ["info", "running"], done: ["", "done"] }[r.outcome] ?? ["", String(r.outcome ?? "unknown")];
-  return `<span class="tag ${c}">${esc(t)}</span>`;
+  return tag(t, c);
 }
 function renderOvRuns() {
-  if (RUNS_ERR) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Recent runs unavailable: ${esc(RUNS_ERR)}. The next poll tries again.</div>`);
-  if (!RUNS) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Loading the recent runs…</div>`);
+  if (RUNS_ERR) return putOv("ov-runs", html`<h2>Recent runs</h2>${emptybox(`Recent runs unavailable: ${RUNS_ERR}. The next poll tries again.`)}`);
+  if (!RUNS) return putOv("ov-runs", html`<h2>Recent runs</h2>${emptybox("Loading the recent runs…")}`);
   // Today's count from every stats row, not only the runs on this card; passes are the system card's.
   const today = localDay(Date.now()), td = STATS ? (STATS.rows ?? []).filter(r => r.src !== "pass" && localDay((r.ms ?? Date.parse(r.at))) === today) : null;
   const out = r => r.src === "pipeline" ? (r.pr ? "pr" : "no_pr") : "answered", c = k => td.filter(r => out(r) === k).length;
@@ -1375,12 +1376,12 @@ function renderOvRuns() {
   const row = r => {
     const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = (r.ms ?? Date.parse(r.at)), d = new Date(t);
     const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
-    const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
-    return `<div class="ovrun" data-run="${esc(r.key)}"><time datetime="${esc(r.at)}">${esc(when)}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${esc(kind)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
-      <span class="t">${key}${esc(plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : "")))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
-      <span class="d">${r.team ? `<span class="tag">${esc(r.team)}</span>` : ""}<span>${esc(r.kind || kind)}</span></span></div>`;
+    const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? html`<a class="key" href="${href}"${r.src === "pipeline" ? html` target="_blank" rel="noreferrer"` : ""}>${r.key}</a>` : html`<span class="key">${r.key}</span>`;
+    return html`<div class="ovrun" data-run="${r.key}"><time datetime="${r.at}">${when}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${kind}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
+      <span class="t">${key}${plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : ""))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
+      <span class="d">${r.team ? tag(r.team) : ""}<span>${r.kind || kind}</span></span></div>`;
   };
-  putOv("ov-runs", `<h2>Recent runs<span class="note">${esc(sum)}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${RUNS.length ? RUNS.map(row).join("") : `<div class="emptybox">No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.</div>`}`,
+  putOv("ov-runs", html`<h2>Recent runs<span class="note">${sum}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}${RUNS.length ? RUNS.map(row) : emptybox(`No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.`)}`,
     RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(",") + note + sum);
 }
 // The sandbox part moves the focus to the #attn strip on this page.
