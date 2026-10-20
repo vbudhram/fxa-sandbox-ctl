@@ -70,4 +70,12 @@ awk() { rm -f "$PIPE_STATE_DIR/FXA-77.blocked-why"; command awk "$@"; }
 check "a state file removed during the read: no failure, the other key still reads" "0|operator" "$(set -o pipefail; out="$(rf)"; echo "$?|$(jq -r '.["FXA-5"].why.kind' <<< "$out")")"
 unset -f awk
 
+# A conflicted done PR whose relock failed carries the precheck note; one with no such note, and a green one, do not.
+jira_items_in_state() { case "$1" in done) items FXA-7 FXA-8 FXA-9 ;; *) echo '[]' ;; esac; }
+gh_pr_states_json() { echo '[{"key":"FXA-7","mergeable":"CONFLICTING","fail":0},{"key":"FXA-8","mergeable":"CONFLICTING","fail":0},{"key":"FXA-9","mergeable":"MERGEABLE","fail":0}]'; }
+echo "FXA-7 21533 CONFLICT lockfile (relock FAILED; run: relock FXA-7)" > "$PIPE_STATE_DIR/FXA-7.drain-noted"
+echo "FXA-8 21534 CONFLICT" > "$PIPE_STATE_DIR/FXA-8.drain-noted"; echo "relock FAILED" > "$PIPE_STATE_DIR/FXA-9.drain-noted"
+check "a failed relock reaches only its conflicted review row" "true|null|null" \
+  "$(snapshot_json 2>/dev/null | jq -r '[.review[] | .relock_failed] | "\(.[0] | test("relock FAILED"))|\(.[1])|\(.[2])"')"
+
 exit "$fail"

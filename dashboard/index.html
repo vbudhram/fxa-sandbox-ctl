@@ -2779,6 +2779,7 @@ const NEXT_STEP = {
   ci_red: "Nothing to do now: the agent fixes CI on its next pass.",
   changes: "Nothing to do now: the agent answers the review on its next pass.",
   conflicts: "Nothing to do now: the next pass rebases the PR.",
+  relock: "Run fxa-sandbox-ctl relock KEY on the manager: the automatic yarn.lock fix failed, and no pass retries it.",
   infra: "Rerun the failed CI job: the failure is in CI, not in the change.",
   fault: "Read the run's log, then relaunch the ticket or label it blocked.",
   ready: "Nothing to do: the next pass offers it when it reaches the front and a slot is free.",
@@ -2786,7 +2787,7 @@ const NEXT_STEP = {
 };
 const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", operator: "operator",
   jira: "blocked in Jira", other: "other", needs_decision: "needs a decision", underspecified: "underspecified", already_done: "already done",
-  depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", infra: "infra red", fault: "fault" };
+  depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", relock: "relock failed", infra: "infra red", fault: "fault" };
 // The old skip records have no kind: the reason's first words decide, as the Queue tab did.
 const skipKindOf = k => k.kind ?? (k.held_by ? "depends_on" : /^underspecified/i.test(k.reason ?? "") ? "underspecified" : /^already satisfied/i.test(k.reason ?? "") ? "already_done" : "needs_decision");
 const boardAge = s => s == null ? "" : s >= 2 * 86400 ? `${Math.round(s / 86400)}d` : short(s);
@@ -2796,7 +2797,7 @@ function classify(i) {
   const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer",
     operator: "the operator", jira: "the operator", other: "the operator", needs_decision: "the reporter", underspecified: "the reporter",
     already_done: "the operator", infra: "the operator", fault: "the operator", ci_red: "the agent, next pass", changes: "the agent, next pass",
-    conflicts: "the agent, next pass" }[i.kind];
+    conflicts: "the agent, next pass", relock: "the operator" }[i.kind];
   const waitsOn = i.kind === "depends_on" ? (i.held_by ?? null) : null;
   const person = i.column === "blocked" ? (waitsOn ? `waits on ${waitsOn}` : who ?? "the operator") : i.column === "running" && i.fault ? "the operator" : who ?? null;
   // A reporter's answer is in Jira, not a person here (i356 D31): it waits, and Queue still lists it.
@@ -2817,7 +2818,7 @@ function boardItems() {
   (SNAP?.blocked ?? []).forEach(b => { const r = b.blocked_reason ?? { kind: "jira", text: "blocked in Jira", at: null };
     add({ key: b.key, title: b.summary ?? "", column: "blocked", kind: r.kind || "other", why: r.text || (r.kind === "jira" ? "blocked in Jira" : ""), since: r.at ?? null, age: secsSince(r.at) }); });
   (SNAP?.review ?? []).forEach(r => {
-    const kind = r.mergeable === "CONFLICTING" ? "conflicts" : r.fail > 0 ? (r.infra ? "infra" : "ci_red") : r.review === "CHANGES_REQUESTED" ? "changes" : null;
+    const kind = r.mergeable === "CONFLICTING" ? (r.relock_failed ? "relock" : "conflicts") : r.fail > 0 ? (r.infra ? "infra" : "ci_red") : r.review === "CHANGES_REQUESTED" ? "changes" : null;
     if (kind) add({ key: r.key, title: r.title ?? "", column: "blocked", kind, why: kind === "infra" ? `infra red: ${r.infra}` : kind === "ci_red" ? `CI red: ${r.fail} failing` : KIND_LABEL[kind], age: secsSince(r.created), pr: r.pr, belt: true });
     else if (!seen.has(r.key) && r.state !== "MERGED" && r.state !== "CLOSED") { seen.add(r.key); out.push({ key: r.key, column: "review" }); } });
   waiting.forEach(t => add({ key: t.key, title: t.summary ?? "", column: "running", fault: true, kind: "fault", stage: t.stage, why: "no sandbox is up for this run", age: t.elapsed_seconds ?? null }));
@@ -2892,7 +2893,7 @@ function laneRows() {
     let st = 7, kind = "wait", l1 = `Waiting ${d} day${d === 1 ? "" : "s"}`, l2 = r.last_human_review ? `${r.last_human_review.login} reviewed` : "no human review";
     if (r.state === "MERGED") { st = 8; kind = "done"; l1 = "Merged"; l2 = "drain pending"; }
     else if (r.state === "CLOSED") { st = 8; kind = "wait"; l1 = "Closed"; l2 = "not merged"; }
-    else if (r.mergeable === "CONFLICTING") { st = 6; kind = "fix"; l1 = r.fail > 0 && r.infra ? "Conflicts + infra red" : "Conflicts"; l2 = `${d}d open`; }
+    else if (r.mergeable === "CONFLICTING") { st = 6; kind = "fix"; l1 = r.fail > 0 && r.infra ? "Conflicts + infra red" : "Conflicts"; l2 = r.relock_failed ? `relock failed: run relock ${r.key}` : `${d}d open`; }
     else if (r.fail > 0) { st = 6; kind = r.infra ? "warn" : "fix"; l1 = r.infra ? "Infra red" : `${r.fail} failing`; l2 = r.infra ? r.infra : `${d}d open`; }
     else if (r.running > 0) { st = 6; kind = "live"; l1 = `CI ${r.running} running`; }
     else if (r.review === "CHANGES_REQUESTED") { kind = "fix"; l1 = "Changes requested"; }
@@ -2948,7 +2949,7 @@ let OUTSIDE_OPEN = false, BAD_LINK = false;
 const BELT_GROUPS = [["working", "Working now", "an agent runs in a sandbox", "k-live", "No agent works now."], ["needs", "Needs you", "only a person can move these", "k-warn", "Nobody needs to act."],
   ["fixes", "The agent fixes it", "on the next pass", "k-bad", "Nothing for the agent to fix."], ["review", "Waits on review", "oldest first", "k-wait", "No PR waits on review."]];
 // Kinds where something is broken (red), not waiting on a decision (amber).
-const BROKEN = new Set(["stalled", "dead_vm", "attempts", "rounds", "infra", "fault", "ci_red", "conflicts"]);
+const BROKEN = new Set(["stalled", "dead_vm", "attempts", "rounds", "infra", "fault", "ci_red", "conflicts", "relock"]);
 // The belts page: phases closest to the merge first, then who acts. A stop's phase follows LANE_ST.
 const BELT_PHASES = [["PR", "the agent is done; the PR moves to a merge", 5, 8], ["Agent run", "a sandbox works on the ticket", 1, 4], ["Queue", "before a sandbox starts", 0, 0]];
 const BELT_SUBS = [["review", "You", "Review and merge", () => true], ["needs", "You", "Fix it", r => r.tone === "k-bad"], ["needs", "You", "Decide", r => r.tone !== "k-bad"],
