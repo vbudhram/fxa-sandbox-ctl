@@ -95,6 +95,8 @@ to run with `!` instead of trying it first:
 - IAM grants, such as `gcloud secrets add-iam-policy-binding`.
 - Changes to the live bot's access (`ALLOWED_USERS`, `ALLOWED_CHANNELS`) and its restart
   with new tokens.
+  Write such a change to both `../fxa-agent-bot/.env` and `~/.config/fxa/bot.env.base` on the VM:
+  fxa-secrets rebuilds the .env from the base, so a change in the .env alone is lost. `vm.sh status` warns.
 - Printing ssh commands or keys for a person (`vm.sh ssh`).
 - Entering a secret: `vm.sh secret <name>` prompts for it without echo. Run it in a real
   terminal: the `!` prefix has no tty for the hidden prompt.
