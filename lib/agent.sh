@@ -940,7 +940,7 @@ _inject_claude_auth() {
   # the launch script sources and deletes it. No in-VM sudo: after hardening,
   # that channel is unreliable.
   local token_file="$1/.fxa-auto-token" run="${2:-}"
-  ( umask 077; _claude_auth_line "$run" | slot_write "$token_file" )
+  ( set -o pipefail; umask 077; _claude_auth_line "$run" | slot_write "$token_file" ) || { rm -f "$token_file"; return 1; }
   echo "  Claude credential written to ${token_file} ($( [ -n "${FXA_LLM_PROXY_URL:-}" ] && [ -n "$run" ] && echo "a run token for the proxy" || { [ -n "${ANTHROPIC_API_KEY:-}" ] && echo "API key"; } || echo "setup-token"))."
 }
 
@@ -1166,8 +1166,10 @@ agent_run() {
       "${workspace_dir}/.fxa-jira-context.md" "${workspace_dir}/.fxa-auto-done.json" "${workspace_dir}/.fxa-auto-token"
   fi
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
-    _put_run_files "$name" "$workspace_dir" || { rm -f "$launching"; vm_delete "$name"; return 1; }
+    _put_run_files "$name" "$workspace_dir" || { rm -f "$launching" "${workspace_dir}/.fxa-auto-token" "${workspace_dir}/.fxa-auto-codex-auth.json"; vm_delete "$name"; return 1; }
     rm -f "$launching"
+    # The runner has its copy; none stays in plain text in the slot.
+    rm -f "${workspace_dir}/.fxa-auto-token" "${workspace_dir}/.fxa-auto-codex-auth.json"
   fi
   _launch_in_screen "$name"
 
@@ -1264,6 +1266,7 @@ agent_switch() {
 
   if [ "$FXA_VM_BACKEND" = "gce" ]; then
     _put_run_files "$name" "$new_workspace" || return 1
+    rm -f "${new_workspace}/.fxa-auto-token" "${new_workspace}/.fxa-auto-codex-auth.json"
   fi
   _launch_in_screen "$name"
 

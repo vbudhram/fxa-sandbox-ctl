@@ -24,12 +24,11 @@ runtime_setup_config() { _setup_claude_config "$1"; }
 
 runtime_inject_auth() {
   local workspace_dir="$1" run="${2:-}"
-  if _claude_auth_line >/dev/null; then
-    _inject_claude_auth "$workspace_dir" "$run"
-  else
-    echo "NOTE: Set ANTHROPIC_API_KEY (billed per token) or CLAUDE_CODE_OAUTH_TOKEN"
-    echo "      (a subscription's 'claude setup-token') on the host to authenticate agents."
-  fi
+  # With the run name, so a proxy run token needs no raw key in the ctl env. No credential stops the launch.
+  _inject_claude_auth "$workspace_dir" "$run" && return 0
+  echo "NOTE: Set FXA_LLM_PROXY_URL, ANTHROPIC_API_KEY (billed per token) or CLAUDE_CODE_OAUTH_TOKEN"
+  echo "      (a subscription's 'claude setup-token') on the host to authenticate agents."
+  return 1
 }
 
 # `claude -p` takes the prompt as an argument, newlines intact. A TUI paste let
@@ -103,6 +102,8 @@ runtime_prompt_max_chars() { printf '%s' "${FXA_GOAL_MAX_CHARS:-4000}"; }
 # A human attaching to the TUI may need to re-authenticate, so the credential is re-staged.
 runtime_attach_hook() {
   local workspace_dir="$1"
+  # Only a tart mount carries the re-staged file to the runner; elsewhere it would sit on the host.
+  [ "${FXA_VM_BACKEND:-}" = tart ] || return 0
   _claude_auth_line >/dev/null && _inject_claude_auth "$workspace_dir" "${2:-}"
   return 0
 }
