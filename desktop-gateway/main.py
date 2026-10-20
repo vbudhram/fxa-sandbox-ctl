@@ -179,7 +179,7 @@ async def dashboard(request):
     # A browser's cross-site signals pass through, so its CSRF check still works;
     # only the gateway's own origin is dropped, because it is same-site here.
     headers = {"Host": "localhost"}
-    for h in ("Sec-Fetch-Site", "Content-Type"):
+    for h in ("Sec-Fetch-Site", "Content-Type", "If-None-Match"):
         if h in request.headers:
             headers[h] = request.headers[h]
     origin = request.headers.get("Origin")
@@ -191,7 +191,7 @@ async def dashboard(request):
         headers.update({"X-Fxa-User": email, "X-Fxa-Time": ts, "X-Fxa-Sig": sign_user(DASHBOARD_HMAC, email, ts, request.method, request.path)})
     body = await request.read() if request.method == "POST" else None
     async with request.app["http"].request(request.method, f"{MANAGER_URL}{request.path_qs}", headers=headers, data=body) as r:
-        keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-security-policy", "cache-control", "x-content-type-options", "referrer-policy")}
+        keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-security-policy", "cache-control", "x-content-type-options", "referrer-policy", "etag")}
         resp = web.Response(status=r.status, body=await r.read(), headers=keep)
         # The page and its JSON shrink 3-8x; media (png, jpg, mp4, webm) is compressed already.
         if r.content_type in ("text/html", "application/json"):

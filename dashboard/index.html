@@ -1726,7 +1726,7 @@ let STATS_ERR = null;
 async function loadStats() {
   if (STATS && !STATS_ERR && Date.now() - STATS_AT < 60000) { safeRender(renderStats, "s-stats"); return; }
   try {
-    const r = await fetch("/api/stats", { cache:"no-store" }), j = r.ok ? await r.json() : null;
+    const r = await fetch("/api/stats", { cache:"no-cache" }), j = r.ok ? await r.json() : null;
     if (!j || j.error) throw new Error(j?.error || `HTTP ${r.status}`);
     STATS = j; STATS_AT = Date.now(); STATS_ERR = null;
     // Each render filtered the rows by time with about 59,000 Date.parse calls: parse each row once.
@@ -1742,7 +1742,8 @@ async function loadStats() {
 // Errors: every failure the host and the bot recorded, one row per signature.
 // ERRS_ERR: why the last read failed. ERRS keeps the last good list; a failed read is never "No open errors".
 let ERRS = null, ERRS_ALL = false, ERRS_ERR = "";
-const feedRead = async (url) => { try { const r = await fetch(url, { cache:"no-store" }), j = await r.json().catch(() => null);
+// no-cache: the browser revalidates, and an unchanged list comes back as a 304 with no body.
+const feedRead = async (url) => { try { const r = await fetch(url, { cache:"no-cache" }), j = await r.json().catch(() => null);
   return r.ok && Array.isArray(j) ? { rows: j } : { err: j?.error || `HTTP ${r.status}` }; } catch (e) { return { err: e.message || "no answer" }; } };
 async function loadErrors() {
   const got = await feedRead("/api/errors"); ERRS_ERR = got.err ?? ""; if (got.rows) ERRS = got.rows;
