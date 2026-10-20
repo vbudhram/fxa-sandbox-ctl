@@ -47,8 +47,13 @@ alerts_check() {
     "idle runner time in the last 24 h is $(awk -v i="$idle" 'BEGIN { printf "%.1f", i / 3600 }') h, over ${ih} h"
   _alert daily_spend "$(awk -v s="$spend" -v d="$du" 'BEGIN { print (s >= 0.8 * d) }')" \
     "LLM spend in the last 24 h is \$$(awk -v s="$spend" 'BEGIN { printf "%.0f", s }'), at least 80% of FXA_ALERT_DAILY_USD (\$${du})"
+  # The step the slow boots spent most time in, so the alert names the cause (a cold Firecracker host shows as 'starting a runner').
+  local slow; slow="$(jq -r --argjson t "$since" --argjson m "$bs" "$def"' [.[] | select((.booted_at | n) >= $t and (.boot_s | n) > $m)
+    | (.boot_steps | if type == "string" then (fromjson? // []) else (. // []) end)[]? | {step, s: (.s | n)}]
+    | group_by(.step) | map({step: .[0].step, s: (map(.s) | add / length)}) | max_by(.s) // empty
+    | "; the slow boots spend most time in \(.step) (\(.s | floor) s each)"' <<< "$sessions" 2>/dev/null || true)"
   _alert slow_boot "$(awk -v b="$boot" -v m="$bs" 'BEGIN { print (b > m) }')" \
-    "the median boot in the last 24 h is $(awk -v b="$boot" 'BEGIN { printf "%.0f", b }') s, over ${bs} s"
+    "the median boot in the last 24 h is $(awk -v b="$boot" 'BEGIN { printf "%.0f", b }') s, over ${bs} s${slow}"
   _alert capacity "$([ "${cap:-0}" -ge "$cn" ] && echo 1 || echo 0)" \
     "${cap} capacity failures (zone stockouts or the session cap) in the last 24 h"
   # A manager unit in a restart loop or failed: nothing else reads systemd (grafana-iap looped for a week unseen).

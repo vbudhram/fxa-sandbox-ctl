@@ -16,12 +16,13 @@ FXA_SESSION_DIR="$SESSION_DIR" source "$here/session.sh"  # _session_records: th
 now=$(date +%s)
 # 7 h idle in a session stopped an hour ago; three boots with a median of 90 s; $130 of spend.
 echo "{\"key\":\"agent-al01\",\"stopped_at\":\"$(( now - 3600 ))\",\"idle_s\":\"25200\",\"booted_at\":\"$(( now - 9000 ))\",\"boot_s\":\"90\"}" > "$SESSION_DIR/agent-al01.json"
-echo "{\"key\":\"agent-al02\",\"booted_at\":\"$(( now - 600 ))\",\"boot_s\":\"95\"}" > "$SESSION_DIR/agent-al02.json"
+echo "{\"key\":\"agent-al02\",\"booted_at\":\"$(( now - 600 ))\",\"boot_s\":\"95\",\"boot_steps\":[{\"step\":\"starting a runner\",\"s\":44},{\"step\":\"locking down\",\"s\":20}]}" > "$SESSION_DIR/agent-al02.json"
 echo "{\"key\":\"agent-al03\",\"booted_at\":\"$(( now - 600 ))\",\"boot_s\":\"12\"}" > "$SESSION_DIR/agent-al03.json"
 echo "{\"at\":\"$(date -u +%FT%TZ)\",\"usd\":130}" > "$tmp/proxy/usage.jsonl"
 out="$(alerts_check)"
 check "idle, spend and slow boot raise; capacity does not" "1|1|1|0" \
   "$(grep -c '^alert: idle runner' <<< "$out")|$(grep -c '^alert: LLM spend' <<< "$out")|$(grep -c '^alert: the median boot' <<< "$out")|$(grep -c 'capacity' <<< "$out")"
+check "the slow-boot alert names the step the slow boots spent most time in" "1" "$(grep -c "spend most time in starting a runner (44 s each)" <<< "$out")"
 check "a breach that lasts is not raised again" "" "$(alerts_check)"
 rm "$tmp/proxy/usage.jsonl"
 check "spend under the threshold again: resolved" "cleared: daily_spend" "$(alerts_check)"
