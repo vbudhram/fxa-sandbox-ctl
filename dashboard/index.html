@@ -101,7 +101,7 @@
   .wide { grid-column:1/-1; }
   h2 { font:700 var(--t-heading)/1.3 var(--head); margin:0 0 var(--s3); color:var(--ink);
        display:flex; align-items:baseline; gap:var(--s2); }
-  * + h2 { margin-top:var(--s4); }
+  .card * + h2 { margin-top:var(--s4); }
   h2 .n { font-size:var(--t-body); font-weight:700; color:var(--dim); font-variant-numeric:tabular-nums; }
   h2 .note { margin-left:auto; font:400 var(--t-sub) var(--sans); color:var(--faint); text-transform:none; }
   h2 .sub  { font:400 var(--t-sub) var(--sans); color:var(--faint); text-transform:none; }
@@ -266,6 +266,7 @@
   .table td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .table tr:last-child td, .table tr.tot td { border-bottom:0; }
   /* .num right-aligns one cell; .figures right-aligns every column after the first. */
   .table .num, .table.figures :is(th, td):not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .table.dense { font-size:var(--t-label); } .table.dense :is(th, td) { padding:3px 4px; }
   .table tr.sel td { background:var(--infobg); } .table tr.sel td:first-child { box-shadow:inset 3px 0 0 var(--info); }
   .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
   .tbud { min-width:180px; } .tbud .meter { margin-top:4px; }
@@ -426,7 +427,7 @@
   .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .linkbtn:hover:not(:disabled) { background:none; text-decoration:underline; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
   /* Spacing between siblings, set by class, not by inline margins. */
-  * + .acts2, .sh .tgl { margin-top:var(--s2); } .errs + .empty, [data-routine-form], * + .charts { margin-top:var(--s3); } * + .emptybox { margin-top:var(--s4); }
+  * + .acts2, .sh .tgl { margin-top:var(--s2); } .right > .acts2 { margin-top:0; } .errs + .empty, [data-routine-form], * + .charts { margin-top:var(--s3); } #s-stats .emptybox { margin-top:var(--s4); }
   .field, [data-routine-list] > .alert { margin-bottom:var(--s2); }
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
@@ -603,7 +604,7 @@
 @media (max-width:640px) {
   table.rt-hist thead { display: none; }
   table.rt-hist tr { display: block; padding: var(--s1) 0; border-bottom: 1px solid var(--line); }
-  table.rt-hist td { display: block; text-align: left; border: 0; white-space: normal; }
+  .table.figures.rt-hist td { display: block; text-align: left; border: 0; white-space: normal; }
   table.rt-hist td::before { content: attr(data-l) ": "; color: var(--dim); }
 }
 /* Sandboxes list (i407 sb-list-fixes) */
@@ -1468,7 +1469,7 @@ function renderAnswers() {
   const tag = { answered: "ok", upgraded: "info", failed: "bad" };
   const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
-    ${rows.length ? `<div style="overflow-x:auto"><table class="table figures answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
+    ${rows.length ? `<div style="overflow-x:auto"><table class="table figures dense answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
     ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
       return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button type="button" class="linkbtn" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
         <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
@@ -1795,7 +1796,7 @@ function teamEditor(name, isRecord) {
       <span class="mono">${esc(s)}</span><span class="tag ${st === "present" ? "" : "warn"}">${esc(st)}</span>
       <input type="password" autocomplete="off" data-secret-val="${esc(s)}" placeholder="new value" aria-label="New value for ${esc(s)}">
       <button data-tact="secret" data-secret="${esc(s)}">Set</button></div>`).join("")}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
-    ${e.audit ? `<table class="table figures"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
+    ${e.audit ? `<table class="table figures dense"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
@@ -2208,7 +2209,7 @@ function rtLast(x, d) {
 function rtHist(rows) {
   if (!rows.length) return `<p class="empty">No runs yet.</p>`;
   const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
-  return `<table class="table figures rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
+  return `<table class="table figures dense rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
     `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
       ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
       ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", sessHref(x.session) ? `<a class="mono" href="${sessHref(x.session)}">${esc(x.session)}</a>` : esc(x.session || ""))}
@@ -3563,7 +3564,7 @@ function usageTable(rows) {
   if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
   const tr = (r, b) => `<tr${b ? ' class="tot"' : ""}><td>${b ? "<b>Total</b>" : esc(modelName(r.model))}</td><td>${r.calls}</td><td>${tokn(r.cache_read)}</td><td>${tokn(r.cache_write)}</td><td>${tokn(r.input)}</td><td>${tokn(r.output)}</td><td><b>${usd(r.usd)}</b></td></tr>`;
-  return `<table class="table figures"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
+  return `<table class="table figures dense"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
     <tbody>${rows.map(r => tr(r)).join("")}${rows.length > 1 ? tr({ calls: t("calls"), cache_read: t("cache_read"), cache_write: t("cache_write"), input: t("input"), output: t("output"), usd: t("usd") }, true) : ""}</tbody></table>`;
 }
 function usageHtml(key) {
