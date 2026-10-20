@@ -77,5 +77,12 @@ ta="$(bash "$p" '#teams' --fixture "$O" --probe '
   await loadTeams(); renderTeams(); await w(100); window.fetch = real;
   const x = document.getElementById("s-teams").textContent; return /showing data from \d+[smhd] ago/.test(x) && !/ago ago/.test(x)')"
 if [ "$ta" = true ]; then echo "ok   a failed refresh after a good read says the data age once"; else echo "FAIL a failed refresh after a good read says the data age once: got [$ta]"; fail=1; fi
+# The note adds the time since the last read to the server's own data age (10 min here), not the elapsed time alone.
+tg="$(bash "$p" '#teams' --fixture "$O" --probe '
+  const w = ms => new Promise(r => setTimeout(r, ms)); await w(300); const real = window.fetch;
+  window.fetch = (u, o) => String(u).startsWith("/api/teams") ? Promise.resolve(new Response("", { status: 503 })) : real(u, o);
+  TEAMS_AGE0 = 600; await loadTeams(); renderTeams(); await w(100); window.fetch = real;
+  return /showing data from 10m ago/.test(document.getElementById("s-teams").textContent)')"
+if [ "$tg" = true ]; then echo "ok   a failed refresh shows the server's data age plus the time since the read"; else echo "FAIL a failed refresh shows the server's data age plus the time since the read: got [$tg]"; fail=1; fi
 if [ "$tf" = true ]; then echo "ok   a first /api/teams request that fails shows the error on Teams"; else echo "FAIL a first /api/teams request that fails shows the error on Teams: got [$tf]"; fail=1; fi
 exit $fail
