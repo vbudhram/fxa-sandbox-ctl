@@ -22,7 +22,14 @@ FXA_GCE_SSH_KEY="${FXA_GCE_SSH_KEY:-${HOME}/.ssh/fxa-sandbox-gce}"
 _gce() { gcloud --project "$FXA_GCE_PROJECT" --quiet --verbosity=error "$@"; }
 # Each instance remembers the zone it landed in (stockouts move launches
 # between zones), so every per-instance call reads that file, not the default.
-_vm_zone() { cat "${LOG_DIR}/${1#agent-}.zone" 2>/dev/null || printf '%s' "$FXA_GCE_ZONE"; }
+# <instance> is the gce name (vm_name's output). With no zone file (a lost file, a runner another host launched), the instance is found by name, so a
+# delete never asks the default zone and counts its "not found" as done while the VM bills elsewhere.
+_vm_zone() {
+  local f="${LOG_DIR}/${1#agent-}.zone" z
+  cat "$f" 2>/dev/null && return 0
+  z="$(_gce compute instances list --filter "name=$1" --format 'value(zone.basename())' 2>/dev/null | head -1 || true)"
+  if [ -n "$z" ]; then printf '%s' "$z" > "$f" 2>/dev/null || true; printf '%s' "$z"; else printf '%s' "$FXA_GCE_ZONE"; fi
+}
 _gce_zones_csv() { printf '%s' "$FXA_GCE_ZONES" | tr ' ' ','; }
 # _gce_zone instances <verb> <instance> [args]   |   _gce_zone ssh <instance> [args]
 _gce_zone() {

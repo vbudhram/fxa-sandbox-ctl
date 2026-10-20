@@ -1472,8 +1472,10 @@ agent_stop() {
   sleep 2
 
   # The delete decides: on Firecracker it retries a stop that failed, and its error reaches session_stop.
+  # On gce the delete stops the instance itself; a separate stop first only widens the window
+  # (about 2 min) in which a killed process leaves a stopped VM behind.
   local rc=0
-  vm_stop "$name" || true
+  [ "$FXA_VM_BACKEND" = gce ] || vm_stop "$name" || true
   vm_delete "$name" || rc=$?
   rm -rf "${LOG_DIR}/ssh/${name}" "${LOG_DIR}/profiles/${name}"
   # A launch killed during the ship leaves its run tar, which holds the run's credentials and secrets.
