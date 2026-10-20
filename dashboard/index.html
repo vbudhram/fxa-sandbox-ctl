@@ -425,6 +425,7 @@
   .ovtoday { display:flex; gap:var(--s4); align-items:center; } .ovtoday svg { width:84px; height:84px; flex:none; }
   .ovtoday .big { font:700 var(--t-kpi)/1.1 var(--head); font-variant-numeric:tabular-nums; } .ovtoday .sub, #ov-spend .sub { font-size:var(--t-sub); color:var(--faint); }
   .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .linkbtn:hover:not(:disabled) { background:none; text-decoration:underline; }
+  .linkbtn.toggle { color:inherit; font-weight:inherit; text-decoration:underline dotted; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
   /* Spacing between siblings, set by class, not by inline margins. */
   * + .acts2, .sh .tgl { margin-top:var(--s2); } .right > .acts2 { margin-top:0; } .errs + .empty, [data-routine-form], * + .charts { margin-top:var(--s3); } #s-stats .emptybox { margin-top:var(--s4); }
@@ -1471,7 +1472,7 @@ function renderAnswers() {
   put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
     ${rows.length ? `<div style="overflow-x:auto"><table class="table figures dense answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
     ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
-      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button type="button" class="linkbtn" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
+      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button type="button" class="linkbtn toggle" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
         <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
         <td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? `<span class="mono">${esc(r.thread)}</span>` : "—"}</td></tr>
         ${open ? `<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }).join("")}</tbody></table></div>` : `<div class="emptybox">No quick answer in this range.</div>`}`);
@@ -1981,7 +1982,7 @@ function allTeamsHtml() {
   const needs = ts.filter(t => t.load_error || teamNeeds(t)).length, errs = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null, dash = v => v == null ? "—" : v;
   const tile = (l, v, m, cls = "") => `<div class="ttile card flat sm ${cls}"><div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div></div>`;
   const row = t => { const x = use?.[t.profile], w = wk?.[t.profile], st = t.load_error ? ["bad", "did not load"] : t.access?.record && t.access.status !== "active" ? ["bad", t.access.status] : t.read_only ? ["", "read-only"] : ["ok", "active"];
-    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="dot ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
+    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
       <td><span class="tag ${st[0]}">${esc(st[1])}</span></td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
       <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
       <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
