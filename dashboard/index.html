@@ -2634,15 +2634,15 @@ function sbCards() {
   // Before the first stats poll the lines say Loading, as on Overview; a failed or old feed says unknown.
   const g = AGENTS, f = ovFloor(), now = Date.now() / 1000, lo = now - 7 * 86400, loading = !STATS && !STATS_ERR, note = loading ? "" : statsNote() || (STATS ? "" : "the stats feed could not be read"), statsOk = !!STATS && !note;
   const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && (r.ms ?? Date.parse(r.at)) / 1000 >= lo) : [], unk = loading ? "Loading the stats…" : `unknown: ${note.replace(/\.$/, "")}`;
-  const hrs = h => `${+h.toFixed(1)} h`, seg = (cls, t) => `<i class="${cls}" title="${esc(t)}"></i>`;
+  const hrs = h => `${+h.toFixed(1)} h`, seg = (c, t) => html`<i class="${c}" title="${t}"></i>`;
   // Pipeline slots: one segment for each slot.
   const pt = f.unknown ? [] : f.tiles.filter(t => t.kind === "pipe" || t.slot), busy = pt.filter(t => t.kind === "pipe").length;
   const freeN = pt.filter(t => t.state === "free").length, held = pt.filter(t => t.state === "held").length, slotsUnk = pt.some(t => t.state === "unknown");
   const pipeRows = rows.filter(r => r.src === "pipeline"), pipeLine = statsOk ? `7 days: ${pipeRows.length} runs, ${hrs(pipeRows.reduce((n, r) => n + (r.min || 0), 0) / 60)}` : `7 days: ${unk}`;
-  const pipe = f.unknown ? `<div class="big">?</div><div class="sub">Slots unknown: the agents feed is not current.</div>`
-    : `<div class="big">${busy} of ${pt.length} busy</div><div class="sub">${slotsUnk ? "free slots unknown" : `${freeN} free${held ? ` · ${held} held` : ""}`}</div>
-      <div class="sbstrip" role="img" aria-label="${busy} busy, ${slotsUnk ? "free slots unknown" : `${freeN} free, ${held} held`}">${pt.map(t => seg(t.kind === "pipe" ? "busy" : t.state, `${t.slot || t.key}: ${t.kind === "pipe" ? t.key : t.state}`)).join("")}</div>
-      <div class="sub">${esc(pipeLine)}</div><div class="sub">${esc(agentsMore(SNAP?.mode?.newtickets === "off", g))}</div>`;
+  const pipe = f.unknown ? html`<div class="big">?</div><div class="sub">Slots unknown: the agents feed is not current.</div>`
+    : html`<div class="big">${busy} of ${pt.length} busy</div><div class="sub">${slotsUnk ? "free slots unknown" : `${freeN} free${held ? ` · ${held} held` : ""}`}</div>
+      <div class="sbstrip" role="img" aria-label="${busy} busy, ${slotsUnk ? "free slots unknown" : `${freeN} free, ${held} held`}">${pt.map(t => seg(t.kind === "pipe" ? "busy" : t.state, `${t.slot || t.key}: ${t.kind === "pipe" ? t.key : t.state}`))}</div>
+      <div class="sub">${pipeLine}</div><div class="sub">${agentsMore(SNAP?.mode?.newtickets === "off", g)}</div>`;
   // Session slots: session_cap segments; a session on GCE is marked.
   const cap = g?.session_cap, live = (g?.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)), gce = live.filter(x => x.boot_backend === "gce").length;
   const sl = rows.filter(r => r.src === "slack"), boots = sl.map(r => r.boot_s).filter(x => x != null).sort((a, b) => a - b);
@@ -2651,19 +2651,20 @@ function sbCards() {
   const peak = peaks.length ? Math.max(...peaks) : "?";
   const sessLine = statsOk ? `7 days: ${sl.length} sessions, peak ${peak} of ${STATS.load?.cap ?? cap ?? "?"}${boots.length ? ` · boot median ${Math.round(boots[Math.floor(boots.length / 2)])} s` : ""}` : `7 days: ${unk}`;
   const host = f.unknown ? null : sbHostState(g);
-  const sess = f.unknown || cap == null ? `<div class="big">?</div><div class="sub">Session slots unknown: the agents feed is not current.</div>`
-    : `<div class="big">${live.length} of ${cap} busy</div>
-      <div class="sbstrip" role="img" aria-label="${live.length} of ${cap} session slots busy${gce ? `, ${gce} on GCE` : ""}">${Array.from({ length: Math.max(cap, live.length) }, (_, i) => i < live.length ? seg(live[i].boot_backend === "gce" ? "busy gce" : "busy", live[i].boot_backend === "gce" ? "on GCE" : "busy") : seg("free", "free")).join("")}</div>
-      ${gce ? `<div class="sub">${gce} on GCE</div>` : ""}<div class="sub">${esc(sessLine)}</div>${host ? `<div class="sub">${esc(host)}</div>` : ""}`;
+  const sess = f.unknown || cap == null ? html`<div class="big">?</div><div class="sub">Session slots unknown: the agents feed is not current.</div>`
+    : html`<div class="big">${live.length} of ${cap} busy</div>
+      <div class="sbstrip" role="img" aria-label="${live.length} of ${cap} session slots busy${gce ? `, ${gce} on GCE` : ""}">${Array.from({ length: Math.max(cap, live.length) }, (_, i) => i < live.length ? seg(live[i].boot_backend === "gce" ? "busy gce" : "busy", live[i].boot_backend === "gce" ? "on GCE" : "busy") : seg("free", "free"))}</div>
+      ${gce ? html`<div class="sub">${gce} on GCE</div>` : ""}<div class="sub">${sessLine}</div>${host ? html`<div class="sub">${host}</div>` : ""}`;
   // Cost: the manager is always on; the host has a rate only while up, and no 7 day total (no up-time record).
   const mgr = g?.infra?.manager, fc = g?.infra?.firecracker_host, hh = statsOk ? sbHostHours(rows, lo, now) : null;
-  const cost = f.unknown ? `<div class="big">?</div><div class="sub">Cost unknown: the agents feed is not current.</div>`
-    : `<div class="kv"><b>Manager</b> <span>${mgr ? `${usd(mgr)}/h · $${Math.round(mgr * 168)} in 7 days, always on` : "rate not set"}</span></div>
-      ${host ? `<div class="kv"><b>Firecracker host</b> <span>${fc > 0 ? `${usd(fc)}/h while up · up now` : esc(host.replace(/^Firecracker host /, ""))}</span></div>
-        <div class="kv"><b>Host use</b> <span>${hh == null ? esc(unk) : `Sessions used the host ${hrs(hh)} in 7 days`}</span></div>` : ""}
+  const cost = f.unknown ? html`<div class="big">?</div><div class="sub">Cost unknown: the agents feed is not current.</div>`
+    : html`<div class="kv"><b>Manager</b> <span>${mgr ? `${usd(mgr)}/h · $${Math.round(mgr * 168)} in 7 days, always on` : "rate not set"}</span></div>
+      ${host ? html`<div class="kv"><b>Firecracker host</b> <span>${fc > 0 ? `${usd(fc)}/h while up · up now` : host.replace(/^Firecracker host /, "")}</span></div>
+        <div class="kv"><b>Host use</b> <span>${hh == null ? unk : `Sessions used the host ${hrs(hh)} in 7 days`}</span></div>` : ""}
       <div class="kv"><b>GCE sandboxes now</b> <span>${g?.runner_hourly_usd == null ? "?" : `${usd(g.runner_hourly_usd)}/h`}</span></div>
       <div class="sub"><a href="#stats/spend">LLM spend is on Stats ›</a></div>`;
-  return `<div class="ovc card sm sb-card"><div class="lbl">Pipeline slots · GCE</div>${pipe}</div><div class="ovc card sm sb-card"><div class="lbl">Session slots</div>${sess}</div><div class="ovc card sm sb-card"><div class="lbl">Cost</div>${cost}</div>`;
+  const box = (lbl, body) => card(html`<div class="lbl">${lbl}</div>${body}`, { sm: true, cls: "ovc sb-card" });
+  return String(html`${box("Pipeline slots · GCE", pipe)}${box("Session slots", sess)}${box("Cost", cost)}`);
 }
 function renderSbCards() { putOv("sb-cards", sbCards()); }
 function loadCard(l, lo, hi) {
@@ -3357,35 +3358,35 @@ function sbBadge() {
 }
 // The chip: the floor header's words; '? in use' on a failed or stale feed, whatever the snapshot says.
 function renderSbHead() {
-  if (!AGENTS) return put("sb-head", `<span class="tag">Loading…</span>`);
+  if (!AGENTS) return put("sb-head", String(tag("Loading…")));
   const f = floorRows(), bad = f.stale || f.unknown, n = bad ? 0 : f.rows.filter(t => t.kind !== "free").length;
   const txt = bad ? "? in use" : n ? floorHead(f) : "No sandbox in use";
-  put("sb-head", `<span class="tag run${n ? " info live" : ""}">${esc(txt)}</span>`);
+  put("sb-head", String(tag(txt, n ? "info" : "", { run: true, live: !!n })));
 }
 function renderSbList() {
-  if (!AGENTS) return put("sb-list", `<div class="emptybox">Loading…</div>`);
+  if (!AGENTS) return put("sb-list", String(emptybox("Loading…")));
   const r = sbRows(), admin = !!TEAM_ADMIN?.admin, t = TAB || "all";
-  if (r.err) return put("sb-list", `<div class="emptybox">Sandboxes unknown: the agents feed could not be read.</div>`);
-  if (t === "routines" && !admin) return put("sb-list", `<div class="emptybox">Only a team admin can see routine runs.</div>`);
+  if (r.err) return put("sb-list", String(emptybox("Sandboxes unknown: the agents feed could not be read.")));
+  if (t === "routines" && !admin) return put("sb-list", String(emptybox("Only a team admin can see routine runs.")));
   const SRC = { pipeline: "Pipeline", slack: "Slack", routine: "Routine" };
   const whereTxt = x => x.src === "pipeline" ? (x.slot ? `${x.slot} · GCE slot` : x.where === "firecracker" ? "Firecracker" : "GCE") : `session · ${x.where === "gce" ? "GCE" : x.where === "firecracker" ? "Firecracker" : "starting"}`;
   const forTxt = x => x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
-  const fld = (l, v) => v ? `<span class="f"><span class="vh">${l}: </span>${v}</span>` : "";
+  const fld = (l, v) => v ? html`<span class="f"><span class="vh">${l}: </span>${v}</span>` : "";
   const bar = x => { if (x.age == null || !x.cap) return ""; const over = x.age >= x.cap;
-    return `<span class="f tb${over ? " over" : ""}"><span class="vh">Time: </span><span class="meter" aria-hidden="true"><i${over ? ' class="bad"' : ""} style="width:${Math.min(100, Math.round(x.age / x.cap * 100))}%"></i></span>${esc(short(x.age))} of ${esc(short(x.cap))}${over ? " · over cap" : ""}</span>`; };
-  const row = x => `<li class="${x.fix ? "fixr" : x.fault ? "bad" : ""}"${x.id === SEL.runners ? ' aria-current="true"' : ""}><button type="button" data-sbsel="${esc(x.id)}" aria-label="${esc(forTxt(x))}, details">${esc(forTxt(x))}</button>
-    ${fld("What", esc(plainMd(x.title)))}${fld("Now", esc(x.fix ? x.fix.why : x.state))}${fld("Team", x.team ? esc(teamLabel(x.team)) : "")}${fld("Where", esc(whereTxt(x)))}${x.fix ? "" : bar(x)}${fld("LLM cost", x.cost != null ? usd(x.cost) : "")}
-    ${x.fix?.cmd ? `<code>${esc(x.fix.cmd)}</code>` : x.fix?.steps && !r.stale ? `<span class="f steps">${esc(x.fix.steps)}</span>` : ""}</li>`;
+    return html`<span class="${cls("f tb", { over })}"><span class="vh">Time: </span>${meter(x.age / x.cap * 100, over ? "bad" : "")}${short(x.age)} of ${short(x.cap)}${over ? " · over cap" : ""}</span>`; };
+  const row = x => html`<li class="${x.fix ? "fixr" : x.fault ? "bad" : ""}"${x.id === SEL.runners ? html` aria-current="true"` : ""}><button type="button" data-sbsel="${x.id}" aria-label="${forTxt(x)}, details">${forTxt(x)}</button>
+    ${fld("What", plainMd(x.title))}${fld("Now", x.fix ? x.fix.why : x.state)}${fld("Team", x.team ? teamLabel(x.team) : "")}${fld("Where", whereTxt(x))}${x.fix ? "" : bar(x)}${fld("LLM cost", x.cost != null ? usd(x.cost) : "")}
+    ${x.fix?.cmd ? html`<code>${x.fix.cmd}</code>` : x.fix?.steps && !r.stale ? html`<span class="f steps">${x.fix.steps}</span>` : ""}</li>`;
   const live = r.live.filter(sbTabHas), fix = r.fix.filter(sbTabHas), pool = t === "all" || t === "pipeline";
   const none = !(AGENTS.pool ?? []).length && !(AGENTS.free_slots ?? []).length && !r.live.length ? "No sandbox slot is set up, and no Slack session is live." : "No sandbox runs now.";
   // A stale feed keeps its last rows under the warning, with no free line: a free slot may be taken by now.
   const freeLine = r.stale ? "" : [pool && r.free.some(x => !x.held) ? slotList(r.free.filter(x => !x.held).map(x => x.slot)) : "", pool && r.free.some(x => x.held) ? `held for a run in flight: ${r.free.filter(x => x.held).map(x => `${x.slot} (${x.held})`).join(", ")}` : "",
     ...(pool ? r.unknown.map(u => u.why) : []), r.sessionFree != null && (t === "all" || t === "slack") ? `${r.sessionFree} session slot${r.sessionFree === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   const a = STATE.agents_age_seconds, i = STATE.agents_interval;
-  put("sb-list", `${r.stale ? `<p class="sbstale">The agents feed is ${Math.round(a / 60)} min old: these rows may be out of date.</p>` : ""}${live.length ? `<ul class="sbl">${live.map(row).join("")}</ul>` : r.stale ? "" : `<div class="emptybox">${none}</div>`}
-    ${fix.length ? `<h3 class="sbh">Needs a fix · ${fix.length}</h3><ul class="sbl">${fix.map(row).join("")}</ul>` : ""}
-    ${freeLine ? `<h3 class="sbh">Free slots</h3><p class="sbfree">${esc(freeLine)}</p>` : ""}
-    ${a != null ? `<p class="sbage">Agents read ${esc(ago(a))}${i ? ` · the next read in about ${Math.max(0, Math.round(i - a))} s` : ""}</p>` : ""}`);
+  put("sb-list", String(html`${r.stale ? html`<p class="sbstale">The agents feed is ${Math.round(a / 60)} min old: these rows may be out of date.</p>` : ""}${live.length ? html`<ul class="sbl">${live.map(row)}</ul>` : r.stale ? "" : emptybox(none)}
+    ${fix.length ? html`<h3 class="sbh">Needs a fix · ${fix.length}</h3><ul class="sbl">${fix.map(row)}</ul>` : ""}
+    ${freeLine ? html`<h3 class="sbh">Free slots</h3><p class="sbfree">${freeLine}</p>` : ""}
+    ${a != null ? html`<p class="sbage">Agents read ${ago(a)}${i ? ` · the next read in about ${Math.max(0, Math.round(i - a))} s` : ""}</p>` : ""}`));
 }
 // The other slices add renderSbCards and renderSbDone; each part fails alone (i356 D26).
 function renderSb() {
@@ -3568,17 +3569,17 @@ function sideGroups() {
 function renderSide() {
   const side = document.getElementById("side");
   if (VIEW === "overview" || VIEW === "runners") { side.innerHTML = ""; return; }
-  if (VIEW === "stats") { side.innerHTML = `<div class="sh"><h2>Filters</h2></div>${STATS ? statsFilters() : `<div class="sgroup">loading…</div>`}`; return; }
+  if (VIEW === "stats") { side.innerHTML = html`<div class="sh"><h2>Filters</h2></div>${STATS ? raw(statsFilters()) : html`<div class="sgroup">loading…</div>`}`; return; }
   const groups = sideGroups(), total = groups.reduce((n, g) => n + g.items.length, 0), name = VIEWS.find(x => x[0] === VIEW)[1];
   const sel = VIEW === "sessions" ? SESS_SEL || currentSession()?.key : SEL[VIEW];
   const active = document.activeElement?.id === "q";
   const people = VIEW === "sessions" ? [...new Set((AGENTS?.sessions ?? []).map(ownerName).filter(Boolean))].sort() : [];
-  const who = people.length ? `<label class="sowner">Person<select id="sowner"><option value="">Everyone</option>${people.map(p => `<option${p === SOWNER ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></label>` : "";
-  side.innerHTML = `<div class="sh"><h2>${esc(name)} <span class="n">${total}</span></h2>
-      <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div>${who}${VIEW === "sessions" && STEAM ? `<button type="button" class="tgl sm" data-steam-clear>Team: ${esc(teamLabel(STEAM))} ×</button>` : ""}</div>
-    <div class="slist2">${groups.map(g => (g.group ? `<h3 class="sgroup">${esc(g.group)}</h3>` : "") + `<ul>${g.items.map(it =>
-      `<li><button type="button" class="si" data-id="${esc(it.id)}"${it.id === sel ? ' aria-current="true"' : ""}${it.tip ? ` title="${esc(it.tip)}"` : ""}><span class="dot ${it.d === "live" ? "info live" : it.d === "fix" ? "bad" : it.d}" aria-hidden="true"></span><span class="t">${esc(it.t)}</span>
-        <span class="m">${it.m.filter(Boolean).map(esc).join(" · ")}</span></button></li>`).join("")}</ul>`).join("") || `<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
+  const who = people.length ? html`<label class="sowner">Person<select id="sowner"><option value="">Everyone</option>${people.map(p => html`<option${p === SOWNER ? html` selected` : ""}>${p}</option>`)}</select></label>` : "";
+  side.innerHTML = html`<div class="sh"><h2>${name} <span class="n">${total}</span></h2>
+      <div class="search">${raw(svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16))}<input id="q" type="search" placeholder="Search" value="${Q}" aria-label="Search the list">${KEYS ? html`<kbd>/</kbd>` : ""}</div>${who}${VIEW === "sessions" && STEAM ? html`<button type="button" class="tgl sm" data-steam-clear>Team: ${teamLabel(STEAM)} ×</button>` : ""}</div>
+    <div class="slist2">${groups.length ? groups.map(g => html`${g.group ? html`<h3 class="sgroup">${g.group}</h3>` : ""}<ul>${g.items.map(it =>
+      html`<li><button type="button" class="si" data-id="${it.id}"${it.id === sel ? html` aria-current="true"` : ""}${it.tip ? html` title="${it.tip}"` : ""}>${dot(it.d === "live" ? "info" : it.d === "fix" ? "bad" : it.d, it.d === "live")}<span class="t">${it.t}</span>
+        <span class="m">${it.m.filter(Boolean).join(" · ")}</span></button></li>`)}</ul>`) : html`<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
   if (active) { const q = document.getElementById("q"); q.focus(); q.setSelectionRange(Q.length, Q.length); }
 }
 const currentSession = () => { const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)); return list.find(s => s.key === SESS_SEL) || list[0]; };
@@ -3641,18 +3642,18 @@ function sbDetails(id, now = Date.now() / 1000) {
   // Only a known row list clears a selection: before the first agents read, on a failed read, or on a stale feed with no
   // rows, a deep link survives and the last panel stays with a warning.
   if (!r) { if (AGENTS != null && !rs.err && !(rs.stale && !(rs.live?.length || rs.fix?.length))) return null;
-    return `${closeBtn}<p class="na">The agents feed is unknown: this panel may be out of date.</p>${sbDetails.last?.id === id ? sbDetails.last.body : ""}`; }
-  const keep = h => { sbDetails.last = { id, body: h }; return closeBtn + h; };
+    return String(html`${raw(closeBtn)}<p class="na">The agents feed is unknown: this panel may be out of date.</p>${sbDetails.last?.id === id ? raw(sbDetails.last.body) : ""}`); }
+  const keep = h => { sbDetails.last = { id, body: String(h) }; return closeBtn + h; };
   const json = v => { try { return typeof v === "string" ? JSON.parse(v) : v ?? null; } catch { return null; } };
   const n = v => v == null || v === "" || !isFinite(Number(v)) ? null : Number(v);
   const up = n(r.started) != null ? Math.max(0, Math.round(now - n(r.started))) : n(r.age);
-  if (r.fix) return keep(`<h2 class="rh">${esc(r.key || r.slot || id)}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${esc(r.fix.why)}</p>
-    ${r.fix.cmd && !rs.stale ? `<h4>Fix</h4><p><code>${esc(r.fix.cmd)}</code></p>` : r.fix.cmd ? `<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? `<h4>Read first</h4><p>${esc(r.fix.steps)}</p>` : ""}</div>`);
+  if (r.fix) return keep(html`<h2 class="rh">${r.key || r.slot || id}<small>Needs a fix</small></h2><div class="sb-panel"><h4>Why</h4><p>${r.fix.why}</p>
+    ${r.fix.cmd && !rs.stale ? html`<h4>Fix</h4><p><code>${r.fix.cmd}</code></p>` : r.fix.cmd ? html`<p class="na">The agents feed is stale, so no command shows. It shows again when the feed is fresh.</p>` : r.fix.steps ? html`<h4>Read first</h4><p>${r.fix.steps}</p>` : ""}</div>`);
   if (r.src === "pipeline") {
     const cap = n(r.max_seconds), href = KEY_RE.test(r.key || "") ? `#pipeline/belts/${r.key}` : "";
-    return keep(`<h2 class="rh">${href ? `<a href="${href}">${esc(r.key)}</a>` : esc(r.key || "pipeline run")}<small>Pipeline run</small></h2><div class="sb-panel"><h4>Sandbox</h4>
-      ${kvr("Slot", esc(r.slot || "unknown"))}${kvr("Stop", esc(r.state || "unknown"))}${up != null ? kvr("Time", `${short(up)}${cap ? ` of the ${short(cap)} cap` : ""}`) : ""}${n(r.usd) != null ? kvr("Cost", usd(n(r.usd))) : ""}
-      ${r.title ? kvr("Ticket", esc(r.title)) : ""}${TEAM_RE.test(r.team || "") ? kvr("Team", `<a href="#teams/${r.team}">${esc(r.team)}</a>`) : ""}
+    return keep(html`<h2 class="rh">${href ? html`<a href="${href}">${r.key}</a>` : r.key || "pipeline run"}<small>Pipeline run</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+      ${kvRow("Slot", r.slot || "unknown")}${kvRow("Stop", r.state || "unknown")}${up != null ? kvRow("Time", `${short(up)}${cap ? ` of the ${short(cap)} cap` : ""}`) : ""}${n(r.usd) != null ? kvRow("Cost", usd(n(r.usd))) : ""}
+      ${r.title ? kvRow("Ticket", r.title) : ""}${TEAM_RE.test(r.team || "") ? kvRow("Team", html`<a href="#teams/${r.team}">${r.team}</a>`) : ""}
       <p class="na">Boot steps and peak memory are not recorded for pipeline runs.</p></div>`);
   }
   const routine = r.src === "routine" || !!r.routine_run, open = !routine || !!TEAM_ADMIN?.admin;
@@ -3662,14 +3663,14 @@ function sbDetails(id, now = Date.now() / 1000) {
   // The Sessions tab from the session record: the row's state is display text ('working', 'stopping').
   const sk = r.session || r.key, sx = (AGENTS?.sessions ?? []).find(s => s.key === sk);
   const sh = open && sessHref(sk) ? `#sessions/${sx ? sessTabOf(sx) : "stopped"}/${sk}` : "", pr = open ? prHref(r.pr) : "";
-  const team = open && TEAM_RE.test(r.team || "") ? `<a href="#teams/${routine ? "routines/" : ""}${r.team}">${esc(r.team)}</a>` : "";
-  return keep(`<h2 class="rh">${esc(name)}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
-    ${kvr("State", esc(r.state || "unknown"))}${kvr("Where", esc(r.where || "unknown"))}${up != null ? kvr("Up for", `${short(up)}${cap ? ` of ${short(cap)}` : ""}`) : ""}
-    ${n(r.boot_s) != null ? kvr("Boot", `${Math.round(n(r.boot_s))} s${r.where ? ` · ${esc(r.where)}` : ""}`) : kvr("Boot", "not recorded yet", 1)}
-    ${steps.length ? `<ol class="sbsteps">${steps.map(x => `<li><span>${esc(x.step)}</span><b>${n(x.s) != null ? `${n(x.s)} s` : "—"}</b></li>`).join("")}</ol>` : ""}
-    ${peak ? kvr("Peak load, memory, disk", `${esc(peak.load1)} · ${n(peak.mem_mb) != null ? (n(peak.mem_mb) / 1024).toFixed(1) : "?"} GB · ${esc(peak.disk_pct)}%`) : kvr("Peak load, memory, disk", "not recorded yet", 1)}
-    ${team ? kvr("Team", team) : ""}</div>
-    ${sh || pr ? `<div class="sb-panel"><h4>Links</h4>${sh ? `<p><a href="${sh}">Open the session</a></p>` : ""}${pr ? `<p><a href="${esc(pr)}" target="_blank" rel="noopener">${esc(pr.split("/").slice(-3).join("/"))}</a></p>` : ""}</div>` : ""}`);
+  const team = open && TEAM_RE.test(r.team || "") ? html`<a href="#teams/${routine ? "routines/" : ""}${r.team}">${r.team}</a>` : "";
+  return keep(html`<h2 class="rh">${name}<small>${routine ? "Routine run" : "Slack session"}</small></h2><div class="sb-panel"><h4>Sandbox</h4>
+    ${kvRow("State", r.state || "unknown")}${kvRow("Where", r.where || "unknown")}${up != null ? kvRow("Up for", `${short(up)}${cap ? ` of ${short(cap)}` : ""}`) : ""}
+    ${n(r.boot_s) != null ? kvRow("Boot", `${Math.round(n(r.boot_s))} s${r.where ? ` · ${r.where}` : ""}`) : kvRow("Boot", "not recorded yet", 1)}
+    ${steps.length ? html`<ol class="sbsteps">${steps.map(x => html`<li><span>${x.step}</span><b>${n(x.s) != null ? `${n(x.s)} s` : "—"}</b></li>`)}</ol>` : ""}
+    ${peak ? kvRow("Peak load, memory, disk", `${peak.load1} · ${n(peak.mem_mb) != null ? (n(peak.mem_mb) / 1024).toFixed(1) : "?"} GB · ${peak.disk_pct}%`) : kvRow("Peak load, memory, disk", "not recorded yet", 1)}
+    ${team ? kvRow("Team", team) : ""}</div>
+    ${sh || pr ? html`<div class="sb-panel"><h4>Links</h4>${sh ? html`<p><a href="${sh}">Open the session</a></p>` : ""}${pr ? html`<p><a href="${pr}" target="_blank" rel="noopener">${pr.split("/").slice(-3).join("/")}</a></p>` : ""}</div>` : ""}`);
 }
 // A selected row that left the tab (it ended, or the tab changed): clear it, close the drawer, and put the focus in the list.
 function sbClearGone() {
@@ -3679,28 +3680,28 @@ function sbClearGone() {
   renderHeader();
 }
 function renderRight() {
-  const el = document.getElementById("right"); let html = "";
+  const el = document.getElementById("right"); let body = "";
   if (["errors", "lessons"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
-  if (VIEW === "sessions") { const s = currentSession(); if (s) html = sessionDetails(s); }
+  if (VIEW === "sessions") { const s = currentSession(); if (s) body = sessionDetails(s); }
   else if (VIEW === "errors") { const e = (ERRS ?? []).find(x => x.sig === SEL.errors);
-    if (e) html = `${closeBtn}<h2 class="rh">Error<small>${esc(e.sig)}</small></h2><div><h4>Signature</h4>${kvr("Status", esc(e.status))}${kvr("Source", `${esc(e.source)}/${esc(e.kind)}`)}${kvr("Where", esc(e.where))}
-      ${kvr("Seen", `${e.count} times`)}${kvr("First", esc(e.first.slice(0, 16).replace("T", " ")))}${kvr("Last", esc(e.last.slice(0, 16).replace("T", " ")))}${e.keys?.length ? kvr("Sessions", e.keys.map(k => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`).join(" ")) : ""}
-      ${e.log ? kvr("Log", `<span class="mono">${esc(e.log)}</span>`) : ""}${e.resolved ? kvr("Resolved", `${esc(e.resolved.at.slice(0, 10))}${e.resolved.note ? `: ${esc(e.resolved.note)}` : ""}`) : ""}</div>
-      <div><h4>Message</h4><div class="mono" style="overflow-wrap:anywhere">${esc(e.message)}</div></div>
-      <div><h4>Mark it fixed</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl errors resolve ${esc(e.sig)} "&lt;commit or note&gt;"</div></div>`; }
+    if (e) body = String(html`${raw(closeBtn)}<h2 class="rh">Error<small>${e.sig}</small></h2><div><h4>Signature</h4>${kvRow("Status", e.status)}${kvRow("Source", `${e.source}/${e.kind}`)}${kvRow("Where", e.where)}
+      ${kvRow("Seen", `${e.count} times`)}${kvRow("First", e.first.slice(0, 16).replace("T", " "))}${kvRow("Last", e.last.slice(0, 16).replace("T", " "))}${e.keys?.length ? kvRow("Sessions", e.keys.map((k, i) => html`${i ? " " : ""}<a class="mono" href="#sessions/stopped/${k}">${k}</a>`)) : ""}
+      ${e.log ? kvRow("Log", html`<span class="mono">${e.log}</span>`) : ""}${e.resolved ? kvRow("Resolved", `${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}`) : ""}</div>
+      <div><h4>Message</h4><div class="mono" style="overflow-wrap:anywhere">${e.message}</div></div>
+      <div><h4>Mark it fixed</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl errors resolve ${e.sig} "&lt;commit or note&gt;"</div></div>`); }
   else if (VIEW === "lessons") { const l = (LESSONS ?? []).find(x => x.id === SEL.lessons);
-    if (l) html = `${closeBtn}<h2 class="rh">Lesson<small>from ${esc(l.session)}</small></h2><div><h4>Text</h4>${esc(l.text)}</div>${l.why ? `<div><h4>Why</h4>${esc(l.why)}</div>` : ""}
-      <div><h4>Record</h4>${kvr("Status", esc(l.status))}${kvr("Proposed", esc((l.at || "").slice(0, 10)))}${l.decided_at ? kvr("Decided", esc(l.decided_at.slice(0, 10))) : ""}${kvr("Session", `<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a>`)}</div>
-      <p class="empty">Edit, approve or reject it in the list in the middle.</p>`; }
-  else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = `<p class="rempty">This panel did not render: ${esc(e.message)}</p>`; }
-    if (d == null) sbClearGone(); else html = d; }
+    if (l) body = String(html`${raw(closeBtn)}<h2 class="rh">Lesson<small>from ${l.session}</small></h2><div><h4>Text</h4>${l.text}</div>${l.why ? html`<div><h4>Why</h4>${l.why}</div>` : ""}
+      <div><h4>Record</h4>${kvRow("Status", l.status)}${kvRow("Proposed", (l.at || "").slice(0, 10))}${l.decided_at ? kvRow("Decided", l.decided_at.slice(0, 10)) : ""}${kvRow("Session", html`<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a>`)}</div>
+      <p class="empty">Edit, approve or reject it in the list in the middle.</p>`); }
+  else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = String(html`<p class="rempty">This panel did not render: ${e.message}</p>`); }
+    if (d == null) sbClearGone(); else body = d; }
   else if (VIEW === "teams") { renderTeams(); return; }
-  const out = html || `<p class="rempty">Select an item in the list to see its details.</p>`;
+  const out = body || `<p class="rempty">Select an item in the list to see its details.</p>`;
   // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.
   if (VIEW === "pipeline" && el.dataset.h === out) return;
   el.dataset.h = out;
   rtFocus(() => { el.innerHTML = out; });
-  document.body.classList.toggle("noitem", !html && ["sessions", "runners"].includes(VIEW));
+  document.body.classList.toggle("noitem", !body && ["sessions", "runners"].includes(VIEW));
 }
 
 // ── panels, keys, theme ──
@@ -3795,27 +3796,28 @@ function sbDoneRows() {
   return (SB_DONE?.runs ?? []).filter(r => typeof sbTabHas === "function" ? sbTabHas({ ...r, src: r.routine ? "routine" : r.src }) : true).slice(0, 20);
 }
 function renderSbDone() {
-  const h = `<h2>Recently completed</h2>`;
-  if (TAB === "routines" && !TEAM_ADMIN?.admin) return putOv("sb-done", `${h}<div class="emptybox">Only a team admin can see routine runs.</div>`);
-  if (!SB_DONE || SB_DONE.src !== sbDoneSrc()) return putOv("sb-done", `${h}<div class="emptybox">Loading the recent runs…</div>`);
-  if (!SB_DONE.runs) return putOv("sb-done", `${h}<div class="emptybox">Recently completed unknown: ${esc(SB_DONE.err)}. The next poll tries again.</div>`);
-  const rows = sbDoneRows(), today = new Date().toDateString(), na = `<span title="not recorded for pipeline runs">—</span>`;
+  const h = html`<h2>Recently completed</h2>`;
+  if (TAB === "routines" && !TEAM_ADMIN?.admin) return putOv("sb-done", String(html`${h}${emptybox("Only a team admin can see routine runs.")}`));
+  if (!SB_DONE || SB_DONE.src !== sbDoneSrc()) return putOv("sb-done", String(html`${h}${emptybox("Loading the recent runs…")}`));
+  if (!SB_DONE.runs) return putOv("sb-done", String(html`${h}${emptybox(`Recently completed unknown: ${SB_DONE.err}. The next poll tries again.`)}`));
+  const rows = sbDoneRows(), today = new Date().toDateString(), na = html`<span title="not recorded for pipeline runs">—</span>`;
   const note = SB_DONE.err ? `Recently completed may be out of date: ${SB_DONE.err}. These rows are from ${ago(Math.round((Date.now() - SB_DONE.at) / 1000))}; the next poll tries again.` : "";
   const row = r => {
     const d = new Date(r.end * 1000), when = !(r.end > 0) ? "—" : d.toDateString() === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     const pipe = r.src === "pipeline", href = pipe ? jiraHref(r.key) : sessHref(r.key);
-    const key = !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${pipe ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a> ` : `<span class="key">${esc(r.key)}</span> `;
-    const who = r.routine && !r.key ? "Routine · scheduled run" : `${key}${esc(plainMd(r.title || ""))}`;
+    const key = !r.key ? "" : href ? html`<a class="key" href="${href}"${pipe ? html` target="_blank" rel="noreferrer"` : ""}>${r.key}</a> ` : html`<span class="key">${r.key}</span> `;
+    const who = r.routine && !r.key ? "Routine · scheduled run" : html`${key}${plainMd(r.title || "")}`;
     const where = pipe ? "GCE" : { firecracker: "Firecracker", gce: "GCE" }[r.where] ?? "—";
     const mem = Number.isFinite(r.mem_mb) ? `${(r.mem_mb / 1024).toFixed(1)} GB` : "—";
-    const res = `${runBadge(r)}${r.stop && r.outcome !== "pr" ? ` <span class="sbd-stop">${esc(r.stop)}</span>` : ""}`;
+    const res = html`${raw(runBadge(r))}${r.stop && r.outcome !== "pr" ? html` <span class="sbd-stop">${r.stop}</span>` : ""}`;
     // A gated routine run comes with no team and no cost: a dash, not FxA and $0.00.
     const full = r.routine && !r.key ? "Routine · scheduled run" : `${r.key ? `${r.key} ` : ""}${plainMd(r.title || "")}`;
-    return `<tr data-sbdone="${esc(r.key)}"><td>${esc(when)}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for" title="${esc(full)}">${who}</td><td>${r.team ? esc(teamLabel(r.team)) : "—"}</td><td>${where}</td>
+    return html`<tr data-sbdone="${r.key}"><td>${when}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for" title="${full}">${who}</td><td>${r.team ? teamLabel(r.team) : "—"}</td><td>${where}</td>
       <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${r.usd == null ? "—" : usd(r.usd)}</td><td>${res}</td></tr>`;
   };
-  putOv("sb-done", `${h}${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${rows.length ? `<div class="sbd-scroll"><table class="table"><thead><tr><th>Ended</th><th>Source</th><th>For</th><th>Team</th><th>Where</th><th>Boot</th><th>Peak memory</th><th>Time</th><th>LLM cost</th><th>Result</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : `<div class="emptybox">No run has ended yet.</div>`}
-    <div class="sbd-more"><a href="#sessions">All sessions ›</a><a href="#stats">Stats ›</a></div>`, rows.map(r => `${r.key}:${r.end}:${r.outcome}`).join(",") + note);
+  const cols = ["Ended", "Source", "For", "Team", "Where", "Boot", "Peak memory", "Time", "LLM cost", "Result"];
+  putOv("sb-done", String(html`${h}${note ? html`<div class="ovknote">${note}</div>` : ""}${rows.length ? html`<div class="sbd-scroll">${table(cols, rows.map(row))}</div>` : emptybox("No run has ended yet.")}
+    <div class="sbd-more"><a href="#sessions">All sessions ›</a><a href="#stats">Stats ›</a></div>`), rows.map(r => `${r.key}:${r.end}:${r.outcome}`).join(",") + note);
 }
 
 // One section that throws (a snapshot shape no check has) says so in place; the rest of the page still renders.
