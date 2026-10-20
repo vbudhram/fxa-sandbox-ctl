@@ -1,0 +1,54 @@
+{
+ "/api/team-admin": {
+  "user": "admin@example.com",
+  "admin": true
+ },
+ "/api/teams": {
+  "age_seconds": 5,
+  "teams": [
+   {
+    "profile": "example",
+    "label": "Example",
+    "repos": [
+     "example/app"
+    ],
+    "access": {
+     "record": true,
+     "status": "active",
+     "open": false,
+     "users": [
+      "U000EXAMPLE"
+     ]
+    },
+    "test": {
+     "result": null,
+     "at": null,
+     "generation": 3,
+     "tested": 3
+    }
+   }
+  ]
+ },
+ "/api/routines/summary": {
+  "teams": {}
+ },
+ "/api/errors": {
+  "error": "the errors read failed"
+ },
+ "/api/lessons": {
+  "error": "the lessons read failed (TimeoutExpired)"
+ },
+ "/api/stats": {
+  "rows": [
+   {
+    "src": "answer",
+    "key": "ask-t1",
+    "at": "2026-10-19T12:00:00Z",
+    "kind": "answered",
+    "secs": 3,
+    "turns": 1,
+    "usd": 0.01
+   }
+  ]
+ }
+}

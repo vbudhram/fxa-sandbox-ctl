@@ -1091,16 +1091,24 @@ class Handler(BaseHTTPRequestHandler):
                              "access_error": access_err, "age_seconds": age, "error": err,
                              "refreshing": busy, "interval": TEAMS.interval})
         elif path == "/api/lessons":
+            # A failed read says so (503), so the page never shows it as "No pending lessons".
             try:
                 proc = ctl_run(["lessons", "--json"], timeout=15)
-                rows = json.loads(proc.stdout) if proc.returncode == 0 and proc.stdout.strip() else []
-            except Exception:
-                rows = []
+                if proc.returncode != 0:
+                    raise RuntimeError(f"lessons exited {proc.returncode}")
+                rows = json.loads(proc.stdout) if proc.stdout.strip() else []
+            except Exception as e:
+                self._json(503, {"error": f"the lessons read failed ({type(e).__name__})"})
+                return
             # A private team's lessons can quote its code: only a signed team admin sees them (i358).
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
             self._json(200, [r for r in rows if isinstance(r, dict) and (admin or not team_private(r.get("team") or "fxa"))])
         elif path == "/api/errors":
-            self._send(200, cached_ctl(ERRORS, ["errors", "--json"], 20, 20) or "[]", "application/json")
+            body = cached_ctl(ERRORS, ["errors", "--json"], 20, 20)
+            if body is None:  # no read has worked yet: not the same as no errors
+                self._json(503, {"error": "the errors read failed"})
+            else:
+                self._send(200, body, "application/json")
         elif path == "/api/history":
             key = arg("key")
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):

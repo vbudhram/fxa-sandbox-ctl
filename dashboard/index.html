@@ -7,6 +7,7 @@
 <link rel="icon" id="favicon" href="/icon.png">
 <script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
+  button.linkish { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; }
   /* FxA design tokens (libs/shared/assets tailwind.config.js), as fxa-settings applies them. */
   :root {
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px;
@@ -1490,12 +1491,15 @@ function threadUrl(th) {
 function renderAnswers() {
   if (!STATS) { loadStats(); return put("s-sess", `<div class="emptybox">Loading the quick answers…</div>`); }
   const rows = answerRows();
+  // A row's button keeps the focus across each repaint (a poll, a usage read), so a keyboard user can open and close it.
+  const kf = document.activeElement?.dataset?.ansBtn;
+  setTimeout(() => kf && document.querySelector(`button[data-ans-btn="${CSS.escape(kf)}"]`)?.focus());
   const tag = { answered: "ok", upgraded: "info", failed: "bad" };
   const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
     ${rows.length ? `<div style="overflow-x:auto"><table class="usage answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
     ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
-      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer" aria-expanded="${open}"><td>${esc(when(r.at))}</td><td class="mono">${esc(r.key)}</td>
+      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button class="linkish" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
         <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
         <td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? `<span class="mono">${esc(r.thread)}</span>` : "—"}</td></tr>
         ${open ? `<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }).join("")}</tbody></table></div>` : `<div class="emptybox">No quick answer in this range.</div>`}`);
@@ -1732,19 +1736,23 @@ async function loadStats() {
   if (VIEW === "runners") renderSb();   // the cards read the 7 day rows
 }
 // Errors: every failure the host and the bot recorded, one row per signature.
-let ERRS = null, ERRS_ALL = false;
+// ERRS_ERR: why the last read failed. ERRS keeps the last good list; a failed read is never "No open errors".
+let ERRS = null, ERRS_ALL = false, ERRS_ERR = "";
+const feedRead = async (url) => { try { const r = await fetch(url, { cache:"no-store" }), j = await r.json().catch(() => null);
+  return r.ok && Array.isArray(j) ? { rows: j } : { err: j?.error || `HTTP ${r.status}` }; } catch (e) { return { err: e.message || "no answer" }; } };
 async function loadErrors() {
-  try { ERRS = await (await fetch("/api/errors", { cache:"no-store" })).json(); } catch { return; }
+  const got = await feedRead("/api/errors"); ERRS_ERR = got.err ?? ""; if (got.rows) ERRS = got.rows;
   const open = (ERRS || []).filter(e => e.status !== "resolved").length;
-  const b = document.getElementById("n-errors"); b.textContent = open || ""; b.className = "n" + (open ? " bad" : "");
+  const b = document.getElementById("n-errors"); b.textContent = ERRS_ERR ? "?" : open || ""; b.className = "n" + (ERRS_ERR ? " warn" : open ? " bad" : "");
   if (document.body.dataset.view === "errors") { renderErrors(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderErrors() {
-  if (!ERRS) { put("s-errors", head("errors") + `<div class="emptybox">loading…</div>`); return; }
+  const fail = ERRS_ERR ? `<div class="emptybox" role="alert">Could not read the errors: ${esc(ERRS_ERR)}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
+  if (!ERRS || (fail && !ERRS.length)) { put("s-errors", head("errors") + (fail || `<div class="emptybox">loading…</div>`)); return; }
   const rows = ERRS.filter(e => ERRS_ALL || e.status !== "resolved");
   const chip = { open: "bad", reopened: "bad", resolved: "dim" };
   const key = (k) => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`;
-  put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) +
+  put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) + fail +
     (rows.length === 0 ? `<div class="emptybox">No open errors.</div>` : `<div class="errs">${rows.map(e => `<div class="err" id="err-${esc(e.sig)}">
       <span class="chip ${chip[e.status] ?? "dim"}">${esc(e.status)}</span>
       <div class="body"><div class="m">${esc(e.message)}</div>
@@ -1755,19 +1763,20 @@ function renderErrors() {
     <p class="empty" style="margin-top:var(--s3)">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
 }
 // Lessons: what sessions learned. None reaches a runner until it is approved here.
-let LESSONS = null, LESSONS_ALL = false;
+let LESSONS = null, LESSONS_ALL = false, LESSONS_ERR = "";
 async function loadLessons() {
-  try { LESSONS = await (await fetch("/api/lessons", { cache:"no-store" })).json(); } catch { return; }
+  const got = await feedRead("/api/lessons"); LESSONS_ERR = got.err ?? ""; if (got.rows) LESSONS = got.rows;
   const pending = (LESSONS || []).filter(l => l.status === "pending").length;
-  const b = document.getElementById("n-lessons"); b.textContent = pending || ""; b.className = "n" + (pending ? " warn" : "");
+  const b = document.getElementById("n-lessons"); b.textContent = LESSONS_ERR ? "?" : pending || ""; b.className = "n" + (LESSONS_ERR || pending ? " warn" : "");
   if (document.body.dataset.view === "lessons" && !document.activeElement?.closest?.("#s-lessons")) { renderLessons(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderLessons() {
-  if (!LESSONS) { put("s-lessons", head("lessons") + `<div class="emptybox">loading…</div>`); return; }
+  const fail = LESSONS_ERR ? `<div class="emptybox" role="alert">Could not read the lessons: ${esc(LESSONS_ERR)}. Retrying.</div>` : "";
+  if (!LESSONS || (fail && !LESSONS.length)) { put("s-lessons", head("lessons") + (fail || `<div class="emptybox">loading…</div>`)); return; }
   const rows = LESSONS.filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).slice().reverse()
     .sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1));
   const chip = { pending: "warn", approved: "ok", rejected: "dim" };
-  put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") +
+  put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") + fail +
     (rows.length === 0 ? `<div class="emptybox">No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.</div>` : `<div class="errs">${rows.map(l => `<div class="err" data-lesson="${esc(l.id)}">
       <span class="chip ${chip[l.status] ?? "dim"}">${esc(l.status)}</span>
       <div class="body" style="flex:1">${l.status === "pending" ? `<textarea rows="2" maxlength="300" aria-label="Lesson text">${esc(l.text)}</textarea>` : `<div class="m">${esc(l.text)}</div>`}
@@ -3576,12 +3585,14 @@ function usageTable(rows) {
 function usageHtml(key) {
   const u = USAGE[key];
   if (!u || (Date.now() - u.at > 30000 && !u.busy)) loadUsage(key);
+  if (u?.error && !u.rows) return `<div class="empty">Could not read the LLM calls for this run.</div>`;
   return u?.rows ? usageTable(u.rows) : `<div class="empty">Loading…</div>`;
 }
 async function loadUsage(key) {
   USAGE[key] = { ...(USAGE[key] ?? {}), busy: true, at: USAGE[key]?.at ?? 0 };
-  try { const r = await (await fetch(`/api/usage?run=${encodeURIComponent(key)}`, { cache: "no-store" })).json(); USAGE[key] = { at: Date.now(), rows: r.models ?? [] }; }
-  catch { USAGE[key] = { at: Date.now(), rows: USAGE[key]?.rows ?? [] }; }
+  try { const f = await fetch(`/api/usage?run=${encodeURIComponent(key)}`, { cache: "no-store" }); if (!f.ok) throw new Error(f.status);
+    const r = await f.json(); USAGE[key] = { at: Date.now(), rows: r.models ?? [] }; }
+  catch { USAGE[key] = { at: Date.now(), rows: USAGE[key]?.rows, error: true }; }  // a failed read is not "no calls"
   renderRight(); if (ANS_OPEN.has(key)) renderAnswers();
 }
 function sessionDetails(s) {
