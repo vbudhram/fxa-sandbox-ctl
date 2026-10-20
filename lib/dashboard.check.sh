@@ -445,7 +445,7 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
 JS
 rc=$?
 # Sandboxes panel (i407 sb-panel): sbDetails() for a session, a pipeline row, a fix row and a routine row as a non-admin.
-fns="$(sed -n '/^const esc = /p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const sessTabOf = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p; /^function sbClearGone(/,/^}/p' "$page")"
+fns="$(sed -n '/^const esc = /p; /^\/\/ Components:/,/^\/\/ End components\./p; /^const REPO_RE = /p; /^const short = /p; /^const usd = /p; /^const TEAM_RE = /p; /^const rtPr = /p; /^const prHref = /p; /^const sessHref = /p; /^const KEY_RE = /p; /^const LIVE_SESSION = /p; /^const sessTabOf = /p; /^const kvr = /p; /^const closeBtn = /p; /^function sbDetails(/,/^}/p; /^function sbClearGone(/,/^}/p' "$page")"
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 eval(process.argv[1].replace(/^(let|const) /gm, "var "));
