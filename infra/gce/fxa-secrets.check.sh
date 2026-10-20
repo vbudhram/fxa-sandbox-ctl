@@ -38,4 +38,6 @@ check "a failed first read (the GitHub key) also stops it" "1|old pem" "$rc|$(ca
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "with every read, the files hold the new values" "0|v-fxa-slack-bot-token|v-fxa-github-app-key|ANTHROPIC_API_KEY=v-fxa-anthropic-api-key" \
   "$rc|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(cat "$C/github-app.pem")|$(grep '^ANTHROPIC' "$t/home/Desktop/working2/fxa-sandbox-ctl/.env")"
+mv "$C/bot.env.base" "$t/bb"; PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
+check "a .env base that cannot be read stops it before any write" "1|v-fxa-slack-bot-token|B=1" "$( [ "$rc" = 0 ] && echo 0 || echo 1)|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(head -1 "$B")"
 exit "$fail"
