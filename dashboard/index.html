@@ -67,10 +67,13 @@
 
 
   .warnt { color:var(--warn); font-weight:600; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none; }
-  .dot.warn { background:var(--warn); } .dot.dead { background:var(--bad); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad, .dot.dead { background:var(--bad); }
+  .dot.info { background:var(--info); } .dot.done { background:var(--purple); } .dot.dim, .dot.paused { background:var(--faint); }
+  .dot.live { animation:pulse 1.6s ease-in-out infinite; }
+  /* The health dot: 9px, ok unless the status sets warn, dead or paused. */
+  .status .dot { width:9px; height:9px; } .status .dot:not(.warn, .dead, .paused) { background:var(--ok); }
   #health { font-weight:650; color:var(--ok); } #health.warn { color:var(--warn); } #health.dead { color:var(--bad); } #health.paused { color:var(--dim); }
-  .dot.paused { background:var(--faint); }
   /* cta-neutral */
   button { font:600 var(--t-sub) var(--head); color:var(--ink); background:var(--bg);
            border:1px solid var(--line2); border-radius:var(--r-sm); padding:6px var(--s4); cursor:pointer; }
@@ -224,9 +227,7 @@
   .si[aria-current] { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .si[aria-current] .m { color:var(--dim); }
   .si.cur { outline:2px solid var(--link); outline-offset:-2px; }
-  .si .d { width:8px; height:8px; border-radius:50%; background:var(--line2); align-self:center; }
-  .si .d.live { background:var(--info); animation:pulse 2s infinite; }
-  .si .d.bad, .si .d.fix { background:var(--bad); } .si .d.warn { background:var(--warn); } .si .d.ok { background:var(--ok); }
+  .si .dot { align-self:center; }
   @keyframes pulse { 50% { opacity:.4; } }
   .si .t { font-size:var(--t-body); font-weight:600; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.35; }
   .si .m { grid-column:2; font-size:var(--t-label); color:var(--faint); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -259,14 +260,17 @@
   .tscroll { overflow-x:auto; padding:0; }
   .ttiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .ttile .tl { font-size:var(--t-label); color:var(--dim); } .ttile .tv { font-size:var(--t-head); font-weight:700; font-variant-numeric:tabular-nums; } .ttile .tm { font-size:var(--t-label); font-weight:400; color:var(--dim); }
-  .ttable { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .ttable th { text-align:left; font-size:var(--t-label); color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
-  .ttable td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .ttable tr:last-child td { border-bottom:0; }
-  .ttable .num, .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
+  .table { width:100%; border-collapse:collapse; font-size:var(--t-sub); }
+  .table th { text-align:left; font-size:var(--t-label); font-weight:600; color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
+  .table td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .table tr:last-child td, .table tr.tot td { border-bottom:0; }
+  /* .num right-aligns one cell; .figures right-aligns every column after the first. */
+  .table .num, .table.figures :is(th, td):not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .table tr.sel td { background:var(--infobg); } .table tr.sel td:first-child { box-shadow:inset 3px 0 0 var(--info); }
+  .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
   .tbud { min-width:180px; } .tbud .meter { margin-top:4px; }
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
  
-  .ttable tr.sel td { background:var(--infobg); }
-  #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #sb-done .sbd-scroll { overflow-x:auto; } #sb-done .ttable td { white-space:nowrap; } #sb-done .ttable td.sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } #sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
+  #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } #sb-done .sbd-scroll { overflow-x:auto; } #sb-done .table td { white-space:nowrap; } #sb-done .table td.sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } #sb-done .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .rtshow { display:flex; gap:var(--s1); align-items:center; flex-wrap:wrap; margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-sub); }
   .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
   .tchk { display:flex; gap:var(--s2); align-items:center; }
@@ -423,9 +427,9 @@
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
   .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
-  .slist a { display:flex; flex-direction:column; gap:2px; padding:var(--s3); border-radius:var(--r-md); color:inherit; border-left:3px solid transparent; }
+  .slist a { display:flex; flex-direction:column; gap:2px; padding:var(--s3); border-radius:var(--r-md); color:inherit; }
   .slist a:hover { text-decoration:none; background:var(--bg); }
-  .slist a.on { background:var(--infobg); border-left-color:var(--info); }
+  .slist a.on { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .slist .k { font-family:var(--mono); font-size:var(--t-label); font-weight:700; color:var(--info); display:flex; gap:var(--s2); }
   .slist .k span { margin-left:auto; color:var(--faint); font-family:var(--sans); font-weight:400; }
   .slist .r { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .slist .m { font-size:var(--t-label); color:var(--dim); }
@@ -441,7 +445,6 @@
   .sx .sxt { font-weight:600; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .sx .sxm { color:var(--faint); font-size:var(--t-sub); white-space:nowrap; } .sx .sp { flex:1; }
   .sx .lnk { font-size:var(--t-sub); color:var(--link); white-space:nowrap; } .sx .lnk a { color:var(--link); }
-  .sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--faint); } .sdot.info { background:var(--info); } .sdot.bad { background:var(--bad); } .sdot.done { background:var(--purple); }
   .tgl { border:1px solid transparent; background:transparent; color:var(--faint); padding:4px 8px; border-radius:var(--r-md); font:500 var(--t-sub) var(--sans); }
   .tgl:hover { background:var(--sunk); color:var(--ink); }
   .sxdetails { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s6); padding:var(--s2) 0; border-bottom:1px solid var(--line); font-size:var(--t-sub); color:var(--dim); }
@@ -452,7 +455,7 @@
   .withlist.withterm .sxbody { grid-template-columns:220px minmax(0,1fr) minmax(360px,40%); }
   @media (max-width:1200px) { .sxbody, .withlist .sxbody, .withterm .sxbody, .withlist.withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { order:-1; position:static; } }
   .sx .slist { border-right:1px solid var(--line); padding:var(--s3) var(--s2) 0 0; max-height:calc(100vh - 170px); overflow:auto; display:flex; flex-direction:column; gap:2px; }
-  .sx .slist a { padding:var(--s2); border-left-width:2px; }
+  .sx .slist a { padding:var(--s2); }
   .sx .slist .k { display:block; font-size:var(--t-tiny); } .sx .slist .k span { display:block; margin:0; font-size:var(--t-tiny); }
   .sx .slist .r { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; font-size:var(--t-sub); line-height:1.35; }
   .md.clip { max-height:240px; overflow:hidden; position:relative; }
@@ -525,7 +528,6 @@
   /* Belts v2: one list in four groups. The tone of a row colours its current stop and its state. */
   .bhead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; margin-bottom:var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .bhead .now { color:var(--info); font-weight:650; display:inline-flex; align-items:center; gap:6px; }
-  .bhead .now i { width:8px; height:8px; border-radius:50%; background:var(--info); } .bhead .now i.live { animation:bpulse 1.6s infinite; }
   @keyframes bpulse { 50% { opacity:.35; } }
   .bwrap { background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md); }
   .bgrid { display:grid; grid-template-columns:minmax(160px,280px) minmax(0,1fr) minmax(120px,220px) 44px; gap:var(--s3); align-items:center; padding:0 var(--s3); }
@@ -567,8 +569,7 @@
   .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
   .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
   .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
-  .dtab { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .dtab th { text-align:left; font-size:var(--t-label); color:var(--dim); font-weight:650; padding:var(--s2); border-bottom:1px solid var(--line); }
-  .dtab td { padding:var(--s2); border-bottom:1px solid var(--sunk); vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
+  .dtab td { vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .bempty { margin:0; padding:4px var(--s3) var(--s3); color:var(--faint); font-size:var(--t-sub); }
@@ -594,11 +595,6 @@
         .sx .sxbar { flex-wrap:wrap; } .sx .sxt { order:-1; flex:1 1 100%; white-space:normal; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
-table.usage { width: 100%; border-collapse: collapse; font-size: var(--t-label); font-variant-numeric: tabular-nums; }
-table.usage th, table.usage td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-table.usage th:first-child, table.usage td:first-child { text-align: left; }
-table.usage th { font-weight: 600; color: var(--dim); }
-table.usage tr.tot td { border-bottom: 0; }
 /* Routine History at phone width: each run is a stacked block, each value under its label. */
 @media (max-width:640px) {
   table.rt-hist thead { display: none; }
@@ -606,12 +602,11 @@ table.usage tr.tot td { border-bottom: 0; }
   table.rt-hist td { display: block; text-align: left; border: 0; white-space: normal; }
   table.rt-hist td::before { content: attr(data-l) ": "; color: var(--dim); }
 }
-table.usage tr.sel td { background: var(--infobg); }
 /* Sandboxes list (i407 sb-list-fixes) */
 #s-sb #sb-head { margin-bottom:var(--s3); }
 #s-sb #sb-list .sbl { list-style:none; margin:0; padding:0; }
 #s-sb #sb-list .sbl li { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); padding:var(--s2) var(--s2); border-top:1px solid var(--line); font-size:var(--t-sub); min-width:0; }
-#s-sb #sb-list .sbl li[aria-current] { background:var(--sunk); }
+#s-sb #sb-list .sbl li[aria-current] { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
 #s-sb #sb-list .sbl li.fixr { border-left:3px solid var(--warn); }
 #s-sb #sb-list .sbl li.bad > button { color:var(--bad); }
 #s-sb #sb-list .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; }
@@ -1469,7 +1464,7 @@ function renderAnswers() {
   const tag = { answered: "ok", upgraded: "info", failed: "bad" };
   const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
-    ${rows.length ? `<div style="overflow-x:auto"><table class="usage answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
+    ${rows.length ? `<div style="overflow-x:auto"><table class="table figures answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
     ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
       return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button type="button" class="linkbtn" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
         <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
@@ -1518,7 +1513,7 @@ function renderSess() {
     const repo = teamRepo();
     const branch = prHref(sel.pr_url) ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : sel.pr_url ? esc(sel.pr_url)
       : sel.pushed_branch ? (repo ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : esc(sel.pushed_branch)) : "";
-    put("sx-bar", `<span class="sdot ${cls}"></span><span class="key">${esc(sel.key)}</span>
+    put("sx-bar", `<span class="dot ${cls}"></span><span class="key">${esc(sel.key)}</span>
       <span class="sxt" title="${esc(convTitle(sel))}">${esc(convTitle(sel))}</span>
       <span class="sxm">${esc(st)}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
       <span class="sp"></span>
@@ -1796,7 +1791,7 @@ function teamEditor(name, isRecord) {
       <span class="mono">${esc(s)}</span><span class="tag ${st === "present" ? "" : "warn"}">${esc(st)}</span>
       <input type="password" autocomplete="off" data-secret-val="${esc(s)}" placeholder="new value" aria-label="New value for ${esc(s)}">
       <button data-tact="secret" data-secret="${esc(s)}">Set</button></div>`).join("")}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
-    ${e.audit ? `<table class="usage"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
+    ${e.audit ? `<table class="table figures"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
@@ -1979,7 +1974,7 @@ function allTeamsHtml() {
   const needs = ts.filter(t => t.load_error || teamNeeds(t)).length, errs = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null, dash = v => v == null ? "—" : v;
   const tile = (l, v, m, cls = "") => `<div class="ttile card flat sm ${cls}"><div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div></div>`;
   const row = t => { const x = use?.[t.profile], w = wk?.[t.profile], st = t.load_error ? ["bad", "did not load"] : t.access?.record && t.access.status !== "active" ? ["bad", t.access.status] : t.read_only ? ["", "read-only"] : ["ok", "active"];
-    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
+    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="dot ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
       <td><span class="tag ${st[0]}">${esc(st[1])}</span></td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
       <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
       <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
@@ -1988,7 +1983,7 @@ function allTeamsHtml() {
     ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
     <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
       ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
-    <div class="tcard card tscroll"><table class="ttable"><thead><tr><th>Team</th><th>Status</th><th>Active now</th><th>Last 7 days</th><th>Cost this month, of budget</th><th>Open errors</th><th>Last test</th></tr></thead>
+    <div class="tcard card tscroll"><table class="table"><thead><tr><th>Team</th><th>Status</th><th>Active now</th><th>Last 7 days</th><th>Cost this month, of budget</th><th>Open errors</th><th>Last test</th></tr></thead>
       <tbody>${ts.map(row).join("")}</tbody></table></div>
     ${TEAM_ADMIN?.admin ? `<div class="acts2" style="margin-top:var(--s3)"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""}</div>`;
 }
@@ -2209,7 +2204,7 @@ function rtLast(x, d) {
 function rtHist(rows) {
   if (!rows.length) return `<p class="empty">No runs yet.</p>`;
   const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
-  return `<table class="usage rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
+  return `<table class="table figures rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
     `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
       ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
       ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", sessHref(x.session) ? `<a class="mono" href="${sessHref(x.session)}">${esc(x.session)}</a>` : esc(x.session || ""))}
@@ -2258,7 +2253,7 @@ function routineListHtml(t, now) {
       <td class="num">${sum[r.id] ? usd(sum[r.id].cost_30d) : "—"}</td>
       <td><button type="button" class="tsw" data-rt-act="${r.paused ? "resume" : "pause"}" data-rt-id="${r.id}" aria-pressed="${!r.paused}" aria-label="Routine ${esc(d.name)} on"${RT.busy === r.id ? " disabled" : ""}>${r.paused ? "Off" : "On"}</button></td></tr>`; };
   return `<div data-routine-list>${stale}<div class="rtshow" role="group" aria-label="Show">Show ${["all", "failed", "paused"].map(k => `<button type="button" data-rt-show="${k}" aria-pressed="${show === k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
-    <div class="tscroll"><table class="ttable"><thead><tr><th>Name</th><th>Schedule</th><th>Mode</th><th>Channel</th><th>Last run</th><th>Next run</th><th>Cost, 30 days</th><th>On</th></tr></thead>
+    <div class="tscroll"><table class="table"><thead><tr><th>Name</th><th>Schedule</th><th>Mode</th><th>Channel</th><th>Last run</th><th>Next run</th><th>Cost, 30 days</th><th>On</th></tr></thead>
       <tbody>${rows.map(tr).join("") || `<tr><td colspan="8" class="na">No ${show} routines.</td></tr>`}</tbody></table></div>
     ${sel ? `${RT.sel && L.some(r => r.id === RT.sel) ? "" : `<p class="na">${RT.sel ? "The routine from the link is no longer here. " : ""}Showing the routine that ran last. Select a row to see another.</p>`}<div class="tcard card">${rtRow(sel)}</div>` : ""}</div>`;
 }
@@ -3025,7 +3020,7 @@ function beltsHtml(g) {
   const n = beltCount(g), q = x => x == null ? "?" : x, live = g.working.some(r => r.t.agent_alive);
   const counts = LANE_ST.map((_, j) => BELT_GROUPS.reduce((c, [k]) => c + g[k].filter(r => r.st === j).length, 0));
   const old = g.outside.filter(r => r.age >= 3).length;
-  const head = `<div class="bhead"><span class="now"><i class="${live ? "live" : ""}"></i>${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
+  const head = `<div class="bhead"><span class="now"><i class="dot info${live ? " live" : ""}"></i>${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
     <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
   const where = beltWhere(g);
   const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => `<p class="bempty">${name}: ${esc(g.unknown[k])}</p>`).join("");
@@ -3071,7 +3066,7 @@ function doneHtml() {
   if (prs == null) return `<p class="bempty">Could not read merged PRs from GitHub.</p>`;
   if (!rows.length) return `<p class="bempty">No merged ticket yet.</p>`;
   return `<p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${esc(cap)} merged PRs${lbl ? ` labelled ${esc(lbl)}` : ""}, newest first.</p>
-    <div class="tscroll"><table class="dtab"><thead><tr><th scope="col">Ticket</th><th scope="col">Title</th><th scope="col">Merged</th><th scope="col">Days to merge</th><th scope="col">Merged by</th></tr></thead><tbody>
+    <div class="tscroll"><table class="table dtab"><thead><tr><th scope="col">Ticket</th><th scope="col">Title</th><th scope="col">Merged</th><th scope="col">Days to merge</th><th scope="col">Merged by</th></tr></thead><tbody>
     ${rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
       return `<tr><td>${jira(t.key)}${t.pr ? ` ${prl("", t.pr)}` : ""}</td><td>${esc(laneTitle(t.summary).text)}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${esc(r.by || "—")}</td></tr>`; }).join("")}
     </tbody></table></div>`;
@@ -3545,7 +3540,7 @@ function renderSide() {
   side.innerHTML = `<div class="sh"><h2>${esc(name)} <span class="n">${total}</span></h2>
       <div class="search">${svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16)}<input id="q" type="search" placeholder="Search" value="${esc(Q)}" aria-label="Search the list">${KEYS ? "<kbd>/</kbd>" : ""}</div>${who}${VIEW === "sessions" && STEAM ? `<button type="button" class="tgl sm" data-steam-clear style="margin-top:var(--s2)">Team: ${esc(teamLabel(STEAM))} ×</button>` : ""}</div>
     <div class="slist2">${groups.map(g => (g.group ? `<h3 class="sgroup">${esc(g.group)}</h3>` : "") + `<ul>${g.items.map(it =>
-      `<li><button type="button" class="si" data-id="${esc(it.id)}"${it.id === sel ? ' aria-current="true"' : ""}${it.tip ? ` title="${esc(it.tip)}"` : ""}><span class="d ${it.d}" aria-hidden="true"></span><span class="t">${esc(it.t)}</span>
+      `<li><button type="button" class="si" data-id="${esc(it.id)}"${it.id === sel ? ' aria-current="true"' : ""}${it.tip ? ` title="${esc(it.tip)}"` : ""}><span class="dot ${it.d === "live" ? "info live" : it.d === "fix" ? "bad" : it.d}" aria-hidden="true"></span><span class="t">${esc(it.t)}</span>
         <span class="m">${it.m.filter(Boolean).map(esc).join(" · ")}</span></button></li>`).join("")}</ul>`).join("") || `<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
   if (active) { const q = document.getElementById("q"); q.focus(); q.setSelectionRange(Q.length, Q.length); }
 }
@@ -3564,7 +3559,7 @@ function usageTable(rows) {
   if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
   const tr = (r, b) => `<tr${b ? ' class="tot"' : ""}><td>${b ? "<b>Total</b>" : esc(modelName(r.model))}</td><td>${r.calls}</td><td>${tokn(r.cache_read)}</td><td>${tokn(r.cache_write)}</td><td>${tokn(r.input)}</td><td>${tokn(r.output)}</td><td><b>${usd(r.usd)}</b></td></tr>`;
-  return `<table class="usage"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
+  return `<table class="table figures"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
     <tbody>${rows.map(r => tr(r)).join("")}${rows.length > 1 ? tr({ calls: t("calls"), cache_read: t("cache_read"), cache_write: t("cache_write"), input: t("input"), output: t("output"), usd: t("usd") }, true) : ""}</tbody></table>`;
 }
 function usageHtml(key) {
@@ -3782,7 +3777,7 @@ function renderSbDone() {
     return `<tr data-sbdone="${esc(r.key)}"><td>${esc(when)}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for" title="${esc(full)}">${who}</td><td>${r.team ? esc(teamLabel(r.team)) : "—"}</td><td>${where}</td>
       <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${r.usd == null ? "—" : usd(r.usd)}</td><td>${res}</td></tr>`;
   };
-  putOv("sb-done", `${h}${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${rows.length ? `<div class="sbd-scroll"><table class="ttable"><thead><tr><th>Ended</th><th>Source</th><th>For</th><th>Team</th><th>Where</th><th>Boot</th><th>Peak memory</th><th>Time</th><th>LLM cost</th><th>Result</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : `<div class="emptybox">No run has ended yet.</div>`}
+  putOv("sb-done", `${h}${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${rows.length ? `<div class="sbd-scroll"><table class="table"><thead><tr><th>Ended</th><th>Source</th><th>For</th><th>Team</th><th>Where</th><th>Boot</th><th>Peak memory</th><th>Time</th><th>LLM cost</th><th>Result</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : `<div class="emptybox">No run has ended yet.</div>`}
     <div class="sbd-more"><a href="#sessions">All sessions ›</a><a href="#stats">Stats ›</a></div>`, rows.map(r => `${r.key}:${r.end}:${r.outcome}`).join(",") + note);
 }
 
