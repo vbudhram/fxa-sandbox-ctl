@@ -584,6 +584,10 @@
   .k-bad { --tone:var(--bad); --tone-fill:var(--faint); --tone-text:var(--bad); }
   .k-warn { --tone:var(--warn); --tone-fill:var(--faint); --tone-text:var(--warn); }
   .k-wait { --tone:var(--faint); --tone-fill:var(--faint); --tone-text:var(--dim); }
+  .k-ok { --tone:var(--ok); --tone-fill:var(--faint); --tone-text:var(--ok); }
+  .bstops .phs { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); margin-bottom:4px; } .bstops .phs b { margin:0 6px; padding-bottom:2px; border-bottom:2px solid var(--line2); text-align:center; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+  .bsub { margin:0; padding:var(--s2) var(--s3) 2px calc(var(--s3) + 14px); display:flex; align-items:center; gap:6px; font-size:var(--t-label); font-weight:650; color:var(--ink); } .bsub .who { font-size:10px; border:1px solid var(--line2); border-radius:9px; padding:0 7px; color:var(--dim); } .bsub .cnt { color:var(--faint); font-weight:400; }
+  .belt .age.old { color:var(--ink); font-weight:700; }
   .bdet { padding:0 var(--s3) var(--s3); display:flex; flex-direction:column; gap:var(--s2); background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .bdet .blks { display:flex; flex-wrap:wrap; gap:var(--s2); } .bdet .blk { flex:1 1 200px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:var(--panel); }
   .bdet .blk h3 { margin:0; font-size:var(--t-sub); font-weight:700; } .bdet .blk p { margin:2px 0 0; font-size:var(--t-label); line-height:1.45; color:var(--dim); }
@@ -2943,6 +2947,12 @@ function openPrLine() {
 let OUTSIDE_OPEN = false, BAD_LINK = false;
 const BELT_GROUPS = [["working", "Working now", "an agent runs in a sandbox", "k-live", "No agent works now."], ["needs", "Needs you", "only a person can move these", "k-warn", "Nobody needs to act."],
   ["fixes", "The agent fixes it", "on the next pass", "k-bad", "Nothing for the agent to fix."], ["review", "Waits on review", "oldest first", "k-wait", "No PR waits on review."]];
+// Kinds where something is broken (red), not waiting on a decision (amber).
+const BROKEN = new Set(["stalled", "dead_vm", "attempts", "rounds", "infra", "fault", "ci_red", "conflicts"]);
+// The belts page: phases closest to the merge first, then who acts. A stop's phase follows LANE_ST.
+const BELT_PHASES = [["PR", "the agent is done; the PR moves to a merge", 5, 8], ["Agent run", "a sandbox works on the ticket", 1, 4], ["Queue", "before a sandbox starts", 0, 0]];
+const BELT_SUBS = [["review", "You", "Review and merge", () => true], ["needs", "You", "Fix it", r => r.tone === "k-bad"], ["needs", "You", "Decide", r => r.tone !== "k-bad"],
+  ["fixes", "Agent", "The agent fixes it, next pass", () => true], ["working", "Agent", "Working now", () => true]];
 function beltGroups() {
   const items = SNAP ? boardItems() : [], byKey = Object.fromEntries(items.map(i => [i.key, i]));
   const g = { working: [], needs: [], fixes: [], review: [], outside: [] }, placed = new Set();
@@ -2954,16 +2964,16 @@ function beltGroups() {
     if (!i) return;   // a merged or closed review row, a hold or a ready ticket has no belt
     if (i.column === "running") {
       if (i.fault) return add("needs", { ...r, tone: "k-bad" });
-      if (i.ci) return r.t.fail > 0 ? add("fixes", { ...r, tone: "k-bad" }) : add("review", { ...r, tone: "k-wait", l1: r.t.running > 0 ? "CI running" : r.l1 });
+      if (i.ci) return r.t.fail > 0 ? add("fixes", { ...r, tone: "k-bad" }) : add("review", { ...r, tone: r.t.running > 0 ? "k-live" : "k-ok", l1: r.t.running > 0 ? "CI running" : r.l1 });
       const min = Math.round((r.t.elapsed_seconds ?? 0) / 60), a = r.t.agent || {};
       return add("working", { ...r, tone: "k-live", l1: `${LANE_ST[r.st]} · ${min} min`, l2: r.st === 1 ? r.t.detail || "the sandbox boots" : plainMd(a.last_tool || a.last_text || "") || r.l2 });
     }
-    if (i.column === "blocked") return i.group === "act" ? add("needs", { ...r, tone: "k-warn", l2: i.why || r.l2 }) : /^the agent/.test(i.person ?? "") ? add("fixes", { ...r, tone: "k-bad", l2: i.next || r.l2 }) : undefined;
-    if (i.column === "review") add("review", { ...r, tone: r.kind === "warn" ? "k-warn" : "k-wait" });
+    if (i.column === "blocked") return i.group === "act" ? add("needs", { ...r, tone: BROKEN.has(i.kind) ? "k-bad" : "k-warn", l2: i.why || r.l2 }) : /^the agent/.test(i.person ?? "") ? add("fixes", { ...r, tone: "k-bad", l2: i.next || r.l2 }) : undefined;
+    if (i.column === "review") add("review", { ...r, tone: r.kind === "live" ? "k-live" : "k-ok" });
   });
   // Needs you items with no PR or run get a row at the Queue stop, so the group equals boardAct().
   items.filter(i => !placed.has(i.key) && ((i.column === "blocked" && i.group === "act") || (i.column === "running" && i.fault))).forEach(i =>
-    add("needs", { t: { key: i.key, summary: i.title, pr: i.pr }, st: i.column === "running" ? 2 : 0, tone: i.fault ? "k-bad" : "k-warn",
+    add("needs", { t: { key: i.key, summary: i.title, pr: i.pr }, st: i.column === "running" ? 2 : 0, tone: i.fault || BROKEN.has(i.kind) ? "k-bad" : "k-warn",
       l1: i.fault ? "Run fault" : { needs_decision: "Needs a decision", underspecified: "Needs detail", already_done: "Maybe done" }[i.kind] ?? "Blocked", l2: i.why || i.next || "", ageText: boardAge(i.age) }));
   g.review.sort((x, y) => (y.age ?? 0) - (x.age ?? 0));
   // A failed read of the review list or of the in-flight PR states is unknown, never a confident count.
@@ -2982,7 +2992,7 @@ function beltRow(r) {
     <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${esc(t.key)}</span>${t.pr ? `<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
     <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
-    <span class="age">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
+    <span class="age${r.age >= 7 ? " old" : ""}">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
 }
 // The open row's details: four blocks, one main action and the links, each link checked or plain text.
 function beltDetails(r) {
@@ -3026,11 +3036,14 @@ function beltsHtml(g) {
   const old = g.outside.filter(r => r.age >= 3).length;
   const head = `<div class="bhead"><span class="now"><i class="${live ? "live" : ""}"></i>${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
     <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
-  const group = ([k, name, why, tone, empty]) => `<div role="group" aria-labelledby="bg-${k}"><h2 class="bgh ${tone}" id="bg-${k}"><i></i>${name} <span class="cnt">${g.unknown[k] ? "?" : g[k].length}</span><span class="why">${why}</span></h2>
-    ${g.unknown[k] ? `<p class="bempty">${esc(g.unknown[k])}</p>` : g[k].length ? `<ul class="belts">${g[k].map(beltRow).join("")}</ul>` : `<p class="bempty">${empty}</p>`}</div>`;
   const where = beltWhere(g);
-  return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div><span>Status</span><span class="r">Age</span></div>
-    ${BELT_GROUPS.map(group).join("")}
+  const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => `<p class="bempty">${name}: ${esc(g.unknown[k])}</p>`).join("");
+  const sub = ([k, who, name, pick], lo, hi) => { const rs = g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)); return rs.length
+    ? `<div role="group" aria-label="${name}"><h3 class="bsub"><span class="who">${who}</span>${name} <span class="cnt">${rs.length}</span></h3><ul class="belts">${rs.map(beltRow).join("")}</ul></div>` : ""; };
+  const phases = BELT_PHASES.map(([name, why, lo, hi]) => { const body = BELT_SUBS.map(x => sub(x, lo, hi)).join(""); return body
+    ? `<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).join("");
+  return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div><div class="phs"><b style="grid-column:1/2">Queue</b><b style="grid-column:2/6">Agent run</b><b style="grid-column:6/10">PR</b></div><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div><span>Status</span><span class="r">Age</span></div>
+    ${unknown}${phases || (unknown ? "" : `<p class="bempty">Nothing on the belts.</p>`)}
     ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
 }
 function renderLanes() {

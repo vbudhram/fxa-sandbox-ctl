@@ -37,7 +37,7 @@ ck "an old Board link lands on Belts, with a Jira key only" "#pipeline/belts/FXA
 flow='const w = () => new Promise(r => setTimeout(r, 250)), bad = () => [...document.querySelectorAll(".emptybox")].some(e => /did not render/.test(e.textContent)), wide = () => document.documentElement.scrollWidth > innerWidth;
   let fails = [];
   const step = (n, ok) => { if (!ok || bad() || wide()) fails.push(n); };
-  location.hash = "#pipeline"; await w(); step("open", /agents? works? now/.test(document.querySelector(".bhead")?.textContent ?? "") && document.querySelectorAll("#s-lanes h2").length === 4);
+  location.hash = "#pipeline"; await w(); step("open", /agents? works? now/.test(document.querySelector(".bhead")?.textContent ?? "") && document.querySelectorAll("#s-lanes h2").length === 3);
   document.querySelector(".belt[data-belt=\"FXA-3\"] > a").click(); await w(); step("row open", !!document.getElementById("bd-FXA-3"));
   document.querySelector(".belt[data-belt=\"FXA-3\"] > a").click(); await w(); step("row close", !document.querySelector(".bdet"));
   document.querySelector("details.bout > summary").click(); await w(); step("outside", document.querySelector("details.bout").open);
