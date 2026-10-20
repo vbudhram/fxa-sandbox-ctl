@@ -70,5 +70,12 @@ tf="$(bash "$p" '#teams' --fixture "$O" --probe '
   window.fetch = (u, o) => String(u).startsWith("/api/teams") ? Promise.resolve(new Response("", { status: 503 })) : real(u, o);
   TEAMS = null; TEAMS_AT = 0; await loadTeams(); renderTeams(); await w(100); window.fetch = real;
   const x = document.getElementById("s-teams").textContent; return /the teams read failed \(HTTP 503\)/.test(x) && !/ago/.test(x)')"
+# A refresh that fails after a good read: Teams says how old the rows are, in one plain phrase.
+ta="$(bash "$p" '#teams' --fixture "$O" --probe '
+  const w = ms => new Promise(r => setTimeout(r, ms)); await w(300); const real = window.fetch;
+  window.fetch = (u, o) => String(u).startsWith("/api/teams") ? Promise.resolve(new Response("", { status: 503 })) : real(u, o);
+  await loadTeams(); renderTeams(); await w(100); window.fetch = real;
+  const x = document.getElementById("s-teams").textContent; return /showing data from \d+[smhd] ago/.test(x) && !/ago ago/.test(x)')"
+if [ "$ta" = true ]; then echo "ok   a failed refresh after a good read says the data age once"; else echo "FAIL a failed refresh after a good read says the data age once: got [$ta]"; fail=1; fi
 if [ "$tf" = true ]; then echo "ok   a first /api/teams request that fails shows the error on Teams"; else echo "FAIL a first /api/teams request that fails shows the error on Teams: got [$tf]"; fail=1; fi
 exit $fail
