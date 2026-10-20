@@ -53,6 +53,11 @@ cmd_precheck > "$tmp/pre" 2>&1
 check "work, then the info marker, then the held-back info" "drain|info:|mode: focus FXA-1" "$(cut -c1-5 "$tmp/pre" | sed -n 1,2p | paste -sd'|' -)|$(sed -n 3p "$tmp/pre" | cut -c1-17)"
 pipeline_focus_key() { :; }
 # gh_drain prints the PR's head commit on a RED line, from the same query.
+# A drain stderr line that starts with a path is not a ticket key: it never names a note file, and the pass goes on.
+cmd_drain() { echo "/home/fxa/x/lib/github.sh: line 166: printf: write error: Broken pipe" >&2; }
+out="$(set -e; cmd_precheck 2>&1)"; rc=$?
+check "a path in the drain output is reported as work and does not end the pass" "1|drain: /home/fxa/x/lib/github.sh: line 166: printf: write error: Broken pipe|0" \
+  "$rc|$out|$(find "$tmp" -name '*github.sh*' | wc -l | tr -d ' ')"
 eval "$(sed -n '/^gh_drain() {/,/^}/p' "$(dirname "$0")/github.sh")"
 pipeline_require() { :; }; worktree_branch_for() { echo fxa-31; }; PIPE_REPO_SLUG=mozilla/fxa _GH_ROLLUP_JQ=.
 gh() { case "$*" in *headRefOid*) echo "fxa-31 310 OPEN 9 1 0 MERGEABLE 0123456789abcdef0123" ;; *) echo "fxa-31 310 OPEN 9 1 0 MERGEABLE" ;; esac; }

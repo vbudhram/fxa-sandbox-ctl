@@ -163,7 +163,8 @@ gh_drain() {
   local key br line num state ok bad run mrg sha
   for key in $keys; do
     br="$(worktree_branch_for "$key")"
-    line="$(printf '%s\n' "$map" | awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8; exit}')"
+    # A here-string, not printf |: awk exits at the first match, and the printf's SIGPIPE error went to stderr.
+    line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8; exit}' <<< "$map")"
     if [ -z "$line" ]; then
       # Report a missing PR, do not relabel it: a human must look.
       echo "$key none -"

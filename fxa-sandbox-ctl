@@ -1478,7 +1478,9 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         if [ "$(gh_conflicts "$key" 2>/dev/null | cut -d' ' -f1)" = lockfile ]; then
           if gh_relock "$key" >/dev/null 2>&1; then _info "drain: $key #$num lockfile conflict fixed (main merged, yarn.lock re-resolved)"; else _drain_wake "$key" "$line lockfile (relock FAILED; run: relock $key)"; fi
         else _drain_wake "$key" "$line"; fi ;;
-      *)      _drain_wake "${key:-none}" "$line" ;;
+      # Only a ticket key names a state file: drain's stderr is in this stream too (2>&1), and a
+      # path there once became a key whose note file had no directory, which ended the pass.
+      *)      if [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then _drain_wake "$key" "$line"; else _drain_wake none "$line"; fi ;;
     esac
   done <<< "$drain_out"
   # A PR that is no longer red forgets its note, so a later red wakes a pass again. Only after a
