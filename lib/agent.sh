@@ -381,14 +381,18 @@ _gce_profile_workspace() {
   # The other trees go beside it, never inside /workspace, so the agent loads no
   # CLAUDE.md, skills or hooks from them. The loader checked each row.
   local cmd="[ -d ${ws}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$slug") https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
-  local row s p r
+  local row s p r want="${ws}"
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
     read -r s p r _ <<< "$row"
     case "$r" in
       dep|data) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}" ;;
       ref) cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet --depth 1 https://github.com/${s}.git ${p}" ;;
     esac
+    case "$r" in dep|data|ref) want="${want} ${p}" ;; esac
   done
+  # The step's status was the last command's, so a failed clone (a private repo whose token did not
+  # arrive) showed only as a WARN: name each repo that is not there, and fail the step.
+  cmd="${cmd}; m=''; for d in ${want}; do [ -d \$d/.git ] || m=\"\$m \$d\"; done; [ -z \"\$m\" ] || { echo \"ERROR: these repos did not clone:\$m\" >&2; exit 1; }"
   echo "Cloning ${slug} into ${ws}..."
   vm_exec "$name" sudo bash -c "$cmd"
 }

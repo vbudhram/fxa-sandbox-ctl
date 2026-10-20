@@ -107,15 +107,16 @@ _trees_line_ok() {
 # a plain directory with a link to each: no repo is the primary one. FxA's skills find
 # FxA through FXA_WORKSPACE, and its screenshots land in the stack's media folder.
 _trees_workspace() {
-  local name="$1" cmd="mkdir -p ${TREES_ROOT}/.fxa-auto-media && chown -R agent:agent ${TREES_ROOT}" n s p sha base bsha br
+  local name="$1" cmd="mkdir -p ${TREES_ROOT}/.fxa-auto-media && chown -R agent:agent ${TREES_ROOT}" n s p sha base bsha br want=""
   while IFS=$'\t' read -r n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || { echo "ERROR: bad tree line for ${n:-?}" >&2; return 1; }
-    cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"
+    cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"; want="${want} ${p}"
     # The image's fxa-start and stack.sh read FxA from /workspace, which here holds only links.
     [ "$s" = mozilla/fxa ] && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p} FXA_ROOT=${p}' >> /etc/agent-env.sh; sed -i 's#/workspace#${p}#g' /usr/local/bin/fxa-start"
   done < "$2"
   echo "Setting up the stack's repos on the runner..."
-  vm_exec "$name" sudo bash -c "${cmd}; ln -sfn ${TREES_ROOT} /workspace"
+  # A failed clone fails here and names the repo, not 600 s later at the pin wait.
+  vm_exec "$name" sudo bash -c "${cmd}; ln -sfn ${TREES_ROOT} /workspace; m=''; for d in ${want}; do [ -d \$d/.git ] || m=\"\$m \$d\"; done; [ -z \"\$m\" ] || { echo \"ERROR: these repos did not clone:\$m\" >&2; exit 1; }"
 }
 
 # _trees_pin <name> <trees.tsv>   Pin each tree to its commit and branch, as the one-repo pin does.
