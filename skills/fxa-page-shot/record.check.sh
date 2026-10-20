@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Offline check for record.sh argument handling. Needs no X or ffmpeg.
+# Offline check for record.sh argument handling, and the blank-video hint on stop.
+# Needs no X; the stop check needs ffmpeg.
 #   bash skills/fxa-page-shot/record.check.sh
 set -u
 fail=0
@@ -15,4 +16,11 @@ bash "$R" start '../x' >/dev/null 2>&1; check "start refuses a path in the name"
 bash "$R" stop >/dev/null 2>&1; check "stop with nothing recording fails" 1 $?
 bash "$R" stop --speed 0 >/dev/null 2>&1; check "stop refuses a speed of 0" 2 $?
 bash "$R" bogus >/dev/null 2>&1; check "an unknown command fails" 2 $?
+if command -v ffmpeg >/dev/null; then
+  # A sleep stands in for the ffmpeg recorder; stop sends it SIGINT.
+  ffmpeg -v error -f lavfi -i "color=c=black:s=320x180:d=2" -pix_fmt yuv420p "$tmp/blank.mp4"
+  sleep 20 & echo $! > "$tmp/fxa-record.pid"; echo "$tmp/blank.mp4" > "$tmp/fxa-record.out"
+  got="$(bash "$R" stop 2>&1)"; check "stop fails on a blank video" 1 $?
+  check "stop gives the blank-video hint" 1 "$(grep -c 'gfx.webrender.software=true.*env -u MOZ_HEADLESS' <<< "$got")"
+fi
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

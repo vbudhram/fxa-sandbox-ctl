@@ -1,6 +1,6 @@
 ---
 name: fxa-page-shot
-description: Use inside the FxA sandbox to screenshot a live page on the local stack (a route, a signed-in or 2FA state, a viewport, a locale, dark mode), or to check a recorded video frame by frame. Trigger when someone asks to see, show or screenshot a page, or asks you to check a video. Not for a component with a sibling *.stories.tsx (use /fxa-storybook-capture), and not to prove a whole flow (use /fxa-functional-local).
+description: Use inside the FxA sandbox to screenshot a live page on the local stack (a route, a signed-in or 2FA state, a viewport, a locale, dark mode), to record a desktop Firefox flow with its browser chrome (record.sh), or to check a recorded video frame by frame. Trigger when someone asks to see, show or screenshot a page, asks for a video of desktop Firefox (Sync, about:preferences), or asks you to check a video. Not for a component with a sibling *.stories.tsx (use /fxa-storybook-capture), and not to prove a whole flow (use /fxa-functional-local).
 ---
 
 # Screenshot a live page, or check a video
@@ -47,6 +47,8 @@ ffmpeg command by hand.
     bash ~/.claude/skills/fxa-page-shot/record.sh stop --speed 4  # .fxa-auto-media/signout.mp4
 
 `stop` ends the file cleanly, so it plays. `--speed` shortens a slow flow.
+If `stop` says the video is blank, set `gfx.webrender.software=true` in the
+Firefox profile, and start Firefox with `env -u MOZ_HEADLESS`.
 
 ## Check a video
 

@@ -7,6 +7,12 @@ set -u
 D="${FXA_RECORD_DISPLAY:-:99}" PIDF="${TMPDIR:-/tmp}/fxa-record.pid" OUTF="${TMPDIR:-/tmp}/fxa-record.out"
 MEDIA="${FXA_WORKSPACE:-/workspace}/.fxa-auto-media"
 recording() { [ -s "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+# The blank-video check from fxa-functional-local/run.sh: near-uniform frames show nothing.
+shows_something() {
+  command -v ffmpeg >/dev/null || return 0
+  ffmpeg -v error -i "$1" -vf "entropy,metadata=print:key=lavfi.entropy.normalized_entropy.normal.Y:file=-" -f null - 2>/dev/null \
+    | awk -F= '/entropy/ { if ($2 + 0 > m) m = $2 + 0 } END { exit !(m >= 0.12) }'
+}
 case "${1:-}" in
   start)
     name="${2:-}"
@@ -35,6 +41,7 @@ case "${1:-}" in
       ffmpeg -y -loglevel error -i "$out" -vf "setpts=PTS/$speed" -r 24 -an -c:v libx264 -preset veryfast -pix_fmt yuv420p "$out.fast.mp4" \
         && mv "$out.fast.mp4" "$out"
     fi
-    echo "saved $out ($(du -h "$out" | cut -f1))" ;;
+    echo "saved $out ($(du -h "$out" | cut -f1))"
+    shows_something "$out" || { echo "record: the video is blank. Set gfx.webrender.software=true in the Firefox profile and start Firefox with env -u MOZ_HEADLESS" >&2; exit 1; } ;;
   *) echo "usage: $0 start <name> | stop [--speed N]" >&2; exit 2 ;;
 esac

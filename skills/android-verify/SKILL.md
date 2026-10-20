@@ -28,9 +28,10 @@ on the left (`adb screenrecord`), desktop Nightly on the right (an ffmpeg grab o
 lined up by the wall-clock start of each recorder. The video starts at sign-in, so the first
 20 s or so is the desktop signing in.
 
-Review it before you share it. Extract a frame every 4 s
-(`ffmpeg -i <video> -vf fps=1/4 /tmp/review/f-%02d.png`), then read the frames where the phone
-shows "Connect", where the desktop shows the approval, and the last one. Check:
+Review it before you share it. Take a frame every 4 s
+(`node ~/.claude/skills/fxa-page-shot/page-shot.mjs frames <video> --every 4`), then read every
+contact sheet it prints. Look closely at the frames where the phone shows "Connect", where the
+desktop shows the approval, and the last one. Check:
 
 | Check | Failure looks like |
 |---|---|

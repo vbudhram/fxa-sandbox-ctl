@@ -23,7 +23,7 @@ if [ "${1:-}" = wait ]; then
   limit="${2:-270}"; t0=$(date +%s)
   while running && [ $(( $(date +%s) - t0 )) -lt "$limit" ]; do sleep "${FXA_FUNCTIONAL_POLL_S:-5}"; done
   ran=$(( $(date +%s) - $(cat "${job}/started" 2>/dev/null || echo "$t0") ))
-  if [ -f "${job}/rc" ]; then grep -E '^(PASS|FAIL|video:|no video:|[0-9]+ video)' "${job}/log"; exit "$(cat "${job}/rc")"; fi
+  if [ -f "${job}/rc" ]; then grep -E '^(PASS|FAIL|video|check:|no video:|[0-9]+ video)' "${job}/log"; exit "$(cat "${job}/rc")"; fi
   if running; then echo "still running after ${ran}s. Last line: $(tail -1 "${job}/log" | cut -c1-200). Call: bash $0 wait"; exit 75; fi
   echo "the run died after ${ran}s without a result. Last lines:"; tail -5 "${job}/log"; exit 4
 fi
@@ -62,16 +62,23 @@ shows_something() {
     | awk -F= '/entropy/ { if ($2 + 0 > m) m = $2 + 0 } END { exit !(m >= 0.12) }'
 }
 # Name each video after its test's output folder; a test's own browser adds -own-<n>.
-n=0 blank=0
-while IFS= read -r v; do
-  case "$v" in
-    */own-browser-video/*) t="$(basename "$(dirname "$(dirname "$v")")" | cut -c1-74)"; k=1; while [ -e "${media}/${t}-own-${k}.webm" ]; do k=$((k + 1)); done; name="${t}-own-${k}.webm" ;;
-    *) name="$(basename "$(dirname "$v")" | cut -c1-80).webm" ;;
-  esac
-  if ! shows_something "$v"; then blank=$((blank + 1)); echo "no video: ${name%.webm} shows only a blank page"; continue; fi
-  cp "$v" "${media}/${name}" && n=$((n + 1)) && echo "video: ${media}/${name}"
-done < <(find "$out" -name '*.webm' 2>/dev/null | sort)
-[ "$blank" -gt 0 ] && echo "${blank} video(s) were blank and are not posted: the test drove a browser that is not recorded, such as Marionette's headless Firefox."
+# Only a passing run posts its videos: a failure video is debug output, not proof.
+post_videos() {
+  n=0 blank=0
+  while IFS= read -r v; do
+    case "$v" in
+      */own-browser-video/*) t="$(basename "$(dirname "$(dirname "$v")")" | cut -c1-74)"; k=1; while [ -e "${media}/${t}-own-${k}.webm" ]; do k=$((k + 1)); done; name="${t}-own-${k}.webm" ;;
+      *) name="$(basename "$(dirname "$v")" | cut -c1-80).webm" ;;
+    esac
+    if ! shows_something "$v"; then blank=$((blank + 1)); echo "no video: ${name%.webm} shows only a blank page"; continue; fi
+    if [ "$rc" -ne 0 ]; then echo "video (not posted): $v"; echo "check: node ~/.claude/skills/fxa-page-shot/page-shot.mjs frames $v"; continue; fi
+    cp "$v" "${media}/${name}" && n=$((n + 1)) && echo "video: ${media}/${name}" \
+      && echo "check: node ~/.claude/skills/fxa-page-shot/page-shot.mjs frames ${media}/${name}"
+  done < <(find "$out" -name '*.webm' 2>/dev/null | sort)
+  [ "$blank" -gt 0 ] && echo "${blank} video(s) were blank and are not posted: the test drove a browser that is not recorded, such as Marionette's headless Firefox."
+  return 0
+}
+post_videos
 rm -f "$cfg"
 if [ "$rc" -eq 0 ]; then echo "PASS ${spec} (${secs}s, ${n} video(s))"; else echo "FAIL ${spec} (${secs}s). Read the trace: bash $(dirname "$0")/trace.sh ${out}"; fi
 exit "$rc"

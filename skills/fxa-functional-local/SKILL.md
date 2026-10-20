@@ -7,7 +7,7 @@ description: Run the one Playwright functional test that covers a user flow agai
 
 Pick the existing spec that covers the flow; do not write a throwaway spec.
 Then run it with the helper, which starts the stack if needed, records video,
-and copies it to /workspace/.fxa-auto-media/ (posted to the engineer):
+and on a pass copies it to /workspace/.fxa-auto-media/ (posted to the engineer):
 
     bash ~/.claude/skills/fxa-functional-local/run.sh tests/settings/changePassword.spec.ts "change password with a correct password"
 
@@ -17,6 +17,13 @@ test in it.
 It runs one worker and no retries, so a failure is a real failure, and prints
 PASS or FAIL with the video paths. A trace is kept on failure under
 /workspace/artifacts/functional/.
+
+- Run the `check:` command that follows each video line, and read every sheet
+  before you describe or post the video.
+- A failed run posts no video. It prints `video (not posted): <path>` instead.
+  Copy a failure video in by hand only when it is the evidence.
+- A Playwright video shows the page only. For the browser chrome too, use
+  `/fxa-page-shot` (`record.sh`).
 
 ## A run longer than 10 minutes
 
@@ -85,10 +92,12 @@ Paths are under /workspace/packages/functional-tests/.
 If no row fits, `git grep -n "test(" packages/functional-tests/tests` and pick
 the closest existing test.
 
+OAuth through 123done and 321done (`tests/oauth/*`) runs on the VM. Run
+`bash ~/.claude/skills/fxa-stack/stack.sh ensure` first: it starts 321done
+(port 10139) when it is down. If a spec still fails on Stripe or Strapi, say CI covers it.
+
 ## Not on the VM
 
-- OAuth through 123done (`tests/oauth/*`, loginHint, relay, smart window): the
-  token exchange needs Stripe and Strapi. Say CI covers it.
 - Payments (`tests-payments-next`): no payments stack. Say CI covers it.
 - Sync specs launch their own Firefox. The helper records it too, as
   `<test>-own-<n>.webm`. Pairing's authority is a headless Firefox driven by
