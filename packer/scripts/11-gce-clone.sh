@@ -13,6 +13,14 @@ echo "==> Node: $(node --version) (.nvmrc $(cat .nvmrc))"
 sudo -u agent bash -c 'source /etc/agent-env.sh && yarn install --immutable' || {
   echo '==> yarn install failed; build logs:'; cat /tmp/xfs-*/build.log 2>/dev/null | tail -60; exit 1
 }
+# `npx glean` pip-installs glean_parser into a venv, and the VM's DNS refuses PyPI, so
+# glean-lint and glean-generate failed in every run. Bake the venv; VIRTUAL_ENV points the CLI at it,
+# and OFFLINE stops its pip upgrade. Nothing else in FxA reads OFFLINE.
+gv="$(sed -n 's/^const GLEAN_PARSER_VERSION = "\(.*\)";$/\1/p' node_modules/@mozilla/glean/dist/cli/cli.js)"
+[ -n "$gv" ] || { echo '==> ERROR: no GLEAN_PARSER_VERSION in @mozilla/glean'; exit 1; }
+python3 -m venv /opt/glean-venv && /opt/glean-venv/bin/pip install -q wheel "glean_parser~=${gv}"
+echo 'export VIRTUAL_ENV=/opt/glean-venv OFFLINE=1' >> /etc/agent-env.sh
+echo "==> glean_parser $(/opt/glean-venv/bin/python -c 'import glean_parser; print(glean_parser.__version__)') baked (~=${gv})"
 # fxa-start runs pm2 against this tree, and the repo's own `pm2-all.sh start`
 # builds everything first. Without that, auth dies on a missing FTL basePath and
 # content on a missing dist/libs/shared/l10n. The build needs the translations
