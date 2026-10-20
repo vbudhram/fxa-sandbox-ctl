@@ -101,6 +101,7 @@
   .wide { grid-column:1/-1; }
   h2 { font:700 var(--t-heading)/1.3 var(--head); margin:0 0 var(--s3); color:var(--ink);
        display:flex; align-items:baseline; gap:var(--s2); }
+  * + h2 { margin-top:var(--s4); }
   h2 .n { font-size:var(--t-body); font-weight:700; color:var(--dim); font-variant-numeric:tabular-nums; }
   h2 .note { margin-left:auto; font:400 var(--t-sub) var(--sans); color:var(--faint); text-transform:none; }
   h2 .sub  { font:400 var(--t-sub) var(--sans); color:var(--faint); text-transform:none; }
@@ -2440,11 +2441,11 @@ function renderStats() {
       <div class="chart card flat"><h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div></div></div>
     <div class="three">
       <div class="chart card flat"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
-        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2 style="margin-top:var(--s4)">By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
+        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
           return `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(teamLabel(g.name))}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""}</div>
       <div class="chart card flat"><h2>Most expensive<span class="note">in this view</span></h2>${over.length ? `<div class="kv share" style="--p:${share(sum(over))}%"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv share" style="--p:${share(g.usd)}%">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}
         ${(() => { const ps = group(r => r.src === "slack" ? (r.who || "name not recorded") : null).filter(g => g.name);
-          return ps.length ? `<h2 style="margin-top:var(--s4)">By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
+          return ps.length ? `<h2>By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
             return `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(g.name)}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""; })()}</div>
       <div class="chart card flat"><h2>Spend by model<span class="note">in this view</span></h2>${(() => {
         // Subagents included where the proxy priced the run; else the run's main model only.
@@ -2455,7 +2456,7 @@ function renderStats() {
           + (main ? `<div class="kv"><span class="note">${main} run${main === 1 ? "" : "s"} here count all tokens at the main model</span><span></span></div>` : "")
           + (none ? `<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>` : "");
       })() || `<div class="empty">No model recorded for these rows.</div>`}
-        <h2 style="margin-top:var(--s4)">By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
+        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
     </div>`}`);
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
@@ -2499,12 +2500,12 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
     <div class="charts"><div class="chart card flat"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div></div>
       <div class="chart card flat"><h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
         return a.length ? kv(`<b>${l}</b>`, `${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; }).join("")}
-        <h2 style="margin-top:var(--s4)">Merged by</h2>${who.map(([k, n]) => kv(`<span class="mono">${esc(k)}</span>`, `<b>${n}</b>`)).join("") || `<div class="empty">None merged.</div>`}</div></div>
+        <h2>Merged by</h2>${who.map(([k, n]) => kv(`<span class="mono">${esc(k)}</span>`, `<b>${n}</b>`)).join("") || `<div class="empty">None merged.</div>`}</div></div>
     <div class="three">
       <div class="chart card flat"><h2>Recently merged<span class="note">time to merge · lines · cost</span></h2>${list(merged.slice().sort((a, b) => newest(a, b, "merged")), "None merged.")}</div>
       <div class="chart card flat"><h2>Still open<span class="note">oldest first</span></h2>${list(open.slice().sort((a, b) => -newest(a, b, "created")), "None open.")}</div>
       <div class="chart card flat"><h2>Costliest merged<span class="note">every run on the PR</span></h2>${list(merged.slice().sort((a, b) => cost(b) - cost(a)), "None merged.")}
-        ${closed.length ? `<h2 style="margin-top:var(--s4)">Closed, not merged</h2>${list(closed, "")}` : ""}</div>
+        ${closed.length ? `<h2>Closed, not merged</h2>${list(closed, "")}` : ""}</div>
     </div>`;
 }
 // The Stats filters, in the list panel.
@@ -2545,7 +2546,7 @@ function runnerCard(rows) {
     ${(() => { const s = rows.filter(r => r.stack_starts); if (!s.length) return "";
       const n = s.reduce((x, r) => x + r.stack_starts, 0);
       return `<div class="kv"><b>Stack starts</b><span>${n} · avg ${Math.round(s.reduce((x, r) => x + (r.stack_s || 0), 0) / n)} s · ${s.reduce((x, r) => x + (r.stack_fails || 0), 0)} failed</span></div>`; })()}
-    <h2 style="margin-top:var(--s4)">Why they stopped</h2>${stops.map(([k, n]) => `<div class="kv"><b>${esc(k)}</b><span>${n}</span></div>`).join("")}</div>`;
+    <h2>Why they stopped</h2>${stops.map(([k, n]) => `<div class="kv"><b>${esc(k)}</b><span>${n}</span></div>`).join("")}</div>`;
 }
 // LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
 function llmCard(l, lo, hi) {
@@ -3193,7 +3194,7 @@ function renderTickets() {
          <span class="rest">${review.length} in review · oldest wait first</span></div>`) +
     (review == null ? "" : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
      : waiting.slice().sort(byWait).map(row).join("") +
-       (others.length ? `<h2 style="margin-top:var(--s4)">Not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>` +
+       (others.length ? `<h2>Not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>` +
          others.slice().sort(byWait).map(row).join("") : "")));
 
   const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
