@@ -180,7 +180,9 @@ _snapshot_agent_json() {
       { in: (map(.input_tokens // 0) | add // 0), out: (map(.output_tokens // 0) | add // 0),
         cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
         cache_write: (map(.cache_creation_input_tokens // 0) | add // 0),
-        cache_write_1h: (map(.cache_creation.ephemeral_1h_input_tokens // 0) | add // 0) }) as $u |
+        cache_write_1h: (map(.cache_creation.ephemeral_1h_input_tokens // 0) | add // 0) }) as $u0 |
+      # The 1-hour count is at most the write count, as the proxy and telemetry_record clamp it.
+      ($u0 + {cache_write_1h: ([$u0.cache_write_1h, $u0.cache_write] | min)}) as $u |
     { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
       # A 1-hour cache write costs 2x input, the rest 5-minute writes at the cache_write rate (as the proxy prices them).
       cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + ($u.cache_write - $u.cache_write_1h) * $p[2] + $u.cache_write_1h * 2 * $p[0] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),

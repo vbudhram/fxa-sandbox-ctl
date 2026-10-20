@@ -25,6 +25,8 @@ check "the last tool and text still come from every line" "Bash ls|Done." "$(jq 
 # A 1-hour cache write is priced at 2x input, as the proxy bills it: 1M 1-hour tokens on opus-5-5 (input $4) cost $8, not $5.
 printf '%s\n' '{"type":"assistant","message":{"id":"h1","model":"claude-opus-5-5","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":1500000,"cache_creation":{"ephemeral_1h_input_tokens":1000000}},"content":[]}}' > "$tmp/h.jsonl"
 check "1-hour cache writes cost 2x input, 5-minute ones the cache-write rate" "10.5" "$(_snapshot_agent_json "$tmp/h.jsonl" "$(date +%s)" | jq -r '.cost_so_far')"
+printf '%s\n' '{"type":"assistant","message":{"id":"h2","model":"claude-opus-5-5","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":1000000,"cache_creation":{"ephemeral_1h_input_tokens":2000000}},"content":[]}}' > "$tmp/h2.jsonl"
+check "a 1-hour count above the write count is clamped to it" "8" "$(_snapshot_agent_json "$tmp/h2.jsonl" "$(date +%s)" | jq -r '.cost_so_far')"
 
 # Every kept session is listed: a paused one from last week too, newest first.
 sd="$(mktemp -d)"; now=$(date +%s)
