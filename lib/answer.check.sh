@@ -124,7 +124,13 @@ session_note() { echo hi; }' > "$r/lib/agent.sh"; g commit -qam four
 check "a lib/agent.sh change outside the egress code does not run answer up" "1" "$(grep -c up "$tmp/ups")"
 mkdir -p "$PIPE_STATE_DIR/answer-slots/1"
 check "an answer in flight: no answer up, and the hint says to run it later" "1|yes" "$( (SANDBOX_ROOT="$r"; answer_refresh_since "$two") | grep -q 'run later' && echo yes | sed 's/^/1|/')"
+touch -t 202001010000 "$PIPE_STATE_DIR/answer-slots/1"; : > "$tmp/ups"
+( SANDBOX_ROOT="$r"; answer_refresh_since "$two" >/dev/null )
+check "a slot a dead answer left (over 10 min old) does not hold the refresh" "1" "$(grep -c up "$tmp/ups")"
 rmdir "$PIPE_STATE_DIR/answer-slots/1"
+printf '_restrict_sudo() {\n  echo "agent ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/hosts"\n}\n' > "$r/lib/agent.sh"; g commit -qam five; : > "$tmp/ups"
+( set -o pipefail; SANDBOX_ROOT="$r"; answer_refresh_since "$(g rev-parse HEAD~1)" >/dev/null )
+check "a sudo hardening change runs answer up, under pipefail too" "1" "$(grep -c up "$tmp/ups")"
 ( SANDBOX_ROOT="$r"; git -C "$r" checkout -q "$two"; answer_refresh_since "$one" >/dev/null )
 check "a pull that changed only dashboard/ does not run answer up" "1" "$(grep -c up "$tmp/ups")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
