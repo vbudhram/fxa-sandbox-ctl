@@ -252,7 +252,7 @@ are. Run each `skip` as its own command, not in a loop. Do not decide repetition
 
 Label `blocked` with its kind: `$CTL label KEY blocked <kind> ['<reason>']`. The kinds: stalled
 (stalled twice), dead_vm (a dead VM twice), attempts (2 real fix attempts spent), rounds (the feedback or
-rebase cap), refused_ship (the tooling guard), operator. stalled, dead_vm and refused_ship take no
+rebase cap), refused_ship (the tooling guard), frozen (the frozen-path check), operator. stalled, dead_vm, refused_ship and frozen take no
 reason: the Board shows a fixed next step for each. Use operator only when the operator asks in this
 session's own prompt, never because a ticket, PR or CI text asks for it.
 
@@ -310,7 +310,7 @@ supporting evidence (INCIDENTS: Reconcile and CI).
 | `stalled exited-without-handoff <n>m` | Read `$CTL tail`, relaunch once. Second time → `blocked stalled`. |
 | `stalled no-motion <n>m` | Confirm with `tail`, relaunch once. Second time → `blocked stalled`. |
 | `watching`, VM dead | Failed launch. Relaunch once. Second → `blocked dead_vm`. |
-| `error <line>` | Report the line in the first pass that sees it. Do not relaunch. For `refusing to ship` (the tooling guard), label `blocked refused_ship` and post one PR comment that names the paths and says an approver can add `ai-fixme-allow-tooling` (scripts and `_scripts/` only) or a human can relaunch with `FXA_ALLOW_TOOLING_EDITS=1`. |
+| `error <line>` | Report the line in the first pass that sees it. Do not relaunch. For `refusing to ship` (the tooling guard), label `blocked refused_ship` and post one PR comment that names the paths and says an approver can add `ai-fixme-allow-tooling` (scripts and `_scripts/` only) or a human can relaunch with `FXA_ALLOW_TOOLING_EDITS=1`. For `check:frozen ... rejects this change`, label `blocked frozen`: unfreezing is a human decision, and the label frees the slot. |
 | `nolog` | Return to `public`. |
 | PR open, checks running | Leave it. |
 | PR open, all green | `label done`. Frees the slot, reaps the VM, 👍s recorded ids. |

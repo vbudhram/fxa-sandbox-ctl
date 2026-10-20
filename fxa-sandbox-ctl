@@ -142,7 +142,7 @@ PIPELINE COMMANDS:
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
   label <ISSUE-KEY> <state> [kind] [reason]
                                WRITE: move the ticket; also reaps its VM. For blocked, the kind
-                               (stalled dead_vm attempts rounds refused_ship operator) and reason show on the Board
+                               (stalled dead_vm attempts rounds refused_ship frozen operator) and reason show on the Board
                                states: public inflight done blocked merged rejected diff
   slots                        Pool slots, and any VM running on each
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce

@@ -893,7 +893,7 @@ marker, and `reporters.tsv`.
 | `<KEY>.launch.log` | The launcher's full output | `progress` reports `nolog`, and the pass returns the ticket to the queue |
 | `<KEY>.attempts` | Real-fix counter | The 2-attempt cap resets |
 | `<KEY>.skipped` | Skip fingerprint, time, pass count, reason, and the kind (needs_decision, underspecified, depends_on, already_done, or empty) | The ticket gets one more skip comment |
-| `<KEY>.blocked-why` | When the ticket was blocked, the kind (stalled, dead_vm, attempts, rounds, refused_ship, operator, other) and the reason, from `label KEY blocked`; any other label removes it | The Board shows "blocked in Jira" with no reason |
+| `<KEY>.blocked-why` | When the ticket was blocked, the kind (stalled, dead_vm, attempts, rounds, refused_ship, frozen, operator, other) and the reason, from `label KEY blocked`; any other label removes it | The Board shows "blocked in Jira" with no reason |
 | `<KEY>.feedback-seen` | Handled review comment IDs | Handled comments reappear as new |
 | `<KEY>.feedback-rounds` | Round counter | The 2-round cap resets |
 | `<KEY>.feedback-acted` | IDs this round will fix | The 👍 reactions are lost |

@@ -418,7 +418,7 @@ _pipeline_one_line() {
 }
 
 # The kinds of a blocked label and of an admission skip (the pass skill names them; lib/skill-kinds.check.sh reads these).
-_PIPE_BLOCKED_KINDS="stalled dead_vm attempts rounds refused_ship operator"
+_PIPE_BLOCKED_KINDS="stalled dead_vm attempts rounds refused_ship frozen operator"
 _PIPE_SKIP_KINDS="needs_decision underspecified depends_on already_done"
 
 # pipeline_blocked_why <KEY> <state> [kind] [reason...]   Why the ticket is blocked, for the Board: one

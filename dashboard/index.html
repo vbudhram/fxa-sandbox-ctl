@@ -2773,6 +2773,7 @@ const NEXT_STEP = {
   attempts: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
   rounds: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
   refused_ship: "An approver adds ai-fixme-allow-tooling, or a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",
+  frozen: "The fix needs a frozen path. A human unfreezes it in _scripts/check-frozen.ts or fixes the ticket by hand.",
   operator: "Do what the reason says, then remove ai-fixme-blocked.",
   jira: "Read the Jira history for who added the label.",
   other: "Read the Jira history for who added the label.",
@@ -2789,7 +2790,7 @@ const NEXT_STEP = {
   ready: "Nothing to do: the next pass offers it when it reaches the front and a slot is free.",
   running: "Nothing to do: the belt shows its progress.",
 };
-const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", operator: "operator",
+const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", frozen: "frozen path", operator: "operator",
   jira: "blocked in Jira", other: "other", needs_decision: "needs a decision", underspecified: "underspecified", already_done: "already done",
   depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", relock: "relock failed", infra: "infra red", fault: "fault" };
 // The old skip records have no kind: the reason's first words decide, as the Queue tab did.
@@ -2798,7 +2799,7 @@ const boardAge = s => s == null ? "" : s >= 2 * 86400 ? `${Math.round(s / 86400)
 const secsSince = t => t == null ? null : Math.max(0, Math.round(Date.now() / 1000 - (typeof t === "number" ? t : Date.parse(t) / 1000)));
 // classify(item): who acts and the next step from the column and the kind; "the operator" for work only the operator can do.
 function classify(i) {
-  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer",
+  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer", frozen: "the operator",
     operator: "the operator", jira: "the operator", other: "the operator", needs_decision: "the reporter", underspecified: "the reporter",
     already_done: "the operator", infra: "the operator", fault: "the operator", ci_red: "the agent, next pass", changes: "the agent, next pass",
     conflicts: "the agent, next pass", relock: "the operator" }[i.kind];
