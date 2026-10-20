@@ -385,14 +385,16 @@ libs/shared/db/mysql/account/src/.env
 LIST
 }
 
-# worktree_copy_secrets <path>
-#   Copy worktree_secret_files into <path>. Safe to re-run; skips missing sources.
+# worktree_copy_secrets <path> [<file> ...]
+#   Copy worktree_secret_files, or only the named ones, into <path>. Safe to re-run; skips missing sources.
 worktree_copy_secrets() {
   local path="${1:-}"
   if [ -z "$path" ] || [ ! -d "$path" ]; then
     echo "ERROR: worktree_copy_secrets needs an existing worktree path" >&2
     return 1
   fi
+  shift
+  local files="${*:-$(worktree_secret_files)}"
   local root
   if [ -n "${FXA_SECRETS_SOURCE:-}" ]; then
     if [ ! -d "$FXA_SECRETS_SOURCE" ]; then
@@ -405,7 +407,7 @@ worktree_copy_secrets() {
   fi
 
   local rel src dest copied=0 skipped=0
-  for rel in $(worktree_secret_files); do
+  for rel in $files; do
     src="${root}/${rel}"
     dest="${path}/${rel}"
     # A file the repo tracks (Monitor's .env) comes from the runner's checkout; the host's copy can be old.
@@ -424,7 +426,7 @@ worktree_copy_secrets() {
     fi
   done
 
-  if [ -d "${root}/_dev/firebase/.config" ]; then
+  if [ $# -eq 0 ] && [ -d "${root}/_dev/firebase/.config" ]; then
     mkdir -p "${path}/_dev/firebase"
     [ -L "${path}/_dev" ] || [ -L "${path}/_dev/firebase" ] && { echo "ERROR: _dev in the slot is a link; refusing to copy secrets." >&2; return 1; }
     rm -rf -- "${path}/_dev/firebase/.config"
@@ -618,7 +620,7 @@ worktree_prepare_for_issue() {
     echo "Syncing per-developer secrets and config files..." >&2
     worktree_copy_secrets "$path" >&2 || return 1
   else
-    echo "Skipping secret sync. Pass --functional-tests, or set FXA_COPY_SECRETS=true, if the run needs fxa-start." >&2
+    echo "Skipping secret sync, except 123done's. Pass --functional-tests, or set FXA_COPY_SECRETS=true, if the run needs fxa-start." >&2
     # An earlier functional run left them in this slot; this run must not see them.
     local rel real; real="$(cd "$path" && pwd -P)"
     for rel in $(worktree_secret_files) _dev/firebase/.config; do
@@ -626,6 +628,8 @@ worktree_prepare_for_issue() {
       # Through a planted dir link this rm would reach a host file.
       case "$(cd "$(dirname "${path}/${rel}")" 2>/dev/null && pwd -P)/" in "$real"/*) rm -rf -- "${path:?}/${rel}" ;; esac
     done
+    # The 123done client secret works only against the local stack; OAuth relier specs need it.
+    worktree_copy_secrets "$path" packages/123done/secrets.json >&2 || return 1
   fi
 
   printf '%s\n' "$path"
