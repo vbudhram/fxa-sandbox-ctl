@@ -38,4 +38,10 @@ check "a present rule is left alone" "0" "$(grep -c 'rules create' "$tmp/calls")
 check "users from .env reach the deploy" "1" "$(grep -c 'DASHBOARD_USERS=a@example.com,b@example.com' "$tmp/calls")"
 ARGS=(users "x; rm -rf /"); check "users refuses anything but a comma list of emails, and calls nothing" "2|0" \
   "$( : > "$tmp/calls"; gw >/dev/null; echo $?)|$(grep -c . "$tmp/calls")"
+# A quoted .env value loses both quotes; the manager is looked up in FXA_MANAGER_ZONE, never the runners' FXA_GCE_ZONE.
+printf 'FXA_GCE_PROJECT="p2"\nFXA_DASHBOARD_USERS="a@example.com,b@example.com"\n' > "$tmp/repo/.env"; : > "$tmp/calls"
+( cd "$tmp/repo" && PATH="$tmp/bin:$PATH" env -u FXA_GCE_PROJECT -u FXA_DASHBOARD_USERS -u FXA_MANAGER_ZONE FXA_GCE_ZONE=us-central1-a bash infra/gce/gateway.sh deploy >/dev/null 2>&1 )
+check "quoted .env values arrive with no quotes" "1|1" "$(grep -c 'DASHBOARD_USERS=a@example.com,b@example.com' "$tmp/calls")|$(grep -c -- '--project p2' <<< "$(grep 'instances describe' "$tmp/calls")")"
+check "the manager is found in its own zone, not the runner zone" "1|0" "$(grep -c 'instances describe fxa-manager --zone us-central1-b' "$tmp/calls")|$(grep -c 'zone us-central1-a' "$tmp/calls")"
+rm -f "$tmp/repo/.env"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

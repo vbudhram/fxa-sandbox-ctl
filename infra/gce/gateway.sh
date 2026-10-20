@@ -10,7 +10,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 if [ -f "$ROOT/.env" ]; then
-  while IFS='=' read -r k v; do case "$k" in FXA_GCE_PROJECT|FXA_DASHBOARD_USERS|FXA_GATEWAY_IAP_AUDIENCE) [ -n "${!k:-}" ] || export "$k=${v%\"}" ;; esac; done < "$ROOT/.env"
+  # One matching pair of quotes comes off both ends: a quoted user list kept its opening quote before.
+  unq() { case "$1" in \"*\") v="${1#\"}"; v="${v%\"}" ;; \'*\') v="${1#\'}"; v="${v%\'}" ;; *) v="$1" ;; esac; printf '%s' "$v"; }
+  while IFS='=' read -r k v; do case "$k" in FXA_GCE_PROJECT|FXA_DASHBOARD_USERS|FXA_GATEWAY_IAP_AUDIENCE|FXA_MANAGER_ZONE) [ -n "${!k:-}" ] || export "$k=$(unq "$v")" ;; esac; done < "$ROOT/.env"
 fi
 P="${FXA_GCE_PROJECT:?FXA_GCE_PROJECT is not set (controller .env)}"
 R="${FXA_GATEWAY_REGION:-us-central1}" SVC="${FXA_GATEWAY_SERVICE:-fxa-desktop}" NET="${FXA_GCE_NETWORK:-fxa-sandbox}"
@@ -20,7 +22,8 @@ EMAILS='^[^@,; ]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(,[^@,; ]+@[A-Za-z0-9.-]+\.[A-Za-z
 
 # The env to set: the bucket and the manager URL are derived; the rest only when .env names them.
 want_env() {
-  local ip; ip="$(gcloud compute instances describe fxa-manager --zone "${FXA_GCE_ZONE:-us-central1-b}" --project "$P" --format='value(networkInterfaces[0].networkIP)')"
+  # FXA_MANAGER_ZONE, as vm.sh: FXA_GCE_ZONE is the runners' zone.
+  local ip; ip="$(gcloud compute instances describe fxa-manager --zone "${FXA_MANAGER_ZONE:-us-central1-b}" --project "$P" --format='value(networkInterfaces[0].networkIP)')"
   [[ "$ip" =~ ^[0-9.]+$ ]] || { echo "ERROR: no private IP for fxa-manager" >&2; return 1; }
   printf 'DESKTOP_BUCKET=%s;MANAGER_URL=http://%s:8787' "${P}-fxa-ai-fixme" "$ip"
   [ -z "${FXA_GATEWAY_IAP_AUDIENCE:-}" ] || printf ';IAP_AUDIENCE=%s' "$FXA_GATEWAY_IAP_AUDIENCE"
