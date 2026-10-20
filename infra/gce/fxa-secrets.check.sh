@@ -43,6 +43,9 @@ check "with every read, the files hold the new values" "0|v-fxa-slack-bot-token|
 mv "$C/bot.env.base" "$t/bb"; PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "a .env base that cannot be read stops it before any write" "1|v-fxa-slack-bot-token|B=1" "$( [ "$rc" = 0 ] && echo 0 || echo 1)|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(head -1 "$B")"
 mv "$t/bb" "$C/bot.env.base"
+mv "$C/ctl.env.base" "$t/cb"; cp "$B" "$t/bot.good"; PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
+check "a ctl .env base that cannot be read stops it before any write, the bot .env included" "1|same" "$([ "$rc" = 0 ] && echo 0 || echo 1)|$(cmp -s "$B" "$t/bot.good" && echo same)"
+mv "$t/cb" "$C/ctl.env.base"
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
 check "the LLM proxy gets a file with the API key only, and its unit reads that file, not the ctl .env" "ANTHROPIC_API_KEY=v-fxa-anthropic-api-key|1|0" \
   "$(cat "$C/llm-proxy.env")|$(grep -A8 'fxa-llm-proxy.service <<' "$here/manager-setup.sh" | grep -c 'EnvironmentFile=-$C/llm-proxy.env')|$(grep -A8 'fxa-llm-proxy.service <<' "$here/manager-setup.sh" | grep -c 'fxa-sandbox-ctl/.env')"
