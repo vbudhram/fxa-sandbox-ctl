@@ -95,7 +95,7 @@ hidden prompt, stores it (it creates the secret and grants the manager on the
 first store), runs `fxa-secrets` on the manager, and restarts the service that
 reads the secret at start. For `fxa-llm-proxy` it prints the restart command
 instead, because a restart drops model calls in flight. The runners' Claude credential is
-`fxa-anthropic-api-key` (preferred) or `fxa-claude-token`.
+`fxa-anthropic-api-key`: the LLM proxy sends only an API key, so a setup-token does not work on the manager.
 
 **State mirror.** Pipeline state and the error log are in
 `~/.claude/state/fxa-ai-fixme`, mirrored to GCS: `unlock` pushes after every

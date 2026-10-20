@@ -22,7 +22,9 @@ cat > "$t/bin/gcloud" <<'SH'
 #!/bin/sh
 n=""; while [ $# -gt 0 ]; do [ "$1" = --secret ] && n="$2"; shift; done
 [ "$n" = "${FAIL_SECRET:-}" ] && { echo "ERROR: permission denied on $n" >&2; exit 1; }
-case "$n" in fxa-claude-token|fxa-runlayer-agent-token|fxa-sentry-token|fxa-grafana-token|fxa-jira-*|fxa-agent-memory-key|fxa-dashboard-hmac) exit 1 ;; esac
+case " ${HAVE:-} " in *" $n "*) printf 'v-%s' "$n"; exit 0 ;; esac
+case "$n" in fxa-claude-token|fxa-runlayer-agent-token|fxa-sentry-token|fxa-grafana-token|fxa-jira-*|fxa-agent-memory-key|fxa-dashboard-hmac)
+  echo "ERROR: (gcloud.secrets.versions.access) NOT_FOUND: Secret [$n] not found or has no versions." >&2; exit 1 ;; esac
 printf 'v-%s' "$n"
 SH
 chmod +x "$t/bin/"*
@@ -40,4 +42,15 @@ check "with every read, the files hold the new values" "0|v-fxa-slack-bot-token|
   "$rc|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(cat "$C/github-app.pem")|$(grep '^ANTHROPIC' "$t/home/Desktop/working2/fxa-sandbox-ctl/.env")"
 mv "$C/bot.env.base" "$t/bb"; PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "a .env base that cannot be read stops it before any write" "1|v-fxa-slack-bot-token|B=1" "$( [ "$rc" = 0 ] && echo 0 || echo 1)|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(head -1 "$B")"
+mv "$t/bb" "$C/bot.env.base"
+E="$t/home/Desktop/working2/fxa-sandbox-ctl/.env"; cp "$E" "$t/ctl.env.good"
+FAIL_SECRET=fxa-anthropic-api-key HAVE=fxa-claude-token PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
+check "no API key, only a setup-token: it stops, and the ctl .env keeps its API key" "1|same" "$([ "$rc" = 0 ] && echo 0 || echo 1)|$(cmp -s "$E" "$t/ctl.env.good" && echo same)"
+HAVE="fxa-dashboard-hmac fxa-sentry-token" PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
+cp "$C/dashboard-hmac" "$t/hmac.good"; cp "$C/mcp-gateway.env" "$t/gw.good"
+FAIL_SECRET=fxa-dashboard-hmac HAVE="fxa-sentry-token" PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>"$t/err"; rc=$?
+check "an optional secret that fails to read (not NOT_FOUND): it stops, and the HMAC and gateway files stay" "1|same|same|yes" \
+  "$([ "$rc" = 0 ] && echo 0 || echo 1)|$(cmp -s "$C/dashboard-hmac" "$t/hmac.good" && echo same)|$(cmp -s "$C/mcp-gateway.env" "$t/gw.good" && echo same)|$(grep -q 'could not read fxa-dashboard-hmac' "$t/err" && echo yes)"
+PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>"$t/err"; rc=$?
+check "optional secrets that do not exist: it runs, says nothing about them, and removes their files" "0|0|no|no" "$rc|$(grep -c NOT_FOUND "$t/err")|$([ -e "$C/dashboard-hmac" ] && echo yes || echo no)|$([ -e "$C/mcp-gateway.env" ] && echo yes || echo no)"
 exit "$fail"

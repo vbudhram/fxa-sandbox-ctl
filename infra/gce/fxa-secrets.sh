@@ -8,18 +8,25 @@ get() { gcloud secrets versions access latest --secret "$1" --project "$P"; }
 need() { local v; v="$(get "$1")" && [ -n "$v" ] || { echo "fxa-secrets: could not read $1; no file changed" >&2; exit 1; }; printf '%s' "$v"; }
 put() { printf '%s' "$2" > "$1.new" && mv "$1.new" "$1"; }
 umask 077
+# A secret that may not exist: NOT_FOUND reads as empty, and any other failed read stops the run before a write.
+opt() { local v; if v="$(get "$1" 2>"$C/.opt-err")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$C/.opt-err"; then :
+  else echo "fxa-secrets: could not read $1 ($(head -1 "$C/.opt-err")); no file changed" >&2; exit 1; fi; }
 pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts
-if [ -d "$W/fxa-sandbox-ctl" ]; then
-  # The API key when there is one (billed per token), else a setup-token.
-  k="$(get fxa-anthropic-api-key || true)"; t="$(get fxa-claude-token || true)"
-  if [ -n "$k" ]; then cl="ANTHROPIC_API_KEY=$k"; elif [ -n "$t" ]; then cl="CLAUDE_CODE_OAUTH_TOKEN=$t"
-  else echo "fxa-secrets: could not read fxa-anthropic-api-key or fxa-claude-token; no file changed" >&2; exit 1; fi
-fi
+# Runners reach Claude only through the LLM proxy, which sends an API key: a setup-token is no use here.
+if [ -d "$W/fxa-sandbox-ctl" ]; then k="$(need fxa-anthropic-api-key)"; cl="ANTHROPIC_API_KEY=$k"; fi
 # The .env bases too, before any write: a base that cannot be read must not leave a .env of credentials only.
 [ ! -d "$W/fxa-sandbox-ctl" ] || cb="$(cat "$C/ctl.env.base")"
 [ ! -d "$W/fxa-agent-bot" ] || bb="$(cat "$C/bot.env.base")"
 # Plain assignments, not inside || or &&: set -e does not stop a failed $(...) there.
 if [ -d "$W/fxa-agent-bot" ]; then sb="$(need fxa-slack-bot-token)"; sa="$(need fxa-slack-app-token)"; fi
+r="$(opt fxa-runlayer-agent-token)"
+s="$(opt fxa-sentry-token)"
+g="$(opt fxa-grafana-token)"
+j="$(opt fxa-jira-token)"
+e="$(opt fxa-jira-email)"
+m="$(opt fxa-agent-memory-key)"
+h="$(opt fxa-dashboard-hmac)"
+rm -f "$C/.opt-err"
 put "$C/github-app.pem" "$pem
 "
 mkdir -p "$H/.circleci"; put "$H/.circleci/cli.yml" "token: $ci
@@ -31,16 +38,16 @@ $cl
 SLACK_BOT_TOKEN=$sb
 SLACK_APP_TOKEN=$sa
 "
-unset pem ci k t cl sb sa
+unset pem ci k cl sb sa
 # The MCP gateway's upstream credentials, in their own file: no other service reads it.
-r="$(get fxa-runlayer-agent-token || true)" s="$(get fxa-sentry-token || true)" g="$(get fxa-grafana-token || true)"
-{ [ -z "$r" ] || printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r"
+gw="$([ -z "$r" ] || printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r"
   [ -z "$s" ] || printf 'SENTRY_ACCESS_TOKEN=%s\n' "$s"
-  [ -z "$g" ] || printf 'GRAFANA_TOKEN=%s\n' "$g"; } > "$C/mcp-gateway.env"
-[ -s "$C/mcp-gateway.env" ] || rm -f "$C/mcp-gateway.env"
+  [ -z "$g" ] || printf 'GRAFANA_TOKEN=%s\n' "$g")"
+if [ -n "$gw" ]; then put "$C/mcp-gateway.env" "$gw
+"; else rm -f "$C/mcp-gateway.env"; fi
+unset gw
 unset r s g
 # acli keeps its Jira login in its own config, so log it in from the secrets.
-j="$(get fxa-jira-token || true)" e="$(get fxa-jira-email || true)"
 if [ -z "$j" ] || [ -z "$e" ]; then
   echo "fxa-secrets: no fxa-jira-token or fxa-jira-email, so acli keeps its old Jira login" >&2
 elif command -v acli >/dev/null; then
@@ -54,15 +61,13 @@ fi
 [ -n "$j" ] && [ -n "$e" ] && [ -f "$W/fxa-sandbox-ctl/.env" ] && printf 'PIPE_JIRA_BASIC=%s:%s\n' "$e" "$j" >> "$W/fxa-sandbox-ctl/.env"
 unset j e
 # The team memory repo's deploy key (lib/memory.sh), when the secret exists; a rebuilt manager keeps writing.
-m="$(get fxa-agent-memory-key || true)"
 if [ -n "$m" ]; then
   mkdir -p "$H/.ssh" && printf '%s\n' "$m" > "$H/.ssh/fxa-agent-memory"
   chown fxa:fxa "$H/.ssh" "$H/.ssh/fxa-agent-memory"; chmod 700 "$H/.ssh"; chmod 600 "$H/.ssh/fxa-agent-memory"
 fi
 unset m
 # The key the dashboard gateway signs each user with (dashboard/server.py); none means no team writes.
-h="$(get fxa-dashboard-hmac || true)"
-if [ -n "$h" ]; then printf '%s' "$h" > "$C/dashboard-hmac"; else rm -f "$C/dashboard-hmac"; fi
+if [ -n "$h" ]; then put "$C/dashboard-hmac" "$h"; else rm -f "$C/dashboard-hmac"; fi
 unset h
 chown -R fxa:fxa "$C" "$H/.circleci"
 [ -f "$W/fxa-sandbox-ctl/.env" ] && chown fxa:fxa "$W/fxa-sandbox-ctl/.env"
