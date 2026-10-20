@@ -12,5 +12,8 @@ check "a changed and a new setting are named; same lines, tokens and comments ar
 check "no value is printed" "0" "$(grep -c 'C2\|x$\|xoxb' <<< "$out")"
 check "a missing file prints nothing and exits 0" "0|" "$(bash "$here/env-drift.sh" "$tmp/none" "$tmp/base"; echo "$?|$(bash "$here/env-drift.sh" "$tmp/none" "$tmp/base")")"
 check "vm.sh status runs it" "yes" "$(grep -q 'env-drift.sh ../fxa-agent-bot/.env ~/.config/fxa/bot.env.base' "$here/vm.sh" && echo yes)"
+printf 'FXA_X=1\n' > "$tmp/cbase"; printf 'FXA_X=2\nANTHROPIC_API_KEY=k\nPIPE_JIRA_BASIC=a:b\n' > "$tmp/cenv"
+check "the ctl .env: a hand edit is named; the secrets fxa-secrets adds are skipped" "FXA_X" "$(bash "$here/env-drift.sh" "$tmp/cenv" "$tmp/cbase" 'ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|PIPE_JIRA_BASIC' | paste -sd' ' -)"
+check "vm.sh status also runs it on the ctl .env" "yes" "$(grep -q 'env-drift.sh .env ~/.config/fxa/ctl.env.base' "$here/vm.sh" && echo yes)"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
