@@ -38,6 +38,12 @@ import fxadb  # noqa: E402  the controller's store: sessions as they change
 import routine  # noqa: E402  the one reader of a team's spend against its caps
 
 
+
+class Server(ThreadingHTTPServer):
+    # Each poll opens 6-8 connections at once per tab; the default backlog of 5 dropped some into a 1 s SYN retry.
+    request_queue_size = 64
+
+
 class Feed:
     """Last good result of one command, plus what happened on the latest attempt."""
     def __init__(self, name, args, interval, timeout):
@@ -1161,6 +1167,6 @@ if __name__ == "__main__":
     try:
         # 127.0.0.1 unless told otherwise: on the manager VM the Cloud Run gateway
         # reaches it on the private network, and a GCP firewall rule admits only it.
-        ThreadingHTTPServer((os.environ.get("FXA_DASHBOARD_BIND") or "127.0.0.1", PORT), Handler).serve_forever()
+        Server((os.environ.get("FXA_DASHBOARD_BIND") or "127.0.0.1", PORT), Handler).serve_forever()
     except KeyboardInterrupt:
         print("\nstopped.")
