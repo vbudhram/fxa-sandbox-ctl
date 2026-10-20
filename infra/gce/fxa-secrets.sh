@@ -39,6 +39,9 @@ $cl
 SLACK_BOT_TOKEN=$sb
 SLACK_APP_TOKEN=$sa
 "
+# The LLM proxy needs only the API key: its own file, so it does not load the Jira login and the rest of the ctl .env.
+[ ! -d "$W/fxa-sandbox-ctl" ] || put "$C/llm-proxy.env" "ANTHROPIC_API_KEY=$k
+"
 unset pem ci k cl sb sa
 # The MCP gateway's upstream credentials, in their own file: no other service reads it.
 gw="$([ -z "$r" ] || printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r"
