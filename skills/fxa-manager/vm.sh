@@ -41,7 +41,20 @@ worktree_tree() {
   GIT_INDEX_FILE="$idx" git -C "$1" add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git -C "$1" write-tree; local rc=$?
   rm -f "$idx"; return $rc
 }
-BOT_ROOT="$(cd "$CTL_ROOT/../fxa-agent-bot" 2>/dev/null && pwd || true)"
+# FXA_DEV_BOT_ROOT: a bot tree other than the sibling one, such as a second worktree on another branch.
+BOT_ROOT="$(cd "${FXA_DEV_BOT_ROOT:-$CTL_ROOT/../fxa-agent-bot}" 2>/dev/null && pwd || true)"
+# dev_tar <ctl tree> <bot tree>   Both trees' tracked and new files (not ignored ones: .env, ai/, logs/, node_modules) and the
+# dev env, gzipped to stdout under the names the VM expects, whatever the local folders are called.
+dev_tar() {
+  { for x in "fxa-sandbox-ctl $1" "fxa-agent-bot $2"; do n="${x%% *}" r="${x#* }"
+      git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s\t%s\n' "$r/$f" "$n/$f"; done
+    done; printf '%s\t%s\n' "$2/.env.dev" fxa-agent-bot/.env.dev; } \
+  | python3 -c 'import sys, tarfile
+t = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
+for l in sys.stdin:
+    a, b = l.rstrip("\n").split("\t"); t.add(a, arcname=b, recursive=False)
+t.close()'
+}
 DEV_RECORD="$(git -C "$CTL_ROOT" rev-parse --git-common-dir 2>/dev/null)/fxa-dev-deployed"
 # promote_diff <repo> <recorded tree>   Nothing when origin/main is that tree; else what differs.
 promote_diff() {
@@ -326,16 +339,12 @@ EOF
       report) [ -n "${3:-}" ] || { echo "usage: vm.sh dev report <thread ts | key>" >&2; exit 1; }
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q 2>&1\n' "$vars" "$3" | on_vm | mask ;;
       up)
-        BOT_ROOT="$(cd "$CTL_ROOT/../fxa-agent-bot" && pwd)"
-        [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
+        [ -n "$BOT_ROOT" ] && [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
         { echo 'exec sudo -u fxa -H bash -s'
           echo "$vars"
           # Stop the old dev bot first: its timers ran ctl against a half-extracted tree ("Permission denied").
           echo 'mkdir -p $D $S && chmod 700 $S && cd $D && { [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2; true; } && t=$(mktemp) && base64 -d <<"B64" > "$t" && tar -xzf "$t"'
-          # Tracked and new files of both repos (not ignored ones: .env, ai/, logs/, node_modules), and the dev env.
-          ( cd "$CTL_ROOT/.." && for r in fxa-sandbox-ctl fxa-agent-bot; do
-              git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s/%s\n' "$r" "$f"; done
-            done; echo fxa-agent-bot/.env.dev ) | ( cd "$CTL_ROOT/.." && COPYFILE_DISABLE=1 tar -czf - -T - ) | base64
+          dev_tar "$CTL_ROOT" "$BOT_ROOT" | base64
           echo 'B64'
           declare -f dev_prune; echo 'dev_prune "$t"; rm -f "$t"'
           cat <<'EOF2'

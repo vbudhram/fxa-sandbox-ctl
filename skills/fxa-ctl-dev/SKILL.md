@@ -117,6 +117,8 @@ The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` co
 the working trees of both repos (uncommitted changes too) to `~fxa/dev` on the
 manager and restarts it there: the same runners, proxy and store as the real bot,
 its own sessions folder and thread map. The real bot keeps the committed code.
+It takes the controller tree it runs from and the sibling `fxa-agent-bot` tree, or the bot tree in
+`FXA_DEV_BOT_ROOT`. The bot's `npm run e2e` takes the controller worktree on its own branch name, as CI does.
 
 ```bash
 H=skills/fxa-manager/vm.sh D=skills/fxa-ctl-dev/slack-drive.sh

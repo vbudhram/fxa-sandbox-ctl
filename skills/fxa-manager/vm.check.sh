@@ -37,6 +37,13 @@ echo 'OTHER=1' > "$D/fxa-agent-bot/.env.devhost"
 out="$( { echo "D=$D"; dev_fn_script 'echo "host=${FXA_FC_HOST:-unset}"'; } | bash 2>&1)"
 check "dev fn: a devhost file without FXA_FC_HOST leaves it unset and prints no environment" "host=unset|0" \
   "$(printf '%s\n' "$out" | tail -1)|$(printf '%s\n' "$out" | grep -c 'declare -x')"
+# dev_tar: the trees go under the VM's names whatever the local folders are called (a worktree, FXA_DEV_BOT_ROOT).
+eval "$(sed -n '/^dev_tar() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+T3="$tmp/devtar"; mkdir -p "$T3/my-ctl" "$T3/other-bot"
+for r in my-ctl other-bot; do git -C "$T3/$r" init -q; echo x > "$T3/$r/a.txt"; done; echo secret > "$T3/other-bot/.env.dev"; echo .env.dev > "$T3/other-bot/.gitignore"; echo y > "$T3/my-ctl/new.sh"
+git -C "$T3/my-ctl" add a.txt; git -C "$T3/other-bot" add a.txt .gitignore
+check "dev_tar names each tree as the VM expects, with new files and the dev env" "fxa-agent-bot/.env.dev fxa-agent-bot/.gitignore fxa-agent-bot/a.txt fxa-sandbox-ctl/a.txt fxa-sandbox-ctl/new.sh" \
+  "$(dev_tar "$T3/my-ctl" "$T3/other-bot" | tar -tzf - | sort | paste -sd' ' -)"
 # dev up: the dev ctl tree's sibling bot .env is the real one, so the routine tick can read the access rules.
 check "dev up links the real bot .env next to the dev ctl" "1" "$(grep -cx 'ln -sfn $R/fxa-agent-bot/.env fxa-agent-bot/.env' "$(dirname "$0")/vm.sh")"
 # dev prune: a file the last deploy copied and this one did not goes; a file no deploy copied stays.
