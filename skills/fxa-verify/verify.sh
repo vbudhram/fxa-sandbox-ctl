@@ -22,6 +22,12 @@ if [ "${#files[@]}" -eq 0 ]; then
 fi
 [ "${#files[@]}" -gt 0 ] || [ -n "$PLAN" ] || { echo "No changed files."; exit 0; }
 export NODE_OPTIONS="--max-old-space-size=4096 ${NODE_OPTIONS:-}"
+# Two runs at once share the log dir and the tree. Fd 9 holds the lock; each command
+# closes it (9>&-), so a daemon that a row starts cannot keep the lock.
+if [ "$RUN$REVERT$FAILED" != 000 ] && command -v flock >/dev/null; then
+  lockf="${TMPDIR:-/tmp}/fxa-verify-$(id -u).lock"; exec 9>"$lockf"
+  flock -n 9 || { echo "ERROR: another fxa-verify run holds $lockf. Wait for it to end, then run again."; exit 75; }
+fi
 
 # The project that owns a file: the nearest dir up with project.json or package.json.
 owner() {
@@ -192,15 +198,17 @@ elif [ "$REVERT" = 0 ]; then
 fi
 
 # A widely imported file relates to many specs; fall back to its sibling spec.
+# Sets capped (the command to run) and capnote (for the row label).
 cap_related() {
-  local dir="$1" cmd="$2"
-  case "$cmd" in *--findRelatedTests*) ;; *) echo "$cmd"; return ;; esac
+  local dir="$1" cmd="$2"; capped="$2" capnote=""
+  case "$cmd" in *--findRelatedTests*) ;; *) return 0 ;; esac
   local n; n="$(cd "$dir" && eval "${cmd/--findRelatedTests/--listTests --findRelatedTests}" 2>/dev/null | grep -c '\.\(spec\|test\)\.' || true)"
-  if [ "${n:-0}" -le "$MAX_RELATED" ]; then echo "$cmd"; return; fi
+  [ "${n:-0}" -gt "$MAX_RELATED" ] || return 0
   local sib; sib="$(sed 's/.*--findRelatedTests //' <<<"$cmd" | tr ' ' '\n' | sed -E 's/\.(tsx?|jsx?)$//' | while read -r b; do
     for e in .test.tsx .test.ts .spec.ts .spec.tsx; do [ -f "$dir/$b$e" ] && echo "$b$e"; done; done | tr '\n' ' ')"
   echo "# ${n} related specs; running the sibling specs only" >&2
-  if [ -n "$sib" ]; then echo "${cmd%%--findRelatedTests*}$sib"; else echo "$cmd"; fi
+  [ -n "$sib" ] && capped="${cmd%%--findRelatedTests*}$sib" capnote=" (sibling only; $n related not run)"
+  return 0
 }
 
 # --revert: run the tests with the non-test files of the diff at the merge-base
@@ -222,8 +230,8 @@ if [ "$REVERT" = 1 ]; then
   LINT=0 TYPES=0 rows=() setup=""
   add_rows() { local p label dir cmd; for p in "${plan[@]}"; do IFS='|' read -r label dir cmd <<<"$p"
     case "$label" in *"db patches") setup="$cmd"; continue ;; esac
-    cmd="$(cap_related "$dir" "$cmd")"; case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
-    rows+=("${1:-$label}|$dir|$cmd"); done; }
+    cap_related "$dir" "$cmd"; cmd="$capped"; case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
+    rows+=("${1:-$label}$capnote|$dir|$cmd"); done; }
   if [ "${#tests[@]}" -gt 0 ]; then for t in "${tests[@]}"; do plan=(); plan_files "" "$t"; add_rows "$t"; done
   else plan=(); plan_files "" "${fix[@]}"; add_rows; fi
   [ "${#rows[@]}" -gt 0 ] || { echo "No tests to run; pass the spec paths."; exit 2; }
@@ -248,7 +256,7 @@ if [ "$REVERT" = 1 ]; then
   settle() {
     [ "$srv" = 1 ] || return 0
     sleep 5 # ponytail: fixed grace for the pm2 watch restart to start; poll pm2 restart_time if it races
-    printf '%s\n' "${fix[@]}" | grep -qvE '^packages/fxa-auth-server/(bin|config|lib)/' && pm2 restart auth >/dev/null 2>&1
+    printf '%s\n' "${fix[@]}" | grep -qvE '^packages/fxa-auth-server/(bin|config|lib)/' && pm2 restart auth >/dev/null 2>&1 9>&-
     for _ in $(seq 60); do curl -sf -m 5 localhost:9000/__heartbeat__ >/dev/null 2>&1 && return 0; sleep 2; done
     echo "ERROR: the auth heartbeat did not come back in 2 minutes; see: pm2 logs auth --lines 50 --nostream"; return 1; }
 
@@ -256,11 +264,11 @@ if [ "$REVERT" = 1 ]; then
   logs="${TMPDIR:-/tmp}/fxa-verify-revert-$(id -u)"; rm -rf "$logs"; mkdir -p "$logs"
   declare -A res=()
   run_rows() { local i label dir cmd v; for i in "${!rows[@]}"; do IFS='|' read -r label dir cmd <<<"${rows[$i]}"
-    if (cd "$dir" && eval "$cmd") > "$logs/$1-$i.log" 2>&1; then v=PASS; else v=FAIL; fi
+    if (cd "$dir" && eval "$cmd") > "$logs/$1-$i.log" 2>&1 9>&-; then v=PASS; else v=FAIL; fi
     case "$cmd" in *fxa-functional-local*) ;; *) [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed|[0-9]+ passing' "$logs/$1-$i.log" && v=NONE ;; esac
     res[$1,$i]=$v; echo "  $1 the fix: $v  $label"; done; }
 
-  [ -z "$setup" ] || eval "$setup" > "$logs/setup.log" 2>&1 || { echo "ERROR: $setup failed; see $logs/setup.log"; exit 2; }
+  [ -z "$setup" ] || eval "$setup" > "$logs/setup.log" 2>&1 9>&- || { echo "ERROR: $setup failed; see $logs/setup.log"; exit 2; }
   swapped=1
   for f in "${fix[@]}"; do
     if git cat-file -e "$base:$f" 2>/dev/null; then mkdir -p "$(dirname "$f")" && git show "$base:$f" > "$f"; else rm -f "$f"; fi; done
@@ -305,29 +313,32 @@ for i in "${!plan[@]}"; do IFS='|' read -r label dir cmd <<<"${plan[$i]}"; print
 [ "$RUN" = 1 ] || { echo; echo "Run it with: bash $0 --run${PLAN:+ --plan $PLAN}"; exit 0; }
 
 logs="${TMPDIR:-/tmp}/fxa-verify-$(id -u)"; rm -rf "$logs"; mkdir -p "$logs"
-fail=0; results=()
+fail=0; results=() failed_logs=()
 for i in "${!plan[@]}"; do
   IFS='|' read -r label dir cmd <<<"${plan[$i]}"
   case "$label" in
     "plan CI: "*) results+=("$(printf '%-4s %-40s' CI "$label")  left to CI"); continue ;;
     "plan storybook: "*) results+=("$(printf '%-4s %-40s' TODO "$label")  run /fxa-storybook-capture"); continue ;;
   esac
-  cmd="$(cap_related "$dir" "$cmd")"
+  cap_related "$dir" "$cmd"; cmd="$capped"
   # No spec imports the file (a route that only integration specs cover): Jest
   # would exit 1 on "No tests found". Say so as NOREL, not as a failure.
   case "$cmd" in *--findRelatedTests*) cmd="$cmd --passWithNoTests" ;; esac
   start=$(date +%s)
-  if (cd "$dir" && eval "$cmd") > "$logs/$i.log" 2>&1; then v=PASS; else v=FAIL; fail=1; fi
+  if (cd "$dir" && eval "$cmd") > "$logs/$i.log" 2>&1 9>&-; then v=PASS; else v=FAIL; fail=1; fi
   # Jest can exit 0 having run nothing; that proves nothing, so say so.
   case "$label" in *tests|*unit|*integration|*scripts|*oauth-api)
     [ "$v" = PASS ] && ! grep -qE 'Tests: +([0-9]+ [a-z]+, )*[0-9]+ passed|[0-9]+ passing' "$logs/$i.log" && v=NONE
     [ "$v" = NONE ] && grep -q 'No tests found' "$logs/$i.log" && v=NOREL ;;
   esac
-  results+=("$(printf '%-4s %-40s %4ss  %s' "$v" "$label" "$(( $(date +%s) - start ))" "$logs/$i.log")")
-  [ "$v" = FAIL ] && { echo "---- $label failed; last lines:"; tail -25 "$logs/$i.log"; }
+  results+=("$(printf '%-4s %-40s %4ss  %s' "$v" "$label$capnote" "$(( $(date +%s) - start ))" "$logs/$i.log")")
+  [ "$v" = FAIL ] && failed_logs+=("$label|$logs/$i.log")
 done
 for r in ${kept_rows[@]+"${kept_rows[@]}"}; do results+=("${r##*$'\t'}"); done
 echo; echo "Verdict:"; printf '  %s\n' "${results[@]}"
+# After the table, so a run piped to tail still shows why each row failed.
+for fl in ${failed_logs[@]+"${failed_logs[@]}"}; do echo; echo "---- ${fl%%|*} failed; last lines:"; tail -15 "${fl#*|}"; done
+[ "$fail" = 0 ] || { echo; echo "Next: fix the failure, then rerun only the failed rows: bash $0 --failed"; }
 # The record the self-check and the PR body read. .fxa- keeps it out of the commit.
 note=""; [ "$FAILED" = 1 ] && note=" (reran ${#plan[@]} failed row(s); ${#kept_rows[@]} kept from the last run)"
 { echo "fxa-verify $(date -u +%FT%TZ)${PLAN:+ plan=$PLAN}${note}"; printf '%s\n' "${results[@]}"; } > /workspace/.fxa-verify-verdict.txt

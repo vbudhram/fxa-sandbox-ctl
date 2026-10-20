@@ -33,7 +33,8 @@ transcript: `pass`, `fixed: <what>`, or `n/a`.
    - For each behavior you changed, name the test that fails if you revert
      that change. If no test would fail, write one at the lowest level that
      fails: a unit test before a functional spec. A styling-only change needs
-     no new functional spec.
+     no new functional spec. Prove that the test fails without the change with
+     `/fxa-verify --revert <spec>`. Do not use `git stash`.
    - When you delete a test, replace its coverage or say in the PR body why
      the behavior is gone.
    - Check that the test target really runs. `fxa-settings` `test-unit` is

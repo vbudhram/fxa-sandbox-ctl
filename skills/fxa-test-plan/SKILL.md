@@ -46,7 +46,8 @@ sandbox:
 - Use a lower level only when every higher one cannot run here or cannot show
   the behavior. Write the reason in `why`.
 - Add a `unit` line for each edge case and for the regression test: a test that
-  fails if you revert the change. Write a new spec when none exists.
+  fails if you revert the change. Write a new spec when none exists. Prove it
+  with `/fxa-verify --revert <spec>`. Do not use `git stash`.
 - A UI change: a `functional` or `storybook` line to see it, and `unit` for its
   states. For a layout or styling change (CSS classes, spacing, breakpoints), run
   the functional or storybook line to look, but do not commit a new functional spec:

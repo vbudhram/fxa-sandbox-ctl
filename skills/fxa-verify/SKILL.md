@@ -14,6 +14,10 @@ included), plans one command per package, and with `--run` runs them:
     bash ~/.claude/skills/fxa-verify/verify.sh --run --plan /workspace/.fxa-test-plan.json
     bash ~/.claude/skills/fxa-verify/verify.sh --failed    # after a fix: rerun only what failed
 
+Run it in the foreground with a Bash timeout of 600000. Do not run it in the
+background. Only one run can write logs at a time: a second run exits 75 and
+says so.
+
 After you fix a failure, use `--failed`. It reruns only the rows that failed or
 ran no tests last time, and keeps the other rows' verdicts. A full rerun repeats
 every planned spec, the functional ones too. Before the handoff, run the full
@@ -32,7 +36,11 @@ integration specs cover: your test plan must cover it); `CI` (left to CI);
 Each touched project gets lint, Prettier, and a type-check. The App commits
 through the API, so no hook formats your change: the `format` row writes Prettier
 on your files and passes, and its log names each file it formatted. It fails only
-on a file Prettier cannot parse. Pass file paths to check only those. Print the verdict table in your reply: it is the evidence.
+on a file Prettier cannot parse. Pass file paths to check only those.
+
+In the reply, give the count per verdict and name every `FAIL`, `NONE`,
+`NOREL`, `CI` and `TODO` row. Do not give the log paths: a Slack reply must not
+name sandbox paths (see guide/session.md).
 
 With no file paths it checks every change in the working tree, including
 changes an earlier run left on this slot. Read `git status` first; if the plan
@@ -45,6 +53,9 @@ for example for the PR body or the self-check:
 
     bash ~/.claude/skills/fxa-verify/verify.sh --revert                  # the test files in the diff
     bash ~/.claude/skills/fxa-verify/verify.sh --revert <spec> [<spec>...]
+
+Use `--revert` on unit or integration specs, not functional specs: a functional
+`--revert` run took 12 minutes.
 
 1. It backs up the non-test files in the diff against the merge-base.
 2. It writes their merge-base versions with `git show`. It removes the new
@@ -71,7 +82,8 @@ bundle.
 
 For Jest projects it uses Jest's own `--findRelatedTests`, so a source change
 runs every spec that imports it. When more than 15 specs relate (a widely used
-file), it runs the sibling spec only and says so. Full logs are in
+file), it runs the sibling spec only, and the row label gives the count, for
+example `tests (sibling only; 153 related not run)`. Full logs are in
 `/tmp/fxa-verify-<uid>/` (`--revert`: `/tmp/fxa-verify-revert-<uid>/`).
 
 ## Traps it avoids (do not work around them by hand)
@@ -160,7 +172,9 @@ of memory on the whole project. Run only related specs.
 
 ## If a check fails
 
-Read the last lines the helper printed and the log it names. Fix the code, not
+After the verdict table, the helper prints the last 15 lines of each `FAIL`
+log and the `--failed` command to run next. Read them and the log the row
+names. Fix the code, not
 the test, unless the test asserts the old behaviour the change was meant to
 replace. Run the helper again until the verdict is all PASS, or report the
 failure plainly if it is outside the change.
