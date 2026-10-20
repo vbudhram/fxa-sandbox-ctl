@@ -27,6 +27,7 @@ printf 'a\n' >src.js; printf 'lock-base\n' >yarn.lock
 g add . && g commit -qm base && g push -q origin main
 g checkout -qb fxa-1; printf 'lock-branch\n' >yarn.lock; g commit -qam branch; g push -q origin fxa-1
 g checkout -qb fxa-2 main; printf 'b\n' >src.js; printf 'lock-2\n' >yarn.lock; g commit -qam two; g push -q origin fxa-2
+g checkout -qb fxa-3 main; printf 'lock-3\n' >yarn.lock; g commit -qam three; g push -q origin fxa-3
 g checkout -q main; printf 'lock-main\n' >yarn.lock; printf 'c\n' >src.js; g commit -qam main; g push -q origin main
 g clone -q "$tmp/origin.git" "$tmp/repo" 2>/dev/null
 PIPE_REPO="$tmp/repo"
@@ -47,5 +48,15 @@ gh_relock FXA-2 >/dev/null 2>&1; rc=$?
 check "source conflict is refused" "1" "$rc"
 g -C "$tmp/repo" fetch -q origin
 check "source branch untouched" "$before" "$(g -C "$tmp/repo" rev-parse origin/fxa-2)"
+
+# With the App on, the App makes the merge commit; git neither signs nor pushes.
+before="$(g -C "$tmp/repo" rev-parse origin/fxa-3)"
+github_app_enabled() { true; }
+github_app_commit() { printf '%s|%s|%s\n' "$2" "$3" "$5" > "$tmp/app"; git -C "$1" show :yarn.lock > "$tmp/app-lock"; echo sha; }
+gh_relock FXA-3 >/dev/null 2>&1; rc=$?
+check "App relock: a merge of main into the branch head" "0|fxa-3|$(g -C "$tmp/repo" rev-parse origin/main)|$before" "$rc|$(cat "$tmp/app" 2>/dev/null)"
+check "App relock: the staged yarn.lock is re-resolved" "lock-main resolved-branch-dep" "$(tr '\n' ' ' < "$tmp/app-lock" | sed 's/ $//')"
+g -C "$tmp/repo" fetch -q origin
+check "App relock: no git push" "$before" "$(g -C "$tmp/repo" rev-parse origin/fxa-3)"
 
 exit "$fail"
