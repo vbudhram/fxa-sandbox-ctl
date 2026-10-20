@@ -27,7 +27,7 @@ srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(ta
 def get(p):
     req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{p}", headers={"Host": "localhost"})
     with urllib.request.urlopen(req, timeout=30) as r: return json.loads(r.read().decode())
-print(json.dumps({"/api/snapshot": get("/api/snapshot"), "/api/stats": get("/api/stats"), "/api/teams": live["teams"],
+print(json.dumps({"/api/snapshot": get("/api/snapshot"), "/api/stats": get("/api/stats"), "/api/overview": get("/api/overview"), "/api/teams": live["teams"],
                   "/api/runs/recent": get("/api/runs/recent?" + query), "/api/team-admin": {"admin": admin}}))
 PY
 bash "$here/page.sh" "$route" --fixture "$t/fx.json" "$@"

@@ -12,6 +12,7 @@ import atexit
 import base64
 import calendar
 import hashlib
+from datetime import datetime
 import hmac
 import json
 import os
@@ -42,6 +43,43 @@ import routine  # noqa: E402  the one reader of a team's spend against its caps
 class Server(ThreadingHTTPServer):
     # Each poll opens 6-8 connections at once per tab; the default backlog of 5 dropped some into a 1 s SYN retry.
     request_queue_size = 64
+
+
+OVERVIEW_DAYS = 180
+_OVERVIEW = (None, None, None)  # (stats object, UTC day, slice)
+
+
+def overview_slice(stats, now=None):
+    """The Overview's part of /api/stats: the last 180 days of rows with only the fields it reads,
+    the merged PR times, and the LLM days and per-model totals. The page groups rows by its own
+    local day, so this sends rows, not sums. The cutoff moves once a UTC day, so the ETag holds."""
+    global _OVERVIEW
+    day = int((now if now is not None else time.time()) // 86400)
+    if _OVERVIEW[0] is stats and _OVERVIEW[1] == day:
+        return _OVERVIEW[2]
+    cut = (day - OVERVIEW_DAYS - 1) * 86400
+
+    def ms(at):
+        try:
+            return int(datetime.fromisoformat(str(at).replace("Z", "+00:00")).timestamp() * 1000)
+        except ValueError:
+            return None
+    rows = []
+    for r in stats.get("rows") or []:
+        t = ms(r.get("at")) if isinstance(r, dict) else None
+        if t is None or t < cut * 1000:
+            continue
+        rows.append([t, r.get("src"), r.get("usd") or 0, 1 if r.get("pr") else 0, r.get("min"), r.get("profile"), r.get("compute_usd") or 0])
+    # No PR list yet is null, not an empty list: the page then says the list is not read, never 0 merged.
+    prs = None if stats.get("prs") is None else [p.get("merged") for p in stats["prs"] if isinstance(p, dict) and p.get("merged") and (ms(p["merged"]) or 0) >= cut * 1000]
+    llm = stats.get("llm") or {}
+    models = {}
+    for m in llm.get("models") or []:
+        models[m.get("model") or ""] = round(models.get(m.get("model") or "", 0) + (m.get("usd") or 0), 2)
+    out = {"cols": ["ms", "src", "usd", "pr", "min", "profile", "compute_usd"], "rows": rows, "merged": prs, "prs_at": stats.get("prs_at"),
+           "llm": {"hour_usd": llm.get("hour_usd"), "days": (llm.get("days") or [])[-14:], "models": models}}
+    _OVERVIEW = (stats, day, out)
+    return out
 
 
 class Feed:
@@ -1128,6 +1166,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stats":
             data = STATS.read()[0]
             self._json(200, data if data is not None else {"error": "stats unavailable"}, etag=data is not None)
+        elif path == "/api/overview":
+            data = STATS.read()[0]
+            self._json(200, overview_slice(data) if data is not None else {"error": "stats unavailable"}, etag=data is not None)
         elif path == "/api/teams":
             data, age, err, busy = TEAMS.read()
             access, access_err = read_access()

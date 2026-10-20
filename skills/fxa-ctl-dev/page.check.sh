@@ -139,23 +139,23 @@ ck "Needs you: card, badge and title agree; a stray adds a sandbox part that foc
   return [...r1, ...r2, big(), /unknown, agents feed/.test(document.querySelector("#ov-needs .sub").textContent)].join("|")')"
 # The Merged and Cost cards (i380): the cost is the Stats PRs number; an unread or old PR list shows no 0;
 # the focus stays on a card link across a poll; a renderer that throws does not stop the others.
-ck "Merged and Cost cards: Stats number, no 0 for an unread or old list, focus kept, a throw stops nothing" "2|\$1.50|—|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
-  const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString(), card = k => document.querySelector(`#ov-mini [data-focus="${k}"]`);
+ck "Merged and Cost: Stats number, no 0 for an unread or old list, focus kept, a throw stops nothing" "2|\$1.50|—|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
+  const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString(), lk = k => document.querySelector(`#ov-main [data-focus="${k}"]`);
   STATS = { prs: [{ n: 1, merged: iso(1) }, { n: 2, merged: iso(2) }, { n: 3, merged: iso(20) }], prs_at: Math.round(now / 1000) - 60, rows: [{ at: iso(1), usd: 2 }, { at: iso(3), usd: 1 }, { at: iso(30), usd: 50 }] };
-  renderOvMini(); const m = card("ov-merged").querySelector(".big").textContent, c = card("ov-cost").querySelector(".big").textContent;
+  OV_METRIC = "merged"; renderOvMain(); const m = lk("ovm-open-merged").querySelector(".big").textContent, c = lk("ovm-open-cost").querySelector(".big").textContent;
   const same = c === usd(costPerMerged(now - 7 * 86400000, now, STATS.prs, STATS.rows).per);
   // A value outside the links changes, so the card is rewritten: the focus must come back to the same link.
-  card("ov-cost").focus(); const n0 = card("ov-cost"); STATS = { ...STATS, rows: [...STATS.rows, { at: iso(0.1), usd: 4 }] }; render();
-  const kept = document.activeElement?.dataset.focus === "ov-cost" && document.activeElement !== n0 && /\$3\.50/.test(card("ov-cost").textContent);
-  STATS = { ...STATS, prs: null }; renderOvMini(); const none = card("ov-merged").querySelector(".big").textContent;
-  STATS = { ...STATS, prs: [], prs_at: Math.round(now / 1000) - 7200 }; renderOvMini(); const old = /old/.test(card("ov-cost").textContent) && !/\$0\.00/.test(card("ov-cost").textContent);
+  lk("ovm-open-cost").focus(); const n0 = lk("ovm-open-cost"); STATS = { ...STATS, rows: [...STATS.rows, { at: iso(0.1), usd: 4 }] }; render();
+  const kept = document.activeElement?.dataset.focus === "ovm-open-cost" && document.activeElement !== n0 && /\$3\.50/.test(lk("ovm-open-cost").textContent);
+  STATS = { ...STATS, prs: null }; renderOvMain(); const none = document.querySelector("#ov-main [data-ovmetric=\"merged\"] .mv").textContent;
+  STATS = { ...STATS, prs: [], prs_at: Math.round(now / 1000) - 7200 }; renderOvMain(); const old = /old/.test(document.getElementById("ov-main").textContent) && !lk("ovm-open-cost");
   const nav = renderNav; renderNav = () => { throw new Error("boom"); }; document.title = "x"; render(); renderNav = nav;
   return [m, c, none, same && kept, old, document.title !== "x"].join("|")')"
 ck "Stats PRs renders with a PR merged this week and a run in it" "true|false" "$(bash "$p" '#stats/prs' --fixture "$F" --width 1280 --probe '
   const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString();
   STATS = { ...(STATS ?? {}), prs: [{ n: 1, key: "FXA-1", title: "t", state: "MERGED", created: iso(2), merged: iso(1), add: 1, del: 0, src: "pipeline" }], rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], llm: STATS?.llm ?? {} };
   renderStats(); const t = document.body.innerText; return [/Cost per merged PR/.test(t), /did not render|is not defined/.test(t)].join("|")')"
-# Spend and Today (ov-spend slice). Rows over 100 days in four sources, one 95 days ago; a peak day with 3 merged PRs.
+# Spend (ov-main, the Spend tab). Rows over 100 days in four sources, one 95 days ago; a peak day with 3 merged PRs.
 SP='const DAY = 86400000, noon = d => { const t = new Date(); t.setHours(12, 0, 0, 0); return new Date(t.getTime() - d * DAY).toISOString(); };
   const rows = []; for (let d = 0; d < 100; d++) [["pipeline", 1], ["pass", 0.5], ["slack", 0.25], ["answer", 0.125]].forEach(([src, u]) => rows.push({ at: noon(d), src, usd: d === 4 ? u * 20 : u, key: `K-${d}-${src}`, model: "claude-opus-5-5" }));
   rows.push({ at: noon(95), src: "pipeline", usd: 1000, key: "OLD-1" });
@@ -164,204 +164,103 @@ SP='const DAY = 86400000, noon = d => { const t = new Date(); t.setHours(12, 0, 
 ck "Spend: equals Stats for 7, 30 and 90 days; sources add up; the 95-day row is out of 90d; the peak names 3 merged PRs" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
   const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r));
   const sp = ovSpend("90d"), parts = Object.values(sp.by).reduce((a, b) => a + b, 0);
-  OV_RANGE = "30d"; renderOvSpend(); const t = document.querySelector("#ov-spend").textContent;
+  OV_RANGE = "30d"; OV_METRIC = "spend"; renderOvMain(); const t = document.querySelector("#ov-main").textContent;
   return [eq, Math.abs(parts - sp.total) < 1e-9, sp.total < 1000, /3 PRs merged that day/.test(t)].join("|")')"
-ck "Today: the usual day, the last hour and midnight; 0 is \$0.00; 2 days of history is gray; a stale feed is unknown" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
-  renderOvToday(); const t1 = document.querySelector("#ov-today").textContent;
-  const a = /Usual day \$1\.88/.test(t1) && /100% of a usual day/.test(t1) && /LLM, last hour \$0\.42/.test(t1) && /By midnight about \$\d+/.test(t1) && /Opus 5\.5 \$1\.88/.test(t1);
-  STATS = { ...STATS, llm: { hour_usd: 0 } }; renderOvToday(); const b = /LLM, last hour \$0\.00/.test(document.querySelector("#ov-today").textContent);
-  STATS = { ...STATS, rows: STATS.rows.filter(r => Date.now() - Date.parse(r.at) < 2.5 * DAY) }; renderOvToday(); const c = /not enough history for a usual day/.test(document.querySelector("#ov-today").textContent);
-  STATE.stats_age_seconds = 420; STATE.stats_interval = 60; renderOvToday(); const d = /LLM, last hour unknown: The stats feed is 7 min old/.test(document.querySelector("#ov-today").textContent);
-  return [a, b, c, d].join("|")')"
 ck "A failed stats read: the cards say so, show no \$0.00, keep the last figures; a throwing card leaves the others" "true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
-  const w = () => new Promise(r => setTimeout(r, 50)), f0 = window.fetch;
+  const w = () => new Promise(r => setTimeout(r, 50)), f0 = window.fetch, txt = id => document.getElementById(id).textContent;
   STATS = null; window.fetch = async u => String(u).includes("/api/stats") ? new Response("not json", { status: 502 }) : f0(u); STATS_AT = 0; await loadStats(); await w();
-  const a = /could not be read/.test(document.querySelector("#ov-spend").textContent) && !/\$0\.00/.test(document.querySelector("#ov-spend").textContent + document.querySelector("#ov-today").textContent);
+  const a = /could not be read/.test(txt("ov-main")) && !/\$0\.00/.test(txt("ov-main") + txt("ov-llm") + txt("ov-budget"));
   window.fetch = f0; { '"$SP"' } const keep = STATS; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response("{}", { status: 500 }) : f0(u); await loadStats(); window.fetch = f0;
-  const b = STATS === keep && /These figures are from/.test(document.querySelector("#ov-spend").textContent);
-  const sp = renderOvSpend; renderOvSpend = () => { throw new Error("boom"); }; STATS_ERR = null; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response(JSON.stringify(keep)) : f0(u);
-  await loadStats(); window.fetch = f0; renderOvSpend = sp;
-  return [a, b, /did not render: boom/.test(document.querySelector("#ov-spend").textContent) && /Today/.test(document.querySelector("#ov-today").textContent)].join("|")')"
+  const b = STATS === keep && /These figures are from/.test(txt("ov-main"));
+  const mn = renderOvMain; renderOvMain = () => { throw new Error("boom"); }; STATS_ERR = null; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response(JSON.stringify(keep)) : f0(u);
+  await loadStats(); window.fetch = f0; renderOvMain = mn;
+  return [a, b, /did not render: boom/.test(txt("ov-main")) && /LLM spend/.test(txt("ov-llm"))].join("|")')"
 ck "A spend link sets Stats for the visit: totals agree, no Stats click saves, a bad value does nothing, Restore and Keep these" "true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
   const w = () => new Promise(r => setTimeout(r, 100)); localStorage.setItem("statsFilter", JSON.stringify({ ...SF_DEFAULT, model: "m1" })); SF = { ...SF_DEFAULT, model: "m1" }; SF_FROM_OV = false;
-  OV_RANGE = "7d"; renderOvSpend(); const tot = document.querySelector("#ov-spend .tot").textContent; document.querySelector("#ov-spend .tot").click(); await w();
+  OV_RANGE = "7d"; OV_METRIC = "spend"; renderOvMain(); const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-spend\"]"), tot = lk.querySelector(".big").textContent; lk.click(); await w();
   const a = location.hash === "#stats/spend" && SF.range === "7d" && SF.model === "all" && statsSpend("7d") === tot && !!document.querySelector("#s-stats .sfov");
   SF_FROM_OV = true; setStatsFilter({ range: "30d" }); const b = JSON.parse(localStorage.getItem("statsFilter")).model === "m1";
   const x = document.createElement("a"); x.dataset.sfrange = "x;y"; document.body.appendChild(x); const before = SF.range; x.click(); const c = SF.range === before;
   document.querySelector("[data-sfrestore]").click(); const d = SF.model === "m1" && !SF_FROM_OV;
   SF_FROM_OV = true; setStatsFilter({ range: "90d" }, false); document.querySelector("[data-sfkeep]").click(); const e = JSON.parse(localStorage.getItem("statsFilter")).range === "90d" && !SF_FROM_OV;
   return [a, b, c, d, e].join("|")')"
-# Daylight saving (New York): with a fixed date after each change, Spend still equals Stats and Today finds all 30 days.
+# Daylight saving (New York): with a fixed date after each change, Spend still equals Stats and the chart has one column for each day of the range.
 DST='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(...(a.length ? a : [FIX])); } static now() { return FIX; } } window.Date = D;
   const DAY = 86400000, rows = []; for (let i = 0; i < 100; i++) { const d = new R(FIX); d.setDate(d.getDate() - i); d.setHours(12, 0, 0, 0); rows.push({ at: d.toISOString(), src: "pipeline", usd: 1, key: "K" + i }); }
   STATS = { rows, prs: [], prs_at: null, llm: {} }; STATS_ERR = null;
   const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".v").textContent; };
-  const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r)); renderOvToday();
-  return [eq, /100% of a usual day/.test(document.querySelector("#ov-today").textContent)].join("|")'
+  const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r)); OV_RANGE = "30d"; OV_METRIC = "spend"; renderOvMain();
+  return [eq, document.querySelectorAll("#ov-main .ovchart .hit").length === ovSpend("30d").days.length].join("|")'
 for t in 'new Date(2027, 2, 20, 12).getTime()' 'new Date(2026, 10, 3, 12).getTime()'; do
-  ck "daylight saving: Spend equals Stats and Today sees 30 days ($t)" "true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "${DST/__T__/$t}")"
+  ck "daylight saving: Spend equals Stats and the chart has one column for each day of the range ($t)" "true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "${DST/__T__/$t}")"
 done
 ck "The range buttons repaint after a click, a legend link sets the source, an old PR list hides the merged count, a 200 error body keeps the figures" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
   const w = () => new Promise(r => setTimeout(r, 100)); render(); const b7 = document.querySelector("[data-ovrange=\"7d\"]"); b7.focus(); b7.click(); await w();
   const a = document.querySelector("[data-ovrange=\"7d\"]").getAttribute("aria-pressed") === "true" && document.querySelector("[data-ovrange=\"30d\"]").getAttribute("aria-pressed") === "false";
-  document.querySelector("#ov-spend [data-sfsrc=\"slack\"]").click(); await w(); const b = SF.src === "slack" && SF.range === "7d"; location.hash = "#overview"; await w();
-  STATS = { ...STATS, prs_at: Math.round(Date.now() / 1000) - 7200 }; OV_RANGE = "30d"; renderOvSpend(); const c = !/merged that day/.test(document.querySelector("#ov-spend").textContent);
+  document.querySelector("#ov-main [data-sfsrc=\"slack\"]").click(); await w(); const b = SF.src === "slack" && SF.range === "7d"; location.hash = "#overview"; await w();
+  STATS = { ...STATS, prs_at: Math.round(Date.now() / 1000) - 7200 }; OV_RANGE = "30d"; OV_METRIC = "spend"; renderOvMain(); const c = !/merged that day/.test(document.querySelector("#ov-main").textContent);
   const keep = STATS, f0 = window.fetch; STATS_AT = 0; window.fetch = async u => String(u).includes("/api/stats") ? new Response(JSON.stringify({ error: "stats unavailable" })) : f0(u); await loadStats(); window.fetch = f0;
-  return [a, b, c, STATS === keep && /could not be read \(stats unavailable\)/.test(document.querySelector("#ov-spend").textContent)].join("|")')"
-# The floor (ov-floor slice): 7 slots with FXA-1 at Agent (idle 700 s), FXA-2 booting, FXA-3 stalled and 4 free; a live
-# Slack session with 8 turns; a routine run that waits on its owner; a viewer who is not a team admin.
-FL='SNAP.inflight = [{ key: "FXA-1", summary: "one" }, { key: "FXA-2", summary: "two" }, { key: "FXA-3", summary: "three" }];
-  AGENTS.runners = [{ key: "FXA-1", name: "fxa-auto-1", agent_alive: true, stage: "watching", elapsed_seconds: 900, agent: { idle_seconds: 700, cost_so_far: 1.5 } },
-    { key: "FXA-2", name: "fxa-auto-2", agent_alive: true, stage: "starting", elapsed_seconds: 60, agent: {} },
-    { key: "FXA-3", name: "fxa-auto-3", agent_alive: false, stage: "stalled", detail: "no-motion 30m", elapsed_seconds: 4000, agent: {} }];
-  AGENTS.pool = [1, 2, 3, 4, 5, 6, 7].map(n => ({ slot: `fxa-auto-${n}`, agent: n < 4 ? `fxa-auto-${n}` : null, key: n < 4 ? `FXA-${n}` : "HEAD", busy: n < 4 }));
-  AGENTS.free_slots = ["fxa-auto-4", "fxa-auto-5", "fxa-auto-6", "fxa-auto-7"];
-  AGENTS.sessions = [{ key: "agent-abc123", state: "active", agent_alive: true, turns: 8, created: Date.now() / 1000 - 600, owner: "U1", request: "fix the thing" },
-    { key: "agent-rt0001", state: "active", agent_alive: false, routine_run: 4, routine_name: "Nightly", request: "SECRET ROUTINE PROMPT", created: Date.now() / 1000 - 60, owner: "U2" }];
-  AGENTS.instances = []; TEAM_ADMIN = { admin: false }; STATE.agents_error = null; render();
-  const ft = k => [...document.querySelectorAll("#ov-floor .ft")].find(e => e.textContent.includes(k));'
-ck "floor: stops from the belts, the header, the chip, the routine tile for a non-admin, the free slots" "true|true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
-  const h = document.querySelector("#ov-floor h2 .note").textContent, a1 = ft("FXA-1").querySelector("a");
-  const a = h === "3 of 7 pipeline sandboxes in use (1 stalled), plus 2 sessions (1 waits on its owner)";
-  const b = a1.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent" && a1.getAttribute("href") === "#pipeline/belts/FXA-1" && /idle 11 min/.test(ft("FXA-1").textContent) && /Stop 2 of 9, Boot/.test(ft("FXA-2").textContent);
-  const c = ft("FXA-3").classList.contains("bad") && /stalled/.test(ft("FXA-3").textContent) && /4 free: fxa-auto-4, 5, 6, 7/.test(document.querySelector("#ov-floor .ovfree").textContent) && !document.querySelector("#ov-floor .ft.free");
-  const s1 = ft("agent-abc123"), r = ft("scheduled run");
-  const d = /turn 8/.test(s1.textContent) && s1.querySelector("a").getAttribute("href") === "#sessions/live/agent-abc123" && !r.querySelector("a") && !/Nightly|SECRET/.test(document.getElementById("ov-floor").innerHTML) && /waits on its owner/.test(r.textContent) && !/U2/.test(r.textContent);
-  const e = document.querySelector("#ov-head .tag.run").textContent.startsWith("3 at work now");
-  TEAM_ADMIN = { admin: true }; render(); const f = /plus 1 Slack session and 1 scheduled run/.test(document.querySelector("#ov-floor h2 .note").textContent);
-  return [a, b, c, d, e, f].join("|")')"
-ck "floor: bad keys get no link, the last output line shows escaped and outside the link, focus and its name survive a poll, an unknown feed is ?" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
-  AGENTS.runners[0].agent.last_tool = "curl -H \"Authorization: Bearer fxm_<masked>\" <img src=x>"; AGENTS.runners.push({ key: "x\"><b>", name: "fxa-auto-9", agent_alive: true, stage: "watching", agent: {} });
-  AGENTS.sessions.push({ key: "javascript:alert(1)", state: "active", agent_alive: true, request: "x" }); render();
-  const a = !!ft("x\"><b>") && !ft("x\"><b>").querySelector("a") && !document.querySelector("#ov-floor b") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && /Bearer fxm_<masked>/.test(ft("FXA-1").querySelector(".ftl").textContent) && !document.querySelector("#ov-floor img") && !ft("FXA-1").querySelector("a").contains(ft("FXA-1").querySelector(".ftl"));
-  const l = () => ft("FXA-1").querySelector("a"); l().focus(); const n0 = l(); AGENTS.runners[0].agent.cost_so_far = 9; render(); const b = document.activeElement === n0 && n0.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent";
-  AGENTS.sessions.push({ key: "agent-new001", state: "active", agent_alive: true, request: "y" }); render(); const c = document.activeElement?.dataset.focus === "ft-FXA-1" && !!ft("agent-new001");
-  STATE.agents_error = "agents failed"; render(); const d = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /Sandboxes unknown: the agents feed could not be read/.test(document.getElementById("ov-floor").textContent) && !document.querySelector("#ov-floor .ft.free");
-  return [a, b, c, d].join("|")')"
-ck "floor: a throwing card leaves the others, and Running now is gone" "true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
-  const f = renderOvFloor; renderOvFloor = () => { throw new Error("boom"); }; LAST["ov-floor"] = ""; render(); renderOvFloor = f;
-  return [/This section did not render: boom/.test(document.getElementById("ov-floor").textContent) && !!document.querySelector("#ov-mini .big") && !!document.querySelector("#ov-head .seg"),
-    !document.getElementById("s-running") && !/Running now/.test(document.getElementById("main").innerText) && typeof renderRunning === "undefined"].join("|")')"
-ck "floor: held and unknown slots, a failed run and an exited agent, the chip's LLM hour, a fault repaints under focus" "true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
-  AGENTS.free_slots = ["fxa-auto-4"]; render(); const a = /held: fxa-auto-5, 6, 7/.test(document.getElementById("ov-floor").textContent) && /1 free: fxa-auto-4/.test(document.getElementById("ov-floor").textContent);
-  AGENTS.free_slots = null; render(); const b = /slots unknown: fxa-auto-4, 5, 6, 7/.test(document.getElementById("ov-floor").textContent) && !/\d free:/.test(document.getElementById("ov-floor").textContent);
-  AGENTS.free_slots = ["fxa-auto-4", "fxa-auto-5", "fxa-auto-6", "fxa-auto-7"]; AGENTS.runners[1].stage = "error"; AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: false, handoff: false }; render();
-  const c = /run failed/.test(ft("FXA-2").textContent) && ft("FXA-2").classList.contains("bad") && /agent exited/.test(ft("FXA-1").textContent);
-  STATS = { rows: [], prs: [], llm: { hour_usd: 0.42 } }; STATS_ERR = null; render(); const d = /at work now · LLM \$0\.42 in the last hour/.test(document.querySelector("#ov-head .tag.run").textContent);
-  AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: true, stage: "watching" }; AGENTS.runners[1].stage = "watching"; render();
-  ft("FXA-1").querySelector("a").focus(); AGENTS.runners[1].stage = "stalled"; render();
-  const e = ft("FXA-2").classList.contains("bad") && /\(2 stalled\)/.test(document.querySelector("#ov-floor h2 .note").textContent) && document.activeElement?.dataset.focus === "ft-FXA-1";
-  return [a, b, c, d, e].join("|")')"
-# What the system is doing (ov-system slice), with a fixed date in New York.
-SYS='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(...(a.length ? a : [FIX])); } static now() { return FIX; } } window.Date = D;
-  const now = Math.round(FIX / 1000), at = (h, m, dd = 0) => { const d = new R(FIX); d.setDate(d.getDate() + dd); d.setHours(h, m, 0, 0); return Math.round(d.getTime() / 1000); };
-  const pt = []; for (let m = 0; at(15, 4) + m * 60 <= at(19, 59); m += 5) pt.push(at(15, 4) + m * 60); pt.splice(3, 1);
-  SNAP.health = { ...SNAP.health, lock_age_seconds: 40, lock_stale_seconds: 1800, pass_timer: "on", paused: null, pass_times: [now - 60, ...pt, ...__NEXT__] };
-  SNAP.review = Array.from({ length: 6 }, (_, i) => ({ key: `FXA-${70 + i}`, pr: 70 + i, state: "OPEN", ok: 20, fail: 0, running: 0, created: new R(FIX - (12 - i) * 86400000).toISOString() }));
-  SNAP.repo = SNAP.team.repo = "example/app";
-  SNAP.inflight = [{ key: "FXA-60", stage: "pr", pr: 77, ok: 18, fail: 0, running: 4 }, { key: "FXA-61", stage: "pr", pr: "5\"><img src=x>", ok: 1, fail: 0, running: 1 }]; AGENTS.runners = [];
-  AGENTS.sessions = [{ key: "agent-rt0002", state: "active", agent_alive: true, routine_run: 5, routine_name: "Live one", created: now - 60, request: "r" }];
-  SNAP.queue = { ...(SNAP.queue ?? {}), ready: Array.from({ length: 27 }, (_, i) => ({ key: `FXA-${i + 1}` })) };
-  STATE.age_seconds = 44; STATE.interval = 120; STATE.agents_age_seconds = 18;
-  RTSUM = { teams: {}, routines: { 1: { name: "Nightly <img src=x> report", team: "fxa", next: at(2, 0, 1), runs_30d: 10, cost_30d: 30 }, 2: { name: "Odd team", team: "../x", next: at(16, 0) }, 3: { name: "Old", team: "fxa", next: now - 30 } } }; RTSUM_ERR = ""; RTSUM_AT = Date.now();
-  const txt = () => document.getElementById("ov-sys").innerText, html = () => document.getElementById("ov-sys").innerHTML;'
-WED='new Date(2026, 9, 21, 15, 0).getTime()'; FRI='new Date(2026, 9, 23, 15, 0).getTime()'
-ck "system: Wednesday 15:00 reads the real facts; an admin sees the routine, escaped; a non-admin sees none" "true|true|true|true|true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$WED/; s/__NEXT__/[at(7, 4, 1)]/")"'
-  TEAM_ADMIN = { admin: true }; render(); const t = txt(), h = html();
-  const a = /Pipeline pass · runs now · 40s/.test(t) && /checks 18 of 22 done/.test(t) && /width:82%/.test(h) && /href="https:\/\/github\.com\/example\/app\/pull\/77\/checks"/.test(h);
-  const b = /Merge watch · 6 PRs wait on a human review · the oldest is 12 days/.test(t);
-  const c = /3:04 PM Pipeline pass, then every 5 min until 7:59 PM/.test(t) && /Quiet hours start 7:59 PM/.test(t) && /First pass of the day 7:04 AM · 27 tickets are ready/.test(t);
-  const a2 = /checks 1 of 2 done/.test(t) && !/pull\/5/.test(h) && !document.querySelector("#ov-sys img") && /Routine Live one runs now/.test(t);
-  const d = /then every 5 min/.test(t) && document.querySelectorAll("#ov-sys svg line").length === 59 && document.querySelectorAll("#ov-sys svg rect").length === 1 && document.querySelectorAll("#ov-sys svg circle").length === 2;
-  const e = /2:00 AM Routine Nightly <img src=x> report · about \$3\.00/.test(t) && !document.querySelector("#ov-sys img") && !/Routine Old/.test(t) && /4:00 PM Routine Odd team/.test(t) && !/#teams\/\.\.\/x/.test(h);
-  TEAM_ADMIN = { admin: false }; render(); const f = !/Nightly|Odd team|Live one|routine run|circle/.test(html().replace("Team admins see the routine runs here.", "")) && /Team admins see the routine runs here\./.test(txt());
-  return [a && a2, b, c, d, e, f].join("|")')"
-ck "system: Friday afternoon names the weekday of the first pass" "true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$FRI/; s/__NEXT__/[at(7, 4, 1), at(8, 4, 1)]/")"'
-  TEAM_ADMIN = { admin: false }; render(); return /First pass of the day Sat 7:04 AM/.test(txt()) && /Quiet hours start 7:59 PM/.test(txt())')"
-ck "system: it says when it cannot tell, and shows no false time" "true|true|true|true|true|true|true" "$(TZ=America/New_York bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$(printf '%s' "$SYS" | sed "s/__T__/$WED/; s/__NEXT__/[]/")"'
-  const st = (patch, f) => { Object.assign(SNAP.health, patch); render(); return f(txt()); };
-  TEAM_ADMIN = { admin: true };
-  const a = st({ pass_times: null, next_pass_epoch: now + 600 }, t => /Pass times unknown on this host\./.test(t) && /3:10 PM Next pipeline pass/.test(t) && !document.querySelector("#ov-sys svg line"));
-  const b = st({ pass_timer: "off", lock_age_seconds: null }, t => /The pass timer is off, so no pass runs\./.test(t));
-  const c = st({ pass_timer: "on", lock_age_seconds: 4000 }, t => /A pass lock is 67 min old/.test(t));
-  const d = st({ paused: "deploy" }, t => /Passes are paused: deploy/.test(t));
-  SNAP.review = null; const e = st({}, t => /CI watch and Merge watch: unknown, GitHub fetch failed/.test(t) && !/checks 18/.test(t));
-  RTSUM_AT = Date.now() - 50000; const f = st({}, t => /Routine times unknown: the routine store cannot be read/.test(t) && !/2:00 AM/.test(t));
-  STATE.age_seconds = 900; const g = st({ pass_times: [now + 300], paused: null, lock_age_seconds: 40 }, t => /Pass times unknown: the snapshot is 15 min old/.test(t) && !document.querySelector("#ov-sys svg line")
-    && /Pass, CI and merge watch unknown: the snapshot is 15 min old/.test(t) && !/Pipeline pass · runs now|Merge watch · /.test(t) && /--bad/.test(document.querySelector("#ov-sys .row[style*=\"--bad\"]")?.getAttribute("style") ?? ""));
-  return [a, b, c, d, e, f, g].join("|")')"
+  return [a, b, c, STATS === keep && /could not be read \(stats unavailable\)/.test(document.querySelector("#ov-main").textContent)].join("|")')"
 # The Overview fixture (sample data only, times relative to the run): every card renders, none errors.
 O="$(dirname "$0")/page-fixture-overview.json"
 ck "overview fixture: every card heading, no section error, relative times read as recent" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  const hs = ["ov-spend", "ov-today", "ov-floor", "ov-sys", "ov-mini"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
-  return [hs, !document.getElementById("main").innerText.includes("did not render"), /PRs merged in 7 days/.test(document.getElementById("ov-mini").textContent) && document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent === "6"].join("|")')"
-# Overview layout: no sideways scroll at 500 (the smallest headless width) and 640; the tiles go 1 wide in a
-# phone-sized floor card; Spend and Today share a row at 1280 and stack at 640; Belts and Teams still fit.
-LAY='const cols = () => getComputedStyle(document.querySelector("#ov-floor .ovtiles")).gridTemplateColumns.split(" ").length;
-  const row = () => Math.abs(document.getElementById("ov-spend").getBoundingClientRect().top - document.getElementById("ov-teams").getBoundingClientRect().top) < 2;
-  const fits = document.documentElement.scrollWidth <= innerWidth, c2 = cols(); document.getElementById("ov-floor").style.width = "330px"; await new Promise(r => setTimeout(r, 50));
-  return [fits, c2, cols(), row()].join("|")'
-ck "overview at 500 px: no sideways scroll, tiles 1 wide, 1 wide in a phone-sized card, cards stacked" "true|1|1|false" "$(bash "$p" '#overview' --fixture "$O" --width 500 --probe "$LAY")"
-ck "overview at 640 px: the same" "true|2|1|false" "$(bash "$p" '#overview' --fixture "$O" --width 640 --probe "$LAY")"
-ck "overview at 1280 px: 4 tiles a row; Spend and Teams share a row" "true|4|1|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe "$LAY")"
+  const hs = ["ov-main", "ov-needs", "ov-budget", "ov-runs", "ov-llm", "ov-hours", "ov-teams", "ov-src"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
+  OV_METRIC = "merged"; renderOvMain(); const m = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"] .big")?.textContent;
+  return [hs, !document.getElementById("main").innerText.includes("did not render"), m === "6"].join("|")')"
+# Overview layout: no sideways scroll at 500 (the smallest headless width) and 640, where the rail and the
+# three cards stack; at 1280 the rail sits beside the chart and the three cards share a row. Belts and Teams still fit.
+LAY='const top = id => document.getElementById(id).getBoundingClientRect().top, fits = document.documentElement.scrollWidth <= innerWidth;
+  const side = Math.abs(top("ov-main") - top("ov-needs")) < 2, three = Math.abs(top("ov-runs") - top("ov-hours")) < 2;
+  return [fits, side, three].join("|")'
+ck "overview at 500 px: no sideways scroll, the rail and the three cards stacked" "true|false|false" "$(bash "$p" '#overview' --fixture "$O" --width 500 --probe "$LAY")"
+ck "overview at 640 px: the same" "true|false|false" "$(bash "$p" '#overview' --fixture "$O" --width 640 --probe "$LAY")"
+ck "overview at 1280 px: the rail beside the chart, the three cards in a row" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe "$LAY")"
 for r in '#pipeline/belts' '#teams'; do
   ck "$r at 500 px still has no sideways scroll" "true" "$(bash "$p" "$r" --fixture "$F" --width 500 --probe 'return document.documentElement.scrollWidth <= innerWidth')"
 done
-# Epic review 1 fixes: the Merged and Cost cards open Stats PRs on 7 days and agree with it; a failed Jira queue
-# read is not '0 ready'; a stale agents feed is unknown on the chip and the floor too.
-ck "review 1: the Cost card opens Stats PRs on 7 days with the same figure; a Jira outage is not 0 ready; a stale agents feed is unknown everywhere" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+# Epic review 1 fixes: the Merged and Cost links open Stats PRs on 7 days and agree with it; a stale agents feed
+# is unknown on the chip and on Needs you.
+ck "review 1: the Cost link opens Stats PRs on 7 days with the same figure; a stale agents feed is unknown on the chip and Needs you" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)); localStorage.setItem("statsFilter", JSON.stringify({ ...SF_DEFAULT, range: "30d" })); SF = { ...SF_DEFAULT, range: "30d" };
-  const card = document.querySelector("#ov-mini [data-focus=\"ov-cost\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-cost\"]").click(); await w();
+  OV_METRIC = "merged"; renderOvMain(); const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-cost\"]"), card = lk.querySelector(".big").textContent; lk.click(); await w();
   const kpi = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Cost per merged PR")?.querySelector(".v").textContent;
   const a = location.hash === "#stats/prs" && SF.range === "7d" && kpi === card;
-  location.hash = "#overview"; await w(); SNAP.queue = { fetch_failed: true, ready: [], skipped: [] }; render();
-  const b = /ready tickets unknown, Jira fetch failed/.test(document.getElementById("ov-sys").innerText) && !/0 tickets are ready/.test(document.getElementById("ov-sys").innerText);
-  STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
-  const c = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /Sandboxes unknown: the agents feed is 20 min old/.test(document.getElementById("ov-floor").textContent) && /\?/.test(document.querySelector("#ov-needs .big").textContent);
-  return [a, b, c].join("|")')"
+  location.hash = "#overview"; await w(); STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
+  const c = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /\?/.test(document.querySelector("#ov-needs .big").textContent);
+  return [a, c].join("|")')"
 ck "review 2: 'Merged, 7 days' on Overview equals the Stats PRs Merged card it opens, for a PR opened 10 days ago" "2|2" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
   STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(1) }, { n: 2, key: "EX-2", title: "b", state: "MERGED", src: "pipeline", created: ago(2), merged: ago(1) }] };
-  renderOvMini(); const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
+  OV_METRIC = "merged"; renderOvMain(); const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"]"), o = lk.querySelector(".big").textContent; lk.click(); await w();
   return [o, [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent].join("|")')"
-# Epic review 3: the range buttons keep the focus; Stats PRs shows a week of merges of older PRs; a stale agents
-# feed makes routine runs unknown.
-ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs shows merges of older PRs; routine runs unknown on a stale agents feed" "true|1|1|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+# Epic review 3: the range buttons keep the focus; Stats PRs shows a week of merges of older PRs.
+ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs shows merges of older PRs" "true|1|1" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
   const b = document.querySelector("[data-ovrange=\"7d\"]"); b.focus(); b.click(); await w(); AGENTS.runners[0].agent_alive = false; render(); await w();
   const a = document.activeElement?.dataset.focus === "ovr-7d" && document.querySelector("[data-ovrange=\"7d\"]").getAttribute("aria-pressed") === "true";
-  STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(2) }] }; renderOvMini();
-  const o = document.querySelector("#ov-mini [data-focus=\"ov-merged\"] .big").textContent; document.querySelector("#ov-mini [data-focus=\"ov-merged\"]").click(); await w();
+  STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(2) }] }; OV_METRIC = "merged"; renderOvMain();
+  const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"]"), o = lk.querySelector(".big").textContent; lk.click(); await w();
   const k = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent;
   SF = { ...SF, src: "slack" }; LAST["s-stats"] = ""; renderStats(); const k2 = /No PR opened or merged in this range matches these filters/.test(document.getElementById("s-stats").textContent);
-  location.hash = "#overview"; await w(); TEAM_ADMIN = { admin: true }; AGENTS.sessions = [{ key: "agent-rt0009", state: "active", agent_alive: true, routine_run: 9, routine_name: "Ghost run", created: Date.now() / 1000 }];
-  STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render(); const t = document.getElementById("ov-sys").innerText;
-  return [a, o, k2 ? k : "filter ignored", /Routine runs unknown/.test(t) && !/Ghost run runs now/.test(t)].join("|")')"
-# Overview at a glance (O6): the KPI change, Teams by profile, the free-slot line, Recent runs and its failed read.
+  return [a, o, k2 ? k : "filter ignored"].join("|")')"
+# Overview at a glance (O6): the KPI change, Teams by profile, Recent runs and its failed read.
 ck "O6 KPIs: the change against the period before in %, points and minutes, colored by which way is good" "+50%|bad|+25 pts|good|+14 min|bad|75%" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const DAY = 86400000, iso = d => new Date(Date.now() - d * DAY).toISOString(), P = (d, pr, min, usd) => ({ at: iso(d), src: "pipeline", pr, min, usd, key: "K" });
-  STATS = { ...STATS, rows: [P(1, true, 10, 10), P(1, true, 20, 10), P(2, true, 30, 5), P(2, false, 40, 5), P(9, true, 10, 10), P(9, false, 12, 10)] }; STATS_ERR = null; OV_RANGE = "7d"; renderOvMini();
-  const g = f => { const c = document.querySelector(`#ov-mini [data-focus="${f}"] .chg`); return [c?.textContent, c?.classList.contains("good") ? "good" : c?.classList.contains("bad") ? "bad" : ""]; };
-  return [...g("ov-spend-k"), ...g("ov-rate"), ...g("ov-median"), document.querySelector("#ov-mini [data-focus=\"ov-rate\"] .big").textContent].join("|")')"
+  STATS = { ...STATS, rows: [P(1, true, 10, 10), P(1, true, 20, 10), P(2, true, 30, 5), P(2, false, 40, 5), P(9, true, 10, 10), P(9, false, 12, 10)] }; STATS_ERR = null; OV_RANGE = "7d"; renderOvMain();
+  const g = f => { const c = document.querySelector(`#ov-main [data-ovmetric="${f}"] .chg`); return [c?.textContent, c?.classList.contains("good") ? "good" : c?.classList.contains("bad") ? "bad" : ""]; };
+  return [...g("spend"), ...g("rate"), ...g("median"), document.querySelector("#ov-main [data-ovmetric=\"rate\"] .mv").textContent].join("|")')"
 ck "O6 Teams: rows by stats profile (none is fxa), work now by team, runs and PRs in the range, the budget bar, no link for a bad name" "fxa|1,2,1|0,1,0|warn 90%|DIV" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const iso = d => new Date(Date.now() - d * 86400000).toISOString();
   TEAMS = { teams: [{ profile: "two", label: "Two", access: { open: true }, budget: { month_usd: 45, month_cap: 50 } }, { profile: "fxa", label: "FxA" }, { profile: "../x", label: "Bad" }] };
   STATS = { ...STATS, rows: [{ at: iso(1), src: "pipeline", pr: true, usd: 3 }, { at: iso(1), src: "slack", usd: 1, profile: "fxa" }, { at: iso(2), src: "slack", usd: 2, profile: "two" }, { at: iso(40), src: "slack", usd: 9, profile: "two" }] };
   OV_RANGE = "30d"; renderOvTeams(); const r = p => document.querySelector(`#ov-teams [data-team="${p}"]`), nums = p => [...r(p).querySelectorAll(".num")].map(e => e.textContent).join(","), bar = r("two").querySelector(".meter i");
   return [document.querySelector("#ov-teams [data-team]").dataset.team, nums("fxa"), nums("two"), `${bar.className} ${bar.style.width}`, r("../x").tagName].join("|")')"
-ck "O6 Running now: busy tiles only, the free slots on one line, and an empty floor says when the last run ended and the next pass" "3|3 free: ex-auto-3, 4, 5|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  const a = document.querySelectorAll("#ov-floor .ft").length, b = document.querySelector("#ov-floor .ovfree").textContent.split(" · ")[0];
-  AGENTS.runners = []; AGENTS.sessions = []; AGENTS.pool = AGENTS.pool.map(x => ({ ...x, agent: null, busy: false })); render();
-  return [a, b, /^Nothing runs now · the last run ended .+ago · next pass in \d+ min$/.test(document.querySelector("#ov-floor .emptybox").textContent)].join("|")')"
 ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged from pr_state, today's counts, escaped" "PR #312|running|done|PR #301 merged|answered|no change|failed|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .tag")].map(e => e.textContent);
   const a = document.querySelector("#ov-runs a.tag[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs h2").textContent);
   RUNS = [{ at: new Date().toISOString(), src: "pipeline", key: "x\"><img src=x>", title: "<img src=x>", team: "<b>t</b>", outcome: "pr", pr_url: "javascript:alert(1)", pr_number: 5 }]; renderOvRuns();
   const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.tag") && /PR #5/.test(document.getElementById("ov-runs").textContent);
   return [...bs, a, b].join("|")')"
-ck "O6 review: the KPI tiles keep their order, Spend then Today then the rest, when a tile is not a link" "ov-spend-k|ov-today|ov-merged" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  const t = [...document.querySelectorAll("#ov-mini > .ovk, #ov-today")].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-  return t.slice(0, 3).map(x => x.id || x.dataset.focus).join("|")')"
 ck "O6 review: a failed stats feed puts its note on Teams and Recent runs and the Teams figures say unknown; today counts every stats row, not the card's" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const tm = () => document.getElementById("ov-teams").textContent, rn = () => document.getElementById("ov-runs").textContent;
   const now = new Date().toISOString(); STATS.rows ??= []; for (let i = 0; i < 14; i++) STATS.rows.push({ at: now, src: "pipeline", key: "EX-9" + i, kind: "fix", usd: 1, min: 3, pr: i < 5, profile: "example" });
@@ -374,6 +273,39 @@ ck "O6 Recent runs: no endpoint, an error body and an HTTP error each say unavai
   window.fetch = async u => String(u).includes("/api/runs/recent") ? new Response(JSON.stringify({ runs: [], error: "stats unavailable" })) : f0(u); await loadRuns(); const b = /Recent runs unavailable: stats unavailable/.test(t());
   window.fetch = async u => String(u).includes("/api/runs/recent") ? new Response("nope", { status: 404 }) : f0(u); await loadRuns(); window.fetch = f0;
   return [a, b, /Recent runs unavailable: HTTP 404/.test(t()) && !document.querySelector("#ov-runs .ovrun")].join("|")')"
+# The new Overview cards (O7): LLM spend, the month's budget, runs by hour, the slim /api/overview slice, Needs you rows.
+ck "O7 LLM: 14 days and the cost by model from the full feed or the slim slice, the last hour, a stale feed is unknown" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const days = [...Array(20)].map((_, i) => ({ day: new Date(Date.now() - (19 - i) * 86400000).toISOString().slice(0, 10), usd: i }));
+  STATS = { ...STATS, llm: { hour_usd: 0.42, days, models: [{ day: "a", model: "claude-opus-5-5", usd: 6 }, { day: "b", model: "claude-opus-5-5", usd: 1 }, { day: "b", model: "claude-sonnet-5-5", usd: 3.6 }] } }; STATS_ERR = null; renderOvLlm();
+  const t = document.getElementById("ov-llm").textContent, a = /\$0\.42 last hour/.test(t) && /Opus 5\.5\$7\.00/.test(t) && /Sonnet 5\.5\$3\.60/.test(t) && document.querySelectorAll("#ov-llm .ovchart .hit").length === 14;
+  const full = STATS; STATS = null; OV = { rows: [], prs: [], llm: { hour_usd: 0.1, days: days.slice(-3), models: { "claude-opus-5-5": 2 } } }; renderOvLlm();
+  const b = /\$0\.10 last hour/.test(document.getElementById("ov-llm").textContent) && /Opus 5\.5\$2\.00/.test(document.getElementById("ov-llm").textContent); STATS = full;
+  STATE.stats_age_seconds = 9999; STATE.stats_interval = 60; renderOvLlm(); const c = /last hour unknown/.test(document.getElementById("ov-llm").textContent);
+  return [a, b, c].join("|")')"
+ck "O7 Budget: every team by day from the rows; a capped team's meter is its budget record, not the rows; a team past its cap rate gets the date; no cap says so" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const now = new Date(), d = new Date(now.getFullYear(), now.getMonth(), 1, 12).toISOString();
+  STATS = { ...STATS, rows: [{ at: d, src: "pipeline", usd: 7, profile: "example" }, { at: new Date().toISOString(), src: "slack", usd: 3, profile: "sample-two" }] }; STATS_ERR = null;
+  TEAMS = { teams: [{ profile: "example", label: "Example", budget: { month_usd: 1, month_cap: null } }, { profile: "sample-two", label: "Sample Two", budget: { month_usd: 49, month_cap: 50 } }] }; renderOvBudget();
+  const t = document.getElementById("ov-budget").textContent, a = /\$10\.00/.test(t), b = /Sample Two\$49\.00 of \$50\.00/.test(t) && !/Example\$/.test(t);
+  const c = now.getDate() === new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() || /passes the cap on/.test(t);
+  TEAMS = { teams: [{ profile: "example", label: "Example", budget: { month_usd: 1, month_cap: null } }] }; renderOvBudget();
+  return [a, b, c, /No team has a monthly budget cap/.test(document.getElementById("ov-budget").textContent)].join("|")')"
+ck "O7 Runs by hour: the last 24 hours, passes not counted, the busiest hour named" "3 runs|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const ago = h => new Date(Date.now() - h * 3600000).toISOString();
+  STATS = { ...STATS, rows: [{ at: ago(1), src: "pipeline" }, { at: ago(1), src: "slack" }, { at: ago(5), src: "answer" }, { at: ago(1), src: "pass" }, { at: ago(30), src: "pipeline" }] }; STATS_ERR = null; renderOvHours();
+  const t = document.getElementById("ov-hours").textContent;
+  return [t.match(/\d+ runs?/)?.[0], /Busiest: .*2 runs/.test(t), document.querySelectorAll("#ov-hours .ovchart .hit").length === 24].join("|")')"
+ck "O7 slim slice: before /api/stats lands the Overview draws from /api/overview; the full feed then takes over; a bad answer is ignored" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const f0 = window.fetch, full = STATS, t = Date.now() - 3600000;
+  window.fetch = async u => String(u).includes("/api/overview") ? new Response(JSON.stringify({ cols: ["ms", "src", "usd", "pr", "min", "profile", "compute_usd"], rows: [[t, "pipeline", 12.5, 1, 9, "example", 0]], merged: [new Date(t).toISOString()], prs_at: Math.round(Date.now() / 1000), llm: { hour_usd: 0.05, days: [], models: {} } })) : f0(u);
+  STATS = null; OV = null; await loadOverview(); window.fetch = f0;
+  const a = OV?.slim && document.querySelector("#ov-main [data-ovmetric=\"spend\"] .mv").textContent === "$12.50" && OV.rows[0].pr === 1 && OV.prs.length === 1;
+  STATS = full; render(); const b = document.querySelector("#ov-main [data-ovmetric=\"spend\"] .mv").textContent !== "$12.50";
+  const keep = OV; window.fetch = async u => String(u).includes("/api/overview") ? new Response("{}") : f0(u); await loadOverview(); window.fetch = f0;
+  return [a, b, OV === keep].join("|")')"
+ck "O7 Needs you: a row per belt that needs a person, each linking its belt, the reason escaped" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  const r = document.querySelector("#ov-needs .nrow"), bg = beltGroups().needs[0];
+  return [!!r && r.getAttribute("href") === `#pipeline/belts/${encodeURIComponent(bg.t.key)}`, !document.querySelector("#ov-needs .nrow .why img")].join("|")')"
 # i407 sb-cards: the cards read the 7 day Stats rows and the agents feed, say what the host costs, and never show a 0 for an unknown feed.
 C="$(dirname "$0")/page-fixture-sb-cards.json"
 ck "i407 cards: 7 day runs and sessions, the cost lines, the host state from fc_state, a GCE session, and an unknown stats feed" "true|true|true|true|true|true|true|true|true|true|true" "$(bash "$p" '#runners' --fixture "$C" --width 1280 --probe '

@@ -13,7 +13,7 @@ run() { local out rc; out="$(bash "$p" '#overview' --fixture "$O" --width 1280 -
 # The figure on the Stats page is the KPI with the card's label up to the comma, or Spend.
 run '
   const w = () => new Promise(r => setTimeout(r, 120)), out = [], seen = new Set();
-  // A run today, so Today has a figure at any hour of the run.
+  // A run today, so the month and the day have a figure at any hour of the run.
   STATS.rows.push({ at: new Date().toISOString(), src: "slack", key: "agent-ex0t01", usd: 1.5, profile: "example" }); render(); await w();
   const links = () => [...document.querySelectorAll(".ov [data-sfrange]")].filter(a => !a.closest("[hidden]"));
   const ids = links().map(a => a.dataset.focus);
@@ -34,8 +34,8 @@ run '
 # a card in the page and not in CARDS fails, so a new card gets its feeds named here.
 # Stale is old data past 3 intervals; failed is what the server sends when a read fails, with or without old data.
 run '
-  const CARDS = { "ov-head": ["agents"], "ov-needs": ["snapshot", "agents"], "ov-mini": ["stats"], "ov-today": ["stats"], "ov-spend": ["stats"],
-    "ov-teams": ["stats", "agents", "teams"], "ov-floor": ["agents"], "ov-runs": ["stats", "runs"], "ov-sys": ["snapshot", "agents"] };
+  const CARDS = { "ov-head": ["agents"], "ov-needs": ["snapshot", "agents"], "ov-main": ["stats"], "ov-budget": ["stats", "teams"], "ov-runs": ["stats", "runs"],
+    "ov-llm": ["stats"], "ov-hours": ["stats"], "ov-teams": ["stats", "agents", "teams"], "ov-src": ["stats"] };
   const FEEDS = {
     "snapshot stale": () => { STATE.age_seconds = 9999; }, "snapshot failed": () => { STATE.error = "the snapshot read failed"; SNAP = STATE.snapshot = null; },
     "stats stale": () => { STATE.stats_age_seconds = 9999; }, "stats failed": () => { STATS_ERR = "the stats feed could not be read (HTTP 500)"; },
@@ -44,7 +44,7 @@ run '
     "runs failed": () => { RUNS = null; RUNS_ERR = "HTTP 500"; } };
   const UNKNOWN = /unknown|\?|could not be read|min old|unavailable|not current|failed/i;
   const w = () => new Promise(r => setTimeout(r, 60)), txt = id => document.getElementById(id).innerText, out = [];
-  const ids = [...document.querySelectorAll(".ov section[id]")].map(s => s.id).filter(id => id !== "ov-kpis");
+  const ids = [...document.querySelectorAll(".ov section[id]")].map(s => s.id);
   ids.filter(id => !CARDS[id]).forEach(id => out.push(`FAIL ${id} is an Overview card with no feeds named in CARDS`));
   const save = JSON.stringify({ STATE, STATS, TEAMS, RUNS, STATS_ERR, RUNS_ERR }), restore = () => { const s = JSON.parse(save);
     STATE = s.STATE; SNAP = STATE.snapshot; AGENTS = STATE.agents; STATS = s.STATS; TEAMS = s.TEAMS; RUNS = s.RUNS; STATS_ERR = s.STATS_ERR; RUNS_ERR = s.RUNS_ERR; };
