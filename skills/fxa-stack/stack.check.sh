@@ -22,7 +22,7 @@ bash "$S" restart demo-svc 1BAD=x >/dev/null 2>&1; check "restart rejects a bad 
 bash "$S" restart demo-svc NOEQUALS >/dev/null 2>&1; check "restart rejects a word with no =" 2 $?
 check "a rejected restart does not call pm2" "" "$(cat "$tmp/pm2.log" 2>/dev/null)"
 bash "$S" wait nosuch >/dev/null 2>&1; check "wait rejects an unknown service" 2 $?
-check "wait names the known services" 1 "$(bash "$S" wait nosuch 2>&1 | grep -c 'names: mysql redis firestore goaws auth inbox content settings profile admin-server 123done')"
+check "wait names the known services" 1 "$(bash "$S" wait nosuch 2>&1 | grep -c 'names: mysql redis firestore goaws auth inbox content settings profile admin-server 123done 321done')"
 # The rest reads pm2 configs with node, which the runner has and a bare test host may not.
 command -v node >/dev/null || { echo "skip: restart needs node"; exit "$fail"; }
 bash "$S" restart no-such-svc A=1 >/dev/null 2>&1; check "restart fails for a service no config defines" 1 $?
@@ -34,5 +34,13 @@ check "restart deletes then starts from the built config" "delete demo-svc|start
 
 bash "$S" restart demo-svc >/dev/null 2>&1
 check "a plain restart goes back to the config env" '{"NODE_ENV":"dev","PORT":"1"}' "$(env_of)"
+
+# ensure starts 321done with pm2 when the core is up and 10139 does not answer.
+mkdir -p "$tmp/repo/packages/123done"
+echo "module.exports = { apps: [{ name: '321done', script: 'node server.js', env: { PORT: '10139' } }] };" > "$tmp/repo/packages/123done/pm2.config.js"
+printf '#!/bin/sh\ncase "$*" in *10139*) grep -q "^start" %s/pm2.log 2>/dev/null ;; *) exit 0 ;; esac\n' "$tmp" > "$tmp/bin/curl"; chmod +x "$tmp/bin/curl"
+: > "$tmp/pm2.log"
+bash "$S" ensure >/dev/null 2>&1
+check "ensure starts a down 321done with pm2" "delete 321done|start $tmp/fxa-stack-restart-321done.config.js" "$(paste -sd'|' "$tmp/pm2.log")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

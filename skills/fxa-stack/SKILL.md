@@ -57,13 +57,13 @@ The names are pm2 names: `auth`, `inbox`, `content`, `settings-react`,
 | auth-server `*.in.spec.ts` integration tests | nothing from pm2; the tests start their own auth on :9100 |
 | Settings pages, sign-in, sign-up, screenshots | `ensure` (auth, inbox, content, nginx, settings, profile) |
 | Functional test account cleanup | admin-server on :8095, which `fxa-start` starts |
-| OAuth through 123done, `tests/oauth/*` | known to fail on the VM (token exchange needs Stripe/Strapi); leave to CI |
+| OAuth through 123done and 321done, `tests/oauth/*` | `ensure`, which also starts 321done (:10139) when it is down |
 | Payments | not supported on the VM; leave to CI |
 
 ## Ports
 
 content 3030 (nginx, which proxies to content on 3031 and settings on 3000),
-auth 9000, inbox 9001, profile 1111, settings 3000, 123done 8080, admin 8095,
+auth 9000, inbox 9001, profile 1111, settings 3000, 123done 8080, 321done 10139, admin 8095,
 MySQL 3306, Redis 6379, Firestore 9090, goaws 4100, Cloud Tasks 8123.
 
 ## Fixes for common failures

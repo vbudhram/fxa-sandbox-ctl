@@ -15,7 +15,8 @@ content (nginx)|http http://localhost:3030/
 settings|http http://localhost:3000/settings/static/js/bundle.js
 profile|http http://localhost:1111/__heartbeat__
 admin-server|tcp 8095
-123done|http http://localhost:8080/'
+123done|http http://localhost:8080/
+321done|http http://localhost:10139/'
 
 status() {
   local down=0 name check
@@ -51,14 +52,18 @@ wait_up() {
 # The services a UI check cannot run without. Others are reported, not required.
 core_up() { http http://localhost:9000/__heartbeat__ && http http://localhost:3030/ && http http://localhost:3000/settings/static/js/bundle.js; }
 
+# OAuth functional tests need 321done, and fxa-start does not always bring it up.
+up_321done() { http http://localhost:10139/ || { echo "321done is down; starting it with pm2"; restart 321done || true; }; }
+
 ensure() {
-  if core_up; then echo "stack already up"; status; return 0; fi
+  if core_up; then echo "stack already up"; up_321done; status; return 0; fi
   echo "starting the stack with fxa-start (about 2 minutes)..."
   local t0; t0=$(date +%s)
   source /etc/agent-env.sh 2>/dev/null
   fxa-start > /tmp/fxa-start.log 2>&1 || echo "fxa-start exited non-zero; see /tmp/fxa-start.log"
   local i
   for i in $(seq 40); do core_up && break; sleep 3; done
+  core_up && up_321done
   status || echo "(some optional services are down; bash $0 diagnose shows why)"
   core_up || { rec start "$t0" 1; echo "auth, content, or settings is down; run: bash $0 diagnose"; return 1; }
   rec start "$t0" 0
