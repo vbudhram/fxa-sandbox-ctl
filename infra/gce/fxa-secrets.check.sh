@@ -21,7 +21,8 @@ for c in curl chown sudo; do printf '#!/bin/sh\n[ "$(basename "$0")" = curl ] &&
 cat > "$t/bin/gcloud" <<'SH'
 #!/bin/sh
 n=""; while [ $# -gt 0 ]; do [ "$1" = --secret ] && n="$2"; shift; done
-[ "$n" = "${FAIL_SECRET:-}" ] && { echo "ERROR: permission denied on $n" >&2; exit 1; }
+[ "$n" = "${FAIL_SECRET:-}" ] && { echo "ERROR: (gcloud.secrets.versions.access) UNAVAILABLE: the service is unavailable on $n" >&2; exit 1; }
+[ "$n" = "${DENY_SECRET:-}" ] && { echo "ERROR: (gcloud.secrets.versions.access) PERMISSION_DENIED: Permission denied on resource (or it may not exist)." >&2; exit 1; }
 case " ${HAVE:-} " in *" $n "*) printf 'v-%s' "$n"; exit 0 ;; esac
 case "$n" in fxa-claude-token|fxa-runlayer-agent-token|fxa-sentry-token|fxa-grafana-token|fxa-jira-*|fxa-agent-memory-key|fxa-dashboard-hmac)
   echo "ERROR: (gcloud.secrets.versions.access) NOT_FOUND: Secret [$n] not found or has no versions." >&2; exit 1 ;; esac
@@ -55,7 +56,7 @@ check "no API key, only a setup-token: it stops, and the ctl .env keeps its API 
 HAVE="fxa-dashboard-hmac fxa-sentry-token" PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
 cp "$C/dashboard-hmac" "$t/hmac.good"; cp "$C/mcp-gateway.env" "$t/gw.good"
 FAIL_SECRET=fxa-dashboard-hmac HAVE="fxa-sentry-token" PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>"$t/err"; rc=$?
-check "an optional secret that fails to read (not NOT_FOUND): it stops, and the HMAC and gateway files stay" "1|same|same|yes" \
+check "an optional secret that fails to read (UNAVAILABLE): it stops, and the HMAC and gateway files stay" "1|same|same|yes" \
   "$([ "$rc" = 0 ] && echo 0 || echo 1)|$(cmp -s "$C/dashboard-hmac" "$t/hmac.good" && echo same)|$(cmp -s "$C/mcp-gateway.env" "$t/gw.good" && echo same)|$(grep -q 'could not read fxa-dashboard-hmac' "$t/err" && echo yes)"
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>"$t/err"; rc=$?
 check "optional secrets that do not exist: it runs, says nothing about them, and removes their files" "0|0|no|no" "$rc|$(grep -c NOT_FOUND "$t/err")|$([ -e "$C/dashboard-hmac" ] && echo yes || echo no)|$([ -e "$C/mcp-gateway.env" ] && echo yes || echo no)"
@@ -63,4 +64,6 @@ check "optional secrets that do not exist: it runs, says nothing about them, and
 echo keep > "$t/target"; ln -sf "$t/target" "$C/.opt-err"
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
 check "a link planted at the old error path leaves its target unchanged" "keep" "$(cat "$t/target")"
+DENY_SECRET=fxa-runlayer-agent-token PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
+check "an optional secret the manager has no grant on (PERMISSION_DENIED, as for one that does not exist) reads as empty" "0" "$rc"
 exit "$fail"

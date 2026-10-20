@@ -8,11 +8,12 @@ get() { gcloud secrets versions access latest --secret "$1" --project "$P"; }
 need() { local v; v="$(get "$1")" && [ -n "$v" ] || { echo "fxa-secrets: could not read $1; no file changed" >&2; exit 1; }; printf '%s' "$v"; }
 put() { printf '%s' "$2" > "$1.new" && mv "$1.new" "$1"; }
 umask 077
-# A secret that may not exist: NOT_FOUND reads as empty, and any other failed read stops the run before a write.
+# A secret that may not exist: NOT_FOUND, or PERMISSION_DENIED (the manager has a grant only on the secrets that exist), reads as empty;
+# any other failed read (network, quota, unavailable) stops the run before a write.
 # The name ends in get: vm.sh status finds the secrets by 'get fxa-'.
 # The error text goes to a root-owned temp file: $C belongs to fxa, so a link planted there would aim root's write.
 E="$(mktemp)"; trap 'rm -f "$E"' EXIT
-opt_get() { local v; if v="$(get "$1" 2>"$E")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$E"; then :
+opt_get() { local v; if v="$(get "$1" 2>"$E")"; then printf '%s' "$v"; elif grep -qE "NOT_FOUND|PERMISSION_DENIED" "$E"; then :
   else echo "fxa-secrets: could not read $1 ($(head -1 "$E")); no file changed" >&2; exit 1; fi; }
 pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts
 # Runners reach Claude only through the LLM proxy, which sends an API key: a setup-token is no use here.
