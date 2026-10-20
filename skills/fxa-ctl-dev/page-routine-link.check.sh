@@ -9,5 +9,7 @@ out="$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$probe")"; 
 [ "$rc" = 3 ] && { echo "SKIP (no Chrome): the page probes did not run; set CHROME to run them"; exit 0; }
 ck "a link with routine 1 opens Alpha, the routine that ran first" "Alpha" "$out"
 ck "with no routine in the link, the routine that ran last (Beta) opens" "Beta" "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$probe")"
+gone='await new Promise(r => setTimeout(r, 600)); return /The routine from the link is no longer here/.test(document.querySelector("[data-routine-list]")?.textContent ?? "")'
+ck "a link to a routine that is gone says so above the one that ran last" "true" "$(bash "$p" '#teams/example/routines/999' --fixture "$F" --probe "$gone")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

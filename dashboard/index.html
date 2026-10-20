@@ -2290,7 +2290,7 @@ function routineListHtml(t, now) {
   return `<div data-routine-list>${stale}<div class="rtshow" role="group" aria-label="Show">Show ${["all", "failed", "paused"].map(k => `<button type="button" data-rt-show="${k}" aria-pressed="${show === k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
     <div class="tscroll"><table class="ttable"><thead><tr><th>Name</th><th>Schedule</th><th>Mode</th><th>Channel</th><th>Last run</th><th>Next run</th><th>Cost, 30 days</th><th>On</th></tr></thead>
       <tbody>${rows.map(tr).join("") || `<tr><td colspan="8" class="na">No ${show} routines.</td></tr>`}</tbody></table></div>
-    ${sel ? `${RT.sel ? "" : `<p class="na">Showing the routine that ran last. Select a row to see another.</p>`}<div class="tcard">${rtRow(sel)}</div>` : ""}</div>`;
+    ${sel ? `${RT.sel && L.some(r => r.id === RT.sel) ? "" : `<p class="na">${RT.sel ? "The routine from the link is no longer here. " : ""}Showing the routine that ran last. Select a row to see another.</p>`}<div class="tcard">${rtRow(sel)}</div>` : ""}</div>`;
 }
 function routineForm(t) {
   const f = RT.form, d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
