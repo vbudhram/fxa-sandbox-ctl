@@ -35,11 +35,15 @@ def sum_models: to_entries | map(.value) |
 [.[] | select(.type=="result" and .modelUsage != null)] as $r
 | if ($r|length) > 0 then
     ($r | map(.modelUsage) | add) as $mu
+    # modelUsage has no 1-hour split: take each model's 1-hour cache writes from its assistant messages.
+    | ([.[] | select(.type=="assistant" and .message.usage != null)] | group_by(.message.model)
+       | map({key: .[0].message.model, value: (map(.message.usage.cache_creation.ephemeral_1h_input_tokens//0)|add)}) | from_entries) as $h1
     | ($mu | sum_models) + {
         messages: ($r|map(.num_turns//0)|add), model: ($mu|to_entries|max_by(.value.costUSD//0)|.key),
-        models: ($mu | with_entries(.value |= {input:(.inputTokens//0), output:(.outputTokens//0),
-                   cache_write:(.cacheCreationInputTokens//0), cache_read:(.cacheReadInputTokens//0),
-                   cost_reported:(.costUSD//0)})),
+        cache_write_1h: ($h1 | map(.) | add // 0),
+        models: ($mu | to_entries | map(.key as $k | .value as $u | {key: $k, value: {input:($u.inputTokens//0), output:($u.outputTokens//0),
+                   cache_write:($u.cacheCreationInputTokens//0), cache_write_1h:($h1[$k]//0), cache_read:($u.cacheReadInputTokens//0),
+                   cost_reported:($u.costUSD//0)}}) | from_entries),
         agent_ms: ($r|map(.duration_ms//0)|add), source: "result" }
   else
     [.[] | select(.type=="assistant" and .message.usage != null and .message.model != "<synthetic>")] as $m
@@ -266,15 +270,18 @@ print(max(0,int(end-start)) if start else 0)" "$log" "${done_file:-}" "$launched
     cost="$(printf '%s\n' "$usage" | jq -c --arg t "$(printf "$table")" '
       ($t | split("\n") | map(select(length>0) | split(" ") | {key:.[0], value:(.[1:]|map(tonumber))}) | from_entries) as $p
       | { cost_usd: ([.models | to_entries[] | select($p[.key] != null) |
-            (.value.input*$p[.key][0] + .value.output*$p[.key][1] + (.value.cache_write - (.value.cache_write_1h//0))*$p[.key][2]
-             + (.value.cache_write_1h//0)*2*$p[.key][0] + .value.cache_read*$p[.key][3]) / 1000000]
+            # The 1-hour count is at most the whole write count, as the proxy clamps it.
+            ([.value.cache_write_1h//0, .value.cache_write] | min) as $h
+            | (.value.input*$p[.key][0] + .value.output*$p[.key][1] + (.value.cache_write - $h)*$p[.key][2]
+             + $h*2*$p[.key][0] + .value.cache_read*$p[.key][3]) / 1000000]
             | add // 0 | . * 100 | round / 100),
           priced: ($p | with_entries(.value |= {input:.[0], output:.[1], cache_write:.[2], cache_read:.[3]})) }')"
   elif [ -n "$rates" ]; then
     cost="$(printf '%s\n' "$usage" | jq -c --arg r "$rates" '
       ($r | split(" ") | map(select(length>0) | tonumber)) as $p
+      | ([.cache_write_1h//0, .cache_write//0] | min) as $h
       | { cost_usd: (((.input//0)*$p[0] + (.output//0)*$p[1]
-                    + ((.cache_write//0) - (.cache_write_1h//0))*$p[2] + (.cache_write_1h//0)*2*$p[0] + (.cache_read//0)*$p[3]) / 1000000
+                    + ((.cache_write//0) - $h)*$p[2] + $h*2*$p[0] + (.cache_read//0)*$p[3]) / 1000000
                     * 100 | round / 100),
           priced: {input:$p[0], output:$p[1], cache_write:$p[2], cache_read:$p[3]} }')"
   else
