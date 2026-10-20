@@ -69,11 +69,11 @@ For `fxa-react` components use `yarn workspace fxa-react storybook --no-open`
 ## Step 2 — Wait, and do not trust the 200
 
     SB_PORT=6008
-    for i in $(seq 60); do curl -sf -o /dev/null --max-time 300 "http://localhost:$SB_PORT/iframe.html" && break; sleep 5; done
+    t0=$(date +%s); until curl -sf -o /dev/null --max-time 30 "http://localhost:$SB_PORT/iframe.html" || [ $(( $(date +%s) - t0 )) -ge 300 ]; do sleep 5; done
     curl -sf -o /dev/null --max-time 5 "http://localhost:$SB_PORT/iframe.html" && echo "storybook up" || echo "storybook did not answer"
 
-The loop retries while the server is not yet listening (curl exit 7), up to
-5 minutes. The webpack builder serves that file through `webpack-dev-middleware`
+The loop tries every 5 s until the server answers, for 5 minutes in all;
+each try waits 30 s at most. The webpack builder serves that file through `webpack-dev-middleware`
 with `waitUntilValid`, so one request blocks until the first compile finishes.
 A 200 means "compiled". If the last line says "did not answer", count it as a
 failed build.

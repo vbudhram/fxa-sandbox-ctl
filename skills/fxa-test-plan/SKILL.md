@@ -143,9 +143,9 @@ also written to `/workspace/.fxa-verify-verdict.txt`.
 
 ## Limits here
 
-- These run only in CI; plan them as `ci`: OAuth relier flows through 123done
-  (`tests/oauth/*`, `loginHint*`, `relayIntegration`, `smartWindowIntegration`),
-  the CMS specs (`tests/cms/*`), payments (`local-payments-next`), and
+- OAuth relier flows through 123done and 321done (`tests/oauth/*`) run here:
+  `/fxa-stack` ensure starts 321done. Plan one as `ci` only if it needs Stripe or Strapi.
+- These run only in CI; plan them as `ci`: the CMS specs (`tests/cms/*`), payments (`local-payments-next`), and
   payments-next unit tests.
 - Up to 3 `functional` specs, run one after another. With the stack up, one
   run with 2 workers used 6.85GB of 7.9GB, so nothing else runs beside them.
