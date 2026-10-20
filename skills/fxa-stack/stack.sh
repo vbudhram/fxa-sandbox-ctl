@@ -53,7 +53,14 @@ wait_up() {
 core_up() { http http://localhost:9000/__heartbeat__ && http http://localhost:3030/ && http http://localhost:3000/settings/static/js/bundle.js; }
 
 # OAuth functional tests need 321done, and fxa-start does not always bring it up.
-up_321done() { http http://localhost:10139/ || { echo "321done is down; starting it with pm2"; restart 321done || true; }; }
+# One try per boot (/tmp clears at boot): a 321done that cannot start would cost each ensure up to 2 minutes.
+up_321done() {
+  local m="${TMPDIR:-/tmp}/fxa-321done-failed"
+  http http://localhost:10139/ && return 0
+  [ -e "$m" ] && { echo "321done is down; it failed to start once this boot, so OAuth specs that need it fail (rm $m to retry)"; return 0; }
+  echo "321done is down; starting it with pm2"; restart 321done || : > "$m"
+  return 0
+}
 
 ensure() {
   if core_up; then echo "stack already up"; up_321done; status; return 0; fi

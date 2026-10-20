@@ -43,4 +43,11 @@ printf '#!/bin/sh\ncase "$*" in *10139*) grep -q "^start" %s/pm2.log 2>/dev/null
 bash "$S" ensure >/dev/null 2>&1
 check "ensure starts a down 321done with pm2" "delete 321done|start $tmp/fxa-stack-restart-321done.config.js" "$(paste -sd'|' "$tmp/pm2.log")"
 
+# A 321done that never answers: one start per boot, then ensure skips it (a marker in TMPDIR, which /tmp clears at boot).
+printf '#!/bin/sh\ncase "$*" in *10139*) exit 7 ;; *) exit 0 ;; esac\n' > "$tmp/bin/curl"; printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/sleep"; chmod +x "$tmp/bin/curl" "$tmp/bin/sleep"
+: > "$tmp/pm2.log"; rm -f "$tmp/fxa-321done-failed"; bash "$S" ensure >/dev/null 2>&1
+check "a 321done start that fails leaves the boot marker" "yes" "$([ -e "$tmp/fxa-321done-failed" ] && echo yes)"
+: > "$tmp/pm2.log"; out="$(bash "$S" ensure 2>&1)"
+check "the next ensure skips the start and says why" "0|1" "$(grep -c 321done "$tmp/pm2.log")|$(grep -c 'failed to start once this boot' <<< "$out")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
