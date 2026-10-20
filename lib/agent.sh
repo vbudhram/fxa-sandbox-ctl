@@ -186,7 +186,8 @@ _install_ssh_key() {
 #   in one tar: ticket context, prompt, runtime auth, ai/ docs, and the same
 #   secret set worktree_copy_secrets wrote. Nothing from the tree itself.
 _put_run_files() {
-  local name="$1" slot="$2" tar="${LOG_DIR}/${name}-run.tar" f
+  local name="$1" slot="$2" f
+  local tar="${LOG_DIR}/${name}-run.tar"   # its own line: bash 3.2 does not see $name in the same local under set -u
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
            .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz .fxa-thread-notes.md .fxa-ci .fxa-inbox ai \
@@ -214,7 +215,7 @@ _put_run_files() {
   # ai/data is 18 MB of JSON the agent never reads, slow over the IAP tunnel.
   # "./" prefix: filenames can come from the agent, and bsdtar reads a leading dash as an option.
   local -a rel=(); for f in "${items[@]}"; do rel+=("./${f#./}"); done
-  ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -czf "$tar" -C "$slot" "${rel[@]}" ) || return 1
+  ( umask 077; COPYFILE_DISABLE=1 tar --no-xattrs --exclude ./ai/data -czf "$tar" -C "$slot" "${rel[@]}" ) || { rm -f "$tar"; return 1; }
   vm_put "$name" "$tar" /workspace; local rc=$?
   rm -f "$tar"
   [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-auto-deleted" ] && \
@@ -1475,7 +1476,8 @@ agent_stop() {
   vm_stop "$name" || true
   vm_delete "$name" || rc=$?
   rm -rf "${LOG_DIR}/ssh/${name}" "${LOG_DIR}/profiles/${name}"
-  rm -f "${LOG_DIR}/${name}.meta"
+  # A launch killed during the ship leaves its run tar, which holds the run's credentials and secrets.
+  rm -f "${LOG_DIR}/${name}.meta" "${LOG_DIR}/${name}-run.tar"
 
   [ "$rc" -eq 0 ] && echo "Agent '${name}' stopped and cleaned up."
   return "$rc"
