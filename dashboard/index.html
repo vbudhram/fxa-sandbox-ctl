@@ -1258,8 +1258,8 @@ function ovNeeds() {
   merged().cards.forEach(c => { if (!c.ci && (c.base_ok === false || c.agent?.num_turns === 0) && !belts.has(c.key)) sandbox.add(c.key); });
   strays().forEach(v => sandbox.add(v.name));
   const by = {}; bg.needs.forEach(r => { const p = r.item?.person ?? "the operator"; by[p] = (by[p] ?? 0) + 1; });
-  const old = STATE.age_seconds != null && STATE.interval && STATE.age_seconds > 3 * STATE.interval ? `unknown, the snapshot is ${Math.round(STATE.age_seconds / 60)} min old` : "";
-  return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") || old };
+  // boardState says when the snapshot is old, for every column.
+  return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
 }
 function renderOvNeeds() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
