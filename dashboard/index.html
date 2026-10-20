@@ -2964,7 +2964,7 @@ function openPrLine() {
   const c = openPrCounts();
   if (!c) return "";
   const repo = teamRepo(), lbl = SNAP.team?.pr_label, n = `${c.total} open PR${c.total === 1 ? "" : "s"}`;
-  return `<span class="sub" style="color:var(--dim)">${repo && lbl ? `<a href="https://github.com/${esc(repo)}/pulls?q=is%3Apr+state%3Aopen+label%3A${encodeURIComponent(lbl)}" target="_blank" rel="noreferrer">${n}</a>` : n}: ${esc(c.parts)}</span>`;
+  return html`<span class="sub" style="color:var(--dim)">${repo && lbl ? html`<a href="https://github.com/${repo}/pulls?q=is%3Apr+state%3Aopen+label%3A${encodeURIComponent(lbl)}" target="_blank" rel="noreferrer">${n}</a>` : n}: ${c.parts}</span>`;
 }
 // Belts v2 groups. Each key goes to one group, from classify() through boardItems(), so the groups,
 // the tab count and Needs you agree. The first rule that matches wins (design D2).
@@ -3008,74 +3008,75 @@ function beltGroups() {
 const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working.length + g.needs.length + g.fixes.length + g.review.length;
 function beltRow(r) {
   // The row is one link, so the key and the PR number carry their own URL and the click handler opens it.
-  const ext = (u, site) => u ? ` data-href="${esc(u)}" role="link" title="Open in ${site}"` : "";
+  const ext = (u, site) => u ? html` data-href="${u}" role="link" title="Open in ${site}"` : "";
   const t = r.t, title = laneTitle(t.summary || t.branch), live = r.group === "working" && t.agent_alive;
-  const nodes = LANE_ST.map((_, j) => `<span class="n${j < r.st ? " done" : j === r.st ? ` cur${live ? " live" : ""}` : ""}"></span>`).join("");
+  const nodes = LANE_ST.map((_, j) => html`<span class="${cls("n", { done: j < r.st, cur: j === r.st, live: j === r.st && live })}"></span>`);
   const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds)), open = TAB === "belts" && t.key === SEL.pipeline;
-  return `<li class="belt ${r.tone}${open ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${open}" aria-controls="bd-${esc(t.key)}">
-    <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${esc(t.key)}</span>${t.pr ? `<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="tag sq">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
+  return html`<li class="${cls("belt", r.tone, { sel: open })}" data-belt="${t.key}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${String(open)}" aria-controls="bd-${t.key}">
+    <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${t.key}</span>${t.pr ? html`<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${t.pr}</span>` : ""}${title.tag ? tag(title.tag, "", { sq: true }) : ""}</span><span class="t" title="${t.summary || ""}">${title.text}</span></span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
-    <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
-    <span class="age${r.age >= 7 ? " old" : ""}">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
+    <span class="st"><span class="l1" title="${r.l1}">${r.l1}</span><span class="l2" title="${r.l2}">${r.l2}</span></span>
+    <span class="${cls("age", { old: r.age >= 7 })}">${age}</span></a>${open ? beltDetails(r) : ""}</li>`;
 }
 // The open row's details: four blocks, one main action and the links, each link checked or plain text.
 function beltDetails(r) {
   const t = r.t, i = r.item ?? {}, k = STATS?.tickets?.[t.key], a = t.agent || {}, pr = prUrl(t.pr), lim = SNAP?.limits?.attempts ?? 2;
-  const blk = (h, body, bad) => `<div class="blk card flat sm${bad ? " bad" : ""}"><h3>${h}</h3>${body}</div>`, p = x => `<p>${x}</p>`;
+  const blk = (h, body, bad) => card(html`<h3>${h}</h3>${body}`, { flat: true, sm: true, tone: bad && "bad", cls: "blk" }), p = x => html`<p>${x}</p>`;
   const total = (t.ok ?? 0) + (t.fail ?? 0) + (t.running ?? 0);
   const ci = !t.pr ? blk("CI: no PR yet", p("Checks start after the agent opens the PR."))
-    : t.fail > 0 ? blk(`CI: ${t.fail} of ${total} checks failed`, p(esc(t.infra ? `Known infra failure: ${t.infra}` : `${t.ok ?? 0} passed.`)), true)
+    : t.fail > 0 ? blk(`CI: ${t.fail} of ${total} checks failed`, p(t.infra ? `Known infra failure: ${t.infra}` : `${t.ok ?? 0} passed.`), true)
     : t.running > 0 ? blk(`CI: ${t.running} of ${total} running`, p(`${t.ok ?? 0} passed so far.`)) : blk(`CI: ${t.ok ?? 0} checks passed`, p(t.mergeable === "CONFLICTING" ? "The branch has merge conflicts." : "Nothing failed."));
-  const term = t.agent_alive ? `<details class="out tty" data-lane="${esc(t.key)}" id="lane-term-${esc(t.key)}"${LANE_OUT[t.key] ? " open" : ""}><summary class="bar" data-focus="term"><i></i><i></i><i></i><span>agent@sandbox: ${esc(t.name || t.key.toLowerCase())}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : "";
-  const agent = t.agent_alive ? blk(`Agent: ${esc(LANE_ST[r.st])} · ${Math.round((t.elapsed_seconds ?? 0) / 60)} min`, p([a.model && `<span class="mono">${esc(a.model)}</span>`, a.cost_so_far && `${usd(a.cost_so_far)} so far`, a.turns && `${esc(a.turns)} turns`].filter(Boolean).join(" · ") || "working") + term)
-    : blk(`Agent: ${esc(i.next || r.l1 || "")}`, p(t.attempts != null || r.group === "fixes" ? `Fix attempts ${esc(t.attempts ?? 0)} of ${esc(lim)}. Then it moves to Needs you.` : esc(r.l2 ?? "")));
+  const term = t.agent_alive ? html`<details class="out tty" data-lane="${t.key}" id="lane-term-${t.key}"${LANE_OUT[t.key] ? html` open` : ""}><summary class="bar" data-focus="term"><i></i><i></i><i></i><span>agent@sandbox: ${t.name || t.key.toLowerCase()}</span><b class="state">connecting…</b></summary><div class="screen body" tabindex="0"></div></details>` : "";
+  const facts = [a.model && html`<span class="mono">${a.model}</span>`, a.cost_so_far && `${usd(a.cost_so_far)} so far`, a.turns && `${a.turns} turns`].filter(Boolean);
+  const agent = t.agent_alive ? blk(`Agent: ${LANE_ST[r.st]} · ${Math.round((t.elapsed_seconds ?? 0) / 60)} min`, html`${p(facts.length ? facts.map((x, n) => n ? html` · ${x}` : x) : "working")}${term}`)
+    : blk(`Agent: ${i.next || r.l1 || ""}`, p(t.attempts != null || r.group === "fixes" ? `Fix attempts ${t.attempts ?? 0} of ${lim}. Then it moves to Needs you.` : r.l2));
   const rv = { APPROVED: "approved", CHANGES_REQUESTED: "changes requested", REVIEW_REQUIRED: "review required" }[t.review] ?? t.review;
   const review = !t.pr ? blk("Review: none yet", p("A reviewer gets it after CI passes."))
-    : blk(`Review: ${esc(rv || "none yet")}`, p(t.last_human_review ? `${esc(t.last_human_review.login)} reviewed ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : `no human review${(t.reviewers ?? []).length ? ` · requested ${esc(t.reviewers.map(x => x.replace(/^mozilla\//, "")).join(", "))}` : ""}`));
-  const runs = blk(`Agent runs: ${k ? esc(k.runs) : STATS ? "none" : "…"}`, p(k ? [`${esc(k.turns)} turns`, `${esc(k.median_min)} min`, usd(k.cost), `${esc(k.files)} files`].join(" · ") : STATS ? "not in the run log: a run records only when it reaches handoff" : "loading…"));
+    : blk(`Review: ${rv || "none yet"}`, p(t.last_human_review ? `${t.last_human_review.login} reviewed ${ago(Math.round((Date.now() - Date.parse(t.last_human_review.at)) / 1000))}` : `no human review${(t.reviewers ?? []).length ? ` · requested ${t.reviewers.map(x => x.replace(/^mozilla\//, "")).join(", ")}` : ""}`));
+  const runs = blk(`Agent runs: ${k ? k.runs : STATS ? "none" : "…"}`, p(k ? [`${k.turns} turns`, `${k.median_min} min`, usd(k.cost), `${k.files} files`].join(" · ") : STATS ? "not in the run log: a run records only when it reaches handoff" : "loading…"));
   // The session's own tab: the Sessions view shows a key only on the tab of its state.
   const sess = t.sess && sessHref(t.sess.key) ? `#sessions/${sessTabOf(t.sess)}/${t.sess.key}` : "";
   const [label, href] = t.slack ? ["Open the session", sess] : t.agent_alive ? ["Watch the agent", ""] : t.fail > 0 && pr ? ["Open the failing check", `${pr}/checks`]
     : r.group === "needs" && i.column === "blocked" && jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)]
     : pr ? ["Open the PR", pr] : jiraHref(t.key) ? ["Answer in Jira", jiraHref(t.key)] : ["", ""];
-  const main = t.agent_alive ? `<button type="button" class="main" data-focus="main" data-watch="${esc(t.key)}">Watch the agent</button>`
-    : href ? `<a class="main" data-focus="main" href="${esc(href)}"${href.startsWith("#") ? "" : ' target="_blank" rel="noopener"'}>${label}</a>` : "";
-  const links = [jiraHref(t.key) && `<a data-focus="jira" href="${jiraHref(t.key)}" target="_blank" rel="noopener">Jira ↗</a>`, pr && `<a data-focus="pr" href="${pr}" target="_blank" rel="noopener">PR ↗</a>`,
-    pr && `<a data-focus="checks" href="${pr}/checks" target="_blank" rel="noopener">Checks ↗</a>`, sess && `<a data-focus="sess" href="${sess}">Session</a>`].filter(Boolean).join("");
-  return `<div class="bdet" id="bd-${esc(t.key)}" role="region" aria-label="Details of ${esc(t.key)}"><div class="blks">${ci}${agent}${review}${runs}</div><div class="acts">${main}${links}</div></div>`;
+  const main = t.agent_alive ? html`<button type="button" class="main" data-focus="main" data-watch="${t.key}">Watch the agent</button>`
+    : href ? html`<a class="main" data-focus="main" href="${href}"${href.startsWith("#") ? "" : html` target="_blank" rel="noopener"`}>${label}</a>` : "";
+  const links = [jiraHref(t.key) && html`<a data-focus="jira" href="${jiraHref(t.key)}" target="_blank" rel="noopener">Jira ↗</a>`, pr && html`<a data-focus="pr" href="${pr}" target="_blank" rel="noopener">PR ↗</a>`,
+    pr && html`<a data-focus="checks" href="${pr}/checks" target="_blank" rel="noopener">Checks ↗</a>`, sess && html`<a data-focus="sess" href="${sess}">Session</a>`];
+  return html`<div class="bdet" id="bd-${t.key}" role="region" aria-label="Details of ${t.key}"><div class="blks">${ci}${agent}${review}${runs}</div><div class="acts">${main}${links}</div></div>`;
 }
 // Where a key from a link is when it has no belt: a hold, the queue, Done, or nowhere.
 function beltWhere(g) {
   if (BAD_LINK) return "That link names no ticket.";
   const k = SEL.pipeline; if (!k || ["working", "needs", "fixes", "review", "outside"].some(x => g[x].some(r => r.t.key === k))) return "";
   const i = SNAP ? boardItems().find(x => x.key === k) : null, d = doneRows().find(x => x.t.key === k);
-  const q = `(<a href="#pipeline/queue">Queue and review</a>)`;
-  return i?.waitsOn ? `${esc(k)} waits on ${esc(i.waitsOn)} ${q}` : i?.column === "next" ? `${esc(k)} is ready in the queue ${q}` : i ? `${esc(k)} is in the queue ${q}`
-    : d ? `${esc(k)} ${esc(d.l1.replace(/^Merged/, "merged"))} (<a href="#pipeline/done">Done</a>)` : `${esc(k)} is not on a belt now. Look in <a href="#pipeline/queue">Queue and review</a> or <a href="#pipeline/done">Done</a>.`;
+  const q = html`(<a href="#pipeline/queue">Queue and review</a>)`;
+  return i?.waitsOn ? html`${k} waits on ${i.waitsOn} ${q}` : i?.column === "next" ? html`${k} is ready in the queue ${q}` : i ? html`${k} is in the queue ${q}`
+    : d ? html`${k} ${d.l1.replace(/^Merged/, "merged")} (<a href="#pipeline/done">Done</a>)` : html`${k} is not on a belt now. Look in <a href="#pipeline/queue">Queue and review</a> or <a href="#pipeline/done">Done</a>.`;
 }
 function beltsHtml(g) {
-  if (!SNAP) return `<p class="bempty">Loading the pipeline…</p>`;
+  if (!SNAP) return html`<p class="bempty">Loading the pipeline…</p>`;
   const n = beltCount(g), q = x => x == null ? "?" : x, live = g.working.some(r => r.t.agent_alive);
   const counts = LANE_ST.map((_, j) => BELT_GROUPS.reduce((c, [k]) => c + g[k].filter(r => r.st === j).length, 0));
-  const old = g.outside.filter(r => r.age >= 3).length;
-  const head = `<div class="bhead"><span class="now"><i class="dot info${live ? " live" : ""}"></i>${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
-    <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${openPrLine() ? `<span>· ${openPrLine()}</span>` : ""}</div>`;
+  const old = g.outside.filter(r => r.age >= 3).length, prs = openPrLine();
+  const head = html`<div class="bhead"><span class="now">${dot("info", live)}${q(g.unknown.working ? null : g.working.length)} agent${g.working.length === 1 && !g.unknown.working ? " works" : "s work"} now</span>
+    <span>· ${q(n)} belt${n === 1 ? "" : "s"}</span><span>· ${q(g.unknown.needs ? null : g.needs.length)} need you</span>${prs ? html`<span>· ${prs}</span>` : ""}</div>`;
   const where = beltWhere(g);
-  const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => `<p class="bempty">${name}: ${esc(g.unknown[k])}</p>`).join("");
+  const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => html`<p class="bempty">${name}: ${g.unknown[k]}</p>`);
   // An unknown group (its feed failed) lists no rows and makes its phase count '?': never a confident figure.
   const sub = ([k, who, name, pick], lo, hi) => { if (g.unknown[k]) return ""; const rs = g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)); return rs.length
-    ? `<div role="group" aria-label="${name}"><h3 class="bsub"><span class="who">${who}</span>${name} <span class="cnt">${rs.length}</span></h3><ul class="belts">${rs.map(beltRow).join("")}</ul></div>` : ""; };
-  const phases = BELT_PHASES.map(([name, why, lo, hi]) => { const body = BELT_SUBS.map(x => sub(x, lo, hi)).join(""); return body
-    ? `<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.some(([k]) => g.unknown[k]) ? "?" : BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).join("");
-  return head + (where ? `<p class="bwhere">${where}</p>` : "") + `<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div><div class="phs"><b style="grid-column:1/2">Queue</b><b style="grid-column:2/6">Agent run</b><b style="grid-column:6/10">PR</b></div><div class="cols">${LANE_ST.map((s, j) => `<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`).join("")}</div></div><span>Status</span><span class="r">Age</span></div>
-    ${unknown}${phases || (unknown ? "" : `<p class="bempty">Nothing on the belts.</p>`)}
-    ${g.outside.length ? `<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? " open" : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow).join("")}</ul></details>` : ""}</div>`;
+    ? html`<div role="group" aria-label="${name}"><h3 class="bsub"><span class="who">${who}</span>${name} <span class="cnt">${rs.length}</span></h3><ul class="belts">${rs.map(beltRow)}</ul></div>` : ""; };
+  const phases = BELT_PHASES.map(([name, why, lo, hi]) => { const body = BELT_SUBS.map(x => sub(x, lo, hi)).filter(Boolean); return body.length
+    ? html`<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.some(([k]) => g.unknown[k]) ? "?" : BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).filter(Boolean);
+  return html`${head}${where ? html`<p class="bwhere">${where}</p>` : ""}<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div><div class="phs"><b style="grid-column:1/2">Queue</b><b style="grid-column:2/6">Agent run</b><b style="grid-column:6/10">PR</b></div><div class="cols">${LANE_ST.map((s, j) => html`<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`)}</div></div><span>Status</span><span class="r">Age</span></div>
+    ${unknown}${phases.length ? phases : unknown.length ? "" : html`<p class="bempty">Nothing on the belts.</p>`}
+    ${g.outside.length ? html`<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? html` open` : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow)}</ul></details>` : ""}</div>`;
 }
 function renderLanes() {
   const g = beltGroups(), live = g.working.filter(r => r.t.agent_alive);
   // A poll rewrites the list: put the focus back on the same row and control.
   const ae = document.activeElement, fk = ae?.closest?.(".belt")?.dataset.belt, ff = ae?.dataset?.focus;
-  put("s-lanes", beltsHtml(g));
+  put("s-lanes", String(beltsHtml(g)));
   if (fk && !document.activeElement?.closest?.(".belt")) { const li = document.querySelector(`.belt[data-belt="${CSS.escape(fk)}"]`); (li?.querySelector(`[data-focus="${ff}"]`) ?? li?.querySelector("a"))?.focus({ preventScroll: true }); }
   live.forEach(r => paintTail(r.t.key, true));
   // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
@@ -3101,15 +3102,13 @@ function doneRows() {
 // Done: one compact row per merged ticket, newest first, with the cap and the label in the header.
 function doneHtml() {
   const prs = SNAP?.merged_prs, rows = doneRows(), lbl = SNAP?.team?.pr_label, cap = SNAP?.limits?.merged_prs ?? prs?.length ?? 0;
-  if (prs == null) return `<p class="bempty">Could not read merged PRs from GitHub.</p>`;
-  if (!rows.length) return `<p class="bempty">No merged ticket yet.</p>`;
-  return `<p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${esc(cap)} merged PRs${lbl ? ` labelled ${esc(lbl)}` : ""}, newest first.</p>
-    <div class="tscroll"><table class="table dtab"><thead><tr><th scope="col">Ticket</th><th scope="col">Title</th><th scope="col">Merged</th><th scope="col">Days to merge</th><th scope="col">Merged by</th></tr></thead><tbody>
-    ${rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
-      return `<tr><td>${jira(t.key)}${t.pr ? ` ${prl("", t.pr)}` : ""}</td><td>${esc(laneTitle(t.summary).text)}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${esc(r.by || "—")}</td></tr>`; }).join("")}
-    </tbody></table></div>`;
+  if (prs == null) return html`<p class="bempty">Could not read merged PRs from GitHub.</p>`;
+  if (!rows.length) return html`<p class="bempty">No merged ticket yet.</p>`;
+  return html`<p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${cap} merged PRs${lbl ? ` labelled ${lbl}` : ""}, newest first.</p>
+    <div class="tscroll">${table(["Ticket", "Title", "Merged", "Days to merge", "Merged by"], rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
+      return html`<tr><td>${raw(jira(t.key))}${t.pr ? html` ${raw(prl("", t.pr))}` : ""}</td><td>${laneTitle(t.summary).text}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${r.by || "—"}</td></tr>`; }), { cls: "dtab" })}</div>`;
 }
-function renderDone() { put("s-done", doneHtml()); }
+function renderDone() { put("s-done", String(doneHtml())); }
 document.addEventListener("toggle", e => {
   const d = e.target;
   if (d.matches?.("details[data-lane]")) LANE_OUT[d.dataset.lane] = d.open;
@@ -3220,42 +3219,41 @@ function renderTickets() {
   const s = SNAP; if (!s) return;
   const review = s.review, repo = s.repo;
   const waiting = review ? review.filter(isWaitingOnHuman) : [];
-  const row = r => `<div class="item">
-      <div class="line1">${jira(r.key)}${titled(r.title ? laneTitle(r.title).text : r.pr ? "title unavailable" : "no PR found")}${verdictTag(r)}</div>
-      <div class="line2">${r.pr ? prl(repo, r.pr) : "no PR on this branch"} ${checkBars(r)} ${waitAge(r)}</div></div>`;
+  const row = r => html`<div class="item">
+      <div class="line1">${raw(jira(r.key))}${raw(titled(r.title ? laneTitle(r.title).text : r.pr ? "title unavailable" : "no PR found"))}${raw(verdictTag(r))}</div>
+      <div class="line2">${r.pr ? raw(prl(repo, r.pr)) : "no PR on this branch"} ${raw(checkBars(r))} ${raw(waitAge(r))}</div></div>`;
   const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
   const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
   // The open PR list is on the Belts tab; here only the tickets in review.
-  put("s-review", (review == null ? `<div class="headline"><span class="big unknown">?</span><span class="cap">${SNAP?.done_fetch_failed ? "Jira" : "GitHub"} fetch failed; unknown, not zero</span></div>`
-      : `<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
-         <span class="rest">${review.length} in review · oldest wait first</span></div>`) +
-    (review == null ? "" : review.length === 0 ? `<div class="empty">nothing awaiting review</div>`
-     : waiting.slice().sort(byWait).map(row).join("") +
-       (others.length ? `<h2>Not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>` +
-         others.slice().sort(byWait).map(row).join("") : "")));
+  put("s-review", String(html`${review == null ? html`<div class="headline"><span class="big unknown">?</span><span class="cap">${SNAP?.done_fetch_failed ? "Jira" : "GitHub"} fetch failed; unknown, not zero</span></div>`
+      : html`<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
+         <span class="rest">${review.length} in review · oldest wait first</span></div>`}${
+    review == null ? "" : review.length === 0 ? html`<div class="empty">nothing awaiting review</div>`
+     : html`${waiting.slice().sort(byWait).map(row)}${
+       others.length ? html`<h2>Not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>${others.slice().sort(byWait).map(row)}` : ""}`}`));
 
   const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
   // A skip outside the epic focus is still in the queue; the focus hides it from the launch list.
-  const skipRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span>${k.in_focus === false && k.in_queue !== false ? `<span class="tag">outside the focus</span>` : ""}<span class="tag">${k.passes}×</span></span></div>
-             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
+  const skipRow = k => html`<div class="item"><div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${k.in_focus === false && k.in_queue !== false ? tag("outside the focus") : ""}${tag(`${k.passes}×`)}</span></div>
+             <div class="line2 reason" title="${k.reason}">${k.reason}</div></div>`;
   // A hold waits for another ticket to merge (pipeline_hold); it is not launchable, and not a skip a person must answer.
   const held = skipped.filter(k => k.in_queue !== false && k.held_by), liveSkips = skipped.filter(k => k.in_queue !== false && !k.held_by), staleSkips = skipped.filter(k => k.in_queue === false);
-  const heldRow = k => `<div class="item"><div class="line1">${jira(k.key)}${titled(k.summary)}<span><span class="tag info">waiting on ${esc(k.held_by)}</span></span></div>
-             <div class="line2 reason" title="${esc(k.reason)}">${esc(k.reason)}</div></div>`;
-  put("s-queue", head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, SNAP?.team?.queue_label ? `labelled ${esc(SNAP.team.queue_label)}` : "in the queue") +
-    (q.fetch_failed ? `<div class="unknown">Jira fetch failed; unknown, not zero</div>`
-     : (s.mode?.newtickets === "off" ? `<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>` +
-          (ready.length ? `<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
-            ready.map(t => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span></span></div></div>`).join("")}</div></details>` : "")
-     : ready.length === 0 ? `<div class="empty">nothing launchable right now</div>`
-        : ready.slice(0, 5).map((t, i) => `<div class="item"><div class="line1">${jira(t.key)}${titled(t.summary)}<span>${i === 0 ? `<span class="tag info">next up</span>` : ""}</span></div></div>`).join("") +
-          (ready.length > 5 ? `<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : "")) +
-       (held.length ? `<details data-k="held" open><summary>${held.length} held, waiting on another ticket to merge</summary><div class="body">${
-          held.map(heldRow).join("")}</div></details>` : "") +
-       (liveSkips.length ? `<details data-k="skipped"${ready.length ? "" : " open"}><summary>${liveSkips.length} skipped, each waits on a person's answer in Jira</summary><div class="body">${
-          skipGroups(liveSkips).map(([g, ks]) => `<h3 class="sgroup">${esc(g)} <span class="n">${ks.length}</span></h3>` + ks.map(skipRow).join("")).join("")}</div></details>` : "") +
-       (staleSkips.length ? `<details data-k="staleskips"><summary>${staleSkips.length} skip record${staleSkips.length > 1 ? "s" : ""} for tickets that left the queue (resolved or unlabelled); pruned on the next reconcile</summary><div class="body">${
-          staleSkips.map(skipRow).join("")}</div></details>` : "")));
+  const heldRow = k => html`<div class="item"><div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${tag(`waiting on ${k.held_by}`, "info")}</span></div>
+             <div class="line2 reason" title="${k.reason}">${k.reason}</div></div>`;
+  put("s-queue", String(html`${raw(head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, SNAP?.team?.queue_label ? `labelled ${esc(SNAP.team.queue_label)}` : "in the queue"))}${
+    q.fetch_failed ? html`<div class="unknown">Jira fetch failed; unknown, not zero</div>`
+     : html`${s.mode?.newtickets === "off" ? html`<div class="empty">intake is off: the passes work on open PRs only and launch nothing from this queue</div>${
+          ready.length ? html`<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
+            ready.map(t => html`<div class="item"><div class="line1">${raw(jira(t.key))}${raw(titled(t.summary))}<span></span></div></div>`)}</div></details>` : ""}`
+     : ready.length === 0 ? html`<div class="empty">nothing launchable right now</div>`
+        : html`${ready.slice(0, 5).map((t, i) => html`<div class="item"><div class="line1">${raw(jira(t.key))}${raw(titled(t.summary))}<span>${i === 0 ? tag("next up", "info") : ""}</span></div></div>`)}${
+          ready.length > 5 ? html`<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : ""}`}${
+       held.length ? html`<details data-k="held" open><summary>${held.length} held, waiting on another ticket to merge</summary><div class="body">${
+          held.map(heldRow)}</div></details>` : ""}${
+       liveSkips.length ? html`<details data-k="skipped"${ready.length ? "" : html` open`}><summary>${liveSkips.length} skipped, each waits on a person's answer in Jira</summary><div class="body">${
+          skipGroups(liveSkips).map(([g, ks]) => html`<h3 class="sgroup">${g} <span class="n">${ks.length}</span></h3>${ks.map(skipRow)}`)}</div></details>` : ""}${
+       staleSkips.length ? html`<details data-k="staleskips"><summary>${staleSkips.length} skip record${staleSkips.length > 1 ? "s" : ""} for tickets that left the queue (resolved or unlabelled); pruned on the next reconcile</summary><div class="body">${
+          staleSkips.map(skipRow)}</div></details>` : ""}`}`));
 }
 
 // A sandbox is up only while its instance runs. A stopped GCE instance (terminated) keeps its disk
