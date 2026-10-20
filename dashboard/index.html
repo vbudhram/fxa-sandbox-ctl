@@ -1241,7 +1241,7 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
   return out;
 }
 function renderOvSys() {
-  if (!SNAP) return putOv("ov-sys", `<h2>What the system is doing</h2><div class="emptybox">Loading the pipeline…</div>`);
+  if (!SNAP) return putOv("ov-sys", `<h2>What the system is doing</h2><div class="emptybox">${STATE.error ? `Pipeline unknown: ${esc(STATE.error)}.` : "Loading the pipeline…"}</div>`);
   const now = Math.round(Date.now() / 1000), o = ovSys(now), W = 600, x = e => ((e - now) / (12 * 3600) * W).toFixed(1);
   const row = ([k, v]) => k === "ci" ? `<div class="row">CI watch · ${v.href ? `<a href="${esc(v.href)}" target="_blank" rel="noreferrer" data-focus="ci-${esc(v.n)}">#${esc(v.n)}</a>` : `#${esc(v.n)}`} · checks ${v.done} of ${v.tot} done<div class="bar"><i style="width:${v.pct}%"></i></div></div>`
     : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
@@ -1252,13 +1252,14 @@ function renderOvSys() {
     JSON.stringify([o.now, o.next, o.routines, o.pins, o.ticks.length]));
 }
 // Needs you (i356 D2): the belts that need a person, plus the sandbox alerts that name a fix, each key once.
-// Unknown when Jira or the agents feed is unknown: never a confident zero.
+// Unknown when Jira, the agents feed or the snapshot age is unknown: never a confident zero.
 function ovNeeds() {
   const bg = beltGroups(), belts = new Set(bg.needs.map(r => r.t.key)), sandbox = new Set();
   merged().cards.forEach(c => { if (!c.ci && (c.base_ok === false || c.agent?.num_turns === 0) && !belts.has(c.key)) sandbox.add(c.key); });
   strays().forEach(v => sandbox.add(v.name));
   const by = {}; bg.needs.forEach(r => { const p = r.item?.person ?? "the operator"; by[p] = (by[p] ?? 0) + 1; });
-  return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") };
+  const old = STATE.age_seconds != null && STATE.interval && STATE.age_seconds > 3 * STATE.interval ? `unknown, the snapshot is ${Math.round(STATE.age_seconds / 60)} min old` : "";
+  return { total: belts.size + sandbox.size, sandbox: sandbox.size, by, unknown: bg.unknown.needs || boardState("running") || old };
 }
 function renderOvNeeds() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => `<a href="#pipeline/belts" data-focus="need-${esc(p)}">${k} for ${esc(p)}</a>`)
@@ -1332,6 +1333,7 @@ function renderOvTeams() {
   if (!TEAMS) return putOv("ov-teams", `<h2>Teams, last ${n}</h2><div class="emptybox">Loading the teams…</div>`);
   // A failed or stale stats feed: the runs, PRs and spend say unknown, as the KPI tiles do.
   const rows = ovTeams(OV_RANGE), note = statsNote(), st = !!STATS && !note;
+  const tnote = !TEAMS.error ? "" : rows.length ? `The teams feed failed: ${TEAMS.error}. These rows are from ${ago(Math.round(TEAMS.age_seconds))}.` : `Teams unknown: ${TEAMS.error}.`;
   const row = ({ t, u, now }) => {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
@@ -1339,8 +1341,8 @@ function renderOvTeams() {
     const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="ovpill ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
   };
-  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${note ? `<div class="ovknote">${esc(note)}</div>` : ""}
-    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row).join("")}` : `<div class="emptybox">No team.</div>`}`);
+  putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${[note, tnote].filter(Boolean).map(t => `<div class="ovknote">${esc(t)}</div>`).join("")}
+    ${rows.length ? `<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row).join("")}` : TEAMS.error ? "" : `<div class="emptybox">No team.</div>`}`);
 }
 // Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
 let RUNS = null, RUNS_ERR = null, RUNS_SEQ = 0;
