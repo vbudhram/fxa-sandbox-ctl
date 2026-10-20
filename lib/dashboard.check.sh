@@ -241,6 +241,9 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   load(); SNAP.review[0].mergeable = "CONFLICTING"; SNAP.review[0].relock_failed = "FXA-3 7 CONFLICT lockfile (relock FAILED; run: relock FXA-3)";
   const ir = boardItems().map(classify).find(i => i.key === SNAP.review[0].key);
   t("belts: a conflict whose relock failed waits on the operator with the relock command, not on the next pass", `${ir.kind}|${ir.person}|${ir.group}|${/relock FXA-3 on the manager/.test(ir.next)}`, "relock|the operator|act|true");
+  load(); const st0 = { ...STATE }; Object.assign(STATE, { age_seconds: 3600, interval: 300 });
+  t("belts: an old snapshot makes every column unknown, Needs you included", `${/snapshot is 60 min old/.test(boardState("needs"))}|${/snapshot is 60 min old/.test(boardState("running"))}`, "true|true");
+  Object.keys(STATE).forEach(k => delete STATE[k]); Object.assign(STATE, st0);
   load(); SNAP.inflight_prs_failed = true; const gi = beltGroups();
   t("belts: a failed in-flight PR read makes fixes and review unknown, from GitHub", `${gi.unknown.fixes}|${gi.unknown.review}|${beltCount(gi)}`, "unknown, GitHub fetch failed|unknown, GitHub fetch failed|null");
   const hi = beltsHtml(gi);

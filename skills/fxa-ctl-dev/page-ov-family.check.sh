@@ -57,4 +57,11 @@ run '
     }
   }
   restore(); render(); return out.join("\n")'
+# A /api/teams request that fails (HTTP 503, as the gateway answers when the manager is down) keeps the rows with a note.
+tt="$(bash "$p" '#overview' --fixture "$O" --probe '
+  const w = ms => new Promise(r => setTimeout(r, ms)); await w(300); const real = window.fetch;
+  window.fetch = (u, o) => String(u).startsWith("/api/teams") ? Promise.resolve(new Response("", { status: 503 })) : real(u, o);
+  await loadTeams(); await w(100); window.fetch = real;
+  return /teams feed failed: the teams read failed \(HTTP 503\)/.test(document.getElementById("ov-teams").textContent)')"
+if [ "$tt" = true ]; then echo "ok   a failed /api/teams request keeps the Teams rows with a note"; else echo "FAIL a failed /api/teams request keeps the Teams rows with a note: got [$tt]"; fail=1; fi
 exit $fail
