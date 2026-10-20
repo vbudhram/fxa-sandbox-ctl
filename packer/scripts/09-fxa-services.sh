@@ -467,6 +467,10 @@ for i in $(seq 1 40); do
   sleep 3
 done
 curl -sf -m 3 http://localhost:9000/__heartbeat__ >/dev/null || log "WARN: auth server not answering on :9000; see pm2 logs auth"
+# A content crash loop (a missing lib dist) shows only as a 502 on :3030: fail, so the caller sees it now.
+start_rc=0
+for i in $(seq 1 20); do curl -sf -m 3 http://localhost:3030/ >/dev/null && break; sleep 3; done
+curl -sf -m 3 http://localhost:3030/ >/dev/null || { log "ERROR: content not answering on :3030; see pm2 logs content"; start_rc=1; }
 
 echo ""
 pm2 list
@@ -489,6 +493,7 @@ echo ""
 echo "  Monitor logs:  pm2 logs --lines 20"
 echo "  Status:        fxa-start --status"
 echo "  Stop:          fxa-start --stop"
+exit "$start_rc"
 
 FXASTART
 chmod +x /usr/local/bin/fxa-start

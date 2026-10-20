@@ -55,6 +55,8 @@ if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-
   (cd packages/functional-tests && npx playwright install chromium firefox > /dev/null 2>&1) || true
   sha256sum yarn.lock | cut -d' ' -f1 > /home/agent/.image-lock-hash
 fi
+# As the image build does: a new lib on main has no dist otherwise, and the Nx cache makes a runner's pin build a hit.
+npx nx run-many -t build --all --exclude=fxa-dev-launcher > /tmp/refresh-nx.log 2>&1 || { echo "WARN: nx build failed; runners build what they need at the pin"; tail -15 /tmp/refresh-nx.log; }
 echo "clone at $(git rev-parse --short HEAD)"
 GUEST
 # The snapshot's stack uses CI's location override; images before it lack the line.
