@@ -431,7 +431,8 @@ write a PR description; that happens when they open the PR. Only:
 2. Write /workspace/.fxa-auto-done.json with keys {issue, branch, pr_title, pr_body, commit_body, media_paths}:
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; pr_body and commit_body the same two or three plain
-   lines on what changed and why; media_paths []. Write it to .fxa-auto-done.json.tmp, then mv it into place.
+   lines on what changed and why; media_paths the output of
+   'ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .'. Write it to .fxa-auto-done.json.tmp, then mv it into place.
 EOF
     return
   fi
@@ -466,8 +467,8 @@ straight to step 4.
    what should ship, with keys {issue, branch, pr_title, pr_body, commit_body, media_paths}:
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; commit_body the short commit body of
-   fxa-vm-handoff Step 3b, at most 15 lines; media_paths relative to /workspace, empty if
-   none. Write it with the Write tool (not an inline script) to
+   fxa-vm-handoff Step 3b, at most 15 lines; media_paths the output of
+   'ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .' (do not type it). Write it with the Write tool (not an inline script) to
    .fxa-auto-done.json.tmp, then mv it into place.
 5. Run 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' and fix what it prints.
 6. If this session taught you something that a later session in this repo needs

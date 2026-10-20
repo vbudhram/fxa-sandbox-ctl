@@ -30,6 +30,8 @@ the repo's rules for a PR, and a hand-written body missed them in a test on
    The testing section must match the verdict line by line.
 4. Write the body to /workspace/.fxa-pr-body.md and the title (a scoped
    conventional commit subject) to /workspace/.fxa-pr-title.txt.
+5. In `## Screenshots`, embed each file as `![what it shows](name.png)`. The host
+   swaps only a `(name.png)` link for the uploaded URL, so do not put a name in backticks.
 
 If the Skill tool is not available, read the skill's SKILL.md (in
 /workspace/.claude/skills/<name>/ or ~/.claude/skills/<name>/) and follow it.
