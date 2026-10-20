@@ -13,6 +13,19 @@ _retry() { local d; for d in 3 9 0; do "$@" && return 0; [ "$d" = 0 ] && return 
 gh()   { _retry command gh "$@"; }
 acli() { _retry command acli "$@"; }
 
+# _lock_take_stale <lock dir> <secs>   Remove a lock dir older than <secs>, one taker at a time (<lock>.take):
+# a second taker that judged the old lock stale must not remove the lock the first one just took.
+_lock_take_stale() {
+  local d="$1" t="$1.take" m
+  [ -d "$d" ] || return 0
+  # ponytail: a taker that died inside the take leaves .take; one older than 60 s is taken over, no finer lock.
+  m="$(_mtime "$t" 2>/dev/null)" && [ -n "$m" ] && [ $(( $(date +%s) - m )) -gt 60 ] && rmdir "$t" 2>/dev/null
+  mkdir "$t" 2>/dev/null || return 0
+  # The holder can remove the lock between the -d and the stat: no time then means not stale.
+  m="$(_mtime "$d" 2>/dev/null)" && [ -n "$m" ] && [ $(( $(date +%s) - m )) -gt "$2" ] && rmdir "$d" 2>/dev/null
+  rmdir "$t" 2>/dev/null; return 0
+}
+
 # The host is macOS (BSD tools) or the manager VM (GNU tools). GNU `stat -f`
 # describes the file system and does not fail, so choose once, not per call.
 if stat -c %Y / >/dev/null 2>&1; then

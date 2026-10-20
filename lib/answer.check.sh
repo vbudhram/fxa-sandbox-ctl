@@ -8,6 +8,7 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
 export PIPE_STATE_DIR="$tmp/ps" FXA_LLM_PROXY_URL="http://10.0.0.2:8788"; mkdir -p "$PIPE_STATE_DIR"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+eval "$(sed -n '/^_lock_take_stale() {/,/^}/p' "$here/config.sh")"
 FXA_SESSION_DIR="$tmp/sess" source "$here/session.sh"   # _SESSION_FIN_JQ: questions parse as a turn does
 source "$here/answer.sh"
 SANDBOX_ROOT="$here/.."  # config.sh sets it on a host; the script reads guide/voice.md from it
