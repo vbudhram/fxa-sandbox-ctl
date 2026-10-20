@@ -239,9 +239,14 @@ answer_ask() {
 # changed since <old sha> and fxa-answer exists, since only answer up applies them to that runner.
 answer_refresh_since() {
   local old="$1" changed
-  changed="$(git -C "$SANDBOX_ROOT" diff --name-only "$old"..HEAD -- lib/answer.sh lib/agent.sh templates/agent-dns.sh skills/fxa-jira-link 2>/dev/null || true)"
+  changed="$(git -C "$SANDBOX_ROOT" diff --name-only "$old"..HEAD -- lib/answer.sh templates/agent-dns.sh skills/fxa-jira-link 2>/dev/null || true)"
+  # lib/agent.sh changes in most syncs; answer_up uses only its egress and DNS code.
+  # ponytail: a keyword match on the changed lines; a helper renamed with none of these words is missed until the next answer up.
+  git -C "$SANDBOX_ROOT" diff "$old"..HEAD -- lib/agent.sh 2>/dev/null | grep -E '^[-+][^-+]' | grep -qiE 'egress|iptables|firewall|dns|allow' && changed="${changed:-lib/agent.sh}"
   [ -n "$changed" ] || return 0
   _answer_vm vm_exists "$ANSWER_NAME" || return 0
+  # answer_up flushes the runner's firewall: not while an answer runs.
+  if [ -n "$(ls -A "$PIPE_STATE_DIR/answer-slots" 2>/dev/null)" ]; then echo "answers in flight: run later: vm.sh run './fxa-sandbox-ctl answer up'"; return 0; fi
   if answer_up >/dev/null 2>&1; then echo "answer up: fxa-answer has the new egress and answer code"
   else echo "answer up failed; run: vm.sh run './fxa-sandbox-ctl answer up'"; fi
 }

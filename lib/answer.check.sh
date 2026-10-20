@@ -114,10 +114,17 @@ check "no question: null" "null" "$(_answer_result ask-t010 1 '{"type":"result",
 r="$tmp/repo"; mkdir -p "$r/lib" "$r/dashboard"; g() { git -C "$r" -c user.email=t@example.com -c user.name=t "$@"; }
 g init -q; echo a > "$r/lib/agent.sh"; echo a > "$r/dashboard/index.html"; g add -A; g commit -qm one; one="$(g rev-parse HEAD)"
 echo b > "$r/dashboard/index.html"; g commit -qam two; two="$(g rev-parse HEAD)"
-echo b > "$r/lib/agent.sh"; g commit -qam three
-answer_up() { echo up >> "$tmp/ups"; }; vm_exists() { [ -z "${NO_VM:-}" ]; }; : > "$tmp/ups"
+echo '_setup_egress_firewall() { iptables -A OUTPUT; }' > "$r/lib/agent.sh"; g commit -qam three; three="$(g rev-parse HEAD)"
+answer_up() { echo up >> "$tmp/ups"; }; vm_exists() { [ -z "${NO_VM:-}" ]; }; : > "$tmp/ups"; rm -rf "$PIPE_STATE_DIR/answer-slots"
 ( SANDBOX_ROOT="$r"; answer_refresh_since "$one" >/dev/null; answer_refresh_since "$(g rev-parse HEAD)" >/dev/null; NO_VM=1 answer_refresh_since "$two" >/dev/null )
-check "answer up runs once: for a pull that changed lib/agent.sh, not for no change or no fxa-answer" "1" "$(grep -c up "$tmp/ups")"
+check "answer up runs once: for a pull that changed the egress code in lib/agent.sh, not for no change or no fxa-answer" "1" "$(grep -c up "$tmp/ups")"
+echo '_setup_egress_firewall() { iptables -A OUTPUT; }
+session_note() { echo hi; }' > "$r/lib/agent.sh"; g commit -qam four
+( SANDBOX_ROOT="$r"; answer_refresh_since "$three" >/dev/null )
+check "a lib/agent.sh change outside the egress code does not run answer up" "1" "$(grep -c up "$tmp/ups")"
+mkdir -p "$PIPE_STATE_DIR/answer-slots/1"
+check "an answer in flight: no answer up, and the hint says to run it later" "1|yes" "$( (SANDBOX_ROOT="$r"; answer_refresh_since "$two") | grep -q 'run later' && echo yes | sed 's/^/1|/')"
+rmdir "$PIPE_STATE_DIR/answer-slots/1"
 ( SANDBOX_ROOT="$r"; git -C "$r" checkout -q "$two"; answer_refresh_since "$one" >/dev/null )
 check "a pull that changed only dashboard/ does not run answer up" "1" "$(grep -c up "$tmp/ups")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
