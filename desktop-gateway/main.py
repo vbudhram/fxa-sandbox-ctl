@@ -28,8 +28,15 @@ THREAD = re.compile(r"[A-Z0-9]+:\d+\.\d+")
 IAP_KEYS_URL = "https://www.gstatic.com/iap/verify/public_key"
 NOVNC_PORT = 6080
 MANAGER_URL = os.environ.get("MANAGER_URL", "").rstrip("/")
-# Empty: anyone IAP lets in may see the dashboard. Else only these emails.
+# Empty: anyone IAP lets in may see the dashboard. Else only these emails, and every email of a domain listed as @domain.
+# A domain entry admits viewing only: watching a gated team's session stays with the emails named here (see watch).
 DASHBOARD_USERS = {e.strip().lower() for e in os.environ.get("DASHBOARD_USERS", "").split(",") if e.strip()}
+
+
+def may_view(email):
+    email = (email or "").lower()
+    return bool(email) and (not DASHBOARD_USERS or email in DASHBOARD_USERS
+                            or any(u.startswith("@") and email.endswith(u) for u in DASHBOARD_USERS))
 # The key the dashboard checks the signed user with (secret fxa-dashboard-hmac). Empty: no user is
 # signed, so the dashboard refuses every write that needs one.
 DASHBOARD_HMAC = os.environ.get("DASHBOARD_HMAC", "").strip().encode()
@@ -173,7 +180,7 @@ async def dashboard(request):
     if not MANAGER_URL:
         raise web.HTTPNotFound()
     email = await iap_email(request)
-    if not email or (DASHBOARD_USERS and email not in DASHBOARD_USERS):
+    if not may_view(email):
         raise web.HTTPForbidden(text="Not allowed to see the dashboard.")
     # The dashboard accepts only loopback Host names; the gateway is its proxy.
     # A browser's cross-site signals pass through, so its CSRF check still works;

@@ -162,6 +162,15 @@ async def dashboard_check():
         main.DASHBOARD_USERS = {"someone@example.com"}
         async with c.get(f"{base}/") as x:
             check("an account not on the list: 403", 403, x.status)
+        main.DASHBOARD_USERS = {"someone@example.com", "@example.org"}
+        for e, want in (("viewer@example.org", 200), ("x@notexample.org", 403), ("x@example.org.evil.test", 403)):
+            who["email"] = e
+            async with c.get(f"{base}/") as x:
+                check(f"@example.org on the list: {e} gets {want}", want, x.status)
+        main.DASHBOARD_HMAC, who["email"] = b"k1", "viewer@example.org"
+        async with c.get(f"{base}/w/C0AB12CD3:1791135361.015169/events") as x:
+            check("a domain entry admits viewing only: its viewer is not signed for a gated watch", None, seen["user"])
+        main.DASHBOARD_HMAC, who["email"], main.DASHBOARD_USERS = b"", "owner@example.com", {"someone@example.com"}
         t = "C0AB12CD3:1791135361.015169"
         async with c.get(f"{base}/w/{t}") as x:
             check("the watch page is open to any IAP account", (200, True), (x.status, "<title>fxa-agent</title>" in await x.text()))
