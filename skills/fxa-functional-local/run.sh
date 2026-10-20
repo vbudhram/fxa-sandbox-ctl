@@ -58,7 +58,8 @@ secs=$(( $(date +%s) - start ))
 # pages peak at 0.06 normalized entropy, pages with content at 0.2 and up.
 shows_something() {
   command -v ffmpeg >/dev/null || return 0
-  ffmpeg -v error -i "$1" -vf "entropy,metadata=print:key=lavfi.entropy.normalized_entropy.normal.Y:file=-" -f null - 2>/dev/null \
+  # -nostdin: it runs in a `while read` loop, and GNU ffmpeg would eat the rest of the video list.
+  ffmpeg -nostdin -v error -i "$1" -vf "entropy,metadata=print:key=lavfi.entropy.normalized_entropy.normal.Y:file=-" -f null - 2>/dev/null \
     | awk -F= '/entropy/ { if ($2 + 0 > m) m = $2 + 0 } END { exit !(m >= 0.12) }'
 }
 # Name each video after its test's output folder; a test's own browser adds -own-<n>.

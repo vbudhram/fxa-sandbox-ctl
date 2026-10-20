@@ -11,7 +11,7 @@ n=0
 for a in "$F"/[0-9][0-9]-a-*.png; do
   [ -f "$a" ] || break
   i="$(basename "$a")"; i="${i%%-*}"
-  s="$(ls "$F/$i"-s-*.png 2>/dev/null | head -1)"
+  s="$(ls "$F/$i"-s-*.png 2>/dev/null | head -1 || true)" # GNU ls exits 2 on no match, which pipefail would turn into the exit
   [ -n "$s" ] || { echo "pair-video: no supplicant frame for step $i" >&2; exit 1; }
   lbl="$(basename "$a" .png)"; lbl="${lbl#*-a-}"
   base="[0]${fit}[a];[1]${fit}[b];[a][b]hstack"

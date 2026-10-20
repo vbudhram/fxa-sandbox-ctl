@@ -10,7 +10,7 @@ recording() { [ -s "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
 # The blank-video check from fxa-functional-local/run.sh: near-uniform frames show nothing.
 shows_something() {
   command -v ffmpeg >/dev/null || return 0
-  ffmpeg -v error -i "$1" -vf "entropy,metadata=print:key=lavfi.entropy.normalized_entropy.normal.Y:file=-" -f null - 2>/dev/null \
+  ffmpeg -nostdin -v error -i "$1" -vf "entropy,metadata=print:key=lavfi.entropy.normalized_entropy.normal.Y:file=-" -f null - 2>/dev/null \
     | awk -F= '/entropy/ { if ($2 + 0 > m) m = $2 + 0 } END { exit !(m >= 0.12) }'
 }
 case "${1:-}" in
