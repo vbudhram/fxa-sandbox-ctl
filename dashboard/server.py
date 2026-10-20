@@ -53,6 +53,7 @@ class Feed:
         self.fetched_at = None    # when that succeeded
         self.error = None         # error from the most recent attempt, if any
         self.refreshing = False
+        self.gated = False        # True: refresh only while a viewer is around (see seen())
         self.fails = 0            # failures in a row; the third raises an alert
         self.alerted = False
 
@@ -98,10 +99,35 @@ class Feed:
                 self.refreshing = False
         return True
 
+    def tick(self):
+        """One loop turn: refresh unless the feed waits for a viewer. True when it refreshed."""
+        if self.gated and self.data is not None and time.time() - LAST_SEEN[0] > IDLE_S:
+            return False
+        self.refresh()
+        return True
+
     def loop(self):
         while True:
-            self.refresh()
+            self.tick()
             time.sleep(self.interval)
+
+
+# The snapshot, agents and stats feeds cost 0.8-1.3 of the VM's cores (measured 2026-10-20) with or without a
+# viewer: a gated feed refreshes only while an /api request came in the last IDLE_S, and the first one after wakes it.
+# While nobody looks, a gated feed cannot fail either, so its feed_failed alert waits for the next viewer.
+IDLE_S = int(os.environ.get("FXA_DASHBOARD_IDLE_S", "600"))
+LAST_SEEN = [time.time()]
+GATED = []
+
+
+def seen():
+    """Note a viewer; after an idle spell, refresh the gated feeds now, not at their next turn. Returns the feeds started."""
+    idle = time.time() - LAST_SEEN[0] > IDLE_S
+    LAST_SEEN[0] = time.time()
+    woke = [f for f in GATED if idle and f.claim()]
+    for f in woke:
+        threading.Thread(target=f.refresh, kwargs={"already_claimed": True}, daemon=True).start()
+    return woke
 
 
 # A feed that keeps failing leaves the page empty with no other sign (the sessions
@@ -946,6 +972,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path.startswith("/api/"):
+            seen()
         if not self._allowed(path.startswith("/api/")):
             return
         query = parse_qs(urlparse(self.path).query)
@@ -1155,6 +1183,9 @@ if __name__ == "__main__":
     threading.Thread(target=FULL.loop, daemon=True).start()
     # The run logs grow once per run, so a minute is fresh enough; no request waits for a refresh.
     STATS = Feed("stats", ["--pipeline", PIPELINE, "snapshot", "--stats"], 60, 30)
+    for f in (FULL, AGENTS, STATS):
+        f.gated = True
+        GATED.append(f)
     threading.Thread(target=AGENTS.loop, daemon=True).start()
     threading.Thread(target=STATS.loop, daemon=True).start()
     # Each team runs pipeline_load and the App check; outside CTL_SLOTS like the other feeds.
