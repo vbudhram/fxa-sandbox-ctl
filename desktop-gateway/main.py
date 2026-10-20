@@ -192,7 +192,11 @@ async def dashboard(request):
     body = await request.read() if request.method == "POST" else None
     async with request.app["http"].request(request.method, f"{MANAGER_URL}{request.path_qs}", headers=headers, data=body) as r:
         keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-security-policy", "cache-control", "x-content-type-options", "referrer-policy")}
-        return web.Response(status=r.status, body=await r.read(), headers=keep)
+        resp = web.Response(status=r.status, body=await r.read(), headers=keep)
+        # The page and its JSON shrink 3-8x; media (png, jpg, mp4, webm) is compressed already.
+        if r.content_type in ("text/html", "application/json"):
+            resp.enable_compression()
+        return resp
 
 
 WATCH_PAGE = r"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
