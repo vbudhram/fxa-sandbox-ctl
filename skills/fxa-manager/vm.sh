@@ -251,7 +251,7 @@ echo "== repos"
 for r in fxa-sandbox-ctl fxa-agent-bot; do d=~/Desktop/working2/$r; git -C "$d" fetch -q origin 2>/dev/null
   printf "  %-16s %s  (%s behind origin)\n" "$r" "$(git -C "$d" log --oneline -1 | cut -c1-60)" "$(git -C "$d" rev-list --count HEAD..origin/main 2>/dev/null)"; done
 echo "== claude credential for runners"
-grep -q "^ANTHROPIC_API_KEY=" .env && echo "  ANTHROPIC_API_KEY: present" || { grep -q "^CLAUDE_CODE_OAUTH_TOKEN=" .env && echo "  setup-token: present" || echo "  MISSING: runners cannot start"; }
+grep -q "^ANTHROPIC_API_KEY=" .env && echo "  ANTHROPIC_API_KEY: present" || { grep -q "^CLAUDE_CODE_OAUTH_TOKEN=" .env && echo "  MISSING: only a setup-token, and the LLM proxy needs ANTHROPIC_API_KEY: runners cannot start" || echo "  MISSING: runners cannot start"; }
 echo "== tmux"; tmux ls 2>/dev/null | sed "s/^/  /" || echo "  no session"
 echo "== open errors"; ./fxa-sandbox-ctl errors 2>/dev/null | grep -cE "^[0-9a-f]{10}" | sed "s/^/  /"
 '
