@@ -10,15 +10,16 @@
   /* FxA design tokens (libs/shared/assets tailwind.config.js), as fxa-settings applies them. */
   :root {
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px;
-    --r-sm:4px; --r-md:8px; --r-lg:12px; --r-pill:999px;
+    --r-sm:4px; --r-md:8px; --r-lg:14px; --r-pill:999px;
     --t-tiny:11px; --t-label:12px; --t-sub:13px; --t-body:14px; --t-heading:16px; --t-head:18px; --t-page:22px; --t-kpi:28px; --t-huge:32px;
 
-    --bg:#FAFAFB; --panel:#fff; --sunk:#F0F0F4; --line:#E7E7E7; --line2:#8A8A8A; --hover:#E7E7E7;
-    --ink:#0C0C0D; --dim:#5E5E72; --faint:#6D6D6E;
-    --ok:#00736C; --warn:#CC3D00; --bad:#C50042; --info:#0060DF; --purple:#7542E5; --link:#0060DF; --link-hover:#0250BB;
-    --okbg:#E3FFF3; --warnbg:#FFF4DE; --badbg:#FFDFE7; --infobg:#E6EFFC;
-    --amber:#FE4800;
-    --card-border:transparent; --shadow:0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
+    --bg:#f6f4f0; --panel:#fffdfa; --sunk:#eeebe5; --line:#e6e1da; --line2:#87807a; --hover:#ece8e1;
+    --ink:#24211d; --dim:#5c564e; --faint:#6c665e;
+    --ok:#25705a; --warn:#a85420; --bad:#b23a4a; --info:#3866ab; --purple:#7a62c9; --link:#3866ab; --link-hover:#2c5390;
+    --okbg:#e5f1eb; --warnbg:#f8ebe0; --badbg:#f7e4e6; --infobg:#e6edf7;
+    --amber:#c9732f;
+    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#cf9a36; --chart-muted:#cbc5bb;   /* chart series, in fixed order; never the status colours */
+    --card-border:transparent; --shadow:0 1px 2px rgb(40 30 20 / .04), 0 6px 20px rgb(40 30 20 / .05);
     --shadow-hover:0 2px 14px rgb(58 57 68 / .2); --shadow-pop:0 10px 30px rgb(0 0 0 / .25);
     --shadow-drawer:0 0 30px rgb(0 0 0 / .18); --shadow-dialog:0 20px 60px rgb(0 0 0 / .3);
     /* The terminal is dark in both themes. */
@@ -27,7 +28,7 @@
     /* FxA dropped Metropolis and Inter in 2024 (FXA-9058): the system stack, for body and headings */
     --sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue",sans-serif;
     --head:var(--sans);
-    --purpletxt:#592ACB; --purplebg:#E7DFFF; --on-strong:#fff;   /* purple-700 on purple-50; text on a solid badge */
+    --purpletxt:#5e48ad; --purplebg:#ece7f8; --on-strong:#ffffff;   /* purple-700 on purple-50; text on a solid badge */
     --rail:72px; --side:300px; --right:340px;
     --mono:Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
   }
@@ -35,22 +36,24 @@
   :root[data-theme="light"] { color-scheme:light; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg:#0C0C0D; --panel:#15141A; --sunk:#1F1E25; --line:#32313C; --line2:#67677D; --hover:#32313C;
-      --ink:#FAFAFB; --dim:#C2C2C2; --faint:#9E9E9E;
-      --ok:#3FE1B0; --warn:#FFBD4F; --bad:#FF848B; --info:#00B3F4; --purple:#AB71FF; --link:#0090ED; --link-hover:#00B3F4;
-      --okbg:#0E2A24; --warnbg:#2E2210; --badbg:#35141D; --infobg:#0B2340;
-      --amber:#FF8A50;
-      --card-border:#32313C; --shadow:none; --purpletxt:#AD74FF; --purplebg:#321C64; --on-strong:#0C0C0D;
+      --bg:#18171a; --panel:#211f24; --sunk:#2a282e; --line:#36343b; --line2:#77737d; --hover:#302e35;
+      --ink:#efece7; --dim:#c9c4bc; --faint:#a29c93;
+      --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
+      --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
+      --amber:#e0a06a;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#4a4750;
+      --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
     }
   }
   :root[data-theme="dark"] {
     color-scheme:dark;
-    --bg:#0C0C0D; --panel:#15141A; --sunk:#1F1E25; --line:#32313C; --line2:#67677D; --hover:#32313C;
-    --ink:#FAFAFB; --dim:#C2C2C2; --faint:#9E9E9E;
-    --ok:#3FE1B0; --warn:#FFBD4F; --bad:#FF848B; --info:#00B3F4; --purple:#AB71FF; --link:#0090ED; --link-hover:#00B3F4;
-    --okbg:#0E2A24; --warnbg:#2E2210; --badbg:#35141D; --infobg:#0B2340;
-    --amber:#FF8A50;
-    --card-border:#32313C; --shadow:none; --purpletxt:#AD74FF; --purplebg:#321C64; --on-strong:#0C0C0D;
+    --bg:#18171a; --panel:#211f24; --sunk:#2a282e; --line:#36343b; --line2:#77737d; --hover:#302e35;
+    --ink:#efece7; --dim:#c9c4bc; --faint:#a29c93;
+    --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
+    --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
+    --amber:#e0a06a;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#4a4750;
+    --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
@@ -1024,7 +1027,7 @@ function putOv(id, html, extra = "") {
 // The Overview range (7, 30 or 90 days), in memory for the visit.
 let OV_RANGE = "30d";
 const OV_RANGES = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
-const OV_SRC = [["pipeline", "var(--info)"], ["pass", "var(--purple)"], ["slack", "var(--ok)"], ["answer", "var(--amber)"]];
+const OV_SRC = [["pipeline", "var(--chart-1)"], ["pass", "var(--chart-2)"], ["slack", "var(--chart-3)"], ["answer", "var(--chart-4)"]];
 // Why the stats figures may be wrong, or "": a failed read keeps the last figures, with their age.
 function statsNote() {
   if (STATS_ERR) return STATS ? `${sentence(STATS_ERR)}. These figures are from ${ago(Math.round((Date.now() - STATS_AT) / 1000))}; the next poll tries again.` : `${sentence(STATS_ERR)}. The next poll tries again.`;
@@ -1356,8 +1359,8 @@ async function loadRuns() {
   } catch (e) { if (seq !== RUNS_SEQ) return; RUNS = null; RUNS_ERR = e.message; }
   safeRender(renderOvRuns, "ov-runs");
 }
-const RUN_SRC = { pipeline: ["var(--info)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--ok)", "M4 5h16v11H8l-4 4z", "Slack session"],
-  answer: ["var(--amber)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--purple)", "M12 4v16M4 12h16", "pass"] };
+const RUN_SRC = { pipeline: ["var(--chart-1)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--chart-3)", "M4 5h16v11H8l-4 4z", "Slack session"],
+  answer: ["var(--chart-4)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--chart-2)", "M12 4v16M4 12h16", "pass"] };
 const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 function runBadge(r) {
   if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
