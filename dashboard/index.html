@@ -3292,7 +3292,7 @@ function sbRows() {
       age: t.started ? Math.max(0, Math.round(now - t.started)) : null, cap: g.session_max_run_seconds ?? null, cost: t.cost ?? null, usd: t.cost ?? null, session: t.key,
       routine_run: x?.routine_run ?? null, routine_name: open ? x?.routine_name ?? null : null, boot_s: t.boot_s, boot_steps: t.boot_steps, res_peak: t.res_peak });
   });
-  // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1, with no
+  // A stopped session whose runner is up: 'stopping' in the stop window, a fix row with runner_left 1 after 5 min, with no
   // stopped_at, or after 10 min (D5).
   const known = new Set();
   ss.filter(x => !LIVE_SESSION.includes(x.state)).forEach(x => {
@@ -3304,7 +3304,7 @@ function sbRows() {
       boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
     row.usd = row.cost;
     // No stopped_at (a failed boot, a job that died): nothing will stop the runner, so it is a fix at once.
-    if (instUp(v) && (String(x.runner_left) === "1" || since == null || since >= SB_GRACE))
+    if (instUp(v) && (String(x.runner_left) === "1" && since >= 300 || since == null || since >= SB_GRACE))
       out.fix.push(withFix({ ...row, id: `fix:${v.name}`, state: "stopped, runner still up" }, { kind: "session", target: x.key, steps: null,
         why: `The session ${x.state}${since != null ? ` ${short(Math.round(since))} ago` : ""}, and its runner still bills. Stop it: the stop saves the work.` }));
     else out.live.push({ ...row, id: `sess:${x.key}`, state: "stopping" });

@@ -659,7 +659,8 @@ session_idle_sweep() {
     [ -f "$f" ] || continue
     key="$(basename "$f" .json)"
     # A stop whose runner delete failed: try the delete again until the runner goes.
-    if [ "$(jq -r '.runner_left // ""' "$f")" = 1 ]; then
+    # session_stop sets the mark before its delete, so a stop under 5 min old is still at work.
+    if [ "$(jq -r '.runner_left // ""' "$f")" = 1 ] && [ $(( now - $(jq -r '.stopped_at // 0' "$f") )) -ge 300 ]; then
       _session_lock "$key" || continue
       if agent_stop "$(worktree_branch_for "$key")" >/dev/null 2>&1; then session_set "$key" runner_left 0 && echo "deleted the runner of ${key}"
       # Once per session: the sweep retries every minute.
