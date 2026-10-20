@@ -9,7 +9,8 @@ need() { local v; v="$(get "$1")" && [ -n "$v" ] || { echo "fxa-secrets: could n
 put() { printf '%s' "$2" > "$1.new" && mv "$1.new" "$1"; }
 umask 077
 # A secret that may not exist: NOT_FOUND reads as empty, and any other failed read stops the run before a write.
-opt() { local v; if v="$(get "$1" 2>"$C/.opt-err")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$C/.opt-err"; then :
+# The name ends in get: vm.sh status finds the secrets by 'get fxa-'.
+opt_get() { local v; if v="$(get "$1" 2>"$C/.opt-err")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$C/.opt-err"; then :
   else echo "fxa-secrets: could not read $1 ($(head -1 "$C/.opt-err")); no file changed" >&2; exit 1; fi; }
 pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts
 # Runners reach Claude only through the LLM proxy, which sends an API key: a setup-token is no use here.
@@ -19,13 +20,13 @@ if [ -d "$W/fxa-sandbox-ctl" ]; then k="$(need fxa-anthropic-api-key)"; cl="ANTH
 [ ! -d "$W/fxa-agent-bot" ] || bb="$(cat "$C/bot.env.base")"
 # Plain assignments, not inside || or &&: set -e does not stop a failed $(...) there.
 if [ -d "$W/fxa-agent-bot" ]; then sb="$(need fxa-slack-bot-token)"; sa="$(need fxa-slack-app-token)"; fi
-r="$(opt fxa-runlayer-agent-token)"
-s="$(opt fxa-sentry-token)"
-g="$(opt fxa-grafana-token)"
-j="$(opt fxa-jira-token)"
-e="$(opt fxa-jira-email)"
-m="$(opt fxa-agent-memory-key)"
-h="$(opt fxa-dashboard-hmac)"
+r="$(opt_get fxa-runlayer-agent-token)"
+s="$(opt_get fxa-sentry-token)"
+g="$(opt_get fxa-grafana-token)"
+j="$(opt_get fxa-jira-token)"
+e="$(opt_get fxa-jira-email)"
+m="$(opt_get fxa-agent-memory-key)"
+h="$(opt_get fxa-dashboard-hmac)"
 rm -f "$C/.opt-err"
 put "$C/github-app.pem" "$pem
 "
