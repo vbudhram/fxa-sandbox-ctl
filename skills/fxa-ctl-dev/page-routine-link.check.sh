@@ -11,5 +11,8 @@ ck "a link with routine 1 opens Alpha, the routine that ran first" "Alpha" "$out
 ck "with no routine in the link, the routine that ran last (Beta) opens" "Beta" "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$probe")"
 gone='await new Promise(r => setTimeout(r, 600)); return /The routine from the link is no longer here/.test(document.querySelector("[data-routine-list]")?.textContent ?? "")'
 ck "a link to a routine that is gone says so above the one that ran last" "true" "$(bash "$p" '#teams/example/routines/999' --fixture "$F" --probe "$gone")"
+# A link to a team already open selects the routine at once, and leaves no id for the next team's tab.
+want='await new Promise(r => setTimeout(r, 600)); location.hash = "#teams/example/routines/1"; await new Promise(r => setTimeout(r, 400)); return `${RT.sel}|${RT_WANT}`'
+ck "a link to an open team selects its routine and keeps no id for another team" "1|0" "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$want")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

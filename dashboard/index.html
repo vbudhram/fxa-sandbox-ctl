@@ -3463,7 +3463,7 @@ function route() {
     const r = teamRoute(sub, sel);
     if (r.replace) return location.replace(r.replace);
     // #teams/<team>/routines/<id> (a Slack History link): that routine is the one selected.
-    if (r.tab === "routines" && /^[1-9][0-9]*$/.test(rid ?? "")) { RT_WANT = Number(rid); if (RT.team === r.sel) RT.sel = RT_WANT; }
+    if (r.tab === "routines" && /^[1-9][0-9]*$/.test(rid ?? "")) { RT_WANT = Number(rid); if (RT.team === r.sel) { RT.sel = RT_WANT; RT_WANT = 0; } }
     if (r.sel !== SEL.teams) TED = null;
     SEL.teams = r.sel; TTAB = r.tab;
   }
