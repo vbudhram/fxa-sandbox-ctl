@@ -1881,13 +1881,13 @@ document.addEventListener("click", async e => {
 
 // Teams: each profile, what it gets, and who can start one. Read-only; the server rebuilds it every 5 min.
 let TEAMS = null;
-let TEAMS_AT = 0;
+let TEAMS_AT = 0, TEAMS_AGE0 = 0;
 async function loadTeams() {
-  try { const r = await fetch("/api/teams", { cache:"no-store" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); TEAMS = await r.json(); TEAMS_AT = Date.now(); }
+  try { const r = await fetch("/api/teams", { cache:"no-store" }); if (!r.ok) throw new Error(`HTTP ${r.status}`); TEAMS = await r.json(); TEAMS_AT = Date.now(); TEAMS_AGE0 = TEAMS.age_seconds ?? 0; }
   catch (e) {
     RTSUM_ERR = "the routine store cannot be read";
     // A failed read keeps the last rows with the error and their age, so Teams says so, not 'Loading' or old rows as current.
-    TEAMS = { ...(TEAMS ?? { teams: [] }), error: `the teams read failed (${e.message})`, age_seconds: TEAMS_AT ? (Date.now() - TEAMS_AT) / 1000 : 0 };
+    TEAMS = { ...(TEAMS ?? { teams: [] }), error: `the teams read failed (${e.message})`, age_seconds: TEAMS_AT ? TEAMS_AGE0 + (Date.now() - TEAMS_AT) / 1000 : null };
     if (VIEW === "overview") { safeRender(renderOvSys, "ov-sys"); safeRender(renderOvTeams, "ov-teams"); }
     return;
   }

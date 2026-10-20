@@ -64,4 +64,11 @@ tt="$(bash "$p" '#overview' --fixture "$O" --probe '
   await loadTeams(); await w(100); window.fetch = real;
   return /teams feed failed: the teams read failed \(HTTP 503\)/.test(document.getElementById("ov-teams").textContent)')"
 if [ "$tt" = true ]; then echo "ok   a failed /api/teams request keeps the Teams rows with a note"; else echo "FAIL a failed /api/teams request keeps the Teams rows with a note: got [$tt]"; fail=1; fi
+# The first /api/teams request fails: Teams shows the error, not an empty list "from 0s ago".
+tf="$(bash "$p" '#teams' --fixture "$O" --probe '
+  const w = ms => new Promise(r => setTimeout(r, ms)); await w(300); const real = window.fetch;
+  window.fetch = (u, o) => String(u).startsWith("/api/teams") ? Promise.resolve(new Response("", { status: 503 })) : real(u, o);
+  TEAMS = null; TEAMS_AT = 0; await loadTeams(); renderTeams(); await w(100); window.fetch = real;
+  const x = document.getElementById("s-teams").textContent; return /the teams read failed \(HTTP 503\)/.test(x) && !/ago/.test(x)')"
+if [ "$tf" = true ]; then echo "ok   a first /api/teams request that fails shows the error on Teams"; else echo "FAIL a first /api/teams request that fails shows the error on Teams: got [$tf]"; fail=1; fi
 exit $fail
