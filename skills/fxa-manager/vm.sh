@@ -264,7 +264,7 @@ echo "== repos"
 for r in fxa-sandbox-ctl fxa-agent-bot; do d=~/Desktop/working2/$r; git -C "$d" fetch -q origin 2>/dev/null
   printf "  %-16s %s  (%s behind origin)\n" "$r" "$(git -C "$d" log --oneline -1 | cut -c1-60)" "$(git -C "$d" rev-list --count HEAD..origin/main 2>/dev/null)"; done
 echo "== claude credential for runners"
-grep -q "^ANTHROPIC_API_KEY=" .env && echo "  ANTHROPIC_API_KEY: present" || { grep -q "^CLAUDE_CODE_OAUTH_TOKEN=" .env && echo "  setup-token: present" || echo "  MISSING: runners cannot start"; }
+grep -q "^ANTHROPIC_API_KEY=" .env && echo "  ANTHROPIC_API_KEY: present" || { grep -q "^CLAUDE_CODE_OAUTH_TOKEN=" .env && echo "  MISSING: only a setup-token, and the LLM proxy needs ANTHROPIC_API_KEY: runners cannot start" || echo "  MISSING: runners cannot start"; }
 d="$(bash skills/fxa-manager/env-drift.sh ../fxa-agent-bot/.env ~/.config/fxa/bot.env.base | tr "\n" " ")"
 [ -z "$d" ] || echo "WARN: the bot .env has settings that ~/.config/fxa/bot.env.base does not: ${d}. The next fxa-secrets run drops them: edit bot.env.base too."
 d="$(bash skills/fxa-manager/env-drift.sh .env ~/.config/fxa/ctl.env.base "ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|PIPE_JIRA_BASIC" | tr "\n" " ")"
