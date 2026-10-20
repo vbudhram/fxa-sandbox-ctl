@@ -1,0 +1,73 @@
+{
+ "/api/team-admin": {
+  "admin": true
+ },
+ "/api/teams": {
+  "age_seconds": 5,
+  "teams": [
+   {
+    "profile": "example",
+    "label": "Example",
+    "repos": [
+     "example/app"
+    ],
+    "access": {
+     "record": true,
+     "status": "active",
+     "open": false,
+     "users": [
+      "U000EXAMPLE"
+     ]
+    },
+    "test": {
+     "result": null,
+     "at": null,
+     "generation": 3,
+     "tested": 3
+    }
+   }
+  ]
+ },
+ "/api/routines/summary": {
+  "teams": {}
+ },
+ "/api/teams/example/routines": [
+  {
+   "id": 1,
+   "version": 1,
+   "paused": 0,
+   "data": {
+    "name": "Alpha",
+    "template": "code-review",
+    "schedule": "daily 09:00",
+    "zone": "UTC",
+    "mode": "report",
+    "channel": ""
+   },
+   "next": [],
+   "last": {
+    "state": "ok",
+    "ended_at": 100
+   }
+  },
+  {
+   "id": 2,
+   "version": 1,
+   "paused": 0,
+   "data": {
+    "name": "Beta",
+    "template": "code-review",
+    "schedule": "daily 09:00",
+    "zone": "UTC",
+    "mode": "report",
+    "channel": ""
+   },
+   "next": [],
+   "last": {
+    "state": "ok",
+    "ended_at": 300
+   }
+  }
+ ],
+ "/api/routine-templates": []
+}

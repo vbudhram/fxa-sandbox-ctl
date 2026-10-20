@@ -2157,7 +2157,7 @@ function renderTeams() {
   const T = TEAMS;
   if (!T || T.age_seconds == null) { put("s-teams", `<div class="emptybox">${T?.error ? esc(T.error) : "loading teams… the first profile list can take a minute"}</div>`); return; }
   const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
-  if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile }; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
+  if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
   if (TTAB === "settings" && t?.access?.record && TEAM_ADMIN?.admin && TED?.name !== t.profile && TEAM_LOADING !== t.profile) {
@@ -2181,7 +2181,7 @@ function renderTeams() {
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
 // again: the signed user, TEAM_ADMINS, the validator and the version. RT holds one team's list and the open form,
 // whose draft object each input updates, so a poll that repaints the list keeps what the admin typed.
-let RT = { team: null };
+let RT = { team: null }, RT_WANT = 0;   // RT_WANT: a routine id from the link, kept until that team's routines load
 const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_MODES = [["report", "Report"], ["pr", "Draft PR"], ["pr+notes", "Draft PR with notes"]];
 const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits"];
@@ -3458,10 +3458,12 @@ const svgI = (d, w = 18) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24"
 const ICO_SIDE = '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>', ICO_RIGHT = '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>';
 
 function route() {
-  const [v, sub, sel] = location.hash.slice(1).split("/");
+  const [v, sub, sel, rid] = location.hash.slice(1).split("/");
   if (v === "teams") {
     const r = teamRoute(sub, sel);
     if (r.replace) return location.replace(r.replace);
+    // #teams/<team>/routines/<id> (a Slack History link): that routine is the one selected.
+    if (r.tab === "routines" && /^[1-9][0-9]*$/.test(rid ?? "")) { RT_WANT = Number(rid); if (RT.team === r.sel) RT.sel = RT_WANT; }
     if (r.sel !== SEL.teams) TED = null;
     SEL.teams = r.sel; TTAB = r.tab;
   }
