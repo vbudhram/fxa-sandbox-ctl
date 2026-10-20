@@ -115,6 +115,10 @@ async def dashboard_check():
     async def dash(request):
         seen.update(host=request.headers.get("Host"), origin=request.headers.get("Origin"), method=request.method, query=request.query.get("thread"),
                     user=request.headers.get("X-Fxa-User"), ts=request.headers.get("X-Fxa-Time"), sig=request.headers.get("X-Fxa-Sig"), path=request.path)
+        if request.path == "/api/errors":
+            if request.headers.get("If-None-Match") == '"e1"':
+                return web.Response(status=304, headers={"ETag": '"e1"'})
+            return web.Response(text="[]", content_type="application/json", headers={"ETag": '"e1"', "Cache-Control": "no-cache"})
         if request.path.startswith("/api/media"):
             return web.Response(body=b"\x89PNG" + b"0" * 2000, content_type="image/png")
         return web.Response(text="dash " + request.path, content_type="text/html", headers={"Content-Security-Policy": "default-src 'self'"})
@@ -136,6 +140,10 @@ async def dashboard_check():
             check("its CSP comes through", "default-src 'self'", x.headers.get("Content-Security-Policy"))
         async with c.get(f"{base}/api/snapshot", headers={"Accept-Encoding": "gzip"}) as x:
             check("the page and its JSON are gzipped for a browser that takes gzip", ("gzip", "dash /api/snapshot"), (x.headers.get("Content-Encoding"), await x.text()))
+        async with c.get(f"{base}/api/errors") as x:
+            check("the dashboard's ETag comes through", '"e1"', x.headers.get("ETag"))
+        async with c.get(f"{base}/api/errors", headers={"If-None-Match": '"e1"'}) as x:
+            check("If-None-Match goes up, and an unchanged list comes back as a 304", (304, '"e1"'), (x.status, x.headers.get("ETag")))
         async with c.get(f"{base}/api/media?k=1", headers={"Accept-Encoding": "gzip"}) as x:
             check("media is not compressed again", None, x.headers.get("Content-Encoding"))
         check("Host is loopback for the dashboard", "localhost", seen["host"])
@@ -154,6 +162,15 @@ async def dashboard_check():
         main.DASHBOARD_USERS = {"someone@example.com"}
         async with c.get(f"{base}/") as x:
             check("an account not on the list: 403", 403, x.status)
+        main.DASHBOARD_USERS = {"someone@example.com", "@example.org"}
+        for e, want in (("viewer@example.org", 200), ("x@notexample.org", 403), ("x@example.org.evil.test", 403)):
+            who["email"] = e
+            async with c.get(f"{base}/") as x:
+                check(f"@example.org on the list: {e} gets {want}", want, x.status)
+        main.DASHBOARD_HMAC, who["email"] = b"k1", "viewer@example.org"
+        async with c.get(f"{base}/w/C0AB12CD3:1791135361.015169/events") as x:
+            check("a domain entry admits viewing only: its viewer is not signed for a gated watch", None, seen["user"])
+        main.DASHBOARD_HMAC, who["email"], main.DASHBOARD_USERS = b"", "owner@example.com", {"someone@example.com"}
         t = "C0AB12CD3:1791135361.015169"
         async with c.get(f"{base}/w/{t}") as x:
             check("the watch page is open to any IAP account", (200, True), (x.status, "<title>fxa-agent</title>" in await x.text()))

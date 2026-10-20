@@ -18,7 +18,8 @@ P="${FXA_GCE_PROJECT:?FXA_GCE_PROJECT is not set (controller .env)}"
 R="${FXA_GATEWAY_REGION:-us-central1}" SVC="${FXA_GATEWAY_SERVICE:-fxa-desktop}" NET="${FXA_GCE_NETWORK:-fxa-sandbox}"
 SUBNET="${FXA_GATEWAY_SUBNET:-fxa-desktop-gw}" GW_SA="fxa-desktop-gw@${P}.iam.gserviceaccount.com"
 MGR_SA="fxa-ai-fixme-manager@${P}.iam.gserviceaccount.com" RULE="${NET}-allow-gw-dashboard"
-EMAILS='^[^@,; ]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(,[^@,; ]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})*$'
+# Emails, or @domain for every email of a domain (viewing only).
+EMAILS='^[^@,; ]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(,[^@,; ]*@[A-Za-z0-9.-]+\.[A-Za-z]{2,})*$'
 
 # The env to set: the bucket and the manager URL are derived; the rest only when .env names them.
 want_env() {
@@ -67,7 +68,7 @@ case "${1:-}" in
       --no-allow-unauthenticated --update-env-vars "^;^${env}" --update-secrets DASHBOARD_HMAC=fxa-dashboard-hmac:latest
     ensure_rule ;;
   users)
-    [[ "${2:-}" =~ $EMAILS ]] || { echo "usage: gateway.sh users <email>[,<email>...]" >&2; exit 2; }
+    [[ "${2:-}" =~ $EMAILS ]] || { echo "usage: gateway.sh users <email or @domain>[,...]" >&2; exit 2; }
     gcloud run services update "$SVC" --region "$R" --project "$P" --update-env-vars "^;^DASHBOARD_USERS=$2"
     echo "Put the same list in the controller .env as FXA_DASHBOARD_USERS, so the next deploy keeps it." ;;
   *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;

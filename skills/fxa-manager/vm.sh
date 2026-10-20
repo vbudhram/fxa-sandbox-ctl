@@ -358,7 +358,9 @@ if cmp -s fxa-agent-bot/package-lock.json $R/fxa-agent-bot/package-lock.json; th
   [ -d fxa-agent-bot/node_modules ] && [ ! -L fxa-agent-bot/node_modules ] && rm -rf fxa-agent-bot/node_modules
   ln -sfn $R/fxa-agent-bot/node_modules fxa-agent-bot/node_modules
 else rm -f fxa-agent-bot/node_modules; (cd fxa-agent-bot && npm ci --silent); fi
-printf 'FXA_CTL=%s\nERROR_DMS=0\nSLACK_CALL_LOG=%s\n' "$D/fxa-sandbox-ctl/fxa-sandbox-ctl" "$D/slack-calls.jsonl" > fxa-agent-bot/.env.devhost
+# ROUTINES_ENV=dev: the dev bot loads the live bot's .env first (ROUTINES_ENV=live), and a dev bot that ticks live
+# routines claims the live runs and posts with the dev app, so they fail (channel_not_found) and never run live.
+printf 'FXA_CTL=%s\nERROR_DMS=0\nSLACK_CALL_LOG=%s\nROUTINES_ENV=dev\n' "$D/fxa-sandbox-ctl/fxa-sandbox-ctl" "$D/slack-calls.jsonl" > fxa-agent-bot/.env.devhost
 EOF2
           # An eval pins every new session to one commit (vm.sh dev with FXA_SESSION_BASE_SHA set); unset, main.
           [[ "${FXA_SESSION_BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]] && echo "echo FXA_SESSION_BASE_SHA=${FXA_SESSION_BASE_SHA} >> fxa-agent-bot/.env.devhost"

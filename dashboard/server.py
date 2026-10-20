@@ -53,6 +53,7 @@ class Feed:
         self.fetched_at = None    # when that succeeded
         self.error = None         # error from the most recent attempt, if any
         self.refreshing = False
+        self.gated = False        # True: refresh only while a viewer is around (see seen())
         self.fails = 0            # failures in a row; the third raises an alert
         self.alerted = False
 
@@ -98,10 +99,39 @@ class Feed:
                 self.refreshing = False
         return True
 
+    def tick(self):
+        """One loop turn: refresh unless the feed waits for a viewer. True when it refreshed."""
+        if self.gated and self.data is not None and time.time() - LAST_SEEN[0] > IDLE_S:
+            return False
+        self.refresh()
+        return True
+
     def loop(self):
         while True:
-            self.refresh()
+            self.tick()
             time.sleep(self.interval)
+
+
+# The snapshot, agents and stats feeds cost 0.8-1.3 of the VM's cores (measured 2026-10-20) with or without a
+# viewer: a gated feed refreshes only while an /api request came in the last IDLE_S, and the first one after wakes it.
+# While nobody looks, a gated feed cannot fail either, so its feed_failed alert waits for the next viewer.
+# Session fields the page never reads: about 45 KB of each 15 s snapshot poll (measured 2026-10-20). /api/sessions keeps them.
+SESSION_UNUSED = frozenset("""owner_image base_sha claude_session_id trees turn_started job_pid turn_logged turn_ended_at history_cursor
+    push_lease boot_reported handoff_at notes_stale round_fixed tree_changes pr_announced pr_updated review_pr routine_mode desktop_open
+    pushed_announced last_error last_say cap_usd""".split())
+IDLE_S = int(os.environ.get("FXA_DASHBOARD_IDLE_S", "600"))
+LAST_SEEN = [time.time()]
+GATED = []
+
+
+def seen():
+    """Note a viewer; after an idle spell, refresh the gated feeds now, not at their next turn. Returns the feeds started."""
+    idle = time.time() - LAST_SEEN[0] > IDLE_S
+    LAST_SEEN[0] = time.time()
+    woke = [f for f in GATED if idle and f.claim()]
+    for f in woke:
+        threading.Thread(target=f.refresh, kwargs={"already_claimed": True}, daemon=True).start()
+    return woke
 
 
 # A feed that keeps failing leaves the page empty with no other sign (the sessions
@@ -605,25 +635,32 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # the page polls; access logs would bury any real error
 
-    def _hardening(self, csp=None):
-        self.send_header("Cache-Control", "no-store")
+    def _hardening(self, csp=None, cache="no-store"):
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Content-Security-Policy", csp or "default-src 'none'; frame-ancestors 'none'")
 
-    def _send(self, code, body, ctype, csp=None):
+    def _send(self, code, body, ctype, csp=None, etag=False):
         if ctype == "application/json":
             body = MASK.sub(r"\1<masked>", body.decode("utf-8") if isinstance(body, bytes) else body)
         payload = body if isinstance(body, bytes) else body.encode("utf-8")
+        # etag: a body that stays the same between polls (errors, stats within one refresh) answers a revalidation with 304.
+        tag = f'"{hashlib.sha1(payload).hexdigest()[:20]}"' if etag and code == 200 else None
+        if tag and self.headers.get("If-None-Match") == tag:
+            code, payload = 304, b""
         self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(payload)))
-        self._hardening(csp)
+        if code != 304:
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(payload)))
+        if tag:
+            self.send_header("ETag", tag)
+        self._hardening(csp, cache="no-cache" if tag else "no-store")
         self.end_headers()
         self.wfile.write(payload)
 
-    def _json(self, code, obj):
-        self._send(code, json.dumps(obj), "application/json")
+    def _json(self, code, obj, etag=False):
+        self._send(code, json.dumps(obj), "application/json", etag=etag)
 
     def _team_admin(self, path):
         """True when the gateway signed this GET for a team admin, as /api/lessons checks."""
@@ -946,6 +983,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path.startswith("/api/"):
+            seen()
         if not self._allowed(path.startswith("/api/")):
             return
         query = parse_qs(urlparse(self.path).query)
@@ -993,6 +1032,9 @@ class Handler(BaseHTTPRequestHandler):
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
             if isinstance(ag, dict) and not self._team_admin(path):
                 ag = dict(ag, sessions=[redact_session(s) if isinstance(s, dict) and team_private(s.get("profile") or "fxa") else s
+                                        for s in ag.get("sessions") or []])
+            if isinstance(ag, dict):
+                ag = dict(ag, sessions=[{k: v for k, v in s.items() if k not in SESSION_UNUSED} if isinstance(s, dict) else s
                                         for s in ag.get("sessions") or []])
             # The stats feed's age and error, so a page tells live figures from old ones; /api/stats stays as it is.
             _, st_age, st_err, _ = STATS.read()
@@ -1085,7 +1127,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"runs": runs, "error": None if rows is not None else "stats unavailable"})
         elif path == "/api/stats":
             data = STATS.read()[0]
-            self._json(200, data if data is not None else {"error": "stats unavailable"})
+            self._json(200, data if data is not None else {"error": "stats unavailable"}, etag=data is not None)
         elif path == "/api/teams":
             data, age, err, busy = TEAMS.read()
             access, access_err = read_access()
@@ -1116,13 +1158,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
             # A private team's lessons can quote its code: only a signed team admin sees them (i358).
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
-            self._json(200, [r for r in rows if isinstance(r, dict) and (admin or not team_private(r.get("team") or "fxa"))])
+            self._json(200, [r for r in rows if isinstance(r, dict) and (admin or not team_private(r.get("team") or "fxa"))], etag=True)
         elif path == "/api/errors":
             body = cached_ctl(ERRORS, ["errors", "--json"], 20, 20)
             if body is None:  # no read has worked yet: not the same as no errors
                 self._json(503, {"error": "the errors read failed"})
             else:
-                self._send(200, body, "application/json")
+                self._send(200, body, "application/json", etag=True)
         elif path == "/api/history":
             key = arg("key")
             if not re.fullmatch(r"agent-[a-z0-9]{4,12}", key):
@@ -1155,6 +1197,9 @@ if __name__ == "__main__":
     threading.Thread(target=FULL.loop, daemon=True).start()
     # The run logs grow once per run, so a minute is fresh enough; no request waits for a refresh.
     STATS = Feed("stats", ["--pipeline", PIPELINE, "snapshot", "--stats"], 60, 30)
+    for f in (FULL, AGENTS, STATS):
+        f.gated = True
+        GATED.append(f)
     threading.Thread(target=AGENTS.loop, daemon=True).start()
     threading.Thread(target=STATS.loop, daemon=True).start()
     # Each team runs pipeline_load and the App check; outside CTL_SLOTS like the other feeds.

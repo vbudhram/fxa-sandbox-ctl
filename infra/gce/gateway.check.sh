@@ -36,6 +36,7 @@ check "a present rule is left alone" "0" "$(grep -c 'rules create' "$tmp/calls")
 : > "$tmp/calls"
 ( cd "$tmp/repo" && PATH="$tmp/bin:$PATH" FXA_GCE_PROJECT=p1 FXA_DASHBOARD_USERS='a@example.com,b@example.com' bash infra/gce/gateway.sh deploy >/dev/null 2>&1 )
 check "users from .env reach the deploy" "1" "$(grep -c 'DASHBOARD_USERS=a@example.com,b@example.com' "$tmp/calls")"
+ARGS=(users "@mozilla.com,a@example.com"); check "users takes @domain beside emails" "0|1" "$( : > "$tmp/calls"; gw >/dev/null; echo $?)|$(grep -c 'DASHBOARD_USERS=@mozilla.com,a@example.com' "$tmp/calls")"
 ARGS=(users "x; rm -rf /"); check "users refuses anything but a comma list of emails, and calls nothing" "2|0" \
   "$( : > "$tmp/calls"; gw >/dev/null; echo $?)|$(grep -c . "$tmp/calls")"
 # A quoted .env value loses both quotes; the manager is looked up in FXA_MANAGER_ZONE, never the runners' FXA_GCE_ZONE.
