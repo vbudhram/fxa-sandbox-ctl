@@ -35,8 +35,9 @@ def sum_models: to_entries | map(.value) |
 [.[] | select(.type=="result" and .modelUsage != null)] as $r
 | if ($r|length) > 0 then
     ($r | map(.modelUsage) | add) as $mu
-    # modelUsage has no 1-hour split: take each model's 1-hour cache writes from its assistant messages.
-    | ([.[] | select(.type=="assistant" and .message.usage != null)] | group_by(.message.model)
+    # modelUsage has no 1-hour split: take each model's 1-hour cache writes from its assistant messages,
+    # once per message id (a message with several content blocks comes once per block).
+    | ([.[] | select(.type=="assistant" and .message.usage != null)] | group_by(.message.id) | map(.[-1]) | group_by(.message.model)
        | map({key: .[0].message.model, value: (map(.message.usage.cache_creation.ephemeral_1h_input_tokens//0)|add)}) | from_entries) as $h1
     | ($mu | sum_models) + {
         messages: ($r|map(.num_turns//0)|add), model: ($mu|to_entries|max_by(.value.costUSD//0)|.key),
