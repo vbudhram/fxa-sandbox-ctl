@@ -3844,10 +3844,14 @@ async function poll() {
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }
+// A rebuild takes 15-25 s: poll every 2 s while it runs (at most 30 s), so its result shows when it lands. After
+// Refresh, and at load, when the first request woke feeds that slept while nobody looked.
+async function pollFresh(wait) {
+  for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, i ? 2000 : wait)); await poll(); if (!STATE?.refreshing) break; }
+}
 document.getElementById("refresh").addEventListener("click", async () => {
   try { await fetch("/api/refresh", { method: "POST" }); } catch {}
-  // The rebuild takes 15-25 s: poll every 2 s while it runs (at most 30 s), so its result shows when it lands.
-  for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, i ? 2000 : 1500)); await poll(); if (!STATE?.refreshing) break; }
+  pollFresh(1500);
 });
 // Sessions as they change: every 3 s, the server answers from the store with only the
 // sessions written since the last cursor. The 30 s feed still brings the live agents;
@@ -3877,7 +3881,7 @@ async function pollSessions() {
   if (overlay()) render();
 }
 route();
-poll();
+pollFresh(0);
 pollSessions();
 // A hidden tab polls nothing (only tails checked before); it catches up when it shows again.
 setInterval(() => document.hidden || poll(), 15000);
