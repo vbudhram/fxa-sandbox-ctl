@@ -140,7 +140,12 @@ vm_image_build() {
 
 # ── VM lifecycle ───────────────────────────────────────────────
 
-vm_exists() { _gce_zone instances describe "$(vm_name "$1")" >/dev/null 2>&1; }
+vm_exists() {
+  local n z; n="$(vm_name "$1")"; z="${LOG_DIR}/${n#agent-}.zone"
+  # No zone file: the by-name lookup already answers, so no describe follows it (launch asks twice).
+  [ -f "$z" ] || { _vm_zone "$n" >/dev/null; [ -f "$z" ]; return; }
+  _gce_zone instances describe "$n" >/dev/null 2>&1
+}
 
 # vm_clone <name>
 #   Create the instance. It boots at once; vm_start is then a no-op. The run's
