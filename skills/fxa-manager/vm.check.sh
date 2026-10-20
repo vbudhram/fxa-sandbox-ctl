@@ -45,6 +45,8 @@ git -C "$T3/my-ctl" add a.txt; git -C "$T3/other-bot" add a.txt .gitignore
 check "dev_tar names each tree as the VM expects, with new files and the dev env" "fxa-agent-bot/.env.dev fxa-agent-bot/.gitignore fxa-agent-bot/a.txt fxa-sandbox-ctl/a.txt fxa-sandbox-ctl/new.sh" \
   "$(dev_tar "$T3/my-ctl" "$T3/other-bot" | tar -tzf - | sort | paste -sd' ' -)"
 # dev up: the dev ctl tree's sibling bot .env is the real one, so the routine tick can read the access rules.
+# The dev bot loads the live .env first; the last env file it loads must set ROUTINES_ENV=dev, or it ticks live routines.
+check "dev up gives the dev bot ROUTINES_ENV=dev in its last env file" "1|1" "$(grep -c "printf '.*ROUTINES_ENV=dev.*' .* > fxa-agent-bot/.env.devhost" "$(dirname "$0")/vm.sh")|$(grep -c -- '--env-file=.env.devhost src/app.js' "$(dirname "$0")/vm.sh")"
 check "dev up links the real bot .env next to the dev ctl" "1" "$(grep -cx 'ln -sfn $R/fxa-agent-bot/.env fxa-agent-bot/.env' "$(dirname "$0")/vm.sh")"
 # dev prune: a file the last deploy copied and this one did not goes; a file no deploy copied stays.
 P2="$tmp/prune"; mkdir -p "$P2/src/r" "$P2/dst"; (cd "$P2/src" && echo a > r/keep && echo b > r/gone && tar -czf ../t1 r/keep r/gone)
