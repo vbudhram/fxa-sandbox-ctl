@@ -190,6 +190,8 @@ check "a day-old pr_open is stopped as inactive, with its PR" "1|stopped|inactiv
   check "a failed runner delete again: one error" "1|1" "$(grep -c '^session runner_left agent-rl1 ' "$tmp/rl.errs")|$(session_get agent-rl1 runner_left)"
   agent_stop() { return 0; }
   check "the delete works: the retry mark clears" "deleted the runner of agent-rl1|0" "$(session_idle_sweep 2>/dev/null | grep agent-rl1)|$(session_get agent-rl1 runner_left)"
+  printf '{"key":"agent-rl2","state":"stopped","runner_left":"1","stopped_at":%s,"last_activity":%s}\n' "$(date +%s)" "$(date +%s)" > "$SESSION_DIR/agent-rl2.json"
+  check "a stop still at work: the sweep does not start a second delete" "|1" "$(session_idle_sweep 2>/dev/null | grep agent-rl2)|$(session_get agent-rl2 runner_left)"
   exit "$fail" ) || fail=1
 
 # The request and the guide travel in the prompt; a resumed turn gets only the request.
