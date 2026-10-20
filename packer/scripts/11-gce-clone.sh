@@ -29,7 +29,8 @@ echo "==> glean_parser $(/opt/glean-venv/bin/python -c 'import glean_parser; pri
 # nx has exited non-zero on flaky l10n-prime retries that still produced the
 # outputs, so assert the outputs instead of trusting the exit code.
 sudo -u agent bash -c 'source /etc/agent-env.sh && yarn l10n:clone' >/dev/null
-sudo -u agent bash -c 'source /etc/agent-env.sh && npx nx run-many -t build --all --exclude=fxa-dev-launcher' > /tmp/nx-build.log 2>&1 \
+# NODE_ENV as CI's build job: agent-env's development fails payments-next's prerender (useContext of null).
+sudo -u agent bash -c 'source /etc/agent-env.sh && NODE_ENV=test npx nx run-many -t build --all --exclude=fxa-dev-launcher' > /tmp/nx-build.log 2>&1 \
   || echo "==> nx build exited non-zero; checking outputs (log: /tmp/nx-build.log)"
 for f in dist/libs/shared/l10n libs/accounts/email-renderer/public/locales/en \
          packages/fxa-auth-server/public/locales/en/auth.ftl; do
