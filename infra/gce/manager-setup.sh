@@ -184,7 +184,7 @@ Requires=fxa-secrets.service
 After=fxa-secrets.service
 [Service]
 User=$U
-EnvironmentFile=-$W/fxa-sandbox-ctl/.env
+EnvironmentFile=-$C/llm-proxy.env
 Environment=LLM_PROXY_LISTEN=0.0.0.0:8788
 ExecStart=/usr/bin/python3 $W/fxa-sandbox-ctl/infra/llm-proxy/proxy.py
 Restart=always
