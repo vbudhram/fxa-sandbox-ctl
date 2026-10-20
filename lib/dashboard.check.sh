@@ -329,7 +329,7 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     t("routines: History shows a report escaped, in a left-aligned row of its own", /<tr><td colspan="7" style="text-align:left[^"]*"><details data-rt-run="5"><summary>Report<\/summary><pre[^>]*>&lt;b&gt;x&lt;\/b&gt;<\/pre>/.test(rtHist([{ id: 5, started_at: 1, state: "report", report: "<b>x</b>" }])), true);
     RT_OPEN.add("5");
     t("sessions: a routine run names its routine and team, escaped, with a link to the team routines",
-      sessRoutineLink({ routine_run: "7", routine_name: "<b>Code review</b>", profile: "fxa" }), `<a href="#teams/routines/fxa">Routine: &lt;b&gt;Code review&lt;/b&gt; (fxa)</a>`);
+      String(sessRoutineLink({ routine_run: "7", routine_name: "<b>Code review</b>", profile: "fxa" })), `<a href="#teams/routines/fxa">Routine: &lt;b&gt;Code review&lt;/b&gt; (fxa)</a>`);
     t("sessions: a session that is not a routine run has no routine label", sessRoutine({ key: "agent-x" }), "");
     t("routines: an open report stays open on a repaint", String(rtHist([{ id: 5, started_at: 1, state: "report", report: "x" }])).includes(`<details data-rt-run="5" open>`), true);
     RT_OPEN.clear();
