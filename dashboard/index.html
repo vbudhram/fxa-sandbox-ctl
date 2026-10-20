@@ -699,6 +699,32 @@ function teamRepo() { const r = SNAP?.team?.repo ?? SNAP?.repo ?? ""; return REP
 function jiraHref(k) { const s = String(SNAP?.team?.jira_site ?? "").replace(/\/+$/, ""); return /^https:\/\/[\w-]+(\.[\w-]+)+(:\d+)?$/.test(s) && /^[A-Z][A-Z0-9]+-\d+$/.test(k ?? "") ? `${s}/browse/${encodeURIComponent(k)}` : ""; }
 function prUrl(n) { const r = teamRepo(); return r && /^\d+$/.test(String(n ?? "")) ? `https://github.com/${r}/pull/${n}` : ""; }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+// Components: the design system's parts, built with html``, which escapes every value it is given.
+// html`` escapes each ${value} unless the value is an html`` result; an array joins, and null, undefined and false give nothing.
+class Html { constructor(s) { this.s = s; } toString() { return this.s; } }
+const raw = s => s instanceof Html ? s : new Html(String(s ?? ""));
+const htmlVal = v => v == null || v === false ? "" : v instanceof Html ? v.s : Array.isArray(v) ? v.map(htmlVal).join("") : esc(v);
+const html = (strs, ...vals) => new Html(strs.reduce((out, s, i) => out + s + (i < vals.length ? htmlVal(vals[i]) : ""), ""));
+// A class list from words and {word: on} maps: cls("tag", tone, { run: true }).
+const cls = (...xs) => xs.flatMap(x => x && typeof x === "object" ? Object.keys(x).filter(k => x[k]) : x ? [x] : []).join(" ");
+// tone: ok, warn, bad, info, merged, dim. run draws the running dot, live pulses it, sq is the square form.
+const tag = (text, tone, { run, live, sq, title, href } = {}) => href
+  ? html`<a class="${cls("tag", tone, { run, live, sq })}" href="${href}"${title ? html` title="${title}"` : ""} target="_blank" rel="noreferrer">${text}</a>`
+  : html`<span class="${cls("tag", tone, { run, live, sq })}"${title ? html` title="${title}"` : ""}>${text}</span>`;
+// tone: ok, warn, bad, info, done, dim, or none for idle; live pulses.
+const dot = (tone, live) => html`<span class="${cls("dot", tone, { live })}" aria-hidden="true"></span>`;
+// pct is clamped to 0 to 100; label, when given, names the bar for a screen reader.
+const meter = (pct, tone, label) => html`<span class="meter"${label ? html` role="img" aria-label="${label}"` : html` aria-hidden="true"`}><i${tone ? html` class="${tone}"` : ""} style="width:${Math.max(0, Math.min(100, Math.round(pct) || 0))}%"></i></span>`;
+// body is HTML: pass an html`` result. sm and flat are the design system's sizes; tone is warn or bad.
+const card = (body, { sm, flat, tone, cls: more, href } = {}) => href
+  ? html`<a class="${cls("card", { sm, flat }, tone, more)}" href="${href}">${raw(body)}</a>`
+  : html`<div class="${cls("card", { sm, flat }, tone, more)}">${raw(body)}</div>`;
+// A label and value row; value is text or an html`` result; na marks a missing value.
+const kvRow = (label, value, na) => html`<div class="kv"><span>${label}</span><b${na ? html` class="na"` : ""}>${value}</b></div>`;
+// head: column labels, or [label, "num"] for a right-aligned one. rows: <tr> rows as html`` results. figures right-aligns every column after the first.
+const table = (head, rows, { figures, dense, cls: more } = {}) => html`<table class="${cls("table", { figures, dense }, more)}"><thead><tr>${head.map(c => Array.isArray(c) ? html`<th class="${c[1]}">${c[0]}</th>` : html`<th>${c}</th>`)}</tr></thead><tbody>${[].concat(rows).map(raw)}</tbody></table>`;
+const emptybox = text => html`<div class="emptybox">${text}</div>`;
+// End components.
 const ago = s => s == null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
   : s < 172800 ? `${Math.round(s/3600)}h ago` : `${Math.round(s/86400)}d ago`;
 const short = s => s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s/60)}m` : `${(s/3600).toFixed(1)}h`;
@@ -814,7 +840,7 @@ function rail(t) {
 }
 
 // One card per runner (fast feed) merged with its ticket row (slow feed).
-function card(t) {
+function agentCard(t) {
   const a = t.agent || {};
   const stalled = t.stage === "stalled", failed = t.stage === "error";
   const stat = t.diffstat || "", ins = stat.match(/(\d+) insertion/), del = stat.match(/(\d+) deletion/);
@@ -965,7 +991,7 @@ function renderAgents() {
   const intakeOff = SNAP?.mode?.newtickets === "off";
   const more = agentsMore(intakeOff, AGENTS);
   put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} sandbox${nRunners === 1 ? "" : "es"} up · ${more}` : "agents feed not loaded", "in flight") +
-    (cards.length === 0 ? `<div class="empty">no sandbox is up</div>` : cards.map(card).join("")) +
+    (cards.length === 0 ? `<div class="empty">no sandbox is up</div>` : cards.map(agentCard).join("")) +
     (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
         <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}<span class="tag bad">no sandbox</span></span></div>`).join("") : ""));
   cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
