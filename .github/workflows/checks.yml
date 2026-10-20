@@ -16,6 +16,11 @@ jobs:
         shard: ['1/3', '2/3', '3/3']
     steps:
       - uses: actions/checkout@v4
+      # The bot tree, for the checks that read its text (symptoms.check.sh): without it they skip.
+      - uses: actions/checkout@v4
+        with:
+          repository: vbudhram/fxa-agent-bot
+          path: bot
       # The runner image has them already: apt only runs when one is missing (an apt update alone is 5 to 15 s).
       - name: Packages (the same list as test.sh run_linux)
         run: |
@@ -35,3 +40,4 @@ jobs:
       - run: env --default-signal=PIPE bash skills/fxa-ctl-dev/test.sh here
         env:
           FXA_CHECK_SHARD: ${{ matrix.shard }}
+          FXA_BOT_REPO: ${{ github.workspace }}/bot
