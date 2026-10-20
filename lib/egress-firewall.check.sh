@@ -38,10 +38,13 @@ check "the service limit sits in the limited branch, after the agent REJECT" "ye
   "$(awk '/--uid-owner agent -j REJECT --reject-with/ {r=NR} /for u in redis-server mysql goaws/ {u=NR} /if \[ "\$FXA_EGRESS_ALLOW_ALL" = "1" \]; then/ && !a {a=NR} END {print (r && u > r && a < r) ? "yes" : "no"}' "$tmp_s")"
 # A unit that is stopped now (goaws waits to restart) still gets the limit; a unit that is not installed is skipped.
 loop="$(sed -n '/for u in redis-server mysql goaws; do/,/^ *done$/p' "$tmp_s")"
-check "a stopped but loaded unit still gets the loopback limit" "goaws.service|mysql.service|redis-server.service" "$(bash -c '
-  systemctl() { case "$1 $2" in "show -p") [ "$4" = nothere.service ] && echo not-found || echo loaded ;; "is-active -q") return 3 ;;
+# systemctl show -p LoadState --value <unit>: the unit is $5. GONE names a unit that is not installed.
+limited() { rm -f "$tmp_s.set"; GONE="$1" bash -c '
+  systemctl() { case "$1 $2" in "show -p") [ "$5" = "$GONE" ] && echo not-found || echo loaded ;; "is-active -q") return 3 ;;
     "set-property --runtime") echo "$3" >> "'"$tmp_s"'.set" ;; esac; [ "$1" = show ] && [ "$3" = IPAddressDeny ] && echo any; return 0; }
-  '"$loop"'' >/dev/null 2>&1; sort "$tmp_s.set" 2>/dev/null | paste -sd'|' -)"
+  '"$loop"'' >/dev/null 2>&1; sort "$tmp_s.set" 2>/dev/null | paste -sd'|' -; }
+check "a stopped but loaded unit still gets the loopback limit" "goaws.service|mysql.service|redis-server.service" "$(limited none)"
+check "a unit that is not installed is skipped" "goaws.service|redis-server.service" "$(limited mysql.service)"
 rm -f "$tmp_s" "$tmp_s.set"
 
 # After the firewall, the agent's DNS filter runs with the allowed hosts, from templates/agent-dns.sh.
