@@ -35,7 +35,7 @@ Say in one line that you skipped capture and why, and write that line to
 
 ## Budget
 
-- **One** Storybook start. The `fxa-settings` webpack build takes 3 to 6 minutes.
+- **One** Storybook start. The `fxa-settings` webpack build takes about 1 to 2 minutes.
 - **At most 4 screenshots.** Capture the states the ticket changed, nothing else.
 - If the build fails twice, stop, leave `media_paths` empty, and write the
   reason to `/workspace/.fxa-auto-media-skipped.txt`. Do not debug Storybook.
@@ -68,18 +68,22 @@ For `fxa-react` components use `yarn workspace fxa-react storybook --no-open`
 
 ## Step 2 — Wait, and do not trust the 200
 
-    curl -sf http://localhost:6008/iframe.html > /dev/null
+    SB_PORT=6008
+    for i in $(seq 60); do curl -sf -o /dev/null --max-time 300 "http://localhost:$SB_PORT/iframe.html" && break; sleep 5; done
+    curl -sf -o /dev/null --max-time 5 "http://localhost:$SB_PORT/iframe.html" && echo "storybook up" || echo "storybook did not answer"
 
-**Send no timeout flag.** The webpack builder serves that file through
-`webpack-dev-middleware` with `waitUntilValid`, so the request blocks until the
-first compile finishes. A 200 means "compiled".
+The loop retries while the server is not yet listening (curl exit 7), up to
+5 minutes. The webpack builder serves that file through `webpack-dev-middleware`
+with `waitUntilValid`, so one request blocks until the first compile finishes.
+A 200 means "compiled". If the last line says "did not answer", count it as a
+failed build.
 
 **A 200 does not mean "compiled clean".** A bundle with errors also returns 200,
 and the story then renders an error box. A screenshot of an error box looks like a
 real capture. Step 4 asserts against this; do not skip it.
 
-Storybook moves to a free port when 6008 is busy. Read the real port from its log
-rather than assuming.
+Storybook moves to a free port when 6008 is busy. Read the real port from its log,
+and set `SB_PORT` to it before the loop.
 
 ## Step 3 — Map changed files to story ids
 
@@ -91,50 +95,18 @@ before an edit.
 
 ## Step 4 — Shoot
 
-Write `/workspace/.fxa-auto-shoot.mjs`. The `.fxa-auto-*` prefix is ignored by the
-dirty-worktree guard, so it will not pollute the diff.
+Run the shipped script with one `<story-id>:<slug>` for each state. Keep the
+numeric prefix on the slug so the files sort:
 
-```js
-import { firefox } from 'playwright';
-import fs from 'fs';
+    SB_PORT=$SB_PORT node ~/.claude/skills/fxa-storybook-capture/shoot.mjs \
+      components-thirdpartyauth--default:01-third-party-auth [--viewport 900x700]
 
-const OUT = '/workspace/.fxa-auto-media';
-const PORT = process.env.SB_PORT ?? '6008';
-// [storyId, fileSlug] — keep the numeric prefix so files sort.
-const SHOTS = [['components-thirdpartyauth--default', '01-third-party-auth']];
-
-fs.mkdirSync(OUT, { recursive: true });
-const browser = await firefox.launch();
-const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
-
-for (const [id, slug] of SHOTS) {
-  // Not 'networkidle': the dev server keeps HMR traffic open and the first
-  // preview compile can hold the request past 30 s. Wait for load, then for
-  // the story to put something in the root.
-  await page.goto(`http://localhost:${PORT}/iframe.html?id=${id}&viewMode=story`,
-                  { waitUntil: 'load', timeout: 180000 });
-  const root = page.locator('#storybook-root');
-  if ((await root.count()) === 0) throw new Error(`story ${id} has no #storybook-root`);
-  await root.locator(':scope > *').first().waitFor({ timeout: 60000 });
-
-  // A failed bundle still returns 200 and paints an error box. Refuse to
-  // screenshot that: it would reach the reviewer looking like evidence.
-  // Storybook 8 always renders the box and hides it, so test visibility,
-  // never presence.
-  if (await page.locator('#error-message').isVisible())
-    throw new Error(`story ${id} rendered a Storybook error box`);
-  if ((await root.innerHTML()).trim() === '') throw new Error(`story ${id} rendered empty`);
-
-  // Shoot the root, not the viewport: the card is a small island in an empty page.
-  await root.screenshot({ path: `${OUT}/${slug}.png` });
-  console.log(`captured ${slug}.png`);
-}
-
-await browser.close();
-```
-
-Run it with `node /workspace/.fxa-auto-shoot.mjs`. Step 0 confirmed the firefox
-binary; `playwright` resolves from the repo root, so install nothing.
+It writes `/workspace/.fxa-auto-media/<slug>.png` for each story, and shoots the
+story root, not the viewport. It stops with an error when a story renders a
+Storybook error box or renders empty, so a failed bundle never becomes a
+screenshot. Add `--dry-run` to print the shots without a browser. Step 0
+confirmed the firefox binary; the script resolves `playwright` from the repo
+root, so install nothing.
 
 ## Step 5 — Hand off
 
