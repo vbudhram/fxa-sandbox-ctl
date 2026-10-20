@@ -1811,22 +1811,22 @@ async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/tea
   if (VIEW === "runners") renderSb(); }
 function teamEditor(name, isRecord) {
   if (!TEAM_ADMIN?.admin) return "";
-  if (!isRecord) return `<div><h4>Edit</h4><p class="empty">A folder team: change it in <span class="mono">profiles/${esc(name)}/</span>, then promote.</p></div>`;
+  if (!isRecord) return html`<div><h4>Edit</h4><p class="empty">A folder team: change it in <span class="mono">profiles/${name}/</span>, then promote.</p></div>`;
   const e = TED?.name === name ? TED : null;
-  if (!e) return `<div><h4>Edit</h4><div class="acts2"><button data-team-load="${esc(name)}">${name === "__new" ? "Start from the template" : "Load the record"}</button></div></div>`;
-  const acts = name === "__new" ? `<button data-tact="create">Create as draft</button>`
-    : `<button data-tact="save">Save</button><button data-tact="test">Test</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
-  return `<div data-team-ed="${esc(name)}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + esc(e.gen) : "new record"}</span></h4>
-    <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${esc(e.text)}</textarea>
+  if (!e) return html`<div><h4>Edit</h4><div class="acts2"><button data-team-load="${name}">${name === "__new" ? "Start from the template" : "Load the record"}</button></div></div>`;
+  const acts = name === "__new" ? html`<button data-tact="create">Create as draft</button>`
+    : html`<button data-tact="save">Save</button><button data-tact="test">Test</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
+  return html`<div data-team-ed="${name}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + e.gen : "new record"}</span></h4>
+    <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${e.text}</textarea>
     <div class="acts2"><button data-tact="validate">Validate</button>${acts}</div>
-    <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${esc(e.msg || "")}</p>
-    ${name === "__new" ? "" : `<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
-    ${e.testLog ? `<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${esc(e.testLog)}</pre>` : ""}
-    ${e.secrets && Object.keys(e.secrets).length ? `<h4>Secrets</h4>${Object.entries(e.secrets).map(([s, st]) => `<div class="acts2" style="align-items:center;margin-bottom:var(--s1)">
-      <span class="mono">${esc(s)}</span><span class="tag ${st === "present" ? "" : "warn"}">${esc(st)}</span>
-      <input type="password" autocomplete="off" data-secret-val="${esc(s)}" placeholder="new value" aria-label="New value for ${esc(s)}">
-      <button data-tact="secret" data-secret="${esc(s)}">Set</button></div>`).join("")}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
-    ${e.audit ? `<table class="table figures dense"><tbody>${e.audit.map(r => `<tr><td>${stamp(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mono">${esc(r.changed || "")}</td></tr>`).join("") || "<tr><td>no rows</td></tr>"}</tbody></table>` : ""}</div>`;
+    <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${e.msg || ""}</p>
+    ${name === "__new" ? "" : html`<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
+    ${e.testLog ? html`<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${e.testLog}</pre>` : ""}
+    ${e.secrets && Object.keys(e.secrets).length ? html`<h4>Secrets</h4>${Object.entries(e.secrets).map(([s, st]) => html`<div class="acts2" style="align-items:center;margin-bottom:var(--s1)">
+      <span class="mono">${s}</span>${tag(st, st === "present" ? "" : "warn")}
+      <input type="password" autocomplete="off" data-secret-val="${s}" placeholder="new value" aria-label="New value for ${s}">
+      <button data-tact="secret" data-secret="${s}">Set</button></div>`)}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
+    ${e.audit ? html`<table class="table figures dense"><tbody>${e.audit.length ? e.audit.map(r => html`<tr><td>${stamp(r.at)}</td><td>${r.actor}</td><td>${r.action}</td><td class="mono">${r.changed || ""}</td></tr>`) : html`<tr><td>no rows</td></tr>`}</tbody></table>` : ""}</div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
@@ -1943,7 +1943,7 @@ const repoShip = r => r.why === APP_FAIL ? ["info", "write unknown", "GitHub App
 function repoTag(r) {
   if (r.role !== "work") return "";
   const [cls, s, l] = repoShip(r);
-  return s ? ` <span class="tag ${cls}" title="${esc(l)}">${s}</span>` : "";
+  return s ? html` ${tag(s, cls, { title: l })}` : "";
 }
 
 // ── Teams (epic i275): a list at the left, All teams or the selected team in main, with Overview, Routines
@@ -1989,77 +1989,77 @@ function teamWeek() {
   return out;
 }
 function budgetCell(t) {
-  return t.budget_error ? `<span class="unknown">budget unknown: the spend file cannot be read</span>` : !t.budget ? `<span class="na">budget unknown on this host</span>`
-  : t.budget.month_cap ? `<span class="num">${usd(t.budget.month_usd)} <span class="na">of ${usd(t.budget.month_cap)}</span></span><span class="meter" role="img" aria-label="${Math.round(100 * t.budget.month_usd / t.budget.month_cap)}% of the budget"><i class="${t.budget.month_usd >= t.budget.month_cap ? "bad" : t.budget.month_usd >= 0.9 * t.budget.month_cap ? "warn" : "ok"}" style="width:${Math.min(100, Math.round(100 * t.budget.month_usd / t.budget.month_cap))}%"></i></span>`
-  : `<span class="num">${usd(t.budget.month_usd)}</span> <span class="na">no cap</span>`;
+  const b = t.budget, pct = b?.month_cap ? 100 * b.month_usd / b.month_cap : 0;
+  return t.budget_error ? html`<span class="unknown">budget unknown: the spend file cannot be read</span>` : !b ? html`<span class="na">budget unknown on this host</span>`
+  : b.month_cap ? html`<span class="num">${usd(b.month_usd)} <span class="na">of ${usd(b.month_cap)}</span></span>${meter(pct, b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok", `${Math.round(pct)}% of the budget`)}`
+  : html`<span class="num">${usd(b.month_usd)}</span> <span class="na">no cap</span>`;
 }
 function testCell(t) {
   const x = t.test;
-  if (!x) return `<span class="na">—</span>`;
+  if (!x) return html`<span class="na">—</span>`;
   // No final line to show (Activate wrote a newer generation, or there is no log): tested says what passed.
-  if (!x.result) return x.tested != null && x.tested === x.generation ? `<span class="tag ok">passed at generation ${esc(x.tested)}</span>`
-    : x.tested != null ? `<span class="na">last passed at generation ${esc(x.tested)}</span>`
-    : `<span class="na">${t.access?.record && t.access.status !== "active" ? "not tested at this generation" : "never tested"}</span>`;
-  return `<span class="tag ${x.result === "passed" ? "ok" : x.result === "failed" ? "bad" : "info"}">${esc(x.result)}${x.at ? ` ${ago(Math.round(Date.now() / 1000 - x.at))}` : ""}</span>`;
+  if (!x.result) return x.tested != null && x.tested === x.generation ? tag(`passed at generation ${x.tested}`, "ok")
+    : x.tested != null ? html`<span class="na">last passed at generation ${x.tested}</span>`
+    : html`<span class="na">${t.access?.record && t.access.status !== "active" ? "not tested at this generation" : "never tested"}</span>`;
+  return tag(`${x.result}${x.at ? ` ${ago(Math.round(Date.now() / 1000 - x.at))}` : ""}`, x.result === "passed" ? "ok" : x.result === "failed" ? "bad" : "info");
 }
 function allTeamsHtml() {
   const ts = TEAMS?.teams ?? [], use = teamUse(), wk = teamWeek(), er = teamErrs(), ok = ts.filter(t => !t.load_error);
   const live = use ? ok.reduce((n, t) => n + (use[t.profile]?.live ?? 0), 0) : null, runs = wk ? Object.values(wk).reduce((n, x) => n + x.runs, 0) : null, prs = wk ? Object.values(wk).reduce((n, x) => n + x.prs.size, 0) : null;
   const bt = ok.filter(t => t.budget), spent = bt.reduce((n, t) => n + t.budget.month_usd, 0), caps = bt.reduce((n, t) => n + (t.budget.month_cap ?? 0), 0);
   const needs = ts.filter(t => t.load_error || teamNeeds(t)).length, errs = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null, dash = v => v == null ? "—" : v;
-  const tile = (l, v, m, cls = "") => `<div class="ttile card flat sm ${cls}"><div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div></div>`;
+  const tile = (l, v, m, tone) => card(html`<div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div>`, { flat: true, sm: true, tone, cls: "ttile" });
   const row = t => { const x = use?.[t.profile], w = wk?.[t.profile], st = t.load_error ? ["bad", "did not load"] : t.access?.record && t.access.status !== "active" ? ["bad", t.access.status] : t.read_only ? ["", "read-only"] : ["ok", "active"];
-    return `<tr><td><a href="#teams/${esc(t.profile)}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${esc(t.load_error ? t.profile : teamName(t))}</a></td>
-      <td><span class="tag ${st[0]}">${esc(st[1])}</span></td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
+    return html`<tr><td><a href="#teams/${t.profile}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${t.load_error ? t.profile : teamName(t)}</a></td>
+      <td>${tag(st[1], st[0])}</td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
       <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
       <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
-  return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
-    ${TEAMS?.error ? `<p class="unknown">last refresh failed: ${esc(TEAMS.error)}; showing data from ${ago(Math.round(TEAMS.age_seconds))}</p>` : ""}
-    ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
+  return html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
+    ${TEAMS?.error ? html`<p class="unknown">last refresh failed: ${TEAMS.error}; showing data from ${ago(Math.round(TEAMS.age_seconds))}</p>` : ""}
+    ${(TEAMS?.issues ?? []).map(i => html`<div class="alert warn"><span class="mono">${i.key}</span><span class="what">${i.text}</span></div>`)}
     <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
       ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
-    <div class="tcard card tscroll"><table class="table"><thead><tr><th>Team</th><th>Status</th><th>Active now</th><th>Last 7 days</th><th>Cost this month, of budget</th><th>Open errors</th><th>Last test</th></tr></thead>
-      <tbody>${ts.map(row).join("")}</tbody></table></div>
-    ${TEAM_ADMIN?.admin ? `<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${esc(TEAM_ADMIN.user)}).</span></div>` : ""}</div>`;
+    ${card(table(["Team", "Status", "Active now", "Last 7 days", "Cost this month, of budget", "Open errors", "Last test"], ts.map(row)), { cls: "tcard tscroll" })}
+    ${TEAM_ADMIN?.admin ? html`<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${TEAM_ADMIN.user}).</span></div>` : ""}</div>`;
 }
 // The Settings sections: what the team gets, each with its config key in gray, then the record editor.
 function teamSettingsHtml(t) {
-  const p = esc(t.profile), conf = `profiles/${p}/profile.conf`, a = t.access, src = TEAMS?.access_source, repos = t.repos ?? [];
-  const h = (title, key) => `<h3>${title}<span class="tkey">${key}</span></h3>`;
+  const conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
+  const h = (title, key) => html`<h3>${title}<span class="tkey">${key}</span></h3>`;
   const req = (t.issues ?? []).some(i => i.text === "nobody can start it") || (t.access?.record && t.access.status !== "active");
-  return `<div class="tcard card${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
-    <div class="tcard card">${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.map(r => kvr(`<span class="mono">${esc(r.slug)}</span>`, `${esc(r.role)}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${esc(r.why)}` : ""}`)).join("") || kvr("Repos", "none", 1)}
-      ${kvr(`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, esc((t.defaults ?? []).join(", ") || "none"))}</div>
-    <div class="tcard card">${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvr("Connectors", esc(teamTools(t.mcp)))}${kvr("Mode", t.read_only ? "read-only" : "read and write")}</div>
-    <div class="tcard card" id="t-record">${TACT === t.profile && TED?.name === t.profile ? `<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
+  return html`<div class="tcard card${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
+    ${card(html`${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
+      ${kvRow(html`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
+    ${card(html`${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
+    <div class="tcard card" id="t-record">${TACT === t.profile && TED?.name === t.profile ? html`<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
 }
 // A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.
 function teamBanner(t) {
-  const adm = !!TEAM_ADMIN?.admin, base = `#teams/${esc(t.profile)}`, has = re => (t.issues ?? []).some(i => re.test(i.text)), r = rtSum(t.profile), out = [];
+  const adm = !!TEAM_ADMIN?.admin, base = `#teams/${t.profile}`, has = re => (t.issues ?? []).some(i => re.test(i.text)), r = rtSum(t.profile), out = [];
   if (has(/spend cap reached/)) out.push(["The team reached its spend cap", "Every new session and routine run of the team is refused until the cap resets or the operator raises it.", null]);
-  if (t.access?.record && t.access.status !== "active") out.push([`The team is ${esc(t.access.status)}`, "Nobody can start it until it is tested and active.", [`${base}/settings`, "Test and activate", t.profile]]);
+  if (t.access?.record && t.access.status !== "active") out.push([`The team is ${t.access.status}`, "Nobody can start it until it is tested and active.", [`${base}/settings`, "Test and activate", t.profile]]);
   else if (has(/nobody can start it/)) out.push(["Nobody can start this team", "It has no users and no channel rules, and it is not open.", [`${base}/settings`, "Add users"]]);
   if (adm && r?.routines && has(/spend cannot be read/)) out.push(["Routines are skipped", "The team's spend cannot be read, so each run is refused (fail closed).", null]);
-  if (adm && r?.failed) out.push([`${r.failed} routine${r.failed === 1 ? "" : "s"} failed`, r.last_failed ? `${esc(r.last_failed.name ?? "")}: ${esc(r.last_failed.reason ?? "no reason recorded")}` : "", [`${base}/routines`, "Open Routines"]]);
+  if (adm && r?.failed) out.push([`${r.failed} routine${r.failed === 1 ? "" : "s"} failed`, r.last_failed ? `${r.last_failed.name ?? ""}: ${r.last_failed.reason ?? "no reason recorded"}` : "", [`${base}/routines`, "Open Routines"]]);
   if (!out.length) return "";
-  const [h, why, act] = out[0], more = out.length > 1 ? ` <span class="na">and ${out.length - 1} more</span>` : "";
-  return `<div class="tbanner" role="alert"><div><b>${h}</b>${more}<div>${why}${!adm && act ? " A team admin can fix this. Ask the operator." : ""}</div></div>${adm && act ? `<a class="tile card sm" style="padding:6px 12px" href="${act[0]}"${act[2] ? ` data-team-activate="${esc(act[2])}"` : ""}>${act[1]}</a>` : ""}</div>`;
+  const [h, why, act] = out[0], more = out.length > 1 ? html` <span class="na">and ${out.length - 1} more</span>` : "";
+  return html`<div class="tbanner" role="alert"><div><b>${h}</b>${more}<div>${why}${!adm && act ? " A team admin can fix this. Ask the operator." : ""}</div></div>${adm && act ? html`<a class="tile card sm" style="padding:6px 12px" href="${act[0]}"${act[2] ? html` data-team-activate="${act[2]}"` : ""}>${act[1]}</a>` : ""}</div>`;
 }
 // Recent work: the team's 5 newest runs; a routine run is named only for an admin (i168 D1).
 function teamRecent(p) {
   const ss = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s])), rows = (STATS?.rows ?? []).filter(r => (r.profile || "fxa") === p).sort((a, b) => (b.t0 ?? Date.parse(b.at) / 1000) - (a.t0 ?? Date.parse(a.at) / 1000)).slice(0, 5);
-  if (!STATS) return `<p class="na">—</p>`;
-  if (!rows.length) return `<p class="na">No sessions or runs in 30 days.</p>`;
-  return rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
-    const k = sessHref(r.key) ? `<a href="${sessHref(r.key)}">${esc(name)}</a>` : esc(name), pr = r.pr ? (prUrl(r.pr) ? `<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${esc(r.pr)}</a>` : `PR #${esc(r.pr)}`) : "";
-    return `<div class="titem"><span>${k} ${r.src === "pass" ? "" : `<span class="na">· ${esc(r.src)}</span>`}</span><span>${pr || `<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)))}</span>`}</span></div>`; }).join("");
+  if (!STATS) return html`<p class="na">—</p>`;
+  if (!rows.length) return html`<p class="na">No sessions or runs in 30 days.</p>`;
+  return html`${rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
+    const k = sessHref(r.key) ? html`<a href="${sessHref(r.key)}">${name}</a>` : name, pr = r.pr ? (prUrl(r.pr) ? html`<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${r.pr}</a>` : `PR #${r.pr}`) : "";
+    return html`<div class="titem"><span>${k} ${r.src === "pass" ? "" : html`<span class="na">· ${r.src}</span>`}</span><span>${pr || html`<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)))}</span>`}</span></div>`; })}`;
 }
 function teamActivity(p) {
-  if (!STATS?.rows) return `<p class="na">—</p>`;
+  if (!STATS?.rows) return html`<p class="na">—</p>`;
   const now = Date.now() / 1000, n = Array(30).fill(0);
   STATS.rows.forEach(r => { if ((r.profile || "fxa") !== p) return; const d = Math.floor((now - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)) / 86400); if (d >= 0 && d < 30) n[29 - d]++; });
   const max = Math.max(1, ...n), total = n.reduce((a, b) => a + b, 0);
-  return `<svg viewBox="0 0 300 64" class="tchart" role="img" aria-label="${total} sessions and runs in 30 days, at most ${max} a day">${n.map((v, i) => `<rect x="${i * 10 + 1}" y="${60 - Math.round(v / max * 56)}" width="8" height="${Math.max(1, Math.round(v / max * 56))}" rx="1" class="${v ? "on" : ""}"></rect>`).join("")}<line x1="0" y1="60.5" x2="300" y2="60.5"></line></svg>
+  return html`<svg viewBox="0 0 300 64" class="tchart" role="img" aria-label="${total} sessions and runs in 30 days, at most ${max} a day">${n.map((v, i) => html`<rect x="${i * 10 + 1}" y="${60 - Math.round(v / max * 56)}" width="8" height="${Math.max(1, Math.round(v / max * 56))}" rx="1" class="${v ? "on" : ""}"></rect>`)}<line x1="0" y1="60.5" x2="300" y2="60.5"></line></svg>
     <div class="tchartl"><span>30 days ago</span><span>${total} sessions and runs</span><span>today</span></div>`;
 }
 function teamReadiness(t) {
@@ -2067,30 +2067,31 @@ function teamReadiness(t) {
   const access = t.profile === "fxa" || t.access?.open === "built-in" ? "good" : !t.access ? "unknown" : (t.access.record && t.access.status !== "active") || has(/nobody can start it/) ? "required" : "good";
   const rows = [["Config", t.load_error ? "required" : "good", "profile.conf loads"], ["Access", access, teamAccess(t)[1]], ["Repos", work.length ? "good" : "required", work.map(r => r.slug).join(", ") || "no work repo"],
     ["Tools", "good", teamTools(t.mcp)], ["Mode", "good", t.read_only ? "read-only" : "read and write"]];
-  const good = rows.filter(r => r[1] === "good").length, set = `#teams/${esc(t.profile)}/settings`;
-  if (good === rows.length) return `<div class="tcard card"><span class="trd"><b>Readiness</b> 5 of 5 good</span> <a href="${set}">Settings</a></div>`;
-  return `<div class="tcard card"><h3>Readiness <span class="na">${good} of ${rows.length} good</span></h3>${rows.map(([k, st, d]) => `<div class="titem"><span><b>${k}</b> <span class="na">${esc(d)}</span></span><span><span class="tag ${st === "good" ? "ok" : st === "required" ? "warn" : ""}">${st}</span> <a href="${set}" aria-label="Edit ${k.toLowerCase()}">Edit</a></span></div>`).join("")}</div>`;
+  const good = rows.filter(r => r[1] === "good").length, set = `#teams/${t.profile}/settings`;
+  if (good === rows.length) return card(html`<span class="trd"><b>Readiness</b> 5 of 5 good</span> <a href="${set}">Settings</a>`, { cls: "tcard" });
+  return card(html`<h3>Readiness <span class="na">${good} of ${rows.length} good</span></h3>${rows.map(([k, st, d]) => html`<div class="titem"><span><b>${k}</b> <span class="na">${d}</span></span><span>${tag(st, st === "good" ? "ok" : st === "required" ? "warn" : "")} <a href="${set}" aria-label="Edit ${k.toLowerCase()}">Edit</a></span></div>`)}`, { cls: "tcard" });
 }
 function teamOverview(t) {
-  const use = teamUse(), u = use?.[t.profile], er = teamErrs(), b = t.budget, r = rtSum(t.profile), base = `#teams/${esc(t.profile)}`;
-  const cost = t.budget_error ? `<div class="tl">Cost this month</div><div class="tv">—</div><div class="unknown">budget unknown: the spend file cannot be read</div>`
-    : b ? `<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? ` <span class="tm">of ${usd(b.month_cap)}</span>` : ` <span class="tm">no cap</span>`}</div>${b.month_cap ? `<span class="meter"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok"}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}`
-    : `<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
-  const split = use ? `<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
-  const test = t.access?.record || t.test ? testCell(t) : `<span class="na">no record to test</span>`;
+  const use = teamUse(), u = use?.[t.profile], er = teamErrs(), b = t.budget, r = rtSum(t.profile), base = `#teams/${t.profile}`;
+  const tc = body => card(body, { cls: "tcard" }), sub = (body, tone) => card(body, { flat: true, sm: true, tone, cls: "tsub2" });
+  const cost = t.budget_error ? html`<div class="tl">Cost this month</div><div class="tv">—</div><div class="unknown">budget unknown: the spend file cannot be read</div>`
+    : b ? html`<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? html` <span class="tm">of ${usd(b.month_cap)}</span>` : html` <span class="tm">no cap</span>`}</div>${b.month_cap ? meter(100 * b.month_usd / b.month_cap, b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok") : ""}`
+    : html`<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
+  const split = use ? html`<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
+  const test = t.access?.record || t.test ? testCell(t) : html`<span class="na">no record to test</span>`;
   const tested = (t.issues ?? []).find(i => /^last passed at generation/.test(i.text));
   const tab = (() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })();
-  return teamBanner(t) + `<div class="tcards4">
-      <div class="tcard card">${cost}${split}</div>
-      <div class="tcard card"><div class="tl">Active now</div><div class="tv">${use ? u?.live ?? 0 : "—"}</div><a href="#sessions/${tab}" data-team-sess="${esc(t.profile)}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${esc(t.profile)}">Its spend in Stats</a></div>
-      <div class="tcard card"><div class="tl">Open errors</div><div class="tv">${er ? er[t.profile] ?? 0 : "—"}</div><a href="#errors">Open in Errors</a></div>
-      <div class="tcard card"><div class="tl">Last profile test</div><div class="tv">${test}</div>${tested ? `<div class="na">${esc(tested.text)}</div>` : ""}</div></div>
-    <div class="tcols"><div class="tcard card"><h3>Activity, 30 days</h3>${teamActivity(t.profile)}</div><div class="tcard card"><h3>Recent work</h3>${teamRecent(t.profile)}</div></div>
-    ${r ? `<div class="tcard card"><h3>Routines <a href="${base}/routines" class="na">All ${r.routines} routine${r.routines === 1 ? "" : "s"}</a></h3><div class="tcards3">
-      <div class="tsub2 card flat sm ${r.failed ? "bad" : ""}"><div class="tl">${r.failed ? "Failed last run" : "Failed runs"}</div><b>${r.last_failed ? esc(r.last_failed.name ?? "") : "none"}</b>${r.last_failed ? `<div class="tm">${ago(Math.round(Date.now() / 1000 - r.last_failed.at))} · ${esc(r.last_failed.reason ?? "")}</div>` : ""}</div>
-      <div class="tsub2 card flat sm"><div class="tl">Routines</div><b>${r.routines}</b><div class="tm">${r.paused} paused · ${r.live} running</div></div>
-      <div class="tsub2 card flat sm"><div class="tl">Routine cost, 30 days</div><b>${usd(r.cost_30d)}</b><div class="tm">${r.runs_30d} run${r.runs_30d === 1 ? "" : "s"}</div></div></div></div>`
-      : TEAM_ADMIN?.admin && RTSUM_ERR ? `<div class="tcard card"><p class="unknown">Routine status unknown: ${esc(RTSUM_ERR)}</p></div>` : ""}
+  return html`${teamBanner(t)}<div class="tcards4">
+      ${tc(html`${cost}${split}`)}
+      ${tc(html`<div class="tl">Active now</div><div class="tv">${use ? u?.live ?? 0 : "—"}</div><a href="#sessions/${tab}" data-team-sess="${t.profile}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${t.profile}">Its spend in Stats</a>`)}
+      ${tc(html`<div class="tl">Open errors</div><div class="tv">${er ? er[t.profile] ?? 0 : "—"}</div><a href="#errors">Open in Errors</a>`)}
+      ${tc(html`<div class="tl">Last profile test</div><div class="tv">${test}</div>${tested ? html`<div class="na">${tested.text}</div>` : ""}`)}</div>
+    <div class="tcols">${tc(html`<h3>Activity, 30 days</h3>${teamActivity(t.profile)}`)}${tc(html`<h3>Recent work</h3>${teamRecent(t.profile)}`)}</div>
+    ${r ? tc(html`<h3>Routines <a href="${base}/routines" class="na">All ${r.routines} routine${r.routines === 1 ? "" : "s"}</a></h3><div class="tcards3">
+      ${sub(html`<div class="tl">${r.failed ? "Failed last run" : "Failed runs"}</div><b>${r.last_failed ? r.last_failed.name ?? "" : "none"}</b>${r.last_failed ? html`<div class="tm">${ago(Math.round(Date.now() / 1000 - r.last_failed.at))} · ${r.last_failed.reason ?? ""}</div>` : ""}`, r.failed ? "bad" : "")}
+      ${sub(html`<div class="tl">Routines</div><b>${r.routines}</b><div class="tm">${r.paused} paused · ${r.live} running</div>`)}
+      ${sub(html`<div class="tl">Routine cost, 30 days</div><b>${usd(r.cost_30d)}</b><div class="tm">${r.runs_30d} run${r.runs_30d === 1 ? "" : "s"}</div>`)}</div>`)
+      : TEAM_ADMIN?.admin && RTSUM_ERR ? tc(html`<p class="unknown">Routine status unknown: ${RTSUM_ERR}</p>`) : ""}
     ${teamReadiness(t)}`;
 }
 // Access: a record team's admin edits users, channels and open here; FxA, env and folder teams say where it is set.
@@ -2098,20 +2099,20 @@ let ACCESS_DRAFT = null, TACT = "", TEAM_LOADING = "", TACT_FOCUSED = false;
 const accessList = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))];
 function teamAccessCard(t) {
   const a = t.access, adm = !!TEAM_ADMIN?.admin, src = TEAMS?.access_source;
-  if (t.profile === "fxa" || a?.open === "built-in") return kvr("Who", "everyone (built into the bot)");
-  if (!a) return `<p class="unknown">access unknown (bot env not readable)</p>`;
-  const rows = kvr("Open", a.open === true ? "yes" : "no") + kvr("Users", `${a.users} user${a.users === 1 ? "" : "s"}`) + kvr("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`) + kvr("Jira", esc((a.jira ?? []).join(", ") || "none"), !(a.jira ?? []).length);
-  if (!a.record) return rows + `<p class="empty" title="${src ? `From the bot ${esc(src.file)}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
-  if (!adm) return rows + `<p class="empty">A team admin adds users. Ask the operator.</p>`;
-  if (TED?.name !== t.profile) return rows + `<p class="empty">loading the record…</p>`;
-  if (!TED.ok || !TED.rec) return rows + `<p class="unknown">The record did not load: ${esc(TED.msg || "no answer")}</p><div class="acts2"><button data-team-load="${esc(t.profile)}">Load the record</button></div>`;
+  if (t.profile === "fxa" || a?.open === "built-in") return kvRow("Who", "everyone (built into the bot)");
+  if (!a) return html`<p class="unknown">access unknown (bot env not readable)</p>`;
+  const rows = html`${kvRow("Open", a.open === true ? "yes" : "no")}${kvRow("Users", `${a.users} user${a.users === 1 ? "" : "s"}`)}${kvRow("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`)}${kvRow("Jira", (a.jira ?? []).join(", ") || "none", !(a.jira ?? []).length)}`;
+  if (!a.record) return html`${rows}<p class="empty" title="${src ? `From the bot ${src.file}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
+  if (!adm) return html`${rows}<p class="empty">A team admin adds users. Ask the operator.</p>`;
+  if (TED?.name !== t.profile) return html`${rows}<p class="empty">loading the record…</p>`;
+  if (!TED.ok || !TED.rec) return html`${rows}<p class="unknown">The record did not load: ${TED.msg || "no answer"}</p><div class="acts2"><button data-team-load="${t.profile}">Load the record</button></div>`;
   const rec = TED.rec ?? {};   // the record as loaded, not the editor's unsaved text
   const d = ACCESS_DRAFT?.team === t.profile ? ACCESS_DRAFT : { team: t.profile, users: (rec.access?.users ?? []).join(", "), channels: (rec.access?.channels ?? []).join(", "), open: !!rec.access?.open };
-  return `<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${esc(d.users)}" autocomplete="off">
-    <label for="t-channels">Channels <span class="na">Slack channel IDs</span></label><input id="t-channels" data-acc="channels" value="${esc(d.channels)}" autocomplete="off">
+  return html`<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${d.users}" autocomplete="off">
+    <label for="t-channels">Channels <span class="na">Slack channel IDs</span></label><input id="t-channels" data-acc="channels" value="${d.channels}" autocomplete="off">
     <label class="tchk"><input type="checkbox" id="t-open" data-acc="open"${d.open ? " checked" : ""}> Open to anyone the bot allows</label>
     <div class="acts2"><button type="button" data-acc-save${ACCESS_DRAFT?.busy ? " disabled" : ""}>Save access</button></div>
-    <p role="status" class="${ACCESS_DRAFT?.ok === false ? "unknown" : "empty"}">${esc(ACCESS_DRAFT?.msg || "")}</p></div>`;
+    <p role="status" class="${ACCESS_DRAFT?.ok === false ? "unknown" : "empty"}">${ACCESS_DRAFT?.msg || ""}</p></div>`;
 }
 document.addEventListener("input", e => {
   const k = e.target.dataset?.acc; if (!k || !TEAM_RE.test(SEL.teams ?? "")) return;
@@ -2140,22 +2141,22 @@ document.addEventListener("click", e => {
 });
 function teamPageHtml(p) {
   const t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null;
-  if (!t) return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${esc(p)}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
-  const r = rtSum(t.profile), base = `#teams/${esc(t.profile)}`, src = t.access?.record ? "team record" : `profiles/${esc(t.profile)}/profile.conf`;
-  const tabs = TTABS.map(([k, l]) => `<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${TTAB === k ? ' aria-current="page"' : ""}>${l}${k === "routines" && r ? `<span class="n">${r.routines}</span>${r.failed ? `<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`).join("");
-  const body = t.load_error ? `<div class="tcard card"><p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${esc(t.profile)} profile show</span></p></div>`
-    : TTAB === "routines" ? (TEAM_ADMIN?.admin ? routinesGroup(t, Date.now() / 1000) : `<div class="tcard card"><p>Only a team admin can see and change routines.</p></div>`)
+  if (!t) return html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${p}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
+  const r = rtSum(t.profile), base = `#teams/${t.profile}`, src = t.access?.record ? "team record" : `profiles/${t.profile}/profile.conf`;
+  const tabs = TTABS.map(([k, l]) => html`<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${TTAB === k ? html` aria-current="page"` : ""}>${l}${k === "routines" && r ? html`<span class="n">${r.routines}</span>${r.failed ? html`<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`);
+  const body = t.load_error ? card(html`<p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${t.profile} profile show</span></p>`, { cls: "tcard" })
+    : TTAB === "routines" ? (TEAM_ADMIN?.admin ? routinesGroup(t, Date.now() / 1000) : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
     : TTAB === "settings" ? teamSettingsHtml(t)
     : teamOverview(t);
-  return `<div class="tpage"><div class="thead"><div><h2 class="th" id="team-h" tabindex="-1">${esc(teamName(t))} <span class="tag ${teamLevel(t) || "ok"}">${esc(teamAccess(t)[0])}</span></h2>
-      <div class="tkey">${esc(t.profile)} · ${src}</div></div></div>
+  return html`<div class="tpage"><div class="thead"><div><h2 class="th" id="team-h" tabindex="-1">${teamName(t)} ${tag(teamAccess(t)[0], teamLevel(t) || "ok")}</h2>
+      <div class="tkey">${t.profile} · ${src}</div></div></div>
     <nav class="ttabs" aria-label="Team">${tabs}</nav>${body}</div>`;
 }
 // A poll must not wipe an edit in progress: the record JSON, a secret value, or a routine form someone changed.
 const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val], #t-access input") || !!RT.form?.dirty;
 function renderTeams() {
   const T = TEAMS;
-  if (!T || T.age_seconds == null) { put("s-teams", `<div class="emptybox">${T?.error ? esc(T.error) : "loading teams… the first profile list can take a minute"}</div>`); return; }
+  if (!T || T.age_seconds == null) { put("s-teams", String(emptybox(T?.error || "loading teams… the first profile list can take a minute"))); return; }
   const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
   if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
@@ -2167,15 +2168,16 @@ function renderTeams() {
   if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
   // Test and activate: once the record is in the card, the focus goes to Test (before any other focus rule).
   if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) {
-    put("s-teams", teamPageHtml(id)); TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); return;
+    put("s-teams", String(teamPageHtml(id))); TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); return;
   }
   // A repaint keeps the keyboard focus on the same heading, tab link, link or button (the routines list has its own).
   const a = document.activeElement, inMain = a && a !== document.body && el?.contains(a) && !a.closest?.("[data-routines]");
   const key = !inMain ? "" : a.id ? `#${CSS.escape(a.id)}` : a.matches("a[href]") ? `a[href="${CSS.escape(a.getAttribute("href"))}"]`
     : ["data-tact", "data-acc-save", "data-team-load", "data-rt-sel"].map(n => a.hasAttribute(n) ? `[${n}="${CSS.escape(a.getAttribute(n))}"]` : "").find(Boolean) ?? "";
-  if (key && !put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard card">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id))) return;
+  const page = () => String(id === "__all" ? allTeamsHtml() : id === "__new" ? html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2>${card(teamEditor("__new", true), { cls: "tcard" })}</div>` : teamPageHtml(id));
+  if (key && !put("s-teams", page())) return;
   if (key) { el.querySelector(key)?.focus({ preventScroll: true }); return; }
-  rtFocus(() => put("s-teams", id === "__all" ? allTeamsHtml() : id === "__new" ? `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2><div class="tcard card">${teamEditor("__new", true)}</div></div>` : teamPageHtml(id)));
+  rtFocus(() => put("s-teams", page()));
 }
 
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
@@ -2220,9 +2222,9 @@ const rtWhen = (iso, zone) => { try { return new Date(iso).toLocaleString("en-GB
 const rtSched = d => { const [k, a, b] = (d.schedule || "").split(" "); return k === "weekly" ? `Weekly on ${a}, ${b}` : `${k === "daily" ? "Daily" : "Weekdays"}, ${a}`; };
 function rtState(r) {
   const v = r.live;
-  if (v?.state === "queued") return `<span class="tag info">Queued</span> It starts when a runner is free, within 60 min, and the result goes to ${r.data.channel ? `<span class="mono">${esc(r.data.channel)}</span>` : "History only"}.`;
-  if (v) return `<span class="tag info">Running</span>${v.session ? ` <a class="mono" href="#sessions/live/${esc(v.session)}">${esc(v.session)}</a>` : ""}`;
-  return r.paused ? `<span class="tag warn">Paused</span>` : `<span class="tag">Active</span>`;
+  if (v?.state === "queued") return html`${tag("Queued", "info")} It starts when a runner is free, within 60 min, and the result goes to ${r.data.channel ? html`<span class="mono">${r.data.channel}</span>` : "History only"}.`;
+  if (v) return html`${tag("Running", "info")}${v.session ? html` <a class="mono" href="#sessions/live/${v.session}">${v.session}</a>` : ""}`;
+  return r.paused ? tag("Paused", "warn") : tag("Active");
 }
 // Only a GitHub PR link becomes a link; anything else in pr_url shows as text.
 const rtPr = u => { const m = String(u || "").match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+$/); return m && REPO_RE.test(m[1]) ? u : ""; };
@@ -2232,29 +2234,29 @@ const sessHref = k => /^agent-[a-z0-9]{4,12}$/.test(k || "") ? `#sessions/stoppe
 // d: the routine's config. A routine with no channel posts nothing, so its report is in History (D32).
 function rtLast(x, d) {
   if (!x) return "no run yet";
-  const why = x.reason ? `: ${esc(x.reason)}` : "", at = x.ended_at ? ` · ${stamp(x.ended_at)}` : "";
-  return ({ ok: rtPr(x.pr_url) ? `draft PR <a href="${esc(x.pr_url)}" target="_blank" rel="noopener">${esc(x.pr_url.split("/").slice(-3).join("/"))}</a>` : x.pr_url ? `ok: ${esc(x.pr_url)}` : "ok",
-    report: !d?.channel ? "report in History" : x.reason ? `report held: ${esc(x.reason)}. Read it in History` : "report posted", nochange: "nothing to change" }[x.state] ?? `${esc(x.state)}${why}`) + at;
+  const why = x.reason ? `: ${x.reason}` : "", at = x.ended_at ? ` · ${stamp(x.ended_at)}` : "";
+  return html`${{ ok: rtPr(x.pr_url) ? html`draft PR <a href="${x.pr_url}" target="_blank" rel="noopener">${x.pr_url.split("/").slice(-3).join("/")}</a>` : x.pr_url ? `ok: ${x.pr_url}` : "ok",
+    report: !d?.channel ? "report in History" : x.reason ? `report held: ${x.reason}. Read it in History` : "report posted", nochange: "nothing to change" }[x.state] ?? `${x.state}${why}`}${at}`;
 }
 function rtHist(rows) {
-  if (!rows.length) return `<p class="empty">No runs yet.</p>`;
-  const cell = (l, v) => `<td data-l="${l}">${v}</td>`;
-  return `<table class="table figures dense rt-hist"><thead><tr><th>Time</th><th>Trigger</th><th>Result</th><th>Reason</th><th>PR</th><th>Cost</th><th>Session</th></tr></thead><tbody>${rows.map(x =>
-    `<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${esc(x.actor)}` : ""}` : "schedule")}${cell("Result", esc(x.state))}
-      ${cell("Reason", esc(x.reason || ""))}${cell("PR", rtPr(x.pr_url) ? `<a href="${esc(x.pr_url)}" target="_blank" rel="noopener">#${esc(x.pr_url.split("/").pop())}</a>` : esc(x.pr_url || ""))}
-      ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", sessHref(x.session) ? `<a class="mono" href="${sessHref(x.session)}">${esc(x.session)}</a>` : esc(x.session || ""))}
-</tr>${x.report ? `<tr><td colspan="7" style="text-align:left;white-space:normal"><details data-rt-run="${esc(x.id)}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre style="white-space:pre-wrap">${esc(x.report)}</pre></details></td></tr>` : ""}`).join("")}</tbody></table>`;
+  if (!rows.length) return html`<p class="empty">No runs yet.</p>`;
+  const cell = (l, v) => html`<td data-l="${l}">${v}</td>`;
+  return table(["Time", "Trigger", "Result", "Reason", "PR", "Cost", "Session"], rows.map(x =>
+    html`<tr>${cell("Time", stamp(x.started_at ?? x.ended_at))}${cell("Trigger", x.trigger === "manual" ? `Run now${x.actor ? ` · ${x.actor}` : ""}` : "schedule")}${cell("Result", x.state)}
+      ${cell("Reason", x.reason || "")}${cell("PR", rtPr(x.pr_url) ? html`<a href="${x.pr_url}" target="_blank" rel="noopener">#${x.pr_url.split("/").pop()}</a>` : x.pr_url || "")}
+      ${cell("Cost", x.cost_usd == null ? "" : usd(x.cost_usd))}${cell("Session", sessHref(x.session) ? html`<a class="mono" href="${sessHref(x.session)}">${x.session}</a>` : x.session || "")}
+</tr>${x.report ? html`<tr><td colspan="7" style="text-align:left;white-space:normal"><details data-rt-run="${x.id}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre style="white-space:pre-wrap">${x.report}</pre></details></td></tr>` : ""}`), { figures: true, dense: true, cls: "rt-hist" });
 }
 function rtRow(r) {
-  const d = r.data, n = esc(d.name), b = (act, label, extra = "") => `<button data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
-  const busy = r.live || RT.busy === r.id ? ` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : "";
-  return `<div class="rt-row" data-rt-row="${r.id}" style="border-top:1px solid var(--line);padding:var(--s2) 0">
+  const d = r.data, n = d.name, b = (act, label, extra = "") => html`<button data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
+  const busy = r.live || RT.busy === r.id ? html` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : "";
+  return html`<div class="rt-row" data-rt-row="${r.id}" style="border-top:1px solid var(--line);padding:var(--s2) 0">
     <div><b>${n}</b> ${rtState(r)}</div>
-    ${kvr("Schedule", `${esc(rtSched(d))} ${esc(d.zone)}`)}${kvr("Channel", d.channel ? `<span class="mono">${esc(d.channel)}</span>` : "none, History only")}${kvr("Mode", esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]))}
-    ${kvr("Next run", r.paused ? "paused" : esc((r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none"), r.paused)}${kvr("Last result", rtLast(r.last, d))}
+    ${kvRow("Schedule", `${rtSched(d)} ${d.zone}`)}${kvRow("Channel", d.channel ? html`<span class="mono">${d.channel}</span>` : "none, History only")}${kvRow("Mode", (RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1])}
+    ${kvRow("Next run", r.paused ? "paused" : (r.next ?? []).map(x => rtWhen(x, d.zone)).join(" · ") || "none", r.paused)}${kvRow("Last result", rtLast(r.last, d))}
     <div class="acts2">${b("edit", "Edit")}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("run", r.live ? "A run is in progress" : "Run now", busy)}
       ${r.live ? b("stop", "Stop run") : ""}${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}${b("hist", RT.hist?.[r.id] ? "Hide history" : "History")}</div>
-    ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : RT.histErr?.[r.id] ? `<p class="unknown">Runs did not load: ${esc(RT.histErr[r.id])} <button data-rt-act="hist" data-rt-id="${r.id}">Retry</button></p>` : RT.histLoading === r.id ? `<p class="empty">loading runs…</p>` : ""}</div>`;
+    ${RT.hist?.[r.id] ? rtHist(RT.hist[r.id]) : RT.histErr?.[r.id] ? html`<p class="unknown">Runs did not load: ${RT.histErr[r.id]} <button data-rt-act="hist" data-rt-id="${r.id}">Retry</button></p>` : RT.histLoading === r.id ? html`<p class="empty">loading runs…</p>` : ""}</div>`;
 }
 // The routine the Routines tab opens on: the one picked, else the one with the newest ended run, else the
 // first failed, else the first. Its runs load at once.
@@ -2277,53 +2279,52 @@ function routineListHtml(t, now) {
   // The oldest heartbeat of the envs these routines use: a fresh dev tick does not hide a live one that stopped.
   const L = RT.list ?? [], tick = L.some(r => r.tick == null) ? null : Math.min(...L.map(r => r.tick)), age = tick == null ? null : Math.max(0, Math.round(now - tick));
   const stale = L.length && (age == null || age > RT_STALE_S)
-    ? `<div class="alert warn"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
-  if (!L.length) return `<div data-routine-list>${stale}<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p></div>`;
+    ? html`<div class="alert warn"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
+  if (!L.length) return html`<div data-routine-list>${stale}<p class="empty">No routines yet. A routine runs a prompt on a schedule and posts the result in Slack.</p></div>`;
   const sum = RTSUM?.routines ?? {}, show = RT.show || "all", rows = L.filter(r => show === "all" || (show === "failed" ? rtFailed(r) : !!r.paused)), sel = rtSelected(L);
   const tr = r => { const d = r.data;
-    return `<tr${r.id === sel?.id ? ' class="sel"' : ""}><td><button type="button" class="linkbtn" data-rt-sel="${r.id}">${esc(d.name)}</button><div class="na">${esc(d.template || "")}</div></td>
-      <td>${esc(rtSched(d))}<div class="na">${esc(d.zone)}</div></td><td>${esc((RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1])}</td>
-      <td>${d.channel ? `<span class="mono">${esc(d.channel)}</span>` : `<span class="na">History only</span>`}</td><td>${r.live ? rtState(r) : rtLast(r.last, d)}</td>
-      <td>${r.paused ? `<span class="na">paused</span>` : esc((r.next ?? []).slice(0, 1).map(x => rtWhen(x, d.zone)).join("") || "none")}</td>
+    return html`<tr${r.id === sel?.id ? html` class="sel"` : ""}><td><button type="button" class="linkbtn" data-rt-sel="${r.id}">${d.name}</button><div class="na">${d.template || ""}</div></td>
+      <td>${rtSched(d)}<div class="na">${d.zone}</div></td><td>${(RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1]}</td>
+      <td>${d.channel ? html`<span class="mono">${d.channel}</span>` : html`<span class="na">History only</span>`}</td><td>${r.live ? rtState(r) : rtLast(r.last, d)}</td>
+      <td>${r.paused ? html`<span class="na">paused</span>` : (r.next ?? []).slice(0, 1).map(x => rtWhen(x, d.zone)).join("") || "none"}</td>
       <td class="num">${sum[r.id] ? usd(sum[r.id].cost_30d) : "—"}</td>
-      <td><button type="button" class="tsw" data-rt-act="${r.paused ? "resume" : "pause"}" data-rt-id="${r.id}" aria-pressed="${!r.paused}" aria-label="Routine ${esc(d.name)} on"${RT.busy === r.id ? " disabled" : ""}>${r.paused ? "Off" : "On"}</button></td></tr>`; };
-  return `<div data-routine-list>${stale}<div class="rtshow" role="group" aria-label="Show">Show ${["all", "failed", "paused"].map(k => `<button type="button" data-rt-show="${k}" aria-pressed="${show === k}">${k[0].toUpperCase() + k.slice(1)}</button>`).join("")}</div>
-    <div class="tscroll"><table class="table"><thead><tr><th>Name</th><th>Schedule</th><th>Mode</th><th>Channel</th><th>Last run</th><th>Next run</th><th>Cost, 30 days</th><th>On</th></tr></thead>
-      <tbody>${rows.map(tr).join("") || `<tr><td colspan="8" class="na">No ${show} routines.</td></tr>`}</tbody></table></div>
-    ${sel ? `${RT.sel && L.some(r => r.id === RT.sel) ? "" : `<p class="na">${RT.sel ? "The routine from the link is no longer here. " : ""}Showing the routine that ran last. Select a row to see another.</p>`}<div class="tcard card">${rtRow(sel)}</div>` : ""}</div>`;
+      <td><button type="button" class="tsw" data-rt-act="${r.paused ? "resume" : "pause"}" data-rt-id="${r.id}" aria-pressed="${String(!r.paused)}" aria-label="Routine ${d.name} on"${RT.busy === r.id ? " disabled" : ""}>${r.paused ? "Off" : "On"}</button></td></tr>`; };
+  return html`<div data-routine-list>${stale}<div class="rtshow" role="group" aria-label="Show">Show ${["all", "failed", "paused"].map(k => html`<button type="button" data-rt-show="${k}" aria-pressed="${String(show === k)}">${k[0].toUpperCase() + k.slice(1)}</button>`)}</div>
+    <div class="tscroll">${table(["Name", "Schedule", "Mode", "Channel", "Last run", "Next run", "Cost, 30 days", "On"], rows.length ? rows.map(tr) : html`<tr><td colspan="8" class="na">No ${show} routines.</td></tr>`)}</div>
+    ${sel ? html`${RT.sel && L.some(r => r.id === RT.sel) ? "" : html`<p class="na">${RT.sel ? "The routine from the link is no longer here. " : ""}Showing the routine that ran last. Select a row to see another.</p>`}${card(rtRow(sel), { cls: "tcard" })}` : ""}</div>`;
 }
 function routineForm(t) {
   const f = RT.form, d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
-  const locked = tpl?.locked_mode, bad = k => e[k] ? ` aria-invalid="true" aria-describedby="rt-${k}-err"` : "";
-  const err = k => e[k] ? `<p class="unknown" id="rt-${k}-err">${esc(e[k])}</p>` : "";
-  const lab = (k, l, input) => `<div class="field"><label for="rt-${k}"><b>${l}</b></label><br>${input}${err(k)}</div>`;
-  const opt = (v, l, cur, dis) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}${dis ? ` disabled title="${esc(dis)}"` : ""}>${esc(l)}${dis ? ` (${esc(dis)})` : ""}</option>`;
+  const locked = tpl?.locked_mode, bad = k => e[k] ? html` aria-invalid="true" aria-describedby="rt-${k}-err"` : "";
+  const err = k => e[k] ? html`<p class="unknown" id="rt-${k}-err">${e[k]}</p>` : "";
+  const lab = (k, l, input) => html`<div class="field"><label for="rt-${k}"><b>${l}</b></label><br>${input}${err(k)}</div>`;
+  const opt = (v, l, cur, dis) => html`<option value="${v}"${v === cur ? " selected" : ""}${dis ? html` disabled title="${dis}"` : ""}>${l}${dis ? ` (${dis})` : ""}</option>`;
   const modeOff = m => m === "report" ? "" : locked ? "a security review only reports" : t.read_only ? "this team gets diffs only" : "";
-  return `<div data-routine-form><h4>${f.id ? `Edit ${esc(d.name)}` : "New routine"}</h4>
-    ${lab("template", "Template", `<select id="rt-template" data-rt="template"${bad("template")}>${[...(RT.tpls ?? []).map(x => [x.template, x.name]), ["blank", "Blank"]].map(([v, l]) => opt(v, l, d.template)).join("")}</select>`)}
-    ${lab("name", "Name", `<input id="rt-name" data-rt="name" maxlength="40" value="${esc(d.name)}"${bad("name")}>`)}
-    ${lab("prompt", `Prompt <span class="empty" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, `<textarea id="rt-prompt" data-rt="prompt" rows="8" style="width:100%;box-sizing:border-box"${bad("prompt")}>${esc(d.prompt)}</textarea>`)}
-    ${lab("schedule", "Schedule", `<select id="rt-schedule" data-rt="kind" aria-label="How often"${bad("schedule")}>${[["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"]].map(([v, l]) => opt(v, l, d.kind)).join("")}</select>
-      ${d.kind === "weekly" ? `<select data-rt="day" aria-label="Day">${RT_DAYS.map(x => opt(x, x, d.day)).join("")}</select>` : ""}
-      <input type="time" data-rt="time" aria-label="Time" value="${esc(d.time)}">`)}
-    ${lab("zone", "Time zone", `<input id="rt-zone" data-rt="zone" value="${esc(d.zone)}"${bad("zone")}>`)}
-    ${lab("repos", "Repos", `<span id="rt-repos" tabindex="-1"${bad("repos")}>${repos.map(s => `<label style="margin-right:var(--s2)"><input type="checkbox" data-rt-repo="${esc(s)}"${d.repos.includes(s) ? " checked" : ""}> <span class="mono">${esc(s)}</span></label>`).join("") || "this team has no repos"}</span>`)}
-    ${d.repos.length === 1 ? lab("branch", "Branch", `<input id="rt-branch" data-rt="branch" placeholder="the repo's default branch" value="${esc(d.branch)}"${bad("branch")}>`) : ""}
-    ${lab("channel", "Slack channel (optional)", `<input id="rt-channel" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${esc(d.channel)}"${bad("channel")}>
+  return html`<div data-routine-form><h4>${f.id ? `Edit ${d.name}` : "New routine"}</h4>
+    ${lab("template", "Template", html`<select id="rt-template" data-rt="template"${bad("template")}>${[...(RT.tpls ?? []).map(x => [x.template, x.name]), ["blank", "Blank"]].map(([v, l]) => opt(v, l, d.template))}</select>`)}
+    ${lab("name", "Name", html`<input id="rt-name" data-rt="name" maxlength="40" value="${d.name}"${bad("name")}>`)}
+    ${lab("prompt", html`Prompt <span class="empty" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, html`<textarea id="rt-prompt" data-rt="prompt" rows="8" style="width:100%;box-sizing:border-box"${bad("prompt")}>${d.prompt}</textarea>`)}
+    ${lab("schedule", "Schedule", html`<select id="rt-schedule" data-rt="kind" aria-label="How often"${bad("schedule")}>${[["daily", "Daily"], ["weekdays", "Weekdays"], ["weekly", "Weekly"]].map(([v, l]) => opt(v, l, d.kind))}</select>
+      ${d.kind === "weekly" ? html`<select data-rt="day" aria-label="Day">${RT_DAYS.map(x => opt(x, x, d.day))}</select>` : ""}
+      <input type="time" data-rt="time" aria-label="Time" value="${d.time}">`)}
+    ${lab("zone", "Time zone", html`<input id="rt-zone" data-rt="zone" value="${d.zone}"${bad("zone")}>`)}
+    ${lab("repos", "Repos", html`<span id="rt-repos" tabindex="-1"${bad("repos")}>${repos.length ? repos.map(s => html`<label style="margin-right:var(--s2)"><input type="checkbox" data-rt-repo="${s}"${d.repos.includes(s) ? " checked" : ""}> <span class="mono">${s}</span></label>`) : "this team has no repos"}</span>`)}
+    ${d.repos.length === 1 ? lab("branch", "Branch", html`<input id="rt-branch" data-rt="branch" placeholder="the repo's default branch" value="${d.branch}"${bad("branch")}>`) : ""}
+    ${lab("channel", "Slack channel (optional)", html`<input id="rt-channel" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${d.channel}"${bad("channel")}>
       <p class="empty">With no channel, nothing posts in Slack and the results show only in History. Invite @fxa-agent to this channel. A team with a private repo, and every security review, needs a private channel that is not shared with another workspace. A private-repo team and a security review on a record team must use one of the team's own channels.</p>`)}
-    ${lab("mode", "Output mode", `<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v))).join("")}</select>`)}
-    ${lab("max_usd", "Cost limit for each run, USD", `<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${esc(d.max_usd)}"${bad("max_usd")}>`)}
+    ${lab("mode", "Output mode", html`<select id="rt-mode" data-rt="mode"${locked ? " disabled" : ""}${bad("mode")}>${RT_MODES.map(([v, l]) => opt(v, l, locked || d.mode, modeOff(v)))}</select>`)}
+    ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" data-rt="max_usd" type="number" min="1" step="1" value="${d.max_usd}"${bad("max_usd")}>`)}
     <div class="field"><label><input type="checkbox" id="rt-skip_no_commits" data-rt="skip_no_commits"${d.skip_no_commits ? " checked" : ""}${bad("skip_no_commits")}> Skip when no new commits since the last run</label>${err("skip_no_commits")}</div>
     <div class="acts2"><button data-rt-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Create"}</button><button data-rt-cancel>Cancel</button></div></div>`;
 }
 function routinesGroup(t, now) {
-  if (!TEAM_ADMIN?.admin) return `<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
-  if (RT.team !== t.profile || (!RT.list && !RT.err)) return `<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
-  const off = t.access?.record && t.access.status !== "active" ? `<p class="unknown">Routines run only while the team is active.</p>` : "";
-  return `<div data-routines><h4>Routines</h4>${off}${RT.err ? `<p class="unknown">${esc(RT.err)}</p>` : ""}
-    <p role="status" data-rt-msg tabindex="-1" class="${RT.ok === false ? "unknown" : "empty"}">${esc(RT.msg || "")}</p>
+  if (!TEAM_ADMIN?.admin) return html`<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
+  if (RT.team !== t.profile || (!RT.list && !RT.err)) return html`<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
+  const off = t.access?.record && t.access.status !== "active" ? html`<p class="unknown">Routines run only while the team is active.</p>` : "";
+  return html`<div data-routines><h4>Routines</h4>${off}${RT.err ? html`<p class="unknown">${RT.err}</p>` : ""}
+    <p role="status" data-rt-msg tabindex="-1" class="${RT.ok === false ? "unknown" : "empty"}">${RT.msg || ""}</p>
     ${routineListHtml(t, now)}
-    ${RT.form ? routineForm(t) : `<div class="acts2"><button data-rt-new${(RT.list ?? []).length >= 8 ? ' disabled title="A team has at most 8 routines"' : ""}>New routine</button></div>`}</div>`;
+    ${RT.form ? routineForm(t) : html`<div class="acts2"><button data-rt-new${(RT.list ?? []).length >= 8 ? html` disabled title="A team has at most 8 routines"` : ""}>New routine</button></div>`}</div>`;
 }
 // An open form the admin changed stays as it is: a poll repaints only the routine list. True when it did.
 function rtKeepForm(el, t) {
