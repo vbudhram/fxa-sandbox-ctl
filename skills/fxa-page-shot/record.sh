@@ -42,6 +42,7 @@ case "${1:-}" in
         && mv "$out.fast.mp4" "$out"
     fi
     echo "saved $out ($(du -h "$out" | cut -f1))"
-    shows_something "$out" || { echo "record: the video is blank. Set gfx.webrender.software=true in the Firefox profile and start Firefox with env -u MOZ_HEADLESS" >&2; exit 1; } ;;
+    # A blank video leaves the media folder, so the wrap-up's media_paths never posts it.
+    shows_something "$out" || { mv -f "$out" "$out.blank"; echo "record: the video is blank (kept as $out.blank, not posted). Set gfx.webrender.software=true in the Firefox profile and start Firefox with env -u MOZ_HEADLESS" >&2; exit 1; } ;;
   *) echo "usage: $0 start <name> | stop [--speed N]" >&2; exit 2 ;;
 esac

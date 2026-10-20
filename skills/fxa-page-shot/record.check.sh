@@ -19,8 +19,10 @@ bash "$R" bogus >/dev/null 2>&1; check "an unknown command fails" 2 $?
 if command -v ffmpeg >/dev/null; then
   # A sleep stands in for the ffmpeg recorder; stop sends it SIGINT.
   ffmpeg -v error -f lavfi -i "color=c=black:s=320x180:d=2" -pix_fmt yuv420p "$tmp/blank.mp4"
-  sleep 20 & echo $! > "$tmp/fxa-record.pid"; echo "$tmp/blank.mp4" > "$tmp/fxa-record.out"
+  # A background job of a script ignores SIGINT; the stand-in takes the default back, as ffmpeg handles it.
+  (trap - INT; exec sleep 20) & echo $! > "$tmp/fxa-record.pid"; echo "$tmp/blank.mp4" > "$tmp/fxa-record.out"
   got="$(bash "$R" stop 2>&1)"; check "stop fails on a blank video" 1 $?
   check "stop gives the blank-video hint" 1 "$(grep -c 'gfx.webrender.software=true.*env -u MOZ_HEADLESS' <<< "$got")"
+  check "the blank video leaves the media name, so the wrap-up does not post it" "no|yes" "$([ -e "$tmp/blank.mp4" ] && echo yes || echo no)|$([ -e "$tmp/blank.mp4.blank" ] && echo yes || echo no)"
 fi
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
