@@ -115,6 +115,10 @@ class Feed:
 # The snapshot, agents and stats feeds cost 0.8-1.3 of the VM's cores (measured 2026-10-20) with or without a
 # viewer: a gated feed refreshes only while an /api request came in the last IDLE_S, and the first one after wakes it.
 # While nobody looks, a gated feed cannot fail either, so its feed_failed alert waits for the next viewer.
+# Session fields the page never reads: about 45 KB of each 15 s snapshot poll (measured 2026-10-20). /api/sessions keeps them.
+SESSION_UNUSED = frozenset("""owner_image base_sha claude_session_id trees turn_started job_pid turn_logged turn_ended_at history_cursor
+    push_lease boot_reported handoff_at notes_stale round_fixed tree_changes pr_announced pr_updated review_pr routine_mode desktop_open
+    pushed_announced last_error last_say cap_usd""".split())
 IDLE_S = int(os.environ.get("FXA_DASHBOARD_IDLE_S", "600"))
 LAST_SEEN = [time.time()]
 GATED = []
@@ -1021,6 +1025,9 @@ class Handler(BaseHTTPRequestHandler):
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
             if isinstance(ag, dict) and not self._team_admin(path):
                 ag = dict(ag, sessions=[redact_session(s) if isinstance(s, dict) and team_private(s.get("profile") or "fxa") else s
+                                        for s in ag.get("sessions") or []])
+            if isinstance(ag, dict):
+                ag = dict(ag, sessions=[{k: v for k, v in s.items() if k not in SESSION_UNUSED} if isinstance(s, dict) else s
                                         for s in ag.get("sessions") or []])
             # The stats feed's age and error, so a page tells live figures from old ones; /api/stats stays as it is.
             _, st_age, st_err, _ = STATS.read()
