@@ -238,6 +238,9 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("belt details: escaped, with the failing check as the main action, and only the open row has details", `${/&lt;img/.test(dh)}|${/<img src=x/.test(dh)}|${/class="main"[^>]*href="https:\/\/github.com\/example\/app\/pull\/3\/checks"/.test(dh)}|${(oh.match(/class="bdet"/g) || []).length}`, "true|false|true|1");
   load(); SNAP.open_prs.push({ number: 7, key: "FXA-1", title: "x", created: "2026-10-15T10:00:00Z", branch: "FXA-1" }); const gb = beltGroups(), b1 = gb.needs.find(r => r.t.key === "FXA-1");
   t("belt details: a Jira-blocked ticket with an open PR answers in Jira", `${b1.t.pr}|${/class="main"[^>]*href="https:\/\/jira\.example\.com\/browse\/FXA-1"[^>]*>Answer in Jira</.test(beltDetails(b1))}`, "7|true");
+  load(); SNAP.review[0].mergeable = "CONFLICTING"; SNAP.review[0].relock_failed = "FXA-3 7 CONFLICT lockfile (relock FAILED; run: relock FXA-3)";
+  const ir = boardItems().map(classify).find(i => i.key === SNAP.review[0].key);
+  t("belts: a conflict whose relock failed waits on the operator with the relock command, not on the next pass", `${ir.kind}|${ir.person}|${ir.group}|${/relock FXA-3 on the manager/.test(ir.next)}`, "relock|the operator|act|true");
   load(); SNAP.inflight_prs_failed = true; const gi = beltGroups();
   t("belts: a failed in-flight PR read makes fixes and review unknown, from GitHub", `${gi.unknown.fixes}|${gi.unknown.review}|${beltCount(gi)}`, "unknown, GitHub fetch failed|unknown, GitHub fetch failed|null");
   const hi = beltsHtml(gi);

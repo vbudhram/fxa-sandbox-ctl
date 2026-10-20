@@ -711,6 +711,13 @@ snapshot_json() {
   for k in $(printf '%s' "$review" | jq -r '.[]? | select(.fail > 0) | .key' 2>/dev/null); do
     why="$(gh_red_infra "$k" 2>/dev/null)" && infra="$(jq -c --arg k "$k" --arg w "$why" '. + {($k): $w}' <<<"$infra")"
   done
+  # A conflicted PR whose automatic yarn.lock fix failed (precheck noted 'relock FAILED'): a person
+  # runs relock, so the page must not say the next pass rebases it.
+  local relock='{}' note
+  for k in $(printf '%s' "$review" | jq -r '.[]? | select(.mergeable == "CONFLICTING") | .key // empty' 2>/dev/null); do
+    note="$(cat "${PIPE_STATE_DIR}/${k}.drain-noted" 2>/dev/null || true)"
+    case "$note" in *"relock FAILED"*) relock="$(jq -c --arg k "$k" --arg w "$note" '. + {($k): $w}' <<<"$relock")" ;; esac
+  done
   local hold; hold="$(pipeline_holding_new && cat "$(pipeline_hold_marker)" || true)"
   # A failed inflight read gives an empty owner list, and worktree_free_slots
   # then calls every idle slot claimable. Report unknown instead.
@@ -744,7 +751,7 @@ snapshot_json() {
     --argjson inflight_prs "$inflight_prs" \
     --argjson review "$review" \
     --argjson telemetry "$telem" \
-    --argjson infra "$infra" \
+    --argjson infra "$infra" --argjson relock "$relock" \
     --arg hold "$hold" \
     --arg focus "$(pipeline_focus_key || true)" \
     --argjson instances "$instances" \
@@ -793,7 +800,7 @@ snapshot_json() {
                       + (((($inflight_prs // [])[] | select(.key == $i.key))
                           | {pr, pr_state: .state, ok, fail, running, review_decision: .review})
                          // {pr: null, pr_state: null, ok: 0, fail: 0, running: 0, review_decision: null})],
-         review: (if $review == null then null else $review | map(. + {infra: ($infra[.key] // null)}) end),
+         review: (if $review == null then null else $review | map(. + {infra: ($infra[.key] // null), relock_failed: ($relock[.key] // null)}) end),
          mode: { newtickets: (if $hold == "" then "on" else "off" end),
                  newtickets_note: (if $hold == "" then null else $hold end),
                  focus: (if $focus == "" then null else $focus end) },
