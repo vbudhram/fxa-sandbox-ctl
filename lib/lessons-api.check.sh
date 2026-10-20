@@ -7,7 +7,8 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/ctl" <<'SH'
 #!/bin/sh
 case "$*" in
-  *"lessons --json"*) echo '[{"id":"a1","team":"fxa","text":"an fxa lesson"},{"id":"b2","team":"privteam","text":"a private lesson"},{"id":"c3","text":"an old lesson"},{"id":"d4","team":"ghost","text":"a team profile show cannot read"}]' ;;
+  *"lessons approve"*) exit 0 ;;
+  *"lessons --json"*) echo read >> "$(dirname "$0")/reads"; echo '[{"id":"a1","team":"fxa","text":"an fxa lesson"},{"id":"b2","team":"privteam","text":"a private lesson"},{"id":"c3","text":"an old lesson"},{"id":"d4","team":"ghost","text":"a team profile show cannot read"}]' ;;
   *"--pipeline privteam profile show"*) echo '{"private":true}' ;;
   *"--pipeline ghost profile show"*) exit 1 ;;
   *"profile show"*) echo '{"private":false}' ;;
@@ -35,5 +36,15 @@ def ids(user=None):
 check("no signed user: no private team's lesson, nor one whose team cannot be read", ["a1", "c3"], ids())
 check("a signed user who is not an admin: the same", ["a1", "c3"], ids("other@example.com"))
 check("a signed team admin sees every lesson", ["a1", "b2", "c3", "d4"], ids("admin@example.com"))
+# One read serves repeated polls; an approve clears it, so the next read shows the decision.
+reads = lambda: len(open(sys.argv[2].rsplit("/", 1)[0] + "/reads").read().split())
+check("three polls in a row read the lessons once", 1, reads())
+ts = str(int(time.time())); u = "admin@example.com"
+req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/lessons", data=b'{"id":"a1b2c3d4","action":"approve"}', method="POST",
+    headers={"Host": "localhost", "Content-Type": "application/json", "X-Fxa-User": u, "X-Fxa-Time": ts,
+             "X-Fxa-Sig": hmac.new(b"k1", f"{u}|{ts}|POST|/api/lessons".encode(), hashlib.sha256).hexdigest()})
+with urllib.request.urlopen(req, timeout=10) as r: r.read()
+ids()
+check("after an approve, the next poll reads the lessons again", 2, reads())
 sys.exit(fail)
 PY

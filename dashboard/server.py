@@ -139,6 +139,8 @@ def clean_tail(raw, limit=200):
     return out[-limit:]
 
 ERRORS = {"at": 0, "body": None}
+# Each open tab polled lessons every 15 s, a 0.3 s ctl process each time; an approve or reject clears it.
+LESSONS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
 CTL_SLOTS = threading.BoundedSemaphore(4)
@@ -689,6 +691,7 @@ class Handler(BaseHTTPRequestHandler):
         if proc.returncode != 0:
             self._json(400, {"error": (proc.stderr or "failed").strip()[:200]})
             return
+        LESSONS["at"] = 0  # the next read shows the decision, not the cached list
         self._json(200, {"ok": True})
 
     def _admin(self, method, path):
@@ -1098,10 +1101,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/lessons":
             # A failed read says so (503), so the page never shows it as "No pending lessons".
             try:
-                proc = ctl_run(["lessons", "--json"], timeout=15)
-                if proc.returncode != 0:
-                    raise RuntimeError(f"lessons exited {proc.returncode}")
-                rows = json.loads(proc.stdout) if proc.stdout.strip() else []
+                body = cached_ctl(LESSONS, ["lessons", "--json"], 15, 60)
+                if body is None:
+                    raise RuntimeError("no lessons read yet")
+                rows = json.loads(body)
             except Exception as e:
                 self._json(503, {"error": f"the lessons read failed ({type(e).__name__})"})
                 return
