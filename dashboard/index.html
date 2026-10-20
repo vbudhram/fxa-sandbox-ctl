@@ -120,7 +120,9 @@
          border:1px solid transparent; color:var(--dim); background:var(--sunk); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .tag.ok { color:var(--ok); background:var(--okbg); } .tag.bad { color:var(--bad); background:var(--badbg); }
   .tag.warn { color:var(--warn); background:var(--warnbg); } .tag.info { color:var(--info); background:var(--infobg); }
-  .tag.merged { color:var(--purpletxt); background:var(--purplebg); }
+  .tag.merged { color:var(--purpletxt); background:var(--purplebg); } .tag.dim { color:var(--dim); background:var(--sunk); }
+  .tag.sq { border-radius:var(--r-sm); padding:0 5px; font-size:var(--t-tiny); }
+  .tag.run.live::before { animation:pulse 1.6s ease-in-out infinite; }
   .tag.run::before { content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
                      margin-right:5px; vertical-align:1px; }
   .age { font-variant-numeric:tabular-nums; } .age.old { color:var(--bad); font-weight:650; }
@@ -353,7 +355,7 @@
   }
   @media (max-width:480px) { .rail a { font-size:0; gap:0; } }
   .errs .err { display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s2) 0; border-top:1px solid var(--line); }
-  .errs .err .chip { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:var(--r-pill); } .errs .err .body { min-width:0; }
+  .errs .err .tag { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:var(--r-pill); } .errs .err .body { min-width:0; }
   .errs .err .m { font-family:var(--mono); font-size:var(--t-label); overflow-wrap:anywhere; }
   .errs .err textarea { width:100%; box-sizing:border-box; font:var(--t-sub) var(--sans); color:var(--ink); background:var(--sunk); border:1px solid var(--line2); border-radius:var(--r-md); padding:6px 8px; resize:vertical; }
   .errs .err .acts { display:flex; gap:var(--s2); margin-top:var(--s2); }
@@ -396,8 +398,6 @@
   .ovk .chg { font-weight:600; } .ovk .chg.good { color:var(--ok); } .ovk .chg.bad { color:var(--bad); }
   #ov-today { padding:var(--s3) var(--s4); } #ov-today h2 { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:0 0 4px; display:flex; justify-content:space-between; gap:var(--s2); }
   #ov-today h2 .note { text-transform:none; letter-spacing:0; font-weight:600; } #ov-today .ovtoday { gap:var(--s3); align-items:flex-start; } #ov-today .ovtoday svg { width:40px; height:40px; margin-top:2px; } #ov-today .big { font-size:var(--t-kpi); } #ov-today .sub { font-size:var(--t-label); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; } #ov-today .ovtoday > div { min-width:0; }
-  .ovpill { display:inline-block; font-size:var(--t-label); font-weight:600; border-radius:var(--r-pill); padding:1px 8px; white-space:nowrap; background:var(--sunk); color:var(--dim); }
-  .ovpill.ok { background:var(--okbg); color:var(--ok); } .ovpill.info { background:var(--infobg); color:var(--info); } .ovpill.bad { background:var(--badbg); color:var(--bad); } .ovpill.warn { background:var(--warnbg); color:var(--warn); }
   .ovteam { display:grid; grid-template-columns:minmax(0,1.4fr) 44px 56px 44px minmax(0,1.5fr); gap:var(--s2); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); font-size:var(--t-sub); color:inherit; }
   a.ovteam:hover { text-decoration:none; background:var(--hover); } .ovteam.hd { border-top:0; font-size:var(--t-label); color:var(--dim); padding-bottom:2px; }
   .ovteam .n { display:flex; align-items:center; gap:var(--s2); min-width:0; font-weight:600; } .ovteam .n span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -416,7 +416,6 @@
   .ovrun .d { font-size:var(--t-label); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
   .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label); color:var(--dim); font-variant-numeric:tabular-nums; }
   @container (max-width:420px) { .ovrun { grid-template-columns:56px minmax(0,1fr) auto; } .ovrun .ic { display:none; } .ovrun .d { grid-column:2; } }
-  .ovchip { padding:3px 12px; border-radius:var(--r-pill); background:var(--sunk); } .ovchip.live { background:var(--infobg); color:var(--info); font-weight:600; } .ovchip.live i { background:var(--info); }
   .ovwho { font-size:var(--t-sub); color:var(--dim); }
   .ft { display:flex; flex-direction:column; gap:var(--s1); padding:var(--s3); } .ft.live { border-color:color-mix(in srgb,var(--info) 55%,transparent); box-shadow:0 0 0 1px color-mix(in srgb,var(--info) 35%,transparent); }
   .ft .fth { display:flex; justify-content:space-between; align-items:center; gap:var(--s2); font-size:var(--t-label); color:var(--dim); } .ft .fth > span:first-child { display:flex; gap:6px; align-items:center; min-width:0; font-family:var(--mono); }
@@ -434,8 +433,6 @@
   #ov-sys h3 { font:600 var(--t-sub) var(--head); color:var(--dim); margin:var(--s3) 0 var(--s1); }
   #ov-sys .row { font-size:var(--t-sub); padding:2px 0; } #ov-sys .row .w { color:var(--warn); } #ov-sys .bar { height:4px; background:var(--sunk); border-radius:2px; margin:2px 0 4px; }
   #ov-sys .bar i { display:block; height:100%; background:var(--info); border-radius:2px; } #ov-sys svg { width:100%; height:34px; display:block; }
-  .ovchip { display:inline-flex; align-items:center; gap:6px; font-size:var(--t-sub); color:var(--dim); } .ovchip i { width:8px; height:8px; border-radius:50%; background:var(--faint); }
-  .ovchip i.on { background:var(--ok); animation:pulse 1.6s ease-in-out infinite; } @keyframes pulse { 50% { opacity:.35; } }
   #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; background:none; border:0; box-shadow:none; padding:0; }
   #ov-head .seg { margin-left:auto; }
   .ovl { display:grid; gap:var(--s3); align-content:start; min-width:0; }
@@ -447,9 +444,6 @@
   .ovtoday .big { font:700 var(--t-kpi)/1.1 var(--head); font-variant-numeric:tabular-nums; } .ovtoday .sub, #ov-spend .sub { font-size:var(--t-sub); color:var(--faint); }
   .sfov { font-size:var(--t-sub); color:var(--warn); margin-bottom:var(--s2); } .linkbtn { background:none; border:0; padding:0; color:var(--link); font:inherit; cursor:pointer; }
   @media (max-width:900px) { .ov { grid-template-columns:minmax(0,1fr); } }
-  .chip.bad { background:var(--badbg); color:var(--bad); } .chip.warn { background:var(--warnbg); color:var(--warn); }
-  .chip.info { background:var(--infobg); color:var(--info); } .chip.done { background:var(--purplebg); color:var(--purpletxt); }
-  .chip.dim { background:var(--sunk); color:var(--dim); } .chip.ok { background:var(--okbg); color:var(--ok); }
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
   .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
@@ -511,7 +505,7 @@
   .tmsg .av { width:36px; height:36px; flex:none; border-radius:var(--r-md); background:var(--sunk); color:var(--dim); display:flex; align-items:center; justify-content:center; }
   .tmsg img.av { background:transparent; }
   .tmsg .who { display:flex; gap:var(--s2); align-items:baseline; font-size:var(--t-label); color:var(--faint); white-space:nowrap; }
-  .tmsg .who b { white-space:nowrap; font-size:var(--t-body); color:var(--ink); } .tmsg .app { font-size:var(--t-tiny); font-weight:700; padding:0 5px; border-radius:var(--r-sm); background:var(--sunk); color:var(--dim); }
+  .tmsg .who b { white-space:nowrap; font-size:var(--t-body); color:var(--ink); }
   .tmsg .txt { overflow-wrap:anywhere; font-size:var(--t-body); }
   .md p { margin:0 0 var(--s2); } .md p:last-child, .md ul:last-child, .md ol:last-child, .md pre:last-child { margin-bottom:0; }
   .md ul, .md ol { margin:0 0 var(--s2); padding-left:22px; } .md li { margin:2px 0; } .md li.sub { margin-left:18px; }
@@ -567,7 +561,7 @@
   .belt > a:hover { background:var(--bg); } .belt.sel > a { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .belt .tk { min-width:0; display:flex; flex-direction:column; gap:2px; }
   .belt .tk .m { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:var(--t-label); color:var(--faint); }
-  .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk [data-href] { cursor:pointer; } .belt .tk [data-href]:hover { text-decoration:underline; } .belt .tk .scope { font-size:var(--t-tiny); font-weight:600; padding:0 5px; border-radius:var(--r-sm); background:var(--sunk); color:var(--dim); max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk [data-href] { cursor:pointer; } .belt .tk [data-href]:hover { text-decoration:underline; } .belt .tk .tag.sq { max-width:130px; overflow:hidden; text-overflow:ellipsis; }
   .belt .tk .t { font-size:var(--t-sub); font-weight:600; line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
   .belt .trk { position:relative; height:24px; }
   .belt .trk .base, .belt .trk .fill { position:absolute; top:11px; height:2px; left:5.55%; } .belt .trk .base { right:5.55%; background:var(--line); } .belt .trk .fill { background:var(--tone-fill); }
@@ -1037,7 +1031,7 @@ function renderOvHead() {
   const f = ovFloor(), hr = STATS?.llm?.hour_usd, llm = typeof hr === "number" && !statsNote() ? ` · LLM ${usd(hr)} in the last hour` : "";
   const live = f.tiles.filter(t => t.kind !== "free" && t.alive), np = live.filter(t => t.kind === "pipe").length, ns = live.length - np, pl = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
   const who = f.unknown || !live.length ? "" : [np && pl(np, "agent"), ns && pl(ns, "session")].filter(Boolean).join(" and ");
-  putOv("ov-head", `<span class="ovchip${f.atWork ? " live" : ""}"><i class="${f.atWork ? "on" : ""}" aria-hidden="true"></i>${f.unknown ? "?" : f.atWork} at work now${llm}</span>${who ? `<span class="ovwho">${esc(who)}</span>` : ""}<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}|${who}`);
+  putOv("ov-head", `<span class="tag run${f.atWork ? " info live" : ""}">${f.unknown ? "?" : f.atWork} at work now${llm}</span>${who ? `<span class="ovwho">${esc(who)}</span>` : ""}<div class="seg" role="group" aria-label="Range">${OV_RANGES.map(([k, l]) => `<button type="button" data-ovrange="${k}" data-focus="ovr-${k}" aria-pressed="${OV_RANGE === k}">${l}</button>`).join("")}</div>`, `${OV_RANGE}|${f.unknown ? "?" : f.atWork}|${llm}|${who}`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovrange]"); if (b && OV_RANGES.some(([k]) => k === b.dataset.ovrange)) { OV_RANGE = b.dataset.ovrange; [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"]].forEach(([f, id]) => safeRender(f, id)); loadRuns(); } });
 // Local calendar days, stepped with setDate: a 24 h step skips or repeats a day at a DST change.
@@ -1149,7 +1143,7 @@ function renderOvFloor() {
     const body = `<span class="ring" style="--p:${t.kind === "pipe" ? Math.round((t.st + 1) / 9 * 100) : 100}%" aria-hidden="true"></span><span style="min-width:0"><span class="ftk">${esc(name)}</span><div class="ftt">${esc(plainMd(t.title))}</div></span>`;
     const status = t.kind === "pipe" ? (t.fault || t.idle || stop) : t.waits ? `<span class="w">waits on ${esc(t.waits)}</span>` : "working";
     const meta = [t.kind === "pipe" ? null : t.turns != null ? `turn ${t.turns}` : null, t.time, t.cost != null ? usd(t.cost) : null].filter(Boolean).map(esc).join(" · ");
-    const head = `<div class="fth"><span>${esc(t.slot || (t.kind === "pipe" ? "" : t.kind === "routine" ? "Routine" : "Slack"))}${t.team ? `<span class="ovpill">${esc(t.team)}</span>` : ""}</span></div>`;
+    const head = `<div class="fth"><span>${esc(t.slot || (t.kind === "pipe" ? "" : t.kind === "routine" ? "Routine" : "Slack"))}${t.team ? `<span class="tag">${esc(t.team)}</span>` : ""}</span></div>`;
     return `<div class="ft ${t.fault ? "bad" : t.alive ? "live" : ""}">${head}${t.href ? `<a href="${esc(t.href)}" data-focus="ft-${esc(t.key)}" aria-label="${esc(label)}">${body}</a>` : `<div class="ftb">${body}</div>`}
       <div class="ftm">${t.kind === "pipe" ? esc(status) : status}${meta ? ` · ${meta}` : ""}</div>${t.out ? `<div class="ftl" title="${esc(plainMd(t.out))}">${esc(plainMd(t.out))}</div>` : ""}</div>`;
   };
@@ -1337,7 +1331,7 @@ function renderOvTeams() {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
     const cap = b?.month_cap, bud = `<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? `<span class="ovbar"><i class="${b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / cap))}%"></i></span>` : ""}`;
-    const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="ovpill ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
+    const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="tag ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
   };
   putOv("ov-teams", `<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${[note, tnote].filter(Boolean).map(t => `<div class="ovknote">${esc(t)}</div>`).join("")}
@@ -1362,9 +1356,9 @@ const RUN_SRC = { pipeline: ["var(--info)", "M4 12l5 5L20 6", "pipeline run"], s
 const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 function runBadge(r) {
   if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
-    return PR_URL_RE.test(r.pr_url ?? "") ? `<a class="ovpill ${m ? "ok" : "info"}" href="${esc(r.pr_url)}" target="_blank" rel="noreferrer">${txt}</a>` : `<span class="ovpill ${m ? "ok" : "info"}">${txt}</span>`; }
+    return PR_URL_RE.test(r.pr_url ?? "") ? `<a class="tag ${m ? "ok" : "info"}" href="${esc(r.pr_url)}" target="_blank" rel="noreferrer">${txt}</a>` : `<span class="tag ${m ? "ok" : "info"}">${txt}</span>`; }
   const [c, t] = { no_pr: ["", "no change"], failed: ["bad", "failed"], answered: ["ok", "answered"], running: ["info", "running"], done: ["", "done"] }[r.outcome] ?? ["", String(r.outcome ?? "unknown")];
-  return `<span class="ovpill ${c}">${esc(t)}</span>`;
+  return `<span class="tag ${c}">${esc(t)}</span>`;
 }
 function renderOvRuns() {
   if (RUNS_ERR) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Recent runs unavailable: ${esc(RUNS_ERR)}. The next poll tries again.</div>`);
@@ -1380,7 +1374,7 @@ function renderOvRuns() {
     const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
     return `<div class="ovrun" data-run="${esc(r.key)}"><time datetime="${esc(r.at)}">${esc(when)}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${esc(kind)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
       <span class="t">${key}${esc(plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : "")))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
-      <span class="d">${r.team ? `<span class="ovpill">${esc(r.team)}</span>` : ""}<span>${esc(r.kind || kind)}</span></span></div>`;
+      <span class="d">${r.team ? `<span class="tag">${esc(r.team)}</span>` : ""}<span>${esc(r.kind || kind)}</span></span></div>`;
   };
   putOv("ov-runs", `<h2>Recent runs<span class="note">${esc(sum)}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${note ? `<div class="ovknote">${esc(note)}</div>` : ""}${RUNS.length ? RUNS.map(row).join("") : `<div class="emptybox">No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.</div>`}`,
     RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(",") + note + sum);
@@ -1705,13 +1699,13 @@ function threadHtml(sel) {
         return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
           : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("");
       const what = m.files.every(n => /\.(mp4|webm)$/i.test(n)) ? "video" : m.files.some(n => /\.(mp4|webm)$/i.test(n)) ? "screenshots and videos" : "screenshot";
-      return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b><span class="app">APP</span>shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
+      return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b><span class="tag sq">APP</span>shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
     }
     const raw = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, id = `${m.key}:${m.at}`;
     const long = raw.length > 700 || raw.split("\n").length > 12, open = OPEN_MSG.has(id);
     const txt = mdHtml(raw), more = long ? `<button class="more" data-more="${esc(id)}">${open ? "Show less" : "Show more"}</button>` : "";
     if (m.role === "action") return out + `<div class="tact">${esc(raw)}</div>`;
-    if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="app">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
+    if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="tag sq">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
     const face = m.image ? `<img class="av" src="${esc(m.image)}" alt="" referrerpolicy="no-referrer">` : PERSON;
     return out + `<div class="tmsg">${face}<div style="min-width:0"><div class="who"><b>${esc(m.name || "Message")}</b>${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
   }).join("");
@@ -1755,7 +1749,7 @@ function renderErrors() {
   const key = (k) => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`;
   put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) + fail +
     (rows.length === 0 ? `<div class="emptybox">No open errors.</div>` : `<div class="errs">${rows.map(e => `<div class="err" id="err-${esc(e.sig)}">
-      <span class="chip ${chip[e.status] ?? "dim"}">${esc(e.status)}</span>
+      <span class="tag ${chip[e.status] ?? "dim"}">${esc(e.status)}</span>
       <div class="body"><div class="m">${esc(e.message)}</div>
         <div class="meta"><span class="mono">${esc(e.sig)}</span> · ${esc(e.source)}/${esc(e.kind)} · ${esc(e.where)} · ×${e.count} · last ${ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))}
         ${e.keys?.length ? ` · ${e.keys.map(key).join(" ")}` : ""}${e.log ? ` · <span class="mono">${esc(e.log)}</span>` : ""}
@@ -1779,7 +1773,7 @@ function renderLessons() {
   const chip = { pending: "warn", approved: "ok", rejected: "dim" };
   put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") + fail +
     (rows.length === 0 ? `<div class="emptybox">No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.</div>` : `<div class="errs">${rows.map(l => `<div class="err" data-lesson="${esc(l.id)}">
-      <span class="chip ${chip[l.status] ?? "dim"}">${esc(l.status)}</span>
+      <span class="tag ${chip[l.status] ?? "dim"}">${esc(l.status)}</span>
       <div class="body" style="flex:1">${l.status === "pending" ? `<textarea rows="2" maxlength="300" aria-label="Lesson text">${esc(l.text)}</textarea>` : `<div class="m">${esc(l.text)}</div>`}
         <div class="meta">${l.why ? `why: ${esc(l.why)} · ` : ""}<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a> · ${esc((l.at || "").slice(0, 10))}${l.decided_at ? ` · ${esc(l.status)} ${esc(l.decided_at.slice(0, 10))}` : ""}</div>
         <div class="acts">${l.status !== "approved" ? `<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? `<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
@@ -3009,7 +3003,7 @@ function beltRow(r) {
   const nodes = LANE_ST.map((_, j) => `<span class="n${j < r.st ? " done" : j === r.st ? ` cur${live ? " live" : ""}` : ""}"></span>`).join("");
   const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds)), open = TAB === "belts" && t.key === SEL.pipeline;
   return `<li class="belt ${r.tone}${open ? " sel" : ""}" data-belt="${esc(t.key)}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${open}" aria-controls="bd-${esc(t.key)}">
-    <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${esc(t.key)}</span>${t.pr ? `<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="scope">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
+    <span class="tk"><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${esc(t.key)}</span>${t.pr ? `<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${esc(t.pr)}</span>` : ""}${title.tag ? `<span class="tag sq">${esc(title.tag)}</span>` : ""}</span><span class="t" title="${esc(t.summary || "")}">${esc(title.text)}</span></span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
     <span class="st"><span class="l1" title="${esc(r.l1)}">${esc(r.l1)}</span><span class="l2" title="${esc(r.l2 ?? "")}">${esc(r.l2 ?? "")}</span></span>
     <span class="age${r.age >= 7 ? " old" : ""}">${esc(age)}</span></a>${open ? beltDetails(r) : ""}</li>`;
@@ -3354,10 +3348,10 @@ function sbBadge() {
 }
 // The chip: the floor header's words; '? in use' on a failed or stale feed, whatever the snapshot says.
 function renderSbHead() {
-  if (!AGENTS) return put("sb-head", `<span class="ovchip">Loading…</span>`);
+  if (!AGENTS) return put("sb-head", `<span class="tag">Loading…</span>`);
   const f = floorRows(), bad = f.stale || f.unknown, n = bad ? 0 : f.rows.filter(t => t.kind !== "free").length;
   const txt = bad ? "? in use" : n ? floorHead(f) : "No sandbox in use";
-  put("sb-head", `<span class="ovchip${n ? " live" : ""}"><i class="${n ? "on" : ""}" aria-hidden="true"></i>${esc(txt)}</span>`);
+  put("sb-head", `<span class="tag run${n ? " info live" : ""}">${esc(txt)}</span>`);
 }
 function renderSbList() {
   if (!AGENTS) return put("sb-list", `<div class="emptybox">Loading…</div>`);

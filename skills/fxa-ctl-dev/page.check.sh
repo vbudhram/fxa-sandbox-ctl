@@ -227,7 +227,7 @@ ck "floor: stops from the belts, the header, the chip, the routine tile for a no
   const c = ft("FXA-3").classList.contains("bad") && /stalled/.test(ft("FXA-3").textContent) && /4 free: fxa-auto-4, 5, 6, 7/.test(document.querySelector("#ov-floor .ovfree").textContent) && !document.querySelector("#ov-floor .ft.free");
   const s1 = ft("agent-abc123"), r = ft("scheduled run");
   const d = /turn 8/.test(s1.textContent) && s1.querySelector("a").getAttribute("href") === "#sessions/live/agent-abc123" && !r.querySelector("a") && !/Nightly|SECRET/.test(document.getElementById("ov-floor").innerHTML) && /waits on its owner/.test(r.textContent) && !/U2/.test(r.textContent);
-  const e = document.querySelector(".ovchip").textContent.startsWith("3 at work now");
+  const e = document.querySelector("#ov-head .tag.run").textContent.startsWith("3 at work now");
   TEAM_ADMIN = { admin: true }; render(); const f = /plus 1 Slack session and 1 scheduled run/.test(document.querySelector("#ov-floor h2 .note").textContent);
   return [a, b, c, d, e, f].join("|")')"
 ck "floor: bad keys get no link, the last output line shows escaped and outside the link, focus and its name survive a poll, an unknown feed is ?" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$FL"'
@@ -236,7 +236,7 @@ ck "floor: bad keys get no link, the last output line shows escaped and outside 
   const a = !!ft("x\"><b>") && !ft("x\"><b>").querySelector("a") && !document.querySelector("#ov-floor b") && !/javascript:/.test([...document.querySelectorAll("#ov-floor a")].map(x => x.getAttribute("href")).join(" ")) && /Bearer fxm_<masked>/.test(ft("FXA-1").querySelector(".ftl").textContent) && !document.querySelector("#ov-floor img") && !ft("FXA-1").querySelector("a").contains(ft("FXA-1").querySelector(".ftl"));
   const l = () => ft("FXA-1").querySelector("a"); l().focus(); const n0 = l(); AGENTS.runners[0].agent.cost_so_far = 9; render(); const b = document.activeElement === n0 && n0.getAttribute("aria-label") === "FXA-1, Stop 3 of 9, Agent";
   AGENTS.sessions.push({ key: "agent-new001", state: "active", agent_alive: true, request: "y" }); render(); const c = document.activeElement?.dataset.focus === "ft-FXA-1" && !!ft("agent-new001");
-  STATE.agents_error = "agents failed"; render(); const d = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed could not be read/.test(document.getElementById("ov-floor").textContent) && !document.querySelector("#ov-floor .ft.free");
+  STATE.agents_error = "agents failed"; render(); const d = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /Sandboxes unknown: the agents feed could not be read/.test(document.getElementById("ov-floor").textContent) && !document.querySelector("#ov-floor .ft.free");
   return [a, b, c, d].join("|")')"
 ck "floor: a throwing card leaves the others, and Running now is gone" "true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
   const f = renderOvFloor; renderOvFloor = () => { throw new Error("boom"); }; LAST["ov-floor"] = ""; render(); renderOvFloor = f;
@@ -247,7 +247,7 @@ ck "floor: held and unknown slots, a failed run and an exited agent, the chip's 
   AGENTS.free_slots = null; render(); const b = /slots unknown: fxa-auto-4, 5, 6, 7/.test(document.getElementById("ov-floor").textContent) && !/\d free:/.test(document.getElementById("ov-floor").textContent);
   AGENTS.free_slots = ["fxa-auto-4", "fxa-auto-5", "fxa-auto-6", "fxa-auto-7"]; AGENTS.runners[1].stage = "error"; AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: false, handoff: false }; render();
   const c = /run failed/.test(ft("FXA-2").textContent) && ft("FXA-2").classList.contains("bad") && /agent exited/.test(ft("FXA-1").textContent);
-  STATS = { rows: [], prs: [], llm: { hour_usd: 0.42 } }; STATS_ERR = null; render(); const d = /at work now · LLM \$0\.42 in the last hour/.test(document.querySelector(".ovchip").textContent);
+  STATS = { rows: [], prs: [], llm: { hour_usd: 0.42 } }; STATS_ERR = null; render(); const d = /at work now · LLM \$0\.42 in the last hour/.test(document.querySelector("#ov-head .tag.run").textContent);
   AGENTS.runners[0] = { ...AGENTS.runners[0], agent_alive: true, stage: "watching" }; AGENTS.runners[1].stage = "watching"; render();
   ft("FXA-1").querySelector("a").focus(); AGENTS.runners[1].stage = "stalled"; render();
   const e = ft("FXA-2").classList.contains("bad") && /\(2 stalled\)/.test(document.querySelector("#ov-floor h2 .note").textContent) && document.activeElement?.dataset.focus === "ft-FXA-1";
@@ -317,7 +317,7 @@ ck "review 1: the Cost card opens Stats PRs on 7 days with the same figure; a Ji
   location.hash = "#overview"; await w(); SNAP.queue = { fetch_failed: true, ready: [], skipped: [] }; render();
   const b = /ready tickets unknown, Jira fetch failed/.test(document.getElementById("ov-sys").innerText) && !/0 tickets are ready/.test(document.getElementById("ov-sys").innerText);
   STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
-  const c = /^\? at work now/.test(document.querySelector(".ovchip").textContent) && /Sandboxes unknown: the agents feed is 20 min old/.test(document.getElementById("ov-floor").textContent) && /\?/.test(document.querySelector("#ov-needs .big").textContent);
+  const c = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /Sandboxes unknown: the agents feed is 20 min old/.test(document.getElementById("ov-floor").textContent) && /\?/.test(document.querySelector("#ov-needs .big").textContent);
   return [a, b, c].join("|")')"
 ck "review 2: 'Merged, 7 days' on Overview equals the Stats PRs Merged card it opens, for a PR opened 10 days ago" "2|2" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
@@ -354,10 +354,10 @@ ck "O6 Running now: busy tiles only, the free slots on one line, and an empty fl
   AGENTS.runners = []; AGENTS.sessions = []; AGENTS.pool = AGENTS.pool.map(x => ({ ...x, agent: null, busy: false })); render();
   return [a, b, /^Nothing runs now · the last run ended .+ago · next pass in \d+ min$/.test(document.querySelector("#ov-floor .emptybox").textContent)].join("|")')"
 ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged from pr_state, today's counts, escaped" "PR #312|running|done|PR #301 merged|answered|no change|failed|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .ovpill")].map(e => e.textContent);
-  const a = document.querySelector("#ov-runs a.ovpill[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs h2").textContent);
+  const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .tag")].map(e => e.textContent);
+  const a = document.querySelector("#ov-runs a.tag[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs h2").textContent);
   RUNS = [{ at: new Date().toISOString(), src: "pipeline", key: "x\"><img src=x>", title: "<img src=x>", team: "<b>t</b>", outcome: "pr", pr_url: "javascript:alert(1)", pr_number: 5 }]; renderOvRuns();
-  const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.ovpill") && /PR #5/.test(document.getElementById("ov-runs").textContent);
+  const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.tag") && /PR #5/.test(document.getElementById("ov-runs").textContent);
   return [...bs, a, b].join("|")')"
 ck "O6 review: the KPI tiles keep their order, Spend then Today then the rest, when a tile is not a link" "ov-spend-k|ov-today|ov-merged" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const t = [...document.querySelectorAll("#ov-mini > .ovk, #ov-today")].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left);
