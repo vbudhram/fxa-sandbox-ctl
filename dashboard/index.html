@@ -2003,15 +2003,24 @@ function allTeamsHtml() {
     ${card(table(["Team", "Status", "Active now", "Last 7 days", "Cost this month, of budget", "Open errors", "Last test"], ts.map(row)), { cls: "tcard tscroll" })}
     ${TEAM_ADMIN?.admin ? html`<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${TEAM_ADMIN.user}).</span></div>` : ""}</div>`;
 }
+// Where the team's agents run and what each runner has baked in (lib/vm-firecracker.sh _fc_owns, packer/).
+const FIREFOX_READ = "Firefox: read; a change comes back as a diff, never a push";
+function teamRunsOn(t) {
+  if (t.android) return kvRow("Every runner", `the fxa-dev-android image on GCE (nested KVM): FxA, Firefox with an artifact build, Fenix, an emulator and Nightly. ${FIREFOX_READ}`);
+  return html`${kvRow("Slack sessions", `the Firecracker snapshot, with the FxA stack running and Firefox at ~/firefox (an artifact build). On GCE (the fxa-dev image) when the snapshot host cannot start. ${FIREFOX_READ}`)}
+    ${kvRow("Pipeline runs, with a Jira queue", "the fxa-dev image on GCE: FxA, no Firefox (the agent makes a sparse clone). A ticket that asks for Android gets the fxa-dev-android image.")}`;
+}
 // The Settings sections: what the team gets, each with its config key in gray, then the record editor.
 function teamSettingsHtml(t) {
-  const conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
+  const rec = !!t.access?.record, conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
+  const key = (field, conf_keys) => rec ? `team record: ${field}` : `${conf} ${conf_keys}`;
   const h = (title, key) => html`<h3>${title}<span class="tkey">${key}</span></h3>`;
   const req = (t.issues ?? []).some(i => i.text === "nobody can start it") || (t.access?.record && t.access.status !== "active");
   return html`<div class="tcard card${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
-    ${card(html`${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
-      ${kvRow(html`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
-    ${card(html`${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
+    ${card(html`${h("Repos", key("repos", t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"))}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
+      ${kvRow(html`Defaults <span class="mono">${rec ? "repos[].default" : "PIPE_STACK_DEFAULT"}</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
+    ${card(html`${h("Runs on", key("runner.android", "PIPE_ANDROID"))}${teamRunsOn(t)}`, { cls: "tcard" })}
+    ${card(html`${h("Tools and mode", key("mcp, pr.open", "PIPE_MCP, PIPE_PR_OPEN"))}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
     <div class="tcard card" id="t-record">${TACT === t.profile && TED?.name === t.profile ? html`<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
 }
 // A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.

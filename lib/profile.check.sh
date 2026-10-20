@@ -142,6 +142,7 @@ check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls";
 check "a repo under another installation counts as installed (asked per repo, not from one token's list)" '"mozilla/fxa:work:true"' \
   "$(rm -f "$PIPE_STATE_DIR"/app-repos.*.txt; PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0] | "\(.slug):\(.role):\(.write)"')"
 curl() { echo 500; }; rm -f "$PIPE_STATE_DIR"/app-repos.*.txt
+check "an Android team says so; another team does not" "true|false" "$(PIPE_ANDROID=1 PIPE_PROFILE=a PIPE_REPO_SLUG=mozilla/fxa pipeline_profile_json | jq -c .android)|$(PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa pipeline_profile_json | jq -c .android)"
 check "a profile's PIPE_MCP replaces the bot's list" "github,jira" "$(PIPE_MCP=github,jira pipeline_mcp jira,slack)"
 check "an empty PIPE_MCP means none" "" "$(PIPE_MCP= pipeline_mcp jira,slack)"
 check "no PIPE_MCP: the bot's list" "jira,slack" "$(unset PIPE_MCP; pipeline_mcp jira,slack)"
