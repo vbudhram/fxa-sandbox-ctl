@@ -2005,7 +2005,7 @@ function allTeamsHtml() {
       <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
       <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
   return `<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
-    ${TEAMS?.error ? `<p class="unknown">last refresh failed: ${esc(TEAMS.error)}; showing data from ${ago(Math.round(TEAMS.age_seconds))} ago</p>` : ""}
+    ${TEAMS?.error ? `<p class="unknown">last refresh failed: ${esc(TEAMS.error)}; showing data from ${ago(Math.round(TEAMS.age_seconds))}</p>` : ""}
     ${(TEAMS?.issues ?? []).map(i => `<div class="alert warn" style="margin-bottom:var(--s2)"><span class="mono">${esc(i.key)}</span><span class="what">${esc(i.text)}</span></div>`).join("")}
     <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
       ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
