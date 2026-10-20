@@ -10,8 +10,10 @@ put() { printf '%s' "$2" > "$1.new" && mv "$1.new" "$1"; }
 umask 077
 # A secret that may not exist: NOT_FOUND reads as empty, and any other failed read stops the run before a write.
 # The name ends in get: vm.sh status finds the secrets by 'get fxa-'.
-opt_get() { local v; if v="$(get "$1" 2>"$C/.opt-err")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$C/.opt-err"; then :
-  else echo "fxa-secrets: could not read $1 ($(head -1 "$C/.opt-err")); no file changed" >&2; exit 1; fi; }
+# The error text goes to a root-owned temp file: $C belongs to fxa, so a link planted there would aim root's write.
+E="$(mktemp)"; trap 'rm -f "$E"' EXIT
+opt_get() { local v; if v="$(get "$1" 2>"$E")"; then printf '%s' "$v"; elif grep -q NOT_FOUND "$E"; then :
+  else echo "fxa-secrets: could not read $1 ($(head -1 "$E")); no file changed" >&2; exit 1; fi; }
 pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts
 # Runners reach Claude only through the LLM proxy, which sends an API key: a setup-token is no use here.
 if [ -d "$W/fxa-sandbox-ctl" ]; then k="$(need fxa-anthropic-api-key)"; cl="ANTHROPIC_API_KEY=$k"; fi
@@ -27,7 +29,6 @@ j="$(opt_get fxa-jira-token)"
 e="$(opt_get fxa-jira-email)"
 m="$(opt_get fxa-agent-memory-key)"
 h="$(opt_get fxa-dashboard-hmac)"
-rm -f "$C/.opt-err"
 put "$C/github-app.pem" "$pem
 "
 mkdir -p "$H/.circleci"; put "$H/.circleci/cli.yml" "token: $ci
