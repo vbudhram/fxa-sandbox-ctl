@@ -8,12 +8,11 @@
 #   devslot.sh run <profile> - < script.sh    the same, with a local script
 #   devslot.sh root <profile> - < boot.sh     as root, as the controller runs a profile's boot.sh
 #   devslot.sh list
-# FXA_FC_HOST: the Firecracker host's address (required).
+# FXA_FC_HOST: the Firecracker host's address; unset, the manager's .env gives it.
 set -euo pipefail
 H="$(cd "$(dirname "$0")/../fxa-manager" && pwd)/vm.sh"
-: "${FXA_FC_HOST:?set FXA_FC_HOST to the Firecracker host address}"
 # vm.sh run drops the remote stderr, so it comes back on stdout.
-ctl() { printf 'FXA_FC_HOST=%q ./fxa-sandbox-ctl --backend gce devslot%s 2>&1\n' "$FXA_FC_HOST" "$(printf ' %q' "$@")"; }
+ctl() { printf '%s./fxa-sandbox-ctl --backend gce devslot%s 2>&1\n' "${FXA_FC_HOST:+FXA_FC_HOST=$(printf %q "$FXA_FC_HOST") }" "$(printf ' %q' "$@")"; }
 sub="${1:-}"; shift || true
 case "$sub" in
   up|down|reset|list) ctl "$sub" "$@" | bash "$H" run - ;;

@@ -112,9 +112,10 @@ to run with `!` instead of trying it first:
 |---|---|
 | A runner prompt, a subagent, a skill | `skills/fxa-ctl-dev/agent-try.sh "<request>"`: on the laptop, about 20 s; no stack |
 | Anything a runner does | `fxa-sandbox-ctl session try --prompt "<request>"` on the manager: a real runner, no Slack |
-| A profile's guest scripts (provision, boot, ready) | `FXA_FC_HOST=<host> skills/fxa-ctl-dev/devslot.sh up <profile>`, then `sync <profile> <guest dir>=<local dir>`, `run <profile> - < script.sh`, `reset`, `down`: a warm Firecracker slot. About 7 s for each run or reset, 17 s to sync 24 MB. The host stops an unused dev slot after 30 min |
+| A profile's guest scripts (provision, boot, ready) | `skills/fxa-ctl-dev/devslot.sh up <profile>` (the manager's `.env` gives the host), then `sync <profile> <guest dir>=<local dir>`, `run <profile> - < script.sh`, `reset`, `down`: a warm Firecracker slot. About 7 s for each run or reset, 17 s to sync 24 MB. The host stops an unused dev slot after 30 min |
 | A dashboard view (focus, routes, layout) | `skills/fxa-ctl-dev/page.sh '#teams/example' --probe '<async js>'` or `--shot out.png`: headless Chrome, fetch stubbed from `page-fixture.json` (or `--fixture`), about 3 s. Blur before a route change in a focus probe, or the focus can stay from the last route |
 | The bot, or the whole path from Slack | the dev bot, below |
+| A new team, or a team's repos or image | the dev bot: `!team <name>` in a new thread. Read the start card: it must list every repo the person named. Then confirm that the runner uses the team's image (the card does not show it). Do this before you say the team is done |
 
 The dev bot is the app `fxa-agent-dev` in a private test channel. `vm.sh dev` copies
 the working trees of both repos (uncommitted changes too) to `~fxa/dev` on the
