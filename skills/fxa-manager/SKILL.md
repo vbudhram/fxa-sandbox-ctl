@@ -60,7 +60,8 @@ Runners are reached on the private network (`FXA_GCE_SSH_DIRECT=1`), not through
 Run gateway, behind IAP; `DASHBOARD_USERS` on the service lists who may see
 it). `bash infra/gce/gateway.sh plan|deploy|users <emails>` deploys it and its :8787
 firewall rule; keep the users in the controller .env as `FXA_DASHBOARD_USERS`.
-`TEAM_ADMINS` in that .env names who may change teams there. Desktops are at `/d/<session>` on the same host. `/w/<channel>:<thread ts>`
+`TEAM_ADMINS` in that .env names who may change teams there. Set both in `~/.config/fxa/ctl.env.base`
+on the manager: fxa-secrets rebuilds the .env from it, so an edit to the .env alone is lost. Desktops are at `/d/<session>` on the same host. `/w/<channel>:<thread ts>`
 shows the newest session's output for a Slack thread, read-only, to anyone IAP
 admits (`!watch` gives the link). The gateway reaches the
 VM at `MANAGER_URL=http://10.42.2.2:8787`; if the VM is rebuilt and its private
