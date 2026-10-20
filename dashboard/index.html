@@ -1437,9 +1437,9 @@ function ownerName(s) {
 }
 // A routine's run: its name and team, linked to the team's Routines group (D31).
 const sessRoutine = s => s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
-const sessRoutineLink = s => s.routine_run ? `<a href="#teams/routines/${esc(s.profile || "fxa")}">${esc(sessRoutine(s))}</a>` : "";
+const sessRoutineLink = s => s.routine_run ? html`<a href="#teams/routines/${s.profile || "fxa"}">${sessRoutine(s)}</a>` : "";
 const sessTabOf = s => s.state === "paused" ? "paused" : LIVE_SESSION.includes(s.state) ? "live" : "stopped";
-const sessLink = (s, label) => s ? `<a class="key" href="#sessions/${sessTabOf(s)}/${esc(s.key)}">${esc(label)}</a>` : `<span class="key">${esc(label)}</span>`;
+const sessLink = (s, label) => s ? html`<a class="key" href="#sessions/${sessTabOf(s)}/${s.key}">${label}</a>` : html`<span class="key">${label}</span>`;
 // The list's day groups, from a session's start (seconds).
 function sessDay(c) {
   const d = new Date().setHours(0, 0, 0, 0) / 1000 - Number(c || 0);
@@ -1488,20 +1488,19 @@ function threadUrl(th) {
   return h ? `https://${h}/archives/${c}/p${ts.replace(".", "")}` : "";
 }
 function renderAnswers() {
-  if (!STATS) { loadStats(); return put("s-sess", `<div class="emptybox">Loading the quick answers…</div>`); }
+  if (!STATS) { loadStats(); return put("s-sess", String(emptybox("Loading the quick answers…"))); }
   const rows = answerRows();
   // A row's button keeps the focus across each repaint (a poll, a usage read), so a keyboard user can open and close it.
   const kf = document.activeElement?.dataset?.ansBtn;
   setTimeout(() => kf && document.querySelector(`button[data-ans-btn="${CSS.escape(kf)}"]`)?.focus());
-  const tag = { answered: "ok", upgraded: "info", failed: "bad" };
+  const tone = { answered: "ok", upgraded: "info", failed: "bad" };
   const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  put("s-sess", `<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
-    ${rows.length ? `<div style="overflow-x:auto"><table class="table figures dense answers"><thead><tr><th>When</th><th>Answer</th><th>Outcome</th><th>Time</th><th>Turns</th><th>Cost</th><th>Thread</th></tr></thead><tbody>
-    ${rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
-      return `<tr class="ansrow" data-ans="${esc(r.key)}" style="cursor:pointer"><td>${esc(when(r.at))}</td><td class="mono"><button type="button" class="linkbtn toggle" data-ans-btn="${esc(r.key)}" aria-expanded="${open}" aria-label="Cost of ${esc(r.key)}">${esc(r.key)}</button></td>
-        <td><span class="tag ${tag[r.kind] ?? ""}">${esc(r.kind)}</span></td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
-        <td>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? `<span class="mono">${esc(r.thread)}</span>` : "—"}</td></tr>
-        ${open ? `<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }).join("")}</tbody></table></div>` : `<div class="emptybox">No quick answer in this range.</div>`}`);
+  put("s-sess", String(html`<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
+    ${rows.length ? html`<div style="overflow-x:auto">${table(["When", "Answer", "Outcome", "Time", "Turns", "Cost", "Thread"], rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
+      return html`<tr class="ansrow" data-ans="${r.key}" style="cursor:pointer"><td>${when(r.at)}</td><td class="mono"><button type="button" class="linkbtn toggle" data-ans-btn="${r.key}" aria-expanded="${String(open)}" aria-label="Cost of ${r.key}">${r.key}</button></td>
+        <td>${tag(r.kind, tone[r.kind])}</td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
+        <td>${u ? html`<a href="${u}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? html`<span class="mono">${r.thread}</span>` : "—"}</td></tr>
+        ${open ? html`<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }), { figures: true, dense: true, cls: "answers" })}</div>` : emptybox("No quick answer in this range.")}`));
 }
 document.addEventListener("click", e => {
   const tr = e.target.closest?.("tr[data-ans]"); if (!tr || e.target.closest("a")) return;
@@ -1523,50 +1522,50 @@ function renderSess() {
   const isLive = sel && live(sel), showTerm = isLive && SX.term;
   // The frame changes only with the selection or a toggle, so the thread and
   // terminal inside it keep their DOM, scroll and loaded images between polls.
-  const frame = `<div class="sx${SX.list ? " withlist" : ""}${showTerm ? " withterm" : ""}">
+  const frame = String(html`<div class="${cls("sx", { withlist: SX.list, withterm: showTerm })}">
       <div class="sxbar" id="sx-bar"></div>
-      <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : " hidden"}></div>
+      <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : html` hidden`}></div>
       <div class="sxbody">
-        ${SX.list ? `<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
-        <div class="convo">${sel ? `<div class="sxout card flat sm" id="sx-outcome"></div><div class="thread" data-thread="${esc(sel.key)}" id="sx-thread"></div>` : `<div class="emptybox">No ${SESS_TAB} session.${SESS_TAB === "stopped" ? "" : ` <a href="#sessions/stopped" style="color:var(--link)">See stopped sessions</a>`}</div>`}</div>
-        ${showTerm ? `<aside class="tty" id="tty-${esc(sel.key)}" aria-label="Agent output">
-          <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${esc(sel.key)}</span><b class="state"></b></div>
+        ${SX.list ? html`<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
+        <div class="convo">${sel ? html`<div class="sxout card flat sm" id="sx-outcome"></div><div class="thread" data-thread="${sel.key}" id="sx-thread"></div>` : emptybox(html`No ${SESS_TAB} session.${SESS_TAB === "stopped" ? "" : html` <a href="#sessions/stopped" style="color:var(--link)">See stopped sessions</a>`}`)}</div>
+        ${showTerm ? html`<aside class="tty" id="tty-${sel.key}" aria-label="Agent output">
+          <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${sel.key}</span><b class="state"></b></div>
           <div class="screen" tabindex="0"></div></aside>` : ""}
-      </div></div>`;
+      </div></div>`);
   if (put("s-sess", frame)) { ["sx-bar", "sx-details", "sx-list", "sx-thread"].forEach(id => delete LAST[id]); if (sel) delete TTY_LAST[sel.key]; }
-  const tgl = (k, label, on) => `<button class="tgl" data-sx="${k}" aria-pressed="${on}">${label}</button>`;
+  const tgl = (k, label, on) => html`<button class="tgl" data-sx="${k}" aria-pressed="${String(on)}">${label}</button>`;
   if (!sel) { put("sx-bar", ""); }
   else {
     const a = sel.agent || {}, rt = sel.runtime || "claude", now = Date.now() / 1000;
     const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
-    const [st, cls] = sessStatus(sel), cost = sessUsd(sel), tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
+    const [st, tone] = sessStatus(sel), cost = sessUsd(sel), tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
     const pauseIn = sel.state === "active" && !sel.agent_alive && sel.turn_open !== "1" && sel.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - sel.last_activity))) : null;
     const endsIn = isLive && sel.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - sel.booted_at))) : null;
     const repo = teamRepo();
-    const branch = prHref(sel.pr_url) ? `<a href="${esc(sel.pr_url)}" target="_blank" rel="noopener">${esc(sel.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : sel.pr_url ? esc(sel.pr_url)
-      : sel.pushed_branch ? (repo ? `<a href="https://github.com/${esc(repo)}/tree/${esc(sel.pushed_branch)}" target="_blank" rel="noopener">${esc(sel.pushed_branch)} ↗</a>` : esc(sel.pushed_branch)) : "";
-    put("sx-bar", `<span class="dot ${cls}"></span><span class="key">${esc(sel.key)}</span>
-      <span class="sxt" title="${esc(convTitle(sel))}">${esc(convTitle(sel))}</span>
-      <span class="sxm">${esc(st)}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
+    const branch = prHref(sel.pr_url) ? html`<a href="${sel.pr_url}" target="_blank" rel="noopener">${sel.pr_url.replace(/.*\/pull\//, "PR #")} ↗</a>` : sel.pr_url ? sel.pr_url
+      : sel.pushed_branch ? (repo ? html`<a href="https://github.com/${repo}/tree/${sel.pushed_branch}" target="_blank" rel="noopener">${sel.pushed_branch} ↗</a>` : sel.pushed_branch) : "";
+    put("sx-bar", String(html`${dot(tone)}<span class="key">${sel.key}</span>
+      <span class="sxt" title="${convTitle(sel)}">${convTitle(sel)}</span>
+      <span class="sxm">${st}${pauseIn != null && pauseIn < 600 ? ` · pauses in ${short(pauseIn)}` : ""}</span>
       <span class="sp"></span>
-      ${sel.slack_url ? `<a class="lnk" href="${esc(sel.slack_url)}" target="_blank" rel="noopener">Slack ↗</a>` : ""}${branch ? `<span class="lnk">${branch}</span>` : ""}
-      ${isLive ? tgl("term", "Terminal", SX.term) : ""}`);
-    if (SX.details) put("sx-details", [
-      ["Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`],
+      ${sel.slack_url ? html`<a class="lnk" href="${sel.slack_url}" target="_blank" rel="noopener">Slack ↗</a>` : ""}${branch ? html`<span class="lnk">${branch}</span>` : ""}
+      ${isLive ? tgl("term", "Terminal", SX.term) : ""}`));
+    if (SX.details) put("sx-details", String(html`${[
+      ["Agent", html`${rt === "codex" ? "Codex" : "Claude"}${model ? html` · <span class="mono">${model}</span>` : ""}`],
       ...(() => { const ch = chainOf(sel, AGENTS?.sessions ?? []), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), n = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
-        return [[c ? "Cost" : "Tokens", c ? usd(c) + (ch.length > 1 ? ` (${ch.length} sessions)` : "") : tok ? `${(tok / 1000).toFixed(0)}k` : "—"], ["Steer turns", esc(n)]]; })(),
+        return [[c ? "Cost" : "Tokens", c ? usd(c) + (ch.length > 1 ? ` (${ch.length} sessions)` : "") : tok ? `${(tok / 1000).toFixed(0)}k` : "—"], ["Steer turns", n]]; })(),
       ["Started", stamp(sel.created)],
-      ["Resumed from", sel.resume_from ? `<a href="#sessions/${SESS_TAB}/${esc(sel.resume_from)}">${esc(sel.resume_from)}</a>` : "—"],
+      ["Resumed from", sel.resume_from ? html`<a href="#sessions/${SESS_TAB}/${sel.resume_from}">${sel.resume_from}</a>` : "—"],
       ["Branch or PR", branch || "not pushed"],
       ...(pauseIn != null ? [["Idle pause in", short(pauseIn)]] : []),
       ...(endsIn != null ? [["Sandbox ends in", short(endsIn)]] : []),
-    ].map(([k, v]) => `<span><b>${k}</b>${v}</span>`).join(""));
-    put("sx-outcome", outcomeHtml(sel));
+    ].map(([k, v]) => html`<span><b>${k}</b>${v}</span>`)}`));
+    put("sx-outcome", String(outcomeHtml(sel)));
     HIST_OPEN.add(sel.key); if (!HIST[sel.key]) loadHist(sel.key);
     put("sx-thread", threadHtmlCached(sel));
   }
-  if (SX.list) put("sx-list", list.map(s => `<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${esc(s.key)}"><span class="k">${esc(s.key)}<span>${stamp(s.created)}</span></span>
-      <span class="r">${esc(firstLine(s.request))}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${esc(s.turns ?? 0)} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`).join("") || `<div class="empty">none</div>`);
+  if (SX.list) put("sx-list", String(list.length ? html`${list.map(s => html`<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${s.key}"><span class="k">${s.key}<span>${stamp(s.created)}</span></span>
+      <span class="r">${firstLine(s.request)}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`)}` : html`<div class="empty">none</div>`));
   if (showTerm) paintTty(sel.key, sel.agent_alive);
 }
 // What the conversation produced, at the top of the center: the PR and its state, the diff, notes and media.
@@ -1583,11 +1582,11 @@ function outcomeHtml(s) {
   const pr = convPr(s), prUrl = pr?.url, state = pr?.state, pushed = pick(x => x.pushed_branch), diff = pick(x => sessSummary(x).diff), notes = pick(x => x.finish_notes);
   const media = ch.reduce((n, x) => n + (Array.isArray(x.media) ? x.media.length : 0), 0), repo = teamRepo();
   const ro = (TEAMS?.teams ?? []).find(t => t.profile === (s.profile || "fxa"))?.read_only;
-  const result = prUrl ? `<a href="${esc(prUrl)}" target="_blank" rel="noopener">${esc(prUrl.replace(/.*github\.com\//, "").replace("/pull/", " #"))} ↗</a>${state ? ` <span class="tag ${state === "MERGED" ? "ok" : state === "OPEN" ? "info" : ""}">${esc(state.toLowerCase())}</span>` : ""}`
-    : pushed ? (repo ? `branch <a href="https://github.com/${esc(repo)}/tree/${esc(pushed)}" target="_blank" rel="noopener">${esc(pushed)} ↗</a>` : `branch ${esc(pushed)}`)
+  const result = prUrl ? html`<a href="${prUrl}" target="_blank" rel="noopener">${prUrl.replace(/.*github\.com\//, "").replace("/pull/", " #")} ↗</a>${state ? html` ${tag(state.toLowerCase(), state === "MERGED" ? "ok" : state === "OPEN" ? "info" : "")}` : ""}`
+    : pushed ? (repo ? html`branch <a href="https://github.com/${repo}/tree/${pushed}" target="_blank" rel="noopener">${pushed} ↗</a>` : `branch ${pushed}`)
     : diff ? (ro ? "diff posted in Slack (read-only team)" : "changed files, not pushed") : "no code change";
-  return `<div class="kvs"><span><b>Result</b>${result}</span>${diff ? `<span><b>Change</b>${esc(diff)}</span>` : ""}${media ? `<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
-    ${ch.length > 1 ? `<span><b>Conversation</b>${ch.length} sessions</span>` : ""}</div>${notes ? `<div class="notes">${esc(String(notes).slice(0, 600))}</div>` : ""}`;
+  return html`<div class="kvs"><span><b>Result</b>${result}</span>${diff ? html`<span><b>Change</b>${diff}</span>` : ""}${media ? html`<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
+    ${ch.length > 1 ? html`<span><b>Conversation</b>${ch.length} sessions</span>` : ""}</div>${notes ? html`<div class="notes">${String(notes).slice(0, 600)}</div>` : ""}`;
 }
 // Markdown for a whole thread is the costly part: rebuild only when it changes.
 const THREAD_CACHE = {};
@@ -1596,9 +1595,9 @@ function threadHtmlCached(sel) {
   const sig = `${Array.isArray(h) ? h.length + ":" + (h[h.length - 1]?.at ?? "") : h?.error ?? "none"}|${media}|${[...OPEN_MSG].join(",")}`;
   const c = THREAD_CACHE[sel.key];
   if (c && c.sig === sig) return c.html;
-  const html = threadHtml(sel);
-  THREAD_CACHE[sel.key] = { sig, html };
-  return html;
+  const out = String(threadHtml(sel));
+  THREAD_CACHE[sel.key] = { sig, html: out };
+  return out;
 }
 // Long messages are clipped; "Show more" opens one and it stays open.
 const OPEN_MSG = new Set();
@@ -1613,13 +1612,13 @@ const live = s => LIVE_SESSION.includes(s.state);
 const TTY_SCROLL = {}, TTY_LAST = {};
 function ttyLine(l) {
   const m = l.match(/^\[tool\] (\S+)\s*(.*)$/);
-  if (m) return m[1] === "Bash" || m[1] === "shell" ? `<span class="p">$</span> ${esc(m[2])}` : `<span class="t">${esc(m[1])}</span> ${esc(m[2])}`;
+  if (m) return m[1] === "Bash" || m[1] === "shell" ? html`<span class="p">$</span> ${m[2]}` : html`<span class="t">${m[1]}</span> ${m[2]}`;
   // Only real results get a colour; prose that mentions "failed" stays plain.
-  if (/^\s*(FAIL\b|ERROR\b|Error:|✗|✕|Tests:.*\bfailed\b)/.test(l)) return `<span class="bad">${esc(l)}</span>`;
-  if (/^\s*(PASS\b|✓|Tests:.*\bpassed\b)/.test(l)) return `<span class="ok">${esc(l)}</span>`;
-  if (/^OPTION:/.test(l)) return `<span class="opt">${esc(l)}</span>`;
-  if (/^status:/.test(l)) return `<span class="dim">${esc(l)}</span>`;
-  return esc(l);
+  if (/^\s*(FAIL\b|ERROR\b|Error:|✗|✕|Tests:.*\bfailed\b)/.test(l)) return html`<span class="bad">${l}</span>`;
+  if (/^\s*(PASS\b|✓|Tests:.*\bpassed\b)/.test(l)) return html`<span class="ok">${l}</span>`;
+  if (/^OPTION:/.test(l)) return html`<span class="opt">${l}</span>`;
+  if (/^status:/.test(l)) return html`<span class="dim">${l}</span>`;
+  return html`${l}`;
 }
 function paintTty(key, working) {
   const el = document.getElementById("tty-" + key); if (!el) return;
@@ -1629,8 +1628,8 @@ function paintTty(key, working) {
   // Append only what is new; a shifted window (the 200-line cap) repaints all.
   const prev = TTY_LAST[key] || [], grew = prev.length && lines.length >= prev.length && lines[0] === prev[0] && lines[prev.length - 1] === prev[prev.length - 1];
   if (grew && screen.querySelector(".cur")) {
-    if (lines.length > prev.length) screen.querySelector(".cur").insertAdjacentHTML("beforebegin", lines.slice(prev.length).map(l => `<div>${ttyLine(l)}</div>`).join(""));
-  } else screen.innerHTML = (lines.length ? lines.map(l => `<div>${ttyLine(l)}</div>`).join("") : `<div class="dim">waiting for output…</div>`) + `<span class="cur"></span>`;
+    if (lines.length > prev.length) screen.querySelector(".cur").insertAdjacentHTML("beforebegin", String(html`${lines.slice(prev.length).map(l => html`<div>${ttyLine(l)}</div>`)}`));
+  } else screen.innerHTML = String(html`${lines.length ? lines.map(l => html`<div>${ttyLine(l)}</div>`) : html`<div class="dim">waiting for output…</div>`}<span class="cur"></span>`);
   TTY_LAST[key] = lines.slice();
   screen.scrollTop = TTY_SCROLL[key] ?? screen.scrollHeight;
 }
@@ -1643,7 +1642,7 @@ document.addEventListener("scroll", e => {
 // code, bold, italics, headings, lists, http(s) links; tables stay monospace.
 function mdHtml(src) {
   const blocks = [];
-  let t = String(src ?? "").replace(/```[^\n]*\n([\s\S]*?)```/g, (_, c) => { blocks.push(`<pre><code>${esc(c.replace(/\n$/, ""))}</code></pre>`); return `\u0000${blocks.length - 1}\u0000`; });
+  let t = String(src ?? "").replace(/```[^\n]*\n([\s\S]*?)```/g, (_, c) => { blocks.push(String(html`<pre><code>${c.replace(/\n$/, "")}</code></pre>`)); return `\u0000${blocks.length - 1}\u0000`; });
   const inline = x => esc(x)
     .replace(/`([^`\n]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
@@ -1657,7 +1656,7 @@ function mdHtml(src) {
   const flush = () => {
     if (para.length) { out.push(`<p>${para.join("<br>")}</p>`); para = []; }
     if (list) { out.push(`<${list.tag}>${list.items.join("")}</${list.tag}>`); list = null; }
-    if (table.length) { out.push(`<pre>${esc(table.join("\n"))}</pre>`); table = []; }
+    if (table.length) { out.push(String(html`<pre>${table.join("\n")}</pre>`)); table = []; }
   };
   for (const line of t.split("\n")) {
     const blk = line.match(/^\u0000(\d+)\u0000$/), ul = line.match(/^(\s*)[-*•] (.*)$/), ol = line.match(/^(\s*)\d+[.)] (.*)$/), h = line.match(/^#{1,6} (.*)$/);
@@ -1679,9 +1678,9 @@ function mdHtml(src) {
 const PERSON = `<span class="av" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></span>`;
 function threadHtml(sel) {
   const h = HIST[sel.key];
-  if (!h) return `<div class="empty">loading…</div>`;
-  if (h.error) return `<div class="empty">${esc(h.error)}</div>`;
-  if (!h.length) return `<div class="empty">nothing recorded</div>`;
+  if (!h) return html`<div class="empty">loading…</div>`;
+  if (h.error) return html`<div class="empty">${h.error}</div>`;
+  if (!h.length) return html`<div class="empty">nothing recorded</div>`;
   const rt = sel.runtime === "codex" ? "Codex" : "Claude";
   // Screenshots and videos join the thread at the time each file was made,
   // for every session in the chain. Files in a row become one message.
@@ -1695,24 +1694,24 @@ function threadHtml(sel) {
     .reduce((acc, m) => { const p = acc[acc.length - 1];
       if (m.role === "media" && p?.role === "media" && p.key === m.key) p.files.push(...m.files); else acc.push(m); return acc; }, []);
   let last = null;
-  return items.map(m => {
-    let out = "";
-    if (m.key !== last) { out += `<div class="tsep">${last ? `Resumed as ${esc(m.key)}` : esc(m.key)} · ${stamp(m.at)}</div>`; last = m.key; }
+  return html`${items.map(m => {
+    let sep = "";
+    if (m.key !== last) { sep = html`<div class="tsep">${last ? `Resumed as ${m.key}` : m.key} · ${stamp(m.at)}</div>`; last = m.key; }
     if (m.role === "media") {
       const figs = m.files.map(n => { const u = `/api/media?key=${encodeURIComponent(m.key)}&name=${encodeURIComponent(n)}`;
-        return /\.(mp4|webm)$/i.test(n) ? `<figure><video src="${u}" controls preload="metadata"></video><figcaption>${esc(n)}</figcaption></figure>`
-          : `<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${esc(n)}" loading="lazy"></a><figcaption>${esc(n)}</figcaption></figure>`; }).join("");
+        return /\.(mp4|webm)$/i.test(n) ? html`<figure><video src="${u}" controls preload="metadata"></video><figcaption>${n}</figcaption></figure>`
+          : html`<figure><a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${n}" loading="lazy"></a><figcaption>${n}</figcaption></figure>`; });
       const what = m.files.every(n => /\.(mp4|webm)$/i.test(n)) ? "video" : m.files.some(n => /\.(mp4|webm)$/i.test(n)) ? "screenshots and videos" : "screenshot";
-      return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b><span class="tag sq">APP</span>shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
+      return html`${sep}<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0;flex:1"><div class="who"><b>FxA Agent</b>${tag("APP", "", { sq: true })}shared ${m.files.length > 1 ? `${m.files.length} ${what === "screenshot" ? "screenshots" : what === "video" ? "videos" : what}` : `a ${what}`} · ${stamp(m.at)}</div><div class="media">${figs}</div></div></div>`;
     }
-    const raw = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, id = `${m.key}:${m.at}`;
-    const long = raw.length > 700 || raw.split("\n").length > 12, open = OPEN_MSG.has(id);
-    const txt = mdHtml(raw), more = long ? `<button type="button" class="linkbtn more" data-more="${esc(id)}">${open ? "Show less" : "Show more"}</button>` : "";
-    if (m.role === "action") return out + `<div class="tact">${esc(raw)}</div>`;
-    if (m.role === "agent") return out + `<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b><span class="tag sq">APP</span>${rt} · ${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
-    const face = m.image ? `<img class="av" src="${esc(m.image)}" alt="" referrerpolicy="no-referrer">` : PERSON;
-    return out + `<div class="tmsg">${face}<div style="min-width:0"><div class="who"><b>${esc(m.name || "Message")}</b>${stamp(m.at)}</div><div class="txt md${long && !open ? " clip" : ""}">${txt}</div>${more}</div></div>`;
-  }).join("");
+    const body = m.text.length > 8000 ? m.text.slice(0, 8000) + "…" : m.text, id = `${m.key}:${m.at}`;
+    const long = body.length > 700 || body.split("\n").length > 12, open = OPEN_MSG.has(id), txtCls = cls("txt", "md", { clip: long && !open });
+    const txt = raw(mdHtml(body)), more = long ? html`<button type="button" class="linkbtn more" data-more="${id}">${open ? "Show less" : "Show more"}</button>` : "";
+    if (m.role === "action") return html`${sep}<div class="tact">${body}</div>`;
+    if (m.role === "agent") return html`${sep}<div class="tmsg agent"><img class="av" src="/icon.png" alt=""><div style="min-width:0"><div class="who"><b>FxA Agent</b>${tag("APP", "", { sq: true })}${rt} · ${stamp(m.at)}</div><div class="${txtCls}">${txt}</div>${more}</div></div>`;
+    const face = m.image ? html`<img class="av" src="${m.image}" alt="" referrerpolicy="no-referrer">` : raw(PERSON);
+    return html`${sep}<div class="tmsg">${face}<div style="min-width:0"><div class="who"><b>${m.name || "Message"}</b>${stamp(m.at)}</div><div class="${txtCls}">${txt}</div>${more}</div></div>`;
+  })}`;
 }
 
 // Stats: run-log totals, fetched on their own cadence.
@@ -1748,20 +1747,20 @@ async function loadErrors() {
   if (document.body.dataset.view === "errors") { renderErrors(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderErrors() {
-  const fail = ERRS_ERR ? `<div class="emptybox" role="alert">Could not read the errors: ${esc(ERRS_ERR)}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
-  if (!ERRS || (fail && !ERRS.length)) { put("s-errors", head("errors") + (fail || `<div class="emptybox">loading…</div>`)); return; }
+  const fail = ERRS_ERR ? html`<div class="emptybox" role="alert">Could not read the errors: ${ERRS_ERR}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
+  if (!ERRS || (fail && !ERRS.length)) { put("s-errors", head("errors") + (fail || emptybox("loading…"))); return; }
   const rows = ERRS.filter(e => ERRS_ALL || e.status !== "resolved");
   const chip = { open: "bad", reopened: "bad", resolved: "dim" };
-  const key = (k) => `<a class="mono" href="#sessions/stopped/${esc(k)}">${esc(k)}</a>`;
-  put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) + fail +
-    (rows.length === 0 ? `<div class="emptybox">No open errors.</div>` : `<div class="errs">${rows.map(e => `<div class="err" id="err-${esc(e.sig)}">
-      <span class="tag ${chip[e.status] ?? "dim"}">${esc(e.status)}</span>
-      <div class="body"><div class="m">${esc(e.message)}</div>
-        <div class="meta"><span class="mono">${esc(e.sig)}</span> · ${esc(e.source)}/${esc(e.kind)} · ${esc(e.where)} · ×${e.count} · last ${ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))}
-        ${e.keys?.length ? ` · ${e.keys.map(key).join(" ")}` : ""}${e.log ? ` · <span class="mono">${esc(e.log)}</span>` : ""}
-        ${e.resolved ? ` · resolved ${esc(e.resolved.at.slice(0, 10))}${e.resolved.note ? `: ${esc(e.resolved.note)}` : ""}` : ""}</div></div>
-    </div>`).join("")}</div>
-    <p class="empty">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`));
+  const key = (k) => html`<a class="mono" href="#sessions/stopped/${k}">${k}</a>`;
+  put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) + html`${fail}${
+    rows.length === 0 ? emptybox("No open errors.") : html`<div class="errs">${rows.map(e => html`<div class="err" id="err-${e.sig}">
+      ${tag(e.status, chip[e.status] ?? "dim")}
+      <div class="body"><div class="m">${e.message}</div>
+        <div class="meta"><span class="mono">${e.sig}</span> · ${e.source}/${e.kind} · ${e.where} · ×${e.count} · last ${ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))}
+        ${e.keys?.length ? html` · ${raw(e.keys.map(key).join(" "))}` : ""}${e.log ? html` · <span class="mono">${e.log}</span>` : ""}
+        ${e.resolved ? html` · resolved ${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}` : ""}</div></div>
+    </div>`)}</div>
+    <p class="empty">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`}`);
 }
 // Lessons: what sessions learned. None reaches a runner until it is approved here.
 let LESSONS = null, LESSONS_ALL = false, LESSONS_ERR = "";
@@ -1772,19 +1771,19 @@ async function loadLessons() {
   if (document.body.dataset.view === "lessons" && !document.activeElement?.closest?.("#s-lessons")) { renderLessons(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderLessons() {
-  const fail = LESSONS_ERR ? `<div class="emptybox" role="alert">Could not read the lessons: ${esc(LESSONS_ERR)}. Retrying.</div>` : "";
-  if (!LESSONS || (fail && !LESSONS.length)) { put("s-lessons", head("lessons") + (fail || `<div class="emptybox">loading…</div>`)); return; }
+  const fail = LESSONS_ERR ? html`<div class="emptybox" role="alert">Could not read the lessons: ${LESSONS_ERR}. Retrying.</div>` : "";
+  if (!LESSONS || (fail && !LESSONS.length)) { put("s-lessons", head("lessons") + (fail || emptybox("loading…"))); return; }
   const rows = LESSONS.filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).slice().reverse()
     .sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1));
   const chip = { pending: "warn", approved: "ok", rejected: "dim" };
-  put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") + fail +
-    (rows.length === 0 ? `<div class="emptybox">No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.</div>` : `<div class="errs">${rows.map(l => `<div class="err" data-lesson="${esc(l.id)}">
-      <span class="tag ${chip[l.status] ?? "dim"}">${esc(l.status)}</span>
-      <div class="body" style="flex:1">${l.status === "pending" ? `<textarea rows="2" maxlength="300" aria-label="Lesson text">${esc(l.text)}</textarea>` : `<div class="m">${esc(l.text)}</div>`}
-        <div class="meta">${l.why ? `why: ${esc(l.why)} · ` : ""}<a class="mono" href="#sessions/stopped/${esc(l.session)}">${esc(l.session)}</a> · ${esc((l.at || "").slice(0, 10))}${l.decided_at ? ` · ${esc(l.status)} ${esc(l.decided_at.slice(0, 10))}` : ""}</div>
-        <div class="acts">${l.status !== "approved" ? `<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? `<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
-    </div>`).join("")}</div>
-    <p class="empty">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`));
+  put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") + html`${fail}${
+    rows.length === 0 ? emptybox(`No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.`) : html`<div class="errs">${rows.map(l => html`<div class="err" data-lesson="${l.id}">
+      ${tag(l.status, chip[l.status] ?? "dim")}
+      <div class="body" style="flex:1">${l.status === "pending" ? html`<textarea rows="2" maxlength="300" aria-label="Lesson text">${l.text}</textarea>` : html`<div class="m">${l.text}</div>`}
+        <div class="meta">${l.why ? html`why: ${l.why} · ` : ""}<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a> · ${(l.at || "").slice(0, 10)}${l.decided_at ? html` · ${l.status} ${l.decided_at.slice(0, 10)}` : ""}</div>
+        <div class="acts">${l.status !== "approved" ? html`<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? html`<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
+    </div>`)}</div>
+    <p class="empty">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`}`);
 }
 document.addEventListener("click", async e => {
   const btn = e.target.closest?.("[data-lesson] button[data-act]"); if (!btn) return;
@@ -3590,17 +3589,17 @@ const USAGE = {};
 const tokn = n => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);
 const modelName = m => { const l = /\[1m\]$/.test(m || ""); return (m || "unknown").replace(/\[1m\]$/, "").replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase()) + (l ? " (1M)" : ""); };
 function usageTable(rows) {
-  if (!rows.length) return `<div class="empty">No LLM calls recorded for this run.</div>`;
+  if (!rows.length) return html`<div class="empty">No LLM calls recorded for this run.</div>`;
   const t = k => rows.reduce((x, r) => x + (r[k] || 0), 0);
-  const tr = (r, b) => `<tr${b ? ' class="tot"' : ""}><td>${b ? "<b>Total</b>" : esc(modelName(r.model))}</td><td>${r.calls}</td><td>${tokn(r.cache_read)}</td><td>${tokn(r.cache_write)}</td><td>${tokn(r.input)}</td><td>${tokn(r.output)}</td><td><b>${usd(r.usd)}</b></td></tr>`;
-  return `<table class="table figures dense"><thead><tr><th>Model</th><th>Calls</th><th title="cache reads">Cache read</th><th title="cache writes">Cache write</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
-    <tbody>${rows.map(r => tr(r)).join("")}${rows.length > 1 ? tr({ calls: t("calls"), cache_read: t("cache_read"), cache_write: t("cache_write"), input: t("input"), output: t("output"), usd: t("usd") }, true) : ""}</tbody></table>`;
+  const tr = (r, b) => html`<tr${b ? html` class="tot"` : ""}><td>${b ? html`<b>Total</b>` : modelName(r.model)}</td><td>${r.calls}</td><td>${tokn(r.cache_read)}</td><td>${tokn(r.cache_write)}</td><td>${tokn(r.input)}</td><td>${tokn(r.output)}</td><td><b>${usd(r.usd)}</b></td></tr>`;
+  return table(["Model", "Calls", html`<span title="cache reads">Cache read</span>`, html`<span title="cache writes">Cache write</span>`, "Input", "Output", "Cost"],
+    [...rows.map(r => tr(r)), rows.length > 1 ? tr({ calls: t("calls"), cache_read: t("cache_read"), cache_write: t("cache_write"), input: t("input"), output: t("output"), usd: t("usd") }, true) : ""], { figures: true, dense: true });
 }
 function usageHtml(key) {
   const u = USAGE[key];
   if (!u || (Date.now() - u.at > 30000 && !u.busy)) loadUsage(key);
-  if (u?.error && !u.rows) return `<div class="empty">Could not read the LLM calls for this run.</div>`;
-  return u?.rows ? usageTable(u.rows) : `<div class="empty">Loading…</div>`;
+  if (u?.error && !u.rows) return html`<div class="empty">Could not read the LLM calls for this run.</div>`;
+  return u?.rows ? usageTable(u.rows) : html`<div class="empty">Loading…</div>`;
 }
 async function loadUsage(key) {
   USAGE[key] = { ...(USAGE[key] ?? {}), busy: true, at: USAGE[key]?.at ?? 0 };
@@ -3614,21 +3613,21 @@ function sessionDetails(s) {
   const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
   const cost = sessUsd(s), [st] = sessStatus(s);
   const ch = chainOf(s, AGENTS?.sessions ?? []), convUsd = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), convTurns = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
-  const one = ch.length > 1 ? ` <span class="na">· this session ${cost ? usd(cost) : "—"}</span>` : "";
+  const one = ch.length > 1 ? html` <span class="na">· this session ${cost ? usd(cost) : "—"}</span>` : "";
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
   const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
   const nr = "not recorded for this session", rs = num(s.runner_s), peak = (() => { try { return JSON.parse(s.res_peak || "null"); } catch { return null; } })();
-  return `${closeBtn}
-    <div><h4>Session</h4>${kvr("State", esc(st))}${kvr("Agent", `${rt === "codex" ? "Codex" : "Claude"}${model ? ` · <span class="mono">${esc(model)}</span>` : ""}`)}${kvr(ch.length > 1 ? `Cost, ${ch.length} sessions` : "Cost", (convUsd ? usd(convUsd) : "—") + one)}
-      ${kvr("Turns", esc(convTurns) + (ch.length > 1 ? ` <span class="na">· this session ${esc(s.turns ?? 0)}</span>` : ""))}${s.routine_run ? kvr("Routine", sessRoutineLink(s)) : kvr("Owner", esc(ownerName(s) || "unknown"))}${kvr("Started", stamp(s.created))}${s.resume_from ? kvr("Resumed from", `<a href="#sessions/${SESS_TAB}/${esc(s.resume_from)}">${esc(s.resume_from)}</a>`) : ""}
-      ${pauseIn != null ? kvr("Idle pause in", short(pauseIn)) : ""}${endsIn != null ? kvr("Sandbox ends in", short(endsIn)) : ""}</div>
+  return html`${raw(closeBtn)}
+    <div><h4>Session</h4>${kvRow("State", st)}${kvRow("Agent", html`${rt === "codex" ? "Codex" : "Claude"}${model ? html` · <span class="mono">${model}</span>` : ""}`)}${kvRow(ch.length > 1 ? `Cost, ${ch.length} sessions` : "Cost", html`${convUsd ? usd(convUsd) : "—"}${one}`)}
+      ${kvRow("Turns", html`${convTurns}${ch.length > 1 ? html` <span class="na">· this session ${s.turns ?? 0}</span>` : ""}`)}${s.routine_run ? kvRow("Routine", sessRoutineLink(s)) : kvRow("Owner", ownerName(s) || "unknown")}${kvRow("Started", stamp(s.created))}${s.resume_from ? kvRow("Resumed from", html`<a href="#sessions/${SESS_TAB}/${s.resume_from}">${s.resume_from}</a>`) : ""}
+      ${pauseIn != null ? kvRow("Idle pause in", short(pauseIn)) : ""}${endsIn != null ? kvRow("Sandbox ends in", short(endsIn)) : ""}</div>
     <div><h4>Usage by model</h4>${usageHtml(s.key)}</div>
-    <div><h4>Runner</h4>${s.boot_s ? kvr("Boot", `${Math.round(num(s.boot_s))} s${s.boot_backend ? ` · ${esc(s.boot_backend)}` : ""}`) : ""}
-      ${rs != null ? kvr("Busy, idle", `${short(num(s.busy_s))} busy · ${short(num(s.idle_s))} idle of ${short(rs)}`) : kvr("Busy, idle", live ? "recorded when it stops" : nr, 1)}
-      ${s.verify_runs != null ? kvr("Verify runs", `${s.verify_runs} · ${s.verify_full ?? 0} full · ${short(num(s.verify_s))}${num(s.verify_fail_runs) ? ` · ${s.verify_fail_runs} with a FAIL` : ""}`) : kvr("Verify runs", nr, 1)}
-      ${s.stack_starts != null ? kvr("Stack starts", `${s.stack_starts}${num(s.stack_starts) ? ` · ${short(num(s.stack_s))}` : ""}${num(s.stack_fails) ? ` · ${s.stack_fails} failed` : ""}`) : kvr("Stack starts", nr, 1)}
-      ${peak ? kvr("Peak load, memory, disk", `${peak.load1} · ${(peak.mem_mb / 1024).toFixed(1)} GB · ${peak.disk_pct}%`) : ""}
-      ${s.compute_usd ? kvr("Compute, estimated", usd(num(s.compute_usd))) : ""}${s.stop_reason && s.stop_reason !== s.state ? kvr("Stopped because", esc(s.stop_reason)) : ""}</div>`;
+    <div><h4>Runner</h4>${s.boot_s ? kvRow("Boot", `${Math.round(num(s.boot_s))} s${s.boot_backend ? ` · ${s.boot_backend}` : ""}`) : ""}
+      ${rs != null ? kvRow("Busy, idle", `${short(num(s.busy_s))} busy · ${short(num(s.idle_s))} idle of ${short(rs)}`) : kvRow("Busy, idle", live ? "recorded when it stops" : nr, 1)}
+      ${s.verify_runs != null ? kvRow("Verify runs", `${s.verify_runs} · ${s.verify_full ?? 0} full · ${short(num(s.verify_s))}${num(s.verify_fail_runs) ? ` · ${s.verify_fail_runs} with a FAIL` : ""}`) : kvRow("Verify runs", nr, 1)}
+      ${s.stack_starts != null ? kvRow("Stack starts", `${s.stack_starts}${num(s.stack_starts) ? ` · ${short(num(s.stack_s))}` : ""}${num(s.stack_fails) ? ` · ${s.stack_fails} failed` : ""}`) : kvRow("Stack starts", nr, 1)}
+      ${peak ? kvRow("Peak load, memory, disk", `${peak.load1} · ${(peak.mem_mb / 1024).toFixed(1)} GB · ${peak.disk_pct}%`) : ""}
+      ${s.compute_usd ? kvRow("Compute, estimated", usd(num(s.compute_usd))) : ""}${s.stop_reason && s.stop_reason !== s.state ? kvRow("Stopped because", s.stop_reason) : ""}</div>`;
 }
 // Sandboxes panel (i407): one row of sbRows(), by its id in the current tab; null when the row is gone. Feed values are
 // untrusted: every one goes through esc(), links only through sessHref, prHref, KEY_RE and TEAM_RE, and a routine row
