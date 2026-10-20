@@ -184,23 +184,6 @@
   .waiting { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline;
              padding:var(--s2) 0; font-size:var(--t-sub); border-top:1px solid var(--line); }
 
-  /* ── pool and runners ── */
-  .slot { display:grid; grid-template-columns:96px minmax(60px,1fr) max-content; align-items:center; gap:var(--s3); padding:var(--s2) 0; }
-  .slot + .slot { border-top:1px solid color-mix(in srgb,var(--line) 60%,var(--panel)); }
-  .slot .nm { font-family:var(--mono); font-size:var(--t-sub); }
-  .slot .meter { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; }
-  .slot .meter i { display:block; height:100%; width:0; border-radius:3px; }
-  .slot.free .meter { background:transparent; border:1px dashed var(--line2); }
-  .slot.virtual .meter { background:transparent; border:1px dotted var(--line); }
-  .slot.virtual .nm { color:var(--faint); }
-  .slot.busy .meter i { width:100%; background:var(--info); opacity:.7; }
-  .slot.held .meter i { width:100%; background:var(--warn); opacity:.45; }
-  .slot.over .meter i { width:100%; background:var(--bad); opacity:.6; }
-  .slot .r { display:flex; gap:5px; align-items:center; }
-  .slot .meter.none { visibility:hidden; }
-  .freeslots { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:var(--s2) 0; font-size:var(--t-sub); color:var(--dim); }
-  .freeslots + .slot, .slot + .freeslots { border-top:1px solid color-mix(in srgb,var(--line) 60%,var(--panel)); }
-
   /* ── shell: left rail, list, main, details, status bar ── */
   .shell { height:100vh; display:grid; grid-template-rows:minmax(0,1fr) 32px;
            grid-template-columns:var(--rail) var(--side) minmax(0,1fr) var(--right);
@@ -276,7 +259,7 @@
   .ttable { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .ttable th { text-align:left; font-size:var(--t-label); color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
   .ttable td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .ttable tr:last-child td { border-bottom:0; }
   .ttable .num, .num { font-variant-numeric:tabular-nums; } .tname { display:inline-flex; align-items:center; gap:var(--s2); font-weight:600; color:var(--ink); text-decoration:none; }
-  .tbud { min-width:180px; } .tbar { display:block; height:6px; border-radius:3px; background:var(--sunk); margin-top:4px; overflow:hidden; } .tbar i { display:block; height:100%; background:var(--ok); } .tbar i.warn { background:var(--warn); } .tbar i.bad { background:var(--bad); }
+  .tbud { min-width:180px; } .tbud .meter { margin-top:4px; }
   #s-teams.wide { background:none; border:0; box-shadow:none; padding:0; }
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
   .tlink { background:none; border:0; padding:0; color:var(--link); font:inherit; font-weight:600; cursor:pointer; text-align:left; } .tlink:hover { text-decoration:underline; }
@@ -297,9 +280,6 @@
   .right { grid-area:right; background:var(--panel); border-left:1px solid var(--line); overflow:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
   .right .rh { display:block; font:700 var(--t-heading)/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
   .right h4 { margin:0 0 var(--s2); font:700 var(--t-label) var(--sans); color:var(--dim); }
-  .right .kvr, .tpage .kvr { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
-  .right .kvr:first-of-type, .tpage .kvr:first-of-type { border-top:0; } .right .kvr > span, .tpage .kvr > span { color:var(--dim); } .right .kvr b, .tpage .kvr b { font-weight:600; font-variant-numeric:tabular-nums; text-align:right; overflow-wrap:anywhere; }
-  .right .kvr b.na, .right .kvr .na, .tpage .kvr b.na, .tpage .kvr .na { font-weight:400; color:var(--faint); }
   .right .acts2 { display:flex; gap:var(--s2); flex-wrap:wrap; } .right .acts2 a { color:var(--link); font-weight:600; }
   .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
   .drawer-close { display:none; }
@@ -325,7 +305,6 @@
   .right .sb-panel .sbsteps { list-style:none; margin:0 0 var(--s2); padding:0 0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .right .sb-panel .sbsteps li { display:flex; justify-content:space-between; gap:var(--s3); padding:2px 0; } .right .sb-panel .sbsteps b { font-weight:500; color:var(--ink); }
   .right .sb-panel p { margin:var(--s2) 0; overflow-wrap:anywhere; }
-  .help .kvr { display:flex; justify-content:space-between; padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); } .help .kvr:first-of-type { border-top:0; }
   .help label { display:flex; gap:var(--s2); align-items:flex-start; margin-top:var(--s4); color:var(--dim); font-size:var(--t-sub); }
   @media (max-width:1280px) {
     .shell { --right:0px !important; }
@@ -402,7 +381,8 @@
   a.ovteam:hover { text-decoration:none; background:var(--hover); } .ovteam.hd { border-top:0; font-size:var(--t-label); color:var(--dim); padding-bottom:2px; }
   .ovteam .n { display:flex; align-items:center; gap:var(--s2); min-width:0; font-weight:600; } .ovteam .n span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ovteam .num { text-align:right; font-variant-numeric:tabular-nums; } .ovteam .bud { display:flex; flex-direction:column; gap:3px; min-width:0; } .ovteam .bud > span:first-child { display:flex; justify-content:space-between; gap:var(--s1); font-size:var(--t-label); color:var(--dim); } .ovteam .bud b { color:var(--ink, inherit); }
-  .ovbar { height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; } .ovbar i { display:block; height:100%; background:var(--info); } .ovbar i.warn { background:var(--warn); } .ovbar i.bad { background:var(--bad); }
+  .meter { display:block; height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; } .meter i { display:block; height:100%; background:var(--info); }
+  .meter i.ok { background:var(--ok); } .meter i.warn { background:var(--warn); } .meter i.bad { background:var(--bad); }
   @container (max-width:420px) { .ovteam { grid-template-columns:minmax(0,1fr) 40px 52px; } .ovteam > :nth-child(4), .ovteam > :nth-child(5) { display:none; } }
   #ov-teams, #ov-runs { container-type:inline-size; }
   .ovrun { display:grid; grid-template-columns:62px 28px minmax(0,1fr) auto; gap:2px var(--s3); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); }
@@ -411,7 +391,7 @@
   .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ovrun .t .key { margin-right:6px; }
   #sb-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); } #sb-cards .sb-card { display:flex; flex-direction:column; gap:4px; min-width:0; } #sb-cards .big { font-size:var(--t-page); }
   #sb-cards .sbstrip { display:flex; gap:3px; margin:4px 0; } #sb-cards .sbstrip i { flex:1; height:10px; border-radius:2px; background:var(--sunk); } #sb-cards .sbstrip i.busy { background:var(--info); } #sb-cards .sbstrip i.gce { background:repeating-linear-gradient(135deg,var(--info) 0 4px,var(--panel) 4px 6px); } #sb-cards .sbstrip i.held { background:var(--warn); } #sb-cards .sbstrip i.unknown { background:var(--line); }
-  #sb-cards .kv { display:flex; justify-content:space-between; gap:var(--s2); font-size:var(--t-sub); } #sb-cards .kv b { font-weight:600; } #sb-cards .sub a { color:var(--link); }
+  #sb-cards .sub a { color:var(--link); }
   @media (max-width:900px) { #sb-cards { grid-template-columns:1fr; } }
   .ovrun .d { font-size:var(--t-label); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
   .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label); color:var(--dim); font-variant-numeric:tabular-nums; }
@@ -431,8 +411,8 @@
   .ft.bad { border-color:var(--bad); } .ft.bad .ring { background:conic-gradient(var(--bad) var(--p), var(--sunk) 0); }
   .ft.free { border-style:dashed; background:none; color:var(--faint); font-size:var(--t-sub); }
   #ov-sys h3 { font:600 var(--t-sub) var(--head); color:var(--dim); margin:var(--s3) 0 var(--s1); }
-  #ov-sys .row { font-size:var(--t-sub); padding:2px 0; } #ov-sys .row .w { color:var(--warn); } #ov-sys .bar { height:4px; background:var(--sunk); border-radius:2px; margin:2px 0 4px; }
-  #ov-sys .bar i { display:block; height:100%; background:var(--info); border-radius:2px; } #ov-sys svg { width:100%; height:34px; display:block; }
+  #ov-sys .row { font-size:var(--t-sub); padding:2px 0; } #ov-sys .row .w { color:var(--warn); } #ov-sys .meter { margin:2px 0 4px; }
+  #ov-sys svg { width:100%; height:34px; display:block; }
   #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; background:none; border:0; box-shadow:none; padding:0; }
   #ov-head .seg { margin-left:auto; }
   .ovl { display:grid; gap:var(--s3); align-content:start; min-width:0; }
@@ -538,7 +518,11 @@
   .insight { margin:var(--s3) 0; padding:var(--s3) var(--s4); border-radius:var(--r-lg); background:var(--okbg); color:var(--ok); font-size:var(--t-body); }
   .three { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); }
   @media (max-width:900px) { .three { grid-template-columns:minmax(0,1fr); } }
-  .kv { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--sunk); font-size:var(--t-sub); }
+  .kv { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
+  .kv:first-child, :is(h2, h3, h4) + .kv { border-top:0; }
+  /* The first child is the label and the last the value, whatever their tags; a b in the value stays bold. */
+  .kv > :first-child { color:var(--dim); font-weight:400; } .kv > :last-child:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .kv b { font-weight:600; } .kv .na { font-weight:400; color:var(--faint); }
   .kv.share { background:linear-gradient(90deg, color-mix(in srgb,var(--info) 14%,transparent) var(--p), transparent var(--p)); }
   .fchips { display:inline-flex; flex-wrap:wrap; gap:var(--s1); }
 
@@ -612,7 +596,6 @@
     .line1 > .key, .fac .top > .key, .waiting > .key { grid-column:1 / -1; }
     .alert { flex-wrap:wrap; } .alert .what { white-space:normal; } .alert .fix { margin-left:0; }
     h2, .headline { flex-wrap:wrap; } h2 .note, .headline .rest { margin-left:0; flex-basis:100%; }
-    .slot { grid-template-columns:84px minmax(40px,1fr) max-content; }
         .sx .sxbar { flex-wrap:wrap; } .sx .sxt { order:-1; flex:1 1 100%; white-space:normal; }
   }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
@@ -638,9 +621,8 @@ table.usage tr.sel td { background: var(--infobg); }
 #s-sb #sb-list .sbl li.bad > button { color:var(--bad); }
 #s-sb #sb-list .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; }
 #s-sb #sb-list .sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
-#s-sb #sb-list .sbl .tb .bar { display:inline-block; width:60px; height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; vertical-align:middle; margin-right:4px; }
-#s-sb #sb-list .sbl .tb .bar i { display:block; height:100%; background:var(--info); }
-#s-sb #sb-list .sbl .tb.over { color:var(--bad); } #s-sb #sb-list .sbl .tb.over .bar i { background:var(--bad); }
+#s-sb #sb-list .sbl .tb .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
+#s-sb #sb-list .sbl .tb.over { color:var(--bad); }
 #s-sb #sb-list .sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
 #s-sb #sb-list .sbh { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin:var(--s4) 0 var(--s1); }
 #s-sb #sb-list .sbfree, #s-sb #sb-list .sbage, #s-sb #sb-list .sbstale { font-size:var(--t-sub); color:var(--dim); margin:var(--s2) 0; overflow-wrap:anywhere; }
@@ -703,13 +685,13 @@ table.usage tr.sel td { background: var(--infobg); }
 </div>
 <div class="help" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
   <div class="hd"><h2 id="help-title">Keyboard shortcuts</h2><button type="button" id="help-close">Close</button></div>
-  <div class="kvr"><span><kbd>1</kbd> to <kbd>8</kbd></span><b>Switch view</b></div>
-  <div class="kvr"><span><kbd>/</kbd></span><b>Search the list</b></div>
-  <div class="kvr"><span><kbd>j</kbd> <kbd>k</kbd>, then <kbd>Enter</kbd></span><b>Move in the list, open</b></div>
-  <div class="kvr"><span><kbd>h</kbd> <kbd>l</kbd></span><b>Previous or next tab</b></div>
-  <div class="kvr"><span><kbd>[</kbd> <kbd>]</kbd></span><b>Hide or show the list and the details</b></div>
-  <div class="kvr"><span><kbd>r</kbd></span><b>Refresh now</b></div>
-  <div class="kvr"><span><kbd>Esc</kbd></span><b>Close this, or a drawer</b></div>
+  <div class="kv"><span><kbd>1</kbd> to <kbd>8</kbd></span><b>Switch view</b></div>
+  <div class="kv"><span><kbd>/</kbd></span><b>Search the list</b></div>
+  <div class="kv"><span><kbd>j</kbd> <kbd>k</kbd>, then <kbd>Enter</kbd></span><b>Move in the list, open</b></div>
+  <div class="kv"><span><kbd>h</kbd> <kbd>l</kbd></span><b>Previous or next tab</b></div>
+  <div class="kv"><span><kbd>[</kbd> <kbd>]</kbd></span><b>Hide or show the list and the details</b></div>
+  <div class="kv"><span><kbd>r</kbd></span><b>Refresh now</b></div>
+  <div class="kv"><span><kbd>Esc</kbd></span><b>Close this, or a drawer</b></div>
   <label><input type="checkbox" id="keys-on"> Turn on single-key shortcuts. They are off by default, because they get in the way of speech input.</label>
 </div></div>
 
@@ -1236,7 +1218,7 @@ function ovSys(now = Math.round(Date.now() / 1000)) {
 function renderOvSys() {
   if (!SNAP) return putOv("ov-sys", `<h2>What the system is doing</h2><div class="emptybox">${STATE.error ? `Pipeline unknown: ${esc(STATE.error)}.` : "Loading the pipeline…"}</div>`);
   const now = Math.round(Date.now() / 1000), o = ovSys(now), W = 600, x = e => ((e - now) / (12 * 3600) * W).toFixed(1);
-  const row = ([k, v]) => k === "ci" ? `<div class="row">CI watch · ${v.href ? `<a href="${esc(v.href)}" target="_blank" rel="noreferrer" data-focus="ci-${esc(v.n)}">#${esc(v.n)}</a>` : `#${esc(v.n)}`} · checks ${v.done} of ${v.tot} done<div class="bar"><i style="width:${v.pct}%"></i></div></div>`
+  const row = ([k, v]) => k === "ci" ? `<div class="row">CI watch · ${v.href ? `<a href="${esc(v.href)}" target="_blank" rel="noreferrer" data-focus="ci-${esc(v.n)}">#${esc(v.n)}</a>` : `#${esc(v.n)}`} · checks ${v.done} of ${v.tot} done<div class="meter"><i style="width:${v.pct}%"></i></div></div>`
     : `<div class="row">${k === "w" ? `<span class="w">${esc(v)}</span>` : esc(v)}</div>`;
   const strip = o.ticks.length || o.pins.length ? `<svg viewBox="0 0 ${W} 34" preserveAspectRatio="none" aria-hidden="true">${o.quiet.map(([a, b]) => `<rect x="${x(a)}" y="0" width="${Math.max(0, x(Math.min(b, now + 12 * 3600)) - x(a))}" height="34" fill="var(--sunk)"/>`).join("")}${o.ticks.map(e => `<line x1="${x(e)}" x2="${x(e)}" y1="14" y2="30" stroke="var(--info)"/>`).join("")}${o.pins.map(p => `<circle cx="${x(p.at)}" cy="7" r="5" fill="var(--purple)"><title>${esc(p.name)}</title></circle>`).join("")}</svg>` : "";
   const pins = o.pins.map(p => `<div class="row">${hmOf(p.at)} ${TEAM_RE.test(p.team ?? "") ? `<a href="#teams/${esc(p.team)}/routines" data-focus="rt-${esc(p.team)}-${esc(p.name)}">Routine ${esc(p.name)}</a>` : `Routine ${esc(p.name)}`}${p.usd != null ? ` · about ${usd(p.usd)}` : ""}</div>`).join("");
@@ -1330,7 +1312,7 @@ function renderOvTeams() {
   const row = ({ t, u, now }) => {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
-    const cap = b?.month_cap, bud = `<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? `<span class="ovbar"><i class="${b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / cap))}%"></i></span>` : ""}`;
+    const cap = b?.month_cap, bud = `<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? `<span class="meter"><i class="${b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / cap))}%"></i></span>` : ""}`;
     const cells = `<span class="n"><span>${esc(teamName(t))}</span><span class="tag ${cls}" title="${esc(title)}">${esc(a)}</span></span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? `<a class="ovteam" href="#teams/${esc(t.profile)}" data-focus="ovteam-${esc(t.profile)}" data-team="${esc(t.profile)}">${cells}</a>` : `<div class="ovteam" data-team="${esc(t.profile)}">${cells}</div>`;
   };
@@ -1983,7 +1965,7 @@ function teamWeek() {
 }
 function budgetCell(t) {
   return t.budget_error ? `<span class="unknown">budget unknown: the spend file cannot be read</span>` : !t.budget ? `<span class="na">budget unknown on this host</span>`
-  : t.budget.month_cap ? `<span class="num">${usd(t.budget.month_usd)} <span class="na">of ${usd(t.budget.month_cap)}</span></span><span class="tbar" role="img" aria-label="${Math.round(100 * t.budget.month_usd / t.budget.month_cap)}% of the budget"><i class="${t.budget.month_usd >= t.budget.month_cap ? "bad" : t.budget.month_usd >= 0.9 * t.budget.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * t.budget.month_usd / t.budget.month_cap))}%"></i></span>`
+  : t.budget.month_cap ? `<span class="num">${usd(t.budget.month_usd)} <span class="na">of ${usd(t.budget.month_cap)}</span></span><span class="meter" role="img" aria-label="${Math.round(100 * t.budget.month_usd / t.budget.month_cap)}% of the budget"><i class="${t.budget.month_usd >= t.budget.month_cap ? "bad" : t.budget.month_usd >= 0.9 * t.budget.month_cap ? "warn" : "ok"}" style="width:${Math.min(100, Math.round(100 * t.budget.month_usd / t.budget.month_cap))}%"></i></span>`
   : `<span class="num">${usd(t.budget.month_usd)}</span> <span class="na">no cap</span>`;
 }
 function testCell(t) {
@@ -2067,7 +2049,7 @@ function teamReadiness(t) {
 function teamOverview(t) {
   const use = teamUse(), u = use?.[t.profile], er = teamErrs(), b = t.budget, r = rtSum(t.profile), base = `#teams/${esc(t.profile)}`;
   const cost = t.budget_error ? `<div class="tl">Cost this month</div><div class="tv">—</div><div class="unknown">budget unknown: the spend file cannot be read</div>`
-    : b ? `<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? ` <span class="tm">of ${usd(b.month_cap)}</span>` : ` <span class="tm">no cap</span>`}</div>${b.month_cap ? `<span class="tbar"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : ""}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}`
+    : b ? `<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? ` <span class="tm">of ${usd(b.month_cap)}</span>` : ` <span class="tm">no cap</span>`}</div>${b.month_cap ? `<span class="meter"><i class="${b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok"}" style="width:${Math.min(100, Math.round(100 * b.month_usd / b.month_cap))}%"></i></span>` : ""}`
     : `<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
   const split = use ? `<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
   const test = t.access?.record || t.test ? testCell(t) : `<span class="na">no record to test</span>`;
@@ -3363,7 +3345,7 @@ function renderSbList() {
   const forTxt = x => x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
   const fld = (l, v) => v ? `<span class="f"><span class="vh">${l}: </span>${v}</span>` : "";
   const bar = x => { if (x.age == null || !x.cap) return ""; const over = x.age >= x.cap;
-    return `<span class="f tb${over ? " over" : ""}"><span class="vh">Time: </span><span class="bar" aria-hidden="true"><i style="width:${Math.min(100, Math.round(x.age / x.cap * 100))}%"></i></span>${esc(short(x.age))} of ${esc(short(x.cap))}${over ? " · over cap" : ""}</span>`; };
+    return `<span class="f tb${over ? " over" : ""}"><span class="vh">Time: </span><span class="meter" aria-hidden="true"><i${over ? ' class="bad"' : ""} style="width:${Math.min(100, Math.round(x.age / x.cap * 100))}%"></i></span>${esc(short(x.age))} of ${esc(short(x.cap))}${over ? " · over cap" : ""}</span>`; };
   const row = x => `<li class="${x.fix ? "fixr" : x.fault ? "bad" : ""}"${x.id === SEL.runners ? ' aria-current="true"' : ""}><button type="button" data-sbsel="${esc(x.id)}" aria-label="${esc(forTxt(x))}, details">${esc(forTxt(x))}</button>
     ${fld("What", esc(plainMd(x.title)))}${fld("Now", esc(x.fix ? x.fix.why : x.state))}${fld("Team", x.team ? esc(teamLabel(x.team)) : "")}${fld("Where", esc(whereTxt(x)))}${x.fix ? "" : bar(x)}${fld("LLM cost", x.cost != null ? usd(x.cost) : "")}
     ${x.fix?.cmd ? `<code>${esc(x.fix.cmd)}</code>` : x.fix?.steps && !r.stale ? `<span class="f steps">${esc(x.fix.steps)}</span>` : ""}</li>`;
@@ -3575,7 +3557,7 @@ function renderSide() {
 const currentSession = () => { const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)); return list.find(s => s.key === SESS_SEL) || list[0]; };
 
 // ── the details of the selection ──
-const kvr = (k, v, na) => `<div class="kvr"><span>${k}</span><b${na ? ' class="na"' : ""}>${v}</b></div>`;
+const kvr = (k, v, na) => `<div class="kv"><span>${k}</span><b${na ? ' class="na"' : ""}>${v}</b></div>`;
 const closeBtn = `<button type="button" class="drawer-close" id="rclose">Close</button>`;
 const num = v => v == null || v === "" ? null : Number(v);
 // LLM use by model for one session or quick answer, from the proxy's calls (/api/usage): main

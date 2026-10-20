@@ -347,7 +347,7 @@ ck "O6 Teams: rows by stats profile (none is fxa), work now by team, runs and PR
   const iso = d => new Date(Date.now() - d * 86400000).toISOString();
   TEAMS = { teams: [{ profile: "two", label: "Two", access: { open: true }, budget: { month_usd: 45, month_cap: 50 } }, { profile: "fxa", label: "FxA" }, { profile: "../x", label: "Bad" }] };
   STATS = { ...STATS, rows: [{ at: iso(1), src: "pipeline", pr: true, usd: 3 }, { at: iso(1), src: "slack", usd: 1, profile: "fxa" }, { at: iso(2), src: "slack", usd: 2, profile: "two" }, { at: iso(40), src: "slack", usd: 9, profile: "two" }] };
-  OV_RANGE = "30d"; renderOvTeams(); const r = p => document.querySelector(`#ov-teams [data-team="${p}"]`), nums = p => [...r(p).querySelectorAll(".num")].map(e => e.textContent).join(","), bar = r("two").querySelector(".ovbar i");
+  OV_RANGE = "30d"; renderOvTeams(); const r = p => document.querySelector(`#ov-teams [data-team="${p}"]`), nums = p => [...r(p).querySelectorAll(".num")].map(e => e.textContent).join(","), bar = r("two").querySelector(".meter i");
   return [document.querySelector("#ov-teams [data-team]").dataset.team, nums("fxa"), nums("two"), `${bar.className} ${bar.style.width}`, r("../x").tagName].join("|")')"
 ck "O6 Running now: busy tiles only, the free slots on one line, and an empty floor says when the last run ended and the next pass" "3|3 free: ex-auto-3, 4, 5|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const a = document.querySelectorAll("#ov-floor .ft").length, b = document.querySelector("#ov-floor .ovfree").textContent.split(" · ")[0];
