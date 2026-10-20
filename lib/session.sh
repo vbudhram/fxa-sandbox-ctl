@@ -1589,7 +1589,11 @@ session_stop() {
   _session_desktop_close "$key"
   # No runner yet (still booting) is fine. A delete that failed is an error, and
   # the idle sweep tries it again (runner_left): the state is stopped already.
-  agent_stop "$name" >&2 || { session_set "$key" runner_left 1; return 1; }
+  # runner_left is set before the delete and cleared after it: a stop that dies partway (a killed
+  # process) leaves 1, so the idle sweep retries it in place of leaving the runner for good.
+  session_set "$key" runner_left 1
+  agent_stop "$name" >&2 || return 1
+  session_set "$key" runner_left 0
   return 0
 }
 
