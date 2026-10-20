@@ -600,9 +600,10 @@ _setup_egress_firewall() {
       iptables -A OUTPUT -j ACCEPT
       # The agent drives local services that connect out as their own uid (goaws runs as root):
       # Redis MIGRATE, a goaws SNS http subscription. Each gets loopback only, on the running unit,
-      # with no restart, so the FxA stack keeps its state.
+      # with no restart, so the FxA stack keeps its state. A loaded unit that is not running now
+      # gets the limit too: it holds on its next start (the agent may sudo start goaws).
       for u in redis-server mysql goaws; do
-        systemctl is-active -q "$u.service" 2>/dev/null || continue
+        [ "$(systemctl show -p LoadState --value "$u.service" 2>/dev/null)" = loaded ] || continue
         systemctl set-property --runtime "$u.service" IPAddressDeny=any IPAddressAllow=localhost \
           && systemctl show -p IPAddressDeny --value "$u.service" | grep -q . || { echo "egress: could not limit $u to loopback" >&2; exit 1; }
       done

@@ -36,7 +36,13 @@ check "the script limits redis-server, mysql and goaws to loopback" "yes|yes" \
   "$(grep -q 'for u in redis-server mysql goaws' "$tmp_s" && echo yes)|$(grep -q 'set-property --runtime "$u.service" IPAddressDeny=any IPAddressAllow=localhost' "$tmp_s" && echo yes)"
 check "the service limit sits in the limited branch, after the agent REJECT" "yes" \
   "$(awk '/--uid-owner agent -j REJECT --reject-with/ {r=NR} /for u in redis-server mysql goaws/ {u=NR} /if \[ "\$FXA_EGRESS_ALLOW_ALL" = "1" \]; then/ && !a {a=NR} END {print (r && u > r && a < r) ? "yes" : "no"}' "$tmp_s")"
-rm -f "$tmp_s"
+# A unit that is stopped now (goaws waits to restart) still gets the limit; a unit that is not installed is skipped.
+loop="$(sed -n '/for u in redis-server mysql goaws; do/,/^ *done$/p' "$tmp_s")"
+check "a stopped but loaded unit still gets the loopback limit" "goaws.service|mysql.service|redis-server.service" "$(bash -c '
+  systemctl() { case "$1 $2" in "show -p") [ "$4" = nothere.service ] && echo not-found || echo loaded ;; "is-active -q") return 3 ;;
+    "set-property --runtime") echo "$3" >> "'"$tmp_s"'.set" ;; esac; [ "$1" = show ] && [ "$3" = IPAddressDeny ] && echo any; return 0; }
+  '"$loop"'' >/dev/null 2>&1; sort "$tmp_s.set" 2>/dev/null | paste -sd'|' -)"
+rm -f "$tmp_s" "$tmp_s.set"
 
 # After the firewall, the agent's DNS filter runs with the allowed hosts, from templates/agent-dns.sh.
 # The calls tell apart by their third word: env for the firewall, bash for the DNS step.
@@ -50,8 +56,9 @@ check "an allow-all run has no DNS filter" "fw" "$(paste -sd'|' "$log")"
 vm_exec() { [ "$3" = bash ] || return 0; echo "egress: the agent's DNS answered a name outside the allowlist" >&2; return 1; }
 out="$(_setup_egress_firewall vm 2>&1)"; rc=$?
 check "a DNS filter that leaks fails the launch, and says why" "1|yes" "$rc|$(grep -q 'outside the allowlist' <<< "$out" && echo yes)"
-vm_exec() { [ "$3" = bash ] || return 0; echo "egress: WARN dnsmasq-base did not install" >&2; return 0; }
-check "a missing dnsmasq warns and goes on" "0|egress: WARN dnsmasq-base did not install" "$(out="$(_setup_egress_firewall vm 2>&1)"; echo "$?|$out")"
+vm_exec() { [ "$3" = bash ] || return 0; echo "egress: dnsmasq-base did not install, so the agent's DNS cannot be filtered" >&2; return 1; }
+check "a missing dnsmasq fails the launch, and says why" "1|yes" "$(out="$(_setup_egress_firewall vm 2>&1)"; echo "$?|$(grep -q 'cannot be filtered' <<< "$out" && echo yes)")"
+check "the template exits 1 when dnsmasq cannot be had" "yes" "$(grep -q 'cannot be filtered" >&2; exit 1; }' "$(dirname "$0")/../templates/agent-dns.sh" 2>/dev/null && echo yes)"
 # tart exec passes no stdin: the runner's bash still runs the template, with the hosts.
 fake="$(mktemp -d)"; mkdir "$fake/templates"
 printf '%s\n' 'echo "egress: WARN ran with $*" >&2' > "$fake/templates/agent-dns.sh"

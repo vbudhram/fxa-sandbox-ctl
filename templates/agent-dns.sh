@@ -3,13 +3,13 @@
 # user's DNS then answers only the names it may connect to: the given hosts, and GitHub and
 # Anthropic, which the firewall allows by address range. Any other name is refused, so a lookup
 # such as <data>.attacker.example cannot carry data out. Root and services keep the normal resolver.
-# Exit 1 when the filter leaks or breaks GitHub; 0 with a WARN when dnsmasq cannot be had.
+# Exit 1 when the filter leaks, breaks GitHub, or dnsmasq cannot be had: the agent never runs with open DNS.
 set -u
 command -v dnsmasq >/dev/null 2>&1 || {
   export DEBIAN_FRONTEND=noninteractive
   apt-get install -y -qq dnsmasq-base >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq dnsmasq-base >/dev/null 2>&1; }
 }
-command -v dnsmasq >/dev/null 2>&1 || { echo "egress: WARN dnsmasq-base did not install; the agent's DNS is not filtered" >&2; exit 0; }
+command -v dnsmasq >/dev/null 2>&1 || { echo "egress: dnsmasq-base did not install, so the agent's DNS cannot be filtered" >&2; exit 1; }
 
 up="$(awk '/^nameserver/ { print $2; exit }' /etc/resolv.conf)"
 [ -n "$up" ] || { echo "egress: no nameserver in /etc/resolv.conf" >&2; exit 1; }
