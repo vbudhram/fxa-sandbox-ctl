@@ -106,6 +106,8 @@ case "$*" in
   *) exit 1 ;;
 esac
 FAKE
+# No local services here, as on a host with none installed; a CI host's real units stay untouched.
+printf '#!/bin/sh\n[ "$1" = show ] && echo not-found\nexit 0\n' > "$fw/systemctl"
 chmod +x "$fw"/*
 vm_exec() { [ "$3" = env ] || return 0; shift 2; PATH="$fw:/usr/bin:/bin" "$@"; }
 fw_run() { rm -f "$fw"/*.rules; out="$(_setup_egress_firewall vm 2>&1)"; echo "$?|$out"; }
