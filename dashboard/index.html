@@ -163,7 +163,7 @@
   @keyframes forge { 0%,100%{opacity:1} 50%{opacity:.35} }
   .rail .node.fail .box { border-color:var(--bad); } .rail .node.fail .box i { background:var(--bad); }
   .rail-lbl { font-size:var(--t-tiny); letter-spacing:.06em; text-transform:uppercase; color:var(--faint); white-space:nowrap; }
-  .rail .node.now .rail-lbl { color:var(--amber); font-weight:700; } .rail .node.done .rail-lbl { color:var(--dim); }
+  .rail .node.now .rail-lbl { color:var(--ink); font-weight:700; } .rail .node.done .rail-lbl { color:var(--dim); }
   .rail .seg { flex:1; height:4px; min-width:14px; margin:0 3px 13px; border-radius:2px; background:var(--sunk);
                border:1px solid var(--line); overflow:hidden; position:relative; }
   .rail .seg::before { content:""; position:absolute; inset:0;
@@ -3555,10 +3555,10 @@ function sideGroups() {
     const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s);
       // The title is what the person first asked: the chain's first session's request.
       return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: firstLine(ch[ch.length - 1].request),
-        tip: stamp(s.created), m: [c ? usd(c) : "", sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
+        tip: stamp(s.created), m: [c ? usd(c) : "", sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
-  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [`${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
+  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
   if (VIEW === "lessons") return [{ items: (LESSONS ?? []).filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).filter(l => hit(l.text)).map(l => ({ id: l.id, d: l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : "", t: l.text, m: [l.status, l.session] })) }];
   if (VIEW === "teams") {
     const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
