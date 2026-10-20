@@ -2418,7 +2418,7 @@ document.addEventListener("click", e => {
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
 function renderStats() {
   const st = STATS;
-  if (!st || st.error) { put("s-stats", head("stats") + `<div class="emptybox">${esc(st?.error || (STATS_ERR ? `${sentence(STATS_ERR)}. The next poll tries again.` : "loading the run log…"))}</div>`); return; }
+  if (!st || st.error) { put("s-stats", head("stats") + emptybox(st?.error || (STATS_ERR ? `${sentence(STATS_ERR)}. The next poll tries again.` : "loading the run log…"))); return; }
   const all = st.rows ?? [];
   const DAY = 86400000, [lo, hi] = statsBounds(SF.range);
   const q = SF.q.trim().toLowerCase();
@@ -2448,49 +2448,51 @@ function renderStats() {
   // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
   const many = bl.length > 14, step = Math.ceil(bl.length / 7);
   const showDay = i => !many || i === bl.length - 1 || (i % step === 0 && bl.length - 1 - i >= step / 2);
-  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => `<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${esc(lbl(b.t))}</b><br>${k === "merged" ? `${b.merged} merged` : `${b.runs} runs · ${usd(b.spend)}${k === "spend" && b.low ? `<br>${b.low} priced at the main agent only, about half` : ""}${b.runs ? `<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
+  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => html`<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${lbl(b.t)}</b><br>${k === "merged" ? `${b.merged} merged` : html`${b.runs} runs · ${usd(b.spend)}${k === "spend" && b.low ? html`<br>${b.low} priced at the main agent only, about half` : ""}${b.runs ? html`<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
       <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "spend" && b.low ? "repeating-linear-gradient(135deg, var(--purple) 0 4px, transparent 4px 7px)" : k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
-      <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
-  const kpi = (l, v, sub) => `<div class="scard card flat sm"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
+      <span class="w">${showDay(i) ? lbl(b.t) : raw("&nbsp;")}</span></div>`); };
+  const kpi = (l, v, sub) => card(html`<div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div>`, { flat: true, sm: true, cls: "scard" });
+  const chart = body => card(body, { flat: true, cls: "chart" });
   const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
     return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
   const conv = r => r.conv ?? r.key, share = v => Math.round(v / Math.max(spend, 0.01) * 100);
   const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
-  const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? jira(r.name) : `<span class="mono">${esc(r.name)}</span>`;
-  const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
+  const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? raw(jira(r.name)) : html`<span class="mono">${r.name}</span>`;
+  const opt = (f, v, l) => html`<option value="${v}"${SF[f] === v ? " selected" : ""}>${l}</option>`;
   const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
-  const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => `<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${esc(sfLabel(f))} ×</button>`).join("");
-  put("s-stats", (SF_FROM_OV ? `<div class="sfov" role="status">Filters set from Overview are not saved. <button type="button" class="linkbtn" data-sfrestore>Restore my filters</button> · <button type="button" class="linkbtn" data-sfkeep>Keep these</button></div>` : "") + `<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${esc(range)}</span></h2>${chips ? `<span class="fchips">${chips}</span>` : ""}</div>
-    ${STATS_TAB === "runners" ? `<div class="charts">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? `<div class="charts">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
-    ${!spendTab ? "" : rows.length === 0 ? `<div class="emptybox">Nothing matches these filters.</div>` : `
-    <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || "&nbsp;")}
-      ${kpi("Tickets and conversations", keys.size, work.length ? `up to ${Math.max(...group(conv).filter(g => g.rs[0].src !== "pass").map(g => g.rs.length))} runs on one${over.length ? ` · passes and triage left out` : ""}` : "&nbsp;")}
+  const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => html`<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${sfLabel(f)} ×</button>`);
+  put("s-stats", String(html`${SF_FROM_OV ? html`<div class="sfov" role="status">Filters set from Overview are not saved. <button type="button" class="linkbtn" data-sfrestore>Restore my filters</button> · <button type="button" class="linkbtn" data-sfkeep>Keep these</button></div>` : ""}<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${range}</span></h2>${chips.length ? html`<span class="fchips">${chips}</span>` : ""}</div>
+    ${STATS_TAB === "runners" ? html`<div class="charts">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? html`<div class="charts">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
+    ${!spendTab ? "" : rows.length === 0 ? emptybox("Nothing matches these filters.") : html`
+    <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || raw("&nbsp;"))}
+      ${kpi("Tickets and conversations", keys.size, work.length ? `up to ${Math.max(...group(conv).filter(g => g.rs[0].src !== "pass").map(g => g.rs.length))} runs on one${over.length ? ` · passes and triage left out` : ""}` : raw("&nbsp;"))}
       ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
       ${kpi("Per run", usd(spend / rows.length), Object.entries(SRC).map(([v, l]) => { const a = rows.filter(r => r.src === v); return a.length ? `${({ answer: "answers", pass: "passes" })[v] ?? v} ${usd(sum(a) / a.length)}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
-    <div class="charts"><div class="chart card flat"><h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div></div>
-      <div class="chart card flat"><h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div></div></div>
+    <div class="charts">${chart(html`<h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div>`)}
+      ${chart(html`<h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div>`)}</div>
     <div class="three">
-      <div class="chart card flat"><h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(SRC[g.name] ?? g.name)}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`).join("")}
-        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? `<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
-          return `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(teamLabel(g.name))}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""}</div>
-      <div class="chart card flat"><h2>Most expensive<span class="note">in this view</span></h2>${over.length ? `<div class="kv share" style="--p:${share(sum(over))}%"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => `<div class="kv share" style="--p:${share(g.usd)}%">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`).join("")}
+      ${chart(html`<h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${SRC[g.name] ?? g.name}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`)}
+        ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? html`<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
+          return html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${teamLabel(g.name)}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; })}` : ""}`)}
+      ${chart(html`<h2>Most expensive<span class="note">in this view</span></h2>${over.length ? html`<div class="kv share" style="--p:${share(sum(over))}%"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`)}
         ${(() => { const ps = group(r => r.src === "slack" ? (r.who || "name not recorded") : null).filter(g => g.name);
-          return ps.length ? `<h2>By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
-            return `<div class="kv share" style="--p:${share(g.usd)}%"><b>${esc(g.name)}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; }).join("")}` : ""; })()}</div>
-      <div class="chart card flat"><h2>Spend by model<span class="note">in this view</span></h2>${(() => {
+          return ps.length ? html`<h2>By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
+            return html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${g.name}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; })}` : ""; })()}`)}
+      ${chart(html`<h2>Spend by model<span class="note">in this view</span></h2>${(() => {
         // Subagents included where the proxy priced the run; else the run's main model only.
         const m = new Map();
         for (const r of rows) for (const [k, v] of Object.entries(r.models ?? (r.model ? { [r.model]: r.usd } : {}))) m.set(k, (m.get(k) ?? 0) + (v || 0));
         const t = [...m.values()].reduce((a, b) => a + b, 0) || 1, main = rows.filter(r => r.main_only).length, none = rows.filter(r => !r.models && !r.model).length;
-        return [...m].sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="kv share" style="--p:${Math.round(v / t * 100)}%"><span class="mono">${esc(modelName(k))}</span><b>${usd(v)} · ${Math.round(v / t * 100)}%</b></div>`).join("")
-          + (main ? `<div class="kv"><span class="note">${main} run${main === 1 ? "" : "s"} here count all tokens at the main model</span><span></span></div>` : "")
-          + (none ? `<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>` : "");
-      })() || `<div class="empty">No model recorded for these rows.</div>`}
-        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => `<div class="kv"><b>${esc(KIND[g.name] ?? g.name)}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`).join("")}</div>
-    </div>`}`);
+        const out = [...m].sort((a, b) => b[1] - a[1]).map(([k, v]) => html`<div class="kv share" style="--p:${Math.round(v / t * 100)}%"><span class="mono">${modelName(k)}</span><b>${usd(v)} · ${Math.round(v / t * 100)}%</b></div>`);
+        if (main) out.push(html`<div class="kv"><span class="note">${main} run${main === 1 ? "" : "s"} here count all tokens at the main model</span><span></span></div>`);
+        if (none) out.push(html`<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>`);
+        return out.length ? out : null;
+      })() || html`<div class="empty">No model recorded for these rows.</div>`}
+        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => html`<div class="kv"><b>${KIND[g.name] ?? g.name}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`)}`)}
+    </div>`}`));
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
 }
@@ -2501,7 +2503,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
     && (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q)); });
   // A PR opened before the range and merged in it still counts as merged here, as on Overview.
   const shown = p => (SF.src === "all" || p.src === SF.src) && (!q || `${p.key} ${p.title} ${p.n}`.toLowerCase().includes(q));
-  if (!prs.length && !costPerMerged(lo, hi, all.filter(shown), rows).mergedIn.length) return `<div class="emptybox">${all.length ? "No PR opened or merged in this range matches these filters." : "No PR list yet."}</div>`;
+  if (!prs.length && !costPerMerged(lo, hi, all.filter(shown), rows).mergedIn.length) return emptybox(all.length ? "No PR opened or merged in this range matches these filters." : "No PR list yet.");
   // LLM and the session's runner compute, where it was recorded.
   // A session's PR number counts only in this repo's list: a team repo has its own #123.
   const cost = p => rows.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
@@ -2510,14 +2512,15 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const by = s => prs.filter(p => p.state === s), merged = by("MERGED"), closed = by("CLOSED"), open = by("OPEN");
   const rate = (m, c) => m + c ? `${Math.round(m / (m + c) * 100)}%` : "—";
   const mc = merged.map(cost), SRC = { pipeline: "Pipeline", slack: "Slack sessions" };
-  const kv = (k, v) => `<div class="kv">${k}<span>${v}</span></div>`;
+  const kv = (k, v) => html`<div class="kv">${k}<span>${v}</span></div>`;
+  const chart = body => card(body, { flat: true, cls: "chart" });
   // A merged pipeline PR: its ticket's assignee and status, or that the next pass has not updated it yet.
   const ticket = p => p.src !== "pipeline" || !/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? ""
-    : p.jira ? (/^done$/i.test(p.jira.status ?? "") ? "" : ` · ${esc(p.jira.assignee || "unassigned")}, ${esc(p.jira.status || "?")}`) : ` · <span style="color:var(--warn)">ticket not updated yet</span>`;
-  const line = p => `<div title="${esc(p.title)}">${kv(`<span>${prl(repo, p.n)} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? jira(p.key) : `<span class="mono">${esc(p.key)}</span>`}</span>`,
-    (p.state === "MERGED" ? `${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>${ticket(p)}`
-      : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed") + ` · <b>${usd(cost(p))}</b>`)}</div>`;
-  const list = (l, none) => l.slice(0, 10).map(line).join("") || `<div class="empty">${none}</div>`;
+    : p.jira ? (/^done$/i.test(p.jira.status ?? "") ? "" : ` · ${p.jira.assignee || "unassigned"}, ${p.jira.status || "?"}`) : html` · <span style="color:var(--warn)">ticket not updated yet</span>`;
+  const line = p => html`<div title="${p.title}">${kv(html`<span>${raw(prl(repo, p.n))} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? raw(jira(p.key)) : html`<span class="mono">${p.key}</span>`}</span>`,
+    html`${p.state === "MERGED" ? html`${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>${ticket(p)}`
+      : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed"} · <b>${usd(cost(p))}</b>`)}</div>`;
+  const list = (l, none) => l.length ? l.slice(0, 10).map(line) : html`<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
   // All-in: every run in the range, any source (passes, sessions, answers too), over the PRs merged in it.
   const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows), allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
@@ -2525,20 +2528,20 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
     return m ? usd(rows.filter(r => { const t = (r.ms ?? Date.parse(r.at)); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
   const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
-  return `<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
+  return html`<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Merged", mergedIn.length, `by merge date · of the PRs opened in this range, ${rate(merged.length, closed.length)} merged or closed`)}
       ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
-      ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : "&nbsp;")}
+      ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : raw("&nbsp;"))}
       ${kpi("Cost per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `${usd(spentIn)} all-in over ${mergedIn.length}${merged.length ? ` · own runs, median ${usd(med(mc))}` : ""} · by week ${weeks.join(" → ")}`)}</div>
-    <div class="charts"><div class="chart card flat"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div></div>
-      <div class="chart card flat"><h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
-        return a.length ? kv(`<b>${l}</b>`, `${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; }).join("")}
-        <h2>Merged by</h2>${who.map(([k, n]) => kv(`<span class="mono">${esc(k)}</span>`, `<b>${n}</b>`)).join("") || `<div class="empty">None merged.</div>`}</div></div>
+    <div class="charts">${chart(html`<h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div>`)}
+      ${chart(html`<h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
+        return a.length ? kv(html`<b>${l}</b>`, html`${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; })}
+        <h2>Merged by</h2>${who.length ? who.map(([k, n]) => kv(html`<span class="mono">${k}</span>`, html`<b>${n}</b>`)) : html`<div class="empty">None merged.</div>`}`)}</div>
     <div class="three">
-      <div class="chart card flat"><h2>Recently merged<span class="note">time to merge · lines · cost</span></h2>${list(merged.slice().sort((a, b) => newest(a, b, "merged")), "None merged.")}</div>
-      <div class="chart card flat"><h2>Still open<span class="note">oldest first</span></h2>${list(open.slice().sort((a, b) => -newest(a, b, "created")), "None open.")}</div>
-      <div class="chart card flat"><h2>Costliest merged<span class="note">every run on the PR</span></h2>${list(merged.slice().sort((a, b) => cost(b) - cost(a)), "None merged.")}
-        ${closed.length ? `<h2>Closed, not merged</h2>${list(closed, "")}` : ""}</div>
+      ${chart(html`<h2>Recently merged<span class="note">time to merge · lines · cost</span></h2>${list(merged.slice().sort((a, b) => newest(a, b, "merged")), "None merged.")}`)}
+      ${chart(html`<h2>Still open<span class="note">oldest first</span></h2>${list(open.slice().sort((a, b) => -newest(a, b, "created")), "None open.")}`)}
+      ${chart(html`<h2>Costliest merged<span class="note">every run on the PR</span></h2>${list(merged.slice().sort((a, b) => cost(b) - cost(a)), "None merged.")}
+        ${closed.length ? html`<h2>Closed, not merged</h2>${list(closed, "")}` : ""}`)}
     </div>`;
 }
 // The Stats filters, in the list panel.
@@ -2546,66 +2549,66 @@ function statsFilters() {
   const all = STATS?.rows ?? [], use = f => STATS_USES[STATS_TAB].includes(f);
   const SRC = STATS_TAB === "prs" ? { pipeline: SF_SRC.pipeline, slack: SF_SRC.slack } : SF_SRC;
   const teams = [...new Set(all.map(r => r.profile || "fxa"))].sort();
-  const opt = (f, v, l) => `<option value="${esc(v)}"${SF[f] === v ? " selected" : ""}>${esc(l)}</option>`;
+  const opt = (f, v, l) => html`<option value="${v}"${SF[f] === v ? " selected" : ""}>${l}</option>`;
   const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
-  return `<div class="sfilters">
-      <div class="fl" role="group" aria-label="Date range"><span>Range</span><div class="seg">${STATS_RANGES.map(([k, l]) => `<button type="button" data-range="${k}" aria-pressed="${SF.range === k}">${l}</button>`).join("")}</div></div>
-      ${SF.range === "custom" ? `<label>From <input type="date" data-f="from" value="${esc(SF.from)}"></label><label>To <input type="date" data-f="to" value="${esc(SF.to)}"></label>` : ""}
-      ${use("src") ? `<label>Source<select data-f="src">${opt("src", "all", "All sources")}${Object.entries(SRC).map(([v, l]) => opt("src", v, l)).join("")}</select></label>` : ""}
-      ${use("kind") ? `<label>Kind<select data-f="kind">${opt("kind", "all", "All kinds")}${kinds.map(k => opt("kind", k, KIND[k] ?? k)).join("")}</select></label>` : ""}
-      ${use("team") && teams.length > 1 ? `<label>Team<select data-f="team">${opt("team", "all", "All teams")}${teams.map(t => opt("team", t, teamLabel(t))).join("")}</select></label>` : ""}
-      ${use("model") ? `<label>Model<select data-f="model">${opt("model", "all", "All models")}${models.map(m => opt("model", m, m)).join("")}</select></label>` : ""}
-      ${use("q") ? `<label>Ticket or session<input type="search" data-f="q" placeholder="FXA-… or agent-…" value="${esc(SF.q)}"></label>` : ""}
-      ${statsFiltered() ? `<button type="button" data-reset>Clear filters</button>` : ""}</div>`;
+  return html`<div class="sfilters">
+      <div class="fl" role="group" aria-label="Date range"><span>Range</span><div class="seg">${STATS_RANGES.map(([k, l]) => html`<button type="button" data-range="${k}" aria-pressed="${String(SF.range === k)}">${l}</button>`)}</div></div>
+      ${SF.range === "custom" ? html`<label>From <input type="date" data-f="from" value="${SF.from}"></label><label>To <input type="date" data-f="to" value="${SF.to}"></label>` : ""}
+      ${use("src") ? html`<label>Source<select data-f="src">${opt("src", "all", "All sources")}${Object.entries(SRC).map(([v, l]) => opt("src", v, l))}</select></label>` : ""}
+      ${use("kind") ? html`<label>Kind<select data-f="kind">${opt("kind", "all", "All kinds")}${kinds.map(k => opt("kind", k, KIND[k] ?? k))}</select></label>` : ""}
+      ${use("team") && teams.length > 1 ? html`<label>Team<select data-f="team">${opt("team", "all", "All teams")}${teams.map(t => opt("team", t, teamLabel(t)))}</select></label>` : ""}
+      ${use("model") ? html`<label>Model<select data-f="model">${opt("model", "all", "All models")}${models.map(m => opt("model", m, m))}</select></label>` : ""}
+      ${use("q") ? html`<label>Ticket or session<input type="search" data-f="q" placeholder="FXA-… or agent-…" value="${SF.q}"></label>` : ""}
+      ${statsFiltered() ? html`<button type="button" data-reset>Clear filters</button>` : ""}</div>`;
 }
 // Runner time of the Slack sessions in this view: only those stopped since the controller records it.
 function runnerCard(rows) {
   const rs = rows.filter(r => r.runner_s != null), h = s => (s / 3600).toFixed(1);
-  if (!rs.length) return `<div class="chart card flat"><h2>Runner time<span class="note">Slack sessions</span></h2><div class="empty">No stopped session in this view has runner times yet.</div></div>`;
+  if (!rs.length) return card(html`<h2>Runner time<span class="note">Slack sessions</span></h2><div class="empty">No stopped session in this view has runner times yet.</div>`, { flat: true, cls: "chart" });
   const up = rs.reduce((x, r) => x + r.runner_s, 0), busy = rs.reduce((x, r) => x + (r.busy_s || 0), 0);
   const med = a => { const v = a.filter(x => x != null).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : null; };
   const boots = ["firecracker", "gce"].map(b => [b, med(rs.filter(r => r.backend === b).map(r => r.boot_s))]).filter(([, m]) => m != null);
   const stops = Object.entries(rs.reduce((m, r) => (m[r.stop || "not recorded"] = (m[r.stop || "not recorded"] || 0) + 1, m), {})).sort((a, b) => b[1] - a[1]);
   const peak = k => Math.max(0, ...rs.map(r => r.peak?.[k] ?? 0));
-  return `<div class="chart card flat"><h2>Runner time<span class="note">${rs.length} stopped sessions</span></h2>
+  return card(html`<h2>Runner time<span class="note">${rs.length} stopped sessions</span></h2>
     <div class="kv"><b>Runner hours</b><span>${h(up)} h</span></div>
     <div class="kv"><b>Busy (turns running)</b><span>${h(busy)} h · ${Math.round(busy / Math.max(up, 1) * 100)}%</span></div>
     <div class="kv"><b>Idle</b><span>${h(up - busy)} h</span></div>
-    ${boots.map(([b, m]) => `<div class="kv"><b>Median boot, ${esc(b)}</b><span>${m.toFixed(0)} s</span></div>`).join("")}
+    ${boots.map(([b, m]) => html`<div class="kv"><b>Median boot, ${b}</b><span>${m.toFixed(0)} s</span></div>`)}
     <div class="kv"><b>Peak memory, load, disk</b><span>${(peak("mem_mb") / 1024).toFixed(1)} GB · ${peak("load1")} · ${peak("disk_pct")}%</span></div>
     <div class="kv"><b>Compute, estimated</b><span>${usd(rs.reduce((x, r) => x + (r.compute_usd || 0), 0))}</span></div>
     ${(() => { const v = rows.filter(r => r.verify_runs != null), vr = v.reduce((x, r) => x + r.verify_runs, 0);
-      return v.length ? `<div class="kv"><b>Verify runs</b><span>${vr} in ${v.length} sessions · ${v.reduce((x, r) => x + (r.verify_full || 0), 0)} full · ${Math.round(v.reduce((x, r) => x + (r.verify_s || 0), 0) / 60)} min · ${v.reduce((x, r) => x + (r.verify_fail_runs || 0), 0)} with a FAIL</span></div>` : ""; })()}
+      return v.length ? html`<div class="kv"><b>Verify runs</b><span>${vr} in ${v.length} sessions · ${v.reduce((x, r) => x + (r.verify_full || 0), 0)} full · ${Math.round(v.reduce((x, r) => x + (r.verify_s || 0), 0) / 60)} min · ${v.reduce((x, r) => x + (r.verify_fail_runs || 0), 0)} with a FAIL</span></div>` : ""; })()}
     ${(() => { const s = rows.filter(r => r.stack_starts); if (!s.length) return "";
       const n = s.reduce((x, r) => x + r.stack_starts, 0);
-      return `<div class="kv"><b>Stack starts</b><span>${n} · avg ${Math.round(s.reduce((x, r) => x + (r.stack_s || 0), 0) / n)} s · ${s.reduce((x, r) => x + (r.stack_fails || 0), 0)} failed</span></div>`; })()}
-    <h2>Why they stopped</h2>${stops.map(([k, n]) => `<div class="kv"><b>${esc(k)}</b><span>${n}</span></div>`).join("")}</div>`;
+      return html`<div class="kv"><b>Stack starts</b><span>${n} · avg ${Math.round(s.reduce((x, r) => x + (r.stack_s || 0), 0) / n)} s · ${s.reduce((x, r) => x + (r.stack_fails || 0), 0)} failed</span></div>`; })()}
+    <h2>Why they stopped</h2>${stops.map(([k, n]) => html`<div class="kv"><b>${k}</b><span>${n}</span></div>`)}`, { flat: true, cls: "chart" });
 }
 // LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
 function llmCard(l, lo, hi) {
   const days = inRange(l?.days, lo, hi).reverse();
-  if (!days.length) return `<div class="chart card flat"><h2>LLM spend<span class="note">proxy log</span></h2><div class="empty">No proxy log yet.</div></div>`;
+  if (!days.length) return card(html`<h2>LLM spend<span class="note">proxy log</span></h2><div class="empty">No proxy log yet.</div>`, { flat: true, cls: "chart" });
   // By model over the same days: who spends, and on which kind of token.
   const bm = Object.values(inRange(l.models, lo, hi).reduce((m, r) => { const x = m[r.model] ??= { model: r.model, calls: 0, usd: 0, input: 0, cache_read: 0, cache_write: 0, output: 0 };
     for (const k of ["calls", "usd", "input", "cache_read", "cache_write", "output"]) x[k] += r[k] || 0; return m; }, {})).sort((a, b) => b.usd - a.usd);
   const all = bm.reduce((x, r) => x + r.usd, 0) || 1;
-  const models = bm.length ? `<div class="kv"><b>By model, these days</b><span></span></div>${bm.map(r => `<div class="kv"><span>${esc(modelName(r.model))}</span><span><b>${usd(r.usd)}</b> · ${Math.round(r.usd / all * 100)}% · ${r.calls} calls · ${tokn(r.cache_read)} cache read · ${tokn(r.cache_write)} written · ${tokn(r.output)} out</span></div>`).join("")}` : "";
-  return `<div class="chart card flat"><h2>LLM spend<span class="note">proxy log, test runs left out</span></h2>
+  const models = bm.length ? html`<div class="kv"><b>By model, these days</b><span></span></div>${bm.map(r => html`<div class="kv"><span>${modelName(r.model)}</span><span><b>${usd(r.usd)}</b> · ${Math.round(r.usd / all * 100)}% · ${r.calls} calls · ${tokn(r.cache_read)} cache read · ${tokn(r.cache_write)} written · ${tokn(r.output)} out</span></div>`)}` : "";
+  return card(html`<h2>LLM spend<span class="note">proxy log, test runs left out</span></h2>
     <div class="kv"><b>In this range</b><span><b>${usd(days.reduce((x, d) => x + d.usd, 0))}</b> · ${days.reduce((x, d) => x + d.calls, 0)} calls</span></div>
     ${models}
     <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
-    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`).join("")}</div>`;
+    ${days.map(d => html`<div class="kv"><span class="mono">${d.day}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`)}`, { flat: true, cls: "chart" });
 }
 // The pipeline's passes and queue: days from passes.jsonl, waits from queued to first run.
 function answerCard(rows) {
   const a = rows.filter(r => r.src === "answer"), n = k => a.filter(r => r.kind === k).length;
-  if (!a.length) return `<div class="chart card flat"><h2>Quick answers<span class="note">read-only, no sandbox</span></h2><div class="empty">No quick answer in this range.</div></div>`;
+  if (!a.length) return card(html`<h2>Quick answers<span class="note">read-only, no sandbox</span></h2><div class="empty">No quick answer in this range.</div>`, { flat: true, cls: "chart" });
   const secs = a.filter(r => r.kind !== "failed").map(r => r.secs).filter(v => v != null).sort((x, y) => x - y);
-  const kv = (k, v) => `<div class="kv"><b>${k}</b><span>${v}</span></div>`;
-  return `<div class="chart card flat"><h2>Quick answers<span class="note">read-only, no sandbox</span></h2>
+  const kv = (k, v) => html`<div class="kv"><b>${k}</b><span>${v}</span></div>`;
+  return card(html`<h2>Quick answers<span class="note">read-only, no sandbox</span></h2>
     ${kv("Answered", `${n("answered")} of ${a.length}`)}${kv("Upgraded to a sandbox", n("upgraded"))}${n("failed") ? kv("Failed, then a session", n("failed")) : ""}
     ${secs.length ? kv("Time", `median ${secs[Math.floor(secs.length / 2)]} s · slowest ${secs[secs.length - 1]} s`) : ""}
-    ${kv("Cost", `${usd(a.reduce((x, r) => x + (r.usd || 0), 0))} · ${usd(a.reduce((x, r) => x + (r.usd || 0), 0) / a.length)} each`)}</div>`;
+    ${kv("Cost", `${usd(a.reduce((x, r) => x + (r.usd || 0), 0))} · ${usd(a.reduce((x, r) => x + (r.usd || 0), 0) / a.length)} each`)}`, { flat: true, cls: "chart" });
 }
 // Sandboxes cards (i407): pipeline slots, session slots and cost, from the agents feed and the 7 day Stats rows.
 // A feed that failed or is old gives '?' or 'unknown', never a 0.
@@ -2664,28 +2667,28 @@ function renderSbCards() { putOv("sb-cards", sbCards()); }
 function loadCard(l, lo, hi) {
   const days = inRange(l?.days, lo, hi).reverse();
   const mins = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;
-  if (!days.length) return `<div class="chart card flat"><h2>Sessions at once<span class="note">cap ${l?.cap ?? "?"}</span></h2><div class="empty">No session with a stop time yet.</div></div>`;
-  return `<div class="chart card flat"><h2>Sessions at once<span class="note">Slack, peak per day, cap ${l.cap}</span></h2>
-    ${days.map(d => `<div class="kv"><span class="mono">${esc(d.day)}</span><span${d.peak >= l.cap ? ' style="color:var(--warn)"' : ""}>peak ${d.peak} of ${l.cap}${d.queued ? ` · ${d.queued} waited, up to ${mins(d.wait_max_s)}` : ""}${d.dropped ? ` · ${d.dropped} dropped` : ""}</span></div>`).join("")}</div>`;
+  if (!days.length) return card(html`<h2>Sessions at once<span class="note">cap ${l?.cap ?? "?"}</span></h2><div class="empty">No session with a stop time yet.</div>`, { flat: true, cls: "chart" });
+  return card(html`<h2>Sessions at once<span class="note">Slack, peak per day, cap ${l.cap}</span></h2>
+    ${days.map(d => html`<div class="kv"><span class="mono">${d.day}</span><span${d.peak >= l.cap ? html` style="color:var(--warn)"` : ""}>peak ${d.peak} of ${l.cap}${d.queued ? ` · ${d.queued} waited, up to ${mins(d.wait_max_s)}` : ""}${d.dropped ? ` · ${d.dropped} dropped` : ""}</span></div>`)}`, { flat: true, cls: "chart" });
 }
 function pipelineCard(p, lo, hi) {
   const days = inRange(p?.days, lo, hi).reverse(), w = (p?.waits ?? []).map(x => x.hours).sort((a, b) => a - b);
   const medOf = k => { const v = (p?.waits ?? []).map(x => x[k]).filter(x => x != null).sort((a, b) => a - b); return v.length ? `median ${v[Math.floor(v.length / 2)]} h · ${v.length} tickets` : "none yet"; };
-  if (!days.length && !w.length) return `<div class="chart card flat"><h2>Pipeline queue<span class="note">passes</span></h2><div class="empty">No pass recorded yet.</div></div>`;
-  return `<div class="chart card flat"><h2>Pipeline queue<span class="note">waits all time, passes in this range</span></h2>
-    ${w.length ? `<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>
+  if (!days.length && !w.length) return card(html`<h2>Pipeline queue<span class="note">passes</span></h2><div class="empty">No pass recorded yet.</div>`, { flat: true, cls: "chart" });
+  return card(html`<h2>Pipeline queue<span class="note">waits all time, passes in this range</span></h2>
+    ${w.length ? html`<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>
       <div class="kv"><b>Queued to PR</b><span>${medOf("pr_hours")}</span></div><div class="kv"><b>Queued to merge</b><span>${medOf("merge_hours")}</span></div>` : ""}
     <div class="kv"><b>Tickets retried</b><span>${p.retried} of ${p.tickets}</span></div>
-    ${days.map(d => { const wk = Object.entries(d.woke ?? {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${esc(k)} ${n}`).join(", ");
-      return `<div class="kv"><span class="mono">${esc(d.day)}</span><span title="${wk ? `woke: ${wk}` : ""}">${d.passes} passes · ${d.work} with work${wk ? ` (${wk})` : ""} · queue up to ${d.max_queued} · ${d.inflight} in flight${d.merged ? ` · ${d.merged} merged` : ""}${d.rejected ? ` · ${d.rejected} rejected` : ""}${d.usd ? ` · ${usd(d.usd)}` : ""}</span></div>`; }).join("")}</div>`;
+    ${days.map(d => { const wk = Object.entries(d.woke ?? {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ");
+      return html`<div class="kv"><span class="mono">${d.day}</span><span title="${wk ? `woke: ${wk}` : ""}">${d.passes} passes · ${d.work} with work${wk ? ` (${wk})` : ""} · queue up to ${d.max_queued} · ${d.inflight} in flight${d.merged ? ` · ${d.merged} merged` : ""}${d.rejected ? ` · ${d.rejected} rejected` : ""}${d.usd ? ` · ${usd(d.usd)}` : ""}</span></div>`; })}`, { flat: true, cls: "chart" });
 }
 function memoryCard(m) {
   if (!m) return "";
   const saves = Object.entries(m.saves ?? {}), d = m.last_digest;
-  return `<div class="chart card flat"><h2>Team memory<span class="note">30 days</span></h2>
-    <div class="kv"><b>Saves</b><span>${saves.length ? saves.map(([k, n]) => `${n} ${esc(k.replace(/_/g, " "))}`).join(" · ") : "none"}</span></div>
+  return card(html`<h2>Team memory<span class="note">30 days</span></h2>
+    <div class="kv"><b>Saves</b><span>${saves.length ? saves.map(([k, n]) => `${n} ${k.replace(/_/g, " ")}`).join(" · ") : "none"}</span></div>
     <div class="kv"><b>Learnings</b><span>${m.added} live at once · ${m.inbox} to the inbox · ${m.dropped} dropped as instructions</span></div>
-    <div class="kv"><b>Last digest</b><span>${d ? `${esc(d.at.slice(0, 10))} · ${esc(d.result)}${d.result === "opened" ? ` · ${d.added} from the inbox, ${d.inbox} to look at` : ""}` : "none yet"}</span></div></div>`;
+    <div class="kv"><b>Last digest</b><span>${d ? `${d.at.slice(0, 10)} · ${d.result}${d.result === "opened" ? ` · ${d.added} from the inbox, ${d.inbox} to look at` : ""}` : "none yet"}</span></div>`, { flat: true, cls: "chart" });
 }
 // Stats filters, remembered per viewer in this browser.
 const STATS_RANGES = [["today", "Today"], ["yesterday", "Yesterday"], ["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"], ["month", "This month"], ["lastmonth", "Last month"], ["all", "All time"], ["custom", "Custom"]];
