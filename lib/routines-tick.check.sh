@@ -131,6 +131,7 @@ N=$((T + 50000))
 g1="$(st started agent-gone01 $((N - 60)))"
 echo '{"key":"agent-paus01","state":"paused"}' > "$tmp/agent-paus01.json"; g2="$(st started agent-paus01 $((N - 60)))"
 echo '{"key":"agent-prok01","state":"pr_open","pr_url":"https://github.com/mozilla/fxa/pull/7"}' > "$tmp/agent-prok01.json"; g3="$(st started agent-prok01 $((N - 60)))"
+touch -t 202001010000 "$tmp/agent-prok01.json"   # ended long before N: the 10-min grace reads the record's mtime, a real clock
 echo '{"key":"agent-long01","state":"active"}' > "$tmp/agent-long01.json"; g4="$(st started agent-long01 $((N - 7300)))"
 echo '{"key":"agent-fine01","state":"active"}' > "$tmp/agent-fine01.json"; g5="$(st started agent-fine01 $((N - 60)))"
 g6="$(st claimed "" $((N - 660)))"; g7="$(st claimed "" $((N - 540)))"
@@ -227,6 +228,7 @@ check "routine_run_fail ends a queued run" "failed|x" "$(db_value "SELECT state 
 # Reconcile: a live session with a pr_url is still the bot's (it calls done); a stopped one with no result fails.
 echo '{"key":"agent-prlv01","state":"active","pr_url":"https://github.com/mozilla/fxa/pull/8"}' > "$tmp/agent-prlv01.json"; g10="$(st started agent-prlv01 $((N - 60)))"
 echo '{"key":"agent-stpd01","state":"stopped"}' > "$tmp/agent-stpd01.json"; g11="$(st started agent-stpd01 $((N - 60)))"
+touch -t 202001010000 "$tmp/agent-stpd01.json"
 routine_reconcile "$N" live
 check "a live session with a PR stays started for the bot's done call; a stopped one with no result fails" "started||failed|the session stopped with no result" \
   "$(s_of "$g10")|$(s_of "$g11")"
