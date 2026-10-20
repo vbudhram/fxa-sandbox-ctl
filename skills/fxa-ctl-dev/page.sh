@@ -2,6 +2,7 @@
 # Render the dashboard in headless Chrome with fetch stubbed from a fixture, for UI checks with no server.
 #   bash skills/fxa-ctl-dev/page.sh '#teams/example' [--fixture f.json] [--probe 'async js'] [--shot out.png] [--width 1280] [--height 900]
 # --probe is the body of an async function, run after the page settles; what it returns is printed.
+# PAGE_BUDGET: Chrome's virtual time budget in ms (default 6000), for a probe that waits through several poll intervals.
 # Headless Chrome keeps the window at least 500 px wide: a narrower --width renders at 500. Test a phone
 # layout by the element's own width (a container query), not by --width under 500.
 # --shot writes a screenshot. With neither, it prints the rendered DOM.
@@ -44,7 +45,7 @@ if probe:
 const d=document.createElement("pre");d.id="__probe";d.textContent=t;document.body.appendChild(d);},2500)</script>""" % probe
 open(out, "w").write(html)
 PY
-args=(--headless=new --disable-gpu --no-sandbox --virtual-time-budget=6000 "--window-size=${width},${height}")
+args=(--headless=new --disable-gpu --no-sandbox --virtual-time-budget=${PAGE_BUDGET:-6000} "--window-size=${width},${height}")
 if [ -n "$shot" ]; then "$chrome" "${args[@]}" --screenshot="$shot" "file://$dir/p.html$hash" >/dev/null 2>&1; echo "$shot"
 else
   dom="$("$chrome" "${args[@]}" --dump-dom "file://$dir/p.html$hash" 2>/dev/null)"

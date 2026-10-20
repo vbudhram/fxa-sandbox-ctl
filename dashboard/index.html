@@ -976,7 +976,7 @@ function renderAgents() {
 function costPerMerged(lo, hi, prs, rows) {
   const inR = t => t >= lo && t < hi;
   const mergedIn = (prs ?? []).filter(p => p.merged && inR(Date.parse(p.merged)));
-  const spentIn = (rows ?? []).filter(r => inR(Date.parse(r.at))).reduce((x, r) => x + (r.usd || 0) + (r.compute_usd || 0), 0);
+  const spentIn = (rows ?? []).filter(r => inR((r.ms ?? Date.parse(r.at)))).reduce((x, r) => x + (r.usd || 0) + (r.compute_usd || 0), 0);
   return { mergedIn, spentIn, per: mergedIn.length ? spentIn / mergedIn.length : null };
 }
 // putOv: put() for an Overview card. While a link in the card has the focus and the card's links and labels
@@ -1018,7 +1018,7 @@ function ovSpend(range) {
   const [lo] = statsBounds(range), today = localDay(Date.now()), days = new Map();
   for (const d = new Date(localDay(lo)); d.getTime() <= today; d.setDate(d.getDate() + 1)) days.set(d.getTime(), { t: d.getTime(), by: {}, usd: 0, merged: 0 });
   const by = {}; let total = 0;
-  (STATS?.rows ?? []).forEach(r => { const t = Date.parse(r.at); if (!(t >= lo)) return; const d = days.get(localDay(t)); if (!d) return;
+  (STATS?.rows ?? []).forEach(r => { const t = (r.ms ?? Date.parse(r.at)); if (!(t >= lo)) return; const d = days.get(localDay(t)); if (!d) return;
     const u = r.usd || 0; d.by[r.src] = (d.by[r.src] ?? 0) + u; d.usd += u; by[r.src] = (by[r.src] ?? 0) + u; total += u; });
   (STATS?.prs ?? []).forEach(p => { const d = p.merged && days.get(localDay(Date.parse(p.merged))); if (d) d.merged++; });
   const list = [...days.values()], peak = list.reduce((a, d) => d.usd > (a?.usd ?? 0) ? d : a, null);
@@ -1048,7 +1048,7 @@ function renderOvToday() {
   const note = statsNote();
   if (!STATS) return putOv("ov-today", `<h2 class="overline">Today</h2><div class="emptybox">${esc(note || "Loading the stats…")}</div>`);
   const DAY = 86400000, today = localDay(Date.now()), byDay = new Map(), models = {};
-  (STATS.rows ?? []).forEach(r => { const d = localDay(Date.parse(r.at)); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
+  (STATS.rows ?? []).forEach(r => { const d = localDay((r.ms ?? Date.parse(r.at))); byDay.set(d, (byDay.get(d) ?? 0) + (r.usd || 0)); if (d === today) models[r.model || ""] = (models[r.model || ""] ?? 0) + (r.usd || 0); });
   const now = byDay.get(today) ?? 0, past = daysBack(today, 31).slice(1).map(d => byDay.get(d)).filter(v => v > 0).sort((a, b) => a - b);
   const mid = past.length >= 3 ? past.length / 2 : 0, usual = mid ? (past.length % 2 ? past[Math.floor(mid)] : (past[mid - 1] + past[mid]) / 2) : null, pct = usual ? Math.round(now / usual * 100) : null;
   const hr = STATS.llm?.hour_usd, hourOk = typeof hr === "number" && !note, toMid = (today + DAY - Date.now()) / 3600000;
@@ -1142,7 +1142,7 @@ function ovNextPass() {
   return t ? `in ${Math.max(1, Math.round((t - now) / 60))} min` : "";
 }
 function ovLastRun() {
-  const t = Math.max(0, ...(STATS?.rows ?? []).map(r => Date.parse(r.at)).filter(x => x > 0));
+  const t = Math.max(0, ...(STATS?.rows ?? []).map(r => (r.ms ?? Date.parse(r.at))).filter(x => x > 0));
   return t ? ago(Math.max(0, Math.round((Date.now() - t) / 1000))) : "";
 }
 // What the system is doing (i356): Now from the health facts, the in-flight CI and the review list; Next 12 hours
@@ -1242,7 +1242,7 @@ function renderOvNeeds() {
 const median = a => { const s = a.filter(v => typeof v === "number").sort((x, y) => x - y), m = s.length >> 1; return !s.length ? null : s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 function ovKpis(range, now = Date.now()) {
   const rows = STATS?.rows ?? [], prs = STATS?.prs ?? [], [lo] = statsBounds(range), len = now - lo, [lo7] = statsBounds("7d"), len7 = now - lo7;
-  const at = (a, b) => rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; });
+  const at = (a, b) => rows.filter(r => { const t = (r.ms ?? Date.parse(r.at)); return t >= a && t < b; });
   const spend = rs => rs.reduce((x, r) => x + (r.usd || 0), 0), pipe = rs => rs.filter(r => r.src === "pipeline");
   const rate = rs => { const p = pipe(rs); return p.length ? p.filter(r => r.pr).length / p.length : null; };
   const med = rs => median(pipe(rs).map(r => r.min));
@@ -1292,7 +1292,7 @@ function renderOvMini() {
 // from the stats rows (a row with no profile is fxa), and this month's spend against its budget.
 function ovTeams(range) {
   const [lo] = statsBounds(range), by = {}, f = ovFloor();
-  (STATS?.rows ?? []).forEach(r => { if (!(Date.parse(r.at) >= lo)) return; const x = by[r.profile || "fxa"] ??= { runs: 0, prs: 0, usd: 0 };
+  (STATS?.rows ?? []).forEach(r => { if (!((r.ms ?? Date.parse(r.at)) >= lo)) return; const x = by[r.profile || "fxa"] ??= { runs: 0, prs: 0, usd: 0 };
     x.runs++; x.usd += r.usd || 0; if (r.src === "pipeline" && r.pr) x.prs++; });
   const now = {}; f.tiles.filter(t => t.kind !== "free" && t.team).forEach(t => { now[t.team] = (now[t.team] ?? 0) + 1; });
   return (TEAMS?.teams ?? []).filter(t => !t.load_error).map(t => ({ t, u: by[t.profile] ?? { runs: 0, prs: 0, usd: 0 }, now: f.unknown ? null : now[t.profile] ?? 0 }))
@@ -1341,12 +1341,12 @@ function renderOvRuns() {
   if (RUNS_ERR) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Recent runs unavailable: ${esc(RUNS_ERR)}. The next poll tries again.</div>`);
   if (!RUNS) return putOv("ov-runs", `<h2>Recent runs</h2><div class="emptybox">Loading the recent runs…</div>`);
   // Today's count from every stats row, not only the runs on this card; passes are the system card's.
-  const today = localDay(Date.now()), td = STATS ? (STATS.rows ?? []).filter(r => r.src !== "pass" && localDay(Date.parse(r.at)) === today) : null;
+  const today = localDay(Date.now()), td = STATS ? (STATS.rows ?? []).filter(r => r.src !== "pass" && localDay((r.ms ?? Date.parse(r.at))) === today) : null;
   const out = r => r.src === "pipeline" ? (r.pr ? "pr" : "no_pr") : "answered", c = k => td.filter(r => out(r) === k).length;
   const sum = !td ? "" : td.length ? `${td.length} today${[["pr", "PR opened", "PRs opened"], ["no_pr", "with no change", "with no change"], ["answered", "answered", "answered"]]
     .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : "none today", note = statsNote();
   const row = r => {
-    const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = Date.parse(r.at), d = new Date(t);
+    const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = (r.ms ?? Date.parse(r.at)), d = new Date(t);
     const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
     const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? `<a class="key" href="${esc(href)}"${r.src === "pipeline" ? ` target="_blank" rel="noreferrer"` : ""}>${esc(r.key)}</a>` : `<span class="key">${esc(r.key)}</span>`;
     return `<div class="ovrun" data-run="${esc(r.key)}"><time datetime="${esc(r.at)}">${esc(when)}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${esc(kind)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
@@ -1699,6 +1699,8 @@ async function loadStats() {
     const r = await fetch("/api/stats", { cache:"no-store" }), j = r.ok ? await r.json() : null;
     if (!j || j.error) throw new Error(j?.error || `HTTP ${r.status}`);
     STATS = j; STATS_AT = Date.now(); STATS_ERR = null;
+    // Each render filtered the rows by time with about 59,000 Date.parse calls: parse each row once.
+    for (const r of STATS.rows ?? []) r.ms = Date.parse(r.at);
   } catch (e) { STATS_ERR = `the stats feed could not be read (${e.message})`; }
   safeRender(renderStats, "s-stats"); safeRender(renderNav); if (VIEW === "pipeline") safeRender(renderLanes, "s-lanes");
   if (VIEW === "overview") [[renderOvHead, "ov-head"], [renderOvSpend, "ov-spend"], [renderOvToday, "ov-today"], [renderOvMini, "ov-mini"], [renderOvTeams, "ov-teams"], [renderOvFloor, "ov-floor"], [renderOvRuns, "ov-runs"]].forEach(([f, id]) => safeRender(f, id));
@@ -1899,7 +1901,7 @@ function teamUse() {
   const cut = Date.now() / 1000 - 30 * 86400, u = {};
   for (const r of STATS.rows) {
     // Cost from every source; the count is Slack sessions, and pipeline runs are their own count.
-    const t = r.t0 ?? Date.parse(r.at) / 1000; if (!(t >= cut)) continue;
+    const t = r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000; if (!(t >= cut)) continue;
     const x = u[r.profile || "fxa"] ??= { ...NO_USE, slack_usd: 0, pipe_usd: 0 };
     x.usd += r.usd || 0;
     if (r.src === "pipeline" || r.src === "pass") x.pipe_usd += r.usd || 0; else x.slack_usd += r.usd || 0;
@@ -1955,7 +1957,7 @@ function teamErrs() {
 function teamWeek() {
   if (!STATS?.rows) return null;
   const cut = Date.now() / 1000 - 7 * 86400, out = {};
-  STATS.rows.forEach(r => { const t = r.t0 ?? Date.parse(r.at) / 1000; if (!(t >= cut)) return; const x = out[r.profile || "fxa"] ??= { runs: 0, prs: new Set() }; x.runs++; if (r.pr) x.prs.add(r.pr); });
+  STATS.rows.forEach(r => { const t = r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000; if (!(t >= cut)) return; const x = out[r.profile || "fxa"] ??= { runs: 0, prs: new Set() }; x.runs++; if (r.pr) x.prs.add(r.pr); });
   return out;
 }
 function budgetCell(t) {
@@ -2022,12 +2024,12 @@ function teamRecent(p) {
   if (!rows.length) return `<p class="na">No sessions or runs in 30 days.</p>`;
   return rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
     const k = sessHref(r.key) ? `<a href="${sessHref(r.key)}">${esc(name)}</a>` : esc(name), pr = r.pr ? (prUrl(r.pr) ? `<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${esc(r.pr)}</a>` : `PR #${esc(r.pr)}`) : "";
-    return `<div class="titem"><span>${k} ${r.src === "pass" ? "" : `<span class="na">· ${esc(r.src)}</span>`}</span><span>${pr || `<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? Date.parse(r.at) / 1000)))}</span>`}</span></div>`; }).join("");
+    return `<div class="titem"><span>${k} ${r.src === "pass" ? "" : `<span class="na">· ${esc(r.src)}</span>`}</span><span>${pr || `<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)))}</span>`}</span></div>`; }).join("");
 }
 function teamActivity(p) {
   if (!STATS?.rows) return `<p class="na">—</p>`;
   const now = Date.now() / 1000, n = Array(30).fill(0);
-  STATS.rows.forEach(r => { if ((r.profile || "fxa") !== p) return; const d = Math.floor((now - (r.t0 ?? Date.parse(r.at) / 1000)) / 86400); if (d >= 0 && d < 30) n[29 - d]++; });
+  STATS.rows.forEach(r => { if ((r.profile || "fxa") !== p) return; const d = Math.floor((now - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)) / 86400); if (d >= 0 && d < 30) n[29 - d]++; });
   const max = Math.max(1, ...n), total = n.reduce((a, b) => a + b, 0);
   return `<svg viewBox="0 0 300 64" class="tchart" role="img" aria-label="${total} sessions and runs in 30 days, at most ${max} a day">${n.map((v, i) => `<rect x="${i * 10 + 1}" y="${60 - Math.round(v / max * 56)}" width="8" height="${Math.max(1, Math.round(v / max * 56))}" rx="1" class="${v ? "on" : ""}"></rect>`).join("")}<line x1="0" y1="60.5" x2="300" y2="60.5"></line></svg>
     <div class="tchartl"><span>30 days ago</span><span>${total} sessions and runs</span><span>today</span></div>`;
@@ -2394,7 +2396,7 @@ function renderStats() {
   const DAY = 86400000, [lo, hi] = statsBounds(SF.range);
   const q = SF.q.trim().toLowerCase();
   const on = f => STATS_USES[STATS_TAB].includes(f) && SF[f] !== SF_DEFAULT[f];
-  const rows = all.filter(r => { const t = Date.parse(r.at); return t >= lo && t < hi
+  const rows = all.filter(r => { const t = (r.ms ?? Date.parse(r.at)); return t >= lo && t < hi
     && (!on("src") || r.src === SF.src) && (!on("kind") || r.kind === SF.kind)
     && (!on("model") || r.model === SF.model) && (!on("team") || (r.profile || "fxa") === SF.team) && (!on("q") || r.key.toLowerCase().includes(q)); });
   const sum = a => a.reduce((x, r) => x + (r.usd || 0), 0), med = a => { const s = a.filter(v => v != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
@@ -2405,16 +2407,16 @@ function renderStats() {
   // Pipeline runs priced before the proxy (cost_source) count the main agent only: about half their cost.
   const mainOnly = rows.filter(r => r.src === "pipeline" && r.main_only).length;
   // Buckets: days for a short range, weeks (from Monday) for a long one.
-  const first = rows.length ? Math.min(...rows.map(r => Date.parse(r.at))) : Date.now();
+  const first = rows.length ? Math.min(...rows.map(r => (r.ms ?? Date.parse(r.at)))) : Date.now();
   const start = Math.max(lo === 0 ? first : lo, Math.min(first, lo === 0 ? first : lo)), end = Math.min(hi, Date.now() + 1);
   const byDay = (end - Math.min(start, end)) <= 45 * DAY;
   const bucketOf = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); if (!byDay) d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const buckets = new Map();
   for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0, merged: 0, low: 0 });
-  rows.forEach(r => { const b = buckets.get(bucketOf(Date.parse(r.at))); if (b) { b.runs++; b.spend += r.usd || 0; if (r.src === "pipeline" && r.main_only) b.low++; } });
+  rows.forEach(r => { const b = buckets.get(bucketOf((r.ms ?? Date.parse(r.at)))); if (b) { b.runs++; b.spend += r.usd || 0; if (r.src === "pipeline" && r.main_only) b.low++; } });
   (st.prs ?? []).forEach(p => { const b = p.merged && (SF.src === "all" || p.src === SF.src) && buckets.get(bucketOf(Date.parse(p.merged))); if (b) b.merged++; });
   const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
-  const lbl = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const dayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }), lbl = t => dayFmt.format(t);
   // A month of days does not fit 30 labels: with many bars, label about every fifth day and
   // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
   const many = bl.length > 14, step = Math.ceil(bl.length / 7);
@@ -2424,7 +2426,7 @@ function renderStats() {
       <span class="w">${showDay(i) ? esc(lbl(b.t)) : "&nbsp;"}</span></div>`).join(""); };
   const kpi = (l, v, sub) => `<div class="scard card flat sm"><div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div></div>`;
   const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
-    return [...rows.reduce((m, r) => m.set(v(r), [...(m.get(v(r)) ?? []), r]), new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
+    return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
   const conv = r => r.conv ?? r.key, share = v => Math.round(v / Math.max(spend, 0.01) * 100);
   const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
   const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? jira(r.name) : `<span class="mono">${esc(r.name)}</span>`;
@@ -2494,7 +2496,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows), allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
   const WK = 7 * 86400000, mon = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
-    return m ? usd(rows.filter(r => { const t = Date.parse(r.at); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
+    return m ? usd(rows.filter(r => { const t = (r.ms ?? Date.parse(r.at)); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
   const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
   return `<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Merged", mergedIn.length, `by merge date · of the PRs opened in this range, ${rate(merged.length, closed.length)} merged or closed`)}
@@ -2599,7 +2601,7 @@ function sbHostHours(rows, lo, now) {
 function sbCards() {
   // Before the first stats poll the lines say Loading, as on Overview; a failed or old feed says unknown.
   const g = AGENTS, f = ovFloor(), now = Date.now() / 1000, lo = now - 7 * 86400, loading = !STATS && !STATS_ERR, note = loading ? "" : statsNote() || (STATS ? "" : "the stats feed could not be read"), statsOk = !!STATS && !note;
-  const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && Date.parse(r.at) / 1000 >= lo) : [], unk = loading ? "Loading the stats…" : `unknown: ${note.replace(/\.$/, "")}`;
+  const rows = statsOk ? (STATS.rows ?? []).filter(r => r.at && (r.ms ?? Date.parse(r.at)) / 1000 >= lo) : [], unk = loading ? "Loading the stats…" : `unknown: ${note.replace(/\.$/, "")}`;
   const hrs = h => `${+h.toFixed(1)} h`, seg = (cls, t) => `<i class="${cls}" title="${esc(t)}"></i>`;
   // Pipeline slots: one segment for each slot.
   const pt = f.unknown ? [] : f.tiles.filter(t => t.kind === "pipe" || t.slot), busy = pt.filter(t => t.kind === "pipe").length;
@@ -3814,7 +3816,8 @@ async function poll() {
 }
 document.getElementById("refresh").addEventListener("click", async () => {
   try { await fetch("/api/refresh", { method: "POST" }); } catch {}
-  setTimeout(poll, 1500);
+  // The rebuild takes 15-25 s: poll every 2 s while it runs (at most 30 s), so its result shows when it lands.
+  for (let i = 0; i < 15; i++) { await new Promise(r => setTimeout(r, i ? 2000 : 1500)); await poll(); if (!STATE?.refreshing) break; }
 });
 // Sessions as they change: every 3 s, the server answers from the store with only the
 // sessions written since the last cursor. The 30 s feed still brings the live agents;
@@ -3846,8 +3849,10 @@ async function pollSessions() {
 route();
 poll();
 pollSessions();
-setInterval(poll, 15000);
-setInterval(pollSessions, 3000);
+// A hidden tab polls nothing (only tails checked before); it catches up when it shows again.
+setInterval(() => document.hidden || poll(), 15000);
+setInterval(() => document.hidden || pollSessions(), 3000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); pollSessions(); } });
 setInterval(() => pollTails(TAIL_KEYS), 5000);
 </script>
 </body>

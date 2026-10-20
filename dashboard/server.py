@@ -38,6 +38,12 @@ import fxadb  # noqa: E402  the controller's store: sessions as they change
 import routine  # noqa: E402  the one reader of a team's spend against its caps
 
 
+
+class Server(ThreadingHTTPServer):
+    # Each poll opens 6-8 connections at once per tab; the default backlog of 5 dropped some into a 1 s SYN retry.
+    request_queue_size = 64
+
+
 class Feed:
     """Last good result of one command, plus what happened on the latest attempt."""
     def __init__(self, name, args, interval, timeout):
@@ -139,6 +145,8 @@ def clean_tail(raw, limit=200):
     return out[-limit:]
 
 ERRORS = {"at": 0, "body": None}
+# Each open tab polled lessons every 15 s, a 0.3 s ctl process each time; an approve or reject clears it.
+LESSONS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
 CTL_SLOTS = threading.BoundedSemaphore(4)
@@ -348,7 +356,12 @@ _PRIVATE = {}  # profile -> (when, private)
 
 
 def team_private(profile):
-    """True when the team has a private repo (profile show), cached 10 minutes. No answer counts as private."""
+    """True when the team has a private repo, cached 10 minutes. No answer counts as private."""
+    # The teams feed's 'profile list' already holds each team's flag: a request never waits on 'profile show' for it.
+    teams = globals().get("TEAMS")
+    row = next((t for t in ((teams.read()[0] if teams else None) or []) if isinstance(t, dict) and t.get("profile") == profile), None)
+    if row is not None:
+        return row.get("private") is not False
     hit = _PRIVATE.get(profile)
     if hit and time.time() - hit[0] < 600:
         return hit[1]
@@ -684,6 +697,7 @@ class Handler(BaseHTTPRequestHandler):
         if proc.returncode != 0:
             self._json(400, {"error": (proc.stderr or "failed").strip()[:200]})
             return
+        LESSONS["at"] = 0  # the next read shows the decision, not the cached list
         self._json(200, {"ok": True})
 
     def _admin(self, method, path):
@@ -1093,10 +1107,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/lessons":
             # A failed read says so (503), so the page never shows it as "No pending lessons".
             try:
-                proc = ctl_run(["lessons", "--json"], timeout=15)
-                if proc.returncode != 0:
-                    raise RuntimeError(f"lessons exited {proc.returncode}")
-                rows = json.loads(proc.stdout) if proc.stdout.strip() else []
+                body = cached_ctl(LESSONS, ["lessons", "--json"], 15, 60)
+                if body is None:
+                    raise RuntimeError("no lessons read yet")
+                rows = json.loads(body)
             except Exception as e:
                 self._json(503, {"error": f"the lessons read failed ({type(e).__name__})"})
                 return
@@ -1153,6 +1167,6 @@ if __name__ == "__main__":
     try:
         # 127.0.0.1 unless told otherwise: on the manager VM the Cloud Run gateway
         # reaches it on the private network, and a GCP firewall rule admits only it.
-        ThreadingHTTPServer((os.environ.get("FXA_DASHBOARD_BIND") or "127.0.0.1", PORT), Handler).serve_forever()
+        Server((os.environ.get("FXA_DASHBOARD_BIND") or "127.0.0.1", PORT), Handler).serve_forever()
     except KeyboardInterrupt:
         print("\nstopped.")
