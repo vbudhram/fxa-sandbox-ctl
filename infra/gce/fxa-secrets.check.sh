@@ -56,4 +56,8 @@ check "an optional secret that fails to read (not NOT_FOUND): it stops, and the 
   "$([ "$rc" = 0 ] && echo 0 || echo 1)|$(cmp -s "$C/dashboard-hmac" "$t/hmac.good" && echo same)|$(cmp -s "$C/mcp-gateway.env" "$t/gw.good" && echo same)|$(grep -q 'could not read fxa-dashboard-hmac' "$t/err" && echo yes)"
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>"$t/err"; rc=$?
 check "optional secrets that do not exist: it runs, says nothing about them, and removes their files" "0|0|no|no" "$rc|$(grep -c NOT_FOUND "$t/err")|$([ -e "$C/dashboard-hmac" ] && echo yes || echo no)|$([ -e "$C/mcp-gateway.env" ] && echo yes || echo no)"
+# A link planted in the fxa-owned config folder does not aim root's error write.
+echo keep > "$t/target"; ln -sf "$t/target" "$C/.opt-err"
+PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
+check "a link planted at the old error path leaves its target unchanged" "keep" "$(cat "$t/target")"
 exit "$fail"
