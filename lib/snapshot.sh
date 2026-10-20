@@ -179,9 +179,11 @@ _snapshot_agent_json() {
       | map(.message.usage // {}) |
       { in: (map(.input_tokens // 0) | add // 0), out: (map(.output_tokens // 0) | add // 0),
         cache_read: (map(.cache_read_input_tokens // 0) | add // 0),
-        cache_write: (map(.cache_creation_input_tokens // 0) | add // 0) }) as $u |
+        cache_write: (map(.cache_creation_input_tokens // 0) | add // 0),
+        cache_write_1h: (map(.cache_creation.ephemeral_1h_input_tokens // 0) | add // 0) }) as $u |
     { turns: ($a | length), idle_seconds: $idle, model: $model, tokens: $u,
-      cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + $u.cache_write * $p[2] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),
+      # A 1-hour cache write costs 2x input, the rest 5-minute writes at the cache_write rate (as the proxy prices them).
+      cost_so_far: ((($u.in * $p[0] + $u.out * $p[1] + ($u.cache_write - $u.cache_write_1h) * $p[2] + $u.cache_write_1h * 2 * $p[0] + $u.cache_read * $p[3]) / 1000000 * 100 | round) / 100),
       last_text: ($text | split("\n") | map(select(test("\\S"))) | first // "" | gsub("\\s+"; " ") | .[0:200]),
       last_tool: ($tool | gsub("\\s+"; " ") | .[0:160]),
       cost_usd: ($r.total_cost_usd // null),

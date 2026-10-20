@@ -46,6 +46,7 @@ def sum_models: to_entries | map(.value) |
     | { messages: ($m|length), model: ($m|map(.message.model)|unique|first),
         input: ($m|map(.message.usage.input_tokens//0)|add), output: ($m|map(.message.usage.output_tokens//0)|add),
         cache_write: ($m|map(.message.usage.cache_creation_input_tokens//0)|add),
+        cache_write_1h: ($m|map(.message.usage.cache_creation.ephemeral_1h_input_tokens//0)|add),
         cache_read: ($m|map(.message.usage.cache_read_input_tokens//0)|add), source: "assistant-sum" }
   end
 LOCAL
@@ -59,7 +60,7 @@ read -r -d '' _TELEMETRY_SESSION <<'SESSION' || true
 | group_by(.message.model) | map({key: .[0].message.model, value: {
     input: (map(.message.usage.input_tokens//0)|add), output: (map(.message.usage.output_tokens//0)|add),
     cache_write: (map(.message.usage.cache_creation_input_tokens//0)|add), cache_read: (map(.message.usage.cache_read_input_tokens//0)|add),
-    n: length }}) | from_entries as $models
+    cache_write_1h: (map(.message.usage.cache_creation.ephemeral_1h_input_tokens//0)|add), n: length }}) | from_entries as $models
 | ($models | to_entries | map(.value)) as $v
 | { messages: ($v|map(.n)|add), model: ($models|to_entries|max_by(.value.output)|.key),
     input: ($v|map(.input)|add), output: ($v|map(.output)|add),
@@ -102,7 +103,7 @@ telemetry_usage() {
 # List pricing in USD per 1M tokens: input, output, cache_write, cache_read.
 # Priced at record time, because reconstructing later means guessing which
 # pricing applied on the day. Source: platform.claude.com/docs/en/about-claude/pricing
-# (read 2026-09-01). cache_write is the 5-minute rate (1.25x input).
+# (read 2026-09-01). cache_write is the 5-minute rate (1.25x input); a 1-hour write is priced 2x input where it is counted.
 #
 # Order matters: the fable-5-1 row must precede the fable-5 glob. Fable 5.1 is
 # the one model whose cache reads are 0.025x input, not 0.1x. Likewise opus-5-5
@@ -265,14 +266,15 @@ print(max(0,int(end-start)) if start else 0)" "$log" "${done_file:-}" "$launched
     cost="$(printf '%s\n' "$usage" | jq -c --arg t "$(printf "$table")" '
       ($t | split("\n") | map(select(length>0) | split(" ") | {key:.[0], value:(.[1:]|map(tonumber))}) | from_entries) as $p
       | { cost_usd: ([.models | to_entries[] | select($p[.key] != null) |
-            (.value.input*$p[.key][0] + .value.output*$p[.key][1] + .value.cache_write*$p[.key][2] + .value.cache_read*$p[.key][3]) / 1000000]
+            (.value.input*$p[.key][0] + .value.output*$p[.key][1] + (.value.cache_write - (.value.cache_write_1h//0))*$p[.key][2]
+             + (.value.cache_write_1h//0)*2*$p[.key][0] + .value.cache_read*$p[.key][3]) / 1000000]
             | add // 0 | . * 100 | round / 100),
           priced: ($p | with_entries(.value |= {input:.[0], output:.[1], cache_write:.[2], cache_read:.[3]})) }')"
   elif [ -n "$rates" ]; then
     cost="$(printf '%s\n' "$usage" | jq -c --arg r "$rates" '
       ($r | split(" ") | map(select(length>0) | tonumber)) as $p
       | { cost_usd: (((.input//0)*$p[0] + (.output//0)*$p[1]
-                    + (.cache_write//0)*$p[2] + (.cache_read//0)*$p[3]) / 1000000
+                    + ((.cache_write//0) - (.cache_write_1h//0))*$p[2] + (.cache_write_1h//0)*2*$p[0] + (.cache_read//0)*$p[3]) / 1000000
                     * 100 | round / 100),
           priced: {input:$p[0], output:$p[1], cache_write:$p[2], cache_read:$p[3]} }')"
   else
