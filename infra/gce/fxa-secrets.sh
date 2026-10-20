@@ -2,22 +2,33 @@
 set -euo pipefail
 H=/home/fxa W=/home/fxa/Desktop/working2 C=/home/fxa/.config/fxa
 P="$(curl -fsS -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/project/project-id)"
-get() { gcloud secrets versions access latest --secret "$1" --project "$P" 2>/dev/null; }
+get() { gcloud secrets versions access latest --secret "$1" --project "$P"; }
+# The credentials the services cannot start without: all of them read, or no file changes, so a failed
+# read (IAM, quota, network not ready) keeps the last good files and the units on them.
+need() { local v; v="$(get "$1")" && [ -n "$v" ] || { echo "fxa-secrets: could not read $1; no file changed" >&2; exit 1; }; printf '%s' "$v"; }
+put() { printf '%s' "$2" > "$1.new" && mv "$1.new" "$1"; }
 umask 077
-get fxa-github-app-key > "$C/github-app.pem"
-mkdir -p "$H/.circleci"; printf 'token: %s\n' "$(get fxa-circleci-token)" > "$H/.circleci/cli.yml"
+pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts
 if [ -d "$W/fxa-sandbox-ctl" ]; then
-  { cat "$C/ctl.env.base"
-    # The API key when there is one (billed per token), else a setup-token.
-    k="$(get fxa-anthropic-api-key || true)"; t="$(get fxa-claude-token || true)"
-    if [ -n "$k" ]; then printf 'ANTHROPIC_API_KEY=%s\n' "$k"; elif [ -n "$t" ]; then printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$t"; fi
-    true; } > "$W/fxa-sandbox-ctl/.env"
+  # The API key when there is one (billed per token), else a setup-token.
+  k="$(get fxa-anthropic-api-key || true)"; t="$(get fxa-claude-token || true)"
+  if [ -n "$k" ]; then cl="ANTHROPIC_API_KEY=$k"; elif [ -n "$t" ]; then cl="CLAUDE_CODE_OAUTH_TOKEN=$t"
+  else echo "fxa-secrets: could not read fxa-anthropic-api-key or fxa-claude-token; no file changed" >&2; exit 1; fi
 fi
-if [ -d "$W/fxa-agent-bot" ]; then
-  { cat "$C/bot.env.base"
-    printf 'SLACK_BOT_TOKEN=%s\n' "$(get fxa-slack-bot-token)"
-    printf 'SLACK_APP_TOKEN=%s\n' "$(get fxa-slack-app-token)"; } > "$W/fxa-agent-bot/.env"
-fi
+# Plain assignments, not inside || or &&: set -e does not stop a failed $(...) there.
+if [ -d "$W/fxa-agent-bot" ]; then sb="$(need fxa-slack-bot-token)"; sa="$(need fxa-slack-app-token)"; fi
+put "$C/github-app.pem" "$pem
+"
+mkdir -p "$H/.circleci"; put "$H/.circleci/cli.yml" "token: $ci
+"
+[ ! -d "$W/fxa-sandbox-ctl" ] || put "$W/fxa-sandbox-ctl/.env" "$(cat "$C/ctl.env.base")
+$cl
+"
+[ ! -d "$W/fxa-agent-bot" ] || put "$W/fxa-agent-bot/.env" "$(cat "$C/bot.env.base")
+SLACK_BOT_TOKEN=$sb
+SLACK_APP_TOKEN=$sa
+"
+unset pem ci k t cl sb sa
 # The MCP gateway's upstream credentials, in their own file: no other service reads it.
 r="$(get fxa-runlayer-agent-token || true)" s="$(get fxa-sentry-token || true)" g="$(get fxa-grafana-token || true)"
 { [ -z "$r" ] || printf 'RUNLAYER_AGENT_TOKEN=%s\n' "$r"
