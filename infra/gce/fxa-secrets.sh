@@ -15,16 +15,19 @@ if [ -d "$W/fxa-sandbox-ctl" ]; then
   if [ -n "$k" ]; then cl="ANTHROPIC_API_KEY=$k"; elif [ -n "$t" ]; then cl="CLAUDE_CODE_OAUTH_TOKEN=$t"
   else echo "fxa-secrets: could not read fxa-anthropic-api-key or fxa-claude-token; no file changed" >&2; exit 1; fi
 fi
+# The .env bases too, before any write: a base that cannot be read must not leave a .env of credentials only.
+[ ! -d "$W/fxa-sandbox-ctl" ] || cb="$(cat "$C/ctl.env.base")"
+[ ! -d "$W/fxa-agent-bot" ] || bb="$(cat "$C/bot.env.base")"
 # Plain assignments, not inside || or &&: set -e does not stop a failed $(...) there.
 if [ -d "$W/fxa-agent-bot" ]; then sb="$(need fxa-slack-bot-token)"; sa="$(need fxa-slack-app-token)"; fi
 put "$C/github-app.pem" "$pem
 "
 mkdir -p "$H/.circleci"; put "$H/.circleci/cli.yml" "token: $ci
 "
-[ ! -d "$W/fxa-sandbox-ctl" ] || put "$W/fxa-sandbox-ctl/.env" "$(cat "$C/ctl.env.base")
+[ ! -d "$W/fxa-sandbox-ctl" ] || put "$W/fxa-sandbox-ctl/.env" "$cb
 $cl
 "
-[ ! -d "$W/fxa-agent-bot" ] || put "$W/fxa-agent-bot/.env" "$(cat "$C/bot.env.base")
+[ ! -d "$W/fxa-agent-bot" ] || put "$W/fxa-agent-bot/.env" "$bb
 SLACK_BOT_TOKEN=$sb
 SLACK_APP_TOKEN=$sa
 "
