@@ -2955,6 +2955,13 @@ main() {
   local command="${1:-help}"
   shift 2>/dev/null || true
 
+  # No subcommand reads --help, and one once ran a real relock with it: print the command's usage instead.
+  # exec, run and session pass their arguments on to a runner or a prompt.
+  case "$command" in exec|run|session) ;; *)
+    local a; for a in "$@"; do case "$a" in -h|--help)
+      usage | awk -v c="$command" '$1 == c { p = 1; print; next } p && /^      / { print; next } { p = 0 }'; return 0 ;; esac; done ;;
+  esac
+
   case "$command" in
     jira)       cmd_jira "$@" ;;
     finish)     cmd_finish "$@" ;;
