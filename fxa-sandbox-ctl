@@ -524,7 +524,7 @@ EOF
 
   if [ "$watch" = "true" ]; then
     if ! finish_attach_and_wait "$name"; then
-      echo "When the agent finishes, run: fxa-sandbox-ctl finish" >&2
+      echo "When the agent finishes, run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} finish --worktree ${worktree_path} --create-pr" >&2
       return 1
     fi
     # The run's notes and learnings, before the diff or PR split, so a read-only team's run counts too.
@@ -546,7 +546,7 @@ EOF
       return 0
     fi
     local pr_url
-    pr_url="$(FXA_SHIP_CHECK=1 finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
+    pr_url="$(FXA_SHIP_CHECK="$key" finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
     # Record the run here, on the host that ran it, while its transcript is in
     # the slot. The row lands in the state dir, which the GCS mirror carries to
     # any host that labels the ticket later; that label's record is then a no-op.
@@ -564,7 +564,7 @@ EOF
     fi
   else
     echo "" >&2
-    echo "Agent started; not watching. Resume with: fxa-sandbox-ctl finish" >&2
+    echo "Agent started; not watching. Resume with: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} finish --worktree ${worktree_path} --create-pr" >&2
   fi
 }
 
