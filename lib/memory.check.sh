@@ -174,6 +174,40 @@ check "main keeps its inbox until a person merges; the operator gets the compare
   "$(g -C "$tmp/clone" ls-tree -r --name-only origin/main | grep -c 'inbox/mozilla__fxa/mem-' | sed 's/^[1-9][0-9]*$/1/')|$(grep -c "compare/main...${br}" "$tmp/digest.msg")"
 
 
+# Use counts, bad ratings and gone anchors: in the digest message and the prompt.
+ud="$(date -u +%F)"; now=$(date +%s); old=$(( now - 40 * 86400 ))
+mkdir -p "$tmp/clone/tickets/uc"
+for x in "a|alpha trap text|test-unit" "b|beta trap text|gone anchor text" "c|gamma trap text|test-unit"; do
+  IFS='|' read -r k t an <<< "$x"
+  printf '## mem-0000000%s\n<!-- kind: trap | path: packages/** | cite: packages/fxa-settings/package.json:4 | anchor: %s | confirmed: %s | source: r1 | taint: 0 -->\n%s\n\nWhy: w\n\n' "$k" "$an" "$ud" "$t" >> "$tmp/clone/repos/mozilla__fxa/trap.md"
+done
+{ echo "{\"at\": $now, \"cmd\": \"show\", \"id\": \"mem-0000000a\"}"
+  echo "{\"at\": $now, \"cmd\": \"search\", \"q\": \"x\", \"ids\": [\"mem-0000000a\", \"mem-0000000b\"]}"
+  echo "{\"at\": $now, \"cmd\": \"rate\", \"id\": \"mem-0000000a\", \"rating\": \"stale\", \"why\": \"moved to another file\"}"
+} > "$tmp/clone/tickets/uc/$ud-r1.use.jsonl"
+for i in 1 2 3; do echo "{\"at\": $old, \"cmd\": \"show\", \"id\": \"mem-0000000b\"}"; done > "$tmp/clone/tickets/uc/2000-01-01-old.use.jsonl"
+g -C "$tmp/clone" add -A && g -C "$tmp/clone" commit -qm uc && g -C "$tmp/clone" push -q origin HEAD:main 2>/dev/null
+check "use counts: last 30 days only, highest first" "2 mem-0000000a|1 mem-0000000b" "$(_memory_use_counts 30 | head -1)|$(_memory_use_counts 30 | sed -n 2p)"
+rm -f "$tmp/digest.msg"; g -C "$tmp/remote.git" branch -D "$br" >/dev/null 2>&1; g -C "$tmp/clone" fetch -q -p origin 2>/dev/null
+memory_digest 2>/dev/null
+check "the digest lists a stale rating and a gone anchor" "1|1" \
+  "$(grep -c 'mem-0000000a.*stale.*moved to another file' "$tmp/digest.msg")|$(grep -c 'mem-0000000b.*anchor' "$tmp/digest.msg")"
+check "the digest lists the most read and the unread" "1|1" \
+  "$(grep -c '2 mem-0000000a' "$tmp/digest.msg")|$(grep -c 'mem-0000000c' "$tmp/digest.msg")"
+# With no inbox and no tainted entry the digest still reports what it finds to check.
+g -C "$tmp/clone" rm -rq inbox 2>/dev/null; g -C "$tmp/clone" commit -qm noinbox 2>/dev/null; g -C "$tmp/clone" push -q origin HEAD:main 2>/dev/null
+rm -f "$tmp/digest.msg"; g -C "$tmp/remote.git" branch -D "$(g -C "$tmp/remote.git" branch --list 'digest/*' | tr -d ' *' | tail -1)" >/dev/null 2>&1
+g -C "$tmp/clone" fetch -q -p origin 2>/dev/null
+memory_digest 2>/dev/null
+check "no inbox: the digest still reports a gone anchor" "1" "$(grep -c 'mem-0000000b.*anchor' "$tmp/digest.msg")"
+idx="$(memory_index_md monitor mozilla/fxa)"
+check "the prompt shows the most read traps, inside 2500 chars" "1|0|1" \
+  "$(grep -c '^mem-0000000a \[trap\] alpha trap text -> mozilla__fxa/trap.md$' <<< "$idx")|$(grep -c '^mem-0000000c' <<< "$idx")|$([ "$(printf '%s\n' "$idx" | wc -c)" -le 2500 ] && echo 1)"
+head -c 1810 /dev/zero | tr '\0' 'x' > "$FXA_MEMORY_DIR/profiles/monitor.md"
+check "a long team file drops trap lines to stay inside 2500" "1|1" \
+  "$(memory_index_md monitor mozilla/fxa | grep -c '^mem-')|$([ "$(memory_index_md monitor mozilla/fxa | wc -c)" -le 2500 ] && echo 1)"
+g -C "$tmp/clone" checkout -q -- profiles
+
 # One ticket, the same run key twice in a day (a second pipeline run, or a ship then a stop): two files.
 echo '{"episode": {"goal": "first try", "outcome": "red"}}' > "$tmp/e1.json"; echo '{"episode": {"goal": "second try", "outcome": "PR"}}' > "$tmp/e2.json"
 memory_collect FXA-300 "$tmp/e1.json" pipeline fxa 1 FXA-300 mozilla/fxa 2>/dev/null; sleep 1
