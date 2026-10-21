@@ -128,7 +128,11 @@ check "an object exit_code 1 recalls the trap" "1" "$(hk <<< '{"session_id":"c6"
 check "a Codex object response with a non-zero exit recalls the trap" "1" \
   "$(hk <<< '{"session_id":"c2","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"Error: Cannot find module @fxa/shared/foo\nexited with code 2"}}' | grep -c mem-0000000a)"
 check "raw Codex output with no exit code and an error recalls the trap" "1" \
-  "$(hk <<< '{"session_id":"c3","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":"Error: Cannot find module @fxa/shared/foo\n"}' | grep -c mem-0000000a)"
+  "$(hk <<< '{"session_id":"c3","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"yarn build"},"tool_response":"Error: Cannot find module @fxa/shared/foo\n"}' | grep -c mem-0000000a)"
+check "a Claude test run piped to tail, exit 0, with an error recalls the trap" "1" \
+  "$(hk <<< '{"session_id":"c8","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"npx jest a.spec.ts 2>&1 | tail -20"},"tool_response":{"stdout":"Error: Cannot find module @fxa/shared/foo","stderr":"","interrupted":false}}' | grep -c mem-0000000a)"
+check "the same error text from grep, not a build or test tool, adds nothing" "" \
+  "$(hk <<< '{"session_id":"c9","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"grep -rn foo src"},"tool_response":{"stdout":"Error: Cannot find module @fxa/shared/foo","stderr":"","interrupted":false}}')"
 check "raw Codex output with no exit code and no error adds nothing" "" \
   "$(hk <<< '{"session_id":"c4","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":"Done in 3.2s\n"}')"
 check "an unrelated failure adds nothing" "" "$(hk <<< '{"session_id":"s3","hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"fatal: not a git repository"}')"

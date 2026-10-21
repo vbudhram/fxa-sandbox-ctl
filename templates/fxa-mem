@@ -16,6 +16,7 @@ FLAGS = ("repo", "kind", "text", "cite", "anchor", "why", "path", "terms", "op",
 NEED = ("kind", "text", "why", "terms")  # with repo, cite and anchor, checked apart for --team
 SEEN = os.environ.get("FXA_MEM_SEEN", "/workspace/.fxa-mem-hook-seen")
 HOOK_ERR_RE = r"error(?!s)|failed|err!|exception|traceback|cannot|not found|refused|denied|fatal"
+HOOK_CMD_RE = r"\b(jest|mocha|tsc|eslint|prettier|yarn|npx|npm|nx|node|playwright|pytest|make|vitest)\b"
 HOOK_MIN_SCORE = 7.5  # negated BM25; 24 error texts and 10 unrelated ones put the cut between 6.7 and 8.4
 
 
@@ -229,8 +230,9 @@ def hook(_args):
                 if isinstance(r, dict):
                     r = "\n".join(v for v in (r.get(k) for k in ("output", "stderr", "stdout")) if isinstance(v, str))
                 code = isinstance(r, str) and re.search(r"exit(ed)?( with)? code:? *([0-9]+)", r, re.I)
-                # Codex 0.160 sends only the output, with no exit code: an error marker counts as a failure.
-                text = r if isinstance(r, str) and (int(code.group(3)) != 0 if code else re.search(HOOK_ERR_RE, "\n".join(r.splitlines()[-40:]), re.I)) else None
+                # No exit code (Codex 0.160, or a Claude command piped to tail): an error marker after a build or test tool counts.
+                cmd = str((ev.get("tool_input") or {}).get("command") or "")
+                text = r if isinstance(r, str) and (int(code.group(3)) != 0 if code else re.search(HOOK_CMD_RE, cmd) and re.search(HOOK_ERR_RE, "\n".join(r.splitlines()[-40:]), re.I)) else None
             if not isinstance(text, str):
                 return 0
             entries = load()
