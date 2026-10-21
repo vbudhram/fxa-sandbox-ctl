@@ -1,0 +1,152 @@
+#!/usr/bin/env -S python3 -I
+"""fxa-mem: search the team memory on this runner (standard library only)."""
+import fnmatch, glob, json, os, re, sqlite3, subprocess, sys, time
+
+MEM = os.environ.get("FXA_MEM_DIR", "/home/agent/.fxa-memory")
+USE = os.environ.get("FXA_MEM_USE", "/workspace/.fxa-memory-use.jsonl")
+STOP = set("a an and are as at be by for from in is it of on or that the this to with".split())
+RATINGS = ("helped", "wrong", "stale")
+
+
+def load():
+    """Parse every entry of repos/*/*.md, in topic file order. A block with no meta line is skipped."""
+    out = []
+    for f in sorted(glob.glob(os.path.join(MEM, "repos", "*", "*.md"))):
+        if os.path.basename(f) == "INDEX.md":
+            continue
+        repo, topic = os.path.basename(os.path.dirname(f)), os.path.basename(f)
+        with open(f, encoding="utf-8", errors="replace") as fh:
+            blocks = re.split(r"(?m)^(?=## mem-[0-9a-f]{8}$)", fh.read())
+        for b in blocks:
+            head, _, rest = b.partition("\n")
+            meta_line, _, body = rest.partition("\n")
+            if not re.fullmatch(r"## mem-[0-9a-f]{8}", head) or not (meta_line.startswith("<!--") and meta_line.rstrip().endswith("-->")):
+                continue
+            meta = {}
+            for kv in meta_line.strip()[4:-3].split(" | "):
+                k, _, v = kv.strip().partition(": ")
+                meta[k.strip()] = v.strip()
+            text, _, why = body.partition("\nWhy: ")
+            out.append(dict(id=head[3:], repo=repo, topic=topic, meta=meta, text=text.strip(), why=why.strip()))
+    return out
+
+
+def log(**rec):
+    rec["at"] = int(time.time())
+    try:
+        with open(USE, "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
+def hit(e):
+    snip = " ".join(e["text"].split())[:100]
+    return "%s [%s] %s -> %s/%s" % (e["id"], e["meta"].get("kind", ""), snip, e["repo"], e["topic"])
+
+
+def have_memory():
+    if os.path.isdir(os.path.join(MEM, "repos")):
+        return True
+    print("no team memory on this runner")
+    return False
+
+
+def search(words):
+    if not have_memory():
+        return 0
+    entries = load()
+    toks = []
+    for t in re.findall(r"[a-z0-9]+", " ".join(words).lower()):
+        if t not in STOP and t not in toks:
+            toks.append(t)
+    ids = []
+    if toks and entries:
+        db = sqlite3.connect(":memory:")
+        db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms)")
+        db.executemany("insert into m values (?,?,?,?,?,?,?)", [
+            (e["id"], e["text"], e["why"]) + tuple(e["meta"].get(k, "") for k in ("path", "cite", "anchor", "terms")) for e in entries])
+        q = " OR ".join('"%s"' % t for t in toks)
+        ids = [r[0] for r in db.execute("select id from m where m match ? order by bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0) limit 5", (q,))]
+    by_id = {e["id"]: e for e in entries}
+    for i in ids:
+        print(hit(by_id[i]))
+    if not ids:
+        print("no match")
+    log(cmd="search", q=" ".join(words), ids=ids)
+    return 0
+
+
+def show(args):
+    if len(args) != 1:
+        return usage()
+    e = next((e for e in load() if e["id"] == args[0]), None)
+    if not e:
+        print("unknown id %s" % args[0])
+        return 1
+    print("## " + e["id"])
+    for k in ("kind", "path", "cite", "anchor", "confirmed"):
+        print("%s: %s" % (k, e["meta"].get(k, "")))
+    print(e["text"] + "\n\nWhy: " + e["why"])
+    log(cmd="show", id=e["id"])
+    return 0
+
+
+def repo_from_git():
+    """The owner__repo folder of the origin remote of the current directory, or None."""
+    try:
+        url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"([^/:]+)/([^/:]+?)(?:\.git)?/?$", url)
+    return "%s__%s" % m.groups() if m else None
+
+
+def traps(args):
+    repo = None
+    if args[:1] == ["--repo"]:
+        repo, args = (args[1:2] or [""])[0].replace("/", "__"), args[2:]
+    if len(args) != 1 or repo == "":
+        return usage()
+    if not have_memory():
+        return 0
+    if repo is None:
+        repo = repo_from_git()
+    if repo is None or not os.path.isdir(os.path.join(MEM, "repos", repo)):
+        repo = None  # all repos
+    hits = [e for e in load() if e["meta"].get("kind") == "trap" and (repo is None or e["repo"] == repo)
+            and e["meta"].get("path") and fnmatch.fnmatchcase(args[0], e["meta"]["path"])]
+    for e in hits:
+        print(hit(e))
+    if not hits:
+        print("no match")
+    log(cmd="traps", q=args[0], ids=[e["id"] for e in hits])
+    return 0
+
+
+def rate(args):
+    if len(args) < 2:
+        return usage()
+    if args[1] not in RATINGS:
+        print("rating must be one of: " + ", ".join(RATINGS))
+        return 2
+    if not any(e["id"] == args[0] for e in load()):
+        print("unknown id %s" % args[0])
+        return 1
+    log(cmd="rate", id=args[0], rating=args[1], why=" ".join(args[2:])[:200])
+    print("rated %s %s" % (args[0], args[1]))
+    return 0
+
+
+def usage():
+    print("usage: fxa-mem search <words...> | show <id> | traps [--repo owner/repo] <path> | rate <id> helped|wrong|stale [why...]")
+    return 2
+
+
+def main(argv):
+    cmds = dict(search=lambda a: search(a) if a else usage(), show=show, traps=traps, rate=rate)
+    return cmds[argv[0]](argv[1:]) if argv and argv[0] in cmds else usage()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
