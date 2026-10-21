@@ -1371,14 +1371,14 @@ function renderOvBudget() {
 // LLM spend from the proxy log: the last 14 UTC days, the cost by model over them, and the last hour.
 function renderOvLlm() {
   const s = ovStats(), note = statsNote(), L = s?.llm ?? {};
-  if (!s) return putOv("ov-llm", html`<h2>LLM spend, 14 days</h2>${emptybox(note ? `LLM spend unknown: ${note}` : "Loading the stats…")}`);
+  if (!s) return putOv("ov-llm", html`<h2>LLM spend</h2>${emptybox(note ? `LLM spend unknown: ${note}` : "Loading the stats…")}`);
   // The proxy log groups by UTC date and leaves out a day with no call, so the slots are 14 UTC dates, 0 when absent.
   const keys = [...Array(14)].map((_, i) => new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10)), by = new Map((L.days ?? []).map(d => [d.day, d.usd || 0]));
   const days = (L.days ?? []).some(d => keys.includes(d.day)) ? keys.map(k => ({ t: new Date(`${k}T00:00`).getTime(), usd: by.get(k) ?? 0 })) : [];
   const models = Array.isArray(L.models) ? L.models.filter(x => keys.includes(x.day)).reduce((a, x) => { a[x.model || ""] = (a[x.model || ""] ?? 0) + (x.usd || 0); return a; }, {}) : L.models ?? {};
   const top = Object.entries(models).sort((a, b) => b[1] - a[1]), rest = top.slice(3).reduce((a, [, v]) => a + v, 0), hr = L.hour_usd;
-  putOv("ov-llm", html`<h2>LLM spend, 14 days<span class="note mono">${typeof hr === "number" && !note ? `${usd(hr)} last hour` : "last hour unknown"}</span></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}
-    <div class="sub">By UTC date, as the LLM proxy logs it.</div>
+  putOv("ov-llm", html`<h2>LLM spend<span class="note mono">${typeof hr === "number" && !note ? `${usd(hr)} last hour` : "last hour unknown"}</span></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}
+    <div class="sub">By UTC date for the last 14 days, as the LLM proxy logs it.</div>
     ${days.length ? ovChart(days, [["LLM, UTC day", "var(--chart-1)", d => d.usd]], (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v), { line: true, W: 400, H: 235, cents: true, id: "ov-llm", label: "LLM spend by UTC day, last 14 days" }) : emptybox("No LLM call in the last 14 UTC days.")}
     ${top.slice(0, 3).map(([mdl, v]) => kvRow(modelName(mdl), usd(v)))}${rest ? kvRow("Other models", usd(rest)) : ""}`);
 }
