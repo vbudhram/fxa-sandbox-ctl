@@ -10,9 +10,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 H="${SMOKE_VM:-$here/../fxa-manager/vm.sh}" D="${SMOKE_DRIVE:-$here/slack-drive.sh}"
 bad=0
 fail() { echo "FAIL smoke: $1 (thread $2)"; bad=1; }
-# done_ok <ts> <what> [secs]   The bot finished with my last message, with ✅.
-done_ok() { local w; w="$("$D" wait "$1" "${3:-120}" 2>&1)"
-  case "$(head -1 <<< "$w")" in *warning*) ;; *white_check_mark*) return 0 ;; esac; fail "$2: it did not end with a check mark ($(head -1 <<< "$w"))" "$1"; return 1; }
+# done_ok <ts> <what> [secs]   The bot finished with my last message, with ✅. The wait's "== " line is the result: a failed poll before it prints a line too.
+done_ok() { local w s; w="$("$D" wait "$1" "${3:-120}" 2>&1)"; s="$(grep -m1 '^== ' <<< "$w" || head -1 <<< "$w")"
+  case "$s" in *warning*) ;; *white_check_mark*) return 0 ;; esac; fail "$2: it did not end with a check mark ($s)" "$1"; return 1; }
 # shows <ts> <what> <regex>...   Within SMOKE_SHOW_S (60) s the thread shows each regex, and never "Something went wrong".
 shows() { local ts="$1" what="$2" out re miss end=$(( $(date +%s) + ${SMOKE_SHOW_S:-60} )); shift 2
   while :; do out="$("$D" show "$ts" 2>&1)" miss=""

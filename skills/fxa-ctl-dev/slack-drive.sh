@@ -75,7 +75,8 @@ case "${1:-}" in
     # The bot puts 👀 on each message it takes, and swaps it for ✅ or ⚠️ when it is done with it.
     me="$(api "$USER_TOKEN" auth.test | jq -r .user_id)"; end=$(( $(date +%s) + ${3:-1800} )); t0=$(date +%s)
     while :; do
-      r="$(jq -r --arg me "$me" '[.messages[] | select(.user == $me)] | last | [(.reactions // [])[].name] | join(",")' <<< "$(replies "$2")")"
+      # A poll with no messages (thread not yet readable, rate limited) counts as no reaction yet.
+      r="$(jq -r --arg me "$me" '[(.messages // [])[] | select(.user == $me)] | last | [(.reactions // [])[].name] | join(",")' <<< "$(replies "$2")" 2>/dev/null)"
       case ",$r," in *,white_check_mark,*|*,warning,*) echo "== done after $(( $(date +%s) - t0 ))s (:${r//,/: :}:)"; break ;; esac
       [ "$(date +%s)" -lt "$end" ] || { echo "== still working after ${3:-1800}s (reactions: ${r:-none})"; break; }
       sleep 10

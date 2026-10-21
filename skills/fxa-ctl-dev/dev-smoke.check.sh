@@ -15,7 +15,7 @@ cat > "$tmp/drive.sh" <<'S'
 case "$1" in
   start) n=$(( $(cat "$SMOKE_TMP/n" 2>/dev/null || echo 0) + 1 )); echo $n > "$SMOKE_TMP/n"; echo "17.$n" ;;
   reply) echo "$3" >> "$SMOKE_TMP/replies" ;;
-  wait) echo "== done after 3s (:$(cat "$SMOKE_TMP/react"):)"; cat "$SMOKE_TMP/thread" ;;
+  wait) cat "$SMOKE_TMP/noise" 2>/dev/null; echo "== done after 3s (:$(cat "$SMOKE_TMP/react"):)"; cat "$SMOKE_TMP/thread" ;;
   show) cat "$SMOKE_TMP/thread" ;;
 esac
 S
@@ -27,6 +27,11 @@ out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
 check "all good: it passes, fake mode first, and it ends on the real controller" "0|1 dev|real dev" \
   "$rc|$(head -1 "$tmp/vm.log")|$(tail -1 "$tmp/vm.log")"
 check "it sends !status and !stop in the fake session" '!status|!stop' "$(paste -sd'|' "$tmp/replies")"
+# A failed poll prints a jq error before the wait's result line; the result line decides.
+echo 'jq: error (at <stdin>:1): Cannot iterate over null (null)' > "$tmp/noise"; : > "$tmp/vm.log"; : > "$tmp/replies"; echo 0 > "$tmp/n"
+out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
+check "an error line before the wait's result: it still passes" "0|" "$rc|$(grep 'FAIL' <<< "$out")"
+rm "$tmp/noise"
 : > "$tmp/vm.log"; : > "$tmp/replies"; echo 0 > "$tmp/n"
 printf '%s\n' '+1s bot: Something went wrong. The details are in the dev log.' > "$tmp/thread"
 out="$(bash "$(dirname "$0")/dev-smoke.sh" 2>&1)"; rc=$?
