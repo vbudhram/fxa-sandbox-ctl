@@ -112,6 +112,10 @@ pipeline_load() {
   [ -n "${FXA_WORKTREE_BASE:-}" ] && [ "$FXA_WORKTREE_BASE" = "${_FXA_BASE_LOADED:-}" ] && unset FXA_WORKTREE_BASE
   [ -n "${FXA_SHARED_WORKTREE_NAME:-}" ] && [ "$FXA_SHARED_WORKTREE_NAME" = "${_FXA_POOL_LOADED:-}" ] && unset FXA_SHARED_WORKTREE_NAME
   [ -n "${FXA_SECRETS_SOURCE:-}" ] && [ "$FXA_SECRETS_SOURCE" = "${_FXA_SECRETS_LOADED:-}" ] && unset FXA_SECRETS_SOURCE
+  # Only a secret team's record sets these: a later load in the same shell (a subshell loop over teams)
+  # must not keep a secret team's flag, labels or queue.
+  [ -z "${PIPE_SECRET_TICKETS:-}" ] || unset PIPE_LABEL_PREFIX PIPE_QUEUE_JQL
+  unset PIPE_SECRET_TICKETS PIPE_QUEUE_LABEL
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
   conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
   [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"

@@ -239,12 +239,18 @@ rm -f "$S"/so.json "$S"/sp.json "$S"/sq.json "$S"/sq2.json
 check "stack.repo must be one of the record's repos; the index marks the secret team" "1|true|false" \
   "$(sed 's#"repo": "mozilla/fxa-private"#"repo": "mozilla/other"#' "$S/fxa-private.json" > "$S/sr.json"; py validate "$S/sr.json" sr 2>&1 | grep -c 'stack.repo must be the slug'; rm -f "$S/sr.json")|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$S" | jq -r '.teams["fxa-private"].secret')|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$T" | jq -r '.teams.rusty.secret')"
 
-fsrc() { ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO FXA_SECRETS_SOURCE
+fsrc() { ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO
   SANDBOX_ROOT="$root"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
   echo "${FXA_SECRETS_SOURCE:-none}" ); }
 cp "$S/fxa-private.json" "$T/fxa-private.json"
 check "an FxA fork that runs the stack from its own repo takes the FxA dev secrets from the FxA host clone; FxA as a dep row does not" \
-  "$tmp/home/Desktop/working2/fxa|none" "$(fsrc fxa-private)|$(fsrc rusty)"
+  "$tmp/home/Desktop/working2/fxa|none" "$( (unset FXA_SECRETS_SOURCE; fsrc fxa-private))|$( (unset FXA_SECRETS_SOURCE; fsrc rusty))"
+check "a child does not keep the source its parent's load set; a source set by hand wins" "none|/mine" \
+  "$(FXA_SECRETS_SOURCE=/x _FXA_SECRETS_LOADED=/x fsrc rusty)|$(FXA_SECRETS_SOURCE=/mine fsrc fxa-private)"
+check "a load after a secret team's load keeps none of its flag, labels or queue" "|ai-fixme|ai-fixme|ai-fixme" \
+  "$( ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO; SANDBOX_ROOT="$root"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"
+    pipeline_load fxa-private >/dev/null 2>&1 && pipeline_load rusty >/dev/null 2>&1 || exit 1
+    printf '%s|%s|%s|%s' "${PIPE_SECRET_TICKETS:-}" "$PIPE_QUEUE_LABEL" "$PIPE_LABEL_PREFIX" "$(grep -o '"ai-fixme[a-z-]*"' <<< "$PIPE_QUEUE_JQL" | tr -d '"')" ) )"
 sv="$(loaded fxa-private)"; rm -f "$T/fxa-private.json"
 sl() { printf '%s\n' "$sv" | sed -n "s/^$1=//p" | tr -d "'"; }
 check "a secret record loads its flag, its labels and a queue that reads ai-fixme" '1|ai-fixme|ai-fixme-private|labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' \
