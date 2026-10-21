@@ -492,6 +492,7 @@ EOF
   elif [[ "$guardrails_file" == */feedback/* ]]; then run_kind="feedback"; fi
   echo "Run kind: ${run_kind}" >&2
 
+  _jira_name_clash "$name" || return 1
   if [ -n "$worktree_slot" ]; then
     echo "Using worktree '${worktree_slot}' for branch ${branch}..." >&2
   else
@@ -1304,6 +1305,14 @@ _reap_key() {
 
 # WRITE: stop every agent VM whose ticket is not inflight, for the cases the reap
 # in `label` misses. A live run is safe: its inflight label covers the whole run.
+# _jira_name_clash <name>   Fails while a VM of that name runs in another team's pool: a secret team shares
+# its project's keys, and tail, stop and reap take the name as the key's.
+_jira_name_clash() {
+  local ws; ws="$(_worktree_each_active_agent | awk -v n="$1" '$1 == n && !f {print $2; f=1}')" || true
+  [ -n "$ws" ] && ! _slot_in_pool "$ws" "${PIPE_POOL_NAME:-}" && [[ "${ws##*/}" =~ ^(.+)-auto(-[0-9]+)?$ ]] || return 0
+  echo "ERROR: $1 runs for team ${BASH_REMATCH[1]}; a person stops it first." >&2
+  return 1
+}
 # _slot_in_pool <worktree path> <pool name>   True when the slot is the pool's (<pool> or <pool>-N).
 _slot_in_pool() { local b="${1##*/}"; [ -n "$2" ] && { [ "$b" = "$2" ] || [[ "$b" =~ ^${2}-[0-9]+$ ]]; }; }
 _reap_stray_vms() {

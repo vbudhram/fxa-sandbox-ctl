@@ -39,6 +39,15 @@ o="$(LEFT=1 FXA_SHIP_CHECK=1 ship _finish_push_and_pr "$tmp/fxa-auto-2" true)"
 check "finish with the ship check: out of scope, refused before any git or gh call" "1|rc=1|0" \
   "$(grep -c 'left team fxa' <<< "$o")|$(tail -1 <<< "$o")|$(grep -c . "$tmp/calls")"
 c="$here/../fxa-sandbox-ctl"
+# One VM name for a key, whichever team runs it: a launch refuses while another team's pool runs it.
+eval "$(sed -n '/^_slot_in_pool() /p;/^_jira_name_clash() {/,/^}/p' "$c")"
+_worktree_each_active_agent() { printf '%s\n' "fxa-3 /w/fxa-auto-2" "fxa-4 /w/fxa-private-auto-1" "fxa-6 /w/fxa-6"; }
+clash() { ( PIPE_POOL_NAME="$1"; _jira_name_clash "$2" ) 2>&1; echo "rc=$?"; }
+check "a key that runs in another team's pool refuses, with the next step" "ERROR: fxa-3 runs for team fxa; a person stops it first.|rc=1" \
+  "$(clash fxa-private-auto fxa-3 | tr '\n' '|' | sed 's/|$//')"
+check "its own pool, a hand run and a key that runs nowhere may launch" "rc=0|rc=0|rc=0" \
+  "$(clash fxa-auto fxa-3)|$(clash fxa-private-auto fxa-6)|$(clash fxa-auto fxa-9)"
+check "cmd_jira runs the clash check before it takes a slot" "1" "$(sed -n '/^cmd_jira() {/,/^}/p' "$c" | grep -c '_jira_name_clash "\$name" || return 1')"
 check "cmd_jira and cmd_finish turn the check on; cmd_jira checks before a diff-only finish" "1|1|1" \
   "$(sed -n '/^cmd_jira() {/,/^}/p' "$c" | grep -c 'FXA_SHIP_CHECK=1 finish_push_and_pr')|$(sed -n '/^cmd_finish() {/,/^}/p' "$c" | grep -c 'FXA_SHIP_CHECK=1 finish_push_and_pr')|$(sed -n '/^cmd_jira() {/,/^}/p' "$c" | grep -c 'pipeline_ship_ok "\$key" "\$worktree_path" || return 1')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
