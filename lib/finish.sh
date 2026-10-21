@@ -380,6 +380,10 @@ _finish_push_and_pr() {
     echo "       The agent hasn't finished yet, or it failed before writing it." >&2
     return 1
   fi
+  # A pipeline finish (cmd_jira, cmd_finish) checks that the ticket is still this team's to ship; a session does not.
+  if [ -n "${FXA_SHIP_CHECK:-}" ]; then
+    pipeline_ship_ok "$(jq -r '.issue // empty' "$done_file" 2>/dev/null)" "$worktree" || return 1
+  fi
 
   # A read-only profile (PIPE_PR_OPEN=0) never writes to its repo: `finish` keeps the patch, as
   # the watch does. The runner wrote the handoff, so its key must be the slot's own branch.

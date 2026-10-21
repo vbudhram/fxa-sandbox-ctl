@@ -559,6 +559,7 @@ EOF
     fi
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+      pipeline_ship_ok "$key" "$worktree_path" || return 1
       finish_diff_only "$key" "$worktree_path" || return 1
       cmd_label "$key" diff >/dev/null || echo "WARN: could not label ${key} diff" >&2
       finish_notify "Diff ready for ${key}" ""
@@ -566,7 +567,7 @@ EOF
       return 0
     fi
     local pr_url
-    pr_url="$(finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
+    pr_url="$(FXA_SHIP_CHECK=1 finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
     # Record the run here, on the host that ran it, while its transcript is in
     # the slot. The row lands in the state dir, which the GCS mirror carries to
     # any host that labels the ticket later; that label's record is then a no-op.
@@ -874,7 +875,7 @@ cmd_finish() {
   # Read before the ship: the handoff names the ticket whose launch log the dashboard reads.
   local pr_url key=""
   [ -n "$worktree" ] && key="$(jq -r '.issue // empty' "$(finish_done_file_path "$worktree")" 2>/dev/null || true)"
-  pr_url="$(finish_push_and_pr "$worktree" "$create_pr")" || return 1
+  pr_url="$(FXA_SHIP_CHECK=1 finish_push_and_pr "$worktree" "$create_pr")" || return 1
   if [ -n "$pr_url" ]; then
     finish_notify "PR opened" "$pr_url"
     # A recovery finish: without this line, progress keeps the run's old error.

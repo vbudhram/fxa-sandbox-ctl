@@ -318,6 +318,26 @@ pipeline_key_in_scope() {
   got="$(_jira_keys_for_jql "${s} AND key = $1")" || return 1
   [ "$got" = "$1" ]
 }
+# pipeline_ship_ok <KEY> [<worktree>]   Before a push: the ticket is still in this team's Jira scope, and a
+# secret team's repos are still confirmed private (the scope checks them). A label can change during a run.
+pipeline_ship_ok() {
+  local key="${1:-}" wt="${2:-}" s got i t="" m
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "ERROR: no ticket key in the handoff, so its scope cannot be checked; no push" >&2; return 1; }
+  for i in 1 2 3; do
+    if s="$(pipeline_jira_scope)" && got="$(_jira_keys_for_jql "${s} AND key = ${key}")"; then
+      [ "$got" = "$key" ] && return 0
+      [ "${PIPE_SECRET_TICKETS:-}" = 1 ] || t="$(pipeline_secret_team "$(pipeline_jira_project 2>/dev/null)" 2>/dev/null || true)"
+      if [ -n "$t" ]; then t="team ${t}"; else t="the team that takes it"; fi
+      m="${key} left team ${PIPE_PROFILE:-?}'s Jira scope; no push. Relabel it for ${t}."
+      echo "ERROR: ${m}" >&2; errors_record pipeline ship "$key" "pipeline_ship_ok" "$m" "" 2>/dev/null || true
+      return 1
+    fi
+    [ "$i" = 3 ] || sleep "${FXA_SHIP_RETRY_S:-5}"
+  done
+  m="could not read Jira or GitHub to confirm ${key}'s scope; no push. Retry: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE:-fxa} finish --worktree ${wt##*/} --create-pr"
+  echo "ERROR: ${m}" >&2; errors_record pipeline ship "$key" "pipeline_ship_ok" "$m" "" 2>/dev/null || true
+  return 1
+}
 pipeline_focus() {
   pipeline_require || return 1
   case "${1:-}" in
