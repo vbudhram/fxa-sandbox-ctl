@@ -29,6 +29,13 @@ check "the index has the team file and the session's repos only, as data" "1|1|0
 check "over the budget a repo gets a pointer, not its index" "1|0" \
   "$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md')|$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'nx test-unit-jest')"
 check "the header does not say people reviewed every note" "0|1" "$(memory_index_md fxa mozilla/fxa | grep -c 'People reviewed these notes')|$(memory_index_md fxa mozilla/fxa | grep -c 'some are not reviewed yet')"
+big="$(printf -- '- mem-%08d [command] %0200d\n' 1 0 2 0 3 0)
+- mem-0000000a [trap] content is down until the libs build"
+echo "$big" > "$FXA_MEMORY_DIR/repos/mozilla__fxa/INDEX.md"
+idx="$(MEMORY_INDEX_MAX=900 memory_index_md x mozilla/fxa | sed -n '/^## Repo/,$p')"
+check "traps come first, the lines the budget holds follow, then a pointer" "1|2|1" \
+  "$(sed -n 2p <<< "$idx" | grep -c '\[trap\]')|$(grep -c '\[command\]' <<< "$idx")|$(tail -1 <<< "$idx" | grep -c '^Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md$')"
+g -C "$FXA_MEMORY_DIR" checkout -q -- repos
 check "a bad profile or slug reads nothing" "" "$(memory_index_md '../x' '../../etc')"
 
 # Sync: the reviewed files only, never the inbox or tickets.
