@@ -551,7 +551,8 @@ EOF
     # The run's notes and learnings, before the diff or PR split, so a read-only team's run counts too.
     if [ -s "${worktree_path}/.fxa-memory.json" ] || [ -s "${worktree_path}/.fxa-memory-use.jsonl" ]; then
       local mem_use; mem_use="$(mktemp)"
-      head -c 32000 "${worktree_path}/.fxa-memory-use.jsonl" > "$mem_use" 2>/dev/null || true
+      # The log's end: memory_collect drops the first line, cut by the 32001-byte tail.
+      tail -c 32001 "${worktree_path}/.fxa-memory-use.jsonl" > "$mem_use" 2>/dev/null || true
       # shellcheck disable=SC2046  # one slug per word
       FXA_MEMORY_USE_FILE="$mem_use" memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
       rm -f "${worktree_path}/.fxa-memory.json" "${worktree_path}/.fxa-memory-use.jsonl" "$mem_use"
