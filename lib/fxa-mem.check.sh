@@ -141,6 +141,10 @@ check "the first edit in a package shows its traps" "1" "$(hk <<< "$edit_in" | g
 check "a second edit in that package shows nothing" "" "$(hk <<< "${edit_in/x.js/y.js}")"
 patch_in='{"session_id":"e2","hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: packages/fxa-content-server/app/x.js\n@@\n*** End Patch"}}'
 check "a Codex apply_patch shows the package traps" "1" "$(hk <<< "$patch_in" | grep -c mem-0000000a)"
+check "a shell edit in a package shows its traps" "1" \
+  "$(hk <<< '{"session_id":"e3","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cd /workspace/packages/fxa-content-server/app && python3 - <<EOF\np=1\nEOF"}}' | grep -c mem-0000000a)"
+check "a notes file outside packages and libs adds nothing" "" "$(hk <<< '{"session_id":"e4","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/workspace/.fxa-todo.md"}}')"
+check "and it does not use up the first package edit" "1" "$(hk <<< "${edit_in/e1/e4}" | grep -c mem-0000000a)"
 check "a shown entry is logged as auto" "true|hook" "$(tail -1 "$tmp/use.jsonl" | jq -r '"\(.auto)|\(.cmd)"')"
 check "an entry shown on a failure does not show again on an edit" "" "$(hk <<< "${edit_in/e1/s1}" | grep mem-0000000a)"
 check "bad input prints nothing and exits 0" "|0" "$(out=$(hk <<< 'not json'); echo "$out|$?")"

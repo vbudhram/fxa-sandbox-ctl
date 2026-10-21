@@ -109,7 +109,7 @@ _vm_settings_json() {
     | .permissions.deny = ((.permissions.deny // []) + $deny)
     | {type: "command", command: "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0", timeout: 5} as $mem
     | .hooks = {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-bash-guard.sh"}]},
-        {matcher: "Edit|Write|MultiEdit", hooks: [$mem]}], PostToolUseFailure: [{matcher: "Bash", hooks: [$mem]}],
+        {matcher: "Edit|Write|MultiEdit|Bash", hooks: [$mem]}], PostToolUseFailure: [{matcher: "Bash", hooks: [$mem]}],
         PostToolUse: [{matcher: "Bash", hooks: [$mem]}]}'
 }
 

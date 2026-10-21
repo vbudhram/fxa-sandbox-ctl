@@ -55,7 +55,7 @@ check "team rules follow the repo notes" "Repo notes: mozilla/fxa|Team rules: t"
 toml() { grep -h "codex/config.toml" "$tmp"/exec.* | sed -n "s/.*echo '\([A-Za-z0-9+/=]*\)' | base64 -d > \/home\/agent\/.codex\/config.toml.*/\1/p" | base64 -d; }
 rm -f "$tmp"/exec.*; PIPE_PROFILE=fxa runtime_setup_config vm5 2>/dev/null; toml > "$tmp/config.toml"
 hk='command -v fxa-mem >/dev/null && fxa-mem hook; exit 0'
-check "config.toml has the memory hooks" "^Bash$|^(apply_patch|Edit|Write)$|command|$hk|5" "$(python3 -c '
+check "config.toml has the memory hooks" "^Bash$|^(apply_patch|Edit|Write|Bash)$|command|$hk|5" "$(python3 -c '
 import tomllib, sys
 h = tomllib.load(open(sys.argv[1], "rb"))["hooks"]; c = h["PostToolUse"][0]["hooks"][0]
 print("|".join([h["PostToolUse"][0]["matcher"], h["PreToolUse"][0]["matcher"], c["type"], c["command"], str(c["timeout"])]))' "$tmp/config.toml" 2>&1)"

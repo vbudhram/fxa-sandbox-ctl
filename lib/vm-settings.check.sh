@@ -21,5 +21,5 @@ check "no host settings: still denied" "true" "$(_vm_settings_json "$tmp/none.js
 check "the bash guard group stays first" "Bash|bash /home/agent/.claude/hooks/fxa-bash-guard.sh" "$(jq -r '.hooks.PreToolUse[0] | "\(.matcher)|\(.hooks[0].command)"' <<< "$out")"
 check "a failed Bash command runs the memory hook" "Bash|$hk|5" "$(jq -r '.hooks.PostToolUseFailure[0] | "\(.matcher)|\(.hooks[0].command)|\(.hooks[0].timeout)"' <<< "$out")"
 check "a Bash result with exit 0 also runs the memory hook" "Bash|$hk|5" "$(jq -r '.hooks.PostToolUse[0] | "\(.matcher)|\(.hooks[0].command)|\(.hooks[0].timeout)"' <<< "$out")"
-check "an edit runs the memory hook" "$hk|5" "$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Edit|Write|MultiEdit") | "\(.hooks[0].command)|\(.hooks[0].timeout)"' <<< "$out")"
+check "an edit runs the memory hook" "$hk|5" "$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Edit|Write|MultiEdit|Bash") | "\(.hooks[0].command)|\(.hooks[0].timeout)"' <<< "$out")"
 exit "$fail"

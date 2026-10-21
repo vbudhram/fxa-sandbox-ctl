@@ -42,7 +42,7 @@ command = "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0"
 timeout = 5
 
 [[hooks.PreToolUse]]
-matcher = "^(apply_patch|Edit|Write)\$"
+matcher = "^(apply_patch|Edit|Write|Bash)\$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"

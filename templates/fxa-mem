@@ -197,7 +197,10 @@ def hook_query(text):
 
 
 def hook_paths(name, inp):
-    """The file of a Claude edit, or the files of a Codex patch (Codex can name apply_patch Edit or Write too)."""
+    """The file of a Claude edit, the files of a Codex patch, or the package paths a shell command names."""
+    if name == "Bash":
+        # Agents also edit with sed or a python heredoc, so the first command in a package counts.
+        return re.findall(r"(?:^|[\s'\"=:(])(?:/workspace/|\./)?((?:packages|libs)/[\w.@-]+)", str(inp.get("command") or ""))
     if name not in ("Edit", "Write", "MultiEdit", "apply_patch"):
         return []
     if isinstance(inp.get("file_path"), str):
@@ -206,9 +209,9 @@ def hook_paths(name, inp):
 
 
 def package(p):
-    """The first two parts under packages/ or libs/, else the first part, of the path from the top of the repo."""
+    """The first two parts of a path under packages/ or libs/, from the top of the repo; None for any other path."""
     parts = re.sub(r"^/workspace/", "", rel_path(p)).split("/")
-    return "/".join(parts[:2] if parts[0] in ("packages", "libs") else parts[:1])
+    return "/".join(parts[:2]) if parts[0] in ("packages", "libs") and len(parts) > 1 else None
 
 
 def hook(_args):
@@ -240,7 +243,7 @@ def hook(_args):
             hits = sorted((by_id[i] for i, sc in rank(entries, hook_query(text)) if sc >= HOOK_MIN_SCORE), key=old)
         elif event == "PreToolUse" and isinstance(ev.get("tool_input"), dict):
             hits = []
-            for pkg in dict.fromkeys(package(p) for p in hook_paths(name, ev["tool_input"]) if p):
+            for pkg in [k for k in dict.fromkeys(package(p) for p in hook_paths(name, ev["tool_input"]) if p) if k]:
                 if "%s pkg:%s" % (sid, pkg) not in seen:
                     mark.append("%s pkg:%s" % (sid, pkg))
                     hits += [e for e in trap_hits(None, pkg) if e not in hits]
