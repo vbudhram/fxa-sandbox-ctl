@@ -112,7 +112,8 @@ _trees_workspace() {
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || { echo "ERROR: bad tree line for ${n:-?}" >&2; return 1; }
     cmd="${cmd}; [ -d ${p}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$s") https://github.com/${s}.git ${p}; sudo -u agent ln -sfn ${p} ${TREES_ROOT}/${n}"; want="${want} ${p}"
     # The image's fxa-start and stack.sh read FxA from /workspace, which here holds only links.
-    [ "$s" = mozilla/fxa ] && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p} FXA_ROOT=${p}' >> /etc/agent-env.sh; sed -i 's#/workspace#${p}#g' /usr/local/bin/fxa-start"
+    # The FxA stack's row: mozilla/fxa, or the record's private fork of it (stack.repo, PIPE_STACK_DIR).
+    { [ "$s" = mozilla/fxa ] || [ "$p" = "${PIPE_STACK_DIR:-}" ]; } && cmd="${cmd}; sudo -u agent ln -sfn ${TREES_ROOT}/.fxa-auto-media ${p}/.fxa-auto-media; grep -q '^export FXA_WORKSPACE=' /etc/agent-env.sh || echo 'export FXA_WORKSPACE=${p} FXA_ROOT=${p}' >> /etc/agent-env.sh; sed -i 's#/workspace#${p}#g' /usr/local/bin/fxa-start"
   done < "$2"
   echo "Setting up the stack's repos on the runner..."
   # A failed clone fails here and names the repo, not 600 s later at the pin wait.
@@ -140,7 +141,7 @@ _trees_restore() {
   done
   while IFS=$'\t' read -r -u 3 n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || return 1
-    if [ "$s" = mozilla/fxa ]; then
+    if [ "$s" = mozilla/fxa ] || [ "$p" = "${PIPE_STACK_DIR:-}" ]; then
       # The moves leave empty packages/ folders, which make /workspace look like an FxA tree.
       vm_exec "$name" sudo -u agent bash -c "cd ${TREES_ROOT} && for f in ${moves}; do [ -e \"\$f\" ] || continue; mkdir -p \"${p}/\$(dirname \"\$f\")\" && rm -rf \"${p}/\$f\" && mv \"\$f\" \"${p}/\$f\"; done
         find packages libs _dev -depth -type d -empty -delete 2>/dev/null

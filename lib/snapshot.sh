@@ -763,7 +763,7 @@ snapshot_json() {
     --arg zone "$( [ "${FXA_VM_BACKEND:-tart}" = gce ] && printf '%s' "$FXA_GCE_ZONE" )" \
     --argjson mcap "$merged_cap" \
     --arg t_profile "${PIPE_PROFILE:-}" --arg t_name "${PIPE_LABEL:-${PIPE_PROFILE:-}}" --arg t_site "${PIPE_JIRA_SITE:-}" \
-    --arg t_queue "${PIPE_LABEL_PREFIX:-}" --arg t_pr "${FXA_PR_LABEL:-auto}" --arg t_repo "${PIPE_REPO_SLUG:-}" \
+    --arg t_queue "${PIPE_QUEUE_LABEL:-${PIPE_LABEL_PREFIX:-}}" --arg t_pr "${FXA_PR_LABEL:-auto}" --arg t_repo "${PIPE_REPO_SLUG:-}" \
     'def nn: if . == "" then null else . end;
      ($skipped | map(.key)) as $skipkeys
      | ($items // []) as $q
