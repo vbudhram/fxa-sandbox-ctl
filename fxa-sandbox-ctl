@@ -153,6 +153,7 @@ PIPELINE COMMANDS:
   progress <ISSUE-KEY>         What the launcher did (read this first)
   needs-you <ISSUE-KEY>        "new" the first time a ⚠️ item is reported, then "seen <date>"
   pass-report                  The pass report's fixed part: the counts, ✅ ready to review, ⏳ in flight
+  repo-dir                     The team's host clone, where the pass greps origin/<base> (fxa: ~/Desktop/working2/fxa)
   prstate <ISSUE-KEY>          PR number, state, and check tally
   conflicts <ISSUE-KEY>        Files conflicting with main, and their class
                                (lockfile | source). Empty if it merges clean.
@@ -1618,6 +1619,8 @@ cmd_pass_report() {
   [ -z "$d" ] || { echo "✅ Ready to review:"; for k in $d; do printf '  %s  #%s\n' "$k" "$(gh_pr_state "$k" 2>/dev/null | awk '{print $2}')"; done; }
   [ -z "$i" ] || { echo "⏳ In flight:"; for k in $i; do printf '  %s  %s\n' "$k" "$(pipeline_progress "$k" 2>/dev/null | head -1)"; done; }
 }
+# repo-dir   The team's host clone: a pass greps there, not in FxA's clone (a private team's fork lives elsewhere).
+cmd_repo_dir() { pipeline_ensure_clone >/dev/null 2>&1 || { echo "ERROR: could not clone ${PIPE_REPO_SLUG:-?} on this host" >&2; return 1; }; printf '%s\n' "$PIPE_REPO"; }
 cmd_lock()      { pipeline_lock; }
 cmd_unlock()    { pipeline_unlock; }
 cmd_pause()     { pipeline_pause "$@"; }
@@ -3090,6 +3093,7 @@ main() {
     progress)   cmd_progress "$@" ;;
     needs-you)  cmd_needs_you "$@" ;;
     pass-report) cmd_pass_report ;;
+    repo-dir)   cmd_repo_dir ;;
     prstate)    cmd_prstate "$@" ;;
     conflicts)  cmd_conflicts "$@" ;;
     relock)     cmd_relock "$@" ;;

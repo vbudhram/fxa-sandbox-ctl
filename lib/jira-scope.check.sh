@@ -34,6 +34,8 @@ check "jira gates every launch on the scope" "1" "$(grep -c '^  if ! pipeline_ke
 eval "$(sed -n '/^_jira_private_gone() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 check "the docs name private pipeline teams, not --private" "0|1|1|1" \
   "$(grep -c 'FXA_PRIVATE_REPO\|Private mode' "$here/../README.md")|$(grep -c '^### Private pipeline teams$' "$here/../README.md")|$(grep -c 'jira.secret: true' "$here/../PRODUCT.md" | sed 's/[2-9]/1/')|$(grep -c 'ai-fixme-private-<state>' "$here/../skills/fxa-ai-fixme/SKILL.md")"
+check "the pass greps in the team's own clone (repo-dir), not FxA's" "0|1|/w/fxa-private|1" \
+  "$(grep -c 'cd ~/Desktop/working2/fxa &&' "$here/../skills/fxa-ai-fixme/SKILL.md")|$(grep -c 'cd "$($CTL repo-dir)"' "$here/../skills/fxa-ai-fixme/SKILL.md")|$( (eval "$(sed -n '/^cmd_repo_dir() /p' "$here/../fxa-sandbox-ctl")"; pipeline_ensure_clone() { :; }; PIPE_REPO=/w/fxa-private; cmd_repo_dir) )|$( (eval "$(sed -n '/^cmd_repo_dir() /p' "$here/../fxa-sandbox-ctl")"; pipeline_ensure_clone() { return 1; }; PIPE_REPO_SLUG=mozilla/x; cmd_repo_dir 2>&1) | grep -c 'could not clone mozilla/x')"
 check "the ticket-filing skill sends a security bug to the private team with ai-fixme and security" "0|1" \
   "$(grep -c 'never gets the .ai-fixme' "$here/../skills/fxa-ai-fixme-create-issue/SKILL.md")|$(grep -c -- '-l ai-fixme,security' "$here/../skills/fxa-ai-fixme-create-issue/SKILL.md")"
 mkdir -p "$tmp/pt"; echo '{"teams":{"fxa-private":{"status":"active","secret":true,"jira":"FXA"}}}' > "$tmp/pt/index.json"

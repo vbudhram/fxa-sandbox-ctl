@@ -24,7 +24,7 @@ token comes from `~/.circleci/cli.yml`. Never print it.
    `inflight` ones, then lists only what needs judgment and releases the lock. If it prints `quiet`,
    report that one line and stop. If it prints `locked` or `paused`, stop and say so; never
    `resume` it yourself. Otherwise continue with the lines it printed as your worklist.
-1. **`$CTL lock`**, unless the prompt says the timer holds the lock: then never lock or unlock. Then `cd ~/Desktop/working2/fxa && git fetch origin main`. Ground every grep
+1. **`$CTL lock`**, unless the prompt says the timer holds the lock: then never lock or unlock. Then `cd "$($CTL repo-dir)" && git fetch origin main`: the team's own clone (a private team's fork is not FxA's). Ground every grep
    against `origin/main` with `git grep <pat> origin/main -- <path>` and
    `git ls-tree -r --name-only origin/main`. Never the working tree (INCIDENTS: Grounding).
 2. **Reconcile.** `$CTL reconcile` applied the determinate rows already: merged→`merged`,
