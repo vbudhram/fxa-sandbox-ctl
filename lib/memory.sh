@@ -115,12 +115,12 @@ Traps that runs read the most:
   printf '%s\n%s' "$out" "$body"
 }
 
-# _memory_use_counts <days>   "<count> <id>": the runs (use-log files) that showed or found it in the last <days> days, highest first.
+# _memory_use_counts <days>   "<count> <id>": the runs (use-log files) that showed, found or auto-recalled it in the last <days> days, highest first.
 _memory_use_counts() {
   local cut; cut=$(( $(date +%s) - $1 * 86400 ))
   [ -d "${FXA_MEMORY_DIR}/tickets" ] || return 0
   find "${FXA_MEMORY_DIR}/tickets" -name '*.use.jsonl' -mtime "-$(( $1 + 1 ))" -exec jq -Rr --argjson cut "$cut" 'fromjson? | select((.at // 0) >= $cut)
-        | (if .cmd == "show" then [.id] elif .cmd == "search" then (.ids // []) else [] end)[]?
+        | (if .cmd == "show" or .cmd == "hook" then [.id] elif .cmd == "search" then (.ids // []) else [] end)[]?
         | strings | select(test("^mem-[0-9a-f]{8}$")) | "\(input_filename) \(.)"' {} + 2>/dev/null \
     | sort -u | awk '{ print $NF }' | sort | uniq -c | awk '{ print $1 " " $2 }' | sort -k1,1nr -k2,2 || true
 }
@@ -337,11 +337,12 @@ memory_collect() {
     # A longer log comes as tail -c 32001: its first line is cut, so it goes.
     ulines="$(tail -c 32001 "$use" | { if [ "$(( $(wc -c < "$use") ))" -gt 32000 ]; then sed 1d; else cat; fi; } | jq -R -c --argjson now "$(date +%s)" '
       def s($n): (if type == "string" then . else "" end) | gsub("[[:cntrl:]]"; " ") | .[0:$n];
-      fromjson? | select(type == "object") | select(.cmd == "search" or .cmd == "show" or .cmd == "traps" or .cmd == "rate")
+      fromjson? | select(type == "object") | select(.cmd == "search" or .cmd == "show" or .cmd == "traps" or .cmd == "rate" or .cmd == "hook")
       | { at: (if (.at | type) == "number" then ([.at, $now] | min) else null end), cmd, q: (if has("q") then .q | s(200) else null end),
           id: (if (.id | type) == "string" and (.id | test("^mem-[0-9a-f]{8}$")) then .id else null end),
           ids: (if (.ids | type) == "array" then [.ids[] | strings | select(test("^mem-[0-9a-f]{8}$"))] else null end),
-          rating: (if .rating == "helped" or .rating == "wrong" or .rating == "stale" then .rating else null end), why: (if has("why") then .why | s(200) else null end) }
+          rating: (if .rating == "helped" or .rating == "wrong" or .rating == "stale" then .rating else null end), why: (if has("why") then .why | s(200) else null end),
+          auto: (if .auto == true then true else null end) }
       | with_entries(select(.value != null))' 2>/dev/null | tail -n 200 || true)"
     while IFS= read -r l; do
       [ -n "$l" ] || continue

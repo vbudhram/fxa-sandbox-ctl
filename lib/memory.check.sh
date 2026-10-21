@@ -235,6 +235,11 @@ for i in 1 2 3; do echo "{\"at\": $old, \"cmd\": \"show\", \"id\": \"mem-0000000
 echo "{\"at\": $now, \"cmd\": \"show\", \"id\": \"mem-0000000a\"}" > "$tmp/clone/tickets/uc/$ud-r2.use.jsonl"
 g -C "$tmp/clone" add -A && g -C "$tmp/clone" commit -qm uc && g -C "$tmp/clone" push -q origin HEAD:main 2>/dev/null
 check "use counts: runs that read it in the last 30 days, once per run, highest first" "2 mem-0000000a|1 mem-0000000b" "$(_memory_use_counts 30 | head -1)|$(_memory_use_counts 30 | sed -n 2p)"
+echo "{\"at\": $now, \"cmd\": \"hook\", \"id\": \"mem-000000c8\", \"auto\": true, \"event\": \"PostToolUseFailure\"}" > "$tmp/use.hook"
+FXA_MEMORY_USE_FILE="$tmp/use.hook" memory_collect r8 "$tmp/empty.json" t fxa 0 FXA-8 mozilla/fxa 2>/dev/null
+mkdir -p "$tmp/hookmem/tickets/FXA-8"; ulist FXA-8 r8 > "$tmp/hookmem/tickets/FXA-8/$uday-r8.use.jsonl"
+check "an auto hook recall is saved as auto and counts as a read" "true|1 mem-000000c8" \
+  "$(ulist FXA-8 r8 | jq -r .auto)|$(FXA_MEMORY_DIR="$tmp/hookmem" _memory_use_counts 30)"
 rm -f "$tmp/digest.msg"; g -C "$tmp/remote.git" branch -D "$br" >/dev/null 2>&1; g -C "$tmp/clone" fetch -q -p origin 2>/dev/null
 memory_digest 2>/dev/null
 ib="$(g -C "$tmp/clone" ls-tree -r --name-only origin/main | sed -n 's#^inbox/.*/\(mem-[0-9a-f]*\)\.md$#\1#p')"
