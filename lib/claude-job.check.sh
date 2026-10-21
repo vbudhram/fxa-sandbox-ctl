@@ -23,11 +23,12 @@ case "\$1" in
   lock) [ -e $tmp/lock-lost ] && { echo 'locked: lost the race'; exit 1; }; echo lock >> $tmp/ctl-calls; echo acquired ;;
   unlock) echo unlock >> $tmp/ctl-calls ;;
   pass-report) echo '### REPORT' ;;
+  repo-dir) echo "\${REPO_DIR:-/nonexistent}" ;;
   *) sleep 1; echo "state-\$1" ;;
 esac
 SH
 printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
-printf 'echo "${ANTHROPIC_BASE_URL:-none} ${ANTHROPIC_API_KEY:-none}" > %s/claude-env\n' "$tmp" >> "$tmp/bin/claude"
+printf 'echo "${ANTHROPIC_BASE_URL:-none} ${ANTHROPIC_API_KEY:-none}" > %s/claude-env\necho "${DEPS_REPO:-none}" > %s/claude-deps\n' "$tmp" "$tmp" >> "$tmp/bin/claude"
 chmod +x "$tmp/fxa-sandbox-ctl" "$tmp/bin/claude"
 echo "Invoke /fxa-ai-fixme." > "$tmp/prompt.txt"
 run() { rm -f "$tmp/claude-in"; printf '%s\n' "$1" > "$tmp/precheck-out"
@@ -150,5 +151,12 @@ unset FXA_LLM_PROXY_DIR ANTHROPIC_API_KEY
 j="$(dirname "$0")/../infra/gce/claude-job.sh"
 check "the run token never goes in a command's argv, where ps shows it" "0" "$(grep -c 'env \${llm\|ANTHROPIC_API_KEY="\$tok" claude' "$j")"
 check "a run name is unique per process, so one job's revoke never ends another's token" "1" "$(grep -c '^run="\${job}-\${_p}-\$(date +%s)-\$\$"' "$j")"
+
+# deps.sh gets the team's repo from its host clone's origin; a clone that does not answer leaves it unset.
+mkdir -p "$tmp/fork"; git -C "$tmp/fork" init -q; git -C "$tmp/fork" remote add origin https://github.com/mozilla/fxa-private.git
+REPO_DIR="$tmp/fork" run 'queue: FXA-1 new (run: ground FXA-1)' >/dev/null
+check "a pass exports DEPS_REPO from the team's clone" "mozilla/fxa-private" "$(cat "$tmp/claude-deps")"
+run 'queue: FXA-1 new (run: ground FXA-1)' >/dev/null
+check "no clone: DEPS_REPO stays unset (deps.sh keeps mozilla/fxa)" "none" "$(cat "$tmp/claude-deps")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
