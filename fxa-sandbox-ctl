@@ -1414,6 +1414,18 @@ cmd_precheck() {
     echo "paused: the Jira login was refused; see errors (jira/login)"
     return 0
   fi
+  # A secret team's repo gate runs here once, in this shell: the reads below run in subshells, which
+  # then keep its yes, and a repo that is not confirmed private stops the pass before any read.
+  if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+    local gerr; gerr="$(mktemp)"
+    if ! pipeline_jira_scope >/dev/null 2>"$gerr"; then
+      errors_record pipeline private "" "precheck" "$(tail -1 "$gerr")" ""; rm -f "$gerr"
+      pipeline_unlock >/dev/null
+      echo "paused: team ${PIPE_PROFILE}'s work repo is not confirmed private; see errors (pipeline/private)"
+      return 0
+    fi
+    rm -f "$gerr"
+  fi
   local work=0 info="" line key num state ids noted why kinds=""
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
   _work() { work=1; kinds="${kinds}${kinds:+ }${1%%:*}"; printf '%s\n' "$*"; }
@@ -1537,10 +1549,10 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
     [[ "$sk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || continue
     if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
       _info "secret label removed: ${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label; a person moves it (the pass does not touch it)"
-      smsg="${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label, so team ${PIPE_PROFILE} no longer reads it. Add the label back, or set ai-fixme by hand so the public team takes it"
+      smsg="${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label, so team ${PIPE_PROFILE} no longer reads it. Add the label back, or run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} label ${sk} public (it stops the run and leaves only ai-fixme, so the public team takes it)"
     elif [ -n "$steam" ]; then
       _info "security level or label: ${sk} has a public pipeline label; a person moves it (the pass does not touch it)"
-      smsg="${sk} got a security level or a secret label during a public run. Stop its run, then set ai-fixme on it, so team ${steam} takes it"
+      smsg="${sk} got a security level or a secret label during a public run. Run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} label ${sk} public (it stops the run and leaves only ai-fixme), so team ${steam} takes it"
     else
       _info "security level or label: ${sk} has a pipeline label, and no active team takes ${sproj}'s secret tickets; a person moves it (the pass does not touch it)"
       smsg="${sk} has a security level or a secret label and a pipeline label, but no active team takes ${sproj}'s secret tickets. Create or activate one (README: Private pipeline teams), or move it by hand"
