@@ -2534,7 +2534,8 @@ function renderStats() {
   // Grow the bars in from zero on each draw.
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
 }
-// PRs tab: the outcome of each PR opened in the range, and its cost from every run on it.
+// PRs tab: PRs opened in the range (Opened, Still open, By source), and PRs merged or closed in the range,
+// whenever they were opened (Merged, Time to merge, the merged lists), with the cost of every run on each.
 function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const repo = teamRepo(), all = st.prs ?? [], rows = st.rows ?? [];
   const prs = all.filter(p => { const t = Date.parse(p.created); return t >= lo && t < hi
@@ -2547,7 +2548,10 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   const cost = p => rows.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === "pipeline" && r.key === p.key) ? (r.usd || 0) + (r.compute_usd || 0) : 0), 0);
   const hrs = p => (Date.parse(p.merged) - Date.parse(p.created)) / 3600000, dur = h => h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} d`;
   const med = a => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
-  const by = s => prs.filter(p => p.state === s), merged = by("MERGED"), closed = by("CLOSED"), open = by("OPEN");
+  // All-in cost reads every PR and run, so a source filter does not divide all spend by fewer PRs.
+  const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows), allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
+  const merged = mergedIn.filter(shown), open = prs.filter(p => p.state === "OPEN");
+  const closed = all.filter(p => shown(p) && p.state === "CLOSED" && Date.parse(p.closed) >= lo && Date.parse(p.closed) < hi);
   const rate = (m, c) => m + c ? `${Math.round(m / (m + c) * 100)}%` : "—";
   const mc = merged.map(cost), SRC = { pipeline: "Pipeline", slack: "Slack sessions" };
   const kv = (k, v) => html`<div class="kv">${k}<span>${v}</span></div>`;
@@ -2560,17 +2564,15 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
       : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed"} · <b>${usd(cost(p))}</b>`)}</div>`;
   const list = (l, none) => l.length ? l.slice(0, 10).map(line) : html`<div class="empty">${none}</div>`;
   const newest = (a, b, k) => (b[k] > a[k]) - (b[k] < a[k]);
-  // All-in: every run in the range, any source (passes, sessions, answers too), over the PRs merged in it.
-  const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows), allUsd = r => (r.usd || 0) + (r.compute_usd || 0);
   const WK = 7 * 86400000, mon = t => { const d = new Date(t); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.getTime(); };
   const weeks = [3, 2, 1, 0].map(i => { const a = mon(Date.now()) - i * WK, b = a + WK, m = all.filter(p => p.merged && Date.parse(p.merged) >= a && Date.parse(p.merged) < b).length;
     return m ? usd(rows.filter(r => { const t = (r.ms ?? Date.parse(r.at)); return t >= a && t < b; }).reduce((x, r) => x + allUsd(r), 0) / m) : "—"; });
   const who = [...merged.reduce((m, p) => m.set(p.by || "?", (m.get(p.by || "?") ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]);
   return html`<div class="kpis">${kpi("Opened", prs.length, Object.entries(SRC).map(([v, l]) => { const n = prs.filter(p => p.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · "))}
-      ${kpi("Merged", mergedIn.length, `by merge date · of the PRs opened in this range, ${rate(merged.length, closed.length)} merged or closed`)}
-      ${kpi("Closed, not merged", closed.length, `${open.length} still open`)}
+      ${kpi("Merged", merged.length, "merged in this range, whenever opened")}
+      ${kpi("Closed, not merged", closed.length, `closed in this range · ${open.length} opened in it still open`)}
       ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : raw("&nbsp;"))}
-      ${kpi("Cost per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `${usd(spentIn)} all-in over ${mergedIn.length}${merged.length ? ` · own runs, median ${usd(med(mc))}` : ""} · by week ${weeks.join(" → ")}`)}</div>
+      ${kpi("Cost per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `all spend in this range, ${usd(spentIn)}, over ${mergedIn.length} merged${merged.length ? ` · one PR's own runs: median ${usd(med(mc))}` : ""} · last 4 weeks ${weeks.join(" → ")}`)}</div>
     <div class="charts">${chart(html`<h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div>`)}
       ${chart(html`<h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
         return a.length ? kv(html`<b>${l}</b>`, html`${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; })}

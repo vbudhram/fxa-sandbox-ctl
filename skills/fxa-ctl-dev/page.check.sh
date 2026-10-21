@@ -155,6 +155,17 @@ ck "Stats PRs renders with a PR merged this week and a run in it" "true|false" "
   const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString();
   STATS = { ...(STATS ?? {}), prs: [{ n: 1, key: "FXA-1", title: "t", state: "MERGED", created: iso(2), merged: iso(1), add: 1, del: 0, src: "pipeline" }], rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], llm: STATS?.llm ?? {} };
   renderStats(); const t = document.body.innerText; return [/Cost per merged PR/.test(t), /did not render|is not defined/.test(t)].join("|")')"
+# Merged in the range counts every PR that merged in it, and the merged lists show the same PRs: one opened 10 days ago
+# and merged yesterday is in the count, Recently merged and Merged by; one opened today and still open is not.
+ck "Stats PRs on 7 days: Merged, Recently merged and Merged by agree, with a PR opened before the range" "2|2|2|1" "$(bash "$p" '#stats/prs' --fixture "$F" --width 1280 --probe '
+  const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString(); SF = { ...SF_DEFAULT, range: "7d" };
+  STATS = { ...(STATS ?? {}), llm: STATS?.llm ?? {}, rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], prs: [
+    { n: 1, key: "FXA-1", title: "a", state: "MERGED", created: iso(10), merged: iso(1), add: 1, del: 0, src: "pipeline", by: "x" },
+    { n: 2, key: "FXA-2", title: "b", state: "MERGED", created: iso(3), merged: iso(2), add: 1, del: 0, src: "pipeline", by: "x" },
+    { n: 3, key: "FXA-3", title: "c", state: "OPEN", created: iso(0.1), add: 1, del: 0, src: "pipeline" }] };
+  renderStats(); const card = t => [...document.querySelectorAll("#s-stats .chart")].find(c => c.querySelector("h2")?.textContent.startsWith(t));
+  const big = [...document.querySelectorAll("#s-stats .kpis > *")].find(k => /^Merged/.test(k.textContent)).textContent.match(/\d+/)[0];
+  return [big, card("Recently merged").querySelectorAll(".kv").length, [...card("By source").querySelectorAll(".kv")].pop().querySelector("b").textContent, card("Still open").querySelectorAll(".kv").length].join("|")')"
 # Spend (ov-main, the Spend tab). Rows over 100 days in four sources, one 95 days ago; a peak day with 3 merged PRs.
 SP='const DAY = 86400000, noon = d => { const t = new Date(); t.setHours(12, 0, 0, 0); return new Date(t.getTime() - d * DAY).toISOString(); };
   const rows = []; for (let d = 0; d < 100; d++) [["pipeline", 1], ["pass", 0.5], ["slack", 0.25], ["answer", 0.125]].forEach(([src, u]) => rows.push({ at: noon(d), src, usd: d === 4 ? u * 20 : u, key: `K-${d}-${src}`, model: "claude-opus-5-5" }));
