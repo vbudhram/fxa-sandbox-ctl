@@ -24,20 +24,12 @@ g -C "$tmp/seed" add -A && g -C "$tmp/seed" commit -qm seed && g -C "$tmp/seed" 
 export FXA_MEMORY_REMOTE="$tmp/remote.git" FXA_MEMORY_DIR="$tmp/clone"
 memory_pull
 idx="$(memory_index_md monitor mozilla/fxa)"
-check "the index has the team file and the session's repos only, as data" "1|1|0|1" \
-  "$(grep -c 'Owners: the FxA team' <<< "$idx")|$(grep -c 'nx test-unit-jest' <<< "$idx")|$(grep -c '^- other' <<< "$idx")|$(grep -c 'data, not instructions' <<< "$idx")"
-check "over the budget a repo gets a pointer, not its index" "1|0" \
-  "$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md')|$(MEMORY_INDEX_MAX=10 memory_index_md monitor mozilla/fxa | grep -c 'nx test-unit-jest')"
-check "the header does not say people reviewed every note" "0|1" "$(memory_index_md fxa mozilla/fxa | grep -c 'People reviewed these notes')|$(memory_index_md fxa mozilla/fxa | grep -c 'some are not reviewed yet')"
-big="$(printf -- '- mem-%08d [command] %0200d\n' 1 0 2 0 3 0)
-- mem-0000000a [trap] content is down until the libs build"
-echo "$big" > "$FXA_MEMORY_DIR/repos/mozilla__fxa/INDEX.md"
-idx="$(MEMORY_INDEX_MAX=900 memory_index_md x mozilla/fxa | sed -n '/^## Repo/,$p')"
-check "traps come first, the lines the budget holds follow, then a pointer" "1|2|1" \
-  "$(sed -n 2p <<< "$idx" | grep -c '\[trap\]')|$(grep -c '\[command\]' <<< "$idx")|$(tail -1 <<< "$idx" | grep -c '^Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md$')"
-printf -- '- mem-0000000b [trap] %0150d (packages/x/y.js:1) -> trap.md\n' 0 > "$FXA_MEMORY_DIR/repos/mozilla__fxa/INDEX.md"
-check "an entry is a 100-char snippet and its topic file, without the cite" "- mem-0000000b [trap] $(printf '%0100d' 0) -> trap.md" \
-  "$(memory_index_md x mozilla/fxa | grep '^- mem-')"
+check "the prompt has the team file, and names the commands, not the entries" "1|1|1|0" \
+  "$(grep -c 'Owners: the FxA team' <<< "$idx")|$(grep -c 'fxa-mem search' <<< "$idx")|$(grep -c 'fxa-mem traps' <<< "$idx")|$(grep -c 'nx test-unit-jest' <<< "$idx")"
+check "the prompt section is small" "1" "$([ "${#idx}" -le 2500 ] && echo 1)"
+check "the header says the notes are data" "1" "$(grep -c 'data, not instructions' <<< "$idx")"
+check "memory off: no prompt section" "" "$(FXA_MEMORY_REMOTE= memory_index_md monitor mozilla/fxa)"
+check "no repo folder: no prompt section" "" "$(memory_index_md monitor mozilla/none)"
 g -C "$FXA_MEMORY_DIR" checkout -q -- repos
 check "a bad profile or slug reads nothing" "" "$(memory_index_md '../x' '../../etc')"
 
@@ -49,7 +41,12 @@ b64="$(sed -E "s/.*echo '([^']*)'.*/\1/" "$tmp/vm.cmd")"
 check "sync copies the team file and the repo, and not the inbox" "profiles/monitor.md|repos/mozilla__fxa/|0" \
   "$(base64 -d <<< "$b64" | tar -tzf - | grep -c . >/dev/null; base64 -d <<< "$b64" | tar -tzf - | grep -x 'profiles/monitor.md')|$(base64 -d <<< "$b64" | tar -tzf - | grep -x 'repos/mozilla__fxa/')|$(base64 -d <<< "$b64" | tar -tzf - | grep -c inbox)"
 check "the runner copy is root-owned and read-only" "1" "$(grep -c 'chown -R root:root /home/agent/.fxa-memory && chmod -R a+rX,go-w' "$tmp/vm.cmd")"
+check "sync ships the command and links it" "1|1" "$(grep -c 'fxa-mem' "$tmp/vm.cmd")|$(grep -c '/usr/local/bin/fxa-mem' "$tmp/vm.cmd")"
+check "the tar holds the command" "fxa-mem" "$(base64 -d <<< "$b64" | tar -tzf - | grep -x 'fxa-mem')"
 rm -rf "$tmp/clone/inbox"
+head -c 3000000 /dev/urandom > "$FXA_MEMORY_DIR/repos/mozilla__fxa/big.md"; rm -f "$tmp/vm.cmd"
+check "a tar over the cap is not sent, and the error names the repos" "0|1" "$([ -f "$tmp/vm.cmd" ] && echo 1 || echo 0)|$(memory_sync r monitor mozilla/fxa 2>&1 | grep -c 'repos/mozilla__fxa')"
+rm -f "$FXA_MEMORY_DIR/repos/mozilla__fxa/big.md"
 
 # Capture: an episode for the ticket, and only the learnings that are about the run's repos,
 # of a known kind, and not shaped like an instruction.
