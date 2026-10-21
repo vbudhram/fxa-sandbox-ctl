@@ -549,10 +549,12 @@ EOF
       return 1
     fi
     # The run's notes and learnings, before the diff or PR split, so a read-only team's run counts too.
-    if [ -s "${worktree_path}/.fxa-memory.json" ]; then
+    if [ -s "${worktree_path}/.fxa-memory.json" ] || [ -s "${worktree_path}/.fxa-memory-use.jsonl" ]; then
+      local mem_use; mem_use="$(mktemp)"
+      head -c 32000 "${worktree_path}/.fxa-memory-use.jsonl" > "$mem_use" 2>/dev/null || true
       # shellcheck disable=SC2046  # one slug per word
-      memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
-      rm -f "${worktree_path}/.fxa-memory.json"
+      FXA_MEMORY_USE_FILE="$mem_use" memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
+      rm -f "${worktree_path}/.fxa-memory.json" "${worktree_path}/.fxa-memory-use.jsonl" "$mem_use"
     fi
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then

@@ -183,6 +183,14 @@ _memory_index() {
   done > "$1/INDEX.md"
 }
 
+# _memory_pii_ok <jsonl text>   0 when the PII guard finds nothing in the text's strings.
+_memory_pii_ok() {
+  local p rc=0; p="$(mktemp)"; : > "${p}.diff"
+  jq -s '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' <<< "$1" > "$p"
+  python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$p" "${p}.diff" >/dev/null 2>&1 || rc=$?
+  rm -f "$p" "${p}.diff"; return "$rc"
+}
+
 # memory_collect <run> <json> <trigger> <profile> <taint> <ticket|""> <slug...>
 # _memory_log <run> <result> [added] [inbox] [dropped]   One line per save or digest, for the Stats page.
 _memory_log() {
@@ -211,21 +219,23 @@ memory_collect() {
       def s($n): (if type == "string" then . else "" end) | gsub("[[:cntrl:]]"; " ") | .[0:$n];
       fromjson? | select(type == "object") | select(.cmd == "search" or .cmd == "show" or .cmd == "traps" or .cmd == "rate")
       | { at: (if (.at | type) == "number" then .at else null end), cmd, q: (if has("q") then .q | s(200) else null end),
-          id: (if has("id") then .id | s(20) else null end),
+          id: (if (.id | type) == "string" and (.id | test("^mem-[0-9a-f]{8}$")) then .id else null end),
           ids: (if (.ids | type) == "array" then [.ids[] | strings | select(test("^mem-[0-9a-f]{8}$"))] else null end),
-          rating: (if has("rating") then .rating | s(20) else null end), why: (if has("why") then .why | s(200) else null end) }
-      | with_entries(select(.value != null))' "$use" 2>/dev/null || true)"
+          rating: (if .rating == "helped" or .rating == "wrong" or .rating == "stale" then .rating else null end), why: (if has("why") then .why | s(200) else null end) }
+      | with_entries(select(.value != null))' "$use" 2>/dev/null | head -n 200 || true)"
     while IFS= read -r l; do
       [ -n "$l" ] || continue
       _memory_suspect "$(jq -r '(.q // "") + " " + (.why // "")' <<< "$l")" && continue
       ul="${ul}${l}"$'\n'
     done <<< "$ulines"
-    ul="$(printf '%s' "$ul" | head -n 200)"
+    ul="${ul%$'\n'}"
+    # Personal data in the use log drops only the log; the notes still save.
+    if [ -n "$ul" ] && ! _memory_pii_ok "$ul"; then echo "  memory: personal or internal data in ${run}'s use log; the log is dropped" >&2; _memory_log "$run" use_pii; ul=""; fi
   fi
   [ -s "$json" ] || [ -n "$ul" ] || return 0
   # Personal or internal data anywhere in it: nothing is saved.
   prose="$(mktemp)"; : > "${prose}.diff"
-  { printf '%s\n' "$norm"; printf '%s\n' "$ul"; } | jq -s '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' > "$prose"
+  jq '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' <<< "$norm" > "$prose"
   hits="$(python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$prose" "${prose}.diff" 2>/dev/null)" || rc=$?
   rm -f "$prose" "${prose}.diff"
   if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; _memory_log "$run" pii_blocked; return 0; fi
