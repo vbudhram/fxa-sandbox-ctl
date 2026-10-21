@@ -1442,7 +1442,8 @@ cmd_precheck() {
   # Held back; printed only when some line needs judgment.
   _info() { info="${info}${info:+$'\n'}$*"; }
   # Reconcile lines that need judgment. The rest were applied or are progress.
-  local judge_re='dead-runner| RED |could not read|exited-without-handoff|stalled|public \(inflight'
+  # A run in error (a refused ship, a failed PR create) needs a person: the skill reports it, so it wakes.
+  local judge_re='dead-runner| RED |could not read|exited-without-handoff|stalled|public \(inflight|^[A-Z][A-Z0-9]*-[0-9]+ error '
 
   # The same judgment line wakes one pass, then one an hour while it stays, so a stuck ticket is
   # retried without waking every pass (every 5 min) until a person acts. The ok= and running=
