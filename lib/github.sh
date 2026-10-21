@@ -594,6 +594,29 @@ github_repo_private() {
   esac
 }
 
+# github_repo_confirmed_private <owner/repo>   True only when an authenticated read answers private == true:
+# the App's read token, else the person's gh login. Any other answer is false, with the reason on stderr,
+# and nothing is cached: a secret team's gate must not count an unclear answer as private.
+github_repo_confirmed_private() {
+  local slug="$1" tok out code
+  [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "could not confirm that ${slug} is private (not a repo slug)" >&2; return 1; }
+  if github_app_enabled && tok="$(github_read_token "$slug")" && [ -n "$tok" ]; then
+    out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -s --max-time 20 -K - -w '\n%{http_code}' \
+      -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${slug}")" || out=$'\n000'
+    code="${out##*$'\n'}"
+    [ "$code" = 200 ] || { echo "could not confirm that ${slug} is private (GitHub answered HTTP ${code})" >&2; return 1; }
+    out="$(printf '%s' "${out%$'\n'*}" | jq -r '.private' 2>/dev/null)" || out=""
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    out="$(gh api "repos/${slug}" --jq .private 2>&1)" || { echo "could not confirm that ${slug} is private (gh: ${out##*$'\n'})" >&2; return 1; }
+  else
+    echo "no GitHub App and no gh login on this host, so ${slug} cannot be confirmed private. Run gh auth login, or run on the manager." >&2
+    return 1
+  fi
+  [ "$out" = true ] && return 0
+  [ "$out" = false ] && echo "${slug} is public" >&2 || echo "could not confirm that ${slug} is private (GitHub gave no private field)" >&2
+  return 1
+}
+
 # github_git_credential <operation>   A git credential helper (git asks only after a 401, so only for a
 # private repo): a read token for github.com/<owner>/<repo>, from the request on stdin. Needs
 # credential.useHttpPath. Prints nothing when it has no token, and git then fails as before.

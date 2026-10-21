@@ -123,6 +123,13 @@ check "full rights and an active queue: valid, no warning" "0|0" \
 pv() { local o; o="$(live "$1" "$2"; echo "rc=$?")"; printf '%s/%s' "$(grep -c "$3" <<< "$o")" "${o##*rc=}"; }
 check "a private repo: refused without the App or with access.open; valid for listed users" "1/1|1/1|0/0" \
   "$(pv pv2 '' 'pv2 is private (or GitHub did not answer), and the agent.s GitHub App is not installed')|$(pv pv1 ', "access": { "open": true }' 'cannot be open to everyone')|$(pv pv3 ', "access": { "users": ["U012345"] }' ERROR)"
+# A secret team: each work repo must be confirmed private by an authenticated read (the gate is faked here).
+github_repo_confirmed_private() { case "$1" in example/sp1) return 0 ;; example/sp2) echo "example/sp2 is public" >&2; return 1 ;;
+  *) echo "could not confirm that $1 is private (GitHub answered HTTP 500)" >&2; return 1 ;; esac; }
+sec=', "status": "active", "jira": { "project": "OK", "queue": true, "secret": true }, "access": { "users": ["U012345"] }'
+check "a secret team: a confirmed private repo is valid with the level warning; public and unclear repos are refused" "0/1|1/1|1/1" \
+  "$(pv sp1 "$sec" 'only a security level' | awk -F/ '{print $2"/"$1}')|$(pv sp2 "$sec" 'example/sp2 is public, so team sp2 cannot take secret tickets: remove jira.secret or use a private work repo')|$(pv sp3 "$sec" 'could not confirm that example/sp3 is private (GitHub answered HTTP 500). Validate again when GitHub answers.')"
+unset -f github_repo_confirmed_private
 gcloud() { return 1; }   # the team's credential is not stored yet
 check "a team credential that is not stored yet: refused for an active queue, a warning for a draft" "1|1" \
   "$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv8 Live ', "status": "active", "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv8--jira" }')" lv8 >/dev/null 2>&1; echo $?)|$(FXA_TEAMS_LIVE=1 teams_validate "$(rec lv9 Live ', "jira": { "project": "OK", "queue": true }, "secrets": { "jira": "fxa-team-lv9--jira" }')" lv9 2>&1 | grep -c 'store it with vm.sh secret fxa-team-lv9--jira')"
