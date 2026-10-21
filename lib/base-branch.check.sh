@@ -33,4 +33,15 @@ main_line="$(grep -o "\[ 'main' = main \] ||.*" <<< "$(pin main; cat "$tmp/pin.c
 check "a main base makes no alias" "none" "$(git -C "$r2" rev-parse -q --verify refs/remotes/origin/main || echo none)"
 check "the session fetches the profile's base, not main" "1|0" \
   "$(grep -c 'fetch --quiet origin "\$base"' "$here/../fxa-sandbox-ctl")|$(grep -c 'fetch --quiet origin main &&' "$here/../fxa-sandbox-ctl")"
+# The libs content imports, from the Nx graph: transitive, with no npm packages and no content itself.
+pin main; mkdir -p "$tmp/w/packages/fxa-content-server" "$tmp/bin"
+echo '{"graph":{"nodes":{"fxa-content-server":{"data":{"root":"packages/fxa-content-server"}},"fxa-settings":{"data":{"root":"packages/fxa-settings"}},"shared-email":{"data":{"root":"libs/shared/email"}},"shared-log":{"data":{"root":"libs/shared/log"}},"shared-l10n":{"data":{"root":"libs/shared/l10n"}}},"dependencies":{"fxa-content-server":[{"target":"shared-email"},{"target":"npm:express"},{"target":"fxa-settings"}],"fxa-settings":[{"target":"shared-l10n"}],"shared-email":[{"target":"shared-log"}],"shared-log":[{"target":"shared-email"}]}}}' > "$tmp/graph.json"
+cat > "$tmp/bin/npx" <<EOF2
+#!/bin/sh
+case "\$*" in *--file=*) cp "$tmp/graph.json" "\${3#--file=}" ;; *) echo "\$*" > "$tmp/npx.args" ;; esac
+EOF2
+chmod +x "$tmp/bin/npx"
+libs_block="$(sed -n '/if \[ -d packages\/fxa-content-server \]/,/^    fi$/p' "$tmp/pin.cmd" | sed "s#/tmp/fxa-#$tmp/fxa-#g; s#source /etc/agent-env.sh#true#")"
+( cd "$tmp/w" && PATH="$tmp/bin:$PATH" bash -c "$libs_block" )
+check "the pin builds the libs content imports, transitively, once each, and no package" "nx run-many -t build -p shared-email,shared-log" "$(cat "$tmp/npx.args" 2>/dev/null)"
 exit "$fail"

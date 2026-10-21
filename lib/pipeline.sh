@@ -397,13 +397,14 @@ _pipeline_hash() {
 
 # Hash the ticket plus every comment not led by 🤖. Our own skip comment would
 # otherwise change the hash and cause another comment on every pass.
+# A failed read prints nothing: md5 of a partial read looked like an edit and woke a model pass.
+# The trailing . keeps the bytes the hash saw before, trailing newlines included.
 _pipeline_skip_fingerprint() {
-  local key="$1"
-  {
-    acli jira workitem view "$key" 2>/dev/null
-    acli jira workitem comment list --key "$key" --json 2>/dev/null \
-      | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body'
-  } | _pipeline_hash
+  local key="$1" v c
+  v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
+  c="$(acli jira workitem comment list --key "$key" --json 2>/dev/null)" || return 0
+  c="$(printf '%s\n' "$c" | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body' && echo .)" || return 0
+  printf '%s%s' "${v%.}" "${c%.}" | _pipeline_hash
 }
 
 # pipeline_skip <KEY> [reason...]
@@ -418,7 +419,7 @@ _pipeline_one_line() {
 }
 
 # The kinds of a blocked label and of an admission skip (the pass skill names them; lib/skill-kinds.check.sh reads these).
-_PIPE_BLOCKED_KINDS="stalled dead_vm attempts rounds refused_ship operator"
+_PIPE_BLOCKED_KINDS="stalled dead_vm attempts rounds refused_ship frozen operator"
 _PIPE_SKIP_KINDS="needs_decision underspecified depends_on already_done"
 
 # pipeline_blocked_why <KEY> <state> [kind] [reason...]   Why the ticket is blocked, for the Board: one
@@ -524,7 +525,8 @@ pipeline_skip_changed() {
   f="${PIPE_STATE_DIR}/${key}.skipped"
   [ -f "$f" ] || { echo "new"; return 0; }
   fp="$(_pipeline_skip_fingerprint "$key")"
-  [ -n "$fp" ] || { echo "changed"; return 0; }
+  # A failed read is no edit: the next pass reads again.
+  [ -n "$fp" ] || return 1
   old="$(awk -F'\t' 'NR==1{print $1}' "$f")"
   [ "$old" = "$fp" ] || { echo "changed"; return 0; }
   # A hold wakes a pass once its blocker is merged or closed.
@@ -808,9 +810,9 @@ pipeline_profile_json() {
   done
   jq -nc --arg p "${PIPE_PROFILE:-}" --argjson private "$priv" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
     --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" \
-    --arg mcp "${PIPE_MCP:-}" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" '
+    --arg mcp "${PIPE_MCP:-}" --argjson android "$([ "${PIPE_ANDROID:-}" = 1 ] && echo true || echo false)" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" '
     ($ro == "0") as $read_only | ($app | split("\n") | map(ascii_downcase)) as $installed |
-    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only, private: $private,
+    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only, private: $private, android: $android,
       mcp: (if $mcp_set then ($mcp | split(",") | map(select(. != ""))) else null end),
       defaults: ($defaults | split(" ") | map(select(. != ""))),
       repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",

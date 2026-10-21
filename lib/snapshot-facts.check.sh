@@ -60,6 +60,7 @@ cmd_launchcap() { echo "cmd_launchcap must not run: it reads Jira again" >&2; ec
 cmd_freeslots() { echo s-1; echo s-2; }
 check "slots read: the cap from the one free list, and no second Jira read" '2|["s-1","s-2"]' "$(FXA_VM_BACKEND=gce slots 2>&1)"
 check "the backend cap is the ceiling" '1|["s-1","s-2"]' "$(FXA_VM_BACKEND=tart slots 2>&1)"
+check "more free slots than the cap: the read returns 0, so set -e does not end the feed" '0' "$(set -e; FXA_VM_BACKEND=tart _snapshot_slots; echo $?)"
 cmd_freeslots() { echo "ERROR: cannot list inflight tickets" >&2; return 1; }
 check "a slot read that fails: launchcap and free_slots null, not 0 and []" 'null|null' "$(slots)"
 

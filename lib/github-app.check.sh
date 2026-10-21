@@ -37,6 +37,8 @@ check "blob holds the staged content" "a2" "$(grep '^POST git/blobs' "$tmp/calls
 check "commit has one parent and the message" "$base|fix(x): y" \
   "$(grep '^POST git/commits' "$tmp/calls" | cut -d' ' -f3- | jq -r '"\(.parents | join(","))|\(.message)"')"
 check "a new branch is created" "refs/heads/fxa-1" "$(grep '^POST git/refs' "$tmp/calls" | cut -d' ' -f3- | jq -r .ref)"
+: > "$tmp/calls"; github_app_commit "$tmp/r" fxa-9 "$base" "merge" abc123 >/dev/null 2>&1
+check "a first parent makes a merge commit" "abc123,$base" "$(grep '^POST git/commits' "$tmp/calls" | cut -d' ' -f3- | jq -r '.parents | join(",")')"
 
 # An existing branch that moved since our fetch is never overwritten.
 : > "$tmp/calls"; git update-ref refs/remotes/origin/fxa-1 "$base"

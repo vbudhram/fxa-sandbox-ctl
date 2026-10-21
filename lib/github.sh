@@ -427,8 +427,13 @@ gh_relock() {
     printf '%s\n' "$locks" | xargs git checkout --theirs --
     ${PIPE_RELOCK_CMD:-yarn install --mode=update-lockfile} >&2
     printf '%s\n' "$locks" | xargs git add --
-    git -c core.hooksPath=/dev/null commit -q --no-edit ${PIPE_RELOCK_SIGN--S}
-    git push -q origin "HEAD:refs/heads/${br}" >&2
+    # The manager has no signing key and no push login: there the App makes the merge commit.
+    if github_app_enabled; then
+      github_app_commit "$wt" "$br" "$(git rev-parse origin/main)" "Merge origin/main into ${br}, re-resolve yarn.lock" "$(git rev-parse HEAD)" >/dev/null
+    else
+      git -c core.hooksPath=/dev/null commit -q --no-edit ${PIPE_RELOCK_SIGN--S}
+      git push -q origin "HEAD:refs/heads/${br}" >&2
+    fi
   ) || rc=1
   git -C "$repo" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
   [ "$rc" = 0 ] || return 1
@@ -641,13 +646,14 @@ _gh_app_rebuild() {
   echo "  ${branch} moved to ${remote:0:10}: rebuilt this change on top of it." >&2
 }
 
-# github_app_commit <worktree> <branch> <parent_sha> <message>
+# github_app_commit <worktree> <branch> <parent_sha> <message> [<first_parent_sha>]
 #   Create the staged change as one commit through the API, so the App is its
-#   author and GitHub signs it, then move <branch> to it. An existing branch must
+#   author and GitHub signs it, then move <branch> to it. With <first_parent_sha>
+#   it is a merge commit of that and <parent_sha>; the tree is still sent as a diff on <parent_sha>. An existing branch must
 #   still be where our tracking ref says (the --force-with-lease rule). Resets the
 #   slot onto the new commit and prints its sha.
 github_app_commit() {
-  local wt="$1" branch="$2" parent="$3" msg="$4"
+  local wt="$1" branch="$2" parent="$3" msg="$4" first="${5:-}"
   local st path mode sha entries='[]' tree commit remote expect
   while IFS= read -r -d '' st && IFS= read -r -d '' path; do
     if [ "$st" = D ]; then
@@ -663,7 +669,7 @@ github_app_commit() {
   tree="$(jq -c --arg b "$(git -C "$wt" rev-parse "${parent}^{tree}")" '{base_tree: $b, tree: .}' <<< "$entries" \
           | _gh_app_api POST git/trees | jq -r '.sha // empty')"
   [ -n "$tree" ] || { echo "ERROR: could not create the tree as the App." >&2; return 1; }
-  commit="$(jq -nc --arg m "$msg" --arg t "$tree" --arg p "$parent" '{message: $m, tree: $t, parents: [$p]}' \
+  commit="$(jq -nc --arg m "$msg" --arg t "$tree" --arg p "$parent" --arg f "$first" '{message: $m, tree: $t, parents: ([$f, $p] | map(select(. != "")))}' \
             | _gh_app_api POST git/commits | jq -r '.sha // empty')"
   [ -n "$commit" ] || { echo "ERROR: could not create the commit as the App." >&2; return 1; }
   remote="$(printf '' | _gh_app_api GET "git/ref/heads/${branch}" 2>/dev/null | jq -r '.object.sha // empty')"
@@ -674,7 +680,7 @@ github_app_commit() {
     expect="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" || true)"
     if [ "$remote" != "$expect" ]; then
       # Someone pushed to the branch: rebuild this change on top of their commits, once.
-      if [ -n "$expect" ] && [ -z "${_GH_APP_REBUILT:-}" ] && _gh_app_rebuild "$wt" "$branch" "$expect" "$remote"; then
+      if [ -n "$expect" ] && [ -z "$first" ] && [ -z "${_GH_APP_REBUILT:-}" ] && _gh_app_rebuild "$wt" "$branch" "$expect" "$remote"; then
         _GH_APP_REBUILT=1 github_app_commit "$wt" "$branch" "$remote" "$msg"; return
       fi
       echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1

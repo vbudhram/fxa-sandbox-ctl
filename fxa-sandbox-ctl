@@ -142,7 +142,7 @@ PIPELINE COMMANDS:
   reporter <ISSUE-KEY>         Reporter's GitHub login, empty if unmapped
   label <ISSUE-KEY> <state> [kind] [reason]
                                WRITE: move the ticket; also reaps its VM. For blocked, the kind
-                               (stalled dead_vm attempts rounds refused_ship operator) and reason show on the Board
+                               (stalled dead_vm attempts rounds refused_ship frozen operator) and reason show on the Board
                                states: public inflight done blocked merged rejected diff
   slots                        Pool slots, and any VM running on each
   launchcap                    Launches this pass may make: 1 on tart, one per free slot on gce
@@ -2954,6 +2954,13 @@ main() {
 
   local command="${1:-help}"
   shift 2>/dev/null || true
+
+  # No subcommand reads --help, and one once ran a real relock with it: print the command's usage instead.
+  # exec, run and session pass their arguments on to a runner or a prompt.
+  case "$command" in exec|run|session) ;; *)
+    local a; for a in "$@"; do case "$a" in -h|--help)
+      usage | awk -v c="$command" '$1 == c { p = 1; print; next } p && /^      / { print; next } { p = 0 }'; return 0 ;; esac; done ;;
+  esac
 
   case "$command" in
     jira)       cmd_jira "$@" ;;

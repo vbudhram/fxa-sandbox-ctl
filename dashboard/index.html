@@ -2049,15 +2049,24 @@ function allTeamsHtml() {
     ${card(table(["Team", "Status", "Active now", "Last 7 days", "Cost this month, of budget", "Open errors", "Last test"], ts.map(row)), { cls: "tcard tscroll" })}
     ${TEAM_ADMIN?.admin ? html`<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${TEAM_ADMIN.user}).</span></div>` : ""}</div>`;
 }
+// Where the team's agents run and what each runner has baked in (lib/vm-firecracker.sh _fc_owns, packer/).
+const FIREFOX_READ = "Firefox: read; a change comes back as a diff, never a push";
+function teamRunsOn(t) {
+  if (t.android) return kvRow("Every runner", `the fxa-dev-android image on GCE (nested KVM): FxA, Firefox with an artifact build, Fenix, an emulator and Nightly. ${FIREFOX_READ}`);
+  return html`${kvRow("Slack sessions", `the Firecracker snapshot, with the FxA stack running and Firefox at ~/firefox (an artifact build). On GCE (the fxa-dev image) when the snapshot host cannot start. ${FIREFOX_READ}`)}
+    ${kvRow("Pipeline runs, with a Jira queue", "the fxa-dev image on GCE: FxA, no Firefox (the agent makes a sparse clone). A ticket that asks for Android gets the fxa-dev-android image.")}`;
+}
 // The Settings sections: what the team gets, each with its config key in gray, then the record editor.
 function teamSettingsHtml(t) {
-  const conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
+  const rec = !!t.access?.record, conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
+  const key = (field, conf_keys) => rec ? `team record: ${field}` : `${conf} ${conf_keys}`;
   const h = (title, key) => html`<h3>${title}<span class="tkey">${key}</span></h3>`;
   const req = (t.issues ?? []).some(i => i.text === "nobody can start it") || (t.access?.record && t.access.status !== "active");
   return html`<div class="tcard card${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
-    ${card(html`${h("Repos", `${conf} ${t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"}`)}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
-      ${kvRow(html`Defaults <span class="mono">PIPE_STACK_DEFAULT</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
-    ${card(html`${h("Tools and mode", `${conf} PIPE_MCP, PIPE_PR_OPEN`)}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
+    ${card(html`${h("Repos", key("repos", t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"))}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
+      ${kvRow(html`Defaults <span class="mono">${rec ? "repos[].default" : "PIPE_STACK_DEFAULT"}</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
+    ${card(html`${h("Runs on", key("runner.android", "PIPE_ANDROID"))}${teamRunsOn(t)}`, { cls: "tcard" })}
+    ${card(html`${h("Tools and mode", key("mcp, pr.open", "PIPE_MCP, PIPE_PR_OPEN"))}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
     <div class="tcard card" id="t-record">${TACT === t.profile && TED?.name === t.profile ? html`<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
 }
 // A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.
@@ -2821,6 +2830,7 @@ const NEXT_STEP = {
   attempts: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
   rounds: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
   refused_ship: "An approver adds ai-fixme-allow-tooling, or a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",
+  frozen: "The fix needs a frozen path. A human unfreezes it in _scripts/check-frozen.ts or fixes the ticket by hand.",
   operator: "Do what the reason says, then remove ai-fixme-blocked.",
   jira: "Read the Jira history for who added the label.",
   other: "Read the Jira history for who added the label.",
@@ -2837,7 +2847,7 @@ const NEXT_STEP = {
   ready: "Nothing to do: the next pass offers it when it reaches the front and a slot is free.",
   running: "Nothing to do: the belt shows its progress.",
 };
-const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", operator: "operator",
+const KIND_LABEL = { stalled: "stalled", dead_vm: "dead VM", attempts: "attempts", rounds: "rounds", refused_ship: "refused ship", frozen: "frozen path", operator: "operator",
   jira: "blocked in Jira", other: "other", needs_decision: "needs a decision", underspecified: "underspecified", already_done: "already done",
   depends_on: "depends on", ci_red: "CI red", changes: "changes requested", conflicts: "conflicts", relock: "relock failed", infra: "infra red", fault: "fault" };
 // The old skip records have no kind: the reason's first words decide, as the Queue tab did.
@@ -2846,7 +2856,7 @@ const boardAge = s => s == null ? "" : s >= 2 * 86400 ? `${Math.round(s / 86400)
 const secsSince = t => t == null ? null : Math.max(0, Math.round(Date.now() / 1000 - (typeof t === "number" ? t : Date.parse(t) / 1000)));
 // classify(item): who acts and the next step from the column and the kind; "the operator" for work only the operator can do.
 function classify(i) {
-  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer",
+  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer", frozen: "the operator",
     operator: "the operator", jira: "the operator", other: "the operator", needs_decision: "the reporter", underspecified: "the reporter",
     already_done: "the operator", infra: "the operator", fault: "the operator", ci_red: "the agent, next pass", changes: "the agent, next pass",
     conflicts: "the agent, next pass", relock: "the operator" }[i.kind];

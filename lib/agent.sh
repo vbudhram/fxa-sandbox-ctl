@@ -472,6 +472,16 @@ _gce_pin_runner_tree() {
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
       (cd packages/functional-tests && npx playwright install chromium firefox > /tmp/fxa-pin-playwright.log 2>&1) || true
     fi
+    # The pin moves the code past the snapshot's lib dist: build the libs/ content imports, or its next start crash-loops.
+    # Only libs/: the graph also links content to fxa-settings, a 2-minute build it does not need.
+    if [ -d packages/fxa-content-server ]; then
+      source /etc/agent-env.sh && npx nx graph --file=/tmp/fxa-graph.json > /tmp/fxa-pin-libs.log 2>&1 \
+        && libs=\"\$(jq -r '.graph.dependencies as \$d | .graph.nodes as \$n | {s: [\"fxa-content-server\"], seen: []}
+          | until(.s == []; .seen += .s | .s = ([.s[] as \$p | \$d[\$p][]?.target | select(\$n[.].data.root // \"\" | startswith(\"libs/\"))] | unique) - .seen)
+          | .seen - [\"fxa-content-server\"] | join(\",\")' /tmp/fxa-graph.json)\" \
+        && npx nx run-many -t build -p \"\$libs\" >> /tmp/fxa-pin-libs.log 2>&1 \
+        || echo 'WARN: could not build the libs content needs; see /tmp/fxa-pin-libs.log' >&2
+    fi
     git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)" || true
   [ -n "$got" ] && break
   echo "  The runner did not answer the pin (try ${try} of 3)." >&2
