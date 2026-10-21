@@ -15,7 +15,7 @@ PIPE_STATE_DIR="$tmp"
 pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
 # The ticket text, and the blocker's labels, from files the check moves.
 echo "FXA-3 text" > "$tmp/ticket"; echo '[]' > "$tmp/blabels"
-acli() { case "$*" in *"comment list"*) echo '{"comments":[]}' ;;
+acli() { case "$*" in *"comment list"*) echo '{"comments":[{"body":"a person asks"}]}' ;;
   *"--fields labels,status"*) jq -n --argjson l "$(cat "$tmp/blabels")" '{fields: {labels: $l, status: {statusCategory: {key: "indeterminate"}}}}' ;;
   *) cat "$tmp/ticket" ;; esac; }
 
@@ -48,5 +48,16 @@ check "a skip kind is field 5; a near word stays in the reason; a hold is depend
   "$(cut -f5 "$tmp/FXA-7.skipped")|$(cut -f4 "$tmp/FXA-7.skipped")|$(cut -f5 "$tmp/FXA-8.skipped")|$(cut -f4 "$tmp/FXA-8.skipped")|$(cut -f5 "$tmp/FXA-9.skipped")"
 check "a repeat skip with the same ticket text is silent and keeps its kind" "silent 2|needs_decision" "$(pipeline_skip FXA-7 needs_decision pick one of two routes)|$(cut -f5 "$tmp/FXA-7.skipped")"
 check "skipped lists a 5-field record as before" "FXA-7 2" "$(pipeline_skipped FXA-7 | awk '{print $1, $2}')"
+
+# A failed Jira read is no edit: it must not wake a model pass or replace the recorded hash.
+fp7="$(cut -f1 "$tmp/FXA-7.skipped")"
+real_acli="$(declare -f acli)"
+acli() { case "$*" in *"comment list"*) echo '{"comments":[]}' ;; *) return 1 ;; esac; }
+check "the ticket read fails: not changed" "quiet" "$(pipeline_skip_changed FXA-7 || echo quiet)"
+acli() { case "$*" in *"comment list"*) return 1 ;; *) cat "$tmp/ticket" ;; esac; }
+check "the comment read fails: not changed" "quiet" "$(pipeline_skip_changed FXA-7 || echo quiet)"
+pipeline_skip FXA-7 needs_decision pick one of two routes >/dev/null
+check "a skip whose read fails keeps the recorded hash" "$fp7" "$(cut -f1 "$tmp/FXA-7.skipped")"
+eval "$real_acli"
 
 exit "$fail"

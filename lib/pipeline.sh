@@ -397,13 +397,14 @@ _pipeline_hash() {
 
 # Hash the ticket plus every comment not led by 🤖. Our own skip comment would
 # otherwise change the hash and cause another comment on every pass.
+# A failed read prints nothing: md5 of a partial read looked like an edit and woke a model pass.
+# The trailing . keeps the bytes the hash saw before, trailing newlines included.
 _pipeline_skip_fingerprint() {
-  local key="$1"
-  {
-    acli jira workitem view "$key" 2>/dev/null
-    acli jira workitem comment list --key "$key" --json 2>/dev/null \
-      | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body'
-  } | _pipeline_hash
+  local key="$1" v c
+  v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
+  c="$(acli jira workitem comment list --key "$key" --json 2>/dev/null)" || return 0
+  c="$(printf '%s\n' "$c" | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body' && echo .)" || return 0
+  printf '%s%s' "${v%.}" "${c%.}" | _pipeline_hash
 }
 
 # pipeline_skip <KEY> [reason...]
@@ -524,7 +525,8 @@ pipeline_skip_changed() {
   f="${PIPE_STATE_DIR}/${key}.skipped"
   [ -f "$f" ] || { echo "new"; return 0; }
   fp="$(_pipeline_skip_fingerprint "$key")"
-  [ -n "$fp" ] || { echo "changed"; return 0; }
+  # A failed read is no edit: the next pass reads again.
+  [ -n "$fp" ] || return 1
   old="$(awk -F'\t' 'NR==1{print $1}' "$f")"
   [ "$old" = "$fp" ] || { echo "changed"; return 0; }
   # A hold wakes a pass once its blocker is merged or closed.
