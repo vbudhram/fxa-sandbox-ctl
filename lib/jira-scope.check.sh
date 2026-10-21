@@ -29,7 +29,15 @@ _jira_keys_for_jql() { case "$1" in *"key = FXA-7") echo FXA-7 ;; esac; }
 check "a key in the scope may launch" "0" "$(pipeline_key_in_scope FXA-7; echo $?)"
 check "a key outside the scope (or with a security level) may not" "1" "$(pipeline_key_in_scope SEC-5; echo $?)"
 check "a key with a JQL tail may not" "1" "$(pipeline_key_in_scope 'FXA-7 OR key = SEC-5'; echo $?)"
-check "jira gates the launch outside --private" "1" "$(grep -c 'if \[ "\$private" != "true" \] && ! pipeline_key_in_scope "\$key"' "$here/../fxa-sandbox-ctl")"
+check "jira gates every launch on the scope" "1" "$(grep -c '^  if ! pipeline_key_in_scope "\$key"; then' "$here/../fxa-sandbox-ctl")"
+# --private is gone: a secret team runs these tickets. The flag names the command, before any worktree.
+eval "$(sed -n '/^_jira_private_gone() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
+mkdir -p "$tmp/pt"; echo '{"teams":{"fxa-private":{"status":"active","secret":true,"jira":"FXA"}}}' > "$tmp/pt/index.json"
+check "--private names the secret team's command, or says to sync the index" \
+  "ERROR: --private is gone. Run: fxa-sandbox-ctl --pipeline fxa-private jira FXA-10|1|1" \
+  "$(FXA_TEAMS_DIR="$tmp/pt" _jira_private_gone FXA-10 2>&1)|$(FXA_TEAMS_DIR="$tmp/none" _jira_private_gone FXA-10 2>&1 | grep -c "No team in this host's teams index takes FXA's secret tickets. Run fxa-sandbox-ctl profile sync, then try again. If no team exists, create one (README: Private pipeline teams).")|$(FXA_TEAMS_DIR="$tmp/pt" _jira_private_gone FXA-10 >/dev/null 2>&1; echo $?)"
+check "cmd_jira stops on --private before it loads a runtime or clones, and nothing reads FXA_PRIVATE_REPO" "1|0" \
+  "$(sed -n '/^cmd_jira() {/,/^}/p' "$here/../fxa-sandbox-ctl" | grep -c '\[ "\$private" = "true" \] && { _jira_private_gone "\$key"; return 1; }')|$(ls "$here"/*.sh | grep -v '\.check\.sh$' | xargs cat "$here/../fxa-sandbox-ctl" "$here/../.env.example" | grep -c 'FXA_PRIVATE_REPO\|fxa-auto-private')"
 _jira_keys_for_jql() { printf '%s\n' "$1"; }
 check "a top-level OR in the profile's JQL stays inside the scope" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "a" OR labels = "b") ORDER BY created ASC' \
   "$(PIPE_QUEUE_JQL='labels = "a" OR labels = "b" ORDER BY created ASC' pipeline_queue_jql)"

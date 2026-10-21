@@ -108,7 +108,7 @@ pipeline_load() {
   local name="${1:-$FXA_PIPELINE}" conf
   # A child inherits the FXA_REPO its parent's load exported; only a repo set by hand overrides.
   [ -n "${FXA_REPO:-}" ] && [ "$FXA_REPO" = "${_FXA_REPO_LOADED:-}" ] && unset FXA_REPO
-  # The same for the base branch and the pool name (README: env overrides; --private sets the pool).
+  # The same for the base branch, the pool name and the secrets source (README: env overrides).
   [ -n "${FXA_WORKTREE_BASE:-}" ] && [ "$FXA_WORKTREE_BASE" = "${_FXA_BASE_LOADED:-}" ] && unset FXA_WORKTREE_BASE
   [ -n "${FXA_SHARED_WORKTREE_NAME:-}" ] && [ "$FXA_SHARED_WORKTREE_NAME" = "${_FXA_POOL_LOADED:-}" ] && unset FXA_SHARED_WORKTREE_NAME
   [ -n "${FXA_SECRETS_SOURCE:-}" ] && [ "$FXA_SECRETS_SOURCE" = "${_FXA_SECRETS_LOADED:-}" ] && unset FXA_SECRETS_SOURCE

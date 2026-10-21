@@ -39,7 +39,7 @@ envs() { ( export HOME="$tmp/home" FXA_FIXME_STATE="$tmp/fxstate"; unset FXA_REP
 echo 'PIPE_BASE_BRANCH=master' >> "$tmp/r/profiles/demo/profile.conf"
 check "another profile gets its pool and base, and keeps its own state" "demo-auto|master|home/.claude/state/demo" "$(envs "$tmp/r" demo)"
 check "fxa keeps its pool and base, and FxA's state override" "fxa-auto|main|fxstate" "$(envs "$root" fxa)"
-check "a base and a pool set by hand win (README; --private sets the pool)" "mypool|release-1|fxstate" \
+check "a base and a pool set by hand win (README: env overrides)" "mypool|release-1|fxstate" \
   "$(FXA_WORKTREE_BASE=release-1 FXA_SHARED_WORKTREE_NAME=mypool envs "$root" fxa)"
 check "a child does not keep the base and pool its parent's profile exported" "demo-auto|master" \
   "$(FXA_WORKTREE_BASE=main _FXA_BASE_LOADED=main FXA_SHARED_WORKTREE_NAME=fxa-auto _FXA_POOL_LOADED=fxa-auto envs "$tmp/r" demo | cut -d'|' -f1-2)"

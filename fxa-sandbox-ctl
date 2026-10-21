@@ -195,10 +195,6 @@ JIRA OPTIONS:
   --worktree <name>            Use a named worktree slot (creates if missing).
                                Without this, picks first free pool slot or
                                creates the next-numbered one (fxa-auto-2, ...).
-  --private                    Provision from the checkout at $FXA_PRIVATE_REPO
-                               into its own worktree pool. Push and PR follow
-                               that checkout's origin; secrets come from the
-                               public fxa checkout. Set FXA_PRIVATE_REPO in .env.
   --guardrails <file>          Prepend <file> to the agent's task context as
                                mandatory reviewer guidance (e.g. an independent
                                security analysis). Read first by the agent.
@@ -364,14 +360,15 @@ cmd_jira() {
   fi
 
   key="$(jira_normalize_key "$key")" || return 1
+  [ "$private" = "true" ] && { _jira_private_gone "$key"; return 1; }
   # Resolve the runtime before any Jira or VM work, so a bad name fails at once.
   runtime_load || return 1
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
 
-  # A security ticket (a level or a secret label) must not reach a public PR; it runs only with --private.
-  if [ "$private" != "true" ] && ! pipeline_key_in_scope "$key"; then
+  # A security ticket (a level or a secret label) must not reach a public PR: only a secret team takes it.
+  if ! pipeline_key_in_scope "$key"; then
     echo "ERROR: ${key} is outside this profile's Jira scope ($(pipeline_jira_scope 2>/dev/null)), or the Jira read failed." >&2
-    echo "       A ticket with a security level or a secret label (security, hackerone, PIPE_SECRET_LABELS) runs only with --private." >&2
+    echo "       A ticket with a security level or a secret label (security, hackerone, PIPE_SECRET_LABELS) runs only in a team that takes secret tickets (README: Private pipeline teams)." >&2
     return 1
   fi
 
@@ -388,24 +385,6 @@ cmd_jira() {
   fi
   # After the functional type, so it wins: an x86 runner with nested virtualization, never Arm.
   if [ "$android" = "true" ] || [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
-
-  # Push and PR follow the private worktree's origin; secrets come from the public checkout.
-  if [ "$private" = "true" ]; then
-    if [ -z "$FXA_PRIVATE_REPO" ]; then
-      echo "ERROR: --private needs FXA_PRIVATE_REPO set to a local checkout. Put it in .env (see .env.example)." >&2
-      return 1
-    fi
-    if [ ! -d "$FXA_PRIVATE_REPO" ]; then
-      echo "ERROR: FXA_PRIVATE_REPO='${FXA_PRIVATE_REPO}' is not a directory." >&2
-      return 1
-    fi
-    local public_root
-    public_root="$(worktree_repo_root)" || return 1
-    export FXA_SECRETS_SOURCE="$public_root"
-    export FXA_REPO="$FXA_PRIVATE_REPO"
-    export FXA_SHARED_WORKTREE_NAME="fxa-auto-private"
-    echo "Private mode: repo=${FXA_REPO}, pool=${FXA_SHARED_WORKTREE_NAME}, secrets from ${FXA_SECRETS_SOURCE}" >&2
-  fi
 
   echo "Fetching ${key} from Jira..." >&2
   local summary context
@@ -499,10 +478,9 @@ EOF
     echo "Acquiring a pool worktree slot for branch ${branch}..." >&2
   fi
   local worktree_path
-  # Owned slots matter only when we pick one. The private pool has its own
-  # labels, so the pipeline's inflight list says nothing about it.
+  # Owned slots matter only when we pick one.
   local owned=""
-  if [ -z "$worktree_slot" ] && [ "$private" != "true" ]; then
+  if [ -z "$worktree_slot" ]; then
     owned="$(jira_owning_keys)"
   fi
   worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot" "$owned")" || return 1
@@ -1305,6 +1283,13 @@ _reap_key() {
 
 # WRITE: stop every agent VM whose ticket is not inflight, for the cases the reap
 # in `label` misses. A live run is safe: its inflight label covers the whole run.
+# _jira_private_gone <KEY>   The team that runs the key's secret tickets now, in place of jira --private.
+_jira_private_gone() {
+  local p="${1%%-*}" t; t="$(pipeline_secret_team "$p" 2>/dev/null || true)"
+  if [ -n "$t" ]; then echo "ERROR: --private is gone. Run: fxa-sandbox-ctl --pipeline ${t} jira $1" >&2
+  else echo "ERROR: --private is gone. No team in this host's teams index takes ${p}'s secret tickets. Run fxa-sandbox-ctl profile sync, then try again. If no team exists, create one (README: Private pipeline teams)." >&2; fi
+  return 1
+}
 # _jira_name_clash <name>   Fails while a VM of that name runs in another team's pool: a secret team shares
 # its project's keys, and tail, stop and reap take the name as the key's.
 _jira_name_clash() {
