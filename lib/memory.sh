@@ -6,7 +6,9 @@
 #                                                  holds on origin/main; INDEX.md is built from the files
 #   profiles/<name>.md                             reviewed team policy
 #   tickets/<KEY>/<date>-<run>.md                  what a run did, written here at its end
+#   teams/<profile>/INDEX.md + <kind>.md          team facts: how the team's repos work together, up to 3 cites
 #   inbox/<owner>__<repo>/<id>.md                  learnings whose cite did not check out; the weekly digest
+#   inbox/team__<profile>/<id>.md                  the same, for a team fact
 #
 #   memory_index_md <profile> [slug...]     the prompt section that tells the agent to use fxa-mem
 #   memory_sync <runner> <profile> [slug...]   the reviewed files into /home/agent/.fxa-memory
@@ -24,6 +26,10 @@ FXA_MEMORY_KEY="${FXA_MEMORY_KEY:-$HOME/.ssh/fxa-agent-memory}"
 _MEMORY_SLUG='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
 _MEMORY_KEY_RE='^[A-Z][A-Z0-9]+-[0-9]{1,6}$'
 _MEMORY_KINDS='convention trap command decision owner-area'
+# A team fact can also be about the system the repos make together.
+_MEMORY_TEAM_KINDS='convention trap command decision owner-area system'
+# The cite and anchor meta pairs of a learning: cite, anchor, then cite2, anchor2 and cite3, anchor3 of a team fact.
+_MEMORY_CITES_JQ='if .cites then (.cites | to_entries[] | (if .key == 0 then "" else .key + 1 | tostring end) as $n | "cite\($n): \(.value.cite)", "anchor\($n): \(.value.anchor)") else "cite: \(.cite)", "anchor: \(.anchor)" end | gsub("\\|"; "")'
 
 memory_on() { [ -n "$FXA_MEMORY_REMOTE" ]; }
 # The deploy key only, so the host's own git login never writes this repo.
@@ -85,6 +91,7 @@ memory_index_md() {
   for s in "$@"; do
     [[ "$s" =~ $_MEMORY_SLUG ]] && [ -d "${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$s")" ] && have=1
   done
+  [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ -d "${FXA_MEMORY_DIR}/teams/${p}" ] && have=1
   [ -n "$have" ] || return 0
   [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ -f "${FXA_MEMORY_DIR}/profiles/${p}.md" ] \
     && body="## Team: ${p}
@@ -95,7 +102,7 @@ $(head -c 3000 "${FXA_MEMORY_DIR}/profiles/${p}.md")
   local tl line add="" head="
 Traps that runs read the most:
 "
-  tl="$(_memory_top_traps "$@")"
+  tl="$(_memory_top_traps "$p" "$@")"
   while IFS= read -r line; do
     [ -n "$line" ] && [ "$(printf '%s\n' "${out}${head}${add}${line}" | wc -c)" -le 2500 ] || break
     add="${add}${line}
@@ -116,37 +123,43 @@ _memory_use_counts() {
     | sort | uniq -c | awk '{ print $1 " " $2 }' | sort -k1,1nr -k2,2 || true
 }
 
-# _memory_blocks [slug...]   One tab-separated line per entry: id, kind, cite, anchor, text (100 chars), dir/file. All repos when no slug.
+# _memory_blocks [folder...]   One tab-separated line per entry: id, kind, cite, anchor, text (100 chars), label/file,
+# cite2, anchor2, cite3, anchor3. A folder is repos/<owner>__<repo> (label owner__repo) or teams/<profile> (label team).
+# All folders when none is given.
 _memory_blocks() {
-  local d f dirs=""
-  for d in "$@"; do dirs="${dirs}$(_memory_dir_of "$d")
+  local d f lbl dirs=""
+  for d in "$@"; do dirs="${dirs}${d}
 "; done
-  [ "$#" -gt 0 ] || dirs="$(cd "${FXA_MEMORY_DIR}/repos" 2>/dev/null && ls -d */ 2>/dev/null | tr -d / || true)"
+  [ "$#" -gt 0 ] || dirs="$(cd "$FXA_MEMORY_DIR" 2>/dev/null && ls -d repos/*/ teams/*/ 2>/dev/null | sed 's#/$##' || true)"
   for d in $dirs; do
-    for f in "${FXA_MEMORY_DIR}/repos/${d}"/*.md; do
+    lbl="${d#repos/}"; [ "${d#teams/}" = "$d" ] || lbl=team
+    for f in "${FXA_MEMORY_DIR}/${d}"/*.md; do
       [ -f "$f" ] && [ "${f##*/}" != INDEX.md ] || continue
-      awk -v file="${d}/${f##*/}" '
+      awk -v file="${lbl}/${f##*/}" '
         /^## mem-/ { id = substr($0, 4); getline meta; split(meta, a, " \\| ")
-                     kind = ""; cite = ""; anc = ""
+                     kind = ""; split("", m)
                      for (i in a) { if (a[i] ~ /kind: /) { kind = a[i]; sub(/.*kind: /, "", kind) }
-                                    if (a[i] ~ /^cite: /) { cite = a[i]; sub(/^cite: /, "", cite) }
-                                    if (a[i] ~ /^anchor: /) { anc = a[i]; sub(/^anchor: /, "", anc) } }
+                                    if (match(a[i], /^(cite|anchor)[23]?: /)) m[substr(a[i], 1, RLENGTH - 2)] = substr(a[i], RLENGTH + 1) }
                      getline text; gsub(/[ \t]+/, " ", text)
-                     printf "%s\t%s\t%s\t%s\t%s\t%s\n", id, kind, cite, anc, substr(text, 1, 100), file }' "$f"
+                     printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, kind, m["cite"], m["anchor"], substr(text, 1, 100), file,
+                       m["cite2"], m["anchor2"], m["cite3"], m["anchor3"] }' "$f"
     done
   done
 }
 
-# _memory_top_traps <slug...>   Up to 8 hit lines (fxa-mem format) for the most read traps of those repos.
+# _memory_top_traps <profile> <slug...>   Up to 8 hit lines (fxa-mem format) for the most read traps of the
+# team and its repos. A team trap comes before a repo trap with the same count.
 _memory_top_traps() {
-  local tab n=0 id c row tbl; tab="$(printf '\t')"
-  tbl="$(_memory_blocks "$@")"
+  local tab id c row tbl s dirs=(); tab="$(printf '\t')"
+  [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]] && dirs+=("teams/$1"); shift
+  for s in "$@"; do [[ "$s" =~ $_MEMORY_SLUG ]] && dirs+=("repos/$(_memory_dir_of "$s")"); done
+  [ "${#dirs[@]}" -gt 0 ] || return 0
+  tbl="$(_memory_blocks "${dirs[@]}")"
   while read -r c id; do
     row="$(grep -m1 "^${id}${tab}trap${tab}" <<< "$tbl" || true)"
     [ -n "$row" ] || continue
-    awk -F"$tab" '{ printf "%s [%s] %s -> %s\n", $1, $2, $5, $6 }' <<< "$row"
-    n=$((n + 1)); [ "$n" -lt 8 ] || break
-  done < <(_memory_use_counts 30)
+    awk -F"$tab" -v c="$c" '{ printf "%s\t%d\t%s [%s] %s -> %s\n", c, ($6 !~ /^team\//), $1, $2, $5, $6 }' <<< "$row"
+  done < <(_memory_use_counts 30) | sort -t"$tab" -k1,1nr -k2,2n | cut -f3 | sed -n '1,8p'
 }
 
 # _memory_bad_ratings   One line per id that a run rated wrong or stale in the last 30 days, with the reason.
@@ -159,15 +172,17 @@ _memory_bad_ratings() {
         | "- \(.id) rated \(.rating): \((.why // "") | tostring | gsub("[\\r\\n\\t]+"; " ") | .[0:100])"' 2>/dev/null | sort -u || true
 }
 
-# _memory_gone_anchors   One line per entry whose anchor is no longer within 3 lines of its cite. Read-only.
+# _memory_gone_anchors   One line per cite whose anchor is no longer within 3 lines of it. Read-only.
+# A team cite (owner/repo:path:line) is checked in its own repo.
 _memory_gone_anchors() {
-  local id kind cite anc txt file slug root
-  while IFS="$(printf '\t')" read -r id kind cite anc txt file; do
+  local id file cite anc slug at root
+  while IFS="$(printf '\t')" read -r id file cite anc; do
     [ -n "$cite" ] && [ -n "$anc" ] || continue
-    slug="${file%%/*}"; slug="${slug/__/\/}"
+    if [ "${file%%/*}" = team ]; then slug="${cite%%:*}"; at="${cite#*:}"; else slug="${file%%/*}"; slug="${slug/__//}"; at="$cite"; fi
+    [[ "$slug" =~ $_MEMORY_SLUG ]] || continue
     root="$(_tree_host_root "$slug" 2>/dev/null)" && [ -d "$root/.git" ] || continue
-    _memory_cite_ok "$slug" "$cite" "$anc" || printf -- '- %s: the anchor is no longer near %s\n' "$id" "$cite"
-  done < <(_memory_blocks)
+    _memory_cite_ok "$slug" "$at" "$anc" || printf -- '- %s: the anchor is no longer near %s\n' "$id" "$cite"
+  done < <(_memory_blocks | awk -F'\t' '{ for (k = 3; k <= 9; k += 2) if (k != 5 && $k != "") print $1 "\t" $6 "\t" $k "\t" $(k + 1) }')
 }
 
 # memory_sync <runner> <profile> [slug...]   The reviewed files, root-owned and read-only, outside
@@ -179,6 +194,7 @@ memory_sync() {
   for s in "$@"; do
     [[ "$s" =~ $_MEMORY_SLUG ]] && [ -d "${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$s")" ] && paths+=("repos/$(_memory_dir_of "$s")")
   done
+  [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] && [ -d "${FXA_MEMORY_DIR}/teams/${p}" ] && paths+=("teams/${p}")
   [ "${#paths[@]}" -gt 0 ] || return 0
   local tgz size rc=0; tgz="$(mktemp)"
   tar -czf "$tgz" -C "$FXA_MEMORY_DIR" "${paths[@]}" -C "$MEMORY_LIB_DIR/../templates" fxa-mem 2>/dev/null || rc=$?
@@ -197,16 +213,25 @@ memory_sync() {
 # _memory_norm <json-file> <slugs, newline-separated>   The run's file in a fixed shape, capped:
 # an episode, at most 5 learnings (add, or update/supersede of an entry id) about the run's own
 # repos with a known kind, and the ids of entries the run checked again (confirmed).
+# A team fact (repo "team") has 1 to 3 cites, each owner/repo:path:line in one of the run's repos.
 _memory_norm() {
-  jq -c --arg slugs "$2" --arg kinds "$_MEMORY_KINDS" '
+  jq -c --arg slugs "$2" --arg kinds "$_MEMORY_KINDS" --arg tkinds "$_MEMORY_TEAM_KINDS" '
     def s($n): (if type == "string" then . else "" end) | gsub("[[:cntrl:]]"; " ") | .[0:$n];
     def l: (if type == "array" then . else [] end) | map(s(300)) | map(select(length > 0)) | .[0:8];
-    ($slugs | split("\n") | map(select(length > 0))) as $ok | ($kinds | split(" ")) as $k
+    def opok: .op == "add" or ((.op == "update" or .op == "supersede") and (.id | test("^mem-[0-9a-f]{8}$")));
+    ($slugs | split("\n") | map(select(length > 0))) as $ok | ($kinds | split(" ")) as $k | ($tkinds | split(" ")) as $tk
     | { episode: { goal: (.episode.goal | s(300)), decisions: (.episode.decisions | l), dead_ends: (.episode.dead_ends | l), outcome: (.episode.outcome | s(300)) },
-        learnings: [ (.learnings // [])[]? | { op: (.op // "add" | s(10)), id: (.id | s(20)), repo: (.repo | s(100)), kind: (.kind | s(20)),
+        learnings: [ (.learnings // [])[]? | if .repo == "team" then
+                     { op: (.op // "add" | s(10)), id: (.id | s(20)), repo: "team", kind: (.kind | s(20)), text: (.text | s(300)), why: (.why | s(300)),
+                       path: (.path | s(200)), terms: (.terms | s(200)),
+                       cites: [ (.cites | if type == "array" then .[0:3] else [] end)[] | objects | { cite: (.cite | s(200)), anchor: (.anchor | s(120)) } ] }
+                     | select(.text != "" and (.kind as $x | $tk | index($x)) and (.cites | length > 0) and opok
+                              and all(.cites[]; .cite | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:[A-Za-z0-9_./@+-]+:[0-9]{1,6}$") and (split(":")[0] as $r | $ok | index($r))))
+                   else
+                     { op: (.op // "add" | s(10)), id: (.id | s(20)), repo: (.repo | s(100)), kind: (.kind | s(20)),
                      text: (.text | s(300)), cite: (.cite | s(200)), anchor: (.anchor | s(120)), why: (.why | s(300)), path: (.path | s(200)), terms: (.terms | s(200)) }
-                     | select(.text != "" and (.repo as $r | $ok | index($r)) and (.kind as $x | $k | index($x))
-                              and (.op == "add" or ((.op == "update" or .op == "supersede") and (.id | test("^mem-[0-9a-f]{8}$"))))) ] | .[0:5],
+                     | select(.text != "" and (.repo as $r | $ok | index($r)) and (.kind as $x | $k | index($x)) and opok)
+                   end ] | .[0:5],
         confirmed: [ (.confirmed // [])[]? | s(20) | select(test("^mem-[0-9a-f]{8}$")) ] | .[0:20] }' "$1" 2>/dev/null
 }
 
@@ -229,10 +254,20 @@ _memory_cite_ok() {
   git -C "$root" show "${ref}:${path}" 2>/dev/null | sed -n "${lo},$(( line + 3 ))p" | grep -qF -- "$3"
 }
 
+# _memory_cites_ok <cites json>   0 when each cite (owner/repo:path:line) holds in its own repo.
+_memory_cites_ok() {
+  local i c
+  [ "$(jq 'length' <<< "$1" 2>/dev/null)" -gt 0 ] 2>/dev/null || return 1
+  for i in $(jq -r 'keys[]' <<< "$1"); do
+    c="$(jq -r ".[$i].cite" <<< "$1")"
+    _memory_cite_ok "${c%%:*}" "${c#*:}" "$(jq -r ".[$i].anchor" <<< "$1")" || return 1
+  done
+}
+
 # _memory_entry <id> <learning json> <run> <ticket> <taint> <date>   One reviewed entry, as a block.
 _memory_entry() {
-  printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s -->\n%s\n\nWhy: %s\n\n' \
-    "$1" "$(jq -r .kind <<< "$2")" "$(jq -r .path <<< "$2")" "$(jq -r .cite <<< "$2" | tr -d '|')" "$(jq -r .anchor <<< "$2" | tr -d '|')" \
+  printf '## %s\n<!-- kind: %s | path: %s | %s | terms: %s | confirmed: %s | source: %s %s | taint: %s -->\n%s\n\nWhy: %s\n\n' \
+    "$1" "$(jq -r .kind <<< "$2")" "$(jq -r .path <<< "$2")" "$(jq -r "[${_MEMORY_CITES_JQ}] | join(\" | \")" <<< "$2")" \
     "$(jq -r '.terms // ""' <<< "$2" | tr -d '|' | sed 's/-->//g')" "$6" "$3" "$4" "$5" "$(jq -r .text <<< "$2")" "$(jq -r .why <<< "$2")"
 }
 
@@ -341,30 +376,39 @@ memory_collect() {
   # else to the inbox, for the weekly digest. A tainted run's entries are listed there for a look too.
   local touched="" dir today="${now%%T*}"
   while IFS= read -r l; do
-    _memory_suspect "$(jq -r '.text + " " + .why + " " + .anchor + " " + .terms + " " + .path' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; dropped=$((dropped + 1)); continue; }
-    local repo op; repo="$(jq -r .repo <<< "$l")"; op="$(jq -r .op <<< "$l")"; dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$repo")"
+    _memory_suspect "$(jq -r '[.text, .why, .anchor, .terms, .path, .cites[]?.anchor] | map(. // "") | join(" ")' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; dropped=$((dropped + 1)); continue; }
+    local repo op key ibox chk; repo="$(jq -r .repo <<< "$l")"; op="$(jq -r .op <<< "$l")"
+    # A team fact goes to its team's folder: its cites are checked each in its own repo.
+    if [ "$repo" = team ]; then
+      [[ "$prof" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { dropped=$((dropped + 1)); continue; }
+      key="team/${prof}"; dir="${FXA_MEMORY_DIR}/teams/${prof}"; ibox="${FXA_MEMORY_DIR}/inbox/team__${prof}"
+      chk=(_memory_cites_ok "$(jq -c .cites <<< "$l")")
+    else
+      key="$repo"; dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$repo")"; ibox="${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")"
+      chk=(_memory_cite_ok "$repo" "$(jq -r .cite <<< "$l")" "$(jq -r .anchor <<< "$l")")
+    fi
     if [ "$op" = update ]; then id="$(jq -r .id <<< "$l")"
-    else id="mem-$(jq -r '.repo + "\n" + .text' <<< "$l" | shasum | cut -c1-8)"; fi
+    else id="mem-$(jq -r --arg k "$key" '$k + "\n" + .text' <<< "$l" | shasum | cut -c1-8)"; fi
     [ "$op" = add ] && grep -rqs "^## ${id}\$" "$dir" && continue
     if [ "$op" != add ] && ! grep -rqs "^## $(jq -r .id <<< "$l")\$" "$dir"; then continue; fi
-    if _memory_cite_ok "$repo" "$(jq -r .cite <<< "$l")" "$(jq -r .anchor <<< "$l")"; then
+    if "${chk[@]}"; then
       mkdir -p "$dir"
       [ "$op" = add ] || _memory_drop "$dir" "$(jq -r .id <<< "$l")"
       _memory_entry "$id" "$l" "$run" "$ticket" "$taint" "$today" >> "${dir}/$(jq -r .kind <<< "$l").md"
-      rm -f "${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")/${id}.md"
+      rm -f "${ibox}/${id}.md"
       touched="${touched} ${dir}"; n=$((n + 1)); added=$((added + 1))
     else
-      d="${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")"; mkdir -p "$d"
+      d="$ibox"; mkdir -p "$d"
       [ -f "${d}/${id}.md" ] && continue
       { _memory_md "id: ${id}" "op: ${op}" "replaces: $(jq -r .id <<< "$l")" "kind: $(jq -r .kind <<< "$l")" "repo: ${repo}" "path: $(jq -r .path <<< "$l")" \
-          "cite: $(jq -r .cite <<< "$l")" "anchor: $(jq -r .anchor <<< "$l")" "terms: $(jq -r .terms <<< "$l")" "run: ${run}" "ticket: ${ticket}" "profile: ${prof}" "taint: ${taint}" "created: ${now}"
+          "$(jq -r "$_MEMORY_CITES_JQ" <<< "$l")" "terms: $(jq -r .terms <<< "$l")" "run: ${run}" "ticket: ${ticket}" "profile: ${prof}" "taint: ${taint}" "created: ${now}"
         jq -r '.text, "", "Why: \(.why)"' <<< "$l"; } > "${d}/${id}.md"; n=$((n + 1)); inbox=$((inbox + 1))
     fi
   done < <(jq -c '.learnings[]' <<< "$norm")
   # Entries the run checked again stay in the index another 90 days. Only an untainted run renews.
   if [ "$taint" = 0 ]; then
     for id in $(jq -r '.confirmed[]' <<< "$norm"); do
-      f="$(grep -rlx -- "## ${id}" "${FXA_MEMORY_DIR}/repos" 2>/dev/null | head -1)"; [ -n "$f" ] || continue
+      f="$(grep -rlx -- "## ${id}" "${FXA_MEMORY_DIR}/repos" "${FXA_MEMORY_DIR}/teams" 2>/dev/null | head -1)"; [ -n "$f" ] || continue
       awk -v id="## ${id}" -v d="$today" '$0 == id { hit = 1; print; next } hit && /^<!-- / { sub(/confirmed: [0-9-]+/, "confirmed: " d); hit = 0 } { print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
       touched="${touched} ${f%/*}"; n=$((n + 1))
     done
@@ -375,7 +419,7 @@ memory_collect() {
   local result=nothing
   if [ "$n" -gt 0 ]; then
     result=push_failed
-    _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d tickets inbox repos 2>/dev/null) 2>/dev/null
+    _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d tickets inbox repos teams 2>/dev/null) 2>/dev/null
     _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: ${run} (${trig})" \
       && { _memory_git push -q origin HEAD:main 2>/dev/null || { _memory_git fetch -q origin && { _memory_git rebase -q origin/main >/dev/null 2>&1 || { _memory_git rebase --abort 2>/dev/null; false; }; } && _memory_git push -q origin HEAD:main 2>/dev/null; }; } \
       && { result=saved; echo "  memory: saved ${n} file(s) for ${run}" >&2; } \
@@ -443,28 +487,33 @@ memory_digest() {
 }
 _memory_digest() {
   memory_pull || return 1
-  local week f n=0 t=0 dir br list="" kind id replaces body
+  local week f n=0 t=0 dir br list="" kind id replaces body irepo iprof what
   week="$(date -u -v-7d +%F 2>/dev/null || date -u -d '7 days ago' +%F)"
   br="digest/$(date -u +%F)"
   _memory_git rev-parse -q --verify "origin/${br}" >/dev/null && return 0
   _memory_git checkout -q -B "$br" origin/main 2>/dev/null || return 1
   for f in $(find "${FXA_MEMORY_DIR}/inbox" -name 'mem-*.md' 2>/dev/null | sort); do
     id="$(sed -n 's/^id: //p' "$f")"; kind="$(sed -n 's/^kind: //p' "$f")"; replaces="$(sed -n 's/^replaces: //p' "$f")"
-    dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$(sed -n 's/^repo: //p' "$f")")"; mkdir -p "$dir"
+    irepo="$(sed -n 's/^repo: //p' "$f")"; what="$kind"
+    if [ "$irepo" = team ]; then
+      iprof="$(sed -n 's/^profile: //p' "$f")"; [[ "$iprof" =~ ^[a-z0-9][a-z0-9-]*$ ]] || continue
+      dir="${FXA_MEMORY_DIR}/teams/${iprof}"; what="team fact, ${kind}"
+    else dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$irepo")"; fi
+    mkdir -p "$dir"
     [[ "$replaces" =~ ^mem-[0-9a-f]{8}$ ]] && _memory_drop "$dir" "$replaces"
     body="$(awk 'c >= 2 { print } /^---$/ { c++ }' "$f")"
-    printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
-      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(sed -n 's/^cite: //p' "$f")" "$(sed -n 's/^anchor: //p' "$f")" "$(sed -n 's/^terms: //p' "$f" | tr -d '|' | sed 's/-->//g')" "$(date -u +%F)" \
+    printf '## %s\n<!-- kind: %s | path: %s | %s | terms: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
+      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(awk '/^---$/ { c++; next } c == 1 && /^(cite|anchor)[23]?: / { printf "%s%s", (n++ ? " | " : ""), $0 }' "$f")" "$(sed -n 's/^terms: //p' "$f" | tr -d '|' | sed 's/-->//g')" "$(date -u +%F)" \
       "$(sed -n 's/^run: //p' "$f")" "$(sed -n 's/^ticket: //p' "$f")" "$(sed -n 's/^taint: //p' "$f")" "$body" >> "${dir}/${kind}.md"
     _memory_git rm -q -- "${f#"${FXA_MEMORY_DIR}"/}" 2>/dev/null || rm -f "$f"
-    list="${list}- ${id} (${kind}, cite did not check out): $(printf '%s' "$body" | head -1 | cut -c1-160)
+    list="${list}- ${id} (${what}, cite did not check out): $(printf '%s' "$body" | head -1 | cut -c1-160)
 "; _memory_index "$dir"; n=$((n + 1))
   done
-  # Entries a tainted run added this week went in on their cite alone: list them for a look.
+  # Entries a tainted run added this week, and every new team fact, went in on their cites alone: list them for a look.
   while IFS= read -r f; do
-    awk -v week="$week" '/^## mem-/ { id = substr($0, 4); getline m; getline x
-      if (m ~ /taint: 1/ && m !~ /digest: 1/) { c = m; sub(/.*confirmed: /, "", c); sub(/ .*/, "", c); if (c >= week) print "- " id " (auto, tainted run): " substr(x, 1, 160) } }' "$f"
-  done < <(find "${FXA_MEMORY_DIR}/repos" -name '*.md' ! -name INDEX.md 2>/dev/null) > "${FXA_MEMORY_DIR}.tainted"
+    awk -v week="$week" -v team="$([ "${f#"${FXA_MEMORY_DIR}"/teams/}" = "$f" ] || echo 1)" '/^## mem-/ { id = substr($0, 4); getline m; getline x
+      if ((team || m ~ /taint: 1/) && m !~ /digest: 1/) { c = m; sub(/.*confirmed: /, "", c); sub(/ .*/, "", c); if (c >= week) print "- " id " (auto, " (team ? "team fact" : "tainted run") "): " substr(x, 1, 160) } }' "$f"
+  done < <(find "${FXA_MEMORY_DIR}/repos" "${FXA_MEMORY_DIR}/teams" -name '*.md' ! -name INDEX.md 2>/dev/null) > "${FXA_MEMORY_DIR}.tainted"
   t="$(grep -c . "${FXA_MEMORY_DIR}.tainted" || true)"
   local top unread chk tc
   top="$(_memory_use_counts 30 | head -10 | sed 's/^/- /' || true)"
@@ -473,14 +522,14 @@ _memory_digest() {
   tc="$(printf '%s' "$chk" | grep -c . || true)"
   if [ "$n" -eq 0 ] && [ "$t" -eq 0 ] && [ "$tc" -eq 0 ]; then _memory_git checkout -q main 2>/dev/null; rm -f "${FXA_MEMORY_DIR}.tainted"; _memory_log digest nothing; return 0; fi
   { printf '# Memory digest %s\n\nMerge this PR to keep these entries. Delete a block from its topic file (and the INDEX line) to reject it.\n\n' "$(date -u +%F)"
-    [ "$n" -gt 0 ] && printf '## From the inbox (now in repos/)\n\n%s\n' "$list"
-    [ "$t" -gt 0 ] && printf '## Added this week by runs that read untrusted text (already live)\n\n%s\n' "$(cat "${FXA_MEMORY_DIR}.tainted")"
+    [ "$n" -gt 0 ] && printf '## From the inbox (now in repos/ or teams/)\n\n%s\n' "$list"
+    [ "$t" -gt 0 ] && printf '## Added this week by runs that read untrusted text, and new team facts (already live)\n\n%s\n' "$(cat "${FXA_MEMORY_DIR}.tainted")"
     [ "$tc" -gt 0 ] && printf '## To check\n\n%s\n\n' "$chk"
     [ -n "$top" ] && printf '## Read the most (30 days)\n\n%s\n\n' "$top"
     [ -n "$unread" ] && printf '## Not read in 30 days\n\n%s\n' "$unread"
   } > "${FXA_MEMORY_DIR}/DIGEST.md"
   rm -f "${FXA_MEMORY_DIR}.tainted"
-  _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d repos inbox DIGEST.md 2>/dev/null) 2>/dev/null
+  _memory_git add -A -- $(cd "$FXA_MEMORY_DIR" && ls -d repos teams inbox DIGEST.md 2>/dev/null) 2>/dev/null
   _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: digest $(date -u +%F) (${n} from the inbox, ${t} to look at)" \
     && _memory_git push -q origin "$br" 2>/dev/null \
     && _memory_log digest opened "$n" "$t" \

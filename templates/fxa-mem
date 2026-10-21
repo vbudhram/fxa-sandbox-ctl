@@ -8,18 +8,24 @@ STOP = set("a an and are as at be by for from in is it of on or that the this to
 RATINGS = ("helped", "wrong", "stale")
 OUT = os.environ.get("FXA_MEM_OUT", "/workspace/.fxa-memory.json")
 KINDS = ("convention", "trap", "command", "decision", "owner-area")  # same list as _MEMORY_KINDS in lib/memory.sh
+TEAM_KINDS = ("convention", "trap", "command", "decision", "owner-area", "system")  # same list as _MEMORY_TEAM_KINDS
+TEAM_CITE_RE = r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:[A-Za-z0-9_./@+-]+:[0-9]{1,6}"
+CITES = ("cite", "cite2", "cite3")
 ID_RE = r"mem-[0-9a-f]{8}"
 FLAGS = ("repo", "kind", "text", "cite", "anchor", "why", "path", "terms", "op", "id")
-NEED = ("repo", "kind", "text", "cite", "anchor", "why", "terms")
+NEED = ("kind", "text", "why", "terms")  # with repo, cite and anchor, checked apart for --team
 
 
 def load():
-    """Parse every entry of repos/*/*.md, in topic file order. A block with no meta line is skipped."""
+    """Parse every entry of repos/*/*.md, then teams/*/*.md (repo "team"), in topic file order. A block with no meta line is skipped."""
     out = []
-    for f in sorted(glob.glob(os.path.join(MEM, "repos", "*", "*.md"))):
+    files = sorted(glob.glob(os.path.join(MEM, "repos", "*", "*.md"))) + sorted(glob.glob(os.path.join(MEM, "teams", "*", "*.md")))
+    for f in files:
         if os.path.basename(f) == "INDEX.md":
             continue
         repo, topic = os.path.basename(os.path.dirname(f)), os.path.basename(f)
+        if os.path.basename(os.path.dirname(os.path.dirname(f))) == "teams":
+            repo = "team"
         with open(f, encoding="utf-8", errors="replace") as fh:
             blocks = re.split(r"(?m)^(?=## mem-[0-9a-f]{8}$)", fh.read())
         for b in blocks:
@@ -51,7 +57,7 @@ def hit(e):
 
 
 def have_memory():
-    if os.path.isdir(os.path.join(MEM, "repos")):
+    if os.path.isdir(os.path.join(MEM, "repos")) or os.path.isdir(os.path.join(MEM, "teams")):
         return True
     print("no team memory on this runner")
     return False
@@ -70,7 +76,8 @@ def search(words):
         db = sqlite3.connect(":memory:")
         db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms, tokenize='porter unicode61')")
         db.executemany("insert into m values (?,?,?,?,?,?,?)", [
-            (e["id"], e["text"], e["why"]) + tuple(e["meta"].get(k, "") for k in ("path", "cite", "anchor", "terms")) for e in entries])
+            (e["id"], e["text"], e["why"], e["meta"].get("path", ""), " ".join(e["meta"].get(k, "") for k in CITES),
+             " ".join(e["meta"].get(k, "") for k in ("anchor", "anchor2", "anchor3")), e["meta"].get("terms", "")) for e in entries])
         q = " OR ".join('"%s"' % t for t in toks)
         ids = [r[0] for r in db.execute("select id from m where m match ? order by bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0) limit 5", (q,))]
     by_id = {e["id"]: e for e in entries}
@@ -90,8 +97,9 @@ def show(args):
         print("unknown id %s" % args[0])
         return 1
     print("## " + e["id"])
-    for k in ("kind", "path", "cite", "anchor", "confirmed"):
-        print("%s: %s" % (k, e["meta"].get(k, "")))
+    for k in ("kind", "path", "cite", "anchor", "cite2", "anchor2", "cite3", "anchor3", "confirmed"):
+        if k in ("kind", "path", "cite", "anchor", "confirmed") or k in e["meta"]:
+            print("%s: %s" % (k, e["meta"].get(k, "")))
     print(e["text"] + "\n\nWhy: " + e["why"])
     log(cmd="show", id=e["id"])
     return 0
@@ -119,8 +127,13 @@ def traps(args):
         repo = repo_from_git()
     if repo is None or not os.path.isdir(os.path.join(MEM, "repos", repo)):
         repo = None  # all repos
-    hits = [e for e in load() if e["meta"].get("kind") == "trap" and (repo is None or e["repo"] == repo)
+    traps_ = [e for e in load() if e["meta"].get("kind") == "trap"]
+    hits = [e for e in traps_ if e["repo"] != "team" and (repo is None or e["repo"] == repo)
             and e["meta"].get("path") and fnmatch.fnmatchcase(args[0], e["meta"]["path"])]
+    # A team trap after the repo's own: one of its cites names the repo; an empty path matches only a named repo.
+    hits += [e for e in traps_ if e["repo"] == "team"
+             and (repo is None or any(e["meta"].get(k, "").split(":")[0].replace("/", "__") == repo for k in CITES))
+             and (fnmatch.fnmatchcase(args[0], e["meta"]["path"]) if e["meta"].get("path") else repo is not None)]
     for e in hits:
         print(hit(e))
     if not hits:
@@ -166,16 +179,37 @@ def edit_out(change):
 
 
 def propose(args):
-    f = {}
-    while args and args[0].startswith("--") and args[0][2:] in FLAGS and len(args) > 1:
-        f[args[0][2:]], args = args[1], args[2:]
+    f, cites, anchors, team = {}, [], [], False
+    while args:
+        k = args[0][2:] if args[0].startswith("--") else ""
+        if k == "team":
+            team, args = True, args[1:]
+        elif k in FLAGS and len(args) > 1:
+            if k == "cite":
+                cites.append(args[1])
+            elif k == "anchor":
+                anchors.append(args[1])
+            else:
+                f[k] = args[1]
+            args = args[2:]
+        else:
+            break
     op = f.get("op", "add")
-    if args or any(not f.get(k) for k in NEED) or f["kind"] not in KINDS or op not in ("add", "update", "supersede") \
-            or (op == "add") != ("id" not in f) or ("id" in f and not re.fullmatch(ID_RE, f["id"])):
+    if team:
+        # A team fact: 1 to 3 cites, each owner/repo:path:line with its own anchor.
+        ok = "repo" not in f and f.get("kind") in TEAM_KINDS and 1 <= len(cites) <= 3 and all(re.fullmatch(TEAM_CITE_RE, c) for c in cites)
+    else:
+        ok = bool(f.get("repo")) and f.get("kind") in KINDS and len(cites) == 1
+    if not ok or args or len(cites) != len(anchors) or not all(cites + anchors) or any(not f.get(k) for k in NEED) \
+            or op not in ("add", "update", "supersede") or (op == "add") != ("id" not in f) or ("id" in f and not re.fullmatch(ID_RE, f["id"])):
         return usage()
+    if team:
+        f["repo"], f["cites"] = "team", [{"cite": c, "anchor": a} for c, a in zip(cites, anchors)]
+    else:
+        f["cite"], f["anchor"] = cites[0], anchors[0]
     f["op"] = op
     f.setdefault("path", "")
-    return edit_out(lambda d: d.setdefault("learnings", []).append({k: f[k] for k in FLAGS if k in f}))
+    return edit_out(lambda d: d.setdefault("learnings", []).append({k: f[k] for k in FLAGS + ("cites",) if k in f}))
 
 
 def confirm(args):
@@ -187,7 +221,8 @@ def confirm(args):
 def usage():
     print("usage: fxa-mem search <words...> | show <id> | traps [--repo owner/repo] <path> | rate <id> helped|wrong|stale [why...]\n"
           "       fxa-mem propose --repo owner/repo --kind %s --text T --cite path:line --anchor A --why W --terms T [--path GLOB] [--op update|supersede --id mem-XXXXXXXX]\n"
-          "       fxa-mem confirm <id>" % "|".join(KINDS))
+          "       fxa-mem propose --team --kind %s --text T --cite owner/repo:path:line --anchor A [--cite ... --anchor ...] (up to 3) --why W --terms T [--path GLOB]\n"
+          "       fxa-mem confirm <id>" % ("|".join(KINDS), "|".join(TEAM_KINDS)))
     return 2
 
 

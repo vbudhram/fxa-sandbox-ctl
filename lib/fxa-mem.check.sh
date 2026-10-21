@@ -33,6 +33,15 @@ d="$tmp/mem/repos/mozilla__fxa"; o="$tmp/mem/repos/mozilla__other"; mkdir -p "$d
 _entry mem-0000000e "kind: trap | path: packages/fxa-content-server/** | cite: packages/fxa-content-server/c.js:3 | anchor: otherrepoword | confirmed: 2026-10-16 | source: run K7 | taint: 0" \
   "The otherrepoword trap of the other repo." "Another repo." > "$o/trap.md"
 echo "- index only" > "$d/INDEX.md"
+t="$tmp/mem/teams/fxa"; mkdir -p "$t"
+_entry mem-000000f1 "kind: system | path:  | cite: mozilla/fxa:a.js:1 | anchor: authApi | cite2: mozilla/other:b.py:2 | anchor2: call_auth_api | confirmed: 2026-10-16 | source: run K8 | taint: 0" \
+  "An auth API change needs a crossrepoword client update." "Both sides break." > "$t/system.md"
+{
+  _entry mem-000000f2 "kind: trap | path:  | cite: mozilla/third:c.go:1 | anchor: pinned | cite2: mozilla/other:b.py:2 | anchor2: call_auth_api | confirmed: 2026-10-16 | source: run K9 | taint: 0" \
+    "The other client pins the auth version." "A bump breaks it."
+  _entry mem-000000f3 "kind: trap | path: packages/nomatch/** | cite: mozilla/other:b.py:2 | anchor: call_auth_api | confirmed: 2026-10-16 | source: run K9 | taint: 0" \
+    "A team trap on a path that does not match." "No match."
+} > "$t/trap.md"
 
 check "an error text finds its trap first" "mem-0000000a" "$(fm search "Cannot find module @fxa/shared/foo" | head -1 | cut -d' ' -f1)"
 check "a hit line is id, kind, 100-char snippet, repo and topic file" "1" "$(fm search foo | head -1 | grep -cE '^mem-[0-9a-f]{8} \[trap\] .{1,100} -> mozilla__fxa/trap\.md$')"
@@ -76,4 +85,17 @@ check "a learnings value that is not a list exits 1, with no traceback" "1|0" "$
 check "KINDS matches _MEMORY_KINDS in lib/memory.sh" "$(sed -n "s/^_MEMORY_KINDS='\(.*\)'.*/\1/p" "$here/memory.sh")" "$(sed -n 's/^KINDS = (\(.*\)).*/\1/p' "$here/../templates/fxa-mem" | tr -d '"' | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
 check "propose and confirm leave the use log alone" "0" "$(rm -f "$tmp/out.json"; : > "$tmp/use.jsonl"; fm confirm mem-0000000a >/dev/null; wc -l < "$tmp/use.jsonl" | tr -d ' ')"
 check "terms are searched" "mem-0000000d" "$(fm search EREFUSED | head -1 | cut -d' ' -f1)"
+mtk="$(sed -n "s/^_MEMORY_TEAM_KINDS='\(.*\)'.*/\1/p" "$here/memory.sh")"
+check "TEAM_KINDS matches _MEMORY_TEAM_KINDS in lib/memory.sh, and has system" "system|$mtk" \
+  "$(grep -o system <<< "$mtk")|$(sed -n 's/^TEAM_KINDS = (\(.*\)).*/\1/p' "$here/../templates/fxa-mem" | tr -d '"' | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
+check "search covers team facts and names them" "1" "$(fm search crossrepoword | head -1 | grep -c '^mem-000000f1 .* -> team/system\.md$')"
+check "show prints every cite of a team fact" "1" "$(fm show mem-000000f1 | grep -c '^cite2: mozilla/other:b.py:2$')"
+check "traps --repo adds team traps that cite that repo, after its own" "mem-0000000e mem-000000f2" "$(fm traps --repo mozilla/other packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
+rm -f "$tmp/out.json"
+check "propose --team writes cites with their anchors" "2|mozilla/other:b.py:2|team" \
+  "$(fm propose --team --kind system --text t --why w --terms x --cite mozilla/fxa:a.js:1 --anchor aaaa --cite mozilla/other:b.py:2 --anchor bbbb && jq -r '.learnings[-1] | (.cites | length, .[1].cite), .repo' "$tmp/out.json" | paste -sd'|' -)"
+check "propose --team with a cite and no anchor exits 2" "2" "$(fm propose --team --kind system --text t --why w --terms x --cite mozilla/fxa:a.js:1 >/dev/null 2>&1; echo $?)"
+check "propose --team with a cite and no repo exits 2" "2" "$(fm propose --team --kind system --text t --why w --terms x --cite a.js:1 --anchor aaaa >/dev/null 2>&1; echo $?)"
+check "propose --team with 4 cites exits 2" "2" "$(fm propose --team --kind system --text t --why w --terms x $(for i in 1 2 3 4; do printf -- '--cite o/r%s:a.js:1 --anchor aaaa ' "$i"; done) >/dev/null 2>&1; echo $?)"
+check "system is refused for a repo fact" "2" "$(fm propose --repo mozilla/fxa --kind system --text t --cite a.js:1 --anchor abcd --why w --terms x >/dev/null 2>&1; echo $?)"
 exit "$fail"

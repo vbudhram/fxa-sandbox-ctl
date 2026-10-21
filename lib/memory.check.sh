@@ -278,5 +278,40 @@ check "a clone a crash left in a rebase is freed by the next pull" "no" \
   check "a session with memory off, or with no readable record, saves no memory note on stop or ship" "" "$(cat "$tmp/mcs")"
   exit "$fail" ) || fail=1
 
+# Team facts: one fact that needs two repos to be true, with a cite in each repo.
+g -C "$tmp/clone" reset -q --hard origin/main 2>/dev/null
+g init -q --bare "$tmp/other-origin.git"; g clone -q "$tmp/other-origin.git" "$tmp/other" 2>/dev/null
+printf 'import os\ndef call_auth_api():\n    pass\n' > "$tmp/other/b.py"
+g -C "$tmp/other" add -A && g -C "$tmp/other" commit -qm x && g -C "$tmp/other" push -q origin main 2>/dev/null && g -C "$tmp/other" fetch -q
+printf 'export const authApi = "v2";\n' > "$tmp/fxa/a.js"
+g -C "$tmp/fxa" add -A && g -C "$tmp/fxa" commit -qm a && g -C "$tmp/fxa" push -q origin main 2>/dev/null && g -C "$tmp/fxa" fetch -q
+_tree_host_root() { case "$1" in mozilla/other) echo "$tmp/other" ;; mozilla-services/*) echo "$tmp/ss" ;; *) echo "$tmp/fxa" ;; esac; }
+collect_json() { local f; f="$(mktemp "$tmp/cj.XXXXXX")"; printf '%s' "$1" > "$f"; shift; memory_collect "r${f##*.}" "$f" t fxa 0 FXA-1 "$@" 2>/dev/null; }
+team='{"learnings":[{"repo":"team","kind":"system","text":"an auth API change also needs the client in other","why":"w","path":"","terms":"auth api client",
+  "cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"},{"cite":"mozilla/other:b.py:2","anchor":"call_auth_api"}]}]}'
+check "cites: each cite holds in its own repo, and one bad anchor fails them all" "0|1" \
+  "$(_memory_cites_ok '[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"},{"cite":"mozilla/other:b.py:2","anchor":"call_auth_api"}]'; echo $?)|$(_memory_cites_ok '[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"},{"cite":"mozilla/other:b.py:2","anchor":"nothere"}]'; echo $?)"
+check "a team fact with good cites lands in teams/<profile>/system.md" "1" "$(collect_json "$team" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" show main:teams/fxa/system.md | grep -c 'cite2: mozilla/other:b.py:2')"
+check "a team fact citing a repo outside the run is dropped" "0" "$(collect_json "${team//mozilla\/other/mozilla\/elsewhere}" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" show main:teams/fxa/system.md | grep -c elsewhere || true)"
+bad="${team//call_auth_api/nothere}"; bad="${bad//also needs/then needs}"
+check "a team fact with a bad anchor goes to the inbox" "1" "$(collect_json "$bad" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" ls-tree -r --name-only main inbox/team__fxa | grep -c .)"
+check "system is refused for a repo fact" "0" "$(collect_json '{"learnings":[{"repo":"mozilla/fxa","kind":"system","text":"t","why":"w","cite":"a.js:1","anchor":"authApi"}]}' mozilla/fxa; g -C "$tmp/remote.git" ls-tree -r --name-only main repos/mozilla__fxa | grep -c system.md || true)"
+rm -f "$tmp/vm.cmd"; memory_sync r fxa mozilla/fxa
+check "sync copies the team folder" "1" "$(sed -E "s/.*echo '([^']*)'.*/\1/" "$tmp/vm.cmd" | base64 -d | tar -tzf - | grep -c '^teams/fxa/$')"
+# A team trap read as often as repo traps comes first in the prompt; its second cite's anchor is gone.
+g -C "$tmp/clone" pull -q 2>/dev/null; mkdir -p "$tmp/clone/teams/fxa"
+printf '## mem-000000e1\n<!-- kind: trap | path:  | cite: mozilla/fxa:a.js:1 | anchor: authApi | cite2: mozilla/other:b.py:2 | anchor2: gone gone | terms: x | confirmed: %s | source: r1 | taint: 0 -->\nteam trap text\n\nWhy: w\n\n' "$ud" > "$tmp/clone/teams/fxa/trap.md"
+echo "{\"at\": $now, \"cmd\": \"show\", \"id\": \"mem-000000e1\"}" >> "$tmp/clone/tickets/uc/$ud-r1.use.jsonl"
+g -C "$tmp/clone" add -A && g -C "$tmp/clone" commit -qm team && g -C "$tmp/clone" push -q origin HEAD:main 2>/dev/null
+check "a team trap prints -> team/<file>, before a repo trap read as often" "mem-000000e1 [trap] team trap text -> team/trap.md" \
+  "$(memory_index_md fxa mozilla/fxa | grep '^mem-' | sed -n 2p)"
+rm -f "$tmp/digest.msg"; g -C "$tmp/remote.git" branch -D "$(g -C "$tmp/remote.git" branch --list 'digest/*' | tr -d ' *' | tail -1)" >/dev/null 2>&1
+g -C "$tmp/clone" fetch -q -p origin 2>/dev/null
+memory_digest 2>/dev/null
+br="$(g -C "$tmp/clone" fetch -q origin 2>/dev/null; g -C "$tmp/clone" branch -r --list 'origin/digest/*' | sed 's#^ *origin/##' | tail -1)"
+check "the digest checks each team cite in its own repo" "1|0" \
+  "$(grep -c 'mem-000000e1: the anchor is no longer near mozilla/other:b.py:2' "$tmp/digest.msg")|$(grep -c 'mem-000000e1: the anchor is no longer near mozilla/fxa' "$tmp/digest.msg" || true)"
+check "the digest moves a team inbox entry into teams/<profile>/, and lists new team facts" "0|1|1" \
+  "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/team__fxa/' || true)|$(g -C "$tmp/clone" show "origin/${br}:teams/fxa/system.md" | grep -c 'cite2: mozilla/other:b.py:2 | anchor2: nothere')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'team fact.*also needs the client')"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
