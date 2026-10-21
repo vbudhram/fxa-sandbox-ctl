@@ -125,6 +125,7 @@ def traps(args):
         return 0
     if repo is None:
         repo = repo_from_git()
+    named = repo  # team traps filter on it even when the repo has no folder here
     if repo is None or not os.path.isdir(os.path.join(MEM, "repos", repo)):
         repo = None  # all repos
     traps_ = [e for e in load() if e["meta"].get("kind") == "trap"]
@@ -132,8 +133,8 @@ def traps(args):
             and e["meta"].get("path") and fnmatch.fnmatchcase(args[0], e["meta"]["path"])]
     # A team trap after the repo's own: one of its cites names the repo; an empty path matches only a named repo.
     hits += [e for e in traps_ if e["repo"] == "team"
-             and (repo is None or any(e["meta"].get(k, "").split(":")[0].replace("/", "__") == repo for k in CITES))
-             and (fnmatch.fnmatchcase(args[0], e["meta"]["path"]) if e["meta"].get("path") else repo is not None)]
+             and (named is None or any(e["meta"].get(k, "").split(":")[0].replace("/", "__") == named for k in CITES))
+             and (fnmatch.fnmatchcase(args[0], e["meta"]["path"]) if e["meta"].get("path") else named is not None)]
     for e in hits:
         print(hit(e))
     if not hits:

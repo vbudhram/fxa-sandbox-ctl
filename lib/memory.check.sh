@@ -292,7 +292,9 @@ team='{"learnings":[{"repo":"team","kind":"system","text":"an auth API change al
 check "cites: each cite holds in its own repo, and one bad anchor fails them all" "0|1" \
   "$(_memory_cites_ok '[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"},{"cite":"mozilla/other:b.py:2","anchor":"call_auth_api"}]'; echo $?)|$(_memory_cites_ok '[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"},{"cite":"mozilla/other:b.py:2","anchor":"nothere"}]'; echo $?)"
 check "a team fact with good cites lands in teams/<profile>/system.md" "1" "$(collect_json "$team" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" show main:teams/fxa/system.md | grep -c 'cite2: mozilla/other:b.py:2')"
-check "a team fact citing a repo outside the run is dropped" "0" "$(collect_json "${team//mozilla\/other/mozilla\/elsewhere}" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" show main:teams/fxa/system.md | grep -c elsewhere || true)"
+printf '%s' "${team//mozilla\/other/mozilla\/elsewhere}" > "$tmp/else.json"
+check "a team fact citing a repo outside the run is dropped" "1|0" \
+  "$(_memory_norm "$tmp/else.json" $'mozilla/fxa\nmozilla/elsewhere' | jq '.learnings | length')|$(_memory_norm "$tmp/else.json" $'mozilla/fxa\nmozilla/other' | jq '.learnings | length')"
 bad="${team//call_auth_api/nothere}"; bad="${bad//also needs/then needs}"
 check "a team fact with a bad anchor goes to the inbox" "1" "$(collect_json "$bad" mozilla/fxa mozilla/other; g -C "$tmp/remote.git" ls-tree -r --name-only main inbox/team__fxa | grep -c .)"
 check "system is refused for a repo fact" "0" "$(collect_json '{"learnings":[{"repo":"mozilla/fxa","kind":"system","text":"t","why":"w","cite":"a.js:1","anchor":"authApi"}]}' mozilla/fxa; g -C "$tmp/remote.git" ls-tree -r --name-only main repos/mozilla__fxa | grep -c system.md || true)"

@@ -260,6 +260,7 @@ _memory_cites_ok() {
   [ "$(jq 'length' <<< "$1" 2>/dev/null)" -gt 0 ] 2>/dev/null || return 1
   for i in $(jq -r 'keys[]' <<< "$1"); do
     c="$(jq -r ".[$i].cite" <<< "$1")"
+    [[ "${c%%:*}" =~ $_MEMORY_SLUG ]] || return 1
     _memory_cite_ok "${c%%:*}" "${c#*:}" "$(jq -r ".[$i].anchor" <<< "$1")" || return 1
   done
 }
@@ -494,9 +495,9 @@ _memory_digest() {
   _memory_git checkout -q -B "$br" origin/main 2>/dev/null || return 1
   for f in $(find "${FXA_MEMORY_DIR}/inbox" -name 'mem-*.md' 2>/dev/null | sort); do
     id="$(sed -n 's/^id: //p' "$f")"; kind="$(sed -n 's/^kind: //p' "$f")"; replaces="$(sed -n 's/^replaces: //p' "$f")"
-    irepo="$(sed -n 's/^repo: //p' "$f")"; what="$kind"
+    irepo="$(awk '/^---$/ { c++; next } c == 1 && sub(/^repo: /, "")' "$f")"; what="$kind"
     if [ "$irepo" = team ]; then
-      iprof="$(sed -n 's/^profile: //p' "$f")"; [[ "$iprof" =~ ^[a-z0-9][a-z0-9-]*$ ]] || continue
+      iprof="$(awk '/^---$/ { c++; next } c == 1 && sub(/^profile: /, "")' "$f")"; [[ "$iprof" =~ ^[a-z0-9][a-z0-9-]*$ ]] || continue
       dir="${FXA_MEMORY_DIR}/teams/${iprof}"; what="team fact, ${kind}"
     else dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$irepo")"; fi
     mkdir -p "$dir"
