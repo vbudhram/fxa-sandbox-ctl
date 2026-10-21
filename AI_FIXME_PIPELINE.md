@@ -25,6 +25,11 @@ happens:
 
 The pipeline never merges. It never approves. It stops at review-ready.
 
+A secret ticket (a Jira security level, or the `security` or `hackerone` label) never runs against a
+public repo. A team that takes secret tickets (`jira.secret: true`, private work repos only, such as
+fxa-private on `mozilla/fxa-private`) runs it instead. The reporter still adds only `ai-fixme`; that
+team's states are `ai-fixme-private-<state>`. See README: Private pipeline teams.
+
 ### Scope boundaries
 
 | In scope | Out of scope |

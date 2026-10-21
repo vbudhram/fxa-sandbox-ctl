@@ -32,6 +32,8 @@ check "a key with a JQL tail may not" "1" "$(pipeline_key_in_scope 'FXA-7 OR key
 check "jira gates every launch on the scope" "1" "$(grep -c '^  if ! pipeline_key_in_scope "\$key"; then' "$here/../fxa-sandbox-ctl")"
 # --private is gone: a secret team runs these tickets. The flag names the command, before any worktree.
 eval "$(sed -n '/^_jira_private_gone() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
+check "the docs name private pipeline teams, not --private" "0|1|1|1" \
+  "$(grep -c 'FXA_PRIVATE_REPO\|Private mode' "$here/../README.md")|$(grep -c '^### Private pipeline teams$' "$here/../README.md")|$(grep -c 'jira.secret: true' "$here/../PRODUCT.md" | sed 's/[2-9]/1/')|$(grep -c 'ai-fixme-private-<state>' "$here/../skills/fxa-ai-fixme/SKILL.md")"
 mkdir -p "$tmp/pt"; echo '{"teams":{"fxa-private":{"status":"active","secret":true,"jira":"FXA"}}}' > "$tmp/pt/index.json"
 check "--private names the secret team's command, or says to sync the index" \
   "ERROR: --private is gone. Run: fxa-sandbox-ctl --pipeline fxa-private jira FXA-10|1|1" \

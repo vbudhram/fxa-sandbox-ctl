@@ -179,11 +179,11 @@ over a record of the same name. All other teams are records.
 | `label`, `status` | The name people see. `draft`, `active` or `disabled`. A team turns active only through `profile enable`, after `profile test` passes at that generation. |
 | `access` | Who may start sessions: listed users, channels, Jira prefixes, or open to everyone allowed. A team with a private repo cannot be open. |
 | `repos` | Up to 8 repos, each with a role: `work` (writable, ships), `dep` (runs beside it), `data`, `ref` (read-only). Each has a path and a base branch. |
-| `stack` | `fxa` (the FxA stack runs in the runner) or `none`. A team without the FxA stack must bring its own goal. |
+| `stack` | `fxa` (the FxA stack runs in the runner) or `none`. A team without the FxA stack must bring its own goal. `stack.repo` names the row the stack runs from, for a private fork of FxA. |
 | `runner` | The backend (`gce` or `firecracker`), the Android emulator, a desktop URL. |
 | `egress` | The extra hosts the agent may reach. Hosts that take data out with no account (paste sites, tunnels, request catchers) are refused, even for an admin. |
 | `mcp` | Which connectors the team's sessions get. |
-| `jira` | The team's project and whether the pipeline works its queue. |
+| `jira` | The team's project and whether the pipeline works its queue. With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
 | `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. |
 | `caps` | Launches per day and dollars per day and per month, inside the operator's ceilings. |
 | `prompts` | The team's `CLAUDE.md`, guide and pass goal. Admins edit these as text. |
@@ -205,6 +205,7 @@ runs only while its file matches the pinned hash.
 | A repo the App cannot write | The tree ships as a diff in the thread | Firefox in fxa-android |
 | A queue the agent works alone | `jira.project`, `jira.queue: true`, a `goal_md` | sync-storage (STOR) |
 | A private repo | The App installed on it; a full clone with a read-only token; code stays out of public channels, the watch page and shared memory | (live test pending) |
+| Secret tickets against a private repo | `jira.secret: true`, private work repos only | fxa-private |
 
 **Not possible yet** (phase 3): a stack recipe that is not FxA (`stack.kind: recipe`),
 a team image, a generic pass skill for a team that is not FxA, and lessons scoped to a team. Do not
