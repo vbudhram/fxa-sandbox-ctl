@@ -44,7 +44,15 @@ check "FTS syntax in a query searches the words" "0|mem-0000000a" "$(fm search '
 check "no match prints one line and exits 0" "no match|0" "$(o="$(fm search zzzqqq)"; echo "$o|$?")"
 check "traps matches the path glob" "mem-0000000a" "$(fm traps --repo mozilla/fxa packages/fxa-content-server/server/lib/x.js | cut -d' ' -f1)"
 check "a block with no meta line is skipped, the rest match" "0" "$(fm search nometa | grep -c mem-0000000c)"
+check "a stemmed query matches" "mem-0000000b" "$(fm search ports | head -1 | cut -d' ' -f1)"
+mkdir -p "$tmp/gitfxa" "$tmp/gitnone" "$tmp/nogit"
+git -C "$tmp/gitfxa" init -q && git -C "$tmp/gitfxa" remote add origin git@github.com:mozilla/fxa.git
+git -C "$tmp/gitnone" init -q && git -C "$tmp/gitnone" remote add origin https://github.com/mozilla/nofolder.git
+check "traps without --repo uses the origin repo" "mem-0000000a" "$(cd "$tmp/gitfxa" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1)"
+check "traps without --repo and without git uses all repos" "mem-0000000a mem-0000000e" "$(cd "$tmp/nogit" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
+check "traps with an origin that has no folder uses all repos" "mem-0000000a mem-0000000e" "$(cd "$tmp/gitnone" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
 check "show prints the cite and the why" "1|1" "$(fm show mem-0000000a | grep -c '^cite: ')|$(fm show mem-0000000a | grep -c '^Why: ')"
+touch "$tmp/use.jsonl"
 check "an unknown id exits 1 and logs nothing" "1|0" "$(fm show mem-ffffffff >/dev/null 2>&1; echo $?)|$(grep -c ffffffff "$tmp/use.jsonl" || true)"
 check "rate logs the rating and its reason" "stale|fixed upstream" "$(fm rate mem-0000000a stale fixed upstream >/dev/null; tail -1 "$tmp/use.jsonl" | jq -r '.rating + "|" + .why')"
 check "a bad rating exits 2" "2" "$(fm rate mem-0000000a great >/dev/null 2>&1; echo $?)"

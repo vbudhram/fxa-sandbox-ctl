@@ -63,7 +63,7 @@ def search(words):
     ids = []
     if toks and entries:
         db = sqlite3.connect(":memory:")
-        db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms)")
+        db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms, tokenize='porter unicode61')")
         db.executemany("insert into m values (?,?,?,?,?,?,?)", [
             (e["id"], e["text"], e["why"]) + tuple(e["meta"].get(k, "") for k in ("path", "cite", "anchor", "terms")) for e in entries])
         q = " OR ".join('"%s"' % t for t in toks)
