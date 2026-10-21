@@ -32,6 +32,11 @@ export GOOGLE_CLOUD_PROJECT=demo-fxa
 # every request resolves to this location, and no city is shown.
 export GEODB_LOCATION_OVERRIDE='{"location": {"countryCode": "US", "postalCode": "85001"}}'
 
+# Firefox Nightly (03b-toolchain.sh), the authority for the v2 pairing and Marionette specs.
+export FIREFOX_BINARY=/opt/firefox-nightly/firefox
+# Current Nightly refuses Marionette's chrome commands without this.
+export MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1
+
 # MySQL
 export AUTH_MYSQL_HOST=localhost
 export AUTH_MYSQL_PORT=3306

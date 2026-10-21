@@ -60,11 +60,17 @@ fi
 NODE_ENV=test npx nx run-many -t build --all --exclude=fxa-dev-launcher > /tmp/refresh-nx.log 2>&1 || { echo "WARN: nx build failed; runners build what they need at the pin"; tail -15 /tmp/refresh-nx.log; }
 echo "clone at $(git rev-parse --short HEAD)"
 GUEST
-# The snapshot's stack uses CI's location override; images before it lack the line.
+# The snapshot's stack uses CI's location override and Nightly's env; images before them lack the lines.
 "$fc" ssh 0 'sudo bash -s' <<'GUEST'
 grep -q GEODB_LOCATION_OVERRIDE /etc/agent-env.sh || cat >> /etc/agent-env.sh <<'ENV'
 # As CI sets it (.circleci/config.yml), so a spec that passes here passes there.
 export GEODB_LOCATION_OVERRIDE='{"location": {"countryCode": "US", "postalCode": "85001"}}'
+ENV
+grep -q '^export FIREFOX_BINARY=' /etc/agent-env.sh || cat >> /etc/agent-env.sh <<'ENV'
+# Firefox Nightly (03b-toolchain.sh), the authority for the v2 pairing and Marionette specs.
+export FIREFOX_BINARY=/opt/firefox-nightly/firefox
+# Current Nightly refuses Marionette's chrome commands without this.
+export MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1
 ENV
 GUEST
 # The image has no apt lists: without the update, the install finds no package, and each boot

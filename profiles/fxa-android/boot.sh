@@ -1,6 +1,6 @@
 #!/bin/bash
 # profiles/fxa-android/boot.sh: start the Android emulator with Fenix beside the FxA stack. The
-# fxa-dev-android image holds the SDK, the AVD `fxa`, the Fenix build and Nightly (13-android.sh).
+# fxa-dev-android image holds the SDK, the AVD `fxa`, the Fenix build (13-android.sh), and Nightly (03b-toolchain.sh).
 # The controller runs it once as root on the runner, detached, after the egress firewall. The
 # emulator and Fenix run only as agent. Log: /var/log/profile-boot.log.
 # Done: /run/fxa-profile/ready, or failed.

@@ -1,6 +1,6 @@
 #!/bin/bash
 # 13-android.sh — the fxa-dev-android image only (FXA_ANDROID=true): Firefox for Android (Fenix)
-# built from source, an x86_64 emulator, and Firefox Nightly as the pairing authority.
+# built from source and an x86_64 emulator. Firefox Nightly, the pairing authority, is in every image (03b-toolchain.sh).
 # Measured on n2-standard-8 (2026-10-15): clone 2.5 min, bootstrap 1 min, build 8 min,
 # Fenix 9 min; about 35 GB more disk. The build needs about 15 GB of RAM.
 set -euo pipefail
@@ -83,21 +83,13 @@ EOF
 echo "==> AVD fxa on ${img}; Fenix $(du -h "$apk" | cut -f1)"
 AGENT
 
-echo "==> Firefox Nightly, the v2 pairing authority"
-mkdir -p /opt/firefox-nightly
-curl -fsSL 'https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=linux64&lang=en-US' \
-  | tar -xJ -C /opt/firefox-nightly --strip-components=1
-/opt/firefox-nightly/firefox --version 2>/dev/null || true
-
 # On PATH for the agent: adb and the emulator from the bootstrapped SDK.
 ln -sfn "$A/.mozbuild/android-sdk-linux/platform-tools/adb" /usr/local/bin/adb
 ln -sfn "$A/.mozbuild/android-sdk-linux/emulator/emulator" /usr/local/bin/emulator
 cat >> /etc/agent-env.sh <<'ENV'
-# fxa-dev-android: the Android SDK, the AVD and Nightly (13-android.sh).
+# fxa-dev-android: the Android SDK and the AVD (13-android.sh).
 export ANDROID_SDK_ROOT=/home/agent/.mozbuild/android-sdk-linux ANDROID_HOME=/home/agent/.mozbuild/android-sdk-linux
-export ANDROID_AVD_HOME=/home/agent/.android/avd FIREFOX_BINARY=/opt/firefox-nightly/firefox
-# Current Nightly refuses Marionette's chrome commands without this.
-export MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1
+export ANDROID_AVD_HOME=/home/agent/.android/avd
 # The content server serves pairing v2, which the Android pairing specs need (fxa-start inherits it).
 export PAIRING_VERSION=2
 ENV

@@ -3,9 +3,26 @@
 # that wins on PATH. The Packer build runs it, and infra/firecracker/refresh.sh runs it
 # in the snapshot guest. Run as root: 03b-toolchain.sh [node-version], fxa main's
 # .nvmrc when it is not given.
-# Prints "node <version>", "claude <version>" and "codex <version>", and fails when one
-# is not what was asked for.
+# Prints "node <version>", "claude <version>", "codex <version>" and "nightly <version>",
+# and fails when one is not what was asked for.
 set -euo pipefail
+
+# Firefox Nightly, the v2 pairing authority: FIREFOX_BINARY in /etc/agent-env.sh (06-agent-init.sh).
+NIGHTLY=/opt/firefox-nightly
+# Nightly changes each day: fetch it once a day, not on each refresh. A failed fetch keeps the earlier copy.
+nightly() {
+  local day; day="$(date -u +%F)"
+  [ "$(cat "$NIGHTLY/.fetched" 2>/dev/null)" != "$day" ] || return 0
+  rm -rf "$NIGHTLY.new" && mkdir -p "$NIGHTLY.new"
+  if curl -fsSL 'https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=linux64&lang=en-US' \
+    | tar -xJ -C "$NIGHTLY.new" --strip-components=1 && [ -x "$NIGHTLY.new/firefox" ]; then
+    rm -rf "$NIGHTLY" && mv "$NIGHTLY.new" "$NIGHTLY" && echo "$day" > "$NIGHTLY/.fetched"
+  else
+    rm -rf "$NIGHTLY.new"
+    [ -x "$NIGHTLY/firefox" ] || { echo "ERROR: Firefox Nightly did not install" >&2; return 1; }
+    echo "WARN: the Nightly fetch failed; the earlier copy stays" >&2
+  fi
+}
 
 # The one pin for each runtime: manager.sh reads them for the manager, and refresh.sh
 # for the snapshot (lib/claude-pin.check.sh).
@@ -45,3 +62,6 @@ echo "codex $(cx)"
 [ "$(cc)" = "$CLAUDE_CODE_VERSION" ] || { echo "ERROR: claude is '$(cc)', not ${CLAUDE_CODE_VERSION}" >&2; exit 1; }
 [ "$(cx)" = "$CODEX_VERSION" ] || { echo "ERROR: codex is '$(cx)', not ${CODEX_VERSION}" >&2; exit 1; }
 npm -v > /dev/null || { echo "ERROR: npm does not run" >&2; exit 1; }
+
+nightly
+echo "nightly $(sed -n 's/^Version=//p' "$NIGHTLY/application.ini" | head -1)"
