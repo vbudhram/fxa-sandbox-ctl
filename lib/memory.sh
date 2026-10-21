@@ -195,14 +195,37 @@ memory_collect() {
   memory_on || return 0
   local run="$1" json="$2" trig="$3" prof="$4" taint="$5" ticket="$6" norm prose hits rc=0 now d n=0 f id added=0 inbox=0 dropped=0
   shift 6
-  [ -s "$json" ] || return 0
+  local use="${FXA_MEMORY_USE_FILE:-}"
+  [ -s "$use" ] || use=""
+  [ -s "$json" ] || [ -n "$use" ] || return 0
   # The memory repo is shared by every team: a run on a private repo leaves nothing in it.
   for f in "$@"; do github_repo_private "$f" && { echo "  memory: ${f} is private; nothing saved" >&2; _memory_log "$run" private; return 0; }; done
-  norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; _memory_log "$run" invalid; return 0; }
-  [ -n "$norm" ] || return 0
+  if [ -s "$json" ]; then
+    norm="$(_memory_norm "$json" "$(printf '%s\n' "$@")")" || { echo "  memory: the run's .fxa-memory.json is not valid JSON; nothing saved" >&2; _memory_log "$run" invalid; return 0; }
+    [ -n "$norm" ] || return 0
+  else norm='{"episode":{},"learnings":[],"confirmed":[]}'; fi
+  # The use log: fixed shape, capped, a suspect line dropped. A log with no kept line writes no file.
+  local ul="" ulines
+  if [ -n "$use" ]; then
+    ulines="$(jq -R -c '
+      def s($n): (if type == "string" then . else "" end) | gsub("[[:cntrl:]]"; " ") | .[0:$n];
+      fromjson? | select(type == "object") | select(.cmd == "search" or .cmd == "show" or .cmd == "traps" or .cmd == "rate")
+      | { at: (if (.at | type) == "number" then .at else null end), cmd, q: (if has("q") then .q | s(200) else null end),
+          id: (if has("id") then .id | s(20) else null end),
+          ids: (if (.ids | type) == "array" then [.ids[] | strings | select(test("^mem-[0-9a-f]{8}$"))] else null end),
+          rating: (if has("rating") then .rating | s(20) else null end), why: (if has("why") then .why | s(200) else null end) }
+      | with_entries(select(.value != null))' "$use" 2>/dev/null || true)"
+    while IFS= read -r l; do
+      [ -n "$l" ] || continue
+      _memory_suspect "$(jq -r '(.q // "") + " " + (.why // "")' <<< "$l")" && continue
+      ul="${ul}${l}"$'\n'
+    done <<< "$ulines"
+    ul="$(printf '%s' "$ul" | head -n 200)"
+  fi
+  [ -s "$json" ] || [ -n "$ul" ] || return 0
   # Personal or internal data anywhere in it: nothing is saved.
   prose="$(mktemp)"; : > "${prose}.diff"
-  jq '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' <<< "$norm" > "$prose"
+  { printf '%s\n' "$norm"; printf '%s\n' "$ul"; } | jq -s '[.. | strings] | to_entries | map({key: "f\(.key)", value: .value}) | from_entries' > "$prose"
   hits="$(python3 "${MEMORY_LIB_DIR}/pii_guard.py" "$prose" "${prose}.diff" 2>/dev/null)" || rc=$?
   rm -f "$prose" "${prose}.diff"
   if [ "$rc" != 0 ]; then echo "  memory: personal or internal data in ${run}'s memory; nothing saved (${hits:-the check could not run})" >&2; _memory_log "$run" pii_blocked; return 0; fi
@@ -219,6 +242,13 @@ memory_collect() {
       jq -r '.episode | "# \(.goal)\n", (if .decisions | length > 0 then "## Decisions", (.decisions[] | "- \(.)"), "" else empty end),
         (if .dead_ends | length > 0 then "## Dead ends", (.dead_ends[] | "- \(.)"), "" else empty end), "## Outcome", .outcome' <<< "$norm"
     } > "$f"; n=$((n + 1))
+  fi
+  # The use log goes beside the notes: tickets/<KEY>/, or tickets/<run>/ when there is no key.
+  if [ -n "$ul" ]; then
+    d="${FXA_MEMORY_DIR}/tickets/${ticket}"; [[ "$ticket" =~ $_MEMORY_KEY_RE ]] || d="${FXA_MEMORY_DIR}/tickets/${run//[^A-Za-z0-9._-]/_}"
+    mkdir -p "$d"; f="${d}/${now%%T*}-${run//[^A-Za-z0-9._-]/_}.use.jsonl"
+    [ -e "$f" ] && f="${f%.use.jsonl}-${now:11:2}${now:14:2}${now:17:2}.use.jsonl"
+    printf '%s\n' "$ul" > "$f"; n=$((n + 1))
   fi
   # Learnings: into repos/ at once when the cite holds on origin/main (the code checks the fact);
   # else to the inbox, for the weekly digest. A tainted run's entries are listed there for a look too.
@@ -272,14 +302,16 @@ memory_collect() {
 # runner, so a ship and a later stop do not save it twice. Taint: it read text no person on the team wrote.
 memory_collect_session() {
   memory_on || return 0
-  local key="$1" f taint=0 ticket slugs mem
+  local key="$1" f u taint=0 ticket slugs mem
   # A session with memory off (a routine's security review, D9) writes no team memory, and one whose
   # record cannot be read writes none either: its notes go with the runner.
   mem="$(jq -r '.memory // "on"' "$(_session_file "$key")" 2>/dev/null)" && [ "$mem" != off ] || {
-    _session_sh "$2" 'rm -f /workspace/.fxa-memory.json' >/dev/null 2>&1 || true; return 0; }
+    _session_sh "$2" 'rm -f /workspace/.fxa-memory.json /workspace/.fxa-memory-use.jsonl' >/dev/null 2>&1 || true; return 0; }
   f="$(mktemp)"
   _session_sh "$2" 'head -c 16000 /workspace/.fxa-memory.json 2>/dev/null; rm -f /workspace/.fxa-memory.json' > "$f" 2>/dev/null || true
-  [ -s "$f" ] || { rm -f "$f"; return 0; }
+  u="$(mktemp)"
+  _session_sh "$2" 'head -c 32000 /workspace/.fxa-memory-use.jsonl 2>/dev/null; rm -f /workspace/.fxa-memory-use.jsonl' > "$u" 2>/dev/null || true
+  [ -s "$f" ] || [ -s "$u" ] || { rm -f "$f" "$u"; return 0; }
   # untrusted: boot added a ticket or a CI log. A PR: review, Copilot and CI rounds steer the session with outside text.
   jq -e '(.checkout_person // "") != "" or (.review_pr // "") != "" or (.jira // "") != "" or ([.trees[]?.review_pr // empty] | length > 0)
       or (.untrusted // "" | tostring) == "1" or (.pr_url // "") != "" or ([.trees[]?.pr_url // empty] | length > 0)' \
@@ -288,8 +320,8 @@ memory_collect_session() {
   slugs="$(jq -r '[.trees[]?.slug] | .[]' "$(_session_file "$key")" 2>/dev/null)"
   [ -n "$slugs" ] || slugs="$(memory_profile_slugs)"
   # shellcheck disable=SC2086  # one slug per word
-  memory_collect "$key" "$f" "$3" "$(session_get "$key" profile 2>/dev/null || echo "${PIPE_PROFILE:-fxa}")" "$taint" "$ticket" $slugs
-  rm -f "$f"
+  FXA_MEMORY_USE_FILE="$u" memory_collect "$key" "$f" "$3" "$(session_get "$key" profile 2>/dev/null || echo "${PIPE_PROFILE:-fxa}")" "$taint" "$ticket" $slugs
+  rm -f "$f" "$u"
 }
 
 # memory_ticket_md <KEY> <nonce>   The latest notes of earlier runs on a ticket, fenced: agent-written,

