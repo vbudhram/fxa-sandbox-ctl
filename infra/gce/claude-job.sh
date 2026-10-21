@@ -72,6 +72,9 @@ ${st}
   grep -qE '^(queue|reconcile|feedback):' <<< "$work" && extra="${extra} launch.md"
   grep -q '^queue:' <<< "$work" && extra="${extra} admission.md"
   grep -q '^feedback:' <<< "$work" && extra="${extra} feedback.md"
+  # deps.sh (faillog, gate, rerun) reads mozilla/fxa unless told the team's repo, from its host clone.
+  u="$(git -C "$("$ctl" repo-dir 2>/dev/null)" remote get-url origin 2>/dev/null)" || u=""; u="${u%.git}"; u="${u#https://github.com/}"; u="${u#git@github.com:}"
+  [[ "$u" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && export DEPS_REPO="$u"
   # The skill goes in the prompt, first so the next pass can reuse its cache: skills are off below.
   skill="$(cd "$(dirname "$0")/../../skills/fxa-ai-fixme" 2>/dev/null && pwd)"
   [ -f "${skill:-/nonexistent}/SKILL.md" ] || { echo "pass: no fxa-ai-fixme skill beside this script; not starting a pass without it" >&2; exit 1; }
