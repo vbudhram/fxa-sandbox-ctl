@@ -10,7 +10,7 @@ case "${FXA_PIPELINE:-fxa-ai-fixme}" in fxa|fxa-ai-fixme) _p=fxa-ai-fixme ;; *) 
 state="${PIPE_STATE_DIR:-$HOME/.claude/state/$_p}"
 lib="$(dirname "$0")/../../lib" ctl="$(dirname "$0")/../../fxa-sandbox-ctl"
 # Runs on a kill too (systemd's timeout, a stop), so no run token outlives its job, and no lock its pass.
-cleanup() { rm -f "$out" "${cfg:-}"
+cleanup() { rm -f "$out" "$out".* "${cfg:-}"
   [ -z "${locked:-}" ] || "$ctl" unlock >/dev/null 2>&1
   [ -z "${mcp_tok:-}" ] || ( source "$lib/mcp-token.sh" && mcp_token_revoke "$run" )
   [ -z "${llm_tok:-}" ] || ( source "$lib/llm-token.sh" && llm_token_revoke "$run" ); }
@@ -53,14 +53,19 @@ ${pre}
   # spends no turn on them. Precheck released its lock, so another pass can win it here: then stop.
   lk="$("$ctl" lock 2>&1)" || { printf '%s\n' "$lk" | head -1; exit 0; }
   locked=1
-  st="$(for c in newtickets focus freeslots launchcap queue inflight done-keys; do printf '$ %s\n%s\n' "$c" "$("$ctl" "$c" 2>&1)"; done)"
   input="${input}
 
-The timer holds the pass lock: do not run lock or unlock. It read the state below at the start of the pass;
-use it, and do not read these again. It prints the report's counts, ✅ and ⏳ itself.
+The timer holds the pass lock: do not run lock or unlock. It prints the report's counts, ✅ and ⏳ itself."
+  # In parallel: freeslots and launchcap each take about 100 s on GCE. A pass that only reports needs none.
+  if grep -qE '^(queue|reconcile|feedback):' <<< "$work"; then
+    reads="newtickets focus freeslots launchcap queue inflight done-keys"
+    for c in $reads; do "$ctl" "$c" > "$out.$c" 2>&1 & done; wait
+    st="$(for c in $reads; do printf '$ %s\n' "$c"; cat "$out.$c"; done)"
+    input="${input} It read the state below at the start of the pass; use it, and do not read these again.
 <state-${n}>
 ${st}
 </state-${n}>"
+  fi
   # Only the skill sections this pass's lines need: admission for a queued ticket, the review rules for
   # feedback, the grounding rules for any line that can launch.
   extra=""

@@ -23,7 +23,7 @@ case "\$1" in
   lock) [ -e $tmp/lock-lost ] && { echo 'locked: lost the race'; exit 1; }; echo lock >> $tmp/ctl-calls; echo acquired ;;
   unlock) echo unlock >> $tmp/ctl-calls ;;
   pass-report) echo '### REPORT' ;;
-  *) echo "state-\$1" ;;
+  *) sleep 1; echo "state-\$1" ;;
 esac
 SH
 printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
@@ -60,6 +60,9 @@ check "the state is in the prompt, fenced, and the model is told not to lock" "y
   "$(grep -q '^<state-[0-9a-f]\{12\}>$' "$tmp/claude-in" && echo yes)|$(grep -qx 'state-freeslots' "$tmp/claude-in" && echo yes)|$(grep -q 'do not run lock or unlock' "$tmp/claude-in" && echo yes)"
 check "the fixed report goes to the journal before the model's reply" "### REPORT|did the pass" "$(printf '%s' "$o" | tr '\n' '|')"
 : > "$tmp/ctl-calls"; run 'quiet: 3 queued' >/dev/null
+s=$(date +%s); run 'queue: FXA-1 new' >/dev/null; check "the state reads run in parallel" "yes" "$([ $(( $(date +%s) - s )) -lt 5 ] && echo yes)"
+check "each read under its own name, in order" "\$ newtickets|state-newtickets|\$ focus" "$(grep -A2 -x '\$ newtickets' "$tmp/claude-in" | tr '\n' '|' | sed 's/|$//')"
+: > "$tmp/ctl-calls"; run 'quiet: 3 queued' >/dev/null
 check "a quiet pass takes no lock" "" "$(cat "$tmp/ctl-calls")"
 touch "$tmp/lock-lost"; o="$(run 'queue: FXA-1 new')"; rm -f "$tmp/lock-lost"
 check "another pass won the lock: stop before Claude" "no|locked: lost the race" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)|$o"
@@ -68,7 +71,7 @@ parts() { grep -o '^PART [a-z]*' "$tmp/claude-in" | cut -d' ' -f2 | tr '\n' ' ' 
 run 'queue: FXA-1 new (run: ground FXA-1)' >/dev/null; check "a queued ticket gets the launch and admission parts" "launch admission" "$(parts)"
 run 'feedback: FXA-1 has new review comments: 5 (run: feedback FXA-1 bundle)' >/dev/null; check "feedback gets the launch and feedback parts" "launch feedback" "$(parts)"
 run 'reconcile: FXA-5 dead-runner' >/dev/null; check "a reconcile line gets the launch part" "launch" "$(parts)"
-run 'drain: FXA-6 70 RED ok=9 fail=1 running=0' >/dev/null; check "a report-only pass gets no part" "" "$(parts)"
+run 'drain: FXA-6 70 RED ok=9 fail=1 running=0' >/dev/null; check "a report-only pass gets no part and no state reads" "|no" "$(parts)|$(grep -q 'state-freeslots' "$tmp/claude-in" && echo yes || echo no)"
 mv "$tmp/skills" "$tmp/skills.off"; run 'queue: FXA-1 new' >/dev/null 2>&1
 check "no skill folder: the pass stops before Claude" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 mv "$tmp/skills.off" "$tmp/skills"
