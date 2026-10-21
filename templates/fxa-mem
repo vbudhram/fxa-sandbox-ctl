@@ -15,7 +15,7 @@ ID_RE = r"mem-[0-9a-f]{8}"
 FLAGS = ("repo", "kind", "text", "cite", "anchor", "why", "path", "terms", "op", "id")
 NEED = ("kind", "text", "why", "terms")  # with repo, cite and anchor, checked apart for --team
 SEEN = os.environ.get("FXA_MEM_SEEN", "/workspace/.fxa-mem-hook-seen")
-HOOK_ERR_RE = r"error|failed|err!|exception|traceback|cannot|not found|refused|denied|fatal"
+HOOK_ERR_RE = r"error(?!s)|failed|err!|exception|traceback|cannot|not found|refused|denied|fatal"
 HOOK_MIN_SCORE = 7.5  # negated BM25; 24 error texts and 10 unrelated ones put the cut between 6.7 and 8.4
 
 
@@ -224,6 +224,8 @@ def hook(_args):
         if name == "Bash" and event in ("PostToolUseFailure", "PostToolUse"):
             text, r = ev.get("error"), ev.get("tool_response")
             if event == "PostToolUse":
+                if isinstance(r, dict) and isinstance(r.get("exit_code"), int):
+                    r = "Exit code: %d\n%s" % (r["exit_code"], r.get("output") or r.get("stderr") or "")
                 if isinstance(r, dict):
                     r = "\n".join(v for v in (r.get(k) for k in ("output", "stderr", "stdout")) if isinstance(v, str))
                 code = isinstance(r, str) and re.search(r"exit(ed)?( with)? code:? *([0-9]+)", r, re.I)

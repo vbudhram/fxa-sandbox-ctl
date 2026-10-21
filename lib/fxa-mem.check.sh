@@ -123,6 +123,8 @@ codex_fail='{"session_id":"c1","hook_event_name":"PostToolUse","tool_name":"Bash
 check "a Codex non-zero exit recalls the trap" "1" "$(hk <<< "$codex_fail" | grep -c mem-0000000a)"
 codex_ok="${codex_fail/Exit code: 1/Exit code: 0}"
 check "a Codex zero exit adds nothing" "" "$(hk <<< "${codex_ok/c1/c9}")"
+check "an object exit_code 0 wins over an error marker" "" "$(hk <<< '{"session_id":"c5","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"exit_code":0,"stdout":"Error: Cannot find module @fxa/shared/foo"}}')"
+check "an object exit_code 1 recalls the trap" "1" "$(hk <<< '{"session_id":"c6","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"exit_code":1,"output":"Error: Cannot find module @fxa/shared/foo"}}' | grep -c mem-0000000a)"
 check "a Codex object response with a non-zero exit recalls the trap" "1" \
   "$(hk <<< '{"session_id":"c2","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"Error: Cannot find module @fxa/shared/foo\nexited with code 2"}}' | grep -c mem-0000000a)"
 check "raw Codex output with no exit code and an error recalls the trap" "1" \
