@@ -18,7 +18,7 @@
     --ok:#25705a; --warn:#a85420; --bad:#b23a4a; --info:#3866ab; --purple:#7a62c9; --link:#3866ab; --link-hover:#2c5390;
     --okbg:#e5f1eb; --warnbg:#f8ebe0; --badbg:#f7e4e6; --infobg:#e6edf7;
     --amber:#c9732f;
-    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#cf9a36; --chart-muted:#cbc5bb;   /* chart series, in fixed order; never the status colours */
+    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#b0802a; --chart-muted:#99928a;   /* chart series, in fixed order; never the status colours */
     --card-border:transparent; --shadow:0 1px 2px rgb(40 30 20 / .04), 0 6px 20px rgb(40 30 20 / .05);
     --shadow-hover:0 2px 14px rgb(58 57 68 / .2); --shadow-pop:0 10px 30px rgb(0 0 0 / .25);
     --shadow-drawer:0 0 30px rgb(0 0 0 / .18); --shadow-dialog:0 20px 60px rgb(0 0 0 / .3);
@@ -41,7 +41,7 @@
       --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
       --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
       --amber:#e0a06a;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#4a4750;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#716d77;
       --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
     }
   }
@@ -52,7 +52,7 @@
     --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
     --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
     --amber:#e0a06a;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#4a4750;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#716d77;
     --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
   }
   * { box-sizing:border-box; }
@@ -368,7 +368,7 @@
   .ovteam { display:grid; grid-template-columns:minmax(0,1.4fr) 44px 56px 44px minmax(0,1.5fr); gap:var(--s2); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); font-size:var(--t-sub); color:inherit; }
   a.ovteam:hover { text-decoration:none; background:var(--hover); } .ovteam.hd { border-top:0; font-size:var(--t-label); color:var(--dim); padding-bottom:2px; }
   .ovteam .n { display:flex; align-items:center; gap:var(--s2); min-width:0; font-weight:600; } .ovteam .n span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .ovteam .num { text-align:right; font-variant-numeric:tabular-nums; } .ovteam .bud { display:flex; flex-direction:column; gap:3px; min-width:0; } .ovteam .bud > span:first-child { display:flex; justify-content:space-between; gap:var(--s1); font-size:var(--t-label); color:var(--dim); } .ovteam .bud b { color:var(--ink, inherit); }
+  .ovteam .num { text-align:right; font-variant-numeric:tabular-nums; } .ovteam .bud { display:flex; flex-direction:column; gap:3px; min-width:0; } .ovteam .bud > .vh + span { display:flex; justify-content:space-between; gap:var(--s1); font-size:var(--t-label); color:var(--dim); } .ovteam .bud b { color:var(--ink, inherit); }
   .meter { display:block; height:6px; border-radius:3px; background:var(--sunk); overflow:hidden; } .meter i { display:block; height:100%; background:var(--info); }
   .meter i.ok { background:var(--ok); } .meter i.warn { background:var(--warn); } .meter i.bad { background:var(--bad); }
   @container (max-width:420px) { .ovteam { grid-template-columns:minmax(0,1fr) 40px 52px; } .ovteam > :nth-child(4), .ovteam > :nth-child(5) { display:none; } }
@@ -376,25 +376,37 @@
   .ovrun { display:grid; grid-template-columns:62px 28px minmax(0,1fr) auto; gap:2px var(--s3); align-items:center; padding:var(--s2) 0; border-top:1px solid var(--line); }
   .ovrun time { font-size:var(--t-label); color:var(--dim); grid-row:span 2; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .ovrun .ic { width:28px; height:28px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; grid-row:span 2; } .ovrun .ic svg { width:14px; height:14px; }
-  .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ovrun .t .key { margin-right:6px; }
+  .ovrun .t { font-size:var(--t-sub); font-weight:600; min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; line-height:1.35; grid-column:3/-1; }
+  #ov-runs > .sub { font-size:var(--t-sub); color:var(--dim); margin-bottom:var(--s1); } #ov-runs h2 a { white-space:nowrap; }
   #sb-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); } .sb-card { display:flex; flex-direction:column; gap:4px; min-width:0; } .sb-card .big { font-size:var(--t-page); }
   .sbstrip { display:flex; gap:3px; margin:4px 0; } .sbstrip i { flex:1; height:10px; border-radius:2px; background:var(--sunk); } .sbstrip i.busy { background:var(--info); } .sbstrip i.gce { background:repeating-linear-gradient(135deg,var(--info) 0 4px,var(--panel) 4px 6px); } .sbstrip i.held { background:var(--warn); } .sbstrip i.unknown { background:var(--line); }
   .sb-card .sub a { color:var(--link); }
   @media (max-width:900px) { #sb-cards { grid-template-columns:1fr; } }
   .ovrun .d { font-size:var(--t-label); color:var(--dim); grid-column:3; display:flex; gap:var(--s2); align-items:center; min-width:0; }
-  .ovrun .r { grid-row:span 2; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label); color:var(--dim); font-variant-numeric:tabular-nums; }
-  @container (max-width:420px) { .ovrun { grid-template-columns:56px minmax(0,1fr) auto; } .ovrun .ic { display:none; } .ovrun .d { grid-column:2; } }
+  .ovrun .r { grid-row:2; grid-column:4; display:flex; flex-direction:column; align-items:flex-end; gap:4px; font-size:var(--t-label); color:var(--dim); font-variant-numeric:tabular-nums; }
+  @container (max-width:420px) { .ovrun { grid-template-columns:56px minmax(0,1fr) auto; } .ovrun .ic { display:none; } .ovrun .t { grid-column:2/-1; } .ovrun .d { grid-column:2; } .ovrun .r { grid-column:3; } }
   .ovwho { font-size:var(--t-sub); color:var(--dim); }
   #ov-head { grid-column:1/-1; display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; }
   #ov-head .seg { margin-left:auto; }
   /* Overview (O7): the main chart and a rail, then Activity, LLM spend and runs by hour, Teams, and one card per source. */
-  .ovgrid { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); align-items:start; }
+  .ovgrid { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr); }
   @media (min-width:1100px) { .ovgrid { grid-template-columns:minmax(0,1fr) 320px; } }
-  .ovrail { display:flex; flex-direction:column; gap:var(--s3); min-width:0; }
-  .ov3 { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); align-items:start; }
-  .ovsrc { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); }
-  .mtabs { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); margin:calc(-1 * var(--s4)) calc(-1 * var(--s6)) var(--s3); border-bottom:1px solid var(--line); }
-  .mt { all:unset; box-sizing:border-box; cursor:pointer; display:flex; flex-direction:column; gap:2px; min-width:0; padding:var(--s3) var(--s4); border-bottom:2px solid transparent; box-shadow:inset 1px 0 0 var(--line); }
+  /* Small cards wrap at 300px, so a 400-wide chart never stretches across a full row. Two cards in one row share one height. */
+  .ovrail { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); align-content:start; min-width:0; }
+  /* One row of three cards of the same height; Activity titles keep to one line so it stays near the charts' height. */
+  .ov3 { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); container-type:inline-size; }
+  /* Two columns (2 x 300px + --s3 up to 3 x 300px + 2 x --s3): runs by hour takes the whole second row, not half of it. */
+  @container (min-width:612px) and (max-width:923.98px) { .ov3 > #ov-hours { grid-column:1/-1; } }
+  /* Always four source cards: 4 x 200px + 3 x --s3 fits one row, else 2 x 2, never 3 + 1. */
+  .ov { container-type:inline-size; } .ovsrc { display:grid; gap:var(--s3); grid-template-columns:repeat(2,minmax(0,1fr)); }
+  @container (min-width:836px) { .ovsrc { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+  #ov-main { container-type:inline-size; }
+  /* Six columns give the five tabs rows of 2, 2, 1 or 3, 2 with no lone tab; subgrid rows keep each row's values level. */
+  .mtabs { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); margin:calc(-1 * var(--s4)) calc(-1 * var(--s6)) var(--s3); border-bottom:1px solid var(--line); }
+  .mt { all:unset; box-sizing:border-box; cursor:pointer; display:grid; grid-template-rows:subgrid; grid-row:span 3; grid-column:span 3; row-gap:2px; min-width:0; padding:var(--s3) var(--s4); border-bottom:2px solid transparent; box-shadow:inset 1px 0 0 var(--line); }
+  .mt:last-child { grid-column:1 / -1; }
+  @container (min-width:340px) { .mt, .mt:last-child { grid-column:span 2; } .mt:nth-child(n+4) { grid-column:span 3; } }
+  @container (min-width:600px) { .mtabs { grid-template-columns:repeat(5,minmax(0,1fr)); } .mt, .mt:last-child, .mt:nth-child(n+4) { grid-column:auto; } }
   .mt:hover { background:var(--hover); } .mt[aria-pressed="true"] { border-bottom-color:var(--link); background:color-mix(in srgb,var(--infobg) 60%,transparent); }
   .mt .ml { font:600 var(--t-label) var(--head); color:var(--dim); text-transform:uppercase; letter-spacing:.05em; }
   .mt .mv { font:700 var(--t-kpi)/1.1 var(--head); font-variant-numeric:tabular-nums; color:var(--ink); white-space:nowrap; }
@@ -410,10 +422,11 @@
   .needs h2 { align-items:center; } .needs h2 .big { font:700 var(--t-head)/1 var(--head); color:var(--warn); } .needs.calm h2 .big { color:var(--dim); }
   .needs .sub { font-size:var(--t-sub); color:var(--dim); margin-bottom:var(--s1); } .needs .sub a { color:inherit; }
   .needs .nrow { display:grid; grid-template-columns:auto auto minmax(0,1fr); gap:var(--s2); align-items:baseline; padding:6px 0; border-top:1px solid var(--line); color:inherit; }
-  .needs .nrow:hover { text-decoration:none; background:var(--hover); } .needs .nrow .why { font-size:var(--t-label); color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .needs .nrow:hover { text-decoration:none; background:var(--hover); } .needs .nrow .why { grid-column:1/-1; font-size:var(--t-label); color:var(--faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #ov-budget .sub b { color:var(--ink); } #ov-budget .badt { color:var(--bad); } .capr { margin-top:var(--s2); } .capr .meter { margin:2px 0 4px; }
   .srcm { display:flex; flex-direction:column; gap:2px; color:inherit; } .srcm:hover { text-decoration:none; box-shadow:var(--shadow-hover); }
   .srcm .smh { display:flex; align-items:center; gap:var(--s2); } .srcm .smh i { width:10px; height:10px; border-radius:2px; flex:none; } .srcm .smh .mono { margin-left:auto; }
+  .srcm .smh b { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ovmini { width:100%; height:40px; display:block; margin-top:var(--s2); }
   .ovleg { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); font-size:var(--t-sub); }
   .ovleg a { color:inherit; display:flex; align-items:center; gap:6px; } .ovleg i { width:10px; height:10px; border-radius:2px; display:inline-block; }
@@ -1055,9 +1068,12 @@ function ovSpend(range) {
     const u = r.usd || 0; d.by[r.src] = (d.by[r.src] ?? 0) + u; d.n[r.src] = (d.n[r.src] ?? 0) + 1; d.usd += u; by[r.src] = (by[r.src] ?? 0) + u; nby[r.src] = (nby[r.src] ?? 0) + 1; total += u;
     if (r.src === "pipeline") { d.pipe++; if (r.pr) d.pr++; if (typeof r.min === "number") d.mins.push(r.min); } });
   (ovStats()?.prs ?? []).forEach(p => { const d = p.merged && days.get(localDay(Date.parse(p.merged))); if (d) d.merged++; });
-  const list = [...days.values()], peak = list.reduce((a, d) => d.usd > (a?.usd ?? 0) ? d : a, null);
-  return { total, by, nby, days: list, peak, perDay: total / list.length };
+  const list = [...days.values()], peak = list.reduce((a, d) => d.usd > (a?.usd ?? 0) ? d : a, null), t0 = localDay(Math.min(...Object.values(ovFirstRow())));
+  // The days before the log starts have no data, so they do not count in the average.
+  return { total, by, nby, days: list, peak, perDay: total / Math.max(1, list.filter(d => d.t >= t0).length) };
 }
+// The time of the first stats row of each source.
+const ovFirstRow = () => { const f = {}; (ovStats()?.rows ?? []).forEach(r => { const t = r.ms ?? Date.parse(r.at); if (!(f[r.src] <= t)) f[r.src] = t; }); return f; };
 // On the floor (i356 D5, D35-D37, D41): a row for each pool slot and each live session. A pipeline row
 // takes its stop from its belt row; 'at work' counts only agents that are alive, so a session that waits
 // on its owner is on the floor but not at work. A non-admin sees a routine run as a scheduled run, no more.
@@ -1128,7 +1144,7 @@ function renderOvNeeds() {
   const n = ovNeeds(), parts = Object.entries(n.by).map(([p, k]) => html`<a href="#pipeline/belts" data-focus="need-${p}">${k} for ${p}</a>`)
     .concat(n.sandbox ? [html`<a href="#overview" data-attn data-focus="need-sandbox">${n.sandbox} sandbox alert${n.sandbox === 1 ? "" : "s"}</a>`] : []);
   const node = document.getElementById("ov-needs"); if (node) { node.dataset.empty = !n.unknown && !n.total; node.classList.toggle("calm", !!n.unknown); }
-  const top = n.unknown ? [] : beltGroups().needs.slice(0, 4).map(r => html`<a class="nrow" href="#pipeline/belts/${encodeURIComponent(r.t.key)}" data-focus="need-${r.t.key}">${tag(r.l1, r.tone === "k-bad" ? "bad" : "warn")}<span class="key">${r.t.key}</span><span class="why">${r.l2}</span></a>`);
+  const top = n.unknown ? [] : beltGroups().needs.slice(0, 4).map(r => html`<a class="nrow" href="#pipeline/belts/${encodeURIComponent(r.t.key)}" data-focus="need-${r.t.key}">${tag(r.l1, r.tone === "k-bad" ? "bad" : "warn")}<span class="key">${r.t.key}</span><span class="why" title="${r.l2}">${r.l2}</span></a>`);
   putOv("ov-needs", html`<h2>Needs you<span class="big">${n.unknown ? "?" : n.total}</span><a class="go note" href="#pipeline/belts" data-focus="need-open">Open the list ›</a></h2><div class="sub">${n.unknown ? n.unknown : raw(parts.join(" · "))}</div>${top}`);
 }
 // The KPI tiles (O6): each figure in the range, its change against the period of the same length before it, and a
@@ -1143,10 +1159,12 @@ function ovKpis(range, now = Date.now()) {
   // 8 equal buckets over [a, b): the values for the small line.
   const line = (a, b, f) => [...Array(8)].map((_, i) => f(a + i * (b - a) / 8, a + (i + 1) * (b - a) / 8));
   const merged = (a, b) => prs.filter(p => { const t = p.merged && Date.parse(p.merged); return t >= a && t < b; }).length;
-  const c7 = costPerMerged(lo7, Infinity, prs, rows), p7 = costPerMerged(lo7 - len7, lo7, prs, rows);
+  const c7 = costPerMerged(lo7, Infinity, prs, rows), p7 = costPerMerged(lo7 - len7, lo7, prs, rows), first = ovFirstRow();
+  // A source whose log starts after the period before began would show its start as growth: no change then.
+  const whole = !at(lo, Infinity).some(r => first[r.src] > lo - len);
   return {
-    spend: { v: spend(at(lo, Infinity)), p: spend(at(lo - len, lo)), line: line(lo, now, (a, b) => spend(at(a, b))) },
-    runs: { v: at(lo, Infinity).length, p: at(lo - len, lo).length },
+    spend: { v: spend(at(lo, Infinity)), p: whole ? spend(at(lo - len, lo)) : null, line: line(lo, now, (a, b) => spend(at(a, b))) },
+    runs: { v: at(lo, Infinity).length, p: whole ? at(lo - len, lo).length : null },
     merged: { v: c7.mergedIn.length, p: p7.mergedIn.length, line: line(lo7, now, merged) },
     cost: { v: c7.per, p: p7.per, spent: c7.spentIn, line: line(lo7, now, (a, b) => { const m = merged(a, b); return m ? spend(at(a, b)) / m : null; }) },
     rate: { v: rate(at(lo, Infinity)), p: rate(at(lo - len, lo)), n: pipe(at(lo, Infinity)).length, line: line(lo, now, (a, b) => rate(at(a, b))) },
@@ -1180,11 +1198,12 @@ function renderOvTeams() {
     const [a, title] = teamAccess(t), cls = a === "everyone" || a === "open" ? "ok" : a === "unknown" ? "" : /user/.test(a) ? "info" : "bad", b = t.budget;
     // The spend in the range from the stats rows; the cap, when the team has one, is this month's budget meter.
     const cap = b?.month_cap, bud = html`<span><b>${st ? usd(u.usd) : "—"}</b><span>${t.budget_error ? "budget unknown" : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : "no cap"}</span></span>${cap ? meter(100 * b.month_usd / cap, b.month_usd >= cap ? "bad" : b.month_usd >= 0.9 * cap ? "warn" : "") : ""}`;
-    const cells = html`<span class="n"><span>${teamName(t)}</span>${tag(a, cls, { title })}</span><span class="num">${now ?? "?"}</span><span class="num">${st ? u.runs.toLocaleString() : "—"}</span><span class="num">${st ? u.prs : "—"}</span><span class="bud">${bud}</span>`;
+    // Hidden column names, so a row link reads "FxA, everyone, Now 0, Runs 1,221" and not a run of numbers.
+    const cells = html`<span class="n"><span>${teamName(t)}</span><span class="vh">, </span>${tag(a, cls, { title })}</span><span class="num"><span class="vh">, Now </span>${now ?? "?"}</span><span class="num"><span class="vh">, Runs </span>${st ? u.runs.toLocaleString() : "—"}</span><span class="num"><span class="vh">, PRs </span>${st ? u.prs : "—"}</span><span class="bud"><span class="vh">, Spend </span>${bud}</span>`;
     return TEAM_RE.test(t.profile ?? "") ? html`<a class="ovteam" href="#teams/${t.profile}" data-focus="ovteam-${t.profile}" data-team="${t.profile}">${cells}</a>` : html`<div class="ovteam" data-team="${t.profile}">${cells}</div>`;
   };
   putOv("ov-teams", html`<h2>Teams, last ${n}<a class="note" href="#teams" data-focus="ovteams-all" style="color:var(--link)">All teams ›</a></h2>${[note, tnote].filter(Boolean).map(t => html`<div class="ovknote">${t}</div>`)}
-    ${rows.length ? html`<div class="ovteam hd"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row)}` : TEAMS.error ? "" : emptybox("No team.")}`);
+    ${rows.length ? html`<div class="ovteam hd" aria-hidden="true"><span>Team</span><span class="num">Now</span><span class="num">Runs</span><span class="num">PRs</span><span>Spend</span></div>${rows.map(row)}` : TEAMS.error ? "" : emptybox("No team.")}`);
 }
 // Recent runs (O6): the last runs from /api/runs/recent, each with its team and outcome. A failed read says so.
 let RUNS = null, RUNS_ERR = null, RUNS_SEQ = 0;
@@ -1192,13 +1211,15 @@ async function loadRuns() {
   if (VIEW !== "overview") return;
   const seq = ++RUNS_SEQ;
   try {
-    const d = { "7d": 7, "30d": 30, "90d": 90 }[OV_RANGE], r = await fetch(`/api/runs/recent?limit=12&days=${d}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
+    const d = { "7d": 7, "30d": 30, "90d": 90 }[OV_RANGE], r = await fetch(`/api/runs/recent?limit=4&days=${d}`, { cache: "no-store" }), j = r.ok ? await r.json().catch(() => null) : null;
     if (!j || !Array.isArray(j.runs)) throw new Error(r.ok ? "the answer has no runs" : `HTTP ${r.status}`);
     if (j.error) throw new Error(j.error);
     if (seq !== RUNS_SEQ) return;
     RUNS = j.runs; RUNS_ERR = null;
   } catch (e) { if (seq !== RUNS_SEQ) return; RUNS = null; RUNS_ERR = e.message; }
   safeRender(renderOvRuns, "ov-runs");
+  // Activity sets the row height, so the charts beside it draw again to fill it.
+  safeRender(renderOvLlm, "ov-llm"); safeRender(renderOvHours, "ov-hours");
 }
 const RUN_SRC = { pipeline: ["var(--chart-1)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--chart-3)", "M4 5h16v11H8l-4 4z", "Slack session"],
   answer: ["var(--chart-4)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--chart-2)", "M12 4v16M4 12h16", "pass"] };
@@ -1222,27 +1243,35 @@ function renderOvRuns() {
     const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
     const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? html`<a class="key" href="${href}"${r.src === "pipeline" ? html` target="_blank" rel="noreferrer"` : ""}>${r.key}</a>` : html`<span class="key">${r.key}</span>`;
     return html`<div class="ovrun" data-run="${r.key}"><time datetime="${r.at}">${when}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${kind}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
-      <span class="t">${key}${plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : ""))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
+      <span class="t" title="${[r.key, r.title].filter(Boolean).join(" ")}">${key} ${plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : ""))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
       <span class="d">${r.team ? tag(r.team) : ""}<span>${r.kind || kind}</span></span></div>`;
   };
-  putOv("ov-runs", html`<h2>Activity<span class="note">${sum}</span><a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}${RUNS.length ? RUNS.map(row) : emptybox(`No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.`)}`,
+  putOv("ov-runs", html`<h2>Activity<a class="note" href="#sessions" data-focus="ovruns-all" style="color:var(--link)">All sessions ›</a></h2>${sum ? html`<div class="sub">${sum}</div>` : ""}${note ? html`<div class="ovknote">${note}</div>` : ""}${RUNS.length ? RUNS.map(row) : emptybox(`No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.`)}`,
     RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(",") + note + sum);
 }
 // Overview charts: bars by local day, stacked in the OV_SRC order, or one line. Each column has its values as a
 // tooltip (the hit rectangle), and ref draws a dashed limit line, such as a budget.
 const shortDay = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const niceMax = v => { if (!(v > 0)) return 1; const p = 10 ** Math.floor(Math.log10(v)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
-function ovChart(points, series, fmt, { line = false, W = 960, H = 260, label = "", ref = null } = {}) {
+// A 1, 2 or 5 step (25 at tens and up, so 100% is a top), so each of the four grid lines has a round label.
+const niceStep = v => { if (!(v > 0)) return 1; const p = 10 ** Math.floor(Math.log10(v)), f = Number((v / p).toPrecision(12)); return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 && p >= 10 ? 2.5 : f <= 5 ? 5 : 10) * p; };
+// The content width of a card, so one viewBox unit is one CSS px and the axis text keeps --t-tiny.
+const ovW = (id, W) => { const c = document.getElementById(id), s = c && getComputedStyle(c), w = c ? c.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) : 0; return w > 0 ? Math.round(w) : W; };
+function ovChart(points, series, fmt, { line = false, W = 960, H = 380, label = "", ref = null, cents = false, id = "", cap = Infinity } = {}) {
+  W = ovW(id, W);
   const L = 46, T = 8, B = 22, iw = W - L - 6, ih = H - T - B, n = points.length || 1, bw = iw / n;
   const vals = points.map(p => series.map(([, , f]) => f(p)));
-  const max = niceMax(Math.max(0, ref?.v ?? 0, ...vals.map(v => line ? Math.max(0, ...v.filter(x => x != null)) : v.reduce((a, x) => a + (x || 0), 0))));
+  const top = Math.min(cap, Math.max(0, ref?.v ?? 0, ...vals.map(v => line ? Math.max(0, ...v.filter(x => x != null)) : v.reduce((a, x) => a + (x || 0), 0))));
+  // The axis text rounds to whole units, so only a cents axis steps below 1; fmt gets the step to choose its digits.
+  const st = Math.max(cents ? 0 : 1, niceStep(top / 4)), nl = !cents && top < 4 ? Math.max(1, Math.ceil(top)) : 4, max = nl * st;
   const y = v => T + ih - ih * v / max, xc = i => L + i * bw + bw / 2, lbl = p => p.lbl ?? shortDay(p.t);
-  const grid = [0, 1, 2, 3, 4].map(k => html`<line class="gl" x1="${L}" x2="${W - 6}" y1="${y(max * k / 4).toFixed(1)}" y2="${y(max * k / 4).toFixed(1)}"/><text class="ax" x="${L - 6}" y="${(y(max * k / 4) + 4).toFixed(1)}" text-anchor="end">${fmt(max * k / 4, true)}</text>`);
-  const step = Math.max(1, Math.ceil(n / 6)), xl = points.map((p, i) => i % step === 0 ? html`<text class="ax" x="${xc(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${lbl(p)}</text>` : "");
+  const grid = Array.from({ length: nl + 1 }, (_, k) => html`<line class="gl" x1="${L}" x2="${W - 6}" y1="${y(st * k).toFixed(1)}" y2="${y(st * k).toFixed(1)}"/><text class="ax" x="${L - 6}" y="${(y(st * k) + 4).toFixed(1)}" text-anchor="end">${fmt(st * k, st)}</text>`);
+  // At most one label per 60px of plot, and the edge labels align to the plot edges, so no label touches another or leaves the card.
+  const step = Math.max(1, Math.ceil(n / Math.max(2, Math.min(6, Math.floor(iw / 60))))), xa = i => n < 2 ? [xc(i), "middle"] : i === 0 ? [L, "start"] : i === n - 1 ? [W - 6, "end"] : [xc(i), "middle"];
+  const xl = points.map((p, i) => i % step === 0 ? html`<text class="ax" x="${xa(i)[0].toFixed(1)}" y="${H - 6}" text-anchor="${xa(i)[1]}">${lbl(p)}</text>` : "");
   let marks;
   if (line) {
     const [, col] = series[0], segs = [[]];
-    vals.forEach((v, i) => { if (v[0] == null) segs.push([]); else segs[segs.length - 1].push([xc(i), y(v[0])]); });
+    vals.forEach((v, i) => { if (v[0] == null) segs.push([]); else segs[segs.length - 1].push([xc(i), y(Math.min(v[0], max))]); });
     marks = segs.filter(s => s.length).map(s => s.length > 1 ? html`<polyline class="ln" points="${s.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ")}" style="stroke:${col}"/>`
       : html`<circle cx="${s[0][0].toFixed(1)}" cy="${s[0][1].toFixed(1)}" r="3" style="fill:${col}"/>`);
   } else {
@@ -1254,8 +1283,10 @@ function ovChart(points, series, fmt, { line = false, W = 960, H = 260, label = 
       return html`<rect x="${x(i)}" y="${y1.toFixed(1)}" width="${w}" height="${Math.max(.5, y0 - y1 - (top ? 0 : 2)).toFixed(1)}"${top ? html` rx="2"` : ""} style="fill:${series[j][1]}"/>`; }); });
   }
   const refLine = ref ? html`<line class="ref" x1="${L}" x2="${W - 6}" y1="${y(ref.v).toFixed(1)}" y2="${y(ref.v).toFixed(1)}"/><text class="ax" x="${W - 6}" y="${(y(ref.v) - 4).toFixed(1)}" text-anchor="end">${ref.label}</text>` : "";
-  const hits = points.map((p, i) => html`<rect class="hit" x="${(L + i * bw).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${ih}" data-tip="${lbl(p)}: ${series.map(([nm], j) => `${nm} ${vals[i][j] == null ? "none" : fmt(vals[i][j])}`).join(" · ")}"/>`);
-  return html`<svg class="ovchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${label}">${grid}${marks}${refLine}${xl}${hits}</svg>`;
+  const tips = points.map((p, i) => `${lbl(p)}: ${series.map(([nm], j) => `${nm} ${vals[i][j] == null ? "none" : fmt(vals[i][j])}`).join(" · ")}`);
+  const hits = tips.map((t, i) => html`<rect class="hit" x="${(L + i * bw).toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${ih}" data-tip="${t}"/>`);
+  // The hover tip is mouse only, so a hidden list gives each point to a keyboard or screen reader user.
+  return html`<svg class="ovchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${label}">${grid}${marks}${refLine}${xl}${hits}</svg><ul class="vh">${tips.map(t => html`<li>${t}</li>`)}</ul>`;
 }
 const ovMini = (vals, col, days) => { const m = Math.max(.01, ...vals), w = 200 / Math.max(1, vals.length);
   return html`<svg class="ovmini" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true">${vals.map((v, i) => v > 0 ? html`<rect x="${(i * w + w * .15).toFixed(1)}" y="${(40 - 38 * v / m).toFixed(1)}" width="${(w * .7).toFixed(1)}" height="${(38 * v / m).toFixed(1)}" rx="1" style="fill:${col}"/>` : "")}</svg>`; };
@@ -1264,7 +1295,7 @@ document.addEventListener("mousemove", e => {
   const tip = document.getElementById("viztip"), t = e.target.closest?.("[data-tip]"); if (!tip) return;
   if (!t) { tip.hidden = true; return; }
   tip.textContent = t.dataset.tip; tip.hidden = false;
-  tip.style.left = `${Math.max(8, Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8))}px`; tip.style.top = `${e.clientY + 16}px`;
+  tip.style.left = `${Math.max(8, Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8))}px`; tip.style.top = `${Math.max(8, Math.min(e.clientY + 16, innerHeight - tip.offsetHeight - 8))}px`;
 });
 // The main card (O7): five metrics as tabs over the range; the chosen one draws its chart by local day.
 // Merged keeps the Stats '7 days' window, so it equals Stats PRs; no Stats page shows the rate or the median.
@@ -1284,24 +1315,27 @@ function renderOvMain() {
     merged: [why ? "—" : String(k.merged.v), why ? { t: "" } : kpiChange(k.merged, "pct", false)], rate: [pct(k.rate.v), kpiChange(k.rate, "pts", false)], median: [mins(k.med.v), kpiChange(k.med, "min", true)] };
   const tabHtml = OV_METRICS.map(([key, lbl]) => { const [v, c] = tabs[key];
     return html`<button type="button" class="mt" data-ovmetric="${key}" data-focus="ovm-${key}" aria-pressed="${String(m === key)}"><span class="ml">${lbl}</span><span class="mv">${v}</span>
-      <span class="mc">${c.t ? html`<span class="chg ${c.c}">${c.t}</span> vs the ${key === "merged" ? "7 days" : n} before` : key === "merged" && why ? why : ""}</span></button>`; });
-  const money = (v, ax) => ax ? `$${Math.round(v)}` : usd(v), count = v => String(Math.round(v));
+      <span class="mc">${c.t ? html`<span class="chg ${c.c}">${c.t}</span>${c.c ? html`<span class="vh">, ${c.c === "good" ? "better" : "worse"},</span>` : ""} vs the ${key === "merged" ? "7 days" : n} before` : key === "merged" && why ? why : ""}</span></button>`; });
+  const money = (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v), count = v => String(Math.round(v));
   let head, chart, leg = "";
   if (m === "spend" || m === "runs") {
     const isS = m === "spend", tot = isS ? sp.total : k.runs.v;
-    chart = tot ? ovChart(sp.days, OV_SRC.map(([src, col]) => [srcName(src), col, d => (isS ? d.by : d.n)[src] ?? 0]), isS ? money : count, { label: `${isS ? "Spend" : "Runs"} by day and source, last ${n}` })
+    chart = tot ? ovChart(sp.days, OV_SRC.map(([src, col]) => [srcName(src), col, d => (isS ? d.by : d.n)[src] ?? 0]), isS ? money : count, { cents: isS, id: "ov-main", label: `${isS ? "Spend" : "Runs"} by day and source, last ${n}` })
       : emptybox(isS ? `$0.00 · no runs in the last ${n}` : `No run in the last ${n}.`);
     head = html`<a class="ovopen" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovm-open-${m}"><span class="lbl">${isS ? "Spend" : "Runs"}, last ${n}</span> <b class="big">${isS ? usd(sp.total) : tot.toLocaleString()}</b> <span class="go">in Stats ›</span></a>`;
     leg = html`<div class="ovleg">${OV_SRC.map(([src, col]) => isS ? html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${srcName(src)} <b>${usd(sp.by[src] ?? 0)}</b></a>`
       : html`<span><i style="background:${col}"></i>${srcName(src)} <b>${(sp.nby[src] ?? 0).toLocaleString()}</b></span>`)}</div>`;
   } else if (m === "merged") {
-    chart = why ? emptybox(`Merged PRs unknown: ${why}`) : ovChart(sp.days, [["Merged PRs", "var(--chart-1)", d => d.merged]], count, { label: `PRs merged by day, last ${n}` });
+    chart = why ? emptybox(`Merged PRs unknown: ${why}`) : ovChart(sp.days, [["Merged PRs", "var(--chart-1)", d => d.merged]], count, { id: "ov-main", label: `PRs merged by day, last ${n}` });
     head = why ? "" : html`<a class="ovopen" href="#stats/prs" data-sfrange="7d" data-focus="ovm-open-merged"><span class="lbl">Merged, 7 days</span> <b class="big">${k.merged.v}</b> <span class="go">in Stats ›</span></a>
       <a class="ovopen" href="#stats/prs" data-sfrange="7d" data-focus="ovm-open-cost"><span class="lbl">Cost per merged PR</span> <b class="big">${k.cost.v != null ? usd(k.cost.v) : "—"}</b> <span class="go">${k.cost.v != null ? `${usd(k.cost.spent)} all-in over ${k.merged.v}` : "no PR merged in 7 days"}</span></a>`;
   } else {
-    const isR = m === "rate";
-    chart = ovChart(sp.days, [[isR ? "Runs that made a PR" : "Median run", "var(--chart-1)", d => isR ? (d.pipe ? d.pr / d.pipe * 100 : null) : median(d.mins)]],
-      isR ? v => `${Math.round(v)}%` : v => `${Math.round(v)} min`, { line: true, label: isR ? `Share of pipeline runs that made a PR, by day, last ${n}` : `Median pipeline run, by day, last ${n}` });
+    const isR = m === "rate", dm = sp.days.map(d => median(d.mins)).filter(v => v != null), val = d => isR ? (d.pipe ? d.pr / d.pipe * 100 : null) : median(d.mins);
+    // With no value on any day the chart draws no mark and a repeated axis, so it says so as the other tabs do.
+    chart = !sp.days.some(d => val(d) != null) ? emptybox(`No pipeline run in the last ${n}.`) : ovChart(sp.days, [[isR ? "Runs that made a PR" : "Median run", "var(--chart-1)", val]],
+      isR ? v => `${Math.round(v)}%` : v => `${Math.round(v)} min`, { line: true, id: "ov-main", label: isR ? `Share of pipeline runs that made a PR, by day, last ${n}` : `Median pipeline run, by day, last ${n}`,
+      // One stuck run would scale the axis to itself and flatten every other day, so the axis stops at 3 times the typical day; the tip keeps the true value.
+      cap: isR || !dm.length ? Infinity : 3 * median(dm) });
     head = html`<span class="sub">${isR ? `${k.rate.n} pipeline run${k.rate.n === 1 ? "" : "s"} in the last ${n}` : `per pipeline run, last ${n}`}</span>`;
   }
   const pk = sp.peak, pkText = m === "spend" && pk ? `Peak ${shortDay(pk.t)}: ${usd(pk.usd)}${why ? "" : `, ${pk.merged} PR${pk.merged === 1 ? "" : "s"} merged that day`}` : "";
@@ -1316,52 +1350,64 @@ function renderOvBudget() {
   const s = ovStats(), note = statsNote(), now = new Date(), mo = now.getMonth(), name = now.toLocaleDateString(undefined, { month: "long" });
   if (!s) return putOv("ov-budget", html`<h2>${name} spend</h2>${emptybox(note ? `Spend unknown: ${note}` : "Loading the stats…")}`);
   const days = []; for (const d = new Date(now.getFullYear(), mo, 1); d.getMonth() === mo; d.setDate(d.getDate() + 1)) days.push({ t: d.getTime(), usd: 0 });
-  const idx = new Map(days.map((d, i) => [d.t, i])), today = idx.get(localDay(now.getTime())) ?? days.length - 1, left = days.length - 1 - today;
+  const idx = new Map(days.map((d, i) => [d.t, i])), today = idx.get(localDay(now.getTime())) ?? days.length - 1;
   (s.rows ?? []).forEach(r => { const i = idx.get(localDay(r.ms ?? Date.parse(r.at))); if (i != null) days[i].usd += r.usd || 0; });
   let c = 0; days.forEach(d => { c += d.usd; d.cum = c; });
-  const mtd = days[today].cum, rate = mtd / (today + 1), end = mtd + rate * left;
-  const pts = days.map((d, i) => ({ t: d.t, a: i <= today ? d.cum : null, p: i > today ? mtd + rate * (i - today) : null }));
+  // The rate uses the days elapsed to now, not whole days; at least one, so a run early on the 1st does not project a huge month.
+  const el = Math.max(1, (now - days[0].t) / 86400000), mtd = days[today].cum, rate = mtd / el, end = mtd + rate * (days.length - el);
+  const pts = days.map((d, i) => ({ t: d.t, a: i <= today ? d.cum : null, p: i > today ? mtd + rate * (i + 1 - el) : null }));
   const caps = TEAMS?.error ? [] : (TEAMS?.teams ?? []).filter(t => t.budget?.month_cap > 0 && !t.budget_error);
   const tnote = !TEAMS ? "Loading the team budgets…" : TEAMS.error ? `Team budgets unknown: the teams feed failed: ${TEAMS.error}.` : !caps.length ? "No team has a monthly budget cap." : "";
-  const capRow = t => { const b = t.budget, e = b.month_usd + b.month_usd / (today + 1) * left, d = b.month_usd / (today + 1);
-    const day = e > b.month_cap && d > 0 ? days[Math.min(days.length - 1, today + Math.ceil((b.month_cap - b.month_usd) / d))] : null;
+  const capRow = t => { const b = t.budget, d = b.month_usd / el, e = b.month_usd + d * (days.length - el);
+    const day = e > b.month_cap && d > 0 ? days[Math.min(days.length - 1, Math.floor(el + (b.month_cap - b.month_usd) / d))] : null;
     return html`<div class="capr"><div class="kv"><span>${teamName(t)}</span><b>${usd(b.month_usd)} of ${usd(b.month_cap)}</b></div>${meter(100 * b.month_usd / b.month_cap, b.month_usd >= b.month_cap ? "bad" : e > b.month_cap ? "warn" : "", `${teamName(t)}: ${Math.round(100 * b.month_usd / b.month_cap)}% of the cap`)}
       <div class="sub">${b.month_usd >= b.month_cap ? html`<b class="badt">Over the cap.</b>` : day ? html`At this rate it passes the cap on <b class="badt">${shortDay(day.t)}</b>.` : `At this rate it ends near ${usd(e)}.`}</div></div>`; };
   putOv("ov-budget", html`<h2>${name} spend<span class="note mono">${note ? "unknown" : usd(mtd)}</span></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}
     <div class="sub">Every team. At this rate the month ends near <b>${usd(end)}</b>.</div>
-    ${ovChart(pts, [["Spent", "var(--chart-1)", p => p.a], ["Projected", "var(--chart-muted)", p => p.p]], (v, ax) => ax ? `$${Math.round(v)}` : usd(v), { W: 300, H: 150, label: `${name} spend of every team, so far and projected` })}
+    <div class="ovleg"><span><i style="background:var(--chart-1)"></i>Spent <b>${usd(mtd)}</b></span><span><i style="background:var(--chart-muted)"></i>Projected <b>${usd(end)}</b></span></div>
+    ${ovChart(pts, [["Spent", "var(--chart-1)", p => p.a], ["Projected", "var(--chart-muted)", p => p.p]], (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v), { W: 300, H: 150, cents: true, id: "ov-budget", label: `${name} spend of every team, so far and projected` })}
     ${caps.slice(0, 3).map(capRow)}${caps.length > 3 ? html`<a class="note" href="#teams">${caps.length - 3} more capped team${caps.length === 4 ? "" : "s"} ›</a>` : ""}${tnote ? html`<div class="sub">${tnote}</div>` : ""}`);
 }
-// LLM spend from the proxy log: the last 14 days, the cost by model over them, and the last hour.
+// LLM spend from the proxy log: the last 14 UTC days, the cost by model over them, and the last hour.
 function renderOvLlm() {
   const s = ovStats(), note = statsNote(), L = s?.llm ?? {};
   if (!s) return putOv("ov-llm", html`<h2>LLM spend, 14 days</h2>${emptybox(note ? `LLM spend unknown: ${note}` : "Loading the stats…")}`);
-  const days = (L.days ?? []).slice(-14).map(d => ({ t: new Date(`${d.day}T00:00`).getTime(), usd: d.usd || 0 })).filter(d => isFinite(d.t));
-  const models = Array.isArray(L.models) ? L.models.reduce((a, x) => { a[x.model || ""] = (a[x.model || ""] ?? 0) + (x.usd || 0); return a; }, {}) : L.models ?? {};
+  // The proxy log groups by UTC date and leaves out a day with no call, so the slots are 14 UTC dates, 0 when absent.
+  const keys = [...Array(14)].map((_, i) => new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10)), by = new Map((L.days ?? []).map(d => [d.day, d.usd || 0]));
+  const days = (L.days ?? []).some(d => keys.includes(d.day)) ? keys.map(k => ({ t: new Date(`${k}T00:00`).getTime(), usd: by.get(k) ?? 0 })) : [];
+  const models = Array.isArray(L.models) ? L.models.filter(x => keys.includes(x.day)).reduce((a, x) => { a[x.model || ""] = (a[x.model || ""] ?? 0) + (x.usd || 0); return a; }, {}) : L.models ?? {};
   const top = Object.entries(models).sort((a, b) => b[1] - a[1]), rest = top.slice(3).reduce((a, [, v]) => a + v, 0), hr = L.hour_usd;
   putOv("ov-llm", html`<h2>LLM spend, 14 days<span class="note mono">${typeof hr === "number" && !note ? `${usd(hr)} last hour` : "last hour unknown"}</span></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}
-    ${days.length ? ovChart(days, [["LLM", "var(--chart-1)", d => d.usd]], (v, ax) => ax ? `$${Math.round(v)}` : usd(v), { line: true, W: 400, H: 150, label: "LLM spend by day, last 14 days" }) : emptybox("No LLM call is recorded yet.")}
+    <div class="sub">By UTC date, as the LLM proxy logs it.</div>
+    ${days.length ? ovChart(days, [["LLM, UTC day", "var(--chart-1)", d => d.usd]], (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v), { line: true, W: 400, H: 235, cents: true, id: "ov-llm", label: "LLM spend by UTC day, last 14 days" }) : emptybox("No LLM call in the last 14 UTC days.")}
     ${top.slice(0, 3).map(([mdl, v]) => kvRow(modelName(mdl), usd(v)))}${rest ? kvRow("Other models", usd(rest)) : ""}`);
 }
 // Runs started in each of the last 24 hours, from the stats rows; passes are the scheduler's, not counted.
 function renderOvHours() {
   const s = ovStats(), note = statsNote();
   if (!s) return putOv("ov-hours", html`<h2>Runs by hour, 24 h</h2>${emptybox(note ? `Runs unknown: ${note}` : "Loading the stats…")}`);
-  const HR = 3600000, end = Math.floor(Date.now() / HR) * HR + HR, start = end - 24 * HR, b = [...Array(24)].map((_, i) => ({ t: start + i * HR, n: 0 }));
+  const HR = 3600000, h0 = new Date(); h0.setMinutes(0, 0, 0);
+  // Local hour edges, so a zone 30 or 45 minutes off UTC gets buckets that match their hour labels.
+  const end = h0.getTime() + HR, start = end - 24 * HR, b = [...Array(24)].map((_, i) => ({ t: start + i * HR, n: 0 }));
   (s.rows ?? []).forEach(r => { if (r.src === "pass") return; const t = r.ms ?? Date.parse(r.at); if (t >= start && t < end) b[Math.floor((t - start) / HR)].n++; });
   b.forEach(x => { x.lbl = new Date(x.t).toLocaleTimeString([], { hour: "numeric" }); });
-  const tot = b.reduce((a, x) => a + x.n, 0), pk = b.reduce((a, x) => x.n > a.n ? x : a, b[0]);
+  const tot = b.reduce((a, x) => a + x.n, 0), pk = b.reduce((a, x) => x.n > a.n ? x : a, b[0]), one = b.filter(x => x.n === pk.n).length === 1;
   putOv("ov-hours", html`<h2>Runs by hour, 24 h<span class="note">${note ? "unknown" : `${tot} run${tot === 1 ? "" : "s"}`}</span></h2>${note ? html`<div class="ovknote">${note}</div>` : ""}
-    ${tot ? html`${ovChart(b, [["Runs", "var(--chart-1)", x => x.n]], v => String(Math.round(v)), { W: 400, H: 150, label: "Runs started per hour, last 24 hours" })}
-      <div class="sub">Busiest: ${pk.lbl}, ${pk.n} run${pk.n === 1 ? "" : "s"}. Passes are not counted.</div>` : emptybox("No run in the last 24 hours.")}`);
+    ${tot ? html`${ovChart(b, [["Runs", "var(--chart-1)", x => x.n]], v => String(Math.round(v)), { W: 400, H: 330, id: "ov-hours", label: "Runs started per hour, last 24 hours" })}
+      <div class="sub">${one ? `Busiest: ${pk.lbl}, ` : "At most "}${pk.n} run${pk.n === 1 ? "" : "s"}${one ? "" : " in an hour"}. Passes are not counted.</div>` : emptybox("No run in the last 24 hours.")}`);
 }
+// A chart is drawn at its card's width, so a card that changes width draws it again.
+const OV_CHARTS = { "ov-main": renderOvMain, "ov-budget": renderOvBudget, "ov-llm": renderOvLlm, "ov-hours": renderOvHours };
+const ovRO = new ResizeObserver(es => es.forEach(({ target: c, contentRect: r }) => { const v = c.querySelector(".ovchart")?.viewBox.baseVal.width;
+  if (v && r.width > 0 && Math.abs(v - Math.round(r.width)) > 1) safeRender(OV_CHARTS[c.id], c.id); }));
+Object.keys(OV_CHARTS).forEach(id => { const c = document.getElementById(id); if (c) ovRO.observe(c); });
 // One small card per source: its spend and count in the range, and its spend by day.
 function renderOvSrc() {
   const s = ovStats(), n = ovRangeName(), note = statsNote();
   if (!s) return putOv("ov-src", html`<div class="card sm">${emptybox(note ? `Spend by source unknown: ${note}` : "Loading the stats…")}</div>`);
   const sp = ovSpend(OV_RANGE);
   putOv("ov-src", html`${OV_SRC.map(([src, col]) => html`<a class="card sm srcm" href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovsrc-${src}">
-    <span class="smh"><i style="background:${col}"></i><b>${srcName(src)}</b><span class="mono">${note ? "unknown" : usd(sp.by[src] ?? 0)}</span></span>
+    <span class="smh"><i style="background:${col}"></i><b title="${srcName(src)}">${srcName(src)}</b><span class="mono">${note ? "unknown" : usd(sp.by[src] ?? 0)}</span></span>
     <span class="sub">${(sp.nby[src] ?? 0).toLocaleString()} in the last ${n}</span>${ovMini(sp.days.map(d => d.by[src] ?? 0), col, sp.days)}</a>`)}`);
 }
 // The sandbox part moves the focus to the #attn strip on this page.
@@ -2687,12 +2733,14 @@ const sfLabel = f => f === "src" ? SF_SRC[SF.src] ?? SF.src : f === "kind" ? KIN
 const inRange = (days, lo, hi) => (days ?? []).filter(d => { const t = Date.parse(d.day + "T00:00"); return t >= lo && t < hi; });
 function statsBounds(r) {
   const DAY = 86400000, d = new Date(); d.setHours(0, 0, 0, 0); const t = d.getTime(), y = d.getFullYear(), m = d.getMonth();
+  // Calendar days, not 24 h steps: across a DST change a 24 h step lands at 23:00 or 01:00.
+  const back = n => new Date(y, m, d.getDate() - n).getTime();
   switch (r) {
     case "today": return [t, Infinity];
-    case "yesterday": return [t - DAY, t];
-    case "7d": return [t - 6 * DAY, Infinity];
-    case "30d": return [t - 29 * DAY, Infinity];
-    case "90d": return [t - 89 * DAY, Infinity];
+    case "yesterday": return [back(1), t];
+    case "7d": return [back(6), Infinity];
+    case "30d": return [back(29), Infinity];
+    case "90d": return [back(89), Infinity];
     case "month": return [new Date(y, m, 1).getTime(), Infinity];
     case "lastmonth": return [new Date(y, m - 1, 1).getTime(), new Date(y, m, 1).getTime()];
     case "custom": return [SF.from ? new Date(SF.from + "T00:00").getTime() : 0, SF.to ? new Date(SF.to + "T00:00").getTime() + DAY : Infinity];

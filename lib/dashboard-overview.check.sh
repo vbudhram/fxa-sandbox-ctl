@@ -12,7 +12,7 @@ stats = {"rows": [{"at": iso(1), "src": "pipeline", "usd": 1.5, "pr": True, "min
                   {"at": "not a time", "src": "pass", "usd": 1}],
          "prs": [{"n": 1, "merged": iso(2), "title": "a"}, {"n": 2, "merged": None}, {"n": 3, "merged": iso(500)}],
          "llm": {"hour_usd": 0.42, "days": [{"day": str(i), "usd": i} for i in range(20)], "runs": {"x": 1},
-                 "models": [{"day": "a", "model": "opus", "usd": 1.25}, {"day": "b", "model": "opus", "usd": 2}, {"day": "b", "model": None, "usd": 0.5}]}}
+                 "models": [{"day": iso(0)[:10], "model": "opus", "usd": 1.25}, {"day": iso(13)[:10], "model": "opus", "usd": 2}, {"day": iso(13)[:10], "model": None, "usd": 0.5}, {"day": iso(14)[:10], "model": "opus", "usd": 9}]}}
 fail = 0
 def check(name, want, got):
     global fail
@@ -22,7 +22,7 @@ check("rows: only the last 180 days, a bad time left out", 1, len(o["rows"]))
 check("rows: only the Overview's fields, in column order", [o["cols"], o["rows"][0][1:]], [["ms", "src", "usd", "pr", "min", "profile", "compute_usd"], ["pipeline", 1.5, 1, 20, "fxa", 0.1]])
 check("rows: the time is epoch ms", True, abs(o["rows"][0][0] / 1000 - (now - 86400)) < 2)
 check("merged: only merged PRs in the window", [iso(2)], o["merged"])
-check("llm: the hour, the last 14 days and per-model totals, no per-run map",
+check("llm: the hour, the last 14 days and per-model totals over the last 14 UTC dates only, no per-run map",
       [0.42, 14, "6", {"opus": 3.25, "": 0.5}, False], [o["llm"]["hour_usd"], len(o["llm"]["days"]), o["llm"]["days"][0]["day"], o["llm"]["models"], "runs" in o["llm"]])
 check("the same stats on the same day give the same object (cached)", True, server.overview_slice(stats, now) is o)
 check("new stats give a new slice", False, server.overview_slice(dict(stats), now) is o)

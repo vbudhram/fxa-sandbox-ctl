@@ -74,7 +74,9 @@ def overview_slice(stats, now=None):
     prs = None if stats.get("prs") is None else [p.get("merged") for p in stats["prs"] if isinstance(p, dict) and p.get("merged") and (ms(p["merged"]) or 0) >= cut * 1000]
     llm = stats.get("llm") or {}
     models = {}
-    for m in llm.get("models") or []:
+    # The model rows cover the chart's 14 UTC dates; the feed's 14 call days can reach further back.
+    keep = {time.strftime("%Y-%m-%d", time.gmtime((day - i) * 86400)) for i in range(14)}
+    for m in [m for m in llm.get("models") or [] if m.get("day") in keep]:
         models[m.get("model") or ""] = round(models.get(m.get("model") or "", 0) + (m.get("usd") or 0), 2)
     out = {"cols": ["ms", "src", "usd", "pr", "min", "profile", "compute_usd"], "rows": rows, "merged": prs, "prs_at": stats.get("prs_at"),
            "llm": {"hour_usd": llm.get("hour_usd"), "days": (llm.get("days") or [])[-14:], "models": models}}

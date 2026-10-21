@@ -8,7 +8,7 @@
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"; root="$(cd "$here/../.." && pwd)"
 route="${1:?usage: live-render.sh <#route> [--admin] [--query q] [page.sh options]}"; shift
-admin=false query="limit=12&days=30"
+admin=false query="limit=4&days=30"
 while [ $# -gt 0 ]; do case "$1" in --admin) admin=true; shift ;; --query) query="$2"; shift 2 ;; *) break ;; esac; done
 t="$(mktemp -d "${TMPDIR:-/tmp}/live-render.XXXXXX")"; trap 'rm -rf "$t"' EXIT
 for a in snapshot stats teams; do bash "$root/skills/fxa-manager/vm.sh" api "$a" > "$t/$a.json"; done
