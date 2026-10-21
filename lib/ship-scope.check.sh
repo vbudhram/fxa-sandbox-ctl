@@ -25,7 +25,7 @@ mkdir -p "$tmp/fxa-auto-2"; echo '{"issue":"FXA-3","branch":"fxa-3"}' > "$tmp/fx
 check "a key still in scope may ship" "rc=0" "$(ship pipeline_ship_ok FXA-3 "$tmp/fxa-auto-2")"
 o="$(LEFT=1 STEAM=fxa-private ship pipeline_ship_ok FXA-3 "$tmp/fxa-auto-2")"
 check "a key that left the scope does not ship, names the secret team, and records an error with the key" \
-  "ERROR: FXA-3 left team fxa's Jira scope; no push. Relabel it for team fxa-private.|rc=1|1|1" \
+  "ERROR: FXA-3 left team fxa's Jira scope; no push. Relabel it for team fxa-private: fxa-sandbox-ctl --pipeline fxa label FXA-3 public (it leaves only ai-fixme).|rc=1|1|1" \
   "$(printf '%s' "$o" | tr '\n' '|')|$(grep -c '^FXA-3 ' "$tmp/errors")|$(grep -c . "$tmp/reads")"
 check "with no secret team, the generic next step" "1" "$(LEFT=1 ship pipeline_ship_ok FXA-3 x | grep -c 'Relabel it for the team that takes it.')"
 o="$(READ_FAIL=1 ship pipeline_ship_ok FXA-3 "$tmp/fxa-auto-2")"

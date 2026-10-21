@@ -281,10 +281,14 @@ jira_label_set() {
     *) echo "ERROR: bad state '$state'" >&2; return 1 ;;
   esac
   local want; want="$(pipeline_label_for "$state")"
-  local others="" s l
+  # The other family's states too (a public team's and a secret team's ai-fixme-private-*): a ticket
+  # that changed sides keeps one state label, the one this write sets.
+  local others="" s l alt="${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}"
+  [ "$alt" != "$PIPE_LABEL_PREFIX" ] || alt="${PIPE_LABEL_PREFIX}-private"
   while IFS= read -r s; do
     l="$(pipeline_label_for "$s")"
     [ "$l" = "$want" ] || others="${others}${others:+,}${l}"
+    [ "$s" = public ] || [ "${alt}-${s}" = "$want" ] || others="${others},${alt}-${s}"
   done <<< "$(pipeline_states)"
   acli jira workitem edit -k "$key" --remove-labels "$others" -l "$want" -y >/dev/null
   printf '%s -> %s\n' "$key" "$want"

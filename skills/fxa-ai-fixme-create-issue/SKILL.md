@@ -62,8 +62,12 @@ and network access.
    - Ask at most 4 questions per round, the ones that change scope first.
    - Put the minor decisions in a "Defaults I will use" list, and offer "take the recommendations"
      as a single reply that accepts every default.
-4. **Check the blockers.** A security vulnerability never gets the `ai-fixme` label: the agent's PR
-   is public, so it would publish the fix before a release. Use the private security process.
+4. **Check the blockers.** A security vulnerability goes to the private team (fxa-private), whose PR
+   opens in the private repo mozilla/fxa-private: give it the `security` label as well as `ai-fixme`.
+   Without that label, the public team takes it, and its public PR publishes the fix before a release.
+   A ticket with only a security level runs only when the pipeline's Jira login can see it, so add
+   the label in every case. When no active team takes FXA's secret tickets (ask the operator), use
+   the private security process instead, and do not add `ai-fixme`.
    For each other item that applies, either remove it from scope or get the engineer's explicit
    sign-off and quote it in the ticket:
    - a path listed in `_scripts/check-frozen.ts` on origin/main
@@ -89,6 +93,7 @@ and network access.
    `createJiraIssue` with project `FXA`, issue type `Task`, label `ai-fixme`, and a markdown
    description. Or use the Atlassian CLI:
    `acli jira workitem create -p FXA -t Task -s "<summary>" --description-file <file> -l ai-fixme`
+   For a security vulnerability, the labels are `ai-fixme` and `security` (`-l ai-fixme,security`).
    Set the parent epic when the ticket belongs to one. Report the new key and
    `https://mozilla-hub.atlassian.net/browse/<KEY>`.
 

@@ -340,7 +340,7 @@ pipeline_ship_ok() {
       [ "$got" = "$key" ] && return 0
       [ "${PIPE_SECRET_TICKETS:-}" = 1 ] || t="$(pipeline_secret_team "$(pipeline_jira_project 2>/dev/null)" 2>/dev/null || true)"
       if [ -n "$t" ]; then t="team ${t}"; else t="the team that takes it"; fi
-      m="${key} left team ${PIPE_PROFILE:-?}'s Jira scope; no push. Relabel it for ${t}."
+      m="${key} left team ${PIPE_PROFILE:-?}'s Jira scope; no push. Relabel it for ${t}: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE:-?} label ${key} public (it leaves only ai-fixme)."
       echo "ERROR: ${m}" >&2; errors_record pipeline ship "$key" "pipeline_ship_ok" "$m" "" 2>/dev/null || true
       return 1
     fi

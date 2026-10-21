@@ -34,6 +34,8 @@ check "jira gates every launch on the scope" "1" "$(grep -c '^  if ! pipeline_ke
 eval "$(sed -n '/^_jira_private_gone() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 check "the docs name private pipeline teams, not --private" "0|1|1|1" \
   "$(grep -c 'FXA_PRIVATE_REPO\|Private mode' "$here/../README.md")|$(grep -c '^### Private pipeline teams$' "$here/../README.md")|$(grep -c 'jira.secret: true' "$here/../PRODUCT.md" | sed 's/[2-9]/1/')|$(grep -c 'ai-fixme-private-<state>' "$here/../skills/fxa-ai-fixme/SKILL.md")"
+check "the ticket-filing skill sends a security bug to the private team with ai-fixme and security" "0|1" \
+  "$(grep -c 'never gets the .ai-fixme' "$here/../skills/fxa-ai-fixme-create-issue/SKILL.md")|$(grep -c -- '-l ai-fixme,security' "$here/../skills/fxa-ai-fixme-create-issue/SKILL.md")"
 mkdir -p "$tmp/pt"; echo '{"teams":{"fxa-private":{"status":"active","secret":true,"jira":"FXA"}}}' > "$tmp/pt/index.json"
 check "--private names the secret team's command, or says to sync the index" \
   "ERROR: --private is gone. Run: fxa-sandbox-ctl --pipeline fxa-private jira FXA-10|1|1" \
@@ -84,9 +86,11 @@ eval "$(sed -n '/^jira_label_set() {/,/^}/p' "$here/jira.sh")"
 acli() { echo "$*" >> "$tmp/acli"; }
 lset() { ( eval "$(sed -n '/^pipeline_label_for() {/,/^}/p;/^pipeline_states() /p' "$here/pipeline.sh")"; PIPE_LABEL_PREFIX="$1"; PIPE_QUEUE_LABEL=ai-fixme; : > "$tmp/acli"; jira_label_set FXA-1 "$2" >/dev/null; cat "$tmp/acli" ); }
 check "a secret team's inflight drops ai-fixme and every public state" \
-  "jira workitem edit -k FXA-1 --remove-labels ai-fixme,ai-fixme-private-done,ai-fixme-private-blocked,ai-fixme-private-merged,ai-fixme-private-rejected,ai-fixme-private-diff -l ai-fixme-private-inflight -y" "$(lset ai-fixme-private inflight)"
+  "jira workitem edit -k FXA-1 --remove-labels ai-fixme,ai-fixme-inflight,ai-fixme-private-done,ai-fixme-done,ai-fixme-private-blocked,ai-fixme-blocked,ai-fixme-private-merged,ai-fixme-merged,ai-fixme-private-rejected,ai-fixme-rejected,ai-fixme-private-diff,ai-fixme-diff -l ai-fixme-private-inflight -y" "$(lset ai-fixme-private inflight)"
 check "public (or the full ai-fixme label) puts ai-fixme back and drops the private states" "-l ai-fixme -y|-l ai-fixme -y" \
   "$(lset ai-fixme-private public | grep -o -- '-l ai-fixme -y')|$(lset ai-fixme-private ai-fixme | grep -o -- '-l ai-fixme -y')"
+check "a public team's write also drops a secret team's states, so a ticket that changed sides keeps one state" "1|1|0" \
+  "$(lset ai-fixme inflight | grep -c 'ai-fixme-private-inflight,')|$(lset ai-fixme public | grep -c 'ai-fixme-private-done')|$(lset ai-fixme inflight | grep -cE -- '--remove-labels ([^ ]*,)?ai-fixme-inflight[, ]')"
 check "the full private label is accepted; the public team's labels do not change" "-l ai-fixme-private-done -y|-l ai-fixme-inflight -y" \
   "$(lset ai-fixme-private ai-fixme-private-done | grep -o -- '-l [a-z-]* -y')|$(lset ai-fixme inflight | grep -o -- '-l [a-z-]* -y')"
 unset -f acli
