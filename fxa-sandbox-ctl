@@ -1304,6 +1304,8 @@ _reap_key() {
 
 # WRITE: stop every agent VM whose ticket is not inflight, for the cases the reap
 # in `label` misses. A live run is safe: its inflight label covers the whole run.
+# _slot_in_pool <worktree path> <pool name>   True when the slot is the pool's (<pool> or <pool>-N).
+_slot_in_pool() { local b="${1##*/}"; [ -n "$2" ] && { [ "$b" = "$2" ] || [[ "$b" =~ ^${2}-[0-9]+$ ]]; }; }
 _reap_stray_vms() {
   if [ "${FXA_NO_REAP:-}" = "1" ]; then echo "reapstray skipped (FXA_NO_REAP=1)"; return 0; fi
   local owned project; owned="$(jira_owning_keys)"
@@ -1313,14 +1315,20 @@ _reap_stray_vms() {
     echo "ERROR: cannot list inflight tickets; refusing to stop any VM." >&2
     return 1
   fi
-  local name key
-  while IFS= read -r name; do
+  local name ws key
+  while read -r name ws; do
     [ -z "$name" ] && continue
     # Anything else is a hand-started agent.
     case "$name" in
       agent-*|[a-z]*-[0-9]*) ;;
       *) continue ;;
     esac
+    # Two teams can share a project's keys (a secret team), so the pool slot says whose runner it is:
+    # a secret team reaps only its own pool; any team leaves another team's pool alone.
+    if ! _slot_in_pool "$ws" "${PIPE_POOL_NAME:-}"; then
+      [ "${PIPE_SECRET_TICKETS:-}" = 1 ] && continue
+      [[ "${ws##*/}" =~ -auto(-[0-9]+)?$ ]] && continue
+    fi
     session_live "$name" && continue   # an owner-steered session, no Jira label
     key="$(worktree_key_for "$name")"
     # Another profile's ticket runner: its own pass owns it, and this profile cannot see its labels.
@@ -1333,7 +1341,7 @@ _reap_stray_vms() {
     else
       echo "$key stray-reap-failed ($name) -- stop it by hand" >&2
     fi
-  done <<< "$(_worktree_each_active_agent | awk '{print $1}')"
+  done <<< "$(_worktree_each_active_agent)"
   vm_gc
 }
 

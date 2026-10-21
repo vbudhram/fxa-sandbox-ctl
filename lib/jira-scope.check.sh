@@ -9,7 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^_pipeline_secret_labels() {/,/^}/p;/^pipeline_jira_project() {/,/^}/p;/^pipeline_secret_team() {/,/^}/p;/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
 eval "$(sed -n '/^jira_keys_in_state() {/,/^}/p;/^jira_items_in_state() {/,/^}/p;/^jira_queue_keys() {/,/^}/p;/^jira_queue_items() /p;/^jira_secured_keys() {/,/^}/p' "$here/jira.sh")"
-eval "$(sed -n '/^_reap_stray_vms() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^_slot_in_pool() /p;/^_reap_stray_vms() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
 _jira_keys_for_jql() { printf '%s\n' "$1"; }; jira_items_json() { printf '%s\n' "$1"; }
 PIPE_STATE_DIR="$tmp" PIPE_QUEUE_JQL='labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC'
@@ -92,6 +92,20 @@ check "the reap leaves another project's runner" "fxa-2 agent-ab12" "$(paste -sd
 check "no project, no reap" "1|" "$(PIPE_PROFILE=monitor _reap_stray_vms >/dev/null 2>&1; echo "$?|$(cat "$tmp/stopped")")"
 check "no project: the reap says why under set -e and pipefail" "1|1" \
   "$( (set -eo pipefail; PIPE_PROFILE=monitor _reap_stray_vms) >/dev/null 2>"$tmp/reap.err"; echo "$?|$(grep -c 'refusing to stop any VM' "$tmp/reap.err")")"
+# Both teams have FXA keys, so the pool slot says whose runner it is.
+_worktree_each_active_agent() { printf '%s\n' "fxa-9 /w/fxa-private-auto-2" "fxa-8 /w/fxa-auto-2" "fxa-6 /w/fxa-6" "fxa-5 /w/fxa-auto"; }
+jira_owning_keys() { echo "${OWNED:-}"; }
+: > "$tmp/stopped"; PIPE_POOL_NAME=fxa-auto _reap_stray_vms >/dev/null
+check "the FxA reap stops its own pool's strays and a hand run, and leaves a private team's slot" "fxa-8 fxa-6 fxa-5" "$(paste -sd' ' "$tmp/stopped")"
+: > "$tmp/stopped"; github_repo_confirmed_private() { :; }
+sreap() { ( PIPE_PROFILE=fxa-private PIPE_JIRA_PROJECT=FXA PIPE_SECRET_TICKETS=1 PIPE_POOL_NAME=fxa-private-auto
+  PIPE_WORK_ROWS=("mozilla/fxa-private /home/agent/fxa"); _reap_stray_vms >/dev/null ); }
+OWNED=FXA-9 sreap
+check "a secret team reaps only its own pool: its in-flight run stays, FxA's and hand runs are not its own" "" "$(paste -sd' ' "$tmp/stopped")"
+: > "$tmp/stopped"
+sreap
+check "a secret team reaps its own stray" "fxa-9" "$(paste -sd' ' "$tmp/stopped")"
+unset -f github_repo_confirmed_private
 
 [ "$fail" = 0 ] && echo "all checks pass"; check "a team adds its own secret labels; security and hackerone always stay" 'project = PAY AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone", "sec-high"))' \
   "$(PIPE_PROFILE=pay PIPE_JIRA_PROJECT=PAY PIPE_SECRET_LABELS="sec-high security" pipeline_jira_scope)"
