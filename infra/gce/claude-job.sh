@@ -77,8 +77,9 @@ ${st}
   [ -f "${skill:-/nonexistent}/SKILL.md" ] || { echo "pass: no fxa-ai-fixme skill beside this script; not starting a pass without it" >&2; exit 1; }
   input="The fxa-ai-fixme skill (folder ${skill}) is below and already loaded: follow it, do not invoke it.
 <skill>
-$(cat "${skill}/SKILL.md"; for f in $extra; do printf '\n'; cat "${skill}/$f"; done)
+$(cat "${skill}/SKILL.md"; for f in $extra; do printf '\n(%s, already loaded: do not read it)\n' "$f"; cat "${skill}/$f"; done)
 </skill>
+This pass needs only the skill parts above${extra:+ (${extra# })}: do not read SKILL.md, launch.md, admission.md or feedback.md.
 
 ${input}"
 fi

@@ -69,6 +69,7 @@ check "another pass won the lock: stop before Claude" "no|locked: lost the race"
 # Only the skill parts a pass's lines need.
 parts() { grep -o '^PART [a-z]*' "$tmp/claude-in" | cut -d' ' -f2 | tr '\n' ' ' | sed 's/ $//'; }
 run 'queue: FXA-1 new (run: ground FXA-1)' >/dev/null; check "a queued ticket gets the launch and admission parts" "launch admission" "$(parts)"
+check "the prompt names the parts it holds, so the model does not read them again" "2|1" "$(grep -c 'already loaded: do not read it' "$tmp/claude-in")|$(grep -c 'only the skill parts above (launch.md admission.md): do not read SKILL.md' "$tmp/claude-in")"
 run 'feedback: FXA-1 has new review comments: 5 (run: feedback FXA-1 bundle)' >/dev/null; check "feedback gets the launch and feedback parts" "launch feedback" "$(parts)"
 run 'reconcile: FXA-5 dead-runner' >/dev/null; check "a reconcile line gets the launch part" "launch" "$(parts)"
 run 'drain: FXA-6 70 RED ok=9 fail=1 running=0' >/dev/null; check "a report-only pass gets no part and no state reads" "|no" "$(parts)|$(grep -q 'state-freeslots' "$tmp/claude-in" && echo yes || echo no)"
