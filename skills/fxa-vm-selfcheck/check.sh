@@ -37,9 +37,21 @@ if [ -n "$pkgs" ]; then
 else echo "No removed export or changed signature."; fi
 
 echo "== Check 4: scope"
-frozen="$(git show "$ref:_scripts/check-frozen.ts" 2>/dev/null | sed -n '/^const frozen/,/^\];/p' | grep -oE "['\"][^'\"]+['\"]" | tr -d "'\"")"
+# As check-frozen.ts does: each entry's pattern is a regex searched in the path, and its exclude spares a
+# path. Every quoted word as a prefix took reason words ("a", "lib") as paths and missed the regexes.
+frozen="$(git show "$ref:_scripts/check-frozen.ts" 2>/dev/null | python3 -c '
+import re, sys
+m = re.search(r"const frozen[\s\S]*?=\s*\[([\s\S]*?)\n\];", sys.stdin.read())
+lit = r"""([\x27"])((?:\\.|(?!\1).)*)\1"""
+js = lambda s: re.sub(r"\\(.)", r"\1", s)
+for b in re.findall(r"\{([^{}]*)\}", m.group(1) if m else ""):
+  p, e = re.search(r"pattern:\s*" + lit, b), re.search(r"exclude:\s*" + lit, b)
+  if not p: continue
+  for f in sys.argv[1:]:
+    if re.search(js(p.group(2)), f) and not (e and re.search(js(e.group(2)), f)): print(f)
+' $changed)"
 hit=0
-for f in $changed; do for z in $frozen; do case "$f" in "$z"*) flag "frozen path (yarn check:frozen refuses the commit): $f"; hit=1 ;; esac; done; done
+for f in $frozen; do flag "frozen path (yarn check:frozen refuses the commit): $f"; hit=1; done
 [ "$hit" = 0 ] && echo "No frozen path. Read the file list above against the request; revert what it does not need."
 
 echo "== Check 6: the test plan ran"
