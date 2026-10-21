@@ -53,7 +53,12 @@ def log(**rec):
 
 def hit(e):
     snip = " ".join(e["text"].split())[:100]
-    return "%s [%s] %s -> %s/%s" % (e["id"], e["meta"].get("kind", ""), snip, e["repo"], e["topic"])
+    return "%s [%s] %s -> %s/%s (confirmed %s)" % (e["id"], e["meta"].get("kind", ""), snip, e["repo"], e["topic"], e["meta"].get("confirmed", ""))
+
+
+def old(e):
+    """True when the entry was not confirmed in the last 90 days: it ranks after newer ones."""
+    return e["meta"].get("confirmed", "") < time.strftime("%Y-%m-%d", time.gmtime(time.time() - 90 * 86400))
 
 
 def have_memory():
@@ -79,8 +84,9 @@ def search(words):
             (e["id"], e["text"], e["why"], e["meta"].get("path", ""), " ".join(e["meta"].get(k, "") for k in CITES),
              " ".join(e["meta"].get(k, "") for k in ("anchor", "anchor2", "anchor3")), e["meta"].get("terms", "")) for e in entries])
         q = " OR ".join('"%s"' % t for t in toks)
-        ids = [r[0] for r in db.execute("select id from m where m match ? order by bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0) limit 5", (q,))]
+        ids = [r[0] for r in db.execute("select id from m where m match ? order by bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0)", (q,))]
     by_id = {e["id"]: e for e in entries}
+    ids = sorted(ids, key=lambda i: old(by_id[i]))[:5]
     for i in ids:
         print(hit(by_id[i]))
     if not ids:
@@ -105,14 +111,35 @@ def show(args):
     return 0
 
 
+def git(*args):
+    """The output of a git command in the current directory, or "" when it fails."""
+    try:
+        return subprocess.run(("git",) + args, capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 def repo_from_git():
     """The owner__repo folder of the origin remote of the current directory, or None."""
-    try:
-        url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
+    url = git("remote", "get-url", "origin")
     m = re.search(r"([^/:]+)/([^/:]+?)(?:\.git)?/?$", url)
     return "%s__%s" % m.groups() if m else None
+
+
+def rel_path(p):
+    """The path from the top of the git tree: an absolute path inside it loses that prefix, and ./ goes."""
+    top = os.path.isabs(p) and git("rev-parse", "--show-toplevel")
+    if top:
+        r = os.path.relpath(os.path.realpath(p), os.path.realpath(top))
+        p = p if r.startswith("..") else r
+    while p.startswith("./"):
+        p = p[2:]
+    return p
+
+
+def on_path(p, glob_):
+    """A folder matches the glob of the files in it, so packages/x matches packages/x/**."""
+    return fnmatch.fnmatchcase(p, glob_) or fnmatch.fnmatchcase(p + "/", glob_)
 
 
 def traps(args):
@@ -126,15 +153,19 @@ def traps(args):
     if repo is None:
         repo = repo_from_git()
     named = repo  # team traps filter on it even when the repo has no folder here
+    path = rel_path(args[0])
     if repo is None or not os.path.isdir(os.path.join(MEM, "repos", repo)):
         repo = None  # all repos
     traps_ = [e for e in load() if e["meta"].get("kind") == "trap"]
     hits = [e for e in traps_ if e["repo"] != "team" and (repo is None or e["repo"] == repo)
-            and e["meta"].get("path") and fnmatch.fnmatchcase(args[0], e["meta"]["path"])]
+            and e["meta"].get("path") and on_path(path, e["meta"]["path"])]
     # A team trap after the repo's own: one of its cites names the repo; an empty path matches only a named repo.
     hits += [e for e in traps_ if e["repo"] == "team"
              and (named is None or any(e["meta"].get(k, "").split(":")[0].replace("/", "__") == named for k in CITES))
-             and (fnmatch.fnmatchcase(args[0], e["meta"]["path"]) if e["meta"].get("path") else named is not None)]
+             and (on_path(path, e["meta"]["path"]) if e["meta"].get("path") else named is not None)]
+    # Within the repo's traps and within the team's, an entry older than 90 days comes last.
+    n_repo = sum(e["repo"] != "team" for e in hits)
+    hits = sorted(hits[:n_repo], key=old) + sorted(hits[n_repo:], key=old)
     for e in hits:
         print(hit(e))
     if not hits:

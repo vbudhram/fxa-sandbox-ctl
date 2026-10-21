@@ -44,7 +44,7 @@ _entry mem-000000f1 "kind: system | path:  | cite: mozilla/fxa:a.js:1 | anchor: 
 } > "$t/trap.md"
 
 check "an error text finds its trap first" "mem-0000000a" "$(fm search "Cannot find module @fxa/shared/foo" | head -1 | cut -d' ' -f1)"
-check "a hit line is id, kind, 100-char snippet, repo and topic file" "1" "$(fm search foo | head -1 | grep -cE '^mem-[0-9a-f]{8} \[trap\] .{1,100} -> mozilla__fxa/trap\.md$')"
+check "a hit line is id, kind, 100-char snippet, repo and topic file, and the confirmed date" "1" "$(fm search foo | head -1 | grep -cE '^mem-[0-9a-f]{8} \[trap\] .{1,100} -> mozilla__fxa/trap\.md \(confirmed 2026-10-16\)$')"
 check "one search covers every repo of the team" "mem-0000000e" "$(fm search otherrepoword | head -1 | cut -d' ' -f1)"
 check "a search finds the anchor text" "mem-0000000b" "$(fm search uniqanchorword | head -1 | cut -d' ' -f1)"
 check "traps --repo keeps out another repo's entry on the same path" "mem-0000000a|0" "$(fm traps --repo mozilla/fxa packages/fxa-content-server/x.js | cut -d' ' -f1)|$(fm traps --repo mozilla/fxa packages/fxa-content-server/x.js | grep -c mem-0000000e)"
@@ -58,6 +58,8 @@ mkdir -p "$tmp/gitfxa" "$tmp/gitnone" "$tmp/nogit"
 git -C "$tmp/gitfxa" init -q && git -C "$tmp/gitfxa" remote add origin git@github.com:mozilla/fxa.git
 git -C "$tmp/gitnone" init -q && git -C "$tmp/gitnone" remote add origin https://github.com/mozilla/nofolder.git
 check "traps without --repo uses the origin repo" "mem-0000000a" "$(cd "$tmp/gitfxa" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1)"
+check "traps matches the folder itself and a ./ path" "mem-0000000a|mem-0000000a" "$(fm traps --repo mozilla/fxa packages/fxa-content-server | cut -d' ' -f1)|$(fm traps --repo mozilla/fxa ./packages/fxa-content-server/x.js | cut -d' ' -f1)"
+check "traps takes an absolute path inside the git tree" "mem-0000000a" "$(cd "$tmp/gitfxa" && fm traps "$tmp/gitfxa/packages/fxa-content-server/x.js" | cut -d' ' -f1)"
 check "traps without --repo and without git uses all repos" "mem-0000000a mem-0000000e" "$(cd "$tmp/nogit" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
 check "traps with an origin that has no folder uses all repos" "mem-0000000a mem-0000000e" "$(cd "$tmp/gitnone" && fm traps packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
 check "show prints the cite and the why" "1|1" "$(fm show mem-0000000a | grep -c '^cite: ')|$(fm show mem-0000000a | grep -c '^Why: ')"
@@ -68,7 +70,7 @@ check "a bad rating exits 2" "2" "$(fm rate mem-0000000a great >/dev/null 2>&1; 
 check "each search is logged with its hit ids" "search|true" "$(fm search foo >/dev/null; tail -1 "$tmp/use.jsonl" | jq -r '.cmd + "|" + (.ids | length > 0 | tostring)')"
 check "no writable use log still prints hits" "mem-0000000a" "$(FXA_MEM_USE=/nonexistent/x.jsonl fm search foo | head -1 | cut -d' ' -f1)"
 check "a missing memory folder prints one line, exit 0" "no team memory on this runner|0" "$(o="$(FXA_MEM_DIR=$tmp/none fm search foo)"; echo "$o|$?")"
-check "this python has FTS5" "ok" "$(python3 -I -c 'import sqlite3; sqlite3.connect(":memory:").execute("create virtual table t using fts5(x)"); print("ok")')"
+check "this host's python has FTS5 (the runner is checked live in Task 7)" "ok" "$(python3 -I -c 'import sqlite3; sqlite3.connect(":memory:").execute("create virtual table t using fts5(x)"); print("ok")')"
 check "propose writes a learning the controller accepts" "trap|EREFUSED dns" \
   "$(fm propose --repo mozilla/fxa --kind trap --text t --cite a.js:1 --anchor abcd --why w --path 'packages/**' --terms 'EREFUSED dns' >/dev/null && jq -r '.learnings[0].kind + "|" + .learnings[0].terms' "$tmp/out.json")"
 check "propose without terms exits 2" "2" "$(fm propose --repo mozilla/fxa --kind trap --text t --cite a.js:1 --anchor abcd --why w >/dev/null 2>&1; echo $?)"
@@ -88,7 +90,7 @@ check "terms are searched" "mem-0000000d" "$(fm search EREFUSED | head -1 | cut 
 mtk="$(sed -n "s/^_MEMORY_TEAM_KINDS='\(.*\)'.*/\1/p" "$here/memory.sh")"
 check "TEAM_KINDS matches _MEMORY_TEAM_KINDS in lib/memory.sh, and has system" "system|$mtk" \
   "$(grep -o system <<< "$mtk")|$(sed -n 's/^TEAM_KINDS = (\(.*\)).*/\1/p' "$here/../templates/fxa-mem" | tr -d '"' | tr ',' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')"
-check "search covers team facts and names them" "1" "$(fm search crossrepoword | head -1 | grep -c '^mem-000000f1 .* -> team/system\.md$')"
+check "search covers team facts and names them" "1" "$(fm search crossrepoword | head -1 | grep -c '^mem-000000f1 .* -> team/system\.md (confirmed 2026-10-16)$')"
 check "show prints every cite of a team fact" "1" "$(fm show mem-000000f1 | grep -c '^cite2: mozilla/other:b.py:2$')"
 check "traps --repo adds team traps that cite that repo, after its own" "mem-0000000e mem-000000f2" "$(fm traps --repo mozilla/other packages/fxa-content-server/x.js | cut -d' ' -f1 | tr '\n' ' ' | sed 's/ $//')"
 nt="$tmp/memteam/teams/fxa"; mkdir -p "$nt"
@@ -103,4 +105,11 @@ check "propose --team with a cite and no anchor exits 2" "2" "$(fm propose --tea
 check "propose --team with a cite and no repo exits 2" "2" "$(fm propose --team --kind system --text t --why w --terms x --cite a.js:1 --anchor aaaa >/dev/null 2>&1; echo $?)"
 check "propose --team with 4 cites exits 2" "2" "$(fm propose --team --kind system --text t --why w --terms x $(for i in 1 2 3 4; do printf -- '--cite o/r%s:a.js:1 --anchor aaaa ' "$i"; done) >/dev/null 2>&1; echo $?)"
 check "system is refused for a repo fact" "2" "$(fm propose --repo mozilla/fxa --kind system --text t --cite a.js:1 --anchor abcd --why w --terms x >/dev/null 2>&1; echo $?)"
+# An entry not confirmed in 90 days comes after a newer one that matches the same, even when it ranks higher.
+rk="$tmp/memrank/repos/mozilla__fxa"; mkdir -p "$rk"; today="$(date -u +%F)"; old="$(date -u -v-100d +%F 2>/dev/null || date -u -d '100 days ago' +%F)"
+{ _entry mem-000000b1 "kind: trap | path: packages/rank/** | cite: a:1 | anchor: abcd | confirmed: $old | source: r | taint: 0" "rankword rankword rankword old note." "w"
+  _entry mem-000000b2 "kind: trap | path: packages/rank/** | cite: a:1 | anchor: abcd | confirmed: $today | source: r | taint: 0" "rankword new note with more words in it." "w"
+} > "$rk/trap.md"
+check "search and traps put an entry older than 90 days after a newer one" "mem-000000b2 mem-000000b1|mem-000000b2 mem-000000b1" \
+  "$(FXA_MEM_DIR="$tmp/memrank" fm search rankword | cut -d' ' -f1 | paste -sd' ' -)|$(FXA_MEM_DIR="$tmp/memrank" fm traps --repo mozilla/fxa packages/rank/x.js | cut -d' ' -f1 | paste -sd' ' -)"
 exit "$fail"

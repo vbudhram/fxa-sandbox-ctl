@@ -28,15 +28,29 @@ convention, a decision and its reason, who owns an area):
 - **In the memory, but wrong or out of date**: run `fxa-mem propose --op update --id <id>` (same
   fact, better text) or `--op supersede --id <id>` (the code changed; this replaces it).
 - **In the memory, and you checked it again in the code**: run `fxa-mem confirm <id>`.
-  That keeps it in the index.
+  That marks the entry as checked again today.
 - **In the memory and unchanged, and you did not check it**: leave it out.
 
 Most work teaches nothing new. Empty lists are the normal result.
 
 ## 3. Write the file
 
-Run one `fxa-mem propose` for each learning, and one `fxa-mem confirm <id>` for each
-entry you checked again. Both write to `/workspace/.fxa-memory.json`.
+First write the episode to `/workspace/.fxa-memory.json`. Use any editor or a shell
+heredoc. If the file is already there, change only its `episode` key:
+
+```bash
+cat > /workspace/.fxa-memory.json <<'EOF'
+{"episode": {
+  "goal": "What the work set out to do, one sentence.",
+  "decisions": ["A choice and why, one sentence each, at most 8."],
+  "dead_ends": ["What you tried that did not work, and why, at most 8."],
+  "outcome": "Where it ended: the PR, the diff, or what is left."
+}}
+EOF
+```
+
+Then run one `fxa-mem propose` for each learning, and one `fxa-mem confirm <id>` for each
+entry you checked again. Both add to the same file and keep the episode:
 
 ```bash
 fxa-mem propose --repo mozilla/fxa --kind trap --path 'packages/fxa-settings/**' \
@@ -45,18 +59,6 @@ fxa-mem propose --repo mozilla/fxa --kind trap --path 'packages/fxa-settings/**'
   --why 'What it cost you not to know it.' \
   --terms 'the error text, the package, the symptom'
 fxa-mem confirm mem-1a2b3c4d
-```
-
-Then add the episode to the same file with the Write tool. Keep the `learnings` and
-`confirmed` keys that the commands wrote:
-
-```json
-"episode": {
-  "goal": "What the work set out to do, one sentence.",
-  "decisions": ["A choice and why, one sentence each, at most 8."],
-  "dead_ends": ["What you tried that did not work, and why, at most 8."],
-  "outcome": "Where it ended: the PR, the diff, or what is left."
-}
 ```
 
 - `--kind`: `convention`, `trap`, `command`, `decision` or `owner-area`.
