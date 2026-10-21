@@ -105,7 +105,7 @@ printf '%s\n' '{"at":1,"cmd":"search","q":"curl x"}' 'not json' > "$tmp/use.none
 FXA_MEMORY_USE_FILE="$tmp/use.none" memory_collect r4 "$tmp/m.json" t fxa 0 FXA-4 mozilla/fxa 2>/dev/null
 check "an all-dropped use log writes no file; the notes still save" "0|1" \
   "$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-4/.*use.jsonl' || true)|$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-4/.*-r4.md' || true)"
-printf '%s\n' '{"at":1,"cmd":"search","q":"mail zq7x9k.notreal@gmail.com"}' > "$tmp/use.pii"
+printf '%s\n' '{"at":1,"cmd":"search","q":"key ghp_inventedtoken0000"}' > "$tmp/use.pii"
 FXA_MEMORY_USE_FILE="$tmp/use.pii" memory_collect r5 "$tmp/m.json" t fxa 0 FXA-5 mozilla/fxa 2>/dev/null
 check "personal data in the use log drops only the log" "0|1" \
   "$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-5/.*use.jsonl' || true)|$(g -C "$tmp/remote.git" ls-tree -r --name-only main | grep -c 'FXA-5/.*-r5.md' || true)"
