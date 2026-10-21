@@ -233,7 +233,7 @@ _memory_cite_ok() {
 _memory_entry() {
   printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s -->\n%s\n\nWhy: %s\n\n' \
     "$1" "$(jq -r .kind <<< "$2")" "$(jq -r .path <<< "$2")" "$(jq -r .cite <<< "$2" | tr -d '|')" "$(jq -r .anchor <<< "$2" | tr -d '|')" \
-    "$(jq -r '.terms // ""' <<< "$2" | tr -d '|')" "$6" "$3" "$4" "$5" "$(jq -r .text <<< "$2")" "$(jq -r .why <<< "$2")"
+    "$(jq -r '.terms // ""' <<< "$2" | tr -d '|' | sed 's/-->//g')" "$6" "$3" "$4" "$5" "$(jq -r .text <<< "$2")" "$(jq -r .why <<< "$2")"
 }
 
 # _memory_drop <dir> <id>   Remove an entry's block from whichever topic file holds it.
@@ -341,7 +341,7 @@ memory_collect() {
   # else to the inbox, for the weekly digest. A tainted run's entries are listed there for a look too.
   local touched="" dir today="${now%%T*}"
   while IFS= read -r l; do
-    _memory_suspect "$(jq -r '.text + " " + .why + " " + .anchor' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; dropped=$((dropped + 1)); continue; }
+    _memory_suspect "$(jq -r '.text + " " + .why + " " + .anchor + " " + .terms + " " + .path' <<< "$l")" && { echo "  memory: dropped a learning that reads like an instruction" >&2; dropped=$((dropped + 1)); continue; }
     local repo op; repo="$(jq -r .repo <<< "$l")"; op="$(jq -r .op <<< "$l")"; dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$repo")"
     if [ "$op" = update ]; then id="$(jq -r .id <<< "$l")"
     else id="mem-$(jq -r '.repo + "\n" + .text' <<< "$l" | shasum | cut -c1-8)"; fi
@@ -454,7 +454,7 @@ _memory_digest() {
     [[ "$replaces" =~ ^mem-[0-9a-f]{8}$ ]] && _memory_drop "$dir" "$replaces"
     body="$(awk 'c >= 2 { print } /^---$/ { c++ }' "$f")"
     printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
-      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(sed -n 's/^cite: //p' "$f")" "$(sed -n 's/^anchor: //p' "$f")" "$(sed -n 's/^terms: //p' "$f" | tr -d '|')" "$(date -u +%F)" \
+      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(sed -n 's/^cite: //p' "$f")" "$(sed -n 's/^anchor: //p' "$f")" "$(sed -n 's/^terms: //p' "$f" | tr -d '|' | sed 's/-->//g')" "$(date -u +%F)" \
       "$(sed -n 's/^run: //p' "$f")" "$(sed -n 's/^ticket: //p' "$f")" "$(sed -n 's/^taint: //p' "$f")" "$body" >> "${dir}/${kind}.md"
     _memory_git rm -q -- "${f#"${FXA_MEMORY_DIR}"/}" 2>/dev/null || rm -f "$f"
     list="${list}- ${id} (${kind}, cite did not check out): $(printf '%s' "$body" | head -1 | cut -c1-160)

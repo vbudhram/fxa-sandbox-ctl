@@ -154,9 +154,14 @@ def edit_out(change):
         except (ValueError, AssertionError, OSError):
             print("%s is not valid JSON; fix or remove it" % OUT)
             return 1
+    if not all(isinstance(doc.get(k, []), list) for k in ("learnings", "confirmed")):
+        print("%s: learnings and confirmed must be lists; fix or remove it" % OUT)
+        return 1
     change(doc)
-    with open(OUT, "w", encoding="utf-8") as fh:
+    tmp = OUT + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
+    os.replace(tmp, OUT)
     return 0
 
 
