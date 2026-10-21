@@ -8,7 +8,7 @@
 #   tickets/<KEY>/<date>-<run>.md                  what a run did, written here at its end
 #   inbox/<owner>__<repo>/<id>.md                  learnings whose cite did not check out; the weekly digest
 #
-#   memory_index_md <profile> [slug...]     the prompt section that points a runner at fxa-mem's CLAUDE.md
+#   memory_index_md <profile> [slug...]     the prompt section that tells the agent to use fxa-mem
 #   memory_sync <runner> <profile> [slug...]   the reviewed files into /home/agent/.fxa-memory
 #   memory_collect <run> <json> <trigger> <profile> <taint 0|1> <ticket|""> <slug...>
 #                                           a run's .fxa-memory.json into tickets/ and inbox/
@@ -103,12 +103,13 @@ memory_sync() {
     [[ "$s" =~ $_MEMORY_SLUG ]] && [ -d "${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$s")" ] && paths+=("repos/$(_memory_dir_of "$s")")
   done
   [ "${#paths[@]}" -gt 0 ] || return 0
-  local tgz; tgz="$(mktemp)"
-  tar -czf "$tgz" -C "$FXA_MEMORY_DIR" "${paths[@]}" -C "$MEMORY_LIB_DIR/../templates" fxa-mem
-  if [ "$(wc -c < "$tgz")" -gt 2000000 ]; then
-    rm -f "$tgz"; echo "  WARN: the team memory is over 2 MB; not copied: ${paths[*]}" >&2; return 0
-  fi
-  b64="$(base64 < "$tgz" | tr -d '\n')"; rm -f "$tgz"
+  local tgz size rc=0; tgz="$(mktemp)"
+  tar -czf "$tgz" -C "$FXA_MEMORY_DIR" "${paths[@]}" -C "$MEMORY_LIB_DIR/../templates" fxa-mem 2>/dev/null || rc=$?
+  size="$(wc -c < "$tgz" | tr -d ' ')"
+  [ "$rc" = 0 ] && [ "$size" -le 2000000 ] && b64="$(base64 < "$tgz" | tr -d '\n')"
+  rm -f "$tgz"
+  if [ "$rc" != 0 ]; then echo "  WARN: could not pack the team memory" >&2; return 0; fi
+  if [ "$size" -gt 2000000 ]; then echo "  WARN: the team memory is over 2 MB; not copied: ${paths[*]}" >&2; return 0; fi
   vm_exec "$name" sudo bash -c "rm -rf /home/agent/.fxa-memory && mkdir -p /home/agent/.fxa-memory \
     && echo '${b64}' | base64 -d | tar -xzf - -C /home/agent/.fxa-memory --no-same-owner \
     && chown -R root:root /home/agent/.fxa-memory && chmod -R a+rX,go-w /home/agent/.fxa-memory \

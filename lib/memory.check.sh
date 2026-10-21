@@ -41,12 +41,15 @@ b64="$(sed -E "s/.*echo '([^']*)'.*/\1/" "$tmp/vm.cmd")"
 check "sync copies the team file and the repo, and not the inbox" "profiles/monitor.md|repos/mozilla__fxa/|0" \
   "$(base64 -d <<< "$b64" | tar -tzf - | grep -c . >/dev/null; base64 -d <<< "$b64" | tar -tzf - | grep -x 'profiles/monitor.md')|$(base64 -d <<< "$b64" | tar -tzf - | grep -x 'repos/mozilla__fxa/')|$(base64 -d <<< "$b64" | tar -tzf - | grep -c inbox)"
 check "the runner copy is root-owned and read-only" "1" "$(grep -c 'chown -R root:root /home/agent/.fxa-memory && chmod -R a+rX,go-w' "$tmp/vm.cmd")"
-check "sync ships the command and links it" "1|1" "$(grep -c 'fxa-mem' "$tmp/vm.cmd")|$(grep -c '/usr/local/bin/fxa-mem' "$tmp/vm.cmd")"
+check "sync ships the command and links it" "1|1" "$(grep -c 'chmod 755 /home/agent/.fxa-memory/fxa-mem ' "$tmp/vm.cmd")|$(grep -c '/usr/local/bin/fxa-mem' "$tmp/vm.cmd")"
 check "the tar holds the command" "fxa-mem" "$(base64 -d <<< "$b64" | tar -tzf - | grep -x 'fxa-mem')"
 rm -rf "$tmp/clone/inbox"
 head -c 3000000 /dev/urandom > "$FXA_MEMORY_DIR/repos/mozilla__fxa/big.md"; rm -f "$tmp/vm.cmd"
 check "a tar over the cap is not sent, and the error names the repos" "0|1" "$([ -f "$tmp/vm.cmd" ] && echo 1 || echo 0)|$(memory_sync r monitor mozilla/fxa 2>&1 | grep -c 'repos/mozilla__fxa')"
 rm -f "$FXA_MEMORY_DIR/repos/mozilla__fxa/big.md"
+rm -f "$tmp/vm.cmd"; mlib="$MEMORY_LIB_DIR"; MEMORY_LIB_DIR="$tmp/nolib"
+check "a tar that fails to pack is not sent, and the call returns 0" "0|0" "$(memory_sync r monitor mozilla/fxa 2>/dev/null; echo $?)|$([ -f "$tmp/vm.cmd" ] && echo 1 || echo 0)"
+MEMORY_LIB_DIR="$mlib"
 
 # Capture: an episode for the ticket, and only the learnings that are about the run's repos,
 # of a known kind, and not shaped like an instruction.
