@@ -111,6 +111,7 @@ pipeline_load() {
   # The same for the base branch and the pool name (README: env overrides; --private sets the pool).
   [ -n "${FXA_WORKTREE_BASE:-}" ] && [ "$FXA_WORKTREE_BASE" = "${_FXA_BASE_LOADED:-}" ] && unset FXA_WORKTREE_BASE
   [ -n "${FXA_SHARED_WORKTREE_NAME:-}" ] && [ "$FXA_SHARED_WORKTREE_NAME" = "${_FXA_POOL_LOADED:-}" ] && unset FXA_SHARED_WORKTREE_NAME
+  [ -n "${FXA_SECRETS_SOURCE:-}" ] && [ "$FXA_SECRETS_SOURCE" = "${_FXA_SECRETS_LOADED:-}" ] && unset FXA_SECRETS_SOURCE
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
   conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
   [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
@@ -195,6 +196,13 @@ pipeline_load() {
   export FXA_REPO="$PIPE_REPO" _FXA_REPO_LOADED="$PIPE_REPO" \
     FXA_SHARED_WORKTREE_NAME="$PIPE_POOL_NAME" _FXA_POOL_LOADED="$PIPE_POOL_NAME" \
     FXA_WORKTREE_BASE="$PIPE_BASE_BRANCH" _FXA_BASE_LOADED="$PIPE_BASE_BRANCH"
+  # A private fork of FxA runs the stack from its own work repo, so the FxA dev secrets come from
+  # the FxA host clone, as they do for FxA. A set FXA_SECRETS_SOURCE wins.
+  if [ -n "${PIPE_STACK_DIR:-}" ] && [ "$PIPE_STACK_DIR" = "${PIPE_WORKSPACE:-}" ] && [ -z "${FXA_SECRETS_SOURCE:-}" ] \
+     && [ "$(tr 'A-Z' 'a-z' <<< "${PIPE_REPO_SLUG:-}")" != mozilla/fxa ]; then
+    local fs; fs="$(pipeline_host_clone mozilla/fxa)"
+    export FXA_SECRETS_SOURCE="$fs" _FXA_SECRETS_LOADED="$fs"
+  fi
 
   mkdir -p "$PIPE_STATE_DIR"
   PIPE_LOCK_DIR="${PIPE_STATE_DIR}/pass.lock"

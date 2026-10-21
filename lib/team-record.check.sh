@@ -239,7 +239,13 @@ rm -f "$S"/so.json "$S"/sp.json "$S"/sq.json "$S"/sq2.json
 check "stack.repo must be one of the record's repos; the index marks the secret team" "1|true|false" \
   "$(sed 's#"repo": "mozilla/fxa-private"#"repo": "mozilla/other"#' "$S/fxa-private.json" > "$S/sr.json"; py validate "$S/sr.json" sr 2>&1 | grep -c 'stack.repo must be the slug'; rm -f "$S/sr.json")|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$S" | jq -r '.teams["fxa-private"].secret')|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$T" | jq -r '.teams.rusty.secret')"
 
-cp "$S/fxa-private.json" "$T/fxa-private.json"; sv="$(loaded fxa-private)"; rm -f "$T/fxa-private.json"
+fsrc() { ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO FXA_SECRETS_SOURCE
+  SANDBOX_ROOT="$root"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
+  echo "${FXA_SECRETS_SOURCE:-none}" ); }
+cp "$S/fxa-private.json" "$T/fxa-private.json"
+check "an FxA fork that runs the stack from its own repo takes the FxA dev secrets from the FxA host clone; FxA as a dep row does not" \
+  "$tmp/home/Desktop/working2/fxa|none" "$(fsrc fxa-private)|$(fsrc rusty)"
+sv="$(loaded fxa-private)"; rm -f "$T/fxa-private.json"
 sl() { printf '%s\n' "$sv" | sed -n "s/^$1=//p" | tr -d "'"; }
 check "a secret record loads its flag, its labels and a queue that reads ai-fixme" '1|ai-fixme|ai-fixme-private|labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' \
   "$(sl PIPE_SECRET_TICKETS)|$(sl PIPE_QUEUE_LABEL)|$(sl PIPE_LABEL_PREFIX)|$(sl PIPE_QUEUE_JQL)"
