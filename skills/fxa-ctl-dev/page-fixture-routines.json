@@ -9,7 +9,10 @@
     "profile": "example",
     "label": "Example",
     "repos": [
-     "example/app"
+     {
+      "slug": "example/app",
+      "role": "work"
+     }
     ],
     "access": {
      "record": true,
@@ -69,5 +72,23 @@
    }
   }
  ],
- "/api/routine-templates": []
+ "/api/routine-templates": [
+  {
+   "template": "code-review",
+   "prompt": "Review the commits on the routine's branch since the last run (the host gives the start and head SHAs; read them with git log and git show). Look for bugs, missing error handling, unsafe input handling, dead code and missing tests.\n\nFix only the issues that are clear and small: one obvious change each, with a test when the repo has tests for that code. Do not refactor, rename or restyle. List every other finding in the PR description under \"Not fixed\", with file:line and one line on why it matters.\n\nWhen you find nothing worth a change, make no change and say so.",
+   "about": "Reads the new commits for bugs, missing error handling, unsafe input, dead code and missing tests, and fixes only the small, clear issues.",
+   "name": "Code review",
+   "mode": "pr+notes",
+   "skip_no_commits": true
+  },
+  {
+   "template": "security-review",
+   "prompt": "Review the code that changed on the routine's branch since the last run (the host gives the start and head SHAs) for security defects: untrusted input that reaches a shell, a query, a file path or HTML; missing access checks; secrets in code or logs; weak crypto; unsafe dependencies.\n\nReport only. Change no code and open no PR: a fix in public would disclose the issue before a release. For each finding give the file:line, how a caller reaches it, the impact, and the fix you suggest. Say how sure you are.\n\nWhen you find nothing, say so in one line.",
+   "about": "Looks for untrusted input, missing access checks, secrets and weak crypto in the changed code. It changes no code, because a public fix would disclose the issue before a release.",
+   "name": "Security review",
+   "mode": "report",
+   "locked_mode": "report",
+   "skip_no_commits": true
+  }
+ ]
 }
