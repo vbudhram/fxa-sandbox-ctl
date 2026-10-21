@@ -8,9 +8,10 @@ job="${1:?job name}" prompt="${2:?prompt file}"
 # loader's default state dir, repeated here so the wrapper needs no ctl; keep the two in step.
 case "${FXA_PIPELINE:-fxa-ai-fixme}" in fxa|fxa-ai-fixme) _p=fxa-ai-fixme ;; *) _p="$FXA_PIPELINE" ;; esac
 state="${PIPE_STATE_DIR:-$HOME/.claude/state/$_p}"
-lib="$(dirname "$0")/../../lib"
-# Runs on a kill too (systemd's timeout, a stop), so no run token outlives its job.
+lib="$(dirname "$0")/../../lib" ctl="$(dirname "$0")/../../fxa-sandbox-ctl"
+# Runs on a kill too (systemd's timeout, a stop), so no run token outlives its job, and no lock its pass.
 cleanup() { rm -f "$out" "${cfg:-}"
+  [ -z "${locked:-}" ] || "$ctl" unlock >/dev/null 2>&1
   [ -z "${mcp_tok:-}" ] || ( source "$lib/mcp-token.sh" && mcp_token_revoke "$run" )
   [ -z "${llm_tok:-}" ] || ( source "$lib/llm-token.sh" && llm_token_revoke "$run" ); }
 out="$(mktemp)"; trap cleanup EXIT
@@ -19,7 +20,7 @@ out="$(mktemp)"; trap cleanup EXIT
 # not report review comments the first one already marked as noted.
 input="$(cat "$prompt")"
 if [ "$job" = pass ]; then
-  pre="$("$(dirname "$0")/../../fxa-sandbox-ctl" precheck 2>&1)"
+  pre="$("$ctl" precheck 2>&1)"
   case "$pre" in quiet*|locked*|paused*) printf '%s\n' "$pre" | head -1; exit 0 ;; esac
   # Lines a model can only report: a reap that already ran, a label that precheck tries again each
   # pass, a relock only the operator can run. The journal gets them, and no model turn is paid.
@@ -40,15 +41,38 @@ ${pre}
   # (Opus): the launch-or-skip call and the grounding need it. One that can only report (drain and
   # reap lines) runs on FXA_PASS_REPORT_MODEL; empty keeps the default for those too. Lines after
   # precheck's "info:" marker were handled already and do not count.
-  if ! printf '%s\n' "$pre" | sed '/^info:/,$d' | grep -qE '^(queue|reconcile|feedback):'; then
+  work="$(printf '%s\n' "$pre" | sed '/^info:/,$d')"
+  if ! grep -qE '^(queue|reconcile|feedback):' <<< "$work"; then
     report_model="${FXA_PASS_REPORT_MODEL-claude-sonnet-5-5}"
+  # Only skipped tickets that changed: one question each, does the edit answer the skip. FXA_PASS_JUDGE_MODEL
+  # runs it; empty keeps the default. A new or unblocked ticket keeps the default model.
+  elif ! grep -vqE '^queue: [A-Z][A-Z0-9]*-[0-9]+ changed ' <<< "$work"; then
+    report_model="${FXA_PASS_JUDGE_MODEL-claude-sonnet-5-5}"
   fi
+  # The wrapper holds the lock for the model's turns and reads the state each pass reads, so the model
+  # spends no turn on them. Precheck released its lock, so another pass can win it here: then stop.
+  lk="$("$ctl" lock 2>&1)" || { printf '%s\n' "$lk" | head -1; exit 0; }
+  locked=1
+  st="$(for c in newtickets focus freeslots launchcap queue inflight done-keys; do printf '$ %s\n%s\n' "$c" "$("$ctl" "$c" 2>&1)"; done)"
+  input="${input}
+
+The timer holds the pass lock: do not run lock or unlock. It read the state below at the start of the pass;
+use it, and do not read these again. It prints the report's counts, ✅ and ⏳ itself.
+<state-${n}>
+${st}
+</state-${n}>"
+  # Only the skill sections this pass's lines need: admission for a queued ticket, the review rules for
+  # feedback, the grounding rules for any line that can launch.
+  extra=""
+  grep -qE '^(queue|reconcile|feedback):' <<< "$work" && extra="${extra} launch.md"
+  grep -q '^queue:' <<< "$work" && extra="${extra} admission.md"
+  grep -q '^feedback:' <<< "$work" && extra="${extra} feedback.md"
   # The skill goes in the prompt, first so the next pass can reuse its cache: skills are off below.
   skill="$(cd "$(dirname "$0")/../../skills/fxa-ai-fixme" 2>/dev/null && pwd)"
   [ -f "${skill:-/nonexistent}/SKILL.md" ] || { echo "pass: no fxa-ai-fixme skill beside this script; not starting a pass without it" >&2; exit 1; }
   input="The fxa-ai-fixme skill (folder ${skill}) is below and already loaded: follow it, do not invoke it.
 <skill>
-$(cat "${skill}/SKILL.md")
+$(cat "${skill}/SKILL.md"; for f in $extra; do printf '\n'; cat "${skill}/$f"; done)
 </skill>
 
 ${input}"
@@ -79,6 +103,7 @@ if [ -n "${FXA_LLM_PROXY_URL:-}" ]; then
   else echo "WARN: no LLM proxy token; this ${job} uses the API key directly" >&2; fi
 fi
 claude -p --permission-mode auto --output-format json "${lean[@]}" ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
+[ -z "${locked:-}" ] || "$ctl" pass-report 2>&1
 jq -r '.result // empty' "$out" 2>/dev/null || cat "$out"
 row="$(jq -c --arg job "$job" --arg run "$run" '{at: (now | todate), job: $job, run: $run, cost_usd: (.total_cost_usd // null), models: ((.modelUsage // {}) | keys),
   turns: (.num_turns // null), duration_ms: (.duration_ms // null), is_error: (.is_error // false)}' "$out" 2>/dev/null)"

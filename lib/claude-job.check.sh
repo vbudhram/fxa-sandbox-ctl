@@ -11,11 +11,21 @@ command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/infra/gce" "$tmp/bin" "$tmp/state" "$tmp/lib" "$tmp/skills/fxa-ai-fixme" "$tmp/cfg"
 echo "SKILL BODY" > "$tmp/skills/fxa-ai-fixme/SKILL.md"
+for p in launch admission feedback; do echo "PART $p" > "$tmp/skills/fxa-ai-fixme/$p.md"; done
 echo '{"enabledPlugins":{"mem@x":true},"hooks":{"PreToolUse":[]}}' > "$tmp/cfg/settings.json"; export CLAUDE_CONFIG_DIR="$tmp/cfg"
 cp "$(dirname "$0")/../infra/gce/claude-job.sh" "$tmp/infra/gce/"
 cp "$(dirname "$0")/mcp-token.sh" "$(dirname "$0")/llm-token.sh" "$tmp/lib/"
 export FXA_MCP_GATEWAY_DIR="$tmp/gw"
-printf '#!/bin/sh\necho x >> %s/precheck-runs; cat %s/precheck-out\n' "$tmp" "$tmp" > "$tmp/fxa-sandbox-ctl"
+cat > "$tmp/fxa-sandbox-ctl" <<SH
+#!/bin/sh
+case "\$1" in
+  precheck) echo x >> $tmp/precheck-runs; cat $tmp/precheck-out ;;
+  lock) [ -e $tmp/lock-lost ] && { echo 'locked: lost the race'; exit 1; }; echo lock >> $tmp/ctl-calls; echo acquired ;;
+  unlock) echo unlock >> $tmp/ctl-calls ;;
+  pass-report) echo '### REPORT' ;;
+  *) echo "state-\$1" ;;
+esac
+SH
 printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
 printf 'echo "${ANTHROPIC_BASE_URL:-none} ${ANTHROPIC_API_KEY:-none}" > %s/claude-env\n' "$tmp" >> "$tmp/bin/claude"
 chmod +x "$tmp/fxa-sandbox-ctl" "$tmp/bin/claude"
@@ -29,7 +39,7 @@ check "a quiet pass records no cost" "0" "$(cat "$tmp/state/job-costs.jsonl" 2>/
 run 'locked: another pass started 5s ago' >/dev/null; check "a locked pass calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 run 'paused: deploy' >/dev/null; check "a paused pass calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 
-check "a pass with work runs Claude" "did the pass" "$(run 'queue: FXA-1 new (run: ground FXA-1)')"
+check "a pass with work runs Claude" "did the pass" "$(run 'queue: FXA-1 new (run: ground FXA-1)' | tail -1)"
 check "Claude gets the prompt and precheck's output" "Invoke /fxa-ai-fixme.|queue: FXA-1 new (run: ground FXA-1)|do not run precheck again" \
   "$(grep -x 'Invoke /fxa-ai-fixme.' "$tmp/claude-in")|$(grep '^queue:' "$tmp/claude-in")|$(grep -o 'do not run precheck again' "$tmp/claude-in")"
 check "the pass skill is in the prompt, before it, from its folder" "yes|$tmp/skills/fxa-ai-fixme" \
@@ -43,6 +53,22 @@ check "report-only lines call no model" "no" "$([ -e "$tmp/claude-in" ] && echo 
 check "report-only lines still reach the journal" "reap: FXA-1 stray-reaped (agent-x)" "$(run 'reap: FXA-1 stray-reaped (agent-x)' | head -1)"
 run "$(printf 'reap: FXA-1 stray-reaped (agent-x)\ndrain: FXA-6 72 RED ok=9 fail=1 running=0')" >/dev/null
 check "a red PR beside them still wakes a model" "yes" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
+# The timer holds the lock for the model's turns, gives it the state each pass reads, and prints the fixed report.
+: > "$tmp/ctl-calls"; o="$(run 'queue: FXA-1 new (run: ground FXA-1)')"
+check "a work pass locks before Claude and unlocks after" "lock unlock" "$(tr '\n' ' ' < "$tmp/ctl-calls" | sed 's/ $//')"
+check "the state is in the prompt, fenced, and the model is told not to lock" "yes|yes|yes" \
+  "$(grep -q '^<state-[0-9a-f]\{12\}>$' "$tmp/claude-in" && echo yes)|$(grep -qx 'state-freeslots' "$tmp/claude-in" && echo yes)|$(grep -q 'do not run lock or unlock' "$tmp/claude-in" && echo yes)"
+check "the fixed report goes to the journal before the model's reply" "### REPORT|did the pass" "$(printf '%s' "$o" | tr '\n' '|')"
+: > "$tmp/ctl-calls"; run 'quiet: 3 queued' >/dev/null
+check "a quiet pass takes no lock" "" "$(cat "$tmp/ctl-calls")"
+touch "$tmp/lock-lost"; o="$(run 'queue: FXA-1 new')"; rm -f "$tmp/lock-lost"
+check "another pass won the lock: stop before Claude" "no|locked: lost the race" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)|$o"
+# Only the skill parts a pass's lines need.
+parts() { grep -o '^PART [a-z]*' "$tmp/claude-in" | cut -d' ' -f2 | tr '\n' ' ' | sed 's/ $//'; }
+run 'queue: FXA-1 new (run: ground FXA-1)' >/dev/null; check "a queued ticket gets the launch and admission parts" "launch admission" "$(parts)"
+run 'feedback: FXA-1 has new review comments: 5 (run: feedback FXA-1 bundle)' >/dev/null; check "feedback gets the launch and feedback parts" "launch feedback" "$(parts)"
+run 'reconcile: FXA-5 dead-runner' >/dev/null; check "a reconcile line gets the launch part" "launch" "$(parts)"
+run 'drain: FXA-6 70 RED ok=9 fail=1 running=0' >/dev/null; check "a report-only pass gets no part" "" "$(parts)"
 mv "$tmp/skills" "$tmp/skills.off"; run 'queue: FXA-1 new' >/dev/null 2>&1
 check "no skill folder: the pass stops before Claude" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 mv "$tmp/skills.off" "$tmp/skills"
@@ -88,6 +114,15 @@ run "$(printf 'drain: FXA-6 70 RED ok=9 fail=1 running=0\ninfo: handled already,
 check "info lines after precheck's info marker do not keep the default model" "yes" "$(grep -q -- '--model claude-sonnet-5-5' "$tmp/claude-args" && echo yes || echo no)"
 FXA_PASS_REPORT_MODEL= run 'drain: FXA-7 71 RED ok=1 fail=1 running=0' >/dev/null
 check "an empty FXA_PASS_REPORT_MODEL keeps the default model for reports too" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+# Skipped tickets that changed only: one re-judgment each, on FXA_PASS_JUDGE_MODEL.
+run "$(printf 'queue: FXA-1 changed (run: ground FXA-1)\nqueue: FXA-2 changed (run: ground FXA-2)')" >/dev/null
+check "only changed skipped tickets run on Sonnet" "yes" "$(grep -q -- '--model claude-sonnet-5-5' "$tmp/claude-args" && echo yes || echo no)"
+run "$(printf 'queue: FXA-1 changed (run: ground FXA-1)\nqueue: FXA-3 new (run: ground FXA-3)')" >/dev/null
+check "a new ticket beside them keeps the default model" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+run "$(printf 'queue: FXA-1 changed (run: ground FXA-1)\nreconcile: FXA-5 dead-runner')" >/dev/null
+check "a reconcile line beside them keeps the default model" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
+FXA_PASS_JUDGE_MODEL= run 'queue: FXA-1 changed (run: ground FXA-1)' >/dev/null
+check "an empty FXA_PASS_REPORT_MODEL keeps the default model for reports too" "no" "$(grep -q -- '--model' "$tmp/claude-args" && echo yes || echo no)"
 
 # Through the LLM proxy: a token for this run (capped), revoked at the end; the row names the run.
 export FXA_LLM_PROXY_DIR="$tmp/llm" ANTHROPIC_API_KEY=sk-ant-direct-key-0000
@@ -102,6 +137,7 @@ cp "$tmp/bin/claude" "$tmp/claude.ok"; printf '#!/bin/bash\necho "${ANTHROPIC_AP
 rm -f "$tmp/claude-mcp"; FXA_LLM_PROXY_URL=http://10.0.0.2:8788 run 'queue: FXA-11 new (run: ground FXA-11)' >/dev/null 2>&1
 key="$(cat "$tmp/claude-env")"
 check "a killed job still expires its LLM run token" "fxl_|true" "${key:0:4}|$(jq '.expires <= now' "$tmp/llm/tokens/$key.json" 2>/dev/null)"
+check "a killed job still releases the pass lock" "unlock" "$(tail -1 "$tmp/ctl-calls")"
 check "a killed job still expires its MCP token" "true" "$(n=0; for f in "$tmp"/gw/tokens/*.json; do jq -e '.expires > now' "$f" >/dev/null && n=1; done; [ $n = 0 ] && echo true)"
 cp "$tmp/claude.ok" "$tmp/bin/claude"
 run 'queue: FXA-9 new (run: ground FXA-9)' >/dev/null

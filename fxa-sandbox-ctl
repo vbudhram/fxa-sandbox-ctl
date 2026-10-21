@@ -152,6 +152,7 @@ PIPELINE COMMANDS:
   alive <ISSUE-KEY>            Exit 0 if a live claude process runs in the VM
   progress <ISSUE-KEY>         What the launcher did (read this first)
   needs-you <ISSUE-KEY>        "new" the first time a ⚠️ item is reported, then "seen <date>"
+  pass-report                  The pass report's fixed part: the counts, ✅ ready to review, ⏳ in flight
   prstate <ISSUE-KEY>          PR number, state, and check tally
   conflicts <ISSUE-KEY>        Files conflicting with main, and their class
                                (lockfile | source). Empty if it merges clean.
@@ -1580,6 +1581,13 @@ cmd_progress()  { pipeline_progress "$(_key "$1")"; }
 cmd_needs_you() {
   local key f; key="$(_key "$1")"; f="${PIPE_STATE_DIR}/${key}.needs-you"
   if [ -f "$f" ]; then echo "seen $(cat "$f")"; else date -u +%F > "$f"; echo new; fi
+}
+# pass-report   The fixed part of the pass report, so the model writes only what the pass did and what needs a person.
+cmd_pass_report() {
+  local k q d i; q="$(jira_queue_keys | grep -c . || true)"; d="$(jira_done_keys)"; i="$(jira_inflight_keys)"
+  printf '### %s: %s queued, %s in flight   (%s)\n' "$PIPE_NAME" "$q" "$(printf '%s\n' $i | grep -c . || true)" "$(date +%H:%M)"
+  [ -z "$d" ] || { echo "✅ Ready to review:"; for k in $d; do printf '  %s  #%s\n' "$k" "$(gh_pr_state "$k" 2>/dev/null | awk '{print $2}')"; done; }
+  [ -z "$i" ] || { echo "⏳ In flight:"; for k in $i; do printf '  %s  %s\n' "$k" "$(pipeline_progress "$k" 2>/dev/null | head -1)"; done; }
 }
 cmd_lock()      { pipeline_lock; }
 cmd_unlock()    { pipeline_unlock; }
@@ -3052,6 +3060,7 @@ main() {
     alive)      cmd_alive "$@" ;;
     progress)   cmd_progress "$@" ;;
     needs-you)  cmd_needs_you "$@" ;;
+    pass-report) cmd_pass_report ;;
     prstate)    cmd_prstate "$@" ;;
     conflicts)  cmd_conflicts "$@" ;;
     relock)     cmd_relock "$@" ;;

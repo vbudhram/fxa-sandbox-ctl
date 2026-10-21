@@ -2,10 +2,12 @@
 # Offline check of the pass skill's reason rules: a reason is in single quotes, in the pass's own words,
 # so text from a ticket, PR or CI log never reaches a shell inside double quotes; and the skill names
 # every blocked and skip kind that the code takes.
-#   bash lib/skill-kinds.check.sh [SKILL.md] [pipeline.sh]
+#   bash lib/skill-kinds.check.sh [skill file] [pipeline.sh]   (default: SKILL.md and the parts beside it)
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
-f="${1:-$root/skills/fxa-ai-fixme/SKILL.md}"; code="${2:-$root/lib/pipeline.sh}"; fail=0
+s="$root/skills/fxa-ai-fixme"; f="$(mktemp)"; trap 'rm -f "$f"' EXIT
+if [ -n "${1:-}" ]; then cat "$1" > "$f"; else cat "$s/SKILL.md" "$s/launch.md" "$s/admission.md" "$s/feedback.md" > "$f"; fi
+code="${2:-$root/lib/pipeline.sh}"; fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 check "no reason placeholder in double quotes" "0" "$(grep -c '"<reason>"' "$f")"
 flat="$(tr '\n' ' ' < "$f")"
