@@ -1105,8 +1105,13 @@ _finish_check_frozen() {
     rm -f "$tmp"; return 0
   }
   # Run from the operator's checkout with no project config: a tsconfig.json in
-  # the slot can make ts-node load any file the agent wrote.
-  if ! (cd "$root" && GIT_DIR="$adm" GIT_WORK_TREE="$wt" TS_NODE_SKIP_PROJECT=true TS_NODE_TRANSPILE_ONLY=true \
+  # the slot can make ts-node load any file the agent wrote. A clone with no install (a private fork's
+  # host clone) borrows the FxA host clone's ts-node: the check needs only Node, ts-node and TypeScript.
+  local run="$root" fxa; fxa="$(pipeline_host_clone mozilla/fxa 2>/dev/null || true)"
+  [ -x "$root/node_modules/.bin/ts-node" ] || { [ -n "$fxa" ] && [ -x "$fxa/node_modules/.bin/ts-node" ] && run="$fxa"; } || {
+    echo "ERROR: the frozen-path check could not run: no ts-node in ${root} or in the FxA host clone. Run yarn install in ${root}, then finish again." >&2
+    rm -rf "$(dirname "$tmp")"; return 1; }
+  if ! (cd "$run" && GIT_DIR="$adm" GIT_WORK_TREE="$wt" TS_NODE_SKIP_PROJECT=true TS_NODE_TRANSPILE_ONLY=true \
         TS_NODE_COMPILER_OPTIONS='{"module":"commonjs","moduleResolution":"node"}' \
         npx --no-install ts-node "$tmp" >&2); then
     rm -rf "$(dirname "$tmp")"
