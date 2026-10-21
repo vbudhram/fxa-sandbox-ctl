@@ -91,9 +91,10 @@ $(head -c 3000 "${FXA_MEMORY_DIR}/profiles/${p}.md")
     [[ "$s" =~ $_MEMORY_SLUG ]] || continue
     f="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$s")/INDEX.md"
     [ -f "$f" ] || continue
-    # Traps first, then the lines the budget holds and a pointer: a size cut of the index, in kind order, kept no trap.
+    # Traps first, each a short snippet and its topic file (the cite is there), so every entry fits; a pointer for any that do not.
     part="## Repo: ${s}
 $( { grep '^- mem-[0-9a-f]* \[trap\]' "$f" || true; grep -v '^- mem-[0-9a-f]* \[trap\]' "$f" || true; } \
+      | sed -E 's/^(- mem-[0-9a-f]+ \[[a-z-]+\] .{0,100})[^>]*( -> [a-z-]+\.md)$/\1\2/' \
       | awk -v m=$(( MEMORY_INDEX_MAX - ${#body} - 300 )) -v ptr="/home/agent/.fxa-memory/repos/$(_memory_dir_of "$s")/INDEX.md" \
         '{ n += length($0) + 1; if (n <= m) print; else cut = 1 } END { if (cut) print "Index: " ptr }')
 "

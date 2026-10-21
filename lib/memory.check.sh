@@ -35,6 +35,9 @@ echo "$big" > "$FXA_MEMORY_DIR/repos/mozilla__fxa/INDEX.md"
 idx="$(MEMORY_INDEX_MAX=900 memory_index_md x mozilla/fxa | sed -n '/^## Repo/,$p')"
 check "traps come first, the lines the budget holds follow, then a pointer" "1|2|1" \
   "$(sed -n 2p <<< "$idx" | grep -c '\[trap\]')|$(grep -c '\[command\]' <<< "$idx")|$(tail -1 <<< "$idx" | grep -c '^Index: /home/agent/.fxa-memory/repos/mozilla__fxa/INDEX.md$')"
+printf -- '- mem-0000000b [trap] %0150d (packages/x/y.js:1) -> trap.md\n' 0 > "$FXA_MEMORY_DIR/repos/mozilla__fxa/INDEX.md"
+check "an entry is a 100-char snippet and its topic file, without the cite" "- mem-0000000b [trap] $(printf '%0100d' 0) -> trap.md" \
+  "$(memory_index_md x mozilla/fxa | grep '^- mem-')"
 g -C "$FXA_MEMORY_DIR" checkout -q -- repos
 check "a bad profile or slug reads nothing" "" "$(memory_index_md '../x' '../../etc')"
 
