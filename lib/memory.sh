@@ -204,7 +204,7 @@ _memory_norm() {
     ($slugs | split("\n") | map(select(length > 0))) as $ok | ($kinds | split(" ")) as $k
     | { episode: { goal: (.episode.goal | s(300)), decisions: (.episode.decisions | l), dead_ends: (.episode.dead_ends | l), outcome: (.episode.outcome | s(300)) },
         learnings: [ (.learnings // [])[]? | { op: (.op // "add" | s(10)), id: (.id | s(20)), repo: (.repo | s(100)), kind: (.kind | s(20)),
-                     text: (.text | s(300)), cite: (.cite | s(200)), anchor: (.anchor | s(120)), why: (.why | s(300)), path: (.path | s(200)) }
+                     text: (.text | s(300)), cite: (.cite | s(200)), anchor: (.anchor | s(120)), why: (.why | s(300)), path: (.path | s(200)), terms: (.terms | s(200)) }
                      | select(.text != "" and (.repo as $r | $ok | index($r)) and (.kind as $x | $k | index($x))
                               and (.op == "add" or ((.op == "update" or .op == "supersede") and (.id | test("^mem-[0-9a-f]{8}$"))))) ] | .[0:5],
         confirmed: [ (.confirmed // [])[]? | s(20) | select(test("^mem-[0-9a-f]{8}$")) ] | .[0:20] }' "$1" 2>/dev/null
@@ -231,9 +231,9 @@ _memory_cite_ok() {
 
 # _memory_entry <id> <learning json> <run> <ticket> <taint> <date>   One reviewed entry, as a block.
 _memory_entry() {
-  printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | confirmed: %s | source: %s %s | taint: %s -->\n%s\n\nWhy: %s\n\n' \
+  printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s -->\n%s\n\nWhy: %s\n\n' \
     "$1" "$(jq -r .kind <<< "$2")" "$(jq -r .path <<< "$2")" "$(jq -r .cite <<< "$2" | tr -d '|')" "$(jq -r .anchor <<< "$2" | tr -d '|')" \
-    "$6" "$3" "$4" "$5" "$(jq -r .text <<< "$2")" "$(jq -r .why <<< "$2")"
+    "$(jq -r '.terms // ""' <<< "$2" | tr -d '|')" "$6" "$3" "$4" "$5" "$(jq -r .text <<< "$2")" "$(jq -r .why <<< "$2")"
 }
 
 # _memory_drop <dir> <id>   Remove an entry's block from whichever topic file holds it.
@@ -357,7 +357,7 @@ memory_collect() {
       d="${FXA_MEMORY_DIR}/inbox/$(_memory_dir_of "$repo")"; mkdir -p "$d"
       [ -f "${d}/${id}.md" ] && continue
       { _memory_md "id: ${id}" "op: ${op}" "replaces: $(jq -r .id <<< "$l")" "kind: $(jq -r .kind <<< "$l")" "repo: ${repo}" "path: $(jq -r .path <<< "$l")" \
-          "cite: $(jq -r .cite <<< "$l")" "anchor: $(jq -r .anchor <<< "$l")" "run: ${run}" "ticket: ${ticket}" "profile: ${prof}" "taint: ${taint}" "created: ${now}"
+          "cite: $(jq -r .cite <<< "$l")" "anchor: $(jq -r .anchor <<< "$l")" "terms: $(jq -r .terms <<< "$l")" "run: ${run}" "ticket: ${ticket}" "profile: ${prof}" "taint: ${taint}" "created: ${now}"
         jq -r '.text, "", "Why: \(.why)"' <<< "$l"; } > "${d}/${id}.md"; n=$((n + 1)); inbox=$((inbox + 1))
     fi
   done < <(jq -c '.learnings[]' <<< "$norm")
@@ -453,8 +453,8 @@ _memory_digest() {
     dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$(sed -n 's/^repo: //p' "$f")")"; mkdir -p "$dir"
     [[ "$replaces" =~ ^mem-[0-9a-f]{8}$ ]] && _memory_drop "$dir" "$replaces"
     body="$(awk 'c >= 2 { print } /^---$/ { c++ }' "$f")"
-    printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
-      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(sed -n 's/^cite: //p' "$f")" "$(sed -n 's/^anchor: //p' "$f")" "$(date -u +%F)" \
+    printf '## %s\n<!-- kind: %s | path: %s | cite: %s | anchor: %s | terms: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
+      "$id" "$kind" "$(sed -n 's/^path: //p' "$f")" "$(sed -n 's/^cite: //p' "$f")" "$(sed -n 's/^anchor: //p' "$f")" "$(sed -n 's/^terms: //p' "$f" | tr -d '|')" "$(date -u +%F)" \
       "$(sed -n 's/^run: //p' "$f")" "$(sed -n 's/^ticket: //p' "$f")" "$(sed -n 's/^taint: //p' "$f")" "$body" >> "${dir}/${kind}.md"
     _memory_git rm -q -- "${f#"${FXA_MEMORY_DIR}"/}" 2>/dev/null || rm -f "$f"
     list="${list}- ${id} (${kind}, cite did not check out): $(printf '%s' "$body" | head -1 | cut -c1-160)

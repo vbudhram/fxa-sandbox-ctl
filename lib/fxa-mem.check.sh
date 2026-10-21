@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
-fm() { FXA_MEM_DIR="${FXA_MEM_DIR:-$tmp/mem}" FXA_MEM_USE="${FXA_MEM_USE:-$tmp/use.jsonl}" python3 -I "$here/../templates/fxa-mem" "$@"; }
+fm() { FXA_MEM_DIR="${FXA_MEM_DIR:-$tmp/mem}" FXA_MEM_USE="${FXA_MEM_USE:-$tmp/use.jsonl}" FXA_MEM_OUT="$tmp/out.json" python3 -I "$here/../templates/fxa-mem" "$@"; }
 
 # _entry <id> <meta> <text> <why>   One block, in the shape of _memory_entry in lib/memory.sh.
 _entry() { if [ -n "$2" ]; then printf '## %s\n<!-- %s -->\n%s\n\nWhy: %s\n\n' "$1" "$2" "$3" "$4"; else printf '## %s\n%s\n\nWhy: %s\n\n' "$1" "$3" "$4"; fi; }
@@ -19,7 +19,7 @@ d="$tmp/mem/repos/mozilla__fxa"; o="$tmp/mem/repos/mozilla__other"; mkdir -p "$d
   _entry mem-0000000c "" "nometa this block has no meta line, so the parser skips it. module test run file" "No meta."
 } > "$d/trap.md"
 {
-  _entry mem-0000000d "kind: command | path: packages/dd/** | cite: packages/dd/package.json:1 | anchor: jest | confirmed: 2026-10-16 | source: run K3 | taint: 0 | digest: 1" \
+  _entry mem-0000000d "kind: command | path: packages/dd/** | cite: packages/dd/package.json:1 | anchor: jest | terms: EREFUSED dns | confirmed: 2026-10-16 | source: run K3 | taint: 0 | digest: 1" \
     "Run the unit test of a file with jest." "It is fast."
   _entry mem-0000000f "kind: command | path: packages/y/** | cite: packages/y/package.json:1 | anchor: mocha | confirmed: 2026-10-16 | source: run K4 | taint: 0" \
     "Run one test file with mocha." "It skips the rest."
@@ -60,4 +60,15 @@ check "each search is logged with its hit ids" "search|true" "$(fm search foo >/
 check "no writable use log still prints hits" "mem-0000000a" "$(FXA_MEM_USE=/nonexistent/x.jsonl fm search foo | head -1 | cut -d' ' -f1)"
 check "a missing memory folder prints one line, exit 0" "no team memory on this runner|0" "$(o="$(FXA_MEM_DIR=$tmp/none fm search foo)"; echo "$o|$?")"
 check "this python has FTS5" "ok" "$(python3 -I -c 'import sqlite3; sqlite3.connect(":memory:").execute("create virtual table t using fts5(x)"); print("ok")')"
+check "propose writes a learning the controller accepts" "trap|EREFUSED dns" \
+  "$(fm propose --repo mozilla/fxa --kind trap --text t --cite a.js:1 --anchor abcd --why w --path 'packages/**' --terms 'EREFUSED dns' >/dev/null && jq -r '.learnings[0].kind + "|" + .learnings[0].terms' "$tmp/out.json")"
+check "propose without terms exits 2" "2" "$(fm propose --repo mozilla/fxa --kind trap --text t --cite a.js:1 --anchor abcd --why w >/dev/null 2>&1; echo $?)"
+check "propose with a bad kind exits 2" "2" "$(fm propose --repo mozilla/fxa --kind nope --text t --cite a.js:1 --anchor abcd --why w --terms x >/dev/null 2>&1; echo $?)"
+check "propose update needs a good id, and an id needs an op" "2|2|0" "$(fm propose --repo r/r --kind trap --text t --cite a:1 --anchor abcd --why w --terms x --op update >/dev/null 2>&1; echo $?)|$(fm propose --repo r/r --kind trap --text t --cite a:1 --anchor abcd --why w --terms x --id mem-0000000a >/dev/null 2>&1; echo $?)|$(fm propose --repo r/r --kind trap --text t --cite a:1 --anchor abcd --why w --terms x --op supersede --id mem-0000000a >/dev/null 2>&1; echo $?)"
+check "propose keeps op and id" "supersede|mem-0000000a" "$(jq -r '.learnings[-1].op + "|" + .learnings[-1].id' "$tmp/out.json")"
+check "confirm adds an id once" "1" "$(fm confirm mem-0000000a >/dev/null; fm confirm mem-0000000a >/dev/null; jq '.confirmed | length' "$tmp/out.json")"
+check "confirm with a bad id exits 2" "2" "$(fm confirm nope >/dev/null 2>&1; echo $?)"
+check "the output file is not overwritten when it is not JSON" "1|not json" "$(echo 'not json' > "$tmp/out.json"; fm confirm mem-0000000a >/dev/null 2>&1; echo $?)|$(cat "$tmp/out.json")"
+check "propose and confirm leave the use log alone" "0" "$(rm -f "$tmp/out.json"; : > "$tmp/use.jsonl"; fm confirm mem-0000000a >/dev/null; wc -l < "$tmp/use.jsonl" | tr -d ' ')"
+check "terms are searched" "mem-0000000d" "$(fm search EREFUSED | head -1 | cut -d' ' -f1)"
 exit "$fail"

@@ -133,16 +133,17 @@ g -C "$tmp/fxa" add -A && g -C "$tmp/fxa" commit -qm x && g -C "$tmp/fxa" push -
 _tree_host_root() { echo "$tmp/fxa"; }
 cat > "$tmp/a.json" <<'EOF2'
 {"learnings": [
-  {"op": "add", "repo": "mozilla/fxa", "kind": "command", "text": "fxa-settings test-unit runs no tests; use test", "cite": "packages/fxa-settings/package.json:4", "anchor": "\"test-unit\": \"echo none\"", "why": "a run passed with no tests"},
-  {"op": "add", "repo": "mozilla/fxa", "kind": "trap", "text": "a fact whose anchor is not in the code", "cite": "packages/fxa-settings/package.json:4", "anchor": "not there at all", "why": "w"}]}
+  {"op": "add", "repo": "mozilla/fxa", "kind": "command", "text": "fxa-settings test-unit runs no tests; use test", "cite": "packages/fxa-settings/package.json:4", "anchor": "\"test-unit\": \"echo none\"", "why": "a run passed with no tests", "terms": "npm test | zero tests"},
+  {"op": "add", "repo": "mozilla/fxa", "kind": "trap", "text": "a fact whose anchor is not in the code", "cite": "packages/fxa-settings/package.json:4", "anchor": "not there at all", "why": "w", "terms": "inboxterm words"}]}
 EOF2
 memory_collect agent-p1 "$tmp/a.json" ship fxa 1 FXA-200 mozilla/fxa 2>/dev/null
 g -C "$tmp/check" pull -q 2>/dev/null
 pid="$(grep -o '^## mem-[0-9a-f]*' "$tmp/check/repos/mozilla__fxa/command.md" | head -1 | cut -c4-)"
 check "a good cite goes straight to repos/ and its INDEX; a bad anchor waits in the inbox" "1|1|1" \
   "$(grep -c 'test-unit runs no tests' "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c "^- ${pid} \[command\]" "$tmp/check/repos/mozilla__fxa/INDEX.md")|$(grep -rl 'anchor is not in the code' "$tmp/check/inbox" | grep -c .)"
-echo "{\"learnings\": [{\"op\": \"update\", \"id\": \"${pid}\", \"repo\": \"mozilla/fxa\", \"kind\": \"command\", \"text\": \"fxa-settings unit tests: run test (jest); test-unit only echoes\", \"cite\": \"packages/fxa-settings/package.json:5\", \"anchor\": \"jest\", \"why\": \"w\"}]}" > "$tmp/u.json"
+echo "{\"learnings\": [{\"op\": \"update\", \"id\": \"${pid}\", \"repo\": \"mozilla/fxa\", \"kind\": \"command\", \"text\": \"fxa-settings unit tests: run test (jest); test-unit only echoes\", \"terms\": \"npm test | zero tests\", \"cite\": \"packages/fxa-settings/package.json:5\", \"anchor\": \"jest\", \"why\": \"w\"}]}" > "$tmp/u.json"
 memory_collect agent-p2 "$tmp/u.json" ship fxa 0 "" mozilla/fxa 2>/dev/null; g -C "$tmp/check" pull -q 2>/dev/null
+check "terms reach the topic file meta line, with the pipe removed" "1" "$(grep -c 'terms: npm test  zero tests |' "$tmp/check/repos/mozilla__fxa/command.md")"
 check "an update replaces the entry under the same id" "1|0|1" \
   "$(grep -c "^## ${pid}\$" "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c 'runs no tests; use test' "$tmp/check/repos/mozilla__fxa/command.md")|$(grep -c 'only echoes' "$tmp/check/repos/mozilla__fxa/INDEX.md")"
 # Confirm: only an untainted run renews; an entry not confirmed for 90 days leaves the index.
@@ -170,6 +171,7 @@ memory_digest 2>/dev/null
 br="$(g -C "$tmp/clone" fetch -q origin 2>/dev/null; g -C "$tmp/clone" branch -r --list 'origin/digest/*' | sed 's#^ *origin/##' | tail -1)"
 check "the digest branch moves the inbox into repos/ and lists it" "0|1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/.*mem-')|$(g -C "$tmp/clone" show "origin/${br}:repos/mozilla__fxa/trap.md" | grep -c 'patch level bump')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'From the inbox')"
+check "the digest keeps the terms of an inbox learning" "1" "$(g -C "$tmp/clone" show "origin/${br}:repos/mozilla__fxa/trap.md" | grep -c 'terms: inboxterm words |')"
 check "main keeps its inbox until a person merges; the operator gets the compare link" "1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only origin/main | grep -c 'inbox/mozilla__fxa/mem-' | sed 's/^[1-9][0-9]*$/1/')|$(grep -c "compare/main...${br}" "$tmp/digest.msg")"
 
