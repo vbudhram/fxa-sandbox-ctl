@@ -176,10 +176,13 @@ def check(rec, name=None):
     if repos and not any(isinstance(r, dict) and r.get("role") == "work" for r in repos):
         bad.append("repos needs at least one work repo")
 
-    stack = obj(rec.get("stack", {}), "stack", {"kind"})
+    stack = obj(rec.get("stack", {}), "stack", {"kind", "repo"})
     if stack.get("kind", "none") not in ("fxa", "none"):
         bad.append("stack.kind must be fxa or none")
-    if stack.get("kind") == "fxa" and "mozilla/fxa" not in slugs:
+    # stack.repo names the row the FxA stack runs from: a private fork of FxA, else mozilla/fxa.
+    if "repo" in stack and str(stack["repo"]).lower() not in slugs:
+        bad.append("stack.repo must be the slug of one of the record's repos")
+    elif stack.get("kind") == "fxa" and str(stack.get("repo", "mozilla/fxa")).lower() not in slugs:
         bad.append("stack.kind fxa needs a mozilla/fxa repo row")
     if stack.get("kind", "none") != "fxa" and not str(rec.get("prompts", {}).get("goal_md", "")).strip():
         bad.append("a team without the FxA stack needs prompts.goal_md: FxA's goal names FxA's skills, lint and PR template")
@@ -199,13 +202,23 @@ def check(rec, name=None):
             bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
-    jira = obj(rec.get("jira", {}), "jira", {"project", "queue"})
+    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret"})
     if "project" in jira and not PROJECT.fullmatch(str(jira["project"])):
         bad.append("jira.project must be a Jira project key")
     if "queue" in jira:
         flag(jira["queue"], "jira.queue")
     if jira.get("queue") and "project" not in jira:
         bad.append("jira.queue needs jira.project")
+    # The secret tickets of a project (a level or a secret label) go to this team's private repos.
+    if "secret" in jira:
+        flag(jira["secret"], "jira.secret")
+    if jira.get("secret") is True:
+        if jira.get("queue") is not True:
+            bad.append("jira.secret needs jira.project and jira.queue: true")
+        if acc.get("open") is True:
+            bad.append("a team that takes secret tickets cannot be open: set access.open to false and list access.users")
+        if acc.get("jira_prefixes"):
+            bad.append("a team that takes secret tickets cannot list access.jira_prefixes: a Slack tag of a key starts the public team's session")
 
     pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers"})
     if "open" in pr:
@@ -294,7 +307,8 @@ def env(rec):
     if default:
         yield "PIPE_STACK_DEFAULT", default
     if rec.get("stack", {}).get("kind") == "fxa":
-        fxa = next(r for r in repos if r["slug"].lower() == "mozilla/fxa")  # check() compares lowercase too
+        want = str(rec["stack"].get("repo", "mozilla/fxa")).lower()
+        fxa = next(r for r in repos if r["slug"].lower() == want)  # check() compares lowercase too
         yield "PIPE_STACK_DIR", fxa.get("path", default_path(fxa["slug"]))
     run = rec.get("runner", {})
     yield "PIPE_VM_BACKEND", run.get("backend", "gce")
@@ -308,6 +322,11 @@ def env(rec):
     jira = rec.get("jira", {})
     if jira.get("project"):
         yield "PIPE_JIRA_PROJECT", jira["project"]
+    # The engineer adds ai-fixme to any ticket; a secret team's states are ai-fixme-private-<state>.
+    if jira.get("secret") is True:
+        yield "PIPE_SECRET_TICKETS", "1"
+        yield "PIPE_QUEUE_LABEL", "ai-fixme"
+        yield "PIPE_LABEL_PREFIX", "ai-fixme-private"
     pr = rec.get("pr", {})
     yield "PIPE_PR_OPEN", "1" if pr.get("open", True) else "0"
     if pr.get("reviewers"):
@@ -333,6 +352,7 @@ def unique(rec, folder):
     """Clashes with the other teams. FXA_BUILTIN_JIRA holds the built-in teams' "PROJECT:team" pairs."""
     bad, mine = [], rec["name"]
     taken = dict(p.split(":", 1) for p in os.environ.get("FXA_BUILTIN_JIRA", "").split() if ":" in p)
+    secret = {}  # project -> the one team that takes its secret tickets
     chans = {}
     for f in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
         if not f.endswith(".json") or f == "index.json" or f[:-5] == mine:
@@ -341,13 +361,22 @@ def unique(rec, folder):
             other = load(os.path.join(folder, f))
         except SystemExit:
             continue
-        for p in [other.get("jira", {}).get("project")] + other.get("access", {}).get("jira_prefixes", []):
+        oj = other.get("jira", {})
+        if oj.get("secret") is True and oj.get("project"):
+            secret.setdefault(oj["project"], other.get("name", f[:-5]))
+            oj = {}
+        for p in [oj.get("project")] + other.get("access", {}).get("jira_prefixes", []):
             if p:
                 taken.setdefault(p, other.get("name", f[:-5]))
         for c in other.get("access", {}).get("channels", []):
             chans.setdefault(c, other.get("name", f[:-5]))
-    acc = rec.get("access", {})
-    for p in {rec.get("jira", {}).get("project")} | set(acc.get("jira_prefixes", [])):
+    acc, mj = rec.get("access", {}), rec.get("jira", {})
+    if mj.get("secret") is True:
+        p = mj.get("project")
+        if p and secret.get(p, mine) != mine:
+            bad.append(f"Jira project {p}'s secret tickets belong to team {secret[p]}: remove jira.secret, or use a different jira.project")
+        mj = {}
+    for p in {mj.get("project")} | set(acc.get("jira_prefixes", [])):
         if p and taken.get(p, mine) != mine:
             bad.append(f"Jira project {p} belongs to team {taken[p]}")
     for c in acc.get("channels", []):
@@ -387,7 +416,8 @@ def index(folder):
             pass
         teams[rec["name"]] = {"label": rec.get("label", rec["name"]), "status": rec.get("status", "draft"),
                               "generation": gen, "access": rec.get("access", {}),
-                              "jira": rec.get("jira", {}).get("project", ""), "queue": rec.get("jira", {}).get("queue") is True}
+                              "jira": rec.get("jira", {}).get("project", ""), "queue": rec.get("jira", {}).get("queue") is True,
+                              "secret": rec.get("jira", {}).get("secret") is True}
     return {"schema": 1, "teams": teams}
 
 

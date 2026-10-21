@@ -134,6 +134,19 @@ _teams_live() {
     [ "$code" = 200 ] || { echo "ERROR: ${s} is private (or GitHub did not answer), and the agent's GitHub App is not installed on it (HTTP ${code}), so a runner cannot clone it" >&2; rc=1; }
     [ "$(jq -r '.access.open // false' "$f")" != true ] || { echo "ERROR: ${s} is private, so the team cannot be open to everyone: set access.users instead of access.open" >&2; rc=1; }
   done
+  # A team that takes secret tickets: GitHub must confirm each work repo private, now and at every read.
+  if [ "$(jq -r '.jira.secret // false' "$f")" = true ]; then
+    local why n; n="$(jq -r '.name' "$f")"
+    for s in $(jq -r '.repos[]? | select(.role == "work") | .slug' "$f"); do
+      why="$(github_repo_confirmed_private "$s" 2>&1)" && continue
+      case "$why" in
+        *" is public") echo "ERROR: ${s} is public, so team ${n} cannot take secret tickets: remove jira.secret or use a private work repo" >&2 ;;
+        *) echo "ERROR: ${why}. Validate again when GitHub answers." >&2 ;;
+      esac
+      rc=1
+    done
+    echo "WARN: a ticket with only a security level (no secret label) runs only when the pipeline's Jira login can see it"
+  fi
   [ "$rc" -eq 0 ] || return 1
   proj="$(jq -r '.jira.project // empty' "$f")"; [ -n "$proj" ] || return 0
   st="$(jq -r '.status // "draft"' "$f")"; queue="$(jq -r '.jira.queue // false' "$f")"

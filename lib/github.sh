@@ -594,6 +594,40 @@ github_repo_private() {
   esac
 }
 
+# github_repo_confirmed_private <owner/repo>   True only when an authenticated read answers visibility
+# "private" (an enterprise "internal" repo also says private: true): the App's read token, else the
+# person's gh login. Any other answer is false, with the reason on stderr. Only a yes is kept, and only
+# for this process, so each pass asks again; a secret team's gate never counts an unclear answer.
+_GH_CONFIRMED=" "
+github_repo_confirmed_private() {
+  local slug="$1" tok out code
+  [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "could not confirm that ${slug} is private (not a repo slug)" >&2; return 1; }
+  case "$_GH_CONFIRMED" in *" $slug "*) return 0 ;; esac
+  if github_app_enabled; then
+    tok="$(github_read_token "$slug")" && [ -n "$tok" ] \
+      || { echo "could not confirm that ${slug} is private (the GitHub App gave no read token: is it installed on ${slug}?)" >&2; return 1; }
+    out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -s --max-time 20 -K - -w '\n%{http_code}' \
+      -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${slug}")" || out=$'\n000'
+    code="${out##*$'\n'}"
+    [ "$code" = 200 ] || { echo "could not confirm that ${slug} is private (GitHub answered HTTP ${code})" >&2; return 1; }
+    out="$(printf '%s' "${out%$'\n'*}" | jq -r '.visibility // empty' 2>/dev/null)" || out=""
+  elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    local err; err="$(mktemp)"
+    out="$(gh api "repos/${slug}" --jq '.visibility // empty' 2>"$err")" || { echo "could not confirm that ${slug} is private (gh: $(tail -1 "$err"))" >&2; rm -f "$err"; return 1; }
+    rm -f "$err"
+  else
+    echo "no GitHub App and no gh login on this host, so ${slug} cannot be confirmed private. Run gh auth login, or run on the manager." >&2
+    return 1
+  fi
+  case "$out" in
+    private) _GH_CONFIRMED="${_GH_CONFIRMED}${slug} "; return 0 ;;
+    public) echo "${slug} is public" >&2 ;;
+    internal) echo "${slug} is internal (every member of the enterprise can read it), not private" >&2 ;;
+    *) echo "could not confirm that ${slug} is private (GitHub gave no visibility)" >&2 ;;
+  esac
+  return 1
+}
+
 # github_git_credential <operation>   A git credential helper (git asks only after a 401, so only for a
 # private repo): a read token for github.com/<owner>/<repo>, from the request on stdin. Needs
 # credential.useHttpPath. Prints nothing when it has no token, and git then fails as before.

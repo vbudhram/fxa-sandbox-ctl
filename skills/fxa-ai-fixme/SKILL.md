@@ -94,6 +94,8 @@ the queue has work.
 | `ai-fixme-blocked` | Needs a human. |
 | `ai-fixme-diff` | A read-only profile's run (`PIPE_PR_OPEN=0`) ended as a patch in `<state dir>/diffs/KEY.patch`, with a summary comment on the ticket. No PR. A person reviews it. The launcher sets it; the pass never relabels it. |
 
+A team that takes secret tickets (`jira.secret`) uses `ai-fixme-private-<state>` for each state; `label` writes them. Its queue label is still `ai-fixme`.
+
 `$CTL label KEY <state>` swaps the label and removes every other in the family; `public` means
 the bare label. Never read or write Jira status to decide pipeline state; the label is the state
 machine. The one status write is the Done transition inside `label KEY merged`, which is

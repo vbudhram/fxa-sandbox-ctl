@@ -164,7 +164,6 @@ What happens under the hood:
 |------|---------|-------------|
 | `--worktree <name>` | auto-pool | Pin to a named worktree slot (creates if missing). Without it, the pool picks a free `fxa-auto*` slot. |
 | `--base <branch>` | `main` | Base branch for new ticket branches. |
-| `--private` | off | Provision from the checkout at `$FXA_PRIVATE_REPO` into its own pool. See [Private mode](#private-mode). |
 | `--guardrails <file>` | — | Prepend a file to the agent's task context as mandatory reviewer guidance. The agent reads it first. |
 | `--functional-tests` | off | Pre-warm the FxA stack in the VM. The test plan must name the functional spec for the changed flow, and `/fxa-verify --plan` must pass it. Alias: `--with-stack`. |
 | `--watch` | on | After agent starts, block until handoff lands, then push. |
@@ -177,28 +176,27 @@ What happens under the hood:
 | `-n, --name <name>` | issue key | Agent name, lowercased issue key by default. |
 | `-c, --cpu` / `-m, --memory` | 4 / 8192 | VM resources. |
 
-### Private mode
+### Private pipeline teams
 
-`--private` runs a ticket against a second local checkout instead of the public
-FxA repo. Point `FXA_PRIVATE_REPO` at that checkout in `.env`:
+A secret ticket (a Jira security level, or a `security`, `hackerone` or `PIPE_SECRET_LABELS` label)
+never runs against a public repo. A team record with `jira.secret: true` takes the secret tickets of
+its project and runs them against its private work repos. For FxA it is fxa-private:
 
-```bash
-echo 'FXA_PRIVATE_REPO=/path/to/second/checkout' >> .env
-fxa-sandbox-ctl jira FXA-13474 --private
-```
+1. A TEAM_ADMINS admin creates the record: work repo `mozilla/fxa-private` (the GitHub App installed
+   on it), `stack: {kind: fxa, repo: mozilla/fxa-private}`,
+   `jira: {project: FXA, queue: true, secret: true}`, and `access.users`. Validate refuses a work repo
+   that GitHub does not confirm private, an open team and Jira prefixes.
+2. Run `profile test fxa-private`, then `profile enable fxa-private`.
+3. Engineers add `ai-fixme` to a secret ticket, as to any ticket. The fxa-private pass takes it, and
+   its states are `ai-fixme-private-<state>`. FxA's pass never reads those tickets.
 
-Worktrees come from that checkout and use their own pool (`fxa-auto-private`,
-`fxa-auto-private-2`, ...), so private runs never take a slot from the public
-pool. `git push` and `gh pr create` both run inside the worktree, so they
-resolve the target repo from that worktree's own `origin` remote. The tool is
-never told which repo it is.
+The FxA dev secrets for a fork come from the FxA host clone (`FXA_SECRETS_SOURCE`). By hand, run
+`fxa-sandbox-ctl --pipeline fxa-private jira FXA-123`. `jira --private` is gone and names that command.
 
-Dev secrets still come from the public FxA checkout through
-`FXA_SECRETS_SOURCE`, because a second checkout has no populated secrets of its
-own.
-
-`FXA_PRIVATE_REPO` has no default. Without it, `--private` stops with an error
-and changes nothing.
+A ticket with only a security level runs only when the pipeline's Jira login can see it, so add the
+`security` label too. A secret ticket that stays on `ai-fixme` for more than one pass interval means
+that the team is stopped (no active secret team, or its repo is not confirmed private): ask a
+TEAM_ADMINS operator.
 
 ### GCE backend
 
@@ -306,8 +304,7 @@ cp .env.example .env
 |-----|---------|
 | `CLAUDE_CODE_OAUTH_TOKEN` | Generated via `claude setup-token`. Ephemerally injected into each VM. |
 | `FXA_REPO` | Override the FxA monorepo path (default: `~/Desktop/working2/fxa`). |
-| `FXA_PRIVATE_REPO` | Checkout that `jira --private` provisions from. No default; `--private` fails without it. |
-| `FXA_SECRETS_SOURCE` | Checkout to copy dev secrets and the `ai/` mirror from (default: the worktree's own repo root). |
+| `FXA_SECRETS_SOURCE` | Checkout to copy dev secrets and the `ai/` mirror from (default: the worktree's own repo root; the FxA host clone for a private fork of FxA). |
 | `FXA_WORKTREE_BASE` | Default base branch (default: `main`). |
 | `FXA_AGENT_MODEL` | Model for the agent's Claude, passed as `--model` (default: `claude-opus-5-5`). |
 | `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |

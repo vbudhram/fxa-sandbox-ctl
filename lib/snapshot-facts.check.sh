@@ -44,6 +44,8 @@ check "a recorded kind wins, and a hold is depends_on" "depends_on needs_decisio
 tm="$(PIPE_PROFILE=t1 PIPE_LABEL='Team One' PIPE_JIRA_SITE=https://jira.example.com PIPE_LABEL_PREFIX=ai-x FXA_PR_LABEL=lbl PIPE_JIRA_BASIC=secretmark1 PIPE_RELOCK_SIGN=secretmark2 PIPE_STATE_URI=gs://secretmark3 snapshot_json 2>/dev/null)"
 check "team: six keys with the PIPE values" "jira_site,name,pr_label,profile,queue_label,repo|t1|Team One|https://jira.example.com|ai-x|lbl|mozilla/fxa" \
   "$(jq -r '(.team | keys | join(",")) + "|" + ([.team.profile, .team.name, .team.jira_site, .team.queue_label, .team.pr_label, .team.repo] | join("|"))' <<< "$tm")"
+check "team: a secret team shows the label engineers add (ai-fixme), not its state prefix" "ai-fixme" \
+  "$(PIPE_PROFILE=t2 PIPE_LABEL_PREFIX=ai-fixme-private PIPE_QUEUE_LABEL=ai-fixme snapshot_json 2>/dev/null | jq -r .team.queue_label)"
 check "team: no other host value reaches the snapshot" "0" "$(grep -c secretmark <<< "$tm")"
 check "team: no label gives the profile as the name, and pr_label auto" "t1|auto|null" "$( (unset PIPE_LABEL FXA_PR_LABEL PIPE_JIRA_SITE; PIPE_PROFILE=t1 snapshot_json 2>/dev/null) | jq -r '"\(.team.name)|\(.team.pr_label)|\(.team.jira_site)"')"
 check "the Done cap is in limits" "30" "$(jq -r .limits.merged_prs <<< "$tm")"

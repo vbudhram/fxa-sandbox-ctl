@@ -84,6 +84,9 @@ check "the workspace step clones each repo the image lacks, into its own path" "
 check "it links each tree under the stack root, and /workspace to the root" "1|1|1" \
   "$(grep -c 'ln -sfn /home/agent/fxa /home/agent/stack/fxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/pyfxa /home/agent/stack/pyfxa' <<< "$w")|$(grep -c 'ln -sfn /home/agent/stack /workspace' <<< "$w")"
 check "only the fxa tree writes FXA_WORKSPACE and FXA_ROOT, to its own path" "echo 'export FXA_WORKSPACE=/home/agent/fxa FXA_ROOT=/home/agent/fxa'" "$(grep -o "echo 'export FXA_WORKSPACE=[^']*'" <<< "$w" | paste -sd, -)"
+printf 'fxa\tmozilla/fxa-private\t/home/agent/fxa\t%s\tmain\t%s\tagent-x1\n' "$A" "$B" > "$tmp/fork.tsv"
+check "a private fork of FxA that is the stack row (PIPE_STACK_DIR) gets FXA_WORKSPACE too; with no stack dir it does not" "1|0" \
+  "$(: > "$tmp/vm.log"; PIPE_STACK_DIR=/home/agent/fxa _trees_workspace run1 "$tmp/fork.tsv" >/dev/null; grep -c "export FXA_WORKSPACE=/home/agent/fxa" "$tmp/vm.log")|$(: > "$tmp/vm.log"; PIPE_STACK_DIR= _trees_workspace run1 "$tmp/fork.tsv" >/dev/null; grep -c "export FXA_WORKSPACE=" "$tmp/vm.log")"
 github_repo_private() { [ "$1" = mozilla/PyFxA ]; }
 : > "$tmp/vm.log"; _trees_workspace run1 "$tmp/trees.tsv" >/dev/null
 check "a private tree gets a full clone, a public one stays blobless" "1|1" \

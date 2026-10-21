@@ -220,4 +220,42 @@ check "profile list holds the record's team" "1" "$(jq '[.[] | select(.profile =
 check "a record that does not load is named on stderr" "1" "$(grep -c 'profile list: broken does not load' "$tmp/err")"
 rm -f "$T/broken.json"
 
+# A team that takes the secret tickets of a project, on its private fork of FxA.
+S="$tmp/secret-teams"; mkdir -p "$S"
+srec() { printf '{ "schema": 1, "name": "%s", "label": "FxA Private", "repos": [ { "slug": "mozilla/fxa-private", "path": "/home/agent/fxa", "role": "work" } ], "stack": { "kind": "fxa", "repo": "mozilla/fxa-private" }, "jira": { "project": "FXA", "queue": true, "secret": true }, "access": { "users": ["U012345"] }%s }' "$1" "${2:-}" > "$S/$1.json"; echo "$S/$1.json"; }
+uq() { FXA_BUILTIN_JIRA='FXA:fxa' py unique "$1" "$S" 2>&1; }
+senv="$(py env "$(srec fxa-private)" fxa-private)"
+sget() { printf '%s\n' "$senv" | awk -F'\t' -v k="$1" '$1 == k {print $2}'; }
+check "a secret team on an FxA fork is valid beside fxa; its env names its labels and its stack dir" "0||1|ai-fixme|ai-fixme-private|/home/agent/fxa" \
+  "$(py validate "$S/fxa-private.json" fxa-private >/dev/null 2>&1; echo $?)|$(uq "$S/fxa-private.json")|$(sget PIPE_SECRET_TICKETS)|$(sget PIPE_QUEUE_LABEL)|$(sget PIPE_LABEL_PREFIX)|$(sget PIPE_STACK_DIR)"
+two="$(uq "$(srec fxa-private2)")"; rm -f "$S/fxa-private2.json"
+printf '{ "schema": 1, "name": "pub", "repos": [ { "slug": "example/pub", "role": "work" } ], "prompts": { "goal_md": "g" }, "jira": { "project": "FXA", "queue": true } }' > "$S/pub.json"
+pub="$(uq "$S/pub.json")"; rm -f "$S/pub.json"
+check "a second secret team for FXA is refused; a public record for FXA keeps today's line" "1|1" \
+  "$(grep -c "Jira project FXA's secret tickets belong to team fxa-private: remove jira.secret, or use a different jira.project" <<< "$two")|$(grep -c 'Jira project FXA belongs to team fxa' <<< "$pub")"
+check "a secret team cannot be open, list Jira prefixes, or go without a queue" "1|1|1" \
+  "$(py validate "$(srec so ', "access": { "open": true }')" so 2>&1 | grep -c 'cannot be open')|$(py validate "$(srec sp ', "access": { "users": ["U012345"], "jira_prefixes": ["FXA"] }')" sp 2>&1 | grep -c 'cannot list access.jira_prefixes')|$(sed 's/"queue": true, //' "$(srec sq)" > "$S/sq2.json"; py validate "$S/sq2.json" sq2 2>&1 | grep -c 'jira.secret needs jira.project and jira.queue')"
+rm -f "$S"/so.json "$S"/sp.json "$S"/sq.json "$S"/sq2.json
+check "stack.repo must be one of the record's repos; the index marks the secret team" "1|true|false" \
+  "$(sed 's#"repo": "mozilla/fxa-private"#"repo": "mozilla/other"#' "$S/fxa-private.json" > "$S/sr.json"; py validate "$S/sr.json" sr 2>&1 | grep -c 'stack.repo must be the slug'; rm -f "$S/sr.json")|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$S" | jq -r '.teams["fxa-private"].secret')|$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$T" | jq -r '.teams.rusty.secret')"
+
+fsrc() { ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO
+  SANDBOX_ROOT="$root"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"; pipeline_load "$1" >/dev/null 2>&1 || exit 1
+  echo "${FXA_SECRETS_SOURCE:-none}" ); }
+cp "$S/fxa-private.json" "$T/fxa-private.json"
+check "an FxA fork that runs the stack from its own repo takes the FxA dev secrets from the FxA host clone; FxA as a dep row does not" \
+  "$tmp/home/Desktop/working2/fxa|none" "$( (unset FXA_SECRETS_SOURCE; fsrc fxa-private))|$( (unset FXA_SECRETS_SOURCE; fsrc rusty))"
+check "a child does not keep the source its parent's load set; a source set by hand wins" "none|/mine" \
+  "$(FXA_SECRETS_SOURCE=/x _FXA_SECRETS_LOADED=/x fsrc rusty)|$(FXA_SECRETS_SOURCE=/mine fsrc fxa-private)"
+check "a load after a secret team's load keeps none of its flag, labels or queue" "|ai-fixme|ai-fixme|ai-fixme" \
+  "$( ( export HOME="$tmp/home" FXA_TEAMS_DIR="$T"; unset FXA_REPO; SANDBOX_ROOT="$root"; _FXA_PIPELINE_LOADED=; source "$root/lib/pipeline.sh"
+    pipeline_load fxa-private >/dev/null 2>&1 && pipeline_load rusty >/dev/null 2>&1 || exit 1
+    printf '%s|%s|%s|%s' "${PIPE_SECRET_TICKETS:-}" "$PIPE_QUEUE_LABEL" "$PIPE_LABEL_PREFIX" "$(grep -o '"ai-fixme[a-z-]*"' <<< "$PIPE_QUEUE_JQL" | tr -d '"')" ) )"
+sv="$(loaded fxa-private)"; rm -f "$T/fxa-private.json"
+sl() { printf '%s\n' "$sv" | sed -n "s/^$1=//p" | tr -d "'"; }
+check "a secret record loads its flag, its labels and a queue that reads ai-fixme" '1|ai-fixme|ai-fixme-private|labels = "ai-fixme" AND statusCategory != Done ORDER BY created ASC' \
+  "$(sl PIPE_SECRET_TICKETS)|$(sl PIPE_QUEUE_LABEL)|$(sl PIPE_LABEL_PREFIX)|$(sl PIPE_QUEUE_JQL)"
+printf 'PIPE_REPO_SLUG=example/x\nPIPE_SECRET_TICKETS=1\n' > "$tmp/folder.conf"
+check "a folder conf cannot make itself a secret team (a host key)" "1" "$( (source "$root/lib/pipeline.sh"; pipeline_conf_lint "$tmp/folder.conf") 2>&1 | grep -c 'host key: .*PIPE_SECRET_TICKETS')"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

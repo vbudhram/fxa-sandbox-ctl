@@ -20,7 +20,6 @@
 _FXA_WORKTREE_LOADED=1
 
 : "${FXA_REPO_DEFAULT:=${HOME}/Desktop/working2/fxa}"
-: "${FXA_PRIVATE_REPO:=}"
 # A default set here is marked as one, as pipeline_load marks its own: a profile's base
 # (master) and pool (<profile>-auto) then win over it. A value set by hand still wins.
 [ -n "${FXA_WORKTREE_BASE:-}" ] || { FXA_WORKTREE_BASE=main; _FXA_BASE_LOADED=main; }

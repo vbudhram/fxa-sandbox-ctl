@@ -19,4 +19,14 @@ cmd_label() { echo "$1 $2" >> "$tmp/labels"; }
 out="$(cmd_precheck 2>&1)"
 check "a merged PR moves the ticket to merged, a closed one to rejected, an open one stays" "FXA-1 merged|FXA-2 rejected" "$(paste -sd'|' "$tmp/labels")"
 check "the quiet line counts them" "yes" "$(grep -q '1 merged, 1 rejected' <<<"$out" && echo yes)"
+# A secret team: its repo gate runs once in the pass's own shell; a repo not confirmed private stops the pass.
+: > "$tmp/labels"; errors_record() { echo "$5" >> "$tmp/errors"; }
+pipeline_jira_scope() { echo x >> "$tmp/scope"; [ -z "${GATE_FAIL:-}" ] || { echo "ERROR: fxa-private: mozilla/fxa-private is not confirmed private" >&2; return 1; }; G_OK=1; echo scope; }
+cmd_reconcile() { echo r >> "$tmp/rec"; }
+out="$(PIPE_SECRET_TICKETS=1 PIPE_PROFILE=fxa-private GATE_FAIL=1 cmd_precheck 2>&1)"
+check "a secret team whose repo is not confirmed private pauses before any read, with one error row" "paused: team fxa-private's work repo is not confirmed private; see errors (pipeline/private)|0|1|0" \
+  "$out|$(cat "$tmp/rec" 2>/dev/null | grep -c .)|$(grep -c 'not confirmed private' "$tmp/errors")|$(grep -c . "$tmp/labels")"
+: > "$tmp/scope"
+check "with the repo confirmed, the gate ran in the pass's shell (its yes reaches the reads below)" "1" \
+  "$( (PIPE_SECRET_TICKETS=1 PIPE_PROFILE=fxa-private cmd_precheck >/dev/null 2>&1; echo "${G_OK:-0}") )"
 exit "$fail"

@@ -195,10 +195,6 @@ JIRA OPTIONS:
   --worktree <name>            Use a named worktree slot (creates if missing).
                                Without this, picks first free pool slot or
                                creates the next-numbered one (fxa-auto-2, ...).
-  --private                    Provision from the checkout at $FXA_PRIVATE_REPO
-                               into its own worktree pool. Push and PR follow
-                               that checkout's origin; secrets come from the
-                               public fxa checkout. Set FXA_PRIVATE_REPO in .env.
   --guardrails <file>          Prepend <file> to the agent's task context as
                                mandatory reviewer guidance (e.g. an independent
                                security analysis). Read first by the agent.
@@ -364,14 +360,15 @@ cmd_jira() {
   fi
 
   key="$(jira_normalize_key "$key")" || return 1
+  [ "$private" = "true" ] && { _jira_private_gone "$key"; return 1; }
   # Resolve the runtime before any Jira or VM work, so a bad name fails at once.
   runtime_load || return 1
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
 
-  # A security ticket (a level or a secret label) must not reach a public PR; it runs only with --private.
-  if [ "$private" != "true" ] && ! pipeline_key_in_scope "$key"; then
+  # A security ticket (a level or a secret label) must not reach a public PR: only a secret team takes it.
+  if ! pipeline_key_in_scope "$key"; then
     echo "ERROR: ${key} is outside this profile's Jira scope ($(pipeline_jira_scope 2>/dev/null)), or the Jira read failed." >&2
-    echo "       A ticket with a security level or a secret label (security, hackerone, PIPE_SECRET_LABELS) runs only with --private." >&2
+    echo "       A ticket with a security level or a secret label (security, hackerone, PIPE_SECRET_LABELS) runs only in a team that takes secret tickets (README: Private pipeline teams)." >&2
     return 1
   fi
 
@@ -388,24 +385,6 @@ cmd_jira() {
   fi
   # After the functional type, so it wins: an x86 runner with nested virtualization, never Arm.
   if [ "$android" = "true" ] || [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
-
-  # Push and PR follow the private worktree's origin; secrets come from the public checkout.
-  if [ "$private" = "true" ]; then
-    if [ -z "$FXA_PRIVATE_REPO" ]; then
-      echo "ERROR: --private needs FXA_PRIVATE_REPO set to a local checkout. Put it in .env (see .env.example)." >&2
-      return 1
-    fi
-    if [ ! -d "$FXA_PRIVATE_REPO" ]; then
-      echo "ERROR: FXA_PRIVATE_REPO='${FXA_PRIVATE_REPO}' is not a directory." >&2
-      return 1
-    fi
-    local public_root
-    public_root="$(worktree_repo_root)" || return 1
-    export FXA_SECRETS_SOURCE="$public_root"
-    export FXA_REPO="$FXA_PRIVATE_REPO"
-    export FXA_SHARED_WORKTREE_NAME="fxa-auto-private"
-    echo "Private mode: repo=${FXA_REPO}, pool=${FXA_SHARED_WORKTREE_NAME}, secrets from ${FXA_SECRETS_SOURCE}" >&2
-  fi
 
   echo "Fetching ${key} from Jira..." >&2
   local summary context
@@ -492,16 +471,16 @@ EOF
   elif [[ "$guardrails_file" == */feedback/* ]]; then run_kind="feedback"; fi
   echo "Run kind: ${run_kind}" >&2
 
+  _jira_name_clash "$name" || return 1
   if [ -n "$worktree_slot" ]; then
     echo "Using worktree '${worktree_slot}' for branch ${branch}..." >&2
   else
     echo "Acquiring a pool worktree slot for branch ${branch}..." >&2
   fi
   local worktree_path
-  # Owned slots matter only when we pick one. The private pool has its own
-  # labels, so the pipeline's inflight list says nothing about it.
+  # Owned slots matter only when we pick one.
   local owned=""
-  if [ -z "$worktree_slot" ] && [ "$private" != "true" ]; then
+  if [ -z "$worktree_slot" ]; then
     owned="$(jira_owning_keys)"
   fi
   worktree_path="$(worktree_prepare_for_issue "$key" "$base" "$worktree_slot" "$owned")" || return 1
@@ -545,7 +524,7 @@ EOF
 
   if [ "$watch" = "true" ]; then
     if ! finish_attach_and_wait "$name"; then
-      echo "When the agent finishes, run: fxa-sandbox-ctl finish" >&2
+      echo "When the agent finishes, run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} finish --worktree ${worktree_path} --create-pr" >&2
       return 1
     fi
     # The run's notes and learnings, before the diff or PR split, so a read-only team's run counts too.
@@ -559,6 +538,7 @@ EOF
     fi
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+      pipeline_ship_ok "$key" "$worktree_path" || return 1
       finish_diff_only "$key" "$worktree_path" || return 1
       cmd_label "$key" diff >/dev/null || echo "WARN: could not label ${key} diff" >&2
       finish_notify "Diff ready for ${key}" ""
@@ -566,7 +546,7 @@ EOF
       return 0
     fi
     local pr_url
-    pr_url="$(finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
+    pr_url="$(FXA_SHIP_CHECK="$key" finish_push_and_pr "$worktree_path" "$create_pr")" || return 1
     # Record the run here, on the host that ran it, while its transcript is in
     # the slot. The row lands in the state dir, which the GCS mirror carries to
     # any host that labels the ticket later; that label's record is then a no-op.
@@ -584,7 +564,7 @@ EOF
     fi
   else
     echo "" >&2
-    echo "Agent started; not watching. Resume with: fxa-sandbox-ctl finish" >&2
+    echo "Agent started; not watching. Resume with: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} finish --worktree ${worktree_path} --create-pr" >&2
   fi
 }
 
@@ -874,7 +854,7 @@ cmd_finish() {
   # Read before the ship: the handoff names the ticket whose launch log the dashboard reads.
   local pr_url key=""
   [ -n "$worktree" ] && key="$(jq -r '.issue // empty' "$(finish_done_file_path "$worktree")" 2>/dev/null || true)"
-  pr_url="$(finish_push_and_pr "$worktree" "$create_pr")" || return 1
+  pr_url="$(FXA_SHIP_CHECK=1 finish_push_and_pr "$worktree" "$create_pr")" || return 1
   if [ -n "$pr_url" ]; then
     finish_notify "PR opened" "$pr_url"
     # A recovery finish: without this line, progress keeps the run's old error.
@@ -1303,6 +1283,23 @@ _reap_key() {
 
 # WRITE: stop every agent VM whose ticket is not inflight, for the cases the reap
 # in `label` misses. A live run is safe: its inflight label covers the whole run.
+# _jira_private_gone <KEY>   The team that runs the key's secret tickets now, in place of jira --private.
+_jira_private_gone() {
+  local p="${1%%-*}" t; t="$(pipeline_secret_team "$p" 2>/dev/null || true)"
+  if [ -n "$t" ]; then echo "ERROR: --private is gone. Run: fxa-sandbox-ctl --pipeline ${t} jira $1" >&2
+  else echo "ERROR: --private is gone. No team in this host's teams index takes ${p}'s secret tickets. Run fxa-sandbox-ctl profile sync, then try again. If no team exists, create one (README: Private pipeline teams)." >&2; fi
+  return 1
+}
+# _jira_name_clash <name>   Fails while a VM of that name runs in another team's pool: a secret team shares
+# its project's keys, and tail, stop and reap take the name as the key's.
+_jira_name_clash() {
+  local ws; ws="$(_worktree_each_active_agent | awk -v n="$1" '$1 == n && !f {print $2; f=1}')" || true
+  [ -n "$ws" ] && ! _slot_in_pool "$ws" "${PIPE_POOL_NAME:-}" && [[ "${ws##*/}" =~ ^(.+)-auto(-[0-9]+)?$ ]] || return 0
+  echo "ERROR: $1 runs for team ${BASH_REMATCH[1]}; a person stops it first." >&2
+  return 1
+}
+# _slot_in_pool <worktree path> <pool name>   True when the slot is the pool's (<pool> or <pool>-N).
+_slot_in_pool() { local b="${1##*/}"; [ -n "$2" ] && { [ "$b" = "$2" ] || [[ "$b" =~ ^${2}-[0-9]+$ ]]; }; }
 _reap_stray_vms() {
   if [ "${FXA_NO_REAP:-}" = "1" ]; then echo "reapstray skipped (FXA_NO_REAP=1)"; return 0; fi
   local owned project; owned="$(jira_owning_keys)"
@@ -1312,14 +1309,20 @@ _reap_stray_vms() {
     echo "ERROR: cannot list inflight tickets; refusing to stop any VM." >&2
     return 1
   fi
-  local name key
-  while IFS= read -r name; do
+  local name ws key
+  while read -r name ws; do
     [ -z "$name" ] && continue
     # Anything else is a hand-started agent.
     case "$name" in
       agent-*|[a-z]*-[0-9]*) ;;
       *) continue ;;
     esac
+    # Two teams can share a project's keys (a secret team), so the pool slot says whose runner it is:
+    # a secret team reaps only its own pool; any team leaves another team's pool alone.
+    if ! _slot_in_pool "$ws" "${PIPE_POOL_NAME:-}"; then
+      [ "${PIPE_SECRET_TICKETS:-}" = 1 ] && continue
+      [[ "${ws##*/}" =~ -auto(-[0-9]+)?$ ]] && continue
+    fi
     session_live "$name" && continue   # an owner-steered session, no Jira label
     key="$(worktree_key_for "$name")"
     # Another profile's ticket runner: its own pass owns it, and this profile cannot see its labels.
@@ -1332,7 +1335,7 @@ _reap_stray_vms() {
     else
       echo "$key stray-reap-failed ($name) -- stop it by hand" >&2
     fi
-  done <<< "$(_worktree_each_active_agent | awk '{print $1}')"
+  done <<< "$(_worktree_each_active_agent)"
   vm_gc
 }
 
@@ -1410,6 +1413,18 @@ cmd_precheck() {
     pipeline_unlock >/dev/null
     echo "paused: the Jira login was refused; see errors (jira/login)"
     return 0
+  fi
+  # A secret team's repo gate runs here once, in this shell: the reads below run in subshells, which
+  # then keep its yes, and a repo that is not confirmed private stops the pass before any read.
+  if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+    local gerr; gerr="$(mktemp)"
+    if ! pipeline_jira_scope >/dev/null 2>"$gerr"; then
+      errors_record pipeline private "" "precheck" "$(tail -1 "$gerr")" ""; rm -f "$gerr"
+      pipeline_unlock >/dev/null
+      echo "paused: team ${PIPE_PROFILE}'s work repo is not confirmed private; see errors (pipeline/private)"
+      return 0
+    fi
+    rm -f "$gerr"
   fi
   local work=0 info="" line key num state ids noted why kinds=""
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
@@ -1528,11 +1543,22 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
   # The pass posts nothing to a security ticket: tell the operator once for each, and let a person move it.
-  local sk; for sk in $(jira_secured_keys 2>/dev/null || true); do
+  local sk smsg sproj steam=""; sproj="$(pipeline_jira_project 2>/dev/null || true)"
+  [ "${PIPE_SECRET_TICKETS:-}" = 1 ] || steam="$(pipeline_secret_team "$sproj" 2>/dev/null || true)"
+  for sk in $(jira_secured_keys 2>/dev/null || true); do
     [[ "$sk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || continue
-    _info "security level or label: ${sk} has a pipeline label; a person moves it (the pass does not touch it)"
+    if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+      _info "secret label removed: ${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label; a person moves it (the pass does not touch it)"
+      smsg="${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label, so team ${PIPE_PROFILE} no longer reads it. Add the label back, or run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} label ${sk} public (it stops the run and leaves only ai-fixme, so the public team takes it)"
+    elif [ -n "$steam" ]; then
+      _info "security level or label: ${sk} has a public pipeline label; a person moves it (the pass does not touch it)"
+      smsg="${sk} got a security level or a secret label during a public run. Run: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} label ${sk} public (it stops the run and leaves only ai-fixme), so team ${steam} takes it"
+    else
+      _info "security level or label: ${sk} has a pipeline label, and no active team takes ${sproj}'s secret tickets; a person moves it (the pass does not touch it)"
+      smsg="${sk} has a security level or a secret label and a pipeline label, but no active team takes ${sproj}'s secret tickets. Create or activate one (README: Private pipeline teams), or move it by hand"
+    fi
     [ -f "${PIPE_STATE_DIR}/${sk}.secured-noted" ] && continue
-    errors_record pipeline secured "$sk" "precheck" "${sk} has a security level or a secret label (PIPE_SECRET_LABELS) and a pipeline label; it runs only with jira --private. Move or relabel it by hand" ""
+    errors_record pipeline secured "$sk" "precheck" "$smsg" ""
     : > "${PIPE_STATE_DIR}/${sk}.secured-noted"
   done
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
@@ -1843,7 +1869,7 @@ cmd_label() {
   jira_label_set "$key" "$state" || return 1
   rm -f "${PIPE_STATE_DIR}/$(jira_normalize_key "$key" 2>/dev/null).needs-you"
   state="${state#${PIPE_LABEL_PREFIX}-}"
-  [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
+  [ "$state" = "$PIPE_LABEL_PREFIX" ] || [ "$state" = "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ] && state="public"
   pipeline_blocked_why "$key" "$state" "${@:3}"
   # Only inflight owns a worktree, so any other state reaps the VM.
   if [ "$state" != "inflight" ]; then
