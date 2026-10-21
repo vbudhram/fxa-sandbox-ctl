@@ -445,6 +445,11 @@ _gce_pin_runner_tree() {
   # A team stack pins each tree at its own path (FXA_TREE_PATH, checked by _trees_workspace).
   local at="${FXA_TREE_PATH:-/workspace}"
   [[ "$at" =~ ^/[a-z0-9/-]+$ ]] || { echo "ERROR: refusing to pin: the tree path is not plain." >&2; return 1; }
+  # The image's clone at that path can be another repo's (public FxA under a private fork of it): the
+  # fetch goes to the tree's own repo, whose read token is already on the runner.
+  local slug="${FXA_PIN_SLUG-${PIPE_REPO_SLUG:-}}" seturl=""
+  [[ -z "$slug" || "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "ERROR: refusing to pin: the repo is not a plain slug." >&2; return 1; }
+  [ -z "$slug" ] || seturl="git remote set-url origin https://github.com/${slug}.git && "
   until vm_exec "$name" test -e "${at}/.git" >/dev/null 2>&1; do
     [ "$(date +%s)" -lt "$deadline" ] || { echo "ERROR: ${at} never appeared on the runner." >&2; return 1; }
     sleep 5
@@ -457,7 +462,7 @@ _gce_pin_runner_tree() {
   # which reads as an empty answer, so retry that instead of failing the launch.
   local try
   for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
       # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.

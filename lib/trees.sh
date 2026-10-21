@@ -125,7 +125,7 @@ _trees_pin() {
   local name="$1" n s p sha base bsha br first=""
   while IFS=$'\t' read -r -u 3 n s p sha base bsha br; do
     _trees_line_ok "$n" "$s" "$p" "$sha" "$base" "$bsha" "$br" || return 1
-    FXA_TREE_PATH="$p" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$bsha" FXA_PIN_BRANCH="$br" FXA_WORKTREE_BASE="$base" \
+    FXA_TREE_PATH="$p" FXA_PIN_SLUG="$s" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$bsha" FXA_PIN_BRANCH="$br" FXA_WORKTREE_BASE="$base" \
       _gce_pin_runner_tree "$name" "" || return 1
     first="${first:-${_PINNED_BASE:-}}"
   done 3< "$2"

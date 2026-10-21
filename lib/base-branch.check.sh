@@ -33,6 +33,17 @@ main_line="$(grep -o "\[ 'main' = main \] ||.*" <<< "$(pin main; cat "$tmp/pin.c
 check "a main base makes no alias" "none" "$(git -C "$r2" rev-parse -q --verify refs/remotes/origin/main || echo none)"
 check "the session fetches the profile's base, not main" "1|0" \
   "$(grep -c 'fetch --quiet origin "\$base"' "$here/../fxa-sandbox-ctl")|$(grep -c 'fetch --quiet origin main &&' "$here/../fxa-sandbox-ctl")"
+# A private fork at the image's FxA path: the fetch goes to the fork, not the image clone's public origin.
+PIPE_REPO_SLUG=mozilla/fxa-private pin main
+check "the pin points origin at the tree's repo before it fetches" "1" "$(grep -c 'cd /workspace && git remote set-url origin https://github.com/mozilla/fxa-private.git && { git cat-file' "$tmp/pin.cmd")"
+check "a slug that is not plain refuses the pin" "1" "$(PIPE_REPO_SLUG='a/b;x' FXA_WORKTREE_BASE=main FXA_PIN_SHA="$S" FXA_PIN_BRANCH=agent-x _gce_pin_runner_tree r1 "$tmp" 2>&1 | grep -c 'not a plain slug')"
+# The pinned order on a real clone: a set-url then a fetch from that remote reaches a commit the old origin lacks.
+pub="$tmp/pub"; priv="$tmp/priv"; git init -q "$pub"; g -C "$pub" commit -q --allow-empty -m pub
+git clone -q "$pub" "$priv"; g -C "$priv" commit -q --allow-empty -m secret; ps="$(git -C "$priv" rev-parse HEAD)"
+git clone -q "$pub" "$tmp/runner"
+( cd "$tmp/runner" && git remote set-url origin "$priv" && { git cat-file -e "${ps}^{commit}" 2>/dev/null || git fetch --quiet origin "$ps"; } ) 2>/dev/null
+check "on a clone of the public repo, the fork's commit arrives after the set-url" "commit" "$(git -C "$tmp/runner" cat-file -t "$ps" 2>/dev/null)"
+
 # The libs content imports, from the Nx graph: transitive, with no npm packages and no content itself.
 pin main; mkdir -p "$tmp/w/packages/fxa-content-server" "$tmp/bin"
 echo '{"graph":{"nodes":{"fxa-content-server":{"data":{"root":"packages/fxa-content-server"}},"fxa-settings":{"data":{"root":"packages/fxa-settings"}},"shared-email":{"data":{"root":"libs/shared/email"}},"shared-log":{"data":{"root":"libs/shared/log"}},"shared-l10n":{"data":{"root":"libs/shared/l10n"}}},"dependencies":{"fxa-content-server":[{"target":"shared-email"},{"target":"npm:express"},{"target":"fxa-settings"}],"fxa-settings":[{"target":"shared-l10n"}],"shared-email":[{"target":"shared-log"}],"shared-log":[{"target":"shared-email"}]}}}' > "$tmp/graph.json"
