@@ -199,13 +199,20 @@ g -C "$tmp/clone" rm -rq inbox 2>/dev/null; g -C "$tmp/clone" commit -qm noinbox
 rm -f "$tmp/digest.msg"; g -C "$tmp/remote.git" branch -D "$(g -C "$tmp/remote.git" branch --list 'digest/*' | tr -d ' *' | tail -1)" >/dev/null 2>&1
 g -C "$tmp/clone" fetch -q -p origin 2>/dev/null
 memory_digest 2>/dev/null
-check "no inbox: the digest still reports a gone anchor" "1" "$(grep -c 'mem-0000000b.*anchor' "$tmp/digest.msg")"
+check "no inbox: the digest still reports a gone anchor, and not a good one" "1|0|1" \
+  "$(grep -c 'mem-0000000b.*anchor' "$tmp/digest.msg")|$(grep -c 'mem-0000000[ac].*anchor' "$tmp/digest.msg")|$(grep -c 'DIGEST.md' "$tmp/digest.msg")"
 idx="$(memory_index_md monitor mozilla/fxa)"
 check "the prompt shows the most read traps, inside 2500 chars" "1|0|1" \
   "$(grep -c '^mem-0000000a \[trap\] alpha trap text -> mozilla__fxa/trap.md$' <<< "$idx")|$(grep -c '^mem-0000000c' <<< "$idx")|$([ "$(printf '%s\n' "$idx" | wc -c)" -le 2500 ] && echo 1)"
-head -c 1810 /dev/zero | tr '\0' 'x' > "$FXA_MEMORY_DIR/profiles/monitor.md"
-check "a long team file drops trap lines to stay inside 2500" "1|1" \
-  "$(memory_index_md monitor mozilla/fxa | grep -c '^mem-')|$([ "$(memory_index_md monitor mozilla/fxa | wc -c)" -le 2500 ] && echo 1)"
+# Many long trap lines, all read: the memory part (heading to the team file) stays inside 2500.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  printf '## mem-100000%02d\n<!-- kind: trap | path: x | cite: packages/fxa-settings/package.json:4 | anchor: test-unit | confirmed: %s | source: r1 | taint: 0 -->\n%s\n\nWhy: w\n\n' "$i" "$ud" "$(head -c 100 /dev/zero | tr '\0' 'y')" >> "$tmp/clone/repos/mozilla__fxa/trap.md"
+  echo "{\"at\": $now, \"cmd\": \"show\", \"id\": \"mem-100000$(printf %02d "$i")\"}" >> "$tmp/clone/tickets/uc/$ud-r1.use.jsonl"
+done
+head -c 3000 /dev/zero | tr '\0' 'x' > "$FXA_MEMORY_DIR/profiles/monitor.md"
+idx="$(memory_index_md monitor mozilla/fxa)"; mem="$(sed '/^## Team: /,$d' <<< "$idx")"
+check "many long trap lines and a long team file: 8 lines, memory part inside 2500, team file kept" "8|1|1" \
+  "$(grep -c '^mem-' <<< "$idx")|$([ "$(printf '%s\n' "$mem" | wc -c)" -le 2500 ] && echo 1)|$(grep -c '^xxxx' <<< "$idx")"
 g -C "$tmp/clone" checkout -q -- profiles
 
 # One ticket, the same run key twice in a day (a second pipeline run, or a ship then a stop): two files.
