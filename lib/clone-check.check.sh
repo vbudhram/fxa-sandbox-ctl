@@ -22,6 +22,13 @@ out="$(_gce_profile_workspace r1 2>&1)"; rc=$?
 check "a dep that did not clone fails the step and names it" "1|1" "$rc|$(grep -c 'did not clone: .*/home/dep' <<< "$out")"
 rm -rf "$tmp/home"/*; PIPE_REPOS=("org/work /home/agent/work work" "org/dep /home/agent/dep dep")
 _gce_profile_workspace r1 >/dev/null 2>&1; check "every repo cloned: the step passes" "0" "$?"
+# A private fork of FxA at the image's FxA path: the work tree is the image's (the pin moves it), and its
+# read-only reference copy of public FxA is still cloned.
+rm -rf "$tmp/home"/*; mkdir -p "$tmp/home/fxa/.git"
+PIPE_WORKSPACE=/home/agent/fxa PIPE_REPO_SLUG=mozilla/fxa-private PIPE_REPOS=("mozilla/fxa-private /home/agent/fxa work" "mozilla/fxa /home/agent/fxa-public ref")
+_gce_profile_workspace r1 >/dev/null 2>&1; rc=$?
+check "at the image's FxA path, the ref repo is cloned and the step passes" "0|yes" "$rc|$([ -d "$tmp/home/fxa-public/.git" ] && echo yes)"
+check "with no other repo at that path, nothing runs on the runner" "0" "$(PIPE_REPOS=("mozilla/fxa /home/agent/fxa work"); vm_exec() { echo called; }; _gce_profile_workspace r1 | grep -c called)"
 TREES_ROOT="$tmp/home/stack"; mkdir -p "$TREES_ROOT"; z=0000000000000000000000000000000000000000
 printf 'a\torg/a\t/home/agent/a\t%s\tmain\t%s\tb1\nb\torg/bad-b\t/home/agent/b\t%s\tmain\t%s\tb2\n' $z $z $z $z > "$tmp/trees.tsv"
 out="$(_trees_workspace r1 "$tmp/trees.tsv" 2>&1)"; rc=$?

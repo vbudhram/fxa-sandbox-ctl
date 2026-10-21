@@ -376,15 +376,18 @@ _profile_egress_extra() {
 # _gce_profile_workspace <name>   A profile with its own repo (PIPE_WORKSPACE): clone it
 # beside FxA, whose stack keeps running from /home/agent/fxa, and point /workspace at it.
 _gce_profile_workspace() {
-  local name="$1" ws="${PIPE_WORKSPACE:-/home/agent/fxa}" slug="${PIPE_REPO_SLUG:-}"
-  [ "$ws" = /home/agent/fxa ] && return 0
+  local name="$1" ws="${PIPE_WORKSPACE:-/home/agent/fxa}" slug="${PIPE_REPO_SLUG:-}" row other=""
+  for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do case "$(awk '{print $3}' <<< "$row")" in dep|data|ref) other=1 ;; esac; done
+  # At the image's FxA path the work tree is already there (a fork is pinned over it); its other repos are not.
+  [ "$ws" = /home/agent/fxa ] && [ -z "$other" ] && return 0
   # These go into a remote bash -c string unquoted.
   [[ "$ws" =~ ^/home/agent/[a-z0-9-]+$ ]] && [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
     || { echo "ERROR: PIPE_WORKSPACE or PIPE_REPO_SLUG is not a plain path or repo name." >&2; return 1; }
   # The other trees go beside it, never inside /workspace, so the agent loads no
   # CLAUDE.md, skills or hooks from them. The loader checked each row.
   local cmd="[ -d ${ws}/.git ] || sudo -u agent env ${_RUNNER_GIT_ENV:-} git clone --quiet $(_clone_filter "$slug") https://github.com/${slug}.git ${ws}; ln -sfn ${ws} /workspace"
-  local row s p r want="${ws}"
+  [ "$ws" != /home/agent/fxa ] || cmd="true"
+  local s p r want="${ws}"
   for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do
     read -r s p r _ <<< "$row"
     case "$r" in
