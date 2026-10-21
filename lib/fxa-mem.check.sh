@@ -112,4 +112,28 @@ rk="$tmp/memrank/repos/mozilla__fxa"; mkdir -p "$rk"; today="$(date -u +%F)"; ol
 } > "$rk/trap.md"
 check "search and traps put an entry older than 90 days after a newer one" "mem-000000b2 mem-000000b1|mem-000000b2 mem-000000b1" \
   "$(FXA_MEM_DIR="$tmp/memrank" fm search rankword | cut -d' ' -f1 | paste -sd' ' -)|$(FXA_MEM_DIR="$tmp/memrank" fm traps --repo mozilla/fxa packages/rank/x.js | cut -d' ' -f1 | paste -sd' ' -)"
+# The hook: recall on a failed command and on the first edit in a package, once per session.
+hk() { FXA_MEM_SEEN="$tmp/seen" fm hook; }
+fail_in='{"session_id":"s1","hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"yarn build"},"error":"Error: Cannot find module @fxa/shared/foo\nRequire stack: x"}'
+check "a Claude failure recalls the matching trap" "mem-0000000a" "$(hk <<< "$fail_in" | jq -r .hookSpecificOutput.additionalContext | sed -n 2p | cut -d' ' -f1)"
+check "the event name is echoed" "PostToolUseFailure" "$(rm -f "$tmp/seen"; hk <<< "$fail_in" | jq -r .hookSpecificOutput.hookEventName)"
+check "the same entry does not show twice in a session" "" "$(hk <<< "$fail_in")"
+check "it shows again in another session" "1" "$(hk <<< "${fail_in/s1/s2}" | grep -c mem-0000000a)"
+codex_fail='{"session_id":"c1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"yarn build"},"tool_response":"Exit code: 1\nOutput:\nError: Cannot find module @fxa/shared/foo"}'
+check "a Codex non-zero exit recalls the trap" "1" "$(hk <<< "$codex_fail" | grep -c mem-0000000a)"
+codex_ok="${codex_fail/Exit code: 1/Exit code: 0}"
+check "a Codex zero exit adds nothing" "" "$(hk <<< "${codex_ok/c1/c9}")"
+check "a Codex object response with a non-zero exit recalls the trap" "1" \
+  "$(hk <<< '{"session_id":"c2","hook_event_name":"PostToolUse","tool_name":"Bash","tool_response":{"stdout":"","stderr":"Error: Cannot find module @fxa/shared/foo\nexited with code 2"}}' | grep -c mem-0000000a)"
+check "an unrelated failure adds nothing" "" "$(hk <<< '{"session_id":"s3","hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"fatal: not a git repository"}')"
+edit_in='{"session_id":"e1","hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{"file_path":"/workspace/packages/fxa-content-server/app/x.js"}}'
+check "the first edit in a package shows its traps" "1" "$(hk <<< "$edit_in" | grep -c mem-0000000a)"
+check "a second edit in that package shows nothing" "" "$(hk <<< "${edit_in/x.js/y.js}")"
+patch_in='{"session_id":"e2","hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: packages/fxa-content-server/app/x.js\n@@\n*** End Patch"}}'
+check "a Codex apply_patch shows the package traps" "1" "$(hk <<< "$patch_in" | grep -c mem-0000000a)"
+check "a shown entry is logged as auto" "true|hook" "$(tail -1 "$tmp/use.jsonl" | jq -r '"\(.auto)|\(.op)"')"
+check "an entry shown on a failure does not show again on an edit" "" "$(hk <<< "${edit_in/e1/s1}" | grep mem-0000000a)"
+check "bad input prints nothing and exits 0" "|0" "$(out=$(hk <<< 'not json'); echo "$out|$?")"
+check "no memory folder prints nothing and exits 0" "|0" "$(out=$(FXA_MEM_DIR="$tmp/none" hk <<< "$fail_in"); echo "$out|$?")"
+check "an unwritable seen file still recalls" "1" "$(FXA_MEM_SEEN=/nonexistent/seen fm hook <<< "${fail_in/s1/s4}" | grep -c mem-0000000a)"
 exit "$fail"

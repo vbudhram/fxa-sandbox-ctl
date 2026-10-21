@@ -14,6 +14,8 @@ CITES = ("cite", "cite2", "cite3")
 ID_RE = r"mem-[0-9a-f]{8}"
 FLAGS = ("repo", "kind", "text", "cite", "anchor", "why", "path", "terms", "op", "id")
 NEED = ("kind", "text", "why", "terms")  # with repo, cite and anchor, checked apart for --team
+SEEN = os.environ.get("FXA_MEM_SEEN", "/workspace/.fxa-mem-hook-seen")
+HOOK_MIN_SCORE = 7.5  # negated BM25; 24 error texts and 10 unrelated ones put the cut between 6.7 and 8.4
 
 
 def load():
@@ -68,6 +70,19 @@ def have_memory():
     return False
 
 
+def rank(entries, toks):
+    """(id, score) of the entries that match any token, best first. The score is the negated BM25: higher is better."""
+    if not toks or not entries:
+        return []
+    db = sqlite3.connect(":memory:")
+    db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms, tokenize='porter unicode61')")
+    db.executemany("insert into m values (?,?,?,?,?,?,?)", [
+        (e["id"], e["text"], e["why"], e["meta"].get("path", ""), " ".join(e["meta"].get(k, "") for k in CITES),
+         " ".join(e["meta"].get(k, "") for k in ("anchor", "anchor2", "anchor3")), e["meta"].get("terms", "")) for e in entries])
+    q = " OR ".join('"%s"' % t for t in toks)
+    return db.execute("select id, -bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0) s from m where m match ? order by s desc", (q,)).fetchall()
+
+
 def search(words):
     if not have_memory():
         return 0
@@ -76,17 +91,8 @@ def search(words):
     for t in re.findall(r"[a-z0-9]+", " ".join(words).lower()):
         if t not in STOP and t not in toks:
             toks.append(t)
-    ids = []
-    if toks and entries:
-        db = sqlite3.connect(":memory:")
-        db.execute("create virtual table m using fts5(id unindexed, text, why, path, cite, anchor, terms, tokenize='porter unicode61')")
-        db.executemany("insert into m values (?,?,?,?,?,?,?)", [
-            (e["id"], e["text"], e["why"], e["meta"].get("path", ""), " ".join(e["meta"].get(k, "") for k in CITES),
-             " ".join(e["meta"].get(k, "") for k in ("anchor", "anchor2", "anchor3")), e["meta"].get("terms", "")) for e in entries])
-        q = " OR ".join('"%s"' % t for t in toks)
-        ids = [r[0] for r in db.execute("select id from m where m match ? order by bm25(m, 0, 1.0, 0.3, 2.0, 1.0, 2.0, 2.0)", (q,))]
     by_id = {e["id"]: e for e in entries}
-    ids = sorted(ids, key=lambda i: old(by_id[i]))[:5]
+    ids = sorted((i for i, _ in rank(entries, toks)), key=lambda i: old(by_id[i]))[:5]
     for i in ids:
         print(hit(by_id[i]))
     if not ids:
@@ -142,18 +148,12 @@ def on_path(p, glob_):
     return fnmatch.fnmatchcase(p, glob_) or fnmatch.fnmatchcase(p + "/", glob_)
 
 
-def traps(args):
-    repo = None
-    if args[:1] == ["--repo"]:
-        repo, args = (args[1:2] or [""])[0].replace("/", "__"), args[2:]
-    if len(args) != 1 or repo == "":
-        return usage()
-    if not have_memory():
-        return 0
+def trap_hits(repo, path):
+    """The traps on a path, for the owner__repo folder name (None: the origin repo of the current directory)."""
     if repo is None:
         repo = repo_from_git()
     named = repo  # team traps filter on it even when the repo has no folder here
-    path = rel_path(args[0])
+    path = rel_path(path)
     if repo is None or not os.path.isdir(os.path.join(MEM, "repos", repo)):
         repo = None  # all repos
     traps_ = [e for e in load() if e["meta"].get("kind") == "trap"]
@@ -165,12 +165,94 @@ def traps(args):
              and (on_path(path, e["meta"]["path"]) if e["meta"].get("path") else named is not None)]
     # Within the repo's traps and within the team's, an entry older than 90 days comes last.
     n_repo = sum(e["repo"] != "team" for e in hits)
-    hits = sorted(hits[:n_repo], key=old) + sorted(hits[n_repo:], key=old)
+    return sorted(hits[:n_repo], key=old) + sorted(hits[n_repo:], key=old)
+
+
+def traps(args):
+    repo = None
+    if args[:1] == ["--repo"]:
+        repo, args = (args[1:2] or [""])[0].replace("/", "__"), args[2:]
+    if len(args) != 1 or repo == "":
+        return usage()
+    if not have_memory():
+        return 0
+    hits = trap_hits(repo, args[0])
     for e in hits:
         print(hit(e))
     if not hits:
         print("no match")
     log(cmd="traps", q=args[0], ids=[e["id"] for e in hits])
+    return 0
+
+
+def hook_query(text):
+    """The distinct words of the last 40 lines, 3 chars or more, with no numbers or hex ids, at most 40."""
+    toks = []
+    for t in re.findall(r"[a-z0-9]+", "\n".join(text.splitlines()[-40:]).lower()):
+        if len(t) >= 3 and t not in STOP and not t.isdigit() and not re.fullmatch(r"(?=.*[0-9])[0-9a-f]{6,}", t) and t not in toks:
+            toks.append(t)
+    return toks[:40]
+
+
+def hook_paths(name, inp):
+    """The file of a Claude edit, or the files of a Codex patch (Codex can name apply_patch Edit or Write too)."""
+    if name not in ("Edit", "Write", "MultiEdit", "apply_patch"):
+        return []
+    if isinstance(inp.get("file_path"), str):
+        return [inp["file_path"]]
+    return re.findall(r"(?m)^\*\*\* (?:Add|Update|Delete) File: (.+?)\s*$", str(inp.get("command") or ""))
+
+
+def package(p):
+    """The first two parts under packages/ or libs/, else the first part, of the path from the top of the repo."""
+    parts = re.sub(r"^/workspace/", "", rel_path(p)).split("/")
+    return "/".join(parts[:2] if parts[0] in ("packages", "libs") else parts[:1])
+
+
+def hook(_args):
+    """Recall memory for a Claude or Codex hook event on stdin. Prints hookSpecificOutput or nothing, and always exits 0."""
+    try:
+        ev = json.loads(sys.stdin.read(200000))
+        name, event, sid = ev.get("tool_name"), ev.get("hook_event_name"), str(ev.get("session_id", ""))
+        try:
+            with open(SEEN, encoding="utf-8") as fh:
+                seen = set(l.strip() for l in fh if l.startswith(sid + " "))
+        except OSError:
+            seen = set()
+        mark = []
+        if name == "Bash" and event in ("PostToolUseFailure", "PostToolUse"):
+            text, r = ev.get("error"), ev.get("tool_response")
+            if event == "PostToolUse":
+                if isinstance(r, dict):
+                    r = "\n".join(v for v in (r.get(k) for k in ("output", "stderr", "stdout")) if isinstance(v, str))
+                text = r if isinstance(r, str) and re.search(r"exit(ed)?( with)? code:? *([1-9][0-9]*)", r, re.I) else None
+            if not isinstance(text, str):
+                return 0
+            entries = load()
+            by_id = {e["id"]: e for e in entries}
+            hits = sorted((by_id[i] for i, sc in rank(entries, hook_query(text)) if sc >= HOOK_MIN_SCORE), key=old)
+        elif event == "PreToolUse" and isinstance(ev.get("tool_input"), dict):
+            hits = []
+            for pkg in dict.fromkeys(package(p) for p in hook_paths(name, ev["tool_input"]) if p):
+                if "%s pkg:%s" % (sid, pkg) not in seen:
+                    mark.append("%s pkg:%s" % (sid, pkg))
+                    hits += [e for e in trap_hits(None, pkg) if e not in hits]
+        else:
+            return 0
+        hits = [e for e in hits if "%s %s" % (sid, e["id"]) not in seen][:3]
+        mark += ["%s %s" % (sid, e["id"]) for e in hits]
+        try:
+            with open(SEEN, "a", encoding="utf-8") as fh:
+                fh.writelines(m + "\n" for m in mark)
+        except OSError:
+            pass
+        if hits:
+            for e in hits:
+                log(op="hook", id=e["id"], auto=True, event=event)
+            ctx = "\n".join(["Team memory (auto):"] + [hit(e) for e in hits] + ["Run fxa-mem show <id> for the whole entry."])
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": ctx}}))
+    except Exception:
+        pass
     return 0
 
 
@@ -259,7 +341,7 @@ def usage():
 
 
 def main(argv):
-    cmds = dict(search=lambda a: search(a) if a else usage(), show=show, traps=traps, rate=rate, propose=propose, confirm=confirm)
+    cmds = dict(search=lambda a: search(a) if a else usage(), show=show, traps=traps, rate=rate, propose=propose, confirm=confirm, hook=hook)
     return cmds[argv[0]](argv[1:]) if argv and argv[0] in cmds else usage()
 
 

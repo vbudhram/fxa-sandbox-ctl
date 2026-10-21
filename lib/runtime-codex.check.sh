@@ -51,4 +51,13 @@ check "a two-repo team with fxa gets FxA's skills" "1|1" "$(_vm_skill_allowlist 
 mkdir -p "$tmp/root/profiles/t" "$tmp/root/repos/mozilla__fxa"; echo "Run fxa-start." > "$tmp/root/repos/mozilla__fxa/notes.md"; echo "Never run fxa-start." > "$tmp/root/profiles/t/CLAUDE.md"
 check "team rules follow the repo notes" "Repo notes: mozilla/fxa|Team rules: t" \
   "$(SANDBOX_ROOT="$tmp/root" PIPE_PROFILE=t _vm_team_rules | grep -o 'Repo notes: mozilla/fxa\|Team rules: t' | paste -sd'|' -)"
+# The memory hooks: a Bash result and a patch run fxa-mem hook, and the launch trusts them.
+toml() { grep -h "codex/config.toml" "$tmp"/exec.* | sed -n "s/.*echo '\([A-Za-z0-9+/=]*\)' | base64 -d > \/home\/agent\/.codex\/config.toml.*/\1/p" | base64 -d; }
+rm -f "$tmp"/exec.*; PIPE_PROFILE=fxa runtime_setup_config vm5 2>/dev/null; toml > "$tmp/config.toml"
+hk='command -v fxa-mem >/dev/null && fxa-mem hook; exit 0'
+check "config.toml has the memory hooks" "^Bash$|^(apply_patch|Edit|Write)$|command|$hk|5" "$(python3 -c '
+import tomllib, sys
+h = tomllib.load(open(sys.argv[1], "rb"))["hooks"]; c = h["PostToolUse"][0]["hooks"][0]
+print("|".join([h["PostToolUse"][0]["matcher"], h["PreToolUse"][0]["matcher"], c["type"], c["command"], str(c["timeout"])]))' "$tmp/config.toml" 2>&1)"
+check "both launch lines trust the hooks" "1|1" "$(runtime_launch_cmd | grep -c -- '--dangerously-bypass-hook-trust')|$(FXA_SESSION_MODE=1 runtime_launch_cmd | grep -c -- '--dangerously-bypass-hook-trust')"
 exit "$fail"

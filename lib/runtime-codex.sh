@@ -31,6 +31,23 @@ trust_level = "trusted"
 
 [projects."/mnt/shared/workspace"]
 trust_level = "trusted"
+
+# Team memory recall on a Bash result and on a patch (fxa-mem hook).
+[[hooks.PostToolUse]]
+matcher = "^Bash\$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0"
+timeout = 5
+
+[[hooks.PreToolUse]]
+matcher = "^(apply_patch|Edit|Write)\$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0"
+timeout = 5
 TOML
 )"
   # AGENTS.md is Codex's CLAUDE.md. The operator rules come first, the same ones
@@ -149,10 +166,10 @@ runtime_launch_cmd() {
   # A Slack session streams JSON events into the transcript the events command
   # reads, and continues an earlier conversation when FXA_CODEX_RESUME is set.
   if [ -n "${FXA_SESSION_MODE:-}" ]; then
-    printf '%s' "${start} ${FXA_CODEX_RESUME:+resume ${FXA_CODEX_RESUME} }--json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check - < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-claude.jsonl"
+    printf '%s' "${start} ${FXA_CODEX_RESUME:+resume ${FXA_CODEX_RESUME} }--json --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust --skip-git-repo-check - < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-claude.jsonl"
     return
   fi
-  printf '%s' "${start} --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C /workspace --output-schema /workspace/.fxa-auto-handoff.schema.json -o /workspace/.fxa-auto-done.json.tmp < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-agent.log; test -s /workspace/.fxa-auto-done.json.tmp && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json"
+  printf '%s' "${start} --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust --skip-git-repo-check -C /workspace --output-schema /workspace/.fxa-auto-handoff.schema.json -o /workspace/.fxa-auto-done.json.tmp < /workspace/.fxa-auto-prompt.txt 2>&1 | tee -a /workspace/.fxa-auto-agent.log; test -s /workspace/.fxa-auto-done.json.tmp && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json"
 }
 
 runtime_submit_prompt() {

@@ -107,7 +107,9 @@ _vm_settings_json() {
   { cat "$1" 2>/dev/null || echo '{}'; } | jq -c --argjson deny "$deny" '{model, permissions, statusLine, theme}
     | with_entries(select(.value != null)) | . + {outputStyle: "concise"}
     | .permissions.deny = ((.permissions.deny // []) + $deny)
-    | .hooks = {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-bash-guard.sh"}]}]}'
+    | {type: "command", command: "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0", timeout: 5} as $mem
+    | .hooks = {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-bash-guard.sh"}]},
+        {matcher: "Edit|Write|MultiEdit", hooks: [$mem]}], PostToolUseFailure: [{matcher: "Bash", hooks: [$mem]}]}'
 }
 
 # ── Helpers ────────────────────────────────────────────────────
