@@ -7,7 +7,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^_pipeline_secret_labels() {/,/^}/p;/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
+eval "$(sed -n '/^_pipeline_secret_labels() {/,/^}/p;/^pipeline_jira_project() {/,/^}/p;/^pipeline_secret_team() {/,/^}/p;/^pipeline_jira_scope() {/,/^}/p;/^pipeline_queue_jql() {/,/^}/p;/^pipeline_focus_marker() /p;/^pipeline_focus_key() /p;/^pipeline_key_in_scope() {/,/^}/p;/^pipeline_focus() {/,/^}/p' "$here/pipeline.sh")"
 eval "$(sed -n '/^jira_keys_in_state() {/,/^}/p;/^jira_items_in_state() {/,/^}/p;/^jira_queue_keys() {/,/^}/p;/^jira_queue_items() /p;/^jira_secured_keys() {/,/^}/p' "$here/jira.sh")"
 eval "$(sed -n '/^_reap_stray_vms() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
@@ -37,8 +37,8 @@ echo FXA-9 > "$tmp/FOCUS"
 check "the whole queue ignores the focus" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND (labels = "ai-fixme" AND statusCategory != Done) ORDER BY created ASC' "$(pipeline_queue_jql all)"
 rm "$tmp/FOCUS"
 pipeline_states() { printf '%s\n' inflight done; }
-check "a pipeline ticket that got a security level or a secret label is found, in the project" 'project = FXA AND (level IS NOT EMPTY OR labels IN ("security", "hackerone")) AND labels in ("ai-fixme-inflight", "ai-fixme-done")' "$(jira_secured_keys)"
-check "precheck reports it once, and the pass gets an info line" "1|1|1" \
+check "a pipeline ticket that got a security level or a secret label is found, in the project, with a secret team's labels when no team takes them" 'project = FXA AND (level IS NOT EMPTY OR labels IN ("security", "hackerone")) AND labels in ("ai-fixme-inflight", "ai-fixme-private-inflight", "ai-fixme-done", "ai-fixme-private-done")' "$(FXA_TEAMS_DIR="$tmp/none" jira_secured_keys)"
+check "precheck reports it once, and the pass gets an info line (public team, with and without a secret team)" "1|1|2" \
   "$(grep -c 'for sk in $(jira_secured_keys' "$here/../fxa-sandbox-ctl")|$(grep -c 'secured-noted" \] && continue' "$here/../fxa-sandbox-ctl")|$(grep -c '_info "security level or label: ' "$here/../fxa-sandbox-ctl")"
 check "a state read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
 check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
@@ -47,6 +47,39 @@ check "a profile with no project has no queue" "1|" "$(PIPE_PROFILE=monitor pipe
 check "a profile with no project reads no queue, and says so with an error" "1|1|" \
   "$(PIPE_PROFILE=monitor jira_queue_keys 2>/dev/null; echo "$?|")$(PIPE_PROFILE=monitor jira_queue_items 2>/dev/null; echo "$?|")"
 check "a project value that is not a key is refused" "1" "$(PIPE_JIRA_PROJECT='FXA OR project = X' pipeline_jira_scope >/dev/null 2>&1; echo $?)"
+
+# A secret team takes exactly what the public scope leaves out, while GitHub confirms its repos private.
+github_repo_confirmed_private() { [ -z "${GATE_FAIL:-}" ] || { echo "could not confirm that $1 is private (GitHub answered HTTP 503)" >&2; return 1; }; }
+sec() { ( PIPE_PROFILE=fxa-private PIPE_JIRA_PROJECT=FXA PIPE_SECRET_TICKETS=1 PIPE_WORK_ROWS=("mozilla/fxa-private /home/agent/fxa"); "$@" ); }
+check "the two scopes split the project, with the host's extra secret labels" \
+  'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone", "embargo"))|project = FXA AND (level IS NOT EMPTY OR labels IN ("security", "hackerone", "embargo"))' \
+  "$(PIPE_SECRET_LABELS=embargo pipeline_jira_scope)|$(PIPE_SECRET_LABELS=embargo sec pipeline_jira_scope)"
+_jira_keys_for_jql() { echo "$1" >> "$tmp/jql"; echo FXA-7; }; : > "$tmp/jql"
+check "a repo GitHub does not confirm private stops the secret queue: no JQL, no key in scope" "1|1|1|0|1" \
+  "$(GATE_FAIL=1 sec pipeline_jira_scope 2>&1 | grep -c 'mozilla/fxa-private is not confirmed private')|$(GATE_FAIL=1 sec jira_queue_keys >/dev/null 2>&1; echo $?)|$(GATE_FAIL=1 sec pipeline_key_in_scope FXA-7 2>/dev/null; echo $?)|$(grep -c . "$tmp/jql")|$(GATE_FAIL=1 sec jira_secured_keys >/dev/null 2>&1; echo $?)"
+_jira_keys_for_jql() { printf '%s\n' "$1"; }
+mkdir -p "$tmp/teams"; echo '{"teams":{"fxa-private":{"status":"active","secret":true,"jira":"FXA"},"old":{"status":"disabled","secret":true,"jira":"MNTOR"}}}' > "$tmp/teams/index.json"
+pipeline_states() { printf '%s\n' public inflight done; }
+lab() { ( eval "$(sed -n '/^pipeline_label_for() {/,/^}/p' "$here/pipeline.sh")"; PIPE_LABEL_PREFIX="${PFX:-ai-fixme}"; PIPE_QUEUE_LABEL=ai-fixme; FXA_TEAMS_DIR="$tmp/teams"; "$@" ); }
+check "with an active secret team, the public report leaves out a queued secret ticket and that team's labels" \
+  'project = FXA AND (level IS NOT EMPTY OR labels IN ("security", "hackerone")) AND labels in ("ai-fixme-inflight", "ai-fixme-done")' "$(lab jira_secured_keys)"
+check "a disabled secret team takes nothing; a bad index counts as none" 'project = MNTOR AND (level IS NOT EMPTY OR labels IN ("security", "hackerone")) AND labels in ("ai-fixme", "ai-fixme-inflight", "ai-fixme-private-inflight", "ai-fixme-done", "ai-fixme-private-done")|fxa-private|' \
+  "$(PIPE_JIRA_PROJECT=MNTOR lab jira_secured_keys)|$(FXA_TEAMS_DIR="$tmp/teams" pipeline_secret_team FXA)|$(echo '{bad' > "$tmp/bad.json"; mkdir -p "$tmp/badt"; cp "$tmp/bad.json" "$tmp/badt/index.json"; FXA_TEAMS_DIR="$tmp/badt" pipeline_secret_team FXA)"
+check "the secret team reports its own tickets that lost the secret label" \
+  'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels in ("ai-fixme-private-inflight", "ai-fixme-private-done")' "$(PFX=ai-fixme-private lab sec jira_secured_keys)"
+unset -f github_repo_confirmed_private
+
+# A secret team's states have their own prefix; the queue label stays ai-fixme for every team.
+eval "$(sed -n '/^jira_label_set() {/,/^}/p' "$here/jira.sh")"
+acli() { echo "$*" >> "$tmp/acli"; }
+lset() { ( eval "$(sed -n '/^pipeline_label_for() {/,/^}/p;/^pipeline_states() /p' "$here/pipeline.sh")"; PIPE_LABEL_PREFIX="$1"; PIPE_QUEUE_LABEL=ai-fixme; : > "$tmp/acli"; jira_label_set FXA-1 "$2" >/dev/null; cat "$tmp/acli" ); }
+check "a secret team's inflight drops ai-fixme and every public state" \
+  "jira workitem edit -k FXA-1 --remove-labels ai-fixme,ai-fixme-private-done,ai-fixme-private-blocked,ai-fixme-private-merged,ai-fixme-private-rejected,ai-fixme-private-diff -l ai-fixme-private-inflight -y" "$(lset ai-fixme-private inflight)"
+check "public (or the full ai-fixme label) puts ai-fixme back and drops the private states" "-l ai-fixme -y|-l ai-fixme -y" \
+  "$(lset ai-fixme-private public | grep -o -- '-l ai-fixme -y')|$(lset ai-fixme-private ai-fixme | grep -o -- '-l ai-fixme -y')"
+check "the full private label is accepted; the public team's labels do not change" "-l ai-fixme-private-done -y|-l ai-fixme-inflight -y" \
+  "$(lset ai-fixme-private ai-fixme-private-done | grep -o -- '-l [a-z-]* -y')|$(lset ai-fixme inflight | grep -o -- '-l [a-z-]* -y')"
+unset -f acli
 
 # The reap stops this project's stray runners and sessions' stray runners, never another project's.
 jira_owning_keys() { echo FXA-1; }; session_live() { return 1; }; vm_gc() { :; }

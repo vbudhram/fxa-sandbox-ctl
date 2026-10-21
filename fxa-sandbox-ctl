@@ -1528,11 +1528,22 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   if pipeline_holding_new; then _info "mode: newtickets off; the queue is not offered"; queue=""; fi
   local focus; focus="$(pipeline_focus_key || true)"; [ -n "$focus" ] && _info "mode: focus ${focus}; the queue is that epic's children"
   # The pass posts nothing to a security ticket: tell the operator once for each, and let a person move it.
-  local sk; for sk in $(jira_secured_keys 2>/dev/null || true); do
+  local sk smsg sproj steam=""; sproj="$(pipeline_jira_project 2>/dev/null || true)"
+  [ "${PIPE_SECRET_TICKETS:-}" = 1 ] || steam="$(pipeline_secret_team "$sproj" 2>/dev/null || true)"
+  for sk in $(jira_secured_keys 2>/dev/null || true); do
     [[ "$sk" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || continue
-    _info "security level or label: ${sk} has a pipeline label; a person moves it (the pass does not touch it)"
+    if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+      _info "secret label removed: ${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label; a person moves it (the pass does not touch it)"
+      smsg="${sk} has a ${PIPE_LABEL_PREFIX} label but no security level or secret label, so team ${PIPE_PROFILE} no longer reads it. Add the label back, or set ai-fixme by hand so the public team takes it"
+    elif [ -n "$steam" ]; then
+      _info "security level or label: ${sk} has a public pipeline label; a person moves it (the pass does not touch it)"
+      smsg="${sk} got a security level or a secret label during a public run. Stop its run, then set ai-fixme on it, so team ${steam} takes it"
+    else
+      _info "security level or label: ${sk} has a pipeline label, and no active team takes ${sproj}'s secret tickets; a person moves it (the pass does not touch it)"
+      smsg="${sk} has a security level or a secret label and a pipeline label, but no active team takes ${sproj}'s secret tickets. Create or activate one (README: Private pipeline teams), or move it by hand"
+    fi
     [ -f "${PIPE_STATE_DIR}/${sk}.secured-noted" ] && continue
-    errors_record pipeline secured "$sk" "precheck" "${sk} has a security level or a secret label (PIPE_SECRET_LABELS) and a pipeline label; it runs only with jira --private. Move or relabel it by hand" ""
+    errors_record pipeline secured "$sk" "precheck" "$smsg" ""
     : > "${PIPE_STATE_DIR}/${sk}.secured-noted"
   done
   while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
@@ -1843,7 +1854,7 @@ cmd_label() {
   jira_label_set "$key" "$state" || return 1
   rm -f "${PIPE_STATE_DIR}/$(jira_normalize_key "$key" 2>/dev/null).needs-you"
   state="${state#${PIPE_LABEL_PREFIX}-}"
-  [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
+  [ "$state" = "$PIPE_LABEL_PREFIX" ] || [ "$state" = "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ] && state="public"
   pipeline_blocked_why "$key" "$state" "${@:3}"
   # Only inflight owns a worktree, so any other state reaps the VM.
   if [ "$state" != "inflight" ]; then

@@ -228,11 +228,25 @@ jira_items_in_state() {
 jira_done_keys()      { jira_keys_in_state done; }
 # jira_secured_keys   The project's pipeline tickets that got a security level or a secret label: the
 # scoped state reads no longer see them, so their label stays until a person moves them.
+# A secret team: its own tickets that lost their level and secret label. A public team: with a team that
+# takes the project's secret tickets, a queued one is that team's work; with none, that team's labels too.
 jira_secured_keys() {
   pipeline_require || return 1
-  local p ls="" st sl; p="$(pipeline_jira_scope)" || return 1; sl="$(_pipeline_secret_labels)" || return 1
-  for st in $(pipeline_states); do ls="${ls:+$ls, }\"$(pipeline_label_for "$st")\""; done
-  _jira_keys_for_jql "${p%% AND level IS EMPTY*} AND (level IS NOT EMPTY OR labels IN (${sl})) AND labels in (${ls})"
+  local p ls="" st sl s; p="$(pipeline_jira_project)" || return 1; sl="$(_pipeline_secret_labels)" || return 1
+  pipeline_jira_scope >/dev/null || return 1
+  if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+    for st in $(pipeline_states); do [ "$st" = public ] || ls="${ls:+$ls, }\"$(pipeline_label_for "$st")\""; done
+    _jira_keys_for_jql "project = ${p} AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN (${sl})) AND labels in (${ls})"
+    return
+  fi
+  s="$(pipeline_secret_team "$p")"
+  for st in $(pipeline_states); do
+    [ -n "$s" ] && [ "$st" = public ] && continue
+    ls="${ls:+$ls, }\"$(pipeline_label_for "$st")\""
+    # ai-fixme-private: the prefix team_record.py gives a secret team.
+    [ -n "$s" ] || [ "$st" = public ] || ls="${ls}, \"ai-fixme-private-${st}\""
+  done
+  _jira_keys_for_jql "project = ${p} AND (level IS NOT EMPTY OR labels IN (${sl})) AND labels in (${ls})"
 }
 
 # jira_owning_keys
@@ -260,7 +274,7 @@ jira_label_set() {
   [ -n "$key" ] && [ -n "$state" ] || { echo "ERROR: label needs <KEY> <state>" >&2; return 1; }
   # Accept the full label too. Callers reach for `ai-fixme-blocked` as often as
   # `blocked`, and failing on the longer form is pointless friction.
-  [ "$state" = "$PIPE_LABEL_PREFIX" ] && state="public"
+  [ "$state" = "$PIPE_LABEL_PREFIX" ] || [ "$state" = "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ] && state="public"
   state="${state#${PIPE_LABEL_PREFIX}-}"
   case "$state" in
     public|queued|inflight|done|blocked|merged|rejected|diff) ;;

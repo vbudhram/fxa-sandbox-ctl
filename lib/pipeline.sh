@@ -29,7 +29,7 @@ _FXA_ROUND_CAP=2
 # Env overrides win over the config, so old cron and shell overrides still work.
 # Keys only the controller sets: a team that set them would move its state, locks or mirror,
 # read a credential, or run a command on the host. pipeline_load derives them from the name.
-PIPE_HOST_KEYS="PIPE_NAME PIPE_STATE_DIR PIPE_LOCK_DIR PIPE_POOL_NAME PIPE_REPO PIPE_RUNS_FILE PIPE_COSTS_FILE PIPE_STATE_URI PIPE_PAUSE_URI PIPE_JIRA_BASIC PIPE_TOOLING_APPROVERS PIPE_RELOCK_CMD PIPE_RELOCK_SIGN PIPE_LOCK_STALE_SECONDS PIPE_JIRA_SITE"
+PIPE_HOST_KEYS="PIPE_NAME PIPE_STATE_DIR PIPE_LOCK_DIR PIPE_POOL_NAME PIPE_REPO PIPE_RUNS_FILE PIPE_COSTS_FILE PIPE_STATE_URI PIPE_PAUSE_URI PIPE_JIRA_BASIC PIPE_TOOLING_APPROVERS PIPE_RELOCK_CMD PIPE_RELOCK_SIGN PIPE_LOCK_STALE_SECONDS PIPE_JIRA_SITE PIPE_SECRET_TICKETS"
 # pipeline_conf_lint <conf>   A profile may hold only comments, KEY=value with one word or one
 # quoted string, and the rows of a KEY=( ... ) array. No command substitution, no second command.
 pipeline_conf_lint() {
@@ -93,7 +93,7 @@ _pipeline_load_record() {
   while IFS=$'\t' read -r k v; do
     case "$k" in
       REPO) PIPE_REPOS+=("$v") ;;
-      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256|PIPE_JIRA_SECRET|PIPE_TEAM_USD_DAY|PIPE_TEAM_USD_MONTH|PIPE_RUNTIME_SECRETS)
+      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256|PIPE_JIRA_SECRET|PIPE_TEAM_USD_DAY|PIPE_TEAM_USD_MONTH|PIPE_RUNTIME_SECRETS|PIPE_SECRET_TICKETS|PIPE_QUEUE_LABEL|PIPE_LABEL_PREFIX)
         printf -v "$k" '%s' "$v" ;;
       *) echo "ERROR: team record ${name}: unexpected key ${k}" >&2; return 1 ;;
     esac
@@ -164,7 +164,9 @@ pipeline_load() {
   PIPE_JIRA_SITE="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}"
   # One label for every team: pipeline_jira_scope keeps each queue to its own project.
   PIPE_LABEL_PREFIX="${PIPE_LABEL_PREFIX:-ai-fixme}"
-  PIPE_QUEUE_JQL="${PIPE_QUEUE_JQL:-labels = \"${PIPE_LABEL_PREFIX}\" AND statusCategory != Done ORDER BY created ASC}"
+  # The label an engineer adds: the prefix, except for a secret team, whose states have their own prefix.
+  PIPE_QUEUE_LABEL="${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}"
+  PIPE_QUEUE_JQL="${PIPE_QUEUE_JQL:-labels = \"${PIPE_QUEUE_LABEL}\" AND statusCategory != Done ORDER BY created ASC}"
   # The pool sits beside the repo's clone, and every clone is in ~/Desktop/working2: each
   # profile needs its own name, or a second team's slots are FxA's.
   PIPE_POOL_NAME="${PIPE_POOL_NAME:-${PIPE_PROFILE}-auto}"
@@ -206,7 +208,7 @@ pipeline_require() {
 # The bare prefix is the queue label; only lifecycle states carry a suffix.
 pipeline_label_for() {
   case "$1" in
-    public|queued) printf '%s\n' "$PIPE_LABEL_PREFIX" ;;
+    public|queued) printf '%s\n' "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ;;
     *)             printf '%s-%s\n' "$PIPE_LABEL_PREFIX" "$1" ;;
   esac
 }
@@ -279,11 +281,33 @@ _pipeline_secret_labels() {
 # Jira project (FXA for fxa), so another team's ticket with the same label never runs against
 # this repo, and no secret ticket (a security level or a secret label), whose fix would go into a public PR.
 # It goes first: the profile's JQL ends with ORDER BY.
-pipeline_jira_scope() {
-  local p="${PIPE_JIRA_PROJECT:-}" sl
+# pipeline_jira_project   The profile's Jira project key (FXA for fxa), or an error.
+pipeline_jira_project() {
+  local p="${PIPE_JIRA_PROJECT:-}"
   [ -z "$p" ] && [ "${PIPE_PROFILE:-}" = fxa ] && p=FXA
   [[ "$p" =~ ^[A-Z][A-Z0-9]*$ ]] || { echo "ERROR: profile ${PIPE_PROFILE:-?} has no Jira project (PIPE_JIRA_PROJECT), so it has no queue" >&2; return 1; }
+  printf '%s' "$p"
+}
+# pipeline_secret_team <PROJECT>   The active team that takes the project's secret tickets, from the teams
+# index; nothing when none does, or when the index is missing or bad (a report then shows more, never less).
+pipeline_secret_team() {
+  jq -r --arg p "$1" '[.teams // {} | to_entries[] | select(.value.secret == true and .value.status == "active" and .value.jira == $p) | .key][0] // empty' \
+    "${FXA_TEAMS_DIR:-/nonexistent}/index.json" 2>/dev/null || true
+}
+pipeline_jira_scope() {
+  local p sl r
+  p="$(pipeline_jira_project)" || return 1
   sl="$(_pipeline_secret_labels)" || return 1
+  if [ "${PIPE_SECRET_TICKETS:-}" = 1 ]; then
+    # A secret team takes exactly what the public scope leaves out, and only while GitHub confirms
+    # that each work repo is private: no read, so no launch, on any other answer.
+    [ "${#PIPE_WORK_ROWS[@]}" -gt 0 ] || { echo "ERROR: secret team ${PIPE_PROFILE:-?} has no work repo" >&2; return 1; }
+    for r in "${PIPE_WORK_ROWS[@]}"; do
+      github_repo_confirmed_private "${r%% *}" || { echo "ERROR: ${PIPE_PROFILE:-?}: ${r%% *} is not confirmed private, so no secret ticket is read or launched. The next pass checks again." >&2; return 1; }
+    done
+    printf 'project = %s AND (level IS NOT EMPTY OR labels IN (%s))' "$p" "$sl"
+    return 0
+  fi
   printf 'project = %s AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN (%s))' "$p" "$sl"
 }
 # pipeline_key_in_scope <KEY>   The queue's scope also gates a direct launch: a pass that a
