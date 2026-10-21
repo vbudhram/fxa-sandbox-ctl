@@ -51,6 +51,8 @@ r = s["routines"]; nx = r["1"]["next"]
 check("A's next run is its next 09:00 UTC, within a day", (True, True), (isinstance(nx, int) and 0 < nx - time.time() <= 86400, time.gmtime(nx)[3:5] == (9, 0) if nx else False))
 check("no next run for a bad zone, no schedule, or a paused routine", (None, None, None, None), (r["2"]["next"], r["3"]["next"], r["4"]["next"], r["5"]["next"]))
 check("each routine has its name, team and paused", ("E", "fxa", True), (r["5"]["name"], r["5"]["team"], r["5"]["paused"]))
+check("each routine's template (blank when none) and its lowest and highest run cost in 30 days", ("blank", 0.25, 1.0, None, None),
+      (r["2"]["template"], r["2"]["cost_min_30d"], r["2"]["cost_max_30d"], r["6"]["cost_min_30d"], r["4"]["cost_max_30d"]))
 check("no prompt, report or channel in the body", (False, False, False), ("SECRET-PROMPT" in body, "SECRET-REPORT" in body, "C0SECRET" in body))
 fxadb.PATH = f"{tmp}/missing/fxa.db"
 code, body = get(sig("admin@example.com", P))

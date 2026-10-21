@@ -1,4 +1,5 @@
 ---
+about: Checks the changed screens for text, empty, error and loading states, labels, focus, contrast and keyboard use, and fixes only small, clear issues.
 name: UX review
 mode: pr+notes
 skip_no_commits: true

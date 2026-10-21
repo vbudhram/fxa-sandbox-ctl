@@ -1047,12 +1047,13 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:  # noqa: BLE001  a fixed text: the error may name a path
                     self._json(503, {"error": "the routine store cannot be read"})
             return
-        # Routines: admins only, for reading too (the design's D1).
-        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})/history)?", path)
+        # Routines: admins only, for reading too (the design's D1). routine-channels: the channels the live bot is in.
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/(routines(?:/([0-9]{{1,9}})/history)?|routine-channels)", path)
         if m or path == "/api/routine-templates":
             user = self._admin("GET", path)
             if user:
-                args = ["templates"] if not m else ["history", m.group(1), m.group(2)] if m.group(2) else ["list", m.group(1)]
+                args = ["templates"] if not m else ["channels", m.group(1)] if m.group(2) == "routine-channels" \
+                    else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]
                 self._team_ctl(user, args, read=True, cmd="routine")
             return
         # One team's full record and its audit: admins only, since a record names Slack users.

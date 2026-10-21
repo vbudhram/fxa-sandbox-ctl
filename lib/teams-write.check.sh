@@ -14,7 +14,7 @@ for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$t
 [ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
 # routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
 if [ "\$1" = routine ]; then
-  case "\$2" in list|history|templates) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
+  case "\$2" in list|history|templates|channels) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
   [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: Someone changed this routine since you opened it. Load it again to see their change." >&2; exit "\$(cat "$tmp/rc")"; }
   exit 0
 fi
@@ -111,6 +111,10 @@ check("routines: unsigned gets 401, a signed non-admin 403, for a read and a wri
 check("an admin reads the list, the templates and a history", ((200, [{"id": 5}]), (200, [{"id": 5}]), (200, [{"id": 5}]), ["routine list rusty", "routine templates", "routine history rusty 5"]),
       (call("GET", L, headers=sig(A, "GET", L)), call("GET", "/api/routine-templates", headers=sig(A, "GET", "/api/routine-templates")),
        call("GET", L + "/5/history", headers=sig(A, "GET", L + "/5/history")), ran()))
+C = "/api/teams/rusty/routine-channels"
+check("routine-channels: unsigned 401, a non-admin 403, an admin runs routine channels for the URL team",
+      (401, 403, 200, "routine channels rusty"),
+      (call("GET", C)[0], call("GET", C, headers=sig(V, "GET", C))[0], call("GET", C, headers=sig(A, "GET", C))[0], ran()[-1]))
 st, _ = call("POST", L, {"routine": R}, sig(A, "POST", L))
 check("an admin creates one: routine set with the routine in a file, as that admin", (200, "routine set rusty", R, A),
       (st, ran()[-1].rsplit(" ", 1)[0], json.load(open(f"{tmp}/record")), open(f"{tmp}/actor").read().splitlines()[-1]))

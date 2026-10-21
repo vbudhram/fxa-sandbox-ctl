@@ -1,4 +1,5 @@
 ---
+about: Looks for untrusted input, missing access checks, secrets and weak crypto in the changed code. It changes no code, because a public fix would disclose the issue before a release.
 name: Security review
 mode: report
 locked_mode: report

@@ -51,10 +51,11 @@ def routine_summary(con, now):
     """For the Teams page (admins only): per team and per routine, the 30-day runs and cost, and whether
     the routine failed (its newest ended run is failed or missed). A paused routine stays failed for
     itself, but is left out of its team's failed count and last failed run. No prompt, report or channel.
-    Each routine also has its name, team, paused and next run (epoch; null when paused or unreadable)."""
+    Each routine also has its name, team, template, paused and next run (epoch; null when paused or unreadable),
+    and the lowest and highest cost of one run in 30 days (null with no costed run), for the form's cost hint."""
     import routine  # the one reader of a schedule; the dashboard loads it from lib/ beside this file
     since = now - 30 * 86400
-    rts = rows(con, """SELECT id, team, paused, json_extract(data, '$.name') AS name,
+    rts = rows(con, """SELECT id, team, paused, json_extract(data, '$.name') AS name, coalesce(json_extract(data, '$.template'), 'blank') AS template,
         json_extract(data, '$.schedule') AS schedule, json_extract(data, '$.zone') AS zone FROM routines""")
     ended = rows(con, """SELECT r.routine_id AS rid, r.state, r.reason, r.session, coalesce(r.ended_at, r.started_at, 0) AS at, r.cost_usd
         FROM routine_runs r WHERE r.state NOT IN ('queued', 'claimed', 'started') ORDER BY at, r.id""")
@@ -67,8 +68,8 @@ def routine_summary(con, now):
                 nxt = int(routine.runs(r, now, 1)[0].timestamp())
             except Exception:  # noqa: BLE001  a bad schedule or zone shows no next run, not a failed page
                 nxt = None
-        per[r["id"]] = {"name": r["name"], "team": r["team"], "paused": bool(r["paused"]), "next": nxt,
-                        "runs_30d": 0, "cost_30d": 0.0, "failed": False, "last_end": None}
+        per[r["id"]] = {"name": r["name"], "team": r["team"], "template": r["template"], "paused": bool(r["paused"]), "next": nxt,
+                        "runs_30d": 0, "cost_30d": 0.0, "cost_min_30d": None, "cost_max_30d": None, "failed": False, "last_end": None}
     last = {}
     for x in ended:
         p = per.get(x["rid"])
@@ -79,6 +80,9 @@ def routine_summary(con, now):
         if x["at"] >= since:
             p["runs_30d"] += 1
             p["cost_30d"] += x["cost_usd"] or 0.0
+            if x["cost_usd"]:
+                p["cost_min_30d"] = min(p["cost_min_30d"] or x["cost_usd"], x["cost_usd"])
+                p["cost_max_30d"] = max(p["cost_max_30d"] or 0.0, x["cost_usd"])
     for r in rts:
         p, x = per[r["id"]], last.get(r["id"])
         p["failed"] = bool(x and x["state"] in ("failed", "missed"))

@@ -111,6 +111,7 @@ check "a time in the DST gap runs once that day, at the first valid minute after
 check "routine templates lists four templates, and security-review is locked to report" "code-review perf-review security-review ux-review|report|report" \
   "$(python3 -I "$here/routine.py" templates | jq -r '[.[].template] | join(" ")')|$(python3 -I "$here/routine.py" templates | jq -r '.[] | select(.template == "security-review") | "\(.mode)|\(.locked_mode)"')"
 check "each template has a prompt and a skip flag" "4" "$(python3 -I "$here/routine.py" templates | jq '[.[] | select((.prompt | length) > 100 and (.skip_no_commits | type) == "boolean")] | length')"
+check "each template has a one-sentence about for the form's start cards" "4" "$(python3 -I "$here/routine.py" templates | jq '[.[] | select((.about // "") | length > 40 and length < 240 and endswith("."))] | length')"
 
 # The CRUD commands, with the real store and the team profile stubbed.
 SANDBOX_ROOT="$(cd "$here/.." && pwd)" FXA_GCE_PROJECT="" FXA_TEAMS_URI="" SESSION_DIR="$tmp/sessions" FXA_TEAMS_DIR="$tmp/teams"

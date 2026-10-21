@@ -1,4 +1,5 @@
 ---
+about: Looks for slow paths in the changed code, such as work or queries in loops, missing indexes and blocking calls, and fixes only what it can measure.
 name: Performance review
 mode: pr+notes
 skip_no_commits: true

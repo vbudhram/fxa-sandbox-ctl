@@ -77,6 +77,23 @@ run="$(sqlite3 "$tmp/fxa.db" "INSERT INTO routine_runs (routine_id, period, stat
 out="$(NOW=$((T + 240)) ctl routine done "$run" --state nochange --session agent-cli001 2>&1)"; rc=$?
 check "the CLI done with a schedule that cannot be read: exit 0, the result stored, no next run" "0|nochange|null" \
   "$rc|$(sqlite3 "$tmp/fxa.db" "SELECT state FROM routine_runs WHERE id = $run;")|$(jq -r .next <<< "$out" 2>/dev/null)"
+# The channel list the bot writes through ingest: names sorted, the bad id left out, a public channel refused for a
+# security review only, and a later list of the same env replacing it. The routine list names its channel.
+ing() { sqlite3 "$tmp/fxa.db" "INSERT INTO ingest (tbl, j) VALUES ('slack_channels', '$1');"; }
+ing '{"env":"live","at":1792400000,"channels":[{"id":"C0OWN00","name":"fxa-routines","private":false,"shared":false},{"id":"C0PRIV1","name":"fxa-private","private":true,"shared":false},{"id":"bad","name":"x"}]}'
+ing '{"env":"dev","at":1792400001,"channels":[{"id":"C0DEV00","name":"fxa-dev","private":true,"shared":false}]}'
+out="$(ctl routine channels fxa 2>&1)"; rc=$?
+check "routine channels: the live list, sorted, each with why a routine or a security review may not post" \
+  "0|1792400000|fxa-private,fxa-routines|null,null|null,public" \
+  "$rc|$(jq -r '.at' <<< "$out")|$(jq -r '[.channels[].name] | join(",")' <<< "$out")|$(jq -r '[.channels[].why] | map(tostring) | join(",")' <<< "$out")|$(jq -r '[.channels[].why_security | if . then (split(" ")[3] | rtrimstr(".")) else "null" end] | join(",")' <<< "$out")"
+check "routine channels dev: only the dev bot's list" "fxa-dev" "$(ctl routine channels fxa dev 2>&1 | jq -r '[.channels[].name] | join(",")')"
+out="$(ctl routine list fxa 2>/dev/null)"
+check "routine list: the channel's name, and the last results oldest first" "fxa-routines|nochange" \
+  "$(jq -r --argjson r "$r1" '.[] | select(.id == $r) | .channel_name' <<< "$out")|$(jq -r --argjson r "$rz" '.[] | select(.id == $r) | [.recent[].state] | join(",")' <<< "$out")"
+ing '{"env":"live","at":1792400600,"channels":[{"id":"C0PRIV1","name":"fxa-private","private":true,"shared":false}]}'
+check "a new live list replaces the old one; dev keeps its own" "1|1|null" \
+  "$(sqlite3 "$tmp/fxa.db" "SELECT count(*) FROM slack_channels WHERE env = 'live';")|$(sqlite3 "$tmp/fxa.db" "SELECT count(*) FROM slack_channels WHERE env = 'dev';")|$(ctl routine list fxa 2>/dev/null | jq -r --argjson r "$r1" '.[] | select(.id == $r) | .channel_name')"
+check "routine channels refuses a bad env" "1" "$(ctl routine channels fxa prod >/dev/null 2>&1; echo $?)"
 # A repo GitHub hides (404) makes the team private: the real CLI keeps the run out of a channel it does not bind.
 rp="$(mk "daily 10:00")"; touch "$tmp/private"; rm -f "$tmp"/fxa-github-vis.*   # the 200 answers above are cached for a day
 out="$(NOW=$((T + 3600 + 30)) ctl routine tick --env live 2>"$tmp/err")"; rc=$?

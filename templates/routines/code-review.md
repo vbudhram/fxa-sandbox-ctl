@@ -1,4 +1,5 @@
 ---
+about: Reads the new commits for bugs, missing error handling, unsafe input, dead code and missing tests, and fixes only the small, clear issues.
 name: Code review
 mode: pr+notes
 skip_no_commits: true

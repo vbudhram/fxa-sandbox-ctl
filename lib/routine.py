@@ -4,6 +4,8 @@
   routine.py validate <routine.json> <team> --profile <profile show json> [--index <teams index>]
                       [--bot-env <bot .env>] [--count <other routines of the team>]
       Prints the normalized routine on success; else one "<field>: <reason>" line for each problem, exit 1.
+  routine.py channels <channels.json> <team> --profile <json> --index <index> --bot-env <env>
+      The channels a bot is in (slack_channels rows), each with why a routine or a security review may not post there.
   routine.py next <routine.json> [--from <epoch>] [--n <count>]   the next run times, as local ISO times
   routine.py period <routine.json> <epoch>                         the period key: the local date of that time
   routine.py due <routine.json> <epoch>                            {period, at, next} of the latest run time at or before then
@@ -90,6 +92,41 @@ def kind(team, index, env):
     return "folder"
 
 
+def channel_why(ch, team, tpl, profile, index, env):
+    """Why this team's routine of template tpl may not post in channel ch, or None."""
+    own, other = channels(team, index, env)
+    if ch in other:
+        return f"Channel {ch} belongs to team {other[ch]}"
+    if profile.get("private") and ch not in own:
+        return "A team with a private repo posts only to one of this team's channels"
+    if tpl == "security-review" and kind(team, index, env) != "folder" and ch not in own:
+        return "A security review posts only to one of this team's channels"
+    return None
+
+
+def post_why(c, tpl, profile):
+    """The bot's rule when a run starts (fxa-agent-bot channelRefusal): why it refuses channel c, or None."""
+    if not profile.get("private") and tpl != "security-review":
+        return None
+    if not c.get("private"):
+        return "The channel is public. A team with a private repo, and every security review, posts only to a private channel"
+    if c.get("shared"):
+        return "The channel is shared with another workspace. A team with a private repo, and every security review, posts only to a channel that is not shared"
+    return None
+
+
+def channel_list(rows, team, profile, index, env):
+    """The channels a bot is in, each with why a routine (why) or a security review (why_security) may not post there."""
+    out = []
+    for c in sorted(rows, key=lambda c: c["name"]):
+        c = {k: c[k] for k in ("id", "name", "private", "shared")}
+        c["private"], c["shared"] = bool(c["private"]), bool(c["shared"])
+        for key, tpl in (("why", "blank"), ("why_security", "security-review")):
+            c[key] = channel_why(c["id"], team, tpl, profile, index, env) or post_why(c, tpl, profile)
+        out.append(c)
+    return out
+
+
 def valid_text(s):
     """False for a lone surrogate (JSON lets one through as \\ud800), which has no UTF-8 form."""
     try:
@@ -163,13 +200,9 @@ def check(r, team, profile, index, env, count):
     elif not isinstance(ch, str) or not CHANNEL.fullmatch(ch):
         bad.append("channel: Use a Slack channel ID (C0123ABCD) or a link to the channel")
     else:
-        own, other = channels(team, index, env)
-        if ch in other:
-            bad.append(f"channel: Channel {ch} belongs to team {other[ch]}")
-        elif profile.get("private") and ch not in own:
-            bad.append("channel: A team with a private repo posts only to one of this team's channels")
-        elif tpl == "security-review" and kind(team, index, env) != "folder" and ch not in own:
-            bad.append("channel: A security review posts only to one of this team's channels")
+        why = channel_why(ch, team, tpl, profile, index, env)
+        if why:
+            bad.append(f"channel: {why}")
 
     cap, most = r.get("max_usd", 10), ceiling()
     if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not 0 < cap <= most:
@@ -396,10 +429,10 @@ def main(argv):
             print(f"ERROR: the routine's schedule cannot be read: {e}", file=sys.stderr)
             return 1
         return 0
-    if len(argv) < 3 or argv[1] not in ("validate", "next", "period"):
+    if len(argv) < 3 or argv[1] not in ("validate", "next", "period", "channels"):
         sys.exit(__doc__)
     cmd, r = argv[1], load(argv[2])
-    if cmd == "validate":
+    if cmd in ("validate", "channels"):
         if len(argv) < 4 or not opt(argv, "--profile"):
             sys.exit(__doc__)
         # The channel rules need the teams index: none, or one that cannot be read, refuses (fail closed).
@@ -411,14 +444,17 @@ def main(argv):
         except (OSError, ValueError):
             print("channel: cannot read the teams index", file=sys.stderr)
             return 1
-        try:
-            count = int(opt(argv, "--count", "0"))
-        except ValueError:
-            count = MOST  # fail closed
         env = bot_access(opt(argv, "--bot-env", ""))
         if env is None:
             print("channel: cannot read the bot access rules", file=sys.stderr)
             return 1
+    if cmd == "channels":
+        print(json.dumps(channel_list(r, argv[3], load(opt(argv, "--profile")), index, env)))
+    elif cmd == "validate":
+        try:
+            count = int(opt(argv, "--count", "0"))
+        except ValueError:
+            count = MOST  # fail closed
         bad, out = check(r, argv[3], load(opt(argv, "--profile")), index, env, count)
         if bad:
             print("\n".join(bad), file=sys.stderr)

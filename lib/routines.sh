@@ -3,7 +3,7 @@
 # store (lib/db/006-routines.sql). lib/routine.py is the one validator. Each write checks the version (a stale
 # one exits 2) and writes a team_audit row that names the routine and the changed fields, never the prompt.
 #
-#   routine list <team> | get <id> | history <team> <id> | templates
+#   routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev]
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
 #   routine pause | resume | delete | run-now | stop <team> <id>
 #   routine tick --env live|dev                            the bot's 60 s pass: gates, claims, reconcile
@@ -35,24 +35,47 @@ _routine_of() {
 }
 
 # routine_list <team>   The team's routines, each with its config, next three run times, its live run and last
-# result, and the scheduler's last tick (the dashboard warns when it is old).
+# result, its last 6 results (recent, oldest first), its channel's name when its bot is in it, and the
+# scheduler's last tick (the dashboard warns when it is old).
 routine_list() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
-  local rows r f out="[]" runs tick; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
+  local rows r f out="[]" runs tick recent names; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
   runs="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, r.state IN (${_ROUTINE_LIVE_STATES}) AS live
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.id IN
     (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN (${_ROUTINE_LIVE_STATES}));")" || return 1
   tick="$(db_json "SELECT env, at FROM routine_tick_env;")" || return 1
+  recent="$(db_json "SELECT routine_id, state, at FROM (SELECT r.routine_id, r.id, r.state, coalesce(r.ended_at, r.started_at) AS at,
+    row_number() OVER (PARTITION BY r.routine_id ORDER BY r.id DESC) AS n FROM routine_runs r JOIN routines t ON t.id = r.routine_id
+    WHERE t.team = $(db_q "$1") AND r.state NOT IN (${_ROUTINE_LIVE_STATES})) WHERE n <= 6 ORDER BY id;")" || return 1
+  names="$(db_json "SELECT env, id, name FROM slack_channels;")" || return 1
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     jq -c '.data | fromjson' <<< "$r" > "$f"
     out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --argjson tick "$tick" \
-      '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine
-       | . + [$r + {data: ($r.data | fromjson), next: $next, live: ($mine | map(select(.live == 1)) | first),
-          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | map(select(.env == $r.env)) | first | .at // null)}]' <<< "$out")"
+      --argjson recent "$recent" --argjson names "$names" \
+      '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine | ($r.data | fromjson) as $d
+       | . + [$r + {data: $d, next: $next, live: ($mine | map(select(.live == 1)) | first),
+          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | map(select(.env == $r.env)) | first | .at // null),
+          recent: ($recent | map(select(.routine_id == $r.id) | del(.routine_id))),
+          channel_name: ($names | map(select(.env == $r.env and .id == $d.channel)) | first | .name // null)}]' <<< "$out")"
   done < <(jq -c '.[]' <<< "$rows")
   rm -f "$f"; printf '%s\n' "$out"
+}
+
+# routine_channels <team> [live|dev]   The channels that env's bot is in, from the list the bot keeps in the
+# store, each with why this team's routine may not post there: {at, channels}. at is null before the first list.
+routine_channels() {
+  local team="${1:-}" env="${2:-live}" rows prof f rc=0 out
+  [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [[ "$env" =~ ^(live|dev)$ ]] || { echo "usage: routine channels <team> [live|dev]" >&2; return 1; }
+  rows="$(db_json "SELECT id, name, private, shared, at FROM slack_channels WHERE env = $(db_q "$env");")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  prof="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")" f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  _routine_profile "$team" > "$prof" && [ -s "$prof" ] || { rm -f "$prof" "$f"; echo "ERROR: team ${team} does not load" >&2; return 1; }
+  printf '%s' "$rows" > "$f"
+  out="$(_ROUTINE_PY channels "$f" "$team" --profile "$prof" --index "${FXA_TEAMS_DIR:-/nonexistent}/index.json" \
+    --bot-env "${FXA_BOT_ENV:-${SANDBOX_ROOT}/../fxa-agent-bot/.env}")" || rc=$?
+  rm -f "$prof" "$f"; [ "$rc" = 0 ] || return 1
+  jq -c --argjson rows "$rows" '{at: ($rows | map(.at) | max), channels: .}' <<< "$out"
 }
 
 routine_get() { _routine_id "$1" || return 1; local r; r="$(_routine_row "$1")"; [ -n "$r" ] || { echo "ERROR: no routine $1" >&2; return 1; }; jq -c '.data |= fromjson' <<< "$r"; }
@@ -148,6 +171,7 @@ cmd_routine() {
     list) routine_list "${2:-}" ;;
     get) routine_get "${2:-}" ;;
     history) routine_history "${2:-}" "${3:-}" ;;
+    channels) routine_channels "${2:-}" "${3:-}" ;;
     templates) _ROUTINE_PY templates ;;
     tick) shift; routine_tick "$@" ;;
     done) shift; routine_done "$@" ;;
@@ -161,7 +185,7 @@ cmd_routine() {
          done
          routine_set "$team" "$file" "$id" "$ver" ;;
     pause|resume|delete) routine_state "${2:-}" "${3:-}" "$1" ;;
-    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now|stop <team> <id> | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev] | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now|stop <team> <id> | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
   esac
 }
 
