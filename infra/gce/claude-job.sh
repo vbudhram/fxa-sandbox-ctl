@@ -21,6 +21,11 @@ input="$(cat "$prompt")"
 if [ "$job" = pass ]; then
   pre="$("$(dirname "$0")/../../fxa-sandbox-ctl" precheck 2>&1)"
   case "$pre" in quiet*|locked*|paused*) printf '%s\n' "$pre" | head -1; exit 0 ;; esac
+  # Lines a model can only report: a reap that already ran, a label that precheck tries again each
+  # pass, a relock only the operator can run. The journal gets them, and no model turn is paid.
+  if ! printf '%s\n' "$pre" | sed '/^info:/,$d' | grep -vE '^reap: |^drain: .*(label (merged|rejected) FAILED\)$|relock FAILED; run: relock )' | grep -q .; then
+    printf '%s\n' "$pre"; exit 0
+  fi
   # Its lines can quote runner text (a launch error with the agent's PR title), so a per-run nonce
   # fences them: a line cannot close the tag it does not know.
   n="$(openssl rand -hex 6)"; [[ "$n" =~ ^[0-9a-f]{12}$ ]] || { echo "pass: no nonce for the precheck fence (openssl rand failed)" >&2; exit 1; }
@@ -38,7 +43,19 @@ ${pre}
   if ! printf '%s\n' "$pre" | sed '/^info:/,$d' | grep -qE '^(queue|reconcile|feedback):'; then
     report_model="${FXA_PASS_REPORT_MODEL-claude-sonnet-5-5}"
   fi
+  # The skill goes in the prompt, first so the next pass can reuse its cache: skills are off below.
+  skill="$(cd "$(dirname "$0")/../../skills/fxa-ai-fixme" 2>/dev/null && pwd)"
+  [ -f "${skill:-/nonexistent}/SKILL.md" ] || { echo "pass: no fxa-ai-fixme skill beside this script; not starting a pass without it" >&2; exit 1; }
+  input="The fxa-ai-fixme skill (folder ${skill}) is below and already loaded: follow it, do not invoke it.
+<skill>
+$(cat "${skill}/SKILL.md")
+</skill>
+
+${input}"
 fi
+# Only what a job uses: no skill listing and no plugins, whose listings and hook output were a fifth of
+# every call. The hooks and permissions in settings stay.
+lean=(--disable-slash-commands --settings "$(jq -c '{enabledPlugins: (.enabledPlugins // {} | map_values(false))}' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null || echo '{}')")
 model=(); [ -n "${report_model:-}" ] && model=(--model "$report_model")
 # A pass reads a ticket's Figma design and Bugzilla bugs through the MCP gateway on this host,
 # which holds the Runlayer credential: a token for this run, those two only, expired when the run ends.
@@ -61,7 +78,7 @@ if [ -n "${FXA_LLM_PROXY_URL:-}" ]; then
     llm_tok=1; export ANTHROPIC_BASE_URL="$FXA_LLM_PROXY_URL" ANTHROPIC_API_KEY="$tok"
   else echo "WARN: no LLM proxy token; this ${job} uses the API key directly" >&2; fi
 fi
-claude -p --permission-mode auto --output-format json ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
+claude -p --permission-mode auto --output-format json "${lean[@]}" ${model[@]+"${model[@]}"} ${mcp[@]+"${mcp[@]}"} <<< "$input" > "$out"; rc=$?
 jq -r '.result // empty' "$out" 2>/dev/null || cat "$out"
 row="$(jq -c --arg job "$job" --arg run "$run" '{at: (now | todate), job: $job, run: $run, cost_usd: (.total_cost_usd // null), models: ((.modelUsage // {}) | keys),
   turns: (.num_turns // null), duration_ms: (.duration_ms // null), is_error: (.is_error // false)}' "$out" 2>/dev/null)"
