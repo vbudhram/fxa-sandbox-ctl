@@ -22,10 +22,20 @@ jobs:
           repository: vbudhram/fxa-agent-bot
           path: bot
       # The runner image has them already: apt only runs when one is missing (an apt update alone is 5 to 15 s).
+      # A stalled mirror once held this step silent for 11 min: each apt call has a timeout, and the step tries 3 times.
       - name: Packages (the same list as test.sh run_linux)
+        timeout-minutes: 15
         run: |
           for c in git jq curl python3 openssl perl rsync ffmpeg; do command -v $c >/dev/null || miss=1; done
-          [ -z "${miss:-}" ] || { sudo apt-get update -qq && sudo apt-get install -y -qq git jq curl python3 openssl perl rsync ffmpeg ca-certificates; }
+          [ -n "${miss:-}" ] || exit 0
+          o=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          for i in 1 2 3; do
+            sudo timeout 120 apt-get update -q "${o[@]}" \
+              && sudo timeout 300 apt-get install -y -q "${o[@]}" git jq curl python3 openssl perl rsync ffmpeg ca-certificates \
+              && exit 0
+            echo "apt try $i failed"; sleep 10
+          done
+          exit 1
       # Only the last job runs the desktop gateway's check (test.sh, FXA_CHECK_SHARD).
       - name: The desktop gateway's packages, so test.sh runs its check
         if: matrix.shard == '3/3'
