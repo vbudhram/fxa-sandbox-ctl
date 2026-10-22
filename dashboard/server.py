@@ -844,9 +844,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 self._json(502, {"error": "the profile command did not answer JSON"})
         else:
-            self._json(200, {"ok": True, "out": proc.stdout.strip()[-2000:]})
+            # Claim the refresh before the answer, so a client that has the answer finds the refresh claimed.
             if refresh and cmd == "profile" and TEAMS.claim():
                 threading.Thread(target=TEAMS.refresh, args=(True,), daemon=True).start()
+            self._json(200, {"ok": True, "out": proc.stdout.strip()[-2000:]})
 
     def _team_test(self, user, name):
         """Start profile test in the background (it boots a runner for minutes); its log goes beside the record."""
