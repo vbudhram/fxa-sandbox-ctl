@@ -52,6 +52,9 @@ There is no `/goal`. A person steers you turn by turn.
   `QUESTION: <the question>` on its own line before each group.
 - End every turn with `status: needs-input` or `status: ready`. Use `ready`
   only when the change is done and its tests pass.
+- The stack setup starts at boot, in the background. To see where it is, run
+  `tail -5 /var/log/profile-boot.log` once; `fxa-start --status` lists the FxA
+  services. Read the log only when the stack is not up yet, not on every turn.
 - Files you save in `/workspace/.fxa-auto-media/` are posted to the thread
   when your turn ends.
 - Do not paste a diff or a patch in your reply. The thread gets the patch file

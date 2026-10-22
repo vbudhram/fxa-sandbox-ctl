@@ -98,6 +98,28 @@ _vm_skill_blocklist() {
   [ -z "${PIPE_SKILLS_DENY:-}" ] || printf '%s\n' $PIPE_SKILLS_DENY
 }
 
+# _vm_guide_inline   stdin: the CLAUDE.md section. A pipeline run gets the guide in CLAUDE.md in place of
+# the line that says to read it, as a session gets it in its prompt: runs read only its first 150 lines.
+_vm_guide_inline() {
+  G="$(vm_guide_build pipeline)" awk '/^First, read `\/etc\/vm-agent-guide.md`/ {skip=1
+      print "The runner\047s operations guide follows. /etc/vm-agent-guide.md has the same text: do not read it.\n"; print ENVIRON["G"]; next}
+    skip && /^$/ {skip=0} !skip'
+}
+
+# _run_model <run kind> <ticket key>   The model for a run, or nothing for FXA_AGENT_MODEL. Feedback and
+# rebase runs make narrow changes to an open PR, so they take FXA_AGENT_LIGHT_MODEL (Sonnet: half
+# Opus's price). FXA_AGENT_LIGHT_FIX_PCT of fix runs, by ticket number, take it too, to compare
+# merge rates. An empty FXA_AGENT_LIGHT_MODEL turns both off.
+_run_model() {
+  local light="${FXA_AGENT_LIGHT_MODEL-claude-sonnet-5-5}" n="${2##*-}"
+  [ -n "$light" ] || return 0
+  case "$1" in
+    feedback|rebase) printf '%s' "$light" ;;
+    fix) [[ "$n" =~ ^[0-9]+$ ]] && [ $((10#$n % 100)) -lt "${FXA_AGENT_LIGHT_FIX_PCT:-25}" ] && printf '%s' "$light" ;;
+  esac
+  return 0
+}
+
 # _vm_settings_json <host-settings-file>   The runner's Claude settings: an
 # allowlist of the host's keys (its file holds API keys and hooks, which do not
 # belong on a bypassPermissions VM), the concise style no human reads past, and
@@ -893,6 +915,7 @@ What trips agents most often:
 - Save screenshots and videos in `/workspace/.fxa-auto-media/`.
 VMSECTION
 )"
+  [ "${FXA_SESSION_MODE:-}" = 1 ] || vm_section="$(printf '%s\n' "$vm_section" | _vm_guide_inline)"
   vm_section="$(printf '%s\n' "$vm_section" | _vm_session_git_rule)$(_vm_team_rules)$(_vm_team_context "$name")"
   local vm_section_b64
   vm_section_b64="$(printf '%s' "$vm_section" | base64 | tr -d '\n')"

@@ -79,7 +79,9 @@ Run `test.sh changed` before each push, and let CI run the full suite. Use `test
 fails to start or exits nonzero as a failure. (A hand loop once reported "all pass"
 because macOS has no `timeout`, so no check ran.)
 
-To replace exact text in a file, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`, each old text once, nothing written on a miss), not a hand-written heredoc.
+To replace exact text, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`), or `rep.py < triples.json` (`[["file", "old", "new"], ...]`) for several files. Each old text must match once; on a miss, nothing is written to any file. Do not write an inline `def rep(` heredoc.
+
+To answer "is everything shipped?" or "what is the status?", run `bash skills/fxa-ctl-dev/shipped.sh` first (about 15 s; `--no-live` skips the manager). It lists work not on origin/main with its CI state, main against the dev deploy and the live bot, and the backlog items that wait.
 
 To render a dashboard view with live data and this tree's dashboard code, with no dev bot: `bash skills/fxa-ctl-dev/live-render.sh '#runners' [--admin] [--query 'ended=1&limit=100'] [page.sh options]` (about 15 s). A change to `lib/snapshot.sh` still needs `vm.sh dev`.
 

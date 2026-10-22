@@ -11,7 +11,7 @@ read `launch.md` before you ground or launch, `admission.md` before you launch o
 ticket, and `feedback.md` before you act on review comments. A timer pass gets the parts it needs
 in its prompt; do not read those again.
 
-Reuse `fxa-dependabot`'s `scripts/deps.sh` for `gate`, `faillog`, and `rerun`. The CircleCI
+Use `~/.claude/skills/fxa-dependabot/scripts/deps.sh` for `gate`, `faillog`, and `rerun`; do not search for it. The CircleCI
 token comes from `~/.circleci/cli.yml`. Never print it.
 
 ## Pass procedure
