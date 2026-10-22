@@ -471,6 +471,8 @@ EOF
   if [ "$rebase" = "true" ]; then run_kind="rebase"
   elif [[ "$guardrails_file" == */feedback/* ]]; then run_kind="feedback"; fi
   echo "Run kind: ${run_kind}" >&2
+  local run_model; run_model="$(_run_model "$run_kind" "$key")"
+  [ -z "$run_model" ] || { local FXA_AGENT_MODEL="$run_model"; echo "Run model: ${run_model}" >&2; }
 
   _jira_name_clash "$name" || return 1
   if [ -n "$worktree_slot" ]; then

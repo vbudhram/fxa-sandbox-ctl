@@ -75,7 +75,7 @@ runtime_prompt_header() {
   cat <<HDR
 /goal Resolve Jira issue ${key} ("${summary}"). Full ticket context is in
 /workspace/.fxa-jira-context.md — read it first. Project conventions are in
-/workspace/ai/AGENTS.md and /etc/vm-agent-guide.md.
+/workspace/ai/AGENTS.md and in the operations guide in your CLAUDE.md.
 HDR
 }
 
