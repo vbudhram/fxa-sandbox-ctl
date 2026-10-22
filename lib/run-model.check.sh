@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# _run_model: feedback and rebase runs and a share of fix runs take the light model; empty turns it off.
+# _run_model: off by default; with a light model set, feedback and rebase runs and a share of fix runs take it.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 eval "$(sed -n '/^_run_model() {/,/^}/p' "$here/agent.sh")"
 f=0; t() { [ "$(_run_model "$1" "$2")" = "$3" ] || { echo "FAIL: _run_model $1 $2 gave '$(_run_model "$1" "$2")', want '$3'"; f=1; }; }
 unset FXA_AGENT_LIGHT_MODEL FXA_AGENT_LIGHT_FIX_PCT
+t feedback FXA-14808 ""
+t fix FXA-14808 ""
+export FXA_AGENT_LIGHT_MODEL=claude-sonnet-5-5
 t feedback FXA-14808 claude-sonnet-5-5
 t rebase FXA-1 claude-sonnet-5-5
 t fix FXA-14808 claude-sonnet-5-5   # 08 < 25
