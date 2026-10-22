@@ -109,9 +109,9 @@ _vm_guide_inline() {
 # _run_model <run kind> <ticket key>   The model for a run, or nothing for FXA_AGENT_MODEL. Feedback and
 # rebase runs make narrow changes to an open PR, so they take FXA_AGENT_LIGHT_MODEL (Sonnet: half
 # Opus's price). FXA_AGENT_LIGHT_FIX_PCT of fix runs, by ticket number, take it too, to compare
-# merge rates. An empty FXA_AGENT_LIGHT_MODEL turns both off.
+# merge rates. Off (every run on FXA_AGENT_MODEL) until FXA_AGENT_LIGHT_MODEL is set, such as claude-sonnet-5-5.
 _run_model() {
-  local light="${FXA_AGENT_LIGHT_MODEL-claude-sonnet-5-5}" n="${2##*-}"
+  local light="${FXA_AGENT_LIGHT_MODEL:-}" n="${2##*-}"
   [ -n "$light" ] || return 0
   case "$1" in
     feedback|rebase) printf '%s' "$light" ;;
