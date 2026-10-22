@@ -411,6 +411,7 @@ telemetry_merge_comment() {
           + [ $r | to_entries[] | "\(.key+1). \(.value.kind // "fix" | kindname): \(.value.wall_seconds//0|mins), \(if .value.cost_usd == null then "unpriced" else "$" + ((.value.cost_usd*100|round/100)|tostring) end). Tokens in \(.value.input//0|n) / out \(.value.output//0|n) / cache write \(.value.cache_write//0|short) / cache read \(.value.cache_read//0|short)." ]
           + ( ($r | map(select(.source == "assistant-sum")) | length) as $approx
               | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; those costs are a floor." ] else [] end )
+          + [ "Note: these costs use Anthropic list prices with the token counts from the API. The rate that Mozilla pays can be lower." ]
         | join("\n")
       end' "$PIPE_RUNS_FILE"
 }
