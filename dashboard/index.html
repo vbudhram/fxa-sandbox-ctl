@@ -611,11 +611,11 @@
   .stat .lbl { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
   .stat .big { font:700 var(--t-kpi)/1.1 var(--head); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .stat .sub { font-size:var(--t-sub); color:var(--faint); } .stat.bad .big { color:var(--bad); } .stat.warn .big { color:var(--warn); }
-  [data-routines] h3 { margin:0; font:700 var(--t-heading)/1.3 var(--head); display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
-  [data-routines] h3 .n { color:var(--dim); font-size:var(--t-body); font-variant-numeric:tabular-nums; }
-  [data-routines] .tsub { max-width:68ch; } [data-routines] .hint { margin:0; color:var(--faint); font-size:var(--t-sub); }
-  [data-routines] p[data-rt-msg]:empty { display:none; }
-  [data-routines] .row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); } [data-routines] .row .sp { flex:1; }
+  :is([data-routines], [data-tform]) h3 { margin:0; font:700 var(--t-heading)/1.3 var(--head); display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
+  :is([data-routines], [data-tform]) h3 .n { color:var(--dim); font-size:var(--t-body); font-variant-numeric:tabular-nums; }
+  :is([data-routines], [data-tform]) .tsub { max-width:68ch; } :is([data-routines], [data-tform]) .hint { margin:0; color:var(--faint); font-size:var(--t-sub); }
+  :is([data-routines], [data-tform]) p[data-rt-msg]:empty { display:none; }
+  :is([data-routines], [data-tform]) .row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); } :is([data-routines], [data-tform]) .row .sp { flex:1; }
   .rt-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s3); }
   .rtkpis { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); }
   .rtcols { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr) minmax(280px,360px); align-items:start; }
@@ -634,7 +634,7 @@
   .rtkey { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); }
   .rtback { font-size:var(--t-sub); color:var(--link); font-weight:600; align-self:flex-start; }
   .rtd .item .alert { margin-top:var(--s2); } .rtd details { margin-top:var(--s2); } .rtd summary { cursor:pointer; color:var(--link); font-size:var(--t-sub); font-weight:600; }
-  [data-routines] .report { margin:var(--s2) 0 0; padding:var(--s2) var(--s3); background:var(--sunk); border-radius:var(--r-md); font:var(--t-label)/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; }
+  :is([data-routines], [data-tform]) .report { margin:var(--s2) 0 0; padding:var(--s2) var(--s3); background:var(--sunk); border-radius:var(--r-md); font:var(--t-label)/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; }
   .steps { display:flex; align-items:center; gap:var(--s2); font-size:var(--t-sub); color:var(--faint); list-style:none; margin:0; padding:0; }
   .steps li { display:flex; align-items:center; gap:var(--s2); } .steps li + li::before { content:""; width:24px; height:1px; background:var(--line2); }
   .steps b { width:22px; height:22px; border-radius:var(--r-pill); display:grid; place-items:center; font:700 var(--t-label) var(--sans); background:var(--sunk); color:var(--dim); }
@@ -646,19 +646,31 @@
   .choice .ct { font:700 var(--t-body)/1.3 var(--head); } .choice .cd { color:var(--dim); font-size:var(--t-sub); } .choice .foot { margin-top:auto; display:flex; flex-wrap:wrap; gap:var(--s1); }
   .choice.sm { padding:var(--s3); flex-direction:row; gap:var(--s2); } .choice.sm input { margin:3px 0 0; accent-color:var(--link); } .choice:has(input:disabled) { cursor:default; opacity:.7; }
   .emptybox .rtchoices { text-align:left; margin-top:var(--s2); }
-  [data-routines] fieldset { border:0; padding:0; margin:0; min-width:0; } .rt-head h3:focus { outline:none; } .rt-head h3:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
+  :is([data-routines], [data-tform]) fieldset { border:0; padding:0; margin:0; min-width:0; } .rt-head h3:focus { outline:none; } .rt-head h3:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
   .rtd .line1 { grid-template-columns:64px minmax(0,1fr) auto; }
-  [data-routines] .field { display:flex; flex-direction:column; gap:var(--s1); min-width:0; border:0; padding:0; margin:0; }
-  [data-routines] .field > label, [data-routines] .lb { font:600 var(--t-sub) var(--sans); color:var(--ink); padding:0; }
-  [data-routines] .field > label:has(input[type="checkbox"]) { font-weight:400; } [data-routines] .opt { font-weight:400; color:var(--faint); }
-  [data-routines] fieldset.field label { font-size:var(--t-sub); } [data-routines] fieldset .seg { align-self:flex-start; } [data-routines] fieldset .seg + .seg { margin-top:var(--s1); }
-  [data-routines] .input { font:var(--t-body) var(--sans); color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:var(--s2) var(--s3); min-height:40px; width:100%; }
-  [data-routines] .input:focus { outline:2px solid var(--link); outline-offset:0; border-color:var(--link); }
-  [data-routines] textarea.input { min-height:180px; font:var(--t-label)/1.6 var(--mono); resize:vertical; } [data-routines] .input[aria-invalid="true"] { border-color:var(--bad); }
-  [data-routines] .rt-usd { max-width:140px; }
+  :is([data-routines], [data-tform]) .field { display:flex; flex-direction:column; gap:var(--s1); min-width:0; border:0; padding:0; margin:0; }
+  :is([data-routines], [data-tform]) .field > label, :is([data-routines], [data-tform]) .lb { font:600 var(--t-sub) var(--sans); color:var(--ink); padding:0; }
+  :is([data-routines], [data-tform]) .field > label:has(input[type="checkbox"]) { font-weight:400; } :is([data-routines], [data-tform]) .opt { font-weight:400; color:var(--faint); }
+  :is([data-routines], [data-tform]) fieldset.field label { font-size:var(--t-sub); } :is([data-routines], [data-tform]) fieldset .seg { align-self:flex-start; } :is([data-routines], [data-tform]) fieldset .seg + .seg { margin-top:var(--s1); }
+  :is([data-routines], [data-tform]) .input { font:var(--t-body) var(--sans); color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:var(--s2) var(--s3); min-height:40px; width:100%; }
+  :is([data-routines], [data-tform]) .input:focus { outline:2px solid var(--link); outline-offset:0; border-color:var(--link); }
+  :is([data-routines], [data-tform]) textarea.input { min-height:180px; font:var(--t-label)/1.6 var(--mono); resize:vertical; } :is([data-routines], [data-tform]) .input[aria-invalid="true"] { border-color:var(--bad); }
+  :is([data-routines], [data-tform]) .rt-usd { max-width:140px; }
   .fields2 { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); }
   .okline { margin:0; color:var(--ok); font-size:var(--t-sub); }
   .readback { margin:0; font-size:var(--t-body); line-height:1.6; color:var(--dim); } .readback b { color:var(--ink); font-weight:600; }
+  /* Team setup: a check item, the test log, a row form, and a link that looks like a button. */
+  a.btn { display:inline-flex; align-items:center; gap:var(--s1); font:600 var(--t-sub) var(--head); color:var(--ink); background:var(--bg); border:1px solid var(--line2); border-radius:var(--r-sm); padding:6px var(--s4); }
+  a.btn:hover { background:var(--hover); text-decoration:none; }
+  .ck { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s3); } a.ck { color:inherit; } a.ck:hover { text-decoration:none; box-shadow:var(--shadow-hover); }
+  .ck .who { flex:1 1 260px; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .ck .nm { font:700 var(--t-body)/1.3 var(--head); color:var(--ink); } .ck .says { color:var(--dim); font-size:var(--t-sub); }
+  .ck .num { width:24px; height:24px; flex:none; border-radius:var(--r-pill); display:grid; place-items:center; font:700 var(--t-label) var(--sans); background:var(--sunk); color:var(--dim); }
+  .ck .num.ok { background:var(--okbg); color:var(--ok); } .ck .num.warn { background:var(--warnbg); color:var(--warn); } .ck .num.info { background:var(--infobg); color:var(--info); }
+  .ckbody { border-top:1px solid var(--line); padding-top:var(--s4); display:flex; flex-direction:column; gap:var(--s3); }
+  .log { margin:0; padding:var(--s3); border-radius:var(--r-md); background:var(--tty-bg); color:var(--tty-ink); font:var(--t-label)/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; }
+  .rows { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .rows th { text-align:left; font-size:var(--t-label); color:var(--dim); font-weight:600; padding:var(--s1) var(--s2); } .rows td { padding:var(--s1) var(--s2); }
+  [data-tform] details > summary { cursor:pointer; } [data-tform] .tmore { padding-top:var(--s3); }
   @media (max-width:900px) { .rtcols { grid-template-columns:minmax(0,1fr); } }
 /* Sandboxes list (i407 sb-list-fixes) */
 #s-sb #sb-head { margin-bottom:var(--s3); }
@@ -1883,23 +1895,13 @@ const TEAM_TEMPLATE = { schema: 1, name: "new-team", label: "New Team", status: 
 async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; }
   if (VIEW === "runners") renderSb(); }
 function teamEditor(name, isRecord) {
-  if (!TEAM_ADMIN?.admin) return "";
-  if (!isRecord) return html`<div><h4>Edit</h4><p class="empty">A folder team: change it in <span class="mono">profiles/${name}/</span>, then promote.</p></div>`;
+  if (!TEAM_ADMIN?.admin || !isRecord) return "";
   const e = TED?.name === name ? TED : null;
-  if (!e) return html`<div><h4>Edit</h4><div class="acts2"><button data-team-load="${name}">${name === "__new" ? "Start from the template" : "Load the record"}</button></div></div>`;
-  const acts = name === "__new" ? html`<button data-tact="create">Create as draft</button>`
-    : html`<button data-tact="save">Save</button><button data-tact="test">Test</button><button data-tact="active">Activate</button><button data-tact="disabled">Disable</button><button data-tact="delete">${e.arm ? "Delete: click again" : "Delete"}</button><button data-tact="audit">Audit</button>`;
-  return html`<div data-team-ed="${name}"><h4>Edit<span class="mono" style="font-weight:400;margin-left:var(--s2)">${e.gen ? "generation " + e.gen : "new record"}</span></h4>
+  if (!e) return html`<div class="acts2"><button data-team-load="${name}">Load the record</button></div>`;
+  return html`<div data-team-ed="${name}" class="stack sm"><p class="hint">For keys that have no form: egress, runner, boot, admins and secret names. Save checks the generation you loaded.</p>
     <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${e.text}</textarea>
-    <div class="acts2"><button data-tact="validate">Validate</button>${acts}</div>
-    <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${e.msg || ""}</p>
-    ${name === "__new" ? "" : html`<p class="empty">${e.tested && e.tested === e.gen ? "Tested at this generation: it may be activated." : "Not tested at this generation: Test it before you activate it."}</p>`}
-    ${e.testLog ? html`<pre class="mono" style="white-space:pre-wrap;max-height:240px;overflow:auto">${e.testLog}</pre>` : ""}
-    ${e.secrets && Object.keys(e.secrets).length ? html`<h4>Secrets</h4>${Object.entries(e.secrets).map(([s, st]) => html`<div class="acts2" style="align-items:center;margin-bottom:var(--s1)">
-      <span class="mono">${s}</span>${tag(st, st === "present" ? "" : "warn")}
-      <input type="password" autocomplete="off" data-secret-val="${s}" placeholder="new value" aria-label="New value for ${s}">
-      <button data-tact="secret" data-secret="${s}">Set</button></div>`)}<p class="empty">A value is stored in Secret Manager and never shown again.</p>` : ""}
-    ${e.audit ? html`<table class="table figures dense"><tbody>${e.audit.length ? e.audit.map(r => html`<tr><td>${stamp(r.at)}</td><td>${r.actor}</td><td>${r.action}</td><td class="mono">${r.changed || ""}</td></tr>`) : html`<tr><td>no rows</td></tr>`}</tbody></table>` : ""}</div>`;
+    <div class="acts2"><button data-tact="validate">Validate</button><button data-tact="save">Save</button></div>
+    <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${e.msg || ""}</p></div>`;
 }
 async function teamRecord(n) {
   const r = await fetch(`/api/teams/${encodeURIComponent(n)}`, { cache: "no-store" }), j = await r.json().catch(() => ({}));
@@ -2068,32 +2070,36 @@ function budgetCell(t) {
   : html`<span class="num">${usd(b.month_usd)}</span> <span class="na">no cap</span>`;
 }
 function testCell(t) {
-  const x = t.test;
-  if (!x) return html`<span class="na">—</span>`;
-  // No final line to show (Activate wrote a newer generation, or there is no log): tested says what passed.
-  if (!x.result) return x.tested != null && x.tested === x.generation ? tag(`passed at generation ${x.tested}`, "ok")
-    : x.tested != null ? html`<span class="na">last passed at generation ${x.tested}</span>`
-    : html`<span class="na">${t.access?.record && t.access.status !== "active" ? "not tested at this generation" : "never tested"}</span>`;
-  return tag(`${x.result}${x.at ? ` ${ago(Math.round(Date.now() / 1000 - x.at))}` : ""}`, x.result === "passed" ? "ok" : x.result === "failed" ? "bad" : "info");
+  const st = teamTestState(t);
+  if (!t.test) return html`<span class="na">${t.access?.record ? "—" : "not tested by profile"}</span>`;
+  return st === "passed" ? tag("passed", "ok") : st === "failed" ? tag("failed", "bad") : st === "running" ? tag("running", "info", { run: true, live: true }) : html`<span class="na">not tested</span>`;
+}
+// The first problem of a team, short: a missing GitHub App names its repo.
+function teamProblem(t) {
+  // A draft that nobody can start yet is expected: its step left says so.
+  const is = (t.issues ?? []).filter(x => !(teamDraftOf(t) && x.text === "nobody can start it")), i = is.find(x => x.level === "bad") ?? is.find(x => x.level === "warn");
+  if (!i) return html`<span class="na">none</span>`;
+  const m = i.text.match(/^(\S+): the agent's GitHub App is not installed/);
+  return m ? html`${tag("App missing", "warn")} <span class="mono na">${m[1]}</span>` : html`${tag(i.level === "bad" ? "problem" : "check", i.level)} <span class="na">${i.text}</span>`;
 }
 function allTeamsHtml() {
-  const ts = TEAMS?.teams ?? [], use = teamUse(), wk = teamWeek(), er = teamErrs(), ok = ts.filter(t => !t.load_error);
-  const live = use ? ok.reduce((n, t) => n + (use[t.profile]?.live ?? 0), 0) : null, runs = wk ? Object.values(wk).reduce((n, x) => n + x.runs, 0) : null, prs = wk ? Object.values(wk).reduce((n, x) => n + x.prs.size, 0) : null;
-  const bt = ok.filter(t => t.budget), spent = bt.reduce((n, t) => n + t.budget.month_usd, 0), caps = bt.reduce((n, t) => n + (t.budget.month_cap ?? 0), 0);
-  const needs = ts.filter(t => t.load_error || teamNeeds(t)).length, errs = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null, dash = v => v == null ? "—" : v;
-  const tile = (l, v, m, tone) => card(html`<div class="tl">${l}</div><div class="tv">${v} <span class="tm">${m}</span></div>`, { flat: true, sm: true, tone, cls: "ttile" });
-  const row = t => { const x = use?.[t.profile], w = wk?.[t.profile], st = t.load_error ? ["bad", "did not load"] : t.access?.record && t.access.status !== "active" ? ["bad", t.access.status] : t.read_only ? ["", "read-only"] : ["ok", "active"];
-    return html`<tr><td><a href="#teams/${t.profile}" class="tname"><span class="d ${teamNeeds(t) || t.load_error ? (teamLevel(t) || "warn") : "ok"}" aria-hidden="true"></span>${t.load_error ? t.profile : teamName(t)}</a></td>
-      <td>${tag(st[1], st[0])}</td><td class="num">${dash(x?.live ?? (use ? 0 : null))}</td>
-      <td class="num">${wk ? `${w?.runs ?? 0} runs · ${w?.prs.size ?? 0} PRs` : "—"}</td><td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td>
-      <td class="num">${er ? er[t.profile] ?? 0 : "—"}</td><td>${t.load_error ? "—" : testCell(t)}</td></tr>`; };
-  return html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">All teams</h2><p class="tsub">How each team is doing. Select a team to see its sessions, PRs, routines and settings.</p>
+  const ts = TEAMS?.teams ?? [], ok = ts.filter(t => !t.load_error), adm = !!TEAM_ADMIN?.admin, drafts = ok.filter(teamDraftOf), act = ok.filter(t => !teamDraftOf(t));
+  const bt = ok.filter(t => t.budget), spent = bt.reduce((n, t) => n + t.budget.month_usd, 0), top = [...bt].sort((a, b) => b.budget.month_usd - a.budget.month_usd)[0];
+  const needs = ts.filter(t => t.load_error || (teamNeeds(t) && !teamDraftOf(t))).length, passed = act.filter(t => t.access?.record && teamTestState(t) === "passed").length, rec = act.filter(t => t.access?.record).length;
+  const stat = (l, v, s, tone) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${s}</span>`, { sm: true, cls: cls("stat", tone) });
+  const row = t => { const st = t.load_error ? ["bad", "did not load"] : teamDraftOf(t) ? [t.access.status === "disabled" ? "warn" : "", t.access.status] : ["ok", "active"];
+    return html`<tr><td><a href="#teams/${t.profile}" class="tname">${t.load_error ? t.profile : teamName(t)}</a></td>
+      <td>${tag(st[1], st[0])}${t.read_only ? html` ${tag("read-only", "", { title: "This team gets diffs only, never a PR" })}` : ""}${t.profile === "fxa" ? html` ${tag("built in", "", { title: "Built into the bot: the operator changes it in the repo" })}` : ""}</td>
+      <td class="tbud">${t.load_error ? "—" : budgetCell(t)}</td><td>${t.load_error ? "—" : testCell(t)}</td><td>${t.load_error ? tag("did not load", "bad") : teamProblem(t)}</td></tr>`; };
+  return html`<div class="tpage"><div class="rt-head"><h2 class="th" id="team-h" tabindex="-1">All teams</h2>${adm ? html`<a class="btn" href="#teams/new" data-team-new>New team</a>` : ""}</div>
     ${TEAMS?.error ? html`<p class="unknown">last refresh failed: ${TEAMS.error}; showing data from ${ago(Math.round(TEAMS.age_seconds))}</p>` : ""}
     ${(TEAMS?.issues ?? []).map(i => html`<div class="alert warn"><span class="mono">${i.key}</span><span class="what">${i.text}</span></div>`)}
-    <div class="ttiles">${tile("Active now", dash(live), "sessions")}${tile("This week", dash(runs), prs == null ? "" : `runs · ${prs} PRs`)}
-      ${tile("Cost this month", bt.length ? usd(spent) : "—", caps ? `of ${usd(caps)} in budgets` : "")}${tile("Needs attention", needs, `team${needs === 1 ? "" : "s"}${errs == null ? "" : ` · ${errs} open errors`}`, needs ? "warn" : "")}</div>
-    ${card(table(["Team", "Status", "Active now", "Last 7 days", "Cost this month, of budget", "Open errors", "Last test"], ts.map(row)), { cls: "tcard tscroll" })}
-    ${TEAM_ADMIN?.admin ? html`<div class="acts2"><a class="tile card sm" style="padding:6px 12px" href="#teams/new" data-team-new>New team</a><span class="empty">You are a team admin (${TEAM_ADMIN.user}).</span></div>` : ""}</div>`;
+    <div class="rtkpis">${stat("Teams", ok.length, `${act.length} active${drafts.length ? ` · ${drafts.length} not set up` : ""}`)}
+      ${stat("Cost this month", bt.length ? usd(spent) : "—", top ? `${teamName(top)} ${usd(top.budget.month_usd)}` : "")}
+      ${stat("Needs attention", needs, needs ? "see Problems below" : "none", needs ? "warn" : "")}${stat("Tests", rec ? `${passed} of ${rec}` : "—", "active record teams that passed")}</div>
+    ${adm ? drafts.map(t => html`<a class="card ck" href="#teams/${t.profile}/settings"><div class="who"><div class="row"><span class="nm">${teamName(t)}</span>${tag(t.access.status, t.access.status === "disabled" ? "warn" : "")}</div>
+      <span class="says">${t.access.status === "disabled" ? "Off. Test it to turn it on again." : "Next: test and activate it."}</span></div>${tag("1 step left", "warn")}</a>`) : ""}
+    ${card(html`<h2>All teams<span class="n">${ts.length}</span></h2><div class="tscroll">${table(["Team", "Status", "Cost this month", "Last test", "Problems"], ts.map(row))}</div>`)}</div>`;
 }
 // Where the team's agents run and what each runner has baked in (lib/vm-firecracker.sh _fc_owns, packer/).
 const FIREFOX_READ = "Firefox: read; a change comes back as a diff, never a push";
@@ -2102,18 +2108,16 @@ function teamRunsOn(t) {
   return html`${kvRow("Slack sessions", `the Firecracker snapshot, with the FxA stack running and Firefox at ~/firefox (an artifact build). On GCE (the fxa-dev image) when the snapshot host cannot start. ${FIREFOX_READ}`)}
     ${kvRow("Pipeline runs, with a Jira queue", "the fxa-dev image on GCE: FxA, no Firefox (the agent makes a sparse clone). A ticket that asks for Android gets the fxa-dev-android image.")}`;
 }
-// The Settings sections: what the team gets, each with its config key in gray, then the record editor.
+// Settings of a folder or env team, or a record team for a viewer who is not an admin: what it gets, read-only.
+function teamInfoHtml(t) {
+  const rec = !!t.access?.record, repos = t.repos ?? [];
+  const where = t.profile === "fxa" || t.access?.open === "built-in" ? "The operator changes the FxA team in profiles/fxa/ in the repo." : rec ? "A team admin changes this team. Ask the operator." : `The operator changes this team in profiles/${t.profile}/ in the repo, and its access in the bot .env.`;
+  return html`${card(html`<h2>Settings</h2>${kvRow("Who can start it", teamWho(t))}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}`)) : kvRow("Repos", "none", 1)}
+      ${kvRow("Tools", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "diffs only" : "draft PRs")}<p class="hint">${where}</p>`)}
+    ${card(html`<h2>Runs on</h2>${teamRunsOn(t)}`)}`;
+}
 function teamSettingsHtml(t) {
-  const rec = !!t.access?.record, conf = `profiles/${t.profile}/profile.conf`, repos = t.repos ?? [];
-  const key = (field, conf_keys) => rec ? `team record: ${field}` : `${conf} ${conf_keys}`;
-  const h = (title, key) => html`<h3>${title}<span class="tkey">${key}</span></h3>`;
-  const req = (t.issues ?? []).some(i => i.text === "nobody can start it") || (t.access?.record && t.access.status !== "active");
-  return html`<div class="tcard card${req ? " req" : ""}" id="t-access">${h("Access", t.access?.record ? "team record: access" : t.profile === "fxa" ? "built into the bot" : "fxa-agent-bot/.env PROFILE_OPEN, PROFILE_USERS, PROFILE_CHANNELS, PROFILE_JIRA")}${teamAccessCard(t)}</div>
-    ${card(html`${h("Repos", key("repos", t.profile === "fxa" ? "PIPE_REPO_SLUG" : "PIPE_REPOS"))}${repos.length ? repos.map(r => kvRow(html`<span class="mono">${r.slug}</span>`, `${r.role}${r.role === "work" ? ` · ${repoShip(r)[2]}` : ""}${r.why && r.why !== APP_FAIL ? ` · ${r.why}` : ""}`)) : kvRow("Repos", "none", 1)}
-      ${kvRow(html`Defaults <span class="mono">${rec ? "repos[].default" : "PIPE_STACK_DEFAULT"}</span>`, (t.defaults ?? []).join(", ") || "none")}`, { cls: "tcard" })}
-    ${card(html`${h("Runs on", key("runner.android", "PIPE_ANDROID"))}${teamRunsOn(t)}`, { cls: "tcard" })}
-    ${card(html`${h("Tools and mode", key("mcp, pr.open", "PIPE_MCP, PIPE_PR_OPEN"))}${kvRow("Connectors", teamTools(t.mcp))}${kvRow("Mode", t.read_only ? "read-only" : "read and write")}`, { cls: "tcard" })}
-    <div class="tcard card" id="t-record">${TACT === t.profile && TED?.name === t.profile ? html`<p class="tbanner">Test it (a few minutes), then Activate.</p>` : ""}${teamEditor(t.profile, t.access?.record)}</div>`;
+  return t.access?.record && TEAM_ADMIN?.admin ? teamSetupHtml(t) : teamInfoHtml(t);
 }
 // A team's Overview (B1, B5): one banner, four cards, Activity, Recent work, the Routines strip (admins) and Readiness.
 function teamBanner(t) {
@@ -2147,10 +2151,9 @@ function teamActivity(p) {
 function teamReadiness(t) {
   const has = re => (t.issues ?? []).some(i => re.test(i.text)), work = (t.repos ?? []).filter(r => r.role === "work");
   const access = t.profile === "fxa" || t.access?.open === "built-in" ? "good" : !t.access ? "unknown" : (t.access.record && t.access.status !== "active") || has(/nobody can start it/) ? "required" : "good";
-  const rows = [["Config", t.load_error ? "required" : "good", "profile.conf loads"], ["Access", access, teamAccess(t)[1]], ["Repos", work.length ? "good" : "required", work.map(r => r.slug).join(", ") || "no work repo"],
-    ["Tools", "good", teamTools(t.mcp)], ["Mode", "good", t.read_only ? "read-only" : "read and write"]];
+  const rows = [["Config", t.load_error ? "required" : "good", "profile.conf loads"], ["Access", access, teamAccess(t)[1]], ["Repos", work.length ? "good" : "required", work.map(r => r.slug).join(", ") || "no work repo"]];
   const good = rows.filter(r => r[1] === "good").length, set = `#teams/${t.profile}/settings`;
-  if (good === rows.length) return card(html`<span class="trd"><b>Readiness</b> 5 of 5 good</span> <a href="${set}">Settings</a>`, { cls: "tcard" });
+  if (good === rows.length) return card(html`<span class="trd"><b>Readiness</b> ${good} of ${good} good</span> <a href="${set}">Settings</a>`, { cls: "tcard" });
   return card(html`<h3>Readiness <span class="na">${good} of ${rows.length} good</span></h3>${rows.map(([k, st, d]) => html`<div class="titem"><span><b>${k}</b> <span class="na">${d}</span></span><span>${tag(st, st === "good" ? "ok" : st === "required" ? "warn" : "")} <a href="${set}" aria-label="Edit ${k.toLowerCase()}">Edit</a></span></div>`)}`, { cls: "tcard" });
 }
 function teamOverview(t) {
@@ -2176,66 +2179,325 @@ function teamOverview(t) {
       : TEAM_ADMIN?.admin && RTSUM_ERR ? tc(html`<p class="unknown">Routine status unknown: ${RTSUM_ERR}</p>`) : ""}
     ${teamReadiness(t)}`;
 }
-// Access: a record team's admin edits users, channels and open here; FxA, env and folder teams say where it is set.
-let ACCESS_DRAFT = null, TACT = "", TEAM_LOADING = "", TACT_FOCUSED = false;
-const accessList = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))];
-function teamAccessCard(t) {
-  const a = t.access, adm = !!TEAM_ADMIN?.admin, src = TEAMS?.access_source;
-  if (t.profile === "fxa" || a?.open === "built-in") return kvRow("Who", "everyone (built into the bot)");
-  if (!a) return html`<p class="unknown">access unknown (bot env not readable)</p>`;
-  const rows = html`${kvRow("Open", a.open === true ? "yes" : "no")}${kvRow("Users", `${a.users} user${a.users === 1 ? "" : "s"}`)}${kvRow("Channels", `${a.channels} channel rule${a.channels === 1 ? "" : "s"}`)}${kvRow("Jira", (a.jira ?? []).join(", ") || "none", !(a.jira ?? []).length)}`;
-  if (!a.record) return html`${rows}<p class="empty" title="${src ? `From the bot ${src.file}, saved ${stamp(src.mtime)}.` : ""}">${adm ? "Set in the bot .env by the operator." : "A team admin adds users. Ask the operator."}</p>`;
-  if (!adm) return html`${rows}<p class="empty">A team admin adds users. Ask the operator.</p>`;
-  if (TED?.name !== t.profile) return html`${rows}<p class="empty">loading the record…</p>`;
-  if (!TED.ok || !TED.rec) return html`${rows}<p class="unknown">The record did not load: ${TED.msg || "no answer"}</p><div class="acts2"><button data-team-load="${t.profile}">Load the record</button></div>`;
-  const rec = TED.rec ?? {};   // the record as loaded, not the editor's unsaved text
-  const d = ACCESS_DRAFT?.team === t.profile ? ACCESS_DRAFT : { team: t.profile, users: (rec.access?.users ?? []).join(", "), channels: (rec.access?.channels ?? []).join(", "), open: !!rec.access?.open };
-  return html`<div class="tform"><label for="t-users">Users <span class="na">Slack member IDs, such as U0123ABCD, comma separated</span></label><input id="t-users" data-acc="users" value="${d.users}" autocomplete="off">
-    <label for="t-channels">Channels <span class="na">Slack channel IDs</span></label><input id="t-channels" data-acc="channels" value="${d.channels}" autocomplete="off">
-    <label class="tchk"><input type="checkbox" id="t-open" data-acc="open"${d.open ? " checked" : ""}> Open to anyone the bot allows</label>
-    <div class="acts2"><button type="button" data-acc-save${ACCESS_DRAFT?.busy ? " disabled" : ""}>Save access</button></div>
-    <p role="status" class="${ACCESS_DRAFT?.ok === false ? "unknown" : "empty"}">${ACCESS_DRAFT?.msg || ""}</p></div>`;
+let TACT = "", TEAM_LOADING = "", TACT_FOCUSED = false;
+document.addEventListener("click", e => { const act = e.target.closest?.("[data-team-activate]"); if (act) { TACT = act.dataset.teamActivate; TACT_FOCUSED = false; } });
+// Team setup (design 2026-10-21-team-management): one Settings page to set up and to change a record team.
+// Each item posts the record as loaded with only its keys replaced, plus the generation; the server stays the judge.
+// The keys a runner reads: on an active team a change to one needs a new test (lib/teams.sh _teams_runner_keys).
+const TEAM_RUNNER_KEYS = ["repos", "stack", "runner", "egress", "mcp", "skills", "boot", "secrets"];
+let TFORM = null, TTEST = null, TMSG = null, NEWT = null, TMORE = new Set(), TAUDIT = null, TARM = "", TCHANS = null;
+const teamDraftOf = t => !!(t?.access?.record && t.access.status !== "active");
+const teamCap = n => n.split("-").map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+// Who can start a record team, in one phrase, from the loaded record or the feed's counts.
+function teamWho(t, rec) {
+  const a = rec?.access ?? null;
+  if (t.profile === "fxa" || t.access?.open === "built-in") return "Everyone";
+  if (a ? a.open : t.access?.open === true) return "Anyone the bot allows";
+  const n = a ? (a.users ?? []).length : t.access?.listed ?? t.access?.users ?? 0, c = a ? (a.channels ?? []).length : t.access?.channels ?? 0;
+  return n || c ? [n ? `${n} ${n === 1 ? "person" : "people"}` : "", c ? `${c} channel${c === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ") : "Nobody";
 }
+// The test state of a team: running, passed, failed or none. An active team keeps its pass after edits
+// that a runner never reads, so a pass at an older generation still counts for it.
+function teamTestState(t, data) {
+  const x = data ?? t.test;
+  if (!x) return "none";
+  if (x.result === "running" || x.result === "failed") return x.result;
+  if (x.result === "passed" || (x.tested != null && (x.tested === x.generation || t.access?.status === "active"))) return "passed";
+  return "none";
+}
+function teamStateTag(t, rec) {
+  const st = rec?.status ?? t.access?.status;
+  if (TTEST?.team === t.profile && TTEST.data?.result === "running") return tag("testing", "info", { run: true, live: true });
+  if (!t.access?.record) return tag(teamAccess(t)[0], teamLevel(t) || "ok");
+  return st === "active" ? tag("active", "ok") : st === "disabled" ? tag("disabled", "warn") : tag("draft");
+}
+// The repos of a record, with the GitHub App state from the feed (a new draft has none yet).
+function teamRepoSays(t, rec) {
+  const fr = new Map((t.repos ?? []).map(r => [String(r.slug).toLowerCase(), r])), rs = rec?.repos ?? t.repos ?? [];
+  const miss = rs.filter(r => r.role === "work" && fr.get(String(r.slug).toLowerCase()) && !fr.get(String(r.slug).toLowerCase()).write && fr.get(String(r.slug).toLowerCase()).why !== APP_FAIL);
+  const stack = rec ? (rec.stack?.kind === "fxa" ? "the FxA stack" : "no FxA stack") : "";
+  return { miss, text: html`${rs.length === 1 ? html`<span class="mono">${rs[0].slug}</span>` : `${rs.length} repos`}${miss.length ? html` · the GitHub App is missing on <span class="mono">${miss.map(r => r.slug).join(", ")}</span>` : fr.size ? " · the GitHub App is installed" : ""}${stack ? ` · ${stack}` : ""}` };
+}
+function teamTestCard(t, rec) {
+  const d = TTEST?.team === t.profile ? TTEST : null, x = d?.data ?? t.test, st = teamTestState(t, d?.data), active = rec.status === "active";
+  const since = x?.started_at ? new Date(x.started_at * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+  const log = (x?.lines ?? []).length ? html`<pre class="log" aria-label="The last lines of the test log">${x.lines.join("\n")}</pre>` : "";
+  const go = (label, act) => html`<div class="row"><button type="button" data-ttest="${t.profile}"${d?.busy ? " disabled" : ""}>${label}</button>${act ? html`<label class="hint"><input type="checkbox" data-ttest-act${d?.noact ? "" : " checked"}> Activate when it passes</label>` : ""}</div>`;
+  const body = st === "running" ? [html`Running${since ? ` since ${since}` : ""}. The first answer can take up to 20 minutes. You can leave this page.`, tag("Running", "info", { run: true, live: true }), html`${log}<p class="hint">${!d?.activate ? "It stays a draft when it passes." : `${teamName(t)} turns on when it passes.`}</p>`]
+    : st === "passed" && active ? ["Passed. The team is active.", "", go("Test again")]
+    : st === "passed" ? [html`Passed. Activate it to let ${teamWho(t, rec).toLowerCase()} start it.`, tag("Passed", "ok"), html`<div class="row"><button type="button" data-tstatus="active">Activate</button></div>`]
+    : st === "failed" ? ["Failed. Read the log, change the setup, then test again.", tag("Failed", "bad"), html`${log}${go("Test and activate", true)}`]
+    : ["Boots one runner with this setup. The first answer can take up to 20 minutes.", "", go(active ? "Test" : "Test and activate", !active)];
+  return card(html`<div class="ck"><span class="${cls("num", st === "passed" ? "ok" : st === "failed" ? "warn" : "info")}">${st === "passed" ? "✓" : "2"}</span><div class="who"><span class="nm">Test and activate</span><span class="says">${body[0]}</span></div>${body[1]}</div>
+    ${body[2]}${d?.msg ? html`<p role="status" class="${d.ok === false ? "unknown" : "hint"}">${d.msg}</p>` : ""}`, { cls: "stack" });
+}
+// One item's form, opened in place. f.d holds the draft values; Save posts only this item's keys.
+function teamItemForm(t, rec, f) {
+  const active = rec.status === "active", d = f.d, err = f.msg ? html`<p role="status" class="${f.ok ? "hint" : "unknown"}">${f.msg}</p>` : "";
+  const retest = active && teamRetest(rec, teamApply(rec, teamPatch(f)));
+  const save = html`${retest ? html`<div class="alert warn"><span class="what" style="white-space:normal">This change needs a new test. Nobody can start the team while the test runs, up to 20 minutes. It turns on again when the test passes.</span></div>` : ""}
+    <div class="row"><button type="button" data-tf-save${f.busy ? " disabled" : ""}>${f.busy ? "Saving…" : retest ? "Save and test again" : "Save"}</button><button type="button" class="linkbtn" data-tf-cancel>Cancel</button></div>${err}`;
+  const lab = (k, l, input, hint) => html`<div class="field"><label for="tf-${k}">${l}</label>${input}${hint ? html`<p class="hint">${hint}</p>` : ""}</div>`;
+  if (f.item === "repos") return html`${f.warn?.length ? f.warn.map(w => html`<div class="alert warn"><span class="what" style="white-space:normal">${w.replace(/^WARN: /, "")}</span></div>`) : ""}
+    <div class="tscroll"><table class="rows"><thead><tr><th>Repo</th><th>Role</th><th></th></tr></thead><tbody>${d.repos.map((r, i) => html`<tr>
+      <td><input class="input mono" data-tfr="${i}" data-tfk="slug" value="${r.slug}" aria-label="Repo ${i + 1}" placeholder="owner/name"></td>
+      <td><select class="input" data-tfr="${i}" data-tfk="role" aria-label="Role of repo ${i + 1}">${["work", "dep", "data", "ref"].map(x => html`<option${x === r.role ? " selected" : ""}>${x}</option>`)}</select></td>
+      <td><button type="button" class="linkbtn" data-tf-del="${i}" aria-label="Remove repo ${i + 1}">Remove</button></td></tr>`)}</tbody></table></div>
+    <div class="row">${d.repos.length < 8 ? html`<button type="button" class="linkbtn" data-tf-add>Add repo</button>` : ""}<button type="button" class="linkbtn" data-tf-check>Check again</button></div>${save}`;
+  if (f.item === "access") { const C = TCHANS?.team === t.profile ? TCHANS.channels : [];
+    return html`<fieldset class="group stack sm"><legend class="lb">Who can start it</legend><div class="fields2">
+      <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value="1"${d.open ? " checked" : ""}><span class="stack sm"><b>Anyone the bot allows</b><span class="hint">Every person who can use @fxa-agent.</span></span></label>
+      <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value=""${d.open ? "" : " checked"}><span class="stack sm"><b>Only these people and channels</b><span class="hint">Nobody else can start this team.</span></span></label></div></fieldset>
+      ${d.open ? "" : html`<div class="fields2">${lab("users", html`People <span class="opt">· one Slack member ID a line</span>`, html`<textarea id="tf-users" class="input" rows="4" data-tfk="users">${d.users}</textarea>`, "In Slack, open the person's profile, then More, then Copy member ID.")}
+        <fieldset class="group field"><legend class="lb">Channels</legend>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
+          ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}${save}`; }
+  if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${new Blob([d.goal]).size} of 2560 bytes</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
+  if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("prefixes", html`Ticket prefixes in Slack <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`)}</div>
+    <label><input type="checkbox" data-tfk="queue"${d.queue ? " checked" : ""}> Take tickets from the project's queue</label>
+    <label><input type="checkbox" data-tfk="secret"${d.secret ? " checked" : ""}${d.queue ? "" : " disabled"}> Take secret tickets too</label>${save}`;
+  if (f.item === "tools") return html`${lab("mcp", html`MCP connectors <span class="opt">· comma separated, empty for none</span>`, html`<input id="tf-mcp" class="input mono" data-tfk="mcp" value="${d.mcp}" placeholder="the bot default">`, "Leave it as the bot default to use the connectors the bot has.")}
+    <label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>${save}`;
+  if (f.item === "caps") return html`<div class="fields2">${[["usd_per_day", "Spend cap a day, USD"], ["usd_per_month", "Spend cap a month, USD"], ["launches_per_day", "Pipeline launches a day"]].map(([k, l]) => lab(k, html`${l} <span class="opt">· empty for none</span>`, html`<input id="tf-${k}" class="input" type="number" min="0" data-tfk="${k}" value="${d[k]}">`))}</div>${save}`;
+  if (f.item === "pr") return html`<label><input type="checkbox" data-tfk="open"${d.open ? " checked" : ""}> Open draft PRs (off: the team gets diffs only)</label>
+    ${lab("reviewers", html`Reviewers <span class="opt">· comma separated, optional</span>`, html`<input id="tf-reviewers" class="input mono" data-tfk="reviewers" value="${d.reviewers}">`)}${save}`;
+  return "";
+}
+// The draft values of an item, from the record as loaded.
+function teamItemDraft(item, rec) {
+  const a = rec.access ?? {}, j = rec.jira ?? {}, c = rec.caps ?? {}, p = rec.pr ?? {};
+  return { repos: { repos: (rec.repos ?? []).map(r => ({ ...r })) }, goal: { goal: rec.prompts?.goal_md ?? "" },
+    access: { open: !!a.open, users: (a.users ?? []).join("\n"), chans: [...(a.channels ?? [])], other: "" },
+    jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, prefixes: (a.jira_prefixes ?? []).join(", ") },
+    tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
+    caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "", launches_per_day: c.launches_per_day ?? "" },
+    pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", ") } }[item];
+}
+// The record with a patch applied (a key set to undefined is removed), and whether the change needs a new test.
+function teamApply(rec, patch) {
+  const out = structuredClone(rec);
+  for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete out[k]; else out[k] = v; }
+  return out;
+}
+const teamRetest = (a, b) => TEAM_RUNNER_KEYS.some(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+// The record keys an item form changes: {key: new value}; a key set to undefined is removed.
+function teamPatch(f) {
+  const d = f.d, rec = TED?.rec ?? {}, list = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))], num = v => v === "" || v == null ? undefined : Number(v);
+  const drop = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
+  if (f.item === "repos") return { repos: d.repos.filter(r => String(r.slug).trim()).map((r, i, a) => ({ ...r, slug: String(r.slug).trim(), default: a.findIndex(x => x.role === "work") === i ? true : undefined })).map(r => drop(r)) };
+  if (f.item === "goal") return { prompts: { ...(rec.prompts ?? {}), goal_md: d.goal } };
+  if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list(d.users), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])] } };
+  if (f.item === "jira") { const j = drop({ project: d.project.trim(), queue: d.queue || undefined, secret: d.queue && d.secret || undefined });
+    return { jira: Object.keys(j).length ? j : undefined, access: { ...(rec.access ?? {}), jira_prefixes: list(d.prefixes) } }; }
+  if (f.item === "tools") return { mcp: d.dflt ? undefined : list(d.mcp) };
+  if (f.item === "caps") { const c = drop({ usd_per_day: num(d.usd_per_day), usd_per_month: num(d.usd_per_month), launches_per_day: num(d.launches_per_day) }); return { caps: Object.keys(c).length ? c : undefined }; }
+  if (f.item === "pr") return { pr: drop({ ...(rec.pr ?? {}), open: d.open, reviewers: list(d.reviewers).length ? list(d.reviewers) : undefined }) };
+  return {};
+}
+function teamSetupHtml(t) {
+  const adm = !!TEAM_ADMIN?.admin;
+  if (TED?.name !== t.profile) return card(html`<p class="empty">loading the record…</p>`);
+  if (!TED.ok || !TED.rec) return card(html`<p class="unknown">The record did not load: ${TED.msg || "no answer"}</p><div class="row"><button data-team-load="${t.profile}">Load the record</button></div>`);
+  const rec = TED.rec, f = TFORM?.team === t.profile ? TFORM : null, open = k => f?.item === k, active = rec.status === "active";
+  const rs = teamRepoSays(t, rec), btn = (k, l) => adm ? html`<button type="button" data-tf="${k}"${f ? " disabled" : ""}>${l}</button>` : "";
+  const item = (k, body) => open(k) ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : body;
+  const rowv = (k, l, v, b) => html`<div class="kv"><span>${l}</span><span>${v}${adm ? html` · <button type="button" class="linkbtn" data-tf="${k}"${f ? " disabled" : ""}>${b}</button>` : ""}</span></div>${open(k) ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : ""}`;
+  const j = rec.jira ?? {}, c = rec.caps ?? {}, sec = Object.entries(TED.secrets ?? {}), arm = k => TARM === `${t.profile}:${k}`;
+  const more = (k, s, body) => html`<details class="card" data-tmore="${k}"${TMORE.has(k) ? " open" : ""}><summary><b>${s[0]}</b> <span class="hint">· ${s[1]}</span></summary><div class="stack sm tmore">${body}</div></details>`;
+  return html`<div class="stack lg" data-tform>${TMSG?.team === t.profile && TMSG.msg ? html`<p role="status" class="${TMSG.ok ? "hint" : "unknown"}">${TMSG.msg}</p>` : ""}
+    ${card(html`<div class="ck"><span class="${cls("num", rs.miss.length ? "warn" : "ok")}">${rs.miss.length ? "!" : "✓"}</span><div class="who"><span class="nm">Repo${(rec.repos ?? []).length === 1 ? "" : "s"}</span><span class="says">${rs.text}</span></div>${open("repos") ? "" : btn("repos", "Edit")}</div>
+      ${rs.miss.length && !open("repos") ? html`<div class="alert warn"><span class="what" style="white-space:normal">An org owner installs the fxa-agent GitHub App on ${rs.miss.map(r => r.slug).join(", ")}. Until then, its work ships as a diff.</span></div>` : ""}${item("repos", "")}`, { cls: "stack" })}
+    ${teamTestCard(t, rec)}
+    ${card(html`${rowv("access", "Who can start it", teamWho(t, rec), "Change")}${rowv("goal", "What it works on", String(rec.prompts?.goal_md ?? "").trim() ? `${String(rec.prompts.goal_md).trim().slice(0, 80)}${String(rec.prompts.goal_md).trim().length > 80 ? "…" : ""}` : "not set", "Edit")}`, { flat: true, cls: "stack sm" })}
+    ${more("settings", ["More settings", "all optional"], html`${rowv("jira", "Jira", j.project ? `${j.project}${j.queue ? ", takes tickets from the queue" : ""}${j.secret ? ", secret tickets too" : ""}` : "Not used", j.project ? "Change" : "Set up")}
+      ${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}${rowv("caps", "Limits", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : "", c.launches_per_day != null ? `${c.launches_per_day} launches a day` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}
+      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}`, "Change")}
+      <div class="kv"><span>Secrets</span><span>${sec.length ? `${sec.length} named` : "None"}</span></div>
+      ${adm && sec.length ? html`${sec.map(([s, st]) => html`<div class="row"><span class="mono">${s}</span>${tag(st, st === "present" ? "" : "warn")}<input type="password" class="input" style="max-width:240px" autocomplete="off" data-secret-val="${s}" placeholder="new value" aria-label="New value for ${s}"><button type="button" data-tsec="${s}">Set</button></div>`)}
+        <p class="hint">A value is stored in Secret Manager and never shown again. Add a secret name in the record JSON below.</p>` : ""}`)}
+    ${adm ? more("json", ["Edit the record as JSON", "egress, runner, boot, admins and secret names"], teamEditor(t.profile, true)) : ""}
+    ${more("history", ["History", "every change, newest first"], TAUDIT?.team !== t.profile ? html`<p class="empty">loading…</p>` : TAUDIT.err ? html`<p class="unknown">${TAUDIT.err}</p>`
+      : table(["When", "Who", "What", "Changed"], TAUDIT.rows.length ? TAUDIT.rows.map(r => html`<tr><td>${stamp(r.at)}</td><td>${String(r.actor ?? "").split("@")[0]}</td><td>${r.action}</td><td>${r.changed || ""}</td></tr>`) : html`<tr><td colspan="4" class="na">No changes yet.</td></tr>`, { dense: true }))}
+    ${adm ? card(html`<h3>${active ? "Turn off or delete" : "Delete this team"}</h3><p class="hint">${active ? "Turn off stops new sessions and the Jira queue. To turn it on again you need a new test. " : ""}Delete is refused while a session of the team can resume, and it also deletes the team's routines${rtSum(t.profile) ? ` (${rtSum(t.profile).routines})` : ""}. You cannot undo it.</p>
+      <div class="row">${active ? html`<button type="button" data-tstatus="disabled">${arm("disabled") ? "Turn off: click again" : "Turn off"}</button>` : ""}<button type="button" data-tdel>${arm("delete") ? `Delete ${teamName(t)}: click again` : `Delete ${teamName(t)}`}</button></div>`, { flat: true, cls: "stack sm" }) : ""}</div>`;
+}
+// New team: three fields and a stack; the label comes from the name. The server judges every rule.
+function newTeamHtml() {
+  const head = html`<a class="hint" href="#teams">← All teams</a><h2 class="th" id="team-h" tabindex="-1">New team</h2>`;
+  if (!TEAM_ADMIN?.admin) return html`<div class="tpage">${head}<p class="tsub">Only a team admin can create a team.</p></div>`;
+  const d = NEWT ??= { name: "", repo: "", stack: "", goal: "", errs: {} }, e = d.errs ?? {}, label = d.name ? teamCap(d.name) : "the team";
+  const bad = k => e[k] ? html` aria-invalid="true" aria-describedby="nt-${k}-err"` : "", err = k => e[k] ? html`<p class="unknown" id="nt-${k}-err">${e[k]}</p>` : "";
+  return html`<div class="tpage" data-tform>${head}<p class="tsub">A team is a repo that the agent works on. It starts as a draft, and it turns on after a test passes.</p>
+    <div class="rtcols"><section class="card stack">
+      <div class="fields2"><div class="field"><label for="nt-name">Name</label><input id="nt-name" class="input" data-nt="name" value="${d.name}" autocomplete="off" placeholder="relay"${bad("name")}><p class="hint">Lowercase letters, digits and -. It shows as ${label}.</p>${err("name")}</div>
+        <div class="field"><label for="nt-repo">Work repo</label><input id="nt-repo" class="input mono" data-nt="repo" value="${d.repo}" placeholder="owner/name"${bad("repo")}><p class="hint">Where the agent opens PRs.</p>${err("repo")}</div></div>
+      <fieldset class="group stack sm" id="nt-stack" tabindex="-1"${bad("stack")}><legend class="lb">Stack</legend><div class="fields2">
+        <label class="choice sm"><input type="radio" name="nt-stack" data-nt="stack" value="none"${d.stack === "none" ? " checked" : ""}><span class="stack sm"><b>No FxA stack</b><span class="hint">The agent works in the repo with its own tools.</span></span></label>
+        <label class="choice sm"><input type="radio" name="nt-stack" data-nt="stack" value="fxa"${d.stack === "fxa" ? " checked" : ""}><span class="stack sm"><b>Runs the FxA stack</b><span class="hint">The agent boots the FxA services to test its change.</span></span></label></div>${err("stack")}</fieldset>
+      <div class="field"><label for="nt-goal">What does this team work on? <span class="opt" data-nt-count>${new Blob([d.goal]).size} of 2560 bytes</span></label><textarea id="nt-goal" class="input" data-nt="goal" rows="5"${bad("goal")}>${d.goal}</textarea><p class="hint">The agent reads this at the start of every session.</p>${err("goal")}</div>
+    </section><aside class="card stack"><h3>Before you create it</h3><p class="readback" data-nt-readback>${newTeamReadback(d)}</p>
+      <div class="row"><button type="button" data-nt-create${d.busy ? " disabled" : ""}>${d.busy ? "Creating…" : "Create draft"}</button><a class="btn" href="#teams">Cancel</a></div>
+      <p role="status" class="${d.ok === false ? "unknown" : "hint"}">${d.msg || "The fxa-agent GitHub App must be on the repo. If it is not, an org owner installs it. You can create the draft first."}</p></aside></div></div>`;
+}
+const newTeamReadback = d => html`Creates <b>${d.name ? teamCap(d.name) : "a team"}</b> as a <b>draft</b>, on <b>${d.repo || "its work repo"}</b>, with <b>${d.stack === "fxa" ? "the FxA stack" : d.stack === "none" ? "no FxA stack" : "a stack you pick"}</b>. Next, you test it, and it turns on when the test passes.`;
+// The record a new team starts with: the work repo, the stack, the goal; open to anyone the bot allows.
+function newTeamRecord(d) {
+  const slug = d.repo.trim(), repos = [{ slug, role: "work", default: true }];
+  if (d.stack === "fxa" && slug.toLowerCase() !== "mozilla/fxa") repos.push({ slug: "mozilla/fxa", role: "dep" });
+  return { schema: 1, name: d.name.trim(), label: teamCap(d.name.trim()), status: "draft", repos, stack: { kind: d.stack || "none" },
+    access: { open: true, users: [], channels: [], jira_prefixes: [] }, prompts: { goal_md: d.goal } };
+}
+// The validator's lines, mapped to the new team's fields; the rest is the summary.
+function newTeamErrs(text) {
+  const errs = {}, other = [];
+  for (const l of String(text || "").split("\n").map(s => s.replace(/^ERROR: /, "").replace(/^\S+\.json: /, "").trim()).filter(Boolean)) {
+    const k = /^name\b|team name|reserved|already exists/.test(l) ? "name" : /^repos/.test(l) ? "repo" : /^stack/.test(l) ? "stack" : /goal_md|^prompts/.test(l) ? "goal" : "";
+    if (k) errs[k] ??= l; else other.push(l);
+  }
+  return { errs, summary: other.join(" ") || (Object.keys(errs).length ? "Check the marked fields." : "") };
+}
+async function teamPost(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  return [r, await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" }];
+}
+// A repaint of the teams page, also while a team form is open and changed (it keeps the form).
+function teamPaint() {
+  const keep = TFORM?.dirty, keepN = NEWT?.dirty;
+  if (TFORM) TFORM.dirty = false;
+  if (NEWT) NEWT.dirty = false;
+  try { renderTeams(); } finally { if (TFORM) TFORM.dirty = keep; if (NEWT) NEWT.dirty = keepN; }
+}
+async function teamCreate() {
+  const d = NEWT; if (!d || d.busy) return;
+  const errs = {};
+  if (!TEAM_RE.test(d.name.trim())) errs.name = "Use lowercase letters, digits and -, 2 to 31 characters, starting with a letter.";
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(d.repo.trim())) errs.repo = "Use owner/name, such as mozilla/fx-private-relay.";
+  if (!d.stack) errs.stack = "Pick a stack.";
+  if (Object.keys(errs).length) { Object.assign(d, { errs, msg: "Check the marked fields.", ok: false }); teamPaint(); return document.getElementById(`nt-${Object.keys(errs)[0]}`)?.focus(); }
+  Object.assign(d, { busy: true, errs: {}, msg: "" }); teamPaint();
+  const rec = newTeamRecord(d), [r, j] = await teamPost("/api/teams", { record: rec });
+  d.busy = false;
+  if (!r?.ok) { const x = r?.status === 409 ? { errs: { name: "A team with this name already exists." }, summary: "" } : newTeamErrs(j.error || r?.status);
+    Object.assign(d, { errs: x.errs, msg: x.summary || "Check the marked fields.", ok: false }); teamPaint(); return document.getElementById(`nt-${Object.keys(x.errs)[0] ?? "name"}`)?.focus(); }
+  NEWT = null; TED = await teamRecord(rec.name); location.hash = `teams/${rec.name}/settings`; loadTeams();
+}
+// Save one item: the record as loaded, this item's keys replaced. A change a runner reads on an active
+// team saves as draft and starts a new test that activates the team when it passes.
+async function teamItemSave() {
+  const f = TFORM, team = f?.team; if (!f || f.busy || TED?.name !== team || !TED.rec) return;
+  const rec = teamApply(TED.rec, teamPatch(f)), retest = TED.rec.status === "active" && teamRetest(TED.rec, rec);
+  if (retest) rec.status = "draft";
+  Object.assign(f, { busy: true, msg: "" }); teamPaint();
+  const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(team)}`, { record: rec, generation: TED.gen });
+  f.busy = false;
+  if (!r?.ok) { Object.assign(f, { ok: false, msg: r?.status === 409 ? "Someone changed this team after you loaded it. Cancel, then redo your edit." : j.error || String(r?.status), warn: j.warn }); return teamPaint(); }
+  TFORM = null; TED = await teamRecord(team);
+  if (retest) await teamTestStart(team, true);
+  await loadTeams(); teamPaint();
+}
+async function teamTestStart(team, activate) {
+  TTEST = { team, activate, busy: true, data: TTEST?.team === team ? TTEST.data : null };
+  const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(team)}/test`, {});
+  TTEST.busy = false;
+  if (!r?.ok && r?.status !== 409) { Object.assign(TTEST, { ok: false, msg: j.error || String(r?.status) }); return teamPaint(); }
+  teamTestPoll(team);
+}
+// Watch a test every 10 s while its team's page is open; on a pass, activate when the admin asked for it.
+async function teamTestPoll(team) {
+  clearTimeout(TTEST?.timer);
+  const r = await fetch(`/api/teams/${encodeURIComponent(team)}/test`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+  if (TTEST?.team !== team) TTEST = { team, activate: false };
+  TTEST.data = r?.ok ? j : TTEST.data;
+  if (j?.result === "passed" && TTEST.activate && TED?.name === team && TED.rec?.status !== "active" && !TTEST.activated) {
+    TTEST.activated = true;
+    const [a, aj] = await teamPost(`/api/teams/${encodeURIComponent(team)}/status`, { status: "active" });
+    Object.assign(TTEST, { ok: !!a?.ok, msg: a?.ok ? "Passed, and the team is active." : `Passed, but Activate did not work: ${aj.error || a?.status}` });
+    TED = await teamRecord(team); await loadTeams();
+  }
+  teamPaint();
+  if (j?.result === "running" && SEL.teams === team && VIEW === "teams") TTEST.timer = setTimeout(() => teamTestPoll(team), 10000);
+}
+document.addEventListener("toggle", e => {
+  const k = e.target.dataset?.tmore; if (!k) return;
+  TMORE[e.target.open ? "add" : "delete"](k);
+  if (k === "history" && e.target.open && TEAM_RE.test(SEL.teams ?? "")) { const team = SEL.teams;
+    fetch(`/api/teams/${encodeURIComponent(team)}/audit`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => []);
+      TAUDIT = { team, rows: r.ok && Array.isArray(j) ? j : [], err: r.ok ? "" : j.error || String(r.status) }; teamPaint(); }, () => { TAUDIT = { team, rows: [], err: "the dashboard did not answer" }; teamPaint(); }); }
+}, true);
 document.addEventListener("input", e => {
-  const k = e.target.dataset?.acc; if (!k || !TEAM_RE.test(SEL.teams ?? "")) return;
-  ACCESS_DRAFT = { ...(ACCESS_DRAFT?.team === SEL.teams ? ACCESS_DRAFT : { team: SEL.teams, users: document.getElementById("t-users")?.value ?? "", channels: document.getElementById("t-channels")?.value ?? "", open: !!document.getElementById("t-open")?.checked }),
-    [k]: k === "open" ? e.target.checked : e.target.value, msg: "" };
+  if (e.target.matches?.("[data-ttest-act]") && TTEST) { TTEST.noact = !e.target.checked; return; }
+  const nt = e.target.dataset?.nt;
+  if (nt && NEWT) { NEWT[nt] = e.target.value; NEWT.dirty = true; NEWT.errs = { ...NEWT.errs, [nt]: undefined };
+    const rb = document.querySelector("[data-nt-readback]"); if (rb) rb.innerHTML = String(newTeamReadback(NEWT));
+    const c = document.querySelector("[data-nt-count]"); if (c && nt === "goal") c.textContent = `${new Blob([NEWT.goal]).size} of 2560 bytes`;
+    if (nt === "name") { const h = e.target.parentElement?.querySelector(".hint"); if (h) h.textContent = `Lowercase letters, digits and -. It shows as ${NEWT.name ? teamCap(NEWT.name) : "the team"}.`; }
+    return; }
+  const f = TFORM, k = e.target.dataset?.tfk; if (!f || !e.target.closest?.("[data-tform]")) return;
+  const ch = e.target.dataset.tfch;
+  if (ch) { f.d.chans = e.target.checked ? [...new Set([...f.d.chans, ch])] : f.d.chans.filter(x => x !== ch); f.dirty = true; return; }
+  if (!k) return;
+  const v = e.target.type === "checkbox" ? e.target.checked : e.target.type === "radio" ? !!e.target.value : e.target.value;
+  if (e.target.dataset.tfr != null) f.d.repos[Number(e.target.dataset.tfr)][k] = v; else f.d[k] = v;
+  f.dirty = true;
+  if (k === "goal") { const c = document.querySelector("[data-tf-count]"); if (c) c.textContent = `${new Blob([v]).size} of 2560 bytes`; }
+  if (["open", "queue", "dflt"].includes(k)) teamPaint();
 });
-document.addEventListener("change", e => { if (e.target.dataset?.acc === "open") e.target.dispatchEvent(new Event("input", { bubbles: true })); });
-// Save access: the kept record and generation, so an edit someone else saved meanwhile is refused (409), not lost.
-async function accessSave(team) {
-  if (ACCESS_DRAFT?.busy || TED?.name !== team || !TED.ok || !TED.rec) return;
-  // The record as loaded, with only access replaced: unsaved text in the record editor is not posted.
-  const rec = structuredClone(TED.rec ?? {});
-  const d = ACCESS_DRAFT?.team === team ? ACCESS_DRAFT : { users: (rec.access?.users ?? []).join(","), channels: (rec.access?.channels ?? []).join(","), open: !!rec.access?.open };
-  rec.access = { ...(rec.access ?? {}), users: accessList(d.users), channels: accessList(d.channels), open: !!d.open };
-  ACCESS_DRAFT = { ...d, team, busy: true, msg: "saving…" }; renderTeams();
-  const r = await fetch(`/api/teams/${encodeURIComponent(team)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ record: rec, generation: TED.gen }) }).catch(() => null);
-  const j = await r?.json().catch(() => ({})) ?? {};
-  if (!r?.ok) { ACCESS_DRAFT = { ...ACCESS_DRAFT, busy: false, ok: false, msg: r?.status === 409 ? "Someone changed this team after you loaded it. Load it again and redo your edit." : j.error || "the dashboard did not answer" }; return renderTeams(); }
-  TED = await teamRecord(team); const ac = TED.rec?.access ?? {};
-  ACCESS_DRAFT = { team, users: (ac.users ?? []).join(", "), channels: (ac.channels ?? []).join(", "), open: !!ac.open, busy: false, ok: true, msg: `saved: generation ${TED.gen}` };
-  await loadTeams(); renderTeams();
-}
-document.addEventListener("click", e => {
-  if (e.target.closest?.("[data-acc-save]")) return accessSave(SEL.teams);
-  const act = e.target.closest?.("[data-team-activate]"); if (act) { TACT = act.dataset.teamActivate; TACT_FOCUSED = false; }
+document.addEventListener("click", async e => {
+  const g = e.target.closest?.("[data-tform]"); if (!g) return;
+  const team = SEL.teams, b = e.target.closest("button"); if (!b || b.disabled) return;
+  if (b.hasAttribute("data-nt-create")) return teamCreate();
+  if (b.dataset.tf) {
+    if (b.dataset.tf === "access" && TCHANS?.team !== team) fetch(`/api/teams/${encodeURIComponent(team)}/routine-channels`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({}));
+      TCHANS = { team, channels: r.ok && Array.isArray(j.channels) ? j.channels : [] }; teamPaint(); }, () => { TCHANS = { team, channels: [] }; });
+    TFORM = { team, item: b.dataset.tf, d: teamItemDraft(b.dataset.tf, TED.rec) }; teamPaint();
+    return setTimeout(() => document.querySelector("[data-tform] .ckbody :is(input, textarea, select)")?.focus());
+  }
+  if (b.hasAttribute("data-tf-cancel")) { TFORM = null; return teamPaint(); }
+  if (b.hasAttribute("data-tf-save")) return teamItemSave();
+  if (b.hasAttribute("data-tf-add") && TFORM) { TFORM.d.repos.push({ slug: "", role: "dep" }); TFORM.dirty = true; return teamPaint(); }
+  if (b.dataset.tfDel != null && TFORM) { TFORM.d.repos.splice(Number(b.dataset.tfDel), 1); TFORM.dirty = true; return teamPaint(); }
+  if (b.hasAttribute("data-tf-check") && TFORM) { const rec = teamApply(TED.rec, teamPatch(TFORM)), [r, j] = await teamPost("/api/teams/validate", { record: rec });
+    Object.assign(TFORM, { warn: [...(j.warn ?? []), ...String(j.out ?? "").split("\n").filter(l => l.startsWith("WARN: "))], ok: !!r?.ok, msg: r?.ok ? "The repos pass their checks." : j.error || String(r?.status) }); return teamPaint(); }
+  if (b.dataset.ttest) { const box = document.querySelector("[data-ttest-act]"); return teamTestStart(b.dataset.ttest, box ? box.checked : TED?.rec?.status !== "active"); }
+  const st = b.dataset.tstatus;
+  if (st) {
+    if (st === "disabled" && TARM !== `${team}:disabled`) { TARM = `${team}:disabled`; return teamPaint(); }
+    TARM = ""; b.disabled = true;
+    const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(team)}/status`, { status: st });
+    TMSG = { team, ok: !!r?.ok, msg: r?.ok ? (st === "active" ? "The team is active." : "The team is off.") : j.error || String(r?.status) };
+    TED = await teamRecord(team); await loadTeams(); return teamPaint();
+  }
+  if (b.hasAttribute("data-tdel")) {
+    if (TARM !== `${team}:delete`) { TARM = `${team}:delete`; return teamPaint(); }
+    TARM = ""; b.disabled = true;
+    const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(team)}/delete`, {});
+    if (!r?.ok) { TMSG = { team, ok: false, msg: j.error || String(r?.status) }; return teamPaint(); }
+    TED = null; location.hash = "teams"; return loadTeams();
+  }
+  const s = b.dataset.tsec;
+  if (s) { const input = document.querySelector(`[data-secret-val="${CSS.escape(s)}"]`), value = input?.value ?? ""; if (!value) return;
+    const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(team)}/secret`, { secret: s, value }); input.value = "";
+    TMSG = { team, ok: !!r?.ok, msg: r?.ok ? j.out : j.error || String(r?.status) }; TED = await teamRecord(team); return teamPaint(); }
 });
 function teamPageHtml(p) {
-  const t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null;
+  let t = TEAM_RE.test(p) ? (TEAMS?.teams ?? []).find(x => x.profile === p) : null, note = "";
+  // Just after a create the teams list can lag: the loaded record stands in until it has the team.
+  if (!t && TED?.name === p && TED.rec) { t = { profile: p, label: TED.rec.label, repos: [], issues: [], access: { record: true, status: TED.rec.status, open: !!TED.rec.access?.open, listed: (TED.rec.access?.users ?? []).length, channels: (TED.rec.access?.channels ?? []).length }, test: null }; note = "The team list updates in a minute."; }
   if (!t) return html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${p}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
-  const r = rtSum(t.profile), base = `#teams/${t.profile}`, src = t.access?.record ? "team record" : `profiles/${t.profile}/profile.conf`;
-  const tabs = TTABS.map(([k, l]) => html`<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${TTAB === k ? html` aria-current="page"` : ""}>${l}${k === "routines" && r ? html`<span class="n">${r.routines}</span>${r.failed ? html`<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`);
+  const r = rtSum(t.profile), base = `#teams/${t.profile}`, draft = teamDraftOf(t), rec = TED?.name === t.profile ? TED.rec : null;
+  const tab = draft && TTAB === "overview" ? "settings" : TTAB;
+  const tabs = (draft ? [["settings", "Settings"], ["routines", "Routines"]] : TTABS).map(([k, l]) => html`<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${tab === k ? html` aria-current="page"` : ""}>${l}${k === "settings" && draft ? html`<span class="n">1 left</span>` : ""}${k === "routines" && r ? html`<span class="n">${r.routines}</span>${r.failed ? html`<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`);
+  const who = teamWho(t, rec), say = !t.access?.record ? html`<span class="tkey">${t.profile} · ${t.profile === "fxa" ? "built into the bot" : `profiles/${t.profile}/profile.conf`}</span>`
+    : draft ? html`<p class="readback">Nobody can start <b>${teamName(t)}</b> yet. ${t.access.status === "disabled" ? "It is off. Test it, and it turns on again when the test passes." : "Test it, and it turns on when the test passes."}</p>`
+    : html`<p class="readback"><b>${who}</b> can start <b>${teamName(t)}</b>.</p>`;
   const body = t.load_error ? card(html`<p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${t.profile} profile show</span></p>`, { cls: "tcard" })
-    : TTAB === "routines" ? (TEAM_ADMIN?.admin ? routinesGroup(t, Date.now() / 1000) : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
-    : TTAB === "settings" ? teamSettingsHtml(t)
+    : tab === "routines" ? (TEAM_ADMIN?.admin ? html`${draft ? card(html`<p class="hint">Routines run only when the team is active.</p>`, { flat: true }) : ""}${routinesGroup(t, Date.now() / 1000)}` : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
+    : tab === "settings" ? teamSettingsHtml(t)
     : teamOverview(t);
-  return html`<div class="tpage"><div class="thead"><div><h2 class="th" id="team-h" tabindex="-1">${teamName(t)} ${tag(teamAccess(t)[0], teamLevel(t) || "ok")}</h2>
-      <div class="tkey">${t.profile} · ${src}</div></div></div>
+  return html`<div class="tpage"><div class="thead stack sm"><h2 class="th" id="team-h" tabindex="-1">${teamName(t)} ${teamStateTag(t, rec)}</h2>${say}${note ? html`<p class="hint">${note}</p>` : ""}</div>
     <nav class="ttabs" aria-label="Team">${tabs}</nav>${body}</div>`;
 }
 // A poll must not wipe an edit in progress: the record JSON, a secret value, or a routine form someone changed.
-const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val], #t-access input") || !!RT.form?.dirty;
+const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val]") || !!RT.form?.dirty || !!TFORM?.dirty || !!NEWT?.dirty;
 function renderTeams() {
   const T = TEAMS;
   if (!T || T.age_seconds == null) { put("s-teams", String(emptybox(T?.error || "loading teams… the first profile list can take a minute"))); return; }
@@ -2243,20 +2505,24 @@ function renderTeams() {
   if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
-  if (TTAB === "settings" && t?.access?.record && TEAM_ADMIN?.admin && TED?.name !== t.profile && TEAM_LOADING !== t.profile) {
-    TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; ACCESS_DRAFT = null; renderTeams(); } })
+  // A draft opens on Settings, so its record loads on the default tab too.
+  if ((TTAB === "settings" || teamDraftOf(t)) && t?.access?.record && TEAM_ADMIN?.admin && TED?.name !== t.profile && TEAM_LOADING !== t.profile) {
+    TEAM_LOADING = t.profile; teamRecord(t.profile).then(r => { TEAM_LOADING = ""; if (SEL.teams === r.name) { TED = r; renderTeams(); } })
       .catch(() => { TEAM_LOADING = ""; TED = { name: t.profile, ok: false, msg: "the dashboard did not answer" }; renderTeams(); });
   }
-  if (ACCESS_DRAFT && ACCESS_DRAFT.team !== id) ACCESS_DRAFT = null;
+  if (TFORM && TFORM.team !== id) TFORM = null;
+  if (TMSG && TMSG.team !== id) TMSG = null;
+  // The test state of a record team, once a page of it shows; a running test is then watched every 10 s.
+  if (t?.access?.record && TEAM_ADMIN?.admin && TTEST?.team !== id) { TTEST = { team: id, activate: false }; teamTestPoll(id); }
   // Test and activate: once the record is in the card, the focus goes to Test (before any other focus rule).
-  if (TACT === id && TTAB === "settings" && TED?.name === id && !TACT_FOCUSED) {
-    put("s-teams", String(teamPageHtml(id))); TACT_FOCUSED = true; document.querySelector('[data-tact="test"]')?.focus(); return;
+  if (TACT === id && (TTAB === "settings" || teamDraftOf(t)) && TED?.name === id && !TACT_FOCUSED) {
+    put("s-teams", String(teamPageHtml(id))); TACT_FOCUSED = true; document.querySelector("[data-ttest]")?.focus(); return;
   }
   // A repaint keeps the keyboard focus on the same heading, tab link, link or button (the routines list has its own).
   const a = document.activeElement, inMain = a && a !== document.body && el?.contains(a) && !a.closest?.("[data-routines]");
   const key = !inMain ? "" : a.id ? `#${CSS.escape(a.id)}` : a.matches("a[href]") ? `a[href="${CSS.escape(a.getAttribute("href"))}"]`
-    : ["data-tact", "data-acc-save", "data-team-load", "data-rt-sel"].map(n => a.hasAttribute(n) ? `[${n}="${CSS.escape(a.getAttribute(n))}"]` : "").find(Boolean) ?? "";
-  const page = () => String(id === "__all" ? allTeamsHtml() : id === "__new" ? html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">New team</h2>${card(teamEditor("__new", true), { cls: "tcard" })}</div>` : teamPageHtml(id));
+    : ["data-tact", "data-tf", "data-ttest", "data-tstatus", "data-tdel", "data-team-load", "data-rt-sel"].map(n => a.hasAttribute(n) ? `[${n}="${CSS.escape(a.getAttribute(n))}"]` : "").find(Boolean) ?? "";
+  const page = () => String(id === "__all" ? allTeamsHtml() : id === "__new" ? newTeamHtml() : teamPageHtml(id));
   if (key && !put("s-teams", page())) return;
   if (key) { el.querySelector(key)?.focus({ preventScroll: true }); return; }
   rtFocus(() => put("s-teams", page()));

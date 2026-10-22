@@ -1,0 +1,116 @@
+{
+ "/api/teams": {
+  "age_seconds": 5,
+  "issues": [],
+  "teams": [
+   {
+    "profile": "fxa",
+    "label": "FxA",
+    "repos": [
+     {
+      "slug": "mozilla/fxa",
+      "role": "work",
+      "write": true
+     }
+    ],
+    "issues": [],
+    "access": {
+     "open": "built-in",
+     "users": 0,
+     "channels": 0,
+     "jira": []
+    },
+    "test": null,
+    "budget": {
+     "month": "2026-10",
+     "month_usd": 12.5,
+     "day_usd": 1,
+     "month_cap": null,
+     "day_cap": null
+    }
+   },
+   {
+    "profile": "example",
+    "label": "Example",
+    "repos": [
+     {
+      "slug": "example/app",
+      "role": "work",
+      "write": true
+     }
+    ],
+    "issues": [
+     {
+      "level": "warn",
+      "text": "nobody can start it"
+     }
+    ],
+    "access": {
+     "open": false,
+     "users": 0,
+     "listed": 0,
+     "channels": 0,
+     "jira": [],
+     "record": true,
+     "status": "draft"
+    },
+    "test": {
+     "result": null,
+     "at": null,
+     "generation": 1792640520000000,
+     "tested": null
+    },
+    "budget": null
+   }
+  ]
+ },
+ "/api/team-admin": {
+  "admin": true,
+  "user": "admin@example.com"
+ },
+ "/api/routines/summary": {
+  "teams": {},
+  "routines": {}
+ },
+ "/api/teams/example": {
+  "schema": 1,
+  "name": "example",
+  "label": "Example",
+  "status": "draft",
+  "repos": [
+   {
+    "slug": "example/app",
+    "role": "work",
+    "default": true
+   }
+  ],
+  "stack": {
+   "kind": "none"
+  },
+  "access": {
+   "open": true,
+   "users": [],
+   "channels": [],
+   "jira_prefixes": []
+  },
+  "prompts": {
+   "goal_md": "Example work."
+  },
+  "generation": "1792640520000000",
+  "tested": null
+ },
+ "/api/teams/example/secrets": {},
+ "/api/teams/example/test": {
+  "result": null,
+  "at": null,
+  "generation": 1792640520000000,
+  "tested": null,
+  "started_at": null,
+  "lines": []
+ },
+ "/api/teams/example/routine-channels": {
+  "at": null,
+  "channels": []
+ },
+ "/api/teams/example/audit": []
+}
