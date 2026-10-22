@@ -456,11 +456,17 @@ _pipeline_hash() {
 # A failed read prints nothing: md5 of a partial read looked like an edit and woke a model pass.
 # The trailing . keeps the bytes the hash saw before, trailing newlines included.
 _pipeline_skip_fingerprint() {
-  local key="$1" v c
+  local key="$1" v c t=""
   v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
   c="$(acli jira workitem comment list --key "$key" --json 2>/dev/null)" || return 0
   c="$(printf '%s\n' "$c" | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body' && echo .)" || return 0
-  printf '%s%s' "${v%.}" "${c%.}" | _pipeline_hash
+  # The plain view prints no labels, and the allow-tooling label is how a tooling skip is unblocked.
+  # Only that label counts: hashing every label would wake each skipped ticket once.
+  if [ -n "${PIPE_TOOLING_LABEL:-}" ]; then
+    t="$(acli jira workitem view "$key" --fields labels --json 2>/dev/null)" || return 0
+    t="$(printf '%s' "$t" | jq -r --arg l "$PIPE_TOOLING_LABEL" 'if (.fields.labels // []) | index($l) then $l else "" end')" || return 0
+  fi
+  printf '%s%s%s' "${v%.}" "${c%.}" "$t" | _pipeline_hash
 }
 
 # pipeline_skip <KEY> [reason...]
