@@ -66,4 +66,19 @@ PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
 check "a link planted at the old error path leaves its target unchanged" "keep" "$(cat "$t/target")"
 DENY_SECRET=fxa-runlayer-agent-token PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "an optional secret the manager has no grant on (PERMISSION_DENIED, as for one that does not exist) reads as empty" "0" "$rc"
+# sudo logs the variables it keeps (ENV=...) to the journal, so the Jira token must not pass through sudo.
+# The stubs log their arguments and, as sudo does, the values of --preserve-env; runuser runs the command.
+cat > "$t/bin/sudo" <<'SH'
+#!/bin/bash
+for a; do case "$a" in --preserve-env=*) for v in $(tr , ' ' <<< "${a#*=}"); do printf 'ENV=%s ' "${!v}"; done ;; esac; done >> "$LOG"
+echo "sudo $*" >> "$LOG"
+SH
+cat > "$t/bin/runuser" <<'SH'
+#!/bin/bash
+echo "runuser $*" >> "$LOG"; while [ "$1" != -- ]; do shift; done; shift; exec "$@"
+SH
+printf '#!/bin/sh\ncat >> "$LOG.acli"\n' > "$t/bin/acli"; chmod +x "$t/bin/"*
+LOG="$t/log" HAVE="fxa-jira-token fxa-jira-email" PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1
+check "the Jira token reaches acli, and no logged command line or sudo ENV holds it" "v-fxa-jira-token|0" \
+  "$(cat "$t/log.acli" 2>/dev/null)|$(grep -c 'v-fxa-jira-token' "$t/log" 2>/dev/null)"
 exit "$fail"

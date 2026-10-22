@@ -57,8 +57,8 @@ unset r s g
 if [ -z "$j" ] || [ -z "$e" ]; then
   echo "fxa-secrets: no fxa-jira-token or fxa-jira-email, so acli keeps its old Jira login" >&2
 elif command -v acli >/dev/null; then
-  # The pipe must start inside fxa's shell: through sudo's own terminal, acli reads no token.
-  T="$j" E="$e" sudo -u fxa -H --preserve-env=T,E bash -c \
+  # The pipe must start inside fxa's shell. runuser, not sudo: sudo logs the kept variables, the token too, to the journal.
+  T="$j" E="$e" HOME="$H" runuser -u fxa -- bash -c \
     'printf "%s\n" "$T" | acli jira auth login --site mozilla-hub.atlassian.net --email "$E" --token' >/dev/null 2>&1 \
     || echo "fxa-secrets: the acli Jira login failed" >&2
 fi
