@@ -607,14 +607,29 @@ def team_test(name, now):
     return out
 
 
+def team_test_tail(name, now):
+    """team_test, plus started_at and the last 25 lines of a log not older than the generation (the same rule)."""
+    out = team_test(name, now)
+    if out is None:
+        return None
+    teams = Path(os.environ.get("FXA_TEAMS_DIR") or Path.home() / ".claude/state/teams")
+    gen_p, log, pidf = (teams / f"{name}{e}" for e in (".gen", ".test.log", ".test.pid"))
+    gm = gen_p.stat().st_mtime if gen_p.exists() else 0
+    fresh = log.exists() and log.stat().st_mtime >= gm
+    lines = [x for x in log.read_text(errors="replace").splitlines() if x.strip()][-25:] if fresh else []
+    started = int(pidf.stat().st_mtime) if fresh and pidf.exists() else None
+    return {**out, "started_at": started, "lines": lines}
+
+
 def team_access(profile, access, records=None):
     """One team's rules; users is a count, so no Slack user ID leaves the server."""
     rec = (records or {}).get(profile)
     if isinstance(rec, dict):  # a record team: its own rules, and nobody can start it unless it is active
         a = rec.get("access") or {}
         active = rec.get("status") == "active"
+        # listed: the people the record names, also for a draft, so a new admin sees that the people saved.
         return {"open": active and a.get("open") is True, "users": len(a.get("users") or []) if active else 0,
-                "channels": len(a.get("channels") or []),
+                "listed": len(a.get("users") or []), "channels": len(a.get("channels") or []),
                 "jira": sorted(set(a.get("jira_prefixes") or []) | ({rec["jira"]} if rec.get("jira") else set())),
                 "record": True, "status": rec.get("status") or "draft"}
     if access is None:
@@ -803,7 +818,7 @@ class Handler(BaseHTTPRequestHandler):
         out = (proc.stdout if proc.returncode == 0 else proc.stderr or "failed").strip().replace(value, "<value>")[-500:]
         self._json(200 if proc.returncode == 0 else 400, {"ok": True, "out": out} if proc.returncode == 0 else {"error": out})
 
-    def _team_ctl(self, user, args, record=None, read=False, cmd="profile"):
+    def _team_ctl(self, user, args, record=None, read=False, cmd="profile", refresh=True):
         """Run a profile (or routine) command as the admin, the record in a private temp file; 409 for a stale
         generation or version. A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
         f = None
@@ -820,7 +835,9 @@ class Handler(BaseHTTPRequestHandler):
             if f:
                 os.unlink(f)
         if proc.returncode != 0:
-            self._json(409 if proc.returncode == 2 else 400, {"error": (proc.stderr or proc.stdout or "failed").strip()[-2000:]})
+            # WARN lines go to stdout and do not refuse; a page shows them beside the error that did.
+            warn = [x for x in (proc.stdout or "").splitlines() if x.startswith("WARN: ")][-20:]
+            self._json(409 if proc.returncode == 2 else 400, {"error": (proc.stderr or proc.stdout or "failed").strip()[-2000:], **({"warn": warn} if warn else {})})
         elif read:
             try:
                 self._json(200, json.loads(proc.stdout or "null"))
@@ -828,7 +845,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(502, {"error": "the profile command did not answer JSON"})
         else:
             self._json(200, {"ok": True, "out": proc.stdout.strip()[-2000:]})
-            if cmd == "profile" and TEAMS.claim():
+            if refresh and cmd == "profile" and TEAMS.claim():
                 threading.Thread(target=TEAMS.refresh, args=(True,), daemon=True).start()
 
     def _team_test(self, user, name):
@@ -904,7 +921,13 @@ class Handler(BaseHTTPRequestHandler):
         if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
             self._json(415, {"error": "send JSON"})
             return
-        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0:
+            self._json(400, {"error": "bad Content-Length"})
+            return
         if n > 65536:
             self._json(413, {"error": "the record is over 64 KB"})
             return
@@ -926,7 +949,7 @@ class Handler(BaseHTTPRequestHandler):
         elif not isinstance(rec, dict):
             self._json(400, {"error": "send {\"record\": {...}}"})
         elif validate:
-            self._team_ctl(user, ["validate", None], rec)
+            self._team_ctl(user, ["validate", None], rec, refresh=False)
         elif not name:
             self._team_ctl(user, ["create", None], rec)
         elif not gen.isdigit():
@@ -1055,6 +1078,13 @@ class Handler(BaseHTTPRequestHandler):
                 args = ["templates"] if not m else ["channels", m.group(1)] if m.group(2) == "routine-channels" \
                     else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]
                 self._team_ctl(user, args, read=True, cmd="routine")
+            return
+        # A team's test, for a page that watches one: its state and log tail. Admins only: the log carries runner text.
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/test", path)
+        if m:
+            if self._admin("GET", path):
+                t = team_test_tail(m.group(1), time.time())
+                self._json(200, t) if t else self._json(404, {"error": f"no team record {m.group(1)}"})
             return
         # One team's full record and its audit: admins only, since a record names Slack users.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})(/audit|/secrets)?", path)

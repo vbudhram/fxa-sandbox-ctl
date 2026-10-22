@@ -74,9 +74,10 @@ check("an unreadable bot env: access null, the error set, no nobody rule, no orp
 # A team record's own rules (the teams index), as counts: active or not, never a Slack user ID.
 recs = {"rusty": {"status": "active", "jira": "RUST", "access": {"users": ["U0EEEE666", "U0FFFF777"], "channels": ["C0RUSTY1"], "jira_prefixes": ["RS"]}},
         "drafty": {"status": "draft", "access": {"open": True, "users": ["U0EEEE666"]}}}
-check("an active record: its users, channels and Jira keys", {"open": False, "users": 2, "channels": 1, "jira": ["RS", "RUST"], "record": True, "status": "active"},
+check("an active record: its users, channels and Jira keys", {"open": False, "users": 2, "listed": 2, "channels": 1, "jira": ["RS", "RUST"], "record": True, "status": "active"},
       server.team_access("rusty", None, recs))
 check("a draft record is open to nobody, whatever it says", (False, 0, "draft"), tuple(server.team_access("drafty", None, recs)[k] for k in ("open", "users", "status")))
+check("a draft record still counts the people it lists, so its admin sees that they saved", 1, server.team_access("drafty", None, recs)["listed"])
 check("no Slack user ID from a record reaches the access", False, "U0EEEE" in json.dumps(server.team_access("rusty", None, recs)))
 per, _ = server.team_issues([{"profile": "drafty", "repos": []}], None, recs)
 check("a draft record: nobody can start it", True, ("warn", "nobody can start it") in [(x["level"], x["text"]) for x in per[0]])
@@ -132,6 +133,11 @@ check("after an edit: no result from the older log, tested 14 at generation 15",
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": r}], None, {"rusty": {"status": "active", "generation": "15"}})
 check("after an edit: the last-passed info shows", True, any(x["text"] == "last passed at generation 14; later edits did not change what a runner uses" for x in per[0]))
 check("a team with no record has no test", None, server.team_test("crew", now))
+files(14, "\n".join(f"line {i}" for i in range(30)) + "\n", pid=os.getpid()); t = server.team_test_tail("rusty", now)
+check("the test tail: the state, the last 25 lines of a fresh log, and when it started", ("running", 25, "line 29", True), (t["result"], len(t["lines"]), t["lines"][-1], isinstance(t["started_at"], int)))
+files(14, "SECRETLINE\n", log_age=500); t = server.team_test_tail("rusty", now)
+check("the test tail of a log older than the generation has no lines and no start", ([], None), (t["lines"], t["started_at"]))
+check("a team with no record has no test tail", None, server.team_test_tail("crew", now))
 recs2 = {"rusty": {"status": "active", "generation": "13"}}
 per, _ = server.team_issues([{"profile": "rusty", "repos": [], "test": {"tested": 12}}], None, recs2)
 check("an active team tested at an older generation: info", True, ("info", "last passed at generation 12; later edits did not change what a runner uses") in [(x["level"], x["text"]) for x in per[0]])

@@ -10,6 +10,8 @@ cat > "$tmp/ctl" <<EOF
 printf '%s\n' "\$*" >> "$tmp/args"; printf '%s\n' "\${FXA_TEAM_ACTOR:-}" >> "$tmp/actor"
 for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$tmp/recfile"; }; done
 [ "\$2" = test ] && sleep 2
+# validate: a WARN line on stdout, as teams_validate prints for a missing GitHub App.
+[ "\$2" = validate ] && echo "WARN: the agent's GitHub App is not installed on a/b, so its changes ship as a diff"
 # secret-set: keep stdin, and echo it back, so a check can see the answer leaves it out.
 [ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
 # routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
@@ -74,6 +76,13 @@ check("a bad status is refused; active runs enable", (400, 200, "profile enable 
       (call("POST", "/api/teams/rusty/status", {"status": "on"}, sig(A, "POST", "/api/teams/rusty/status"))[0],
        call("POST", "/api/teams/rusty/status", {"status": "active"}, sig(A, "POST", "/api/teams/rusty/status"))[0], args()))
 check("delete runs profile delete", (200, "profile delete rusty"), (call("POST", "/api/teams/rusty/delete", {}, sig(A, "POST", "/api/teams/rusty/delete"))[0], args()))
+claims = []; server.TEAMS.claim = lambda: claims.append(1) or False
+open(f"{tmp}/rc", "w").write("1")
+st, b = call("POST", "/api/teams/validate", {"record": rec}, sig(A, "POST", "/api/teams/validate"))
+open(f"{tmp}/rc", "w").write("0")
+check("a failed validate also answers its WARN lines", (400, ["WARN: the agent's GitHub App is not installed on a/b, so its changes ship as a diff"]), (st, b.get("warn")))
+call("POST", "/api/teams/validate", {"record": rec}, sig(A, "POST", "/api/teams/validate"))
+check("a validate does not refresh the teams list; a delete does", (0, 1), (len(claims), (call("POST", "/api/teams/rusty/delete", {}, sig(A, "POST", "/api/teams/rusty/delete")), len(claims))[1]))
 check("validate runs profile validate", (200, "profile validate"), (call("POST", "/api/teams/validate", {"record": rec}, sig(A, "POST", "/api/teams/validate"))[0], args().rsplit(" ", 1)[0]))
 check("an admin reads a record and its audit as JSON", ((200, {"name": "rusty", "generation": "7"}), (200, [{"action": "create"}])),
       (call("GET", "/api/teams/rusty", headers=sig(A, "GET", "/api/teams/rusty")), call("GET", "/api/teams/rusty/audit", headers=sig(A, "GET", "/api/teams/rusty/audit"))))
@@ -135,12 +144,19 @@ check("run and stop: a non-admin gets 403 and nothing runs; an admin's run runs 
 check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),
       (call("POST", L, raw=b"x", headers={**sig(A, "POST", L), "Content-Type": "text/plain"})[0], call("POST", L, raw=b"{" + b" " * 70000 + b"}", headers=sig(A, "POST", L))[0]))
 import http.client
-def raw_len(length):
+def raw_len(length, path=None):
     c = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=5)
-    c.putrequest("POST", L); c.putheader("Host", "localhost"); c.putheader("Content-Type", "application/json"); c.putheader("Content-Length", length)
-    for k, v in sig(A, "POST", L).items(): c.putheader(k, v)
+    c.putrequest("POST", path or L); c.putheader("Host", "localhost"); c.putheader("Content-Type", "application/json"); c.putheader("Content-Length", length)
+    for k, v in sig(A, "POST", path or L).items(): c.putheader(k, v)
     c.endheaders(); r = c.getresponse(); return r.status
 n_ran = len(ran())
+n_args = len(open(f"{tmp}/args").read().splitlines())
+check("a team write with a negative or bad Content-Length gets 400 and runs nothing", (400, 400, n_args),
+      (raw_len("-1", "/api/teams"), raw_len("x", "/api/teams/rusty"), len(open(f"{tmp}/args").read().splitlines())))
+open(f"{tmp}/teams/rusty.test.log", "w").write("== rusty at generation 7: booting agent-x (a few minutes)\nok   the runner booted and the agent answered\n")
+T = "/api/teams/rusty/test"; st, b = call("GET", T, headers=sig(A, "GET", T))
+check("the test route: unsigned 401, a viewer 403, an admin the log tail, and no ctl runs", (401, 403, 200, "ok   the runner booted and the agent answered", n_args),
+      (call("GET", T)[0], call("GET", T, headers=sig("viewer@example.com", "GET", T))[0], st, (b.get("lines") or [""])[-1], len(open(f"{tmp}/args").read().splitlines())))
 check("a negative or bad Content-Length, and a body that is not an object, get 400 and run nothing", (400, 400, 400, 400, n_ran),
       (raw_len("-1"), raw_len("x"), call("POST", L, raw=b"[1]", headers=sig(A, "POST", L))[0], call("POST", L + "/5", raw=b'"x"', headers=sig(A, "POST", L + "/5"))[0], len(ran())))
 # Lessons: an approved lesson reaches every runner, so only a signed team admin may approve, edit or reject one.
