@@ -238,15 +238,20 @@ def hook(_args):
                 text = r if isinstance(r, str) and (int(code.group(3)) != 0 if code else re.search(HOOK_CMD_RE, cmd) and re.search(HOOK_ERR_RE, "\n".join(r.splitlines()[-40:]), re.I)) else None
             if not isinstance(text, str):
                 return 0
-            entries = load()
+            entries, query = load(), hook_query(text)
             by_id = {e["id"]: e for e in entries}
-            hits = sorted((by_id[i] for i, sc in rank(entries, hook_query(text)) if sc >= HOOK_MIN_SCORE), key=old)
+            scores = {i: sc for i, sc in rank(entries, query) if sc >= HOOK_MIN_SCORE}
+            hits = sorted((by_id[i] for i in scores), key=old)
+            why = {i: dict(trig="failure", score=round(sc, 1), q=" ".join(query)[:200]) for i, sc in scores.items()}
         elif event == "PreToolUse" and isinstance(ev.get("tool_input"), dict):
-            hits = []
+            hits, why = [], {}
             for pkg in [k for k in dict.fromkeys(package(p) for p in hook_paths(name, ev["tool_input"]) if p) if k]:
                 if "%s pkg:%s" % (sid, pkg) not in seen:
                     mark.append("%s pkg:%s" % (sid, pkg))
-                    hits += [e for e in trap_hits(None, pkg) if e not in hits]
+                    for e in trap_hits(None, pkg):
+                        if e not in hits:
+                            hits.append(e)
+                            why[e["id"]] = dict(trig="edit", pkg=pkg)
         else:
             return 0
         hits = [e for e in hits if "%s %s" % (sid, e["id"]) not in seen][:3]
@@ -258,7 +263,7 @@ def hook(_args):
             pass
         if hits:
             for e in hits:
-                log(cmd="hook", id=e["id"], auto=True, event=event)
+                log(cmd="hook", id=e["id"], auto=True, event=event, **why.get(e["id"], {}))
             ctx = "\n".join(["Team memory (auto):"] + [hit(e) for e in hits] + ["Run fxa-mem show <id> for the whole entry."])
             print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": ctx}}))
     except Exception:
@@ -272,11 +277,40 @@ def rate(args):
     if args[1] not in RATINGS:
         print("rating must be one of: " + ", ".join(RATINGS))
         return 2
-    if not any(e["id"] == args[0] for e in load()):
-        print("unknown id %s" % args[0])
+    # Several ids, comma separated, so the end-of-run rating is one command.
+    ids, known = [i for i in args[0].split(",") if i], set(e["id"] for e in load())
+    bad = [i for i in ids if i not in known]
+    if not ids or bad:
+        print("unknown id %s" % ",".join(bad or [args[0]]))
         return 1
-    log(cmd="rate", id=args[0], rating=args[1], why=" ".join(args[2:])[:200])
-    print("rated %s %s" % (args[0], args[1]))
+    for i in ids:
+        log(cmd="rate", id=i, rating=args[1], why=" ".join(args[2:])[:200])
+    print("rated %s %s" % (",".join(ids), args[1]))
+    return 0
+
+
+def recalled(_args):
+    """The entries the hooks showed in this run, once each, and any rating the agent gave."""
+    shown, rated = [], {}
+    try:
+        with open(USE, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                if r.get("cmd") == "hook" and r.get("id") not in shown:
+                    shown.append(r.get("id"))
+                elif r.get("cmd") == "rate":
+                    rated[r.get("id")] = r.get("rating")
+    except OSError:
+        pass
+    by_id = {e["id"]: e for e in load()}
+    for i in shown:
+        if i in by_id:
+            print(hit(by_id[i]) + ("  [rated %s]" % rated[i] if i in rated else ""))
+    if not shown:
+        print("The hooks showed no entry in this run.")
     return 0
 
 
@@ -343,7 +377,7 @@ def confirm(args):
 
 
 def usage():
-    print("usage: fxa-mem search <words...> | show <id> | traps [--repo owner/repo] <path> | rate <id> helped|wrong|stale [why...]\n"
+    print("usage: fxa-mem search <words...> | show <id> | traps [--repo owner/repo] <path> | recalled | rate <id>[,<id>...] helped|wrong|stale [why...]\n"
           "       fxa-mem propose --repo owner/repo --kind %s --text T --cite path:line --anchor A --why W --terms T [--path GLOB] [--op update|supersede --id mem-XXXXXXXX]\n"
           "       fxa-mem propose --team --kind %s --text T --cite owner/repo:path:line --anchor A [--cite ... --anchor ...] (up to 3) --why W --terms T [--path GLOB]\n"
           "       fxa-mem confirm <id>" % ("|".join(KINDS), "|".join(TEAM_KINDS)))
@@ -351,7 +385,7 @@ def usage():
 
 
 def main(argv):
-    cmds = dict(search=lambda a: search(a) if a else usage(), show=show, traps=traps, rate=rate, propose=propose, confirm=confirm, hook=hook)
+    cmds = dict(search=lambda a: search(a) if a else usage(), show=show, traps=traps, rate=rate, recalled=recalled, propose=propose, confirm=confirm, hook=hook)
     return cmds[argv[0]](argv[1:]) if argv and argv[0] in cmds else usage()
 
 

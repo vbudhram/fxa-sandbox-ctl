@@ -33,6 +33,19 @@ convention, a decision and its reason, who owns an area):
 
 Most work teaches nothing new. Empty lists are the normal result.
 
+## 2b. Rate what the memory showed you
+
+`fxa-mem recalled` lists the entries that the hooks showed during this work. Rate only
+the exceptions, with one command for each rating, and leave the rest out:
+
+```bash
+fxa-mem rate mem-1234abcd,mem-5678ef01 helped 'saved the debug of the lib build'
+fxa-mem rate mem-9abc2345 wrong 'the script moved to _scripts/'
+```
+
+Use `helped` when an entry changed what you did, `wrong` when it misled you, and `stale`
+when the code no longer matches it. An entry that you did not use needs no rating.
+
 ## 3. Write the file
 
 First write the episode to `/workspace/.fxa-memory.json`. Use any editor or a shell

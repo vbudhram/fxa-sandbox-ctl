@@ -150,4 +150,22 @@ check "an entry shown on a failure does not show again on an edit" "" "$(hk <<< 
 check "bad input prints nothing and exits 0" "|0" "$(out=$(hk <<< 'not json'); echo "$out|$?")"
 check "no memory folder prints nothing and exits 0" "|0" "$(out=$(FXA_MEM_DIR="$tmp/none" hk <<< "$fail_in"); echo "$out|$?")"
 check "an unwritable seen file still recalls" "1" "$(FXA_MEM_SEEN=/nonexistent/seen fm hook <<< "${fail_in/s1/s4}" | grep -c mem-0000000a)"
+
+# The use log says what started each recall, so the digest can tell failure recalls from edit traps.
+: > "$tmp/use.jsonl"; rm -f "$tmp/seen"
+hk <<< "$fail_in" >/dev/null
+check "a failure recall logs its trigger, a score over the cut and the query" "failure|true|true" \
+  "$(jq -r '[.trig, (.score >= 7.5), (.q | test("module"))] | map(tostring) | join("|")' "$tmp/use.jsonl")"
+: > "$tmp/use.jsonl"; hk <<< "${edit_in/e1/e9}" >/dev/null
+check "an edit recall logs its trigger and package" "edit|packages/fxa-content-server" "$(jq -r '.trig + "|" + .pkg' "$tmp/use.jsonl" | sort -u)"
+
+# recalled lists what the hooks showed, once each; rate takes several ids in one command.
+hk <<< "${fail_in/s1/s9}" >/dev/null
+check "recalled lists each shown entry once" "1" "$(fm recalled | grep -c mem-0000000a)"
+check "rate takes several ids and logs one line for each" "2" \
+  "$(fm rate mem-0000000a,mem-0000000b helped saved a debug >/dev/null; jq -s 'map(select(.cmd == "rate" and .rating == "helped")) | length' "$tmp/use.jsonl")"
+check "recalled shows the rating" "1" "$(fm recalled | grep -c 'mem-0000000a.*\[rated helped\]')"
+check "an unknown id in the list exits 1 and logs nothing" "1|2" \
+  "$(fm rate mem-0000000a,mem-deadbeef wrong >/dev/null; echo $?)|$(jq -s 'map(select(.cmd == "rate")) | length' "$tmp/use.jsonl")"
+check "recalled with no recall says so" "The hooks showed no entry in this run." "$(FXA_MEM_USE="$tmp/none.jsonl" fm recalled)"
 exit "$fail"

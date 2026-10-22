@@ -342,7 +342,10 @@ memory_collect() {
           id: (if (.id | type) == "string" and (.id | test("^mem-[0-9a-f]{8}$")) then .id else null end),
           ids: (if (.ids | type) == "array" then [.ids[] | strings | select(test("^mem-[0-9a-f]{8}$"))] else null end),
           rating: (if .rating == "helped" or .rating == "wrong" or .rating == "stale" then .rating else null end), why: (if has("why") then .why | s(200) else null end),
-          auto: (if .auto == true then true else null end) }
+          auto: (if .auto == true then true else null end),
+          trig: (if .trig == "failure" or .trig == "edit" then .trig else null end),
+          pkg: (if (.pkg | type) == "string" and (.pkg | test("^(packages|libs)/[A-Za-z0-9_.@-]+$")) then .pkg else null end),
+          score: (if (.score | type) == "number" then .score else null end) }
       | with_entries(select(.value != null))' 2>/dev/null | tail -n 200 || true)"
     while IFS= read -r l; do
       [ -n "$l" ] || continue
