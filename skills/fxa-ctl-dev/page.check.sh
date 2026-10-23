@@ -83,6 +83,10 @@ ck "Sandboxes review: an instance on its way up or down (provisioning, staging, 
   render(); const r = sbRows(), row = id => r.live.find(x => x.id === id)?.state;
   return [row("sess:agent-ex0001"), row("sess:agent-ex0004"), r.live.find(x => x.key === "EX-101")?.state, codes().filter(c => /ex0001|ex0004|ex-101/.test(c)).length, r.fix.length,
     !r.unknown.some(u => /ex0001|ex0004|ex-101/.test(u.slot))].join("|")')"
+ck "Sandboxes: a stopped session whose runner is left is a fix row after 5 min; without runner_left it waits the 10 min grace" "stopping|fix|stopping" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  const s = AGENTS.sessions.find(x => x.key === "agent-ex0004"), at = ago => { s.stopped_at = Math.floor(Date.now() / 1000) - ago; render(); const r = sbRows();
+    return r.fix.some(x => x.id === "fix:agent-agent-ex0004") ? "fix" : r.live.find(x => x.id === "sess:agent-ex0004")?.state; };
+  const a = at(120), b = at(360); delete s.runner_left; return [a, b, at(360)].join("|")')"
 ck "Sandboxes review: a stopped session with an unsafe key gets no command, and nothing says 'stop null'" "false|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.sessions[3].key = "x;rm -rf ~"; AGENTS.instances.push({ name: "agent-x;rm -rf ~", state: "running", age_seconds: 9000, where: "gce" }); render();
   return [codes().some(c => /rm -rf/.test(c)), /stop null/.test(L().textContent)].join("|")')"
