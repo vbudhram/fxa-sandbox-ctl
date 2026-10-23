@@ -27,21 +27,15 @@ echo '{"state":"paused","profile":"team-a"}' > "$tmp/agent-gggggg.json"
 printf 'PROFILE_OPEN=team-a\nCHANNEL_GATES=COLD000001:CPRIV00001\nCHANNEL_GATES=CGATED0001:CPRIV00001\n' > "$tmp/bot.env"
 printf 'k3y' > "$tmp/hmac"
 FXA_SESSION_DIR="$tmp" FXA_BOT_ENV="$tmp/bot.env" FXA_TEAMS_DIR="$tmp/none" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" python3 - "$(dirname "$0")/../dashboard" "$tmp/ctl" <<'PY'
-import hashlib, hmac, os, sys, threading, time, urllib.error, urllib.request
-sys.path.insert(0, sys.argv[1]); import server
-from http.server import ThreadingHTTPServer
+import os, sys, time
+sys.path.insert(0, sys.argv[1]); import server, testkit
 server.CTL, server.PIPELINE = sys.argv[2], "test"
-srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = testkit.start(server.Handler)
 fail = 0
 def get(q, viewer=None, key=b"k3y"):
-    h = {"Host": "localhost"}
-    if viewer:
-        ts = str(int(time.time()))
-        h.update({"X-Fxa-User": viewer, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(key, f"{viewer}|{ts}|GET|/api/watch/events".encode(), hashlib.sha256).hexdigest()})
-    req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/watch/events?thread={q}", headers=h)
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r: return r.status, r.headers.get("Content-Type"), r.read().decode()
-    except urllib.error.HTTPError as e: return e.code, None, ""
+    h = testkit.sig(viewer, "GET", "/api/watch/events", key=key) if viewer else {}
+    st, hd, b = testkit.request(f"{base}/api/watch/events?thread={q}", headers=h, timeout=10)
+    return (st, hd.get("Content-Type"), b.decode()) if st < 400 else (st, None, "")
 def check(name, want, got):
     global fail
     ok = want == got; fail |= not ok
@@ -68,5 +62,5 @@ os.environ["FXA_BOT_ENV"] = "/nonexistent"
 check("no bot .env: a FxA session is gated", 403, get("C0AB12CD3:1791135361.015169")[0])
 check("an unknown thread: 404", 404, get("C0AB12CD3:1700000000.000001")[0])
 check("a bad thread: 400", 400, get("..%2Fx")[0])
-srv.shutdown(); sys.exit(fail)
+sys.exit(fail)
 PY

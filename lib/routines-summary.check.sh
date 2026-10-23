@@ -20,23 +20,18 @@ INSERT INTO routine_runs (routine_id, period, state, reason, session, cost_usd, 
 INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES (4,'p1','started','agent-d1',$((now-30)));"
 printf k1 > "$tmp/hmac"
 FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com" python3 - "$here/../dashboard" "$tmp" <<'PY'
-import hashlib, hmac, json, os, sys, threading, time, urllib.error, urllib.request
-sys.path.insert(0, sys.argv[1]); import server, fxadb
-from http.server import ThreadingHTTPServer
+import json, os, sys, time
+sys.path.insert(0, sys.argv[1]); import server, fxadb, testkit
 tmp = sys.argv[2]
-srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = testkit.start(server.Handler)
 fail = 0
 def check(name, want, got):
     global fail
     print(("ok   " if want == got else "FAIL ") + name + ("" if want == got else f": want {want!r} got {got!r}")); fail |= want != got
-def sig(user, path):
-    ts = str(int(time.time()))
-    return {"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(b"k1", f"{user}|{ts}|GET|{path}".encode(), hashlib.sha256).hexdigest()}
+def sig(user, path): return testkit.sig(user, "GET", path)
 def get(headers=None):
-    req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}/api/routines/summary", headers={"Host": "localhost", **(headers or {})})
-    try:
-        with urllib.request.urlopen(req) as r: return r.status, r.read().decode()
-    except urllib.error.HTTPError as e: return e.code, e.read().decode()
+    st, _, b = testkit.request(base + "/api/routines/summary", headers=headers)
+    return st, b.decode()
 P = "/api/routines/summary"
 check("no signed user: 401", 401, get()[0])
 check("a signed user who is not a team admin: 403", 403, get(sig("other@example.com", P))[0])
@@ -57,5 +52,5 @@ check("no prompt, report or channel in the body", (False, False, False), ("SECRE
 fxadb.PATH = f"{tmp}/missing/fxa.db"
 code, body = get(sig("admin@example.com", P))
 check("a store that cannot be read: 503 with a fixed text, no path", (503, "the routine store cannot be read", False), (code, json.loads(body)["error"], "missing" in body))
-srv.shutdown(); sys.exit(fail)
+sys.exit(fail)
 PY

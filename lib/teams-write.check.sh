@@ -31,27 +31,21 @@ EOF
 chmod +x "$tmp/ctl"; printf 'k1' > "$tmp/hmac"
 mkdir -p "$tmp/teams"; echo '{}' > "$tmp/teams/rusty.json"
 FXA_TEAMS_DIR="$tmp/teams" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
-import hashlib, hmac, json, os, sys, threading, time, urllib.error, urllib.request
-sys.path.insert(0, sys.argv[1]); import server
-from http.server import ThreadingHTTPServer
+import json, os, sys, time
+sys.path.insert(0, sys.argv[1]); import server, testkit
+from testkit import sig
 tmp = sys.argv[2]
 server.CTL = f"{tmp}/ctl"
 server.TEAMS = server.Feed("teams", ["profile", "list"], 300, 600)
-srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = testkit.start(server.Handler)
 fail = 0
 def check(name, want, got):
     global fail
     print(("ok   " if want == got else "FAIL ") + name + ("" if want == got else f": want {want!r} got {got!r}")); fail |= want != got
-def sig(user, method, path, ts=None, key=b"k1"):
-    ts = str(int(time.time()) if ts is None else ts)
-    return {"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(key, f"{user}|{ts}|{method}|{path}".encode(), hashlib.sha256).hexdigest()}
 def call(method, path, body=None, headers=None, raw=None):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
-    h = {"Host": "localhost", "Content-Type": "application/json", **(headers or {})}
-    req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{path}", data=data, method=method, headers=h)
-    try:
-        with urllib.request.urlopen(req) as r: return r.status, json.loads(r.read() or b"null")
-    except urllib.error.HTTPError as e: return e.code, json.loads(e.read() or b"null")
+    st, _, b = testkit.request(base + path, method, data, {"Content-Type": "application/json", **(headers or {})})
+    return st, json.loads(b or b"null")
 # The last command a route ran; the teams list refresh that follows a write runs in the background, so skip it.
 def args(): return ([l for l in open(f"{tmp}/args").read().splitlines() if l != "profile list"] or [""])[-1] if os.path.exists(f"{tmp}/args") else ""
 rec = {"schema": 1, "name": "rusty", "repos": [{"slug": "a/b", "role": "work"}]}
@@ -192,7 +186,7 @@ check("a routine write that is not JSON, or over 64 KB, is refused", (415, 413),
       (call("POST", L, raw=b"x", headers={**sig(A, "POST", L), "Content-Type": "text/plain"})[0], call("POST", L, raw=b"{" + b" " * 70000 + b"}", headers=sig(A, "POST", L))[0]))
 import http.client
 def raw_len(length, path=None):
-    c = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=5)
+    c = http.client.HTTPConnection("127.0.0.1", int(base.rsplit(":", 1)[1]), timeout=5)
     c.putrequest("POST", path or L); c.putheader("Host", "localhost"); c.putheader("Content-Type", "application/json"); c.putheader("Content-Length", length)
     for k, v in sig(A, "POST", path or L).items(): c.putheader(k, v)
     c.endheaders(); r = c.getresponse(); return r.status
@@ -210,5 +204,5 @@ os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")
 check("no key on the server: no write, even signed", 401, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
-srv.shutdown(); sys.exit(fail)
+sys.exit(fail)
 PY
