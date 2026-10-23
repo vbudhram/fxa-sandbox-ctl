@@ -447,7 +447,8 @@ EOF
     review="Use the fxa-reviewer subagent (Agent tool) to review the diff: it runs /fxa-review-quick, /fxa-vm-selfcheck
    and /fxa-unslop Part 1 and returns only the findings. Fix every blocker it reports."
     write="Use the fxa-writer subagent to write the PR title and body: it runs /create-pr-description, /humanizer
-   and /fxa-unslop Part 2 and writes /workspace/.fxa-pr-body.md and .fxa-pr-title.txt. Tell it there is no Jira ticket.
+   and /fxa-unslop Part 2 and writes /workspace/.fxa-pr-body.md and .fxa-pr-title.txt. Tell it there is no Jira ticket,
+   and give it each test result you ran outside /fxa-verify (coverage, repeat runs), so the body keeps them.
    Use those files for pr_title and pr_body. If its reply does not list all three skills
    under 'Skills run', ask it again to run the missing ones."
   fi

@@ -27,7 +27,8 @@ the repo's rules for a PR, and a hand-written body missed them in a test on
 2. Skill `humanizer` on its output, then Skill `fxa-unslop` (Part 2).
 3. Check each claim against the diff (check 5 of `/fxa-vm-selfcheck`): name the
    diff line or the `it()` title that proves it, and delete a claim with no match.
-   The testing section must match the verdict line by line.
+   The testing section must match the verdict line by line. A test result the caller gives you
+   (a coverage figure, a repeat run) has no verdict line: keep it as given, after the verdict lines.
 4. Write the body to /workspace/.fxa-pr-body.md and the title (a scoped
    conventional commit subject) to /workspace/.fxa-pr-title.txt.
 5. In `## Screenshots`, embed each file as `![what it shows](name.png)`. The host
