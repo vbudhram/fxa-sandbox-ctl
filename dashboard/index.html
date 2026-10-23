@@ -63,9 +63,9 @@
   a { color:inherit; text-decoration:none; border-radius:2px; }
   a:hover { text-decoration:underline; text-underline-offset:2px; }
   a:focus-visible, button:focus-visible, summary:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
-  .stats a, .alert .what a { color:var(--link); text-decoration:underline; text-underline-offset:2px; }
+  .alert .what a { color:var(--link); text-decoration:underline; text-underline-offset:2px; }
+  .sb-panel a, .right .rh a { color:var(--link); }
   .stats a:hover { color:var(--link-hover); }
-  .stats a b { color:inherit; }
   [hidden] { display:none !important; }
 
 
@@ -227,7 +227,7 @@
   .tbud { min-width:180px; } .tbud .meter { margin-top:4px; }
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
  
-  #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } .sbd-scroll { overflow-x:auto; } .sbd-scroll .table td { white-space:nowrap; } .sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
+  .sbdone h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } .sbd-scroll { overflow-x:auto; } .sbd-scroll .table td { white-space:nowrap; } .sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
   .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
@@ -608,6 +608,7 @@
 .sbl li.bad > button { color:var(--bad); }
 .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; } .sbl button:hover:not(:disabled) { background:none; text-decoration:underline; }
 .sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
+.sbl .f > .vh { position:static; width:auto; height:auto; overflow:visible; clip:auto; color:var(--faint); }
 .sbl .tb .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
 .sbl .tb.over { color:var(--bad); }
 .sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
@@ -655,7 +656,7 @@
   <section class="wide card" id="s-done" data-views="pipeline:done"></section>
   <section class="wide card" id="s-review" data-views="pipeline:queue"></section>
   <section class="wide card" id="s-queue" data-views="pipeline:queue"></section>
-  <section class="wide card" id="s-sb" data-views="runners"><div id="sb-head"></div><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done"></div></section>
+  <section class="wide card stack lg" id="s-sb" data-views="runners"><div id="sb-head"></div><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done" class="sbdone"></div></section>
 </div>
 </div>
 </main>
@@ -3134,10 +3135,10 @@ function sbCards() {
   // Cost: the manager is always on; the host has a rate only while up, and no 7 day total (no up-time record).
   const mgr = g?.infra?.manager, fc = g?.infra?.firecracker_host, hh = statsOk ? sbHostHours(rows, lo, now) : null;
   const cost = f.unknown ? html`<div class="big">?</div><div class="sub">Cost unknown: the agents feed is not current.</div>`
-    : html`<div class="kv"><b>Manager</b> <span>${mgr ? `${usd(mgr)}/h · $${Math.round(mgr * 168)} in 7 days, always on` : "rate not set"}</span></div>
-      ${host ? html`<div class="kv"><b>Firecracker host</b> <span>${fc > 0 ? `${usd(fc)}/h while up · up now` : host.replace(/^Firecracker host /, "")}</span></div>
-        <div class="kv"><b>Host use</b> <span>${hh == null ? unk : `Sessions used the host ${hrs(hh)} in 7 days`}</span></div>` : ""}
-      <div class="kv"><b>GCE sandboxes now</b> <span>${g?.runner_hourly_usd == null ? "?" : `${usd(g.runner_hourly_usd)}/h`}</span></div>
+    : html`${kvRow("Manager", mgr ? `${usd(mgr)}/h · $${Math.round(mgr * 168)} in 7 days, always on` : "rate not set")}
+      ${host ? html`${kvRow("Firecracker host", fc > 0 ? `${usd(fc)}/h while up · up now` : host.replace(/^Firecracker host /, ""))}
+        ${kvRow("Host use", hh == null ? unk : `Sessions used the host ${hrs(hh)} in 7 days`)}` : ""}
+      ${kvRow("GCE sandboxes now", g?.runner_hourly_usd == null ? "?" : `${usd(g.runner_hourly_usd)}/h`)}
       <div class="sub"><a href="#stats/spend">LLM spend is on Stats ›</a></div>`;
   const box = (lbl, body) => card(html`<div class="lbl">${lbl}</div>${body}`, { sm: true, cls: "ovc sb-card" });
   return String(html`${box("Pipeline slots · GCE", pipe)}${box("Session slots", sess)}${box("Cost", cost)}`);
@@ -3807,11 +3808,10 @@ function renderSbList() {
     ${freeLine ? html`<h3 class="sbh">Free slots</h3><p class="sbfree">${freeLine}</p>` : ""}
     ${a != null ? html`<p class="sbage">Agents read ${ago(a)}${i ? ` · the next read in about ${Math.max(0, Math.round(i - a))} s` : ""}</p>` : ""}`));
 }
-// The other slices add renderSbCards and renderSbDone; each part fails alone (i356 D26).
+// Each part fails alone (i356 D26).
 function renderSb() {
   safeRender(renderSbHead, "sb-head"); safeRender(renderSbList, "sb-list");
-  typeof renderSbCards === "function" && safeRender(renderSbCards, "sb-cards");
-  typeof renderSbDone === "function" && safeRender(renderSbDone, "sb-done");
+  safeRender(renderSbCards, "sb-cards"); safeRender(renderSbDone, "sb-done");
 }
 document.addEventListener("click", e => {
   const b = e.target.closest?.("[data-sbsel]"); if (!b) return;

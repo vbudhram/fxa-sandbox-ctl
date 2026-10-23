@@ -456,8 +456,8 @@ ck "i407 cards: 7 day runs and sessions, the cost lines, the host state from fc_
   AGENTS.infra.fc_state = "none"; renderSbCards(); const c = t();
   AGENTS.sessions.push({ key: "agent-ex0002", state: "active", boot_backend: "gce", created: now - 60 }); renderSbCards(); const d = t(), gseg = !!n.querySelector(".sbstrip i.gce");
   STATS_ERR = "stats read failed"; renderSbCards(); const e = t();
-  return [/7 days: 41 runs, 63 h/.test(a), /7 days: 23 sessions, peak 3 of 4 · boot median 41 s/.test(a), /Manager \$0\.21\/h · \$35 in 7 days, always on/.test(a), /Firecracker host stopped: it starts for the next session/.test(a),
-    /Sessions used the host 3 h in 7 days/.test(a), /GCE sandboxes now \$0\.13\/h/.test(a), noHostAlways, /Firecracker host state unknown: the host did not answer/.test(b), !/Firecracker/.test(c),
+  return [/7 days: 41 runs, 63 h/.test(a), /7 days: 23 sessions, peak 3 of 4 · boot median 41 s/.test(a), /Manager ?\$0\.21\/h · \$35 in 7 days, always on/.test(a), /Firecracker host ?stopped: it starts for the next session/.test(a),
+    /Sessions used the host 3 h in 7 days/.test(a), /GCE sandboxes now ?\$0\.13\/h/.test(a), noHostAlways, /Firecracker host ?state unknown: the host did not answer/.test(b), !/Firecracker/.test(c),
     /2 of 4 busy/.test(d) && /1 on GCE/.test(d) && gseg, /7 days: unknown: Stats read failed/.test(e) && !/7 days: 0|used the host 0/.test(e)].join("|")')"
 ck "i407 cards: an old agents feed gives ? on each card, not a 0" "3|false" "$(bash "$p" '#runners' --fixture "$C" --width 1280 --probe '
   const n = document.getElementById("sb-cards"); STATE.agents_age_seconds = 99999; renderSbCards();
