@@ -126,4 +126,7 @@ echo 2000 > "$FAKE_NOW_FILE"; PATH="$tmp/race:$PATH" f task --id agent-rc1 --own
 check "a task's session starts at the time its call was logged" "$(tail -1 "$FAKE_CTL_LOG" | jq -r .at)" "$(cat "$FAKE_CTL_DIR/agent-rc1/t0")"
 echo 2100 > "$FAKE_NOW_FILE"; PATH="$tmp/race:$PATH" f finish --session agent-rc1 >/dev/null 2>&1
 check "a finish starts at the time its call was logged" "$(tail -1 "$FAKE_CTL_LOG" | jq -r .at)" "$(cut -d' ' -f1 "$FAKE_CTL_DIR/agent-rc1/fins")"
+echo 3000 > "$FAKE_NOW_FILE"; f task --id agent-ef1 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 3005 > "$FAKE_NOW_FILE"
+check "FAKE_EVENTS_FAIL_AFTER: events answers before that time and exits 1 from then on" "0|1" \
+  "$(FAKE_EVENTS_FAIL_AFTER=6 f events agent-ef1 >/dev/null 2>&1; echo $?)|$(echo 3006 > "$FAKE_NOW_FILE"; FAKE_EVENTS_FAIL_AFTER=6 f events agent-ef1 >/dev/null 2>&1; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

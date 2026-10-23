@@ -35,6 +35,7 @@
 #   FAKE_ROUTINE_TASK_FAIL  task --source routine exits 1 with this error and no session, as ctl refusing the run does
 #   FAKE_TASK_CAP  the first n tasks (not routine runs) exit 1 at the session cap, as ctl does when every runner is busy
 #   FAKE_IDLE_S    session idle-sweep pauses a session whose last turn ended this many seconds ago, and prints "paused <key>"
+#   FAKE_EVENTS_FAIL_AFTER  from that many seconds after a session's start, events exits 1 (a runner that stopped answering)
 #   FAKE_ROUTINE_DONE fail: routine done exits 1, as a store error does; stopped: it answers changed false, state stopped
 #   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
 #                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
@@ -108,6 +109,8 @@ script() {
 events() {
   local k="$1" since="${3:-0}" sc
   [ -f "$DIR/$k/t0" ] || { jq -n --argjson c "$since" '{cursor: $c, state: "stopped", events: []}'; return; }
+  # FAKE_EVENTS_FAIL_AFTER=<s>: from that long after the start, every poll fails, as when the runner stops answering.
+  [ -z "${FAKE_EVENTS_FAIL_AFTER:-}" ] || [ "$AT" -lt $(( $(cat "$DIR/$k/t0") + FAKE_EVENTS_FAIL_AFTER )) ] || { echo "ERROR: ssh to the runner timed out" >&2; exit 1; }
   sc="$(script "$k")"
   # A run that went past the tape: say so once, so the results show where it left the recording.
   if [ "$(jq .exhausted <<< "$sc")" -gt 0 ] && [ ! -f "$DIR/$k/exhausted" ] && [ -n "${FAKE_CTL_LOG:-}" ]; then
