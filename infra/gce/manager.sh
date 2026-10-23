@@ -37,7 +37,10 @@ fi
 if [ "$MODE" = sync ]; then
   # Fast-forward only: a checkout edited on the VM stops the sync instead of
   # being overwritten. The bot and the dashboard load the code at start.
-  ssh_vm 'sudo -u fxa -H bash -c '"'"'
+  # One sync at a time: two npm ci runs at once in the bot tree left the live bot without a file.
+  ssh_vm 'sudo touch /run/fxa-sync.lock; exec 9</run/fxa-sync.lock
+  flock -n 9 || { echo "another sync runs; waiting for it (up to 10 min)"; flock -w 600 9; } || { echo "sync: another sync still runs after 10 min; nothing changed"; exit 1; }
+  sudo -u fxa -H bash -c '"'"'
     set -e
     old="$(git -C ~/Desktop/working2/fxa-sandbox-ctl rev-parse HEAD)"
     for r in fxa-sandbox-ctl fxa-agent-bot; do
