@@ -138,6 +138,8 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("all teams: four tiles and one row per team, names escaped", `${(all.match(/class="[^"]*\bstat\b/g) || []).length}|${(all.match(/<tr><td><a /g) || []).length}|${/<img src=x>/.test(all)}`, "4|3|false");
   t("all teams: a cost no team reports shows a dash, never a zero", /Cost this month<\/span><span class="big">—</.test(all), true);
   t("all teams: an admin gets New team at the top, and a card for the team that is not set up", `${/<a class="btn" href="#teams\/new" data-team-new>New team/.test(all)}|${/href="#teams\/ent\/settings"[^]*Off\. Test it to turn it on again/.test(all)}`, "true|true");
+  const appInfo = { profile: "x", issues: [{ level: "info", text: "org/repo: the agent's GitHub App is not installed on it" }, { level: "info", text: "something else" }] };
+  t("all teams: an info missing App shows App missing with the repo, and does not need attention", `${/App missing<\/span> <span class="mono na">org\/repo</.test(teamProblem(appInfo))}|${/none/.test(teamProblem({ issues: [{ level: "info", text: "something else" }] }))}|${!!teamNeeds(appInfo)}`, "true|true|false");
   TTAB = "overview"; const pg = String(teamPageHtml("ent"));
   t("team page: a team that is not active has a heading to focus, and only Settings and Routines", `${/<h2 class="th" id="team-h" tabindex="-1">Entitlements/.test(pg)}|${(pg.match(/class="ttab"/g) || []).length}|${/href="#teams\/ent\/routines"/.test(pg)}`, "true|2|true");
   t("team page: a team that is not active opens on Settings, with the step left", /href="#teams\/ent\/settings" aria-current="page">Settings<span class="n">1 left/.test(pg), true);

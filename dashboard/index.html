@@ -2085,9 +2085,11 @@ function testCell(t) {
 // The first problem of a team, short: a missing GitHub App names its repo.
 function teamProblem(t) {
   // A draft that nobody can start yet is expected: its step left says so.
-  const is = (t.issues ?? []).filter(x => !(teamDraftOf(t) && x.text === "nobody can start it")), i = is.find(x => x.level === "bad") ?? is.find(x => x.level === "warn");
+  // A missing App is info (the team still works through the bot's token), but it is the row's one problem: show it, not "none".
+  const app = x => /^(\S+): the agent's GitHub App is not installed/.exec(x.text);
+  const is = (t.issues ?? []).filter(x => !(teamDraftOf(t) && x.text === "nobody can start it")), i = is.find(x => x.level === "bad") ?? is.find(x => x.level === "warn") ?? is.find(app);
   if (!i) return html`<span class="na">none</span>`;
-  const m = i.text.match(/^(\S+): the agent's GitHub App is not installed/);
+  const m = app(i);
   return m ? html`${tag("App missing", "warn")} <span class="mono na">${m[1]}</span>` : html`${tag(i.level === "bad" ? "problem" : "check", i.level)} <span class="na">${i.text}</span>`;
 }
 function allTeamsHtml() {
