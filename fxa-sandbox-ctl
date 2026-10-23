@@ -68,7 +68,7 @@ COMMANDS:
   jira <ISSUE-KEY> [options]   Fetch a Jira issue and spin up an agent on a new worktree
   finish [--worktree <slot>]   Push the worktree's branch and open a PR from the
                                agent's handoff file (default: the shared worktree)
-  tail [<name>]                Print a snapshot of the agent's screen scrollback
+  tail [<name>|<KEY>]          Print a snapshot of the agent's screen scrollback
                                (for live view, use `attach`)
   run [directory] -p <prompt>  Start a new agent (defaults to current directory)
   switch <name> <directory>    Switch an agent's workspace directory
@@ -792,6 +792,8 @@ cmd_tail() {
     return 1
   fi
 
+  # A pass names the run by its Jira key; the agent is the key's branch (FXA-1 runs as fxa-1). Linux paths keep case.
+  [ -f "${LOG_DIR}/${name}.meta" ] || ! [[ "$name" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || name="$(worktree_branch_for "$name")"
   local meta="${LOG_DIR}/${name}.meta"
   if [ ! -f "$meta" ]; then
     echo "ERROR: no metadata for agent '${name}'" >&2
