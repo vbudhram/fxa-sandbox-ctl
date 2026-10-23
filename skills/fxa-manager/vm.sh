@@ -277,10 +277,9 @@ echo "== open errors"; ./fxa-sandbox-ctl errors 2>/dev/null | grep -cE "^[0-9a-f
 echo "== disk"; df -h / | tail -1 | awk '{print "  " $4 " free of " $2}'
 echo "== runners (name, status, the controller that started it)"; gcloud compute instances list --filter='name~^agent-' --format='value(name,status,labels.fxa-controller)' 2>/dev/null | sed 's/^/  /'
 echo "== secrets the VM can read (present or missing, never the value)"
-# Every secret fxa-secrets reads, from the script itself, so a new one shows here too. Some are optional.
-opt=" fxa-claude-token fxa-runlayer-agent-token fxa-sentry-token fxa-grafana-token fxa-agent-memory-key fxa-dashboard-hmac "
+# Every secret fxa-secrets reads, from the script itself, so a new one shows here too. The ones it reads with opt_get are optional.
 for s in $(sudo grep -oE '(need|get) fxa-[a-z0-9-]+' /home/fxa/Desktop/working2/fxa-sandbox-ctl/infra/gce/fxa-secrets.sh | awk '{print $2}' | sort -u); do
-  case "$opt" in *" $s "*) o=" (optional)" ;; *) o="" ;; esac
+  sudo grep -q "opt_get $s" /home/fxa/Desktop/working2/fxa-sandbox-ctl/infra/gce/fxa-secrets.sh && o=" (optional)" || o=""
   gcloud secrets versions access latest --secret "$s" >/dev/null 2>&1 && printf '  %-26s present\n' "$s" || printf '  %-26s missing%s\n' "$s" "$o"
 done
 EOF
