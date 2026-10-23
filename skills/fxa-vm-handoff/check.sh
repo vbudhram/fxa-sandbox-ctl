@@ -51,7 +51,7 @@ if [ -f "$guard" ] && command -v python3 >/dev/null; then
       | while IFS= read -r -d '' f; do git diff -U0 --text --no-color --no-index -- /dev/null "$f"; done; } > "$diff" 2>/dev/null
   while IFS= read -r h; do
     [ -n "$h" ] && problems+=("personal or internal data, which GitHub must not get: $h (in a test, use example.com, or 192.0.2.x or 203.0.113.x for an IP)")
-  done < <(python3 "$guard" "$prose" "$diff" 2>/dev/null || true)
+  done < <(python3 "$guard" "$prose" "$diff" . 2>/dev/null || true)
   rm -f "$prose" "$diff"
 fi
 if [ -s "$done_file" ]; then
