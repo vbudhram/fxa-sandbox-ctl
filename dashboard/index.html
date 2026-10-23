@@ -7,19 +7,19 @@
 <link rel="icon" id="favicon" href="/icon.png">
 <script>try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
-  /* FxA design tokens (libs/shared/assets tailwind.config.js), as fxa-settings applies them. */
+  /* Design tokens: the Graphite scheme, cool greys with a teal accent, in light and dark. */
   :root {
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s6:24px;
     --r-sm:4px; --r-md:8px; --r-lg:14px; --r-pill:999px;
     --t-tiny:11px; --t-label:12px; --t-sub:13px; --t-body:14px; --t-heading:16px; --t-head:18px; --t-page:22px; --t-kpi:28px; --t-huge:32px;
 
-    --bg:#f6f4f0; --panel:#fffdfa; --sunk:#eeebe5; --line:#e6e1da; --line2:#87807a; --hover:#ece8e1;
-    --ink:#24211d; --dim:#5c564e; --faint:#6c665e;
-    --ok:#25705a; --warn:#a85420; --bad:#b23a4a; --info:#3866ab; --purple:#7a62c9; --link:#3866ab; --link-hover:#2c5390;
-    --okbg:#e5f1eb; --warnbg:#f8ebe0; --badbg:#f7e4e6; --infobg:#e6edf7;
-    --amber:#c9732f;
-    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#b0802a; --chart-muted:#99928a;   /* chart series, in fixed order; never the status colours */
-    --card-border:transparent; --shadow:0 1px 2px rgb(40 30 20 / .04), 0 6px 20px rgb(40 30 20 / .05);
+    --bg:#f6f8fa; --panel:#ffffff; --sunk:#eef1f4; --line:#d8dee4; --line2:#8c959f; --hover:#eef1f4;
+    --ink:#1f2328; --dim:#4b535d; --faint:#59636e;
+    --ok:#187a34; --warn:#9a5b00; --bad:#cf222e; --info:#0969da; --purple:#8250df; --link:#0b7380; --link-hover:#075861;
+    --okbg:#dafbe1; --warnbg:#fff4d6; --badbg:#ffebe9; --infobg:#ddf4ff;
+    --amber:#bf8700;
+    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#b0802a; --chart-muted:#8c959f;   /* chart series, in fixed order; never the status colours */
+    --card-border:#d8dee4; --shadow:0 1px 2px rgb(31 35 40 / .06);
     --shadow-hover:0 2px 14px rgb(58 57 68 / .2); --shadow-pop:0 10px 30px rgb(0 0 0 / .25);
     --shadow-drawer:0 0 30px rgb(0 0 0 / .18); --shadow-dialog:0 20px 60px rgb(0 0 0 / .3);
     /* The terminal is dark in both themes. */
@@ -28,7 +28,7 @@
     /* FxA dropped Metropolis and Inter in 2024 (FXA-9058): the system stack, for body and headings */
     --sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue",sans-serif;
     --head:var(--sans);
-    --purpletxt:#5e48ad; --purplebg:#ece7f8; --on-strong:#ffffff;   /* purple-700 on purple-50; text on a solid badge */
+    --purpletxt:#6639ba; --purplebg:#f3ebff; --on-strong:#ffffff;   /* purple-700 on purple-50; text on a solid badge */
     --rail:72px; --side:300px; --right:340px;
     --mono:Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
   }
@@ -36,24 +36,24 @@
   :root[data-theme="light"] { color-scheme:light; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg:#18171a; --panel:#211f24; --sunk:#2a282e; --line:#36343b; --line2:#77737d; --hover:#302e35;
-      --ink:#efece7; --dim:#c9c4bc; --faint:#a29c93;
-      --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
-      --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
-      --amber:#e0a06a;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#716d77;
-      --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
+      --bg:#1b1f24; --panel:#22272e; --sunk:#2a3038; --line:#333b45; --line2:#6b7682; --hover:#2c333c;
+      --ink:#e6edf3; --dim:#b8c2cc; --faint:#959fab;
+      --ok:#5fc98f; --warn:#e3b341; --bad:#f07178; --info:#6cb6ff; --purple:#b392f0; --link:#4fc3c7; --link-hover:#7fd8db;
+      --okbg:#1c3226; --warnbg:#33290f; --badbg:#3a1f23; --infobg:#1d2f45;
+      --amber:#e3b341;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#6b7682;
+      --card-border:#333b45; --shadow:none; --purpletxt:#c4a8f5; --purplebg:#2e2645; --on-strong:#1b1f24;
     }
   }
   :root[data-theme="dark"] {
     color-scheme:dark;
-    --bg:#18171a; --panel:#211f24; --sunk:#2a282e; --line:#36343b; --line2:#77737d; --hover:#302e35;
-    --ink:#efece7; --dim:#c9c4bc; --faint:#a29c93;
-    --ok:#6fc3a2; --warn:#e0a06a; --bad:#e98d98; --info:#86a8e3; --purple:#a993ea; --link:#86a8e3; --link-hover:#a5bfee;
-    --okbg:#1c2e27; --warnbg:#33271c; --badbg:#36222a; --infobg:#1f2a3c;
-    --amber:#e0a06a;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#716d77;
-    --card-border:#36343b; --shadow:none; --purpletxt:#b5a3ee; --purplebg:#2e2645; --on-strong:#18171a;
+    --bg:#1b1f24; --panel:#22272e; --sunk:#2a3038; --line:#333b45; --line2:#6b7682; --hover:#2c333c;
+    --ink:#e6edf3; --dim:#b8c2cc; --faint:#959fab;
+    --ok:#5fc98f; --warn:#e3b341; --bad:#f07178; --info:#6cb6ff; --purple:#b392f0; --link:#4fc3c7; --link-hover:#7fd8db;
+    --okbg:#1c3226; --warnbg:#33290f; --badbg:#3a1f23; --infobg:#1d2f45;
+    --amber:#e3b341;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#6b7682;
+    --card-border:#333b45; --shadow:none; --purpletxt:#c4a8f5; --purplebg:#2e2645; --on-strong:#1b1f24;
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
