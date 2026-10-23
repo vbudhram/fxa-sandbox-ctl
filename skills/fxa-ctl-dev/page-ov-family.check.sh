@@ -35,7 +35,7 @@ run '
 # Stale is old data past 3 intervals; failed is what the server sends when a read fails, with or without old data.
 run '
   const CARDS = { "ov-head": ["agents"], "ov-needs": ["snapshot", "agents"], "ov-main": ["stats"], "ov-budget": ["stats", "teams"], "ov-runs": ["stats", "runs"],
-    "ov-llm": ["stats"], "ov-hours": ["stats"], "ov-teams": ["stats", "agents", "teams"], "ov-src": ["stats"] };
+    "ov-llm": ["stats"], "ov-hours": ["stats"], "ov-teams": ["stats", "agents", "teams"] };
   const FEEDS = {
     "snapshot stale": () => { STATE.age_seconds = 9999; }, "snapshot failed": () => { STATE.error = "the snapshot read failed"; SNAP = STATE.snapshot = null; },
     "stats stale": () => { STATE.stats_age_seconds = 9999; }, "stats failed": () => { STATS_ERR = "the stats feed could not be read (HTTP 500)"; },

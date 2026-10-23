@@ -264,7 +264,7 @@ ck "The range buttons repaint after a click, a legend link sets the source, an o
 # The Overview fixture (sample data only, times relative to the run): every card renders, none errors.
 O="$(dirname "$0")/page-fixture-overview.json"
 ck "overview fixture: every card heading, no section error, relative times read as recent" "true|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  const hs = ["ov-main", "ov-needs", "ov-budget", "ov-runs", "ov-llm", "ov-hours", "ov-teams", "ov-src"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
+  const hs = ["ov-main", "ov-needs", "ov-budget", "ov-runs", "ov-llm", "ov-hours", "ov-teams"].every(id => document.getElementById(id)?.textContent.trim().length > 0);
   OV_METRIC = "merged"; renderOvMain(); const m = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"] .big")?.textContent;
   return [hs, !document.getElementById("main").innerText.includes("did not render"), m === "6"].join("|")')"
 # Overview layout: no sideways scroll at 500 (the smallest headless width) and 640, where the rail and the
@@ -293,11 +293,11 @@ ck "rail at 768 and 1080 px: two cards in one row end within 1px of each other" 
 ck "overview at 1080, 1280 and 2000 px: the three cards share a height and the main card ends at the rail" "true|true true|true true|true" "$(for w in 1080 1280 2000; do bash "$p" '#overview' --fixture "$O" --width $w --probe '
   const r = id => document.getElementById(id).getBoundingClientRect(), hs = ["ov-runs", "ov-llm", "ov-hours"].map(id => r(id).height), m = r("ov-main"), rl = document.querySelector(".ovgrid > .ovrail").getBoundingClientRect();
   return [Math.max(...hs) - Math.min(...hs) < 1, Math.abs(m.top - rl.top) > 1 || Math.abs(m.bottom - rl.bottom) < 1].join("|")'; done | paste -sd' ' -)"
-# The four source cards make rows of 2 + 2 or 4, never 3 + 1, and a long name ends in an ellipsis on one line.
-SRC='const r = {}; for (const c of document.querySelectorAll("#ov-src .srcm")) { const t = Math.round(c.getBoundingClientRect().top); r[t] = (r[t] ?? 0) + 1; }
-  const one = [...document.querySelectorAll("#ov-src .smh b")].every(b => b.getClientRects().length === 1 && b.getBoundingClientRect().height < 2 * parseFloat(getComputedStyle(b).lineHeight) && b.title === b.textContent);
-  return [Object.values(r).join(","), one].join("|")'
-ck "source cards at 500, 768 and 1280 px: rows of 2,2, 2,2 and 4, each name on one line with a title" "2,2|true 2,2|true 4|true" "$(for w in 500 768 1280; do bash "$p" '#overview' --fixture "$O" --width $w --probe "$SRC"; done | paste -sd' ' -)"
+# The legend under the spend chart gives each source's spend and run count; a stale-feed note is in the warn colour.
+ck "overview: the legend gives each source's runs, and a feed note has the warn colour" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  OV_METRIC = "spend"; renderOvMain(); const leg = /runs/.test(document.querySelector("#ov-main .ovleg")?.textContent ?? "");
+  const d = document.createElement("div"); d.className = "ovknote"; document.getElementById("ov-main").append(d);
+  return [leg, getComputedStyle(d).color === getComputedStyle(document.documentElement).getPropertyValue("--warn").trim().replace(/^#(..)(..)(..)$/, (_, r, g, b) => `rgb(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)})`)].join("|")')"
 for r in '#pipeline/belts' '#teams'; do
   ck "$r at 500 px still has no sideways scroll" "true" "$(bash "$p" "$r" --fixture "$F" --width 500 --probe 'return document.documentElement.scrollWidth <= innerWidth')"
 done
@@ -341,19 +341,16 @@ ck "O6 KPIs: the change against the period before in %, points and minutes, colo
 ck "Rate and Median run with no pipeline row: an empty box, not an empty axis" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   STATS = { ...STATS, rows: [{ at: new Date(Date.now() - 86400000).toISOString(), src: "slack", usd: 1 }] }; STATS_ERR = null; OV_RANGE = "7d";
   return ["rate", "median"].map(m => { OV_METRIC = m; renderOvMain(); const c = document.getElementById("ov-main"); return !c.querySelector(".ovchart") && /No pipeline run in the last/.test(c.querySelector(".emptybox")?.textContent ?? ""); }).join("|")')"
-ck "O6 Teams: rows by stats profile (none is fxa), work now by team, runs and PRs in the range, the budget bar, no link for a bad name" "fxa|1,2,1|0,1,0|warn 90%|DIV" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+ck "O6 Teams: rows by stats profile (none is fxa), work now by team, runs and PRs in the range, the budget bar, no link for a bad name" "fxa|1,2,1|0,1,0|warn 90%|no link" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const iso = d => new Date(Date.now() - d * 86400000).toISOString();
   TEAMS = { teams: [{ profile: "two", label: "Two", access: { open: true }, budget: { month_usd: 45, month_cap: 50 } }, { profile: "fxa", label: "FxA" }, { profile: "../x", label: "Bad" }] };
   STATS = { ...STATS, rows: [{ at: iso(1), src: "pipeline", pr: true, usd: 3 }, { at: iso(1), src: "slack", usd: 1, profile: "fxa" }, { at: iso(2), src: "slack", usd: 2, profile: "two" }, { at: iso(40), src: "slack", usd: 9, profile: "two" }] };
   OV_RANGE = "30d"; renderOvTeams(); const r = p => document.querySelector(`#ov-teams [data-team="${p}"]`), nums = p => [...r(p).querySelectorAll(".num")].map(e => e.lastChild.textContent).join(","), bar = r("two").querySelector(".meter i");
-  return [document.querySelector("#ov-teams [data-team]").dataset.team, nums("fxa"), nums("two"), `${bar.className} ${bar.style.width}`, r("../x").tagName].join("|")')"
-ck "O6 Teams: a row link names each value, the header row is hidden from a screen reader" "FxA, everyone, Now 1, Runs 0, PRs 0, Spend|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
-  TEAMS = { teams: [{ profile: "fxa", label: "FxA", access: { open: true } }] }; OV_RANGE = "30d"; renderOvTeams();
-  return [document.querySelector("#ov-teams a.ovteam").textContent.replace(/\s+/g, " ").match(/^.*?Spend/)[0], document.querySelector("#ov-teams .ovteam.hd").getAttribute("aria-hidden") === "true"].join("|")')"
-ck "O6 Teams: the cap text sits at the right edge of the Spend cell, apart from the amount, with and without a cap" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+  return [document.querySelector("#ov-teams [data-team]").dataset.team, nums("fxa"), nums("two"), `${bar.className} ${bar.style.width}`, r("../x").querySelector("a") ? "link" : "no link"].join("|")')"
+ck "O6 Teams: a table with named columns, the team name links, and the cap text says the month" "Team,Now,Runs,PRs,Spend|FxA|no cap|$5.00 of $50.00 this month" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   TEAMS = { teams: [{ profile: "fxa", label: "FxA", access: { open: true } }, { profile: "two", label: "Two", access: { open: true }, budget: { month_usd: 5, month_cap: 50 } }] }; OV_RANGE = "30d"; renderOvTeams();
-  return ["fxa", "two"].map(p => { const c = document.querySelector(`#ov-teams [data-team="${p}"] .bud`), l = c.querySelector(".vh + span"), b = l.querySelector("b").getBoundingClientRect(), t = l.lastElementChild.getBoundingClientRect(), r = c.getBoundingClientRect();
-    return Math.abs(t.right - r.right) < 1 && t.left - b.right >= 4; }).join("|")')"
+  const h = p => document.querySelector(`#ov-teams [data-team="${p}"] td.bud .hint`).textContent;
+  return [[...document.querySelectorAll("#ov-teams th")].map(t => t.textContent).join(","), document.querySelector("#ov-teams [data-team=fxa] a").textContent, h("fxa"), h("two")].join("|")')"
 ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged from pr_state, today's counts, escaped" "PR #312|running|done|PR #301 merged|answered|no change|failed|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .tag")].map(e => e.textContent);
   const a = document.querySelector("#ov-runs a.tag[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs > .sub").textContent);
@@ -371,7 +368,7 @@ ck "O6 review: a failed stats feed puts its note on Teams and Recent runs and th
   const now = new Date().toISOString(); STATS.rows ??= []; for (let i = 0; i < 14; i++) STATS.rows.push({ at: now, src: "pipeline", key: "EX-9" + i, kind: "fix", usd: 1, min: 3, pr: i < 5, profile: "example" });
   safeRender(renderOvRuns, "ov-runs"); const n = (rn().match(/(\d+) today/) || [])[1], cnt = Number(n) >= 14 && Number(n) > RUNS.length;
   STATS_ERR = "the stats read failed"; safeRender(renderOvTeams, "ov-teams"); safeRender(renderOvRuns, "ov-runs");
-  const r = [/the stats read failed/i.test(tm()), /the stats read failed/i.test(rn()), !/\$\d/.test([...document.querySelectorAll("#ov-teams .ovteam:not(.hd) .bud b")].map(b => b.textContent).join("")), cnt];
+  const r = [/the stats read failed/i.test(tm()), /the stats read failed/i.test(rn()), !/\$\d/.test([...document.querySelectorAll("#ov-teams td.bud b")].map(b => b.textContent).join("")), cnt];
   STATS_ERR = null; return r.join("|")')"
 ck "O6 Recent runs: no endpoint, an error body and an HTTP error each say unavailable, never an empty list" "true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
   const t = () => document.getElementById("ov-runs").textContent, f0 = window.fetch, a = /Recent runs unavailable: the answer has no runs/.test(t());
