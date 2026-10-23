@@ -21,19 +21,22 @@ jobs:
         with:
           repository: vbudhram/fxa-agent-bot
           path: bot
-      # The runner image has them already: apt only runs when one is missing (an apt update alone is 5 to 15 s).
-      # A stalled mirror once held this step silent for 11 min: each apt call has a timeout, and the step tries 3 times.
+      # apt runs only when one is missing. The image has no ffmpeg, so every run installs it. A good mirror fetches it in 3 s; a bad one trickles below every
+      # apt timeout and failed the step at 15 min. Each try has a short limit, and a retry uses another mirror.
       - name: Packages (the same list as test.sh run_linux)
         timeout-minutes: 15
         run: |
           for c in git jq curl python3 openssl perl rsync ffmpeg; do command -v $c >/dev/null || miss=1; done
           [ -n "${miss:-}" ] || exit 0
           o=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
-          for i in 1 2 3; do
-            sudo timeout 120 apt-get update -q "${o[@]}" \
-              && sudo timeout 300 apt-get install -y -q "${o[@]}" git jq curl python3 openssl perl rsync ffmpeg ca-certificates \
+          mirrors=("" http://archive.ubuntu.com/ubuntu/ http://mirrors.edge.kernel.org/ubuntu/)
+          for i in 0 1 2; do
+            # The runner's sources read their mirror from this file (mirror+file:).
+            [ -z "${mirrors[$i]}" ] || echo "${mirrors[$i]}" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+            sudo timeout 90 apt-get update -q "${o[@]}" \
+              && sudo timeout 150 apt-get install -y -q --no-install-recommends "${o[@]}" git jq curl python3 openssl perl rsync ffmpeg ca-certificates \
               && exit 0
-            echo "apt try $i failed"; sleep 10
+            echo "apt try $((i + 1)) failed"; sleep 5
           done
           exit 1
       # Only the last job runs the desktop gateway's check (test.sh, FXA_CHECK_SHARD).
