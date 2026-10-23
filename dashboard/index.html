@@ -69,7 +69,6 @@
   [hidden] { display:none !important; }
 
 
-  .warnt { color:var(--warn); font-weight:600; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--line2); flex:none; }
   .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); } .dot.bad, .dot.dead { background:var(--bad); }
   .dot.info { background:var(--info); } .dot.done { background:var(--purple); } .dot.dim, .dot.paused { background:var(--faint); }
@@ -151,51 +150,6 @@
   details .body { margin-top:var(--s2); padding-left:var(--s3); border-left:2px solid var(--line); }
   details .reason { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; white-space:normal; }
 
-  /* ── agent cards ── */
-  .fac { padding:var(--s3) 0; } .fac + .fac { border-top:1px solid var(--line); }
-  .fac .top { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline; }
-  .fac .top .key { color:var(--info); } .fac .top .title { font-weight:500; }
-  .fac .top .tags { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
-  .rail { display:flex; align-items:center; margin:var(--s3) 0 var(--s2); max-width:600px; }
-  .rail .node { display:flex; flex-direction:column; align-items:center; gap:3px; flex:none; }
-  .rail .box { width:15px; height:15px; border-radius:3px; background:var(--sunk); border:1px solid var(--line2); display:grid; place-items:center; }
-  .rail .box i { width:5px; height:5px; border-radius:1px; background:var(--line2); }
-  .rail .node.done .box { border-color:color-mix(in srgb,var(--ok) 55%,var(--line2)); } .rail .node.done .box i { background:var(--ok); }
-  .rail .node.now .box { border-color:var(--amber); box-shadow:0 0 0 2px color-mix(in srgb,var(--amber) 22%,transparent); }
-  .rail .node.now .box i { background:var(--amber); animation:forge 1.6s ease-in-out infinite; }
-  @keyframes forge { 0%,100%{opacity:1} 50%{opacity:.35} }
-  .rail .node.fail .box { border-color:var(--bad); } .rail .node.fail .box i { background:var(--bad); }
-  .rail-lbl { font-size:var(--t-tiny); letter-spacing:.06em; text-transform:uppercase; color:var(--faint); white-space:nowrap; }
-  .rail .node.now .rail-lbl { color:var(--ink); font-weight:700; } .rail .node.done .rail-lbl { color:var(--dim); }
-  .rail .seg { flex:1; height:4px; min-width:14px; margin:0 3px 13px; border-radius:2px; background:var(--sunk);
-               border:1px solid var(--line); overflow:hidden; position:relative; }
-  .rail .seg::before { content:""; position:absolute; inset:0;
-    background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--line2) 70%,transparent) 0 4px,transparent 4px 10px); background-size:10px 100%; }
-  .rail .seg.done::before { background:repeating-linear-gradient(90deg,color-mix(in srgb,var(--ok) 55%,transparent) 0 4px,transparent 4px 10px); background-size:10px 100%; }
-  .rail .seg.moving::before { animation:belt 800ms linear infinite; } @keyframes belt { to { background-position:10px 0; } }
-  .rail .seg.jammed::before { background:repeating-linear-gradient(115deg,color-mix(in srgb,var(--bad) 45%,transparent) 0 5px,transparent 5px 10px); }
-  .stats { display:flex; align-items:center; gap:var(--s3); flex-wrap:wrap; font-size:var(--t-sub); color:var(--dim); }
-  .stats b { color:var(--ink); font-weight:650; font-variant-numeric:tabular-nums; }
-  .stats .add { color:var(--ok); } .stats .del { color:var(--bad); }
-  .stats .sep { width:1px; height:11px; background:var(--line2); opacity:.6; }
-  .stats .last { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:72ch; display:inline-block; vertical-align:bottom; }
-  .fac details { margin-top:var(--s2); }
-  .fac details.hist summary { font:500 var(--t-sub) var(--sans); color:var(--dim); }
-  .fac summary { font-family:var(--mono); font-size:var(--t-tiny); color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .term-body { margin-top:var(--s2); background:var(--sunk); color:var(--dim); border:1px solid var(--line); border-radius:var(--r-sm);
-               padding:var(--s2); max-height:clamp(96px,20vh,170px); overflow:auto; overscroll-behavior:contain;
-               font-family:var(--mono); font-size:var(--t-tiny); line-height:1.45; white-space:pre; }
-  .chat { max-height:55vh; overflow:auto; overscroll-behavior:contain; display:flex; flex-direction:column; gap:var(--s2); }
-  .msg { border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s2) var(--s3); background:var(--sunk);
-         font-size:var(--t-sub); white-space:pre-wrap; overflow-wrap:anywhere; }
-  .msg.user { background:var(--infobg); border-color:color-mix(in srgb,var(--info) 25%,transparent); margin-right:15%; }
-  .msg.agent { margin-left:15%; }
-  .msg.action { background:transparent; border-style:dashed; color:var(--dim); text-align:center; }
-  .msg .who { display:block; font-size:var(--t-label); font-weight:650; color:var(--dim); margin-bottom:2px; white-space:normal; }
-  .msg .who span { font-weight:400; color:var(--faint); margin-left:var(--s2); }
-  .waiting { display:grid; grid-template-columns:88px minmax(0,1fr) max-content; gap:var(--s3); align-items:baseline;
-             padding:var(--s2) 0; font-size:var(--t-sub); border-top:1px solid var(--line); }
-
   /* ── shell: left rail, list, main, details, status bar ── */
   .shell { height:100vh; display:grid; grid-template-rows:minmax(0,1fr) 32px;
            grid-template-columns:var(--rail) var(--side) minmax(0,1fr) var(--right);
@@ -262,8 +216,6 @@
   .ttab[aria-current] { color:var(--link); border-color:var(--link); }
   .tcard.req { outline:2px solid var(--warn); }
   .tscroll { overflow-x:auto; padding:0; }
-  .ttiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
-  .ttile .tl { font-size:var(--t-label); color:var(--dim); } .ttile .tv { font-size:var(--t-head); font-weight:700; font-variant-numeric:tabular-nums; } .ttile .tm { font-size:var(--t-label); font-weight:400; color:var(--dim); }
   .table { width:100%; border-collapse:collapse; font-size:var(--t-sub); }
   .table th { text-align:left; font-size:var(--t-label); font-weight:600; color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
   .table td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .table tr:last-child td, .table tr.tot td { border-bottom:0; }
@@ -276,8 +228,6 @@
   .tbanner { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; justify-content:space-between; background:var(--warnbg); border:1px solid var(--warn); border-radius:var(--r-lg); padding:var(--s3) var(--s4); }
  
   #sb-done h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } .sbd-scroll { overflow-x:auto; } .sbd-scroll .table td { white-space:nowrap; } .sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
-  .tform { display:grid; gap:var(--s2); } .tform input:not([type]) , .tform input[id="t-users"], .tform input[id="t-channels"] { font:inherit; padding:6px 8px; border:1px solid var(--line2); border-radius:var(--r-sm); background:var(--panel); color:var(--ink); }
-  .tchk { display:flex; gap:var(--s2); align-items:center; }
   .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
   .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
@@ -431,13 +381,6 @@
   * + .acts2, .sh .tgl { margin-top:var(--s2); } .right > .acts2 { margin-top:0; } .errs + .empty, * + .charts { margin-top:var(--s3); } #s-stats .emptybox { margin-top:var(--s4); }
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
-  .slist { border-right:1px solid var(--line); padding-right:var(--s3); display:flex; flex-direction:column; }
-  .slist a { display:flex; flex-direction:column; gap:2px; padding:var(--s3); border-radius:var(--r-md); color:inherit; }
-  .slist a:hover { text-decoration:none; background:var(--bg); }
-  .slist a.on { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
-  .slist .k { font-family:var(--mono); font-size:var(--t-label); font-weight:700; color:var(--info); display:flex; gap:var(--s2); }
-  .slist .k span { margin-left:auto; color:var(--faint); font-family:var(--sans); font-weight:400; }
-  .slist .r { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .slist .m { font-size:var(--t-label); color:var(--dim); }
   .scard .lbl { font-size:var(--t-label); font-weight:600; color:var(--dim); } .scard .v { font-size:var(--t-head); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--s3); }
   .media figure { margin:0; border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--sunk); }
@@ -452,17 +395,9 @@
   .sx .lnk { font-size:var(--t-sub); color:var(--link); white-space:nowrap; } .sx .lnk a { color:var(--link); }
   .tgl { border:1px solid transparent; background:transparent; color:var(--faint); padding:4px 8px; border-radius:var(--r-md); font:500 var(--t-sub) var(--sans); }
   .tgl:hover { background:var(--sunk); color:var(--ink); }
-  .sxdetails { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s6); padding:var(--s2) 0; border-bottom:1px solid var(--line); font-size:var(--t-sub); color:var(--dim); }
-  .sxdetails b { font-weight:600; color:var(--faint); margin-right:6px; }
   .sxbody { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s4); align-items:start; }
-  .withlist .sxbody { grid-template-columns:220px minmax(0,1fr); }
   .withterm .sxbody { grid-template-columns:minmax(0,1fr) minmax(380px,44%); }
-  .withlist.withterm .sxbody { grid-template-columns:220px minmax(0,1fr) minmax(360px,40%); }
-  @media (max-width:1200px) { .sxbody, .withlist .sxbody, .withterm .sxbody, .withlist.withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { order:-1; position:static; } }
-  .sx .slist { border-right:1px solid var(--line); padding:var(--s3) var(--s2) 0 0; max-height:calc(100vh - 170px); overflow:auto; display:flex; flex-direction:column; gap:2px; }
-  .sx .slist a { padding:var(--s2); }
-  .sx .slist .k { display:block; font-size:var(--t-tiny); } .sx .slist .k span { display:block; margin:0; font-size:var(--t-tiny); }
-  .sx .slist .r { white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; font-size:var(--t-sub); line-height:1.35; }
+  @media (max-width:1200px) { .sxbody, .withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { order:-1; position:static; } }
   .md.clip { max-height:240px; overflow:hidden; position:relative; }
   .md.clip::after { content:""; position:absolute; left:0; right:0; bottom:0; height:64px; background:linear-gradient(transparent, var(--sunk)); }
   .tmsg:not(.agent) .md.clip::after { background:linear-gradient(transparent, var(--panel)); }
@@ -518,7 +453,6 @@
   .bars .tip { display:none; position:absolute; top:-6px; left:50%; transform:translate(-50%,-100%); z-index:3; white-space:nowrap; padding:6px 10px; border-radius:var(--r-md);
                background:var(--tty-bg); color:var(--tty-ink); font-size:var(--t-label); line-height:1.5; box-shadow:var(--shadow-pop); pointer-events:none; }
   .bars .col:hover .tip { display:block; }
-  .insight { margin:var(--s3) 0; padding:var(--s3) var(--s4); border-radius:var(--r-lg); background:var(--okbg); color:var(--ok); font-size:var(--t-body); }
   .three { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); }
   @media (max-width:900px) { .three { grid-template-columns:minmax(0,1fr); } }
   .kv { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
@@ -598,13 +532,12 @@
   .belt .out summary { list-style:none; cursor:pointer; } .belt .out summary::-webkit-details-marker { display:none; }
   .belt .out summary::before, .belt .out[open] summary::before { content:none; }
   .belt .out:not([open]) summary { border-bottom:0; }
-  .bob { animation:bob 1.4s ease-in-out infinite; } @keyframes bob { 50% { transform:translateY(-3px); } }
 
 
   /* ── phone: fixed columns give way, the key takes its own row ── */
   @media (max-width:600px) {
-    .line1, .fac .top, .waiting { grid-template-columns:minmax(0,1fr) auto; row-gap:2px; }
-    .line1 > .key, .fac .top > .key, .waiting > .key { grid-column:1 / -1; }
+    .line1 { grid-template-columns:minmax(0,1fr) auto; row-gap:2px; }
+    .line1 > .key { grid-column:1 / -1; }
     .alert { flex-wrap:wrap; } .alert .what { white-space:normal; } .alert .fix { margin-left:0; }
     h2, .headline { flex-wrap:wrap; } h2 .note, .headline .rest { margin-left:0; flex-basis:100%; }
         .sx .sxbar { flex-wrap:wrap; } .sx .sxt { order:-1; flex:1 1 100%; white-space:normal; }
@@ -726,15 +659,12 @@
     <section class="card" id="ov-teams"></section>
     <section class="ovsrc" id="ov-src"></section>
   </div>
-  <section class="wide card" id="s-agents" data-views="none"></section>
   <section class="wide card" id="s-sess" data-views="sessions"></section>
   <section class="wide card" id="s-stats" data-views="stats"></section>
   <section class="wide card" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-teams" data-views="teams"></section>
   <section class="wide card" id="s-lanes" data-views="pipeline:belts"></section>
   <section class="wide card" id="s-done" data-views="pipeline:done"></section>
-  <section class="wide card" id="s-sessions" data-views="none"></section>
-  <section class="wide card" id="s-sessions-off" data-views="none"></section>
   <section class="wide card" id="s-review" data-views="pipeline:queue"></section>
   <section class="wide card" id="s-queue" data-views="pipeline:queue"></section>
   <section class="wide card" id="s-sb" data-views="runners"><div id="sb-head"></div><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done"></div></section>
@@ -749,7 +679,7 @@
 <div class="viztip" id="viztip" hidden></div>
 <div class="help" id="help" role="dialog" aria-modal="true" aria-labelledby="help-title"><div class="box">
   <div class="hd"><h2 id="help-title">Keyboard shortcuts</h2><button type="button" id="help-close">Close</button></div>
-  <div class="kv"><span><kbd>1</kbd> to <kbd>8</kbd></span><b>Switch view</b></div>
+  <div class="kv"><span><kbd>1</kbd> to <kbd>7</kbd></span><b>Switch view</b></div>
   <div class="kv"><span><kbd>/</kbd></span><b>Search the list</b></div>
   <div class="kv"><span><kbd>j</kbd> <kbd>k</kbd>, then <kbd>Enter</kbd></span><b>Move in the list, open</b></div>
   <div class="kv"><span><kbd>h</kbd> <kbd>l</kbd></span><b>Previous or next tab</b></div>
@@ -856,99 +786,28 @@ const isWaitingOnHuman = r => r.pr && r.state === "OPEN" && !r.draft && r.fail =
 
 // ── the agent's own output, on its own cadence ──
 const TAILS = {}; let TAIL_KEYS = [];
-function paintTail(key, isLive) {
+function paintTail(key) {
   const lane = document.getElementById("lane-term-" + key);
-  if (lane) {
-    const body = lane.querySelector(".body"), lines = TAILS[key] || [], next = lines.join("\n");
-    lane.querySelector(".state").textContent = lines.length ? "running" : "connecting…";
-    lane.classList.toggle("busy", lines.length > 0);
-    // A redraw replaces the panel; LANE_SCROLL keeps a reader's place above the newest line.
-    if (body._text !== next) { body._text = next; body.innerHTML = lines.map(ttyLine).join("\n"); }
-    body.scrollTop = LANE_SCROLL[key] ?? body.scrollHeight;
-  }
-  const el = document.getElementById("term-" + key); if (!el) return;
-  const body = el.querySelector(".body"), hdr = el.querySelector(".hdr"), lines = TAILS[key] || [];
-  const next = lines.join("\n");
-  if (hdr) hdr.textContent = lines.length
-    ? (isLive ? "agent output · live · " : "final output · ") + (lines[lines.length - 1] || "").trim().slice(0, 120)
-    : (isLive ? "agent output · waiting…" : "no output captured");
-  if (body.textContent === next) return;
-  const atBottom = body.scrollTop + body.clientHeight >= body.scrollHeight - 24;
-  body.textContent = next;
-  if (atBottom) body.scrollTop = body.scrollHeight;
+  if (!lane) return;
+  const body = lane.querySelector(".body"), lines = TAILS[key] || [], next = lines.join("\n");
+  lane.querySelector(".state").textContent = lines.length ? "running" : "connecting…";
+  lane.classList.toggle("busy", lines.length > 0);
+  // A redraw replaces the panel; LANE_SCROLL keeps a reader's place above the newest line.
+  if (body._text !== next) { body._text = next; body.innerHTML = lines.map(ttyLine).join("\n"); }
+  body.scrollTop = LANE_SCROLL[key] ?? body.scrollHeight;
 }
 async function pollTails(keys) {
   if (document.hidden) return;
   for (const k of keys) {
     try {
       const r = await (await fetch(`/api/tail?key=${encodeURIComponent(k)}`, { cache:"no-store" })).json();
-      if (r && Array.isArray(r.lines)) { TAILS[k] = r.lines; paintTail(k, true); paintTty(k, (AGENTS?.sessions ?? []).find(s => s.key === k)?.agent_alive); }
+      if (r && Array.isArray(r.lines)) { TAILS[k] = r.lines; paintTail(k); paintTty(k, (AGENTS?.sessions ?? []).find(s => s.key === k)?.agent_alive); }
     } catch {}
   }
 }
 
-// ── the conveyor: boot sub-steps are real steps now ──
-const BOOT = ["boot","checkout","hardening","config","launching"];
-const STAGES = [["starting","boot"],["watching","agent"],["squashing","squash"],["pushed","push"],["pr","PR"],["ci","CI"]];
-function rail(t) {
-  const failed = t.stage === "error" || t.stage === "stalled";
-  let i = STAGES.findIndex(x => x[0] === t.stage);
-  if (t.stage === "stalled") i = 1;
-  if (t.stage === "pr") i = t.pr ? 5 : 4;
-  if (i < 0) i = 0;
-  const ciDone = t.pr && t.fail === 0 && t.running === 0 && hasChecks(t);
-  const live = t.live || (t.stage === "pr" && t.pr && t.running > 0);
-  return `<div class="rail">${STAGES.map(([id, lbl], n) => {
-    const cls = failed ? (n === i ? "fail" : n < i ? "done" : "") : n < i ? "done" : n === i ? (id === "ci" && ciDone ? "done" : "now") : "";
-    const seg = ["seg"]; if (failed && n >= i) seg.push("jammed"); else if (n < i) seg.push("done"); if (live && n === i) seg.push("moving");
-    const label = n === 0 && t.stage === "starting" && t.detail ? esc(t.detail) : lbl;
-    return `<div class="node ${cls}"><span class="box"><i></i></span><span class="rail-lbl">${label}</span></div>${
-      n < STAGES.length - 1 ? `<span class="${seg.join(" ")}"></span>` : ""}`;
-  }).join("")}</div>`;
-}
 
 // One card per runner (fast feed) merged with its ticket row (slow feed).
-function agentCard(t) {
-  const a = t.agent || {};
-  const stalled = t.stage === "stalled", failed = t.stage === "error";
-  const stat = t.diffstat || "", ins = stat.match(/(\d+) insertion/), del = stat.match(/(\d+) deletion/);
-  const idle = a.idle_seconds ?? null;
-  const status = t.ci ? (t.fail > 0 ? `<span class="tag bad">${t.fail} failing</span>`
-      : t.running > 0 ? `<span class="tag run info">CI ${t.running} running</span>`
-      : t.pr ? `<span class="tag ok">CI green</span>` : `<span class="tag info">PR opening</span>`)
-    : stalled ? `<span class="tag bad">stalled · ${esc((t.detail || "").split(" ")[0])}</span>`
-    : failed ? `<span class="tag bad">run failed</span>`
-    : t.stage === "starting" ? `<span class="tag run info">${esc(t.detail || "boot")}</span>`
-    : t.stage === "squashing" || t.stage === "pushed" ? `<span class="tag run info">${esc(t.stage)}</span>`
-    : !t.agent_alive ? `<span class="tag bad">agent exited</span>`
-    : idle != null && idle >= 300 ? `<span class="tag warn">idle ${short(idle)}</span>`
-    : `<span class="tag run ok">working</span>`;
-  const base = t.base_ok === true ? `<span class="tag ok" title="sandbox is on the slot's commit">base ok</span>`
-    : t.base_ok === false ? `<span class="tag bad" title="sandbox and slot are on different commits">base mismatch</span>` : "";
-  const cost = a.cost_usd ?? a.cost_so_far;
-  return `<div class="fac">
-    <div class="top">${jira(t.key)}${titled(t.summary || t.branch)}
-      <span class="tags">${(t.attempts ?? 0) > 0 ? `<span class="tag warn">attempt ${t.attempts + 1}</span>` : ""}${base}
-        <span class="tag">${short(t.elapsed_seconds)}</span>${status}</span></div>
-    ${rail(t)}
-    <div class="stats">
-      ${t.pr ? `${prl(SNAP?.repo ?? "", t.pr)} ${checkBars(t)}<span class="sep"></span>` : ""}
-      ${t.ci ? `<span><b>${t.committed_files ?? t.files_changed ?? 0}</b> file${(t.committed_files ?? t.files_changed) === 1 ? "" : "s"} committed</span>` :
-      `<span><b>${t.files_changed ?? 0}</b> file${t.files_changed === 1 ? "" : "s"} touched</span>`}
-      ${ins ? `<span class="add">+${ins[1]}</span>` : ""}${del ? `<span class="del">−${del[1]}</span>` : ""}
-      ${t.handoff ? `<span class="tag ok">handoff written</span>` : ""}
-      ${a.turns != null ? `<span class="sep"></span><span><b>${a.turns}</b> turns</span>` : ""}
-      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b>${a.cost_usd == null ? " so far" : ""}</span>` : ""}
-      ${idle != null && t.agent_alive ? `<span>last event ${short(idle)} ago</span>` : ""}
-      ${a.num_turns === 0 ? `<span class="tag bad">goal rejected</span>` : ""}
-      ${a.is_error === true ? `<span class="tag bad">run error</span>` : ""}
-      ${t.ci ? `<span class="tag">sandbox released</span>` : `<span class="sep"></span><span class="mono">${esc(t.name)} · ${esc(t.slot)}</span>`}
-    </div>
-    ${a.last_text || a.last_tool ? `<div class="stats"><span class="last" title="${esc(a.last_tool || "")}">${esc(a.last_text || a.last_tool)}</span></div>` : ""}
-    ${failed && t.detail ? `<div class="stats" style="color:var(--bad)">${esc(t.detail)}</div>` : ""}
-    ${t.ci ? "" : `<details data-k="term-${esc(t.key)}" id="term-${esc(t.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>`}
-  </div>`;
-}
 
 let SNAP = null, AGENTS = null, STATE = {};
 
@@ -1048,22 +907,9 @@ function renderAlerts() {
 
 // A null launchcap means the slot read failed: say so, never "null more may launch".
 const agentsMore = (intakeOff, g) => intakeOff ? "intake off, no new tickets launch" : g?.launchcap == null ? "slots unknown" : `${g.launchcap} more may launch`;
-function renderAgents() {
-  const { cards, waiting } = merged();
-  const sec = document.getElementById("s-agents");
-  const anyLive = cards.some(c => c.live || (c.ci && c.running > 0));
-  sec.classList.toggle("running", anyLive);
-  sec.dataset.empty = cards.length === 0 && waiting.length === 0;
-  const repo = SNAP?.repo ?? "";
-  const nRunners = cards.filter(c => !c.ci).length;
-  const intakeOff = SNAP?.mode?.newtickets === "off";
-  const more = agentsMore(intakeOff, AGENTS);
-  put("s-agents", head("agents", AGENTS ? cards.length : "?", AGENTS ? `${nRunners} sandbox${nRunners === 1 ? "" : "es"} up · ${more}` : "agents feed not loaded", "in flight") +
-    (cards.length === 0 ? `<div class="empty">no sandbox is up</div>` : cards.map(agentCard).join("")) +
-    (waiting.length ? waiting.map(t => `<div class="waiting">${jira(t.key)}${titled(t.summary)}
-        <span>${t.pr ? `${prl(repo, t.pr)} ${checkBars(t)} ` : ""}<span class="tag bad">no sandbox</span></span></div>`).join("") : ""));
-  cards.filter(c => !c.ci).forEach(c => paintTail(c.key, c.live));
-  TAIL_KEYS = cards.filter(c => c.live && !c.ci).map(c => c.key);
+// The keys whose agent output the 5 s tail poll reads: live pipeline runners and live Slack sessions.
+function renderTailKeys() {
+  TAIL_KEYS = [...merged().cards.filter(c => c.live && !c.ci).map(c => c.key), ...(AGENTS?.sessions ?? []).filter(s => LIVE_SESSION.includes(s.state)).map(s => s.key)];
 }
 
 // All-in cost per merged PR: every run in [lo, hi), any source (passes, sessions, answers too), over the
@@ -1541,10 +1387,9 @@ function sessStatus(s) {
     : s.state === "pr_open" ? ["PR open", "done"] : s.state === "paused" ? ["paused · a reply resumes", "dim"] : s.state === "failed" ? ["boot failed", "bad"]
     : s.state === "stopped" ? ["stopped", "dim"] : s.agent_alive ? ["working", "info"] : s.turn_open === "1" ? ["turn died", "bad"] : ["waiting on owner", "info"];
 }
-// Session view state: which panels are open, kept per browser.
-const SX = { list: false, details: false, term: true };
-try { Object.assign(SX, JSON.parse(localStorage.getItem("sx") || "{}")); } catch {}
-SX.list = false; SX.details = false;   // the list and the details are the side panels
+// Session view state: whether the terminal shows, kept per browser.
+const SX = { term: true };
+try { SX.term = JSON.parse(localStorage.getItem("sx") || "{}").term !== false; } catch {}
 const saveSX = () => { try { localStorage.setItem("sx", JSON.stringify(SX)); } catch {} };
 // Sidebar widths: drag a handle; remembered in this browser; double-click for the default.
 (() => {
@@ -1610,17 +1455,15 @@ function renderSess() {
   const isLive = sel && live(sel), showTerm = isLive && SX.term;
   // The frame changes only with the selection or a toggle, so the thread and
   // terminal inside it keep their DOM, scroll and loaded images between polls.
-  const frame = String(html`<div class="${cls("sx", { withlist: SX.list, withterm: showTerm })}">
+  const frame = String(html`<div class="${cls("sx", { withterm: showTerm })}">
       <div class="sxbar" id="sx-bar"></div>
-      <div class="sxdetails" id="sx-details"${SX.details && sel ? "" : html` hidden`}></div>
       <div class="sxbody">
-        ${SX.list ? html`<div class="slist" id="sx-list" role="navigation" aria-label="Sessions"></div>` : ""}
         <div class="convo">${sel ? html`<div class="sxout card flat sm" id="sx-outcome"></div><div class="thread" data-thread="${sel.key}" id="sx-thread"></div>` : emptybox(html`No ${SESS_TAB} session.${SESS_TAB === "stopped" ? "" : html` <a href="#sessions/stopped" style="color:var(--link)">See stopped sessions</a>`}`)}</div>
         ${showTerm ? html`<aside class="tty" id="tty-${sel.key}" aria-label="Agent output">
           <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${sel.key}</span><b class="state"></b></div>
           <div class="screen" tabindex="0"></div></aside>` : ""}
       </div></div>`);
-  if (put("s-sess", frame)) { ["sx-bar", "sx-details", "sx-list", "sx-thread"].forEach(id => delete LAST[id]); if (sel) delete TTY_LAST[sel.key]; }
+  if (put("s-sess", frame)) { ["sx-bar", "sx-thread"].forEach(id => delete LAST[id]); if (sel) delete TTY_LAST[sel.key]; }
   const tgl = (k, label, on) => html`<button class="tgl" data-sx="${k}" aria-pressed="${String(on)}">${label}</button>`;
   if (!sel) { put("sx-bar", ""); }
   else {
@@ -1638,22 +1481,10 @@ function renderSess() {
       <span class="sp"></span>
       ${sel.slack_url ? html`<a class="lnk" href="${sel.slack_url}" target="_blank" rel="noopener">Slack ↗</a>` : ""}${branch ? html`<span class="lnk">${branch}</span>` : ""}
       ${isLive ? tgl("term", "Terminal", SX.term) : ""}`));
-    if (SX.details) put("sx-details", String(html`${[
-      ["Agent", html`${rt === "codex" ? "Codex" : "Claude"}${model ? html` · <span class="mono">${model}</span>` : ""}`],
-      ...(() => { const ch = chainOf(sel, AGENTS?.sessions ?? []), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), n = ch.reduce((x, y) => x + (Number(y.turns) || 0), 0);
-        return [[c ? "Cost" : "Tokens", c ? usd(c) + (ch.length > 1 ? ` (${ch.length} sessions)` : "") : tok ? `${(tok / 1000).toFixed(0)}k` : "—"], ["Steer turns", n]]; })(),
-      ["Started", stamp(sel.created)],
-      ["Resumed from", sel.resume_from ? html`<a href="#sessions/${SESS_TAB}/${sel.resume_from}">${sel.resume_from}</a>` : "—"],
-      ["Branch or PR", branch || "not pushed"],
-      ...(pauseIn != null ? [["Idle pause in", short(pauseIn)]] : []),
-      ...(endsIn != null ? [["Sandbox ends in", short(endsIn)]] : []),
-    ].map(([k, v]) => html`<span><b>${k}</b>${v}</span>`)}`));
     put("sx-outcome", String(outcomeHtml(sel)));
     HIST_OPEN.add(sel.key); if (!HIST[sel.key]) loadHist(sel.key);
     put("sx-thread", threadHtmlCached(sel));
   }
-  if (SX.list) put("sx-list", String(list.length ? html`${list.map(s => html`<a class="${s === sel ? "on" : ""}" href="#sessions/${SESS_TAB}/${s.key}"><span class="k">${s.key}<span>${stamp(s.created)}</span></span>
-      <span class="r">${firstLine(s.request)}</span><span class="m">${s.runtime === "codex" ? "Codex" : "Claude"} · ${s.turns ?? 0} turn${s.turns === "1" ? "" : "s"}${s.resume_from ? " · resumed" : ""}</span></a>`)}` : html`<div class="empty">none</div>`));
   if (showTerm) paintTty(sel.key, sel.agent_alive);
 }
 // What the conversation produced, at the top of the center: the PR and its state, the diff, notes and media.
@@ -3758,8 +3589,8 @@ function renderLanes() {
   const ae = document.activeElement, fk = ae?.closest?.(".belt")?.dataset.belt, ff = ae?.dataset?.focus;
   put("s-lanes", String(beltsHtml(g)));
   if (fk && !document.activeElement?.closest?.(".belt")) { const li = document.querySelector(`.belt[data-belt="${CSS.escape(fk)}"]`); (li?.querySelector(`[data-focus="${ff}"]`) ?? li?.querySelector("a"))?.focus({ preventScroll: true }); }
-  live.forEach(r => paintTail(r.t.key, true));
-  // A rebase round sits at the PR stage with its VM up, which renderAgents does not tail.
+  live.forEach(r => paintTail(r.t.key));
+  // A rebase round sits at the PR stage with its VM up, which renderTailKeys does not tail.
   TAIL_KEYS = [...new Set([...TAIL_KEYS, ...live.map(r => r.t.key)])];
 }
 document.addEventListener("toggle", e => { if (e.target.matches?.("details.bout")) OUTSIDE_OPEN = e.target.open; }, true);
@@ -3807,88 +3638,14 @@ document.addEventListener("scroll", e => {
 const LIVE_SESSION = ["starting", "active", "wrapping"];
 // "[README.md](/workspace/README.md:15)" reads as "README.md".
 const plainMd = t => String(t ?? "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*`]/g, "");
-function sessionCard(s) {
-  const a = s.agent || {}, live = LIVE_SESSION.includes(s.state), now = Date.now() / 1000;
-  const status = s.state === "starting" ? `<span class="tag run info">booting</span>`
-    : s.state === "wrapping" ? `<span class="tag run info">${s.wrap_mode === "push" ? "pushing branch" : "opening PR"}</span>`
-    : s.state === "pr_open" ? `<span class="tag ok">PR open</span>`
-    : s.state === "paused" ? `<span class="tag">paused · a reply resumes</span>`
-    : s.state === "failed" ? `<span class="tag bad">boot failed</span>`
-    : s.state === "stopped" ? `<span class="tag">stopped</span>`
-    : s.agent_alive ? `<span class="tag run ok">working</span>`
-    : s.turn_open === "1" ? `<span class="tag bad">turn died</span>`
-    : `<span class="tag info">waiting on owner</span>`;
-  const rt = s.runtime || "claude";
-  const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
-  const cost = sessUsd(s);
-  const tok = a.tokens ? a.tokens.in + a.tokens.out : 0;
-  const age = now - (s.created ?? now);
-  // Idle sessions pause after session_idle_seconds; the runner stops at session_max_run_seconds.
-  const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity
-    ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
-  const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
-  const repo = teamRepo();
-  const last = plainMd(a.last_text || a.last_tool);
-  return `<div class="fac">
-    <div class="top"><span class="key" title="owner ${esc(s.owner || "?")}">${esc(s.key)}</span>${titled(s.request || "")}
-      <span class="tags">${pauseIn != null ? `<span class="tag ${pauseIn < 300 ? "warn" : ""}" title="idle sessions pause; a reply resumes">pauses in ${short(pauseIn)}</span>` : ""}<span class="tag">${short(Math.round(age))}</span>${status}</span></div>
-    <div class="stats">
-      ${s.slack_url ? `<a href="${esc(s.slack_url)}" target="_blank" rel="noopener"><b>Slack thread ↗</b></a><span class="sep"></span>` : ""}
-      <span>${rt === "codex" ? "Codex" : "Claude"}${model ? ` <span class="mono">${esc(model)}</span>` : ""}</span><span class="sep"></span>
-      <span><b>${esc(s.turns ?? 0)}</b> steer turn${s.turns === "1" ? "" : "s"}</span>
-      ${cost != null && cost > 0 ? `<span><b>${usd(cost)}</b></span>` : tok ? `<span><b>${(tok / 1000).toFixed(0)}k</b> tokens</span>` : ""}
-      ${live && a.idle_seconds != null ? `<span>active ${short(a.idle_seconds)} ago</span>` : ""}
-      ${endsIn != null ? `<span class="${endsIn < 1800 ? "warnt" : ""}">sandbox ends in ${short(endsIn)}</span>` : ""}
-      ${s.resume_from ? `<span>resumed from <span class="mono">${esc(s.resume_from)}</span></span>` : ""}
-      ${s.pushed_branch && !s.pr_url ? `<span class="sep"></span><a href="https://github.com/${esc(repo)}/tree/${esc(s.pushed_branch)}" target="_blank" rel="noopener">branch ${esc(s.pushed_branch)} ↗</a>` : ""}
-      ${prHref(s.pr_url) ? `<span class="sep"></span><a href="${esc(s.pr_url)}" target="_blank" rel="noopener">${esc(s.pr_url.replace(/.*\/pull\//, "PR #"))} ↗</a>` : s.pr_url ? `<span class="sep"></span>${esc(s.pr_url)}` : ""}
-    </div>
-    ${last ? `<div class="stats"><span class="last" title="${esc(last)}">${esc(last)}</span></div>` : ""}
-    <details class="hist" data-key="${esc(s.key)}"${HIST_OPEN.has(s.key) ? " open" : ""}><summary>Conversation</summary><div class="chat body">${histHtml(s.key)}</div></details>
-    ${live ? `<details data-k="term-${esc(s.key)}" id="term-${esc(s.key)}"><summary><span class="hdr"></span></summary><div class="term-body body"></div></details>` : ""}
-  </div>`;
-}
 
 // The conversation loads when opened and refreshes on each poll while open.
 const HIST = {}, HIST_OPEN = new Set();
-function histHtml(key) {
-  const h = HIST[key];
-  if (!h) return `<div class="empty">loading…</div>`;
-  if (h.error) return `<div class="empty">${esc(h.error)}</div>`;
-  if (!h.length) return `<div class="empty">nothing recorded</div>`;
-  const who = { user: "Message", agent: "Agent", action: "" };
-  return h.map(m => `<div class="msg ${esc(m.role)}"><span class="who">${who[m.role] ?? esc(m.role)}<span>${stamp(m.at)}${m.key !== key ? ` · ${esc(m.key)}` : ""}</span></span>${
-    esc(m.text.length > 4000 ? m.text.slice(0, 4000) + "…" : m.text)}</div>`).join("");
-}
 async function loadHist(key) {
   try { HIST[key] = await (await fetch(`/api/history?key=${encodeURIComponent(key)}`, { cache:"no-store" })).json(); }
   catch { HIST[key] = { error: "could not load the conversation" }; }
   const sel = (AGENTS?.sessions ?? []).find(s => s.key === key);
   if (sel && document.getElementById("sx-thread")?.dataset.thread === key) put("sx-thread", threadHtmlCached(sel));
-  document.querySelectorAll(`details.hist[data-key="${key}"] .chat`).forEach(c => {
-    const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 24 || !c.dataset.seen;
-    c.innerHTML = histHtml(key); c.dataset.seen = 1;
-    if (atBottom) c.scrollTop = c.scrollHeight;
-  });
-}
-document.addEventListener("toggle", e => {
-  const d = e.target;
-  if (!d.matches?.("details.hist")) return;
-  if (d.open) { HIST_OPEN.add(d.dataset.key); loadHist(d.dataset.key); } else HIST_OPEN.delete(d.dataset.key);
-}, true);
-function renderSessions() {
-  const ss = AGENTS?.sessions ?? [], live = ss.filter(s => LIVE_SESSION.includes(s.state));
-  // No runner: paused first, since a reply brings those back.
-  const off = ss.filter(s => !LIVE_SESSION.includes(s.state)).sort((x, y) => (y.state === "paused") - (x.state === "paused"));
-  const paused = off.filter(s => s.state === "paused").length;
-  document.getElementById("s-sessions").classList.toggle("running", live.some(s => s.agent_alive));
-  document.getElementById("s-sessions").dataset.empty = live.length === 0;
-  put("s-sessions", head("sessions", AGENTS ? live.length : "?", `cap ${AGENTS?.session_cap ?? "?"}`, "slack, sandbox up") +
-    (live.length === 0 ? `<div class="empty">no session is running</div>` : live.map(sessionCard).join("")));
-  put("s-sessions-off", head("stopped sessions", off.length, paused ? `${paused} paused` : "", "no sandbox, last day") +
-    (off.length === 0 ? `<div class="empty">no stopped session in the last day</div>` : off.map(sessionCard).join("")));
-  live.forEach(s => paintTail(s.key, s.agent_alive));
-  TAIL_KEYS = TAIL_KEYS.concat(live.map(s => s.key));
 }
 
 // Skips by their reason's first word, as the pipeline writes it; most passes first in each.
@@ -4431,7 +4188,7 @@ document.addEventListener("keydown", e => {
   if (help.classList.contains("on")) { if (e.key === "Tab") { e.preventDefault(); document.getElementById(document.activeElement.id === "help-close" ? "keys-on" : "help-close").focus(); } return; }
   if (!KEYS || e.metaKey || e.ctrlKey || e.altKey || e.target.matches?.("input, select, textarea")) return;
   const items = [...document.querySelectorAll(".si")];
-  if (/^[1-8]$/.test(e.key)) location.hash = VIEWS[e.key - 1][0];
+  if (/^[1-9]$/.test(e.key) && VIEWS[e.key - 1]) location.hash = VIEWS[e.key - 1][0];
   else if (e.key === "/") { e.preventDefault(); if (matchMedia("(max-width:900px)").matches) document.body.classList.add("showside"); document.getElementById("q")?.focus(); }
   else if (e.key === "j" || e.key === "k") { if (!items.length) return; CUR = Math.max(0, Math.min(items.length - 1, CUR + (e.key === "j" ? 1 : -1))); items.forEach((x, i) => x.classList.toggle("cur", i === CUR)); items[CUR].focus(); }
   else if (e.key === "h" || e.key === "l") { const t = VIEWS.find(v => v[0] === VIEW)[3], i = t.findIndex(x => x[0] === TAB); if (t.length) location.hash = `${VIEW}/${t[(i + (e.key === "l" ? 1 : t.length - 1)) % t.length][0]}`; }
@@ -4502,12 +4259,12 @@ function safeRender(fn, id) {
   try { fn(); } catch (e) { console.error(e); if (id) put(id, `<div class="emptybox">This section did not render: ${esc(e?.message ?? String(e))}. Reload, or run vm.sh rollback.</div>`); }
 }
 // The Overview cards draw only on the Overview: on another view they were about half of each poll's render time.
-// renderAgents, renderLanes and renderSessions still run everywhere, since they set the tail keys.
+// renderTailKeys and renderLanes still run everywhere, since they set the tail keys.
 // A function, so each call takes the current binding (a page check swaps one in).
 const ovRenders = () => [[renderOvHead, "ov-head"], [renderOvNeeds, "ov-needs"], [renderOvMain, "ov-main"], [renderOvBudget, "ov-budget"], [renderOvRuns, "ov-runs"],
   [renderOvLlm, "ov-llm"], [renderOvHours, "ov-hours"], [renderOvTeams, "ov-teams"], [renderOvSrc, "ov-src"]];
 function render() {
-  [[renderStatus], [renderAlerts, "attn"], [renderAgents, "s-agents"], [renderSessions, "s-sessions"], [renderTickets, "s-queue"],
+  [[renderStatus], [renderAlerts, "attn"], [renderTailKeys], [renderTickets, "s-queue"],
    [renderLanes, "s-lanes"], [renderDone, "s-done"], ...(VIEW === "overview" ? ovRenders() : []), [renderSess, "s-sess"], [renderSb],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
