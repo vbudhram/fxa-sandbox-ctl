@@ -56,6 +56,7 @@ globalThis.TEAMS = { teams: [{ profile: "monitor", read_only: true }] };
 t("outcome: a read-only team\u2019s diff is posted in Slack", /diff posted in Slack/.test(outcomeHtml({ key: "m1", profile: "monitor", summary: JSON.stringify({ diff: "1 file changed" }) })), true);
 AGENTS.sessions = [{ key: "agent-c2", resume_from: "agent-b1", pr_url: "https://github.com/mozilla/fxa/pull/9", state: "paused" }, { key: "agent-b1", state: "stopped", request: "First ask" }];
 STATS.prs = [{ n: 9, state: "MERGED" }];
+t("outcome: a session with no result, media, notes or chain shows no card", outcomeHtml({ key: "z9", profile: "fxa" }), "");
 t("outcome: the PR from any session in the conversation, with its state", /#9[\s\S]*merged/.test(outcomeHtml(AGENTS.sessions[0])), true);
 t("the conversation title is the first session\u2019s request", convTitle(AGENTS.sessions[0]), "First ask");
 for (const [i, want] of [["Can you work on <https://mozilla-hub.atlassian.net/browse/FXA-14767>", "Can you work on FXA-14767"],

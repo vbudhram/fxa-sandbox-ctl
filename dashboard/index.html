@@ -291,7 +291,7 @@
   }
   @media (max-width:480px) { .rail a { font-size:0; gap:0; } }
   .errs .err { display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s2) 0; border-top:1px solid var(--line); }
-  .errs .err .tag { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:var(--r-pill); } .errs .err .body { min-width:0; }
+  .errs .err .tag { flex:none; } .errs .err .body { min-width:0; }
   .errs .err .m { font-family:var(--mono); font-size:var(--t-label); overflow-wrap:anywhere; }
   .errs .err .meta { font-size:var(--t-label); color:var(--dim); margin-top:2px; overflow-wrap:anywhere; }
   [data-views]:not(.on) { display:none !important; }
@@ -376,7 +376,7 @@
   .media img, .media video { display:block; width:100%; max-height:200px; object-fit:contain; background:var(--tty-bg); }
   .media figcaption { font:var(--t-tiny) var(--mono); color:var(--dim); padding:4px 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sx .sxbar { display:flex; align-items:center; gap:var(--s2); min-height:36px; padding-bottom:var(--s2); border-bottom:1px solid var(--line); }
-  .sx .sxout { margin:var(--s3) 0; }
+  .sx .sxout { margin:var(--s3) 0; } .sx .sxout:empty { display:none; }
   .sx .sxout .kvs { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); font-size:var(--t-sub); } .sx .sxout .kvs b { color:var(--dim); font-weight:600; margin-right:6px; }
   .sx .sxout .notes { margin-top:var(--s2); white-space:pre-wrap; color:var(--dim); font-size:var(--t-sub); max-height:6.5em; overflow:auto; }
   .sx .sxt { font-weight:600; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
@@ -386,7 +386,7 @@
   .tgl:hover { background:var(--sunk); color:var(--ink); }
   .sxbody { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s4); align-items:start; }
   .withterm .sxbody { grid-template-columns:minmax(0,1fr) minmax(380px,44%); }
-  @media (max-width:1200px) { .sxbody, .withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { order:-1; position:static; } }
+  @media (max-width:1200px) { .sxbody, .withterm .sxbody { grid-template-columns:minmax(0,1fr); } .sxbody .tty { position:static; } .sxbody .tty .screen { height:clamp(240px,45vh,480px); min-height:0; } }
   .md.clip { max-height:240px; overflow:hidden; position:relative; }
   .md.clip::after { content:""; position:absolute; left:0; right:0; bottom:0; height:64px; background:linear-gradient(transparent, var(--sunk)); }
   .tmsg:not(.agent) .md.clip::after { background:linear-gradient(transparent, var(--panel)); }
@@ -399,7 +399,7 @@
   .tty .bar .state { font-weight:400; color:var(--tty-dim); } .tty.busy .bar .state { color:var(--tty-prompt); }
   .tty .screen { height:calc(100vh - 150px); min-height:320px; overflow:auto; overscroll-behavior:contain; padding:12px 14px;
                  font:var(--t-label)/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; }
-  .tty .screen:focus { outline:none; }
+  .tty .screen:focus { outline:none; } .tty .screen:focus-visible { outline:2px solid var(--link); outline-offset:-2px; }
   .tty .p { color:var(--tty-prompt); font-weight:700; } .tty .t { color:var(--tty-tool); font-weight:700; } .tty .ok { color:var(--tty-prompt); } .tty .bad { color:var(--tty-bad); }
   .tty .opt { color:var(--tty-opt); } .tty .dim { color:var(--tty-muted); }
   .tty .cur { display:inline-block; width:8px; height:14px; vertical-align:-2px; background:var(--tty-ink); opacity:.25; }
@@ -1480,8 +1480,9 @@ function outcomeHtml(s) {
   const ro = (TEAMS?.teams ?? []).find(t => t.profile === (s.profile || "fxa"))?.read_only;
   const result = prUrl ? html`<a href="${prUrl}" target="_blank" rel="noopener">${prUrl.replace(/.*github\.com\//, "").replace("/pull/", " #")} ↗</a>${state ? html` ${tag(state.toLowerCase(), state === "MERGED" ? "ok" : state === "OPEN" ? "info" : "")}` : ""}`
     : pushed ? (repo ? html`branch <a href="https://github.com/${repo}/tree/${pushed}" target="_blank" rel="noopener">${pushed} ↗</a>` : `branch ${pushed}`)
-    : diff ? (ro ? "diff posted in Slack (read-only team)" : "changed files, not pushed") : "no code change";
-  return html`<div class="kvs"><span><b>Result</b>${result}</span>${diff ? html`<span><b>Change</b>${diff}</span>` : ""}${media ? html`<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
+    : diff ? (ro ? "diff posted in Slack (read-only team)" : "changed files, not pushed") : "";
+  if (!result && !media && !notes && ch.length < 2) return "";
+  return html`<div class="kvs">${result ? html`<span><b>Result</b>${result}</span>` : ""}${diff ? html`<span><b>Change</b>${diff}</span>` : ""}${media ? html`<span><b>Media</b>${media} file${media === 1 ? "" : "s"} in the thread</span>` : ""}
     ${ch.length > 1 ? html`<span><b>Conversation</b>${ch.length} sessions</span>` : ""}</div>${notes ? html`<div class="notes">${String(notes).slice(0, 600)}</div>` : ""}`;
 }
 // Markdown for a whole thread is the costly part: rebuild only when it changes.
@@ -1645,7 +1646,7 @@ async function loadErrors() {
   if (document.body.dataset.view === "errors") { renderErrors(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderErrors() {
-  const fail = ERRS_ERR ? html`<div class="emptybox" role="alert">Could not read the errors: ${ERRS_ERR}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
+  const fail = ERRS_ERR ? html`<div class="emptybox unknown" role="alert">Could not read the errors: ${ERRS_ERR}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
   if (!ERRS || (fail && !ERRS.length)) { put("s-errors", head("errors") + (fail || emptybox("loading…"))); return; }
   const rows = ERRS.filter(e => ERRS_ALL || e.status !== "resolved");
   const chip = { open: "bad", reopened: "bad", resolved: "dim" };
@@ -1656,7 +1657,7 @@ function renderErrors() {
       <div class="body"><div class="m">${e.message}</div>
         <div class="meta"><span class="mono">${e.sig}</span> · ${e.source}/${e.kind} · ${e.where} · ×${e.count} · last ${ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))}
         ${e.keys?.length ? html` · ${raw(e.keys.map(key).join(" "))}` : ""}${e.log ? html` · <span class="mono">${e.log}</span>` : ""}
-        ${e.resolved ? html` · resolved ${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}` : ""}</div></div>
+        ${e.resolved ? html` · ${e.status === "reopened" ? "last fix" : "resolved"} ${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}` : ""}</div></div>
     </div>`)}</div>
     <p class="empty">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`}`);
 }
