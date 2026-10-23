@@ -499,6 +499,8 @@ EOF
     echo "Archiving prior handoff file in ${worktree_path}..." >&2
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
   }
+  # A prior ticket's lessons must not be queued under this one.
+  rm -f "${worktree_path}/.fxa-lessons.json"
   # Truncate the agent stream log so `tail` starts fresh.
   slot_write "${worktree_path}/.fxa-auto-claude.jsonl" < /dev/null 2>/dev/null || true
   slot_write "${worktree_path}/.fxa-auto-claude.log" < /dev/null 2>/dev/null || true
@@ -539,6 +541,7 @@ EOF
       FXA_MEMORY_USE_FILE="$mem_use" memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
       rm -f "${worktree_path}/.fxa-memory.json" "${worktree_path}/.fxa-memory-use.jsonl" "$mem_use"
     fi
+    lessons_collect_file "$key" "${worktree_path}/.fxa-lessons.json"
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
       pipeline_ship_ok "$key" "$worktree_path" || return 1

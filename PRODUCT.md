@@ -77,7 +77,9 @@ within their budget. Nobody asked the operator for anything, and FxA sessions di
 | **Team admin** | An email in `TEAM_ADMINS`. | Creates, edits, tests, enables and disables team records in the dashboard. Sets team secrets. Creates, edits, pauses, runs now, stops and deletes the team's routines in the dashboard. Every write is audited. |
 | **Jira reporter** | Anyone who can label a ticket. | Puts work in a team's queue with the `ai-fixme` label. |
 | **Reviewer** | People, and Copilot. | Review and merge the agent's PRs. A Copilot review or a failed CI run starts an automatic fix round, at most 2 for each PR. |
-| **Operator** | Vijay. | Holds the secrets, IAM, the live bot's access, the kill switches, lesson approval and promote. The guards are the operator's. |
+| **Operator** | Vijay. | Holds the secrets, IAM, the live bot's access, the kill switches and promote. The guards are the operator's. |
+
+A team admin (any email in `TEAM_ADMINS`) approves or rejects lessons on the dashboard. Each team's runners get only that team's approved lessons.
 
 Design for the owner first, and for the teammate second. Every other role is a guard, not a user.
 
@@ -208,7 +210,7 @@ runs only while its file matches the pinned hash.
 | Secret tickets against a private repo | `jira.secret: true`, private work repos only | fxa-private |
 
 **Not possible yet** (phase 3): a stack recipe that is not FxA (`stack.kind: recipe`),
-a team image, a generic pass skill for a team that is not FxA, and lessons scoped to a team. Do not
+a team image, and a generic pass skill for a team that is not FxA. Do not
 fake these with prompt text; say that the team needs phase 3.
 
 ---

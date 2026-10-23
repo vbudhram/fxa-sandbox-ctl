@@ -1876,7 +1876,7 @@ function renderLessons() {
     rows.length === 0 ? emptybox(`No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.`) : html`<div class="errs">${rows.map(l => html`<div class="err" data-lesson="${l.id}">
       ${tag(l.status, chip[l.status] ?? "dim")}
       <div class="body" style="flex:1">${l.status === "pending" ? html`<textarea rows="2" maxlength="300" aria-label="Lesson text">${l.text}</textarea>` : html`<div class="m">${l.text}</div>`}
-        <div class="meta">${l.why ? html`why: ${l.why} · ` : ""}<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a> · ${(l.at || "").slice(0, 10)}${l.decided_at ? html` · ${l.status} ${l.decided_at.slice(0, 10)}` : ""}</div>
+        <div class="meta">${l.why ? html`why: ${l.why} · ` : ""}${l.session?.startsWith("agent-") ? html`<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a>` : html`<span class="mono">${l.session}</span>`} · ${(l.at || "").slice(0, 10)}${l.decided_at ? html` · ${l.status} ${l.decided_at.slice(0, 10)}` : ""}</div>
         <div class="acts">${l.status !== "approved" ? html`<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? html`<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
     </div>`)}</div>
     <p class="empty">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`}`);
