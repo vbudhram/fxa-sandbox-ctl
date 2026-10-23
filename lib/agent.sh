@@ -487,7 +487,7 @@ _gce_pin_runner_tree() {
   # which reads as an empty answer, so retry that instead of failing the launch.
   local try
   for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && old=\$(git rev-parse HEAD) && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
       # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.
@@ -507,7 +507,8 @@ _gce_pin_runner_tree() {
     fi
     # The pin moves the code past the snapshot's lib dist: build the libs/ content imports, or its next start crash-loops.
     # Only libs/: the graph also links content to fxa-settings, a 2-minute build it does not need.
-    if [ -d packages/fxa-content-server ]; then
+    # The snapshot built every lib at its commit, so a pin that changes no lib skips the 10-30 s graph and build.
+    if [ -d packages/fxa-content-server ] && ! git diff --quiet \"\$old\" HEAD -- libs/ yarn.lock 2>/dev/null; then
       source /etc/agent-env.sh && npx nx graph --file=/tmp/fxa-graph.json > /tmp/fxa-pin-libs.log 2>&1 \
         && libs=\"\$(jq -r '.graph.dependencies as \$d | .graph.nodes as \$n | {s: [\"fxa-content-server\"], seen: []}
           | until(.s == []; .seen += .s | .s = ([.s[] as \$p | \$d[\$p][]?.target | select(\$n[.].data.root // \"\" | startswith(\"libs/\"))] | unique) - .seen)
