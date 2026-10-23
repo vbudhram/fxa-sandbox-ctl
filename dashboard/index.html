@@ -433,15 +433,7 @@
   @media (max-width:900px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   .charts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s3); }
   @media (max-width:900px) { .charts { grid-template-columns:minmax(0,1fr); } }
-  .bars { display:flex; align-items:flex-end; gap:clamp(1px,1%,10px); height:230px; padding-top:28px; }
-  .bars .col { flex:1; min-width:0; height:100%; position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:4px; }
-  .bars .v { font-size:var(--t-label); font-weight:700; } .bars .w { font-size:var(--t-label); color:var(--dim); white-space:nowrap; }
-  .bars .bar { width:100%; max-width:46px; height:0; border-radius:var(--r-sm) var(--r-sm) 0 0; transition:height .7s cubic-bezier(.16,1,.3,1), opacity .15s ease, transform .15s ease; }
-  .bars:hover .col:not(:hover) .bar, .bars:hover .col:not(:hover) .v { opacity:.35; }
-  .bars .col:hover .bar { transform:translateY(-3px); }
-  .bars .tip { display:none; position:absolute; top:-6px; left:50%; transform:translate(-50%,-100%); z-index:3; white-space:nowrap; padding:6px 10px; border-radius:var(--r-md);
                background:var(--tty-bg); color:var(--tty-ink); font-size:var(--t-label); line-height:1.5; box-shadow:var(--shadow-pop); pointer-events:none; }
-  .bars .col:hover .tip { display:block; }
   .three { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--s3); }
   @media (max-width:900px) { .three { grid-template-columns:minmax(0,1fr); } }
   .kv { display:flex; justify-content:space-between; gap:var(--s3); padding:6px 0; border-top:1px solid var(--line); font-size:var(--t-sub); }
@@ -2919,24 +2911,19 @@ function renderStats() {
   for (let t = bucketOf(Math.min(start, end)); t < end; t += byDay ? DAY : 7 * DAY) buckets.set(bucketOf(t), { t: bucketOf(t), runs: 0, spend: 0, merged: 0, low: 0 });
   rows.forEach(r => { const b = buckets.get(bucketOf((r.ms ?? Date.parse(r.at)))); if (b) { b.runs++; b.spend += r.usd || 0; if (r.src === "pipeline" && r.main_only) b.low++; } });
   (st.prs ?? []).forEach(p => { const b = p.merged && (SF.src === "all" || p.src === SF.src) && buckets.get(bucketOf(Date.parse(p.merged))); if (b) b.merged++; });
-  const bl = [...buckets.values()].slice(-60), H = 150, mr = Math.max(1, ...bl.map(b => b.runs)), ms = Math.max(0.01, ...bl.map(b => b.spend));
+  const bl = [...buckets.values()].slice(-60);
   const dayFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }), lbl = t => dayFmt.format(t);
-  // A month of days does not fit 30 labels: with many bars, label about every fifth day and
-  // the last, and print only the tallest bar's value. Every bar keeps its hover tip.
-  const many = bl.length > 14, step = Math.ceil(bl.length / 7);
-  const showDay = i => !many || i === bl.length - 1 || (i % step === 0 && bl.length - 1 - i >= step / 2);
-  const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => html`<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${lbl(b.t)}</b><br>${k === "merged" ? `${b.merged} merged` : html`${b.runs} runs · ${usd(b.spend)}${k === "spend" && b.low ? html`<br>${b.low} priced at the main agent only, about half` : ""}${b.runs ? html`<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
-      <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "spend" && b.low ? "repeating-linear-gradient(135deg, var(--purple) 0 4px, transparent 4px 7px)" : k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
-      <span class="w">${showDay(i) ? lbl(b.t) : raw("&nbsp;")}</span></div>`); };
+  // One chart for runs, spend or merged PRs a day (or a week), drawn as the Overview draws its charts.
+  const pts = bl.map(b => ({ ...b, lbl: lbl(b.t) })), fmtOf = { runs: v => String(Math.round(v)), merged: v => String(Math.round(v)), spend: (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v) };
+  const bars = k => ovChart(pts, [[{ runs: "Runs", spend: "Spend", merged: "Merged PRs" }[k], k === "spend" ? "var(--chart-2)" : "var(--chart-1)", b => b[k] || 0]], fmtOf[k],
+    { H: 230, cents: k === "spend", id: `st-${k}`, label: `${{ runs: "Runs", spend: "Spend", merged: "Merged PRs" }[k]} per ${byDay ? "day" : "week"}` });
   const kpi = (l, v, sub) => statTile(l, v ?? "—", sub);
   const chart = body => card(body, { flat: true, cls: "chart" });
   const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
     return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
   const conv = r => r.conv ?? r.key, share = v => Math.round(v / Math.max(spend, 0.01) * 100);
-  const SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
+  const SRC = SF_SRC;
   const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? raw(jira(r.name)) : html`<span class="mono">${r.name}</span>`;
-  const opt = (f, v, l) => html`<option value="${v}"${SF[f] === v ? " selected" : ""}>${l}</option>`;
-  const kinds = [...new Set(all.filter(r => SF.src === "all" || r.src === SF.src).map(r => r.kind))].sort(), models = [...new Set(all.map(r => r.model).filter(Boolean))].sort();
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => html`<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${sfLabel(f)} ×</button>`);
@@ -2948,8 +2935,8 @@ function renderStats() {
       ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
       ${kpi("Per run", usd(spend / rows.length), Object.entries(SRC).map(([v, l]) => { const a = rows.filter(r => r.src === v); return a.length ? `${({ answer: "answers", pass: "passes" })[v] ?? v} ${usd(sum(a) / a.length)}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
-    <div class="charts">${chart(html`<h2>Runs per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("runs")}</div>`)}
-      ${chart(html`<h2>Spend per ${byDay ? "day" : "week"}<span class="note">hover a bar</span></h2><div class="bars">${bars("spend")}</div>`)}</div>
+    <div class="charts"><div class="card flat chart" id="st-runs"><h2>Runs per ${byDay ? "day" : "week"}</h2>${bars("runs")}</div>
+      <div class="card flat chart" id="st-spend"><h2>Spend per ${byDay ? "day" : "week"}</h2>${bars("spend")}</div></div>
     <div class="three">
       ${chart(html`<h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${SRC[g.name] ?? g.name}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`)}
         ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? html`<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
@@ -2968,10 +2955,8 @@ function renderStats() {
         if (none) out.push(html`<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>`);
         return out.length ? out : null;
       })() || html`<div class="empty">No model recorded for these rows.</div>`}
-        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => html`<div class="kv"><b>${KIND[g.name] ?? g.name}</b><span>${g.rs.length} · avg ${usd(g.usd / g.rs.length)}</span></div>`)}`)}
+        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => kvRow(g.name ? KIND[g.name] ?? g.name : "not recorded", `${g.rs.length} · avg ${usd(g.usd / g.rs.length)}`, !g.name))}`)}
     </div>`}`));
-  // Grow the bars in from zero on each draw.
-  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll("#s-stats .bar[data-h]").forEach(b => { b.style.height = b.dataset.h + "px"; })));
 }
 // PRs tab: PRs opened in the range (Opened, Still open, By source), and PRs merged or closed in the range,
 // whenever they were opened (Merged, Time to merge, the merged lists), with the cost of every run on each.
@@ -3012,7 +2997,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
       ${kpi("Closed, not merged", closed.length, `closed in this range · ${open.length} opened in it still open`)}
       ${kpi("Time to merge", merged.length ? dur(med(merged.map(hrs))) : "—", merged.length ? `median · slowest ${dur(Math.max(...merged.map(hrs)))}` : raw("&nbsp;"))}
       ${kpi("Cost per merged PR", mergedIn.length ? usd(spentIn / mergedIn.length) : "—", `all spend in this range, ${usd(spentIn)}, over ${mergedIn.length} merged${merged.length ? ` · one PR's own runs: median ${usd(med(mc))}` : ""} · last 4 weeks ${weeks.join(" → ")}`)}</div>
-    <div class="charts">${chart(html`<h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2><div class="bars">${bars("merged")}</div>`)}
+    <div class="charts"><div class="card flat chart" id="st-merged"><h2>Merged per ${byDay ? "day" : "week"}<span class="note">by merge date</span></h2>${bars("merged")}</div>
       ${chart(html`<h2>By source<span class="note">PRs opened in this range</span></h2>${Object.entries(SRC).map(([v, l]) => { const a = prs.filter(p => p.src === v), m = a.filter(p => p.state === "MERGED");
         return a.length ? kv(html`<b>${l}</b>`, html`${a.length} opened · ${m.length} merged (${rate(m.length, a.filter(p => p.state === "CLOSED").length)}) · median ${m.length ? dur(med(m.map(hrs))) : "—"} · <span class="add">+${m.reduce((x, p) => x + p.add, 0)}</span> <span class="del">−${m.reduce((x, p) => x + p.del, 0)}</span>`) : ""; })}
         <h2>Merged by</h2>${who.length ? who.map(([k, n]) => kv(html`<span class="mono">${k}</span>`, html`<b>${n}</b>`)) : html`<div class="empty">None merged.</div>`}`)}</div>

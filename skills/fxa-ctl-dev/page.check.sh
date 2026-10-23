@@ -41,6 +41,10 @@ ck "shell: the nav rail has no stage-rail margin or width cap, and key 8 (no 8th
 ck "errors: an empty list says Nothing here, not loading, and a list with errors has no empty group" "Nothing here.|1" "$(bash "$p" '#errors/open' --fixture "$F" --probe '
   AGENTS = null; ERRS = []; renderSide(); const a = document.querySelector(".side .sgroup")?.textContent;
   ERRS = [{ sig: "s1", message: "boom", status: "open" }]; renderSide(); return [a, document.querySelectorAll(".side .slist2 ul").length].join("|")')"
+ck "stats: runs and spend a day are SVG charts with one tip a day and no CSS bars; a run with no kind reads not recorded" "true|true|false|true" "$(bash "$p" '#stats/spend' --fixture "$(dirname "$0")/page-fixture-overview.json" --width 1280 --probe '
+  await new Promise(r => setTimeout(r, 400)); const n = id => document.querySelectorAll(`#${id} svg.ovchart [data-tip]`).length;
+  STATS.rows.push({ at: new Date().toISOString(), src: "pipeline", key: "EX-77", usd: 1 }); LAST["s-stats"] = ""; renderStats();
+  return [n("st-runs") >= 28, n("st-spend") === n("st-runs"), !!document.querySelector("#s-stats .bars"), /not recorded/.test(document.getElementById("s-stats").textContent)].join("|")')"
 # The whole flow on one fixture, at desktop and phone width: no section fails, nothing scrolls sideways.
 flow='const w = () => new Promise(r => setTimeout(r, 250)), bad = () => [...document.querySelectorAll(".emptybox")].some(e => /did not render/.test(e.textContent)), wide = () => document.documentElement.scrollWidth > innerWidth;
   let fails = [];
