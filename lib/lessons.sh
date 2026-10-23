@@ -3,6 +3,7 @@
 #
 # Public API:
 #   lessons_collect <key> <runner>   read the runner's /workspace/.fxa-lessons.json into the queue
+#   lessons_collect_file <key> <file>   the same for a pipeline run's file on the host, as PIPE_PROFILE's
 #   lessons_approved_md              the approved lessons as a CLAUDE.md section, or nothing
 #   cmd_lessons [--json] | approve <id> [--text <text>] | reject <id>
 #
@@ -56,6 +57,14 @@ lessons_collect() {
   local team; team="$(session_get "$1" profile 2>/dev/null || true)"
   [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || team="${PIPE_PROFILE:-fxa}"
   n="$(_lessons_add "$1" "$raw" "$team")"
+  [ "${n:-0}" -gt 0 ] && echo "Queued ${n} lesson(s) for review" >&2
+  return 0
+}
+
+lessons_collect_file() {
+  [ -s "$2" ] || { rm -f "$2"; return 0; }
+  local raw n; raw="$(head -c 8000 "$2")"; rm -f "$2"
+  n="$(_lessons_add "$1" "$raw" "${PIPE_PROFILE:-fxa}")"
   [ "${n:-0}" -gt 0 ] && echo "Queued ${n} lesson(s) for review" >&2
   return 0
 }

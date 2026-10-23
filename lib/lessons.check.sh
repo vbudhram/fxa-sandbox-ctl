@@ -42,6 +42,13 @@ check "collect removes the file on the runner" "1" "$(grep -c 'rm -f /workspace/
 _session_sh() { return 255; }
 check "an unreachable runner is not an error" "0" "$(lessons_collect agent-ef56 runner; echo $?)"
 
+# A pipeline run's file on the host is queued as the run's team, then removed.
+echo '[{"lesson":"The pipeline slot needs yarn install after a rebase.","why":"seen"}]' > "$tmp/pl.json"
+PIPE_PROFILE=crew lessons_collect_file FXA-1 "$tmp/pl.json" 2>/dev/null
+check "a pipeline run's lesson has the ticket and the run's team" "FXA-1|crew|pending" "$(cmd_lessons --json | jq -r '.[-1] | "\(.session)|\(.team)|\(.status)"')"
+check "the pipeline file is removed" "no" "$([ -e "$tmp/pl.json" ] && echo yes || echo no)"
+check "no pipeline file is not an error" "0" "$(lessons_collect_file FXA-2 "$tmp/none.json"; echo $?)"
+
 # The store gives the same lessons and the same guide section as the file.
 if command -v sqlite3 >/dev/null; then
   export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI=""
