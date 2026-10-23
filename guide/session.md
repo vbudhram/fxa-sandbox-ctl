@@ -29,7 +29,13 @@ Rules that follow from this:
   an OAuth client row, a test account or a downloaded tool.
 - There is no editor, so interactive commands stop. In place of
   `git rebase -i`, use `git commit --fixup <sha>` and then
-  `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash origin/main`.
+  `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash "$(git merge-base HEAD origin/main)"`.
+  Autosquash onto `origin/main` itself also moves the branch onto a newer main.
+- After you cherry-pick the commits of a PR that merged main in, compare the
+  result with the PR head (`git diff --stat <pr-head> HEAD`). A merge of main can
+  carry conflict fixes, and a cherry-pick of the other commits drops them.
+- A `refs/fxa/pr-<N>` ref from an earlier read can be missing here. Fetch it
+  with `git fetch origin pull/<N>/head:refs/fxa/pr-<N>`.
 
 The host checks the change before it ships it; section 4 lists what it refuses.
 

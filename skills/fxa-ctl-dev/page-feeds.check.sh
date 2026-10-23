@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dashboard/index.html: a failed Errors, Lessons or usage read says so, never an all-clear, and an Answers row opens from the keyboard.
+# dashboard/index.html: a failed Errors or usage read says so, never an all-clear, and an Answers row opens from the keyboard.
 #   bash skills/fxa-ctl-dev/page-feeds.check.sh
 set -u
 p="$(dirname "$0")/page.sh" F="$(dirname "$0")/page-fixture-feeds.json"; fail=0
@@ -8,8 +8,6 @@ out="$(bash "$p" '#errors' --fixture "$F" --probe 'await new Promise(r => setTim
   return [/Could not read the errors/.test(t), /No open errors/.test(t), document.getElementById("n-errors").textContent].join("|")')"; rc=$?
 [ "$rc" = 3 ] && { echo "SKIP (no Chrome): the page probes did not run; set CHROME to run them"; exit 0; }
 ck "a failed errors read says so, not 'No open errors', and the badge is ?" "true|false|?" "$out"
-ck "a failed lessons read says so, not 'No pending lessons', and the badge is ?" "true|false|?" "$(bash "$p" '#lessons' --fixture "$F" --probe 'await new Promise(r => setTimeout(r, 300)); const t = document.getElementById("s-lessons").textContent;
-  return [/Could not read the lessons/.test(t), /No .*lessons\./.test(t), document.getElementById("n-lessons").textContent].join("|")')"
 ck "an Answers row opens with Enter on its button, keeps the focus, and a failed usage read says so" "true|true|true|false" "$(bash "$p" '#sessions/answers' --fixture "$F" --probe '
   const w = (ms) => new Promise(r => setTimeout(r, ms)); const real = window.fetch;
   window.fetch = (u, o) => String(u).startsWith("/api/usage") ? Promise.reject(new Error("down")) : real(u, o);

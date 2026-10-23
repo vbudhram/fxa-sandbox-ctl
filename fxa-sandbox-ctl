@@ -43,7 +43,6 @@ source "${SCRIPT_DIR}/lib/snapshot.sh"
 source "${SCRIPT_DIR}/lib/circleci.sh"
 source "${SCRIPT_DIR}/lib/finish.sh"
 source "${SCRIPT_DIR}/lib/errors.sh"
-source "${SCRIPT_DIR}/lib/lessons.sh"
 source "${SCRIPT_DIR}/lib/memory.sh"
 source "${SCRIPT_DIR}/lib/alerts.sh"
 source "${SCRIPT_DIR}/lib/db.sh"
@@ -499,8 +498,6 @@ EOF
     echo "Archiving prior handoff file in ${worktree_path}..." >&2
     mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
   }
-  # A prior ticket's lessons must not be queued under this one.
-  rm -f "${worktree_path}/.fxa-lessons.json"
   # Truncate the agent stream log so `tail` starts fresh.
   slot_write "${worktree_path}/.fxa-auto-claude.jsonl" < /dev/null 2>/dev/null || true
   slot_write "${worktree_path}/.fxa-auto-claude.log" < /dev/null 2>/dev/null || true
@@ -541,7 +538,6 @@ EOF
       FXA_MEMORY_USE_FILE="$mem_use" memory_collect "$key" "${worktree_path}/.fxa-memory.json" pipeline "${PIPE_PROFILE:-fxa}" 1 "$key" $(memory_profile_slugs)
       rm -f "${worktree_path}/.fxa-memory.json" "${worktree_path}/.fxa-memory-use.jsonl" "$mem_use"
     fi
-    lessons_collect_file "$key" "${worktree_path}/.fxa-lessons.json"
     # A read-only profile's run ends as a patch and the diff label, which also stops the VM.
     if [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
       pipeline_ship_ok "$key" "$worktree_path" || return 1
@@ -2876,7 +2872,6 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
     _checkout_consent "$(session_get "$key" checkout)" "$(session_get "$key" checkout_author)" \
       || { _session_finish_fail "$key" "$(session_get "$key" checkout_author) made this PR. I push to it only after they comment 'push ok' on it" "$mode"; return 1; }
   fi
-  lessons_collect "$key" "$name"
   memory_collect_session "$key" "$name" ship
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
@@ -3153,7 +3148,6 @@ main() {
         *) echo "Usage: fxa-sandbox-ctl sessions pause [reason] [--now] | resume | status" >&2; return 1 ;;
       esac ;;
     errors)     cmd_errors "$@" ;;
-    lessons)    cmd_lessons "$@" ;;
     alerts)     alerts_check ;;
     fc)         declare -F cmd_fc >/dev/null || { echo "ERROR: fc needs FXA_FC_HOST and the gce backend (FXA_VM_BACKEND=gce)" >&2; exit 1; }; cmd_fc "$@" ;;
     db)         cmd_db "$@" ;;

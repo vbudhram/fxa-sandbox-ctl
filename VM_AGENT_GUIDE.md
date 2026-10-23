@@ -146,7 +146,9 @@ planned tests, then the related specs and lint for each changed package, and
 only for the files you changed. With no file paths it also
 checks changes an earlier run left on the slot, so read `git status` first.
 After a fix, rerun only what failed with `/fxa-verify --failed`. Run the full
-`--run` once more before the handoff.
+`--run` once more before the handoff. Also run it again after a check by hand that
+copies a file away and back: the copy changes the file time, and the handoff
+check then calls the verdict stale.
 To prove that a test catches the bug, use `/fxa-verify --revert <spec>`. Do not
 use `git stash`. To run one spec, use
 `bash ~/.claude/skills/fxa-verify/verify.sh --run --no-lint --no-types <spec>`.
@@ -302,6 +304,11 @@ Firefox flow with its browser chrome (Sync, about:preferences), use
 `bash ~/.claude/skills/fxa-page-shot/record.sh`. Do not build an x11grab recorder by hand. A
 Playwright video shows the page only. If you cannot take a screenshot you planned, write
 the reason to `/workspace/.fxa-auto-media-skipped.txt`.
+
+To render a Mermaid diagram, run
+`PUPPETEER_SKIP_DOWNLOAD=1 npx @mermaid-js/mermaid-cli@11 -p <config>`. In the config, set
+`executablePath` to `~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome` and `args` to
+`["--no-sandbox"]`. The egress allowlist blocks the Puppeteer Chrome download.
 
 ## 9. Skills you have
 

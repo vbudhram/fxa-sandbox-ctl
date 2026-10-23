@@ -471,12 +471,7 @@ straight to step 4.
    'ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .' (do not type it). Write it with the Write tool (not an inline script) to
    .fxa-auto-done.json.tmp, then mv it into place.
 5. Run 'bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix' and fix what it prints.
-6. If this session taught you something that a later session in this repo needs
-   (a command that works, a trap, a wrong assumption that cost time), write
-   /workspace/.fxa-lessons.json as [{"lesson": "...", "why": "..."}]: at most 3,
-   one sentence each, about the repo or the sandbox, never about this change.
-   Write none when there is nothing new. The operator reviews each one first.
-7. Run $(runtime_skill_ref fxa-end): it writes /workspace/.fxa-memory.json, this work's notes and
+6. Run $(runtime_skill_ref fxa-end): it writes /workspace/.fxa-memory.json, this work's notes and
    learnings for the team's memory.
 EOF
 }

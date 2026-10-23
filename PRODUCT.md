@@ -79,8 +79,6 @@ within their budget. Nobody asked the operator for anything, and FxA sessions di
 | **Reviewer** | People, and Copilot. | Review and merge the agent's PRs. A Copilot review or a failed CI run starts an automatic fix round, at most 2 for each PR. |
 | **Operator** | Vijay. | Holds the secrets, IAM, the live bot's access, the kill switches and promote. The guards are the operator's. |
 
-A team admin (any email in `TEAM_ADMINS`) approves or rejects lessons on the dashboard. Each team's runners get only that team's approved lessons.
-
 Design for the owner first, and for the teammate second. Every other role is a guard, not a user.
 
 ---

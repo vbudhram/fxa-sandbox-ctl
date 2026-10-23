@@ -343,11 +343,6 @@
   .errs .err { display:flex; gap:var(--s3); align-items:flex-start; padding:var(--s2) 0; border-top:1px solid var(--line); }
   .errs .err .tag { flex:0 0 76px; text-align:center; font-size:var(--t-label); font-weight:700; padding:2px 0; border-radius:var(--r-pill); } .errs .err .body { min-width:0; }
   .errs .err .m { font-family:var(--mono); font-size:var(--t-label); overflow-wrap:anywhere; }
-  .errs .err textarea { width:100%; box-sizing:border-box; font:var(--t-sub) var(--sans); color:var(--ink); background:var(--sunk); border:1px solid var(--line2); border-radius:var(--r-md); padding:6px 8px; resize:vertical; }
-  .errs .err .acts { display:flex; gap:var(--s2); margin-top:var(--s2); }
-  .errs .err .acts button { border:1px solid var(--line2); background:transparent; color:var(--ink); border-radius:var(--r-md); padding:3px 10px; font:500 var(--t-label) var(--sans); cursor:pointer; }
-  .errs .err .acts button[data-act="approve"] { color:var(--link); border-color:var(--link); }
-  .errs .err .acts button:disabled { opacity:.5; cursor:default; }
   .errs .err .meta { font-size:var(--t-label); color:var(--dim); margin-top:2px; overflow-wrap:anywhere; }
   [data-views]:not(.on) { display:none !important; }
   body[data-view="overview"] section[data-empty="true"] { display:none !important; }
@@ -710,7 +705,6 @@
   <a href="#sessions" data-nav="sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12z"/></svg>Sessions<span class="n" id="n-sessions"></span></a>
   <a href="#stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats<span class="n" id="n-stats"></span></a>
   <a href="#errors" data-nav="errors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>Errors<span class="n" id="n-errors"></span></a>
-  <a href="#lessons" data-nav="lessons"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg>Lessons<span class="n" id="n-lessons"></span></a>
   <a href="#runners" data-nav="runners"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Sandboxes<span class="n" id="n-runners"></span></a>
   <a href="#teams" data-nav="teams"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.5.6 4 2.8 4 6"/></svg>Teams<span class="n" id="n-teams"></span></a>
   <span class="grow"></span>
@@ -736,7 +730,6 @@
   <section class="wide card" id="s-sess" data-views="sessions"></section>
   <section class="wide card" id="s-stats" data-views="stats"></section>
   <section class="wide card" id="s-errors" data-views="errors"></section>
-  <section class="wide card" id="s-lessons" data-views="lessons"></section>
   <section class="wide" id="s-teams" data-views="teams"></section>
   <section class="wide card" id="s-lanes" data-views="pipeline:belts"></section>
   <section class="wide card" id="s-done" data-views="pipeline:done"></section>
@@ -1859,43 +1852,6 @@ function renderErrors() {
     </div>`)}</div>
     <p class="empty">Mark one fixed: <span class="mono">fxa-sandbox-ctl errors resolve &lt;sig&gt; "&lt;commit or note&gt;"</span>. It reopens if it happens again. The log is also copied to the state bucket under <span class="mono">errors/</span>.</p>`}`);
 }
-// Lessons: what sessions learned. None reaches a runner until it is approved here.
-let LESSONS = null, LESSONS_ALL = false, LESSONS_ERR = "";
-async function loadLessons() {
-  const got = await feedRead("/api/lessons"); LESSONS_ERR = got.err ?? ""; if (got.rows) LESSONS = got.rows;
-  const pending = (LESSONS || []).filter(l => l.status === "pending").length;
-  const b = document.getElementById("n-lessons"); b.textContent = LESSONS_ERR ? "?" : pending || ""; b.className = "n" + (LESSONS_ERR || pending ? " warn" : "");
-  if (document.body.dataset.view === "lessons" && !document.activeElement?.closest?.("#s-lessons")) { renderLessons(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
-}
-function renderLessons() {
-  const fail = LESSONS_ERR ? html`<div class="emptybox" role="alert">Could not read the lessons: ${LESSONS_ERR}. Retrying.</div>` : "";
-  if (!LESSONS || (fail && !LESSONS.length)) { put("s-lessons", head("lessons") + (fail || emptybox("loading…"))); return; }
-  const rows = LESSONS.filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).slice().reverse()
-    .sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1));
-  const chip = { pending: "warn", approved: "ok", rejected: "dim" };
-  put("s-lessons", head(`${LESSONS_TAB === "all" ? "all" : LESSONS_TAB} lessons`, rows.length, "", "proposed by sessions at wrap-up") + html`${fail}${
-    rows.length === 0 ? emptybox(`No ${LESSONS_TAB === "all" ? "" : LESSONS_TAB + " "}lessons.`) : html`<div class="errs">${rows.map(l => html`<div class="err" data-lesson="${l.id}">
-      ${tag(l.status, chip[l.status] ?? "dim")}
-      <div class="body" style="flex:1">${l.status === "pending" ? html`<textarea rows="2" maxlength="300" aria-label="Lesson text">${l.text}</textarea>` : html`<div class="m">${l.text}</div>`}
-        <div class="meta">${l.why ? html`why: ${l.why} · ` : ""}${l.session?.startsWith("agent-") ? html`<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a>` : html`<span class="mono">${l.session}</span>`} · ${(l.at || "").slice(0, 10)}${l.decided_at ? html` · ${l.status} ${l.decided_at.slice(0, 10)}` : ""}</div>
-        <div class="acts">${l.status !== "approved" ? html`<button data-act="approve">${l.status === "pending" ? "Approve" : "Approve after all"}</button>` : ""}${l.status !== "rejected" ? html`<button data-act="reject">${l.status === "approved" ? "Retire" : "Reject"}</button>` : ""}<span class="meta" data-msg></span></div></div>
-    </div>`)}</div>
-    <p class="empty">Edit a pending lesson before you approve it. A change reaches sandboxes that start after it. From a shell: <span class="mono">fxa-sandbox-ctl lessons approve &lt;id&gt; [--text "…"]</span>.</p>`}`);
-}
-document.addEventListener("click", async e => {
-  const btn = e.target.closest?.("[data-lesson] button[data-act]"); if (!btn) return;
-  const row = btn.closest("[data-lesson]"), msg = row.querySelector("[data-msg]");
-  const text = row.querySelector("textarea")?.value.trim() ?? "";
-  row.querySelectorAll("button").forEach(b => b.disabled = true);
-  try {
-    const r = await fetch("/api/lessons", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: row.dataset.lesson, action: btn.dataset.act, text }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || r.status);
-    document.activeElement?.blur?.(); await loadLessons(); renderLessons();
-  } catch (err) { msg.textContent = `failed: ${err.message}`; row.querySelectorAll("button").forEach(b => b.disabled = false); }
-});
-
 // Team records: a JSON editor for team admins (/api/team-admin says who). The server checks every
 // write again: the gateway's signed user, TEAM_ADMINS, the validator and the store's generation.
 let TEAM_ADMIN = null, TED = null;   // TED: the open editor { name, text, gen, msg, ok, audit, arm }
@@ -4176,13 +4132,12 @@ const VIEWS = [
   ["sessions", "Sessions", "Slack threads and their sandboxes", [["live", "Live"], ["paused", "Paused"], ["stopped", "Stopped"], ["answers", "Answers"]]],
   ["stats", "Stats", "Spend, time and capacity", [["spend", "Spend"], ["prs", "PRs"], ["runners", "Runners and LLM"], ["pipeline", "Pipeline"]]],
   ["errors", "Errors", "Failures from the controller and the bot, grouped by signature", [["open", "Open"], ["all", "All"]]],
-  ["lessons", "Lessons", "What sessions learned. Approved lessons reach new sandboxes.", [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]]],
   ["runners", "Sandboxes", "Where the agents run, who uses them, and what it costs", [["all", "All"], ["pipeline", "Pipeline"], ["slack", "Slack"], ["routines", "Routines"]]],
   ["teams", "Teams", "Which teams exist, what each gets, who can start one, and how each is doing", []],
 ];
 // The Sessions list's person filter ("mine"), kept per browser.
 let SOWNER = ""; try { SOWNER = localStorage.getItem("sowner") || ""; } catch {}
-let VIEW = "overview", TAB = "", SESS_TAB = "live", SESS_AUTO = false, SESS_SEL = "", STATS_TAB = "spend", LESSONS_TAB = "pending", Q = "", CUR = -1;
+let VIEW = "overview", TAB = "", SESS_TAB = "live", SESS_AUTO = false, SESS_SEL = "", STATS_TAB = "spend", Q = "", CUR = -1;
 const SEL = {};
 let KEYS = false; try { KEYS = localStorage.getItem("keys") === "1"; } catch {}
 try { document.body.classList.toggle("noside", localStorage.getItem("noside") === "1"); document.body.classList.toggle("noright", localStorage.getItem("noright") === "1"); } catch {}
@@ -4213,7 +4168,6 @@ function route() {
   if (view === "sessions") { SESS_AUTO = !tabs.some(t => t[0] === sub) && view !== VIEW_PREV; SESS_TAB = TAB; SESS_SEL = /^agent-[a-z0-9]{4,12}$/.test(SEL.sessions ?? "") ? SEL.sessions : ""; }
   if (view === "stats") STATS_TAB = TAB;
   if (view === "errors") ERRS_ALL = TAB === "all";
-  if (view === "lessons") LESSONS_TAB = TAB;
   document.body.className = (document.body.className.replace(/\bv-\w+/g, "") + " v-" + view).trim();
   document.body.classList.toggle("bare", view === "sessions" && TAB === "answers");
   document.body.dataset.view = view;
@@ -4225,7 +4179,6 @@ function route() {
   renderHeader();
   if (view === "sessions" && AGENTS) renderSess();
   if (view === "errors") renderErrors();
-  if (view === "lessons") renderLessons();
   if (view === "stats") renderStats();
   if (view === "overview") ovRenders().forEach(([f, id]) => safeRender(f, id));
   if (view === "overview" && view !== VIEW_PREV) loadRuns();
@@ -4257,7 +4210,6 @@ function tabCount(t) {
   const ss = AGENTS?.sessions ?? [];
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
-  if (VIEW === "lessons") return LESSONS ? LESSONS.filter(l => t === "all" || l.status === t).length : "";
   if (VIEW === "pipeline") return SNAP ? (t === "belts" ? beltCount(beltGroups()) ?? "" : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
@@ -4288,7 +4240,6 @@ function sideGroups() {
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
-  if (VIEW === "lessons") return [{ items: (LESSONS ?? []).filter(l => LESSONS_TAB === "all" || l.status === LESSONS_TAB).filter(l => hit(l.text)).map(l => ({ id: l.id, d: l.status === "pending" ? "warn" : l.status === "approved" ? "ok" : "", t: l.text, m: [l.status, l.session] })) }];
   if (VIEW === "teams") {
     const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
     const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
@@ -4412,7 +4363,7 @@ function sbClearGone() {
 }
 function renderRight() {
   const el = document.getElementById("right"); let body = "";
-  if (["errors", "lessons"].includes(VIEW) && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
+  if (VIEW === "errors" && !SEL[VIEW]) SEL[VIEW] = sideGroups()[0]?.items[0]?.id;
   if (VIEW === "sessions") { const s = currentSession(); if (s) body = sessionDetails(s); }
   else if (VIEW === "errors") { const e = (ERRS ?? []).find(x => x.sig === SEL.errors);
     if (e) body = String(html`${raw(closeBtn)}<h2 class="rh">Error<small>${e.sig}</small></h2><div><h4>Signature</h4>${kvRow("Status", e.status)}${kvRow("Source", `${e.source}/${e.kind}`)}${kvRow("Where", e.where)}
@@ -4420,10 +4371,6 @@ function renderRight() {
       ${e.log ? kvRow("Log", html`<span class="mono">${e.log}</span>`) : ""}${e.resolved ? kvRow("Resolved", `${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}`) : ""}</div>
       <div><h4>Message</h4><div class="mono" style="overflow-wrap:anywhere">${e.message}</div></div>
       <div><h4>Mark it fixed</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl errors resolve ${e.sig} "&lt;commit or note&gt;"</div></div>`); }
-  else if (VIEW === "lessons") { const l = (LESSONS ?? []).find(x => x.id === SEL.lessons);
-    if (l) body = String(html`${raw(closeBtn)}<h2 class="rh">Lesson<small>from ${l.session}</small></h2><div><h4>Text</h4>${l.text}</div>${l.why ? html`<div><h4>Why</h4>${l.why}</div>` : ""}
-      <div><h4>Record</h4>${kvRow("Status", l.status)}${kvRow("Proposed", (l.at || "").slice(0, 10))}${l.decided_at ? kvRow("Decided", l.decided_at.slice(0, 10)) : ""}${kvRow("Session", html`<a class="mono" href="#sessions/stopped/${l.session}">${l.session}</a>`)}</div>
-      <p class="empty">Edit, approve or reject it in the list in the middle.</p>`); }
   else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = String(html`<p class="rempty">This panel did not render: ${e.message}</p>`); }
     if (d == null) sbClearGone(); else body = d; }
   else if (VIEW === "teams") { renderTeams(); return; }
@@ -4453,7 +4400,6 @@ function select(id) {
     SEL[VIEW] = id; renderSide(); renderRight();
     if (VIEW === "teams") renderTeams();
     if (VIEW === "errors") document.getElementById("err-" + id)?.scrollIntoView({ block: "center", behavior: "smooth" });
-    if (VIEW === "lessons") document.querySelector(`[data-lesson="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   if (matchMedia("(max-width:900px)").matches) document.body.classList.remove("showside");
   if (matchMedia("(max-width:1280px)").matches) document.body.classList.add("showright");
@@ -4577,7 +4523,7 @@ async function poll() {
   overlay();
   render();
   HIST_OPEN.forEach(loadHist);
-  loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
+  loadErrors(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
   loadSbDone();
   if (VIEW === "teams" && TTAB === "memory" && MEM.team && MEM.team === SEL.teams && TEAM_ADMIN?.admin) loadMemory(MEM.team).then(() => MEM.team === SEL.teams && renderTeams());
   if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());

@@ -67,7 +67,7 @@ What trips agents most often:
 - Skills are in ~/.codex/skills (also reachable as ~/.claude/skills, the path the
   guides use). The skills of the repo are in /workspace/.claude/skills/<name>/SKILL.md:
   read the file to use one. If /workspace/CLAUDE.md exists, read it first.' | _vm_session_git_rule)"
-  # The same approved lessons and team memory a Claude runner gets.
+  # The same team memory a Claude runner gets.
   guide="${guide}$(_vm_team_rules)$(_vm_team_context "$name")"
   agents_b64="$(printf '%s\n\n%s\n' "$host_agents" "$guide" | base64 | tr -d '\n')"
   _vm_git_identity "$name"
