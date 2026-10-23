@@ -551,8 +551,11 @@
   .belt > a { text-decoration:none; color:var(--ink); padding-top:var(--s2); padding-bottom:var(--s2); border-top:1px solid var(--sunk); min-height:44px; }
   .belt > a:hover { background:var(--bg); } .belt.sel > a { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
   .belt .tk { min-width:0; display:grid; grid-template-columns:28px minmax(0,1fr); column-gap:var(--s3); row-gap:2px; } .belt .tk > :not(.src) { grid-column:2; }
-  .belt .src { grid-row:1 / span 3; align-self:start; width:28px; height:28px; border-radius:var(--r-pill); display:grid; place-items:center; margin-top:2px; }
-  .belt .src svg { width:14px; height:14px; } .belt .src.jira { background:var(--infobg); color:var(--info); } .belt .src.gh, .belt .src.slack { background:var(--sunk); color:var(--ink); box-shadow:inset 0 0 0 1px var(--line); }
+  .src { width:28px; height:28px; border-radius:var(--r-pill); display:grid; place-items:center; flex:none; }
+  .src svg { width:14px; height:14px; } .src.jira { background:var(--infobg); color:var(--info); } .src.gh, .src.slack { background:var(--sunk); color:var(--ink); box-shadow:inset 0 0 0 1px var(--line); }
+  .belt .src, .qi .src { grid-row:1 / span 3; align-self:start; margin-top:2px; }
+  .qi { display:grid; grid-template-columns:28px minmax(0,1fr); column-gap:var(--s3); } .qi > :not(.src) { grid-column:2; }
+  .ptiles { margin-bottom:var(--s4); }
   .belt .tk .l2 { font-size:var(--t-sub); color:var(--dim); line-height:1.4; }
   .belt .tk .m { display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:var(--t-label); color:var(--faint); }
   .belt .tk .key { font-weight:700; color:var(--info); } .belt .tk [data-href] { cursor:pointer; } .belt .tk [data-href]:hover { text-decoration:underline; } .belt .tk .tag.sq { max-width:130px; overflow:hidden; text-overflow:ellipsis; }
@@ -3499,6 +3502,9 @@ const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working
 // Brand marks from Simple Icons (CC0): the source of a belt, as a badge before its ticket.
 const BRAND = { jira: "M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0Z", github: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12", slack: "M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" };
 const brandSvg = (k, label) => raw(`<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${BRAND[k]}"></path></svg>`);
+const srcBadge = k => html`<span class="${cls("src", k === "github" ? "gh" : k)}">${brandSvg(k)}</span>`;
+// A stat tile of the Pipeline tabs; v is "?" when its feed failed, never a confident 0.
+const statTile = (l, v, sub, tone, href) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone), href });
 const strokeSvg = d => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`);
 // Each group of belts: an icon and one line on what it means.
 const BELT_HINT = { "Review and merge": ['<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', "CI passed. A person reviews and merges each PR."],
@@ -3515,7 +3521,7 @@ function beltRow(r) {
   const nodes = LANE_ST.map((_, j) => html`<span class="${cls("n", { done: j < r.st, cur: j === r.st, live: j === r.st && live })}"></span>`);
   const age = r.ageText ?? (r.age != null ? `${r.age}d` : short(t.elapsed_seconds)), open = TAB === "belts" && t.key === SEL.pipeline;
   return html`<li class="${cls("belt", r.tone, { sel: open })}" data-belt="${t.key}"><a class="bgrid" data-focus="row" href="${open ? "#pipeline/belts" : `#pipeline/belts/${encodeURIComponent(t.key)}`}" aria-expanded="${String(open)}" aria-controls="bd-${t.key}">
-    <span class="tk"><span class="${cls("src", t.slack ? "slack" : t.pr ? "gh" : "jira")}">${brandSvg(t.slack ? "slack" : t.pr ? "github" : "jira")}</span><span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${t.key}</span>${t.pr ? html`<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${t.pr}</span>` : ""}${title.tag ? tag(title.tag, "", { sq: true }) : ""}</span><span class="t" title="${t.summary || ""}">${title.text}</span>${r.l2 ? html`<span class="l2" title="${r.l2}">${r.l2}</span>` : ""}</span>
+    <span class="tk">${srcBadge(t.slack ? "slack" : t.pr ? "github" : "jira")}<span class="m"><span class="key mono"${ext(jiraHref(t.key), "Jira")}>${t.key}</span>${t.pr ? html`<span class="mono"${ext(prUrl(t.pr), "GitHub")}>#${t.pr}</span>` : ""}${title.tag ? tag(title.tag, "", { sq: true }) : ""}</span><span class="t" title="${t.summary || ""}">${title.text}</span>${r.l2 ? html`<span class="l2" title="${r.l2}">${r.l2}</span>` : ""}</span>
     <span class="trk"><span class="base"></span><span class="fill" style="width:${(r.st * 100 / 9).toFixed(2)}%"></span><span class="nodes" aria-hidden="true">${nodes}</span><span class="vh">Stop ${r.st + 1} of 9, ${LANE_ST[r.st]}${live ? ", agent working" : ""}</span></span>
     <span class="st"><span class="${cls("l1", "tag", beltTone(r))}" title="${r.l1}">${r.l1}</span><span class="${cls("age", { old: r.age >= 7 })}">${age}</span></span></a>${open ? beltDetails(r) : ""}</li>`;
 }
@@ -3560,8 +3566,7 @@ function beltsHtml(g) {
   const n = beltCount(g), q = x => x == null ? "?" : x, live = g.working.some(r => r.t.agent_alive);
   const counts = LANE_ST.map((_, j) => BELT_GROUPS.reduce((c, [k]) => c + g[k].filter(r => r.st === j).length, 0));
   const old = g.outside.filter(r => r.age >= 3).length;
-  // Four tiles; a feed that failed gives ?, never a confident 0.
-  const stat = (l, v, sub, tone, href) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone), href });
+  const stat = statTile;
   const repo = teamRepo(), lbl = SNAP.team?.pr_label, prHref = repo && lbl ? `https://github.com/${repo}/pulls?q=is%3Apr+state%3Aopen+label%3A${encodeURIComponent(lbl)}` : "";
   const you = g.unknown.needs || g.unknown.review ? null : g.needs.length + g.review.length, pc = openPrCounts(), wk = Date.now() - 7 * 86400000;
   const merged = SNAP.merged_prs == null ? null : SNAP.merged_prs.filter(p => p.key && Date.parse(p.merged) >= wk).length;
@@ -3611,7 +3616,10 @@ function doneHtml() {
   const prs = SNAP?.merged_prs, rows = doneRows(), lbl = SNAP?.team?.pr_label, cap = SNAP?.limits?.merged_prs ?? prs?.length ?? 0;
   if (prs == null) return html`<p class="bempty">Could not read merged PRs from GitHub.</p>`;
   if (!rows.length) return html`<p class="bempty">No merged ticket yet.</p>`;
-  return html`<p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${cap} merged PRs${lbl ? ` labelled ${lbl}` : ""}, newest first.</p>
+  const took = rows.map(r => (Date.parse(r.merged) - Date.parse(r.t.created)) / 86400000).filter(Number.isFinite).sort((a, b) => a - b);
+  const wk = rows.filter(r => (days(r.merged) ?? 99) < 7).length, med = took.length ? Math.round(took[took.length >> 1]) : null;
+  return html`<div class="rtkpis ptiles">${statTile("Tickets merged", rows.length, `from the last ${cap} merged PRs`)}${statTile("Merged, 7 days", wk, wk === 1 ? "ticket" : "tickets")}
+    ${statTile("Median days to merge", med ?? "—", "from the PR's creation")}</div><p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${cap} merged PRs${lbl ? ` labelled ${lbl}` : ""}, newest first.</p>
     <div class="tscroll">${table(["Ticket", "Title", "Merged", "Days to merge", "Merged by"], rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
       return html`<tr><td>${raw(jira(t.key))}${t.pr ? html` ${raw(prl("", t.pr))}` : ""}</td><td>${laneTitle(t.summary).text}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${r.by || "—"}</td></tr>`; }), { cls: "dtab" })}</div>`;
 }
@@ -3726,26 +3734,30 @@ function renderTickets() {
   const s = SNAP; if (!s) return;
   const review = s.review, repo = s.repo;
   const waiting = review ? review.filter(isWaitingOnHuman) : [];
-  const row = r => html`<div class="item">
+  const row = r => html`<div class="item qi">${srcBadge(r.pr ? "github" : "jira")}
       <div class="line1">${raw(jira(r.key))}${raw(titled(r.title ? laneTitle(r.title).text : r.pr ? "title unavailable" : "no PR found"))}${raw(verdictTag(r))}</div>
       <div class="line2">${r.pr ? raw(prl(repo, r.pr)) : "no PR on this branch"} ${raw(checkBars(r))} ${raw(waitAge(r))}</div></div>`;
   const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
   const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
   // The open PR list is on the Belts tab; here only the tickets in review.
-  put("s-review", String(html`${review == null ? html`<div class="headline"><span class="big unknown">?</span><span class="cap">${SNAP?.done_fetch_failed ? "Jira" : "GitHub"} fetch failed; unknown, not zero</span></div>`
-      : html`<div class="headline"><span class="big">${waiting.length}</span><span class="cap">waiting on a human reviewer</span>
-         <span class="rest">${review.length} in review · oldest wait first</span></div>`}${
+  const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
+  // A hold waits for another ticket to merge (pipeline_hold); it is not launchable, and not a skip a person must answer.
+  const held = skipped.filter(k => k.in_queue !== false && k.held_by), liveSkips = skipped.filter(k => k.in_queue !== false && !k.held_by), staleSkips = skipped.filter(k => k.in_queue === false);
+  const stuck = others.filter(r => r.state !== "MERGED").length, qv = x => q.fetch_failed ? "?" : x, rv = x => review == null ? "?" : x;
+  const tiles = html`<div class="rtkpis ptiles">${statTile("Waiting on a reviewer", rv(waiting.length), review == null ? "a feed failed" : `${review.length} in review`, waiting.length ? "warn" : "")}
+    ${statTile("Stuck in review", rv(stuck), "CI red, conflicts, or changes requested", stuck ? "bad" : "")}
+    ${statTile("Launchable", qv(ready.length), q.fetch_failed ? "Jira did not answer" : s.mode?.newtickets === "off" ? "intake is off" : ready[0] ? `next up ${ready[0].key}` : "nothing to launch")}
+    ${statTile("Waits on a person", qv(liveSkips.length), q.fetch_failed ? "Jira did not answer" : `${held.length} held on another ticket`, liveSkips.length ? "warn" : "")}</div>`;
+  put("s-review", String(html`${tiles}${review == null ? html`<div class="headline"><span class="big unknown">?</span><span class="cap">${SNAP?.done_fetch_failed ? "Jira" : "GitHub"} fetch failed; unknown, not zero</span></div>`
+      : html`<h2>Waiting on a reviewer<span class="n">${waiting.length}</span><span class="note">oldest wait first</span></h2>`}${
     review == null ? "" : review.length === 0 ? html`<div class="empty">nothing awaiting review</div>`
      : html`${waiting.slice().sort(byWait).map(row)}${
        others.length ? html`<h2>Not waiting on a reviewer<span class="n">${others.length}</span><span class="note">CI red, conflicts, or changes requested</span></h2>${others.slice().sort(byWait).map(row)}` : ""}`}`));
 
-  const q = s.queue ?? {}, ready = q.ready ?? [], skipped = q.skipped ?? [];
   // A skip outside the epic focus is still in the queue; the focus hides it from the launch list.
-  const skipRow = k => html`<div class="item"><div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${k.in_focus === false && k.in_queue !== false ? tag("outside the focus") : ""}${tag(`${k.passes}×`)}</span></div>
+  const skipRow = k => html`<div class="item qi">${srcBadge("jira")}<div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${k.in_focus === false && k.in_queue !== false ? tag("outside the focus") : ""}${tag(`${k.passes}×`)}</span></div>
              <div class="line2 reason" title="${k.reason}">${k.reason}</div></div>`;
-  // A hold waits for another ticket to merge (pipeline_hold); it is not launchable, and not a skip a person must answer.
-  const held = skipped.filter(k => k.in_queue !== false && k.held_by), liveSkips = skipped.filter(k => k.in_queue !== false && !k.held_by), staleSkips = skipped.filter(k => k.in_queue === false);
-  const heldRow = k => html`<div class="item"><div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${tag(`waiting on ${k.held_by}`, "info")}</span></div>
+  const heldRow = k => html`<div class="item qi">${srcBadge("jira")}<div class="line1">${raw(jira(k.key))}${raw(titled(k.summary))}<span>${tag(`waiting on ${k.held_by}`, "info")}</span></div>
              <div class="line2 reason" title="${k.reason}">${k.reason}</div></div>`;
   put("s-queue", String(html`${raw(head("queue", q.fetch_failed ? "?" : ready.length + liveSkips.length + held.length, q.fetch_failed ? "" : `${ready.length} launchable${held.length ? `, ${held.length} held` : ""}`, SNAP?.team?.queue_label ? `labelled ${esc(SNAP.team.queue_label)}` : "in the queue"))}${
     q.fetch_failed ? html`<div class="unknown">Jira fetch failed; unknown, not zero</div>`
@@ -3753,7 +3765,7 @@ function renderTickets() {
           ready.length ? html`<details data-k="launchable"><summary>${ready.length} launchable, oldest first</summary><div class="body">${
             ready.map(t => html`<div class="item"><div class="line1">${raw(jira(t.key))}${raw(titled(t.summary))}<span></span></div></div>`)}</div></details>` : ""}`
      : ready.length === 0 ? html`<div class="empty">nothing launchable right now</div>`
-        : html`${ready.slice(0, 5).map((t, i) => html`<div class="item"><div class="line1">${raw(jira(t.key))}${raw(titled(t.summary))}<span>${i === 0 ? tag("next up", "info") : ""}</span></div></div>`)}${
+        : html`${ready.slice(0, 5).map((t, i) => html`<div class="item qi">${srcBadge("jira")}<div class="line1">${raw(jira(t.key))}${raw(titled(t.summary))}<span>${i === 0 ? tag("next up", "info") : ""}</span></div></div>`)}${
           ready.length > 5 ? html`<div class="empty" style="padding-top:var(--s2)">+ ${ready.length - 5} more launchable</div>` : ""}`}${
        held.length ? html`<details data-k="held" open><summary>${held.length} held, waiting on another ticket to merge</summary><div class="body">${
           held.map(heldRow)}</div></details>` : ""}${
