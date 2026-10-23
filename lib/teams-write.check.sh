@@ -25,7 +25,7 @@ if [ "\$1" = routine ]; then
   [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: Someone changed this routine since you opened it. Load it again to see their change." >&2; exit "\$(cat "$tmp/rc")"; }
   exit 0
 fi
-case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
+case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; options) echo '{"skills":["s"]}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
 [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
 EOF
 chmod +x "$tmp/ctl"; printf 'k1' > "$tmp/hmac"
@@ -133,10 +133,27 @@ M = "/api/teams/rusty/memory"
 check("memory: unsigned 401, a non-admin 403, an admin runs memory list for the URL team and gets its JSON",
       (401, 403, (200, {"on": True, "entries": []}), "memory list rusty"),
       (call("GET", M)[0], call("GET", M, headers=sig(V, "GET", M))[0], call("GET", M, headers=sig(A, "GET", M)), args()))
+O = "/api/teams/options"
+check("options: unsigned 401, a non-admin 403, an admin gets profile options' JSON, never a team named options", (401, 403, (200, {"skills": ["s"]}), "profile options"),
+      (call("GET", O)[0], call("GET", O, headers=sig(V, "GET", O))[0], call("GET", O, headers=sig(A, "GET", O)), args()))
+PQ = "/api/teams/people/pat%20doe"
+check("people: unsigned 401, a non-admin 403, an admin with no store gets an empty list, and a control character is 400", (401, 403, (200, {"at": None, "people": []}), 400),
+      (call("GET", PQ)[0], call("GET", PQ, headers=sig(V, "GET", PQ))[0], call("GET", PQ, headers=sig(A, "GET", PQ)), call("GET", "/api/teams/people/a%0Ab", headers=sig(A, "GET", "/api/teams/people/a%0Ab"))[0]))
+TS = "/api/teams/rusty/test/stop"
+check("test stop: none running is 409", 409, call("POST", TS, {}, sig(A, "POST", TS))[0])
+import subprocess as sp, signal as sg
+pr = sp.Popen(["bash", "-c", "trap 'echo stopped > " + tmp + "/stopped; exit 143' TERM; while :; do sleep 0.1; done"]); time.sleep(0.3)
+open(f"{tmp}/teams/rusty.test.pid", "w").write(str(pr.pid))
+st = call("POST", TS, {}, sig(A, "POST", TS))[0]
+try:
+    pr.wait(5)
+except sp.TimeoutExpired:
+    pr.kill()  # no TERM came: the check fails below, and the loop must not keep the run open
+check("test stop: a running test gets TERM, and its trap runs", (202, "stopped", 401), (st, open(f"{tmp}/stopped").read().strip() if os.path.exists(f"{tmp}/stopped") else "", call("POST", TS, {})[0]))
 server.team_private = lambda p: p == "secret"
 ME, MD = M + "/mem-0000aaaa", M + "/mem-0000aaaa/delete"
 E = {"scope": "team", "kind": "trap", "text": "t", "cites": []}
-check("memory write: unsigned 401, a non-admin 403, and no command runs", (401, 403, "memory list rusty"),
+check("memory write: unsigned 401, a non-admin 403, and no command runs", (401, 403, "profile options"),
       (call("POST", M, {"entry": E})[0], call("POST", M, {"entry": E}, sig(V, "POST", M))[0], args()))
 st, body = call("POST", M, {"entry": E}, sig(A, "POST", M))
 check("memory add: the admin's set runs with the entry in a record file, not argv, as the admin", (200, "memory set rusty ", E, A),

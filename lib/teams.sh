@@ -309,6 +309,8 @@ teams_test() {
     rm -f "$f"; echo "FAIL the runner did not start; see ${SESSION_DIR}/${key}.log"; echo "failed: team ${name} stays as it is"; return 1
   fi
   rm -f "$f"
+  # The dashboard's Stop sends TERM: stop the runner too, so a stopped test leaves nothing up.
+  trap '"$ctl" --backend gce stop "$key" >/dev/null 2>&1; echo "== stopped ${key}: the test was stopped"; echo "failed: team ${name} stays as it is (the test was stopped)"; exit 143' TERM
   if FXA_TRY_TURN_SECONDS="${FXA_TEAMS_TEST_SECONDS:-1200}" _session_try_wait "$ctl" "$key" && [ "${_TRY_LAST:-}" != error ]; then
     echo "ok   the runner booted and the agent answered"
     # A failed probe ssh fails the test here; under set -e it would end the command and leave the runner up.
@@ -318,6 +320,7 @@ teams_test() {
   else
     echo "FAIL the runner did not finish its first turn${_TRY_LAST:+ (it ended in ${_TRY_LAST})}; see ${SESSION_DIR}/${key}.log"; rc=1
   fi
+  trap - TERM
   "$ctl" --backend gce stop "$key" >/dev/null 2>&1 || echo "WARN: the stop of ${key} failed; fxa-sandbox-ctl stop ${key}" >&2
   echo "== stopped ${key}"
   if [ "$rc" = 0 ]; then printf '%s\n' "$gen" > "${FXA_TEAMS_DIR}/${name}.tested"; echo "passed: team ${name} may be activated at generation ${gen}"

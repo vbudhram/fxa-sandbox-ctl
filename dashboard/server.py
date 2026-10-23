@@ -18,6 +18,7 @@ import json
 import os
 import queue
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -27,7 +28,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 CTL = ROOT.parent / "fxa-sandbox-ctl"
@@ -868,6 +869,16 @@ class Handler(BaseHTTPRequestHandler):
         pidf.write_text(str(p.pid))
         self._json(202, {"ok": True, "out": f"testing {name}: it boots one runner, a few minutes. Load the record again to see the result."})
 
+    def _team_test_stop(self, name):
+        """Stop a running test: TERM to profile test, whose trap stops the runner it booted (teams_test)."""
+        pidf = Path(os.environ.get("FXA_TEAMS_DIR") or Path.home() / ".claude/state/teams") / f"{name}.test.pid"
+        try:
+            os.kill(int(pidf.read_text()), signal.SIGTERM)
+        except (OSError, ValueError):
+            self._json(409, {"error": "no test of this team is running"})
+            return
+        self._json(202, {"ok": True, "out": f"stopping the test of {name}: it stops its runner, then the log says so"})
+
     def _memory_write(self, path):
         """POST /api/teams/<name>/memory[/<id>[/delete]]: a signed admin adds, edits or deletes a team fact.
         The body is {entry, v} (v: the version the admin read; none for an add), JSON only, 64 KB at most."""
@@ -947,7 +958,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _team_write(self, path):
         """POST /api/teams[/validate|/<name>[/status|/delete]]: a signed admin's change, JSON only, 64 KB at most."""
-        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete|test|secret))?)?", path)
+        m = re.fullmatch(rf"/api/teams(?:/(validate)|/({TEAM_NAME})(?:/(status|delete|test|test/stop|secret))?)?", path)
         if not m:
             self._json(404, {"error": "not found"})
             return
@@ -976,6 +987,8 @@ class Handler(BaseHTTPRequestHandler):
         rec, gen = body.get("record"), str(body.get("generation") or "")
         if verb == "test":
             self._team_test(user, name)
+        elif verb == "test/stop":
+            self._team_test_stop(name)
         elif verb == "secret":
             self._team_secret(user, name, body)
         elif verb == "delete":
@@ -1118,6 +1131,30 @@ class Handler(BaseHTTPRequestHandler):
                 args = ["templates"] if not m else ["channels", m.group(1)] if m.group(2) == "routine-channels" \
                     else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]
                 self._team_ctl(user, args, read=True, cmd="routine")
+            return
+        # The people picker of a team's Settings: names, handles and emails from the live bot's Slack list. Admins
+        # only. The query is in the path, because the gateway's signature covers the path and not the query string.
+        m = re.fullmatch(r"/api/teams/people/([^/]{2,2600})", path)
+        if m:
+            if self._admin("GET", path):
+                q = unquote(m.group(1))
+                if any(ord(c) < 32 for c in q) or len(q) > 2500:
+                    self._json(400, {"error": "bad search"})
+                    return
+                try:
+                    con = fxadb.connect(readonly=True)
+                    try:
+                        self._json(200, fxadb.people(con, q))
+                    finally:
+                        con.close()
+                except Exception:  # noqa: BLE001  no store, or no slack_users table yet: an empty list says so
+                    self._json(200, {"at": None, "people": []})
+            return
+        # What the team forms offer (cap ceilings, skills, boot scripts, connector names): admins only.
+        if path == "/api/teams/options":
+            user = self._admin("GET", path)
+            if user:
+                self._team_ctl(user, ["options"], read=True)
             return
         # A team's memory: admins only, for reading too, since an entry can name internal code.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/memory", path)

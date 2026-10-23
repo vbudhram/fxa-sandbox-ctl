@@ -214,3 +214,20 @@ def _is_json(s):
         return True
     except ValueError:
         return False
+
+
+ID_LIST = re.compile(r"^[UW][A-Z0-9]{6,}(,[UW][A-Z0-9]{6,}){0,199}$")
+
+
+def people(con, q, env="live", most=20):
+    """For the people picker of a team's Settings (admins only): the people whose name, handle or email holds q,
+    or, when q is a comma list of member IDs, those people. at is the time of the bot's last list (None: no list)."""
+    at = con.execute("SELECT max(at) FROM slack_users WHERE env = ?", (env,)).fetchone()[0]
+    if ID_LIST.match(q):
+        ids = q.split(",")
+        rows = con.execute(f"SELECT id, name, handle, email FROM slack_users WHERE env = ? AND id IN ({','.join('?' * len(ids))})", (env, *ids))
+    else:
+        like = "%" + q.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        rows = con.execute("SELECT id, name, handle, email FROM slack_users WHERE env = ? AND (lower(name) LIKE ? ESCAPE '\\' OR lower(handle) LIKE ? ESCAPE '\\'"
+                           " OR email LIKE ? ESCAPE '\\') ORDER BY lower(name) LIMIT ?", (env, like, like, like, most))
+    return {"at": at, "people": [dict(r) for r in rows]}

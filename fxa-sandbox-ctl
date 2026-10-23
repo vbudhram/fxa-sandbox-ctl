@@ -3023,6 +3023,8 @@ main() {
     devslot)    cmd_devslot "$@" ;;
     profile)    case "${1:-}" in
                   show) pipeline_profile_json ;;
+                  # What the dashboard's team forms offer: cap ceilings, skills, boot scripts, connector names.
+                  options) python3 -I "${SCRIPT_DIR}/lib/team_record.py" options ;;
                   # Every team, for the bot's !stack picker: one profile_show each, in its own shell.
                   # A team that does not load is named on stderr, not dropped without a word.
                   list) local n out; for n in $(pipeline_profile_names); do

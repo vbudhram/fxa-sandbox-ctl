@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql applied 009-lessons-team.sql applied 010-slack-channels.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql applied 009-lessons-team.sql applied 010-slack-channels.sql applied 011-slack-users.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "10|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "11|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"
@@ -203,8 +203,20 @@ check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169
     _DB_DIR="$real"; db_init >/dev/null
     db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","team":"crew","text":"a crew lesson","status":"pending"}'
     db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","text":"a crew lesson, edited","status":"approved"}'
-    check "schema 9: the old lesson is fxa's, a new one keeps its team through an update" "10|fxa|crew" \
+    check "schema 9: the old lesson is fxa's, a new one keeps its team through an update" "11|fxa|crew" \
       "$(_db "PRAGMA user_version;")|$(db_value "SELECT team FROM lessons WHERE id = 'o1';")|$(db_value "SELECT team FROM lessons WHERE id = 'n1';")"
   else echo "FAIL schema 9: could not build a schema 8 store to migrate"; fail=1; fi
   exit "$fail" ) || fail=1
+# Schema 11: a bot's people list replaces its env's rows; a bot, a bad id or no name is left out; the picker finds by
+# name, handle or email, and by a list of member IDs.
+db_ingest slack_users '{"env":"live","at":5,"users":[{"id":"U0000001","name":"Old"}]}'
+db_ingest slack_users '{"env":"live","at":7,"users":[{"id":"U0000002","name":"Pat Doe","handle":"pat","email":"Pat@Example.com"},{"id":"W0000003","name":"Sam_Lee","handle":"sam"},{"id":"B0000004","name":"bot"},{"id":"U0000005"}]}'
+db_ingest slack_users '{"env":"dev","at":9,"users":[{"id":"U0000009","name":"Dev Person"}]}'
+check "slack_users: a write replaces its env, keeps the other, and drops a bad id or a missing name" "U0000002,W0000003|1|pat@example.com" \
+  "$(db_value "SELECT group_concat(id) FROM (SELECT id FROM slack_users WHERE env = 'live' ORDER BY id);")|$(db_value "SELECT count(*) FROM slack_users WHERE env = 'dev';")|$(db_value "SELECT email FROM slack_users WHERE id = 'U0000002';")"
+check "people: by name, handle or email, a LIKE character is literal, and a list of IDs" "U0000002|U0000002|U0000002||W0000003|U0000002,W0000003|7" \
+  "$(FXA_DB="$FXA_DB" python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import fxadb
+c = fxadb.connect(readonly=True); f = lambda q: ",".join(p["id"] for p in fxadb.people(c, q)["people"])
+print("|".join([f("doe"), f("PAT"), f("example.com"), f("%"), f("m_l"), f("U0000002,W0000003"), str(fxadb.people(c, "x")["at"])]))' "$here")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

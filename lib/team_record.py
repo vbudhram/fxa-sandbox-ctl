@@ -43,7 +43,8 @@ PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "g
 # A team's state dir is ~/.claude/state/<name>, so a name the host uses there would give a team the
 # host's own store (llm-proxy holds the run tokens) and each pass would mirror it to GCS.
 # new, all and routines are words in the dashboard's #teams/<team> routes, so no team may take them.
-RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "teams", "new", "all", "routines"}
+RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "teams", "new", "all", "routines",
+            "options", "people"}
 # Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
 # An admin may approve other hosts; these are refused even then, with every subdomain.
 EGRESS_DENY = ("pastebin.com", "paste.ee", "hastebin.com", "termbin.com", "ix.io", "dpaste.org", "rentry.co",
@@ -429,7 +430,27 @@ def load(path):
         sys.exit(f"{path}: cannot read the record: {e}")
 
 
+def options():
+    """What the dashboard's team forms offer: the cap ceilings, the skill catalog, the boot scripts with their
+    pins, and the MCP gateway's connector names (names only, never a URL or a header; None when unread)."""
+    conf = os.environ.get("MCP_GATEWAY_CONFIG") or os.path.expanduser("~/.config/fxa/mcp-gateway.json")
+    try:
+        with open(conf, encoding="utf-8") as f:
+            conns = sorted(k for k in (json.load(f).get("connectors") or {}) if CONNECTOR.fullmatch(k))
+    except (OSError, ValueError, AttributeError):
+        conns = None
+    bdir = os.path.join(REPO, "boot")
+    boot = [{"script": f[:-3], "sha256": file_sha(os.path.join(bdir, f))} for f in sorted(os.listdir(bdir))
+            if f.endswith(".sh") and SCRIPT.fullmatch(f[:-3])] if os.path.isdir(bdir) else []
+    return {"caps": {"usd_per_day": ceiling("TEAM_CAP_USD_PER_DAY", 200), "usd_per_month": ceiling("TEAM_CAP_USD_PER_MONTH", 3000),
+                     "launches_per_day": ceiling("TEAM_CAP_LAUNCHES_PER_DAY", 40)},
+            "skills": sorted(catalog()), "connectors": conns, "boot": boot, "egress_deny": list(EGRESS_DENY)}
+
+
 def main(argv):
+    if argv[1:] == ["options"]:
+        print(json.dumps(options()))
+        return 0
     if len(argv) < 3 or argv[1] not in ("validate", "env", "prompts", "unique", "stamp", "index"):
         sys.exit(__doc__)
     cmd, path = argv[1], argv[2]

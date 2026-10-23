@@ -586,6 +586,7 @@
   .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
   .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
   .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
+  .plist { list-style:none; margin:0; padding:0; } .plist li { display:flex; justify-content:space-between; align-items:center; gap:var(--s2); padding:var(--s1) 0; border-bottom:1px solid var(--line); }
   .mtab td { vertical-align:top; } .mtab td:nth-child(4) { color:var(--dim); word-break:break-all; min-width:14em; } .mtab td:nth-child(n+5), .mtab td:first-child { white-space:nowrap; color:var(--dim); } .mtab .mtext { font-weight:600; } .mtab .mtags { display:flex; gap:var(--s1); flex-wrap:wrap; margin-top:var(--s1); } .mtab .mtags:empty { display:none; } .mtab td.macts { white-space:nowrap; } .linkbtn.danger { color:var(--bad); font-weight:700; }
   .dtab td { vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
@@ -1907,7 +1908,7 @@ function teamEditor(name, isRecord) {
   if (!TEAM_ADMIN?.admin || !isRecord) return "";
   const e = TED?.name === name ? TED : null;
   if (!e) return html`<div class="acts2"><button data-team-load="${name}">Load the record</button></div>`;
-  return html`<div data-team-ed="${name}" class="stack sm"><p class="hint">For keys that have no form: egress, runner, boot, admins and secret names. Save checks the generation you loaded.</p>
+  return html`<div data-team-ed="${name}" class="stack sm"><p class="hint">Every field at once. Each field also has its own form above. Save checks the generation you loaded.</p>
     <textarea class="team-json mono" rows="22" spellcheck="false" aria-label="Team record JSON" style="width:100%;box-sizing:border-box">${e.text}</textarea>
     <div class="acts2"><button data-tact="validate">Validate</button><button data-tact="save">Save</button></div>
     <p data-msg class="${e.ok ? "empty" : "unknown"}" style="white-space:pre-wrap">${e.msg || ""}</p></div>`;
@@ -2197,6 +2198,29 @@ document.addEventListener("click", e => { const act = e.target.closest?.("[data-
 // The keys a runner reads: on an active team a change to one needs a new test (lib/teams.sh _teams_runner_keys).
 const TEAM_RUNNER_KEYS = ["repos", "stack", "runner", "egress", "mcp", "skills", "boot", "secrets"];
 let TFORM = null, TTEST = null, TMSG = null, NEWT = null, TMORE = new Set(), TAUDIT = null, TARM = "", TCHANS = null;
+// TOPTS: what the forms offer (GET /api/teams/options). TPEOPLE: the last people search; TPNAMES: id -> person, for chips.
+let TOPTS = null, TPEOPLE = null, TPNAMES = {};
+const loadTeamOpts = () => { if (TOPTS) return; TOPTS = { loading: true };
+  fetch("/api/teams/options", { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => null); TOPTS = r.ok && j ? j : { err: j?.error || String(r.status) }; teamPaint(); }, () => { TOPTS = { err: "the dashboard did not answer" }; }); };
+// Names for member IDs already in a form, so a chip says who it is.
+const loadPeopleNames = ids => { const miss = ids.filter(x => /^[UW][A-Z0-9]{6,}$/.test(x) && !(x in TPNAMES)); if (!miss.length) return;
+  miss.forEach(x => { TPNAMES[x] = null; });
+  fetch(`/api/teams/people/${miss.slice(0, 200).join(",")}`, { cache: "no-store" }).then(r => r.json()).then(j => { (j.people ?? []).forEach(p => { TPNAMES[p.id] = p; }); teamPaint(); }, () => {}); };
+let TPQ_T = 0;
+const searchPeople = q => { clearTimeout(TPQ_T); if (q.trim().length < 2) { TPEOPLE = null; return teamPaint(); }
+  TPQ_T = setTimeout(() => fetch(`/api/teams/people/${encodeURIComponent(q.trim())}`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({}));
+    if (TFORM) { TPEOPLE = { q, at: j.at ?? null, people: r.ok ? j.people ?? [] : [], err: r.ok ? "" : j.error || String(r.status) }; (TPEOPLE.people).forEach(p => { TPNAMES[p.id] = p; });
+      // The repaint replaces the search box: put the focus and the caret back.
+      const had = document.activeElement?.dataset?.tfpq; teamPaint(); const n = had && document.querySelector(`[data-tfpq="${had}"]`); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } }, () => {}), 250); };
+const personLabel = id => { const p = TPNAMES[id]; return p ? `${p.name}${p.handle && p.handle !== p.name ? ` (@${p.handle})` : ""}` : id; };
+// A people search: results with Add, for the access users or the admins.
+function peoplePicker(target, have) {
+  const P = TPEOPLE, res = (P?.people ?? []).filter(p => !have.includes(p.id));
+  return html`<div class="field"><label for="tf-pq-${target}">Find a person</label><input id="tf-pq-${target}" class="input" data-tfpq="${target}" autocomplete="off" placeholder="Name, @handle or email" value="${P?.q ?? ""}">
+    ${P?.err ? html`<p class="unknown">${P.err}</p>` : P && P.at == null ? html`<p class="hint">The bot has not listed the workspace's people yet. Paste a member ID below: in Slack, open the profile, then More, then Copy member ID.</p>`
+      : P && !res.length ? html`<p class="hint">Nobody matches "${P.q}".</p>` : ""}
+    ${res.length ? html`<ul class="plist">${res.map(p => html`<li><span><b>${p.name}</b> <span class="hint">@${p.handle}${p.email ? ` · ${p.email}` : ""}</span></span><button type="button" class="linkbtn" data-tfpick="${target}" data-id="${p.id}">Add</button></li>`)}</ul>` : ""}</div>`;
+}
 const teamDraftOf = t => !!(t?.access?.record && t.access.status !== "active");
 const teamCap = n => n.split("-").map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
 // Who can start a record team, in one phrase, from the loaded record or the feed's counts.
@@ -2234,7 +2258,7 @@ function teamTestCard(t, rec) {
   const since = x?.started_at ? new Date(x.started_at * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
   const log = (x?.lines ?? []).length ? html`<pre class="log" aria-label="The last lines of the test log">${x.lines.join("\n")}</pre>` : "";
   const go = (label, act) => html`<div class="row"><button type="button" data-ttest="${t.profile}"${d?.busy ? " disabled" : ""}>${label}</button>${act ? html`<label class="hint"><input type="checkbox" data-ttest-act${d?.noact ? "" : " checked"}> Activate when it passes</label>` : ""}</div>`;
-  const body = st === "running" ? [html`Running${since ? ` since ${since}` : ""}. The first answer can take up to 20 minutes. You can leave this page.`, tag("Running", "info", { run: true, live: true }), html`${log}<p class="hint">${!d?.activate ? "It stays a draft when it passes." : `${teamName(t)} turns on when it passes.`}</p>`]
+  const body = st === "running" ? [html`Running${since ? ` since ${since}` : ""}. The first answer can take up to 20 minutes. You can leave this page.`, tag("Running", "info", { run: true, live: true }), html`${log}${TEAM_ADMIN?.admin ? html`<div class="row"><button type="button" data-ttest-stop="${t.profile}"${d?.busy ? " disabled" : ""}>Stop the test</button><span class="hint">It stops the runner the test booted. The team stays as it is.</span></div>` : ""}<p class="hint">${!d?.activate ? "It stays a draft when it passes." : `${teamName(t)} turns on when it passes.`}</p>`]
     : st === "passed" && active ? ["Passed. The team is active.", "", go("Test again")]
     : st === "passed" ? [html`Passed. Activate it to let ${teamWho(t, rec).toLowerCase()} start it.`, tag("Passed", "ok"), html`<div class="row"><button type="button" data-tstatus="active">Activate</button></div>`]
     : st === "failed" ? ["Failed. Read the log, change the setup, then test again.", tag("Failed", "bad"), html`${log}${go("Test and activate", true)}`]
@@ -2243,6 +2267,7 @@ function teamTestCard(t, rec) {
     ${body[2]}${d?.msg ? html`<p role="status" class="${d.ok === false ? "unknown" : "hint"}">${d.msg}</p>` : ""}`, { cls: "stack" });
 }
 // One item's form, opened in place. f.d holds the draft values; Save posts only this item's keys.
+const list0 = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))];
 function teamItemForm(t, rec, f) {
   const active = rec.status === "active", d = f.d, err = f.msg ? html`<p role="status" class="${f.ok ? "hint" : "unknown"}">${f.msg}</p>` : "";
   const retest = active && teamRetest(rec, teamApply(rec, teamPatch(f)));
@@ -2259,16 +2284,49 @@ function teamItemForm(t, rec, f) {
     return html`<fieldset class="group stack sm"><legend class="lb">Who can start it</legend><div class="fields2">
       <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value="1"${d.open ? " checked" : ""}><span class="stack sm"><b>Anyone the bot allows</b><span class="hint">Every person who can use @fxa-agent.</span></span></label>
       <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value=""${d.open ? "" : " checked"}><span class="stack sm"><b>Only these people and channels</b><span class="hint">Nobody else can start this team.</span></span></label></div></fieldset>
-      ${d.open ? "" : html`<div class="fields2">${lab("users", html`People <span class="opt">· one Slack member ID a line</span>`, html`<textarea id="tf-users" class="input" rows="4" data-tfk="users">${d.users}</textarea>`, "In Slack, open the person's profile, then More, then Copy member ID.")}
+      ${d.open ? "" : html`<div class="fields2"><fieldset class="group field"><legend class="lb">People <span class="opt">· ${d.users.length}</span></legend>
+        ${d.users.length ? html`<ul class="plist">${d.users.map(u => html`<li><span>${personLabel(u)}${personLabel(u) !== u ? html` <span class="mono hint">${u}</span>` : ""}</span><button type="button" class="linkbtn" data-tfunpick="users" data-id="${u}" aria-label="Remove ${personLabel(u)}">Remove</button></li>`)}</ul>` : html`<p class="hint">Nobody yet.</p>`}
+        ${peoplePicker("users", d.users)}${lab("uid", html`Or paste a member ID <span class="opt">· optional</span>`, html`<input id="tf-uid" class="input mono" data-tfk="uid" value="${d.uid ?? ""}" placeholder="U0123ABCD">`)}</fieldset>
         <fieldset class="group field"><legend class="lb">Channels</legend>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
           ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}${save}`; }
   if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${new Blob([d.goal]).size} of 2560 bytes</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
   if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("prefixes", html`Ticket prefixes in Slack <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`)}</div>
     <label><input type="checkbox" data-tfk="queue"${d.queue ? " checked" : ""}> Take tickets from the project's queue</label>
     <label><input type="checkbox" data-tfk="secret"${d.secret ? " checked" : ""}${d.queue ? "" : " disabled"}> Take secret tickets too</label>${save}`;
+  if (f.item === "tools" && Array.isArray(TOPTS?.connectors)) return html`<label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>
+    ${d.dflt ? "" : html`<fieldset class="group field"><legend class="lb">MCP connectors</legend>${TOPTS.connectors.map(c => html`<label><input type="checkbox" data-tfset="mcp" data-v="${c}"${list0(d.mcp).includes(c) ? " checked" : ""}> <span class="mono">${c}</span></label>`)}</fieldset>`}${save}`;
   if (f.item === "tools") return html`${lab("mcp", html`MCP connectors <span class="opt">· comma separated, empty for none</span>`, html`<input id="tf-mcp" class="input mono" data-tfk="mcp" value="${d.mcp}" placeholder="the bot default">`, "Leave it as the bot default to use the connectors the bot has.")}
     <label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>${save}`;
-  if (f.item === "caps") return html`<div class="fields2">${[["usd_per_day", "Spend cap a day, USD"], ["usd_per_month", "Spend cap a month, USD"], ["launches_per_day", "Pipeline launches a day"]].map(([k, l]) => lab(k, html`${l} <span class="opt">· empty for none</span>`, html`<input id="tf-${k}" class="input" type="number" min="0" data-tfk="${k}" value="${d[k]}">`))}</div>${save}`;
+  if (f.item === "caps") return html`<div class="fields2">${[["usd_per_day", "Spend cap a day, USD"], ["usd_per_month", "Spend cap a month, USD"], ["launches_per_day", "Pipeline launches a day"]].map(([k, l]) => lab(k, html`${l} <span class="opt">· ${TOPTS?.caps?.[k] != null ? `at most ${TOPTS.caps[k]}, ` : ""}empty for none</span>`, html`<input id="tf-${k}" class="input" type="number" min="0" data-tfk="${k}" value="${d[k]}">`))}</div>${save}`;
+  const O = TOPTS ?? {}, wait = O.loading ? html`<p class="hint">Loading the choices…</p>` : O.err ? html`<p class="unknown">The choices did not load: ${O.err}</p>` : "";
+  const row = (list, i, fields) => html`<div class="fields2">${fields}<button type="button" class="linkbtn" data-tf-pop="${list}" data-i="${i}">Remove</button></div>`;
+  if (f.item === "name") return html`${lab("label", "Name shown", html`<input id="tf-label" class="input" data-tfk="label" maxlength="40" value="${d.label}" placeholder="${teamCap(t.profile)}">`, `Letters, digits, spaces and ._()-. Empty shows ${teamCap(t.profile)}. The team's id stays ${t.profile}.`)}${save}`;
+  if (f.item === "admins") return html`<p class="hint">Team admins get the team's alerts. Dashboard rights come from TEAM_ADMINS on the host.</p>
+    ${d.admins.map((a, i) => row("admins", i, html`${lab(`a${i}s`, "Slack member ID", html`<input id="tf-a${i}s" class="input mono" data-tfi="admins:${i}" data-tfk="slack" value="${a.slack}" placeholder="U0123ABCD">`, personLabel(a.slack) !== a.slack ? personLabel(a.slack) : "")}
+      ${lab(`a${i}e`, "Email", html`<input id="tf-a${i}e" class="input" data-tfi="admins:${i}" data-tfk="email" value="${a.email}">`)}`))}
+    ${peoplePicker("admins", d.admins.map(a => a.slack))}${save}`;
+  if (f.item === "runner") { const slugs = (rec.repos ?? []).map(r => r.slug);
+    return html`<fieldset class="group field"><legend class="lb">Stack</legend><label><input type="radio" name="tf-kind" data-tfk="kind" value="none"${d.kind !== "fxa" ? " checked" : ""}> None: the runner gets the repos only</label>
+      <label><input type="radio" name="tf-kind" data-tfk="kind" value="fxa"${d.kind === "fxa" ? " checked" : ""}> The FxA stack, started from <select class="input" style="width:auto;display:inline-block" data-tfk="srepo" aria-label="Repo the FxA stack runs from">${slugs.map(x => html`<option${x === d.srepo ? " selected" : ""}>${x}</option>`)}</select></label></fieldset>
+      <div class="fields2">${lab("backend", "Runner", html`<select id="tf-backend" class="input" data-tfk="backend"><option value="gce"${d.backend !== "firecracker" ? " selected" : ""}>GCE VM</option><option value="firecracker"${d.backend === "firecracker" ? " selected" : ""}>Firecracker snapshot</option></select>`)}
+        ${lab("desktop_url", html`Desktop URL <span class="opt">· optional</span>`, html`<input id="tf-desktop_url" class="input mono" data-tfk="desktop_url" value="${d.desktop_url}" placeholder="http://localhost:3030/">`, "The page a screenshot opens, on the runner.")}</div>
+      <label><input type="checkbox" data-tfk="android"${d.android ? " checked" : ""}> Give the runner an Android emulator</label>${save}`; }
+  if (f.item === "egress") { const deny = O.egress_deny ?? [];
+    return html`${lab("approved", html`Approved hosts <span class="opt">· one a line, at most 30</span>`, html`<textarea id="tf-approved" class="input mono" rows="5" data-tfk="approved">${d.approved}</textarea>`, "The runner may reach these hosts and their subdomains, beyond the base list. Paste sites, file drops and tunnels are refused.")}
+      ${d.requested.length ? html`<div class="field"><span class="lb">Asked for by the team</span><ul class="plist">${d.requested.map(h => html`<li><span class="mono">${h}</span>${String(d.approved).split(/\s+/).includes(h) ? tag("approved", "ok") : html`<button type="button" class="linkbtn" data-tf-approve="${h}">Approve</button>`}</li>`)}</ul></div>` : ""}
+      ${deny.length ? html`<details><summary class="hint">Hosts that are always refused (${deny.length})</summary><p class="hint mono">${deny.join(" ")}</p></details>` : ""}${save}`; }
+  if (f.item === "skills") return html`${wait}${(O.skills ?? []).length ? html`<fieldset class="group field"><legend class="lb">Skills from skills/team-catalog.txt</legend>${O.skills.map(k => html`<label><input type="checkbox" data-tfset="skills" data-v="${k}"${d.skills.includes(k) ? " checked" : ""}> <span class="mono">${k}</span></label>`)}</fieldset>` : O.skills ? html`<p class="hint">The catalog is empty.</p>` : ""}
+    <p class="hint">The runner gets these on top of the base skills. A skill is reviewed in this repo before it goes on the catalog.</p>${save}`;
+  if (f.item === "boot") return html`${wait}${lab("script", "Boot script", html`<select id="tf-script" class="input" data-tfk="script"><option value="">None</option>${(O.boot ?? []).map(b => html`<option value="${b.script}"${b.script === d.script ? " selected" : ""}>boot/${b.script}.sh</option>`)}</select>`,
+      O.boot && !O.boot.length ? "This repo has no boot/ scripts yet. A script is reviewed here first." : "The runner runs it once at boot. It is pinned to the script's SHA-256, so a later edit needs a new pin.")}
+    ${d.script && rec.boot?.script === d.script && (O.boot ?? []).find(b => b.script === d.script)?.sha256 !== rec.boot?.sha256 ? html`<div class="alert warn"><span class="what" style="white-space:normal">boot/${d.script}.sh changed since it was pinned. Save pins the current version.</span></div>` : ""}${save}`;
+  if (f.item === "secrets") { const pre = `fxa-team-${t.profile}--`;
+    return html`<p class="hint">Names in Secret Manager, never values. Each name starts ${pre}. Set a value in the Secrets row after you save.</p>
+      ${lab("jira", html`Jira login <span class="opt">· optional</span>`, html`<span class="row"><span class="mono hint">${pre}</span><input id="tf-jira" class="input mono" style="flex:1" data-tfk="jira" value="${d.jira}" placeholder="jira"></span>`, "The Jira account the team's runs use, as email:token. Empty uses the bot's.")}
+      <fieldset class="group field"><legend class="lb">Files on the runner <span class="opt">· at most 10</span></legend>
+        ${d.runtime.map((r, i) => row("runtime", i, html`${lab(`r${i}w`, "Secret", html`<span class="row"><span class="mono hint">${pre}</span><input id="tf-r${i}w" class="input mono" style="flex:1" data-tfi="runtime:${i}" data-tfk="what" value="${r.what}"></span>`)}
+          ${lab(`r${i}p`, "Path on the runner", html`<input id="tf-r${i}p" class="input mono" data-tfi="runtime:${i}" data-tfk="path" value="${r.path}" placeholder="/home/agent/repo/.env">`)}`))}
+        ${d.runtime.length < 10 ? html`<button type="button" class="linkbtn" data-tf-push="runtime">Add a file</button>` : ""}</fieldset>${save}`; }
   if (f.item === "pr") return html`<label><input type="checkbox" data-tfk="open"${d.open ? " checked" : ""}> Open draft PRs (off: the team gets diffs only)</label>
     ${lab("reviewers", html`Reviewers <span class="opt">· comma separated, optional</span>`, html`<input id="tf-reviewers" class="input mono" data-tfk="reviewers" value="${d.reviewers}">`)}${save}`;
   return "";
@@ -2277,7 +2335,15 @@ function teamItemForm(t, rec, f) {
 function teamItemDraft(item, rec) {
   const a = rec.access ?? {}, j = rec.jira ?? {}, c = rec.caps ?? {}, p = rec.pr ?? {};
   return { repos: { repos: (rec.repos ?? []).map(r => ({ ...r })) }, goal: { goal: rec.prompts?.goal_md ?? "" },
-    access: { open: !!a.open, users: (a.users ?? []).join("\n"), chans: [...(a.channels ?? [])], other: "" },
+    access: { open: !!a.open, users: [...(a.users ?? [])], uid: "", chans: [...(a.channels ?? [])], other: "" },
+    name: { label: rec.label ?? "" },
+    admins: { admins: (rec.admins ?? []).map(x => ({ slack: x.slack ?? "", email: x.email ?? "" })) },
+    runner: { kind: rec.stack?.kind ?? "none", srepo: rec.stack?.repo ?? ((rec.repos ?? []).find(r => r.slug.toLowerCase() === "mozilla/fxa")?.slug ?? (rec.repos ?? [])[0]?.slug ?? ""),
+      backend: rec.runner?.backend ?? "gce", android: !!rec.runner?.android, desktop_url: rec.runner?.desktop_url ?? "" },
+    egress: { approved: (rec.egress?.approved ?? []).join("\n"), requested: [...(rec.egress?.requested ?? [])] },
+    skills: { skills: [...(rec.skills ?? [])] },
+    boot: { script: rec.boot?.script ?? "" },
+    secrets: { jira: String(rec.secrets?.jira ?? "").replace(/^fxa-team-[a-z0-9-]+--/, ""), runtime: (rec.secrets?.runtime ?? []).map(r => ({ what: String(r.secret).replace(/^fxa-team-[a-z0-9-]+--/, ""), path: r.path })) },
     jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, prefixes: (a.jira_prefixes ?? []).join(", ") },
     tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
     caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "", launches_per_day: c.launches_per_day ?? "" },
@@ -2296,11 +2362,22 @@ function teamPatch(f) {
   const drop = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
   if (f.item === "repos") return { repos: d.repos.filter(r => String(r.slug).trim()).map((r, i, a) => ({ ...r, slug: String(r.slug).trim(), default: a.findIndex(x => x.role === "work") === i ? true : undefined })).map(r => drop(r)) };
   if (f.item === "goal") return { prompts: { ...(rec.prompts ?? {}), goal_md: d.goal } };
-  if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list(d.users), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])] } };
+  if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list([].concat(d.users, d.uid ?? "").join(",")), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])] } };
   if (f.item === "jira") { const j = drop({ project: d.project.trim(), queue: d.queue || undefined, secret: d.queue && d.secret || undefined });
     return { jira: Object.keys(j).length ? j : undefined, access: { ...(rec.access ?? {}), jira_prefixes: list(d.prefixes) } }; }
   if (f.item === "tools") return { mcp: d.dflt ? undefined : list(d.mcp) };
   if (f.item === "caps") { const c = drop({ usd_per_day: num(d.usd_per_day), usd_per_month: num(d.usd_per_month), launches_per_day: num(d.launches_per_day) }); return { caps: Object.keys(c).length ? c : undefined }; }
+  const pre = `fxa-team-${TED?.name}--`, some = o => Object.keys(o).length ? o : undefined;
+  if (f.item === "name") return { label: d.label.trim() || undefined };
+  if (f.item === "admins") { const a = d.admins.map(x => ({ slack: x.slack.trim(), email: x.email.trim() })).filter(x => x.slack || x.email); return { admins: a.length ? a : undefined }; }
+  if (f.item === "runner") {
+    const st = d.kind === "fxa" ? { kind: "fxa", ...(d.srepo && (d.srepo.toLowerCase() !== "mozilla/fxa" || rec.stack?.repo) ? { repo: d.srepo } : {}) } : rec.stack ? { kind: "none" } : undefined;
+    return { stack: st, runner: some(drop({ backend: d.backend !== "gce" || rec.runner?.backend ? d.backend : undefined, android: d.android || undefined, desktop_url: d.desktop_url.trim() || undefined })) }; }
+  if (f.item === "egress") { const ap = list(d.approved); return { egress: some(drop({ requested: d.requested.length ? d.requested : undefined, approved: ap.length ? ap : undefined })) }; }
+  if (f.item === "skills") return { skills: d.skills.length ? d.skills : undefined };
+  if (f.item === "boot") return { boot: d.script ? { script: d.script, sha256: (TOPTS?.boot ?? []).find(b => b.script === d.script)?.sha256 ?? rec.boot?.sha256 ?? "" } : undefined };
+  if (f.item === "secrets") { const rt = d.runtime.filter(r => r.what.trim() || r.path.trim()).map(r => ({ secret: pre + r.what.trim(), path: r.path.trim() }));
+    return { secrets: some(drop({ jira: d.jira.trim() ? pre + d.jira.trim() : undefined, runtime: rt.length ? rt : undefined })) }; }
   if (f.item === "pr") return { pr: drop({ ...(rec.pr ?? {}), open: d.open, reviewers: list(d.reviewers).length ? list(d.reviewers) : undefined }) };
   return {};
 }
@@ -2319,13 +2396,19 @@ function teamSetupHtml(t) {
       ${rs.miss.length && !open("repos") ? html`<div class="alert warn"><span class="what" style="white-space:normal">An org owner installs the fxa-agent GitHub App on ${rs.miss.map(r => r.slug).join(", ")}. Until then, its work ships as a diff.</span></div>` : ""}${item("repos", "")}`, { cls: "stack" })}
     ${teamTestCard(t, rec)}
     ${card(html`${rowv("access", "Who can start it", teamWho(t, rec), "Change")}${rowv("goal", "What it works on", String(rec.prompts?.goal_md ?? "").trim() ? `${String(rec.prompts.goal_md).trim().slice(0, 80)}${String(rec.prompts.goal_md).trim().length > 80 ? "…" : ""}` : "not set", "Edit")}`, { flat: true, cls: "stack sm" })}
-    ${more("settings", ["More settings", "all optional"], html`${rowv("jira", "Jira", j.project ? `${j.project}${j.queue ? ", takes tickets from the queue" : ""}${j.secret ? ", secret tickets too" : ""}` : "Not used", j.project ? "Change" : "Set up")}
+    ${more("settings", ["More settings", "all optional"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
+      ${rowv("admins", "Team admins", (rec.admins ?? []).length ? rec.admins.map(a => a.email || a.slack).join(", ") : "None", (rec.admins ?? []).length ? "Change" : "Add")}
+      ${rowv("jira", "Jira", j.project ? `${j.project}${j.queue ? ", takes tickets from the queue" : ""}${j.secret ? ", secret tickets too" : ""}` : "Not used", j.project ? "Change" : "Set up")}
       ${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}${rowv("caps", "Limits", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : "", c.launches_per_day != null ? `${c.launches_per_day} launches a day` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}
+      ${rowv("skills", "Skills", (rec.skills ?? []).length ? rec.skills.join(", ") : "The base skills only", "Change")}
       ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}`, "Change")}
-      <div class="kv"><span>Secrets</span><span>${sec.length ? `${sec.length} named` : "None"}</span></div>
+      ${rowv("runner", "Runner", `${rec.stack?.kind === "fxa" ? `FxA stack from ${rec.stack.repo ?? "mozilla/fxa"}` : "No stack"}, ${rec.runner?.backend === "firecracker" ? "Firecracker" : "GCE VM"}${rec.runner?.android ? ", Android" : ""}`, "Change")}
+      ${rowv("egress", "Network", `${(rec.egress?.approved ?? []).length} approved host${(rec.egress?.approved ?? []).length === 1 ? "" : "s"}${(rec.egress?.requested ?? []).filter(h => !(rec.egress?.approved ?? []).includes(h)).length ? `, ${(rec.egress.requested ?? []).filter(h => !(rec.egress?.approved ?? []).includes(h)).length} asked for` : ""}`, "Change")}
+      ${rowv("boot", "Boot script", rec.boot?.script ? `boot/${rec.boot.script}.sh` : "None", "Change")}
+      ${rowv("secrets", "Secrets", sec.length ? `${sec.length} named` : "None", "Change names")}
       ${adm && sec.length ? html`${sec.map(([s, st]) => html`<div class="row"><span class="mono">${s}</span>${tag(st, st === "present" ? "" : "warn")}<input type="password" class="input" style="max-width:240px" autocomplete="off" data-secret-val="${s}" placeholder="new value" aria-label="New value for ${s}"><button type="button" data-tsec="${s}">Set</button></div>`)}
-        <p class="hint">A value is stored in Secret Manager and never shown again. Add a secret name in the record JSON below.</p>` : ""}`)}
-    ${adm ? more("json", ["Edit the record as JSON", "egress, runner, boot, admins and secret names"], teamEditor(t.profile, true)) : ""}
+        <p class="hint">A value is stored in Secret Manager and never shown again.</p>` : ""}`)}
+    ${adm ? more("json", ["Edit the record as JSON", "every field at once, for an expert"], teamEditor(t.profile, true)) : ""}
     ${more("history", ["History", "every change, newest first"], TAUDIT?.team !== t.profile ? html`<p class="empty">loading…</p>` : TAUDIT.err ? html`<p class="unknown">${TAUDIT.err}</p>`
       : table(["When", "Who", "What", "Changed"], TAUDIT.rows.length ? TAUDIT.rows.map(r => html`<tr><td>${stamp(r.at)}</td><td>${String(r.actor ?? "").split("@")[0]}</td><td>${r.action}</td><td>${r.changed || ""}</td></tr>`) : html`<tr><td colspan="4" class="na">No changes yet.</td></tr>`, { dense: true }))}
     ${adm ? card(html`<h3>${active ? "Turn off or delete" : "Delete this team"}</h3><p class="hint">${active ? "Turn off stops new sessions and the Jira queue. To turn it on again you need a new test. " : ""}Delete is refused while a session of the team can resume, and it also deletes the team's routines${rtSum(t.profile) ? ` (${rtSum(t.profile).routines})` : ""}. You cannot undo it.</p>
@@ -2443,6 +2526,12 @@ document.addEventListener("input", e => {
     if (nt === "name") { const h = e.target.parentElement?.querySelector(".hint"); if (h) h.textContent = `Lowercase letters, digits and -. It shows as ${NEWT.name ? teamCap(NEWT.name) : "the team"}.`; }
     return; }
   const f = TFORM, k = e.target.dataset?.tfk; if (!f || !e.target.closest?.("[data-tform]")) return;
+  if (e.target.dataset.tfpq != null) return searchPeople(e.target.value);
+  const set = e.target.dataset.tfset;
+  if (set) { const v = e.target.dataset.v, cur = set === "mcp" ? list0(f.d.mcp) : f.d[set]; const nx = e.target.checked ? [...new Set([...cur, v])] : cur.filter(x => x !== v);
+    f.d[set] = set === "mcp" ? nx.join(", ") : nx; f.dirty = true; return; }
+  if (e.target.dataset.tfi) { const [l, i] = e.target.dataset.tfi.split(":"); f.d[l][Number(i)][k] = e.target.value; f.dirty = true; return; }
+  if (k === "kind") { f.d.kind = e.target.value; f.dirty = true; return; }
   const ch = e.target.dataset.tfch;
   if (ch) { f.d.chans = e.target.checked ? [...new Set([...f.d.chans, ch])] : f.d.chans.filter(x => x !== ch); f.dirty = true; return; }
   if (!k) return;
@@ -2459,10 +2548,22 @@ document.addEventListener("click", async e => {
   if (b.dataset.tf) {
     if (b.dataset.tf === "access" && TCHANS?.team !== team) fetch(`/api/teams/${encodeURIComponent(team)}/routine-channels`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({}));
       TCHANS = { team, channels: r.ok && Array.isArray(j.channels) ? j.channels : [] }; teamPaint(); }, () => { TCHANS = { team, channels: [] }; });
-    TFORM = { team, item: b.dataset.tf, d: teamItemDraft(b.dataset.tf, TED.rec) }; teamPaint();
+    TFORM = { team, item: b.dataset.tf, d: teamItemDraft(b.dataset.tf, TED.rec) }; TPEOPLE = null;
+    if (b.dataset.tf === "access") loadPeopleNames(TFORM.d.users); if (b.dataset.tf === "admins") loadPeopleNames(TFORM.d.admins.map(a => a.slack));
+    if (["tools", "caps", "skills", "boot", "egress"].includes(b.dataset.tf)) loadTeamOpts();
+    teamPaint();
     return setTimeout(() => document.querySelector("[data-tform] .ckbody :is(input, textarea, select)")?.focus());
   }
-  if (b.hasAttribute("data-tf-cancel")) { TFORM = null; return teamPaint(); }
+  if (b.hasAttribute("data-tf-cancel")) { TFORM = null; TPEOPLE = null; return teamPaint(); }
+  if (b.dataset.tfpick && TFORM) { const id = b.dataset.id, p = TPNAMES[id];
+    if (b.dataset.tfpick === "users") TFORM.d.users = [...new Set([...TFORM.d.users, id])]; else TFORM.d.admins.push({ slack: id, email: p?.email ?? "" });
+    TFORM.dirty = true; teamPaint(); return setTimeout(() => document.querySelector("[data-tfpq]")?.focus()); }
+  if (b.dataset.tfunpick && TFORM) { TFORM.d.users = TFORM.d.users.filter(x => x !== b.dataset.id); TFORM.dirty = true; return teamPaint(); }
+  if (b.dataset.tfPush && TFORM) { TFORM.d[b.dataset.tfPush].push({ what: "", path: "" }); TFORM.dirty = true; return teamPaint(); }
+  if (b.dataset.tfPop && TFORM) { TFORM.d[b.dataset.tfPop].splice(Number(b.dataset.i), 1); TFORM.dirty = true; return teamPaint(); }
+  if (b.dataset.tfApprove && TFORM) { TFORM.d.approved = [...list0(TFORM.d.approved), b.dataset.tfApprove].join("\n"); TFORM.dirty = true; return teamPaint(); }
+  if (b.dataset.ttestStop) { b.disabled = true; const [r, j] = await teamPost(`/api/teams/${encodeURIComponent(b.dataset.ttestStop)}/test/stop`, {});
+    TTEST = { ...(TTEST ?? { team: b.dataset.ttestStop }), msg: r?.ok ? j.out : j.error || String(r?.status), ok: !!r?.ok }; return teamPaint(); }
   if (b.hasAttribute("data-tf-save")) return teamItemSave();
   if (b.hasAttribute("data-tf-add") && TFORM) { TFORM.d.repos.push({ slug: "", role: "dep" }); TFORM.dirty = true; return teamPaint(); }
   if (b.dataset.tfDel != null && TFORM) { TFORM.d.repos.splice(Number(b.dataset.tfDel), 1); TFORM.dirty = true; return teamPaint(); }

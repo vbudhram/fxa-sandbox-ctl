@@ -58,8 +58,8 @@ check "a built-in team's name is refused" "1" "$(bad fxa '{ "schema": 1, "repos"
 hostname_rec() { printf '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "%s" }' "$1"; }
 r=""; for hn in agent-sessions agent-sessions-dev fxa-ai-fixme llm-proxy mcp-gateway teams; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
 check "a name the host uses under ~/.claude/state is refused (the team would get that store)" "1 1 1 1 1 1" "${r# }"
-r=""; for hn in new all routines; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
-check "the dashboard route words new, all and routines are refused as team names" "1 1 1" "${r# }"
+r=""; for hn in new all routines options people; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
+check "the dashboard route words new, all, routines, options and people are refused as team names" "1 1 1 1 1" "${r# }"
 check "a label with a command is refused, and nothing runs" "1|no" \
   "$(bad lb '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "lb", "label": "$(touch /tmp/team-record-lb)" }' | grep -c 'label')|$([ -e /tmp/team-record-lb ] && echo yes || echo no)"
 check "a repo slug with a shell character is refused" "1" "$(bad sl '{ "schema": 1, "name": "sl", "repos": [ { "slug": "a/b;rm", "role": "work" } ] }' | grep -c 'slug')"
@@ -257,5 +257,13 @@ check "a secret record loads its flag, its labels and a queue that reads ai-fixm
   "$(sl PIPE_SECRET_TICKETS)|$(sl PIPE_QUEUE_LABEL)|$(sl PIPE_LABEL_PREFIX)|$(sl PIPE_QUEUE_JQL)"
 printf 'PIPE_REPO_SLUG=example/x\nPIPE_SECRET_TICKETS=1\n' > "$tmp/folder.conf"
 check "a folder conf cannot make itself a secret team (a host key)" "1" "$( (source "$root/lib/pipeline.sh"; pipeline_conf_lint "$tmp/folder.conf") 2>&1 | grep -c 'host key: .*PIPE_SECRET_TICKETS')"
+
+# options: the dashboard's choices, with the connector names only (never a URL or a header) and the boot pins.
+mkdir -p "$tmp/opt/boot" "$tmp/opt/skills"; printf 'echo hi\n' > "$tmp/opt/boot/web-setup.sh"; printf '# c\nfxa-stack\nzz\n' > "$tmp/opt/skills/team-catalog.txt"
+printf '{"connectors":{"jira":{"url":"https://jira.example.com/mcp","headers":{"Authorization":"Bearer x"}},"Bad Name":{}}}' > "$tmp/opt/gw.json"
+o="$(FXA_TEAM_REPO="$tmp/opt" MCP_GATEWAY_CONFIG="$tmp/opt/gw.json" TEAM_CAP_USD_PER_DAY=50 python3 -I "$root/lib/team_record.py" options)"
+check "options: caps from the env, the catalog, a valid connector name only, and each boot script with its pin" "50|fxa-stack,zz|jira|web-setup:$(shasum -a 256 "$tmp/opt/boot/web-setup.sh" | cut -c1-64)|0" \
+  "$(jq -r '.caps.usd_per_day' <<< "$o")|$(jq -r '.skills | join(",")' <<< "$o")|$(jq -r '.connectors | join(",")' <<< "$o")|$(jq -r '.boot[0] | .script + ":" + .sha256' <<< "$o")|$(grep -c 'example.com\|Bearer' <<< "$o")"
+check "options: no gateway config gives null connectors, not an empty list" "null" "$(FXA_TEAM_REPO="$tmp/opt" MCP_GATEWAY_CONFIG="$tmp/none.json" python3 -I "$root/lib/team_record.py" options | jq -c .connectors)"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
