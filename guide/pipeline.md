@@ -20,7 +20,7 @@ only explains the files around it.
 | `/workspace/.fxa-auto-prompt.txt`, `.fxa-auto-launch.sh`, `.fxa-auto-claude.jsonl` | How you were started, and your transcript. Ignore them. |
 | `/workspace/.fxa-auto-token` | Read and deleted before you start. Never recreate it. |
 
-When the work is done, run `/fxa-end` (the notes and learnings for the team's memory). If this run taught you something that a later run in this repo needs (a command that works, a trap, a wrong assumption that cost time), write `/workspace/.fxa-lessons.json` as `[{"lesson": "...", "why": "..."}]`: at most 3, one sentence each, about the repo or the sandbox, never about this ticket. Write none when there is nothing new. A team admin reviews each one first. Then write the handoff with `/fxa-vm-handoff`. The file is
+When the work is done, run `/fxa-end` (the notes and learnings for the team's memory), then write the handoff with `/fxa-vm-handoff`. The file is
 `/workspace/.fxa-auto-done.json`:
 
 ```json

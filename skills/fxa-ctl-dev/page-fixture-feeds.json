@@ -35,9 +35,6 @@
  "/api/errors": {
   "error": "the errors read failed"
  },
- "/api/lessons": {
-  "error": "the lessons read failed (TimeoutExpired)"
- },
  "/api/stats": {
   "rows": [
    {

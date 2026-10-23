@@ -215,8 +215,6 @@ def clean_tail(raw, limit=200):
     return out[-limit:]
 
 ERRORS = {"at": 0, "body": None}
-# Each open tab polled lessons every 15 s, a 0.3 s ctl process each time; an approve or reject clears it.
-LESSONS = {"at": 0, "body": None}
 # Each ctl call is a process (tail is an ssh); a page, or a flood from another
 # site, must not start them without bound.
 CTL_SLOTS = threading.BoundedSemaphore(4)
@@ -718,7 +716,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj), "application/json", etag=etag)
 
     def _team_admin(self, path):
-        """True when the gateway signed this GET for a team admin, as /api/lessons checks."""
+        """True when the gateway signed this GET for a team admin."""
         return signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
 
     def _allowed(self, api):
@@ -760,37 +758,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Location", f"http://localhost:{port}/fxa.html#password={password}")
         self._hardening()
         self.end_headers()
-
-    def _lesson_decide(self):
-        # An approved lesson goes into every new runner's guide, so only a signed team admin may decide one.
-        user = self._admin("POST", "/api/lessons")
-        if not user:
-            return
-        # JSON only: a cross-site form cannot send it without a preflight, which this server never answers.
-        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
-            self._json(415, {"error": "send JSON"})
-            return
-        try:
-            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 4096)) or b"{}")
-        except (ValueError, json.JSONDecodeError):
-            self._json(400, {"error": "bad JSON"})
-            return
-        lid, action, text = body.get("id"), body.get("action"), body.get("text") or ""
-        if not (isinstance(lid, str) and re.fullmatch(r"[0-9a-f]{8}", lid)) or action not in ("approve", "reject") \
-                or not isinstance(text, str) or len(text) > 300:
-            self._json(400, {"error": "bad request"})
-            return
-        try:
-            proc = ctl_run(["lessons", action, lid] + (["--text", text] if text.strip() and action == "approve" else []), timeout=15,
-                           env={"FXA_TEAM_ACTOR": user})
-        except Exception as exc:
-            self._json(503, {"error": type(exc).__name__})
-            return
-        if proc.returncode != 0:
-            self._json(400, {"error": (proc.stderr or "failed").strip()[:200]})
-            return
-        LESSONS["at"] = 0  # the next read shows the decision, not the cached list
-        self._json(200, {"ok": True})
 
     def _admin(self, method, path):
         """The signed team admin of this request, or None once the refusal is sent."""
@@ -997,9 +964,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
         if not self._allowed(True):
-            return
-        if path == "/api/lessons":
-            self._lesson_decide()
             return
         if re.fullmatch(rf"/api/teams/{TEAM_NAME}/routines(/[0-9]{{1,9}}(/(pause|resume|delete|run|stop))?)?", path):
             self._routine_write(path)
@@ -1237,7 +1201,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/runs/recent":
             lim, days, ended, src = arg("limit"), arg("days"), arg("ended") == "1", arg("src")
             rows = (STATS.read()[0] or {}).get("rows")
-            # A private team's runs name its tickets: only a signed team admin sees them, as with lessons.
+            # A private team's runs name its tickets: only a signed team admin sees them.
             admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
             runs = recent_runs(rows, FULL.read()[0], int(time.time()), min(int(lim), 100) if lim.isdigit() and int(lim) else 20,
                                min(int(days), 90) if days.isdigit() and int(days) else 7, os.path.dirname(ERRORS_FILE), str(SESSION_DIR),
@@ -1267,19 +1231,6 @@ class Handler(BaseHTTPRequestHandler):
                              "access_source": access and {"file": os.path.basename(access["path"]), "mtime": access["mtime"]},
                              "access_error": access_err, "age_seconds": age, "error": err,
                              "refreshing": busy, "interval": TEAMS.interval})
-        elif path == "/api/lessons":
-            # A failed read says so (503), so the page never shows it as "No pending lessons".
-            try:
-                body = cached_ctl(LESSONS, ["lessons", "--json"], 15, 60)
-                if body is None:
-                    raise RuntimeError("no lessons read yet")
-                rows = json.loads(body)
-            except Exception as e:
-                self._json(503, {"error": f"the lessons read failed ({type(e).__name__})"})
-                return
-            # A private team's lessons can quote its code: only a signed team admin sees them (i358).
-            admin = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time())) in team_admins()
-            self._json(200, [r for r in rows if isinstance(r, dict) and (admin or not team_private(r.get("team") or "fxa"))], etag=True)
         elif path == "/api/errors":
             body = cached_ctl(ERRORS, ["errors", "--json"], 20, 20)
             if body is None:  # no read has worked yet: not the same as no errors

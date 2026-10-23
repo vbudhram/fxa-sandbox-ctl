@@ -13,7 +13,6 @@ vm_exec() { shift; printf '%s\n' "$*" > "$tmp/exec.$(ls "$tmp" | grep -c '^exec\
 vm_name() { echo "$1"; }; vm_ip() { echo 10.0.0.1; }; _retry() { return 1; }
 _vm_operator_rules() { echo "# Operator rules"; }
 _vm_skill_allowlist() { :; }
-lessons_approved_md() { echo "# Lessons: run the unit tests with jest"; }
 memory_on() { return 0; }; memory_profile_slugs() { echo mozilla/fxa; }
 memory_index_md() { echo "# Team memory for $1: settings tests need the l10n build"; }
 memory_sync() { echo "synced $*" > "$tmp/synced"; }
@@ -23,8 +22,7 @@ CLAUDE_HOME_DIR="$tmp/none" SANDBOX_ROOT="$(cd "$here/.." && pwd)" LOG_DIR="$tmp
 agents() { grep -h "codex/AGENTS.md" "$tmp"/exec.* | sed -n "s/.*echo '\([A-Za-z0-9+/=]*\)' | base64 -d > \/home\/agent\/.codex\/AGENTS.md.*/\1/p" | base64 -d; }
 PIPE_PROFILE=fxa FXA_SESSION_MODE=1 runtime_setup_config vm1 2>/dev/null
 a="$(agents)"
-check "AGENTS.md has the approved lessons and the team memory index" "1|1" \
-  "$(grep -c 'Lessons: run the unit tests' <<< "$a")|$(grep -c 'Team memory for fxa' <<< "$a")"
+check "AGENTS.md has the team memory index" "1" "$(grep -c 'Team memory for fxa' <<< "$a")"
 check "the memory files are synced to the runner" "synced vm1 fxa mozilla/fxa" "$(cat "$tmp/synced" 2>/dev/null)"
 check "a Slack session may use git, as a Claude one may" "1|0" "$(grep -c 'Use git as you like' <<< "$a")|$(grep -c 'You cannot commit or push' <<< "$a")"
 check "the host's git identity is set for the agent" "1" "$(grep -l "user.email 'test@example.com'" "$tmp"/exec.* | wc -l | tr -d ' ')"

@@ -788,11 +788,9 @@ _vm_team_rules() {
   return 0
 }
 
-# _vm_team_context <name>   What every runtime gets after its guide: the approved lessons (an
-# unreviewed one could carry text the agent read from the web) and the team memory's reviewed
+# _vm_team_context <name>   What every runtime gets after its guide: the team memory's reviewed
 # index, with the memory files synced beside it (lib/memory.sh; off when unset).
 _vm_team_context() {
-  declare -F lessons_approved_md >/dev/null && printf '\n%s' "$(lessons_approved_md)"
   if declare -F memory_index_md >/dev/null && memory_on; then
     # shellcheck disable=SC2046  # one slug per word
     printf '\n%s' "$(memory_index_md "${PIPE_PROFILE:-fxa}" $(memory_profile_slugs))"

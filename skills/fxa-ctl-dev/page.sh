@@ -37,7 +37,7 @@ fx = rel(fx)
 # The longest fixture key that the URL path starts with wins; a miss answers [] for a list-like path, else {}.
 stub = """<script>const __F=%s;window.fetch=async(u)=>{const p=new URL(String(u),location.href).pathname;
 const k=Object.keys(__F).filter(k=>p===k||p.startsWith(k+"/")).sort((a,b)=>b.length-a.length)[0];
-const body=k?__F[k]:(/sessions/.test(p)?{sessions:[],cursor:null}:/routines|errors|lessons/.test(p)?[]:{});
+const body=k?__F[k]:(/sessions/.test(p)?{sessions:[],cursor:null}:/routines|errors/.test(p)?[]:{});
 return {ok:true,status:200,json:async()=>body,text:async()=>JSON.stringify(body)};};</script>""" % json.dumps(fx)
 html = open(page).read().replace("<head>", "<head>" + stub, 1)
 if probe:

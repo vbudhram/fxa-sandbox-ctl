@@ -189,14 +189,6 @@ check("the test route: unsigned 401, a viewer 403, an admin the log tail, and no
       (call("GET", T)[0], call("GET", T, headers=sig("viewer@example.com", "GET", T))[0], st, (b.get("lines") or [""])[-1], len(open(f"{tmp}/args").read().splitlines())))
 check("a negative or bad Content-Length, and a body that is not an object, get 400 and run nothing", (400, 400, 400, 400, n_ran),
       (raw_len("-1"), raw_len("x"), call("POST", L, raw=b"[1]", headers=sig(A, "POST", L))[0], call("POST", L + "/5", raw=b'"x"', headers=sig(A, "POST", L + "/5"))[0], len(ran())))
-# Lessons: an approved lesson reaches every runner, so only a signed team admin may approve, edit or reject one.
-LB = {"id": "0123abcd", "action": "approve", "text": "Run the unit tests before a PR."}
-n0 = len(open(f"{tmp}/args").read().splitlines()) if os.path.exists(f"{tmp}/args") else 0
-check("lessons: unsigned 401, a viewer 403, and neither runs the ctl", (401, 403, n0),
-      (call("POST", "/api/lessons", LB)[0], call("POST", "/api/lessons", LB, sig("viewer@example.com", "POST", "/api/lessons"))[0],
-       len(open(f"{tmp}/args").read().splitlines()) if os.path.exists(f"{tmp}/args") else 0))
-check("lessons: an admin approves as itself", (200, "lessons approve 0123abcd --text Run the unit tests before a PR.", A),
-      (call("POST", "/api/lessons", LB, sig(A, "POST", "/api/lessons"))[0], args(), open(f"{tmp}/actor").read().splitlines()[-1]))
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")
