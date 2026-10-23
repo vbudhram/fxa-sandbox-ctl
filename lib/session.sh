@@ -596,7 +596,7 @@ ${_MCP_LAUNCH_SNIPPET}
 cd /workspace
 ${trees:+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1}
 : > /workspace/.fxa-auto-stream.jsonl
-claude -p --resume ${sid} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS}${trees} \\
+claude -p --resume ${sid} --permission-mode bypassPermissions${_CLAUDE_TOOLS_FLAG}${_MCP_CLAUDE_FLAGS}${trees} \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5} --output-format stream-json --verbose${_SESSION_CLAUDE_PARTIAL} -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
   | ${out}
 STEER

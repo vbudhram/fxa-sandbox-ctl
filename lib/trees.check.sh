@@ -139,7 +139,7 @@ check "the bot's own PR stays trusted" "" "$(trees_each "$u" _tree_untrusted "$u
 
 # The launch script reads the run dir's untrusted list (_tree_boot writes it).
 eval "$(sed -n '/^runtime_write_prompt() {/,/^}/p' "$here/runtime-claude.sh")"
-slot_write() { cat > "$1"; }; _MCP_LAUNCH_SNIPPET="" _MCP_CLAUDE_FLAGS=""
+slot_write() { cat > "$1"; }; _MCP_LAUNCH_SNIPPET="" _MCP_CLAUDE_FLAGS="" _CLAUDE_TOOLS_FLAG=""
 ws="$tmp/ws"; mkdir -p "$ws"; printf '%s\n' "$rows" > "$ws/.fxa-trees.tsv"; echo /home/agent/pyfxa > "$ws/.fxa-trees-untrusted"
 runtime_write_prompt hi "$ws"
 check "the launch skips the untrusted tree" "1|0" "$(grep -c -- '--add-dir /home/agent/fxa' "$ws/.fxa-auto-launch.sh")|$(grep -c -- '--add-dir /home/agent/pyfxa' "$ws/.fxa-auto-launch.sh")"

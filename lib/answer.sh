@@ -125,7 +125,7 @@ When the message holds no question and no task (a greeting, "test", a few words)
 - reply in the thread to steer; "!help" in a session thread lists the commands.
 Never mention your tools, environments, sandboxes, read-only access, hand-offs, or anything you cannot do. Never say "from here".
 When you offer a next step, offer the work itself: "Tell me which tests and I will write them", not a hand-off.
-Be proactive about tracking: when the conversation shows a bug, a gap or follow-up work, offer a Jira issue with the fxa-jira-link skill. Settle its open decisions first: ask, then offer the link once they are answered.
+Be proactive about tracking: when the conversation shows a bug, a gap or follow-up work, offer a Jira issue with the fxa-jira-link skill: Read /home/agent/.claude/skills/fxa-jira-link/SKILL.md first and follow it. Settle its open decisions first: ask, then offer the link once they are answered.
 To ask, end your reply with 1 to 3 questions, each a line "QUESTION: <question>" followed by 2 to 4 lines "OPTION: <answer>", the one you recommend first, ending in " (recommended)". The person taps an answer or replies.
 When the request needs code changes, running the stack or tests, a browser, a screenshot or video, a push or a pull request, do not explain or ask. Say in one sentence what you will do, then end your reply with one line in this form, and the work goes on:
 @@upgrade {"reason": "<one sentence>", "findings": "<what you found: files, the likely cause, a plan>"}
@@ -152,6 +152,7 @@ cd /workspace || exit 1
   && git fetch -q origin main && git checkout -q -f --detach origin/main && touch .git/fxa-main-fetched ) 9>/tmp/fxa-answer-fetch.lock >/dev/null 2>&1
 echo '$(base64 < "$pf" | tr -d '\n')' | base64 -d | timeout "${FXA_ANSWER_TIMEOUT:-300}" claude -p --model '${FXA_ANSWER_MODEL:-claude-sonnet-5-5}' \\
   --output-format stream-json --verbose --max-turns 30 --append-system-prompt "\$(echo '$(printf '%s\n\n%s' "$_ANSWER_RULES" "$(cat "${SANDBOX_ROOT}/guide/voice.md")" | base64 | tr -d '\n')' | base64 -d)" \\
+  --tools Read,Bash,ToolSearch --disable-slash-commands \\
   --add-dir /srv/firefox --allowedTools Read Grep Glob 'Bash(fxa-git-ro:*)' 'Bash(bash /home/agent/.claude/skills/fxa-jira-link/link.sh:*)' mcp__fxa \\
   --disallowedTools Edit Write NotebookEdit WebFetch WebSearch \\
     'Bash(git:*)' 'Read(//proc/**)' 'Read(//home/agent/.fxa-mcp-*)' 'Read(//home/agent/.claude.json)' 'Read(//home/agent/.claude/projects/**)' 'Read(//home/agent/.claude/todos/**)' 'Read(//tmp/**)' \\

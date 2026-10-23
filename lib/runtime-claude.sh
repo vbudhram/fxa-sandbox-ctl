@@ -52,7 +52,7 @@ source /etc/agent-env.sh
 ${_MCP_LAUNCH_SNIPPET}
 cd /workspace
 ${trees:+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1}
-claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions${_MCP_CLAUDE_FLAGS}${trees} \\
+claude -p "\$(cat /workspace/.fxa-auto-prompt.txt)"${FXA_CLAUDE_RESUME:+ --resume ${FXA_CLAUDE_RESUME}} --permission-mode bypassPermissions${_CLAUDE_TOOLS_FLAG}${_MCP_CLAUDE_FLAGS}${trees} \\
   --model ${FXA_AGENT_MODEL:-claude-opus-5-5}${effort} --output-format stream-json --verbose${partial} 2>&1 \\
   | { ${out}; }
 LAUNCH

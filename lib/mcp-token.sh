@@ -75,3 +75,6 @@ if [ -n "${FXA_MCP_URL:-}" ] && [ -n "${FXA_MCP_TOKEN:-}" ]; then
 fi'
 # --strict-mcp-config: the gateway is the only MCP server the agent gets.
 _MCP_CLAUDE_FLAGS=' ${FXA_MCP_CONFIG:+--mcp-config "$FXA_MCP_CONFIG" --strict-mcp-config}'
+# Only the built-in tools runs call: the 12 others no run called cost about 12k tokens in every call (ai/docs/510).
+# The first turn and each resume pass the same list, or the cached prefix changes.
+_CLAUDE_TOOLS_FLAG=' --tools Bash,Read,Edit,Write,Agent,Skill,Monitor,TaskStop,WebFetch,SendMessage,ToolSearch'
