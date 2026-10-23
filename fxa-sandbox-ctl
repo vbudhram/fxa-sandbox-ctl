@@ -707,6 +707,10 @@ and /ponytail-review too; apply each cut it reports or decline it in one line.
 Run step 8 in the fxa-writer subagent. Print each verdict and its 'Skills run:'
 line here: the goal evaluator reads only this transcript."
 
+  # A run that cannot pass a step once looped on the stop check to the cap with no handoff, and was relaunched.
+  local stop="Blocked (a step still fails after 2 fixes): write the step, error and tries to
+/workspace/.fxa-auto-blocked.txt, then stop. Or stop after 30 turns."
+
   # Another team's own steps 1-8 (profiles/<team>/goal.md): FxA's steps name FxA's skills, lint and PR template.
   local own; own="$(profile_file "${PIPE_PROFILE:-fxa}" goal.md)"
   if [ "${PIPE_PROFILE:-fxa}" != fxa ] && [ -s "$own" ]; then
@@ -721,7 +725,7 @@ $(runtime_prompt_handoff_step)
 DO NOT push and DO NOT run 'gh' — the host does that once it sees the handoff
 file. No GitHub credentials in this VM.
 
-Or stop after 30 turns.
+${stop}
 EOF
     return 0
   fi
@@ -769,7 +773,7 @@ ${delegate}
 DO NOT push and DO NOT run 'gh' — the host does that once it sees the handoff
 file. No GitHub credentials in this VM.
 
-Or stop after 30 turns.
+${stop}
 EOF
 }
 

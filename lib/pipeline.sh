@@ -657,6 +657,10 @@ _pipeline_stalled_reason() {
   fi
   # rc 1 is "asked, no process". rc 2 is "could not ask", which is not a stall.
   if [ "$alive_rc" -eq 1 ] && [ ! -s "${wt}/.fxa-auto-done.json" ]; then
+    # The run said it is blocked: a person decides, so the pass does not relaunch it. Runner text, so plain characters only.
+    if [ -s "${wt}/.fxa-auto-blocked.txt" ]; then
+      printf 'agent-blocked: %s' "$(head -1 "${wt}/.fxa-auto-blocked.txt" | tr -cd 'A-Za-z0-9 ._:/,-' | tr -s ' ' | cut -c1-120)"; return 0
+    fi
     if grep -q '"type":"result".*"num_turns":0[,}]' "${wt}/.fxa-auto-claude.jsonl" 2>/dev/null; then
       printf 'goal-rejected'; return 0
     fi
