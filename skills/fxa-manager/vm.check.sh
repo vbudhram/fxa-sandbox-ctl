@@ -5,7 +5,7 @@ set -u
 fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^on_vm() {/,/^}/p;/^dev_fn_script() {/,/^}/p;/^dev_prune() {/,/^}/p' "$(dirname "$0")/vm.sh")"
+eval "$(sed -n '/^on_vm() {/,/^}/p;/^dev_fn_script() {/,/^}/p;/^dev_prune() {/,/^}/p;/^dev_stop_bots() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 VM=fxa-manager Z=z P=p
 hostname() { echo laptop; }
 # No shared connection, so the gcloud stub below answers: a live one on this laptop must never be used.
@@ -46,7 +46,7 @@ check "dev_tar names each tree as the VM expects, with new files and the dev env
   "$(dev_tar "$T3/my-ctl" "$T3/other-bot" | tar -tzf - | sort | paste -sd' ' -)"
 # dev up: the dev ctl tree's sibling bot .env is the real one, so the routine tick can read the access rules.
 # The dev bot loads the live .env first; the last env file it loads must set ROUTINES_ENV=dev, or it ticks live routines.
-check "dev up gives the dev bot ROUTINES_ENV=dev in its last env file" "1|1" "$(grep -c "printf '.*ROUTINES_ENV=dev.*' .* > fxa-agent-bot/.env.devhost" "$(dirname "$0")/vm.sh")|$(grep -c -- '--env-file=.env.devhost src/app.js' "$(dirname "$0")/vm.sh")"
+check "dev up gives the dev bot ROUTINES_ENV=dev in its last env file" "1|1" "$(grep -c "printf '.*ROUTINES_ENV=dev.*' .* > fxa-agent-bot/.env.devhost" "$(dirname "$0")/vm.sh")|$(grep -c -- '--env-file=.env.devhost src/app.js >>' "$(dirname "$0")/vm.sh")"
 check "dev up links the real bot .env next to the dev ctl" "1" "$(grep -cx 'ln -sfn $R/fxa-agent-bot/.env fxa-agent-bot/.env' "$(dirname "$0")/vm.sh")"
 # dev prune: a file the last deploy copied and this one did not goes; a file no deploy copied stays.
 P2="$tmp/prune"; mkdir -p "$P2/src/r" "$P2/dst"; (cd "$P2/src" && echo a > r/keep && echo b > r/gone && tar -czf ../t1 r/keep r/gone)
@@ -54,4 +54,12 @@ rm "$P2/src/r/gone"; (cd "$P2/src" && tar -czf ../t2 r/keep)
 ( cd "$P2/dst" && tar -xzf ../t1 && dev_prune ../t1 && echo x > r/local && tar -xzf ../t2 && dev_prune ../t2 && : > ../bad && dev_prune ../bad )
 check "dev prune: removed file goes, kept and local files stay, a bad tarball changes nothing" "r/keep r/local|r/keep" \
   "$(cd "$P2/dst" && find r -type f | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')|$(cat "$P2/dst/.dev-files")"
+# dev stop: every dev bot stops, also one that bot.pid does not name; the live bot (no .env.devhost) runs on.
+( exec -a "node --env-file=.env.dev --env-file=.env.devhost src/app.js" sleep 30 ) & d1=$!
+( exec -a "node --env-file=.env.dev --env-file=.env.devhost src/app.js" sleep 30 ) & d2=$!
+( exec -a "node --env-file=.env src/app.js" sleep 30 ) & lv=$!
+disown "$d1" "$d2" "$lv"; sleep 0.3; dev_stop_bots; sleep 0.3
+check "dev stop: both dev bots stop, the live bot runs on" "gone gone up" \
+  "$(for p in $d1 $d2 $lv; do kill -0 "$p" 2>/dev/null && printf 'up ' || printf 'gone '; done | sed 's/ $//')"
+kill "$d1" "$d2" "$lv" 2>/dev/null
 exit "$fail"

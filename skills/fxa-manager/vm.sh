@@ -243,6 +243,13 @@ dev_fn_script() {
     'source lib/vm-gce.sh; trap - ERR; set +eu +o pipefail; exec 2>&1' "$1"
 }
 
+# dev_stop_bots   Stop every dev bot, not only the one in bot.pid: one left by two deploys at once ran 2 days, and Slack gave it half the events.
+dev_stop_bots() {
+  local p='--env-file=.env.devhost src/app.js' i
+  pkill -f -- "$p" || return 0
+  for i in 1 2 3 4 5; do pgrep -f -- "$p" >/dev/null || return 0; sleep 1; done
+  pkill -9 -f -- "$p"; return 0
+}
 # dev_prune <tarball>   In $D: remove the files the last vm.sh dev copied that this tarball no longer has
 # (tar never deletes), then keep its list for the next deploy. Files no deploy copied stay.
 dev_prune() {
@@ -324,7 +331,7 @@ EOF
     # Each dev path, and what the dev bot runs with, as fxa on the VM.
     vars='D=$HOME/dev; S=$HOME/.claude/state/agent-sessions-dev; export FXA_SESSION_DIR=$S FXA_AGENT_STATE=$HOME/.fxa-agent-dev-sessions.json FXA_ENV=dev'
     case "${2:-up}" in
-      stop) printf 'exec sudo -u fxa -H bash -s\n%s\n%s\n' "$vars" '[ -f $D/bot.pid ] && kill "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot stopped" || echo "dev bot not running"' | on_vm ;;
+      stop) printf 'exec sudo -u fxa -H bash -s\n%s\n%s\ndev_stop_bots; echo "dev bot stopped"\n' "$vars" "$(declare -f dev_stop_bots)" | on_vm ;;
       log) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/bot.log\n' "$vars" "${3:-40}" | on_vm | mask ;;
       # The dev bot's last n Slack calls: time, method, message, and each row or text it sent.
       calls) printf 'exec sudo -u fxa -H bash -s\n%s\ntail -n %d $D/slack-calls.jsonl | jq -r %q\n' "$vars" "${3:-60}" \
@@ -345,7 +352,8 @@ EOF
         { echo 'exec sudo -u fxa -H bash -s'
           echo "$vars"
           # Stop the old dev bot first: its timers ran ctl against a half-extracted tree ("Permission denied").
-          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && { [ -f bot.pid ] && kill "$(cat bot.pid)" 2>/dev/null && sleep 2; true; } && t=$(mktemp) && base64 -d <<"B64" > "$t" && tar -xzf "$t"'
+          declare -f dev_stop_bots
+          echo 'mkdir -p $D $S && chmod 700 $S && cd $D && dev_stop_bots && t=$(mktemp) && base64 -d <<"B64" > "$t" && tar -xzf "$t"'
           dev_tar "$CTL_ROOT" "$BOT_ROOT" | base64
           echo 'B64'
           declare -f dev_prune; echo 'dev_prune "$t"; rm -f "$t"'
@@ -379,6 +387,8 @@ setsid nohup node --env-file=$R/fxa-agent-bot/.env --env-file=.env.dev --env-fil
 echo $! > $D/bot.pid
 for i in 1 2 3 4 5 6 7 8 9 10; do sleep 1; grep -q "is running" <(tail -n 5 $D/bot.log) && break; done
 kill -0 "$(cat $D/bot.pid)" 2>/dev/null && echo "dev bot up (pid $(cat $D/bot.pid))" || { echo "dev bot failed:"; tail -n 20 $D/bot.log; }
+# ponytail: two deploys at the same moment can still start two; this says so, and the next deploy stops both.
+n=$(pgrep -fc -- '--env-file=.env.devhost src/app.js'); [ "${n:-0}" -le 1 ] || echo "WARN: $n dev bots run (another vm.sh dev ran at the same time): run vm.sh dev again"
 EOF2
         } | on_vm | mask > "${TMPDIR:-/tmp}/vm-dev-up.$$"
         cat "${TMPDIR:-/tmp}/vm-dev-up.$$"; up=0; grep -q '^dev bot up' "${TMPDIR:-/tmp}/vm-dev-up.$$" && up=1; rm -f "${TMPDIR:-/tmp}/vm-dev-up.$$"
