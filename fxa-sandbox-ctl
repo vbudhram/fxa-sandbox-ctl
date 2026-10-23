@@ -3064,6 +3064,7 @@ main() {
                   *) echo "usage: fxa-sandbox-ctl [--pipeline <profile>] profile show | list | lint | get <name> | validate <file> | create <file> | set <name> <file> [--generation <g>] | enable|disable|draft <name> | delete <name> | sync" >&2; return 1 ;;
                 esac ;;
     routine)    cmd_routine "$@" ;;
+    memory)     cmd_memory "$@" ;;
     list|ls)    cmd_list "$@" ;;
     logs|log)   cmd_logs "$@" ;;
     stop)       cmd_stop "$@" ;;

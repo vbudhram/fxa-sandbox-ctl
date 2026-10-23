@@ -368,4 +368,23 @@ check "the digest checks each team cite in its own repo" "1|0" \
 check "the digest moves a team inbox entry into teams/<profile>/, and lists new team facts" "0|1|1" \
   "$(g -C "$tmp/clone" ls-tree -r --name-only "origin/${br}" | grep -c '^inbox/team__fxa/' || true)|$(g -C "$tmp/clone" show "origin/${br}:teams/fxa/system.md" | grep -c 'cite2: mozilla/other:b.py:2 | anchor2: nothere')|$(g -C "$tmp/clone" show "origin/${br}:DIGEST.md" | grep -c 'team fact.*also needs the client')"
 
+# The Memory tab's list: main's entries only, with each entry's version.
+g -C "$tmp/clone" checkout -q main 2>/dev/null; g -C "$tmp/clone" pull -q 2>/dev/null
+mkdir -p "$tmp/clone/teams/web"
+printf '## mem-0000aaaa\n<!-- kind: trap | path: src/* | cite: mozilla/fxa:a.js:3 | anchor: foo() | cite2: mozilla/other:b.py:2 | anchor2: bar | terms: auth | confirmed: 2026-10-01 | source: r1 FXA-1 | taint: 0 | person: 1 -->\nThe <img src=x> trap.\n\nWhy: it broke twice.\n\n## mem-0000bbbb\n<!-- kind: trap | path:  | cite: mozilla/fxa:c.js:1 | anchor: c | terms:  | confirmed: 2026-10-05 | source: r2 - | taint: 1 -->\nNewer.\n\nWhy: w.\n\n' > "$tmp/clone/teams/web/trap.md"
+echo '- index' > "$tmp/clone/teams/web/INDEX.md"
+g -C "$tmp/clone" add -A teams && g -C "$tmp/clone" commit -qm web && g -C "$tmp/clone" push -q origin main 2>/dev/null
+l="$(memory_list web)"
+check "memory list: newest first, every field, the person flag, two cites, and no INDEX.md" "mem-0000bbbb,mem-0000aaaa|trap|The <img src=x> trap.|it broke twice.|src/*|2|true|false|1|true|2" \
+  "$(jq -r '[.entries[].id] | join(",")' <<< "$l")|$(jq -r '.entries[1] | [.kind, .text, .why, .path, (.cites | length), .person, .taint] | map(tostring) | join("|")' <<< "$l")|$(jq -r '.entries[0].taint' <<< "$l" | grep -c true)|$(jq '.on' <<< "$l")|$(jq '.entries | length' <<< "$l")"
+v0="$(jq -r '.entries[1].v' <<< "$l")"
+sed -i.bak 's/confirmed: 2026-10-01/confirmed: 2026-10-20/' "$tmp/clone/teams/web/trap.md" && rm -f "$tmp/clone/teams/web/trap.md.bak"
+g -C "$tmp/clone" commit -qam confirm
+check "memory list: a new confirmed date keeps the version" "$v0" "$(memory_list web | jq -r '.entries[] | select(.id == "mem-0000aaaa") | .v')"
+g -C "$tmp/clone" checkout -q -b digest/x && printf '## mem-0000cccc\n<!-- kind: trap | cite: mozilla/fxa:d.js:1 | anchor: d | confirmed: 2026-10-21 | source: r3 - | taint: 0 | digest: 1 -->\nUnreviewed.\n\nWhy: w.\n\n' >> "$tmp/clone/teams/web/trap.md"
+check "memory list: a digest branch in the clone does not show its entries" "2" "$(memory_list web | jq '.entries | length')"
+g -C "$tmp/clone" checkout -q -f main
+check "memory list: a team with no folder, a bad name, and memory off" "0|1|false" \
+  "$(memory_list nofolder | jq '.entries | length')|$(memory_list '../x' >/dev/null 2>&1; echo $?)|$(FXA_MEMORY_REMOTE= memory_list web | jq '.on')"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

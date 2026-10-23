@@ -560,3 +560,24 @@ The full lists are in DIGEST.md on the branch." "" 2>/dev/null
   _memory_git checkout -q main 2>/dev/null
   return 0
 }
+
+# memory_list <team>   The team's facts as JSON for the dashboard, read from main: a digest can hold the
+# clone on its own branch with entries nobody reviewed yet.
+memory_list() {
+  local p="${1:-}" f
+  [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
+  memory_on || { echo '{"on":false,"entries":[]}'; return 0; }
+  memory_pull_maybe 2>/dev/null
+  _memory_git rev-parse -q --verify main >/dev/null 2>&1 || { echo "ERROR: this host has no copy of the team memory yet" >&2; return 1; }
+  _memory_git ls-tree --name-only "main:teams/$p" 2>/dev/null | grep -E '^[a-z-]+\.md$' | grep -vx INDEX.md \
+    | while IFS= read -r f; do printf '\036%s\n' "$f"; _memory_git show "main:teams/$p/$f"; done \
+    | python3 -I "${MEMORY_LIB_DIR}/memory_list.py"
+}
+
+# cmd_memory list <team>   The dashboard's Memory tab.
+cmd_memory() {
+  case "${1:-}" in
+    list) memory_list "${2:-}" ;;
+    *) echo "usage: fxa-sandbox-ctl memory list <team>" >&2; return 1 ;;
+  esac
+}

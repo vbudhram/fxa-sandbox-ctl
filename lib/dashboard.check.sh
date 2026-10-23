@@ -143,7 +143,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   TTAB = "overview"; const pg = String(teamPageHtml("ent"));
   t("team page: a team that is not active has a heading to focus, and only Settings and Routines", `${/<h2 class="th" id="team-h" tabindex="-1">Entitlements/.test(pg)}|${(pg.match(/class="ttab"/g) || []).length}|${/href="#teams\/ent\/routines"/.test(pg)}`, "true|2|true");
   t("team page: a team that is not active opens on Settings, with the step left", /href="#teams\/ent\/settings" aria-current="page">Settings<span class="n">1 left/.test(pg), true);
-  t("team page: an active team keeps its three tabs", (String(teamPageHtml("crew")).match(/class="ttab"/g) || []).length, 3);
+  t("team page: an active team has four tabs, Memory among them", (String(teamPageHtml("crew")).match(/class="ttab"[^>]*>(Overview|Routines|Memory|Settings)/g) || []).length, 4);
   t("team page: an unknown team says so, escaped", /No team &lt;b&gt;/.test(teamPageHtml("<b>")), true);
   // The Overview tab (slice 5): one banner by viewer, the cost card, last test, open errors, no routine name for a non-admin, Readiness.
   { const ent = { profile: "ent", label: "Ent", repos: [{ slug: "a/b", role: "work" }], issues: [{ level: "warn", text: "nobody can start it" }], access: { record: true, status: "active", users: 0 } };

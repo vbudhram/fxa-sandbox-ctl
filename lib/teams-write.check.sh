@@ -14,6 +14,7 @@ for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$t
 [ "\$2" = validate ] && echo "WARN: the agent's GitHub App is not installed on a/b, so its changes ship as a diff"
 # secret-set: keep stdin, and echo it back, so a check can see the answer leaves it out.
 [ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
+[ "\$1" = memory ] && { echo '{"on":true,"entries":[]}'; exit 0; }
 # routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
 if [ "\$1" = routine ]; then
   case "\$2" in list|history|templates|channels) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
@@ -124,6 +125,10 @@ C = "/api/teams/rusty/routine-channels"
 check("routine-channels: unsigned 401, a non-admin 403, an admin runs routine channels for the URL team",
       (401, 403, 200, "routine channels rusty"),
       (call("GET", C)[0], call("GET", C, headers=sig(V, "GET", C))[0], call("GET", C, headers=sig(A, "GET", C))[0], ran()[-1]))
+M = "/api/teams/rusty/memory"
+check("memory: unsigned 401, a non-admin 403, an admin runs memory list for the URL team and gets its JSON",
+      (401, 403, (200, {"on": True, "entries": []}), "memory list rusty"),
+      (call("GET", M)[0], call("GET", M, headers=sig(V, "GET", M))[0], call("GET", M, headers=sig(A, "GET", M)), args()))
 st, _ = call("POST", L, {"routine": R}, sig(A, "POST", L))
 check("an admin creates one: routine set with the routine in a file, as that admin", (200, "routine set rusty", R, A),
       (st, ran()[-1].rsplit(" ", 1)[0], json.load(open(f"{tmp}/record")), open(f"{tmp}/actor").read().splitlines()[-1]))

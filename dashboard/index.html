@@ -586,6 +586,7 @@
   .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
   .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
   .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
+  .mtab td { vertical-align:top; } .mtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); } .mtab .mtext { font-weight:600; } .mtab .mtags { display:flex; gap:var(--s1); flex-wrap:wrap; margin-top:var(--s1); } .mtab .mtags:empty { display:none; }
   .dtab td { vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -2033,13 +2034,13 @@ function repoTag(r) {
 // and Settings tabs. Routine facts come only from the admin routes; a non-admin sees none (i168 D1).
 const TEAM_RE = /^[a-z][a-z0-9-]{1,30}$/;
 let TTAB = "overview", RTSUM = null, RTSUM_ERR = "", RTSUM_AT = 0;
-const TTABS = [["overview", "Overview"], ["routines", "Routines"], ["settings", "Settings"]];
+const TTABS = [["overview", "Overview"], ["routines", "Routines"], ["memory", "Memory"], ["settings", "Settings"]];
 // #teams, #teams/<team>, #teams/<team>/routines|settings. The raw segment is used as it is, never decoded;
 // the old forms (#teams/routines/<team> in Slack History links, #teams/all) are replaced, so Back does not loop.
 function teamRoute(sub, sel) {
   if (sub === "routines" && TEAM_RE.test(sel ?? "")) return { replace: `#teams/${sel}/routines` };
   if (sub === "all" || sub === "routines") return { replace: "#teams" };
-  return { sel: !sub ? "__all" : sub === "new" ? "__new" : sub, tab: ["routines", "settings"].includes(sel) ? sel : "overview" };
+  return { sel: !sub ? "__all" : sub === "new" ? "__new" : sub, tab: ["routines", "memory", "settings"].includes(sel) ? sel : "overview" };
 }
 const rtSum = p => TEAM_ADMIN?.admin ? RTSUM?.teams?.[p] ?? null : null;
 // A team needs attention for a bad or warn issue, or (admins) a failed routine that is not paused.
@@ -2494,13 +2495,15 @@ function teamPageHtml(p) {
   if (!t && TED?.name === p && TED.rec) { t = { profile: p, label: TED.rec.label, repos: [], issues: [], access: { record: true, status: TED.rec.status, open: !!TED.rec.access?.open, listed: (TED.rec.access?.users ?? []).length, channels: (TED.rec.access?.channels ?? []).length }, test: null }; note = "The team list updates in a minute."; }
   if (!t) return html`<div class="tpage"><h2 class="th" id="team-h" tabindex="-1">No team ${p}</h2><p class="tsub">It may have been deleted. <a href="#teams">All teams</a></p></div>`;
   const r = rtSum(t.profile), base = `#teams/${t.profile}`, draft = teamDraftOf(t), rec = TED?.name === t.profile ? TED.rec : null;
-  const tab = draft && TTAB === "overview" ? "settings" : TTAB;
+  // A draft has no Overview and no Memory: nothing runs for it yet.
+  const tab = draft && (TTAB === "overview" || TTAB === "memory") ? "settings" : TTAB;
   const tabs = (draft ? [["settings", "Settings"], ["routines", "Routines"]] : TTABS).map(([k, l]) => html`<a class="ttab" href="${base}${k === "overview" ? "" : "/" + k}"${tab === k ? html` aria-current="page"` : ""}>${l}${k === "settings" && draft ? html`<span class="n">1 left</span>` : ""}${k === "routines" && r ? html`<span class="n">${r.routines}</span>${r.failed ? html`<span class="n bad">${r.failed} failed</span>` : ""}` : ""}</a>`);
   const who = teamWho(t, rec), say = !t.access?.record ? html`<span class="tkey">${t.profile} · ${t.profile === "fxa" ? "built into the bot" : `profiles/${t.profile}/profile.conf`}</span>`
     : draft ? html`<p class="readback">Nobody can start <b>${teamName(t)}</b> yet. ${t.access.status === "disabled" ? "It is off. Test it, and it turns on again when the test passes." : "Test it, and it turns on when the test passes."}</p>`
     : html`<p class="readback"><b>${who}</b> can start <b>${teamName(t)}</b>.</p>`;
   const body = t.load_error ? card(html`<p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${t.profile} profile show</span></p>`, { cls: "tcard" })
     : tab === "routines" ? (TEAM_ADMIN?.admin ? html`${draft ? card(html`<p class="hint">Routines run only when the team is active.</p>`, { flat: true }) : ""}${routinesGroup(t, Date.now() / 1000)}` : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
+    : tab === "memory" ? (TEAM_ADMIN?.admin ? memoryTabHtml(t) : card(html`<p>Only a team admin can see and change team memory.</p>`, { cls: "tcard" }))
     : tab === "settings" ? teamSettingsHtml(t)
     : teamOverview(t);
   return html`<div class="tpage"><div class="thead stack sm"><h2 class="th" id="team-h" tabindex="-1">${teamName(t)} ${teamStateTag(t, rec)}</h2>${say}${note ? html`<p class="hint">${note}</p>` : ""}</div>
@@ -2513,6 +2516,7 @@ function renderTeams() {
   if (!T || T.age_seconds == null) { put("s-teams", String(emptybox(T?.error || "loading teams… the first profile list can take a minute"))); return; }
   const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
   if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
+  if (TTAB === "memory" && t && TEAM_ADMIN?.admin && MEM.team !== t.profile) { MEM = { team: t.profile }; loadMemory(t.profile).then(() => MEM.team === t.profile && renderTeams()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
   // A draft opens on Settings, so its record loads on the default tab too.
@@ -2541,6 +2545,26 @@ function renderTeams() {
 // Routines: a team admin's scheduled prompts (design 2026-10-17-routines). The server checks every write
 // again: the signed user, TEAM_ADMINS, the validator and the version. RT holds one team's list, the routine open
 // in the detail (sel), and the open form, whose draft object each input updates, so a poll keeps what the admin typed.
+// The Memory tab: the team's facts from the memory repo's main branch (fxa-sandbox-ctl memory list).
+let MEM = { team: null };
+async function loadMemory(team) {
+  const r = await fetch(`/api/teams/${encodeURIComponent(team)}/memory`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
+  if (MEM.team === team) Object.assign(MEM, r?.ok && j ? { data: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
+}
+function memoryTabHtml(t) {
+  const d = MEM.team === t.profile ? MEM.data : null, err = MEM.team === t.profile ? MEM.err : "";
+  if (err && !d) return card(html`<p>The team memory did not load: ${err}</p><p class="hint">It tries again on the next refresh.</p>`, { cls: "tcard" });
+  if (!d) return emptybox("Loading the team memory…");
+  if (!d.on) return card(html`<p>Team memory is off on this host.</p>`, { cls: "tcard" });
+  if (!d.entries.length) return emptybox("No team memory yet. A run adds a fact when its cites hold on main.");
+  // INDEX.md lists only the facts confirmed in the last 90 days (lib/memory.sh _memory_index); fxa-mem still finds the rest.
+  const cut = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const rows = d.entries.map(e => html`<tr data-mem="${e.id}"><td>${tag(e.kind, "", { sq: true })}</td>
+    <td><div class="mtext">${e.text}</div>${e.why ? html`<div class="hint">${e.why}</div>` : ""}<div class="mtags">${e.person ? tag("person", "info") : ""}${e.confirmed < cut ? tag("not in index", "warn", { title: "Not confirmed in 90 days: fxa-mem ranks it last" }) : ""}${e.taint ? tag("tainted run", "warn") : ""}</div></td>
+    <td>${e.cites.map(c => html`<div class="mono">${c.cite}</div>`)}</td><td>${e.confirmed || "—"}</td></tr>`);
+  return card(html`<p class="hint">${d.entries.length} fact${d.entries.length === 1 ? "" : "s"} from teams/${t.profile}/ on main. Runners that start after a change get it; running sessions keep their copy.</p>
+    <div class="tscroll">${table(["Kind", "Fact", "Cite", "Confirmed"], rows, { cls: "mtab" })}</div>`, { cls: "tcard" });
+}
 let RT = { team: null }, RT_WANT = 0;   // RT_WANT: a routine id from the link, kept until that team's routines load
 const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -4369,6 +4393,7 @@ async function poll() {
   HIST_OPEN.forEach(loadHist);
   loadErrors(); loadLessons(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
   loadSbDone();
+  if (VIEW === "teams" && TTAB === "memory" && MEM.team && MEM.team === SEL.teams && TEAM_ADMIN?.admin) loadMemory(MEM.team).then(() => MEM.team === SEL.teams && renderTeams());
   if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }

@@ -1080,6 +1080,13 @@ class Handler(BaseHTTPRequestHandler):
                     else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]
                 self._team_ctl(user, args, read=True, cmd="routine")
             return
+        # A team's memory: admins only, for reading too, since an entry can name internal code.
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/memory", path)
+        if m:
+            user = self._admin("GET", path)
+            if user:
+                self._team_ctl(user, ["list", m.group(1)], read=True, cmd="memory")
+            return
         # A team's test, for a page that watches one: its state and log tail. Admins only: the log carries runner text.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/test", path)
         if m:
