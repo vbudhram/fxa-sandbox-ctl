@@ -16,9 +16,8 @@ chmod +x "$tmp/ctl"; printf k1 > "$tmp/hmac"; mkdir -p "$tmp/sess/agent-priv01.m
 echo '{"key":"agent-priv01","profile":"privteam"}' > "$tmp/sess/agent-priv01.json"; echo '{"key":"agent-pub001","profile":"fxa"}' > "$tmp/sess/agent-pub001.json"
 printf png > "$tmp/sess/agent-priv01.media/a.png"; printf png > "$tmp/sess/agent-pub001.media/a.png"; : > "$tmp/db"
 FXA_SESSION_DIR="$tmp/sess" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com" FXA_TEAMS_DIR="$tmp/none" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
-import hashlib, hmac, json, sys, threading, time, urllib.error, urllib.request
-sys.path.insert(0, sys.argv[1]); import server
-from http.server import ThreadingHTTPServer
+import json, sys, time
+sys.path.insert(0, sys.argv[1]); import server, testkit
 t = sys.argv[2]
 server.CTL, server.PIPELINE = t + "/ctl", "test"
 server.agent_tail = lambda key: ["the private screen"]
@@ -29,23 +28,16 @@ rows = [{"key": "agent-priv01", "profile": "privteam", "request": "fix the secre
 server.fxadb.sessions_since = lambda con, since, d: {"cursor": 9, "rows": rows}
 server.FULL = server.Feed("snapshot", [], 60, 30); server.STATS = server.Feed("stats", [], 60, 30); server.AGENTS = server.Feed("agents", [], 15, 30)
 server.AGENTS.data, server.AGENTS.fetched_at = {"sessions": [dict(rows[0], agent={"last_text": "secret out", "last_tool": "cat key"}), rows[1]]}, time.time()
-srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
+base = testkit.start(server.Handler)
 fail = 0
 def check(name, want, got):
     global fail
     ok = want == got; fail |= not ok
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": want {want!r} got {got!r}"))
 def get(pq, user=None):
-    h = {"Host": "localhost"}
-    if user:
-        ts = str(int(time.time())); p = pq.split("?")[0]
-        h.update({"X-Fxa-User": user, "X-Fxa-Time": ts, "X-Fxa-Sig": hmac.new(b"k1", f"{user}|{ts}|GET|{p}".encode(), hashlib.sha256).hexdigest()})
-    try:
-        with urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{pq}", headers=h), timeout=20) as r:
-            body = r.read().decode()
-            return r.status, json.loads(body) if r.headers.get("Content-Type", "").startswith("application/json") else body
-    except urllib.error.HTTPError as e:
-        return e.code, None
+    st, hd, b = testkit.request(base + pq, headers=testkit.sig(user, "GET", pq.split("?")[0]) if user else None)
+    if st >= 400: return st, None
+    return st, json.loads(b) if hd.get("Content-Type", "").startswith("application/json") else b.decode()
 codes = lambda key, user=None: [get(p, user)[0] for p in (f"/api/history?key={key}", f"/api/tail?key={key}", f"/api/media?key={key}&name=a.png")]
 check("a non-admin gets 403 from history, tail and media of a private team's session", [403, 403, 403], codes("agent-priv01", "other@example.com"))
 check("an upper-case key reaches the same session: AGENT-PRIV01 is refused on tail", 403, get("/api/tail?key=AGENT-PRIV01", "other@example.com")[0])
