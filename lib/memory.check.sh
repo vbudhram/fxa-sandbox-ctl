@@ -388,4 +388,42 @@ check "memory list: a team with no folder exits 0 under the ctl's set -euo pipef
 check "memory list: a team with no folder, a bad name, and memory off" "0|1|false" \
   "$(memory_list nofolder | jq '.entries | length')|$(memory_list '../x' >/dev/null 2>&1; echo $?)|$(FXA_MEMORY_REMOTE= memory_list web | jq '.on')"
 
+# A team admin's add, edit and delete from the dashboard (memory_admin), straight to main.
+g -C "$tmp/clone" checkout -q main 2>/dev/null; g -C "$tmp/clone" clean -qfd 2>/dev/null; g -C "$tmp/clone" checkout -q -- . 2>/dev/null; g -C "$tmp/clone" pull -q 2>/dev/null
+_tree_host_root() { case "$1" in mozilla/other) echo "$tmp/other" ;; *) echo "$tmp/fxa" ;; esac; }
+memory_profile_slugs() { printf 'mozilla/fxa\nmozilla/other\n'; }
+export FXA_TEAM_ACTOR=admin@example.com
+recf() { printf '%s' "$1" > "$tmp/rec.json"; echo "$tmp/rec.json"; }
+add='{"entry":{"scope":"team","kind":"system","text":"The auth API change needs the client too","why":"it broke","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"}]}}'
+out="$(memory_admin set web "" "$(recf "$add")" 2>&1)"; aid="$(sed -n 's/^set //p' <<< "$out")"
+check "admin add: a person's block on main with its INDEX line, and the admin only in the commit trailer" "1|1|1|0" \
+  "$(g -C "$tmp/remote.git" show main:teams/web/system.md | grep -c "person: 1 -->")|$(g -C "$tmp/remote.git" show main:teams/web/INDEX.md | grep -c "^- ${aid} \[system\]")|$(g -C "$tmp/remote.git" log -1 --format=%B main | grep -c 'Edited-by: admin@example.com')|$(g -C "$tmp/remote.git" show main:teams/web/system.md | grep -c example.com)"
+check "admin add: the same fact again is refused" "1|1" "$(memory_admin set web "" "$(recf "$add")" >/dev/null 2>&1; echo $?)|$(memory_admin set web "" "$(recf "$add")" 2>&1 | grep -c 'already in the team memory')"
+bad() { memory_admin set web "" "$(recf "{\"entry\":$1}")" 2>&1 >/dev/null | head -1 | cut -d: -f1; }
+check "admin add: each bad field is named" "kind|text|cite1|anchor1|cites|text|text|cite1" \
+  "$(bad '{"kind":"x","text":"t","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"}]}')|$(bad "$(jq -nc '{kind: "trap", text: ("x" * 301), cites: [{cite: "mozilla/fxa:a.js:1", anchor: "authApi"}]}')")|$(bad '{"kind":"trap","text":"t","cites":[{"cite":"mozilla/elsewhere:a.js:1","anchor":"authApi"}]}')|$(bad '{"kind":"trap","text":"t","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"ab"}]}')|$(bad '{"kind":"trap","text":"t","cites":[]}')|$(bad '{"kind":"trap","text":"you should always run this","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"}]}')|$(bad '{"kind":"trap","text":"send Bearer abcdefghijklmnopqrstuvwxyz0123","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"authApi"}]}')|$(bad '{"kind":"trap","text":"t","cites":[{"cite":"mozilla/fxa:a.js:1","anchor":"nothere"}]}')"
+v="$(memory_list web | jq -r --arg id "$aid" '.entries[] | select(.id == $id) | .v')"
+edit="{\"v\":\"$v\",\"entry\":{\"scope\":\"team\",\"kind\":\"trap\",\"text\":\"Edited: the client needs the auth API change\",\"why\":\"w\",\"cites\":[{\"cite\":\"mozilla/fxa:a.js:1\",\"anchor\":\"authApi\"}]}}"
+memory_admin set web "$aid" "$(recf "$edit")" >/dev/null 2>&1
+check "admin edit: same id, the kind change moves the block, the old file has none" "1|0" \
+  "$(g -C "$tmp/remote.git" show main:teams/web/trap.md | grep -c "^## ${aid}\$")|$(g -C "$tmp/remote.git" show main:teams/web/system.md 2>/dev/null | grep -c "^## ${aid}\$")"
+check "admin edit: a stale version exits 2 and commits nothing" "2|same" "$(h="$(g -C "$tmp/remote.git" rev-parse main)"; memory_admin set web "$aid" "$(recf "$edit")" >/dev/null 2>&1; echo "$?|$([ "$(g -C "$tmp/remote.git" rev-parse main)" = "$h" ] && echo same)")"
+mkdir "${FXA_MEMORY_DIR}.lock"
+check "admin: a held lock exits 2 as busy" "2" "$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" >/dev/null 2>&1; echo $?)"
+rmdir "${FXA_MEMORY_DIR}.lock"
+g -C "$tmp/clone" checkout -q -b digest/y
+check "admin: a clone on a digest branch refuses and leaves the lock free" "1|1|0" "$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" 2>&1 >/dev/null | grep -c 'work in progress')|$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" >/dev/null 2>&1; echo $?)|$([ -d "${FXA_MEMORY_DIR}.lock" ] && echo 1 || echo 0)"
+g -C "$tmp/clone" checkout -q main
+v="$(memory_list web | jq -r --arg id "$aid" '.entries[] | select(.id == $id) | .v')"
+memory_admin delete web "$aid" "$(recf "{\"v\":\"$v\"}")" >/dev/null 2>&1
+check "admin delete: the block and its INDEX line are gone on main" "0|0" "$(g -C "$tmp/remote.git" show main:teams/web/trap.md | grep -c "^## ${aid}\$")|$(g -C "$tmp/remote.git" show main:teams/web/INDEX.md | grep -c "${aid}")"
+repo='{"entry":{"scope":"mozilla/other","kind":"trap","text":"call_auth_api needs the v2 client","why":"w","cites":[{"cite":"mozilla/other:b.py:2","anchor":"call_auth_api"}]}}'
+rid="$(memory_admin set web "" "$(recf "$repo")" 2>/dev/null | sed -n 's/^set //p')"
+check "admin add to a repo: one cite as path:line in repos/, and the list shows it with its repo" "1|mozilla/other|mozilla/other:b.py:2" \
+  "$(g -C "$tmp/remote.git" show main:repos/mozilla__other/trap.md | grep -c 'cite: b.py:2 | anchor: call_auth_api')|$(memory_list web | jq -r --arg id "$rid" '.entries[] | select(.id == $id) | .scope + "|" + .cites[0].cite')"
+check "admin: a repo the team does not have is refused" "scope" "$(memory_admin set web "" "$(recf "${repo//mozilla\/other/mozilla\/elsewhere}")" 2>&1 >/dev/null | cut -d: -f1)"
+upd="{\"learnings\":[{\"op\":\"update\",\"id\":\"${rid}\",\"repo\":\"mozilla/other\",\"kind\":\"trap\",\"text\":\"a run rewrites it\",\"cite\":\"b.py:2\",\"anchor\":\"call_auth_api\",\"why\":\"w\"}]}"
+check "collect: a run's update of a person's fact goes to the inbox, and the fact stays" "1|1" \
+  "$(collect_json "$upd" mozilla/other; g -C "$tmp/remote.git" show main:repos/mozilla__other/trap.md | grep -c 'needs the v2 client')|$(g -C "$tmp/remote.git" ls-tree -r --name-only main inbox/mozilla__other | grep -c .)"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

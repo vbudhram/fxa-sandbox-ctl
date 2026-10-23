@@ -586,7 +586,7 @@
   .bdet .blk.bad h3 { color:var(--bad); } .bdet .blk .out.tty { margin:var(--s2) 0 0; }
   .bdet .acts { display:flex; flex-wrap:wrap; gap:4px var(--s3); align-items:center; font-size:var(--t-sub); font-weight:600; }
   .bdet .acts .main { font:inherit; font-weight:650; color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:0 10px; min-height:32px; display:inline-flex; align-items:center; text-decoration:none; cursor:pointer; }
-  .mtab td { vertical-align:top; } .mtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); } .mtab .mtext { font-weight:600; } .mtab .mtags { display:flex; gap:var(--s1); flex-wrap:wrap; margin-top:var(--s1); } .mtab .mtags:empty { display:none; }
+  .mtab td { vertical-align:top; } .mtab td:nth-child(4) { color:var(--dim); word-break:break-all; min-width:14em; } .mtab td:nth-child(n+5), .mtab td:first-child { white-space:nowrap; color:var(--dim); } .mtab .mtext { font-weight:600; } .mtab .mtags { display:flex; gap:var(--s1); flex-wrap:wrap; margin-top:var(--s1); } .mtab .mtags:empty { display:none; } .mtab td.macts { white-space:nowrap; } .linkbtn.danger { color:var(--bad); font-weight:700; }
   .dtab td { vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -620,11 +620,11 @@
   .stat .lbl { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
   .stat .big { font:700 var(--t-kpi)/1.1 var(--head); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .stat .sub { font-size:var(--t-sub); color:var(--faint); } .stat.bad .big { color:var(--bad); } .stat.warn .big { color:var(--warn); }
-  :is([data-routines], [data-tform]) h3 { margin:0; font:700 var(--t-heading)/1.3 var(--head); display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
-  :is([data-routines], [data-tform]) h3 .n { color:var(--dim); font-size:var(--t-body); font-variant-numeric:tabular-nums; }
-  :is([data-routines], [data-tform]) .tsub { max-width:68ch; } :is([data-routines], [data-tform]) .hint { margin:0; color:var(--faint); font-size:var(--t-sub); }
-  :is([data-routines], [data-tform]) p[data-rt-msg]:empty { display:none; }
-  :is([data-routines], [data-tform]) .row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); } :is([data-routines], [data-tform]) .row .sp { flex:1; }
+  :is([data-routines], [data-tform], [data-memory]) h3 { margin:0; font:700 var(--t-heading)/1.3 var(--head); display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
+  :is([data-routines], [data-tform], [data-memory]) h3 .n { color:var(--dim); font-size:var(--t-body); font-variant-numeric:tabular-nums; }
+  :is([data-routines], [data-tform], [data-memory]) .tsub { max-width:68ch; } :is([data-routines], [data-tform], [data-memory]) .hint { margin:0; color:var(--faint); font-size:var(--t-sub); }
+  :is([data-routines], [data-tform], [data-memory]) p[data-rt-msg]:empty { display:none; }
+  :is([data-routines], [data-tform], [data-memory]) .row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); } :is([data-routines], [data-tform], [data-memory]) .row .sp { flex:1; }
   .rt-head { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s3); }
   .rtkpis { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); }
   .rtcols { display:grid; gap:var(--s3); grid-template-columns:minmax(0,1fr) minmax(280px,360px); align-items:start; }
@@ -643,7 +643,7 @@
   .rtkey { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); }
   .rtback { font-size:var(--t-sub); color:var(--link); font-weight:600; align-self:flex-start; }
   .rtd .item .alert { margin-top:var(--s2); } .rtd details { margin-top:var(--s2); } .rtd summary { cursor:pointer; color:var(--link); font-size:var(--t-sub); font-weight:600; }
-  :is([data-routines], [data-tform]) .report { margin:var(--s2) 0 0; padding:var(--s2) var(--s3); background:var(--sunk); border-radius:var(--r-md); font:var(--t-label)/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; }
+  :is([data-routines], [data-tform], [data-memory]) .report { margin:var(--s2) 0 0; padding:var(--s2) var(--s3); background:var(--sunk); border-radius:var(--r-md); font:var(--t-label)/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; }
   .steps { display:flex; align-items:center; gap:var(--s2); font-size:var(--t-sub); color:var(--faint); list-style:none; margin:0; padding:0; }
   .steps li { display:flex; align-items:center; gap:var(--s2); } .steps li + li::before { content:""; width:24px; height:1px; background:var(--line2); }
   .steps b { width:22px; height:22px; border-radius:var(--r-pill); display:grid; place-items:center; font:700 var(--t-label) var(--sans); background:var(--sunk); color:var(--dim); }
@@ -655,16 +655,16 @@
   .choice .ct { font:700 var(--t-body)/1.3 var(--head); } .choice .cd { color:var(--dim); font-size:var(--t-sub); } .choice .foot { margin-top:auto; display:flex; flex-wrap:wrap; gap:var(--s1); }
   .choice.sm { padding:var(--s3); flex-direction:row; gap:var(--s2); } .choice.sm input { margin:3px 0 0; accent-color:var(--link); } .choice:has(input:disabled) { cursor:default; opacity:.7; }
   .emptybox .rtchoices { text-align:left; margin-top:var(--s2); }
-  :is([data-routines], [data-tform]) fieldset { border:0; padding:0; margin:0; min-width:0; } .rt-head h3:focus { outline:none; } .rt-head h3:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
+  :is([data-routines], [data-tform], [data-memory]) fieldset { border:0; padding:0; margin:0; min-width:0; } .rt-head h3:focus { outline:none; } .rt-head h3:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
   .rtd .line1 { grid-template-columns:64px minmax(0,1fr) auto; }
-  :is([data-routines], [data-tform]) .field { display:flex; flex-direction:column; gap:var(--s1); min-width:0; border:0; padding:0; margin:0; }
-  :is([data-routines], [data-tform]) .field > label, :is([data-routines], [data-tform]) .lb { font:600 var(--t-sub) var(--sans); color:var(--ink); padding:0; }
-  :is([data-routines], [data-tform]) .field > label:has(input[type="checkbox"]) { font-weight:400; } :is([data-routines], [data-tform]) .opt { font-weight:400; color:var(--faint); }
-  :is([data-routines], [data-tform]) fieldset.field label { font-size:var(--t-sub); } :is([data-routines], [data-tform]) fieldset .seg { align-self:flex-start; } :is([data-routines], [data-tform]) fieldset .seg + .seg { margin-top:var(--s1); }
-  :is([data-routines], [data-tform]) .input { font:var(--t-body) var(--sans); color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:var(--s2) var(--s3); min-height:40px; width:100%; }
-  :is([data-routines], [data-tform]) .input:focus { outline:2px solid var(--link); outline-offset:0; border-color:var(--link); }
-  :is([data-routines], [data-tform]) textarea.input { min-height:180px; font:var(--t-label)/1.6 var(--mono); resize:vertical; } :is([data-routines], [data-tform]) .input[aria-invalid="true"] { border-color:var(--bad); }
-  :is([data-routines], [data-tform]) .rt-usd { max-width:140px; }
+  :is([data-routines], [data-tform], [data-memory]) .field { display:flex; flex-direction:column; gap:var(--s1); min-width:0; border:0; padding:0; margin:0; }
+  :is([data-routines], [data-tform], [data-memory]) .field > label, :is([data-routines], [data-tform], [data-memory]) .lb { font:600 var(--t-sub) var(--sans); color:var(--ink); padding:0; }
+  :is([data-routines], [data-tform], [data-memory]) .field > label:has(input[type="checkbox"]) { font-weight:400; } :is([data-routines], [data-tform], [data-memory]) .opt { font-weight:400; color:var(--faint); }
+  :is([data-routines], [data-tform], [data-memory]) fieldset.field label { font-size:var(--t-sub); } :is([data-routines], [data-tform], [data-memory]) fieldset .seg { align-self:flex-start; } :is([data-routines], [data-tform], [data-memory]) fieldset .seg + .seg { margin-top:var(--s1); }
+  :is([data-routines], [data-tform], [data-memory]) .input { font:var(--t-body) var(--sans); color:var(--ink); background:var(--panel); border:1px solid var(--line2); border-radius:var(--r-md); padding:var(--s2) var(--s3); min-height:40px; width:100%; }
+  :is([data-routines], [data-tform], [data-memory]) .input:focus { outline:2px solid var(--link); outline-offset:0; border-color:var(--link); }
+  :is([data-routines], [data-tform], [data-memory]) textarea.input { min-height:180px; font:var(--t-label)/1.6 var(--mono); resize:vertical; } :is([data-routines], [data-tform], [data-memory]) .input[aria-invalid="true"] { border-color:var(--bad); }
+  :is([data-routines], [data-tform], [data-memory]) .rt-usd { max-width:140px; }
   .fields2 { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr)); }
   .okline { margin:0; color:var(--ok); font-size:var(--t-sub); }
   .readback { margin:0; font-size:var(--t-body); line-height:1.6; color:var(--dim); } .readback b { color:var(--ink); font-weight:600; }
@@ -2510,7 +2510,7 @@ function teamPageHtml(p) {
     <nav class="ttabs" aria-label="Team">${tabs}</nav>${body}</div>`;
 }
 // A poll must not wipe an edit in progress: the record JSON, a secret value, or a routine form someone changed.
-const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val]") || !!RT.form?.dirty || !!TFORM?.dirty || !!NEWT?.dirty;
+const teamEditing = () => !!document.activeElement?.matches?.(".team-json, [data-secret-val], [data-mem-q]") || !!RT.form?.dirty || !!TFORM?.dirty || !!NEWT?.dirty || !!MEM.form?.dirty;
 function renderTeams() {
   const T = TEAMS;
   if (!T || T.age_seconds == null) { put("s-teams", String(emptybox(T?.error || "loading teams… the first profile list can take a minute"))); return; }
@@ -2551,20 +2551,105 @@ async function loadMemory(team) {
   const r = await fetch(`/api/teams/${encodeURIComponent(team)}/memory`, { cache: "no-store" }).catch(() => null), j = await r?.json().catch(() => null);
   if (MEM.team === team) Object.assign(MEM, r?.ok && j ? { data: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
 }
+const MEM_KINDS = ["convention", "trap", "command", "decision", "owner-area"];
+const memScopes = t => ["team", ...(t.repos ?? []).map(r => r.slug)];
+const memWhere = sc => sc === "team" ? "Team" : sc;
+// The form of one fact, from an entry or empty; a repo fact has one cite, a team fact up to three.
+const memDraft = (e, t) => e ? { scope: e.scope, kind: e.kind, text: e.text, why: e.why, path: e.path, terms: e.terms, cites: e.cites.map(c => ({ ...c })) }
+  : { scope: "team", kind: "system", text: "", why: "", path: "", terms: "", cites: [{ cite: `${(t.repos ?? [])[0]?.slug ?? "owner/repo"}:path:1`, anchor: "" }] };
+function memForm(t) {
+  const f = MEM.form, d = f.d, e = f.errs ?? {}, kinds = d.scope === "team" ? [...MEM_KINDS, "system"] : MEM_KINDS, max = d.scope === "team" ? 3 : 1;
+  const bad = k => e[k] ? html` aria-invalid="true" aria-describedby="mem-${k}-err"` : "", err = k => e[k] ? html`<p class="unknown" id="mem-${k}-err">${e[k]}</p>` : "";
+  const lab = (k, l, input, hint) => html`<div class="field"><label for="mem-${k}">${l}</label>${input}${hint ?? ""}${err(k)}</div>`;
+  const inp = (k, l, hint, max) => lab(k, l, html`<input id="mem-${k}" class="input" data-mem-f="${k}" maxlength="${max}" value="${d[k]}"${bad(k)}>`, hint ? html`<p class="hint">${hint}</p>` : "");
+  return card(html`<div data-mem-form class="stack"><h3 id="mem-form-h" tabindex="-1">${f.id ? "Edit a fact" : "Add a fact"}</h3>
+    <p class="hint">Agents read this before they work on ${d.scope === "team" ? `any repo of ${teamName(t)}` : html`<span class="mono">${d.scope}</span>, in every team that has it`}. Write one fact about the code, and cite the line that shows it.</p>
+    <div class="fields2">${lab("scope", "Where", html`<select id="mem-scope" class="input" data-mem-f="scope"${f.id ? " disabled" : ""}${bad("scope")}>${[...new Set([...memScopes(t), d.scope])].map(sc => html`<option value="${sc}"${sc === d.scope ? " selected" : ""}>${memWhere(sc)}</option>`)}</select>`)}
+      ${lab("kind", "Kind", html`<select id="mem-kind" class="input" data-mem-f="kind"${bad("kind")}>${kinds.map(k => html`<option${k === d.kind ? " selected" : ""}>${k}</option>`)}</select>`)}</div>
+    ${inp("text", "Fact", "One line, 300 characters at most.", 300)}${inp("why", html`Why <span class="opt">· optional</span>`, "What went wrong without it.", 300)}
+    <div class="fields2">${inp("path", html`Paths <span class="opt">· optional</span>`, "A glob, such as packages/fxa-settings/*.", 200)}${inp("terms", html`Search terms <span class="opt">· optional</span>`, "", 200)}</div>
+    <fieldset class="group field" id="mem-cites" tabindex="-1"${bad("cites")}><legend class="lb">${max === 1 ? "Cite" : "Cites"}</legend>
+      ${d.cites.map((c, i) => html`<div class="fields2">${lab(`cite${i + 1}`, "owner/repo:path:line", html`<input id="mem-cite${i + 1}" class="input mono" data-mem-cite="${i}" data-part="cite" value="${c.cite}"${bad(`cite${i + 1}`)}>`)}
+        ${lab(`anchor${i + 1}`, "Code at that line", html`<input id="mem-anchor${i + 1}" class="input mono" data-mem-cite="${i}" data-part="anchor" maxlength="120" value="${c.anchor}"${bad(`anchor${i + 1}`)}>`)}</div>`)}
+      <p class="hint">The save checks that this code is within 3 lines of the cite on the repo's default branch.</p>
+      ${d.cites.length < max ? html`<button type="button" class="linkbtn" data-mem-addcite>Add a cite</button>` : ""}${err("cites")}</fieldset>
+    ${MEM.formMsg ? html`<p class="unknown" role="alert">${MEM.formMsg}</p>` : ""}
+    <div class="row"><button type="button" data-mem-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Add"}</button><button type="button" data-mem-cancel>Cancel</button></div></div>`, { cls: "tcard" });
+}
 function memoryTabHtml(t) {
   const d = MEM.team === t.profile ? MEM.data : null, err = MEM.team === t.profile ? MEM.err : "";
   if (err && !d) return card(html`<p>The team memory did not load: ${err}</p><p class="hint">It tries again on the next refresh.</p>`, { cls: "tcard" });
   if (!d) return emptybox("Loading the team memory…");
   if (!d.on) return card(html`<p>Team memory is off on this host.</p>`, { cls: "tcard" });
-  if (!d.entries.length) return emptybox("No team memory yet. A run adds a fact when its cites hold on main.");
   // INDEX.md lists only the facts confirmed in the last 90 days (lib/memory.sh _memory_index); fxa-mem still finds the rest.
-  const cut = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-  const rows = d.entries.map(e => html`<tr data-mem="${e.id}"><td>${tag(e.kind, "", { sq: true })}</td>
+  const cut = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), q = (MEM.q ?? "").toLowerCase();
+  const shown = d.entries.filter(e => !q || [e.text, e.why, e.kind, e.scope, ...e.cites.map(c => c.cite)].join(" ").toLowerCase().includes(q));
+  const rows = shown.map(e => html`<tr data-mem="${e.id}"><td>${e.scope === "team" ? "Team" : html`<span class="mono">${e.scope}</span>`}</td><td>${tag(e.kind, "", { sq: true })}</td>
     <td><div class="mtext">${e.text}</div>${e.why ? html`<div class="hint">${e.why}</div>` : ""}<div class="mtags">${e.person ? tag("person", "info") : ""}${e.confirmed < cut ? tag("not in index", "warn", { title: "Not confirmed in 90 days: fxa-mem ranks it last" }) : ""}${e.taint ? tag("tainted run", "warn") : ""}</div></td>
-    <td>${e.cites.map(c => html`<div class="mono">${c.cite}</div>`)}</td><td>${e.confirmed || "—"}</td></tr>`);
-  return card(html`<p class="hint">${d.entries.length} fact${d.entries.length === 1 ? "" : "s"} from teams/${t.profile}/ on main. Runners that start after a change get it; running sessions keep their copy.</p>
-    <div class="tscroll">${table(["Kind", "Fact", "Cite", "Confirmed"], rows, { cls: "mtab" })}</div>`, { cls: "tcard" });
+    <td>${e.cites.map(c => html`<div class="mono">${c.cite}</div>`)}</td><td>${e.confirmed || "—"}</td>
+    <td class="macts"><button type="button" class="linkbtn" data-mem-edit="${e.id}">Edit</button> <button type="button" class="linkbtn${MEM.arm === e.id ? " danger" : ""}" data-mem-del="${e.id}">${MEM.arm === e.id ? "Delete it?" : "Delete"}</button></td></tr>`);
+  const n = d.entries.length;
+  return html`<div data-memory class="stack">${MEM.form ? memForm(t) : ""}${card(html`<div class="row"><p class="hint">${n} fact${n === 1 ? "" : "s"} for this team and its repos, from main. A repo fact is shared by every team on that repo. Runners that start after a change get it; running sessions keep their copy.</p><span class="sp"></span>
+      ${MEM.form ? "" : html`<button type="button" data-mem-new>Add a fact</button>`}</div>
+    <p class="${MEM.ok ? "hint" : "unknown"}" data-mem-msg role="status" tabindex="-1">${MEM.msg ?? ""}</p>
+    ${n ? html`<input class="input" data-mem-q aria-label="Filter the facts" placeholder="Filter by text, kind, repo or cite" value="${MEM.q ?? ""}">
+      <div class="tscroll">${shown.length ? table(["Where", "Kind", "Fact", "Cite", "Confirmed", ["", "macts"]], rows, { cls: "mtab" }) : emptybox("No fact matches the filter.")}</div>`
+      : emptybox("No team memory yet. A run adds a fact when its cites hold on main, or add one here.")}`, { cls: "tcard" })}</div>`;
 }
+// A repaint of the Memory tab that keeps the focus on the same control.
+function memPaint() {
+  const t = (TEAMS?.teams ?? []).find(x => x.profile === MEM.team), el = document.querySelector("[data-memory]"), a = document.activeElement;
+  const key = a?.id || ["memEdit", "memDel"].map(k => a?.dataset?.[k] ? `[data-${k.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}="${a.dataset[k]}"]` : "").find(Boolean) || (a?.hasAttribute?.("data-mem-q") ? "[data-mem-q]" : "");
+  if (!t || !el) return renderTeams();
+  el.outerHTML = String(memoryTabHtml(t));
+  const n = key ? (key.startsWith("[") ? document.querySelector(`[data-memory] ${key}`) : document.getElementById(key)) : null;
+  if (n) { n.focus(); if (n.matches("[data-mem-q]")) n.setSelectionRange(n.value.length, n.value.length); }
+}
+const memSay = (msg, ok) => { Object.assign(MEM, { msg, ok }); memPaint(); };
+document.addEventListener("input", e => {
+  if (e.target.matches?.("[data-mem-q]")) { MEM.q = e.target.value; return memPaint(); }
+  const f = MEM.form; if (!f || !e.target.closest?.("[data-mem-form]")) return;
+  f.dirty = true;
+  const k = e.target.dataset.memF, ci = e.target.dataset.memCite;
+  if (ci != null) f.d.cites[Number(ci)][e.target.dataset.part] = e.target.value;
+  else if (k) f.d[k] = e.target.value;
+  // A repo fact takes one cite in that repo, and no "system" kind.
+  if (k === "scope") { if (f.d.scope !== "team") { f.d.cites = f.d.cites.slice(0, 1); if (f.d.kind === "system") f.d.kind = "trap"; } memPaint(); }
+});
+async function memDo(act, id) {
+  const team = MEM.team, base = `/api/teams/${encodeURIComponent(team)}/memory`, t = (TEAMS?.teams ?? []).find(x => x.profile === team), row = x => MEM.data?.entries.find(e => e.id === x);
+  if (act === "new" || act === "edit") { const e = act === "edit" ? row(id) : null; MEM.form = { id: e?.id, v: e?.v, d: memDraft(e, t), errs: {} }; MEM.formMsg = ""; MEM.arm = ""; memPaint(); return setTimeout(() => document.getElementById("mem-form-h")?.focus()); }
+  if (act === "cancel") { MEM.form = null; MEM.formMsg = ""; return memPaint(); }
+  if (act === "addcite") { MEM.form.d.cites.push({ cite: "", anchor: "" }); MEM.form.dirty = true; return memPaint(); }
+  if (act === "del") {
+    if (MEM.arm !== id) { MEM.arm = id; return memPaint(); }
+    const e = row(id); MEM.arm = "";
+    const [r, j] = await teamPost(`${base}/${id}/delete`, { v: e?.v, scope: e?.scope });
+    await loadMemory(team);
+    return memSay(r?.ok ? `Deleted ${id}. ${j.out?.includes("WARN") ? "The push to GitHub failed; the next save pushes it." : ""}` : j.error || "the delete did not go through", !!r?.ok);
+  }
+  if (act === "save") {
+    const f = MEM.form; if (!f || f.saving) return;
+    f.saving = true; memPaint();
+    const [r, j] = await teamPost(f.id ? `${base}/${f.id}` : base, { entry: f.d, ...(f.id ? { v: f.v } : {}) });
+    f.saving = false;
+    if (r?.ok) { MEM.form = null; MEM.formMsg = ""; await loadMemory(team); return memSay(`Saved ${String(j.out ?? "").match(/mem-[0-9a-f]{8}/)?.[0] ?? ""}. ${/WARN/.test(j.out ?? "") ? "The push to GitHub failed; the next save pushes it." : "New runners get it."}`, true); }
+    const errs = {}, other = [];
+    for (const l of String(j.error || "").split("\n").map(x => x.replace(/^ERROR: /, "").trim()).filter(Boolean)) {
+      const m = l.match(/^(scope|kind|text|why|path|terms|cites|cite[123]|anchor[123]|entry): (.*)$/); if (m) errs[m[1]] ??= m[2]; else other.push(l);
+    }
+    // A 409: keep the draft and take the current version, so a second Save replaces their change on purpose.
+    if (r?.status === 409) { await loadMemory(team); const cur = row(f.id); if (cur) f.v = cur.v; }
+    f.errs = errs; MEM.formMsg = [Object.keys(errs).length ? "Fix the marked fields." : "", ...other].filter(Boolean).join(" ") || `the save did not go through (${r?.status ?? "no answer"})`;
+    memPaint();
+    const first = Object.keys(errs)[0]; (document.getElementById(first ? `mem-${first}` : "mem-form-h") ?? document.getElementById("mem-cites"))?.focus();
+  }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest?.("[data-mem-new], [data-mem-edit], [data-mem-del], [data-mem-save], [data-mem-cancel], [data-mem-addcite]"); if (!b || !b.closest("[data-memory]")) return;
+  const d = b.dataset;
+  memDo(d.memEdit ? "edit" : d.memDel ? "del" : "memNew" in d ? "new" : "memSave" in d ? "save" : "memCancel" in d ? "cancel" : "addcite", d.memEdit || d.memDel);
+});
 let RT = { team: null }, RT_WANT = 0;   // RT_WANT: a routine id from the link, kept until that team's routines load
 const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];

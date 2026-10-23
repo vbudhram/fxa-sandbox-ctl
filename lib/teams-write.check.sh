@@ -14,7 +14,11 @@ for a in "\$@"; do [ -f "\$a" ] && { cat "\$a" > "$tmp/record"; echo "\$a" > "$t
 [ "\$2" = validate ] && echo "WARN: the agent's GitHub App is not installed on a/b, so its changes ship as a diff"
 # secret-set: keep stdin, and echo it back, so a check can see the answer leaves it out.
 [ "\$2" = secret-set ] && { v="\$(cat)"; printf '%s' "\$v" > "$tmp/secretval"; echo "stored \$4 (\$v)"; exit 0; }
-[ "\$1" = memory ] && { echo '{"on":true,"entries":[]}'; exit 0; }
+if [ "\$1" = memory ]; then
+  [ "\$2" = list ] && echo '{"on":true,"entries":[]}' || echo "\$2 mem-0000aaaa"
+  [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: someone changed or removed this fact since you opened it; load it again" >&2; exit "\$(cat "$tmp/rc")"; }
+  exit 0
+fi
 # routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
 if [ "\$1" = routine ]; then
   case "\$2" in list|history|templates|channels) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
@@ -129,6 +133,27 @@ M = "/api/teams/rusty/memory"
 check("memory: unsigned 401, a non-admin 403, an admin runs memory list for the URL team and gets its JSON",
       (401, 403, (200, {"on": True, "entries": []}), "memory list rusty"),
       (call("GET", M)[0], call("GET", M, headers=sig(V, "GET", M))[0], call("GET", M, headers=sig(A, "GET", M)), args()))
+server.team_private = lambda p: p == "secret"
+ME, MD = M + "/mem-0000aaaa", M + "/mem-0000aaaa/delete"
+E = {"scope": "team", "kind": "trap", "text": "t", "cites": []}
+check("memory write: unsigned 401, a non-admin 403, and no command runs", (401, 403, "memory list rusty"),
+      (call("POST", M, {"entry": E})[0], call("POST", M, {"entry": E}, sig(V, "POST", M))[0], args()))
+st, body = call("POST", M, {"entry": E}, sig(A, "POST", M))
+check("memory add: the admin's set runs with the entry in a record file, not argv, as the admin", (200, "memory set rusty ", E, A),
+      (st, args().rsplit(" ", 1)[0], json.load(open(f"{tmp}/record"))["entry"], open(f"{tmp}/actor").read().split()[-1]))
+st, _ = call("POST", ME, {"entry": E, "v": "0123456789ab"}, sig(A, "POST", ME))
+check("memory edit: the id from the path and the version in the record", (200, "memory set rusty mem-0000aaaa", "0123456789ab"),
+      (st, args().rsplit(" ", 1)[0], json.load(open(f"{tmp}/record"))["v"]))
+check("memory edit or delete with no version: 400, and no command runs", (400, 400, "memory set rusty mem-0000aaaa"),
+      (call("POST", ME, {"entry": E}, sig(A, "POST", ME))[0], call("POST", MD, {}, sig(A, "POST", MD))[0], args().rsplit(" ", 1)[0]))
+open(f"{tmp}/rc", "w").write("2"); st, body = call("POST", MD, {"v": "0123456789ab", "scope": "team"}, sig(A, "POST", MD)); os.unlink(f"{tmp}/rc")
+check("memory delete: runs delete, and a stale version is 409 with the command's words", (409, "memory delete rusty mem-0000aaaa", True),
+      (st, args().rsplit(" ", 1)[0], "load it again" in body["error"]))
+S, SD = "/api/teams/secret/memory", "/api/teams/secret/memory/mem-0000aaaa/delete"
+check("memory: a private team takes no new text, but a delete still runs", (403, 200, "memory delete secret mem-0000aaaa"),
+      (call("POST", S, {"entry": E}, sig(A, "POST", S))[0], call("POST", SD, {"v": "0123456789ab"}, sig(A, "POST", SD))[0], args().rsplit(" ", 1)[0]))
+check("memory: text/plain is 415 and a bad id is not a memory route", (415, 404),
+      (call("POST", M, raw=b"x", headers={**sig(A, "POST", M), "Content-Type": "text/plain"})[0], call("POST", M + "/mem-zz", {}, sig(A, "POST", M + "/mem-zz"))[0]))
 st, _ = call("POST", L, {"routine": R}, sig(A, "POST", L))
 check("an admin creates one: routine set with the routine in a file, as that admin", (200, "routine set rusty", R, A),
       (st, ran()[-1].rsplit(" ", 1)[0], json.load(open(f"{tmp}/record")), open(f"{tmp}/actor").read().splitlines()[-1]))

@@ -868,6 +868,42 @@ class Handler(BaseHTTPRequestHandler):
         pidf.write_text(str(p.pid))
         self._json(202, {"ok": True, "out": f"testing {name}: it boots one runner, a few minutes. Load the record again to see the result."})
 
+    def _memory_write(self, path):
+        """POST /api/teams/<name>/memory[/<id>[/delete]]: a signed admin adds, edits or deletes a team fact.
+        The body is {entry, v} (v: the version the admin read; none for an add), JSON only, 64 KB at most."""
+        m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/memory(?:/(mem-[0-9a-f]{{8}})(/delete)?)?", path)
+        user = self._admin("POST", path)
+        if not user:
+            return
+        name, mid, delete = m.groups()
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+            self._json(415, {"error": "send JSON"})
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if n < 0:
+            self._json(400, {"error": "bad Content-Length"})
+            return
+        if n > 65536:
+            self._json(413, {"error": "the entry is over 64 KB"})
+            return
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self._json(400, {"error": "bad JSON"})
+            return
+        if not isinstance(body, dict) or (mid and not re.fullmatch(r"[0-9a-f]{12}", str(body.get("v") or ""))):
+            self._json(400, {"error": "send a JSON object, with the entry's version v for an edit or a delete"})
+            return
+        # PRODUCT.md: a private repo's code stays out of shared memory, and a person's text is no exception.
+        if not delete and team_private(name):
+            self._json(403, {"error": "this team has a private repo (or GitHub did not say), so its memory takes no new text"})
+            return
+        rec = {"v": body.get("v") or ""} if delete else {"entry": body.get("entry"), "v": body.get("v") or ""}
+        self._team_ctl(user, ["delete" if delete else "set", name, mid or "", None], record=rec, cmd="memory", refresh=False)
+
     def _routine_write(self, path):
         """POST /api/teams/<name>/routines[/<id>[/pause|resume|delete]]: a signed admin's change, JSON only, 64 KB at most."""
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})(?:/(pause|resume|delete|run|stop))?)?", path)
@@ -967,6 +1003,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if re.fullmatch(rf"/api/teams/{TEAM_NAME}/routines(/[0-9]{{1,9}}(/(pause|resume|delete|run|stop))?)?", path):
             self._routine_write(path)
+            return
+        if re.fullmatch(rf"/api/teams/{TEAM_NAME}/memory(/mem-[0-9a-f]{{8}}(/delete)?)?", path):
+            self._memory_write(path)
             return
         if path.startswith("/api/teams"):
             self._team_write(path)

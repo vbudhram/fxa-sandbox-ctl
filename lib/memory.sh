@@ -407,7 +407,7 @@ memory_collect() {
     else id="mem-$(jq -r --arg k "$key" '$k + "\n" + .text' <<< "$l" | shasum | cut -c1-8)"; fi
     [ "$op" = add ] && grep -rqs "^## ${id}\$" "$dir" && continue
     if [ "$op" != add ] && ! grep -rqs "^## $(jq -r .id <<< "$l")\$" "$dir"; then continue; fi
-    if "${chk[@]}"; then
+    if { [ "$op" = add ] || ! _memory_person "$dir" "$(jq -r .id <<< "$l")"; } && "${chk[@]}"; then
       mkdir -p "$dir"
       [ "$op" = add ] || _memory_drop "$dir" "$(jq -r .id <<< "$l")"
       _memory_entry "$id" "$l" "$run" "$ticket" "$taint" "$today" >> "${dir}/$(jq -r .kind <<< "$l").md"
@@ -524,6 +524,7 @@ _memory_digest() {
       dir="${FXA_MEMORY_DIR}/teams/${iprof}"; what="team fact, ${kind}"
     else dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$irepo")"; fi
     mkdir -p "$dir"
+    [[ "$replaces" =~ ^mem-[0-9a-f]{8}$ ]] && _memory_person "$dir" "$replaces" && what="${what}, REPLACES A FACT A PERSON WROTE (${replaces})"
     [[ "$replaces" =~ ^mem-[0-9a-f]{8}$ ]] && _memory_drop "$dir" "$replaces"
     body="$(awk 'c >= 2 { print } /^---$/ { c++ }' "$f")"
     printf '## %s\n<!-- kind: %s | path: %s | %s | terms: %s | confirmed: %s | source: %s %s | taint: %s | digest: 1 -->\n%s\n\n' \
@@ -561,24 +562,157 @@ The full lists are in DIGEST.md on the branch." "" 2>/dev/null
   return 0
 }
 
-# memory_list <team>   The team's facts as JSON for the dashboard, read from main: a digest can hold the
-# clone on its own branch with entries nobody reviewed yet.
+# memory_list <team>   The team's facts and its repos' code facts as JSON for the dashboard, read from main:
+# a digest can hold the clone on its own branch with entries nobody reviewed yet.
 memory_list() {
-  local p="${1:-}" f
+  local p="${1:-}" s slugs=""
   [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
   memory_on || { echo '{"on":false,"entries":[]}'; return 0; }
+  slugs="$(_memory_team_slugs "$p")"
   memory_pull_maybe 2>/dev/null
   _memory_git rev-parse -q --verify main >/dev/null 2>&1 || { echo "ERROR: this host has no copy of the team memory yet" >&2; return 1; }
-  # A team with no folder yet has no facts: under pipefail a failed ls-tree or an empty grep must not end the command.
-  { _memory_git ls-tree --name-only "main:teams/$p" 2>/dev/null || true; } | { grep -E '^[a-z-]+\.md$' || true; } | { grep -vx INDEX.md || true; } \
-    | while IFS= read -r f; do printf '\036%s\n' "$f"; _memory_git show "main:teams/$p/$f"; done \
+  { _memory_list_dir team "teams/$p"; for s in $slugs; do _memory_list_dir "$s" "repos/$(_memory_dir_of "$s")"; done; } \
     | python3 -I "${MEMORY_LIB_DIR}/memory_list.py"
 }
+# _memory_list_dir <scope> <folder>   Each topic file of the folder on main, after a "\036<scope>\t<file>" line.
+_memory_list_dir() {
+  local f
+  # A folder that does not exist yet has no facts: under pipefail a failed ls-tree or an empty grep must not end the command.
+  { _memory_git ls-tree --name-only "main:$2" 2>/dev/null || true; } | { grep -E '^[a-z-]+\.md$' || true; } | { grep -vx INDEX.md || true; } \
+    | while IFS= read -r f; do printf '\036%s\t%s\n' "$1" "$f"; _memory_git show "main:$2/$f"; done
+}
+# _memory_team_slugs <team>   The team's repos, from its profile; none when it does not load (never the default team's).
+_memory_team_slugs() {
+  declare -F pipeline_load >/dev/null || { memory_profile_slugs; return 0; }
+  ( pipeline_load "$1" >/dev/null 2>&1 && memory_profile_slugs ) || true
+}
 
-# cmd_memory list <team>   The dashboard's Memory tab.
+# _memory_person <dir> <id>   0 when a person wrote the entry (person: 1 ends its meta line): a run may not replace it.
+_memory_person() {
+  local f
+  for f in "$1"/*.md; do
+    [ -f "$f" ] && awk -v id="## $2" '$0 == id { getline m; hit = (m ~ /\| person: 1 -->$/); exit } END { exit !hit }' "$f" && return 0
+  done
+  return 1
+}
+
+# _memory_netgit <git args>   A git call that reaches GitHub, cut off after 25 s: a dashboard request holds
+# the memory lock, and a hung push would keep every run's save waiting.
+_memory_netgit() {
+  local t=(); command -v timeout >/dev/null 2>&1 && t=(timeout 25)
+  GIT_SSH_COMMAND="ssh -i ${FXA_MEMORY_KEY} -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10" ${t[@]+"${t[@]}"} git -C "$FXA_MEMORY_DIR" "$@"
+}
+
+# _memory_entry_errs <entry json> <slugs> <kinds> <max cites>   One "field: message" line for each field a person must fix,
+# then the runner's filters: an instruction's shape, personal data, and each cite on the host clone.
+_memory_entry_errs() {
+  local e="$1" i c errs
+  errs="$(jq -r --arg slugs "$2" --arg tk "$3" --argjson max "${4:-3}" '
+    def str: if type == "string" then . else "" end;
+    def line($f; $n; $need): (.[$f] | str) as $v
+      | if $need and $v == "" then "\($f): fill it in" elif ($v | length) > $n then "\($f): keep it to \($n) characters"
+        elif ($v | test("[[:cntrl:]]")) then "\($f): keep it on one line" else empty end;
+    ($slugs | split("\n") | map(select(length > 0))) as $ok
+    | (if (.kind | str) as $k | ($tk | split(" ") | index($k)) then empty else "kind: pick one of \($tk)" end),
+      line("text"; 300; true), line("why"; 300; false), line("path"; 200; false), line("terms"; 200; false),
+      (if (.cites | type) != "array" or (.cites | length) < 1 or (.cites | length) > $max then (if $max == 1 then "cites: give one cite" else "cites: give one to \($max) cites" end)
+       else (.cites | to_entries[] | (.key + 1) as $n | .value | if type != "object" then "cite\($n): give a cite and an anchor" else
+         ((.cite | str) as $c | if ($c | test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:[A-Za-z0-9_./@+-]+:[0-9]{1,6}$") | not) then "cite\($n): write it as owner/repo:path:line"
+           elif ($ok | index($c | split(":")[0]) | not) then "cite\($n): use \(if ($ok | length) == 1 then $ok[0] else "one of the team repos (\($ok | join(", ")))" end)" else empty end),
+         ((.anchor | str) as $a | if ($a | length) < 4 or ($a | length) > 120 or ($a | test("[[:cntrl:]]")) then "anchor\($n): copy 4 to 120 characters of the code at that line" else empty end) end) end)
+  ' <<< "$e" 2>/dev/null)" || errs="entry: send the entry as a JSON object"
+  [ -z "$errs" ] || { printf '%s\n' "$errs"; return 1; }
+  _memory_suspect "$(jq -r '[.text, .why, .path, .terms, .cites[].anchor] | map(. // "") | join(" ")' <<< "$e")" \
+    && { echo "text: it reads like an instruction to the agent (such as \"you should always\", a link, or a pipe to a shell); write the fact"; return 1; }
+  _memory_pii_ok "$e" || { echo "text: it looks like it holds personal data (an email, a name or a token); leave that out"; return 1; }
+  for i in $(jq -r '.cites | keys[]' <<< "$e"); do
+    c="$(jq -r ".cites[$i].cite" <<< "$e")"
+    _memory_cite_ok "${c%%:*}" "${c#*:}" "$(jq -r ".cites[$i].anchor" <<< "$e")" \
+      || { echo "cite$((i + 1)): the anchor is not within 3 lines of ${c#*:} on the default branch of this host's clone of ${c%%:*}"; return 1; }
+  done
+}
+
+# _memory_entry_version <dir> <id>   The version memory_list gives the entry, or nothing when it is gone.
+_memory_entry_version() {
+  local f
+  for f in "$1"/*.md; do [ -f "$f" ] && [ "${f##*/}" != INDEX.md ] && printf '\036%s\n' "${f##*/}" && cat "$f"; done \
+    | python3 -I "${MEMORY_LIB_DIR}/memory_list.py" | jq -r --arg id "$2" '.entries[] | select(.id == $id) | .v'
+}
+
+# memory_admin <set|delete> <team> <id|""> <record file>   A team admin's change from the dashboard: an add
+# (no id), an edit or a delete of a fact, straight to main. The record is {entry, v} for a set, {scope, v} for a
+# delete. The scope is "team" (teams/<team>/) or one of the team's repos (repos/<owner>__<repo>/, shared by
+# every team on that repo).
+# Exit 2: busy, or the entry changed since the admin read it (version v); the page asks to load it again.
+memory_admin() {
+  local op="$1" p="$2" id="$3" rec="$4" e="" v="" dir slugs scope key kinds size tgz s paths=()
+  memory_on || { echo "ERROR: team memory is off on this host" >&2; return 1; }
+  [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
+  [ -z "$id" ] || [[ "$id" =~ ^mem-[0-9a-f]{8}$ ]] || { echo "ERROR: bad entry id" >&2; return 1; }
+  [ "$op" = delete ] && [ -z "$id" ] && { echo "ERROR: name the entry to delete" >&2; return 1; }
+  v="$(jq -r '.v // ""' "$rec" 2>/dev/null)" || v=""; [ -z "$id" ] || [[ "$v" =~ ^[0-9a-f]{12}$ ]] || { echo "ERROR: send the entry's version" >&2; return 1; }
+  # The team's repos: the dashboard runs this with no --pipeline.
+  slugs="$(_memory_team_slugs "$p")"
+  scope="$(jq -r '.entry.scope // .scope // "team"' "$rec" 2>/dev/null)" || scope=team
+  if [ "$scope" = team ]; then dir="${FXA_MEMORY_DIR}/teams/${p}"; key="team/${p}"; kinds="$_MEMORY_TEAM_KINDS"
+  elif [[ "$scope" =~ $_MEMORY_SLUG ]] && grep -qxF -- "$scope" <<< "$slugs"; then
+    dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$scope")"; key="$scope"; kinds="$_MEMORY_KINDS"
+  else echo "scope: pick the team or one of its repos ($(printf '%s ' $slugs))" >&2; return 1; fi
+  if [ "$op" = set ]; then
+    e="$(jq -c '.entry | {kind, text, why: (.why // ""), path: (.path // ""), terms: (.terms // ""), cites}' "$rec" 2>/dev/null)" || e=""
+    # A repo fact has one cite, in that repo; a team fact up to three, in any of the team's repos.
+    if [ "$scope" = team ]; then _memory_entry_errs "${e:-null}" "$slugs" "$kinds" 3 >&2 || return 1
+    else _memory_entry_errs "${e:-null}" "$scope" "$kinds" 1 >&2 || return 1
+      e="$(jq -c '. + {cite: (.cites[0].cite | sub("^[^:]+:"; "")), anchor: .cites[0].anchor} | del(.cites)' <<< "$e")"; fi
+  fi
+  _memory_lock 10 || { echo "ERROR: the team memory is busy with a run's save; try again in a minute" >&2; return 2; }
+  trap _memory_unlock EXIT
+  # A digest that stopped part way can leave the clone on its branch, or with its moved entries uncommitted:
+  # a dashboard request must not commit those to main.
+  if [ "$(_memory_git symbolic-ref -q --short HEAD 2>/dev/null)" != main ] || [ -n "$(_memory_git status --porcelain 2>/dev/null)" ]; then
+    echo "ERROR: this host's copy of the team memory has work in progress (a digest?); ask the operator" >&2; _memory_unlock; trap - EXIT; return 1
+  fi
+  { _memory_netgit fetch -q origin && _memory_git merge -q --ff-only origin/main; } >/dev/null 2>&1 \
+    || { echo "ERROR: could not bring this host's copy of the team memory up to date" >&2; _memory_unlock; trap - EXIT; return 1; }
+  if [ -n "$id" ]; then
+    [ "$(_memory_entry_version "$dir" "$id")" = "$v" ] \
+      || { echo "ERROR: someone changed or removed this fact since you opened it; load it again" >&2; _memory_unlock; trap - EXIT; return 2; }
+    _memory_drop "$dir" "$id"
+  fi
+  if [ "$op" = set ]; then
+    [ -n "$id" ] || id="mem-$(jq -r --arg k "$key" '$k + "\n" + .text' <<< "$e" | shasum | cut -c1-8)"
+    if grep -rqs "^## ${id}\$" "$dir"; then
+      echo "ERROR: the same fact is already in the team memory (${id})" >&2; _memory_git checkout -q -- . 2>/dev/null; _memory_unlock; trap - EXIT; return 1
+    fi
+    mkdir -p "$dir"
+    _memory_entry "$id" "$e" dashboard - 0 "$(date -u +%F)" | sed '2s/ -->$/ | person: 1 -->/' >> "${dir}/$(jq -r .kind <<< "$e").md"
+    # memory_sync copies nothing over its cap: the team's runners would lose every repo's memory too.
+    [ -f "${FXA_MEMORY_DIR}/profiles/${p}.md" ] && paths+=("profiles/${p}.md")
+    for s in $slugs; do [ -d "${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$s")" ] && paths+=("repos/$(_memory_dir_of "$s")"); done
+    paths+=("teams/${p}"); tgz="$(mktemp)"
+    tar -czf "$tgz" -C "$FXA_MEMORY_DIR" "${paths[@]}" -C "$MEMORY_LIB_DIR/../templates" fxa-mem 2>/dev/null || true; size="$(wc -c < "$tgz" | tr -d ' ')"; rm -f "$tgz"
+    if [ "$size" -gt "$_MEMORY_SYNC_MAX" ]; then
+      echo "ERROR: the team memory would be ${size} bytes packed, over the ${_MEMORY_SYNC_MAX} a runner takes; remove an old fact first" >&2
+      _memory_git checkout -q -- . 2>/dev/null; _memory_git clean -qfd -- "${dir#"${FXA_MEMORY_DIR}"/}" 2>/dev/null; _memory_unlock; trap - EXIT; return 1
+    fi
+  fi
+  _memory_index "$dir"
+  _memory_git add -A -- "${dir#"${FXA_MEMORY_DIR}"/}"
+  _memory_git -c user.name=fxa-agent -c user.email=fxa-agent@users.noreply.github.com commit -qm "memory: ${op} ${id} (${key})" -m "Edited-by: ${FXA_TEAM_ACTOR:-unknown}" \
+    || { echo "ERROR: the commit failed" >&2; _memory_unlock; trap - EXIT; return 1; }
+  # A failed push keeps the commit: runners on this host read it now, and the next save pushes it.
+  _memory_netgit push -q origin HEAD:main >/dev/null 2>&1 || echo "WARN: saved here, but the push to GitHub failed; the next save pushes it"
+  declare -F _teams_audit_note >/dev/null && _teams_audit_note memory "$p" "${op} ${id} (${key})"
+  _memory_log dashboard "edited"
+  _memory_unlock; trap - EXIT
+  echo "${op} ${id}"
+}
+
+# cmd_memory list <team> | set <team> <id|""> <record> | delete <team> <id> <record>   The dashboard's Memory tab.
 cmd_memory() {
   case "${1:-}" in
     list) memory_list "${2:-}" ;;
-    *) echo "usage: fxa-sandbox-ctl memory list <team>" >&2; return 1 ;;
+    set|delete) memory_admin "$1" "${2:-}" "${3:-}" "${4:-}" ;;
+    *) echo "usage: fxa-sandbox-ctl memory list <team> | set <team> <id|\"\"> <record> | delete <team> <id> <record>" >&2; return 1 ;;
   esac
 }
