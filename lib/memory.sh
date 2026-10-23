@@ -569,7 +569,8 @@ memory_list() {
   memory_on || { echo '{"on":false,"entries":[]}'; return 0; }
   memory_pull_maybe 2>/dev/null
   _memory_git rev-parse -q --verify main >/dev/null 2>&1 || { echo "ERROR: this host has no copy of the team memory yet" >&2; return 1; }
-  _memory_git ls-tree --name-only "main:teams/$p" 2>/dev/null | grep -E '^[a-z-]+\.md$' | grep -vx INDEX.md \
+  # A team with no folder yet has no facts: under pipefail a failed ls-tree or an empty grep must not end the command.
+  { _memory_git ls-tree --name-only "main:teams/$p" 2>/dev/null || true; } | { grep -E '^[a-z-]+\.md$' || true; } | { grep -vx INDEX.md || true; } \
     | while IFS= read -r f; do printf '\036%s\n' "$f"; _memory_git show "main:teams/$p/$f"; done \
     | python3 -I "${MEMORY_LIB_DIR}/memory_list.py"
 }

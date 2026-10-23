@@ -384,6 +384,7 @@ check "memory list: a new confirmed date keeps the version" "$v0" "$(memory_list
 g -C "$tmp/clone" checkout -q -b digest/x && printf '## mem-0000cccc\n<!-- kind: trap | cite: mozilla/fxa:d.js:1 | anchor: d | confirmed: 2026-10-21 | source: r3 - | taint: 0 | digest: 1 -->\nUnreviewed.\n\nWhy: w.\n\n' >> "$tmp/clone/teams/web/trap.md"
 check "memory list: a digest branch in the clone does not show its entries" "2" "$(memory_list web | jq '.entries | length')"
 g -C "$tmp/clone" checkout -q -f main
+check "memory list: a team with no folder exits 0 under the ctl's set -euo pipefail" "0|0" "$( (set -euo pipefail; memory_list nofolder >/dev/null); echo $?)|$( (set -euo pipefail; memory_list nofolder) | jq '.entries | length')"
 check "memory list: a team with no folder, a bad name, and memory off" "0|1|false" \
   "$(memory_list nofolder | jq '.entries | length')|$(memory_list '../x' >/dev/null 2>&1; echo $?)|$(FXA_MEMORY_REMOTE= memory_list web | jq '.on')"
 
