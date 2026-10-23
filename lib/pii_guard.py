@@ -12,6 +12,7 @@ uid or token, but not a real email, an IP, a secret or an internal host.
 import ipaddress
 import json
 import re
+import subprocess
 import sys
 import urllib.parse
 
@@ -56,6 +57,16 @@ PHONE_OK = re.compile(r"^1\d{3}555\d{4}$|^(\d)\1+$|^1?234567890")  # 555 numbers
 
 
 DOC_V6 = ipaddress.ip_network("2001:db8::/32")
+# argv[3], a repo: the PR text may quote an address the repo holds at HEAD (a spec's fixture), already public in git.
+REPO = sys.argv[3] if __name__ == "__main__" and len(sys.argv) > 3 else None
+_IN_REPO = {}
+
+
+def in_repo(addr):
+    if REPO and addr not in _IN_REPO:
+        _IN_REPO[addr] = subprocess.run(["git", "-C", REPO, "grep", "-q", "-i", "-F", "-e", addr, "HEAD", "--"],
+                                        capture_output=True).returncode == 0
+    return _IN_REPO.get(addr, False)
 
 
 def v6_real(text):
@@ -70,7 +81,8 @@ def findings(text, prose):
     for kind, pat in EVERYWHERE + (PROSE_ONLY if prose else []):
         if pat.search(text):
             yield kind
-    if any(not EMAIL_OK.search(m.group(1)) if prose else EMAIL_REAL.search(m.group(1)) and not FAKE_LOCAL.match(m.group(0))
+    if any(not EMAIL_OK.search(m.group(1)) and not in_repo(m.group(0)) if prose
+           else EMAIL_REAL.search(m.group(1)) and not FAKE_LOCAL.match(m.group(0))
            for m in EMAIL.finditer(text)):
         yield "email"
     if any(not (IPV4_OK.match(ip) or (not prose and IPV4_PRIVATE.match(ip))) for ip in (m.group(1) for m in IPV4.finditer(text))) or \

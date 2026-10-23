@@ -17,6 +17,13 @@ scan_diff() { echo '{}' > "$tmp/p.json"; printf 'diff --git a/src/a.ts b/src/a.t
   python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" | paste -sd, - | sed 's/^$/clean/'; }
 
 check "a user's email" "email" "$(scan 'reported by jane.doe@gmail.com')"
+# An address the repo already holds at HEAD (a spec's fixture) is public in git: the PR text may quote it.
+r="$tmp/repo"; git init -q "$r"; echo "const email = 'Quoted.Fixture@acme.dev';" > "$r/a.spec.ts"
+git -C "$r" add -A && git -C "$r" -c user.name=t -c user.email=t@example.com commit -qm one
+scan_repo() { jq -n --arg b "$1" '{pr_body: $b}' > "$tmp/p.json"; : > "$tmp/d"
+  python3 "$here/pii_guard.py" "$tmp/p.json" "$tmp/d" "$r" | sed 's/^pr_body line 1: //' | paste -sd, - | sed 's/^$/clean/'; }
+check "an email the repo already holds may be quoted; another one may not; no repo, no exception" "clean|email|email" \
+  "$(scan_repo 'Not fixed: the spec with quoted.fixture@acme.dev')|$(scan_repo 'see other.person@acme.dev')|$(scan 'quoted.fixture@acme.dev')"
 check "fake and Mozilla emails pass" "clean" "$(scan 'user@example.com test@restmail.net support@mozilla.com icon@2x.png')"
 check "a public IP" "IP address" "$(scan 'from 81.12.40.7 today')"
 check "a private IP is internal" "IP address" "$(scan 'manager at 10.42.2.2')"

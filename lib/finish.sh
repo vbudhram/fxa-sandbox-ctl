@@ -1071,7 +1071,7 @@ _finish_pii_guard() {
     '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions} | map_values(
        if type == "array" then map(tostring) | join("\n") else (. // "" | tostring) end))' > "$d.json" \
     && { if [ -n "${6:-}" ]; then cat "$6"; else git -C "$wt" diff --cached -U0 --text --no-textconv --no-color --no-ext-diff; fi; } > "$d" \
-    && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d")" || rc=$?
+    && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d" "$wt")" || rc=$?
   rm -f "$d" "$d.json"
   [ "$rc" = 0 ] && return 0
   # The places on the ERROR line itself: progress and the pass keep only that line.
