@@ -38,6 +38,9 @@ ck "shell: the nav rail has no stage-rail margin or width cap, and key 8 (no 8th
   const n = getComputedStyle(document.querySelector("nav.rail")), errs = []; addEventListener("error", e => errs.push(e.message));
   document.body.focus(); document.dispatchEvent(new KeyboardEvent("keydown", { key: "8", bubbles: true })); await new Promise(r => setTimeout(r, 100));
   return [n.marginTop, n.maxWidth, location.hash || "#overview", errs.length].join("|")')"
+ck "errors: an empty list says Nothing here, not loading, and a list with errors has no empty group" "Nothing here.|1" "$(bash "$p" '#errors/open' --fixture "$F" --probe '
+  AGENTS = null; ERRS = []; renderSide(); const a = document.querySelector(".side .sgroup")?.textContent;
+  ERRS = [{ sig: "s1", message: "boom", status: "open" }]; renderSide(); return [a, document.querySelectorAll(".side .slist2 ul").length].join("|")')"
 # The whole flow on one fixture, at desktop and phone width: no section fails, nothing scrolls sideways.
 flow='const w = () => new Promise(r => setTimeout(r, 250)), bad = () => [...document.querySelectorAll(".emptybox")].some(e => /did not render/.test(e.textContent)), wide = () => document.documentElement.scrollWidth > innerWidth;
   let fails = [];
@@ -159,7 +162,7 @@ ck "Merged and Cost: Stats number, no 0 for an unread or old list, focus kept, a
 ck "Stats PRs renders with a PR merged this week and a run in it" "true|false" "$(bash "$p" '#stats/prs' --fixture "$F" --width 1280 --probe '
   const now = Date.now(), iso = d => new Date(now - d * 86400000).toISOString();
   STATS = { ...(STATS ?? {}), prs: [{ n: 1, key: "FXA-1", title: "t", state: "MERGED", created: iso(2), merged: iso(1), add: 1, del: 0, src: "pipeline" }], rows: [{ at: iso(1), usd: 2, src: "pipeline", key: "FXA-1" }], llm: STATS?.llm ?? {} };
-  renderStats(); const t = document.body.innerText; return [/Cost per merged PR/.test(t), /did not render|is not defined/.test(t)].join("|")')"
+  renderStats(); const t = document.body.innerText; return [/Cost per merged PR/i.test(t), /did not render|is not defined/.test(t)].join("|")')"
 # Merged in the range counts every PR that merged in it, and the merged lists show the same PRs: one opened 10 days ago
 # and merged yesterday is in the count, Recently merged and Merged by; one opened today and still open is not.
 ck "Stats PRs on 7 days: Merged, Recently merged and Merged by agree, with a PR opened before the range" "2|2|2|1" "$(bash "$p" '#stats/prs' --fixture "$F" --width 1280 --probe '
@@ -176,7 +179,7 @@ SP='const DAY = 86400000, noon = d => { const t = new Date(); t.setHours(12, 0, 
   const rows = []; for (let d = 0; d < 100; d++) [["pipeline", 1], ["pass", 0.5], ["slack", 0.25], ["answer", 0.125]].forEach(([src, u]) => rows.push({ at: noon(d), src, usd: d === 4 ? u * 20 : u, key: `K-${d}-${src}`, model: "claude-opus-5-5" }));
   rows.push({ at: noon(95), src: "pipeline", usd: 1000, key: "OLD-1" });
   STATS = { rows, prs: [1, 2, 3].map(n => ({ n, merged: noon(4), src: "pipeline" })), prs_at: Math.round(Date.now() / 1000) - 60, llm: { hour_usd: 0.42 } }; STATS_ERR = null;
-  const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".v").textContent; };'
+  const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".big").textContent; };'
 ck "Spend: equals Stats for 7, 30 and 90 days; sources add up; the 95-day row is out of 90d; the peak names 3 merged PRs" "true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe "$SP"'
   const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r));
   const sp = ovSpend("90d"), parts = Object.values(sp.by).reduce((a, b) => a + b, 0);
@@ -211,7 +214,7 @@ ck "A spend link sets Stats for the visit: totals agree, no Stats click saves, a
 DST='const FIX = __T__, R = Date; class D extends R { constructor(...a) { super(...(a.length ? a : [FIX])); } static now() { return FIX; } } window.Date = D;
   const DAY = 86400000, rows = []; for (let i = 0; i < 100; i++) { const d = new R(FIX); d.setDate(d.getDate() - i); d.setHours(12, 0, 0, 0); rows.push({ at: d.toISOString(), src: "pipeline", usd: 1, key: "K" + i }); }
   STATS = { rows, prs: [], prs_at: null, llm: {} }; STATS_ERR = null;
-  const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".v").textContent; };
+  const statsSpend = r => { SF = { ...SF_DEFAULT, range: r }; STATS_TAB = "spend"; LAST["s-stats"] = ""; renderStats(); return [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === "Spend").querySelector(".big").textContent; };
   const eq = ["7d", "30d", "90d"].every(r => usd(ovSpend(r).total) === statsSpend(r)); OV_RANGE = "30d"; OV_METRIC = "spend"; renderOvMain();
   const n = [[7, "7d"], [30, "30d"], [90, "90d"]].every(([k, r]) => ovSpend(r).days.length === k && new R(statsBounds(r)[0]).getHours() === 0);
   return [eq, document.querySelectorAll("#ov-main .ovchart .hit").length === ovSpend("30d").days.length, n].join("|")'
@@ -306,7 +309,7 @@ done
 ck "review 1: the Cost link opens Stats PRs on 7 days with the same figure; a stale agents feed is unknown on the chip and Needs you" "true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)); localStorage.setItem("statsFilter", JSON.stringify({ ...SF_DEFAULT, range: "30d" })); SF = { ...SF_DEFAULT, range: "30d" };
   OV_METRIC = "merged"; renderOvMain(); const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-cost\"]"), card = lk.querySelector(".big").textContent; lk.click(); await w();
-  const kpi = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Cost per merged PR")?.querySelector(".v").textContent;
+  const kpi = [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === "Cost per merged PR")?.querySelector(".big").textContent;
   const a = location.hash === "#stats/prs" && SF.range === "7d" && kpi === card;
   location.hash = "#overview"; await w(); STATE.agents_age_seconds = 1200; STATE.agents_interval = 30; render();
   const c = /^\? at work now/.test(document.querySelector("#ov-head .tag.run").textContent) && /\?/.test(document.querySelector("#ov-needs .big").textContent);
@@ -315,7 +318,7 @@ ck "review 2: 'Merged, 7 days' on Overview equals the Stats PRs Merged card it o
   const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
   STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(1) }, { n: 2, key: "EX-2", title: "b", state: "MERGED", src: "pipeline", created: ago(2), merged: ago(1) }] };
   OV_METRIC = "merged"; renderOvMain(); const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"]"), o = lk.querySelector(".big").textContent; lk.click(); await w();
-  return [o, [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent].join("|")')"
+  return [o, [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".big").textContent].join("|")')"
 # Epic review 3: the range buttons keep the focus; Stats PRs shows a week of merges of older PRs.
 ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs shows merges of older PRs" "true|1|1" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const w = () => new Promise(r => setTimeout(r, 150)), ago = d => new Date(Date.now() - d * 86400000).toISOString();
@@ -323,7 +326,7 @@ ck "review 3: range buttons keep the focus across a click and a poll; Stats PRs 
   const a = document.activeElement?.dataset.focus === "ovr-7d" && document.querySelector("[data-ovrange=\"7d\"]").getAttribute("aria-pressed") === "true";
   STATS = { ...STATS, prs: [{ n: 1, key: "EX-1", title: "a", state: "MERGED", src: "pipeline", created: ago(10), merged: ago(2) }] }; OV_METRIC = "merged"; renderOvMain();
   const lk = document.querySelector("#ov-main [data-focus=\"ovm-open-merged\"]"), o = lk.querySelector(".big").textContent; lk.click(); await w();
-  const k = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".v").textContent;
+  const k = [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === "Merged")?.querySelector(".big").textContent;
   SF = { ...SF, src: "slack" }; LAST["s-stats"] = ""; renderStats(); const k2 = /No PR opened or merged in this range matches these filters/.test(document.getElementById("s-stats").textContent);
   return [a, o, k2 ? k : "filter ignored"].join("|")')"
 ck "O6 KPIs: a good or bad change also says better or worse in words, not by colour alone" "+50%, worse, vs|+25 pts, better, vs|false" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
@@ -347,7 +350,7 @@ ck "O6 Teams: rows by stats profile (none is fxa), work now by team, runs and PR
   STATS = { ...STATS, rows: [{ at: iso(1), src: "pipeline", pr: true, usd: 3 }, { at: iso(1), src: "slack", usd: 1, profile: "fxa" }, { at: iso(2), src: "slack", usd: 2, profile: "two" }, { at: iso(40), src: "slack", usd: 9, profile: "two" }] };
   OV_RANGE = "30d"; renderOvTeams(); const r = p => document.querySelector(`#ov-teams [data-team="${p}"]`), nums = p => [...r(p).querySelectorAll(".num")].map(e => e.lastChild.textContent).join(","), bar = r("two").querySelector(".meter i");
   return [document.querySelector("#ov-teams [data-team]").dataset.team, nums("fxa"), nums("two"), `${bar.className} ${bar.style.width}`, r("../x").querySelector("a") ? "link" : "no link"].join("|")')"
-ck "O6 Teams: a table with named columns, the team name links, and the cap text says the month" "Team,Now,Runs,PRs,Spend|FxA|no cap|$5.00 of $50.00 this month" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
+ck "O6 Teams: a table with named columns, the team name links, and the cap text says the month" "Team,Now,Runs,PRs,Spend|FxA|no cap|\$5.00 of \$50.00 this month" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   TEAMS = { teams: [{ profile: "fxa", label: "FxA", access: { open: true } }, { profile: "two", label: "Two", access: { open: true }, budget: { month_usd: 5, month_cap: 50 } }] }; OV_RANGE = "30d"; renderOvTeams();
   const h = p => document.querySelector(`#ov-teams [data-team="${p}"] td.bud .hint`).textContent;
   return [[...document.querySelectorAll("#ov-teams th")].map(t => t.textContent).join(","), document.querySelector("#ov-teams [data-team=fxa] a").textContent, h("fxa"), h("two")].join("|")')"

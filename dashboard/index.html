@@ -371,7 +371,6 @@
   * + .acts2, .sh .tgl { margin-top:var(--s2); } .right > .acts2 { margin-top:0; } .errs + .empty, * + .charts { margin-top:var(--s3); } #s-stats .emptybox { margin-top:var(--s4); }
   .emptybox { padding:var(--s4); border-radius:var(--r-md); border:1px dashed var(--line2); text-align:center; color:var(--dim); font-size:var(--t-sub); }
   /* ── sessions: list and detail ── */
-  .scard .lbl { font-size:var(--t-label); font-weight:600; color:var(--dim); } .scard .v { font-size:var(--t-head); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .media { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:var(--s3); }
   .media figure { margin:0; border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; background:var(--sunk); }
   .media img, .media video { display:block; width:100%; max-height:200px; object-fit:contain; background:var(--tty-bg); }
@@ -711,6 +710,12 @@ const kvRow = (label, value, na) => html`<div class="kv"><span>${label}</span><b
 // head: column labels, or [label, "num"] for a right-aligned one. rows: <tr> rows as html`` results. figures right-aligns every column after the first.
 const table = (head, rows, { figures, dense, cls: more } = {}) => html`<table class="${cls("table", { figures, dense }, more)}"><thead><tr>${head.map(c => Array.isArray(c) ? html`<th class="${c[1]}">${c[0]}</th>` : html`<th>${c}</th>`)}</tr></thead><tbody>${[].concat(rows).map(raw)}</tbody></table>`;
 const emptybox = text => html`<div class="emptybox">${text}</div>`;
+// Brand marks from Simple Icons (CC0): the source of a belt, as a badge before its ticket.
+const BRAND = { jira: "M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0Z", github: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12", slack: "M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" };
+const brandSvg = (k, label) => raw(`<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${BRAND[k]}"></path></svg>`);
+const srcBadge = k => html`<span class="${cls("src", k === "github" ? "gh" : k)}">${brandSvg(k)}</span>`;
+// A stat tile: a label, the value and a sub line. v is "?" when its feed failed, never a confident 0.
+const statTile = (l, v, sub, tone, href) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone), href });
 // End components.
 const ago = s => s == null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
   : s < 172800 ? `${Math.round(s/3600)}h ago` : `${Math.round(s/86400)}d ago`;
@@ -1864,7 +1869,7 @@ function allTeamsHtml() {
   const ts = TEAMS?.teams ?? [], ok = ts.filter(t => !t.load_error), adm = !!TEAM_ADMIN?.admin, drafts = ok.filter(teamDraftOf), act = ok.filter(t => !teamDraftOf(t));
   const bt = ok.filter(t => t.budget), spent = bt.reduce((n, t) => n + t.budget.month_usd, 0), top = [...bt].sort((a, b) => b.budget.month_usd - a.budget.month_usd)[0];
   const needs = ts.filter(t => t.load_error || (teamNeeds(t) && !teamDraftOf(t))).length, passed = act.filter(t => t.access?.record && teamTestState(t) === "passed").length, rec = act.filter(t => t.access?.record).length;
-  const stat = (l, v, s, tone) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${s}</span>`, { sm: true, cls: cls("stat", tone) });
+  const stat = statTile;
   const row = t => { const st = t.load_error ? ["bad", "did not load"] : teamDraftOf(t) ? [t.access.status === "disabled" ? "warn" : "", t.access.status] : ["ok", "active"];
     return html`<tr><td><a href="#teams/${t.profile}" class="tname">${t.load_error ? t.profile : teamName(t)}</a></td>
       <td>${tag(st[1], st[0])}${t.read_only ? html` ${tag("read-only", "", { title: "This team gets diffs only, never a PR" })}` : ""}${t.profile === "fxa" ? html` ${tag("built in", "", { title: "Built into the bot: the operator changes it in the repo" })}` : ""}</td>
@@ -2616,7 +2621,6 @@ function rtHist(rows, d) {
       ${x.report ? html`<details data-rt-run="${x.id}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre class="report">${x.report}</pre></details>` : ""}</div>`; });
 }
 const rtGlyph = tpl => { const [tone, d] = RT_GLYPH[tpl] ?? RT_GLYPH.blank; return html`<span class="${cls("glyph", tone)}">${raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`)}</span>`; };
-const rtStat = (label, value, sub, tone) => card(html`<span class="lbl">${label}</span><span class="big">${value}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone) });
 const rtFailed = r => !!RTSUM?.routines?.[r.id]?.failed || ["failed", "missed"].includes(r.last?.state);
 // One routine's page: what it does, its actions, its runs, its setup and Delete.
 function rtDetail(t, r) {
@@ -2628,10 +2632,10 @@ function rtDetail(t, r) {
     <a class="rtback" href="#teams/${t.profile}/routines" data-rt-list>← Routines</a>
     <div class="rt"><div class="hd">${rtGlyph(d.template)}<div class="who"><h3 class="nm">${n} ${rtState(r)}</h3><span class="says">${rtSays(d, r.channel_name)}</span></div>
       ${b("run", r.live ? "A run is in progress" : "Run now", busy)}${r.live ? b("stop", "Stop run") : ""}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("edit", "Edit")}</div></div>
-    <div class="rtkpis">${rtStat("Runs, 30 days", sum?.runs_30d ?? "—", hist ? `${hist.filter(x => ["failed", "missed"].includes(x.state)).length} failed of the last ${hist.length}` : "")}
-      ${rtStat("Cost, 30 days", usd(sum?.cost_30d), sum?.runs_30d ? `${usd(sum.cost_30d / sum.runs_30d)} a run · limit ${usd(d.max_usd)}` : `limit ${usd(d.max_usd)} a run`)}
-      ${rtStat("Last result", r.last ? rtResult(r.last, d)[0] : "none", r.last?.ended_at ? stamp(r.last.ended_at) : "no run yet", rtFailed(r) ? "bad" : "")}
-      ${rtStat("Next run", next[0] ? rtIn(next[0]) || "now" : "none", r.paused ? "paused" : next[0] ? rtWhen(next[0], d.zone, true) : "")}</div>
+    <div class="rtkpis">${statTile("Runs, 30 days", sum?.runs_30d ?? "—", hist ? `${hist.filter(x => ["failed", "missed"].includes(x.state)).length} failed of the last ${hist.length}` : "")}
+      ${statTile("Cost, 30 days", usd(sum?.cost_30d), sum?.runs_30d ? `${usd(sum.cost_30d / sum.runs_30d)} a run · limit ${usd(d.max_usd)}` : `limit ${usd(d.max_usd)} a run`)}
+      ${statTile("Last result", r.last ? rtResult(r.last, d)[0] : "none", r.last?.ended_at ? stamp(r.last.ended_at) : "no run yet", rtFailed(r) ? "bad" : "")}
+      ${statTile("Next run", next[0] ? rtIn(next[0]) || "now" : "none", r.paused ? "paused" : next[0] ? rtWhen(next[0], d.zone, true) : "")}</div>
     <div class="rtcols"><section class="card"><h2>Runs${hist ? html`<span class="n">${hist.length}</span><span class="note">newest first</span>` : ""}</h2>
       ${hist ? rtHist(hist, d) : RT.histErr?.[r.id] ? html`<p class="unknown">Runs did not load: ${RT.histErr[r.id]} <button data-rt-act="hist" data-rt-id="${r.id}">Retry</button></p>` : html`<p class="empty">loading runs…</p>`}</section>
       <div class="stack">
@@ -2657,10 +2661,10 @@ function routineListHtml(t, now) {
   const sum = RTSUM?.routines ?? {}, ts = RTSUM?.teams?.[t.profile], show = RT.show || "all", paused = L.filter(r => r.paused).length, failed = L.filter(rtFailed).length;
   const rows = L.filter(r => show === "all" || (show === "failed" ? rtFailed(r) : !!r.paused));
   return html`<div data-routine-list class="stack">${gone}${stale}
-    <div class="rtkpis">${rtStat("Routines", L.length, `${L.length - paused} on · ${paused} paused`)}
-      ${rtStat("Runs, 30 days", ts?.runs_30d ?? "—", failed ? `${failed} need${failed === 1 ? "s" : ""} attention` : "none needs attention", failed ? "warn" : "")}
-      ${rtStat("Cost, 30 days", usd(ts?.cost_30d), ts?.runs_30d ? `${usd(ts.cost_30d / ts.runs_30d)} a run` : "no run yet")}
-      ${rtStat("Scheduler", late ? "Stopped" : "Running", age == null ? "it has not run" : `checked ${ago(age)}`, late ? "bad" : "")}</div>
+    <div class="rtkpis">${statTile("Routines", L.length, `${L.length - paused} on · ${paused} paused`)}
+      ${statTile("Runs, 30 days", ts?.runs_30d ?? "—", failed ? `${failed} need${failed === 1 ? "s" : ""} attention` : "none needs attention", failed ? "warn" : "")}
+      ${statTile("Cost, 30 days", usd(ts?.cost_30d), ts?.runs_30d ? `${usd(ts.cost_30d / ts.runs_30d)} a run` : "no run yet")}
+      ${statTile("Scheduler", late ? "Stopped" : "Running", age == null ? "it has not run" : `checked ${ago(age)}`, late ? "bad" : "")}</div>
     <div class="row"><span class="seg" role="group" aria-label="Show">${[["all", "All", L.length], ["failed", "Needs attention", failed], ["paused", "Paused", paused]].map(([k, l, c]) =>
       html`<button type="button" data-rt-show="${k}" aria-pressed="${String(show === k)}">${l} ${c}</button>`)}</span></div>
     ${rows.length ? rows.map(r => rtCard(t, r, sum[r.id])) : html`<p class="empty">No ${show === "failed" ? "routine needs attention" : "routine is paused"}.</p>`}
@@ -2923,7 +2927,7 @@ function renderStats() {
   const bars = k => { const top = Math.max(...bl.map(x => x[k] || 0)); return bl.map((b, i) => html`<div class="col"><span class="tip"><b>${byDay ? "" : "Week of "}${lbl(b.t)}</b><br>${k === "merged" ? `${b.merged} merged` : html`${b.runs} runs · ${usd(b.spend)}${k === "spend" && b.low ? html`<br>${b.low} priced at the main agent only, about half` : ""}${b.runs ? html`<br>${usd(b.spend / b.runs)} per run` : ""}`}</span>
       <span class="v">${many && (b[k] || 0) !== top ? "" : k === "runs" ? (b.runs || "") : k === "merged" ? (b.merged || "") : b.spend ? "$" + Math.round(b.spend) : ""}</span><div class="bar" data-h="${Math.max(b[k] ? 3 : 0, Math.round(b[k] / (k === "runs" ? mr : k === "spend" ? ms : Math.max(1, top)) * H))}" style="background:${k === "spend" && b.low ? "repeating-linear-gradient(135deg, var(--purple) 0 4px, transparent 4px 7px)" : k === "runs" ? "var(--info)" : k === "spend" ? "var(--purple)" : "var(--ok)"};transition:height 400ms"></div>
       <span class="w">${showDay(i) ? lbl(b.t) : raw("&nbsp;")}</span></div>`); };
-  const kpi = (l, v, sub) => card(html`<div class="lbl">${l}</div><div class="v" style="font-size:26px">${v ?? "—"}</div><div class="empty">${sub}</div>`, { flat: true, sm: true, cls: "scard" });
+  const kpi = (l, v, sub) => statTile(l, v ?? "—", sub);
   const chart = body => card(body, { flat: true, cls: "chart" });
   const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
     return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
@@ -3477,12 +3481,6 @@ function beltGroups() {
   return g;
 }
 const beltCount = g => Object.values(g.unknown).some(Boolean) ? null : g.working.length + g.needs.length + g.fixes.length + g.review.length;
-// Brand marks from Simple Icons (CC0): the source of a belt, as a badge before its ticket.
-const BRAND = { jira: "M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.001 1.001 0 0 0 23.013 0Z", github: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12", slack: "M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" };
-const brandSvg = (k, label) => raw(`<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${BRAND[k]}"></path></svg>`);
-const srcBadge = k => html`<span class="${cls("src", k === "github" ? "gh" : k)}">${brandSvg(k)}</span>`;
-// A stat tile of the Pipeline tabs; v is "?" when its feed failed, never a confident 0.
-const statTile = (l, v, sub, tone, href) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone), href });
 const strokeSvg = d => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`);
 // Each group of belts: an icon and one line on what it means.
 const BELT_HINT = { "Review and merge": ['<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', "CI passed. A person reviews and merges each PR."],
@@ -3975,7 +3973,7 @@ function sideGroups() {
         tip: stamp(s.created), m: [c ? usd(c) : "", sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
-  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }];
+  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
   if (VIEW === "teams") {
     const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
     const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
@@ -3997,7 +3995,7 @@ function renderSide() {
       <div class="search">${raw(svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16))}<input id="q" type="search" placeholder="Search" value="${Q}" aria-label="Search the list">${KEYS ? html`<kbd>/</kbd>` : ""}</div>${who}${VIEW === "sessions" && STEAM ? html`<button type="button" class="tgl sm" data-steam-clear>Team: ${teamLabel(STEAM)} ×</button>` : ""}</div>
     <div class="slist2">${groups.length ? groups.map(g => html`${g.group ? html`<h3 class="sgroup">${g.group}</h3>` : ""}<ul>${g.items.map(it =>
       html`<li><button type="button" class="si" data-id="${it.id}"${it.id === sel ? html` aria-current="true"` : ""}${it.tip ? html` title="${it.tip}"` : ""}>${dot(it.d === "live" ? "info" : it.d === "fix" ? "bad" : it.d, it.d === "live")}<span class="t">${it.t}</span>
-        <span class="m">${it.m.filter(Boolean).join(" · ")}</span></button></li>`)}</ul>`) : html`<p class="sgroup">${Q ? "Nothing matches." : AGENTS ? "Nothing here." : "loading…"}</p>`}</div>`;
+        <span class="m">${it.m.filter(Boolean).join(" · ")}</span></button></li>`)}</ul>`) : html`<p class="sgroup">${Q ? "Nothing matches." : (VIEW === "errors" ? ERRS : AGENTS) ? "Nothing here." : "loading…"}</p>`}</div>`;
   if (active) { const q = document.getElementById("q"); q.focus(); q.setSelectionRange(Q.length, Q.length); }
 }
 const currentSession = () => { const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)); return list.find(s => s.key === SESS_SEL) || list[0]; };

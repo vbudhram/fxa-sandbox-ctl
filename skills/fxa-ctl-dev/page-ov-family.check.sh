@@ -24,7 +24,7 @@ run '
     const lbl = (a.querySelector(".lbl")?.textContent ?? "Spend").split(",")[0].trim();
     const fig = (a.querySelector(".big")?.textContent ?? a.textContent.match(/\$[\d,]+\.\d\d/)?.[0] ?? sec.querySelector(".big")?.textContent ?? "").trim();
     a.click(); await w();
-    const kp = [...document.querySelectorAll("#s-stats .scard")].find(c => c.querySelector(".lbl").textContent === lbl)?.querySelector(".v").textContent.trim();
+    const kp = [...document.querySelectorAll("#s-stats .stat")].find(c => c.querySelector(".lbl").textContent === lbl)?.querySelector(".big").textContent.trim();
     out.push(`${fig && kp === fig ? "ok  " : "FAIL"} ${sec.id} ${id}: Overview ${fig || "no figure"}, ${location.hash} ${SF.range} ${lbl} ${kp ?? "not found"}`);
     location.hash = "#overview"; await w();
   }
