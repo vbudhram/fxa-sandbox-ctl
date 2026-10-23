@@ -1,8 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 H=/home/fxa W=/home/fxa/Desktop/working2 C=/home/fxa/.config/fxa
-P="$(curl -fsS -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/project/project-id)"
-get() { gcloud secrets versions access latest --secret "$1" --project "$P"; }
+P="$(curl -fsS --retry 5 --retry-connrefused -H Metadata-Flavor:Google http://metadata.google.internal/computeMetadata/v1/project/project-id)"
+# The error text goes to a root-owned temp file: $C belongs to fxa, so a link planted there would aim root's write.
+E="$(mktemp)"; trap 'rm -f "$E" "$E.get"' EXIT
+# A read at boot can fail before the network or the auth token is ready, and the oneshot unit never runs again:
+# try 5 times (20 s of waits) unless the secret is missing or not granted.
+get() { local i; for i in 1 2 3 4 5; do
+    gcloud secrets versions access latest --secret "$1" --project "$P" 2>"$E.get" && return 0
+    grep -qE "NOT_FOUND|PERMISSION_DENIED" "$E.get" && break
+    [ "$i" = 5 ] || sleep $(( i * ${FXA_SECRETS_RETRY_S:-2} ))
+  done; cat "$E.get" >&2; return 1; }
 # The credentials the services cannot start without: all of them read, or no file changes, so a failed
 # read (IAM, quota, network not ready) keeps the last good files and the units on them.
 need() { local v; v="$(get "$1")" && [ -n "$v" ] || { echo "fxa-secrets: could not read $1; no file changed" >&2; exit 1; }; printf '%s' "$v"; }
@@ -11,8 +19,6 @@ umask 077
 # A secret that may not exist: NOT_FOUND, or PERMISSION_DENIED (the manager has a grant only on the secrets that exist), reads as empty;
 # any other failed read (network, quota, unavailable) stops the run before a write.
 # The name ends in get: vm.sh status finds the secrets by 'get fxa-'.
-# The error text goes to a root-owned temp file: $C belongs to fxa, so a link planted there would aim root's write.
-E="$(mktemp)"; trap 'rm -f "$E"' EXIT
 opt_get() { local v; if v="$(get "$1" 2>"$E")"; then printf '%s' "$v"; elif grep -qE "NOT_FOUND|PERMISSION_DENIED" "$E"; then :
   else echo "fxa-secrets: could not read $1 ($(head -1 "$E")); no file changed" >&2; exit 1; fi; }
 pem="$(need fxa-github-app-key)"; ci="$(need fxa-circleci-token)"   # one per command: only the last one's status counts

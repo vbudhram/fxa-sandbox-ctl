@@ -22,6 +22,8 @@ cat > "$t/bin/gcloud" <<'SH'
 #!/bin/sh
 n=""; while [ $# -gt 0 ]; do [ "$1" = --secret ] && n="$2"; shift; done
 [ "$n" = "${FAIL_SECRET:-}" ] && { echo "ERROR: (gcloud.secrets.versions.access) UNAVAILABLE: the service is unavailable on $n" >&2; exit 1; }
+# FLAKY_SECRET fails its first read only, as at a boot before the network is up.
+[ "$n" = "${FLAKY_SECRET:-}" ] && [ ! -e "$FLAKY_MARK" ] && { : > "$FLAKY_MARK"; echo "ERROR: (gcloud.secrets.versions.access) There was a problem refreshing your current auth tokens" >&2; exit 1; }
 [ "$n" = "${DENY_SECRET:-}" ] && { echo "ERROR: (gcloud.secrets.versions.access) PERMISSION_DENIED: Permission denied on resource (or it may not exist)." >&2; exit 1; }
 case " ${HAVE:-} " in *" $n "*) printf 'v-%s' "$n"; exit 0 ;; esac
 case "$n" in fxa-claude-token|fxa-runlayer-agent-token|fxa-sentry-token|fxa-grafana-token|fxa-jira-*|fxa-agent-memory-key|fxa-dashboard-hmac)
@@ -30,6 +32,7 @@ printf 'v-%s' "$n"
 SH
 chmod +x "$t/bin/"*
 sed "s#/home/fxa#$t/home#g" "$here/fxa-secrets.sh" > "$t/fxa-secrets.sh"
+export FXA_SECRETS_RETRY_S=0 FLAKY_MARK="$t/flaky"
 C="$t/home/.config/fxa" B="$t/home/Desktop/working2/fxa-agent-bot/.env"
 printf 'A=1\n' > "$C/ctl.env.base"; printf 'B=1\n' > "$C/bot.env.base"; printf 'old pem\n' > "$C/github-app.pem"
 printf 'B=1\nSLACK_BOT_TOKEN=xoxb-old\n' > "$B"
@@ -38,6 +41,9 @@ check "a failed Slack token read exits 1, says which, and leaves the bot .env an
   "$rc|$(grep -q 'could not read fxa-slack-bot-token' "$t/err" && echo yes)|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(cat "$C/github-app.pem")"
 printf 'old pem\n' > "$C/github-app.pem"; FAIL_SECRET=fxa-github-app-key PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "a failed first read (the GitHub key) also stops it" "1|old pem" "$rc|$(cat "$C/github-app.pem")"
+rm -f "$FLAKY_MARK"; FLAKY_SECRET=fxa-github-app-key PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
+check "a read that fails once at boot is tried again, and the files are written" "0|v-fxa-github-app-key" "$rc|$(cat "$C/github-app.pem")"
+printf 'old pem\n' > "$C/github-app.pem"
 PATH="$t/bin:$PATH" bash "$t/fxa-secrets.sh" >/dev/null 2>&1; rc=$?
 check "with every read, the files hold the new values" "0|v-fxa-slack-bot-token|v-fxa-github-app-key|ANTHROPIC_API_KEY=v-fxa-anthropic-api-key" \
   "$rc|$(sed -n 's/^SLACK_BOT_TOKEN=//p' "$B")|$(cat "$C/github-app.pem")|$(grep '^ANTHROPIC' "$t/home/Desktop/working2/fxa-sandbox-ctl/.env")"
