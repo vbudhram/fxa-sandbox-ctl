@@ -51,6 +51,9 @@ profile() {
   case "${1:-}" in list) jq -c . "$FAKE_PROFILES" ;; show) jq -c --arg p "${pipe:-fxa}" '.[] | select(.profile == $p) | .private //= false' "$FAKE_PROFILES" ;; esac
 }
 now() { if [ -n "${FAKE_NOW_FILE:-}" ]; then cat "$FAKE_NOW_FILE"; else date +%s; fi; }
+# This call's time, read once: the e2e driver moves the clock as soon as the call is logged, and a second read
+# after that move put a job's start past it (78-routine-no-channel-pr waited for a finish that never ended).
+AT="$(now)"
 if [ -n "${FAKE_CTL_LOG:-}" ]; then
   # The bot deletes each file after the call, so keep its text here.
   _files='{}' _prev=""
@@ -58,7 +61,7 @@ if [ -n "${FAKE_CTL_LOG:-}" ]; then
     case "$_prev" in --*-file) [ -f "$a" ] && _files="$(jq -c --arg k "${_prev#--}" --rawfile v "$a" '. + {($k): $v}' <<< "$_files")" ;; esac
     _prev="$a"
   done
-  printf '%s\0' "$@" | jq -cRs --argjson at "$(now)" --argjson files "$_files" --arg pipe "$pipe" '{at: $at, argv: (split("\u0000")[:-1]), files: $files} + (if $pipe != "" then {pipeline: $pipe} else {} end)' >> "$FAKE_CTL_LOG"
+  printf '%s\0' "$@" | jq -cRs --argjson at "$AT" --argjson files "$_files" --arg pipe "$pipe" '{at: $at, argv: (split("\u0000")[:-1]), files: $files} + (if $pipe != "" then {pipeline: $pipe} else {} end)' >> "$FAKE_CTL_LOG"
 fi
 get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 
@@ -150,7 +153,7 @@ case "$cmd" in
       [ -z "${FAKE_ROUTINE_TASK_FAIL:-}" ] || { echo "ERROR: ${FAKE_ROUTINE_TASK_FAIL}" >&2; exit 1; }
       mkdir -p "$DIR"; echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
     fi
-    mkdir -p "$DIR/$k"; t="$(now)"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
+    mkdir -p "$DIR/$k"; t="$AT"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
     # A tape: the nth task plays the tape's nth session.
     [ -n "${FAKE_TAPE:-}" ] && { n="$(find "$DIR" -path '*/agent-*/tape_idx' | wc -l | tr -d ' ')"; echo "$n" > "$DIR/$k/tape_idx"; }
     # A routine run's owner is its sentinel, from the run row in the real controller.
@@ -164,7 +167,7 @@ case "$cmd" in
     [ -z "$r" ] && [[ "$co" =~ ^https://github\.com/([^/]+/[^/]+)/pull/ ]] && r="${BASH_REMATCH[1]}"
     echo "$r" > "$DIR/$k/repos"; echo "started $k (fake)" ;;
   # Like the real steer: during a turn (or the boot) the message waits, and its turn starts when that one ends.
-  steer) k="$1"; t="$(now)"; last="$(sort -n "$DIR/$k/turns" | tail -1)"
+  steer) k="$1"; t="$AT"; last="$(sort -n "$DIR/$k/turns" | tail -1)"
     if [ -z "$(get "$k" over)" ] && [ "$t" -lt $(( last + 10 )) ]; then echo $(( last + 10 )) >> "$DIR/$k/turns"; echo queued
     else echo "$t" >> "$DIR/$k/turns"; fi
     rm -f "$DIR/$k/over" ;;
@@ -181,7 +184,7 @@ case "$cmd" in
       echo x >> "$DIR/$k/refused"; echo "ERROR: $k is busy; try again in a moment" >&2; exit 1; fi
     s="$(opt --repo "$@")"; s="${s:--}"; m=pr; case " $* " in *" --no-pr "*) m=push ;; esac; [ -z "${FAKE_FINISH_FAIL:-}" ] || m=fail
     get "$k" fins | awk -v s="$s" '$3 == s && $2 != "fail" {f=1} END {exit !f}' && { echo "ERROR: the fake opens one PR per repo" >&2; exit 1; }
-    echo "$(now) $m $s" >> "$DIR/$k/fins" ;;
+    echo "$AT $m $s" >> "$DIR/$k/fins" ;;
   stop) echo stopped > "$DIR/$1/over" ;;
   # FAKE_INTERRUPT_FAILS=1: the interrupt fails, as when the runner does not answer.
   interrupt) [ -n "${FAKE_INTERRUPT_FAILS:-}" ] && exit 1; k="$1"; last="$(sort -n "$DIR/$k/turns" 2>/dev/null | tail -1)"

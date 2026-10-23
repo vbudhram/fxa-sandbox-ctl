@@ -117,4 +117,13 @@ FAKE_TICK=0.2 FAKE_TAPE="$tmp/tape0.json" bash "$F" watch agent-tp1 > "$tmp/w" &
 check "a tape turn with an empty diff has no diffstat in the watch" "1|0" "$(grep -c '"step"' "$tmp/w")|$(grep -c diffstat "$tmp/w")"
 export FAKE_CTL_DIR="$tmp/s1"   # a routine task is the first call on an empty store
 check "a routine task as the first call starts its session" "started agent-rr9 (fake)" "$(f --pipeline fxa task --id agent-rr9 --source routine --routine-run 39 2>&1)"
+# The e2e driver moves the clock as soon as it sees a call in the log: a job must start at the call's logged time,
+# or a move between the two reads pushes its end past the next move (78-routine-no-channel-pr hung on its stop).
+# Here each read of the clock moves it 12 s, as the driver's advance can.
+export FAKE_CTL_DIR="$tmp/s2"; mkdir -p "$tmp/race"
+printf '#!/bin/bash\nif [ "${1:-}" = "$FAKE_NOW_FILE" ]; then v=$(/bin/cat "$1"); echo "$v"; echo $((v + 12)) > "$1"; else exec /bin/cat "$@"; fi\n' > "$tmp/race/cat"; chmod +x "$tmp/race/cat"
+echo 2000 > "$FAKE_NOW_FILE"; PATH="$tmp/race:$PATH" f task --id agent-rc1 --owner UA --prompt-file "$tmp/p.md" >/dev/null
+check "a task's session starts at the time its call was logged" "$(tail -1 "$FAKE_CTL_LOG" | jq -r .at)" "$(cat "$FAKE_CTL_DIR/agent-rc1/t0")"
+echo 2100 > "$FAKE_NOW_FILE"; PATH="$tmp/race:$PATH" f finish --session agent-rc1 >/dev/null 2>&1
+check "a finish starts at the time its call was logged" "$(tail -1 "$FAKE_CTL_LOG" | jq -r .at)" "$(cut -d' ' -f1 "$FAKE_CTL_DIR/agent-rc1/fins")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
