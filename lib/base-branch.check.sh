@@ -35,8 +35,17 @@ check "the session fetches the profile's base, not main" "1|0" \
   "$(grep -c 'fetch --quiet origin "\$base"' "$here/../fxa-sandbox-ctl")|$(grep -c 'fetch --quiet origin main &&' "$here/../fxa-sandbox-ctl")"
 # A private fork at the image's FxA path: the fetch goes to the fork, not the image clone's public origin.
 PIPE_REPO_SLUG=mozilla/fxa-private pin main
-check "the pin points origin at the tree's repo before it fetches" "1" "$(grep -c 'cd /workspace && git remote set-url origin https://github.com/mozilla/fxa-private.git && { git cat-file' "$tmp/pin.cmd")"
+check "the pin points origin at the tree's repo before it fetches" "1" "$(grep -c 'cd /workspace && old=\$(git rev-parse HEAD) && git remote set-url origin https://github.com/mozilla/fxa-private.git && { git cat-file' "$tmp/pin.cmd")"
 check "a slug that is not plain refuses the pin" "1" "$(PIPE_REPO_SLUG='a/b;x' FXA_WORKTREE_BASE=main FXA_PIN_SHA="$S" FXA_PIN_BRANCH=agent-x _gce_pin_runner_tree r1 "$tmp" 2>&1 | grep -c 'not a plain slug')"
+# The libs build at the pin runs only when the pin changes libs/ or yarn.lock against the snapshot's commit.
+guard="$(grep -o '! git diff --quiet "\$old" HEAD -- libs/ yarn.lock 2>/dev/null' "$tmp/pin.cmd" | head -1)"
+lr="$tmp/libs"; git init -q "$lr"; mkdir -p "$lr/libs" && echo a > "$lr/libs/a" && g -C "$lr" add -A && g -C "$lr" commit -q -m one
+o1="$(git -C "$lr" rev-parse HEAD)"; echo r > "$lr/README" && g -C "$lr" add -A && g -C "$lr" commit -q -m docs
+same="$(cd "$lr" && old="$o1" && eval "$guard" && echo build || echo skip)"
+echo b > "$lr/libs/a" && g -C "$lr" commit -qam lib
+moved="$(cd "$lr" && old="$o1" && eval "$guard" && echo build || echo skip)"
+gone="$(cd "$lr" && old=0000000000000000000000000000000000000000 && eval "$guard" && echo build || echo skip)"
+check "the pin skips the libs build when no lib moved, builds when one did or the old commit is unknown" "skip|build|build" "$same|$moved|$gone"
 # The pinned order on a real clone: a set-url then a fetch from that remote reaches a commit the old origin lacks.
 pub="$tmp/pub"; priv="$tmp/priv"; git init -q "$pub"; g -C "$pub" commit -q --allow-empty -m pub
 git clone -q "$pub" "$priv"; g -C "$priv" commit -q --allow-empty -m secret; ps="$(git -C "$priv" rev-parse HEAD)"
