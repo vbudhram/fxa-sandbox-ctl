@@ -508,6 +508,23 @@ _prfix_consider() {
   _prfix_queue "$rid" "$cfg" "$pr" "$trigger" "$actor" "$at" "$now" "$cid"
 }
 
+# _prfix_stop <run> <why> <session> <label> <now>   The sweep's stop of a live fix row (why label, closed or merged), guarded on
+# its state and on heads.fix.pushing IS NULL: a fix that is being pushed is not cut off, and the next sweep looks again.
+_prfix_stop() {
+  local reason n
+  case "$2" in label) reason="the $4 label was removed" ;; closed) reason="the PR was closed" ;; *) reason="the PR was merged" ;; esac
+  n="$(db_value "UPDATE routine_runs SET state = 'stopped', reason = $(db_q "$reason"), ended_at = $5, heads = json_set(heads, '$.fix.why', '$2')
+    WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix.pushing') IS NULL; SELECT changes();")" || return 0
+  if [ "$n" != 1 ]; then
+    [ "$(db_value "SELECT count(*) FROM routine_runs WHERE id = $1 AND json_extract(heads, '$.fix.pushing') IS NOT NULL;")" = 0 ] \
+      || echo "routine run $1 not stopped: ${_PRFIX_PUSHING}"
+    return 0
+  fi
+  echo "routine run $1: stopped, ${reason}"
+  [ -z "$3" ] || session_stop "$3" </dev/null >/dev/null 2>&1 || true
+  prfix_report "$1" >/dev/null 2>&1 || true
+}
+
 # _prfix_sweep_one <routine row json> <now>   The open PRs of each author of one pr-label routine, in number order after
 # sweep_pr. A full pass sets swept_at and clears sweep_pr. Exit 3 when the budget ran out: sweep_pr is the last PR done.
 _prfix_sweep_one() {
@@ -523,6 +540,26 @@ _prfix_sweep_one() {
     jq -e 'type == "array"' <<< "$got" >/dev/null 2>&1 || continue
     prs="$(jq -c --argjson g "$got" '. + [$g[] | select((.number | type) == "number" and .number > 0)] | unique_by(.number)' <<< "$prs")"
   done
+  # Each live fix row stops when a person removed the label of a label or BLEnder request, or the PR closed or merged.
+  local lv l lid lnum lurl why st label; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
+  lv="$(db_json "SELECT id, coalesce(session, '') AS session, coalesce(trigger, '') AS trigger, heads->'fix' AS fix FROM routine_runs
+    WHERE routine_id = ${rid} AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix') IS NOT NULL ORDER BY id;")" || lv="[]"
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    lid="$(jq -r .id <<< "$l")"; lnum="$(jq -r '.fix.pr // ""' <<< "$l")"; lurl="$(jq -r '.fix.url // ""' <<< "$l")"; why=""
+    [[ "$lnum" =~ ^[1-9][0-9]{0,9}$ ]] || continue
+    if jq -e --argjson n "$lnum" 'any(.[]; .number == $n)' <<< "$prs" >/dev/null; then
+      case "$(jq -r .trigger <<< "$l")" in
+        label|blender) jq -e --argjson n "$lnum" --arg l "$label" '.[] | select(.number == $n) | any(.labels[]?; .name == $l)' <<< "$prs" >/dev/null || why=label ;;
+      esac
+    else
+      [[ "$lurl" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || continue
+      _prfix_left || return 3
+      st="$(_prfix_gh pr view "$lurl" --json state --jq .state)" || continue
+      case "$st" in MERGED) why=merged ;; CLOSED) why=closed ;; esac
+    fi
+    [ -z "$why" ] || _prfix_stop "$lid" "$why" "$(jq -r .session <<< "$l")" "$label" "$now"
+  done < <(jq -c '.[] | .fix |= (fromjson? // {})' <<< "$lv")
   while IFS= read -r pr; do
     [ -n "$pr" ] || continue
     num="$(jq -r .number <<< "$pr")"

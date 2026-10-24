@@ -136,4 +136,23 @@ check "a kill after the INSERT (the comment write fails) leaves the row, and the
   "$(db_value "SELECT state || '|' || coalesce(json_extract(heads, '$.fix.comment'), '') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90001;")|$(: > "$tmp/pc"; _prfix_repair live "$N"; pc comment 90001)"
 rows >/dev/null
 
+# i559 A25, A26: the live-run stop, guarded on the push claim.
+live() { # live <pr> <trigger> [fix keys json]   A started fix row on the PR; prints its id.
+  db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, session, heads, started_at) VALUES ($rid, 'pr-$1-live', '$2', 'started', 'agent-fx$1',
+    json($(db_q "$(jq -cn --argjson n "$1" --argjson x "${3:-null}" '{fix: ({pr: $n, url: "https://github.com/mozilla/fxa/pull/\($n)"} + ($x // {}))}')")), $N); SELECT last_insert_rowid();"; }
+l1="$(live 90002 blender)"; l2="$(live 90004 manual)"; : > "$tmp/stopped"; sweep
+check "A25: a BLEnder run whose label a person removed stops with its session, and the comment says so; a Run now run needs no label" \
+  "stopped|label|agent-fx90002|Stopped: the agent-help label was removed. Nothing was pushed.|started" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') FROM routine_runs WHERE id = $l1;")|$(cat "$tmp/stopped")|$(pc comment 90002)|$(db_value "SELECT state FROM routine_runs WHERE id = $l2;")"
+d="$(dir s1)"; jq '.number = 90009 | .state = "MERGED" | .url = "https://github.com/mozilla/fxa/pull/90009"' "$fx/pr/90001.json" > "$d/pr/90009.json"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $l2;"; l3="$(live 90009 label)"
+check "a run on a PR that was merged stops with why merged" "stopped|merged" "$(PRFIX_DIR="$d" sweep; db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') FROM routine_runs WHERE id = $l3;")"
+P7=9999999999999999999999999999999999999999
+l4="$(live 90002 blender '{"pushing": 1792836000, "pending_sha": "'$P7'"}')"; : > "$tmp/err"; sweep
+check "A26: a stop while the fix is pushed is skipped and logged" "started|routine run $l4 not stopped: The fix is being pushed. Try again after it ends." \
+  "$(db_value "SELECT state FROM routine_runs WHERE id = $l4;")|$(grep "run $l4" "$tmp/out" | tail -1)"
+_prfix_set "$l4" '.new_sha = $s' --arg s "$P7"; : > "$tmp/pc"
+check "A26: then the push lands, and the run ends ok with Pushed" "ok|Pushed 9999999. Next: review the fix commit, then approve the functional tests gate." \
+  "$(FXA_ROUTINE_NOW=$N routine_done "$l4" --state ok --session agent-fx90002 | jq -r .state)|$(pc comment 90002)"
+
 exit "$fail"
