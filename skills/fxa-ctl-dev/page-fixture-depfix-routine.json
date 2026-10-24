@@ -1,0 +1,39 @@
+{
+ "/api/team-admin": { "admin": true },
+ "/api/teams": { "age_seconds": 5, "teams": [ { "profile": "example", "label": "Example", "repos": [ { "slug": "example/app", "role": "work" } ],
+   "access": { "record": true, "status": "active", "open": false, "users": [ "U000EXAMPLE" ] }, "test": { "result": null, "at": null, "generation": 3, "tested": 3 } } ] },
+ "/api/routines/summary": { "teams": { "example": { "routines": 2, "failed": 0, "paused": 0, "runs_30d": 6, "cost_30d": 4.5 } }, "routines": { "1": { "runs_30d": 6, "cost_30d": 4.5 } } },
+ "/api/teams/example/routine-channels": { "channels": [ { "id": "C0123ABCD", "name": "deps" } ] },
+ "/api/routine-templates": [ { "template": "code-review", "name": "Code review", "prompt": "Review the new commits.", "about": "Reads the new commits.", "mode": "pr+notes", "skip_no_commits": true } ],
+ "/api/teams/example/routines": [
+  { "id": 1, "version": 3, "paused": 0, "tick": "@epoch-30", "channel_name": "deps", "next": [],
+    "data": { "name": "Dependency fixes", "template": "blank", "on": "pr-label", "mode": "pr", "channel": "C0123ABCD", "repos": [ "example/app" ], "max_usd": 10,
+      "pr": { "repo": "example/app", "authors": [ "dependabot[bot]", "example-blender[bot]" ], "label": "agent-help", "blender_login": "example-blender[bot]", "sweep_min": 5 } },
+    "live": { "id": 11, "state": "started", "session": "agent-fix001", "started_at": "@epoch-300", "live": 1 },
+    "lives": [
+      { "id": 11, "state": "started", "session": "agent-fix001", "started_at": "@epoch-300", "live": 1, "fix": { "pr": 90001, "url": "https://github.com/example/app/pull/90001", "head_sha": "1111111aaaaaaa" } },
+      { "id": 13, "state": "queued", "live": 1, "fix": { "pr": 90003, "url": "https://github.com/example/app/pull/90003", "wait": "the team budget is used" } },
+      { "id": 12, "state": "queued", "live": 1, "fix": { "pr": 90002, "url": "https://github.com/example/app/pull/90002" } } ],
+    "last": { "state": "ok", "ended_at": "@epoch-3600" },
+    "recent": [ { "state": "ok" }, { "state": "nochange" }, { "state": "report" }, { "state": "stopped" }, { "state": "skipped" }, { "state": "failed" } ] },
+  { "id": 2, "version": 1, "paused": 0, "tick": "@epoch-30", "next": [ "@iso+7200" ],
+    "data": { "name": "Weekday review", "template": "code-review", "prompt": "Review.", "schedule": "weekdays 09:00", "zone": "UTC", "repos": [ "example/app" ], "mode": "report", "channel": "", "max_usd": 5, "skip_no_commits": true },
+    "live": null, "lives": [], "last": { "state": "report", "ended_at": "@epoch-7200" }, "recent": [ { "state": "report" } ] }
+ ],
+ "/api/teams/example/routines/1/history": [
+  { "id": 21, "trigger": "label", "actor": "example-writer", "state": "ok", "session": "agent-fix021", "cost_usd": 1.2, "started_at": "@epoch-3700", "ended_at": "@epoch-3600",
+    "heads": { "fix": { "pr": 90001, "url": "https://github.com/example/app/pull/90001", "head_sha": "aaaaaaa1111111111111111111111111111111aa", "new_sha": "bbbbbbb2222222222222222222222222222222bb" } } },
+  { "id": 20, "trigger": "blender", "actor": "example-blender[bot]", "state": "nochange", "cost_usd": 0.8, "started_at": "@epoch-7300",
+    "heads": { "fix": { "pr": 90004, "url": "https://github.com/example/app/pull/90004", "head_sha": "ccccccc3333333333333333333333333333333cc" } } },
+  { "id": 19, "trigger": "manual", "actor": "admin@example.com", "state": "report", "cost_usd": 0.9, "started_at": "@epoch-9000",
+    "heads": { "fix": { "pr": 90005, "url": "https://github.com/example/app/pull/90005", "head_sha": "ddddddd4444444444444444444444444444444dd", "why": "moved" } } },
+  { "id": 18, "trigger": "label", "actor": "example-writer", "state": "report", "cost_usd": 0.7, "started_at": "@epoch-10000",
+    "heads": { "fix": { "pr": 90006, "url": "https://github.com/example/app/pull/90006", "head_sha": "eeeeeee5555555555555555555555555555555ee", "why": "guard:lock" } } },
+  { "id": 17, "trigger": "label", "actor": "example-writer", "state": "stopped", "cost_usd": 0.2, "started_at": "@epoch-11000",
+    "heads": { "fix": { "pr": 90007, "url": "https://github.com/example/app/pull/90007", "head_sha": "fffffff6666666666666666666666666666666ff", "why": "label" } } },
+  { "id": 16, "trigger": "label", "actor": "example-writer", "state": "skipped", "ended_at": "@epoch-12000",
+    "heads": { "fix": { "pr": 90008, "url": "https://github.com/example/app/pull/90008", "head_sha": "0000000777777777777777777777777777777700", "why": "new-commit" } } },
+  { "id": 15, "trigger": "label", "actor": "example-writer", "state": "failed", "reason": "the sandbox did not start", "started_at": "@epoch-13000",
+    "heads": { "fix": { "pr": 90009, "url": "https://github.com/example/app/pull/90009", "head_sha": "9999999888888888888888888888888888888899", "why": "boot" } } }
+ ]
+}
