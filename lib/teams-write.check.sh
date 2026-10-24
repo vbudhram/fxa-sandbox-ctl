@@ -166,6 +166,9 @@ check("memory edit or delete with no version: 400, and no command runs", (400, 4
 open(f"{tmp}/rc", "w").write("2"); st, body = call("POST", MD, {"v": "0123456789ab", "scope": "team"}, sig(A, "POST", MD)); os.unlink(f"{tmp}/rc")
 check("memory delete: runs delete, and a stale version is 409 with the command's words", (409, "memory delete rusty mem-0000aaaa", True),
       (st, args().rsplit(" ", 1)[0], "load it again" in body["error"]))
+st, _ = call("POST", MD, {"v": "0123456789ab", "scope": "example-org/example-repo"}, sig(A, "POST", MD))
+check("memory delete: a repo fact's scope reaches the record, so memory_admin looks in that repo's folder", (200, "example-org/example-repo"),
+      (st, json.load(open(f"{tmp}/record")).get("scope")))
 S, SD = "/api/teams/secret/memory", "/api/teams/secret/memory/mem-0000aaaa/delete"
 check("memory: a private team takes no new text, but a delete still runs", (403, 200, "memory delete secret mem-0000aaaa"),
       (call("POST", S, {"entry": E}, sig(A, "POST", S))[0], call("POST", SD, {"v": "0123456789ab"}, sig(A, "POST", SD))[0], args().rsplit(" ", 1)[0]))

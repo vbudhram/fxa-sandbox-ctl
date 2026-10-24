@@ -910,7 +910,8 @@ class Handler(BaseHTTPRequestHandler):
         if not delete and team_private(name):
             self._json(403, {"error": "this team has a private repo (or GitHub did not say), so its memory takes no new text"})
             return
-        rec = {"v": body.get("v") or ""} if delete else {"entry": body.get("entry"), "v": body.get("v") or ""}
+        # memory_admin checks the scope against the team's repos; a delete names one to find a repo fact.
+        rec = {"v": body.get("v") or "", "scope": str(body.get("scope") or "team")} if delete else {"entry": body.get("entry"), "v": body.get("v") or ""}
         self._team_ctl(user, ["delete" if delete else "set", name, mid or "", None], record=rec, cmd="memory", refresh=False)
 
     def _routine_write(self, path):
