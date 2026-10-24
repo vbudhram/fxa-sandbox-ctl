@@ -53,5 +53,40 @@ Dependency fixes runs when a dependency PR in example/app by dependabot[bot] or 
 edit="$W document.querySelector('[data-rt-act=\"edit\"][data-rt-id=\"1\"]').click(); await w(300);
   return [document.querySelector('#rt-pr_repo')?.value, document.querySelector('#rt-pr_authors')?.value, document.querySelector('#rt-pr_label')?.value, !!document.querySelector('[data-rt-then=\"run\"]')].join('|')"
 ck "Edit of a pr-label routine fills the pr fields" "example/app|dependabot[bot], example-blender[bot]|agent-help|false" "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$edit")"
+
+# Run now asks for a PR URL: a labelled field, a busy text, ctl's refusal tied to the field, then the queued text (A34).
+ask="$W const sent = [], f0 = window.fetch; let n = 0;
+  window.fetch = async (u, o) => { if (o?.method !== 'POST') return f0(u, o); sent.push(u + ' ' + o.body); await w(300);
+    return n++ ? new Response(JSON.stringify({ ok: true, out: 'queued run 31: Queued for #90010. The PR comment shows its state.' }), { status: 200 })
+      : new Response(JSON.stringify({ error: 'ERROR: A run on 1111111 already ended. A new commit allows a new run.' }), { status: 400 }); };
+  const type = v => { const e = document.querySelector('[data-rt-ask]'); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); };
+  document.querySelector('[data-rt-act=\"run\"][data-rt-id=\"1\"]').click(); await w(200);
+  const i = document.querySelector('[data-rt-ask]'), lab = document.querySelector('label[for=\"' + i?.id + '\"]')?.textContent, focus = document.activeElement === i;
+  type('https://github.com/example/app/pull/90001'); document.querySelector('[data-rt-act=\"runpr\"]').click(); await w(100);
+  const b = document.querySelector('[data-rt-act=\"runpr\"]'), busy = b.textContent + ' ' + b.disabled; await w(500);
+  const i2 = document.querySelector('[data-rt-ask]'), err = document.getElementById(i2.getAttribute('aria-describedby') ?? 'none')?.textContent;
+  type('https://github.com/example/app/pull/90010'); document.querySelector('[data-rt-act=\"runpr\"]').click(); await w(900);
+  return [lab, focus, busy, err, i2.getAttribute('aria-invalid'), tx('[data-rt-msg]'), !!document.querySelector('[data-rt-ask]'), ...sent].join('\n')"
+ck "Run now opens a labelled PR URL field, shows Checking the PR, ties the refusal to the field, then says Queued for #n" \
+  "PR URL
+true
+Checking the PR… true
+A run on 1111111 already ended. A new commit allows a new run.
+true
+Queued for #90010. The PR comment shows its state.
+false
+/api/teams/example/routines/1/run {\"pr\":\"https://github.com/example/app/pull/90001\"}
+/api/teams/example/routines/1/run {\"pr\":\"https://github.com/example/app/pull/90010\"}" \
+  "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$ask")"
+ck "a card's Run now on a pr-label routine with live runs is not turned off, and opens the field" "false|true" \
+  "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$W const b = document.querySelector('[data-rt-act=\"run\"][data-rt-id=\"1\"]'), off = b.disabled; b.click(); await w(200); return off + '|' + !!document.querySelector('[data-rt-row=\"1\"] [data-rt-ask]')")"
+
+# Stop run sends the run id of the row it is on, and only that run (A42).
+stop="$W const sent = [], f0 = window.fetch;
+  window.fetch = (u, o) => o?.method === 'POST' ? (sent.push(u + ' ' + o.body), Promise.resolve(new Response(JSON.stringify({ ok: true, out: 'stopped run 12' }), { status: 200 }))) : f0(u, o);
+  const bs = [...document.querySelectorAll('.rtd [data-rt-act=\"stop\"]')], b = document.querySelector('[data-rt-live=\"12\"] [data-rt-act=\"stop\"]');
+  const lab = b?.getAttribute('aria-label'); b?.click(); await w(400); return [bs.length, lab, ...sent].join('|')"
+ck "each live run has its own Stop run, and a press sends that run id" "3|Stop the run for #90002|/api/teams/example/routines/1/stop {\"run\":12}" \
+  "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$stop")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

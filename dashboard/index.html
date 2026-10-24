@@ -548,6 +548,7 @@
   .runs { display:inline-flex; gap:var(--s1); align-items:center; min-height:20px; } .runs .dot { width:10px; height:10px; }
   .rtkey { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); }
   .rtback { font-size:var(--t-sub); color:var(--link); font-weight:600; align-self:flex-start; }
+  .rtask .row .input { flex:1 1 260px; min-width:0; }
   .rtlives { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--s2); font-size:var(--t-sub); } .rtlives li { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s2); }
   .rtd .item .alert { margin-top:var(--s2); } .rtd details { margin-top:var(--s2); } .rtd summary { cursor:pointer; color:var(--link); font-size:var(--t-sub); font-weight:600; }
   :is([data-routines], [data-tform], [data-memory]) .report { margin:var(--s2) 0 0; padding:var(--s2) var(--s3); background:var(--sunk); border-radius:var(--r-md); font:var(--t-label)/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; }
@@ -2600,7 +2601,18 @@ function rtLives(r) {
   return html`<ul class="rtlives">${line.map((x, i) => { const f = x.fix ?? {}, pr = rtPr(f.url), ahead = line[i - 1];
     const st = x.state !== "queued" ? html`${tag("Running", "info", { run: true, live: true })}${x.session ? html` <a class="mono" href="#sessions/live/${x.session}">${x.session}</a>` : ""}`
       : f.wait && f.wait !== "another run of this routine is in progress" ? tag(`Waiting: ${f.wait}`, "warn") : ahead ? tag(`In line behind ${rtPrN(ahead.fix)}`, "dim") : tag("Queued", "info");
-    return html`<li data-rt-live="${x.id}">${pr ? html`<a class="key" href="${pr}" target="_blank" rel="noopener">${rtPrN(f)}</a>` : html`<span class="key">${rtPrN(f)}</span>`} ${st}</li>`; })}</ul>`;
+    return html`<li data-rt-live="${x.id}">${pr ? html`<a class="key" href="${pr}" target="_blank" rel="noopener">${rtPrN(f)}</a>` : html`<span class="key">${rtPrN(f)}</span>`} ${st}
+      <button type="button" class="linkbtn" data-rt-act="stop" data-rt-id="${r.id}" data-rt-run="${x.id}" aria-label="Stop the run for ${rtPrN(f)}"${RT.busy === r.id ? " disabled" : ""}>Stop run</button></li>`; })}</ul>`;
+}
+// Run now on a pr-label routine asks which PR: a labelled field, ctl's refusal tied to it, and a busy text while ctl checks the PR.
+function rtAsk(r) {
+  if (RT.ask !== r.id) return "";
+  const id = `rt-ask-${r.id}`, repo = r.data.pr?.repo ?? (r.data.repos ?? [])[0] ?? "owner/repo";
+  return html`<div class="field rtask"><label for="${id}">PR URL</label>
+    <div class="row"><input id="${id}" class="input" type="url" data-rt-ask="${r.id}" placeholder="https://github.com/${repo}/pull/123" value="${RT.askUrl ?? ""}"${RT.askErr ? html` aria-invalid="true" aria-describedby="${id}-err"` : html` aria-describedby="${id}-hint"`}>
+      <button type="button" data-rt-act="runpr" data-rt-id="${r.id}"${RT.asking ? " disabled" : ""}>${RT.asking ? "Checking the PR…" : "Run"}</button>
+      <button type="button" class="linkbtn" data-rt-act="askcancel" data-rt-id="${r.id}">Cancel</button></div>
+    ${RT.askErr ? html`<p class="unknown" id="${id}-err">${RT.askErr}</p>` : html`<p class="hint" id="${id}-hint">An open PR of ${repo} by one of the routine's authors. The run fixes its current head.</p>`}</div>`;
 }
 function rtState(r) {
   const v = r.live;
@@ -2668,12 +2680,12 @@ const rtFailed = r => !!RTSUM?.routines?.[r.id]?.failed || ["failed", "missed"].
 function rtDetail(t, r) {
   const d = r.data, n = d.name, sum = RTSUM?.routines?.[r.id], hist = RT.hist?.[r.id];
   const b = (act, label, extra = "") => html`<button type="button" data-rt-act="${act}" data-rt-id="${r.id}" aria-label="${label} ${n}"${extra}>${label}</button>`;
-  const busy = r.live || RT.busy === r.id ? html` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : "";
-  const next = r.paused ? [] : r.next ?? [], ch = d.channel ? rtChName(d.channel, r.channel_name) : "", onpr = d.on === "pr-label";
+  const onpr = d.on === "pr-label", busy = (r.live && !onpr) || RT.busy === r.id ? html` disabled title="${r.live && !onpr ? "A run is in progress" : "Working on it"}"` : "";
+  const next = r.paused ? [] : r.next ?? [], ch = d.channel ? rtChName(d.channel, r.channel_name) : "";
   return html`<div class="rtd stack lg" data-rt-row="${r.id}">
     <a class="rtback" href="#teams/${t.profile}/routines" data-rt-list>← Routines</a>
     <div class="rt"><div class="hd">${rtGlyph(onpr ? "depfix" : d.template)}<div class="who"><h3 class="nm">${n} ${rtState(r)}</h3><span class="says">${rtSays(d, r.channel_name)}</span></div>
-      ${b("run", r.live ? "A run is in progress" : "Run now", busy)}${r.live ? b("stop", "Stop run") : ""}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("edit", "Edit")}</div></div>
+      ${b("run", r.live && !onpr ? "A run is in progress" : "Run now", busy)}${r.live && !onpr ? b("stop", "Stop run", html` data-rt-run="${r.live.id}"`) : ""}${b(r.paused ? "resume" : "pause", r.paused ? "Resume" : "Pause")}${b("edit", "Edit")}</div>${rtAsk(r)}</div>
     <div class="rtkpis">${statTile("Runs, 30 days", sum?.runs_30d ?? "—", hist ? `${hist.filter(x => ["failed", "missed"].includes(x.state)).length} failed of the last ${hist.length}` : "")}
       ${statTile("Cost, 30 days", usd(sum?.cost_30d), sum?.runs_30d ? `${usd(sum.cost_30d / sum.runs_30d)} a run · limit ${usd(d.max_usd)}` : `limit ${usd(d.max_usd)} a run`)}
       ${statTile("Last result", r.last ? rtResult(r.last, d)[0] : "none", r.last?.ended_at ? stamp(r.last.ended_at) : "no run yet", rtFailed(r) ? "bad" : "")}
@@ -2720,9 +2732,9 @@ function rtCard(t, r, s) {
   const d = r.data, rec = r.recent ?? [], nx = r.paused ? null : (r.next ?? [])[0], last = r.last ? rtResult(r.last, d) : null, onpr = d.on === "pr-label";
   return html`<article class="card rt" data-rt-row="${r.id}"><div class="hd">${rtGlyph(onpr ? "depfix" : d.template)}
     <div class="who"><div class="row"><a class="nm" href="#teams/${t.profile}/routines/${r.id}" data-rt-sel="${r.id}">${d.name}</a>${r.live ? "" : rtState(r)}${onpr ? tag("dependency fix", "", { sq: true }) : d.template === "blank" ? tag("custom prompt", "", { sq: true }) : ""}</div><span class="says">${rtSays(d, r.channel_name)}</span></div>
-    <button type="button" data-rt-act="run" data-rt-id="${r.id}" aria-label="Run now ${d.name}"${r.live || RT.busy === r.id ? html` disabled title="${r.live ? "A run is in progress" : "Working on it"}"` : ""}>Run now</button>
+    <button type="button" data-rt-act="run" data-rt-id="${r.id}" aria-label="Run now ${d.name}"${(r.live && !onpr) || RT.busy === r.id ? html` disabled title="${r.live && !onpr ? "A run is in progress" : "Working on it"}"` : ""}>Run now</button>
     <button type="button" class="tsw" data-rt-act="${r.paused ? "resume" : "pause"}" data-rt-id="${r.id}" aria-pressed="${String(!r.paused)}" aria-label="Routine ${d.name} on"${RT.busy === r.id ? " disabled" : ""}>${r.paused ? "Off" : "On"}</button></div>
-    <div class="facts">
+    ${rtAsk(r)}<div class="facts">
       <div class="fact"><span class="overline">Last run</span><span>${r.live ? rtState(r) : last ? html`${tag(last[0], last[1], { title: last[2] })} ${r.last.ended_at ? stamp(r.last.ended_at) : ""}` : html`<span class="m">no run yet</span>`}</span></div>
       <div class="fact"><span class="overline">Next run</span><span>${r.paused ? html`<span class="m">paused</span>` : onpr ? "on request" : nx ? html`${rtWhen(nx, d.zone, true)} <span class="m">· ${rtIn(nx)}</span>` : "none"}</span></div>
       <div class="fact"><span class="overline">Last ${rec.length || ""} runs</span>${rec.length ? html`<span class="runs" role="img" aria-label="Oldest first: ${rec.map(x => rtResult(x, d)[0].toLowerCase()).join(", ")}">${rec.map(x => dot(RT_DOT[x.state] ?? ""))}</span>` : html`<span class="m">none yet</span>`}</div>
@@ -2867,8 +2879,8 @@ function rtPaint() {
 function rtFocus(paint) {
   const a = document.activeElement, d = a?.closest?.("[data-routines]") ? a.dataset ?? {} : null, v = x => `"${String(x).replace(/["\\]/g, "\\$&")}"`;
   const flag = d && ["rt-save", "rt-cancel", "rt-new", "rt-back", "rt-prompt", "rt-chlist", "rt-list"].find(k => a.hasAttribute?.(`data-${k}`));
-  const q = !d ? "" : d.rtAct ? `[data-rt-act=${v(d.rtAct)}][data-rt-id=${v(d.rtId)}]` : d.rt === "mode" ? `[data-rt="mode"][value=${v(a.value)}]`
-    : ["rtSel", "rtShow", "rtRepo", "rt", "rtTpl", "rtKind", "rtDay"].map(k => d[k] != null ? `[data-${k.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}=${v(d[k])}]` : "").find(Boolean) || (flag ? `[data-${flag}]` : "");
+  const q = !d ? "" : d.rtAct ? `[data-rt-act=${v(d.rtAct)}][data-rt-id=${v(d.rtId)}]${d.rtRun ? `[data-rt-run=${v(d.rtRun)}]` : ""}` : d.rt === "mode" ? `[data-rt="mode"][value=${v(a.value)}]`
+    : ["rtAsk", "rtSel", "rtShow", "rtRepo", "rt", "rtTpl", "rtKind", "rtDay"].map(k => d[k] != null ? `[data-${k.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}=${v(d[k])}]` : "").find(Boolean) || (flag ? `[data-${flag}]` : "");
   paint();
   if (!q) return;
   const n = document.querySelector(`[data-routines] ${q}`);
@@ -2877,6 +2889,9 @@ function rtFocus(paint) {
 // An open report stays open through the 15 s repaint.
 document.addEventListener("toggle", e => { const k = e.target.dataset?.rtRun; if (k) RT_OPEN[e.target.open ? "add" : "delete"](k); }, true);
 const rtSay = (msg, ok) => { Object.assign(RT, { msg, ok }); rtPaint(); };
+// The PR URL field keeps its text through a repaint; Enter runs it.
+document.addEventListener("input", e => { if (e.target.dataset?.rtAsk) RT.askUrl = e.target.value; });
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.dataset?.rtAsk) { e.preventDefault(); rtDo("runpr", e.target.dataset.rtAsk); } });
 document.addEventListener("input", e => {
   const f = RT.form, k = e.target.dataset?.rt; if (!f?.d || !e.target.closest?.("[data-routine-form]")) return;
   f.dirty = true;
@@ -2891,7 +2906,7 @@ document.addEventListener("input", e => {
   if (nx) nx.textContent = rtNextText(f.d);
 });
 // One routine action: new, a start, back, cancel, save (create or edit, then maybe run), or a verb on a routine.
-async function rtDo(act, id, then) {
+async function rtDo(act, id, then, run) {
   const team = RT.team, base = `/api/teams/${encodeURIComponent(team)}/routines`, row = x => (RT.list ?? []).find(r => String(r.id) === String(x));
   const post = async (url, body) => { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     return [r, await r?.json().catch(() => ({})) ?? { error: "the dashboard did not answer" }]; };
@@ -2926,10 +2941,23 @@ async function rtDo(act, id, then) {
   const r0 = row(id); if (!r0) return;
   if (act === "edit") { RT.form = { step: 2, id: r0.id, version: r0.version, d: rtDraft(r0.data), errs: {} }; RT.msg = ""; rtPaint(); return focusHead(); }
   if (act === "hist") { if (RT.histErr?.[id]) delete RT.histErr[id]; return rtLoadHist(team, Number(id)); }
+  const focusAsk = () => setTimeout(() => document.querySelector(`[data-rt-ask="${r0.id}"]`)?.focus());
+  if (act === "run" && r0.data.on === "pr-label") { Object.assign(RT, { ask: r0.id, askUrl: "", askErr: "", msg: "" }); rtPaint(); return focusAsk(); }
+  if (act === "askcancel") { RT.ask = null; return rtPaint(); }
+  if (act === "runpr") {
+    if (RT.asking || RT.ask !== r0.id) return;
+    RT.asking = true; RT.askErr = ""; rtPaint();
+    const [q, k] = await post(`${base}/${id}/run`, { pr: String(RT.askUrl ?? "").trim() });
+    RT.asking = false;
+    if (!q?.ok) { RT.askErr = String(k.error || q?.status || "the dashboard did not answer").replace(/^ERROR: /, ""); rtPaint(); return focusAsk(); }
+    RT.ask = null; if (RT.hist) delete RT.hist[r0.id]; await loadRoutines(team);
+    return rtSay(String(k.out ?? "").replace(/^queued run \d+: /, "") || "Queued.", true);
+  }
   if (act === "delete" && RT.arm !== r0.id) { RT.arm = r0.id; return rtSay(`Delete ${r0.data.name}? Click Delete again. You cannot undo this.`, false); }
   if (RT.busy) return;
   RT.arm = null; RT.busy = r0.id; rtPaint();
-  const [r, j] = await post(`${base}/${id}/${act}`, {});
+  // Stop names the run the page shows, so a second live run is never the one that stops.
+  const [r, j] = await post(`${base}/${id}/${act}`, act === "stop" && run ? { run: Number(run) } : {});
   RT.busy = null;
   if (r?.ok && act === "delete") RT.sel = undefined;
   if (r?.ok && act === "run" && RT.hist) delete RT.hist[r0.id];
@@ -2951,7 +2979,7 @@ document.addEventListener("click", e => {
   const tpl = e.target.closest("[data-rt-tpl]"); if (tpl) return rtDo("tpl", tpl.dataset.rtTpl);
   const b = e.target.closest(":is([data-rt-new], [data-rt-cancel], [data-rt-save], [data-rt-back], [data-rt-act])"); if (!b || b.disabled) return;
   const act = b.dataset.rtAct ?? ["new", "cancel", "back"].find(k => b.hasAttribute(`data-rt-${k}`)) ?? "save";
-  rtDo(act, b.dataset.rtId, b.dataset.rtThen);
+  rtDo(act, b.dataset.rtId, b.dataset.rtThen, b.dataset.rtRun);
 });
 
 const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
