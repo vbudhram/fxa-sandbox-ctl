@@ -929,7 +929,7 @@ routine_reconcile() {
 # its push claim is 10 min old with no new_sha. A failed end is an operator error; report and ok are not. Exit 1 on a store error.
 _prfix_reconcile() {
   local now="$1" id="$2" sess="$3" since="$4" fix="$5" rec="${SESSION_DIR}/$3.json" sst why="" push end n
-  push="$(jq -r '.pushing // 0' <<< "$fix")"
+  push="$(jq -r '.pushing // 0' <<< "$fix")"; [[ "$push" =~ ^[0-9]+$ ]] || push=0
   if [ -z "$(jq -r '.new_sha // ""' <<< "$fix")" ] && [[ "$push" =~ ^[1-9][0-9]*$ ]]; then
     [ $((now - push)) -gt 600 ] || return 0
     why="the push did not report back"
@@ -945,7 +945,10 @@ _prfix_reconcile() {
   fi
   # GitHub did not answer about a claimed push: the next tick asks again.
   end="$(_prfix_end "$id" "$fix" failed)" || return 0
-  n="$(db_value "UPDATE routine_runs SET state = '$end', reason = $( [ "$end" = failed ] && db_q "$why" || echo NULL ), ended_at = $now WHERE id = $id AND state = 'started'; SELECT changes();")" \
+  # Guarded on the push claim read above: a finish that claims its push while session_stop runs keeps the row,
+  # and the next tick ends it from the PR head.
+  n="$(db_value "UPDATE routine_runs SET state = '$end', reason = $( [ "$end" = failed ] && db_q "$why" || echo NULL ), ended_at = $now
+    WHERE id = $id AND state = 'started' AND coalesce(json_extract(heads, '$.fix.pushing'), 0) = ${push}; SELECT changes();")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   [ "$n" = 1 ] && [ "$end" = failed ] && errors_record routine run_failed "$sess" "routine tick" "routine run ${id}: ${why}" ""
   return 0

@@ -602,6 +602,16 @@ check "A26b: a kill after the PATCH: 10 min after the claim, the PR at pending_s
 check "a claim under 10 min old waits; one whose PR is not at pending_sha fails" "started|failed" "$(s_of "$r3f" | cut -d'|' -f1)|$(s_of "$r4f" | cut -d'|' -f1)"
 check "a moved branch is report, a pushed one ok, and only the real failures are operator errors" "report|ok|2" \
   "$(s_of "$r5f" | cut -d'|' -f1)|$(s_of "$r6f" | cut -d'|' -f1)|$(grep -c . "$tmp/errs")"
+# The 120 min stop of a live session races its finish: a push claim that lands during session_stop keeps the row
+# started, and the next tick ends it from the PR head (fake gh: PA) once the push window passes.
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state = 'started';"
+rec agent-fxr007 active; r7f="$(fx started agent-fxr007 '{}' $((N - 7300)))"
+( export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; session_live() { true; }
+  session_stop() { cat >/dev/null 2>&1 || true; FXA_ROUTINE_NOW=$N _prfix_claim_push "$r7f" "$PA"; }
+  routine_reconcile "$N" live; s1="$(s_of "$r7f" | cut -d'|' -f1)"; routine_reconcile $((N + 601)) live
+  check "a push claimed during the 120 min stop keeps the row started; the next tick ends it ok at the PR head" "started|ok|$PA" \
+    "$s1|$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.new_sha') FROM routine_runs WHERE id = $r7f;")"
+  exit "$fail" ) || fail=1
 
 # A18: a queued fix row waits up to 24 h, not 60 min: then it ends skipped with why expired, posts once on the skips
 # list, records no operator error, and its head is free for a new request.
