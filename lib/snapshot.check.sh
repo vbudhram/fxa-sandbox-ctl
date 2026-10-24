@@ -211,6 +211,18 @@ rm -rf "$pd"
   check "stats: nor with a malformed answers line" "yes" "$(grep -q 'agent-d9' "$tmp/noans.sql" && echo yes || echo no)"
   exit "$fail" ) || fail=1
 
+# A dependency fix session is source depfix; a scheduled routine session stays slack. The stats feed goes to
+# every viewer, so a depfix row has no PR, person or fix fields (a team admin reads them from the session).
+( export SESSION_DIR="$tmp/fx" PIPE_STATE_DIR="$tmp/fxps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"; db_on() { false; }; _session_cap() { echo 2; }
+  _session_records() { echo '{"key":"agent-fx01","owner":"U1","owner_name":"Pat","created":1,"routine_run":7,"fix_pr":90001,"fix_trigger":"label","fix_actor":"octo-example","pr_url":"https://github.com/mozilla/fxa/pull/90001","stopped_at":60}'
+    echo '{"key":"agent-rt01","owner":"U1","created":2,"routine_run":8,"stopped_at":60}'; }
+  out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
+  check "stats: a fix session is depfix, a scheduled routine session stays slack" "agent-fx01 depfix|agent-rt01 slack" "$(jq -r '[.rows[] | "\(.key) \(.src)"] | join("|")' <<< "$out")"
+  check "stats: the public feed has no fix_pr, PR or person on a depfix row" "null null null null false" \
+    "$(jq -r '.rows[] | select(.src == "depfix") | "\(.fix_pr) \(.fix_actor) \(.prn) \(.who) \(.pr)"' <<< "$out")"
+  check "load: a fix session holds a session slot" "2" "$(_stats_add_load <<< "$out" | jq '.load.days[0].peak')"
+  exit "$fail" ) || fail=1
+
 # Agent PRs for the PRs tab: the source and key come from the branch, a session row
 # names its PR, and a failed read keeps the last list.
 ( export SESSION_DIR="$tmp/prs" PIPE_STATE_DIR="$tmp/prsps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"

@@ -304,6 +304,13 @@ TAIL = {}   # key -> (fetched_at, lines): the agent's own output, on its own cad
 JOB_TITLES = {"pass": "Pipeline pass", "triage": "Triage", "merge-watch": "Merge watch"}
 
 
+def fix_label(rec):
+    """A dependency fix run's name for a team admin: its PR and what started it (fixLabel in index.html)."""
+    n, t, a = str(rec.get("fix_pr") or ""), rec.get("fix_trigger"), rec.get("fix_actor") or ""
+    by = "BLEnder" if t == "blender" else ("label by " + a if a else "label") if t == "label" else ("Run now by " + a if a else "Run now") if t == "manual" else ""
+    return f"Dependency fix: #{n}" + (f" ({by})" if by else "") if n.isdigit() else "Dependency fix"
+
+
 def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False, ended=False, src_only=None):
     """The newest runs of the stats feed's rows, with a title and an outcome each.
     Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run.
@@ -333,7 +340,7 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             return None
     pick = (r for r in rows or [] if (r.get("at") or "") >= since)
     if ended:
-        pick = (r for r in pick if r.get("src") in ("pipeline", "slack") and not r.get("live") and isinstance(r.get("end"), (int, float)) and r["end"] > 0)
+        pick = (r for r in pick if r.get("src") in ("pipeline", "slack", "depfix") and not r.get("live") and isinstance(r.get("end"), (int, float)) and r["end"] > 0)
     out = []
     for r in sorted(pick, key=(lambda r: r["end"]) if ended else (lambda r: r["at"]), reverse=True):
         team = r.get("profile") or "fxa"
@@ -342,7 +349,7 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             continue
         src, key, kind = r.get("src"), r.get("key") or "", r.get("kind") or ""
         num = state = None
-        routine = False
+        routine, fix = False, {}
         if src == "pipeline":
             title = titles.get(key) or key
             if r.get("pr") and key in prs:
@@ -350,7 +357,7 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             outcome = "pr" if r.get("pr") else "no_pr"
             if os.path.exists(os.path.join(state_dir, key + ".secured-noted")):
                 title, num, state = "Secured ticket", None, None
-        elif src == "slack":
+        elif src in ("slack", "depfix"):
             try:
                 with open(os.path.join(sess_dir, key + ".prompt.md"), "rb") as f:
                     title = f.read(300).decode("utf-8", "ignore").strip().split("\n")[0][:120] or "Slack session"
@@ -360,9 +367,15 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             # A routine's prompt and session are a team admin's, as on Running now and Stats.
             try:
                 with open(os.path.join(sess_dir, key + ".json")) as f:
-                    routine = bool(json.load(f).get("routine_run"))
+                    rec = json.load(f)
+                routine = bool(rec.get("routine_run")) or src == "depfix"
             except (OSError, ValueError):
-                routine = False
+                rec, routine = {}, src == "depfix"
+            if src == "depfix":
+                # The stats row has no PR (every viewer reads it): the session record has it.
+                n = str(rec.get("fix_pr") or "")
+                title, num = fix_label(rec), int(n) if n.isdigit() else None
+                fix = {"fix_pr": num, "fix_trigger": rec.get("fix_trigger"), "fix_actor": rec.get("fix_actor")}
             if routine and not admin:
                 num = None
             outcome = "running" if r.get("live") else "pr" if num else "answered"
@@ -375,12 +388,13 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
         usd_, min_, stop = r.get("usd"), r.get("min"), r.get("stop")
         if routine and not admin:
             # A routine run tells a non-admin only that it ran: no prompt, session, PR, team or cost.
-            title, key, num, team, usd_, min_, stop = "Scheduled run", "", None, "", None, None, None
+            title, key, num, team, usd_, min_, stop = "Dependency fix" if src == "depfix" else "Scheduled run", "", None, "", None, None, None
+            fix = {}
         url = num and f"https://github.com/{r.get('prr') or repo}/pull/{num}"
         out.append({"at": r["at"], "src": src, "kind": kind, "key": key, "title": title, "team": team, "outcome": outcome,
                     "pr_url": url or None, "pr_number": num, "pr_state": state, "usd": usd_, "min": min_,
-                    "end": end_of(r), "where": r.get("backend") if src == "slack" else None, "boot_s": r.get("boot_s"),
-                    "mem_mb": (r.get("peak") or {}).get("mem_mb") if isinstance(r.get("peak"), dict) else None, "stop": stop, "routine": routine})
+                    "end": end_of(r), "where": r.get("backend") if src in ("slack", "depfix") else None, "boot_s": r.get("boot_s"),
+                    "mem_mb": (r.get("peak") or {}).get("mem_mb") if isinstance(r.get("peak"), dict) else None, "stop": stop, "routine": routine, **fix})
         if len(out) >= limit:
             break
     return out

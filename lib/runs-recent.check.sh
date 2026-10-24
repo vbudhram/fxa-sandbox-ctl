@@ -5,6 +5,8 @@ set -u
 T=$(mktemp -d "${TMPDIR:-/tmp}/runs-recent.XXXXXX"); trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/state" "$T/sess"; : > "$T/state/FXA-3.secured-noted"; printf 'Why does sync fail?\nmore\n' > "$T/sess/agent-aaaa11.prompt.md"
 printf 'Review the private commits\n' > "$T/sess/agent-rout01.prompt.md"; echo '{"key": "agent-rout01", "routine_run": 7}' > "$T/sess/agent-rout01.json"
+printf 'Host frame for PR 90001\n' > "$T/sess/agent-fix001.prompt.md"
+echo '{"key": "agent-fix001", "routine_run": 9, "fix_pr": 90001, "fix_trigger": "label", "fix_actor": "octo-example", "pr_url": "https://github.com/mozilla/fxa/pull/90001"}' > "$T/sess/agent-fix001.json"
 python3 - "$(dirname "$0")/../dashboard" "$T" <<'PY'
 import json, sys, threading, time, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
@@ -65,6 +67,13 @@ s = server.recent_runs(many, snap, int(now), 100, 7, t + "/state", t + "/sess", 
 check("src=pipeline filters before the limit: 120 newer Slack runs do not push the pipeline runs out", ["PRIV-1", "FXA-1"], [r["key"] for r in s])
 check("src=routine keeps only routine runs", [True], [r["routine"] for r in server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True, False, "routine")])
 check("the route passes src", ["FXA-1"], [r["key"] for r in get("/api/runs/recent?ended=1&src=pipeline&limit=100")["runs"]])
+fx = [{"at": iso(120), "src": "depfix", "key": "agent-fix001", "end": int(now - 30), "kind": "session", "usd": 0.7, "min": 6, "pr": False, "prn": None, "stop": "done", "profile": "fxa"}]
+rr = lambda admin, ended=False, src=None: server.recent_runs(fx, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, admin, ended, src)
+check("a dependency fix for a team admin: its PR, trigger and actor", ("Dependency fix: #90001 (label by octo-example)", 90001, "label", "octo-example", "https://github.com/mozilla/fxa/pull/90001", "agent-fix001", 0.7),
+      (lambda x: (x["title"], x["pr_number"], x.get("fix_trigger"), x.get("fix_actor"), x["pr_url"], x["key"], x["usd"]))(rr(True)[0]))
+check("a dependency fix for a non-admin: only that it ran, with no PR, team, cost or fix fields", ("Dependency fix", "", None, "", None, None, "depfix", True),
+      (lambda x: (x["title"], x["key"], x["pr_number"], x["team"], x["usd"], x.get("fix_pr"), x["src"], x["routine"]))(rr(False)[0]))
+check("a dependency fix is in Recently completed and on the routine filter", (1, 1), (len(rr(True, True)), len(rr(True, False, "routine"))))
 server.STATS.data = None
 check("no stats feed: empty with an error", ([], "stats unavailable"), (lambda x: (x["runs"], x["error"]))(get("/api/runs/recent")))
 sys.exit(fail)

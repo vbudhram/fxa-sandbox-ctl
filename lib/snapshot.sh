@@ -339,12 +339,13 @@ _stats_add_rows() {
     # conv: the first session of a resume chain, so one Slack conversation counts once.
     (map({key: .key, value: (.resume_from // null)}) | from_entries) as $rf
     | def root($d): if $d < 50 and ($rf[.] // null) != null and $rf[.] != . then $rf[.] | root($d + 1) else . end;
-    map(select(.owner != "U-DRYRUN" and .env != "dev") | ((.summary // "{}") | fromjson? // {}) as $s
-      | { at: ((.created // 0) | floor | todate), src: "slack", key: .key, conv: (.key | root(0)), kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
+    # A dependency fix (fix_pr) is its own source. Every viewer reads this feed, so its row has no PR or person.
+    map(select(.owner != "U-DRYRUN" and .env != "dev") | ((.summary // "{}") | fromjson? // {}) as $s | ((.fix_pr // "" | tostring) != "") as $fx
+      | { at: ((.created // 0) | floor | todate), src: (if $fx then "depfix" else "slack" end), key: .key, conv: (.key | root(0)), kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
           min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else $cm end), models: ($llm.run_models[.key] // null),
-          main_only: ($llm.run_models[.key] == null), pr: ((.pr_url // "") != ""), who: (.owner_name // null),
-          prn: ([.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null),
-          prr: ([.pr_url // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null),
+          main_only: ($llm.run_models[.key] == null), pr: (($fx | not) and (.pr_url // "") != ""), who: (if $fx then null else .owner_name // null end),
+          prn: (if $fx then null else [.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null end),
+          prr: (if $fx then null else [.pr_url // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null end),
           profile: (.profile // "fxa"),
           runner_s: (.runner_s | n), busy_s: (.busy_s | n), idle_s: (.idle_s | n), boot_s: (.boot_s | n),
           backend: (.boot_backend // null), stop: (.stop_reason // null), peak: ((.res_peak // "") | fromjson? // null),
@@ -401,12 +402,12 @@ _stats_add_load() {
   if declare -F db_on >/dev/null && db_on; then drops="$(db_json "SELECT substr(at, 1, 10) AS day, count(*) AS n FROM errors WHERE kind = 'queue_dropped' GROUP BY 1;")" || drops='[]'
   elif [ -s "${ERRORS_FILE:-}" ]; then drops="$(jq -sc 'map(select(.kind == "queue_dropped")) | group_by(.at[0:10]) | map({day: .[0].at[0:10], n: length})' "$ERRORS_FILE" 2>/dev/null || echo '[]')"; fi
   jq -c --argjson cap "$(_session_cap)" --argjson drops "${drops:-[]}" --argjson now "$(date +%s)" '
-    [.rows[] | select(.src == "slack" and .t0 != null and (.end != null or .live))] as $s
+    [.rows[] | select((.src == "slack" or .src == "depfix") and .t0 != null and (.end != null or .live))] as $s
     | ([$s[] | {t: .t0, d: 1}, {t: (.end // $now), d: -1}] | sort_by(.t, .d)
        | reduce .[] as $e ({cur: 0, peak: {}}; ($e.t | floor | todate | .[0:10]) as $day
            # A day starts from the sessions still live at its start, not from zero.
            | .peak[$day] = ([(.peak[$day] // .cur), (.cur + $e.d)] | max) | .cur += $e.d) | .peak) as $peak
-    | ([.rows[] | select(.src == "slack" and (.queued_s // 0) > 0)] | group_by(.at[0:10])
+    | ([.rows[] | select((.src == "slack" or .src == "depfix") and (.queued_s // 0) > 0)] | group_by(.at[0:10])
        | map({key: .[0].at[0:10], value: {queued: length, wait_max_s: (map(.queued_s) | max)}}) | from_entries) as $q
     | ($drops | map({key: .day, value: .n}) | from_entries) as $dr
     | .load = {cap: $cap, days: ([$peak, $q, $dr] | map(keys) | add | unique | .[-14:]
