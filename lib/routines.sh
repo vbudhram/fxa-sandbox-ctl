@@ -613,20 +613,40 @@ routine_tick() {
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }
 
+# _prfix_end <run> <fix json> <state>   The end of a live fix row from heads.fix, never from the bot's word or
+# the session's pr_url (the checkout sets it at boot): new_sha is ok; why moved or guard:* is report; a push claim with
+# no new_sha reads the PR head: at pending_sha it is ok (new_sha is written), else failed; an ok with no push is failed;
+# else <state>. Exit 1 when GitHub did not answer about a claimed push.
+_prfix_end() {
+  local why pend info
+  why="$(jq -r '.why // ""' <<< "$2")"; pend="$(jq -r '.pending_sha // ""' <<< "$2")"
+  if [ -n "$(jq -r '.new_sha // ""' <<< "$2")" ]; then echo ok
+  elif [ "$why" = moved ] || [[ "$why" == guard:* ]]; then echo report
+  elif [ -n "$(jq -r '.pushing // ""' <<< "$2")" ] && [[ "$pend" =~ ^[0-9a-f]{40}$ ]]; then
+    # ponytail: the PR's headRefOid can lag a ref move by seconds; done reads it right after finish, reconcile 10 min later.
+    info="$(_prfix_pr_read "$(jq -r '.url // ""' <<< "$2")")" || return 1
+    if [ "$(jq -r .headRefOid <<< "$info")" = "$pend" ]; then _prfix_set "$1" '.new_sha = $s' --arg s "$pend" || return 1; echo ok; else echo failed; fi
+  elif [ "$3" = ok ]; then echo failed
+  else echo "$3"; fi
+}
+
 # routine_reconcile <now> <env>   Live runs of that env's routines (the other env's bot has other session records), from their session records (D14): a run the bot never reported on still
 # ends. pr_open or a pr_url is ok with that PR; a session that is gone, unreadable, paused, stopped or failed with
 # no done call fails (a paused one is stopped first: nobody will answer it); a started run past 120 min is stopped
 # and fails; a claimed run with no session after 10 min, or a queued one with no free runner after 60, fails. Each change is one
 # UPDATE guarded on the state it read, so a done call or a second tick at the same time cannot be undone.
 routine_reconcile() {
-  local now="$1" env="$2" rows r id st sess since rec sst pr why free=""
-  rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since FROM routine_runs r
+  local now="$1" env="$2" rows r id st sess since rec sst pr why free="" fix
+  rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since, r.heads->'fix' AS fix FROM routine_runs r
     LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(json_extract(r.config, '$.env'), t.env, 'live') = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
     why=""; pr=""; sst=""
+    if [ "$st" = started ] && fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")" && [ -n "$fix" ]; then
+      _prfix_reconcile "$now" "$id" "$sess" "$since" "$fix" || return 1; continue
+    fi
     case "$st" in
       queued) if [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ]; then
           [ -n "$free" ] || free="$(_routine_free_slots)"
@@ -668,6 +688,33 @@ routine_reconcile() {
   return 0
 }
 
+# _prfix_reconcile <now> <run> <session> <since> <fix json>   A started fix row the bot did not end: its end from heads.fix
+# (_prfix_end) once its session ended (after the 10 min grace for a late done call), took over 120 min, or is gone, or once
+# its push claim is 10 min old with no new_sha. A failed end is an operator error; report and ok are not. Exit 1 on a store error.
+_prfix_reconcile() {
+  local now="$1" id="$2" sess="$3" since="$4" fix="$5" rec="${SESSION_DIR}/$3.json" sst why="" push end n
+  push="$(jq -r '.pushing // 0' <<< "$fix")"
+  if [ -z "$(jq -r '.new_sha // ""' <<< "$fix")" ] && [[ "$push" =~ ^[1-9][0-9]*$ ]]; then
+    [ $((now - push)) -gt 600 ] || return 0
+    why="the push did not report back"
+  elif ! [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || [ ! -f "$rec" ]; then why="the run's session is gone"
+  elif ! sst="$(jq -r '.state // ""' "$rec" 2>/dev/null)"; then why="the run's session record cannot be read"
+  elif session_live "$sess"; then
+    [ "$since" -gt 0 ] && [ $((now - since)) -gt 7200 ] || return 0
+    session_stop "$sess" </dev/null >/dev/null 2>&1 || true; why="the run took over 120 min"
+  else
+    [ $((now - $(_mtime "$rec" 2>/dev/null || echo 0))) -ge 600 ] || return 0
+    [ "$sst" != paused ] || session_stop "$sess" </dev/null >/dev/null 2>&1 || true
+    why="the session ${sst:-ended} with no result"
+  fi
+  # GitHub did not answer about a claimed push: the next tick asks again.
+  end="$(_prfix_end "$id" "$fix" failed)" || return 0
+  n="$(db_value "UPDATE routine_runs SET state = '$end', reason = $( [ "$end" = failed ] && db_q "$why" || echo NULL ), ended_at = $now WHERE id = $id AND state = 'started'; SELECT changes();")" \
+    || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  [ "$n" = 1 ] && [ "$end" = failed ] && errors_record routine run_failed "$sess" "routine tick" "routine run ${id}: ${why}" ""
+  return 0
+}
+
 # _routine_session_cost <key>   What the session's run token spent (the LLM proxy's count), or nothing.
 _routine_session_cost() {
   local d="${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}" tok
@@ -678,7 +725,8 @@ _routine_session_cost() {
 # routine done <run> --state ok|report|nochange|failed|stopped [--session <key>] [--pr <url>] [--reason <text>]
 #   [--report-file <f>]   The bot's result. Idempotent: a run in an end state does not change. A report goes
 #   through lib/pii_guard.py: a finding answers post false, and the report stays only in the row (D10).
-#   Answers {changed, state, post, next}.
+#   Answers {changed, state, post, next}. A fix run's state comes from heads.fix (_prfix_end), and the answer adds
+#   fix {pr, url, sha, why}; its state can be one ctl wrote first (stopped or skipped).
 routine_done() {
   local run="${1:-}" state="" sess="" pr="" reason="" rf=""; shift || true
   while [ $# -gt 0 ]; do
@@ -692,13 +740,19 @@ routine_done() {
   [ -z "$sess" ] || [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
   [ -z "$pr" ] || [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "ERROR: --pr must be a GitHub PR link" >&2; return 1; }
   [ ${#reason} -le 300 ] && [[ "$reason" != *$'\n'* ]] || { echo "ERROR: --reason is one line of at most 300 characters" >&2; return 1; }
-  local j r; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data, coalesce(r.config, t.data) AS cfg FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
+  local j r fix=""; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data, coalesce(r.config, t.data) AS cfg, r.heads->'fix' AS fix FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
   [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; return 1; }
   if [ -z "$sess" ]; then
     [ "$state" = failed ] || { echo "ERROR: done with no --session only fails a run" >&2; return 1; }
     [[ "$(jq -r .state <<< "$r")" =~ ^(claimed|queued)$ ]] || { echo "ERROR: routine run ${run} is $(jq -r .state <<< "$r"): done with no --session takes only a claimed or queued run" >&2; return 1; }
+  fi
+  fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")"
+  if [ -n "$fix" ] && [[ "$(jq -r .state <<< "$r")" =~ ^(queued|claimed|started)$ ]]; then
+    local given="$state"
+    state="$(_prfix_end "$run" "$fix" "$state")" || { echo "ERROR: GitHub did not answer about the fix push of run ${run}; the tick decides its end" >&2; return 1; }
+    [ "$given:$state" != ok:failed ] || [ -n "$reason" ] || reason="the fix was not pushed"
   fi
   local next="" f; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   if jq -e '.data' <<< "$r" >/dev/null 2>&1; then jq -r .data <<< "$r" > "$f"; next="$(_ROUTINE_PY due "$f" "$(_routine_now)" 2>/dev/null | jq -r '.next // empty' 2>/dev/null)" || next=""; fi
@@ -726,9 +780,12 @@ routine_done() {
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
       cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now)
       WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
+  local add='{}'
+  [ -z "$fix" ] || add="$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${run};" | jq -c '{fix: {pr, url, sha: .new_sha, why}}' 2>/dev/null)" || add=""
+  [ -n "$add" ] || add='{}'
   case "$n" in
-    1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)}' ;;
-    0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)}' ;;
+    1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" --argjson x "$add" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
+    0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" --argjson x "$add" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
     *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
   esac
 }

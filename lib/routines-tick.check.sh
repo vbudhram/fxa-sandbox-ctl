@@ -553,6 +553,39 @@ db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $fe;"
 check "a row with no fix makes no call" "0" "$(: > "$tmp/pc"; prfix_report "$r1"; prfix_report "$(db_value "SELECT id FROM routine_runs WHERE routine_id = $r1 LIMIT 1;")"; grep -c . "$tmp/pc")"
 check "no text holds the row's reason or a link" "0" "$(cat "$tmp/pc" | grep -c 'http\|agent says')"
 
+# The end of a fix row comes from heads.fix, not from the bot's state or the session's pr_url (checkout sets it at boot).
+fx() { # fx <state> <session> [fix keys json] [started_at]   A fix row with a session record; prints its id.
+  local x="${3:-}"; [ -n "$x" ] || x='{}'
+  db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, heads) VALUES ($rpf, 'pr-90001-$RANDOM$RANDOM', '$1', $(db_q "$2"), ${4:-$((N - 60))},
+    json($(db_q "$(jq -cn --argjson x "$x" --arg h "$PA" '{fix: ({pr: 90001, url: "https://github.com/mozilla/fxa/pull/90001", head_sha: $h} + $x)}')"))); SELECT last_insert_rowid();"; }
+rec() { echo "{\"key\":\"$1\",\"state\":\"$2\",\"pr_url\":\"https://github.com/mozilla/fxa/pull/90001\"}" > "$tmp/$1.json"; [ "$2" = active ] || touch -t 202001010000 "$tmp/$1.json"; }
+dn() { ( export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; FXA_ROUTINE_NOW=$N routine_done "$@" | jq -c '[.changed, .state, .fix.pr, .fix.sha, .fix.why]' ); }
+rec agent-fxd001 active; e1="$(fx started agent-fxd001 "{\"new_sha\": \"$P7\"}")"
+check "done: a bot failed after the push (new_sha) records ok, and answers the fix" "[true,\"ok\",90001,\"$P7\",null]|ok" "$(dn "$e1" --state failed --session agent-fxd001)|$(s_of "$e1" | cut -d'|' -f1)"
+rec agent-fxd002 active; e2="$(fx started agent-fxd002)"
+check "done: ok with no new_sha records failed, with why it failed" "[true,\"failed\",90001,null,null]|failed|the fix was not pushed" "$(dn "$e2" --state ok --session agent-fxd002)|$(s_of "$e2")"
+rec agent-fxd003 active; e3="$(fx started agent-fxd003 '{"why": "guard:lock"}')"
+check "done: a guard refusal is report, whatever the bot says" "[true,\"report\",90001,null,\"guard:lock\"]" "$(dn "$e3" --state nochange --session agent-fxd003)"
+rec agent-fxd004 active; e4="$(fx stopped agent-fxd004 '{"why": "label"}')"; e5="$(fx skipped agent-fxd005 '{"why": "new-commit"}')"
+check "done on a row ctl ended first answers its state and why: stopped, and skipped" "[false,\"stopped\",90001,null,\"label\"]|[false,\"skipped\",90001,null,\"new-commit\"]" \
+  "$(dn "$e4" --state stopped --session agent-fxd004)|$(dn "$e5" --state failed --session agent-fxd005)"
+rec agent-fxd006 active; e6="$(fx started agent-fxd006 "{\"pushing\": $((N - 30)), \"pending_sha\": \"$PA\"}")"
+check "done: a push claim with no new_sha, and the PR at pending_sha, is ok with new_sha" "[true,\"ok\",90001,\"$PA\",null]" "$(dn "$e6" --state failed --session agent-fxd006)"
+# Reconcile, on the fake gh: PR 90001 is at PA.
+rec agent-fxr001 stopped; r1f="$(fx started agent-fxr001)"
+rec agent-fxr002 active; r2f="$(fx started agent-fxr002 "{\"pushing\": $((N - 601)), \"pending_sha\": \"$PA\"}")"
+rec agent-fxr003 active; r3f="$(fx started agent-fxr003 "{\"pushing\": $((N - 60)), \"pending_sha\": \"$PA\"}")"
+rec agent-fxr004 active; r4f="$(fx started agent-fxr004 "{\"pushing\": $((N - 601)), \"pending_sha\": \"$P7\"}")"
+rec agent-fxr005 stopped; r5f="$(fx started agent-fxr005 '{"why": "moved"}')"
+rec agent-fxr006 stopped; r6f="$(fx started agent-fxr006 "{\"new_sha\": \"$P7\"}")"
+: > "$tmp/errs"; ( export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; routine_reconcile "$N" live )
+check "reconcile: a stopped session with the checkout's pr_url and no new_sha fails, not ok" "failed|the session stopped with no result" "$(s_of "$r1f")"
+check "A26b: a kill after the PATCH: 10 min after the claim, the PR at pending_sha ends ok with new_sha" "ok|$PA" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.new_sha') FROM routine_runs WHERE id = $r2f;")"
+check "a claim under 10 min old waits; one whose PR is not at pending_sha fails" "started|failed" "$(s_of "$r3f" | cut -d'|' -f1)|$(s_of "$r4f" | cut -d'|' -f1)"
+check "a moved branch is report, a pushed one ok, and only the real failures are operator errors" "report|ok|2" \
+  "$(s_of "$r5f" | cut -d'|' -f1)|$(s_of "$r6f" | cut -d'|' -f1)|$(grep -c . "$tmp/errs")"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
