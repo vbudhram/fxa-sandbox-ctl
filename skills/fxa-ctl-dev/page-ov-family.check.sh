@@ -14,8 +14,11 @@ run() { local out rc; out="$(bash "$p" '#overview' --fixture "$O" --width 1280 -
 run '
   const w = () => new Promise(r => setTimeout(r, 120)), out = [], seen = new Set();
   // A run today, so the month and the day have a figure at any hour of the run.
-  STATS.rows.push({ at: new Date().toISOString(), src: "slack", key: "agent-ex0t01", usd: 1.5, profile: "example" }); render(); await w();
+  STATS.rows.push({ at: new Date().toISOString(), src: "slack", key: "agent-ex0t01", usd: 1.5, profile: "example" },
+    { at: new Date().toISOString(), src: "depfix", key: "agent-ex0f01", usd: 2.25, profile: "example" }); render(); await w();
   const links = () => [...document.querySelectorAll(".ov [data-sfrange]")].filter(a => !a.closest("[hidden]"));
+  // Each source in the feed has its spend link, so a new source joins the family.
+  [...new Set(STATS.rows.map(r => r.src))].forEach(s => { if (!links().some(a => a.dataset.sfsrc === s)) out.push(`FAIL source ${s} has no spend link on Overview`); });
   const ids = links().map(a => a.dataset.focus);
   if (ids.length < 5) out.push(`FAIL only ${ids.length} Stats links on Overview: the fixture lost its cards`);
   for (const id of ids) {
@@ -57,6 +60,28 @@ run '
     }
   }
   restore(); render(); return out.join("\n")'
+
+# The stats feed set stale or failed: each source figure on Overview and on Stats says unknown, never a value or 0.
+run '
+  STATS.rows.push({ at: new Date().toISOString(), src: "depfix", key: "agent-ex0f01", usd: 2.25, profile: "example" });
+  const w = () => new Promise(r => setTimeout(r, 120)), out = [], srcs = [...new Set(STATS.rows.map(r => r.src))];
+  const save = JSON.stringify({ STATE, STATS_ERR }), restore = () => { const s = JSON.parse(save); STATE = s.STATE; SNAP = STATE.snapshot; AGENTS = STATE.agents; STATS_ERR = s.STATS_ERR; };
+  const FEEDS = { "stats stale": () => { STATE.stats_age_seconds = 9999; }, "stats failed": () => { STATS_ERR = "the stats feed could not be read (HTTP 500)"; } };
+  for (const [feed, set] of Object.entries(FEEDS)) {
+    restore(); location.hash = "#overview"; await w(); set(); render(); await w();
+    for (const s of srcs) {
+      const a = document.querySelector(`#ov-main .ovleg [data-sfsrc="${s}"]`), t = a?.textContent ?? "";
+      out.push(`${a && /unknown/.test(t) && !/\$\d/.test(t) ? "ok  " : "FAIL"} ${feed}: Overview ${s}: ${t.replace(/\s+/g, " ").trim() || "no legend entry"}`);
+    }
+    location.hash = "#stats/spend"; await w(); set(); render(); await w();
+    const by = [...document.querySelectorAll("#s-stats .kv.share")].map(k => k.textContent.replace(/\s+/g, " ").trim()), st = document.getElementById("s-stats").textContent;
+    for (const s of srcs) {
+      const t = by.find(x => x.startsWith(SF_SRC[s] ?? `(${s} has no name)`)) ?? "";
+      out.push(`${t && /unknown/.test(t) && !/\$\d/.test(t) ? "ok  " : "FAIL"} ${feed}: Stats By source ${s}: ${t || "no row"}`);
+    }
+    out.push(`${/unknown/i.test(st.slice(0, 600)) ? "ok  " : "FAIL"} ${feed}: Stats says the figures are unknown`);
+  }
+  restore(); location.hash = "#overview"; await w(); render(); return out.join("\n")'
 # A /api/teams request that fails (HTTP 503, as the gateway answers when the manager is down) keeps the rows with a note.
 tt="$(bash "$p" '#overview' --fixture "$O" --probe '
   const w = ms => new Promise(r => setTimeout(r, ms)); await w(300); const real = window.fetch;

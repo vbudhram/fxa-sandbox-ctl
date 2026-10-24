@@ -18,7 +18,7 @@
     --ok:#187a34; --warn:#9a5b00; --bad:#cf222e; --info:#0969da; --purple:#8250df; --link:#0b7380; --link-hover:#075861;
     --okbg:#dafbe1; --warnbg:#fff4d6; --badbg:#ffebe9; --infobg:#ddf4ff;
     --amber:#bf8700;
-    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#b0802a; --chart-muted:#8c959f;   /* chart series, in fixed order; never the status colours */
+    --chart-1:#5683c8; --chart-2:#d27552; --chart-3:#2e9f7c; --chart-4:#b0802a; --chart-5:#a35d9e; --chart-muted:#8c959f;   /* chart series, in fixed order; never the status colours */
     --card-border:#d8dee4; --shadow:0 1px 2px rgb(31 35 40 / .06);
     --shadow-hover:0 2px 14px rgb(58 57 68 / .2); --shadow-pop:0 10px 30px rgb(0 0 0 / .25);
     --shadow-drawer:0 0 30px rgb(0 0 0 / .18); --shadow-dialog:0 20px 60px rgb(0 0 0 / .3);
@@ -41,7 +41,7 @@
       --ok:#5fc98f; --warn:#e3b341; --bad:#f07178; --info:#6cb6ff; --purple:#b392f0; --link:#4fc3c7; --link-hover:#7fd8db;
       --okbg:#1c3226; --warnbg:#33290f; --badbg:#3a1f23; --infobg:#1d2f45;
       --amber:#e3b341;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#6b7682;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-5:#b46eaf; --chart-muted:#6b7682;
       --card-border:#333b45; --shadow:none; --purpletxt:#c4a8f5; --purplebg:#2e2645; --on-strong:#1b1f24;
     }
   }
@@ -52,7 +52,7 @@
     --ok:#5fc98f; --warn:#e3b341; --bad:#f07178; --info:#6cb6ff; --purple:#b392f0; --link:#4fc3c7; --link-hover:#7fd8db;
     --okbg:#1c3226; --warnbg:#33290f; --badbg:#3a1f23; --infobg:#1d2f45;
     --amber:#e3b341;
-    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-muted:#6b7682;
+    --chart-1:#5d89cf; --chart-2:#c46d4b; --chart-3:#2f977a; --chart-4:#b48632; --chart-5:#b46eaf; --chart-muted:#6b7682;
     --card-border:#333b45; --shadow:none; --purpletxt:#c4a8f5; --purplebg:#2e2645; --on-strong:#1b1f24;
   }
   * { box-sizing:border-box; }
@@ -917,7 +917,7 @@ function putOv(id, html, extra = "") {
 // The Overview range (7, 30 or 90 days), in memory for the visit.
 let OV_RANGE = "30d";
 const OV_RANGES = [["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"]];
-const OV_SRC = [["pipeline", "var(--chart-1)"], ["pass", "var(--chart-2)"], ["slack", "var(--chart-3)"], ["answer", "var(--chart-4)"]];
+const OV_SRC = [["pipeline", "var(--chart-1)"], ["pass", "var(--chart-2)"], ["slack", "var(--chart-3)"], ["answer", "var(--chart-4)"], ["depfix", "var(--chart-5)"]];
 // Why the stats figures may be wrong, or "": a failed read keeps the last figures, with their age.
 function statsNote() {
   if (STATS_ERR) return STATS ? `${sentence(STATS_ERR)}. These figures are from ${ago(Math.round((Date.now() - STATS_AT) / 1000))}; the next poll tries again.` : `${sentence(STATS_ERR)}. The next poll tries again.`;
@@ -1103,7 +1103,7 @@ async function loadRuns() {
 }
 const RUN_SRC = { pipeline: ["var(--chart-1)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--chart-3)", "M4 5h16v11H8l-4 4z", "Slack session"],
   answer: ["var(--chart-4)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--chart-2)", "M12 4v16M4 12h16", "pass"],
-  depfix: ["var(--chart-muted)", "M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9", "dependency fix"] };
+  depfix: ["var(--chart-5)", "M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9", "dependency fix"] };
 const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 function runBadge(r) {
   if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
@@ -1202,8 +1202,9 @@ function renderOvMain() {
     chart = tot ? ovChart(sp.days, OV_SRC.map(([src, col]) => [srcName(src), col, d => (isS ? d.by : d.n)[src] ?? 0]), isS ? money : count, { cents: isS, id: "ov-main", label: `${isS ? "Spend" : "Runs"} by day and source, last ${n}` })
       : emptybox(isS ? `$0.00 · no runs in the last ${n}` : `No run in the last ${n}.`);
     head = html`<a class="ovopen" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovm-open-${m}"><span class="lbl">${isS ? "Spend" : "Runs"}, last ${n}</span> <b class="big">${isS ? usd(sp.total) : tot.toLocaleString()}</b> <span class="go">in Stats ›</span></a>`;
-    leg = html`<div class="ovleg">${OV_SRC.map(([src, col]) => isS ? html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${srcName(src)} <b>${usd(sp.by[src] ?? 0)}</b> <span class="hint">· ${(sp.nby[src] ?? 0).toLocaleString()} runs</span></a>`
-      : html`<span><i style="background:${col}"></i>${srcName(src)} <b>${(sp.nby[src] ?? 0).toLocaleString()}</b></span>`)}</div>`;
+    // A stale or failed feed may lack a source's newest runs, so a source figure says unknown, never a value or 0.
+    leg = html`<div class="ovleg">${OV_SRC.map(([src, col]) => isS ? html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${srcName(src)} <b>${note ? "unknown" : usd(sp.by[src] ?? 0)}</b>${note ? "" : html` <span class="hint">· ${(sp.nby[src] ?? 0).toLocaleString()} runs</span>`}</a>`
+      : html`<span><i style="background:${col}"></i>${srcName(src)} <b>${note ? "unknown" : (sp.nby[src] ?? 0).toLocaleString()}</b></span>`)}</div>`;
   } else if (m === "merged") {
     chart = why ? emptybox(`Merged PRs unknown: ${why}`) : ovChart(sp.days, [["Merged PRs", "var(--chart-1)", d => d.merged]], count, { id: "ov-main", label: `PRs merged by day, last ${n}` });
     head = why ? "" : html`<a class="ovopen" href="#stats/prs" data-sfrange="7d" data-focus="ovm-open-merged"><span class="lbl">Merged, 7 days</span> <b class="big">${k.merged.v}</b> <span class="go">in Stats ›</span></a>
@@ -1220,7 +1221,7 @@ function renderOvMain() {
   const pk = sp.peak, pkText = m === "spend" && pk ? `Peak ${shortDay(pk.t)}: ${usd(pk.usd)}${why ? "" : `, ${pk.merged} PR${pk.merged === 1 ? "" : "s"} merged that day`}` : "";
   putOv("ov-main", html`<div class="mtabs" role="group" aria-label="Metric">${tabHtml}</div>${note ? html`<div class="ovknote">${note}</div>` : ""}
     <div class="ovhead">${head}${pkText ? html`<span class="sub">${usd(sp.perDay)} a day on average · ${pkText}</span>` : ""}</div>${leg}${chart}
-    ${m === "spend" ? html`<p class="vh">Spend in the last ${n}: ${usd(sp.total)}, ${OV_SRC.map(([src]) => `${srcName(src)} ${usd(sp.by[src] ?? 0)}`).join(", ")}. ${pkText}.</p>` : ""}`);
+    ${m === "spend" ? html`<p class="vh">Spend in the last ${n}: ${usd(sp.total)}, ${OV_SRC.map(([src]) => `${srcName(src)} ${note ? "unknown" : usd(sp.by[src] ?? 0)}`).join(", ")}. ${pkText}.</p>` : ""}`);
 }
 document.addEventListener("click", e => { const b = e.target.closest?.("[data-ovmetric]"); if (b && OV_METRICS.some(([key]) => key === b.dataset.ovmetric)) { OV_METRIC = b.dataset.ovmetric; safeRender(renderOvMain, "ov-main"); } });
 // This month's spend of every team by local day from the stats rows, and where the month ends at the rate so far.
@@ -2914,7 +2915,8 @@ function renderStats() {
   const pts = bl.map(b => ({ ...b, lbl: lbl(b.t) })), fmtOf = { runs: v => String(Math.round(v)), merged: v => String(Math.round(v)), spend: (v, ax) => ax >= 1 ? `$${Math.round(v)}` : usd(v) };
   const bars = k => ovChart(pts, [[{ runs: "Runs", spend: "Spend", merged: "Merged PRs" }[k], k === "spend" ? "var(--chart-2)" : "var(--chart-1)", b => b[k] || 0]], fmtOf[k],
     { H: 230, cents: k === "spend", id: `st-${k}`, label: `${{ runs: "Runs", spend: "Spend", merged: "Merged PRs" }[k]} per ${byDay ? "day" : "week"}` });
-  const kpi = (l, v, sub) => statTile(l, v ?? "—", sub);
+  // A stale or failed feed may lack the newest runs: a figure of one source says unknown, never a value or 0.
+  const unk = statsNote(), kpi = (l, v, sub) => statTile(l, (unk && on("src") ? "unknown" : v) ?? "—", sub);
   const chart = body => card(body, { flat: true, cls: "chart" });
   const group = (k) => { const v = typeof k === "function" ? k : r => r[k];
     return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
@@ -2926,16 +2928,16 @@ function renderStats() {
   const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => html`<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${sfLabel(f)} ×</button>`);
   put("s-stats", String(html`${SF_FROM_OV ? html`<div class="sfov" role="status">Filters set from Overview are not saved. <button type="button" class="linkbtn" data-sfrestore>Restore my filters</button> · <button type="button" class="linkbtn" data-sfkeep>Keep these</button></div>` : ""}<div style="display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap"><h2 style="margin:0">${STATS_TAB === "spend" ? "Spend" : STATS_TAB === "prs" ? "Pull requests" : STATS_TAB === "runners" ? "Runners and LLM" : "Pipeline"}<span class="sub">${range}</span></h2>${chips.length ? html`<span class="fchips">${chips}</span>` : ""}</div>
     ${STATS_TAB === "runners" ? html`<div class="charts">${loadCard(st.load, lo, hi)}${answerCard(rows)}${runnerCard(rows)}${llmCard(st.llm, lo, hi)}</div>` : STATS_TAB === "pipeline" ? html`<div class="charts">${pipelineCard(st.pipeline, lo, hi)}${memoryCard(st.memory)}</div>` : STATS_TAB === "prs" ? prsTab(st, lo, hi, on("q") ? q : "", bars, byDay, kpi) : ""}
-    ${!spendTab ? "" : rows.length === 0 ? emptybox("Nothing matches these filters.") : html`
-    <div class="kpis">${kpi("Runs", rows.length, Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || raw("&nbsp;"))}
+    ${!spendTab ? "" : rows.length === 0 ? emptybox("Nothing matches these filters.") : html`${unk ? html`<p class="unknown" role="status">Figures by source unknown: ${unk}</p>` : ""}
+    <div class="kpis">${kpi("Runs", rows.length, unk ? "by source unknown" : Object.entries(SRC).map(([v, l]) => { const n = rows.filter(r => r.src === v).length; return n ? `${n} ${l.toLowerCase()}` : ""; }).filter(Boolean).join(" · ") || raw("&nbsp;"))}
       ${kpi("Tickets and conversations", keys.size, work.length ? `up to ${Math.max(...group(conv).filter(g => g.rs[0].src !== "pass").map(g => g.rs.length))} runs on one${over.length ? ` · passes and triage left out` : ""}` : raw("&nbsp;"))}
       ${kpi("Spend", usd(spend), `${mainOnly ? `${mainOnly} pipeline run${mainOnly === 1 ? "" : "s"} count the main agent only` : "LLM, estimated from tokens"}${compute ? ` · +${usd(compute)} session compute` : ""}`)}
-      ${kpi("Per run", usd(spend / rows.length), Object.entries(SRC).map(([v, l]) => { const a = rows.filter(r => r.src === v); return a.length ? `${({ answer: "answers", pass: "passes" })[v] ?? v} ${usd(sum(a) / a.length)}` : ""; }).filter(Boolean).join(" · "))}
+      ${kpi("Per run", usd(spend / rows.length), unk ? "by source unknown" : Object.entries(SRC).map(([v, l]) => { const a = rows.filter(r => r.src === v); return a.length ? `${({ answer: "answers", pass: "passes" })[v] ?? v} ${usd(sum(a) / a.length)}` : ""; }).filter(Boolean).join(" · "))}
       ${kpi("Median length", med(rows.map(r => r.min)) != null ? `${med(rows.map(r => r.min))} min` : "—", "wall time of a run")}</div>
     <div class="charts"><div class="card flat chart" id="st-runs"><h2>Runs per ${byDay ? "day" : "week"}</h2>${bars("runs")}</div>
       <div class="card flat chart" id="st-spend"><h2>Spend per ${byDay ? "day" : "week"}</h2>${bars("spend")}</div></div>
     <div class="three">
-      ${chart(html`<h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${SRC[g.name] ?? g.name}</b><span>${g.rs.length} · <b>${usd(g.usd)}</b></span></div>`)}
+      ${chart(html`<h2>By source</h2>${group("src").sort((a, b) => b.usd - a.usd).map(g => html`<div class="kv share" style="--p:${unk ? 0 : share(g.usd)}%"><b>${SRC[g.name] ?? g.name}</b><span>${unk ? "unknown" : html`${g.rs.length} · <b>${usd(g.usd)}</b>`}</span></div>`)}
         ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? html`<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
           return html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${teamLabel(g.name)}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; })}` : ""}`)}
       ${chart(html`<h2>Most expensive<span class="note">in this view</span></h2>${over.length ? html`<div class="kv share" style="--p:${share(sum(over))}%"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`)}
