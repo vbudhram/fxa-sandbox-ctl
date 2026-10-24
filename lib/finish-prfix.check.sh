@@ -130,5 +130,21 @@ cp "$tmp/fx/pr/90001.head.json" "$tmp/fx/pr/90001.json"
 reset_origin; r5="$(run e)"; db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $r5;"; w="$(wt 'echo six > a.txt')"
 check "a run stopped before the push: 4 and nothing pushed" "4|$D" "$(ffin "$r5" "$w")|$(git -C "$O" rev-parse "$B")"
 
+# A38, A5c: the yarn.lock guard and the tooling guard. A refusal sets why guard:<class> and pushes nothing.
+guard() { # guard <run tag> <agent edit>   exit|why|branch moved|the ERROR line's fixed text
+  local r rc w; reset_origin; r="$(run "$1")"; w="$(wt "$2")"; rc="$(FXA_ALLOW_TOOLING_EDITS=1 ffin "$r" "$w")"
+  echo "$rc|$(fix "$r" | jq -r '.why // ""')|$([ "$(git -C "$O" rev-parse "$B")" = "$D" ] && echo same || echo moved)|$(grep -c "The fix changes yarn.lock entries, which I do not push. Fix it by hand." "$tmp/err")"
+}
+check "a resolution from a GitHub tarball is refused" "1|guard:lock|same|1" \
+  "$(guard g1 'sed -i.b "s#example-pkg@npm:1.3.0#example-pkg@https://codeload.github.com/x/y/tar.gz/abc#" yarn.lock && rm yarn.lock.b')"
+check "a checksum change with no version change is refused" "1|guard:lock|same|1" \
+  "$(guard g2 'sed -i.b "s/bbb/ccc/" yarn.lock && rm yarn.lock.b')"
+check "a registry bump pushes, in the berry and the v1 lockfile formats" "0||moved|0" \
+  "$(guard g3 'sed -i.b "s/1\.3\.0/1.3.1/g; s/bbb/ddd/" yarn.lock && rm yarn.lock.b && mkdir -p old && printf "\"left-pad@^1.0.0\":\n  version \"1.3.0\"\n  resolved \"https://registry.yarnpkg.com/left-pad/-/left-pad-1.3.0.tgz#abc\"\n  integrity sha512-x\n" > old/yarn.lock')"
+check "a v1 entry from another host is refused" "1|guard:lock|same|1" \
+  "$(guard g4 'mkdir -p old && printf "left-pad@^1.0.0:\n  version \"1.3.0\"\n  resolved \"https://evil.example/left-pad-1.3.0.tgz\"\n  integrity sha512-x\n" > old/yarn.lock')"
+check "a .yarn/patches file is refused in fix-pr mode, whatever FXA_ALLOW_TOOLING_EDITS says" "1|guard:tooling|same|0" \
+  "$(guard g5 'mkdir -p .yarn/patches && echo p > .yarn/patches/x.patch')"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

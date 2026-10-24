@@ -548,6 +548,11 @@ _finish_push_and_pr() {
   fi
   # After the reset the index holds the whole change, a rebase round's merge included.
   # A fix run's refusal is its end (why guard:<class>), not an operator error.
+  # A fix run has no approver's tooling label: .yarn/* and .yarnrc* stay refused.
+  if [ -n "$fix" ]; then
+    FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_TOOLING_SCOPE="" _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
+    _finish_prfix_lock_guard "$worktree" || { _finish_prfix_why guard:lock; return 1; }
+  fi
   _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
   _finish_check_frozen "$worktree" || { _finish_prfix_why guard:frozen; return 1; }
   local commit_body
@@ -1093,6 +1098,30 @@ _finish_tooling_guard() {
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
   echo "       For package.json scripts or _scripts/ only, an approver adds the label ${PIPE_TOOLING_LABEL:-ai-fixme-allow-tooling} and relaunches." >&2
   echo "       For anything else, relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  return 1
+}
+
+# _finish_prfix_lock_guard <worktree>   A fix run's yarn.lock entries: each one the staged change adds or changes
+# must resolve from the npm registry (berry's npm:, a registry.yarnpkg.com or registry.npmjs.org URL), a workspace:,
+# or a patch: of an npm: package. A checksum that changes with no version change is refused too.
+_finish_prfix_lock_guard() {
+  local wt="$1" f hit=""
+  # One line per entry: key, version, resolution, checksum (berry and v1 lockfiles).
+  local tsv='function out() { if (k != "" && k != "__metadata:") print k "\t" v "\t" r "\t" c; k = v = r = c = "" }
+    /^[^ #\t].*:$/ { out(); k = $0; next }
+    /^  version:? / { v = $2 } /^  (resolution:|resolved) / { r = $2 } /^  (checksum:|integrity) / { c = $2 }
+    END { out() }'
+  while IFS= read -r -d '' f; do
+    case "$f" in yarn.lock|*/yarn.lock) ;; *) continue ;; esac
+    hit="${hit}$(awk -F'\t' 'FILENAME == ARGV[1] { o[$1] = $2 FS $3 FS $4; ov[$1] = $2; oc[$1] = $4; next }
+      o[$1] != $2 FS $3 FS $4 {
+        if ($3 !~ /^(@[a-z0-9._~-]+\/)?[a-z0-9._~-]+@(npm:[0-9A-Za-z.+-]+|workspace:.*|patch:.*@npm%3A.*)$/ \
+            && $3 !~ /^https:\/\/registry\.(yarnpkg\.com|npmjs\.org)\//) print "x"
+        else if (($1 in ov) && ov[$1] == $2 && oc[$1] != $4) print "x"
+      }' <(git -C "$wt" show "HEAD:$f" 2>/dev/null | tr -d '"' | awk "$tsv") <(git -C "$wt" show ":$f" 2>/dev/null | tr -d '"' | awk "$tsv"))"
+  done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
+  [ -z "$hit" ] && return 0
+  echo "ERROR: refusing to ship: The fix changes yarn.lock entries, which I do not push. Fix it by hand." >&2
   return 1
 }
 
