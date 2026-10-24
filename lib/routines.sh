@@ -5,7 +5,7 @@
 #
 #   routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev]
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
-#   routine pause | resume | delete | run-now <team> <id>;  routine stop <team> <id> [--run <run>]
+#   routine pause | resume | delete <team> <id>;  routine run-now <team> <id> [--pr <url>];  routine stop <team> <id> [--run <run>]
 #   routine tick --env live|dev                            the bot's 60 s pass: gates, claims, reconcile
 #   routine done <run> --state <s> [--session <key>] [...] | posted <run>   the bot's results
 # A command that names a team refuses a routine of another team.
@@ -181,7 +181,8 @@ cmd_routine() {
     tick) shift; routine_tick "$@" ;;
     done) shift; routine_done "$@" ;;
     posted) routine_posted "${2:-}" ;;
-    run-now) routine_runnow "${2:-}" "${3:-}" ;;
+    run-now) [ $# -le 3 ] || { [ "$4" = --pr ] && [ $# = 5 ]; } || { echo "usage: routine run-now <team> <id> [--pr <url>]" >&2; return 1; }
+             routine_runnow "${2:-}" "${3:-}" "${5:-}" ;;
     stop) [ $# -le 3 ] || { [ "$4" = --run ] && [ $# = 5 ]; } || { echo "usage: routine stop <team> <id> [--run <run>]" >&2; return 1; }
           routine_stop "${2:-}" "${3:-}" "${5:-}" ;;
     set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
@@ -191,7 +192,7 @@ cmd_routine() {
          done
          routine_set "$team" "$file" "$id" "$ver" ;;
     pause|resume|delete) routine_state "${2:-}" "${3:-}" "$1" ;;
-    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev] | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now <team> <id> | stop <team> <id> [--run <run>] | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev] | set <team> <file> [--id <id> --version <v>] | pause|resume|delete <team> <id> | run-now <team> <id> [--pr <url>] | stop <team> <id> [--run <run>] | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
   esac
 }
 
@@ -667,13 +668,18 @@ routine_posted() {
   case "$n" in 1) echo "posted ${1}" ;; 0) echo "ERROR: routine run $1 is not a skip or a failure" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
 }
 
-# routine run-now <team> <id>   Queue a manual run (period manual-<epoch second>, D15) when no run of the routine
+# routine run-now <team> <id> [<PR url>]   Queue a manual run (period manual-<epoch second>, D15) when no run of the routine
 # is live: the next tick hands it to the bot. The team's gates still apply; the routine's pause and the
 # no-new-commits rule do not (an admin asked for it). One guarded INSERT: two admins at once queue one run.
+# A pr-label routine takes a PR instead: its run is 'pr-<n>-<head sha>', so UNIQUE is the guard (one run for each
+# head, D4), and other live rows of the routine do not block it.
 routine_runnow() {
-  local team="$1" id="$2" row cfg why tp now heads n
+  local team="$1" id="$2" pr="${3:-}" row cfg why tp now heads n
   row="$(_routine_of "$team" "$id")" || return 1
   cfg="$(jq -c '.data | fromjson' <<< "$row")"; now="$(_routine_now)"
+  if [ "$(jq -r '.on // "schedule"' <<< "$cfg")" = pr-label ]; then
+    [ -n "$pr" ] || { echo "ERROR: routine ${id} runs on a dependency PR: pass --pr <url>" >&2; return 1; }
+  elif [ -n "$pr" ]; then echo "ERROR: routine ${id} is not a dependency PR routine, so it takes no --pr" >&2; return 1; fi
   why="$(_routine_team_state "$team")"; [ "$why" = active ] && why=""
   [ -n "$why" ] || { why="$(_routine_sessions_paused)"; [ -z "$why" ] || why="agent sessions are paused: ${why}"; }
   if [ -z "$why" ]; then
@@ -686,6 +692,7 @@ routine_runnow() {
     rm -f "$f"
   fi
   [ -z "$why" ] || { echo "ERROR: routine ${id} cannot run now: ${why}" >&2; return 1; }
+  [ -z "$pr" ] || { _prfix_runnow "$team" "$id" "$cfg" "$pr" "$now"; return; }
   local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
   case $hrc in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
@@ -696,6 +703,42 @@ routine_runnow() {
     0) if [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES});")" = 0 ]; then
          echo "ERROR: routine ${id} ran in this same second; try again in a second" >&2
        else echo "ERROR: a run of routine ${id} is in progress" >&2; fi; return 1 ;;
+    *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
+  esac
+}
+
+# _prfix_runnow <team> <id> <cfg json> <PR url> <now>   run-now --pr: the PR against the routine's target, then one
+# queued manual row with heads.fix. Each refusal is a fixed text with the next step.
+_prfix_runnow() {
+  local team="$1" id="$2" cfg="$3" url="$4" now="$5" repo info why num head fix n st
+  repo="$(jq -r .pr.repo <<< "$cfg")"
+  [[ "$url" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] && [ "$(cut -d/ -f4-5 <<< "$url" | tr 'A-Z' 'a-z')" = "$(tr 'A-Z' 'a-z' <<< "$repo")" ] \
+    || { echo "ERROR: ${url:0:200} is not a PR of ${repo}. Use a PR link of ${repo}." >&2; return 1; }
+  info="$(_prfix_pr_read "$url")" || { echo "ERROR: GitHub did not answer about ${url}. Try again in a minute." >&2; return 1; }
+  num="$(jq -r .number <<< "$info")"; head="$(jq -r .headRefOid <<< "$info")"
+  why="$(_prfix_pr_why "$cfg" "$info" "$url")"
+  case "$why" in
+    "") ;;
+    merged|closed) echo "ERROR: PR #${num} is not open. Use an open dependency PR." >&2; return 1 ;;
+    fork) echo "ERROR: PR #${num} is from a fork. The fix pushes to the PR branch, so use a PR from a branch of ${repo}." >&2; return 1 ;;
+    base) echo "ERROR: PR #${num} is from the base or a release branch. Use a dependency PR." >&2; return 1 ;;
+    *) echo "ERROR: PR #${num} is not a dependency PR this routine fixes: it must be by $(jq -r '.pr.authors | join(" or ")' <<< "$cfg"). Use one of their PRs." >&2; return 1 ;;
+  esac
+  # Only host-checked values: the package name from a 'bump <pkg> from' title, and the failed checks' https links.
+  fix="$(jq -c --argjson now "$now" '{pr: .number, url, head_sha: .headRefOid, head_ref: .headRefName, base_ref: .baseRefName, author: .author.login,
+    packages: [.title | capture("[Bb]ump (?<p>[^ ]+) from")? | .p | select(test("^[@a-z0-9._/-]{1,80}$"))], signal_at: $now,
+    check_urls: [.statusCheckRollup[]? | select((.conclusion // .state) | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"))
+      | (.detailsUrl // .targetUrl) | select(type == "string" and test("^https://[A-Za-z0-9./_?=&-]+$"))][:10]}' <<< "$info")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
+      VALUES ($id, $(db_q "pr-${num}-${head}"), 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "{\"fix\":${fix}}")), $now);
+      SELECT changes() || '|' || last_insert_rowid();")" || n=""
+  case "${n%%|*}" in
+    1) _teams_audit_note routine-run "$team" "routine ${id}: run ${n#*|} on PR #${num}"; echo "queued run ${n#*|}: Queued for #${num}. The PR comment shows its state." ;;
+    0) st="$(db_value "SELECT state FROM routine_runs WHERE routine_id = $id AND period = $(db_q "pr-${num}-${head}");")" || st=""
+       case "$st" in
+         queued|claimed|started) echo "ERROR: A run on #${num} at ${head:0:7} is already queued or in progress. The PR comment shows its state." >&2 ;;
+         *) echo "ERROR: A run on ${head:0:7} already ended. A new commit allows a new run." >&2 ;;
+       esac; return 1 ;;
     *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
   esac
 }

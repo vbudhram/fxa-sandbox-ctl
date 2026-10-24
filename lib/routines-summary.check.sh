@@ -49,6 +49,21 @@ check("each routine has its name, team and paused", ("E", "fxa", True), (r["5"][
 check("each routine's template (blank when none) and its lowest and highest run cost in 30 days", ("blank", 0.25, 1.0, None, None),
       (r["2"]["template"], r["2"]["cost_min_30d"], r["2"]["cost_max_30d"], r["6"]["cost_min_30d"], r["4"]["cost_max_30d"]))
 check("no prompt, report or channel in the body", (False, False, False), ("SECRET-PROMPT" in body, "SECRET-REPORT" in body, "C0SECRET" in body))
+# Run now and Stop run: a PR link goes to run-now as --pr, a run id to stop as --run; anything else is refused.
+calls = []
+class Done:
+    returncode, stdout, stderr = 0, "queued run 9", ""
+server.ctl_run = lambda args, **kw: (calls.append(args), Done())[1]
+def post(path, body):
+    st, _, b = testkit.request(base + path, "POST", json.dumps(body).encode(), {**testkit.sig("admin@example.com", "POST", path), "Content-Type": "application/json"})
+    return st
+U = "https://github.com/mozilla/fxa/pull/90001"
+check("Run now with a PR, Stop with a run id, and both with none", (200, 200, 200, 200),
+      (post("/api/teams/fxa/routines/3/run", {"pr": U}), post("/api/teams/fxa/routines/3/stop", {"run": 12}), post("/api/teams/fxa/routines/3/run", {}), post("/api/teams/fxa/routines/3/stop", {})))
+check("the ctl gets --pr and --run", [["routine", "run-now", "fxa", "3", "--pr", U], ["routine", "stop", "fxa", "3", "--run", "12"], ["routine", "run-now", "fxa", "3"], ["routine", "stop", "fxa", "3"]],
+      [a[:6] for a in calls])
+check("a PR that is not a GitHub PR link, and a run that is not a number, are refused", (400, 400, 4),
+      (post("/api/teams/fxa/routines/3/run", {"pr": "https://evil.example/pull/1 --x"}), post("/api/teams/fxa/routines/3/stop", {"run": "1; x"}), len(calls)))
 fxadb.PATH = f"{tmp}/missing/fxa.db"
 code, body = get(sig("admin@example.com", P))
 check("a store that cannot be read: 503 with a fixed text, no path", (503, "the routine store cannot be read", False), (code, json.loads(body)["error"], "missing" in body))

@@ -913,7 +913,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         rec, ver = body.get("routine"), str(body.get("version") or "")
         if verb:
-            self._team_ctl(user, [{"run": "run-now"}.get(verb, verb), name, rid], cmd="routine")
+            # Run now on a dependency PR routine names the PR; Stop run names the run the page shows.
+            more, pr, run = [], body.get("pr"), body.get("run")
+            if verb == "run" and pr is not None:
+                if not (isinstance(pr, str) and re.fullmatch(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]{1,9}", pr)):
+                    self._json(400, {"error": "send the PR as a GitHub PR link"})
+                    return
+                more = ["--pr", pr]
+            if verb == "stop" and run is not None:
+                if isinstance(run, bool) or not re.fullmatch(r"[1-9][0-9]{0,11}", str(run)):
+                    self._json(400, {"error": "send the run as a number"})
+                    return
+                more = ["--run", str(run)]
+            self._team_ctl(user, [{"run": "run-now"}.get(verb, verb), name, rid, *more], cmd="routine")
         elif not isinstance(rec, dict):
             self._json(400, {"error": "send {\"routine\": {...}}"})
         elif not rid:

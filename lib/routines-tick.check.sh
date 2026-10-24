@@ -492,6 +492,28 @@ out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" export PRFIX_DIR="$tmp/
 check "a PR read that fails keeps the row queued with a wait, not a skip" "queued|GitHub did not answer" "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.wait') FROM routine_runs WHERE id = $q3;")"
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q3;"
 
+# A39 run-now --pr: with two queued rows and a started run, a fork PR and a head with a result are refused with their
+# fixed texts, and a good PR queues a manual row with heads.fix at its head.
+PB="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+db_exec "INSERT INTO routine_runs (routine_id, period, trigger, state, heads) VALUES ($rpf, 'pr-90003-c', 'label', 'queued', json('{\"fix\":{\"pr\":90003}}')),
+  ($rpf, 'pr-90005-e', 'label', 'queued', json('{\"fix\":{\"pr\":90005}}')), ($rpf, 'pr-90004-d', 'label', 'started', json('{\"fix\":{\"pr\":90004}}')),
+  ($rpf, 'pr-90002-$PB', 'label', 'ok', json('{\"fix\":{\"pr\":90002}}'));"
+rn() { ( export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" FXA_TEAM_ACTOR=admin@example.com FXA_ROUTINE_NOW=$((T + 200)); cmd_routine run-now fxa "$rpf" "$@" 2>&1 ); }
+check "run-now --pr on a fork PR is refused with its text" "ERROR: PR #90006 is from a fork. The fix pushes to the PR branch, so use a PR from a branch of mozilla/fxa." \
+  "$(rn --pr https://github.com/mozilla/fxa/pull/90006)"
+check "run-now --pr on a head with a result gives the D4 text" "ERROR: A run on bbbbbbb already ended. A new commit allows a new run." \
+  "$(rn --pr https://github.com/mozilla/fxa/pull/90002)"
+check "run-now --pr on a PR of another repo, and run-now of a pr-label routine with no --pr, are refused" \
+  "ERROR: https://github.com/mozilla/other/pull/1 is not a PR of mozilla/fxa. Use a PR link of mozilla/fxa.|ERROR: routine $rpf runs on a dependency PR: pass --pr <url>" \
+  "$(rn --pr https://github.com/mozilla/other/pull/1)|$(rn)"
+got="$(rn --pr https://github.com/mozilla/fxa/pull/90001)"; qn="$(sed -nE 's/^queued run ([0-9]+):.*/\1/p' <<< "$got")"
+check "a third good PR queues a manual row with heads.fix, beside two queued rows and a started run" \
+  "queued run $qn: Queued for #90001. The PR comment shows its state.|queued|manual|admin@example.com|pr-90001-$PA|90001|$PA|dependabot/npm_and_yarn/example-pkg-1.3.0|main|example-pkg|https://github.com/mozilla/fxa/actions/runs/1000/job/1" \
+  "$got|$(db_value "SELECT state || '|' || trigger || '|' || actor || '|' || period FROM routine_runs WHERE id = ${qn:-0};")|$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${qn:-0};" | jq -r '[.pr, .head_sha, .head_ref, .base_ref, (.packages | join(",")), (.check_urls | join(","))] | map(tostring) | join("|")')"
+check "the same PR head again, while that run is queued" "ERROR: A run on #90001 at aaaaaaa is already queued or in progress. The PR comment shows its state." \
+  "$(rn --pr https://github.com/mozilla/fxa/pull/90001)"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE routine_id = $rpf AND state IN ('queued','claimed','started');"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
