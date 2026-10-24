@@ -156,6 +156,9 @@ async def dashboard_check():
         async with c.post(f"{base}/api/teams", headers={"Origin": base, "X-Fxa-User": "evil@example.com", "X-Fxa-Sig": "forged"}) as x:
             check("the gateway signs the IAP user for this method and path, not the client's copy",
                   ("owner@example.com", main.sign_user(b"k1", "owner@example.com", seen["ts"], "POST", "/api/teams")), (seen["user"], seen["sig"]))
+        async with c.get(f"{base}/api/teams/people/pat%20doe") as x:
+            check("the gateway signs the path as the dashboard gets it, still encoded, so a query with a space verifies",
+                  main.sign_user(b"k1", "owner@example.com", seen["ts"], "GET", "/api/teams/people/pat%20doe"), seen["sig"])
         main.DASHBOARD_HMAC = b""
         async with c.get(f"{base}/desktop/agent-abcd12", allow_redirects=False) as x:
             check("the dashboard's desktop link goes to /d/", "/d/agent-abcd12", x.headers.get("Location"))

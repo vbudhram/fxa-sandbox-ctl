@@ -195,7 +195,8 @@ async def dashboard(request):
     # Only the gateway names the user: a client's own X-Fxa-* headers are never in the list above.
     if DASHBOARD_HMAC:
         ts = str(int(time.time()))
-        headers.update({"X-Fxa-User": email, "X-Fxa-Time": ts, "X-Fxa-Sig": sign_user(DASHBOARD_HMAC, email, ts, request.method, request.path)})
+        # Sign the path as the dashboard reads it: still percent-encoded (request.path is decoded).
+        headers.update({"X-Fxa-User": email, "X-Fxa-Time": ts, "X-Fxa-Sig": sign_user(DASHBOARD_HMAC, email, ts, request.method, request.rel_url.raw_path)})
     body = await request.read() if request.method == "POST" else None
     async with request.app["http"].request(request.method, f"{MANAGER_URL}{request.path_qs}", headers=headers, data=body) as r:
         keep = {k: v for k, v in r.headers.items() if k.lower() in ("content-type", "content-security-policy", "cache-control", "x-content-type-options", "referrer-policy", "etag")}
