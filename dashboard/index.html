@@ -985,7 +985,7 @@ function floorRows() {
   (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => rows.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
-    rows.push({ kind: routine ? "routine" : "slack", key: x.key, team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
+    rows.push({ kind: routine ? "routine" : "slack", key: x.key, depfix: x.fix_pr ? fixLabel(x, admin) : "", team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
       turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "",
       where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : null, boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null, started: x.created ?? null });
   });
@@ -1102,7 +1102,8 @@ async function loadRuns() {
   safeRender(renderOvLlm, "ov-llm"); safeRender(renderOvHours, "ov-hours");
 }
 const RUN_SRC = { pipeline: ["var(--chart-1)", "M4 12l5 5L20 6", "pipeline run"], slack: ["var(--chart-3)", "M4 5h16v11H8l-4 4z", "Slack session"],
-  answer: ["var(--chart-4)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--chart-2)", "M12 4v16M4 12h16", "pass"] };
+  answer: ["var(--chart-4)", "M12 18v.5M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7v1", "quick answer"], pass: ["var(--chart-2)", "M12 4v16M4 12h16", "pass"],
+  depfix: ["var(--chart-muted)", "M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9", "dependency fix"] };
 const PR_URL_RE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/;
 function runBadge(r) {
   if (r.outcome === "pr") { const n = Number.isInteger(r.pr_number) ? r.pr_number : null, m = r.pr_state === "merged", txt = `${n != null ? `PR #${n}` : "PR"}${m ? " merged" : ""}`;
@@ -1307,7 +1308,7 @@ const ageOf = e => e ? ago(Math.max(0, Math.round(Date.now() / 1000 - Number(e))
 // One cost per session on every view: the live runner's (the proxy's total so far), else the Stats row's.
 let STAT_USD = new Map(), STAT_SRC = null;
 function sessUsd(s) {
-  if (STAT_SRC !== STATS) { STAT_SRC = STATS; STAT_USD = new Map((STATS?.rows ?? []).filter(r => r.src === "slack").map(r => [r.key, r.usd])); }
+  if (STAT_SRC !== STATS) { STAT_SRC = STATS; STAT_USD = new Map((STATS?.rows ?? []).filter(r => r.src === "slack" || r.src === "depfix").map(r => [r.key, r.usd])); }
   const a = s.agent || {};
   let sm = {}; try { sm = JSON.parse(s.summary || "{}"); } catch {}
   return a.cost_usd ?? a.cost_so_far ?? STAT_USD.get(s.key) ?? sm.cost;
@@ -1333,8 +1334,15 @@ function ownerName(s) {
   return (AGENTS?.sessions ?? []).find(x => x.owner === s.owner && x.owner_name)?.owner_name || s.owner || "";
 }
 // A routine's run: its name and team, linked to the team's Routines group (D31).
-const sessRoutine = s => s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
-const sessRoutineLink = s => s.routine_run ? html`<a href="#teams/routines/${s.profile || "fxa"}">${sessRoutine(s)}</a>` : "";
+// A dependency fix run: its PR and trigger for a team admin, else only that it ran (fix_label in server.py).
+function fixLabel(s, admin) {
+  const n = String(s.fix_pr ?? ""), t = s.fix_trigger, a = s.fix_actor || "";
+  const by = t === "blender" ? "BLEnder" : t === "label" ? (a ? `label by ${a}` : "label") : t === "manual" ? (a ? `Run now by ${a}` : "Run now") : "";
+  return admin && /^\d+$/.test(n) ? `Dependency fix: #${n}${by ? ` (${by})` : ""}` : "Dependency fix";
+}
+const fixGated = s => !!s?.fix_pr && !TEAM_ADMIN?.admin;
+const sessRoutine = s => s.fix_pr ? fixLabel(s, !!TEAM_ADMIN?.admin) : s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
+const sessRoutineLink = s => fixGated(s) ? sessRoutine(s) : s.routine_run ? html`<a href="#teams/routines/${s.profile || "fxa"}">${sessRoutine(s)}</a>` : "";
 const sessTabOf = s => s.state === "paused" ? "paused" : LIVE_SESSION.includes(s.state) ? "live" : "stopped";
 const sessLink = (s, label) => s ? html`<a class="key" href="#sessions/${sessTabOf(s)}/${s.key}">${label}</a>` : html`<span class="key">${label}</span>`;
 // The list's day groups, from a session's start (seconds).
@@ -1415,13 +1423,14 @@ function renderSess() {
   Object.entries(SESS_STATES).forEach(([k, st]) => { const e = document.getElementById("t-" + k); if (e) e.textContent = AGENTS ? hs.filter(s => st.includes(s.state)).length : ""; });
   const list = hs.filter(s => SESS_STATES[SESS_TAB].includes(s.state));
   const sel = ss.find(s => s.key === SESS_SEL && SESS_STATES[SESS_TAB].includes(s.state)) || list[0];
-  const isLive = sel && live(sel), showTerm = isLive && SX.term;
+  // A dependency fix is a team admin's: another viewer sees only that it runs, as on Sandboxes.
+  const gated = fixGated(sel), isLive = sel && live(sel), showTerm = isLive && SX.term && !gated;
   // The frame changes only with the selection or a toggle, so the thread and
   // terminal inside it keep their DOM, scroll and loaded images between polls.
   const frame = String(html`<div class="${cls("sx", { withterm: showTerm })}">
       <div class="sxbar" id="sx-bar"></div>
       <div class="sxbody">
-        <div class="convo">${sel ? html`<div class="sxout card flat sm" id="sx-outcome"></div><div class="thread" data-thread="${sel.key}" id="sx-thread"></div>` : emptybox(html`No ${SESS_TAB} session.${SESS_TAB === "stopped" ? "" : html` <a href="#sessions/stopped" style="color:var(--link)">See stopped sessions</a>`}`)}</div>
+        <div class="convo">${gated ? emptybox("Dependency fix. Only a team admin can see its PR, trigger, cost and conversation.") : sel ? html`<div class="sxout card flat sm" id="sx-outcome"></div><div class="thread" data-thread="${sel.key}" id="sx-thread"></div>` : emptybox(html`No ${SESS_TAB} session.${SESS_TAB === "stopped" ? "" : html` <a href="#sessions/stopped" style="color:var(--link)">See stopped sessions</a>`}`)}</div>
         ${showTerm ? html`<aside class="tty" id="tty-${sel.key}" aria-label="Agent output">
           <div class="bar"><i></i><i></i><i></i><span>agent@sandbox: ${sel.key}</span><b class="state"></b></div>
           <div class="screen" tabindex="0"></div></aside>` : ""}
@@ -1429,6 +1438,7 @@ function renderSess() {
   if (put("s-sess", frame)) { ["sx-bar", "sx-thread"].forEach(id => delete LAST[id]); if (sel) delete TTY_LAST[sel.key]; }
   const tgl = (k, label, on) => html`<button class="tgl" data-sx="${k}" aria-pressed="${String(on)}">${label}</button>`;
   if (!sel) { put("sx-bar", ""); }
+  else if (gated) { const [st, tone] = sessStatus(sel); put("sx-bar", String(html`${dot(tone)}<span class="sxt">Dependency fix</span><span class="sxm">${st}</span>`)); }
   else {
     const a = sel.agent || {}, rt = sel.runtime || "claude", now = Date.now() / 1000;
     const model = rt === "claude" ? (a.model || AGENTS?.session_models?.claude) : AGENTS?.session_models?.codex;
@@ -1654,7 +1664,8 @@ const TEAM_TEMPLATE = { schema: 1, name: "new-team", label: "New Team", status: 
   repos: [{ slug: "mozilla/fxa", role: "work", default: true }], stack: { kind: "fxa" },
   access: { open: false, users: [], channels: [], jira_prefixes: [] }, mcp: [], prompts: { claude_md: "" } };
 async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; }
-  if (VIEW === "runners") renderSb(); }
+  if (VIEW === "runners") renderSb();
+  else if (VIEW === "sessions" && AGENTS) render(); }   // a dependency fix shows its PR only once the viewer is known
 function teamEditor(name, isRecord) {
   if (!TEAM_ADMIN?.admin || !isRecord) return "";
   const e = TED?.name === name ? TED : null;
@@ -1899,7 +1910,7 @@ function teamRecent(p) {
   const ss = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s])), rows = (STATS?.rows ?? []).filter(r => (r.profile || "fxa") === p).sort((a, b) => (b.t0 ?? Date.parse(b.at) / 1000) - (a.t0 ?? Date.parse(a.at) / 1000)).slice(0, 5);
   if (!STATS) return html`<p class="na">—</p>`;
   if (!rows.length) return html`<p class="na">No sessions or runs in 30 days.</p>`;
-  return html`${rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
+  return html`${rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin || s.fix_pr ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
     const k = sessHref(r.key) ? html`<a href="${sessHref(r.key)}">${name}</a>` : name, pr = r.pr ? (prUrl(r.pr) ? html`<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${r.pr}</a>` : `PR #${r.pr}`) : "";
     return html`<div class="titem"><span>${k} ${r.src === "pass" ? "" : html`<span class="na">· ${r.src}</span>`}</span><span>${pr || html`<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)))}</span>`}</span></div>`; })}`;
 }
@@ -3150,7 +3161,7 @@ let SF = { ...SF_DEFAULT, ...(() => { try { return JSON.parse(localStorage.getIt
 const statsFiltered = () => Object.keys(SF_DEFAULT).some(k => SF[k] !== SF_DEFAULT[k]);
 // The filters each Stats tab reads; the range applies to every tab.
 const STATS_USES = { spend: ["src", "kind", "team", "model", "q"], prs: ["src", "q"], runners: ["team"], pipeline: [] };
-const SF_SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage" };
+const SF_SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage", depfix: "Dependency fixes" };
 const sfLabel = f => f === "src" ? SF_SRC[SF.src] ?? SF.src : f === "kind" ? KIND[SF.kind] ?? SF.kind : f === "team" ? teamLabel(SF.team) : f === "model" ? modelName(SF.model) : `"${SF.q}"`;
 // Day rows ({day: "YYYY-MM-DD"}) inside the Stats range.
 const inRange = (days, lo, hi) => (days ?? []).filter(d => { const t = Date.parse(d.day + "T00:00"); return t >= lo && t < hi; });
@@ -3677,14 +3688,14 @@ function sbRows() {
   if (fr.unknown) { out.err = g ? STATE.agents_error || "the agents feed could not be read" : null; return out; }
   const now = Date.now() / 1000, admin = fr.admin, ss = g.sessions ?? [], byKey = new Map(ss.map(x => [x.key, x]));
   const inst = g.instances ?? [], instBy = new Map(inst.map(v => [v.name, v])), pool = g.pool ?? [];
-  const base = { slot: "", key: "", title: "", team: "", where: null, started: null, age: null, cap: null, max_seconds: null, cost: null, usd: null, session: null, pr: null, routine_run: null, routine_name: null, boot_s: null, boot_steps: null, res_peak: null, fault: "", fix: null };
+  const base = { slot: "", key: "", depfix: "", title: "", team: "", where: null, started: null, age: null, cap: null, max_seconds: null, cost: null, usd: null, session: null, pr: null, routine_run: null, routine_name: null, boot_s: null, boot_steps: null, res_peak: null, fault: "", fix: null };
   const withFix = (row, fix) => { const r = { ...row, fix }; r.fix.cmd = fixCmd(r, stale); return r; };
   fr.rows.filter(t => t.kind !== "free").forEach(t => {
     if (t.kind === "pipe") { const v = instBy.get(`agent-${t.name}`), cap = v?.max_seconds ?? null;
       return out.live.push({ ...base, id: `pipe:${t.slot || t.key}`, src: "pipeline", slot: t.slot || "", key: t.key, title: t.title, team: t.team, where: "gce",
         state: instMoving(v) ? movingWord(v) : t.fault || t.idle || `Stop ${t.st + 1} of 9, ${LANE_ST[t.st]}`, fault: t.fault || t.idle || "", age: t.age ?? null, cap, max_seconds: cap, cost: t.cost ?? null, usd: t.cost ?? null }); }
     const x = byKey.get(t.key), open = admin || t.kind !== "routine", v = instBy.get(`agent-${t.key}`);
-    out.live.push({ ...base, id: `sess:${t.key}`, src: t.kind, key: t.key, title: t.title, team: t.team, where: t.where, started: t.started, state: instMoving(v) ? movingWord(v) : t.waits ? `waits on ${t.waits}` : "working",
+    out.live.push({ ...base, id: `sess:${t.key}`, src: t.kind, key: t.key, depfix: t.depfix, title: t.title, team: t.team, where: t.where, started: t.started, state: instMoving(v) ? movingWord(v) : t.waits ? `waits on ${t.waits}` : "working",
       age: t.started ? Math.max(0, Math.round(now - t.started)) : null, cap: g.session_max_run_seconds ?? null, cost: t.cost ?? null, usd: t.cost ?? null, session: t.key,
       routine_run: x?.routine_run ?? null, routine_name: open ? x?.routine_name ?? null : null, boot_s: t.boot_s, boot_steps: t.boot_steps, res_peak: t.res_peak });
   });
@@ -3695,7 +3706,7 @@ function sbRows() {
     const v = instBy.get(`agent-${x.key}`); if (!v || !(instUp(v) || instMoving(v))) return;
     known.add(v.name);
     const routine = !!x.routine_run, open = admin || !routine, since = x.stopped_at ? now - x.stopped_at : null;
-    const row = { ...base, src: routine ? "routine" : "slack", key: x.key, title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
+    const row = { ...base, src: routine ? "routine" : "slack", key: x.key, depfix: x.fix_pr ? fixLabel(x, admin) : "", title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
       started: x.created ?? null, age: v.age_seconds ?? null, cap: v.max_seconds ?? null, cost: open ? sessUsd(x) : null, session: x.key, routine_run: x.routine_run ?? null, routine_name: open ? x.routine_name ?? null : null,
       boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
     row.usd = row.cost;
@@ -3757,7 +3768,7 @@ function renderSbList() {
   if (t === "routines" && !admin) return put("sb-list", String(emptybox("Only a team admin can see routine runs.")));
   const SRC = { pipeline: "Pipeline", slack: "Slack", routine: "Routine" };
   const whereTxt = x => x.src === "pipeline" ? (x.slot ? `${x.slot} · GCE slot` : x.where === "firecracker" ? "Firecracker" : "GCE") : `session · ${x.where === "gce" ? "GCE" : x.where === "firecracker" ? "Firecracker" : "starting"}`;
-  const forTxt = x => x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
+  const forTxt = x => x.depfix ? x.depfix : x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
   const bar = x => { if (x.age == null || !x.cap) return ""; const over = x.age >= x.cap;
     return html`<span class="${cls({ over })}">${meter(x.age / x.cap * 100, over ? "bad" : "")}${short(x.age)} of ${short(x.cap)}${over ? " · over cap" : ""}</span>`; };
   const row = x => html`<tr class="${cls({ fixr: x.fix, bad: !x.fix && x.fault, sel: x.id === SEL.runners })}"${x.id === SEL.runners ? html` aria-current="true"` : ""}><td><button type="button" data-sbsel="${x.id}" aria-label="${forTxt(x)}, details">${forTxt(x)}</button></td>
@@ -3933,11 +3944,11 @@ function sideGroups() {
   if (VIEW === "sessions") {
     const all = AGENTS?.sessions ?? [];
     const list = sessHeads(all).filter(s => SESS_STATES[SESS_TAB].includes(s.state)).filter(s => !SOWNER || ownerName(s) === SOWNER).filter(s => !STEAM || (s.profile || "fxa") === STEAM)
-      .filter(s => hit(s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
-    const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s);
-      // The title is what the person first asked: the chain's first session's request.
-      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: firstLine(ch[ch.length - 1].request),
-        tip: stamp(s.created), m: [c ? usd(c) : "", sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
+      .filter(s => hit(fixGated(s) ? s.key : s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
+    const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s), gate = fixGated(s);
+      // The title is what the person first asked: the chain's first session's request. A dependency fix is named by its label.
+      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: s.fix_pr ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
+        tip: stamp(s.created), m: [c && !gate ? usd(c) : "", s.fix_pr ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
@@ -4005,6 +4016,8 @@ function sessionDetails(s) {
   const pauseIn = s.state === "active" && !s.agent_alive && s.turn_open !== "1" && s.last_activity ? Math.max(0, Math.round(AGENTS.session_idle_seconds - (now - s.last_activity))) : null;
   const endsIn = live && s.booted_at ? Math.max(0, Math.round(AGENTS.session_max_run_seconds - (now - s.booted_at))) : null;
   const nr = "not recorded for this session", rs = num(s.runner_s), peak = (() => { try { return JSON.parse(s.res_peak || "null"); } catch { return null; } })();
+  if (fixGated(s)) return html`${raw(closeBtn)}<div><h4>Session</h4>${kvRow("State", st)}${kvRow("Routine", "Dependency fix")}${kvRow("Started", stamp(s.created))}
+    <p class="na">Only a team admin can see its PR, trigger and cost.</p></div>`;
   return html`${raw(closeBtn)}
     <div><h4>Session</h4>${kvRow("State", st)}${kvRow("Agent", html`${rt === "codex" ? "Codex" : "Claude"}${model ? html` · <span class="mono">${model}</span>` : ""}`)}${kvRow(ch.length > 1 ? `Cost, ${ch.length} sessions` : "Cost", html`${convUsd ? usd(convUsd) : "—"}${one}`)}
       ${kvRow("Turns", html`${convTurns}${ch.length > 1 ? html` <span class="na">· this session ${s.turns ?? 0}</span>` : ""}`)}${s.routine_run ? kvRow("Routine", sessRoutineLink(s)) : kvRow("Owner", ownerName(s) || "unknown")}${kvRow("Started", stamp(s.created))}${s.resume_from ? kvRow("Resumed from", html`<a href="#sessions/${SESS_TAB}/${s.resume_from}">${s.resume_from}</a>`) : ""}
@@ -4040,7 +4053,7 @@ function sbDetails(id, now = Date.now() / 1000) {
       <p class="na">Boot steps and peak memory are not recorded for pipeline runs.</p></div>`);
   }
   const routine = r.src === "routine" || !!r.routine_run, open = !routine || !!TEAM_ADMIN?.admin;
-  const name = !open ? "Routine · scheduled run" : routine ? `Routine ${r.routine_name || `run ${r.routine_run}`}` : r.title || r.key;
+  const name = r.depfix ? r.depfix : !open ? "Routine · scheduled run" : routine ? `Routine ${r.routine_name || `run ${r.routine_run}`}` : r.title || r.key;
   const sj = json(r.boot_steps), pj = json(r.res_peak), cap = n(AGENTS?.session_max_run_seconds);
   const steps = Array.isArray(sj) ? sj.filter(x => x && typeof x === "object") : [], peak = pj && typeof pj === "object" && !Array.isArray(pj) && (n(pj.load1) != null || n(pj.mem_mb) != null) ? pj : null;
   // The Sessions tab from the session record: the row's state is display text ('working', 'stopping').
@@ -4184,12 +4197,14 @@ function renderSbDone() {
     const d = new Date(r.end * 1000), when = !(r.end > 0) ? "—" : d.toDateString() === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     const pipe = r.src === "pipeline", href = pipe ? jiraHref(r.key) : sessHref(r.key);
     const key = !r.key ? "" : href ? html`<a class="key" href="${href}"${pipe ? html` target="_blank" rel="noreferrer"` : ""}>${r.key}</a> ` : html`<span class="key">${r.key}</span> `;
-    const who = r.routine && !r.key ? "Routine · scheduled run" : html`${key}${plainMd(r.title || "")}`;
+    // The server sends a non-admin only that a routine or a dependency fix ran.
+    const gated = r.routine && !r.key ? (r.src === "depfix" ? "Dependency fix" : "Routine · scheduled run") : "";
+    const who = gated || html`${key}${plainMd(r.title || "")}`;
     const where = pipe ? "GCE" : { firecracker: "Firecracker", gce: "GCE" }[r.where] ?? "—";
     const mem = Number.isFinite(r.mem_mb) ? `${(r.mem_mb / 1024).toFixed(1)} GB` : "—";
     const res = html`${raw(runBadge(r))}${r.stop && r.outcome !== "pr" ? html` <span class="sbd-stop">${r.stop}</span>` : ""}`;
     // A gated routine run comes with no team and no cost: a dash, not FxA and $0.00.
-    const full = r.routine && !r.key ? "Routine · scheduled run" : `${r.key ? `${r.key} ` : ""}${plainMd(r.title || "")}`;
+    const full = gated || `${r.key ? `${r.key} ` : ""}${plainMd(r.title || "")}`;
     return html`<tr data-sbdone="${r.key}"><td>${when}</td><td>${pipe ? "pipeline" : r.routine ? "routine" : "Slack"}</td><td class="sbd-for" title="${full}">${who}</td><td>${r.team ? teamLabel(r.team) : "—"}</td><td>${where}</td>
       <td class="num">${pipe ? na : Number.isFinite(r.boot_s) ? `${Math.round(r.boot_s)} s` : "—"}</td><td class="num">${pipe ? na : mem}</td><td class="num">${r.min != null ? `${Number(r.min)} min` : "—"}</td><td class="num">${r.usd == null ? "—" : usd(r.usd)}</td><td>${res}</td></tr>`;
   };
