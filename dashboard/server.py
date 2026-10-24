@@ -558,6 +558,18 @@ def redact_session(s):
     return out
 
 
+# What names a dependency fix session's PR and the person who asked: a team admin's, as in recent_runs.
+FIX_PRIVATE = frozenset(("fix_pr", "fix_trigger", "fix_actor", "fix_head_sha", "pr_url", "review_pr", "branch", "pushed_branch", "trees"))
+
+
+def redact_fix(s):
+    """A non-admin's copy of a session row: a dependency fix session (fix_pr) without its PR, trigger, actor or prompt,
+    and fix_run true, so the page still names it 'Dependency fix'."""
+    if not isinstance(s, dict) or not s.get("fix_pr"):
+        return s
+    return dict({k: v for k, v in redact_session(s).items() if k not in FIX_PRIVATE}, fix_run=True)
+
+
 def read_records():
     """The team records' access, from the controller's teams index (lib/teams.sh), or {}."""
     path = os.path.join(os.environ.get("FXA_TEAMS_DIR") or os.path.expanduser("~/.claude/state/teams"), "index.json")
@@ -1176,7 +1188,7 @@ class Handler(BaseHTTPRequestHandler):
             snap, age, err, busy = FULL.read()
             ag, ag_age, ag_err, ag_busy = AGENTS.read()
             if isinstance(ag, dict) and not self._team_admin(path):
-                ag = dict(ag, sessions=[redact_session(s) if isinstance(s, dict) and team_private(s.get("profile") or "fxa") else s
+                ag = dict(ag, sessions=[redact_fix(redact_session(s) if isinstance(s, dict) and team_private(s.get("profile") or "fxa") else s)
                                         for s in ag.get("sessions") or []])
             if isinstance(ag, dict):
                 ag = dict(ag, sessions=[{k: v for k, v in s.items() if k not in SESSION_UNUSED} if isinstance(s, dict) else s
@@ -1245,7 +1257,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 body = {"cursor": None, "rows": [], "error": type(exc).__name__}
             if body.get("rows") and not self._team_admin(path):
-                body["rows"] = [redact_session(r) if not r.get("deleted") and team_private(r.get("profile") or "fxa") else r for r in body["rows"]]
+                body["rows"] = [redact_fix(redact_session(r) if not r.get("deleted") and team_private(r.get("profile") or "fxa") else r) for r in body["rows"]]
             self._json(200, body)
         elif path == "/api/usage":
             # One session's or quick answer's LLM use by model, from the proxy's calls in the store.

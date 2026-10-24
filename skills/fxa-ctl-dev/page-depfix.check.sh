@@ -11,6 +11,9 @@ run() { local out rc; out="$(bash "$p" "$1" --fixture "$F" --width 1280 --probe 
 PRE='const w = ms => new Promise(r => setTimeout(r, ms)), out = [], ck = (n, c) => out.push(`${c ? "ok  " : "FAIL"} ${n}`);
   const nonAdmin = async () => { TEAM_ADMIN = { admin: false }; if (SB_DONE?.runs) SB_DONE.runs = SB_DONE.runs.map(r => r.src === "depfix"
     ? { ...r, title: "Dependency fix", key: "", team: "", usd: null, min: null, stop: null, pr_url: null, pr_number: null, fix_pr: undefined, fix_trigger: undefined, fix_actor: undefined } : r);
+    // As redact_fix in server.py: a fix session keeps only fix_run, with no PR, trigger, actor or prompt.
+    const FIXK = ["fix_pr", "fix_trigger", "fix_actor", "fix_head_sha", "pr_url", "review_pr", "branch", "pushed_branch", "trees", "request", "media", "last_text", "last_tool"];
+    if (AGENTS?.sessions) AGENTS.sessions = AGENTS.sessions.map(s => s.fix_pr ? { ...Object.fromEntries(Object.entries(s).filter(([k]) => !FIXK.includes(k))), fix_run: true } : s);
     Object.keys(LAST).forEach(k => delete LAST[k]); render(); renderRight(); await w(150); };
   await w(400);'
 

@@ -24,10 +24,14 @@ server.agent_tail = lambda key: ["the private screen"]
 server.fxadb.PATH = t + "/db"
 server.fxadb.connect = lambda readonly=False: type("C", (), {"close": lambda self: None})()
 rows = [{"key": "agent-priv01", "profile": "privteam", "request": "fix the secret", "media": [{"name": "a.png"}], "last_text": "x"},
-        {"key": "agent-pub001", "profile": "fxa", "request": "fix the page", "media": [{"name": "a.png"}]}, {"key": "agent-gone01", "deleted": True}]
+        {"key": "agent-pub001", "profile": "fxa", "request": "fix the page", "media": [{"name": "a.png"}]}, {"key": "agent-gone01", "deleted": True},
+        {"key": "agent-fix001", "profile": "fxa", "fix_pr": "90001", "fix_trigger": "label", "fix_actor": "example-writer", "fix_head_sha": "a" * 40,
+         "pr_url": "https://github.com/mozilla/fxa/pull/90001", "branch": "dependabot/x", "request": "Fix the failing checks of #90001"},
+        {"key": "agent-rtn001", "profile": "fxa", "routine_run": "7", "request": "review the code"}]
+FIXK = ("fix_pr", "fix_trigger", "fix_actor", "fix_head_sha", "pr_url", "branch", "request")
 server.fxadb.sessions_since = lambda con, since, d: {"cursor": 9, "rows": rows}
 server.FULL = server.Feed("snapshot", [], 60, 30); server.STATS = server.Feed("stats", [], 60, 30); server.AGENTS = server.Feed("agents", [], 15, 30)
-server.AGENTS.data, server.AGENTS.fetched_at = {"sessions": [dict(rows[0], agent={"last_text": "secret out", "last_tool": "cat key"}), rows[1]]}, time.time()
+server.AGENTS.data, server.AGENTS.fetched_at = {"sessions": [dict(rows[0], agent={"last_text": "secret out", "last_tool": "cat key"}), rows[1], rows[3], rows[4]]}, time.time()
 base = testkit.start(server.Handler)
 fail = 0
 def check(name, want, got):
@@ -53,5 +57,13 @@ a = {x["key"]: x for x in get("/api/snapshot")[1]["agents"]["sessions"]}
 check("/api/snapshot: a private session's request and the agent's last output are gone", (None, {}), (a["agent-priv01"].get("request"), a["agent-priv01"]["agent"]))
 check("/api/snapshot: the feed's own copy is not changed", "secret out", server.AGENTS.data["sessions"][0]["agent"]["last_text"])
 check("/api/snapshot: an admin sees the agent's last output", "secret out", {x["key"]: x for x in get("/api/snapshot", "admin@example.com")[1]["agents"]["sessions"]}["agent-priv01"]["agent"]["last_text"])
+# A dependency fix session: its PR, trigger, actor and prompt are a team admin's; a scheduled routine session is unchanged.
+check("/api/snapshot: a non-admin gets no PR, trigger, actor or prompt of a fix session, only fix_run; a routine session keeps its request",
+      ([], True, "review the code"), ([k for k in FIXK if k in a["agent-fix001"]], a["agent-fix001"].get("fix_run"), a["agent-rtn001"]["request"]))
+ad = {x["key"]: x for x in get("/api/snapshot", "admin@example.com")[1]["agents"]["sessions"]}
+check("/api/snapshot: an admin still has them", ("90001", "label", "example-writer", "Fix the failing checks of #90001"),
+      tuple(ad["agent-fix001"].get(k) for k in ("fix_pr", "fix_trigger", "fix_actor", "request")))
+check("/api/sessions: the same for a non-admin, and an admin keeps them", ([], "example-writer"),
+      ([k for k in FIXK if k in s["agent-fix001"]], {r["key"]: r for r in get("/api/sessions?since=1", "admin@example.com")[1]["rows"]}["agent-fix001"].get("fix_actor")))
 sys.exit(fail)
 PY

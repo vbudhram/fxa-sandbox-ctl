@@ -987,7 +987,7 @@ function floorRows() {
   (g.free_slots ?? []).filter(f => !pool.some(p => p.slot === f)).forEach(f => rows.push({ kind: "free", slot: f, state: "free" }));
   (g.sessions ?? []).filter(x => LIVE_SESSION.includes(x.state)).forEach(x => {
     const routine = !!x.routine_run, open = admin || !routine;
-    rows.push({ kind: routine ? "routine" : "slack", key: x.key, depfix: x.fix_pr ? fixLabel(x, admin) : "", team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
+    rows.push({ kind: routine ? "routine" : "slack", key: x.key, depfix: isFix(x) ? fixLabel(x, admin) : "", team: open ? x.profile || "fxa" : "", title: open ? convTitle(x) : "", alive: !!x.agent_alive, waits: !x.agent_alive ? (open ? ownerName(x) : "its owner") : "",
       turns: x.turns, time: ageOf(x.created), cost: open ? sessUsd(x) : null, href: open && sessHref(x.key) ? `#sessions/${sessTabOf(x)}/${x.key}` : "",
       where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : null, boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null, started: x.created ?? null });
   });
@@ -1343,8 +1343,10 @@ function fixLabel(s, admin) {
   const by = t === "blender" ? "BLEnder" : t === "label" ? (a ? `label by ${a}` : "label") : t === "manual" ? (a ? `Run now by ${a}` : "Run now") : "";
   return admin && /^\d+$/.test(n) ? `Dependency fix: #${n}${by ? ` (${by})` : ""}` : "Dependency fix";
 }
-const fixGated = s => !!s?.fix_pr && !TEAM_ADMIN?.admin;
-const sessRoutine = s => s.fix_pr ? fixLabel(s, !!TEAM_ADMIN?.admin) : s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
+// A team admin's feed has fix_pr; others get only fix_run (redact_fix in server.py).
+const isFix = s => !!(s?.fix_pr || s?.fix_run);
+const fixGated = s => isFix(s) && !TEAM_ADMIN?.admin;
+const sessRoutine = s => isFix(s) ? fixLabel(s, !!TEAM_ADMIN?.admin) : s.routine_run ? `Routine: ${s.routine_name || `run ${s.routine_run}`} (${teamLabel(s.profile || "fxa")})` : "";
 const sessRoutineLink = s => fixGated(s) ? sessRoutine(s) : s.routine_run ? html`<a href="#teams/routines/${s.profile || "fxa"}">${sessRoutine(s)}</a>` : "";
 const sessTabOf = s => s.state === "paused" ? "paused" : LIVE_SESSION.includes(s.state) ? "live" : "stopped";
 const sessLink = (s, label) => s ? html`<a class="key" href="#sessions/${sessTabOf(s)}/${s.key}">${label}</a>` : html`<span class="key">${label}</span>`;
@@ -1913,7 +1915,7 @@ function teamRecent(p) {
   const ss = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s])), rows = (STATS?.rows ?? []).filter(r => (r.profile || "fxa") === p).sort((a, b) => (b.t0 ?? Date.parse(b.at) / 1000) - (a.t0 ?? Date.parse(a.at) / 1000)).slice(0, 5);
   if (!STATS) return html`<p class="na">—</p>`;
   if (!rows.length) return html`<p class="na">No sessions or runs in 30 days.</p>`;
-  return html`${rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin || s.fix_pr ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
+  return html`${rows.map(r => { const s = ss.get(r.key), name = r.src === "pass" ? "Pipeline pass" : s ? (s.routine_run ? (TEAM_ADMIN?.admin || isFix(s) ? sessRoutine(s) : ownerName(s) || "scheduled run") : convTitle(s)) : r.key;
     const k = sessHref(r.key) ? html`<a href="${sessHref(r.key)}">${name}</a>` : name, pr = r.pr ? (prUrl(r.pr) ? html`<a href="${prUrl(r.pr)}" target="_blank" rel="noopener">PR #${r.pr}</a>` : `PR #${r.pr}`) : "";
     return html`<div class="titem"><span>${k} ${r.src === "pass" ? "" : html`<span class="na">· ${r.src}</span>`}</span><span>${pr || html`<span class="na">${ago(Math.round(Date.now() / 1000 - (r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000)))}</span>`}</span></div>`; })}`;
 }
@@ -3808,7 +3810,7 @@ function sbRows() {
     const v = instBy.get(`agent-${x.key}`); if (!v || !(instUp(v) || instMoving(v))) return;
     known.add(v.name);
     const routine = !!x.routine_run, open = admin || !routine, since = x.stopped_at ? now - x.stopped_at : null;
-    const row = { ...base, src: routine ? "routine" : "slack", key: x.key, depfix: x.fix_pr ? fixLabel(x, admin) : "", title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
+    const row = { ...base, src: routine ? "routine" : "slack", key: x.key, depfix: isFix(x) ? fixLabel(x, admin) : "", title: open ? convTitle(x) : "", team: open ? x.profile || "fxa" : "", where: x.boot_backend === "gce" ? "gce" : x.boot_backend === "firecracker" ? "firecracker" : v.where === "firecracker" ? "firecracker" : "gce",
       started: x.created ?? null, age: v.age_seconds ?? null, cap: v.max_seconds ?? null, cost: open ? sessUsd(x) : null, session: x.key, routine_run: x.routine_run ?? null, routine_name: open ? x.routine_name ?? null : null,
       boot_s: x.boot_s ?? null, boot_steps: x.boot_steps ?? null, res_peak: x.res_peak ?? null };
     row.usd = row.cost;
@@ -4049,8 +4051,8 @@ function sideGroups() {
       .filter(s => hit(fixGated(s) ? s.key : s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
     const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s), gate = fixGated(s);
       // The title is what the person first asked: the chain's first session's request. A dependency fix is named by its label.
-      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: s.fix_pr ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
-        tip: stamp(s.created), m: [c && !gate ? usd(c) : "", s.fix_pr ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
+      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: isFix(s) ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
+        tip: stamp(s.created), m: [c && !gate ? usd(c) : "", isFix(s) ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
