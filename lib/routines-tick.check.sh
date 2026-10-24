@@ -586,6 +586,20 @@ check "a claim under 10 min old waits; one whose PR is not at pending_sha fails"
 check "a moved branch is report, a pushed one ok, and only the real failures are operator errors" "report|ok|2" \
   "$(s_of "$r5f" | cut -d'|' -f1)|$(s_of "$r6f" | cut -d'|' -f1)|$(grep -c . "$tmp/errs")"
 
+# A18: a queued fix row waits up to 24 h, not 60 min: then it ends skipped with why expired, posts once on the skips
+# list, records no operator error, and its head is free for a new request.
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state IN ('queued','claimed','started');"
+x1="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at, heads) VALUES ($rpf, 'pr-90001-$PA', 'label', 'queued', $((N - 7200)),
+  json('{\"fix\":{\"pr\":90001,\"url\":\"https://github.com/mozilla/fxa/pull/90001\",\"head_sha\":\"$PA\",\"wait\":\"the team is paused\"}}')); SELECT last_insert_rowid();")"
+: > "$tmp/errs"; ( _routine_team_paused() { echo held; return 0; }; tick "$N" >/dev/null )
+check "a fix row queued 2 h stays queued" "queued" "$(s_of "$x1" | cut -d'|' -f1)"
+out="$(_routine_team_paused() { echo held; return 0; }; tick $((N + 86400 - 7200 + 60)))"
+check "after 24 h: skipped with why expired, on skips with post true and the fix, no error, the head freed" \
+  "skipped|expired|it waited 24 h|true|90001|expired|0|pr-90001-$PA-x$x1" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') || '|' || reason FROM routine_runs WHERE id = $x1;")|$(jq -r --argjson q "$x1" '.skips[] | select(.run == $q) | [.post, .fix.pr, .fix.why] | map(tostring) | join("|")' <<< "$out")|$(grep -c . "$tmp/errs")|$(db_value "SELECT period FROM routine_runs WHERE id = $x1;")"
+check "the next tick does not post it again, and a new request on the same head inserts" "0|1" \
+  "$(tick $((N + 86400)) | jq --argjson q "$x1" '[.skips[] | select(.run == $q)] | length')|$(db_value "INSERT INTO routine_runs (routine_id, period, state) VALUES ($rpf, 'pr-90001-$PA', 'stopped'); SELECT changes();")"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

@@ -466,12 +466,21 @@ routine_tick() {
     || { echo "usage: routine tick --env live|dev [--resume]" >&2; return 1; }
   local env="$2" resume="${3:-}" now; now="$(_routine_now)"
   db_exec "INSERT INTO routine_tick_env (env, at) VALUES ($(db_q "$env"), $now) ON CONFLICT (env) DO UPDATE SET at = excluded.at;" >/dev/null || { echo "$_ROUTINE_STORE" >&2; return 1; }
-  routine_reconcile "$now" "$env" || return 1
+  local expired; expired="$(routine_reconcile "$now" "$env")" || return 1
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
   local queued q qid qrid qt qwhy qpost qfix recheck runs="[]" skips="[]"
-  local f id team paused period at next cfg; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  local f id team paused period at next cfg x; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
+  # The fix rows that reconcile expired: each posts once, as a skip with its fix.
+  for x in $expired; do
+    [[ "$x" =~ ^[1-9][0-9]*$ ]] || continue
+    q="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, r.heads->'fix' AS fix FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = $x;" | jq -c '.[0] // empty')" || q=""
+    [ -n "$q" ] || continue
+    skips="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
+      '($q.data | fromjson) as $d | ($q.fix | fromjson) as $x | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel,
+        template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: "expired"}}]' <<< "$skips")"
+  done
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, t.paused, coalesce(r.trigger, 'manual') AS trigger, coalesce(r.actor, '') AS actor, r.heads->'fix' AS fix
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env") ORDER BY r.id;")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
@@ -644,8 +653,15 @@ routine_reconcile() {
     [ -n "$r" ] || continue
     id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
     why=""; pr=""; sst=""
-    if [ "$st" = started ] && fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")" && [ -n "$fix" ]; then
-      _prfix_reconcile "$now" "$id" "$sess" "$since" "$fix" || return 1; continue
+    fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")"
+    if [ "$st" = started ] && [ -n "$fix" ]; then _prfix_reconcile "$now" "$id" "$sess" "$since" "$fix" || return 1; continue; fi
+    # A queued fix row waits for its gates up to 24 h, not 60 min. Then it ends skipped (no operator error), and its
+    # id goes to stdout, so the tick posts it once on its skips list.
+    if [ "$st" = queued ] && [ -n "$fix" ]; then
+      [ "$since" -gt 0 ] && [ $((now - since)) -gt 86400 ] || continue
+      [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = 'it waited 24 h', ended_at = $now, heads = json_set(heads, '$.fix.why', 'expired')
+        WHERE id = $id AND state = 'queued'; SELECT changes();")" = 1 ] && echo "$id"
+      continue
     fi
     case "$st" in
       queued) if [ "$since" -gt 0 ] && [ $((now - since)) -gt 3600 ]; then
