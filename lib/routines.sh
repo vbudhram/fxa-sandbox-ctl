@@ -673,6 +673,11 @@ _routine_recheck() {
 # does not load (its channels are unknown). Other refusals post once, as any skip (D23).
 _routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: channel:"*) return 0 ;; *) return 1 ;; esac; }
 
+# A claimed fix row's actor and fix on its runs entry, from the row ($q, with .data) and its heads.fix ($x).
+# The claim loop and --resume share it, so the bot gets one shape.
+_PRFIX_RUN_JQ='def fixrun($q; $x): {actor: $q.actor, fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first),
+  label: ($q.data | fromjson | .pr.label // "agent-help")}};'
+
 routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] && [[ "${3:-}" =~ ^(--resume)?$ ]] && [ $# -le 3 ] \
     || { echo "usage: routine tick --env live|dev [--resume]" >&2; return 1; }
@@ -722,8 +727,7 @@ routine_tick() {
         AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $qrid AND o.id != $qid AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
       free=$((free - 1))
       runs="$(jq -c --argjson q "$q" --argjson x "$qfix" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
-        '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, actor: $q.actor, channel: ($q.data | fromjson | .channel)} + $i
-          + {fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first), label: ($q.data | fromjson | .pr.label // "agent-help")}}]' <<< "$runs")"
+        "${_PRFIX_RUN_JQ}"'. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i + fixrun($q; $x)]' <<< "$runs")"
       continue
     fi
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
@@ -750,14 +754,15 @@ routine_tick() {
   # A run this tick claimed above has started_at = now: it is in runs already.
   if [ -n "$resume" ]; then
     local orphans o
-    orphans="$(db_json "SELECT r.id, r.routine_id, r.trigger, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id
+    orphans="$(db_json "SELECT r.id, r.routine_id, r.trigger, coalesce(r.actor, '') AS actor, r.heads->'fix' AS fix, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id
       WHERE r.state = 'claimed' AND r.session IS NULL AND r.started_at > $((now - 600)) AND r.started_at < $now AND coalesce(json_extract(r.config, '$.env'), t.env) = $(db_q "$env");")" \
       || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
     while IFS= read -r o; do
       [ -n "$o" ] || continue
       free=$((free - 1))
       runs="$(jq -c --argjson q "$o" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$o")" "$(jq -r .team <<< "$o")" "$(jq -c '.data | fromjson' <<< "$o")")" \
-        '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
+        "${_PRFIX_RUN_JQ}"'. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i
+          + (($q.fix // "" | fromjson? // null) as $x | if $x then fixrun($q; $x) else {} end)]' <<< "$runs")"
     done < <(jq -c '.[]' <<< "$orphans")
   fi
   local spaused; spaused="$(_routine_sessions_paused)"

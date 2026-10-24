@@ -499,6 +499,12 @@ q5="$(fq "$H1")"; out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick
 q4="$(fq "$PA")"; out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick $((T + 170)))"
 check "a skip and a run of a routine with label deps-fix carry it on their fix" "deps-fix|deps-fix" "$l5|$(jq -r --argjson q "$q4" '.runs[] | select(.run == $q) | .fix.label' <<< "$out")"
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q4; UPDATE routines SET data = json_remove(data, '$.pr.label') WHERE id = $rpf;"
+# A bot restart between the claim and the start: --resume answers a claimed fix row with the claim loop's actor and fix.
+q6="$(fq "$PA")"; db_exec "UPDATE routine_runs SET state = 'claimed', started_at = $((T + 175)) WHERE id = $q6;"
+check "--resume answers a claimed fix row with the same trigger, actor and fix as the claim" \
+  "label|example-writer|90001|https://github.com/mozilla/fxa/pull/90001|example-writer|example-pkg|agent-help" \
+  "$(FXA_ROUTINE_NOW=$((T + 180)) routine_tick --env live --resume | jq -r --argjson q "$q6" '.runs[] | select(.run == $q) | [.trigger, .actor, .fix.pr, .fix.url, .fix.actor, .fix.package, .fix.label] | map(tostring) | join("|")')"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q6;"
 
 # A39 run-now --pr: with two queued rows and a started run, a fork PR and a head with a result are refused with their
 # fixed texts, and a good PR queues a manual row with heads.fix at its head.
