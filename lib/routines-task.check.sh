@@ -113,6 +113,56 @@ TMPDIR="$tmp/t" FXA_SESSION_MAX=0 task pyfxa agent-rt23 --routine-run "$r10" >/d
 TMPDIR="$tmp/t" task pyfxa agent-rt10 --routine-run "$r10" >/dev/null 2>&1   # a key that exists: an early return
 check "a refused routine run leaves no temp file, and the capped one stays claimed" "0|claimed" "$(ls -A "$tmp/t" | wc -l | tr -d ' ')|$(db_value "SELECT state FROM routine_runs WHERE id = $r10;")"
 
+# A dependency fix run (heads.fix of a pr-label routine): the PR from the row, Claude, no connectors, narrowed, and the
+# host frame alone in prompt.md. gh is the shared fake of lib/testdata/prfix.
+PA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" PU=https://github.com/mozilla/fxa/pull/90001
+cp -R "$SANDBOX_ROOT/lib/testdata/prfix" "$tmp/fx"; export PRFIX_DIR="$tmp/fx" PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"
+frid="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', '{}'); SELECT last_insert_rowid();")"
+fixrun() { db_value "INSERT INTO routine_runs (routine_id, period, trigger, actor, state, config, heads) VALUES ($frid, 'pr-90001-$PA-$RANDOM', 'label', 'example-writer', 'claimed',
+  $(db_q "$(jq -cn '{name: "Dep fix", template: "blank", on: "pr-label", mode: "pr", repos: ["mozilla/fxa"], channel: "C0OWN00", max_usd: 5,
+    pr: {repo: "mozilla/fxa", authors: ["dependabot[bot]"], label: "agent-help"}}')"),
+  $(db_q "$FH")); SELECT last_insert_rowid();"; }
+FH="$(jq -cn --arg u "$PU" --arg h "$PA" '{fix: {pr: 90001, url: $u, head_sha: $h, packages: ["example-pkg", "bad name"]}}')"
+ftask() { PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa cmd_task --source routine --id "$1" --routine-run "$2"; }
+f1="$(fixrun)"
+check "A9: a fix run with no LLM proxy does not start: the run fails with why boot, and no session" \
+  "ERROR: routine run ${f1} cannot start: a fix run needs the LLM proxy (FXA_LLM_PROXY_URL)|none|failed|a fix run needs the LLM proxy|boot" \
+  "$(FXA_LLM_PROXY_URL="" ftask agent-fx01 "$f1" 2>&1)|$(none agent-fx01)|$(db_value "SELECT state || '|' || reason || '|' || json_extract(heads, '$.fix.why') FROM routine_runs WHERE id = $f1;")"
+f2="$(fixrun)"
+FXA_LLM_PROXY_URL=http://10.0.0.2:8080 FXA_SESSION_RUNTIME=codex PIPE_MCP=jira ftask agent-fx02 "$f2" >/dev/null 2>&1
+check "A9: with FXA_SESSION_RUNTIME=codex the fix run is on claude, with no connectors, narrowed, and its fix fields" \
+  "claude||1|off|90001|label|example-writer|$PA|$PU|$PU|0" \
+  "$(jq -r '[.runtime, (.mcp // ""), .watch_narrow, .memory, .fix_pr, .fix_trigger, .fix_actor, .fix_head_sha, .review_pr, .checkout, .checkout_person] | map(tostring) | join("|")' "$tmp/agent-fx02.json" 2>&1)"
+p="$tmp/agent-fx02.prompt.md"
+check "prompt.md is the host frame: the PR, the head SHA and the checked package names only, not a schedule" \
+  "1|1|0|0|0" \
+  "$(grep -c "^- PR #90001 of mozilla/fxa, at its head commit ${PA}\$" "$p")|$(grep -c '^- the packages it updates: example-pkg$' "$p")|$(grep -c 'bad name' "$p")|$(grep -c 'on a schedule' "$p")|$(grep -oE '[0-9a-f]{40}' "$p" | grep -cv "^${PA}\$")"
+
+# The boot of a fix run, with the runner and the host's clone stubbed: it boots at the claimed head, or not at all.
+eval "$(sed -n '/^_cmd_session_boot() {/,/^}/p' "$SANDBOX_ROOT/fxa-sandbox-ctl")"
+g init -q --bare "$tmp/origin.git"; g clone -q "$tmp/origin.git" "$tmp/root" 2>/dev/null
+( cd "$tmp/root" && echo x > x && g add x && g commit -qm m && g push -q origin HEAD:main ) >/dev/null 2>&1
+boot() { # boot <key>   _cmd_session_boot with stubs; agent_run records its pins in $tmp/booted
+  : > "$tmp/booted"; : > "$tmp/secrets"
+  ( session_run_dir() { echo "$tmp/run-$1"; }; runtime_load() { :; }; pipeline_ensure_clone() { :; }; worktree_repo_root() { echo "$tmp/root"; }
+    _session_pack_media() { :; }; worktree_copy_secrets() { echo copied > "$tmp/secrets"; }; _session_ticket_context() { echo "TICKET" >> "$tmp/booted"; }
+    circleci_digests() { :; }; _session_review() { echo "REVIEW-TEXT"; }; check_prerequisites() { :; }; _session_first_prompt() { echo FIRST; }
+    _session_prompt_tail() { :; }; _session_wants_stack() { return 1; }; _session_boot_times() { echo null; }; agent_stop() { :; }
+    agent_run() { printf 'pin %s %s\n%s\n' "$FXA_PIN_SHA" "$FXA_PIN_BASE_SHA" "$3" >> "$tmp/booted"; }
+    _cmd_session_boot "$1" ) >/dev/null 2>&1
+}
+FXA_LLM_PROXY_URL=http://10.0.0.2:8080 boot agent-fx02
+check "the boot pins the claimed head as sha and base, copies no secret file, and goes active" "pin $PA $PA||active" \
+  "$(grep '^pin' "$tmp/booted")|$(cat "$tmp/secrets")|$(session_get agent-fx02 state)"
+f3="$(fixrun)"; FXA_LLM_PROXY_URL=http://10.0.0.2:8080 ftask agent-fx03 "$f3" >/dev/null 2>&1
+jq '.headRefOid = "3333333333333333333333333333333333333333"' "$tmp/fx/pr/90001.json" > "$tmp/x" && mv "$tmp/x" "$tmp/fx/pr/90001.json"
+FXA_LLM_PROXY_URL=http://10.0.0.2:8080 boot agent-fx03
+check "A8b: a PR head that moved between the claim and the boot: no runner boots, the run ends skipped with why new-commit, and the head is free" \
+  "|stopped|skipped|new-commit|-x$f3" \
+  "$(cat "$tmp/booted")|$(session_get agent-fx03 state)|$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') FROM routine_runs WHERE id = $f3;")|$(db_value "SELECT substr(period, instr(period, '-x')) FROM routine_runs WHERE id = $f3;")"
+FXA_LLM_PROXY_URL="" boot agent-fx02
+check "a fix run's boot with no LLM proxy boots nothing" "|failed" "$(cat "$tmp/booted")|$(session_get agent-fx02 state)"
+
 # The cap: the run's own, at most the host's (D21); a bad one fails.
 echo '{"cap_usd": 7}' > "$tmp/agent-cap1.json"; echo '{"cap_usd": 70}' > "$tmp/agent-cap2.json"; echo '{}' > "$tmp/agent-cap3.json"; echo '{"cap_usd": "x"}' > "$tmp/agent-cap4.json"
 check "the run cap is min(the run's, the host's), the host's when none, and a bad one fails" "7|50|50|1" \

@@ -2203,10 +2203,22 @@ cmd_task() {
     *) echo "ERROR: task needs --source slack" >&2; return 1 ;;
   esac
   [[ "$key" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like agent-7f3a" >&2; return 1; }
-  local run_json="" run_text="" routine_cfg=""
+  local run_json="" run_text="" routine_cfg="" fix=""
   if [ "$source" = routine ]; then
     run_json="$(routine_run_read "$rrun" "${PIPE_PROFILE:-fxa}")" || return 1
     routine_cfg="$(jq -c .config <<< "$run_json")"
+    # A dependency fix run (heads.fix): its PR comes from the row. It boots only with the LLM proxy, so the runner
+    # holds a run token and never a key (credentials fail closed).
+    fix="$(jq -c '.heads.fix // empty' <<< "$run_json")"
+    if [ -n "$fix" ]; then
+      if [ -z "${FXA_LLM_PROXY_URL:-}" ]; then
+        _prfix_set "$rrun" '.why = "boot"' || true; routine_run_fail "$rrun" "a fix run needs the LLM proxy" || true
+        echo "ERROR: routine run ${rrun} cannot start: a fix run needs the LLM proxy (FXA_LLM_PROXY_URL)" >&2; return 1
+      fi
+      checkout="$(jq -r '.url // ""' <<< "$fix")"
+      [[ "$checkout" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] && [[ "$(jq -r '.head_sha // ""' <<< "$fix")" =~ ^[0-9a-f]{40}$ ]] \
+        || { echo "ERROR: routine run ${rrun} cannot start: its row is not valid" >&2; return 1; }
+    fi
     owner="routine:${PIPE_PROFILE:-fxa}/$(jq -r .routine_id <<< "$run_json")"
     # Built now, so a bad row is refused before anything is written; kept in memory, so no return path
     # leaves a temp file. It goes to the session's prompt file under the cap lock below.
@@ -2230,7 +2242,7 @@ cmd_task() {
   local why; if why="$(sessions_paused)"; then echo "ERROR: agent sessions are paused by the operator: ${why}" >&2; return 1; fi
   # Codex is off unless the host opts in: the manager VM has no Codex login.
   local eff="$runtime"; [ -n "$resume_from" ] && [ -z "$eff" ] && eff="$(session_get "$resume_from" runtime)"
-  if [ "${eff:-${FXA_SESSION_RUNTIME:-claude}}" = codex ] && [ "${FXA_SESSION_CODEX:-}" != 1 ]; then
+  if [ -z "$fix" ] && [ "${eff:-${FXA_SESSION_RUNTIME:-claude}}" = codex ] && [ "${FXA_SESSION_CODEX:-}" != 1 ]; then
     echo "ERROR: Codex sessions are turned off on this host (FXA_SESSION_CODEX)" >&2; return 1
   fi
   # The thread's open PR carries over to any new session in it, unless --new
@@ -2293,11 +2305,14 @@ cmd_task() {
   # A routine run: its branch is the base, its text is untrusted (D18), and a security review is
   # narrowed: watch_narrow for the watch page, no team memory (D9).
   jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" --arg profile "${PIPE_PROFILE:-}" --arg base "${PIPE_BASE_BRANCH:-main}" \
-    --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" \
+    --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" --argjson fix "${fix:-null}" \
+    --arg run_trigger "$([ -z "$fix" ] || jq -r '.trigger // ""' <<< "$run_json")" --arg run_actor "$([ -z "$fix" ] || jq -r '.actor // ""' <<< "$run_json")" \
     '{key: $key, owner: $owner, source: $source, branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)
      + (if $cfg == null then {} else {routine_run: $run, routine_name: $cfg.name, routine_mode: $cfg.mode, untrusted: "1", cap_usd: ($cfg.max_usd // 10),
-          base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end) end)' > "$(_session_file "$key")"
+          base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end) end)
+     + (if $fix == null then {} else {watch_narrow: "1", memory: "off", fix_pr: ($fix.pr | tostring), fix_trigger: $run_trigger, fix_actor: $run_actor,
+          fix_head_sha: $fix.head_sha} end)' > "$(_session_file "$key")"
   _session_unlock .task-cap
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
@@ -2333,13 +2348,16 @@ cmd_task() {
   # A resumed session keeps its agent: the other one cannot read its conversation.
   [ -n "$resume_from" ] && [ -z "$runtime" ] && runtime="$(session_get "$resume_from" runtime)"
   runtime="${runtime:-${FXA_SESSION_RUNTIME:-claude}}"
+  # A fix run is pinned to Claude: the proxy token and the guards are set up for it.
+  [ -z "$fix" ] || runtime=claude
   case "$runtime" in claude|codex) ;; *) echo "ERROR: --runtime must be claude or codex" >&2; _task_abort "$key"; return 1 ;; esac
   # ponytail: a team stack loads each repo's config through Claude's --add-dir; Codex has no such flag yet.
   if [ "$runtime" = codex ] && trees_on "$key"; then echo "ERROR: a session with several repos runs on Claude only" >&2; _task_abort "$key"; return 1; fi
   session_set "$key" runtime "$runtime"
   # MCP connectors: a new session takes its team profile's (PIPE_MCP) or --mcp; a resume keeps its
   # session's. Sessions only: pipeline runs never get them.
-  [ -z "$resume_from" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
+  # A fix run gets no connectors: its context holds untrusted PR and CI text.
+  [ -z "$resume_from" ] && [ -z "$fix" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
     [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; _task_abort "$key"; return 1; }
@@ -2354,8 +2372,11 @@ cmd_task() {
 
 # Runs detached: prepare the slot, write the fenced request, boot the runner.
 _cmd_session_boot() {
-  local key="$1" dir name nonce root sha
+  local key="$1" dir name nonce root sha fixh
   name="$(worktree_branch_for "$key")"; dir="$(session_run_dir "$key")"
+  # A dependency fix run boots at the head its run was claimed for, and only with the LLM proxy.
+  fixh="$(session_get "$key" fix_head_sha)"
+  [ -z "$fixh" ] || [ -n "${FXA_LLM_PROXY_URL:-}" ] || { echo "ERROR: a fix run needs the LLM proxy" >&2; session_set "$key" state failed; return 1; }
   FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   export _FXA_SESSION_MCP="$(session_get "$key" mcp)" # only a session sets this
@@ -2386,6 +2407,7 @@ _cmd_session_boot() {
   local from base_sha="$sha" resume_sid=""
   from="$(session_get "$key" resume_from)"
   local branch review; branch="$(session_get "$key" branch)"; branch="${branch:-$key}"; review="$(session_get "$key" review_pr)"
+  [ -z "$fixh" ] || [ -n "$review" ] || { echo "ERROR: ${key} is a fix run with no PR" >&2; session_set "$key" state failed; return 1; }
   # A new round on the PR starts at its head. A round that stopped part way
   # resumes like any session: its base (the head it began at) and its patch.
   # A fresh round (!restart) keeps the PR head but not the conversation or the patch.
@@ -2406,6 +2428,12 @@ _cmd_session_boot() {
     # The PR head also holds any push made since Open PR.
     sha="$(gh pr view "$review" --json headRefOid -q .headRefOid 2>/dev/null || true)"
     [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "ERROR: could not read the head of ${review}" >&2; session_set "$key" state failed; return 1; }
+    # The head moved after the claim: this run is not for the new commit, so nothing boots and the head is free.
+    if [ -n "$fixh" ] && [ "$sha" != "$fixh" ]; then
+      echo "The PR has a new commit (${sha:0:10}); this run was for ${fixh:0:10}, so nothing boots."
+      _prfix_skip "$(session_get "$key" routine_run)" new-commit "the PR has a new commit" || true
+      session_set "$key" state stopped; return 1
+    fi
     base_sha="$sha"
     echo "Continuing ${review} at ${sha:0:10}${resume_sid:+, conversation ${resume_sid:0:8}}..."
   elif [ -n "$from" ]; then
@@ -2426,7 +2454,8 @@ _cmd_session_boot() {
   rm -rf "${dir}/.fxa-inbox"; [ -d "${SESSION_DIR}/${key}.inbox" ] && mv "${SESSION_DIR}/${key}.inbox" "${dir}/.fxa-inbox"
   rm -f "${dir}/.fxa-thread-notes.md"; [ -n "$notes" ] && cp "$notes" "${dir}/.fxa-thread-notes.md"
   # The run dir is no worktree, so the stack's gitignored secrets (123done's client secret) come over here.
-  worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
+  # Not for a fix run: package code it installs runs on the runner.
+  [ -n "$fixh" ] || worktree_copy_secrets "$dir" 2>/dev/null || echo "WARN: could not copy the stack's secret files; OAuth relier tests will fail" >&2
   if [ -n "$from" ] && [ "$fresh_pr" != 1 ]; then
     [ -z "$stack" ] && [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.patch" ] && cp "${SESSION_DIR}/${from}.patch" "${dir}/.fxa-resume.patch"
     [ -z "$stack" ] && [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.bundle" ] && cp "${SESSION_DIR}/${from}.bundle" "${dir}/.fxa-resume.bundle"
@@ -2535,6 +2564,13 @@ cmd_steer() {
   _session_unlock "$key"
   [ "$rc" -eq 0 ] || return "$rc"
   echo "${key} started"
+}
+
+# _prfix_boot_why <key>   A fix run whose boot failed: heads.fix.why 'boot', unless the boot already ended the row.
+_prfix_boot_why() {
+  local run; run="$(session_get "$1" routine_run 2>/dev/null || true)"
+  [ -n "$(session_get "$1" fix_pr 2>/dev/null || true)" ] && [[ "$run" =~ ^[1-9][0-9]*$ ]] || return 0
+  _prfix_set "$run" 'if .why then . else .why = "boot" end' || true
 }
 
 # _session_job_died <key> <state>   A boot or finish job that died (a host restart): settle the state so it
@@ -3151,7 +3187,7 @@ main() {
 
     # Owner-steered sessions (Slack front door)
     task)       cmd_task "$@" ;;
-    session-boot) _cmd_session_boot "$@" ;;
+    session-boot) _cmd_session_boot "$@" || { _prfix_boot_why "${1:-}"; false; } ;;
     session-finish) _cmd_session_finish "$@" ;;
     steer)      cmd_steer "$@" ;;
     events)     cmd_events "$@" ;;

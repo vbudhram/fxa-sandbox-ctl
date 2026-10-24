@@ -201,13 +201,13 @@ cmd_routine() {
 # is not claimed, or one that already has a session. A store error says so.
 routine_run_read() {
   _routine_id "$1" || return 1
-  local j r; j="$(db_json "SELECT r.id, r.routine_id, t.team, r.state, r.session, r.config, r.heads FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = $1;")" \
+  local j r; j="$(db_json "SELECT r.id, r.routine_id, t.team, r.state, r.session, r.trigger, r.actor, r.config, r.heads FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = $1;")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"
   [ -n "$r" ] || { echo "ERROR: no routine run $1" >&2; return 1; }
   [ "$(jq -r .team <<< "$r")" = "$2" ] || { echo "ERROR: routine run $1 is not a run of team $2" >&2; return 1; }
   [ "$(jq -r '"\(.state)|\(.session // "")"' <<< "$r")" = "claimed|" ] || { echo "ERROR: routine run $1 is not claimed" >&2; return 1; }
-  jq -c '{id, routine_id, team, config: (.config // "null" | fromjson), heads: (.heads // "null" | fromjson)}' <<< "$r" 2>/dev/null \
+  jq -c '{id, routine_id, team, trigger, actor, config: (.config // "null" | fromjson), heads: (.heads // "null" | fromjson)}' <<< "$r" 2>/dev/null \
     || { echo "ERROR: routine run $1 has no readable config" >&2; return 1; }
 }
 
@@ -221,6 +221,13 @@ routine_run_start() {
 # routine_run_fail <run> <reason>   A started run whose session could not start.
 routine_run_fail() {
   db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES});" >/dev/null
+}
+
+# _prfix_skip <run> <why> <reason>   End a live fix row skipped, with heads.fix.why (the migration 012 trigger frees its head).
+_prfix_skip() {
+  _routine_id "$1" || return 1
+  db_exec "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "$3"), ended_at = $(_routine_now), heads = json_set(heads, '$.fix.why', $(db_q "$2"))
+    WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix') IS NOT NULL;" >/dev/null
 }
 
 # _with_timeout <s> <cmd> [args...]   Run an outside command (not a shell function) for at most <s> seconds.
