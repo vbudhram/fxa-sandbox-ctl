@@ -257,6 +257,54 @@ _prfix_claim_push() {
   [ "$n" = 1 ]
 }
 
+# _prfix_gate <team> <paused> <trigger> <cfg file> <free slots> <routine id> <run id>   The first gate that holds a
+# queued fix row, as a fixed text for heads.fix.wait (it reaches the public PR comment, so no operator reason), or nothing.
+_prfix_gate() {
+  local prc=0
+  [ "$(_routine_team_state "$1")" = active ] || { echo "the team is not active"; return 0; }
+  [ -z "$(_routine_sessions_paused)" ] || { echo "agent sessions are paused"; return 0; }
+  _routine_team_paused "$1" >/dev/null || prc=$?
+  case $prc in 0) echo "the team is paused"; return 0 ;; 2) echo "the team does not load"; return 0 ;; esac
+  [ -z "$(_ROUTINE_PY budget "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/$1.json" "${FXA_LLM_PROXY_DIR:-$HOME/.claude/state/llm-proxy}/teams/$1.spend.json" "$(_routine_now)")" ] \
+    || { echo "the team budget is used"; return 0; }
+  [ "$2" = 0 ] || [ "$3" = manual ] || { echo "the routine is paused"; return 0; }
+  [ -z "$(_routine_recheck "$1" "$4")" ] || { echo "the routine no longer passes its checks"; return 0; }
+  [ "$5" -ge 2 ] || { echo "no runner is free"; return 0; }
+  [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $6 AND id != $7 AND state IN ('claimed','started');")" = 0 ] \
+    || echo "another run of this routine is in progress"
+}
+
+# _prfix_pr_read <url>   The PR as gh pr view gives it (one call, at most 30 s), or exit 1 when GitHub did not answer.
+_prfix_pr_read() {
+  local info
+  [[ "$1" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || return 1
+  info="$(_with_timeout 30 gh pr view "$1" --json number,url,title,state,headRefOid,headRefName,baseRefName,isCrossRepository,author,statusCheckRollup 2>/dev/null)" \
+    && jq -e '.state and (.number | type == "number")' <<< "$info" >/dev/null 2>&1 && printf '%s\n' "$info"
+}
+
+# _prfix_pr_why <cfg json> <PR json> <url> [head sha]   Why the PR is not this routine's target, as a C2 code: merged,
+# closed, fork, base, new-commit (not at [head sha]), or target (another repo or author, or a branch name that cannot
+# be used). Nothing when it is the target.
+_prfix_pr_why() {
+  jq -r --argjson c "$1" --arg u "$3" --arg h "${4:-}" 'def who: ascii_downcase | sub("^app/"; "") | sub("\\[bot\\]$"; "");
+    if .state == "MERGED" then "merged" elif .state != "OPEN" then "closed" elif .isCrossRepository then "fork"
+    elif (.url | ascii_downcase) != ($u | ascii_downcase) or ($u | ascii_downcase | split("/")[3:5] | join("/")) != ($c.pr.repo | ascii_downcase)
+      or ((.author.login | who) as $a | [$c.pr.authors[] | who] | index($a) | not)
+      or (.headRefOid | test("^[0-9a-f]{40}$") | not) or (.headRefName | test("^[A-Za-z0-9._/@+-]+$") | not) or (.headRefName | contains("..")) then "target"
+    elif .headRefName == .baseRefName or (.headRefName | test("^(main|master)$|^(release|train)[-/_]")) then "base"
+    elif $h != "" and .headRefOid != $h then "new-commit" else empty end' <<< "$2"
+}
+
+# _prfix_target <cfg json> <fix json>   The PR against the routine before a claim: _prfix_pr_why at the row's head.
+# Exit 1 when GitHub did not answer, so the row waits.
+_prfix_target() {
+  local url info; url="$(jq -r '.url // ""' <<< "$2")"
+  [[ "$(jq -r '.head_sha // ""' <<< "$2")" =~ ^[0-9a-f]{40}$ ]] || { echo target; return 0; }
+  [[ "$url" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo target; return 0; }
+  info="$(_prfix_pr_read "$url")" || return 1
+  _prfix_pr_why "$1" "$info" "$url" "$(jq -r .head_sha <<< "$2")"
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.
@@ -349,11 +397,41 @@ routine_tick() {
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
-  local queued q qid qrid qt qwhy qpost recheck runs="[]" skips="[]"
+  local queued q qid qrid qt qwhy qpost qfix recheck runs="[]" skips="[]"
   local f id team paused period at next cfg; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
-  queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env");")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
+  queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, t.paused, coalesce(r.trigger, 'manual') AS trigger, coalesce(r.actor, '') AS actor, r.heads->'fix' AS fix
+    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env") ORDER BY r.id;")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
+    # A fix row (heads.fix): every gate, then the PR target, before the claim. A gate keeps it queued with its text.
+    qfix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$q")"
+    if [ -n "$qfix" ]; then
+      qid="$(jq -r .id <<< "$q")"; qrid="$(jq -r .routine_id <<< "$q")"; qt="$(jq -r .team <<< "$q")"
+      jq -j '.data' <<< "$q" > "$f"
+      qwhy="$(_prfix_gate "$qt" "$(jq -r .paused <<< "$q")" "$(jq -r .trigger <<< "$q")" "$f" "$free" "$qrid" "$qid")"
+      if [ -z "$qwhy" ]; then
+        local trc=0; qwhy="$(_prfix_target "$(jq -c '.data | fromjson' <<< "$q")" "$qfix")" || { trc=1; qwhy="GitHub did not answer"; }
+        if [ "$trc" = 0 ] && [ -n "$qwhy" ]; then
+          [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "the PR is no longer the run's target: ${qwhy}"), ended_at = $now,
+            heads = json_set(heads, '$.fix.why', $(db_q "$qwhy")) WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
+          skips="$(jq -c --argjson q "$q" --argjson x "$qfix" --arg why "$qwhy" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+            '($q.data | fromjson) as $d | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel, template: $i.template, private: $i.private,
+              reason: "the PR is no longer the run'"'"'s target: \($why)", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: $why}}]' <<< "$skips")"
+          continue
+        fi
+      fi
+      if [ -n "$qwhy" ]; then
+        [ "$(jq -r '.wait // ""' <<< "$qfix")" = "$qwhy" ] || _prfix_set "$qid" '.wait = $w' --arg w "$qwhy" || true
+        continue
+      fi
+      [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now, heads = json_remove(heads, '$.fix.wait') WHERE id = $qid AND state = 'queued'
+        AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $qrid AND o.id != $qid AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
+      free=$((free - 1))
+      runs="$(jq -c --argjson q "$q" --argjson x "$qfix" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+        '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, actor: $q.actor, channel: ($q.data | fromjson | .channel)} + $i
+          + {fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first)}}]' <<< "$runs")"
+      continue
+    fi
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
     [ "$free" -ge 2 ] || continue
     # The saved routine against its team as it is now (D8), as for a scheduled run.

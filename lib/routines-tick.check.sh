@@ -462,6 +462,36 @@ check "the claim sets pushing and pending_sha once; a second claim, an ended row
 check "a stop of the claimed row says the fix is being pushed" "ERROR: The fix is being pushed. Try again after it ends." "$(cmd_routine stop fxa "$rst" --run "$fd" 2>&1)"
 db_exec "UPDATE routine_runs SET state = 'ok' WHERE id IN ($fd, $fb);"
 
+# The queued claim loop for a fix row (a pr-label routine): every gate keeps it queued with heads.fix.wait, and the
+# target check against the fake gh (lib/testdata/prfix) skips a PR with a new commit before any claim.
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state IN ('queued','claimed','started');"
+PA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+rpf="$(mk fxa "daily 09:00" '{"name": "Dep fix", "on": "pr-label", "mode": "pr", "pr": {"repo": "mozilla/fxa", "authors": ["dependabot[bot]"]}}')"
+fq() { # fq <head sha> [trigger]   A queued fix row on PR 90001; prints its id.
+  db_value "INSERT INTO routine_runs (routine_id, period, trigger, actor, state, heads, started_at) VALUES ($rpf, 'pr-90001-$1', '${2:-label}', 'example-writer', 'queued',
+    json('{\"fix\":{\"pr\":90001,\"url\":\"https://github.com/mozilla/fxa/pull/90001\",\"head_sha\":\"$1\",\"packages\":[\"example-pkg\"]}}'), $T); SELECT last_insert_rowid();"; }
+q1="$(fq "$PA")"
+out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; _routine_team_paused() { echo held; return 0; }; tick $((T + 30)))"
+check "A7: a queued fix row on a paused team stays queued with the gate text in heads.fix.wait, and no run starts" "queued|the team is paused|0" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.wait') FROM routine_runs WHERE id = $q1;")|$(jq --argjson q "$q1" '[.runs[], .skips[] | select(.run == $q)] | length' <<< "$out")"
+out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; db_exec "UPDATE routines SET paused = 1 WHERE id = $rpf;"; tick $((T + 60)))"
+check "a paused routine holds a label run, not a manual one" "queued|the routine is paused" "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.wait') FROM routine_runs WHERE id = $q1;")"
+db_exec "UPDATE routine_runs SET trigger = 'manual' WHERE id = $q1;"
+out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick $((T + 90)))"; db_exec "UPDATE routines SET paused = 0 WHERE id = $rpf;"
+check "a queued fix row that passes the gates and the target check is claimed: wait cleared, its trigger, actor and fix on runs" \
+  "claimed||manual|example-writer|90001|https://github.com/mozilla/fxa/pull/90001|example-writer|example-pkg" \
+  "$(db_value "SELECT state || '|' || coalesce(json_extract(heads, '$.fix.wait'), '') FROM routine_runs WHERE id = $q1;")|$(jq -r --argjson q "$q1" '.runs[] | select(.run == $q) | [.trigger, .actor, .fix.pr, .fix.url, .fix.actor, .fix.package] | map(tostring) | join("|")' <<< "$out")"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q1;"
+q2="$(fq "$H1")"
+out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick $((T + 120)))"
+check "A8: a PR with a new commit: not claimed, skipped with why new-commit, on skips with fix, not on runs, and its head freed" \
+  "skipped|new-commit|new-commit|90001|true|0|pr-90001-$H1-x$q2" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') FROM routine_runs WHERE id = $q2;")|$(jq -r --argjson q "$q2" '.skips[] | select(.run == $q) | [.fix.why, .fix.pr, .post] | map(tostring) | join("|")' <<< "$out")|$(jq --argjson q "$q2" '[.runs[] | select(.run == $q)] | length' <<< "$out")|$(db_value "SELECT period FROM routine_runs WHERE id = $q2;")"
+q3="$(fq "$PA")"
+out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" export PRFIX_DIR="$tmp/nofx"; tick $((T + 150)))"
+check "a PR read that fails keeps the row queued with a wait, not a skip" "queued|GitHub did not answer" "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.wait') FROM routine_runs WHERE id = $q3;")"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q3;"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
