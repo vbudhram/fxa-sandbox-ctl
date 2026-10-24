@@ -136,7 +136,13 @@ check("people: unsigned 401, a non-admin 403, an admin with no store gets an emp
 TS = "/api/teams/rusty/test/stop"
 check("test stop: none running is 409", 409, call("POST", TS, {}, sig(A, "POST", TS))[0])
 import subprocess as sp, signal as sg
-pr = sp.Popen(["bash", "-c", "trap 'echo stopped > " + tmp + "/stopped; exit 143' TERM; while :; do sleep 0.1; done"]); time.sleep(0.3)
+# A pid file left by an ended test whose PID now names another process: no TERM to it.
+other = sp.Popen(["sleep", "30"]); open(f"{tmp}/teams/rusty.test.pid", "w").write(str(other.pid))
+st = call("POST", TS, {}, sig(A, "POST", TS))[0]; time.sleep(0.3)
+check("test stop: a stale pid file that names an unrelated process is 409, and that process lives", (409, None), (st, other.poll()))
+other.kill()
+# The fake test's command line ends like the real one: '<ctl> profile test rusty'.
+pr = sp.Popen(["bash", "-c", "trap 'echo stopped > " + tmp + "/stopped; exit 143' TERM; while :; do sleep 0.1; done", "fxa-sandbox-ctl", "profile", "test", "rusty"]); time.sleep(0.3)
 open(f"{tmp}/teams/rusty.test.pid", "w").write(str(pr.pid))
 st = call("POST", TS, {}, sig(A, "POST", TS))[0]
 try:

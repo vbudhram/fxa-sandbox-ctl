@@ -866,8 +866,13 @@ class Handler(BaseHTTPRequestHandler):
         """Stop a running test: TERM to profile test, whose trap stops the runner it booted (teams_test)."""
         pidf = Path(os.environ.get("FXA_TEAMS_DIR") or Path.home() / ".claude/state/teams") / f"{name}.test.pid"
         try:
-            os.kill(int(pidf.read_text()), signal.SIGTERM)
-        except (OSError, ValueError):
+            pid = int(pidf.read_text())
+            # The pid file outlives the test, and the PID can name another process by now.
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout.strip()
+            if not cmd.endswith(f" profile test {name}"):
+                raise ValueError("not this team's test")
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ValueError, subprocess.SubprocessError):
             self._json(409, {"error": "no test of this team is running"})
             return
         self._json(202, {"ok": True, "out": f"stopping the test of {name}: it stops its runner, then the log says so"})
