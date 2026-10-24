@@ -608,6 +608,8 @@ check "the next tick does not post it again, and a new request on the same head 
   cp -R "$SANDBOX_ROOT/lib/testdata/prfix" "$tmp/pf"; export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" PRFIX_DIR="$tmp/pf" GITHUB_APP_ID=123456
   echo '[]' > "$tmp/pf/api/repos/mozilla/fxa/issues/90003/comments.json"; echo '[]' > "$tmp/pf/api/repos/mozilla/fxa/issues/90004/comments.json"
   github_app_enabled() { true; }
+  # The sweep has its own check (lib/prfix-sweep.check.sh): here it must not queue the fixture's labelled PRs.
+  db_exec "UPDATE routines SET swept_at = 9999999999 WHERE json_extract(data, '$.on') = 'pr-label';"
   _gh_app_api() {
     local body f; body="$(cat)"; echo "$1 $2 $(jq -r '.body // "" | split("\n")[1] // ""' <<< "${body:-{\}}" 2>/dev/null)" >> "$tmp/app"
     case "$1 $2" in

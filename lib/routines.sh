@@ -410,9 +410,34 @@ _prfix_red() {
     | if index("red") then "red" elif index("pending") then "pending" else "green" end' <<< "$1" 2>/dev/null || echo pending
 }
 
+# _prfix_fix_json <PR json> <signal epoch>   heads.fix of a new fix row, from host-checked values only: the package name
+# from a 'bump <pkg> from' title, and the failed checks' https links.
+_prfix_fix_json() {
+  jq -c --argjson at "$2" '{pr: .number, url, head_sha: .headRefOid, head_ref: .headRefName, base_ref: .baseRefName, author: .author.login,
+    packages: [.title | capture("[Bb]ump (?<p>[^ ]+) from")? | .p | select(test("^[@a-z0-9._/-]{1,80}$"))], signal_at: $at,
+    check_urls: [.statusCheckRollup[]? | select((.conclusion // .state) | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"))
+      | (.detailsUrl // .targetUrl) | select(type == "string" and test("^https://[A-Za-z0-9./_?=&-]+$"))][:10]}' <<< "$1"
+}
+
+# _prfix_queue <routine id> <cfg json> <PR json> <trigger> <actor> <signal epoch> <now>   One queued fix row for the PR head
+# (UNIQUE period 'pr-<n>-<sha>'), written before any label or comment, so a kill leaves a row that prfix_report repairs.
+_prfix_queue() {
+  local fix num head n id
+  fix="$(_prfix_fix_json "$3" "$6")" && [ -n "$fix" ] || return 0
+  num="$(jq -r .pr <<< "$fix")"; head="$(jq -r .head_sha <<< "$fix")"
+  n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
+      VALUES ($1, $(db_q "pr-${num}-${head}"), $(db_q "$4"), $(db_q "$5"), 'queued', json($(db_q "$2")), json($(db_q "{\"fix\":${fix}}")), $7);
+      SELECT changes() || '|' || last_insert_rowid();")" || return 0
+  [ "${n%%|*}" = 1 ] || return 0
+  id="${n#*|}"; echo "routine $1: queued run ${id} for #${num} (${4} by ${5})"
+  prfix_report "$id" >/dev/null 2>&1 || true
+}
+
 # _prfix_consider <routine id> <cfg json> <PR json> <now>   One PR of the sweep. Exit 3 when the budget is used.
+# Label signal: the newest 'labeled' event of the routine's label, by a User with admin, maintain or write permission,
+# newer than the head commit and the end of the last run on the PR. A read that fails, times out or is not JSON: no signal.
 _prfix_consider() {
-  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat
+  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor
   repo="$(jq -r .pr.repo <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
   num="$(jq -r '.number' <<< "$pr")"; head="$(jq -r '.headRefOid // ""' <<< "$pr")"
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
@@ -422,7 +447,25 @@ _prfix_consider() {
   # A request must be newer than the head commit.
   _prfix_left || return 3
   hat="$(_prfix_gh api "repos/${repo}/commits/${head}" --jq '.commit.committer.date | fromdateiso8601')" && [[ "$hat" =~ ^[0-9]{9,11}$ ]] || return 0
-  return 0
+  lend="$(db_value "SELECT coalesce(max(ended_at), 0) FROM routine_runs WHERE routine_id = ${rid} AND json_extract(heads, '$.fix.pr') = ${num}
+    AND state NOT IN (${_ROUTINE_LIVE_STATES});")" && [[ "$lend" =~ ^[0-9]+$ ]] || return 0
+  since="$hat"; [ "$lend" -le "$since" ] || since="$lend"
+  if jq -e --arg l "$label" 'any(.labels[]?; .name == $l)' <<< "$pr" >/dev/null 2>&1; then
+    _prfix_left || return 3
+    ev="$(_prfix_gh api --paginate "repos/${repo}/issues/${num}/timeline?per_page=100")" || return 0
+    ev="$(jq -rs --arg l "$label" '[add // [] | .[] | select(.event == "labeled" and .label.name == $l)] | sort_by(.created_at) | last
+      | select(.actor.type == "User") | "\(.actor.login) \(.created_at | fromdateiso8601)"' <<< "$ev" 2>/dev/null)" || return 0
+    login="${ev% *}"; at="${ev##* }"
+    [[ "$login" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] && [[ "$at" =~ ^[0-9]{9,11}$ ]] && [ "$at" -gt "$since" ] || return 0
+    _prfix_left || return 3
+    perm="$(_prfix_gh api "repos/${repo}/collaborators/${login}/permission")" || return 0
+    pw="$(jq -r 'if (.permission | IN("admin", "write")) or (.role_name | IN("admin", "maintain", "write")) then "yes"
+      elif (.permission | type) == "string" then "no" else empty end' <<< "$perm" 2>/dev/null)" || return 0
+    [ "$pw" = yes ] || return 0
+    trigger=label actor="$login"
+  else return 0; fi
+  [ "$red" = red ] && [ -z "$(_prfix_pr_why "$cfg" "$pr" "$(jq -r .url <<< "$pr")")" ] || return 0
+  _prfix_queue "$rid" "$cfg" "$pr" "$trigger" "$actor" "$at" "$now"
 }
 
 # _prfix_sweep_one <routine row json> <now>   The open PRs of each author of one pr-label routine, in number order after
@@ -966,11 +1009,7 @@ _prfix_runnow() {
     base) echo "ERROR: PR #${num} is from the base or a release branch. Use a dependency PR." >&2; return 1 ;;
     *) echo "ERROR: PR #${num} is not a dependency PR this routine fixes: it must be by $(jq -r '.pr.authors | join(" or ")' <<< "$cfg"). Use one of their PRs." >&2; return 1 ;;
   esac
-  # Only host-checked values: the package name from a 'bump <pkg> from' title, and the failed checks' https links.
-  fix="$(jq -c --argjson now "$now" '{pr: .number, url, head_sha: .headRefOid, head_ref: .headRefName, base_ref: .baseRefName, author: .author.login,
-    packages: [.title | capture("[Bb]ump (?<p>[^ ]+) from")? | .p | select(test("^[@a-z0-9._/-]{1,80}$"))], signal_at: $now,
-    check_urls: [.statusCheckRollup[]? | select((.conclusion // .state) | IN("FAILURE", "TIMED_OUT", "CANCELLED", "ERROR"))
-      | (.detailsUrl // .targetUrl) | select(type == "string" and test("^https://[A-Za-z0-9./_?=&-]+$"))][:10]}' <<< "$info")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
+  fix="$(_prfix_fix_json "$info" "$now")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
       VALUES ($id, $(db_q "pr-${num}-${head}"), 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "{\"fix\":${fix}}")), $now);
       SELECT changes() || '|' || last_insert_rowid();")" || n=""
