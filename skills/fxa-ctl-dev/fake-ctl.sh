@@ -32,6 +32,7 @@
 #   FAKE_FINISH_FAIL  a finish ends 12 s later with this error and the session active, as a failed wrap-up does
 #   FAKE_WRAP_REPLY   a finish's wrap-up turn replies with this text 6 s in (needs-input), as ctl's wrap_reply does
 #   FAKE_FAIL_S       the session's state is failed from this many seconds after its start
+#   FAKE_STOP_S       the session's state is stopped from this many seconds after its start, as a routine stop does
 #   FAKE_ROUTINE_TASK_FAIL  task --source routine exits 1 with this error and no session, as ctl refusing the run does
 #   FAKE_TASK_CAP  the first n tasks (not routine runs) exit 1 at the session cap, as ctl does when every runner is busy
 #   FAKE_IDLE_S    session idle-sweep pauses a session whose last turn ended this many seconds ago, and prints "paused <key>"
@@ -40,6 +41,9 @@
 #   FAKE_ROUTINES  routine tick: a JSON array of the tick's runs and skips (a skip has a reason), each with
 #                  env (default live) and at (the fake clock time it is due, default 0); each is answered once.
 #                  routine done answers {changed, state, post, next}, once per run; posted says posted.
+#                  A dependency fix run carries trigger and fix {pr, url, actor, package}, and done {state, changed,
+#                  sha, why} that the tick keeps from the bot: done then answers that state (else the bot's) and fix
+#                  {pr, url, sha, why}, as ctl derives them from heads.fix. A skip can carry fix {pr, url, why}.
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
@@ -73,7 +77,7 @@ script() {
   [ -n "${FAKE_TAPE:-}" ] && [ -n "$(get "$k" tape_idx)" ] && tape="$(jq -c --argjson i "$(get "$k" tape_idx)" '.sessions[$i] // null' "$FAKE_TAPE")"
   jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" --argjson tape "$tape" \
     --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" \
-    --argjson ch "${FAKE_CHANGES:-1}" --arg ferr "${FAKE_FINISH_FAIL:-}" --arg failat "${FAKE_FAIL_S:-}" --arg wr "${FAKE_WRAP_REPLY:-}" '
+    --argjson ch "${FAKE_CHANGES:-1}" --arg ferr "${FAKE_FINISH_FAIL:-}" --arg failat "${FAKE_FAIL_S:-}" --arg stopat "${FAKE_STOP_S:-}" --arg wr "${FAKE_WRAP_REPLY:-}" '
     def url($s): if $s == "" then $pr else "https://github.com/\($s)/pull/999999" end;
     ($turns | split("\n") | map(select(. != "") | tonumber)) as $ts
     | ($fins | split("\n") | map(select(. != "") | split(" ") | {at: (.[0] | tonumber), mode: .[1], slug: (if .[2] == "-" then "" else .[2] end)})) as $fs
@@ -100,7 +104,8 @@ script() {
           else {type: "pr", url: url(.slug), updated: false, notes: [], summary: null} end) + (if .slug == "" then {} else {repo: .slug} end))}]
     | map(select(.at <= $now)) | sort_by(.at) as $evs
     | ($ts | map(select(. <= $now and $now < . + 10)) | length > 0) as $inturn
-    | (if $over != "" then $over elif $failat != "" and $now >= $t0 + ($failat | tonumber) then "failed" elif $now < $t0 + 5 then "starting"
+    | (if $over != "" then $over elif $failat != "" and $now >= $t0 + ($failat | tonumber) then "failed"
+       elif $stopat != "" and $now >= $t0 + ($stopat | tonumber) then "stopped" elif $now < $t0 + 5 then "starting"
        elif any($fs[]; (.mode == "pr" or .mode == "push" or .mode == "fail") and $now < .at + 12) then "wrapping" else "active" end) as $state
     | {now: $now, state: $state, inturn: $inturn, evs: $evs, t0: $t0,
        exhausted: (if $tape then [$ts[] | select(. + 10 <= $now)] | length - ($tape.turns | length) else 0 end)}'
@@ -208,13 +213,22 @@ case "$cmd" in
           ($seen | split("\n")) as $d
           | map(select((.env // "live") == $env and (.at // 0) <= $now and ((.run | tostring) as $r | $d | index($r) | not)) | del(.env, .at))
           | {runs: map(select(.reason == null)), skips: map(select(.reason != null))}' "$FAKE_ROUTINES" > "$DIR/tick.out"
-        jq -r '.runs[], .skips[] | .run' "$DIR/tick.out" >> "$DIR/routine-answered"; cat "$DIR/tick.out" ;;
+        jq -r '.runs[], .skips[] | .run' "$DIR/tick.out" >> "$DIR/routine-answered"
+        jq -c '.runs[] | select(.fix) | {run, fix, done}' "$DIR/tick.out" | while read -r l; do echo "$l" > "$DIR/routine-fix-$(jq -r .run <<< "$l")"; done
+        jq -c '(.runs, .skips) |= map(del(.done))' "$DIR/tick.out" ;;
       done) run="${1:-}"
         case "${FAKE_ROUTINE_DONE:-}" in fail) echo "ERROR: the routine store did not answer (busy or failed); nothing changed, try again" >&2; exit 1 ;;
           stopped) jq -nc --argjson n "$(( $(now) + 86400 ))" '{changed: false, state: "stopped", post: false, next: $n}'; exit 0 ;; esac
         # Like the real one: done names the run's own session, or none for a run that has none.
         sess="$(opt --session "$@")"; [ "$sess" = "$(cat "$DIR/routine-session-$run" 2>/dev/null)" ] \
           || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; exit 1; }
+        if [ -f "$DIR/routine-fix-$run" ]; then first=false
+          [ -f "$DIR/routine-done-$run" ] || { first=true; opt --state "$@" > "$DIR/routine-done-$run"; }
+          jq -c --arg s "$(cat "$DIR/routine-done-$run")" --argjson first "$first" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" '
+            ($first and .done.changed != false) as $c
+            | {changed: $c, state: (.done.state // $s), post: ($c and $p), next: $n, fix: {pr: .fix.pr, url: .fix.url, sha: .done.sha, why: .done.why}}' "$DIR/routine-fix-$run"
+          exit 0
+        fi
         [ -f "$DIR/routine-done-$run" ] && { jq -nc --arg s "$(cat "$DIR/routine-done-$run")" '{changed: false, state: $s, post: false, next: null}'; exit 0; }
         opt --state "$@" > "$DIR/routine-done-$run"
         jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" '{changed: true, state: $s, post: $p, next: $n}' ;;

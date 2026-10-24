@@ -129,4 +129,19 @@ check "a finish starts at the time its call was logged" "$(tail -1 "$FAKE_CTL_LO
 echo 3000 > "$FAKE_NOW_FILE"; f task --id agent-ef1 --owner UA --prompt-file "$tmp/p.md" >/dev/null; echo 3005 > "$FAKE_NOW_FILE"
 check "FAKE_EVENTS_FAIL_AFTER: events answers before that time and exits 1 from then on" "0|1" \
   "$(FAKE_EVENTS_FAIL_AFTER=6 f events agent-ef1 >/dev/null 2>&1; echo $?)|$(echo 3006 > "$FAKE_NOW_FILE"; FAKE_EVENTS_FAIL_AFTER=6 f events agent-ef1 >/dev/null 2>&1; echo $?)"
+# A dependency fix run: the tick passes fix and trigger to the bot but not the fixture's done, and done answers ctl's state and fix.
+export FAKE_CTL_DIR="$tmp/s3"; echo 4000 > "$FAKE_NOW_FILE"
+echo '[{"run": 71, "routine": 9, "team": "fxa", "channel": "C_TEST", "name": "Dependency fix", "mode": "pr", "trigger": "label", "fix": {"pr": 90001, "url": "https://github.com/mozilla/fxa/pull/90001", "actor": "octocat", "package": "nx"}, "done": {"state": "stopped", "changed": false, "why": "label"}},
+  {"run": 72, "routine": 9, "team": "fxa", "channel": "C_TEST", "name": "Dependency fix", "post": true, "reason": "not started", "fix": {"pr": 90002, "url": "https://github.com/mozilla/fxa/pull/90002", "why": "new-commit"}}]' > "$tmp/fix.json"
+check "a fix run and a fix skip carry fix and trigger, and the tick hides the fixture's done" "label|octocat|null|new-commit" \
+  "$(FAKE_ROUTINES="$tmp/fix.json" f routine tick --env live | jq -r '"\(.runs[0].trigger)|\(.runs[0].fix.actor)|\(.runs[0].done)|\(.skips[0].fix.why)"')"
+f --pipeline fxa task --id agent-fx1 --source routine --routine-run 71 >/dev/null
+check "routine done answers the fixture's state stopped with changed false, and the fix object" "false|stopped|90001|label|https://github.com/mozilla/fxa/pull/90001" \
+  "$(f routine done 71 --state stopped --session agent-fx1 | jq -r '"\(.changed)|\(.state)|\(.fix.pr)|\(.fix.why)|\(.fix.url)"')"
+echo '[{"run": 73, "routine": 9, "team": "fxa", "channel": "C_TEST", "name": "Dependency fix", "mode": "pr", "trigger": "blender", "fix": {"pr": 90003, "url": "https://github.com/mozilla/fxa/pull/90003"}, "done": {"sha": "0123456789abcdef0123456789abcdef01234567"}}]' > "$tmp/fix2.json"
+FAKE_ROUTINES="$tmp/fix2.json" f routine tick --env live >/dev/null; f --pipeline fxa task --id agent-fx2 --source routine --routine-run 73 >/dev/null
+check "with no state in the fixture, done takes the bot's state and changes once" "true|ok|0123456789abcdef0123456789abcdef01234567|false|ok|90003" \
+  "$(f routine done 73 --state ok --session agent-fx2 | jq -r '"\(.changed)|\(.state)|\(.fix.sha)"')|$(f routine done 73 --state failed --session agent-fx2 | jq -r '"\(.changed)|\(.state)|\(.fix.pr)"')"
+check "FAKE_STOP_S: the session is stopped from then on, as a routine stop does" "active|stopped" \
+  "$(echo 4006 > "$FAKE_NOW_FILE"; FAKE_STOP_S=8 st agent-fx2)|$(echo 4008 > "$FAKE_NOW_FILE"; FAKE_STOP_S=8 st agent-fx2)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
