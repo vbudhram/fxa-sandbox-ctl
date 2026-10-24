@@ -394,6 +394,82 @@ _prfix_repair() {
   for id in $ids; do prfix_report "$id" >/dev/null 2>&1 || true; done
 }
 
+# The sweep's total budget and the limit of each GitHub call it makes, in seconds. The bot's tick has 5 min.
+_PRFIX_SWEEP_S=90 _PRFIX_CALL_S=30
+# _prfix_left   True while the sweep has budget for one more GitHub call.
+_prfix_left() { [ $((SECONDS - ${_PRFIX_T0:-$SECONDS})) -lt "$_PRFIX_SWEEP_S" ]; }
+# _prfix_gh <args...>   One GitHub read of the sweep, at most _PRFIX_CALL_S. The reply is untrusted data.
+_prfix_gh() { _with_timeout "$_PRFIX_CALL_S" gh "$@" 2>/dev/null; }
+
+# _prfix_red <PR json>   red, pending or green. Red: a check run ended FAILURE, TIMED_OUT or CANCELLED, or a status is
+# FAILURE or ERROR. Pending: a check run is not done, or a status is not SUCCESS.
+_prfix_red() {
+  jq -r '[.statusCheckRollup // [] | .[] | if .__typename == "CheckRun"
+      then (if .status != "COMPLETED" then "pending" elif (.conclusion | IN("FAILURE", "TIMED_OUT", "CANCELLED")) then "red" else "ok" end)
+      else (if (.state | IN("FAILURE", "ERROR")) then "red" elif .state == "SUCCESS" then "ok" else "pending" end) end]
+    | if index("red") then "red" elif index("pending") then "pending" else "green" end' <<< "$1" 2>/dev/null || echo pending
+}
+
+# _prfix_consider <routine id> <cfg json> <PR json> <now>   One PR of the sweep. Exit 3 when the budget is used.
+_prfix_consider() {
+  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat
+  repo="$(jq -r .pr.repo <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
+  num="$(jq -r '.number' <<< "$pr")"; head="$(jq -r '.headRefOid // ""' <<< "$pr")"
+  [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
+  red="$(_prfix_red "$pr")"
+  if jq -e --arg l "$label" 'any(.labels[]?; .name == $l)' <<< "$pr" >/dev/null 2>&1; then [ "$red" != pending ] || return 0
+  else [ "$red" = red ] || return 0; fi
+  # A request must be newer than the head commit.
+  _prfix_left || return 3
+  hat="$(_prfix_gh api "repos/${repo}/commits/${head}" --jq '.commit.committer.date | fromdateiso8601')" && [[ "$hat" =~ ^[0-9]{9,11}$ ]] || return 0
+  return 0
+}
+
+# _prfix_sweep_one <routine row json> <now>   The open PRs of each author of one pr-label routine, in number order after
+# sweep_pr. A full pass sets swept_at and clears sweep_pr. Exit 3 when the budget ran out: sweep_pr is the last PR done.
+_prfix_sweep_one() {
+  local r="$1" now="$2" rid cfg repo cur a got prs="[]" pr num last="" rc
+  rid="$(jq -r .id <<< "$r")"; cfg="$(jq -c '.data | fromjson' <<< "$r")"; cur="$(jq -r .sweep_pr <<< "$r")"
+  repo="$(jq -r '.pr.repo // ""' <<< "$cfg")"; [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 0
+  for a in $(jq -r '.pr.authors[]? // empty' <<< "$cfg"); do
+    [[ "$a" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}(\[bot\])?$ ]] || continue
+    _prfix_left || return 3
+    # A list that fails, times out or is not a list is no signal for that author.
+    got="$(_prfix_gh pr list -R "$repo" --author "$a" --state open --limit 100 \
+      --json number,url,title,state,headRefOid,headRefName,baseRefName,isCrossRepository,author,labels,statusCheckRollup)" || continue
+    jq -e 'type == "array"' <<< "$got" >/dev/null 2>&1 || continue
+    prs="$(jq -c --argjson g "$got" '. + [$g[] | select((.number | type) == "number" and .number > 0)] | unique_by(.number)' <<< "$prs")"
+  done
+  while IFS= read -r pr; do
+    [ -n "$pr" ] || continue
+    num="$(jq -r .number <<< "$pr")"
+    rc=0; _prfix_consider "$rid" "$cfg" "$pr" "$now" || rc=$?
+    if [ "$rc" = 3 ]; then
+      [ -z "$last" ] || db_exec "UPDATE routines SET sweep_pr = $last WHERE id = $rid;" >/dev/null || true
+      return 3
+    fi
+    last="$num"
+  done < <(jq -c --argjson c "$cur" '.[] | select(.number > $c)' <<< "$prs")
+  db_exec "UPDATE routines SET swept_at = $now, sweep_pr = NULL WHERE id = $rid;" >/dev/null
+}
+
+# prfix_sweep <env> <now>   The hands-off sweep, at the end of routine tick: each active pr-label routine of the env whose
+# last full sweep is older than its sweep_min. One budget of _PRFIX_SWEEP_S for all, checked before each GitHub call;
+# when it runs out, the next tick continues after sweep_pr. Nothing when the App is not set up.
+prfix_sweep() {
+  local env="$1" now="$2" rows r rc
+  declare -F github_app_enabled >/dev/null && github_app_enabled || return 0
+  _PRFIX_T0=$SECONDS
+  rows="$(db_json "SELECT id, team, data, coalesce(sweep_pr, 0) AS sweep_pr FROM routines WHERE env = $(db_q "$env") AND paused = 0
+    AND json_extract(data, '$.on') = 'pr-label' AND coalesce(swept_at, 0) <= $now - 60 * coalesce(json_extract(data, '$.pr.sweep_min'), 5) ORDER BY id;")" || return 1
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [ "$(_routine_team_state "$(jq -r .team <<< "$r")")" = active ] || continue
+    rc=0; _prfix_sweep_one "$r" "$now" || rc=$?
+    [ "$rc" != 3 ] || return 0
+  done < <(jq -c '.[]' <<< "$rows")
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.
@@ -635,6 +711,8 @@ routine_tick() {
     fi
   done <<< "$dues"
   rm -f "$f"
+  # After the answer is built: the sweep queues new fix rows for a later tick, and its log goes to stderr.
+  prfix_sweep "$env" "$now" >&2 || true
   _prfix_repair "$env" "$now"
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }

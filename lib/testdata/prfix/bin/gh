@@ -13,7 +13,8 @@
 set -u
 d="${PRFIX_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 cmd="${1:-} ${2:-}" jqf="" json="" body="" args="$*"
-[ -z "${PRFIX_GH_SLEEP:-}" ] || sleep "$PRFIX_GH_SLEEP"
+# The sleep holds no pipe, so a caller's timeout ends the read at once.
+[ -z "${PRFIX_GH_SLEEP:-}" ] || sleep "$PRFIX_GH_SLEEP" </dev/null >/dev/null 2>&1
 out() { if [ -n "$jqf" ]; then jq -r "$jqf"; else cat; fi; }
 fields() { if [ -n "$json" ]; then jq -c --arg f "$json" '($f | split(",")) as $k | if type == "array" then map(with_entries(select(.key | IN($k[])))) else with_entries(select(.key | IN($k[]))) end'; else cat; fi; }
 fail() { # fail <code>
