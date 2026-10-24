@@ -392,6 +392,21 @@ gh_conflicts() {
 #   yarn re-resolve the branch's own dependency changes, commit the merge, and
 #   push it as a fast-forward. History is not rewritten.
 #   PIPE_RELOCK_CMD overrides the resolver (tests stub it).
+# Dependency specs that the branch adds or changes in a package.json and that are not a registry range,
+# an npm: alias or a workspace: link (exec:, git, github shorthand, file:, link:, patch:, http). Yarn runs
+# some of them while it fetches, and the relock runs on the manager. Prints "<file> <name>@<spec>" per spec.
+_relock_bad_specs() {
+  local br="$1" f old
+  git diff --name-only "origin/main...origin/${br}" -- 'package.json' '*/package.json' 2>/dev/null | while IFS= read -r f; do
+    old="$(git show "origin/main:${f}" 2>/dev/null | jq -c . 2>/dev/null)" || old=""; [ -n "$old" ] || old='{}'
+    git show "origin/${br}:${f}" 2>/dev/null | jq -r --arg f "$f" --argjson old "$old" '
+      def deps: [.dependencies, .devDependencies, .optionalDependencies, .peerDependencies, .resolutions] | map(. // {}) | add;
+      ($old | deps) as $o | deps | to_entries[] | select($o[.key] != .value)
+      | select((.value | type) != "string" or ((.value | test("^[^:/]*$")) or (.value | test("^workspace:")) or (.value | test("^npm:(@[A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+@[^:/]*$")) | not))
+      | "\($f) \(.key)@\(.value)"' 2>/dev/null || echo "${f} (not readable JSON)"
+  done
+}
+
 gh_relock() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: relock needs <KEY>" >&2; return 1; }
@@ -423,9 +438,12 @@ gh_relock() {
     if printf '%s\n' "$locks" | grep -qvE '(^|/)yarn\.lock$'; then
       echo "ERROR: the merge conflicts outside yarn.lock: $(printf '%s ' $locks)" >&2; exit 1
     fi
+    bad="$(_relock_bad_specs "$br")"
+    [ -z "$bad" ] || { echo "ERROR: ${key} adds a dependency that yarn could run while it fetches, so the relock stops: $(printf '%s; ' $bad) A person relocks it by hand." >&2; exit 1; }
     # In a merge of main into the branch, "theirs" is main.
     printf '%s\n' "$locks" | xargs git checkout --theirs --
-    ${PIPE_RELOCK_CMD:-yarn install --mode=update-lockfile} >&2
+    # No controller secret in yarn's env, and no install scripts.
+    env -i PATH="$PATH" HOME="$HOME" YARN_ENABLE_SCRIPTS=0 ${PIPE_RELOCK_CMD:-yarn install --mode=update-lockfile} >&2
     printf '%s\n' "$locks" | xargs git add --
     # The manager has no signing key and no push login: there the App makes the merge commit.
     if github_app_enabled; then
