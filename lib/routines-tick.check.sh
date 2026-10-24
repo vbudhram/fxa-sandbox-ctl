@@ -427,6 +427,15 @@ rpl="$(mk fxa "daily 09:00" '{"on": "pr-label", "mode": "pr", "pr": {"repo": "mo
 check "a pr-label routine is not claimed or skipped on a schedule, and gets no row" "0|0" \
   "$(tick $((T + 30)) | jq --argjson r "$rpl" '[.runs[], .skips[] | select(.routine == $r)] | length')|$(rows "$rpl")"
 
+# _prfix_set writes heads.fix of a live fix row only; _with_timeout stops a slow command.
+fx1="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rpl, 'pr-1-aa', 'queued', json('{\"fix\":{\"pr\":1}}')); SELECT last_insert_rowid();")"
+fx2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rpl, 'pr-2-bb', 'ok', json('{\"fix\":{\"pr\":2}}')); SELECT last_insert_rowid();")"
+check "_prfix_set: a live fix row takes the filter with its --arg; an ended row is not written" "0|{\"pr\":1,\"wait\":\"it's busy\"}|1|{\"pr\":2}" \
+  "$(_prfix_set "$fx1" '.wait = $w' --arg w "it's busy"; echo $?)|$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $fx1;")|$(_prfix_set "$fx2" '.wait = "x"'; echo $?)|$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $fx2;")"
+s0="$(date +%s)"; _with_timeout 1 sleep 5; rc=$?
+check "_with_timeout stops sleep 5 at 1 s with 124; a quick command keeps its status and output" "124|1|hi|3" \
+  "$rc|$([ $(( $(date +%s) - s0 )) -le 3 ] && echo 1)|$(_with_timeout 5 echo hi)|$(_with_timeout 5 sh -c 'exit 3'; echo $?)"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

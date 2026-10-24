@@ -14,9 +14,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 source "$here/db.sh"
 
-check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql applied 009-lessons-team.sql applied 010-slack-channels.sql applied 011-slack-users.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
+check "init applies the migrations" "applied 001-init.sql applied 002-ingest.sql applied 003-llm-thread.sql applied 004-team-audit.sql applied 005-llm-team.sql applied 006-routines.sql applied 007-routine-saved.sql applied 008-routine-tick-env.sql applied 009-lessons-team.sql applied 010-slack-channels.sql applied 011-slack-users.sql applied 012-routine-sweep.sql" "$(db_init | tr '\n' ' ' | sed 's/ $//')"
 check "init again changes nothing" "" "$(db_init)"
-check "schema version and WAL" "11|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
+check "schema version and WAL" "12|wal" "$(_db "PRAGMA user_version;")|$(_db "PRAGMA journal_mode;")"
 
 # Every hostile string comes back unchanged.
 db_exec "CREATE TABLE t (v TEXT);"
@@ -203,10 +203,20 @@ check "migration 3 backfills the thread" "agent-ab12|C0AB12CD3:1791135361.015169
     _DB_DIR="$real"; db_init >/dev/null
     db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","team":"crew","text":"a crew lesson","status":"pending"}'
     db_ingest lessons '{"id":"n1","at":"x","session":"agent-y","text":"a crew lesson, edited","status":"approved"}'
-    check "schema 9: the old lesson is fxa's, a new one keeps its team through an update" "11|fxa|crew" \
+    check "schema 9: the old lesson is fxa's, a new one keeps its team through an update" "12|fxa|crew" \
       "$(_db "PRAGMA user_version;")|$(db_value "SELECT team FROM lessons WHERE id = 'o1';")|$(db_value "SELECT team FROM lessons WHERE id = 'n1';")"
   else echo "FAIL schema 9: could not build a schema 8 store to migrate"; fail=1; fi
   exit "$fail" ) || fail=1
+# Schema 12: a fix row that ends with no result frees its head; a result keeps it, and a scheduled row never changes.
+db_exec "INSERT INTO routine_runs (id, routine_id, period, state, heads) VALUES
+  (901, 9, 'pr-12-aaaa', 'started', json('{\"fix\":{\"pr\":12}}')), (902, 9, 'pr-13-bbbb', 'started', json('{\"fix\":{\"pr\":13}}')),
+  (903, 9, '2026-10-24', 'started', json('{\"mozilla/fxa\":{\"head\":\"cc\"}}'));
+  UPDATE routine_runs SET state = 'failed' WHERE id IN (901, 903); UPDATE routine_runs SET state = 'ok' WHERE id = 902;
+  UPDATE routine_runs SET state = 'stopped' WHERE id = 901;"
+check "schema 12: a failed fix row gets -x<id> once; an ok fix row and a scheduled row keep their period" "pr-12-aaaa-x901|pr-13-bbbb|2026-10-24" \
+  "$(db_value "SELECT group_concat(period, '|') FROM (SELECT period FROM routine_runs WHERE id IN (901, 902, 903) ORDER BY id);")"
+check "schema 12: the routine sweep columns" "swept_at,sweep_pr" "$(db_value "SELECT group_concat(name) FROM pragma_table_info('routines') WHERE name LIKE 'swe%';")"
+db_exec "DELETE FROM routine_runs WHERE id IN (901, 902, 903);"
 # Schema 11: a bot's people list replaces its env's rows; a bot, a bad id or no name is left out; the picker finds by
 # name, handle or email, and by a list of member IDs.
 db_ingest slack_users '{"env":"live","at":5,"users":[{"id":"U0000001","name":"Old"}]}'

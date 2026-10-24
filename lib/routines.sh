@@ -216,6 +216,31 @@ routine_run_fail() {
   db_exec "UPDATE routine_runs SET state = 'failed', reason = $(db_q "$2"), ended_at = $(date +%s) WHERE id = $1 AND state IN (${_ROUTINE_LIVE_STATES});" >/dev/null
 }
 
+# _with_timeout <s> <cmd> [args...]   Run an outside command (not a shell function) for at most <s> seconds.
+# macOS has no timeout(1). A perl alarm sends the command TERM; a timeout exits 124, as timeout(1) does.
+_with_timeout() {
+  [[ "${1:-}" =~ ^[1-9][0-9]{0,3}$ ]] || { echo "ERROR: _with_timeout needs a number of seconds" >&2; return 1; }
+  perl -e '$t = shift; $p = fork // exit 127; exec @ARGV or exit 127 unless $p;
+    $SIG{ALRM} = sub { kill "TERM", $p; waitpid $p, 0; exit 124 }; alarm $t; waitpid $p, 0;
+    exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"
+}
+
+# _prfix_set <run> <jq filter> [jq args...]   Apply the filter to heads.fix of a live fix row (queued, claimed or
+# started), in one UPDATE guarded on that state and on the heads it read. Pass values as --arg, never in the
+# filter. Exit 0 when it wrote, 1 when the row is not a live fix row or the store fails.
+_prfix_set() {
+  local run="$1" filter="$2" old new n try; shift 2
+  _routine_id "$run" || return 1
+  for try in 1 2 3; do
+    old="$(db_value "SELECT heads FROM routine_runs WHERE id = ${run} AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix') IS NOT NULL;")" || return 1
+    [ -n "$old" ] || return 1
+    new="$(jq -c "$@" ".fix |= ($filter)" <<< "$old")" && [ -n "$new" ] || return 1
+    n="$(db_value "UPDATE routine_runs SET heads = json($(db_q "$new")) WHERE id = ${run} AND state IN (${_ROUTINE_LIVE_STATES}) AND heads = $(db_q "$old"); SELECT changes();")" || return 1
+    [ "$n" = 1 ] && return 0
+  done
+  return 1
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.
