@@ -600,6 +600,57 @@ check "after 24 h: skipped with why expired, on skips with post true and the fix
 check "the next tick does not post it again, and a new request on the same head inserts" "0|1" \
   "$(tick $((N + 86400)) | jq --argjson q "$x1" '[.skips[] | select(.run == $q)] | length')|$(db_value "INSERT INTO routine_runs (routine_id, period, state) VALUES ($rpf, 'pr-90001-$PA', 'stopped'); SELECT changes();")"
 
+# A15, A17, A19: each state change edits the App's one comment, through the real prfix_comment on a copy of the fixture
+# (the stub API writes there, as in lib/github-app.check.sh). The tick repairs the comment of each fix row.
+( eval "$(sed -n '/^_prfix_comment_id() {/,/^}/p;/^prfix_comment() {/,/^}/p;/^prfix_label() {/,/^}/p;/^PRFIX_MARK=/p' "$SANDBOX_ROOT/lib/github.sh")"
+  cp -R "$SANDBOX_ROOT/lib/testdata/prfix" "$tmp/pf"; export PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" PRFIX_DIR="$tmp/pf" GITHUB_APP_ID=123456
+  echo '[]' > "$tmp/pf/api/repos/mozilla/fxa/issues/90003/comments.json"; echo '[]' > "$tmp/pf/api/repos/mozilla/fxa/issues/90004/comments.json"
+  github_app_enabled() { true; }
+  _gh_app_api() {
+    local body f; body="$(cat)"; echo "$1 $2 $(jq -r '.body // "" | split("\n")[1] // ""' <<< "${body:-{\}}" 2>/dev/null)" >> "$tmp/app"
+    case "$1 $2" in
+      "POST issues/"*/comments) f="$tmp/pf/api/repos/$PIPE_REPO_SLUG/$2.json"
+        jq --argjson b "$body" '. + [{id: (9100 + length), user: {login: "example-fxa-app[bot]", type: "Bot"}, performed_via_github_app: {id: 123456}, body: $b.body}]' "$f" > "$f.n" && mv "$f.n" "$f"
+        [ -z "${POST_LOST:-}" ] || return 22; echo '{}' ;;
+      "PATCH issues/comments/"*) for f in "$tmp"/pf/api/repos/"$PIPE_REPO_SLUG"/issues/*/comments.json; do
+          jq --argjson b "$body" --argjson id "${2##*/}" 'map(if .id == $id then .body = $b.body else . end)' "$f" > "$f.n" && mv "$f.n" "$f"; done; echo '{}' ;;
+      *) echo '{}' ;;
+    esac
+  }
+  mine() { jq -r '[.[] | select(.user.type == "Bot" and .performed_via_github_app.id == 123456)] | "\(length)|\(map(.body | split("\n")[1]) | join(","))"' "$tmp/pf/api/repos/mozilla/fxa/issues/$1/comments.json"; }
+  M=$((T + 3000))
+  # Only this block's rows are new enough for the tick's repair of each PR's comment.
+  db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state IN ('queued','claimed','started'); UPDATE routine_runs SET ended_at = 0 WHERE ended_at IS NOT NULL;"
+  echo '{"day_usd": 1}' > "$FXA_LLM_PROXY_DIR/teams/fxa.json"; echo '{"day": "2026-10-19", "day_usd": 2, "month": "2026-10", "month_usd": 2}' > "$FXA_LLM_PROXY_DIR/teams/fxa.spend.json"
+  : > "$tmp/app"
+  got="$(export FXA_TEAM_ACTOR=admin@example.com FXA_ROUTINE_NOW=$M; rm "$FXA_LLM_PROXY_DIR/teams/fxa.json"; POST_LOST=1 cmd_routine run-now fxa "$rpf" --pr https://github.com/mozilla/fxa/pull/90003 2>&1; echo '{"day_usd": 1}' > "$FXA_LLM_PROXY_DIR/teams/fxa.json")"
+  w1="$(sed -nE 's/^queued run ([0-9]+):.*/\1/p' <<< "$got")"
+  check "run-now writes the Queued comment; the create reply is lost, and the comment is still one" "1|Queued: the fix starts when a runner is free." "$(mine 90003)"
+  tick "$M" >/dev/null
+  check "A17: a used budget keeps the row queued, and the comment says Waiting" "queued|1|Waiting: the team budget is used. I try again each minute." "$(s_of "${w1:-0}" | cut -d'|' -f1)|$(mine 90003)"
+  rm -f "$FXA_LLM_PROXY_DIR/teams/fxa.json" "$FXA_LLM_PROXY_DIR/teams/fxa.spend.json"
+  o1="$(tick $((M + 60)))"; o2="$(tick $((M + 120)))"
+  check "the budget frees: the row is claimed once, and the comment says Working" "claimed|1|0|1|Working: the agent is fixing the failing checks on ccccccc." \
+    "$(s_of "${w1:-0}" | cut -d'|' -f1)|$(jq --argjson q "${w1:-0}" '[.runs[] | select(.run == $q)] | length' <<< "$o1")|$(jq --argjson q "${w1:-0}" '[.runs[] | select(.run == $q)] | length' <<< "$o2")|$(mine 90003)"
+  routine_run_start "$w1" agent-fxw001; _prfix_set "$w1" '.new_sha = $s' --arg s "$P7"
+  FXA_ROUTINE_NOW=$((M + 180)) routine_done "$w1" --state ok --session agent-fxw001 >/dev/null
+  check "A15: done ok edits the same comment to Pushed, and the label is removed: one comment, edited at each step" \
+    "1|Pushed 9999999. Next: review the fix commit, then approve the functional tests gate.|POST,PATCH,PATCH,PATCH,DELETE|Queued: the fix starts when a runner is free.,Waiting: the team budget is used. I try again each minute.,Working: the agent is fixing the failing checks on ccccccc.,Pushed 9999999. Next: review the fix commit, then approve the functional tests gate." \
+    "$(mine 90003)|$(cut -d' ' -f1 "$tmp/app" | paste -sd, -)|$(grep -E '^(POST|PATCH) ' "$tmp/app" | cut -d' ' -f3- | paste -sd, -)"
+  check "a tick after the end edits nothing more" "0" "$(: > "$tmp/app"; tick $((M + 240)) >/dev/null; grep -c . "$tmp/app")"
+  # A19: a run whose runner does not boot frees its head: the comment says so, and a new request on that head runs.
+  got="$(export FXA_TEAM_ACTOR=admin@example.com FXA_ROUTINE_NOW=$((M + 300)); cmd_routine run-now fxa "$rpf" --pr https://github.com/mozilla/fxa/pull/90004 2>&1)"; w2="$(sed -nE 's/^queued run ([0-9]+):.*/\1/p' <<< "$got")"
+  tick $((M + 300)) >/dev/null; routine_run_start "$w2" agent-fxw002; _prfix_set "$w2" '.why = "boot"'; routine_run_fail "$w2" "the session could not start"
+  tick $((M + 360)) >/dev/null
+  check "A19: a boot failure says Not started on the PR, and frees the head" "1|Not started: the sandbox did not start. Add agent-help again to retry.|pr-90004-dddddddddddddddddddddddddddddddddddddddd-x$w2" \
+    "$(mine 90004)|$(db_value "SELECT period FROM routine_runs WHERE id = ${w2:-0};")"
+  got="$(export FXA_TEAM_ACTOR=admin@example.com FXA_ROUTINE_NOW=$((M + 400)); cmd_routine run-now fxa "$rpf" --pr https://github.com/mozilla/fxa/pull/90004 2>&1)"; w3="$(sed -nE 's/^queued run ([0-9]+):.*/\1/p' <<< "$got")"
+  o3="$(tick $((M + 420)))"
+  check "a new request on that head queues, starts, and the one comment says Working" "1|1|Working: the agent is fixing the failing checks on ddddddd." \
+    "$(jq --argjson q "${w3:-0}" '[.runs[] | select(.run == $q)] | length' <<< "$o3")|$(mine 90004)"
+  db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state IN ('queued','claimed','started');"
+  exit "$fail" ) || fail=1
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

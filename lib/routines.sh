@@ -378,6 +378,17 @@ prfix_report() {
   db_exec "UPDATE routine_runs SET heads = json_set(heads, '$.fix.comment', $(db_q "$text")) WHERE id = $1 AND state = '$st';" >/dev/null
 }
 
+# _prfix_repair <env> <now>   prfix_report for the newest fix row of each PR (live, or ended in the last 24 h), so a
+# state write that did not report (a gate, a claim, a skip, a boot failure, a kill) reaches the PR comment within a tick.
+# prfix_report calls GitHub only when the text changed. Nothing when the App is not set up.
+_prfix_repair() {
+  local ids id
+  declare -F github_app_enabled >/dev/null && github_app_enabled || return 0
+  ids="$(db_value "SELECT max(r.id) FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.env = $(db_q "$1") AND json_extract(r.heads, '$.fix') IS NOT NULL
+    AND (r.state IN (${_ROUTINE_LIVE_STATES}) OR r.ended_at > $(($2 - 86400))) GROUP BY r.routine_id, json_extract(r.heads, '$.fix.pr');")" || return 0
+  for id in $ids; do prfix_report "$id" >/dev/null 2>&1 || true; done
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.
@@ -619,6 +630,7 @@ routine_tick() {
     fi
   done <<< "$dues"
   rm -f "$f"
+  _prfix_repair "$env" "$now"
   jq -nc --argjson runs "$runs" --argjson skips "$skips" '{runs: $runs, skips: $skips}'
 }
 
@@ -796,6 +808,8 @@ routine_done() {
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
       cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now)
       WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
+  # The PR comment follows the end at once; a failure is repaired by the next tick.
+  [ -z "$fix" ] || prfix_report "$run" >/dev/null 2>&1 || true
   local add='{}'
   [ -z "$fix" ] || add="$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${run};" | jq -c '{fix: {pr, url, sha: .new_sha, why}}' 2>/dev/null)" || add=""
   [ -n "$add" ] || add='{}'
@@ -878,7 +892,8 @@ _prfix_runnow() {
       VALUES ($id, $(db_q "pr-${num}-${head}"), 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "{\"fix\":${fix}}")), $now);
       SELECT changes() || '|' || last_insert_rowid();")" || n=""
   case "${n%%|*}" in
-    1) _teams_audit_note routine-run "$team" "routine ${id}: run ${n#*|} on PR #${num}"; echo "queued run ${n#*|}: Queued for #${num}. The PR comment shows its state." ;;
+    1) _teams_audit_note routine-run "$team" "routine ${id}: run ${n#*|} on PR #${num}"; prfix_report "${n#*|}" >/dev/null 2>&1 || true
+       echo "queued run ${n#*|}: Queued for #${num}. The PR comment shows its state." ;;
     0) st="$(db_value "SELECT state FROM routine_runs WHERE routine_id = $id AND period = $(db_q "pr-${num}-${head}");")" || st=""
        case "$st" in
          queued|claimed|started) echo "ERROR: A run on #${num} at ${head:0:7} is already queued or in progress. The PR comment shows its state." >&2 ;;
@@ -911,6 +926,7 @@ routine_stop() {
     *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
   esac
   _teams_audit_note routine-stop "$team" "routine ${id}: run ${run}"
+  prfix_report "$run" >/dev/null 2>&1 || true
   [ -z "$sess" ] || session_stop "$sess" </dev/null >/dev/null 2>&1 || echo "WARN: run ${run} is stopped, but its session ${sess} did not stop; stop it with session stop" >&2
   echo "stopped run ${run}"
 }
