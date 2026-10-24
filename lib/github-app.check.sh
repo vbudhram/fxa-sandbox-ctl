@@ -174,5 +174,43 @@ check "app-token for a PR profile still asks GitHub" "1" "$([ -s "$tmp/curl-call
   check "a known answer is cached, an error is asked again" "0 1" "$(grep -c . "$tmp/vcurls") $(r a/flaky >/dev/null; grep -c . "$tmp/vcurls")"
   exit "$fail" ) || fail=1
 
+# The App's one PR comment (A15, A41) and the label, on a copy of the recorded fixture. The stub API writes to the copy:
+# a create adds a comment as the App (POST_LOST=1 loses the reply), an edit changes that comment's body.
+( eval "$(sed -n '/^_prfix_comment_id() {/,/^}/p;/^prfix_comment() {/,/^}/p;/^prfix_label() {/,/^}/p;/^PRFIX_MARK=/p' "$here/github.sh")"
+  cp -R "$here/testdata/prfix" "$tmp/pf"; export PATH="$here/testdata/prfix/bin:$PATH" PRFIX_DIR="$tmp/pf" GITHUB_APP_ID=123456
+  _gh_app_api() {
+    local body f; body="$(cat)"; echo "$1 $PIPE_REPO_SLUG/$2 $body" >> "$tmp/app"
+    case "$1 $2" in
+      "POST issues/"*/comments) f="$tmp/pf/api/repos/$PIPE_REPO_SLUG/$2.json"; [ -f "$f" ] || echo '[]' > "$f"
+        jq --argjson b "$body" '. + [{id: (9000 + length), user: {login: "example-fxa-app[bot]", type: "Bot"}, performed_via_github_app: {id: 123456}, body: $b.body}]' "$f" > "$f.n" && mv "$f.n" "$f"
+        [ -z "${POST_LOST:-}" ] || return 22; echo '{}' ;;
+      "PATCH issues/comments/"*) for f in "$tmp"/pf/api/repos/"$PIPE_REPO_SLUG"/issues/*/comments.json; do
+          jq --argjson b "$body" --argjson id "${2##*/}" 'map(if .id == $id then .body = $b.body else . end)' "$f" > "$f.n" && mv "$f.n" "$f"; done; echo '{}' ;;
+      "DELETE issues/90003/labels/"*) echo '{"message":"Label does not exist"}'; return 22 ;;
+      *) echo '{}' ;;
+    esac
+  }
+  mine() { jq -r --arg n "$1" '[.[] | select(.user.type == "Bot" and .performed_via_github_app.id == 123456)] | "\(length)|\(map(.body) | join(","))"' "$tmp/pf/api/repos/mozilla/fxa/issues/$1/comments.json"; }
+  : > "$tmp/app"; POST_LOST=1 prfix_comment mozilla/fxa 90002 "Queued: the fix starts when a runner is free."; rc=$?
+  check "A41: a User comment with the marker is not the App's: the App creates its own; a lost create reply reads back as done" \
+    "0|POST|1|<!-- fxa-agent:pr-fix -->
+Queued: the fix starts when a runner is free.|<!-- fxa-agent:pr-fix -->
+Pushed 0000000." \
+    "$rc|$(cut -d' ' -f1 "$tmp/app" | paste -sd, -)|$(mine 90002)|$(jq -r '.[] | select(.id == 7004) | .body' "$tmp/pf/api/repos/mozilla/fxa/issues/90002/comments.json")"
+  : > "$tmp/app"; prfix_comment mozilla/fxa 90002 "Working: the agent is fixing the failing checks."
+  check "A15: the second call edits that one comment, not a new one" "PATCH mozilla/fxa/issues/comments/9003|1|<!-- fxa-agent:pr-fix -->
+Working: the agent is fixing the failing checks." "$(cut -d' ' -f1-2 "$tmp/app")|$(mine 90002)"
+  : > "$tmp/app"; prfix_comment mozilla/fxa 90001 "Working: the agent is fixing the failing checks."
+  check "the App's recorded comment on 90001 is edited in place" "PATCH mozilla/fxa/issues/comments/7001" "$(cut -d' ' -f1-2 "$tmp/app")"
+  echo 502 > "$tmp/pf/api/repos/mozilla/fxa/issues/90001/comments.status"; : > "$tmp/app"
+  check "a comment read that fails writes nothing" "1|0" "$(prfix_comment mozilla/fxa 90001 "x"; echo $?)|$(grep -c . "$tmp/app")"
+  : > "$tmp/app"
+  check "the label: add and remove as the App, a label already gone is a success, another error is not" "0|0|0|POST mozilla/fxa/issues/90001/labels {\"labels\":[\"agent-help\"]},DELETE mozilla/fxa/issues/90001/labels/agent-help" \
+    "$(prfix_label mozilla/fxa 90001 add agent-help; echo $?)|$(prfix_label mozilla/fxa 90001 remove agent-help; echo $?)|$(prfix_label mozilla/fxa 90003 remove agent-help; echo $?)|$(head -2 "$tmp/app" | sed 's/ *$//' | paste -sd, -)"
+  check "a label remove that GitHub refuses fails" "1" "$(_gh_app_api() { cat >/dev/null; echo '{"message":"Server Error"}'; return 22; }; prfix_label mozilla/fxa 90001 remove agent-help; echo $?)"
+  exit "$fail" ) || fail=1
+# A comment create is never retried by curl: a repeat would post twice.
+check "the comment create has no curl retry" "1" "$(sed -n '/^_gh_app_api() {/,/^}/p' "$here/github.sh" | grep -c '"POST issues/"\*"/comments"')"
+
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

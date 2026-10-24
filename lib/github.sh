@@ -650,7 +650,8 @@ _gh_app_api() {
   # GitHub's 5xx and resets are transient. Blobs, trees, commits and reads are
   # safe to repeat; a ref write is not, and its caller checks the result.
   local -a retry=(--retry 3 --retry-connrefused --max-time 60)
-  case "$1 $2" in "POST git/refs"|"PATCH git/refs/"*) retry=(--max-time 60) ;; esac
+  # A comment create is not safe to repeat either: its caller reads back whether it landed.
+  case "$1 $2" in "POST git/refs"|"PATCH git/refs/"*|"POST issues/"*"/comments") retry=(--max-time 60) ;; esac
   tok="$(github_app_token)" || return 1
   hdr="$(mktemp)"; chmod 600 "$hdr"
   printf 'Authorization: Bearer %s\nAccept: application/vnd.github+json\n' "$tok" > "$hdr"
@@ -662,6 +663,36 @@ _gh_app_api() {
 # _gh_app_ref_is <branch> <sha>   A ref write is not retried: when one fails,
 # the branch may still have moved, so read it back.
 _gh_app_ref_is() { [ "$(printf '' | _gh_app_api GET "git/ref/heads/$(_gh_ref_enc "$1")" 2>/dev/null | jq -r '.object.sha // empty')" = "$2" ]; }
+# The first line of the App's one comment on a dependency fix PR.
+PRFIX_MARK='<!-- fxa-agent:pr-fix -->'
+# _prfix_comment_id <repo> <pr>   The id of the App's own marker comment: user.type Bot and performed_via_github_app.id ==
+# GITHUB_APP_ID, because anyone can post the marker. Nothing when there is none; exit 1 when the read fails.
+_prfix_comment_id() {
+  local out
+  out="$(gh api --paginate "repos/$1/issues/$2/comments?per_page=100" 2>/dev/null)" || return 1
+  jq -rs --arg m "$PRFIX_MARK" --arg app "${GITHUB_APP_ID:-}" '[add // [] | .[] | select($app != "" and .user.type == "Bot"
+    and ((.performed_via_github_app.id // "") | tostring) == $app and (.body // "" | startswith($m)))] | first | .id // empty' <<< "$out"
+}
+# prfix_comment <repo> <pr> <text>   Set the App's one comment on the PR to the marker and <text>: edit it, or create it
+# when there is none. A create is never repeated: on a failed reply, read back whether it landed.
+prfix_comment() {
+  local id body; [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || return 1
+  id="$(_prfix_comment_id "$1" "$2")" || return 1
+  body="$(jq -nc --arg b "${PRFIX_MARK}"$'\n'"$3" '{body: $b}')"
+  if [ -n "$id" ]; then printf '%s' "$body" | PIPE_REPO_SLUG="$1" _gh_app_api PATCH "issues/comments/${id}" >/dev/null
+  else printf '%s' "$body" | PIPE_REPO_SLUG="$1" _gh_app_api POST "issues/$2/comments" >/dev/null || [ -n "$(_prfix_comment_id "$1" "$2")" ]; fi
+}
+# prfix_label <repo> <pr> add|remove <label>   Add or remove a PR label as the App. Both are safe to repeat; removing
+# a label that is not there is a success.
+prfix_label() {
+  local out rc=0
+  case "$3" in
+    add) jq -nc --arg l "$4" '{labels: [$l]}' | PIPE_REPO_SLUG="$1" _gh_app_api POST "issues/$2/labels" >/dev/null ;;
+    remove) out="$(printf '' | PIPE_REPO_SLUG="$1" _gh_app_api DELETE "issues/$2/labels/$(jq -rn --arg l "$4" '$l | @uri')" 2>/dev/null)" || rc=$?
+      [ "$rc" = 0 ] || jq -e '.message == "Label does not exist"' <<< "$out" >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
 # _gh_ref_enc <branch>   The branch for a git/ref path: each part URL-encoded, the slashes kept.
 _gh_ref_enc() { jq -rn --arg b "$1" '$b | split("/") | map(@uri) | join("/")'; }
 
