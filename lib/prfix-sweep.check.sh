@@ -96,12 +96,44 @@ check "a label older than the end of the last run on the PR: no new run" "90001 
 sweep
 check "A22: the BLEnder Bot comment queues a run with its comment id, and the row exists before the App adds agent-help" \
   "90001 queued label example-writer,90002 queued blender mozilla-blender[bot]|7002|label 90002 add agent-help rows=1" \
-  "$(db_value "SELECT json_extract(heads, '$.fix.blender_comment_id') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90002;" > "$tmp/c"; rows)|$(cat "$tmp/c")|$(grep '^label' "$tmp/pc")"
+  "$(db_value "SELECT json_extract(heads, '$.fix.blender_comment_id') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90002;" > "$tmp/c"; rows)|$(cat "$tmp/c")|$(grep '^label 90002' "$tmp/pc")"
 d="$(dir b1)"; jq 'map(select(.id != 7002))' "$fx/api/repos/mozilla/fxa/issues/90002/comments.json" > "$d/api/repos/mozilla/fxa/issues/90002/comments.json"
 check "A22: the same text from a User does nothing" "90001 queued label example-writer" "$(PRFIX_DIR="$d" sweep; rows)"
 at930="$(iso 2026-10-24T09:30:00Z)"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, ended_at) VALUES ($rid, 'pr-90001-9999', 'ok', json('{\"fix\":{\"pr\":90001,\"new_sha\":\"$PA\"}}'), $at930),
   ($rid, 'pr-90002-9999', 'ok', json('{\"fix\":{\"pr\":90002,\"new_sha\":\"$PB\"}}'), $at930);"
 check "A24: on the App's fix commit a writer's label queues one run, and a BLEnder comment does nothing" "90001 ok,90002 ok,90001 queued label example-writer" "$(sweep; rows)"
+
+# i558: drops, the dedupe, and the row before the writes.
+pc() { grep "^$1 $2" "$tmp/pc" | cut -d' ' -f3- | paste -sd'#' -; }
+sweep
+check "two red PRs give two rows, and the second says In line behind" "Queued: the fix starts when a runner is free.|In line behind #90001. The fix starts after that run ends." \
+  "$(pc comment 90001)|$(pc comment 90002)"
+check "A23: a labelled PR with running checks waits with no comment; a labelled green PR gets the not-red text and loses the label" \
+  "|Not started: CI passes on ddddddd. Add agent-help again if CI fails.|remove agent-help rows=0|90001 queued label example-writer,90002 queued blender mozilla-blender[bot]" \
+  "$(grep 90003 "$tmp/pc")|$(pc comment 90004)|$(pc label 90004)|$(rows)"
+d="$(dir r1)"; jq '.statusCheckRollup[0] |= (.status = "COMPLETED" | .conclusion = "FAILURE")' "$fx/pr/90003.json" > "$d/pr/90003.json"
+check "A23: when its checks fail, the waiting PR queues" "90003 queued label example-writer" "$(PRFIX_DIR="$d" sweep; rows 90003)"
+d="$(dir r2)"; rm "$d/api/repos/mozilla/fxa/issues/90001/timeline.page2.json"
+check "A20: the triage user's label gets the write-access text, and the App removes it" \
+  "Not started: the label needs a person with write access. Ask a person with write access to add agent-help.|remove agent-help rows=0|" \
+  "$(PRFIX_DIR="$d" sweep; pc comment 90001)|$(pc label 90001)|$(rows 90001)"
+d="$(dir r3)"; jq '.[1].actor.login = "example-writer"' "$fx/api/repos/mozilla/fxa/issues/90006/timeline.json" > "$d/api/repos/mozilla/fxa/issues/90006/timeline.json"
+jq '.headRefName = "release/2026.10"' "$fx/pr/90004.json" | jq '.statusCheckRollup[0].conclusion = "FAILURE"' > "$d/pr/90004.json"
+check "a writer's label on a fork PR and on a release branch get their texts" \
+  "Not started: the PR is from a fork. Fix it by hand.|Not started: the PR branch is a base or release branch. Fix it by hand.|" \
+  "$(PRFIX_DIR="$d" sweep; pc comment 90006)|$(pc comment 90004)|$(rows 90006)$(rows 90004)"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, ended_at) VALUES ($rid, 'pr-90001-$PA', 'ok', json('{\"fix\":{\"pr\":90001}}'), $at930),
+  ($rid, 'pr-90002-$PB', 'nochange', json('{\"fix\":{\"pr\":90002}}'), $at930);"
+check "A27: a label on a head whose run ended gets the used text and no run; the BLEnder comment there does nothing" \
+  "Not started: a run on aaaaaaa already ended. A new commit allows a new run.|remove agent-help rows=1||90001 ok,90002 nochange" \
+  "$(sweep; pc comment 90001)|$(pc label 90001)|$(pc comment 90002)|$(rows)"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rid, 'pr-90001-other', 'started', json('{\"fix\":{\"pr\":90001}}'));"
+check "a PR with a live fix row or a live session gets no new row and no comment" "90001 started||" \
+  "$(_session_records() { echo '{"key":"agent-live01","state":"active","review_pr":"https://github.com/mozilla/fxa/pull/90002"}'; }; sweep; rows)|$(pc comment 90001)|$(pc comment 90002)"
+PC_FAILS=1 sweep
+check "a kill after the INSERT (the comment write fails) leaves the row, and the tick's repair writes its comment" "queued||Queued: the fix starts when a runner is free." \
+  "$(db_value "SELECT state || '|' || coalesce(json_extract(heads, '$.fix.comment'), '') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90001;")|$(: > "$tmp/pc"; _prfix_repair live "$N"; pc comment 90001)"
+rows >/dev/null
 
 exit "$fail"

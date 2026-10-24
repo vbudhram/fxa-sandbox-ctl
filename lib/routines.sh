@@ -436,16 +436,35 @@ _prfix_queue() {
   prfix_report "$id" >/dev/null 2>&1 || true
 }
 
+# _prfix_reject <cfg json> <pr> <head sha> <why>   A person's label that cannot start a run: the App's one comment gives the
+# fixed reason and the next step, and the App removes the label, so the request ends here.
+_prfix_reject() {
+  local repo label; repo="$(jq -r .pr.repo <<< "$1")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$1")"
+  echo "routine: #$2 not started: $4"
+  prfix_comment "$repo" "$2" "$(_prfix_text skipped "$(jq -nc --arg h "$3" --arg w "$4" '{head_sha: $h, why: $w}')" "$label")" && prfix_label "$repo" "$2" remove "$label" || true
+}
+
+# _prfix_live_session <PR url>   True when a live session works on the PR: it answers there, not a new run.
+_prfix_live_session() {
+  declare -F _session_records >/dev/null || return 1
+  _session_records 2>/dev/null | jq -se --arg u "$1" 'any(.[]; (.pr_url == $u or .review_pr == $u or any((.trees // [])[]; .pr_url == $u or .review_pr == $u))
+    and (.state | IN("starting", "active", "wrapping")))' >/dev/null 2>&1
+}
+
 # _prfix_consider <routine id> <cfg json> <PR json> <now>   One PR of the sweep. Exit 3 when the budget is used.
+# A PR with a live fix row or a live session is skipped. A label from a person with no write access, on a fork or a base
+# branch, with CI not red, or on a head whose run ended with a result is rejected (_prfix_reject); a BLEnder one is dropped.
 # Label signal: the newest 'labeled' event of the routine's label, by a User with admin, maintain or write permission,
 # newer than the head commit and the end of the last run on the PR. BLEnder signal (no label): the newest comment of a Bot
 # with exactly the blender_login that holds the blender_mention, newer than both, and never on an App head (the App's fix
 # commit), where only a person's label counts. A read that fails, times out or is not JSON: no signal.
 _prfix_consider() {
-  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor blogin mention c cid=""
+  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor blogin mention c cid="" why
   repo="$(jq -r .pr.repo <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
   num="$(jq -r '.number' <<< "$pr")"; head="$(jq -r '.headRefOid // ""' <<< "$pr")"
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
+  [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix.pr') = ${num};")" = 0 ] || return 0
+  ! _prfix_live_session "$(jq -r .url <<< "$pr")" || return 0
   red="$(_prfix_red "$pr")"
   if jq -e --arg l "$label" 'any(.labels[]?; .name == $l)' <<< "$pr" >/dev/null 2>&1; then [ "$red" != pending ] || return 0
   else [ "$red" = red ] || return 0; fi
@@ -466,7 +485,7 @@ _prfix_consider() {
     perm="$(_prfix_gh api "repos/${repo}/collaborators/${login}/permission")" || return 0
     pw="$(jq -r 'if (.permission | IN("admin", "write")) or (.role_name | IN("admin", "maintain", "write")) then "yes"
       elif (.permission | type) == "string" then "no" else empty end' <<< "$perm" 2>/dev/null)" || return 0
-    [ "$pw" = yes ] || return 0
+    case "$pw" in yes) ;; no) _prfix_reject "$cfg" "$num" "$head" no-write; return 0 ;; *) return 0 ;; esac
     trigger=label actor="$login"
   else
     blogin="$(jq -r '.pr.blender_login // "mozilla-blender[bot]"' <<< "$cfg")"; mention="$(jq -r '.pr.blender_mention // ""' <<< "$cfg")"
@@ -481,7 +500,11 @@ _prfix_consider() {
     [[ "$cid" =~ ^[1-9][0-9]{0,15}$ ]] && [[ "$at" =~ ^[0-9]{9,11}$ ]] || return 0
     trigger=blender actor="$blogin"
   fi
-  [ "$red" = red ] && [ -z "$(_prfix_pr_why "$cfg" "$pr" "$(jq -r .url <<< "$pr")")" ] || return 0
+  why="$(_prfix_pr_why "$cfg" "$pr" "$(jq -r .url <<< "$pr")")"
+  [ -n "$why" ] || [ "$red" = red ] || why=not-red
+  # A head whose run ended with a result: only a new commit allows a new run (a run with no result freed its period).
+  [ -n "$why" ] || [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND period = 'pr-${num}-${head}';")" = 0 ] || why=used
+  if [ -n "$why" ]; then [ "$trigger" != label ] || _prfix_reject "$cfg" "$num" "$head" "$why"; return 0; fi
   _prfix_queue "$rid" "$cfg" "$pr" "$trigger" "$actor" "$at" "$now" "$cid"
 }
 
