@@ -436,6 +436,24 @@ s0="$(date +%s)"; _with_timeout 1 sleep 5; rc=$?
 check "_with_timeout stops sleep 5 at 1 s with 124; a quick command keeps its status and output" "124|1|hi|3" \
   "$rc|$([ $(( $(date +%s) - s0 )) -le 3 ] && echo 1)|$(_with_timeout 5 echo hi)|$(_with_timeout 5 sh -c 'exit 3'; echo $?)"
 
+# Stop with several fix rows: no --run takes the started row, not the newer queued one; --run takes that row;
+# a row whose fix is being pushed is not stopped. The list's live is the started row, and lives has every row.
+rst="$(mk fxa "weekly sun 05:00")"
+fa="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, heads) VALUES ($rst, 'pr-10-aa', 'started', 'agent-fixa01', json('{\"fix\":{\"pr\":10}}')); SELECT last_insert_rowid();")"
+fb="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rst, 'pr-11-bb', 'queued', json('{\"fix\":{\"pr\":11}}')); SELECT last_insert_rowid();")"
+echo '{"key":"agent-fixa01","state":"active"}' > "$tmp/agent-fixa01.json"; : > "$tmp/stopped"
+check "routine list: live is the started row; lives has both, started first, each with its fix" "$fa|$fa,$fb|10,11" \
+  "$(routine_list fxa | jq -r --argjson r "$rst" '.[] | select(.id == $r) | "\(.live.id)|\([.lives[].id] | join(","))|\([.lives[].fix.pr] | join(","))"')"
+check "stop with no --run ends the started row and its session; the queued row stays" "stopped run $fa|stopped|agent-fixa01|queued" \
+  "$(cmd_routine stop fxa "$rst")|$(db_value "SELECT state FROM routine_runs WHERE id = $fa;")|$(cat "$tmp/stopped")|$(db_value "SELECT state FROM routine_runs WHERE id = $fb;")"
+check "stop --run ends that row" "stopped run $fb|stopped" "$(cmd_routine stop fxa "$rst" --run "$fb")|$(db_value "SELECT state FROM routine_runs WHERE id = $fb;")"
+fc="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, heads) VALUES ($rst, 'pr-12-cc', 'started', 'agent-fixc01', json('{\"fix\":{\"pr\":12,\"pushing\":1792414800}}')); SELECT last_insert_rowid();")"
+check "a row whose fix is being pushed is not stopped" "ERROR: The fix is being pushed. Try again after it ends.|started" \
+  "$(cmd_routine stop fxa "$rst" --run "$fc" 2>&1)|$(db_value "SELECT state FROM routine_runs WHERE id = $fc;")"
+check "stop --run of a run that is not live, and a bad option, are refused" "ERROR: run $fa of routine $rst is not in progress|usage: routine stop <team> <id> [--run <run>]" \
+  "$(cmd_routine stop fxa "$rst" --run "$fa" 2>&1)|$(cmd_routine stop fxa "$rst" --now 2>&1)"
+db_exec "UPDATE routine_runs SET state = 'ok' WHERE id = $fc;"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

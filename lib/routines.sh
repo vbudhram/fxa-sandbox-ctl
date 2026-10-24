@@ -5,7 +5,7 @@
 #
 #   routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev]
 #   routine set <team> <file> [--id <id> --version <v>]   create, or replace one at that version
-#   routine pause | resume | delete | run-now | stop <team> <id>
+#   routine pause | resume | delete | run-now <team> <id>;  routine stop <team> <id> [--run <run>]
 #   routine tick --env live|dev                            the bot's 60 s pass: gates, claims, reconcile
 #   routine done <run> --state <s> [--session <key>] [...] | posted <run>   the bot's results
 # A command that names a team refuses a routine of another team.
@@ -34,12 +34,16 @@ _routine_of() {
 ' "$r"
 }
 
-# routine_list <team>   The team's routines, each with its config, next three run times, its live run and last
-# result, its last 6 results (recent, oldest first), its channel's name when its bot is in it, and the
+# routine_list <team>   The team's routines, each with its config, next three run times, its live run (claimed or
+# started first, then the newest queued), lives (every live run in that order, each with its heads.fix as fix),
+# its last result, its last 6 results (recent, oldest first), its channel's name when its bot is in it, and the
 # scheduler's last tick (the dashboard warns when it is old).
 routine_list() {
   [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
-  local rows r f out="[]" runs tick recent names; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
+  local rows r f out="[]" runs lives tick recent names; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
+  lives="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, 1 AS live, r.heads->'fix' AS fix
+    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.state IN (${_ROUTINE_LIVE_STATES})
+    ORDER BY r.state = 'queued', r.id DESC;")" || return 1
   runs="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, r.state IN (${_ROUTINE_LIVE_STATES}) AS live
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.id IN
     (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN (${_ROUTINE_LIVE_STATES}));")" || return 1
@@ -53,9 +57,10 @@ routine_list() {
     [ -n "$r" ] || continue
     jq -c '.data | fromjson' <<< "$r" > "$f"
     out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --argjson tick "$tick" \
-      --argjson recent "$recent" --argjson names "$names" \
+      --argjson recent "$recent" --argjson names "$names" --argjson lives "$lives" \
       '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine | ($r.data | fromjson) as $d
-       | . + [$r + {data: $d, next: $next, live: ($mine | map(select(.live == 1)) | first),
+       | ($lives | map(select(.routine_id == $r.id) | del(.routine_id) | .fix |= (fromjson? // null))) as $l
+       | . + [$r + {data: $d, next: $next, live: ($l | first | del(.fix)?), lives: $l,
           last: ($mine | map(select(.live == 0)) | first), tick: ($tick | map(select(.env == $r.env)) | first | .at // null),
           recent: ($recent | map(select(.routine_id == $r.id) | del(.routine_id))),
           channel_name: ($names | map(select(.env == $r.env and .id == $d.channel)) | first | .name // null)}]' <<< "$out")"
@@ -177,7 +182,8 @@ cmd_routine() {
     done) shift; routine_done "$@" ;;
     posted) routine_posted "${2:-}" ;;
     run-now) routine_runnow "${2:-}" "${3:-}" ;;
-    stop) routine_stop "${2:-}" "${3:-}" ;;
+    stop) [ $# -le 3 ] || { [ "$4" = --run ] && [ $# = 5 ]; } || { echo "usage: routine stop <team> <id> [--run <run>]" >&2; return 1; }
+          routine_stop "${2:-}" "${3:-}" "${5:-}" ;;
     set) local team="${2:-}" file="${3:-}" id="" ver=""; shift 3 2>/dev/null || shift $#
          while [ $# -gt 0 ]; do
            case "$1" in --id) id="${2:-}"; shift 2 2>/dev/null || shift ;; --version) ver="${2:-}"; shift 2 2>/dev/null || shift ;;
@@ -185,7 +191,7 @@ cmd_routine() {
          done
          routine_set "$team" "$file" "$id" "$ver" ;;
     pause|resume|delete) routine_state "${2:-}" "${3:-}" "$1" ;;
-    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev] | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now|stop <team> <id> | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
+    *) echo "usage: fxa-sandbox-ctl routine list <team> | get <id> | history <team> <id> | templates | channels <team> [live|dev] | set <team> <file> [--id <id> --version <v>] | pause|resume|delete|run-now <team> <id> | stop <team> <id> [--run <run>] | tick --env live|dev | done <run> ... | posted <run>" >&2; return 1 ;;
   esac
 }
 
@@ -606,17 +612,28 @@ routine_runnow() {
   esac
 }
 
-# routine stop <team> <id>   Stop the routine's live run: the row first (guarded, so two admins stop it once),
-# then its session.
+_PRFIX_PUSHING="The fix is being pushed. Try again after it ends."
+# routine stop <team> <id> [<run>]   Stop a live run: that run, or with none the claimed or started one before a
+# queued one. The row first (guarded on its state, so two admins stop it once, and on heads.fix.pushing IS NULL, so
+# a fix push that started is never cut off), then its session.
 routine_stop() {
-  local team="$1" id="$2" r run st sess n
+  local team="$1" id="$2" want="${3:-}" r run st sess n none
   _routine_of "$team" "$id" >/dev/null || return 1
-  r="$(db_json "SELECT id, state, coalesce(session, '') AS session FROM routine_runs WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES}) ORDER BY id DESC LIMIT 1;")" \
+  none="ERROR: no run of routine ${id} is in progress"
+  [ -z "$want" ] || { _routine_id "$want" || return 1; none="ERROR: run ${want} of routine ${id} is not in progress"; }
+  r="$(db_json "SELECT id, state, coalesce(session, '') AS session, json_extract(heads, '$.fix.pushing') IS NOT NULL AS pushing FROM routine_runs
+    WHERE routine_id = $id AND state IN (${_ROUTINE_LIVE_STATES})$([ -z "$want" ] || echo " AND id = $want") ORDER BY state = 'queued', id DESC LIMIT 1;")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
-  run="$(jq -r '.[0].id // empty' <<< "$r")"; [ -n "$run" ] || { echo "ERROR: no run of routine ${id} is in progress" >&2; return 1; }
+  run="$(jq -r '.[0].id // empty' <<< "$r")"; [ -n "$run" ] || { echo "$none" >&2; return 1; }
   st="$(jq -r '.[0].state' <<< "$r")"; sess="$(jq -r '.[0].session' <<< "$r")"
-  n="$(db_value "UPDATE routine_runs SET state = 'stopped', reason = 'stopped by a team admin', ended_at = $(_routine_now) WHERE id = $run AND state = '$st'; SELECT changes();")" || n=""
-  case "$n" in 1) ;; 0) echo "ERROR: no run of routine ${id} is in progress" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
+  n="$(db_value "UPDATE routine_runs SET state = 'stopped', reason = 'stopped by a team admin', ended_at = $(_routine_now) WHERE id = $run AND state = '$st'
+    AND json_extract(heads, '$.fix.pushing') IS NULL; SELECT changes();")" || n=""
+  case "$n" in
+    1) ;;
+    0) if [ "$(db_value "SELECT count(*) FROM routine_runs WHERE id = $run AND state = '$st' AND json_extract(heads, '$.fix.pushing') IS NOT NULL;")" = 1 ]; then
+         echo "ERROR: ${_PRFIX_PUSHING}" >&2; else echo "$none" >&2; fi; return 1 ;;
+    *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
+  esac
   _teams_audit_note routine-stop "$team" "routine ${id}: run ${run}"
   [ -z "$sess" ] || session_stop "$sess" </dev/null >/dev/null 2>&1 || echo "WARN: run ${run} is stopped, but its session ${sess} did not stop; stop it with session stop" >&2
   echo "stopped run ${run}"
