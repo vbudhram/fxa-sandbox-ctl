@@ -169,7 +169,12 @@ routines_clear_name() {
   [ "$n" = 0 ] || _teams_audit_note routine-delete "$1" "${n} routines of an earlier team of this name"
 }
 
-routine_history() { _routine_of "$1" "$2" >/dev/null || return 1; db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, report, started_at, ended_at FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;"; }
+# heads: a fix run's heads.fix gives History its PR, the base and new SHA, and why it ended.
+routine_history() {
+  _routine_of "$1" "$2" >/dev/null || return 1
+  db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, report, started_at, ended_at, heads FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;" \
+    | jq -c 'map(.heads |= (fromjson? // null))'
+}
 
 cmd_routine() {
   case "${1:-}" in

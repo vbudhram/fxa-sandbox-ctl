@@ -563,7 +563,7 @@
   .choice.sm { padding:var(--s3); flex-direction:row; gap:var(--s2); } .choice.sm input { margin:3px 0 0; accent-color:var(--link); } .choice:has(input:disabled) { cursor:default; opacity:.7; }
   .emptybox .rtchoices { text-align:left; margin-top:var(--s2); }
   :is([data-routines], [data-tform], [data-memory]) fieldset { border:0; padding:0; margin:0; min-width:0; } .rt-head h3:focus { outline:none; } .rt-head h3:focus-visible { outline:2px solid var(--link); outline-offset:2px; }
-  .rtd .line1 { grid-template-columns:64px minmax(0,1fr) auto; }
+  .rtd .line1 { grid-template-columns:64px minmax(0,1fr) auto; } .rtd .line1 .title { white-space:normal; }
   :is([data-routines], [data-tform], [data-memory]) .field { display:flex; flex-direction:column; gap:var(--s1); min-width:0; border:0; padding:0; margin:0; }
   :is([data-routines], [data-tform], [data-memory]) .field > label, :is([data-routines], [data-tform], [data-memory]) .lb { font:600 var(--t-sub) var(--sans); color:var(--ink); padding:0; }
   :is([data-routines], [data-tform], [data-memory]) .field > label:has(input[type="checkbox"]) { font-weight:400; } :is([data-routines], [data-tform], [data-memory]) .opt { font-weight:400; color:var(--faint); }
@@ -2606,11 +2606,30 @@ const prHref = rtPr;
 const sessHref = k => /^agent-[a-z0-9]{4,12}$/.test(k || "") ? `#sessions/stopped/${k}` : "";
 // A run's result: [tag, tone, one line]. d: the routine's config; a routine with no channel keeps its report in History (D32).
 function rtResult(x, d) {
+  if (d?.on === "pr-label" || x.heads?.fix) return rtFixResult(x, d);
   const pr = rtPr(x.pr_url);
   return { ok: ["Draft PR", "merged", pr ? `Opened draft PR #${pr.split("/").pop()}` : x.pr_url ? `Finished: ${x.pr_url}` : "Finished"],
     report: ["Report", "info", !d?.channel ? "Report in History" : x.reason ? `Report held: ${x.reason}. Read it in History` : "Posted a report"],
     nochange: ["No change", "dim", "Nothing to change"], failed: ["Failed", "bad", x.reason ? sentence(String(x.reason)) : "Failed"], missed: ["Missed", "bad", x.reason ? sentence(String(x.reason)) : "The run did not start"],
     stopped: ["Stopped", "warn", "Stopped by an admin"] }[x.state] ?? [String(x.state ?? "unknown"), "dim", x.reason || String(x.state ?? "")];
+}
+// A dependency fix run's result from ctl's state and fix.why (C2), never agent text: [tag, tone, one line, the next step].
+const FIX_GUARD = { lock: ["yarn.lock", "The fix changes yarn.lock entries, which I do not push. Fix it by hand."], tooling: ["Yarn tooling", "The fix changes Yarn tooling files, which I do not push. Fix it by hand."], frozen: ["protected files", "The fix changes protected files, which I do not push. Fix it by hand."], pii: ["personal data", "The fix may hold personal data or a secret, so it was not pushed. Read the report here."] };
+const rtSha7 = s => /^[0-9a-f]{7,40}$/.test(String(s ?? "")) ? s.slice(0, 7) : "";
+function rtFixResult(x, d) {
+  const f = x.heads?.fix ?? {}, n = rtPrN(f), lb = d?.pr?.label || "agent-help", why = String(f.why ?? ""), again = `Add ${lb} again to retry.`;
+  const not = { "new-commit": ["the PR has a new commit", `Add ${lb} again to fix the new head.`], expired: ["it waited 24 h", again], "not-red": ["CI passes on its head", `Add ${lb} again if CI fails.`],
+    used: ["a run on its head already ended", "A new commit allows a new run."], "no-write": ["the label needs a person with write access", `Ask a person with write access to add ${lb}.`],
+    fork: ["the PR is from a fork", "Fix it by hand."], base: ["the PR branch is a base or release branch", "Fix it by hand."], closed: ["the PR is closed", `Reopen it and add ${lb} again.`],
+    merged: ["the PR is merged", "No step is needed."], boot: ["the sandbox did not start", again], target: ["the PR no longer matches this routine", "Check the routine's repo and authors."] };
+  if (x.state === "ok") return ["Pushed", "merged", `Pushed ${rtSha7(f.new_sha) || "the fix"} to ${n}`, "Next: review the fix commit, then approve the functional tests gate."];
+  if (x.state === "report" && why === "moved") return ["Branch moved", "warn", `The branch of ${n} moved, so nothing was pushed`, again];
+  if (x.state === "report" && why.startsWith("guard:")) { const [c, t] = FIX_GUARD[why.slice(6)] ?? ["a guard", "A guard refused the fix. Fix it by hand."]; return ["Not pushed", "warn", `Not pushed (${c})`, t]; }
+  if (x.state === "report" || x.state === "nochange") return ["No fix found", "dim", `No fix found for ${n}`, "A new commit allows a new run."];
+  if (x.state === "stopped") { const c = why === "label" ? `the ${lb} label was removed` : ["closed", "merged"].includes(why) ? `${n} was ${why}` : "a team admin stopped it";
+    return ["Stopped", "warn", `Stopped (${c})`, `Nothing was pushed. ${why === "merged" ? "No step is needed." : why === "label" || why === "closed" ? again : "Use Run now to retry."}`]; }
+  if (x.state === "skipped") { const [c, nx] = not[why] ?? ["the run could not start", again]; return ["Not started", "dim", `Not started (${c})`, nx]; }
+  return ["Failed", "bad", x.reason ? sentence(String(x.reason)) : `The fix for ${n} failed`, `Nothing was pushed. ${again}`];
 }
 // The next step for a failed run whose reason is known.
 function rtFix(why) {
@@ -2620,11 +2639,16 @@ function rtFix(why) {
 }
 function rtHist(rows, d) {
   if (!rows.length) return html`<p class="empty">No runs yet.</p>`;
-  return rows.map(x => { const [t, tone, title] = rtResult(x, d), at = x.started_at ?? x.ended_at, fix = ["failed", "missed"].includes(x.state) ? rtFix(x.reason) : "";
+  return rows.map(x => { const [t, tone, title, next] = rtResult(x, d), at = x.started_at ?? x.ended_at, fix = ["failed", "missed"].includes(x.state) && !next ? rtFix(x.reason) : "";
     const day = at ? new Date(at * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "", time = at ? new Date(at * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
+    // A fix run names its trigger as Sessions and Sandboxes do, links its PR, and shows the PR head it started on and the commit it pushed.
+    const fx = x.heads?.fix, who = String(x.actor ?? "").slice(0, 60), pr = fx ? rtPr(fx.url) : rtPr(x.pr_url);
+    const by = fx ? { blender: "BLEnder", label: who ? `label by ${who}` : "label", manual: who ? `Run now by ${who.split("@")[0]}` : "Run now" }[x.trigger] ?? "Dependency fix"
+      : x.trigger === "manual" ? `Run now${x.actor ? ` by ${String(x.actor).split("@")[0]}` : ""}` : "Schedule";
+    const shas = fx && rtSha7(fx.head_sha) ? html` · <span class="mono" title="${rtSha7(fx.new_sha) ? "The PR head it started on, and the commit it pushed" : "The PR head it started on"}">${rtSha7(fx.head_sha)}${rtSha7(fx.new_sha) ? ` → ${rtSha7(fx.new_sha)}` : ""}</span>` : "";
     return html`<div class="item"><div class="line1"><span class="mono">${day}</span><span class="title">${title}</span><span>${tag(t, tone)}</span></div>
-      <div class="line2">${x.trigger === "manual" ? `Run now${x.actor ? ` by ${String(x.actor).split("@")[0]}` : ""}` : "Schedule"} · ${time} · ${x.cost_usd == null ? "no cost" : usd(x.cost_usd)}${x.session ? html` · ${sessHref(x.session) ? html`<a class="mono" href="${sessHref(x.session)}">${x.session}</a>` : html`<span class="mono">${x.session}</span>`}` : ""}${rtPr(x.pr_url) ? html` · <a class="key" href="${x.pr_url}" target="_blank" rel="noopener">#${x.pr_url.split("/").pop()}</a>` : ""}</div>
-      ${fix ? html`<div class="alert warn"><span class="what">${fix}</span></div>` : ""}
+      <div class="line2">${by} · ${time} · ${x.cost_usd == null ? "no cost" : usd(x.cost_usd)}${x.session ? html` · ${sessHref(x.session) ? html`<a class="mono" href="${sessHref(x.session)}">${x.session}</a>` : html`<span class="mono">${x.session}</span>`}` : ""}${pr ? html` · <a class="key" href="${pr}" target="_blank" rel="noopener">#${pr.split("/").pop()}</a>` : ""}${shas}</div>
+      ${next ? html`<p class="hint next">${next}</p>` : ""}${fix ? html`<div class="alert warn"><span class="what">${fix}</span></div>` : ""}
       ${x.report ? html`<details data-rt-run="${x.id}"${RT_OPEN.has(String(x.id)) ? " open" : ""}><summary>Report</summary><pre class="report">${x.report}</pre></details>` : ""}</div>`; });
 }
 const rtGlyph = tpl => { const [tone, d] = RT_GLYPH[tpl] ?? RT_GLYPH.blank; return html`<span class="${cls("glyph", tone)}">${raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`)}</span>`; };
@@ -2678,7 +2702,8 @@ function routineListHtml(t, now) {
     <div class="row"><span class="seg" role="group" aria-label="Show">${[["all", "All", L.length], ["failed", "Needs attention", failed], ["paused", "Paused", paused]].map(([k, l, c]) =>
       html`<button type="button" data-rt-show="${k}" aria-pressed="${String(show === k)}">${l} ${c}</button>`)}</span></div>
     ${rows.length ? rows.map(r => rtCard(t, r, sum[r.id])) : html`<p class="empty">No ${show === "failed" ? "routine needs attention" : "routine is paused"}.</p>`}
-    <p class="hint rtkey">${dot("done")} Draft PR ${dot("info")} Report ${dot("")} Nothing to change ${dot("bad")} Failed ${dot("warn")} Stopped</p></div>`;
+    ${L.some(r => r.data.on === "pr-label") ? html`<p class="hint rtkey">${dot("done")} Draft PR or Pushed ${dot("info")} Report, Branch moved or Not pushed ${dot("")} Nothing to change, No fix found or Not started ${dot("bad")} Failed ${dot("warn")} Stopped</p>`
+      : html`<p class="hint rtkey">${dot("done")} Draft PR ${dot("info")} Report ${dot("")} Nothing to change ${dot("bad")} Failed ${dot("warn")} Stopped</p>`}</div>`;
 }
 function rtCard(t, r, s) {
   const d = r.data, rec = r.recent ?? [], nx = r.paused ? null : (r.next ?? [])[0], last = r.last ? rtResult(r.last, d) : null, onpr = d.on === "pr-label";

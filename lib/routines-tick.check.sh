@@ -432,6 +432,8 @@ fx1="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VAL
 fx2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rpl, 'pr-2-bb', 'ok', json('{\"fix\":{\"pr\":2}}')); SELECT last_insert_rowid();")"
 check "_prfix_set: a live fix row takes the filter with its --arg; an ended row is not written" "0|{\"pr\":1,\"wait\":\"it's busy\"}|1|{\"pr\":2}" \
   "$(_prfix_set "$fx1" '.wait = $w' --arg w "it's busy"; echo $?)|$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $fx1;")|$(_prfix_set "$fx2" '.wait = "x"'; echo $?)|$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $fx2;")"
+check "History returns a fix row's heads, so the page shows its PR and SHAs" "2|object" \
+  "$(routine_history fxa "$rpl" | jq -r --argjson d "$fx2" '.[] | select(.id == $d) | "\(.heads.fix.pr)|\(.heads | type)"')"
 s0="$(date +%s)"; _with_timeout 1 sleep 5; rc=$?
 check "_with_timeout stops sleep 5 at 1 s with 124; a quick command keeps its status and output" "124|1|hi|3" \
   "$rc|$([ $(( $(date +%s) - s0 )) -le 3 ] && echo 1)|$(_with_timeout 5 echo hi)|$(_with_timeout 5 sh -c 'exit 3'; echo $?)"

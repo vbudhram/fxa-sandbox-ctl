@@ -21,5 +21,18 @@ ck "the page's next run tile is on request" "on request" \
   "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$W return [...document.querySelectorAll('.rtd .stat')].find(s => /Next run/.test(s.textContent))?.querySelector('.big').textContent")"
 ck "the page lists every live run: the running PR, one in line and one that waits on a gate" "#90001 Running|#90002 In line behind #90001|#90003 Waiting: the team budget is used" \
   "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$W return [...document.querySelectorAll('.rtd [data-rt-live]')].map(e => e.innerText.replace(/\s+/g, ' ').replace(/ agent-\S+| Stop run/g, '').trim()).join('|')")"
+
+# Each fix run in History: its result and next step from fix.why, the trigger, the PR, and base to new SHA (A28, A33).
+hist="$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$W return [...document.querySelectorAll('.rtd .item')].map(e => [e.querySelector('.title')?.textContent, e.querySelector('.tag')?.textContent, e.querySelector('.line2')?.textContent.replace(/\s+/g, ' ').trim().replace(/ · \d\d:\d\d/, ''), e.querySelector('.next')?.textContent ?? ''].join(' / ')).join('\n')")"
+row() { sed -n "${1}p" <<< "$hist"; }
+ck "pushed: the new SHA, the trigger, the PR, base to new SHA, and the next step" "Pushed bbbbbbb to #90001 / Pushed / label by example-writer · \$1.20 · agent-fix021 · #90001 · aaaaaaa → bbbbbbb / Next: review the fix commit, then approve the functional tests gate." "$(row 1)"
+ck "no fix found, by BLEnder" "No fix found for #90004 / No fix found / BLEnder · \$0.80 · #90004 · ccccccc / A new commit allows a new run." "$(row 2)"
+ck "branch moved, by Run now" "The branch of #90005 moved, so nothing was pushed / Branch moved / Run now by admin · \$0.90 · #90005 · ddddddd / Add agent-help again to retry." "$(row 3)"
+ck "a guard: not pushed, with its class and the guard text" "Not pushed (yarn.lock) / Not pushed / label by example-writer · \$0.70 · #90006 · eeeeeee / The fix changes yarn.lock entries, which I do not push. Fix it by hand." "$(row 4)"
+ck "stopped: the cause" "Stopped (the agent-help label was removed) / Stopped / label by example-writer · \$0.20 · #90007 · fffffff / Nothing was pushed. Add agent-help again to retry." "$(row 5)"
+ck "not started: the reason" "Not started (the PR has a new commit) / Not started / label by example-writer · no cost · #90008 · 0000000 / Add agent-help again to fix the new head." "$(row 6)"
+ck "failed: the reason, and nothing was pushed" "The sandbox did not start / Failed / label by example-writer · no cost · #90009 · 9999999 / Nothing was pushed. Add agent-help again to retry." "$(row 7)"
+ck "the legend names the fix results too" "true" \
+  "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$W const k = tx('.rtkey'); return ['Pushed', 'Not pushed', 'No fix found', 'Not started'].every(x => k.includes(x))")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
