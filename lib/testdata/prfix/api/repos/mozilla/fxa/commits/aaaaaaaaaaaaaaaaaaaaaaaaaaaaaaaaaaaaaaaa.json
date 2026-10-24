@@ -1,0 +1,28 @@
+{
+ "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "node_id": "C_kwDOexample90001",
+ "commit": {
+  "author": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "committer": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "message": "bump",
+  "tree": {
+   "sha": "0000000000000000000000000000000000000000"
+  }
+ },
+ "author": null,
+ "committer": null,
+ "parents": [
+  {
+   "sha": "9999999999999999999999999999999999999999"
+  }
+ ],
+ "html_url": "https://github.com/mozilla/fxa/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

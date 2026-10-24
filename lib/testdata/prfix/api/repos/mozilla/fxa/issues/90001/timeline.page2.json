@@ -1,0 +1,24 @@
+[
+ {
+  "id": 5004,
+  "node_id": "LE_lADOexample5004",
+  "url": "https://api.github.com/repos/mozilla/fxa/issues/events/5004",
+  "actor": {
+   "login": "example-writer",
+   "id": 1001,
+   "node_id": "U_kgDOexample1001",
+   "type": "User",
+   "site_admin": false,
+   "html_url": "https://github.com/example-writer"
+  },
+  "event": "labeled",
+  "commit_id": null,
+  "commit_url": null,
+  "created_at": "2026-10-24T10:00:00Z",
+  "performed_via_github_app": null,
+  "label": {
+   "name": "agent-help",
+   "color": "ededed"
+  }
+ }
+]

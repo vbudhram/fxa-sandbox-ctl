@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# A fake gh for offline checks of the dependency PR fix: it serves the recorded GitHub JSON of lib/testdata/prfix
+# and logs each call. Put its folder first on PATH:  PATH="<repo>/lib/testdata/prfix/bin:$PATH"
+#   PRFIX_GH_LOG=<file>    one line per call: the arguments, then " <<< <body>" for --input
+#   PRFIX_GH_SLEEP=<s>     sleep before each answer (a slow GitHub)
+#   PRFIX_DIR=<dir>        serve a copy of the data (a check that changes a file); default: this fixture
+# gh api <path>      api/<path>.json, without the query; --paginate adds api/<path>.page2.json (one array per page,
+#                    as gh prints them). api/<path>.status with a code other than 200 answers as gh does: the
+#                    error JSON on stdout, "gh: ... (HTTP <code>)" on stderr, exit 1. A missing file is a 404.
+#                    -X <method> other than GET answers api/<path>.<METHOD>.json, or {}.
+# gh pr list         every pr/<n>.json, newest first, filtered by --state (default open), --author and --label.
+# gh pr view <n|url> pr/<n>.json.   --json <fields> and --jq work as in gh. Any other command answers nothing.
+set -u
+d="${PRFIX_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+cmd="${1:-} ${2:-}" jqf="" json="" body="" args="$*"
+[ -z "${PRFIX_GH_SLEEP:-}" ] || sleep "$PRFIX_GH_SLEEP"
+out() { if [ -n "$jqf" ]; then jq -r "$jqf"; else cat; fi; }
+fields() { if [ -n "$json" ]; then jq -c --arg f "$json" '($f | split(",")) as $k | if type == "array" then map(with_entries(select(.key | IN($k[])))) else with_entries(select(.key | IN($k[]))) end'; else cat; fi; }
+fail() { # fail <code>
+  local m="Not Found"; [ "$1" = 404 ] || m="HTTP $1"
+  jq -nc --arg m "$m" --arg c "$1" '{message: $m, documentation_url: "https://docs.github.com/rest", status: $c}'
+  echo "gh: ${m} (HTTP $1)" >&2; exit 1
+}
+case "$cmd" in
+  "api "*)
+    shift; pag="" method=GET path=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --paginate) pag=1; shift ;;
+        --jq|-q) jqf="$2"; shift 2 ;;
+        -X|--method) method="$2"; shift 2 ;;
+        --input) if [ "$2" = - ]; then body="$(cat)"; else body="$(cat "$2")"; fi; shift 2 ;;
+        -H|--header|-f|-F|--field|--raw-field|-p|--preview|--hostname|--cache) shift 2 ;;
+        -*) shift ;;
+        *) path="${1#/}"; shift ;;
+      esac
+    done
+    [ -z "${PRFIX_GH_LOG:-}" ] || printf '%s%s\n' "$args" "${body:+ <<< $(printf '%s' "$body" | tr '\n' ' ')}" >> "$PRFIX_GH_LOG"
+    f="$d/api/${path%%\?*}"
+    if [ "$method" != GET ]; then
+      if [ -f "$f.$method.json" ]; then out < "$f.$method.json"; else echo '{}' | out; fi; exit 0
+    fi
+    if [ -f "$f.status" ] && [ "$(tr -d ' \n' < "$f.status")" != 200 ]; then fail "$(tr -d ' \n' < "$f.status")"; fi
+    [ -f "$f.json" ] || fail 404
+    { cat "$f.json"; [ -z "$pag" ] || [ ! -f "$f.page2.json" ] || cat "$f.page2.json"; } | out ;;
+  "pr list"|"pr view")
+    shift 2; state=open author="" label="" num=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --json) json="$2"; shift 2 ;;
+        --jq|-q) jqf="$2"; shift 2 ;;
+        --state|-s) state="$2"; shift 2 ;;
+        --author|-A) author="$2"; shift 2 ;;
+        --label|-l) label="$2"; shift 2 ;;
+        -R|--repo|-L|--limit|-B|--base|-H|--head|-S|--search) shift 2 ;;
+        -*) shift ;;
+        *) num="${1##*/}"; shift ;;
+      esac
+    done
+    [ -z "${PRFIX_GH_LOG:-}" ] || printf '%s\n' "$args" >> "$PRFIX_GH_LOG"
+    if [ "$cmd" = "pr view" ]; then
+      [ -f "$d/pr/${num}.json" ] || { echo "GraphQL: Could not resolve to a PullRequest with the number of ${num}. (repository.pullRequest)" >&2; exit 1; }
+      fields < "$d/pr/${num}.json" | out; exit 0
+    fi
+    # A bot's login is app/<name> in gh's JSON; --author takes app/<name> or <name>[bot].
+    cat "$d"/pr/*.json | jq -sc --arg s "$(tr 'a-z' 'A-Z' <<< "$state")" --arg a "$author" --arg l "$label" '
+      def norm: sub("^app/"; "") | sub("\\[bot\\]$"; "");
+      map(select(($s == "ALL" or .state == $s) and ($a == "" or (.author.login | norm) == ($a | norm))
+        and ($l == "" or any(.labels[]; .name == $l)))) | sort_by(-.number)' | fields | out ;;
+  *) [ -z "${PRFIX_GH_LOG:-}" ] || printf '%s\n' "$args" >> "$PRFIX_GH_LOG" ;;
+esac

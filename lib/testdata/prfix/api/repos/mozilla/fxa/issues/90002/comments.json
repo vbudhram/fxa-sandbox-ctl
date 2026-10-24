@@ -1,0 +1,62 @@
+[
+ {
+  "id": 7002,
+  "node_id": "IC_kwDOexample7002",
+  "url": "https://api.github.com/repos/mozilla/fxa/issues/comments/7002",
+  "html_url": "https://github.com/mozilla/fxa/pull/90002#issuecomment-7002",
+  "issue_url": "https://api.github.com/repos/mozilla/fxa/issues/90002",
+  "user": {
+   "login": "mozilla-blender[bot]",
+   "id": 2001,
+   "node_id": "U_kgDOexample2001",
+   "type": "Bot",
+   "site_admin": false,
+   "html_url": "https://github.com/mozilla-blender"
+  },
+  "created_at": "2026-10-24T10:00:00Z",
+  "updated_at": "2026-10-24T10:00:00Z",
+  "author_association": "NONE",
+  "body": "BLEnder could not fix the failing checks of this PR. @example-fxa-agent please take a look.",
+  "performed_via_github_app": null
+ },
+ {
+  "id": 7003,
+  "node_id": "IC_kwDOexample7003",
+  "url": "https://api.github.com/repos/mozilla/fxa/issues/comments/7003",
+  "html_url": "https://github.com/mozilla/fxa/pull/90002#issuecomment-7003",
+  "issue_url": "https://api.github.com/repos/mozilla/fxa/issues/90002",
+  "user": {
+   "login": "example-triage",
+   "id": 1002,
+   "node_id": "U_kgDOexample1002",
+   "type": "User",
+   "site_admin": false,
+   "html_url": "https://github.com/example-triage"
+  },
+  "created_at": "2026-10-24T10:05:00Z",
+  "updated_at": "2026-10-24T10:05:00Z",
+  "author_association": "MEMBER",
+  "body": "BLEnder could not fix the failing checks of this PR. @example-fxa-agent please take a look.",
+  "performed_via_github_app": null
+ },
+ {
+  "id": 7004,
+  "node_id": "IC_kwDOexample7004",
+  "url": "https://api.github.com/repos/mozilla/fxa/issues/comments/7004",
+  "html_url": "https://github.com/mozilla/fxa/pull/90002#issuecomment-7004",
+  "issue_url": "https://api.github.com/repos/mozilla/fxa/issues/90002",
+  "user": {
+   "login": "example-triage",
+   "id": 1002,
+   "node_id": "U_kgDOexample1002",
+   "type": "User",
+   "site_admin": false,
+   "html_url": "https://github.com/example-triage"
+  },
+  "created_at": "2026-10-24T10:10:00Z",
+  "updated_at": "2026-10-24T10:10:00Z",
+  "author_association": "MEMBER",
+  "body": "<!-- fxa-agent:pr-fix -->\nPushed 0000000.",
+  "performed_via_github_app": null
+ }
+]

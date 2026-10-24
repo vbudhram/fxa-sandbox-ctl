@@ -1,0 +1,47 @@
+{
+ "number": 90005,
+ "title": "fix(deps): security bump of @opentelemetry/x",
+ "url": "https://github.com/mozilla/fxa/pull/90005",
+ "state": "OPEN",
+ "isDraft": false,
+ "headRefName": "blender/security-bump-@opentelemetry/x",
+ "headRefOid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+ "baseRefName": "main",
+ "isCrossRepository": false,
+ "headRepository": {
+  "id": "R_kgDOexample",
+  "name": "fxa"
+ },
+ "headRepositoryOwner": {
+  "id": "O_kgDOexample",
+  "login": "mozilla"
+ },
+ "author": {
+  "id": "BOT_kgDOexample2",
+  "is_bot": true,
+  "login": "app/mozilla-blender",
+  "name": ""
+ },
+ "labels": [],
+ "statusCheckRollup": [
+  {
+   "__typename": "CheckRun",
+   "completedAt": "2026-10-24T09:20:00Z",
+   "conclusion": "TIMED_OUT",
+   "detailsUrl": "https://github.com/mozilla/fxa/actions/runs/1000/job/5",
+   "name": "build",
+   "startedAt": "2026-10-24T09:01:00Z",
+   "status": "COMPLETED",
+   "workflowName": "CI"
+  },
+  {
+   "__typename": "StatusContext",
+   "context": "ci/circleci: unit-test",
+   "startedAt": "2026-10-24T09:01:00Z",
+   "state": "SUCCESS",
+   "targetUrl": "https://app.circleci.com/pipelines/github/mozilla/fxa/1000/workflows/00000000-0000-4000-8000-000000000001/jobs/6"
+  }
+ ],
+ "createdAt": "2026-10-24T08:55:00Z",
+ "updatedAt": "2026-10-24T10:00:00Z"
+}

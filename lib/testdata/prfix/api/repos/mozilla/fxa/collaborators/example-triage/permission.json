@@ -1,0 +1,12 @@
+{
+ "permission": "read",
+ "role_name": "triage",
+ "user": {
+  "login": "example-triage",
+  "id": 1002,
+  "node_id": "U_kgDOexample1002",
+  "type": "User",
+  "site_admin": false,
+  "html_url": "https://github.com/example-triage"
+ }
+}

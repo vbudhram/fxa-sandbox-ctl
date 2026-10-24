@@ -1,0 +1,47 @@
+{
+ "number": 90006,
+ "title": "chore(deps): bump example-fork from 1.0.0 to 1.0.1",
+ "url": "https://github.com/mozilla/fxa/pull/90006",
+ "state": "OPEN",
+ "isDraft": false,
+ "headRefName": "dependabot/npm_and_yarn/example-fork-1.0.1",
+ "headRefOid": "ffffffffffffffffffffffffffffffffffffffff",
+ "baseRefName": "main",
+ "isCrossRepository": true,
+ "headRepository": {
+  "id": "R_kgDOexample",
+  "name": "fxa"
+ },
+ "headRepositoryOwner": {
+  "id": "O_kgDOexample",
+  "login": "example-fork"
+ },
+ "author": {
+  "id": "BOT_kgDOexample1",
+  "is_bot": true,
+  "login": "app/dependabot",
+  "name": ""
+ },
+ "labels": [
+  {
+   "id": "LA_kwDOexampleagent-help",
+   "name": "agent-help",
+   "description": "",
+   "color": "ededed"
+  }
+ ],
+ "statusCheckRollup": [
+  {
+   "__typename": "CheckRun",
+   "completedAt": "2026-10-24T09:20:00Z",
+   "conclusion": "CANCELLED",
+   "detailsUrl": "https://github.com/mozilla/fxa/actions/runs/1000/job/6",
+   "name": "build",
+   "startedAt": "2026-10-24T09:01:00Z",
+   "status": "COMPLETED",
+   "workflowName": "CI"
+  }
+ ],
+ "createdAt": "2026-10-24T08:55:00Z",
+ "updatedAt": "2026-10-24T10:00:00Z"
+}

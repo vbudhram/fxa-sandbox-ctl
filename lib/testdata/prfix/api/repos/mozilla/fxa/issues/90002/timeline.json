@@ -1,0 +1,32 @@
+[
+ {
+  "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "node_id": "C_kwDOexample90002",
+  "url": "https://api.github.com/repos/mozilla/fxa/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "html_url": "https://github.com/mozilla/fxa/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "author": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "committer": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "tree": {
+   "sha": "0000000000000000000000000000000000000000"
+  },
+  "message": "chore(deps): bump example-lib from 2.0.0 to 2.1.0",
+  "parents": [
+   {
+    "sha": "9999999999999999999999999999999999999999"
+   }
+  ],
+  "verification": {
+   "verified": true,
+   "reason": "valid"
+  },
+  "event": "committed"
+ }
+]

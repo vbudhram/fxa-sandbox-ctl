@@ -1,0 +1,60 @@
+{
+ "number": 90004,
+ "title": "chore(deps): bump example-green from 3.0.0 to 3.0.1",
+ "url": "https://github.com/mozilla/fxa/pull/90004",
+ "state": "OPEN",
+ "isDraft": false,
+ "headRefName": "dependabot/npm_and_yarn/example-green-3.0.1",
+ "headRefOid": "dddddddddddddddddddddddddddddddddddddddd",
+ "baseRefName": "main",
+ "isCrossRepository": false,
+ "headRepository": {
+  "id": "R_kgDOexample",
+  "name": "fxa"
+ },
+ "headRepositoryOwner": {
+  "id": "O_kgDOexample",
+  "login": "mozilla"
+ },
+ "author": {
+  "id": "BOT_kgDOexample1",
+  "is_bot": true,
+  "login": "app/dependabot",
+  "name": ""
+ },
+ "labels": [
+  {
+   "id": "LA_kwDOexampledependencies",
+   "name": "dependencies",
+   "description": "",
+   "color": "ededed"
+  },
+  {
+   "id": "LA_kwDOexampleagent-help",
+   "name": "agent-help",
+   "description": "",
+   "color": "ededed"
+  }
+ ],
+ "statusCheckRollup": [
+  {
+   "__typename": "CheckRun",
+   "completedAt": "2026-10-24T09:20:00Z",
+   "conclusion": "SUCCESS",
+   "detailsUrl": "https://github.com/mozilla/fxa/actions/runs/1000/job/4",
+   "name": "build",
+   "startedAt": "2026-10-24T09:01:00Z",
+   "status": "COMPLETED",
+   "workflowName": "CI"
+  },
+  {
+   "__typename": "StatusContext",
+   "context": "ci/circleci: unit-test",
+   "startedAt": "2026-10-24T09:01:00Z",
+   "state": "SUCCESS",
+   "targetUrl": "https://app.circleci.com/pipelines/github/mozilla/fxa/1000/workflows/00000000-0000-4000-8000-000000000001/jobs/5"
+  }
+ ],
+ "createdAt": "2026-10-24T08:55:00Z",
+ "updatedAt": "2026-10-24T10:00:00Z"
+}

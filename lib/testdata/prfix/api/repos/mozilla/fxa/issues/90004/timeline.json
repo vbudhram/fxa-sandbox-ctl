@@ -1,0 +1,54 @@
+[
+ {
+  "sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "node_id": "C_kwDOexample90004",
+  "url": "https://api.github.com/repos/mozilla/fxa/git/commits/dddddddddddddddddddddddddddddddddddddddd",
+  "html_url": "https://github.com/mozilla/fxa/commit/dddddddddddddddddddddddddddddddddddddddd",
+  "author": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "committer": {
+   "name": "dependabot[bot]",
+   "email": "noreply@example.com",
+   "date": "2026-10-24T09:00:00Z"
+  },
+  "tree": {
+   "sha": "0000000000000000000000000000000000000000"
+  },
+  "message": "chore(deps): bump example-green from 3.0.0 to 3.0.1",
+  "parents": [
+   {
+    "sha": "9999999999999999999999999999999999999999"
+   }
+  ],
+  "verification": {
+   "verified": true,
+   "reason": "valid"
+  },
+  "event": "committed"
+ },
+ {
+  "id": 5006,
+  "node_id": "LE_lADOexample5006",
+  "url": "https://api.github.com/repos/mozilla/fxa/issues/events/5006",
+  "actor": {
+   "login": "example-writer",
+   "id": 1001,
+   "node_id": "U_kgDOexample1001",
+   "type": "User",
+   "site_admin": false,
+   "html_url": "https://github.com/example-writer"
+  },
+  "event": "labeled",
+  "commit_id": null,
+  "commit_url": null,
+  "created_at": "2026-10-24T10:00:00Z",
+  "performed_via_github_app": null,
+  "label": {
+   "name": "agent-help",
+   "color": "ededed"
+  }
+ }
+]

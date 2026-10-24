@@ -1,0 +1,12 @@
+{
+ "permission": "write",
+ "role_name": "write",
+ "user": {
+  "login": "example-writer",
+  "id": 1001,
+  "node_id": "U_kgDOexample1001",
+  "type": "User",
+  "site_admin": false,
+  "html_url": "https://github.com/example-writer"
+ }
+}
