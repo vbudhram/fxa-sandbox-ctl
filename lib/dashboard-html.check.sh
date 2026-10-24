@@ -5,6 +5,9 @@ set -u
 command -v node >/dev/null || { echo "skip: needs node"; exit 0; }
 page="$(dirname "$0")/../dashboard/index.html"
 fns="$(sed -n '/^const esc = /p; /^\/\/ Components:/,/^\/\/ End components\./p' "$page")"
+# The style block: a rule cut in half leaves its tail outside any rule, and the browser then drops the next rule.
+stray="$(sed -n '/<style>/,/<\/style>/p' "$page" | awk '{ if (d == 0 && $0 ~ /^[[:space:]]+[a-z-]+:[^{]*;/) print NR": "$0; o = gsub(/\{/, "{"); c = gsub(/\}/, "}"); d += o - c; if (d < 0) { print NR": a } with no rule open"; d = 0 } }')"
+if [ -z "$stray" ]; then echo "ok   style: no CSS fragment outside a rule"; else echo "FAIL style: no CSS fragment outside a rule: want [] got [$(head -2 <<< "$stray" | cut -c1-120 | tr '\n' ' ')]"; css_fail=1; fi
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 eval(process.argv[1].replace(/^(let|const|class) (\w+)/gm, (m, k, n) => k === "class" ? `var ${n} = class ${n}` : `var ${n}`));
@@ -30,3 +33,4 @@ t("table: head with a num column, rows as HTML", table(["Ticket", ["Cost", "num"
 t("emptybox escapes", emptybox("No <runs>"), '<div class="emptybox">No &lt;runs&gt;</div>');
 process.exit(fail);
 JS
+rc=$?; [ "${css_fail:-0}" = 0 ] || rc=1; exit "$rc"
