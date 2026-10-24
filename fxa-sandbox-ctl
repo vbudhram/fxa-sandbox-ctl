@@ -2786,7 +2786,14 @@ _session_finish_fail() {
   local last what="Open PR"; last="$(grep -E '^ERROR' "${SESSION_DIR}/$1.finish.log" 2>/dev/null | tail -1 || true)"
   [ "${3:-}" = --no-pr ] && what="Push branch"
   session_set "$1" state active last_error "${what} failed: ${last:-$2}"
-  errors_record session "$( [ "$what" = "Push branch" ] && echo push_failed || echo pr_failed )" "$1" "session-finish" "${last:-$2}" "agent-sessions/$1.finish.log"
+  # A fix run that ended on a moved branch or a guard (heads.fix.why) ended as designed: no operator error.
+  local run why=""; run="$(session_get "$1" routine_run)"
+  if [ -n "$(session_get "$1" fix_pr)" ] && [[ "$run" =~ ^[1-9][0-9]*$ ]]; then
+    why="$(db_value "SELECT coalesce(json_extract(heads, '$.fix.why'), '') FROM routine_runs WHERE id = ${run};" 2>/dev/null || true)"
+  fi
+  case "$why" in moved|guard:*) ;; *)
+    errors_record session "$( [ "$what" = "Push branch" ] && echo push_failed || echo pr_failed )" "$1" "session-finish" "${last:-$2}" "agent-sessions/$1.finish.log" ;;
+  esac
   _session_history_add "$1" action "${what} failed: ${last:-$2}"
   return 1
 }
@@ -2886,10 +2893,14 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
   # A checked-out PR (task --checkout) is the PR to update: finish never searches for it by branch name.
   local fpr=""; [ -n "$(session_get "$key" checkout)" ] && fpr="$(session_get "$key" review_pr)"
+  # A dependency fix run: fix-pr mode, one fast forward of the head it booted at (lib/finish.sh).
+  # A fix record with no run still selects the mode, so finish refuses it and never pushes as an ordinary session.
+  local frun="" fhead=""; [ -n "$(session_get "$key" fix_pr)" ] && { frun="$(session_get "$key" routine_run)"; frun="${frun:-none}"; fhead="$(session_get "$key" fix_head_sha)"; }
   rc=0
   pr_url="$(FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
-    finish_push_and_pr "$tmp" "$create")" || rc=$?
+    FXA_APP_COMMIT_FF="$frun" FXA_FIX_HEAD_SHA="$fhead" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
+  [ "$rc" = 3 ] && { _session_finish_fail "$key" "the branch of the PR moved, so nothing was pushed" "$mode"; return 1; }
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
   session_set "$key" finish_notes "$(_session_finish_notes "$key")"
   if [ "$create" = false ]; then

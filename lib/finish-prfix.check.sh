@@ -60,9 +60,10 @@ github_app_token() { echo t-app; }
 worktree_git_ok() { :; }
 _finish_check_frozen() { :; }
 # The steps that write to GitHub or CircleCI outside the push, recorded.
-for f in finish_approve_functional_gate finish_add_reviewers finish_request_copilot_review _finish_feedback_comment _finish_feedback_pr _finish_media_to_bucket _finish_release_runner; do
+for f in finish_approve_functional_gate finish_add_reviewers finish_request_copilot_review _finish_feedback_comment _finish_feedback_pr _finish_media_to_bucket; do
   eval "$f() { echo $f >> \"\$tmp/steps\"; }"
 done
+_finish_release_runner() { :; }
 
 # wt <agent edit command>   The host worktree as session_checkout makes it: at main, the tracking ref at the PR head,
 # and the runner's files (the PR head plus the agent's edit) on top. Prints its path.
@@ -85,6 +86,49 @@ out="$(FXA_FINISH_PR="$PR" _finish_push_and_pr "$w" true 2>"$tmp/err")"; rc=$?
 check "finish updates the checked-out PR, not the fork PR with the same branch name" "0|$PR" "$rc|$out"
 check "the PR keeps Dependabot's commit with its SHA, plus one App commit with only the agent's change" "$D dependabot[bot]|fxa-agent[bot] $D a.txt" \
   "$(git -C "$O" log --reverse --format='%H %an' "$M..$B" | head -1)|$(git -C "$O" log -1 --format='%an %P' "$B") $(git -C "$O" diff --name-only "$D" "$B" | paste -sd, -)"
+
+# Fix-pr mode: a started fix row of a pr-label routine, and finish with the run, the PR and the head it booted at.
+rt="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', json('{}')); SELECT last_insert_rowid();")"
+run() { db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rt, 'pr-90001-$1', 'started', json('{\"fix\":{\"pr\":90001}}')); SELECT last_insert_rowid();"; }
+fix() { db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $1;"; }
+ffin() { # ffin <run> <worktree>   finish in fix-pr mode; prints the exit code
+  local rc=0; FXA_APP_COMMIT_FF="$1" FXA_FIX_HEAD_SHA="$D" FXA_FINISH_PR="$PR" FXA_MEDIA_BUCKET=b _finish_push_and_pr "$2" true >/dev/null 2>"$tmp/err" || rc=$?
+  echo "$rc"
+}
+other() { # a commit on the PR branch that another push made
+  git -C "$O" commit-tree "$(git -C "$O" rev-parse "$D^{tree}")" -p "$D" -m "chore(deps): rebase" </dev/null; }
+
+# A4, A15b: one App commit on the PR head; no gate approval, reviewers, Copilot review, media comment or upload,
+# and no feedback comment. heads.fix has the claim and new_sha.
+reset_origin; r1="$(run a)"; w="$(wt 'echo two > a.txt')"
+rc="$(ffin "$r1" "$w")"; new="$(git -C "$O" rev-parse "$B")"
+check "fix-pr mode pushes one App commit on the PR head" "0|$D" "$rc|$(git -C "$O" rev-parse "$B~1")"
+check "fix-pr mode makes no other GitHub or CircleCI write" "|0|0" "$(cat "$tmp/steps")|$(grep -c 'pr comment' "$tmp/gh")|$(grep -c 'requested_reviewers' "$tmp/gh")"
+check "heads.fix has the claim, the pending sha and new_sha" "1|$new|$new" "$(fix "$r1" | jq -r '"\(.pushing > 0 | if . then 1 else 0 end)|\(.pending_sha)|\(.new_sha)"')"
+
+# A6: the ref moved, and then the token mint fails: new_sha is already written.
+reset_origin; r2="$(run b)"; w="$(wt 'echo three > a.txt')"
+rc="$(github_app_token() { return 1; }; ffin "$r2" "$w")"
+check "a token mint that fails after the push leaves new_sha" "1|$(git -C "$O" rev-parse "$B")" "$rc|$(fix "$r2" | jq -r .new_sha)"
+
+# A5: another commit lands between the GET and the PATCH: refused, their commit stays, why 'moved', the claim is cleared.
+reset_origin; r3="$(run c)"; w="$(wt 'echo four > a.txt')"; X="$(other)"
+rc="$(MOVE_AT_PATCH="$X" ffin "$r3" "$w")"
+check "a branch that moves during the push: 3, their commit stays, why moved, no claim and no new_sha" "3|$X|moved|null|null|null" \
+  "$rc|$(git -C "$O" rev-parse "$B")|$(fix "$r3" | jq -r '"\(.why)|\(.pushing)|\(.pending_sha)|\(.new_sha)"')"
+
+# A5b: Dependabot rebased the branch during the agent's turn: the PR head is not the head the run booted at.
+reset_origin; r4="$(run d)"; X="$(other)"; git -C "$O" update-ref "refs/heads/$B" "$X"
+jq --arg x "$X" '.headRefOid = $x' "$tmp/fx/pr/90001.json" > "$tmp/x" && cp "$tmp/x" "$tmp/fx/pr/90001.rebased.json"
+cp "$tmp/fx/pr/90001.json" "$tmp/fx/pr/90001.head.json"; cp "$tmp/fx/pr/90001.rebased.json" "$tmp/fx/pr/90001.json"
+w="$(wt 'echo five > a.txt')"; rc="$(ffin "$r4" "$w")"
+check "a PR head that moved during the turn: 3, nothing pushed, why moved" "3|$X|moved|0" \
+  "$rc|$(git -C "$O" rev-parse "$B")|$(fix "$r4" | jq -r .why)|$(grep -c '^PATCH' "$tmp/api")"
+cp "$tmp/fx/pr/90001.head.json" "$tmp/fx/pr/90001.json"
+
+# A stopped run: the claim is refused, nothing is pushed.
+reset_origin; r5="$(run e)"; db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $r5;"; w="$(wt 'echo six > a.txt')"
+check "a run stopped before the push: 4 and nothing pushed" "4|$D" "$(ffin "$r5" "$w")|$(git -C "$O" rev-parse "$B")"
 
 [ "$fail" = 0 ] && echo "all ok"
 exit "$fail"

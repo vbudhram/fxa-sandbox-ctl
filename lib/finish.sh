@@ -538,15 +538,29 @@ _finish_push_and_pr() {
     echo "ERROR: soft reset to merge-base failed." >&2
     return 1
   }
+  # Fix-pr mode (a dependency fix run): the change goes on the head the run booted at, or nowhere.
+  local fix="${FXA_APP_COMMIT_FF:-}"
+  if [ -n "$fix" ]; then
+    if ! [[ "$fix" =~ ^[1-9][0-9]*$ ]] || ! [[ "${FXA_FIX_HEAD_SHA:-}" =~ ^[0-9a-f]{40}$ ]] || [ -z "${FXA_FINISH_PR:-}" ] || ! github_app_enabled; then
+      echo "ERROR: a fix run needs its run, its PR, its head and the GitHub App; nothing was pushed." >&2; return 1
+    fi
+    [ "$merge_base" = "$FXA_FIX_HEAD_SHA" ] || { echo "ERROR: the branch of the PR moved; nothing was pushed." >&2; _finish_prfix_why moved; return 3; }
+  fi
   # After the reset the index holds the whole change, a rebase round's merge included.
-  _finish_tooling_guard "$worktree" || return 1
-  _finish_check_frozen "$worktree" || return 1
+  # A fix run's refusal is its end (why guard:<class>), not an operator error.
+  _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
+  _finish_check_frozen "$worktree" || { _finish_prfix_why guard:frozen; return 1; }
   local commit_body
   commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
-  _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || return 1
+  _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || { _finish_prfix_why guard:pii; return 1; }
 
   local as_is=""
-  if _finish_as_is "$worktree" "$merge_base" "$cut_base"; then
+  if [ -n "$fix" ]; then
+    git -C "$worktree" diff --cached --quiet && { echo "ERROR: the fix adds nothing to the PR head; nothing was pushed." >&2; return 1; }
+    # The PR head again, just before the push: a rebase during the agent's turn ends the run, it is not rebuilt.
+    local now_head; now_head="$(_retry gh pr view "$FXA_FINISH_PR" --json headRefOid -q .headRefOid 2>/dev/null || true)"
+    [ "$now_head" = "$FXA_FIX_HEAD_SHA" ] || { echo "ERROR: the branch of the PR moved to ${now_head:0:10}; nothing was pushed." >&2; _finish_prfix_why moved; return 3; }
+  elif _finish_as_is "$worktree" "$merge_base" "$cut_base"; then
     as_is=1
     echo "  The run added nothing on top of them; the PR is their commits as they are." >&2
   fi
@@ -559,11 +573,19 @@ _finish_push_and_pr() {
       export GH_TOKEN
     fi
   elif github_app_enabled; then
-    local new_sha GH_TOKEN
+    local new_sha GH_TOKEN arc=0
     echo "Committing and pushing ${branch} as the GitHub App..." >&2
     new_sha="$(github_app_commit "$worktree" "$branch" "$merge_base" \
-      "$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")")" || return 1
+      "$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")")" || arc=$?
+    if [ "$arc" != 0 ]; then
+      [ "$arc" = 3 ] && _finish_prfix_why moved
+      [ -n "$fix" ] && return "$arc"; return 1
+    fi
     echo "  App commit: ${new_sha}" >&2
+    # First, before any step that can fail: the ref moved, so the run's end is 'ok'.
+    if [ -n "$fix" ]; then
+      _prfix_set "$fix" '.new_sha = $s' --arg s "$new_sha" || echo "WARN: run ${fix} pushed ${new_sha:0:10}, but its record did not take new_sha" >&2
+    fi
     GH_TOKEN="$(github_app_token)" || return 1
     export GH_TOKEN
   else
@@ -605,6 +627,8 @@ _finish_push_and_pr() {
   local body_file="${worktree}/.fxa-auto-pr-body.md"
   printf '%s\n' "$pr_body" | slot_write "$body_file"
   local media_md=""
+  # A fix run writes nothing to GitHub but the push: no media, gate, reviewers, Copilot or feedback.
+  [ -z "$fix" ] || media_args=()
   if github_app_enabled && [ -n "${FXA_MEDIA_BUCKET:-}" ] && [ "${#media_args[@]}" -gt 0 ]; then
     media_md="$(_finish_media_to_bucket "$body_file" media_args)"
     media_args=()  # the helper ran in a subshell; gh must not retry these as the App
@@ -638,6 +662,12 @@ _finish_push_and_pr() {
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
     echo "PR updated: ${pr_url}" >&2
+    if [ -n "$fix" ]; then
+      _finish_release_runner "$worktree"
+      printf '%s\n' "$pr_url"
+      mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+      return 0
+    fi
     # First, before the steps that can fail on their own: the push reset the gate.
     finish_approve_functional_gate "$pr_url"
     # Never change an existing PR's title or body: a round's handoff describes
@@ -712,6 +742,15 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
 
   # Archive the handoff file so the next ticket can write a fresh one.
   mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+}
+
+# _finish_prfix_why <why>   In fix-pr mode, the run's end code (heads.fix.why). 'moved' also drops the push claim:
+# nothing was pushed, so a stop may end the row again.
+_finish_prfix_why() {
+  [ -n "${FXA_APP_COMMIT_FF:-}" ] || return 0
+  if [ "$1" = moved ]; then _prfix_set "$FXA_APP_COMMIT_FF" '.why = $w | del(.pushing, .pending_sha)' --arg w "$1"
+  else _prfix_set "$FXA_APP_COMMIT_FF" '.why = $w' --arg w "$1"; fi || echo "WARN: run ${FXA_APP_COMMIT_FF} did not take why ${1}" >&2
+  return 0
 }
 
 # _finish_feedback_comment <KEY> <done_file> <pr_url>
