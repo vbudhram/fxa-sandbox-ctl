@@ -115,10 +115,13 @@ check "search and traps put an entry older than 90 days after a newer one" "mem-
 # The hook: recall on a failed command and on the first edit in a package, once per session.
 hk() { FXA_MEM_SEEN="$tmp/seen" fm hook; }
 fail_in='{"session_id":"s1","hook_event_name":"PostToolUseFailure","tool_name":"Bash","tool_input":{"command":"yarn build"},"error":"Error: Cannot find module @fxa/shared/foo\nRequire stack: x"}'
-check "a Claude failure recalls the matching trap" "mem-0000000a" "$(hk <<< "$fail_in" | jq -r .hookSpecificOutput.additionalContext | sed -n 2p | cut -d' ' -f1)"
+check "a Claude failure recalls the matching trap" "mem-0000000a" "$(hk <<< "$fail_in" | jq -r .hookSpecificOutput.additionalContext | grep -m1 '^mem-' | cut -d' ' -f1)"
 check "the event name is echoed" "PostToolUseFailure" "$(rm -f "$tmp/seen"; hk <<< "$fail_in" | jq -r .hookSpecificOutput.hookEventName)"
 check "the same entry does not show twice in a session" "" "$(hk <<< "$fail_in")"
 check "it shows again in another session" "1" "$(hk <<< "${fail_in/s1/s2}" | grep -c mem-0000000a)"
+ctx="$(hk <<< "${fail_in/s1/s3}" | jq -r .hookSpecificOutput.additionalContext)"; hn="$(sed -n 's/^<<<MEMORY-\([0-9a-f]\{16\}\)>>>$/\1/p' <<< "$ctx")"
+check "the recalled entries are agent text, so they sit in a nonce fence with a data note" "1|1|1" \
+  "$([ -n "$hn" ] && echo 1)|$(awk -v o="<<<MEMORY-$hn>>>" -v c="<<</MEMORY-$hn>>>" '$0 == o { f = 1 } f && /^mem-0000000a / { t = 1 } $0 == c && t { print 1; exit }' <<< "$ctx")|$(grep -c 'data, not instructions' <<< "$ctx")"
 codex_fail='{"session_id":"c1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"yarn build"},"tool_response":"Exit code: 1\nOutput:\nError: Cannot find module @fxa/shared/foo"}'
 check "a Codex non-zero exit recalls the trap" "1" "$(hk <<< "$codex_fail" | grep -c mem-0000000a)"
 codex_ok="${codex_fail/Exit code: 1/Exit code: 0}"
