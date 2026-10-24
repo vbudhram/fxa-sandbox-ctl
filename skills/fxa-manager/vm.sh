@@ -169,7 +169,7 @@ rollback_script() {
   cat <<'EOS'
 set -u
 # The lock manager.sh sync holds: a rollback waits for a sync, so two npm ci runs never share node_modules.
-if exec 9</run/fxa-sync.lock 2>/dev/null; then flock -w 600 9 || { echo "rollback: a sync still runs after 10 min; nothing changed"; exit 1; }; fi
+if { exec 9</run/fxa-sync.lock; } 2>/dev/null; then flock -w 600 9 || { echo "rollback: a sync still runs after 10 min; nothing changed"; exit 1; }; fi
 L=~/.fxa-deploys.log
 line="$(grep ' promote ' "$L" 2>/dev/null | tail -1)"
 [ -n "$line" ] || { echo "rollback: no promote recorded in $L"; exit 1; }
