@@ -34,7 +34,13 @@ TEMPLATES = ("code-review", "ux-review", "perf-review", "security-review", "blan
 MODES = ("report", "pr", "pr+notes")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
-        "skip_no_commits", "env"}
+        "skip_no_commits", "env", "on", "pr"}
+# on='pr-label': the run starts when a dependency PR asks for help, not on a schedule (the pr block).
+PR_KEYS = {"repo", "authors", "label", "blender_login", "blender_mention", "sweep_min"}
+SLUG = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+LOGIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}(\[bot\])?$")
+LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,49}$")
+MENTION = re.compile(r"^@[A-Za-z0-9][A-Za-z0-9-]{0,38}(/[A-Za-z0-9._-]{1,40})?$")
 MOST = 8
 PROMPT_BYTES = 4096
 
@@ -136,12 +142,62 @@ def valid_text(s):
         return False
 
 
+def check_pr(r, known):
+    """The pr block of an on='pr-label' routine: [field: reason lines], and it sets the defaults in r."""
+    pr = r.get("pr")
+    if not isinstance(pr, dict):
+        return ["pr: A dependency PR routine needs the pr block"]
+    pr = r["pr"] = dict(pr)
+    bad = [f"pr: {k} is not a pr field" for k in sorted(set(pr) - PR_KEYS)]
+    repo = pr.get("repo")
+    if not isinstance(repo, str) or not SLUG.fullmatch(repo):
+        bad.append("pr: repo must be a repo slug, such as mozilla/fxa")
+    elif known.get(repo.lower(), {}).get("role") != "work":
+        bad.append(f"pr: Repo {repo} is not one of this team's work repos")
+    else:
+        r.setdefault("repos", [repo])
+        if not isinstance(r["repos"], list) or [str(x).lower() for x in r["repos"]] != [repo.lower()]:
+            bad.append("repos: A dependency PR routine works on its pr repo only")
+        if r.get("env", "live") == "dev" and repo.lower().startswith("mozilla/"):
+            bad.append("env: A dependency PR routine on a mozilla repo runs only on the live bot")
+    authors = pr.get("authors")
+    if not isinstance(authors, list) or not 0 < len(authors) <= 10 or not all(isinstance(a, str) and LOGIN.fullmatch(a) for a in authors):
+        bad.append("pr: authors must be 1 to 10 GitHub logins, such as dependabot[bot]")
+    pr.setdefault("label", "agent-help")
+    pr.setdefault("blender_login", "mozilla-blender[bot]")
+    pr.setdefault("sweep_min", 5)
+    if not isinstance(pr["label"], str) or not LABEL.fullmatch(pr["label"]):
+        bad.append("pr: label must be a label name of at most 50 characters")
+    if not isinstance(pr["blender_login"], str) or not LOGIN.fullmatch(pr["blender_login"]):
+        bad.append("pr: blender_login must be a GitHub login")
+    if "blender_mention" in pr and (not isinstance(pr["blender_mention"], str) or not MENTION.fullmatch(pr["blender_mention"])):
+        bad.append("pr: blender_mention must be an @login or @org/team")
+    sm = pr["sweep_min"]
+    if isinstance(sm, bool) or not isinstance(sm, int) or not 1 <= sm <= 60:
+        bad.append("pr: sweep_min must be a whole number of minutes from 1 to 60")
+    return bad
+
+
 def check(r, team, profile, index, env, count):
     """([field: reason lines], the normalized routine)."""
     if not isinstance(r, dict):
         return ["routine: must be a JSON object"], r
     bad = [f"{k}: is not a routine field" for k in sorted(set(r) - KEYS)]
     r = dict(r)
+    known = {x.get("slug", "").lower(): x for x in profile.get("repos") or []}
+    onpr = r.get("on") == "pr-label"
+    if r.get("on", "schedule") not in ("schedule", "pr-label"):
+        bad.append("on: must be schedule or pr-label")
+    elif onpr:
+        # No schedule: the sweep starts each run, and the host frame is the prompt.
+        r.pop("schedule", None), r.pop("zone", None)
+        bad += check_pr(r, known)
+        if r.get("mode") != "pr":
+            bad.append("mode: A dependency PR routine pushes a fix commit, so its mode is pr")
+        if not r.get("channel"):
+            bad.append("channel: A dependency PR routine needs a channel for its results")
+    elif "pr" in r:
+        bad.append("pr: Only a routine with on pr-label has a pr block")
     name = r.get("name")
     if not isinstance(name, str) or not NAME.fullmatch(name):
         bad.append("name: Use letters, digits, spaces and . _ ( ) - in the name, at most 40 characters")
@@ -149,24 +205,25 @@ def check(r, team, profile, index, env, count):
     if tpl not in TEMPLATES:
         bad.append(f"template: must be one of {', '.join(TEMPLATES)}")
     prompt = r.get("prompt")
-    if not isinstance(prompt, str) or not prompt.strip():
+    if onpr and prompt is None:
+        pass
+    elif not isinstance(prompt, str) or not prompt.strip():
         bad.append("prompt: The prompt is empty")
     elif not valid_text(prompt):
         bad.append("prompt: The prompt is not valid text")
     elif len(prompt.encode()) > PROMPT_BYTES:
         bad.append("prompt: The prompt is over 4 KB")
-    sched = r.get("schedule")
-    if not isinstance(sched, str) or not SCHEDULE.fullmatch(sched):
+    sched, zone = r.get("schedule"), r.get("zone")
+    if not onpr and (not isinstance(sched, str) or not SCHEDULE.fullmatch(sched)):
         bad.append("schedule: Use daily HH:MM, weekdays HH:MM or weekly <mon..sun> HH:MM")
-    zone = r.get("zone")
     try:
-        if not isinstance(zone, str) or not ZONE.fullmatch(zone):
-            raise ValueError
-        zoneinfo.ZoneInfo(zone)
+        if not onpr:
+            if not isinstance(zone, str) or not ZONE.fullmatch(zone):
+                raise ValueError
+            zoneinfo.ZoneInfo(zone)
     except (ValueError, zoneinfo.ZoneInfoNotFoundError):
         bad.append(f"zone: {zone!r} is not a time zone, such as America/New_York")
 
-    known = {x.get("slug", "").lower(): x for x in profile.get("repos") or []}
     repos = r.get("repos")
     if not isinstance(repos, list) or not repos or not all(isinstance(x, str) for x in repos):
         bad.append("repos: Pick at least one of this team's repos")
@@ -241,7 +298,9 @@ def on(m, day):
 
 
 def runs(r, start, n):
-    """The next n run times after start (epoch), as aware datetimes in the routine's zone."""
+    """The next n run times after start (epoch), as aware datetimes in the routine's zone. None for on='pr-label'."""
+    if r.get("on") == "pr-label":
+        return []
     m = SCHEDULE.fullmatch(r["schedule"])
     tz = zoneinfo.ZoneInfo(r["zone"])
     day = datetime.datetime.fromtimestamp(start, tz).date()
@@ -260,7 +319,10 @@ def runs(r, start, n):
 def due(r, now, since=0):
     """The routine's latest run time at or before now: {period (its local date), at, next} in epoch seconds,
     or None when it had none in the last 8 days, or that time is before the routine was saved (since): a
-    routine saved after today's time runs at the next one, with no missed row for a period before it."""
+    routine saved after today's time runs at the next one, with no missed row for a period before it.
+    None for on='pr-label': a request starts its run, never the clock."""
+    if r.get("on") == "pr-label":
+        return None
     m = SCHEDULE.fullmatch(r["schedule"])
     tz = zoneinfo.ZoneInfo(r["zone"])
     day = datetime.datetime.fromtimestamp(now, tz).date()

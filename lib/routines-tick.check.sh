@@ -422,6 +422,11 @@ qf="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, st
 FXA_ROUTINE_NOW=$T routine_reconcile "$T" live
 check "a queued run that waited 60 min with free runners does not blame the runners" "failed|no tick started it within 60 min" "$(s_of "$qf")"
 
+# A pr-label routine runs on request only: the tick never claims it on a schedule, even with a schedule saved.
+rpl="$(mk fxa "daily 09:00" '{"on": "pr-label", "mode": "pr", "pr": {"repo": "mozilla/fxa", "authors": ["dependabot[bot]"]}}')"
+check "a pr-label routine is not claimed or skipped on a schedule, and gets no row" "0|0" \
+  "$(tick $((T + 30)) | jq --argjson r "$rpl" '[.runs[], .skips[] | select(.routine == $r)] | length')|$(rows "$rpl")"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

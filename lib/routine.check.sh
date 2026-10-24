@@ -54,6 +54,21 @@ echo '{"profile":"second","read_only":false,"private":false,"repos":[{"slug":"mo
 check "a security review on a record team, on a channel it does not bind" "channel: A security review posts only to one of this team's channels" \
   "$(v second open.json '{"template":"security-review","repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
 check "a code review on that team's other channel passes" "ok" "$(v second open.json '{"repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
+# on='pr-label': no schedule, mode pr and a channel, the pr repo a work repo, no dev bot on a mozilla repo.
+prl='{"on":"pr-label","mode":"pr","repos":["mozilla/two"],"channel":"C0PUBLIC","pr":{"repo":"mozilla/two","authors":["dependabot[bot]"]}}'
+check "a pr-label routine passes with no schedule" "ok" "$(v second open.json "$prl")"
+check "a pr-label routine in report mode is refused" "mode: A dependency PR routine pushes a fix commit, so its mode is pr" \
+  "$(v second open.json "$(jq -c '.mode = "report"' <<< "$prl")")"
+check "a pr-label routine with no channel is refused" "channel: A dependency PR routine needs a channel for its results" \
+  "$(v second open.json "$(jq -c '.channel = ""' <<< "$prl")")"
+check "a pr-label routine for the dev bot on a mozilla repo is refused" "env: A dependency PR routine on a mozilla repo runs only on the live bot" \
+  "$(v second open.json "$(jq -c '.env = "dev"' <<< "$prl")")"
+check "a pr-label routine on a repo that is not a work repo is refused" "pr: Repo mozilla/fxa is not one of this team's work repos" \
+  "$(v secret priv.json "$(jq -c '.pr.repo = "mozilla/fxa" | .repos = ["mozilla/fxa"] | .channel = "C0OWN00"' <<< "$prl")")"
+check "a pr block on a scheduled routine is refused" "pr: Only a routine with on pr-label has a pr block" "$(v second open.json '{"repos":["mozilla/two"],"channel":"C0PUBLIC","pr":{}}')"
+jq -cn --argjson b "$base" --argjson x "$prl" '$b + $x | del(.repos)' > "$tmp/r.json"
+check "a pr-label routine is saved with the pr defaults, its repo, and no schedule" '{"authors":["dependabot[bot]"],"blender_login":"mozilla-blender[bot]","label":"agent-help","repo":"mozilla/two","sweep_min":5}|["mozilla/two"]|null|[]|null' \
+  "$(python3 -I "$here/routine.py" validate "$tmp/r.json" second --profile "$tmp/open.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" | jq -c '"\(.pr | tojson)|\(.repos | tojson)|\(.schedule)"' -r)|$(python3 -I "$here/routine.py" next "$tmp/r.json" | jq -Rsc 'split("\n") | map(select(. != ""))')|$(python3 -I "$here/routine.py" due "$tmp/r.json" 1792414800)"
 check "an unknown field" "colour: is not a routine field" "$(v secret priv.json '{"colour":"red"}')"
 check "a bad template" "template: must be one of code-review, ux-review, perf-review, security-review, blank" "$(v secret priv.json '{"template":"x"}')"
 check "an empty prompt" "prompt: The prompt is empty" "$(v secret priv.json '{"prompt":"  "}')"
