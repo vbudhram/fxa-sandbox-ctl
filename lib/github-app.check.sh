@@ -18,7 +18,9 @@ _gh_app_api() {
     "POST git/blobs") echo '{"sha":"blob'"$(wc -l < "$tmp/calls" | tr -d ' ')"'"}' ;;
     "POST git/trees") echo '{"sha":"tree1"}' ;;
     "POST git/commits") echo '{"sha":"commit1"}' ;;
-    GET*) [ -n "${REMOTE_SHA:-}" ] && echo '{"object":{"sha":"'"$REMOTE_SHA"'"}}' || return 22 ;;
+    GET*) [ -s "$tmp/remote" ] && REMOTE_SHA="$(cat "$tmp/remote")"; [ -n "${REMOTE_SHA:-}" ] && echo '{"object":{"sha":"'"$REMOTE_SHA"'"}}' || return 22 ;;
+    # PATCH_FAILS=<sha>: the PATCH is refused, and the branch is then at <sha>.
+    PATCH*) [ -z "${PATCH_FAILS:-}" ] || { echo "$PATCH_FAILS" > "$tmp/remote"; return 22; }; echo '{}' ;;
     *) echo '{}' ;;
   esac
 }
@@ -53,6 +55,21 @@ check "expected branch is moved" "true" "$(grep '^PATCH git/refs/heads/fxa-1' "$
 REMOTE_SHA="$base" github_app_commit "$tmp/r" "blender/a@b" "$base" "m" >/dev/null 2>&1
 check "the ref paths of a branch with '@' are encoded" "GET git/ref/heads/blender/a%40b|PATCH git/refs/heads/blender/a%40b" \
   "$(grep -E '^(GET|PATCH) git/ref' "$tmp/calls" | cut -d' ' -f1-2 | paste -sd'|' -)"
+
+# Fix-pr mode (FXA_APP_COMMIT_FF=<run>): the push claim, then one fast forward with force false; never a rebuild.
+_prfix_claim_push() { echo "claim $1 $2" >> "$tmp/calls"; [ -z "${CLAIM_FAILS:-}" ]; }
+ff() { : > "$tmp/calls"; rm -f "$tmp/remote"; FXA_APP_COMMIT_FF=7 github_app_commit "$tmp/r" fxa-1 "$base" "m" >/dev/null 2>&1; echo $?; }
+git update-ref refs/remotes/origin/fxa-1 "$base"
+check "fix-pr mode claims the push with the new commit, then moves the branch with force false" "0|claim 7 commit1|false" \
+  "$(REMOTE_SHA="$base" ff)|$(grep '^claim' "$tmp/calls")|$(grep '^PATCH' "$tmp/calls" | cut -d' ' -f3- | jq -r .force)"
+check "a branch that moved before the push returns 3, with no claim, no rebuild and no PATCH" "3|0" \
+  "$(REMOTE_SHA=0123456789abcdef ff)|$(grep -cE '^(claim|PATCH)' "$tmp/calls")"
+check "a stopped run (the claim is refused) returns 4, with no PATCH" "4|0" "$(CLAIM_FAILS=1 REMOTE_SHA="$base" ff)|$(grep -c '^PATCH' "$tmp/calls")"
+check "a branch that moves between the GET and the PATCH returns 3, and their commit stays" "3|fedcba9876543210" \
+  "$(PATCH_FAILS=fedcba9876543210 REMOTE_SHA="$base" ff)|$(cat "$tmp/remote")"
+check "a refused PATCH with the branch still at the parent returns 1; one that landed is a success" "1|0" \
+  "$(PATCH_FAILS="$base" REMOTE_SHA="$base" ff)|$(PATCH_FAILS=commit1 REMOTE_SHA="$base" ff)"
+rm -f "$tmp/remote"
 
 # A person pushed to the branch: this change is rebuilt on top of their commit.
 eval "$(sed -n '/^_gh_app_rebuild() {/,/^}/p' "$here/github.sh")"

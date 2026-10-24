@@ -454,6 +454,14 @@ check "stop --run of a run that is not live, and a bad option, are refused" "ERR
   "$(cmd_routine stop fxa "$rst" --run "$fa" 2>&1)|$(cmd_routine stop fxa "$rst" --now 2>&1)"
 db_exec "UPDATE routine_runs SET state = 'ok' WHERE id = $fc;"
 
+# _prfix_claim_push: one claim of a started fix row, with the commit it pushes; a stop then waits for the push.
+S1="2222222222222222222222222222222222222222"
+fd="$(db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rst, 'pr-13-dd', 'started', json('{\"fix\":{\"pr\":13}}')); SELECT last_insert_rowid();")"
+check "the claim sets pushing and pending_sha once; a second claim, an ended row and a bad sha are refused" "0|$((T + 7))|$S1|1|1|1" \
+  "$(FXA_ROUTINE_NOW=$((T + 7)) _prfix_claim_push "$fd" "$S1"; echo $?)|$(db_value "SELECT json_extract(heads, '$.fix.pushing') || '|' || json_extract(heads, '$.fix.pending_sha') FROM routine_runs WHERE id = $fd;")|$(_prfix_claim_push "$fd" "$S1"; echo $?)|$(_prfix_claim_push "$fb" "$S1"; echo $?)|$(db_exec "UPDATE routine_runs SET state = 'started' WHERE id = $fb;"; _prfix_claim_push "$fb" "x'); --"; echo $?)"
+check "a stop of the claimed row says the fix is being pushed" "ERROR: The fix is being pushed. Try again after it ends." "$(cmd_routine stop fxa "$rst" --run "$fd" 2>&1)"
+db_exec "UPDATE routine_runs SET state = 'ok' WHERE id IN ($fd, $fb);"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"

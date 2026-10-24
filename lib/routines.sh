@@ -247,6 +247,16 @@ _prfix_set() {
   return 1
 }
 
+# _prfix_claim_push <run> <sha>   Claim the push of a started fix row, before the PATCH: set heads.fix.pushing (now)
+# and pending_sha, in one UPDATE guarded on state 'started' and pushing IS NULL, so a stop cannot end the row while
+# the branch moves (every stop is guarded on pushing). Exit 0 claimed, 1 not (the run was stopped, or a store error).
+_prfix_claim_push() {
+  local n; _routine_id "$1" && [[ "${2:-}" =~ ^[0-9a-f]{40}$ ]] || return 1
+  n="$(db_value "UPDATE routine_runs SET heads = json_set(heads, '$.fix.pushing', $(_routine_now), '$.fix.pending_sha', '$2')
+    WHERE id = $1 AND state = 'started' AND json_extract(heads, '$.fix') IS NOT NULL AND json_extract(heads, '$.fix.pushing') IS NULL; SELECT changes();")" || return 1
+  [ "$n" = 1 ]
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.

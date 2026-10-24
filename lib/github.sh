@@ -688,6 +688,9 @@ _gh_app_rebuild() {
 #   it is a merge commit of that and <parent_sha>; the tree is still sent as a diff on <parent_sha>. An existing branch must
 #   still be where our tracking ref says (the --force-with-lease rule). Resets the
 #   slot onto the new commit and prints its sha.
+#   FXA_APP_COMMIT_FF=<run>: fix-pr mode, a fast forward of the PR head <parent_sha> only. No rebuild and no
+#   force. The branch is not at <parent_sha>, before or at the PATCH: return 3. The run's push claim
+#   (_prfix_claim_push) is refused because the run was stopped: return 4. Nothing is pushed in both.
 github_app_commit() {
   local wt="$1" branch="$2" parent="$3" msg="$4" first="${5:-}"
   local st path mode sha entries='[]' tree commit remote expect
@@ -709,7 +712,21 @@ github_app_commit() {
             | _gh_app_api POST git/commits | jq -r '.sha // empty')"
   [ -n "$commit" ] || { echo "ERROR: could not create the commit as the App." >&2; return 1; }
   remote="$(printf '' | _gh_app_api GET "git/ref/heads/$(_gh_ref_enc "$branch")" 2>/dev/null | jq -r '.object.sha // empty')"
-  if [ -z "$remote" ]; then
+  if [ -n "${FXA_APP_COMMIT_FF:-}" ]; then
+    expect="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" || true)"
+    if [ -z "$remote" ] || [ "$remote" != "$expect" ] || [ "$remote" != "$parent" ]; then
+      echo "ERROR: the branch of the PR moved to ${remote:0:10} (expected ${parent:0:10}); nothing was pushed." >&2; return 3
+    fi
+    _prfix_claim_push "$FXA_APP_COMMIT_FF" "$commit" || { echo "ERROR: the run was stopped, so nothing was pushed." >&2; return 4; }
+    if ! jq -nc --arg s "$commit" '{sha: $s, force: false}' | _gh_app_api PATCH "git/refs/heads/$(_gh_ref_enc "$branch")" >/dev/null; then
+      # A refused PATCH: read the branch back. No answer keeps the claim, and reconcile reads the PR head later.
+      remote="$(printf '' | _gh_app_api GET "git/ref/heads/$(_gh_ref_enc "$branch")" 2>/dev/null | jq -r '.object.sha // empty')"
+      if [ "$remote" = "$commit" ]; then :
+      elif [ -n "$remote" ] && [ "$remote" != "$parent" ]; then
+        echo "ERROR: the branch of the PR moved to ${remote:0:10} during the push; nothing was pushed." >&2; return 3
+      else echo "ERROR: could not move ${branch} as the App." >&2; return 1; fi
+    fi
+  elif [ -z "$remote" ]; then
     jq -nc --arg r "refs/heads/${branch}" --arg s "$commit" '{ref: $r, sha: $s}' | _gh_app_api POST git/refs >/dev/null \
       || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
   else
