@@ -313,6 +313,71 @@ _prfix_target() {
   _prfix_pr_why "$1" "$info" "$url" "$(jq -r .head_sha <<< "$2")"
 }
 
+# _prfix_text <state> <fix json> <label> [PR ahead]   The public PR comment of a fix row: one fixed host text with its
+# next step, from the state and heads.fix.why (C2), never agent text or a reason. Short SHAs only, no links.
+_prfix_text() {
+  local l="$3" why wait head sha
+  why="$(jq -r '.why // ""' <<< "$2")"; wait="$(jq -r '.wait // ""' <<< "$2")"
+  head="$(jq -r '.head_sha // "" | select(test("^[0-9a-f]{40}$")) | .[0:7]' <<< "$2")"
+  sha="$(jq -r '.new_sha // "" | select(test("^[0-9a-f]{40}$")) | .[0:7]' <<< "$2")"
+  case "$1:$why" in
+    queued:*) if [ -n "$wait" ] && [ "$wait" != "another run of this routine is in progress" ]; then echo "Waiting: ${wait}. I try again each minute."
+      elif [ -n "${4:-}" ]; then echo "In line behind #$4. The fix starts after that run ends."
+      else echo "Queued: the fix starts when a runner is free."; fi ;;
+    claimed:*|started:*) echo "Working: the agent is fixing the failing checks${head:+ on ${head}}." ;;
+    ok:*) echo "Pushed ${sha:-the fix}. Next: review the fix commit, then approve the functional tests gate." ;;
+    report:moved) echo "The branch moved, so nothing was pushed. Add ${l} again to retry." ;;
+    report:guard:lock) echo "Nothing was pushed: the fix changes yarn.lock entries, which I do not push. Fix it by hand." ;;
+    report:guard:tooling) echo "Nothing was pushed: the fix changes Yarn tooling files, which I do not push. Fix it by hand." ;;
+    report:guard:frozen) echo "Nothing was pushed: the fix changes protected files, which I do not push. Fix it by hand." ;;
+    report:guard:pii) echo "Nothing was pushed: the fix may hold personal data or a secret, so I do not push it. Fix it by hand." ;;
+    report:guard:*) echo "Nothing was pushed: a guard refused the fix. Fix it by hand." ;;
+    report:*|nochange:*) echo "No fix found on ${head:-the PR head}. A new commit allows a new run." ;;
+    failed:boot|skipped:boot) echo "Not started: the sandbox did not start. Add ${l} again to retry." ;;
+    failed:*) echo "The fix failed, and nothing was pushed. Add ${l} again to retry." ;;
+    stopped:label) echo "Stopped: the ${l} label was removed. Nothing was pushed." ;;
+    stopped:closed) echo "Stopped: the PR was closed. Nothing was pushed. Reopen it and add ${l} again to retry." ;;
+    stopped:merged) echo "Stopped: the PR was merged. Nothing was pushed." ;;
+    stopped:*) echo "Stopped by a team admin. Nothing was pushed. Add ${l} again to retry." ;;
+    skipped:new-commit) echo "Not started: the PR has a new commit. Add ${l} again to fix the new head." ;;
+    skipped:expired) echo "Not started: it waited 24 h. Add ${l} again to retry." ;;
+    skipped:not-red) echo "Not started: CI passes on ${head:-the PR head}. Add ${l} again if CI fails." ;;
+    skipped:used) echo "Not started: a run on ${head:-the PR head} already ended. A new commit allows a new run." ;;
+    skipped:no-write) echo "Not started: the label needs a person with write access. Ask a person with write access to add ${l}." ;;
+    skipped:fork) echo "Not started: the PR is from a fork. Fix it by hand." ;;
+    skipped:base) echo "Not started: the PR branch is a base or release branch. Fix it by hand." ;;
+    skipped:closed) echo "Not started: the PR is closed. Reopen it and add ${l} again." ;;
+    skipped:merged) echo "Not started: the PR is merged. No step is needed." ;;
+    skipped:target) echo "Not started: the PR no longer matches the routine's repo, author or branch rules. Fix it by hand." ;;
+    skipped:*) echo "Not started: the run could not start. Add ${l} again to retry." ;;
+  esac
+}
+
+# prfix_report <run>   Set the App's PR comment of a fix row to the text of its state, and at an end remove the label.
+# It edits only when the text differs from heads.fix.comment, and keeps the text there only after the edit (and the
+# label remove) worked, so the next call repeats a failed one. A row with no fix: nothing. Exit 1 when GitHub failed.
+prfix_report() {
+  local j r st fix cfg repo label pr text ahead=""
+  _routine_id "${1:-}" || return 1
+  j="$(db_json "SELECT r.routine_id, r.state, r.heads->'fix' AS fix, coalesce(r.config, t.data) AS cfg FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = $1;")" || return 1
+  r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || return 0
+  fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")"; [ -n "$fix" ] || return 0
+  st="$(jq -r .state <<< "$r")"; cfg="$(jq -c '.cfg // "{}" | fromjson? // {}' <<< "$r")"
+  repo="$(jq -r '.pr.repo // ""' <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"; pr="$(jq -r '.pr // ""' <<< "$fix")"
+  [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$pr" =~ ^[1-9][0-9]*$ ]] || return 1
+  if [ "$st" = queued ]; then
+    # The run ahead in line: a live fix run of the routine, else an older queued one.
+    ahead="$(db_value "SELECT json_extract(heads, '$.fix.pr') FROM routine_runs WHERE routine_id = $(jq -r .routine_id <<< "$r") AND id != $1
+      AND json_extract(heads, '$.fix') IS NOT NULL AND (state IN ('claimed','started') OR (state = 'queued' AND id < $1)) ORDER BY state = 'queued', id LIMIT 1;")" || ahead=""
+    [[ "$ahead" =~ ^[1-9][0-9]*$ ]] || ahead=""
+  fi
+  text="$(_prfix_text "$st" "$fix" "$label" "$ahead")"; [ -n "$text" ] || return 0
+  [ "$text" != "$(jq -r '.comment // ""' <<< "$fix")" ] || return 0
+  prfix_comment "$repo" "$pr" "$text" || return 1
+  case "$st" in queued|claimed|started) ;; *) prfix_label "$repo" "$pr" remove "$label" || return 1 ;; esac
+  db_exec "UPDATE routine_runs SET heads = json_set(heads, '$.fix.comment', $(db_q "$text")) WHERE id = $1 AND state = '$st';" >/dev/null
+}
+
 # ── The tick (slice 3): the bot calls `routine tick --env live|dev` every 60 s (D4, D5) ──
 
 # The clock: FXA_ROUTINE_NOW in a check, else the host's.

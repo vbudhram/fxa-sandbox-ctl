@@ -514,6 +514,45 @@ check "the same PR head again, while that run is queued" "ERROR: A run on #90001
   "$(rn --pr https://github.com/mozilla/fxa/pull/90001)"
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE routine_id = $rpf AND state IN ('queued','claimed','started');"
 
+# A16 prfix_report: the PR comment of a fix row is one fixed text with its next step, for each state and why. The
+# comment and the label are stubbed here (lib/github-app.check.sh checks them on the fixture).
+prfix_comment() { printf 'comment %s %s %s\n' "$1" "$2" "$3" >> "$tmp/pc"; [ -z "${PC_FAILS:-}" ]; }
+prfix_label() { echo "label $*" >> "$tmp/pc"; }
+P7="9999999999999999999999999999999999999999"
+fr() { # fr <state> [fix keys json]   A fix row of the pr-label routine on PR 90001 at head PA; prints its id.
+  local x="${2:-}"; [ -n "$x" ] || x='{}'
+  db_value "INSERT INTO routine_runs (routine_id, period, state, reason, heads) VALUES ($rpf, 'pr-90001-$RANDOM$RANDOM', '$1', 'agent says: see https://internal.example/x',
+    json($(db_q "$(jq -cn --argjson x "$x" --arg h "$PA" '{fix: ({pr: 90001, url: "https://github.com/mozilla/fxa/pull/90001", head_sha: $h} + $x)}')"))); SELECT last_insert_rowid();"; }
+rep() { local id; id="$(fr "$@")"; : > "$tmp/pc"; prfix_report "$id" >/dev/null 2>&1; sed "s/^comment mozilla\/fxa 90001 //" "$tmp/pc" | paste -sd'#' -; db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $id AND state IN ('queued','claimed','started');"; }
+L="label mozilla/fxa 90001 remove agent-help"
+check "queued: Queued" "Queued: the fix starts when a runner is free." "$(rep queued)"
+check "queued with a gate: Waiting and the gate text" "Waiting: the team budget is used. I try again each minute." "$(rep queued '{"wait": "the team budget is used"}')"
+fs="$(fr started '{"pr": 90003}')"
+check "queued behind a live run on another PR: In line" "In line behind #90003. The fix starts after that run ends." "$(rep queued '{"wait": "another run of this routine is in progress"}')"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $fs;"
+check "claimed and started: Working, with the short head" "Working: the agent is fixing the failing checks on aaaaaaa.|Working: the agent is fixing the failing checks on aaaaaaa." "$(rep claimed)|$(rep started)"
+check "ok: Pushed and the next step, and the label is removed" "Pushed 9999999. Next: review the fix commit, then approve the functional tests gate.#$L" "$(rep ok "{\"new_sha\": \"$P7\"}")"
+check "nochange and a report with no why" "No fix found on aaaaaaa. A new commit allows a new run.#$L|No fix found on aaaaaaa. A new commit allows a new run.#$L" "$(rep nochange)|$(rep report)"
+check "report: the branch moved" "The branch moved, so nothing was pushed. Add agent-help again to retry.#$L" "$(rep report '{"why": "moved"}')"
+check "report: each guard" "Nothing was pushed: the fix changes yarn.lock entries, which I do not push. Fix it by hand.#$L|Nothing was pushed: the fix changes Yarn tooling files, which I do not push. Fix it by hand.#$L|Nothing was pushed: the fix changes protected files, which I do not push. Fix it by hand.#$L|Nothing was pushed: the fix may hold personal data or a secret, so I do not push it. Fix it by hand.#$L" \
+  "$(rep report '{"why": "guard:lock"}')|$(rep report '{"why": "guard:tooling"}')|$(rep report '{"why": "guard:frozen"}')|$(rep report '{"why": "guard:pii"}')"
+check "failed, and a boot failure" "The fix failed, and nothing was pushed. Add agent-help again to retry.#$L|Not started: the sandbox did not start. Add agent-help again to retry.#$L" "$(rep failed)|$(rep failed '{"why": "boot"}')"
+check "stopped: label, closed, merged, admin" "Stopped: the agent-help label was removed. Nothing was pushed.#$L|Stopped: the PR was closed. Nothing was pushed. Reopen it and add agent-help again to retry.#$L|Stopped: the PR was merged. Nothing was pushed.#$L|Stopped by a team admin. Nothing was pushed. Add agent-help again to retry.#$L" \
+  "$(rep stopped '{"why": "label"}')|$(rep stopped '{"why": "closed"}')|$(rep stopped '{"why": "merged"}')|$(rep stopped)"
+check "skipped: each not-started why" "Not started: the PR has a new commit. Add agent-help again to fix the new head.#$L|Not started: it waited 24 h. Add agent-help again to retry.#$L|Not started: CI passes on aaaaaaa. Add agent-help again if CI fails.#$L|Not started: a run on aaaaaaa already ended. A new commit allows a new run.#$L|Not started: the label needs a person with write access. Ask a person with write access to add agent-help.#$L" \
+  "$(rep skipped '{"why": "new-commit"}')|$(rep skipped '{"why": "expired"}')|$(rep skipped '{"why": "not-red"}')|$(rep skipped '{"why": "used"}')|$(rep skipped '{"why": "no-write"}')"
+check "skipped: fork, base, closed, merged, target, and an unknown why" "Not started: the PR is from a fork. Fix it by hand.#$L|Not started: the PR branch is a base or release branch. Fix it by hand.#$L|Not started: the PR is closed. Reopen it and add agent-help again.#$L|Not started: the PR is merged. No step is needed.#$L|Not started: the PR no longer matches the routine's repo, author or branch rules. Fix it by hand.#$L|Not started: the run could not start. Add agent-help again to retry.#$L" \
+  "$(rep skipped '{"why": "fork"}')|$(rep skipped '{"why": "base"}')|$(rep skipped '{"why": "closed"}')|$(rep skipped '{"why": "merged"}')|$(rep skipped '{"why": "target"}')|$(rep skipped '{"why": "<b>odd</b>"}')"
+# The text is kept in heads.fix.comment: the same text again makes no call, a new state edits, and a failed edit keeps the old text.
+fe="$(fr queued)"; : > "$tmp/pc"; prfix_report "$fe"; prfix_report "$fe"
+check "the same text twice: one comment call, and the text is kept" "1|Queued: the fix starts when a runner is free." "$(grep -c '^comment' "$tmp/pc")|$(db_value "SELECT json_extract(heads, '$.fix.comment') FROM routine_runs WHERE id = $fe;")"
+db_exec "UPDATE routine_runs SET state = 'started' WHERE id = $fe;"; : > "$tmp/pc"; PC_FAILS=1 prfix_report "$fe"; rc=$?
+check "a failed edit exits 1 and keeps the old text, so the next call tries again" "1|Queued: the fix starts when a runner is free.|2" \
+  "$rc|$(db_value "SELECT json_extract(heads, '$.fix.comment') FROM routine_runs WHERE id = $fe;")|$(prfix_report "$fe"; grep -c '^comment' "$tmp/pc")"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $fe;"
+check "a row with no fix makes no call" "0" "$(: > "$tmp/pc"; prfix_report "$r1"; prfix_report "$(db_value "SELECT id FROM routine_runs WHERE routine_id = $r1 LIMIT 1;")"; grep -c . "$tmp/pc")"
+check "no text holds the row's reason or a link" "0" "$(cat "$tmp/pc" | grep -c 'http\|agent says')"
+
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
