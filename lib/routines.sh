@@ -691,7 +691,7 @@ routine_tick() {
     [ -n "$q" ] || continue
     skips="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
       '($q.data | fromjson) as $d | ($q.fix | fromjson) as $x | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel,
-        template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: "expired"}}]' <<< "$skips")"
+        template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: "expired", label: ($d.pr.label // "agent-help")}}]' <<< "$skips")"
   done
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, t.paused, coalesce(r.trigger, 'manual') AS trigger, coalesce(r.actor, '') AS actor, r.heads->'fix' AS fix
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env") ORDER BY r.id;")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
@@ -710,7 +710,7 @@ routine_tick() {
             heads = json_set(heads, '$.fix.why', $(db_q "$qwhy")) WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
           skips="$(jq -c --argjson q "$q" --argjson x "$qfix" --arg why "$qwhy" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
             '($q.data | fromjson) as $d | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel, template: $i.template, private: $i.private,
-              reason: "the PR is no longer the run'"'"'s target: \($why)", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: $why}}]' <<< "$skips")"
+              reason: "the PR is no longer the run'"'"'s target: \($why)", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: $why, label: ($d.pr.label // "agent-help")}}]' <<< "$skips")"
           continue
         fi
       fi
@@ -723,7 +723,7 @@ routine_tick() {
       free=$((free - 1))
       runs="$(jq -c --argjson q "$q" --argjson x "$qfix" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
         '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, actor: $q.actor, channel: ($q.data | fromjson | .channel)} + $i
-          + {fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first)}}]' <<< "$runs")"
+          + {fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first), label: ($q.data | fromjson | .pr.label // "agent-help")}}]' <<< "$runs")"
       continue
     fi
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
@@ -1014,7 +1014,8 @@ routine_done() {
   # The PR comment follows the end at once; a failure is repaired by the next tick.
   [ -z "$fix" ] || prfix_report "$run" >/dev/null 2>&1 || true
   local add='{}'
-  [ -z "$fix" ] || add="$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${run};" | jq -c '{fix: {pr, url, sha: .new_sha, why}}' 2>/dev/null)" || add=""
+  [ -z "$fix" ] || add="$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${run};" \
+    | jq -c --arg l "$(jq -r '.cfg | fromjson? | .pr.label // "agent-help"' <<< "$r")" '{fix: {pr, url, sha: .new_sha, why, label: $l}}' 2>/dev/null)" || add=""
   [ -n "$add" ] || add='{}'
   case "$n" in
     1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" --argjson x "$add" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;

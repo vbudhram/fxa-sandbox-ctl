@@ -493,6 +493,12 @@ q3="$(fq "$PA")"
 out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" export PRFIX_DIR="$tmp/nofx"; tick $((T + 150)))"
 check "a PR read that fails keeps the row queued with a wait, not a skip" "queued|GitHub did not answer" "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.wait') FROM routine_runs WHERE id = $q3;")"
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q3;"
+# The fix of a skip and a run carries the routine's own label, so the bot's next step names the label that starts a run.
+db_exec "UPDATE routines SET data = json_set(data, '$.pr.label', 'deps-fix') WHERE id = $rpf;"
+q5="$(fq "$H1")"; out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick $((T + 160)))"; l5="$(jq -r --argjson q "$q5" '.skips[] | select(.run == $q) | .fix.label' <<< "$out")"
+q4="$(fq "$PA")"; out="$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH"; tick $((T + 170)))"
+check "a skip and a run of a routine with label deps-fix carry it on their fix" "deps-fix|deps-fix" "$l5|$(jq -r --argjson q "$q4" '.runs[] | select(.run == $q) | .fix.label' <<< "$out")"
+db_exec "UPDATE routine_runs SET state = 'stopped' WHERE id = $q4; UPDATE routines SET data = json_remove(data, '$.pr.label') WHERE id = $rpf;"
 
 # A39 run-now --pr: with two queued rows and a started run, a fork PR and a head with a result are refused with their
 # fixed texts, and a good PR queues a manual row with heads.fix at its head.
@@ -573,6 +579,9 @@ check "done on a row ctl ended first answers its state and why: stopped, and ski
   "$(dn "$e4" --state stopped --session agent-fxd004)|$(dn "$e5" --state failed --session agent-fxd005)"
 rec agent-fxd006 active; e6="$(fx started agent-fxd006 "{\"pushing\": $((N - 30)), \"pending_sha\": \"$PA\"}")"
 check "done: a push claim with no new_sha, and the PR at pending_sha, is ok with new_sha" "[true,\"ok\",90001,\"$PA\",null]" "$(dn "$e6" --state failed --session agent-fxd006)"
+rec agent-fxd007 active; e7="$(fx started agent-fxd007)"
+check "done answers the fix with the routine's label, agent-help when it sets none" "agent-help" \
+  "$(PATH="$SANDBOX_ROOT/lib/testdata/prfix/bin:$PATH" FXA_ROUTINE_NOW=$N routine_done "$e7" --state failed --session agent-fxd007 | jq -r .fix.label)"
 # Reconcile, on the fake gh: PR 90001 is at PA.
 rec agent-fxr001 stopped; r1f="$(fx started agent-fxr001)"
 rec agent-fxr002 active; r2f="$(fx started agent-fxr002 "{\"pushing\": $((N - 601)), \"pending_sha\": \"$PA\"}")"
@@ -597,8 +606,8 @@ x1="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, st
 check "a fix row queued 2 h stays queued" "queued" "$(s_of "$x1" | cut -d'|' -f1)"
 out="$(_routine_team_paused() { echo held; return 0; }; tick $((N + 86400 - 7200 + 60)))"
 check "after 24 h: skipped with why expired, on skips with post true and the fix, no error, the head freed" \
-  "skipped|expired|it waited 24 h|true|90001|expired|0|pr-90001-$PA-x$x1" \
-  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') || '|' || reason FROM routine_runs WHERE id = $x1;")|$(jq -r --argjson q "$x1" '.skips[] | select(.run == $q) | [.post, .fix.pr, .fix.why] | map(tostring) | join("|")' <<< "$out")|$(grep -c . "$tmp/errs")|$(db_value "SELECT period FROM routine_runs WHERE id = $x1;")"
+  "skipped|expired|it waited 24 h|true|90001|expired|agent-help|0|pr-90001-$PA-x$x1" \
+  "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') || '|' || reason FROM routine_runs WHERE id = $x1;")|$(jq -r --argjson q "$x1" '.skips[] | select(.run == $q) | [.post, .fix.pr, .fix.why, .fix.label] | map(tostring) | join("|")' <<< "$out")|$(grep -c . "$tmp/errs")|$(db_value "SELECT period FROM routine_runs WHERE id = $x1;")"
 check "the next tick does not post it again, and a new request on the same head inserts" "0|1" \
   "$(tick $((N + 86400)) | jq --argjson q "$x1" '[.skips[] | select(.run == $q)] | length')|$(db_value "INSERT INTO routine_runs (routine_id, period, state) VALUES ($rpf, 'pr-90001-$PA', 'stopped'); SELECT changes();")"
 
