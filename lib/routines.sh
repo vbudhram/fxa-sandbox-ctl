@@ -419,25 +419,30 @@ _prfix_fix_json() {
       | (.detailsUrl // .targetUrl) | select(type == "string" and test("^https://[A-Za-z0-9./_?=&-]+$"))][:10]}' <<< "$1"
 }
 
-# _prfix_queue <routine id> <cfg json> <PR json> <trigger> <actor> <signal epoch> <now>   One queued fix row for the PR head
-# (UNIQUE period 'pr-<n>-<sha>'), written before any label or comment, so a kill leaves a row that prfix_report repairs.
+# _prfix_queue <routine id> <cfg json> <PR json> <trigger> <actor> <signal epoch> <now> [BLEnder comment id]   One queued
+# fix row for the PR head (UNIQUE period 'pr-<n>-<sha>'), written before the label and the comment, so a kill leaves a row
+# that prfix_report repairs. A BLEnder request gets the routine's label from the App, so a person can cancel it.
 _prfix_queue() {
   local fix num head n id
   fix="$(_prfix_fix_json "$3" "$6")" && [ -n "$fix" ] || return 0
+  [ -z "${8:-}" ] || fix="$(jq -c --argjson c "$8" '. + {blender_comment_id: $c}' <<< "$fix")" || return 0
   num="$(jq -r .pr <<< "$fix")"; head="$(jq -r .head_sha <<< "$fix")"
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
       VALUES ($1, $(db_q "pr-${num}-${head}"), $(db_q "$4"), $(db_q "$5"), 'queued', json($(db_q "$2")), json($(db_q "{\"fix\":${fix}}")), $7);
       SELECT changes() || '|' || last_insert_rowid();")" || return 0
   [ "${n%%|*}" = 1 ] || return 0
   id="${n#*|}"; echo "routine $1: queued run ${id} for #${num} (${4} by ${5})"
+  [ "$4" != blender ] || prfix_label "$(jq -r .pr.repo <<< "$2")" "$num" add "$(jq -r '.pr.label // "agent-help"' <<< "$2")" || true
   prfix_report "$id" >/dev/null 2>&1 || true
 }
 
 # _prfix_consider <routine id> <cfg json> <PR json> <now>   One PR of the sweep. Exit 3 when the budget is used.
 # Label signal: the newest 'labeled' event of the routine's label, by a User with admin, maintain or write permission,
-# newer than the head commit and the end of the last run on the PR. A read that fails, times out or is not JSON: no signal.
+# newer than the head commit and the end of the last run on the PR. BLEnder signal (no label): the newest comment of a Bot
+# with exactly the blender_login that holds the blender_mention, newer than both, and never on an App head (the App's fix
+# commit), where only a person's label counts. A read that fails, times out or is not JSON: no signal.
 _prfix_consider() {
-  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor
+  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor blogin mention c cid=""
   repo="$(jq -r .pr.repo <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
   num="$(jq -r '.number' <<< "$pr")"; head="$(jq -r '.headRefOid // ""' <<< "$pr")"
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
@@ -463,9 +468,21 @@ _prfix_consider() {
       elif (.permission | type) == "string" then "no" else empty end' <<< "$perm" 2>/dev/null)" || return 0
     [ "$pw" = yes ] || return 0
     trigger=label actor="$login"
-  else return 0; fi
+  else
+    blogin="$(jq -r '.pr.blender_login // "mozilla-blender[bot]"' <<< "$cfg")"; mention="$(jq -r '.pr.blender_mention // ""' <<< "$cfg")"
+    [ -n "$mention" ] || return 0
+    [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND json_extract(heads, '$.fix.new_sha') = '${head}';")" = 0 ] || return 0
+    _prfix_left || return 3
+    c="$(_prfix_gh api --paginate "repos/${repo}/issues/${num}/comments?per_page=100")" || return 0
+    c="$(jq -rs --arg b "$blogin" --arg m "$mention" --argjson s "$since" '[add // [] | .[] | select(.user.type == "Bot" and .user.login == $b
+      and (.body // "" | contains($m)) and (.id | type) == "number") | {id, at: (.created_at | fromdateiso8601)} | select(.at > $s)]
+      | sort_by(.at) | last | select(.) | "\(.id) \(.at)"' <<< "$c" 2>/dev/null)" || return 0
+    cid="${c% *}"; at="${c##* }"
+    [[ "$cid" =~ ^[1-9][0-9]{0,15}$ ]] && [[ "$at" =~ ^[0-9]{9,11}$ ]] || return 0
+    trigger=blender actor="$blogin"
+  fi
   [ "$red" = red ] && [ -z "$(_prfix_pr_why "$cfg" "$pr" "$(jq -r .url <<< "$pr")")" ] || return 0
-  _prfix_queue "$rid" "$cfg" "$pr" "$trigger" "$actor" "$at" "$now"
+  _prfix_queue "$rid" "$cfg" "$pr" "$trigger" "$actor" "$at" "$now" "$cid"
 }
 
 # _prfix_sweep_one <routine row json> <now>   The open PRs of each author of one pr-label routine, in number order after

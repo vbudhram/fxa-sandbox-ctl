@@ -68,8 +68,9 @@ s0=$SECONDS; db_exec "UPDATE routines SET swept_at = NULL WHERE id = $rid;"
 check "a GitHub that does not answer: each call ends at its limit, the sweep at its budget, and nothing queues" "1|0" \
   "$([ "$el" -le 6 ] && echo 1)|$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $rid;")"
 
-# rows   The fix rows the sweep wrote, as '<pr> <state> <trigger> <actor>', then clears them for the next case.
-rows() { db_value "SELECT json_extract(heads, '$.fix.pr') || ' ' || state || coalesce(' ' || trigger || ' ' || actor, '') FROM routine_runs WHERE routine_id = $rid ORDER BY id;" | paste -sd, -
+# rows [pr]   The fix rows (of that PR) as '<pr> <state> <trigger> <actor>', then clears every row for the next case.
+rows() { db_value "SELECT json_extract(heads, '$.fix.pr') || ' ' || state || coalesce(' ' || trigger || ' ' || actor, '') FROM routine_runs WHERE routine_id = $rid
+    AND json_extract(heads, '$.fix.pr') = coalesce(${1:-NULL}, json_extract(heads, '$.fix.pr')) ORDER BY id;" | paste -sd, -
   db_exec "DELETE FROM routine_runs WHERE routine_id = $rid;"; }
 writer_at="$(iso 2026-10-24T10:00:00Z)"
 
@@ -77,18 +78,30 @@ writer_at="$(iso 2026-10-24T10:00:00Z)"
 sweep
 check "A20: the writer's agent-help on page 2 of the timeline queues one run on the head, with heads.fix, and the comment says Queued" \
   "pr-90001-$PA|90001|$PA|$writer_at|example-pkg|comment 90001 Queued: the fix starts when a runner is free.|90001 queued label example-writer" \
-  "$(db_value "SELECT period || '|' || json_extract(heads, '$.fix.pr') || '|' || json_extract(heads, '$.fix.head_sha') || '|' || json_extract(heads, '$.fix.signal_at') || '|' || json_extract(heads, '$.fix.packages[0]') FROM routine_runs WHERE routine_id = $rid;")|$(grep 90001 "$tmp/pc")|$(rows)"
+  "$(db_value "SELECT period || '|' || json_extract(heads, '$.fix.pr') || '|' || json_extract(heads, '$.fix.head_sha') || '|' || json_extract(heads, '$.fix.signal_at') || '|' || json_extract(heads, '$.fix.packages[0]') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90001;")|$(grep '^comment 90001' "$tmp/pc")|$(rows 90001)"
 d="$(dir p1)"; rm "$d/api/repos/mozilla/fxa/issues/90001/timeline.page2.json"
-check "A21: a triage user adds agent-help, then a writer adds 'dependencies': no run" "" "$(PRFIX_DIR="$d" sweep; rows)"
+check "A21: a triage user adds agent-help, then a writer adds 'dependencies': no run" "" "$(PRFIX_DIR="$d" sweep; rows 90001)"
 d="$(dir p2)"; jq '.[0].actor.login = "example-outsider"' "$fx/api/repos/mozilla/fxa/issues/90001/timeline.page2.json" > "$d/api/repos/mozilla/fxa/issues/90001/timeline.page2.json"
-check "a 404 on the permission read: no run and no comment" "|" "$(PRFIX_DIR="$d" sweep; rows)|$(grep 90001 "$tmp/pc")"
+check "a 404 on the permission read: no run and no comment" "|" "$(PRFIX_DIR="$d" sweep; rows 90001)|$(grep '^comment 90001' "$tmp/pc")"
 d="$(dir p3)"; echo 'not json' > "$d/api/repos/mozilla/fxa/collaborators/example-writer/permission.json"
-check "bad JSON on the permission read: no run" "" "$(PRFIX_DIR="$d" sweep; rows)"
+check "bad JSON on the permission read: no run" "" "$(PRFIX_DIR="$d" sweep; rows 90001)"
 mkdir -p "$tmp/slowbin"; printf '#!/usr/bin/env bash\ncase "$*" in *permission*) sleep 5 </dev/null >/dev/null 2>&1 ;; esac\nexec "%s/bin/gh" "$@"\n' "$fx" > "$tmp/slowbin/gh"; chmod +x "$tmp/slowbin/gh"
-check "a permission read that times out: no run" "" "$(PATH="$tmp/slowbin:$PATH" _PRFIX_CALL_S=1 sweep; rows)"
+check "a permission read that times out: no run" "" "$(PATH="$tmp/slowbin:$PATH" _PRFIX_CALL_S=1 sweep; rows 90001)"
 d="$(dir p4)"; jq '.commit.committer.date = "2026-10-24T10:30:00Z"' "$fx/api/repos/mozilla/fxa/commits/$PA.json" > "$d/api/repos/mozilla/fxa/commits/$PA.json"
-check "a label older than the head commit: no run" "" "$(PRFIX_DIR="$d" sweep; rows)"
+check "a label older than the head commit: no run" "" "$(PRFIX_DIR="$d" sweep; rows 90001)"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, ended_at) VALUES ($rid, 'pr-90001-old-x1', 'failed', json('{\"fix\":{\"pr\":90001}}'), $((writer_at + 60)));"
-check "a label older than the end of the last run on the PR: no new run" "90001 failed" "$(sweep; rows)"
+check "a label older than the end of the last run on the PR: no new run" "90001 failed" "$(sweep; rows 90001)"
+
+# i557 A22, A24: the BLEnder signal.
+sweep
+check "A22: the BLEnder Bot comment queues a run with its comment id, and the row exists before the App adds agent-help" \
+  "90001 queued label example-writer,90002 queued blender mozilla-blender[bot]|7002|label 90002 add agent-help rows=1" \
+  "$(db_value "SELECT json_extract(heads, '$.fix.blender_comment_id') FROM routine_runs WHERE routine_id = $rid AND json_extract(heads, '$.fix.pr') = 90002;" > "$tmp/c"; rows)|$(cat "$tmp/c")|$(grep '^label' "$tmp/pc")"
+d="$(dir b1)"; jq 'map(select(.id != 7002))' "$fx/api/repos/mozilla/fxa/issues/90002/comments.json" > "$d/api/repos/mozilla/fxa/issues/90002/comments.json"
+check "A22: the same text from a User does nothing" "90001 queued label example-writer" "$(PRFIX_DIR="$d" sweep; rows)"
+at930="$(iso 2026-10-24T09:30:00Z)"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, ended_at) VALUES ($rid, 'pr-90001-9999', 'ok', json('{\"fix\":{\"pr\":90001,\"new_sha\":\"$PA\"}}'), $at930),
+  ($rid, 'pr-90002-9999', 'ok', json('{\"fix\":{\"pr\":90002,\"new_sha\":\"$PB\"}}'), $at930);"
+check "A24: on the App's fix commit a writer's label queues one run, and a BLEnder comment does nothing" "90001 ok,90002 ok,90001 queued label example-writer" "$(sweep; rows)"
 
 exit "$fail"
