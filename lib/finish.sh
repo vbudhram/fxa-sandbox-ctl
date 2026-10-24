@@ -578,10 +578,12 @@ _finish_push_and_pr() {
       export GH_TOKEN
     fi
   elif github_app_enabled; then
-    local new_sha GH_TOKEN arc=0
+    local new_sha GH_TOKEN arc=0 msg
     echo "Committing and pushing ${branch} as the GitHub App..." >&2
-    new_sha="$(github_app_commit "$worktree" "$branch" "$merge_base" \
-      "$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")")" || arc=$?
+    msg="$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")"
+    # A fix run's commit lands on a public PR: a fixed host text, never the agent's title or body.
+    [ -z "$fix" ] || msg="$(_finish_prfix_message "$fix" "$FXA_FINISH_PR")"
+    new_sha="$(github_app_commit "$worktree" "$branch" "$merge_base" "$msg")" || arc=$?
     if [ "$arc" != 0 ]; then
       [ "$arc" = 3 ] && _finish_prfix_why moved
       [ -n "$fix" ] && return "$arc"; return 1
@@ -747,6 +749,14 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
 
   # Archive the handoff file so the next ticket can write a fresh one.
   mv "$done_file" "${done_file}.$(date +%s)" 2>/dev/null || rm -f "$done_file"
+}
+
+# _finish_prfix_message <run> <PR url>   The fix commit's message: the PR number, the run id and the package names of
+# heads.fix that pass the name check.
+_finish_prfix_message() {
+  local pk; pk="$(db_value "SELECT coalesce(heads->'fix'->'packages', '[]') FROM routine_runs WHERE id = $1;" 2>/dev/null \
+    | jq -r '[.[]? | strings | select(test("^[@a-z0-9._/-]{1,80}$"))][:10] | join(", ")' 2>/dev/null || true)"
+  printf 'fix(deps): fix the failing checks of #%s\n\nRoutine run %s. Packages: %s.' "${2##*/}" "$1" "${pk:-not named}"
 }
 
 # _finish_prfix_why <why>   In fix-pr mode, the run's end code (heads.fix.why). 'moved' also drops the push claim:

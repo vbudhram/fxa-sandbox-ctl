@@ -89,7 +89,7 @@ check "the PR keeps Dependabot's commit with its SHA, plus one App commit with o
 
 # Fix-pr mode: a started fix row of a pr-label routine, and finish with the run, the PR and the head it booted at.
 rt="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', json('{}')); SELECT last_insert_rowid();")"
-run() { db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rt, 'pr-90001-$1', 'started', json('{\"fix\":{\"pr\":90001}}')); SELECT last_insert_rowid();"; }
+run() { db_value "INSERT INTO routine_runs (routine_id, period, state, heads) VALUES ($rt, 'pr-90001-$1', 'started', json('{\"fix\":{\"pr\":90001,\"packages\":[\"example-pkg\",\"bad name\"]}}')); SELECT last_insert_rowid();"; }
 fix() { db_value "SELECT heads->'fix' FROM routine_runs WHERE id = $1;"; }
 ffin() { # ffin <run> <worktree>   finish in fix-pr mode; prints the exit code
   local rc=0; FXA_APP_COMMIT_FF="$1" FXA_FIX_HEAD_SHA="$D" FXA_FINISH_PR="$PR" FXA_MEDIA_BUCKET=b _finish_push_and_pr "$2" true >/dev/null 2>"$tmp/err" || rc=$?
@@ -103,6 +103,9 @@ other() { # a commit on the PR branch that another push made
 reset_origin; r1="$(run a)"; w="$(wt 'echo two > a.txt')"
 rc="$(ffin "$r1" "$w")"; new="$(git -C "$O" rev-parse "$B")"
 check "fix-pr mode pushes one App commit on the PR head" "0|$D" "$rc|$(git -C "$O" rev-parse "$B~1")"
+check "the fix commit message is the fixed host text with the run and the checked packages, with no agent text" \
+  "fix(deps): fix the failing checks of #90001|Routine run ${r1}. Packages: example-pkg.|0" \
+  "$(git -C "$O" log -1 --format=%B "$B" | sed '/^$/d' | paste -sd'|' -)|$(git -C "$O" log -1 --format=%B "$B" | grep -c 'adapt\|Adapts\|bad name')"
 check "fix-pr mode makes no other GitHub or CircleCI write" "|0|0" "$(cat "$tmp/steps")|$(grep -c 'pr comment' "$tmp/gh")|$(grep -c 'requested_reviewers' "$tmp/gh")"
 check "heads.fix has the claim, the pending sha and new_sha" "1|$new|$new" "$(fix "$r1" | jq -r '"\(.pushing > 0 | if . then 1 else 0 end)|\(.pending_sha)|\(.new_sha)"')"
 
