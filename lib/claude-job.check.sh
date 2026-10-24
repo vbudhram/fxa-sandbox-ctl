@@ -8,6 +8,8 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
+# The no-proxy case expects no base URL: a caller's own (Claude Code sets one) must not leak in.
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/infra/gce" "$tmp/bin" "$tmp/state" "$tmp/lib" "$tmp/skills/fxa-ai-fixme" "$tmp/cfg"
 echo "SKILL BODY" > "$tmp/skills/fxa-ai-fixme/SKILL.md"
