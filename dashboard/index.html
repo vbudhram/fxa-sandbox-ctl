@@ -2518,10 +2518,12 @@ let RT = { team: null }, RT_WANT = 0;   // RT_WANT: a routine id from the link, 
 const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const RT_MODES = [["report", "Report", "A summary in Slack and History. Changes no code."], ["pr", "Draft PR", "Opens a draft PR with the fixes. Nothing merges by itself."], ["pr+notes", "Draft PR with notes", "The draft PR, plus every finding it did not fix, in the PR description."]];
-const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits"];
+const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits", "pr"];
 const RT_STALE_S = 300;
 const RT_ZONES = [["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Los_Angeles", "Pacific"], ["UTC", "UTC"], ["Europe/London", "UK"], ["Europe/Berlin", "Central Europe"], ["Asia/Kolkata", "India"], ["Asia/Tokyo", "Japan"], ["Australia/Sydney", "Sydney"]];
 const RT_BLANK = { template: "blank", name: "Write your own", about: "Start with an empty prompt, for a task the other starts do not cover.", mode: "report", skip_no_commits: true, prompt: "" };
+// The dependency PR start (on='pr-label'): no schedule and no prompt; a red PR that asks for help starts each run.
+const RT_DEPFIX = { template: "depfix", on: "pr-label", name: "Fix dependency PRs", about: "When a red Dependabot or BLEnder PR asks for help, pushes one fix commit to its branch and posts in Slack.", mode: "pr" };
 // Each start's glyph: a tone of Tag and a 24px stroke icon.
 const RT_GLYPH = { "code-review": ["info", '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'], "perf-review": ["warn", '<path d="M12 13l4-4"/><path d="M3.3 17a9 9 0 1 1 17.4 0"/>'], "security-review": ["ok", '<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/>'], "ux-review": ["merged", '<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8"/>'], blank: ["", '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'], depfix: ["", '<path d="M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9"/>'] };
 const RT_VERB = { "code-review": "Reviews new commits on", "perf-review": "Looks for slow paths in", "security-review": "Looks for security defects in", "ux-review": "Checks the changed screens in" };
@@ -2540,10 +2542,17 @@ async function loadRoutines(team) {
 // A routine's config as form fields, and back.
 function rtDraft(data) {
   const d = data ?? { template: "blank", name: "", prompt: "", schedule: "weekdays 09:00", zone: "America/New_York", repos: [], channel: "", mode: "report", max_usd: 10, skip_no_commits: true };
-  const [kind, a, b] = (d.schedule || "weekdays 09:00").split(" ");
-  return { ...d, template: d.template || "blank", kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "", channel: d.channel ?? "" };
+  const [kind, a, b] = (d.schedule || "weekdays 09:00").split(" "), pr = d.pr ?? {};
+  return { ...d, template: d.template || "blank", kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "", channel: d.channel ?? "",
+    ...(d.on === "pr-label" ? { pr_repo: pr.repo ?? "", pr_authors: (pr.authors ?? []).join(", "), pr_label: pr.label ?? "agent-help", pr_mention: pr.blender_mention ?? "" } : {}) };
 }
 function rtRoutine(d) {
+  if (d.on === "pr-label") {
+    // An edit keeps the pr fields the form does not show (blender_login, sweep_min).
+    const pr = { ...(d.pr ?? {}), repo: d.pr_repo, authors: String(d.pr_authors).split(/[\s,]+/).filter(Boolean), label: String(d.pr_label).trim() || "agent-help" };
+    if (String(d.pr_mention).trim()) pr.blender_mention = String(d.pr_mention).trim(); else delete pr.blender_mention;
+    return { on: "pr-label", template: "blank", name: d.name, repos: d.pr_repo ? [d.pr_repo] : [], channel: d.channel.trim(), mode: "pr", max_usd: Number(d.max_usd), pr, ...(d.env ? { env: d.env } : {}) };
+  }
   const r = { template: d.template, name: d.name, prompt: d.prompt, schedule: d.kind === "weekly" ? `weekly ${d.day} ${d.time}` : `${d.kind} ${d.time}`,
     zone: d.zone, repos: d.repos, channel: d.channel.trim(), mode: d.mode, max_usd: Number(d.max_usd), skip_no_commits: !!d.skip_no_commits };
   if (d.branch.trim() && d.repos.length === 1) r.branch = d.branch.trim();
@@ -2552,7 +2561,9 @@ function rtRoutine(d) {
 }
 // A new draft from a start: its prompt and result, and the team's repo when it has only one.
 function rtFromTpl(x, repos) {
-  const d = rtDraft();
+  const d = rtDraft(), work = repos.filter(r => r.role === "work");
+  if (x.on === "pr-label") return { ...d, template: "blank", on: "pr-label", name: "Dependency fixes", prompt: "", mode: "pr", max_usd: 10,
+    pr_repo: work.length === 1 ? work[0].slug : "", pr_authors: "dependabot[bot]", pr_label: "agent-help", pr_mention: "" };
   return { ...d, template: x.template, name: x.template === "blank" ? "" : x.name, prompt: x.prompt ?? "", mode: x.locked_mode || x.mode || "report",
     skip_no_commits: x.skip_no_commits !== false, repos: repos.length === 1 ? [repos[0].slug] : [], max_usd: 5 };
 }
@@ -2718,7 +2729,7 @@ function rtCard(t, r, s) {
       <div class="fact"><span class="overline">Cost, 30 days</span><span>${s ? usd(s.cost_30d) : "—"} <span class="m">· ${s?.runs_30d ?? 0} run${s?.runs_30d === 1 ? "" : "s"} · limit ${usd(d.max_usd)} a run</span></span></div></div></article>`;
 }
 // The starts the create flow offers: the server's templates, then Write your own.
-const rtStarts = () => [...(RT.tpls ?? []), RT_BLANK];
+const rtStarts = () => [...(RT.tpls ?? []), RT_DEPFIX, RT_BLANK];
 const rtSteps = n => html`<ol class="steps">${["Pick a start", "Set it up"].map((l, i) => html`<li${i + 1 === n ? html` aria-current="step"` : i + 1 < n ? html` class="done"` : ""}><b>${i + 1 < n ? "✓" : i + 1}</b>${l}</li>`)}</ol>`;
 // The next run days of a draft, in its zone, from its kind, day and time (no DST math: a day and a wall time).
 function rtNextDays(d, n, now = Date.now()) {
@@ -2738,6 +2749,8 @@ function rtNextDays(d, n, now = Date.now()) {
 const rtNextText = d => { const x = rtNextDays(d, 3); return x.length ? `Next runs: ${x.length > 1 ? `${x.slice(0, -1).join(", ")} and ` : ""}${x.at(-1)}, at ${d.time}.` : "Pick a time and a zone to see the next runs."; };
 // The draft read back in one sentence, before it is saved.
 function rtReadback(d) {
+  if (d.on === "pr-label") { const au = String(d.pr_authors).split(/[\s,]+/).filter(Boolean);
+    return html`<b>${d.name || "This routine"}</b> runs when a dependency PR in <b>${d.pr_repo || "no repo yet"}</b> by <b>${au.length ? au.join(" or ") : "no author yet"}</b> asks for help with the <b>${String(d.pr_label).trim() || "agent-help"}</b> label. It pushes one fix commit to the PR branch, ${d.channel.trim() ? html`posts in <b>${rtChName(d.channel.trim())}</b>` : "needs a channel for its results"}, and stops at <b>${usd(Number(d.max_usd))}</b> a run.`; }
   const mode = { report: "reports", pr: "opens a draft PR", "pr+notes": "opens a draft PR with notes" }[d.mode] ?? d.mode, s = rtRoutine(d);
   return html`<b>${d.name || "This routine"}</b> runs <b>${rtSched(s)} ${rtZoneName(d.zone)}</b> on <b>${d.repos.join(", ") || "no repo yet"}</b>${d.skip_no_commits ? ", when there are new commits" : ""}. It ${mode}${d.channel.trim() ? html`, posts in <b>${rtChName(d.channel.trim())}</b>,` : ", posts nothing in Slack (the results are in History),"} and stops at <b>${usd(Number(d.max_usd))}</b> a run.`;
 }
@@ -2749,21 +2762,22 @@ function rtCostHint(t, d) {
   return `${name} runs on this team cost ${usd(lo)} to ${usd(hi)} a run in the last 30 days.`;
 }
 function rtChannelField(d, f, bad, err) {
-  const C = RT.chans?.channels ?? [], why = c => d.template === "security-review" ? c.why_security : c.why, cur = C.find(c => c.id === d.channel);
-  const lb = html`<label for="rt-channel">Slack channel <span class="opt">· optional</span></label>`;
+  const C = RT.chans?.channels ?? [], why = c => d.template === "security-review" ? c.why_security : c.why, cur = C.find(c => c.id === d.channel), onpr = d.on === "pr-label";
+  const none = onpr ? "A dependency fix routine needs a channel: each run posts its start and its result there." : "With no channel, nothing posts in Slack and the results show only in History.";
+  const lb = html`<label for="rt-channel">Slack channel${d.on === "pr-label" ? "" : html` <span class="opt">· optional</span>`}</label>`;
   if (C.length && !f.chPaste && (!d.channel || cur)) return html`<div class="field">${lb}
-    <select id="rt-channel" class="input" data-rt="channel"${bad("channel")}><option value=""${d.channel ? "" : " selected"}>None: results show only in History</option>
+    <select id="rt-channel" class="input" data-rt="channel"${bad("channel")}><option value=""${d.channel ? "" : " selected"}>${onpr ? "Pick a channel" : "None: results show only in History"}</option>
       ${C.map(c => html`<option value="${c.id}"${c.id === d.channel ? " selected" : ""}${why(c) && c.id !== d.channel ? " disabled" : ""}>#${c.name}${why(c) ? " (not allowed)" : ""}</option>`)}
       <option value="__paste">Another channel: paste its ID or link</option></select>
-    ${cur ? why(cur) ? html`<p class="unknown">${why(cur)}</p>` : html`<p class="okline">✓ @fxa-agent is in this channel</p>` : html`<p class="hint">With no channel, nothing posts in Slack and the results show only in History.</p>`}${err("channel")}</div>`;
+    ${cur ? why(cur) ? html`<p class="unknown">${why(cur)}</p>` : html`<p class="okline">✓ @fxa-agent is in this channel</p>` : html`<p class="hint">${none}</p>`}${err("channel")}</div>`;
   return html`<div class="field">${lb}<input id="rt-channel" class="input" data-rt="channel" placeholder="C0123ABCD or a link to the channel" value="${d.channel}"${bad("channel")}>
-    <p class="hint">Leave it empty and the results show only in History. Invite @fxa-agent to the channel first. A team with a private repo, and every security review, needs a private channel of this team that is not shared with another workspace.${C.length ? html` <button type="button" class="linkbtn" data-rt-chlist>Pick from the list</button>` : ""}</p>${err("channel")}</div>`;
+    <p class="hint">${onpr ? "A dependency fix routine needs a channel." : "Leave it empty and the results show only in History."} Invite @fxa-agent to the channel first. A team with a private repo, and every security review, needs a private channel of this team that is not shared with another workspace.${C.length ? html` <button type="button" class="linkbtn" data-rt-chlist>Pick from the list</button>` : ""}</p>${err("channel")}</div>`;
 }
 function routineForm(t) {
   const f = RT.form;
   if (f.step === 1) return html`<div data-routine-form class="stack lg"><div class="rt-head"><div><h3 id="rt-form-h" tabindex="-1">New routine</h3><p class="tsub">Pick what the routine does. Each start fills in a tested prompt and a result type. You can change all of it in the next step.</p></div>${rtSteps(1)}</div>
     <div class="rtchoices" role="group" aria-label="Start from">${rtStarts().map(x => html`<button type="button" class="choice" data-rt-tpl="${x.template}">${rtGlyph(x.template)}<span class="ct">${x.name}</span><span class="cd">${x.about ?? ""}</span>
-      <span class="foot">${tag((RT_MODES.find(m => m[0] === (x.locked_mode || x.mode)) ?? [, x.mode])[1] + (x.locked_mode ? " only" : ""), (x.locked_mode || x.mode) === "report" ? "info" : "merged")}${x.skip_no_commits ? tag("skips with no new commits") : ""}</span></button>`)}</div>
+      <span class="foot">${x.on ? html`${tag("One fix commit", "merged")}${tag("on request")}` : html`${tag((RT_MODES.find(m => m[0] === (x.locked_mode || x.mode)) ?? [, x.mode])[1] + (x.locked_mode ? " only" : ""), (x.locked_mode || x.mode) === "report" ? "info" : "merged")}${x.skip_no_commits ? tag("skips with no new commits") : ""}`}</span></button>`)}</div>
     <div class="row"><span class="hint">Every run is a normal session with the team's repos, access and budget. A team can have 8 routines.</span><span class="sp"></span><button type="button" data-rt-cancel>Cancel</button></div></div>`;
   const d = f.d, e = f.errs ?? {}, repos = (t.repos ?? []).map(r => r.slug), tpl = (RT.tpls ?? []).find(x => x.template === d.template);
   const locked = tpl?.locked_mode, bad = k => e[k] ? html` aria-invalid="true" aria-describedby="rt-${k}-err"` : "";
@@ -2771,10 +2785,24 @@ function routineForm(t) {
   const lab = (k, l, input, hint) => html`<div class="field"><label for="rt-${k}">${l}</label>${input}${hint ?? ""}${err(k)}</div>`;
   const modeOff = m => m === "report" ? "" : locked ? "a security review only reports" : t.read_only ? "this team gets diffs only" : "";
   const openPrompt = f.promptOpen || d.template === "blank" || !String(d.prompt).trim() || e.prompt;
-  const zones = RT_ZONES.some(z => z[0] === d.zone) ? RT_ZONES : [[d.zone, d.zone], ...RT_ZONES];
-  return html`<div data-routine-form class="stack lg"><div class="rt-head"><div><h3 id="rt-form-h" tabindex="-1">${f.id ? `Edit ${d.name}` : "New routine"} ${tag(tpl?.name ?? "Custom prompt", "", { sq: true })}</h3>
-      <p class="tsub">${f.id ? "Change what you need, then save. The next run uses the new setup." : "The start filled in each field. Check the schedule and the channel, then create it."}</p></div>${f.id ? "" : rtSteps(2)}</div>
-    <div class="rtcols"><div class="stack">
+  const zones = RT_ZONES.some(z => z[0] === d.zone) ? RT_ZONES : [[d.zone, d.zone], ...RT_ZONES], onpr = d.on === "pr-label";
+  const work = (t.repos ?? []).filter(r => r.role === "work").map(r => r.slug), prRepos = work.includes(d.pr_repo) || !d.pr_repo ? work : [d.pr_repo, ...work];
+  return html`<div data-routine-form class="stack lg"><div class="rt-head"><div><h3 id="rt-form-h" tabindex="-1">${f.id ? `Edit ${d.name}` : "New routine"} ${tag(onpr ? "Dependency fix" : tpl?.name ?? "Custom prompt", "", { sq: true })}</h3>
+      <p class="tsub">${f.id ? "Change what you need, then save. The next run uses the new setup." : onpr ? "Check the repo, the authors and the channel, then create it." : "The start filled in each field. Check the schedule and the channel, then create it."}</p></div>${f.id ? "" : rtSteps(2)}</div>
+    <div class="rtcols"><div class="stack">${onpr ? html`
+      ${card(html`<h2>What it does</h2><div class="stack">${lab("name", "Name", html`<input id="rt-name" class="input" data-rt="name" maxlength="40" value="${d.name}"${bad("name")}>`)}
+        <p class="hint">Each run reads the PR, its failing checks and the BLEnder comment, and fixes the dependency update. The host writes the prompt, so this routine has none.</p></div>`)}
+      ${card(html`<h2>When it runs</h2><div class="stack"><p><b>When:</b> a dependency PR asks for help</p>
+        <p class="hint">A run starts for a red PR by one of the authors, when a person with write access adds the label or BLEnder tags the agent in a comment. It does not run on a schedule.</p>
+        <fieldset class="group field stack" id="rt-pr" tabindex="-1"${bad("pr")}><legend class="lb">The dependency PRs</legend>
+          ${lab("pr_repo", "Repo", html`<select id="rt-pr_repo" class="input" data-rt="pr_repo"><option value=""${d.pr_repo ? "" : " selected"}>Pick a work repo</option>${prRepos.map(s => html`<option value="${s}"${s === d.pr_repo ? " selected" : ""}>${s}</option>`)}</select>`,
+            work.length ? "" : html`<p class="hint">This team has no work repo, so it cannot push a fix.</p>`)}
+          ${lab("pr_authors", "Authors", html`<input id="rt-pr_authors" class="input" data-rt="pr_authors" value="${d.pr_authors}" aria-describedby="rt-pr_authors-hint">`, html`<p class="hint" id="rt-pr_authors-hint">GitHub logins, with commas. Only PRs by these authors get a fix.</p>`)}
+          <div class="fields2">${lab("pr_label", "Label", html`<input id="rt-pr_label" class="input" data-rt="pr_label" maxlength="50" value="${d.pr_label}">`)}
+            ${lab("pr_mention", html`BLEnder mention <span class="opt">· optional</span>`, html`<input id="rt-pr_mention" class="input" data-rt="pr_mention" placeholder="@login or @org/team" value="${d.pr_mention}">`)}</div>${err("pr")}</fieldset></div>`)}
+      ${card(html`<h2>What you get</h2><div class="stack"><p>One fix commit on the PR branch. Nothing merges by itself.</p>
+        ${rtChannelField(d, f, bad, err)}
+        ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" class="input rt-usd" type="number" min="1" step="1" data-rt="max_usd" value="${d.max_usd}"${bad("max_usd")}>`)}</div>`)}` : html`
       ${card(html`<h2>What it does</h2><div class="stack">${lab("name", "Name", html`<input id="rt-name" class="input" data-rt="name" maxlength="40" value="${d.name}"${bad("name")}>`)}
         ${openPrompt ? lab("prompt", html`Prompt <span class="opt" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, html`<textarea id="rt-prompt" class="input" data-rt="prompt" rows="10"${bad("prompt")}>${d.prompt}</textarea>`)
           : html`<div class="field"><span class="lb">Prompt <span class="opt">· ${new Blob([d.prompt]).size} of 4096 bytes</span></span><p class="report">${String(d.prompt).slice(0, 260)}${String(d.prompt).length > 260 ? "…" : ""}</p>
@@ -2793,11 +2821,11 @@ function routineForm(t) {
         <fieldset class="group stack sm" id="rt-mode" tabindex="-1"${bad("mode")}><legend class="lb">Result</legend>${RT_MODES.map(([v, l, about]) => { const off = modeOff(v);
           return html`<label class="choice sm"><input type="radio" name="rt-mode" data-rt="mode" value="${v}"${(locked || d.mode) === v ? " checked" : ""}${off ? " disabled" : ""}><span class="stack sm"><b>${l}</b><span class="hint">${off ? `Off: ${off}.` : about}</span></span></label>`; })}${err("mode")}</fieldset>
         ${rtChannelField(d, f, bad, err)}
-        ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" class="input rt-usd" type="number" min="1" step="1" data-rt="max_usd" value="${d.max_usd}"${bad("max_usd")}>`, rtCostHint(t, d) ? html`<p class="hint">${rtCostHint(t, d)}</p>` : "")}</div>`)}
+        ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" class="input rt-usd" type="number" min="1" step="1" data-rt="max_usd" value="${d.max_usd}"${bad("max_usd")}>`, rtCostHint(t, d) ? html`<p class="hint">${rtCostHint(t, d)}</p>` : "")}</div>`)}`}
     </div><aside class="stack">${card(html`<h2>${f.id ? "Before you save" : "Before you create it"}</h2><div class="stack">
       <p class="readback" data-rt-readback>${rtReadback(d)}</p>
-      <p class="hint">${d.channel.trim() ? "Each run is one thread in the channel, with the result and the next run time." : "Each run's result is in the routine's Runs, here."}</p>
-      <div class="row"><button type="button" data-rt-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Create"}</button>${f.id ? "" : html`<button type="button" data-rt-save data-rt-then="run"${f.saving ? " disabled" : ""}>Create and run now</button>`}</div>
+      <p class="hint">${onpr ? "Each run posts its start and its result in the channel, and keeps one comment on the PR up to date." : d.channel.trim() ? "Each run is one thread in the channel, with the result and the next run time." : "Each run's result is in the routine's Runs, here."}</p>
+      <div class="row"><button type="button" data-rt-save${f.saving ? " disabled" : ""}>${f.saving ? "Saving…" : f.id ? "Save" : "Create"}</button>${f.id || onpr ? "" : html`<button type="button" data-rt-save data-rt-then="run"${f.saving ? " disabled" : ""}>Create and run now</button>`}</div>
       <div class="row">${f.id ? "" : html`<button type="button" class="linkbtn" data-rt-back>Back</button>`}<button type="button" class="linkbtn" data-rt-cancel>Cancel</button></div></div>`)}</aside></div></div>`;
 }
 function routinesGroup(t, now) {

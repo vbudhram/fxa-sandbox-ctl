@@ -34,5 +34,24 @@ ck "not started: the reason" "Not started (the PR has a new commit) / Not starte
 ck "failed: the reason, and nothing was pushed" "The sandbox did not start / Failed / label by example-writer · no cost · #90009 · 9999999 / Nothing was pushed. Add agent-help again to retry." "$(row 7)"
 ck "the legend names the fix results too" "true" \
   "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$W const k = tx('.rtkey'); return ['Pushed', 'Not pushed', 'No fix found', 'Not started'].every(x => k.includes(x))")"
+
+# The form: the dependency PR start asks when a PR asks for help, sends on and pr, and has no Create and run now (A33).
+form="$W const sent = [], f0 = window.fetch, set = (s, v) => { const e = document.querySelector(s); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); };
+  window.fetch = (u, o) => o?.method === 'POST' ? (sent.push(JSON.parse(o.body)), Promise.resolve(new Response(JSON.stringify({ out: 'created routine 7' }), { status: 200 }))) : f0(u, o);
+  document.querySelector('[data-rt-new]').click(); await w(200); document.querySelector('[data-rt-tpl=\"depfix\"]').click(); await w(200);
+  set('#rt-pr_authors', 'dependabot[bot], example-blender[bot]'); set('#rt-channel', 'C0123ABCD'); await w(200);
+  const f = tx('[data-routine-form]'), rb = tx('[data-rt-readback]'), run = !!document.querySelector('[data-rt-then=\"run\"]'), sched = !!document.querySelector('#rt-schedule, #rt-time, #rt-prompt');
+  document.querySelector('[data-rt-save]').click(); await w(400); const r = sent[0]?.routine ?? {};
+  return [/When: a dependency PR asks for help/.test(f), run, sched, rb, JSON.stringify([r.on, r.mode, r.repos, r.pr, 'schedule' in r, 'prompt' in r, 'zone' in r])].join('\n')"
+ck "the form says when a dependency PR asks for help, has no Create and run now and no schedule or prompt, reads back, and sends on and pr" \
+  "true
+false
+false
+Dependency fixes runs when a dependency PR in example/app by dependabot[bot] or example-blender[bot] asks for help with the agent-help label. It pushes one fix commit to the PR branch, posts in #deps, and stops at \$10.00 a run.
+[\"pr-label\",\"pr\",[\"example/app\"],{\"repo\":\"example/app\",\"authors\":[\"dependabot[bot]\",\"example-blender[bot]\"],\"label\":\"agent-help\"},false,false,false]" \
+  "$(bash "$p" '#teams/example/routines' --fixture "$F" --probe "$form")"
+edit="$W document.querySelector('[data-rt-act=\"edit\"][data-rt-id=\"1\"]').click(); await w(300);
+  return [document.querySelector('#rt-pr_repo')?.value, document.querySelector('#rt-pr_authors')?.value, document.querySelector('#rt-pr_label')?.value, !!document.querySelector('[data-rt-then=\"run\"]')].join('|')"
+ck "Edit of a pr-label routine fills the pr fields" "example/app|dependabot[bot], example-blender[bot]|agent-help|false" "$(bash "$p" '#teams/example/routines/1' --fixture "$F" --probe "$edit")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
