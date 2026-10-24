@@ -487,21 +487,10 @@ _gce_pin_runner_tree() {
   # when the clone has the commit: on a fresh disk it cost 20-40 s for nothing.
   # The step is safe to repeat. An IAP tunnel can time out on the ssh banner,
   # which reads as an empty answer, so retry that instead of failing the launch.
-  local try
-  for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && old=\$(git rev-parse HEAD) && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${qbranch} ${sha}
-    if [ -n '${base_sha}' ]; then
-      { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
-      # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.
-      [ '${base}' = main ] || git rev-parse -q --verify refs/remotes/origin/main >/dev/null || git update-ref refs/remotes/origin/main ${base_sha}
-    fi
-    # An eval (FXA_PIN_HIDE): no ref, reflog or fetch record that reaches past the base.
-    if [ '${FXA_PIN_HIDE:-}' = 1 ]; then
-      git symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null
-      git for-each-ref --no-merged=${sha} --format='%(if)%(symref)%(then)%(else)delete %(refname)%(end)' | sed '/^\$/d' | git update-ref --stdin || echo 'WARN: could not hide the refs past the base' >&2
-      rm -f \"\$(git rev-parse --git-dir)/FETCH_HEAD\" \"\$(git rev-parse --git-dir)/ORIG_HEAD\"
-      git reflog expire --expire=now --all
-    fi
+  # A fix run's tree is a bot PR head: none of its code (install scripts, Nx plugins, builds) runs
+  # before the egress firewall; the agent installs and builds after it.
+  local build=""
+  [ "${FXA_PIN_UNTRUSTED:-}" = 1 ] || build="
     if [ -f yarn.lock ] && [ \"\$(sha256sum yarn.lock | cut -d' ' -f1)\" != \"\$(cat /home/agent/.image-lock-hash 2>/dev/null)\" ]; then
       echo 'yarn.lock differs from the image; installing dependencies...' >&2
       source /etc/agent-env.sh && yarn install --immutable > /tmp/fxa-pin-yarn.log 2>&1 || echo 'WARN: yarn install failed; see /tmp/fxa-pin-yarn.log' >&2
@@ -517,7 +506,23 @@ _gce_pin_runner_tree() {
           | .seen - [\"fxa-content-server\"] | join(\",\")' /tmp/fxa-graph.json)\" \
         && npx nx run-many -t build -p \"\$libs\" >> /tmp/fxa-pin-libs.log 2>&1 \
         || echo 'WARN: could not build the libs content needs; see /tmp/fxa-pin-libs.log' >&2
+    fi"
+  local try
+  for try in 1 2 3; do
+  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && old=\$(git rev-parse HEAD) && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${qbranch} ${sha}
+    if [ -n '${base_sha}' ]; then
+      { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
+      # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.
+      [ '${base}' = main ] || git rev-parse -q --verify refs/remotes/origin/main >/dev/null || git update-ref refs/remotes/origin/main ${base_sha}
     fi
+    # An eval (FXA_PIN_HIDE): no ref, reflog or fetch record that reaches past the base.
+    if [ '${FXA_PIN_HIDE:-}' = 1 ]; then
+      git symbolic-ref -d refs/remotes/origin/HEAD 2>/dev/null
+      git for-each-ref --no-merged=${sha} --format='%(if)%(symref)%(then)%(else)delete %(refname)%(end)' | sed '/^\$/d' | git update-ref --stdin || echo 'WARN: could not hide the refs past the base' >&2
+      rm -f \"\$(git rev-parse --git-dir)/FETCH_HEAD\" \"\$(git rev-parse --git-dir)/ORIG_HEAD\"
+      git reflog expire --expire=now --all
+    fi
+${build}
     git rev-parse HEAD" 2> >(grep -v 'unable to resolve' >&2) | tr -d '\r' | tail -1)" || true
   [ -n "$got" ] && break
   echo "  The runner did not answer the pin (try ${try} of 3)." >&2

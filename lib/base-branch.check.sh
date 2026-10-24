@@ -66,4 +66,10 @@ chmod +x "$tmp/bin/npx"
 libs_block="$(sed -n '/if \[ -d packages\/fxa-content-server \]/,/^    fi$/p' "$tmp/pin.cmd" | sed "s#/tmp/fxa-#$tmp/fxa-#g; s#source /etc/agent-env.sh#true#")"
 ( cd "$tmp/w" && PATH="$tmp/bin:$PATH" bash -c "$libs_block" )
 check "the pin builds the libs content imports, transitively, once each, and no package" "nx run-many -t build -p shared-email,shared-log" "$(cat "$tmp/npx.args" 2>/dev/null)"
+# A fix run (FXA_PIN_UNTRUSTED): no install, Nx or build of the PR head before the egress firewall.
+FXA_PIN_UNTRUSTED=1 pin main
+check "a fix run's pin runs no yarn install, npx or nx" "0|1" "$(grep -cE 'yarn install|npx|nx ' "$tmp/pin.cmd")|$(grep -c "git checkout --quiet -B agent-x $S" "$tmp/pin.cmd")"
+pin main
+check "another run's pin still installs and builds the libs" "1|1" "$(grep -c 'yarn install --immutable' "$tmp/pin.cmd")|$(grep -c 'nx run-many -t build' "$tmp/pin.cmd")"
+check "the session boot marks a fix run's pin untrusted" "1" "$(grep -c 'FXA_PIN_UNTRUSTED="${fixh:+1}"' "$here/../fxa-sandbox-ctl")"
 exit "$fail"

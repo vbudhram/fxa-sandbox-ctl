@@ -2524,7 +2524,11 @@ what code you are on. Do not pull: a newer main needs a new thread."
   local rc=0
   # The run dir is not a checkout: the ceiling stops git from shipping an enclosing
   # repo's files. The idle pause, not this longer lifetime, bounds a session's cost.
-  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" FXA_PIN_HIDE="$pin_hide" \
+  # A fix run: the pin runs none of the PR head's code, because the egress firewall is not up yet.
+  [ -z "$fixh" ] || prompt="${prompt}
+
+The runner did not install this head's dependencies or build its libs. Run \`yarn install --immutable\` before you build or test."
+  GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" FXA_PIN_HIDE="$pin_hide" FXA_PIN_UNTRUSTED="${fixh:+1}" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
   rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz" "${dir}/.fxa-resume-media.tgz"
