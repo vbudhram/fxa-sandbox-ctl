@@ -10,7 +10,7 @@ finish() { # finish <record json>   the base finish_push_and_pr got, or the erro
     runtime_load() { :; }; sleep() { :; }; _session_turn_running() { return 1; }; errors_record() { :; }
     _session_turn() { :; }; vm_exec() { return 0; }; _session_sh() { echo "handoff check: ok"; }
     session_checkout() { mkdir -p "$2"; }; session_checkout_remove() { :; }
-    finish_push_and_pr() { echo "${FXA_WORKTREE_BASE:-}" >> "$BASES"; echo https://github.com/o/r/pull/1; }
+    finish_push_and_pr() { echo "${FXA_WORKTREE_BASE:-}${FXA_FINISH_PR:+ ${FXA_FINISH_PR}}" >> "$BASES"; echo https://github.com/o/r/pull/1; }
     _session_finish_notes() { :; }; _session_record_summary() { :; }; _thread_ok() { return 1; }
     _cmd_session_finish agent-fb1 >/dev/null 2>"$tmp/fin.err"
     [ -s "$BASES" ] && cat "$BASES" || grep -o 'has a base branch that is not valid' "$tmp/fin.err" | head -1 )
@@ -23,4 +23,6 @@ check "a routine run with no base falls back to main" "main" \
   "$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"routine"}')"
 check "a routine run with a base that is not a branch name ships nothing" "has a base branch that is not valid" \
   "$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"routine","base":"x..y"}')"
+check "a checked-out PR is the PR finish updates; a session's own PR round still finds its PR by branch" "main https://github.com/o/r/pull/7|main" \
+  "$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","checkout":"https://github.com/o/r/pull/7","review_pr":"https://github.com/o/r/pull/7"}')|$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","review_pr":"https://github.com/o/r/pull/7"}')"
 exit "$fail"

@@ -1113,9 +1113,16 @@ Before you use it, wait until curl -sf http://localhost:9000/__heartbeat__ succe
 # runner; the runner holds the work until Open PR or stop.
 session_run_dir() { printf '%s/%s.run' "$SESSION_DIR" "$1"; }
 
-# The changed-file count on the runner: the work since it left origin/main
+# The changed-file count on the runner: the work since it left origin/main, or since FXA_COUNT_BASE
 # (commits and edits), plus untracked files, without the session's own files.
-_SESSION_COUNT='{ git diff --name-only "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" 2>/dev/null; git ls-files -o --exclude-standard; } | grep -vE "^(\.fxa-|ai/|artifacts/)" | sort -u | wc -l'
+_SESSION_COUNT='{ git diff --name-only "${FXA_COUNT_BASE:-$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)}" 2>/dev/null; git ls-files -o --exclude-standard; } | grep -vE "^(\.fxa-|ai/|artifacts/)" | sort -u | wc -l'
+# _session_count_base <key>   "FXA_COUNT_BASE=<sha>; " for a checked-out PR, which boots at the PR head: the
+# PR's own commits are not the session's change. Nothing for any other session.
+_session_count_base() {
+  local b; [ -n "$(session_get "$1" checkout)" ] || return 0
+  b="$(session_get "$1" base_sha)"; [[ "$b" =~ ^[0-9a-f]{40}$ ]] && printf 'FXA_COUNT_BASE=%s; ' "$b"
+  return 0
+}
 
 # A team stack: "name=count" for each repo that /workspace links to, run on the runner.
 _SESSION_TREES_COUNT='for d in /workspace/*; do [ -L "$d" ] && [ -d "$d/.git" ] || continue; printf "%s=%s " "${d##*/}" "$(cd "$d" && '"$_SESSION_COUNT"' | tr -dc 0-9)"; done'
@@ -1128,7 +1135,7 @@ _session_changes() {
   if trees_on "$1"; then
     _session_sh "$(worktree_branch_for "$1")" "$_SESSION_TREES_COUNT" 2>/dev/null | _trees_sum
   else
-    _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && '"$_SESSION_COUNT" 2>/dev/null | tr -dc '0-9'
+    _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && '"$(_session_count_base "$1")$_SESSION_COUNT" 2>/dev/null | tr -dc '0-9'
   fi
 }
 # _trees_sum < "a=1 b=2"   The total; empty when the runner gave nothing.
@@ -1275,7 +1282,7 @@ _session_end_facts() {
   b="$(session_get "$1" booted_at | tr -dc 0-9)"; b="${b:-0}"
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
-    printf "@@changes %s\n" "$(cd /workspace && '"$_SESSION_COUNT"')"
+    printf "@@changes %s\n" "$(cd /workspace && '"$(_session_count_base "$1")$_SESSION_COUNT"')"
     printf "@@trees %s\n" "$('"$_SESSION_TREES_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
     printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"

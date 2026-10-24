@@ -630,8 +630,9 @@ _finish_push_and_pr() {
 
   # A fix round's branch already has a PR, and `gh pr create` would fail and
   # skip the reviewer request and the functional gate. Update that PR instead.
-  local pr_url existing
-  existing="$(cd "$worktree" && gh pr list --head "$branch" --state open \
+  # A checked-out PR is the session's own (FXA_FINISH_PR): a search by branch can find a fork's PR of that name.
+  local pr_url existing="${FXA_FINISH_PR:-}"
+  [ -n "$existing" ] || existing="$(cd "$worktree" && gh pr list --head "$branch" --state open \
                 --json url -q '.[0].url' 2>/dev/null)" || existing=""
   if [ -n "$existing" ]; then
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
@@ -821,6 +822,11 @@ _finish_squash_base() {
     people="$(git -C "$wt" log --format=%an "${base}..${head}" 2>/dev/null | grep -v '\[bot\]$' || true)"
     if [ -n "$people" ]; then
       echo "  The PR has commits from a person, so this change goes on top of them." >&2
+      echo "$head"; return 0
+    fi
+    # A checked-out PR (FXA_FINISH_PR) is another author's, a bot's too: its commits stay as they are.
+    if [ -n "${FXA_FINISH_PR:-}" ]; then
+      echo "  This session checked out the PR, so this change goes on top of its head." >&2
       echo "$head"; return 0
     fi
   fi

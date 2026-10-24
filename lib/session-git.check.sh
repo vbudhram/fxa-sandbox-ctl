@@ -64,4 +64,10 @@ rm -f "$tmp/agent-gt02.bundle"; echo "{\"key\":\"agent-gt02\",\"state\":\"active
 worktree_branch_for() { echo "agent-$1"; }; _session_save agent-gt02
 check "with no commits since the base there is no bundle" "no" "$([ -e "$tmp/agent-gt02.bundle" ] && echo yes || echo no)"
 
+# A checked-out PR (task --checkout) starts at the PR head: the PR's own commits are not the session's change.
+g clone -q "$tmp/origin.git" "$tmp/ws3" 2>/dev/null; cd "$tmp/ws3" && echo bump > e.txt && g add e.txt && g commit -qm bump; P="$(g rev-parse HEAD)"
+echo "{\"key\":\"gt03\",\"state\":\"active\",\"base_sha\":\"$P\",\"checkout\":\"https://github.com/o/r/pull/3\"}" > "$tmp/gt03.json"
+_session_sh() { (cd "$tmp/ws3" && bash -c "${2//\/workspace/$tmp/ws3}"); }
+check "a checked-out PR with no agent edit counts 0, and one edit counts 1" "0|1" "$(_session_changes gt03)|$(echo x >> e.txt; _session_changes gt03)"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

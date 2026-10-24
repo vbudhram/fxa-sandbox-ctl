@@ -2884,8 +2884,11 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
   session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
+  # A checked-out PR (task --checkout) is the PR to update: finish never searches for it by branch name.
+  local fpr=""; [ -n "$(session_get "$key" checkout)" ] && fpr="$(session_get "$key" review_pr)"
   rc=0
-  pr_url="$(FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" finish_push_and_pr "$tmp" "$create")" || rc=$?
+  pr_url="$(FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
+    finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
   session_set "$key" finish_notes "$(_session_finish_notes "$key")"
