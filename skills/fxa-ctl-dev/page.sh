@@ -24,13 +24,14 @@ python3 - "$page" "$fixture" "$probe" "$dir/p.html" <<'PY'
 import json, sys
 page, fixture, probe, out = sys.argv[1:]
 fx = json.load(open(fixture))
-# Times relative to the run: "@iso-3600" is an ISO time an hour ago, "@epoch+600" an epoch 10 min ahead.
+# Times relative to the run: "@iso-3600" is an ISO time an hour ago, "@epoch+600" an epoch 10 min ahead, "@day-2" the local day two days ago.
 import re, time, datetime
 def rel(v):
     if isinstance(v, dict): return {k: rel(x) for k, x in v.items()}
     if isinstance(v, list): return [rel(x) for x in v]
-    m = re.fullmatch(r"@(iso|epoch)([+-]\d+)", v) if isinstance(v, str) else None
+    m = re.fullmatch(r"@(iso|epoch|day)([+-]\d+)", v) if isinstance(v, str) else None
     if not m: return v
+    if m.group(1) == "day": return (datetime.date.today() + datetime.timedelta(days=int(m.group(2)))).isoformat()
     t = time.time() + int(m.group(2))
     return int(t) if m.group(1) == "epoch" else datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 fx = rel(fx)

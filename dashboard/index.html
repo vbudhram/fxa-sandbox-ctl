@@ -215,7 +215,7 @@
   .ttab { padding:var(--s2) var(--s3); color:var(--dim); text-decoration:none; border-bottom:2px solid transparent; font-weight:600; min-height:40px; display:inline-flex; align-items:center; gap:6px; }
   .ttab[aria-current] { color:var(--link); border-color:var(--link); }
   .tcard.req { outline:2px solid var(--warn); }
-  .tscroll { overflow-x:auto; padding:0; }
+  .tscroll { overflow-x:auto; padding:0; } .warnt { color:var(--warn); } .nowrap { white-space:nowrap; }
   .table { width:100%; border-collapse:collapse; font-size:var(--t-sub); }
   .table th { text-align:left; font-size:var(--t-label); font-weight:600; color:var(--dim); padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); white-space:nowrap; }
   .table td { padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; } .table tr:last-child td, .table tr.tot td { border-bottom:0; }
@@ -230,7 +230,6 @@
   .sbdone h2 { font:700 var(--t-body)/1.3 var(--head); margin:0 0 var(--s2); display:flex; gap:var(--s3); align-items:baseline; } .sbd-scroll { overflow-x:auto; } .sbd-scroll .table td { white-space:nowrap; } .sbd-for { max-width:28ch; overflow:hidden; text-overflow:ellipsis; } .sbd-more { display:flex; gap:var(--s4); margin-top:var(--s2); font-size:var(--t-sub); }
   .tcards4 { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--s2); } .tcards3 { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:var(--s2); }
   .tcols { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:var(--s4); }
-  .tcard .tl { font-size:var(--t-label); color:var(--dim); } .tcard .tv { font-size:var(--t-head); font-weight:700; } .tcard .tm { font-size:var(--t-label); color:var(--dim); }
   .titem { display:flex; justify-content:space-between; gap:var(--s3); padding:var(--s2) 0; border-bottom:1px solid var(--line); font-size:var(--t-sub); min-width:0; } .titem:last-child { border-bottom:0; } .titem > span:first-child { min-width:0; overflow-wrap:anywhere; }
   .tchart { width:100%; height:80px; } .tchart rect { fill:var(--line2); } .tchart rect.on { fill:var(--link); } .tchart line { stroke:var(--line); }
   .tchartl { display:flex; justify-content:space-between; font-size:var(--t-label); color:var(--dim); }
@@ -239,7 +238,6 @@
   .right .rh { display:block; font:700 var(--t-heading)/1.3 var(--sans); margin:0; overflow-wrap:anywhere; } .right .rh small { display:block; font:400 var(--t-label) var(--mono); color:var(--faint); margin-top:2px; }
   .right h4 { margin:0 0 var(--s2); }
   .right .acts2 { display:flex; gap:var(--s2); flex-wrap:wrap; } .right .acts2 a { color:var(--link); font-weight:600; }
-  .right .rempty { color:var(--faint); text-align:center; margin-top:40%; }
   .drawer-close { display:none; }
   .sowner { display:flex; align-items:center; gap:var(--s2); margin-top:var(--s2); font:600 var(--t-label) var(--sans); color:var(--dim); } .sowner select { flex:1; min-width:0; min-height:28px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--panel); color:var(--ink); padding:0 8px; font:400 var(--t-sub) var(--sans); }
   .side .sfilters { flex-direction:column; align-items:stretch; flex-wrap:nowrap; padding:0 var(--s4) var(--s4); margin:0; gap:var(--s3); }
@@ -500,7 +498,6 @@
   .dtab td { vertical-align:top; } .dtab td:nth-child(n+3) { white-space:nowrap; color:var(--dim); }
   .bwhere { margin:0 0 var(--s3); font-size:var(--t-sub); color:var(--dim); }
   .vh { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
-  .bempty { margin:0; padding:4px var(--s3) var(--s3); color:var(--faint); font-size:var(--t-sub); }
   details.bout { border-top:1px solid var(--line); } details.bout > summary { cursor:pointer; padding:var(--s3); font-size:var(--t-label); font-weight:700; color:var(--dim); }
   @media (max-width:720px) {
     .bstops { display:none; }
@@ -528,7 +525,7 @@
   .stat, a.card.stat { display:flex; flex-direction:column; gap:4px; min-width:0; }
   .stat .lbl { font:600 var(--t-label) var(--head); text-transform:uppercase; letter-spacing:.05em; color:var(--dim); }
   .stat .big { font:700 var(--t-kpi)/1.1 var(--head); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-  .stat .sub { font-size:var(--t-sub); color:var(--faint); } .stat.bad .big { color:var(--bad); } .stat.warn .big { color:var(--warn); }
+  .stat .sub { font-size:var(--t-sub); color:var(--faint); } .stat .sub a { color:var(--link); } .stat.bad .big { color:var(--bad); } .stat.warn .big { color:var(--warn); }
   :is([data-routines], [data-tform], [data-memory]) h3 { margin:0; font:700 var(--t-heading)/1.3 var(--head); display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; }
   :is([data-routines], [data-tform], [data-memory]) h3 .n { color:var(--dim); font-size:var(--t-body); font-variant-numeric:tabular-nums; }
   :is([data-routines], [data-tform], [data-memory]) .tsub { max-width:68ch; } :is([data-routines], [data-tform], [data-memory]) .hint { margin:0; color:var(--faint); font-size:var(--t-sub); }
@@ -591,18 +588,14 @@
   [data-tform] details > summary { cursor:pointer; } [data-tform] .tmore { padding-top:var(--s3); }
   @media (max-width:900px) { .rtcols { grid-template-columns:minmax(0,1fr); } }
 /* Sandboxes list (i407 sb-list-fixes) */
-#s-sb #sb-head { margin-bottom:var(--s3); }
-.sbl { list-style:none; margin:0; padding:0; }
-.sbl li { display:flex; flex-wrap:wrap; align-items:baseline; gap:var(--s1) var(--s3); padding:var(--s2) var(--s2); border-top:1px solid var(--line); font-size:var(--t-sub); min-width:0; }
-.sbl li[aria-current] { background:var(--infobg); box-shadow:inset 3px 0 0 var(--info); }
-.sbl li.fixr { border-left:3px solid var(--warn); }
-.sbl li.bad > button { color:var(--bad); }
+.sbl { overflow-x:auto; } .sbl .what { min-width:20ch; overflow-wrap:anywhere; } .sbl td:first-child { white-space:nowrap; }
+.sbl tr.fixr:not(.sel) td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
+.sbl tr.bad button { color:var(--bad); }
 .sbl button { font:600 var(--t-sub) var(--mono); background:none; border:0; padding:0; color:var(--link); cursor:pointer; text-align:left; } .sbl button:hover:not(:disabled) { background:none; text-decoration:underline; }
-.sbl .f { color:var(--dim); min-width:0; overflow-wrap:anywhere; }
-.sbl .f > .vh { position:static; width:auto; height:auto; overflow:visible; clip:auto; color:var(--faint); }
-.sbl .tb .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
-.sbl .tb.over { color:var(--bad); }
-.sbl code { font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
+.sbl .steps { display:block; color:var(--dim); }
+.sbl .meter { display:inline-block; width:60px; vertical-align:middle; margin-right:4px; }
+.sbl .over { color:var(--bad); white-space:nowrap; }
+.sbl code { display:block; width:max-content; max-width:100%; margin-top:4px; font:var(--t-label) var(--mono); background:var(--sunk); padding:2px 6px; border-radius:var(--r-sm); overflow-wrap:anywhere; user-select:all; }
 .sbh { margin:var(--s4) 0 var(--s1); }
 .sbfree, .sbage, .sbstale { font-size:var(--t-sub); color:var(--dim); margin:var(--s2) 0; overflow-wrap:anywhere; }
 .sbfree { font-family:var(--mono); } .sbstale { color:var(--warn); }
@@ -647,7 +640,7 @@
   <section class="wide card" id="s-done" data-views="pipeline:done"></section>
   <section class="wide card" id="s-review" data-views="pipeline:queue"></section>
   <section class="wide card" id="s-queue" data-views="pipeline:queue"></section>
-  <section class="wide card stack lg" id="s-sb" data-views="runners"><div id="sb-head"></div><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done" class="sbdone"></div></section>
+  <section class="wide card stack lg" id="s-sb" data-views="runners"><div id="sb-cards"></div><div id="sb-list"></div><div id="sb-done" class="sbdone"></div></section>
 </div>
 </div>
 </main>
@@ -1011,13 +1004,7 @@ function ovFloor() {
   });
   return { tiles, atWork: tiles.filter(t => t.kind !== "free" && t.alive).length, slots: f.slots, admin: f.admin };
 }
-// The floor header (i356 D5, D35): Overview Running now and the Sandboxes chip say the same words.
-function floorHead(f) {
-  const ts = f.tiles ?? f.rows, pipe = ts.filter(t => t.kind === "pipe"), stalled = pipe.filter(t => t.fault).length, slack = ts.filter(t => t.kind === "slack"), rt = ts.filter(t => t.kind === "routine");
-  const waits = [...slack, ...rt].filter(t => t.waits).length, n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
-  const sess = f.admin ? [slack.length && n(slack.length, "Slack session"), rt.length && n(rt.length, "scheduled run")].filter(Boolean).join(" and ") : slack.length + rt.length ? n(slack.length + rt.length, "session") : "";
-  return `${pipe.length} of ${f.slots} pipeline sandboxes in use${stalled ? ` (${stalled} stalled)` : ""}${sess ? `, plus ${sess}` : ""}${waits ? ` (${waits} wait${waits === 1 ? "s" : ""} on ${waits === 1 ? "its" : "their"} owner${waits === 1 ? "" : "s"})` : ""}`;
-}
+
 // "fxa-auto-4, 5, 6": a run of slot names with one prefix shows the prefix once.
 function slotList(l) {
   const m = l.map(x => String(x).match(/^(.*?)(\d+)$/)), pre = m[0]?.[1];
@@ -1934,24 +1921,23 @@ function teamReadiness(t) {
 }
 function teamOverview(t) {
   const use = teamUse(), u = use?.[t.profile], er = teamErrs(), b = t.budget, r = rtSum(t.profile), base = `#teams/${t.profile}`;
-  const tc = body => card(body, { cls: "tcard" }), sub = (body, tone) => card(body, { flat: true, sm: true, tone, cls: "tsub2" });
-  const cost = t.budget_error ? html`<div class="tl">Cost this month</div><div class="tv">—</div><div class="unknown">budget unknown: the spend file cannot be read</div>`
-    : b ? html`<div class="tl">Cost this month${b.month_cap ? ", of budget" : ""}</div><div class="tv num">${usd(b.month_usd)}${b.month_cap ? html` <span class="tm">of ${usd(b.month_cap)}</span>` : html` <span class="tm">no cap</span>`}</div>${b.month_cap ? meter(100 * b.month_usd / b.month_cap, b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok") : ""}`
-    : html`<div class="tl">Cost, 30 days</div><div class="tv num">${use ? usd(u?.usd ?? 0) : "—"}</div><div class="na">budget unknown on this host</div>`;
-  const split = use ? html`<div class="tm">Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
-  const test = t.access?.record || t.test ? testCell(t) : html`<span class="na">no record to test</span>`;
+  const tc = body => card(body, { cls: "tcard" });
+  const split = use ? html`<div>Slack ${usd(u?.slack_usd ?? 0)} · pipeline ${usd(u?.pipe_usd ?? 0)}, 30 days</div>` : "";
+  const cost = t.budget_error ? statTile("Cost this month", "—", html`<span class="unknown">budget unknown: the spend file cannot be read</span>`)
+    : b ? statTile(`Cost this month${b.month_cap ? ", of budget" : ""}`, usd(b.month_usd), html`${b.month_cap ? html`of ${usd(b.month_cap)}${meter(100 * b.month_usd / b.month_cap, b.month_usd >= b.month_cap ? "bad" : b.month_usd >= 0.9 * b.month_cap ? "warn" : "ok")}` : "no cap"}${split}`)
+    : statTile("Cost, 30 days", use ? usd(u?.usd ?? 0) : "—", html`budget unknown on this host${split}`);
   const tested = (t.issues ?? []).find(i => /^last passed at generation/.test(i.text));
   const tab = (() => { const h = sessHeads(AGENTS?.sessions ?? []).filter(x => (x.profile || "fxa") === t.profile).sort((x, y) => y.created - x.created)[0]; return h ? sessTabOf(h) : "stopped"; })();
   return html`${teamBanner(t)}<div class="tcards4">
-      ${tc(html`${cost}${split}`)}
-      ${tc(html`<div class="tl">Active now</div><div class="tv">${use ? u?.live ?? 0 : "—"}</div><a href="#sessions/${tab}" data-team-sess="${t.profile}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${t.profile}">Its spend in Stats</a>`)}
-      ${tc(html`<div class="tl">Open errors</div><div class="tv">${er ? er[t.profile] ?? 0 : "—"}</div><a href="#errors">Open in Errors</a>`)}
-      ${tc(html`<div class="tl">Last profile test</div><div class="tv">${test}</div>${tested ? html`<div class="na">${tested.text}</div>` : ""}`)}</div>
+      ${cost}
+      ${statTile("Active now", use ? u?.live ?? 0 : "—", html`<a href="#sessions/${tab}" data-team-sess="${t.profile}">Its sessions</a> · <a href="#stats/spend" data-team-stats="${t.profile}">Its spend in Stats</a>`)}
+      ${statTile("Open errors", er ? er[t.profile] ?? 0 : "—", html`<a href="#errors">Open in Errors</a>`)}
+      ${t.access?.record || t.test ? statTile("Last profile test", testCell(t), tested ? tested.text : "") : statTile("Last profile test", "—", "no record to test")}</div>
     <div class="tcols">${tc(html`<h3>Activity, 30 days</h3>${teamActivity(t.profile)}`)}${tc(html`<h3>Recent work</h3>${teamRecent(t.profile)}`)}</div>
     ${r ? tc(html`<h3>Routines <a href="${base}/routines" class="na">All ${r.routines} routine${r.routines === 1 ? "" : "s"}</a></h3><div class="tcards3">
-      ${sub(html`<div class="tl">${r.failed ? "Failed last run" : "Failed runs"}</div><b>${r.last_failed ? r.last_failed.name ?? "" : "none"}</b>${r.last_failed ? html`<div class="tm">${ago(Math.round(Date.now() / 1000 - r.last_failed.at))} · ${r.last_failed.reason ?? ""}</div>` : ""}`, r.failed ? "bad" : "")}
-      ${sub(html`<div class="tl">Routines</div><b>${r.routines}</b><div class="tm">${r.paused} paused · ${r.live} running</div>`)}
-      ${sub(html`<div class="tl">Routine cost, 30 days</div><b>${usd(r.cost_30d)}</b><div class="tm">${r.runs_30d} run${r.runs_30d === 1 ? "" : "s"}</div>`)}</div>`)
+      ${statTile(r.failed ? "Failed last run" : "Failed runs", r.last_failed ? r.last_failed.name ?? "" : "none", r.last_failed ? `${ago(Math.round(Date.now() / 1000 - r.last_failed.at))} · ${r.last_failed.reason ?? ""}` : "", r.failed ? "bad" : "")}
+      ${statTile("Routines", r.routines, `${r.paused} paused · ${r.live} running`)}
+      ${statTile("Routine cost, 30 days", usd(r.cost_30d), `${r.runs_30d} run${r.runs_30d === 1 ? "" : "s"}`)}</div>`)
       : TEAM_ADMIN?.admin && RTSUM_ERR ? tc(html`<p class="unknown">Routine status unknown: ${RTSUM_ERR}</p>`) : ""}
     ${teamReadiness(t)}`;
 }
@@ -3049,6 +3035,8 @@ function runnerCard(rows) {
     <h2>Why they stopped</h2>${stops.map(([k, n]) => html`<div class="kv"><b>${k}</b><span>${n}</span></div>`)}`, { flat: true, cls: "chart" });
 }
 // LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
+// One row a day: the first cell is the YYYY-MM-DD day, the rest are figures.
+const dayTable = (head, rows) => html`<div class="tscroll">${table(["Day", ...head], rows.map(([d, ...c]) => html`<tr><td class="nowrap">${shortDay(`${d}T00:00`)}</td>${c.map(v => html`<td>${v}</td>`)}</tr>`), { figures: true, dense: true })}</div>`;
 function llmCard(l, lo, hi) {
   const days = inRange(l?.days, lo, hi).reverse();
   if (!days.length) return card(html`<h2>LLM spend<span class="note">proxy log</span></h2><div class="empty">No proxy log yet.</div>`, { flat: true, cls: "chart" });
@@ -3061,7 +3049,7 @@ function llmCard(l, lo, hi) {
     <div class="kv"><b>In this range</b><span><b>${usd(days.reduce((x, d) => x + d.usd, 0))}</b> · ${days.reduce((x, d) => x + d.calls, 0)} calls</span></div>
     ${models}
     <div class="kv"><b>Cache rewrites after a 5 min gap</b><span>${usd(l.gap_usd ?? 0)}</span></div>
-    ${days.map(d => html`<div class="kv"><span class="mono">${d.day}</span><span>${d.calls} calls · <b>${usd(d.usd)}</b>${d.cache_write_usd ? ` · ${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}% cache writes` : ""}</span></div>`)}`, { flat: true, cls: "chart" });
+    ${dayTable(["Calls", "Cost", "Cache writes"], days.map(d => [d.day, d.calls, usd(d.usd), d.cache_write_usd ? `${Math.round(d.cache_write_usd / Math.max(d.usd, 0.01) * 100)}%` : ""]))}`, { flat: true, cls: "chart" });
 }
 // The pipeline's passes and queue: days from passes.jsonl, waits from queued to first run.
 function answerCard(rows) {
@@ -3134,7 +3122,7 @@ function loadCard(l, lo, hi) {
   const mins = s => s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`;
   if (!days.length) return card(html`<h2>Sessions at once<span class="note">cap ${l?.cap ?? "?"}</span></h2><div class="empty">No session with a stop time yet.</div>`, { flat: true, cls: "chart" });
   return card(html`<h2>Sessions at once<span class="note">Slack, peak per day, cap ${l.cap}</span></h2>
-    ${days.map(d => html`<div class="kv"><span class="mono">${d.day}</span><span${d.peak >= l.cap ? html` style="color:var(--warn)"` : ""}>peak ${d.peak} of ${l.cap}${d.queued ? ` · ${d.queued} waited, up to ${mins(d.wait_max_s)}` : ""}${d.dropped ? ` · ${d.dropped} dropped` : ""}</span></div>`)}`, { flat: true, cls: "chart" });
+    ${dayTable(["Peak", "Waited", "Dropped"], days.map(d => [d.day, d.peak >= l.cap ? html`<span class="warnt">${d.peak} of ${l.cap}</span>` : `${d.peak} of ${l.cap}`, d.queued ? `${d.queued}, up to ${mins(d.wait_max_s)}` : "", d.dropped || ""]))}`, { flat: true, cls: "chart" });
 }
 function pipelineCard(p, lo, hi) {
   const days = inRange(p?.days, lo, hi).reverse(), w = (p?.waits ?? []).map(x => x.hours).sort((a, b) => a - b);
@@ -3144,8 +3132,8 @@ function pipelineCard(p, lo, hi) {
     ${w.length ? html`<div class="kv"><b>Queued to first run</b><span>median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets</span></div>
       <div class="kv"><b>Queued to PR</b><span>${medOf("pr_hours")}</span></div><div class="kv"><b>Queued to merge</b><span>${medOf("merge_hours")}</span></div>` : ""}
     <div class="kv"><b>Tickets retried</b><span>${p.retried} of ${p.tickets}</span></div>
-    ${days.map(d => { const wk = Object.entries(d.woke ?? {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ");
-      return html`<div class="kv"><span class="mono">${d.day}</span><span title="${wk ? `woke: ${wk}` : ""}">${d.passes} passes · ${d.work} with work${wk ? ` (${wk})` : ""} · queue up to ${d.max_queued} · ${d.inflight} in flight${d.merged ? ` · ${d.merged} merged` : ""}${d.rejected ? ` · ${d.rejected} rejected` : ""}${d.usd ? ` · ${usd(d.usd)}` : ""}</span></div>`; })}`, { flat: true, cls: "chart" });
+    ${dayTable(["Passes", "Work", "Queue", "In flight", "Merged", "Cost"], days.map(d => { const wk = Object.entries(d.woke ?? {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(", ");
+      return [d.day, d.passes, wk ? html`<span title="woke: ${wk}">${d.work}</span>` : d.work, d.max_queued, d.inflight, `${d.merged || ""}${d.rejected ? ` (${d.rejected} rejected)` : ""}`, d.usd ? usd(d.usd) : ""]; }))}`, { flat: true, cls: "chart" });
 }
 function memoryCard(m) {
   if (!m) return "";
@@ -3524,7 +3512,7 @@ function beltWhere(g) {
     : d ? html`${k} ${d.l1.replace(/^Merged/, "merged")} (<a href="#pipeline/done">Done</a>)` : html`${k} is not on a belt now. Look in <a href="#pipeline/queue">Queue and review</a> or <a href="#pipeline/done">Done</a>.`;
 }
 function beltsHtml(g) {
-  if (!SNAP) return html`<p class="bempty">Loading the pipeline…</p>`;
+  if (!SNAP) return emptybox("Loading the pipeline…");
   const n = beltCount(g), q = x => x == null ? "?" : x, live = g.working.some(r => r.t.agent_alive);
   const counts = LANE_ST.map((_, j) => BELT_GROUPS.reduce((c, [k]) => c + g[k].filter(r => r.st === j).length, 0));
   const old = g.outside.filter(r => r.age >= 3).length;
@@ -3536,14 +3524,14 @@ function beltsHtml(g) {
     ${stat("Agents working", q(g.unknown.working ? null : g.working.length), html`${live ? html`${dot("info", true)} live · ` : ""}${q(n)} belt${n === 1 ? "" : "s"} in all`)}
     ${stat("Open PRs", pc ? pc.total : "—", pc ? pc.parts : "GitHub did not answer", "", pc ? prHref : "")}${stat("Merged, 7 days", merged ?? "—", merged == null ? "GitHub did not answer" : "pipeline tickets")}</div>`;
   const where = beltWhere(g);
-  const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => html`<p class="bempty">${name}: ${g.unknown[k]}</p>`);
+  const unknown = BELT_GROUPS.filter(([k]) => g.unknown[k]).map(([k, name]) => emptybox(html`${name}: ${g.unknown[k]}`));
   // An unknown group (its feed failed) lists no rows and makes its phase count '?': never a confident figure.
   const sub = ([k, who, name, pick], lo, hi) => { if (g.unknown[k]) return ""; const rs = g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)); return rs.length
     ? html`<div role="group" aria-label="${name}"><h3 class="bsub"><span class="bi">${strokeSvg(BELT_HINT[name]?.[0] ?? "")}</span><span class="who">${who}</span>${name} <span class="cnt">${rs.length}</span><span class="hint">${BELT_HINT[name]?.[1] ?? ""}</span></h3><ul class="belts">${rs.map(beltRow)}</ul></div>` : ""; };
   const phases = BELT_PHASES.map(([name, why, lo, hi]) => { const body = BELT_SUBS.map(x => sub(x, lo, hi)).filter(Boolean); return body.length
     ? html`<div role="group" aria-labelledby="bp-${lo}"><h2 class="bgh" id="bp-${lo}">${name} <span class="cnt">${BELT_SUBS.some(([k]) => g.unknown[k]) ? "?" : BELT_SUBS.reduce((c, [k, , , pick]) => c + g[k].filter(r => r.st >= lo && r.st <= hi && pick(r)).length, 0)}</span><span class="why">${why}</span></h2>${body}</div>` : ""; }).filter(Boolean);
   return html`${head}${where ? html`<p class="bwhere">${where}</p>` : ""}<div class="bwrap"><div class="bgrid bstops"><span>Ticket</span><div><div class="phs"><b style="grid-column:1/2">Queue</b><b style="grid-column:2/6">Agent run</b><b style="grid-column:6/10">PR</b></div><div class="cols">${LANE_ST.map((s, j) => html`<div><b title="${s}">${s}</b><span>${counts[j] || "·"}</span></div>`)}</div></div><span class="r">Status</span></div>
-    ${unknown}${phases.length ? phases : unknown.length ? "" : html`<p class="bempty">Nothing on the belts.</p>`}
+    ${unknown}${phases.length ? phases : unknown.length ? "" : emptybox("Nothing on the belts.")}
     ${g.outside.length ? html`<details class="bout" data-k="outside"${OUTSIDE_OPEN || g.outside.some(r => r.t.key === SEL.pipeline) ? html` open` : ""}><summary>Outside the pipeline (${g.outside.length})${old ? ` · ${old} wait 3+ days` : ""}</summary><ul class="belts">${g.outside.map(beltRow)}</ul></details>` : ""}</div>`;
 }
 function renderLanes() {
@@ -3576,8 +3564,8 @@ function doneRows() {
 // Done: one compact row per merged ticket, newest first, with the cap and the label in the header.
 function doneHtml() {
   const prs = SNAP?.merged_prs, rows = doneRows(), lbl = SNAP?.team?.pr_label, cap = SNAP?.limits?.merged_prs ?? prs?.length ?? 0;
-  if (prs == null) return html`<p class="bempty">Could not read merged PRs from GitHub.</p>`;
-  if (!rows.length) return html`<p class="bempty">No merged ticket yet.</p>`;
+  if (prs == null) return emptybox("Could not read merged PRs from GitHub.");
+  if (!rows.length) return emptybox("No merged ticket yet.");
   const took = rows.map(r => (Date.parse(r.merged) - Date.parse(r.t.created)) / 86400000).filter(Number.isFinite).sort((a, b) => a - b);
   const wk = rows.filter(r => (days(r.merged) ?? 99) < 7).length, med = took.length ? Math.round(took[took.length >> 1]) : null;
   return html`<div class="rtkpis ptiles">${statTile("Tickets merged", rows.length, `from the last ${cap} merged PRs`)}${statTile("Merged, 7 days", wk, wk === 1 ? "ticket" : "tickets")}
@@ -3761,13 +3749,7 @@ function sbBadge() {
   const n = r.fix.length;
   return n ? { n, cls: "warn", label: `${n} sandbox${n === 1 ? " needs" : "es need"} a fix` } : { n: "", cls: "", label: "" };
 }
-// The chip: the floor header's words; '? in use' on a failed or stale feed, whatever the snapshot says.
-function renderSbHead() {
-  if (!AGENTS) return put("sb-head", String(tag("Loading…")));
-  const f = floorRows(), bad = f.stale || f.unknown, n = bad ? 0 : f.rows.filter(t => t.kind !== "free").length;
-  const txt = bad ? "? in use" : n ? floorHead(f) : "No sandbox in use";
-  put("sb-head", String(tag(txt, n ? "info" : "", { run: true, live: !!n })));
-}
+
 function renderSbList() {
   if (!AGENTS) return put("sb-list", String(emptybox("Loading…")));
   const r = sbRows(), admin = !!TEAM_ADMIN?.admin, t = TAB || "all";
@@ -3776,26 +3758,26 @@ function renderSbList() {
   const SRC = { pipeline: "Pipeline", slack: "Slack", routine: "Routine" };
   const whereTxt = x => x.src === "pipeline" ? (x.slot ? `${x.slot} · GCE slot` : x.where === "firecracker" ? "Firecracker" : "GCE") : `session · ${x.where === "gce" ? "GCE" : x.where === "firecracker" ? "Firecracker" : "starting"}`;
   const forTxt = x => x.src === "routine" ? (admin && x.routine_name ? x.routine_name : "Routine · scheduled run") : `${SRC[x.src]} ${x.key}`;
-  const fld = (l, v) => v ? html`<span class="f"><span class="vh">${l}: </span>${v}</span>` : "";
   const bar = x => { if (x.age == null || !x.cap) return ""; const over = x.age >= x.cap;
-    return html`<span class="${cls("f tb", { over })}"><span class="vh">Time: </span>${meter(x.age / x.cap * 100, over ? "bad" : "")}${short(x.age)} of ${short(x.cap)}${over ? " · over cap" : ""}</span>`; };
-  const row = x => html`<li class="${x.fix ? "fixr" : x.fault ? "bad" : ""}"${x.id === SEL.runners ? html` aria-current="true"` : ""}><button type="button" data-sbsel="${x.id}" aria-label="${forTxt(x)}, details">${forTxt(x)}</button>
-    ${fld("What", plainMd(x.title))}${fld("Now", x.fix ? x.fix.why : x.state)}${fld("Team", x.team ? teamLabel(x.team) : "")}${fld("Where", whereTxt(x))}${x.fix ? "" : bar(x)}${fld("LLM cost", x.cost != null ? usd(x.cost) : "")}
-    ${x.fix?.cmd ? html`<code>${x.fix.cmd}</code>` : x.fix?.steps && !r.stale ? html`<span class="f steps">${x.fix.steps}</span>` : ""}</li>`;
+    return html`<span class="${cls({ over })}">${meter(x.age / x.cap * 100, over ? "bad" : "")}${short(x.age)} of ${short(x.cap)}${over ? " · over cap" : ""}</span>`; };
+  const row = x => html`<tr class="${cls({ fixr: x.fix, bad: !x.fix && x.fault, sel: x.id === SEL.runners })}"${x.id === SEL.runners ? html` aria-current="true"` : ""}><td><button type="button" data-sbsel="${x.id}" aria-label="${forTxt(x)}, details">${forTxt(x)}</button></td>
+    <td class="what">${plainMd(x.title)}</td><td>${x.fix ? x.fix.why : x.state}${x.fix?.cmd ? html`<code>${x.fix.cmd}</code>` : x.fix?.steps && !r.stale ? html`<span class="steps">${x.fix.steps}</span>` : ""}</td>
+    <td>${x.team ? teamLabel(x.team) : ""}</td><td>${whereTxt(x)}</td><td>${x.fix ? "" : bar(x)}</td><td class="num">${x.cost != null ? usd(x.cost) : ""}</td></tr>`;
+  const list = xs => html`<div class="sbl">${table(["For", "What", "Now", "Team", "Where", "Time", ["LLM cost", "num"]], xs.map(row))}</div>`;
   const live = r.live.filter(sbTabHas), fix = r.fix.filter(sbTabHas), pool = t === "all" || t === "pipeline";
   const none = !(AGENTS.pool ?? []).length && !(AGENTS.free_slots ?? []).length && !r.live.length ? "No sandbox slot is set up, and no Slack session is live." : "No sandbox runs now.";
   // A stale feed keeps its last rows under the warning, with no free line: a free slot may be taken by now.
   const freeLine = r.stale ? "" : [pool && r.free.some(x => !x.held) ? slotList(r.free.filter(x => !x.held).map(x => x.slot)) : "", pool && r.free.some(x => x.held) ? `held for a run in flight: ${r.free.filter(x => x.held).map(x => `${x.slot} (${x.held})`).join(", ")}` : "",
     ...(pool ? r.unknown.map(u => u.why) : []), r.sessionFree != null && (t === "all" || t === "slack") ? `${r.sessionFree} session slot${r.sessionFree === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   const a = STATE.agents_age_seconds, i = STATE.agents_interval;
-  put("sb-list", String(html`${r.stale ? html`<p class="sbstale">The agents feed is ${Math.round(a / 60)} min old: these rows may be out of date.</p>` : ""}${live.length ? html`<ul class="sbl">${live.map(row)}</ul>` : r.stale ? "" : emptybox(none)}
-    ${fix.length ? html`<h3 class="sbh">Needs a fix · ${fix.length}</h3><ul class="sbl">${fix.map(row)}</ul>` : ""}
+  put("sb-list", String(html`${r.stale ? html`<p class="sbstale">The agents feed is ${Math.round(a / 60)} min old: these rows may be out of date.</p>` : ""}${live.length ? list(live) : r.stale ? "" : emptybox(none)}
+    ${fix.length ? html`<h3 class="sbh">Needs a fix · ${fix.length}</h3>${list(fix)}` : ""}
     ${freeLine ? html`<h3 class="sbh">Free slots</h3><p class="sbfree">${freeLine}</p>` : ""}
     ${a != null ? html`<p class="sbage">Agents read ${ago(a)}${i ? ` · the next read in about ${Math.max(0, Math.round(i - a))} s` : ""}</p>` : ""}`));
 }
 // Each part fails alone (i356 D26).
 function renderSb() {
-  safeRender(renderSbHead, "sb-head"); safeRender(renderSbList, "sb-list");
+  safeRender(renderSbList, "sb-list");
   safeRender(renderSbCards, "sb-cards"); safeRender(renderSbDone, "sb-done");
 }
 document.addEventListener("click", e => {
@@ -4090,10 +4072,10 @@ function renderRight() {
       ${e.log ? kvRow("Log", html`<span class="mono">${e.log}</span>`) : ""}${e.resolved ? kvRow("Resolved", `${e.resolved.at.slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ""}`) : ""}</div>
       <div><h4>Message</h4><div class="mono" style="overflow-wrap:anywhere">${e.message}</div></div>
       <div><h4>Mark it fixed</h4><div class="mono" style="overflow-wrap:anywhere">fxa-sandbox-ctl errors resolve ${e.sig} "&lt;commit or note&gt;"</div></div>`); }
-  else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = String(html`<p class="rempty">This panel did not render: ${e.message}</p>`); }
+  else if (VIEW === "runners" && SEL.runners) { let d = null; try { d = sbDetails(SEL.runners); } catch (e) { d = String(emptybox(html`This panel did not render: ${e.message}`)); }
     if (d == null) sbClearGone(); else body = d; }
   else if (VIEW === "teams") { renderTeams(); return; }
-  const out = body || `<p class="rempty">Select an item in the list to see its details.</p>`;
+  const out = body || String(emptybox("Select an item in the list to see its details."));
   // The Pipeline rail is written only when it changes, so a refresh keeps the keyboard focus a person put in it.
   if (VIEW === "pipeline" && el.dataset.h === out) return;
   el.dataset.h = out;

@@ -64,15 +64,15 @@ ck "Watch the agent opens the terminal, moves the focus there, and a poll keeps 
   renderLanes(); await w(); return [o, f, d().open].join("|")')"
 # Sandboxes (i407 sb-list-fixes): one list on the Overview floor rows, fix rows with a safe command, the badge.
 B="$(dirname "$0")/page-fixture-sandboxes.json"
-sbw='const w = () => new Promise(r => setTimeout(r, 300)); await w(); const L = () => document.getElementById("sb-list"), H = () => document.getElementById("sb-head").textContent.trim(), N = () => document.getElementById("n-runners");
+sbw='const w = () => new Promise(r => setTimeout(r, 300)); await w(); const L = () => document.getElementById("sb-list"), N = () => document.getElementById("n-runners");
   const codes = () => [...L().querySelectorAll("code")].map(c => c.textContent), inBtn = () => [...L().querySelectorAll("button code, button .steps")].length;'
-ck "Sandboxes: the chip equals the floor, live rows then 'Needs a fix · 3', commands in <code> outside the buttons, the badge" "2 of 5 pipeline sandboxes in use, plus 1 Slack session and 1 scheduled run|true|EX-101,EX-102,agent-ex0001,Nightly review,agent-ex0003|Needs a fix · 3|fxa-sandbox-ctl stop agent-ex0004;fxa-sandbox-ctl stop agent-41c0e6|0|true|3|3 sandboxes need a fix|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
-  render(); const live = [...L().querySelectorAll("ul.sbl")[0].querySelectorAll("button")].map(b => b.textContent.replace(/^(Pipeline|Slack) /, ""));
-  return [H(), H() === floorHead(ovFloor()) && sbRows().live[0].max_seconds === 5400 && sbRows().live[0].usd === 1.25, live.join(","), L().querySelector("h3.sbh").textContent, codes().join(";"), inBtn(), /ex-auto-4 is not free for a launch\. Its last ticket EX-130 is not in flight/.test(L().textContent) && /fxa-sandbox-ctl slots/.test(L().textContent),
+ck "Sandboxes: live rows then 'Needs a fix · 3', commands in <code> outside the buttons, the badge" "true|EX-101,EX-102,agent-ex0001,Nightly review,agent-ex0003|Needs a fix · 3|fxa-sandbox-ctl stop agent-ex0004;fxa-sandbox-ctl stop agent-41c0e6|0|true|3|3 sandboxes need a fix|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  render(); const live = [...L().querySelectorAll(".sbl")[0].querySelectorAll("button")].map(b => b.textContent.replace(/^(Pipeline|Slack) /, ""));
+  return [sbRows().live[0].max_seconds === 5400 && sbRows().live[0].usd === 1.25, live.join(","), L().querySelector("h3.sbh").textContent, codes().join(";"), inBtn(), /ex-auto-4 is not free for a launch\. Its last ticket EX-130 is not in flight/.test(L().textContent) && /fxa-sandbox-ctl slots/.test(L().textContent),
     N().textContent, N().getAttribute("aria-label"), /ex-auto-3 · held for a run in flight: ex-auto-5 \(EX-103\) · 2 session slots/.test(L().textContent)].join("|")')"
-ck "Sandboxes as a non-admin: no routine name, no routine link, the Routines tab says why" "2 of 5 pipeline sandboxes in use, plus 2 sessions|false|true|false|Only a team admin can see routine runs." "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+ck "Sandboxes as a non-admin: no routine name, no routine link, the Routines tab says why" "false|true|false|Only a team admin can see routine runs." "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   TEAM_ADMIN = { admin: false }; render(); const t = L().innerHTML;
-  const r = [H(), /Nightly review/.test(t + document.getElementById("sb-head").innerHTML), /Routine · scheduled run/.test(t), /href=/.test(t)];
+  const r = [/Nightly review/.test(t), /Routine · scheduled run/.test(t), /href=/.test(t)];
   location.hash = "#runners/routines"; await w(); return [...r, L().textContent.trim()].join("|")')"
 ck "Sandboxes: feed text never becomes markup, and a command shows only for a safe name" "true|false|true|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.instances.push({ name: "agent-x;rm -rf ~", state: "terminated", age_seconds: 9000, where: "gce" }); AGENTS.sessions[0].request = "<img src=x onerror=alert(1)>"; render();
@@ -96,12 +96,12 @@ ck "Sandboxes review: the panel of a real live row ('working') opens the session
   const id = "sess:agent-ex0001", h = document.createElement("div"); h.innerHTML = sbDetails(id) || "";
   return [sbRows().live.find(x => x.id === id)?.state, [...h.querySelectorAll("a")].map(a => a.getAttribute("href")).find(x => /^#sessions\//.test(x || ""))].join("|")')"
 ck "Sandboxes: a normal stop is 'stopping' with no command; 10 min later it is a fix row" "stopping|false|true|4" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
-  const st = () => [...L().querySelectorAll("li")].find(li => li.querySelector("[data-sbsel=\"sess:agent-ex0003\"], [data-sbsel=\"fix:agent-agent-ex0003\"]"));
-  const a = st().querySelector(".f:nth-of-type(2)")?.textContent.replace(/^Now: /, ""), b = codes().includes("fxa-sandbox-ctl stop agent-ex0003");
+  const st = () => [...L().querySelectorAll("tbody tr")].find(li => li.querySelector("[data-sbsel=\"sess:agent-ex0003\"], [data-sbsel=\"fix:agent-agent-ex0003\"]"));
+  const a = st().querySelector("td:nth-child(3)")?.textContent, b = codes().includes("fxa-sandbox-ctl stop agent-ex0003");
   AGENTS.sessions[2].stopped_at = Date.now() / 1000 - 700; render();
   return [a, b, codes().includes("fxa-sandbox-ctl stop agent-ex0003"), N().textContent].join("|")')"
-ck "Sandboxes: a stale feed shows the rows with a warning, no command, '? in use' and badge '?'" "? in use|true|0|?|Sandbox fixes unknown: the agents feed could not be read" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
-  STATE.agents_age_seconds = 600; render(); return [H(), /The agents feed is 10 min old: these rows may be out of date\./.test(L().textContent), codes().length, N().textContent, N().getAttribute("aria-label")].join("|")')"
+ck "Sandboxes: a stale feed shows the rows with a warning, no command, and badge '?'" "true|0|?|Sandbox fixes unknown: the agents feed could not be read" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  STATE.agents_age_seconds = 600; render(); return [/The agents feed is 10 min old: these rows may be out of date\./.test(L().textContent), codes().length, N().textContent, N().getAttribute("aria-label")].join("|")')"
 ck "Sandboxes: a held slot names a ticket only when it is one, and an old snapshot is not checked yet" "true|true|?|false" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.pool[3] = { ...AGENTS.pool[3], key: "HEAD", branch: "HEAD" }; render(); const a = /ex-auto-4 is not free for a launch \(branch HEAD\)/.test(L().textContent);
   AGENTS.pool[3] = { ...AGENTS.pool[3], key: "EX-130", branch: "ex-130" }; SNAP.generated_at = new Date(Date.parse(AGENTS.generated_at) - 9999e3).toISOString(); render();
@@ -109,21 +109,25 @@ ck "Sandboxes: a held slot names a ticket only when it is one, and an old snapsh
 ck "Sandboxes: the tabs filter the list" "EX-101,EX-102,agent-agent-41c0e6,EX-130|agent-ex0001,agent-ex0003,agent-ex0004|Nightly review" "$(bash "$p" '#runners/pipeline' --fixture "$B" --width 1280 --probe "$sbw"'
   render(); const keys = () => [...L().querySelectorAll("[data-sbsel]")].map(b => b.textContent.replace(/^(Pipeline|Slack) /, "")).join(",");
   const a = keys(); location.hash = "#runners/slack"; await w(); const b = keys(); location.hash = "#runners/routines"; await w(); return [a, b, keys()].join("|")')"
-ck "Sandboxes: nothing runs; nothing set up; the feed failed" "No sandbox runs now.|No sandbox in use|true|No sandbox slot is set up, and no Slack session is live.|Sandboxes unknown: the agents feed could not be read.|? in use|?" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+ck "Sandboxes: nothing runs; nothing set up; the feed failed" "No sandbox runs now.|true|No sandbox slot is set up, and no Slack session is live.|Sandboxes unknown: the agents feed could not be read.|?" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
   AGENTS.runners = []; AGENTS.sessions = []; AGENTS.instances = []; AGENTS.pool = AGENTS.pool.map(x => ({ ...x, agent: null, busy: false, key: null })); AGENTS.free_slots = AGENTS.pool.map(x => x.slot); render();
-  const a = [L().querySelector(".emptybox")?.textContent, H(), N().textContent === "" && !N().hasAttribute("aria-label")];
+  const a = [L().querySelector(".emptybox")?.textContent, N().textContent === "" && !N().hasAttribute("aria-label")];
   AGENTS.pool = []; AGENTS.free_slots = []; render(); const b = L().querySelector(".emptybox")?.textContent;
-  STATE.agents_error = "boom"; render(); return [...a, b, L().textContent.trim(), H(), N().textContent].join("|")')"
-ck "Sandboxes: one part that throws leaves the chip and the badge" "true|2 of 5 pipeline sandboxes in use, plus 1 Slack session and 1 scheduled run|3" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
-  renderSbList = () => { throw new Error("boom"); }; render(); return [/This section did not render: boom\./.test(L().textContent), H(), N().textContent].join("|")')"
-ck "Sandboxes recheck: a stale feed keeps its rows but no 'No sandbox runs now.' and no free line; a stray on a slot's agent is unknown; a failed slot read; a null SNAP keeps the chip" "true|false|false|true|true|true|false|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
-  STATE.agents_age_seconds = 600; render(); const st = [L().querySelectorAll("ul.sbl li").length > 0, /No sandbox runs now/.test(L().textContent), !!L().querySelector(".sbfree")];
+  STATE.agents_error = "boom"; render(); return [...a, b, L().textContent.trim(), N().textContent].join("|")')"
+ck "Sandboxes: one part that throws leaves the cards and the badge" "true|true|3" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  renderSbList = () => { throw new Error("boom"); }; render(); return [/This section did not render: boom\./.test(L().textContent), !!document.querySelector("#sb-cards .stat, #sb-cards .card"), N().textContent].join("|")')"
+ck "Sandboxes recheck: a stale feed keeps its rows but no 'No sandbox runs now.' and no free line; a stray on a slot's agent is unknown; a failed slot read; a null SNAP keeps the list" "true|false|false|true|true|false|true" "$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'
+  STATE.agents_age_seconds = 600; render(); const st = [L().querySelectorAll(".sbl tbody tr").length > 0, /No sandbox runs now/.test(L().textContent), !!L().querySelector(".sbfree")];
   STATE.agents_age_seconds = 12; AGENTS.instances.push({ name: "agent-ex-109", state: "running", age_seconds: 900, where: "gce" }); AGENTS.pool[2] = { ...AGENTS.pool[2], agent: "ex-109", busy: true }; render();
   const u = /agent-ex-109: the slot says it runs, but the agents feed has no run row/.test(L().textContent) && !codes().includes("fxa-sandbox-ctl stop ex-109");
   AGENTS.free_slots = null; render(); const sl = /ex-auto-4: slots unknown: the slot read failed/.test(L().textContent) && !/Its last ticket EX-130/.test(L().textContent);
   AGENTS.free_slots = ["ex-auto-3"]; AGENTS.pool[2] = { ...AGENTS.pool[2], agent: null, busy: false }; AGENTS.instances.pop(); SNAP = null; render();
-  return [...st, u, sl, !/\?/.test(H()), /\/home|\/Users|worktree path/.test(L().textContent), H() === floorHead(ovFloor())].join("|")')"
+  return [...st, u, sl, /\/home|\/Users|worktree path/.test(L().textContent), L().querySelectorAll(".sbl tbody tr").length > 0].join("|")')"
 ck "Sandboxes at 390 and 1280 px: no sideways scroll, no side list" "true|true|true" "$(bash "$p" '#runners' --fixture "$B" --width 390 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'render(); return document.documentElement.scrollWidth <= innerWidth')|$(bash "$p" '#runners' --fixture "$B" --width 1280 --probe "$sbw"'const s = getComputedStyle(document.getElementById("side")); return s.visibility === "hidden" || s.display === "none"')"
+# Stats day lists are tables with a day and figures, the newest day first, with no sideways scroll at 390 px.
+SF="$(dirname "$0")/page-fixture-stats.json"
+st='const m = document.getElementById("main"), t = [...m.querySelectorAll(".tscroll table")]; return [m.innerText.includes("did not render"), t.map(x => x.querySelectorAll("tbody tr").length).join(","), t[0]?.querySelector("tbody td")?.textContent === new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }), document.documentElement.scrollWidth <= innerWidth].join("|")'
+ck "Stats: Runners and LLM and Pipeline show their days as tables" "false|3,3|true|true|false|2|true|true" "$(bash "$p" '#stats/runners' --fixture "$SF" --width 390 --probe "$st")|$(bash "$p" '#stats/pipeline' --fixture "$SF" --width 1280 --probe "$st")"
 # #attn sandbox alerts (i376): runner faults with one stop rule, and feed text that never becomes markup.
 ck "#attn: wrong base with its stop, goal rejected with its next step, idle warn, strays by the stop rule, escaped" "true|true|true|true|true|true|true|true" "$(bash "$p" '#overview' --fixture "$F" --width 1280 --probe '
   const x = "<img src=x onerror=alert(1)>";
