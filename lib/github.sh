@@ -661,7 +661,9 @@ _gh_app_api() {
 
 # _gh_app_ref_is <branch> <sha>   A ref write is not retried: when one fails,
 # the branch may still have moved, so read it back.
-_gh_app_ref_is() { [ "$(printf '' | _gh_app_api GET "git/ref/heads/$1" 2>/dev/null | jq -r '.object.sha // empty')" = "$2" ]; }
+_gh_app_ref_is() { [ "$(printf '' | _gh_app_api GET "git/ref/heads/$(_gh_ref_enc "$1")" 2>/dev/null | jq -r '.object.sha // empty')" = "$2" ]; }
+# _gh_ref_enc <branch>   The branch for a git/ref path: each part URL-encoded, the slashes kept.
+_gh_ref_enc() { jq -rn --arg b "$1" '$b | split("/") | map(@uri) | join("/")'; }
 
 # _gh_app_rebuild <worktree> <branch> <expected_sha> <remote_sha>
 #   Three-way merge of the staged change with the commits pushed since <expected_sha>.
@@ -706,7 +708,7 @@ github_app_commit() {
   commit="$(jq -nc --arg m "$msg" --arg t "$tree" --arg p "$parent" --arg f "$first" '{message: $m, tree: $t, parents: ([$f, $p] | map(select(. != "")))}' \
             | _gh_app_api POST git/commits | jq -r '.sha // empty')"
   [ -n "$commit" ] || { echo "ERROR: could not create the commit as the App." >&2; return 1; }
-  remote="$(printf '' | _gh_app_api GET "git/ref/heads/${branch}" 2>/dev/null | jq -r '.object.sha // empty')"
+  remote="$(printf '' | _gh_app_api GET "git/ref/heads/$(_gh_ref_enc "$branch")" 2>/dev/null | jq -r '.object.sha // empty')"
   if [ -z "$remote" ]; then
     jq -nc --arg r "refs/heads/${branch}" --arg s "$commit" '{ref: $r, sha: $s}' | _gh_app_api POST git/refs >/dev/null \
       || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not create ${branch} as the App." >&2; return 1; }
@@ -719,7 +721,7 @@ github_app_commit() {
       fi
       echo "ERROR: origin/${branch} moved to ${remote:0:10} (expected ${expect:0:10}); refusing to overwrite it." >&2; return 1
     fi
-    jq -nc --arg s "$commit" '{sha: $s, force: true}' | _gh_app_api PATCH "git/refs/heads/${branch}" >/dev/null \
+    jq -nc --arg s "$commit" '{sha: $s, force: true}' | _gh_app_api PATCH "git/refs/heads/$(_gh_ref_enc "$branch")" >/dev/null \
       || _gh_app_ref_is "$branch" "$commit" || { echo "ERROR: could not move ${branch} as the App." >&2; return 1; }
   fi
   _retry git -C "$wt" fetch -q origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" &&

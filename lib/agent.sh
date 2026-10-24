@@ -449,7 +449,7 @@ _profile_guide_trees() {
 #   Fetch the slot's HEAD by sha into the runner and check it out on the branch.
 #   GitHub serves any reachable sha, so this works before the branch is pushed.
 _gce_pin_runner_tree() {
-  local name="$1" slot="$2" sha branch got
+  local name="$1" slot="$2" sha branch qbranch got
   # A session has no slot; it names the commit and branch itself.
   sha="${FXA_PIN_SHA:-$(git -C "$slot" rev-parse HEAD)}" || return 1
   branch="${FXA_PIN_BRANCH:-$(git -C "$slot" rev-parse --abbrev-ref HEAD)}" || return 1
@@ -463,6 +463,8 @@ _gce_pin_runner_tree() {
   [[ "$sha" =~ ^[0-9a-f]{7,40}$ ]] && [[ -z "$base_sha" || "$base_sha" =~ ^[0-9a-f]{7,40}$ ]] &&
     git check-ref-format --branch "$branch" >/dev/null 2>&1 && git check-ref-format --branch "$base" >/dev/null 2>&1 ||
     { echo "ERROR: refusing to pin: sha, branch or base is not a plain git name." >&2; return 1; }
+  # check-ref-format allows ; $ ( ) and quotes, so the branch goes to the remote shell quoted.
+  qbranch="$(printf '%q' "$branch")"
   echo "Pinning the runner to ${branch} at ${sha:0:10}..."
   # vm_wait_ready skips the wait for the checkout unit when one ssh flakes, and
   # parallel launches then pinned before /workspace existed. Poll for it here.
@@ -487,7 +489,7 @@ _gce_pin_runner_tree() {
   # which reads as an empty answer, so retry that instead of failing the launch.
   local try
   for try in 1 2 3; do
-  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && old=\$(git rev-parse HEAD) && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${branch} ${sha}
+  got="$(vm_exec "$name" sudo -u agent bash -c "export ${_RUNNER_GIT_ENV:-}; cd ${at} && old=\$(git rev-parse HEAD) && ${seturl}{ git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch --quiet origin ${sha}; } && git checkout --quiet -B ${qbranch} ${sha}
     if [ -n '${base_sha}' ]; then
       { git cat-file -e ${base_sha}^{commit} 2>/dev/null || git fetch --quiet origin ${base_sha}; } && git update-ref refs/remotes/origin/${base} ${base_sha}
       # The prompts and diffs name origin/main; a repo on another base (master) gets it as an alias.

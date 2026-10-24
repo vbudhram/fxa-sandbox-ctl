@@ -10,6 +10,7 @@ check() { # check <name> <want> <got>
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd -P)"
 eval "$(sed -n '/^github_app_commit() {/,/^}/p' "$here/github.sh")"
+eval "$(grep -E '^(_gh_ref_enc|_gh_app_ref_is)\(\)' "$here/github.sh")"
 # Stub: log each call, answer like GitHub. REMOTE_SHA plays the branch's current head.
 _gh_app_api() {
   local body; body="$(cat)"; printf '%s %s %s\n' "$1" "$2" "$body" >> "$tmp/calls"
@@ -47,6 +48,11 @@ check "moved branch refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
 : > "$tmp/calls"
 REMOTE_SHA="$base" github_app_commit "$tmp/r" fxa-1 "$base" "m" >/dev/null 2>&1
 check "expected branch is moved" "true" "$(grep '^PATCH git/refs/heads/fxa-1' "$tmp/calls" | cut -d' ' -f3- | jq -r .force)"
+# A bot branch with '@': each path part is URL-encoded, the slashes kept.
+: > "$tmp/calls"; git update-ref "refs/remotes/origin/blender/a@b" "$base"
+REMOTE_SHA="$base" github_app_commit "$tmp/r" "blender/a@b" "$base" "m" >/dev/null 2>&1
+check "the ref paths of a branch with '@' are encoded" "GET git/ref/heads/blender/a%40b|PATCH git/refs/heads/blender/a%40b" \
+  "$(grep -E '^(GET|PATCH) git/ref' "$tmp/calls" | cut -d' ' -f1-2 | paste -sd'|' -)"
 
 # A person pushed to the branch: this change is rebuilt on top of their commit.
 eval "$(sed -n '/^_gh_app_rebuild() {/,/^}/p' "$here/github.sh")"

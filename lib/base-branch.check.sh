@@ -36,6 +36,8 @@ check "the session fetches the profile's base, not main" "1|0" \
 # A private fork at the image's FxA path: the fetch goes to the fork, not the image clone's public origin.
 PIPE_REPO_SLUG=mozilla/fxa-private pin main
 check "the pin points origin at the tree's repo before it fetches" "1" "$(grep -c 'cd /workspace && old=\$(git rev-parse HEAD) && git remote set-url origin https://github.com/mozilla/fxa-private.git && { git cat-file' "$tmp/pin.cmd")"
+FXA_WORKTREE_BASE=main FXA_PIN_SHA="$S" FXA_PIN_BRANCH='a;id' _gce_pin_runner_tree r1 "$tmp" >/dev/null 2>&1
+check "the branch reaches the remote shell quoted" "1" "$(grep -cF "git checkout --quiet -B a\;id $S" "$tmp/pin.cmd")"
 check "a slug that is not plain refuses the pin" "1" "$(PIPE_REPO_SLUG='a/b;x' FXA_WORKTREE_BASE=main FXA_PIN_SHA="$S" FXA_PIN_BRANCH=agent-x _gce_pin_runner_tree r1 "$tmp" 2>&1 | grep -c 'not a plain slug')"
 # The libs build at the pin runs only when the pin changes libs/ or yarn.lock against the snapshot's commit.
 guard="$(grep -o '! git diff --quiet "\$old" HEAD -- libs/ yarn.lock 2>/dev/null' "$tmp/pin.cmd" | head -1)"

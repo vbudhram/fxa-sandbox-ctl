@@ -2123,7 +2123,9 @@ _task_checkout() {
   # A fork's CLAUDE.md, rules and skills would reach the agent, and the App cannot push there.
   [ "$(jq -r .isCrossRepository <<< "$info")" != true ] || { echo "ERROR: ${url} is from a fork. Ask for a PR from a branch of ${slug} instead" >&2; return 1; }
   head="$(jq -r .headRefName <<< "$info")"; author="$(jq -r .author.login <<< "$info")"
-  [[ "$head" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "ERROR: ${url} has a branch name this cannot use" >&2; return 1; }
+  # Bot branches carry '@' (blender/security-bump-@scope/pkg); the name still reaches git and API paths.
+  [[ "$head" =~ ^[A-Za-z0-9._/@+-]+$ ]] && [[ "$head" != *..* ]] && git check-ref-format --branch "$head" >/dev/null 2>&1 \
+    || { echo "ERROR: ${url} has a branch name this cannot use" >&2; return 1; }
   if trees_on "$key"; then
     idx="$(jq -r --arg s "$slug" '.trees | to_entries[] | select((.value.slug | ascii_downcase) == ($s | ascii_downcase)) | .key' "$(_session_file "$key")" | head -1)"
     [ -n "$idx" ] || { echo "ERROR: ${slug} is not one of this session's repos" >&2; return 1; }

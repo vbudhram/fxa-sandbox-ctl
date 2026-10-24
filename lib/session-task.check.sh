@@ -56,6 +56,15 @@ check "a fork PR is refused at checkout, and nothing is set" "ERROR: https://git
   "$(gh() { echo '{"state":"OPEN","headRefName":"fix","isCrossRepository":true,"author":{"login":"bob","is_bot":false}}'; }; PIPE_REPO_SLUG=mozilla/fxa _task_checkout agent-cof1 https://github.com/mozilla/fxa/pull/78 2>&1)|$(session_get agent-cof1 checkout)"
 check "a same-repo PR is taken, with its author's gate" "fix https://github.com/mozilla/fxa/pull/79 alice 1" \
   "$(gh() { echo '{"state":"OPEN","headRefName":"fix","isCrossRepository":false,"author":{"login":"alice","is_bot":false}}'; }; PIPE_REPO_SLUG=mozilla/fxa _task_checkout agent-cof1 https://github.com/mozilla/fxa/pull/79 >/dev/null 2>&1; echo "$(session_get agent-cof1 branch) $(session_get agent-cof1 checkout) $(session_get agent-cof1 checkout_author) $(session_get agent-cof1 checkout_person)")"
+# Branch names: a bot's '@' branch checks out; shell syntax and '..' are refused.
+for b in 'blender/security-bump-@opentelemetry/x' 'a$(id)' 'a;id' 'a..b'; do
+  echo '{"key":"agent-cob1"}' > "$tmp/agent-cob1.json"
+  printf '%s=%s\n' "$b" "$(gh() { jq -nc --arg h "$b" '{state:"OPEN",headRefName:$h,isCrossRepository:false,author:{login:"dependabot",is_bot:true}}'; }
+    PIPE_REPO_SLUG=mozilla/fxa _task_checkout agent-cob1 https://github.com/mozilla/fxa/pull/80 2>&1 >/dev/null | sed 's|.*/pull/80 ||'; session_get agent-cob1 branch)"
+done > "$tmp/branches"
+check "a '@' branch checks out; a\$(id), a;id and a..b are refused" \
+  "blender/security-bump-@opentelemetry/x=blender/security-bump-@opentelemetry/x|a\$(id)=has a branch name this cannot use|a;id=has a branch name this cannot use|a..b=has a branch name this cannot use" \
+  "$(paste -sd'|' "$tmp/branches")"
 # The thread record: the first request, its sessions, and its open PR for later sessions.
 export FXA_SESSION_MAX=20 # the earlier checks left sessions live
 printf 'Build the tests\n\nEarlier messages in this Slack thread, for context:\n> owner: hi\n' > "$tmp/t.md"
