@@ -65,5 +65,17 @@ ck "secret tickets: the box says only secret tickets, the hint shows before Save
   'Take only secret tickets (a security level, or a security or hackerone label)|false|Needs private work repos. Turns off "Anyone the bot allows" and clears the Jira keys. One team per project.|true|true|false|[]' \
   "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$sec")"
 
+# Routines and dependency PR fixes, from the routine summary: a dependency fix is the routine with on pr-label.
+fx '(."/api/routines/summary") = {"teams": {"example": {"routines": 2, "paused": 0, "failed": 0}}, "routines": {
+  "1": {"name": "Dependency fixes", "team": "example", "template": "blank", "on": "pr-label", "paused": false, "next": null},
+  "2": {"name": "Code review", "team": "example", "template": "code-review", "on": "schedule", "paused": false, "next": "@epoch+3600"}}}'
+rts="$stub$says"' await w(800); const sum = `${says("routines")} / ${says("depfix")}`, link = q("[data-tin=routines] a")?.getAttribute("href");
+  RT = { team: "example", list: [{ id: 1, paused: 0, data: { on: "pr-label", pr: { repo: "example/app", label: "agent-help" } } }] }; teamPaint(); const list = says("depfix");
+  TEAM_ADMIN = { admin: false }; const t = TEAMS.teams.find(x => x.profile === "example"), user = String(teamInputsHtml(t, TED.rec, null));
+  return [sum.replace(/next run .*? \[/, "next run X ["), link, list, /Routines|Dependency PRs|None|on a schedule/.test(user)].join("|")'
+ck "Routines and Dependency PRs rows: counts from the summary, the repo and label once the routine list is loaded, nothing for a viewer who is not an admin" \
+  "1 on a schedule · next run X [on] / 1 on [on]|#teams/example/routines|On for example/app, label agent-help [on]|false" \
+  "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$rts")"
+
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

@@ -2165,8 +2165,9 @@ function teamPatch(f) {
 // The ways a session of a record team can start, each with its rule and the form that changes it.
 function teamInputsHtml(t, rec, f) {
   const adm = !!TEAM_ADMIN?.admin, a = rec.access ?? {}, j = rec.jira ?? {}, c = rec.caps ?? {}, draft = rec.status !== "active";
-  const row = (k, name, tg, lines, b) => html`<div class="ck tin" data-tin="${k}"><div class="who"><span class="nm">${name} ${tg}</span>${lines.filter(Boolean).map(l => html`<span class="says">${l}</span>`)}</div>${adm ? html`<button type="button" class="linkbtn" data-tf="${k}"${f ? " disabled" : ""}>${b}</button>` : ""}</div>
+  const row = (k, name, tg, lines, b) => html`<div class="ck tin" data-tin="${k}"><div class="who"><span class="nm">${name} ${tg}</span>${lines.filter(Boolean).map(l => html`<span class="says">${l}</span>`)}</div>${adm ? b : ""}</div>
     ${f?.item === k ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : ""}`;
+  const btn = (k, l) => html`<button type="button" class="linkbtn" data-tf="${k}"${f ? " disabled" : ""}>${l}</button>`, go = html`<a href="#teams/${t.profile}/routines">Open Routines</a>`;
   const n = (a.users ?? []).length, ch = a.channels ?? [], after = draft ? " (after the test)" : "";
   if (ch.length) loadTeamChans(t.profile);
   const names = ch.map(id => { const x = TCHANS?.team === t.profile && TCHANS.channels.find(y => y.id === id); return x ? `#${x.name}` : id; }).join(", ");
@@ -2180,8 +2181,14 @@ function teamInputsHtml(t, rec, f) {
   const login = TED?.secrets?.[rec.secrets?.jira] === "present" ? "present" : "missing";
   const jira = !j.project ? ["Not used", tag("off")] : !j.queue ? [`Off · project ${j.project}`, tag("off")]
     : [`${j.secret ? `Takes only ${j.project} secret tickets (a security level, or a security or hackerone label)` : `Takes ${j.project} tickets with the ai-fixme label, every 5 minutes on weekdays, hourly on weekends, 07:04 to 19:59 New York time`}${cap}`, tag("on", "ok")];
-  return html`<div class="stack sm">${row("access", "Slack", slack[1], [slack[0] + (a.open || n ? after : ""), keys.length ? `A message with ${keys.map(k => `${k}-123`).join(" or ")} picks this team` : ""], "Change")}
-    ${row("jira", "Jira queue", jira[1], [jira[0], j.project ? `Jira login: ${rec.secrets?.jira ? login : "the bot's"}` : ""], j.project ? "Change" : "Set up")}</div>`;
+  // Routines and dependency PR fixes, from the routine summary (admins only); a dependency fix has on pr-label.
+  const rs = adm && RTSUM ? Object.values(RTSUM.routines ?? {}).filter(x => x.team === t.profile) : null, sched = (rs ?? []).filter(x => x.on !== "pr-label"), dep = (rs ?? []).filter(x => x.on === "pr-label");
+  const on = sched.filter(x => !x.paused).length, held = sched.length - on, nx = Math.min(...sched.map(x => x.next ?? Infinity)), depOn = dep.filter(x => !x.paused).length;
+  const depL = RT.team === t.profile && Array.isArray(RT.list) ? RT.list.filter(r => r.data?.on === "pr-label" && !r.paused).map(r => `On for ${r.data.pr?.repo ?? (r.data.repos ?? [])[0] ?? "its repo"}, label ${r.data.pr?.label ?? "agent-help"}`) : [];
+  return html`<div class="stack sm">${row("access", "Slack", slack[1], [slack[0] + (a.open || n ? after : ""), keys.length ? `A message with ${keys.map(k => `${k}-123`).join(" or ")} picks this team` : ""], btn("access", "Change"))}
+    ${row("jira", "Jira queue", jira[1], [jira[0], j.project ? `Jira login: ${rec.secrets?.jira ? login : "the bot's"}` : ""], btn("jira", j.project ? "Change" : "Set up"))}
+    ${rs ? html`${row("routines", "Routines", on ? tag("on", "ok") : tag("off"), [sched.length ? `${[on || !held ? `${on} on a schedule` : "", held ? `${held} paused` : ""].filter(Boolean).join(", ")}${nx < Infinity ? ` · next run ${stamp(nx)}` : ""}` : "None"], go)}
+      ${row("depfix", "Dependency PRs", depOn ? tag("on", "ok") : tag("off"), [depOn ? (depL.length ? depL.join("; ") : `${depOn} on`) : "Off"], go)}` : ""}</div>`;
 }
 function teamSetupHtml(t) {
   const adm = !!TEAM_ADMIN?.admin;

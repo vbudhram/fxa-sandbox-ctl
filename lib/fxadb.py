@@ -51,11 +51,12 @@ def routine_summary(con, now):
     """For the Teams page (admins only): per team and per routine, the 30-day runs and cost, and whether
     the routine failed (its newest ended run is failed or missed). A paused routine stays failed for
     itself, but is left out of its team's failed count and last failed run. No prompt, report or channel.
-    Each routine also has its name, team, template, paused and next run (epoch; null when paused or unreadable),
+    Each routine also has its name, team, template, on (schedule or pr-label), paused and next run (epoch; null when paused or unreadable),
     and the lowest and highest cost of one run in 30 days (null with no costed run), for the form's cost hint."""
     import routine  # the one reader of a schedule; the dashboard loads it from lib/ beside this file
     since = now - 30 * 86400
     rts = rows(con, """SELECT id, team, paused, json_extract(data, '$.name') AS name, coalesce(json_extract(data, '$.template'), 'blank') AS template,
+        coalesce(json_extract(data, '$.on'), 'schedule') AS "on",
         json_extract(data, '$.schedule') AS schedule, json_extract(data, '$.zone') AS zone FROM routines""")
     ended = rows(con, """SELECT r.routine_id AS rid, r.state, r.reason, r.session, coalesce(r.ended_at, r.started_at, 0) AS at, r.cost_usd
         FROM routine_runs r WHERE r.state NOT IN ('queued', 'claimed', 'started') ORDER BY at, r.id""")
@@ -68,7 +69,7 @@ def routine_summary(con, now):
                 nxt = int(routine.runs(r, now, 1)[0].timestamp())
             except Exception:  # noqa: BLE001  a bad schedule or zone shows no next run, not a failed page
                 nxt = None
-        per[r["id"]] = {"name": r["name"], "team": r["team"], "template": r["template"], "paused": bool(r["paused"]), "next": nxt,
+        per[r["id"]] = {"name": r["name"], "team": r["team"], "template": r["template"], "on": r["on"], "paused": bool(r["paused"]), "next": nxt,
                         "runs_30d": 0, "cost_30d": 0.0, "cost_min_30d": None, "cost_max_30d": None, "failed": False, "last_end": None}
     last = {}
     for x in ended:

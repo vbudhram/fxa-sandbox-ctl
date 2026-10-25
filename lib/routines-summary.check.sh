@@ -10,7 +10,7 @@ export FXA_DB="$tmp/fxa.db"; source "$here/config.sh"; source "$here/db.sh"; db_
 now=$(date +%s); old=$((now - 40 * 86400))
 d() { printf '{"name":"%s","prompt":"SECRET-PROMPT","channel":"C0SECRET"%s}' "$1" "${2:-}"; }
 sqlite3 "$FXA_DB" "
-INSERT INTO routines (id, team, data, paused) VALUES (1,'fxa','$(d A ',"schedule":"daily 09:00","zone":"UTC"')',0),(2,'fxa','$(d B ',"schedule":"daily 09:00","zone":"Nowhere/Bad"')',0),(3,'fxa','$(d C)',0),(4,'fxa','$(d D)',0),(5,'fxa','$(d E)',1),(6,'crew','$(d F)',0);
+INSERT INTO routines (id, team, data, paused) VALUES (1,'fxa','$(d A ',"schedule":"daily 09:00","zone":"UTC"')',0),(2,'fxa','$(d B ',"schedule":"daily 09:00","zone":"Nowhere/Bad"')',0),(3,'fxa','$(d C ',"on":"pr-label"')',0),(4,'fxa','$(d D)',0),(5,'fxa','$(d E)',1),(6,'crew','$(d F)',0);
 INSERT INTO routine_runs (routine_id, period, state, reason, session, cost_usd, report, ended_at) VALUES
  (1,'p1','report',NULL,'agent-a1',0.5,'SECRET-REPORT',$((now-3600))),
  (2,'p1','ok',NULL,'agent-b0',1.0,NULL,$((now-7200))),(2,'p2','failed','the turn stopped','agent-b1',0.25,NULL,$((now-600))),
@@ -48,6 +48,8 @@ check("no next run for a bad zone, no schedule, or a paused routine", (None, Non
 check("each routine has its name, team and paused", ("E", "fxa", True), (r["5"]["name"], r["5"]["team"], r["5"]["paused"]))
 check("each routine's template (blank when none) and its lowest and highest run cost in 30 days", ("blank", 0.25, 1.0, None, None),
       (r["2"]["template"], r["2"]["cost_min_30d"], r["2"]["cost_max_30d"], r["6"]["cost_min_30d"], r["4"]["cost_max_30d"]))
+# A dependency PR fix keeps template blank, so only on tells it apart.
+check("each routine's on: pr-label for a dependency PR fix, else schedule", ("pr-label", "blank", "schedule"), (r["3"]["on"], r["3"]["template"], r["1"]["on"]))
 check("no prompt, report or channel in the body", (False, False, False), ("SECRET-PROMPT" in body, "SECRET-REPORT" in body, "C0SECRET" in body))
 # Run now and Stop run: a PR link goes to run-now as --pr, a run id to stop as --run; anything else is refused.
 calls = []
