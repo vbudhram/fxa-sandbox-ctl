@@ -6,6 +6,7 @@
 #
 # Public API:
 #   gh_pr_state KEY              "KEY <pr#> <state> ok=n fail=n running=n"
+#   gh_pr_none KEY               exit 0 no PR, 1 a PR, 2 the read failed
 #   gh_drain KEYS                done keys whose PR is no longer open, or is red
 #   gh_feedback KEY [sub] ...    unhandled review comments, and their bookkeeping
 
@@ -32,6 +33,16 @@ gh_pr_state() {
   printf '%s' "$json" | jq -r --arg k "$key" "
     .[0] as \$p | (\$p | ${_GH_ROLLUP_JQ}) as \$r
     | \"\(\$k) \(\$p.number) \(\$p.state) ok=\(\$r.ok) fail=\(\$r.fail) running=\(\$r.run)\""
+}
+
+# gh_pr_none <KEY>   A strict PR read for a reship: exit 0 when gh works and lists no PR for the
+#   key's branch (any state), 1 when it lists one, 2 when gh or jq fails. gh_pr_state says none then.
+gh_pr_none() {
+  local br json n
+  br="$(worktree_branch_for "${1:-}")" || return 2
+  json="$(_retry gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json number 2>/dev/null)" || return 2
+  n="$(jq 'length' <<< "$json" 2>/dev/null)" && [[ "$n" =~ ^[0-9]+$ ]] || return 2
+  [ "$n" = 0 ] || return 1
 }
 
 # gh_pr_approver <KEY>
