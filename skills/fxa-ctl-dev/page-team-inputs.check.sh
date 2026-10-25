@@ -19,5 +19,18 @@ out="$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$who")"; rc=$
 [ "$rc" = 3 ] && { echo "SKIP (no Chrome): the page probes did not run; set CHROME to run them"; exit 0; }
 ck "a team with channels and no people reads Nobody: a channel lets nobody start it" "Nobody|Nobody|1 person|true" "$out"
 
+# Each Jira setting has one home: the keys go with Slack, the launch cap with the queue. Each save keeps the other form's caps.
+fx '(."/api/teams/example") += {"jira": {"project": "EXA", "queue": true}, "caps": {"usd_per_day": 5, "usd_per_month": 50, "launches_per_day": 7}} | (."/api/teams/example".access.jira_prefixes) = ["EXB"]'
+keys="$stub"' try { await w(700); const open = async k => { q(`[data-tf="${k}"]`).click(); await w(400); }, save = async () => { q("[data-tf-save]").click(); await w(500); };
+  const set = (sel, v) => { const e = q(sel); e.value = v; e.dispatchEvent(new Event("input", { bubbles: true })); }, form = () => q("[data-tf-save]").closest(".ckbody");
+  await open("jira"); const jf = `${!!form().querySelector("#tf-launches_per_day")}:${!!form().querySelector("#tf-prefixes")}:${q("[data-tf-save]").textContent}`; set("#tf-launches_per_day", "9"); await save();
+  await open("caps"); const cf = `${!!form().querySelector("#tf-launches_per_day")}`; set("#tf-usd_per_day", "6"); await save();
+  await open("access"); const af = form().querySelector("#tf-prefixes")?.value; set("#tf-prefixes", "EXB, EXC"); await save();
+  const b = i => sent.filter(x => /\/api\/teams\/example$/.test(x[0]))[i]?.[1] ?? {}, c = i => JSON.stringify(b(i).record?.caps);
+  return [jf, c(0), b(0).record?.access?.jira_prefixes?.join(","), cf, c(1), af, b(2).record?.access?.jira_prefixes?.join(","), [0, 1, 2].map(i => b(i).generation).join(",")].join("|") } catch (e) { return "ERR " + e.message + " after " + sent.length + " posts"; }'
+ck "Jira keys move to the Slack form and the launch cap to the Jira form; each save keeps the other caps and sends the loaded generation" \
+  'true:false:Save|{"usd_per_day":5,"usd_per_month":50,"launches_per_day":9}|EXB|false|{"usd_per_day":6,"usd_per_month":50,"launches_per_day":7}|EXB|EXB,EXC|1792640520000000,1792640520000000,1792640520000000' \
+  "$(PAGE_BUDGET=12000 bash "$p" '#teams/example/settings' --fixture "$G" --probe "$keys")"
+
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

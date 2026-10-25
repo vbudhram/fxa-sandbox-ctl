@@ -2059,16 +2059,17 @@ function teamItemForm(t, rec, f) {
         ${d.users.length ? html`<ul class="plist">${d.users.map(u => html`<li><span>${personLabel(u)}${personLabel(u) !== u ? html` <span class="mono hint">${u}</span>` : ""}</span><button type="button" class="linkbtn" data-tfunpick="users" data-id="${u}" aria-label="Remove ${personLabel(u)}">Remove</button></li>`)}</ul>` : html`<p class="hint">Nobody yet.</p>`}
         ${peoplePicker("users", d.users)}${lab("uid", html`Or paste a member ID <span class="opt">· optional</span>`, html`<input id="tf-uid" class="input mono" data-tfk="uid" value="${d.uid ?? ""}" placeholder="U0123ABCD">`)}</fieldset>
         <fieldset class="group field"><legend class="lb">Channels</legend>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
-          ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}${save}`; }
+          ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}
+      ${lab("prefixes", html`Jira keys that pick this team <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`, rec.jira?.project && !rec.jira.secret ? `Your project key ${rec.jira.project} counts already.` : "")}${save}`; }
   if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${new Blob([d.goal]).size} of 2560 bytes</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
-  if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("prefixes", html`Ticket prefixes in Slack <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`)}</div>
+  if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("launches_per_day", html`Launches a day, empty for the default <span class="opt">· ${TOPTS?.caps?.launches_per_day != null ? `at most ${TOPTS.caps.launches_per_day}` : "optional"}</span>`, html`<input id="tf-launches_per_day" class="input" type="number" min="0" data-tfk="launches_per_day" value="${d.launches_per_day}">`)}</div>
     <label><input type="checkbox" data-tfk="queue"${d.queue ? " checked" : ""}> Take tickets from the project's queue</label>
     <label><input type="checkbox" data-tfk="secret"${d.secret ? " checked" : ""}${d.queue ? "" : " disabled"}> Take secret tickets too</label>${save}`;
   if (f.item === "tools" && Array.isArray(TOPTS?.connectors)) return html`<label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>
     ${d.dflt ? "" : html`<fieldset class="group field"><legend class="lb">MCP connectors</legend>${TOPTS.connectors.map(c => html`<label><input type="checkbox" data-tfset="mcp" data-v="${c}"${list0(d.mcp).includes(c) ? " checked" : ""}> <span class="mono">${c}</span></label>`)}</fieldset>`}${save}`;
   if (f.item === "tools") return html`${lab("mcp", html`MCP connectors <span class="opt">· comma separated, empty for none</span>`, html`<input id="tf-mcp" class="input mono" data-tfk="mcp" value="${d.mcp}" placeholder="the bot default">`, "Leave it as the bot default to use the connectors the bot has.")}
     <label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>${save}`;
-  if (f.item === "caps") return html`<div class="fields2">${[["usd_per_day", "Spend cap a day, USD"], ["usd_per_month", "Spend cap a month, USD"], ["launches_per_day", "Pipeline launches a day"]].map(([k, l]) => lab(k, html`${l} <span class="opt">· ${TOPTS?.caps?.[k] != null ? `at most ${TOPTS.caps[k]}, ` : ""}empty for none</span>`, html`<input id="tf-${k}" class="input" type="number" min="0" data-tfk="${k}" value="${d[k]}">`))}</div>${save}`;
+  if (f.item === "caps") return html`<div class="fields2">${[["usd_per_day", "Spend cap a day, USD"], ["usd_per_month", "Spend cap a month, USD"]].map(([k, l]) => lab(k, html`${l} <span class="opt">· ${TOPTS?.caps?.[k] != null ? `at most ${TOPTS.caps[k]}, ` : ""}empty for none</span>`, html`<input id="tf-${k}" class="input" type="number" min="0" data-tfk="${k}" value="${d[k]}">`))}</div>${save}`;
   const O = TOPTS ?? {}, wait = O.loading ? html`<p class="hint">Loading the choices…</p>` : O.err ? html`<p class="unknown">The choices did not load: ${O.err}</p>` : "";
   const row = (list, i, fields) => html`<div class="fields2">${fields}<button type="button" class="linkbtn" data-tf-pop="${list}" data-i="${i}">Remove</button></div>`;
   if (f.item === "name") return html`${lab("label", "Name shown", html`<input id="tf-label" class="input" data-tfk="label" maxlength="40" value="${d.label}" placeholder="${teamCap(t.profile)}">`, `Letters, digits, spaces and ._()-. Empty shows ${teamCap(t.profile)}. The team's id stays ${t.profile}.`)}${save}`;
@@ -2106,7 +2107,7 @@ function teamItemForm(t, rec, f) {
 function teamItemDraft(item, rec) {
   const a = rec.access ?? {}, j = rec.jira ?? {}, c = rec.caps ?? {}, p = rec.pr ?? {};
   return { repos: { repos: (rec.repos ?? []).map(r => ({ ...r })) }, goal: { goal: rec.prompts?.goal_md ?? "" },
-    access: { open: !!a.open, users: [...(a.users ?? [])], uid: "", chans: [...(a.channels ?? [])], other: "" },
+    access: { open: !!a.open, users: [...(a.users ?? [])], uid: "", chans: [...(a.channels ?? [])], other: "", prefixes: (a.jira_prefixes ?? []).join(", ") },
     name: { label: rec.label ?? "" },
     admins: { admins: (rec.admins ?? []).map(x => ({ slack: x.slack ?? "", email: x.email ?? "" })) },
     runner: { kind: rec.stack?.kind ?? "none", srepo: rec.stack?.repo ?? ((rec.repos ?? []).find(r => r.slug.toLowerCase() === "mozilla/fxa")?.slug ?? (rec.repos ?? [])[0]?.slug ?? ""),
@@ -2115,9 +2116,9 @@ function teamItemDraft(item, rec) {
     skills: { skills: [...(rec.skills ?? [])] },
     boot: { script: rec.boot?.script ?? "" },
     secrets: { jira: String(rec.secrets?.jira ?? "").replace(/^fxa-team-[a-z0-9-]+--/, ""), runtime: (rec.secrets?.runtime ?? []).map(r => ({ what: String(r.secret).replace(/^fxa-team-[a-z0-9-]+--/, ""), path: r.path })) },
-    jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, prefixes: (a.jira_prefixes ?? []).join(", ") },
+    jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, launches_per_day: c.launches_per_day ?? "" },
     tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
-    caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "", launches_per_day: c.launches_per_day ?? "" },
+    caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "" },
     pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", ") } }[item];
 }
 // The record with a patch applied (a key set to undefined is removed), and whether the change needs a new test.
@@ -2133,11 +2134,13 @@ function teamPatch(f) {
   const drop = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
   if (f.item === "repos") return { repos: d.repos.filter(r => String(r.slug).trim()).map((r, i, a) => ({ ...r, slug: String(r.slug).trim(), default: a.findIndex(x => x.role === "work") === i ? true : undefined })).map(r => drop(r)) };
   if (f.item === "goal") return { prompts: { ...(rec.prompts ?? {}), goal_md: d.goal } };
-  if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list([].concat(d.users, d.uid ?? "").join(",")), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])] } };
+  if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list([].concat(d.users, d.uid ?? "").join(",")), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])], jira_prefixes: list(d.prefixes) } };
+  // The Jira and Budget forms share caps: each replaces only its own keys.
+  const caps = o => { const c = drop({ ...(rec.caps ?? {}), ...o }); return Object.keys(c).length ? c : undefined; };
   if (f.item === "jira") { const j = drop({ project: d.project.trim(), queue: d.queue || undefined, secret: d.queue && d.secret || undefined });
-    return { jira: Object.keys(j).length ? j : undefined, access: { ...(rec.access ?? {}), jira_prefixes: list(d.prefixes) } }; }
+    return { jira: Object.keys(j).length ? j : undefined, caps: caps({ launches_per_day: num(d.launches_per_day) }) }; }
   if (f.item === "tools") return { mcp: d.dflt ? undefined : list(d.mcp) };
-  if (f.item === "caps") { const c = drop({ usd_per_day: num(d.usd_per_day), usd_per_month: num(d.usd_per_month), launches_per_day: num(d.launches_per_day) }); return { caps: Object.keys(c).length ? c : undefined }; }
+  if (f.item === "caps") return { caps: caps({ usd_per_day: num(d.usd_per_day), usd_per_month: num(d.usd_per_month) }) };
   const pre = `fxa-team-${TED?.name}--`, some = o => Object.keys(o).length ? o : undefined;
   if (f.item === "name") return { label: d.label.trim() || undefined };
   if (f.item === "admins") { const a = d.admins.map(x => ({ slack: x.slack.trim(), email: x.email.trim() })).filter(x => x.slack || x.email); return { admins: a.length ? a : undefined }; }
