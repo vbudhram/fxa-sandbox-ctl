@@ -32,5 +32,27 @@ ck "Jira keys move to the Slack form and the launch cap to the Jira form; each s
   'true:false:Save|{"usd_per_day":5,"usd_per_month":50,"launches_per_day":9}|EXB|false|{"usd_per_day":6,"usd_per_month":50,"launches_per_day":7}|EXB|EXB,EXC|1792640520000000,1792640520000000,1792640520000000' \
   "$(PAGE_BUDGET=12000 bash "$p" '#teams/example/settings' --fixture "$G" --probe "$keys")"
 
+# The inputs card: each way a session starts, with its rule. says <k>: the lines of one row, then its tag.
+says='const says = k => [...document.querySelectorAll(`[data-tin=${k}] .says`)].map(e => e.textContent).join(" / ") + " [" + q(`[data-tin=${k}] .tag`)?.textContent + "]";'
+order='const at = s => main().indexOf(s), keys = it => Object.keys(teamPatch({ item: it, d: teamItemDraft(it, TED.rec) }));
+  const runs = [...q("[data-tmore=runs]").querySelectorAll("[data-tf]")].map(b => b.dataset.tf), rest = [...document.querySelectorAll("[data-tform] [data-tf]")].filter(b => !b.closest("[data-tmore=runs]")).map(b => b.dataset.tf);
+  const ok = ["What it works on", "How work reaches this team", "Budget", "About the team", "How it runs"].map(at).every((x, i, a) => x > 0 && (!i || x > a[i - 1]));
+  const m = document.getElementById("main"); m.style.width = "375px"; await w(100); const r = m.getBoundingClientRect().right;
+  const wide = [...m.querySelectorAll("*")].filter(e => !e.closest(".tscroll") && e.getBoundingClientRect().right > r + 1).length;'
+fx '(."/api/teams/example") += {"jira": {"project": "EXA", "queue": true}, "caps": {"launches_per_day": 7}, "secrets": {"jira": "fxa-team-example--jira"}}
+  | (."/api/teams/example".access) = {"open": false, "users": ["U0AAA1111", "U0BBB2222"], "channels": ["C0AAAA111"], "jira_prefixes": ["EXB"]}
+  | (."/api/teams/example/routine-channels") = {"at": 1, "channels": [{"id": "C0AAAA111", "name": "example-team"}]} | (."/api/teams/example/secrets") = {"fxa-team-example--jira": "present"}'
+act="$stub$says"' await w(900); '"$order"'
+  return [says("access"), says("jira"), ok, [...new Set(runs.flatMap(keys))].sort().join(","), rest.filter(x => x !== "repos").flatMap(keys).filter(k => TEAM_RUNNER_KEYS.includes(k)).join(","), wide, document.documentElement.scrollWidth <= innerWidth].join("|")'
+ck "an active team: the Slack and Jira rows give each rule, the parts come in order, How it runs holds the runner keys, no sideways scroll at 375 px" \
+  "2 people can start it · watches #example-team / A message with EXB-123 or EXA-123 picks this team [on]|Takes EXA tickets with the ai-fixme label, every 5 minutes on weekdays, hourly on weekends, 07:04 to 19:59 New York time · at most 7 launches a day / Jira login: present [on]|true|$(echo boot egress mcp runner secrets skills stack | tr ' ' ',')||0|true" \
+  "$(PAGE_BUDGET=9000 bash "$p" '#teams/example/settings' --fixture "$G" --width 375 --probe "$act")"
+drf="$stub$says"' await w(800); return [says("access"), says("jira")].join("|")'
+ck "a draft open to anyone says so after the test; a team with no project does not use Jira" \
+  "Anyone the bot allows can tag @fxa-agent (after the test) [on]|Not used [off]" "$(bash "$p" '#teams/example/settings' --fixture "$F" --probe "$drf")"
+fx '(."/api/teams/example") += {"jira": {"project": "EXA"}} | (."/api/teams/example".access) = {"open": false, "users": [], "channels": ["C0AAAA111", "C0BBBB222"], "jira_prefixes": []}'
+ck "channels with no people: nobody can start it from Slack, and the row asks for people; a queue that is off names the project" \
+  "Nobody can start it from Slack · watches 2 channels / A message with EXA-123 picks this team [add people]|Off · project EXA / Jira login: the bot's [off]" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$drf")"
+
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

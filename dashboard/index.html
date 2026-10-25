@@ -585,6 +585,7 @@
   .ck .num { width:24px; height:24px; flex:none; border-radius:var(--r-pill); display:grid; place-items:center; font:700 var(--t-label) var(--sans); background:var(--sunk); color:var(--dim); }
   .ck .num.ok { background:var(--okbg); color:var(--ok); } .ck .num.warn { background:var(--warnbg); color:var(--warn); } .ck .num.info { background:var(--infobg); color:var(--info); }
   .ckbody { border-top:1px solid var(--line); padding-top:var(--s4); display:flex; flex-direction:column; gap:var(--s3); }
+  .tin ~ .tin { border-top:1px solid var(--line); padding-top:var(--s3); }
   .log { margin:0; padding:var(--s3); border-radius:var(--r-md); background:var(--tty-bg); color:var(--tty-ink); font:var(--t-label)/1.6 var(--mono); white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; }
   .rows { width:100%; border-collapse:collapse; font-size:var(--t-sub); } .rows th { text-align:left; font-size:var(--t-label); color:var(--dim); font-weight:600; padding:var(--s1) var(--s2); } .rows td { padding:var(--s1) var(--s2); }
   [data-tform] details > summary { cursor:pointer; } [data-tform] .tmore { padding-top:var(--s3); }
@@ -1972,6 +1973,10 @@ let TFORM = null, TTEST = null, TMSG = null, NEWT = null, TMORE = new Set(), TAU
 let TOPTS = null, TPEOPLE = null, TPNAMES = {};
 const loadTeamOpts = () => { if (TOPTS) return; TOPTS = { loading: true };
   fetch("/api/teams/options", { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => null); TOPTS = r.ok && j ? j : { err: j?.error || String(r.status) }; teamPaint(); }, () => { TOPTS = { err: "the dashboard did not answer" }; }); };
+// The channels the bot is in, with names, for the access form and the Slack row.
+const loadTeamChans = team => { if (TCHANS?.team === team) return; TCHANS = { team, channels: [] };
+  fetch(`/api/teams/${encodeURIComponent(team)}/routine-channels`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({}));
+    TCHANS = { team, channels: r.ok && Array.isArray(j.channels) ? j.channels : [] }; teamPaint(); }, () => {}); };
 // Names for member IDs already in a form, so a chip says who it is.
 const loadPeopleNames = ids => { const miss = ids.filter(x => /^[UW][A-Z0-9]{6,}$/.test(x) && !(x in TPNAMES)); if (!miss.length) return;
   miss.forEach(x => { TPNAMES[x] = null; });
@@ -2054,11 +2059,11 @@ function teamItemForm(t, rec, f) {
   if (f.item === "access") { const C = TCHANS?.team === t.profile ? TCHANS.channels : [];
     return html`<fieldset class="group stack sm"><legend class="lb">Who can start it</legend><div class="fields2">
       <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value="1"${d.open ? " checked" : ""}><span class="stack sm"><b>Anyone the bot allows</b><span class="hint">Every person who can use @fxa-agent.</span></span></label>
-      <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value=""${d.open ? "" : " checked"}><span class="stack sm"><b>Only these people and channels</b><span class="hint">Nobody else can start this team.</span></span></label></div></fieldset>
+      <label class="choice sm"><input type="radio" name="tf-open" data-tfk="open" value=""${d.open ? "" : " checked"}><span class="stack sm"><b>Only these people</b><span class="hint">Nobody else can start this team.</span></span></label></div></fieldset>
       ${d.open ? "" : html`<div class="fields2"><fieldset class="group field"><legend class="lb">People <span class="opt">· ${d.users.length}</span></legend>
         ${d.users.length ? html`<ul class="plist">${d.users.map(u => html`<li><span>${personLabel(u)}${personLabel(u) !== u ? html` <span class="mono hint">${u}</span>` : ""}</span><button type="button" class="linkbtn" data-tfunpick="users" data-id="${u}" aria-label="Remove ${personLabel(u)}">Remove</button></li>`)}</ul>` : html`<p class="hint">Nobody yet.</p>`}
         ${peoplePicker("users", d.users)}${lab("uid", html`Or paste a member ID <span class="opt">· optional</span>`, html`<input id="tf-uid" class="input mono" data-tfk="uid" value="${d.uid ?? ""}" placeholder="U0123ABCD">`)}</fieldset>
-        <fieldset class="group field"><legend class="lb">Channels</legend>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
+        <fieldset class="group field"><legend class="lb">Channels it watches</legend><p class="hint">A tag in one of these channels picks this team. The person must still be on the list.</p>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
           ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}
       ${lab("prefixes", html`Jira keys that pick this team <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`, rec.jira?.project && !rec.jira.secret ? `Your project key ${rec.jira.project} counts already.` : "")}${save}`; }
   if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${new Blob([d.goal]).size} of 2560 bytes</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
@@ -2155,6 +2160,27 @@ function teamPatch(f) {
   if (f.item === "pr") return { pr: drop({ ...(rec.pr ?? {}), open: d.open, reviewers: list(d.reviewers).length ? list(d.reviewers) : undefined }) };
   return {};
 }
+// The ways a session of a record team can start, each with its rule and the form that changes it.
+function teamInputsHtml(t, rec, f) {
+  const adm = !!TEAM_ADMIN?.admin, a = rec.access ?? {}, j = rec.jira ?? {}, c = rec.caps ?? {}, draft = rec.status !== "active";
+  const row = (k, name, tg, lines, b) => html`<div class="ck tin" data-tin="${k}"><div class="who"><span class="nm">${name} ${tg}</span>${lines.filter(Boolean).map(l => html`<span class="says">${l}</span>`)}</div>${adm ? html`<button type="button" class="linkbtn" data-tf="${k}"${f ? " disabled" : ""}>${b}</button>` : ""}</div>
+    ${f?.item === k ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : ""}`;
+  const n = (a.users ?? []).length, ch = a.channels ?? [], after = draft ? " (after the test)" : "";
+  if (ch.length) loadTeamChans(t.profile);
+  const names = ch.map(id => { const x = TCHANS?.team === t.profile && TCHANS.channels.find(y => y.id === id); return x ? `#${x.name}` : id; }).join(", ");
+  const slack = a.open ? ["Anyone the bot allows can tag @fxa-agent", tag("on", "ok")]
+    : n ? [`${n} ${n === 1 ? "person" : "people"} can start it${ch.length ? ` · watches ${names}` : ""}`, tag("on", "ok")]
+    : ch.length ? [`Nobody can start it from Slack · watches ${ch.length} channel${ch.length === 1 ? "" : "s"}`, tag("add people", "warn")]
+    : ["Nobody can start it from Slack", tag("off")];
+  // The bot routes a key by the team's prefixes and by its project, unless the team takes secret tickets (fxa-agent-bot teams.js).
+  const keys = [...new Set([...(a.jira_prefixes ?? []), ...(j.project && !j.secret ? [j.project] : [])])];
+  const cap = c.launches_per_day != null ? ` · at most ${c.launches_per_day} launches a day` : " · at most 20 launches a day (default)";
+  const login = TED?.secrets?.[rec.secrets?.jira] === "present" ? "present" : "missing";
+  const jira = !j.project ? ["Not used", tag("off")] : !j.queue ? [`Off · project ${j.project}`, tag("off")]
+    : [`${j.secret ? `Takes only ${j.project} secret tickets (a security level, or a security or hackerone label)` : `Takes ${j.project} tickets with the ai-fixme label, every 5 minutes on weekdays, hourly on weekends, 07:04 to 19:59 New York time`}${cap}`, tag("on", "ok")];
+  return html`<div class="stack sm">${row("access", "Slack", slack[1], [slack[0] + (a.open || n ? after : ""), keys.length ? `A message with ${keys.map(k => `${k}-123`).join(" or ")} picks this team` : ""], "Change")}
+    ${row("jira", "Jira queue", jira[1], [jira[0], j.project ? `Jira login: ${rec.secrets?.jira ? login : "the bot's"}` : ""], j.project ? "Change" : "Set up")}</div>`;
+}
 function teamSetupHtml(t) {
   const adm = !!TEAM_ADMIN?.admin;
   if (TED?.name !== t.profile) return card(html`<p class="empty">loading the record…</p>`);
@@ -2163,19 +2189,21 @@ function teamSetupHtml(t) {
   const rs = teamRepoSays(t, rec), btn = (k, l) => adm ? html`<button type="button" data-tf="${k}"${f ? " disabled" : ""}>${l}</button>` : "";
   const item = (k, body) => open(k) ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : body;
   const rowv = (k, l, v, b) => html`<div class="kv"><span>${l}</span><span>${v}${adm ? html` · <button type="button" class="linkbtn" data-tf="${k}"${f ? " disabled" : ""}>${b}</button>` : ""}</span></div>${open(k) ? html`<div class="ckbody">${teamItemForm(t, rec, f)}</div>` : ""}`;
-  const j = rec.jira ?? {}, c = rec.caps ?? {}, sec = Object.entries(TED.secrets ?? {}), arm = k => TARM === `${t.profile}:${k}`;
+  const c = rec.caps ?? {}, sec = Object.entries(TED.secrets ?? {}), arm = k => TARM === `${t.profile}:${k}`;
   const more = (k, s, body) => html`<details class="card" data-tmore="${k}"${TMORE.has(k) ? " open" : ""}><summary><b>${s[0]}</b> <span class="hint">· ${s[1]}</span></summary><div class="stack sm tmore">${body}</div></details>`;
   return html`<div class="stack lg" data-tform>${TMSG?.team === t.profile && TMSG.msg ? html`<p role="status" class="${TMSG.ok ? "hint" : "unknown"}">${TMSG.msg}</p>` : ""}
     ${card(html`<div class="ck"><span class="${cls("num", rs.miss.length ? "warn" : "ok")}">${rs.miss.length ? "!" : "✓"}</span><div class="who"><span class="nm">Repo${(rec.repos ?? []).length === 1 ? "" : "s"}</span><span class="says">${rs.text}</span></div>${open("repos") ? "" : btn("repos", "Edit")}</div>
       ${rs.miss.length && !open("repos") ? html`<div class="alert warn"><span class="what" style="white-space:normal">An org owner installs the fxa-agent GitHub App on ${rs.miss.map(r => r.slug).join(", ")}. Until then, its work ships as a diff.</span></div>` : ""}${item("repos", "")}`, { cls: "stack" })}
     ${teamTestCard(t, rec)}
-    ${card(html`${rowv("access", "Who can start it", teamWho(t, rec), "Change")}${rowv("goal", "What it works on", String(rec.prompts?.goal_md ?? "").trim() ? `${String(rec.prompts.goal_md).trim().slice(0, 80)}${String(rec.prompts.goal_md).trim().length > 80 ? "…" : ""}` : "not set", "Edit")}`, { flat: true, cls: "stack sm" })}
-    ${more("settings", ["More settings", "all optional"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
+    ${card(rowv("goal", "What it works on", String(rec.prompts?.goal_md ?? "").trim() ? `${String(rec.prompts.goal_md).trim().slice(0, 80)}${String(rec.prompts.goal_md).trim().length > 80 ? "…" : ""}` : "not set", "Edit"), { flat: true, cls: "stack sm" })}
+    ${card(html`<h3>How work reaches this team</h3><p class="hint">The ways a session can start. Each one has its own rule.</p>${teamInputsHtml(t, rec, f)}
+      <p class="hint">Every input stops while the team is not active. Every input counts against the spend cap below. Last pass and queue depth: not shown here.</p>`, { cls: "stack sm" })}
+    ${card(html`<h3>Budget</h3>${rowv("caps", "Spend cap", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}`, { flat: true, cls: "stack sm" })}
+    ${more("about", ["About the team", "name, admins and PR rules"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
       ${rowv("admins", "Team admins", (rec.admins ?? []).length ? rec.admins.map(a => a.email || a.slack).join(", ") : "None", (rec.admins ?? []).length ? "Change" : "Add")}
-      ${rowv("jira", "Jira", j.project ? `${j.project}${j.queue ? ", takes tickets from the queue" : ""}${j.secret ? ", secret tickets too" : ""}` : "Not used", j.project ? "Change" : "Set up")}
-      ${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}${rowv("caps", "Limits", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : "", c.launches_per_day != null ? `${c.launches_per_day} launches a day` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}
+      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}`, "Change")}`)}
+    ${more("runs", ["How it runs", "a change needs a new test"], html`${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}
       ${rowv("skills", "Skills", (rec.skills ?? []).length ? rec.skills.join(", ") : "The base skills only", "Change")}
-      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}`, "Change")}
       ${rowv("runner", "Runner", `${rec.stack?.kind === "fxa" ? `FxA stack from ${rec.stack.repo ?? "mozilla/fxa"}` : "No stack"}, ${rec.runner?.backend === "firecracker" ? "Firecracker" : "GCE VM"}${rec.runner?.android ? ", Android" : ""}`, "Change")}
       ${rowv("egress", "Network", `${(rec.egress?.approved ?? []).length} approved host${(rec.egress?.approved ?? []).length === 1 ? "" : "s"}${(rec.egress?.requested ?? []).filter(h => !(rec.egress?.approved ?? []).includes(h)).length ? `, ${(rec.egress.requested ?? []).filter(h => !(rec.egress?.approved ?? []).includes(h)).length} asked for` : ""}`, "Change")}
       ${rowv("boot", "Boot script", rec.boot?.script ? `boot/${rec.boot.script}.sh` : "None", "Change")}
@@ -2320,8 +2348,7 @@ document.addEventListener("click", async e => {
   const team = SEL.teams, b = e.target.closest("button"); if (!b || b.disabled) return;
   if (b.hasAttribute("data-nt-create")) return teamCreate();
   if (b.dataset.tf) {
-    if (b.dataset.tf === "access" && TCHANS?.team !== team) fetch(`/api/teams/${encodeURIComponent(team)}/routine-channels`, { cache: "no-store" }).then(async r => { const j = await r.json().catch(() => ({}));
-      TCHANS = { team, channels: r.ok && Array.isArray(j.channels) ? j.channels : [] }; teamPaint(); }, () => { TCHANS = { team, channels: [] }; });
+    if (b.dataset.tf === "access") loadTeamChans(team);
     TFORM = { team, item: b.dataset.tf, d: teamItemDraft(b.dataset.tf, TED.rec) }; TPEOPLE = null;
     if (b.dataset.tf === "access") loadPeopleNames(TFORM.d.users); if (b.dataset.tf === "admins") loadPeopleNames(TFORM.d.admins.map(a => a.slack));
     if (["tools", "caps", "skills", "boot", "egress"].includes(b.dataset.tf)) loadTeamOpts();
