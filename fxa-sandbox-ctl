@@ -2845,7 +2845,8 @@ _finish_session() {
     _session_unlock "$key"; return 1
   fi
   _session_history_add "$key" action "$( [ "$mode" = --no-pr ] && echo "Push branch" || echo "Open PR" )"
-  session_set "$key" state wrapping wrap_mode "$( [ "$mode" = --no-pr ] && echo push || echo pr )"
+  # job_pid "" in the same write: until the new pid lands, the boot job's dead pid read as a died finish.
+  session_set "$key" state wrapping wrap_mode "$( [ "$mode" = --no-pr ] && echo push || echo pr )" job_pid ""
   _session_unlock "$key"
   nohup "$0" --backend gce session-finish "$key" "${mode:--}" ${idx:+"$idx"} > "${SESSION_DIR}/${key}.finish.log" 2>&1 &
   session_set "$key" job_pid "$!"

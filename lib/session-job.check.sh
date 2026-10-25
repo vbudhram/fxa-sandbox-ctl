@@ -15,4 +15,8 @@ check "a dead Push branch job says Push branch" "active|state active last_error 
 check "a dead Open PR job says Open PR" "active|state active last_error Open PR stopped before it finished. Try again.|finish_died" "$(run pr wrapping)"
 check "a dead boot job fails the session" "failed|state failed|boot_died" "$(run "" starting)"
 check "any other state is left as it is" "active||" "$(run "" active)"
+# The wrap-up write clears the boot job's pid in the same write: an events poll before the new pid lands
+# must not see 'wrapping' with a dead pid and settle the live finish job as died.
+check "starting a finish clears the old job pid in the same write as state wrapping" "1" \
+  "$(sed -n '/^_finish_session() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl" | grep -c 'session_set "$key" state wrapping .*job_pid ""')"
 exit "$fail"
