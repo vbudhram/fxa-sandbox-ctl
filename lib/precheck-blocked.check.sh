@@ -29,4 +29,53 @@ check "a secret team whose repo is not confirmed private pauses before any read,
 : > "$tmp/scope"
 check "with the repo confirmed, the gate ran in the pass's shell (its yes reaches the reads below)" "1" \
   "$( (PIPE_SECRET_TICKETS=1 PIPE_PROFILE=fxa-private cmd_precheck >/dev/null 2>&1; echo "${G_OK:-0}") )"
+
+# ── A blocked refused_ship key with a saved ship: an approver's label requeues it ──
+here="$(cd "$(dirname "$0")" && pwd)"
+eval "$(sed -n '/^worktree_saved_ship() {/,/^}/p;/^worktree_saved_ship_retire() {/,/^}/p' "$here/worktree.sh")"
+eval "$(sed -n '/^jira_tooling_label_adder() {/,/^}/p;/^_jira_tooling_match() {/,/^}/p' "$here/jira.sh")"
+_retry() { "$@"; }
+PIPE_TOOLING_LABEL=ai-fixme-allow-tooling PIPE_JIRA_BASIC=u:t PIPE_TOOLING_APPROVERS="Boss Person:acct-boss"
+unset PIPE_SECRET_TICKETS; pipeline_jira_scope() { :; }; cmd_reconcile() { :; }
+# A reap line is work, so the pass prints its info lines too.
+cmd_reap() { echo 'stray x'; }
+jira_keys_in_state() { [ "$1" = blocked ] && echo FXA-7; }
+gh_pr_state() { echo "${PRSTATE:-FXA-7 none - -}"; }
+gh_pr_none() { return "${PRNONE:-0}"; }
+# Jira: the label, and a changelog where ADDER added it. Each read is counted.
+_jira_rest_get() {
+  case "$1" in
+    *fields=labels) echo l >> "$tmp/reads"; [ -z "${LABEL_FAILS:-}" ] || return 22
+      if [ -n "${ADDER:-}" ]; then echo '{"fields":{"labels":["ai-fixme-blocked","ai-fixme-allow-tooling"]}}'; else echo '{"fields":{"labels":["ai-fixme-blocked"]}}'; fi ;;
+    *changelog*) echo c >> "$tmp/reads"; [ -z "${LOG_FAILS:-}" ] || return 22
+      printf '{"isLast":true,"total":1,"values":[{"author":{"accountId":"%s"},"items":[{"field":"labels","fromString":"ai-fixme-blocked","toString":"ai-fixme-blocked ai-fixme-allow-tooling"}]}]}\n' "$ADDER" ;;
+  esac
+}
+jira_comment() { printf '%s\n' "$2" >> "$tmp/jira"; }
+errors_record() { jq -nc --arg k "$2" --arg w "$4" --arg m "$5" '{kind: $k, where: $w, message: $m}' >> "$tmp/errors"; }
+# setup   FXA-7 blocked refused_ship with a saved set, and no notes.
+setup() { rm -f "$tmp"/FXA-7.* "$tmp"/{labels,jira,errors,reads}; printf '1\trefused_ship\t\n' > "$tmp/FXA-7.blocked-why"
+  for f in patch done.json base; do echo x > "$tmp/FXA-7.leftover-100.$f"; done; }
+pc() { cmd_precheck 2>&1; }
+cnt() { [ -e "$tmp/$1" ] || { echo 0; return 0; }; grep -c -- "${2:-.}" "$tmp/$1" || true; }
+setup; out="$(ADDER=acct-boss pc)"
+check "an approver's label: label public, the reship line, one label and one changelog read" \
+  "FXA-7 public|1|1|1" "$(cat "$tmp/labels")|$(grep -c '^reship: FXA-7 refused_ship, tooling label approved by Boss Person; back in the queue, the saved change ships with no new run$' <<< "$out")|$(cnt reads l)|$(cnt reads c)"
+setup; rm "$tmp/FXA-7.leftover-100.base" "$tmp/FXA-7.leftover-100.done.json"
+check "an old leftover with no .base or .done.json: no requeue" 0 "$(ADDER=acct-boss pc >/dev/null; cnt labels)"
+setup; echo stale > "$tmp/FXA-7.leftover-100.retired"
+check "a set with a tombstone: no requeue over three passes (no loop)" 0 "$(for i in 1 2 3; do ADDER=acct-boss pc >/dev/null; done; cnt labels)"
+setup
+check "an open PR: no requeue, and no Jira read" "0|0" "$(PRSTATE='FXA-7 9 OPEN ok=1' ADDER=acct-boss pc >/dev/null; cnt labels)|$(cnt reads)"
+setup
+check "PIPE_PR_OPEN=0: no requeue" 0 "$(PIPE_PR_OPEN=0 ADDER=acct-boss pc >/dev/null; cnt labels)"
+setup; printf '1\tstalled\t\n' > "$tmp/FXA-7.blocked-why"
+check "another blocked kind: no requeue" 0 "$(ADDER=acct-boss pc >/dev/null; cnt labels)"
+setup
+check "no label: no requeue, nothing posted" "0|0|0" "$(pc >/dev/null; cnt labels)|$(cnt jira)|$(cnt errors)"
+setup; pipeline_holding_new() { return 0; }
+out="$(ADDER=acct-boss pc; ADDER=acct-boss pc)"
+check "newtickets off: no requeue, the info line, and one held comment over two passes" \
+  "0|2|1" "$(cnt labels)|$(grep -c '^reship of FXA-7 waits for newtickets on$' <<< "$out")|$(cnt jira '^🤖 Tooling label approved by Boss Person. The saved change ships when the operator turns new tickets back on.$')"
+pipeline_holding_new() { return 1; }
 exit "$fail"

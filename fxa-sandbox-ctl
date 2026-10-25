@@ -1610,6 +1610,23 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   done
   # Drain reads only done tickets. A blocked ticket's PR can still be merged or
   # closed by a person, and nothing else moves the ticket then.
+  # A refused tooling ship with a saved ship: a tooling approver's label alone sends it back to the queue,
+  # and the launch ships the saved change with no agent run. One label and one changelog read per key.
+  _reship_offer() {
+    local key="$1" rc=0 who="" by
+    gh_pr_none "$key" || rc=$?
+    [ "$rc" != 0 ] || who="$(jira_tooling_label_adder "$key")" || rc=$?
+    [ "$rc" = 0 ] || return 0
+    by="$(_jira_tooling_match "$who")" || return 0
+    if pipeline_holding_new; then
+      _info "reship of ${key} waits for newtickets on"
+      [ -e "${PIPE_STATE_DIR}/${key}.reship-held-noted" ] \
+        || { jira_comment "$key" "🤖 Tooling label approved by ${by#* }. The saved change ships when the operator turns new tickets back on." \
+             && : > "${PIPE_STATE_DIR}/${key}.reship-held-noted"; } || true
+    elif cmd_label "$key" public >/dev/null 2>&1; then
+      _info "reship: ${key} refused_ship, tooling label approved by ${by#* }; back in the queue, the saved change ships with no new run"
+    else _work "reship: ${key} label public FAILED"; fi
+  }
   local bstate
   for key in $(jira_keys_in_state blocked 2>/dev/null || true); do
     read -r _ num bstate _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
@@ -1617,6 +1634,9 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
       MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num while blocked (labelled, ticket closed)"; else _work "drain: $key blocked, #$num merged (label merged FAILED)"; fi ;;
       CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num while blocked (labelled)"; else _work "drain: $key blocked, #$num closed (label rejected FAILED)"; fi ;;
     esac
+    [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ "$num" = none ] && [ "${PIPE_PR_OPEN:-1}" != 0 ] \
+      && [ "$(cut -f2 "${PIPE_STATE_DIR}/${key}.blocked-why" 2>/dev/null || true)" = refused_ship ] \
+      && worktree_saved_ship "$key" >/dev/null && _reship_offer "$key" || true
   done
   while IFS= read -r line; do [ -n "$line" ] && _work "reap: $line"; done < <(cmd_reap --stray 2>&1)
 
