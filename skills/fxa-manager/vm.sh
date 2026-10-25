@@ -218,11 +218,11 @@ EOF
 on_vm() {
   if [ "$(hostname -s)" = "$VM" ]; then bash -s; return; fi
   local err rc=0; err="$(mktemp "${TMPDIR:-/tmp}/vm-ssh.XXXXXX")"
-  # One IAP connection, shared for 5 min: gcloud opens it (about 3 s), and each later call is plain
+  # One IAP connection, shared for 30 min: gcloud opens it (about 3 s), and each later call is plain
   # ssh over it (0.15 s, against 5 s for a new gcloud ssh). A promote makes about ten calls.
   local m="$HOME/.ssh/fxa-mux-$VM"
   ssh -S "$m" -O check x 2>/dev/null || gcloud compute ssh "$VM" --tunnel-through-iap --zone "$Z" --project "$P" --quiet \
-    --ssh-flag=-oControlMaster=auto --ssh-flag="-oControlPath=$m" --ssh-flag=-oControlPersist=300 --command true 2>"$err" >/dev/null </dev/null || rc=$?
+    --ssh-flag=-oControlMaster=auto --ssh-flag="-oControlPath=$m" --ssh-flag=-oControlPersist=1800 --command true 2>"$err" >/dev/null </dev/null || rc=$?
   [ "$rc" != 0 ] || ssh -S "$m" -o ControlMaster=no x 'bash -s' 2>>"$err" || rc=$?
   if [ "$rc" != 0 ]; then
     if grep -qiE 'reauthentication|refreshing your current auth tokens|gcloud auth login' "$err"; then
