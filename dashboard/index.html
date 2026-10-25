@@ -835,11 +835,13 @@ function merged() {
   const seen = new Set(runners.map(r => r.key));
   // Inflight with no runner: at the PR stage the runner is gone by design and
   // CI is the live phase, so it keeps its card and the belt runs on the CI
-  // segment. Anything else without a runner is a fault and gets an alert.
+  // segment. A reship has no runner either: the host ships the saved change. Anything else without a runner is a fault.
   const waiting = inflight.filter(t => !seen.has(t.key));
+  const reship = t => t.stage === "starting" && (t.detail || "").split(" ")[0] === "reship";
   const ciCards = waiting.filter(t => t.stage === "pr").map(t => ({ ...t, live: false, ci: true,
     name: "", slot: "", agent: null, agent_alive: false, elapsed_seconds: t.elapsed_seconds }));
-  return { cards: cards.concat(ciCards), waiting: waiting.filter(t => t.stage !== "pr") };
+  const reshipCards = waiting.filter(reship).map(t => ({ ...t, live: false, reship: true, name: "", slot: "", agent: null, agent_alive: false }));
+  return { cards: cards.concat(ciCards, reshipCards), waiting: waiting.filter(t => t.stage !== "pr" && !reship(t)) };
 }
 
 // One rule for a stop command a person copies (i356 D38): a slot or runner name, else no command.
@@ -971,7 +973,7 @@ function floorRows() {
   if (!g || STATE.agents_error) return { unknown: true, stale, rows: [], slots: 0, admin: !!TEAM_ADMIN?.admin };
   const bg = beltGroups(), rowBy = new Map(["working", "needs", "fixes", "review"].flatMap(k => bg[k]).map(r => [r.t.key, r]));
   // free_slots null: the slot read failed, so an empty slot is unknown, never a confident free.
-  const cards = new Map(merged().cards.filter(c => !c.ci).map(c => [c.name, c])), known = Array.isArray(g.free_slots), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
+  const cards = new Map(merged().cards.filter(c => !c.ci && !c.reship).map(c => [c.name, c])), known = Array.isArray(g.free_slots), free = new Set(g.free_slots ?? []), admin = !!TEAM_ADMIN?.admin;
   const rows = [], pool = g.pool ?? [];
   // A runner that no pool slot holds (another pool, a hand-started run) still gets its row.
   const slots = pool.map(p => ({ slot: p.slot, c: p.agent ? cards.get(p.agent) : null, agent: p.agent })).concat([...cards.values()].filter(c => !pool.some(p => p.agent === c.name)).map(c => ({ slot: "", c })));

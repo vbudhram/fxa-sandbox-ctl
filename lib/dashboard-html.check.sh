@@ -50,4 +50,15 @@ t("Belt: with the scope on the progress line too (snapshot's detail)", l1({ stag
 t("Belt: another boot step keeps Boot:", l1({ stage: "starting", detail: "checkout" }), "Boot: checkout");
 process.exit(fail);
 JS
+# A reship from the feeds: an inflight row with no runner gets a Belt row, not a "no sandbox" fault.
+fns="$(sed -n '/^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p' "$page")"
+node - "$fns" <<'JS' || rc=1
+process.argv.splice(1, 1);
+var SNAP = { inflight: [{ key: "FXA-1", stage: "starting", detail: "reship tooling=scripts", elapsed_seconds: 60 }], review: [], blocked: [], open_prs: [] }, AGENTS = { runners: [], sessions: [] };
+eval(process.argv[1]);
+const m = merged(), row = laneRows().find(r => r.t.key === "FXA-1");
+const got = `${m.waiting.length}|${m.cards.filter(c => c.reship).length}|${row?.l1}`, want = "0|1|Shipping saved change";
+if (got === want) console.log("ok   Belt: a reship with no runner is a card that says Shipping saved change, not a waiting fault");
+else { console.log(`FAIL Belt: a reship with no runner: want [${want}] got [${got}]`); process.exit(1); }
+JS
 exit "$rc"
