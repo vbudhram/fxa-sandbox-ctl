@@ -33,4 +33,17 @@ t("table: head with a num column, rows as HTML", table(["Ticket", ["Cost", "num"
 t("emptybox escapes", emptybox("No <runs>"), '<div class="emptybox">No &lt;runs&gt;</div>');
 process.exit(fail);
 JS
-rc=$?; [ "${css_fail:-0}" = 0 ] || rc=1; exit "$rc"
+rc=$?; [ "${css_fail:-0}" = 0 ] || rc=1
+# The Belt's first line for a run, from the page's own expression.
+l1="$(sed -n '/^    const l1 = t.stage === "starting"/,/plainMd(a.last_tool/p' "$page")"
+node - "$l1" <<'JS' || rc=1
+const src = process.argv[2], plainMd = s => s, a = {};
+const l1 = t => eval(src.replace(/^\s*const l1 = /, "").replace(/;\s*$/, ""));
+let fail = 0;
+const t = (name, got, want) => { if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } };
+t("Belt: a starting run with detail reship says Shipping saved change", l1({ stage: "starting", detail: "reship" }), "Shipping saved change");
+t("Belt: with the scope on the progress line too (snapshot's detail)", l1({ stage: "starting", detail: "reship tooling=scripts" }), "Shipping saved change");
+t("Belt: another boot step keeps Boot:", l1({ stage: "starting", detail: "checkout" }), "Boot: checkout");
+process.exit(fail);
+JS
+exit "$rc"

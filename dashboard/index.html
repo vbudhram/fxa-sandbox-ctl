@@ -3477,7 +3477,7 @@ function laneRows() {
     }
     const st = { starting:1, watching:2, stalled:2, error:2, squashing:3, pushed:4, pr:5 }[t.stage] ?? 2;
     const kind = t.stage === "stalled" || t.stage === "error" ? "fix" : "live";
-    const l1 = t.stage === "starting" ? `Boot: ${t.detail || "starting"}` : t.stage === "stalled" ? `Stalled · ${(t.detail || "").split(" ")[0]}`
+    const l1 = t.stage === "starting" ? ((t.detail || "").split(" ")[0] === "reship" ? "Shipping saved change" : `Boot: ${t.detail || "starting"}`) : t.stage === "stalled" ? `Stalled · ${(t.detail || "").split(" ")[0]}`
       : t.stage === "error" ? "Run failed" : t.stage === "squashing" ? "Squashing" : t.stage === "pushed" ? "Pushing" : t.stage === "pr" ? "Opening PR"
       : plainMd(a.last_tool || a.last_text || "Working");
     const l2 = st === 2 && kind === "live" ? `${min}m${med ? ` of a ${med}m median` : ""} · ${t.files_changed ?? 0} files` : `${min}m`;

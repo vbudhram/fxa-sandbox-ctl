@@ -2178,7 +2178,7 @@ _launch_times() {
   local key="${1:?launch-times needs <KEY>}"; pipeline_require || return 1
   local tsv; tsv="$(pipeline_launch_log "$key")"; tsv="${tsv%.log}.tsv"
   [ -f "$tsv" ] || { echo "no timings for ${key} (launched before they were recorded)"; return 0; }
-  grep -E $'^[0-9.]+\t(Creating GCE|Restoring|VM .* ready|Checking out the commit|Applying security|Starting claude|=== handoff file detected|Committing and pushing|PR opened|PR updated|Releasing runner|Agent .* stopped and cleaned up|CI: |ERROR)' "$tsv" \
+  grep -E $'^[0-9.]+\t(Creating GCE|Reship|Restoring|VM .* ready|Checking out the commit|Applying security|Starting claude|=== handoff file detected|Committing and pushing|PR opened|PR updated|Releasing runner|Agent .* stopped and cleaned up|CI: |ERROR)' "$tsv" \
     | awk -F'\t' '{ s = int($1); printf "%3dm%02ds  %s\n", s / 60, s % 60, substr($2, 1, 100) }'
 }
 

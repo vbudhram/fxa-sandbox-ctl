@@ -735,6 +735,8 @@ pipeline_progress() {
   # Before the launcher watches for the handoff, say which boot step it is on.
   # On gce this stage lasts minutes, and "starting" alone hid all of them.
   local sub="boot"
+  # A reship has no boot; its fallback starts one, so the boot steps below win.
+  grep -q '^Reship:' "$log" && ! grep -q '^Reship fallback:' "$log" && sub="reship"
   grep -q "ready (" "$log"                   && sub="checkout"
   grep -q "Infrastructure ready" "$log"      && sub="hardening"
   grep -q "^Shipping \|Setting up .* config" "$log" && sub="config"

@@ -174,4 +174,19 @@ for p in out hook link; do
     "$(fallback apply)|$(cat "$tmp/jira" "$tmp/errors" "$tmp/launch.log" | grep -c 'outside\|hooks/pre-commit\|lnk')"
 done
 
+# ── progress and launch-times show the reship, and the fallback goes back to the boot steps ──
+eval "$(sed -n '/^pipeline_progress() {/,/^}/p' "$here/pipeline.sh")"
+eval "$(sed -n '/^_launch_times() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
+pipeline_require() { :; }; pipeline_launch_log() { printf '%s/%s.launch.log\n' "$PIPE_STATE_DIR" "$1"; }
+L="$PIPE_STATE_DIR/FXA-7.launch.log"
+printf 'Launched at: 1\ntooling: scripts allowed by Boss Person [acct-boss] (label ai-fixme-allow-tooling)\nReship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.\n' > "$L"
+check "progress after the Reship: line" "FXA-7 starting reship tooling=scripts" "$(pipeline_progress FXA-7)"
+echo 'Reship fallback: hash; a new agent run starts.' >> "$L"
+check "progress once the fallback line is there" "FXA-7 starting boot tooling=scripts" "$(pipeline_progress FXA-7)"
+echo 'Watching for the handoff file [ 5s]' >> "$L"
+_pipeline_stalled_reason() { return 1; }; pipeline_launch_started() { date +%s; }
+check "then watching, as any run" "FXA-7 watching 5s tooling=scripts" "$(pipeline_progress FXA-7)"
+printf '0.1\tLaunched at: 1\n0.2\tReship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.\n' > "${L%.log}.tsv"
+check "launch-times lists the Reship milestone" 1 "$(_launch_times FXA-7 | grep -c 'Reship: shipping')"
+
 exit "$fail"
