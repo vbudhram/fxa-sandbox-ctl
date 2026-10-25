@@ -16,4 +16,8 @@ acli() { case "$4" in
 check "a normal ticket" '{"key":"FXA-1","summary":"Fix it","status":"In Progress","category":"indeterminate","assignee":"Dev One","type":"Bug","priority":"P2"}' "$(jira_card fxa-1)"
 for k in FXA-2 FXA-3 FXA-4 SEC-5 FXA-9; do check "$k is hidden" "null" "$(jira_card $k)"; done
 check "a bad key fails" "1" "$(jira_card 'x; rm' >/dev/null 2>&1; echo $?)"
+# jira_ticket under set -e: a refused view is one ERROR line with the next step, not a bare crash.
+eval "$(sed -n '/^jira_ticket() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+out="$(set -euo pipefail; acli() { return 1; }; jira_ticket FXA-7 2>&1 || echo "rc=$?")"
+check "a Jira view that fails says why and exits 1" "1|rc=1" "$(grep -c '^ERROR: Jira did not return FXA-7' <<< "$out")|$(tail -1 <<< "$out")"
 exit "$fail"

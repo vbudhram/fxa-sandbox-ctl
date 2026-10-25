@@ -299,7 +299,8 @@ jira_label_set() {
 jira_ticket() {
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: ticket needs <KEY>" >&2; return 1; }
   echo "=== $key description ==="
-  acli jira workitem view "$key" 2>/dev/null
+  # Under set -e a refused view used to end the command with only the header; say why and stop.
+  acli jira workitem view "$key" 2>/dev/null || { echo "ERROR: Jira did not return ${key}: it is restricted, missing, or the Jira login failed." >&2; return 1; }
   echo
   echo "=== $key comments (oldest first) ==="
   acli jira workitem comment list --key "$key" --json 2>/dev/null \

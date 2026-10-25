@@ -1741,7 +1741,8 @@ cmd_ground() {
   local out="/tmp/fxa-${key}-ground.md" repo="$PIPE_REPO" b="${PIPE_BASE_BRANCH:-main}"
   pipeline_ensure_clone || { echo "ERROR: could not clone ${PIPE_REPO_SLUG} on this host" >&2; return 1; }
   git -C "$repo" fetch -q origin "$b" 2>/dev/null || true
-  local ticket; ticket="$(jira_ticket "$key" 2>/dev/null)"
+  # jira_ticket's own ERROR line says why a refused read stops the grounding.
+  local ticket; ticket="$(jira_ticket "$key")"
   local reporter; reporter="$(jira_reporter_login "$key" 2>/dev/null || true)"
   local skiprec; skiprec="$(pipeline_skipped "$key" 2>/dev/null || true)"
   local paths; paths="$(_ground_paths "$ticket" || true)"
