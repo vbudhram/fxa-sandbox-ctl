@@ -23,8 +23,9 @@ act="$stub"' await w(900); const h = document.getElementById("s-teams").innerTex
   test = { result: "passed", at: 1, generation: 1792640520000000, tested: 1792640520000000, started_at: 1, lines: ["passed: team example may be activated at generation 1792640520000000"] };
   await teamTestPoll("example"); await w(300);
   return [/Settings\s*1 left/.test(h), !/Overview/.test(document.querySelector(".ttabs").innerText), box, sent.map(s => s[0] + (s[1].status ? ":" + s[1].status : "")).join(",")].join("|")'
+# The probe waits 1.5 s plus a test poll after the 2.5 s start: the default 6 s budget left no room on a busy host, and the answer came back empty (i585).
 ck "a draft opens on Settings with one step left; Test and activate tests, then activates on the pass" \
-  "true|true|true|/api/teams/example/test,/api/teams/example/status:active" "$(bash "$p" '#teams/example' --fixture "$F" --probe "$act")"
+  "true|true|true|/api/teams/example/test,/api/teams/example/status:active" "$(PAGE_BUDGET=12000 bash "$p" '#teams/example' --fixture "$F" --probe "$act")"
 # The settings items beyond the first seven: options-driven pickers, the people search, and the record each Save posts.
 G="$(mktemp)"; trap 'rm -f "$G"' EXIT
 jq '. + {"/api/teams/options": {"caps": {"usd_per_day": 50, "usd_per_month": 900, "launches_per_day": 9}, "skills": ["fxa-stack", "fxa-verify"], "connectors": ["jira", "sentry"], "boot": [{"script": "web", "sha256": "'"$(printf 'b%.0s' $(seq 64))"'"}], "egress_deny": ["pastebin.com"]},
