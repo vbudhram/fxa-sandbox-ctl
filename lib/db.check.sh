@@ -229,4 +229,10 @@ check "people: by name, handle or email, a LIKE character is literal, and a list
 c = fxadb.connect(readonly=True); f = lambda q: ",".join(p["id"] for p in fxadb.people(c, q)["people"])
 print("|".join([f("doe"), f("PAT"), f("example.com"), f("%"), f("m_l"), f("U0000002,W0000003"), str(fxadb.people(c, "x")["at"])]))' "$here")"
 
+# A typo in 'db query' is a refused statement, not a controller crash: sqlite3's reason, exit 1, no errors row.
+ef="$(mktemp "${TMPDIR:-/tmp}/db-errs.XXXXXX")"
+out="$(FXA_DB="$(mktemp -u "${TMPDIR:-/tmp}/db-q.XXXXXX").db" FXA_ERRORS_FILE="$ef" FXA_ERRORS_URI= "$here/../fxa-sandbox-ctl" db query 'SELEC 1' 2>&1; echo "rc=$?")"
+check "a bad db query says why, exits 1 and records no crash" "1|rc=1|0" "$(grep -ci 'syntax error' <<< "$out" | head -c1)|$(tail -1 <<< "$out")|$(grep -c . "$ef" || true)"
+rm -f "$ef"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

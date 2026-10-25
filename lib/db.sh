@@ -139,7 +139,8 @@ cmd_db() {
     import) db_import ;;
     parity) db_parity ;;
     query) [ -n "${2:-}" ] || { echo "usage: fxa-sandbox-ctl db query '<sql>'" >&2; return 1; }
-      _db_ready && _db -readonly -box "$2" ;;
+      # || return 1: sqlite3 already printed why, and a return is a handled refusal, not a crash for the errors trap.
+      _db_ready && _db -readonly -box "$2" || return 1 ;;
     status)
       [ -f "$FXA_DB" ] || { echo "no database at ${FXA_DB} (run: fxa-sandbox-ctl db init)"; return 0; }
       echo "database: ${FXA_DB} ($(du -h "$FXA_DB" | cut -f1), schema $(_db "PRAGMA user_version;"), journal $(_db "PRAGMA journal_mode;"))"
