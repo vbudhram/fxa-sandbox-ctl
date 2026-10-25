@@ -6,7 +6,9 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^worktree_free_slots() {/,/^}/p' "$here/worktree.sh")"
+eval "$(sed -n '/^worktree_free_slots() {/,/^}/p;/^worktree_finishing() {/,/^}/p' "$here/worktree.sh")"
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+LOG_DIR="$tmp/logs"; mkdir -p "$LOG_DIR"
 eval "$(sed -n '/^worktree_key_for() {/,/^}/p' "$here/worktree.sh")"
 eval "$(sed -n '/^worktree_filtered_status() {/,/^}/p' "$here/worktree.sh")"
 worktree_repo_root() { echo "$tmp/fxa"; }
@@ -19,6 +21,12 @@ for s in fxa-auto-1 fxa-auto-2; do
 done
 git -C "$tmp/fxa-auto-1" checkout -q -b fxa-14727; git -C "$tmp/fxa-auto-2" checkout -q -b fxa-14580
 check "clean idle slots are free" "fxa-auto-1 fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
+# A finish or a reship holds a slot with no VM: on gce it looks free, and another ticket would take it.
+: > "$LOG_DIR/fxa-auto-1.finishing"
+check "a clean slot with a fresh .finishing marker is not free" "fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
+check "a marker older than FXA_FINISHING_STALE_SECONDS does not hold it" "fxa-auto-1 fxa-auto-2" \
+  "$(touch -t 202001010000 "$LOG_DIR/fxa-auto-1.finishing"; FXA_FINISHING_STALE_SECONDS=60 FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
+rm -f "$LOG_DIR/fxa-auto-1.finishing"
 echo '{"a":1}' > "$tmp/fxa-auto-1/package.json"; git -C "$tmp/fxa-auto-1" add package.json
 check "a slot with a staged, unshipped change is not free" "fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
 # A ticket that leaves inflight: its unshipped changes are saved, and its slot goes back to the pool.

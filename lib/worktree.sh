@@ -221,6 +221,7 @@ worktree_free_slots() {
     if [ -n "$(_worktree_agent_for_workspace "$path")" ]; then
       continue                      # a VM still runs here; a launch would abort
     fi
+    worktree_finishing "$path" && continue   # a finish or a reship holds it, with no VM
     # Unshipped changes (a refused ship) are the only copy once the runner is gone,
     # and another ticket would inherit them. Its own ticket still resumes here.
     [ -n "$(worktree_filtered_status "$path")" ] && continue

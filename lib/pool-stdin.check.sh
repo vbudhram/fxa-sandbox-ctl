@@ -7,7 +7,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
-eval "$(sed -n '/^_worktree_each_active_agent() {/,/^}/p;/^_worktree_agent_for_workspace() {/,/^}/p;/^worktree_free_slots() {/,/^}/p' "$here/worktree.sh")"
+eval "$(sed -n '/^_worktree_each_active_agent() {/,/^}/p;/^_worktree_agent_for_workspace() {/,/^}/p;/^worktree_free_slots() {/,/^}/p;/^worktree_finishing() {/,/^}/p' "$here/worktree.sh")"
 # Three slots; a runner works in slot 1. The runner check reads stdin, as ssh does.
 LOG_DIR="$tmp"; printf 'NAME=fxa-1\nWORKSPACE=%s/p/s1\n' "$tmp" > "$tmp/fxa-1.meta"
 vm_is_running() { cat > /dev/null; return 0; }
