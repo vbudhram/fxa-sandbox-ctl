@@ -58,6 +58,9 @@ jobs:
     # The laptop's OS: bash 3.2 and BSD tools. A 3.2-only break used to pass CI and reach main.
     runs-on: macos-latest
     timeout-minutes: 25
+    # Not a gate yet: some checks hang or fail on the runner (headless Chrome, network-bound ones); see i591.
+    # Its log still names each failing check, and the laptop runs test.sh mac.
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
