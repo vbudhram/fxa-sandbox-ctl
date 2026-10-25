@@ -57,11 +57,11 @@ memory_pull() {
 # _memory_lock [wait] / _memory_unlock   One writer of the clone at a time: a save, a pull or the digest.
 # A lock older than 10 min is from a process that died. It waits up to <wait> seconds (2).
 _memory_lock() {
-  local l="${FXA_MEMORY_DIR}.lock" w="${1:-2}" end
+  local l="${FXA_MEMORY_DIR}.lock" w="${1:-${FXA_MEMORY_LOCK_WAIT:-2}}" end
   case "$w" in ''|*[!0-9]*) w=2 ;; esac   # a typo such as 60s would end the whole command in the arithmetic
   end=$(( $(date +%s) + w ))
   [ -d "$l" ] && [ $(( $(date +%s) - $(_mtime "$l" 2>/dev/null || date +%s) )) -gt 600 ] && rmdir "$l" 2>/dev/null
-  until mkdir "$l" 2>/dev/null; do [ "$(date +%s)" -lt "$end" ] || return 1; sleep 2; done
+  until mkdir "$l" 2>/dev/null; do [ "$(date +%s)" -lt "$end" ] || return 1; sleep "${FXA_MEMORY_LOCK_POLL:-2}"; done
 }
 _memory_unlock() { rmdir "${FXA_MEMORY_DIR}.lock" 2>/dev/null; return 0; }
 
@@ -672,7 +672,7 @@ memory_admin() {
     else _memory_entry_errs "${e:-null}" "$scope" "$kinds" 1 >&2 || return 1
       e="$(jq -c '. + {cite: (.cites[0].cite | sub("^[^:]+:"; "")), anchor: .cites[0].anchor} | del(.cites)' <<< "$e")"; fi
   fi
-  _memory_lock 10 || { echo "ERROR: the team memory is busy with a run's save; try again in a minute" >&2; return 2; }
+  _memory_lock "${FXA_MEMORY_ADMIN_WAIT:-10}" || { echo "ERROR: the team memory is busy with a run's save; try again in a minute" >&2; return 2; }
   trap _memory_unlock EXIT
   # A digest that stopped part way can leave the clone on its branch, or with its moved entries uncommitted:
   # a dashboard request must not commit those to main.

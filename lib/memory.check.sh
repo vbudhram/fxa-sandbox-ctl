@@ -9,6 +9,10 @@ tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 g() { git -c init.defaultBranch=main -c user.name=t -c user.email=t@example.com "$@"; }
 _retry() { "$@"; }
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# The host's git config can sign each commit (about 0.2 s each), and the lock checks need no 2 s poll.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FXA_MEMORY_LOCK_POLL=0.2
+# macOS /usr/bin/git is an xcrun shim that adds about 20 ms to each of some 400 calls.
+xg="$(xcrun -f git 2>/dev/null || true)"; [ -x "$xg" ] && mkdir -p "$tmp/bin" && ln -s "$xg" "$tmp/bin/git" && PATH="$tmp/bin:$PATH"
 export FXA_MEMORY_LOG="$tmp/memory.jsonl"
 source "$here/memory.sh"
 
@@ -296,17 +300,17 @@ check "a cite on a main repo still checks out, and a bad anchor does not" "0|1" 
 
 # One writer at a time: while a save holds the lock, the digest and the pull wait their turn.
 mkdir "${FXA_MEMORY_DIR}.lock"; rm -f "${FXA_MEMORY_DIR}.pulled" "${FXA_MEMORY_DIR}.digest"
-memory_digest_maybe 2>/dev/null; memory_pull_maybe 2>/dev/null
+FXA_MEMORY_LOCK_WAIT=0 memory_digest_maybe 2>/dev/null; FXA_MEMORY_LOCK_WAIT=0 memory_pull_maybe 2>/dev/null
 check "the digest and the pull skip a held lock, and try again next sweep" "main|no|no" \
   "$(g -C "$tmp/clone" rev-parse --abbrev-ref HEAD)|$([ -f "${FXA_MEMORY_DIR}.digest" ] && echo yes || echo no)|$([ -f "${FXA_MEMORY_DIR}.pulled" ] && echo yes || echo no)"
 touch -t 200001010000 "${FXA_MEMORY_DIR}.lock"
 check "a lock from a process that died is taken over" "0" "$(_memory_lock; echo $?)"; _memory_unlock
-mkdir "${FXA_MEMORY_DIR}.lock"; ( sleep 3; rmdir "${FXA_MEMORY_DIR}.lock" ) &
+mkdir "${FXA_MEMORY_DIR}.lock"; ( sleep 1; rmdir "${FXA_MEMORY_DIR}.lock" ) &
 check "a save waits for a pull that holds the lock, then takes it" "0" "$(_memory_lock 20; echo $?)"; _memory_unlock; wait
 mkdir "${FXA_MEMORY_DIR}.lock"
 check "a held lock past the wait is refused, and a wait that is not a number counts as 2 s" "1|1" "$(_memory_lock 2; echo $?)|$(_memory_lock 60s; echo $?)"; _memory_unlock
 # The save itself (memory_collect) waits for a pull that holds the lock, and lands.
-mkdir "${FXA_MEMORY_DIR}.lock"; ( sleep 3; rmdir "${FXA_MEMORY_DIR}.lock" ) &
+mkdir "${FXA_MEMORY_DIR}.lock"; ( sleep 1; rmdir "${FXA_MEMORY_DIR}.lock" ) &
 FXA_MEMORY_SAVE_WAIT=20 memory_collect agent-lk1 "$tmp/m.json" ship fxa 0 FXA-321 mozilla/fxa 2>/dev/null; wait
 check "a session save that meets a held lock waits and saves" "saved" "$(jq -r 'select(.run == "agent-lk1") | .result' "$FXA_MEMORY_LOG" | tail -1)"
 
@@ -412,7 +416,7 @@ check "admin edit: same id, the kind change moves the block, the old file has no
   "$(g -C "$tmp/remote.git" show main:teams/web/trap.md | grep -c "^## ${aid}\$")|$(g -C "$tmp/remote.git" show main:teams/web/system.md 2>/dev/null | grep -c "^## ${aid}\$")"
 check "admin edit: a stale version exits 2 and commits nothing" "2|same" "$(h="$(g -C "$tmp/remote.git" rev-parse main)"; memory_admin set web "$aid" "$(recf "$edit")" >/dev/null 2>&1; echo "$?|$([ "$(g -C "$tmp/remote.git" rev-parse main)" = "$h" ] && echo same)")"
 mkdir "${FXA_MEMORY_DIR}.lock"
-check "admin: a held lock exits 2 as busy" "2" "$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" >/dev/null 2>&1; echo $?)"
+check "admin: a held lock exits 2 as busy" "2" "$(FXA_MEMORY_ADMIN_WAIT=1 memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" >/dev/null 2>&1; echo $?)"
 rmdir "${FXA_MEMORY_DIR}.lock"
 g -C "$tmp/clone" checkout -q -b digest/y
 check "admin: a clone on a digest branch refuses and leaves the lock free" "1|1|0" "$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" 2>&1 >/dev/null | grep -c 'work in progress')|$(memory_admin delete web "$aid" "$(recf '{"v":"000000000000"}')" >/dev/null 2>&1; echo $?)|$([ -d "${FXA_MEMORY_DIR}.lock" ] && echo 1 || echo 0)"
