@@ -18,7 +18,14 @@ export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" FXA_DB_BACKUP_URI=""  
 # check_one <file> <host>   Run once, then read the output: grep -q in a pipe stopped at the
 # first FAIL, the check died of SIGPIPE, and pipefail hid the failure. A nonzero exit fails too.
 check_one() {
-  local out code=0; out="$(bash "$1" 2>&1)" || code=$?
+  # FXA_CHECK_TIMEOUT=<s>: stop a check that hangs, with its whole process group (a child that keeps the
+  # output pipe open would keep the capture waiting), and fail it with exit 142. macOS has no timeout.
+  local out code=0
+  if [ -n "${FXA_CHECK_TIMEOUT:-}" ]; then out="$(perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV }
+    $SIG{ALRM} = sub { kill "KILL", -$p; exit 142 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$FXA_CHECK_TIMEOUT" bash "$1" 2>&1)" || code=$?
+  else out="$(bash "$1" 2>&1)" || code=$?; fi
+  [ "$code" != 142 ] || out="${out}
+FAIL $1 did not finish in ${FXA_CHECK_TIMEOUT}s"
   # A pass whose check skipped itself (a missing tool, bash 3.2) says so: a silent skip read as a pass.
   if ! grep -q '^FAIL' <<< "$out" && [ "$code" = 0 ]; then
     local s; s="$(grep -m1 -iE '^skip' <<< "$out" | sed -E 's/^[sS][kK][iI][pP]:? *//' || true)"; [ -z "$s" ] || echo "skip $2: $1: $s"; return 0; fi
@@ -34,7 +41,8 @@ run_pool() {
   export -f check_one
   # xargs stops starting checks when one is killed (exit 125): a check with no output never ran.
   printf '%s\n' "$@" | xargs -P "${FXA_CHECK_JOBS:-8}" -I{} bash -c \
-    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"' _ {} "$d" "$host" || bad=1
+    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"
+     [ -z "${FXA_CHECK_PROGRESS:-}" ] || echo "done $1" >&2' _ {} "$d" "$host" || bad=1
   for f in "$@"; do
     n="$(printf %s "$f" | tr / _)"
     if [ -e "$d/$n.out" ]; then cat "$d/$n.out"; else echo "FAIL $host: $f did not run"; bad=1; fi
