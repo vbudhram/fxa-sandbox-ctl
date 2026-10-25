@@ -41,13 +41,16 @@ run_pool() {
   export -f check_one
   # xargs stops starting checks when one is killed (exit 125): a check with no output never ran.
   printf '%s\n' "$@" | xargs -P "${FXA_CHECK_JOBS:-8}" -I{} bash -c \
-    'n="$(printf %s "$1" | tr / _)"; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"
+    'n="$(printf %s "$1" | tr / _)"; s=$SECONDS; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"
+     echo "$(( SECONDS - s ))s $1" > "$2/$n.t"
      [ -z "${FXA_CHECK_PROGRESS:-}" ] || echo "done $1" >&2' _ {} "$d" "$host" || bad=1
   for f in "$@"; do
     n="$(printf %s "$f" | tr / _)"
     if [ -e "$d/$n.out" ]; then cat "$d/$n.out"; else echo "FAIL $host: $f did not run"; bad=1; fi
     [ ! -e "$d/$n.bad" ] || bad=1
   done
+  # The slowest checks set the wall time of a run: name them, so a check that got slow shows.
+  [ "$#" -lt 5 ] || echo "$host: slowest: $(cat "$d"/*.t 2>/dev/null | sort -rn | head -5 | paste -sd, - | sed 's/,/, /g')"
   rm -rf "$d"; return "$bad"
 }
 

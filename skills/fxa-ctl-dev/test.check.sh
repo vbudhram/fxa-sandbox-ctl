@@ -13,6 +13,10 @@ echo 'echo ok' > c/a.check.sh; echo 'echo ok' > c/b.check.sh
 check "all pass: the pool passes" "0" "$(run_pool mac c/a.check.sh c/b.check.sh >/dev/null 2>&1; echo $?)"
 echo 'echo "skip: needs bash 4"; exit 0' > c/s.check.sh
 check "a check that skips itself passes, and the pool names the skip" "0|skip mac: c/s.check.sh: needs bash 4" "$(run_pool mac c/s.check.sh > out 2>&1; echo $?)|$(cat out)"
+for x in c d e f; do echo 'echo ok' > c/$x.check.sh; done; echo 'sleep 2; echo ok' > c/z.check.sh
+check "a run of 5 or more checks names the slowest first" "1" \
+  "$(run_pool mac c/a.check.sh c/c.check.sh c/d.check.sh c/e.check.sh c/z.check.sh 2>&1 | grep -cE '^mac: slowest: [2-9]s c/z.check.sh, [0-9]s c/')"
+check "a run of fewer checks prints no slowest line" "0" "$(run_pool mac c/a.check.sh c/b.check.sh 2>&1 | grep -c slowest)"
 echo 'echo "FAIL planted"' > c/a.check.sh
 check "a FAIL line fails the pool and names the check" "1|yes" "$(run_pool mac c/a.check.sh c/b.check.sh > out 2>&1; echo $?)|$(grep -q 'FAIL mac: c/a.check.sh' out && echo yes)"
 # The check kills the xargs child that runs it (its grandparent, as an OOM kill would): xargs
