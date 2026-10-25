@@ -517,7 +517,22 @@ EOF
     if why="$(_jira_reship "$key" "$worktree_path" "$reship")"; then
       _jira_reship_ship "$key" "$worktree_path" "$create_pr" "$ci_watch"; return
     fi
+    # It cannot ship as saved: say why in fixed words (git's own text names runner paths), then run the agent.
     _finish_release "$worktree_path"
+    worktree_saved_ship_retire "$key" stale "$why" || true
+    local phrase
+    case "$why" in
+      hash)   phrase="the saved patch file changed" ;;
+      base)   phrase="its base commit is not on ${base}" ;;
+      branch) phrase="a branch for this ticket already exists on GitHub" ;;
+      dirty)  phrase="the slot holds other unsaved changes" ;;
+      apply)  phrase="git could not apply it" ;;
+      *)      why=handoff; phrase="the saved handoff could not be used" ;;
+    esac
+    errors_record pipeline reship "$key" launch "${key}: saved change not shipped (${why}); a new agent run started." "${PIPE_STATE_DIR}/${key}.reship-err"
+    echo "Reship fallback: ${why}; a new agent run starts." >&2
+    jira_comment "$key" "🤖 The saved change did not ship: ${phrase}. A new agent run started with the approved tooling label." \
+      || echo "WARN: the reship fallback comment failed for ${key}" >&2
   fi
 
   # The /goal is capped, so it points at this file instead of embedding the context.

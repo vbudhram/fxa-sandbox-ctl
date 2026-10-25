@@ -88,7 +88,7 @@ jira_normalize_key() { printf '%s\n' "$1" | tr 'a-z' 'A-Z'; }
 runtime_load() { :; }; pipeline_ensure_clone() { :; }; pipeline_key_in_scope() { :; }; _jira_private_gone() { :; }
 jira_summary_for() { echo "Add a task script"; }; jira_fetch_context() { echo "the ticket"; }
 _jira_render_prompt() { echo prompt; }; runtime_prompt_max_chars() { echo 0; }; _run_model() { :; }; _jira_name_clash() { :; }
-memory_ticket_md() { :; }; check_prerequisites() { :; }; agent_prewarm_stack() { :; }; finish_attach_and_wait() { :; }
+memory_ticket_md() { :; }; check_prerequisites() { :; }; agent_prewarm_stack() { :; }; finish_attach_and_wait() { return 1; }
 memory_collect() { :; }; finish_notify() { :; }; finish_watch_ci() { :; }; _jira_launch_failed() { :; }
 telemetry_record() { echo t >> "$tmp/telemetry"; }
 agent_run() { echo "scope=${FXA_ALLOW_TOOLING_SCOPE:-}" >> "$tmp/agent"; }
@@ -140,5 +140,38 @@ fresh; : > "$tmp/push-fails"
 check "a failed push keeps the set" "1|$P.base" "$(run_jira)|$(worktree_saved_ship FXA-7)"
 check "the retry ships it once, with one start comment and no agent run" "0|$want_diff|1|0|shipped" \
   "$(run_jira KEEP_SLOT=1)|$(pushed)|$(n_of jira 'Shipping the saved change')|$(n_of agent)|$(cat "$P.retired")"
+
+# A7, A9: a set that cannot ship as saved falls back to one scoped agent run, in fixed words.
+# fallback <word> <phrase>   After the case's setup: tombstone|errors row|comment|agent|log lines|slot.
+fallback() {
+  run_jira FXA_ALLOW_TOOLING_SCOPE=scripts >/dev/null
+  printf '%s|%s|%s|%s|%s|%s|%s' "$(cat "$P.retired" 2>/dev/null)" \
+    "$(jq -c 'select(.kind == "reship")' "$tmp/errors" 2>/dev/null | jq -r '"\(.key) \(.where) \(.message) \(.log)"' | paste -sd'#' -)" \
+    "$(paste -sd'#' "$tmp/jira" 2>/dev/null)" "$(paste -sd'#' "$tmp/agent" 2>/dev/null)" \
+    "$(n_of launch.log "^Reship fallback: $1; a new agent run starts.\$")" "$(n_of launch.log '^ERROR\|fatal:\|rejected')" "$(at_prep)"
+}
+fb_want() { printf 'stale %s|FXA-7 launch FXA-7: saved change not shipped (%s); a new agent run started. %s|🤖 The saved change did not ship: %s. A new agent run started with the approved tooling label.|scope=scripts|1|0|%s' \
+  "$1" "$1" "$PIPE_STATE_DIR/FXA-7.reship-err" "$2" "${3:-prep}"; }
+fresh; echo x >> "$P.patch"
+check "fallback: hash" "$(fb_want hash 'the saved patch file changed')" "$(fallback hash)"
+fresh; saved "$tmp/good.patch" "$C"
+check "fallback: base" "$(fb_want base 'its base commit is not on main')" "$(fallback base)"
+fresh; g -C "$tmp/seed" push -q "$tmp/origin.git" HEAD:refs/heads/fxa-7
+check "fallback: branch, and the origin branch's commit stays" "$(fb_want branch 'a branch for this ticket already exists on GitHub')|$B" "$(fallback branch)|$(git -C "$tmp/origin.git" rev-parse fxa-7)"
+fresh; git -C "$FXA_REPO" remote set-url origin "$tmp/no-such.git"
+check "fallback: a failed ls-remote is branch" "$(fb_want branch 'a branch for this ticket already exists on GitHub')" "$(fallback branch)"
+git -C "$FXA_REPO" remote set-url origin "$tmp/origin.git"
+fresh; saved "$tmp/good.patch" "$B" FXA-8
+check "fallback: a handoff for FXA-8" "$(fb_want handoff 'the saved handoff could not be used')" "$(fallback handoff)"
+fresh; saved "$tmp/good.patch" "$B" FXA-7 other
+check "fallback: a handoff for branch other" "$(fb_want handoff 'the saved handoff could not be used')" "$(fallback handoff)"
+fresh; echo other > "$W/other.txt"
+check "fallback: dirty keeps the tree, and the agent resumes it" "$(fb_want dirty 'the slot holds other unsaved changes' moved)|other|1" \
+  "$(KEEP_SLOT=1 fallback dirty)|$(cat "$W/other.txt")|$(n_of launch.log 'Slot holds work from an earlier run')"
+for p in out hook link; do
+  fresh; saved "$tmp/$p.patch"
+  check "fallback: the $p patch is apply, and no host text names its paths" "$(fb_want apply 'git could not apply it')|0" \
+    "$(fallback apply)|$(cat "$tmp/jira" "$tmp/errors" "$tmp/launch.log" | grep -c 'outside\|hooks/pre-commit\|lnk')"
+done
 
 exit "$fail"
