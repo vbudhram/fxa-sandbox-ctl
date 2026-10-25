@@ -4028,7 +4028,8 @@ function tabCount(t) {
   const ss = AGENTS?.sessions ?? [];
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
   if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
-  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? beltCount(beltGroups()) ?? "" : t === "done" ? doneRows().length : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
+  // A feed that failed is unknown ('?'), never a count that looks confident.
+  if (VIEW === "pipeline") return SNAP ? (t === "belts" ? beltCount(beltGroups()) ?? "?" : t === "done" ? doneRows().length : SNAP.queue?.fetch_failed ? "?" : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
 }
 function renderHeader() {
@@ -4041,7 +4042,7 @@ function renderHeader() {
   const tabs = document.getElementById("vtabs");
   tabs.hidden = !def[3].length;
   tabs.setAttribute("aria-label", `${def[1]} tabs`);
-  tabs.innerHTML = def[3].map(([k, l]) => { const n = tabCount(k); return `<a href="#${VIEW}/${k}"${TAB === k ? ' aria-current="page"' : ""}>${l}${n !== "" ? `<span class="n">${n}</span>` : ""}</a>`; }).join("");
+  tabs.innerHTML = def[3].map(([k, l]) => { const n = tabCount(k); return `<a href="#${VIEW}/${k}"${TAB === k ? ' aria-current="page"' : ""}>${l}${n !== "" ? `<span class="n">${n}${n === "?" ? '<span class="vh">, unknown: a feed failed</span>' : ""}</span>` : ""}</a>`; }).join("");
 }
 
 // ── the list: one per view, from the live feeds ──
