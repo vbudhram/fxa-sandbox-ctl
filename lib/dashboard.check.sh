@@ -495,7 +495,7 @@ t("links: a run whose session is not a key shows it as text", /href="javascript/
     t("board: an old snapshot renders with no error, blocked in Jira, and an unknown budget", `${thrown}|${boardItems().find(i => i.key === "FXA-1").why}|${/no launch budget/.test(gateLine(now).text)}`, "|blocked in Jira|true"); }
   { const now = Math.round(Date.now() / 1000);
     globalThis.SNAP = { repo: "mozilla/fxa", blocked: null, review: [], inflight: [], queue: { fetch_failed: true, ready: [], skipped: [] } }; globalThis.AGENTS = { runners: [], sessions: [] }; globalThis.VIEW = "pipeline";
-    t("belts: a failed Jira read gives no tab count, never 0", tabCount("belts"), "");
+    t("belts: a failed Jira read gives the tab count '?', never 0", tabCount("belts"), "?");
     globalThis.SNAP = { repo: "mozilla/fxa", blocked: [], review: [], inflight: [], queue: { ready: [], skipped: [
       { key: "FXA-30", reason: "pick", kind: "needs_decision", last: "2026-10-18T09:00", queued_at: now - 20 * 86400 }, { key: "FXA-31", reason: "pick", kind: "needs_decision", last: "2026-10-18T09:00" }] } };
     const it = boardItems(), a30 = it.find(i => i.key === "FXA-30"), a31 = it.find(i => i.key === "FXA-31");
