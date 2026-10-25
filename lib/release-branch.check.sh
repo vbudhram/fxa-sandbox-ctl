@@ -89,4 +89,20 @@ check "keep=1, a postinstall hook: only the patch" "|1|0|0|clean" "$(kept 1 sh -
 check "keep=1, a .github/workflows change: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo x > '$S/.github/workflows/ci.yml'")"
 check "keep=1, a change the guard does not refuse with no scope: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo x > '$S/notes.txt'")"
 
+# ── The saved ship: lookup and retire (a tombstone, since the state mirror never deletes) ──
+rm -rf "$PIPE_STATE_DIR"/*
+set_of() { local f; for f in patch done.json base; do echo x > "$PIPE_STATE_DIR/FXA-7.leftover-$1.$f"; done; }
+set_of 100; set_of 200
+check "the newest complete set is found" "$PIPE_STATE_DIR/FXA-7.leftover-200.base" "$(worktree_saved_ship FXA-7)"
+rm "$PIPE_STATE_DIR/FXA-7.leftover-200.done.json"
+check "a set with no .done.json is not found; an older whole one is" "$PIPE_STATE_DIR/FXA-7.leftover-100.base" "$(worktree_saved_ship FXA-7)"
+check "another key's set is not found" "1" "$(worktree_saved_ship FXA-8 >/dev/null; echo $?)"
+worktree_saved_ship_retire FXA-7 stale refused
+check "after retire: not found, the tombstone says why, the patch stays" "1|stale refused|0|0|1" \
+  "$(worktree_saved_ship FXA-7 >/dev/null; echo $?)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-100.retired")|$(ls "$PIPE_STATE_DIR" | grep -c 'leftover-100\.base$')|$(ls "$PIPE_STATE_DIR" | grep -c 'leftover-100\.done\.json$')|$(ls "$PIPE_STATE_DIR" | grep -c 'leftover-100\.patch$')"
+echo x > "$PIPE_STATE_DIR/FXA-7.leftover-100.base"; echo x > "$PIPE_STATE_DIR/FXA-7.leftover-100.done.json"
+check "a .base a state pull restored beside a .retired is not found" "1" "$(worktree_saved_ship FXA-7 >/dev/null; echo $?)"
+set_of 300; worktree_saved_ship_retire FXA-7 shipped
+check "a shipped tombstone" "shipped|1" "$(cat "$PIPE_STATE_DIR/FXA-7.leftover-300.retired")|$(worktree_saved_ship FXA-7 >/dev/null; echo $?)"
+
 exit "$fail"

@@ -277,6 +277,30 @@ _worktree_keep_ship() {
   rm -rf "$d"; return "$rc"
 }
 
+# worktree_saved_ship <KEY>   The newest saved ship of KEY: its .base path, when .patch and .done.json
+#   are beside it and no .retired tombstone is. Exit 1 when there is none.
+worktree_saved_ship() {
+  local key="${1:-}" f t best="" bt=-1
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || return 1
+  for f in "${PIPE_STATE_DIR:-$LOG_DIR}/${key}".leftover-*.base; do
+    t="${f##*.leftover-}"; t="${t%.base}"
+    [[ "$t" =~ ^[0-9]+$ ]] && [ -f "${f%.base}.patch" ] && [ -f "${f%.base}.done.json" ] && [ ! -e "${f%.base}.retired" ] || continue
+    [ "$t" -gt "$bt" ] && { bt="$t"; best="$f"; }
+  done
+  [ -n "$best" ] && printf '%s\n' "$best"
+}
+
+# worktree_saved_ship_retire <KEY> stale|shipped [word]   End each live saved ship of KEY: the tombstone
+#   first ('stale <word>' or 'shipped'), then rm .base and .done.json. The patch stays.
+worktree_saved_ship_retire() {
+  local key="$1" why="$2${3:+ $3}" f
+  while f="$(worktree_saved_ship "$key")"; do
+    printf '%s\n' "$why" > "${f%.base}.retired" || return 1
+    rm -f "$f" "${f%.base}.done.json"
+  done
+  return 0
+}
+
 # _worktree_add <root> <path> <name> <base>
 #   Fetch origin/<base> and add a worktree at <path> on its <name>-holding branch.
 _worktree_add() {
