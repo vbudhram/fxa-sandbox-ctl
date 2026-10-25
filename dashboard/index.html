@@ -3360,7 +3360,7 @@ const NEXT_STEP = {
   dead_vm: "The sandbox died twice. Check the runner host, then relaunch the ticket.",
   attempts: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
   rounds: "Fix the PR by hand, or remove ai-fixme-blocked to give the agent a new try.",
-  refused_ship: "An approver adds ai-fixme-allow-tooling, or a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",
+  refused_ship: "An approver adds ai-fixme-allow-tooling. The ticket's 🤖 comment says if the next pass ships the saved change or a requeue is needed. For other paths, a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",
   frozen: "The fix needs a frozen path. A human unfreezes it in _scripts/check-frozen.ts or fixes the ticket by hand.",
   operator: "Do what the reason says, then remove ai-fixme-blocked.",
   jira: "Read the Jira history for who added the label.",
@@ -3387,7 +3387,7 @@ const boardAge = s => s == null ? "" : s >= 2 * 86400 ? `${Math.round(s / 86400)
 const secsSince = t => t == null ? null : Math.max(0, Math.round(Date.now() / 1000 - (typeof t === "number" ? t : Date.parse(t) / 1000)));
 // classify(item): who acts and the next step from the column and the kind; "the operator" for work only the operator can do.
 function classify(i) {
-  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a reviewer", frozen: "the operator",
+  const who = { stalled: "the operator", dead_vm: "the operator", attempts: "the operator", rounds: "the operator", refused_ship: "a tooling approver", frozen: "the operator",
     operator: "the operator", jira: "the operator", other: "the operator", needs_decision: "the reporter", underspecified: "the reporter",
     already_done: "the operator", infra: "the operator", fault: "the operator", ci_red: "the agent, next pass", changes: "the agent, next pass",
     conflicts: "the agent, next pass", relock: "the operator" }[i.kind];

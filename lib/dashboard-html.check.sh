@@ -34,6 +34,10 @@ t("emptybox escapes", emptybox("No <runs>"), '<div class="emptybox">No &lt;runs&
 process.exit(fail);
 JS
 rc=$?; [ "${css_fail:-0}" = 0 ] || rc=1
+# The Board's refused_ship step names the tooling approver and the saved change.
+step='refused_ship: "An approver adds ai-fixme-allow-tooling. The ticket'"'"'s 🤖 comment says if the next pass ships the saved change or a requeue is needed. For other paths, a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",'
+got="$(grep -cF "$step" "$page")|$(grep -c 'refused_ship: "a tooling approver"' "$page")|$(grep -c 'refused_ship: "a reviewer"' "$page")"
+if [ "$got" = "1|1|0" ]; then echo "ok   Board: the refused_ship step and who acts"; else echo "FAIL Board: the refused_ship step and who acts: want [1|1|0] got [$got]"; rc=1; fi
 # The Belt's first line for a run, from the page's own expression.
 l1="$(sed -n '/^    const l1 = t.stage === "starting"/,/plainMd(a.last_tool/p' "$page")"
 node - "$l1" <<'JS' || rc=1
