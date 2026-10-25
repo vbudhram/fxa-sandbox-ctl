@@ -80,6 +80,9 @@ ck "Routines and Dependency PRs rows: counts from the summary, the repo and labe
 fx '.'
 off="$stub"' await w(800); return q("[data-tstatus=disabled]")?.closest(".card")?.querySelector(".hint")?.textContent.split(". ")[0]'
 ck "Turn off names everything it stops" "Turn off stops new Slack sessions, the Jira queue, routines and dependency PR fixes" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$off")"
+lnk="$stub"' await w(800); const a = [...document.querySelectorAll(".tin a")].find(x => x.textContent === "Open Routines");
+  return a ? `${getComputedStyle(a).color !== getComputedStyle(a.closest(".tin")).color}` : "no link"'
+ck "an input row's link shows in the link colour, not the text colour" "true" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$lnk")"
 
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
