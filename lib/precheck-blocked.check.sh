@@ -77,6 +77,10 @@ setup; pipeline_holding_new() { return 0; }
 out="$(ADDER=acct-boss pc; ADDER=acct-boss pc)"
 check "newtickets off: no requeue, the info line, and one held comment over two passes" \
   "0|2|1" "$(cnt labels)|$(grep -c '^reship of FXA-7 waits for newtickets on$' <<< "$out")|$(cnt jira '^🤖 Tooling label approved by Boss Person. The saved change ships when the operator turns new tickets back on.$')"
+setup; rm -f "$tmp/FXA-7.reship-held-noted"
+out="$(PIPE_TOOLING_APPROVERS="Pat:712020:abc,557058:0a1b2c3d-1111-2222-3333-444455556666" ADDER=557058:0a1b2c3d-1111-2222-3333-444455556666 pc)"
+check "a bare or legacy ID approver: the held comment says a tooling approver, not the ID; a Name:ID entry keeps its name" "1|0|1" \
+  "$(cnt jira '^🤖 Tooling label approved by a tooling approver\. ')|$(cnt jira '557058:')|$(setup; PIPE_TOOLING_APPROVERS="Pat:712020:abc" ADDER=712020:abc pc >/dev/null; cnt jira '^🤖 Tooling label approved by Pat\. ')"
 pipeline_holding_new() { return 1; }
 
 # ── The operator's rows: one per adder who is not an approver, and one for a failed read ──

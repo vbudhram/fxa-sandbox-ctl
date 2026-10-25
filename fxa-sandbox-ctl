@@ -623,7 +623,7 @@ _jira_reship_ship() {
 #   branch, hash, base, dirty or apply. The slot is then back at the prepared commit, except for dirty.
 #   Git's stderr names runner-chosen paths, so it goes only to <KEY>.reship-err.
 _jira_reship() {
-  local key="$1" wt="$2" f="$3" err="${PIPE_STATE_DIR}/${1}.reship-err" why="" rc=0 branch prep sha="" hash="" by
+  local key="$1" wt="$2" f="$3" err="${PIPE_STATE_DIR}/${1}.reship-err" why="" rc=0 branch prep sha="" hash="" id="" by=""
   local done="${f%.base}.done.json" patch="${f%.base}.patch" ex=(-- . ':(exclude).fxa-*' ':(exclude).claude')
   _finish_claim "$wt"
   branch="$(worktree_branch_for "$key")"; prep="$(git -C "$wt" rev-parse HEAD 2>>"$err")"
@@ -651,7 +651,9 @@ _jira_reship() {
   fi
   slot_write "${wt}/.fxa-auto-done.json" < "$done"
   if [ "$(cat "${PIPE_STATE_DIR}/${key}.reship-noted" 2>/dev/null)" != "$f" ]; then
-    by="$(awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); print }' "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true)"
+    read -r _ id by < "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true
+    # A bare or legacy ID entry has no name: its name is the ID, which names no person.
+    [ "$by" != "$id" ] || by=""
     jira_comment "$key" "🤖 Shipping the saved change from the refused run. Scripts allowed by ${by:-a tooling approver}. No new agent run." \
       && printf '%s\n' "$f" > "${PIPE_STATE_DIR}/${key}.reship-noted" || echo "WARN: the reship start comment failed for ${key}" >&2
   fi
@@ -1613,7 +1615,7 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   # A refused tooling ship with a saved ship: a tooling approver's label alone sends it back to the queue,
   # and the launch ships the saved change with no agent run. One label and one changelog read per key.
   _reship_offer() {
-    local key="$1" rc=0 who="" by
+    local key="$1" rc=0 who="" by n
     gh_pr_none "$key" || rc=$?
     [ "$rc" != 0 ] || who="$(jira_tooling_label_adder "$key")" || rc=$?
     # The operator gets one short row (a DM) for each failure: the set and the block stay.
@@ -1632,10 +1634,12 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         printf '%s\n' "$who" > "${PIPE_STATE_DIR}/${key}.tooling-noted"; }
       return 0
     fi
+    # A bare or legacy ID entry has no name: its name is the ID, which names no person.
+    n="${by#* }"; [ "$n" != "${by%% *}" ] || n="a tooling approver"
     if pipeline_holding_new; then
       _info "reship of ${key} waits for newtickets on"
       [ -e "${PIPE_STATE_DIR}/${key}.reship-held-noted" ] \
-        || { jira_comment "$key" "🤖 Tooling label approved by ${by#* }. The saved change ships when the operator turns new tickets back on." \
+        || { jira_comment "$key" "🤖 Tooling label approved by ${n}. The saved change ships when the operator turns new tickets back on." \
              && : > "${PIPE_STATE_DIR}/${key}.reship-held-noted"; } || true
     elif cmd_label "$key" public >/dev/null 2>&1; then
       _info "reship: ${key} refused_ship, tooling label approved by ${by#* }; back in the queue, the saved change ships with no new run"

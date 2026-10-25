@@ -55,6 +55,10 @@ check "a good set: 0, the change on fxa-7 at the saved sha, the handoff written,
   "$(rs)|$(git -C "$W" symbolic-ref --short HEAD)|$(git -C "$W" rev-parse HEAD)|$(git -C "$W" diff | grep -c '^+.*"a":"y"')|$(jq -r .issue "$W/.fxa-auto-done.json")|$(ls "$LOG_DIR" | grep -c 'fxa-auto-2.finishing')"
 check "one start comment that names the approver, and once per set" "🤖 Shipping the saved change from the refused run. Scripts allowed by Boss Person. No new agent run.|1" \
   "$(head -1 "$tmp/jira")|$(prep; rs >/dev/null; echo "$P.base" > "$PIPE_STATE_DIR/FXA-7.reship-noted"; g -C "$W" checkout -q -- .; rm -f "$tmp/jira"; rs >/dev/null; [ -e "$tmp/jira" ] && echo 2 || echo 1)"
+prep; saved "$tmp/good.patch"; echo 'scripts 557058:0a1b2c3d-1111-2222-3333-444455556666 557058:0a1b2c3d-1111-2222-3333-444455556666' > "$PIPE_STATE_DIR/tooling/FXA-7"
+check "a bare or legacy ID approver: the start comment says a tooling approver, not the ID" \
+  "🤖 Shipping the saved change from the refused run. Scripts allowed by a tooling approver. No new agent run." "$(rs >/dev/null; cat "$tmp/jira")"
+echo 'scripts acct-boss Boss Person' > "$PIPE_STATE_DIR/tooling/FXA-7"
 prep; saved "$tmp/good.patch"; echo '{"name":"p","scripts":{"a":"y"}}' > "$W/package.json"
 check "a dirty slot at the sha that already holds the change skips the apply (a retry)" "0 |1" "$(rs)|$(git -C "$W" diff | grep -c '^+.*"a":"y"')"
 prep; saved "$tmp/good.patch"; echo other > "$W/other.txt"
