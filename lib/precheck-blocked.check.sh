@@ -78,4 +78,35 @@ out="$(ADDER=acct-boss pc; ADDER=acct-boss pc)"
 check "newtickets off: no requeue, the info line, and one held comment over two passes" \
   "0|2|1" "$(cnt labels)|$(grep -c '^reship of FXA-7 waits for newtickets on$' <<< "$out")|$(cnt jira '^🤖 Tooling label approved by Boss Person. The saved change ships when the operator turns new tickets back on.$')"
 pipeline_holding_new() { return 1; }
+
+# ── The operator's rows: one per adder who is not an approver, and one for a failed read ──
+eval "$(sed -n '/^errors_sig() {/,/^}/p' "$here/errors.sh")"
+rows() { jq -r "select(.where | ${1}) | .where" "$tmp/errors" 2>/dev/null | paste -sd'#' -; }
+for a in "" "557058:acct-other"; do
+  setup; : > "$tmp/reads"
+  out="$(PIPE_TOOLING_APPROVERS="$a" ADDER=acct-other pc; PIPE_TOOLING_APPROVERS="$a" ADDER=acct-other pc)"
+  check "not an approver (list '${a}'): one row over two passes, no requeue, the set stays, one label and one changelog read a pass" \
+    "precheck tooling acct-other|0|0|$tmp/FXA-7.leftover-100.base|2|2" \
+    "$(rows 'startswith("precheck tooling")')|$(cnt labels)|$(grep -c '^reship' <<< "$out")|$(worktree_saved_ship FXA-7)|$(cnt reads l)|$(cnt reads c)"
+  PIPE_TOOLING_APPROVERS="$a" ADDER=acct-third pc >/dev/null
+  check "a second adder gets a row of its own, with another sig" "precheck tooling acct-other#precheck tooling acct-third|2" \
+    "$(rows 'startswith("precheck tooling")')|$(jq -r '.where + "|" + .message' "$tmp/errors" | while IFS='|' read -r w m; do errors_sig "$w" "$m"; echo; done | sort -u | grep -c .)"
+done
+check "the not-approver message names the adder and the next step" \
+  "FXA-7: acct-third added ai-fixme-allow-tooling, not in PIPE_TOOLING_APPROVERS. To ship the saved change, add the ID there." "$(jq -r .message "$tmp/errors" | tail -1)"
+for fv in LOG_FAILS PRNONE; do
+  setup; v=1; [ "$fv" = PRNONE ] && v=2
+  (export "$fv=$v" ADDER=acct-boss; pc >/dev/null; pc >/dev/null)
+  check "a failed read ($fv): one row with where precheck, no requeue, the set stays" \
+    "precheck|0|$tmp/FXA-7.leftover-100.base|FXA-7: could not read the tooling label or the PR. The saved change waits; the next pass tries again." \
+    "$(rows '. == "precheck"')|$(cnt labels)|$(worktree_saved_ship FXA-7)|$(jq -r .message "$tmp/errors" | sort -u)"
+  ADDER=acct-boss pc >/dev/null
+  check "then a good read requeues it ($fv)" "FXA-7 public" "$(cat "$tmp/labels")"
+done
+# A13: the DM keeps the next step, with a 43-character legacy account ID.
+long="557058:0123abcd-0123-4567-89ab-0123456789ab"
+setup; (export LOG_FAILS=1 ADDER=x; pc >/dev/null); cp "$tmp/errors" "$tmp/e2"
+setup; ADDER="$long" pc >/dev/null
+check "each message is 180 characters or fewer and ends with its next step" "${#long}|ok|ok" \
+  "$(printf %s "$long" | wc -c | tr -d ' ')|$(jq -r .message "$tmp/errors" | awk 'length($0) <= 180 && /add the ID there\.$/ { print "ok" }')|$(jq -r .message "$tmp/e2" | awk 'length($0) <= 180 && /the next pass tries again\.$/ { print "ok" }')"
 exit "$fail"

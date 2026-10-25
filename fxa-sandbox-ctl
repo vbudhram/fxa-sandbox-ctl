@@ -1616,8 +1616,22 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
     local key="$1" rc=0 who="" by
     gh_pr_none "$key" || rc=$?
     [ "$rc" != 0 ] || who="$(jira_tooling_label_adder "$key")" || rc=$?
+    # The operator gets one short row (a DM) for each failure: the set and the block stay.
+    if [ "$rc" = 2 ]; then
+      [ -e "${PIPE_STATE_DIR}/${key}.tooling-readfail-noted" ] || { errors_record pipeline tooling "$key" precheck \
+        "${key}: could not read the tooling label or the PR. The saved change waits; the next pass tries again." ""
+        : > "${PIPE_STATE_DIR}/${key}.tooling-readfail-noted"; }
+      return 0
+    fi
     [ "$rc" = 0 ] || return 0
-    by="$(_jira_tooling_match "$who")" || return 0
+    if ! by="$(_jira_tooling_match "$who")"; then
+      # The ID is in where: errors_sig masks IDs in the message, and each adder needs its own DM.
+      [[ "$who" =~ ^[A-Za-z0-9:-]{1,128}$ ]] || who=unknown
+      [ "$(cat "${PIPE_STATE_DIR}/${key}.tooling-noted" 2>/dev/null || true)" = "$who" ] || { errors_record pipeline tooling "$key" "precheck tooling ${who}" \
+        "${key}: ${who} added ${PIPE_TOOLING_LABEL}, not in PIPE_TOOLING_APPROVERS. To ship the saved change, add the ID there." ""
+        printf '%s\n' "$who" > "${PIPE_STATE_DIR}/${key}.tooling-noted"; }
+      return 0
+    fi
     if pipeline_holding_new; then
       _info "reship of ${key} waits for newtickets on"
       [ -e "${PIPE_STATE_DIR}/${key}.reship-held-noted" ] \
