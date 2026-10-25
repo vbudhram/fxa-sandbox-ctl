@@ -159,6 +159,9 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
    skips that check: use it only for a change the dev bot cannot exercise.
    A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
    secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
+   Run the promote as one plain command, with no `cd ... &&` in front: an allow rule
+   matches only the start of the command. From a worktree, give vm.sh's absolute path
+   (it finds its tree from its own path), with `FXA_DEV_BOT_ROOT=<bot tree>` first when needed.
 
 ## After a promote that changed the dashboard
 
