@@ -77,5 +77,9 @@ ck "Routines and Dependency PRs rows: counts from the summary, the repo and labe
   "1 on a schedule · next run X [on] / 1 on [on]|#teams/example/routines|On for example/app, label agent-help [on]|false" \
   "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$rts")"
 
+fx '.'
+off="$stub"' await w(800); return q("[data-tstatus=disabled]")?.closest(".card")?.querySelector(".hint")?.textContent.split(". ")[0]'
+ck "Turn off names everything it stops" "Turn off stops new Slack sessions, the Jira queue, routines and dependency PR fixes" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$off")"
+
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
