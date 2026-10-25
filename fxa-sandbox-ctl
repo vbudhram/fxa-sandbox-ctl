@@ -1883,6 +1883,19 @@ cmd_label() {
   state="${state#${PIPE_LABEL_PREFIX}-}"
   [ "$state" = "$PIPE_LABEL_PREFIX" ] || [ "$state" = "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ] && state="public"
   pipeline_blocked_why "$key" "$state" "${@:3}"
+  # A refused tooling ship: keep a saved ship that an approver's label can ship with no new run (the
+  # guard's own line, and no scope yet), or retire one when the run already had the scope.
+  local K keep=""; K="$(jira_normalize_key "$key" 2>/dev/null || true)"
+  if [ -n "$K" ] && [ "$state" = blocked ] && [ "${3:-}" = refused_ship ]; then
+    if [ -e "${PIPE_STATE_DIR}/tooling/${K}" ]; then
+      worktree_saved_ship_retire "$K" stale refused || true
+      echo "tooling scope already approved"
+    elif grep -q '^ERROR: refusing to ship: the change touches CI or host tooling: ' "$(pipeline_launch_log "$K")" 2>/dev/null; then
+      keep=1
+    fi
+  fi
+  [ -z "$K" ] || [ "$state" = blocked ] \
+    || rm -f "${PIPE_STATE_DIR}/${K}".{tooling-noted,tooling-readfail-noted,reship-held-noted,reship-noted}
   # Only inflight owns a worktree, so any other state reaps the VM.
   if [ "$state" != "inflight" ]; then
     _reap_key "$key"
@@ -1912,8 +1925,10 @@ cmd_label() {
   # first: telemetry finds the run's slot by its branch.
   if [ "$state" != "inflight" ]; then
     [ -f "$(pipeline_launch_log "$key")" ] && { telemetry_record "$key" >/dev/null 2>&1 || true; }
-    worktree_release_branch "$(worktree_branch_for "$key")" \
+    local kept=""
+    kept="$(worktree_release_branch "$(worktree_branch_for "$key")" $keep)" \
       || echo "WARN: could not detach the slot for $key" >&2
+    [ -z "$kept" ] || echo "saved ship kept: ${kept}"
   fi
 }
 

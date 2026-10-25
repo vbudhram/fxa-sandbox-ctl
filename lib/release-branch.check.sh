@@ -105,4 +105,42 @@ check "a .base a state pull restored beside a .retired is not found" "1" "$(work
 set_of 300; worktree_saved_ship_retire FXA-7 shipped
 check "a shipped tombstone" "shipped|1" "$(cat "$PIPE_STATE_DIR/FXA-7.leftover-300.retired")|$(worktree_saved_ship FXA-7 >/dev/null; echo $?)"
 
+# ── cmd_label keeps a set only for the guard's own refusal, and retires one the scope already had ──
+eval "$(sed -n '/^cmd_label() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+PIPE_LABEL_PREFIX=ai-fixme
+jira_label_set() { :; }; jira_normalize_key() { printf '%s\n' "$1" | tr '[:lower:]' '[:upper:]'; }
+pipeline_blocked_why() { :; }; _reap_key() { :; }; gh_feedback_has_acted() { return 1; }; telemetry_record() { :; }
+pipeline_launch_log() { printf '%s/%s.launch.log\n' "$PIPE_STATE_DIR" "$1"; }
+GUARD_LINE='ERROR: refusing to ship: the change touches CI or host tooling: package.json (scripts/lint-staged/husky)'
+# label_run <log line> <label args...>   A refused run on the slot, then label; prints stdout|patches|bases.
+label_run() {
+  local line="$1"; shift
+  g -C "$S" -c core.hooksPath=/dev/null checkout -q -f -B fxa-7 "$B"; g -C "$S" clean -qfdx
+  handoff FXA-7 fxa-7; scripts_edit
+  printf 'Launched at: 1\n%s\n' "$line" > "$PIPE_STATE_DIR/FXA-7.launch.log"
+  local out; out="$(cmd_label "$@" 2>/dev/null)"
+  printf '%s|%s|%s' "$out" "$(ls "$PIPE_STATE_DIR" | grep -c '\.patch$')" "$(ls "$PIPE_STATE_DIR" | grep -c '\.base$')"
+}
+rm -rf "$PIPE_STATE_DIR"/*
+got="$(label_run "$GUARD_LINE" FXA-7 blocked refused_ship)"
+check "label blocked refused_ship after the guard's line: a set, and the first C3 line" \
+  "saved ship kept: $(basename "$(worktree_saved_ship FXA-7 2>/dev/null)" .base).patch|1|1" "$got"
+rm -rf "$PIPE_STATE_DIR"/*
+check "the phrase inside a pr_title ERROR line: only the patch" "|1|0" \
+  "$(label_run "ERROR: pr_title is not a scoped conventional subject: x ${GUARD_LINE#ERROR: }" FXA-7 blocked refused_ship)"
+rm -rf "$PIPE_STATE_DIR"/*
+check "blocked stalled: only the patch" "|1|0" "$(label_run "$GUARD_LINE" FXA-7 blocked stalled)"
+rm -rf "$PIPE_STATE_DIR"/*
+check "the PII guard's line: only the patch" "|1|0" "$(label_run "ERROR: refusing to ship: the PR text or diff has personal data" FXA-7 blocked refused_ship)"
+rm -rf "$PIPE_STATE_DIR"/*; set_of 400; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
+check "with tooling/FXA-7: the live set gets 'stale refused', no new set, and the second C3 line" "tooling scope already approved|2|0|stale refused" \
+  "$(label_run "$GUARD_LINE" FXA-7 blocked refused_ship)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-400.retired")"
+for n in tooling-noted tooling-readfail-noted reship-held-noted reship-noted; do : > "$PIPE_STATE_DIR/FXA-7.$n"; done
+label_run "" FXA-7 blocked operator >/dev/null
+check "a blocked label keeps the noted files" 4 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
+label_run "" FXA-7 public >/dev/null
+check "label public removes the key's tooling and reship noted files" 0 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
+check "the pass's error row says what to post after 'tooling scope already approved'" 1 \
+  "$(grep '^| `error <line>`' "$(dirname "$0")/../skills/fxa-ai-fixme/SKILL.md" | grep -c 'tooling scope already approved')"
+
 exit "$fail"
