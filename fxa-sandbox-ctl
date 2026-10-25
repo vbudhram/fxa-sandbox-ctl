@@ -2049,8 +2049,25 @@ cmd_label() {
     local kept=""
     kept="$(worktree_release_branch "$(worktree_branch_for "$key")" $keep)" \
       || echo "WARN: could not detach the slot for $key" >&2
-    [ -z "$kept" ] || echo "saved ship kept: ${kept}"
+    if [ -n "$kept" ]; then
+      echo "saved ship kept: ${kept}"
+      jira_comment "$key" "$(_tooling_ask_text)" || echo "WARN: the tooling approver comment failed for $key" >&2
+    fi
   fi
+}
+
+# _tooling_ask_text   The 🤖 comment for a saved ship: who can add the tooling label, from host config only.
+_tooling_ask_text() {
+  local l="${PIPE_TOOLING_LABEL:-ai-fixme-allow-tooling}" e names=""
+  while IFS= read -r e; do
+    e="$(printf '%s' "$e" | sed 's/^ *//; s/ *$//')"
+    # "Name:ID" names a person; a bare ID or a legacy ID (557058:uuid) does not.
+    case "$e" in *:*) [[ "${e%%:*}" =~ ^[0-9]+$ ]] || names="${names}${names:+, }${e%%:*}" ;; esac
+  done < <(tr ',' '\n' <<< "${PIPE_TOOLING_APPROVERS:-}")
+  printf '🤖 The finish did not ship this change: it changes package.json scripts or _scripts/, which needs a tooling approver. The change is saved. '
+  if [ -n "$names" ]; then printf 'Ask %s to add the label %s. The next pass then ships it with no new agent run.' "$names" "$l"
+  elif [ -n "$(tr -d ' ,' <<< "${PIPE_TOOLING_APPROVERS:-}")" ]; then printf 'A tooling approver for this team adds the label %s. The next pass then ships it with no new agent run.' "$l"
+  else printf 'No tooling approver is set for this team. Ask the operator to set one. An approver then adds %s, and the next pass ships the saved change.' "$l"; fi
 }
 
 # _jira_ready_comment <KEY>   Tell the ticket its PR is green and ready for review, once

@@ -106,7 +106,7 @@ set_of 300; worktree_saved_ship_retire FXA-7 shipped
 check "a shipped tombstone" "shipped|1" "$(cat "$PIPE_STATE_DIR/FXA-7.leftover-300.retired")|$(worktree_saved_ship FXA-7 >/dev/null; echo $?)"
 
 # ── cmd_label keeps a set only for the guard's own refusal, and retires one the scope already had ──
-eval "$(sed -n '/^cmd_label() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^cmd_label() {/,/^}/p;/^_tooling_ask_text() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 PIPE_LABEL_PREFIX=ai-fixme
 jira_label_set() { :; }; jira_normalize_key() { printf '%s\n' "$1" | tr '[:lower:]' '[:upper:]'; }
 pipeline_blocked_why() { :; }; _reap_key() { :; }; gh_feedback_has_acted() { return 1; }; telemetry_record() { :; }
@@ -140,6 +140,20 @@ label_run "" FXA-7 blocked operator >/dev/null
 check "a blocked label keeps the noted files" 4 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
 label_run "" FXA-7 public >/dev/null
 check "label public removes the key's tooling and reship noted files" 0 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
+# The comment that asks for the label, from host config only.
+jira_comment() { printf '%s\n' "$2" >> "$PIPE_STATE_DIR/jira"; }
+PIPE_TOOLING_LABEL=ai-fixme-allow-tooling
+ask() { rm -rf "$PIPE_STATE_DIR"/*; PIPE_TOOLING_APPROVERS="$1" label_run "${2:-$GUARD_LINE}" FXA-7 blocked refused_ship >/dev/null; cat "$PIPE_STATE_DIR/jira" 2>/dev/null; }
+pre="🤖 The finish did not ship this change: it changes package.json scripts or _scripts/, which needs a tooling approver. The change is saved."
+check "named approvers: ask them by name" \
+  "$pre Ask Boss Person, Lead Person to add the label ai-fixme-allow-tooling. The next pass then ships it with no new agent run." \
+  "$(ask 'Boss Person:acct-boss, Lead Person:acct-lead, acct-bare')"
+check "approvers with no names" "$pre A tooling approver for this team adds the label ai-fixme-allow-tooling. The next pass then ships it with no new agent run." \
+  "$(ask 'acct-bare, 557058:aa11')"
+check "no approvers: the operator first" \
+  "$pre No tooling approver is set for this team. Ask the operator to set one. An approver then adds ai-fixme-allow-tooling, and the next pass ships the saved change." "$(ask '')"
+check "no comment names a path or the setting" 0 "$(for a in 'Boss:acct-boss' acct-bare ''; do ask "$a"; done | grep -c 'package.json (\|PIPE_TOOLING_APPROVERS\|leftover')"
+check "a label that keeps no set posts nothing" "" "$(ask 'Boss:acct-boss' 'ERROR: refusing to ship: the PR text has personal data')"
 check "the pass's error row says what to post after 'tooling scope already approved'" 1 \
   "$(grep '^| `error <line>`' "$(dirname "$0")/../skills/fxa-ai-fixme/SKILL.md" | grep -c 'tooling scope already approved')"
 
