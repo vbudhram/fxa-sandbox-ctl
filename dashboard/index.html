@@ -1998,8 +1998,9 @@ function teamWho(t, rec) {
   const a = rec?.access ?? null;
   if (t.profile === "fxa" || t.access?.open === "built-in") return "Everyone";
   if (a ? a.open : t.access?.open === true) return "Anyone the bot allows";
-  const n = a ? (a.users ?? []).length : t.access?.listed ?? t.access?.users ?? 0, c = a ? (a.channels ?? []).length : t.access?.channels ?? 0;
-  return n || c ? [n ? `${n} ${n === 1 ? "person" : "people"}` : "", c ? `${c} channel${c === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ") : "Nobody";
+  // People only: a channel routes a tag to the team but lets nobody start it (fxa-agent-bot mayStart).
+  const n = a ? (a.users ?? []).length : t.access?.listed ?? t.access?.users ?? 0;
+  return n ? `${n} ${n === 1 ? "person" : "people"}` : "Nobody";
 }
 // The test state of a team: running, passed, failed or none. An active team keeps its pass after edits
 // that a runner never reads, so a pass at an older generation still counts for it.
@@ -2030,7 +2031,7 @@ function teamTestCard(t, rec) {
   const go = (label, act) => html`<div class="row"><button type="button" data-ttest="${t.profile}"${d?.busy ? " disabled" : ""}>${label}</button>${act ? html`<label class="hint"><input type="checkbox" data-ttest-act${d?.noact ? "" : " checked"}> Activate when it passes</label>` : ""}</div>`;
   const body = st === "running" ? [html`Running${since ? ` since ${since}` : ""}. The first answer can take up to 20 minutes. You can leave this page.`, tag("Running", "info", { run: true, live: true }), html`${log}${TEAM_ADMIN?.admin ? html`<div class="row"><button type="button" data-ttest-stop="${t.profile}"${d?.busy ? " disabled" : ""}>Stop the test</button><span class="hint">It stops the runner the test booted. The team stays as it is.</span></div>` : ""}<p class="hint">${!d?.activate ? "It stays a draft when it passes." : `${teamName(t)} turns on when it passes.`}</p>`]
     : st === "passed" && active ? ["Passed. The team is active.", "", go("Test again")]
-    : st === "passed" ? [html`Passed. Activate it to let ${teamWho(t, rec).toLowerCase()} start it.`, tag("Passed", "ok"), html`<div class="row"><button type="button" data-tstatus="active">Activate</button></div>`]
+    : st === "passed" ? [teamWho(t, rec) === "Nobody" ? "Passed. Activate it. Nobody can start it from Slack until you add people." : html`Passed. Activate it to let ${teamWho(t, rec).toLowerCase()} start it.`, tag("Passed", "ok"), html`<div class="row"><button type="button" data-tstatus="active">Activate</button></div>`]
     : st === "failed" ? ["Failed. Read the log, change the setup, then test again.", tag("Failed", "bad"), html`${log}${go("Test and activate", true)}`]
     : ["Boots one runner with this setup. The first answer can take up to 20 minutes.", "", go(active ? "Test" : "Test and activate", !active)];
   return card(html`<div class="ck"><span class="${cls("num", st === "passed" ? "ok" : st === "failed" ? "warn" : "info")}">${st === "passed" ? "✓" : "2"}</span><div class="who"><span class="nm">Test and activate</span><span class="says">${body[0]}</span></div>${body[1]}</div>
