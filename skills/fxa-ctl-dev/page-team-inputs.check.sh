@@ -54,5 +54,16 @@ fx '(."/api/teams/example") += {"jira": {"project": "EXA"}} | (."/api/teams/exam
 ck "channels with no people: nobody can start it from Slack, and the row asks for people; a queue that is off names the project" \
   "Nobody can start it from Slack · watches 2 channels / A message with EXA-123 picks this team [add people]|Off · project EXA / Jira login: the bot's [off]" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$drf")"
 
+# Secret tickets: the copy says which tickets, and the interlock shows before Save and goes into the record.
+fx '(."/api/teams/example") += {"jira": {"project": "EXA", "queue": true}} | (."/api/teams/example".access) = {"open": true, "users": [], "channels": [], "jira_prefixes": ["EXB"]}'
+sec="$stub"' try { await w(700); q("[data-tf=jira]").click(); await w(400); const box = q("[data-tfk=secret]"), before = !!q("[data-tf-secret]");
+  box.checked = true; box.dispatchEvent(new Event("input", { bubbles: true })); await w(200);
+  const hint = q("[data-tf-secret]"), ahead = !!(hint && hint.compareDocumentPosition(q("[data-tf-save]")) & Node.DOCUMENT_POSITION_FOLLOWING);
+  q("[data-tf-save]").click(); await w(500); const r = sent[0]?.[1]?.record ?? {};
+  return [box.parentElement.textContent.trim(), before, hint?.textContent, ahead, r.jira?.secret, r.access?.open, JSON.stringify(r.access?.jira_prefixes)].join("|") } catch (e) { return "ERR " + e.message; }'
+ck "secret tickets: the box says only secret tickets, the hint shows before Save, and the save turns off open and clears the Jira keys" \
+  'Take only secret tickets (a security level, or a security or hackerone label)|false|Needs private work repos. Turns off "Anyone the bot allows" and clears the Jira keys. One team per project.|true|true|false|[]' \
+  "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$sec")"
+
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
