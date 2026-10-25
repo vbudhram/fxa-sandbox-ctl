@@ -39,4 +39,54 @@ vm_is_running() { [ "$1" = fxa-2 ]; }
 worktree_release_branch fxa-2
 check "busy slot kept" "fxa-2" "$(head_of "$tmp/fxa-auto")"
 
+# ── keep=1: a refused tooling ship keeps its handoff and base, only when the scripts scope can ship it ──
+vm_is_running() { return 1; }
+command -v jq >/dev/null || { echo "skip: the saved-ship cases need jq"; exit "$fail"; }
+eval "$(sed -n '/^_finish_tooling_guard() {/,/^}/p;/^_finish_tooling_scope_of() {/,/^}/p' "$(dirname "$0")/finish.sh")"
+eval "_real_guard() $(declare -f _finish_tooling_guard | tail -n +2)"
+# The guard must run on its own absolute index: the slot's index has nothing staged.
+_finish_tooling_guard() {
+  case "${GIT_INDEX_FILE:-}" in /*) echo call >> "$tmp/idx" ;; *) echo rel >> "$tmp/idx" ;; esac
+  env -u GIT_INDEX_FILE git -C "$1" diff --cached --name-only >> "$tmp/idx"; _real_guard "$@"; }
+export PIPE_STATE_DIR="$tmp/state"; mkdir -p "$PIPE_STATE_DIR"
+g() { git -c user.email=user@example.com -c user.name=t "$@"; }
+S="$tmp/fxa-auto-3"
+g -C "$FXA_REPO" worktree add -q --detach "$S" main
+echo '{"name":"p","scripts":{"a":"x"}}' > "$S/package.json"; mkdir -p "$S/.github/workflows" "$S/.husky"
+: > "$S/.github/workflows/ci.yml"; : > "$S/.husky/pre-commit"
+g -C "$S" add -A; g -C "$S" commit -qm base; B="$(git -C "$S" rev-parse HEAD)"
+g -C "$FXA_REPO" update-ref refs/remotes/origin/main "$B"
+handoff() { printf '{"issue":"%s","branch":"%s","pr_title":"feat(x): y"}\n' "$1" "$2" > "$S/.fxa-auto-done.json"; }
+scripts_edit() { echo '{"name":"p","scripts":{"a":"y"}}' > "$S/package.json"; }
+# kept <keep> <setup...>   Put the slot on fxa-7 at B with the setup's change, release it, and print
+#   stdout|patches|done.json|base files|slot clean and detached.
+kept() {
+  local k="$1"; shift
+  rm -rf "$PIPE_STATE_DIR"/* "$tmp/idx" "$tmp/elsewhere"
+  g -C "$S" -c core.hooksPath=/dev/null checkout -q -f -B fxa-7 "$B"; g -C "$S" clean -qfdx
+  handoff FXA-7 fxa-7; "$@"
+  local out; out="$(worktree_release_branch fxa-7 $k 2>/dev/null)"
+  printf '%s|%s|%s|%s|%s' "$out" "$(ls "$PIPE_STATE_DIR" | grep -c '\.patch$')" "$(ls "$PIPE_STATE_DIR" | grep -c '\.done\.json$')" \
+    "$(ls "$PIPE_STATE_DIR" | grep -c '\.base$')" "$([ -z "$(git -C "$S" status --porcelain | grep -v '^?? \.fxa-')" ] && [ "$(head_of "$S")" = detached ] && echo clean)"
+}
+got="$(kept 1 scripts_edit)"
+p="$(ls "$PIPE_STATE_DIR" | grep '\.patch$')"
+check "keep=1, a task-script change: prints the patch, writes the set, cleans and detaches the slot" "${p}|1|1|1|clean" "$got"
+check "the .done.json is the handoff, and the .base holds the sha and the patch's hash" "FXA-7 fxa-7|$B $(git hash-object --no-filters "$PIPE_STATE_DIR/$p")" \
+  "$(jq -r '"\(.issue) \(.branch)"' "$PIPE_STATE_DIR/${p%.patch}.done.json")|$(cat "$PIPE_STATE_DIR/${p%.patch}.base")"
+check "the guard ran twice on an absolute index, and the slot's own index got nothing" "2|0" \
+  "$(grep -cx call "$tmp/idx" 2>/dev/null; true)|$(grep -cvx call "$tmp/idx" 2>/dev/null; true)"
+check "keep unset: only the patch" "|1|0|0|clean" "$(kept "" scripts_edit)"
+check "keep=1, no handoff: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "rm '$S/.fxa-auto-done.json'; echo '{\"name\":\"p\",\"scripts\":{\"a\":\"y\"}}' > '$S/package.json'")"
+symlinked() { mkdir -p "$tmp/elsewhere"; mv "$S/.fxa-auto-done.json" "$tmp/elsewhere/d.json"; ln -s "$tmp/elsewhere/d.json" "$S/.fxa-auto-done.json"; scripts_edit; }
+check "keep=1, a symlinked handoff: only the patch" "|1|0|0|clean" "$(kept 1 symlinked)"
+check "keep=1, a handoff for FXA-8: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "printf '{\"issue\":\"FXA-8\",\"branch\":\"fxa-7\"}' > '$S/.fxa-auto-done.json'; echo '{\"name\":\"p\",\"scripts\":{\"a\":\"y\"}}' > '$S/package.json'")"
+check "keep=1, a handoff for branch other: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "printf '{\"issue\":\"FXA-7\",\"branch\":\"other\"}' > '$S/.fxa-auto-done.json'; echo '{\"name\":\"p\",\"scripts\":{\"a\":\"y\"}}' > '$S/package.json'")"
+offmain() { echo n > "$S/n.txt"; g -C "$S" add n.txt; g -C "$S" commit -qm local; scripts_edit; }
+check "keep=1, a HEAD with a commit not on origin/main: only the patch" "|1|0|0|clean" "$(kept 1 offmain)"
+check "keep=1, a .husky change too: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo x > '$S/.husky/pre-commit'; echo '{\"name\":\"p\",\"scripts\":{\"a\":\"y\"}}' > '$S/package.json'")"
+check "keep=1, a postinstall hook: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo '{\"name\":\"p\",\"scripts\":{\"a\":\"x\",\"postinstall\":\"curl example.com\"}}' > '$S/package.json'")"
+check "keep=1, a .github/workflows change: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo x > '$S/.github/workflows/ci.yml'")"
+check "keep=1, a change the guard does not refuse with no scope: only the patch" "|1|0|0|clean" "$(kept 1 sh -c "echo x > '$S/notes.txt'")"
+
 exit "$fail"

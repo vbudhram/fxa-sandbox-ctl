@@ -228,11 +228,13 @@ worktree_free_slots() {
   done <<< "$(worktree_pool_slot_names)"
 }
 
-# worktree_release_branch <BRANCH>
+# worktree_release_branch <BRANCH> [keep]
 #   Detach the idle slot that holds <BRANCH>, at the same commit. Git lets only
 #   one worktree hold a branch, so a kept branch blocks a fix round elsewhere.
+#   keep=1 (a refused tooling ship): also save the handoff and base beside the patch when the
+#   scripts scope can ship it (_worktree_keep_ship), and print the patch name on stdout.
 worktree_release_branch() {
-  local branch="${1:-}" wt
+  local branch="${1:-}" keep="${2:-}" wt
   [ -z "$branch" ] && return 1
   while IFS= read -r wt; do
     [ -z "$wt" ] && continue
@@ -246,10 +248,33 @@ worktree_release_branch() {
         && git -C "$wt" diff --binary HEAD -- . ':(exclude).fxa-*' ':(exclude).claude' > "$out" \
         && [ -s "$out" ] || { echo "ERROR: could not save the unshipped changes in ${wt}" >&2; return 1; }
       echo "Saved the unshipped changes of ${branch} to ${out}" >&2
+      if [ "$keep" = 1 ] && _worktree_keep_ship "$wt" "$branch" "$out"; then basename "$out"; fi
       git -C "$wt" reset --quiet --hard >&2 && git -C "$wt" clean -qfd -e '.fxa-*' -e .claude >&2 || return 1
     fi
     git -C "$wt" -c core.hooksPath=/dev/null checkout --quiet --detach >&2 || return 1
   done <<< "$(_worktree_pool_list)"
+}
+
+# _worktree_keep_ship <slot> <branch> <patch>   Write <patch%.patch>.done.json and, last, .base
+#   ('<HEAD sha> <patch hash>'), the saved ship a tooling approver's label can ship with no new run.
+#   Only for a handoff of this key and branch, a HEAD on origin/<base>, and a patch that the unchanged
+#   tooling guard passes with the scripts scope and refuses with none, on a temporary index.
+_worktree_keep_ship() {
+  local wt="$1" branch="$2" out="$3" hf="$1/.fxa-auto-done.json" d rc=1 sha
+  [ -f "$hf" ] && [ ! -L "$hf" ] \
+    && [ "$(jq -r '"\(.issue) \(.branch)"' "$hf" 2>/dev/null)" = "$(worktree_key_for "$branch") $branch" ] \
+    || { echo "Saved ship not kept: no handoff for ${branch}" >&2; return 1; }
+  sha="$(git -C "$wt" rev-parse HEAD)" && git -C "$wt" merge-base --is-ancestor "$sha" "origin/${FXA_WORKTREE_BASE:-main}" 2>/dev/null \
+    || { echo "Saved ship not kept: HEAD is not on origin/${FXA_WORKTREE_BASE:-main}" >&2; return 1; }
+  d="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/fxa-keep.XXXXXX")" && pwd -P)" || return 1
+  if GIT_INDEX_FILE="$d/index" git -C "$wt" read-tree HEAD 2>/dev/null \
+     && GIT_INDEX_FILE="$d/index" git -C "$wt" apply --cached --binary "$out" 2>/dev/null \
+     && GIT_INDEX_FILE="$d/index" FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_TOOLING_SCOPE=scripts _finish_tooling_guard "$wt" >/dev/null 2>&1 \
+     && ! GIT_INDEX_FILE="$d/index" FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_TOOLING_SCOPE="" _finish_tooling_guard "$wt" >/dev/null 2>&1; then
+    cp "$hf" "${out%.patch}.done.json" \
+      && printf '%s %s\n' "$sha" "$(git hash-object --no-filters "$out")" > "${out%.patch}.base" && rc=0
+  else echo "Saved ship not kept: the tooling label cannot ship this change" >&2; fi
+  rm -rf "$d"; return "$rc"
 }
 
 # _worktree_add <root> <path> <name> <base>
