@@ -2110,6 +2110,30 @@ cmd_launch() {
     echo "ERROR: refusing to launch ${key}: ${n} launches in 24 h, budget ${PIPE_MAX_LAUNCHES_PER_DAY:-20} (PIPE_MAX_LAUNCHES_PER_DAY)." >&2
     return 1
   fi
+  # An approved Jira label lets this launch change package.json scripts and _scripts/ (the finish
+  # guard). Read before the ledger line: a failed read must use no budget.
+  local tooling_by="" tscope="${PIPE_STATE_DIR}/tooling/${key}" saved="" trc=0
+  rm -f "$tscope"
+  tooling_by="$(jira_tooling_approver "$key")" || tooling_by=""
+  # A saved ship of a refused run (cmd_label) ships with no agent run, only with an approver's label and no PR.
+  if saved="$(worktree_saved_ship "$key")"; then
+    if [ -z "$tooling_by" ]; then
+      # A label from someone who is not an approver keeps the set: adding the ID still ships it.
+      jira_tooling_label_adder "$key" >/dev/null || trc=$?
+      [ "$trc" = 1 ] && worktree_saved_ship_retire "$key" stale
+      saved=""
+    elif [ "${FXA_ALLOW_TOOLING_EDITS:-}" = 1 ] || [ -n "$rebase" ] || [[ "$ctx" == */feedback/* ]] || [ "${PIPE_PR_OPEN:-1}" = 0 ]; then
+      worktree_saved_ship_retire "$key" stale; saved=""
+    else
+      gh_pr_none "$key" || trc=$?
+      [ "$trc" = 1 ] && { worktree_saved_ship_retire "$key" stale; saved=""; }
+    fi
+    if [ "$trc" = 2 ]; then
+      echo "ERROR: cannot read the tooling label or PR of ${key}; the saved change waits for the next pass" >&2
+      cmd_label "$key" blocked refused_ship >/dev/null 2>&1 || echo "WARN: could not label ${key} blocked" >&2
+      return 1
+    fi
+  fi
   printf '%s %s %s\n' "$(date +%s)" "$key" "$slot" >> "$ledger"
   local args=(--pipeline "$PIPE_NAME" jira "$key" --create-pr --worktree "$slot" ${rebase:+--rebase})
   [ -n "${FXA_AGENT_RUNTIME:-${PIPE_AGENT_RUNTIME:-}}" ] && args+=(--runtime "${FXA_AGENT_RUNTIME:-$PIPE_AGENT_RUNTIME}")
@@ -2118,14 +2142,10 @@ cmd_launch() {
   [ -n "$ctx" ] && grep -q '^Launch with --functional-tests' "$ctx" && args+=(--functional-tests)
   # And one asks for the Android emulator with Fenix beside them (the fxa-android runner).
   [ -n "$ctx" ] && grep -q '^Launch with --android' "$ctx" && args+=(--android)
-  # An approved Jira label lets this launch change package.json scripts and _scripts/ (the finish
-  # guard). Recorded for the key too, so a recovery finish without this env gets the same scope.
-  local tooling_by="" tscope="${PIPE_STATE_DIR}/tooling/${key}"
-  rm -f "$tscope"
-  if tooling_by="$(jira_tooling_approver "$key")"; then
+  [ -n "$saved" ] && args+=(--reship "$saved")
+  # The scope is recorded for the key too, so a recovery finish without this env gets the same scope.
+  if [ -n "$tooling_by" ]; then
     mkdir -p "${tscope%/*}" && printf 'scripts %s\n' "$tooling_by" > "$tscope"
-  else
-    tooling_by=""
   fi
   local log; log="$(pipeline_launch_log "$key")"
   # Record the run this slot holds before the launch overwrites its transcript:
@@ -2142,12 +2162,14 @@ cmd_launch() {
   rm -f "$log"
   echo "Launched at: $(date +%s)" > "$log"
   [ -n "$tooling_by" ] && echo "tooling: scripts allowed by ${tooling_by#* } [${tooling_by%% *}] (label ${PIPE_TOOLING_LABEL})" >> "$log"
+  local rname=""; [ -z "$saved" ] || rname="$(basename "${saved%.base}").patch"
+  [ -z "$rname" ] || echo "Reship: shipping the saved change of the refused run (${rname}); no agent run." >> "$log"
   # Each line also lands in <KEY>.launch.tsv with its seconds since launch; see launch-times.
   env ${tooling_by:+FXA_ALLOW_TOOLING_SCOPE=scripts} nohup "$0" "${args[@]}" 2>&1 < /dev/null \
     | nohup perl -e "$_SESSION_STAMP_PL" "$log" "${log%.log}.tsv" > /dev/null 2>&1 &
   # A stale skip fingerprint would silence a later skip of this key.
   pipeline_skip_clear "$key"
-  echo "$key launched on $slot (log ${log})${tooling_by:+ tooling=scripts}"
+  echo "$key launched on $slot (log ${log})${tooling_by:+ tooling=scripts}${rname:+ reship=${rname}}"
 }
 
 # launch-times <KEY>   When each milestone of the last launch happened, in

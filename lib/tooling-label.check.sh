@@ -140,7 +140,7 @@ launch() {
     _launch_slot_for() { echo "$2"; }; pipeline_free_gb() { echo 99; }; pipeline_launches_24h() { :; }; pipeline_holding_new() { return 1; }
     pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
     worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
-    jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-lead Lead Person"; }
+    jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-lead Lead Person"; }; worktree_saved_ship() { return 1; }
     cmd_launch FXA-7 fxa-1 >/dev/null
   ' "$tmp/fakectl" "$here" "$tmp"
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/child" ] && break; sleep 0.3; done
@@ -196,5 +196,50 @@ out="$(bash -c '
   pipeline_launch_log() { echo "$PIPE_STATE_DIR/x.log"; }; worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
   cmd_launch FXA-7 s' _ "$tmp" "$tmp" "$plh" 2>&1; echo "rc=$?")"
 check "a full 24 h budget refuses the launch with the budget text" "1|rc=1" "$(grep -c 'refusing to launch FXA-7: 3 launches in 24 h, budget 3' <<< "$out")|$(tail -1 <<< "$out")"
+
+# ── The reship gate in cmd_launch: a saved ship goes out with no agent run only with an approver's label and no PR ──
+cat > "$tmp/fakectl" <<'EOF3'
+#!/bin/bash
+printf '%s|%s\n' "$*" "${FXA_ALLOW_TOOLING_SCOPE:-none}" > "$CHILD_OUT"
+EOF3
+wsh="$(sed -n '/^worktree_saved_ship() {/,/^}/p;/^worktree_saved_ship_retire() {/,/^}/p' "$here/worktree.sh")"
+mkdir -p "$tmp/rs/feedback"; : > "$tmp/rs/ctx.md"; : > "$tmp/rs/feedback/ctx.md"
+# gate [VAR=value...]   A launch of FXA-7 with a saved set. APPROVED=1: an approver's label; ADDER=<rc> for
+#   the label read when it is not; PRNONE=<rc>; CTX=<file>. Prints rc|echo|child|log Reship lines|tombstone|ledger|tooling|labels.
+gate() {
+  local S="$tmp/rs/state"; rm -rf "$S" "$tmp/child" "$tmp/rs/labels"; mkdir -p "$S"
+  for f in patch done.json base; do echo x > "$S/FXA-7.leftover-100.$f"; done
+  local out rc=0
+  out="$(env "$@" CHILD_OUT="$tmp/child" bash -c '
+    set -euo pipefail; source "$1/cmd_launch.sh"; eval "$3"
+    PIPE_STATE_DIR="$2/state" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$2" PIPE_MIN_FREE_GB=1 PIPE_TOOLING_LABEL=ai-fixme-allow-tooling _SESSION_STAMP_PL="while (<STDIN>) {}"
+    _launch_slot_for() { echo fxa-1; }; pipeline_free_gb() { echo 99; }; pipeline_launches_24h() { :; }; pipeline_holding_new() { return 1; }
+    pipeline_launch_log() { printf "%s/%s.launch.log\n" "$PIPE_STATE_DIR" "$1"; }
+    worktree_repo_root() { echo /; }; worktree_key_for() { echo; }; telemetry_record() { :; }; pipeline_skip_clear() { :; }
+    jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-boss Boss Person"; }
+    jira_tooling_label_adder() { [ "${ADDER:-1}" = 0 ] && echo acct-other; return "${ADDER:-1}"; }
+    gh_pr_none() { return "${PRNONE:-0}"; }
+    LBL="$2/labels"; cmd_label() { echo "$*" >> "$LBL"; }
+    cmd_launch FXA-7 fxa-1 ${CTX:-}' "$tmp/fakectl" "$tmp" "$tmp/rs" "$wsh" 2>&1)" || rc=$?
+  printf '%s\n' "$out" > "$tmp/rs/out"
+  [ "$rc" = 0 ] && for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/child" ] && break; sleep 0.3; done
+  cnt() { [ -e "$2" ] || { echo "${3:-0}"; return 0; }; grep -c -- "$1" "$2" || true; }
+  printf '%s|%s|%s|%s|%s|%s|%s|%s' "$rc" "$(grep -c 'reship=FXA-7.leftover-100.patch' <<< "$out" || true)" \
+    "$(cnt "--reship $S/FXA-7.leftover-100.base" "$tmp/child" none)" \
+    "$(cnt '^Reship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.$' "$S/FXA-7.launch.log")" \
+    "$(cat "$S/FXA-7.leftover-100.retired" 2>/dev/null || echo -)" "$(cnt . "$S/launches.log")" \
+    "$([ -e "$S/tooling/FXA-7" ] && echo tooling || echo -)" "$(cat "$tmp/rs/labels" 2>/dev/null || echo -)"
+}
+check "an approver's label and no PR: the launch reships, with the scope, and says so" "0|1|1|1|-|1|tooling|-" "$(gate APPROVED=1)"
+check "and the child keeps the scope for a fallback run" "scripts" "$(cut -d'|' -f2 "$tmp/child")"
+check "no label on a good read: the set is retired stale, and a normal run starts" "0|0|0|0|stale|1|-|-" "$(gate ADDER=1)"
+check "a label from someone who is not an approver: the set stays, and a normal run starts" "0|0|0|0|-|1|-|-" "$(gate ADDER=0)"
+check "a feedback context: retired stale, a normal run" "0|0|0|0|stale|1|tooling|-" "$(gate APPROVED=1 CTX="$tmp/rs/feedback/ctx.md")"
+check "a PR (open, or from a manual finish): retired stale, a normal run" "0|0|0|0|stale|1|tooling|-" "$(gate APPROVED=1 PRNONE=1)"
+check "FXA_ALLOW_TOOLING_EDITS=1: retired stale, a full run" "0|0|0|0|stale|1|tooling|-" "$(gate APPROVED=1 FXA_ALLOW_TOOLING_EDITS=1)"
+fr="1|0|none|0|-|0|-|FXA-7 blocked refused_ship"
+check "a failed label read: the ERROR line, no ledger line, no tooling record, blocked again, the set kept" "$fr|1" \
+  "$(gate ADDER=2)|$(grep -c '^ERROR: cannot read the tooling label or PR of FXA-7; the saved change waits for the next pass$' "$tmp/rs/out")"
+check "a failed gh read: the same" "$fr|1" "$(gate APPROVED=1 PRNONE=2)|$(grep -c '^ERROR: cannot read the tooling label or PR of FXA-7' "$tmp/rs/out")"
 
 exit "$fail"
