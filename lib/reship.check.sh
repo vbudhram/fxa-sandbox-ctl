@@ -119,5 +119,26 @@ fresh() { rm -f "$PIPE_STATE_DIR"/FXA-7.leftover-* "$PIPE_STATE_DIR"/FXA-7.reshi
 fresh
 check "--reship with a file that is not the key's saved ship: an ERROR line, and no agent run" "1|1|0" \
   "$(RESHIP="$tmp/good.patch" run_jira)|$(grep -c '^ERROR: --reship good.patch is not the saved ship of FXA-7' "$tmp/launch.log")|$(grep -c . "$tmp/agent" 2>/dev/null || echo 0)"
+eval "$(sed -n '/^_jira_reship_ship() {/,/^}/p' "$here/../fxa-sandbox-ctl")"; export -f _jira_reship_ship
+n_of() { [ -e "$tmp/$1" ] || { echo 0; return; }; grep -c "${2:-.}" "$tmp/$1" || true; }
+pushed() { git -C "$tmp/origin.git" diff "$B" fxa-7 2>/dev/null | grep '^[+-][^+-]' | tr '\n' ' '; }
+want_diff="$(grep '^[+-][^+-]' "$tmp/good.patch" | tr '\n' ' ')"
+fresh; echo 'old run' > "$W/.fxa-auto-session.jsonl"
+check "a reship: one PR whose diff is the patch, no agent run, finish with both tooling vars empty" "0|$want_diff|0|||FXA-7" \
+  "$(run_jira FXA_ALLOW_TOOLING_SCOPE=scripts)|$(pushed)|$(n_of agent)|$(cat "$tmp/finish-env")"
+check "the set is retired as shipped, one start comment, no run recorded, and no transcript left for done" "shipped|1|0|0" \
+  "$(cat "$P.retired")|$(n_of jira 'Shipping the saved change')|$(n_of telemetry)|$(wc -c < "$W/.fxa-auto-session.jsonl" | tr -d ' ')"
+check "the log has no line that starts with 'Shipping '" 0 "$(n_of launch.log '^Shipping ')"
+# A10: the label is gone at the finish. The launch env had the scope, or every path allowed.
+for e in FXA_ALLOW_TOOLING_SCOPE=scripts FXA_ALLOW_TOOLING_EDITS=1; do
+  fresh
+  check "the label removed after the launch ($e in the env): the guard refuses, nothing is pushed" "1|1|" \
+    "$(run_jira LABEL=off "$e")|$(n_of launch.log '^ERROR: refusing to ship: the change touches CI or host tooling: ')|$(pushed)"
+done
+# A15: the push fails once, then the same set runs again on the slot it left.
+fresh; : > "$tmp/push-fails"
+check "a failed push keeps the set" "1|$P.base" "$(run_jira)|$(worktree_saved_ship FXA-7)"
+check "the retry ships it once, with one start comment and no agent run" "0|$want_diff|1|0|shipped" \
+  "$(run_jira KEEP_SLOT=1)|$(pushed)|$(n_of jira 'Shipping the saved change')|$(n_of agent)|$(cat "$P.retired")"
 
 exit "$fail"

@@ -509,6 +509,17 @@ EOF
   slot_write "${worktree_path}/.fxa-auto-claude.jsonl" < /dev/null 2>/dev/null || true
   slot_write "${worktree_path}/.fxa-auto-claude.log" < /dev/null 2>/dev/null || true
 
+  # An approved saved ship of a refused run (cmd_launch decides): ship it with no agent run. No
+  # transcript is left, so `done` records no run for it: the merge comment counts the first run once.
+  if [ -n "$reship" ]; then
+    slot_write "${worktree_path}/.fxa-auto-session.jsonl" < /dev/null 2>/dev/null || true
+    local why
+    if why="$(_jira_reship "$key" "$worktree_path" "$reship")"; then
+      _jira_reship_ship "$key" "$worktree_path" "$create_pr" "$ci_watch"; return
+    fi
+    _finish_release "$worktree_path"
+  fi
+
   # The /goal is capped, so it points at this file instead of embedding the context.
   local context_file="${worktree_path}/.fxa-jira-context.md"
   # A slot that still holds work (a runner deleted at its lifetime cap, a run cut
@@ -575,6 +586,21 @@ EOF
     echo "" >&2
     echo "Agent started; not watching. Resume with: fxa-sandbox-ctl --pipeline ${PIPE_PROFILE} finish --worktree ${worktree_path} --create-pr" >&2
   fi
+}
+
+# _jira_reship_ship <KEY> <slot> <create_pr> <ci_watch>   cmd_jira's PR tail for a reship. Both tooling vars
+#   are empty, so the unchanged guard reads tooling/<KEY> and Jira again: a label removed since the launch
+#   stops the ship. A failed finish keeps the saved ship, so a retry finds it.
+_jira_reship_ship() {
+  local key="$1" wt="$2" pr_url
+  pr_url="$(FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_TOOLING_SCOPE="" FXA_SHIP_CHECK="$key" finish_push_and_pr "$wt" "$3")" \
+    || { _finish_release "$wt"; return 1; }
+  _finish_release "$wt"
+  [ -n "$pr_url" ] || { echo "Branch pushed for ${key}." >&2; return 0; }
+  worktree_saved_ship_retire "$key" shipped || true
+  finish_notify "PR opened for ${key}" "$pr_url"
+  echo "PR: ${pr_url}"
+  [ "$4" != true ] || finish_watch_ci "$pr_url" || true
 }
 
 # _jira_reship <KEY> <slot> <base file>   Put the saved ship of a refused run (worktree_saved_ship) on the
