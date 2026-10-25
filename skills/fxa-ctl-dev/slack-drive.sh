@@ -79,7 +79,8 @@ case "${1:-}" in
       r="$(jq -r --arg me "$me" '[(.messages // [])[] | select(.user == $me)] | last | [(.reactions // [])[].name] | join(",")' <<< "$(replies "$2")" 2>/dev/null)"
       case ",$r," in *,white_check_mark,*|*,warning,*) echo "== done after $(( $(date +%s) - t0 ))s (:${r//,/: :}:)"; break ;; esac
       [ "$(date +%s)" -lt "$end" ] || { echo "== still working after ${3:-1800}s (reactions: ${r:-none})"; break; }
-      sleep 10
+      # SLACK_DRIVE_POLL: seconds between reads; the smoke's short waits use 3, under the replies rate limit.
+      sleep "${SLACK_DRIVE_POLL:-10}"
     done
     show "$2" ;;
   *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;

@@ -11,7 +11,7 @@ H="${SMOKE_VM:-$here/../fxa-manager/vm.sh}" D="${SMOKE_DRIVE:-$here/slack-drive.
 bad=0
 fail() { echo "FAIL smoke: $1 (thread $2)"; bad=1; }
 # done_ok <ts> <what> [secs]   The bot finished with my last message, with ✅. The wait's "== " line is the result: a failed poll before it prints a line too.
-done_ok() { local w s; w="$("$D" wait "$1" "${3:-120}" 2>&1)"; s="$(grep -m1 '^== ' <<< "$w" || head -1 <<< "$w")"
+done_ok() { local w s; w="$(SLACK_DRIVE_POLL=3 "$D" wait "$1" "${3:-120}" 2>&1)"; s="$(grep -m1 '^== ' <<< "$w" || head -1 <<< "$w")"
   case "$s" in *warning*) ;; *white_check_mark*) return 0 ;; esac; fail "$2: it did not end with a check mark ($s)" "$1"; return 1; }
 # shows <ts> <what> <regex>...   Within SMOKE_SHOW_S (60) s the thread shows each regex, and never "Something went wrong".
 shows() { local ts="$1" what="$2" out re miss end=$(( $(date +%s) + ${SMOKE_SHOW_S:-60} )); shift 2
@@ -19,7 +19,7 @@ shows() { local ts="$1" what="$2" out re miss end=$(( $(date +%s) + ${SMOKE_SHOW
     if grep -q 'Something went wrong' <<< "$out"; then fail "$what: Something went wrong" "$ts"; return 1; fi
     for re in "$@"; do grep -qE -- "$re" <<< "$out" || { miss="$re"; break; }; done
     [ -n "$miss" ] || break
-    [ "$(date +%s)" -lt "$end" ] || { fail "$what: no match for '$miss'" "$ts"; return 1; }; sleep 5
+    [ "$(date +%s)" -lt "$end" ] || { fail "$what: no match for '$miss'" "$ts"; return 1; }; sleep 2
   done; echo "ok   smoke: $what"; }
 real() { "$H" dev >/dev/null 2>&1 || { echo "FAIL smoke: the dev bot did not go back to the real controller"; bad=1; }; }
 # Only the half a change can break: the fake half sends the bot's cards to the real Slack API (a bot
