@@ -3,6 +3,12 @@
 #   bash lib/routines-tick.check.sh
 source "$(dirname "$0")/session-check-head.sh"
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
+# The check costs a few thousand jq and sqlite3 starts: its six parts run at once, each with its own store.
+if [ -z "${_TICK_PART:-}" ]; then
+  for p in 1 2 3 4 5 6; do _TICK_PART=$p bash "$0" > "$tmp/part$p" 2>&1 & eval "pid$p=\$!"; done
+  for p in 1 2 3 4 5 6; do eval "wait \$pid$p" || fail=1; cat "$tmp/part$p"; done
+  exit "$fail"
+fi
 export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
 mkdir -p "$FXA_TEAMS_DIR" "$FXA_LLM_PROXY_DIR/teams"; echo "PROFILE_CHANNELS=C0OWN00:fxa" > "$FXA_BOT_ENV"; echo '{"teams": {}}' > "$FXA_TEAMS_DIR/index.json"
 source "$(dirname "$0")/db.sh"; source "$(dirname "$0")/routines.sh"
@@ -28,7 +34,17 @@ mk() { local x="${3:-}"; [ -n "$x" ] || x='{}'
     mode: "report", max_usd: 5, skip_no_commits: true, env: "live"} + $x')"))); SELECT last_insert_rowid();"; }
 tick() { FXA_ROUTINE_NOW="$1" routine_tick --env live; }
 rows() { db_value "SELECT count(*) FROM routine_runs WHERE routine_id = $1;"; }
+# Shared by the parts.
+N=$((T + 50000)) PA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" P7="9999999999999999999999999999999999999999"
+# It reads stdin, as GCE ssh does: reconcile must not let it eat the rows still to read.
+session_stop() { cat >/dev/null 2>&1 || true; echo "$1" >> "$tmp/stopped"; session_set "$1" state stopped; }; : > "$tmp/stopped"
+st() { db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rr, 'r$RANDOM$RANDOM', $(db_q "$1"), $( [ -n "$2" ] && db_q "$2" || echo NULL ), $3); SELECT last_insert_rowid();"; }
+s_of() { db_value "SELECT state || '|' || coalesce(reason, pr_url, '') FROM routine_runs WHERE id = $1;"; }
+printf 'Finding: the handler logs user@example.com and ghp_abcdefghijklmnop1234 in plain text.\n' > "$tmp/report.md"
+# The pr-label routine of parts 4, 5 and 6.
+rpf_mk() { mk fxa "daily 09:00" '{"name": "Dep fix", "on": "pr-label", "mode": "pr", "pr": {"repo": "mozilla/fxa", "authors": ["dependabot[bot]"]}}'; }
 
+if [ "$_TICK_PART" = 1 ]; then
 # Two ticks at once, and one a minute later: one run, one row (D15).
 r1="$(mk fxa)"
 ( tick $((T + 30)) > "$tmp/t1" ) & ( tick $((T + 30)) > "$tmp/t2" ) & wait
@@ -123,11 +139,7 @@ check "a tick in each 01:30 of the DST fold claims one run for the date" "1" "$(
 
 # Reconcile (D14): runs the bot never reported on still end, from their session records.
 : > "$tmp/errs"
-# It reads stdin, as GCE ssh does: reconcile must not let it eat the rows still to read.
-session_stop() { cat >/dev/null 2>&1 || true; echo "$1" >> "$tmp/stopped"; session_set "$1" state stopped; }; : > "$tmp/stopped"
 rr="$(mk fxa "weekly sun 03:00")"
-st() { db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at) VALUES ($rr, 'r$RANDOM$RANDOM', $(db_q "$1"), $( [ -n "$2" ] && db_q "$2" || echo NULL ), $3); SELECT last_insert_rowid();"; }
-N=$((T + 50000))
 g1="$(st started agent-gone01 $((N - 60)))"
 echo '{"key":"agent-paus01","state":"paused"}' > "$tmp/agent-paus01.json"; g2="$(st started agent-paus01 $((N - 60)))"
 echo '{"key":"agent-prok01","state":"pr_open","pr_url":"https://github.com/mozilla/fxa/pull/7"}' > "$tmp/agent-prok01.json"; g3="$(st started agent-prok01 $((N - 60)))"
@@ -137,7 +149,6 @@ echo '{"key":"agent-fine01","state":"active"}' > "$tmp/agent-fine01.json"; g5="$
 g6="$(st claimed "" $((N - 660)))"; g7="$(st claimed "" $((N - 540)))"
 echo 'not json' > "$tmp/agent-junk01.json"; g8="$(st started agent-junk01 $((N - 60)))"
 tick "$N" >/dev/null; tick $((N + 30)) >/dev/null
-s_of() { db_value "SELECT state || '|' || coalesce(reason, pr_url, '') FROM routine_runs WHERE id = $1;"; }
 check "a started run whose session is gone fails, with one error row" "failed|the run's session is gone|1" \
   "$(s_of "$g1")|$(grep -c "routine run ${g1}: " "$tmp/errs")"
 check "a started run whose session paused is stopped and fails, with one error row" "failed|the session paused with no result|agent-paus01|1" \
@@ -160,7 +171,6 @@ mkdir -p "$FXA_LLM_PROXY_DIR/runs" "$FXA_LLM_PROXY_DIR/tokens"
 TOK="fxl_$(printf 'a%.0s' $(seq 32))"
 echo "$TOK" > "$FXA_LLM_PROXY_DIR/runs/$(worktree_branch_for agent-done01)"; echo '{"spent_usd": 1.25}' > "$FXA_LLM_PROXY_DIR/tokens/$TOK.json"
 d1="$(st started agent-done01 $((N - 60)))"
-printf 'Finding: the handler logs user@example.com and ghp_abcdefghijklmnop1234 in plain text.\n' > "$tmp/report.md"
 a1="$(FXA_ROUTINE_NOW=$N routine_done "$d1" --state report --session agent-done01 --report-file "$tmp/report.md")"
 check "a report with an email and a token: post false, and the row keeps the report and the cost" "true|report|false|1|1.25" \
   "$(jq -r '"\(.changed)|\(.state)|\(.post)"' <<< "$a1")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $d1 AND report LIKE '%ghp_abcdef%';")|$(db_value "SELECT cost_usd FROM routine_runs WHERE id = $d1;")"
@@ -182,6 +192,13 @@ check "a store error in done is the store line" "ERROR: the routine store did no
 sk="$(db_value "SELECT id FROM routine_runs WHERE state = 'skipped' AND posted = 0 LIMIT 1;")"
 check "posted marks a skip; a started run is refused" "posted ${sk}|1|ERROR: routine run ${d3} is not a skip or a failure" \
   "$(routine_posted "$sk")|$(db_value "SELECT posted FROM routine_runs WHERE id = $sk;")|$(routine_posted "$d3" 2>&1)"
+fi
+
+if [ "$_TICK_PART" = 2 ]; then
+# As part 1 leaves them: the two gate teams, the spendy routine with a spend that cannot be read, rr, and the clean report.
+echo '{"name":"drafty","status":"draft"}' > "$FXA_TEAMS_DIR/drafty.json"; echo '{"name":"spendy","status":"active"}' > "$FXA_TEAMS_DIR/spendy.json"
+echo '{"day_usd": 10}' > "$FXA_LLM_PROXY_DIR/teams/spendy.json"; echo 'not json' > "$FXA_LLM_PROXY_DIR/teams/spendy.spend.json"
+r5="$(mk spendy "daily 09:00" '{"channel": "C0SPEND"}')"; rr="$(mk fxa "weekly sun 03:00")"; printf 'No issue found in 6 commits.\n' > "$tmp/clean.md"
 
 # Run now and Stop: a queued manual run that the next tick hands out once; Stop stops the row, then the session.
 : > "$tmp/audit"; rn="$(mk fxa "weekly sat 23:00")"
@@ -275,7 +292,11 @@ echo '{"key":"agent-late02","state":"stopped"}' > "$tmp/agent-late02.json"; gm="
 perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1]' "$NOWR" "$tmp/agent-late02.json"
 routine_reconcile $((NOWR + 601)) live
 check "10 min after the session stopped, reconcile fails the run" "failed|the session stopped with no result" "$(s_of "$gm")"
+fi
 
+if [ "$_TICK_PART" = 3 ]; then
+# As part 2 leaves them: NOWR and rr.
+NOWR="$(date +%s)"; rr="$(mk fxa "weekly sun 03:00")"
 # What the bot posts and checks comes with each run: name, mode, template, repos, branch, the team's private
 # flag (true when the team does not load: fail closed), and the start of the last run with a result.
 ri="$(mk fxa "daily 20:00" '{"branch": "main"}')"
@@ -421,7 +442,9 @@ check "a queued run with no free runner after 60 min fails as no runner free" "f
 qf="$(db_value "INSERT INTO routine_runs (routine_id, period, trigger, state, started_at) VALUES ($rw, 'manual-12', 'manual', 'queued', $((T - 3660))); SELECT last_insert_rowid();")"
 FXA_ROUTINE_NOW=$T routine_reconcile "$T" live
 check "a queued run that waited 60 min with free runners does not blame the runners" "failed|no tick started it within 60 min" "$(s_of "$qf")"
+fi
 
+if [ "$_TICK_PART" = 4 ]; then
 # A pr-label routine runs on request only: the tick never claims it on a schedule, even with a schedule saved.
 rpl="$(mk fxa "daily 09:00" '{"on": "pr-label", "mode": "pr", "pr": {"repo": "mozilla/fxa", "authors": ["dependabot[bot]"]}}')"
 check "a pr-label routine is not claimed or skipped on a schedule, and gets no row" "0|0" \
@@ -467,8 +490,7 @@ db_exec "UPDATE routine_runs SET state = 'ok' WHERE id IN ($fd, $fb);"
 # The queued claim loop for a fix row (a pr-label routine): every gate keeps it queued with heads.fix.wait, and the
 # target check against the fake gh (lib/testdata/prfix) skips a PR with a new commit before any claim.
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE state IN ('queued','claimed','started');"
-PA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-rpf="$(mk fxa "daily 09:00" '{"name": "Dep fix", "on": "pr-label", "mode": "pr", "pr": {"repo": "mozilla/fxa", "authors": ["dependabot[bot]"]}}')"
+rpf="$(rpf_mk)"
 fq() { # fq <head sha> [trigger]   A queued fix row on PR 90001; prints its id.
   db_value "INSERT INTO routine_runs (routine_id, period, trigger, actor, state, heads, started_at) VALUES ($rpf, 'pr-90001-$1', '${2:-label}', 'example-writer', 'queued',
     json('{\"fix\":{\"pr\":90001,\"url\":\"https://github.com/mozilla/fxa/pull/90001\",\"head_sha\":\"$1\",\"packages\":[\"example-pkg\"]}}'), $T); SELECT last_insert_rowid();"; }
@@ -527,12 +549,15 @@ check "a third good PR queues a manual row with heads.fix, beside two queued row
 check "the same PR head again, while that run is queued" "ERROR: A run on #90001 at aaaaaaa is already queued or in progress. The PR comment shows its state." \
   "$(rn --pr https://github.com/mozilla/fxa/pull/90001)"
 db_exec "UPDATE routine_runs SET state = 'stopped' WHERE routine_id = $rpf AND state IN ('queued','claimed','started');"
+fi
 
+if [ "$_TICK_PART" = 5 ]; then
+# Routine and run 1 as part 1 leaves them, for "a row with no fix makes no call".
+r1="$(mk fxa)"; tick $((T + 30)) >/dev/null; db_exec "UPDATE routine_runs SET state = 'ok';"; rpf="$(rpf_mk)"
 # A16 prfix_report: the PR comment of a fix row is one fixed text with its next step, for each state and why. The
 # comment and the label are stubbed here (lib/github-app.check.sh checks them on the fixture).
 prfix_comment() { printf 'comment %s %s %s\n' "$1" "$2" "$3" >> "$tmp/pc"; [ -z "${PC_FAILS:-}" ]; }
 prfix_label() { echo "label $*" >> "$tmp/pc"; }
-P7="9999999999999999999999999999999999999999"
 fr() { # fr <state> [fix keys json]   A fix row of the pr-label routine on PR 90001 at head PA; prints its id.
   local x="${2:-}"; [ -n "$x" ] || x='{}'
   db_value "INSERT INTO routine_runs (routine_id, period, state, reason, heads) VALUES ($rpf, 'pr-90001-$RANDOM$RANDOM', '$1', 'agent says: see https://internal.example/x',
@@ -626,7 +651,10 @@ check "after 24 h: skipped with why expired, on skips with post true and the fix
   "$(db_value "SELECT state || '|' || json_extract(heads, '$.fix.why') || '|' || reason FROM routine_runs WHERE id = $x1;")|$(jq -r --argjson q "$x1" '.skips[] | select(.run == $q) | [.post, .fix.pr, .fix.why, .fix.label] | map(tostring) | join("|")' <<< "$out")|$(grep -c . "$tmp/errs")|$(db_value "SELECT period FROM routine_runs WHERE id = $x1;")"
 check "the next tick does not post it again, and a new request on the same head inserts" "0|1" \
   "$(tick $((N + 86400)) | jq --argjson q "$x1" '[.skips[] | select(.run == $q)] | length')|$(db_value "INSERT INTO routine_runs (routine_id, period, state) VALUES ($rpf, 'pr-90001-$PA', 'stopped'); SELECT changes();")"
+fi
 
+if [ "$_TICK_PART" = 6 ]; then
+rpf="$(rpf_mk)"
 # A15, A17, A19: each state change edits the App's one comment, through the real prfix_comment on a copy of the fixture
 # (the stub API writes there, as in lib/github-app.check.sh). The tick repairs the comment of each fix row.
 ( eval "$(sed -n '/^_prfix_comment_id() {/,/^}/p;/^prfix_comment() {/,/^}/p;/^prfix_label() {/,/^}/p;/^PRFIX_MARK=/p' "$SANDBOX_ROOT/lib/github.sh")"
@@ -683,5 +711,6 @@ check "the next tick does not post it again, and a new request on the same head 
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
+fi
 
 exit "$fail"
