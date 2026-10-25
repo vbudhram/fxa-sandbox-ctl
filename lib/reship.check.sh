@@ -187,15 +187,19 @@ eval "$(sed -n '/^pipeline_progress() {/,/^}/p' "$here/pipeline.sh")"
 eval "$(sed -n '/^_launch_times() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 pipeline_require() { :; }; pipeline_launch_log() { printf '%s/%s.launch.log\n' "$PIPE_STATE_DIR" "$1"; }
 L="$PIPE_STATE_DIR/FXA-7.launch.log"
-printf 'Launched at: 1\ntooling: scripts allowed by Boss Person [acct-boss] (label ai-fixme-allow-tooling)\nReship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.\n' > "$L"
+# The launch's Reship lines, from its source, so a reword there fails here.
+src_line() { sed -n "s/.*echo \"\\($1[^\"]*\\)\".*/\\1/p" "$here/../fxa-sandbox-ctl" | head -1; }
+RESHIP_LINE="$(src_line 'Reship: ')"; RESHIP_LINE="${RESHIP_LINE//\$\{rname\}/FXA-7.leftover-100.patch}"
+FALLBACK_LINE="$(src_line 'Reship fallback: ')"; FALLBACK_LINE="${FALLBACK_LINE//\$\{why\}/hash}"
+printf 'Launched at: 1\ntooling: scripts allowed by Boss Person [acct-boss] (label ai-fixme-allow-tooling)\n%s\n' "$RESHIP_LINE" > "$L"
 check "progress after the Reship: line" "FXA-7 starting reship tooling=scripts" "$(pipeline_progress FXA-7)"
-echo 'Reship fallback: hash; a new agent run starts.' >> "$L"
+echo "$FALLBACK_LINE" >> "$L"
 check "progress once the fallback line is there" "FXA-7 starting boot tooling=scripts" "$(pipeline_progress FXA-7)"
 echo 'Watching for the handoff file [ 5s]' >> "$L"
 _pipeline_stalled_reason() { return 1; }; pipeline_launch_started() { date +%s; }
 check "then watching, as any run" "FXA-7 watching 5s tooling=scripts" "$(pipeline_progress FXA-7)"
-printf '0.1\tLaunched at: 1\n0.2\tReship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.\n' > "${L%.log}.tsv"
-check "launch-times lists the Reship milestone" 1 "$(_launch_times FXA-7 | grep -c 'Reship: shipping')"
+printf '0.1\tLaunched at: 1\n0.2\t%s\n' "$RESHIP_LINE" > "${L%.log}.tsv"
+check "launch-times lists the Reship milestone" 1 "$(_launch_times FXA-7 | grep -cF "$RESHIP_LINE")"
 
 # ── The pass and the docs follow the flow ──
 sk="$here/../skills/fxa-ai-fixme/SKILL.md"; row="$(grep '^| `error <line>`' "$sk")"

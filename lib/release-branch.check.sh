@@ -111,7 +111,13 @@ PIPE_LABEL_PREFIX=ai-fixme
 jira_label_set() { :; }; jira_normalize_key() { printf '%s\n' "$1" | tr '[:lower:]' '[:upper:]'; }
 pipeline_blocked_why() { :; }; _reap_key() { :; }; gh_feedback_has_acted() { return 1; }; telemetry_record() { :; }
 pipeline_launch_log() { printf '%s/%s.launch.log\n' "$PIPE_STATE_DIR" "$1"; }
-GUARD_LINE='ERROR: refusing to ship: the change touches CI or host tooling: package.json (scripts/lint-staged/husky)'
+# The guard's own line and the launch's Reship lines, from their source, so a reword there fails here.
+g -C "$S" -c core.hooksPath=/dev/null checkout -q -f -B fxa-7 "$B"; scripts_edit; g -C "$S" add package.json
+GUARD_LINE="$(FXA_ALLOW_TOOLING_EDITS= FXA_ALLOW_TOOLING_SCOPE= _real_guard "$S" 2>&1 >/dev/null | head -1)"
+g -C "$S" reset -q; g -C "$S" checkout -q -- .
+src_line() { sed -n "s/.*echo \"\\($1[^\"]*\\)\".*/\\1/p" "$(dirname "$0")/../fxa-sandbox-ctl" | head -1; }
+RESHIP_LINE="$(src_line 'Reship: ')"; RESHIP_LINE="${RESHIP_LINE//\$\{rname\}/FXA-7.leftover-500.patch}"
+FALLBACK_LINE="$(src_line 'Reship fallback: ')"; FALLBACK_LINE="${FALLBACK_LINE//\$\{why\}/hash}"
 # label_run <log line> <label args...>   A refused run on the slot, then label; prints stdout|patches|bases.
 label_run() {
   local line="$1"; shift
@@ -136,14 +142,13 @@ rm -rf "$PIPE_STATE_DIR"/*; set_of 400; mkdir -p "$PIPE_STATE_DIR/tooling"; echo
 check "with tooling/FXA-7: the live set gets 'stale refused', no new set, and the second C3 line" "tooling scope already approved|2|0|stale refused" \
   "$(label_run "$GUARD_LINE" FXA-7 blocked refused_ship)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-400.retired")"
 # A reship's refusal is a lost scope (a removed label or a failed Jira read): the set waits, with no tombstone.
-RESHIP_LINE='Reship: shipping the saved change of the refused run (FXA-7.leftover-500.patch); no agent run.'
 jira_comment() { printf '%s\n' "$2" >> "$PIPE_STATE_DIR/jira"; }
 rm -rf "$PIPE_STATE_DIR"/*; set_of 500; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
 check "a reship refused: the set is kept with no tombstone, and the label is asked for again" "saved ship kept: FXA-7.leftover-500.patch|2|1|$PIPE_STATE_DIR/FXA-7.leftover-500.base|0|1" \
   "$(label_run "$RESHIP_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship)|$(worktree_saved_ship FXA-7)|$(ls "$PIPE_STATE_DIR" | grep -c '\.retired$')|$(grep -c '^🤖 The finish did not ship this change' "$PIPE_STATE_DIR/jira")"
 rm -rf "$PIPE_STATE_DIR"/*; set_of 600; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
 check "a reship that fell back to an agent run: the set is retired" "tooling scope already approved|stale refused" \
-  "$(label_run "$RESHIP_LINE"$'\nReship fallback: hash; a new agent run starts.\n'"$GUARD_LINE" FXA-7 blocked refused_ship | cut -d'|' -f1)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-600.retired")"
+  "$(label_run "$RESHIP_LINE"$'\n'"$FALLBACK_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship | cut -d'|' -f1)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-600.retired")"
 for n in tooling-noted tooling-readfail-noted reship-held-noted reship-noted; do : > "$PIPE_STATE_DIR/FXA-7.$n"; done
 label_run "" FXA-7 blocked operator >/dev/null
 check "a blocked label keeps the noted files" 4 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
