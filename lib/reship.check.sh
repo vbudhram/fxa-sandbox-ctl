@@ -189,4 +189,13 @@ check "then watching, as any run" "FXA-7 watching 5s tooling=scripts" "$(pipelin
 printf '0.1\tLaunched at: 1\n0.2\tReship: shipping the saved change of the refused run (FXA-7.leftover-100.patch); no agent run.\n' > "${L%.log}.tsv"
 check "launch-times lists the Reship milestone" 1 "$(_launch_times FXA-7 | grep -c 'Reship: shipping')"
 
+# ── The pass and the docs follow the flow ──
+sk="$here/../skills/fxa-ai-fixme/SKILL.md"; row="$(grep '^| `error <line>`' "$sk")"
+check "the error row: only the guard's own line, saved ship kept posts nothing more, and the requeue step" "1|1|1" \
+  "$(grep -c 'refusing to ship: the change touches CI or host tooling' <<< "$row")|$(grep -c '`saved ship kept`' <<< "$row")|$(grep -c 'adds the label and moves the ticket back to ai-fixme' <<< "$row")"
+check "the launch step says reship= means no agent runs" 1 "$(grep -c 'reship=.*no agent run' "$sk")"
+check "admission says it too" 1 "$(grep -c 'reship=' "$here/../skills/fxa-ai-fixme/admission.md")"
+check "AI_FIXME_PIPELINE.md has the saved ship's files" "1|1" \
+  "$(grep -c '^| `<KEY>.leftover-<epoch>.base`' "$here/../AI_FIXME_PIPELINE.md")|$(grep -c '<KEY>.reship-err' "$here/../AI_FIXME_PIPELINE.md" | awk '{print ($1 > 0)}')"
+
 exit "$fail"
