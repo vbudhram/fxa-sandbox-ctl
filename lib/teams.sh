@@ -160,14 +160,15 @@ _teams_live() {
     fi
   fi
   [ -n "${PIPE_JIRA_BASIC:-}" ] || { echo "WARN: no Jira login on this host (PIPE_JIRA_BASIC), so Jira project ${proj} was not checked"; return 0; }
-  code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - -o /dev/null -w '%{http_code}' --max-time 20 "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/rest/api/3/project/${proj}" 2>/dev/null)" || code=000
+  local api; api="$(_jira_api)" || api=""
+  code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - -o /dev/null -w '%{http_code}' --max-time 20 "${api}/rest/api/3/project/${proj}" 2>/dev/null)" || code=000
   case "$code" in
     200) ;;
     404) echo "ERROR: there is no Jira project ${proj}, or the pipeline's login cannot see it" >&2; return 1 ;;
     *) echo "WARN: could not check Jira project ${proj} (HTTP ${code})"; return 0 ;;
   esac
   have="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -s -K - --max-time 20 \
-    "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/rest/api/3/mypermissions?projectKey=${proj}&permissions=BROWSE_PROJECTS,EDIT_ISSUES,TRANSITION_ISSUES" 2>/dev/null \
+    "${api}/rest/api/3/mypermissions?projectKey=${proj}&permissions=BROWSE_PROJECTS,EDIT_ISSUES,TRANSITION_ISSUES" 2>/dev/null \
     | jq -r '[.permissions // {} | to_entries[] | select(.value.havePermission) | .key] | join(" ")' 2>/dev/null)" || have=""
   for p in BROWSE_PROJECTS EDIT_ISSUES TRANSITION_ISSUES; do grep -qw "$p" <<< "$have" || miss="${miss} ${p}"; done
   [ -n "$miss" ] || return 0

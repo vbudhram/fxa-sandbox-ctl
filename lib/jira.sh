@@ -80,7 +80,105 @@ read -r -d '' _JIRA_SLUG_JQ <<'JQ' || true
 JQ
 
 # acli as the loaded team: a team with its own Jira credential has its own acli login, in its home.
-acli() { if [ -n "${FXA_ACLI_HOME:-}" ]; then HOME="$FXA_ACLI_HOME" command acli "$@"; else command acli "$@"; fi; }
+# An Atlassian service account's token works only through the API gateway, and acli logs in only on
+# the site, so for one the same calls go to REST and print what acli prints.
+acli() {
+  if _jira_sa; then _acli_rest "$@"
+  elif [ -n "${FXA_ACLI_HOME:-}" ]; then HOME="$FXA_ACLI_HOME" command acli "$@"; else command acli "$@"; fi
+}
+
+
+# _jira_rest <method> <path> [curl args]   The body on stdout; an HTTP error returns nonzero.
+_jira_rest() {
+  local m="$1" p="$2" base; shift 2; base="$(_jira_api)" || return 1
+  printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 30 -X "$m" -H 'Accept: application/json' "$@" "${base}${p}" 2>/dev/null
+}
+_jira_rest_json() { local m="$1" p="$2"; shift 2; _jira_rest "$m" "$p" -H 'Content-Type: application/json' --data "$@"; }
+
+# ADF as acli's plain text.
+read -r -d '' _JIRA_TEXT_JQ <<'JQ' || true
+def txt:
+  if type == "object" then
+    if   .type == "text"      then (.text // "")
+    elif .type == "hardBreak" then "\n"
+    elif .type == "mention"   then (.attrs.text // "")
+    elif .type == "inlineCard" then (.attrs.url // "")
+    elif .type == "emoji"     then (.attrs.text // .attrs.shortName // "")
+    elif (.type | IN("paragraph", "heading", "listItem", "codeBlock", "blockquote")) then ((.content // []) | map(txt) | add // "") + "\n"
+    else ((.content // []) | map(txt) | add // "") end
+  elif type == "array" then (map(txt) | add // "")
+  else "" end;
+JQ
+
+# _acli_rest <acli args>   The acli subcommands this controller uses, on Jira's REST API.
+_acli_rest() {
+  local a="$1 $2 ${3:-}" key="" fields="" jql="" limit=50 json=0 body="" status="" project="" type="" summary="" desc="" label="" add="" rm="" assignee="" id="" state=""
+  shift 2; [[ "$a" == "jira workitem comment" ]] && shift
+  shift
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --key|-k) key="$2"; shift ;; --fields) fields="$2"; shift ;; --jql) jql="$2"; shift ;; --limit) limit="$2"; shift ;;
+      --json) json=1 ;; -y|--yes) ;; --body) body="$2"; shift ;; --status) status="$2"; shift ;;
+      --project) project="$2"; shift ;; --type) type="$2"; shift ;; --summary) summary="$2"; shift ;;
+      --description-file) desc="$(cat "$2")" || return 1; shift ;; --label) label="$2"; shift ;;
+      -l|--labels) add="$2"; shift ;; --remove-labels) rm="$2"; shift ;; --assignee) assignee="$2"; shift ;;
+      --id) id="$2"; shift ;; --state) state="$2"; shift ;;
+      -*) echo "acli (service account): $1 is not supported" >&2; return 1 ;;
+      *) key="$1" ;;
+    esac; shift
+  done
+  local doc='{type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: $t}]}]}' out
+  case "$a" in
+    "jira auth status")
+      out="$(_jira_rest GET /rest/api/3/myself)" || { echo "✗ unauthorized"; return 1; }
+      printf '✓ Authenticated\n  Account: %s\n' "$(jq -r '.displayName' <<< "$out")" ;;
+    "jira workitem view")
+      if [ "$json" = 1 ]; then
+        _jira_rest GET "/rest/api/3/issue/${key}?fields=${fields:-*navigable}"
+      else
+        out="$(_jira_rest GET "/rest/api/3/issue/${key}?fields=issuetype,summary,status,description")" || return 1
+        jq -r "${_JIRA_TEXT_JQ}"' "Key: \(.key)\nType: \(.fields.issuetype.name)\nSummary: \(.fields.summary)\nStatus: \(.fields.status.name)\nDescription: \(.fields.description | txt | sub("\n+$"; ""))"' <<< "$out"
+      fi ;;
+    "jira workitem comment")
+      case "${body:+create}" in
+        create) _jira_rest_json POST "/rest/api/3/issue/${key}/comment" "$(jq -nc --arg t "$body" "{body: $doc}")" >/dev/null ;;
+        *) out="$(_jira_rest GET "/rest/api/3/issue/${key}/comment?maxResults=50")" || return 1
+           jq "${_JIRA_TEXT_JQ}"' {comments: [.comments[] | {author: .author.displayName, body: (.body | txt | sub("\n+$"; "")), id, visibility: "public"}], isLast: (.startAt + (.comments | length) >= .total), maxResults, startAt, total}' <<< "$out" ;;
+      esac ;;
+    "jira workitem search")
+      local tok="" page all="[]"
+      while :; do
+        page="$(_jira_rest_json POST /rest/api/3/search/jql "$(jq -nc --arg q "$jql" --arg f "${fields:-issuetype,assignee,priority,status,summary}" --arg t "$tok" \
+          --argjson n "$(( limit > 100 ? 100 : limit ))" '{jql: $q, maxResults: $n, fields: ($f | split(","))} + (if $t != "" then {nextPageToken: $t} else {} end)')")" || return 1
+        all="$(jq -c --argjson p "$page" --argjson n "$limit" '(. + $p.issues)[0:$n]' <<< "$all")"
+        tok="$(jq -r '.nextPageToken // empty' <<< "$page")"
+        [ -n "$tok" ] && [ "$(jq length <<< "$all")" -lt "$limit" ] || break
+      done
+      printf '%s\n' "$all" ;;
+    "jira workitem edit")
+      if [ -n "$add$rm" ]; then
+        _jira_rest_json PUT "/rest/api/3/issue/${key}" "$(jq -nc --arg a "$add" --arg r "$rm" \
+          '{update: {labels: ([$r | split(",")[] | select(. != "") | {remove: .}] + [$a | split(",")[] | select(. != "") | {add: .}])}}')" >/dev/null || return 1
+      fi
+      if [ -n "$assignee" ]; then
+        id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${assignee}" | jq -r 'if length == 1 then .[0].accountId else empty end')"
+        [ -n "$id" ] || { echo "acli (service account): no single Jira user for ${assignee}" >&2; return 1; }
+        _jira_rest_json PUT "/rest/api/3/issue/${key}/assignee" "$(jq -nc --arg i "$id" '{accountId: $i}')" >/dev/null
+      fi ;;
+    "jira workitem transition")
+      id="$(_jira_rest GET "/rest/api/3/issue/${key}/transitions" | jq -r --arg s "$status" '[.transitions[] | select(.to.name == $s or .name == $s) | .id][0] // empty')"
+      [ -n "$id" ] || { echo "acli (service account): $key has no transition to ${status}" >&2; return 1; }
+      _jira_rest_json POST "/rest/api/3/issue/${key}/transitions" "$(jq -nc --arg i "$id" '{transition: {id: $i}}')" >/dev/null ;;
+    "jira workitem create")
+      out="$(jq -nc --arg t "$desc" "$doc")"
+      _jira_rest_json POST /rest/api/3/issue "$(jq -nc --arg p "$project" --arg y "$type" --arg s "$summary" --argjson d "$out" --arg l "$label" \
+        '{fields: ({project: {key: $p}, issuetype: {name: $y}, summary: $s, description: $d} + (if $l != "" then {labels: [$l]} else {} end))}')" ;;
+    "jira board list-sprints")
+      out="$(_jira_rest GET "/rest/agile/1.0/board/${id}/sprint?state=${state:-active}")" || return 1
+      jq '{sprints: .values, isLast, maxResults, startAt, total: (.total // (.values | length))}' <<< "$out" ;;
+    *) echo "acli (service account): '$a' is not supported" >&2; return 1 ;;
+  esac
+}
 
 _jira_require_acli() {
   if ! command -v acli &>/dev/null; then
@@ -367,7 +465,7 @@ jira_sprint_add() {
   code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sS -K - -o /dev/null -w '%{http_code}' \
             -X POST -H 'Content-Type: application/json' \
             --data "$(jq -nc --arg k "$key" '{issues: [$k]}')" \
-            "${PIPE_JIRA_SITE}/rest/agile/1.0/sprint/${sid}/issue" 2>/dev/null)" || code="000"
+            "$(_jira_api)/rest/agile/1.0/sprint/${sid}/issue" 2>/dev/null)" || code="000"
   [ "$code" = "204" ] || echo "WARN: sprint add for $key returned HTTP $code" >&2
 }
 
@@ -378,13 +476,13 @@ jira_attach() {
   [ -n "${PIPE_JIRA_BASIC:-}" ] || { echo "WARN: PIPE_JIRA_BASIC unset; nothing attached to $1" >&2; return 1; }
   local code
   code="$(printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sS -K - -o /dev/null -w '%{http_code}' -X POST \
-            -H 'X-Atlassian-Token: no-check' -F "file=@${2}" "${PIPE_JIRA_SITE}/rest/api/3/issue/${1}/attachments" 2>/dev/null)" || code=000
+            -H 'X-Atlassian-Token: no-check' -F "file=@${2}" "$(_jira_api)/rest/api/3/issue/${1}/attachments" 2>/dev/null)" || code=000
   [ "$code" = 200 ] || { echo "WARN: attaching ${2##*/} to $1 returned HTTP $code" >&2; return 1; }
 }
 
 # _jira_rest_get <path>   A GET on Jira's REST API; the login goes to curl on stdin.
 _jira_rest_get() {
-  printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "${PIPE_JIRA_SITE}$1" 2>/dev/null
+  printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "$(_jira_api)$1" 2>/dev/null
 }
 
 # jira_tooling_approver <KEY>   "<accountId> <name>" of the approver who added PIPE_TOOLING_LABEL,
@@ -472,5 +570,5 @@ jira_comment() {
   pipeline_require || return 1
   local key="${1:-}" body="${2:-}"
   [ -n "$key" ] && [ -n "$body" ] || { echo "ERROR: comment needs <KEY> <body>" >&2; return 1; }
-  command acli jira workitem comment create --key "$key" --body "$body" >/dev/null
+  acli jira workitem comment create --key "$key" --body "$body" >/dev/null
 }

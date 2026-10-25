@@ -68,7 +68,7 @@ check "a handoff key that is not the slot's branch is refused" "1|no" \
 unset -f git
 
 # jira_attach itself: the login reaches curl on stdin, never in its arguments.
-eval "$(sed -n '/^jira_attach() {/,/^}/p' "$here/jira.sh")"
+eval "$(sed -n '/^jira_attach() {/,/^}/p' "$here/jira.sh"; sed -n '/^_jira_sa() /p;/^_jira_api() {/,/^}/p' "$here/config.sh")"
 curl() { printf '%s\n' "$*" > "$tmp/curl-args"; cat > "$tmp/curl-in"; echo "${CODE:-200}"; }
 PIPE_JIRA_BASIC="bot@example.com:tok-1234" PIPE_JIRA_SITE=https://jira.example.com
 check "the attach posts the file, with the login on stdin only" "0|1|0|1" \

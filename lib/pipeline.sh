@@ -74,7 +74,8 @@ _pipeline_team_jira() {
   fi
   basic="$(cat "$d/jira.basic")"
   sum="$(printf '%s' "$basic" | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)"
-  if [ "$(cat "$d/acli.sum" 2>/dev/null)" != "$sum" ]; then
+  # A service account has no acli login: jira.sh sends its calls to REST.
+  if ! [[ "$basic" == *@serviceaccount.atlassian.com:* ]] && [ "$(cat "$d/acli.sum" 2>/dev/null)" != "$sum" ]; then
     printf '%s' "${basic#*:}" | HOME="$d/acli-home" command acli jira auth login --site "$(s="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}"; echo "${s#https://}")" --email "${basic%%:*}" --token >/dev/null 2>&1 \
       || { echo "ERROR: team $1: acli refused its Jira credential (${PIPE_JIRA_SECRET})" >&2; return 1; }
     printf '%s' "$sum" > "$d/acli.sum"

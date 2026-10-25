@@ -13,6 +13,24 @@ _retry() { local d; for d in 3 9 0; do "$@" && return 0; [ "$d" = 0 ] && return 
 gh()   { _retry command gh "$@"; }
 acli() { _retry command acli "$@"; }
 
+# _jira_sa   The Jira login is an Atlassian service account: its token works only through the API gateway.
+_jira_sa() { [[ "${PIPE_JIRA_BASIC:-}" == *@serviceaccount.atlassian.com:* ]]; }
+
+# _jira_api   The REST base: the site, or for a service account the gateway with the site's cloud ID.
+# Callers run it in $(...), so the ID is kept in a file (it is public: the site serves it to anyone).
+_jira_api() {
+  local site="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}" f id
+  _jira_sa || { printf '%s\n' "$site"; return 0; }
+  f="${TMPDIR:-/tmp}/fxa-jira-cloud-id.$(printf '%s' "${site#https://}" | tr -c 'a-z0-9.-' _)"
+  id="$(cat "$f" 2>/dev/null)" || id=""
+  if ! [[ "$id" =~ ^[0-9a-f-]{36}$ ]]; then
+    id="$(curl -sSf --max-time 20 "${site}/_edge/tenant_info" 2>/dev/null | jq -r '.cloudId // empty')" || id=""
+    [[ "$id" =~ ^[0-9a-f-]{36}$ ]] || { echo "ERROR: no cloud ID for ${site}" >&2; return 1; }
+    printf '%s' "$id" > "$f" 2>/dev/null || true
+  fi
+  printf 'https://api.atlassian.com/ex/jira/%s\n' "$id"
+}
+
 # _lock_take_stale <lock dir> <secs>   Remove a lock dir older than <secs>, one taker at a time (<lock>.take):
 # a second taker that judged the old lock stale must not remove the lock the first one just took.
 _lock_take_stale() {
