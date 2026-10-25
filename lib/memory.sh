@@ -246,7 +246,8 @@ _memory_norm() {
 
 # A learning is a fact about the code. Words that steer the next agent, a pipe to a shell, or a
 # link outside its cite are an injection's shape: such a learning goes nowhere.
-_memory_suspect() { grep -qiE 'ignore (all|any|previous|prior)|disregard|you (must|should) (always|never)|always run|\| *(ba)?sh\b|curl |wget |base64|https?://|<\|' <<< "$1"; }
+_MEMORY_SUSPECT_RE='ignore (all|any|previous|prior)|disregard|you (must|should) (always|never)|always run|\| *(ba)?sh\b|curl |wget |base64|https?://|<\|'
+_memory_suspect() { grep -qiE "$_MEMORY_SUSPECT_RE" <<< "$1"; }
 
 _memory_md() { printf -- '---\n'; printf '%s\n' "$@"; printf -- '---\n'; }
 
@@ -354,12 +355,11 @@ memory_collect() {
           pkg: (if (.pkg | type) == "string" and (.pkg | test("^(packages|libs)/[A-Za-z0-9_.@-]+$")) then .pkg else null end),
           score: (if (.score | type) == "number" then .score else null end) }
       | with_entries(select(.value != null))' 2>/dev/null | tail -n 200 || true)"
-    while IFS= read -r l; do
-      [ -n "$l" ] || continue
-      _memory_suspect "$(jq -r '(.q // "") + " " + (.why // "")' <<< "$l")" && l="$(jq -c 'del(.q, .why)' <<< "$l")"
-      ul="${ul}${l}"$'\n'
-    done <<< "$ulines"
-    ul="${ul%$'\n'}"
+    # One pass, not two jq calls a line: the numbers of the lines whose q and why are suspect, then those lose them.
+    if [ -n "$ulines" ]; then
+      local sus; sus="$(jq -r '"\(.q // "") \(.why // "")"' <<< "$ulines" | grep -niE "$_MEMORY_SUSPECT_RE" | cut -d: -f1 | paste -sd, - || true)"
+      ul="$(jq -nc --argjson s "[${sus}]" 'foreach inputs as $l (0; . + 1; . as $n | if any($s[]; . == $n) then $l | del(.q, .why) else $l end)' <<< "$ulines")"
+    fi
     # Personal data in the use log: save it without q and why; drop it only when that still fails. The notes still save.
     if [ -n "$ul" ] && ! _memory_pii_ok "$ul"; then
       ul="$(jq -c 'del(.q, .why)' <<< "$ul")"

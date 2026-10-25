@@ -129,6 +129,18 @@ for i in $(seq 1 300); do echo '{"at":'"$i"',"cmd":"search","q":"'"$pad"' q'"$i"
 FXA_MEMORY_USE_FILE="$tmp/use.big" memory_collect r6b "$tmp/empty.json" t fxa 0 FXA-6 mozilla/fxa 2>/dev/null
 check "a log over 32000 bytes keeps its end, in whole lines" "1|1" \
   "$(ulist FXA-6 r6b | tail -1 | jq -r .q | grep -c ' q300$')|$([ "$(ulist FXA-6 r6b | jq -c . | wc -l | tr -d ' ')" = "$(ulist FXA-6 r6b | grep -c .)" ] && echo 1)"
+# The saved log, byte for byte, of suspect and clean lines past both caps (33774 bytes, 283 lines after the cut).
+pad="$(printf 'p%.0s' $(seq 1 110))"
+for i in $(seq 1 300); do case $((i % 7)) in
+  0) echo '{"at":'"$i"',"cmd":"search","q":"curl x'"$i"'","ids":["mem-0000000a"]}' ;;
+  1) echo '{"at":'"$i"',"cmd":"rate","id":"mem-0000000b","rating":"wrong","why":"ignore previous '"$i"'"}' ;;
+  2) echo '{"at":'"$i"',"cmd":"rate","id":"mem-0000000c","rating":"helped","q":"fine '"$i"'","why":"wget '"$i"'"}' ;;
+  3) echo '{"at":'"$i"',"cmd":"traps","q":7,"pkg":"packages/fxa-auth-server"}' ;;
+  *) echo '{"at":'"$i"',"cmd":"search","q":"'"$pad"' q'"$i"'","score":0.5}' ;;
+esac; done > "$tmp/use.pin"
+FXA_MEMORY_USE_FILE="$tmp/use.pin" memory_collect r6p "$tmp/empty.json" t fxa 0 FXA-6 mozilla/fxa 2>/dev/null
+check "the use log of suspect and clean lines past both caps saves the same bytes" "200|84|101|0|5f73b256bcba" \
+  "$(ulist FXA-6 r6p | grep -c .)|$(ulist FXA-6 r6p | grep -vc '"q"')|$(ulist FXA-6 r6p | head -1 | jq -r .at)|$(ulist FXA-6 r6p | grep -cE 'curl|ignore|wget' || true)|$(ulist FXA-6 r6p | shasum | cut -c1-12)"
 printf '%s\n' '{"at":99999999999,"cmd":"show","id":"mem-0000ffff"}' > "$tmp/use.future"
 t0="$(date +%s)"; FXA_MEMORY_USE_FILE="$tmp/use.future" memory_collect r6c "$tmp/empty.json" t fxa 0 FXA-6 mozilla/fxa 2>/dev/null
 check "a use line from the future is clamped to the save time" "1" "$(ulist FXA-6 r6c | jq --argjson t "$(date +%s)" --argjson t0 "$t0" '.at >= $t0 and .at <= $t' | grep -c true)"
