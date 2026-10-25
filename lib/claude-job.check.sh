@@ -26,7 +26,7 @@ case "\$1" in
   unlock) echo unlock >> $tmp/ctl-calls ;;
   pass-report) echo '### REPORT' ;;
   repo-dir) echo "\${REPO_DIR:-/nonexistent}" ;;
-  *) sleep 1; echo "state-\$1" ;;
+  *) sleep \${FAKE_CTL_SLEEP:-0}; echo "state-\$1" ;;
 esac
 SH
 printf '#!/bin/bash\ncat > %s/claude-in\necho "$*" > %s/claude-args\nfor ((i=1; i<=$#; i++)); do [ "${!i}" = --mcp-config ] && j=$((i+1)) && cp "${!j}" %s/claude-mcp; done\necho %s\n' "$tmp" "$tmp" "$tmp" "'{\"result\":\"did the pass\",\"total_cost_usd\":0.5,\"modelUsage\":{\"claude-opus-5-5\":{},\"claude-haiku-4-5\":{}}}'" > "$tmp/bin/claude"
@@ -63,7 +63,8 @@ check "the state is in the prompt, fenced, and the model is told not to lock" "y
   "$(grep -q '^<state-[0-9a-f]\{12\}>$' "$tmp/claude-in" && echo yes)|$(grep -qx 'state-freeslots' "$tmp/claude-in" && echo yes)|$(grep -q 'do not run lock or unlock' "$tmp/claude-in" && echo yes)"
 check "the fixed report goes to the journal before the model's reply" "### REPORT|did the pass" "$(printf '%s' "$o" | tr '\n' '|')"
 : > "$tmp/ctl-calls"; run 'quiet: 3 queued' >/dev/null
-s=$(date +%s); run 'queue: FXA-1 new' >/dev/null; check "the state reads run in parallel" "yes" "$([ $(( $(date +%s) - s )) -lt 5 ] && echo yes)"
+# Each read takes 1 s here only: in a row, the 7 reads take 7 s.
+s=$(date +%s); FAKE_CTL_SLEEP=1 run 'queue: FXA-1 new' >/dev/null; check "the state reads run in parallel" "yes" "$([ $(( $(date +%s) - s )) -lt 5 ] && echo yes)"
 check "each read under its own name, in order" "\$ newtickets|state-newtickets|\$ focus" "$(grep -A2 -x '\$ newtickets' "$tmp/claude-in" | tr '\n' '|' | sed 's/|$//')"
 : > "$tmp/ctl-calls"; run 'quiet: 3 queued' >/dev/null
 check "a quiet pass takes no lock" "" "$(cat "$tmp/ctl-calls")"
