@@ -492,22 +492,39 @@ _jira_rest_get() {
 #   pushed branch with secrets before review, so any unknown (no approvers, no login, a failed
 #   read) returns 1: the label does not count.
 jira_tooling_approver() {
-  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" page last who entry name
-  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "$label" ] && [ -n "${PIPE_TOOLING_APPROVERS:-}" ] \
-    && [ -n "${PIPE_JIRA_BASIC:-}" ] || return 1
-  _retry _jira_rest_get "/rest/api/3/issue/${key}?fields=labels" \
-    | jq -e --arg l "$label" '.fields.labels | index($l)' >/dev/null 2>&1 || return 1
-  page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100")" || return 1
+  local key="${1:-}" who
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "${PIPE_TOOLING_APPROVERS:-}" ] || return 1
+  who="$(jira_tooling_label_adder "$key")" || return 1
+  _jira_tooling_match "$who"
+}
+
+# jira_tooling_label_adder <KEY>   The account ID of the newest change that added PIPE_TOOLING_LABEL.
+#   Exit 1: no label on the ticket, or no add of it on the changelog's last page (a good read).
+#   Exit 2: no login or a failed read, so a caller can keep work that waits on the label.
+jira_tooling_label_adder() {
+  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" j has page last who
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "$label" ] && [ -n "${PIPE_JIRA_BASIC:-}" ] || return 2
+  j="$(_retry _jira_rest_get "/rest/api/3/issue/${key}?fields=labels")" || return 2
+  has="$(jq -r --arg l "$label" '(.fields.labels // error("no labels")) | index($l) != null' <<< "$j" 2>/dev/null)" || return 2
+  [ "$has" = true ] || return 1
+  page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100")" || return 2
   # The changelog is oldest first, so the newest change sits on the last page. A label added more
   # than 100 changes ago is not on it and does not count: an approver adds it again.
-  last="$(jq -r 'if .isLast == false then ([.total - 100, 0] | max) else empty end' <<< "$page" 2>/dev/null)" || return 1
+  last="$(jq -r 'if .isLast == false then ([.total - 100, 0] | max) else empty end' <<< "$page" 2>/dev/null)" || return 2
   if [ -n "$last" ]; then
-    page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100&startAt=${last}")" || return 1
+    page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100&startAt=${last}")" || return 2
   fi
   who="$(jq -r --arg l "$label" '[.values[]
       | select(any(.items[]?; .field == "labels"
           and ((.toString // "") | split(" ") | index($l)) and (((.fromString // "") | split(" ") | index($l)) | not)))
-      | .author.accountId // ""] | last // ""' <<< "$page" 2>/dev/null)" || return 1
+      | .author.accountId // ""] | last // ""' <<< "$page" 2>/dev/null)" || return 2
+  [ -n "$who" ] || return 1
+  printf '%s\n' "$who"
+}
+
+# _jira_tooling_match <accountId>   "<accountId> <name>" when the ID is an entry of PIPE_TOOLING_APPROVERS.
+_jira_tooling_match() {
+  local who="${1:-}" entry name
   [ -n "$who" ] || return 1
   while IFS= read -r entry; do
     entry="$(printf '%s' "$entry" | sed 's/^ *//; s/ *$//')"

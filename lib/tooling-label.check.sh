@@ -9,6 +9,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^_finish_tooling_guard() {/,/^}/p;/^_finish_tooling_scope_of() {/,/^}/p' "$here/finish.sh")"
 eval "$(sed -n '/^jira_tooling_approver() {/,/^}/p;/^jira_label_set() {/,/^}/p' "$here/jira.sh")"
+eval "$(sed -n '/^jira_tooling_label_adder() {/,/^}/p;/^_jira_tooling_match() {/,/^}/p' "$here/jira.sh")"
 eval "$(sed -n '/^pipeline_label_for() {/,/^}/p;/^pipeline_states() {/p' "$here/pipeline.sh")"
 worktree_key_for() { printf '%s\n' "${1:-}" | tr '[:lower:]' '[:upper:]'; }
 _retry() { "$@"; }
@@ -102,6 +103,25 @@ changelog="$(printf '{"isLast":true,"total":3,"values":[%s,%s,%s]}' "$(add acct-
 check "removed and added again by another account: the newest add decides" none "$(approver FXA-7)"
 changelog="$(printf '{"isLast":true,"total":1,"values":[%s]}' "$(add acct-lead ai-fixme-allow-tooling-x 'ai-fixme-allow-tooling-x')")"
 check "a label that only starts with the name does not count" none "$(approver FXA-7)"
+
+# ── The split: who added the label (0, 1 no label, 2 cannot read), and the approver match ──
+adder() { local o rc=0; o="$(jira_tooling_label_adder "$1" 2>/dev/null)" || rc=$?; printf '%s %s' "$rc" "$o"; }
+changelog="$(log_by acct-other)"
+check "adder: a good read prints the newest adder's ID, approver or not" "0 acct-other" "$(adder FXA-7)"
+labels='{"fields":{"labels":["ai-fixme"]}}'
+check "adder: no label on a good read exits 1" "1 " "$(adder FXA-7)"
+labels='{"fields":{"labels":["ai-fixme","ai-fixme-allow-tooling"]}}'
+check "adder: a failed changelog read exits 2" "2 " "$(LOG_FAILS=1 adder FXA-7)"
+check "adder: a failed label read exits 2" "2 " "$(READ_FAILS=1 adder FXA-7)"
+check "adder: no login exits 2" "2 " "$(PIPE_JIRA_BASIC= adder FXA-7)"
+check "adder: the approver list does not matter" "0 acct-other" "$(PIPE_TOOLING_APPROVERS= adder FXA-7)"
+match() { _jira_tooling_match "$1" 2>/dev/null || echo none; }
+check "match: a Name:ID entry" "acct-lead Lead Person" "$(match acct-lead)"
+check "match: a bare ID" "acct-bare acct-bare" "$(match acct-bare)"
+check "match: a legacy ID by name" "557058:aa11 Old Lead" "$(PIPE_TOOLING_APPROVERS="Old Lead:557058:aa11" match 557058:aa11)"
+check "match: not the tail of a legacy ID" none "$(PIPE_TOOLING_APPROVERS="Old Lead:557058:aa11" match aa11)"
+check "match: an empty list matches nothing" none "$(PIPE_TOOLING_APPROVERS= match acct-lead)"
+check "match: another account" none "$(match acct-other)"
 
 # ── The launch passes the scope to its child ──
 cat > "$tmp/fakectl" <<'EOF'
