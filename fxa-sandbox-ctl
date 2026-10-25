@@ -2010,11 +2010,18 @@ cmd_label() {
   pipeline_blocked_why "$key" "$state" "${@:3}"
   # A refused tooling ship: keep a saved ship that an approver's label can ship with no new run (the
   # guard's own line, and no scope yet), or retire one when the run already had the scope.
-  local K keep=""; K="$(jira_normalize_key "$key" 2>/dev/null || true)"
+  local K keep="" held=""; K="$(jira_normalize_key "$key" 2>/dev/null || true)"
   if [ -n "$K" ] && [ "$state" = blocked ] && [ "${3:-}" = refused_ship ]; then
     if [ -e "${PIPE_STATE_DIR}/tooling/${K}" ]; then
-      worktree_saved_ship_retire "$K" stale refused || true
-      echo "tooling scope already approved"
+      # A reship's set passed the guard with the scope at release, so its refusal is a lost scope
+      # (a removed label or a failed Jira read): the set waits for the label, as precheck reads it again.
+      if grep -q '^Reship: ' "$(pipeline_launch_log "$K")" 2>/dev/null && ! grep -q '^Reship fallback: ' "$(pipeline_launch_log "$K")" 2>/dev/null \
+         && held="$(worktree_saved_ship "$K")"; then
+        held="$(basename "$held" .base).patch"
+      else
+        worktree_saved_ship_retire "$K" stale refused || true
+        echo "tooling scope already approved"
+      fi
     elif grep -q '^ERROR: refusing to ship: the change touches CI or host tooling: ' "$(pipeline_launch_log "$K")" 2>/dev/null; then
       keep=1
     fi
@@ -2053,6 +2060,7 @@ cmd_label() {
     local kept=""
     kept="$(worktree_release_branch "$(worktree_branch_for "$key")" $keep)" \
       || echo "WARN: could not detach the slot for $key" >&2
+    kept="${kept:-$held}"
     if [ -n "$kept" ]; then
       echo "saved ship kept: ${kept}"
       jira_comment "$key" "$(_tooling_ask_text)" || echo "WARN: the tooling approver comment failed for $key" >&2

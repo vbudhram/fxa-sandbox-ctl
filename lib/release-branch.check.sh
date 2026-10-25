@@ -135,6 +135,15 @@ check "the PII guard's line: only the patch" "|1|0" "$(label_run "ERROR: refusin
 rm -rf "$PIPE_STATE_DIR"/*; set_of 400; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
 check "with tooling/FXA-7: the live set gets 'stale refused', no new set, and the second C3 line" "tooling scope already approved|2|0|stale refused" \
   "$(label_run "$GUARD_LINE" FXA-7 blocked refused_ship)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-400.retired")"
+# A reship's refusal is a lost scope (a removed label or a failed Jira read): the set waits, with no tombstone.
+RESHIP_LINE='Reship: shipping the saved change of the refused run (FXA-7.leftover-500.patch); no agent run.'
+jira_comment() { printf '%s\n' "$2" >> "$PIPE_STATE_DIR/jira"; }
+rm -rf "$PIPE_STATE_DIR"/*; set_of 500; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
+check "a reship refused: the set is kept with no tombstone, and the label is asked for again" "saved ship kept: FXA-7.leftover-500.patch|2|1|$PIPE_STATE_DIR/FXA-7.leftover-500.base|0|1" \
+  "$(label_run "$RESHIP_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship)|$(worktree_saved_ship FXA-7)|$(ls "$PIPE_STATE_DIR" | grep -c '\.retired$')|$(grep -c '^🤖 The finish did not ship this change' "$PIPE_STATE_DIR/jira")"
+rm -rf "$PIPE_STATE_DIR"/*; set_of 600; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
+check "a reship that fell back to an agent run: the set is retired" "tooling scope already approved|stale refused" \
+  "$(label_run "$RESHIP_LINE"$'\nReship fallback: hash; a new agent run starts.\n'"$GUARD_LINE" FXA-7 blocked refused_ship | cut -d'|' -f1)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-600.retired")"
 for n in tooling-noted tooling-readfail-noted reship-held-noted reship-noted; do : > "$PIPE_STATE_DIR/FXA-7.$n"; done
 label_run "" FXA-7 blocked operator >/dev/null
 check "a blocked label keeps the noted files" 4 "$(ls "$PIPE_STATE_DIR" | grep -c 'noted$')"
