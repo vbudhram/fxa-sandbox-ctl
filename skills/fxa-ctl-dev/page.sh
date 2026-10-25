@@ -46,10 +46,12 @@ if probe:
 const d=document.createElement("pre");d.id="__probe";d.textContent=t;document.body.appendChild(d);},2500)</script>""" % probe
 open(out, "w").write(html)
 PY
-args=(--headless=new --disable-gpu --no-sandbox --virtual-time-budget=${PAGE_BUDGET:-6000} "--window-size=${width},${height}")
-if [ -n "$shot" ]; then "$chrome" "${args[@]}" --screenshot="$shot" "file://$dir/p.html$hash" >/dev/null 2>&1; echo "$shot"
+# Each run gets its own profile: test.sh runs several probes at once. A Chrome failure says why: an empty answer told nothing.
+args=(--headless=new --disable-gpu --no-sandbox --virtual-time-budget=${PAGE_BUDGET:-6000} "--window-size=${width},${height}" "--user-data-dir=$dir/profile")
+failed() { echo "chrome exit $1: $(tail -3 "$dir/err" 2>/dev/null | tr '\n' ' ')"; exit 1; }
+if [ -n "$shot" ]; then "$chrome" "${args[@]}" --screenshot="$shot" "file://$dir/p.html$hash" >/dev/null 2>"$dir/err" || failed $?; echo "$shot"
 else
-  dom="$("$chrome" "${args[@]}" --dump-dom "file://$dir/p.html$hash" 2>/dev/null)"
+  dom="$("$chrome" "${args[@]}" --dump-dom "file://$dir/p.html$hash" 2>"$dir/err")" || failed $?
   if [ -n "$probe" ]; then python3 -c 'import html,re,sys; m=re.search(r"<pre id=\"__probe\">(.*?)</pre>", sys.stdin.read(), re.S); print(html.unescape(m.group(1)) if m else "no probe result")' <<< "$dom"
   else printf '%s\n' "$dom"; fi
 fi
