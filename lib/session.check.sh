@@ -98,6 +98,12 @@ reset 0; RUNNER='{"type":"system","subtype":"init","session_id":"s1-abcdefgh"}
 out="$(cmd_events agent-t2 --since 0)"
 check "dead turn with no result is an error" "error" "$(jq -r '.events[0].type' <<< "$out")"
 check "dead turn closes the turn" "0" "$(session_get agent-t2 turn_open)"
+errors_record() { :; }; cp "$tmp/agent-t2.json" "$tmp/keep.json"
+echo '{"key":"agent-t2","state":"failed"}' > "$tmp/agent-t2.json"; echo "ERROR: the egress firewall did not apply; refusing to start the agent." > "$tmp/agent-t2.log"
+out="$(SESSION_DIR="$tmp" cmd_events agent-t2 --since 0)"
+check "a failed boot answers its error once, then stays as a stopped session that says boot failed" "error|stopped|boot failed" \
+  "$(jq -r '.events[0].type' <<< "$out")|$(session_get agent-t2 state)|$(session_get agent-t2 stop_reason)"
+mv "$tmp/keep.json" "$tmp/agent-t2.json"; rm -f "$tmp/agent-t2.log"
 check "session id captured" "s1-abcdefgh" "$(session_get agent-t2 claude_session_id)"
 
 reset "$(date +%s)"; RUNNING=0

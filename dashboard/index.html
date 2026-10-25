@@ -1358,9 +1358,11 @@ function sessDay(c) {
 
 // Sessions: a list by state, and the selected session in detail.
 const SESS_STATES = { live: ["starting", "active", "wrapping"], paused: ["paused"], stopped: ["stopped", "failed", "pr_open"], answers: [] };  // answers: no session record
+// A boot failure: the record says failed for one poll, then stopped with this reason.
+const bootFailed = s => s.state === "failed" || s.stop_reason === "boot failed";
 function sessStatus(s) {
   return s.state === "starting" ? ["booting", "info"] : s.state === "wrapping" ? [s.wrap_mode === "push" ? "pushing branch" : "opening PR", "info"]
-    : s.state === "pr_open" ? ["PR open", "done"] : s.state === "paused" ? ["paused · a reply resumes", "dim"] : s.state === "failed" ? ["boot failed", "bad"]
+    : s.state === "pr_open" ? ["PR open", "done"] : s.state === "paused" ? ["paused · a reply resumes", "dim"] : bootFailed(s) ? ["boot failed", "bad"]
     : s.state === "stopped" ? ["stopped", "dim"] : s.agent_alive ? ["working", "info"] : s.turn_open === "1" ? ["turn died", "bad"] : ["waiting on owner", "info"];
 }
 // Session view state: whether the terminal shows, kept per browser.
@@ -4051,8 +4053,8 @@ function sideGroups() {
       .filter(s => hit(fixGated(s) ? s.key : s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
     const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s), gate = fixGated(s);
       // The title is what the person first asked: the chain's first session's request. A dependency fix is named by its label.
-      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : s.state === "failed" ? "bad" : "", t: isFix(s) ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
-        tip: stamp(s.created), m: [c && !gate ? usd(c) : "", isFix(s) ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : s.state === "failed" ? "failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
+      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : bootFailed(s) ? "bad" : "", t: isFix(s) ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
+        tip: stamp(s.created), m: [c && !gate ? usd(c) : "", isFix(s) ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : bootFailed(s) ? "boot failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);

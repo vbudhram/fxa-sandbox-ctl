@@ -2655,7 +2655,8 @@ cmd_events() {
       errors_record session boot_failed "$key" "session boot" "${boot_err:-no ERROR line}" "agent-sessions/${key}.log"
       events="$(jq -n --arg t "${boot_err:-The sandbox did not start, and its log names no error. Tag me again to retry.}" '[{type: "error", text: $t}]')"
       # The record moves on to stopped; this one answer still says failed, so Slack says Setup failed.
-      session_set "$key" state stopped ;;
+      # The reason stays on the record, so the dashboard tells a failed boot from a person's stop.
+      session_set "$key" state stopped stop_reason "boot failed" ;;
     active|wrapping)
       open="$(session_get "$key" turn_open)"
       # Ask before reading: once the process is gone, every line it wrote is on disk.
