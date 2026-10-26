@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dashboard/index.html: the page frame keeps the keyboard focus on the List and Details buttons, returns it on
-# Escape.
+# Escape, and names the theme button as the theme, on a phone too.
 #   bash skills/fxa-ctl-dev/page-frame.check.sh
 set -u
 p="$(dirname "$0")/page.sh"; fail=0
@@ -12,4 +12,8 @@ ck "List and Details keep the focus on the button pressed" "tside,tright" "$out"
 ck "at a narrow width, List opens the list on its search box, and Escape returns the focus to List" "q|tside" \
   "$(bash "$p" '#errors' --width 500 --probe "$w"' const b = document.getElementById("tside"); b.focus(); b.click(); await t(100); const a = id();
     document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await t(100); return a + "|" + id()')"
+ck "the theme button is named as the theme; the help button as shortcuts" "Theme: System|Shortcuts" \
+  "$(bash "$p" '#errors' --probe "$w"' return document.getElementById("theme").getAttribute("aria-label") + "|" + document.getElementById("helpbtn").textContent.trim()')"
+ck "a phone keeps the theme button" "true" \
+  "$(bash "$p" '#errors' --width 500 --probe "$w"' const r = document.getElementById("theme").getBoundingClientRect(); return r.width > 0 && r.bottom <= innerHeight')"
 exit "$fail"
