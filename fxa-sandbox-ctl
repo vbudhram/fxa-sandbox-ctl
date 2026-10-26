@@ -2,6 +2,16 @@
 # fxa-sandbox-ctl: orchestration CLI for the FxA agent sandbox VMs.
 set -euo pipefail
 
+# systemd starts its units with SIGPIPE ignored, and bash cannot reset a signal ignored at entry: a writer into
+# `| head` then exits 1 (a false crash under pipefail), not 141. Start again once with SIGPIPE at its default.
+# sigpipe-reset: begin
+# Only when run, not sourced (vm.sh dev fn sources a copy): exec would replace the sourcing shell.
+if [ -z "${_FXA_SIGPIPE:-}" ] && [ "${BASH_SOURCE[0]}" = "$0" ] && [ -r /proc/self/status ]; then
+  _ign="$(sed -n 's/^SigIgn:[[:space:]]*//p' /proc/self/status)"
+  if [ -n "$_ign" ] && (( 0x${_ign: -4} & 0x1000 )); then export _FXA_SIGPIPE=1; exec perl -e '$SIG{PIPE} = "DEFAULT"; exec @ARGV' "$0" "$@"; fi
+fi
+# sigpipe-reset: end
+
 # Follow symlinks so lib/ is found next to the real script.
 _resolve_symlink() {
   local target="$1"
