@@ -2764,7 +2764,7 @@ function routineListHtml(t, now) {
   const late = L.length && (age == null || age > RT_STALE_S), stale = late
     ? html`<div class="alert warn"><span class="what" style="white-space:normal">${age == null ? "The scheduler has not run yet." : `The scheduler last ran ${Math.round(age / 60)} min ago.`} Routines are not running.</span></div>` : "";
   const gone = RT.sel && !L.some(r => r.id === RT.sel) ? html`<p class="na">The routine from the link is no longer here.</p>` : "";
-  if (!L.length) return html`<div data-routine-list>${gone}<div class="emptybox stack"><h3>No routines yet</h3><p class="hint">No routines yet. A routine runs a prompt on a schedule against the team's repos, then posts the result in Slack. Pick a start to make one in two steps.</p>
+  if (!L.length) return html`<div data-routine-list>${gone}<div class="emptybox stack"><h3>No routines yet</h3><p class="hint">Pick a start to make one in two steps.</p>
     <div class="rtchoices">${rtStarts().map(x => html`<button type="button" class="choice" data-rt-tpl="${x.template}">${rtGlyph(x.template)}<span class="ct">${x.name}</span></button>`)}</div></div></div>`;
   const sum = RTSUM?.routines ?? {}, ts = RTSUM?.teams?.[t.profile], show = RT.show || "all", paused = L.filter(r => r.paused).length, failed = L.filter(rtFailed).length;
   const rows = L.filter(r => show === "all" || (show === "failed" ? rtFailed(r) : !!r.paused));
@@ -2896,7 +2896,7 @@ function routinesGroup(t, now) {
   if (RT.team !== t.profile || (!RT.list && !RT.err)) return html`<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
   const off = t.access?.record && t.access.status !== "active" ? html`<p class="unknown">Routines run only while the team is active.</p>` : "";
   const L = RT.list ?? [], sel = !RT.form && RT.sel ? L.find(r => r.id === RT.sel) : null;
-  const head = html`<div class="rt-head"><div><h3>Routines <span class="n">${L.length} of 8</span></h3><p class="tsub">A routine runs a prompt on a schedule against the team's repos, then posts the result in Slack. Each run is a normal session with the team's budget.</p></div>
+  const head = html`<div class="rt-head"><div><h3>Routines <span class="n">${L.length} of 8 allowed</span></h3><p class="tsub">A routine runs a prompt on a schedule against the team's repos, then posts the result in Slack. Each run is a normal session with the team's budget.</p></div>
     <button type="button" data-rt-new${L.length >= 8 ? html` disabled title="A team has at most 8 routines"` : ""}>New routine</button></div>`;
   return html`<div data-routines class="stack lg">${off}${RT.err ? html`<p class="unknown">${RT.err}</p>` : ""}
     <p role="status" data-rt-msg tabindex="-1" class="${RT.ok === false ? "unknown" : "empty"}">${RT.msg || ""}</p>

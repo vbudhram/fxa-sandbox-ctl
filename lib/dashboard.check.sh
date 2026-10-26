@@ -90,7 +90,9 @@ globalThis.TEAM_ADMIN = { admin: true, user: "admin@example.com" };
   RT.list = [row(1, { tick: now - 60 })];
   t("routines: a fresh tick shows no warning", /scheduler/.test(routineListHtml(team, now)), false);
   RT.list = [];
-  t("routines: no routine is the empty state, with no warning", /No routines yet\. A routine runs a prompt on a schedule[\s\S]*/.test(routineListHtml(team, now)) && !/scheduler/.test(routineListHtml(team, now)), true);
+  t("routines: no routine is the empty state, with no warning", /No routines yet[\s\S]*Pick a start/.test(routineListHtml(team, now)) && !/scheduler/.test(routineListHtml(team, now)), true);
+  { const g0 = String(routinesGroup(team, now)), n = re => (g0.match(re) || []).length;
+    t("routines: the empty tab says each line once, and names 8 as the most", `${n(/A routine runs a prompt/g)}|${n(/No routines yet/g)}|${/0 of 8 allowed/.test(g0)}`, "1|1|true"); }
   RT.list = [row(1), row(2, { live: { id: 9, state: "started", session: "agent-ab12" } })];
   RT.form = { id: 1, version: 1, d: { ...rtDraft(RT.list[0].data), name: "My unsaved name" }, dirty: true, errs: {} };
   const g = routinesGroup(team, now);
