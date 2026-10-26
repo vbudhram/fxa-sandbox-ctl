@@ -376,6 +376,9 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
                 n = str(rec.get("fix_pr") or "")
                 title, num = fix_label(rec), int(n) if n.isdigit() else None
                 fix = {"fix_pr": num, "fix_trigger": rec.get("fix_trigger"), "fix_actor": rec.get("fix_actor")}
+            elif routine and rec.get("routine_name"):
+                # Its prompt starts with the schedule preamble (lib/routine.py), the same for every run: name the routine.
+                title = f"{rec['routine_name']} run"
             if routine and not admin:
                 num = None
             outcome = "running" if r.get("live") else "pr" if num else "answered"

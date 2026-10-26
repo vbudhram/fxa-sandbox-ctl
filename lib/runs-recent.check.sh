@@ -52,6 +52,10 @@ check("a secured ticket shows no title and no PR", ("Secured ticket", None, None
 check("a Slack session: the request's first line, answered", ("Why does sync fail?", "answered", "fxa"), tuple(by["agent-aaaa11"][k] for k in ("title", "outcome", "team")))
 check("a routine's session: a non-admin sees no prompt and no key", ("Scheduled run", ""), (b["runs"][0]["title"], b["runs"][0]["key"]))
 check("a team admin sees the routine's prompt", "Review the private commits", server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True)[0]["title"])
+# A routine named in its record is titled by that name: every run's prompt starts with the same schedule preamble.
+json.dump({"key": "agent-rout01", "routine_run": 7, "routine_name": "Code review"}, open(t + "/sess/agent-rout01.json", "w"))
+check("a named routine run is titled by its routine, not its prompt's first line", "Code review run", server.recent_runs(rows, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True)[0]["title"])
+json.dump({"key": "agent-rout01", "routine_run": 7}, open(t + "/sess/agent-rout01.json", "w"))
 check("a pass is left out: the system card shows passes", False, "pass" in by)
 check("limit", 2, len(get("/api/runs/recent?limit=2")["runs"]))
 check("days=30 takes the older run", "FXA-9", get("/api/runs/recent?days=30&limit=100")["runs"][-1]["key"])
