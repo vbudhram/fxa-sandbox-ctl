@@ -62,6 +62,7 @@ check "ask: a hostile question runs nothing" "no" "$([ -e "$tmp/pwned" ] && echo
 check "ask: cost and turns, no upgrade" "0.21|3|null" "$(jq -r '"\(.cost_usd)|\(.turns)|\(.upgrade)"' <<< "$out")"
 check "ask: tokens revoked and slot freed" "llm ask-t001,mcp ask-t001|0" "$(paste -sd, "$tmp/revoked")|$(ls "$PIPE_STATE_DIR/answer-slots" | wc -l | tr -d ' ')"
 check "ask: one line in the answers log" "1" "$(wc -l < "$PIPE_STATE_DIR/answers.jsonl" | tr -d ' ')"
+check "ask: the log keeps the question's first line, as text" "Where is the 'password' check? \$(touch $tmp/pwned) EOF" "$(jq -r .q "$PIPE_STATE_DIR/answers.jsonl")"
 
 echo "UPGRADE-ME please fix https://github.com/mozilla/fxa/pull/7" > "$tmp/q2"
 out="$(answer_ask ask-t002 "$tmp/q2")"

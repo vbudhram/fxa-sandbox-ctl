@@ -231,8 +231,11 @@ answer_ask() {
   [ "$(jq -r .error <<< "$res")" = true ] && errors_record answer failed "" "answer_ask" "an answer failed (ssh status ${rc}): $(printf '%s' "$out" | tail -c 200 | tr '\n' ' ')" ""
   # Where the time went: init_s is ssh, setup, the main fetch and Claude's start with its MCP servers;
   # run_ms is Claude's run, api_ms the part spent waiting on the model.
-  jq -c --argjson init "$init_s" --arg th "${FXA_THREAD:-}" --arg env "${FXA_ENV:-}" '{at: (now | todate), id, secs, init_s: $init, run_ms, api_ms, cost_usd, turns, upgrade: (.upgrade != null), error}
-    + (if $th != "" then {thread: $th} else {} end) + (if $env != "" then {env: $env} else {} end)' <<< "$res" >> "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
+  # q: the question's first line, as a session's title is its request's (quick answers are the FxA team's only).
+  local q; q="$(grep -m1 '[^[:space:]]' "$pf" 2>/dev/null || true)"
+  jq -c --argjson init "$init_s" --arg th "${FXA_THREAD:-}" --arg env "${FXA_ENV:-}" --arg q "$q" '{at: (now | todate), id, secs, init_s: $init, run_ms, api_ms, cost_usd, turns, upgrade: (.upgrade != null), error}
+    + (if $th != "" then {thread: $th} else {} end) + (if $env != "" then {env: $env} else {} end)
+    + ($q | gsub("\\s+"; " ") | ltrimstr(" ") | .[0:120] | if . != "" then {q: .} else {} end)' <<< "$res" >> "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || true
   if [ "$stream" = 1 ]; then jq -c '{type: "answer"} + .' <<< "$res"; else printf '%s\n' "$res"; fi
 }
 

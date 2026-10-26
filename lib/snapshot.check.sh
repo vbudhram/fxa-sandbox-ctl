@@ -81,11 +81,12 @@ rm -rf "$pd"
 ( export SESSION_DIR="$tmp/ans" PIPE_STATE_DIR="$tmp/ansps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
   _session_records() { :; }; db_on() { true; }
   db_json() { case "$1" in *"run LIKE 'ask-%'"*) echo '[{"run":"ask-bbb111","thread":"C1:1.000001"}]' ;; *) echo '[{"llm":"{}"}]' ;; esac; }
-  printf '%s\n' '{"at":"2026-10-06T10:00:00Z","id":"ask-aaa222","secs":20,"cost_usd":0.12,"turns":3,"upgrade":false,"error":false,"thread":"C2:2.000002"}' \
+  printf '%s\n' '{"at":"2026-10-06T10:00:00Z","id":"ask-aaa222","secs":20,"cost_usd":0.12,"turns":3,"upgrade":false,"error":false,"thread":"C2:2.000002","q":"Why does login fail?"}' \
     '{"at":"2026-10-05T10:00:00Z","id":"ask-bbb111","secs":30,"cost_usd":0.2,"turns":5,"upgrade":true,"error":false}' > "$PIPE_STATE_DIR/answers.jsonl"
   out="$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null)"
   check "stats: an answer keeps its thread, an older one gets it from the LLM calls" "ask-aaa222 C2:2.000002 answered 3|ask-bbb111 C1:1.000001 upgraded 5" \
     "$(jq -r '[.rows[] | select(.src == "answer") | "\(.key) \(.thread) \(.kind) \(.turns)"] | join("|")' <<< "$out")"
+  check "stats: an answer row carries its question's first line, or null" "Why does login fail?|null" "$(jq -r '[.rows[] | select(.src == "answer") | .q] | map(tostring) | join("|")' <<< "$out")"
   exit "$fail" ) || fail=1
 
 # Test runs stay out of every total: an answer is priced by the proxy, and the LLM days and models

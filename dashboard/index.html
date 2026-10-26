@@ -1414,7 +1414,7 @@ function renderAnswers() {
   const when = at => new Date(at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   put("s-sess", String(html`<div class="sub" style="color:var(--dim);margin-bottom:var(--s3)">${rows.length} quick answers in the Stats range: read-only, no sandbox. Upgraded ones continue as a session.</div>
     ${rows.length ? html`<div style="overflow-x:auto">${table(["When", "Answer", "Outcome", "Time", "Turns", "Cost", "Thread"], rows.map(r => { const u = threadUrl(r.thread), open = ANS_OPEN.has(r.key);
-      return html`<tr class="ansrow" data-ans="${r.key}" style="cursor:pointer"><td>${when(r.at)}</td><td class="mono"><button type="button" class="linkbtn toggle" data-ans-btn="${r.key}" aria-expanded="${String(open)}" aria-label="Cost of ${r.key}">${r.key}</button></td>
+      return html`<tr class="ansrow" data-ans="${r.key}" style="cursor:pointer"><td>${when(r.at)}</td><td${r.q ? "" : html` class="mono"`}><button type="button" class="linkbtn toggle" data-ans-btn="${r.key}" aria-expanded="${String(open)}" aria-label="Cost of ${r.q || r.key}">${r.q || r.key}</button>${r.q ? html` <span class="mono na">${r.key}</span>` : ""}</td>
         <td>${tag(r.kind, tone[r.kind])}</td><td>${r.secs != null ? `${r.secs} s` : "—"}</td><td>${r.turns ?? "—"}</td><td>${usd(r.usd || 0)}</td>
         <td>${u ? html`<a href="${u}" target="_blank" rel="noopener">Slack ↗</a>` : r.thread ? html`<span class="mono">${r.thread}</span>` : "—"}</td></tr>
         ${open ? html`<tr><td colspan="7">${usageHtml(r.key)}</td></tr>` : ""}`; }), { figures: true, dense: true, cls: "answers" })}</div>` : emptybox("No quick answer in this range.")}`));

@@ -365,7 +365,7 @@ _stats_add_rows() {
   [ -s "${PIPE_STATE_DIR}/answers.jsonl" ] && asks="$(jq -sc --argjson th "$athreads" --argjson llm "$llm" 'map(select(.env != "dev" and (.id | test("^ask-[0-9a-f]{6}$")))) | map({ at, src: "answer", key: .id,
           kind: (if .upgrade then "upgraded" elif .error then "failed" else "answered" end),
           usd: (($llm.runs[.id] // .cost_usd // 0) * 100 | round / 100), min: ((.secs // 0) / 60 | round), secs, turns, model: "", models: ($llm.run_models[.id] // null), pr: false,
-          thread: (.thread // $th[.id]) })' \
+          thread: (.thread // $th[.id]), q: (.q // null) })' \
       "${PIPE_STATE_DIR}/answers.jsonl" 2>/dev/null || echo '[]')"
   # Files, not arguments: one argument stops at 128 KB, and the sessions list passed it on 2026-10-03.
   jq -c --slurpfile s <(printf '%s' "${sess:-[]}") --slurpfile j <(printf '%s' "${jobs:-[]}") --slurpfile a <(printf '%s' "${asks:-[]}") \
