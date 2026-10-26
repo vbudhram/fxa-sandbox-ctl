@@ -1705,9 +1705,13 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
     errors_record pipeline secured "$sk" "precheck" "$smsg" ""
     : > "${PIPE_STATE_DIR}/${sk}.secured-noted"
   done
-  while IFS= read -r line; do [ -n "$line" ] && _work "queue: $line (run: ground ${line%% *})"; done < <(
-    printf '%s\n' $queue | grep . \
-      | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort)
+  local qlines nofree="" fs; qlines="$(printf '%s\n' $queue | grep . | xargs -P 8 -I{} "$0" --pipeline "$PIPE_NAME" skip-changed {} 2>/dev/null | sort || true)"
+  # No free slot: the pass cannot launch a queued ticket, and it records nothing for one it did not launch, so each
+  # pass would wake a model for the same lines. Read the slots only when there is a line; a failed read still wakes.
+  [ -z "$qlines" ] || { fs="$(cmd_freeslots 2>/dev/null)" && [ -z "$fs" ] && nofree=1; } || true
+  while IFS= read -r line; do [ -n "$line" ] || continue
+    if [ -n "$nofree" ]; then _info "queue: $line (no free slot)"; else _work "queue: $line (run: ground ${line%% *})"; fi
+  done <<< "$qlines"
 
   pipeline_unlock >/dev/null
   # One line per pass: the queue's size and what the pass found, for the Stats page.
