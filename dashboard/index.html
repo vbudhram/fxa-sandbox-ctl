@@ -2572,7 +2572,7 @@ let RT = { team: null }, RT_WANT = 0;   // RT_WANT: a routine id from the link, 
 const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const RT_MODES = [["report", "Report", "A summary in Slack and History. Changes no code."], ["pr", "Draft PR", "Opens a draft PR with the fixes. Nothing merges by itself."], ["pr+notes", "Draft PR with notes", "The draft PR, plus every finding it did not fix, in the PR description."]];
-const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd", "skip_no_commits", "pr"];
+const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "draft", "max_usd", "skip_no_commits", "pr"];
 const RT_STALE_S = 300;
 const RT_ZONES = [["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Los_Angeles", "Pacific"], ["UTC", "UTC"], ["Europe/London", "UK"], ["Europe/Berlin", "Central Europe"], ["Asia/Kolkata", "India"], ["Asia/Tokyo", "Japan"], ["Australia/Sydney", "Sydney"]];
 const RT_BLANK = { template: "blank", name: "Write your own", about: "Start with an empty prompt, for a task the other starts do not cover.", mode: "report", skip_no_commits: true, prompt: "" };
@@ -2597,7 +2597,7 @@ async function loadRoutines(team) {
 function rtDraft(data) {
   const d = data ?? { template: "blank", name: "", prompt: "", schedule: "weekdays 09:00", zone: "America/New_York", repos: [], channel: "", mode: "report", max_usd: 10, skip_no_commits: true };
   const [kind, a, b] = (d.schedule || "weekdays 09:00").split(" "), pr = d.pr ?? {};
-  return { ...d, template: d.template || "blank", kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "", channel: d.channel ?? "",
+  return { ...d, template: d.template || "blank", kind, day: kind === "weekly" ? a : "mon", time: kind === "weekly" ? b : a, repos: [...(d.repos ?? [])], branch: d.branch ?? "", channel: d.channel ?? "", draft: d.draft !== false,
     ...(d.on === "pr-label" ? { pr_repo: pr.repo ?? "", pr_authors: (pr.authors ?? []).join(", "), pr_label: pr.label ?? "agent-help", pr_mention: pr.blender_mention ?? "" } : {}) };
 }
 function rtRoutine(d) {
@@ -2608,7 +2608,7 @@ function rtRoutine(d) {
     return { on: "pr-label", template: "blank", name: d.name, repos: d.pr_repo ? [d.pr_repo] : [], channel: d.channel.trim(), mode: "pr", max_usd: Number(d.max_usd), pr, ...(d.env ? { env: d.env } : {}) };
   }
   const r = { template: d.template, name: d.name, prompt: d.prompt, schedule: d.kind === "weekly" ? `weekly ${d.day} ${d.time}` : `${d.kind} ${d.time}`,
-    zone: d.zone, repos: d.repos, channel: d.channel.trim(), mode: d.mode, max_usd: Number(d.max_usd), skip_no_commits: !!d.skip_no_commits };
+    zone: d.zone, repos: d.repos, channel: d.channel.trim(), mode: d.mode, draft: d.draft !== false, max_usd: Number(d.max_usd), skip_no_commits: !!d.skip_no_commits };
   if (d.branch.trim() && d.repos.length === 1) r.branch = d.branch.trim();
   if (d.env) r.env = d.env;
   return r;
@@ -2751,7 +2751,7 @@ function rtDetail(t, r) {
             ${kvRow("Label", d.pr?.label || "agent-help")}${kvRow("Result", "One fix commit on the PR branch")}`
           : html`${kvRow("Starts from", (RT.tpls ?? []).find(x => x.template === d.template)?.name ?? "Custom prompt")}${kvRow("Schedule", sentence(rtSched(d)))}${kvRow("Time zone", d.zone)}
             ${kvRow("Repos", (d.repos ?? []).join(", ") || "none", !(d.repos ?? []).length)}${kvRow("Branch", d.branch || "the default", !d.branch)}
-            ${kvRow("Result", (RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1])}`}${kvRow("Slack", ch || "none, History only", !ch)}
+            ${kvRow("Result", (RT_MODES.find(m => m[0] === d.mode) ?? [, d.mode])[1] + (d.mode !== "report" && d.draft === false ? ", opened as a regular PR" : ""))}`}${kvRow("Slack", ch || "none, History only", !ch)}
           ${kvRow("Cost limit", `${usd(d.max_usd)} a run`)}${onpr ? "" : kvRow("No new commits", d.skip_no_commits ? "skip the run" : "run anyway")}`)}
         ${onpr ? card(html`<h2>Live runs<span class="n">${(r.lives ?? []).length}</span></h2>${rtLives(r)}`)
           : card(html`<h2>Next runs</h2>${next.length ? next.map(x => kvRow(rtWhen(x, d.zone, true).replace(/, \d\d:\d\d$/, ""), rtWhen(x, d.zone, true).slice(-5))) : html`<p class="empty">${r.paused ? "Paused: no run is due." : "No run is due."}</p>`}`)}
@@ -2816,7 +2816,8 @@ const rtNextText = d => { const x = rtNextDays(d, 3); return x.length ? `Next ru
 function rtReadback(d) {
   if (d.on === "pr-label") { const au = String(d.pr_authors).split(/[\s,]+/).filter(Boolean);
     return html`<b>${d.name || "This routine"}</b> runs when a dependency PR in <b>${d.pr_repo || "no repo yet"}</b> by <b>${au.length ? au.join(" or ") : "no author yet"}</b> asks for help with the <b>${String(d.pr_label).trim() || "agent-help"}</b> label. It pushes one fix commit to the PR branch, ${d.channel.trim() ? html`posts in <b>${rtChName(d.channel.trim())}</b>` : "needs a channel for its results"}, and stops at <b>${usd(Number(d.max_usd))}</b> a run.`; }
-  const mode = { report: "reports", pr: "opens a draft PR", "pr+notes": "opens a draft PR with notes" }[d.mode] ?? d.mode, s = rtRoutine(d);
+  const pr = d.draft === false ? "a regular PR" : "a draft PR";
+  const mode = { report: "reports", pr: `opens ${pr}`, "pr+notes": `opens ${pr} with notes` }[d.mode] ?? d.mode, s = rtRoutine(d);
   return html`<b>${d.name || "This routine"}</b> runs <b>${rtSched(s)} ${rtZoneName(d.zone)}</b> on <b>${d.repos.join(", ") || "no repo yet"}</b>${d.skip_no_commits ? ", when there are new commits" : ""}. It ${mode}${d.channel.trim() ? html`, posts in <b>${rtChName(d.channel.trim())}</b>,` : ", posts nothing in Slack (the results are in History),"} and stops at <b>${usd(Number(d.max_usd))}</b> a run.`;
 }
 // The cost hint: what runs of this start cost on this team in 30 days.
@@ -2885,6 +2886,7 @@ function routineForm(t) {
       ${card(html`<h2>What you get</h2><div class="stack">
         <fieldset class="group stack sm" id="rt-mode" tabindex="-1"${bad("mode")}><legend class="lb">Result</legend>${RT_MODES.map(([v, l, about]) => { const off = modeOff(v);
           return html`<label class="choice sm"><input type="radio" name="rt-mode" data-rt="mode" value="${v}"${(locked || d.mode) === v ? " checked" : ""}${off ? " disabled" : ""}><span class="stack sm"><b>${l}</b><span class="hint">${off ? `Off: ${off}.` : about}</span></span></label>`; })}${err("mode")}</fieldset>
+        ${(locked || d.mode) !== "report" ? html`<div class="field"><label><input type="checkbox" id="rt-draft" data-rt="draft"${d.draft !== false ? " checked" : ""}${bad("draft")}> Open the PR as a draft</label><p class="hint">Clear it to open a regular PR. A regular PR asks the code owners for a review at once.</p>${err("draft")}</div>` : ""}
         ${rtChannelField(d, f, bad, err)}
         ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" class="input rt-usd" type="number" min="1" step="1" data-rt="max_usd" value="${d.max_usd}"${bad("max_usd")}>`, rtCostHint(t, d) ? html`<p class="hint">${rtCostHint(t, d)}</p>` : "")}</div>`)}`}
     </div><aside class="stack">${card(html`<h2>${f.id ? "Before you save" : "Before you create it"}</h2><div class="stack">
@@ -2953,7 +2955,7 @@ document.addEventListener("input", e => {
   if (k === "channel" && e.target.value === "__paste") { f.chPaste = true; f.d.channel = ""; return rtPaint(); }
   f.d[k] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
   if (k === "prompt") { const c = document.querySelector("[data-rt-count]"); if (c) c.textContent = textSize(f.d.prompt, 4096); }
-  if (k === "channel" && e.target.tagName === "SELECT") return rtPaint();
+  if ((k === "channel" && e.target.tagName === "SELECT") || k === "mode") return rtPaint();
   const rb = document.querySelector("[data-rt-readback]"), nx = document.querySelector("[data-rt-next]");
   if (rb) rb.innerHTML = String(rtReadback(f.d));
   if (nx) nx.textContent = rtNextText(f.d);

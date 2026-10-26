@@ -94,6 +94,7 @@ jq -c '.prompt = "SURROGATE"' <<< "$base" | sed 's/SURROGATE/review \\ud800 this
 check "a prompt with a lone surrogate is a field error, not a traceback" "prompt: The prompt is not valid text" \
   "$(python3 -I "$here/routine.py" validate "$tmp/sur.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"
 check "skip_no_commits that is not a bool" "skip_no_commits: must be true or false" "$(v secret priv.json '{"skip_no_commits":"yes"}')"
+check "draft that is not a bool" "draft: must be true or false" "$(v secret priv.json '{"draft":"no"}')"
 check "an env that is not live or dev" "env: must be live or dev" "$(v secret priv.json '{"env":"prod"}')"
 echo '[1]' > "$tmp/arr.json"
 check "a routine that is not a JSON object" "routine: must be a JSON object" \

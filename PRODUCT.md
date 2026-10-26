@@ -102,7 +102,8 @@ Design for the owner first, and for the teammate second. Every other role is a g
    one comment that names the decision.
 3. **Routines** (the dashboard). A team admin sets a scheduled prompt on the team's page: a code, UX,
    performance or security review, or free text, with a schedule, the repos, an output mode (report,
-   draft PR, or draft PR with notes), an optional Slack channel and a cost limit. Each **routine run** is a
+   draft PR, or draft PR with notes; the admin can set a PR mode to open a regular PR instead), an optional
+   Slack channel and a cost limit. Each **routine run** is a
    normal session with the team's profile, repos, access and budget. The bot posts only the result in
    the routine's channel: the draft PR link or the report, or why it skipped or failed, and the next run
    time. A routine with no channel posts nothing in Slack; its results are only in the dashboard History.
@@ -227,7 +228,8 @@ Apply them in this order. When two conflict, the higher one wins, and you say wh
    gateway, and at most a short read token that the controller removes before the agent starts. Never a
    value in a log, a command line, `.git/config`, a Slack message or an audit row.
 4. **A person owns each outside action.** The agent never merges, approves or enables auto-merge, and its
-   PRs are drafts. It pushes to a person's PR only after the author's consent on GitHub. Automatic rounds
+   PRs are drafts, except for a routine that a team admin set to open a regular PR. It pushes to a person's
+   PR only after the author's consent on GitHub. Automatic rounds
    stop at 2.
 5. **Records are data, never code.** A dashboard write starts from validated JSON. One validator serves
    the write path and the load path. New code a team needs goes into the repo through review.

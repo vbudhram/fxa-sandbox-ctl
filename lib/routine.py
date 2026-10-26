@@ -34,7 +34,7 @@ TEMPLATES = ("code-review", "ux-review", "perf-review", "security-review", "blan
 MODES = ("report", "pr", "pr+notes")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
-        "skip_no_commits", "env", "on", "pr"}
+        "skip_no_commits", "env", "on", "pr", "draft"}
 # on='pr-label': the run starts when a dependency PR asks for help, not on a schedule (the pr block).
 PR_KEYS = {"repo", "authors", "label", "blender_login", "blender_mention", "sweep_min"}
 SLUG = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -268,12 +268,15 @@ def check(r, team, profile, index, env, count):
         r["max_usd"] = cap
     if not isinstance(r.get("skip_no_commits", True), bool):
         bad.append("skip_no_commits: must be true or false")
+    if not isinstance(r.get("draft", True), bool):
+        bad.append("draft: must be true or false")
     if r.get("env", "live") not in ("live", "dev"):
         bad.append("env: must be live or dev")
     if count >= MOST:
         bad.append(f"routine: A team has at most {MOST} routines")
     r.setdefault("template", "blank")
     r.setdefault("skip_no_commits", True)
+    r.setdefault("draft", True)
     r.setdefault("env", "live")
     r.setdefault("max_usd", 10)
     return bad, r

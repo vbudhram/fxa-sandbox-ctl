@@ -407,6 +407,7 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     RT.chans = undefined;
     t("routines: the read-back names the draft, escaped", String(rtReadback({ ...rtDraft(), name: "<b>x</b>", repos: ["a/b"], kind: "daily", time: "10:30", zone: "America/New_York", mode: "pr+notes", max_usd: 5 })),
       "<b>&lt;b&gt;x&lt;/b&gt;</b> runs <b>every day at 10:30 Eastern</b> on <b>a/b</b>, when there are new commits. It opens a draft PR with notes, posts nothing in Slack (the results are in History), and stops at <b>$5.00</b> a run.");
+    t("routines: a routine set to a regular PR reads back and saves as one; an old routine stays a draft", `${/opens a regular PR,/.test(String(rtReadback({ ...rtDraft(), repos: ["a/b"], kind: "daily", time: "10:30", zone: "UTC", mode: "pr", draft: false })))}|${rtRoutine({ ...rtDraft(), draft: false }).draft}|${rtDraft({ name: "x", schedule: "daily 09:00", zone: "UTC", mode: "pr", repos: [] }).draft}`, "true|false|true");
     RTSUM = { teams: {}, routines: { 1: { team: "fxa", template: "code-review", cost_min_30d: 0.4, cost_max_30d: 0.94 }, 2: { team: "fxa", template: "code-review", cost_min_30d: 0.3, cost_max_30d: 0.5 }, 3: { team: "ent", template: "code-review", cost_min_30d: 9, cost_max_30d: 9 } } };
     t("routines: the cost hint is this team's runs of this start", rtCostHint({ profile: "fxa" }, { template: "code-review" }), "code-review runs on this team cost $0.30 to $0.94 a run in the last 30 days.");
     RTSUM = null;

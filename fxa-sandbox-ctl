@@ -2513,7 +2513,7 @@ cmd_task() {
     --arg run_trigger "$([ -z "$fix" ] || jq -r '.trigger // ""' <<< "$run_json")" --arg run_actor "$([ -z "$fix" ] || jq -r '.actor // ""' <<< "$run_json")" \
     '{key: $key, owner: $owner, source: $source, branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)
-     + (if $cfg == null then {} else {routine_run: $run, routine_name: $cfg.name, routine_mode: $cfg.mode, untrusted: "1", cap_usd: ($cfg.max_usd // 10),
+     + (if $cfg == null then {} else {routine_run: $run, routine_name: $cfg.name, routine_mode: $cfg.mode, routine_draft: ($cfg.draft != false | tostring), untrusted: "1", cap_usd: ($cfg.max_usd // 10),
           base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end) end)
      + (if $fix == null then {} else {watch_narrow: "1", memory: "off", fix_pr: ($fix.pr | tostring), fix_trigger: $run_trigger, fix_actor: $run_actor,
           fix_head_sha: $fix.head_sha} end)' > "$(_session_file "$key")"
@@ -3172,6 +3172,8 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   # A dependency fix run: fix-pr mode, one fast forward of the head it booted at (lib/finish.sh).
   # A fix record with no run still selects the mode, so finish refuses it and never pushes as an ordinary session.
   local frun="" fhead=""; [ -n "$(session_get "$key" fix_pr)" ] && { frun="$(session_get "$key" routine_run)"; frun="${frun:-none}"; fhead="$(session_get "$key" fix_head_sha)"; }
+  # A team admin can set a routine to open a regular PR instead.
+  [ "$(session_get "$key" routine_draft)" = false ] && local FXA_PR_DRAFT=""
   rc=0
   pr_url="$(FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
     FXA_APP_COMMIT_FF="$frun" FXA_FIX_HEAD_SHA="$fhead" finish_push_and_pr "$tmp" "$create")" || rc=$?
