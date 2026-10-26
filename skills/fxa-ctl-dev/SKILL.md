@@ -79,7 +79,7 @@ Run `test.sh changed` before each push, and let CI run the full suite. Use `test
 fails to start or exits nonzero as a failure. (A hand loop once reported "all pass"
 because macOS has no `timeout`, so no check ran.)
 
-To replace exact text, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`), or `rep.py < triples.json` (`[["file", "old", "new"], ...]`) for several files. Each old text must match once; on a miss, nothing is written to any file. Do not write an inline `def rep(` heredoc.
+To replace exact text, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`), or `rep.py < triples.json` (`[["file", "old", "new"], ...]`) for several files. For code with quotes or backslashes, use `rep.py --blocks` with a heredoc of `<<<< path`, old lines, `====`, new lines, `>>>>`: no JSON to escape. Block text is literal: write `"` and `\`, never `\"`. Each old text must match once; on a miss, nothing is written to any file. Do not write an inline `def rep(` or `def sub(` heredoc. `python3 rep_test.py` checks the script.
 
 To answer "is everything shipped?" or "what is the status?", run `bash skills/fxa-ctl-dev/shipped.sh` first (about 15 s; `--no-live` skips the manager). It lists work not on origin/main with its CI state, main against the dev deploy and the live bot, and the backlog items that wait.
 
