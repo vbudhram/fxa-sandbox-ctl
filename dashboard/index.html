@@ -1329,8 +1329,7 @@ function sessHeads(ss) {
 }
 // A conversation's title: what the person first asked, in the chain's first session.
 // A routine run's request starts with the same schedule preamble, so its title is the routine's name.
-const convTitle = s => { if (s.routine_run && !isFix(s)) return `${s.routine_name || "Routine"} run`;
-  const ch = chainOf(s, AGENTS?.sessions ?? []); return firstLine(ch[ch.length - 1].request); };
+const convTitle = s => { if (s.routine_run && !isFix(s)) return `${s.routine_name || "Routine"} run`; const ch = chainOf(s, AGENTS?.sessions ?? []); return firstLine(ch[ch.length - 1].request); };
 function chainOf(s, ss) {
   const by = new Map(ss.map(x => [x.key, x])), out = [];
   for (let x = s; x && out.length < 50; x = by.get(x.resume_from)) out.push(x);
@@ -4106,7 +4105,7 @@ function sideGroups() {
       .filter(s => hit(fixGated(s) ? s.key : s.key + " " + ownerName(s) + " " + chainOf(s, all).map(x => x.request ?? "").join(" ")));
     const items = list.map(s => { const [st] = sessStatus(s), ch = chainOf(s, all), c = ch.reduce((x, y) => x + (sessUsd(y) || 0), 0), pr = convPr(s), gate = fixGated(s);
       // The title is what the person first asked: the chain's first session's request. A dependency fix is named by its label.
-      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : bootFailed(s) ? "bad" : "", t: isFix(s) ? sessRoutine(s) : firstLine(ch[ch.length - 1].request),
+      return { day: sessDay(s.created), id: s.key, d: LIVE_SESSION.includes(s.state) ? "live" : bootFailed(s) ? "bad" : "", t: isFix(s) ? sessRoutine(s) : convTitle(s),
         tip: stamp(s.created), m: [c && !gate ? usd(c) : "", isFix(s) ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : bootFailed(s) ? "boot failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
