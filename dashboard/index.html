@@ -4092,11 +4092,14 @@ function tabCount(t) {
 }
 function renderHeader() {
   const def = VIEWS.find(x => x[0] === VIEW), p = panelState();
+  // The buttons are drawn again below: the one a keyboard user pressed keeps the focus.
+  const fid = document.getElementById("vacts").contains(document.activeElement) ? document.activeElement.id : "";
   document.getElementById("vtitle").textContent = def[1];
   document.getElementById("vsub").textContent = def[2];
   const sideLbl = VIEW === "stats" ? "Filters" : "List";
   document.getElementById("vacts").innerHTML = (VIEW === "teams" ? `<button type="button" class="iconbtn lbl tlist-btn" id="tlist" aria-expanded="${!document.body.classList.contains("tlist-closed")}" aria-controls="side">${svgI(ICO_SIDE)}List</button>` : "") + (["overview", "pipeline", "teams", "runners"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn${VIEW === "stats" ? " lbl" : ""}" id="tside" aria-label="${sideLbl}" title="${sideLbl}" aria-pressed="${p.side}">${svgI(ICO_SIDE)}${VIEW === "stats" ? "Filters" : ""}</button>`)
     + (["overview", "pipeline", "stats", "teams"].includes(VIEW) || (VIEW === "sessions" && TAB === "answers") ? "" : `<button type="button" class="iconbtn" id="tright" aria-label="Details" title="Details" aria-pressed="${p.right}">${svgI(ICO_RIGHT)}</button>`);
+  if (fid) document.getElementById(fid)?.focus();
   const tabs = document.getElementById("vtabs");
   tabs.hidden = !def[3].length;
   tabs.setAttribute("aria-label", `${def[1]} tabs`);
@@ -4269,6 +4272,8 @@ function toggle(which) {
   document.body.classList.toggle((narrow ? "show" : "no") + which);
   if (!narrow) try { localStorage.setItem("no" + which, document.body.classList.contains("no" + which) ? "1" : "0"); } catch {}
   renderHeader();
+  // A drawer that opens takes the focus: the list on its search box, the details on their close button.
+  if (narrow && document.body.classList.contains("show" + which)) document.getElementById(which === "side" ? "q" : "rclose")?.focus();
 }
 function select(id) {
   if (VIEW === "sessions") { location.hash = `sessions/${SESS_TAB}/${id}`; }
@@ -4308,7 +4313,13 @@ document.addEventListener("input", e => { if (e.target.id === "q") { Q = e.targe
 document.addEventListener("keydown", e => {
   const help = document.getElementById("help");
   if (e.key === "Escape" && VIEW === "pipeline" && TAB === "belts" && SEL.pipeline) { location.replace("#pipeline/belts"); return; }
-  if (e.key === "Escape") { openHelp(false); document.body.classList.remove("showside", "showright"); if (e.target.id === "q") e.target.blur(); renderHeader(); return; }
+  if (e.key === "Escape") {
+    // A drawer that closes gives the focus back to the button that opens it.
+    const b = help.classList.contains("on") ? "" : document.body.classList.contains("showside") ? "tside" : document.body.classList.contains("showright") ? "tright" : "";
+    openHelp(false); document.body.classList.remove("showside", "showright"); if (e.target.id === "q") e.target.blur(); renderHeader();
+    if (b) document.getElementById(b)?.focus();
+    return;
+  }
   if (help.classList.contains("on")) { if (e.key === "Tab") { e.preventDefault(); document.getElementById(document.activeElement.id === "help-close" ? "keys-on" : "help-close").focus(); } return; }
   if (!KEYS || e.metaKey || e.ctrlKey || e.altKey || e.target.matches?.("input, select, textarea")) return;
   const items = [...document.querySelectorAll(".si")];
