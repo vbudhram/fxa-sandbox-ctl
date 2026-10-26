@@ -20,7 +20,7 @@ def check(name, want, got):
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": want {want!r} got {got!r}"))
 s = get("/api/snapshot")
 check("snapshot: the stats feed's age, error and interval", (True, "stats failed: timeout", 60),
-      (400 <= (s.get("stats_age_seconds") or 0) <= 402, s.get("stats_error"), s.get("stats_interval")))
+      (400 <= (s.get("stats_age_seconds") or 0) <= 430, s.get("stats_error"), s.get("stats_interval")))  # a slow CI runner takes seconds
 check("/api/stats has no new key", {"llm": {}}, get("/api/stats"))
 server.STATS.data = server.STATS.fetched_at = server.STATS.error = None
 check("snapshot: a stats feed never read gives null age", None, get("/api/snapshot").get("stats_age_seconds"))

@@ -68,7 +68,8 @@ run_here() {
   if [ "$i" = "$n" ]; then
     py="$(mktemp "${TMPDIR:-/tmp}/fxa-py.XXXXXX")"
     ( b=0
-      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; b=1; }; done
+      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"
+        [ -z "${FXA_CHECK_VERBOSE:-}" ] || grep -m1 -A25 '^Traceback' <<< "$o" | sed 's/^/  | /'; b=1; }; done
       # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
       if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then o="$(python3 desktop-gateway/check.py 2>&1)" || { echo "FAIL $HOST: desktop-gateway/check.py"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; b=1; }
       else echo "skip $HOST: desktop-gateway/check.py (pip install -r desktop-gateway/requirements.txt to run it)"; fi
