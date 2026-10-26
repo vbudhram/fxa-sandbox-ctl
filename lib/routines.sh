@@ -679,6 +679,13 @@ _routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: ch
 _PRFIX_RUN_JQ='def fixrun($q; $x): {actor: $q.actor, fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first),
   label: ($q.data | fromjson | .pr.label // "agent-help")}};'
 
+# _routine_q_fields <run row json>   A queued or orphan run's fields in one jq, joined by \x1f for one read:
+# id, routine_id, team, paused, trigger, data (parsed, compact), fix (compact, or empty), channel (or empty).
+_routine_q_fields() {
+  jq -r '(.data | fromjson) as $d | [.id, .routine_id, .team, .paused, .trigger, ($d | tojson),
+    (.fix // "" | fromjson? // "" | if . == "" then "" else tojson end), ($d.channel // "")] | map(tostring) | join("\u001f")' <<< "$1"
+}
+
 routine_tick() {
   [ "${1:-}" = --env ] && [[ "${2:-}" =~ ^(live|dev)$ ]] && [[ "${3:-}" =~ ^(--resume)?$ ]] && [ $# -le 3 ] \
     || { echo "usage: routine tick --env live|dev [--resume]" >&2; return 1; }
@@ -688,14 +695,15 @@ routine_tick() {
   local rows; rows="$(db_json "SELECT id, team, paused, data, coalesce(saved_at, 0) AS saved_at FROM routines WHERE env = $(db_q "$env") ORDER BY id;")" || { echo "$_ROUTINE_STORE" >&2; return 1; }
   # A manual run (Run now) waits as queued: one guarded UPDATE hands it to this tick only.
   local free; free="$(_routine_free_slots)"
-  local queued q qid qrid qt qwhy qpost qfix recheck runs="[]" skips="[]"
+  local queued q qid qrid qt qpaused qtrig qd qch qwhy qpost qfix recheck runs="[]" skips="[]"
   local f id team paused period at next cfg x; f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
   # The fix rows that reconcile expired: each posts once, as a skip with its fix.
   for x in $expired; do
     [[ "$x" =~ ^[1-9][0-9]*$ ]] || continue
     q="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, r.heads->'fix' AS fix FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.id = $x;" | jq -c '.[0] // empty')" || q=""
     [ -n "$q" ] || continue
-    skips="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
+    IFS=$'\x1f' read -r qid qrid qt qpaused qtrig qd qfix qch < <(_routine_q_fields "$q")
+    skips="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
       '($q.data | fromjson) as $d | ($q.fix | fromjson) as $x | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel,
         template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: "expired", label: ($d.pr.label // "agent-help")}}]' <<< "$skips")"
   done
@@ -703,18 +711,17 @@ routine_tick() {
     FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE r.state = 'queued' AND t.env = $(db_q "$env") ORDER BY r.id;")" || { rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r q; do
     [ -n "$q" ] || continue
+    IFS=$'\x1f' read -r qid qrid qt qpaused qtrig qd qfix qch < <(_routine_q_fields "$q")
     # A fix row (heads.fix): every gate, then the PR target, before the claim. A gate keeps it queued with its text.
-    qfix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$q")"
     if [ -n "$qfix" ]; then
-      qid="$(jq -r .id <<< "$q")"; qrid="$(jq -r .routine_id <<< "$q")"; qt="$(jq -r .team <<< "$q")"
-      jq -j '.data' <<< "$q" > "$f"
-      qwhy="$(_prfix_gate "$qt" "$(jq -r .paused <<< "$q")" "$(jq -r .trigger <<< "$q")" "$f" "$free" "$qrid" "$qid")"
+      printf '%s' "$qd" > "$f"
+      qwhy="$(_prfix_gate "$qt" "$qpaused" "$qtrig" "$f" "$free" "$qrid" "$qid")"
       if [ -z "$qwhy" ]; then
-        local trc=0; qwhy="$(_prfix_target "$(jq -c '.data | fromjson' <<< "$q")" "$qfix")" || { trc=1; qwhy="GitHub did not answer"; }
+        local trc=0; qwhy="$(_prfix_target "$qd" "$qfix")" || { trc=1; qwhy="GitHub did not answer"; }
         if [ "$trc" = 0 ] && [ -n "$qwhy" ]; then
           [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "the PR is no longer the run's target: ${qwhy}"), ended_at = $now,
             heads = json_set(heads, '$.fix.why', $(db_q "$qwhy")) WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
-          skips="$(jq -c --argjson q "$q" --argjson x "$qfix" --arg why "$qwhy" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+          skips="$(jq -c --argjson q "$q" --argjson x "$qfix" --arg why "$qwhy" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
             '($q.data | fromjson) as $d | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel, template: $i.template, private: $i.private,
               reason: "the PR is no longer the run'"'"'s target: \($why)", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: $why, label: ($d.pr.label // "agent-help")}}]' <<< "$skips")"
           continue
@@ -727,27 +734,26 @@ routine_tick() {
       [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now, heads = json_remove(heads, '$.fix.wait') WHERE id = $qid AND state = 'queued'
         AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $qrid AND o.id != $qid AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
       free=$((free - 1))
-      runs="$(jq -c --argjson q "$q" --argjson x "$qfix" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+      runs="$(jq -c --argjson q "$q" --argjson x "$qfix" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
         "${_PRFIX_RUN_JQ}"'. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i + fixrun($q; $x)]' <<< "$runs")"
       continue
     fi
     # The slot gate as for a scheduled run: it waits queued (and reconcile fails it after 60 min).
     [ "$free" -ge 2 ] || continue
     # The saved routine against its team as it is now (D8), as for a scheduled run.
-    qid="$(jq -r .id <<< "$q")"; qrid="$(jq -r .routine_id <<< "$q")"; qt="$(jq -r .team <<< "$q")"
-    jq -j '.data' <<< "$q" > "$f"; qwhy="$(_routine_recheck "$qt" "$f")"
+    printf '%s' "$qd" > "$f"; qwhy="$(_routine_recheck "$qt" "$f")"
     if [ -n "$qwhy" ]; then
       [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = $(db_q "$qwhy"), ended_at = $now WHERE id = $qid AND state = 'queued'; SELECT changes();")" = 1 ] || continue
       qpost=false; _routine_quiet "$qwhy" || qpost="$(_routine_post "$qrid" "$qwhy")" || qpost=false
-      jq -e '.data | fromjson | .channel // empty' <<< "$q" >/dev/null || qpost=false   # no channel: History only (D32)
-      skips="$(jq -c --argjson q "$q" --arg why "$qwhy" --argjson post "$qpost" --argjson i "$(_routine_run_info "$qrid" "$qt" "$(jq -c '.data | fromjson' <<< "$q")")" \
+      [ -n "$qch" ] || qpost=false   # no channel: History only (D32)
+      skips="$(jq -c --argjson q "$q" --arg why "$qwhy" --argjson post "$qpost" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
         '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: ($q.data | fromjson | .name), channel: ($q.data | fromjson | .channel), template: $i.template, private: $i.private, reason: $why, next: null, post: $post}]' <<< "$skips")"
       continue
     fi
-    [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $(jq -r .id <<< "$q") AND state = 'queued'
-      AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $(jq -r .routine_id <<< "$q") AND o.id != $(jq -r .id <<< "$q") AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
+    [ "$(db_value "UPDATE routine_runs SET state = 'claimed', started_at = $now WHERE id = $qid AND state = 'queued'
+      AND NOT EXISTS (SELECT 1 FROM routine_runs o WHERE o.routine_id = $qrid AND o.id != $qid AND o.state IN ('claimed','started')); SELECT changes();")" = 1 ] || continue
     free=$((free - 1))
-    runs="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$q")" "$(jq -r .team <<< "$q")" "$(jq -c '.data | fromjson' <<< "$q")")" \
+    runs="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
       '. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: "manual", channel: ($q.data | fromjson | .channel)} + $i]' <<< "$runs")"
   done < <(jq -c '.[]' <<< "$queued")
   # A claimed run with no session is in a bot's hands only in memory: after a restart it starts again, inside the
@@ -761,7 +767,8 @@ routine_tick() {
     while IFS= read -r o; do
       [ -n "$o" ] || continue
       free=$((free - 1))
-      runs="$(jq -c --argjson q "$o" --argjson i "$(_routine_run_info "$(jq -r .routine_id <<< "$o")" "$(jq -r .team <<< "$o")" "$(jq -c '.data | fromjson' <<< "$o")")" \
+      IFS=$'\x1f' read -r qid qrid qt qpaused qtrig qd qfix qch < <(_routine_q_fields "$o")
+      runs="$(jq -c --argjson q "$o" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
         "${_PRFIX_RUN_JQ}"'. + [{run: $q.id, routine: $q.routine_id, team: $q.team, trigger: $q.trigger, channel: ($q.data | fromjson | .channel)} + $i
           + (($q.fix // "" | fromjson? // null) as $x | if $x then fixrun($q; $x) else {} end)]' <<< "$runs")"
     done < <(jq -c '.[]' <<< "$orphans")

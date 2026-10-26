@@ -3,10 +3,10 @@
 #   bash lib/routines-tick.check.sh
 source "$(dirname "$0")/session-check-head.sh"
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
-# The check costs a few thousand jq and sqlite3 starts: its six parts run at once, each with its own store.
+# The check costs a few thousand jq and sqlite3 starts: its seven parts run at once, each with its own store.
 if [ -z "${_TICK_PART:-}" ]; then
-  for p in 1 2 3 4 5 6; do _TICK_PART=$p bash "$0" > "$tmp/part$p" 2>&1 & eval "pid$p=\$!"; done
-  for p in 1 2 3 4 5 6; do eval "wait \$pid$p" || fail=1; cat "$tmp/part$p"; done
+  for p in 1 2 3 4 5 6 7; do _TICK_PART=$p bash "$0" > "$tmp/part$p" 2>&1 & eval "pid$p=\$!"; done
+  for p in 1 2 3 4 5 6 7; do eval "wait \$pid$p" || fail=1; cat "$tmp/part$p"; done
   exit "$fail"
 fi
 export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
@@ -711,6 +711,15 @@ rpf="$(rpf_mk)"
 # A store error is no answer, not a domain error.
 got="$(db_exec() { return 1; }; tick $T 2>"$tmp/err")"; rc=$?
 check "a store error: exit 1, the store line, and no answer" "1|ERROR: the routine store did not answer (busy or failed); nothing changed, try again|" "$rc|$(cat "$tmp/err")|$got"
+fi
+
+if [ "$_TICK_PART" = 7 ]; then
+# A queued run costs a few jq starts in a tick, not one for each field it reads.
+echo 5 > "$tmp/free"; rj="$(mk fxa "weekly sat 23:00")"; FXA_ROUTINE_NOW=$N routine_runnow fxa "$rj" >/dev/null
+jqn() { : > "$tmp/jqn"; ( jq() { echo >> "$tmp/jqn"; command jq "$@"; }; tick "$1" > "$tmp/jqt$2" ); wc -l < "$tmp/jqn" | tr -d ' '; }
+a="$(jqn $((N + 20)) a)"; b="$(jqn $((N + 30)) b)"
+check "a tick hands out the queued run, then has none" "1|0" "$(jq '.runs | length' "$tmp/jqta")|$(jq '.runs | length' "$tmp/jqtb")"
+check "a queued run costs at most 6 jq starts in a tick" "yes" "$([ $((a - b)) -le 6 ] && echo yes || echo "no: $((a - b))")"
 fi
 
 exit "$fail"
