@@ -266,7 +266,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   const h = String(beltsHtml(g)), order = [...h.matchAll(/<h2 class="bgh"[^>]*>([^<]+) <span class="cnt">(\d+)|<h3 class="bsub">[\s\S]*?<span class="who">(\w+)<\/span>([^<]+) <span class="cnt">(\d+)/g)].map(m => m[1] ? `${m[1]} ${m[2]}:` : `${m[3]}/${m[4]} ${m[5]}`).join(" ");
   t("belts: phases closest to the merge first, then who acts, with counts", order, "PR 5: You/Review and merge 3 Agent/The agent fixes it, next pass 2 Agent run 2: Agent/Working now 2 Queue 1: You/Decide 1");
   t("belts: green is CI passed, red is broken, amber is a decision", ["working", "needs", "fixes", "review"].flatMap(k => g[k]).map(r => `${r.t.key}=${r.tone}`).join(","), "FXA-20=k-live,FXA-21=k-live,FXA-1=k-warn,FXA-4=k-bad,FXA-3=k-bad,FXA-10=k-ok,FXA-11=k-ok,FXA-22=k-live");
-  t("belts: the header line", /Needs you<\/span><span class="big">4</.test(h) && /3 to review · 1 to decide or fix/.test(h) && /Agents working<\/span><span class="big">2</.test(h) && /8 belts in all/.test(h), true);
+  t("belts: the header line: Needs you is the Overview's number, review named apart", /Needs you<\/span><span class="big">1</.test(h) && /to decide or fix · 3 more wait on a review/.test(h) && /Agents working<\/span><span class="big">2</.test(h) && /8 belts in all/.test(h), true);
   const row = k => String(beltRow(["working", "needs", "fixes", "review"].flatMap(x => g[x]).find(r => r.t.key === k)));
   const f3 = row("FXA-3"), f20 = row("FXA-20");
   t("belts: the Jira key and the PR number open their pages from the closed row", `${/class="key mono" data-href="https:\/\/jira\.example\.com\/browse\/FXA-3"/.test(f3)}|${/data-href="https:\/\/github\.com\/example\/app\/pull\/3"/.test(f3)}`, "true|true");
