@@ -409,7 +409,8 @@ pipeline_unlock() {
   pipeline_require || return 1
   rm -rf "$PIPE_LOCK_DIR"
   echo "released"
-  pipeline_state_push
+  # A failed push warns and goes on: under set -e its status ended precheck before the pass row and the quiet line.
+  pipeline_state_push || true
 }
 
 # ── State mirror ───────────────────────────────────────────────
