@@ -12,7 +12,8 @@ _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 # The host's git config can sign each commit (about 0.2 s each), and the lock checks need no 2 s poll.
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 FXA_MEMORY_LOCK_POLL=0.2
 # macOS /usr/bin/git is an xcrun shim that adds about 20 ms to each of some 400 calls.
-xg="$(xcrun -f git 2>/dev/null || true)"; [ -x "$xg" ] && mkdir -p "$tmp/bin" && ln -s "$xg" "$tmp/bin/git" && PATH="$tmp/bin:$PATH"
+# A wrapper, not a symlink: a symlinked git takes $tmp as its prefix and loses its exec-path and templates.
+xg="$(xcrun -f git 2>/dev/null || true)"; [ -x "$xg" ] && mkdir -p "$tmp/bin" && printf '#!/bin/sh\nexec "%s" "$@"\n' "$xg" > "$tmp/bin/git" && chmod +x "$tmp/bin/git" && PATH="$tmp/bin:$PATH"
 export FXA_MEMORY_LOG="$tmp/memory.jsonl"
 source "$here/memory.sh"
 
