@@ -5,7 +5,10 @@
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; root="$(cd "$here/../.." && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/skills/fxa-ctl-dev" "$tmp/skills/fxa-manager"; ln -s "$root/dashboard" "$tmp/dashboard"
+# A copy of the dashboard, not a link, so its controller is the stub below: a render must not depend on one (on CI,
+# 'profile show' failing made a team read as private, and the run was hidden).
+mkdir -p "$tmp/skills/fxa-ctl-dev" "$tmp/skills/fxa-manager"; cp -R "$root/dashboard" "$tmp/dashboard"; ln -s "$root/lib" "$tmp/lib"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/fxa-sandbox-ctl"; chmod +x "$tmp/fxa-sandbox-ctl"
 cp "$here/live-render.sh" "$here/page.sh" "$tmp/skills/fxa-ctl-dev/"
 cat > "$tmp/skills/fxa-manager/vm.sh" <<'SH'
 #!/bin/bash
@@ -14,7 +17,7 @@ case "$*" in *live-render-team*) echo "$*" >> "$(dirname "$0")/team-calls"; echo
 case "$2" in
   snapshot) echo '{"snapshot": {}, "agents": {"sessions": []}}' ;;
   stats) echo '{"rows": [{"at": "2026-10-26T00:00:00Z", "src": "slack", "key": "agent-rt0001", "usd": 1}]}' ;;
-  teams) echo '{"teams": []}' ;;
+  teams) echo '{"teams": [{"profile": "fxa", "private": false}]}' ;;
   errors) echo '[{"sig": "s1", "message": "boom", "status": "open", "count": 2, "source": "bot", "kind": "x", "where": "w", "last": "2026-10-26T00:00:00Z", "keys": []}]' ;;
 esac
 SH

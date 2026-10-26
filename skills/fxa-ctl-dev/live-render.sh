@@ -29,7 +29,9 @@ from http.server import ThreadingHTTPServer
 t, admin, query = sys.argv[2], sys.argv[3] == "true", sys.argv[4]
 live = {a: json.load(open(f"{t}/{a}.json")) for a in ("snapshot", "stats", "teams")}
 now = time.time()
-for name, data in (("FULL", live["snapshot"].get("snapshot")), ("AGENTS", live["snapshot"].get("agents")), ("STATS", live["stats"])):
+# TEAMS too: without its rows, team_private asks the controller (and GitHub) and counts no answer as private.
+for name, data in (("FULL", live["snapshot"].get("snapshot")), ("AGENTS", live["snapshot"].get("agents")), ("STATS", live["stats"]),
+                   ("TEAMS", (live["teams"] or {}).get("teams"))):
     f = getattr(server, name, None) or server.Feed(name.lower(), [], 60, 30); setattr(server, name, f); f.data, f.fetched_at = data, now
 if admin:
     server.team_admins = lambda: {None}   # an unsigned local request reads as a team admin
