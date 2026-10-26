@@ -73,6 +73,13 @@ cmd_errors resolve "$sig" "fixed in abc" >/dev/null
 check "resolve hides it" "No open errors." "$(cmd_errors)"
 sleep 1; errors_record session pr_failed agent-cccc33 session-finish "no handoff" ""
 check "seen again, it reopens" "reopened" "$(cmd_errors --json | jq -r '.[0].status')"
+# A signature with no hit for 8 days is quiet: out of the open list, still in --all and the JSON.
+ERRORS_FILE="$tmp/e4.jsonl"; ERRORS_RESOLVED="$tmp/e4-resolved.json"
+errors_record bot channel "" "channel list" "fresh one" ""
+jq -nc --arg at "$(jq -nr 'now - 8 * 86400 | todate')" '{at: $at, source: "bot", kind: "channel", key: null, where: "channel list", message: "old one", log: null, sig: "0ldsig0000"}' >> "$ERRORS_FILE"
+check "an 8-day-old unresolved signature is quiet, a fresh one open; only the open one is listed, --all lists both" "open|quiet|1|0|1" \
+  "$(cmd_errors --json | jq -r '[.[] | .status] | join("|")')|$(cmd_errors | grep -c 'fresh one')|$(cmd_errors | grep -c 'old one')|$(cmd_errors --all | grep -c 'old one')"
+ERRORS_FILE="$tmp/e2.jsonl"; ERRORS_RESOLVED="$tmp/e2-resolved.json"
 
 # The store gives the same rows as the file: with the store, every write and resolve lands in both.
 if command -v sqlite3 >/dev/null; then

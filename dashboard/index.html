@@ -1642,20 +1642,22 @@ async function loadStats() {
 // Errors: every failure the host and the bot recorded, one row per signature.
 // ERRS_ERR: why the last read failed. ERRS keeps the last good list; a failed read is never "No open errors".
 let ERRS = null, ERRS_ALL = false, ERRS_ERR = "";
+// Open or reopened: a quiet signature (no hit for a week) counts as fixed in the counts and the default list.
+const errOpen = e => e.status === "open" || e.status === "reopened";
 // no-cache: the browser revalidates, and an unchanged list comes back as a 304 with no body.
 const feedRead = async (url) => { try { const r = await fetch(url, { cache:"no-cache" }), j = await r.json().catch(() => null);
   return r.ok && Array.isArray(j) ? { rows: j } : { err: j?.error || `HTTP ${r.status}` }; } catch (e) { return { err: e.message || "no answer" }; } };
 async function loadErrors() {
   const got = await feedRead("/api/errors"); ERRS_ERR = got.err ?? ""; if (got.rows) ERRS = got.rows;
-  const open = (ERRS || []).filter(e => e.status !== "resolved").length;
+  const open = (ERRS || []).filter(errOpen).length;
   const b = document.getElementById("n-errors"); b.textContent = ERRS_ERR ? "?" : open || ""; b.className = "n" + (ERRS_ERR ? " warn" : open ? " bad" : "");
   if (document.body.dataset.view === "errors") { renderErrors(); renderHeader(); if (document.activeElement?.id !== "q") renderSide(); renderRight(); }
 }
 function renderErrors() {
   const fail = ERRS_ERR ? html`<div class="emptybox unknown" role="alert">Could not read the errors: ${ERRS_ERR}. ${ERRS ? "This is the last list that loaded. " : ""}Retrying.</div>` : "";
   if (!ERRS || (fail && !ERRS.length)) { put("s-errors", head("errors") + (fail || emptybox("loading…"))); return; }
-  const rows = ERRS.filter(e => ERRS_ALL || e.status !== "resolved");
-  const chip = { open: "bad", reopened: "bad", resolved: "dim" };
+  const rows = ERRS.filter(e => ERRS_ALL || errOpen(e));
+  const chip = { open: "bad", reopened: "bad", resolved: "dim", quiet: "dim" };
   const key = (k) => html`<a class="mono" href="#sessions/stopped/${k}">${k}</a>`;
   put("s-errors", head(ERRS_ALL ? "all errors" : "open errors", rows.length) + html`${fail}${
     rows.length === 0 ? emptybox("No open errors.") : html`<div class="errs">${rows.map(e => html`<div class="err" id="err-${e.sig}">
@@ -1836,7 +1838,7 @@ function teamItem(t, use) {
 function teamErrs() {
   if (!ERRS) return null;
   const prof = new Map((AGENTS?.sessions ?? []).map(s => [s.key, s.profile || "fxa"])), out = {};
-  ERRS.filter(e => e.status !== "resolved").forEach(e => { const ps = new Set((e.keys ?? []).map(k => prof.get(k)).filter(Boolean)); ps.forEach(p => { out[p] = (out[p] ?? 0) + 1; }); });
+  ERRS.filter(errOpen).forEach(e => { const ps = new Set((e.keys ?? []).map(k => prof.get(k)).filter(Boolean)); ps.forEach(p => { out[p] = (out[p] ?? 0) + 1; }); });
   return out;
 }
 function teamWeek() {
@@ -4069,7 +4071,7 @@ function panelState() {
 function tabCount(t) {
   const ss = AGENTS?.sessions ?? [];
   if (VIEW === "sessions") return t === "answers" ? (STATS ? answerRows().length : "") : AGENTS ? sessHeads(ss).filter(s => SESS_STATES[t].includes(s.state)).length : "";
-  if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || e.status !== "resolved").length : "";
+  if (VIEW === "errors") return ERRS ? ERRS.filter(e => t === "all" || errOpen(e)).length : "";
   // A feed that failed is unknown ('?'), never a count that looks confident.
   if (VIEW === "pipeline") return SNAP ? (t === "belts" ? beltCount(beltGroups()) ?? "?" : t === "done" ? doneRows().length : SNAP.queue?.fetch_failed ? "?" : (SNAP.queue?.ready ?? []).length + queueWaits().length) : "";
   return "";
@@ -4100,9 +4102,9 @@ function sideGroups() {
         tip: stamp(s.created), m: [c && !gate ? usd(c) : "", isFix(s) ? "" : sessRoutine(s) || (SOWNER ? "" : ownerName(s)), ageOf(s.created), SESS_TAB === "live" ? st : bootFailed(s) ? "boot failed" : "", pr && !gate ? `PR ${pr.state ? pr.state.toLowerCase() : "#" + pr.n}` : ""] }; });
     return ["Today", "Yesterday", "This week", "Older"].map(g => ({ group: g, items: items.filter(i => i.day === g) })).filter(g => g.items.length);
   }
-  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || e.status !== "resolved").filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: e.status === "resolved" ? "ok" : "bad", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
+  if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || errOpen(e)).filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: errOpen(e) ? "bad" : "ok", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
   if (VIEW === "teams") {
-    const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(e => e.status !== "resolved").length : null;
+    const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(errOpen).length : null;
     const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
     return [{ group: "", items: Q ? [] : [all] }, { group: "Needs attention", items: rows.filter(t => t.load_error || teamNeeds(t)).map(t => teamItem(t, use)) },
       { group: "Teams", items: rows.filter(t => !t.load_error && !teamNeeds(t)).map(t => teamItem(t, use)) }].filter(g => g.items.length);

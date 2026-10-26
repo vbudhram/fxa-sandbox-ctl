@@ -90,7 +90,10 @@ errors_err_trap() {
 #   errors resolve SIG [note]   mark it fixed; it reopens if it happens again
 #   errors push       copy this host's log to GCS now (the bot uses this)
 # _errors_rows   One row per signature, newest first: from the store when it is up, else the file.
+# An unresolved signature with no hit for FXA_ERRORS_QUIET_DAYS (7) is quiet: a replaced message or a fixed
+# cause never resolves itself. A new hit makes it open again.
 _errors_rows() {
+  local qd="${FXA_ERRORS_QUIET_DAYS:-7}"; [[ "$qd" =~ ^[0-9]+$ ]] || qd=7
   if declare -F db_on >/dev/null && db_on; then
     # The first occurrence names the source and kind; the last gives where, message and log.
     db_json 'WITH g AS (SELECT sig, count(*) AS count, min(at) AS first, max(at) AS last, min(id) AS fid, max(id) AS lid FROM errors GROUP BY sig)
@@ -98,20 +101,20 @@ _errors_rows() {
         (SELECT json_group_array(key) FROM (SELECT DISTINCT key FROM errors WHERE sig = g.sig AND key IS NOT NULL ORDER BY key DESC LIMIT 5)) AS keys,
         r.at AS rat, r.note AS rnote
       FROM g JOIN errors f ON f.id = g.fid JOIN errors l ON l.id = g.lid LEFT JOIN error_resolutions r ON r.sig = g.sig' \
-    | jq -c 'map({sig, source, kind, where, message, count, first, last, keys: (.keys | fromjson | sort), log,
+    | jq -c --argjson qd "$qd" '(now - $qd * 86400 | todate) as $q | map({sig, source, kind, where, message, count, first, last, keys: (.keys | fromjson | sort), log,
         resolved: (if .rat then {at: .rat, note: .rnote} else null end)}
-      | .status = (if .resolved == null then "open" elif .last > .resolved.at then "reopened" else "resolved" end))
+      | .status = (if .resolved == null then (if .last < $q then "quiet" else "open" end) elif .last > .resolved.at then "reopened" else "resolved" end))
       | sort_by(.last) | reverse'
     return
   fi
   [ -s "$ERRORS_FILE" ] || { echo '[]'; return 0; }
   local resolved='{}'; [ -s "$ERRORS_RESOLVED" ] && resolved="$(cat "$ERRORS_RESOLVED")"
-  jq -s -c --argjson r "$resolved" '
+  jq -s -c --argjson r "$resolved" --argjson qd "$qd" '(now - $qd * 86400 | todate) as $q |
     group_by(.sig) | map({sig: .[0].sig, source: .[0].source, kind: .[0].kind, where: (last | .where),
       message: (last | .message), count: length, first: (map(.at) | min), last: (map(.at) | max),
       keys: ([.[].key | select(. != null)] | unique | .[-5:]), log: (last | .log),
       resolved: $r[.[0].sig]}
-    | .status = (if .resolved == null then "open" elif .last > .resolved.at then "reopened" else "resolved" end))
+    | .status = (if .resolved == null then (if .last < $q then "quiet" else "open" end) elif .last > .resolved.at then "reopened" else "resolved" end))
     | sort_by(.last) | reverse' "$ERRORS_FILE"
 }
 
@@ -136,9 +139,9 @@ cmd_errors() {
       local rows; rows="$(_errors_rows)"
       if [ "${1:-}" = --json ]; then printf '%s\n' "$rows"; return 0; fi
       [ "$rows" != "[]" ] || { echo "No errors recorded."; return 0; }
-      [ "${1:-}" = --all ] || rows="$(jq -c 'map(select(.status != "resolved"))' <<< "$rows")"
+      [ "${1:-}" = --all ] || rows="$(jq -c 'map(select(.status == "open" or .status == "reopened"))' <<< "$rows")"
       [ "$(jq length <<< "$rows")" -gt 0 ] || { echo "No open errors."; return 0; }
       jq -r '.[] | "\(.sig)  \(.status | ascii_upcase)  x\(.count)  last \(.last)  \(.source)/\(.kind)  \(.where)\n    \(.message | .[0:160])\(if (.keys | length) > 0 then "\n    sessions: " + (.keys | join(", ")) else "" end)"' <<< "$rows" ;;
-    *) echo "Usage: fxa-sandbox-ctl errors [--all|--json] | show <sig> | resolve <sig> [note]" >&2; return 1 ;;
+    *) echo "Usage: fxa-sandbox-ctl errors [--all|--json] | show <sig> | resolve <sig> [note]  (--all adds resolved and quiet ones)" >&2; return 1 ;;
   esac
 }
