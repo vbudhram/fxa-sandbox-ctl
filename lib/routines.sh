@@ -459,14 +459,16 @@ _prfix_live_session() {
 # with exactly the blender_login that holds the blender_mention, newer than both, and never on an App head (the App's fix
 # commit), where only a person's label counts. A read that fails, times out or is not JSON: no signal.
 _prfix_consider() {
-  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head red label hat lend since ev login at perm pw trigger actor blogin mention c cid="" why
-  repo="$(jq -r .pr.repo <<< "$cfg")"; label="$(jq -r '.pr.label // "agent-help"' <<< "$cfg")"
-  num="$(jq -r '.number' <<< "$pr")"; head="$(jq -r '.headRefOid // ""' <<< "$pr")"
-  [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
+  local rid="$1" cfg="$2" pr="$3" now="$4" repo num head url lab red label hat lend since ev login at perm pw trigger actor blogin mention c cid="" why
+  # The fields in one jq, on stdin (a PR with its checks can pass Linux's 128 KiB argument limit); \x1f keeps an empty field.
+  IFS=$'\x1f' read -r repo label num head url lab blogin mention <<< "$(printf '%s\n%s\n' "$cfg" "$pr" | jq -rs '.[0] as $c | .[1] as $p
+    | ($c.pr.label // "agent-help") as $l | [$c.pr.repo, $l, $p.number, ($p.headRefOid // ""), ($p.url // ""), any($p.labels[]?; .name == $l),
+      ($c.pr.blender_login // "mozilla-blender[bot]"), ($c.pr.blender_mention // "")] | map(tostring) | join("\u001f")')" || return 0
+  [[ "$head" =~ ^[0-9a-f]{40}$ ]] && [[ "$num" =~ ^[0-9]+$ ]] || return 0
   [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.fix.pr') = ${num};")" = 0 ] || return 0
-  ! _prfix_live_session "$(jq -r .url <<< "$pr")" || return 0
+  ! _prfix_live_session "$url" || return 0
   red="$(_prfix_red "$pr")"
-  if jq -e --arg l "$label" 'any(.labels[]?; .name == $l)' <<< "$pr" >/dev/null 2>&1; then [ "$red" != pending ] || return 0
+  if [ "$lab" = true ]; then [ "$red" != pending ] || return 0
   else [ "$red" = red ] || return 0; fi
   # A request must be newer than the head commit.
   _prfix_left || return 3
@@ -474,7 +476,7 @@ _prfix_consider() {
   lend="$(db_value "SELECT coalesce(max(ended_at), 0) FROM routine_runs WHERE routine_id = ${rid} AND json_extract(heads, '$.fix.pr') = ${num}
     AND state NOT IN (${_ROUTINE_LIVE_STATES});")" && [[ "$lend" =~ ^[0-9]+$ ]] || return 0
   since="$hat"; [ "$lend" -le "$since" ] || since="$lend"
-  if jq -e --arg l "$label" 'any(.labels[]?; .name == $l)' <<< "$pr" >/dev/null 2>&1; then
+  if [ "$lab" = true ]; then
     _prfix_left || return 3
     ev="$(_prfix_gh api --paginate "repos/${repo}/issues/${num}/timeline?per_page=100")" || return 0
     ev="$(jq -rs --arg l "$label" '[add // [] | .[] | select(.event == "labeled" and .label.name == $l)] | sort_by(.created_at) | last
@@ -488,7 +490,6 @@ _prfix_consider() {
     case "$pw" in yes) ;; no) _prfix_reject "$cfg" "$num" "$head" no-write; return 0 ;; *) return 0 ;; esac
     trigger=label actor="$login"
   else
-    blogin="$(jq -r '.pr.blender_login // "mozilla-blender[bot]"' <<< "$cfg")"; mention="$(jq -r '.pr.blender_mention // ""' <<< "$cfg")"
     [ -n "$mention" ] || return 0
     [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND json_extract(heads, '$.fix.new_sha') = '${head}';")" = 0 ] || return 0
     _prfix_left || return 3
@@ -500,7 +501,7 @@ _prfix_consider() {
     [[ "$cid" =~ ^[1-9][0-9]{0,15}$ ]] && [[ "$at" =~ ^[0-9]{9,11}$ ]] || return 0
     trigger=blender actor="$blogin"
   fi
-  why="$(_prfix_pr_why "$cfg" "$pr" "$(jq -r .url <<< "$pr")")"
+  why="$(_prfix_pr_why "$cfg" "$pr" "$url")"
   [ -n "$why" ] || [ "$red" = red ] || why=not-red
   # A head whose run ended with a result: only a new commit allows a new run (a run with no result freed its period).
   [ -n "$why" ] || [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND period = 'pr-${num}-${head}';")" = 0 ] || why=used
