@@ -142,7 +142,7 @@ check "the cached credential is private and outside the mirrored state dir" "600
 printf 'not-a-credential' > "$tmp/secret"; rm -f "$tmp/tsec/jt/jira.basic"
 check "a secret that is not email:token stops the load" "1" "$(PATH="$tmp/fake:$PATH" FXA_TEAMS_SECRET_DIR="$tmp/tsec" loaded jt >/dev/null; echo $?)"
 check "acli runs in the team's home when one is set, else in the real one" "HOME=/x/home a b|HOME=$HOME c" \
-  "$( : > "$tmp/acli.calls"; ( eval "$(sed -n '/^acli() {/,/}$/p' "$root/lib/jira.sh")"; PATH="$tmp/fake:$PATH"; FXA_ACLI_HOME=/x/home acli a b < /dev/null; unset FXA_ACLI_HOME; acli c < /dev/null ); sed 's/ token=$//' "$tmp/acli.calls" | paste -sd'|' -)"
+  "$( : > "$tmp/acli.calls"; ( eval "$(sed -n '/^_acli_once() {/,/^}/p' "$root/lib/jira.sh")"; PATH="$tmp/fake:$PATH"; FXA_ACLI_HOME=/x/home _acli_once a b < /dev/null; unset FXA_ACLI_HOME; _acli_once c < /dev/null ); sed 's/ token=$//' "$tmp/acli.calls" | paste -sd'|' -)"
 rm -f "$T/jt.json"
 
 # Spend caps for each team: the record's caps, inside the operator ceilings, reach the proxy's team file.

@@ -38,6 +38,7 @@ curl() {
   esac
 }
 command() { [ "$1" = acli ] && { echo "real acli ran" >> "$tmp/log"; return 1; }; builtin command "$@"; }
+sleep() { :; }  # acli's _retry backoff, for the calls that fail on purpose
 export PIPE_JIRA_BASIC="svc-x@serviceaccount.atlassian.com:tok-secret"
 
 check "auth status says Authenticated" "1" "$(jira_login_ok && echo 1)"
@@ -80,6 +81,6 @@ check "the cloud ID is read once" "1" "$(grep -c . "$tmp/tenant")"
 # A normal account keeps acli and the site.
 export PIPE_JIRA_BASIC="dev@example.com:tok"
 check "a user login keeps the site" "https://mozilla-hub.atlassian.net" "$(_jira_api)"
-: > "$tmp/log"; acli jira workitem view FXA-1 >/dev/null
+: > "$tmp/log"; _acli_once jira workitem view FXA-1 >/dev/null
 check "a user login runs real acli" "1" "$(grep -c 'real acli' "$tmp/log")"
 exit "$fail"

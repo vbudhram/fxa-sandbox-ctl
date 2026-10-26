@@ -82,10 +82,13 @@ JQ
 # acli as the loaded team: a team with its own Jira credential has its own acli login, in its home.
 # An Atlassian service account's token works only through the API gateway, and acli logs in only on
 # the site, so for one the same calls go to REST and print what acli prints.
-acli() {
+# acli keeps config.sh's _retry: one failed call made precheck report a refused login.
+# A write that must not repeat (a create) calls _acli_once.
+_acli_once() {
   if _jira_sa; then _acli_rest "$@"
   elif [ -n "${FXA_ACLI_HOME:-}" ]; then HOME="$FXA_ACLI_HOME" command acli "$@"; else command acli "$@"; fi
 }
+acli() { _retry _acli_once "$@"; }
 
 
 # _jira_rest <method> <path> [curl args]   The body on stdout; an HTTP error returns nonzero.

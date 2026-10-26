@@ -21,7 +21,7 @@ gh() {
     *"-X PATCH"*) cat > "$tmp/patched" ;;
   esac
 }
-acli() { cat "$(sed -n 's/.*--description-file \([^ ]*\).*/\1/p' <<< "$*")" > "$tmp/desc"; echo "$*" > "$tmp/acli"; echo '{"key":"FXA-777"}'; }
+_acli_once() { cat "$(sed -n 's/.*--description-file \([^ ]*\).*/\1/p' <<< "$*")" > "$tmp/desc"; echo "$*" > "$tmp/acli"; echo '{"key":"FXA-777"}'; }
 check "it prints the new key and records it" "FXA-777|agent-x1 jira FXA-777" "$(session_create_jira agent-x1)|$(cat "$tmp/set")"
 check "the task: FXA, Task, label, title without the type prefix" "yes" \
   "$(grep -q -- '--project FXA --type Task --summary keep the email' "$tmp/acli" && grep -q -- '--label agent-session' "$tmp/acli" && echo yes)"

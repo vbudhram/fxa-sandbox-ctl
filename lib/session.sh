@@ -1250,7 +1250,7 @@ session_create_jira() {
       printf '\nPull request: %s\n' "$url"
       [ -n "$(session_get "$1" slack_url)" ] && printf 'Slack thread: %s\n' "$(session_get "$1" slack_url)"
       printf '\nCreated by fxa-agent from an agent session.\n'; } > "$desc"
-    key="$(acli jira workitem create --project "$project" --type Task --summary "$title" \
+    key="$(_acli_once jira workitem create --project "$project" --type Task --summary "$title" \
              --description-file "$desc" --label agent-session --json 2>/dev/null | jq -r '.key // empty' 2>/dev/null)" || key=""
     rm -f "$desc"
     [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "could not create a Jira ticket for $url" >&2; return 1; }
