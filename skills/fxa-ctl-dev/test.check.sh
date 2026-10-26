@@ -36,12 +36,15 @@ check "with a timeout, a pass passes and an exit code is reported" "0|1|yes" \
 r="$tmp/r"; mkdir -p "$r/skills/fxa-ctl-dev" "$r/lib" "$r/infra/llm-proxy" "$tmp/bot"
 cp "$here/test.sh" "$r/skills/fxa-ctl-dev/test.sh"
 echo 'X = 1' > "$r/lib/srv.py"; printf 'python3 -c "import os, srv" 2>/dev/null; echo "FAIL planted"\n' > "$r/lib/srv-api.check.sh"
+printf '[ -z "${ANTHROPIC_BASE_URL:-}${ANTHROPIC_API_KEY:-}" ] || echo "FAIL the caller model setup leaked"\n' > "$r/lib/env.check.sh"
 echo 'X = 1' > "$r/infra/llm-proxy/proxy.py"; printf 'print("FAIL: planted")\nraise SystemExit(1)\n' > "$r/infra/llm-proxy/proxy_test.py"
 echo 'true' > "$r/skills/fxa-ctl-dev/fake-ctl.sh"
 printf '{"scripts":{"e2e":"touch marker && exit 1"}}\n' > "$tmp/bot/package.json"
 ( cd "$r" && git init -q && git add -A && git -c user.email=t@example.com -c user.name=t commit -qm base )
 changed() { ( cd "$r" && git checkout -q -- . && for f in "$@"; do echo '# edit' >> "$f"; done
   FXA_BOT_REPO="$tmp/bot" bash skills/fxa-ctl-dev/test.sh changed HEAD > "$tmp/out" 2>&1; echo $? ); }
+check "a check never sees the caller's ANTHROPIC_BASE_URL or ANTHROPIC_API_KEY (a Claude Code session sets them)" "0" \
+  "$(ANTHROPIC_BASE_URL=http://example.invalid ANTHROPIC_API_KEY=sk-test changed lib/env.check.sh)"
 check "a changed module selects the check that imports it" "1|yes" "$(changed lib/srv.py)|$(grep -q 'FAIL [a-z]*: lib/srv-api.check.sh' "$tmp/out" && echo yes)"
 check "a changed proxy runs proxy_test.py" "1|yes" "$(changed infra/llm-proxy/proxy.py)|$(grep -q 'FAIL [a-z]*: infra/llm-proxy/proxy_test.py' "$tmp/out" && echo yes)"
 rm -f "$tmp/bot/marker"
