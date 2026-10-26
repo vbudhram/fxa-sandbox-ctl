@@ -80,6 +80,16 @@ if [ -s "$done_file" ]; then
     while IFS= read -r m; do
       [ -n "$m" ] && [ ! -f "${m#/workspace/}" ] && [ ! -f "/workspace/${m#/workspace/}" ] && problems+=("media_paths names $m, which does not exist")
     done < <(jq -r '.media_paths[]' "$done_file")
+    # In the FxA repo, a change a person sees (a page, a style, a string, an email template) ships with a
+    # screenshot or a video, or with the reason it has none: reviewers ask for one, and 21 of 40 UI PRs had none.
+    if [ -d packages/fxa-settings ]; then
+      vis="$(printf '%s\n' ${kept[@]+"${kept[@]}"} | grep -E '^(packages|apps|libs)/.*\.(tsx|jsx|css|scss|html|mustache|hbs|ftl|svg)$' \
+        | grep -vE '(\.test\.|\.spec\.|\.stories\.|__tests__/|/tests?/|functional-tests/)' | head -1 || true)"
+      if [ -n "$vis" ] && [ ! -s .fxa-auto-media-skipped.txt ] \
+          && ! find .fxa-auto-media -maxdepth 1 -type f 2>/dev/null | grep -qiE '\.(png|jpe?g|webp|gif|webm|mp4|mov)$'; then
+        problems+=("$vis changes what a person sees, and .fxa-auto-media/ has no screenshot or video. Capture the change with /fxa-page-shot, /fxa-storybook-capture or /fxa-functional-local, or write why you cannot to .fxa-auto-media-skipped.txt")
+      fi
+    fi
     # STE in the PR text. A script can be wrong about style, so these never stop a ship (exit 3).
     while IFS= read -r m; do style+=("$m"); done < <(jq -r '.pr_title, "", .pr_body' "$done_file" \
       | bash "$(dirname "$0")/ste.sh" --skip-lines-of .github/PULL_REQUEST_TEMPLATE.md | sed 's/^ste: /PR text, STE: /')

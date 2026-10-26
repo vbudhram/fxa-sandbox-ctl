@@ -135,6 +135,9 @@ bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix
 It formats the changed files with Prettier, deletes untracked scratch files
 (`zz*.spec.ts`, `*.tmp.mjs`), and checks the handoff file: the keys, a scoped
 conventional `pr_title`, the branch, and that each `media_paths` file exists.
+In the FxA repo, a change to a file a person sees (a non-test `.tsx`, `.css`,
+`.ftl`, `.html` or template under `packages/`, `apps/` or `libs/`) needs an image
+or a video in `.fxa-auto-media/`, or the reason in `.fxa-auto-media-skipped.txt`.
 It also checks the PR title and body against the STE rules a script can check:
 unapproved words, em dashes, sentences over 25 words and paragraphs over 6
 sentences (`ste.sh`, beside it). Rewrite what it names; a style line alone

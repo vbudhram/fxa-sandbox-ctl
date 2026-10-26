@@ -93,4 +93,18 @@ printf "it('x', () => geo('203.0.113.0'));\n" > new.spec.ts
 check "a documentation IP passes" "handoff check: ok" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C")"
 jq '.pr_body = "Reported by zq7x9k.notreal@gmail.com"' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
 check "a real email in the PR body is named" "1" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" | grep -c 'personal or internal data')"
+# A visible change in the FxA repo (a page, a style, a string, an email template) needs a screenshot or a video,
+# or the reason it has none. A test, a story, or a repo that is not FxA needs neither.
+mkdir -p "$tmp/fxa/packages/fxa-settings/src" && cd "$tmp/fxa" && g init -q && echo a > packages/fxa-settings/src/Page.tsx && echo a > packages/fxa-settings/src/Page.test.tsx \
+  && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD && g checkout -qb agent-x
+export FXA_WORKSPACE="$tmp/fxa"
+echo b > packages/fxa-settings/src/Page.test.tsx; handoff 'test(settings): x'
+check "a test-only change needs no media" "handoff check: ok" "$(bash "$C")"
+echo b > packages/fxa-settings/src/Page.tsx; handoff 'fix(settings): x'
+check "a visible change with no media is named, with the skills and the way out" 1 \
+  "$(bash "$C" | grep -c "packages/fxa-settings/src/Page.tsx changes what a person sees, and .fxa-auto-media/ has no screenshot or video.*fxa-page-shot.*fxa-auto-media-skipped.txt")"
+bash "$C" >/dev/null; check "a visible change with no media fails the handoff" 1 $?
+printf 'the change is behind a WebAuthn prompt\n' > .fxa-auto-media-skipped.txt; check "a reason in .fxa-auto-media-skipped.txt passes" "handoff check: ok" "$(bash "$C")"
+rm .fxa-auto-media-skipped.txt; mkdir -p .fxa-auto-media && touch .fxa-auto-media/page.webm; check "a video passes" "handoff check: ok" "$(bash "$C")"
+rm -rf .fxa-auto-media; rm .fxa-auto-done.json; check "no handoff yet: no media problem" "handoff check: ok" "$(bash "$C")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
