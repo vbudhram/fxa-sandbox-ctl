@@ -3033,7 +3033,9 @@ document.addEventListener("click", e => {
   rtDo(act, b.dataset.rtId, b.dataset.rtThen, b.dataset.rtRun);
 });
 
-const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", "not recorded":"Not recorded" };
+const KIND = { fix:"Fix", feedback:"Review feedback", rebase:"Rebase", pass:"Pass", triage:"Triage", session:"Session", answered:"Answered", upgraded:"Upgraded", "not recorded":"Not recorded" };
+// A session's stop_reason (lib/session.sh), as a person reads it.
+const STOP_WHY = { inactive: "Paused a day, then closed", idle: "Idle: runner stopped, session paused", stopped: "Stopped", "runner gone": "Runner gone" };
 function renderStats() {
   const st = STATS;
   if (!st || st.error) { put("s-stats", head("stats") + emptybox(st?.error || (STATS_ERR ? `${sentence(STATS_ERR)}. The next poll tries again.` : "loading the run log…"))); return; }
@@ -3073,7 +3075,9 @@ function renderStats() {
     return [...rows.reduce((m, r) => { const k = v(r); (m.get(k) ?? m.set(k, []).get(k)).push(r); return m; }, new Map())].map(([name, rs]) => ({ name, rs, usd: sum(rs) })); };
   const conv = r => r.conv ?? r.key, share = v => Math.round(v / Math.max(spend, 0.01) * 100);
   const SRC = SF_SRC;
-  const keyCell = r => /^[A-Z][A-Z0-9]+-\d+$/.test(r.name) ? raw(jira(r.name)) : html`<span class="mono">${r.name}</span>`;
+  // A session is named by its title for an admin (the title can hold a private team's request), else by its key.
+  const keyCell = r => { if (/^[A-Z][A-Z0-9]+-\d+$/.test(r.name)) return raw(jira(r.name)); const s = TEAM_ADMIN?.admin && (AGENTS?.sessions ?? []).find(x => x.key === r.name);
+    return s ? html`<a href="${sessHref(r.name)}" title="${r.name}">${convTitle(s)}</a>` : html`<span class="mono">${r.name}</span>`; };
   const range = lo ? `${lbl(lo)} to ${lbl(Math.min(hi, Date.now()) - 1)}` : "all time";
   const spendTab = STATS_TAB === "spend";
   const chips = STATS_USES[STATS_TAB].filter(f => SF[f] !== SF_DEFAULT[f]).map(f => html`<button type="button" class="tgl sm" data-sfclear="${f}" title="Remove this filter">${sfLabel(f)} ×</button>`);
@@ -3092,7 +3096,7 @@ function renderStats() {
         ${new Set(rows.filter(r => r.profile).map(r => r.profile)).size > 1 ? html`<h2>By team<span class="note">every source</span></h2>${group("profile").filter(g => g.name).sort((a, b) => b.usd - a.usd).map(g => { const w = g.rs.filter(r => r.src !== "pass").length, ps = g.rs.length - w;
           return html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${teamLabel(g.name)}</b><span>${w} run${w === 1 ? "" : "s"}${ps ? ` · ${ps} passes` : ""} · <b>${usd(g.usd)}</b></span></div>`; })}` : ""}`)}
       ${chart(html`<h2>Most expensive<span class="note">in this view</span></h2>${over.length ? html`<div class="kv share" style="--p:${share(sum(over))}%"><b>Pipeline overhead</b><span>${over.length} passes and triage · <b>${usd(sum(over))}</b></span></div>` : ""}${group(conv).filter(g => g.rs[0].src !== "pass").sort((a, b) => b.usd - a.usd).slice(0, 8).map(g => html`<div class="kv share" style="--p:${share(g.usd)}%">${keyCell(g)}<span>${g.rs.length} ${g.rs[0].src === "slack" ? `session${g.rs.length > 1 ? "s" : ""}` : `run${g.rs.length > 1 ? "s" : ""}`} · <b>${usd(g.usd)}</b></span></div>`)}
-        ${(() => { const ps = group(r => r.src === "slack" ? (r.who || "name not recorded") : null).filter(g => g.name);
+        ${(() => { const ps = group(r => r.src === "slack" ? statPerson(r) : null).filter(g => g.name);
           return ps.length ? html`<h2>By person<span class="note">Slack sessions</span></h2>${ps.sort((a, b) => b.usd - a.usd).map(g => { const n = new Set(g.rs.map(conv)).size;
             return html`<div class="kv share" style="--p:${share(g.usd)}%"><b>${g.name}</b><span>${n} conversation${n === 1 ? "" : "s"} · <b>${usd(g.usd)}</b></span></div>`; })}` : ""; })()}`)}
       ${chart(html`<h2>Spend by model<span class="note">in this view</span></h2>${(() => {
@@ -3105,7 +3109,7 @@ function renderStats() {
         if (none) out.push(html`<div class="kv"><span class="note">${none} run${none === 1 ? "" : "s"} have no model recorded</span><span></span></div>`);
         return out.length ? out : null;
       })() || html`<div class="empty">No model recorded for these rows.</div>`}
-        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => kvRow(g.name ? KIND[g.name] ?? g.name : "not recorded", `${g.rs.length} · avg ${usd(g.usd / g.rs.length)}`, !g.name))}`)}
+        <h2>By kind</h2>${group("kind").sort((a, b) => b.rs.length - a.rs.length).map(g => kvRow(g.name ? KIND[g.name] ?? g.name : "Not recorded", `${g.rs.length} · avg ${usd(g.usd / g.rs.length)}`, !g.name))}`)}
     </div>`}`));
 }
 // PRs tab: PRs opened in the range (Opened, Still open, By source), and PRs merged or closed in the range,
@@ -3196,7 +3200,7 @@ function runnerCard(rows) {
     ${(() => { const s = rows.filter(r => r.stack_starts); if (!s.length) return "";
       const n = s.reduce((x, r) => x + r.stack_starts, 0);
       return html`<div class="kv"><b>Stack starts</b><span>${n} · avg ${Math.round(s.reduce((x, r) => x + (r.stack_s || 0), 0) / n)} s · ${s.reduce((x, r) => x + (r.stack_fails || 0), 0)} failed</span></div>`; })()}
-    <h2>Why they stopped</h2>${stops.map(([k, n]) => html`<div class="kv"><b>${k}</b><span>${n}</span></div>`)}`, { flat: true, cls: "chart" });
+    <h2>Why they stopped</h2>${stops.map(([k, n]) => html`<div class="kv"><b>${STOP_WHY[k] ?? k}</b><span>${n}</span></div>`)}`, { flat: true, cls: "chart" });
 }
 // LLM spend from the proxy's per-call log, all runs: the last 14 days and the cost of an expired prompt cache.
 // One row a day: the first cell is the YYYY-MM-DD day, the rest are figures.
@@ -3315,6 +3319,9 @@ const statsFiltered = () => Object.keys(SF_DEFAULT).some(k => SF[k] !== SF_DEFAU
 // The filters each Stats tab reads; the range applies to every tab.
 const STATS_USES = { spend: ["src", "kind", "team", "model", "q"], prs: ["src", "q"], runners: ["team"], pipeline: [] };
 const SF_SRC = { pipeline: "Pipeline runs", slack: "Slack sessions", answer: "Quick answers", pass: "Passes and triage", depfix: "Dependency fixes" };
+// Who a Slack stats row is for: its session's owner, as the session list names it (a row's own 'who' is missing on
+// older rows). A routine run is nobody's, so it is not a person: null leaves it out of By person.
+const statPerson = r => { const s = (AGENTS?.sessions ?? []).find(x => x.key === r.key); return s?.routine_run ? null : s ? ownerName(s) : r.who || "name not recorded"; };
 const sfLabel = f => f === "src" ? SF_SRC[SF.src] ?? SF.src : f === "kind" ? KIND[SF.kind] ?? SF.kind : f === "team" ? teamLabel(SF.team) : f === "model" ? modelName(SF.model) : `"${SF.q}"`;
 // Day rows ({day: "YYYY-MM-DD"}) inside the Stats range.
 const inRange = (days, lo, hi) => (days ?? []).filter(d => { const t = Date.parse(d.day + "T00:00"); return t >= lo && t < hi; });
