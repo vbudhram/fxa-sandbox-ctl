@@ -262,6 +262,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sys.stderr.write("%s %s\n" % (self.command, fmt % args))
 
     def refuse(self, code, kind, msg):
+        # Read the request body first: a close with unread data makes the OS reset the connection, and the client
+        # gets "connection reset" in place of this answer. 64 MB at most (the API takes 32 MB); a larger one is not read.
+        try:
+            left = int(self.headers.get("content-length", 0) or 0)
+        except ValueError:
+            left = 0
+        while 0 < left <= 64 << 20:
+            chunk = self.rfile.read(min(left, 1 << 16))
+            if not chunk:
+                break
+            left -= len(chunk)
         body = json.dumps({"type": "error", "error": {"type": kind, "message": msg}}).encode()
         self.send_response(code)
         self.send_header("content-type", "application/json")

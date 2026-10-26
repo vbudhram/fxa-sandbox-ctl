@@ -147,6 +147,12 @@ class ProxyTest(unittest.TestCase):
     def test_other_paths_are_refused(self):
         self.assertEqual(self.call(self.token("c"), path="/v1/files")[0], 403)
 
+    def test_a_refusal_with_a_large_body_reaches_the_client(self):
+        # The proxy refuses before it reads the body: unread data at close makes the OS reset the connection,
+        # and the client got "connection reset" in place of the 403 (flaky on the macOS CI runner).
+        status, body = self.call(self.token("c"), path="/v1/files", body={"stream": False, "pad": "x" * 4_000_000})
+        self.assertEqual((status, json.loads(body)["error"]["type"]), (403, "permission_error"))
+
     def test_a_run_past_its_cap_is_refused(self):
         tok = self.token("d", cap=1)
         self.assertEqual(self.call(tok)[0], 200)  # this call takes it to $2
