@@ -664,7 +664,7 @@ _finish_push_and_pr() {
   # A checked-out PR is the session's own (FXA_FINISH_PR): a search by branch can find a fork's PR of that name.
   local pr_url existing="${FXA_FINISH_PR:-}"
   [ -n "$existing" ] || existing="$(cd "$worktree" && gh pr list --head "$branch" --state open \
-                --json url -q '.[0].url' 2>/dev/null)" || existing=""
+                --json url,isCrossRepository -q 'map(select(.isCrossRepository | not))[0].url // empty' 2>/dev/null)" || existing=""
   if [ -n "$existing" ]; then
     echo "PR already open for ${branch}; updating it instead of creating..." >&2
     pr_url="$existing"
@@ -717,7 +717,7 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
     echo "$pr_url" >&2
     # gh creates the PR and still exits non-zero when an attachment fails (an App
     # token cannot upload user assets), so a PR may already exist.
-    pr_url="$(cd "$worktree" && gh pr list --head "$branch" --state open --json url -q '.[0].url' 2>/dev/null)"
+    pr_url="$(cd "$worktree" && gh pr list --head "$branch" --state open --json url,isCrossRepository -q 'map(select(.isCrossRepository | not))[0].url // empty' 2>/dev/null)"
     [ -n "$pr_url" ] && echo "NOTE: the PR was created; some media did not upload." >&2
     [ -n "$pr_url" ] || pr_url="$(cd "$worktree" && gh pr create ${FXA_PR_DRAFT:+--draft} \
       --base "${FXA_WORKTREE_BASE:-main}" \

@@ -57,8 +57,8 @@ gh_pr_approver() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: approver needs <KEY>" >&2; return 1; }
   local br; br="$(worktree_branch_for "$key")" || return 1
-  gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json reviews 2>/dev/null \
-    | jq -r '[ .[0].reviews[]?
+  gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json reviews,isCrossRepository 2>/dev/null \
+    | jq -r '[ (map(select(.isCrossRepository | not))[0].reviews // [])[]
                | select(.state == "APPROVED")
                | select(.author.login | test("\\[bot\\]$|copilot"; "i") | not)
                | .author.login ] | last // empty'
@@ -78,7 +78,8 @@ gh_red_infra() {
   [ -n "${PIPE_INFRA_CHECKS:-}" ] || return 1
   local br; br="$(worktree_branch_for "$key")" || return 1
   local json; json="$(gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
-    --json number,headRefOid,statusCheckRollup 2>/dev/null)" || return 1
+    --json number,headRefOid,statusCheckRollup,isCrossRepository 2>/dev/null)" || return 1
+  json="$(jq -c '[.[] | select(.isCrossRepository | not)]' <<< "$json" 2>/dev/null)" || return 1
   [ "$(printf '%s' "$json" | jq 'length')" -gt 0 ] || return 1
   local sha cache; sha="$(printf '%s' "$json" | jq -r '.[0].headRefOid')"
   cache="${PIPE_STATE_DIR}/${key}.redinfra"
@@ -127,9 +128,9 @@ gh_gate_stuck() {
   local key="${1:-}"; [ -n "$key" ] || return 1
   local br; br="$(worktree_branch_for "$key")" || return 1
   gh pr list --repo "$PIPE_REPO_SLUG" --state open --head "$br" \
-    --json url,statusCheckRollup,commits 2>/dev/null \
+    --json url,statusCheckRollup,commits,isCrossRepository 2>/dev/null \
   | jq -er --argjson now "$(date +%s)" --argjson age "${2:-600}" '
-      .[0] // empty
+      map(select(.isCrossRepository | not))[0] // empty
       | [ .statusCheckRollup[]
           | select(((.status // .state) | ascii_upcase) as $s | $s == "PENDING" or $s == "IN_PROGRESS" or $s == "QUEUED")
           | (.name // .context) ] as $pending
@@ -283,8 +284,8 @@ gh_feedback() {
     return 0
   fi
 
-  pr="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json number \
-          -q '.[0].number' 2>/dev/null)"
+  pr="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --json number,isCrossRepository \
+          -q 'map(select(.isCrossRepository | not))[0].number // empty' 2>/dev/null)"
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
   # A declined comment gets a one-line reply, so a reviewer sees why it is still open.
@@ -497,8 +498,9 @@ gh_pr_states_json() {
   # The newest PR of each branch, with every field below. A branch is the key in
   # lower case: a plain git name, so it is safe as an argument.
   printf '%s\n' "$keys" | tr '[:upper:]' '[:lower:]' | grep -E '^[a-z][a-z0-9]*-[0-9]+$' | xargs -P 8 -I{} sh -c '
-    gh pr list --repo "$1" --head "$2" --state all --limit 1 \
-      --json number,state,headRefName,statusCheckRollup,title,isDraft,reviewDecision,updatedAt,mergeable,createdAt,reviewRequests,latestReviews \
+    gh pr list --repo "$1" --head "$2" --state all --limit 5 \
+      --json number,state,headRefName,statusCheckRollup,title,isDraft,reviewDecision,updatedAt,mergeable,createdAt,reviewRequests,latestReviews,isCrossRepository \
+      -q "[map(select(.isCrossRepository | not))[0] // empty | del(.isCrossRepository)]" \
       > "$3/$2.json" 2>/dev/null || : > "$3/$2.fail"' _ "$PIPE_REPO_SLUG" {} "$dir"
   if ls "$dir"/*.fail >/dev/null 2>&1; then rm -rf "$dir"; echo 'null'; return 0; fi
   # Files, not --argjson: with latestReviews the payload can pass ARG_MAX.
