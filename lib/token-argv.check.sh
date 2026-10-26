@@ -8,6 +8,8 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 here="$(cd "$(dirname "$0")" && pwd)"
 source "$here/sentry.sh"
 eval "$(sed -n '/^jira_sprint_add() {/,/^}/p' "$here/jira.sh")"
+# Its URL comes from _jira_api: without it the call never reaches curl, and the checks below see no call.
+eval "$(sed -n '/^_jira_sa() {/p;/^_jira_api() {/,/^}/p' "$here/config.sh")"
 curl() { printf '%s\n' "$*" >> "$tmp/args"; case "$*" in *"-K -"*) cat >> "$tmp/stdin" ;; esac
   case "$*" in *shortids/*) echo '{"groupId":"42"}' ;; *issues/42/*) echo '{"id":"42","title":"t","count":"1","project":{"slug":"p"},"stats":{"24h":[]}}' ;; *sprint/*) printf 204 ;; esac; }
 echo 'SENTRY_ACCESS_TOKEN=tok-sen-9z' > "$tmp/env"; : > "$tmp/args"; : > "$tmp/stdin"
@@ -17,8 +19,8 @@ check "sentry_card: the token is on stdin as a header line, not on curl's comman
 : > "$tmp/args"; : > "$tmp/stdin"
 pipeline_require() { :; }
 PIPE_JIRA_BASIC='bot@example.com:jtok-9z' PIPE_JIRA_SITE=https://jira.example jira_sprint_add FXA-1 7 >/dev/null 2>&1
-check "jira_sprint_add: the login is on stdin as a user line, not on curl's command line" "0|1|1" \
-  "$(grep -c jtok-9z "$tmp/args")|$(grep -cx 'user = "bot@example.com:jtok-9z"' "$tmp/stdin")|$(grep -c -- '-K -' "$tmp/args")"
+check "jira_sprint_add: the login is on stdin as a user line, not on curl's command line, and the call went to the site" "0|1|1|1" \
+  "$(grep -c jtok-9z "$tmp/args")|$(grep -cx 'user = "bot@example.com:jtok-9z"' "$tmp/stdin")|$(grep -c -- '-K -' "$tmp/args")|$(grep -c 'https://jira.example/rest/agile/1.0/sprint/7/issue' "$tmp/args")"
 eval "$(sed -n '/^_circleci_get() {/p' "$here/circleci.sh")"
 : > "$tmp/args"; : > "$tmp/stdin"; _circleci_get cci-tok-9z https://circleci.example/x >/dev/null 2>&1
 check "_circleci_get: the CircleCI token is on stdin as a header line, not on curl's command line" "0|1|1" \
