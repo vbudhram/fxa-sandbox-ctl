@@ -26,6 +26,12 @@ check "FXA_CHECK_VERBOSE prints the failed check's own output under its FAIL lin
 echo 'kill -9 "$(ps -o ppid= -p "$PPID" | tr -d " ")"' > c/a.check.sh
 check "a killed check stops xargs: the pool fails and names what did not run" "1|yes" \
   "$(FXA_CHECK_JOBS=1 run_pool mac c/a.check.sh c/b.check.sh > out 2>&1; echo $?)|$(grep -q 'c/b.check.sh' out && echo yes)"
+# FXA_CHECK_TIMEOUT: a hung check fails with its name, with its whole process group gone; a pass and an exit code stay as they are.
+echo 'sleep 37.5 & wait' > c/h.check.sh; echo 'exit 3' > c/x.check.sh; s=$SECONDS
+check "a hung check that holds the pipe through a child fails at the timeout, named, with no child left" "1|yes|0" \
+  "$(FXA_CHECK_TIMEOUT=2 run_pool mac c/h.check.sh > out 2>&1; echo $?)|$(grep -q 'did not finish in 2s' out && [ $(( SECONDS - s )) -lt 6 ] && echo yes)|$(pgrep -fx 'sleep 37.5' | wc -l | tr -d ' ')"
+check "with a timeout, a pass passes and an exit code is reported" "0|1|yes" \
+  "$(FXA_CHECK_TIMEOUT=5 run_pool mac c/b.check.sh >/dev/null 2>&1; echo $?)|$(FXA_CHECK_TIMEOUT=5 run_pool mac c/x.check.sh > out 2>&1; echo $?)|$(grep -q 'exit 3' out && echo yes)"
 # run_changed in a scratch repo: a Python module a check imports, a Python service's own test, and fake-ctl.sh's bot e2e.
 r="$tmp/r"; mkdir -p "$r/skills/fxa-ctl-dev" "$r/lib" "$r/infra/llm-proxy" "$tmp/bot"
 cp "$here/test.sh" "$r/skills/fxa-ctl-dev/test.sh"
