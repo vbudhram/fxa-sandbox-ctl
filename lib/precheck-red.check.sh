@@ -36,6 +36,12 @@ check "a failed drain keeps the notes: the same red after it stays quiet" "quiet
 cmd_drain() { :; }; q >/dev/null
 cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=0 head=$(cat "$tmp/sha")"; }
 check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
+# A conflict GitHub has not computed again after main moved reads 'CONFLICT?': the same conflict, no new wake.
+( gh_conflicts() { echo "source a.ts"; }; rm -f "$tmp"/FXA-8.drain-noted
+  cmd_drain() { echo "FXA-8 80 CONFLICT"; }; a="$(q)"
+  cmd_drain() { echo "FXA-8 80 CONFLICT? mergeability-uncomputed"; }; b="$(q)"
+  cmd_drain() { echo "FXA-8 80 CONFLICT"; }; c="$(q)"
+  check "a conflict that flips to uncomputed and back wakes the pass once" "drain:|quiet:|quiet:" "$a|$b|$c" )
 # An inflight PR's conflict wakes the pass too; its red stays reconcile's.
 ( jira_done_keys() { :; }; jira_inflight_keys() { echo FXA-9; }; pipeline_progress() { echo "$1 pr 1"; }; gh_conflicts() { echo "source a.ts"; }
   gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }

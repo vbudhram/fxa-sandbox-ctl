@@ -28,4 +28,9 @@ check "a fork PR named after the key is not ours: none" "FXA-3 none -" "$(grep '
 check "a key with no PR anywhere: none, after one branch read" "FXA-4 none -|1" "$(grep '^FXA-4 ' <<< "$out")|$(grep -c '^fxa-4$' "$tmp/heads")"
 check "a failed branch read reports nothing, not a false none" "" "$(FAIL4=1 gh_drain FXA-4 2>/dev/null)"
 check "a key in the newest list costs no branch read" "0" "$(grep -c '^fxa-2$' "$tmp/heads")"
+# An uncomputed mergeable triggers the one re-poll: the field sits before the head SHA, not at the end of the line.
+sleep() { :; }; : > "$tmp/heads"
+pr() { printf '{"number":%s,"state":"%s","headRefName":"%s","statusCheckRollup":[],"mergeable":"UNKNOWN","headRefOid":"abc","isCrossRepository":%s}' "$@"; }
+gh_drain FXA-2 >/dev/null 2>&1
+check "an UNKNOWN mergeable re-reads the list once" "2" "$(grep -c '^$' "$tmp/heads")"
 exit "$fail"

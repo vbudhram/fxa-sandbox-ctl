@@ -1607,6 +1607,8 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         else _drain_wake "$key" "$line"; fi ;;
       # Only a ticket key names a state file: drain's stderr is in this stream too (2>&1), and a
       # path there once became a key whose note file had no directory, which ended the pass.
+      # A mergeability GitHub has not computed yet is the conflict it had: the same note, so a flip wakes nothing.
+      CONFLICT\?) _drain_wake "$key" "$key $num CONFLICT" ;;
       *)      if [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then _drain_wake "$key" "$line"; else _drain_wake none "$line"; fi ;;
     esac
   done <<< "$drain_out"

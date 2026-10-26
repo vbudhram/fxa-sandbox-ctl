@@ -164,7 +164,8 @@ gh_drain() {
       -q "$jqx" 2>/dev/null
   }
   map="$(_gh_drain_fetch)" || rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s\n' "$map" | grep -q ' UNKNOWN$'; then
+  # mergeable is the next to last field (the head SHA ends the line), so ' UNKNOWN ' and not ' UNKNOWN$'.
+  if [ "$rc" -eq 0 ] && printf '%s\n' "$map" | grep -q ' UNKNOWN '; then
     sleep 2
     local remap
     remap="$(_gh_drain_fetch)" && [ -n "$remap" ] && map="$remap"
