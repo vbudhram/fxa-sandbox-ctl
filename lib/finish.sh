@@ -292,6 +292,18 @@ finish_media_args() {
   echo "media: ${listed} listed, ${attached} attached${why}" >&2
 }
 
+# _finish_media_note <worktree> <base> <attached>   The host's backstop for the handoff check's media rule: an FxA
+# PR that changes what a person sees, with nothing attached and no reason, says so in its body (one line, or nothing).
+_finish_media_note() {
+  local wt="$1" vis
+  [ -d "${wt}/packages/fxa-settings" ] && [ "${3:-0}" = 0 ] || return 0
+  [ -s "${wt}/.fxa-auto-media-skipped.txt" ] && return 0
+  vis="$(git -C "$wt" diff --name-only --diff-filter=d "$2" HEAD 2>/dev/null \
+    | grep -E '^(packages|apps|libs)/.*\.(tsx|jsx|css|scss|html|mustache|hbs|ftl|svg)$' \
+    | grep -vE '(\.test\.|\.spec\.|\.stories\.|__tests__/|/tests?/|functional-tests/)' | head -1 || true)"
+  [ -z "$vis" ] || printf '\n\n_No screenshot or video is attached, though this PR changes what a person sees (`%s`)._\n' "$vis"
+}
+
 # finish_diff_only <key> <worktree>   A pipeline run on a read-only profile (PIPE_PR_OPEN=0)
 # pushes nothing. Keep the change as <state dir>/diffs/<key>.patch, which `state push`
 # mirrors, and post the agent's summary and the diffstat to the ticket. The caller labels it.
@@ -629,6 +641,11 @@ _finish_push_and_pr() {
 
   local media_args=()
   finish_media_args "$worktree" "$done_file" media_args
+  # A fix run adds no body, so it gets no note.
+  if [ -z "$fix" ]; then
+    local media_note; media_note="$(_finish_media_note "$worktree" "$merge_base" "${#media_args[@]}")"
+    [ -z "$media_note" ] || { pr_body="${pr_body}${media_note}"; echo "media: none for a visible change; the PR body says so" >&2; }
+  fi
 
   # Always save the body, so the user can run `gh pr create --body-file` later.
   local body_file="${worktree}/.fxa-auto-pr-body.md"

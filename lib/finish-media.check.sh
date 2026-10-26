@@ -30,4 +30,18 @@ media=("$wt/.fxa-auto-media/shot.png")
 _finish_media_to_bucket "$tmp/body.md" media > /dev/null
 check "local links are rewritten, another file and a URL are not" "2|1|1|0" \
   "$(grep -c 'storage.googleapis.com/bkt/fxa-1/' "$tmp/body.md")|$(grep -c '(other-shot.png)' "$tmp/body.md")|$(grep -c '(https://x.test/shot.png)' "$tmp/body.md")|$(grep -c 'fxa-auto-media' "$tmp/body.md")"
+# The host's backstop: an FxA PR that changes what a person sees, with nothing attached and no reason, says so in
+# its body. A test-only change, an attached file, a reason, or a repo that is not FxA adds no line.
+eval "$(sed -n '/^_finish_media_note() {/,/^}/p' "$(dirname "$0")/finish.sh")"
+fx="$tmp/fx"; mkdir -p "$fx/packages/fxa-settings/src" && cd "$fx" && git init -q && echo a > packages/fxa-settings/src/Page.tsx && echo a > packages/fxa-settings/src/Page.test.tsx \
+  && git -c user.email=t@example.com -c user.name=t add . && git -c user.email=t@example.com -c user.name=t commit -qm base && b="$(git rev-parse HEAD)"
+c() { git -c user.email=t@example.com -c user.name=t commit -qam "$1"; }
+echo b > packages/fxa-settings/src/Page.test.tsx; c test
+check "a test-only change adds no line" "" "$(_finish_media_note "$fx" "$b" 0)"
+echo b > packages/fxa-settings/src/Page.tsx; c page
+check "a visible change with nothing attached names its file" 1 "$(_finish_media_note "$fx" "$b" 0 | grep -c 'No screenshot or video is attached, though this PR changes what a person sees (`packages/fxa-settings/src/Page.tsx`)')"
+check "an attached file adds no line" "" "$(_finish_media_note "$fx" "$b" 1)"
+echo 'behind a WebAuthn prompt' > .fxa-auto-media-skipped.txt; check "a reason adds no line" "" "$(_finish_media_note "$fx" "$b" 0)"; rm .fxa-auto-media-skipped.txt
+check "a repo that is not FxA adds no line" "" "$(mv packages/fxa-settings packages/other && _finish_media_note "$fx" "$b" 0; mv packages/other packages/fxa-settings)"
+cd "$tmp"
 exit "$fail"
