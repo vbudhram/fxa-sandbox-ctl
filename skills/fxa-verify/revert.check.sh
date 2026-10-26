@@ -37,7 +37,8 @@ printf 'fixed b\nno newline at end' >packages/app/src/b.js  # the index and the 
 printf 'new\n' >packages/app/src/new.js; g rm -q packages/app/src/gone.js
 printf 'test\n' >packages/functional-tests/tests/x.spec.ts
 
-snap() { g status --porcelain; g diff --cached | g hash-object --stdin
+# The run's record (.fxa-verify-revert.txt) is new on purpose; the snapshot leaves it out.
+snap() { g status --porcelain | grep -v ' \.fxa-verify-revert\.txt$'; g diff --cached | g hash-object --stdin
   find packages -type f | sort | while read -r f; do printf '%s %s\n' "$(g hash-object --no-filters "$f")" "$f"; done; }
 want="$(snap)"
 run() { echo "$1" >"$tmp/mode"; shift
@@ -47,6 +48,8 @@ run normal; rc=$?
 check "fails without, passes with: exit 0" "0" "$rc"
 check "table row" "tests/x.spec.ts FAIL PASS" "$(grep 'x.spec.ts  ' "$tmp/out" | awk '{print $1, $2, $3}' | sed 's|packages/functional-tests/||')"
 check "restored byte for byte, index kept" "$want" "$(snap)"
+check "the run keeps its record for the PR: proof, then without, with and the test" "proof=yes|FAIL PASS packages/functional-tests/tests/x.spec.ts" \
+  "$(sed -n '1s/.* \(proof=[a-z]*\)$/\1/p' .fxa-verify-revert.txt)|$(sed -n 2p .fxa-verify-revert.txt)"
 
 run fail; rc=$?
 check "a test that fails on both trees: exit 1" "1" "$rc"
@@ -54,6 +57,7 @@ check "restored after a failed test" "$want" "$(snap)"
 
 run pass packages/functional-tests/tests/x.spec.ts; rc=$?
 check "a test that passes without the fix is flagged" "1 1" "$rc $(grep -c 'does not prove the change' "$tmp/out")"
+check "a run that does not prove the change records proof=no" "proof=no" "$(sed -n '1s/.* \(proof=[a-z]*\)$/\1/p' .fxa-verify-revert.txt)"
 check "restored after a pass on both trees" "$want" "$(snap)"
 
 run kill; rc=$?

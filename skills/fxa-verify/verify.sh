@@ -285,6 +285,9 @@ if [ "$REVERT" = 1 ]; then
     [ "$w" = FAIL ] && [ "$h" = PASS ] || proof=1
     printf '  %-60s %-17s %s%s\n' "${rows[$i]%%|*}" "$w" "$h" "$note"; done
   echo "Logs: $logs"
+  # The record the PR's Risk section reads: whether the tests prove the change, then each row.
+  { echo "fxa-verify-revert $(date -u +%FT%TZ) proof=$([ "$proof" = 0 ] && echo yes || echo no)"
+    for i in "${!rows[@]}"; do printf '%s %s %s\n' "${res[without,$i]}" "${res[with,$i]}" "${rows[$i]%%|*}"; done; } > .fxa-verify-revert.txt 2>/dev/null || true
   exit "$proof"
 fi
 
