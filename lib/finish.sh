@@ -314,6 +314,82 @@ finish_media_args() {
   echo "media: ${listed} listed, ${attached} attached${why}" >&2
 }
 
+# _finish_risk_section <worktree> <pr_body> <risk_notes>   The PR body with a ## Risk section after "This pull request",
+# for the human reviewer: merge risk from the paths and size, rollback from what a revert cannot undo, verification from
+# the runner's records. The host sets the levels (a self-rated risk reads low); the agent's notes only explain. FxA only.
+_finish_risk_section() {
+  local wt="$1" body="$2" notes="${3:-}" f a d files=0 adds=0 dels=0 code=0 m=1 r=1 v=1 areas="" why="" sec n pass=0 bad=0 ci=0
+  [ -d "${wt}/packages/fxa-settings" ] || { printf '%s' "$body"; return 0; }
+  add() { case ", ${areas}, " in *", $1, "*) ;; *) areas="${areas:+${areas}, }$1" ;; esac; }
+  because() { case "; ${why}; " in *"; $1; "*) ;; *) why="${why:+${why}; }$1" ;; esac; }
+  while IFS=$'\t' read -r a d f; do
+    case "$f" in .fxa-*|ai/*|artifacts/*|"") continue ;; esac
+    files=$((files + 1)); adds=$((adds + ${a//-/0})); dels=$((dels + ${d//-/0}))
+    case "$f" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*.stories.*|packages/functional-tests/*|docs/*|*.md) continue ;; esac
+    code=1
+    case "$f" in
+      packages/fxa-auth-server/lib/crypto/*|packages/fxa-auth-server/lib/tokens/*|packages/fxa-auth-server/lib/oauth/*|packages/fxa-customs-server/*|\
+      packages/fxa-auth-server/lib/routes/account*|packages/fxa-auth-server/lib/routes/password*|packages/fxa-auth-server/lib/routes/session*|\
+      packages/fxa-auth-server/lib/routes/totp*|packages/fxa-auth-server/lib/routes/mfa*|packages/fxa-auth-server/lib/routes/recovery*|\
+      packages/fxa-auth-server/lib/routes/passkey*|packages/fxa-auth-server/lib/routes/passwordless*|packages/fxa-auth-server/lib/routes/linked-accounts*|\
+      packages/fxa-auth-server/lib/routes/devices-and-sessions*|packages/fxa-auth-server/lib/routes/auth-schemes*|packages/fxa-auth-server/lib/routes/oauth*|\
+      packages/fxa-auth-server/lib/routes/idp*|packages/fxa-auth-server/lib/db.ts|packages/fxa-auth-server/lib/signer*|packages/fxa-auth-server/lib/serverJWT*|\
+      packages/fxa-auth-server/lib/customs*|libs/accounts/passkey/*|libs/accounts/two-factor/*|libs/accounts/recovery-phone/*|libs/accounts/oauth/*|libs/accounts/rate-limit/*)
+        m=3; add "auth (sessions, tokens, 2FA, OAuth)" ;;
+      packages/fxa-auth-server/lib/account-delete*) m=3; r=3; add "account deletion"; because "account deletion cannot be undone" ;;
+      packages/db-migrations/*) m=3; r=3; add "the database schema"; because "a DB migration: production runs it by hand, and its reverse patch is commented out" ;;
+      libs/shared/db/*|packages/fxa-shared/db/*) m=3; add "the database schema" ;;
+      libs/payments/*|apps/payments/*|packages/fxa-payments-server/*|packages/fxa-auth-server/lib/payments/*|packages/fxa-auth-server/lib/routes/subscriptions*|\
+      packages/fxa-shared/payments/*|packages/fxa-shared/subscriptions/*)
+        m=3; [ "$r" -ge 2 ] || r=2; add "payments"; because "a charge or a processed webhook stays" ;;
+      .circleci/*|.github/workflows/*) m=3; add "CI" ;;
+      packages/fxa-content-server/server/lib/csp*|packages/fxa-content-server/server/lib/routes/post-csp*) m=3; add "CSP and security headers" ;;
+      */config/*key*.json) m=3; r=3; add "key files"; because "key files change what existing tokens verify against" ;;
+      packages/fxa-auth-server/lib/senders/*|packages/fxa-auth-server/lib/email/*|libs/accounts/email-renderer/*|libs/accounts/email-sender/*)
+        [ "$m" -ge 2 ] || m=2; [ "$r" -ge 2 ] || r=2; add "email"; because "a sent email cannot be recalled" ;;
+      */config/*|configs/*|*.env*) [ "$m" -ge 2 ] || m=2; [ "$r" -ge 2 ] || r=2; add "config"; because "a config change needs a restart" ;;
+      packages/fxa-profile-server/*|libs/profile/*) [ "$m" -ge 2 ] || m=2; add "the profile server" ;;
+      packages/fxa-settings/*|packages/fxa-react/*) [ "$m" -ge 2 ] || m=2; add "settings and React UI" ;;
+      packages/fxa-content-server/*) [ "$m" -ge 2 ] || m=2; add "the content server" ;;
+      *) [ "$m" -ge 2 ] || m=2; add "other code" ;;
+    esac
+  done < <(git -C "$wt" diff --cached --numstat --no-renames 2>/dev/null)
+  [ $((adds + dels)) -gt 500 ] || [ "$files" -gt 20 ] && m=3
+  [ $((adds + dels)) -gt 100 ] && [ "$m" -lt 2 ] && m=2
+  # Verification: the verify verdict's rows, the --revert proof and the media.
+  if [ -s "${wt}/.fxa-verify-verdict.txt" ]; then
+    pass="$(sed 1d "${wt}/.fxa-verify-verdict.txt" | grep -c '^PASS ' || true)"; bad="$(sed 1d "${wt}/.fxa-verify-verdict.txt" | grep -c '^FAIL ' || true)"
+    ci="$(sed 1d "${wt}/.fxa-verify-verdict.txt" | grep -c '^CI ' || true)"
+  fi
+  local counts; counts="${pass} check$([ "$pass" = 1 ] && echo " passes" || echo "s pass")$([ "$ci" -gt 0 ] && echo ", ${ci} left to CI")"
+  local vt
+  if [ "$code" = 0 ]; then vt="Strong. Only tests and docs change."
+  elif [ "$bad" -gt 0 ]; then v=3; vt="Weak. ${bad} check$([ "$bad" = 1 ] || echo s) failed."
+  elif [ "$pass" = 0 ]; then v=3; vt="Weak. No verify run is on record."
+  elif head -1 "${wt}/.fxa-verify-revert.txt" 2>/dev/null | grep -q ' proof=yes$'; then vt="Strong. A test fails without the fix (verify --revert). ${counts}."
+  else v=2; vt="Partial. ${counts}; no test is shown to fail without the fix."; fi
+  [ "$code" = 1 ] && find "${wt}/.fxa-auto-media" -maxdepth 1 -type f 2>/dev/null | grep -qiE '\.(png|jpe?g|webp|gif|webm|mp4|mov)$' && vt="${vt} A screenshot or video is attached."
+  [ -n "$areas" ] || areas="tests and docs"
+  local lv=(Low Medium High) rb=(Easy Moderate Hard) vs=(Strong Partial Weak) top=$m
+  [ "$r" -gt "$top" ] && top=$r; [ "$v" -gt "$top" ] && top=$v
+  local rt="A plain revert; it ships on the next train."
+  [ -n "$why" ] && rt="$(printf '%s' "${why:0:1}" | tr '[:lower:]' '[:upper:]')${why:1}."
+  sec="## Risk
+
+**Risk: ${lv[$((top - 1))]}** (the worst of the three below)
+
+- Merge risk: ${lv[$((m - 1))]}. ${files} files, +${adds} -${dels}: ${areas}.
+- Rollback: ${rb[$((r - 1))]}. ${rt}
+- Verification: ${vs[$((v - 1))]}. ${vt#*. }"
+  # The agent's notes: what the checks would not catch, a rollback step. At most 3 lines.
+  n="$(printf '%s\n' "$notes" | grep -v '^[[:space:]]*$' | head -3 | cut -c1-300 | sed -E 's/^[-*][[:space:]]*//; s/^/- /')"
+  [ -z "$n" ] || sec="${sec}
+${n}"
+  if printf '%s\n' "$body" | grep -q '^## This pull request'; then
+    S="$sec" awk 'BEGIN { s = ENVIRON["S"] } in_pr && /^## / && !done { print s "\n"; done = 1 } /^## This pull request/ { in_pr = 1 } { print } END { if (!done) print "\n" s }' <<< "$body"
+  else printf '%s\n\n%s\n' "$body" "$sec"; fi
+}
+
 # _finish_media_note <worktree> <base> <attached>   The host's backstop for the handoff check's media rule: an FxA
 # PR that changes what a person sees, with nothing attached and no reason, says so in its body (one line, or nothing).
 _finish_media_note() {
@@ -591,6 +667,11 @@ _finish_push_and_pr() {
   _finish_check_frozen "$worktree" || { _finish_prfix_why guard:frozen; return 1; }
   local commit_body
   commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
+  # The Risk section for the reviewer, before the PII guard, so the agent's notes in it are checked too. A fix run sets no body.
+  # A failure keeps the agent's body as it is: the section must never cost the PR its body.
+  local with_risk=""
+  [ -n "$fix" ] || with_risk="$(_finish_risk_section "$worktree" "$pr_body" "$(jq -r '.risk_notes // empty' "$done_file" 2>/dev/null)")" || with_risk=""
+  [ -z "$with_risk" ] || pr_body="$with_risk"
   _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || { _finish_prfix_why guard:pii; return 1; }
 
   local as_is=""
