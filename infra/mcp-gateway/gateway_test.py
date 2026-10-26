@@ -183,12 +183,17 @@ class GatewayTest(unittest.TestCase):
                    MCP_GATEWAY_LISTEN="127.0.0.1:%d" % cls.port)
         env.pop("UNSET_SLACK_TOKEN", None)
         cls.proc = subprocess.Popen([sys.executable, os.path.join(HERE, "gateway.py")], env=env, stderr=subprocess.DEVNULL)
-        for _ in range(50):
+        # Up to 30 s: a busy CI runner took more than the old 5 s, and the first tests then met a closed port.
+        for _ in range(300):
             try:
                 socket.create_connection(("127.0.0.1", cls.port), 0.1).close()
                 break
             except OSError:
+                if cls.proc.poll() is not None:
+                    raise RuntimeError(f"the server under test exited with {cls.proc.returncode} before it listened")
                 time.sleep(0.1)
+        else:
+            raise RuntimeError("the server under test did not listen within 30 s")
 
     @classmethod
     def tearDownClass(cls):
