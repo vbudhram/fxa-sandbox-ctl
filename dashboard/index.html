@@ -805,7 +805,7 @@ function renderStatus() {
   const level = dead || lowDisk ? "dead" : stale || STATE.error || STATE.agents_error || quiet || starved ? "warn" : "";
   document.getElementById("dot").className = "dot " + level;
   const hl = document.getElementById("health");
-  hl.className = "health " + (level || (paused ? "paused" : "")); hl.textContent = level === "dead" ? "down" : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
+  hl.className = "health " + (level || (paused ? "paused" : "")); hl.textContent = level === "dead" ? (lowDisk ? "disk low" : "no passes") : level === "warn" ? (stale || STATE.error || STATE.agents_error || quiet ? "degraded" : "needs you") : paused ? "paused" : "healthy";
   if (paused && !level) document.getElementById("dot").className = "dot paused";
   document.getElementById("repo").textContent = s?.repo ?? "";
   hl.title = [`${g?.backend ?? s?.backend ?? "?"}${g?.zone ? ` ${g.zone}` : ""}`, h.lock_held ? "lock held" : "lock free", g ? `launchcap ${g.launchcap ?? "unknown"}` : "",
@@ -816,7 +816,7 @@ function renderStatus() {
   if (h.lock_held) cells.push(`<span class="cell warn"><b>lock held</b></span>`);
   const m = s?.mode;
   if (m?.newtickets === "off") cells.push(`<span class="cell warn" title="${esc(m.newtickets_note ?? "")}"><b>intake off</b> · PR rounds only</span>`);
-  if (q) cells.push(`<a class="cell ${starved ? "warn" : ""}" href="#pipeline/queue" title="queue: launchable, and skipped tickets that wait on a person">queue <b>${q.fetch_failed ? "?" : ready} ready</b>${waits ? ` · <b>${waits}</b> wait on you` : ""}</a>`);
+  if (q) cells.push(`<a class="cell ${starved ? "warn" : ""}" href="#pipeline/queue" title="queue: launchable, and skipped tickets that wait on a person">queue <b>${q.fetch_failed ? "?" : ready} ready</b>${waits ? ` · <b>${waits}</b> skipped` : ""}</a>`);
   if (m?.focus) cells.push(`<span class="cell">focus ${jira(m.focus)}</span>`);
   if (lowDisk) cells.push(`<span class="cell bad"><b>${h.free_gb}GB</b> free</span>`);
   if (g) cells.push(`<span class="cell" title="sandboxes now plus always-on hosts, at list prices">burn <b>${usd((g.runner_hourly_usd ?? 0) + (g.infra_hourly_usd ?? 0))}/h</b></span>`);
@@ -867,7 +867,7 @@ function renderAlerts() {
   if (STATE.stats_error) add("warn", html`<b class="key">stats</b>`, STATE.stats_error);
   else staleFeed("stats", STATE.stats_age_seconds, STATE.stats_interval);
   const sp = h.seconds_since_pass;
-  if (s && (sp == null || sp > 7200)) add("warn", html`<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pipeline pass in ${ago(sp).replace(" ago","")}; open PRs get no reconcile, feedback or rebase rounds. Read-only: automation starts from Claude Code`);
+  if (s && (sp == null || sp > 7200)) add("warn", html`<b class="key">pass</b>`, sp == null ? "no pass recorded yet" : `no pipeline pass in ${ago(sp).replace(" ago","")}, so open PRs get no reconcile, feedback or rebase rounds. To start the passes, the operator runs /fxa-automation in Claude Code.`);
   else if (sp > 1500) add("warn", html`<b class="key">pass</b>`, `last pass ${ago(sp)}; the cron fires every 20 minutes`);
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add("bad", html`<b class="key">disk</b>`, `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (s?.inflight_fetch_failed) add("warn", html`<b class="key">jira</b>`, "could not read in-flight tickets; nothing running is unverified");
@@ -1123,14 +1123,14 @@ function renderOvRuns() {
   const today = localDay(Date.now()), td = ovStats() ? (ovStats().rows ?? []).filter(r => r.src !== "pass" && localDay((r.ms ?? Date.parse(r.at))) === today) : null;
   const out = r => r.src === "pipeline" ? (r.pr ? "pr" : "no_pr") : "answered", c = k => td.filter(r => out(r) === k).length;
   const sum = !td ? "" : td.length ? `${td.length} today${[["pr", "PR opened", "PRs opened"], ["no_pr", "with no change", "with no change"], ["answered", "answered", "answered"]]
-    .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : "none today", note = statsNote();
+    .filter(([k]) => c(k)).map(([k, one, many], i) => `${i ? ", " : ": "}${c(k)} ${c(k) === 1 ? one : many}`).join("")}` : RUNS.length ? "Nothing today. The latest runs:" : "Nothing today.", note = statsNote();
   const row = r => {
     const [col, ic, kind] = RUN_SRC[r.src] ?? ["var(--faint)", "M12 12h.01", r.src], t = (r.ms ?? Date.parse(r.at)), d = new Date(t);
     const when = localDay(t) === today ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : d.toLocaleDateString([], { month: "short", day: "numeric" });
     const href = r.src === "pipeline" ? jiraHref(r.key) : sessHref(r.key), key = r.src === "pass" || !r.key ? "" : href ? html`<a class="key" href="${href}"${r.src === "pipeline" ? html` target="_blank" rel="noreferrer"` : ""}>${r.key}</a>` : html`<span class="key">${r.key}</span>`;
     return html`<div class="ovrun" data-run="${r.key}"><time datetime="${r.at}">${when}</time><span class="ic" style="background:color-mix(in srgb,${col} 15%,transparent);color:${col}" title="${kind}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="${ic}"/></svg></span>
       <span class="t" title="${[r.key, r.title].filter(Boolean).join(" ")}">${key} ${plainMd(r.title || (r.src === "pass" ? "Pipeline pass" : ""))}</span><span class="r">${runBadge(r)}<span>${[r.min != null ? `${r.min} min` : "", r.usd != null ? usd(r.usd) : ""].filter(Boolean).join(" · ")}</span></span>
-      <span class="d">${r.team ? tag(r.team) : ""}<span>${r.kind || kind}</span></span></div>`;
+      <span class="d">${r.team ? tag(r.team) : ""}${(r.title || (r.src === "pass" ? "Pipeline pass" : "")).toLowerCase().includes((r.kind || kind).toLowerCase()) ? "" : html`<span>${r.kind || kind}</span>`}</span></div>`;
   };
   putOv("ov-runs", html`<h2>Activity<a class="note" href="#sessions" data-focus="ovruns-all">All sessions ›</a></h2>${sum ? html`<div class="sub">${sum}</div>` : ""}${note ? html`<div class="ovknote">${note}</div>` : ""}${RUNS.length ? RUNS.map(row) : emptybox(`No run in the last ${OV_RANGES.find(([k]) => k === OV_RANGE)[1]}.`)}`,
     RUNS.map(r => `${r.key}:${r.outcome}:${r.pr_state}`).join(",") + note + sum);
@@ -1208,7 +1208,7 @@ function renderOvMain() {
       : emptybox(isS ? `$0.00 · no runs in the last ${n}` : `No run in the last ${n}.`);
     head = html`<a class="ovopen" href="#stats/spend" data-sfrange="${OV_RANGE}" data-focus="ovm-open-${m}"><span class="lbl">${isS ? "Spend" : "Runs"}, last ${n}</span> <b class="big">${isS ? usd(sp.total) : tot.toLocaleString()}</b> <span class="go">in Stats ›</span></a>`;
     // A stale or failed feed may lack a source's newest runs, so a source figure says unknown, never a value or 0.
-    leg = html`<div class="ovleg">${OV_SRC.map(([src, col]) => isS ? html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${srcName(src)} <b>${note ? "unknown" : usd(sp.by[src] ?? 0)}</b>${note ? "" : html` <span class="hint">· ${(sp.nby[src] ?? 0).toLocaleString()} runs</span>`}</a>`
+    leg = html`<div class="ovleg">${OV_SRC.filter(([src]) => !isS || note || (sp.nby[src] ?? 0) > 0).map(([src, col]) => isS ? html`<a href="#stats/spend" data-sfrange="${OV_RANGE}" data-sfsrc="${src}" data-focus="ovs-${src}"><i style="background:${col}"></i>${srcName(src)} <b>${note ? "unknown" : usd(sp.by[src] ?? 0)}</b>${note ? "" : html` <span class="hint">· ${(sp.nby[src] ?? 0).toLocaleString()} runs</span>`}</a>`
       : html`<span><i style="background:${col}"></i>${srcName(src)} <b>${note ? "unknown" : (sp.nby[src] ?? 0).toLocaleString()}</b></span>`)}</div>`;
   } else if (m === "merged") {
     chart = why ? emptybox(`Merged PRs unknown: ${why}`) : ovChart(sp.days, [["Merged PRs", "var(--chart-1)", d => d.merged]], count, { id: "ov-main", label: `PRs merged by day, last ${n}` });
@@ -3981,6 +3981,9 @@ function renderNav() {
   const badge = (id, n, cls) => { const e = document.getElementById(id); e.textContent = n ? n : ""; e.className = "n" + (cls ? " " + cls : ""); };
   badge("n-overview", nv.unknown ? "?" : nv.total || (attn ? "!" : ""), bad ? "bad" : "warn");
   badge("n-pipeline", waiting, "info");
+  // The number names what it counts, so it does not read as a second Needs you.
+  const np = document.getElementById("n-pipeline"), npl = waiting ? `${waiting === 1 ? "1 PR waits" : `${waiting} PRs wait`} on a review` : "";
+  if (npl) { np.setAttribute("aria-label", npl); np.title = npl; } else { np.removeAttribute("aria-label"); np.removeAttribute("title"); }
   badge("n-sessions", liveS, "info");
   const sb = sbBadge(), nr = document.getElementById("n-runners");
   badge("n-runners", sb.n, sb.cls);
