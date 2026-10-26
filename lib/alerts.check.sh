@@ -24,6 +24,12 @@ check "idle, spend and slow boot raise; capacity does not" "1|1|1|0" \
   "$(grep -c '^alert: idle runner' <<< "$out")|$(grep -c '^alert: LLM spend' <<< "$out")|$(grep -c '^alert: the median boot' <<< "$out")|$(grep -c 'capacity' <<< "$out")"
 check "the slow-boot alert names the step the slow boots spent most time in" "1" "$(grep -c "spend most time in starting a runner (44 s each)" <<< "$out")"
 check "a breach that lasts is not raised again" "" "$(alerts_check)"
+# The slowest step changes while boots stay slow: still one alert, and a clear closes it.
+echo "{\"key\":\"agent-al02\",\"booted_at\":\"$(( now - 600 ))\",\"boot_s\":\"95\",\"boot_steps\":[{\"step\":\"checking out the commit\",\"s\":50}]}" > "$SESSION_DIR/agent-al02.json"
+check "a new slowest step does not raise the slow-boot alert again" "0" "$(alerts_check | grep -c '^alert: the median boot')"
+for k in al01 al02; do jq -c '.boot_s = "9"' "$SESSION_DIR/agent-$k.json" > "$tmp/b" && mv "$tmp/b" "$SESSION_DIR/agent-$k.json"; done
+check "fast boots again: cleared, and no slow-boot row stays open" "1|0" \
+  "$(alerts_check | grep -c '^cleared: slow_boot')|$(cmd_errors --json | jq '[.[] | select(.kind == "slow_boot" and .status != "resolved")] | length')"
 rm "$tmp/proxy/usage.jsonl"
 check "spend under the threshold again: resolved" "cleared: daily_spend" "$(alerts_check)"
 echo "{\"at\":\"$(date -u +%FT%TZ)\",\"usd\":200}" > "$tmp/proxy/usage.jsonl"; sleep 1

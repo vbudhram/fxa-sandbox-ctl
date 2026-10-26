@@ -15,16 +15,17 @@
 _FXA_ALERTS_LOADED=1
 
 # _alert <name> <breached 0|1> <message>   Raise once while it lasts; resolve when it clears.
-# The message's numbers are masked in the signature, so one alert keeps one signature.
+# An alert is found by its kind and the text before "; ", numbers masked: the detail after it (the slowest
+# boot step) changes the signature, and a match on the signature raised a second alert and left the first open.
 _alert() {
-  local sig status
-  sig="$(errors_sig "alerts" "$3")"
-  status="$(cmd_errors --json 2>/dev/null | jq -r --arg s "$sig" '.[] | select(.sig == $s) | .status' 2>/dev/null)"
+  local s open
+  open="$(cmd_errors --json 2>/dev/null | jq -r --arg k "$1" --arg p "$3" 'def stem: split("; ")[0] | gsub("[0-9]+"; "N");
+    .[] | select(.source == "alert" and .kind == $k and .status != "resolved" and (.message | stem) == ($p | stem)) | .sig' 2>/dev/null)"
   if [ "$2" = 1 ]; then
-    case "$status" in open|reopened) return 0 ;; esac
+    [ -z "$open" ] || return 0
     errors_record alert "$1" "" "alerts" "$3" "" && echo "alert: $3"
-  elif [ "$status" = open ] || [ "$status" = reopened ]; then
-    cmd_errors resolve "$sig" "cleared: under the threshold again" >/dev/null && echo "cleared: $1"
+  elif [ -n "$open" ]; then
+    for s in $open; do cmd_errors resolve "$s" "cleared: under the threshold again" >/dev/null; done; echo "cleared: $1"
   fi
   return 0
 }
