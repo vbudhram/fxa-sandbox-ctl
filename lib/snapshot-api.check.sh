@@ -8,7 +8,7 @@ sys.path.insert(0, sys.argv[1]); import server
 from http.server import ThreadingHTTPServer
 server.FULL = server.Feed("snapshot", [], 60, 30); server.AGENTS = server.Feed("agents", [], 15, 30)
 server.STATS = server.Feed("stats", [], 60, 30)
-server.STATS.data, server.STATS.fetched_at, server.STATS.error = {"llm": {}}, time.time() - 400, "stats failed: timeout"
+t0 = time.time(); server.STATS.data, server.STATS.fetched_at, server.STATS.error = {"llm": {}}, t0 - 400, "stats failed: timeout"
 srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
 fail = 0
 def get(p):
@@ -21,7 +21,7 @@ def check(name, want, got):
 s = get("/api/snapshot")
 print("  stats_age_seconds:", s.get("stats_age_seconds"))
 check("snapshot: the stats feed's age, error and interval", (True, "stats failed: timeout", 60),
-      (400 <= (s.get("stats_age_seconds") or 0) <= 430, s.get("stats_error"), s.get("stats_interval")))  # a slow CI runner takes seconds
+      (400 <= (s.get("stats_age_seconds") or 0) <= 401 + (time.time() - t0), s.get("stats_error"), s.get("stats_interval")))  # 400 plus the time the request took
 check("/api/stats has no new key", {"llm": {}}, get("/api/stats"))
 server.STATS.data = server.STATS.fetched_at = server.STATS.error = None
 check("snapshot: a stats feed never read gives null age", None, get("/api/snapshot").get("stats_age_seconds"))
