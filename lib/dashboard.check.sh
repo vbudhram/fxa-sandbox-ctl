@@ -143,6 +143,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   globalThis.TEAM_ADMIN = { admin: true };
   globalThis.ERRS = null; globalThis.STATS = null; const all = String(allTeamsHtml());
   t("all teams: four tiles and one row per team, names escaped", `${(all.match(/class="[^"]*\bstat\b/g) || []).length}|${(all.match(/<tr><td><a /g) || []).length}|${/<img src=x>/.test(all)}`, "4|3|false");
+  t("all teams: the Tests tile says what it counts", /teams with a test that passed it/.test(all), true);
   t("all teams: a cost no team reports shows a dash, never a zero", /Cost this month<\/span><span class="big">—</.test(all), true);
   t("all teams: an admin gets New team at the top, and a card for the team that is not set up", `${/<a class="btn" href="#teams\/new" data-team-new>New team/.test(all)}|${/href="#teams\/ent\/settings"[^]*Off\. Test it to turn it on again/.test(all)}`, "true|true");
   const appInfo = { profile: "x", issues: [{ level: "info", text: "org/repo: the agent's GitHub App is not installed on it" }, { level: "info", text: "something else" }] };
@@ -166,7 +167,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
     const fx = { profile: "fxa", label: "FxA", repos: [{ slug: "mozilla/fxa", role: "work" }], issues: [], access: { open: "built-in" }, budget: { month_usd: 1041.09, month_cap: 1500 } };
     t("overview: the cost card shows this month against the cap", /\$1,?041\.09.*of \$1,?500/.test(String(teamOverview(fx)).replace(/\s+/g, " ")), true);
     t("overview: unreadable spend says so, never $0", /budget unknown: the spend file cannot be read/.test(teamOverview({ ...fx, budget: null, budget_error: "unreadable" })), true);
-    t("overview: a healthy team has a one-line Readiness", /3 of 3 good/.test(teamReadiness(fx)), true);
+    t("overview: a healthy team has a one-line Readiness, with its link apart from the count", /3 of 3 good\.<\/span> <a href="[^"]*">Open Settings<\/a>/.test(teamReadiness(fx)), true);
     t("overview: access that cannot be read is unknown, not good", /<b>Access<\/b>[^]*?class="tag">unknown/.test(teamReadiness({ ...fx, profile: "crew", access: null })), true);
     STATS.rows = [{ key: "agent-r1", src: "slack", profile: "fxa", t0: Date.now() / 1000 - 60 }];
     t("overview: a routine run is named for an admin", /Routine: Code review/.test(teamRecent("fxa")), true);
@@ -230,6 +231,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   t("last test: a pass at the current generation with no log", String(testCell({ access: { record: true, status: "active" }, test: { result: null, tested: 14, generation: 14 } })), "\u003cspan class=\"tag ok\">passed\u003c/span>");
   t("last test: an active team keeps its pass after edits a runner never reads", /passed/.test(testCell({ access: { record: true, status: "active" }, test: { result: null, tested: 12, generation: 13 } })), true);
   t("last test: a draft with an older pass is not tested", /not tested/.test(testCell({ access: { record: true, status: "draft" }, test: { result: null, tested: 2, generation: 3 } })), true);
+  t("last test: a team set in the repo says it has no test", /no test, set in the repo/.test(testCell({ profile: "fxa", access: { open: "built-in" } })), true);
   t("last test: never says never run", /never run/.test([12, null].map(x => testCell({ access: { record: true, status: "active" }, test: { result: null, tested: x, generation: 13 } })).join("")), false);
   globalThis.TEAMS = { teams: [] }; RTSUM = null; }
 // A hung await would end node with code 0 and no FAIL line: the guard keeps the loop alive and fails.

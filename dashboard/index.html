@@ -1858,7 +1858,7 @@ function budgetCell(t) {
 }
 function testCell(t) {
   const st = teamTestState(t);
-  if (!t.test) return html`<span class="na">${t.access?.record ? "—" : "not tested by profile"}</span>`;
+  if (!t.test) return html`<span class="na">${t.access?.record ? "—" : "no test, set in the repo"}</span>`;
   return st === "passed" ? tag("passed", "ok") : st === "failed" ? tag("failed", "bad") : st === "running" ? tag("running", "info", { run: true, live: true }) : html`<span class="na">not tested</span>`;
 }
 // The first problem of a team, short: a missing GitHub App names its repo.
@@ -1885,7 +1885,7 @@ function allTeamsHtml() {
     ${(TEAMS?.issues ?? []).map(i => html`<div class="alert warn"><span class="mono">${i.key}</span><span class="what">${i.text}</span></div>`)}
     <div class="rtkpis">${stat("Teams", ok.length, `${act.length} active${drafts.length ? ` · ${drafts.length} not set up` : ""}`)}
       ${stat("Cost this month", bt.length ? usd(spent) : "—", top ? `${teamName(top)} ${usd(top.budget.month_usd)}` : "")}
-      ${stat("Needs attention", needs, needs ? "see Problems below" : "none", needs ? "warn" : "")}${stat("Tests", rec ? `${passed} of ${rec}` : "—", "active record teams that passed")}</div>
+      ${stat("Needs attention", needs, needs ? "see Problems below" : "none", needs ? "warn" : "")}${stat("Tests", rec ? `${passed} of ${rec}` : "—", "teams with a test that passed it")}</div>
     ${adm ? drafts.map(t => html`<a class="card ck" href="#teams/${t.profile}/settings"><div class="who"><div class="row"><span class="nm">${teamName(t)}</span>${tag(t.access.status, t.access.status === "disabled" ? "warn" : "")}</div>
       <span class="says">${t.access.status === "disabled" ? "Off. Test it to turn it on again." : "Next: test and activate it."}</span></div>${tag("1 step left", "warn")}</a>`) : ""}
     ${card(html`<h2>All teams<span class="n">${ts.length}</span></h2><div class="tscroll">${table(["Team", "Status", "Cost this month", "Last test", "Problems"], ts.map(row))}</div>`)}</div>`;
@@ -1942,7 +1942,7 @@ function teamReadiness(t) {
   const access = t.profile === "fxa" || t.access?.open === "built-in" ? "good" : !t.access ? "unknown" : (t.access.record && t.access.status !== "active") || has(/nobody can start it/) ? "required" : "good";
   const rows = [["Config", t.load_error ? "required" : "good", "profile.conf loads"], ["Access", access, teamAccess(t)[1]], ["Repos", work.length ? "good" : "required", work.map(r => r.slug).join(", ") || "no work repo"]];
   const good = rows.filter(r => r[1] === "good").length, set = `#teams/${t.profile}/settings`;
-  if (good === rows.length) return card(html`<span class="trd"><b>Readiness</b> ${good} of ${good} good</span> <a href="${set}">Settings</a>`, { cls: "tcard" });
+  if (good === rows.length) return card(html`<span class="trd"><b>Readiness</b> ${good} of ${good} good.</span> <a href="${set}">Open Settings</a>`, { cls: "tcard" });
   return card(html`<h3>Readiness <span class="na">${good} of ${rows.length} good</span></h3>${rows.map(([k, st, d]) => html`<div class="titem"><span><b>${k}</b> <span class="na">${d}</span></span><span>${tag(st, st === "good" ? "ok" : st === "required" ? "warn" : "")} <a href="${set}" aria-label="Edit ${k.toLowerCase()}">Edit</a></span></div>`)}`, { cls: "tcard" });
 }
 function teamOverview(t) {
