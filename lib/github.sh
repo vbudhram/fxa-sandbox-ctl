@@ -152,7 +152,9 @@ gh_drain() {
   local keys="${1:-}"
   [ -n "$keys" ] || return 0
   local map jqx rc=0
-  jqx=".[] | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.headRefOid)\""
+  # A fork PR from a branch with a key's name is not ours (i619). Only the branch read asks for the field: in the
+  # 200-PR list it made GitHub's GraphQL time out (HTTP 504).
+  jqx=".[] | select((.isCrossRepository // false) | not) | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.headRefOid)\""
   # `|| rc=$?` keeps `set -e` from killing the function before the guard below.
   # GitHub computes `mergeable` lazily and says UNKNOWN until then, but the
   # request starts the computation, so one re-poll resolves most of them.
@@ -179,6 +181,13 @@ gh_drain() {
     br="$(worktree_branch_for "$key")"
     # A here-string, not printf |: awk exits at the first match, and the printf's SIGPIPE error went to stderr.
     line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8; exit}' <<< "$map")"
+    # Older than the 200 newest PRs: read the branch alone. A failed read reports nothing, not a false `none`.
+    if [ -z "$line" ]; then
+      line="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --limit 5 \
+        --json number,state,headRefName,statusCheckRollup,mergeable,headRefOid,isCrossRepository -q "$jqx" 2>/dev/null)" \
+        || { echo "drain: could not read the PR of $key's branch" >&2; continue; }
+      line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8; exit}' <<< "$line")"
+    fi
     if [ -z "$line" ]; then
       # Report a missing PR, do not relabel it: a human must look.
       echo "$key none -"
