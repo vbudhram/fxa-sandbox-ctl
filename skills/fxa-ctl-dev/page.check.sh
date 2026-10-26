@@ -133,6 +133,9 @@ ck "Sessions: a failed boot, now stopped with reason 'boot failed', still reads 
 ck "Pipeline tab counts: a failed feed reads '?', never a confident number" "?|?" \
   "$(bash "$p" '#pipeline/belts' --fixture "$F" --probe 'SNAP.review = null; SNAP.open_prs = null; const a = tabCount("belts"); SNAP.queue = { ...(SNAP.queue || {}), fetch_failed: true, ready: [] }; return [a, tabCount("queue")].join("|")')"
 ck "page.sh says why Chrome failed, in place of an empty answer" "chrome exit" "$(CHROME=/usr/bin/false bash "$p" '#teams' --probe 'return 1' 2>&1 | cut -c1-11)"
+# Chrome that prints the whole page, then exits 2 at teardown (the GitHub macOS runner): the answer counts.
+printf '#!/bin/sh\necho "<html><body><pre id=\\"__probe\\">late exit</pre></body></html>"\nexit 2\n' > "${c2:=$(mktemp -d)/chrome2}"; chmod +x "$c2"
+ck "a Chrome that exits 2 after a complete page still gives the probe result" "late exit" "$(CHROME="$c2" bash "$p" '#teams' --probe 'return 1' 2>&1)"
 # Stats day lists are tables with a day and figures, the newest day first, with no sideways scroll at 390 px.
 SF="$(dirname "$0")/page-fixture-stats.json"
 st='const m = document.getElementById("main"), t = [...m.querySelectorAll(".tscroll table")]; return [m.innerText.includes("did not render"), t.map(x => x.querySelectorAll("tbody tr").length).join(","), t[0]?.querySelector("tbody td")?.textContent === new Date().toLocaleDateString(undefined, { month: "short", day: "numeric" }), document.documentElement.scrollWidth <= innerWidth].join("|")'

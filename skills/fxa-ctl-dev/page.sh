@@ -49,9 +49,13 @@ PY
 # Each run gets its own profile: test.sh runs several probes at once. A Chrome failure says why: an empty answer told nothing.
 args=(--headless=new --disable-gpu --no-sandbox --virtual-time-budget=${PAGE_BUDGET:-6000} "--window-size=${width},${height}" "--user-data-dir=$dir/profile")
 failed() { echo "chrome exit $1: $(tail -3 "$dir/err" 2>/dev/null | tr '\n' ' ')"; exit 1; }
-if [ -n "$shot" ]; then "$chrome" "${args[@]}" --screenshot="$shot" "file://$dir/p.html$hash" >/dev/null 2>"$dir/err" || failed $?; echo "$shot"
+# On the GitHub macOS runner Chrome writes its output, then exits 2 when its teardown watchdog fires
+# (no display link): a complete output counts, a missing one is still a failure.
+if [ -n "$shot" ]; then rm -f "$shot"; "$chrome" "${args[@]}" --screenshot="$shot" "file://$dir/p.html$hash" >/dev/null 2>"$dir/err" && rc=0 || rc=$?
+  [ "$rc" = 0 ] || [ -s "$shot" ] || failed "$rc"; echo "$shot"
 else
-  dom="$("$chrome" "${args[@]}" --dump-dom "file://$dir/p.html$hash" 2>"$dir/err")" || failed $?
+  dom="$("$chrome" "${args[@]}" --dump-dom "file://$dir/p.html$hash" 2>"$dir/err")" && rc=0 || rc=$?
+  [ "$rc" = 0 ] || [[ "$dom" == *"</html>"* ]] || failed "$rc"
   if [ -n "$probe" ]; then python3 -c 'import html,re,sys; m=re.search(r"<pre id=\"__probe\">(.*?)</pre>", sys.stdin.read(), re.S); print(html.unescape(m.group(1)) if m else "no probe result")' <<< "$dom"
   else printf '%s\n' "$dom"; fi
 fi
