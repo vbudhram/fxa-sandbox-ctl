@@ -96,7 +96,7 @@ check "a clash is refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
 check "a clash says how to recover" "1" "$(grep -c 'conflict with this change.*!restart' <<< "$err")"
 
 # Media goes to the bucket: references rewritten in place, the rest appended.
-eval "$(sed -n '/^media_mp4() {/,/^}/p; /^_finish_bucket_cp() {/,/^}/p; /^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^media_mp4() {/,/^}/p; /^_finish_bucket_cp() {/,/^}/p; /^_finish_play_frame() {/,/^}/p; /^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
 eval "$(sed -n '/^slot_write() /p' "$here/worktree.sh")"
 gcloud() { printf '%s\n' "$*" >> "$tmp/gcloud"; }
 FXA_MEDIA_BUCKET=b branch=fxa-1
@@ -105,8 +105,9 @@ printf 'Before ![x](./shot.png) after\n' > "$tmp/body.md"
 arr=(--attach "$tmp/m/shot.png" --attach "$tmp/m/other.png" --attach "$tmp/m/run.mp4")
 md="$(_finish_media_to_bucket "$tmp/body.md" arr)"
 check "three uploads" "3" "$(grep -c '^storage cp' "$tmp/gcloud")"
-check "reference rewritten in place" "1" "$(grep -cE '^Before !\[x\]\(https://storage.googleapis.com/b/fxa-1/[0-9a-f]{16}/1/shot.png\) after$' "$tmp/body.md")"
-check "unreferenced image appended" "1" "$(grep -cE '^!\[other.png\]\(https://storage.googleapis.com/b/.*/2/other.png\)$' "$tmp/body.md")"
+check "reference rewritten in place, as a 480 px picture that links to the full size" "1" \
+  "$(grep -cE '^Before <a href="https://storage.googleapis.com/b/fxa-1/[0-9a-f]{16}/1/shot.png"><img src="https://storage.googleapis.com/b/fxa-1/[0-9a-f]{16}/1/shot.png" width="480" alt="shot.png"></a> after$' "$tmp/body.md")"
+check "unreferenced image appended" "1" "$(grep -cE '^<a href="https://storage.googleapis.com/b/.*/2/other.png"><img src="[^"]*/2/other.png" width="480" alt="other.png"></a>$' "$tmp/body.md")"
 check "video appended as a link" "1" "$(grep -cE '^\[run.mp4\]\(https://.*/3/run.mp4\)$' "$tmp/body.md")"
 check "markdown lists all three" "3" "$(printf '%s\n' "$md" | grep -c 'storage.googleapis.com')"
 

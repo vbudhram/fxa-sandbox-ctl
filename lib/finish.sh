@@ -225,6 +225,14 @@ _finish_bucket_cp() {
 #   The App cannot upload GitHub attachments, so upload to the public bucket at
 #   an unguessable path and rewrite the body. Prints the Markdown for all files.
 #   GitHub plays no video from outside its own uploads, so a video shows as a still frame that links to its MP4.
+# _finish_play_frame <video> <png>   A still frame of the video, 480 px wide, with a white play triangle on a dark disc in
+# its center: GitHub strips CSS, so the overlay that tells a reader "this is a video" is drawn into the picture.
+_finish_play_frame() {
+  local in='lte(hypot(X-W/2,Y-H/2),40)' tri='gte(X,W/2-14)*lte(X,W/2+22)*lte(abs(Y-H/2),(W/2+22-X)*0.62)' c q=""
+  for c in r g b; do q="${q}${q:+:}${c}='if(${in},if(${tri},255,${c}(X,Y)*0.35),${c}(X,Y))'"; done
+  ffmpeg -nostdin -y -loglevel error -i "$1" -vf "thumbnail,scale=480:-2,format=rgb24,geq=${q}" -frames:v 1 "$2"
+}
+
 _finish_media_to_bucket() {
   local body_file="$1" _media_arr="$2" f orig name url furl link dir md="" n=0 files=()
   eval "files=(\${${_media_arr}[@]+\"\${${_media_arr}[@]}\"})"
@@ -237,10 +245,12 @@ _finish_media_to_bucket() {
     url="$(_finish_bucket_cp "$f" "${dir}/${n}/${name}")" || continue
     case "$name" in
       *.mp4|*.webm|*.mov)
-        command -v ffmpeg >/dev/null 2>&1 && ffmpeg -nostdin -y -loglevel error -i "$f" -vf thumbnail -frames:v 1 "${f%.*}.png" \
+        command -v ffmpeg >/dev/null 2>&1 && _finish_play_frame "$f" "${f%.*}.png" \
           && furl="$(_finish_bucket_cp "${f%.*}.png" "${dir}/${n}/${name%.*}.png")"
-        if [ -n "$furl" ]; then link="[![${name}](${furl})](${url})"; else link="[${name}](${url})"; fi ;;
-      *) link="![${name}](${url})" ;;
+        if [ -n "$furl" ]; then link="<a href=\"${url}\"><img src=\"${furl}\" width=\"480\" alt=\"${name} (video: click to play)\"></a>"
+        else link="[${name}](${url})"; fi ;;
+      # 480 px wide in the body: a full-size screenshot pushed the PR text out of view. The link opens the full size.
+      *) link="<a href=\"${url}\"><img src=\"${url}\" width=\"480\" alt=\"${name}\"></a>" ;;
     esac
     md="${md}${link}"$'\n'
     # Rewrite local references in place, `(shot.png)` or `(./.fxa-auto-media/shot.png)`
@@ -249,7 +259,10 @@ _finish_media_to_bucket() {
 import re, sys
 path, name, url, link = sys.argv[1:]
 body = open(path).read()
-new = re.sub(r"\((?![a-z]+://)(?:[^()\s]*/)?" + re.escape(name) + r"\)", lambda m: "(" + url + ")", body)
+local = r"\((?![a-z]+://)(?:[^()\s]*/)?" + re.escape(name) + r"\)"
+# An image reference to the file becomes the sized, linked picture; any other reference (a plain link) gets the URL.
+new = re.sub(r"!\[[^\]]*\]" + local, lambda m: link, body)
+new = re.sub(local, lambda m: "(" + url + ")", new)
 if new == body:
     new = body.rstrip("\n") + "\n\n" + link + "\n"
 sys.stdout.write(new)
