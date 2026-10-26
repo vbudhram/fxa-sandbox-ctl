@@ -234,7 +234,8 @@ _finish_play_frame() {
 }
 
 _finish_media_to_bucket() {
-  local body_file="$1" _media_arr="$2" f orig name url furl link dir md="" n=0 files=()
+  # <done_file> (optional): its media_captions, {file name: one line}, show under each picture.
+  local body_file="$1" _media_arr="$2" caps="${3:-}" f orig name url furl link dir md="" n=0 files=() vids=0 more="" cap
   eval "files=(\${${_media_arr}[@]+\"\${${_media_arr}[@]}\"})"
   dir="${branch:-media}/$(openssl rand -hex 8)"
   for f in ${files[@]+"${files[@]}"}; do
@@ -243,6 +244,13 @@ _finish_media_to_bucket() {
     case "$f" in *.webm|*.mov) media_mp4 "$f" && f="${f%.*}.mp4" ;; esac
     name="$(basename "$f" | tr -c 'A-Za-z0-9._\n-' '-')"; n=$((n + 1))
     url="$(_finish_bucket_cp "$f" "${dir}/${n}/${name}")" || continue
+    cap=""; [ -s "$caps" ] && cap="$(jq -r --arg o "$orig" --arg n "$(basename "$f")" '(.media_captions // {}) | (.[$o] // .[$n] // empty) | tostring' "$caps" 2>/dev/null \
+      | tr '\n' ' ' | head -c 200 | sed -e 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/ *$//')"
+    case "$name" in *.mp4|*.webm|*.mov) vids=$((vids + 1)) ;; esac
+    # Two videos show as frames; more are links in a closed list, so the PR text stays in view.
+    if [ "$vids" -gt 2 ] && case "$name" in *.mp4|*.webm|*.mov) true ;; *) false ;; esac; then
+      more="${more}- [${name}](${url})${cap:+ ${cap}}"$'\n'; continue
+    fi
     case "$name" in
       *.mp4|*.webm|*.mov)
         command -v ffmpeg >/dev/null 2>&1 && _finish_play_frame "$f" "${f%.*}.png" \
@@ -250,8 +258,9 @@ _finish_media_to_bucket() {
         if [ -n "$furl" ]; then link="<a href=\"${url}\"><img src=\"${furl}\" width=\"480\" alt=\"${name} (video: click to play)\"></a>"
         else link="[${name}](${url})"; fi ;;
       # 480 px wide in the body: a full-size screenshot pushed the PR text out of view. The link opens the full size.
-      *) link="<a href=\"${url}\"><img src=\"${url}\" width=\"480\" alt=\"${name}\"></a>" ;;
+      *) link="<a href=\"${url}\"><img src=\"${url}\" width=\"480\" alt=\"${name}${cap:+: ${cap}}\"></a>" ;;
     esac
+    [ -z "$cap" ] || link="${link}<br><em>${cap}</em>"
     md="${md}${link}"$'\n'
     # Rewrite local references in place, `(shot.png)` or `(./.fxa-auto-media/shot.png)`
     # (never a URL); append the rest.
@@ -268,6 +277,11 @@ if new == body:
 sys.stdout.write(new)
 PY
   done
+  if [ -n "$more" ]; then
+    local block; block="<details><summary>More recordings ($(printf '%s' "$more" | grep -c .))</summary>"$'\n\n'"${more}"$'\n'"</details>"
+    md="${md}${block}"$'\n'
+    { cat "$body_file"; printf '\n%s\n' "$block"; } | slot_write "${body_file}.new" && mv -f "${body_file}.new" "$body_file"
+  fi
   printf '%s' "$md"
 }
 
@@ -297,12 +311,19 @@ PY
 #   Always print the `media:` line, so a handoff with no media is visible.
 finish_media_args() {
   local worktree="$1" done_file="$2" out="$3"
-  local p rel local_media real wt_real listed=0 attached=0 copy_dir copy
+  local p rel local_media real wt_real listed=0 attached=0 copy_dir copy all kept dups i=0
   wt_real="$(cd "$worktree" && pwd -P)"
   copy_dir="$(mktemp -d)"
+  all="$(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null | grep -v '^$' || true)"
+  # The same recording twice (a WebM and its MP4, or a rerun under one name): only the newest goes on the PR.
+  kept="$(printf '%s\n' "$all" | grep -v '^$' | while IFS= read -r p; do rel="${p#/workspace/}"; rel="$(basename "$rel")"
+      printf '%s\t%s\t%s\n' "${rel%.*}" "$(_mtime "${worktree}/${p#/workspace/}" 2>/dev/null || echo 0)" "$p"; done \
+    | awk -F'\t' '{ if (!($1 in t) || $2 >= t[$1]) { t[$1] = $2; p[$1] = $3; o[$1] = NR } } END { for (k in p) print o[k] "\t" p[k] }' \
+    | sort -n | cut -f2-)"
+  listed="$(printf '%s\n' "$all" | grep -c . || true)"; dups=$((listed - $(printf '%s\n' "$kept" | grep -c . || true)))
   while IFS= read -r p; do
     [ -z "$p" ] && continue
-    listed=$((listed + 1))
+    i=$((i + 1))
     rel="${p#/workspace/}"
     case "$rel" in
       /*|*..*|"") echo "  WARN: media path refused (outside the worktree): ${p}" >&2; continue ;;
@@ -313,7 +334,7 @@ finish_media_args() {
     esac
     local_media="${worktree}/${rel}"
     real="$( [ -f "$local_media" ] && cd "$(dirname "$local_media")" 2>/dev/null && pwd -P )/$(basename "$rel")"
-    mkdir -p "${copy_dir}/${listed}"; copy="${copy_dir}/${listed}/$(basename "$rel")"  # gh matches body refs by name
+    mkdir -p "${copy_dir}/${i}"; copy="${copy_dir}/${i}/$(basename "$rel")"  # gh matches body refs by name
     if [ -f "$local_media" ] && [ ! -L "$local_media" ] && [[ "$real" == "$wt_real"/* ]] &&
        _finish_copy_media "$local_media" "$copy" "$wt_real" 2>/dev/null; then
       eval "$out+=(--attach \"\$copy\")"
@@ -321,10 +342,10 @@ finish_media_args() {
     else
       echo "  WARN: media listed but not found inside the worktree, skipping: ${p}" >&2
     fi
-  done < <(jq -r '.media_paths // [] | .[]' "$done_file" 2>/dev/null)
+  done <<< "$kept"
   local why=""
   [ -f "${worktree}/.fxa-auto-media-skipped.txt" ] && [ ! -L "${worktree}/.fxa-auto-media-skipped.txt" ] && why="; skipped: $(head -c 200 "${worktree}/.fxa-auto-media-skipped.txt" | tr -d '\n')"
-  echo "media: ${listed} listed, ${attached} attached${why}" >&2
+  echo "media: ${listed} listed, ${attached} attached$([ "$dups" -gt 0 ] && echo " (${dups} duplicate$([ "$dups" = 1 ] || echo s) dropped)")${why}" >&2
 }
 
 # _finish_risk_section <worktree> <pr_body> <risk_notes>   The PR body with a ## Risk section after "This pull request",
@@ -785,7 +806,7 @@ _finish_push_and_pr() {
   # A fix run writes nothing to GitHub but the push: no media, gate, reviewers, Copilot or feedback.
   [ -z "$fix" ] || media_args=()
   if github_app_enabled && [ -n "${FXA_MEDIA_BUCKET:-}" ] && [ "${#media_args[@]}" -gt 0 ]; then
-    media_md="$(_finish_media_to_bucket "$body_file" media_args)"
+    media_md="$(_finish_media_to_bucket "$body_file" media_args "$done_file")"
     media_args=()  # the helper ran in a subshell; gh must not retry these as the App
   fi
 
@@ -1300,8 +1321,8 @@ _finish_pii_guard() {
   local wt="$1" d hits rc=0
   d="$(mktemp "${TMPDIR:-/tmp}/fxa-pii.XXXXXX")"
   jq -n --arg t "$3" --arg b "$4" --arg c "$5" --slurpfile f "$2" \
-    '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions} | map_values(
-       if type == "array" then map(tostring) | join("\n") else (. // "" | tostring) end))' > "$d.json" \
+    '{pr_title: $t, pr_body: $b, commit_body: $c} + ($f[0] | {feedback_summary, open_questions, media_captions} | map_values(
+       if type == "array" then map(tostring) | join("\n") elif type == "object" then [.[] | tostring] | join("\n") else (. // "" | tostring) end))' > "$d.json" \
     && { if [ -n "${6:-}" ]; then cat "$6"; else git -C "$wt" diff --cached -U0 --text --no-textconv --no-color --no-ext-diff; fi; } > "$d" \
     && hits="$(python3 "${FINISH_LIB_DIR}/pii_guard.py" "$d.json" "$d" "$wt")" || rc=$?
   rm -f "$d" "$d.json"

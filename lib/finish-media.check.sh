@@ -19,6 +19,14 @@ finish_media_args "$wt" "$tmp/done.json" args 2>/dev/null
 check "the screenshot is attached" "3 listed, 1 attached" "$(grep -oE '[0-9]+ listed, [0-9]+ attached' <<< "$log")"
 check "its copy holds the file" "png" "$(cat "${args[1]}" 2>/dev/null)"
 check "a symlink and a path outside are refused" "2" "$(grep -cE 'not found inside|refused' <<< "$log")"
+# The same recording twice (a WebM and its MP4, or a rerun): only the newest one goes on the PR.
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+printf 'old' > "$wt/.fxa-auto-media/run.webm"; printf 'new' > "$wt/.fxa-auto-media/run.mp4"
+touch -t 202601010000 "$wt/.fxa-auto-media/run.webm"; touch -t 202601020000 "$wt/.fxa-auto-media/run.mp4"
+printf '{"media_paths":[".fxa-auto-media/run.webm",".fxa-auto-media/shot.png",".fxa-auto-media/run.mp4"]}' > "$tmp/dup.json"
+args=(); log="$(finish_media_args "$wt" "$tmp/dup.json" args 2>&1)"; args=(); finish_media_args "$wt" "$tmp/dup.json" args 2>/dev/null
+check "a duplicate recording is dropped and the newest kept" "3 listed, 2 attached (1 duplicate dropped)|shot.png run.mp4" \
+  "$(grep -oE '[0-9]+ listed, [0-9]+ attached[^;]*' <<< "$log")|$(for a in "${args[@]}"; do [ "$a" = --attach ] || basename "$a"; done | paste -sd' ' -)"
 
 # The body rewrite, with gcloud stubbed: local links to the file become the bucket URL.
 eval "$(sed -n '/^media_mp4() {/,/^}/p; /^_finish_bucket_cp() {/,/^}/p; /^_finish_play_frame() {/,/^}/p; /^_finish_media_to_bucket() {/,/^}/p' "$(dirname "$0")/finish.sh")"
@@ -39,6 +47,15 @@ if command -v ffmpeg >/dev/null 2>&1; then
   _finish_media_to_bucket "$tmp/body.md" media > /dev/null
   check "a WebM goes up as an MP4 and a still frame, and the frame links to the MP4" "1|2" \
     "$(grep -cE '^<a href="https://storage.googleapis.com/bkt/fxa-1/[0-9a-f]{16}/1/run.mp4"><img src="https://storage.googleapis.com/bkt/fxa-1/[0-9a-f]{16}/1/run.png" width="480" alt="run.mp4 \(video: click to play\)"></a>$' "$tmp/body.md")|$(grep -cE '/1/run\.(mp4|png)$' "$tmp/up")"
+  # At most 2 videos show as frames; the rest are links in a closed "More recordings" list. A caption shows under its picture.
+  for v in a b c; do ffmpeg -v error -y -f lavfi -i "testsrc=s=320x180:d=1" -c:v libx264 -pix_fmt yuv420p "$wt/$v.mp4"; done
+  printf '{"media_captions":{"a.mp4":"Sign-in with a <new> code","shot.png":"The code screen"}}' > "$tmp/cap.json"
+  printf 'body\n' > "$tmp/body.md"; : > "$tmp/up"; media=("$wt/a.mp4" "$wt/b.mp4" "$wt/c.mp4" "$wt/.fxa-auto-media/shot.png")
+  _finish_media_to_bucket "$tmp/body.md" media "$tmp/cap.json" > /dev/null
+  check "two videos show as frames, the third is a link under More recordings, and every file is uploaded" "2|1|1|6" \
+    "$(grep -c '(video: click to play)' "$tmp/body.md")|$(grep -c '<details><summary>More recordings (1)</summary>' "$tmp/body.md")|$(grep -cE '^- \[c.mp4\]\(https://storage.googleapis.com/bkt/fxa-1/[0-9a-f]{16}/3/c.mp4\)$' "$tmp/body.md")|$(grep -c . "$tmp/up")"
+  check "a caption shows under its picture, escaped, and in the alt text" "1|1" \
+    "$(grep -c '<br><em>Sign-in with a &lt;new&gt; code</em>$' "$tmp/body.md")|$(grep -c 'alt="shot.png: The code screen"' "$tmp/body.md")"
   # The frame is 480 px wide, with a white play triangle on a dark disc in its center: a reader sees a video.
   px() { ffmpeg -v error -i "$wt/run.png" -vf "crop=1:1:$1:$2" -f rawvideo -pix_fmt gray - | od -An -tu1 | tr -d ' '; }
   check "the still frame is 480 px wide, with a play button in the middle" "480|1|1" \

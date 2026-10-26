@@ -80,6 +80,8 @@ check "the error names the place, not the value" "ERROR: refusing to ship: perso
   "$(_finish_pii_guard "$wt" "$tmp/done.json" 'fix(auth): x' 'from 81.12.40.7' '' 2>&1 >/dev/null | head -1)"
 echo '{"feedback_summary": ["user jane.doe@gmail.com saw it"]}' > "$tmp/done2.json"
 check "the round summary is checked" "1" "$(_finish_pii_guard "$wt" "$tmp/done2.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
+echo '{"media_captions": {"a.mp4": "signs in as jane.doe@gmail.com"}}' > "$tmp/done3.json"
+check "media captions are checked: they reach the PR after the body's check" "1" "$(_finish_pii_guard "$wt" "$tmp/done3.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
 printf 'const ip = "81.12.40.7";\n' >> "$wt/a.ts"; git -C "$wt" add a.ts
 check "an IP in the diff stops it" "1" "$(_finish_pii_guard "$wt" "$tmp/done.json" 'fix(auth): x' 'body' '' 2>/dev/null; echo $?)"
 git -C "$wt" reset -q; printf 'export const x = 1;\n' > "$wt/a.ts"; git -C "$wt" add a.ts
