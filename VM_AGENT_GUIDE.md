@@ -292,6 +292,12 @@ records a video, and its `--bg` and `wait` handle a run longer than 10 minutes.
 
 ## 8. Screenshots and videos
 
+A change a person can see (a page, a style, a string, an email, a loading or
+error state) ships with a screenshot or a short video of it: the reviewer sees
+the change without a checkout. Take it after the fix works, of the state the
+change affects. In the FxA repo, the handoff check refuses a visible change with
+no image or video, unless `/workspace/.fxa-auto-media-skipped.txt` says why.
+
 Save them in `/workspace/.fxa-auto-media/` as `.png`, `.jpg`, `.webp`, `.gif`,
 `.webm`, `.mp4` or `.mov`, or a `.patch` or `.diff`. Each must be a plain file inside the workspace, not
 a symlink, at most 100MB. A pipeline PR attaches only the image and video

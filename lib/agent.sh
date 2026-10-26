@@ -918,7 +918,11 @@ What trips agents most often:
   Any other host is refused.
 - Run only the tests for what you changed, never a whole suite: it can run the
   16GB machine out of memory.
-- Save screenshots and videos in `/workspace/.fxa-auto-media/`.
+- For a change a person can see (a page, a style, a string, an email, a loading or
+  error state), save a screenshot or a short video of it in `/workspace/.fxa-auto-media/`
+  before the handoff: `/fxa-page-shot`, `/fxa-storybook-capture` or `/fxa-functional-local`.
+  The handoff check refuses a visible change with neither, unless
+  `/workspace/.fxa-auto-media-skipped.txt` says why.
 VMSECTION
 )"
   [ "${FXA_SESSION_MODE:-}" = 1 ] || vm_section="$(printf '%s\n' "$vm_section" | _vm_guide_inline)"
