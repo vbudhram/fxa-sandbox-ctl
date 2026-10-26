@@ -1328,7 +1328,9 @@ function sessHeads(ss) {
   return ss.filter(s => !older.has(s.key));
 }
 // A conversation's title: what the person first asked, in the chain's first session.
-const convTitle = s => { const ch = chainOf(s, AGENTS?.sessions ?? []); return firstLine(ch[ch.length - 1].request); };
+// A routine run's request starts with the same schedule preamble, so its title is the routine's name.
+const convTitle = s => { if (s.routine_run && !isFix(s)) return `${s.routine_name || "Routine"} run`;
+  const ch = chainOf(s, AGENTS?.sessions ?? []); return firstLine(ch[ch.length - 1].request); };
 function chainOf(s, ss) {
   const by = new Map(ss.map(x => [x.key, x])), out = [];
   for (let x = s; x && out.length < 50; x = by.get(x.resume_from)) out.push(x);
@@ -4130,7 +4132,7 @@ function renderSide() {
       <div class="search">${raw(svgI('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>', 16))}<input id="q" type="search" placeholder="Search" value="${Q}" aria-label="Search the list">${KEYS ? html`<kbd>/</kbd>` : ""}</div>${who}${VIEW === "sessions" && STEAM ? html`<button type="button" class="tgl sm" data-steam-clear>Team: ${teamLabel(STEAM)} ×</button>` : ""}</div>
     <div class="slist2">${groups.length ? groups.map(g => html`${g.group ? html`<h3 class="sgroup">${g.group}</h3>` : ""}<ul>${g.items.map(it =>
       html`<li><button type="button" class="si" data-id="${it.id}"${it.id === sel ? html` aria-current="true"` : ""}${it.tip ? html` title="${it.tip}"` : ""}>${dot(it.d === "live" ? "info" : it.d === "fix" ? "bad" : it.d, it.d === "live")}<span class="t">${it.t}</span>
-        <span class="m">${it.m.filter(Boolean).join(" · ")}</span></button></li>`)}</ul>`) : html`<p class="sgroup">${Q ? "Nothing matches." : (VIEW === "errors" ? ERRS : AGENTS) ? "Nothing here." : "loading…"}</p>`}</div>`;
+        <span class="m">${it.m.filter(Boolean).join(" · ")}</span></button></li>`)}</ul>`) : html`<p class="empty">${Q ? "Nothing matches." : (VIEW === "errors" ? ERRS : AGENTS) ? "Nothing here." : "loading…"}</p>`}</div>`;
   if (active) { const q = document.getElementById("q"); q.focus(); q.setSelectionRange(Q.length, Q.length); }
 }
 const currentSession = () => { const list = (AGENTS?.sessions ?? []).filter(s => SESS_STATES[SESS_TAB].includes(s.state)); return list.find(s => s.key === SESS_SEL) || list[0]; };
