@@ -15,6 +15,13 @@ for a in snapshot stats teams errors; do bash "$root/skills/fxa-manager/vm.sh" a
 # The last 200 session records and each prompt's first line: recent runs read them for a title and the routine flag,
 # and the manager's session folder is not on this laptop. A failed read leaves the runs as before.
 bash "$root/skills/fxa-manager/vm.sh" run "echo aW1wb3J0IGpzb24sIGdsb2IsIG9zCmQgPSBvcy5wYXRoLmV4cGFuZHVzZXIoIn4vLmNsYXVkZS9zdGF0ZS9hZ2VudC1zZXNzaW9ucyIpOyBvdXQgPSB7fQpmb3IgZiBpbiBzb3J0ZWQoZ2xvYi5nbG9iKGQgKyAiL2FnZW50LSouanNvbiIpLCBrZXk9b3MucGF0aC5nZXRtdGltZSlbLTIwMDpdOgogICAgayA9IG9zLnBhdGguYmFzZW5hbWUoZilbOi01XQogICAgdHJ5OiByZWMgPSBqc29uLmxvYWQob3BlbihmKSkKICAgIGV4Y2VwdCBFeGNlcHRpb246IGNvbnRpbnVlCiAgICBsaW5lID0gIiIKICAgIHRyeTogbGluZSA9IG9wZW4ob3MucGF0aC5qb2luKGQsIGsgKyAiLnByb21wdC5tZCIpLCAicmIiKS5yZWFkKDMwMCkuZGVjb2RlKCJ1dGYtOCIsICJpZ25vcmUiKS5zdHJpcCgpLnNwbGl0KCJcbiIpWzBdCiAgICBleGNlcHQgT1NFcnJvcjogcGFzcwogICAgb3V0W2tdID0gW3JlYywgbGluZV0KcHJpbnQoanNvbi5kdW1wcyhvdXQpKQo= | base64 -d | python3" 2>/dev/null | tail -1 > "$t/sessions.json" || true
+# An admin's render also gets the routine summary and, on a team route, the team's record, test, routines and memory:
+# the admin routes the dashboard reads from the manager's store and controller. They stay in the temp folder.
+echo '{}' > "$t/team.json"
+if [ "$admin" = true ]; then
+  tm="$(printf '%s' "$route" | sed -nE 's|^#teams/([a-z][a-z0-9-]{1,30})(/.*)?$|\1|p' | grep -vxE 'new|all|routines' || true)"
+  bash "$root/skills/fxa-manager/vm.sh" run ": live-render-team; echo aW1wb3J0IGpzb24sIHN1YnByb2Nlc3MsIHN5cywgdGltZQpzeXMucGF0aC5pbnNlcnQoMCwgImxpYiIpOyBzeXMucGF0aC5pbnNlcnQoMCwgImRhc2hib2FyZCIpCnQsIG91dCA9IHN5cy5hcmd2WzFdLCB7fQpkZWYgY3RsKCphKToKICAgIHAgPSBzdWJwcm9jZXNzLnJ1bihbIi4vZnhhLXNhbmRib3gtY3RsIiwgKmFdLCBjYXB0dXJlX291dHB1dD1UcnVlLCB0ZXh0PVRydWUsIHRpbWVvdXQ9MTIwKQogICAgdHJ5OiByZXR1cm4ganNvbi5sb2FkcyhwLnN0ZG91dCkgaWYgcC5yZXR1cm5jb2RlID09IDAgZWxzZSB7ImVycm9yIjogKHAuc3RkZXJyIG9yIHAuc3Rkb3V0KS5zdHJpcCgpWy0zMDA6XX0KICAgIGV4Y2VwdCBWYWx1ZUVycm9yOiByZXR1cm4geyJlcnJvciI6ICJub3QgSlNPTiJ9CnRyeToKICAgIGltcG9ydCBmeGFkYjsgYyA9IGZ4YWRiLmNvbm5lY3QocmVhZG9ubHk9VHJ1ZSk7IG91dFsiL2FwaS9yb3V0aW5lcy9zdW1tYXJ5Il0gPSBmeGFkYi5yb3V0aW5lX3N1bW1hcnkoYywgaW50KHRpbWUudGltZSgpKSkKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOiBvdXRbIi9hcGkvcm91dGluZXMvc3VtbWFyeSJdID0geyJlcnJvciI6IHR5cGUoZSkuX19uYW1lX199CmlmIHQ6CiAgICBvdXQudXBkYXRlKHtmIi9hcGkvdGVhbXMve3R9IjogY3RsKCJwcm9maWxlIiwgImdldCIsIHQpLCAiL2FwaS90ZWFtcy9vcHRpb25zIjogY3RsKCJwcm9maWxlIiwgIm9wdGlvbnMiKSwKICAgICAgICAgICAgICAgIGYiL2FwaS90ZWFtcy97dH0vcm91dGluZXMiOiBjdGwoInJvdXRpbmUiLCAibGlzdCIsIHQpLCBmIi9hcGkvdGVhbXMve3R9L3JvdXRpbmUtY2hhbm5lbHMiOiBjdGwoInJvdXRpbmUiLCAiY2hhbm5lbHMiLCB0KSwKICAgICAgICAgICAgICAgIGYiL2FwaS90ZWFtcy97dH0vbWVtb3J5IjogY3RsKCJtZW1vcnkiLCAibGlzdCIsIHQpfSkKICAgIHRyeToKICAgICAgICBpbXBvcnQgc2VydmVyOyBvdXRbZiIvYXBpL3RlYW1zL3t0fS90ZXN0Il0gPSBzZXJ2ZXIudGVhbV90ZXN0X3RhaWwodCwgdGltZS50aW1lKCkpCiAgICBleGNlcHQgRXhjZXB0aW9uOiBwYXNzCnByaW50KGpzb24uZHVtcHMob3V0KSkK | base64 -d > /tmp/lr-team.py && python3 /tmp/lr-team.py '$tm'; rm -f /tmp/lr-team.py" 2>/dev/null | tail -1 > "$t/team.json" || echo '{}' > "$t/team.json"
+fi
 python3 - "$root/dashboard" "$t" "$admin" "$query" > "$t/fx.json" <<'PY'
 import json, sys, threading, time, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
@@ -37,7 +44,9 @@ srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(ta
 def get(p):
     req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{p}", headers={"Host": "localhost"})
     with urllib.request.urlopen(req, timeout=30) as r: return json.loads(r.read().decode())
-print(json.dumps({"/api/snapshot": get("/api/snapshot"), "/api/stats": get("/api/stats"), "/api/overview": get("/api/overview"), "/api/teams": live["teams"],
+try: team = json.load(open(f"{t}/team.json"))
+except (OSError, ValueError): team = {}
+print(json.dumps({**(team if isinstance(team, dict) else {}), "/api/snapshot": get("/api/snapshot"), "/api/stats": get("/api/stats"), "/api/overview": get("/api/overview"), "/api/teams": live["teams"],
                   "/api/runs/recent": get("/api/runs/recent?" + query), "/api/team-admin": {"admin": admin},
                   "/api/errors": json.load(open(f"{t}/errors.json"))}))
 PY
