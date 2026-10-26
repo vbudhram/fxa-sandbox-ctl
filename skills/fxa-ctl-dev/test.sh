@@ -30,6 +30,8 @@ FAIL $1 did not finish in ${FXA_CHECK_TIMEOUT}s"
   if ! grep -q '^FAIL' <<< "$out" && [ "$code" = 0 ]; then
     local s; s="$(grep -m1 -iE '^skip' <<< "$out" | sed -E 's/^[sS][kK][iI][pP]:? *//' || true)"; [ -z "$s" ] || echo "skip $2: $1: $s"; return 0; fi
   echo "FAIL $2: $1"; { grep '^FAIL' <<< "$out" || printf '  exit %s: %s\n' "$code" "$(tail -2 <<< "$out" | tr '\n' ' ')"; } | head -3
+  # FXA_CHECK_VERBOSE=1 (CI): the failed check's last 60 lines, so a runner-only failure shows its traceback.
+  [ -z "${FXA_CHECK_VERBOSE:-}" ] || tail -60 <<< "$out" | sed 's/^/  | /'
   return 1
 }
 

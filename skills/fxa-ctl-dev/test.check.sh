@@ -19,6 +19,8 @@ check "a run of 5 or more checks names the slowest first" "1" \
 check "a run of fewer checks prints no slowest line" "0" "$(run_pool mac c/a.check.sh c/b.check.sh 2>&1 | grep -c slowest)"
 echo 'echo "FAIL planted"' > c/a.check.sh
 check "a FAIL line fails the pool and names the check" "1|yes" "$(run_pool mac c/a.check.sh c/b.check.sh > out 2>&1; echo $?)|$(grep -q 'FAIL mac: c/a.check.sh' out && echo yes)"
+check "FXA_CHECK_VERBOSE prints the failed check's own output under its FAIL line" "0|1" \
+  "$(grep -c '^  | ' out)|$(FXA_CHECK_VERBOSE=1 run_pool mac c/a.check.sh 2>&1 | grep -c '^  | FAIL')"
 # The check kills the xargs child that runs it (its grandparent, as an OOM kill would): xargs
 # aborts, and b never runs.
 echo 'kill -9 "$(ps -o ppid= -p "$PPID" | tr -d " ")"' > c/a.check.sh

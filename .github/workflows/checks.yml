@@ -93,3 +93,4 @@ jobs:
           # Each finished check prints a line, and a hung one fails at 5 min, so the log names it.
           FXA_CHECK_PROGRESS: '1'
           FXA_CHECK_TIMEOUT: '300'
+          FXA_CHECK_VERBOSE: '1'
