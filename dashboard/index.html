@@ -706,6 +706,8 @@ const brandSvg = (k, label) => raw(`<svg viewBox="0 0 24 24" fill="currentColor"
 const srcBadge = k => html`<span class="${cls("src", k === "github" ? "gh" : k)}">${brandSvg(k)}</span>`;
 // A stat tile: a label, the value and a sub line. v is "?" when its feed failed, never a confident 0.
 const statTile = (l, v, sub, tone, href) => card(html`<span class="lbl">${l}</span><span class="big">${v}</span><span class="sub">${sub}</span>`, { sm: true, cls: cls("stat", tone), href });
+// A text's size against its limit. The limit is in bytes (the server counts bytes): near it, the count says so.
+const textSize = (s, max) => { const n = new Blob([s ?? ""]).size; return n >= 0.9 * max ? `${n} of ${max} bytes, ${max - n} left` : `${n} of ${max}`; };
 // End components.
 const ago = s => s == null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s/60)}m ago`
   : s < 172800 ? `${Math.round(s/3600)}h ago` : `${Math.round(s/86400)}d ago`;
@@ -2071,7 +2073,7 @@ function teamItemForm(t, rec, f) {
         <fieldset class="group field"><legend class="lb">Channels it watches</legend><p class="hint">A tag in one of these channels picks this team. The person must still be on the list.</p>${C.map(c => html`<label><input type="checkbox" data-tfch="${c.id}"${d.chans.includes(c.id) ? " checked" : ""}${c.why && !d.chans.includes(c.id) ? " disabled" : ""}> #${c.name}${c.private ? html` ${tag("private", "", { sq: true })}` : ""}${c.why ? html` <span class="hint">· ${c.why}</span>` : ""}</label>`)}
           ${lab("other", html`${C.length ? "Other channel IDs" : "Channel IDs"} <span class="opt">· optional</span>`, html`<input id="tf-other" class="input" data-tfk="other" value="${d.other}" placeholder="C0123ABCD">`)}</fieldset></div>`}
       ${lab("prefixes", html`Jira keys that pick this team <span class="opt">· at most 5</span>`, html`<input id="tf-prefixes" class="input mono" data-tfk="prefixes" value="${d.prefixes}" placeholder="RELAY">`, rec.jira?.project && !rec.jira.secret ? `Your project key ${rec.jira.project} counts already.` : "")}${save}`; }
-  if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${new Blob([d.goal]).size} of 2560 bytes</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
+  if (f.item === "goal") return html`${lab("goal", html`What does this team work on? <span class="opt" data-tf-count>${textSize(d.goal, 2560)}</span>`, html`<textarea id="tf-goal" class="input" rows="5" data-tfk="goal">${d.goal}</textarea>`, "The agent reads this at the start of every session.")}${save}`;
   if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("launches_per_day", html`Launches a day, empty for the default <span class="opt">· ${TOPTS?.caps?.launches_per_day != null ? `at most ${TOPTS.caps.launches_per_day}` : "optional"}</span>`, html`<input id="tf-launches_per_day" class="input" type="number" min="0" data-tfk="launches_per_day" value="${d.launches_per_day}">`)}</div>
     <label><input type="checkbox" data-tfk="queue"${d.queue ? " checked" : ""}> Take ai-fixme tickets from the queue</label>
     <label><input type="checkbox" data-tfk="secret"${d.secret ? " checked" : ""}${d.queue ? "" : " disabled"}> Take only secret tickets (a security level, or a security or hackerone label)</label>
@@ -2243,7 +2245,7 @@ function newTeamHtml() {
       <fieldset class="group stack sm" id="nt-stack" tabindex="-1"${bad("stack")}><legend class="lb">Stack</legend><div class="fields2">
         <label class="choice sm"><input type="radio" name="nt-stack" data-nt="stack" value="none"${d.stack === "none" ? " checked" : ""}><span class="stack sm"><b>No FxA stack</b><span class="hint">The agent works in the repo with its own tools.</span></span></label>
         <label class="choice sm"><input type="radio" name="nt-stack" data-nt="stack" value="fxa"${d.stack === "fxa" ? " checked" : ""}><span class="stack sm"><b>Runs the FxA stack</b><span class="hint">The agent boots the FxA services to test its change.</span></span></label></div>${err("stack")}</fieldset>
-      <div class="field"><label for="nt-goal">What does this team work on? <span class="opt" data-nt-count>${new Blob([d.goal]).size} of 2560 bytes</span></label><textarea id="nt-goal" class="input" data-nt="goal" rows="5"${bad("goal")}>${d.goal}</textarea><p class="hint">The agent reads this at the start of every session.</p>${err("goal")}</div>
+      <div class="field"><label for="nt-goal">What does this team work on? <span class="opt" data-nt-count>${textSize(d.goal, 2560)}</span></label><textarea id="nt-goal" class="input" data-nt="goal" rows="5"${bad("goal")}>${d.goal}</textarea><p class="hint">The agent reads this at the start of every session.</p>${err("goal")}</div>
     </section><aside class="card stack"><h3>Before you create it</h3><p class="readback" data-nt-readback>${newTeamReadback(d)}</p>
       <div class="row"><button type="button" data-nt-create${d.busy ? " disabled" : ""}>${d.busy ? "Creating…" : "Create draft"}</button><a class="btn" href="#teams">Cancel</a></div>
       <p role="status" class="${d.ok === false ? "unknown" : "hint"}">${d.msg || "The fxa-agent GitHub App must be on the repo. If it is not, an org owner installs it. You can create the draft first."}</p></aside></div></div>`;
@@ -2338,7 +2340,7 @@ document.addEventListener("input", e => {
   const nt = e.target.dataset?.nt;
   if (nt && NEWT) { NEWT[nt] = e.target.value; NEWT.dirty = true; NEWT.errs = { ...NEWT.errs, [nt]: undefined };
     const rb = document.querySelector("[data-nt-readback]"); if (rb) rb.innerHTML = String(newTeamReadback(NEWT));
-    const c = document.querySelector("[data-nt-count]"); if (c && nt === "goal") c.textContent = `${new Blob([NEWT.goal]).size} of 2560 bytes`;
+    const c = document.querySelector("[data-nt-count]"); if (c && nt === "goal") c.textContent = textSize(NEWT.goal, 2560);
     if (nt === "name") { const h = e.target.parentElement?.querySelector(".hint"); if (h) h.textContent = `Lowercase letters, digits and -. It shows as ${NEWT.name ? teamCap(NEWT.name) : "the team"}.`; }
     return; }
   const f = TFORM, k = e.target.dataset?.tfk; if (!f || !e.target.closest?.("[data-tform]")) return;
@@ -2354,7 +2356,7 @@ document.addEventListener("input", e => {
   const v = e.target.type === "checkbox" ? e.target.checked : e.target.type === "radio" ? !!e.target.value : e.target.value;
   if (e.target.dataset.tfr != null) f.d.repos[Number(e.target.dataset.tfr)][k] = v; else f.d[k] = v;
   f.dirty = true;
-  if (k === "goal") { const c = document.querySelector("[data-tf-count]"); if (c) c.textContent = `${new Blob([v]).size} of 2560 bytes`; }
+  if (k === "goal") { const c = document.querySelector("[data-tf-count]"); if (c) c.textContent = textSize(v, 2560); }
   if (["open", "queue", "secret", "dflt"].includes(k)) teamPaint();
 });
 document.addEventListener("click", async e => {
@@ -2753,7 +2755,7 @@ function rtDetail(t, r) {
           ${kvRow("Cost limit", `${usd(d.max_usd)} a run`)}${onpr ? "" : kvRow("No new commits", d.skip_no_commits ? "skip the run" : "run anyway")}`)}
         ${onpr ? card(html`<h2>Live runs<span class="n">${(r.lives ?? []).length}</span></h2>${rtLives(r)}`)
           : card(html`<h2>Next runs</h2>${next.length ? next.map(x => kvRow(rtWhen(x, d.zone, true).replace(/, \d\d:\d\d$/, ""), rtWhen(x, d.zone, true).slice(-5))) : html`<p class="empty">${r.paused ? "Paused: no run is due." : "No run is due."}</p>`}`)}
-        ${onpr ? "" : card(html`<h2>Prompt<span class="note">${new Blob([d.prompt ?? ""]).size} of 4096 bytes</span></h2><details><summary>Show the whole prompt</summary><pre class="report">${d.prompt}</pre></details>`)}
+        ${onpr ? "" : card(html`<h2>Prompt<span class="note">${textSize(d.prompt, 4096)}</span></h2><details><summary>Show the whole prompt</summary><pre class="report">${d.prompt}</pre></details>`)}
         ${card(html`<h3>Delete this routine</h3><p class="hint">${onpr ? "No new run starts after this." : "The schedule stops at once."} You cannot undo this.</p><div class="row">${b("delete", RT.arm === r.id ? "Delete: click again" : "Delete", busy)}</div>`, { flat: true })}
       </div></div></div>`;
 }
@@ -2867,8 +2869,8 @@ function routineForm(t) {
         ${rtChannelField(d, f, bad, err)}
         ${lab("max_usd", "Cost limit for each run, USD", html`<input id="rt-max_usd" class="input rt-usd" type="number" min="1" step="1" data-rt="max_usd" value="${d.max_usd}"${bad("max_usd")}>`)}</div>`)}` : html`
       ${card(html`<h2>What it does</h2><div class="stack">${lab("name", "Name", html`<input id="rt-name" class="input" data-rt="name" maxlength="40" value="${d.name}"${bad("name")}>`)}
-        ${openPrompt ? lab("prompt", html`Prompt <span class="opt" data-rt-count>${new Blob([d.prompt]).size} of 4096 bytes</span>`, html`<textarea id="rt-prompt" class="input" data-rt="prompt" rows="10"${bad("prompt")}>${d.prompt}</textarea>`)
-          : html`<div class="field"><span class="lb">Prompt <span class="opt">· ${new Blob([d.prompt]).size} of 4096 bytes</span></span><p class="report">${String(d.prompt).slice(0, 260)}${String(d.prompt).length > 260 ? "…" : ""}</p>
+        ${openPrompt ? lab("prompt", html`Prompt <span class="opt" data-rt-count>${textSize(d.prompt, 4096)}</span>`, html`<textarea id="rt-prompt" class="input" data-rt="prompt" rows="10"${bad("prompt")}>${d.prompt}</textarea>`)
+          : html`<div class="field"><span class="lb">Prompt <span class="opt">· ${textSize(d.prompt, 4096)}</span></span><p class="report">${String(d.prompt).slice(0, 260)}${String(d.prompt).length > 260 ? "…" : ""}</p>
             <div class="row"><button type="button" class="linkbtn" data-rt-prompt>Edit the prompt</button><span class="hint">The start's prompt is tested. Change it only when you need to.</span></div></div>`}</div>`)}
       ${card(html`<h2>When it runs</h2><div class="stack">
         <fieldset class="group field" id="rt-schedule" tabindex="-1"${bad("schedule")}><legend class="lb">How often</legend><span class="seg">${[["daily", "Every day"], ["weekdays", "Weekdays"], ["weekly", "Once a week"]].map(([v, l]) => html`<button type="button" data-rt-kind="${v}" aria-pressed="${String(d.kind === v)}">${l}</button>`)}</span>
@@ -2950,7 +2952,7 @@ document.addEventListener("input", e => {
   if (!k) return;
   if (k === "channel" && e.target.value === "__paste") { f.chPaste = true; f.d.channel = ""; return rtPaint(); }
   f.d[k] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-  if (k === "prompt") { const c = document.querySelector("[data-rt-count]"); if (c) c.textContent = `${new Blob([f.d.prompt]).size} of 4096 bytes`; }
+  if (k === "prompt") { const c = document.querySelector("[data-rt-count]"); if (c) c.textContent = textSize(f.d.prompt, 4096); }
   if (k === "channel" && e.target.tagName === "SELECT") return rtPaint();
   const rb = document.querySelector("[data-rt-readback]"), nx = document.querySelector("[data-rt-next]");
   if (rb) rb.innerHTML = String(rtReadback(f.d));

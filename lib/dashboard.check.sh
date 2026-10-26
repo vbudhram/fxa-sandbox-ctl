@@ -576,6 +576,11 @@ t("panel: a known row list with the row gone gives null", sbDetails("fix:agent-d
   globalThis.document = { body: { classList: { remove() {} } }, activeElement: null, getElementById: () => el };
   sbClearGone(); t("panel: clearing a selection repaints the header, so #tright's aria-pressed follows", `${hdr}|${SEL.runners}`, "1|undefined"); }
 globalThis.TAB_SRC = "pipeline"; t("panel: a row of another tab gives null", sbDetails("fix:agent-def456", now), null);
+
+// A text size reads as a count against its limit; near the limit it says bytes and what is left.
+t("size: a short text is a count against the limit, with no unit", String(textSize("abc", 2560)), "3 of 2560");
+t("size: near the limit it names bytes and what is left", String(textSize("x".repeat(2400), 2560)), "2400 of 2560 bytes, 160 left");
+t("size: a non-ASCII character counts in bytes", String(textSize("é", 2560)), "2 of 2560");
 process.exit(fail);
 JS
 [ $? = 0 ] || exit 1
