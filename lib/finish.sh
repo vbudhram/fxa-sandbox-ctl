@@ -318,15 +318,26 @@ finish_media_args() {
 # for the human reviewer: merge risk from the paths and size, rollback from what a revert cannot undo, verification from
 # the runner's records. The host sets the levels (a self-rated risk reads low); the agent's notes only explain. FxA only.
 _finish_risk_section() {
-  local wt="$1" body="$2" notes="${3:-}" f a d files=0 adds=0 dels=0 code=0 m=1 r=1 v=1 areas="" why="" sec n pass=0 bad=0 ci=0
+  local wt="$1" body="$2" notes="${3:-}" f a d files=0 adds=0 dels=0 code=0 logic=0 m=1 r=1 v=1 areas="" why="" sec n pass=0 bad=0 ci=0 med=0
   [ -d "${wt}/packages/fxa-settings" ] || { printf '%s' "$body"; return 0; }
   add() { case ", ${areas}, " in *", $1, "*) ;; *) areas="${areas:+${areas}, }$1" ;; esac; }
   because() { case "; ${why}; " in *"; $1; "*) ;; *) why="${why:+${why}; }$1" ;; esac; }
   while IFS=$'\t' read -r a d f; do
     case "$f" in .fxa-*|ai/*|artifacts/*|"") continue ;; esac
-    files=$((files + 1)); adds=$((adds + ${a//-/0})); dels=$((dels + ${d//-/0}))
-    case "$f" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*.stories.*|packages/functional-tests/*|docs/*|*.md) continue ;; esac
+    files=$((files + 1))
+    # A lock file or a snapshot is generated: its lines say nothing about the size of the change.
+    case "$f" in yarn.lock|*/yarn.lock|package-lock.json|*/package-lock.json|*.snap) ;; *) adds=$((adds + ${a//-/0})); dels=$((dels + ${d//-/0})) ;; esac
+    case "$f" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*/__snapshots__/*|*.snap|*.stories.*|packages/functional-tests/*|docs/*|*.md) continue ;; esac
     code=1
+    # Copy (.ftl, and email templates) and dependencies have rules of their own. A style file is UI, but its proof is a picture.
+    case "$f" in
+      packages/fxa-auth-server/lib/senders/*.ftl|packages/fxa-auth-server/lib/senders/*.mjml|libs/accounts/email-renderer/*.ftl|libs/accounts/email-renderer/*.mjml)
+        [ "$r" -ge 2 ] || r=2; add "email copy"; because "a sent email cannot be recalled"; continue ;;
+      *.ftl) add "copy"; continue ;;
+      package.json|*/package.json|yarn.lock|*/yarn.lock|package-lock.json|*/package-lock.json) [ "$m" -ge 2 ] || m=2; logic=1; add "dependencies"; continue ;;
+      *.css|*.scss|*.less) ;;
+      *) logic=1 ;;
+    esac
     case "$f" in
       packages/fxa-auth-server/lib/crypto/*|packages/fxa-auth-server/lib/tokens/*|packages/fxa-auth-server/lib/oauth/*|packages/fxa-customs-server/*|\
       packages/fxa-auth-server/lib/routes/account*|packages/fxa-auth-server/lib/routes/password*|packages/fxa-auth-server/lib/routes/session*|\
@@ -363,12 +374,16 @@ _finish_risk_section() {
   fi
   local counts; counts="${pass} check$([ "$pass" = 1 ] && echo " passes" || echo "s pass")$([ "$ci" -gt 0 ] && echo ", ${ci} left to CI")"
   local vt
+  find "${wt}/.fxa-auto-media" -maxdepth 1 -type f 2>/dev/null | grep -qiE '\.(png|jpe?g|webp|gif|webm|mp4|mov)$' && med=1
   if [ "$code" = 0 ]; then vt="Strong. Only tests and docs change."
   elif [ "$bad" -gt 0 ]; then v=3; vt="Weak. ${bad} check$([ "$bad" = 1 ] || echo s) failed."
   elif [ "$pass" = 0 ]; then v=3; vt="Weak. No verify run is on record."
+  # Copy or styles only: no test fails without them, so a picture of the change is the proof.
+  elif [ "$logic" = 0 ] && [ "$med" = 1 ]; then vt="Strong. A copy or style change: ${counts}, and a screenshot or video shows it."
+  elif [ "$logic" = 0 ]; then v=2; vt="Partial. A copy or style change: ${counts}; no screenshot shows the change."
   elif head -1 "${wt}/.fxa-verify-revert.txt" 2>/dev/null | grep -q ' proof=yes$'; then vt="Strong. A test fails without the fix (verify --revert). ${counts}."
   else v=2; vt="Partial. ${counts}; no test is shown to fail without the fix."; fi
-  [ "$code" = 1 ] && find "${wt}/.fxa-auto-media" -maxdepth 1 -type f 2>/dev/null | grep -qiE '\.(png|jpe?g|webp|gif|webm|mp4|mov)$' && vt="${vt} A screenshot or video is attached."
+  [ "$logic" = 1 ] && [ "$med" = 1 ] && vt="${vt} A screenshot or video is attached."
   [ -n "$areas" ] || areas="tests and docs"
   local lv=(Low Medium High) rb=(Easy Moderate Hard) vs=(Strong Partial Weak) top=$m
   [ "$r" -gt "$top" ] && top=$r; [ "$v" -gt "$top" ] && top=$v
@@ -378,7 +393,7 @@ _finish_risk_section() {
 
 **Risk: ${lv[$((top - 1))]}** (the worst of the three below)
 
-- Merge risk: ${lv[$((m - 1))]}. ${files} files, +${adds} -${dels}: ${areas}.
+- Merge risk: ${lv[$((m - 1))]}. ${files} file$([ "$files" = 1 ] || echo s), +${adds} -${dels}: ${areas}.
 - Rollback: ${rb[$((r - 1))]}. ${rt}
 - Verification: ${vs[$((v - 1))]}. ${vt#*. }"
   # The agent's notes: what the checks would not catch, a rollback step. At most 3 lines.

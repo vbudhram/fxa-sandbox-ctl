@@ -54,6 +54,22 @@ printf 'fxa-verify 2026-10-26T00:00:00Z\nPASS unit 3s /tmp/a\n' > .fxa-verify-ve
 check "over 500 lines is High merge risk; passes with no proof are Partial" "- Merge risk: High. 2 files, +600 -0: settings and React UI.|- Verification: Partial. 1 check passes; no test is shown to fail without the fix." \
   "$(sec | grep -E '^- (Merge|Verification)' | paste -sd'|' -)"
 
+# Kinds of change: copy, email copy, styles, dependencies, snapshots.
+media() { mkdir -p .fxa-auto-media && touch .fxa-auto-media/shot.png; }
+pass1() { printf 'fxa-verify 2026-10-26T00:00:00Z\nPASS l10n 3s /tmp/a\n' > .fxa-verify-verdict.txt; }
+rows() { sec "$@" | grep -E '^(\*\*Risk|- (Merge|Rollback|Verification))' | paste -sd'|' -; }
+repo packages/fxa-settings/public/locales/en/settings.ftl; pass1; media
+check "copy only, a pass and a screenshot: Low, and no revert test is asked for" \
+  "**Risk: Low** (the worst of the three below)|- Merge risk: Low. 1 file, +3 -0: copy.|- Rollback: Easy. A plain revert; it ships on the next train.|- Verification: Strong. A copy or style change: 1 check passes, and a screenshot or video shows it." "$(rows)"
+repo packages/fxa-settings/public/locales/en/settings.ftl; pass1
+check "copy only with no screenshot is Partial" "- Verification: Partial. A copy or style change: 1 check passes; no screenshot shows the change." "$(rows | tr '|' '\n' | grep '^- Verification')"
+repo packages/fxa-auth-server/lib/senders/emails/templates/x/en.ftl; pass1; media
+check "email copy: Low merge, Moderate rollback, as a sent email stays" "- Merge risk: Low. 1 file, +3 -0: email copy.|- Rollback: Moderate. A sent email cannot be recalled." "$(rows | tr '|' '\n' | grep -E '^- (Merge|Rollback)' | paste -sd'|' -)"
+repo packages/fxa-settings/src/styles/a.css; pass1; media
+check "styles only: Medium as UI, and a screenshot is the proof" "- Merge risk: Medium. 1 file, +3 -0: settings and React UI.|- Verification: Strong. A copy or style change: 1 check passes, and a screenshot or video shows it." "$(rows | tr '|' '\n' | grep -E '^- (Merge|Verification)' | paste -sd'|' -)"
+N=300 repo packages/fxa-settings/package.json yarn.lock packages/fxa-settings/src/__snapshots__/A.snap; pass1
+check "dependencies are named and Medium; the lock file and snapshots do not count toward the size" "- Merge risk: Medium. 3 files, +300 -0: dependencies." "$(rows | tr '|' '\n' | grep '^- Merge')"
+
 rm -rf packages/fxa-settings; check "a repo that is not FxA gets no section" "$body" "$(sec)"
 check "a body with no This pull request heading gets the section at the end" "## Risk" "$(mkdir -p packages/fxa-settings; _finish_risk_section "$tmp/wt" 'plain body' '' | sed -n 3p)"
 exit "$fail"
