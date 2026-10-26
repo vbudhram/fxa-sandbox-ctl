@@ -1835,7 +1835,7 @@ function teamItem(t, use) {
   if (t.load_error) return { id: t.profile, d: "bad", t: t.profile, m: ["profile.conf did not load"] };
   const x = use?.[t.profile] ?? NO_USE;
   return { id: t.profile, d: teamNeeds(t) ? (teamLevel(t) || "warn") : x.live ? "live" : "ok", t: teamName(t),
-    m: teamNeeds(t) ? [teamReason(t)] : [teamAccess(t)[0], t.read_only ? "read-only" : "", use ? usd(x.usd) : "", use ? (x.last ? ago(Math.round(Date.now() / 1000 - x.last)) : "never used") : ""] };
+    m: teamNeeds(t) ? [teamReason(t)] : [teamAccess(t)[0], t.read_only ? "read-only" : "", t.budget ? usd(t.budget.month_usd) : "", use ? (x.last ? ago(Math.round(Date.now() / 1000 - x.last)) : "never used") : ""] };
 }
 // Per team: open errors through their sessions, and PRs in 7 days from the run rows.
 function teamErrs() {
@@ -4119,7 +4119,9 @@ function sideGroups() {
   if (VIEW === "errors") return [{ items: (ERRS ?? []).filter(e => ERRS_ALL || errOpen(e)).filter(e => hit(e.message + " " + e.sig)).map(e => ({ id: e.sig, d: errOpen(e) ? "bad" : "ok", t: e.message, m: [ERRS_ALL ? e.status : "", `${e.count}×`, `${e.source}/${e.kind}`, ago(Math.round((Date.now() - Date.parse(e.last)) / 1000))] })) }].filter(g => g.items.length);
   if (VIEW === "teams") {
     const use = teamUse(), rows = teamRows(), ts = TEAMS?.teams ?? [], er = ERRS ? ERRS.filter(errOpen).length : null;
-    const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, use ? `${usd(Object.values(use).reduce((n, x) => n + x.usd, 0))} in 30 days` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
+    // Cost is this month's, from the team budgets, as on the page; 30-day use is only for the last-used time.
+    const bt = ts.filter(t => t.budget);
+    const all = { id: "__all", d: "ok", t: "All teams", m: [`${ts.length} team${ts.length === 1 ? "" : "s"}`, bt.length ? `${usd(bt.reduce((n, t) => n + t.budget.month_usd, 0))} this month` : "", er == null ? "" : `${er} open error${er === 1 ? "" : "s"}`] };
     return [{ group: "", items: Q ? [] : [all] }, { group: "Needs attention", items: rows.filter(t => t.load_error || teamNeeds(t)).map(t => teamItem(t, use)) },
       { group: "Teams", items: rows.filter(t => !t.load_error && !teamNeeds(t)).map(t => teamItem(t, use)) }].filter(g => g.items.length);
   }
