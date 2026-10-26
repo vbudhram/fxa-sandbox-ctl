@@ -4129,7 +4129,7 @@ function renderSide() {
   const side = document.getElementById("side");
   if (VIEW === "overview" || VIEW === "runners") { side.innerHTML = ""; return; }
   if (VIEW === "stats") { side.innerHTML = html`<div class="sh"><h2>Filters</h2></div>${STATS ? raw(statsFilters()) : html`<div class="sgroup">loading…</div>`}`; return; }
-  const groups = sideGroups(), total = groups.reduce((n, g) => n + g.items.length, 0), name = VIEWS.find(x => x[0] === VIEW)[1];
+  const groups = sideGroups(), total = groups.reduce((n, g) => n + g.items.filter(i => i.id !== "__all").length, 0), name = VIEWS.find(x => x[0] === VIEW)[1];
   const sel = VIEW === "sessions" ? SESS_SEL || currentSession()?.key : SEL[VIEW];
   const active = document.activeElement?.id === "q";
   const people = VIEW === "sessions" ? [...new Set((AGENTS?.sessions ?? []).map(ownerName).filter(Boolean))].sort() : [];
