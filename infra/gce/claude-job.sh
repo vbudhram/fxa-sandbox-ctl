@@ -21,7 +21,8 @@ out="$(mktemp)"; trap cleanup EXIT
 input="$(cat "$prompt")"
 if [ "$job" = pass ]; then
   pre="$("$ctl" precheck 2>&1)"
-  case "$pre" in quiet*|locked*|paused*) printf '%s\n' "$pre" | head -1; exit 0 ;; esac
+  # The status line can follow stderr lines (a stale lock cleared, a state push WARN): look at every line.
+  if printf '%s\n' "$pre" | grep -qE '^(quiet|locked|paused)'; then printf '%s\n' "$pre"; exit 0; fi
   # Lines a model can only report: a reap that already ran, a label that precheck tries again each
   # pass, a relock only the operator can run. The journal gets them, and no model turn is paid.
   if ! printf '%s\n' "$pre" | sed '/^info:/,$d' | grep -vE '^reap: |^drain: .*(label (merged|rejected) FAILED\)$|relock FAILED; run: relock )' | grep -q .; then

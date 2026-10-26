@@ -38,6 +38,8 @@ run() { rm -f "$tmp/claude-in"; printf '%s\n' "$1" > "$tmp/precheck-out"
 
 check "a quiet pass prints the quiet line" "quiet: 3 queued" "$(run 'quiet: 3 queued')"
 check "a quiet pass calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
+run $'clearing stale lock, 400s old\nquiet: 3 queued' >/dev/null
+check "a quiet pass after a stderr line still calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 check "a quiet pass records no cost" "0" "$(cat "$tmp/state/job-costs.jsonl" 2>/dev/null | wc -l | tr -d ' ')"
 run 'locked: another pass started 5s ago' >/dev/null; check "a locked pass calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
 run 'paused: deploy' >/dev/null; check "a paused pass calls no model" "no" "$([ -e "$tmp/claude-in" ] && echo yes || echo no)"
