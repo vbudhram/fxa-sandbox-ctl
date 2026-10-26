@@ -110,5 +110,8 @@ rm -rf .fxa-auto-media; echo b > packages/fxa-settings/src/Page.test.tsx; g chec
 handoff 'test(settings): x'; jq 'del(.risk_notes)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
 bash "$C" > out.txt; rc=$?; check "an FxA handoff with no 'Would not catch' line gets a style note only (exit 3)" "3|1" "$rc|$(grep -c "risk_notes has no 'Would not catch" out.txt)"
 jq '.risk_notes = ["x"]' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json; check "risk_notes that is not a string is a problem" 1 "$(bash "$C" | grep -c 'risk_notes as a string')"
+handoff 'test(settings): x'; jq '.media_captions = ["x"]' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+check "media_captions that is not an object of strings is a problem" 1 "$(bash "$C" | grep -c 'media_captions as an object of strings')"
+jq '.media_captions = {"a.png": "The code screen"}' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json; check "captions as an object pass" "handoff check: ok" "$(bash "$C")"
 rm -f out.txt; rm .fxa-auto-done.json; check "no handoff yet: no media problem" "handoff check: ok" "$(bash "$C")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

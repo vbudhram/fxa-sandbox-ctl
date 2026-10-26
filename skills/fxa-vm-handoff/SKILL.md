@@ -99,8 +99,9 @@ jq -n \
   --rawfile cbody /tmp/commit-body.txt \
   --rawfile risk /tmp/risk-notes.txt \
   --argjson media "$(ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .)" \
+  --argjson caps "$(cat /tmp/media-captions.json 2>/dev/null || echo '{}')" \
   '{issue:$issue, branch:$branch, pr_title:$title,
-    pr_body:$body, commit_body:$cbody, risk_notes:$risk, media_paths:$media}' \
+    pr_body:$body, commit_body:$cbody, risk_notes:$risk, media_paths:$media, media_captions:$caps}' \
   > /workspace/.fxa-auto-done.json.tmp \
   && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json
 ```
@@ -136,6 +137,13 @@ rate the risk yourself. Write what the reviewer cannot see from those:
 - `Flag: ...`: the Nimbus or feature flag that turns the change off, when there is one.
 Run `verify --revert` before the handoff when a test covers the fix: the Risk
 section says "Strong" only with that proof.
+
+`media_captions` (`/tmp/media-captions.json`) gives each screenshot and video one
+line that says what it shows, keyed by file name, such as
+`{"signin.mp4": "Sign-in with an emailed code: the new code is accepted"}`. The
+host shows it under the picture. Keep only what proves the change: one recording
+for each flow (delete a rerun's older copy), at most two videos. The host shows
+two videos as pictures and lists the rest under "More recordings".
 
 `media_paths` is read from `.fxa-auto-media/`, so every file a capture skill
 wrote is listed and nothing is typed by hand. Do not replace it with `[]`.

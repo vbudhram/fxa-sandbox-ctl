@@ -58,8 +58,9 @@ if [ -s "$done_file" ]; then
   if ! jq -e 'type == "object" and (.issue|type) == "string" and (.branch|type) == "string"
       and (.pr_title|type) == "string" and (.pr_body|type) == "string" and (.pr_body|length) > 0
       and (.media_paths|type) == "array" and all(.media_paths[]; type == "string")
-      and ((.risk_notes // "")|type) == "string"' "$done_file" >/dev/null 2>&1; then
-    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty), an array media_paths, and risk_notes as a string")
+      and ((.risk_notes // "")|type) == "string"
+      and ((.media_captions // {})|type) == "object" and all((.media_captions // {})[]; type == "string")' "$done_file" >/dev/null 2>&1; then
+    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty), an array media_paths, risk_notes as a string, and media_captions as an object of strings")
   else
     title="$(jq -r .pr_title "$done_file")"
     [[ "$title" =~ ^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?:\ [^[:space:]] ]] \

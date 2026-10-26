@@ -298,6 +298,12 @@ the change without a checkout. Take it after the fix works, of the state the
 change affects. In the FxA repo, the handoff check refuses a visible change with
 no image or video, unless `/workspace/.fxa-auto-media-skipped.txt` says why.
 
+Keep only what proves the change: one recording for each flow, and at most two
+videos. Delete an older copy when you record a flow again. Give each file a
+one-line caption in the handoff's `media_captions` (`/fxa-vm-handoff`). A change
+that nobody sees (a backend fix) needs no video; one recording of the flow it
+touches is enough when you take one.
+
 Save them in `/workspace/.fxa-auto-media/` as `.png`, `.jpg`, `.webp`, `.gif`,
 `.webm`, `.mp4` or `.mov`, or a `.patch` or `.diff`. Each must be a plain file inside the workspace, not
 a symlink, at most 100MB. A pipeline PR attaches only the image and video

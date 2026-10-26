@@ -14,5 +14,6 @@ has() { grep -qF -- "$1" <<< "$md" && echo yes || echo no; }
 ck "the pipeline prompt asks for a screenshot or a short video of a visible change" yes "$(has 'save a screenshot or a short video of it')"
 ck "it names the skills and the handoff gate's way out" "yes|yes" "$(has '`/fxa-page-shot`, `/fxa-storybook-capture` or `/fxa-functional-local`')|$(has '.fxa-auto-media-skipped.txt` says why')"
 ck "the inlined guide holds the media section's rule" yes "$(has 'ships with a screenshot or a short video of it')"
+ck "and the rule on how much: one recording a flow, two videos at most, a caption each" "yes|yes" "$(has 'one recording for each flow, and at most two')|$(has 'one-line caption in the handoff')"
 ck "the FxA repo's runners get the three capture skills" "3" "$(grep -cxE 'fxa-page-shot|fxa-storybook-capture|fxa-functional-local' "$SANDBOX_ROOT/repos/mozilla__fxa/skills.txt")"
 exit "$fail"
