@@ -2211,7 +2211,7 @@ function teamSetupHtml(t) {
     ${teamTestCard(t, rec)}
     ${card(rowv("goal", "What it works on", String(rec.prompts?.goal_md ?? "").trim() ? `${String(rec.prompts.goal_md).trim().slice(0, 80)}${String(rec.prompts.goal_md).trim().length > 80 ? "…" : ""}` : "not set", "Edit"), { flat: true, cls: "stack sm" })}
     ${card(html`<h3>How work reaches this team</h3><p class="hint">The ways a session can start. Each one has its own rule.</p>${teamInputsHtml(t, rec, f)}
-      <p class="hint">Every input stops while the team is not active. Every input counts against the spend cap below. Last pass and queue depth: not shown here.</p>`, { cls: "stack sm" })}
+      <p class="hint">${active ? "" : "Every input stops while the team is not active. "}Every input counts against the spend cap below.</p>`, { cls: "stack sm" })}
     ${card(html`<h3>Budget</h3>${rowv("caps", "Spend cap", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}`, { flat: true, cls: "stack sm" })}
     ${more("about", ["About the team", "name, admins and PR rules"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
       ${rowv("admins", "Team admins", (rec.admins ?? []).length ? rec.admins.map(a => a.email || a.slack).join(", ") : "None", (rec.admins ?? []).length ? "Change" : "Add")}

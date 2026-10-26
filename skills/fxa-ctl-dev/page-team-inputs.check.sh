@@ -84,5 +84,10 @@ lnk="$stub"' await w(800); const a = [...document.querySelectorAll(".tin a")].fi
   return a ? `${getComputedStyle(a).color !== getComputedStyle(a.closest(".tin")).color}` : "no link"'
 ck "an input row's link shows in the link colour, not the text colour" "true" "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$lnk")"
 
+# The hint under the ways in: the 'not active' rule only for a team that is not active, and no line about data the page leaves out.
+fx '.'
+hint='await new Promise(r => setTimeout(r, 700)); const h = [...document.querySelectorAll(".hint")].map(e => e.textContent).join(" "); return /not active/.test(h) + "|" + /not shown here/.test(h)'
+ck "an active team's hint has no 'not active' rule and no 'not shown here'; a draft's has the rule" "false|false,true|false" \
+  "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$hint"),$(bash "$p" '#teams/example/settings' --fixture "$F" --probe "$hint")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"
