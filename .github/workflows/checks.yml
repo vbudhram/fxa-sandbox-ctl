@@ -54,6 +54,9 @@ jobs:
         env:
           FXA_CHECK_SHARD: ${{ matrix.shard }}
           FXA_BOT_REPO: ${{ github.workspace }}/bot
+          # A hung check or Python test fails at 10 min with its name; the 20 min job kill names nothing.
+          FXA_CHECK_PROGRESS: '1'
+          FXA_CHECK_TIMEOUT: '600'
   macos:
     # The laptop's OS: bash 3.2 and BSD tools. A 3.2-only break used to pass CI and reach main.
     runs-on: macos-latest

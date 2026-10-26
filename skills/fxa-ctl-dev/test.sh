@@ -15,15 +15,19 @@ export FXA_DB="${TMPDIR:-/tmp}/fxa-test-no-store-$$.db"
 export FXA_SESSION_DIR="${TMPDIR:-/tmp}/fxa-test-no-sessions-$$"  # a check that forgets its own never reaches real sessions
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" FXA_DB_BACKUP_URI=""  # empty turns the bucket copies off
 
+# _tmo <cmd...>   FXA_CHECK_TIMEOUT=<s>: stop a command that hangs, with its whole process group (a child that
+# keeps the output pipe open would keep the capture waiting), and exit 142. macOS has no timeout.
+_tmo() {
+  [ -n "${FXA_CHECK_TIMEOUT:-}" ] || { "$@"; return; }
+  perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV }
+    $SIG{ALRM} = sub { kill "KILL", -$p; exit 142 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$FXA_CHECK_TIMEOUT" "$@"
+}
+
 # check_one <file> <host>   Run once, then read the output: grep -q in a pipe stopped at the
 # first FAIL, the check died of SIGPIPE, and pipefail hid the failure. A nonzero exit fails too.
 check_one() {
-  # FXA_CHECK_TIMEOUT=<s>: stop a check that hangs, with its whole process group (a child that keeps the
-  # output pipe open would keep the capture waiting), and fail it with exit 142. macOS has no timeout.
   local out code=0
-  if [ -n "${FXA_CHECK_TIMEOUT:-}" ]; then out="$(perl -e '$t = shift; $p = fork; if (!$p) { setpgrp(0, 0); exec @ARGV }
-    $SIG{ALRM} = sub { kill "KILL", -$p; exit 142 }; alarm $t; waitpid($p, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$FXA_CHECK_TIMEOUT" bash "$1" 2>&1)" || code=$?
-  else out="$(bash "$1" 2>&1)" || code=$?; fi
+  out="$(_tmo bash "$1" 2>&1)" || code=$?
   [ "$code" != 142 ] || out="${out}
 FAIL $1 did not finish in ${FXA_CHECK_TIMEOUT}s"
   # A pass whose check skipped itself (a missing tool, bash 3.2) says so: a silent skip read as a pass.
@@ -40,7 +44,7 @@ FAIL $1 did not finish in ${FXA_CHECK_TIMEOUT}s"
 run_pool() {
   local host="$1" d f n bad=0; shift
   d="$(mktemp -d "${TMPDIR:-/tmp}/fxa-checks.XXXXXX")"
-  export -f check_one
+  export -f check_one _tmo
   # xargs stops starting checks when one is killed (exit 125): a check with no output never ran.
   printf '%s\n' "$@" | xargs -P "${FXA_CHECK_JOBS:-8}" -I{} bash -c \
     'n="$(printf %s "$1" | tr / _)"; s=$SECONDS; FXA_DB="$2/$n.db" FXA_SESSION_DIR="$2/$n.s" check_one "$1" "$3" > "$2/$n.out" 2>&1 || touch "$2/$n.bad"
@@ -68,7 +72,7 @@ run_here() {
   if [ "$i" = "$n" ]; then
     py="$(mktemp "${TMPDIR:-/tmp}/fxa-py.XXXXXX")"
     ( b=0
-      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"
+      for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py; do o="$(_tmo python3 "$t" 2>&1)" || { c=$?; echo "FAIL $HOST: $t$([ "$c" != 142 ] || echo " did not finish in ${FXA_CHECK_TIMEOUT}s")"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"
         [ -z "${FXA_CHECK_VERBOSE:-}" ] || grep -m1 -A25 '^Traceback' <<< "$o" | sed 's/^/  | /'; b=1; }; done
       # The desktop gateway's check needs its packages (desktop-gateway/requirements.txt); without them it is skipped, not passed.
       if python3 -c 'import aiohttp, google.auth' 2>/dev/null; then o="$(python3 desktop-gateway/check.py 2>&1)" || { echo "FAIL $HOST: desktop-gateway/check.py"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; b=1; }
@@ -93,11 +97,11 @@ run_linux() {
     'RUN apt-get update -qq && apt-get install -y -qq git jq curl python3 python3-pip openssl perl rsync sqlite3 ca-certificates nodejs npm ffmpeg >/dev/null && rm -rf /var/lib/apt/lists/*' \
     "RUN pip3 install -q --break-system-packages $(tr '\n' ' ' < "$ROOT/desktop-gateway/requirements.txt")" \
     | docker build -q --platform "$plat" -t "$img" - >/dev/null || { echo "linux: the test image did not build"; rc=1; return; }
-  docker run --rm --platform "$plat" -v "$ROOT":/src:ro "$img" bash -c "$(declare -f check_one run_pool)"'
+  docker run --rm --platform "$plat" -v "$ROOT":/src:ro "$img" bash -c "$(declare -f _tmo check_one run_pool)"'
     git config --global user.email test@example.com; git config --global user.name test; git config --global init.defaultBranch main
     cp -r /src /work && cd /work; bad=0
     run_pool linux lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh || bad=1
-    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py desktop-gateway/check.py; do o="$(python3 "$t" 2>&1)" || { echo "FAIL linux: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }; done
+    for t in infra/llm-proxy/proxy_test.py infra/mcp-gateway/gateway_test.py desktop-gateway/check.py; do o="$(_tmo python3 "$t" 2>&1)" || { echo "FAIL linux: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }; done
     [ "$bad" = 0 ] && echo "linux: all checks pass"; exit "$bad"' 2>&1 | tail -20 || rc=1
 }
 
@@ -146,7 +150,7 @@ run_changed() {
   for t in $py; do
     if [ "$t" = desktop-gateway/check.py ] && ! python3 -c 'import aiohttp, google.auth' 2>/dev/null; then
       echo "skip $HOST: $t (pip install -r desktop-gateway/requirements.txt to run it)"; continue; fi
-    o="$(python3 "$t" 2>&1)" || { echo "FAIL $HOST: $t"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }
+    o="$(_tmo python3 "$t" 2>&1)" || { c=$?; echo "FAIL $HOST: $t$([ "$c" != 142 ] || echo " did not finish in ${FXA_CHECK_TIMEOUT}s")"; grep -E "^(FAIL|ERROR)[: ]" <<< "$o" | head -3 | sed "s/^/  /"; bad=1; }
   done
   # The bot's e2e plays every scenario against fake-ctl.sh; a ctl push to main does not run it.
   if [ -n "$e2e" ]; then

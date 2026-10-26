@@ -5,7 +5,7 @@ set -u
 fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^check_one() {/,/^}/p;/^run_pool() {/,/^}/p' "$(dirname "$0")/test.sh")"
+eval "$(sed -n '/^_tmo() {/,/^}/p;/^check_one() {/,/^}/p;/^run_pool() {/,/^}/p' "$(dirname "$0")/test.sh")"
 # The cases below count process levels (a killed grandparent): the CI job's timeout wrapper adds levels.
 unset FXA_CHECK_TIMEOUT FXA_CHECK_PROGRESS FXA_CHECK_VERBOSE
 cd "$tmp" && mkdir -p c
@@ -45,5 +45,8 @@ changed() { ( cd "$r" && git checkout -q -- . && for f in "$@"; do echo '# edit'
 check "a changed module selects the check that imports it" "1|yes" "$(changed lib/srv.py)|$(grep -q 'FAIL [a-z]*: lib/srv-api.check.sh' "$tmp/out" && echo yes)"
 check "a changed proxy runs proxy_test.py" "1|yes" "$(changed infra/llm-proxy/proxy.py)|$(grep -q 'FAIL [a-z]*: infra/llm-proxy/proxy_test.py' "$tmp/out" && echo yes)"
 rm -f "$tmp/bot/marker"
+printf 'import time\ntime.sleep(37)\n' > "$r/infra/llm-proxy/proxy_test.py"; ( cd "$r" && git -c user.email=t@example.com -c user.name=t commit -qam hang ); s=$SECONDS
+check "with FXA_CHECK_TIMEOUT, a hung Python test fails at the timeout, named" "1|yes" \
+  "$(FXA_CHECK_TIMEOUT=2 changed infra/llm-proxy/proxy.py)|$(grep -q 'FAIL [a-z]*: infra/llm-proxy/proxy_test.py did not finish in 2s' "$tmp/out" && [ $(( SECONDS - s )) -lt 8 ] && echo yes)"
 check "a changed fake-ctl.sh runs the bot e2e" "1|yes|yes" "$(changed skills/fxa-ctl-dev/fake-ctl.sh)|$(grep -q 'FAIL [a-z]*: the bot e2e' "$tmp/out" && echo yes)|$([ -e "$tmp/bot/marker" ] && echo yes)"
 exit "$fail"
