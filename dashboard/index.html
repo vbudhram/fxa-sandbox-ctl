@@ -2145,7 +2145,8 @@ const teamRetest = (a, b) => TEAM_RUNNER_KEYS.some(k => JSON.stringify(a[k]) !==
 function teamPatch(f) {
   const d = f.d, rec = TED?.rec ?? {}, list = v => [...new Set(String(v ?? "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean))], num = v => v === "" || v == null ? undefined : Number(v);
   const drop = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
-  if (f.item === "repos") return { repos: d.repos.filter(r => String(r.slug).trim()).map((r, i, a) => ({ ...r, slug: String(r.slug).trim(), default: a.findIndex(x => x.role === "work") === i ? true : undefined })).map(r => drop(r)) };
+  // Each row keeps its own default: a new one sets PIPE_STACK_DEFAULT, a runner change that needs a test.
+  if (f.item === "repos") return { repos: d.repos.filter(r => String(r.slug).trim()).map(r => drop({ ...r, slug: String(r.slug).trim() })) };
   if (f.item === "goal") return { prompts: { ...(rec.prompts ?? {}), goal_md: d.goal } };
   if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list([].concat(d.users, d.uid ?? "").join(",")), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])], jira_prefixes: list(d.prefixes) } };
   // The Jira and Budget forms share caps: each replaces only its own keys.

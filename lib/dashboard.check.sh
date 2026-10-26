@@ -212,7 +212,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
         return JSON.stringify(after) !== JSON.stringify(full); });
       t("settings: every item opened and saved unchanged leaves the record as it was", same.join(","), "");
       const bare = { name: "rusty", repos: [{ slug: "o/r", role: "work" }] }; globalThis.TED = { name: "rusty", rec: bare };
-      t("settings: a record with no runner keys gets none from an unchanged save", ["runner", "egress", "skills", "boot", "secrets", "admins", "name"].filter(i => teamRetest(bare, teamApply(bare, teamPatch({ item: i, d: teamItemDraft(i, bare) })))).join(","), "");
+      t("settings: a record with no runner keys gets none from an unchanged save", ["repos", "runner", "egress", "skills", "boot", "secrets", "admins", "name"].filter(i => teamRetest(bare, teamApply(bare, teamPatch({ item: i, d: teamItemDraft(i, bare) })))).join(","), "");
       t("settings: secret names get the team's prefix, and a pick of the FxA stack names no repo for mozilla/fxa", JSON.stringify([teamPatch({ item: "secrets", d: { jira: "login", runtime: [{ what: "env", path: "/home/agent/r/.env" }, { what: "", path: "" }] } }).secrets,
         teamPatch({ item: "runner", d: { kind: "fxa", srepo: "mozilla/fxa", backend: "gce", android: false, desktop_url: "" } })]),
         JSON.stringify([{ jira: "fxa-team-rusty--login", runtime: [{ secret: "fxa-team-rusty--env", path: "/home/agent/r/.env" }] }, { stack: { kind: "fxa" } }]));
