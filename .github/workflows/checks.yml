@@ -71,6 +71,10 @@ jobs:
         with:
           repository: vbudhram/fxa-agent-bot
           path: bot
+      # The image's python3 is Homebrew's newest (3.15); the laptop runs 3.14, and the proxy tests fail only on 3.15.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
       - name: Packages
         run: for c in jq ffmpeg; do command -v $c >/dev/null || brew install -q $c; done
       # The image's PATH has a newer bash first; the checks must run on the system's bash 3.2.

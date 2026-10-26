@@ -19,6 +19,7 @@ def check(name, want, got):
     ok = want == got; fail |= not ok
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": want {want!r} got {got!r}"))
 s = get("/api/snapshot")
+print("  stats_age_seconds:", s.get("stats_age_seconds"))
 check("snapshot: the stats feed's age, error and interval", (True, "stats failed: timeout", 60),
       (400 <= (s.get("stats_age_seconds") or 0) <= 430, s.get("stats_error"), s.get("stats_interval")))  # a slow CI runner takes seconds
 check("/api/stats has no new key", {"llm": {}}, get("/api/stats"))
