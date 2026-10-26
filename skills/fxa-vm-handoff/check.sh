@@ -57,8 +57,9 @@ fi
 if [ -s "$done_file" ]; then
   if ! jq -e 'type == "object" and (.issue|type) == "string" and (.branch|type) == "string"
       and (.pr_title|type) == "string" and (.pr_body|type) == "string" and (.pr_body|length) > 0
-      and (.media_paths|type) == "array" and all(.media_paths[]; type == "string")' "$done_file" >/dev/null 2>&1; then
-    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty) and an array media_paths")
+      and (.media_paths|type) == "array" and all(.media_paths[]; type == "string")
+      and ((.risk_notes // "")|type) == "string"' "$done_file" >/dev/null 2>&1; then
+    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty), an array media_paths, and risk_notes as a string")
   else
     title="$(jq -r .pr_title "$done_file")"
     [[ "$title" =~ ^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?:\ [^[:space:]] ]] \
@@ -90,6 +91,9 @@ if [ -s "$done_file" ]; then
         problems+=("$vis changes what a person sees, and .fxa-auto-media/ has no screenshot or video. Capture the change with /fxa-page-shot, /fxa-storybook-capture or /fxa-functional-local, or write why you cannot to .fxa-auto-media-skipped.txt")
       fi
     fi
+    # The PR's Risk section shows the agent's notes; the line the reviewer needs most is what the checks miss.
+    [ ! -d packages/fxa-settings ] || jq -r '.risk_notes // ""' "$done_file" | grep -qi '^[-* ]*would not catch:' \
+      || style+=("risk_notes has no 'Would not catch: ...' line: say what your checks miss (SKILL.md Step 4)")
     # STE in the PR text. A script can be wrong about style, so these never stop a ship (exit 3).
     while IFS= read -r m; do style+=("$m"); done < <(jq -r '.pr_title, "", .pr_body' "$done_file" \
       | bash "$(dirname "$0")/ste.sh" --skip-lines-of .github/PULL_REQUEST_TEMPLATE.md | sed 's/^ste: /PR text, STE: /')

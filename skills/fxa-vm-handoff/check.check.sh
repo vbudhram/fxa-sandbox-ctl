@@ -25,7 +25,7 @@ chmod +x "$tmp/bin/npx"; export PATH="$tmp/bin:$PATH" FXA_WORKSPACE="$tmp/repo"
 
 mkdir -p "$tmp/repo/src" && cd "$tmp/repo" && g init -q && echo a > src/a.ts && echo '{}' > package.json && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
 g checkout -qb agent-x
-handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",media_paths:$m}' > .fxa-auto-done.json; }
+handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",risk_notes:"Would not catch: other browsers.",media_paths:$m}' > .fxa-auto-done.json; }
 
 echo b > src/a.ts; handoff 'fix(auth): keep the stored location'
 check "a clean change and handoff pass" "handoff check: ok" "$(bash "$C")"
@@ -106,5 +106,9 @@ check "a visible change with no media is named, with the skills and the way out"
 bash "$C" >/dev/null; check "a visible change with no media fails the handoff" 1 $?
 printf 'the change is behind a WebAuthn prompt\n' > .fxa-auto-media-skipped.txt; check "a reason in .fxa-auto-media-skipped.txt passes" "handoff check: ok" "$(bash "$C")"
 rm .fxa-auto-media-skipped.txt; mkdir -p .fxa-auto-media && touch .fxa-auto-media/page.webm; check "a video passes" "handoff check: ok" "$(bash "$C")"
-rm -rf .fxa-auto-media; rm .fxa-auto-done.json; check "no handoff yet: no media problem" "handoff check: ok" "$(bash "$C")"
+rm -rf .fxa-auto-media; echo b > packages/fxa-settings/src/Page.test.tsx; g checkout -q -- packages/fxa-settings/src/Page.tsx
+handoff 'test(settings): x'; jq 'del(.risk_notes)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+bash "$C" > out.txt; rc=$?; check "an FxA handoff with no 'Would not catch' line gets a style note only (exit 3)" "3|1" "$rc|$(grep -c "risk_notes has no 'Would not catch" out.txt)"
+jq '.risk_notes = ["x"]' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json; check "risk_notes that is not a string is a problem" 1 "$(bash "$C" | grep -c 'risk_notes as a string')"
+rm -f out.txt; rm .fxa-auto-done.json; check "no handoff yet: no media problem" "handoff check: ok" "$(bash "$C")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

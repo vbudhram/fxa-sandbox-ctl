@@ -97,9 +97,10 @@ jq -n \
   --arg title "fix(auth): reject an expired session token" \
   --rawfile body /tmp/pr-body.md \
   --rawfile cbody /tmp/commit-body.txt \
+  --rawfile risk /tmp/risk-notes.txt \
   --argjson media "$(ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .)" \
   '{issue:$issue, branch:$branch, pr_title:$title,
-    pr_body:$body, commit_body:$cbody, media_paths:$media}' \
+    pr_body:$body, commit_body:$cbody, risk_notes:$risk, media_paths:$media}' \
   > /workspace/.fxa-auto-done.json.tmp \
   && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json
 ```
@@ -122,6 +123,19 @@ your change answers; use `[]` when none are left. The host puts this list in pla
 that section of the PR body, and changes nothing else in the body. Add
 `--argjson oq "$(jq -R . /tmp/open-questions.txt | jq -s 'map(select(length > 0))')"`
 and `open_questions:$oq`.
+
+`risk_notes` (`/tmp/risk-notes.txt`) is one to three lines for the PR's Risk
+section, which the host writes after "This pull request". The host sets the risk
+levels from the paths, the size, `verify --revert` and your verify run, so do not
+rate the risk yourself. Write what the reviewer cannot see from those:
+- `Would not catch: ...`: what your checks miss, such as other locales, other
+  browsers, production data, a real third-party service, or load. Always write
+  this line.
+- `Rollback: ...`: only when a plain revert is not enough, such as a migration's
+  reverse patch, a flag to turn off, or data to clean up.
+- `Flag: ...`: the Nimbus or feature flag that turns the change off, when there is one.
+Run `verify --revert` before the handoff when a test covers the fix: the Risk
+section says "Strong" only with that proof.
 
 `media_paths` is read from `.fxa-auto-media/`, so every file a capture skill
 wrote is listed and nothing is typed by hand. Do not replace it with `[]`.
