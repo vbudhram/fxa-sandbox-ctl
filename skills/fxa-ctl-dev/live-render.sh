@@ -12,6 +12,9 @@ admin=false query="limit=4&days=30"
 while [ $# -gt 0 ]; do case "$1" in --admin) admin=true; shift ;; --query) query="$2"; shift 2 ;; *) break ;; esac; done
 t="$(mktemp -d "${TMPDIR:-/tmp}/live-render.XXXXXX")"; trap 'rm -rf "$t"' EXIT
 for a in snapshot stats teams errors; do bash "$root/skills/fxa-manager/vm.sh" api "$a" > "$t/$a.json"; done
+# The last 200 session records and each prompt's first line: recent runs read them for a title and the routine flag,
+# and the manager's session folder is not on this laptop. A failed read leaves the runs as before.
+bash "$root/skills/fxa-manager/vm.sh" run "echo aW1wb3J0IGpzb24sIGdsb2IsIG9zCmQgPSBvcy5wYXRoLmV4cGFuZHVzZXIoIn4vLmNsYXVkZS9zdGF0ZS9hZ2VudC1zZXNzaW9ucyIpOyBvdXQgPSB7fQpmb3IgZiBpbiBzb3J0ZWQoZ2xvYi5nbG9iKGQgKyAiL2FnZW50LSouanNvbiIpLCBrZXk9b3MucGF0aC5nZXRtdGltZSlbLTIwMDpdOgogICAgayA9IG9zLnBhdGguYmFzZW5hbWUoZilbOi01XQogICAgdHJ5OiByZWMgPSBqc29uLmxvYWQob3BlbihmKSkKICAgIGV4Y2VwdCBFeGNlcHRpb246IGNvbnRpbnVlCiAgICBsaW5lID0gIiIKICAgIHRyeTogbGluZSA9IG9wZW4ob3MucGF0aC5qb2luKGQsIGsgKyAiLnByb21wdC5tZCIpLCAicmIiKS5yZWFkKDMwMCkuZGVjb2RlKCJ1dGYtOCIsICJpZ25vcmUiKS5zdHJpcCgpLnNwbGl0KCJcbiIpWzBdCiAgICBleGNlcHQgT1NFcnJvcjogcGFzcwogICAgb3V0W2tdID0gW3JlYywgbGluZV0KcHJpbnQoanNvbi5kdW1wcyhvdXQpKQo= | base64 -d | python3" 2>/dev/null | tail -1 > "$t/sessions.json" || true
 python3 - "$root/dashboard" "$t" "$admin" "$query" > "$t/fx.json" <<'PY'
 import json, sys, threading, time, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
@@ -23,6 +26,13 @@ for name, data in (("FULL", live["snapshot"].get("snapshot")), ("AGENTS", live["
     f = getattr(server, name, None) or server.Feed(name.lower(), [], 60, 30); setattr(server, name, f); f.data, f.fetched_at = data, now
 if admin:
     server.team_admins = lambda: {None}   # an unsigned local request reads as a team admin
+try: sess = json.load(open(f"{t}/sessions.json"))
+except (OSError, ValueError): sess = {}
+if sess:
+    import os, pathlib; sd = f"{t}/sessions"; os.makedirs(sd, exist_ok=True)
+    for k, (rec, line) in sess.items():
+        json.dump(rec, open(f"{sd}/{k}.json", "w")); open(f"{sd}/{k}.prompt.md", "w").write(line)
+    server.SESSION_DIR = pathlib.Path(sd)
 srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
 def get(p):
     req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{p}", headers={"Host": "localhost"})
