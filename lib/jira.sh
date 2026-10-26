@@ -112,7 +112,7 @@ JQ
 
 # _acli_rest <acli args>   The acli subcommands this controller uses, on Jira's REST API.
 _acli_rest() {
-  local a="$1 $2 ${3:-}" key="" fields="" jql="" limit=50 json=0 body="" status="" project="" type="" summary="" desc="" label="" add="" rm="" assignee="" id="" state=""
+  local a="$1 $2 ${3:-}" key="" fields="" jql="" limit=50 json=0 body="" status="" project="" type="" summary="" desc="" label="" add="" rm="" assignee="" id="" state="" all_pages=0
   shift 2; [[ "$a" == "jira workitem comment" ]] && shift
   shift
   while [ $# -gt 0 ]; do
@@ -122,7 +122,7 @@ _acli_rest() {
       --project) project="$2"; shift ;; --type) type="$2"; shift ;; --summary) summary="$2"; shift ;;
       --description-file) desc="$(cat "$2")" || return 1; shift ;; --label) label="$2"; shift ;;
       -l|--labels) add="$2"; shift ;; --remove-labels) rm="$2"; shift ;; --assignee) assignee="$2"; shift ;;
-      --id) id="$2"; shift ;; --state) state="$2"; shift ;;
+      --id) id="$2"; shift ;; --state) state="$2"; shift ;; --paginate) all_pages=1 ;;
       -*) echo "acli (service account): $1 is not supported" >&2; return 1 ;;
       *) key="$1" ;;
     esac; shift
@@ -142,15 +142,22 @@ _acli_rest() {
     "jira workitem comment")
       case "${body:+create}" in
         create) _jira_rest_json POST "/rest/api/3/issue/${key}/comment" "$(jq -nc --arg t "$body" "{body: $doc}")" >/dev/null ;;
-        *) out="$(_jira_rest GET "/rest/api/3/issue/${key}/comment?maxResults=50")" || return 1
-           jq "${_JIRA_TEXT_JQ}"' {comments: [.comments[] | {author: .author.displayName, body: (.body | txt | sub("\n+$"; "")), id, visibility: "public"}], isLast: (.startAt + (.comments | length) >= .total), maxResults, startAt, total}' <<< "$out" ;;
+        # One object per page, as acli --paginate prints them; without it, the first page only.
+        *) local at=0
+           while :; do
+             out="$(_jira_rest GET "/rest/api/3/issue/${key}/comment?maxResults=50&startAt=${at}")" || return 1
+             jq "${_JIRA_TEXT_JQ}"' {comments: [.comments[] | {author: .author.displayName, body: (.body | txt | sub("\n+$"; "")), id, visibility: "public"}], isLast: (.startAt + (.comments | length) >= .total), maxResults, startAt, total}' <<< "$out" || return 1
+             at=$((at + $(jq '.comments | length' <<< "$out")))
+             [ "$all_pages" = 1 ] && [ "$at" -lt "$(jq '.total' <<< "$out")" ] && [ "$(jq '.comments | length' <<< "$out")" -gt 0 ] || break
+           done ;;
       esac ;;
     "jira workitem search")
       local tok="" page all="[]"
       while :; do
         page="$(_jira_rest_json POST /rest/api/3/search/jql "$(jq -nc --arg q "$jql" --arg f "${fields:-issuetype,assignee,priority,status,summary}" --arg t "$tok" \
           --argjson n "$(( limit > 100 ? 100 : limit ))" '{jql: $q, maxResults: $n, fields: ($f | split(","))} + (if $t != "" then {nextPageToken: $t} else {} end)')")" || return 1
-        all="$(jq -c --argjson p "$page" --argjson n "$limit" '(. + $p.issues)[0:$n]' <<< "$all")"
+        # On stdin, not --argjson: Linux refuses one argument over 128 KiB, and a page of 100 issues can be.
+        all="$(printf '%s\n%s\n' "$all" "$page" | jq -cs --argjson n "$limit" '(.[0] + (.[1].issues // []))[0:$n]')" || return 1
         tok="$(jq -r '.nextPageToken // empty' <<< "$page")"
         [ -n "$tok" ] && [ "$(jq length <<< "$all")" -lt "$limit" ] || break
       done
@@ -401,7 +408,7 @@ jira_ticket() {
   acli jira workitem view "$key" 2>/dev/null || { echo "ERROR: Jira did not return ${key}: it is restricted, missing, or the Jira login failed." >&2; return 1; }
   echo
   echo "=== $key comments (oldest first) ==="
-  acli jira workitem comment list --key "$key" --json 2>/dev/null \
+  acli jira workitem comment list --key "$key" --json --paginate 2>/dev/null \
     | jq -r '.comments[]? | "--- \(.author) [\(.id)]\n\(.body)\n"' \
     || echo "(none)"
 }

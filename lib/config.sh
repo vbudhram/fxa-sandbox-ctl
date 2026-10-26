@@ -18,11 +18,13 @@ _jira_sa() { [[ "${PIPE_JIRA_BASIC:-}" == *@serviceaccount.atlassian.com:* ]]; }
 
 # _jira_api   The REST base: the site, or for a service account the gateway with the site's cloud ID.
 # Callers run it in $(...), so the ID is kept in a file (it is public: the site serves it to anyone).
+# The file is in this user's own cache dir: in a shared /tmp another user could plant another tenant's ID.
 _jira_api() {
-  local site="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}" f id
+  local site="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}" d f id=""
   _jira_sa || { printf '%s\n' "$site"; return 0; }
-  f="${TMPDIR:-/tmp}/fxa-jira-cloud-id.$(printf '%s' "${site#https://}" | tr -c 'a-z0-9.-' _)"
-  id="$(cat "$f" 2>/dev/null)" || id=""
+  d="${HOME}/.cache/fxa"; mkdir -p "$d" 2>/dev/null && chmod 700 "$d" 2>/dev/null || true
+  f="$d/jira-cloud-id.$(printf '%s' "${site#https://}" | tr -c 'a-z0-9.-' _)"
+  [ -O "$f" ] && id="$(cat "$f" 2>/dev/null)" || id=""
   if ! [[ "$id" =~ ^[0-9a-f-]{36}$ ]]; then
     id="$(curl -sSf --max-time 20 "${site}/_edge/tenant_info" 2>/dev/null | jq -r '.cloudId // empty')" || id=""
     [[ "$id" =~ ^[0-9a-f-]{36}$ ]] || { echo "ERROR: no cloud ID for ${site}" >&2; return 1; }

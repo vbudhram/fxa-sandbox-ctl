@@ -460,7 +460,7 @@ _pipeline_hash() {
 _pipeline_skip_fingerprint() {
   local key="$1" v c t=""
   v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
-  c="$(acli jira workitem comment list --key "$key" --json 2>/dev/null)" || return 0
+  c="$(acli jira workitem comment list --key "$key" --json --paginate 2>/dev/null)" || return 0
   c="$(printf '%s\n' "$c" | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body' && echo .)" || return 0
   # The plain view prints no labels, and the allow-tooling label is how a tooling skip is unblocked.
   # Only that label counts: hashing every label would wake each skipped ticket once.
