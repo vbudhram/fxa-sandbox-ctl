@@ -1079,15 +1079,10 @@ session_media() {
       -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" -o -iname "*.patch" -o -iname "*.diff" \) -print0 | tar -cf - --null -T -' \
     | head -c 524288000 | tar -xf - -C "$out" 2>/dev/null
   _session_media_scrub "$out"
-  # Playwright records WebM, which Slack does not play inline (iOS not at all).
-  # H.264 MP4 plays everywhere; the scale keeps both sides even, as x264 needs.
-  if command -v ffmpeg >/dev/null 2>&1; then
-    for f in "$out"/*.webm; do
-      [ -f "$f" ] || continue
-      ffmpeg -nostdin -y -loglevel error -i "$f" -map_metadata -1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
-        -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -an "${f%.webm}.mp4" && rm -f "$f"
-    done
-  fi
+  # Playwright records WebM, which Slack does not play inline.
+  for f in "$out"/*.webm; do
+    [ -f "$f" ] && media_mp4 "$f" && rm -f "$f"
+  done
   _session_media_scrub "$out"
   # Keep a copy on the host: the sandbox and the Slack upload dir both go away,
   # and the dashboard shows these on the session.

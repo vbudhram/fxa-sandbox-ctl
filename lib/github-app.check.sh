@@ -96,7 +96,7 @@ check "a clash is refused" "0" "$(grep -c '^PATCH' "$tmp/calls")"
 check "a clash says how to recover" "1" "$(grep -c 'conflict with this change.*!restart' <<< "$err")"
 
 # Media goes to the bucket: references rewritten in place, the rest appended.
-eval "$(sed -n '/^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^media_mp4() {/,/^}/p; /^_finish_bucket_cp() {/,/^}/p; /^_finish_media_to_bucket() {/,/^}/p' "$here/finish.sh")"
 eval "$(sed -n '/^slot_write() /p' "$here/worktree.sh")"
 gcloud() { printf '%s\n' "$*" >> "$tmp/gcloud"; }
 FXA_MEDIA_BUCKET=b branch=fxa-1

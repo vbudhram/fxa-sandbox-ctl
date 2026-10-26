@@ -206,29 +206,51 @@ _finish_release_runner() {
 _finish_claim()   { : > "${LOG_DIR}/$(basename "$1").finishing"; }
 _finish_release() { rm -f "${LOG_DIR}/$(basename "$1").finishing"; }
 
+# media_mp4 <video>   Write <video>.mp4 next to it: H.264 plays in every browser and in Slack, where
+# WebM does not (iOS not at all). The scale keeps both sides even, as x264 needs.
+media_mp4() {
+  command -v ffmpeg >/dev/null 2>&1 || return 1
+  ffmpeg -nostdin -y -loglevel error -i "$1" -map_metadata -1 -c:v libx264 -pix_fmt yuv420p -movflags +faststart \
+    -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -an "${1%.*}.mp4"
+}
+
+# _finish_bucket_cp <file> <object>   Upload one file; print its public URL.
+_finish_bucket_cp() {
+  local err; err="$(gcloud storage cp -q "$1" "gs://${FXA_MEDIA_BUCKET}/$2" --cache-control="public, max-age=3600" 2>&1 >/dev/null)" \
+    || { echo "  WARN: could not upload $(basename "$1") to the media bucket: $(printf '%s' "$err" | grep -m1 ERROR | cut -c1-200)" >&2; return 1; }
+  echo "https://storage.googleapis.com/${FXA_MEDIA_BUCKET}/$2"
+}
+
 # _finish_media_to_bucket <body_file> <array-name>
 #   The App cannot upload GitHub attachments, so upload to the public bucket at
 #   an unguessable path and rewrite the body. Prints the Markdown for all files.
+#   GitHub plays no video from outside its own uploads, so a video shows as a still frame that links to its MP4.
 _finish_media_to_bucket() {
-  local body_file="$1" _media_arr="$2" f name url dir md="" n=0 files=()
+  local body_file="$1" _media_arr="$2" f orig name url furl link dir md="" n=0 files=()
   eval "files=(\${${_media_arr}[@]+\"\${${_media_arr}[@]}\"})"
   dir="${branch:-media}/$(openssl rand -hex 8)"
   for f in ${files[@]+"${files[@]}"}; do
     [ "$f" = --attach ] && continue
+    orig="$(basename "$f")"; furl=""
+    case "$f" in *.webm|*.mov) media_mp4 "$f" && f="${f%.*}.mp4" ;; esac
     name="$(basename "$f" | tr -c 'A-Za-z0-9._\n-' '-')"; n=$((n + 1))
-    local err; err="$(gcloud storage cp -q "$f" "gs://${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}" --cache-control="public, max-age=3600" 2>&1 >/dev/null)" \
-      || { echo "  WARN: could not upload ${name} to the media bucket: $(printf '%s' "$err" | grep -m1 ERROR | cut -c1-200)" >&2; continue; }
-    url="https://storage.googleapis.com/${FXA_MEDIA_BUCKET}/${dir}/${n}/${name}"
-    case "$name" in *.mp4|*.webm|*.mov) md="${md}[${name}](${url})"$'\n' ;; *) md="${md}![${name}](${url})"$'\n' ;; esac
+    url="$(_finish_bucket_cp "$f" "${dir}/${n}/${name}")" || continue
+    case "$name" in
+      *.mp4|*.webm|*.mov)
+        command -v ffmpeg >/dev/null 2>&1 && ffmpeg -nostdin -y -loglevel error -i "$f" -vf thumbnail -frames:v 1 "${f%.*}.png" \
+          && furl="$(_finish_bucket_cp "${f%.*}.png" "${dir}/${n}/${name%.*}.png")"
+        if [ -n "$furl" ]; then link="[![${name}](${furl})](${url})"; else link="[${name}](${url})"; fi ;;
+      *) link="![${name}](${url})" ;;
+    esac
+    md="${md}${link}"$'\n'
     # Rewrite local references in place, `(shot.png)` or `(./.fxa-auto-media/shot.png)`
     # (never a URL); append the rest.
-    python3 - "$body_file" "$(basename "$f")" "$url" <<'PY' | slot_write "${body_file}.new" && mv -f "${body_file}.new" "$body_file"
+    python3 - "$body_file" "$orig" "$url" "$link" <<'PY' | slot_write "${body_file}.new" && mv -f "${body_file}.new" "$body_file"
 import re, sys
-path, name, url = sys.argv[1:]
+path, name, url, link = sys.argv[1:]
 body = open(path).read()
 new = re.sub(r"\((?![a-z]+://)(?:[^()\s]*/)?" + re.escape(name) + r"\)", lambda m: "(" + url + ")", body)
 if new == body:
-    link = ("[%s](%s)" if name.rsplit(".", 1)[-1] in ("mp4", "webm", "mov") else "![%s](%s)") % (name, url)
     new = body.rstrip("\n") + "\n\n" + link + "\n"
 sys.stdout.write(new)
 PY
