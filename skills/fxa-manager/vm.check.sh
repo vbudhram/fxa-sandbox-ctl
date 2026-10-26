@@ -62,4 +62,12 @@ disown "$d1" "$d2" "$lv"; sleep 0.3; dev_stop_bots; sleep 0.3
 check "dev stop: both dev bots stop, the live bot runs on" "gone gone up" \
   "$(for p in $d1 $d2 $lv; do kill -0 "$p" 2>/dev/null && printf 'up ' || printf 'gone '; done | sed 's/ $//')"
 kill "$d1" "$d2" "$lv" 2>/dev/null
+
+# vm.sh dev on an expired login: the login line, no tar traceback, nonzero. gcloud, ssh and hostname are stubs on PATH.
+mkdir -p "$tmp/pbin" "$tmp/bot"; touch "$tmp/bot/.env.dev"; git -C "$tmp/bot" init -q
+printf '#!/bin/sh\ncat >/dev/null\necho "ERROR: (gcloud.compute.ssh) There was a problem refreshing your current auth tokens: Reauthentication failed." >&2\nexit 1\n' > "$tmp/pbin/gcloud"
+printf '#!/bin/sh\nexit 255\n' > "$tmp/pbin/ssh"; printf '#!/bin/sh\necho laptop\n' > "$tmp/pbin/hostname"; chmod +x "$tmp/pbin"/*
+out="$(PATH="$tmp/pbin:$PATH" HOME="$tmp" FXA_DEV_BOT_ROOT="$tmp/bot" bash "$(dirname "$0")/vm.sh" dev 2>&1)"; rc=$?
+check "vm.sh dev on an expired login: says so, prints no traceback, exits nonzero" "yes|0|1" \
+  "$(grep -q 'gcloud login expired' <<< "$out" && echo yes)|$(grep -c 'Traceback\|BrokenPipe' <<< "$out")|$([ "$rc" != 0 ] && echo 1)"
 exit "$fail"

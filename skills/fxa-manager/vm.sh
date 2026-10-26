@@ -348,6 +348,8 @@ EOF
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl session report %q 2>&1\n' "$vars" "$3" | on_vm | mask ;;
       up)
         [ -n "$BOT_ROOT" ] && [ -f "$BOT_ROOT/.env.dev" ] || { echo "vm.sh dev: no $BOT_ROOT/.env.dev" >&2; exit 1; }
+        # Reach the VM before the tar starts: on an expired login on_vm says so, and no tar writes into a closed pipe.
+        on_vm <<< true >/dev/null || exit $?
         { echo 'exec sudo -u fxa -H bash -s'
           echo "$vars"
           # Stop the old dev bot first: its timers ran ctl against a half-extracted tree ("Permission denied").
