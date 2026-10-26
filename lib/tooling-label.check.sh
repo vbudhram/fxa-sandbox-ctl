@@ -130,9 +130,12 @@ printf '%s\n' "${FXA_ALLOW_TOOLING_SCOPE:-none}" > "$CHILD_OUT"
 EOF
 chmod +x "$tmp/fakectl"
 sed -n '/^cmd_launch() {/,/^}/p' "$here/../fxa-sandbox-ctl" > "$tmp/cmd_launch.sh"
+# Each launch has its own child file: the child runs in the background, and a late one from the run before
+# could write the shared file after this run cleared it (a pool flake: 'got scripts').
 launch() {
-  rm -f "$tmp/child" "$tmp/state/FXA-7.launch.log"
-  CHILD_OUT="$tmp/child" bash -c '
+  local out="$tmp/child.${APPROVED:-0}"
+  rm -f "$out" "$tmp/state/FXA-7.launch.log"
+  CHILD_OUT="$out" bash -c '
     set -euo pipefail
     source "$2/cmd_launch.sh"
     PIPE_STATE_DIR="$2/state" PIPE_NAME=fxa-ai-fixme PIPE_REPO="$2" PIPE_MIN_FREE_GB=1 PIPE_TOOLING_LABEL=ai-fixme-allow-tooling
@@ -143,8 +146,8 @@ launch() {
     jira_tooling_approver() { [ -n "${APPROVED:-}" ] && echo "acct-lead Lead Person"; }; worktree_saved_ship() { return 1; }
     cmd_launch FXA-7 fxa-1 >/dev/null
   ' "$tmp/fakectl" "$here" "$tmp"
-  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/child" ] && break; sleep 0.3; done
-  printf '%s|%s|%s' "$(cat "$tmp/child" 2>/dev/null)" \
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$out" ] && break; sleep 0.3; done
+  printf '%s|%s|%s' "$(cat "$out" 2>/dev/null)" \
     "$(grep -c '^tooling: scripts allowed by Lead Person \[acct-lead\] (label ai-fixme-allow-tooling)$' "$tmp/state/FXA-7.launch.log")" \
     "$(cat "$tmp/state/tooling/FXA-7" 2>/dev/null || echo -)"
 }
