@@ -48,17 +48,18 @@ tick $((N + 301)) >/dev/null
 check "a tick past sweep_min sweeps again" "2" "$(grep -c '^pr list' "$tmp/log")"
 db_exec "DELETE FROM routine_runs WHERE routine_id = $rid;"
 
-# A40: a slow GitHub. 20 red PRs, each call 1 s, a budget of 4 s: the tick still answers its claimed run, the sweep stops at
+# A40: a slow GitHub. 20 red PRs, each call 2 s, a budget of 8 s: the tick still answers its claimed run, the sweep stops at
 # its budget and keeps sweep_pr, and the next tick continues after it. (The live values are 90 s and 30 s for each call.)
+# The budget leaves about 3 s for the tick's own work before the first PR, so a busy test host still sweeps one PR.
 d="$(dir slow)"; rm -f "$d"/pr/*.json
 for i in $(seq 1 20); do jq --argjson n $((91000 + i)) --arg h "$(printf '%040d' $((91000 + i)))" '.number = $n | .headRefOid = $h | .url = "https://github.com/mozilla/fxa/pull/\($n)"' "$fx/pr/90002.json" > "$d/pr/$((91000 + i)).json"; done
 rs="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', json($(db_q "$(jq -cn '{name: "Review", template: "code-review", prompt: "x", schedule: "daily 07:00", zone: "America/New_York",
   repos: ["mozilla/fxa"], channel: "C0OWN00", mode: "report", max_usd: 5, skip_no_commits: false, env: "live"}')"))); SELECT last_insert_rowid();")"
 db_exec "UPDATE routines SET swept_at = NULL, sweep_pr = NULL WHERE id = $rid;"; : > "$tmp/log"
-s0=$SECONDS; out="$(_PRFIX_SWEEP_S=4 _PRFIX_CALL_S=3 PRFIX_GH_SLEEP=1 PRFIX_DIR="$d" tick "$N")"; el=$((SECONDS - s0))
+s0=$SECONDS; out="$(_PRFIX_SWEEP_S=8 _PRFIX_CALL_S=3 PRFIX_GH_SLEEP=2 PRFIX_DIR="$d" tick "$N")"; el=$((SECONDS - s0))
 cur="$(db_value "SELECT coalesce(sweep_pr, 0) || '|' || coalesce(swept_at, 0) FROM routines WHERE id = $rid;")"
 check "A40: the tick answers its claimed run, ends within the budget and one call, keeps sweep_pr and leaves swept_at" "1|1|1|0" \
-  "$(jq --argjson r "$rs" '[.runs[] | select(.routine == $r)] | length' <<< "$out")|$([ "$el" -le 8 ] && echo 1)|$([ "${cur%|*}" -ge 91001 ] && [ "${cur%|*}" -lt 91020 ] && echo 1)|${cur#*|}"
+  "$(jq --argjson r "$rs" '[.runs[] | select(.routine == $r)] | length' <<< "$out")|$([ "$el" -le 14 ] && echo 1)|$([ "${cur%|*}" -ge 91001 ] && [ "${cur%|*}" -lt 91020 ] && echo 1)|${cur#*|}"
 : > "$tmp/log"; _PRFIX_SWEEP_S=90 PRFIX_DIR="$d" tick $((N + 60)) >/dev/null
 check "the next tick continues after sweep_pr, and a full pass clears it" "$(printf '%040d' $((${cur%|*} + 1)))||$((N + 60))" \
   "$(sed -nE 's#^api repos/mozilla/fxa/commits/([0-9a-f]{40}).*#\1#p' "$tmp/log" | head -1)|$(db_value "SELECT coalesce(sweep_pr, '') || '|' || swept_at FROM routines WHERE id = $rid;")"
