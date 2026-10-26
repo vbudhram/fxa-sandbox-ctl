@@ -11,7 +11,7 @@ route="${1:?usage: live-render.sh <#route> [--admin] [--query q] [page.sh option
 admin=false query="limit=4&days=30"
 while [ $# -gt 0 ]; do case "$1" in --admin) admin=true; shift ;; --query) query="$2"; shift 2 ;; *) break ;; esac; done
 t="$(mktemp -d "${TMPDIR:-/tmp}/live-render.XXXXXX")"; trap 'rm -rf "$t"' EXIT
-for a in snapshot stats teams; do bash "$root/skills/fxa-manager/vm.sh" api "$a" > "$t/$a.json"; done
+for a in snapshot stats teams errors; do bash "$root/skills/fxa-manager/vm.sh" api "$a" > "$t/$a.json"; done
 python3 - "$root/dashboard" "$t" "$admin" "$query" > "$t/fx.json" <<'PY'
 import json, sys, threading, time, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
@@ -28,6 +28,7 @@ def get(p):
     req = urllib.request.Request(f"http://127.0.0.1:{srv.server_port}{p}", headers={"Host": "localhost"})
     with urllib.request.urlopen(req, timeout=30) as r: return json.loads(r.read().decode())
 print(json.dumps({"/api/snapshot": get("/api/snapshot"), "/api/stats": get("/api/stats"), "/api/overview": get("/api/overview"), "/api/teams": live["teams"],
-                  "/api/runs/recent": get("/api/runs/recent?" + query), "/api/team-admin": {"admin": admin}}))
+                  "/api/runs/recent": get("/api/runs/recent?" + query), "/api/team-admin": {"admin": admin},
+                  "/api/errors": json.load(open(f"{t}/errors.json"))}))
 PY
 bash "$here/page.sh" "$route" --fixture "$t/fx.json" "$@"
