@@ -208,7 +208,7 @@ session_try() {
     esac
   done
   [ -n "$prompt" ] || { echo "ERROR: session try needs --prompt or --prompt-file" >&2; return 1; }
-  key="agent-try$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
+  key="agent-try$(head -c 48 /dev/urandom | base64 | LC_ALL=C tr -dc 'a-z0-9' | cut -c1-5)"   # bounded: see llm_token_for
   f="$(mktemp)"; printf '%s\n' "$prompt" > "$f"
   echo "== ${key}: starting"
   # The loaded profile, so a try can test any team; later commands follow the session's record.

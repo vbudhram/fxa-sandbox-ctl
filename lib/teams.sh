@@ -300,7 +300,7 @@ teams_test() {
   # A pass records the generation it tested, so a test with none is refused, not run.
   gen="$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null || true)"
   [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
-  key="agent-tst$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)"
+  key="agent-tst$(head -c 48 /dev/urandom | base64 | LC_ALL=C tr -dc 'a-z0-9' | cut -c1-5)"   # bounded: see llm_token_for
   f="$(mktemp "${TMPDIR:-/tmp}/fxa-team.XXXXXX")"
   echo 'This is a test boot of the team. Reply with the one word: ready. Change nothing and run nothing.' > "$f"
   echo "== ${name} at generation ${gen}: booting ${key} (a few minutes)"

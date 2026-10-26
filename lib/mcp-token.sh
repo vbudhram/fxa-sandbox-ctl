@@ -25,7 +25,8 @@ mcp_token_for() {
   [ -n "$connectors" ] || return 1
   [[ "$connectors" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: MCP connectors must look like jira,github" >&2; return 1; }
   mkdir -p "${FXA_MCP_GATEWAY_DIR}/tokens" "${FXA_MCP_GATEWAY_DIR}/runs" || return 1
-  tok="fxm_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
+  # A bounded read: with SIGPIPE ignored (a GitHub runner, a systemd unit) BSD tr on an endless stream never stops.
+  tok="fxm_$(head -c 96 /dev/urandom | base64 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-32)"
   # Another team reads its own Jira project and repos, not FxA's (the gateway's team_rules); FxA keeps the rules as written.
   local projects="" repos="" row
   if [ "${PIPE_PROFILE:-fxa}" != fxa ]; then

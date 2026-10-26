@@ -21,7 +21,8 @@ llm_token_for() {
     [ -z "$dl" ] || _tok_expires "${FXA_LLM_PROXY_DIR}/tokens/${tok}.json" "$dl"
     printf '%s\n' "$tok"; return 0
   fi
-  tok="fxl_$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 || true)"
+  # A bounded read: with SIGPIPE ignored (a GitHub runner, a systemd unit) BSD tr on an endless stream never stops.
+  tok="fxl_$(head -c 96 /dev/urandom | base64 | LC_ALL=C tr -dc 'A-Za-z0-9' | cut -c1-32)"
   # The team's caps for the proxy, from its record (none for a team without them): written at each new token.
   local team="${PIPE_PROFILE:-fxa}"
   if [[ "$team" =~ ^[a-z][a-z0-9-]{1,30}$ ]]; then

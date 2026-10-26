@@ -13,6 +13,8 @@ eval "$(sed -n '/^_claude_auth_line() {/,/^}/p' "$(dirname "$0")/agent.sh")"
 
 t1="$(llm_token_for fxa-1)"; t2="$(llm_token_for fxa-1)"
 check "a run keeps one token" "$t1" "$t2"
+# With SIGPIPE ignored (a GitHub runner, a systemd unit) the token still comes back, in seconds.
+check "a token with SIGPIPE ignored" "yes" "$(FXA_LLM_PROXY_DIR="$tmp/sp" perl -e '$SIG{PIPE} = "IGNORE"; alarm 10; exec @ARGV' bash -c 'source "$1/llm-token.sh"; source "$1/mcp-token.sh"; llm_token_for sp-1; FXA_MCP_GATEWAY_DIR="$2" mcp_token_for sp-1 jira' _ "$(dirname "$0")" "$tmp/spg" 2>/dev/null | grep -cE '^fx[lm]_[A-Za-z0-9]{32}$' | sed 's/^2$/yes/')"
 check "the token has the proxy's form" "yes" "$([[ "$t1" =~ ^fxl_[A-Za-z0-9]{32}$ ]] && echo yes)"
 check "another run gets another token" "no" "$([ "$(llm_token_for fxa-2)" = "$t1" ] && echo yes || echo no)"
 check "the token file is private" "600" "$(perl -e 'printf "%o", (stat shift)[2] & 0777' "$tmp/tokens/$t1.json")"
