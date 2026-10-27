@@ -70,4 +70,8 @@ printf '#!/bin/sh\nexit 255\n' > "$tmp/pbin/ssh"; printf '#!/bin/sh\necho laptop
 out="$(PATH="$tmp/pbin:$PATH" HOME="$tmp" FXA_DEV_BOT_ROOT="$tmp/bot" bash "$(dirname "$0")/vm.sh" dev 2>&1)"; rc=$?
 check "vm.sh dev on an expired login: says so, prints no traceback, exits nonzero" "yes|0|1" \
   "$(grep -q 'gcloud login expired' <<< "$out" && echo yes)|$(grep -c 'Traceback\|BrokenPipe' <<< "$out")|$([ "$rc" != 0 ] && echo 1)"
+# The dev record lives in the controller's .git whatever directory vm.sh runs from.
+ctl="$(cd "$(dirname "$0")/../.." && pwd -P)"
+check "the dev record path is the controller's, from another directory" "$(git -C "$ctl" rev-parse --path-format=absolute --git-common-dir)/fxa-dev-deployed" \
+  "$(cd "$tmp" && CTL_ROOT="$ctl" && eval "$(grep '^DEV_RECORD=' "$ctl/skills/fxa-manager/vm.sh")" && echo "$DEV_RECORD")"
 exit "$fail"

@@ -55,7 +55,8 @@ for l in sys.stdin:
     a, b = l.rstrip("\n").split("\t"); t.add(a, arcname=b, recursive=False)
 t.close()'
 }
-DEV_RECORD="$(git -C "$CTL_ROOT" rev-parse --git-common-dir 2>/dev/null)/fxa-dev-deployed"
+# Absolute: a relative .git would resolve against the caller's directory, such as the bot repo.
+DEV_RECORD="$(git -C "$CTL_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/fxa-dev-deployed"
 # promote_diff <repo> <recorded tree>   Nothing when origin/main is that tree; else what differs.
 promote_diff() {
   [ "$(git -C "$1" rev-parse 'origin/main^{tree}')" = "$2" ] && return 0
