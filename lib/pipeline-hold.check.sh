@@ -12,7 +12,7 @@ eval "$(sed -n '/^_PIPE_SKIP_KINDS=/p;/^_pipeline_one_line() {/,/^}/p;/^_pipelin
 eval "$(sed -n '/^_snapshot_skipped() {/,/^}/p' "$here/snapshot.sh")"
 declare -F _pipeline_hash >/dev/null || _pipeline_hash() { shasum | cut -c1-16; }
 PIPE_STATE_DIR="$tmp"
-pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }
+pipeline_require() { :; }; pipeline_label_for() { echo "ai-fixme-$1"; }; _jira_sa() { return 1; }
 # The ticket text, and the blocker's labels, from files the check moves.
 echo "FXA-3 text" > "$tmp/ticket"; echo '[]' > "$tmp/blabels"
 acli() { case "$*" in *"comment list"*) echo '{"comments":[{"body":"a person asks"}]}' ;;
@@ -73,5 +73,18 @@ check "the allow-tooling label wakes a skipped ticket" "changed" "$(pipeline_ski
 fp10="$(cut -f1 "$tmp/FXA-10.skipped")"; unset PIPE_TOOLING_LABEL
 check "with no tooling label set, the hash is the old one" "$fp10" "$(_pipeline_skip_fingerprint FXA-10)"
 eval "$real_acli"
+
+# Under the service account, its own comments carry no 🤖: the hash skips them by author instead.
+_jira_sa() { return 0; }; _jira_rest() { echo '{"displayName":"svc"}'; }
+echo '[{"author":"Pat","body":"a person asks"}]' > "$tmp/comments"
+acli() { case "$*" in *"comment list"*) jq -n --argjson c "$(cat "$tmp/comments")" '{comments: $c}' ;; *) cat "$tmp/ticket" ;; esac; }
+fp="$(_pipeline_skip_fingerprint FXA-11)"
+echo '[{"author":"Pat","body":"a person asks"},{"author":"svc","body":"Skipped: needs a label"},{"author":"Lee","body":"🤖 an old note"}]' > "$tmp/comments"
+check "the service account's comment and an old 🤖 note leave the hash as it was" "$fp" "$(_pipeline_skip_fingerprint FXA-11)"
+echo '[{"author":"Pat","body":"a person asks"},{"author":"Lee","body":"an answer"}]' > "$tmp/comments"
+check "a person's comment changes it" "changed" "$([ "$(_pipeline_skip_fingerprint FXA-11)" != "$fp" ] && echo changed)"
+_jira_rest() { return 1; }
+check "a failed read of the account prints nothing" "" "$(_pipeline_skip_fingerprint FXA-11)"
+_jira_sa() { return 1; }; eval "$real_acli"
 
 exit "$fail"

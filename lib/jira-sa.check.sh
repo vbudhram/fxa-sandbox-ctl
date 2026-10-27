@@ -59,8 +59,10 @@ check "an assignee by email is set by account ID" '{"accountId":"acc-1"}' "$(sed
 : > "$tmp/log"; acli jira workitem transition --key FXA-1 --status Done -y
 check "a transition to Done uses its ID" '{"transition":{"id":"31"}}' "$(sed -n "s|^POST $G/rest/api/3/issue/FXA-1/transitions ||p" "$tmp/log")"
 check "a status with no transition fails" "1" "$(acli jira workitem transition --key FXA-1 --status Nope -y 2>/dev/null; echo $?)"
-: > "$tmp/log"; pipeline_require() { :; }; jira_comment FXA-1 $'🤖 one\ntwo'
-check "a comment is one paragraph, as acli posts it" '[{"type":"paragraph","content":[{"type":"text","text":"🤖 one\ntwo"}]}]' "$(sed -n "s|^POST $G/rest/api/3/issue/FXA-1/comment ||p" "$tmp/log" | jq -c .body.content)"
+: > "$tmp/log"; pipeline_require() { :; }; jira_comment FXA-1 $'::success\n**Merged**\n- two'
+check "a comment goes as ADF, in a panel, with no 🤖 from the service account" '{"type":"panel","attrs":{"panelType":"success"},"content":[{"type":"paragraph","content":[{"type":"text","text":"Merged","marks":[{"type":"strong"}]}]},{"type":"bulletList","content":[{"type":"listItem","content":[{"type":"paragraph","content":[{"type":"text","text":"two"}]}]}]}]}' "$(sed -n "s|^POST $G/rest/api/3/issue/FXA-1/comment ||p" "$tmp/log" | jq -c '.body.content[0]')"
+: > "$tmp/log"; acli jira workitem comment create --key FXA-1 --body $'plain\ntext'
+check "a plain body is still one paragraph" '[{"type":"paragraph","content":[{"type":"text","text":"plain\ntext"}]}]' "$(sed -n "s|^POST $G/rest/api/3/issue/FXA-1/comment ||p" "$tmp/log" | jq -c .body.content)"
 printf 'the PR\nline 2\n' > "$tmp/desc"
 check "create prints the new key" "FXA-9" "$(acli jira workitem create --project FXA --type Task --summary S --description-file "$tmp/desc" --label agent-session --json | jq -r .key)"
 check "create sends project, type, label and description" 'FXA|Task|["agent-session"]|the PR\nline 2' "$(sed -n "s|^POST $G/rest/api/3/issue ||p" "$tmp/log" | jq -r '[.fields.project.key, .fields.issuetype.name, (.fields.labels | tostring), (.fields.description.content[0].content[0].text | gsub("\n"; "\\n"))] | join("|")')"

@@ -453,15 +453,16 @@ _pipeline_hash() {
   else md5 -q; fi
 }
 
-# Hash the ticket plus every comment not led by 🤖. Our own skip comment would
-# otherwise change the hash and cause another comment on every pass.
+# Hash the ticket plus every comment a person wrote: not by the service account, not led by 🤖.
+# Our own skip comment would otherwise change the hash and cause another comment on every pass.
 # A failed read prints nothing: md5 of a partial read looked like an edit and woke a model pass.
 # The trailing . keeps the bytes the hash saw before, trailing newlines included.
 _pipeline_skip_fingerprint() {
   local key="$1" v c t=""
   v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
   c="$(acli jira workitem comment list --key "$key" --json --paginate 2>/dev/null)" || return 0
-  c="$(printf '%s\n' "$c" | jq -r '.comments[]? | select((.body // "") | startswith("🤖") | not) | .body' && echo .)" || return 0
+  local me=""; if _jira_sa; then me="$(_jira_rest GET /rest/api/3/myself | jq -r '.displayName // empty')" && [ -n "$me" ] || return 0; fi
+  c="$(printf '%s\n' "$c" | jq -r --arg me "$me" '.comments[]? | select(((.body // "") | startswith("🤖")) or ($me != "" and .author == $me) | not) | .body' && echo .)" || return 0
   # The plain view prints no labels, and the allow-tooling label is how a tooling skip is unblocked.
   # Only that label counts: hashing every label would wake each skipped ticket once.
   if [ -n "${PIPE_TOOLING_LABEL:-}" ]; then

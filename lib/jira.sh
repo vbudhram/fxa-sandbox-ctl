@@ -98,6 +98,8 @@ _jira_rest() {
 }
 _jira_rest_json() { local m="$1" p="$2"; shift 2; _jira_rest "$m" "$p" -H 'Content-Type: application/json' --data "$@"; }
 
+JIRA_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ADF as acli's plain text.
 read -r -d '' _JIRA_TEXT_JQ <<'JQ' || true
 def txt:
@@ -144,7 +146,8 @@ _acli_rest() {
       fi ;;
     "jira workitem comment")
       case "${body:+create}" in
-        create) _jira_rest_json POST "/rest/api/3/issue/${key}/comment" "$(jq -nc --arg t "$body" "{body: $doc}")" >/dev/null ;;
+        # A body that is already an ADF doc (jira_comment's) goes as it is.
+        create) _jira_rest_json POST "/rest/api/3/issue/${key}/comment" "$(jq -nc --arg t "$body" "{body: ((\$t | try fromjson catch null) as \$j | if (\$j | type) == \"object\" and \$j.type == \"doc\" then \$j else $doc end)}")" >/dev/null ;;
         # One object per page, as acli --paginate prints them; without it, the first page only.
         *) local at=0
            while :; do
@@ -591,11 +594,12 @@ jira_record_state() {
 }
 
 # jira_comment <KEY> <BODY>
-#   WRITE: post one comment. Callers lead the body with 🤖 so readers know a
-#   pipeline wrote it.
+#   WRITE: post one comment, written in jira_adf.py's Markdown subset and sent as ADF.
+#   The service account's name says a pipeline wrote it; a person's login gets 🤖 in front.
 jira_comment() {
   pipeline_require || return 1
-  local key="${1:-}" body="${2:-}"
+  local key="${1:-}" body="${2:-}" adf
   [ -n "$key" ] && [ -n "$body" ] || { echo "ERROR: comment needs <KEY> <body>" >&2; return 1; }
-  acli jira workitem comment create --key "$key" --body "$body" >/dev/null
+  adf="$(printf '%s' "$body" | python3 -I "${JIRA_LIB_DIR}/jira_adf.py" $(_jira_sa || echo --mark))" || return 1
+  acli jira workitem comment create --key "$key" --body "$adf" >/dev/null
 }
