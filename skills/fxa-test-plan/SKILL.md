@@ -54,7 +54,9 @@ sandbox:
   reviewers reject them (#21380, #21305, #21209). Commit a functional spec only for
   a user flow.
 - A route or API change: a `check` or `integration` line that calls it, and a
-  `functional` line when a user flow uses it.
+  `functional` line when a user flow uses it. For an auth-server route, also plan
+  each `test/remote/*.in.spec.ts` that calls the route's path: those specs import
+  no route file, so the import search below misses them.
 
 ## Step 3: Find the specs and write the checks
 
