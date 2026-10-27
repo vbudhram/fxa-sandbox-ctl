@@ -466,8 +466,14 @@ finish_diff_only() {
     || { echo "ERROR: no merge-base with origin/${FXA_WORKTREE_BASE:-main} in ${wt}" >&2; return 1; }
   dir="${PIPE_STATE_DIR}/diffs"; patch="${dir}/${key}.patch"; mkdir -p "$dir" || return 1
   # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files or a new test plan.
-  ( cd "$wt" && git diff --binary --no-ext-diff --no-textconv "$mb" -- . ':(exclude).fxa-*' \
-      && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' ':(exclude,glob)*test-plan.json' ':(exclude,glob).*test-plan.json' ':(exclude,glob)*test_plan.json' \
+  # With a files list in the handoff, only the listed files and the deletions (as in _finish_scope).
+  local -a spec=(. ':(exclude).fxa-*'); local listed=0 filt=""
+  if jq -e '.files | type == "object"' "$done_file" >/dev/null 2>&1; then
+    listed=1 filt=--diff-filter=d; spec=(); while IFS= read -r f; do spec+=(":(literal)$f"); done < <(jq -r '.files | keys[]' "$done_file")
+  fi
+  ( cd "$wt" && { [ "${#spec[@]}" -eq 0 ] || git diff --binary --no-ext-diff --no-textconv $filt "$mb" -- "${spec[@]}"; } \
+      && { [ "$listed" = 0 ] || git diff --binary --no-ext-diff --no-textconv --diff-filter=D "$mb" -- . ':(exclude).fxa-*'; } \
+      && { [ "${#spec[@]}" -eq 0 ] || git ls-files -o --exclude-standard -z -- "${spec[@]}" ':(exclude).fxa-*' ':(exclude,glob)*test-plan.json' ':(exclude,glob).*test-plan.json' ':(exclude,glob)*test_plan.json'; } \
         | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index -- /dev/null "$f" || true; done ) > "${patch}.diff" \
     || { rm -f "${patch}.diff"; echo "ERROR: could not write ${patch}" >&2; return 1; }
   [ -s "${patch}.diff" ] || { rm -f "$patch" "${patch}.diff"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }
@@ -495,6 +501,18 @@ finish_diff_only() {
 - Size: ${stat:-unknown}
 **Next:** ${next}" || echo "WARN: could not post the diff comment on ${key}" >&2
   printf '%s\n' "$patch"
+}
+
+# _finish_scope <worktree> <done file>   Unstage each added or changed file the handoff's files list does not
+# name: only files the agent tied to the issue ship. A deletion stays. A handoff with no list changes nothing.
+_finish_scope() {
+  local f; jq -e '.files | type == "object"' "$2" >/dev/null 2>&1 || return 0
+  while IFS= read -r -d '' f; do
+    jq -e --arg f "$f" '.files | has($f)' "$2" >/dev/null && continue
+    git -C "$1" reset -q -- "$f" >&2 || { echo "ERROR: could not leave out $f" >&2; return 1; }
+    echo "  left out of the PR, not in the handoff's files list: $f" >&2
+  done < <(git -C "$1" diff --cached --name-only --diff-filter=d -z)
+  ! git -C "$1" diff --cached --quiet || { echo "ERROR: nothing to ship: no file in the handoff's files list changed." >&2; return 1; }
 }
 
 # finish_push_and_pr [worktree] [create_pr]
@@ -711,6 +729,7 @@ _finish_push_and_pr() {
     [ "$merge_base" = "$FXA_FIX_HEAD_SHA" ] || { echo "ERROR: the branch of the PR moved; nothing was pushed." >&2; _finish_prfix_why moved; return 3; }
   fi
   # After the reset the index holds the whole change, a rebase round's merge included.
+  _finish_scope "$worktree" "$done_file" || return 1
   # A fix run's refusal is its end (why guard:<class>), not an operator error.
   # A fix run has no approver's tooling label: .yarn/* and .yarnrc* stay refused.
   if [ -n "$fix" ]; then
@@ -726,6 +745,9 @@ _finish_push_and_pr() {
   local with_risk=""
   [ -n "$fix" ] || with_risk="$(_finish_risk_section "$worktree" "$pr_body" "$(jq -r '.risk_notes // empty' "$done_file" 2>/dev/null)")" || with_risk=""
   [ -z "$with_risk" ] || pr_body="$with_risk"
+  # The reviewer sees the scope: each shipped file and why the agent tied it to the issue (before the PII guard, too).
+  local files_md; files_md="$(jq -r '.files // {} | to_entries[] | "- `\(.key)`: \(.value)"' "$done_file" 2>/dev/null)" || files_md=""
+  [ -n "$fix" ] || [ -z "$files_md" ] || pr_body="${pr_body%$'\n'}"$'\n\n## Files\n\n'"$files_md"
   _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || { _finish_prfix_why guard:pii; return 1; }
 
   local as_is=""

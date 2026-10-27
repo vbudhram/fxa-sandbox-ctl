@@ -25,7 +25,10 @@ chmod +x "$tmp/bin/npx"; export PATH="$tmp/bin:$PATH" FXA_WORKSPACE="$tmp/repo"
 
 mkdir -p "$tmp/repo/src" && cd "$tmp/repo" && g init -q && echo a > src/a.ts && echo '{}' > package.json && g add . && g commit -qm init && g update-ref refs/remotes/origin/main HEAD
 g checkout -qb agent-x
-handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",risk_notes:"Would not catch: other browsers.",media_paths:$m}' > .fxa-auto-done.json; }
+# files: every changed file by default (FILES overrides), as an agent that lists its change writes it.
+changed() { { git diff --name-only --diff-filter=d origin/main; git ls-files -o --exclude-standard; } | grep -vE '^(\.fxa-|ai/|artifacts/)' | sort -u; }
+handoff() { jq -n --arg t "$1" --arg b "${2:-agent-x}" --argjson m "${3:-[]}" --argjson f "${FILES:-$(changed | jq -R '{(.): "why"}' | jq -s 'add // {}')}" \
+  '{issue:"agent-x",branch:$b,pr_title:$t,pr_body:"why",commit_body:"Because:\n\n* why",risk_notes:"Would not catch: other browsers.",media_paths:$m,files:$f}' > .fxa-auto-done.json; }
 
 echo b > src/a.ts; handoff 'fix(auth): keep the stored location'
 check "a clean change and handoff pass" "handoff check: ok" "$(bash "$C")"
@@ -60,7 +63,8 @@ bash "$C" --fix >/dev/null; check "--fix leaves a committed scratch file and rep
 
 g rm -q src/kept.tmp.ts && g commit -qm 'drop kept'
 # STE in the PR text: named, exit 3 on style alone, so the host asks once and still ships.
-body() { jq -n --arg b "$1" --arg t "${2:-fix(auth): keep the stored location}" '{issue:"agent-x",branch:"agent-x",pr_title:$t,pr_body:$b,commit_body:"Because:\n\n* why",media_paths:[]}' > .fxa-auto-done.json; }
+body() { jq -n --arg b "$1" --arg t "${2:-fix(auth): keep the stored location}" --argjson f "$(changed | jq -R '{(.): "why"}' | jq -s 'add // {}')" \
+  '{issue:"agent-x",branch:"agent-x",pr_title:$t,pr_body:$b,commit_body:"Because:\n\n* why",media_paths:[],files:$f}' > .fxa-auto-done.json; }
 body 'We utilize the cache.'; bash "$C" >/dev/null; check "style alone exits 3" 3 $?
 check "the word and its replacement are named" 1 "$(bash "$C" | grep -c 'PR text, STE: "utilize": use "use"')"
 body 'We utilize the cache.' 'Fix it'; bash "$C" >/dev/null; check "style and a real problem exit 1" 1 $?
@@ -89,7 +93,7 @@ check "a PR branch the host does not name fails" "1" "$(FXA_WORKSPACE="$tmp/py" 
 printf "it('x', () => geo('194.12.187.0'));\n" > new.spec.ts
 check "a public IP in a new test is named, with the safe ranges" "1|1" \
   "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" >/dev/null; echo $?)|$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" | grep -c 'new.spec.ts:1: IP address.*203.0.113.x')"
-printf "it('x', () => geo('203.0.113.0'));\n" > new.spec.ts
+printf "it('x', () => geo('203.0.113.0'));\n" > new.spec.ts; handoff 'fix(py): keep it' deng-2407-fix
 check "a documentation IP passes" "handoff check: ok" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C")"
 jq '.pr_body = "Reported by zq7x9k.notreal@gmail.com"' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
 check "a real email in the PR body is named" "1" "$(FXA_WORKSPACE="$tmp/py" FXA_SESSION_BRANCH=deng-2407-fix bash "$C" | grep -c 'personal or internal data')"
@@ -108,10 +112,17 @@ printf 'the change is behind a WebAuthn prompt\n' > .fxa-auto-media-skipped.txt;
 rm .fxa-auto-media-skipped.txt; mkdir -p .fxa-auto-media && touch .fxa-auto-media/page.webm; check "a video passes" "handoff check: ok" "$(bash "$C")"
 rm -rf .fxa-auto-media; echo b > packages/fxa-settings/src/Page.test.tsx; g checkout -q -- packages/fxa-settings/src/Page.tsx
 handoff 'test(settings): x'; jq 'del(.risk_notes)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
-bash "$C" > out.txt; rc=$?; check "an FxA handoff with no 'Would not catch' line gets a style note only (exit 3)" "3|1" "$rc|$(grep -c "risk_notes has no 'Would not catch" out.txt)"
+bash "$C" > "$tmp/out.txt"; rc=$?; check "an FxA handoff with no 'Would not catch' line gets a style note only (exit 3)" "3|1" "$rc|$(grep -c "risk_notes has no 'Would not catch" "$tmp/out.txt")"
 jq '.risk_notes = ["x"]' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json; check "risk_notes that is not a string is a problem" 1 "$(bash "$C" | grep -c 'risk_notes as a string')"
 handoff 'test(settings): x'; jq '.media_captions = ["x"]' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
 check "media_captions that is not an object of strings is a problem" 1 "$(bash "$C" | grep -c 'media_captions as an object of strings')"
 jq '.media_captions = {"a.png": "The code screen"}' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json; check "captions as an object pass" "handoff check: ok" "$(bash "$C")"
 rm -f out.txt; rm .fxa-auto-done.json; check "no handoff yet: no media problem" "handoff check: ok" "$(bash "$C")"
+# files: only what the agent tied to the issue ships.
+handoff 'test(settings): x'; printf '{}' > .sync-test-plan.json
+check "a changed file that files does not list is named" 1 "$(bash "$C" | grep -c '.sync-test-plan.json is in the change but not in files')"
+rm .sync-test-plan.json; FILES='{"packages/fxa-settings/src/Page.test.tsx": "the test", "src/other.ts": "x"}' handoff 'test(settings): x'
+check "a listed file that did not change is named" 1 "$(bash "$C" | grep -c 'files lists src/other.ts, which is not in the change')"
+handoff 'test(settings): x'; jq 'del(.files)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
+check "a handoff with no files list is a problem" 1 "$(bash "$C" | grep -c 'files as an object')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

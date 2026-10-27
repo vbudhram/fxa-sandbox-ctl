@@ -29,7 +29,8 @@ When the work is done, run `/fxa-end` (the notes and learnings for the team's me
   "branch": "fxa-12345",
   "pr_title": "fix(settings): handle cached signin state",
   "pr_body": "<the PR description>",
-  "media_paths": [".fxa-auto-media/after.png"]
+  "media_paths": [".fxa-auto-media/after.png"],
+  "files": { "packages/fxa-settings/src/x.tsx": "reads the cached signin state" }
 }
 ```
 

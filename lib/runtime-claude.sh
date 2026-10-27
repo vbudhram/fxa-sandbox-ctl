@@ -82,7 +82,7 @@ HDR
 runtime_prompt_handoff_step() {
   cat <<'STEP'
 9. Write /workspace/.fxa-auto-done.json LAST, with keys {issue, branch, pr_title,
-   pr_body, commit_body, media_paths}. pr_title is the scoped conventional commit
+   pr_body, commit_body, media_paths, files}. files: {path: why}; only those ship. pr_title is the scoped conventional commit
    subject (e.g. 'fix(settings): handle cached signin state'); the Jira key goes in
    pr_body, never the title. commit_body: 'Because:', 'This commit:' and
    'Closes <the Jira key>', at most 15 lines. media_paths: paths relative to /workspace, or

@@ -59,9 +59,18 @@ if [ -s "$done_file" ]; then
       and (.pr_title|type) == "string" and (.pr_body|type) == "string" and (.pr_body|length) > 0
       and (.media_paths|type) == "array" and all(.media_paths[]; type == "string")
       and ((.risk_notes // "")|type) == "string"
-      and ((.media_captions // {})|type) == "object" and all((.media_captions // {})[]; type == "string")' "$done_file" >/dev/null 2>&1; then
-    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty), an array media_paths, risk_notes as a string, and media_captions as an object of strings")
+      and ((.media_captions // {})|type) == "object" and all((.media_captions // {})[]; type == "string")
+      and (.files|type) == "object" and all(.files[]; type == "string" and length > 0)' "$done_file" >/dev/null 2>&1; then
+    problems+=("$done_file needs string keys issue, branch, pr_title, pr_body (not empty), an array media_paths, risk_notes as a string, media_captions as an object of strings, and files as an object: each changed file and why it belongs to the issue")
   else
+    # Only files tied to the issue ship (the host leaves out the rest): every change is listed, and every listed file changed.
+    for f in ${kept[@]+"${kept[@]}"}; do
+      jq -e --arg f "$f" '.files | has($f)' "$done_file" >/dev/null \
+        || problems+=("$f is in the change but not in files. Delete it or undo it, or add it to files with why it belongs to the issue")
+    done
+    while IFS= read -r f; do
+      printf '%s\n' ${kept[@]+"${kept[@]}"} | grep -qxF -- "$f" || problems+=("files lists $f, which is not in the change")
+    done < <(jq -r '.files | keys[]' "$done_file")
     title="$(jq -r .pr_title "$done_file")"
     [[ "$title" =~ ^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?:\ [^[:space:]] ]] \
       || problems+=("pr_title is not a scoped conventional subject like 'fix(auth): reject an expired token': $title")

@@ -35,6 +35,16 @@ check "one comment in an info panel names the title, the size and the next step,
 - Size: 2 files changed, 2 insertions(+)
 **Next:** A person reviews the patch and applies it with \`git am MNTOR-1.patch\`." "$(cat "$tmp/comment")"
 
+# A files list in the handoff: only the listed files and the deletions ship; no list ships as before (above).
+printf 'plan\n' > "$tmp/wt/.sync-test-plan.json"; printf 'stray\n' > "$tmp/wt/stray.log"
+jq '.files = {"a.txt": "the fix"}' "$tmp/wt/.fxa-auto-done.json" > "$tmp/d.json" && cp "$tmp/d.json" "$tmp/wt/.fxa-auto-done.json"
+finish_diff_only MNTOR-1 "$tmp/wt" >/dev/null 2>&1
+check "with a files list the patch has only the listed file" "a.txt" "$(grep '^+++ b/' "$p" | sed 's#^+++ b/##' | paste -sd' ' -)"
+eval "$(sed -n '/^_finish_scope() {/,/^}/p' "$here/finish.sh")"
+g -C "$tmp/wt" add -A; g -C "$tmp/wt" rm -q --cached a.txt >/dev/null; g -C "$tmp/wt" add a.txt
+check "the PR path unstages what the list does not name" "a.txt" "$(_finish_scope "$tmp/wt" "$tmp/wt/.fxa-auto-done.json" 2>/dev/null; g -C "$tmp/wt" diff --cached --name-only | grep -v '^\.fxa-' | paste -sd' ' -)"
+g -C "$tmp/wt" reset -q; rm -f "$tmp/wt/.sync-test-plan.json" "$tmp/wt/stray.log"
+jq 'del(.files)' "$tmp/wt/.fxa-auto-done.json" > "$tmp/d.json" && cp "$tmp/d.json" "$tmp/wt/.fxa-auto-done.json"
 ATTACH_FAILS=1 finish_diff_only MNTOR-1 "$tmp/wt" >/dev/null 2>&1
 check "a failed attach points to the patch on the pipeline host" "1|0" "$(grep -c "on the pipeline host, at \`diffs/MNTOR-1.patch\`" "$tmp/comment")|$(grep -c 'git am' "$tmp/comment")"
 g -C "$tmp/wt" stash -q -u; rm -f "$tmp/comment"

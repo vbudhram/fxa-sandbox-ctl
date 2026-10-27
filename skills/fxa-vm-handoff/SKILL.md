@@ -100,8 +100,9 @@ jq -n \
   --rawfile risk /tmp/risk-notes.txt \
   --argjson media "$(ls .fxa-auto-media/*.{png,jpg,jpeg,webp,gif,webm,mp4,mov} 2>/dev/null | jq -R . | jq -s .)" \
   --argjson caps "$(cat /tmp/media-captions.json 2>/dev/null || echo '{}')" \
+  --argjson files "$(cat /tmp/files.json)" \
   '{issue:$issue, branch:$branch, pr_title:$title,
-    pr_body:$body, commit_body:$cbody, risk_notes:$risk, media_paths:$media, media_captions:$caps}' \
+    pr_body:$body, commit_body:$cbody, risk_notes:$risk, media_paths:$media, media_captions:$caps, files:$files}' \
   > /workspace/.fxa-auto-done.json.tmp \
   && mv /workspace/.fxa-auto-done.json.tmp /workspace/.fxa-auto-done.json
 ```
@@ -144,6 +145,13 @@ line that says what it shows, keyed by file name, such as
 host shows it under the picture. Keep only what proves the change: one recording
 for each flow (delete a rerun's older copy), at most two videos. The host shows
 two videos as pictures and lists the rest under "More recordings".
+
+`files` (`/tmp/files.json`) names each file you changed or added, with one line on
+why it belongs to the issue, such as
+`{"src/auth.ts": "rejects the expired token", "src/auth.test.ts": "the test for it"}`.
+The host ships only these files. Do not list a test plan, a log, a build output or a
+script you used to look around: delete or undo those files instead. The check below
+fails on a changed file that is not listed, and on a listed file that did not change.
 
 `media_paths` is read from `.fxa-auto-media/`, so every file a capture skill
 wrote is listed and nothing is typed by hand. Do not replace it with `[]`.

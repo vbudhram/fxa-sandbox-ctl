@@ -428,7 +428,8 @@ _session_wrapup_steps() {
 The engineer asked to push the branch (no PR yet). Do not review, test or
 write a PR description; that happens when they open the PR. Only:
 1. Revert any file unrelated to the request with 'git checkout "\$(git merge-base HEAD origin/main)" -- <path>'.
-2. Write /workspace/.fxa-auto-done.json with keys {issue, branch, pr_title, pr_body, commit_body, media_paths}:
+2. Write /workspace/.fxa-auto-done.json with keys {issue, branch, pr_title, pr_body, commit_body, media_paths, files}
+   (files: each changed file and one line on why it belongs to the request; only these files ship):
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; pr_body and commit_body the same two or three plain
    lines on what changed and why; media_paths the output of
@@ -465,7 +466,8 @@ straight to step 4.
    pr_body must reuse /workspace/.github/PULL_REQUEST_TEMPLATE.md. There is no
    Jira ticket; leave the ticket field empty and do not name this session.
 4. Write /workspace/.fxa-auto-done.json LAST, once the working tree holds exactly
-   what should ship, with keys {issue, branch, pr_title, pr_body, commit_body, media_paths}:
+   what should ship, with keys {issue, branch, pr_title, pr_body, commit_body, media_paths, files}
+   (files: each changed file and one line on why it belongs to the request; only these files ship):
    issue "$1"; branch from 'git branch --show-current'; pr_title a scoped
    conventional commit subject; commit_body the short commit body of
    fxa-vm-handoff Step 3b, at most 15 lines; media_paths the output of
