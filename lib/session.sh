@@ -1027,7 +1027,11 @@ _session_boot_times() {
 # _session_parse   stream-json lines on stdin → event objects, one per line.
 # The final text of a turn → a question (OPTION: lines) or a turn end with its
 # status: line. Both agents end a turn with such text.
-_SESSION_FIN_JQ='def fin($t): ($t | tostring) as $t
+# The proxy's spend-cap refusal reaches Claude as its final text: say it plainly.
+_SESSION_FIN_JQ='def capped($t): ($t | tostring) as $t
+  | ([$t | capture("fxa-llm-proxy: this run reached its spend cap of (?<c>\\$[0-9.]+)")] | .[0]) as $m
+  | if $m then "I stopped: this run reached its \($m.c) cost limit. Work that finished before it, such as an opened PR, is not affected. Reply here to continue." else $t end;
+def fin($t): ($t | tostring) as $t
   | ($t | [scan("(?m)^status: *(needs-input|ready) *$")] | last // ["needs-input"] | .[0]) as $status
   # QUESTION: lines open groups; OPTION: lines answer the latest one (or one unnamed group).
   | (reduce ($t | split("\n"))[] as $l ([];
@@ -1044,7 +1048,7 @@ _session_parse() {
   # Claude ends a turn with one result event. Codex sends its message (say) and
   # the turn end (turn_done) separately; _session_fold joins them.
   jq -R -c "${_SESSION_FIN_JQ} fromjson? |
-    if .type == \"result\" then fin(.result // \"\")
+    if .type == \"result\" then fin(capped(.result // \"\"))
     elif .type == \"system\" and .subtype == \"init\" then {type: \"init\", session_id: .session_id}
     elif .type == \"thread.started\" then {type: \"init\", session_id: .thread_id}
     elif .type == \"item.completed\" and .item.type == \"agent_message\" then {type: \"say\", text: (.item.text // \"\")}

@@ -16,9 +16,11 @@ ev="$(printf '%s\n' \
   '{"type":"assistant","message":{"content":[{"type":"text","text":"working"}]}}' \
   '{"type":"result","result":"Plan.\nOPTION: keep A\nOPTION: drop A\nstatus: needs-input"}' \
   '{"type":"result","result":"Done.\nstatus: ready"}' \
-  '{"type":"result","result":"no marker"}' | _session_parse | jq -s -c '.')"
+  '{"type":"result","result":"no marker"}' \
+  '{"type":"result","is_error":true,"result":"Failed to authenticate. API Error: 403 fxa-llm-proxy: this run reached its spend cap of $3"}' | _session_parse | jq -s -c '.')"
 check "init carries the session id" "abc" "$(jq -r '.[0].session_id' <<< "$ev")"
-check "assistant chatter is dropped" "4" "$(jq length <<< "$ev")"
+check "assistant chatter is dropped" "5" "$(jq length <<< "$ev")"
+check "a spend-cap refusal reads as a stop, not an API error" "I stopped: this run reached its \$3 cost limit." "$(jq -r '.[4].text' <<< "$ev" | cut -d' ' -f1-9)"
 check "options become a question" "question keep A,drop A" "$(jq -r '.[1] | "\(.type) \(.options | join(","))"' <<< "$ev")"
 check "marker lines leave the text" "Plan." "$(jq -r '.[1].text' <<< "$ev")"
 check "ready marker" "ready Done." "$(jq -r '.[2] | "\(.status) \(.text)"' <<< "$ev")"
