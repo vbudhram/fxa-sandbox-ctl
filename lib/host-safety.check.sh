@@ -33,8 +33,8 @@ rmdir "$tmp/slot/.git"; ln -s "$tmp/pointer" "$tmp/slot/.git"
 check ".git link refused" "no" "$(worktree_git_ok "$tmp/slot" >/dev/null 2>&1 && echo yes || echo no)"
 rm "$tmp/slot/.git"; cp "$tmp/pointer" "$tmp/slot/.git"
 
-# The tooling guard covers yarn and npm config, which run code on the host.
-for f in .yarnrc.yml packages/x/.npmrc .yarn/plugins/p.cjs; do
+# The tooling guard covers CI config, and yarn and npm config, which run code on the host.
+for f in .yarnrc.yml packages/x/.npmrc .yarn/plugins/p.cjs .circleci/config.yml .github/workflows/x.yml; do
   mkdir -p "$tmp/slot/$(dirname "$f")"; echo x > "$tmp/slot/$f"; g -C "$tmp/slot" add -f -- "$f"
   check "guard refuses $f" "no" "$(_finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no)"
   check "the ERROR line names $f" "1" "$(_finish_tooling_guard "$tmp/slot" 2>&1 | grep -c "^ERROR: refusing to ship: .*: ${f}$")"
@@ -43,11 +43,11 @@ done
 echo x > "$tmp/slot/a.ts"; g -C "$tmp/slot" add a.ts
 check "guard passes plain code" "yes" "$(_finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no)"
 
-# package.json: only scripts, lint-staged and husky count. A missing side is {}.
+# package.json, scripts included, passes: CI runs the agent's tests with the same env anyway.
 g -C "$tmp/slot" rm -q --cached a.ts
 mkdir -p "$tmp/slot/libs/old" "$tmp/slot/libs/gone"
 echo '{"name":"root","scripts":{"t":"jest"},"dependencies":{"a":"1"}}' > "$tmp/slot/package.json"
-echo '{"name":"gone","version":"0.0.0"}' > "$tmp/slot/libs/gone/package.json"
+echo '{"name":"gone","scripts":{"t":"jest"}}' > "$tmp/slot/libs/gone/package.json"
 g -C "$tmp/slot" add package.json libs/gone/package.json && g -C "$tmp/slot" commit -q -m pkg
 guard() { _finish_tooling_guard "$tmp/slot" 2>/dev/null && echo yes || echo no; }
 pkg() { # pkg <name> <want> <path> <json>   stage the file, run the guard, then reset to HEAD
@@ -56,11 +56,11 @@ pkg() { # pkg <name> <want> <path> <json>   stage the file, run the guard, then 
   g -C "$tmp/slot" reset -q; g -C "$tmp/slot" checkout -q -- . 2>/dev/null; g -C "$tmp/slot" clean -qfd
 }
 pkg "a new lib's package.json passes" yes libs/x/package.json '{"name":"x","version":"0.0.0"}'
-pkg "a new package.json with scripts is refused" no libs/y/package.json '{"name":"y","scripts":{"postinstall":"curl x"}}'
-pkg "a changed scripts value is refused" no package.json '{"name":"root","scripts":{"t":"curl x"},"dependencies":{"a":"1"}}'
+pkg "a new package.json with scripts passes" yes libs/y/package.json '{"name":"y","scripts":{"postinstall":"curl x"}}'
+pkg "a changed scripts value passes" yes package.json '{"name":"root","scripts":{"t":"curl x"},"dependencies":{"a":"1"}}'
 pkg "a dependency bump passes" yes package.json '{"name":"root","scripts":{"t":"jest"},"dependencies":{"a":"2"}}'
 g -C "$tmp/slot" rm -q libs/gone/package.json
-check "a deleted package.json with no scripts passes" yes "$(guard)"
+check "a deleted package.json with scripts passes" yes "$(guard)"
 g -C "$tmp/slot" reset -q; g -C "$tmp/slot" checkout -q -- .
 
 # The sandbox gets only the allowlisted sections of the operator's CLAUDE.md.

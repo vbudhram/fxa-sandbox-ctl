@@ -498,58 +498,6 @@ _jira_rest_get() {
   printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "$(_jira_api)$1" 2>/dev/null
 }
 
-# jira_tooling_approver <KEY>   "<accountId> <name>" of the approver who added PIPE_TOOLING_LABEL,
-#   when the ticket has the label and the newest change that added it came from an account in
-#   PIPE_TOOLING_APPROVERS ("Name:accountId" or "accountId", comma separated). The match is on the
-#   ID: anyone can take a display name. Anyone with edit access can add a label, and CI runs the
-#   pushed branch with secrets before review, so any unknown (no approvers, no login, a failed
-#   read) returns 1: the label does not count.
-jira_tooling_approver() {
-  local key="${1:-}" who
-  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "${PIPE_TOOLING_APPROVERS:-}" ] || return 1
-  who="$(jira_tooling_label_adder "$key")" || return 1
-  _jira_tooling_match "$who"
-}
-
-# jira_tooling_label_adder <KEY>   The account ID of the newest change that added PIPE_TOOLING_LABEL.
-#   Exit 1: no label on the ticket, or no add of it on the changelog's last page (a good read).
-#   Exit 2: no login or a failed read, so a caller can keep work that waits on the label.
-jira_tooling_label_adder() {
-  local key="${1:-}" label="${PIPE_TOOLING_LABEL:-}" j has page last who
-  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [ -n "$label" ] && [ -n "${PIPE_JIRA_BASIC:-}" ] || return 2
-  j="$(_retry _jira_rest_get "/rest/api/3/issue/${key}?fields=labels")" || return 2
-  has="$(jq -r --arg l "$label" '(.fields.labels // error("no labels")) | index($l) != null' <<< "$j" 2>/dev/null)" || return 2
-  [ "$has" = true ] || return 1
-  page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100")" || return 2
-  # The changelog is oldest first, so the newest change sits on the last page. A label added more
-  # than 100 changes ago is not on it and does not count: an approver adds it again.
-  last="$(jq -r 'if .isLast == false then ([.total - 100, 0] | max) else empty end' <<< "$page" 2>/dev/null)" || return 2
-  if [ -n "$last" ]; then
-    page="$(_retry _jira_rest_get "/rest/api/3/issue/${key}/changelog?maxResults=100&startAt=${last}")" || return 2
-  fi
-  who="$(jq -r --arg l "$label" '[.values[]
-      | select(any(.items[]?; .field == "labels"
-          and ((.toString // "") | split(" ") | index($l)) and (((.fromString // "") | split(" ") | index($l)) | not)))
-      | .author.accountId // ""] | last // ""' <<< "$page" 2>/dev/null)" || return 2
-  [ -n "$who" ] || return 1
-  printf '%s\n' "$who"
-}
-
-# _jira_tooling_match <accountId>   "<accountId> <name>" when the ID is an entry of PIPE_TOOLING_APPROVERS.
-_jira_tooling_match() {
-  local who="${1:-}" entry name
-  [ -n "$who" ] || return 1
-  while IFS= read -r entry; do
-    entry="$(printf '%s' "$entry" | sed 's/^ *//; s/ *$//')"
-    # The ID is the whole entry, or all of it after the first colon ("Name:ID"); a legacy ID has a colon of its own (557058:uuid).
-    if [ "$entry" = "$who" ]; then name="$who"
-    elif [[ ! "${entry%%:*}" =~ ^[0-9]+$ ]] && [ "${entry#*:}" = "$who" ]; then name="${entry%%:*}"
-    else continue; fi
-    printf '%s %s\n' "$who" "$name"; return 0
-  done < <(tr ',' '\n' <<< "$PIPE_TOOLING_APPROVERS")
-  return 1
-}
-
 # jira_close_merged <KEY>
 #   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
 #   approved, add it to the active sprint, transition it to Done.

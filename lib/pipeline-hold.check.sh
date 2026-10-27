@@ -60,20 +60,6 @@ pipeline_skip FXA-7 needs_decision pick one of two routes >/dev/null
 check "a skip whose read fails keeps the recorded hash" "$fp7" "$(cut -f1 "$tmp/FXA-7.skipped")"
 eval "$real_acli"
 
-# The allow-tooling label unblocks a tooling skip, though the plain view never prints labels.
-echo '[]' > "$tmp/labels"
-acli() { case "$*" in *"comment list"*) echo '{"comments":[]}' ;;
-  *"--fields labels --json"*) jq -n --argjson l "$(cat "$tmp/labels")" '{fields: {labels: $l}}' ;; *) cat "$tmp/ticket" ;; esac; }
-PIPE_TOOLING_LABEL=ai-fixme-allow-tooling
-pipeline_skip FXA-10 needs the allow-tooling label >/dev/null
-echo '["ai-fixme","other"]' > "$tmp/labels"
-check "another label does not wake a skipped ticket" "quiet" "$(pipeline_skip_changed FXA-10 || echo quiet)"
-echo '["ai-fixme","ai-fixme-allow-tooling"]' > "$tmp/labels"
-check "the allow-tooling label wakes a skipped ticket" "changed" "$(pipeline_skip_changed FXA-10)"
-fp10="$(cut -f1 "$tmp/FXA-10.skipped")"; unset PIPE_TOOLING_LABEL
-check "with no tooling label set, the hash is the old one" "$fp10" "$(_pipeline_skip_fingerprint FXA-10)"
-eval "$real_acli"
-
 # Under the service account, its own comments carry no 🤖: the hash skips them by author instead.
 _jira_sa() { return 0; }; _jira_rest() { echo '{"displayName":"svc"}'; }
 echo '[{"author":"Pat","body":"a person asks"}]' > "$tmp/comments"

@@ -29,7 +29,7 @@ _FXA_ROUND_CAP=2
 # Env overrides win over the config, so old cron and shell overrides still work.
 # Keys only the controller sets: a team that set them would move its state, locks or mirror,
 # read a credential, or run a command on the host. pipeline_load derives them from the name.
-PIPE_HOST_KEYS="PIPE_NAME PIPE_STATE_DIR PIPE_LOCK_DIR PIPE_POOL_NAME PIPE_REPO PIPE_RUNS_FILE PIPE_COSTS_FILE PIPE_STATE_URI PIPE_PAUSE_URI PIPE_JIRA_BASIC PIPE_TOOLING_APPROVERS PIPE_RELOCK_CMD PIPE_RELOCK_SIGN PIPE_LOCK_STALE_SECONDS PIPE_JIRA_SITE PIPE_SECRET_TICKETS"
+PIPE_HOST_KEYS="PIPE_NAME PIPE_STATE_DIR PIPE_LOCK_DIR PIPE_POOL_NAME PIPE_REPO PIPE_RUNS_FILE PIPE_COSTS_FILE PIPE_STATE_URI PIPE_PAUSE_URI PIPE_JIRA_BASIC PIPE_RELOCK_CMD PIPE_RELOCK_SIGN PIPE_LOCK_STALE_SECONDS PIPE_JIRA_SITE PIPE_SECRET_TICKETS"
 # pipeline_conf_lint <conf>   A profile may hold only comments, KEY=value with one word or one
 # quoted string, and the rows of a KEY=( ... ) array. No command substitution, no second command.
 pipeline_conf_lint() {
@@ -458,18 +458,12 @@ _pipeline_hash() {
 # A failed read prints nothing: md5 of a partial read looked like an edit and woke a model pass.
 # The trailing . keeps the bytes the hash saw before, trailing newlines included.
 _pipeline_skip_fingerprint() {
-  local key="$1" v c t=""
+  local key="$1" v c
   v="$(acli jira workitem view "$key" 2>/dev/null && echo .)" || return 0
   c="$(acli jira workitem comment list --key "$key" --json --paginate 2>/dev/null)" || return 0
   local me=""; if _jira_sa; then me="$(_jira_rest GET /rest/api/3/myself | jq -r '.displayName // empty')" && [ -n "$me" ] || return 0; fi
   c="$(printf '%s\n' "$c" | jq -r --arg me "$me" '.comments[]? | select(((.body // "") | startswith("🤖")) or ($me != "" and .author == $me) | not) | .body' && echo .)" || return 0
-  # The plain view prints no labels, and the allow-tooling label is how a tooling skip is unblocked.
-  # Only that label counts: hashing every label would wake each skipped ticket once.
-  if [ -n "${PIPE_TOOLING_LABEL:-}" ]; then
-    t="$(acli jira workitem view "$key" --fields labels --json 2>/dev/null)" || return 0
-    t="$(printf '%s' "$t" | jq -r --arg l "$PIPE_TOOLING_LABEL" 'if (.fields.labels // []) | index($l) then $l else "" end')" || return 0
-  fi
-  printf '%s%s%s' "${v%.}" "${c%.}" "$t" | _pipeline_hash
+  printf '%s%s' "${v%.}" "${c%.}" | _pipeline_hash
 }
 
 # pipeline_skip <KEY> [reason...]
@@ -704,13 +698,11 @@ pipeline_progress() {
   [ -f "$log" ] || { echo "$key nolog"; return 0; }
   # Every grep here needs `|| true`: pipefail makes a no-match grep fail the
   # whole pipeline, and set -e then kills the function before it can report.
-  local pr err t=""
-  # A launch with an approved tooling label says so on every line (cmd_launch).
-  grep -q '^tooling: scripts allowed' "$log" && t=" tooling=scripts"
+  local pr err
   # Only the launcher's own PR line ("PR opened: <url>", "PR updated: <url>", or the bare URL gh
   # prints): a push hint (".../pull/new/<branch>") or a dumped handoff citing another PR is not it.
   pr="$( { grep -E '^(PR (opened|updated): )?https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$' "$log" || true; } | tail -1 | sed -E 's/^PR (opened|updated): //')"
-  if [ -n "$pr" ]; then echo "$key pr $pr${t}"; return 0; fi
+  if [ -n "$pr" ]; then echo "$key pr $pr"; return 0; fi
   # A feedback round's first push is rejected, then forced with a lease, so
   # "rejected" is routine when a "(forced update)" follows it.
   if grep -q '(forced update)' "$log"; then
@@ -718,9 +710,9 @@ pipeline_progress() {
   else
     err="$(grep -m1 -E '^ERROR|fatal:|rejected' "$log" || true)"
   fi
-  if [ -n "$err" ]; then echo "$key error ${err}${t}"; return 0; fi
-  if grep -qE "Pushing |Committing and pushing" "$log"; then echo "$key pushed${t}"; return 0; fi
-  if grep -q "Squashing " "$log"; then echo "$key squashing${t}"; return 0; fi
+  if [ -n "$err" ]; then echo "$key error ${err}"; return 0; fi
+  if grep -qE "Pushing |Committing and pushing" "$log"; then echo "$key pushed"; return 0; fi
+  if grep -q "Squashing " "$log"; then echo "$key squashing"; return 0; fi
   if grep -q "Watching for" "$log"; then
     # Stall detection lives here because reconcile reads `progress` for every
     # inflight key, so it cannot be skipped.
@@ -729,21 +721,19 @@ pipeline_progress() {
     elapsed=$(( $(date +%s) - started ))
     reason="$(_pipeline_stalled_reason "$key" "$elapsed" || true)"
     if [ -n "$reason" ]; then
-      echo "$key stalled ${reason} $(( elapsed / 60 ))m${t}"; return 0
+      echo "$key stalled ${reason} $(( elapsed / 60 ))m"; return 0
     fi
     local secs; secs="$( { grep -o '\[ *[0-9]*s\]' "$log" || true; } | tail -1 | tr -dc '0-9')"
-    echo "$key watching ${secs:-0}s${t}"; return 0
+    echo "$key watching ${secs:-0}s"; return 0
   fi
   # Before the launcher watches for the handoff, say which boot step it is on.
   # On gce this stage lasts minutes, and "starting" alone hid all of them.
   local sub="boot"
-  # A reship has no boot; its fallback starts one, so the boot steps below win.
-  grep -q '^Reship:' "$log" && ! grep -q '^Reship fallback:' "$log" && sub="reship"
   grep -q "ready (" "$log"                   && sub="checkout"
   grep -q "Infrastructure ready" "$log"      && sub="hardening"
   grep -q "^Shipping \|Setting up .* config" "$log" && sub="config"
   grep -q "is running ===" "$log"            && sub="launching"
-  echo "$key starting ${sub}${t}"
+  echo "$key starting ${sub}"
 }
 
 # pipeline_health_json

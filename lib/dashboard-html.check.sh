@@ -34,10 +34,10 @@ t("emptybox escapes", emptybox("No <runs>"), '<div class="emptybox">No &lt;runs&
 process.exit(fail);
 JS
 rc=$?; [ "${css_fail:-0}" = 0 ] || rc=1
-# The Board's refused_ship step names the tooling approver and the saved change.
-step='refused_ship: "An approver adds ai-fixme-allow-tooling. The ticket'"'"'s 🤖 comment says if the next pass ships the saved change or a requeue is needed. For other paths, a human relaunches with FXA_ALLOW_TOOLING_EDITS=1.",'
-got="$(grep -cF "$step" "$page")|$(grep -c 'refused_ship: "a tooling approver"' "$page")|$(grep -c 'refused_ship: "a reviewer"' "$page")"
-if [ "$got" = "1|1|0" ]; then echo "ok   Board: the refused_ship step and who acts"; else echo "FAIL Board: the refused_ship step and who acts: want [1|1|0] got [$got]"; rc=1; fi
+# The Board's refused_ship step names the relaunch, and the operator acts.
+step='refused_ship: "The change edits CI or Yarn or npm config. A human relaunches with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for it.",'
+got="$(grep -cF "$step" "$page")|$(grep -c 'refused_ship: "the operator"' "$page")"
+if [ "$got" = "1|1" ]; then echo "ok   Board: the refused_ship step and who acts"; else echo "FAIL Board: the refused_ship step and who acts: want [1|1] got [$got]"; rc=1; fi
 # The Belt's first line for a run, from the page's own expression.
 l1="$(sed -n '/^    const l1 = t.stage === "starting"/,/plainMd(a.last_tool/p' "$page")"
 node - "$l1" <<'JS' || rc=1
@@ -45,20 +45,7 @@ const src = process.argv[2], plainMd = s => s, a = {};
 const l1 = t => eval(src.replace(/^\s*const l1 = /, "").replace(/;\s*$/, ""));
 let fail = 0;
 const t = (name, got, want) => { if (got === want) console.log("ok   " + name); else { console.log(`FAIL ${name}: want [${want}] got [${got}]`); fail = 1; } };
-t("Belt: a starting run with detail reship says Shipping saved change", l1({ stage: "starting", detail: "reship" }), "Shipping saved change");
-t("Belt: with the scope on the progress line too (snapshot's detail)", l1({ stage: "starting", detail: "reship tooling=scripts" }), "Shipping saved change");
 t("Belt: another boot step keeps Boot:", l1({ stage: "starting", detail: "checkout" }), "Boot: checkout");
 process.exit(fail);
-JS
-# A reship from the feeds: an inflight row with no runner gets a Belt row, not a "no sandbox" fault.
-fns="$(sed -n '/^function merged() {/,/^}/p; /^function laneRows() {/,/^}/p' "$page")"
-node - "$fns" <<'JS' || rc=1
-process.argv.splice(1, 1);
-var SNAP = { inflight: [{ key: "FXA-1", stage: "starting", detail: "reship tooling=scripts", elapsed_seconds: 60 }], review: [], blocked: [], open_prs: [] }, AGENTS = { runners: [], sessions: [] };
-eval(process.argv[1]);
-const m = merged(), row = laneRows().find(r => r.t.key === "FXA-1");
-const got = `${m.waiting.length}|${m.cards.filter(c => c.reship).length}|${row?.l1}`, want = "0|1|Shipping saved change";
-if (got === want) console.log("ok   Belt: a reship with no runner is a card that says Shipping saved change, not a waiting fault");
-else { console.log(`FAIL Belt: a reship with no runner: want [${want}] got [${got}]`); process.exit(1); }
 JS
 exit "$rc"

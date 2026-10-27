@@ -37,11 +37,6 @@ check "a run stalls: the pass wakes" "reconcile:" "$(q)"
 echo "FXA-8 stalled no-motion 30m" > "$tmp/line"
 check "the same stall, only its minutes grew: quiet" "quiet: 0 q" "$(q)"
 : > "$tmp/line"; q >/dev/null
-echo "FXA-7 stalled no-motion 25m tooling=scripts" > "$tmp/line"
-check "a tooling-label run stalls: the pass wakes" "reconcile:" "$(q)"
-echo "FXA-7 stalled no-motion 30m tooling=scripts" > "$tmp/line"
-check "a tooling-label run's stall, only its minutes grew: quiet" "quiet: 0 q" "$(q)"
-: > "$tmp/line"; q >/dev/null
 echo "FXA-14820 error ERROR: check:frozen (origin/main's copy) rejects this change." > "$tmp/line"
 check "a run in error wakes the pass, once" "reconcile:|quiet: 0 q" "$(q)|$(q)"
 echo "FXA-9 watching 40s (an error log line elsewhere)" > "$tmp/line"

@@ -731,9 +731,9 @@ _finish_push_and_pr() {
   # After the reset the index holds the whole change, a rebase round's merge included.
   _finish_scope "$worktree" "$done_file" || return 1
   # A fix run's refusal is its end (why guard:<class>), not an operator error.
-  # A fix run has no approver's tooling label: .yarn/* and .yarnrc* stay refused.
+  # A fix run never gets FXA_ALLOW_TOOLING_EDITS: CI and yarn config stay refused.
   if [ -n "$fix" ]; then
-    FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_TOOLING_SCOPE="" _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
+    FXA_ALLOW_TOOLING_EDITS="" _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
     _finish_prfix_lock_guard "$worktree" || { _finish_prfix_why guard:lock; return 1; }
   fi
   _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
@@ -1267,45 +1267,22 @@ finish_watch_ci() {
 }
 
 # _finish_tooling_guard <worktree>
-#   Refuse CI or host tooling edits: CI runs with secrets before review, and
-#   hooks run on the operator's Mac. FXA_ALLOW_TOOLING_EDITS=1 allows them all.
-#   FXA_ALLOW_TOOLING_SCOPE=scripts (the launch sets it from an approved Jira label)
-#   allows package.json task scripts and _scripts/ only: not npm's install, prepare or publish
-#   hooks, and not a _scripts/ file that such a hook runs.
+#   Refuse CI config and yarn or npm config. CI config decides which jobs run with which secrets;
+#   yarn config (yarnPath, plugins) runs code on the manager in a relock (lib/github.sh).
+#   Task scripts, hooks and _scripts/ pass: CI runs the agent's tests with the same env anyway.
+#   FXA_ALLOW_TOOLING_EDITS=1 allows them all.
 _finish_tooling_guard() {
-  local wt="$1" f hit="" scope="${FXA_ALLOW_TOOLING_SCOPE:-}" keys
+  local wt="$1" f hit=""
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
-  # A recovery finish has no launch env: use the scope the launch recorded for this key.
-  [ -n "$scope" ] || scope="$(_finish_tooling_scope_of "$wt")"
-  # The scripts scope allows named task scripts, not npm's lifecycle hooks: CI runs those in the install.
-  keys='{scripts, "lint-staged", husky}'
-  [ "$scope" = scripts ] && keys='{hooks: ((.scripts // {}) | with_entries(select(.key | test("^(pre|post)?(install|prepare|publish|pack|version|uninstall|shrinkwrap|dependencies)$|^prepublishOnly$")))), "lint-staged", husky}'
   while IFS= read -r -d '' f; do
     case "$f" in
-      _scripts/*)
-        if [ "$scope" != scripts ]; then hit="${hit}${f}"$'\n'
-        # A hook at HEAD that names the file runs it in CI's install (FxA's preinstall runs _scripts/check-package-manager.sh).
-        elif git -C "$wt" grep -qE "\"(pre|post)?(install|prepare|publish|pack|version|uninstall|shrinkwrap|dependencies|publishOnly)\" *:.*${f//./\\.}" HEAD -- '*package.json' 2>/dev/null; then
-          hit="${hit}${f} (an npm install, prepare or publish hook runs it: the tooling label does not cover it)"$'\n'
-        fi ;;
-      .github/*|.circleci/*|.husky/*|*/.husky/*|.lintstagedrc*|*/.lintstagedrc*|lint-staged.config.*|*/lint-staged.config.*|\
-      .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc)
-        hit="${hit}${f}"$'\n' ;;
-      package.json|*/package.json)
-        # Only the parts a hook or CI executes. A dependency bump is fine. A missing side (a new
-        # or deleted file) counts as {}, so a new lib's package.json passes unless it adds scripts.
-        if [ "$({ git -C "$wt" show ":$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" != \
-             "$({ git -C "$wt" show "HEAD:$f" 2>/dev/null || echo '{}'; } | jq -cS "$keys")" ]; then
-          if [ "$scope" = scripts ]; then hit="${hit}${f} (an npm install, prepare or publish hook, lint-staged or husky: the tooling label does not cover these)"$'\n'
-          else hit="${hit}${f} (scripts/lint-staged/husky)"$'\n'; fi
-        fi ;;
+      .github/*|.circleci/*|.yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc) hit="${hit}${f}"$'\n' ;;
     esac
   done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
   [ -z "$hit" ] && return 0
   # The paths on the ERROR line itself: progress and the pass keep only that line.
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
-  echo "       For package.json scripts or _scripts/ only, an approver adds the label ${PIPE_TOOLING_LABEL:-ai-fixme-allow-tooling} and relaunches." >&2
-  echo "       For anything else, relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
   return 1
 }
 
@@ -1331,17 +1308,6 @@ _finish_prfix_lock_guard() {
   [ -z "$hit" ] && return 0
   echo "ERROR: refusing to ship: The fix changes yarn.lock entries, which I do not push. Fix it by hand." >&2
   return 1
-}
-
-# _finish_tooling_scope_of <worktree>   The tooling scope that cmd_launch recorded for the
-#   worktree's ticket (PIPE_STATE_DIR/tooling/<KEY>), or nothing. It counts only while an approver's
-#   label is still on the ticket: a label removed since the launch, or no answer from Jira, gives nothing.
-_finish_tooling_scope_of() {
-  local key s; key="$(worktree_key_for "$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)")"
-  [ -n "${PIPE_STATE_DIR:-}" ] && [ -n "$key" ] || return 0
-  s="$(awk 'NR == 1 { print $1 }' "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true)"
-  [ -n "$s" ] && jira_tooling_approver "$key" >/dev/null 2>&1 && printf '%s\n' "$s"
-  return 0
 }
 
 # _finish_pii_guard <worktree> <done_file> <pr_title> <pr_body> <commit_body> [patch]   GitHub is public, so

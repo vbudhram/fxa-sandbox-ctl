@@ -21,7 +21,7 @@ for s in fxa-auto-1 fxa-auto-2; do
 done
 git -C "$tmp/fxa-auto-1" checkout -q -b fxa-14727; git -C "$tmp/fxa-auto-2" checkout -q -b fxa-14580
 check "clean idle slots are free" "fxa-auto-1 fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
-# A finish or a reship holds a slot with no VM: on gce it looks free, and another ticket would take it.
+# A finish holds a slot with no VM: on gce it looks free, and another ticket would take it.
 : > "$LOG_DIR/fxa-auto-1.finishing"
 check "a clean slot with a fresh .finishing marker is not free" "fxa-auto-2" "$(FXA_VM_BACKEND=gce worktree_free_slots "" | tr '\n' ' ' | sed 's/ $//')"
 check "a marker older than FXA_FINISHING_STALE_SECONDS does not hold it" "fxa-auto-1 fxa-auto-2" \

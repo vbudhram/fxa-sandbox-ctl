@@ -810,14 +810,7 @@ in the index until that run's handoff dropped it. Such a slot stays out of the p
 own ticket resumes there or a person cleans it.
 
 A label other than `inflight` saves the slot's unshipped changes as `<KEY>.leftover-<epoch>.patch`
-and cleans the slot. After the tooling guard's own refusal (`label KEY blocked refused_ship`, a run
-with no scope yet), the host also keeps a saved ship when the scripts scope can ship the patch: the
-handoff, and the base commit with the patch's hash. It tells the ticket which approver can add
-`ai-fixme-allow-tooling`. When an approver adds it, the next precheck puts the ticket back in the
-queue, and its launch ships the saved change through the unchanged finish with no agent run
-(`reship=` on the launch line, `starting reship` in progress). When the saved change cannot ship
-as saved, the same launch says why in fixed words and continues as a scoped agent run. A refusal of
-a run that already had the scope retires the saved ship, so it cannot loop.
+and cleans the slot.
 
 **Reaping is mandatory, and it hangs off the label write.** A finished agent sits at its prompt
 at 0% CPU and holds 8 to 13GB indefinitely. With two slots the pool deadlocks after two launches.
@@ -912,7 +905,6 @@ marker, and `reporters.tsv`.
 | `<KEY>.launch.log` | The launcher's full output | `progress` reports `nolog`, and the pass returns the ticket to the queue |
 | `<KEY>.attempts` | Real-fix counter | The 2-attempt cap resets |
 | `<KEY>.skipped` | Skip fingerprint, time, pass count, reason, and the kind (needs_decision, underspecified, depends_on, already_done, or empty) | The ticket gets one more skip comment |
-| `<KEY>.leftover-<epoch>.base` | A saved ship of a refused tooling ship: '<base sha> <patch hash>', beside `.patch` and `.done.json` (the handoff), from `label KEY blocked refused_ship`; a `.retired` tombstone ('stale <word>', 'stale refused', 'shipped') ends it, since the state mirror never deletes. `<KEY>.reship-err` holds git's stderr of a reship; `<KEY>.reship-noted`, `.reship-held-noted`, `.tooling-noted` and `.tooling-readfail-noted` stop repeat comments and rows, and any label other than `blocked` removes them | No reship: a refused tooling ship waits for a person, as before |
 | `<KEY>.blocked-why` | When the ticket was blocked, the kind (stalled, dead_vm, attempts, rounds, refused_ship, frozen, operator, other) and the reason, from `label KEY blocked`; any other label removes it | Belts shows "blocked in Jira" with no reason |
 | `<KEY>.feedback-seen` | Handled review comment IDs | Handled comments reappear as new |
 | `<KEY>.feedback-rounds` | Round counter | The 2-round cap resets |
