@@ -14,15 +14,22 @@ url=https://github.com/mozilla/fxa/pull/7
 
 printf '{"feedback_summary":["Fixed: null guard, confirmed on main (https://github.com/mozilla/fxa/pull/7#discussion_r1)","Not fixed: rename, a design preference (https://github.com/mozilla/fxa/pull/7#issuecomment-2)"]}' > "$tmp/done.json"
 _finish_feedback_comment FXA-1 "$tmp/done.json" "$url"
-check "the summary is posted on the ticket" "FXA-1|🤖 Review feedback on ${url}:
-Fixed: null guard, confirmed on main (https://github.com/mozilla/fxa/pull/7#discussion_r1)
-Not fixed: rename, a design preference (https://github.com/mozilla/fxa/pull/7#issuecomment-2)" "$(cat "$tmp/posted")"
+check "the summary is posted on the ticket, one bullet per comment" "FXA-1|::info
+**Review feedback round** · [PR #7](${url})
+- Fixed: null guard, confirmed on main (https://github.com/mozilla/fxa/pull/7#discussion_r1)
+- Not fixed: rename, a design preference (https://github.com/mozilla/fxa/pull/7#issuecomment-2)" "$(cat "$tmp/posted")"
 
 rm -f "$tmp/posted"; printf '{"pr_body":"x"}' > "$tmp/done.json"
 _finish_feedback_comment FXA-1 "$tmp/done.json" "$url"
 check "a round without a summary posts nothing" "no" "$([ -e "$tmp/posted" ] && echo yes || echo no)"
 
-printf '{"feedback_summary":"Fixed: one line"}' > "$tmp/done.json"
+printf '{"feedback_summary":"Fixed: one\\n\\nNot fixed: two"}' > "$tmp/done.json"
+_finish_feedback_comment FXA-1 "$tmp/done.json" "$url"
+check "a string summary gives one bullet per line" "- Fixed: one|- Not fixed: two" "$(tail -2 "$tmp/posted" | paste -sd'|' -)"
+printf '{"feedback_summary":["- Fixed: one\\n* Not fixed: two"]}' > "$tmp/done.json"; rm -f "$tmp/posted"
+_finish_feedback_comment FXA-1 "$tmp/done.json" "$url"
+check "the agent's own list marks and line breaks give clean bullets" "- Fixed: one|- Not fixed: two" "$(tail -2 "$tmp/posted" | paste -sd'|' -)"
+rm -f "$tmp/posted"
 _finish_feedback_comment agent-x1 "$tmp/done.json" "$url"
 check "a session key is not a Jira ticket" "no" "$([ -e "$tmp/posted" ] && echo yes || echo no)"
 

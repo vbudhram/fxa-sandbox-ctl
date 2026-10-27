@@ -145,7 +145,7 @@ check "with tooling/FXA-7: the live set gets 'stale refused', no new set, and th
 jira_comment() { printf '%s\n' "$2" >> "$PIPE_STATE_DIR/jira"; }
 rm -rf "$PIPE_STATE_DIR"/*; set_of 500; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
 check "a reship refused: the set is kept with no tombstone, and the label is asked for again" "saved ship kept: FXA-7.leftover-500.patch|2|1|$PIPE_STATE_DIR/FXA-7.leftover-500.base|0|1" \
-  "$(label_run "$RESHIP_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship)|$(worktree_saved_ship FXA-7)|$(ls "$PIPE_STATE_DIR" | grep -c '\.retired$')|$(grep -c '^🤖 The finish did not ship this change' "$PIPE_STATE_DIR/jira")"
+  "$(label_run "$RESHIP_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship)|$(worktree_saved_ship FXA-7)|$(ls "$PIPE_STATE_DIR" | grep -c '\.retired$')|$(grep -c '^\*\*Tooling approval needed\*\*$' "$PIPE_STATE_DIR/jira")"
 rm -rf "$PIPE_STATE_DIR"/*; set_of 600; mkdir -p "$PIPE_STATE_DIR/tooling"; echo 'scripts acct-boss Boss' > "$PIPE_STATE_DIR/tooling/FXA-7"
 check "a reship that fell back to an agent run: the set is retired" "tooling scope already approved|stale refused" \
   "$(label_run "$RESHIP_LINE"$'\n'"$FALLBACK_LINE"$'\n'"$GUARD_LINE" FXA-7 blocked refused_ship | cut -d'|' -f1)|$(cat "$PIPE_STATE_DIR/FXA-7.leftover-600.retired")"
@@ -158,14 +158,17 @@ check "label public removes the key's tooling and reship noted files" 0 "$(ls "$
 jira_comment() { printf '%s\n' "$2" >> "$PIPE_STATE_DIR/jira"; }
 PIPE_TOOLING_LABEL=ai-fixme-allow-tooling
 ask() { rm -rf "$PIPE_STATE_DIR"/*; PIPE_TOOLING_APPROVERS="$1" label_run "${2:-$GUARD_LINE}" FXA-7 blocked refused_ship >/dev/null; cat "$PIPE_STATE_DIR/jira" 2>/dev/null; }
-pre="🤖 The finish did not ship this change: it changes package.json scripts or _scripts/, which needs a tooling approver. The change is saved."
+pre='::warning
+**Tooling approval needed**
+- The change edits `package.json` scripts or `_scripts/`, so a tooling approver must allow it.
+- The pipeline saved the change.'
 check "named approvers: ask them by name" \
-  "$pre Ask Boss Person, Lead Person to add the label ai-fixme-allow-tooling. The next pass then ships it with no new agent run." \
+  "$pre"$'\n''**Next:** Ask Boss Person, Lead Person to add the label `ai-fixme-allow-tooling`. The next pass then ships it with no new agent run.' \
   "$(ask 'Boss Person:acct-boss, Lead Person:acct-lead, acct-bare')"
-check "approvers with no names" "$pre A tooling approver for this team adds the label ai-fixme-allow-tooling. The next pass then ships it with no new agent run." \
+check "approvers with no names" "$pre"$'\n''**Next:** A tooling approver for this team adds the label `ai-fixme-allow-tooling`. The next pass then ships it with no new agent run.' \
   "$(ask 'acct-bare, 557058:aa11')"
 check "no approvers: the operator first" \
-  "$pre No tooling approver is set for this team. Ask the operator to set one. An approver then adds ai-fixme-allow-tooling, and the next pass ships the saved change." "$(ask '')"
+  "$pre"$'\n''**Next:** Ask the operator to set a tooling approver for this team. The approver then adds `ai-fixme-allow-tooling`, and the next pass ships the change.' "$(ask '')"
 check "no comment names a path or the setting" 0 "$(for a in 'Boss:acct-boss' acct-bare ''; do ask "$a"; done | grep -c 'package.json (\|PIPE_TOOLING_APPROVERS\|leftover')"
 check "a label that keeps no set posts nothing" "" "$(ask 'Boss:acct-boss' 'ERROR: refusing to ship: the PR text has personal data')"
 check "the pass's error row says what to post after 'tooling scope already approved'" 1 \

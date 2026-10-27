@@ -475,22 +475,25 @@ finish_diff_only() {
   { printf 'From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\nFrom: %s agent <noreply@example.invalid>\nSubject: [PATCH] %s\n\n%s\n---\n\n' \
       "${PIPE_PROFILE:-FxA}" "${title:-Change from the agent}" "${cb:-$key}"; cat "${patch}.diff"; } > "$patch" && rm -f "${patch}.diff" \
     || { echo "ERROR: could not write ${patch}" >&2; return 1; }
-  stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -15)"
+  stat="$(cd "$wt" && git apply --stat "$patch" 2>/dev/null | tail -1 | sed 's/^ *//')"
   # The runner wrote the title, body and patch: the PR path's guard runs before any of it is posted.
   if ! _finish_pii_guard "$wt" "$done_file" "$title" "$body" "$cb" "$patch"; then
-    jira_comment "$key" "🤖 Diff-only run: the patch is kept in the pipeline's state dir (diffs/${key}.patch). Its summary is not posted, because the personal-data check refused it. A person must review the patch." \
+    jira_comment "$key" "::warning
+**Patch held for review**
+- The personal-data check refused the summary, so this comment does not show it.
+- The pipeline host keeps the patch at \`diffs/${key}.patch\`.
+**Next:** A person reviews the patch." \
       || echo "WARN: could not post the diff comment on ${key}" >&2
     printf '%s\n' "$patch"; return 0
   fi
-  local where="diffs/${key}.patch in the pipeline's state dir"
-  jira_attach "$key" "$patch" && where="attached as ${key}.patch; apply it with: git am ${key}.patch"
-  jira_comment "$key" "🤖 Diff-only run: the ${PIPE_PROFILE:-} pipeline opens no PR yet, so the change is a patch for a person to review (${where}).
-
-${title:-No title.}
-
-${body}
-
-${stat}" || echo "WARN: could not post the diff comment on ${key}" >&2
+  local where="on the pipeline host, at \`diffs/${key}.patch\`" next="A person reviews the patch."
+  jira_attach "$key" "$patch" && where="attached as \`${key}.patch\`" next="A person reviews the patch and applies it with \`git am ${key}.patch\`."
+  jira_comment "$key" "::info
+**Patch ready for review**
+- Change: ${title:-No title.}
+- Patch: ${where}. The ${PIPE_PROFILE:-} pipeline opens no PR yet.
+- Size: ${stat:-unknown}
+**Next:** ${next}" || echo "WARN: could not post the diff comment on ${key}" >&2
   printf '%s\n' "$patch"
 }
 
@@ -946,9 +949,11 @@ _finish_prfix_why() {
 _finish_feedback_comment() {
   local key="$1" done_file="$2" pr_url="$3" summary
   [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || return 0
-  summary="$(jq -r '.feedback_summary // empty | if type == "array" then join("\n") else . end' "$done_file" 2>/dev/null)" || summary=""
+  # One bullet per line the agent wrote, whatever list marks it used.
+  summary="$(jq -r '[.feedback_summary // empty | if type == "array" then .[] else . end | tostring | split("\n")[] | sub("^\\s*[-*] "; "") | select(. != "")] | map("- " + .) | join("\n")' "$done_file" 2>/dev/null)" || summary=""
   [ -n "$summary" ] || return 0
-  jira_comment "$key" "🤖 Review feedback on ${pr_url}:
+  jira_comment "$key" "::info
+**Review feedback round**${pr_url:+ · [PR #${pr_url##*/}](${pr_url})}
 ${summary}" || echo "  WARN: could not post the feedback summary on ${key}." >&2
 }
 

@@ -28,11 +28,15 @@ check "git am makes one commit with the run's subject and body" "fix(x): keep b|
   "$(cd "$tmp/check" && git checkout -q -- . && git -c user.name=t -c user.email=t@example.com am -q "$p" && git log -1 --format=%s)|$(cd "$tmp/check" && git log -1 --format=%b | grep -o 'Closes MNTOR-1')|$(cd "$tmp/check" && git show --format= --name-only HEAD | sed 's/a.txt/b/' | paste -sd' ' -)"
 check "the patch is attached to the ticket, and the comment says how to apply it" "MNTOR-1 $p|1" \
   "$(cat "$tmp/attached")|$(grep -c 'git am MNTOR-1.patch' "$tmp/comment")"
-check "one comment names the title, the reason and the stat" "MNTOR-1|1|1|1" \
-  "$(head -1 "$tmp/comment" | cut -d'|' -f1)|$(grep -c 'fix(x): keep b' "$tmp/comment")|$(grep -c 'opens no PR yet' "$tmp/comment")|$(grep -c 'new.txt' "$tmp/comment")"
+check "one comment in an info panel names the title, the size and the next step, with no PR body" "MNTOR-1|::info
+**Patch ready for review**
+- Change: fix(x): keep b
+- Patch: attached as \`MNTOR-1.patch\`. The monitor pipeline opens no PR yet.
+- Size: 2 files changed, 2 insertions(+)
+**Next:** A person reviews the patch and applies it with \`git am MNTOR-1.patch\`." "$(cat "$tmp/comment")"
 
 ATTACH_FAILS=1 finish_diff_only MNTOR-1 "$tmp/wt" >/dev/null 2>&1
-check "a failed attach keeps the old pointer to the state dir" "1" "$(grep -c "diffs/MNTOR-1.patch in the pipeline's state dir" "$tmp/comment")"
+check "a failed attach points to the patch on the pipeline host" "1|0" "$(grep -c "on the pipeline host, at \`diffs/MNTOR-1.patch\`" "$tmp/comment")|$(grep -c 'git am' "$tmp/comment")"
 g -C "$tmp/wt" stash -q -u; rm -f "$tmp/comment"
 echo '{"pr_title":"fix(x): y","pr_body":"z"}' > "$tmp/wt/.fxa-auto-done.json"
 check "no change is an error, with no comment and no patch" "1|no|no" \
@@ -45,8 +49,8 @@ printf 'a\nreach me at zq7x9k.notreal@gmail.com\n' > "$tmp/wt/a.txt"
 echo '{"pr_title":"fix(x): mail","pr_body":"Body names ops-secret.internal.example"}' > "$tmp/wt/.fxa-auto-done.json"
 out="$(finish_diff_only MNTOR-4 "$tmp/wt" 2>/dev/null)"
 check "a guard hit attaches nothing" "0" "$(grep -c MNTOR-4 "$tmp/attached")"
-check "a guard hit keeps the patch and posts only host text" "$tmp/state/diffs/MNTOR-4.patch|1|0|0" \
-  "$out|$(grep -c 'personal-data check refused' "$tmp/comment")|$(grep -c 'fix(x): mail' "$tmp/comment")|$(grep -c 'zq7x9k' "$tmp/comment")"
+check "a guard hit keeps the patch and posts only host text, in a warning panel" "$tmp/state/diffs/MNTOR-4.patch|MNTOR-4|::warning|1|0|0" \
+  "$out|$(head -1 "$tmp/comment")|$(grep -c 'personal-data check refused' "$tmp/comment")|$(grep -c 'fix(x): mail' "$tmp/comment")|$(grep -c 'zq7x9k' "$tmp/comment")"
 
 g -C "$tmp/wt" stash -q -u 2>/dev/null; rm -f "$tmp/comment"
 printf 'dash\n' > "$tmp/wt/-R"

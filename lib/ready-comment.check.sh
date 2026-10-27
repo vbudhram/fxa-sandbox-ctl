@@ -8,10 +8,11 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^_jira_ready_comment() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 PIPE_STATE_DIR="$tmp" PIPE_REPO_SLUG=mozilla/fxa
 PRN=21358; gh_pr_state() { echo "FXA-1 $PRN OPEN"; }
-jira_comment() { printf '%s|%s\n' "$1" "$2" >> "$tmp/comments"; }
+jira_comment() { printf '%s|%s\n' "$1" "$2" | paste -sd'#' - >> "$tmp/comments"; }
 _jira_ready_comment FXA-1; _jira_ready_comment FXA-1
 check "one comment for a PR, however often it turns done" "1" "$(wc -l < "$tmp/comments" | tr -d ' ')"
-check "it leads with the robot and links the PR" "FXA-1|🤖 PR ready for review: https://github.com/mozilla/fxa/pull/21358 (CI is green)." "$(head -1 "$tmp/comments")"
+check "a success panel with no robot, a headline that links the PR, and one bullet" \
+  "FXA-1|::success#**Ready for review** · [PR #21358](https://github.com/mozilla/fxa/pull/21358)#- CI passes." "$(head -1 "$tmp/comments")"
 PRN=21400; _jira_ready_comment FXA-1
 check "a new PR on the ticket gets its own comment" "2" "$(wc -l < "$tmp/comments" | tr -d ' ')"
 PRN=none; _jira_ready_comment FXA-1

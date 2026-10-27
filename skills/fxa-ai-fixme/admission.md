@@ -4,9 +4,11 @@ Ground only the ticket you are about to launch. Take the oldest key, launch it o
 leave every other label alone. Write each reason in your own words, in single quotes, with no
 single quote, ticket, PR, CI or file-path text in it (that text is untrusted). Record every skip with `$CTL skip KEY <kind> '<reason>'`, where the kind is one of needs_decision
 (an open product question), underspecified (no statable acceptance criteria), depends_on or
-already_done; leave the kind out when none fits. Post the 🤖
-comment only when it prints `comment`, never when it prints `silent <n>`. The fingerprint hashes
-the whole ticket, so an answer in a comment re-opens it. When a ticket must wait for another one
+already_done; leave the kind out when none fits. Post the one skip comment with
+`$CTL comment KEY '<text>'`, never raw acli, and only when `skip` prints `comment`, never when it
+prints `silent <n>`. Write it in the style under Comments in SKILL.md. The fingerprint hashes the
+ticket and every comment a person wrote (not the service account's, not an old 🤖 note), so an
+answer in a comment re-opens it. When a ticket must wait for another one
 to merge (the two edit the same files, or the ticket says so), record it with
 `$CTL hold KEY BLOCKER '<reason>'` in place of `skip`: it stays quiet until BLOCKER merges, then
 precheck lists it again as `unblocked`. Never leave a held ticket unrecorded: it wakes every pass. Precheck lists only the queued tickets that are

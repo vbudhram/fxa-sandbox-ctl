@@ -181,7 +181,8 @@ PIPELINE COMMANDS:
   skip-changed <KEY>           Print `KEY new|changed` when the ticket has no skip record
                                or changed since it; silent otherwise. Read-only.
   unskip <KEY>                 Drop the skip record, so the next pass judges the ticket again
-                               (after a 🤖 note, which the skip fingerprint ignores)
+                               (after a pipeline note, which the skip fingerprint ignores)
+  comment <KEY> <text>         Post a Jira comment; the text is the Markdown subset of lib/jira_adf.py
   attempts <KEY> [bump]        Read or increment the real-fix attempt counter
   lock / unlock                One pass at a time
   pause [reason] / resume      Kill switch: lock prints `paused` until resume.
@@ -541,7 +542,10 @@ EOF
     esac
     errors_record pipeline reship "$key" launch "${key}: saved change not shipped (${why}); a new agent run started." "${PIPE_STATE_DIR}/${key}.reship-err"
     echo "Reship fallback: ${why}; a new agent run starts." >&2
-    jira_comment "$key" "🤖 The saved change did not ship: ${phrase}. A new agent run started with the approved tooling label." \
+    jira_comment "$key" "::warning
+**Saved change not shipped**
+- Reason: ${phrase}.
+- A new agent run started with the approved tooling label." \
       || echo "WARN: the reship fallback comment failed for ${key}" >&2
   fi
 
@@ -664,7 +668,10 @@ _jira_reship() {
     read -r _ id by < "${PIPE_STATE_DIR}/tooling/${key}" 2>/dev/null || true
     # A bare or legacy ID entry has no name: its name is the ID, which names no person.
     [ "$by" != "$id" ] || by=""
-    jira_comment "$key" "🤖 Shipping the saved change from the refused run. Scripts allowed by ${by:-a tooling approver}. No new agent run." \
+    jira_comment "$key" "::info
+**Saved change ships now**
+- ${by:-A tooling approver} allowed the script changes.
+- No new agent run starts." \
       && printf '%s\n' "$f" > "${PIPE_STATE_DIR}/${key}.reship-noted" || echo "WARN: the reship start comment failed for ${key}" >&2
   fi
 }
@@ -1647,11 +1654,15 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
       return 0
     fi
     # A bare or legacy ID entry has no name: its name is the ID, which names no person.
-    n="${by#* }"; [ "$n" != "${by%% *}" ] || n="a tooling approver"
+    n="${by#* }"; [ "$n" != "${by%% *}" ] || n="A tooling approver"
     if pipeline_holding_new; then
       _info "reship of ${key} waits for newtickets on"
       [ -e "${PIPE_STATE_DIR}/${key}.reship-held-noted" ] \
-        || { jira_comment "$key" "🤖 Tooling label approved by ${n}. The saved change ships when the operator turns new tickets back on." \
+        || { jira_comment "$key" "::warning
+**Tooling label approved**
+- ${n} added the tooling label.
+- New tickets are off, so the saved change waits.
+**Next:** The operator turns new tickets back on." \
              && : > "${PIPE_STATE_DIR}/${key}.reship-held-noted"; } || true
     elif cmd_label "$key" public >/dev/null 2>&1; then
       _info "reship: ${key} refused_ship, tooling label approved by ${by#* }; back in the queue, the saved change ships with no new run"
@@ -1786,6 +1797,12 @@ cmd_state() {
   esac
 }
 cmd_skip()      { pipeline_skip "$(_key "$1")" "${@:2}"; }
+# cmd_comment <KEY> <text>   Post the text as it is: jira_comment renders its Markdown subset.
+cmd_comment() {
+  [ $# = 2 ] && [ -n "$2" ] || { echo "ERROR: comment takes <KEY> <text>." >&2; return 1; }
+  local key; key="$(_key "$1")" || return 1
+  jira_comment "$key" "$2"
+}
 cmd_skip_changed() {
   local key; key="$(_key "$1")"; local why
   if why="$(pipeline_skip_changed "$key")"; then echo "$key $why"; fi
@@ -2084,7 +2101,7 @@ cmd_label() {
   fi
 }
 
-# _tooling_ask_text   The 🤖 comment for a saved ship: who can add the tooling label, from host config only.
+# _tooling_ask_text   The comment for a saved ship: who can add the tooling label, from host config only.
 _tooling_ask_text() {
   local l="${PIPE_TOOLING_LABEL:-ai-fixme-allow-tooling}" e names=""
   while IFS= read -r e; do
@@ -2092,10 +2109,10 @@ _tooling_ask_text() {
     # "Name:ID" names a person; a bare ID or a legacy ID (557058:uuid) does not.
     case "$e" in *:*) [[ "${e%%:*}" =~ ^[0-9]+$ ]] || names="${names}${names:+, }${e%%:*}" ;; esac
   done < <(tr ',' '\n' <<< "${PIPE_TOOLING_APPROVERS:-}")
-  printf '🤖 The finish did not ship this change: it changes package.json scripts or _scripts/, which needs a tooling approver. The change is saved. '
-  if [ -n "$names" ]; then printf 'Ask %s to add the label %s. The next pass then ships it with no new agent run.' "$names" "$l"
-  elif [ -n "$(tr -d ' ,' <<< "${PIPE_TOOLING_APPROVERS:-}")" ]; then printf 'A tooling approver for this team adds the label %s. The next pass then ships it with no new agent run.' "$l"
-  else printf 'No tooling approver is set for this team. Ask the operator to set one. An approver then adds %s, and the next pass ships the saved change.' "$l"; fi
+  printf '::warning\n**Tooling approval needed**\n- The change edits `package.json` scripts or `_scripts/`, so a tooling approver must allow it.\n- The pipeline saved the change.\n'
+  if [ -n "$names" ]; then printf '**Next:** Ask %s to add the label `%s`. The next pass then ships it with no new agent run.' "$names" "$l"
+  elif [ -n "$(tr -d ' ,' <<< "${PIPE_TOOLING_APPROVERS:-}")" ]; then printf '**Next:** A tooling approver for this team adds the label `%s`. The next pass then ships it with no new agent run.' "$l"
+  else printf '**Next:** Ask the operator to set a tooling approver for this team. The approver then adds `%s`, and the next pass ships the change.' "$l"; fi
 }
 
 # _jira_ready_comment <KEY>   Tell the ticket its PR is green and ready for review, once
@@ -2105,7 +2122,9 @@ _jira_ready_comment() {
   read -r _ pr _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
   [[ "$pr" =~ ^[0-9]+$ ]] || return 0
   [ "$(cat "$mark" 2>/dev/null)" = "$pr" ] && return 0
-  jira_comment "$key" "🤖 PR ready for review: https://github.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/${pr} (CI is green)." \
+  jira_comment "$key" "::success
+**Ready for review** · [PR #${pr}](https://github.com/${PIPE_REPO_SLUG:-mozilla/fxa}/pull/${pr})
+- CI passes." \
     && printf '%s\n' "$pr" > "$mark" || echo "WARN: ready comment failed for $key" >&2
 }
 
@@ -3411,6 +3430,7 @@ main() {
     record)     cmd_record "$@" ;;
     costs)      cmd_costs "$@" ;;
     skip)       cmd_skip "$@" ;;
+    comment)    cmd_comment "$@" ;;
     hold)       cmd_hold "$@" ;;
     skipped)    cmd_skipped "$@" ;;
     skip-changed) cmd_skip_changed "$@" ;;

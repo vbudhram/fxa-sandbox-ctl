@@ -381,9 +381,9 @@ telemetry_costs() {
 }
 
 # telemetry_merge_comment <KEY>
-#   Render the 🤖 comment posted when a ticket is labelled merged: what landed,
-#   how long the agent runs took, which models, the token counts, and the
-#   API-list-price estimate. Rows come from the run log; a ticket with no rows
+#   Render the comment posted when a ticket is labelled merged: what landed,
+#   how long the agent runs took, which models, and the API-list-price estimate
+#   (the dashboard keeps the token counts). Rows come from the run log; a ticket with no rows
 #   gets a one-line comment rather than invented numbers. Deliberately says
 #   nothing about how the runs were billed.
 telemetry_merge_comment() {
@@ -393,25 +393,24 @@ telemetry_merge_comment() {
   # shows as a launch without numbers.
   local launches=0
   [ -f "${PIPE_STATE_DIR}/launches.log" ] && launches="$(awk -v k="$key" '$2==k' "${PIPE_STATE_DIR}/launches.log" | wc -l | tr -d ' ')"
-  [ -s "$PIPE_RUNS_FILE" ] || { printf '🤖 Merged%s. Agent launches: %s. No run telemetry was recorded for this ticket.\n' "${pr:+ as $pr}" "$launches"; return 0; }
+  [ -s "$PIPE_RUNS_FILE" ] || { printf '::success\n**Merged**%s\n- Agent launches: %s\n- No run telemetry was recorded for this ticket.\n' "${pr:+ · [PR #${pr##*/}](${pr})}" "$launches"; return 0; }
   jq -r -s --arg k "$key" --arg pr "$pr" --argjson launches "$launches" '
-    def n: tostring | gsub("(?<a>\\d)(?=(?:\\d{3})+$)"; "\(.a),");
-    def short: if . >= 1000000 then "\(. / 100000 | round / 10)M" elif . >= 1000 then "\(. / 1000 | round)k" else tostring end;
     def mins: (. / 60 | round) as $m | if $m >= 60 then "\($m/60|floor)h \($m%60)m" else "\($m)m" end;
-    def kindname: {fix: "fix", feedback: "review feedback", rebase: "rebase"}[.] // .;
+    def head($u): "::success\n**Merged**\(if $u != "" and $u != null then " · [PR #\($u | split("/") | last)](\($u))" else "" end)";
+    def usd: "$" + ((. * 100 | round / 100) | tostring);
     [.[] | select(.issue == $k)] | sort_by(.recorded_at) as $r
-    | if ($r|length) == 0 then "🤖 Merged\(if $pr != "" then " as \($pr)" else "" end). Agent launches: \($launches). No run telemetry was recorded for this ticket."
+    | if ($r|length) == 0 then "\(head($pr))\n- Agent launches: \($launches)\n- No run telemetry was recorded for this ticket."
       else
         ($r | map(.wall_seconds//0) | add) as $wall
         | ($r | map(.cost_usd//0) | add) as $cost
         | ($r | map(.models // {(.model//"unknown"): {}} | keys[]) | unique | map(select(. != "<synthetic>"))) as $models
         | (($r|map(.pr)|map(select(. != "" and . != null))|last) // $pr) as $url
-        | [ "🤖 Merged\(if $url != "" and $url != null then " as \($url)" else "" end).",
-            "Agent runs: \($r|length)\(if $launches > ($r|length) then " recorded of \($launches) launched" else "" end). Total launch→handoff \($wall|mins). Estimated API cost at list price: $\($cost*100|round/100). Models: \($models|join(", "))." ]
-          + [ $r | to_entries[] | "\(.key+1). \(.value.kind // "fix" | kindname): \(.value.wall_seconds//0|mins), \(if .value.cost_usd == null then "unpriced" else "$" + ((.value.cost_usd*100|round/100)|tostring) end). Tokens in \(.value.input//0|n) / out \(.value.output//0|n) / cache write \(.value.cache_write//0|short) / cache read \(.value.cache_read//0|short)." ]
-          + ( ($r | map(select(.source == "assistant-sum")) | length) as $approx
-              | if $approx > 0 then [ "Output tokens are undercounted for \($approx) run(s) recorded from the stream log; those costs are a floor." ] else [] end )
-          + [ "Note: these costs use Anthropic list prices with the token counts from the API. The rate that Mozilla pays can be lower." ]
+        | ($r | map(select(.cost_usd == null)) | length) as $np
+        | ($r | map(select(.source == "assistant-sum")) | length) as $approx
+        | [ head($url),
+            "- Agent time: \($wall|mins) in \($r|length) run\(if ($r|length) > 1 then "s" else "" end)\(if $launches > ($r|length) then " (\($launches) launched, \($r|length) recorded)" else "" end)",
+            "- Cost: \(if $np == ($r|length) then "no price recorded" else "\($cost|usd) at Anthropic list prices\(if $np > 0 then ", with no price for \($np) of the runs" else "" end)" end). Models: \($models|join(", "))",
+            "- The rate that Mozilla pays can be lower.\(if $approx > 0 then " The real cost can be higher: the stream log does not count all output tokens for \($approx) of the runs." else "" end)" ]
         | join("\n")
       end' "$PIPE_RUNS_FILE"
 }

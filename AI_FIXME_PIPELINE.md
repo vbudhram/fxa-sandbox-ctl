@@ -251,9 +251,12 @@ to choose its own picks far too much. On FXA-14299 the agent spent 45 of its 58 
 package-wide lint for a 9 line test-only change.
 
 **Exit: skip.** `$CTL skip <KEY> "<reason>"` records a fingerprint of the whole ticket and
-prints `comment` or `silent <n>`. Post the 🤖 Jira comment only on `comment`. The ticket returns
-to stage 1 with its label untouched. Without the fingerprint, the oldest and least launchable
-tickets collect one identical comment every hour, forever.
+prints `comment` or `silent <n>`. Post the Jira comment with `$CTL comment <KEY> '<text>'` only
+on `comment`, never through raw `acli`. It is a warning panel, a `Skipped: <short reason>`
+headline, at most two bullets, and a `**Next:**` line. The fingerprint covers the ticket and every
+comment a person wrote. It ignores the service account's comments by author, and old notes led by
+🤖. The ticket returns to stage 1 with its label untouched. Without the fingerprint, the oldest
+and least launchable tickets collect one identical comment every hour, forever.
 
 #### Stage 3: Claim and launch
 
@@ -505,7 +508,7 @@ auditing: which tickets produce PRs people reject.
 A `KEY none -` line means the branch has no PR at all. Do not relabel it. That is a bug
 somewhere, not a merge.
 
-`label <KEY> merged` posts one 🤖 Jira comment with the run's telemetry. It then assigns the
+`label <KEY> merged` posts one Jira comment with the run's telemetry. It then assigns the
 ticket to the PR's last human approver, adds it to the active FxA sprint, and moves it to Done.
 It sets the assignee and the sprint only when they are empty. `label <KEY> rejected` posts no
 comment.
@@ -647,7 +650,8 @@ A pass may write exactly eight things. Everything else is out of scope, includin
 other Jira status transitions, and release advice.
 
 1. The Jira label, through `$CTL label`.
-2. One Jira comment per state change, led with 🤖.
+2. One Jira comment per state change. The host posts most of them itself; when you write one, post it with `$CTL comment`. It carries no 🤖: the service
+   account's name says a pipeline wrote it, and `jira_comment` adds 🤖 only under a person's login.
 3. One PR comment when a ticket becomes `blocked`.
 4. The report in the session.
 5. One Jira comment on an admission skip, and only when `$CTL skip` prints `comment`.

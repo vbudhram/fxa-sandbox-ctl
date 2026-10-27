@@ -76,11 +76,11 @@ check "no label: no requeue, nothing posted" "0|0|0" "$(pc >/dev/null; cnt label
 setup; pipeline_holding_new() { return 0; }
 out="$(ADDER=acct-boss pc; ADDER=acct-boss pc)"
 check "newtickets off: no requeue, the info line, and one held comment over two passes" \
-  "0|2|1" "$(cnt labels)|$(grep -c '^reship of FXA-7 waits for newtickets on$' <<< "$out")|$(cnt jira '^🤖 Tooling label approved by Boss Person. The saved change ships when the operator turns new tickets back on.$')"
+  "0|2|::warning#**Tooling label approved**#- Boss Person added the tooling label.#- New tickets are off, so the saved change waits.#**Next:** The operator turns new tickets back on." "$(cnt labels)|$(grep -c '^reship of FXA-7 waits for newtickets on$' <<< "$out")|$(paste -sd'#' "$tmp/jira")"
 setup; rm -f "$tmp/FXA-7.reship-held-noted"
 out="$(PIPE_TOOLING_APPROVERS="Pat:712020:abc,557058:0a1b2c3d-1111-2222-3333-444455556666" ADDER=557058:0a1b2c3d-1111-2222-3333-444455556666 pc)"
 check "a bare or legacy ID approver: the held comment says a tooling approver, not the ID; a Name:ID entry keeps its name" "1|0|1" \
-  "$(cnt jira '^🤖 Tooling label approved by a tooling approver\. ')|$(cnt jira '557058:')|$(setup; PIPE_TOOLING_APPROVERS="Pat:712020:abc" ADDER=712020:abc pc >/dev/null; cnt jira '^🤖 Tooling label approved by Pat\. ')"
+  "$(cnt jira '^- A tooling approver added ')|$(cnt jira '557058:')|$(setup; PIPE_TOOLING_APPROVERS="Pat:712020:abc" ADDER=712020:abc pc >/dev/null; cnt jira '^- Pat added ')"
 pipeline_holding_new() { return 1; }
 
 # ── The operator's rows: one per adder who is not an approver, and one for a failed read ──
