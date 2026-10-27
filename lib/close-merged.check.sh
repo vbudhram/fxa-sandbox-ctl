@@ -83,4 +83,10 @@ eval "$(sed -n '/^jira_record_state() {/,/^}/p' "$(dirname "$0")/jira.sh")"
 acli() { case "$*" in *"view FXA-20"*) echo '{"fields":{"assignee":{"displayName":"Pat Doe","accountId":"x"},"status":{"name":"Done"},"customfield_10020":[{"id":7}]}}' ;; esac; }
 jira_close_merged FXA-20 2>/dev/null
 check "close: jira_close_merged saves the ticket's assignee and status" "Pat Doe Done" "$(jq -r '"\(.assignee) \(.status)"' "$tmp/FXA-20.jira.json" 2>/dev/null)"
+
+# 7. Start: a To Do ticket moves to In Progress; a ticket already past To Do does not move.
+eval "$(sed -n '/^jira_start_work() {/,/^}/p' "$(dirname "$0")/jira.sh")"
+acli() { case "$*" in *view*) echo "{\"fields\":{\"status\":{\"statusCategory\":{\"key\":\"$CAT\"}}}}" ;; *transition*) echo "$*" >> "$tmp/moved" ;; esac; }
+CAT=new jira_start_work FXA-30; CAT=indeterminate jira_start_work FXA-31; CAT=done jira_start_work FXA-32
+check "start: only the To Do ticket moves, to In Progress" "jira workitem transition --key FXA-30 --status In Progress -y" "$(cat "$tmp/moved" 2>/dev/null)"
 exit "$fail"

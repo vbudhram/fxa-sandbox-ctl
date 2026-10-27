@@ -2041,6 +2041,7 @@ cmd_label() {
   state="${state#${PIPE_LABEL_PREFIX}-}"
   [ "$state" = "$PIPE_LABEL_PREFIX" ] || [ "$state" = "${PIPE_QUEUE_LABEL:-$PIPE_LABEL_PREFIX}" ] && state="public"
   pipeline_blocked_why "$key" "$state" "${@:3}"
+  [ "$state" != inflight ] || jira_start_work "$key"
   # A refused tooling ship: keep a saved ship that an approver's label can ship with no new run (the
   # guard's own line, and no scope yet), or retire one when the run already had the scope.
   local K keep="" held=""; K="$(jira_normalize_key "$key" 2>/dev/null || true)"

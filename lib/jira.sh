@@ -584,6 +584,17 @@ jira_close_merged() {
   jira_record_state "$key" || true
 }
 
+# jira_start_work <KEY>
+#   WRITE: a ticket the agent starts on moves from To Do to PIPE_JIRA_START_STATUS. Only from the
+#   To Do category: a fix round must not move a ticket back from review. A failure warns only.
+jira_start_work() {
+  local key="${1:-}" cat
+  cat="$(acli jira workitem view "$key" --fields status --json 2>/dev/null | jq -r '.fields.status.statusCategory.key // empty' 2>/dev/null)"
+  [ "$cat" = new ] || return 0
+  acli jira workitem transition --key "$key" --status "${PIPE_JIRA_START_STATUS:-In Progress}" -y >/dev/null 2>&1 \
+    || echo "WARN: transition of $key to ${PIPE_JIRA_START_STATUS:-In Progress} failed" >&2
+}
+
 # jira_record_state <KEY>   The ticket's assignee and status, read back from Jira, in <KEY>.jira.json
 # for the Stats PRs tab. A failed read writes nothing, so the tab says the ticket is not updated.
 jira_record_state() {
