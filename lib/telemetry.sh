@@ -398,6 +398,9 @@ telemetry_merge_comment() {
     def mins: (. / 60 | round) as $m | if $m >= 60 then "\($m/60|floor)h \($m%60)m" else "\($m)m" end;
     def head($u): "::success\n**Merged**\(if $u != "" and $u != null then " · [PR #\($u | split("/") | last)](\($u))" else "" end)";
     def usd: "$" + ((. * 100 | round / 100) | tostring);
+    def n: tostring | gsub("(?<a>\\d)(?=(?:\\d{3})+$)"; "\(.a),");
+    def short: if . >= 1000000 then "\(. / 100000 | round / 10)M" elif . >= 1000 then "\(. / 1000 | round)k" else tostring end;
+    def count($w; $ws): if . == 1 then "1 \($w)" else "\(.) \($ws)" end;
     [.[] | select(.issue == $k)] | sort_by(.recorded_at) as $r
     | if ($r|length) == 0 then "\(head($pr))\n- Agent launches: \($launches)\n- No run telemetry was recorded for this ticket."
       else
@@ -407,8 +410,10 @@ telemetry_merge_comment() {
         | (($r|map(.pr)|map(select(. != "" and . != null))|last) // $pr) as $url
         | ($r | map(select(.cost_usd == null)) | length) as $np
         | ($r | map(select(.source == "assistant-sum")) | length) as $approx
+        | ($r | group_by(.kind // "fix") | map({k: (.[0].kind // "fix"), n: length}) | sort_by({fix: 0, feedback: 1, rebase: 2}[.k] // 3)) as $kinds
         | [ head($url),
-            "- Agent time: \($wall|mins) in \($r|length) run\(if ($r|length) > 1 then "s" else "" end)\(if $launches > ($r|length) then " (\($launches) launched, \($r|length) recorded)" else "" end)",
+            "- Agent time: \($wall|mins) in \($r|length | count("run"; "runs"))\(if ($r|length) > 1 then ": " + ([$kinds[] | if .k == "fix" then (.n|count("fix"; "fixes")) elif .k == "feedback" then (.n|count("review round"; "review rounds")) elif .k == "rebase" then (.n|count("rebase"; "rebases")) else "\(.n) \(.k)" end] | join(", ")) else "" end)\(if $launches > ($r|length) then " (\($launches) launched, \($r|length) recorded)" else "" end)",
+            "- Tokens: in \($r|map(.input//0)|add|n), out \($r|map(.output//0)|add|n), cache write \($r|map(.cache_write//0)|add|short), cache read \($r|map(.cache_read//0)|add|short)",
             "- Cost: \(if $np == ($r|length) then "no price recorded" else "\($cost|usd) at Anthropic list prices\(if $np > 0 then ", with no price for \($np) of the runs" else "" end)" end). Models: \($models|join(", "))",
             "- The rate that Mozilla pays can be lower.\(if $approx > 0 then " The real cost can be higher: the stream log does not count all output tokens for \($approx) of the runs." else "" end)" ]
         | join("\n")
