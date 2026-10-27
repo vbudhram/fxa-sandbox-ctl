@@ -40,6 +40,15 @@ ffinish() { # ffinish <finish exit> <why in heads.fix>   the env finish got, the
 check "a fix run passes its run and head to finish; moved and guard ends record no error, a failed push does" \
   "42 aaaa https://github.com/o/r/pull/7|42 aaaa https://github.com/o/r/pull/7|42 aaaa https://github.com/o/r/pull/7|error pr_failed" \
   "$(ffinish 3 moved)|$(ffinish 1 guard:lock)|$(ffinish 1 '')"
+nfinish() { # nfinish <record json>   the errors recorded when the agent wrote no handoff
+  ( echo "$1" > "$SESSION_DIR/agent-fb1.json"; : > "$SESSION_DIR/agent-fb1.finish.log"; : > "$BASES"
+    runtime_load() { :; }; sleep() { :; }; _session_turn_running() { return 1; }; errors_record() { echo "error $2" >> "$BASES"; }
+    _session_turn() { :; }; vm_exec() { [ "$2" != test ]; }; vm_exec_as_agent() { :; }; _session_history_add() { :; }
+    _cmd_session_finish agent-fb1 >/dev/null 2>&1
+    cat "$BASES"; echo end )
+}
+check "no handoff: a routine run records no error, a Slack session still does" "end|error pr_failed end" \
+  "$(nfinish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"routine","routine_run":"42"}' | paste -sd' ' -)|$(nfinish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack"}' | paste -sd' ' -)"
 check "a checked-out PR is the PR finish updates; a session's own PR round still finds its PR by branch" "main https://github.com/o/r/pull/7|main" \
   "$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","checkout":"https://github.com/o/r/pull/7","review_pr":"https://github.com/o/r/pull/7"}')|$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","review_pr":"https://github.com/o/r/pull/7"}')"
 exit "$fail"

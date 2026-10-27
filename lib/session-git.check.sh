@@ -69,5 +69,10 @@ g clone -q "$tmp/origin.git" "$tmp/ws3" 2>/dev/null; cd "$tmp/ws3" && echo bump 
 echo "{\"key\":\"gt03\",\"state\":\"active\",\"base_sha\":\"$P\",\"checkout\":\"https://github.com/o/r/pull/3\"}" > "$tmp/gt03.json"
 _session_sh() { (cd "$tmp/ws3" && bash -c "${2//\/workspace/$tmp/ws3}"); }
 check "a checked-out PR with no agent edit counts 0, and one edit counts 1" "0|1" "$(_session_changes gt03)|$(echo x >> e.txt; _session_changes gt03)"
+# The boot's exclude (lib/agent.sh) keeps the stack warm-up's CSS out of the count.
+git -C "$tmp/ws3" checkout -q -- e.txt
+cmd="$(grep -m1 'app/styles/main.css &&' "$HERE/agent.sh" | sed -n "s/.*bash -c '\(.*\)' >.*/\1/p")"
+(cd "$tmp/ws3" && bash -c "${cmd//\/workspace/$tmp/ws3}")
+check "the warm-up's main.css does not count as a change" "0" "$(mkdir -p packages/fxa-content-server/app/styles && echo css > packages/fxa-content-server/app/styles/main.css && _session_changes gt03)"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

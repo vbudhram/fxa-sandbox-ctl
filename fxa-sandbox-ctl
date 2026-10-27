@@ -3086,7 +3086,9 @@ _session_finish_fail() {
   if [ -n "$(session_get "$1" fix_pr)" ] && [[ "$run" =~ ^[1-9][0-9]*$ ]]; then
     why="$(db_value "SELECT coalesce(json_extract(heads, '$.fix.why'), '') FROM routine_runs WHERE id = ${run};" 2>/dev/null || true)"
   fi
-  case "$why" in moved|guard:*) ;; *)
+  # A routine run that wrote no handoff chose to ship nothing; the bot ends it as no change.
+  [ -n "$run" ] && [[ "$2" == "I wrote no handoff"* ]] && why=nohandoff
+  case "$why" in moved|guard:*|nohandoff) ;; *)
     errors_record session "$( [ "$what" = "Push branch" ] && echo push_failed || echo pr_failed )" "$1" "session-finish" "${last:-$2}" "agent-sessions/$1.finish.log" ;;
   esac
   _session_history_add "$1" action "${what} failed: ${last:-$2}"

@@ -266,6 +266,8 @@ _put_run_files() {
   # A session's own files stay out of its commits: it runs git add -A.
   if [ "$rc" -eq 0 ] && [ "${FXA_SESSION_MODE:-}" = 1 ]; then
     vm_exec "$name" sudo -u agent bash -c 'cd /workspace && grep -qxF ".fxa-*" .git/info/exclude 2>/dev/null || printf "%s\n" ".fxa-*" "ai/" "artifacts/" >> .git/info/exclude' >/dev/null 2>&1 || true
+    # The stack warm-up builds this untracked CSS; it is not the agent's change, so it neither counts nor ships.
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && f=/packages/fxa-content-server/app/styles/main.css && { grep -qxF "$f" .git/info/exclude 2>/dev/null || echo "$f" >> .git/info/exclude; }' >/dev/null 2>&1 || true
   fi
   # The earlier session's commits, before its uncommitted patch. Hooks off: post-checkout clones l10n.
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume.bundle" ]; then
