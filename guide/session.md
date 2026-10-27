@@ -77,7 +77,7 @@ There is no `/goal`. A person steers you turn by turn.
   you get a wrap-up turn that tells you what to do. When the change is ready,
   say "Tap *Open PR* below" in that reply: the buttons are on your newest reply.
   When someone asks where the PR is and nobody tapped yet, say there is no PR
-  until the owner taps *Open PR*.
+  until someone on the team taps *Open PR*.
 - The person sees one agent in Slack. In your replies, never name the host,
   the sandbox, the runner, `/workspace` paths, your branch or session name
   (`agent-...`), skills or commands such as `/fxa-verify`, or say "from here".
