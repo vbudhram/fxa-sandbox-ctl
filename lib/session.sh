@@ -876,12 +876,14 @@ _SESSION_LIVE_JQ='(.parent_tool_use_id // null) as $p
 
 # The watch: one runner line in, its events out. {type: "result"} at the turn's
 # end; {type: "text_start"} and {type: "text", text} as the main agent writes;
+# {type: "thinking"} when the main agent starts a thinking block;
 # {type: "step", text} per tool call or message; then the live-status events.
 _SESSION_WATCH_JQ="fromjson? | if .type == \"result\" or .type == \"turn.completed\" then {type: \"result\"}
   elif .type == \"fxa_diffstat\" then {type: \"diffstat\", files: .files}
   elif .type == \"item.completed\" and .item.type == \"agent_message\" then ({type: \"text_start\"}, {type: \"text\", text: .item.text})
   elif .type == \"stream_event\" then (select(.parent_tool_use_id == null) | .event
     | if .type == \"content_block_start\" and .content_block.type == \"text\" then {type: \"text_start\"}
+      elif .type == \"content_block_start\" and .content_block.type == \"thinking\" then {type: \"thinking\"}
       elif .type == \"content_block_delta\" and .delta.type == \"text_delta\" then {type: \"text\", text: .delta.text}
       else empty end)
   else ((${_SESSION_STEPS_JQ} | {type: \"step\", text: .}), (${_SESSION_LIVE_JQ})) end"

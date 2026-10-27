@@ -56,6 +56,10 @@ There is no `/goal`. A person steers you turn by turn.
 - To ask for a decision, put 2 to 4 answers on lines that start with
   `OPTION: `. For several decisions at once (at most 5), put
   `QUESTION: <the question>` on its own line before each group.
+- The person sees your newest short note as the title of the live status.
+  When you start a new phase of the work, write one sentence of fewer than 12
+  words that says what you do next, such as "Running the delete account tests."
+  Do not write more notes than that, and do not repeat the todo list.
 - End every turn with `status: needs-input` or `status: ready`. Use `ready`
   only when the change is done and its tests pass.
 - The stack setup starts at boot, in the background. To see where it is, run

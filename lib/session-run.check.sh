@@ -30,9 +30,11 @@ unset -f gcloud; _SESSIONS_PAUSE_URI=""
 # The watch forwards the reply's text as it is written, but not a subagent's.
 w="$( _session_sh() { printf '%s\n' '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","content_block":{"type":"text"}}}' \
   '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hi"}}}' \
-  '{"type":"stream_event","parent_tool_use_id":"t1","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"sub"}}}' '{"type":"result"}'; }
+  '{"type":"stream_event","parent_tool_use_id":"t1","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"sub"}}}' \
+  '{"type":"stream_event","parent_tool_use_id":null,"event":{"type":"content_block_start","content_block":{"type":"thinking"}}}' \
+  '{"type":"stream_event","parent_tool_use_id":"t1","event":{"type":"content_block_start","content_block":{"type":"thinking"}}}' '{"type":"result"}'; }
   _session_watch agent-t2 | jq -r '.type + (if .text then ":" + .text else "" end)' | paste -sd' ' - )"
-check "watch streams the reply text" "text_start text:Hi result" "$w"
+check "watch streams the reply text, and the main agent's thinking" "text_start text:Hi thinking result" "$w"
 # The watch: existing events unchanged, plus the live-status events.
 long="$(head -c 5000 /dev/zero | tr '\0' x)"
 w="$(printf '%s\n' \
