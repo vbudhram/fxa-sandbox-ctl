@@ -5,7 +5,9 @@
 #   verify.sh [--run] [--plan FILE] [--no-firefox]
 set -uo pipefail
 SK="$(cd "$(dirname "$0")" && pwd)" W="${SYNC_WORKSPACE:-/workspace}" PY="$HOME/.syncstorage-venv/bin/python"
-cd "$W" || exit 2
+# In a team stack /workspace only links to each repo: the build and tests run in the repo, the records stay in $W.
+R="$W"; [ -f "$W/Cargo.toml" ] || R="${SYNC_REPO:-/home/agent/syncstorage}"
+cd "$R" || exit 2
 export RUSTUP_HOME=/opt/rust/rustup PATH=/opt/rust/cargo/bin:$PATH
 F="--no-default-features --features=syncstorage-db/mysql --features=py_verifier"
 run=0 plan="" ff=1
@@ -37,11 +39,11 @@ if [ "$server" = 1 ] || [ -n "$plan" ]; then
       < <(jq -r '.checks[]? | [.name, .cmd] | @tsv' "$plan")
   fi
   # The repo's own e2e suite against this server; its tokenserver tests need CI's mock FxA, so not here.
-  row "integration tests" "cd $W && SYNC_SERVER_URL=http://localhost:8000 \
+  row "integration tests" "cd $R && SYNC_SERVER_URL=http://localhost:8000 \
 SYNC_MASTER_SECRET=\$(sed -n 's/^master_secret *= *\"\\(.*\\)\"/\\1/p' \$HOME/.syncstorage.toml) \
 SYNC_SYNCSTORAGE__DATABASE_URL=mysql://sync:test@127.0.0.1:3306/syncstorage \
 SYNC_TOKENSERVER__DATABASE_URL=mysql://sync:test@127.0.0.1:3306/tokenserver \
-PYTHONPATH=$W $HOME/.syncstorage-it-venv/bin/python -m pytest tools/integration_tests -q -p no:cacheprovider --ignore=tools/integration_tests/tokenserver --ignore=tools/integration_tests/test_payload_link_reconciliation.py"
+PYTHONPATH=$R $HOME/.syncstorage-it-venv/bin/python -m pytest tools/integration_tests -q -p no:cacheprovider --ignore=tools/integration_tests/tokenserver --ignore=tools/integration_tests/test_payload_link_reconciliation.py"
   row "sync protocol" "cd $SK/../sync-e2e && $PY e2e.py"
   [ "$ff" = 1 ] && row "firefox sync" "cd $SK/../sync-e2e && $PY firefox.py"
 fi

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Restart the local syncserver on the last build and wait for its heartbeat.
 set -uo pipefail
-cd "${SYNC_WORKSPACE:-/workspace}" || exit 2
+W="${SYNC_WORKSPACE:-/workspace}"; [ -f "$W/Cargo.toml" ] || W="${SYNC_REPO:-/home/agent/syncstorage}"
+cd "$W" || exit 2
 # By name, never -f: the agent's own command line holds text that names the binary.
 pkill -u "$(id -un)" -x syncserver; sleep 1
 PYTHONPATH="$("$HOME/.syncstorage-venv/bin/python" -c 'import site; print(site.getsitepackages()[0])')" RUST_LOG=info \
