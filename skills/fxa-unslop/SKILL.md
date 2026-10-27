@@ -124,6 +124,8 @@ the commit title.
    - No praise, no enthusiasm, no summary of how good the change is.
    - Banned in the body and the commit: comprehensive, robust, seamless,
      significantly improved, enhanced, various improvements. Name the change.
+   - A security fix: state what changed and link the ticket. Do not call it a
+     security concern or describe how to exploit the old code: the repo is public.
 
 5. **The title.** A scoped conventional commit, as the repo uses:
    `fix(auth): stop sending the stale session token`. Imperative mood, at most
