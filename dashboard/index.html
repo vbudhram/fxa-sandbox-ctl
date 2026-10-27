@@ -846,7 +846,10 @@ function merged() {
   const ciCards = waiting.filter(t => t.stage === "pr").map(t => ({ ...t, live: false, ci: true,
     name: "", slot: "", agent: null, agent_alive: false, elapsed_seconds: t.elapsed_seconds }));
   const reshipCards = waiting.filter(reship).map(t => ({ ...t, live: false, reship: true, name: "", slot: "", agent: null, agent_alive: false }));
-  return { cards: cards.concat(ciCards, reshipCards), waiting: waiting.filter(t => t.stage !== "pr" && !reship(t)) };
+  // A launch creates its runner first (a GCE VM takes a minute), so a young start with no runner yet is booting, not a fault.
+  const booting = t => t.stage === "starting" && !reship(t) && (t.elapsed_seconds ?? Infinity) < 600;
+  const bootCards = waiting.filter(booting).map(t => ({ ...t, live: false, name: "", slot: "", agent: null, agent_alive: false }));
+  return { cards: cards.concat(ciCards, reshipCards, bootCards), waiting: waiting.filter(t => t.stage !== "pr" && !reship(t) && !booting(t)) };
 }
 
 // One rule for a stop command a person copies (i356 D38): a slot or runner name, else no command.
