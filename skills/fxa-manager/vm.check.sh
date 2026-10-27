@@ -41,6 +41,7 @@ check "dev fn: a devhost file without FXA_FC_HOST leaves it unset and prints no 
 eval "$(sed -n '/^dev_tar() {/,/^}/p' "$(dirname "$0")/vm.sh")"
 T3="$tmp/devtar"; mkdir -p "$T3/my-ctl" "$T3/other-bot"
 for r in my-ctl other-bot; do git -C "$T3/$r" init -q; echo x > "$T3/$r/a.txt"; done; echo secret > "$T3/other-bot/.env.dev"; echo .env.dev > "$T3/other-bot/.gitignore"; echo y > "$T3/my-ctl/new.sh"
+mkdir -p "$T3/my-ctl/diagrams"; echo png > "$T3/my-ctl/diagrams/1-x.png"
 git -C "$T3/my-ctl" add a.txt; git -C "$T3/other-bot" add a.txt .gitignore
 check "dev_tar names each tree as the VM expects, with new files and the dev env" "fxa-agent-bot/.env.dev fxa-agent-bot/.gitignore fxa-agent-bot/a.txt fxa-sandbox-ctl/a.txt fxa-sandbox-ctl/new.sh" \
   "$(dev_tar "$T3/my-ctl" "$T3/other-bot" | tar -tzf - | sort | paste -sd' ' -)"

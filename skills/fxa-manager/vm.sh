@@ -47,7 +47,8 @@ BOT_ROOT="$(cd "${FXA_DEV_BOT_ROOT:-$CTL_ROOT/../fxa-agent-bot}" 2>/dev/null && 
 # dev env, gzipped to stdout under the names the VM expects, whatever the local folders are called.
 dev_tar() {
   { for x in "fxa-sandbox-ctl $1" "fxa-agent-bot $2"; do n="${x%% *}" r="${x#* }"
-      git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do [ -e "$r/$f" ] && printf '%s\t%s\n' "$r/$f" "$n/$f"; done
+      # Not diagrams/*.png: half of the upload, and only the laptop's doc scripts read them.
+      git -C "$r" ls-files -co --exclude-standard | while IFS= read -r f; do case "$f" in diagrams/*.png) continue ;; esac; [ -e "$r/$f" ] && printf '%s\t%s\n' "$r/$f" "$n/$f"; done
     done; printf '%s\t%s\n' "$2/.env.dev" fxa-agent-bot/.env.dev; } \
   | python3 -c 'import sys, tarfile
 t = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")

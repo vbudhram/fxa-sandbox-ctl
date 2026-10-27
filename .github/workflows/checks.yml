@@ -34,7 +34,7 @@ jobs:
             # The runner's sources read their mirror from this file (mirror+file:).
             [ -z "${mirrors[$i]}" ] || echo "${mirrors[$i]}" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
             sudo timeout 90 apt-get update -q "${o[@]}" \
-              && sudo timeout 150 apt-get install -y -q --no-install-recommends "${o[@]}" git jq curl python3 openssl perl rsync ffmpeg ca-certificates \
+              && sudo timeout $(( i == 0 ? 60 : 150 )) apt-get install -y -q --no-install-recommends "${o[@]}" git jq curl python3 openssl perl rsync ffmpeg ca-certificates \
               && exit 0
             echo "apt try $((i + 1)) failed"; sleep 5
           done

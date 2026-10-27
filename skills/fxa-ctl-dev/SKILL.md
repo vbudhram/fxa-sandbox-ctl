@@ -68,7 +68,7 @@ whichever tree you run them in.
 
 ```bash
 bash skills/fxa-ctl-dev/test.sh changed   # the default before a push: the checks for the changed files and functions
-bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker (about 2.5 min each; CI runs the same in about 1 min)
+bash skills/fxa-ctl-dev/test.sh        # macOS, then Ubuntu 24.04 in docker (a few minutes each; CI runs the same, sharded)
 bash skills/fxa-ctl-dev/test.sh mac    # this host only
 gh run list -R vbudhram/fxa-sandbox-ctl -L 3   # CI: the Ubuntu half on each push of main and improve/**; the bot's CI runs npm test and the e2e
 cd ~/Desktop/working2/fxa-agent-bot && npm test
@@ -133,7 +133,7 @@ ts=$($D start "<request>")       # @mention it in a new thread, as you
 $D wait "$ts"                    # until ✅ or ⚠️, then the thread with times
 $D reply "$ts" "<text>"          # a follow-up, or the answer to a question
 $H dev report "$ts"              # quick answer, boot, turns, usage by model, subagents, errors
-$H dev smoke                     # before a promote: fake-mode session, !status, !stop, then a quick answer; ends on the real controller
+$H dev smoke                     # before a promote: deploys the trees itself (no $H dev before it), then fake-mode session, !status, !stop, a quick answer; ends on the real controller
 $H dev fn '_answer_dns_gate'     # run the dev controller's functions on the VM (or: dev fn - <<'EOF' ... EOF)
 $H dev log                       # the dev bot's log;  $H dev stop
 $D show "$ts"                    # read a test-channel thread; the Slack MCP tools reach another workspace
