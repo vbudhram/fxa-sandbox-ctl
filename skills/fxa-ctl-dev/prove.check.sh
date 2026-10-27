@@ -15,6 +15,8 @@ printf 'source ./x.sh; echo "ok   anything"\n' > weak.check.sh
 check "a check that catches the change is proved" "0" "$(bash "$P" good.check.sh x.sh >/dev/null; echo $?)"
 check "the file is restored and the index is unchanged" "new|M " "$(source ./x.sh; f)|$(git status --porcelain x.sh | cut -c1-2)"
 check "a check that does not test the change is rejected" "1|yes" "$(bash "$P" weak.check.sh x.sh >/dev/null; echo $?)|$(bash "$P" weak.check.sh x.sh | grep -q 'does not test it' && echo yes)"
+printf 'echo run >> runs; echo "FAIL always"\n' > bad.check.sh
+check "a check that fails with the change is rejected after one run" "1|1|new" "$(bash "$P" bad.check.sh x.sh >/dev/null; echo $?)|$(wc -l < runs | tr -d ' ')|$(source ./x.sh; f)"
 echo 'g() { echo hi; }' > y.sh
 printf 'source ./y.sh 2>/dev/null && [ "$(g)" = hi ] && echo "ok   g" || echo "FAIL no g"\n' > new.check.sh
 check "a new file: proved, and still there after" "0|yes" "$(bash "$P" new.check.sh y.sh >/dev/null; echo $?)|$([ -f y.sh ] && echo yes)"

@@ -108,30 +108,35 @@ run_linux() {
 
 # run_changed <base>   The checks that name a file changed since base (committed, staged, unstaged or new).
 run_changed() {
-  local base="${1:-origin/main}" f b c picked=() bad=0 py="" e2e=""
+  local base="${1:-origin/main}" f b c n fn picked=() bad=0 py="" e2e=""
   local files; files="$( { git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files -o --exclude-standard; } 2>/dev/null | sort -u)"
   [ -n "$files" ] || { echo "$HOST: no changed files since $base"; return; }
   local all; all="$(ls lib/*.check.sh skills/*/*.check.sh infra/*/*.check.sh 2>/dev/null)"
+  local half; half=$(( $(wc -l <<< "$all") / 2 ))
   for f in $files; do
     [ -f "$f" ] || continue
     case "$f" in *.check.sh) picked+=("$f"); continue ;; esac
     # The check named after the file's folder: lib/db/008-x.sql is lib/db.check.sh's.
     c="$(dirname "$(dirname "$f")")/$(basename "$(dirname "$f")").check.sh"; [ -f "$c" ] && picked+=("$c")
+    # The text a check names the file by; a skill's check.sh by its folder too, since every check's own name ends in check.sh.
+    n="${f##*/}"; [ "$n" != check.sh ] || n="${f#"${f%/*/*}"/}"
     case "$f" in *.sh|fxa-sandbox-ctl) bash -n "$f" 2>/dev/null || { echo "SYNTAX: $f"; bad=1; } ;; esac
     case "$f" in
       # A shell file: the checks named after it, and each check that names a function the diff changed.
       *.sh|fxa-sandbox-ctl)
-        b="$(basename "$f" .sh)"
-        for c in $all; do case "$(basename "$c")" in "$b".check.sh|"$b"-*.check.sh) picked+=("$c") ;; esac; done
+        b="${f##*/}"; b="${b%.sh}"
+        for c in $all; do case "${c##*/}" in "$b".check.sh|"$b"-*.check.sh) picked+=("$c") ;; esac; done
         # A check that reads the file as text (a grep of snapshot.sh) names it.
-        for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done
+        for c in $(grep -lF -- "$n" $all 2>/dev/null); do picked+=("$c"); done
         for fn in $( { git diff -U0 "$base"...HEAD -- "$f"; git diff -U0 HEAD -- "$f"; } 2>/dev/null \
             | sed -n 's/^@@[^@]*@@ *\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p; s/^[+-]\([A-Za-z_][A-Za-z0-9_]*\)() *{.*/\1/p' | sort -u); do
-          for c in $(grep -lw -- "$fn" $all 2>/dev/null); do picked+=("$c"); done
+          # A name in most checks (fail, in dev-smoke.sh) is a common word there, not a use of this function.
+          c="$(grep -lw -- "$fn" $all 2>/dev/null)"; [ "$(grep -c . <<< "$c")" -le "$half" ] || continue
+          for c in $c; do picked+=("$c"); done
         done ;;
       # Any other file: each check that names its path or its file name; a Python module also by
       # its name, since a check loads it with "import server".
-      *) for c in $(grep -lF -- "$(basename "$f")" $all 2>/dev/null); do picked+=("$c"); done
+      *) for c in $(grep -lF -- "$n" $all 2>/dev/null); do picked+=("$c"); done
          case "$f" in *.py) b="$(basename "$f" .py)"
            for c in $(grep -lE -- "(import [A-Za-z0-9_, ]*|from )$b([^A-Za-z0-9_]|\$)" $all 2>/dev/null); do picked+=("$c"); done ;; esac ;;
     esac
@@ -145,8 +150,14 @@ run_changed() {
   done
   py="$(printf '%s\n' $py | sort -u)"
   [ ${#picked[@]} -gt 0 ] || [ -n "$py" ] || [ -n "$e2e" ] || { echo "$HOST: no check names the changed files; CI runs the full suite"; [ "$bad" = 0 ] || rc=1; return; }
-  [ ${#picked[@]} -eq 0 ] || picked=($(printf '%s\n' "${picked[@]}" | sort -u))
+  # The page checks render dashboard/index.html in Chrome, about 100 times: only a dashboard or page
+  # change needs them (page.check.sh's fixtures name the controller as text).
+  if [ ${#picked[@]} -gt 0 ] && ! grep -qE '^(dashboard/|skills/fxa-ctl-dev/page)' <<< "$files"; then
+    picked=($(printf '%s\n' "${picked[@]}" | grep -v '^skills/fxa-ctl-dev/page[^/]*\.check\.sh$' || true)); fi
+  # Largest first, as a full run does: the slow ones start first.
+  [ ${#picked[@]} -eq 0 ] || picked=($(ls -S $(printf '%s\n' "${picked[@]}" | sort -u)))
   echo "$HOST: ${#picked[@]} checks for the changed files"
+  [ -z "${FXA_CHANGED_DRY:-}" ] || { printf '%s\n' ${picked[@]+"${picked[@]}"}; return; }
   [ ${#picked[@]} -eq 0 ] || run_pool "$HOST" "${picked[@]}" || bad=1
   for t in $py; do
     if [ "$t" = desktop-gateway/check.py ] && ! python3 -c 'import aiohttp, google.auth' 2>/dev/null; then

@@ -52,4 +52,15 @@ printf 'import time\ntime.sleep(37)\n' > "$r/infra/llm-proxy/proxy_test.py"; ( c
 check "with FXA_CHECK_TIMEOUT, a hung Python test fails at the timeout, named" "1|yes" \
   "$(FXA_CHECK_TIMEOUT=2 changed infra/llm-proxy/proxy.py)|$(grep -q 'FAIL [a-z]*: infra/llm-proxy/proxy_test.py did not finish in 2s' "$tmp/out" && [ $(( SECONDS - s )) -lt 8 ] && echo yes)"
 check "a changed fake-ctl.sh runs the bot e2e" "1|yes|yes" "$(changed skills/fxa-ctl-dev/fake-ctl.sh)|$(grep -q 'FAIL [a-z]*: the bot e2e' "$tmp/out" && echo yes)|$([ -e "$tmp/bot/marker" ] && echo yes)"
+# The selection alone (FXA_CHANGED_DRY): a skill's check.sh, a page check that names the controller as text, a common word.
+mkdir -p "$r/skills/s" "$r/dashboard"; echo true > "$r/skills/s/check.sh"; echo '<html>' > "$r/dashboard/index.html"; printf 'w() {\n  :\n}\n' > "$r/lib/w.sh"
+echo '# runs skills/s/check.sh' > "$r/lib/s-user.check.sh"; echo '# renders dashboard/index.html; fixture: fxa-sandbox-ctl stop; w' > "$r/skills/fxa-ctl-dev/page-x.check.sh"
+for i in 1 2 3 4 5; do echo "# w is a word here; see other.check.sh" > "$r/lib/word$i.check.sh"; done; echo '# echo' > "$r/fxa-sandbox-ctl"
+( cd "$r" && git add -A && git -c user.email=t@example.com -c user.name=t commit -qm sel )
+picks() { ( cd "$r" && git checkout -q -- . && for f in "$@"; do case "$f" in lib/w.sh) sed -i.bak 's/^  :$/  : edit/' "$f" && rm -f "$f.bak" ;; *) echo '# edit' >> "$f" ;; esac; done
+  FXA_CHANGED_DRY=1 bash skills/fxa-ctl-dev/test.sh changed HEAD 2>/dev/null | sed 1d | paste -sd, - ); }
+check "a skill's check.sh picks the checks that name its folder, not every check" "lib/s-user.check.sh" "$(picks skills/s/check.sh)"
+check "a controller change does not pick a page check that only names it as text" "" "$(picks fxa-sandbox-ctl)"
+check "a dashboard change picks the page check" "skills/fxa-ctl-dev/page-x.check.sh" "$(picks dashboard/index.html)"
+check "a function whose name is in most checks picks none by that name" "" "$(picks lib/w.sh)"
 exit "$fail"

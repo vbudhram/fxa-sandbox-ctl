@@ -12,6 +12,8 @@ trap 'restore "$@"' EXIT INT TERM
 # The verdict of one run: FAIL lines or a nonzero exit fail it, as test.sh counts them.
 verdict() { local out rc=0; out="$(bash "$check" 2>&1)" || rc=$?; if [ "$rc" = 0 ] && ! grep -q '^FAIL' <<< "$out"; then echo pass; else echo fail; fi; }
 with="$(verdict)"
+# A check that fails with the change cannot prove anything: skip the second run.
+[ "$with" = pass ] || { echo "with the change: fail"; echo "the check fails even with the change: fix it first"; exit 1; }
 for f in "$@"; do
   mkdir -p "$tmp/$(dirname "$f")"; cp -p "$f" "$tmp/$f" || { echo "prove.sh: cannot read $f" >&2; exit 2; }
   # A file new in this change goes away; a changed one goes back to HEAD.
