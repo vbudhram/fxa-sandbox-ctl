@@ -30,6 +30,8 @@ check "no row for the ticket: launches and the no-telemetry note" "::success
 **Merged** · [PR #9](https://github.com/o/r/pull/9)
 - Agent launches: 0
 - No run telemetry was recorded for this ticket." "$(telemetry_merge_comment FXA-2 https://github.com/o/r/pull/9)"
+check "jira.usage false: only the head, no time, tokens or cost" "::success
+**Merged** · [PR #1](https://github.com/o/r/pull/1)" "$(PIPE_MERGE_USAGE=0 telemetry_merge_comment FXA-1 https://github.com/o/r/pull/1)"
 : > "$PIPE_RUNS_FILE"
 check "no run log: the same note from the shell branch" "::success
 **Merged** · [PR #9](https://github.com/o/r/pull/9)

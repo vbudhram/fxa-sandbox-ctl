@@ -385,10 +385,11 @@ telemetry_costs() {
 #   how long the agent runs took, which models, and the API-list-price estimate
 #   (the dashboard keeps the token counts). Rows come from the run log; a ticket with no rows
 #   gets a one-line comment rather than invented numbers. Deliberately says
-#   nothing about how the runs were billed.
+#   nothing about how the runs were billed. PIPE_MERGE_USAGE=0 (jira.usage: false) leaves only the head.
 telemetry_merge_comment() {
   pipeline_require || return 1
   local key="${1:-}" pr="${2:-}"
+  [ "${PIPE_MERGE_USAGE:-1}" != 0 ] || { printf '::success\n**Merged**%s\n' "${pr:+ · [PR #${pr##*/}](${pr})}"; return 0; }
   # Count launches from the ledger, not the run log, so an unrecorded run still
   # shows as a launch without numbers.
   local launches=0

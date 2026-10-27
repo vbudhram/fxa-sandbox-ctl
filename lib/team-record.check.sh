@@ -228,6 +228,9 @@ senv="$(py env "$(srec fxa-private)" fxa-private)"
 sget() { printf '%s\n' "$senv" | awk -F'\t' -v k="$1" '$1 == k {print $2}'; }
 check "a secret team on an FxA fork is valid beside fxa; its env names its labels and its stack dir" "0||1|ai-fixme|ai-fixme-private|/home/agent/fxa" \
   "$(py validate "$S/fxa-private.json" fxa-private >/dev/null 2>&1; echo $?)|$(uq "$S/fxa-private.json")|$(sget PIPE_SECRET_TICKETS)|$(sget PIPE_QUEUE_LABEL)|$(sget PIPE_LABEL_PREFIX)|$(sget PIPE_STACK_DIR)"
+check "jira.usage: false sets PIPE_MERGE_USAGE=0; unset leaves it out; a string is refused" "0||refused" \
+  "$(py env "$(srec us ', "jira": { "project": "FXA", "queue": true, "secret": true, "usage": false }')" us | awk -F'\t' '$1 == "PIPE_MERGE_USAGE" {print $2}')|$(sget PIPE_MERGE_USAGE)|$(py validate "$(srec us2 ', "jira": { "project": "FXA", "queue": true, "secret": true, "usage": "no" }')" us2 >/dev/null 2>&1 && echo ok || echo refused)"
+rm -f "$S/us.json" "$S/us2.json"
 two="$(uq "$(srec fxa-private2)")"; rm -f "$S/fxa-private2.json"
 printf '{ "schema": 1, "name": "pub", "repos": [ { "slug": "example/pub", "role": "work" } ], "prompts": { "goal_md": "g" }, "jira": { "project": "FXA", "queue": true } }' > "$S/pub.json"
 pub="$(uq "$S/pub.json")"; rm -f "$S/pub.json"

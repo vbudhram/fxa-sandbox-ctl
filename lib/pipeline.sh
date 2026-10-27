@@ -94,7 +94,7 @@ _pipeline_load_record() {
   while IFS=$'\t' read -r k v; do
     case "$k" in
       REPO) PIPE_REPOS+=("$v") ;;
-      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256|PIPE_JIRA_SECRET|PIPE_TEAM_USD_DAY|PIPE_TEAM_USD_MONTH|PIPE_RUNTIME_SECRETS|PIPE_SECRET_TICKETS|PIPE_QUEUE_LABEL|PIPE_LABEL_PREFIX)
+      PIPE_LABEL|PIPE_BASE_BRANCH|PIPE_STACK_DEFAULT|PIPE_STACK_DIR|PIPE_VM_BACKEND|PIPE_ANDROID|PIPE_DESKTOP_URL|PIPE_EGRESS_EXTRA|PIPE_MCP|PIPE_JIRA_PROJECT|PIPE_PR_OPEN|PIPE_PR_TEAM|PIPE_MAX_LAUNCHES_PER_DAY|PIPE_TEAM_SKILLS|PIPE_BOOT_SCRIPT|PIPE_BOOT_SHA256|PIPE_JIRA_SECRET|PIPE_TEAM_USD_DAY|PIPE_TEAM_USD_MONTH|PIPE_RUNTIME_SECRETS|PIPE_SECRET_TICKETS|PIPE_QUEUE_LABEL|PIPE_LABEL_PREFIX|PIPE_MERGE_USAGE)
         printf -v "$k" '%s' "$v" ;;
       *) echo "ERROR: team record ${name}: unexpected key ${k}" >&2; return 1 ;;
     esac
@@ -116,7 +116,7 @@ pipeline_load() {
   # Only a secret team's record sets these: a later load in the same shell (a subshell loop over teams)
   # must not keep a secret team's flag, labels or queue.
   [ -z "${PIPE_SECRET_TICKETS:-}" ] || unset PIPE_LABEL_PREFIX PIPE_QUEUE_JQL
-  unset PIPE_SECRET_TICKETS PIPE_QUEUE_LABEL
+  unset PIPE_SECRET_TICKETS PIPE_QUEUE_LABEL PIPE_MERGE_USAGE
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
   conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
   [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"

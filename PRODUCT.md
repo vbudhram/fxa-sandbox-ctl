@@ -184,7 +184,7 @@ over a record of the same name. All other teams are records.
 | `runner` | The backend (`gce` or `firecracker`), the Android emulator, a desktop URL. |
 | `egress` | The extra hosts the agent may reach. Hosts that take data out with no account (paste sites, tunnels, request catchers) are refused, even for an admin. |
 | `mcp` | Which connectors the team's sessions get. |
-| `jira` | The team's project and whether the pipeline works its queue. With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
+| `jira` | The team's project and whether the pipeline works its queue. With `jira.usage: false`, the comment on a merged ticket has no agent time, tokens or cost (for a project whose comments sync to a public place). With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
 | `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. |
 | `caps` | Launches per day and dollars per day and per month, inside the operator's ceilings. |
 | `prompts` | The team's `CLAUDE.md`, guide and pass goal. Admins edit these as text. |

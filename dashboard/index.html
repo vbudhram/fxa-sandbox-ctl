@@ -2080,7 +2080,9 @@ function teamItemForm(t, rec, f) {
   if (f.item === "jira") return html`<div class="fields2">${lab("project", "Jira project", html`<input id="tf-project" class="input mono" data-tfk="project" value="${d.project}" placeholder="RELAY">`)}${lab("launches_per_day", html`Launches a day, empty for the default <span class="opt">· ${TOPTS?.caps?.launches_per_day != null ? `at most ${TOPTS.caps.launches_per_day}` : "optional"}</span>`, html`<input id="tf-launches_per_day" class="input" type="number" min="0" data-tfk="launches_per_day" value="${d.launches_per_day}">`)}</div>
     <label><input type="checkbox" data-tfk="queue"${d.queue ? " checked" : ""}> Take ai-fixme tickets from the queue</label>
     <label><input type="checkbox" data-tfk="secret"${d.secret ? " checked" : ""}${d.queue ? "" : " disabled"}> Take only secret tickets (a security level, or a security or hackerone label)</label>
-    ${d.queue && d.secret ? html`<p class="hint" data-tf-secret>Needs private work repos. Turns off "Anyone the bot allows" and clears the Jira keys. One team per project.</p>` : ""}${save}`;
+    ${d.queue && d.secret ? html`<p class="hint" data-tf-secret>Needs private work repos. Turns off "Anyone the bot allows" and clears the Jira keys. One team per project.</p>` : ""}
+    <label><input type="checkbox" data-tfk="usage"${d.usage ? " checked" : ""}${d.queue ? "" : " disabled"}> Show agent time, tokens and cost in the merged comment</label>
+    <p class="hint">Turn this off when the team's Jira comments sync to a public place.</p>${save}`;
   if (f.item === "tools" && Array.isArray(TOPTS?.connectors)) return html`<label><input type="checkbox" data-tfk="dflt"${d.dflt ? " checked" : ""}> Use the bot default</label>
     ${d.dflt ? "" : html`<fieldset class="group field"><legend class="lb">MCP connectors</legend>${TOPTS.connectors.map(c => html`<label><input type="checkbox" data-tfset="mcp" data-v="${c}"${list0(d.mcp).includes(c) ? " checked" : ""}> <span class="mono">${c}</span></label>`)}</fieldset>`}${save}`;
   if (f.item === "tools") return html`${lab("mcp", html`MCP connectors <span class="opt">· comma separated, empty for none</span>`, html`<input id="tf-mcp" class="input mono" data-tfk="mcp" value="${d.mcp}" placeholder="the bot default">`, "Leave it as the bot default to use the connectors the bot has.")}
@@ -2132,7 +2134,7 @@ function teamItemDraft(item, rec) {
     skills: { skills: [...(rec.skills ?? [])] },
     boot: { script: rec.boot?.script ?? "" },
     secrets: { jira: String(rec.secrets?.jira ?? "").replace(/^fxa-team-[a-z0-9-]+--/, ""), runtime: (rec.secrets?.runtime ?? []).map(r => ({ what: String(r.secret).replace(/^fxa-team-[a-z0-9-]+--/, ""), path: r.path })) },
-    jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, launches_per_day: c.launches_per_day ?? "" },
+    jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, usage: j.usage !== false, launches_per_day: c.launches_per_day ?? "" },
     tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
     caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "" },
     pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", ") } }[item];
@@ -2154,7 +2156,7 @@ function teamPatch(f) {
   if (f.item === "access") return { access: { ...(rec.access ?? {}), open: !!d.open, users: d.open ? rec.access?.users ?? [] : list([].concat(d.users, d.uid ?? "").join(",")), channels: d.open ? rec.access?.channels ?? [] : [...new Set([...d.chans, ...list(d.other)])], jira_prefixes: list(d.prefixes) } };
   // The Jira and Budget forms share caps: each replaces only its own keys.
   const caps = o => { const c = drop({ ...(rec.caps ?? {}), ...o }); return Object.keys(c).length ? c : undefined; };
-  if (f.item === "jira") { const j = drop({ project: d.project.trim(), queue: d.queue || undefined, secret: d.queue && d.secret || undefined });
+  if (f.item === "jira") { const j = drop({ project: d.project.trim(), queue: d.queue || undefined, secret: d.queue && d.secret || undefined, usage: d.usage ? undefined : false });
     // A secret team cannot be open or list Jira keys (lib/team_record.py), so the save clears both.
     return { jira: Object.keys(j).length ? j : undefined, caps: caps({ launches_per_day: num(d.launches_per_day) }), ...(j.secret ? { access: { ...(rec.access ?? {}), open: false, jira_prefixes: [] } } : {}) }; }
   if (f.item === "tools") return { mcp: d.dflt ? undefined : list(d.mcp) };
@@ -2197,7 +2199,7 @@ function teamInputsHtml(t, rec, f) {
   const on = sched.filter(x => !x.paused).length, held = sched.length - on, nx = Math.min(...sched.map(x => x.next ?? Infinity)), depOn = dep.filter(x => !x.paused).length;
   const depL = RT.team === t.profile && Array.isArray(RT.list) ? RT.list.filter(r => r.data?.on === "pr-label" && !r.paused).map(r => `On for ${r.data.pr?.repo ?? (r.data.repos ?? [])[0] ?? "its repo"}, label ${r.data.pr?.label ?? "agent-help"}`) : [];
   return html`<div class="stack sm">${row("access", "Slack", slack[1], [slack[0] + (a.open || n ? after : ""), keys.length ? `A message with ${keys.map(k => `${k}-123`).join(" or ")} picks this team` : ""], btn("access", "Change"))}
-    ${row("jira", "Jira queue", jira[1], [jira[0], j.project ? `Jira login: ${rec.secrets?.jira ? login : "the bot's"}` : ""], btn("jira", j.project ? "Change" : "Set up"))}
+    ${row("jira", "Jira queue", jira[1], [jira[0], j.project ? `Jira login: ${rec.secrets?.jira ? login : "the bot's"}` : "", j.queue && j.usage === false ? "The merged comment shows no time, tokens or cost" : ""], btn("jira", j.project ? "Change" : "Set up"))}
     ${rs ? html`${row("routines", "Routines", on ? tag("on", "ok") : tag("off"), [sched.length ? `${[on || !held ? `${on} on a schedule` : "", held ? `${held} paused` : ""].filter(Boolean).join(", ")}${nx < Infinity ? ` · next run ${stamp(nx)}` : ""}` : "None"], go)}
       ${row("depfix", "Dependency PRs", depOn ? tag("on", "ok") : tag("off"), [depOn ? (depL.length ? depL.join("; ") : `${depOn} on`) : "Off"], go)}` : ""}</div>`;
 }

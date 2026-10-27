@@ -203,13 +203,15 @@ def check(rec, name=None):
             bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
-    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret"})
+    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage"})
     if "project" in jira and not PROJECT.fullmatch(str(jira["project"])):
         bad.append("jira.project must be a Jira project key")
     if "queue" in jira:
         flag(jira["queue"], "jira.queue")
     if jira.get("queue") and "project" not in jira:
         bad.append("jira.queue needs jira.project")
+    if "usage" in jira:
+        flag(jira["usage"], "jira.usage")
     # The secret tickets of a project (a level or a secret label) go to this team's private repos.
     if "secret" in jira:
         flag(jira["secret"], "jira.secret")
@@ -328,6 +330,9 @@ def env(rec):
         yield "PIPE_SECRET_TICKETS", "1"
         yield "PIPE_QUEUE_LABEL", "ai-fixme"
         yield "PIPE_LABEL_PREFIX", "ai-fixme-private"
+    # A team whose Jira comments sync to a public place keeps time, tokens and cost out of the merged comment.
+    if jira.get("usage") is False:
+        yield "PIPE_MERGE_USAGE", "0"
     pr = rec.get("pr", {})
     yield "PIPE_PR_OPEN", "1" if pr.get("open", True) else "0"
     if pr.get("reviewers"):
