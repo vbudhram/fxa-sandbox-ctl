@@ -2089,7 +2089,7 @@ function teamItemForm(t, rec, f) {
   const O = TOPTS ?? {}, wait = O.loading ? html`<p class="hint">Loading the choices…</p>` : O.err ? html`<p class="unknown">The choices did not load: ${O.err}</p>` : "";
   const row = (list, i, fields) => html`<div class="fields2">${fields}<button type="button" class="linkbtn" data-tf-pop="${list}" data-i="${i}">Remove</button></div>`;
   if (f.item === "name") return html`${lab("label", "Name shown", html`<input id="tf-label" class="input" data-tfk="label" maxlength="40" value="${d.label}" placeholder="${teamCap(t.profile)}">`, `Letters, digits, spaces and ._()-. Empty shows ${teamCap(t.profile)}. The team's id stays ${t.profile}.`)}${save}`;
-  if (f.item === "admins") return html`<p class="hint">Team admins get the team's alerts. Dashboard rights come from TEAM_ADMINS on the host.</p>
+  if (f.item === "admins") return html`<p class="hint">Team admins get the team's alerts, and in Slack they can use every control in the team's threads, as the owner can. Dashboard rights come from TEAM_ADMINS on the host.</p>
     ${d.admins.map((a, i) => row("admins", i, html`${lab(`a${i}s`, "Slack member ID", html`<input id="tf-a${i}s" class="input mono" data-tfi="admins:${i}" data-tfk="slack" value="${a.slack}" placeholder="U0123ABCD">`, personLabel(a.slack) !== a.slack ? personLabel(a.slack) : "")}
       ${lab(`a${i}e`, "Email", html`<input id="tf-a${i}e" class="input" data-tfi="admins:${i}" data-tfk="email" value="${a.email}">`)}`))}
     ${peoplePicker("admins", d.admins.map(a => a.slack))}${save}`;
@@ -2116,7 +2116,11 @@ function teamItemForm(t, rec, f) {
           ${lab(`r${i}p`, "Path on the runner", html`<input id="tf-r${i}p" class="input mono" data-tfi="runtime:${i}" data-tfk="path" value="${r.path}" placeholder="/home/agent/repo/.env">`)}`))}
         ${d.runtime.length < 10 ? html`<button type="button" class="linkbtn" data-tf-push="runtime">Add a file</button>` : ""}</fieldset>${save}`; }
   if (f.item === "pr") return html`<label><input type="checkbox" data-tfk="open"${d.open ? " checked" : ""}> Open draft PRs (off: the team gets diffs only)</label>
-    ${lab("reviewers", html`Reviewers <span class="opt">· comma separated, optional</span>`, html`<input id="tf-reviewers" class="input mono" data-tfk="reviewers" value="${d.reviewers}">`)}${save}`;
+    ${lab("reviewers", html`Reviewers <span class="opt">· comma separated, optional</span>`, html`<input id="tf-reviewers" class="input mono" data-tfk="reviewers" value="${d.reviewers}">`)}
+    <fieldset class="group field"><legend class="lb">Who can open a PR from Slack <span class="opt">· ${d.users.length}</span></legend>
+      <p class="hint">Nobody listed: anyone who can steer the session. Team admins always can.</p>
+      ${d.users.length ? html`<ul class="plist">${d.users.map(u => html`<li><span>${personLabel(u)}${personLabel(u) !== u ? html` <span class="mono hint">${u}</span>` : ""}</span><button type="button" class="linkbtn" data-tfunpick="users" data-id="${u}" aria-label="Remove ${personLabel(u)}">Remove</button></li>`)}</ul>` : ""}
+      ${peoplePicker("users", d.users)}${lab("uid", html`Or paste a member ID <span class="opt">· optional</span>`, html`<input id="tf-uid" class="input mono" data-tfk="uid" value="${d.uid ?? ""}" placeholder="U0123ABCD">`)}</fieldset>${save}`;
   return "";
 }
 // The draft values of an item, from the record as loaded.
@@ -2135,7 +2139,7 @@ function teamItemDraft(item, rec) {
     jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, usage: j.usage !== false, launches_per_day: c.launches_per_day ?? "" },
     tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
     caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "" },
-    pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", ") } }[item];
+    pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", "), users: [...(p.users ?? [])] } }[item];
 }
 // The record with a patch applied (a key set to undefined is removed), and whether the change needs a new test.
 function teamApply(rec, patch) {
@@ -2170,7 +2174,7 @@ function teamPatch(f) {
   if (f.item === "boot") return { boot: d.script ? { script: d.script, sha256: (TOPTS?.boot ?? []).find(b => b.script === d.script)?.sha256 ?? rec.boot?.sha256 ?? "" } : undefined };
   if (f.item === "secrets") { const rt = d.runtime.filter(r => r.what.trim() || r.path.trim()).map(r => ({ secret: pre + r.what.trim(), path: r.path.trim() }));
     return { secrets: some(drop({ jira: d.jira.trim() ? pre + d.jira.trim() : undefined, runtime: rt.length ? rt : undefined })) }; }
-  if (f.item === "pr") return { pr: drop({ ...(rec.pr ?? {}), open: d.open, reviewers: list(d.reviewers).length ? list(d.reviewers) : undefined }) };
+  if (f.item === "pr") return { pr: drop({ ...(rec.pr ?? {}), open: d.open, reviewers: list(d.reviewers).length ? list(d.reviewers) : undefined, users: (u => u.length ? u : undefined)(list([].concat(d.users, d.uid ?? "").join(","))) }) };
   return {};
 }
 // The ways a session of a record team can start, each with its rule and the form that changes it.
@@ -2221,7 +2225,7 @@ function teamSetupHtml(t) {
     ${card(html`<h3>Budget</h3>${rowv("caps", "Spend cap", [c.usd_per_day != null ? `${usd(c.usd_per_day)} a day` : "", c.usd_per_month != null ? `${usd(c.usd_per_month)} a month` : ""].filter(Boolean).join(", ") || "No spend cap", "Change")}`, { flat: true, cls: "stack sm" })}
     ${more("about", ["About the team", "name, admins and PR rules"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
       ${rowv("admins", "Team admins", (rec.admins ?? []).length ? rec.admins.map(a => a.email || a.slack).join(", ") : "None", (rec.admins ?? []).length ? "Change" : "Add")}
-      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}`, "Change")}`)}
+      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${(rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}${(rec.pr?.users ?? []).length ? `, opened from Slack by ${rec.pr.users.length} ${rec.pr.users.length === 1 ? "person" : "people"} and the admins` : ""}`, "Change")}`)}
     ${more("runs", ["How it runs", "a change needs a new test"], html`${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}
       ${rowv("skills", "Skills", (rec.skills ?? []).length ? rec.skills.join(", ") : "The base skills only", "Change")}
       ${rowv("runner", "Runner", `${rec.stack?.kind === "fxa" ? `FxA stack from ${rec.stack.repo ?? "mozilla/fxa"}` : "No stack"}, ${rec.runner?.backend === "firecracker" ? "Firecracker" : "GCE VM"}${rec.runner?.android ? ", Android" : ""}`, "Change")}
@@ -2370,7 +2374,7 @@ document.addEventListener("click", async e => {
   if (b.dataset.tf) {
     if (b.dataset.tf === "access") loadTeamChans(team);
     TFORM = { team, item: b.dataset.tf, d: teamItemDraft(b.dataset.tf, TED.rec) }; TPEOPLE = null;
-    if (b.dataset.tf === "access") loadPeopleNames(TFORM.d.users); if (b.dataset.tf === "admins") loadPeopleNames(TFORM.d.admins.map(a => a.slack));
+    if (["access", "pr"].includes(b.dataset.tf)) loadPeopleNames(TFORM.d.users); if (b.dataset.tf === "admins") loadPeopleNames(TFORM.d.admins.map(a => a.slack));
     if (["tools", "caps", "skills", "boot", "egress"].includes(b.dataset.tf)) loadTeamOpts();
     teamPaint();
     return setTimeout(() => document.querySelector("[data-tform] .ckbody :is(input, textarea, select)")?.focus());

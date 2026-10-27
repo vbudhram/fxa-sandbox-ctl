@@ -89,5 +89,14 @@ fx '.'
 hint='await new Promise(r => setTimeout(r, 700)); const h = [...document.querySelectorAll(".hint")].map(e => e.textContent).join(" "); return /not active/.test(h) + "|" + /not shown here/.test(h)'
 ck "an active team's hint has no 'not active' rule and no 'not shown here'; a draft's has the rule" "false|false,true|false" \
   "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$hint"),$(bash "$p" '#teams/example/settings' --fixture "$F" --probe "$hint")"
+# PR rules: a pasted member ID saves to pr.users and keeps the other PR rules; the row counts them.
+fx '(."/api/teams/example".pr) = {"open": true, "reviewers": ["mozilla/fxa-devs"]}'
+pru="$stub"' try { await w(700); q("[data-tf=pr]").click(); await w(400); const e = q("#tf-uid"); e.value = "U0PRUSE1"; e.dispatchEvent(new Event("input", { bubbles: true }));
+  q("[data-tf-save]").click(); await w(500); return JSON.stringify(sent.filter(x => /\/api\/teams\/example$/.test(x[0]))[0]?.[1]?.record?.pr) } catch (e) { return "ERR " + e.message; }'
+ck "the PR form saves a pasted member ID to pr.users and keeps open and reviewers" '{"open":true,"reviewers":["mozilla/fxa-devs"],"users":["U0PRUSE1"]}' \
+  "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$pru")"
+fx '(."/api/teams/example".pr) = {"open": true, "users": ["U0PRUSE1", "U0PRUSE2"]}'
+ck "a team with pr.users says who opens PRs from Slack in PR rules" "true" \
+  "$(bash "$p" '#teams/example/settings' --fixture "$G" --probe "$stub"' await w(700); return /opened from Slack by 2 people and the admins/.test(q("#s-teams").textContent)')"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

@@ -178,6 +178,7 @@ over a record of the same name. All other teams are records.
 | Key | What it sets |
 |---|---|
 | `label`, `status` | The name people see. `draft`, `active` or `disabled`. A team turns active only through `profile enable`, after `profile test` passes at that generation. |
+| `admins` | The team admins, by Slack ID and email. They get the team's alerts, and in Slack they can use every control in the team's threads, as the owner can. FxA has no record: the bot's `PROFILE_ADMINS` and `PROFILE_PR_USERS` (`fxa:U1+U2`) hold its lists. |
 | `access` | Who may start sessions: listed users, channels, Jira prefixes, or open to everyone allowed. A team with a private repo cannot be open. |
 | `repos` | Up to 8 repos, each with a role: `work` (writable, ships), `dep` (runs beside it), `data`, `ref` (read-only). Each has a path and a base branch. |
 | `stack` | `fxa` (the FxA stack runs in the runner) or `none`. A team without the FxA stack must bring its own goal. `stack.repo` names the row the stack runs from, for a private fork of FxA. |
@@ -185,7 +186,7 @@ over a record of the same name. All other teams are records.
 | `egress` | The extra hosts the agent may reach. Hosts that take data out with no account (paste sites, tunnels, request catchers) are refused, even for an admin. |
 | `mcp` | Which connectors the team's sessions get. |
 | `jira` | The team's project and whether the pipeline works its queue. With `jira.usage: false`, the comment on a merged ticket has no agent time, tokens or cost (for a project whose comments sync to a public place). With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
-| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. |
+| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. `users` lists the Slack users who may open a PR or push from Slack, beside the team admins; with none listed, anyone who can steer may. |
 | `caps` | Launches per day and dollars per day and per month, inside the operator's ceilings. |
 | `prompts` | The team's `CLAUDE.md`, guide and pass goal. Admins edit these as text. |
 | `skills` | Skills from the reviewed catalog (`skills/team-catalog.txt`). |

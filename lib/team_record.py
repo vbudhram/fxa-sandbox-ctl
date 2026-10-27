@@ -223,9 +223,12 @@ def check(rec, name=None):
         if acc.get("jira_prefixes"):
             bad.append("a team that takes secret tickets cannot list access.jira_prefixes: a Slack tag of a key starts the public team's session")
 
-    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers"})
+    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users"})
     if "open" in pr:
         flag(pr["open"], "pr.open")
+    # pr.users: the Slack users who may open a PR from Slack, beside the team admins. None listed: anyone who can steer.
+    if "users" in pr:
+        strs(pr["users"], "pr.users", USER, 200)
     if "reviewers" in pr and not REVIEWERS.fullmatch(str(pr["reviewers"])):
         bad.append("pr.reviewers must be a GitHub team or user name")
 
@@ -422,6 +425,7 @@ def index(folder):
             pass
         teams[rec["name"]] = {"label": rec.get("label", rec["name"]), "status": rec.get("status", "draft"),
                               "generation": gen, "access": rec.get("access", {}),
+                              "admins": [a["slack"] for a in rec.get("admins", [])], "pr_users": rec.get("pr", {}).get("users", []),
                               "jira": rec.get("jira", {}).get("project", ""), "queue": rec.get("jira", {}).get("queue") is True,
                               "secret": rec.get("jira", {}).get("secret") is True}
     return {"schema": 1, "teams": teams}
