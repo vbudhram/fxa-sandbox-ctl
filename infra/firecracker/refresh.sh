@@ -47,6 +47,8 @@ cc="$(sed -n 's/^claude \([0-9][0-9.]*\)$/\1/p' <<< "$tc" | head -1)"; cx="$(sed
 set -euo pipefail
 cd /home/agent/fxa && source /etc/agent-env.sh
 git fetch -q origin main && git checkout -q -B main "$1"
+# The clone carries over from the last snapshot: build output that main no longer ignores would show as a change in every session.
+git ls-files -o --exclude-standard | sed 's/^/removed untracked: /'; git ls-files -o --exclude-standard -z | xargs -0 -r rm -f --
 if [ "$(sha256sum yarn.lock | cut -d' ' -f1)" != "$(cat /home/agent/.image-lock-hash 2>/dev/null)" ]; then
   echo "yarn.lock moved: installing"
   # A rebuild over the old tree runs esbuild's install.js on its already-swapped native bin/esbuild, which fails: relink from the cache.

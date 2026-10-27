@@ -79,6 +79,13 @@ check "fc status drops lines that are not plain key=value" "snapshot=20261011-17
 mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho exit-code\n' > "$tmp/bin/systemctl"; chmod +x "$tmp/bin/systemctl"
 _fc_ssh() { PATH="$tmp/bin:$PATH" bash -c "$1" 2>/dev/null; }
 check "with no status file, fc status reads systemd's result" "refresh=exit-code" "$(fc_status | grep '^refresh=')"
+# refresh.sh removes the clone's untracked files that git does not ignore, and keeps ignored and tracked ones.
+g="$tmp/clone"; mkdir -p "$g/app/styles" && git -C "$g" init -q && echo node_modules > "$g/.gitignore" && echo t > "$g/kept.txt"
+git -C "$g" add . && git -C "$g" -c user.email=t@example.com -c user.name=t commit -qm init
+mkdir -p "$g/node_modules" && echo x > "$g/node_modules/dep.js" && echo y > "$g/app/styles/main.css"
+out="$(cd "$g" && bash -c "$(grep -F 'git ls-files -o --exclude-standard |' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")")"
+check "refresh removes a stale untracked build file and says so" "removed untracked: app/styles/main.css|no|yes|yes" \
+  "${out}|$([ -e "$g/app/styles/main.css" ] && echo yes || echo no)|$([ -e "$g/node_modules/dep.js" ] && echo yes || echo no)|$([ -e "$g/kept.txt" ] && echo yes || echo no)"
 # refresh.sh's traps: a refresh stopped by a signal records a failure, not success.
 { echo 'outcome() { echo "$1" > "$OUT"; }'; grep -E "^trap 'outcome|^trap 'exit 143' TERM" "$SANDBOX_ROOT/infra/firecracker/refresh.sh"; echo 'sleep 5'; } > "$tmp/trap.sh"
 set -m; OUT="$tmp/outcome" bash "$tmp/trap.sh" & tp=$!; set +m; sleep 1; kill -TERM -- "-$tp" 2>/dev/null || kill -TERM "$tp"; wait "$tp" 2>/dev/null
