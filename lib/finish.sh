@@ -465,9 +465,9 @@ finish_diff_only() {
   mb="$(git -C "$wt" merge-base HEAD "origin/${FXA_WORKTREE_BASE:-main}" 2>/dev/null)" \
     || { echo "ERROR: no merge-base with origin/${FXA_WORKTREE_BASE:-main} in ${wt}" >&2; return 1; }
   dir="${PIPE_STATE_DIR}/diffs"; patch="${dir}/${key}.patch"; mkdir -p "$dir" || return 1
-  # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files.
+  # Commits from a rebase round, the edits, and new files; never the .fxa-* scratch files or a new test plan.
   ( cd "$wt" && git diff --binary --no-ext-diff --no-textconv "$mb" -- . ':(exclude).fxa-*' \
-      && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' \
+      && git ls-files -o --exclude-standard -z -- . ':(exclude).fxa-*' ':(exclude,glob)*test-plan.json' ':(exclude,glob).*test-plan.json' ':(exclude,glob)*test_plan.json' \
         | while IFS= read -r -d '' f; do git diff --binary --no-ext-diff --no-textconv --no-index -- /dev/null "$f" || true; done ) > "${patch}.diff" \
     || { rm -f "${patch}.diff"; echo "ERROR: could not write ${patch}" >&2; return 1; }
   [ -s "${patch}.diff" ] || { rm -f "$patch" "${patch}.diff"; echo "ERROR: nothing to ship: the run changed no file." >&2; return 1; }

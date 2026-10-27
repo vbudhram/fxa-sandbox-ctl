@@ -47,6 +47,8 @@ pipeline_ensure_clone() { :; }; worktree_repo_root() { printf '%s\n' "$tmp/fxa";
 # The runner's tree: one edit, one new file, orchestration files.
 mkdir -p "$tmp/runner"; printf 'a\nedit\n' > "$tmp/runner/a.txt"; printf 'new\n' > "$tmp/runner/b.txt"
 printf '{}' > "$tmp/runner/.fxa-auto-done.json"
+# A team's test plan (any name) is the runner's notes, not the change: it never ships.
+printf '{}' > "$tmp/runner/.sync-test-plan.json"; printf '{}' > "$tmp/runner/test-plan.json"
 vm_pull_tree() { rsync -a --exclude .git --exclude node_modules "$tmp/runner/" "$3/"; }
 echo "{\"key\":\"agent-t1\",\"state\":\"active\",\"base_sha\":\"$(g -C "$tmp/fxa" rev-parse HEAD)\"}" > "$tmp/agent-t1.json"
 session_checkout agent-t1 "$tmp/wt" 2>/dev/null

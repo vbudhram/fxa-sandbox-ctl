@@ -158,6 +158,7 @@ worktree_filtered_status() {
   local extra_pattern="${FXA_DIRTY_IGNORE:-}"
   git -C "$path" status --porcelain 2>/dev/null \
     | grep -vE '^\?\? \.fxa-' \
+    | grep -vE '^\?\? \.?[A-Za-z0-9_-]*test[-_]plan\.json$' \
     | grep -vE '^\?\? ai/?$' \
     | grep -vE '^\?\? \.claude(/|$)' \
     | grep -vE '^\?\? packages/fxa-auth-server/config/newKey\.json$' \

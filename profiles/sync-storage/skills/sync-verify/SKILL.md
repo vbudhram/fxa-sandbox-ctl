@@ -5,7 +5,7 @@ description: Verify a syncstorage-rs change in the Sync Storage sandbox, the way
 
 # Verify a change
 
-1. Write a test plan before you change code: `/workspace/.sync-test-plan.json`. Each check is a
+1. Write a test plan before you change code: `/workspace/.fxa-sync-test-plan.json`. Each check is a
    command that shows the bug from outside, the way Firefox or a client meets it: a `curl` to
    the token server or storage on :8000, a SQL read, or a Python step with PyFxA. A check must
    fail before the fix and pass after it. Run it once before the fix and keep that output.
@@ -20,8 +20,8 @@ description: Verify a syncstorage-rs change in the Sync Storage sandbox, the way
    that way passes on the old code too and proves nothing.
 2. Show the plan, then run it:
    ```
-   bash ~/.claude/skills/sync-verify/verify.sh --plan /workspace/.sync-test-plan.json         # the plan
-   bash ~/.claude/skills/sync-verify/verify.sh --run --plan /workspace/.sync-test-plan.json   # run it
+   bash ~/.claude/skills/sync-verify/verify.sh --plan /workspace/.fxa-sync-test-plan.json         # the plan
+   bash ~/.claude/skills/sync-verify/verify.sh --run --plan /workspace/.fxa-sync-test-plan.json   # run it
    ```
    It runs, in order: build, `cargo fmt --check`, clippy (`-D warnings`), the tests of each
    changed crate with `cargo nextest run --workspace -E 'package(<crate>)'` on the test
