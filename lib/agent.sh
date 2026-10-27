@@ -221,6 +221,8 @@ _put_run_files() {
   done
   # A team stack's saved work, one patch and bundle for each repo (_trees_restore).
   for f in "$slot"/.fxa-resume.*.patch "$slot"/.fxa-resume.*.bundle; do [ -s "$f" ] && items+=("${f##*/}"); done
+  # The design the host read from Figma (launch.md): the screenshot and the exported assets.
+  [ -d "${slot}/.fxa-auto-design" ] && items+=(.fxa-auto-design)
   # The slot's own changes too, so a relaunch resumes a cut-off run instead of
   # starting over. The runner is pinned to the slot's HEAD; this is the diff on
   # top. Deletions travel as a list, since a tar cannot carry an absence.

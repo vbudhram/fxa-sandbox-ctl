@@ -16,5 +16,10 @@ _put_run_files agent-x1 "$tmp/slot" >/dev/null 2>&1; rc=$?
 check "a tar that fails part way leaves no archive and ships nothing" "1|no|no" "$rc|$([ -e "$LOG_DIR/agent-x1-run.tar" ] && echo yes || echo no)|$([ -e "$tmp/puts" ] && echo yes || echo no)"
 check "agent_stop removes a run tar a killed launch left" "yes" \
   "$(sed -n '/^agent_stop() {/,/^}/p' "$here/agent.sh" | grep -q 'rm -f .*"${LOG_DIR}/${name}-run.tar"' && echo yes)"
+# The host's Figma export ships into the runner with the run files.
+mkdir -p "$tmp/slot/.fxa-auto-design"; echo svg > "$tmp/slot/.fxa-auto-design/phone.svg"
+tar() { while [ "$1" != -czf ]; do shift; done; shift; shift; printf '%s\n' "$@" > "$tmp/tarred"; : > "$LOG_DIR/agent-x2-run.tar"; }
+_put_run_files agent-x2 "$tmp/slot" >/dev/null 2>&1
+check "the design folder from Figma ships with the run files" "1" "$(grep -cx './.fxa-auto-design' "$tmp/tarred")"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

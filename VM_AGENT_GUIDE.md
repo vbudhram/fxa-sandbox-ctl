@@ -45,6 +45,9 @@ Chat sessions do not have it; do not report that it is missing.
   one MCP server, `fxa`, whose tools are named `<connector>__<tool>`. They are
   read-only. A tool that refuses a call says why; do not retry it another way.
   If something should be written (a Jira comment, a reply), tell the person.
+  A design the host read from Figma is in `/workspace/.fxa-auto-design/`: `screen.png` and
+  the frame's images and SVGs. Use those files as they are; never draw, redraw or trace art
+  the design has. A missing image gets a placeholder and a PR body line that asks for it.
   Jira, Slack and Figma links are readable through these tools, not the network:
   `jira__getJiraIssue` and `jira__searchJiraIssuesUsingJql` (the host pins the
   site and scopes JQL to FXA; ask for `fields` such as `summary` and `status`),
