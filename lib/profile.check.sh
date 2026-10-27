@@ -136,6 +136,8 @@ curl() { echo "call" >> "$tmp/ghcalls"; local u="${*: -1}"
 pj() { PIPE_PROFILE="$1" PIPE_REPO_SLUG="$2" PIPE_DEP_REPOS="$3" PIPE_PR_OPEN="$4" pipeline_profile_json | jq -c '[.read_only, (.repos[] | "\(.slug):\(.role):\(.write)")]'; }
 check "fxa can write to its repo" '[false,"mozilla/fxa:work:true"]' "$(pj fxa mozilla/fxa '' 1)"
 check "a read-only profile writes nowhere, deps included" '[true,"mozilla/blurts-server:work:false","mozilla/fxa:dep:false"]' "$(pj monitor mozilla/blurts-server mozilla/fxa 0)"
+check "PRs off: the work repo's reason says where to turn them on" '"PRs are off for this team; a team admin turns them on in Settings, PR rules"' \
+  "$(PIPE_PROFILE=monitor PIPE_REPO_SLUG=mozilla/blurts-server PIPE_PR_OPEN=0 pipeline_profile_json | jq -c '.repos[0].why')"
 check "no App on the work repo: no write" '"the agent'"'"'s GitHub App is not installed on this repo"' \
   "$(PIPE_PROFILE=x PIPE_REPO_SLUG=mozilla/other PIPE_PR_OPEN=1 pipeline_profile_json | jq -c '.repos[0].why')"
 check "the App's repo list is read once, then cached" "1" "$(: > "$tmp/ghcalls"; rm -f "$PIPE_STATE_DIR"/app-repos.*.txt; pj fxa mozilla/fxa '' 1 >/dev/null; pj fxa mozilla/fxa '' 1 >/dev/null; wc -l < "$tmp/ghcalls" | tr -d ' ')"

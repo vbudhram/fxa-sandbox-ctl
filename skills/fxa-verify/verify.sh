@@ -143,7 +143,8 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
       add "${pre}$p tests" "$p" "npx jest --findRelatedTests $r" ;;
   esac
   if [ "$LINT" = 1 ]; then
-    add "${pre}$p lint" "$p" "npx eslint $r"
+    # fxa-settings' CI build treats a lint warning as an error (CI=true), so a warning fails the row here too.
+    add "${pre}$p lint" "$p" "npx eslint $([ "$p" = packages/fxa-settings ] && echo '--max-warnings 0 ')$r"
     # The App commits through the API, so no lint-staged hook formats the change: format the
     # files here, as the hook would, and say which. Exit 2 is a file Prettier cannot parse.
     add "${pre}$p format" "$p" "f=\$(npx prettier --list-different --ignore-unknown $(rel "$p" "${fs[@]}")); rc=\$?; [ \$rc -le 1 ] || exit \$rc; [ -z \"\$f\" ] || { npx prettier --write --ignore-unknown \$f >/dev/null && echo \"formatted: \$(echo \$f)\"; }"

@@ -887,7 +887,7 @@ pipeline_profile_json() {
       mcp: (if $mcp_set then ($mcp | split(",") | map(select(. != ""))) else null end),
       defaults: ($defaults | split(" ") | map(select(. != ""))),
       repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",
-                 why: (if $read_only then "the profile is read-only"
+                 why: (if $read_only then "PRs are off for this team; a team admin turns them on in Settings, PR rules"
                        elif ($ok == 0) then "the GitHub App check failed"
                        elif ($installed | index($s | ascii_downcase)) == null then "the agent'"'"'s GitHub App is not installed on this repo"
                        else null end) } | . + { write: (.why == null) }))

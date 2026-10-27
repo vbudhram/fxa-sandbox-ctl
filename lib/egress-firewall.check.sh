@@ -67,6 +67,13 @@ fake="$(mktemp -d)"; mkdir "$fake/templates"
 printf '%s\n' 'echo "egress: WARN ran with $*" >&2' > "$fake/templates/agent-dns.sh"
 vm_exec() { [ "$3" = bash ] || return 0; shift 2; "$@" < /dev/null; }
 check "the template runs on a backend with no stdin" "egress: WARN ran with github.com" "$(SANDBOX_ROOT="$fake" _setup_agent_dns vm github.com 2>&1)"
+# A leak right after a restore gets one more try; a leak that stays still fails.
+sleep() { :; }; n="$(mktemp)"
+vm_exec() { [ "$3" = bash ] || return 0; echo x >> "$n"; [ "$(wc -l < "$n")" -gt 1 ] || { echo "egress: the agent's DNS answered a name outside the allowlist" >&2; return 1; }; }
+check "a DNS leak that clears on the second try passes" "0|2" "$(_setup_agent_dns vm github.com >/dev/null 2>&1; echo "$?|$(wc -l < "$n" | tr -d ' ')")"
+vm_exec() { [ "$3" = bash ] || return 0; echo "egress: the agent's DNS answered a name outside the allowlist" >&2; return 1; }
+check "a DNS leak that stays fails after two tries" "1" "$(_setup_agent_dns vm github.com >/dev/null 2>&1; echo $?)"
+unset -f sleep
 # The template itself, with fake tools: the agent's resolved API stays open, so it must fail.
 bin="$(mktemp -d)"
 for t in dnsmasq iptables busctl chmod; do printf '#!/bin/sh\nexit 0\n' > "$bin/$t"; done

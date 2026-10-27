@@ -716,7 +716,13 @@ _setup_agent_dns() {
   local name="$1" err rc=0 b64; shift
   # In argv, not stdin: tart exec passes no stdin, so bash -s would run an empty script.
   b64="$(base64 < "${SANDBOX_ROOT}/templates/agent-dns.sh" | tr -d '\n')"
-  err="$(vm_exec "$name" sudo bash -c 'f=$(mktemp) && echo "$1" | base64 -d > "$f" && shift && bash "$f" "$@"; rc=$?; rm -f "$f"; exit $rc' _ "$b64" "$@" 2>&1 >/dev/null)" || rc=$?
+  local try
+  for try in 1 2; do
+    rc=0; err="$(vm_exec "$name" sudo bash -c 'f=$(mktemp) && echo "$1" | base64 -d > "$f" && shift && bash "$f" "$@"; rc=$?; rm -f "$f"; exit $rc' _ "$b64" "$@" 2>&1 >/dev/null)" || rc=$?
+    # A sandbox just restored can still be restarting its resolver, which reopens a lookup path: apply and check again once.
+    [ "$rc" -ne 0 ] && [ "$try" = 1 ] && grep -q 'outside the allowlist' <<< "$err" || break
+    echo "  egress: the DNS check leaked right after the restore; applying it again" >&2; sleep 5
+  done
   grep -m1 'WARN' <<< "$err" >&2 || true
   [ "$rc" -eq 0 ] || { printf '%s\n' "${err:-egress: the agent DNS step failed (exit $rc)}" | tail -2 >&2; return "$rc"; }
 }
