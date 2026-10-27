@@ -70,6 +70,15 @@ check "styles only: Medium as UI, and a screenshot is the proof" "- Merge risk: 
 N=300 repo packages/fxa-settings/package.json yarn.lock packages/fxa-settings/src/__snapshots__/A.snap; pass1
 check "dependencies are named and Medium; the lock file and snapshots do not count toward the size" "- Merge risk: Medium. 3 files, +300 -0: dependencies." "$(rows | tr '|' '\n' | grep '^- Merge')"
 
+# Code outside the listed areas is Low when small; a long test does not size the change.
+proof() { printf 'fxa-verify 2026-10-26T00:00:00Z\nPASS unit 3s /tmp/a\n' > .fxa-verify-verdict.txt; printf 'fxa-verify-revert 2026-10-26T00:00:00Z proof=yes\n' > .fxa-verify-revert.txt; }
+repo libs/shared/sentry/browser-id.ts; seq 1 120 > libs/shared/sentry/browser-id.test.ts; g add -A; proof
+check "small other code with 120 test lines and a revert proof: Low overall" "**Risk: Low** (the worst of the three below)|- Merge risk: Low. 2 files, +123 -0: other code." "$(rows | tr '|' '\n' | grep -E '^(\*\*Risk|- Merge)' | paste -sd'|' -)"
+N=150 repo libs/shared/sentry/browser-id.ts; proof
+check "other code over 100 code lines is Medium" "- Merge risk: Medium. 1 file, +150 -0: other code." "$(rows | tr '|' '\n' | grep '^- Merge')"
+repo packages/fxa-auth-server/lib/routes/session.js; proof
+check "a small auth change stays High" "- Merge risk: High. 1 file, +3 -0: auth (sessions, tokens, 2FA, OAuth)." "$(rows | tr '|' '\n' | grep '^- Merge')"
+
 rm -rf packages/fxa-settings; check "a repo that is not FxA gets no section" "$body" "$(sec)"
 check "a body with no This pull request heading gets the section at the end" "## Risk" "$(mkdir -p packages/fxa-settings; _finish_risk_section "$tmp/wt" 'plain body' '' | sed -n 3p)"
 exit "$fail"

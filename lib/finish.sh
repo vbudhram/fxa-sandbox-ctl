@@ -352,7 +352,7 @@ finish_media_args() {
 # for the human reviewer: merge risk from the paths and size, rollback from what a revert cannot undo, verification from
 # the runner's records. The host sets the levels (a self-rated risk reads low); the agent's notes only explain. FxA only.
 _finish_risk_section() {
-  local wt="$1" body="$2" notes="${3:-}" f a d files=0 adds=0 dels=0 code=0 logic=0 m=1 r=1 v=1 areas="" why="" sec n pass=0 bad=0 ci=0 med=0
+  local wt="$1" body="$2" notes="${3:-}" f a d files=0 adds=0 dels=0 lines=0 code=0 logic=0 m=1 r=1 v=1 areas="" why="" sec n pass=0 bad=0 ci=0 med=0
   [ -d "${wt}/packages/fxa-settings" ] || { printf '%s' "$body"; return 0; }
   add() { case ", ${areas}, " in *", $1, "*) ;; *) areas="${areas:+${areas}, }$1" ;; esac; }
   because() { case "; ${why}; " in *"; $1; "*) ;; *) why="${why:+${why}; }$1" ;; esac; }
@@ -363,6 +363,8 @@ _finish_risk_section() {
     case "$f" in yarn.lock|*/yarn.lock|package-lock.json|*/package-lock.json|*.snap) ;; *) adds=$((adds + ${a//-/0})); dels=$((dels + ${d//-/0})) ;; esac
     case "$f" in *.spec.*|*.test.*|*/test/*|*/tests/*|*/__tests__/*|*/__mocks__/*|*/__snapshots__/*|*.snap|*.stories.*|packages/functional-tests/*|docs/*|*.md) continue ;; esac
     code=1
+    # Only code lines size the merge risk: a long new test makes a change safer, not riskier.
+    case "$f" in yarn.lock|*/yarn.lock|package-lock.json|*/package-lock.json) ;; *) lines=$((lines + ${a//-/0} + ${d//-/0})) ;; esac
     # Copy (.ftl, and email templates) and dependencies have rules of their own. A style file is UI, but its proof is a picture.
     case "$f" in
       packages/fxa-auth-server/lib/senders/*.ftl|packages/fxa-auth-server/lib/senders/*.mjml|libs/accounts/email-renderer/*.ftl|libs/accounts/email-renderer/*.mjml)
@@ -396,11 +398,11 @@ _finish_risk_section() {
       packages/fxa-profile-server/*|libs/profile/*) [ "$m" -ge 2 ] || m=2; add "the profile server" ;;
       packages/fxa-settings/*|packages/fxa-react/*) [ "$m" -ge 2 ] || m=2; add "settings and React UI" ;;
       packages/fxa-content-server/*) [ "$m" -ge 2 ] || m=2; add "the content server" ;;
-      *) [ "$m" -ge 2 ] || m=2; add "other code" ;;
+      *) add "other code" ;;
     esac
   done < <(git -C "$wt" diff --cached --numstat --no-renames 2>/dev/null)
-  [ $((adds + dels)) -gt 500 ] || [ "$files" -gt 20 ] && m=3
-  [ $((adds + dels)) -gt 100 ] && [ "$m" -lt 2 ] && m=2
+  [ "$lines" -gt 500 ] || [ "$files" -gt 20 ] && m=3
+  [ "$lines" -gt 100 ] && [ "$m" -lt 2 ] && m=2
   # Verification: the verify verdict's rows, the --revert proof and the media.
   if [ -s "${wt}/.fxa-verify-verdict.txt" ]; then
     pass="$(sed 1d "${wt}/.fxa-verify-verdict.txt" | grep -c '^PASS ' || true)"; bad="$(sed 1d "${wt}/.fxa-verify-verdict.txt" | grep -c '^FAIL ' || true)"
