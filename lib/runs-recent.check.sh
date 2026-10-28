@@ -78,6 +78,18 @@ check("a dependency fix for a team admin: its PR, trigger and actor", ("Dependen
 check("a dependency fix for a non-admin: only that it ran, with no PR, team, cost or fix fields", ("Dependency fix", "", None, "", None, None, "depfix", True),
       (lambda x: (x["title"], x["key"], x["pr_number"], x["team"], x["usd"], x.get("fix_pr"), x["src"], x["routine"]))(rr(False)[0]))
 check("a dependency fix is in Recently completed and on the routine filter", (1, 1), (len(rr(True, True)), len(rr(True, False, "routine"))))
+# Another team's run: not in the FxA snapshot, so its own PR link and GitHub give the number, title and merged state.
+calls = []
+class Done: stdout = "fix(syncstorage): keep modified\tmerged\n"
+def fake_run(args, **kw): calls.append(args); return Done()
+real_run, server.subprocess.run = server.subprocess.run, fake_run
+st = [{"at": iso(110), "src": "pipeline", "key": "STOR-460", "end": int(now - 20), "kind": "fix", "usd": 3.6, "min": 33, "pr": True, "prn": 2707, "prr": "mozilla-services/syncstorage-rs", "profile": "sync-storage"}]
+sr = lambda: server.recent_runs(st, snap, int(now), 20, 7, t + "/state", t + "/sess", lambda team: False, True)[0]
+check("another team's PR links to its own repo, with GitHub's title and merged state", ("pr", 2707, "merged", "https://github.com/mozilla-services/syncstorage-rs/pull/2707", "fix(syncstorage): keep modified"),
+      (lambda x: (x["outcome"], x["pr_number"], x["pr_state"], x["pr_url"], x["title"]))(sr()))
+sr()
+check("a merged PR is asked of GitHub once, then cached", 1, len(calls))
+server.subprocess.run = real_run
 server.STATS.data = None
 check("no stats feed: empty with an error", ([], "stats unavailable"), (lambda x: (x["runs"], x["error"]))(get("/api/runs/recent")))
 sys.exit(fail)

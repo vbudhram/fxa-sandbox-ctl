@@ -311,6 +311,29 @@ def fix_label(rec):
     return f"Dependency fix: #{n}" + (f" ({by})" if by else "") if n.isdigit() else "Dependency fix"
 
 
+PR_INFO = {}   # (repo, number) -> (fetched_at, title, state)
+PR_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def pr_info(repo, num, now, budget):
+    """A PR's title and state (open, merged or closed) from GitHub, for a run the FxA snapshot does not know (another
+    team's). A merged or closed PR is cached for good, an open one for 10 min; budget[0] caps the lookups of one request."""
+    c = PR_INFO.get((repo, num))
+    if c and (c[2] != "open" or now - c[0] < 600):
+        return c[1], c[2]
+    if budget[0] <= 0 or not PR_REPO.fullmatch(repo or "") or not isinstance(num, int):
+        return (c[1], c[2]) if c else (None, None)
+    budget[0] -= 1
+    try:
+        out = subprocess.run(["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", '[.title, (if .merged then "merged" else .state end)] | @tsv'],
+                             capture_output=True, text=True, timeout=5)
+        title, state = out.stdout.rstrip("\n").split("\t")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return (c[1], c[2]) if c else (None, None)
+    PR_INFO[(repo, num)] = (now, title, state)
+    return title, state
+
+
 def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=False, ended=False, src_only=None):
     """The newest runs of the stats feed's rows, with a title and an outcome each.
     Titles and PR numbers come from the snapshot; a secured ticket shows no title or PR; hide(team) drops a run.
@@ -341,7 +364,7 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
     pick = (r for r in rows or [] if (r.get("at") or "") >= since)
     if ended:
         pick = (r for r in pick if r.get("src") in ("pipeline", "slack", "depfix") and not r.get("live") and isinstance(r.get("end"), (int, float)) and r["end"] > 0)
-    out = []
+    out, budget = [], [5]
     for r in sorted(pick, key=(lambda r: r["end"]) if ended else (lambda r: r["at"]), reverse=True):
         team = r.get("profile") or "fxa"
         # Passes run every 5 min and would fill the list; the system card shows them.
@@ -354,6 +377,12 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
             title = titles.get(key) or key
             if r.get("pr") and key in prs:
                 num, state = prs[key]
+            elif r.get("pr") and r.get("prn"):
+                # Another team's run: the FxA snapshot does not know it, so the row's own PR link and GitHub name it.
+                num = r["prn"]
+                t, state = pr_info(r.get("prr") or repo, num, now, budget)
+                if t and title == key:
+                    title = t
             outcome = "pr" if r.get("pr") else "no_pr"
             if os.path.exists(os.path.join(state_dir, key + ".secured-noted")):
                 title, num, state = "Secured ticket", None, None
