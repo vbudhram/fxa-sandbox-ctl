@@ -275,4 +275,22 @@ check "options: caps from the env, the catalog, a valid connector name only, and
   "$(jq -r '.caps.usd_per_day' <<< "$o")|$(jq -r '.skills | join(",")' <<< "$o")|$(jq -r '.connectors | join(",")' <<< "$o")|$(jq -r '.boot[0] | .script + ":" + .sha256' <<< "$o")|$(grep -c 'example.com\|Bearer' <<< "$o")"
 check "options: no gateway config gives null connectors, not an empty list" "null" "$(FXA_TEAM_REPO="$tmp/opt" MCP_GATEWAY_CONFIG="$tmp/none.json" python3 -I "$root/lib/team_record.py" options | jq -c .connectors)"
 
+# The FxA keys that differ from the loader defaults: a Jira board and sprint, infra rules, a runner cap.
+f4() { printf '{ "schema": 1, "name": "f4", "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }%s }' "$1" > "$T/f4.json"; py env "$T/f4.json" f4 2>&1; }
+ok4=', "jira": { "project": "FFF", "board": "225", "sprint": "^FxA Sprint " }, "pr": { "infra_checks": ["extract=Bad credentials"] }, "caps": { "runners": 8 }'
+check "the board, the sprint, the infra rules and the runner cap reach the loader" "225|^FxA Sprint |extract=Bad credentials|8" \
+  "$(f4 "$ok4" | awk -F'\t' '/^PIPE_JIRA_BOARD|^PIPE_JIRA_SPRINT_MATCH|^PIPE_INFRA_CHECKS|^PIPE_MAX_LAUNCHES_GCE/{print $2}' | paste -sd'|' -)"
+check "two infra rules join with a comma, as the CI reader splits them" "a=x,b c=y z" \
+  "$(f4 ', "pr": { "infra_checks": ["a=x", "b c=y z"] }' | sed -n 's/^PIPE_INFRA_CHECKS\t//p')"
+r=""; for j in ', "jira": { "board": "x" }' ', "jira": { "sprint": "^FxA" }' ', "jira": { "board": "1", "sprint": "(a+)+" }' \
+  ', "jira": { "board": "1", "sprint": "a[" }' ', "pr": { "infra_checks": ["a=b,c=d"] }' ', "pr": { "infra_checks": ["no-equals"] }' ', "caps": { "runners": 9 }' ', "caps": { "runners": 0 }'; do
+  r="$r $(f4 "$j" | grep -c 'jira.board\|jira.sprint\|pr.infra_checks\|caps.runners')"; done
+check "refused: a board that is not digits, a sprint with no board, a sprint with + or [, an infra rule with a comma or no =, runners 9 or 0" \
+  "1 1 1 1 1 1 1 1" "${r# }"
+check "TEAM_CAP_RUNNERS sets the runners ceiling, and options report it" "0|12" \
+  "$(TEAM_CAP_RUNNERS=12 f4 ', "caps": { "runners": 12 }' | grep -c 'caps.runners')|$(TEAM_CAP_RUNNERS=12 py options | jq -r .caps.runners)"
+check "an accepted sprint means the same in jq test(), the sprint reader" "true|false" \
+  "$(jq -n --arg re '^FxA Sprint ' '"FxA Sprint 12" | test($re)')|$(jq -n --arg re '^FxA Sprint ' '"Other Sprint" | test($re)')"
+rm -f "$T/f4.json"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

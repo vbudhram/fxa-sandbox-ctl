@@ -31,6 +31,11 @@ REVIEWERS = re.compile(r"^([A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]{0,60}$")
 GH_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,49}$")
 DESKTOP = re.compile(r"^http://localhost:[0-9]{2,5}/$")
 STAMP = re.compile(r"^[0-9T:.Z+-]{10,32}$")
+BOARD = re.compile(r"^[0-9]{1,9}$")
+# The sprint name is read with jq test() and an infra rule's log part with grep -E: no regex is compiled
+# here, so both take only a literal subset that means the same in every dialect and cannot be slow.
+SPRINT = re.compile(r"^\^?[A-Za-z0-9 ._:/()-]{1,60}$")
+INFRA = re.compile(r"^[A-Za-z0-9 ._:/()-]{1,80}=[A-Za-z0-9 ._:/()-]{1,120}$")
 
 KEYS = {"schema", "name", "label", "status", "admins", "access", "repos", "stack", "runner",
         "egress", "mcp", "jira", "pr", "caps", "prompts", "skills", "boot", "secrets", "created", "updated"}
@@ -206,9 +211,17 @@ def check(rec, name=None):
             bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
-    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage"})
+    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage", "board", "sprint"})
     if "project" in jira and not PROJECT.fullmatch(str(jira["project"])):
         bad.append("jira.project must be a Jira project key")
+    # jira.board and jira.sprint: a merged ticket goes into the board's active sprint whose name matches.
+    if "board" in jira and (not isinstance(jira["board"], str) or not BOARD.fullmatch(jira["board"])):
+        bad.append("jira.board must be a Jira board id (digits)")
+    if "sprint" in jira:
+        if not isinstance(jira["sprint"], str) or not SPRINT.fullmatch(jira["sprint"]):
+            bad.append("jira.sprint must be an optional ^ and then 1 to 60 letters, digits, spaces or ._:/()-")
+        if "board" not in jira:
+            bad.append("jira.sprint needs jira.board")
     if "queue" in jira:
         flag(jira["queue"], "jira.queue")
     if jira.get("queue") and "project" not in jira:
@@ -226,7 +239,10 @@ def check(rec, name=None):
         if acc.get("jira_prefixes"):
             bad.append("a team that takes secret tickets cannot list access.jira_prefixes: a Slack tag of a key starts the public team's session")
 
-    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users", "labels"})
+    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users", "labels", "infra_checks"})
+    # pr.infra_checks: "check=log text" rules; a failed check whose log has the text is the repo's fault, not the PR's.
+    if "infra_checks" in pr:
+        strs(pr["infra_checks"], "pr.infra_checks", INFRA, 5)
     # pr.labels: GitHub labels added to the team's PRs beside "auto", which the pipeline tracks its PRs by.
     if "labels" in pr:
         strs(pr["labels"], "pr.labels", GH_LABEL, 5)
@@ -238,7 +254,11 @@ def check(rec, name=None):
     if "reviewers" in pr and not REVIEWERS.fullmatch(str(pr["reviewers"])):
         bad.append("pr.reviewers must be a GitHub team or user name")
 
-    caps = obj(rec.get("caps", {}), "caps", {"launches_per_day", "usd_per_day", "usd_per_month"})
+    caps = obj(rec.get("caps", {}), "caps", {"launches_per_day", "usd_per_day", "usd_per_month", "runners"})
+    if "runners" in caps:
+        most, v = ceiling("TEAM_CAP_RUNNERS", 8), caps["runners"]
+        if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= most:
+            bad.append(f"caps.runners must be 1 to {most}")
     for k, env_key, default in (("usd_per_day", "TEAM_CAP_USD_PER_DAY", 200), ("usd_per_month", "TEAM_CAP_USD_PER_MONTH", 3000)):
         if k in caps:
             most, v = ceiling(env_key, default), caps[k]
@@ -334,6 +354,10 @@ def env(rec):
     jira = rec.get("jira", {})
     if jira.get("project"):
         yield "PIPE_JIRA_PROJECT", jira["project"]
+    if jira.get("board"):
+        yield "PIPE_JIRA_BOARD", jira["board"]
+    if jira.get("sprint"):
+        yield "PIPE_JIRA_SPRINT_MATCH", jira["sprint"]
     # The engineer adds ai-fixme to any ticket; a secret team's states are ai-fixme-private-<state>.
     if jira.get("secret") is True:
         yield "PIPE_SECRET_TICKETS", "1"
@@ -348,6 +372,8 @@ def env(rec):
         yield "PIPE_PR_TEAM", pr["reviewers"]
     if pr.get("labels"):
         yield "PIPE_PR_LABELS", ",".join(pr["labels"])
+    if pr.get("infra_checks"):
+        yield "PIPE_INFRA_CHECKS", ",".join(pr["infra_checks"])
     if rec.get("skills"):
         yield "PIPE_TEAM_SKILLS", " ".join(rec["skills"])
     if rec.get("boot"):
@@ -363,6 +389,8 @@ def env(rec):
         yield "PIPE_TEAM_USD_DAY", str(rec["caps"]["usd_per_day"])
     if "usd_per_month" in rec.get("caps", {}):
         yield "PIPE_TEAM_USD_MONTH", str(rec["caps"]["usd_per_month"])
+    if "runners" in rec.get("caps", {}):
+        yield "PIPE_MAX_LAUNCHES_GCE", str(rec["caps"]["runners"])
 
 
 def unique(rec, folder):
@@ -460,7 +488,7 @@ def options():
     boot = [{"script": f[:-3], "sha256": file_sha(os.path.join(bdir, f))} for f in sorted(os.listdir(bdir))
             if f.endswith(".sh") and SCRIPT.fullmatch(f[:-3])] if os.path.isdir(bdir) else []
     return {"caps": {"usd_per_day": ceiling("TEAM_CAP_USD_PER_DAY", 200), "usd_per_month": ceiling("TEAM_CAP_USD_PER_MONTH", 3000),
-                     "launches_per_day": ceiling("TEAM_CAP_LAUNCHES_PER_DAY", 40)},
+                     "launches_per_day": ceiling("TEAM_CAP_LAUNCHES_PER_DAY", 40), "runners": ceiling("TEAM_CAP_RUNNERS", 8)},
             "skills": sorted(catalog()), "connectors": conns, "boot": boot, "egress_deny": list(EGRESS_DENY)}
 
 

@@ -12,7 +12,7 @@
   "stack": {"kind": "fxa"},
   "runner": {"backend": "gce"},
   "mcp": ["jira"],
-  "jira": {"project": "FXA", "queue": true},
-  "pr": {"labels": ["coderabbit"]},
-  "caps": {"launches_per_day": 40}
+  "jira": {"project": "FXA", "queue": true, "board": "225", "sprint": "^FxA Sprint "},
+  "pr": {"labels": ["coderabbit"], "infra_checks": ["extract=Bad credentials"]},
+  "caps": {"launches_per_day": 40, "runners": 8}
 }
