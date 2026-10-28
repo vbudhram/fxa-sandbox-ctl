@@ -19,7 +19,8 @@ gh() {
       {"id":2,"position":4,"user":{"login":"outsider","type":"User"},"author_association":"CONTRIBUTOR","path":"a.ts","line":4,"body":"x"},
       {"id":3,"position":5,"user":{"login":"Copilot","type":"Bot"},"author_association":"CONTRIBUTOR","path":"a.ts","line":5,"body":"c"},
       {"id":4,"position":6,"user":{"login":"member-a","type":"User"},"author_association":"CONTRIBUTOR","path":"a.ts","line":6,"body":"done"},
-      {"id":5,"position":null,"user":{"login":"member-a","type":"User"},"author_association":"CONTRIBUTOR","path":"a.ts","line":null,"original_line":8,"body":"moved"}]' ;;
+      {"id":5,"position":null,"user":{"login":"member-a","type":"User"},"author_association":"CONTRIBUTOR","path":"a.ts","line":null,"original_line":8,"body":"moved"},
+      {"id":6,"position":7,"user":{"login":"coderabbitai[bot]","type":"Bot"},"author_association":"NONE","path":"a.ts","line":7,"body":"r"}]' ;;
     *graphql*) [ -n "${NO_GRAPHQL:-}" ] && return 1; echo '["4"]' ;;
     *pulls/7/reviews*) echo '[{"id":20,"user":{"login":"member-a","type":"User"},"author_association":"CONTRIBUTOR","state":"CHANGES_REQUESTED","body":"Needs a test"},
       {"id":21,"user":{"login":"copilot-pull-request-reviewer[bot]","type":"Bot"},"author_association":"CONTRIBUTOR","state":"COMMENTED","body":"overview"},
@@ -34,6 +35,7 @@ got="$(gh_feedback FXA-1 | jq -r '[.comments[] | "\(.id)=\(.trusted)"] | join(" 
 check "a member with write access is trusted, inline and in the conversation" "yes" "$(grep -q '1=true' <<<"$got" && grep -q 'i9=true' <<<"$got" && echo yes)"
 check "a reader is not trusted" "yes" "$(grep -q '2=false' <<<"$got" && echo yes)"
 check "Copilot stays trusted" "yes" "$(grep -q '3=true' <<<"$got" && echo yes)"
+check "CodeRabbit is trusted like Copilot" "yes" "$(grep -q '6=true' <<<"$got" && echo yes)"
 check "a resolved thread is left out" "no" "$(grep -q '4=' <<<"$got" && echo yes || echo no)"
 fb="$(gh_feedback FXA-1)"
 check "an outdated open thread counts, marked outdated, at its original line" "true 8" "$(jq -r '.comments[] | select(.id == "5") | "\(.outdated) \(.line)"' <<<"$fb")"

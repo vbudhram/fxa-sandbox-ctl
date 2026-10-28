@@ -301,7 +301,7 @@ gh_feedback() {
 
   # Inline comments, then conversation comments, where reviewers often put the
   # big asks, then review summaries. The `i` and `r` id prefixes tell the
-  # endpoints apart. Bot accounts other than Copilot, ours included, and 🤖 notes are not feedback.
+  # endpoints apart. Bot accounts other than Copilot and CodeRabbit, ours included, and 🤖 notes are not feedback.
   # An inline comment counts until its thread is resolved, also after a push moved
   # its lines (outdated). Without the thread list, stop: a different comment set would
   # read as new comments to precheck.
@@ -314,9 +314,9 @@ gh_feedback() {
   all="$(gh api "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments" --paginate 2>/dev/null \
          | jq -c --argjson resolved "$resolved" '[.[]
                        | select((.id | tostring) | IN($resolved[]) | not)
-                       | select(.user.type != "Bot" or (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))
+                       | select(.user.type != "Bot" or (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]","coderabbitai[bot]")))
                        | {id: (.id|tostring), author: .user.login, association: .author_association,
-                          trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]")))),
+                          trusted: ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.type == "Bot" and (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]","coderabbitai[bot]")))),
                           path, line: (.line // .original_line), outdated: (.line == null), url: .html_url, body}]')"
   [ -n "$all" ] || all='[]'
   conv="$(gh api "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" --paginate 2>/dev/null \

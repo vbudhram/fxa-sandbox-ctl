@@ -1194,19 +1194,23 @@ session_pr_status() {
 _session_pr_parts() {
   [[ "$(session_get "$1" pr_url)" =~ ^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([0-9]+)$ ]] && printf '%s\t%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
 }
-_SESSION_COPILOT='IN("Copilot", "copilot-pull-request-reviewer[bot]")'
+# The review bots whose inline comments start a round: Copilot and CodeRabbit.
+_SESSION_COPILOT='IN("Copilot", "copilot-pull-request-reviewer[bot]", "coderabbitai[bot]")'
 
-# session_copilot_comments <key>   The inline comments of Copilot's latest review
-# that are still on current lines: [{id, path, line, body}]. [] when there are none.
+# session_copilot_comments <key>   The inline comments of each review bot's latest
+# review that are still on current lines: [{id, who, at, path, line, body}]. [] when none.
 session_copilot_comments() {
   local p r; p="$(_session_pr_parts "$1")" || { echo '[]'; return 0; }
-  # The latest review from the review list: one with no inline comments must give [], not an older review's.
+  # Each bot's latest review: one with no inline comments must give [], not an older review's.
   r="$(gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/reviews" --paginate 2>/dev/null \
-    | jq -sr "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | .id] | max // empty" 2>/dev/null || true)"
-  [ -n "$r" ] || { echo '[]'; return 0; }
+    | jq -sc "[.[][] | select(.user.login | ${_SESSION_COPILOT})] | group_by(.user.login) | map(max_by(.id) | {id, at: .submitted_at})" 2>/dev/null || true)"
+  [ -n "$r" ] && [ "$r" != '[]' ] || { echo '[]'; return 0; }
+  # CodeRabbit wraps its text in HTML comments, icons and a folded agent prompt that repeats it.
   gh api "repos/${p%%$'\t'*}/pulls/${p#*$'\t'}/comments" --paginate 2>/dev/null \
-    | jq -sc --argjson r "$r" "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.pull_request_review_id == \$r and .line != null)
-        | {id, path, line, body: (.body | .[0:2000])}]" 2>/dev/null || echo '[]'
+    | jq -sc --argjson r "$r" "[.[][] | select(.user.login | ${_SESSION_COPILOT}) | select(.line != null)
+        | .pull_request_review_id as \$v | (\$r[] | select(.id == \$v)) as \$rv
+        | {id, who: (.user.login | sub(\"\\\\[bot\\\\]\$\"; \"\")), at: \$rv.at, path, line,
+           body: (.body | gsub(\"<!--[\\\\s\\\\S]*?-->|<details>[\\\\s\\\\S]*?</details>|<picture>[\\\\s\\\\S]*?</picture>\"; \"\") | gsub(\"\\n{3,}\"; \"\\n\\n\") | sub(\"^\\\\s+\"; \"\") | .[0:2000])}]" 2>/dev/null || echo '[]'
 }
 
 # session_review_comments <key> <login>   A person's latest review on the PR: its
@@ -1680,12 +1684,12 @@ _session_fetch() {
 
 # _session_review <pr_url>   The PR's open review feedback as context for the
 # agent: review bodies, inline comments still on current lines, and conversation
-# comments. Only members' and Copilot's words are copied; others are named only.
+# comments. Only members' and the review bots' words are copied; others are named only.
 _session_review() {
   local url="$1" slug n reviews inline conv
   [[ "$url" =~ ^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([0-9]+)$ ]] || return 1
   slug="${BASH_REMATCH[1]}"; n="${BASH_REMATCH[2]}"
-  local trust='((.author_association // "") | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | IN("Copilot","copilot-pull-request-reviewer[bot]"))'
+  local trust="((.author_association // \"\") | IN(\"OWNER\",\"MEMBER\",\"COLLABORATOR\")) or (.user.login | ${_SESSION_COPILOT})"
   reviews="$(gh api "repos/${slug}/pulls/${n}/reviews" --paginate 2>/dev/null \
     | jq -c "[.[] | select((.body // \"\") != \"\") | {who: .user.login, ok: (${trust}), where: .state, body}]")" || return 1
   inline="$(gh api "repos/${slug}/pulls/${n}/comments" --paginate 2>/dev/null \
