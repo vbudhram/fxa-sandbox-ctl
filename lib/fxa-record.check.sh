@@ -14,9 +14,10 @@ penv() { ( cd "$root" && env HOME="$tmp/home" FXA_TEAMS_DIR="$T" FXA_DB="$tmp/fx
   FXA_FXA_RECORD="$1" ./fxa-sandbox-ctl ${2:+--pipeline "$2"} profile env 2>&1 ); }
 get() { sed -n "s/^$1=//p" | tr -d '"'; }
 # The keys a parity diff may show (the record is explicit where the conf left a default), and the
-# keys the conf sets to a value the reader's default already has.
-allowed="PIPE_REPOS PIPE_WORK_ROWS PIPE_WORKSPACE PIPE_STACK_DIR PIPE_MCP PIPE_EGRESS_EXTRA PIPE_PR_OPEN PIPE_JIRA_PROJECT
-PIPE_VM_BACKEND PIPE_DEP_REPOS PIPE_AGENT_RUNTIME PIPE_JIRA_DONE_STATUS PIPE_JIRA_SPRINT_FIELD PIPE_MAX_LAUNCHES_TART"
+# keys the conf sets to a value the reader's default already has. The repo rows and the stack dir
+# must be equal: only the GCE image has /home/agent/fxa, and a tart runner has only /workspace.
+allowed="PIPE_MCP PIPE_EGRESS_EXTRA PIPE_PR_OPEN PIPE_JIRA_PROJECT
+PIPE_VM_BACKEND PIPE_AGENT_RUNTIME PIPE_JIRA_DONE_STATUS PIPE_JIRA_SPRINT_FIELD PIPE_MAX_LAUNCHES_TART"
 for p in fxa-ai-fixme fxa ""; do
   d="$(diff <(penv 0 "$p") <(penv 1 "$p") | sed -n 's/^[<>] \([A-Za-z_]*\)=.*/\1/p' | sort -u | grep -vxF "$(printf '%s\n' $allowed)" || true)"
   check "the parity diff for --pipeline ${p:-(none)} shows only the allowed keys" "" "$(echo $d)"

@@ -132,6 +132,11 @@ pipeline_load() {
   fi
   if [ ! -f "$conf" ] && [ -f "${FXA_TEAMS_DIR}/${name}.json" ]; then
     _pipeline_load_record "$name" || return 1
+    # FxA's default record loads as the conf did: repo rows and a stack dir need /home/agent/fxa, which only the GCE image has.
+    if [ "$name" = fxa ] && [ "${#PIPE_REPOS[@]}" = 1 ] && [ "${PIPE_REPOS[0]}" = "mozilla/fxa /home/agent/fxa work" ] \
+       && [ "${PIPE_STACK_DIR:-}" = /home/agent/fxa ]; then
+      unset PIPE_REPOS PIPE_STACK_DIR; PIPE_REPO_SLUG=mozilla/fxa
+    fi
   elif [ ! -f "$conf" ]; then
     echo "ERROR: no profile '${name}' in ${SANDBOX_ROOT}/profiles, pipelines or ${FXA_TEAMS_DIR}" >&2
     echo "Available: $(pipeline_profile_names | tr '\n' ' ')" >&2
