@@ -155,6 +155,8 @@ Every turn, including later ones:
   Never use OPTION lines to ask what to look at next.
 - End your final message with exactly one line: 'status: needs-input' or
   'status: ready'. Use ready only when the change is done and its tests pass.
+  The final message is all the engineer sees: put your answer, or your questions
+  with their OPTION lines, above the status line. Your notes files are not shown.
 - If you changed no files (an answer, an investigation), do not suggest a push
   or a pull request: there is nothing to ship.${slack}
 EOF

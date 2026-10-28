@@ -61,7 +61,9 @@ There is no `/goal`. A person steers you turn by turn.
   words that says what you do next, such as "Running the delete account tests."
   Do not write more notes than that, and do not repeat the todo list.
 - End every turn with `status: needs-input` or `status: ready`. Use `ready`
-  only when the change is done and its tests pass.
+  only when the change is done and its tests pass. The final message is all the
+  person sees: put the answer or the questions above the status line, never only
+  in a notes file. A turn with only the status line gets one automatic follow-up.
 - The stack setup starts at boot, in the background. To see where it is, run
   `tail -5 /var/log/profile-boot.log` once; `fxa-start --status` lists the FxA
   services. Read the log only when the stack is not up yet, not on every turn.
