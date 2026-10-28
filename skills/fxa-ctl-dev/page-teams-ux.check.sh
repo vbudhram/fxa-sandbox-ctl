@@ -12,4 +12,9 @@ out="$(bash "$p" '#teams' --fixture "$tmp/fx.json" --probe 'await new Promise(r 
   return [s.querySelector(".sh .n")?.textContent.trim(), /\$12\.50 this month/.test(s.innerText), /\$40/.test(s.innerText)].join("|")')"; rc=$?
 [ "$rc" = 3 ] && { echo "SKIP (no Chrome): the page probes did not run; set CHROME to run them"; exit 0; }
 ck "the side header counts the teams, not the All teams row; the cost is this month's, as on the page" "2|true|false" "$out"
+# FxA as a record (after the seed): its Settings edit like a record team's, with the runner keys read-only and no Delete.
+jq '(."/api/teams".teams[] | select(.profile == "fxa") | .access) = {open: true, users: 0, listed: 0, channels: 0, jira: ["FXA"], record: true, status: "active"}' "$here/page-fixture-teams.json" > "$tmp/fxr.json"
+out="$(PAGE_BUDGET=12000 bash "$p" '#teams/fxa/settings' --fixture "$tmp/fxr.json" --probe 'await new Promise(r => setTimeout(r, 1200)); const m = document.getElementById("main");
+  return [!!m.querySelector("[data-tf=jira]"), !!m.querySelector("[data-tf=runner]"), !!m.querySelector("[data-tdel]"), !!m.querySelector("[data-tstatus=disabled]"), /The operator changes this with the CLI/.test(m.innerText)].join("|")')"
+ck "FxA as a record: Jira has Change, the runner is read-only, and there is no Delete or Turn off" "true|false|false|false|true" "$out"
 exit "$fail"

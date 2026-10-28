@@ -676,15 +676,17 @@ def team_issues(teams, access, records=None):
             per.append([{"level": "bad", "text": "profile.conf did not load", "key": "profile.conf"}])
             continue
         out = []
+        # FxA from its conf: a record named fxa follows the record rules.
+        conf_fxa = t["profile"] == "fxa" and not isinstance((records or {}).get("fxa"), dict)
         if not t.get("read_only"):
             for r in t.get("repos") or []:
                 if r.get("role") == "work" and not r.get("write"):
                     why = r.get("why") or "no write"
                     out.append({"level": "info", "text": f"{r.get('slug')}: " + ("GitHub App check failed; write unknown"
                                 if why == "the GitHub App check failed" else why),
-                                "key": "PIPE_REPO_SLUG" if t["profile"] == "fxa" else "PIPE_REPOS"})
+                                "key": "PIPE_REPO_SLUG" if conf_fxa else "PIPE_REPOS"})
         a = team_access(t["profile"], access, records)
-        if a and t["profile"] != "fxa" and not a["open"] and not a["users"]:
+        if a and not conf_fxa and not a["open"] and not a["users"]:
             out.append({"level": "warn", "text": "nobody can start it", "key": "PROFILE_USERS"})
         # Spend: a reached cap refuses every session and run of the team; 90% is a heads-up.
         b = t.get("budget")

@@ -112,5 +112,73 @@
   "at": null,
   "channels": []
  },
- "/api/teams/example/audit": []
+ "/api/teams/example/audit": [],
+ "/api/teams/fxa": {
+  "schema": 1,
+  "name": "fxa",
+  "label": "FxA",
+  "status": "active",
+  "admins": [
+   {
+    "slack": "UADMINX1",
+    "email": "admin1@example.com"
+   },
+   {
+    "slack": "UADMINX2",
+    "email": "admin2@example.com"
+   }
+  ],
+  "access": {
+   "open": true
+  },
+  "repos": [
+   {
+    "slug": "mozilla/fxa",
+    "role": "work"
+   }
+  ],
+  "stack": {
+   "kind": "fxa"
+  },
+  "runner": {
+   "backend": "gce"
+  },
+  "mcp": [
+   "jira"
+  ],
+  "jira": {
+   "project": "FXA",
+   "queue": true,
+   "board": "225",
+   "sprint": "^FxA Sprint "
+  },
+  "pr": {
+   "labels": [
+    "coderabbit"
+   ],
+   "infra_checks": [
+    "extract=Bad credentials"
+   ]
+  },
+  "caps": {
+   "launches_per_day": 40,
+   "runners": 8
+  },
+  "generation": "1792640520000001",
+  "tested": null
+ },
+ "/api/teams/fxa/secrets": {},
+ "/api/teams/fxa/test": {
+  "result": null,
+  "at": null,
+  "generation": 1792640520000001,
+  "tested": null,
+  "started_at": null,
+  "lines": []
+ },
+ "/api/teams/fxa/routine-channels": {
+  "at": null,
+  "channels": []
+ },
+ "/api/teams/fxa/audit": []
 }

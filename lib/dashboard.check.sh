@@ -194,6 +194,17 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
   { globalThis.TEAM_ADMIN = { admin: true };
     const fx = { profile: "fxa", repos: [], issues: [], access: { open: "built-in" } }, env = { profile: "pyfxa", repos: [], issues: [], access: { open: false, users: 2, channels: 0, jira: [] } };
     t("settings: FxA and an env team are read-only, and say who changes them", `${/<input/.test(teamSettingsHtml(fx))}|${/<input/.test(teamSettingsHtml(env))}|${/The operator changes this team in profiles\/pyfxa\//.test(teamSettingsHtml(env))}`, "false|false|true");
+    // FxA as a record: an admin edits its people, Jira, PR and budget, and never its runner keys, goal or reviewers.
+    { const fxr = { profile: "fxa", repos: [], issues: [], access: { record: true, status: "active", open: true, users: 0, channels: 0, jira: ["FXA"] } };
+      const frec = { name: "fxa", status: "active", repos: [{ slug: "mozilla/fxa", role: "work" }], stack: { kind: "fxa" }, access: { open: true }, mcp: ["jira"], jira: { project: "FXA", queue: true, board: "225", sprint: "^FxA Sprint " }, pr: { labels: ["coderabbit"] } };
+      const keep = TED; globalThis.TED = { name: "fxa", gen: "3", ok: true, rec: frec, text: "{}" };
+      TFORM = { team: "fxa", item: "jira", d: teamItemDraft("jira", frec) }; const h = String(teamSettingsHtml(fxr));
+      t("settings: an FxA record has a form, and no Delete or Turn off", `${/<input/.test(h)}|${/data-tdel/.test(h)}|${/data-tstatus="disabled"/.test(h)}`, "true|false|false");
+      TFORM = null; const h2 = String(teamSettingsHtml(fxr));
+      t("settings: FxA's runner keys and goal are read-only text, its people and Jira have Change", `${["repos", "goal", "tools", "skills", "runner", "egress", "boot", "secrets"].filter(k => h2.includes(`data-tf="${k}"`)).join(",")}|${(h2.match(/The operator changes this with the CLI/g) || []).length}|${/FxA(&#39;|')s built-in goal/.test(h2)}|${/data-tf="access"/.test(h2)}|${/data-tf="jira"/.test(h2)}`, "|8|true|true|true");
+      TFORM = { team: "fxa", item: "pr", d: teamItemDraft("pr", frec) }; const h3 = String(teamSettingsHtml(fxr));
+      t("settings: FxA's PR form says it always asks fxa-devs, with no reviewers input", `${/FxA always asks fxa-devs/.test(h3)}|${/id="tf-reviewers"/.test(h3)}`, "true|false");
+      TFORM = null; globalThis.TED = keep; }
     const rt = { profile: "rusty", repos: [], issues: [], access: { record: true, status: "active", open: false, users: 1, channels: 0, jira: [] } };
     globalThis.TED = { name: "rusty", gen: "7", ok: true, rec: { name: "rusty", status: "active", access: { users: ["U0AAA1111"], channels: [] } }, text: "{}" }; TFORM = { team: "rusty", item: "access", d: teamItemDraft("access", TED.rec) };
     t("settings: the people form lists each person of the record with Remove, and a search", /data-tfunpick="users" data-id="U0AAA1111"/.test(teamSetupHtml(rt)) && /data-tfpq="users"/.test(teamSetupHtml(rt)), true);
@@ -205,12 +216,16 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
     globalThis.TED = { name: "rusty", gen: "7", ok: true, rec: { name: "rusty", access: {} } };
     { const full = { name: "rusty", status: "active", label: "Rusty (web)", admins: [{ slack: "U0AAA1111", email: "a@example.com" }], access: { open: false, users: ["U0AAA1111"], channels: ["C0AAA1111"], jira_prefixes: ["RUS"] },
         repos: [{ slug: "mozilla/fxa", role: "work", default: true }, { slug: "o/r", role: "dep" }], stack: { kind: "fxa" }, runner: { backend: "firecracker", android: true, desktop_url: "http://localhost:3030/" },
-        egress: { requested: ["a.example.com"], approved: ["b.example.com"] }, mcp: ["jira"], jira: { project: "RUS", queue: true }, caps: { usd_per_day: 5 }, pr: { open: true, reviewers: ["t"] },
+        egress: { requested: ["a.example.com"], approved: ["b.example.com"] }, mcp: ["jira"], jira: { project: "RUS", queue: true, board: "225", sprint: "^Rusty Sprint " }, caps: { usd_per_day: 5, runners: 3 }, pr: { open: true, reviewers: ["t"], infra_checks: ["extract=Bad credentials", "lint=ETIMEDOUT"] },
         prompts: { goal_md: "g" }, skills: ["fxa-stack"], boot: { script: "s", sha256: "a".repeat(64) }, secrets: { jira: "fxa-team-rusty--jira", runtime: [{ secret: "fxa-team-rusty--env", path: "/home/agent/fxa/.env" }] } };
       const keep = TED; globalThis.TED = { name: "rusty", rec: full }; globalThis.TOPTS = { boot: [{ script: "s", sha256: "a".repeat(64) }] };
       const same = ["name", "admins", "access", "jira", "tools", "caps", "pr", "runner", "egress", "skills", "boot", "secrets"].filter(i => { const after = teamApply(full, teamPatch({ item: i, d: teamItemDraft(i, full) }));
         return JSON.stringify(after) !== JSON.stringify(full); });
       t("settings: every item opened and saved unchanged leaves the record as it was", same.join(","), "");
+      t("settings: a Jira save keeps the board and the sprint, with its trailing space", JSON.stringify(teamPatch({ item: "jira", d: teamItemDraft("jira", full) }).jira), JSON.stringify(full.jira));
+      t("settings: the new fields from their inputs: board, sprint, runners and comma-split infra rules", JSON.stringify([teamPatch({ item: "jira", d: { ...teamItemDraft("jira", full), board: " 99 ", sprint: "" } }).jira,
+        teamPatch({ item: "caps", d: { ...teamItemDraft("caps", full), runners: "" } }).caps, teamPatch({ item: "pr", d: { ...teamItemDraft("pr", full), infra: "a=b c, d=e" } }).pr.infra_checks]),
+        JSON.stringify([{ project: "RUS", queue: true, board: "99" }, { usd_per_day: 5 }, ["a=b c", "d=e"]]));
       const bare = { name: "rusty", repos: [{ slug: "o/r", role: "work" }] }; globalThis.TED = { name: "rusty", rec: bare };
       t("settings: a record with no runner keys gets none from an unchanged save", ["repos", "runner", "egress", "skills", "boot", "secrets", "admins", "name"].filter(i => teamRetest(bare, teamApply(bare, teamPatch({ item: i, d: teamItemDraft(i, bare) })))).join(","), "");
       t("settings: PR labels split on commas only, so a label may hold a space; empty drops the key", JSON.stringify([teamPatch({ item: "pr", d: { ...teamItemDraft("pr", bare), labels: "coderabbit, needs review, coderabbit" } }).pr.labels, teamPatch({ item: "pr", d: teamItemDraft("pr", bare) }).pr.labels]),

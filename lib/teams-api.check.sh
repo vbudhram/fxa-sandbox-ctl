@@ -85,6 +85,19 @@ idx = Path(tmp) / "teams"; idx.mkdir(); (idx / "index.json").write_text(json.dum
 os.environ["FXA_TEAMS_DIR"] = str(idx)
 check("read_records reads the index; a missing one is empty", (["drafty", "rusty"], {}),
       (sorted(server.read_records()), (os.environ.update(FXA_TEAMS_DIR=f"{tmp}/none"), server.read_records())[1]))
+# FxA as a record: the index team_record.py writes from the fixture makes /api/teams give fxa the record rules.
+import shutil, subprocess
+fxd = Path(tmp) / "fxteams"; fxd.mkdir(); shutil.copy(Path(sys.argv[1]).parent / "lib/testdata/fxa-team.json", fxd / "fxa.json")
+(fxd / "index.json").write_text(subprocess.run([sys.executable, "-I", str(Path(sys.argv[1]).parent / "lib/team_record.py"), "index", str(fxd)], capture_output=True, text=True, env=dict(os.environ, FXA_RESERVED_TEAMS="")).stdout)
+os.environ["FXA_TEAMS_DIR"] = str(fxd)
+fx = {x["profile"]: x for x in json.loads(get()[1])["teams"]}["fxa"]["access"]
+check("with fxa.json and its index entry, /api/teams gives fxa the record rules", (True, "active", True), (fx.get("record"), fx.get("status"), fx.get("open")))
+nowrite = [{"profile": "fxa", "repos": [{"slug": "mozilla/fxa", "role": "work", "write": False, "why": "x"}]}]
+check("an fxa record is not the conf: its repo issue names PIPE_REPOS, and a draft one nobody can start says so",
+      ("PIPE_REPOS", "PIPE_REPO_SLUG", True),
+      (server.team_issues(nowrite, None, {"fxa": {"status": "active", "access": {"open": True}}})[0][0][0]["key"], server.team_issues(nowrite, None, {})[0][0][0]["key"],
+       ("warn", "nobody can start it") in [(x["level"], x["text"]) for x in server.team_issues(nowrite, None, {"fxa": {"status": "draft"}})[0][0]]))
+os.environ["FXA_TEAMS_DIR"] = f"{tmp}/none"
 # Spend against the caps (the LLM proxy's files), and the issues it raises; nothing about an error leaks.
 import time as _t
 month = _t.strftime("%Y-%m", _t.gmtime()); now = int(_t.time())
