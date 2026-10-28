@@ -90,6 +90,10 @@ check("another team's PR links to its own repo, with GitHub's title and merged s
 sr()
 check("a merged PR is asked of GitHub once, then cached", 1, len(calls))
 server.subprocess.run = real_run
+# Another team's secured ticket is marked in that team's own state folder.
+import os; os.makedirs(t + "/teams-state/sync-storage", exist_ok=True); open(t + "/teams-state/sync-storage/STOR-460.secured-noted", "w").close()
+server.STATE_ROOT = t + "/teams-state"
+check("another team's secured ticket shows no title and no PR, from its own state folder", ("Secured ticket", None), (lambda x: (x["title"], x["pr_number"]))(sr()))
 server.STATS.data = None
 check("no stats feed: empty with an error", ([], "stats unavailable"), (lambda x: (x["runs"], x["error"]))(get("/api/runs/recent")))
 sys.exit(fail)

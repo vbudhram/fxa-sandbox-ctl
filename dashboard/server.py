@@ -384,7 +384,8 @@ def recent_runs(rows, snap, now, limit, days, state_dir, sess_dir, hide, admin=F
                 if t and title == key:
                     title = t
             outcome = "pr" if r.get("pr") else "no_pr"
-            if os.path.exists(os.path.join(state_dir, key + ".secured-noted")):
+            # Each team marks its own secured tickets in its own state folder.
+            if os.path.exists(os.path.join(state_dir if team == "fxa" else os.path.join(STATE_ROOT, team), key + ".secured-noted")):
                 title, num, state = "Secured ticket", None, None
         elif src in ("slack", "depfix"):
             try:
@@ -600,6 +601,53 @@ def redact_fix(s):
     if not isinstance(s, dict) or not s.get("fix_pr"):
         return s
     return dict({k: v for k, v in redact_session(s).items() if k not in FIX_PRIVATE}, fix_run=True)
+
+
+TEAM_FEEDS = {}   # team -> Feed: each other pipeline team's snapshot (FULL is FxA's)
+STATE_ROOT = os.path.expanduser("~/.claude/state")   # each other team's state folder is STATE_ROOT/<team>
+SNAP_LISTS = ("inflight", "review", "blocked", "open_prs", "merged_prs")
+
+
+def pipeline_teams(records):
+    """The record teams that run a pass, as infra/gce/teams-reconcile.sh picks them; fxa is FULL."""
+    return sorted(t for t, r in records.items() if t != "fxa" and re.fullmatch(TEAM_NAME, t) and isinstance(r, dict)
+                  and r.get("status") == "active" and r.get("queue") is True and (r.get("jira") or ""))
+
+
+def sync_team_feeds():
+    """Start a snapshot feed for each pipeline team that has none: every 5 min, only while someone views."""
+    for i, t in enumerate(t for t in pipeline_teams(read_records()) if t not in TEAM_FEEDS):
+        f = TEAM_FEEDS[t] = Feed(f"snapshot:{t}", ["--pipeline", t, "snapshot"], 300, 300)
+        f.gated = True
+        GATED.append(f)
+        # Staggered, so the teams' Jira and GitHub calls do not all start at once.
+        start = threading.Timer(15 * (i + 1), f.loop)
+        start.daemon = True
+        start.start()
+
+
+def team_snapshot(team, snap, record, admin, state_root):
+    """One team's snapshot for this viewer, or None to leave the team out. A secret team (jira.secret) goes to team
+    admins only; a private team (unknown counts as private) is counts only for anyone else; a public team drops the
+    keys its own state folder marks secured (<KEY>.secured-noted)."""
+    if not isinstance(snap, dict):
+        return snap
+    if record.get("secret") is True or (not admin and team_private(team)):
+        if admin:
+            return snap
+        if record.get("secret") is True:
+            return None
+        q = snap.get("queue") or {}
+        return {"team": {"profile": team, "name": (snap.get("team") or {}).get("name") or team}, "redacted": True,
+                "counts": {"ready": len(q.get("ready") or []), "skipped": len(q.get("skipped") or []),
+                           **{k: len(snap.get(k) or []) for k in SNAP_LISTS}}}
+    if admin:
+        return snap
+    gone = lambda i: isinstance(i, dict) and os.path.exists(os.path.join(state_root, team, f"{i.get('key')}.secured-noted"))
+    out = dict(snap, **{k: [i for i in snap.get(k) or [] if not gone(i)] for k in SNAP_LISTS if isinstance(snap.get(k), list)})
+    if isinstance(snap.get("queue"), dict):
+        out["queue"] = {k: [i for i in v if not gone(i)] if isinstance(v, list) else v for k, v in snap["queue"].items()}
+    return out
 
 
 def read_records():
@@ -1235,7 +1283,20 @@ class Handler(BaseHTTPRequestHandler):
                                         for s in ag.get("sessions") or []])
             # The stats feed's age and error, so a page tells live figures from old ones; /api/stats stays as it is.
             _, st_age, st_err, _ = STATS.read()
+            # Every other pipeline team's snapshot, for this viewer (team_snapshot): signed per request, never raw.
+            recs, admin, teams = read_records(), self._team_admin(path), {}
+            for t in pipeline_teams(recs):
+                f = TEAM_FEEDS.get(t)
+                if f is None:
+                    continue
+                t_snap, t_age, t_err, _ = f.read()
+                # A secret team is left out for anyone but a team admin, even before its first read.
+                if recs[t].get("secret") is True and not admin:
+                    continue
+                teams[t] = {"snapshot": team_snapshot(t, t_snap, recs[t], admin, STATE_ROOT), "age_seconds": t_age,
+                            "error": t_err, "interval": f.interval}
             self._json(200, {
+                "teams": teams,
                 "stats_age_seconds": st_age, "stats_error": st_err, "stats_interval": STATS.interval,
                 "snapshot": snap, "age_seconds": age, "error": err,
                 "agents": ag, "agents_age_seconds": ag_age, "agents_error": ag_err,
@@ -1392,6 +1453,12 @@ if __name__ == "__main__":
     # Each team runs pipeline_load and the App check; outside CTL_SLOTS like the other feeds.
     TEAMS = Feed("teams", ["profile", "list"], 300, 600)
     threading.Thread(target=TEAMS.loop, daemon=True).start()
+    # A team that gains a queue gets its feed within 5 min.
+    def team_feed_loop():
+        while True:
+            sync_team_feeds()
+            time.sleep(300)
+    threading.Thread(target=team_feed_loop, daemon=True).start()
     print(f"FxA Agent dashboard: http://localhost:{PORT}  (pipeline {PIPELINE}, "
           f"tickets every {INTERVAL}s, agents every {AGENTS_INTERVAL}s)")
     print("Ctrl-C to stop.")

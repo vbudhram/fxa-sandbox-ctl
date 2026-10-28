@@ -641,6 +641,7 @@
   <section class="wide card" id="s-stats" data-views="stats"></section>
   <section class="wide card" id="s-errors" data-views="errors"></section>
   <section class="wide" id="s-teams" data-views="teams"></section>
+  <section class="wide" id="s-pteam" data-views="pipeline:belts pipeline:done pipeline:queue"></section>
   <section class="wide card" id="s-lanes" data-views="pipeline:belts"></section>
   <section class="wide card" id="s-done" data-views="pipeline:done"></section>
   <section class="wide card" id="s-review" data-views="pipeline:queue"></section>
@@ -671,9 +672,44 @@
 "use strict";
 // Links come from the snapshot's team block and fail closed: a bad site, repo, key or number gives plain text.
 const REPO_RE = /^(?!.*\.\.)[\w-][\w.-]*\/[\w-][\w.-]*$/;
-function teamRepo() { const r = SNAP?.team?.repo ?? SNAP?.repo ?? ""; return REPO_RE.test(r) ? r : ""; }
-function jiraHref(k) { const s = String(SNAP?.team?.jira_site ?? "").replace(/\/+$/, ""); return /^https:\/\/[\w-]+(\.[\w-]+)+(:\d+)?$/.test(s) && /^[A-Z][A-Z0-9]+-\d+$/.test(k ?? "") ? `${s}/browse/${encodeURIComponent(k)}` : ""; }
-function prUrl(n) { const r = teamRepo(); return r && /^\d+$/.test(String(n ?? "")) ? `https://github.com/${r}/pull/${n}` : ""; }
+// A ticket's own team's snapshot, so each row links to its own repo and Jira site; else the shown one.
+const keySnap = k => SNAPS[KEY_TEAM[k]]?.snapshot ?? SNAP;
+function teamRepo(k) { const s = keySnap(k), r = s?.team?.repo ?? s?.repo ?? ""; return REPO_RE.test(r) ? r : ""; }
+function jiraHref(k) { const s = String(keySnap(k)?.team?.jira_site ?? "").replace(/\/+$/, ""); return /^https:\/\/[\w-]+(\.[\w-]+)+(:\d+)?$/.test(s) && /^[A-Z][A-Z0-9]+-\d+$/.test(k ?? "") ? `${s}/browse/${encodeURIComponent(k)}` : ""; }
+function prUrl(n, k) { const r = teamRepo(k); return r && /^\d+$/.test(String(n ?? "")) ? `https://github.com/${r}/pull/${n}` : ""; }
+const PIPE_LISTS = ["inflight", "review", "blocked", "open_prs", "merged_prs"];
+// The snapshot the pipeline views read: the picked team's, or for All teams every team's lists joined, each item
+// tagged with its team; the rest (health, pool, limits) is FxA's. A list unknown in FxA's stays unknown (null).
+function pipeSnap(data) {
+  SNAPS = { fxa: { snapshot: data.snapshot, error: data.error, age_seconds: data.age_seconds }, ...(data.teams ?? {}) }; KEY_TEAM = {};
+  const full = Object.entries(SNAPS).filter(([, t]) => t?.snapshot && !t.snapshot.redacted);
+  const tag = (team, xs) => Array.isArray(xs) ? xs.map(i => { if (i?.key) KEY_TEAM[i.key] = team; return { ...i, team }; }) : [];
+  full.forEach(([team, t]) => { PIPE_LISTS.forEach(l => tag(team, t.snapshot[l])); Object.values(t.snapshot.queue ?? {}).forEach(v => tag(team, v)); });
+  if (PIPE_TEAM && SNAPS[PIPE_TEAM]) return full.some(([team]) => team === PIPE_TEAM) ? SNAPS[PIPE_TEAM].snapshot : null;
+  const base = data.snapshot;
+  if (!base || full.length < 2) return base;
+  const out = { ...base, queue: { ...(base.queue ?? {}) } };
+  PIPE_LISTS.forEach(l => { out[l] = base[l] == null ? null : full.flatMap(([team, t]) => tag(team, t.snapshot[l])); });
+  ["ready", "skipped"].forEach(l => { if (Array.isArray(base.queue?.[l])) out.queue[l] = full.flatMap(([team, t]) => tag(team, t.snapshot.queue?.[l])); });
+  return out;
+}
+// The team picker over the pipeline views, when more than one team has a pipeline.
+function renderPipeTeam() { put("s-pteam", String(pipeTeamHtml())); }
+function pipeTeamHtml() {
+  const ts = Object.entries(SNAPS);
+  if (ts.length < 2) return "";
+  const name = (k, t) => t?.snapshot?.team?.name || teamLabel(k), cur = SNAPS[PIPE_TEAM];
+  const why = !PIPE_TEAM ? `${ts.filter(([, t]) => t?.snapshot && !t.snapshot.redacted).length} teams joined`
+    : cur?.snapshot?.redacted ? `A private team: details for team admins. ${cur.snapshot.counts.review} in review, ${cur.snapshot.counts.inflight} in flight, ${cur.snapshot.counts.ready} ready.`
+    : !cur?.snapshot ? `Unknown: ${cur?.error || "the team's snapshot has not loaded"}` : "";
+  return html`<div class="row"><label class="hint">Team <select data-pteam aria-label="Pipeline team"><option value=""${PIPE_TEAM ? "" : " selected"}>All teams</option>${ts.map(([k, t]) => html`<option value="${k}"${k === PIPE_TEAM ? " selected" : ""}>${name(k, t)}${t?.snapshot?.redacted ? " (private)" : ""}</option>`)}</select></label><span class="hint">${why}</span></div>`;
+}
+document.addEventListener("change", e => {
+  if (!e.target.matches?.("[data-pteam]")) return;
+  PIPE_TEAM = e.target.value; try { localStorage.setItem("pipeTeam", PIPE_TEAM); } catch {}
+  if (SNAP_DATA) SNAP = pipeSnap(SNAP_DATA);
+  render();
+});
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 // Components: the design system's parts, built with html``, which escapes every value it is given.
 // html`` escapes each ${value} unless the value is an html`` result; an array joins, and null, undefined and false give nothing.
@@ -715,7 +751,7 @@ const short = s => s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(
 const stamp = e => e == null ? "" : new Date(e * 1000).toLocaleString(undefined, { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" });
 const days = iso => iso == null ? null : (Date.now() - Date.parse(iso)) / 86400000;
 const jira = k => jiraHref(k) ? `<a class="key" href="${jiraHref(k)}" target="_blank" rel="noreferrer">${esc(k)}</a>` : `<span class="key">${esc(k)}</span>`;
-const prl = (_, n) => prUrl(n) ? `<a class="key" href="${prUrl(n)}" target="_blank" rel="noreferrer">#${esc(n)}</a>` : `<span class="key">#${esc(n)}</span>`;
+const prl = (k, n) => prUrl(n, k) ? `<a class="key" href="${prUrl(n, k)}" target="_blank" rel="noreferrer">#${esc(n)}</a>` : `<span class="key">#${esc(n)}</span>`;
 const TICKET = /^[A-Z][A-Z0-9]+-\d+$/;
 const usd = n => n == null ? "—" : "$" + Number(n).toFixed(2);
 
@@ -796,6 +832,8 @@ async function pollTails(keys) {
 // One card per runner (fast feed) merged with its ticket row (slow feed).
 
 let SNAP = null, AGENTS = null, STATE = {};
+// Every pipeline team's snapshot (fxa, then /api/snapshot's teams map), each ticket's team, the picked team ("" = all).
+let SNAPS = {}, KEY_TEAM = {}, SNAP_DATA = null, PIPE_TEAM = (() => { try { return localStorage.getItem("pipeTeam") || ""; } catch { return ""; } })();
 
 function renderStatus() {
   const s = SNAP, g = AGENTS, h = s?.health ?? {};
@@ -3161,7 +3199,7 @@ function prsTab(st, lo, hi, q, bars, byDay, kpi) {
   // A merged pipeline PR: its ticket's assignee and status, or that the next pass has not updated it yet.
   const ticket = p => p.src !== "pipeline" || !/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? ""
     : p.jira ? (/^done$/i.test(p.jira.status ?? "") ? "" : ` · ${p.jira.assignee || "unassigned"}, ${p.jira.status || "?"}`) : html` · <span style="color:var(--warn)">ticket not updated yet</span>`;
-  const line = p => html`<div title="${p.title}">${kv(html`<span>${raw(prl(repo, p.n))} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? raw(jira(p.key)) : html`<span class="mono">${p.key}</span>`}</span>`,
+  const line = p => html`<div title="${p.title}">${kv(html`<span>${raw(prl(p.key, p.n))} ${/^[A-Z][A-Z0-9]+-\d+$/.test(p.key) ? raw(jira(p.key)) : html`<span class="mono">${p.key}</span>`}</span>`,
     html`${p.state === "MERGED" ? html`${dur(hrs(p))} · <span class="add">+${p.add}</span> <span class="del">−${p.del}</span>${ticket(p)}`
       : p.state === "OPEN" ? `open ${dur((Date.now() - Date.parse(p.created)) / 3600000)}` : "closed"} · <b>${usd(cost(p))}</b>`)}</div>`;
   const list = (l, none) => l.length ? l.slice(0, 10).map(line) : html`<div class="empty">${none}</div>`;
@@ -3672,7 +3710,7 @@ function beltRow(r) {
 }
 // The open row's details: four blocks, one main action and the links, each link checked or plain text.
 function beltDetails(r) {
-  const t = r.t, i = r.item ?? {}, k = STATS?.tickets?.[t.key], a = t.agent || {}, pr = prUrl(t.pr), lim = SNAP?.limits?.attempts ?? 2;
+  const t = r.t, i = r.item ?? {}, k = STATS?.tickets?.[t.key], a = t.agent || {}, pr = prUrl(t.pr, t.key), lim = SNAP?.limits?.attempts ?? 2;
   const blk = (h, body, bad) => card(html`<h3>${h}</h3>${body}`, { flat: true, sm: true, tone: bad && "bad", cls: "blk" }), p = x => html`<p>${x}</p>`;
   const total = (t.ok ?? 0) + (t.fail ?? 0) + (t.running ?? 0);
   const ci = !t.pr ? blk("CI: no PR yet", p("Checks start after the agent opens the PR."))
@@ -3767,7 +3805,7 @@ function doneHtml() {
   return html`<div class="rtkpis ptiles">${statTile("Tickets merged", rows.length, `from the last ${cap} merged PRs`)}${statTile("Merged, 7 days", wk, wk === 1 ? "ticket" : "tickets")}
     ${statTile("Median days to merge", med === 0 ? "under 1" : med ?? "—", "from the PR's creation")}</div><p class="bwhere">${rows.length} ticket${rows.length === 1 ? "" : "s"} from the last ${cap} merged PRs${lbl ? ` labelled ${lbl}` : ""}, newest first.</p>
     <div class="tscroll">${table(["Ticket", "Title", "Merged", "Days to merge", "Merged by"], rows.map(r => { const t = r.t, d = Math.round(days(r.merged) ?? 0), took = Math.round((Date.parse(r.merged) - Date.parse(t.created)) / 86400000);
-      return html`<tr><td>${raw(jira(t.key))}${t.pr ? html` ${raw(prl("", t.pr))}` : ""}</td><td>${laneTitle(t.summary).text}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${r.by || "—"}</td></tr>`; }), { cls: "dtab" })}</div>`;
+      return html`<tr><td>${raw(jira(t.key))}${t.pr ? html` ${raw(prl(t.key, t.pr))}` : ""}</td><td>${laneTitle(t.summary).text}</td><td>${d === 0 ? "today" : `${d} day${d === 1 ? "" : "s"} ago`}</td><td>${Number.isFinite(took) ? took : "—"}</td><td>${r.by || "—"}</td></tr>`; }), { cls: "dtab" })}</div>`;
 }
 function renderDone() { put("s-done", String(doneHtml())); }
 document.addEventListener("toggle", e => {
@@ -3808,7 +3846,7 @@ function renderTickets() {
   const waiting = review ? review.filter(isWaitingOnHuman) : [];
   const row = r => html`<div class="item qi">${srcBadge(r.pr ? "github" : "jira")}
       <div class="line1">${raw(jira(r.key))}${raw(titled(r.title ? laneTitle(r.title).text : r.pr ? "title unavailable" : "no PR found"))}${raw(verdictTag(r))}</div>
-      <div class="line2">${r.pr ? raw(prl(repo, r.pr)) : "no PR on this branch"} ${raw(checkBars(r))} ${raw(waitAge(r))}</div></div>`;
+      <div class="line2">${r.pr ? raw(prl(r.key, r.pr)) : "no PR on this branch"} ${raw(checkBars(r))} ${raw(waitAge(r))}</div></div>`;
   const byWait = (a, b) => (Date.parse(a.last_human_review?.at ?? a.created ?? a.updated) || 0) - (Date.parse(b.last_human_review?.at ?? b.created ?? b.updated) || 0);
   const others = review ? review.filter(r => !isWaitingOnHuman(r)) : [];
   // The open PR list is on the Belts tab; here only the tickets in review.
@@ -4428,7 +4466,7 @@ const ovRenders = () => [[renderOvHead, "ov-head"], [renderOvNeeds, "ov-needs"],
   [renderOvLlm, "ov-llm"], [renderOvHours, "ov-hours"], [renderOvTeams, "ov-teams"]];
 function render() {
   [[renderStatus], [renderAlerts, "attn"], [renderTailKeys], [renderTickets, "s-queue"],
-   [renderLanes, "s-lanes"], [renderDone, "s-done"], ...(VIEW === "overview" ? ovRenders() : []), [renderSess, "s-sess"], [renderSb],
+   [renderPipeTeam, "s-pteam"], [renderLanes, "s-lanes"], [renderDone, "s-done"], ...(VIEW === "overview" ? ovRenders() : []), [renderSess, "s-sess"], [renderSb],
    [renderNav], [renderTab], [renderHeader]].forEach(([f, id]) => safeRender(f, id));
   if (document.activeElement?.id !== "q" && !document.activeElement?.closest?.(".si")) safeRender(renderSide);
   safeRender(renderRight);
@@ -4439,7 +4477,7 @@ async function poll() {
   let data;
   try { data = await (await fetch("/api/snapshot", { cache:"no-store" })).json(); }
   catch { document.getElementById("dot").className = "dot dead"; document.getElementById("age").textContent = "server unreachable"; return; }
-  SNAP = data.snapshot; AGENTS = data.agents; STATE = data;
+  SNAP_DATA = data; SNAP = pipeSnap(data); AGENTS = data.agents; STATE = data;
   overlay();
   render();
   HIST_OPEN.forEach(loadHist);

@@ -374,14 +374,25 @@ _stats_add_rows() {
     --slurpfile l <(printf '%s' "$llm") '.rows += $s[0] + $j[0] + $a[0] | .llm = $l[0]'
 }
 
+# _pipeline_prs <state> <limit> <json fields>   The pipeline's PRs, newest first, once each: those with its label, and
+# the recent ones its App opened (a repo with no auto label, such as syncstorage-rs, still lists them). GitHub search
+# cannot name the App in every org, so the author is matched from a plain list. Exit 1 when both reads fail.
+_pipeline_prs() {
+  local a b
+  a="$(gh pr list --repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --label "${FXA_PR_LABEL:-auto}" --state "$1" --limit "$2" --json "$3" 2>/dev/null)" || a=""
+  b="$(gh pr list --repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --state "$1" --limit "$(( $2 < 300 ? 300 : $2 ))" --json "$3,author" 2>/dev/null \
+    | jq -c --arg a "${FXA_PR_AUTHOR:-app/fxa-agent}" 'map(select(.author.login == $a) | del(.author))' 2>/dev/null)" || b=""
+  [ -n "$a$b" ] || return 1
+  jq -cn --argjson a "${a:-[]}" --argjson b "${b:-[]}" --argjson n "$2" '($a | map(.number)) as $have | $a + ($b | map(select(.number as $x | $have | index($x) | not))) | .[0:$n]'
+}
+
 # _stats_add_prs   Every PR with the pipeline's label and its outcome, for the PRs tab.
 # The list takes about 6 s to read, so it is read at most every 10 minutes.
 _stats_add_prs() {
   local f="${PIPE_STATE_DIR}/prs.json" t
   if [ ! -s "$f" ] || [ $(( $(date +%s) - $(_mtime "$f") )) -gt 600 ]; then
     t="$(mktemp "${f}.XXXXXX")"
-    if gh pr list --repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --label "${FXA_PR_LABEL:-auto}" --state all --limit 1000 \
-         --json number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" 2>/dev/null \
+    if _pipeline_prs all 1000 number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" \
        && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
   fi
   # A list never read (no prs.json: gh failed from the start) is null, not empty; prs_at is the
@@ -702,13 +713,11 @@ snapshot_json() {
   if [ "$done_items" = "null" ]; then review=null; else review="$(gh_pr_states_json "$done_keys")"; fi
   # Every open PR with the pipeline's label, whatever its ticket's state: the
   # review list holds only `done` tickets, so the page looked short of GitHub's.
-  local open_prs; open_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state open --limit 100 \
-    --json number,headRefName,title,createdAt 2>/dev/null \
+  local open_prs; open_prs="$(_pipeline_prs open 100 number,headRefName,title,createdAt \
     | jq -c 'map({number, title, created: .createdAt, branch: .headRefName,
         key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
   # Recently merged PRs with the label, for the page's Done tab.
-  local merged_cap=30 merged_prs; merged_prs="$(gh pr list --repo "$PIPE_REPO_SLUG" --label "${FXA_PR_LABEL:-auto}" --state merged --limit "$merged_cap" \
-    --json number,headRefName,title,createdAt,mergedAt,mergedBy 2>/dev/null \
+  local merged_cap=30 merged_prs; merged_prs="$(_pipeline_prs merged "$merged_cap" number,headRefName,title,createdAt,mergedAt,mergedBy \
     | jq -c 'map({number, title, created: .createdAt, merged: .mergedAt, merged_by: (.mergedBy.login // null),
         key: (.headRefName | ascii_upcase | capture("^(?<k>[A-Z][A-Z0-9]+-[0-9]+)$").k // null)})' 2>/dev/null || echo null)"
   local inflight_prs=null; [ "$inflight_items" = "null" ] || inflight_prs="$(gh_pr_states_json "$inflight_keys")"

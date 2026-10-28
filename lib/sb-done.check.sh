@@ -5,7 +5,7 @@
 set -u
 command -v node >/dev/null || { echo "skip: needs node"; exit 0; }
 page="$(dirname "$0")/../dashboard/index.html"
-fns="$(sed -n '/^const esc = /p; /^\/\/ Components:/,/^\/\/ End components\./p; /^const usd = /p; /^const ago = /,/;$/p; /^function jiraHref(/p; /^const plainMd = /p; /^const sessHref = /p; /^const teamName = /p; /^const teamLabel = /p; /^const PR_URL_RE = /p; /^const sbDoneSrc = /p; /^function runBadge(r) {/,/^}/p; /^let SB_DONE = /p; /^async function loadSbDone() {/,/^}/p; /^function sbDoneRows() {/,/^}/p; /^function renderSbDone() {/,/^}/p' "$page")"
+fns="$(sed -n '/^const esc = /p; /^\/\/ Components:/,/^\/\/ End components\./p; /^const usd = /p; /^const ago = /,/;$/p; /^let SNAPS = /p; /^const keySnap = /p; /^function jiraHref(/p; /^const plainMd = /p; /^const sessHref = /p; /^const teamName = /p; /^const teamLabel = /p; /^const PR_URL_RE = /p; /^const sbDoneSrc = /p; /^function runBadge(r) {/,/^}/p; /^let SB_DONE = /p; /^async function loadSbDone() {/,/^}/p; /^function sbDoneRows() {/,/^}/p; /^function renderSbDone() {/,/^}/p' "$page")"
 node - "$fns" <<'JS'
 process.argv.splice(1, 1);
 let OUT = "";
