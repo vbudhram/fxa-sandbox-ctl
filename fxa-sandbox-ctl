@@ -90,6 +90,7 @@ COMMANDS:
   exec <name> '<command>'      Run a command as the agent user on a runner (right key, IAP retries)
   profile show                 The loaded profile's repos and write access, as JSON (pick one with --pipeline)
   profile lint                 Check every profile and repos/*/notes.md: only assignments, no unread key, sizes
+  profile env                  The loaded team's settings, sorted, for a diff of two loads; a secret shows set or unset
   devslot up|down|reset <profile> | run <profile> '<cmd>' | sync <profile> <dir> < tar.gz | list
                                A warm Firecracker slot for building a profile (needs FXA_FC_HOST)
   list                         List all agents and their status
@@ -3076,6 +3077,27 @@ cmd_session() {
 
 # ── Main dispatch ──────────────────────────────────────────────
 
+# _profile_env   The loaded team's PIPE_* values and what the code derives from them, sorted, so two
+# loads diff line by line (FXA_FXA_RECORD=0 against 1). A secret prints only set or unset.
+_profile_env() {
+  local k
+  {
+    for k in $(compgen -v | grep -E '^PIPE_' | grep -vx PIPE_HOST_KEYS || true); do
+      case "$k" in
+        *BASIC*|*TOKEN*|*PASSWORD*) printf '%s=%s\n' "$k" "$([ -n "${!k:-}" ] && echo set || echo unset)" ;;
+        *) declare -p "$k" | sed 's/^declare -[^ ]* //' ;;
+      esac
+    done
+    printf 'FXA_REPO=%s\nFXA_SHARED_WORKTREE_NAME=%s\nFXA_WORKTREE_BASE=%s\n' "${FXA_REPO:-}" "${FXA_SHARED_WORKTREE_NAME:-}" "${FXA_WORKTREE_BASE:-}"
+    printf 'FXA_PR_TEAM=%s\n' "$([ -n "${FXA_PR_TEAM+x}" ] && echo "set:${FXA_PR_TEAM}" || echo unset)"
+    printf 'queue_jql=%s\n' "$(pipeline_queue_jql 2>&1 || true)"
+    printf 'jira_project=%s\n' "$(pipeline_jira_project 2>&1 || true)"
+    printf 'vm_backend=%s\n' "${FXA_VM_BACKEND:-}"
+    printf 'launchcap_caps=gce:%s tart:%s\n' "${PIPE_MAX_LAUNCHES_GCE:-5}" "${PIPE_MAX_LAUNCHES_TART:-1}"
+    printf 'timer_unit=%s\n' "$(_pipeline_timer_unit)"
+  } | LC_ALL=C sort
+}
+
 # _profile_from_args <args>   The profile named by the first session record in the
 # arguments that has one: a new session's own key has no record yet, and a resume
 # names the session it resumes. Empty for none or an old record.
@@ -3105,7 +3127,8 @@ main() {
   done
   # A session's commands run with the profile its record names: the record wins over --pipeline.
   local rp; rp="$(_profile_from_args "$@")"; [ -n "$rp" ] && FXA_PIPELINE="$rp"
-  pipeline_load "$FXA_PIPELINE" || return 1
+  # A host with no cached FxA record must still reach profile sync, which fetches it.
+  pipeline_load "$FXA_PIPELINE" || [ "${1:-} ${2:-}" = "profile sync" ] || return 1
   vm_backend_load || return 1
 
   local command="${1:-help}"
@@ -3133,6 +3156,7 @@ main() {
     devslot)    cmd_devslot "$@" ;;
     profile)    case "${1:-}" in
                   show) pipeline_profile_json ;;
+                  env) _profile_env ;;
                   # What the dashboard's team forms offer: cap ceilings, skills, boot scripts, connector names.
                   options) python3 -I "${SCRIPT_DIR}/lib/team_record.py" options ;;
                   # Every team, for the bot's !stack picker: one profile_show each, in its own shell.

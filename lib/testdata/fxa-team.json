@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "fxa",
+  "label": "FxA",
+  "status": "active",
+  "admins": [
+    {"slack": "UADMINX1", "email": "admin1@example.com"},
+    {"slack": "UADMINX2", "email": "admin2@example.com"}
+  ],
+  "access": {"open": true},
+  "repos": [{"slug": "mozilla/fxa", "role": "work"}],
+  "stack": {"kind": "fxa"},
+  "runner": {"backend": "gce"},
+  "mcp": ["jira"],
+  "jira": {"project": "FXA", "queue": true},
+  "pr": {"labels": ["coderabbit"]},
+  "caps": {"launches_per_day": 40}
+}

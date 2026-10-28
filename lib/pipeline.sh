@@ -106,7 +106,7 @@ _pipeline_load_record() {
 }
 
 pipeline_load() {
-  local name="${1:-$FXA_PIPELINE}" conf
+  local name="${1:-$FXA_PIPELINE}" asked conf=""
   # A child inherits the FXA_REPO its parent's load exported; only a repo set by hand overrides.
   [ -n "${FXA_REPO:-}" ] && [ "$FXA_REPO" = "${_FXA_REPO_LOADED:-}" ] && unset FXA_REPO
   # The same for the base branch, the pool name and the secrets source (README: env overrides).
@@ -118,8 +118,18 @@ pipeline_load() {
   [ -z "${PIPE_SECRET_TICKETS:-}" ] || unset PIPE_LABEL_PREFIX PIPE_QUEUE_JQL
   unset PIPE_SECRET_TICKETS PIPE_QUEUE_LABEL PIPE_MERGE_USAGE
   [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad profile name '${name}'" >&2; return 1; }
-  conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
-  [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
+  asked="$name"
+  # FxA from its record: on a host with FXA_FXA_RECORD=1 (the canary), or once the conf is gone.
+  # fxa-ai-fixme stays an alias, and PIPE_NAME stays the name the caller gave.
+  if { [ "$name" = fxa ] || [ "$name" = fxa-ai-fixme ]; } \
+     && { [ "${FXA_FXA_RECORD:-}" = 1 ] || [ ! -f "${SANDBOX_ROOT}/profiles/fxa/profile.conf" ]; }; then
+    name=fxa conf=/nonexistent
+    [ -f "${FXA_TEAMS_DIR}/fxa.json" ] || { echo "ERROR: no FxA team record in ${FXA_TEAMS_DIR}; run fxa-sandbox-ctl profile sync" >&2; return 1; }
+  fi
+  if [ -z "$conf" ]; then
+    conf="${SANDBOX_ROOT}/profiles/${name}/profile.conf"
+    [ -f "$conf" ] || conf="${SANDBOX_ROOT}/pipelines/${name}.conf"
+  fi
   if [ ! -f "$conf" ] && [ -f "${FXA_TEAMS_DIR}/${name}.json" ]; then
     _pipeline_load_record "$name" || return 1
   elif [ ! -f "$conf" ]; then
@@ -133,7 +143,7 @@ pipeline_load() {
     # Unreadable (a deploy mid-extract) or broken: stop here, not later on an unset PIPE_REPO_SLUG.
     source "$conf" || { echo "ERROR: could not read profile ${name} (${conf})" >&2; return 1; }
   fi
-  PIPE_NAME="$name"
+  PIPE_NAME="$asked"
   # A team that works on Android (PIPE_ANDROID=1): every runner it starts is an Android runner.
   if [ "${PIPE_ANDROID:-}" = 1 ]; then android_runner_env; fi
   # PIPE_REPOS: one row per repo, "slug path role [base]", role work, dep, data or ref; base
@@ -161,6 +171,15 @@ pipeline_load() {
   PIPE_PROFILE="${PIPE_PROFILE:-$name}"
   PIPE_BASE_BRANCH="${PIPE_BASE_BRANCH:-main}"
   PIPE_REPO="${PIPE_REPO:-$(pipeline_host_clone "${PIPE_REPO_SLUG:-}")}"
+  local bucket="${PIPE_STATE_BUCKET:-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme}}"
+  # FxA keeps the old pipeline's host names, so no state file or GCS object moves. These are the
+  # conf's values; a blank URI in .env still turns that URI off.
+  if [ "$PIPE_PROFILE" = fxa ]; then
+    PIPE_STATE_DIR="${HOME}/.claude/state/fxa-ai-fixme"
+    PIPE_RUNS_FILE="${PIPE_STATE_DIR}/agent-runs.jsonl" PIPE_COSTS_FILE="${PIPE_STATE_DIR}/agent-costs.json"
+    PIPE_STATE_URI="${PIPE_STATE_URI-${bucket:+${bucket}/fxa-ai-fixme/state}}"
+    PIPE_PAUSE_URI="${PIPE_PAUSE_URI-${bucket:+${bucket}/fxa-ai-fixme/PAUSED}}"
+  fi
   PIPE_STATE_DIR="${PIPE_STATE_DIR:-${HOME}/.claude/state/${PIPE_PROFILE}}"
   PIPE_RUNS_FILE="${PIPE_RUNS_FILE:-${PIPE_STATE_DIR}/agent-runs.jsonl}"
   PIPE_COSTS_FILE="${PIPE_COSTS_FILE:-${PIPE_STATE_DIR}/agent-costs.json}"
@@ -178,7 +197,6 @@ pipeline_load() {
   PIPE_POOL_NAME="${PIPE_POOL_NAME:-${PIPE_PROFILE}-auto}"
   # Every other team mirrors its state and has its own pause marker beside FxA's, from its name.
   if [ "$PIPE_PROFILE" != fxa ]; then
-    local bucket="${PIPE_STATE_BUCKET:-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme}}"
     PIPE_STATE_URI="${bucket:+${bucket}/teams-state/${PIPE_PROFILE}/state}"
     PIPE_PAUSE_URI="${bucket:+${bucket}/teams-state/${PIPE_PROFILE}/PAUSED}"
   fi
