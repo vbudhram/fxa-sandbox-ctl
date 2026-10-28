@@ -35,7 +35,8 @@ check "a blank PIPE_PAUSE_URI stays blank with the switch on" "" \
 check "a secret prints only set or unset" "PIPE_JIRA_BASIC=set|0" \
   "$( (cd "$root" && env HOME="$tmp/home" FXA_TEAMS_DIR="$T" FXA_DB="$tmp/fxa.db" FXA_VM_BACKEND=tart FXA_FXA_RECORD=1 PIPE_JIRA_BASIC=bot@example.com:tok-q7 ./fxa-sandbox-ctl profile env 2>&1) > "$tmp/sec"; grep '^PIPE_JIRA_BASIC=' "$tmp/sec")|$(grep -c 'tok-q7' "$tmp/sec")"
 mkdir -p "$tmp/empty"
-nocache() { ( cd "$root" && env HOME="$tmp/home" FXA_TEAMS_DIR="$tmp/empty" FXA_DB="$tmp/fxa.db" FXA_GCE_PROJECT= FXA_VM_BACKEND=tart FXA_FXA_RECORD=1 ./fxa-sandbox-ctl "$@" 2>&1; echo "rc=$?" ); }
+# A blank FXA_TEAMS_URI turns the store off; a blank FXA_GCE_PROJECT does not, as .env fills a blank value.
+nocache() { ( cd "$root" && env HOME="$tmp/home" FXA_TEAMS_DIR="$tmp/empty" FXA_DB="$tmp/fxa.db" FXA_GCE_PROJECT=p1 FXA_TEAMS_URI= FXA_VM_BACKEND=tart FXA_FXA_RECORD=1 ./fxa-sandbox-ctl "$@" 2>&1; echo "rc=$?" ); }
 out="$(nocache profile env)"
 check "with the switch on and no cached record, the load stops and names profile sync" "1|rc=1" \
   "$(grep -c "ERROR: no FxA team record in $tmp/empty; run fxa-sandbox-ctl profile sync" <<< "$out")|$(tail -1 <<< "$out")"
