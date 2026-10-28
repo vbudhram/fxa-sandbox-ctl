@@ -68,8 +68,10 @@ if [ -s "$done_file" ]; then
       jq -e --arg f "$f" '.files | has($f)' "$done_file" >/dev/null \
         || problems+=("$f is in the change but not in files. Delete it or undo it, or add it to files with why it belongs to the issue")
     done
+    # A listed file may also be one the change deletes.
+    gone="$(git diff --name-only --diff-filter=D "$base" 2>/dev/null)"
     while IFS= read -r f; do
-      printf '%s\n' ${kept[@]+"${kept[@]}"} | grep -qxF -- "$f" || problems+=("files lists $f, which is not in the change")
+      { printf '%s\n' ${kept[@]+"${kept[@]}"}; printf '%s\n' "$gone"; } | grep -qxF -- "$f" || problems+=("files lists $f, which is not in the change")
     done < <(jq -r '.files | keys[]' "$done_file")
     title="$(jq -r .pr_title "$done_file")"
     [[ "$title" =~ ^(feat|fix|chore|refactor|test|docs|perf|ci|build|style|revert|task|bug)\([^()]+\)!?:\ [^[:space:]] ]] \

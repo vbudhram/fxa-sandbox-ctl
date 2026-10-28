@@ -123,6 +123,9 @@ handoff 'test(settings): x'; printf '{}' > .sync-test-plan.json
 check "a changed file that files does not list is named" 1 "$(bash "$C" | grep -c '.sync-test-plan.json is in the change but not in files')"
 rm .sync-test-plan.json; FILES='{"packages/fxa-settings/src/Page.test.tsx": "the test", "src/other.ts": "x"}' handoff 'test(settings): x'
 check "a listed file that did not change is named" 1 "$(bash "$C" | grep -c 'files lists src/other.ts, which is not in the change')"
+g rm -q -- packages/fxa-settings/src/Page.tsx; FILES='{"packages/fxa-settings/src/Page.test.tsx": "the test", "packages/fxa-settings/src/Page.tsx": "removed with the old page"}' handoff 'test(settings): x'
+check "a listed file the change deletes is in the change" 0 "$(bash "$C" | grep -c 'files lists packages/fxa-settings/src/Page.tsx')"
+g reset -q HEAD -- packages/fxa-settings/src/Page.tsx; g checkout -q -- packages/fxa-settings/src/Page.tsx
 handoff 'test(settings): x'; jq 'del(.files)' .fxa-auto-done.json > d.tmp && mv d.tmp .fxa-auto-done.json
 check "a handoff with no files list is a problem" 1 "$(bash "$C" | grep -c 'files as an object')"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
