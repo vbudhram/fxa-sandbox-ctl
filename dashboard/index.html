@@ -2156,6 +2156,7 @@ function teamItemForm(t, rec, f) {
         ${d.runtime.length < 10 ? html`<button type="button" class="linkbtn" data-tf-push="runtime">Add a file</button>` : ""}</fieldset>${save}`; }
   if (f.item === "pr") return html`<label><input type="checkbox" data-tfk="open"${d.open ? " checked" : ""}> Open draft PRs (off: the team gets diffs only)</label>
     ${t.profile === "fxa" ? html`<p class="hint">FxA always asks fxa-devs.</p>` : lab("reviewers", html`Reviewers <span class="opt">· comma separated, optional</span>`, html`<input id="tf-reviewers" class="input mono" data-tfk="reviewers" value="${d.reviewers}">`)}
+    ${lab("review_rounds", html`Automatic review rounds <span class="opt">· 0 to 5</span>`, html`<input id="tf-review_rounds" class="input" type="number" min="0" max="5" data-tfk="review_rounds" value="${d.review_rounds}">`, "The rounds the bot runs by itself on a PR for Copilot, CodeRabbit and CI. After that it asks. Empty: 2.")}
     ${lab("labels", html`Extra labels <span class="opt">· comma separated, optional</span>`, html`<input id="tf-labels" class="input mono" data-tfk="labels" value="${d.labels}" placeholder="coderabbit">`, "Every PR also gets auto, the label the pipeline finds its PRs by. coderabbit asks CodeRabbit for a review.")}
     <fieldset class="group field"><legend class="lb">Who can open a PR from Slack <span class="opt">· ${d.users.length}</span></legend>
       <p class="hint">Nobody listed: anyone who can steer the session. Team admins always can.</p>
@@ -2180,7 +2181,7 @@ function teamItemDraft(item, rec) {
     jira: { project: j.project ?? "", queue: !!j.queue, secret: !!j.secret, usage: j.usage !== false, launches_per_day: c.launches_per_day ?? "", board: j.board ?? "", sprint: j.sprint ?? "" },
     tools: { mcp: (rec.mcp ?? []).join(", "), dflt: !("mcp" in rec) },
     caps: { usd_per_day: c.usd_per_day ?? "", usd_per_month: c.usd_per_month ?? "", runners: c.runners ?? "" },
-    pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", "), users: [...(p.users ?? [])], labels: (p.labels ?? []).join(", "), infra: (p.infra_checks ?? []).join(", ") } }[item];
+    pr: { open: p.open !== false, reviewers: (p.reviewers ?? []).join(", "), users: [...(p.users ?? [])], labels: (p.labels ?? []).join(", "), infra: (p.infra_checks ?? []).join(", "), review_rounds: p.review_rounds ?? "" } }[item];
 }
 // The record with a patch applied (a key set to undefined is removed), and whether the change needs a new test.
 function teamApply(rec, patch) {
@@ -2221,7 +2222,8 @@ function teamPatch(f) {
     // A label name can hold a space, so labels split on commas only.
     labels: (l => l.length ? l : undefined)([...new Set(String(d.labels ?? "").split(",").map(x => x.trim()).filter(Boolean))]),
     // A rule has no comma (lib/team_record.py), so rules split on commas.
-    infra_checks: (l => l.length ? l : undefined)([...new Set(String(d.infra ?? "").split(",").map(x => x.trim()).filter(Boolean))]) }) };
+    infra_checks: (l => l.length ? l : undefined)([...new Set(String(d.infra ?? "").split(",").map(x => x.trim()).filter(Boolean))]),
+    review_rounds: num(d.review_rounds) ?? undefined }) };
   return {};
 }
 // The ways a session of a record team can start, each with its rule and the form that changes it.
@@ -2275,7 +2277,7 @@ function teamSetupHtml(t) {
       ${c.runners != null ? html`<p class="hint">At most ${c.runners} runners at once.</p>` : ""}`, { flat: true, cls: "stack sm" })}
     ${more("about", ["About the team", "name, admins and PR rules"], html`${rowv("name", "Name shown", rec.label || teamCap(t.profile), "Change")}
       ${rowv("admins", "Team admins", (rec.admins ?? []).length ? rec.admins.map(a => a.email || a.slack).join(", ") : "None", (rec.admins ?? []).length ? "Change" : "Add")}
-      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${fx ? ", reviewers fxa-devs (built in)" : (rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}${(rec.pr?.infra_checks ?? []).length ? `, ${rec.pr.infra_checks.length} CI infra rule${rec.pr.infra_checks.length === 1 ? "" : "s"}` : ""}${(rec.pr?.users ?? []).length ? `, opened from Slack by ${rec.pr.users.length} ${rec.pr.users.length === 1 ? "person" : "people"} and the admins` : ""}, labels ${["auto", ...(rec.pr?.labels ?? [])].join(", ")}`, "Change")}`)}
+      ${rowv("pr", "PR rules", rec.pr?.open === false ? "Diffs only" : `Draft PRs${fx ? ", reviewers fxa-devs (built in)" : (rec.pr?.reviewers ?? []).length ? `, reviewers ${rec.pr.reviewers.join(", ")}` : ""}${(rec.pr?.infra_checks ?? []).length ? `, ${rec.pr.infra_checks.length} CI infra rule${rec.pr.infra_checks.length === 1 ? "" : "s"}` : ""}${(rec.pr?.users ?? []).length ? `, opened from Slack by ${rec.pr.users.length} ${rec.pr.users.length === 1 ? "person" : "people"} and the admins` : ""}, labels ${["auto", ...(rec.pr?.labels ?? [])].join(", ")}, ${rec.pr?.review_rounds ?? 2} automatic review round${(rec.pr?.review_rounds ?? 2) === 1 ? "" : "s"}`, "Change")}`)}
     ${more("runs", ["How it runs", "a change needs a new test"], html`${rowv("tools", "Tools", teamTools(rec.mcp), "Change")}
       ${rowv("skills", "Skills", (rec.skills ?? []).length ? rec.skills.join(", ") : "The base skills only", "Change")}
       ${rowv("runner", "Runner", `${rec.stack?.kind === "fxa" ? `FxA stack from ${rec.stack.repo ?? "mozilla/fxa"}` : "No stack"}, ${rec.runner?.backend === "firecracker" ? "Firecracker" : "GCE VM"}${rec.runner?.android ? ", Android" : ""}`, "Change")}

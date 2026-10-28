@@ -231,7 +231,9 @@ senv="$(py env "$(srec fxa-private)" fxa-private)"
 sget() { printf '%s\n' "$senv" | awk -F'\t' -v k="$1" '$1 == k {print $2}'; }
 check "a secret team on an FxA fork is valid beside fxa; its env names its labels and its stack dir" "0||1|ai-fixme|ai-fixme-private|/home/agent/fxa" \
   "$(py validate "$S/fxa-private.json" fxa-private >/dev/null 2>&1; echo $?)|$(uq "$S/fxa-private.json")|$(sget PIPE_SECRET_TICKETS)|$(sget PIPE_QUEUE_LABEL)|$(sget PIPE_LABEL_PREFIX)|$(sget PIPE_STACK_DIR)"
-mkdir -p "$S/ix"; srec pu ', "admins": [ { "slack": "U0ADMIN1", "email": "a@example.com" } ], "pr": { "users": ["U0PRUSER1"] }' > /dev/null; mv "$S/pu.json" "$S/ix/"
+mkdir -p "$S/ix"; srec pu ', "admins": [ { "slack": "U0ADMIN1", "email": "a@example.com" } ], "pr": { "users": ["U0PRUSER1"], "review_rounds": 3 }' > /dev/null; mv "$S/pu.json" "$S/ix/"
+check "pr.review_rounds: the index gives it, 2 when unset; 6 or a string is refused" '3|2|refused|refused' \
+  "$(FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$S/ix" | jq -r '.teams.pu.review_rounds')|$(mkdir -p "$S/ix2"; srec rr0 '' >/dev/null; mv "$S/rr0.json" "$S/ix2/"; FXA_RESERVED_TEAMS= python3 -I "$root/lib/team_record.py" index "$S/ix2" | jq -r '.teams.rr0.review_rounds')|$(py validate "$(srec rr1 ', "pr": { "review_rounds": 6 }')" rr1 >/dev/null 2>&1 && echo ok || echo refused)|$(py validate "$(srec rr2 ', "pr": { "review_rounds": "2" }')" rr2 >/dev/null 2>&1 && echo ok || echo refused)"
 check "pr.labels: extra PR labels load as PIPE_PR_LABELS; a bad label name is refused" 'PIPE_PR_LABELS	coderabbit,needs review|refused' \
   "$(py env "$(srec pl1 ', "pr": { "labels": ["coderabbit", "needs review"] }')" pl1 | grep '^PIPE_PR_LABELS')|$(py validate "$(srec pl2 ', "pr": { "labels": ["-bad;rm"] }')" pl2 >/dev/null 2>&1 && echo ok || echo refused)"
 check "the index gives the bot each team's admin and PR user IDs; a bad pr.users ID is refused" '["U0ADMIN1"]|["U0PRUSER1"]|refused' \

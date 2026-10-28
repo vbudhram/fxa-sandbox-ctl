@@ -228,6 +228,7 @@ t("teams route: an odd name is kept raw, never decoded", teamRoute("%E0").sel, "
         JSON.stringify([{ project: "RUS", queue: true, board: "99" }, { usd_per_day: 5 }, ["a=b c", "d=e"]]));
       const bare = { name: "rusty", repos: [{ slug: "o/r", role: "work" }] }; globalThis.TED = { name: "rusty", rec: bare };
       t("settings: a record with no runner keys gets none from an unchanged save", ["repos", "runner", "egress", "skills", "boot", "secrets", "admins", "name"].filter(i => teamRetest(bare, teamApply(bare, teamPatch({ item: i, d: teamItemDraft(i, bare) })))).join(","), "");
+      t("settings: review rounds save as a number, and empty drops the key", JSON.stringify([teamPatch({ item: "pr", d: { ...teamItemDraft("pr", bare), review_rounds: "3" } }).pr.review_rounds, teamPatch({ item: "pr", d: teamItemDraft("pr", bare) }).pr.review_rounds]), JSON.stringify([3, undefined]));
       t("settings: PR labels split on commas only, so a label may hold a space; empty drops the key", JSON.stringify([teamPatch({ item: "pr", d: { ...teamItemDraft("pr", bare), labels: "coderabbit, needs review, coderabbit" } }).pr.labels, teamPatch({ item: "pr", d: teamItemDraft("pr", bare) }).pr.labels]),
         JSON.stringify([["coderabbit", "needs review"], undefined]));
       t("settings: secret names get the team's prefix, and a pick of the FxA stack names no repo for mozilla/fxa", JSON.stringify([teamPatch({ item: "secrets", d: { jira: "login", runtime: [{ what: "env", path: "/home/agent/r/.env" }, { what: "", path: "" }] } }).secrets,

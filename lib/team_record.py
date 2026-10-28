@@ -242,7 +242,12 @@ def check(rec, name=None):
         if acc.get("jira_prefixes"):
             bad.append("a team that takes secret tickets cannot list access.jira_prefixes: a Slack tag of a key starts the public team's session")
 
-    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users", "labels", "infra_checks"})
+    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users", "labels", "infra_checks", "review_rounds"})
+    # pr.review_rounds: the automatic fix rounds the bot runs on a PR for review bots and CI; 0 always asks.
+    if "review_rounds" in pr:
+        v = pr["review_rounds"]
+        if not isinstance(v, int) or isinstance(v, bool) or not 0 <= v <= 5:
+            bad.append("pr.review_rounds must be 0 to 5")
     # pr.infra_checks: "check=log text" rules; a failed check whose log has the text is the repo's fault, not the PR's.
     if "infra_checks" in pr:
         strs(pr["infra_checks"], "pr.infra_checks", INFRA, 5)
@@ -465,6 +470,7 @@ def index(folder):
         teams[rec["name"]] = {"label": rec.get("label", rec["name"]), "status": rec.get("status", "draft"),
                               "generation": gen, "access": rec.get("access", {}),
                               "admins": [a["slack"] for a in rec.get("admins", [])], "pr_users": rec.get("pr", {}).get("users", []),
+                              "review_rounds": rec.get("pr", {}).get("review_rounds", 2),
                               "jira": rec.get("jira", {}).get("project", ""), "queue": rec.get("jira", {}).get("queue") is True,
                               "secret": rec.get("jira", {}).get("secret") is True}
     return {"schema": 1, "teams": teams}
