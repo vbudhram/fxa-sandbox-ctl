@@ -115,7 +115,9 @@ holding the lock, and never while another host is still running passes.
    Only the keys that `lib/fxa-record.check.sh` allows may differ. The state dir, the URIs and the queue JQL must be equal.
 4. On the manager, run `fxa-sandbox-ctl state push` and add the line between passes, outside 07:00 to 19:00 New York time on a weekday.
 
-To go back, delete the line: the next command loads the conf again, and no state moves. FxA runner keys
+To go back, delete the line: the next command loads the conf again, and no state moves. The line does not
+change the bot: it reads the FxA admins and PR list from the cached record with or without the line, so
+change those with `profile set fxa`. FxA runner keys
 (repos, stack, runner, egress, mcp, skills, boot, secrets) change only with the CLI: run
 `FXA_TEAMS_SKIP_TEST=1 fxa-sandbox-ctl profile set fxa <file>`, then `profile test fxa` at once. If the test
 fails, set the old version again. FxA never goes to draft for a test.
