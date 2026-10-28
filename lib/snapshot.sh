@@ -679,7 +679,8 @@ snapshot_json() {
   local all_queue_items q; q="$(pipeline_queue_jql all)" && all_queue_items="$(jira_items_json "$q")" || all_queue_items=null
   inflight_items="$(jira_items_in_state inflight)" || inflight_items=null
   done_items="$(jira_items_in_state done)" || done_items=null
-  blocked_items="$(jira_items_in_state blocked)" || blocked_items=null
+  # A blocked ticket someone closed or cancelled keeps its label (drain still reads it), but nobody waits on it.
+  blocked_items="$(jira_items_in_state blocked 'statusCategory != Done')" || blocked_items=null
 
   local queue inflight_keys done_keys
   queue="$(printf '%s' "$queue_items" | jq -r '.[]?.key // empty' 2>/dev/null || echo '')"

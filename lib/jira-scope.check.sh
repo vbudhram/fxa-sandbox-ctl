@@ -55,6 +55,9 @@ check "a pipeline ticket that got a security level or a secret label is found, i
 check "precheck reports it once, and the pass gets an info line (public team, with and without a secret team)" "1|1|2" \
   "$(grep -c 'for sk in $(jira_secured_keys' "$here/../fxa-sandbox-ctl")|$(grep -c 'secured-noted" \] && continue' "$here/../fxa-sandbox-ctl")|$(grep -c '_info "security level or label: ' "$here/../fxa-sandbox-ctl")"
 check "a state read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-inflight" ORDER BY created ASC' "$(jira_keys_in_state inflight)"
+check "the dashboard's blocked read leaves out closed and cancelled tickets" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-blocked" AND statusCategory != Done ORDER BY created ASC' "$(jira_items_in_state blocked 'statusCategory != Done')"
+check "the snapshot reads the blocked list with that filter (drain still reads every blocked ticket)" "1|1" \
+  "$(grep -c "jira_items_in_state blocked 'statusCategory != Done'" "$here/snapshot.sh")|$(grep -c 'jira_keys_in_state blocked 2>' "$here/../fxa-sandbox-ctl")"
 check "a state item read is scoped" 'project = FXA AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone")) AND labels = "ai-fixme-done" ORDER BY created ASC' "$(jira_items_in_state done)"
 check "a profile's own project wins" 'project = MNTOR AND level IS EMPTY AND (labels IS EMPTY OR labels NOT IN ("security", "hackerone"))' "$(PIPE_PROFILE=monitor PIPE_JIRA_PROJECT=MNTOR pipeline_jira_scope)"
 check "a profile with no project has no queue" "1|" "$(PIPE_PROFILE=monitor pipeline_jira_scope 2>/dev/null; echo "$?|$(PIPE_PROFILE=monitor pipeline_queue_jql 2>/dev/null)")"

@@ -331,10 +331,11 @@ jira_items_json() {
 }
 
 jira_queue_items()    { pipeline_require || return 1; local q; q="$(pipeline_queue_jql)" || return 1; jira_items_json "$q"; }
+# jira_items_in_state <state> [extra JQL]   The state's items; the extra clause narrows them (the dashboard's blocked list).
 jira_items_in_state() {
   pipeline_require || return 1
   local s; s="$(pipeline_jira_scope)" || return 1
-  jira_items_json "${s} AND labels = \"$(pipeline_label_for "${1:?state required}")\" ORDER BY created ASC"
+  jira_items_json "${s} AND labels = \"$(pipeline_label_for "${1:?state required}")\"${2:+ AND $2} ORDER BY created ASC"
 }
 jira_done_keys()      { jira_keys_in_state done; }
 # jira_secured_keys   The project's pipeline tickets that got a security level or a secret label: the
