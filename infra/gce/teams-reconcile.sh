@@ -49,7 +49,8 @@ _stop_pass() {
 }
 
 # The record teams that should run a pass, then the folder teams that keep theirs.
-want="$(jq -r '.teams // {} | to_entries[] | select(.value.status == "active" and .value.queue == true and (.value.jira // "") != "") | .key' "$I" 2>/dev/null | grep -E "$NAME" || true)"
+# fxa runs as fxa-pass.timer (the alias fxa-ai-fixme), so a second fxa-pass@fxa.timer would race it.
+want="$(jq -r '.teams // {} | to_entries[] | select(.value.status == "active" and .value.queue == true and (.value.jira // "") != "") | .key' "$I" 2>/dev/null | grep -E "$NAME" | grep -vx fxa || true)"
 keep="$want"
 for f in "$W"/fxa-sandbox-ctl/profiles/*/profile.conf; do
   t="$(basename "$(dirname "$f")")"

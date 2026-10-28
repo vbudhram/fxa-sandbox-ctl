@@ -54,7 +54,8 @@ check "profile_file finds a record's prompt, and a folder team's own file first"
 bad() { printf '%s' "$2" > "$T/$1.json"; py validate "$T/$1.json" "$1" 2>&1; }
 check "a host key in a record is refused" "1" "$(bad hk '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "hk", "state_uri": "gs://x" }' | grep -c 'state_uri is not a known key')"
 check "a name that is not the file's is refused" "1" "$(bad n1 '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "other" }' | grep -c 'does not match')"
-check "a built-in team's name is refused" "1" "$(bad fxa '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "fxa" }' | grep -c 'reserved')"
+check "a folder team's name is refused, but fxa may be a record while its folder exists" "1|" \
+  "$(bad monitor '{ "schema": 1, "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "name": "monitor" }' | grep -c 'reserved')|$(bad fxa '{ "schema": 1, "repos": [ { "slug": "mozilla/fxa", "role": "work" } ], "stack": { "kind": "fxa" }, "name": "fxa" }')"
 hostname_rec() { printf '{ "schema": 1, "repos": [ { "slug": "example/x", "role": "work" } ], "name": "%s" }' "$1"; }
 r=""; for hn in agent-sessions agent-sessions-dev fxa-ai-fixme llm-proxy mcp-gateway teams; do r="$r $(bad "$hn" "$(hostname_rec "$hn")" | grep -c reserved)"; done
 check "a name the host uses under ~/.claude/state is refused (the team would get that store)" "1 1 1 1 1 1" "${r# }"

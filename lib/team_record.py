@@ -44,7 +44,8 @@ PROMPTS = {"claude_md": ("CLAUDE.md", 8192), "guide_md": ("guide.md", 16384), "g
 # A team's state dir is ~/.claude/state/<name>, so a name the host uses there would give a team the
 # host's own store (llm-proxy holds the run tokens) and each pass would mirror it to GCS.
 # new, all and routines are words in the dashboard's #teams/<team> routes, so no team may take them.
-RESERVED = {"fxa", "index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "teams", "new", "all", "routines",
+# fxa is a record name: the host keeps FxA's state under the alias name fxa-ai-fixme.
+RESERVED = {"index", "agent-sessions", "agent-sessions-dev", "fxa-ai-fixme", "llm-proxy", "mcp-gateway", "teams", "new", "all", "routines",
             "options", "people"}
 # Hosts that take data out with no account: paste sites, file drops, tunnels and request catchers.
 # An admin may approve other hosts; these are refused even then, with every subdomain.
@@ -120,7 +121,8 @@ def check(rec, name=None):
             bad.append(f"name {n!r} does not match the record's file name {name!r}")
         # pipeline_load reads pipelines/<name>.conf before a record, so an alias name would load that team.
         aliases = {f[:-5] for f in os.listdir(os.path.join(REPO, "pipelines")) if f.endswith(".conf")} if os.path.isdir(os.path.join(REPO, "pipelines")) else set()
-        reserved = RESERVED | aliases | set(os.environ.get("FXA_RESERVED_TEAMS", "").split())
+        # During the move to a record, the fxa folder and the fxa record are the same team.
+        reserved = RESERVED | aliases | (set(os.environ.get("FXA_RESERVED_TEAMS", "").split()) - {"fxa"})
         if n in reserved:
             bad.append(f"name {n!r} is reserved (a built-in team, or a folder the host keeps under ~/.claude/state)")
 

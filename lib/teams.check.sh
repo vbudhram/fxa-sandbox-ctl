@@ -95,6 +95,17 @@ check "profile lint passes with records and the index in the cache" "profiles: o
   "$(teams_create "$(rec linted Linted)" >/dev/null; cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
 check "the index is not a team, and no record can be named index" "0|1" \
   "$(pipeline_profile_names | grep -cx index)|$(teams_create "$(rec index Index)" 2>&1 | grep -c reserved)"
+# FxA as a record: it may exist beside its folder, and it stays active and cannot be deleted.
+jq -n '{schema: 1, name: "fxa", label: "FxA", status: "active", repos: [{slug: "mozilla/fxa", role: "work"}], stack: {kind: "fxa"}}' > "$tmp/fxa.json"
+check "an active fxa record is created beside the fxa folder, and profile lint passes with it in the cache" "0|profiles: ok" \
+  "$(FXA_TEAMS_SKIP_TEST=1 teams_create "$tmp/fxa.json" >/dev/null 2>&1; echo $?)|$(cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
+mkdir -p "$tmp/nofxa/lib"
+check "profile delete fxa is refused even with no profiles/fxa folder, and the record stays" "1|1|yes" \
+  "$( (SANDBOX_ROOT="$tmp/nofxa"; teams_delete fxa >/dev/null 2>"$tmp/fxdel.err"); echo $?)|$(grep -c 'fxa is the FxA team and cannot be deleted' "$tmp/fxdel.err")|$([ -e "$FXA_TEAMS_DIR/fxa.json" ] && echo yes || echo no)"
+check "profile disable fxa and profile draft fxa are refused, and fxa stays active" "1|1|active" \
+  "$(cli disable fxa)|$(cli draft fxa)|$(jq -r .status "$FXA_TEAMS_DIR/fxa.json")"
+check "profile set fxa with status draft is refused; an active edit writes" "1|0|FxA Two" \
+  "$(jq '.status = "draft"' "$FXA_TEAMS_DIR/fxa.json" > "$tmp/fxa2.json"; teams_set fxa "$tmp/fxa2.json" 2>&1 | grep -c 'FxA team stays active')|$(jq '.label = "FxA Two"' "$FXA_TEAMS_DIR/fxa.json" > "$tmp/fxa2.json"; teams_set fxa "$tmp/fxa2.json" >/dev/null 2>&1; echo $?)|$(jq -r .label "$FXA_TEAMS_DIR/fxa.json")"
 
 # The live checks, with GitHub and Jira faked: a curl that answers by URL.
 curl() { local u="${@: -1}"
@@ -234,5 +245,8 @@ check "sync with a store error keeps a team that left the store, and fails" "1|y
   "$( (db_value() { return 1; }; teams_sync >/dev/null 2>&1); echo $?)|$([ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)"
 check "sync removes a team that left the store, with its routines and an audit row" "no|null|0|1" \
   "$(teams_sync >/dev/null; [ -e "$FXA_TEAMS_DIR/web.json" ] && echo yes || echo no)|$(jq -r .teams.web "$FXA_TEAMS_DIR/index.json")|$(db_value "SELECT count(*) FROM routines WHERE team = 'web';")|$(db_value "SELECT count(*) FROM team_audit WHERE team = 'web' AND action = 'routine-delete';")"
+cp "$tmp/fxa.json" "$FXA_TEAMS_DIR/fxa.json"; echo 5 > "$FXA_TEAMS_DIR/fxa.gen"
+check "sync keeps a cached fxa record that the store does not list, with a WARN" "0|yes|1|active" \
+  "$(teams_sync >/dev/null 2>"$tmp/fxsync.err"; echo $?)|$([ -e "$FXA_TEAMS_DIR/fxa.json" ] && echo yes || echo no)|$(grep -c 'WARN: the store does not list team fxa' "$tmp/fxsync.err")|$(jq -r .teams.fxa.status "$FXA_TEAMS_DIR/index.json")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

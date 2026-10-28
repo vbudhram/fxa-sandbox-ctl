@@ -242,6 +242,9 @@ teams_create() {
 teams_set() {
   local name="$1" f="$2" gen="${3:-}" tmp rc
   [ "$(jq -r '.name // empty' "$f" 2>/dev/null)" = "$name" ] || { echo "ERROR: the record's name is not ${name}; a team cannot be renamed" >&2; return 1; }
+  # A non-active FxA record stops every FxA routine; the dashboard saves runner keys with status draft.
+  [ "$name" != fxa ] || [ "$(jq -r '.status // "draft"' "$f")" = active ] \
+    || { echo "ERROR: the FxA team stays active; change its runner keys with FXA_TEAMS_SKIP_TEST=1 profile set fxa <file>, then profile test fxa" >&2; return 1; }
   [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team ${name} here; run profile sync, or profile create" >&2; return 1; }
   gen="${gen:-$(cat "${FXA_TEAMS_DIR}/${name}.gen" 2>/dev/null)}"
   [[ "$gen" =~ ^[0-9]+$ ]] || { echo "ERROR: no generation for team ${name}; run profile sync" >&2; return 1; }
@@ -333,6 +336,7 @@ teams_test() {
 teams_status() {
   local name="$1" st="$2" tmp rc
   case "$st" in draft|active|disabled) ;; *) echo "ERROR: status is draft, active or disabled" >&2; return 1 ;; esac
+  [ "$name" != fxa ] || [ "$st" = active ] || { echo "ERROR: the FxA team cannot be turned off or put in draft" >&2; return 1; }
   [ -f "${FXA_TEAMS_DIR}/${name}.json" ] || { echo "ERROR: no team ${name} here; run profile sync" >&2; return 1; }
   # Turning active needs a passed test of this very generation: an edit since then needs a new one.
   if [ "$st" = active ] && [ "$(jq -r '.status // "draft"' "${FXA_TEAMS_DIR}/${name}.json")" != active ] \
@@ -356,6 +360,7 @@ teams_status() {
 # teams_delete <name>   Remove a team. Refused while one of its sessions can still resume.
 teams_delete() {
   local name="$1" gen f n=0
+  [ "$name" != fxa ] || { echo "ERROR: fxa is the FxA team and cannot be deleted" >&2; return 1; }
   # A record team may keep profiles/<name>/ for its boot.sh and skills; only a profile.conf makes a folder team.
   [[ "$name" =~ ^[a-z][a-z0-9-]{1,30}$ ]] && [ ! -f "${SANDBOX_ROOT}/profiles/${name}/profile.conf" ] || { echo "ERROR: ${name} is not a team record" >&2; return 1; }
   for f in "$SESSION_DIR"/agent-*.json; do
@@ -403,6 +408,8 @@ teams_sync() {
   for f in "$FXA_TEAMS_DIR"/*.json; do
     n="$(basename "$f" .json)"; [ -f "$f" ] && [ "$n" != index ] || continue
     grep -qx "$n" <<< "$names" && continue
+    # A store problem or an empty listing must not stop the FxA pipeline.
+    [ "$n" != fxa ] || { echo "WARN: the store does not list team fxa; the cached record stays" >&2; continue; }
     # A team deleted on another host: its routines go too, as teams_delete does. A store error keeps the
     # cached record, so the next sync tries again.
     routines_drop_team "$n" || { rc=1; continue; }

@@ -42,6 +42,8 @@ check "no index stops every record pass, and keeps the folder team's" "foldq" \
   "$(index '{ "rusty": { "status": "active", "jira": "RUST", "queue": true } }'; run >/dev/null; rm -f "$H/.claude/state/teams/index.json"; run >/dev/null; wants)"
 check "a run with nothing to change makes no enable or disable" "0" \
   "$(: > "$tmp/calls"; run >/dev/null; grep -cE '^(enable|disable)' "$tmp/calls")"
+check "the fxa record gets no fxa-pass@fxa timer (fxa-pass.timer runs it), and a stray one stops" "foldq|0|1" \
+  "$(index '{ "fxa": { "status": "active", "jira": "FXA", "queue": true } }'; : > "$S/timers.target.wants/fxa-pass@fxa.timer"; : > "$tmp/calls"; run >/dev/null; wants)|$(grep -c '^enable.*fxa-pass@fxa' "$tmp/calls")|$(grep -c '^disable.*fxa-pass@fxa.timer' "$tmp/calls")"
 
 # A team turned off mid-pass: its running pass ends, and a run it launched (adopted by PID 1) does not.
 index '{ "busy": { "status": "active", "jira": "BZ", "queue": true } }'; run >/dev/null
