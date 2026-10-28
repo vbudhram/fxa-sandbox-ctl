@@ -8,6 +8,9 @@ set -uo pipefail
 S=/home/agent/syncstorage RH=/opt/rust/rustup CH=/opt/rust/cargo V=/home/agent/.syncstorage-venv IT=/home/agent/.syncstorage-it-venv
 CONF=/home/agent/.syncstorage.toml LOG=/home/agent/.syncstorage.log
 FEATURES="--no-default-features --features=syncstorage-db/mysql --features=py_verifier"
+# CI's Spanner build. It shares target/ with the MySQL one: a second dir built the gRPC library
+# and the common crates again and filled the runner's disk.
+SPANNER_FEATURES="--no-default-features --features=syncserver/spanner --features=py_verifier --features=syncserver/last_seen"
 R=/run/fxa-profile READY=/run/fxa-profile/ready FAIL=/run/fxa-profile/failed
 install -d -m 755 -o root -g root "$R"; rm -f "$READY" "$FAIL"
 step() { echo "$(date -u +%T) $*"; }
@@ -58,7 +61,8 @@ PY
 # A current pyOpenSSL too: Ubuntu's own (python3-openssl) breaks against the pinned cryptography.
 # marionette-driver drives Firefox for the sync-e2e skill.
 step "Python for the token verifier"
-deps="$(locked "$S/poetry.lock" pyfxa tokenlib cryptography)" || die "could not read poetry.lock"
+# ruff is CI's python-checks job (ruff format and ruff check on tools/).
+deps="$(locked "$S/poetry.lock" pyfxa tokenlib cryptography ruff)" || die "could not read poetry.lock"
 sudo -u agent -H bash -c "[ -x $V/bin/python ] || python3 -m venv $V; $V/bin/pip install -q $deps pyopenssl marionette-driver" < /dev/null \
   || die "could not set up the Python venv"
 
@@ -81,7 +85,10 @@ my "CREATE USER IF NOT EXISTS 'sync'@'%' IDENTIFIED BY 'test'; CREATE USER IF NO
 # Outside the repo: the repo's own config/local.toml is a path its rules keep agents out of.
 # Full debug info put 24 GB in target/ and filled the runner's disk; line tables keep backtraces.
 step "cargo config"
+# No incremental data, as CI builds: it took 2.1 GB of the runner's disk.
 sudo -u agent bash -c "mkdir -p /home/agent/.cargo && cat > /home/agent/.cargo/config.toml" <<'CARGO' || die "could not write the cargo config"
+[build]
+incremental = false
 [profile.dev]
 debug = "line-tables-only"
 [profile.test]
@@ -133,3 +140,48 @@ for i in $(seq 30); do [ "$(my "select count(*) from information_schema.tables w
 
 echo "ready after $(( $(date +%s) - t0 ))s" > "$READY"; chmod 644 "$READY"
 step "ready after $(( $(date +%s) - t0 ))s"
+
+# Stage 2: CI's Spanner path with payload offload, the team's production backend, with no Docker.
+# The MySQL server is ready first; sync-verify waits for spanner-ready only for its Spanner rows.
+SREADY=/run/fxa-profile/spanner-ready SFAIL=/run/fxa-profile/spanner-failed; rm -f "$SREADY" "$SFAIL"
+sdie() { step "SPANNER FAILED: $*"; echo "$*" > "$SFAIL"; chmod 644 "$SFAIL"; exit 1; }
+step "Spanner tools"
+# The image has them (packer/scripts/03b-toolchain.sh): the egress firewall allows none of these
+# hosts. A download here is for an older image, on a runner with open egress.
+ev="$(sed -n 's|.*cloud-spanner-emulator/emulator:\([0-9.]*\).*|\1|p' "$S/docker/docker-compose.spanner.yaml" | head -1)"
+[ -x /opt/spanner-emulator/gateway_main ] || { [ -n "$ev" ] && mkdir -p /opt/spanner-emulator \
+  && curl -fsSL "https://storage.googleapis.com/cloud-spanner-emulator/releases/$ev/cloud-spanner-emulator_linux_amd64-$ev.tar.gz" | tar xz -C /opt/spanner-emulator \
+  && echo "$ev" > /opt/spanner-emulator/.version; } || sdie "the image has no Spanner emulator, and the download failed"
+[ "$(cat /opt/spanner-emulator/.version 2>/dev/null)" = "$ev" ] \
+  || step "note: the Spanner emulator is $(cat /opt/spanner-emulator/.version 2>/dev/null), CI pins ${ev:-none} (SPANNER_EMULATOR_VERSION in 03b-toolchain.sh)"
+[ -x /opt/fake-gcs/fake-gcs-server ] || { mkdir -p /opt/fake-gcs \
+  && curl -fsSL https://github.com/fsouza/fake-gcs-server/releases/download/v1.56.1/fake-gcs-server_1.56.1_Linux_amd64.tar.gz | tar xz -C /opt/fake-gcs; } \
+  || sdie "could not download fake-gcs-server"
+# The Pub/Sub emulator is a gcloud component: its tarball alone, with no gcloud.
+pe=/opt/pubsub-emulator/platform/pubsub-emulator/bin/cloud-pubsub-emulator CL=https://dl.google.com/dl/cloudsdk/channels/rapid
+[ -x "$pe" ] || { src="$(curl -fsSL "$CL/components-2.json" | jq -r '.components[] | select(.id == "pubsub-emulator") | .data.source')" \
+  && [ -n "$src" ] && mkdir -p /opt/pubsub-emulator && curl -fsSL "$CL/$src" | tar xz -C /opt/pubsub-emulator; } \
+  || sdie "could not download the Pub/Sub emulator"
+chmod -R a+rX /opt/spanner-emulator /opt/fake-gcs /opt/pubsub-emulator
+
+step "Python for the payload-link publisher and reconciler"
+for n in publisher:tools/payload-link-dataflow/payload-link-publisher-py reconciler:tools/payload-reconciler; do
+  v=/home/agent/.syncstorage-${n%%:*}-venv
+  deps="$(locked "$S/${n#*:}/poetry.lock")" || sdie "could not read ${n#*:}/poetry.lock"
+  sudo -u agent -H bash -c "[ -x $v/bin/python ] || python3 -m venv $v; $v/bin/pip install -q $deps" < /dev/null || sdie "could not set up the ${n%%:*} venv"
+done
+# The reconciliation test reads GCS itself: CI's image has the reconciler's client for it.
+deps="$(locked "$S/tools/payload-reconciler/poetry.lock" google-cloud-storage)" && sudo -u agent -H bash -c "$IT/bin/pip install -q $deps" < /dev/null \
+  || sdie "could not add google-cloud-storage to the integration tests' venv"
+
+step "cargo build with Spanner (several minutes)"
+# The copy keeps the Spanner binary; the MySQL build after it only relinks, so restart.sh still starts MySQL.
+as_agent "CARGO_INCREMENTAL=0 cargo build -q --bin syncserver $SPANNER_FEATURES && cp target/debug/syncserver target/debug/syncserver-spanner \
+  && cargo build -q --bin syncserver $FEATURES" > /var/log/syncstorage-spanner-build.log 2>&1 \
+  || sdie "the Spanner cargo build failed (see /var/log/syncstorage-spanner-build.log)"
+# grpc's C++ objects are linked from the .a archives alone: drop the .o files and the archives'
+# debug info (about 3 of the 3.9 GB). The build script's fingerprint reads its inputs, not these.
+as_agent "find target/debug/build -path '*/grpcio-sys-*/out/*' -name '*.o' -delete; find target/debug/build -path '*/grpcio-sys-*/out/*' -name '*.a' -exec strip -g {} +" \
+  >> /var/log/syncstorage-spanner-build.log 2>&1
+echo "spanner ready after $(( $(date +%s) - t0 ))s" > "$SREADY"; chmod 644 "$SREADY"
+step "spanner ready after $(( $(date +%s) - t0 ))s"

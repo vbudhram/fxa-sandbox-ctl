@@ -27,13 +27,25 @@ description: Verify a syncstorage-rs change in the Sync Storage sandbox, the way
    changed crate with `cargo nextest run --workspace -E 'package(<crate>)'` on the test
    databases, then (when server code or a plan changed) a rebuild and restart of the server,
    your plan's checks, the repo's integration tests (`tools/integration_tests`, with a venv the
-   boot made from their own lock; the tokenserver tests need CI's mock FxA and the payload-link one
-   needs GCP, so both are left out), the
+   boot made from their own lock; the tokenserver tests need CI's mock FxA, so they are left out,
+   and the payload-link one runs in the Spanner row below), the
    protocol check and the Firefox sync. `--no-firefox` skips Firefox.
+   It also runs what CI runs for the other backends, so a CI failure shows here first:
+   - clippy with the Spanner and the Postgres features (code behind a feature compiles only there);
+   - `ruff format --diff tools` and `ruff check tools`, when a Python file in `tools/` changed;
+   - for server code: a Spanner build, the changed crates' unit tests on the Spanner emulator (as
+     CI's `build-and-unit-test-spanner`; SKIP under 4 GB free disk), then the integration tests on a
+     Spanner server (:8001) with payload offload, fake GCS and the payload-link reconciler, as CI's
+     `reconciliation-e2e-tests` job runs them.
+   The boot builds the Spanner stack after the MySQL server is ready (`/run/fxa-profile/spanner-ready`),
+   so the first Spanner row can wait for it. `bash ~/.claude/skills/sync-verify/spanner.sh up` starts
+   that stack alone, for a reproduction; its logs are in `~/.syncstorage-spanner/`.
    To add an e2e test, put it in `tools/integration_tests` and run the suite with the
    "integration tests" command from the plan.
 3. Fix each FAIL and run it again. Before the handoff, the whole run shows no FAIL. Print the
    verdict table (also in `/workspace/.fxa-verify-verdict.txt`) in your reply.
+   A SKIP row is a test this runner cannot run (Postgres has no server here). Copy its reason and
+   the note under the table into the PR body, so a reviewer knows that only CI tests that part.
 
 A change with no server code (docs, tools) skips the server steps. Unit tests alone never prove
 a fix that a client can see: the plan's checks do.

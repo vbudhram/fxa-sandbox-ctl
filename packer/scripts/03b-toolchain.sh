@@ -24,6 +24,34 @@ nightly() {
   fi
 }
 
+# opt_tool <dir> <version> <url>   A tar.gz unpacked into <dir> once for each version. A failed
+# fetch keeps the earlier copy and only warns: these are one team's tools, never FxA's.
+opt_tool() {
+  [ "$(cat "$1/.version" 2>/dev/null)" != "$2" ] || return 0
+  rm -rf "$1.new" && mkdir -p "$1.new"
+  if curl -fsSL "$3" | tar -xz -C "$1.new" && echo "$2" > "$1.new/.version"; then
+    rm -rf "$1" && mv "$1.new" "$1" && chmod -R a+rX "$1"
+  else
+    rm -rf "$1.new"; echo "WARN: $1 $2 did not install; the earlier copy stays" >&2
+  fi
+}
+
+# The storage team's Spanner path with no Docker (profiles/sync-storage/boot.sh): CI's Spanner
+# and Pub/Sub emulators and fake GCS, idle files for every other team. The emulator pin follows
+# SPANNER_EMULATOR_VER in syncstorage-rs. x86_64 only: the emulator has no arm64 build.
+SPANNER_EMULATOR_VERSION=1.5.52
+FAKE_GCS_VERSION=1.56.1
+PUBSUB_EMULATOR_COMPONENT=google-cloud-sdk-pubsub-emulator-20261009074343
+sync_tools() {
+  [ "$(uname -m)" = x86_64 ] || return 0
+  opt_tool /opt/spanner-emulator "$SPANNER_EMULATOR_VERSION" \
+    "https://storage.googleapis.com/cloud-spanner-emulator/releases/${SPANNER_EMULATOR_VERSION}/cloud-spanner-emulator_linux_amd64-${SPANNER_EMULATOR_VERSION}.tar.gz"
+  opt_tool /opt/fake-gcs "$FAKE_GCS_VERSION" \
+    "https://github.com/fsouza/fake-gcs-server/releases/download/v${FAKE_GCS_VERSION}/fake-gcs-server_${FAKE_GCS_VERSION}_Linux_amd64.tar.gz"
+  opt_tool /opt/pubsub-emulator "$PUBSUB_EMULATOR_COMPONENT" \
+    "https://dl.google.com/dl/cloudsdk/channels/rapid/components/${PUBSUB_EMULATOR_COMPONENT}.tar.gz"
+}
+
 # The one pin for each runtime: manager.sh reads them for the manager, and refresh.sh
 # for the snapshot (lib/claude-pin.check.sh).
 CLAUDE_CODE_VERSION=2.1.304
@@ -65,3 +93,5 @@ npm -v > /dev/null || { echo "ERROR: npm does not run" >&2; exit 1; }
 
 nightly
 echo "nightly $(sed -n 's/^Version=//p' "$NIGHTLY/application.ini" | head -1)"
+sync_tools
+echo "spanner-emulator $(cat /opt/spanner-emulator/.version 2>/dev/null || echo none)"
