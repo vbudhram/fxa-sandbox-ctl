@@ -28,6 +28,7 @@ PROJECT = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 HOST = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 CONNECTOR = re.compile(r"^[a-z0-9-]{1,30}$")
 REVIEWERS = re.compile(r"^([A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]{0,60}$")
+GH_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,49}$")
 DESKTOP = re.compile(r"^http://localhost:[0-9]{2,5}/$")
 STAMP = re.compile(r"^[0-9T:.Z+-]{10,32}$")
 
@@ -223,7 +224,10 @@ def check(rec, name=None):
         if acc.get("jira_prefixes"):
             bad.append("a team that takes secret tickets cannot list access.jira_prefixes: a Slack tag of a key starts the public team's session")
 
-    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users"})
+    pr = obj(rec.get("pr", {}), "pr", {"open", "reviewers", "users", "labels"})
+    # pr.labels: GitHub labels added to the team's PRs beside "auto", which the pipeline tracks its PRs by.
+    if "labels" in pr:
+        strs(pr["labels"], "pr.labels", GH_LABEL, 5)
     if "open" in pr:
         flag(pr["open"], "pr.open")
     # pr.users: the Slack users who may open a PR from Slack, beside the team admins. None listed: anyone who can steer.
@@ -340,6 +344,8 @@ def env(rec):
     yield "PIPE_PR_OPEN", "1" if pr.get("open", True) else "0"
     if pr.get("reviewers"):
         yield "PIPE_PR_TEAM", pr["reviewers"]
+    if pr.get("labels"):
+        yield "PIPE_PR_LABELS", ",".join(pr["labels"])
     if rec.get("skills"):
         yield "PIPE_TEAM_SKILLS", " ".join(rec["skills"])
     if rec.get("boot"):

@@ -186,7 +186,7 @@ over a record of the same name. All other teams are records.
 | `egress` | The extra hosts the agent may reach. Hosts that take data out with no account (paste sites, tunnels, request catchers) are refused, even for an admin. |
 | `mcp` | Which connectors the team's sessions get. |
 | `jira` | The team's project and whether the pipeline works its queue. With `jira.usage: false`, the comment on a merged ticket has no agent time, tokens or cost (for a project whose comments sync to a public place). With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
-| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. `users` lists the Slack users who may open a PR or push from Slack, beside the team admins; with none listed, anyone who can steer may. |
+| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. `users` lists the Slack users who may open a PR or push from Slack, beside the team admins; with none listed, anyone who can steer may. `labels` adds GitHub labels to each PR beside `auto`, which every PR gets because the pipeline finds its PRs by it; the FxA team adds `coderabbit`. |
 | `caps` | Launches per day and dollars per day and per month, inside the operator's ceilings. |
 | `prompts` | The team's `CLAUDE.md`, guide and pass goal. Admins edit these as text. |
 | `skills` | Skills from the reviewed catalog (`skills/team-catalog.txt`). |

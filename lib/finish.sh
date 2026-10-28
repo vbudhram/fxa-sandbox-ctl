@@ -937,6 +937,7 @@ ${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR 
   finish_approve_functional_gate "$pr_url"
 
   finish_add_reviewers "$pr_url"
+  finish_add_labels "$pr_url"
   # The repo's automatic Copilot review skips drafts, so ask for it on every new PR.
   finish_request_copilot_review "$pr_url"
 
@@ -1009,6 +1010,26 @@ print(body[:m.end()] + "\n" + section + "\n" + ("\n" + body[stop:] if end else "
   [ "$new" = "$body" ] && return 0
   printf '%s' "$new" | gh api -X PATCH "repos/${repo}/pulls/${num}" -F body=@- >/dev/null 2>&1 \
     || echo "  WARN: could not update the PR body's questions." >&2
+}
+
+# finish_add_labels <pr_url>
+#   The team's extra labels (PIPE_PR_LABELS, comma separated, such as coderabbit), each on its own after
+#   the create: a label the repo lacks costs only itself, never the PR or the tracking label.
+finish_add_labels() {
+  local pr_url="${1:-}" owner_repo num l
+  [ -n "$pr_url" ] && [ -n "${PIPE_PR_LABELS:-}" ] || return 0
+  owner_repo="$(printf '%s' "$pr_url" | sed -E 's#.*github\.com/([^/]+/[^/]+)/pull/.*#\1#')"
+  num="$(printf '%s' "$pr_url" | sed -E 's#.*/pull/([0-9]+).*#\1#')"
+  [ -n "$owner_repo" ] && [ -n "$num" ] || return 0
+  local IFS=,
+  for l in $PIPE_PR_LABELS; do
+    [ -n "$l" ] && [ "$l" != "${FXA_PR_LABEL:-auto}" ] || continue
+    if gh api -X POST "repos/${owner_repo}/issues/${num}/labels" -f "labels[]=${l}" >/dev/null 2>&1; then
+      echo "  Added the ${l} label." >&2
+    else
+      echo "  WARN: could not add the ${l} label; the repo may not have it." >&2
+    fi
+  done
 }
 
 # finish_add_reviewers <pr_url>
