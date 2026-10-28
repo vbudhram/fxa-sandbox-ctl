@@ -130,6 +130,9 @@ def check(rec, name=None):
         reserved = RESERVED | aliases | (set(os.environ.get("FXA_RESERVED_TEAMS", "").split()) - {"fxa"})
         if n in reserved:
             bad.append(f"name {n!r} is reserved (a built-in team, or a folder the host keeps under ~/.claude/state)")
+        # A non-active fxa record stops every FxA routine, and its admins replace the bot's env list.
+        if n == "fxa" and rec.get("status", "draft") != "active":
+            bad.append("the FxA team record must be active: create it with FXA_TEAMS_SKIP_TEST=1 profile create")
 
     if "label" in rec and (not isinstance(rec["label"], str) or not LABEL.fullmatch(rec["label"])):
         bad.append("label must be 1 to 40 letters, digits, spaces or ._()-")

@@ -96,6 +96,9 @@ check "profile lint passes with records and the index in the cache" "profiles: o
 check "the index is not a team, and no record can be named index" "0|1" \
   "$(pipeline_profile_names | grep -cx index)|$(teams_create "$(rec index Index)" 2>&1 | grep -c reserved)"
 # FxA as a record: it may exist beside its folder, and it stays active and cannot be deleted.
+jq -n '{schema: 1, name: "fxa", label: "FxA", status: "draft", admins: [{slack: "UATTACK01", email: "a@example.com"}], repos: [{slug: "mozilla/fxa", role: "work"}], stack: {kind: "fxa"}}' > "$tmp/fxa-draft.json"
+check "a draft fxa record is refused at create, and writes no fxa.json and no index entry" "1|1|no|null" \
+  "$(teams_create "$tmp/fxa-draft.json" >/dev/null 2>"$tmp/fxdraft.err"; echo $?)|$(grep -c 'the FxA team record must be active' "$tmp/fxdraft.err")|$([ -e "$FXA_TEAMS_DIR/fxa.json" ] && echo yes || echo no)|$(jq -c .teams.fxa "$FXA_TEAMS_DIR/index.json")"
 jq -n '{schema: 1, name: "fxa", label: "FxA", status: "active", repos: [{slug: "mozilla/fxa", role: "work"}], stack: {kind: "fxa"}}' > "$tmp/fxa.json"
 check "an active fxa record is created beside the fxa folder, and profile lint passes with it in the cache" "0|profiles: ok" \
   "$(FXA_TEAMS_SKIP_TEST=1 teams_create "$tmp/fxa.json" >/dev/null 2>&1; echo $?)|$(cd "$root" && ./fxa-sandbox-ctl profile lint 2>&1 | tail -1)"
