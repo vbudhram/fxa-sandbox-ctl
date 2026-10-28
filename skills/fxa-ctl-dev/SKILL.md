@@ -196,6 +196,15 @@ does not stop a session boot or an Open PR job that the bot started.
 To restart only the bot: `vm.sh sys 'sudo systemctl restart fxa-agent-bot'`.
 Never run a second copy of the bot beside the first.
 
+## FxA as a team record
+
+FxA has a record `fxa` beside `profiles/fxa/profile.conf`. The conf wins unless `FXA_FXA_RECORD=1`.
+`pipeline_load` keeps FxA's host names for either source, and `fxa-ai-fixme` stays an alias. A check that
+loads FxA from the record copies `lib/testdata/fxa-team.json` (fake admins) into its `FXA_TEAMS_DIR` and
+sets `FXA_VM_BACKEND=tart`. `lib/fxa-record.check.sh` diffs `profile env` with the switch off and on,
+and lists the keys that may differ. The fxa record cannot be deleted, turned off or put in draft, and its
+runner keys change only with the CLI (`skills/fxa-manager/SKILL.md` has the steps and the rollback).
+
 ## Errors
 
 `fxa-sandbox-ctl errors` lists open error signatures from the controller and

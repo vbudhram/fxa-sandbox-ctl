@@ -103,6 +103,23 @@ instead, because a restart drops model calls in flight. The runners' Claude cred
 pass; a pull is manual (`fxa-sandbox-ctl state pull`). Pull only with no pass
 holding the lock, and never while another host is still running passes.
 
+**FxA as a team record.** FxA loads from the record `fxa` on a host whose controller `.env` has
+`FXA_FXA_RECORD=1`; without the line, `profiles/fxa/profile.conf` decides. Before you add the line:
+
+1. Run `fxa-sandbox-ctl profile sync`. A host with no cached `fxa.json` stops every FxA command with
+   "run fxa-sandbox-ctl profile sync". On the laptop, `~/.claude/state/teams` can be empty: with a blank
+   `FXA_GCE_PROJECT`, sync fetches nothing, so set it first, or copy `fxa.json` and `fxa.gen` from the manager.
+2. Confirm the copy: `fxa-sandbox-ctl --pipeline fxa profile get fxa`.
+3. Compare the two loads for `--pipeline fxa-ai-fixme`, `--pipeline fxa` and no flag:
+   `diff <(FXA_FXA_RECORD=0 fxa-sandbox-ctl --pipeline X profile env) <(FXA_FXA_RECORD=1 fxa-sandbox-ctl --pipeline X profile env)`.
+   Only the keys that `lib/fxa-record.check.sh` allows may differ. The state dir, the URIs and the queue JQL must be equal.
+4. On the manager, run `fxa-sandbox-ctl state push` and add the line between passes, outside 07:00 to 19:00 New York time on a weekday.
+
+To go back, delete the line: the next command loads the conf again, and no state moves. FxA runner keys
+(repos, stack, runner, egress, mcp, skills, boot, secrets) change only with the CLI: run
+`FXA_TEAMS_SKIP_TEST=1 fxa-sandbox-ctl profile set fxa <file>`, then `profile test fxa` at once. If the test
+fails, set the old version again. FxA never goes to draft for a test.
+
 **Change the VM itself.** `bash infra/gce/manager.sh` reprovisions (safe to run
 again). It sends your Claude setup and the `.env` files without secrets, and
 runs `infra/gce/manager-setup.sh` as root.

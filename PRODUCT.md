@@ -173,21 +173,28 @@ A team is a **team record**: one JSON object in the state bucket, validated by `
 never sourced as code. FxA is still a **folder team** (`profiles/fxa/profile.conf`), and a folder wins
 over a record of the same name. All other teams are records.
 
+FxA moves to the record `fxa`. While its conf exists, the conf decides the pipeline, unless a host sets
+`FXA_FXA_RECORD=1` in its `.env` (the canary). The record keeps FxA's host names: the state dir
+`~/.claude/state/fxa-ai-fixme` and the GCS objects under `fxa-ai-fixme/`, so no state moves. The name
+`fxa-ai-fixme` stays an alias of `fxa`. FxA stays active: it cannot be deleted, turned off or put in
+draft. Its runner keys, goal and reviewers change only with the CLI, and the dashboard shows them as
+read-only text. FxA always asks fxa-devs for review.
+
 ### What a team record sets
 
 | Key | What it sets |
 |---|---|
 | `label`, `status` | The name people see. `draft`, `active` or `disabled`. A team turns active only through `profile enable`, after `profile test` passes at that generation. |
-| `admins` | The team admins, by Slack ID and email. They get the team's alerts, and in Slack they can use every control in the team's threads, as the owner can. FxA has no record: the bot's `PROFILE_ADMINS` and `PROFILE_PR_USERS` (`fxa:U1+U2`) hold its lists. |
+| `admins` | The team admins, by Slack ID and email. They get the team's alerts, and in Slack they can use every control in the team's threads, as the owner can. Until FxA's record is in the store, the bot's `PROFILE_ADMINS` and `PROFILE_PR_USERS` (`fxa:U1+U2`) hold its lists. |
 | `access` | Who may start sessions: listed users, channels, Jira prefixes, or open to everyone allowed. A team with a private repo cannot be open. |
 | `repos` | Up to 8 repos, each with a role: `work` (writable, ships), `dep` (runs beside it), `data`, `ref` (read-only). Each has a path and a base branch. |
 | `stack` | `fxa` (the FxA stack runs in the runner) or `none`. A team without the FxA stack must bring its own goal. `stack.repo` names the row the stack runs from, for a private fork of FxA. |
 | `runner` | The backend (`gce` or `firecracker`), the Android emulator, a desktop URL. |
 | `egress` | The extra hosts the agent may reach. Hosts that take data out with no account (paste sites, tunnels, request catchers) are refused, even for an admin. |
 | `mcp` | Which connectors the team's sessions get. |
-| `jira` | The team's project and whether the pipeline works its queue. With `jira.usage: false`, the comment on a merged ticket has no agent time, tokens or cost (for a project whose comments sync to a public place). With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. |
-| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. `users` lists the Slack users who may open a PR or push from Slack, beside the team admins; with none listed, anyone who can steer may. `labels` adds GitHub labels to each PR beside `auto`, which every PR gets because the pipeline finds its PRs by it; the FxA team adds `coderabbit`. |
-| `caps` | Launches per day and dollars per day and per month, inside the operator's ceilings. |
+| `jira` | The team's project and whether the pipeline works its queue. With `jira.usage: false`, the comment on a merged ticket has no agent time, tokens or cost (for a project whose comments sync to a public place). With `jira.secret: true`, the team takes only the project's secret tickets (a security level or a secret label). Its work repos must be private, as GitHub confirms, and it cannot be open or list Jira prefixes. `jira.board` and `jira.sprint` put a merged ticket into the board's active sprint whose name matches. |
+| `pr` | Whether the team opens PRs, and the reviewers. A team with `open: false` gets diffs only. `users` lists the Slack users who may open a PR or push from Slack, beside the team admins; with none listed, anyone who can steer may. `labels` adds GitHub labels to each PR beside `auto`, which every PR gets because the pipeline finds its PRs by it; the FxA team adds `coderabbit`. `infra_checks` lists `check=log text` rules: a failed check whose log has the text is the repo's fault, not the PR's. |
+| `caps` | Launches per day, runners at once, and dollars per day and per month, inside the operator's ceilings. |
 | `prompts` | The team's `CLAUDE.md`, guide and pass goal. Admins edit these as text. |
 | `skills` | Skills from the reviewed catalog (`skills/team-catalog.txt`). |
 | `boot` | A boot script from `boot/<name>.sh`, pinned by its SHA-256. |
@@ -301,8 +308,10 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - Private repos: no agent fetch after start, a full clone, code only in private channels, no watch page.
 - A team with the Jira connector and no Jira project of its own reads FxA's Jira project, as FxA does.
   Most teams that work beside FxA need its tickets. A team with a project reads only that project.
-- Team records are the norm for every team but FxA. `PROFILE_OPEN` and `PROFILE_USERS` in the bot env count
-  only for a team name that has no record.
+- Team records are the norm for every team. FxA moves to its record behind `FXA_FXA_RECORD=1`, one host at
+  a time. `PROFILE_OPEN` and `PROFILE_USERS` in the bot env count only for a team name that has no record.
+- A regex field of a record (`jira.sprint`, the log part of `pr.infra_checks`) takes only a literal subset,
+  so it means the same in jq, grep and Python, and it cannot be slow.
 - Not now: AI review of human PRs (no data that people want it), caps for each person (sessions have
   caps), best-of-N runs (twice the cost), fleet migrations (almost no session uses several trees), a
   multiplayer IDE (the watch page covers it).
