@@ -147,7 +147,7 @@ ck "O6 Teams: a table with named columns, the team name links, and the cap text 
   return [[...document.querySelectorAll("#ov-teams th")].map(t => t.textContent).join(","), document.querySelector("#ov-teams [data-team=fxa] a").textContent, h("fxa"), h("two")].join("|")')"
 ck "O6 Recent runs: a badge per outcome, PR links only to GitHub pulls, merged from pr_state, today's counts, escaped" "PR #312|running|done|PR #301 merged|answered|no change|failed|true|true" "$(bash "$p" '#overview' --fixture "$O" --width 1280 --probe '
   const bs = [...document.querySelectorAll("#ov-runs .ovrun .r .tag")].map(e => e.textContent);
-  const a = document.querySelector("#ov-runs a.tag[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|none today)/.test(document.querySelector("#ov-runs > .sub").textContent);
+  const a = document.querySelector("#ov-runs a.tag[href=\"https://github.com/example/repo/pull/301\"]")?.classList.contains("ok") && /(\d+ today|Nothing today)/.test(document.querySelector("#ov-runs > .sub").textContent);
   RUNS = [{ at: new Date().toISOString(), src: "pipeline", key: "x\"><img src=x>", title: "<img src=x>", team: "<b>t</b>", outcome: "pr", pr_url: "javascript:alert(1)", pr_number: 5 }]; renderOvRuns();
   const b = !document.querySelector("#ov-runs img, #ov-runs b") && !document.querySelector("#ov-runs a.tag") && /PR #5/.test(document.getElementById("ov-runs").textContent);
   return [...bs, a, b].join("|")')"
