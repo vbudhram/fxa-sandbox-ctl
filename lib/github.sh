@@ -284,7 +284,7 @@ gh_feedback() {
     why="$(printf '%s' "${*:4}" | tr '\n' ' ' | cut -c1-"$( [ "$sub" = answer ] && echo 600 || echo 300)")"
     [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> $sub <id> <text>" >&2; return 1; }
     grep -qx "$id" "$declined" 2>/dev/null && { echo "$key: already replied on $id"; return 0; }
-    body="$( [ "$sub" = decline ] && echo "Not changed: ")${why}"
+    body="$why"; [ "$sub" != decline ] || body="Not changed: ${why}"
     # rid: our reply's own id, seen at once, so it is never feedback, also when gh posts as a person, not the App.
     local err="" rid="" ef; ef="$(mktemp)"
     case "$id" in
