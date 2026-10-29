@@ -19,6 +19,8 @@ The upstream account's own permissions stay the real limit; this is the second.
 Config (MCP_GATEWAY_CONFIG), see connectors.example.json:
   {"connectors": {"<name>": {"url", "headers", "tools", "rules", "deny_result", "redact", "redact_keys",
                              "prune_keys", "prune_items", "max_result_bytes", "max_result_hint", "tool_note"}}}
+A connector with "type": "github-app" has no upstream: the gateway serves GitHub read tools itself
+with the controller's GitHub App (GitHubApp below).
 Header values expand ${VAR} from the environment, so secrets stay in .env.
 ${RUNLAYER_OAUTH_TOKEN} is an access token renewed from the refresh token in
 MCP_GATEWAY_OAUTH {token_endpoint, client_id, refresh_tokens: {url: token},
@@ -29,6 +31,7 @@ Tokens: <dir>/tokens/<token>.json  {run, created, expires, connectors, cap_calls
 written by the controller (lib/mcp-token.sh), updated here. One line per call
 goes to <dir>/calls.jsonl. Standard library only.
 """
+import base64
 import hashlib
 import sys
 import http.client
@@ -36,6 +39,7 @@ import http.server
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -559,6 +563,151 @@ class Upstream:
         return found
 
 
+# The read tools of a "github-app" connector: (description, the number argument).
+GH_TOOLS = {
+    "get_pull_request": ("A pull request: title, state, author, branches, head commit and body.", "pull_number"),
+    "get_pull_request_checks": ("The checks and statuses on a pull request's head commit, with the job_id of each GitHub "
+                                "Actions job (for get_job_logs) and the annotations of a failed one.", "pull_number"),
+    "get_pull_request_comments": ("A pull request's comments and review comments, oldest first.", "pull_number"),
+    "get_issue": ("An issue: title, state, author, body and comments.", "issue_number"),
+    "get_job_logs": ("A GitHub Actions job's log: the lines that name a failure, then its end (tail_lines, default 200).", "job_id"),
+}
+# Read only, whatever the App may do elsewhere: GitHub refuses a token for a permission the App lacks.
+GH_READ = {"metadata": "read", "contents": "read", "pull_requests": "read", "checks": "read", "statuses": "read"}
+GH_NAME_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$")
+GH_FAIL_RE = re.compile(r"FAILED|FAIL |Error|error(\[|:)|panicked|assert|Traceback|exit code")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+class GitHubApp(Upstream):
+    """GitHub read tools served here, with the controller's GitHub App: for each call, an installation token
+    for that one repo with read permissions only, reused for 50 minutes. Config: {"type": "github-app",
+    "app_id", "pem_file", "tools", "rules"}; the rules pin owner and repo, as for an upstream connector."""
+
+    def __init__(self, name, spec):
+        super().__init__(name, dict(spec, url=spec.get("api") or "https://api.github.com", headers={}))
+        self.api = self.resource.rstrip("/")
+        self.app_id = expand(str(spec.get("app_id") or ""), live=True)
+        self.pem = expand(str(spec.get("pem_file") or ""), live=True)
+        if not self.app_id.isdigit() or not os.path.isfile(self.pem):
+            raise ValueError("app_id must be a number and pem_file a readable key")
+        self.tokens = {}
+
+    def _http(self, method, url, auth=None, body=None, follow=True):
+        req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"accept": "application/vnd.github+json", "user-agent": "fxa-mcp-gateway",
+                                              **({"authorization": "Bearer " + auth} if auth else {})})
+        opener = urllib.request.build_opener() if follow else urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(req, timeout=UPSTREAM_TIMEOUT) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if not follow and e.code in (301, 302, 303, 307, 308) and e.headers.get("location"):
+                # The log is on a signed storage URL: fetch it without the GitHub token.
+                e.close()
+                return self._http("GET", e.headers["location"])
+            raise UpstreamError("%s answered HTTP %d" % (self.name, e.code))
+        except (OSError, ValueError) as e:
+            raise UpstreamError("%s: %s" % (self.name, e.__class__.__name__))
+
+    def _jwt(self):
+        b64 = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=")
+        now = int(time.time())
+        head = b64(b'{"alg":"RS256","typ":"JWT"}') + b"." + b64(json.dumps({"iat": now - 60, "exp": now + 540, "iss": self.app_id}).encode())
+        sig = subprocess.run(["openssl", "dgst", "-sha256", "-sign", self.pem], input=head, capture_output=True, check=True).stdout
+        return (head + b"." + b64(sig)).decode()
+
+    def _token(self, owner, repo):
+        slug = ("%s/%s" % (owner, repo)).lower()
+        tok, at = self.tokens.get(slug, (None, 0))
+        if tok and time.time() - at < 3000:
+            return tok
+        try:
+            jwt = self._jwt()
+        except (OSError, subprocess.CalledProcessError):
+            raise UpstreamError("%s: could not sign the App key" % self.name)
+        inst = json.loads(self._http("GET", "%s/repos/%s/%s/installation" % (self.api, owner, repo), jwt)).get("id")
+        doc = json.loads(self._http("POST", "%s/app/installations/%s/access_tokens" % (self.api, inst), jwt,
+                                    {"repositories": [repo], "permissions": GH_READ}))
+        self.tokens[slug] = (doc["token"], time.time())
+        return doc["token"]
+
+    def list_tools(self):
+        if self.tools is None:
+            self.tools = {}
+            for n, (desc, num) in GH_TOOLS.items():
+                if n in self.tools_allowed:
+                    props = {"owner": {"type": "string"}, "repo": {"type": "string"}, num: {"type": "integer"}}
+                    if n == "get_job_logs":
+                        props["tail_lines"] = {"type": "integer"}
+                    self.tools[n] = {"name": n, "description": desc,
+                                     "inputSchema": {"type": "object", "properties": props, "required": ["owner", "repo", num]}}
+        return self.tools
+
+    def rpc(self, method, params):
+        if method != "tools/call" or params.get("name") not in self.list_tools():
+            raise UpstreamError("%s: no such tool" % self.name)
+        try:
+            return self._call(params["name"], params.get("arguments") or {})
+        except (ValueError, KeyError, TypeError, AttributeError):  # an answer not shaped as GitHub documents
+            raise UpstreamError("%s: unexpected answer" % self.name)
+
+    def _call(self, tool, args):
+        owner, repo, num = args.get("owner"), args.get("repo"), args.get(GH_TOOLS[tool][1])
+        if not all(isinstance(v, str) and GH_NAME_RE.match(v) for v in (owner, repo)):
+            raise UpstreamError("%s: owner and repo must be plain names" % self.name)
+        if isinstance(num, str) and num.isdigit():
+            num = int(num)
+        if not isinstance(num, int) or isinstance(num, bool) or num <= 0:
+            raise UpstreamError("%s: %s must be a positive number" % (self.name, GH_TOOLS[tool][1]))
+        tok, base = self._token(owner, repo), "%s/repos/%s/%s" % (self.api, owner, repo)
+        get = lambda path: json.loads(self._http("GET", base + path, tok))
+        user = lambda d: (d.get("user") or {}).get("login")
+        if tool == "get_job_logs":
+            text = self._http("GET", "%s/actions/jobs/%d/logs" % (base, num), tok, follow=False).decode("utf-8", "replace")
+            lines = [re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", re.sub(r"^\S+Z ", "", ln)) for ln in text.splitlines()]
+            tail = min(max(int(args.get("tail_lines") or 200), 20), 1000) if str(args.get("tail_lines") or "200").isdigit() else 200
+            if len(lines) > tail:
+                lines = [ln for ln in lines[:-tail] if GH_FAIL_RE.search(ln)][:80] + ["--- the end of the log:"] + lines[-tail:]
+            return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        if tool == "get_issue":
+            d = get("/issues/%d" % num)
+            out = {"title": d.get("title"), "state": d.get("state"), "author": user(d), "body": (d.get("body") or "")[:8000],
+                   "comments": [{"author": user(c), "at": c.get("created_at"), "body": (c.get("body") or "")[:3000]}
+                                for c in get("/issues/%d/comments?per_page=50" % num)]}
+        else:
+            pr = get("/pulls/%d" % num)
+            if tool == "get_pull_request":
+                out = {"title": pr.get("title"), "state": pr.get("state"), "draft": pr.get("draft"), "merged": pr.get("merged"),
+                       "author": user(pr), "head": (pr.get("head") or {}).get("ref"), "base": (pr.get("base") or {}).get("ref"),
+                       "head_sha": (pr.get("head") or {}).get("sha"), "body": (pr.get("body") or "")[:8000]}
+            elif tool == "get_pull_request_comments":
+                out = {"comments": [{"author": user(c), "at": c.get("created_at"), "body": (c.get("body") or "")[:3000]}
+                                    for c in get("/issues/%d/comments?per_page=50" % num)],
+                       "review_comments": [{"author": user(c), "path": c.get("path"), "line": c.get("line"),
+                                            "body": (c.get("body") or "")[:3000]} for c in get("/pulls/%d/comments?per_page=50" % num)]}
+            else:
+                sha = (pr.get("head") or {}).get("sha")
+                runs, failed = [], 0
+                for c in get("/commits/%s/check-runs?per_page=100" % sha).get("check_runs", []):
+                    row = {"name": c.get("name"), "status": c.get("status"), "conclusion": c.get("conclusion"), "url": c.get("html_url")}
+                    if (c.get("app") or {}).get("slug") == "github-actions":
+                        row["job_id"] = c.get("id")  # an Actions check run's id is its job's id
+                    if c.get("conclusion") in ("failure", "timed_out") and failed < 3:
+                        failed += 1
+                        row["annotations"] = [{"path": a.get("path"), "line": a.get("start_line"), "message": (a.get("message") or "")[:500]}
+                                              for a in get("/check-runs/%d/annotations?per_page=20" % c["id"])]
+                    runs.append(row)
+                statuses = [{"context": s.get("context"), "state": s.get("state"), "url": s.get("target_url")}
+                            for s in get("/commits/%s/status" % sha).get("statuses", [])]
+                out = {"head_sha": sha, "check_runs": runs, "statuses": statuses}
+        return {"content": [{"type": "text", "text": json.dumps(out, indent=1)}]}
+
+
 def load_upstreams():
     try:
         with open(CONFIG) as f:
@@ -572,7 +721,7 @@ def load_upstreams():
         if not spec.get("tools"):
             sys.stderr.write("fxa-mcp-gateway: %s has no tools allowlist; it serves nothing\n" % name)
         try:
-            ups[name] = Upstream(name, spec)
+            ups[name] = (GitHubApp if spec.get("type") == "github-app" else Upstream)(name, spec)
         except (KeyError, ValueError, re.error) as e:
             sys.stderr.write("fxa-mcp-gateway: %s is off: %s\n" % (name, e))
     return ups

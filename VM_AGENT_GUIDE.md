@@ -33,7 +33,8 @@ Chat sessions do not have it; do not report that it is missing.
   private ranges and the metadata server. There is no IPv6.
   You have no GitHub login, so a GitHub Actions job log or artifact returns 403. For a run or
   job link of the team's repos in the request, the host adds the failed steps' log to your
-  context ("GitHub Actions" section). For any other CI failure, ask the engineer at once for the `FAILED` lines.
+  context ("GitHub Actions" section). For a PR, `github__get_pull_request_checks`, then
+  `github__get_job_logs` with the failed check's `job_id`. Without those tools, ask the engineer at once for the `FAILED` lines.
 - **Show the change** with new files included:
   `git add -N . && git diff origin/main -- . ":(exclude).fxa-*"`.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
@@ -55,6 +56,9 @@ Chat sessions do not have it; do not report that it is missing.
   `jira__getJiraIssue` and `jira__searchJiraIssuesUsingJql` (the host pins the
   site and scopes JQL to FXA; ask for `fields` such as `summary` and `status`),
   `slack__slack_read_thread` and `slack__slack_read_channel`, and `figma__*`.
+  GitHub, for the team's repos: `github__get_pull_request`, `github__get_pull_request_checks`
+  (each check, with the `job_id` of an Actions job and a failed one's annotations),
+  `github__get_job_logs`, `github__get_pull_request_comments` and `github__get_issue`.
   Slack reads only #fxa (`C4D36CAJW`) and #fxa-team (`CLV3KMZ8B`); pass the ID,
   not the name. For a thread in another channel, ask the engineer to paste it;
   do not search the two channels for it. A permalink `/archives/<C>/p1790355024144359` has

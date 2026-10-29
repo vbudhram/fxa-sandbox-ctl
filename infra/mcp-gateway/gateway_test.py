@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline check for gateway.py against a fake upstream MCP server:
 python3 infra/mcp-gateway/gateway_test.py"""
+import base64
 import http.client
 import http.server
 import json
@@ -545,6 +546,114 @@ class TeamScope(unittest.TestCase):
         for key in ("FXA-1", "12345", "PAY-1 OR x"):
             with self.assertRaises(self.g.Denied):
                 self.g.apply_rules(rules, "getJiraIssue", schema, {"issueIdOrKey": key})
+
+class GitHubAppConnector(unittest.TestCase):
+    """The gateway's own GitHub tools: a read-only token for one repo, minted with the App key."""
+    SEEN = []
+
+    @classmethod
+    def setUpClass(cls):
+        sys.path.insert(0, HERE)
+        import gateway
+        cls.g = gateway
+        seen = cls.SEEN
+
+        class GH(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def send(self, doc, code=200, raw=None):
+                body = raw if raw is not None else json.dumps(doc).encode()
+                self.send_response(code)
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                seen.append(("GET", self.path, self.headers.get("authorization"), None))
+                p = self.path
+                if p == "/repos/mozilla/fxa/installation":
+                    return self.send({"id": 7})
+                if p == "/repos/mozilla/fxa/pulls/5":
+                    return self.send({"title": "t", "state": "open", "head": {"ref": "b", "sha": "abc"}, "base": {"ref": "main"}, "body": "x" * 9000})
+                if p.startswith("/repos/mozilla/fxa/commits/abc/check-runs"):
+                    return self.send({"check_runs": [
+                        {"id": 41, "name": "e2e", "status": "completed", "conclusion": "failure", "app": {"slug": "github-actions"}},
+                        {"id": 42, "name": "lint", "status": "completed", "conclusion": "success", "app": {"slug": "github-actions"}}]})
+                if p.startswith("/repos/mozilla/fxa/check-runs/41/annotations"):
+                    return self.send([{"path": "a.py", "start_line": 3, "message": "assert 1 == 2"}])
+                if p == "/repos/mozilla/fxa/commits/abc/status":
+                    return self.send({"statuses": [{"context": "ci/circleci", "state": "failure", "target_url": "u"}]})
+                if p == "/repos/mozilla/fxa/actions/jobs/41/logs":
+                    self.send_response(302)
+                    self.send_header("location", "http://127.0.0.1:%d/blob/41?sig=1" % self.server.server_port)
+                    self.send_header("content-length", "0")
+                    return self.end_headers()
+                if p == "/blob/41?sig=1":
+                    lines = ["2026-10-28T13:30:0%dZ line %d" % (i % 10, i) for i in range(300)]
+                    lines[10] = "2026-10-28T13:30:00Z \x1b[31mFAILED\x1b[0m test_x - AssertionError"
+                    return self.send(None, raw="\n".join(lines).encode())
+                self.send({"message": "Not Found"}, 404)
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"null")
+                seen.append(("POST", self.path, self.headers.get("authorization"), body))
+                if self.path == "/app/installations/7/access_tokens":
+                    return self.send({"token": "ghs_installation"})
+                self.send({}, 404)
+
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), GH)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        cls.dir = tempfile.mkdtemp()
+        pem = os.path.join(cls.dir, "app.pem")
+        subprocess.run(["openssl", "genrsa", "-out", pem, "2048"], check=True, capture_output=True)
+        spec = {"type": "github-app", "api": "http://127.0.0.1:%d" % srv.server_port, "app_id": "123", "pem_file": pem,
+                "tools": list(gateway.GH_TOOLS), "rules": [{"arg": "owner", "equals": "mozilla"}, {"arg": "repo", "equals": "fxa"}]}
+        cls.up = gateway.GitHubApp("github", spec)
+
+    def text(self, tool, **args):
+        return self.up.rpc("tools/call", {"name": tool, "arguments": dict(owner="mozilla", repo="fxa", **args)})["content"][0]["text"]
+
+    def test_the_token_is_for_one_repo_read_only_and_made_with_the_app_key(self):
+        self.text("get_pull_request", pull_number=5)
+        post = [s for s in self.SEEN if s[0] == "POST"][0]
+        self.assertEqual(post[3], {"repositories": ["fxa"], "permissions": self.g.GH_READ})
+        self.assertTrue(all(v == "read" for v in self.g.GH_READ.values()))
+        self.assertEqual(post[2].split(".")[0], "Bearer " + base64.urlsafe_b64encode(b'{"alg":"RS256","typ":"JWT"}').rstrip(b"=").decode())
+        self.assertIn(("GET", "/repos/mozilla/fxa/pulls/5", "Bearer ghs_installation", None), self.SEEN)
+
+    def test_a_pr_body_is_cut(self):
+        self.assertEqual(len(json.loads(self.text("get_pull_request", pull_number=5))["body"]), 8000)
+
+    def test_checks_give_the_job_id_and_the_failed_annotations(self):
+        out = json.loads(self.text("get_pull_request_checks", pull_number=5))
+        self.assertEqual([(r["name"], r.get("job_id"), r.get("annotations")) for r in out["check_runs"]],
+                         [("e2e", 41, [{"path": "a.py", "line": 3, "message": "assert 1 == 2"}]), ("lint", 42, None)])
+        self.assertEqual(out["statuses"][0]["context"], "ci/circleci")
+
+    def test_a_job_log_follows_its_redirect_without_the_token_and_keeps_the_failure(self):
+        out = self.text("get_job_logs", job_id=41)
+        blob = [s for s in self.SEEN if s[1].startswith("/blob/")][-1]
+        self.assertIsNone(blob[2])
+        self.assertIn("FAILED test_x - AssertionError", out.split("--- the end of the log:")[0])
+        self.assertTrue(out.endswith("line 299"))
+        self.assertNotIn("2026-10-28T", out)
+
+    def test_bad_names_and_numbers_never_reach_github(self):
+        n = len(self.SEEN)
+        for args in ({"owner": "../x", "repo": "fxa", "pull_number": 5}, {"owner": "mozilla", "repo": "fxa", "pull_number": -1},
+                     {"owner": "mozilla", "repo": "fxa", "pull_number": True}):
+            with self.assertRaises(self.g.UpstreamError):
+                self.up.rpc("tools/call", {"name": "get_pull_request", "arguments": args})
+        self.assertEqual(len(self.SEEN), n)
+
+    def test_the_team_rules_pin_owner_and_repo(self):
+        schema = self.up.list_tools()["get_job_logs"]["inputSchema"]
+        with self.assertRaises(self.g.Denied):
+            self.g.apply_rules(self.g.team_rules(self.up.rules, None), "get_job_logs", schema, {"owner": "mozilla", "repo": "fxa-private", "job_id": 1})
+        scoped = self.g.team_rules(self.up.rules, {"repos": ["mozilla-services/syncstorage-rs"]})
+        self.assertEqual(self.g.apply_rules(scoped, "get_job_logs", schema, {"owner": "mozilla-services", "repo": "syncstorage-rs", "job_id": 1})["job_id"], 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)
