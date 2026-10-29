@@ -32,7 +32,11 @@ case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; options) echo '{"
 EOF
 chmod +x "$tmp/ctl"; printf 'k1' > "$tmp/hmac"
 mkdir -p "$tmp/teams"; echo '{}' > "$tmp/teams/rusty.json"
-FXA_TEAMS_DIR="$tmp/teams" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
+# The store the routine reads use in-process: rusty's routine 5 with one run, and crew's routine 6.
+for f in "$(dirname "$0")"/db/[0-9][0-9][0-9]-*.sql; do sqlite3 "$tmp/fxa.db" < "$f"; done
+sqlite3 "$tmp/fxa.db" "INSERT INTO routines (id, team, data) VALUES (5, 'rusty', '{\"name\":\"r\",\"schedule\":\"daily 09:00\",\"zone\":\"UTC\"}'), (6, 'crew', '{\"name\":\"c\"}');
+  INSERT INTO routine_runs (id, routine_id, period, state) VALUES (9, 5, 'p', 'ok');"
+FXA_DB="$tmp/fxa.db" FXA_TEAMS_DIR="$tmp/teams" FXA_DASHBOARD_HMAC_FILE="$tmp/hmac" TEAM_ADMINS="admin@example.com, boss@example.com" python3 - "$(dirname "$0")/../dashboard" "$tmp" <<'PY'
 import json, os, sys, time
 sys.path.insert(0, sys.argv[1]); import server, testkit
 from testkit import sig
@@ -118,9 +122,14 @@ check("routines: unsigned gets 401, a signed non-admin 403, for a read and a wri
       (401, 403, 401, 403, "not a team admin", []),
       (call("GET", L)[0], call("GET", L, headers=sig(V, "GET", L))[0], call("POST", L, {"routine": R})[0], call("POST", L, {"routine": R}, sig(V, "POST", L))[0],
        call("POST", L, {"routine": R}, sig(V, "POST", L))[1].get("error"), ran()))
-check("an admin reads the list, the templates and a history", ((200, [{"id": 5}]), (200, [{"id": 5}]), (200, [{"id": 5}]), ["routine list rusty", "routine templates", "routine history rusty 5"]),
-      (call("GET", L, headers=sig(A, "GET", L)), call("GET", "/api/routine-templates", headers=sig(A, "GET", "/api/routine-templates")),
-       call("GET", L + "/5/history", headers=sig(A, "GET", L + "/5/history")), ran()))
+# The list, a history and the templates are read in-process, with the code the CLI runs: no ctl process.
+lst, tpl, hist = (call("GET", p, headers=sig(A, "GET", p)) for p in (L, "/api/routine-templates", L + "/5/history"))
+import routine
+check("an admin reads the list, the templates and a history from the store, and no routine command runs",
+      ((200, [5], ["daily 09:00"]), (200, routine.templates(os.path.join(sys.argv[1], "..", "templates", "routines"))), (200, [9]), []),
+      ((lst[0], [r["id"] for r in lst[1]], [r["data"]["schedule"] for r in lst[1]]), tpl, (hist[0], [r["id"] for r in hist[1]]), ran()))
+check("another team's routine id in the history path: 400, and the store is not read for it", (400, "ERROR: team rusty has no routine 6"),
+      (lambda r: (r[0], r[1].get("error")))(call("GET", L + "/6/history", headers=sig(A, "GET", L + "/6/history"))))
 C = "/api/teams/rusty/routine-channels"
 check("routine-channels: unsigned 401, a non-admin 403, an admin runs routine channels for the URL team",
       (401, 403, 200, "routine channels rusty"),

@@ -38,34 +38,11 @@ _routine_of() {
 # started first, then the newest queued), lives (every live run in that order, each with its heads.fix as fix),
 # its last result, its last 6 results (recent, oldest first), its channel's name when its bot is in it, and the
 # scheduler's last tick (the dashboard warns when it is old).
+# The reading is in lib/routine.py (team_list), which the dashboard calls in-process too.
 routine_list() {
-  [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
-  local rows r f out="[]" runs lives tick recent names; rows="$(db_json "SELECT id, team, env, paused, version, data FROM routines WHERE team = $(db_q "$1") ORDER BY id;")" || return 1
-  lives="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, 1 AS live, r.heads->'fix' AS fix
-    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.state IN (${_ROUTINE_LIVE_STATES})
-    ORDER BY r.state = 'queued', r.id DESC;")" || return 1
-  runs="$(db_json "SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, r.state IN (${_ROUTINE_LIVE_STATES}) AS live
-    FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = $(db_q "$1") AND r.id IN
-    (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN (${_ROUTINE_LIVE_STATES}));")" || return 1
-  tick="$(db_json "SELECT env, at FROM routine_tick_env;")" || return 1
-  recent="$(db_json "SELECT routine_id, state, at FROM (SELECT r.routine_id, r.id, r.state, coalesce(r.ended_at, r.started_at) AS at,
-    row_number() OVER (PARTITION BY r.routine_id ORDER BY r.id DESC) AS n FROM routine_runs r JOIN routines t ON t.id = r.routine_id
-    WHERE t.team = $(db_q "$1") AND r.state NOT IN (${_ROUTINE_LIVE_STATES})) WHERE n <= 6 ORDER BY id;")" || return 1
-  names="$(db_json "SELECT env, id, name FROM slack_channels;")" || return 1
-  f="$(mktemp "${TMPDIR:-/tmp}/fxa-routine.XXXXXX")"
-  while IFS= read -r r; do
-    [ -n "$r" ] || continue
-    jq -c '.data | fromjson' <<< "$r" > "$f"
-    out="$(jq -c --argjson r "$r" --argjson next "$(_ROUTINE_PY next "$f" | jq -R . | jq -sc .)" --argjson runs "$runs" --argjson tick "$tick" \
-      --argjson recent "$recent" --argjson names "$names" --argjson lives "$lives" \
-      '($runs | map(select(.routine_id == $r.id)) | map(del(.routine_id))) as $mine | ($r.data | fromjson) as $d
-       | ($lives | map(select(.routine_id == $r.id) | del(.routine_id) | .fix |= (fromjson? // null))) as $l
-       | . + [$r + {data: $d, next: $next, live: ($l | first | del(.fix)?), lives: $l,
-          last: ($mine | map(select(.live == 0)) | first), tick: ($tick | map(select(.env == $r.env)) | first | .at // null),
-          recent: ($recent | map(select(.routine_id == $r.id) | del(.routine_id))),
-          channel_name: ($names | map(select(.env == $r.env and .id == $d.channel)) | first | .name // null)}]' <<< "$out")"
-  done < <(jq -c '.[]' <<< "$rows")
-  rm -f "$f"; printf '%s\n' "$out"
+  [[ "${1:-}" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
+  _db_ready || return 1
+  _ROUTINE_PY list "$FXA_DB" "$1" || return 1
 }
 
 # routine_channels <team> [live|dev]   The channels that env's bot is in, from the list the bot keeps in the
@@ -171,12 +148,13 @@ routines_clear_name() {
 
 # heads: a fix run's heads.fix gives History its PR, the base and new SHA, and why it ended.
 routine_history() {
-  _routine_of "$1" "$2" >/dev/null || return 1
-  db_json "SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, report, started_at, ended_at, heads FROM routine_runs WHERE routine_id = $2 ORDER BY id DESC LIMIT 20;" \
-    | jq -c 'map(.heads |= (fromjson? // null))'
+  _db_ready || return 1
+  _ROUTINE_PY history "$FXA_DB" "${1:-}" "${2:-}" || return 1
 }
 
 cmd_routine() {
+  # Migrate here, in this shell: each $(db_json ...) is a subshell, and its own _db_ready would run db_init again.
+  case "${1:-}" in templates | "") ;; *) _db_ready || return 1 ;; esac
   case "${1:-}" in
     list) routine_list "${2:-}" ;;
     get) routine_get "${2:-}" ;;

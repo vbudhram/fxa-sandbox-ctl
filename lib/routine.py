@@ -11,6 +11,8 @@
   routine.py due <routine.json> <epoch>                            {period, at, next} of the latest run time at or before then
   routine.py budget <caps.json> <spend.json> <epoch>               why the team may not spend now (the proxy's rule), or nothing
   routine.py templates [<dir>]                                     the built-in templates (templates/routines), as JSON
+  routine.py list <db> <team> | history <db> <team> <id>           a team's routines, or one routine's last 20 runs,
+      from the store (read only): the one reader for the CLI and the dashboard
   routine.py prompt <run config.json> <heads.json> <team> <nonce>  the session prompt for a claimed run (D18): the
       host's rules, the verified commit SHAs, then the admin's prompt in a nonce fence; exit 1 when an input is bad
 
@@ -20,6 +22,7 @@ import datetime
 import json
 import os
 import re
+import sqlite3
 import sys
 import time
 import zoneinfo
@@ -475,6 +478,86 @@ def prompt(cfg, heads, team, nonce):
             f"<{fence}>\n{cfg['prompt']}\n</{fence}>\n")
 
 
+# The states of a run that is not over (lib/routines.sh _ROUTINE_LIVE_STATES).
+LIVE = "'queued','claimed','started'"
+TEAM = re.compile(r"[a-z][a-z0-9-]{1,30}")
+RID = re.compile(r"0|[1-9][0-9]{0,8}")
+
+
+def _rows(con, sql, params=()):
+    cur = con.execute(sql, params)
+    names = [c[0] for c in cur.description]
+    return [dict(zip(names, tuple(r))) for r in cur]
+
+
+def _parsed(s):
+    """jq's `fromjson? // null`: a JSON text's value, else null; false is null too."""
+    try:
+        v = json.loads(s) if isinstance(s, str) else None
+    except ValueError:
+        return None
+    return None if v is False else v
+
+
+def _drop(x, *keys):
+    return {k: v for k, v in x.items() if k not in keys}
+
+
+def team_list(con, team, now=None):
+    """The team's routines, each with its config, next three run times, its live run (claimed or started first,
+    then the newest queued), lives (every live run in that order, each with its heads.fix as fix), its last
+    result, its last 6 results (recent, oldest first), its channel's name when its bot is in it, and the
+    scheduler's last tick (the dashboard warns when it is old)."""
+    if not TEAM.fullmatch(team or ""):
+        raise ValueError("bad team name")
+    rows = _rows(con, "SELECT id, team, env, paused, version, data FROM routines WHERE team = ? ORDER BY id", (team,))
+    lives = _rows(con, f"""SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at, 1 AS live,
+        r.heads->'fix' AS fix FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = ? AND r.state IN ({LIVE})
+        ORDER BY r.state = 'queued', r.id DESC""", (team,))
+    last = _rows(con, f"""SELECT r.routine_id, r.id, r.state, r.reason, r.session, r.pr_url, r.started_at, r.ended_at,
+        r.state IN ({LIVE}) AS live FROM routine_runs r JOIN routines t ON t.id = r.routine_id WHERE t.team = ? AND r.id IN
+        (SELECT max(id) FROM routine_runs GROUP BY routine_id, state IN ({LIVE}))""", (team,))
+    tick = {x["env"]: x["at"] for x in _rows(con, "SELECT env, at FROM routine_tick_env")}
+    recent = _rows(con, f"""SELECT routine_id, state, at FROM (SELECT r.routine_id, r.id, r.state, coalesce(r.ended_at, r.started_at) AS at,
+        row_number() OVER (PARTITION BY r.routine_id ORDER BY r.id DESC) AS n FROM routine_runs r JOIN routines t ON t.id = r.routine_id
+        WHERE t.team = ? AND r.state NOT IN ({LIVE})) WHERE n <= 6 ORDER BY id""", (team,))
+    names = {(x["env"], x["id"]): x["name"] for x in _rows(con, "SELECT env, id, name FROM slack_channels")}
+    start = time.time() if now is None else now
+    out = []
+    for r in rows:
+        d = json.loads(r["data"])
+        try:
+            at = [a.isoformat() for a in runs(d, start, 3)]
+        except (KeyError, TypeError, ValueError, AttributeError, zoneinfo.ZoneInfoNotFoundError):
+            at = []  # a schedule that cannot be read has no next runs
+        mine = [{**_drop(x, "routine_id"), "fix": _parsed(x["fix"])} for x in lives if x["routine_id"] == r["id"]]
+        out.append({**r, "data": d, "next": at, "live": _drop(mine[0], "fix") if mine else None, "lives": mine,
+                    "last": next((_drop(x, "routine_id") for x in last if x["routine_id"] == r["id"] and x["live"] == 0), None),
+                    "tick": tick.get(r["env"]),
+                    "recent": [_drop(x, "routine_id") for x in recent if x["routine_id"] == r["id"]],
+                    "channel_name": names.get((r["env"], d.get("channel")))})
+    return out
+
+
+def team_history(con, team, rid):
+    """One routine's last 20 runs, newest first, with heads parsed; only when the routine belongs to the team."""
+    if not RID.fullmatch(str(rid)):
+        raise ValueError("bad routine id")
+    own = _rows(con, "SELECT team FROM routines WHERE id = ?", (int(rid),))
+    if not own or own[0]["team"] != team:
+        raise ValueError(f"team {team} has no routine {rid}")
+    h = _rows(con, """SELECT id, period, trigger, actor, state, reason, session, pr_url, cost_usd, report, started_at, ended_at, heads
+        FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT 20""", (int(rid),))
+    return [{**x, "heads": _parsed(x["heads"])} for x in h]
+
+
+def store(path):
+    """A read-only connection to the store, that waits for a writer as every client does."""
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    con.execute("PRAGMA busy_timeout = 5000")
+    return con
+
+
 def opt(argv, flag, default=None):
     return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
 
@@ -491,6 +574,22 @@ def main(argv):
     if len(argv) >= 2 and argv[1] == "templates":
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         print(json.dumps(templates(argv[2] if len(argv) > 2 else os.path.join(here, "templates", "routines"))))
+        return 0
+    # The same compact JSON as jq -c, so the CLI prints what it printed when jq built it.
+    if len(argv) >= 4 and argv[1] in ("list", "history"):
+        try:
+            con = store(argv[2])
+            try:
+                out = team_list(con, argv[3]) if argv[1] == "list" else team_history(con, argv[3], argv[4] if len(argv) > 4 else "")
+            finally:
+                con.close()
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        except sqlite3.Error:
+            print("ERROR: the routine store did not answer (busy or failed); nothing changed, try again", file=sys.stderr)
+            return 1
+        print(json.dumps(out, separators=(",", ":"), ensure_ascii=False))
         return 0
     if len(argv) >= 5 and argv[1] == "budget":
         why = budget(argv[2], argv[3], int(argv[4]))
