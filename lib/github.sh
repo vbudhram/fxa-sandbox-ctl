@@ -288,11 +288,11 @@ gh_feedback() {
     # Before the post: a failed or crashed post then leaves the comment for the precheck to report again.
     rm -f "${PIPE_STATE_DIR}/${key}.feedback-noted"
     # rid: our reply's own id, seen at once, so it is never feedback, also when gh posts as a person, not the App.
-    local err="" rid="" ef; ef="$(mktemp)"
+    local err="" rid="" ef foot=$'\n\n_This comment is from an AI agent._'; ef="$(mktemp)"
     case "$id" in
-      [0-9]*) rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments/${id}/replies" -f body="$body" --jq .id 2>"$ef")" ;;
+      [0-9]*) rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/pulls/${pr}/comments/${id}/replies" -f body="${body}${foot}" --jq .id 2>"$ef")" ;;
       *) local url; url="$(gh api "repos/${PIPE_REPO_SLUG}/$( [ "${id:0:1}" = i ] && echo "issues/comments/${id#i}" || echo "pulls/${pr}/reviews/${id#r}")" --jq .html_url 2>/dev/null)" \
-           && [ -n "$url" ] && rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})" --jq '"i\(.id)"' 2>"$ef")" ;;
+           && [ -n "$url" ] && rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})${foot}" --jq '"i\(.id)"' 2>"$ef")" ;;
     esac || { err="$(tr '\n' ' ' < "$ef" | cut -c1-200)"; rm -f "$ef"
       echo "ERROR: could not reply on $id${err:+: $err}; check the PR before you try again" >&2
       errors_record github "${sub}_failed" "$key" "feedback $sub" "could not reply on ${id}${err:+: $err}" "" 2>/dev/null || true; return 1; }

@@ -887,13 +887,17 @@ _finish_push_and_pr() {
     # Post a round's media as a comment, so the original body's screenshots stay.
     if [ "${#media_args[@]}" -gt 0 ]; then
       (cd "$worktree" && command gh pr comment "$pr_num" \
-         --body "Updated evidence from the latest automated round." \
+         --body "Updated evidence from the latest automated round.
+
+_This comment is from an AI agent._" \
          ${media_args[@]+"${media_args[@]}"} >/dev/null 2>&1) \
         || echo "  WARN: could not attach round media to PR #${pr_num}." >&2
     elif [ -n "$media_md" ]; then
       (cd "$worktree" && command gh pr comment "$pr_num" --body "Updated evidence from the latest automated round.
 
-${media_md}" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR #${pr_num}." >&2
+${media_md}
+
+_This comment is from an AI agent._" >/dev/null 2>&1) || echo "  WARN: could not post round media to PR #${pr_num}." >&2
     fi
     finish_add_reviewers "$pr_url"
     finish_request_copilot_review "$pr_url"
@@ -1000,7 +1004,9 @@ _finish_feedback_pr() {
   summary="$(jq -r '.feedback_summary // empty | if type == "array" then map("- " + .) | join("\n") else . end' "$done_file" 2>/dev/null)" || summary=""
   if [ -n "$summary" ]; then
     gh api -X POST "repos/${repo}/issues/${num}/comments" -f body="This review round pushed a new commit:
-${summary}" >/dev/null 2>&1 || echo "  WARN: could not post the round summary on the PR." >&2
+${summary}
+
+_This comment is from an AI agent._" >/dev/null 2>&1 || echo "  WARN: could not post the round summary on the PR." >&2
   fi
   jq -e '.open_questions | type == "array"' "$done_file" >/dev/null 2>&1 || return 0
   body="$(gh api "repos/${repo}/pulls/${num}" --jq '.body // ""' 2>/dev/null)" || return 0

@@ -28,6 +28,7 @@ gh() {
 jq -n '{feedback_summary: ["Fixed: the email is kept. <link>", "Not fixed: the colour, it matches the design."], open_questions: ["Old question two?"]}' > "$tmp/done.json"
 _finish_feedback_pr https://github.com/mozilla/fxa/pull/7 "$tmp/done.json" 2>/dev/null
 check "the summary is posted on the PR" "yes" "$(grep -q 'review round' "$tmp/comment" && grep -q '^- Fixed: the email is kept' "$tmp/comment" && echo yes)"
+check "the summary ends with the italic AI agent note" "_This comment is from an AI agent._" "$(tail -1 "$tmp/comment")"
 check "only the questions section changes" "**Summary**|Copy change.|1. Old question two?|**Testing**|- PASS" \
   "$(grep -v '^$' "$tmp/newbody" | grep -v '^\*\*Questions' | paste -sd'|' -)"
 rm -f "$tmp/newbody"; jq -n '{feedback_summary: ["Fixed: x"], open_questions: []}' > "$tmp/done.json"

@@ -15,7 +15,7 @@ PIPE_STATE_DIR="$tmp" PIPE_REPO_SLUG="mozilla/fxa"
 gh() {
   case "$*" in
     "pr list"*) echo 7 ;;
-    *"--method POST"*) [ -n "${POST_FAILS:-}" ] && { echo "HTTP 403: Resource not accessible by integration" >&2; return 1; }; printf '%s\n' "$*" >> "$tmp/posts"
+    *"--method POST"*) [ -n "${POST_FAILS:-}" ] && { echo "HTTP 403: Resource not accessible by integration" >&2; return 1; }; printf '%s' "$*" | tr '\n' ' ' >> "$tmp/posts"; echo >> "$tmp/posts"
       case "$*" in *replies*) echo 901 ;; *) echo i902 ;; esac ;;
     *issues/comments/55*) echo https://github.com/mozilla/fxa/pull/7#issuecomment-55 ;;
     *pulls/7/comments*) [ -n "${AS_PERSON:-}" ] && { echo '[{"id":901,"in_reply_to_id":1,"user":{"login":"vbudhram","type":"User"},"author_association":"MEMBER","path":"a.ts","line":3,"body":"Not changed: the plugin adds it"}]'; return 0; }
@@ -34,7 +34,7 @@ check "a decline replies on the inline thread" "1|yes" \
 check "it marks the comment seen, and our own reply is not feedback" "0" "$(gh_feedback FXA-1 | jq '.comments | length')"
 check "a second decline on the same id posts nothing" "1" "$(gh_feedback FXA-1 decline 1 again >/dev/null; posts | wc -l | tr -d ' ')"
 check "an answer replies with its text alone, once" "yes|2" \
-  "$( (set -e; gh_feedback FXA-1 answer 8 "the four scripts on main are .js" >/dev/null); posts | tail -1 | grep -q 'pulls/7/comments/8/replies -f body=the four scripts on main are .js --jq' && echo yes)|$(gh_feedback FXA-1 answer 8 again >/dev/null; posts | wc -l | tr -d ' ')"
+  "$( (set -e; gh_feedback FXA-1 answer 8 "the four scripts on main are .js" >/dev/null); posts | tail -1 | grep -q 'pulls/7/comments/8/replies -f body=the four scripts on main are .js  _This comment is from an AI agent._ --jq' && echo yes)|$(gh_feedback FXA-1 answer 8 again >/dev/null; posts | wc -l | tr -d ' ')"
 check "a conversation comment gets a PR comment that links it" "yes" \
   "$(gh_feedback FXA-1 decline i55 "out of scope" >/dev/null; posts | grep -q 'issues/7/comments.*Not changed: out of scope (https://github.com/mozilla/fxa/pull/7#issuecomment-55)' && echo yes)"
 check "a long reason is cut to one line of 300 characters" "yes" \
@@ -47,6 +47,8 @@ check "our reply is seen at once: posted as a person, it is still not feedback" 
   "$(grep -cx 901 "$tmp/FXA-1.feedback-seen")|$(AS_PERSON=1 gh_feedback FXA-1 | jq '.comments | length')"
 check "a failed post says why, and goes to the error store" "1|1" \
   "$(POST_FAILS=1 gh_feedback FXA-1 decline 6 why 2>&1 >/dev/null | grep -c 'could not reply on 6: HTTP 403: Resource not accessible')|$(grep -c '^github decline_failed FXA-1 feedback decline could not reply on 6: HTTP 403' "$tmp/errs")"
+check "each reply ends with the italic AI agent note" "yes" \
+  "$(gh_feedback FXA-1 answer 9 "yes" >/dev/null; tail -1 "$tmp/posts" | grep -q 'body=yes  _This comment is from an AI agent._ --jq' && echo yes)"
 check "a failed answer clears the precheck's noted ids, so the comment is reported again" "no" \
   "$(echo 7 > "$tmp/FXA-1.feedback-noted"; POST_FAILS=1 gh_feedback FXA-1 answer 7 why >/dev/null 2>&1; [ -e "$tmp/FXA-1.feedback-noted" ] && echo yes || echo no)"
 exit "$fail"
