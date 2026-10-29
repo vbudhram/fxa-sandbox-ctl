@@ -285,6 +285,8 @@ gh_feedback() {
     [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> $sub <id> <text>" >&2; return 1; }
     grep -qx "$id" "$declined" 2>/dev/null && { echo "$key: already replied on $id"; return 0; }
     body="$why"; [ "$sub" != decline ] || body="Not changed: ${why}"
+    # Before the post: a failed or crashed post then leaves the comment for the precheck to report again.
+    rm -f "${PIPE_STATE_DIR}/${key}.feedback-noted"
     # rid: our reply's own id, seen at once, so it is never feedback, also when gh posts as a person, not the App.
     local err="" rid="" ef; ef="$(mktemp)"
     case "$id" in

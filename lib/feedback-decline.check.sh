@@ -47,4 +47,6 @@ check "our reply is seen at once: posted as a person, it is still not feedback" 
   "$(grep -cx 901 "$tmp/FXA-1.feedback-seen")|$(AS_PERSON=1 gh_feedback FXA-1 | jq '.comments | length')"
 check "a failed post says why, and goes to the error store" "1|1" \
   "$(POST_FAILS=1 gh_feedback FXA-1 decline 6 why 2>&1 >/dev/null | grep -c 'could not reply on 6: HTTP 403: Resource not accessible')|$(grep -c '^github decline_failed FXA-1 feedback decline could not reply on 6: HTTP 403' "$tmp/errs")"
+check "a failed answer clears the precheck's noted ids, so the comment is reported again" "no" \
+  "$(echo 7 > "$tmp/FXA-1.feedback-noted"; POST_FAILS=1 gh_feedback FXA-1 answer 7 why >/dev/null 2>&1; [ -e "$tmp/FXA-1.feedback-noted" ] && echo yes || echo no)"
 exit "$fail"
