@@ -442,6 +442,14 @@ rid="$(memory_admin set web "" "$(recf "$repo")" 2>/dev/null | sed -n 's/^set //
 check "admin add to a repo: one cite as path:line in repos/, and the list shows it with its repo" "1|mozilla/other|mozilla/other:b.py:2" \
   "$(g -C "$tmp/remote.git" show main:repos/mozilla__other/trap.md | grep -c 'cite: b.py:2 | anchor: call_auth_api')|$(memory_list web | jq -r --arg id "$rid" '.entries[] | select(.id == $id) | .scope + "|" + .cites[0].cite')"
 check "admin: a repo the team does not have is refused" "scope" "$(memory_admin set web "" "$(recf "${repo//mozilla\/other/mozilla\/elsewhere}")" 2>&1 >/dev/null | cut -d: -f1)"
+# A dependency repo: its facts list as dep and read-only; the team that works on it keeps them.
+memory_dep_slugs() { echo mozilla/other; }
+check "dep repo: its facts list with dep, the team's own without, and the list names it" "true|false|mozilla/other" \
+  "$(memory_list web | jq -r --arg id "$rid" '.entries[] | select(.id == $id) | .dep')|$(memory_list web | jq -r '[.entries[] | select(.scope != "mozilla/other") | .dep] | unique | join(",")')|$(memory_list web | jq -r '.dep | join(",")')"
+v="$(memory_list web | jq -r --arg id "$rid" '.entries[] | select(.id == $id) | .v')"; del="{\"scope\":\"mozilla/other\",\"v\":\"$v\"}"
+check "dep repo: an admin's delete or add there is refused, and the fact stays" "1|1|1" \
+  "$(memory_admin delete web "$rid" "$(recf "$del")" 2>&1 >/dev/null | grep -c "dependency repo")|$(memory_admin set web "" "$(recf "${repo//v2 client/v3 client}")" >/dev/null 2>&1; echo $?)|$(g -C "$tmp/remote.git" show main:repos/mozilla__other/trap.md | grep -c 'needs the v2 client')"
+memory_dep_slugs() { :; }
 upd="{\"learnings\":[{\"op\":\"update\",\"id\":\"${rid}\",\"repo\":\"mozilla/other\",\"kind\":\"trap\",\"text\":\"a run rewrites it\",\"cite\":\"b.py:2\",\"anchor\":\"call_auth_api\",\"why\":\"w\"}]}"
 check "collect: a run's update of a person's fact goes to the inbox, and the fact stays" "1|1" \
   "$(collect_json "$upd" mozilla/other; g -C "$tmp/remote.git" show main:repos/mozilla__other/trap.md | grep -c 'needs the v2 client')|$(g -C "$tmp/remote.git" ls-tree -r --name-only main inbox/mozilla__other | grep -c .)"

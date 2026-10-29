@@ -2530,7 +2530,7 @@ async function loadMemory(team) {
   if (MEM.team === team) Object.assign(MEM, r?.ok && j ? { data: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
 }
 const MEM_KINDS = ["convention", "trap", "command", "decision", "owner-area"];
-const memScopes = t => ["team", ...(t.repos ?? []).map(r => r.slug)];
+const memScopes = t => ["team", ...(t.repos ?? []).map(r => r.slug).filter(s => !(MEM.data?.dep ?? []).includes(s))];
 const memWhere = sc => sc === "team" ? "Team" : sc;
 // The form of one fact, from an entry or empty; a repo fact has one cite, a team fact up to three.
 const memDraft = (e, t) => e ? { scope: e.scope, kind: e.kind, text: e.text, why: e.why, path: e.path, terms: e.terms, cites: e.cites.map(c => ({ ...c })) }
@@ -2562,17 +2562,22 @@ function memoryTabHtml(t) {
   // INDEX.md lists only the facts confirmed in the last 90 days (lib/memory.sh _memory_index); fxa-mem still finds the rest.
   const cut = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), q = (MEM.q ?? "").toLowerCase();
   const shown = d.entries.filter(e => !q || [e.text, e.why, e.kind, e.scope, ...e.cites.map(c => c.cite)].join(" ").toLowerCase().includes(q));
-  const rows = shown.map(e => html`<tr data-mem="${e.id}"><td>${e.scope === "team" ? "Team" : html`<span class="mono">${e.scope}</span>`}</td><td>${tag(e.kind, "", { sq: true })}</td>
+  const row = e => html`<tr data-mem="${e.id}"><td>${e.scope === "team" ? "Team" : html`<span class="mono">${e.scope}</span>`}</td><td>${tag(e.kind, "", { sq: true })}</td>
     <td><div class="mtext">${e.text}</div>${e.why ? html`<div class="hint">${e.why}</div>` : ""}<div class="mtags">${e.person ? tag("person", "info") : ""}${e.confirmed < cut ? tag("not in index", "warn", { title: "Not confirmed in 90 days: fxa-mem ranks it last" }) : ""}${e.taint ? tag("tainted run", "warn") : ""}</div></td>
     <td>${e.cites.map(c => html`<div class="mono">${c.cite}</div>`)}</td><td>${e.confirmed || "—"}</td>
-    <td class="macts"><button type="button" class="linkbtn" data-mem-edit="${e.id}">Edit</button> <button type="button" class="linkbtn${MEM.arm === e.id ? " danger" : ""}" data-mem-del="${e.id}">${MEM.arm === e.id ? "Delete it?" : "Delete"}</button></td></tr>`);
-  const n = d.entries.length;
+    <td class="macts">${e.dep ? "" : html`<button type="button" class="linkbtn" data-mem-edit="${e.id}">Edit</button> <button type="button" class="linkbtn${MEM.arm === e.id ? " danger" : ""}" data-mem-del="${e.id}">${MEM.arm === e.id ? "Delete it?" : "Delete"}</button>`}</td></tr>`;
+  // A dependency repo's facts: agents here read them, the team that works on that repo keeps them.
+  const own = shown.filter(e => !e.dep), dep = shown.filter(e => e.dep), cols = ["Where", "Kind", "Fact", "Cite", "Confirmed", ["", "macts"]];
+  const rows = own.map(row), n = d.entries.filter(e => !e.dep).length;
+  const depBox = dep.length ? html`<details data-mem-dep${q ? " open" : ""}><summary>From dependency repos <span class="n">${dep.length}</span></summary>
+    <p class="hint">Agents on this team read these too. They are read-only here: the team that works on ${[...new Set(dep.map(e => e.scope))].join(", ")} keeps them.</p>
+    <div class="tscroll">${table(cols, dep.map(row), { cls: "mtab" })}</div></details>` : "";
   return html`<div data-memory class="stack">${MEM.form ? memForm(t) : ""}${card(html`<div class="row"><p class="hint">${n} fact${n === 1 ? "" : "s"} for this team and its repos, from main. A repo fact is shared by every team on that repo. Runners that start after a change get it; running sessions keep their copy.</p><span class="sp"></span>
       ${MEM.form ? "" : html`<button type="button" data-mem-new>Add a fact</button>`}</div>
     <p class="${MEM.ok ? "hint" : "unknown"}" data-mem-msg role="status" tabindex="-1">${MEM.msg ?? ""}</p>
-    ${n ? html`<input class="input" data-mem-q aria-label="Filter the facts" placeholder="Filter by text, kind, repo or cite" value="${MEM.q ?? ""}">
-      <div class="tscroll">${shown.length ? table(["Where", "Kind", "Fact", "Cite", "Confirmed", ["", "macts"]], rows, { cls: "mtab" }) : emptybox("No fact matches the filter.")}</div>`
-      : emptybox("No team memory yet. A run adds a fact when its cites hold on main, or add one here.")}`, { cls: "tcard" })}</div>`;
+    ${d.entries.length ? html`<input class="input" data-mem-q aria-label="Filter the facts" placeholder="Filter by text, kind, repo or cite" value="${MEM.q ?? ""}">` : ""}
+    ${n ? html`<div class="tscroll">${own.length ? table(cols, rows, { cls: "mtab" }) : emptybox("No fact matches the filter.")}</div>`
+      : emptybox("No team memory yet. A run adds a fact when its cites hold on main, or add one here.")}${depBox}`, { cls: "tcard" })}</div>`;
 }
 // A repaint of the Memory tab that keeps the focus on the same control.
 function memPaint() {

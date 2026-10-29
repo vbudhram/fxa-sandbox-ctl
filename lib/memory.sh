@@ -84,6 +84,11 @@ memory_profile_slugs() {
     for row in "${PIPE_REPOS[@]}"; do printf '%s\n' "${row%% *}"; done
   else printf '%s\n' "${PIPE_REPO_SLUG:-}"; fi | grep -E "$_MEMORY_SLUG" || true
 }
+# memory_dep_slugs   The profile's dependency repos (role dep): another team's code, read here, changed there.
+memory_dep_slugs() {
+  local row r
+  for row in ${PIPE_REPOS[@]+"${PIPE_REPOS[@]}"}; do read -r r _ role _ <<< "$row"; [ "$role" = dep ] && printf '%s\n' "$r"; done | grep -E "$_MEMORY_SLUG" || true
+}
 
 # memory_index_md <profile> [slug...]   The team's file, then a short section that tells the agent to
 # use fxa-mem. Nothing when memory is off or no repo has a folder.
@@ -571,15 +576,17 @@ The full lists are in DIGEST.md on the branch." "" 2>/dev/null
 
 # memory_list <team>   The team's facts and its repos' code facts as JSON for the dashboard, read from main:
 # a digest can hold the clone on its own branch with entries nobody reviewed yet.
+# A dependency repo's facts come with "dep": true, read-only here: the team that works on that repo keeps them.
 memory_list() {
-  local p="${1:-}" s slugs=""
+  local p="${1:-}" s slugs="" dep=""
   [[ "$p" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "ERROR: bad team name" >&2; return 1; }
   memory_on || { echo '{"on":false,"entries":[]}'; return 0; }
-  slugs="$(_memory_team_slugs "$p")"
+  slugs="$(_memory_team_slugs "$p")"; dep="$(_memory_team_slugs "$p" dep)"
   memory_pull_maybe 2>/dev/null
   _memory_git rev-parse -q --verify main >/dev/null 2>&1 || { echo "ERROR: this host has no copy of the team memory yet" >&2; return 1; }
   { _memory_list_dir team "teams/$p"; for s in $slugs; do _memory_list_dir "$s" "repos/$(_memory_dir_of "$s")"; done; } \
-    | python3 -I "${MEMORY_LIB_DIR}/memory_list.py"
+    | python3 -I "${MEMORY_LIB_DIR}/memory_list.py" \
+    | jq -c --arg dep "$dep" '($dep | split("\n") | map(select(length > 0))) as $d | .dep = $d | .entries |= map(.dep = (.scope | IN($d[])))'
 }
 # _memory_list_dir <scope> <folder>   Each topic file of the folder on main, after a "\036<scope>\t<file>" line.
 _memory_list_dir() {
@@ -588,10 +595,12 @@ _memory_list_dir() {
   { _memory_git ls-tree --name-only "main:$2" 2>/dev/null || true; } | { grep -E '^[a-z-]+\.md$' || true; } | { grep -vx INDEX.md || true; } \
     | while IFS= read -r f; do printf '\036%s\t%s\n' "$1" "$f"; _memory_git show "main:$2/$f"; done
 }
-# _memory_team_slugs <team>   The team's repos, from its profile; none when it does not load (never the default team's).
+# _memory_team_slugs <team> [dep]   The team's repos, or only its dependency repos, from its profile; none when it
+# does not load (never the default team's).
 _memory_team_slugs() {
-  declare -F pipeline_load >/dev/null || { memory_profile_slugs; return 0; }
-  ( pipeline_load "$1" >/dev/null 2>&1 && memory_profile_slugs ) || true
+  local f=memory_profile_slugs; [ "${2:-}" = dep ] && f=memory_dep_slugs
+  declare -F pipeline_load >/dev/null || { "$f"; return 0; }
+  ( pipeline_load "$1" >/dev/null 2>&1 && "$f" ) || true
 }
 
 # _memory_person <dir> <id>   0 when a person wrote the entry (person: 1 ends its meta line): a run may not replace it.
@@ -662,6 +671,8 @@ memory_admin() {
   slugs="$(_memory_team_slugs "$p")"
   scope="$(jq -r '.entry.scope // .scope // "team"' "$rec" 2>/dev/null)" || scope=team
   if [ "$scope" = team ]; then dir="${FXA_MEMORY_DIR}/teams/${p}"; key="team/${p}"; kinds="$_MEMORY_TEAM_KINDS"
+  elif grep -qxF -- "$scope" <<< "$(_memory_team_slugs "$p" dep)"; then
+    echo "scope: ${scope} is a dependency repo here; the team that works on it keeps its facts" >&2; return 1
   elif [[ "$scope" =~ $_MEMORY_SLUG ]] && grep -qxF -- "$scope" <<< "$slugs"; then
     dir="${FXA_MEMORY_DIR}/repos/$(_memory_dir_of "$scope")"; key="$scope"; kinds="$_MEMORY_KINDS"
   else echo "scope: pick the team or one of its repos ($(printf '%s ' $slugs))" >&2; return 1; fi

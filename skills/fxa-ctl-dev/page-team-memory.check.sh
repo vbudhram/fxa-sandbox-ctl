@@ -39,6 +39,11 @@ ck "memory off on the host says so" "Team memory is off on this host." "$(bash "
 ck "a team with no facts says how they arrive" "No team memory yet. A run adds a fact when its cites hold on main, or add one here." "$(bash "$p" '#teams/example/memory' --fixture "$tmp/empty.json" --probe "$w"' return m.querySelector(".emptybox")?.textContent.trim()')"
 ck "a viewer who is not an admin gets the admin line, and no request for the memory" "Only a team admin can see and change team memory.|0" \
   "$(bash "$p" '#teams/example/memory' --fixture "$tmp/viewer.json" --probe "$w"' return m.querySelector(".tcard").textContent.trim() + "|" + performance.getEntriesByType("resource").filter(e => /\/memory$/.test(e.name)).length')"
+# A dependency repo's fact: folded under its own heading, with no Edit or Delete.
+fx '{"on":true,"dep":["mozilla/dep"],"entries":[{"id":"mem-0000aaaa","scope":"team","kind":"trap","file":"trap.md","text":"Own fact","why":"","path":"","terms":"","cites":[{"cite":"mozilla/fxa:a.js:3","anchor":"a"}],"confirmed":"2099-01-01","source":"r -","taint":false,"person":false,"v":"abc","dep":false},{"id":"mem-0000cccc","scope":"mozilla/dep","kind":"trap","file":"trap.md","text":"Dep fact","why":"","path":"","terms":"","cites":[{"cite":"mozilla/dep:b.js:1","anchor":"b"}],"confirmed":"2099-01-01","source":"r -","taint":false,"person":false,"v":"def","dep":true}]}' true dep
+ck "dep facts fold apart and read-only, and the count leaves them out" "1|false|1|0|Dep fact|1 fact" \
+  "$(bash "$p" '#teams/example/memory' --fixture "$tmp/dep.json" --probe "$w"' const d = m.querySelector("[data-mem-dep]"), r = d?.querySelector("tr[data-mem]");
+    return [m.querySelectorAll("[data-memory] > .tcard tr[data-mem]").length - (d?.querySelectorAll("tr[data-mem]").length ?? 0), d?.open, d?.querySelectorAll("tr[data-mem]").length, r?.querySelectorAll("button").length, r?.querySelector(".mtext")?.textContent, m.querySelector(".hint").textContent.match(/^\d+ facts?/)?.[0]].join("|")')"
 ck "a draft team has no Memory tab, and its link opens Settings" "Settings1 left|false" \
   "$(bash "$p" '#teams/example/memory' --fixture "$here/page-fixture-teams.json" --probe "$w"' return document.querySelector(".ttab[aria-current]")?.textContent + "|" + [...document.querySelectorAll(".ttab")].some(a => /Memory/.test(a.textContent))')"
 exit "$fail"
