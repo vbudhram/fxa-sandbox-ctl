@@ -230,6 +230,10 @@ check "the shipped script is the profile's own" "same" "$([ "$(sed -n "s/^echo '
 : > "$tmp/bootx"; SANDBOX_ROOT="$root" PIPE_PROFILE=fxa _gce_profile_boot r1 >/dev/null
 check "fxa has no boot.sh, so nothing runs" "0" "$(wc -l < "$tmp/bootx" | tr -d ' ')"
 check "monitor's boot.sh is valid bash" "0" "$(bash -n "$root/profiles/monitor/boot.sh"; echo $?)"
+# A team with a boot.sh tells its agent how to wait for it; FxA has none.
+eval "$(sed -n '/^_session_has_boot() {/,/^}/p' "$root/lib/session.sh")"
+check "sync-storage's prompt says how to wait for its boot; fxa's does not" "0|1|0" \
+  "$(SANDBOX_ROOT="$root" PIPE_PROFILE=sync-storage _session_has_boot; printf '%s|' $?; SANDBOX_ROOT="$root" PIPE_PROFILE=fxa _session_has_boot; printf '%s|' $?; PIPE_BOOT_SCRIPT=rusty _session_has_boot; echo $?)"
 
 # Extra egress hosts come from the profile, and only plain host names.
 eval "$(sed -n '/^_profile_egress_extra() {/,/^}/p' "$root/lib/agent.sh")"

@@ -2515,6 +2515,7 @@ EOF
   if [ -n "$resume_sid" ]; then prompt="$(_session_resume_prompt)"; else prompt="$(_session_first_prompt)"; fi
   prompt="${prompt}$(_session_prompt_tail "$dir" "$([ -n "$resume_sid" ] && echo 1 || echo 0)")"
   _session_wants_stack "$key" && prompt="${prompt}${_SESSION_STACK_NOTE}"
+  _session_has_boot && prompt="${prompt}${_SESSION_BOOT_NOTE}"
   [ -n "$notes" ] && [ -z "$resume_sid" ] && prompt="${prompt}${_SESSION_NOTES_NOTE}"
   [ -n "$fixh" ] && prompt="${prompt}
 

@@ -31,6 +31,8 @@ Chat sessions do not have it; do not report that it is missing.
   `channelserver.services.mozilla.com` (the pairing channel). Codex runs also reach `api.openai.com`, `chatgpt.com`
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
+  You have no GitHub login, so a GitHub Actions job log or artifact returns 403.
+  For a CI failure, ask the engineer at once for the `FAILED` lines.
 - **Show the change** with new files included:
   `git add -N . && git diff origin/main -- . ":(exclude).fxa-*"`.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
@@ -53,7 +55,8 @@ Chat sessions do not have it; do not report that it is missing.
   site and scopes JQL to FXA; ask for `fields` such as `summary` and `status`),
   `slack__slack_read_thread` and `slack__slack_read_channel`, and `figma__*`.
   Slack reads only #fxa (`C4D36CAJW`) and #fxa-team (`CLV3KMZ8B`); pass the ID,
-  not the name. A permalink `/archives/<C>/p1790355024144359` has
+  not the name. For a thread in another channel, ask the engineer to paste it;
+  do not search the two channels for it. A permalink `/archives/<C>/p1790355024144359` has
   `channel_id` `<C>` and `message_ts` `1790355024.144359` (a dot before the last 6 digits).
   A Bugzilla bug (`bugzilla.mozilla.org/show_bug.cgi?id=N`, `bugzil.la/N`, "bug N") is
   readable with `bugzilla__get_bugzilla_bug` (`bug_id`: N). It shows public bugs

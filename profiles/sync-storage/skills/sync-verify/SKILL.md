@@ -41,7 +41,9 @@ description: Verify a syncstorage-rs change in the Sync Storage sandbox, the way
    so the first Spanner row can wait for it. `bash ~/.claude/skills/sync-verify/spanner.sh up` starts
    that stack alone, for a reproduction; its logs are in `~/.syncstorage-spanner/`.
    To add an e2e test, put it in `tools/integration_tests` and run the suite with the
-   "integration tests" command from the plan.
+   "integration tests" command from the plan. To run one test, add `-k <name>` to that command.
+   Use the boot's venv, `~/.syncstorage-it-venv`: the runner has no poetry, and do not make or
+   change a venv, since the boot pins it to the tests' own lock.
 3. Fix each FAIL and run it again. Before the handoff, the whole run shows no FAIL. Print the
    verdict table (also in `/workspace/.fxa-verify-verdict.txt`) in your reply.
    A SKIP row is a test this runner cannot run (Postgres has no server here). Copy its reason and

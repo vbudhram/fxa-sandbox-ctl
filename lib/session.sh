@@ -1113,6 +1113,16 @@ _session_wants_stack() {
 _SESSION_STACK_NOTE='
 The FxA stack is starting in the background (log: /workspace/.fxa-auto-stack-start.log).
 Before you use it, wait until curl -sf http://localhost:9000/__heartbeat__ succeeds.'
+# A team's boot.sh (_gce_profile_boot) sets up its stack while the agent reads code; without this, agents polled its log.
+_session_has_boot() {
+  [ -n "${PIPE_BOOT_SCRIPT:-}" ] || [ -n "$(android_overlay boot.sh)" ] \
+    || { [ -n "${PIPE_PROFILE:-}" ] && [ -f "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}/boot.sh" ]; }
+}
+_SESSION_BOOT_NOTE='
+The team stack sets itself up in the background (log: /var/log/profile-boot.log). Before you use it,
+wait once, with a 300 s Bash timeout, and do not poll the log:
+for i in $(seq 1 55); do [ -e /run/fxa-profile/ready ] || [ -e /run/fxa-profile/failed ] && break; sleep 5; done; ls /run/fxa-profile; cat /run/fxa-profile/failed 2>/dev/null
+"ready" means the stack is up. "failed" holds what went wrong. Neither yet: run the same line again.'
 
 # Sessions hold no pool slot. The run files are staged here and shipped to the
 # runner; the runner holds the work until Open PR or stop.
