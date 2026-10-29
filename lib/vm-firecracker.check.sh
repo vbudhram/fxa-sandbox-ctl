@@ -126,4 +126,15 @@ check "yarn.lock changed: wake and refresh" "refresh refresh" "$(fc_refresh_mayb
 check "the same main does not wake again" "" "$(fc_refresh_maybe)"
 _fc_up() { return 0; }; rm -f "$SESSION_DIR/.fc-refresh-main"
 check "a running host is left to its own timer" "" "$(fc_refresh_maybe)"
+
+# A snapshot rebuild on the host: the restore waits for it, and gives up past the limit.
+sleep() { :; }; states="$tmp/states"
+_fc_ssh() { local s; s="$(head -1 "$states")"; sed -i.b 1d "$states"; echo "${s:-inactive}"; }
+printf 'activating\nactivating\n' > "$states"
+check "a rebuild that ends: wait once, then go on" "1|0" "$(_fc_refresh_wait > "$tmp/w"; rc=$?; echo "$(grep -c rebuilding "$tmp/w")|$rc")"
+check "no rebuild: no wait" "0" "$(_fc_refresh_wait; echo $?)"
+yes activating | head -200 > "$states"
+check "a rebuild past the limit: give up" "1" "$(FXA_FC_REFRESH_WAIT=0 _fc_refresh_wait >/dev/null 2>&1; echo $?)"
+_fc_ssh() { return 255; }
+check "the probe fails: no wait" "0" "$(_fc_refresh_wait; echo $?)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

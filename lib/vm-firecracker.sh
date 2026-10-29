@@ -74,8 +74,20 @@ vm_clone() {
 
 _fc_vm_exists() { [ -n "$(_fc_slot_of "$1")" ]; }
 _fc_vm_is_running() { _fc_vm_exists "$1"; }
+# _fc_refresh_wait   A snapshot rebuild (the oneshot fc-refresh, "activating" while it runs) on the host: wait for it
+# to end, so a restore never meets a half-built snapshot. Exit 1 when it runs past FXA_FC_REFRESH_WAIT seconds
+# (default 15 min). A failed probe boots as before.
+_fc_refresh_wait() {
+  local end=$(( $(date +%s) + ${FXA_FC_REFRESH_WAIT:-900} )) said=""
+  while [ "$(_fc_ssh 'systemctl is-active fc-refresh' 2>/dev/null)" = activating ]; do
+    [ -n "$said" ] || { echo "  The runner host is rebuilding its snapshot; waiting for it to finish..."; said=1; }
+    [ "$(date +%s)" -lt "$end" ] || { echo "  The snapshot rebuild ran past ${FXA_FC_REFRESH_WAIT:-900}s." >&2; return 1; }
+    sleep 15
+  done
+}
 _fc_vm_clone() {
   local name="$1" out t0; t0="$(date +%s)"
+  _fc_refresh_wait || return 1
   echo "Restoring '$(vm_name "$name")' from the Firecracker snapshot on ${FXA_FC_HOST}..."
   out="$(_fc claim "$(vm_name "$name")")" || return 1
   printf 'Host %s\n  HostName %s\n' "$(vm_name "$name")" "${out#* }" > "${_GCE_SSH_HOSTS}/$(vm_name "$name")"
