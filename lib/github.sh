@@ -210,6 +210,7 @@ gh_drain() {
 #   acted <id>...   WRITE(local): record the ids this round will fix
 #   thumbsup        WRITE(PR): react 👍 to those ids a later push made outdated, then clear them
 #   decline <id> <reason>   WRITE(PR): reply "Not changed: <reason>" on that comment, once
+#   answer <id> <text>      WRITE(PR): reply <text> on a reviewer's question, once
 #
 # Two filters matter. `position: null` means the comment sits on a diff hunk
 # that a later push replaced, so it is stale and acting on it edits code that
@@ -276,14 +277,14 @@ gh_feedback() {
           -q 'map(select(.isCrossRepository | not))[0].number // empty' 2>/dev/null)"
   [ -n "$pr" ] && [ "$pr" != "null" ] || { echo "no PR for $br" >&2; return 1; }
 
-  # A declined comment gets a one-line reply, so a reviewer sees why it is still open.
-  # A post is not safe to repeat: no retry, and an id replied to once is never replied to again.
-  if [ "$sub" = "decline" ]; then
+  # A declined comment gets a one-line reply, so a reviewer sees why it is still open; a question
+  # gets its answer. A post is not safe to repeat: no retry, and an id replied to once is never replied to again.
+  if [ "$sub" = "decline" ] || [ "$sub" = "answer" ]; then
     local id="${3:-}" why declined="${PIPE_STATE_DIR}/${key}.feedback-declined" body
-    why="$(printf '%s' "${*:4}" | tr '\n' ' ' | cut -c1-300)"
-    [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> decline <id> <reason>" >&2; return 1; }
+    why="$(printf '%s' "${*:4}" | tr '\n' ' ' | cut -c1-"$( [ "$sub" = answer ] && echo 600 || echo 300)")"
+    [[ "$id" =~ ^[ir]?[0-9]+$ ]] && [ -n "${why// /}" ] || { echo "usage: feedback <KEY> $sub <id> <text>" >&2; return 1; }
     grep -qx "$id" "$declined" 2>/dev/null && { echo "$key: already replied on $id"; return 0; }
-    body="Not changed: ${why}"
+    body="$( [ "$sub" = decline ] && echo "Not changed: ")${why}"
     # rid: our reply's own id, seen at once, so it is never feedback, also when gh posts as a person, not the App.
     local err="" rid="" ef; ef="$(mktemp)"
     case "$id" in
@@ -292,10 +293,10 @@ gh_feedback() {
            && [ -n "$url" ] && rid="$(gh api --method POST "repos/${PIPE_REPO_SLUG}/issues/${pr}/comments" -f body="${body} (${url})" --jq '"i\(.id)"' 2>"$ef")" ;;
     esac || { err="$(tr '\n' ' ' < "$ef" | cut -c1-200)"; rm -f "$ef"
       echo "ERROR: could not reply on $id${err:+: $err}; check the PR before you try again" >&2
-      errors_record github decline_failed "$key" "feedback decline" "could not reply on ${id}${err:+: $err}" "" 2>/dev/null || true; return 1; }
+      errors_record github "${sub}_failed" "$key" "feedback $sub" "could not reply on ${id}${err:+: $err}" "" 2>/dev/null || true; return 1; }
     rm -f "$ef"
     printf '%s\n' "$id" >>"$declined"; printf '%s\n' "$id" ${rid:+"$rid"} >>"$seen"; sort -u -o "$seen" "$seen" 2>/dev/null || true
-    echo "replied on $id: Not changed"
+    echo "replied on $id$( [ "$sub" = decline ] && echo ": Not changed")"
     return 0
   fi
 

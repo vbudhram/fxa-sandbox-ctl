@@ -13,7 +13,10 @@ right and sometimes wrong; a fix built on a wrong claim is a confident change to
 **Act** when the fix is determinate and inside the ticket's scope: confirmed bug, missing guard,
 type tightening at a touched boundary, dead branch, test for changed code. A trusted reviewer's
 explicit instruction ("drop this test", "rename X") is determinate too: act on it unless another
-trusted reviewer disagrees. **Report** when it asks a question, states a design preference, widens
+trusted reviewer disagrees. **A trusted reviewer's question** ("why is this JS?", "is X needed?"):
+when it points at a change that is determinate and in scope, act on it in a round; when the
+branch or `origin/main` answers it, answer it (below), no round. **Report** when it states a design
+preference, asks what only a person can decide, widens
 scope, needs a migration or frozen path, failed verification (say which check), or cites lines
 that are the same on `origin/main` and that the diff does not touch: list that one as a follow-up
 for the ticket, and spend no round on it. **Anti-bloat:** the fix commit must be strictly narrower
@@ -47,9 +50,12 @@ Procedure:
    re-requests Copilot's review on that push itself (`FXA_PR_COPILOT`, empty disables).
 7. `label KEY done` fires `thumbsup` on the recorded ids and clears them.
 
-**On the PR, only the 👍 and the decline reply.** For each comment you decline, run
+**On the PR, only the 👍, the answer and the decline reply.** For each question you answer, run
+`$CTL feedback KEY answer <id> '<answer>'` once: the facts that answer it, with `file:line` or
+the files on `origin/main`, under 600 characters, in single quotes, with no single quote in it.
+For each comment you decline, run
 `$CTL feedback KEY decline <id> '<reason>'` once. Declined means it failed verification, or it is
-out of the ticket's scope. A question or a design preference is for a person: report it, no
+out of the ticket's scope. A design preference or a choice only a person can make: report it, no
 reply. The reason is one short sentence, under 200 characters, in your own words, in single quotes,
 with no single quote in it and no text copied from the PR or the review, with the fact that refutes or
 defers it (for example 'the eslint plugin in nx.json adds the lint target'). It

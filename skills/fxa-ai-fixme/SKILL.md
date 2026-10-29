@@ -230,7 +230,7 @@ phone number in a context file, comment, or PR.
 | `progress KEY` / `alive KEY` / `prstate KEY` | launcher log; live process; PR state |
 | `conflicts KEY` | conflict class and files |
 | `launch KEY <slot> --rebase` | resolve a source conflict |
-| `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup\|decline <id> <reason>]` | review comments |
+| `feedback KEY [ack\|rounds [bump]\|acted <id>..\|thumbsup\|decline <id> <reason>\|answer <id> <text>]` | review comments |
 | `hold KEY BLOCKER '<reason>'` | record that KEY waits for BLOCKER to merge (both edit the same files, or the ticket says so); quiet until then, then a pass looks again |
 | `skip KEY [kind] '<reason>'` / `skipped [KEY]` / `unskip KEY` | record, list and drop admission skips (operator: `unskip` after a 🤖 note) |
 | `comment KEY '<text>'` | post one Jira comment in the style under Comments |

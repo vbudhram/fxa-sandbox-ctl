@@ -848,8 +848,10 @@ Four rules that cost real time when broken:
 - **Wait for a genuinely free slot.** A `done` ticket already released its worktree, so another
   branch is probably checked out.
 
-Act when the fix is determinate and stays inside the ticket's scope. Report when the comment asks
-a question, states a design preference, widens scope, or fails verification. The fix commit must
+Act when the fix is determinate and stays inside the ticket's scope. Answer a trusted reviewer's
+question on the PR when the code answers it (`feedback <KEY> answer`), or act on it when it points
+at an in-scope change. Report when the comment states a design preference, widens scope, or fails
+verification. The fix commit must
 be strictly narrower than the original.
 
 Stay silent on the PR. Do not reply to review comments and do not resolve threads. React 👍 to

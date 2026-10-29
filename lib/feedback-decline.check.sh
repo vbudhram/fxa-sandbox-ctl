@@ -33,6 +33,8 @@ check "a decline replies on the inline thread" "1|yes" \
   "$(gh_feedback FXA-1 decline 1 "the eslint plugin adds the lint target" >/dev/null; posts | grep -c 'pulls/7/comments/1/replies')|$(posts | grep -q 'body=Not changed: the eslint plugin adds the lint target' && echo yes)"
 check "it marks the comment seen, and our own reply is not feedback" "0" "$(gh_feedback FXA-1 | jq '.comments | length')"
 check "a second decline on the same id posts nothing" "1" "$(gh_feedback FXA-1 decline 1 again >/dev/null; posts | wc -l | tr -d ' ')"
+check "an answer replies with its text alone, once" "yes|2" \
+  "$(gh_feedback FXA-1 answer 8 "the four scripts on main are .js" >/dev/null; posts | tail -1 | grep -q 'pulls/7/comments/8/replies -f body=the four scripts on main are .js --jq' && echo yes)|$(gh_feedback FXA-1 answer 8 again >/dev/null; posts | wc -l | tr -d ' ')"
 check "a conversation comment gets a PR comment that links it" "yes" \
   "$(gh_feedback FXA-1 decline i55 "out of scope" >/dev/null; posts | grep -q 'issues/7/comments.*Not changed: out of scope (https://github.com/mozilla/fxa/pull/7#issuecomment-55)' && echo yes)"
 check "a long reason is cut to one line of 300 characters" "yes" \
