@@ -745,9 +745,6 @@ _finish_push_and_pr() {
   local with_risk=""
   [ -n "$fix" ] || with_risk="$(_finish_risk_section "$worktree" "$pr_body" "$(jq -r '.risk_notes // empty' "$done_file" 2>/dev/null)")" || with_risk=""
   [ -z "$with_risk" ] || pr_body="$with_risk"
-  # The reviewer sees the scope: each shipped file and why the agent tied it to the issue (before the PII guard, too).
-  local files_md; files_md="$(jq -r '.files // {} | to_entries[] | "- `\(.key)`: \(.value)"' "$done_file" 2>/dev/null)" || files_md=""
-  [ -n "$fix" ] || [ -z "$files_md" ] || pr_body="${pr_body%$'\n'}"$'\n\n## Files\n\n'"$files_md"
   _finish_pii_guard "$worktree" "$done_file" "$pr_title" "$pr_body" "$commit_body" || { _finish_prfix_why guard:pii; return 1; }
 
   local as_is=""
