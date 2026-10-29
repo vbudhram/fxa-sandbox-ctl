@@ -150,7 +150,9 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 ## Commit and deploy
 
 1. Scoped conventional commit: `fix(gce): ...`, `feat(session): ...`.
-2. Push both repos when the manager VM needs the change.
+2. From the worktree, run `bash skills/fxa-ctl-dev/ship.sh` (`--bot <bot tree>` for a bot change,
+   default `../fxa-agent-bot-main`; `--smoke` deploys through `dev smoke`). It refuses a dirty tree,
+   rebases each tree on origin/main, pushes the ones with commits, and runs `vm.sh dev` with both.
 3. `bash skills/fxa-manager/vm.sh promote` deploys to the live bot (Mozilla Slack). It
    refuses unless `main` in both repos is exactly what the last `vm.sh dev` ran,
    uncommitted files included, and unless the bot's `npm test` and `npm run e2e` pass
@@ -159,9 +161,11 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
    skips that check: use it only for a change the dev bot cannot exercise.
    A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
    secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
-   Run the promote as one plain command, with no `cd ... &&` in front: an allow rule
-   matches only the start of the command. From a worktree, give vm.sh's absolute path
-   (it finds its tree from its own path), with `FXA_DEV_BOT_ROOT=<bot tree>` first when needed.
+   Run the promote from the main checkout (the shell's start folder), as exactly
+   `bash skills/fxa-manager/vm.sh promote`: no `cd`, path, env or pipe, since the allow rule
+   matches only that text. With green CI it reads only origin/main and the dev record, which
+   every worktree shares. Only when it must run the bot's tests itself does it need the trees
+   dev ran: then it says "vm.sh dev again".
 
 ## After a promote that changed the dashboard
 

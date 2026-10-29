@@ -77,7 +77,7 @@ undoes it; `sessions status` shows it. For the pipeline, use
 `fxa-sandbox-ctl pause "<reason>"`. The hard ceiling is the Anthropic
 workspace's spend limit in the Console.
 
-**Deploy a change.** Test it with `vm.sh dev`, commit and push, then `vm.sh promote`:
+**Deploy a change.** Commit, then `bash skills/fxa-ctl-dev/ship.sh` from the worktree (push and `vm.sh dev`), then `vm.sh promote` from the main checkout:
 it refuses unless `main` matches what the dev bot ran, then runs `sync` and checks
 the services, the bot's connection and the dashboard. `vm.sh sync` alone
 fast-forwards both repos, skips a repo with local edits on the VM, links new
