@@ -2640,7 +2640,7 @@ const RT_OPEN = new Set();
 const RT_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], RT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const RT_MODES = [["report", "Report", "A summary in Slack and History. Changes no code."], ["pr", "Draft PR", "Opens a draft PR with the fixes. Nothing merges by itself."], ["pr+notes", "Draft PR with notes", "The draft PR, plus every finding it did not fix, in the PR description."]];
 const RT_FIELDS = ["template", "name", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "draft", "max_usd", "skip_no_commits", "pr"];
-const RT_STALE_S = 300;
+const RT_STALE_S = 300, RT_CHANS_S = 300;
 const RT_ZONES = [["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Los_Angeles", "Pacific"], ["UTC", "UTC"], ["Europe/London", "UK"], ["Europe/Berlin", "Central Europe"], ["Asia/Kolkata", "India"], ["Asia/Tokyo", "Japan"], ["Australia/Sydney", "Sydney"]];
 const RT_BLANK = { template: "blank", name: "Write your own", about: "Start with an empty prompt, for a task the other starts do not cover.", mode: "report", skip_no_commits: true, prompt: "" };
 // The dependency PR start (on='pr-label'): no schedule and no prompt; a red PR that asks for help starts each run.
@@ -2650,15 +2650,30 @@ const RT_GLYPH = { "code-review": ["info", '<path d="M16 18l6-6-6-6M8 6l-6 6 6 6
 const RT_VERB = { "code-review": "Reviews new commits on", "perf-review": "Looks for slow paths in", "security-review": "Looks for security defects in", "ux-review": "Checks the changed screens in" };
 // The dot of a run in the strip of last runs: Dot's tones.
 const RT_DOT = { ok: "done", report: "info", failed: "bad", missed: "bad", stopped: "warn" };
-async function loadRoutines(team) {
+// poll: the 15 s or 2 s poll, which skips while a load runs. A load after a write always runs, or it could
+// answer with the list from before the write.
+async function loadRoutines(team, poll) {
+  const rt = RT;
+  if (poll && rt.loading) return;
   const get = u => fetch(u, { cache: "no-store" }).catch(() => null).then(async r => [r, await r?.json().catch(() => null)]);
-  const [r, j] = await get(`/api/teams/${encodeURIComponent(team)}/routines`);
-  if (RT.team !== team) return;   // the admin opened another team while this answer was on its way
-  Object.assign(RT, r?.ok && Array.isArray(j) ? { list: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
-  if (!RT.tpls) { const [t, tj] = await get("/api/routine-templates"); if (RT.team === team) RT.tpls = t?.ok && Array.isArray(tj) ? tj : []; }
-  // The channels the bot is in, for the channel picker: none, or an error, leaves the paste field.
-  const [c, cj] = await get(`/api/teams/${encodeURIComponent(team)}/routine-channels`);
-  if (RT.team === team) RT.chans = c?.ok && Array.isArray(cj?.channels) ? cj : { channels: [], err: cj?.error || "the channel list did not load" };
+  // The channels the bot is in, for the channel picker: none, or an error, leaves the paste field. They come
+  // from a ctl command (about 1 s), so the list paints first, and they load again only after RT_CHANS_S.
+  if (!(rt.chansAt > Date.now() - RT_CHANS_S * 1000)) {
+    rt.chansAt = Date.now();
+    get(`/api/teams/${encodeURIComponent(team)}/routine-channels`).then(([c, cj]) => {
+      if (RT.team !== team) return;
+      RT.chans = c?.ok && Array.isArray(cj?.channels) ? cj : { channels: [], err: cj?.error || "the channel list did not load" };
+      if (!c?.ok) RT.chansAt = 0;
+      rtPaint();
+    });
+  }
+  rt.loading = (rt.loading ?? 0) + 1;
+  try {
+    const [[r, j], t] = await Promise.all([get(`/api/teams/${encodeURIComponent(team)}/routines`), rt.tpls ? null : get("/api/routine-templates")]);
+    if (RT.team !== team) return;   // the admin opened another team while this answer was on its way
+    Object.assign(RT, r?.ok && Array.isArray(j) ? { list: j, err: "" } : { err: j?.error || "the dashboard did not answer" });
+    if (t) RT.tpls = t[0]?.ok && Array.isArray(t[1]) ? t[1] : [];
+  } finally { rt.loading--; }
 }
 // A routine's config as form fields, and back.
 function rtDraft(data) {
@@ -4493,7 +4508,7 @@ async function poll() {
   loadErrors(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
   loadSbDone();
   if (VIEW === "teams" && TTAB === "memory" && MEM.team && MEM.team === SEL.teams && TEAM_ADMIN?.admin) loadMemory(MEM.team).then(() => MEM.team === SEL.teams && renderTeams());
-  if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && rtAdmin(RT.team)) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
+  if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && rtAdmin(RT.team)) loadRoutines(RT.team, true).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }

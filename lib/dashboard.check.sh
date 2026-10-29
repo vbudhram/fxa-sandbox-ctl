@@ -381,6 +381,16 @@ setTimeout(() => { console.log("FAIL the async checks did not finish"); process.
     t("new team: a double click on Create draft sends one POST, then opens its Settings", `${calls.filter(c => c[0] === "/api/teams" && c[1] === "POST").length}|${location.hash}`, "1|teams/relay/settings"); }
   RT = { team: "fxa" }; const p = loadRoutines("fxa"); RT = { team: "sync", list: [{ id: 1 }] }; await p;
   t("routines: a list answer for a team the admin left changes nothing", JSON.stringify(RT), JSON.stringify({ team: "sync", list: [{ id: 1 }] }));
+  { const calls = []; let release; const gate = new Promise(res => { release = res; });
+    globalThis.rtPaint = () => {};
+    globalThis.fetch = async url => { calls.push(url); if (url.endsWith("/routine-channels")) await new Promise(() => {});
+      if (url.endsWith("/routines")) await gate; return { ok: true, json: async () => (url.endsWith("/routines") ? [{ id: 7 }] : []) }; };
+    RT = { team: "fxa" }; const first = loadRoutines("fxa"); release();
+    t("routines: the list paints while the channel list is still on its way", await Promise.race([first.then(() => JSON.stringify(RT.list)), new Promise(r => setTimeout(() => r("waited for the channels"), 300))]), '[{"id":7}]');
+    calls.length = 0; const holds = []; globalThis.fetch = async url => { calls.push(url); if (url.endsWith("/routines")) await new Promise(r => holds.push(r)); return { ok: true, json: async () => [] }; };
+    const a = loadRoutines("fxa", true), b = loadRoutines("fxa", true), c = loadRoutines("fxa"); await Promise.resolve(); await Promise.resolve();
+    const n = calls.filter(u => u.endsWith("/routines")).length; holds.forEach(h => h()); await Promise.all([a, b, c]);
+    t("routines: a poll skips while a load runs, a load after a write does not, and the channels load once", `${n}|${calls.filter(u => u.endsWith("/routine-channels")).length}`, "2|0"); }
   { const calls = []; let done; globalThis.fetch = (url, o) => { calls.push([url, o?.body]); return new Promise(res => { done = () => res({ ok: true, json: async () => ({ out: "created routine 3" }) }); }); };
     globalThis.rtPaint = () => {}; globalThis.document = { getElementById: () => null };
     RT = { team: "fxa", list: [], tpls: [], form: { d: { ...rtDraft(), name: "Code review", repos: ["mozilla/fxa"], channel: "C0123ABCD" }, errs: {} } };
