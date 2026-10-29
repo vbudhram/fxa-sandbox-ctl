@@ -22,6 +22,11 @@ check "after committing and pushing what was tested: promote" "0" "$(promote_dif
 echo c > "$tmp/w/c.txt"; g add c.txt; g commit -qm three; g push -q origin main; g fetch -q origin
 check "a commit nobody ran on dev reached main: refuse" "1" "$(promote_diff "$tmp/w" "$t" >/dev/null; echo $?)"
 
+eval "$(sed -n '/^dev_bot_root() {/p' "$(dirname "$0")/vm.sh")"
+printf 'bot x\nbotroot %s\n' "$tmp/w" > "$tmp/br1"; printf 'botroot %s\n' "$tmp/gone" > "$tmp/br2"; printf 'bot x\n' > "$tmp/br3"
+check "smoke and promote take the bot tree the last dev deploy sent, if it still exists" "$tmp/w|1|1" \
+  "$(dev_bot_root "$tmp/br1")|$(dev_bot_root "$tmp/br2" >/dev/null; echo $?)|$(dev_bot_root "$tmp/br3" >/dev/null; echo $?)"
+
 # The test gate: npm is a stub that logs its calls; one tree stands in for both repos.
 npm() { echo "npm $* ctl=${FXA_CTL_REPO:-}" >> "$tmp/npm.log"; [ "$1" != "${NPM_FAIL:-}" ] || { echo "boom"; return 1; }; echo "3/3 pass"; }
 t="$(worktree_tree "$tmp/w")"

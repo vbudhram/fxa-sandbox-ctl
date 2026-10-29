@@ -58,6 +58,12 @@ t.close()'
 }
 # Absolute: a relative .git would resolve against the caller's directory, such as the bot repo.
 DEV_RECORD="$(git -C "$CTL_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/fxa-dev-deployed"
+# dev_bot_root <record>   The bot tree the last dev deploy sent, when it still exists.
+dev_bot_root() { local r; r="$(sed -n 's/^botroot //p' "$1" 2>/dev/null)"; [ -n "$r" ] && [ -d "$r" ] && echo "$r"; }
+# smoke and promote check what the last dev deploy sent: with no FXA_DEV_BOT_ROOT, they take its bot tree.
+if [ -z "${FXA_DEV_BOT_ROOT:-}" ] && { [ "${1:-} ${2:-}" = "dev smoke" ] || [ "${1:-}" = promote ]; }; then
+  BOT_ROOT="$(dev_bot_root "$DEV_RECORD" || echo "$BOT_ROOT")"
+fi
 # promote_diff <repo> <recorded tree>   Nothing when origin/main is that tree; else what differs.
 promote_diff() {
   [ "$(git -C "$1" rev-parse 'origin/main^{tree}')" = "$2" ] && return 0
@@ -341,7 +347,7 @@ EOF
       ctl) shift 2; [ $# -gt 0 ] || { echo "usage: vm.sh dev ctl <args>" >&2; exit 1; }
         printf 'exec sudo -u fxa -H bash -s\n%s\ncd $D/fxa-sandbox-ctl && ./fxa-sandbox-ctl --backend gce%s 2>&1\n' "$vars" "$(printf ' %q' "$@")" | on_vm | mask ;;
       # The smoke check before a promote: fake-mode threads, then a quick answer; it ends on the real controller.
-      smoke) exec bash "$CTL_ROOT/skills/fxa-ctl-dev/dev-smoke.sh" ;;
+      smoke) FXA_DEV_BOT_ROOT="$BOT_ROOT" SMOKE_BOT_ROOT="${SMOKE_BOT_ROOT:-$BOT_ROOT}" exec bash "$CTL_ROOT/skills/fxa-ctl-dev/dev-smoke.sh" ;;
       # The dev controller's functions on the VM: vm.sh dev fn '_answer_dns_gate', or a script with -.
       fn) [ -n "${3:-}" ] || { echo "usage: vm.sh dev fn '<commands>' | vm.sh dev fn - <<'EOF' ... EOF" >&2; exit 1; }
         cmds="$3"; [ "$cmds" = - ] && cmds="$(cat)"
@@ -397,7 +403,7 @@ EOF2
         cat "${TMPDIR:-/tmp}/vm-dev-up.$$"; up=0; grep -q '^dev bot up' "${TMPDIR:-/tmp}/vm-dev-up.$$" && up=1; rm -f "${TMPDIR:-/tmp}/vm-dev-up.$$"
         [ "$up" = 1 ] || exit 1
         # What promote compares main with: the trees this deploy sent.
-        printf 'ctl %s\nbot %s\nat %s\n' "$(worktree_tree "$CTL_ROOT")" "$(worktree_tree "$BOT_ROOT")" "$(date -u +%FT%TZ)" > "$DEV_RECORD"
+        printf 'ctl %s\nbot %s\nat %s\nbotroot %s\n' "$(worktree_tree "$CTL_ROOT")" "$(worktree_tree "$BOT_ROOT")" "$(date -u +%FT%TZ)" "$BOT_ROOT" > "$DEV_RECORD"
         echo "recorded for vm.sh promote" ;;
       *) echo "usage: vm.sh dev [stop|log [n]|calls [n]|report <thread|key>|ctl <args>|fn <commands>|smoke]" >&2; exit 1 ;;
     esac ;;
