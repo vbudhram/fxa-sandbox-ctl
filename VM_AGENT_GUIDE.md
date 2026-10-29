@@ -31,8 +31,9 @@ Chat sessions do not have it; do not report that it is missing.
   `channelserver.services.mozilla.com` (the pairing channel). Codex runs also reach `api.openai.com`, `chatgpt.com`
   and `auth.openai.com`. Everything else is refused, including other CDNs,
   private ranges and the metadata server. There is no IPv6.
-  You have no GitHub login, so a GitHub Actions job log or artifact returns 403.
-  For a CI failure, ask the engineer at once for the `FAILED` lines.
+  You have no GitHub login, so a GitHub Actions job log or artifact returns 403. For a run or
+  job link of the team's repos in the request, the host adds the failed steps' log to your
+  context ("GitHub Actions" section). For any other CI failure, ask the engineer at once for the `FAILED` lines.
 - **Show the change** with new files included:
   `git add -N . && git diff origin/main -- . ":(exclude).fxa-*"`.
 - **Credentials:** none for GitHub, Jira or CircleCI. There is no `gh` and no
