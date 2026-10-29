@@ -570,6 +570,31 @@ def team_admins():
     return {e.strip().lower() for e in os.environ.get("TEAM_ADMINS", "").split(",") if e.strip()}
 
 
+_REC_ADMINS = {}  # team -> (when, emails)
+
+
+def team_record_admins(team):
+    """The emails of a team record's admins, cached a minute. A record that cannot be read has none."""
+    hit = _REC_ADMINS.get(team)
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    try:
+        out = ctl_run(["profile", "get", team], timeout=60)
+        rec = json.loads(out.stdout) if out.returncode == 0 else {}
+        emails = frozenset(a["email"].lower() for a in rec.get("admins", []) if isinstance(a, dict) and isinstance(a.get("email"), str))
+    except (OSError, ValueError, AttributeError, TimeoutError, subprocess.SubprocessError):
+        emails = frozenset()
+    _REC_ADMINS[team] = (time.time(), emails)
+    return emails
+
+
+def admin_teams(user):
+    """The teams whose record names this email as an admin."""
+    teams = globals().get("TEAMS")
+    rows = (teams.read()[0] if teams else None) or []
+    return sorted(t["profile"] for t in rows if isinstance(t, dict) and isinstance(t.get("profile"), str) and user in team_record_admins(t["profile"]))
+
+
 # What a private team's session keeps from a viewer who is not a team admin: its words and its screen.
 PRIVATE_FIELDS = ("request", "media", "last_text", "last_tool")
 
@@ -868,13 +893,14 @@ class Handler(BaseHTTPRequestHandler):
         self._hardening()
         self.end_headers()
 
-    def _admin(self, method, path):
-        """The signed team admin of this request, or None once the refusal is sent."""
+    def _admin(self, method, path, team=None):
+        """The signed team admin of this request, or None once the refusal is sent. With team, that team's
+        record admins pass too ("*": an admin of any team)."""
         user = signed_user(self.headers, method, path, read_hmac_key(), int(time.time()))
         if not user:
             self._json(401, {"error": "no signed user: open the dashboard through the gateway"})
             return None
-        if user not in team_admins():
+        if user not in team_admins() and not (team and (admin_teams(user) if team == "*" else user in team_record_admins(team))):
             self._json(403, {"error": "not a team admin"})
             return None
         return user
@@ -999,7 +1025,8 @@ class Handler(BaseHTTPRequestHandler):
     def _routine_write(self, path):
         """POST /api/teams/<name>/routines[/<id>[/pause|resume|delete]]: a signed admin's change, JSON only, 64 KB at most."""
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/routines(?:/([0-9]{{1,9}})(?:/(pause|resume|delete|run|stop))?)?", path)
-        user = self._admin("POST", path)
+        # A team's record admins manage its routines, as TEAM_ADMINS do.
+        user = self._admin("POST", path, team=m.group(1))
         if not user:
             return
         name, rid, verb = m.groups()
@@ -1198,7 +1225,7 @@ class Handler(BaseHTTPRequestHandler):
         # Who the page is for: the signed user and whether they may change teams (the editor shows only then).
         if path == "/api/team-admin":
             user = signed_user(self.headers, "GET", path, read_hmac_key(), int(time.time()))
-            self._json(200, {"user": user, "admin": bool(user and user in team_admins())})
+            self._json(200, {"user": user, "admin": bool(user and user in team_admins()), "teams": admin_teams(user) if user else []})
             return
         # Each team's routine counts and failures for the Teams page: admins only (i168 D1). A store that
         # cannot be read is an error, never an empty summary that would read as "no routines".
@@ -1216,7 +1243,7 @@ class Handler(BaseHTTPRequestHandler):
         # Routines: admins only, for reading too (the design's D1). routine-channels: the channels the live bot is in.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/(routines(?:/([0-9]{{1,9}})/history)?|routine-channels)", path)
         if m or path == "/api/routine-templates":
-            user = self._admin("GET", path)
+            user = self._admin("GET", path, team=m.group(1) if m else "*")
             if user:
                 args = ["templates"] if not m else ["channels", m.group(1)] if m.group(2) == "routine-channels" \
                     else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]

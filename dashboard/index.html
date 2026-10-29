@@ -1862,6 +1862,8 @@ function teamRoute(sub, sel) {
   return { sel: !sub ? "__all" : sub === "new" ? "__new" : sub, tab: ["routines", "memory", "settings"].includes(sel) ? sel : "overview" };
 }
 const rtSum = p => TEAM_ADMIN?.admin ? RTSUM?.teams?.[p] ?? null : null;
+// Who manages a team's routines: TEAM_ADMINS, and the admins the team's record names (/api/team-admin teams).
+const rtAdmin = p => !!TEAM_ADMIN?.admin || (TEAM_ADMIN?.teams ?? []).includes(p);
 // A team needs attention for a bad or warn issue, or (admins) a failed routine that is not paused.
 // Routines are skipped when the team's spend cannot be read (fail closed): for an admin that needs attention.
 const spendSkip = t => !!(rtSum(t.profile)?.routines && (t.issues ?? []).some(i => i.text === "spend cannot be read"));
@@ -2480,7 +2482,7 @@ function teamPageHtml(p) {
     : draft ? html`<p class="readback">Nobody can start <b>${teamName(t)}</b> yet. ${t.access.status === "disabled" ? "It is off. Test it, and it turns on again when the test passes." : "Test it, and it turns on when the test passes."}</p>`
     : html`<p class="readback"><b>${who}</b> can start <b>${teamName(t)}</b>.</p>`;
   const body = t.load_error ? card(html`<p>profile.conf did not load. Check it with <span class="mono">fxa-sandbox-ctl --pipeline ${t.profile} profile show</span></p>`, { cls: "tcard" })
-    : tab === "routines" ? (TEAM_ADMIN?.admin ? html`${draft ? card(html`<p class="hint">Routines run only when the team is active.</p>`, { flat: true }) : ""}${routinesGroup(t, Date.now() / 1000)}` : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
+    : tab === "routines" ? (rtAdmin(t.profile) ? html`${draft ? card(html`<p class="hint">Routines run only when the team is active.</p>`, { flat: true }) : ""}${routinesGroup(t, Date.now() / 1000)}` : card(html`<p>Only a team admin can see and change routines.</p>`, { cls: "tcard" }))
     : tab === "memory" ? (TEAM_ADMIN?.admin ? memoryTabHtml(t) : card(html`<p>Only a team admin can see and change team memory.</p>`, { cls: "tcard" }))
     : tab === "settings" ? teamSettingsHtml(t)
     : teamOverview(t);
@@ -2493,7 +2495,7 @@ function renderTeams() {
   const T = TEAMS;
   if (!T || T.age_seconds == null) { put("s-teams", String(emptybox(T?.error || "loading teams… the first profile list can take a minute"))); return; }
   const id = SEL.teams || "__all", el = document.getElementById("s-teams"), t = (T.teams ?? []).find(x => x.profile === id);
-  if (TTAB === "routines" && t && TEAM_ADMIN?.admin && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
+  if (TTAB === "routines" && t && rtAdmin(t.profile) && RT.team !== t.profile) { RT = { team: t.profile, ...(RT_WANT ? { sel: RT_WANT } : {}) }; RT_WANT = 0; loadRoutines(t.profile).then(() => RT.team === t.profile && rtPaint()); }
   if (TTAB === "memory" && t && TEAM_ADMIN?.admin && MEM.team !== t.profile) { MEM = { team: t.profile }; loadMemory(t.profile).then(() => MEM.team === t.profile && renderTeams()); }
   if (teamEditing()) { if (TTAB === "routines" && t) rtKeepForm(el, t); return; }
   if (TTAB === "routines") setTimeout(rtEnsureHist);
@@ -2961,7 +2963,7 @@ function routineForm(t) {
       <div class="row">${f.id ? "" : html`<button type="button" class="linkbtn" data-rt-back>Back</button>`}<button type="button" class="linkbtn" data-rt-cancel>Cancel</button></div></div>`)}</aside></div></div>`;
 }
 function routinesGroup(t, now) {
-  if (!TEAM_ADMIN?.admin) return html`<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
+  if (!rtAdmin(t.profile)) return html`<div data-routines><h4>Routines</h4><p class="empty">Only a team admin can see and change routines.</p></div>`;
   if (RT.team !== t.profile || (!RT.list && !RT.err)) return html`<div data-routines><h4>Routines</h4><p class="empty">loading routines…</p></div>`;
   const off = t.access?.record && t.access.status !== "active" ? html`<p class="unknown">Routines run only while the team is active.</p>` : "";
   const L = RT.list ?? [], sel = !RT.form && RT.sel ? L.find(r => r.id === RT.sel) : null;
@@ -4491,7 +4493,7 @@ async function poll() {
   loadErrors(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
   loadSbDone();
   if (VIEW === "teams" && TTAB === "memory" && MEM.team && MEM.team === SEL.teams && TEAM_ADMIN?.admin) loadMemory(MEM.team).then(() => MEM.team === SEL.teams && renderTeams());
-  if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && TEAM_ADMIN?.admin) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
+  if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && rtAdmin(RT.team)) loadRoutines(RT.team).then(() => RT.team === SEL.teams && rtPaint());
   // First load: fetch the agent output now, not on the next 5 s tick.
   if (!poll.tailed && TAIL_KEYS.length) { poll.tailed = true; pollTails(TAIL_KEYS); }
 }

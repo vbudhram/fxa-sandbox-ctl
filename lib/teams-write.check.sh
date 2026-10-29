@@ -25,6 +25,8 @@ if [ "\$1" = routine ]; then
   [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: Someone changed this routine since you opened it. Load it again to see their change." >&2; exit "\$(cat "$tmp/rc")"; }
   exit 0
 fi
+[ "\$2" = list ] && { echo '[{"profile":"rusty"},{"profile":"crew"}]'; exit 0; }
+[ "\$2 \$3" = "get crew" ] && { echo '{"name":"crew","admins":[{"slack":"U1234567","email":"Crew@example.com"}]}'; exit 0; }
 case "\$2" in get) echo '{"name":"rusty","generation":"7"}' ;; options) echo '{"skills":["s"]}' ;; audit) echo '[{"action":"create"}]' ;; *) echo "done \$2" ;; esac
 [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "the store changed" >&2; exit "\$(cat "$tmp/rc")"; }
 EOF
@@ -91,7 +93,7 @@ check("a form post is refused (JSON only); a record over 64 KB too", (415, 413),
        call("POST", "/api/teams", headers=sig(A, "POST", "/api/teams"), raw=b"x" * 70000)[0]))
 check("a cross-site request is refused before the signature counts", 403, call("POST", "/api/teams", {"record": rec}, {**sig(A, "POST", "/api/teams"), "Origin": "https://evil.test"})[0])
 check("the page learns who it is for: an admin, a viewer, nobody signed",
-      ({"user": A, "admin": True}, {"user": "viewer@example.com", "admin": False}, {"user": None, "admin": False}),
+      ({"user": A, "admin": True, "teams": []}, {"user": "viewer@example.com", "admin": False, "teams": []}, {"user": None, "admin": False, "teams": []}),
       tuple(call("GET", "/api/team-admin", headers=h)[1] for h in (sig(A, "GET", "/api/team-admin"), sig("viewer@example.com", "GET", "/api/team-admin"), {})))
 s1 = call("POST", "/api/teams/rusty/test", {}, sig(A, "POST", "/api/teams/rusty/test"))[0]
 s2 = call("POST", "/api/teams/rusty/test", {}, sig(A, "POST", "/api/teams/rusty/test"))[0]
@@ -209,6 +211,16 @@ check("the test route: unsigned 401, a viewer 403, an admin the log tail, and no
       (call("GET", T)[0], call("GET", T, headers=sig("viewer@example.com", "GET", T))[0], st, (b.get("lines") or [""])[-1], len(open(f"{tmp}/args").read().splitlines())))
 check("a negative or bad Content-Length, and a body that is not an object, get 400 and run nothing", (400, 400, 400, 400, n_ran),
       (raw_len("-1"), raw_len("x"), call("POST", L, raw=b"[1]", headers=sig(A, "POST", L))[0], call("POST", L + "/5", raw=b'"x"', headers=sig(A, "POST", L + "/5"))[0], len(ran())))
+# A team's record admin manages that team's routines, and nothing else.
+CR, CA = "/api/teams/crew/routines", "crew@example.com"
+check("a record admin: their team's routine list, write and templates pass; another team's routines and the record itself get 403",
+      (200, 200, 200, 403, 403, 403),
+      (call("GET", CR, headers=sig(CA, "GET", CR))[0], call("POST", CR, {"routine": R}, sig(CA, "POST", CR))[0],
+       call("GET", "/api/routine-templates", headers=sig(CA, "GET", "/api/routine-templates"))[0],
+       call("GET", L, headers=sig(CA, "GET", L))[0], call("POST", "/api/teams/crew", {"record": rec, "generation": "7"}, sig(CA, "POST", "/api/teams/crew"))[0],
+       call("GET", "/api/teams/crew", headers=sig(CA, "GET", "/api/teams/crew"))[0]))
+check("/api/team-admin names the teams whose record lists the user", {"user": CA, "admin": False, "teams": ["crew"]},
+      call("GET", "/api/team-admin", headers=sig(CA, "GET", "/api/team-admin"))[1])
 os.environ["TEAM_ADMINS"] = ""
 check("no TEAM_ADMINS: nobody may write", 403, call("POST", "/api/teams", {"record": rec}, sig(A, "POST", "/api/teams"))[0])
 os.environ["TEAM_ADMINS"] = A; os.unlink(f"{tmp}/hmac")
