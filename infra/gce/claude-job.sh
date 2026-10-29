@@ -91,18 +91,18 @@ fi
 # every call. The hooks and permissions in settings stay.
 lean=(--disable-slash-commands --settings "$(jq -c '{enabledPlugins: (.enabledPlugins // {} | map_values(false))}' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" 2>/dev/null || echo '{}')")
 model=(); [ -n "${report_model:-}" ] && model=(--model "$report_model")
-# A pass reads a ticket's Figma design and Bugzilla bugs through the MCP gateway on this host,
-# which holds the Runlayer credential: a token for this run, those two only, expired when the run ends.
+# A pass reads a ticket's Figma design, Bugzilla bugs and Sentry issues through the MCP gateway on this host,
+# which holds the Runlayer credential: a token for this run, those three only, expired when the run ends.
 run="${job}-${_p}-$(date +%s)-$$"  # unique, so one job's revoke never ends another's token
 mcp=() url="${FXA_PASS_MCP_URL-http://127.0.0.1:8789}"  # set it empty to turn this off
 if [ "$job" = pass ] && [ -n "$url" ]; then
-  if tok="$(source "$lib/mcp-token.sh" && FXA_MCP_TOKEN_TTL=3600 mcp_token_for "$run" figma,bugzilla)"; then
+  if tok="$(source "$lib/mcp-token.sh" && FXA_MCP_TOKEN_TTL=3600 mcp_token_for "$run" figma,bugzilla,sentry)"; then
     mcp_tok=1 cfg="$(mktemp)"
     printf '{"mcpServers":{"fxa":{"type":"http","url":"%s/mcp","headers":{"Authorization":"Bearer %s"}}}}\n' \
       "$url" "$tok" > "$cfg"
     # --strict-mcp-config: the gateway only, not the unauthenticated plugin servers.
     mcp=(--mcp-config "$cfg" --strict-mcp-config)
-  else echo "WARN: no MCP gateway token; this pass cannot read Figma or Bugzilla" >&2; fi
+  else echo "WARN: no MCP gateway token; this pass cannot read Figma, Bugzilla or Sentry" >&2; fi
 fi
 # Through the LLM proxy, as sessions are: a token for this run, capped and revoked at the end, so the
 # proxy logs and prices each call. No token (no proxy): the API key, as before.

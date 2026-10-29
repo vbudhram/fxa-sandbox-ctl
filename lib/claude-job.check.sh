@@ -106,7 +106,7 @@ rm -f "$tmp/claude-mcp"; run 'queue: FXA-2 new (run: ground FXA-2)' >/dev/null
 tok="$(jq -r '.mcpServers.fxa.headers.Authorization' "$tmp/claude-mcp" 2>/dev/null | sed 's/^Bearer //')"
 check "a pass gets the gateway, strict" "http://127.0.0.1:8789/mcp|yes" \
   "$(jq -r '.mcpServers.fxa.url' "$tmp/claude-mcp")|$(grep -q -- --strict-mcp-config "$tmp/claude-args" && echo yes || echo no)"
-check "its token is figma and bugzilla only, and expired after the run" '["figma","bugzilla"]|true' \
+check "its token is figma, bugzilla and sentry only, and expired after the run" '["figma","bugzilla","sentry"]|true' \
   "$(jq -c .connectors "$tmp/gw/tokens/$tok.json")|$(jq '.expires <= now' "$tmp/gw/tokens/$tok.json")"
 FXA_PASS_MCP_URL= run 'queue: FXA-3 new (run: ground FXA-3)' >/dev/null
 check "an empty FXA_PASS_MCP_URL turns it off" "no" "$(grep -q -- --mcp-config "$tmp/claude-args" && echo yes || echo no)"

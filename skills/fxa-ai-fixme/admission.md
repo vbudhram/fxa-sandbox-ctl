@@ -27,6 +27,8 @@ more than one train; deletes or migrates production data or needs prod SQL; adds
 patch or changes a package that another repo consumes (`fxa-auth-client` is internal, so its
 methods may change); needs a decision you
 would escalate. Judge by "can one agent finish this in one PR", not by length.
+A missing fact is not a decision: read it first (Figma, Bugzilla and Sentry, as in launch.md).
+Skip for it only when it stays unreadable, as underspecified, and name the source you could not read.
 
 **Named implementation steps are a strong signal.** Named files, symbols, ordered steps, stated
 out-of-scope: launch even at 5+ files. Clear outcome, no route: ground and decide. Open question
