@@ -100,4 +100,10 @@ out="$(NOW=$((T + 3600 + 30)) ctl routine tick --env live 2>"$tmp/err")"; rc=$?
 check "the CLI tick, a repo GitHub hides: exit 0 and the channel refusal, not posted" "0|channel|false" \
   "$rc|$(jq -r --argjson r "$rp" '.skips[] | select(.routine == $r) | "\(.reason | ltrimstr("the routine no longer passes its checks: ") | split(":")[0])|\(.post)"' <<< "$out" 2>/dev/null)"
 rm -f "$tmp/private"
+# One migration read per process: each $(db_json ...) is a subshell, and once ran db_init again (6 times for a list).
+mkdir -p "$tmp/shim"; real="$(command -v sqlite3)"
+printf '#!/bin/sh\nin="$(cat)"; case "$in" in *"PRAGMA user_version;"*) echo x >> "%s/inits" ;; esac\nprintf "%%s\\n" "$in" | "%s" "$@"\n' "$tmp" "$real" > "$tmp/shim/sqlite3"
+chmod +x "$tmp/shim/sqlite3"
+inits() { rm -f "$tmp/inits"; PATH="$tmp/shim:$PATH" ctl routine "$@" >/dev/null 2>&1; wc -l < "$tmp/inits" 2>/dev/null | tr -d ' ' || echo 0; }
+check "routine list, history and channels: db_init runs once in the process" "1|1|1" "$(inits list fxa)|$(inits history fxa "$r1")|$(inits channels fxa)"
 exit "$fail"

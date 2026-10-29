@@ -1241,13 +1241,31 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(503, {"error": "the routine store cannot be read"})
             return
         # Routines: admins only, for reading too (the design's D1). routine-channels: the channels the live bot is in.
+        # The list, a history and the templates are read here with lib/routine.py, the code the CLI runs: a ctl
+        # process for each took about 1 s. The channels need the team's profile, so they stay a ctl command.
         m = re.fullmatch(rf"/api/teams/({TEAM_NAME})/(routines(?:/([0-9]{{1,9}})/history)?|routine-channels)", path)
         if m or path == "/api/routine-templates":
             user = self._admin("GET", path, team=m.group(1) if m else "*")
-            if user:
-                args = ["templates"] if not m else ["channels", m.group(1)] if m.group(2) == "routine-channels" \
-                    else ["history", m.group(1), m.group(3)] if m.group(3) else ["list", m.group(1)]
-                self._team_ctl(user, args, read=True, cmd="routine")
+            if not user:
+                return
+            if m and m.group(2) == "routine-channels":
+                self._team_ctl(user, ["channels", m.group(1)], read=True, cmd="routine")
+            elif not m:
+                self._json(200, routine.templates(str(ROOT.parent / "templates" / "routines")))
+            else:
+                try:
+                    con = fxadb.connect(readonly=True)
+                    try:
+                        out = routine.team_history(con, m.group(1), m.group(3)) if m.group(3) else routine.team_list(con, m.group(1))
+                    finally:
+                        con.close()
+                except ValueError as e:
+                    self._json(400, {"error": f"ERROR: {e}"})
+                    return
+                except Exception:  # noqa: BLE001  a fixed text: the error may name a path
+                    self._json(503, {"error": "the routine store cannot be read"})
+                    return
+                self._json(200, out)
             return
         # The people picker of a team's Settings: names, handles and emails from the live bot's Slack list. Admins
         # only. The query is in the path, because the gateway's signature covers the path and not the query string.

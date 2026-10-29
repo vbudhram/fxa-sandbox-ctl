@@ -111,7 +111,7 @@ db_init() {
   local cur f n; cur="$(_db "PRAGMA user_version;")"
   for f in "$_DB_DIR"/[0-9][0-9][0-9]-*.sql; do
     [ -f "$f" ] || continue
-    n="$(basename "$f" | cut -c1-3)"; n=$((10#$n))
+    n="${f##*/}"; n=$((10#${n:0:3}))
     [ "$n" -gt "${cur:-0}" ] || continue
     # One transaction per migration, with its version: a failed one leaves the last good schema.
     { echo "BEGIN;"; cat "$f"; echo "PRAGMA user_version = ${n};"; echo "COMMIT;"; } | _db || { echo "ERROR: migration $(basename "$f") failed" >&2; return 1; }
