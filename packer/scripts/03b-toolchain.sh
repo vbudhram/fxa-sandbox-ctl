@@ -14,8 +14,11 @@ nightly() {
   local day; day="$(date -u +%F)"
   [ "$(cat "$NIGHTLY/.fetched" 2>/dev/null)" != "$day" ] || return 0
   rm -rf "$NIGHTLY.new" && mkdir -p "$NIGHTLY.new"
-  if curl -fsSL 'https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=linux64&lang=en-US' \
-    | tar -xJ -C "$NIGHTLY.new" --strip-components=1 && [ -x "$NIGHTLY.new/firefox" ]; then
+  # The GCE images are arm64: an x86_64 build there unpacks, but never runs. The ELF machine byte
+  # proves the CPU type with no GTK, which 08-playwright.sh installs later.
+  local os=linux64 elf=3e; [ "$(uname -m)" = aarch64 ] && { os=linux64-aarch64; elf=b7; }
+  if curl -fsSL "https://download.mozilla.org/?product=firefox-nightly-latest-ssl&os=${os}&lang=en-US" \
+    | tar -xJ -C "$NIGHTLY.new" --strip-components=1 && [ "$(od -An -tx1 -j18 -N1 "$NIGHTLY.new/firefox" 2>/dev/null | tr -d ' ')" = "$elf" ]; then
     rm -rf "$NIGHTLY" && mv "$NIGHTLY.new" "$NIGHTLY" && echo "$day" > "$NIGHTLY/.fetched"
   else
     rm -rf "$NIGHTLY.new"

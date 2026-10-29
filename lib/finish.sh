@@ -524,6 +524,15 @@ finish_push_and_pr() {
   _finish_push_and_pr "$@"
 }
 
+# _finish_env_gaps <worktree> <key>   Each ENV line of the verify verdict (a tool the runner should
+# have and could not run) is an error for the operator: the run ships with that row skipped.
+_finish_env_gaps() {
+  local l
+  { grep '^ENV ' "${1}/.fxa-verify-verdict.txt" 2>/dev/null || true; } | sort -u | while IFS= read -r l; do
+    errors_record pipeline env_gap "$2" "verify" "the runner lacks a tool: $(sed 's/^ENV *//' <<< "$l")" "" 2>/dev/null || true
+  done
+}
+
 _finish_push_and_pr() {
   if ! command -v gh >/dev/null 2>&1; then
     echo "ERROR: gh CLI not installed on the host. Install with: brew install gh" >&2
@@ -742,6 +751,7 @@ _finish_push_and_pr() {
   commit_body="$(_finish_commit_body "$(jq -r '.commit_body // empty' "$done_file")" "$pr_body")"
   # The Risk section for the reviewer, before the PII guard, so the agent's notes in it are checked too. A fix run sets no body.
   # A failure keeps the agent's body as it is: the section must never cost the PR its body.
+  _finish_env_gaps "$worktree" "$(jq -r '.issue // empty' "$done_file" 2>/dev/null)"
   local with_risk=""
   [ -n "$fix" ] || with_risk="$(_finish_risk_section "$worktree" "$pr_body" "$(jq -r '.risk_notes // empty' "$done_file" 2>/dev/null)")" || with_risk=""
   [ -z "$with_risk" ] || pr_body="$with_risk"

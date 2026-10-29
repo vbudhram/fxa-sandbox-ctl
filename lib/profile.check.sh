@@ -91,7 +91,7 @@ check "a repo exported by the parent's load is ignored" "$tmp/home/Desktop/worki
 check "a repo set by hand wins" "/y/mine" "$(child_repo /y/mine /x/fxa)"
 
 # A read-only profile pushes nothing and opens no PR.
-eval "$(sed -n '/^_finish_push_and_pr() {/,/^}/p' "$root/lib/finish.sh")"
+eval "$(sed -n '/^_finish_push_and_pr() {/,/^}/p;/^_finish_env_gaps() {/,/^}/p' "$root/lib/finish.sh")"
 gh() { echo gh >> "$tmp/gh"; }; git() { echo git >> "$tmp/gh"; }
 : > "$tmp/gh"; out="$(PIPE_PR_OPEN=0 PIPE_PROFILE=monitor _finish_push_and_pr "$tmp" true 2>&1)"; rc=$?
 # With no handoff it stops before any git or gh call; with one, finish-diff.check.sh shows the patch path.

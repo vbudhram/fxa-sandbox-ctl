@@ -9,7 +9,7 @@ command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^pipeline_ship_ok() {/,/^}/p' "$here/pipeline.sh")"
-eval "$(sed -n '/^_finish_push_and_pr() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^_finish_push_and_pr() {/,/^}/p;/^_finish_env_gaps() {/,/^}/p' "$here/finish.sh")"
 FXA_SHIP_RETRY_S=0 PIPE_PROFILE=fxa FXA_DONE_FILENAME=.fxa-auto-done.json
 pipeline_jira_scope() { [ -z "${SCOPE_FAIL:-}" ] || return 1; echo 'project = FXA AND level IS EMPTY'; }
 pipeline_jira_project() { echo FXA; }

@@ -7,7 +7,8 @@ from fxa import core, crypto
 from marionette_driver.marionette import Marionette
 from e2e import AUTH, confirm
 
-FIREFOX = sys.argv[1] if len(sys.argv) > 1 else "/home/agent/Nightly/firefox"
+# Every runner image and the snapshot set FIREFOX_BINARY (06-agent-init.sh, refresh.sh): no path of one backend here.
+FIREFOX = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("FIREFOX_BINARY", "/opt/firefox-nightly/firefox")
 PREFS = {  # the "local" set of fxa-dev-launcher/profile.mjs, which the desktop Firefox uses too
     "identity.fxaccounts.auth.uri": AUTH, "identity.fxaccounts.allowHttp": True,
     "identity.fxaccounts.remote.root": "http://localhost:3030/",
@@ -42,7 +43,22 @@ def mysql(q):
     return subprocess.run(["mysql", "-usync", "-ptest", "-h127.0.0.1", "-Nse", q], capture_output=True, text=True).stdout.strip()
 
 
+def runs(path):
+    """Why this runner's Firefox cannot start, or None."""
+    try:
+        r = subprocess.run([path, "--headless", "--version"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as e:
+        return str(e)
+    out = (r.stderr or r.stdout).strip()
+    return None if r.returncode == 0 else out.splitlines()[-1] if out else f"exit {r.returncode}"
+
+
 def main():
+    # Exit 4: the runner, not the change, lacks a Firefox. verify.sh skips the row and tells the operator.
+    why = runs(FIREFOX)
+    if why:
+        print(f"this runner's Firefox ({FIREFOX}) does not start: {why}")
+        sys.exit(4)
     email = f"sync-ff-{os.urandom(4).hex()}@restmail.net"
     session = core.Client(server_url=AUTH).create_account(email, "sync-e2e-password-1", keys=True)
     confirm(session, email)

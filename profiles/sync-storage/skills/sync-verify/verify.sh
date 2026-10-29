@@ -93,9 +93,13 @@ verdict="" fail=0 log="$(mktemp)" vstart=$(date +%s)
 for r in "${rows[@]}"; do
   n="${r%%$'\t'*}" c="${r#*$'\t'}" t0=$(date +%s)
   timeout 1200 bash -c "$c" > "$log" 2>&1; rc=$?
-  if [ "$rc" = 0 ]; then v=PASS; elif [ "$rc" = 3 ]; then v=SKIP; cat "$log"; else v=FAIL; fail=1
+  # Exit 3: a gap the runner always has (CI covers it). Exit 4: a tool this runner should have and
+  # cannot run; the ENV line reaches the operator (finish.sh records it), and the ticket is not blocked.
+  gap=""
+  if [ "$rc" = 0 ]; then v=PASS; elif [ "$rc" = 3 ]; then v=SKIP; cat "$log"
+  elif [ "$rc" = 4 ]; then v=SKIP; cat "$log"; gap="ENV    $n: $(tail -1 "$log")"; else v=FAIL; fail=1
     echo "── $n failed; the last lines:"; tail -25 "$log"; fi
-  verdict="${verdict}$(printf '%-6s %-36s %4ss' "$v" "$n" "$(( $(date +%s) - t0 ))")"$'\n'
+  verdict="${verdict}$(printf '%-6s %-36s %4ss' "$v" "$n" "$(( $(date +%s) - t0 ))")"$'\n'"${gap:+$gap$'\n'}"
   # A broken build leaves nothing to test.
   [ "$v" = FAIL ] && [ "$n" = build ] && break
 done

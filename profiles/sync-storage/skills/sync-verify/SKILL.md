@@ -48,6 +48,8 @@ description: Verify a syncstorage-rs change in the Sync Storage sandbox, the way
    verdict table (also in `/workspace/.fxa-verify-verdict.txt`) in your reply.
    A SKIP row is a test this runner cannot run (Postgres has no server here). Copy its reason and
    the note under the table into the PR body, so a reviewer knows that only CI tests that part.
+   An `ENV` line under a SKIP row means this runner lacks a tool it should have. The operator is
+   told. Do not stop or block for it: hand off with the SKIP and its reason in the PR body.
 
 A change with no server code (docs, tools) skips the server steps. Unit tests alone never prove
 a fix that a client can see: the plan's checks do.

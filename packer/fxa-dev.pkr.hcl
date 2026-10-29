@@ -217,4 +217,11 @@ build {
     execute_command   = "sudo bash -c '{{ .Path }}'"
     expect_disconnect = false
   }
+
+  # Last: every tool a runner uses runs on this image's CPU, or the build fails.
+  provisioner "shell" {
+    script            = "${path.root}/scripts/14-tools-check.sh"
+    execute_command   = "sudo bash -c '{{ .Path }}'"
+    expect_disconnect = false
+  }
 }

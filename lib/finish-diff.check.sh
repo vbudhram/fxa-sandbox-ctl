@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^finish_diff_only() {/,/^}/p;/^finish_done_file_path() {/,/^}/p;/^_finish_pii_guard() {/,/^}/p;/^_finish_push_and_pr() {/,/^}/p' "$here/finish.sh")"
+eval "$(sed -n '/^finish_diff_only() {/,/^}/p;/^finish_done_file_path() {/,/^}/p;/^_finish_pii_guard() {/,/^}/p;/^_finish_push_and_pr() {/,/^}/p;/^_finish_env_gaps() {/,/^}/p' "$here/finish.sh")"
 FINISH_LIB_DIR="$here"
 FXA_DONE_FILENAME=.fxa-auto-done.json PIPE_STATE_DIR="$tmp/state" PIPE_PROFILE=monitor FXA_WORKTREE_BASE=main
 jira_comment() { printf '%s|%s\n' "$1" "$2" > "$tmp/comment"; }

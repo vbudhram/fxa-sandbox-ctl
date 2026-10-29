@@ -14,13 +14,18 @@ check "06-agent-init.sh exports Nightly's env in every image" 2 "$(env_lines "$r
 check "refresh.sh adds Nightly's env to an older snapshot" 2 "$(env_lines "$root/infra/firecracker/refresh.sh")"
 check "13-android.sh does not install Nightly again" 0 "$(grep -c 'firefox-nightly' "$root/packer/scripts/13-android.sh")"
 check "03b-toolchain.sh runs the Nightly install" 1 "$(grep -cx 'nightly' "$tc")"
+# The snapshot's own build is at ~/Nightly; the GCE images have none. A runner file reads FIREFOX_BINARY.
+check "no runner file hard-codes the snapshot's Firefox path" "" \
+  "$(grep -rlE '/home/agent/Nightly|~/Nightly' "$root/profiles" "$root/skills" "$root/templates" 2>/dev/null | grep -v '\.check\.sh$')"
 
 # The install, with curl and tar stubbed: a counter in a file, since the pipe runs them in subshells.
 t="$(mktemp -d "${TMPDIR:-/tmp}/nightly.XXXXXX")"
 pat='/^nightly() {/,/^}/p'; eval "$(sed -n "$pat" "$tc")"
 NIGHTLY="$t/opt"
-curl() { echo x >> "$t/fetches"; [ ! -e "$t/fail" ]; }
-tar() { cat > /dev/null; [ -e "$t/fail" ] || { : > "$NIGHTLY.new/firefox"; chmod +x "$NIGHTLY.new/firefox"; }; }
+# The fetched URL goes to $t/url; the fake build's ELF machine byte is $t/byte (3e x86_64, b7 aarch64).
+curl() { echo x >> "$t/fetches"; echo "$2" > "$t/url"; [ ! -e "$t/fail" ]; }
+tar() { cat > /dev/null; [ -e "$t/fail" ] || { printf "%18s\\x$(cat "$t/byte" 2>/dev/null || echo 3e)" '' > "$NIGHTLY.new/firefox"; chmod +x "$NIGHTLY.new/firefox"; }; }
+uname() { cat "$t/arch" 2>/dev/null || echo x86_64; }
 n() { wc -l < "$t/fetches" 2>/dev/null | tr -d ' ' || echo 0; }
 nightly 2>/dev/null; check "a new image fetches Nightly" "1|1" "$(n)|$([ -x "$NIGHTLY/firefox" ] && echo 1)"
 nightly 2>/dev/null; check "a second refresh the same day does not fetch it again" 1 "$(n)"
@@ -29,5 +34,11 @@ rc=0; nightly 2>/dev/null || rc=$?
 check "a failed fetch on a later day keeps the earlier copy" "2|0|1" "$(n)|$rc|$([ -x "$NIGHTLY/firefox" ] && echo 1)"
 rm -rf "$NIGHTLY"
 rc=0; nightly 2>/dev/null || rc=$?; check "a failed fetch with no copy fails the toolchain" 1 "$rc"
+# An arm64 image fetches the aarch64 build, and refuses an x86_64 one: it unpacks there, but never runs.
+rm -f "$t/fail"; echo aarch64 > "$t/arch"; echo b7 > "$t/byte"
+rc=0; nightly 2>/dev/null || rc=$?
+check "an arm64 image installs the aarch64 build" "0|1|1" "$rc|$(grep -c 'os=linux64-aarch64&' "$t/url")|$([ -x "$NIGHTLY/firefox" ] && echo 1)"
+rm -rf "$NIGHTLY"; echo 3e > "$t/byte"
+rc=0; nightly 2>/dev/null || rc=$?; check "an x86_64 build on an arm64 image is refused" "1|" "$rc|$([ -x "$NIGHTLY/firefox" ] && echo 1)"
 rm -rf "$t"
 exit "$fail"
