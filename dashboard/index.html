@@ -1719,9 +1719,14 @@ let TEAM_ADMIN = null, TED = null;   // TED: the open editor { name, text, gen, 
 const TEAM_TEMPLATE = { schema: 1, name: "new-team", label: "New Team", status: "draft",
   repos: [{ slug: "mozilla/fxa", role: "work", default: true }], stack: { kind: "fxa" },
   access: { open: false, users: [], channels: [], jira_prefixes: [] }, mcp: [], prompts: { claude_md: "" } };
-async function loadTeamAdmin() { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; }
-  if (VIEW === "runners") renderSb();
-  else if (VIEW === "sessions" && AGENTS) render(); }   // a dependency fix shows its PR only once the viewer is known
+// One request at a time: on a cold load, poll and loadTeams both ask.
+let TEAM_ADMIN_P = null;
+function loadTeamAdmin() {
+  return TEAM_ADMIN_P ??= (async () => { try { TEAM_ADMIN = await (await fetch("/api/team-admin", { cache: "no-store" })).json(); } catch { TEAM_ADMIN = { admin: false }; }
+    if (VIEW === "runners") renderSb();
+    else if (VIEW === "sessions" && AGENTS) render();   // a dependency fix shows its PR only once the viewer is known
+  })().finally(() => { TEAM_ADMIN_P = null; });
+}
 function teamEditor(name, isRecord) {
   if (!TEAM_ADMIN?.admin || !isRecord) return "";
   const e = TED?.name === name ? TED : null;
@@ -4498,6 +4503,8 @@ function render() {
 
 async function poll() {
   loadOverview();
+  // Teams reads no snapshot: it loads beside it, not after it.
+  loadTeams(); loadTeamAdmin();
   let data;
   try { data = await (await fetch("/api/snapshot", { cache:"no-store" })).json(); }
   catch { document.getElementById("dot").className = "dot dead"; document.getElementById("age").textContent = "server unreachable"; return; }
@@ -4505,7 +4512,7 @@ async function poll() {
   overlay();
   render();
   HIST_OPEN.forEach(loadHist);
-  loadErrors(); loadStats(); loadTeams(); loadTeamAdmin(); loadRuns();
+  loadErrors(); loadStats(); loadRuns();
   loadSbDone();
   if (VIEW === "teams" && TTAB === "memory" && MEM.team && MEM.team === SEL.teams && TEAM_ADMIN?.admin) loadMemory(MEM.team).then(() => MEM.team === SEL.teams && renderTeams());
   if (VIEW === "teams" && TTAB === "routines" && RT.team && RT.team === SEL.teams && rtAdmin(RT.team)) loadRoutines(RT.team, true).then(() => RT.team === SEL.teams && rtPaint());
