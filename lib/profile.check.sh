@@ -195,7 +195,7 @@ check "a missing manager clone is made once, an existing one is kept" "git clone
 unset -f git
 
 # A ticket for another team's session goes to its own Jira project, or nowhere.
-eval "$(sed -n '/^session_create_jira() {/,/^}/p' "$root/lib/session.sh")"
+eval "$(sed -n '/^session_create_jira() {/,/^}/p;/^_session_jira_project() {/,/^}/p' "$root/lib/session.sh")"
 session_get() { echo "https://github.com/x/y/pull/1"; }; gh() { echo '{"title":"fix(x): y","body":"b","headRefName":"agent-1"}'; }
 acli() { echo acli >> "$tmp/acli"; }
 : > "$tmp/acli"; out="$(PIPE_PROFILE=monitor session_create_jira agent-q1 2>&1)"; rc=$?

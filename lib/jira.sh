@@ -169,6 +169,11 @@ _acli_rest() {
       done
       printf '%s\n' "$all" ;;
     "jira workitem edit")
+      if [ -n "$summary$type$desc" ]; then
+        _jira_rest_json PUT "/rest/api/3/issue/${key}" "$(jq -nc --arg s "$summary" --arg y "$type" --arg t "$desc" \
+          '{fields: ((if $s != "" then {summary: $s} else {} end) + (if $y != "" then {issuetype: {name: $y}} else {} end)
+            + (if $t != "" then {description: {type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: $t}]}]}} else {} end))}')" >/dev/null || return 1
+      fi
       if [ -n "$add$rm" ]; then
         _jira_rest_json PUT "/rest/api/3/issue/${key}" "$(jq -nc --arg a "$add" --arg r "$rm" \
           '{update: {labels: ([$r | split(",")[] | select(. != "") | {remove: .}] + [$a | split(",")[] | select(. != "") | {add: .}])}}')" >/dev/null || return 1

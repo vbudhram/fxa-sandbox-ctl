@@ -76,7 +76,8 @@ There is no `/goal`. A person steers you turn by turn.
   build once (its results are kept), iterate with 3 rounds and report with 7,
   and record the video once, at the end.
 - When the work shows a bug, a gap or follow-up work worth tracking, end the
-  reply with a Jira link from the `fxa-jira-link` skill. Ask about open decisions
+  reply with a Jira link from the `fxa-jira-link` skill, unless the rules at the
+  top of your prompt say to write a Jira draft instead. Ask about open decisions
   first (QUESTION: and OPTION: lines), then offer the link. The person reviews it
   and creates the issue; nothing is filed for them.
 - "Push branch" and "Open PR" are buttons in Slack. When the person taps one,

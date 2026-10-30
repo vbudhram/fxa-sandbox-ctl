@@ -18,6 +18,7 @@ import urllib.parse
 
 EVERYWHERE = [
     ("secret", re.compile(r"\b(?:ghp_|gho_|ghs_|github_pat_|sk-ant-|xox[abpr]-|xapp-|sntry[su]_)[A-Za-z0-9_-]{8,}"
+                          r"|\b(?:fxl_|fxm_)[A-Za-z0-9]{12,}"
                           r"|\bAKIA[0-9A-Z]{16}\b|\bAIza[0-9A-Za-z_-]{35}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----")),
     # GCE and Kubernetes internal DNS names only: `x.internal` alone is often a property or an enum.
     ("internal host", re.compile(r"\b(?:metadata\.google\.internal|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.c\.[a-z0-9-]+\.internal"

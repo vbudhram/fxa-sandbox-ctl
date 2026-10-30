@@ -258,6 +258,12 @@ case "$cmd" in
           [ "$(now)" -lt $(( last + 10 + FAKE_IDLE_S )) ] || { echo paused > "$d/over"; echo "paused $k"; }
         done ;;
       prune|attach|pr-ready) ;;
+      # Jira drafts: one fixed draft; each call is in the call log, which is what a scenario checks.
+      jira-draft) [ "${2:-}" != --stdin ] || cat > /dev/null
+        jq -nc --arg s "$(printf 'a%.0s' $(seq 64))" '{project: "FXA", type: "Bug", summary: "Sign-in times out on slow networks", description: "The auth client waits 5 s.", sha: $s, dups: []}' ;;
+      jira-file) echo FXA-4242 ;;
+      jira-edit) cat > /dev/null; echo "edited ${2:-}" ;;
+      jira-undo|jira-queue) echo "done ${2:-}" ;;
       *) echo "fake-ctl: session $sub is not faked" >&2; exit 1 ;;
     esac ;;
   *) echo "fake-ctl: $cmd is not faked" >&2; exit 1 ;;

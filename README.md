@@ -308,6 +308,7 @@ cp .env.example .env
 | `FXA_WORKTREE_BASE` | Default base branch (default: `main`). |
 | `FXA_AGENT_MODEL` | Model for the agent's Claude, passed as `--model` (default: `claude-opus-5-5`). |
 | `FXA_SHARED_WORKTREE_NAME` | Pool base name (default: `fxa-auto`). |
+| `FXA_JIRA_DRAFTS` | `1`: a Slack session can file Jira tickets from its drafts (`session jira-draft`, `jira-file`, `jira-undo`, `jira-edit`, `jira-queue`). Off by default. |
 | `FXA_DIRTY_IGNORE` | Extended-regex pattern of extra status lines to ignore. |
 | `FXA_VM_BACKEND` | `tart` (default) or `gce`. `--backend` on the command line wins. |
 | `FXA_GCE_PROJECT` | GCP project for `gce` runners. Required for that backend. |
