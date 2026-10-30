@@ -24,6 +24,8 @@ $H screen              # read the tmux session "main"
 $H sync                # pull both repos on the VM after a push
 $H promote             # sync, only if main is exactly what the last vm.sh dev ran; then check
 $H api errors          # the dashboard's /api/<path> as JSON: errors, snapshot, sessions, stats
+$H api teams           # {teams: [{profile, label, access, repos, mcp, test, issues, ...}], issues, error}; pick one with .teams[] | select(.profile == "<name>")
+$H run './fxa-sandbox-ctl jira-get "/rest/api/3/issue/PAY-1?fields=status"'   # a Jira read with the pipeline login; no .env sourcing
 $H secret fxa-<name> --prefix xoxb-   # store a secret from a hidden prompt; grants the manager on create
 $H ssh                 # the ssh command for a person
 ```

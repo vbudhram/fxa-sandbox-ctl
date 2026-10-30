@@ -499,6 +499,12 @@ _jira_rest_get() {
   printf 'user = "%s"\n' "$PIPE_JIRA_BASIC" | curl -sSf -K - --max-time 20 -H 'Accept: application/json' "$(_jira_api)$1" 2>/dev/null
 }
 
+# jira_get </rest/...>   The operator's read-only Jira query with the pipeline login, so nobody hand-builds the login.
+jira_get() {
+  [[ "${1:-}" =~ ^/rest/[A-Za-z0-9/_.=\&?,:%+-]+$ ]] || { echo "usage: jira-get /rest/api/3/<path>, such as /rest/api/3/mypermissions?projectKey=PAY" >&2; return 1; }
+  _jira_rest_get "$1" || { echo "ERROR: Jira GET $1 failed (HTTP error, or no PIPE_JIRA_BASIC)" >&2; return 1; }
+}
+
 # jira_close_merged <KEY>
 #   WRITE: finish a merged ticket the way a person would. Assign the reviewer who
 #   approved, add it to the active sprint, transition it to Done.

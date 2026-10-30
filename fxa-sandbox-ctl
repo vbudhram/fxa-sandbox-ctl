@@ -146,6 +146,7 @@ PIPELINE COMMANDS:
   drain                        Done keys whose PR merged, closed, or went red
   ticket <ISSUE-KEY>           Ticket text INCLUDING comments
   jira-card <ISSUE-KEY>        Summary, status and assignee as JSON for a Slack card; null for a hidden ticket
+  jira-get </rest/...>         A read-only Jira REST GET with the pipeline login, as JSON
   sentry-card <ID|SHORT-ID>    A Sentry issue as JSON for a Slack card (no user data); null when unreadable
   ground <ISSUE-KEY>           Write /tmp/fxa-KEY-ground.md: ticket, cited paths checked on
                                origin/main, frozen/stories checks, overlapping open PRs
@@ -3228,6 +3229,7 @@ main() {
     # jira-state KEY...: save each ticket's assignee and status for the Stats PRs tab (a backfill).
     jira-state) pipeline_require; cmd_jira_state "$@" ;;
     jira-card)  jira_card "$@" ;;
+    jira-get)   jira_get "$@" ;;
     sentry-card) sentry_card "$@" ;;
     ground)     cmd_ground "$@" ;;
     reporter)   cmd_reporter "$@" ;;

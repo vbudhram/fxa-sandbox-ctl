@@ -162,8 +162,8 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
    A change to shared state (`lib/db/` migrations, the MCP gateway, the LLM proxy,
    secrets) reaches live data as soon as dev runs it: test it with `vm.sh test` first.
    Run the promote from the main checkout (the shell's start folder), as exactly
-   `bash skills/fxa-manager/vm.sh promote`: no `cd`, path, env or pipe, since the allow rule
-   matches only that text. With green CI it reads only origin/main and the dev record, which
+   `bash skills/fxa-manager/vm.sh promote`: no `cd`, path, env, pipe or wrapper (`perl alarm`,
+   `timeout`), since the allow rule matches only that text. Run it in the background. With green CI it reads only origin/main and the dev record, which
    every worktree shares. Only when it must run the bot's tests itself does it need the trees
    dev ran: then it says "vm.sh dev again".
 
