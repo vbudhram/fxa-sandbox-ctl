@@ -38,6 +38,8 @@ heads='{"mozilla/fxa-private": {"start": null, "head": "111111111111111111111111
 echo "$cfg" > "$tmp/cfg.json"; echo "$heads" > "$tmp/heads.json"
 check "a tickets-mode prompt has the host's findings rule; a report-mode one does not" "1|0" \
   "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'opens with ```fxa-findings')|$(jq '.mode = "report"' "$tmp/cfg.json" > "$tmp/cfg2.json"; python3 "$here/routine.py" prompt "$tmp/cfg2.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'fxa-findings')"
+check "a security review's first run reads 14 days back; another template's 24 hours" "1|1" \
+  "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'the commits of the last 14 days')|$(jq '.template = "code-review"' "$tmp/cfg.json" > "$tmp/cfg3.json"; python3 "$here/routine.py" prompt "$tmp/cfg3.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'the commits of the last 24 hours')"
 
 
 # Filing, with Jira stubbed: a search finds FXA-49 closed and FXA-50 open for the MEDIUM's id, and nothing for the HIGH

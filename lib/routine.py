@@ -532,6 +532,8 @@ def prompt(cfg, heads, team, nonce):
     watch = cfg.get("watch")
     if watch is not None and (not isinstance(watch, str) or not SLUG.fullmatch(watch)):
         raise ValueError("the run's watch repo is not valid")
+    # A security review runs weekly or less, so its first run reads further back.
+    first = "14 days" if cfg.get("template") == "security-review" else "24 hours"
     lines = []
     for slug in cfg["repos"] + ([watch] if watch else []):
         h = heads.get(slug)
@@ -541,7 +543,7 @@ def prompt(cfg, heads, team, nonce):
         on = f"branch {branch}" if branch and slug != watch else "its default branch"
         if slug == watch:
             on += " (read only: the code that landed; change and commit nothing in this repo)"
-        span = f"{h['start']}..{h['head']}" if h.get("start") else f"up to {h['head']} (the first run: the commits of the last 24 hours)"
+        span = f"{h['start']}..{h['head']}" if h.get("start") else f"up to {h['head']} (the first run: the commits of the last {first})"
         lines.append(f"- {slug}, {on}: {span}")
     fence = f"routine-{nonce}"
     return (f"This run was started on a schedule by the routine \"{cfg['name']}\" of team {team}. Nobody reads this conversation "
