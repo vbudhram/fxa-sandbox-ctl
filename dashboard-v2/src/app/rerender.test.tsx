@@ -98,6 +98,18 @@ test('a session delta repaints Sessions', () => {
   expect(repaints(at('e5a17c0d-52'))).toContain('sessions');
 });
 
+test('a session delta repaints no row of the Teams side list', async () => {
+  location.hash = '#teams';
+  const { container, unmount } = render(<App store={store} sel={modelSel} />);
+  await act(async () => { await vi.waitFor(() => expect(container.querySelectorAll('#side .si').length).toBeGreaterThan(1)); });
+  // React gives a host node new props only when its component renders again.
+  const props = () => [...container.querySelectorAll('#side .si')].map((el) => Object.entries(el).find(([k]) => k.startsWith('__reactProps$'))![1]);
+  const before = props();
+  act(() => dispatch({ id: 'e5a17c0d-62', event: 'delta', data: { tbl: 'sessions', rows: [{ key: 'agent-ex0002', state: 'active', last_activity: NOW + 5 }], deleted: [] } } as Frame));
+  expect(props().filter((p, i) => p !== before[i])).toEqual([]);
+  unmount();
+});
+
 test('a store change that the view does not read gives no repaint of the view in the shell', async () => {
   const errs = VIEWS.find((v) => v.id === 'errors')!, load = errs.load;
   let n = 0;

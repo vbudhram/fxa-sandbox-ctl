@@ -218,7 +218,9 @@ export function Shell({ poll }: { poll?: () => Promise<void> }) {
     }
   }, [poll, st]);
 
-  const select = (id: string) => {
+  // Stable, so the memo side rows skip a repaint: it reads the route at the click.
+  const select = useCallback((id: string) => {
+    const route = st.getState().route;
     if (route.view === 'teams') {
       location.hash = id === '__all' ? '#teams' : `#teams/${id}`;
       if (narrowSide) setTlistClosed(true);
@@ -227,7 +229,7 @@ export function Shell({ poll }: { poll?: () => Promise<void> }) {
     location.hash = format({ ...route, sel: id, rid: '' });
     if (narrowSide) setShowside(false);
     if (narrowRight) setShowright(true);
-  };
+  }, [st, narrowSide, narrowRight]);
 
   // The keys: Ctrl or Cmd+K and Esc always; the single keys only when turned on.
   useEffect(() => {
@@ -442,13 +444,7 @@ function SideList(p: { title: string; groups: SideGroup[] | null; q: string; set
             {g.group && <h3 className="sgroup">{g.group}</h3>}
             <ul>
               {g.items.map((it) => (
-                <li key={it.id}>
-                  <button type="button" className="si" data-id={it.id} aria-current={it.id === sel ? 'true' : undefined} title={it.tip} onClick={() => p.onSelect(it.id)}>
-                    <span className={`dot ${it.d === 'live' ? 'info live' : it.d === 'fix' ? 'bad' : it.d}`} aria-hidden="true" />
-                    <span className="t" title={it.t}>{it.t}</span>
-                    <span className="m">{it.m.filter(Boolean).join(' · ')}</span>
-                  </button>
-                </li>
+                <SideRow key={it.id} id={it.id} d={it.d} t={it.t} m={it.m.filter(Boolean).join(' · ')} tip={it.tip} cur={it.id === sel} onSelect={p.onSelect} />
               ))}
             </ul>
           </div>
@@ -457,6 +453,19 @@ function SideList(p: { title: string; groups: SideGroup[] | null; q: string; set
     </>
   );
 }
+
+// memo on plain props: a side function gives new items on each event, and most of them show the same text.
+const SideRow = memo(function SideRow(p: { id: string; d: string; t: string; m: string; tip?: string; cur: boolean; onSelect: (id: string) => void }) {
+  return (
+    <li>
+      <button type="button" className="si" data-id={p.id} aria-current={p.cur ? 'true' : undefined} title={p.tip} onClick={() => p.onSelect(p.id)}>
+        <span className={`dot ${p.d === 'live' ? 'info live' : p.d === 'fix' ? 'bad' : p.d}`} aria-hidden="true" />
+        <span className="t" title={p.t}>{p.t}</span>
+        <span className="m">{p.m}</span>
+      </button>
+    </li>
+  );
+});
 
 function Resize({ which, width, onWidth }: { which: 'side' | 'right'; width?: number; onWidth: (w?: number) => void }) {
   const p = PANES[which];
