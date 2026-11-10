@@ -97,11 +97,13 @@ export const waitDays = (r: J): number | null => days(r.last_human_review?.at ??
 export const WAIT_BINS: [string, number, number][] = [['under 1 day', 0, 1], ['1 to 3 days', 1, 3], ['3 to 7 days', 3, 7], ['7 days or more', 7, Infinity]];
 
 // Monday of the local week of an ISO time, as "Oct 13".
+// One formatter: toLocaleDateString with options builds a new one each call, about 25 µs a row.
+const WEEK_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 export function weekOf(iso: string): { at: number; label: string } {
   const d = new Date(Date.parse(iso));
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return { at: d.getTime(), label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) };
+  return { at: d.getTime(), label: WEEK_FMT.format(d) };
 }
 
 // Merges per local day for the last n days, oldest first.

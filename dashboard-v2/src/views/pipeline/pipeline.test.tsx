@@ -2,6 +2,7 @@
 // The pipeline view on the v1 pipeline page fixture, through the poll converters and the reducers of the real store.
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
+import { Profiler } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { snapshotActions, viewerAction } from '../../live/poll';
 import { type Action, apply } from '../../live/reducers';
@@ -255,6 +256,34 @@ describe('Done', () => {
     load(fx, '#pipeline/done');
     render(<Done />);
     expect(screen.getByText('No merged ticket yet.')).toBeTruthy();
+  });
+});
+
+describe('repaints', () => {
+  // The commits of a tab for one store change.
+  const commits = (C: typeof Queue, hash: string) => {
+    load(undefined, hash);
+    let n = 0;
+    render(<Profiler id="t" onRender={() => n++}><C /></Profiler>);
+    return (f: () => void) => { n = 0; f(); return n; };
+  };
+  const stats = (data: J) => act(() => store.setState((s) => ({ feeds: { ...s.feeds, stats: { data, ageSeconds: 0, interval: 60, error: null, refreshing: false, fetchedAt: 0 } } })));
+  const sessions = () => act(() => store.setState((s) => ({ sessions: { ...s.sessions } })));
+
+  it('Queue repaints for a snapshot, not for an agents or sessions event that moves no skip', () => {
+    const n = commits(Queue, '#pipeline/queue');
+    expect(n(() => agents((a) => { a.runners[0].elapsed_seconds += 60; }))).toBe(0);
+    expect(n(sessions)).toBe(0);
+    expect(n(() => act(() => store.setState((s) => ({ feeds: { ...s.feeds, full: { ...s.feeds.full!, ageSeconds: 5 } } }))))).toBe(1);
+  });
+  it('Done repaints for the ticket costs, not for an agents event or a stats row', () => {
+    const tickets = { 'FXA-9': { cost: 1 } };
+    const n = commits(Done, '#pipeline/done');
+    stats({ tickets, rows: [] });
+    expect(n(() => agents((a) => { a.runners[0].elapsed_seconds += 60; }))).toBe(0);
+    expect(n(sessions)).toBe(0);
+    expect(n(() => stats({ tickets, rows: [{ key: 'FXA-9' }] }))).toBe(0);
+    expect(n(() => stats({ tickets: { ...tickets }, rows: [] }))).toBe(1);
   });
 });
 

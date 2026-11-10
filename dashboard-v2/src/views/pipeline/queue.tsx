@@ -4,8 +4,8 @@ import { BarList, ChartFrame, StripPlot } from '../../charts';
 import { jiraHref } from '../../format';
 import { skipGroups, verdictTag } from '../../model';
 import type { J } from '../../model/base';
-import { SNAP, jiraSite, queueOnly } from '../../model/pipeline';
-import { MODEL, useParts } from '../../app/store';
+import { SNAP, jiraSite, pipe, queueOnly } from '../../model/pipeline';
+import { useParts } from '../../app/store';
 import type { Store } from '../../store/types';
 import { Card, EmptyBox, Tag } from '../../ui';
 import { WAIT_BINS, waitDays } from './data';
@@ -38,8 +38,11 @@ function Details({ name, def, summary, children }: { name: string; def: boolean;
   );
 }
 
+// The tab reads the snapshot and which skips have no belt: an agents or sessions event that moves no skip does not repaint it.
+const PARTS = (s: Store) => [pipe(s), queueOnly(s).map((k) => k.key).join(' ')];
+
 export function Queue() {
-  const s = useParts(MODEL), snap = SNAP(s);
+  const s = useParts(PARTS), snap = SNAP(s);
   if (!snap) return <EmptyBox>Loading the pipeline…</EmptyBox>;
   const q = snap.queue ?? {}, ready: J[] = q.ready ?? [], skipped: J[] = q.skipped ?? [];
   // A hold waits for another ticket to merge; it is not launchable, and not a skip a person must answer.
