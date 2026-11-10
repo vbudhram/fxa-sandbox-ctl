@@ -1004,6 +1004,19 @@ routine_done() {
     # The reason marks a held report, so History and the last result say where to read it.
     [ "$post" = true ] || [ -n "$reason" ] || [ -n "$nochan" ] || reason="kept off Slack: it may hold personal data or a secret"
   fi
+  # A security review on a team with jira.security_level: its findings become restricted tickets, and the report that
+  # is kept and posted holds only their keys. A failed filing keeps the agent's report and says why.
+  local filed=""
+  if [ -n "$rf" ] && [ "$state" = report ] && [ -n "${PIPE_JIRA_SECURITY_LEVEL:-}" ] \
+      && [ "$(jq -r '(.cfg // "{}") | fromjson | .template // ""' <<< "$r")" = security-review ] \
+      && [[ "$(jq -r .state <<< "$r")" =~ ^(queued|claimed|started)$ ]]; then
+    if filed="$(_routine_file_findings "$run" "$rf" "$(jq -r .cfg <<< "$r")" 2> "$f.err")" && [ -n "$filed" ]; then
+      report="$filed"; post=true; reason=""
+    else
+      filed=""; reason="tickets not filed: $(head -1 "$f.err" | sed 's/^ERROR: //' | cut -c1-200)"
+    fi
+    rm -f "$f.err"
+  fi
   [ -z "$nochan" ] || post=false
   rm -f "$f"
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
@@ -1016,11 +1029,50 @@ routine_done() {
   [ -z "$fix" ] || add="$(db_value "SELECT heads->'fix' FROM routine_runs WHERE id = ${run};" \
     | jq -c --arg l "$(jq -r '.cfg | fromjson? | .pr.label // "agent-help"' <<< "$r")" '{fix: {pr, url, sha: .new_sha, why, label: $l}}' 2>/dev/null)" || add=""
   [ -n "$add" ] || add='{}'
+  [ -z "$filed" ] || add="$(jq -c --arg t "$report" '. + {report: $t}' <<< "$add")"
   case "$n" in
     1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" --argjson x "$add" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
     0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" --argjson x "$add" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
     *) echo "$_ROUTINE_STORE" >&2; return 1 ;;
   esac
+}
+
+# _routine_file_findings <run> <report file> <routine config>   A security review's findings as tickets in the team's Jira
+# project at its security level, with no labels. A finding whose id is in an open ticket gets a comment on it instead.
+# Prints the report to keep and post: the ticket keys and severities, no finding details. Fails when the report has no
+# findings block, or Jira cannot take restricted tickets. ponytail: a create is not retried (it must not repeat), so a
+# failed one is only named in the report; the next run that finds it again files it.
+_routine_file_findings() {
+  local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" lvl="${PIPE_JIRA_SECURITY_LEVEL:-}" t q k body out="" listed n=0 tk id sev
+  [ -n "$p" ] && [ -n "$lvl" ] || { echo "ERROR: the team has no Jira project or security level" >&2; return 1; }
+  _jira_sa || { echo "ERROR: restricted tickets need the team's Jira service account" >&2; return 1; }
+  t="$(_ROUTINE_PY findings "$rf" "$run" "$(jq -r .name <<< "$cfg")" "$(jq -r '.repos | join(", ")' <<< "$cfg")")" || return 1
+  listed="$(jq -r .listed <<< "$t")"
+  while IFS= read -r tk; do
+    [ -n "$tk" ] || continue
+    n=$((n + 1)); id="$(jq -r .id <<< "$tk")"; sev="$(jq -r .severity <<< "$tk")"
+    q="$(jq -nc --arg q "project = ${p} AND statusCategory != Done AND text ~ \"${id}\"" '{jql: $q, fields: ["key"], maxResults: 1}')"
+    # Not one pipe: without pipefail, a failed search would read as "no ticket" and file a duplicate.
+    if ! k="$(_jira_rest_json POST /rest/api/3/search/jql "$q")" || ! k="$(jq -er '.issues | if length > 0 then .[0].key else "" end' <<< "$k")"; then
+      out+=$'\n'"Not filed: a ${sev} finding (the Jira search failed)"; continue
+    fi
+    if [ -n "$k" ]; then
+      body="$(jq -nc --arg t "The security review found this again in run ${run}." '{body: {type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: $t}]}]}}')"
+      if _jira_rest_json POST "/rest/api/3/issue/${k}/comment" "$body" >/dev/null; then out+=$'\n'"Found again: ${k} (${sev}), still open"
+      else out+=$'\n'"Found again: ${k} (${sev}), still open; the comment failed"; fi
+      continue
+    fi
+    body="$(jq -c --arg p "$p" --arg l "$lvl" '{fields: {project: {key: $p}, issuetype: {name: "Bug"}, summary: .summary, security: {name: $l},
+      description: {type: "doc", version: 1, content: [.description | split("\n")[] | select(length > 0) | {type: "paragraph", content: [{type: "text", text: .}]}]}}}' <<< "$tk")"
+    k="$(_jira_rest_json POST /rest/api/3/issue "$body" | jq -r '.key // empty')" || k=""
+    if [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then out+=$'\n'"Filed ${k} (${sev})"
+    else
+      out+=$'\n'"Not filed: a ${sev} finding (Jira refused the ticket)"
+      errors_record routine jira_create_failed "" "routine ${run} findings" "Jira refused a restricted ticket in ${p}" "" 2>/dev/null || true
+    fi
+  done < <(jq -c '.tickets[]' <<< "$t")
+  if [ "$n" = 0 ]; then printf 'Security review: no finding to file (%s listed, none HIGH or above, and no MEDIUM with an attack path).\n' "$listed"
+  else printf 'Security review: %s finding(s) for tickets (%s listed). Each ticket is at the %s security level.%s\n' "$n" "$listed" "$lvl" "$out"; fi
 }
 
 # routine posted <run>   The bot posted this skip: a later skip with the same reason stays quiet (D23).

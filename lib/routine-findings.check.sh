@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Offline check that a security review's findings become restricted Jira tickets (jira.security_level), with no labels.
+#   bash lib/routine-findings.check.sh
+source "$(dirname "$0")/session-check-head.sh"
+command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
+here="$(cd "$(dirname "$0")" && pwd)"
+export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
+mkdir -p "$FXA_TEAMS_DIR"; echo '{"teams": {}}' > "$FXA_TEAMS_DIR/index.json"
+source "$here/db.sh"; source "$here/routines.sh"
+db_init >/dev/null
+errors_record() { echo "$1|$2" >> "$tmp/errs"; }
+
+# A report whose block lists a HIGH, a MEDIUM with an attack path, a MEDIUM without one, a LOW and a bad file.
+fence='```'
+cat > "$tmp/report.md" <<EOF
+Reviewed 12 commits. Not reviewed: none.
+${fence}fxa-findings
+[{"severity": "high", "title": "Refresh grant widens scope", "file": "packages/fxa-auth-server/lib/oauth/grant.js:120", "symbol": "validateRefresh", "cwe": "CWE-285", "attack": "a client with a refresh token asks for a keyed scope it was never granted", "impact": "keys for sync", "fix": "intersect", "confidence": "high"},
+ {"severity": "MEDIUM", "title": "Unverified session destroys another", "file": "packages/fxa-auth-server/lib/routes/session.js:88", "symbol": "destroy", "cwe": "CWE-306", "attack": "an unverified login session sends another session's handle", "impact": "logs a device out", "fix": "guard", "confidence": "medium"},
+ {"severity": "MEDIUM", "title": "Vague worry", "file": "a/b.js:1", "cwe": "CWE-1", "attack": "maybe"},
+ {"severity": "LOW", "title": "Style", "file": "a/b.js:2"},
+ {"severity": "HIGH", "title": "No line", "file": "a/b.js"}]
+${fence}
+EOF
+py() { python3 -c "import sys, json; sys.path.insert(0, '$here'); import routine; $1"; }
+check "the block keeps the HIGH and the MEDIUM with an attack path, worst first, of the 5 it lists" "5|HIGH,MEDIUM" \
+  "$(python3 "$here/routine.py" findings "$tmp/report.md" 7 "Security review" "mozilla/fxa-private" | jq -r '"\(.listed)|\([.tickets[].severity] | join(","))"')"
+check "an id does not change when the line or the wording moves" "True" \
+  "$(py "a = routine.findings(open('$tmp/report.md').read())[0][0]['id']; b = routine.findings(open('$tmp/report.md').read().replace(':120', ':140').replace('widens scope', 'expands scope'))[0][0]['id']; print(a == b)")"
+check "the ticket text names the finding id, and the summary its severity" "[HIGH] Refresh grant widens scope|1" \
+  "$(python3 "$here/routine.py" findings "$tmp/report.md" 7 R x | jq -r '.tickets[0] | "\(.summary)|\(.description | [scan("Finding id: fxasr[0-9a-f]{10}")] | length)"')"
+printf 'No block here.\n' > "$tmp/none.md"
+check "a report with no block fails, so the agent's report stays" "1" "$(python3 "$here/routine.py" findings "$tmp/none.md" 1 R x >/dev/null 2>&1; echo $?)"
+cfg='{"name": "Sec", "template": "security-review", "prompt": "look", "mode": "report", "repos": ["mozilla/fxa-private"]}'
+heads='{"mozilla/fxa-private": {"start": null, "head": "1111111111111111111111111111111111111111"}}'
+echo "$cfg" > "$tmp/cfg.json"; echo "$heads" > "$tmp/heads.json"
+check "a security review's prompt has the host's findings rule; a code review's does not" "1|0" \
+  "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'opens with ```fxa-findings')|$(jq '.template = "code-review"' "$tmp/cfg.json" > "$tmp/cfg2.json"; python3 "$here/routine.py" prompt "$tmp/cfg2.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'fxa-findings')"
+
+# The team record: a valid level loads as PIPE_JIRA_SECURITY_LEVEL; a bad one, or one with no project, is refused.
+check "jira.security_level: a good name loads; a quote, and a level with no project, are refused" "Accounts Security Access|1|1" \
+  "$(python3 - "$here" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1]); import team_record as t
+base = {"schema": 1, "name": "secteam", "repos": [{"slug": "mozilla/fxa-private", "role": "work"}], "access": {"users": ["U1"]}}
+ok = dict(base, jira={"project": "FXA", "security_level": "Accounts Security Access"})
+lvl = dict(t.env(ok)).get("PIPE_JIRA_SECURITY_LEVEL") if not [b for b in t.check(ok) if "security_level" in b] else "refused"
+quote = int(any("jira.security_level must be" in b for b in t.check(dict(base, jira={"project": "FXA", "security_level": "a\"b"}))))
+noproj = int(any("needs jira.project" in b for b in t.check(dict(base, jira={"security_level": "Accounts Security Access"}))))
+print(f"{lvl}|{quote}|{noproj}")
+PY
+)"
+check "a team load keeps no other team's level" "1" "$(grep -c 'PIPE_SLACK_CHANNELS PIPE_JIRA_SECURITY_LEVEL$' "$here/pipeline.sh")"
+
+# Filing, with Jira stubbed: a search finds FXA-50 open for the MEDIUM's id, and nothing for the HIGH.
+mid="$(python3 "$here/routine.py" findings "$tmp/report.md" 1 R x | jq -r '.tickets[1].id')"
+_jira_sa() { return 0; }
+_jira_rest_json() {
+  printf '%s %s %s\n' "$1" "$2" "$3" >> "$tmp/jira"
+  case "$2" in
+    */search/jql) case "$3" in (*"$mid"*) echo '{"issues": [{"key": "FXA-50"}]}' ;; (*) [ -n "${SEARCH_FAILS:-}" ] && return 22; echo '{"issues": []}' ;; esac ;;
+    */comment) echo '{}' ;;
+    /rest/api/3/issue) [ -n "${CREATE_FAILS:-}" ] && return 22; echo '{"key": "FXA-51"}' ;;
+  esac
+}
+PIPE_JIRA_PROJECT=FXA PIPE_JIRA_SECURITY_LEVEL="Accounts Security Access"
+out="$(_routine_file_findings 9 "$tmp/report.md" "$cfg")"
+check "the HIGH is filed and the open MEDIUM gets a comment" "Filed FXA-51 (HIGH)|Found again: FXA-50 (MEDIUM), still open" \
+  "$(grep -E '^(Filed|Found again)' <<< "$out" | paste -sd'|' -)"
+create="$(grep '^POST /rest/api/3/issue {' "$tmp/jira" | cut -d' ' -f3-)"
+check "the create sets the security level and the project, and adds no labels" "Accounts Security Access|FXA|false|Bug" \
+  "$(jq -r '.fields | "\(.security.name)|\(.project.key)|\(has("labels"))|\(.issuetype.name)"' <<< "$create")"
+check "the search looks only at open tickets of the project, by the finding id" "1" \
+  "$(grep -c "search/jql .*project = FXA AND statusCategory != Done AND text ~ .*${mid}" "$tmp/jira")"
+check "the report holds keys and severities, and no finding title or file" "0|0" \
+  "$(grep -c 'Refresh grant' <<< "$out")|$(grep -c 'grant.js' <<< "$out")"
+: > "$tmp/jira"; : > "$tmp/errs"
+out="$(CREATE_FAILS=1 _routine_file_findings 9 "$tmp/report.md" "$cfg")"
+check "a refused create is named in the report and recorded, with no second try" "1|1|1" \
+  "$(grep -c 'Not filed: a HIGH finding (Jira refused the ticket)' <<< "$out")|$(grep -c 'jira_create_failed' "$tmp/errs")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+: > "$tmp/jira"
+out="$(SEARCH_FAILS=1 _routine_file_findings 9 "$tmp/report.md" "$cfg")"
+check "a failed search files nothing for that finding, so no duplicate" "1|0" \
+  "$(grep -c 'Not filed: a HIGH finding (the Jira search failed)' <<< "$out")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+check "no service account: nothing is filed" "1" "$(_jira_sa() { return 1; }; _routine_file_findings 9 "$tmp/report.md" "$cfg" >/dev/null 2>&1; echo $?)"
+
+# routine done: the security review's report becomes the keys-only text, in the row and in the answer.
+rr="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa-private', json($(db_q "$(jq -c '. + {schedule: "weekly mon 06:00", zone: "America/New_York", channel: "C0OWN00", max_usd: 5, skip_no_commits: true, env: "live"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
+run="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p1', 'started', 'agent-sec001', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
+: > "$tmp/jira"
+a="$(routine_done "$run" --state report --session agent-sec001 --report-file "$tmp/report.md")"
+check "done files the tickets, keeps only the keys, and the answer gives the bot that text" "true|true|1|0|1" \
+  "$(jq -r '"\(.changed)|\(.post)|\(.report | contains("Filed FXA-51 (HIGH)") | if . then 1 else 0 end)"' <<< "$a")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $run AND report LIKE '%Refresh grant%';")|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $run AND report LIKE '%FXA-51%';")"
+check "a second done call files nothing more" "1" \
+  "$(routine_done "$run" --state report --session agent-sec001 --report-file "$tmp/report.md" >/dev/null; grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+run2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p2', 'started', 'agent-sec002', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
+check "with no level, a security review keeps its report as before and files nothing" "1|1" \
+  "$(PIPE_JIRA_SECURITY_LEVEL='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+[ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

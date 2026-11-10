@@ -243,7 +243,9 @@ case "$cmd" in
         fi
         [ -f "$DIR/routine-done-$run" ] && { jq -nc --arg s "$(cat "$DIR/routine-done-$run")" '{changed: false, state: $s, post: false, next: null}'; exit 0; }
         opt --state "$@" > "$DIR/routine-done-$run"
-        jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" '{changed: true, state: $s, post: $p, next: $n}' ;;
+        # FAKE_ROUTINE_REPORT: ctl's own report (a security review's ticket keys), which the bot posts in place of the agent's.
+        jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" --arg r "${FAKE_ROUTINE_REPORT:-}" \
+          '{changed: true, state: $s, post: $p, next: $n} + (if $r == "" then {} else {report: $r} end)' ;;
       posted) echo "posted ${1:-}" ;;
       *) echo "fake-ctl: routine $sub is not faked" >&2; exit 1 ;;
     esac ;;

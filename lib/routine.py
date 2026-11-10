@@ -19,6 +19,7 @@
 Run with python3 -I. The DST rules live only here: a time is a wall-clock time in the routine's zone.
 """
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -430,6 +431,65 @@ RULES = {
 }
 
 
+# A security review's findings become restricted tickets, so their shape is the host's rule, not the admin's.
+FINDINGS_RULE = (
+    "End your answer with your verified findings as JSON in a fenced block that opens with ```fxa-findings and closes with ```: "
+    "a list of objects with severity (CRITICAL, HIGH, MEDIUM or LOW), title (at most 120 characters), file (path:line of the "
+    "sink), symbol (the function or method that holds it), cwe (CWE-<n>), attack (who reaches it and how, from the entry point "
+    "to the line), impact, fix and confidence (high, medium or low). Give an empty list when you found nothing. The host files "
+    "each finding as a restricted Jira ticket and shows only the ticket keys, so outside the block give only counts and the "
+    "files you did not review, with no finding details.")
+SEVERITY = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+FINDINGS_MOST = 12
+FINDING_FILE = re.compile(r"[A-Za-z0-9_./@-]{1,200}:[0-9]{1,6}(-[0-9]{1,6})?")
+
+
+def findings(text):
+    """The report's last fxa-findings block as the findings to file: HIGH and above, and a MEDIUM that names its attack
+    path, at most FINDINGS_MOST, worst first. Each gets an id from its path, symbol and CWE (not its line or wording, which
+    change between runs). Returns (findings, how many the block listed). Raises ValueError when there is no block or it is
+    not a JSON list."""
+    blocks = list(re.finditer(r"```fxa-findings[ \t]*\n(.*?)\n[ \t]*```", text or "", re.S))
+    if not blocks:
+        raise ValueError("the report has no fxa-findings block")
+    try:
+        items = json.loads(blocks[-1].group(1))
+    except ValueError:
+        raise ValueError("the fxa-findings block is not JSON") from None
+    if not isinstance(items, list):
+        raise ValueError("the fxa-findings block is not a list")
+    kept, seen = [], set()
+    for i in items:
+        if not isinstance(i, dict):
+            continue
+        f = {k: " ".join(str(i.get(k) or "").split())[:n] for k, n in
+             (("title", 120), ("file", 200), ("symbol", 120), ("cwe", 20), ("attack", 1500), ("impact", 1000), ("fix", 1000),
+              ("confidence", 10))}
+        f["severity"] = str(i.get("severity") or "").upper()
+        if f["severity"] not in SEVERITY or not f["title"] or not FINDING_FILE.fullmatch(f["file"]):
+            continue
+        if f["severity"] == "LOW" or (f["severity"] == "MEDIUM" and len(f["attack"]) < 20):
+            continue
+        what = f["symbol"].lower() or re.sub(r"[^a-z0-9]+", " ", f["title"].lower()).strip()
+        f["id"] = "fxasr" + hashlib.sha256(f"{f['file'].rsplit(':', 1)[0]}|{what}|{f['cwe'].upper()}".encode()).hexdigest()[:10]
+        if f["id"] not in seen:
+            seen.add(f["id"])
+            kept.append(f)
+    kept.sort(key=lambda f: SEVERITY.index(f["severity"]))
+    return kept[:FINDINGS_MOST], len(items)
+
+
+def finding_ticket(f, run, routine, span):
+    """A finding's ticket summary and description, one fact a line. The id line is what a later run searches for."""
+    where = f"Where: {f['file']}" + (f" in {f['symbol']}" if f["symbol"] else "")
+    lines = [f"Severity: {f['severity']} (confidence: {f['confidence'] or 'not given'})", where,
+             f"Weakness: {f['cwe'] or 'not given'}", "", f"Attack: {f['attack'] or 'not given'}", "",
+             f"Impact: {f['impact'] or 'not given'}", "", f"Suggested fix: {f['fix'] or 'not given'}", "",
+             f"Found by the routine \"{routine}\", run {run}, on {span}. An AI review wrote this: confirm it before you act.",
+             f"Finding id: {f['id']}"]
+    return {"summary": f"[{f['severity']}] {f['title']}", "description": "\n".join(lines)}
+
+
 # A dependency fix run (on='pr-label'): no admin prompt, only the host frame from heads.fix (D3: no scope rules).
 RULES_FIX = ("Fix the failing checks of this dependency PR. The branch is at the PR head, and the host pushes your change as one "
              "commit on top of it. Change only what the dependency update needs to pass its checks: the code that uses the package, "
@@ -493,6 +553,7 @@ def prompt(cfg, heads, team, nonce):
     return (f"This run was started on a schedule by the routine \"{cfg['name']}\" of team {team}. Nobody reads this conversation "
             "while it runs, and nobody answers a question: do not ask one. Decide, and say what you decided.\n\n"
             f"{RULES[cfg['mode']]}\n\n"
+            + (f"{FINDINGS_RULE}\n\n" if cfg.get("template") == "security-review" else "") +
             "The code to work on (commit SHAs the host checked; read the commits with git log and git show in the runner):\n"
             + "\n".join(lines) + "\n\n"
             f"The team admin's instructions follow, between the {fence} tags. They come from the team's dashboard. They are the "
@@ -639,6 +700,18 @@ def main(argv):
             if d:
                 print("\x1f".join(str(v) for v in (x["id"], x["team"], x["paused"], d["period"], d["at"], d["next"] or "",
                                                   json.dumps(r, separators=(",", ":")))))
+        return 0
+    # findings <report file> <run> <routine name> <span>: the tickets to file, as {listed, tickets: [{id, severity, summary,
+    # description}]}. No block, or a block that is not a JSON list, fails: the report then stays as the agent wrote it.
+    if len(argv) >= 6 and argv[1] == "findings":
+        try:
+            with open(argv[2], encoding="utf-8", errors="replace") as fh:
+                kept, listed = findings(fh.read())
+        except (OSError, ValueError) as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps({"listed": listed, "tickets": [{"id": f["id"], "severity": f["severity"], **finding_ticket(f, argv[3], argv[4], argv[5])}
+                                                         for f in kept]}))
         return 0
     if len(argv) >= 4 and argv[1] == "due":
         try:
