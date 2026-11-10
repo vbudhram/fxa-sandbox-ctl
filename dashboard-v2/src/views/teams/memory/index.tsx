@@ -1,5 +1,5 @@
 // The Memory tab of a team page: the team's facts from the memory repo's main branch (section 6.7).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarList } from '../../../charts';
 import { postJson } from '../../../live/api';
 import type { J } from '../../../model/base';
@@ -59,17 +59,17 @@ function Memory({ team }: { team: J }) {
     void readMemory(p).then((g) => on && setErr(errOf(g)));
     return () => { on = false; };
   }, [p]);
-  const row = (id?: string) => ((store.getState().teamsUi.memory[p] as J | undefined)?.entries ?? []).find((e: J) => e.id === id);
-  const say = (text: string, ok: boolean) => { setMsg({ text, ok }); focusLater('mem-msg'); };
-  const warn = (out: unknown) => /WARN/.test(String(out ?? ''));
+  const row = useCallback((id?: string) => ((store.getState().teamsUi.memory[p] as J | undefined)?.entries ?? []).find((e: J) => e.id === id), [p]);
+  const say = useCallback((text: string, ok: boolean) => { setMsg({ text, ok }); focusLater('mem-msg'); }, []);
 
-  async function del(e: J) {
+  // Stable while the form changes, so a keystroke in the form does not repaint the table.
+  const del = useCallback(async (e: J) => {
     if (arm !== e.id) { setArm(e.id); return; }
     setArm('');
     const g = await postJson<J>(`${base}/${e.id}/delete`, { v: e.v, scope: e.scope });
     await load();
     say('data' in g ? `Deleted ${e.id}. ${warn(g.data?.out) ? 'The push to GitHub failed; the next save pushes it.' : ''}`.trim() : g.error || 'the delete did not go through', 'data' in g);
-  }
+  }, [arm, base, load, say]);
   async function save() {
     if (!form || saving.current) return;
     saving.current = true;
@@ -92,14 +92,50 @@ function Memory({ team }: { team: J }) {
     const first = Object.keys(errs)[0];
     focusLater(first ? (first === 'cites' || first === 'entry' ? 'mem-cites' : `mem-${first}`) : 'mem-form-h');
   }
-  function open(e: J | null) { setForm({ id: e?.id, v: e?.v, d: memDraft(e, team), errs: {} }); setFormMsg(''); setArm(''); focusLater('mem-form-h'); }
+  const open = useCallback((e: J | null) => { setForm({ id: e?.id, v: e?.v, d: memDraft(e, team), errs: {} }); setFormMsg(''); setArm(''); focusLater('mem-form-h'); }, [team]);
+  const edit = useCallback((id: string) => open(row(id)), [open, row]);
+  const entries: J[] | undefined = d?.entries;
+  const shown = useMemo(() => (entries ?? []).filter((e) => memMatch(e, q)), [entries, q]);
+  const own = useMemo(() => shown.filter((e) => !e.dep), [shown]), dep = useMemo(() => shown.filter((e) => e.dep), [shown]);
 
   if (err && !d) return <Card><p className="m-0">The team memory did not load: {err}</p><p className="hint">It tries again when you press Reload.</p><button type="button" onClick={() => void load()}>Reload</button></Card>;
   if (!d) return <EmptyBox>Loading the team memory…</EmptyBox>;
   if (!d.on) return <Card><p className="m-0">Team memory is off on this host.</p></Card>;
-  const cut = memCut(now), entries: J[] = d.entries ?? [], shown = entries.filter((e) => memMatch(e, q));
-  const own = shown.filter((e) => !e.dep), dep = shown.filter((e) => e.dep), n = entries.filter((e) => !e.dep).length;
-  const tbl = (rows: J[]) => (
+  const all = entries ?? [], n = all.filter((e) => !e.dep).length;
+  const tbl = (rows: J[]) => <MemTable rows={rows} cut={memCut(now)} busy={!!form} arm={arm} edit={edit} del={del} setArm={setArm} />;
+  return (
+    <div data-memory className="flex flex-col gap-s4">
+      {form && <MemFormCard team={team} d={d} f={form} msg={formMsg} setForm={setForm} save={() => void save()} cancel={() => { setForm(null); setFormMsg(''); }} />}
+      <Card>
+        <div className="flex flex-col gap-s3">
+          <div className="flex flex-wrap items-start gap-s3">
+            <p className="hint m-0 flex-1">{n} fact{n === 1 ? '' : 's'} for this team and its repos, from main. A repo fact is shared by every team on that repo. Runners that start after a change get it; running sessions keep their copy.</p>
+            <button type="button" onClick={() => void load()}>Reload</button>
+            {!form && <button type="button" data-mem-new onClick={() => open(null)}>Add a fact</button>}
+          </div>
+          <p id="mem-msg" className={msg && !msg.ok ? 'm-0 text-sub font-semibold text-warn' : 'hint m-0'} data-mem-msg role="status" tabIndex={-1}>{msg?.text ?? ''}</p>
+          {all.length > 0 && <input className={INPUT} data-mem-q aria-label="Filter the facts" placeholder="Filter by text, kind, repo or cite" value={q} onChange={(e) => setQ(e.target.value)} />}
+          {n ? (own.length ? tbl(own) : <EmptyBox>No fact matches the filter.</EmptyBox>) : <EmptyBox>No team memory yet. A run adds a fact when its cites hold on main, or add one here.</EmptyBox>}
+          {dep.length > 0 && (
+            <details data-mem-dep open={q ? true : undefined}>
+              <summary className="cursor-pointer text-link">From dependency repos <span className="n text-faint">{dep.length}</span></summary>
+              <p className="hint">Agents on this team read these too. They are read-only here: the team that works on {[...new Set(dep.map((e) => e.scope))].join(', ')} keeps them.</p>
+              {tbl(dep)}
+            </details>
+          )}
+        </div>
+      </Card>
+      {all.length > 0 && <MemCharts entries={all} cut={now} />}
+    </div>
+  );
+}
+
+const warn = (out: unknown) => /WARN/.test(String(out ?? ''));
+
+type TableProps = { rows: J[]; cut: string; busy: boolean; arm: string; edit: (id: string) => void; del: (e: J) => Promise<void>; setArm: (id: string) => void };
+// The facts table; memo: it repaints only when its rows, the form's presence or the armed Delete change.
+const MemTable = memo(function MemTable({ rows, cut, busy, arm, edit, del, setArm }: TableProps) {
+  return (
     <div className="overflow-x-auto">
       <table className="mtab w-full border-collapse text-sub">
         <thead><tr>{['Where', 'Kind', 'Fact', 'Cite', 'Confirmed'].map((h) => <th key={h} scope="col" className="border-b border-line px-s2 py-s1 text-left font-semibold text-dim">{h}</th>)}<th scope="col" className="border-b border-line"><span className="vh">Actions</span></th></tr></thead>
@@ -118,8 +154,8 @@ function Memory({ team }: { team: J }) {
             <td className="border-b border-line px-s2 py-s1">{e.cites.map((c: J) => <div key={c.cite} className="font-mono">{c.cite}</div>)}</td>
             <td className="border-b border-line px-s2 py-s1 whitespace-nowrap">{e.confirmed || '—'}</td>
             <td className="border-b border-line px-s2 py-s1 whitespace-nowrap">{!e.dep && <span className="flex gap-s1">
-              <button type="button" data-mem-edit={e.id} aria-label={`Edit ${e.id}`} disabled={!!form} onClick={() => open(row(e.id))}>Edit</button>
-              <button type="button" data-mem-del={e.id} aria-label={arm === e.id ? `Delete ${e.id}? Click again` : `Delete ${e.id}`} disabled={!!form}
+              <button type="button" data-mem-edit={e.id} aria-label={`Edit ${e.id}`} disabled={busy} onClick={() => edit(e.id)}>Edit</button>
+              <button type="button" data-mem-del={e.id} aria-label={arm === e.id ? `Delete ${e.id}? Click again` : `Delete ${e.id}`} disabled={busy}
                 className={arm === e.id ? 'text-bad' : undefined} onClick={() => void del(e)} onBlur={() => arm === e.id && setArm('')}>{arm === e.id ? 'Delete it?' : 'Delete'}</button>
             </span>}</td>
           </tr>
@@ -127,35 +163,10 @@ function Memory({ team }: { team: J }) {
       </table>
     </div>
   );
-  return (
-    <div data-memory className="flex flex-col gap-s4">
-      {form && <MemFormCard team={team} d={d} f={form} msg={formMsg} setForm={setForm} save={() => void save()} cancel={() => { setForm(null); setFormMsg(''); }} />}
-      <Card>
-        <div className="flex flex-col gap-s3">
-          <div className="flex flex-wrap items-start gap-s3">
-            <p className="hint m-0 flex-1">{n} fact{n === 1 ? '' : 's'} for this team and its repos, from main. A repo fact is shared by every team on that repo. Runners that start after a change get it; running sessions keep their copy.</p>
-            <button type="button" onClick={() => void load()}>Reload</button>
-            {!form && <button type="button" data-mem-new onClick={() => open(null)}>Add a fact</button>}
-          </div>
-          <p id="mem-msg" className={msg && !msg.ok ? 'm-0 text-sub font-semibold text-warn' : 'hint m-0'} data-mem-msg role="status" tabIndex={-1}>{msg?.text ?? ''}</p>
-          {entries.length > 0 && <input className={INPUT} data-mem-q aria-label="Filter the facts" placeholder="Filter by text, kind, repo or cite" value={q} onChange={(e) => setQ(e.target.value)} />}
-          {n ? (own.length ? tbl(own) : <EmptyBox>No fact matches the filter.</EmptyBox>) : <EmptyBox>No team memory yet. A run adds a fact when its cites hold on main, or add one here.</EmptyBox>}
-          {dep.length > 0 && (
-            <details data-mem-dep open={q ? true : undefined}>
-              <summary className="cursor-pointer text-link">From dependency repos <span className="n text-faint">{dep.length}</span></summary>
-              <p className="hint">Agents on this team read these too. They are read-only here: the team that works on {[...new Set(dep.map((e) => e.scope))].join(', ')} keeps them.</p>
-              {tbl(dep)}
-            </details>
-          )}
-        </div>
-      </Card>
-      {entries.length > 0 && <MemCharts entries={entries} cut={now} />}
-    </div>
-  );
-}
+});
 
 // What the memory holds: facts by kind and by scope, and how long ago each was confirmed, against the 90-day index cutoff.
-function MemCharts({ entries, cut }: { entries: J[]; cut: number }) {
+const MemCharts = memo(function MemCharts({ entries, cut }: { entries: J[]; cut: number }) {
   const count = (k: (e: J) => string) => Object.entries(entries.reduce<Record<string, number>>((a, e) => { a[k(e)] = (a[k(e)] ?? 0) + 1; return a; }, {}))
     .sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
   const age = (e: J) => {
@@ -176,7 +187,7 @@ function MemCharts({ entries, cut }: { entries: J[]; cut: number }) {
       </div>
     </Card>
   );
-}
+});
 
 function MemFormCard({ team, d, f, msg, setForm, save, cancel }: { team: J; d: J; f: MemForm; msg: string; setForm: (f: (x: MemForm | null) => MemForm | null) => void; save: () => void; cancel: () => void }) {
   const x = f.d, e = f.errs, team1 = x.scope === 'team', kinds = team1 ? [...MEM_KINDS, 'system'] : MEM_KINDS, max = team1 ? 3 : 1;
