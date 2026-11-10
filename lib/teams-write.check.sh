@@ -94,7 +94,8 @@ check("an admin reads a record and its audit as JSON", ((200, {"name": "rusty", 
 check("a viewer cannot read a record, which names Slack users", 403, call("GET", "/api/teams/rusty", headers=sig("viewer@example.com", "GET", "/api/teams/rusty"))[0])
 check("a form post is refused (JSON only); a record over 256 KB too", (415, 413),
       (call("POST", "/api/teams", headers={**sig(A, "POST", "/api/teams"), "Content-Type": "application/x-www-form-urlencoded"}, raw=b"a=1")[0],
-       call("POST", "/api/teams", headers=sig(A, "POST", "/api/teams"), raw=b"x" * 270000)[0]))
+       # The size alone: a 413 sent before the body is read resets a client that still sends it.
+       call("POST", "/api/teams", headers={**sig(A, "POST", "/api/teams"), "Content-Length": "270000"}, raw=b"")[0]))
 check("a cross-site request is refused before the signature counts", 403, call("POST", "/api/teams", {"record": rec}, {**sig(A, "POST", "/api/teams"), "Origin": "https://evil.test"})[0])
 check("the page learns who it is for: an admin, a viewer, nobody signed",
       ({"user": A, "admin": True, "teams": []}, {"user": "viewer@example.com", "admin": False, "teams": []}, {"user": None, "admin": False, "teams": []}),
