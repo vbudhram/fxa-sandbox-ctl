@@ -111,16 +111,6 @@ def channel_why(ch, team, tpl, profile, index, env):
     return None
 
 
-def post_why(c, tpl, profile):
-    """The bot's rule when a run starts (fxa-agent-bot channelRefusal): why it refuses channel c, or None."""
-    if not profile.get("private") and tpl != "security-review":
-        return None
-    if not c.get("private"):
-        return "The channel is public. A team with a private repo, and every security review, posts only to a private channel"
-    if c.get("shared"):
-        return "The channel is shared with another workspace. A team with a private repo, and every security review, posts only to a channel that is not shared"
-    return None
-
 
 def channel_list(rows, team, profile, index, env):
     """The channels a bot is in, each with why a routine (why) or a security review (why_security) may not post there."""
@@ -129,7 +119,7 @@ def channel_list(rows, team, profile, index, env):
         c = {k: c[k] for k in ("id", "name", "private", "shared")}
         c["private"], c["shared"] = bool(c["private"]), bool(c["shared"])
         for key, tpl in (("why", "blank"), ("why_security", "security-review")):
-            c[key] = channel_why(c["id"], team, tpl, profile, index, env) or post_why(c, tpl, profile)
+            c[key] = channel_why(c["id"], team, tpl, profile, index, env)
         out.append(c)
     return out
 

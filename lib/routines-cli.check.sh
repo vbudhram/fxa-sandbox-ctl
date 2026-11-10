@@ -77,14 +77,14 @@ run="$(sqlite3 "$tmp/fxa.db" "INSERT INTO routine_runs (routine_id, period, stat
 out="$(NOW=$((T + 240)) ctl routine done "$run" --state nochange --session agent-cli001 2>&1)"; rc=$?
 check "the CLI done with a schedule that cannot be read: exit 0, the result stored, no next run" "0|nochange|null" \
   "$rc|$(sqlite3 "$tmp/fxa.db" "SELECT state FROM routine_runs WHERE id = $run;")|$(jq -r .next <<< "$out" 2>/dev/null)"
-# The channel list the bot writes through ingest: names sorted, the bad id left out, a public channel refused for a
-# security review only, and a later list of the same env replacing it. The routine list names its channel.
+# The channel list the bot writes through ingest: names sorted, the bad id left out, a public channel open to a
+# security review too, and a later list of the same env replacing it. The routine list names its channel.
 ing() { sqlite3 "$tmp/fxa.db" "INSERT INTO ingest (tbl, j) VALUES ('slack_channels', '$1');"; }
 ing '{"env":"live","at":1792400000,"channels":[{"id":"C0OWN00","name":"fxa-routines","private":false,"shared":false},{"id":"C0PRIV1","name":"fxa-private","private":true,"shared":false},{"id":"bad","name":"x"}]}'
 ing '{"env":"dev","at":1792400001,"channels":[{"id":"C0DEV00","name":"fxa-dev","private":true,"shared":false}]}'
 out="$(ctl routine channels fxa 2>&1)"; rc=$?
 check "routine channels: the live list, sorted, each with why a routine or a security review may not post" \
-  "0|1792400000|fxa-private,fxa-routines|null,null|null,public" \
+  "0|1792400000|fxa-private,fxa-routines|null,null|null,null" \
   "$rc|$(jq -r '.at' <<< "$out")|$(jq -r '[.channels[].name] | join(",")' <<< "$out")|$(jq -r '[.channels[].why] | map(tostring) | join(",")' <<< "$out")|$(jq -r '[.channels[].why_security | if . then (split(" ")[3] | rtrimstr(".")) else "null" end] | join(",")' <<< "$out")"
 check "routine channels dev: only the dev bot's list" "fxa-dev" "$(ctl routine channels fxa dev 2>&1 | jq -r '[.channels[].name] | join(",")')"
 check "the form's runtimes: Claude, and Codex only where the host runs Codex sessions" '["claude"]|["claude","codex"]' \
