@@ -57,7 +57,9 @@ routine_channels() {
   out="$(_ROUTINE_PY channels "$f" "$team" --profile "$prof" --index "${FXA_TEAMS_DIR:-/nonexistent}/index.json" \
     --bot-env "${FXA_BOT_ENV:-${SANDBOX_ROOT}/../fxa-agent-bot/.env}")" || rc=$?
   rm -f "$prof" "$f"; [ "$rc" = 0 ] || return 1
-  jq -c --argjson rows "$rows" '{at: ($rows | map(.at) | max), channels: .}' <<< "$out"
+  # runtimes: what the form offers; Codex only where this host runs Codex sessions.
+  jq -c --argjson rows "$rows" --argjson cx "$([ "${FXA_SESSION_CODEX:-}" = 1 ] && echo true || echo false)" \
+    '{at: ($rows | map(.at) | max), channels: ., runtimes: (["claude"] + (if $cx then ["codex"] else [] end))}' <<< "$out"
 }
 
 routine_get() { _routine_id "$1" || return 1; local r; r="$(_routine_row "$1")"; [ -n "$r" ] || { echo "ERROR: no routine $1" >&2; return 1; }; jq -c '.data |= fromjson' <<< "$r"; }

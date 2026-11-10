@@ -168,7 +168,8 @@ boot() { # boot <key>   _cmd_session_boot with stubs; agent_run records its pins
     _session_pack_media() { :; }; worktree_copy_secrets() { echo copied > "$tmp/secrets"; }; _session_ticket_context() { echo "TICKET" >> "$tmp/booted"; }
     circleci_digests() { printf '%s\n' "$1" > "$tmp/ci-in"; printf '\n## CircleCI digest\nFailed: token fxl_ABCDEFGHabcdefgh12345678abcdefgh in the log\n'; }; _session_review() { echo "REVIEW-TEXT"; }; check_prerequisites() { :; }; _session_first_prompt() { echo FIRST; }
     _session_prompt_tail() { :; }; _session_wants_stack() { return 1; }; _session_boot_times() { echo null; }; agent_stop() { :; }
-    agent_run() { printf 'pin %s %s\nmodel %s %s\n%s\n' "$FXA_PIN_SHA" "$FXA_PIN_BASE_SHA" "${FXA_AGENT_MODEL:-}" "${FXA_AGENT_EFFORT:-}" "$3" >> "$tmp/booted"; }
+    agent_run() { printf 'pin %s %s\nmodel %s %s\ncodex %s %s %s\n%s\n' "$FXA_PIN_SHA" "$FXA_PIN_BASE_SHA" "${FXA_AGENT_MODEL:-}" "${FXA_AGENT_EFFORT:-}" \
+      "$FXA_AGENT_RUNTIME" "${FXA_CODEX_MODEL:-}" "${FXA_CODEX_EFFORT:-}" "$3" >> "$tmp/booted"; }
     _cmd_session_boot "$1" ) >/dev/null 2>&1
 }
 FXA_LLM_PROXY_URL=http://10.0.0.2:8080 boot agent-fx02
@@ -190,6 +191,15 @@ check "a routine's model and effort reach the session record, the boot's env and
   "$(jq -r '[.agent_model, .agent_effort] | join("|")' "$tmp/agent-fx04.json")|$(grep '^model' "$tmp/booted")|$(turn agent-fx04)"
 check "a routine with no model keeps the host's: no session key, and Opus with no effort on a later turn" \
   "|--model claude-opus-5-5" "$(jq -r '.agent_model // ""' "$tmp/agent-fx02.json")|$(turn agent-fx02)"
+# A Codex routine: refused where the host has Codex sessions off; else a codex session, with its model and effort in Codex's env.
+codexrun() { local r; r="$(run pyfxa claimed)"; db_exec "UPDATE routine_runs SET config = json_remove(json_set(config, '$.runtime', 'codex', '$.model', 'gpt-6-astra', '$.effort', 'high'), '$.branch') WHERE id = $r;"; echo "$r"; }
+c1="$(codexrun)"; c2="$(codexrun)"
+check "a Codex routine on a host with Codex sessions off: refused, no session" "ERROR: Codex sessions are turned off on this host (FXA_SESSION_CODEX)|none" \
+  "$(FXA_SESSION_CODEX="" task pyfxa agent-cx01 --routine-run "$c1" 2>&1 | tail -1)|$(none agent-cx01)"
+FXA_SESSION_CODEX=1 task pyfxa agent-cx02 --routine-run "$c2" >/dev/null 2>&1
+FXA_AGENT_MODEL="" FXA_AGENT_EFFORT="" FXA_CODEX_MODEL="" FXA_CODEX_EFFORT="" boot agent-cx02
+check "a Codex routine: a codex session, and its model and effort reach Codex's env, not Claude's" "codex|codex codex gpt-6-astra high|model  " \
+  "$(jq -r .runtime "$tmp/agent-cx02.json")|$(grep '^codex' "$tmp/booted")|$(grep '^model' "$tmp/booted")"
 f3="$(fixrun)"; FXA_LLM_PROXY_URL=http://10.0.0.2:8080 ftask agent-fx03 "$f3" >/dev/null 2>&1
 jq '.headRefOid = "3333333333333333333333333333333333333333"' "$tmp/fx/pr/90001.json" > "$tmp/x" && mv "$tmp/x" "$tmp/fx/pr/90001.json"
 FXA_LLM_PROXY_URL=http://10.0.0.2:8080 boot agent-fx03

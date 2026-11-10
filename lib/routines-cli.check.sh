@@ -87,6 +87,8 @@ check "routine channels: the live list, sorted, each with why a routine or a sec
   "0|1792400000|fxa-private,fxa-routines|null,null|null,public" \
   "$rc|$(jq -r '.at' <<< "$out")|$(jq -r '[.channels[].name] | join(",")' <<< "$out")|$(jq -r '[.channels[].why] | map(tostring) | join(",")' <<< "$out")|$(jq -r '[.channels[].why_security | if . then (split(" ")[3] | rtrimstr(".")) else "null" end] | join(",")' <<< "$out")"
 check "routine channels dev: only the dev bot's list" "fxa-dev" "$(ctl routine channels fxa dev 2>&1 | jq -r '[.channels[].name] | join(",")')"
+check "the form's runtimes: Claude, and Codex only where the host runs Codex sessions" '["claude"]|["claude","codex"]' \
+  "$(FXA_SESSION_CODEX= ctl routine channels fxa 2>&1 | jq -c .runtimes)|$(FXA_SESSION_CODEX=1 ctl routine channels fxa 2>&1 | jq -c .runtimes)"
 out="$(ctl routine list fxa 2>/dev/null)"
 check "routine list: the channel's name, and the last results oldest first" "fxa-routines|nochange" \
   "$(jq -r --argjson r "$r1" '.[] | select(.id == $r) | .channel_name' <<< "$out")|$(jq -r --argjson r "$rz" '.[] | select(.id == $r) | [.recent[].state] | join(",")' <<< "$out")"

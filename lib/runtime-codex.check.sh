@@ -57,5 +57,9 @@ check "config.toml has the memory hooks" "^Bash$|^(apply_patch|Edit|Write|Bash)$
 import tomllib, sys
 h = tomllib.load(open(sys.argv[1], "rb"))["hooks"]; c = h["PostToolUse"][0]["hooks"][0]
 print("|".join([h["PostToolUse"][0]["matcher"], h["PreToolUse"][0]["matcher"], c["type"], c["command"], str(c["timeout"])]))' "$tmp/config.toml" 2>&1)"
+check "no routine effort: the default model, and no effort line" "1|0" "$(grep -cx 'model = "gpt-6-astra"' "$tmp/config.toml")|$(grep -c model_reasoning_effort "$tmp/config.toml")"
+rm -f "$tmp"/exec.*; PIPE_PROFILE=fxa FXA_CODEX_MODEL=gpt-6-astra FXA_CODEX_EFFORT=low runtime_setup_config vm6 2>/dev/null
+check "a routine's effort: a quoted model_reasoning_effort that TOML reads" "low" \
+  "$(toml | python3 -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["model_reasoning_effort"])' 2>&1)"
 check "both launch lines trust the hooks" "1|1" "$(runtime_launch_cmd | grep -c -- '--dangerously-bypass-hook-trust')|$(FXA_SESSION_MODE=1 runtime_launch_cmd | grep -c -- '--dangerously-bypass-hook-trust')"
 exit "$fail"

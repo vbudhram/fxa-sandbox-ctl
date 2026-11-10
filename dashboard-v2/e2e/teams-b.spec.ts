@@ -70,6 +70,23 @@ test.describe('routines: links, list and create (page-fixture-routines)', () => 
     await page.locator('[data-rt-save]:not([data-rt-then])').click();
     await expect.poll(() => sent.length).toBe(1);
     expect(sent[0]!.body.routine).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' });
+    await expect(page.locator('#rt-runtime')).toHaveCount(0);
+  });
+  test('Where the host runs Codex: Runtime shows, a switch clears the picks, and Create posts Codex', async ({ page }) => {
+    const ch = '/api/teams/example/routine-channels', fx = { ...F, [ch]: { channels: [], ...(F[ch] as Fx), runtimes: ['claude', 'codex'] } };
+    const sent = await open(page, '#teams/example/routines', fx, () => ({ body: { out: 'created routine 7' } }));
+    await page.locator('[data-rt-new]').click();
+    await page.locator('[data-rt-tpl="code-review"]').click();
+    await page.locator('#rt-name').fill('Codex review');
+    await page.locator('#rt-effort').selectOption('max');
+    await page.locator('#rt-runtime').selectOption('codex');
+    await expect(page.locator('#rt-effort')).toHaveValue('');
+    await expect(page.locator('#rt-effort option[value="max"]')).toHaveCount(0);
+    await page.locator('#rt-effort').selectOption('high');
+    await page.locator('[data-rt-save]:not([data-rt-then])').click();
+    await expect.poll(() => sent.length).toBe(1);
+    expect(sent[0]!.body.routine).toMatchObject({ runtime: 'codex', effort: 'high' });
+    expect('model' in (sent[0]!.body.routine as Fx)).toBe(false);
   });
 });
 

@@ -66,6 +66,13 @@ describe('the draft and the routine', () => {
     expect(rt.rtRoutine(d).pr).toEqual({ repo: 'example/app', authors: ['dependabot[bot]'], label: 'agent-help', blender_login: 'example-blender[bot]', sweep_min: 5 });
   });
   it('rtDraft with no routine equals v1', () => expect(rt.rtDraft()).toEqual(v1.rtDraft()));
+  it('a Codex pick sends its runtime and has no Max effort; Claude sends no runtime', () => {
+    const r = rt.rtDraft({ name: 'n', schedule: 'weekdays 09:00', repos: [], mode: 'report', max_usd: 5 });
+    expect(rt.rtRoutine({ ...r, runtime: 'codex', model: 'gpt-6-astra', effort: 'high' })).toMatchObject({ runtime: 'codex', model: 'gpt-6-astra', effort: 'high' });
+    expect('runtime' in rt.rtRoutine({ ...r, runtime: 'claude' })).toBe(false);
+    expect(rt.rtPicks({ runtime: 'codex' }).efforts.map(([v]) => v)).not.toContain('max');
+    expect(rt.rtPicks({}).models).toBe(rt.RT_MODELS);
+  });
   it('an edit keeps the model and effort on both branches, and an empty pick sends neither', () => {
     for (const r of [routines[0], routines[2]]) {
       expect(rt.rtRoutine(rt.rtDraft({ ...r, model: 'claude-sonnet-5-5', effort: 'low' }))).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'low' });

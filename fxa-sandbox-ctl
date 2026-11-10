@@ -2400,6 +2400,8 @@ cmd_task() {
   if [ "$source" = routine ]; then
     run_json="$(routine_run_read "$rrun" "${PIPE_PROFILE:-fxa}")" || return 1
     routine_cfg="$(jq -c .config <<< "$run_json")"
+    # A routine's own runtime (the validator checked it); the host's Codex switch below still applies.
+    [ -n "$runtime" ] || runtime="$(jq -r '.runtime // ""' <<< "$routine_cfg")"
     # A dependency fix run (heads.fix): its PR comes from the row. It boots only with the LLM proxy, so the runner
     # holds a run token and never a key (credentials fail closed).
     fix="$(jq -c '.heads.fix // empty' <<< "$run_json")"
@@ -2587,8 +2589,10 @@ _cmd_session_boot() {
   FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
   # A routine's own model and effort (the validator checked them); unset keeps the host's.
   local own=""
-  own="$(session_get "$key" agent_model)"; [ -z "$own" ] || export FXA_AGENT_MODEL="$own"
-  own="$(session_get "$key" agent_effort)"; [ -z "$own" ] || export FXA_AGENT_EFFORT="$own"
+  own="$(session_get "$key" agent_model)"
+  if [ -n "$own" ]; then if [ "$FXA_AGENT_RUNTIME" = codex ]; then export FXA_CODEX_MODEL="$own"; else export FXA_AGENT_MODEL="$own"; fi; fi
+  own="$(session_get "$key" agent_effort)"
+  if [ -n "$own" ]; then if [ "$FXA_AGENT_RUNTIME" = codex ]; then export FXA_CODEX_EFFORT="$own"; else export FXA_AGENT_EFFORT="$own"; fi; fi
   export FXA_SESSION_MODE=1 # Codex: stream JSON events into the transcript
   export _FXA_SESSION_MCP="$(session_get "$key" mcp)" # a session's own; a fix run's are CI only
   # A fix run reads only its work repos, as a pipeline run does.

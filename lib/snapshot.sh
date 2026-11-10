@@ -346,7 +346,7 @@ _stats_add_rows() {
     # A dependency fix (fix_pr) is its own source. Every viewer reads this feed, so its row has no PR or person.
     map(select(.owner != "U-DRYRUN" and .env != "dev") | ((.summary // "{}") | fromjson? // {}) as $s | ((.fix_pr // "" | tostring) != "") as $fx
       | { at: ((.created // 0) | floor | todate), src: (if $fx then "depfix" else "slack" end), key: .key, conv: (.key | root(0)), kind: "session", usd: ($llm.runs[.key] // $s.cost // 0),
-          min: ($s.minutes // null), model: (if .runtime == "codex" then $xm else (.agent_model // $cm) | sub("\\[1m\\]$"; "") end), models: ($llm.run_models[.key] // null),
+          min: ($s.minutes // null), model: (if .runtime == "codex" then (.agent_model // $xm) else (.agent_model // $cm) | sub("\\[1m\\]$"; "") end), models: ($llm.run_models[.key] // null),
           main_only: ($llm.run_models[.key] == null), pr: (($fx | not) and (.pr_url // "") != ""), who: (if $fx then null else .owner_name // null end),
           prn: (if $fx then null else [.pr_url // "" | capture("/pull/(?<n>[0-9]+)$") | .n | tonumber] | first // null end),
           prr: (if $fx then null else [.pr_url // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // null end),

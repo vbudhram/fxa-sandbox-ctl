@@ -52,6 +52,10 @@ check "a cost limit over the ceiling" "max_usd: The cost limit must be more than
 check "a model off the list" "model: must be one of claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5" "$(v secret priv.json '{"model":"gpt-6-astra"}')"
 check "an effort off the list" "effort: must be one of low, medium, high, xhigh, max" "$(v secret priv.json '{"effort":"huge"}')"
 check "a model and an effort on the list" "ok" "$(v secret priv.json '{"model":"claude-haiku-5-5","effort":"xhigh"}')"
+check "Codex on a host with Codex sessions off" "runtime: Codex sessions are off on this host" "$(FXA_SESSION_CODEX= v secret priv.json '{"runtime":"codex"}')"
+check "an unknown runtime" "runtime: must be one of claude, codex" "$(v secret priv.json '{"runtime":"gemini"}')"
+check "Codex takes its own models and efforts, not Claude's" "model: must be one of gpt-6-astra|effort: must be one of low, medium, high, xhigh|ok" \
+  "$(FXA_SESSION_CODEX=1 v secret priv.json '{"runtime":"codex","model":"claude-opus-5-5"}')|$(FXA_SESSION_CODEX=1 v secret priv.json '{"runtime":"codex","effort":"max"}')|$(FXA_SESSION_CODEX=1 v secret priv.json '{"runtime":"codex","model":"gpt-6-astra","effort":"high"}')"
 check "a repo the team does not have" "repos: Repo mozilla/x is not one of this team's repos" "$(v secret priv.json '{"repos":["mozilla/x"]}')"
 echo '{"profile":"second","read_only":false,"private":false,"repos":[{"slug":"mozilla/two","role":"work"}]}' > "$tmp/open.json"
 check "a security review on a record team, on a channel it does not bind, passes" "ok" \

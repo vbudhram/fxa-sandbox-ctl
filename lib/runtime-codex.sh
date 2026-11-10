@@ -20,9 +20,12 @@ runtime_setup_config() {
   # trusted because /workspace is a symlink into /mnt/shared and Codex records
   # trust by resolved path. approval_policy=never plus the launch flag below is
   # the Codex form of bypassPermissions; the VM is the sandbox, as today.
-  local config_b64
+  local config_b64 effort_line=""
+  # Built here: inside the heredoc, bash 3.2 drops the quotes of a \${x:+...} word.
+  [ -z "${FXA_CODEX_EFFORT:-}" ] || effort_line="model_reasoning_effort = \"${FXA_CODEX_EFFORT}\""
   config_b64="$(cat <<TOML | base64 | tr -d '\n'
 model = "${FXA_CODEX_MODEL:-gpt-6-astra}"
+${effort_line}
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 

@@ -17,12 +17,19 @@ export const RT_MODES: [string, string, string][] = [
   ['pr', 'Draft PR', 'Opens a draft PR with the fixes. Nothing merges by itself.'],
   ['pr+notes', 'Draft PR with notes', 'The draft PR, plus every finding it did not fix, in the PR description.'],
 ];
-export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr'];
+export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr'];
 // As lib/routine.py MODELS and EFFORTS; '' is the host's default.
 export const RT_MODELS: [string, string][] = [['', 'Default (Opus 5.5)'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5']];
 export const RT_EFFORTS: [string, string][] = [['', 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
-// The model and effort of a routine, set only when picked.
-const own = (d: J): J => ({ ...(d.model ? { model: d.model } : {}), ...(d.effort ? { effort: d.effort } : {}) });
+// As lib/routine.py RUNTIMES: each runtime's models and efforts; no runtime is Claude.
+export const RT_RUNTIMES: [string, string][] = [['claude', 'Claude'], ['codex', 'Codex']];
+export const RT_PICKS: Record<string, { models: [string, string][]; efforts: [string, string][] }> = {
+  claude: { models: RT_MODELS, efforts: RT_EFFORTS },
+  codex: { models: [['', 'Default (gpt-6-astra)'], ['gpt-6-astra', 'gpt-6-astra']], efforts: RT_EFFORTS.filter(([v]) => v !== 'max') },
+};
+export const rtPicks = (d: J) => RT_PICKS[d.runtime as string] ?? RT_PICKS.claude!;
+// The runtime, model and effort of a routine, set only when picked.
+const own = (d: J): J => ({ ...(d.runtime && d.runtime !== 'claude' ? { runtime: d.runtime } : {}), ...(d.model ? { model: d.model } : {}), ...(d.effort ? { effort: d.effort } : {}) });
 export const RT_ZONES: [string, string][] = [
   ['America/New_York', 'Eastern'], ['America/Chicago', 'Central'], ['America/Denver', 'Mountain'], ['America/Los_Angeles', 'Pacific'],
   ['UTC', 'UTC'], ['Europe/London', 'UK'], ['Europe/Berlin', 'Central Europe'], ['Asia/Kolkata', 'India'], ['Asia/Tokyo', 'Japan'], ['Australia/Sydney', 'Sydney'],
@@ -113,7 +120,7 @@ export const rtSched = (d: J) => {
   const [k, a, b] = String(d.schedule || '').split(' ');
   return k === 'weekly' ? `every ${RT_DAY_NAMES[RT_DAYS.indexOf(a ?? '')] ?? a} at ${b}` : `${k === 'daily' ? 'every day' : 'weekdays'} at ${a}`;
 };
-export type Chans = { channels: { id: string; name: string; why?: string; why_security?: string }[]; err?: string };
+export type Chans = { channels: { id: string; name: string; why?: string; why_security?: string }[]; err?: string; runtimes?: string[] };
 export const rtChName = (id: string, name: string | undefined, chans: Chans | null) => {
   const c = name ? null : chans?.channels.find((x) => x.id === id);
   return name ? `#${name}` : c ? `#${c.name}` : id;
