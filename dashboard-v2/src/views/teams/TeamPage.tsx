@@ -1,15 +1,16 @@
 // The team page: the heading with its state tag, the sub line, the team tabs, and the tab's body.
+import { lazy, Suspense } from 'react';
 import { type J, TEAMS } from '../../model/base';
 import { rtAdmin, rtSum, teamAccess, teamLevel, teamName } from '../../model/teams';
 import { useApp } from '../../store';
 import { Card, Tag } from '../../ui';
 import { teamDraftOf, teamWho } from './lib';
-import MemoryTab from './memory';
 import { Overview } from './Overview';
-import RoutinesTab from './routines';
 import { Settings } from './Settings';
 import { useTs } from './state';
 
+// Routines and Memory are admin tabs: they load in their own chunks when opened.
+const RoutinesTab = lazy(() => import('./routines')), MemoryTab = lazy(() => import('./memory'));
 const TABS = [['overview', 'Overview'], ['routines', 'Routines'], ['memory', 'Memory'], ['settings', 'Settings']] as const;
 
 export function TeamPage({ p, tab: want }: { p: string; tab: string }) {
@@ -59,7 +60,7 @@ export function TeamPage({ p, tab: want }: { p: string; tab: string }) {
           </a>
         ))}
       </nav>
-      {body}
+      <Suspense fallback={<p className="hint">loading…</p>}>{body}</Suspense>
     </div>
   );
 }

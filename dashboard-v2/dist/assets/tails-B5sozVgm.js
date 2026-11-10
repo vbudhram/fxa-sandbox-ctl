@@ -1,1 +1,0 @@
-import{a as e,n as t}from"./jsx-runtime-Wy9s6hX0.js";import{u as n}from"./store-pEjg615A.js";var r=e(t(),1),i=new Map,a=()=>n([...i.keys()]);function o(e){(0,r.useEffect)(()=>{if(e)return i.set(e,(i.get(e)??0)+1),a(),()=>{let t=(i.get(e)??1)-1;t>0?i.set(e,t):i.delete(e),a()}},[e])}export{o as t};
