@@ -1,5 +1,5 @@
 // The Spend tab: five KPI tiles, runs and spend per day or week, and where the money went.
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { ChartColor } from '../../charts';
 import { modelName, usd } from '../../format';
 import type { J } from '../../model/base';
@@ -7,7 +7,7 @@ import { convTitle, ownerName, sessHref } from '../../model/sessions';
 import { teamLabel } from '../../model/teams';
 import type { Store } from '../../store/types';
 
-import { Bars, Scatter } from './charts';
+import { Bars, Scatter } from './lazy';
 import { buckets, byModel, conv, group, maxOf, med, plural, sum } from './compute';
 import { KIND, SF_SRC, setFilter } from './filter';
 import { Box, isKey, JiraKey, Kpi, Row, Sub } from './parts';
@@ -21,7 +21,6 @@ export const axisUsd = (v: number) => (v >= 1 || v === 0 ? `$${Math.round(v)}` :
 export type TabProps = { s: Store; rows: J[]; lo: number; hi: number; now: number; unk: string; srcOn: boolean };
 
 export function Spend({ s, rows, lo, hi, now, unk, srcOn }: TabProps) {
-  const [stack, setStack] = useState<'src' | 'model'>('src');
   if (!rows.length) return <div className="emptybox">Nothing matches these filters.</div>;
   // A stale or failed feed may lack the newest runs: a figure of one source says unknown, never a value or 0.
   const kv = (v: string | number) => (unk && srcOn ? 'unknown' : v);
@@ -33,23 +32,6 @@ export function Spend({ s, rows, lo, hi, now, unk, srcOn }: TabProps) {
   const per = Object.entries(SF_SRC).map(([v, l]) => [v, l, rows.filter((r) => r.src === v)] as const).filter(([, , a]) => a.length);
   const convs = group(work, conv);
   const m = med(rows.map((r) => r.min));
-  const b = buckets(rows, lo, hi, now), unit = b.byDay ? 'day' : 'week';
-  const labels = b.list.map((x) => bucketLabel(x.t));
-  const cut = b.cut ? `Showing the last ${b.list.length} of ${b.total} weeks.` : undefined;
-  // The stack: one series per source, or the top five models and the rest.
-  const topModels = byModel(rows).list.slice(0, 5).map((x) => x.model);
-  const stackSeries = stack === 'src'
-    ? SRCS.filter((k) => b.list.some((x) => x.src[k])).map((k, i) => ({ name: SF_SRC[k]!, color: COLORS[i % 5]!, values: b.list.map((x) => x.src[k] ?? 0) }))
-    : [...topModels.map((k, i) => ({ name: modelName(k), color: COLORS[i]!, values: b.list.map((x) => x.model[k] ?? 0) })),
-      { name: 'Other models', color: 'chart-muted' as const, values: b.list.map((x) => Object.entries(x.model).filter(([k]) => !topModels.includes(k)).reduce((n, [, v]) => n + v, 0)) }]
-      .filter((x) => x.values.some(Boolean));
-  // A click on a bucket narrows the range to that day or week.
-  const drill = (i: number) => {
-    const t = b.list[i]?.t;
-    if (t == null) return;
-    const end = new Date(t); if (!b.byDay) end.setDate(end.getDate() + 6);
-    setFilter({ range: 'custom', from: dayKey(t), to: dayKey(end.getTime()) });
-  };
   const keyCell = (g: { name: string }) => {
     if (isKey(g.name)) return <JiraKey s={s} k={g.name} />;
     // A session is named by its title for an admin (the title can hold a private team's request), else by its key.
@@ -62,7 +44,6 @@ export function Spend({ s, rows, lo, hi, now, unk, srcOn }: TabProps) {
   const persons = group(rows, person).filter((g) => g.name).sort((a, b2) => b2.usd - a.usd);
   const teams = new Set(rows.filter((r) => r.profile).map((r) => r.profile)).size > 1;
   const models = byModel(rows);
-  const scatter = rows.filter((r) => typeof r.min === 'number').map((r) => ({ x: r.min, y: (r.usd || 0) + (r.compute_usd || 0), label: String(r.key ?? '') }));
 
   return (
     <>
@@ -77,21 +58,7 @@ export function Spend({ s, rows, lo, hi, now, unk, srcOn }: TabProps) {
           sub={unk ? 'by source unknown' : per.map(([v, , a]) => `${({ answer: 'answers', pass: 'passes' } as Record<string, string>)[v] ?? v} ${usd(sum([...a]) / a.length)}`).join(' · ')} />
         <Kpi label="Median length" value={kv(m != null ? `${m} min` : '—')} sub="wall time of a run" />
       </div>
-      <div className="charts">
-        <div className="st-chart" id="st-runs">
-          <Bars title={`Runs per ${unit}`} what={`Runs per ${unit}`} labels={labels} format={(v) => String(Math.round(v))} note={cut}
-            series={[{ name: 'Runs', color: 'chart-1', values: b.list.map((x) => x.runs) }]} onPick={drill} />
-        </div>
-        <div className="st-chart" id="st-spend">
-          <div className="st-toggle" role="group" aria-label="Stack the spend by" data-new>
-            <span>Stack by</span>
-            <button type="button" aria-pressed={stack === 'src'} onClick={() => setStack('src')}>Source</button>
-            <button type="button" aria-pressed={stack === 'model'} onClick={() => setStack('model')}>Model</button>
-          </div>
-          <Bars title={`Spend per ${unit}`} what={`Spend per ${unit}, by ${stack === 'src' ? 'source' : 'model'}`} labels={labels} format={axisUsd} series={stackSeries} onPick={drill}
-            note={<>{cut ? `${cut} ` : ''}Click a bar to see that {unit} only.{stack === 'model' ? ' By model counts subagents where the proxy priced the run.' : ''}</>} />
-        </div>
-      </div>
+      <SpendCharts rows={rows} lo={lo} hi={hi} now={now} />
       <div className="three">
         <Box title="By source">
           {group(rows, 'src').sort((a, c) => c.usd - a.usd).map((g) => (
@@ -133,12 +100,59 @@ export function Spend({ s, rows, lo, hi, now, unk, srcOn }: TabProps) {
           ))}
         </Box>
       </div>
-      <div className="charts" data-new>
-        <div className="st-chart">
-          <Scatter title="Cost against run length" what="Cost against run length, one point per run" points={scatter}
-            x={{ name: 'Length', format: (v) => `${Math.round(v)} min` }} y={{ name: 'Cost', format: axisUsd }} />
-        </div>
-      </div>
+      <RunScatter rows={rows} />
     </>
   );
 }
+
+// The charts read only the rows and the range, so a session or team change repaints the cards and not them.
+const SpendCharts = memo(function SpendCharts({ rows, lo, hi, now }: { rows: J[]; lo: number; hi: number; now: number }) {
+  const [stack, setStack] = useState<'src' | 'model'>('src');
+  const b = buckets(rows, lo, hi, now), unit = b.byDay ? 'day' : 'week';
+  const labels = b.list.map((x) => bucketLabel(x.t));
+  const cut = b.cut ? `Showing the last ${b.list.length} of ${b.total} weeks.` : undefined;
+  // The stack: one series per source, or the top five models and the rest.
+  const topModels = byModel(rows).list.slice(0, 5).map((x) => x.model);
+  const stackSeries = stack === 'src'
+    ? SRCS.filter((k) => b.list.some((x) => x.src[k])).map((k, i) => ({ name: SF_SRC[k]!, color: COLORS[i % 5]!, values: b.list.map((x) => x.src[k] ?? 0) }))
+    : [...topModels.map((k, i) => ({ name: modelName(k), color: COLORS[i]!, values: b.list.map((x) => x.model[k] ?? 0) })),
+      { name: 'Other models', color: 'chart-muted' as const, values: b.list.map((x) => Object.entries(x.model).filter(([k]) => !topModels.includes(k)).reduce((n, [, v]) => n + v, 0)) }]
+      .filter((x) => x.values.some(Boolean));
+  // A click on a bucket narrows the range to that day or week.
+  const drill = (i: number) => {
+    const t = b.list[i]?.t;
+    if (t == null) return;
+    const end = new Date(t); if (!b.byDay) end.setDate(end.getDate() + 6);
+    setFilter({ range: 'custom', from: dayKey(t), to: dayKey(end.getTime()) });
+  };
+  return (
+    <div className="charts">
+      <div className="st-chart" id="st-runs">
+        <Bars title={`Runs per ${unit}`} what={`Runs per ${unit}`} labels={labels} format={(v) => String(Math.round(v))} note={cut}
+          series={[{ name: 'Runs', color: 'chart-1', values: b.list.map((x) => x.runs) }]} onPick={drill} />
+      </div>
+      <div className="st-chart" id="st-spend">
+        <div className="st-toggle" role="group" aria-label="Stack the spend by" data-new>
+          <span>Stack by</span>
+          <button type="button" aria-pressed={stack === 'src'} onClick={() => setStack('src')}>Source</button>
+          <button type="button" aria-pressed={stack === 'model'} onClick={() => setStack('model')}>Model</button>
+        </div>
+        <Bars title={`Spend per ${unit}`} what={`Spend per ${unit}, by ${stack === 'src' ? 'source' : 'model'}`} labels={labels} format={axisUsd} series={stackSeries} onPick={drill}
+          note={<>{cut ? `${cut} ` : ''}Click a bar to see that {unit} only.{stack === 'model' ? ' By model counts subagents where the proxy priced the run.' : ''}</>} />
+      </div>
+    </div>
+  );
+});
+
+// One point per run: the costliest chart to draw, so it repaints only for new rows.
+const RunScatter = memo(function RunScatter({ rows }: { rows: J[] }) {
+  const scatter = rows.filter((r) => typeof r.min === 'number').map((r) => ({ x: r.min, y: (r.usd || 0) + (r.compute_usd || 0), label: String(r.key ?? '') }));
+  return (
+    <div className="charts" data-new>
+      <div className="st-chart">
+        <Scatter title="Cost against run length" what="Cost against run length, one point per run" points={scatter}
+          x={{ name: 'Length', format: (v) => `${Math.round(v)} min` }} y={{ name: 'Cost', format: axisUsd }} />
+      </div>
+    </div>
+  );
+});

@@ -1,8 +1,9 @@
 // The Runners and LLM tab, and the Pipeline tab: the v1 cards, with a chart next to each day table.
+import { memo } from 'react';
 import { StripPlot } from '../../charts';
 import { modelName, tokn, usd } from '../../format';
 import type { J } from '../../model/base';
-import { Bars } from './charts';
+import { Bars } from './lazy';
 import { answerData, llmData, loadDays, mins, pipelineData, runnerData } from './compute';
 import { Box, DayTable, Empty, Row, shortDay, Sub } from './parts';
 
@@ -11,7 +12,8 @@ const STOP_WHY: Record<string, string> = { inactive: 'Paused a day, then closed'
 const h1 = (s: number) => (s / 3600).toFixed(1);
 const oldest = <T,>(a: T[]) => a.slice().reverse();
 
-export function Runners({ st, rows, lo, hi }: { st: J; rows: J[]; lo: number; hi: number }) {
+// memo: the cards read the stats feed and the rows only, so a session or team event does not redraw them.
+export const Runners = memo(function Runners({ st, rows, lo, hi }: { st: J; rows: J[]; lo: number; hi: number }) {
   return (
     <div className="st-cols">
       <LoadCard l={st.load} lo={lo} hi={hi} />
@@ -20,7 +22,7 @@ export function Runners({ st, rows, lo, hi }: { st: J; rows: J[]; lo: number; hi
       <LlmCard l={st.llm} lo={lo} hi={hi} />
     </div>
   );
-}
+});
 
 function LoadCard({ l, lo, hi }: { l: J; lo: number; hi: number }) {
   const days = loadDays(l, lo, hi);
@@ -106,7 +108,7 @@ function LlmCard({ l, lo, hi }: { l: J; lo: number; hi: number }) {
   );
 }
 
-export function Pipeline({ st, lo, hi }: { st: J; lo: number; hi: number }) {
+export const Pipeline = memo(function Pipeline({ st, lo, hi }: { st: J; lo: number; hi: number }) {
   const p = pipelineData(st.pipeline, lo, hi), m = st.memory;
   const o = p ? oldest(p.days) : [];
   return (
@@ -135,7 +137,7 @@ export function Pipeline({ st, lo, hi }: { st: J; lo: number; hi: number }) {
       {m && <MemoryCard m={m} />}
     </div>
   );
-}
+});
 
 function MemoryCard({ m }: { m: J }) {
   const saves = Object.entries(m.saves ?? {}), d = m.last_digest;
