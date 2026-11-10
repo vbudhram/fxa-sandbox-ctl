@@ -258,7 +258,7 @@ def check(rec, name=None):
             bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
-    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage", "board", "sprint", "security_level"})
+    jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage", "board", "sprint"})
     if "project" in jira and not PROJECT.fullmatch(str(jira["project"])):
         bad.append("jira.project must be a Jira project key")
     # jira.board and jira.sprint: a merged ticket goes into the board's active sprint whose name matches.
@@ -269,12 +269,6 @@ def check(rec, name=None):
             bad.append("jira.sprint must be an optional ^ and then 1 to 60 letters, digits, spaces or ._:/()-")
         if "board" not in jira:
             bad.append("jira.sprint needs jira.board")
-    # jira.security_level: a security review files its findings as tickets at this level; a team with none files none.
-    if "security_level" in jira:
-        if not isinstance(jira["security_level"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._()-]{0,59}", jira["security_level"]):
-            bad.append("jira.security_level must be a Jira security level name: 1 to 60 letters, digits, spaces or ._()-")
-        if "project" not in jira:
-            bad.append("jira.security_level needs jira.project")
     if "queue" in jira:
         flag(jira["queue"], "jira.queue")
     if jira.get("queue") and "project" not in jira:
@@ -482,8 +476,7 @@ def env(rec):
         yield "PIPE_JIRA_BOARD", jira["board"]
     if jira.get("sprint"):
         yield "PIPE_JIRA_SPRINT_MATCH", jira["sprint"]
-    if jira.get("security_level"):
-        yield "PIPE_JIRA_SECURITY_LEVEL", jira["security_level"]
+
     # The engineer adds ai-fixme to any ticket; a secret team's states are ai-fixme-private-<state>.
     if jira.get("secret") is True:
         yield "PIPE_SECRET_TICKETS", "1"

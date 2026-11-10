@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check that a security review's findings become restricted Jira tickets (jira.security_level), with no labels.
+# Offline check that a security review's findings become Jira tickets in the team's project, with no labels.
 #   bash lib/routine-findings.check.sh
 source "$(dirname "$0")/session-check-head.sh"
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
@@ -37,19 +37,6 @@ echo "$cfg" > "$tmp/cfg.json"; echo "$heads" > "$tmp/heads.json"
 check "a security review's prompt has the host's findings rule; a code review's does not" "1|0" \
   "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'opens with ```fxa-findings')|$(jq '.template = "code-review"' "$tmp/cfg.json" > "$tmp/cfg2.json"; python3 "$here/routine.py" prompt "$tmp/cfg2.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'fxa-findings')"
 
-# The team record: a valid level loads as PIPE_JIRA_SECURITY_LEVEL; a bad one, or one with no project, is refused.
-check "jira.security_level: a good name loads; a quote, and a level with no project, are refused" "Accounts Security Access|1|1" \
-  "$(python3 - "$here" <<'PY'
-import sys; sys.path.insert(0, sys.argv[1]); import team_record as t
-base = {"schema": 1, "name": "secteam", "repos": [{"slug": "mozilla/fxa-private", "role": "work"}], "access": {"users": ["U1"]}}
-ok = dict(base, jira={"project": "FXA", "security_level": "Accounts Security Access"})
-lvl = dict(t.env(ok)).get("PIPE_JIRA_SECURITY_LEVEL") if not [b for b in t.check(ok) if "security_level" in b] else "refused"
-quote = int(any("jira.security_level must be" in b for b in t.check(dict(base, jira={"project": "FXA", "security_level": "a\"b"}))))
-noproj = int(any("needs jira.project" in b for b in t.check(dict(base, jira={"security_level": "Accounts Security Access"}))))
-print(f"{lvl}|{quote}|{noproj}")
-PY
-)"
-check "a team load keeps no other team's level" "1" "$(grep -c 'PIPE_SLACK_CHANNELS PIPE_JIRA_SECURITY_LEVEL$' "$here/pipeline.sh")"
 
 # Filing, with Jira stubbed: a search finds FXA-50 open for the MEDIUM's id, and nothing for the HIGH.
 mid="$(python3 "$here/routine.py" findings "$tmp/report.md" 1 R x | jq -r '.tickets[1].id')"
@@ -62,13 +49,13 @@ _jira_rest_json() {
     /rest/api/3/issue) [ -n "${CREATE_FAILS:-}" ] && return 22; echo '{"key": "FXA-51"}' ;;
   esac
 }
-PIPE_JIRA_PROJECT=FXA PIPE_JIRA_SECURITY_LEVEL="Accounts Security Access"
+PIPE_JIRA_PROJECT=FXA
 out="$(_routine_file_findings 9 "$tmp/report.md" "$cfg")"
 check "the HIGH is filed and the open MEDIUM gets a comment" "Filed FXA-51 (HIGH)|Found again: FXA-50 (MEDIUM), still open" \
   "$(grep -E '^(Filed|Found again)' <<< "$out" | paste -sd'|' -)"
 create="$(grep '^POST /rest/api/3/issue {' "$tmp/jira" | cut -d' ' -f3-)"
-check "the create sets the security level and the project, and adds no labels" "Accounts Security Access|FXA|false|Bug" \
-  "$(jq -r '.fields | "\(.security.name)|\(.project.key)|\(has("labels"))|\(.issuetype.name)"' <<< "$create")"
+check "the create sets the project, and adds no labels and no security level" "FXA|false|false|Bug" \
+  "$(jq -r '.fields | "\(.project.key)|\(has("labels"))|\(has("security"))|\(.issuetype.name)"' <<< "$create")"
 check "the search looks only at open tickets of the project, by the finding id" "1" \
   "$(grep -c "search/jql .*project = FXA AND statusCategory != Done AND text ~ .*${mid}" "$tmp/jira")"
 check "the report holds keys and severities, and no finding title or file" "0|0" \
@@ -93,6 +80,6 @@ check "done files the tickets, keeps only the keys, and the answer gives the bot
 check "a second done call files nothing more" "1" \
   "$(routine_done "$run" --state report --session agent-sec001 --report-file "$tmp/report.md" >/dev/null; grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
 run2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p2', 'started', 'agent-sec002', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
-check "with no level, a security review keeps its report as before and files nothing" "1|1" \
-  "$(PIPE_JIRA_SECURITY_LEVEL='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+check "with no Jira project, a security review keeps its report as before and files nothing" "1|1" \
+  "$(PIPE_JIRA_PROJECT='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
