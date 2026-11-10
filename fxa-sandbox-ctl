@@ -1466,6 +1466,17 @@ cmd_reconcile() {
 }
 cmd_done_keys() { jira_done_keys; }
 
+# _drain_red_behind <key> <num>   A red done PR that is behind its base gets GitHub's update-branch, once for
+# each base commit: a broken base made many PRs red, and a rerun on the old base fails again. True when updated.
+# ponytail: GitHub says BEHIND only where the base requires an up-to-date branch; elsewhere this does nothing.
+_drain_red_behind() {
+  local key="$1" num="$2" st="" base="" f="${PIPE_STATE_DIR}/${1}.red-behind"
+  read -r st base <<< "$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json mergeStateStatus,baseRefOid -q '"\(.mergeStateStatus) \(.baseRefOid)"' 2>/dev/null || true)"
+  [ "$st" = BEHIND ] && [ -n "$base" ] && [ "$base" != "$(cat "$f" 2>/dev/null || true)" ] || return 1
+  gh_update_branch "$num" 2>/dev/null || return 1
+  printf '%s\n' "$base" > "$f"
+}
+
 # The deterministic half of a pass, in shell: idle passes that loaded the skill
 # each cost a large model turn. Lists only what needs judgment, else one `quiet` line.
 # <KEY>.feedback-noted keeps an already reported comment from making every pass loud.
@@ -1574,7 +1585,8 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
     case "$state" in
       MERGED) if cmd_label "$key" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $key merged #$num (labelled, ticket closed)"; else _drain_wake "$key" "$line (label merged FAILED)"; fi ;;
       CLOSED) if cmd_label "$key" rejected >/dev/null 2>&1; then rejected_n=$((rejected_n + 1)); _info "drain: $key rejected #$num (labelled)"; else _drain_wake "$key" "$line (label rejected FAILED)"; fi ;;
-      RED)    if why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"
+      RED)    if _drain_red_behind "$key" "$num"; then _info "drain: $key #$num was red and behind ${PIPE_BASE_BRANCH:-main}; branch updated, so CI runs on the new base"
+              elif why="$(gh_red_infra "$key")"; then infra=$((infra + 1)); _info "drain: $key $num RED-INFRA $why"
               elif why="$(gh_red_rerun "$key")"; then _info "drain: $key $num RERUN once: $why"
               else
                 # The pass can only report a done PR's red, so the same red (head and failure count)

@@ -7,8 +7,8 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^cmd_precheck() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
-PIPE_LOCK_DIR="$tmp/pass.lock" PIPE_STATE_DIR="$tmp" PIPE_NAME=test
+eval "$(sed -n '/^cmd_precheck() {/,/^}/p;/^_drain_red_behind() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+PIPE_LOCK_DIR="$tmp/pass.lock" PIPE_STATE_DIR="$tmp" PIPE_NAME=test PIPE_REPO_SLUG=o/r
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 pipeline_lock() { :; }; pipeline_unlock() { :; }; db_ingest() { :; }
 cmd_reconcile() { :; }; cmd_reap() { :; }; cmd_label() { :; }
@@ -20,6 +20,8 @@ gh_feedback() { echo '{}'; }
 # PIPE_INFRA_CHECKS): the fingerprint must take the head from the drain line.
 gh_red_infra() { return 1; }
 gh_red_rerun() { return 1; }
+# A red PR that is not behind its base: the red is its own (gh pr view answers mergeStateStatus and the base head).
+gh() { case "$*" in "pr view"*) cat "$tmp/prview" ;; esac; }; echo "BLOCKED base1" > "$tmp/prview"
 pipeline_rebasing() { return 1; }; pipeline_rebases() { echo 0; }; _FXA_REBASE_CAP=5
 cmd_drain() { echo "FXA-7 70 RED ok=9 fail=$(cat "$tmp/fails") running=$(cat "$tmp/running") head=$(cat "$tmp/sha")"; }
 echo aaa > "$tmp/sha"; echo 1 > "$tmp/fails"; echo 0 > "$tmp/running"
@@ -50,6 +52,12 @@ check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
   pipeline_rebasing() { return 1; }; pipeline_rebases() { echo 5; }
   cmd_label() { echo "$*" > "$tmp/label9"; }; b="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-9')"
   check "a live rebase round does not wake; at 5 rebases precheck labels the ticket itself" "0|0|FXA-9 blocked rebases conflicts with main after 5 rebases" "$a|$b|$(cat "$tmp/label9")" )
+# A red done PR that is behind (a broken base made it red): update-branch once for each base commit, and no wake.
+( rm -f "$tmp"/FXA-7.red-noted; echo "BEHIND base2" > "$tmp/prview"; gh_update_branch() { echo "$1" >> "$tmp/upd7"; }
+  a="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-7')"; b="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-7')"
+  check "red and behind: one update-branch and no wake; the same base again: the pass wakes" "0|1|70" "$a|$b|$(paste -sd' ' "$tmp/upd7")"
+  echo "BEHIND base3" > "$tmp/prview"; rm -f "$tmp"/FXA-7.red-noted
+  check "the base moved again: one more update-branch" "0|70 70" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-7')|$(paste -sd' ' "$tmp/upd7")" )
 # A done PR that is only behind, where the base requires it: GitHub updates the branch, no wake.
 ( cmd_drain() { echo "FXA-10 100 BEHIND"; }; gh_update_branch() { echo "$1" > "$tmp/upd10"; }
   check "a BEHIND PR gets update-branch and no wake" "0|100" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-10')|$(cat "$tmp/upd10")" )
