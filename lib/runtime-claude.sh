@@ -35,12 +35,12 @@ runtime_inject_auth() {
 # runs idle up to 57 min while they looked healthy; /goal works the same in -p.
 # The launch is a script so that $(cat prompt) expands in the VM, not on the host
 # inside agent.sh's double quotes. Not stdin: a SessionStart hook consumes it.
-# FXA_AGENT_EFFORT (unset: the CLI default) must stay fixed for a run: a change
-# invalidates the prompt cache, and cache reads are 63% of a run's cost.
+# FXA_AGENT_EFFORT (unset: medium; empty: the CLI default) must stay fixed for a run:
+# a change invalidates the prompt cache, and cache reads are 63% of a run's cost.
 runtime_write_prompt() {
   local prompt="$1" workspace_dir="$2"
   local effort=""
-  [ -n "${FXA_AGENT_EFFORT:-}" ] && effort=" --effort ${FXA_AGENT_EFFORT}"
+  [ -n "${FXA_AGENT_EFFORT-medium}" ] && effort=" --effort ${FXA_AGENT_EFFORT-medium}"
   printf '%s\n' "$prompt" | slot_write "${workspace_dir}/.fxa-auto-prompt.txt"
   local partial="" out="tee -a /workspace/.fxa-auto-claude.jsonl"
   [ "${FXA_SESSION_MODE:-}" = 1 ] && { partial="$_SESSION_CLAUDE_PARTIAL"; out=": > /workspace/.fxa-auto-stream.jsonl; ${_SESSION_CLAUDE_SPLIT}"; }

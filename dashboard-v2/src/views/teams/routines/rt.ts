@@ -20,8 +20,8 @@ export const RT_MODES: [string, string, string][] = [
 ];
 export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr'];
 // As lib/routine.py MODELS and EFFORTS; '' is the host's default.
-export const RT_MODELS: [string, string][] = [['', 'Default (Opus 5.5)'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5']];
-export const RT_EFFORTS: [string, string][] = [['', 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
+export const RT_MODELS: [string, string][] = [['', 'Default (Opus 5.5)'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-fable-5-2', 'Fable 5.2'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5']];
+export const RT_EFFORTS: [string, string][] = [['', 'Default (Medium)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
 // As lib/routine.py RUNTIMES: each runtime's models and efforts; no runtime is Claude.
 export const RT_RUNTIMES: [string, string][] = [['claude', 'Claude'], ['codex', 'Codex']];
 export const RT_PICKS: Record<string, { models: [string, string][]; efforts: [string, string][] }> = {

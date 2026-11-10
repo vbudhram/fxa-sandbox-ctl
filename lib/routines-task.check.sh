@@ -181,7 +181,8 @@ TURN_DIR="$tmp/turn"
 turn() { rm -rf "$TURN_DIR"; session_set "$1" claude_session_id 11111111-2222-3333-4444-555555555555
   ( worktree_branch_for() { echo n; }; _claude_auth_line() { echo T; }; circleci_digests() { :; }; trees_session_flags() { :; }
     vm_exec() { mkdir -p "$TURN_DIR" && tar -xf - -C "$TURN_DIR"; }; _MCP_LAUNCH_SNIPPET="" _MCP_CLAUDE_FLAGS="" _CLAUDE_TOOLS_FLAG=""
-    FXA_AGENT_MODEL="" FXA_AGENT_EFFORT="" _session_turn "$1" hi quiet ) >/dev/null 2>&1
+    if [ -n "${UNSET_EFFORT:-}" ]; then unset FXA_AGENT_EFFORT; else FXA_AGENT_EFFORT=""; fi
+    FXA_AGENT_MODEL="" _session_turn "$1" hi quiet ) >/dev/null 2>&1
   grep -oE -- '--model [^ ]+( --effort [^ ]+)?' "$TURN_DIR/.fxa-steer.sh"; }
 f4="$(fixrun)"; db_exec "UPDATE routine_runs SET config = json_set(config, '$.model', 'claude-sonnet-5-5', '$.effort', 'low') WHERE id = $f4;"
 FXA_LLM_PROXY_URL=http://10.0.0.2:8080 ftask agent-fx04 "$f4" >/dev/null 2>&1
@@ -191,6 +192,7 @@ check "a routine's model and effort reach the session record, the boot's env and
   "$(jq -r '[.agent_model, .agent_effort] | join("|")' "$tmp/agent-fx04.json")|$(grep '^model' "$tmp/booted")|$(turn agent-fx04)"
 check "a routine with no model keeps the host's: no session key, and Opus with no effort on a later turn" \
   "|--model claude-opus-5-5" "$(jq -r '.agent_model // ""' "$tmp/agent-fx02.json")|$(turn agent-fx02)"
+check "with FXA_AGENT_EFFORT unset, a turn runs Opus 5.5 at medium effort" "--model claude-opus-5-5 --effort medium" "$(UNSET_EFFORT=1 turn agent-fx02)"
 # A Codex routine: refused where the host has Codex sessions off; else a codex session, with its model and effort in Codex's env.
 codexrun() { local r; r="$(run pyfxa claimed)"; db_exec "UPDATE routine_runs SET config = json_remove(json_set(config, '$.runtime', 'codex', '$.model', 'gpt-6-astra', '$.effort', 'high'), '$.branch') WHERE id = $r;"; echo "$r"; }
 c1="$(codexrun)"; c2="$(codexrun)"

@@ -624,7 +624,7 @@ STEER
     # The boot's model and effort: a change on a later turn invalidates the prompt cache.
     local model="" effort=""
     model="$(session_get "$key" agent_model)"; model="${model:-${FXA_AGENT_MODEL:-claude-opus-5-5}}"
-    effort="$(session_get "$key" agent_effort)"; effort="${effort:-${FXA_AGENT_EFFORT:-}}"
+    effort="$(session_get "$key" agent_effort)"; effort="${effort:-${FXA_AGENT_EFFORT-medium}}"
     # "--": a message that starts with a dash is text, not a flag.
     cat > "${tmp}/.fxa-steer.sh" <<STEER
 export HOME=/home/agent # claude finds the session to resume under \$HOME/.claude

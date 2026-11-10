@@ -34,7 +34,7 @@ LISTEN = os.environ.get("LLM_PROXY_LISTEN", "0.0.0.0:8788")
 # Only what Claude Code needs; anything else on the key is refused.
 ALLOWED = [("POST", re.compile(r"^/v1/messages(/count_tokens)?$")), ("GET", re.compile(r"^/v1/models(/[\w.-]+)?$"))]
 # $ per million tokens: input, output, cache write, cache read (as lib/telemetry.sh).
-PRICES = [("claude-fable-5-1", (10, 50, 12.5, 0.25)), ("claude-fable-5", (10, 50, 12.5, 1)),
+PRICES = [("claude-fable-5-2", (8, 40, 10, 0.2)), ("claude-fable-5-1", (10, 50, 12.5, 0.25)), ("claude-fable-5", (10, 50, 12.5, 1)),
           ("claude-opus-5-5", (4, 20, 5, 0.2)), ("claude-opus-5", (5, 25, 6.25, 0.5)),
           ("claude-sonnet-5-5", (2, 10, 2.5, 0.1)), ("claude-sonnet-5", (2, 10, 2.5, 0.2)),
           ("claude-haiku-5-5", (0.1, 0.5, 0.125, 0.01)), ("claude-haiku-4-5", (1, 5, 1.25, 0.1))]

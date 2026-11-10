@@ -40,7 +40,7 @@ DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
         "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime"}
 # Unset: the host's model (Opus) and the CLI's default effort. The models are the ones the LLM proxy prices.
-MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
+MODELS = ("claude-opus-5-5", "claude-fable-5-2", "claude-sonnet-5-5", "claude-haiku-5-5")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Each runtime's models and efforts. Codex has only the model telemetry.sh prices; unset runtime is Claude.
 RUNTIMES = {"claude": (MODELS, EFFORTS), "codex": (("gpt-6-astra",), ("low", "medium", "high", "xhigh"))}

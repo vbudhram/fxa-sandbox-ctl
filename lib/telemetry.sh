@@ -123,6 +123,7 @@ telemetry_usage() {
 # across calls, so it uses the base rate (the proxy prices each call).
 _telemetry_price_for() {
   case "$1" in
+    claude-fable-5-2*) echo "8.00 40.00 10.00 0.20" ;;
     claude-fable-5-1*) echo "10.00 50.00 12.50 0.25" ;;
     claude-fable-5*)   echo "10.00 50.00 12.50 1.00" ;;
     claude-opus-5-5*)  echo "4.00 20.00 5.00 0.20" ;;
