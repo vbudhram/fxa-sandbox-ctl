@@ -242,7 +242,7 @@ function Channel({ c, d, e, set, setF, paste }: { c: Ctl; d: J; e: Record<string
     );
   return (
     <Field id="rt-channel" label={label} err={e.channel}
-      hint={<>{onpr ? 'A dependency fix routine needs a channel.' : 'Leave it empty and the results show only in History.'} Invite @fxa-agent to the channel first. A team with a private repo, and every security review, needs a private channel of this team that is not shared with another workspace.
+      hint={<>{onpr ? 'A dependency fix routine needs a channel.' : 'Leave it empty and the results show only in History.'} Invite @fxa-agent to the channel first. A team with a private repo needs a private channel of this team. A security review can use any private channel. The channel must not be shared with another workspace.
         {C.length > 0 && <> <button type="button" data-rt-chlist onClick={() => { setF({ chPaste: false }); set({ channel: '' }); }}>Pick from the list</button></>}</>}>
       <input id="rt-channel" data-rt="channel" className={INPUT} placeholder="C0123ABCD or a link to the channel" value={d.channel} onChange={(ev) => set({ channel: ev.target.value })} {...bad('rt-channel', e.channel)} />
     </Field>

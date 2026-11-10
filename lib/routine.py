@@ -95,25 +95,17 @@ def channels(team, index, env):
     return own, other
 
 
-def kind(team, index, env):
-    """record, env (an access entry in the bot .env) or folder."""
-    if team in (index.get("teams") or {}):
-        return "record"
-    if team in {x.strip() for x in env.get("OPEN", "").split(",")} or team in pairs(env.get("USERS")) \
-            or team in pairs(env.get("CHANNELS")).values() or team in pairs(env.get("JIRA")).values():
-        return "env"
-    return "folder"
-
 
 def channel_why(ch, team, tpl, profile, index, env):
-    """Why this team's routine of template tpl may not post in channel ch, or None."""
+    """Why this team's routine of template tpl may not post in channel ch, or None. A security review posts to any
+    channel: its findings go to Jira, and the bot still refuses a public or shared channel when the run starts."""
+    if tpl == "security-review":
+        return None
     own, other = channels(team, index, env)
     if ch in other:
         return f"Channel {ch} belongs to team {other[ch]}"
     if profile.get("private") and ch not in own:
         return "A team with a private repo posts only to one of this team's channels"
-    if tpl == "security-review" and kind(team, index, env) != "folder" and ch not in own:
-        return "A security review posts only to one of this team's channels"
     return None
 
 

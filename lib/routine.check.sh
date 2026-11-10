@@ -54,8 +54,10 @@ check "an effort off the list" "effort: must be one of low, medium, high, xhigh,
 check "a model and an effort on the list" "ok" "$(v secret priv.json '{"model":"claude-haiku-5-5","effort":"xhigh"}')"
 check "a repo the team does not have" "repos: Repo mozilla/x is not one of this team's repos" "$(v secret priv.json '{"repos":["mozilla/x"]}')"
 echo '{"profile":"second","read_only":false,"private":false,"repos":[{"slug":"mozilla/two","role":"work"}]}' > "$tmp/open.json"
-check "a security review on a record team, on a channel it does not bind" "channel: A security review posts only to one of this team's channels" \
+check "a security review on a record team, on a channel it does not bind, passes" "ok" \
   "$(v second open.json '{"template":"security-review","repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
+check "a private-repo team's security review on a channel it does not bind passes" "ok" \
+  "$(v secret priv.json '{"template":"security-review","channel":"C0OTHER"}')"
 check "a code review on that team's other channel passes" "ok" "$(v second open.json '{"repos":["mozilla/two"],"channel":"C0PUBLIC"}')"
 # on='pr-label': no schedule, mode pr and a channel, the pr repo a work repo, no dev bot on a mozilla repo.
 prl='{"on":"pr-label","mode":"pr","repos":["mozilla/two"],"channel":"C0PUBLIC","pr":{"repo":"mozilla/two","authors":["dependabot[bot]"]}}'
@@ -83,7 +85,7 @@ check "a bad mode" "mode: must be report, pr or pr+notes" "$(v secret priv.json 
 check "a malformed channel" "channel: Use a Slack channel ID (C0123ABCD) or a link to the channel" "$(v secret priv.json '{"channel":"#general"}')"
 check "a pr mode on the team's dep repo, not its work repo (D27)" "mode: A draft PR mode needs exactly one work repo" "$(v secret priv.json '{"repos":["mozilla/fxa"],"mode":"pr"}')"
 echo '{"profile":"envy","read_only":false,"private":false,"repos":[{"slug":"mozilla/envy","role":"work"}]}' > "$tmp/envy.json"
-check "an env-access team: a security review on a channel it does not own is refused" "channel: A security review posts only to one of this team's channels" \
+check "an env-access team: a security review on a channel it does not own passes" "ok" \
   "$(v envy envy.json '{"template":"security-review","repos":["mozilla/envy"],"channel":"C0PUBLIC"}')"
 check "an env-access team: its PROFILE_CHANNELS channel counts as its own" "ok" "$(v envy envy.json '{"template":"security-review","repos":["mozilla/envy"],"channel":"C0ENVY0"}')"
 check "another team cannot use an env-access team's channel" "channel: Channel C0ENVY0 belongs to team envy" "$(v secret priv.json '{"channel":"C0ENVY0"}')"
