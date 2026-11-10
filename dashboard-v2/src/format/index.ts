@@ -12,9 +12,13 @@ export const ago = (s: number | null | undefined): string =>
 export const short = (s: number | null | undefined): string =>
   s == null ? '' : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
 
-// e is an epoch in seconds.
-export const stamp = (e: number | null | undefined): string =>
-  e == null ? '' : new Date(e * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+// e is an epoch in seconds. One formatter for all calls: toLocaleString builds a new one each time, about 10 times slower.
+const STAMP = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+export const stamp = (e: number | null | undefined): string => {
+  if (e == null) return '';
+  const d = new Date(e * 1000);
+  return Number.isNaN(d.getTime()) ? 'Invalid Date' : STAMP.format(d);
+};
 
 // Days since an ISO time, or null.
 export const days = (iso: string | null | undefined): number | null => (iso == null ? null : (Date.now() - Date.parse(iso)) / 86400000);
