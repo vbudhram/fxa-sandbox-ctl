@@ -208,7 +208,7 @@ class LiveHub:
         if not key.startswith("agent-"):
             return False
         s = self.sessions.get(key)
-        return self.srv.team_private(s.get("profile") or "fxa") if isinstance(s, dict) else self.srv.session_private(key)
+        return self.srv.row_private(s) if isinstance(s, dict) else self.srv.session_private(key)
 
     def view(self, event, d, meta, v):
         """The data of one event for viewer v, or None to leave the event out."""

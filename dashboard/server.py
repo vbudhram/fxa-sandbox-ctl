@@ -724,16 +724,21 @@ def people_rows(rows, old):
 
 
 # What a private team's session keeps from a viewer who is not a team admin: its words and its screen.
-PRIVATE_FIELDS = ("request", "media", "last_text", "last_tool")
+PRIVATE_FIELDS = ("request", "media", "last_text", "last_tool", "last_say", "last_error", "wrap_reply", "summary")
+
+
+def row_private(s):
+    """True when a session row's team has a private repo, or the session is narrowed (a security review, D9)."""
+    return str(s.get("watch_narrow") or "") == "1" or team_private(s.get("profile") or "fxa")
 
 
 def session_private(key):
-    """True when the session's team has a private repo; a record that cannot be read counts as private."""
+    """True when the session is private by row_private; a record that cannot be read counts as private."""
     try:
         rec = json.loads((SESSION_DIR / f"{key}.json").read_text())
     except (OSError, ValueError):
         return True
-    return not isinstance(rec, dict) or team_private(rec.get("profile") or "fxa")
+    return not isinstance(rec, dict) or row_private(rec)
 
 
 def redact_session(s):
@@ -759,7 +764,7 @@ def redact_fix(s):
 def session_for(s, admin):
     """A session row as /api/snapshot sends it to this viewer: redacted for a non-admin, without SESSION_UNUSED."""
     if not admin and isinstance(s, dict):
-        s = redact_fix(redact_session(s) if team_private(s.get("profile") or "fxa") else s)
+        s = redact_fix(redact_session(s) if row_private(s) else s)
     return {k: v for k, v in s.items() if k not in SESSION_UNUSED} if isinstance(s, dict) else s
 
 

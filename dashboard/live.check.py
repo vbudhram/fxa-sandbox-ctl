@@ -314,6 +314,21 @@ class Stream(unittest.TestCase):
         self.assertEqual(problems([{"event": "hello", "data": {"v": 1, "epoch": h.epoch, "sid": "s", "viewer": ADMIN, "retention_s": 300, "max_life_s": 900}},
                                    {"id": f"{h.epoch}-1", "event": "snapshot", "data": {"feeds": {}, "sessions": [], "errors": [], "stats": None, "flow": []}}] + a), [])
 
+    def test_a_narrowed_session_and_an_agents_reply_are_private(self):
+        records(example={})
+        open_row = {"key": "agent-n1", "profile": "fxa", "state": "running"}
+        narrow = dict(open_row, key="agent-n2", watch_narrow="1", wrap_reply="r", summary="s", agent={"last_say": "x"})
+        self.assertEqual(server.session_for(open_row, False)["state"], "running")
+        self.assertFalse({"wrap_reply", "summary"} & set(server.session_for(narrow, False)))
+        self.assertNotIn("last_say", server.session_for(narrow, False)["agent"])
+        self.assertEqual(server.session_for(narrow, True)["wrap_reply"], "r")
+        private = dict(narrow, key="agent-n3", profile="example", watch_narrow="")
+        self.assertFalse({"wrap_reply", "summary"} & set(server.session_for(private, False)))
+        self.hub.sessions = {"agent-n1": open_row, "agent-n2": narrow}
+        self.assertEqual((self.hub.private_key("agent-n1"), self.hub.private_key("agent-n2")), (False, True))
+        write(f"{TMP}/sessions/agent-n4.json", dict(narrow, key="agent-n4"))
+        self.assertTrue(server.session_private("agent-n4"))
+
     def test_a_team_feed_with_no_data_yet_still_shows_its_error(self):
         f = {"name": "snapshot:example", "age_seconds": None, "interval": 300, "error": "jira: 500", "refreshing": False, "fetched_at": None, "data": None}
         for v in (ADMIN, USER):
