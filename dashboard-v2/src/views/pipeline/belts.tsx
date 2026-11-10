@@ -1,6 +1,6 @@
 // The Belts tab (v1 beltsHtml, beltRow, beltDetails): tiles, the 9-stop belts by phase, the outside list, and the flow.
-import { motion, useReducedMotion } from 'motion/react';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
+import { m, useReducedMotion } from 'motion/react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
 import { Belt, Spark } from '../../charts';
 import { ago, days, jiraHref, plainMd, prUrl, usd } from '../../format';
 import { beltCount, boardItems, beltGroups } from '../../model';
@@ -62,7 +62,7 @@ function trackCost(agents: J) {
 
 
 export function Belts() {
-  const s = useParts<State>((x) => [...MODEL(x), x.flow]);
+  const s = useParts<State>(MODEL);
   const g: J = beltGroups(s), snap = SNAP(s), sel = s.route.sel, bad = useBadLink();
   const box = useRef<HTMLDivElement>(null);
   const focus = useRef<{ el: HTMLElement; key: string; f: string } | null>(null);
@@ -104,7 +104,12 @@ export function Belts() {
   const offBelts = g.unknown.needs ? 0 : boardItems(s).filter((i: J) => i.column === 'blocked' && i.group === 'wait').length;
   const all = [...GROUPS.flatMap((k) => g[k]), ...g.outside] as J[];
   const ageMax = Math.max(1, ...all.map((r) => ageSecs(r) ?? 0));
-  const row = (r: J) => <BeltRow key={r.t.key} r={r} s={s} open={r.t.key === sel} ageMax={ageMax} />;
+  // A change to what sits above a row moves it, so the row repaints and motion moves it; else a row with the same data skips its repaint.
+  const at = JSON.stringify([sel, bad, g.unknown, all.map((r) => `${r.group}:${r.tone}:${r.t.key}`)]);
+  const row = (r: J) => (
+    <BeltRow key={r.t.key} r={r} open={r.t.key === sel} ageMax={ageMax} at={at}
+      jh={jiraHref(r.t.key, jiraSite(s, r.t.key))} ph={prUrl(r.t.pr, teamRepo(s, r.t.key))} />
+  );
 
   // Working now always shows, so an empty belt says no agent runs; the other groups show only with rows.
   const sub = ([k, who, name, pick]: (typeof BELT_SUBS)[number]) => {
@@ -181,15 +186,20 @@ const onRow = (e: MouseEvent<HTMLAnchorElement>) => {
   location.replace(e.currentTarget.getAttribute('href')!);
 };
 
-function BeltRow({ r, s, open, ageMax }: { r: J; s: Store; open: boolean; ageMax: number }) {
+type RowProps = { r: J; open: boolean; ageMax: number; at: string; jh: string; ph: string };
+// The model builds new row objects on each feed frame, so the row data is compared by value.
+const sameRow = (a: RowProps, b: RowProps) =>
+  a.open === b.open && a.ageMax === b.ageMax && a.at === b.at && a.jh === b.jh && a.ph === b.ph && (a.r === b.r || JSON.stringify(a.r) === JSON.stringify(b.r));
+
+const BeltRow = memo(function BeltRow({ r, open, ageMax, jh, ph }: RowProps) {
   const t = r.t, title = laneTitle(t.summary || t.branch), live = r.group === 'working' && !!t.agent_alive;
-  const jh = jiraHref(t.key, jiraSite(s, t.key)), ph = prUrl(t.pr, teamRepo(s, t.key)), tone = beltTone(r);
+  const tone = beltTone(r);
   const age = ageWords(r), secs = ageSecs(r), cost = live ? COST[t.key] ?? [] : [];
   const href = open ? '#pipeline/belts' : `#pipeline/belts/${encodeURIComponent(t.key)}`;
   // Under MotionConfig "user" a moved row still got a layout transform, so reduced motion turns layout off.
   const still = useReducedMotion();
   return (
-    <motion.li layout={still ? false : 'position'} layoutId={still ? undefined : `belt-${t.key}`} transition={{ duration: 0.3 }} className={cx('belt', open && 'sel')} data-belt={t.key}>
+    <m.li layout={still ? false : 'position'} layoutId={still ? undefined : `belt-${t.key}`} transition={{ duration: 0.3 }} className={cx('belt', open && 'sel')} data-belt={t.key}>
       <div className="bgrid brow">
         <span className="tk">
           <SrcBadge kind={t.slack ? 'slack' : t.pr ? 'github' : 'jira'} />
@@ -227,15 +237,15 @@ function BeltRow({ r, s, open, ageMax }: { r: J; s: Store; open: boolean; ageMax
           {cost.length > 1 && <span className="bcost"><Spark label={`Cost so far: ${usd(cost[cost.length - 1])}`} values={cost} format={usd} /></span>}
         </span>
       </div>
-      {open && <BeltDetails r={r} s={s} jh={jh} ph={ph} />}
-    </motion.li>
+      {open && <BeltDetails r={r} jh={jh} ph={ph} />}
+    </m.li>
   );
-}
+}, sameRow);
 
 
 // The open row's details: four blocks, one main action and the links, each link checked or plain text.
-function BeltDetails({ r, s, jh, ph }: { r: J; s: Store; jh: string; ph: string }) {
-  const t = r.t, i = r.item ?? {}, k = (s.feeds.stats?.data as J)?.tickets?.[t.key], a = t.agent || {}, lim = SNAP(s)?.limits?.attempts ?? 2;
+function BeltDetails({ r, jh, ph }: { r: J; jh: string; ph: string }) {
+  const s = useParts<State>(MODEL), t = r.t, i = r.item ?? {}, k = (s.feeds.stats?.data as J)?.tickets?.[t.key], a = t.agent || {}, lim = SNAP(s)?.limits?.attempts ?? 2;
   const stats = !!s.feeds.stats?.data;
   const team = pipe(s).keyTeam[t.key] || s.prefs.pipeTeam || 'fxa', cap = SNAP(s)?.limits?.feedback_rounds ?? 2;
   const give = i.column === 'blocked' && i.kind === 'rounds' && rtAdmin(s, team);

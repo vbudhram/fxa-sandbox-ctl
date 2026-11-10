@@ -90,8 +90,8 @@ test('a stats frame repaints Stats, and not Errors', () => {
   expect(r).not.toContain('errors');
 });
 
-test('a flow point repaints only the Pipeline flow', () => {
-  expect(repaints(at('e5a17c0d-51'))).toEqual(['pipeline']);
+test('a flow point repaints no view: no view draws the flow points now', () => {
+  expect(repaints(at('e5a17c0d-51'))).toEqual([]);
 });
 
 test('a session delta repaints Sessions', () => {
