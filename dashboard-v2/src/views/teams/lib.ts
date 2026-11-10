@@ -140,6 +140,18 @@ export function teamDays(rows: J[] | null | undefined, p: string, at = Date.now(
   }
   return out;
 }
+// The daily counts of every team in one pass over the rows: All teams has a sparkline per team.
+// The same days as teamDays, without its day labels.
+export function teamDaysBy(rows: J[] | null | undefined, at = Date.now()): (p: string) => number[] {
+  const by = new Map<string, number[]>();
+  for (const r of rows ?? []) {
+    const d = Math.floor((at / 1000 - rowT(r)) / 86400), p = r.profile || 'fxa';
+    if (!(d >= 0 && d < 30)) continue;
+    const n = by.get(p) ?? by.set(p, Array(30).fill(0)).get(p)!;
+    n[29 - d] = n[29 - d]! + 1;
+  }
+  return (p) => by.get(p) ?? Array(30).fill(0);
+}
 // This month's spend by day, and the straight-line projection to the month end.
 export function teamBurn(rows: J[] | null | undefined, p: string, monthUsd: number, at = Date.now()) {
   const d0 = new Date(at), first = new Date(d0.getFullYear(), d0.getMonth(), 1).getTime(), ndays = new Date(d0.getFullYear(), d0.getMonth() + 1, 0).getDate();

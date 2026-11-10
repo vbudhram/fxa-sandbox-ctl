@@ -1,5 +1,5 @@
 // All teams: the tiles, the drafts that wait for a step, and the table with sortable columns.
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Spark } from '../../charts';
 import { ago, usd } from '../../format';
 import { getJson } from '../../live/api';
@@ -7,7 +7,7 @@ import { type J, STATS } from '../../model/base';
 import { teamName } from '../../model/teams';
 import { useApp } from '../../store';
 import { Card, StatTile, Tag } from '../../ui';
-import { allTeams, budgetOf, plural, teamDays, teamDraftOf, teamProblem, teamTestState } from './lib';
+import { allTeams, budgetOf, plural, teamDaysBy, teamDraftOf, teamProblem, teamTestState } from './lib';
 import { BudgetCell, ProblemCell, TestCell } from './parts';
 
 type Col = { k: string; label: string; key: (t: J) => string | number };
@@ -24,6 +24,25 @@ function status(t: J): [string, 'ok' | 'warn' | 'bad' | undefined] {
   return t.load_error ? ['did not load', 'bad'] : teamDraftOf(t) ? [t.access.status, t.access.status === 'disabled' ? 'warn' : undefined] : ['active', 'ok'];
 }
 
+// memo: a stats frame repaints only the rows whose 30 days changed.
+const Row = memo(function Row({ t, n, known }: { t: J; n: number[]; known: boolean }) {
+  const [st, tone] = status(t), total = n.reduce((x, y) => x + y, 0);
+  return (
+    <tr>
+      <td><a href={`#teams/${t.profile}`} className="tname">{t.load_error ? t.profile : teamName(t)}</a></td>
+      <td>
+        <Tag label={st} tone={tone} />
+        {t.read_only && <> <Tag label="read-only" title="This team gets diffs only, never a PR" /></>}
+        {t.access?.open === 'built-in' && <> <Tag label="built in" title="Built into the bot: the operator changes it in the repo" /></>}
+      </td>
+      <td className="tbud">{t.load_error ? '—' : <BudgetCell t={t} />}</td>
+      <td className="tspark">{known && total ? <Spark label={`${t.load_error ? t.profile : teamName(t)}: ${plural(total, 'session or run', 'sessions and runs')} in 30 days`} values={n} /> : <span className="na">{known ? 'none' : '—'}</span>}</td>
+      <td>{t.load_error ? '—' : <TestCell t={t} />}</td>
+      <td>{t.load_error ? <Tag label="did not load" tone="bad" /> : <ProblemCell t={t} />}</td>
+    </tr>
+  );
+}, (a, b) => a.t === b.t && a.known === b.known && a.n.join() === b.n.join());
+
 export function AllTeams() {
   const a = useApp(allTeams), admin = useApp((s) => s.viewer.admin), rows = useApp((s) => STATS(s)?.rows ?? null);
   const err = useApp((s) => s.feeds.teams?.error ?? null), age = useApp((s) => s.feeds.teams?.ageSeconds ?? null);
@@ -35,7 +54,7 @@ export function AllTeams() {
   const [sort, setSort] = useState<{ k: string; dir: 1 | -1 } | null>(null);
   const col = COLS.find((c) => c.k === sort?.k);
   const ts = col && sort ? [...a.ts].sort((x, y) => (col.key(x) < col.key(y) ? -1 : col.key(x) > col.key(y) ? 1 : 0) * sort.dir) : a.ts;
-  const days = (p: string) => teamDays(rows, p).map((d) => d.n);
+  const days = teamDaysBy(rows);
   return (
     <div className="tpage">
       <div className="thead-row">
@@ -80,23 +99,7 @@ export function AllTeams() {
               </tr>
             </thead>
             <tbody>
-              {ts.map((t) => {
-                const [st, tone] = status(t), n = days(t.profile), total = n.reduce((x, y) => x + y, 0);
-                return (
-                  <tr key={t.profile}>
-                    <td><a href={`#teams/${t.profile}`} className="tname">{t.load_error ? t.profile : teamName(t)}</a></td>
-                    <td>
-                      <Tag label={st} tone={tone} />
-                      {t.read_only && <> <Tag label="read-only" title="This team gets diffs only, never a PR" /></>}
-                      {t.access?.open === 'built-in' && <> <Tag label="built in" title="Built into the bot: the operator changes it in the repo" /></>}
-                    </td>
-                    <td className="tbud">{t.load_error ? '—' : <BudgetCell t={t} />}</td>
-                    <td className="tspark">{rows && total ? <Spark label={`${t.load_error ? t.profile : teamName(t)}: ${plural(total, 'session or run', 'sessions and runs')} in 30 days`} values={n} /> : <span className="na">{rows ? 'none' : '—'}</span>}</td>
-                    <td>{t.load_error ? '—' : <TestCell t={t} />}</td>
-                    <td>{t.load_error ? <Tag label="did not load" tone="bad" /> : <ProblemCell t={t} />}</td>
-                  </tr>
-                );
-              })}
+              {ts.map((t) => <Row key={t.profile} t={t} n={days(t.profile)} known={!!rows} />)}
             </tbody>
           </table>
         </div>

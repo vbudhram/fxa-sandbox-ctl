@@ -64,9 +64,9 @@ export async function refreshTeams() {
 }
 
 export async function readRecord(n: string): Promise<Rec> {
-  const g = await getJson<J>(`/api/teams/${enc(n)}`);
+  // Both reads at once: the secrets do not wait for the record.
+  const [g, sr] = await Promise.all([getJson<J>(`/api/teams/${enc(n)}`), getJson<Record<string, string>>(`/api/teams/${enc(n)}/secrets`)]);
   if (!('data' in g)) return { name: n, ok: false, msg: g.error };
-  const sr = await getJson<Record<string, string>>(`/api/teams/${enc(n)}/secrets`);
   const { generation, tested, ...rec } = g.data;
   delete rec.test_log;
   return { name: n, ok: true, msg: '', rec, gen: generation, tested, secrets: 'data' in sr ? sr.data : {} };

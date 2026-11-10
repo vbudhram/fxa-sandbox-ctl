@@ -1,4 +1,5 @@
 // A team's Overview: the banner, four tiles, Activity and the budget burn, Recent work, the Routines strip and Readiness.
+import { memo, useMemo } from 'react';
 import { Frame, NoData, useChartKeys, useWidth } from '../../charts/frame';
 import { prUrl, usd } from '../../format';
 import { ERRS, type J, LIVE_SESSION, SS, STATS, TEAM_ADMIN } from '../../model/base';
@@ -32,7 +33,8 @@ function Banner({ t }: { t: J }) {
 }
 
 // 30 bars, Slack cost on pipeline cost; a day with runs and no cost still shows its count.
-function Activity({ p }: { p: string }) {
+// memo: an errors or a session delta repaints the tiles, not the 30-day pass over the stats rows.
+const Activity = memo(function Activity({ p }: { p: string }) {
   const rows = useApp((s) => STATS(s)?.rows ?? null), [ref, width] = useWidth(300);
   const ds = teamDays(rows, p), k = useChartKeys(ds.length);
   if (!rows) return <><h3>Activity, 30 days</h3><p className="na">—</p></>;
@@ -65,10 +67,10 @@ function Activity({ p }: { p: string }) {
       </div>
     </Frame>
   );
-}
+});
 
 // This month's spend so far, the straight-line projection to the month end, and the cap.
-function Burn({ t }: { t: J }) {
+const Burn = memo(function Burn({ t }: { t: J }) {
   const rows = useApp((s) => STATS(s)?.rows ?? null), [ref, width] = useWidth(300);
   const b = t.budget, d = teamBurn(rows, t.profile, b?.month_usd ?? 0), k = useChartKeys(d.cum.length);
   if (!b || !rows) return null;
@@ -94,14 +96,15 @@ function Burn({ t }: { t: J }) {
       </div>
     </Frame>
   );
-}
+});
 
 // The 5 newest runs of the team; a routine run is named only for an admin.
-function Recent({ p }: { p: string }) {
+const Recent = memo(function Recent({ p }: { p: string }) {
   const stats = useApp((s) => STATS(s)), ss = useApp(SS), admin = useApp((s) => TEAM_ADMIN(s).admin);
+  // A session delta changes the names only: the newest 5 rows wait for a stats change.
+  const rows = useMemo(() => ((stats?.rows ?? []) as J[]).filter((r) => (r.profile || 'fxa') === p).sort((a, b) => rowT(b) - rowT(a)).slice(0, 5), [stats, p]);
   if (!stats) return <p className="na">—</p>;
   const by = new Map(ss.map((x) => [x.key, x])), st = store.getState() as Store;
-  const rows = ((stats.rows ?? []) as J[]).filter((r) => (r.profile || 'fxa') === p).sort((a, b) => rowT(b) - rowT(a)).slice(0, 5);
   if (!rows.length) return <p className="na">No sessions or runs in 30 days.</p>;
   return (
     <>
@@ -117,7 +120,7 @@ function Recent({ p }: { p: string }) {
       })}
     </>
   );
-}
+});
 
 function Readiness({ t }: { t: J }) {
   const rows = teamReadiness(t), good = rows.filter((r) => r[1] === 'good').length, set = `#teams/${t.profile}/settings`;

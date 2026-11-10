@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { budgetOf, newTeamCheck, newTeamErrs, newTeamRecord, teamApply, teamBanner, teamDays, teamItemDraft, teamPatch, teamRetest, teamTestState, textSize } from './lib';
+import { budgetOf, newTeamCheck, newTeamErrs, newTeamRecord, teamApply, teamBanner, teamDays, teamDaysBy, teamItemDraft, teamPatch, teamRetest, teamTestState, textSize } from './lib';
 
 const rec = { name: 'example', status: 'active', repos: [{ slug: 'example/app', role: 'work' }], caps: { launches_per_day: 40, usd_per_day: 5 },
   access: { open: false, users: ['UEXAMPLE1'], channels: [], jira_prefixes: [] }, jira: { project: 'EX', queue: true, board: '7' }, prompts: { goal_md: 'Example work.' } };
@@ -74,4 +74,11 @@ test('the budget tones, the banner order with "and N more", the 30 days, and the
   expect(ds.at(-3)).toMatchObject({ n: 1, slack: 0, pipe: 3 });
   expect(textSize('é', 2560)).toBe('2 of 2560');
   expect(textSize('x'.repeat(2400), 2560)).toBe('2400 of 2560 bytes, 160 left');
+});
+
+test('teamDaysBy gives each team the counts of teamDays, in one pass over the rows', () => {
+  const at = Date.UTC(2026, 10, 3, 12), s = at / 1000;
+  const rows = [{ profile: 'a', t0: s - 60 }, { profile: 'a', t0: s - 86400 * 2 }, { profile: 'b', at: new Date(at - 86400000 * 29.5).toISOString() }, { t0: s - 10 }, { profile: 'a', t0: s - 86400 * 31 }, { profile: 'a', t0: s + 60 }];
+  const by = teamDaysBy(rows, at);
+  for (const p of ['a', 'b', 'fxa', 'none']) expect(by(p)).toEqual(teamDays(rows, p, at).map((d) => d.n));
 });
