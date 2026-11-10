@@ -23,6 +23,8 @@ const d = (a: Action) => store.setState((s) => apply(s, a), true);
 const start = store.getState();
 
 beforeEach(() => {
+  // A row's elapsed seconds read the clock: a second that passes mid-test is a real change.
+  vi.useFakeTimers({ toFake: ['Date'] });
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   store.setState(start, true);
   d(viewerAction({ data: fixture['/api/team-admin'], etag: null }));
@@ -31,7 +33,7 @@ beforeEach(() => {
   render(<Belts />);
   title.n = 0;
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 const agents = (f: (a: J) => void) => act(() => {
   const a = structuredClone(store.getState().feeds.agents!.data) as J;
