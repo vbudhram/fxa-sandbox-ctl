@@ -1,5 +1,5 @@
 // Errors: one row per signature that the host and the bot recorded, with its list and its details (design 6.9).
-import { useEffect, useState, type ReactNode } from 'react';
+import { memo, useEffect, useState, type ReactNode } from 'react';
 import { errOpen } from '../../app/derive';
 import type { SideGroup } from '../../app/store';
 import type { ViewChunk } from '../../app/views';
@@ -8,7 +8,7 @@ import { ago, sentence } from '../../format';
 import type { ErrorRow } from '../../live/schema';
 import { SESSION_RE, sessTabOf } from '../../router';
 import { useApp } from '../../store';
-import type { Session, Store } from '../../store/types';
+import type { Store } from '../../store/types';
 import { Kv, Meter, Tag, type Tone } from '../../ui';
 import { Button } from '../../ui/button';
 import './errors.css';
@@ -32,12 +32,19 @@ const lastAgo = (e: E) => {
 const minute = (iso: string | undefined) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
 const resolvedText = (e: E) => (e.resolved ? `${String(e.resolved.at ?? '').slice(0, 10)}${e.resolved.note ? `: ${e.resolved.note}` : ''}` : '');
 
+// The Sessions tab of each session key in the list: a session delta that moves no key to another tab repaints nothing.
+const sessTabs = (s: Store) => {
+  const o: Record<string, string> = {};
+  for (const e of list(s) ?? []) for (const k of e.keys ?? []) o[k] = sessTabOf(s.sessions.byKey[k]?.state);
+  return o;
+};
+
 // A key opens the session on its own tab; a key the store does not know opens Stopped, as in v1.
-function SessLinks({ keys, byKey }: { keys: string[]; byKey: Record<string, Session> }) {
+function SessLinks({ keys, tabs }: { keys: string[]; tabs: Record<string, string> }) {
   return keys.map((k, i) => (
     <span key={k}>
       {i ? ' ' : ''}
-      {SESSION_RE.test(k) ? <a className="font-mono" href={`#sessions/${sessTabOf(byKey[k]?.state)}/${k}`}>{k}</a> : <span className="font-mono">{k}</span>}
+      {SESSION_RE.test(k) ? <a className="font-mono" href={`#sessions/${tabs[k] ?? 'stopped'}/${k}`}>{k}</a> : <span className="font-mono">{k}</span>}
     </span>
   ));
 }
@@ -68,7 +75,7 @@ function Recency({ age, word }: { age: number | null; word: string }) {
 }
 
 // Open signatures by source and kind.
-function OpenHeat({ rows }: { rows: E[] }) {
+const OpenHeat = memo(function OpenHeat({ rows }: { rows: E[] }) {
   const open = rows.filter(errOpen);
   if (!open.length) return null;
   const by = new Map<string, number>();
@@ -88,13 +95,14 @@ function OpenHeat({ rows }: { rows: E[] }) {
       />
     </div>
   );
-}
+});
 
 const Head = ({ title, n }: { title: string; n?: number }) => (
   <h2>{sentence(title)}{n != null && <span className="n">{n}</span>}</h2>
 );
 
-function Row({ e, max, byKey }: { e: E; max: number; byKey: Record<string, Session> }) {
+// memo: a delta keeps the rows that it does not change, so only the changed row repaints.
+const Row = memo(function Row({ e, max, tabs }: { e: E; max: number; tabs: Record<string, string> }) {
   const st = e.status ?? 'unknown', word = lastAgo(e);
   return (
     <div className="err" id={`err-${e.sig}`}>
@@ -103,7 +111,7 @@ function Row({ e, max, byKey }: { e: E; max: number; byKey: Record<string, Sessi
         <div className="m">{e.message}</div>
         <div className="meta">
           <span className="font-mono">{e.sig}</span> · {e.source ?? '?'}/{e.kind ?? '?'} · {e.where ?? '?'} · ×{e.count ?? '?'} · last {word}
-          {e.keys?.length ? <> · <SessLinks keys={e.keys} byKey={byKey} /></> : null}
+          {e.keys?.length ? <> · <SessLinks keys={e.keys} tabs={tabs} /></> : null}
           {e.log ? <> · <span className="font-mono">{e.log}</span></> : null}
           {e.resolved ? ` · ${e.status === 'reopened' ? 'last fix' : 'resolved'} ${resolvedText(e)}` : null}
         </div>
@@ -114,7 +122,7 @@ function Row({ e, max, byKey }: { e: E; max: number; byKey: Record<string, Sessi
       </div>
     </div>
   );
-}
+});
 
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -122,7 +130,7 @@ function Main() {
   const f = useApp((s) => s.feeds.errors);
   const tab = useApp((s) => s.route.tab);
   const sel = useApp((s) => s.route.sel);
-  const byKey = useApp((s) => s.sessions.byKey);
+  const tabs = useApp(sessTabs);
   useEffect(() => {
     if (sel) document.getElementById(`err-${sel}`)?.scrollIntoView({ block: 'center', behavior: reduced() ? 'auto' : 'smooth' });
   }, [sel]);
@@ -144,7 +152,7 @@ function Main() {
         ) : (
           <>
             <OpenHeat rows={l} />
-            <div className="errs">{rows.map((e) => <Row key={e.sig} e={e} max={max} byKey={byKey} />)}</div>
+            <div className="errs">{rows.map((e) => <Row key={e.sig} e={e} max={max} tabs={tabs} />)}</div>
             <p className="empty err-hint">
               Mark one fixed: <span className="font-mono">{CLI('<sig>')}</span>. It reopens if it happens again. The log is also copied to the
               state bucket under <span className="font-mono">errors/</span>. <Copy text={CLI('<sig>')} label="Copy the resolve command" />
@@ -187,7 +195,7 @@ function right(s: Store): ReactNode | null {
         <Kv label="Seen" value={e.count == null ? '—' : `${e.count} times`} na={e.count == null} />
         <Kv label="First" value={v(minute(e.first))} na={!e.first} />
         <Kv label="Last" value={v(minute(e.last))} na={!e.last} />
-        {e.keys?.length ? <Kv label="Sessions" value={<SessLinks keys={e.keys} byKey={s.sessions.byKey} />} /> : null}
+        {e.keys?.length ? <Kv label="Sessions" value={<SessLinks keys={e.keys} tabs={sessTabs(s)} />} /> : null}
         {e.log ? <Kv label="Log" value={<span className="font-mono">{e.log}</span>} /> : null}
         {e.resolved ? <Kv label="Resolved" value={resolvedText(e)} /> : null}
       </div>
