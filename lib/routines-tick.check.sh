@@ -736,6 +736,16 @@ jqn() { : > "$tmp/jqn"; ( jq() { echo >> "$tmp/jqn"; command jq "$@"; }; tick "$
 a="$(jqn $((N + 20)) a)"; b="$(jqn $((N + 30)) b)"
 check "a tick hands out the queued run, then has none" "1|0" "$(jq '.runs | length' "$tmp/jqta")|$(jq '.runs | length' "$tmp/jqtb")"
 check "a queued run costs at most 6 jq starts in a tick" "yes" "$([ $((a - b)) -le 6 ] && echo yes || echo "no: $((a - b))")"
+# The real _routine_head: with the team, the App token minted for the repo reads it; the host login gets a 404.
+( eval "$(sed -n '/^_routine_head() {/,/^}/p' "$(dirname "$0")/routines.sh")"
+  gh() { [ -n "${GH_TOKEN:-}" ] && echo 2222222222222222222222222222222222222222 || return 1; }
+  pipeline_load() { [ "$1" = secteam ]; }; github_app_enabled() { :; }
+  github_app_token() { [ "$PIPE_REPO_SLUG" = mozilla/private ] && echo tok; }
+  unset GH_TOKEN
+  printf '%s|%s|%s\n' "$(_routine_head mozilla/private "" secteam)" "$(_routine_head mozilla/private "" || echo none)" \
+    "$(_routine_head mozilla/private "" otherteam || echo none)" ) > "$tmp/head-app"
+check "a private repo's head: read with the team's App token; with no team, or a team that does not load, none" \
+  "2222222222222222222222222222222222222222|none|none" "$(cat "$tmp/head-app")"
 fi
 
 exit "$fail"

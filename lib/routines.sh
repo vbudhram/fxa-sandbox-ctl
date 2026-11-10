@@ -580,8 +580,15 @@ prfix_sweep() {
 _routine_now() { if [[ "${FXA_ROUTINE_NOW:-}" =~ ^[0-9]{9,11}$ ]]; then echo "$FXA_ROUTINE_NOW"; else date +%s; fi; }
 
 # _routine_head <slug> <branch or "">   The branch head's 40-hex SHA (the default branch when none), or fail.
+# With <team>, the repo is read with a GitHub App token minted for it (the host's token is minted for one other repo,
+# so it cannot see a private one). With no token (not a work repo of the team, or no App), the host login reads it.
 _routine_head() {
-  local sha; sha="$(gh api "repos/$1/commits/${2:-HEAD}" --jq .sha 2>/dev/null)" && [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && echo "$sha"
+  local sha=""
+  [ -z "${3:-}" ] || sha="$( pipeline_load "$3" >/dev/null 2>&1 && github_app_enabled || exit 1
+    PIPE_REPO_SLUG="$1"; GH_TOKEN="$(github_app_token 2>/dev/null)" || exit 1; export GH_TOKEN
+    gh api "repos/$1/commits/${2:-HEAD}" --jq .sha 2>/dev/null )" || sha=""
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || sha="$(gh api "repos/$1/commits/${2:-HEAD}" --jq .sha 2>/dev/null)" || sha=""
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] && echo "$sha"
 }
 # _routine_team_paused <team>   The pause reason of the team's pipeline (exit 0), nothing (exit 1), or exit 2
 # when the team does not load (fail closed: the caller skips it).
@@ -609,7 +616,7 @@ _routine_post() {
   local last; last="$(db_value "SELECT state || char(9) || coalesce(reason, '') FROM routine_runs WHERE routine_id = $1 AND ((posted = 1 AND state IN ('skipped','failed')) OR state IN ('ok','report','nochange')) ORDER BY id DESC LIMIT 1;")" || return 1
   case "$last" in skipped$'\t'"$2"|failed$'\t'"$2") echo false ;; *) echo true ;; esac
 }
-# _routine_heads <config json> <routine id>   {"<slug>": {start, head}}: each head read live (fail closed), each
+# _routine_heads <config json> <routine id> [<team>]   {"<slug>": {start, head}}: each head read live (fail closed), each
 # start the head of this routine's last started run.
 _routine_heads() {
   local slug br head start out="{}" prev
@@ -618,7 +625,7 @@ _routine_heads() {
   [ -n "$prev" ] || prev='{}'
   br="$(jq -r '.branch // ""' <<< "$1")"
   for slug in $(jq -r '.repos[], (.watch // empty)' <<< "$1"); do
-    head="$(_routine_head "$slug" "$br")" || { echo "cannot read the head of ${slug}" >&2; return 3; }
+    head="$(_routine_head "$slug" "$br" "${3:-}")" || { echo "cannot read the head of ${slug}" >&2; return 3; }
     start="$(jq -r --arg s "$slug" '.[$s].head // empty' <<< "$prev" 2>/dev/null || true)"
     out="$(jq -c --arg s "$slug" --arg h "$head" --arg st "$start" '. + {($s): {start: (if $st == "" then null else $st end), head: $h}}' <<< "$out")"
     # The watch repo is read on its default branch, after the repos.
@@ -791,7 +798,7 @@ routine_tick() {
       [ "$n" = 0 ] || why="a run of this routine is still in progress"
     fi
     if [ -z "$why" ]; then
-      local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
+      local hrc=0; heads="$(_routine_heads "$cfg" "$id" "$team" 2>/dev/null)" || hrc=$?
       case $hrc in 0) ;; 3) why="cannot read the branch head" ;; *) rm -f "$f"; echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
     fi
     if [ -z "$why" ] && [ "$(jq -r '.skip_no_commits // true' <<< "$cfg")" = true ] \
@@ -1122,7 +1129,7 @@ routine_runnow() {
   fi
   [ -z "$why" ] || { echo "ERROR: routine ${id} cannot run now: ${why}" >&2; return 1; }
   [ -z "$pr" ] || { _prfix_runnow "$team" "$id" "$cfg" "$pr" "$now"; return; }
-  local hrc=0; heads="$(_routine_heads "$cfg" "$id" 2>/dev/null)" || hrc=$?
+  local hrc=0; heads="$(_routine_heads "$cfg" "$id" "$team" 2>/dev/null)" || hrc=$?
   case $hrc in 0) ;; 3) echo "ERROR: routine ${id} cannot run now: cannot read the branch head" >&2; return 1 ;; *) echo "$_ROUTINE_STORE" >&2; return 1 ;; esac
   n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
       SELECT $id, 'manual-${now}', 'manual', $(db_q "$(_teams_actor)"), 'queued', json($(db_q "$cfg")), json($(db_q "$heads")), $now
