@@ -1039,12 +1039,14 @@ routine_done() {
 }
 
 # _routine_file_findings <run> <report file> <routine config>   A tickets-mode routine's findings as tickets in the team's
-# Jira project, with no labels. A finding whose id is already in a ticket is not filed again: an open ticket gets a comment.
+# Jira project, with no labels, at most ROUTINE_TICKETS_MOST new ones a run. A finding whose id is already in a ticket is
+# not filed again: an open ticket gets a comment.
 # Prints the report to keep and post: the ticket keys and severities, no finding details. Fails when the report has no
 # findings block, or there is no Jira login. ponytail: a create is not retried (it must not repeat), so a
 # failed one is only named in the report; the next run that finds it again files it.
+ROUTINE_TICKETS_MOST=5
 _routine_file_findings() {
-  local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" t q k sc body out="" listed n=0 tk id sev name
+  local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" t q k sc body out="" listed n=0 tk id sev name made=0 over=""
   [ -n "$p" ] || { echo "ERROR: the team has no Jira project" >&2; return 1; }
   _jira_sa || { echo "ERROR: tickets need the team's Jira service account" >&2; return 1; }
   name="$(jq -r .name <<< "$cfg")"
@@ -1071,15 +1073,19 @@ _routine_file_findings() {
       else out+=$'\n'"Found again: ${k} (${sev}), still open; the comment failed"; fi
       continue
     fi
+    # Over the cap: counted in the summary; a later run files it if it is still there.
+    [ "$made" -lt "$ROUTINE_TICKETS_MOST" ] || { over+="${sev}"$'\n'; continue; }
     body="$(jq -c --arg p "$p" '{fields: {project: {key: $p}, issuetype: {name: "Bug"}, summary: .summary,
       description: {type: "doc", version: 1, content: [.description | split("\n")[] | select(length > 0) | {type: "paragraph", content: [{type: "text", text: .}]}]}}}' <<< "$tk")"
     k="$(_jira_rest_json POST /rest/api/3/issue "$body" | jq -r '.key // empty')" || k=""
-    if [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then out+=$'\n'"Filed ${k} (${sev})"
+    if [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then out+=$'\n'"Filed ${k} (${sev})"; made=$((made + 1))
     else
       out+=$'\n'"Not filed: a ${sev} finding (Jira refused the ticket)"
       errors_record routine jira_create_failed "" "routine ${run} findings" "Jira refused a ticket in ${p}" "" 2>/dev/null || true
     fi
   done < <(jq -c '.tickets[]' <<< "$t")
+  # The findings come worst first, so the counts keep that order.
+  [ -z "$over" ] || out+=$'\n'"Not filed: $(grep -c . <<< "$over") more finding(s) over the cap of ${ROUTINE_TICKETS_MOST} new tickets a run ($(uniq -c <<< "${over%$'\n'}" | awk '{printf "%s%s %s", (NR > 1 ? ", " : ""), $1, $2}')). A later run files them if they are still there."
   if [ "$n" = 0 ]; then printf '%s: no finding to file (%s listed, none MEDIUM or above).\n' "$name" "$listed"
   else printf '%s: %s finding(s) for tickets (%s listed).%s\n' "$name" "$n" "$listed" "$out"; fi
 }

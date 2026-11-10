@@ -79,6 +79,17 @@ check "a refused create is named in the report and recorded, with no second try"
 out="$(SEARCH_FAILS=1 _routine_file_findings 9 "$tmp/report.md" "$cfg")"
 check "a failed search files nothing for that finding, so no duplicate" "1|0" \
   "$(grep -c 'Not filed: a HIGH finding (the Jira search failed)' <<< "$out")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+# Seven new findings: five tickets, and the other two counted by severity, worst first.
+python3 - "$tmp/many.md" <<'PY'
+import json, sys
+f = [{"severity": s, "title": f"Finding {i}", "file": f"a/f{i}.js:{i + 1}", "symbol": f"s{i}", "cwe": "CWE-1",
+      "attack": "an attacker sends a crafted request to the route"} for i, s in enumerate(["HIGH"] * 5 + ["CRITICAL", "MEDIUM"])]
+open(sys.argv[1], "w").write("Counts only.\n```fxa-findings\n" + json.dumps(f) + "\n```\n")
+PY
+: > "$tmp/jira"
+out="$(_routine_file_findings 9 "$tmp/many.md" "$cfg")"
+check "a run files at most 5 new tickets, and counts the rest worst first" "5|Not filed: 2 more finding(s) over the cap of 5 new tickets a run (1 HIGH, 1 MEDIUM). A later run files them if they are still there." \
+  "$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")|$(grep '^Not filed: 2 more' <<< "$out")"
 check "no service account: nothing is filed" "1" "$(_jira_sa() { return 1; }; _routine_file_findings 9 "$tmp/report.md" "$cfg" >/dev/null 2>&1; echo $?)"
 
 # routine done: the security review's report becomes the keys-only text, in the row and in the answer.
