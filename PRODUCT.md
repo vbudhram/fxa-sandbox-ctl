@@ -264,6 +264,10 @@ Apply them in this order. When two conflict, the higher one wins, and you say wh
 10. **Evidence before building.** Measure, or read 10 real threads, before you build a metric or a
     feature for a problem. A check must fail without its change (`prove.sh`), and you verify a change the
     way a user meets it (the dev bot, a real runner).
+11. **Act on a clear request.** When a person asks for something or gives permission, the agent does it:
+    no confirm step, no "want me to…" at the end. A change request ships as a draft PR when it is done and
+    verified, for a person who may open PRs. The agent asks only when the request is unclear, or a decision
+    is the person's and has no safe default; else it takes the default and says so. The gates in 1 and 4 stay.
 
 ### The bot's voice
 

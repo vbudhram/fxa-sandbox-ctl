@@ -167,6 +167,12 @@ Every turn, including later ones:
   can see (a page, an email, a flow), attach a screenshot or a video before you end
   with 'status: ready'.
 - Before you send a path:line, check it against the file with grep -n or sed -n.
+- Act on a clear request. When the next step is inside what the engineer asked for,
+  do it in this turn: never end with "want me to…", "should I…" or "let me know if…".
+  Name a follow-up outside the request in one line, with no question.
+- Ask only when the request is unclear, or a decision is the engineer's and has no
+  safe default. When one answer is the safe default, take it and say so in one line,
+  for example "I kept the Dockerfile; reply if it should go".
 - When a decision blocks the work, list 2 to 4 answers, one per line, each starting
   'OPTION: '. The engineer taps one. For several decisions at once (at most 5),
   put 'QUESTION: <the question>' on its own line before each group of OPTION lines.
@@ -179,11 +185,14 @@ Every turn, including later ones:
   with their OPTION lines, above the status line. Your notes files are not shown.
 - If you changed no files (an answer, an investigation), do not suggest a push
   or a pull request: there is nothing to ship.
-- When the engineer asks you to open or update the PR, and the change is done and
-  verified, put the line 'ship: pr' above 'status: ready'. The host then opens the
-  PR, or updates the open one. Never write it when they did not ask.
+- When the engineer asked for a code change (a fix, a feature, a cleanup, a test, a
+  doc) and it is done and verified, put the line 'ship: pr' above 'status: ready'.
+  Also write it when this session continues an open PR and you changed files for
+  the engineer's latest request. The host then opens a draft PR, or updates the
+  open one. Do not write it for an answer, an investigation or a plan, or when the
+  engineer said not to ship yet ("no PR", "just show me").
 - In a session over several repos, 'ship: pr' ships every changed repo that ships
-  as a PR. Do not write "tap Open PR below": end with "Reply \`open PR\`, or tap Open PRs."
+  as a PR. Never ask the engineer to tap Open PR or to reply \`open PR\`.
 - Give each check its final result, pass or fail. Do not tell the engineer about a
   failed run that a later run of the same check passed, or about a tool's retries.${slack}${jira}
 EOF
@@ -251,7 +260,7 @@ session_try() {
     fi
     t0="$(date +%s)"
     _session_try_wait "$ctl" "$key" || { rc=1; break; }
-    echo "== turn ${n}, $(( $(date +%s) - t0 )) s"
+    echo "== turn ${n}, $(( $(date +%s) - t0 )) s${_TRY_SHIP:+, ship: ${_TRY_SHIP}}"
     "$ctl" --backend gce session history "$key" 2>/dev/null | jq -r '[.[] | select(.role == "agent")] | last | .text // "(no reply)"'
     n=$((n + 1))
   done
@@ -271,6 +280,8 @@ _session_try_wait() {
       _TRY_CUR="$(jq -r ".cursor // ${_TRY_CUR:-0}" <<< "$out" 2>/dev/null || echo "${_TRY_CUR:-0}")"
       # _TRY_LAST: the event that ended the wait, so a caller can tell an answer from an error.
       _TRY_LAST="$(jq -r '[.events[]? | select(.type == "turn_end" or .type == "question" or .type == "error")] | last | .type // empty' <<< "$out" 2>/dev/null || true)"
+      # _TRY_SHIP: the turn's 'ship:' line, which the bot acts on (askedShip).
+      _TRY_SHIP="$(jq -r '[.events[]? | select(.type == "turn_end")] | last | .ship // empty' <<< "$out" 2>/dev/null || true)"
       [ -n "$_TRY_LAST" ] && return 0
       jq -e '.state == "failed" or .state == "stopped"' <<< "$out" >/dev/null 2>&1 && { echo "ERROR: the session ended: $(jq -r .state <<< "$out")" >&2; return 1; }
     fi
