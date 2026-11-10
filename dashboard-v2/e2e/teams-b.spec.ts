@@ -64,6 +64,7 @@ test.describe('routines: links, list and create (page-fixture-routines)', () => 
     await page.locator('[data-rt-new]').click();
     await page.locator('[data-rt-tpl="code-review"]').click();
     await page.locator('#rt-name').fill('Cheap review');
+    await expect(page.locator('#rt-model option[value="claude-fable-5-2"]')).toHaveText('Fable 5.2');
     await page.locator('#rt-model').selectOption('claude-sonnet-5-5');
     await page.locator('#rt-effort').selectOption('low');
 
@@ -92,6 +93,17 @@ test.describe('routines: links, list and create (page-fixture-routines)', () => 
 
 test.describe('routines: a dependency PR routine (page-fixture-depfix-routine)', () => {
   const F = fixture('depfix-routine');
+  test('The routine page names its model and effort: the defaults', async ({ page }) => {
+    await open(page, '#teams/example/routines/1', F, () => ({ body: {} }));
+    await expect(page.getByText('Default (Opus 5.5)')).toBeVisible();
+    await expect(page.getByText('Default (Medium)')).toBeVisible();
+  });
+  test('The routine page names a picked model and effort: Fable 5.2 at high', async ({ page }) => {
+    const key = '/api/teams/example/routines', rows = (F[key] as Fx[]).map((x) => ({ ...x, data: { ...(x.data as Fx), model: 'claude-fable-5-2', effort: 'high' } }));
+    await open(page, '#teams/example/routines/1', { ...F, [key]: rows }, () => ({ body: {} }));
+    await expect(page.getByText('Fable 5.2', { exact: true })).toBeVisible();
+    await expect(page.getByText('High', { exact: true })).toBeVisible();
+  });
   test('Run now asks for a PR URL, shows Checking the PR, ties the refusal to the field, then says Queued', async ({ page }) => {
     let n = 0;
     const sent = await open(page, '#teams/example/routines/1', F, async () => {

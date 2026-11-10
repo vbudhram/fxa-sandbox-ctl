@@ -10,7 +10,7 @@ import type { Ctl } from './index';
 import { AskPr, RtState } from './List';
 import { Glyph, Says } from './parts';
 import {
-  RT_MODES, RT_PROMPT_MAX, rtChName, rtFailed, rtFix, rtIn, rtLine, rtPr, rtPrN, rtResult, rtSched, rtSha7, rtWhen, sessHref, textSize,
+  RT_MODES, RT_PROMPT_MAX, rtChName, rtFailed, rtFix, rtIn, rtLine, rtPicks, rtPr, rtPrN, rtResult, rtSched, rtSha7, rtWhen, sessHref, textSize,
 } from './rt';
 
 const H2 = ({ children }: { children: ReactNode }) => <h2 className="m-0 mb-s2 flex flex-wrap items-baseline gap-s2 text-heading">{children}</h2>;
@@ -137,6 +137,8 @@ export function Detail({ c, r }: { c: Ctl; r: J }) {
             </>}
             <Kv label="Slack" value={ch || 'none, History only'} na={!ch} />
             <Kv label="Cost limit" value={`${usd(d.max_usd)} a run`} />
+            <Kv label="Model" value={rtPicks(d).models.find(([v]) => v === (d.model ?? ''))?.[1] ?? d.model} />
+            <Kv label="Effort" value={rtPicks(d).efforts.find(([v]) => v === (d.effort ?? ''))?.[1] ?? d.effort} />
             {!onpr && <Kv label="No new commits" value={d.skip_no_commits ? 'skip the run' : 'run anyway'} />}
           </Card>
           {onpr ? (
