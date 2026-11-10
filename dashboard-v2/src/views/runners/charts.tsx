@@ -1,6 +1,6 @@
 // The Sandboxes charts: the runner timeline, the slot grid, the boot steps and the Recently completed scatter.
 import { scaleLinear } from 'd3-scale';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { ChartFrame, Gantt } from '../../charts';
 import { Frame, NoData, timeLabel, useChartKeys, useWidth } from '../../charts/frame';
 import { short, usd } from '../../format';
@@ -19,7 +19,12 @@ function useNow() {
   return now;
 }
 
-export function Timeline({ rows, admin, sel, onPick }: { rows: J[]; admin: boolean; sel: string; onPick: (id: string) => void }) {
+type TlProps = { rows: J[]; admin: boolean; sel: string; onPick: (id: string) => void };
+// A feed frame skips the repaint when the fields the timeline reads are the same; the clock still moves it.
+const sameTl = (a: TlProps, b: TlProps) => a.admin === b.admin && a.sel === b.sel && a.onPick === b.onPick
+  && JSON.stringify(timelineRows(a.rows, a.admin, 0)) === JSON.stringify(timelineRows(b.rows, b.admin, 0));
+
+export const Timeline = memo(function Timeline({ rows, admin, sel, onPick }: TlProps) {
   const now = useNow();
   // A row that gives only an age starts at the time of the feed read, not at each tick.
   const tl = useMemo(() => timelineRows(rows, admin), [rows, admin]);
@@ -36,7 +41,7 @@ export function Timeline({ rows, admin, sel, onPick }: { rows: J[]; admin: boole
       table={{ head: ['Sandbox', 'Started', 'Up for', 'Cap', 'Now'],
         rows: tl.map((r) => [r.label, timeLabel(r.t0, 0), short(Math.round(now - r.t0)), r.cap != null ? short(Math.round(r.cap - r.t0)) : '—', r.cap != null && now > r.cap ? `${r.state}, over cap` : r.state]) }} />
   );
-}
+}, sameTl);
 
 function Tiles({ title, tiles }: { title: string; tiles: Tile[] }) {
   return (
@@ -53,14 +58,15 @@ function Tiles({ title, tiles }: { title: string; tiles: Tile[] }) {
   );
 }
 
-export function SlotGrid({ pool, sess, showPool, showSess }: { pool: Tile[] | null; sess: Tile[] | null; showPool: boolean; showSess: boolean }) {
+type GridProps = { pool: Tile[] | null; sess: Tile[] | null; showPool: boolean; showSess: boolean };
+export const SlotGrid = memo(function SlotGrid({ pool, sess, showPool, showSess }: GridProps) {
   return (
     <div className="sbgrid" id="sb-slots">
       {showPool && (pool ? <Tiles title="Pipeline slots" tiles={pool} /> : <p className="sbfree">Pipeline slots unknown: the agents feed is not current.</p>)}
       {showSess && (sess ? <Tiles title="Session slots" tiles={sess} /> : <p className="sbfree">Session slots unknown: the agents feed is not current.</p>)}
     </div>
   );
-}
+}, (a, b) => a.showPool === b.showPool && a.showSess === b.showSess && JSON.stringify([a.pool, a.sess]) === JSON.stringify([b.pool, b.sess]));
 
 // The boot steps as a waterfall: each step starts where the one before it ends.
 export function BootSteps({ steps }: { steps: { step: string; s: number | null }[] }) {

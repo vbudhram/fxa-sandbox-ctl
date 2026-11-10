@@ -1,7 +1,7 @@
 // Sandboxes (#runners): the cards, the runner timeline and slot grid, the list, Needs a fix, Recently completed and the details.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Boundary } from '../../app/parts';
-import { MODEL, useParts } from '../../app/store';
+import { MODEL, useParts, useStore } from '../../app/store';
 import type { ViewChunk } from '../../app/views';
 import { jiraHref, plainMd, prHref, short, usd } from '../../format';
 import { getJson } from '../../live/api';
@@ -28,6 +28,11 @@ function pick(s: Store, id: string) {
   location.hash = format({ ...s.route, sel: id, rid: '' });
   const b = document.getElementById('tright');
   if (matchMedia('(max-width:1280px)').matches && b?.getAttribute('aria-pressed') !== 'true') b?.click();
+}
+// A row that skips its repaint keeps its first onPick, so the pick reads the latest store.
+function usePick() {
+  const st = useStore();
+  return useCallback((id: string) => pick(st.getState(), id), [st]);
 }
 
 function Cards({ s }: { s: Store }) {
@@ -61,39 +66,45 @@ function Cards({ s }: { s: Store }) {
 }
 
 function Live({ s, tab }: { s: Store; tab: Tab }) {
-  const r = sbRows(s), admin = isAdmin(s);
+  const r = sbRows(s), admin = isAdmin(s), onPick = usePick();
   if (!AGENTS(s) || r.err || (tab === 'routines' && !admin)) return null;
   const g = slotGrid(s), rows = [...r.live, ...r.fix].filter((x: J) => tabHas(tab, x));
   return (
     <Card>
-      <Timeline rows={rows} admin={admin} sel={s.route.sel} onPick={(id) => pick(s, id)} />
+      <Timeline rows={rows} admin={admin} sel={s.route.sel} onPick={onPick} />
       <SlotGrid pool={g.pool} sess={g.sess} showPool={tab === 'all' || tab === 'pipeline'} showSess={tab === 'all' || tab === 'slack'} />
     </Card>
   );
 }
 
+const bar = (x: J) => {
+  if (x.age == null || !x.cap) return null;
+  const over = x.age >= x.cap, txt = `${short(x.age)} of ${short(x.cap)}${over ? ' · over cap' : ''}`;
+  return <span className={cx(over && 'over')}><span className="mt"><Meter pct={(x.age / x.cap) * 100} tone={over ? 'bad' : 'info'} label={txt} /></span>{txt}</span>;
+};
+type RowProps = { x: J; admin: boolean; on: boolean; stale: boolean; team: string; onPick: (id: string) => void };
+// The model builds new row objects on each feed frame, so the row data is compared by value.
+const sameRow = (a: RowProps, b: RowProps) =>
+  a.admin === b.admin && a.on === b.on && a.stale === b.stale && a.team === b.team && a.onPick === b.onPick && (a.x === b.x || JSON.stringify(a.x) === JSON.stringify(b.x));
+const Row = memo(function Row({ x, admin, on, stale, team, onPick }: RowProps) {
+  const f = forTxt(x, admin);
+  return (
+    <tr className={cx(x.fix && 'fixr', !x.fix && x.fault && 'bad', on && 'sel')} aria-current={on ? 'true' : undefined}>
+      <td><button type="button" data-sbsel={x.id} aria-label={`${f}, details`} onClick={() => onPick(x.id)}>{f}</button></td>
+      <td className="what">{plainMd(x.title)}</td>
+      <td>{x.fix ? x.fix.why : x.state}{x.fix?.cmd ? <code>{x.fix.cmd}</code> : x.fix?.steps && !stale ? <span className="steps">{x.fix.steps}</span> : null}</td>
+      <td>{team}</td><td>{whereTxt(x)}</td><td>{x.fix ? null : bar(x)}</td><td className="num">{x.cost != null ? usd(x.cost) : ''}</td>
+    </tr>
+  );
+}, sameRow);
+
 function List({ s, tab }: { s: Store; tab: Tab }) {
-  const g = AGENTS(s);
+  const g = AGENTS(s), onPick = usePick();
   if (!g) return <div id="sb-list" tabIndex={-1}><EmptyBox>Loading…</EmptyBox></div>;
   const r = sbRows(s), admin = isAdmin(s), sel = s.route.sel;
   if (r.err) return <div id="sb-list" tabIndex={-1}><EmptyBox>Sandboxes unknown: the agents feed could not be read.</EmptyBox></div>;
   if (tab === 'routines' && !admin) return <div id="sb-list" tabIndex={-1}><EmptyBox>{ADMIN_ONLY}</EmptyBox></div>;
-  const bar = (x: J) => {
-    if (x.age == null || !x.cap) return null;
-    const over = x.age >= x.cap, txt = `${short(x.age)} of ${short(x.cap)}${over ? ' · over cap' : ''}`;
-    return <span className={cx(over && 'over')}><span className="mt"><Meter pct={(x.age / x.cap) * 100} tone={over ? 'bad' : 'info'} label={txt} /></span>{txt}</span>;
-  };
-  const row = (x: J) => {
-    const f = forTxt(x, admin), on = x.id === sel;
-    return (
-      <tr key={x.id} className={cx(x.fix && 'fixr', !x.fix && x.fault && 'bad', on && 'sel')} aria-current={on ? 'true' : undefined}>
-        <td><button type="button" data-sbsel={x.id} aria-label={`${f}, details`} onClick={() => pick(s, x.id)}>{f}</button></td>
-        <td className="what">{plainMd(x.title)}</td>
-        <td>{x.fix ? x.fix.why : x.state}{x.fix?.cmd ? <code>{x.fix.cmd}</code> : x.fix?.steps && !r.stale ? <span className="steps">{x.fix.steps}</span> : null}</td>
-        <td>{x.team ? teamLabel(s, x.team) : ''}</td><td>{whereTxt(x)}</td><td>{x.fix ? null : bar(x)}</td><td className="num">{x.cost != null ? usd(x.cost) : ''}</td>
-      </tr>
-    );
-  };
+  const row = (x: J) => <Row key={x.id} x={x} admin={admin} on={x.id === sel} stale={!!r.stale} team={x.team ? teamLabel(s, x.team) : ''} onPick={onPick} />;
   const list = (xs: J[], cap: string) => (
     <div className="sbl">
       <table className="sbt">
