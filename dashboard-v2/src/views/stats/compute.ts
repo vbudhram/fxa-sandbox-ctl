@@ -82,9 +82,26 @@ export function prsData(all: J[], rows: J[], lo: number, hi: number, src: string
   const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows);
   const merged = mergedIn.filter(match);
   // A session's PR number counts only in this repo's list: a team repo has its own #123.
+  // The row indexes per PR number and per pipeline key, so a PR's cost does not scan every row.
+  const byN = new Map<unknown, number[]>(), byKey = new Map<unknown, number[]>();
+  rows.forEach((r, i) => {
+    if (!r.prr || r.prr === repo) (byN.get(r.prn) ?? byN.set(r.prn, []).get(r.prn)!).push(i);
+    if (r.src === 'pipeline') (byKey.get(r.key) ?? byKey.set(r.key, []).get(r.key)!).push(i);
+  });
   const costs = new Map<J, number>();
   const cost = (p: J): number => {
-    if (!costs.has(p)) costs.set(p, rows.reduce((x: number, r: J) => x + ((r.prn === p.n && (!r.prr || r.prr === repo)) || (r.src === 'pipeline' && r.key === p.key) ? allUsd(r) : 0), 0));
+    if (!costs.has(p)) {
+      // Both lists are in row order: the merge adds each row once, in the order of a full scan, so the sum is the same.
+      const a = byN.get(p.n) ?? [], b = byKey.get(p.key) ?? [];
+      let x = 0, i = 0, j = 0;
+      while (i < a.length || j < b.length) {
+        const k = j >= b.length || (i < a.length && a[i]! < b[j]!) ? a[i]! : b[j]!;
+        if (a[i] === k) i++;
+        if (b[j] === k) j++;
+        x += allUsd(rows[k]!);
+      }
+      costs.set(p, x);
+    }
     return costs.get(p)!;
   };
   const hrs = (p: J) => (Date.parse(p.merged) - Date.parse(p.created)) / 3600000;

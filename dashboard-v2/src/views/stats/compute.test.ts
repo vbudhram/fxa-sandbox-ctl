@@ -1,5 +1,6 @@
 // The Stats figures: the filters each tab reads, the buckets, the PR lists and the cards, on hand-made rows.
 import { expect, test } from 'vitest';
+import type { J } from '../../model/base';
 import { SF_DEFAULT } from '../../store/prefs';
 import type { FeedState } from '../../store/types';
 import { buckets, byModel, DAY, filterRows, leadBins, llmData, maxOf, med, minOf, pipelineData, prsData, runnerData } from './compute';
@@ -67,6 +68,18 @@ test('PRs: Merged counts a PR opened before the range, Still open lists every op
   expect(prsData(prs, runs, NOW - 6 * DAY, Infinity, 'slack', '', '', NOW).merged.map((p) => p.n)).toEqual([2]);
   // The cost per merged PR reads all spend and all PRs, whatever the source filter.
   expect(prsData(prs, runs, NOW - 6 * DAY, Infinity, 'slack', '', '', NOW).mergedIn).toHaveLength(2);
+});
+
+test('PRs: a cost reads only the rows of its PR, and equals a full scan of the rows', () => {
+  const prs = Array.from({ length: 50 }, (_, i) => ({ n: i, key: `EX-${i % 20}`, state: 'MERGED', created: iso(3), merged: iso(2), src: 'pipeline' }));
+  const runs: J[] = Array.from({ length: 400 }, (_, i) => row(1, { src: i % 3 ? 'slack' : 'pipeline', key: `EX-${i % 25}`, prn: i % 60, prr: i % 4 ? undefined : i % 8 ? 'other/repo' : 'example/repo', usd: (i % 7) / 10, compute_usd: 0.01 }));
+  let reads = 0;
+  const counted = new Proxy(runs, { get: (t, k) => { if (typeof k === 'string' && /^\d+$/.test(k)) reads++; return Reflect.get(t, k); } });
+  const d = prsData(prs, counted, NOW - 6 * DAY, Infinity, 'all', '', 'example/repo', NOW);
+  const scan = (p: (typeof prs)[number]) => runs.reduce((x, r) => x + ((r.prn === p.n && (!r.prr || r.prr === 'example/repo')) || (r.src === 'pipeline' && r.key === p.key) ? r.usd + r.compute_usd : 0), 0);
+  expect(d.mergedCosts).toEqual(prs.map(scan));
+  // A few passes over the rows, not one pass per merged PR.
+  expect(reads).toBeLessThan(10 * runs.length);
 });
 
 test('PRs: the last 4 weeks are full weeks from Monday, oldest first, and leave out the week now', () => {
