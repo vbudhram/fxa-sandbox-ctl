@@ -14,6 +14,7 @@ export const RT_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 export const RT_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 export const RT_MODES: [string, string, string][] = [
   ['report', 'Report', 'A summary in Slack and History. Changes no code.'],
+  ['tickets', 'Jira tickets', "Files each finding as a ticket in the team's Jira project, for a person to triage. A finding already in a ticket is not filed again. Changes no code."],
   ['pr', 'Draft PR', 'Opens a draft PR with the fixes. Nothing merges by itself.'],
   ['pr+notes', 'Draft PR with notes', 'The draft PR, plus every finding it did not fix, in the PR description.'],
 ];

@@ -36,7 +36,7 @@ export function Choices({ c }: { c: Ctl }) {
           {x.about && <span className="hint font-normal">{x.about}</span>}
           <span className="flex flex-wrap gap-s1">
             {x.on ? <><Tag label="One fix commit" tone="merged" /><Tag label="on request" /></> : <>
-              <Tag label={(RT_MODES.find((m) => m[0] === (x.locked_mode || x.mode))?.[1] ?? x.mode ?? '') + (x.locked_mode ? ' only' : '')} tone={(x.locked_mode || x.mode) === 'report' ? 'info' : 'merged'} />
+              <Tag label={x.locked_mode ? 'Report or Jira tickets' : RT_MODES.find((m) => m[0] === x.mode)?.[1] ?? x.mode ?? ''} tone={x.locked_mode || x.mode === 'report' ? 'info' : 'merged'} />
               {x.skip_no_commits && <Tag label="skips with no new commits" />}
             </>}
           </span>

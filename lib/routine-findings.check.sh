@@ -25,26 +25,33 @@ EOF
 py() { python3 -c "import sys, json; sys.path.insert(0, '$here'); import routine; $1"; }
 check "the block keeps the HIGH and the MEDIUM with an attack path, worst first, of the 5 it lists" "5|HIGH,MEDIUM" \
   "$(python3 "$here/routine.py" findings "$tmp/report.md" 7 "Security review" "mozilla/fxa-private" | jq -r '"\(.listed)|\([.tickets[].severity] | join(","))"')"
+check "a code review keeps a MEDIUM with no attack path too" "HIGH,MEDIUM,MEDIUM" \
+  "$(python3 "$here/routine.py" findings "$tmp/report.md" 7 R x code-review | jq -r '[.tickets[].severity] | join(",")')"
 check "an id does not change when the line or the wording moves" "True" \
   "$(py "a = routine.findings(open('$tmp/report.md').read())[0][0]['id']; b = routine.findings(open('$tmp/report.md').read().replace(':120', ':140').replace('widens scope', 'expands scope'))[0][0]['id']; print(a == b)")"
 check "the ticket text names the finding id, and the summary its severity" "[HIGH] Refresh grant widens scope|1" \
   "$(python3 "$here/routine.py" findings "$tmp/report.md" 7 R x | jq -r '.tickets[0] | "\(.summary)|\(.description | [scan("Finding id: fxasr[0-9a-f]{10}")] | length)"')"
 printf 'No block here.\n' > "$tmp/none.md"
 check "a report with no block fails, so the agent's report stays" "1" "$(python3 "$here/routine.py" findings "$tmp/none.md" 1 R x >/dev/null 2>&1; echo $?)"
-cfg='{"name": "Sec", "template": "security-review", "prompt": "look", "mode": "report", "repos": ["mozilla/fxa-private"]}'
+cfg='{"name": "Sec", "template": "security-review", "prompt": "look", "mode": "tickets", "repos": ["mozilla/fxa-private"]}'
 heads='{"mozilla/fxa-private": {"start": null, "head": "1111111111111111111111111111111111111111"}}'
 echo "$cfg" > "$tmp/cfg.json"; echo "$heads" > "$tmp/heads.json"
-check "a security review's prompt has the host's findings rule; a code review's does not" "1|0" \
-  "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'opens with ```fxa-findings')|$(jq '.template = "code-review"' "$tmp/cfg.json" > "$tmp/cfg2.json"; python3 "$here/routine.py" prompt "$tmp/cfg2.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'fxa-findings')"
+check "a tickets-mode prompt has the host's findings rule; a report-mode one does not" "1|0" \
+  "$(python3 "$here/routine.py" prompt "$tmp/cfg.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'opens with ```fxa-findings')|$(jq '.mode = "report"' "$tmp/cfg.json" > "$tmp/cfg2.json"; python3 "$here/routine.py" prompt "$tmp/cfg2.json" "$tmp/heads.json" fxa-private abcdef012345 | grep -c 'fxa-findings')"
 
 
-# Filing, with Jira stubbed: a search finds FXA-50 open for the MEDIUM's id, and nothing for the HIGH.
+# Filing, with Jira stubbed: a search finds FXA-49 closed and FXA-50 open for the MEDIUM's id, and nothing for the HIGH
+# (or, with CLOSED_HIGH, FXA-40 closed).
 mid="$(python3 "$here/routine.py" findings "$tmp/report.md" 1 R x | jq -r '.tickets[1].id')"
 _jira_sa() { return 0; }
 _jira_rest_json() {
   printf '%s %s %s\n' "$1" "$2" "$3" >> "$tmp/jira"
   case "$2" in
-    */search/jql) case "$3" in (*"$mid"*) echo '{"issues": [{"key": "FXA-50"}]}' ;; (*) [ -n "${SEARCH_FAILS:-}" ] && return 22; echo '{"issues": []}' ;; esac ;;
+    */search/jql) case "$3" in
+      (*"$mid"*) echo '{"issues": [{"key": "FXA-49", "fields": {"statusCategory": {"key": "done"}}}, {"key": "FXA-50", "fields": {"statusCategory": {"key": "indeterminate"}}}]}' ;;
+      (*) [ -n "${SEARCH_FAILS:-}" ] && return 22
+          if [ -n "${CLOSED_HIGH:-}" ]; then echo '{"issues": [{"key": "FXA-40", "fields": {"statusCategory": {"key": "done"}}}]}'; else echo '{"issues": []}'; fi ;;
+    esac ;;
     */comment) echo '{}' ;;
     /rest/api/3/issue) [ -n "${CREATE_FAILS:-}" ] && return 22; echo '{"key": "FXA-51"}' ;;
   esac
@@ -56,8 +63,12 @@ check "the HIGH is filed and the open MEDIUM gets a comment" "Filed FXA-51 (HIGH
 create="$(grep '^POST /rest/api/3/issue {' "$tmp/jira" | cut -d' ' -f3-)"
 check "the create sets the project, and adds no labels and no security level" "FXA|false|false|Bug" \
   "$(jq -r '.fields | "\(.project.key)|\(has("labels"))|\(has("security"))|\(.issuetype.name)"' <<< "$create")"
-check "the search looks only at open tickets of the project, by the finding id" "1" \
-  "$(grep -c "search/jql .*project = FXA AND statusCategory != Done AND text ~ .*${mid}" "$tmp/jira")"
+check "the search looks at the project's tickets in any status, by the finding id" "1" \
+  "$(grep -c "search/jql .*\"project = FXA AND text ~ .*${mid}" "$tmp/jira")"
+: > "$tmp/jira"
+out="$(CLOSED_HIGH=1 _routine_file_findings 9 "$tmp/report.md" "$cfg")"
+check "a finding already in a closed ticket is not filed again, and gets no comment" "1|0|0" \
+  "$(grep -c '^Already filed: FXA-40 (HIGH), closed$' <<< "$out")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")|$(grep -c 'FXA-40/comment' "$tmp/jira")"
 check "the report holds keys and severities, and no finding title or file" "0|0" \
   "$(grep -c 'Refresh grant' <<< "$out")|$(grep -c 'grant.js' <<< "$out")"
 : > "$tmp/jira"; : > "$tmp/errs"
@@ -82,4 +93,7 @@ check "a second done call files nothing more" "1" \
 run2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p2', 'started', 'agent-sec002', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
 check "with no Jira project, a security review keeps its report as before and files nothing" "1|1" \
   "$(PIPE_JIRA_PROJECT='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+run3="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p3', 'started', 'agent-sec003', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00", mode: "report"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
+check "a security review in report mode keeps its report and files nothing" "1|1" \
+  "$(routine_done "$run3" --state report --session agent-sec003 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run3 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

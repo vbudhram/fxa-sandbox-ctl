@@ -32,7 +32,7 @@ const Mono = ({ children }: { children: ReactNode }) => <span className="font-mo
 export function Says({ d, chName, chans }: { d: J; chName?: string; chans: Chans | null }) {
   if (d.on === 'pr-label')
     return <>When a dependency PR in <Mono>{d.pr?.repo ?? (d.repos ?? [])[0] ?? 'its repo'}</Mono> asks for help, pushes one fix commit, and posts in {rtChName(d.channel, chName, chans)}.</>;
-  const mode = ({ report: 'reports', pr: 'opens a draft PR', 'pr+notes': 'opens a draft PR with notes' } as Record<string, string>)[d.mode] ?? d.mode;
+  const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: 'opens a draft PR', 'pr+notes': 'opens a draft PR with notes' } as Record<string, string>)[d.mode] ?? d.mode;
   const ch = d.channel ? rtChName(d.channel, chName, chans) : '';
   return (
     <>

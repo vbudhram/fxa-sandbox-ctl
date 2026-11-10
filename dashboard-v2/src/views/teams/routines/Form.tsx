@@ -29,7 +29,7 @@ function Readback({ d, c }: { d: J; c: Ctl }) {
     return <><b>{d.name || 'This routine'}</b> runs when a dependency PR in <b>{d.pr_repo || 'no repo yet'}</b> by <b>{au.length ? au.join(' or ') : 'no author yet'}</b> asks for help with the <b>{String(d.pr_label).trim() || 'agent-help'}</b> label. It pushes one fix commit to the PR branch, {ch ? <>posts in <b>{chn}</b></> : 'needs a channel for its results'}, and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
   }
   const pr = d.draft === false ? 'a regular PR' : 'a draft PR';
-  const mode = ({ report: 'reports', pr: `opens ${pr}`, 'pr+notes': `opens ${pr} with notes` } as Record<string, string>)[d.mode] ?? d.mode;
+  const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: `opens ${pr}`, 'pr+notes': `opens ${pr} with notes` } as Record<string, string>)[d.mode] ?? d.mode;
   return <><b>{d.name || 'This routine'}</b> runs <b>{rtSched(rtRoutine(d))} {rtZoneName(d.zone)}</b> on <b>{d.repos.join(', ') || 'no repo yet'}</b>{d.watch ? <>, for the new commits of <b>{d.watch}</b></> : ''}{d.skip_no_commits ? ', when there are new commits' : ''}. It {mode}{ch ? <>, posts in <b>{chn}</b>,</> : ', posts nothing in Slack (the results are in History),'} and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
 }
 
@@ -55,7 +55,7 @@ export function Form({ c }: { c: Ctl }) {
   const setF = (patch: J) => c.setForm((x) => (x?.step === 2 ? { ...x, ...patch } : x));
   const inp = (k: string) => ({ id: `rt-${k}`, 'data-rt': k, value: d[k] ?? '', onChange: (ev: { target: { value: string } }) => set({ [k]: ev.target.value }), ...bad(`rt-${k}`, e[k]) });
   const locked = tpl?.locked_mode, onpr = d.on === 'pr-label';
-  const modeOff = (m: string) => (m === 'report' ? '' : locked ? 'a security review only reports' : t.read_only ? 'this team gets diffs only' : '');
+  const modeOff = (m: string) => (m === 'report' || m === 'tickets' ? '' : locked ? 'a security review never opens a PR' : t.read_only ? 'this team gets diffs only' : '');
   const openPrompt = f.promptOpen || d.template === 'blank' || !String(d.prompt).trim() || e.prompt;
   const zones = RT_ZONES.some((z) => z[0] === d.zone) ? RT_ZONES : [[d.zone, d.zone] as [string, string], ...RT_ZONES];
   const work: string[] = (t.repos ?? []).filter((r: J) => r.role === 'work').map((r: J) => r.slug), prRepos = work.includes(d.pr_repo) || !d.pr_repo ? work : [d.pr_repo, ...work];
@@ -176,14 +176,14 @@ export function Form({ c }: { c: Ctl }) {
                   const off = modeOff(v);
                   return (
                     <label key={v} className="flex items-start gap-s2">
-                      <input type="radio" name="rt-mode" data-rt="mode" value={v} checked={(locked || d.mode) === v} disabled={!!off} onChange={() => set({ mode: v })} />
+                      <input type="radio" name="rt-mode" data-rt="mode" value={v} checked={d.mode === v} disabled={!!off} onChange={() => set({ mode: v })} />
                       <span className="flex flex-col"><b>{l}</b><span className="hint">{off ? `Off: ${off}.` : about}</span></span>
                     </label>
                   );
                 })}
                 {e.mode && <p className="m-0 text-sub font-semibold text-warn" id="rt-mode-err">{e.mode}</p>}
               </fieldset>
-              {(locked || d.mode) !== 'report' && (
+              {(d.mode === 'pr' || d.mode === 'pr+notes') && (
                 <div className="flex flex-col gap-s1">
                   <label className="flex items-center gap-s2">
                     <input type="checkbox" id="rt-draft" data-rt="draft" checked={d.draft !== false} onChange={(ev) => set({ draft: ev.target.checked })} {...bad('rt-draft', e.draft)} /> Open the PR as a draft

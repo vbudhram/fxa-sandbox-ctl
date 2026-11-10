@@ -133,7 +133,7 @@ export function Detail({ c, r }: { c: Ctl; r: J }) {
               <Kv label="Time zone" value={d.zone} />
               <Kv label="Repos" value={(d.repos ?? []).join(', ') || 'none'} na={!(d.repos ?? []).length} />
               <Kv label="Branch" value={d.branch || 'the default'} na={!d.branch} />
-              <Kv label="Result" value={(RT_MODES.find((m) => m[0] === d.mode)?.[1] ?? d.mode) + (d.mode !== 'report' && d.draft === false ? ', opened as a regular PR' : '')} />
+              <Kv label="Result" value={(RT_MODES.find((m) => m[0] === d.mode)?.[1] ?? d.mode) + ((d.mode === 'pr' || d.mode === 'pr+notes') && d.draft === false ? ', opened as a regular PR' : '')} />
             </>}
             <Kv label="Slack" value={ch || 'none, History only'} na={!ch} />
             <Kv label="Cost limit" value={`${usd(d.max_usd)} a run`} />

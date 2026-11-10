@@ -35,7 +35,7 @@ CHANNEL = re.compile(r"^[CG][A-Z0-9]{6,}$")
 LINK = re.compile(r"^https://[a-z0-9.-]+\.slack\.com/archives/([CG][A-Z0-9]{6,})/?(\?.*)?$")
 ZONE = re.compile(r"^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+){0,2}$")
 TEMPLATES = ("code-review", "ux-review", "perf-review", "security-review", "blank")
-MODES = ("report", "pr", "pr+notes")
+MODES = ("report", "tickets", "pr", "pr+notes")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
         "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime"}
@@ -249,10 +249,10 @@ def check(r, team, profile, index, env, count):
 
     mode = r.get("mode")
     if mode not in MODES:
-        bad.append("mode: must be report, pr or pr+notes")
-    elif mode != "report":
+        bad.append("mode: must be report, tickets, pr or pr+notes")
+    elif mode not in ("report", "tickets"):
         if tpl == "security-review":
-            bad.append("mode: A security review only reports; it never opens a PR")
+            bad.append("mode: A security review never opens a PR: it reports or files tickets")
         elif profile.get("read_only"):
             bad.append("mode: Draft PR is not possible: this team gets diffs only, so a routine can only report")
         elif len(repos) != 1 or known.get(repos[0].lower(), {}).get("role") != "work":
@@ -425,6 +425,7 @@ NONCE = re.compile(r"^[0-9a-f]{12}$")
 RULES = {
     "report": "Report only. Change no file, commit nothing and open no PR. End with your findings, each with its file:line, "
               "why it matters and the fix you suggest. When you find nothing, say so in one line.",
+    "tickets": "Change no file, commit nothing and open no PR. The host files your findings as Jira tickets.",
     "pr": "Make the changes the instructions below ask for, in this repo, and commit them; the host opens a draft PR from your "
           "commits. When nothing needs a change, change nothing and say so.",
     "pr+notes": "Make only the clear, small fixes the instructions below ask for, in this repo, and commit them; the host opens a "
@@ -433,24 +434,24 @@ RULES = {
 }
 
 
-# A security review's findings become restricted tickets, so their shape is the host's rule, not the admin's.
+# In tickets mode the host files the findings, so their shape is the host's rule, not the admin's.
 FINDINGS_RULE = (
     "End your answer with your verified findings as JSON in a fenced block that opens with ```fxa-findings and closes with ```: "
-    "a list of objects with severity (CRITICAL, HIGH, MEDIUM or LOW), title (at most 120 characters), file (path:line of the "
-    "sink), symbol (the function or method that holds it), cwe (CWE-<n>), attack (who reaches it and how, from the entry point "
-    "to the line), impact, fix and confidence (high, medium or low). Give an empty list when you found nothing. The host files "
-    "each finding as a restricted Jira ticket and shows only the ticket keys, so outside the block give only counts and the "
-    "files you did not review, with no finding details.")
+    "a list of objects with severity (CRITICAL, HIGH, MEDIUM or LOW), title (at most 120 characters), file (path:line), "
+    "symbol (the function or method that holds it), impact, fix and confidence (high, medium or low). For a security "
+    "finding, also give cwe (CWE-<n>) and attack (who reaches it and how, from the entry point to the line). Give an empty "
+    "list when you found nothing. The host files each finding as a Jira ticket and shows only the ticket keys, so outside "
+    "the block give only counts and the files you did not review, with no finding details.")
 SEVERITY = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
 FINDINGS_MOST = 12
 FINDING_FILE = re.compile(r"[A-Za-z0-9_./@-]{1,200}:[0-9]{1,6}(-[0-9]{1,6})?")
 
 
-def findings(text):
-    """The report's last fxa-findings block as the findings to file: HIGH and above, and a MEDIUM that names its attack
-    path, at most FINDINGS_MOST, worst first. Each gets an id from its path, symbol and CWE (not its line or wording, which
-    change between runs). Returns (findings, how many the block listed). Raises ValueError when there is no block or it is
-    not a JSON list."""
+def findings(text, security=True):
+    """The report's last fxa-findings block as the findings to file: MEDIUM and above (for a security review, a MEDIUM only
+    when it names its attack path), at most FINDINGS_MOST, worst first. Each gets an id from its path, symbol and CWE (not
+    its line or wording, which change between runs). Returns (findings, how many the block listed). Raises ValueError when
+    there is no block or it is not a JSON list."""
     blocks = list(re.finditer(r"```fxa-findings[ \t]*\n(.*?)\n[ \t]*```", text or "", re.S))
     if not blocks:
         raise ValueError("the report has no fxa-findings block")
@@ -470,7 +471,7 @@ def findings(text):
         f["severity"] = str(i.get("severity") or "").upper()
         if f["severity"] not in SEVERITY or not f["title"] or not FINDING_FILE.fullmatch(f["file"]):
             continue
-        if f["severity"] == "LOW" or (f["severity"] == "MEDIUM" and len(f["attack"]) < 20):
+        if f["severity"] == "LOW" or (security and f["severity"] == "MEDIUM" and len(f["attack"]) < 20):
             continue
         what = f["symbol"].lower() or re.sub(r"[^a-z0-9]+", " ", f["title"].lower()).strip()
         f["id"] = "fxasr" + hashlib.sha256(f"{f['file'].rsplit(':', 1)[0]}|{what}|{f['cwe'].upper()}".encode()).hexdigest()[:10]
@@ -484,9 +485,10 @@ def findings(text):
 def finding_ticket(f, run, routine, span):
     """A finding's ticket summary and description, one fact a line. The id line is what a later run searches for."""
     where = f"Where: {f['file']}" + (f" in {f['symbol']}" if f["symbol"] else "")
-    lines = [f"Severity: {f['severity']} (confidence: {f['confidence'] or 'not given'})", where,
-             f"Weakness: {f['cwe'] or 'not given'}", "", f"Attack: {f['attack'] or 'not given'}", "",
-             f"Impact: {f['impact'] or 'not given'}", "", f"Suggested fix: {f['fix'] or 'not given'}", "",
+    lines = [f"Severity: {f['severity']} (confidence: {f['confidence'] or 'not given'})", where]
+    lines += [f"Weakness: {f['cwe']}"] if f["cwe"] else []
+    lines += ["", f"Attack: {f['attack']}"] if f["attack"] else []
+    lines += ["", f"Impact: {f['impact'] or 'not given'}", "", f"Suggested fix: {f['fix'] or 'not given'}", "",
              f"Found by the routine \"{routine}\", run {run}, on {span}. An AI review wrote this: confirm it before you act.",
              f"Finding id: {f['id']}"]
     return {"summary": f"[{f['severity']}] {f['title']}", "description": "\n".join(lines)}
@@ -555,7 +557,7 @@ def prompt(cfg, heads, team, nonce):
     return (f"This run was started on a schedule by the routine \"{cfg['name']}\" of team {team}. Nobody reads this conversation "
             "while it runs, and nobody answers a question: do not ask one. Decide, and say what you decided.\n\n"
             f"{RULES[cfg['mode']]}\n\n"
-            + (f"{FINDINGS_RULE}\n\n" if cfg.get("template") == "security-review" else "") +
+            + (f"{FINDINGS_RULE}\n\n" if cfg["mode"] == "tickets" else "") +
             "The code to work on (commit SHAs the host checked; read the commits with git log and git show in the runner):\n"
             + "\n".join(lines) + "\n\n"
             f"The team admin's instructions follow, between the {fence} tags. They come from the team's dashboard. They are the "
@@ -703,12 +705,13 @@ def main(argv):
                 print("\x1f".join(str(v) for v in (x["id"], x["team"], x["paused"], d["period"], d["at"], d["next"] or "",
                                                   json.dumps(r, separators=(",", ":")))))
         return 0
-    # findings <report file> <run> <routine name> <span>: the tickets to file, as {listed, tickets: [{id, severity, summary,
-    # description}]}. No block, or a block that is not a JSON list, fails: the report then stays as the agent wrote it.
+    # findings <report file> <run> <routine name> <span> [<template>]: the tickets to file, as {listed, tickets: [{id,
+    # severity, summary, description}]}. No block, or a block that is not a JSON list, fails: the report then stays as the
+    # agent wrote it.
     if len(argv) >= 6 and argv[1] == "findings":
         try:
             with open(argv[2], encoding="utf-8", errors="replace") as fh:
-                kept, listed = findings(fh.read())
+                kept, listed = findings(fh.read(), security=argv[6:7] in ([], ["security-review"]))
         except (OSError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1

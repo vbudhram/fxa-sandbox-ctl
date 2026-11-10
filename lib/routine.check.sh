@@ -45,7 +45,9 @@ check "a 5 KB prompt" "prompt: The prompt is over 4 KB" "$(v secret priv.json "$
 check "a name with a Slack mention" "name: Use letters, digits, spaces and . _ ( ) - in the name, at most 40 characters" "$(v secret priv.json '{"name":"<!channel> review"}')"
 check "a branch with two repos" "branch: A branch needs exactly one repo" "$(v secret priv.json '{"repos":["mozilla/secret","mozilla/fxa"],"branch":"main"}')"
 check "a pr mode with two repos" "mode: A draft PR mode needs exactly one work repo" "$(v secret priv.json '{"repos":["mozilla/secret","mozilla/fxa"],"mode":"pr"}')"
-check "a security review in pr mode" "mode: A security review only reports; it never opens a PR" "$(v secret priv.json '{"template":"security-review","mode":"pr"}')"
+check "a security review in pr mode" "mode: A security review never opens a PR: it reports or files tickets" "$(v secret priv.json '{"template":"security-review","mode":"pr"}')"
+check "a security review in tickets mode passes" "ok" "$(v secret priv.json '{"template":"security-review","mode":"tickets"}')"
+check "a code review in tickets mode on two repos passes (no PR, so no single work repo)" "ok" "$(v secret priv.json '{"repos":["mozilla/secret","mozilla/fxa"],"mode":"tickets"}')"
 check "a ninth routine" "routine: A team has at most 8 routines" "$(v secret priv.json '{}' 8)"
 check "a zone that is not a zone, not a silent UTC" "zone: 'Mars/Base' is not a time zone, such as America/New_York" "$(v secret priv.json '{"zone":"Mars/Base"}')"
 check "a cost limit over the ceiling" "max_usd: The cost limit must be more than 0 and at most 50 USD" "$(v secret priv.json '{"max_usd":500}')"
@@ -85,7 +87,7 @@ check "no repos" "repos: Pick at least one of this team's repos" "$(v secret pri
 for b in '-x' 'a..b' 'a b'; do
   check "a bad branch ($b)" "branch: Use letters, digits and . _ / - in the branch, at most 60 characters" "$(v secret priv.json "$(jq -cn --arg b "$b" '{branch: $b}')")"
 done
-check "a bad mode" "mode: must be report, pr or pr+notes" "$(v secret priv.json '{"mode":"merge"}')"
+check "a bad mode" "mode: must be report, tickets, pr or pr+notes" "$(v secret priv.json '{"mode":"merge"}')"
 check "a malformed channel" "channel: Use a Slack channel ID (C0123ABCD) or a link to the channel" "$(v secret priv.json '{"channel":"#general"}')"
 check "a pr mode on the team's dep repo, not its work repo (D27)" "mode: A draft PR mode needs exactly one work repo" "$(v secret priv.json '{"repos":["mozilla/fxa"],"mode":"pr"}')"
 echo '{"profile":"envy","read_only":false,"private":false,"repos":[{"slug":"mozilla/envy","role":"work"}]}' > "$tmp/envy.json"
