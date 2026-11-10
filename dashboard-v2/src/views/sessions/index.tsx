@@ -1,4 +1,5 @@
 // The Sessions view's chunk: the frame or Answers, the side list with its Person and Team filters, and the details.
+import { memo } from 'react';
 import type { ViewChunk } from '../../app/views';
 import { teamLabel } from '../../model/teams';
 import { format } from '../../router';
@@ -7,7 +8,7 @@ import { Answers } from './Answers';
 import { owners, pick, sideGroups, teamOf } from './data';
 import { Details } from './Details';
 import { SessFrame } from './Frame';
-import { useAll } from './hooks';
+import { useAll, useDetail } from './hooks';
 import './sessions.css';
 
 function Main() {
@@ -34,10 +35,15 @@ function SideTools() {
   );
 }
 
+// memo with no props: the details read the store on their own, so a shell repaint does not repaint them.
+const Right = memo(function Right() {
+  return <Details s={useDetail()} />;
+});
+
 const chunk: ViewChunk = {
   Main,
   side: sideGroups,
-  right: (s) => (s.route.tab !== 'answers' && pick(s) ? <Details s={s} /> : null),
+  right: (s) => (s.route.tab !== 'answers' && pick(s) ? <Right /> : null),
   sideTools: SideTools,
 };
 export default chunk;

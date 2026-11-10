@@ -6,12 +6,16 @@ import { chainOf } from '../../model';
 import { SS } from '../../model/base';
 import { pick } from './data';
 
-// The state: a terminal line or a history delta repaints the view only when it is the shown session's.
+// The state: a history read or delta repaints the view only when it is the shown session's; the frame shows no terminal.
+// Answers shows the usage of any row that it opens, the frame none.
 const parts = (s: State) => {
-  const x = pick(s);
-  return [...MODEL(s), s.history, s.usage, ...(x ? [s.tails[x.key], ...chainOf(x, SS(s)).map((y) => s.live.changed[`history:${y.key}`])] : [])];
+  const x = s.route.tab === 'answers' ? null : pick(s);
+  return [...MODEL(s), ...(x ? [s.history[x.key], ...chainOf(x, SS(s)).map((y) => s.live.changed[`history:${y.key}`])] : [s.usage])];
 };
 export const useAll = () => useParts(parts);
+// The details panel: the model and the usage of the shown session, not the shell's every repaint.
+const detail = (s: State) => [...MODEL(s), s.usage[pick(s)?.key ?? '']];
+export const useDetail = () => useParts(detail);
 
 // Epoch seconds, again every step ms, so a live countdown and the timeline grow on the client.
 export function useNow(step = 1000) {

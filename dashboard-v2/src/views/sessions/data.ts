@@ -2,7 +2,8 @@
 import type { SideGroup } from '../../app/store';
 import { prHref, REPO_RE, stamp, usd } from '../../format';
 import { pipeSnap, sessHeads, statsBounds } from '../../model';
-import { AGENTS, type J, LIVE_SESSION, SS, STATS, TEAMS } from '../../model/base';
+import { AGENTS, type J, LIVE_SESSION, memo, SS, STATS, TEAMS } from '../../model/base';
+import { pipe } from '../../model/pipeline';
 import {
   ageOf, answerRows, bootFailed, chainOf, convTitle, fixGated, isFix, ownerName, SESS_STATES, sessDay, sessRoutine, sessStatus, sessUsd,
 } from '../../model/sessions';
@@ -98,7 +99,8 @@ export const modelOf = (s: Store, x: J): string => {
 };
 
 // The side list: the tab's heads in day groups.
-export function sideGroups(s: Store): SideGroup[] | null {
+// memo: the shell asks on each of its repaints; the ages and the day groups move once a minute.
+export const sideGroups = memo((s) => [s.sessions, s.feeds.agents, s.feeds.stats, s.feeds.teams, pipe(s), s.viewer, s.route.tab, s.route.query.team, s.prefs.sowner, Math.floor(Date.now() / 60000)], (s): SideGroup[] | null => {
   if (!AGENTS(s)) return null;
   const all = SS(s), tab = s.route.tab, o = s.prefs.sowner;
   const items = tabList(s).map((x) => {
@@ -112,7 +114,7 @@ export function sideGroups(s: Store): SideGroup[] | null {
     };
   });
   return ['Today', 'Yesterday', 'This week', 'Older'].map((g) => ({ group: g, items: items.filter((i) => i.day === g) })).filter((g) => g.items.length);
-}
+});
 
 export type HistMsg = { key: string; role: string; at?: number; text?: string; name?: string; image?: string };
 export type ThreadItem = { id: string; key: string; at: number; sep: string } & ({ role: 'media'; files: string[] } | { role: 'agent' | 'action' | 'person'; text: string; name?: string; image?: string });

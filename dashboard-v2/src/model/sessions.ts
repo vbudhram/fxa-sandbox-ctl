@@ -109,9 +109,18 @@ export function sessStatus(x: J): [string, string] {
 export const answerRows = memo((s) => [STATS(s)], (s): J[] => (STATS(s)?.rows ?? []).filter((r: J) => r.src === 'answer')
   .sort((a: J, b: J) => Number(b.at > a.at) - Number(b.at < a.at)));
 // The Slack link of a thread "C123:1700000000.0001", with the workspace host from a session in the same channel.
+// The workspace host of each channel, from the first session in it: one pass, not one per answer row.
+const HOSTS = memo((s) => [SS(s)], (s) => {
+  const m = new Map<string, string>();
+  for (const x of SS(s)) {
+    const g = /^https:\/\/([a-z0-9.-]+\.slack\.com)\/archives\/([A-Z0-9]+)\//.exec(String(x.slack_url || ''));
+    if (g && !m.has(g[2]!)) m.set(g[2]!, g[1]!);
+  }
+  return m;
+});
 export function threadUrl(s: Store, th: unknown): string {
   const [c, ts] = String(th || '').split(':');
   if (!c || !ts) return '';
-  const h = SS(s).map((x) => /^https:\/\/([a-z0-9.-]+\.slack\.com)\/archives\/([A-Z0-9]+)\//.exec(String(x.slack_url || ''))).find((m) => m && m[2] === c)?.[1];
+  const h = HOSTS(s).get(c);
   return h ? `https://${h}/archives/${c}/p${ts.replace('.', '')}` : '';
 }

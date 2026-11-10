@@ -1,5 +1,5 @@
 // The session frame: the bar, the outcome card, and the thread (v1 renderSess); the terminal opens in its own window.
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { mdHtml, short, stamp } from '../../format';
 import type { State } from '../../live/reducers';
 import { SS } from '../../model/base';
@@ -86,7 +86,10 @@ function Thread({ s, x }: { s: State; x: Session }) {
   const sig = chainOf(x, sessions).map((y) => `${y.key}:${y.last_activity ?? ''}:${y.turns ?? ''}:${y.state}:${s.live?.changed[`history:${y.key}`] ?? 0}`).join(',');
   useEffect(() => { void readHistory(x.key); }, [x.key, sig]);
   const rows = h?.rows as HistMsg[] | undefined;
-  const items = useMemo(() => (rows ? threadItems(rows, sessions) : []), [rows, sessions]);
+  // The thread reads only the media of the chain from the sessions, so a delta of another session keeps the items.
+  const media = JSON.stringify(chainOf(x, sessions).map((y) => [y.key, y.media]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- media stands for the sessions that threadItems reads
+  const items = useMemo(() => (rows ? threadItems(rows, sessions) : []), [rows, media]);
   const rt = x.runtime === 'codex' ? 'Codex' : 'Claude';
   return (
     <div className="thread" id="sx-thread" data-thread={x.key}>
@@ -96,7 +99,11 @@ function Thread({ s, x }: { s: State; x: Session }) {
   );
 }
 
-function Item({ it, rt }: { it: ThreadItem; rt: string }) {
+// memo: a history read gives new rows, and only the items whose fields changed repaint.
+type ItemProps = { it: ThreadItem; rt: string };
+const same = (a: ItemProps, b: ItemProps) => a.rt === b.rt && Object.keys(a.it).length === Object.keys(b.it).length
+  && Object.entries(a.it).every(([k, v]) => { const w = (b.it as Record<string, unknown>)[k]; return Array.isArray(v) ? Array.isArray(w) && v.join('\n') === w.join('\n') : v === w; });
+const Item = memo(function Item({ it, rt }: ItemProps) {
   return (
     <>
       {it.sep && <div className="tsep">{it.sep}</div>}
@@ -121,7 +128,7 @@ function Item({ it, rt }: { it: ThreadItem; rt: string }) {
       ) : it.role === 'action' ? <div className="tact">{it.text.slice(0, 8000)}</div> : <Msg it={it} rt={rt} />}
     </>
   );
-}
+}, same);
 
 const CUT = 8000;
 function Msg({ it, rt }: { it: Extract<ThreadItem, { text: string }>; rt: string }) {
