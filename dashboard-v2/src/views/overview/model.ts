@@ -65,10 +65,11 @@ export function tileOf(t: J): Tile {
 export const RUN_KIND: Record<string, string> = { pipeline: 'pipeline run', slack: 'Slack session', answer: 'quick answer', pass: 'pass', depfix: 'dependency fix' };
 
 // Runs started in each of the last 24 local hours; passes are the scheduler's, not counted.
+const HOUR_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric' });
 export function ovHours(rows: J[], now = Date.now()) {
   const h0 = new Date(now); h0.setMinutes(0, 0, 0);
   const end = h0.getTime() + HR, start = end - 24 * HR;
-  const b = [...Array(24)].map((_, i) => ({ t: start + i * HR, n: 0, lbl: new Date(start + i * HR).toLocaleTimeString([], { hour: 'numeric' }) }));
+  const b = [...Array(24)].map((_, i) => ({ t: start + i * HR, n: 0, lbl: HOUR_FMT.format(start + i * HR) }));
   rows.forEach((r) => { if (r.src === 'pass') return; const t = rowMs(r); if (t >= start && t < end) b[Math.floor((t - start) / HR)]!.n++; });
   const tot = b.reduce((a, x) => a + x.n, 0), pk = b.reduce((a, x) => (x.n > a.n ? x : a), b[0]!), one = b.filter((x) => x.n === pk.n).length === 1;
   const text = `${one ? `Busiest: ${pk.lbl}, ` : 'At most '}${plural(pk.n, 'run')}${one ? '' : ' in an hour'}. Passes are not counted.`;

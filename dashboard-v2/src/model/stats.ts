@@ -64,18 +64,17 @@ export function ovKpis(s: Store, range: string, now = Date.now()) {
   const spend = (rs: J[]) => rs.reduce((x: number, r) => x + (r.usd || 0), 0), pipeR = (rs: J[]) => rs.filter((r) => r.src === 'pipeline');
   const rate = (rs: J[]) => { const p = pipeR(rs); return p.length ? p.filter((r) => r.pr).length / p.length : null; };
   const med = (rs: J[]) => median(pipeR(rs).map((r) => r.min));
-  const line = <T,>(a: number, b: number, f: (x: number, y: number) => T) => [...Array(8)].map((_, i) => f(a + i * (b - a) / 8, a + (i + 1) * (b - a) / 8));
-  const mergedN = (a: number, b: number) => prs.filter((p) => { const t = p.merged && Date.parse(p.merged); return t >= a && t < b; }).length;
   const c7 = costPerMerged(lo7, Infinity, prs, rows), p7 = costPerMerged(lo7 - len7, lo7, prs, rows), first = ovFirstRow(s);
+  const cur = at(lo, Infinity), prev = at(lo - len, lo);
   // A source whose log starts after the period before began would show its start as growth: no change then.
-  const whole = !at(lo, Infinity).some((r) => (first[r.src] ?? 0) > lo - len);
+  const whole = !cur.some((r) => (first[r.src] ?? 0) > lo - len);
   return {
-    spend: { v: spend(at(lo, Infinity)), p: whole ? spend(at(lo - len, lo)) : null, line: line(lo, now, (a, b) => spend(at(a, b))) },
-    runs: { v: at(lo, Infinity).length, p: whole ? at(lo - len, lo).length : null },
-    merged: { v: c7.mergedIn.length, p: p7.mergedIn.length, line: line(lo7, now, mergedN) },
-    cost: { v: c7.per, p: p7.per, spent: c7.spentIn, line: line(lo7, now, (a, b) => { const m = mergedN(a, b); return m ? spend(at(a, b)) / m : null; }) },
-    rate: { v: rate(at(lo, Infinity)), p: rate(at(lo - len, lo)), n: pipeR(at(lo, Infinity)).length, line: line(lo, now, (a, b) => rate(at(a, b))) },
-    med: { v: med(at(lo, Infinity)), p: med(at(lo - len, lo)), line: line(lo, now, (a, b) => med(at(a, b))) },
+    spend: { v: spend(cur), p: whole ? spend(prev) : null },
+    runs: { v: cur.length, p: whole ? prev.length : null },
+    merged: { v: c7.mergedIn.length, p: p7.mergedIn.length },
+    cost: { v: c7.per, p: p7.per, spent: c7.spentIn },
+    rate: { v: rate(cur), p: rate(prev), n: pipeR(cur).length },
+    med: { v: med(cur), p: med(prev) },
   };
 }
 // The change text and whether it is good: per cent for money and counts, points for a share, minutes for a time.

@@ -1,7 +1,7 @@
 // The Overview: what runs, what it costs, and how the teams do; two columns on a wide screen.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Boundary } from '../../app/parts';
-import { MODEL, useParts } from '../../app/store';
+import { useParts } from '../../app/store';
 import type { ViewChunk } from '../../app/views';
 import { Heatmap, Spark, type ChartColor } from '../../charts';
 import { ago, jiraHref, modelName, plainMd, usd } from '../../format';
@@ -26,7 +26,9 @@ import { runBadge, statsNote } from '../shared/stats';
 import './overview.css';
 
 const SWATCH: Record<ChartColor, string> = { 'chart-1': 'bg-chart-1', 'chart-2': 'bg-chart-2', 'chart-3': 'bg-chart-3', 'chart-4': 'bg-chart-4', 'chart-5': 'bg-chart-5', 'chart-muted': 'bg-chart-muted' };
-const shortDay = (t: number) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+// One formatter each: toLocaleDateString with options builds a new one each call, about 25 µs a call.
+const DAY_FMT = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }), TIME_FMT = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const shortDay = (t: number) => DAY_FMT.format(t);
 const money = (v: number) => (v === 0 || Math.abs(v) >= 1 ? `$${Math.round(v)}` : usd(v));
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -286,16 +288,17 @@ const RUN_ICON: Record<string, [string, string]> = {
   depfix: ['bg-chart-5/15 text-chart-5', 'M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9'],
 };
 
-// A row that comes after the first paint slides in once.
-function RunRow({ r, site, sessions, fresh }: { r: J; site: unknown; sessions: Store['sessions']['byKey']; fresh: { current: boolean } }) {
+// A row that comes after the first paint slides in once. It reads only its own session, so a delta of another one skips it.
+const RunRow = memo(function RunRow({ r, site, fresh }: { r: J; site: unknown; fresh: { current: boolean } }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (fresh.current && !reduced()) ref.current?.animate?.([{ transform: 'translateY(-6px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 250 });
   }, [fresh]);
-  const [ic, d] = RUN_ICON[r.src] ?? ['bg-sunk text-faint', 'M12 12h.01'], kind = RUN_KIND[r.src] ?? r.src, t = rowMs(r), dt = new Date(t);
-  const when = new Date(t).setHours(0, 0, 0, 0) === new Date().setHours(0, 0, 0, 0) ? dt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : dt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const tab = useApp((s) => { const x = s.sessions.byKey[r.key]; return x ? sessTabOf(x) : null; });
+  const [ic, d] = RUN_ICON[r.src] ?? ['bg-sunk text-faint', 'M12 12h.01'], kind = RUN_KIND[r.src] ?? r.src, t = rowMs(r);
+  const when = new Date(t).setHours(0, 0, 0, 0) === new Date().setHours(0, 0, 0, 0) ? TIME_FMT.format(t) : DAY_FMT.format(t);
   // A session link goes to the tab the session is on now.
-  const x = sessions[r.key], href = r.src === 'pipeline' ? jiraHref(r.key, site) : x && sessHref(r.key) ? `#sessions/${sessTabOf(x)}/${r.key}` : sessHref(r.key);
+  const href = r.src === 'pipeline' ? jiraHref(r.key, site) : tab && sessHref(r.key) ? `#sessions/${tab}/${r.key}` : sessHref(r.key);
   const key = r.src === 'pass' || !r.key ? null : href ? <a className="key" href={href} {...(r.src === 'pipeline' ? { target: '_blank', rel: 'noreferrer' } : {})}>{r.key}</a> : <span className="key">{r.key}</span>;
   // A run with no title can carry its key as the title: do not show the key twice.
   const title = (r.title !== r.key && r.title) || (r.src === 'pass' ? 'Pipeline pass' : ''), b = runBadge(r);
@@ -308,11 +311,11 @@ function RunRow({ r, site, sessions, fresh }: { r: J; site: unknown; sessions: S
       <span className="d">{r.team && <Tag label={r.team} />}{[title, b.label].some((x) => x.toLowerCase().includes(String(r.kind || kind).toLowerCase())) ? null : <span>{r.kind || kind}</span>}</span>
     </div>
   );
-}
+});
 
 function Activity({ range, note, team }: P) {
   const [runs, setRuns] = useState<{ runs: J[] | null; err: string | null }>({ runs: null, err: null });
-  const tick = useApp((s) => s.feeds.full?.fetchedAt ?? 0), sessions = useApp((s) => s.sessions.byKey), site = useApp((s) => (pipeSnap(s) as J)?.team?.jira_site);
+  const tick = useApp((s) => s.feeds.full?.fetchedAt ?? 0), site = useApp((s) => (pipeSnap(s) as J)?.team?.jira_site);
   const last = useRef(''), fresh = useRef(false);
   // A range change reads at once; a new snapshot reads again after 5 s, so a burst of frames gives one read.
   useEffect(() => {
@@ -334,7 +337,7 @@ function Activity({ range, note, team }: P) {
     <Sec id="ov-runs" sm>
       <Hd t="Activity"><a className="note" href="#sessions">All sessions<Go /></a></Hd>
       {note && <div className="ovknote">{note}</div>}
-      {runs.runs.length ? <div className="ovruns">{runs.runs.map((r) => <RunRow key={`${r.key}:${r.at}`} r={r} site={site} sessions={sessions} fresh={fresh} />)}</div> : <EmptyBox>No run in the last {rangeName(range)}.</EmptyBox>}
+      {runs.runs.length ? <div className="ovruns">{runs.runs.map((r) => <RunRow key={`${r.key}:${r.at}`} r={r} site={site} fresh={fresh} />)}</div> : <EmptyBox>No run in the last {rangeName(range)}.</EmptyBox>}
     </Sec>
   );
 }
@@ -394,8 +397,31 @@ function Hours({ fs, note, now }: P) {
 
 const ACCESS_TONE = (a: string): Tone => (a === 'everyone' || a === 'open' ? 'ok' : a === 'unknown' ? 'dim' : /user/.test(a) ? 'info' : 'bad');
 
+// What ovTeams reads: a session or agents delta that moves no team's count still makes a new floor, so the rows skip their repaint.
+const TEAM_PARTS = (s: Store) => [s.feeds.teams, ovFloor(s), ovStats(s)];
+type RowP = { t: J; runs: number; prs: number; spend: number; on: number | null; st: boolean; anyCap: boolean; team: string; spark?: number[] };
+const link = (t: J) => (/^[a-z][a-z0-9-]{1,30}$/.test(t.profile ?? '') ? <a href={`#teams/${t.profile}`}>{teamName(t)}</a> : teamName(t));
+
+const TeamRow = memo(function TeamRow({ t, runs, prs, spend, on, st, anyCap, team, spark }: RowP) {
+  const [a, title] = teamAccess(t), b = t.budget, cap = b?.month_cap;
+  return (
+    <tr data-team={t.profile} className={team ? (t.profile === team ? 'sel' : 'dimrow') : undefined} aria-current={t.profile === team || undefined}>
+      <td>{link(t)} <Tag label={a} tone={ACCESS_TONE(a)} title={title} /></td>
+      <td className="num">{on ?? '?'}</td>
+      <td className="num">{st ? runs.toLocaleString() : '—'}</td>
+      <td className="num">{st ? prs : '—'}</td>
+      <td className="bud"><div className="budc">
+        <b>{st ? usd(spend) : '—'}</b>
+        <span className="hint">{t.budget_error ? 'budget unknown' : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : anyCap ? 'no cap' : ''}</span>
+        {cap ? <Meter pct={(100 * b.month_usd) / cap} tone={b.month_usd >= cap ? 'bad' : b.month_usd >= 0.9 * cap ? 'warn' : undefined} label={`${teamName(t)}: ${Math.round((100 * b.month_usd) / cap)}% of this month's cap`} /> : null}
+        {st && spark && <span className="tspark"><Spark label={`${teamName(t)} spend per day, last 30 days: the top day ${usd(spark.reduce((a, b) => Math.max(a, b), 0))}`} values={spark} format={usd} /></span>}
+      </div></td>
+    </tr>
+  );
+});
+
 function Teams({ range, note, now, team }: P) {
-  const all = useParts(MODEL), teams = all.feeds.teams, n = rangeName(range);
+  const all = useParts(TEAM_PARTS), teams = all.feeds.teams, n = rangeName(range);
   const rows0 = useMemo(() => ovTeams(all, range), [all, range]);
   // The table shows every team, so it reads every team's rows, not the picked team's.
   const s = ovStats(all as Store), spark = useMemo(() => (s ? teamSpark(s.rows ?? [], now) : {}), [s, now]);
@@ -406,7 +432,6 @@ function Teams({ range, note, now, team }: P) {
   const tnote = !teams.error ? '' : rows.length ? `The teams feed failed: ${teams.error}. These rows are from ${ago(Math.round(teams.ageSeconds ?? 0))}.` : `Teams unknown: ${teams.error}.`;
   // "no cap" says something only when some team has a cap or a budget read failed.
   const anyCap = rows.some(({ t }: J) => t.budget?.month_cap > 0 || t.budget_error);
-  const link = (t: J) => (/^[a-z][a-z0-9-]{1,30}$/.test(t.profile ?? '') ? <a href={`#teams/${t.profile}`}>{teamName(t)}</a> : teamName(t));
   return (
     <Sec id="ov-teams">
       <Hd t={`Teams, last ${n}`}><a className="note" href="#teams">All teams<Go /></a></Hd>
@@ -416,23 +441,7 @@ function Teams({ range, note, now, team }: P) {
           <table className="ovtab">
             <thead><tr><th scope="col">Team</th><th scope="col" className="num">Now</th><th scope="col" className="num">Runs</th><th scope="col" className="num">PRs</th><th scope="col" className="num">Spend</th></tr></thead>
             <tbody>
-              {rows.map(({ t, u, now: on }: J) => {
-                const [a, title] = teamAccess(t), b = t.budget, cap = b?.month_cap;
-                return (
-                  <tr key={t.profile} data-team={t.profile} className={team ? (t.profile === team ? 'sel' : 'dimrow') : undefined} aria-current={t.profile === team || undefined}>
-                    <td>{link(t)} <Tag label={a} tone={ACCESS_TONE(a)} title={title} /></td>
-                    <td className="num">{on ?? '?'}</td>
-                    <td className="num">{st ? u.runs.toLocaleString() : '—'}</td>
-                    <td className="num">{st ? u.prs : '—'}</td>
-                    <td className="bud"><div className="budc">
-                      <b>{st ? usd(u.usd) : '—'}</b>
-                      <span className="hint">{t.budget_error ? 'budget unknown' : cap ? `${usd(b.month_usd)} of ${usd(cap)} this month` : anyCap ? 'no cap' : ''}</span>
-                      {cap ? <Meter pct={(100 * b.month_usd) / cap} tone={b.month_usd >= cap ? 'bad' : b.month_usd >= 0.9 * cap ? 'warn' : undefined} label={`${teamName(t)}: ${Math.round((100 * b.month_usd) / cap)}% of this month's cap`} /> : null}
-                      {st && spark[t.profile] && <span className="tspark"><Spark label={`${teamName(t)} spend per day, last 30 days: the top day ${usd(spark[t.profile]!.reduce((a, b) => Math.max(a, b), 0))}`} values={spark[t.profile]!} format={usd} /></span>}
-                    </div></td>
-                  </tr>
-                );
-              })}
+              {rows.map(({ t, u, now: on }: J) => <TeamRow key={t.profile} t={t} runs={u.runs} prs={u.prs} spend={u.usd} on={on} st={st} anyCap={anyCap} team={team} spark={spark[t.profile]} />)}
               {failed.map((t) => (
                 <tr key={t.profile} data-team-error={t.profile}>
                   <td>{teamName(t)} <Tag label="did not load" tone="bad" /></td>
