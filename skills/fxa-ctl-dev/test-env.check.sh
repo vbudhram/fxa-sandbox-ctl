@@ -11,4 +11,5 @@ check "the entry point loads the .env" "from-dotenv" "$(env -u FXA_NO_DOTENV SCR
 check "FXA_NO_DOTENV=1 skips the .env" "" "$(FXA_NO_DOTENV=1 SCRIPT_DIR="$tmp" bash -c "$loader"'; echo "${FXA_ENV_PROBE:-}"')"
 check "test.sh sets FXA_NO_DOTENV" "1" "$(grep -c '^export FXA_NO_DOTENV=1' "$here/test.sh")"
 check "test.sh points FXA_TEAMS_DIR at an empty temp path" "1" "$(grep -c '^export FXA_TEAMS_DIR="${TMPDIR:-/tmp}/fxa-test-no-teams-' "$here/test.sh")"
+check "prove.sh sets both, so its run matches test.sh" "1" "$(grep -c '^export FXA_NO_DOTENV=1 FXA_TEAMS_DIR="${TMPDIR:-/tmp}/fxa-test-no-teams-' "$here/prove.sh")"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

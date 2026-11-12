@@ -4,6 +4,8 @@
 # are copied aside and always restored; the index is not touched.
 # PROVE_BASE=<rev>: compare with that revision instead, for a change already committed.
 set -uo pipefail
+# As test.sh: the repo .env and the real team records change what a check expects.
+export FXA_NO_DOTENV=1 FXA_TEAMS_DIR="${TMPDIR:-/tmp}/fxa-test-no-teams-$$"
 [ "$#" -ge 2 ] || { echo "usage: prove.sh <check.sh> <changed file>..." >&2; exit 2; }
 check="$1"; shift; base="${PROVE_BASE:-HEAD}"
 tmp="$(mktemp -d)"
