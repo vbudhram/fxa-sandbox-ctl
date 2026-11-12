@@ -143,5 +143,7 @@ slot_write() { cat > "$1"; }; _MCP_LAUNCH_SNIPPET="" _MCP_CLAUDE_FLAGS="" _CLAUD
 ws="$tmp/ws"; mkdir -p "$ws"; printf '%s\n' "$rows" > "$ws/.fxa-trees.tsv"; echo /home/agent/pyfxa > "$ws/.fxa-trees-untrusted"
 runtime_write_prompt hi "$ws"
 check "the launch skips the untrusted tree" "1|0" "$(grep -c -- '--add-dir /home/agent/fxa' "$ws/.fxa-auto-launch.sh")|$(grep -c -- '--add-dir /home/agent/pyfxa' "$ws/.fxa-auto-launch.sh")"
+check "effort: unset runs medium, empty runs the CLI default" "1|0" \
+  "$( (unset FXA_AGENT_EFFORT; runtime_write_prompt hi "$ws"); grep -c -- '--effort medium' "$ws/.fxa-auto-launch.sh")|$( (FXA_AGENT_EFFORT=; runtime_write_prompt hi "$ws"); grep -c -- '--effort' "$ws/.fxa-auto-launch.sh")"
 
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

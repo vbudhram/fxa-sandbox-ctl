@@ -335,4 +335,11 @@ check "migrate folds the old fields into roles (joined by email or Slack ID), an
   "False False False 3 [{'slack': 'U0AAAAA1', 'email': 'A@example.com'}] ['U0AAAAA1', 'U0BBBBB2'] ['U0CCCCC3']" "$r"
 rm -f "$T/f6.json"; rm -rf "$T/f6"
 
+# The Slack connector reads the team's own channels; a team with none gets no PIPE_SLACK_CHANNELS.
+jq '.access.channels = ["C0123ABCD", "C0456EFGH"]' "$(srec sch)" > "$S/sch2.json"
+check "a record's channels reach PIPE_SLACK_CHANNELS; no channels, no key" "C0123ABCD C0456EFGH|0" \
+  "$(py env "$S/sch2.json" sch | awk -F'\t' '$1 == "PIPE_SLACK_CHANNELS" {print $2}')|$(py env "$(srec sch)" sch | grep -c '^PIPE_SLACK_CHANNELS')"
+# The gh wrapper mints its token for $FXA_PIPELINE's repo, so the entry point exports it for a team that opens PRs.
+check "the entry point exports FXA_PIPELINE when the team opens PRs" "1" "$(grep -c '^  \[ "${PIPE_PR_OPEN:-1}" = 0 \] || export FXA_PIPELINE$' "$root/fxa-sandbox-ctl")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
