@@ -1747,7 +1747,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 body = {"cursor": None, "rows": [], "error": type(exc).__name__}
             if body.get("rows") and not self._team_admin(path):
-                body["rows"] = [redact_fix(redact_session(r) if not r.get("deleted") and team_private(r.get("profile") or "fxa") else r) for r in body["rows"]]
+                body["rows"] = [redact_fix(redact_session(r) if not r.get("deleted") and row_private(r) else r) for r in body["rows"]]
             self._json(200, body)
         elif path == "/api/usage":
             # One session's or quick answer's LLM use by model, from the proxy's calls in the store.

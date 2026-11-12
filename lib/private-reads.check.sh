@@ -27,7 +27,8 @@ rows = [{"key": "agent-priv01", "profile": "privteam", "request": "fix the secre
         {"key": "agent-pub001", "profile": "fxa", "request": "fix the page", "media": [{"name": "a.png"}]}, {"key": "agent-gone01", "deleted": True},
         {"key": "agent-fix001", "profile": "fxa", "fix_pr": "90001", "fix_trigger": "label", "fix_actor": "example-writer", "fix_head_sha": "a" * 40,
          "pr_url": "https://github.com/mozilla/fxa/pull/90001", "branch": "dependabot/x", "request": "Fix the failing checks of #90001"},
-        {"key": "agent-rtn001", "profile": "fxa", "routine_run": "7", "request": "review the code"}]
+        {"key": "agent-rtn001", "profile": "fxa", "routine_run": "7", "request": "review the code"},
+        {"key": "agent-nar001", "profile": "fxa", "watch_narrow": "1", "request": "review the auth code", "wrap_reply": "found a hole"}]
 FIXK = ("fix_pr", "fix_trigger", "fix_actor", "fix_head_sha", "pr_url", "branch", "request")
 server.fxadb.sessions_since = lambda con, since, d: {"cursor": 9, "rows": rows}
 server.FULL = server.Feed("snapshot", [], 60, 30); server.STATS = server.Feed("stats", [], 60, 30); server.AGENTS = server.Feed("agents", [], 15, 30)
@@ -51,6 +52,7 @@ check("a team admin reads them", [200, 200, 200], codes("agent-priv01", "admin@e
 check("a public team's session is open to any viewer", [200, 200, 200], codes("agent-pub001"))
 s = {r["key"]: r for r in get("/api/sessions?since=1")[1]["rows"]}
 check("/api/sessions: a private session has no request, media or last text for a non-admin", [], [k for k in ("request", "media", "last_text") if k in s["agent-priv01"]])
+check("/api/sessions: a narrowed FxA session (a security review) has no request or wrap-up for a non-admin", [], [k for k in ("request", "wrap_reply") if k in s["agent-nar001"]])
 check("/api/sessions: a public session and a deleted row are as they were", ("fix the page", True), (s["agent-pub001"]["request"], s["agent-gone01"]["deleted"]))
 check("/api/sessions: an admin sees the request", "fix the secret", {r["key"]: r for r in get("/api/sessions?since=1", "admin@example.com")[1]["rows"]}["agent-priv01"]["request"])
 a = {x["key"]: x for x in get("/api/snapshot")[1]["agents"]["sessions"]}
