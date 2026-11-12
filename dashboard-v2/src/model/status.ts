@@ -22,6 +22,11 @@ export const health = memo((s) => [pipe(s), AGENTS(s), STATE(s), s.conn.mode], (
 });
 
 export type AlertRow = { tone: 'bad' | 'warn'; subject: string; what: string; fix?: string };
+// passQuiet: the timer is on and its next run is over 25 min away, so an old last pass is the schedule
+// (the night, a weekend hour), not a stall. A timer that fires and fails keeps its next run near.
+export const passQuiet = (h: J, now = Date.now() / 1000): boolean =>
+  h?.pass_timer === 'on' && typeof h.next_pass_epoch === 'number' && h.next_pass_epoch - now > 1500;
+
 // The faults a person fixes. subject is a feed or a key; fix, when given, is the command that fixes it.
 export const alerts = memo((s) => [pipe(s), AGENTS(s), STATE(s), merged(s), strays(s)], (s): AlertRow[] => {
   const snap = SNAP(s), g = AGENTS(s), st = STATE(s), out: AlertRow[] = [], h = snap?.health ?? {};
@@ -36,9 +41,10 @@ export const alerts = memo((s) => [pipe(s), AGENTS(s), STATE(s), merged(s), stra
   if (st.error) add('bad', 'tickets', st.error);
   if (st.agents_error) add('bad', 'agents', st.agents_error);
   if (st.stats_error) add('warn', 'stats', st.stats_error);
-  const sp = h.seconds_since_pass;
-  if (snap && (sp == null || sp > 7200)) add('warn', 'pass', sp == null ? 'no pass recorded yet' : `no pipeline pass in ${ago(sp).replace(' ago', '')}, so open PRs get no reconcile, feedback or rebase rounds. To start the passes, the operator runs /fxa-automation in Claude Code.`);
-  else if (sp > 1500) add('warn', 'pass', `last pass ${ago(sp)}; the cron fires every 20 minutes`);
+  // Outside pass hours an old last pass is no fault: the status bar says when passes resume.
+  const sp = h.seconds_since_pass, offHours = sp != null && passQuiet(h);
+  if (!offHours && snap && (sp == null || sp > 7200)) add('warn', 'pass', sp == null ? 'no pass recorded yet' : `no pipeline pass in ${ago(sp).replace(' ago', '')}, so open PRs get no reconcile, feedback or rebase rounds. To start the passes, the operator runs /fxa-automation in Claude Code.`);
+  else if (!offHours && sp > 1500) add('warn', 'pass', `last pass ${ago(sp)}; the cron fires every 20 minutes`);
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add('bad', 'disk', `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (snap?.inflight_fetch_failed) add('warn', 'jira', 'could not read in-flight tickets; nothing running is unverified');
   merged(s).cards.forEach((t) => {

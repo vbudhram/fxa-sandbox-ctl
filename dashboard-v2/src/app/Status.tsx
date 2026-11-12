@@ -5,6 +5,7 @@ import type { FeedName, Store } from '../store/types';
 import { agentsOf, connWord, snapOf } from './derive';
 import { ago, usd } from '../format';
 import { safe, type Sel } from './store';
+import { passQuiet } from '../model/status';
 
 type Row = Record<string, unknown>;
 
@@ -48,7 +49,8 @@ export function StatusBar({ s, sel, health, onRefresh }: { s: Store; sel: Sel; h
   const snap = snapOf(s), g = agentsOf(s), h = (snap?.health ?? {}) as Row;
   const paused = h.paused != null;
   const sp = h.seconds_since_pass as number | null | undefined;
-  const dead = !paused && (sp == null || sp > 7200), quiet = !paused && sp != null && sp > 1500;
+  const offHrs = !paused && sp != null && passQuiet(h), np = h.next_pass_epoch as number | undefined;
+  const dead = !paused && !offHrs && (sp == null || sp > 7200), quiet = !paused && !offHrs && sp != null && sp > 1500;
   const lowDisk = h.free_gb != null && h.min_free_gb != null && (h.free_gb as number) < (h.min_free_gb as number);
   const q = snap?.queue as Row | undefined, ready = (q?.ready as unknown[] | undefined)?.length ?? 0;
   const waits = safe(() => sel.queueWaits(s))?.length ?? 0, starved = !q?.fetch_failed && ready === 0 && waits > 0;
@@ -60,7 +62,7 @@ export function StatusBar({ s, sel, health, onRefresh }: { s: Store; sel: Sel; h
   const cell = (k: string, tone: string, body: ReactNode, title?: string) =>
     cells.push(<span key={k} className={`cell ${tone}`.trim()} title={title}>{body}</span>);
   if (snap) {
-    cell('pass', dead ? 'bad' : quiet ? 'warn' : paused ? '' : 'ok', <>last pass <b>{sp == null ? 'never' : ago(sp)}</b></>);
+    cell('pass', dead ? 'bad' : quiet ? 'warn' : paused || offHrs ? '' : 'ok', <>last pass <b>{sp == null ? 'never' : ago(sp)}</b>{offHrs && np ? <> · passes resume at <b>{new Date(np * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</b></> : null}</>);
     if (paused) cell('paused', '', <><b>passes paused</b> · {String(h.paused).slice(0, 60)}</>, String(h.paused));
     if (h.lock_held) cell('lock', 'warn', <b>lock held</b>);
     if (m.newtickets === 'off') cell('intake', 'warn', <><b>intake off</b> · PR rounds only</>, String(m.newtickets_note ?? ''));
