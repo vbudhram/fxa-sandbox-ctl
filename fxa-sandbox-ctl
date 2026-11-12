@@ -24,8 +24,8 @@ _resolve_symlink() {
 }
 SCRIPT_DIR="$(cd "$(dirname "$(_resolve_symlink "${BASH_SOURCE[0]}")")" && pwd)"
 
-# Load KEY=VALUE lines from .env. A variable already set in the shell wins.
-if [ -f "${SCRIPT_DIR}/.env" ]; then
+# Load KEY=VALUE lines from .env. A variable already set in the shell wins. FXA_NO_DOTENV=1 (test.sh) skips it, as CI has none.
+if [ -z "${FXA_NO_DOTENV:-}" ] && [ -f "${SCRIPT_DIR}/.env" ]; then
   # `|| [ -n "$_env_key" ]` handles a final line that has no trailing newline.
   while IFS='=' read -r _env_key _env_val || [ -n "$_env_key" ]; do
     case "$_env_key" in

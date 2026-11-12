@@ -17,6 +17,7 @@ export FXA_SESSION_DIR="${TMPDIR:-/tmp}/fxa-test-no-sessions-$$"  # a check that
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI="" FXA_DB_BACKUP_URI=""  # empty turns the bucket copies off
 unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY  # a Claude Code session sets them; the checks assert their own
 export FXA_TEAMS_DIR="${TMPDIR:-/tmp}/fxa-test-no-teams-$$"  # the real team records change what a check expects
+export FXA_NO_DOTENV=1  # the repo .env (FXA_FXA_RECORD, profiles) changes what a check expects; CI has none
 
 # _tmo <cmd...>   FXA_CHECK_TIMEOUT=<s>: stop a command that hangs, with its whole process group (a child that
 # keeps the output pipe open would keep the capture waiting), and exit 142. macOS has no timeout.
