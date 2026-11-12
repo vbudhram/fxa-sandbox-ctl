@@ -75,30 +75,33 @@ export function useTween(target: number | null, ms = 300) {
 
 export function DataTable({ title, table }: { title: string; table: ChartTable }) {
   return (
-    <table className="mt-s2 w-full border-collapse text-sub">
-      <caption className="sr-only">{title}</caption>
-      <thead>
-        <tr>
-          {table.head.map((h, j) => (
-            <th key={h} scope="col" className={`whitespace-nowrap border-b border-line px-s2 py-s1 font-semibold text-dim ${j ? 'text-right' : 'text-left'}`}>
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {table.rows.map((r, i) => (
-          <tr key={i}>
-            {r.map((c, j) => (
-              // The first column names the row; the rest are figures, so they align right.
-              <td key={j} className={`whitespace-nowrap border-b border-line px-s2 py-s1 ${j ? 'text-right tabular-nums' : ''}`}>
-                {c}
-              </td>
+    // A table wider than a phone card scrolls in its own region, not the page.
+    <div className="mt-s2 overflow-x-auto" role="region" aria-label={`${title} as a table`} tabIndex={0}>
+      <table className="w-full border-collapse text-sub">
+        <caption className="sr-only">{title}</caption>
+        <thead>
+          <tr>
+            {table.head.map((h, j) => (
+              <th key={h} scope="col" className={`whitespace-nowrap border-b border-line px-s2 py-s1 font-semibold text-dim ${j ? 'text-right' : 'text-left'}`}>
+                {h}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {table.rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) => (
+                // The first column names the row; the rest are figures, so they align right.
+                <td key={j} className={`whitespace-nowrap border-b border-line px-s2 py-s1 ${j ? 'text-right tabular-nums' : ''}`}>
+                  {c}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
