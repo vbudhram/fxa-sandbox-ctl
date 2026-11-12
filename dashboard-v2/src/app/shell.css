@@ -2,8 +2,11 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body { overflow: hidden; }
-a { color: inherit; text-decoration: none; border-radius: 2px; }
-a:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* In the base layer, so a Tailwind class on a link (rounded-lg, no-underline) wins. */
+@layer base {
+  a { color: inherit; text-decoration: none; border-radius: 2px; }
+  a:hover { text-decoration: underline; text-underline-offset: 2px; }
+}
 :focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 [hidden] { display: none !important; }
 button { font: 600 var(--t-sub) var(--head); color: var(--ink); background: var(--bg); border: 1px solid var(--line2);
