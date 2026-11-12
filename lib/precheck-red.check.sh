@@ -60,7 +60,10 @@ check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
   check "the base moved again: one more update-branch" "0|70 70" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-7')|$(paste -sd' ' "$tmp/upd7")" )
 # A done PR that is only behind, where the base requires it: GitHub updates the branch, no wake.
 ( cmd_drain() { echo "FXA-10 100 BEHIND"; }; gh_update_branch() { echo "$1" > "$tmp/upd10"; }
-  check "a BEHIND PR gets update-branch and no wake" "0|100" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-10')|$(cat "$tmp/upd10")" )
+  gh_pr_approved() { return 1; }; a="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-10')|$(cat "$tmp/upd10" 2>/dev/null)"
+  check "a BEHIND PR with no approval: no update and no wake" "0|" "$a"
+  gh_pr_approved() { :; }
+  check "an approved BEHIND PR gets update-branch and no wake" "0|100" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-10')|$(cat "$tmp/upd10")" )
 # An inflight PR's conflict wakes the pass too; its red stays reconcile's.
 ( jira_done_keys() { :; }; jira_inflight_keys() { echo FXA-9; }; pipeline_progress() { echo "$1 pr 1"; }; gh_conflicts() { echo "source a.ts"; }
   gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }

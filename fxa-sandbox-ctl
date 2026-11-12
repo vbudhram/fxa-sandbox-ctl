@@ -1615,8 +1615,10 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
                 else _work "drain: $line"; printf '%s\n' "$fp" > "${PIPE_STATE_DIR}/${key}.red-noted"; fi
               fi ;;
       CONFLICT) _precheck_conflict "$key" "$num" ;;
-      # Only where the base requires an up-to-date branch: GitHub merges the base in, with no VM and no counter.
-      BEHIND) if gh_update_branch "$num" 2>/dev/null; then _info "drain: $key #$num was behind ${PIPE_BASE_BRANCH:-main}; branch updated"
+      # Only where the base requires an up-to-date branch. Behind blocks only a merge, so each base move
+      # does not rerun CI on a PR that waits for review: it updates once it is approved.
+      BEHIND) if ! gh_pr_approved "$num"; then _info "drain: $key #$num is behind ${PIPE_BASE_BRANCH:-main}; it updates when it is approved"
+              elif gh_update_branch "$num" 2>/dev/null; then _info "drain: $key #$num was behind ${PIPE_BASE_BRANCH:-main}; branch updated"
               else _drain_wake "$key" "$line (update-branch FAILED)"; fi ;;
       # Only a ticket key names a state file: drain's stderr is in this stream too (2>&1), and a
       # path there once became a key whose note file had no directory, which ended the pass.
@@ -1650,7 +1652,8 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         bm="$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json mergeable,mergeStateStatus -q '"\(.mergeable) \(.mergeStateStatus)"' 2>/dev/null || true)"
         case "$bm" in
           CONFLICTING*) _precheck_conflict "$key" "$num" " blocked:${bkind}" ;;
-          *" BEHIND") if gh_update_branch "$num" 2>/dev/null; then _info "drain: $key #$num (blocked ${bkind}) was behind ${PIPE_BASE_BRANCH:-main}; branch updated"
+          *" BEHIND") if ! gh_pr_approved "$num"; then _info "drain: $key #$num (blocked ${bkind}) is behind ${PIPE_BASE_BRANCH:-main}; it updates when it is approved"
+                      elif gh_update_branch "$num" 2>/dev/null; then _info "drain: $key #$num (blocked ${bkind}) was behind ${PIPE_BASE_BRANCH:-main}; branch updated"
                       else _drain_wake "$key" "$key $num BEHIND blocked:${bkind} (update-branch FAILED)"; fi ;;
         esac ;;
     esac
