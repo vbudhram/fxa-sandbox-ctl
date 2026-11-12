@@ -20,12 +20,13 @@ _FXA_ALERTS_LOADED=1
 _alert() {
   local s open
   open="$(cmd_errors --json 2>/dev/null | jq -r --arg k "$1" --arg p "$3" 'def stem: split("; ")[0] | gsub("[0-9]+"; "N");
-    .[] | select(.source == "alert" and .kind == $k and .status != "resolved" and (.message | stem) == ($p | stem)) | .sig' 2>/dev/null)"
+    .[] | select(.source == "alert" and .kind == $k and .status != "resolved" and (.message | stem) == ($p | stem)) | "\(.sig) \(.status)"' 2>/dev/null)"
   if [ "$2" = 1 ]; then
-    [ -z "$open" ] || return 0
+    # A quiet row (no hit for 7 days) of an alert that still lasts gets a new hit, so it stays in the open views.
+    [ -z "$(grep -v ' quiet$' <<< "$open" || true)" ] || return 0
     errors_record alert "$1" "" "alerts" "$3" "" && echo "alert: $3"
   elif [ -n "$open" ]; then
-    for s in $open; do cmd_errors resolve "$s" "cleared: under the threshold again" >/dev/null; done; echo "cleared: $1"
+    for s in $(cut -d' ' -f1 <<< "$open"); do cmd_errors resolve "$s" "cleared: under the threshold again" >/dev/null; done; echo "cleared: $1"
   fi
   return 0
 }
