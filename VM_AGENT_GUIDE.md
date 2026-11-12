@@ -154,8 +154,10 @@ to 2026-10-03, the longest 10% of sessions used half of all tokens.
 Before it ships anything, the host checks the change. It refuses when:
 
 - The change touches `.github/`, `.circleci/`, `.yarnrc*`, `.yarn/` or
-  `.npmrc`. If the ticket really needs one of these, say so once in the PR
-  body; the operator can relaunch with permission. Everything else ships,
+  `.npmrc`. When a team admin asked for the session, the host says so in
+  the request, and `.github/` and `.circleci/` then ship. Otherwise, if the
+  request needs one of these, say so once and ask a team admin to ask for
+  it. Do not offer a rerun with permission. Everything else ships,
   `_scripts/`, `.husky/` and `package.json` scripts included: do not warn
   about them.
 - `origin/main`'s `_scripts/check-frozen.ts` rejects a path. Read that file

@@ -338,7 +338,8 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - Repos that are not on GitHub.
 - A general multi-tenant platform or a registry for other companies.
 - Root code from the dashboard. A boot script is repo code with a pinned hash.
-- Changes to the guards by a team: the tooling guard, the personal-data guard, the spend ceilings.
+- Changes to the guards by a team: the tooling guard, the personal-data guard, the spend ceilings. One exception: a
+  team admin's request allows CI config (`.circleci/`, `.github/`) for that session or ticket. Yarn and npm config stay refused.
 - Hard isolation between teams on the manager in this version. Each team's pass running with only its
   own credentials waits until a team with its own secrets turns on a queue.
 
