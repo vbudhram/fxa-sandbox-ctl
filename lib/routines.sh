@@ -1053,8 +1053,11 @@ routine_done() {
 # findings block, or there is no Jira login. ponytail: a create is not retried (it must not repeat), so a
 # failed one is only named in the report; the next run that finds it again files it.
 ROUTINE_TICKETS_MOST=5
+# The bot gives `routine done` 2 min. No new finding starts after this many seconds; one in flight takes up to
+# 60 s more (a 30 s search, then a 30 s create), so the run row is still written in time.
+ROUTINE_FILE_BUDGET_S="${ROUTINE_FILE_BUDGET_S:-45}"
 _routine_file_findings() {
-  local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" t q k sc body out="" listed n=0 tk id sev name made=0 over=""
+  local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" t q k sc body out="" listed n=0 tk id sev name made=0 over="" late=0 t0=$SECONDS
   [ -n "$p" ] || { echo "ERROR: the team has no Jira project" >&2; return 1; }
   _jira_sa || { echo "ERROR: tickets need the team's Jira service account" >&2; return 1; }
   name="$(jq -r .name <<< "$cfg")"
@@ -1063,6 +1066,7 @@ _routine_file_findings() {
   while IFS= read -r tk; do
     [ -n "$tk" ] || continue
     n=$((n + 1)); id="$(jq -r .id <<< "$tk")"; sev="$(jq -r .severity <<< "$tk")"
+    [ $((SECONDS - t0)) -lt "$ROUTINE_FILE_BUDGET_S" ] || { late=$((late + 1)); continue; }
     # Any status: a closed ticket (fixed, or not a bug) is not filed again. The open one, if any, comes first.
     q="$(jq -nc --arg q "project = ${p} AND text ~ \"${id}\"" '{jql: $q, fields: ["statusCategory"], maxResults: 10}')"
     # Not one pipe: without pipefail, a failed search would read as "no ticket" and file a duplicate.
@@ -1092,6 +1096,7 @@ _routine_file_findings() {
       errors_record routine jira_create_failed "" "routine ${run} findings" "Jira refused a ticket in ${p}" "" 2>/dev/null || true
     fi
   done < <(jq -c '.tickets[]' <<< "$t")
+  [ "$late" = 0 ] || out+=$'\n'"Not filed: ${late} more finding(s), Jira was too slow to file them all in time. A later run files them if they are still there."
   # The findings come worst first, so the counts keep that order.
   [ -z "$over" ] || out+=$'\n'"Not filed: $(grep -c . <<< "$over") more finding(s) over the cap of ${ROUTINE_TICKETS_MOST} new tickets a run ($(uniq -c <<< "${over%$'\n'}" | awk '{printf "%s%s %s", (NR > 1 ? ", " : ""), $1, $2}')). A later run files them if they are still there."
   if [ "$n" = 0 ]; then printf '%s: no finding to file (%s listed, none MEDIUM or above).\n' "$name" "$listed"

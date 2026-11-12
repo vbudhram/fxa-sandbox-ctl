@@ -52,6 +52,7 @@ _jira_rest_json() {
     */search/jql) case "$3" in
       (*"$mid"*) echo '{"issues": [{"key": "FXA-49", "fields": {"statusCategory": {"key": "done"}}}, {"key": "FXA-50", "fields": {"statusCategory": {"key": "indeterminate"}}}]}' ;;
       (*) [ -n "${SEARCH_FAILS:-}" ] && return 22
+          [ -z "${SLOW_SEARCH:-}" ] || sleep 1
           if [ -n "${CLOSED_HIGH:-}" ]; then echo '{"issues": [{"key": "FXA-40", "fields": {"statusCategory": {"key": "done"}}}]}'; else echo '{"issues": []}'; fi ;;
     esac ;;
     */comment) echo '{}' ;;
@@ -92,6 +93,10 @@ PY
 out="$(_routine_file_findings 9 "$tmp/many.md" "$cfg")"
 check "a run files at most 5 new tickets, and counts the rest worst first" "5|Not filed: 2 more finding(s) over the cap of 5 new tickets a run (1 HIGH, 1 MEDIUM). A later run files them if they are still there." \
   "$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")|$(grep '^Not filed: 2 more' <<< "$out")"
+: > "$tmp/jira"
+out="$(ROUTINE_FILE_BUDGET_S=1 SLOW_SEARCH=1 _routine_file_findings 9 "$tmp/many.md" "$cfg")"
+check "a slow Jira stops filing at the time budget and counts the rest, so done still writes the run row" "1|Not filed: 6 more finding(s), Jira was too slow to file them all in time. A later run files them if they are still there." \
+  "$(grep -c '/search/jql' "$tmp/jira")|$(grep '^Not filed: 6 more' <<< "$out")"
 check "no service account: nothing is filed" "1" "$(_jira_sa() { return 1; }; _routine_file_findings 9 "$tmp/report.md" "$cfg" >/dev/null 2>&1; echo $?)"
 
 # routine done: the security review's report becomes the keys-only text, in the row and in the answer.
