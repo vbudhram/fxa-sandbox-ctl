@@ -397,7 +397,7 @@ _finish_risk_section() {
       libs/payments/*|apps/payments/*|packages/fxa-payments-server/*|packages/fxa-auth-server/lib/payments/*|packages/fxa-auth-server/lib/routes/subscriptions*|\
       packages/fxa-shared/payments/*|packages/fxa-shared/subscriptions/*)
         m=3; [ "$r" -ge 2 ] || r=2; add "payments"; because "a charge or a processed webhook stays" ;;
-      .circleci/*|.github/workflows/*) m=3; add "CI" ;;
+      .circleci/*|.github/workflows/*) m=3; if [ "${FXA_ALLOW_CI_EDITS:-}" = 1 ]; then add "CI config, which a team admin asked for"; else add "CI"; fi ;;
       packages/fxa-content-server/server/lib/csp*|packages/fxa-content-server/server/lib/routes/post-csp*) m=3; add "CSP and security headers" ;;
       */config/*key*.json) m=3; r=3; add "key files"; because "key files change what existing tokens verify against" ;;
       packages/fxa-auth-server/lib/senders/*|packages/fxa-auth-server/lib/email/*|libs/accounts/email-renderer/*|libs/accounts/email-sender/*)
@@ -759,7 +759,7 @@ _finish_push_and_pr() {
   # A fix run's refusal is its end (why guard:<class>), not an operator error.
   # A fix run never gets FXA_ALLOW_TOOLING_EDITS: CI and yarn config stay refused.
   if [ -n "$fix" ]; then
-    FXA_ALLOW_TOOLING_EDITS="" _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
+    FXA_ALLOW_TOOLING_EDITS="" FXA_ALLOW_CI_EDITS="" _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
     _finish_prfix_lock_guard "$worktree" || { _finish_prfix_why guard:lock; return 1; }
   fi
   _finish_tooling_guard "$worktree" || { _finish_prfix_why guard:tooling; return 1; }
@@ -1370,19 +1370,21 @@ finish_watch_ci() {
 #   Refuse CI config and yarn or npm config. CI config decides which jobs run with which secrets;
 #   yarn config (yarnPath, plugins) runs code on the manager in a relock (lib/github.sh).
 #   Task scripts, hooks and _scripts/ pass: CI runs the agent's tests with the same env anyway.
-#   FXA_ALLOW_TOOLING_EDITS=1 allows them all.
+#   FXA_ALLOW_TOOLING_EDITS=1 allows them all. FXA_ALLOW_CI_EDITS=1 (a team admin asked for the session)
+#   allows CI config only: yarn and npm config still run code on the manager.
 _finish_tooling_guard() {
   local wt="$1" f hit=""
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
   while IFS= read -r -d '' f; do
     case "$f" in
-      .github/*|.circleci/*|.yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc) hit="${hit}${f}"$'\n' ;;
+      .github/*|.circleci/*) [ "${FXA_ALLOW_CI_EDITS:-}" = 1 ] || hit="${hit}${f}"$'\n' ;;
+      .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc) hit="${hit}${f}"$'\n' ;;
     esac
   done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
   [ -z "$hit" ] && return 0
   # The paths on the ERROR line itself: progress and the pass keep only that line.
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
-  echo "       Relaunch with FXA_ALLOW_TOOLING_EDITS=1 if the ticket asks for this." >&2
+  echo "       A team admin's request in the thread or on the ticket allows .circleci/ and .github/; yarn and npm config stay refused." >&2
   return 1
 }
 

@@ -27,7 +27,7 @@ runtime_skill_ref() { printf '/%s' "$1"; }
 fin() { jq -nc --arg t "$1" '{type: "result", result: $t}' | _session_parse; }
 eval "$(sed -n '/^_session_finish_fail() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_finish_session() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
-eval "$(sed -n '/^cmd_task() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^cmd_task() {/,/^}/p;/^cmd_steer() {/,/^}/p;/^_ci_ok_note() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_task_carry() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^_checkout_gate_on() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
 eval "$(sed -n '/^trees_from_get() {/,/^}/p' "$(dirname "$0")/trees.sh")"

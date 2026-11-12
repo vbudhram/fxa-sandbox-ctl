@@ -600,3 +600,19 @@ jira_comment() {
   adf="$(printf '%s' "$body" | python3 -I "${JIRA_LIB_DIR}/jira_adf.py" $(_jira_sa || echo --mark))" || return 1
   acli jira workitem comment create --key "$key" --body "$adf" >/dev/null
 }
+
+# jira_admin_asked <KEY>   Succeeds when the ticket's reporter, or the author of one of its comments, is an admin
+#   of this team: each admin email in the team record mapped to one Jira account ID. Account IDs only, never a
+#   display name, which anyone can set. A failed read is "no" (fail closed).
+jira_admin_asked() {
+  local key="${1:-}" rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" ids="" e id who
+  [ -n "$key" ] && [ -f "$rec" ] || return 1
+  for e in $(jq -r '(.admins[]?.email // empty), (.people[]? | select(.admin == true) | .email // empty)' "$rec" 2>/dev/null | sort -u); do
+    id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}" | jq -r 'if length == 1 then .[0].accountId else empty end' 2>/dev/null)" || id=""
+    [ -z "$id" ] || ids="${ids}${id}"$'\n'
+  done
+  [ -n "$ids" ] || return 1
+  who="$(_jira_rest GET "/rest/api/3/issue/${key}?fields=reporter,comment" \
+    | jq -r '(.fields.reporter.accountId // empty), (.fields.comment.comments[]?.author.accountId // empty)' 2>/dev/null)" || return 1
+  printf '%s\n' "$who" | grep -qxF -f <(printf '%s' "$ids")
+}

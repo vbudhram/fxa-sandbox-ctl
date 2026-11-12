@@ -452,6 +452,17 @@ $(cat "$guardrails_file")
 "
     echo "Injected guardrails from ${guardrails_file} into the agent context." >&2
   fi
+  # A team admin filed the ticket or commented on it: this run pulls and ships CI config (lib/finish.sh guard).
+  local FXA_ALLOW_CI_EDITS=""
+  if jira_admin_asked "$key"; then
+    export FXA_ALLOW_CI_EDITS=1
+    fenced="${fenced}
+## CI config (trusted, written by the host)
+
+$(_ci_ok_note | sed 's/this session/this ticket/')
+"
+    echo "A team admin filed or commented on ${key}: CI config ships for this run." >&2
+  fi
   context="${fenced}
 ## Ticket text (untrusted)
 
@@ -2391,7 +2402,7 @@ _session_announce() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
+  local ci_ok="" source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
   while [ $# -gt 0 ]; do
     # A routine run takes only these; any other option is the caller's say, which it must not have.
     case "$1" in --id|--thread|--link|--queued-s|--runtime|--source|--routine-run) ;; *) caller=1 ;; esac
@@ -2410,6 +2421,7 @@ cmd_task() {
       --inbox-dir) inbox_dir="$2"; shift 2 ;;
       --owner-name) owner_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
+      --ci-ok) ci_ok=1; shift ;;
       --source) source="$2"; shift 2 ;;
       --routine-run) rrun="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
@@ -2552,6 +2564,11 @@ cmd_task() {
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   # The resumed transcript holds what the earlier session read, so its taint carries over.
   [ -n "$resume_from" ] && [ "$(session_get "$resume_from" untrusted 2>/dev/null || true)" = 1 ] && session_set "$key" untrusted 1
+  # A team admin asked (the bot checks it, ctl --ci-ok), now or in the session this resumes: CI config ships.
+  if [ -n "${ci_ok:-}" ] || { [ -n "$resume_from" ] && [ -n "$(session_get "$resume_from" ci_ok 2>/dev/null || true)" ]; }; then
+    session_set "$key" ci_ok 1
+    printf '\n\n%s\n' "$(_ci_ok_note)" >> "${SESSION_DIR}/${key}.prompt.md"
+  fi
   [ -z "$rround" ] || session_set "$key" cap_usd "$rround"
   if [ -n "$thread" ]; then
     session_set "$key" thread "$thread"
@@ -2797,12 +2814,17 @@ The runner did not install this head's dependencies or build its libs. Run \`yar
     boot_backend "$(jq -r 'if .restore then "firecracker" else "gce" end' <<< "$boot")"
 }
 
+# The host's line to the agent when a team admin asked for the session: the guide says CI config is refused otherwise.
+_ci_ok_note() {
+  echo '(Host: a team admin asked for this session, so you may change .circleci/ and .github/ when the request needs it. The host ships those changes. .yarnrc*, .yarn/ and .npmrc stay refused.)'
+}
 cmd_steer() {
-  local key="${1:-}" file="" q name="" image=""
+  local key="${1:-}" file="" q name="" image="" ci_ok="" note=""
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --message-file) file="${2:-}"; shift 2 ;;
+      --ci-ok) ci_ok=1; shift ;;
       --from-name) name="${2:-}"; shift 2 ;;
       --from-image) image="${2:-}"; shift 2 ;;
       *) echo "ERROR: unknown steer option: $1" >&2; return 1 ;;
@@ -2816,15 +2838,20 @@ cmd_steer() {
   esac
   local person; person="$(_session_person "$name" "$image")"
   _session_history_add "$key" user "$(cat "$file")" "${person%%$'\t'*}" "${person#*$'\t'}"
+  # The first message from a team admin grants CI config for the rest of the session, and tells the agent once.
+  if [ -n "$ci_ok" ] && [ -z "$(session_get "$key" ci_ok)" ]; then
+    session_set "$key" ci_ok 1
+    note="$(mktemp "${TMPDIR:-/tmp}/fxa-steer.XXXXXX")"; { printf '%s\n\n' "$(_ci_ok_note)"; cat "$file"; } > "$note"; file="$note"
+  fi
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
-  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; echo "${key} queued"; return 0; fi
+  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; [ -z "$note" ] || rm -f "$note"; echo "${key} queued"; return 0; fi
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
-    { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; echo "${key} queued"; return 0
+    { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; [ -z "$note" ] || rm -f "$note"; echo "${key} queued"; return 0
   fi
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
-  _session_unlock "$key"
+  _session_unlock "$key"; [ -z "$note" ] || rm -f "$note"
   [ "$rc" -eq 0 ] || return "$rc"
   echo "${key} started"
 }
@@ -3237,7 +3264,9 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   fi
   memory_collect_session "$key" "$name" ship
   local parent; parent="$(mktemp -d)"; tmp="${parent}/${key}"
-  session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
+  # A team admin asked for this session (task or steer --ci-ok): its CI config is pulled and shipped.
+  local ci=""; [ "$(session_get "$key" ci_ok)" = 1 ] && ci=1
+  FXA_ALLOW_CI_EDITS="$ci" session_checkout "$key" "$tmp" || { session_checkout_remove "$tmp"; rm -rf "$parent"; _session_finish_fail "$key" "could not stage the work" "$mode"; return 1; }
   # Draft, so CODEOWNERS asks nobody yet; finish asks Copilot itself. A person marks it ready.
   # A checked-out PR (task --checkout) is the PR to update: finish never searches for it by branch name.
   local fpr=""; [ -n "$(session_get "$key" checkout)" ] && fpr="$(session_get "$key" review_pr)"
@@ -3247,7 +3276,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   # A team admin can set a routine to open a regular PR instead.
   [ "$(session_get "$key" routine_draft)" = false ] && local FXA_PR_DRAFT=""
   rc=0
-  pr_url="$(FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
+  pr_url="$(FXA_ALLOW_CI_EDITS="$ci" FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
     FXA_APP_COMMIT_FF="$frun" FXA_FIX_HEAD_SHA="$fhead" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" = 3 ] && { _session_finish_fail "$key" "the branch of the PR moved, so nothing was pushed" "$mode"; return 1; }

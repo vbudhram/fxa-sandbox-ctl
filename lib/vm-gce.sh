@@ -324,6 +324,7 @@ vm_pull_tree() {
   local -a tooling=(--exclude .github --exclude .circleci --exclude .husky)
   # bash 3.2: "${tooling[@]}" on an empty array is unbound under set -u, hence the ${x[@]+...} form.
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && tooling=()
+  [ "${FXA_ALLOW_CI_EDITS:-}" = "1" ] && [ "${FXA_ALLOW_TOOLING_EDITS:-}" != "1" ] && tooling=(--exclude .husky)
   for i in 1 2 3; do
     # --safe-links: a pulled symlink that points outside the tree is dropped, not committed.
     # shellcheck disable=SC2086  # VM_SSH_OPTS is a list of flags, split on purpose
