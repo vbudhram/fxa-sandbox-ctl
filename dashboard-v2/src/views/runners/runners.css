@@ -4,8 +4,9 @@
 .sbv #sb-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3); }
 @media (max-width: 900px) { .sbv #sb-cards { grid-template-columns: 1fr; } }
 .sb-card { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.sb-card .lbl { font: 600 var(--t-sub) var(--head); color: var(--dim); }
-.sb-card .big { font: 700 var(--t-page)/1.1 var(--head); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+/* The label and figure of the shared StatTile, so these read as the same tiles as Pipeline's. */
+.sb-card .lbl { font: 600 var(--t-label) var(--head); text-transform: uppercase; letter-spacing: .025em; color: var(--dim); }
+.sb-card .big { font: 700 var(--t-kpi)/1.25 var(--head); font-variant-numeric: tabular-nums; }
 .sb-card .sub { font-size: var(--t-sub); color: var(--faint); }
 .sb-card .sub a { display: inline-flex; align-items: center; min-height: 24px; }
 .sbv a, .sbp a { color: var(--link); }

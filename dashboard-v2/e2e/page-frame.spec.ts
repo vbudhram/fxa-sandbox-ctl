@@ -17,3 +17,11 @@ for (const hash of ['#runners/all', '#teams', '#teams/fxa', '#teams/example/sett
     if (hash.endsWith('/memory')) expect(await page.locator('main p').evaluateAll((ps) => ps.filter((p) => getComputedStyle(p).fontSize === '14px').length)).toBe(0);
   });
 }
+
+test('#runners/all: the summary cards use the StatTile label and figure', async ({ page }) => {
+  await page.goto('/v2/#runners/all');
+  await expect(page.locator('#conn')).toHaveAttribute('data-mode', 'live');
+  const style = (sel: string) => page.locator(sel).first().evaluate((e) => { const s = getComputedStyle(e); return `${s.fontSize}/${s.fontWeight}/${s.textTransform}`; });
+  expect(await style('#sb-cards .lbl')).toBe('12px/600/uppercase');
+  expect(await style('#sb-cards .big')).toBe('28px/700/none');
+});
