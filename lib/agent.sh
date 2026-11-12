@@ -546,6 +546,15 @@ ${build}
     echo "ERROR: runner is at '${got:0:10}', slot is at '${sha:0:10}'. Refusing to launch on a base the host did not choose." >&2
     return 1
   fi
+  # The runner's skills diff against origin/${FXA_WORKTREE_BASE:-main}, and the image's origin/main is old.
+  if [ "$base" != main ]; then
+    [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "ERROR: refusing to pin: the base is not a plain name." >&2; return 1; }
+    for try in 1 2 3; do
+      vm_exec "$name" sudo bash -c "sed -i '/^export FXA_WORKTREE_BASE=/d' /etc/agent-env.sh && echo 'export FXA_WORKTREE_BASE=${base}' >> /etc/agent-env.sh" >/dev/null 2>&1 && break
+      [ "$try" -lt 3 ] || { echo "ERROR: could not give the runner its base branch ${base}." >&2; return 1; }
+      sleep 10
+    done
+  fi
   # The dashboard compares this against the slot's HEAD for the rest of the run.
   # agent_run rewrites .meta after launch, so it appends this again from here.
   _PINNED_BASE="$sha"

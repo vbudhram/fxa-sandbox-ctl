@@ -11,9 +11,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 cd "$tmp"
 eval "$(sed -n '/^_gce_pin_runner_tree() {/,/^}/p' "$here/agent.sh")"
 # The runner: the pin's one command goes to a file, and the runner answers with the pinned sha.
-vm_exec() { shift; case "$1" in test) return 0 ;; esac; printf '%s\n' "$*" > "$tmp/pin.cmd"; echo "$FXA_PIN_SHA"; }
+vm_exec() { shift; case "$1" in test) return 0 ;; esac; printf '%s\n' "$*" >> "$tmp/pin.cmd"; echo "$FXA_PIN_SHA"; }
 LOG_DIR="$tmp"; S=1111111111111111111111111111111111111111 B=2222222222222222222222222222222222222222
-pin() { FXA_WORKTREE_BASE="$1" FXA_PIN_SHA="$S" FXA_PIN_BASE_SHA="$B" FXA_PIN_BRANCH=agent-x _gce_pin_runner_tree r1 "$tmp" >/dev/null; }
+pin() { : > "$tmp/pin.cmd"; FXA_WORKTREE_BASE="$1" FXA_PIN_SHA="$S" FXA_PIN_BASE_SHA="$B" FXA_PIN_BRANCH=agent-x _gce_pin_runner_tree r1 "$tmp" >/dev/null; }
 pin master
 check "a master base moves origin/master, and makes origin/main its alias when the repo has none" "1|1" \
   "$(grep -c "update-ref refs/remotes/origin/master $B" "$tmp/pin.cmd")|$(grep -c "\[ 'master' = main \] || git rev-parse -q --verify refs/remotes/origin/main >/dev/null || git update-ref refs/remotes/origin/main $B" "$tmp/pin.cmd")"
@@ -72,4 +72,10 @@ check "a fix run's pin runs no yarn install, npx or nx" "0|1" "$(grep -cE 'yarn 
 pin main
 check "another run's pin still installs and builds the libs" "1|1" "$(grep -c 'yarn install --immutable' "$tmp/pin.cmd")|$(grep -c 'nx run-many -t build' "$tmp/pin.cmd")"
 check "the session boot marks a fix run's pin untrusted" "1" "$(grep -c 'FXA_PIN_UNTRUSTED="${fixh:+1}"' "$here/../fxa-sandbox-ctl")"
+# The runner's skills read FXA_WORKTREE_BASE: a release-branch PR must not diff against the image's old main.
+pin train-349
+check "a train base is written to the runner's env" "1" "$(grep -c "echo 'export FXA_WORKTREE_BASE=train-349' >> /etc/agent-env.sh" "$tmp/pin.cmd")"
+pin main
+check "a main base writes no env line" "0" "$(grep -c 'FXA_WORKTREE_BASE=' "$tmp/pin.cmd")"
+check "a base with shell characters is refused" "1" "$(pin 'a;b' 2>/dev/null; echo $?)"
 exit "$fail"
