@@ -9,8 +9,8 @@ check() { # check <name> <want> <got>
 }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^_jira_launch_failed() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
-PIPE_NAME=fxa-ai-fixme LOG_DIR="$tmp"
+for f in _jira_launch_failed _feedback_unack _feedback_round_back; do eval "$(sed -n '/^'"$f"'() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"; done
+PIPE_NAME=fxa-ai-fixme LOG_DIR="$tmp" PIPE_STATE_DIR="$tmp/state"; mkdir -p "$tmp/state"
 jira_inflight_keys() { printf 'FXA-1\nFXA-2\n'; }
 cmd_label() { echo "$1 $2" >>"$tmp/labels"; }
 gh_pr_state() {
@@ -28,5 +28,14 @@ check "meta removed" "gone" "$([ -e "$tmp/fxa-1.meta" ] && echo present || echo 
 
 _jira_launch_failed FXA-2 fxa-2 2>/dev/null
 check "no PR returns to the queue" "FXA-2 public" "$(cat "$tmp/labels" 2>/dev/null)"
+
+# A feedback round that never started gives back its round and its comments, so a later pass runs it.
+printf '101\n102\n103\n' > "$tmp/state/FXA-1.feedback-seen"; printf '102\n103\n' > "$tmp/state/FXA-1.feedback-acted"; echo 1 > "$tmp/state/FXA-1.feedback-rounds"
+_jira_launch_failed FXA-1 fxa-1 feedback 2>/dev/null
+check "a failed feedback launch: seen keeps only the ids it did not act on, the round is back, acted is gone" "101|0|gone" \
+  "$(tr '\n' ' ' < "$tmp/state/FXA-1.feedback-seen" | sed 's/ $//')|$(cat "$tmp/state/FXA-1.feedback-rounds")|$([ -e "$tmp/state/FXA-1.feedback-acted" ] && echo present || echo gone)"
+printf '101\n' > "$tmp/state/FXA-1.feedback-seen"; echo 1 > "$tmp/state/FXA-1.feedback-rounds"
+_jira_launch_failed FXA-1 fxa-1 fix 2>/dev/null
+check "a failed fix launch leaves the feedback files alone" "101|1" "$(cat "$tmp/state/FXA-1.feedback-seen")|$(cat "$tmp/state/FXA-1.feedback-rounds")"
 
 exit "$fail"

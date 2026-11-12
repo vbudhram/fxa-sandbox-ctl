@@ -554,7 +554,7 @@ EOF
   check_prerequisites
   # A pipeline run reads CI only, on its work repos (mcp-token.sh); Codex runs get no MCP.
   export _FXA_SESSION_MCP="$(mcp_ci_only "${PIPE_MCP:-}")" _FXA_MCP_WORK_ONLY=1
-  agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || { [ "$rebase" != true ] || pipeline_rebase_end "$key"; _jira_launch_failed "$key" "$name"; return 1; }
+  agent_run "$worktree_path" "$name" "$prompt" "$cpu" "$memory" || { [ "$rebase" != true ] || pipeline_rebase_end "$key"; _jira_launch_failed "$key" "$name" "$run_kind"; return 1; }
 
   # Start the stack now so the functional-test step does not pay the cold start.
   if [ "$functional_tests" = "true" ]; then
@@ -2129,10 +2129,23 @@ _jira_ready_comment() {
     && printf '%s\n' "$pr" > "$mark" || echo "WARN: ready comment failed for $key" >&2
 }
 
+# _feedback_round_back <KEY>   A feedback round that never started: its comments are unhandled again,
+# and it does not count toward the review-round cap.
+_feedback_round_back() {
+  local f="${PIPE_STATE_DIR}/${1}.feedback-rounds" n=""
+  # Without an acted file, unack would empty the seen file.
+  if [ -s "${PIPE_STATE_DIR}/${1}.feedback-acted" ]; then _feedback_unack "$1"; fi
+  n="$(tr -dc 0-9 < "$f" 2>/dev/null || true)"
+  if [ "${n:-0}" -gt 0 ]; then echo "$((10#$n - 1))" > "$f"; fi
+  echo "  The feedback round did not start: its comments are open again, and the round does not count." >&2
+}
+
 # A launch that died before the agent started left the ticket inflight with no
 # runner. Requeue it, unless it has an open PR: then reconcile must keep seeing it.
+# <kind> feedback: the round also gives back its comments and its count.
 _jira_launch_failed() {
   local key="$1" name="$2"
+  [ "${3:-}" != feedback ] || _feedback_round_back "$key"
   [ -n "${PIPE_NAME:-}" ] || return 0
   jira_inflight_keys 2>/dev/null | grep -qx "$key" || return 0
   rm -f "${LOG_DIR}/${name}.meta"
