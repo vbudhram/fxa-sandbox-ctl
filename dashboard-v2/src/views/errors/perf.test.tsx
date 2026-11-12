@@ -53,5 +53,5 @@ test('the frame: the list card and the chart card are two cards side by side in 
   const { container } = render(<chunk.Main />);
   const cards = [...container.querySelectorAll('.err-page > section.err-card')];
   expect(cards.map((c) => c.id || c.className)).toEqual(['s-errors', 'err-card err-chart']);
-  expect(cards[0].querySelector('.err-heat')).toBeNull();
+  expect(cards[0]?.querySelector('.err-heat')).toBeNull();
 });
