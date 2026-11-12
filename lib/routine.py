@@ -113,11 +113,12 @@ def channel_why(ch, team, tpl, profile, index, env):
 
 
 def channel_list(rows, team, profile, index, env):
-    """The channels a bot is in, each with why a routine (why) or a security review (why_security) may not post there."""
-    out = []
+    """The channels a bot is in, each with why a routine (why) or a security review (why_security) may not post there,
+    and own: whether the team binds it."""
+    out, own = [], channels(team, index, env)[0]
     for c in sorted(rows, key=lambda c: c["name"]):
         c = {k: c[k] for k in ("id", "name", "private", "shared")}
-        c["private"], c["shared"] = bool(c["private"]), bool(c["shared"])
+        c["private"], c["shared"], c["own"] = bool(c["private"]), bool(c["shared"]), c["id"] in own
         for key, tpl in (("why", "blank"), ("why_security", "security-review")):
             c[key] = channel_why(c["id"], team, tpl, profile, index, env)
         out.append(c)

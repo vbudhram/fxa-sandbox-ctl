@@ -1081,7 +1081,7 @@ class Handler(BaseHTTPRequestHandler):
         out = (proc.stdout if proc.returncode == 0 else proc.stderr or "failed").strip().replace(value, "<value>")[-500:]
         self._json(200 if proc.returncode == 0 else 400, {"ok": True, "out": out} if proc.returncode == 0 else {"error": out})
 
-    def _team_ctl(self, user, args, record=None, read=False, cmd="profile", refresh=True, extra=None):
+    def _team_ctl(self, user, args, record=None, read=False, cmd="profile", refresh=True, extra=None, post=None):
         """Run a profile (or routine) command as the admin, the record in a private temp file; 409 for a stale
         generation or version. A read answers with the command's JSON; a write answers ok and refreshes the teams list."""
         f = None
@@ -1103,7 +1103,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(409 if proc.returncode == 2 else 400, {"error": (proc.stderr or proc.stdout or "failed").strip()[-2000:], **({"warn": warn} if warn else {})})
         elif read:
             try:
-                self._json(200, json.loads(proc.stdout or "null"))
+                out = json.loads(proc.stdout or "null")
+                self._json(200, post(out) if post else out)
             except ValueError:
                 self._json(502, {"error": "the profile command did not answer JSON"})
         else:
@@ -1584,7 +1585,10 @@ class Handler(BaseHTTPRequestHandler):
             if not user:
                 return
             if m and m.group(2) == "routine-channels":
-                self._team_ctl(user, ["channels", m.group(1)], read=True, cmd="routine")
+                # A team's record admin sees no private channel of another team: its name is that team's.
+                mine = None if user in team_admins() else (
+                    lambda d: {**d, "channels": [c for c in d.get("channels") or [] if not c.get("private") or c.get("own")]})
+                self._team_ctl(user, ["channels", m.group(1)], read=True, cmd="routine", post=mine)
             elif not m:
                 self._json(200, routine.templates(str(ROOT.parent / "templates" / "routines")))
             else:

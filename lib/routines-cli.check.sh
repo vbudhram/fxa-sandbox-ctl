@@ -86,6 +86,10 @@ out="$(ctl routine channels fxa 2>&1)"; rc=$?
 check "routine channels: the live list, sorted, each with why a routine or a security review may not post" \
   "0|1792400000|fxa-private,fxa-routines|null,null|null,null" \
   "$rc|$(jq -r '.at' <<< "$out")|$(jq -r '[.channels[].name] | join(",")' <<< "$out")|$(jq -r '[.channels[].why] | map(tostring) | join(",")' <<< "$out")|$(jq -r '[.channels[].why_security | if . then (split(" ")[3] | rtrimstr(".")) else "null" end] | join(",")' <<< "$out")"
+cp "$tmp/bot.env" "$tmp/bot.env.keep" 2>/dev/null || : > "$tmp/bot.env.keep"; printf 'PROFILE_CHANNELS=C0OWN00:fxa\n' >> "$tmp/bot.env"
+check "routine channels marks the team's own channel, which the dashboard keeps for a record admin" "fxa-private:false,fxa-routines:true" \
+  "$(ctl routine channels fxa 2>&1 | jq -r '[.channels[] | "\(.name):\(.own)"] | join(",")')"
+mv "$tmp/bot.env.keep" "$tmp/bot.env"
 check "routine channels dev: only the dev bot's list" "fxa-dev" "$(ctl routine channels fxa dev 2>&1 | jq -r '[.channels[].name] | join(",")')"
 check "the form's runtimes: Claude, and Codex only where the host runs Codex sessions" '["claude"]|["claude","codex"]' \
   "$(FXA_SESSION_CODEX= ctl routine channels fxa 2>&1 | jq -c .runtimes)|$(FXA_SESSION_CODEX=1 ctl routine channels fxa 2>&1 | jq -c .runtimes)"

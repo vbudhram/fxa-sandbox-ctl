@@ -21,7 +21,9 @@ if [ "\$1" = memory ]; then
 fi
 # routine: list, history and templates answer JSON; a stale set says so, as lib/routines.sh does.
 if [ "\$1" = routine ]; then
-  case "\$2" in list|history|templates|channels) echo '[{"id":5}]' ;; *) echo "done \$2" ;; esac
+  case "\$2" in list|history|templates) echo '[{"id":5}]' ;;
+    channels) echo '{"at":1,"channels":[{"id":"CPUB","private":false,"own":false},{"id":"CMINE","private":true,"own":true},{"id":"COTHER","private":true,"own":false}]}' ;;
+    *) echo "done \$2" ;; esac
   [ "\$(cat "$tmp/rc" 2>/dev/null || echo 0)" = 0 ] || { echo "ERROR: Someone changed this routine since you opened it. Load it again to see their change." >&2; exit "\$(cat "$tmp/rc")"; }
   exit 0
 fi
@@ -229,6 +231,10 @@ check("a record admin: their team's routine list, write and templates pass; anot
        call("GET", "/api/routine-templates", headers=sig(CA, "GET", "/api/routine-templates"))[0],
        call("GET", L, headers=sig(CA, "GET", L))[0], call("POST", "/api/teams/crew", {"record": rec, "generation": "7"}, sig(CA, "POST", "/api/teams/crew"))[0],
        call("GET", "/api/teams/crew", headers=sig(CA, "GET", "/api/teams/crew"))[0]))
+CC = "/api/teams/crew/routine-channels"
+check("routine-channels: a record admin sees public channels and the team's own private ones, not another team's; a dashboard admin sees all",
+      (["CPUB", "CMINE"], ["CPUB", "CMINE", "COTHER"]),
+      ([c["id"] for c in call("GET", CC, headers=sig(CA, "GET", CC))[1]["channels"]], [c["id"] for c in call("GET", CC, headers=sig(A, "GET", CC))[1]["channels"]]))
 check("/api/team-admin names the teams whose record lists the user", {"user": CA, "admin": False, "teams": ["crew"]},
       call("GET", "/api/team-admin", headers=sig(CA, "GET", "/api/team-admin"))[1])
 os.environ["TEAM_ADMINS"] = ""
