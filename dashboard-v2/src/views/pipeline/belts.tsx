@@ -136,7 +136,7 @@ export function Belts() {
     <div id="s-lanes">
       <div className="ptiles">
         <Tile label="Needs you" value={q(you)} tone={you ? 'warn' : undefined}
-          sub={you == null ? 'a feed failed' : `to decide or fix${g.unknown.review ? '' : ` · ${g.review.length} more wait on a review`}${offBelts ? ` · ${offBelts} wait off the belts` : ''}`} />
+          sub={you == null ? g.unknown.needs : `to decide or fix${g.unknown.review ? '' : ` · ${g.review.length} more wait on a review`}${offBelts ? ` · ${offBelts} wait off the belts` : ''}`} />
         <Tile label="Agents working" value={q(g.unknown.working ? null : g.working.length)}
           sub={<>{anyLive && <><span aria-hidden="true" className="ds-live ds-run inline-flex text-info" /> live · </>}{n == null ? '?' : n} belt{n === 1 ? '' : 's'} in all</>} />
         <Tile label="Open PRs" value={pc ? pc.total : '—'} sub={pc ? pc.parts : 'GitHub did not answer'} href={pc ? prHref || undefined : undefined} />

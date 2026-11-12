@@ -55,3 +55,12 @@ it('repaints every row when the open row changes, so motion moves the rows below
   act(() => store.setState((s) => ({ route: { ...s.route, sel: 'FXA-20' } })));
   expect(title.n).toBe(rows);
 });
+
+it('an old snapshot gives the Needs you tile the same reason as the lanes, not a failed feed', () => {
+  cleanup();
+  snapshotActions({ ...fixture['/api/snapshot'], age_seconds: 3600, interval: 300 }).forEach(d);
+  const { container } = render(<Belts />);
+  const tile = container.querySelector('[data-stat="Needs you"]')!.textContent!;
+  expect(tile).toContain('the snapshot is 60 min old');
+  expect(tile).not.toContain('a feed failed');
+});
