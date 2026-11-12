@@ -119,6 +119,8 @@
 .tpage .tppl-box { container-type: inline-size; overflow-x: auto; }
 .tpage .tppl .trl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tpage .linkbtn, .tpage summary { min-height: 24px; }
+/* A 24 px target for the action links, the sort heads and a check label (WCAG 2.5.8). */
+.tpage .lnk, .tpage .sortbtn, .tpage .tname, .tpage label.hint { display: inline-flex; align-items: center; min-height: 24px; }
 .tpage .tsave { justify-content: flex-end; position: sticky; bottom: 0; background: var(--panel); padding: var(--s2) 0; }
 .tpage .tadd { align-self: flex-start; min-height: 24px; }
 /* The card, not the viewport, decides: the team list pane takes room at 1024 and 768. */

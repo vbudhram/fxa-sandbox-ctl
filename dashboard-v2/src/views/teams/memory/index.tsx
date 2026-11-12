@@ -34,7 +34,7 @@ const memWhere = (sc: string) => (sc === 'team' ? 'Team' : sc);
 export function MemoryTab({ team }: { team: J }) {
   const admin = useApp((s) => !!s.viewer.admin);
   // Q10: the server lets only a TEAM_ADMINS admin read team memory, so a team record admin sees this text.
-  if (!admin) return <Card><p className="m-0">Only a dashboard admin (TEAM_ADMINS) can see and change team memory. A team record admin cannot.</p></Card>;
+  if (!admin) return <Card><p className="m-0 text-sub">Only a dashboard admin (TEAM_ADMINS) can see and change team memory. A team record admin cannot.</p></Card>;
   return <Memory key={team.profile} team={team} />;
 }
 export default MemoryTab;
@@ -98,9 +98,9 @@ function Memory({ team }: { team: J }) {
   const shown = useMemo(() => (entries ?? []).filter((e) => memMatch(e, q)), [entries, q]);
   const own = useMemo(() => shown.filter((e) => !e.dep), [shown]), dep = useMemo(() => shown.filter((e) => e.dep), [shown]);
 
-  if (err && !d) return <Card><p className="m-0">The team memory did not load: {err}</p><p className="hint">It tries again when you press Reload.</p><button type="button" onClick={() => void load()}>Reload</button></Card>;
+  if (err && !d) return <Card><p className="m-0 text-sub">The team memory did not load: {err}</p><p className="hint">It tries again when you press Reload.</p><button type="button" onClick={() => void load()}>Reload</button></Card>;
   if (!d) return <EmptyBox>Loading the team memory…</EmptyBox>;
-  if (!d.on) return <Card><p className="m-0">Team memory is off on this host.</p></Card>;
+  if (!d.on) return <Card><p className="m-0 text-sub">Team memory is off on this host.</p></Card>;
   const all = entries ?? [], n = all.filter((e) => !e.dep).length;
   const tbl = (rows: J[]) => <MemTable rows={rows} cut={memCut(now)} busy={!!form} arm={arm} edit={edit} del={del} setArm={setArm} />;
   return (

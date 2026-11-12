@@ -7,6 +7,7 @@
 .sb-card .lbl { font: 600 var(--t-sub) var(--head); color: var(--dim); }
 .sb-card .big { font: 700 var(--t-page)/1.1 var(--head); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .sb-card .sub { font-size: var(--t-sub); color: var(--faint); }
+.sb-card .sub a { display: inline-flex; align-items: center; min-height: 24px; }
 .sbv a, .sbp a { color: var(--link); }
 
 .sbstrip { display: flex; gap: 3px; margin: 4px 0; }
@@ -36,7 +37,7 @@
 .sbl tr.sel td { background: var(--infobg); }
 .sbl tr.fixr:not(.sel) td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .sbl tr.bad button { color: var(--bad); }
-.sbl button { font: 600 var(--t-sub) var(--mono); background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; text-align: left; }
+.sbl button { font: 600 var(--t-sub) var(--mono); background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; text-align: left; min-height: 24px; }
 .sbl button:hover { text-decoration: underline; }
 .sbl .steps { display: block; color: var(--dim); }
 .sbl .mt { display: inline-block; width: 60px; vertical-align: middle; margin-right: 4px; }

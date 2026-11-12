@@ -137,7 +137,7 @@ export function Frame({ title, summary, table, children, note, keys, tip = null 
       </div>
       {note != null && <div className="mt-s1 text-tiny text-faint">{note}</div>}
       <details className="mt-s2 text-sub">
-        <summary className="cursor-pointer text-link">Show as table</summary>
+        <summary className="cursor-pointer py-s1 text-link">Show as table</summary>
         <DataTable title={title} table={table} />
       </details>
     </figure>
