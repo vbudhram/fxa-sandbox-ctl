@@ -39,7 +39,7 @@ printf '1\trounds\t\n' > "$tmp/FXA-4.blocked-why"; printf '1\tattempts\t\n' > "$
 printf '1\tstalled\t\n' > "$tmp/FXA-6.blocked-why"; printf '1\tattempts\t\n' > "$tmp/FXA-7.blocked-why"
 gh() { echo "$*" >> "$tmp/gh"; case "$*" in *" 4 "*|*" 5 "*) echo "CONFLICTING DIRTY" ;; *" 7 "*) echo "MERGEABLE BEHIND" ;; *) echo "MERGEABLE CLEAN" ;; esac; }
 gh_conflicts() { case "$1" in FXA-4) echo "source a.ts" ;; *) echo "lockfile yarn.lock" ;; esac; }
-gh_relock() { echo "$1" >> "$tmp/relocked"; }; gh_update_branch() { echo "$1" >> "$tmp/updated"; }
+gh_relock() { echo "$1" >> "$tmp/relocked"; }; gh_update_branch() { echo "$1" >> "$tmp/updated"; }; gh_pr_approved() { :; }
 out="$(cmd_precheck 2>&1)"
 check "blocked rounds with a source conflict wakes the pass, a red blocked attempts lockfile is relocked, blocked stalled is not read" \
   "1|FXA-5|0|7" "$(grep -c 'drain: FXA-4 4 CONFLICT blocked:rounds' <<< "$out")|$(cat "$tmp/relocked")|$(grep -c ' 6 ' "$tmp/gh")|$(cat "$tmp/updated")"

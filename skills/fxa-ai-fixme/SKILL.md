@@ -67,7 +67,8 @@ token comes from `~/.circleci/cli.yml`. Never print it.
 
 Green does not mean mergeable (INCIDENTS: Conflicts). Conflicts are churn: clearing them once
 does not keep them clear. Rebase only on a conflict. A PR that is only behind (`BEHIND`, on a
-repo that requires an up-to-date branch) gets a GitHub update-branch from `precheck`; do nothing.
+repo that requires an up-to-date branch) waits until it is approved or red. Then `precheck` rebuilds
+it as one signed commit on the base, with no merge commit; do nothing.
 
 `$CTL conflicts KEY` prints the class and files (`git merge-tree`, no worktree, no slot).
 `lockfile`: `precheck` fixes it itself with `$CTL relock KEY`: merge the base in a temporary

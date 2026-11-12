@@ -559,12 +559,40 @@ gh_conflicts() {
   echo "$class $(printf '%s' "$files" | tr '\n' ' ')"
 }
 
-# gh_update_branch NUM   Merge the base into a PR that is only behind, on GitHub's side: no VM, no counter.
-# GitHub makes and signs the merge commit, so it works where the base requires signed commits.
+# gh_pr_approved NUM   True when the PR has an approval or auto-merge is on: only then does behind block a merge.
+gh_pr_approved() {
+  gh pr view "$1" --repo "$PIPE_REPO_SLUG" --json reviewDecision,latestReviews,autoMergeRequest \
+    -q '.reviewDecision == "APPROVED" or .autoMergeRequest != null or any(.latestReviews[]?; .state == "APPROVED")' 2>/dev/null | grep -qx true
+}
+
+# gh_update_branch NUM   Bring a PR that is only behind up to its base: no VM, no counter.
+# With the App, the PR is rebuilt as one App commit on the base, so GitHub signs it and the PR gets no
+# merge commit. A conflict changes nothing. A fork's PR, or a branch with a person's commits, gets
+# GitHub's update-branch instead: it merges the base in and keeps their commits.
 gh_update_branch() {
   local num="${1:-}"; [[ "$num" =~ ^[0-9]+$ ]] || { echo "ERROR: update-branch needs a PR number" >&2; return 1; }
-  if github_app_enabled; then printf '{}' | _gh_app_api PUT "pulls/${num}/update-branch" >/dev/null
-  else gh api -X PUT "repos/${PIPE_REPO_SLUG}/pulls/${num}/update-branch" >/dev/null; fi
+  github_app_enabled || { gh api -X PUT "repos/${PIPE_REPO_SLUG}/pulls/${num}/update-branch" >/dev/null; return; }
+  local br="" head="" base="" fork="" repo="${PIPE_REPO:-$PWD}" new="" mb="" tree="" first="" wt="" rc=0
+  local q='"\(.headRefName) \(.headRefOid) \(.baseRefName) \(.isCrossRepository)"'
+  read -r br head base fork <<< "$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json headRefName,headRefOid,baseRefName,isCrossRepository -q "$q" 2>/dev/null || true)"
+  [ -n "$fork" ] || { echo "ERROR: could not read PR #${num}." >&2; return 1; }
+  _retry git -C "$repo" fetch -q origin "+refs/heads/${base}:refs/remotes/origin/${base}" "+refs/heads/${br}:refs/remotes/origin/${br}" || return 1
+  if [ "$fork" != false ] || git -C "$repo" log --no-merges --format=%an "origin/${base}..${head}" 2>/dev/null | grep -qviE '\[bot\]$'; then
+    printf '{}' | _gh_app_api PUT "pulls/${num}/update-branch" >/dev/null; return
+  fi
+  new="$(git -C "$repo" rev-parse "origin/${base}")" && mb="$(git -C "$repo" merge-base "$head" "$new")" || return 1
+  tree="$(git -C "$repo" merge-tree --write-tree --no-messages --merge-base="$mb" "$new" "$head" 2>/dev/null)" \
+    || { echo "ERROR: #${num} conflicts with ${base}." >&2; return 1; }
+  # The PR's first commit names the change; the fix rounds after it fold into it.
+  first="$(git -C "$repo" log --reverse --no-merges --format=%H "${new}..${head}" | head -1)"
+  [ -n "$first" ] || { echo "ERROR: #${num} has no commit of its own." >&2; return 1; }
+  wt="$(mktemp -d "${TMPDIR:-/tmp}/rebase-${num}.XXXXXX")"
+  git -C "$repo" -c core.hooksPath=/dev/null worktree add -q --no-checkout --detach "$wt" "$new" >&2 || { rm -rf "$wt"; return 1; }
+  # _GH_APP_REBUILT: a push since the fetch is refused, not merged into.
+  git -C "$wt" read-tree "${tree%%$'\n'*}" \
+    && _GH_APP_REBUILT=1 github_app_commit "$wt" "$br" "$new" "$(git -C "$repo" log -1 --format=%B "$first")" >/dev/null || rc=1
+  git -C "$repo" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
+  return "$rc"
 }
 
 # gh_relock KEY
