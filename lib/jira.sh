@@ -304,8 +304,14 @@ jira_login_ok() {
 }
 
 _jira_keys_for_jql() {
-  acli jira workitem search --jql "$1" --limit 200 --json 2>/dev/null \
-    | jq -r '.[]?.key // empty'
+  local out=""
+  # acli can print an error line in place of JSON: that is a failed read, not a crash (no ERR trap row).
+  if out="$(acli jira workitem search --jql "$1" --limit 200 --json 2>/dev/null)" && jq -e 'type == "array"' <<< "$out" >/dev/null 2>&1; then
+    jq -r '.[]?.key // empty' <<< "$out"
+    return 0
+  fi
+  echo "fxa-sandbox-ctl: the Jira read failed: acli gave no list of work items" >&2
+  return 1
 }
 
 # Keys waiting in the queue, oldest first.
