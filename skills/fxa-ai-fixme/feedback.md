@@ -74,7 +74,8 @@ Procedure:
    pass. Report the refusal under ⚠️. The same rule applies to `attempts KEY bump`.
 6. After the push, `deps.sh gate <pr>`. Every push resets the functional gate. The host
    re-requests Copilot's review on that push itself (`FXA_PR_COPILOT`, empty disables).
-7. `label KEY done` fires `thumbsup` on the recorded ids and clears them.
+7. `label KEY done` fires `thumbsup` on the recorded ids and clears them. A round whose handoff had no
+   `feedback_summary` gets a "no summary" note on Jira that names its comments: report that ticket under ⚠️.
 
 **On the PR, only the 👍, the answer, the decline and the defer reply.** For each question you answer, run
 `$CTL feedback KEY answer <id> '<answer>'` once: the facts that answer it, with `file:line` or

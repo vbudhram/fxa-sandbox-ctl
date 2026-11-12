@@ -21,7 +21,13 @@ check "the summary is posted on the ticket, one bullet per comment" "FXA-1|::inf
 
 rm -f "$tmp/posted"; printf '{"pr_body":"x"}' > "$tmp/done.json"
 _finish_feedback_comment FXA-1 "$tmp/done.json" "$url"
-check "a round without a summary posts nothing" "no" "$([ -e "$tmp/posted" ] && echo yes || echo no)"
+check "a run without a summary or acted comments posts nothing" "no" "$([ -e "$tmp/posted" ] && echo yes || echo no)"
+printf '41\ni5\n' > "$tmp/FXA-1.feedback-acted"
+check "a feedback round with no summary says so and names its comments" "FXA-1|::warning
+**Review feedback round: no summary** · [PR #7](${url})
+- The round pushed a commit but did not say which comments it fixed. A person should check: [41](${url}#discussion_r41), i5.|1" \
+  "$(PIPE_STATE_DIR="$tmp" _finish_feedback_comment FXA-1 "$tmp/done.json" "$url" 2>"$tmp/err"; cat "$tmp/posted"; echo "|$(grep -c 'WARN: needs you' "$tmp/err")")"
+rm -f "$tmp/FXA-1.feedback-acted" "$tmp/posted"
 
 printf '{"feedback_summary":"Fixed: one\\n\\nNot fixed: two"}' > "$tmp/done.json"
 _finish_feedback_comment FXA-1 "$tmp/done.json" "$url"

@@ -1005,7 +1005,18 @@ _finish_feedback_comment() {
   [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || return 0
   # One bullet per line the agent wrote, whatever list marks it used.
   summary="$(jq -r '[.feedback_summary // empty | if type == "array" then .[] else . end | tostring | split("\n")[] | sub("^\\s*[-*] "; "") | select(. != "")] | map("- " + .) | join("\n")' "$done_file" 2>/dev/null)" || summary=""
-  [ -n "$summary" ] || return 0
+  if [ -z "$summary" ]; then
+    # A round with acted comments and no summary would end done with nothing on Jira about them.
+    local acted="${PIPE_STATE_DIR:-}/${key}.feedback-acted" ids
+    [ -n "${PIPE_STATE_DIR:-}" ] && [ -s "$acted" ] || return 0
+    ids="$(sed -E "s#^([0-9]+)\$#[\1](${pr_url}\#discussion_r\1)#" "$acted" | paste -sd' ' - | sed 's/ /, /g')"
+    echo "  WARN: needs you: the feedback round on ${key} wrote no feedback_summary; check comments ${ids} by hand." >&2
+    jira_comment "$key" "::warning
+**Review feedback round: no summary**${pr_url:+ · [PR #${pr_url##*/}](${pr_url})}
+- The round pushed a commit but did not say which comments it fixed. A person should check: ${ids}." \
+      || echo "  WARN: could not post the missing-summary note on ${key}." >&2
+    return 0
+  fi
   jira_comment "$key" "::info
 **Review feedback round**${pr_url:+ · [PR #${pr_url##*/}](${pr_url})}
 ${summary}" || echo "  WARN: could not post the feedback summary on ${key}." >&2
