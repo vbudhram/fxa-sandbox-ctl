@@ -524,11 +524,24 @@ _gh_lockfile_re() {
   if command -v cargo >/dev/null 2>&1; then echo '(^|/)(yarn\.lock|Cargo\.lock)$'; else echo '(^|/)yarn\.lock$'; fi
 }
 
+# gh_pr_base KEY
+#   The base branch of the key's open PR, or the team base when it has none. Fails when GitHub
+#   cannot say: a PR moved to a release branch must never get the team base merged in.
+gh_pr_base() {
+  local key="${1:-}" br="" json="" b=""
+  br="$(worktree_branch_for "$key")" || return 1
+  json="$(_retry gh pr list --repo "${PIPE_REPO_SLUG:-}" --state open --head "$br" \
+            --json baseRefName,isCrossRepository 2>/dev/null)" || { echo "ERROR: cannot read the base of ${key}'s PR" >&2; return 1; }
+  b="$(printf '%s' "$json" | jq -r '[.[] | select(.isCrossRepository | not)][0].baseRefName // empty' 2>/dev/null)" || return 1
+  printf '%s\n' "${b:-${PIPE_BASE_BRANCH:-main}}"
+}
+
 gh_conflicts() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: conflicts needs <KEY>" >&2; return 1; }
   local br; br="$(worktree_branch_for "$key")" || return 1
-  local repo="${PIPE_REPO:-$PWD}" base="${PIPE_BASE_BRANCH:-main}"
+  local repo="${PIPE_REPO:-$PWD}" base="${2:-}"
+  [ -n "$base" ] || base="$(gh_pr_base "$key")" || return 1
 
   _retry git -C "$repo" fetch origin "$base" "$br" -q 2>/dev/null || {
     echo "ERROR: cannot fetch origin/${br}" >&2; return 1; }
@@ -579,11 +592,14 @@ _relock_bad_specs() {
 gh_relock() {
   pipeline_require || return 1
   local key="${1:-}"; [ -n "$key" ] || { echo "ERROR: relock needs <KEY>" >&2; return 1; }
-  local br repo conf wt rc=0 base="${PIPE_BASE_BRANCH:-main}"
+  local br repo conf wt rc=0 base=""
   br="$(worktree_branch_for "$key")" || return 1
   repo="${PIPE_REPO:-$PWD}"
+  base="$(gh_pr_base "$key")" || return 1
+  # _relock_bad_specs reads the base from PIPE_BASE_BRANCH.
+  local PIPE_BASE_BRANCH="$base"
 
-  conf="$(gh_conflicts "$key")" || return 1
+  conf="$(gh_conflicts "$key" "$base")" || return 1
   case "$conf" in
     "") echo "${key} merges clean; nothing to relock." >&2; return 0 ;;
     lockfile\ *) ;;

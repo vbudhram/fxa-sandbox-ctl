@@ -13,6 +13,8 @@ source "$(dirname "$0")/github.sh"
 eval "$(grep '^_retry()' "$(dirname "$0")/config.sh")"
 pipeline_require() { :; }
 worktree_branch_for() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
+# No open PR: the conflict check uses the team base.
+gh() { echo '[]'; }
 pipeline_attempts() { if [ "${2:-}" = bump ]; then echo bumped >>"$tmp/attempts"; else cat "$tmp/attempts" 2>/dev/null | wc -l | tr -d ' '; fi; }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.com GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.com
 PIPE_RELOCK_SIGN=""

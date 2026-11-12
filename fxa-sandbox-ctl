@@ -338,7 +338,7 @@ cmd_jira() {
   local name=""
   local cpu="$DEFAULT_VM_CPU"
   local memory="$DEFAULT_VM_MEMORY_MB"
-  local base="${FXA_WORKTREE_BASE:-main}"
+  local base="${FXA_WORKTREE_BASE:-main}" base_set=""
   local dry_run="false"
   local watch="true"
   local ci_watch="true"
@@ -356,7 +356,7 @@ cmd_jira() {
       -n|--name)    name="$2"; shift 2 ;;
       -c|--cpu)     cpu="$2"; shift 2 ;;
       -m|--memory)  memory="$2"; shift 2 ;;
-      --base)       base="$2"; shift 2 ;;
+      --base)       base="$2"; base_set=1; shift 2 ;;
       --worktree)   worktree_slot="$2"; shift 2 ;;
       --private)    private="true"; shift ;;
       --guardrails) guardrails_file="$2"; shift 2 ;;
@@ -403,6 +403,11 @@ cmd_jira() {
     echo "ERROR: ${key} is outside this profile's Jira scope ($(pipeline_jira_scope 2>/dev/null)), or the Jira read failed." >&2
     echo "       A ticket with a security level or a secret label (security, hackerone, PIPE_SECRET_LABELS) runs only in a team that takes secret tickets (README: Private pipeline teams)." >&2
     return 1
+  fi
+
+  # A ticket with an open PR works on that PR's base: a person may have moved it to a release branch.
+  if [ -z "$base_set" ]; then
+    base="$(gh_pr_base "$key")" || return 1
   fi
 
   # finish_push_and_pr reads FXA_WORKTREE_BASE for `gh pr create --base`, so the
