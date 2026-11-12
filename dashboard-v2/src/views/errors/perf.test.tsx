@@ -48,3 +48,10 @@ test('a session delta repaints no row, until a session moves to another tab', ()
   act(() => session('agent-ex0001', 'paused'));
   expect(container.querySelector('a[href="#sessions/paused/agent-ex0001"]')).not.toBeNull();
 });
+
+test('the frame: the list card and the chart card are two cards side by side in .err-page', () => {
+  const { container } = render(<chunk.Main />);
+  const cards = [...container.querySelectorAll('.err-page > section.err-card')];
+  expect(cards.map((c) => c.id || c.className)).toEqual(['s-errors', 'err-card err-chart']);
+  expect(cards[0].querySelector('.err-heat')).toBeNull();
+});

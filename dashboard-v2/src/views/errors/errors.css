@@ -2,6 +2,10 @@
 .err-card h2 .n { margin-left: var(--s2); color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
 .err-card > * + * { margin-top: var(--s3); }
 .err-fail { color: var(--warn); }
+/* wrap-reverse: a wrapped chart goes above the list, not under a long one; flex-end is the top here. */
+.err-page { display: flex; flex-wrap: wrap-reverse; align-items: flex-end; gap: var(--stack-gap); }
+.err-page > #s-errors { flex: 999 1 480px; min-width: 0; }
+.err-page > .err-chart { flex: 1 1 340px; min-width: 0; }
 .errs .err { display: flex; gap: var(--s3); align-items: flex-start; padding: var(--s2) 0; border-top: 1px solid var(--line); }
 .errs .err .body { min-width: 0; flex: 1; }
 .errs .err .m { font-family: var(--mono); font-size: var(--t-label); overflow-wrap: anywhere; }

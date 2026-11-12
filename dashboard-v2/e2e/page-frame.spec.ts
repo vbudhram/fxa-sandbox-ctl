@@ -25,3 +25,4 @@ test('#runners/all: the summary cards use the StatTile label and figure', async 
   expect(await style('#sb-cards .lbl')).toBe('12px/600/uppercase');
   expect(await style('#sb-cards .big')).toBe('28px/700/none');
 });
+

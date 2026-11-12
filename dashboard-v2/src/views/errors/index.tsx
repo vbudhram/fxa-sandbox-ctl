@@ -151,7 +151,6 @@ function Main() {
           <div className="emptybox">{tab === 'all' ? 'No errors recorded.' : 'No open errors.'}</div>
         ) : (
           <>
-            <OpenHeat rows={l} />
             <div className="errs">{rows.map((e) => <Row key={e.sig} e={e} max={max} tabs={tabs} />)}</div>
             <p className="empty err-hint">
               Mark one fixed: <span className="font-mono">{CLI('<sig>')}</span>. It reopens if it happens again. The log is also copied to the
@@ -162,7 +161,14 @@ function Main() {
       </>
     );
   }
-  return <section className="err-card" id="s-errors">{body}</section>;
+  // The frame of the updated pages: the list card, and the chart in a side column that wraps under it when narrow.
+  const heat = l && l.some(errOpen) ? <section className="err-card err-chart"><OpenHeat rows={l} /></section> : null;
+  return (
+    <div className="err-page">
+      <section className="err-card" id="s-errors">{body}</section>
+      {heat}
+    </div>
+  );
 }
 
 function side(s: Store): SideGroup[] | null {
