@@ -1058,6 +1058,8 @@ ROUTINE_TICKETS_MOST=5
 ROUTINE_FILE_BUDGET_S="${ROUTINE_FILE_BUDGET_S:-45}"
 _routine_file_findings() {
   local run="$1" rf="$2" cfg="$3" p="${PIPE_JIRA_PROJECT:-}" t q k sc body out="" listed n=0 tk id sev name made=0 over="" late=0 t0=$SECONDS
+  # Each key line ends in its link: the thread and the dashboard show no finding text, so the ticket is the way in.
+  local browse="${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/browse"
   [ -n "$p" ] || { echo "ERROR: the team has no Jira project" >&2; return 1; }
   _jira_sa || { echo "ERROR: tickets need the team's Jira service account" >&2; return 1; }
   name="$(jq -r .name <<< "$cfg")"
@@ -1077,12 +1079,12 @@ _routine_file_findings() {
     fi
     sc="${k#* }"; k="${k%% *}"
     if [ -n "$k" ] && [ "$sc" = done ]; then
-      out+=$'\n'"Already filed: ${k} (${sev}), closed"; continue
+      out+=$'\n'"Already filed: ${k} (${sev}), closed: ${browse}/${k}"; continue
     fi
     if [ -n "$k" ]; then
       body="$(jq -nc --arg t "The routine \"${name}\" found this again in run ${run}." '{body: {type: "doc", version: 1, content: [{type: "paragraph", content: [{type: "text", text: $t}]}]}}')"
-      if _jira_rest_json POST "/rest/api/3/issue/${k}/comment" "$body" >/dev/null; then out+=$'\n'"Found again: ${k} (${sev}), still open"
-      else out+=$'\n'"Found again: ${k} (${sev}), still open; the comment failed"; fi
+      if _jira_rest_json POST "/rest/api/3/issue/${k}/comment" "$body" >/dev/null; then out+=$'\n'"Found again: ${k} (${sev}), still open: ${browse}/${k}"
+      else out+=$'\n'"Found again: ${k} (${sev}), still open; the comment failed: ${browse}/${k}"; fi
       continue
     fi
     # Over the cap: counted in the summary; a later run files it if it is still there.
@@ -1090,7 +1092,7 @@ _routine_file_findings() {
     body="$(jq -c --arg p "$p" '{fields: {project: {key: $p}, issuetype: {name: "Bug"}, summary: .summary,
       description: {type: "doc", version: 1, content: [.description | split("\n")[] | select(length > 0) | {type: "paragraph", content: [{type: "text", text: .}]}]}}}' <<< "$tk")"
     k="$(_jira_rest_json POST /rest/api/3/issue "$body" | jq -r '.key // empty')" || k=""
-    if [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then out+=$'\n'"Filed ${k} (${sev})"; made=$((made + 1))
+    if [[ "$k" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]]; then out+=$'\n'"Filed ${k} (${sev}): ${browse}/${k}"; made=$((made + 1))
     else
       out+=$'\n'"Not filed: a ${sev} finding (Jira refused the ticket)"
       errors_record routine jira_create_failed "" "routine ${run} findings" "Jira refused a ticket in ${p}" "" 2>/dev/null || true

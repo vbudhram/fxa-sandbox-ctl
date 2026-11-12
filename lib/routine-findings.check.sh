@@ -4,6 +4,7 @@
 source "$(dirname "$0")/session-check-head.sh"
 command -v sqlite3 >/dev/null || { echo "skip: needs sqlite3"; exit 0; }
 here="$(cd "$(dirname "$0")" && pwd)"
+export PIPE_JIRA_SITE=https://jira.example.com
 export FXA_DB="$tmp/fxa.db" FXA_DB_BACKUP_URI="" FXA_TEAMS_DIR="$tmp/teams" FXA_LLM_PROXY_DIR="$tmp/proxy" FXA_BOT_ENV="$tmp/bot.env"
 mkdir -p "$FXA_TEAMS_DIR"; echo '{"teams": {}}' > "$FXA_TEAMS_DIR/index.json"
 source "$here/db.sh"; source "$here/routines.sh"
@@ -61,7 +62,7 @@ _jira_rest_json() {
 }
 PIPE_JIRA_PROJECT=FXA
 out="$(_routine_file_findings 9 "$tmp/report.md" "$cfg")"
-check "the HIGH is filed and the open MEDIUM gets a comment" "Filed FXA-51 (HIGH)|Found again: FXA-50 (MEDIUM), still open" \
+check "the HIGH is filed and the open MEDIUM gets a comment, each with its link" "Filed FXA-51 (HIGH): https://jira.example.com/browse/FXA-51|Found again: FXA-50 (MEDIUM), still open: https://jira.example.com/browse/FXA-50" \
   "$(grep -E '^(Filed|Found again)' <<< "$out" | paste -sd'|' -)"
 create="$(grep '^POST /rest/api/3/issue {' "$tmp/jira" | cut -d' ' -f3-)"
 check "the create sets the project, and adds no labels and no security level" "FXA|false|false|Bug" \
@@ -71,7 +72,7 @@ check "the search looks at the project's tickets in any status, by the finding i
 : > "$tmp/jira"
 out="$(CLOSED_HIGH=1 _routine_file_findings 9 "$tmp/report.md" "$cfg")"
 check "a finding already in a closed ticket is not filed again, and gets no comment" "1|0|0" \
-  "$(grep -c '^Already filed: FXA-40 (HIGH), closed$' <<< "$out")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")|$(grep -c 'FXA-40/comment' "$tmp/jira")"
+  "$(grep -c '^Already filed: FXA-40 (HIGH), closed: https://jira.example.com/browse/FXA-40$' <<< "$out")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")|$(grep -c 'FXA-40/comment' "$tmp/jira")"
 check "the report holds keys and severities, and no finding title or file" "0|0" \
   "$(grep -c 'Refresh grant' <<< "$out")|$(grep -c 'grant.js' <<< "$out")"
 : > "$tmp/jira"; : > "$tmp/errs"
