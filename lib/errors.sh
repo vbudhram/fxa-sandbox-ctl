@@ -69,6 +69,8 @@ errors_err_trap() {
   # SIGPIPE: a reader such as `| head` closed the pipe early.
   [ "$rc" = 141 ] && return 0
   declare -F "${cmd%%[[:space:]]*}" >/dev/null 2>&1 && return 0
+  # The same in a subshell: ( own_function ... ), as the --repo path's ( _tree_enter ... && cmd_session ... ).
+  [[ "$cmd" =~ ^\([[:space:]]*([A-Za-z_][A-Za-z0-9_]*) ]] && declare -F "${BASH_REMATCH[1]}" >/dev/null 2>&1 && return 0
   # The same, assigned: x="$(own_function ...)", as key="$(_key "$1")" on a bad ticket key.
   [[ "$cmd" =~ ^(local[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=\"?\$\(([A-Za-z_][A-Za-z0-9_]*) ]] \
     && declare -F "${BASH_REMATCH[2]}" >/dev/null 2>&1 && return 0
