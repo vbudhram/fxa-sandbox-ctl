@@ -212,10 +212,10 @@ gh_drain() {
   pipeline_require || return 1
   local keys="${1:-}"
   [ -n "$keys" ] || return 0
-  local map jqx rc=0
-  # A fork PR from a branch with a key's name is not ours (i619). Only the branch read asks for the field: in the
-  # 200-PR list it made GitHub's GraphQL time out (HTTP 504).
-  jqx=".[] | select((.isCrossRepository // false) | not) | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.mergeStateStatus) \(.headRefOid)\""
+  local map jqx rc=0 own="${PIPE_REPO_SLUG%%/*}"
+  # A fork PR from a branch with a key's name is not ours (i619). isCrossRepository made the 200-PR list time out
+  # (HTTP 504), so the list asks for headRepositoryOwner instead, and the branch read asks for both.
+  jqx=".[] | select(((.isCrossRepository // false) | not) and ((.headRepositoryOwner.login // \"${own}\") == \"${own}\")) | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.mergeStateStatus) \(.headRefOid)\""
   # `|| rc=$?` keeps `set -e` from killing the function before the guard below.
   # GitHub computes `mergeable` lazily and says UNKNOWN until then, but the
   # request starts the computation, so one re-poll resolves most of them.
@@ -224,7 +224,7 @@ gh_drain() {
   local err lim=200; err="$(mktemp)"
   _gh_drain_fetch() {
     gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit "${1:-200}" \
-      --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid \
+      --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid,headRepositoryOwner \
       -q "$jqx" 2>"$err"
   }
   map="$(_gh_drain_fetch)" || { rc=0; lim=50; map="$(_gh_drain_fetch 50)" || rc=$?; }

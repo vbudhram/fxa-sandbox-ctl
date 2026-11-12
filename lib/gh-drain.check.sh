@@ -15,14 +15,16 @@ pr() { printf '{"number":%s,"state":"%s","headRefName":"%s","statusCheckRollup":
 gh() { local q="" head=""; while [ $# -gt 0 ]; do case "$1" in -q) q="$2"; shift ;; --head) head="$2"; shift ;; esac; shift; done
   echo "$head" >> "$tmp/heads"
   case "$head" in
-    "") j="[$(pr 2 MERGED fxa-2 false)]" ;;
+    # The list cannot ask for isCrossRepository (a 504), so a fork row there carries only its owner.
+    "") j="[$(pr 2 MERGED fxa-2 false),{\"number\":5,\"state\":\"CLOSED\",\"headRefName\":\"fxa-5\",\"statusCheckRollup\":[],\"mergeable\":\"UNKNOWN\",\"headRefOid\":\"def\",\"headRepositoryOwner\":{\"login\":\"evil\"}}]" ;;
     fxa-3) j="[$(pr 3 OPEN fxa-3 true)]" ;;
     fxa-1) j="[$(pr 1 MERGED fxa-1 false)]" ;;
     fxa-4) [ -z "${FAIL4:-}" ] || return 1; j="[]" ;;
     *) j="[]" ;;
   esac
   jq -r "$q" <<< "$j"; }
-out="$(gh_drain $'FXA-1\nFXA-2\nFXA-3\nFXA-4' 2>/dev/null)"
+out="$(gh_drain $'FXA-1\nFXA-2\nFXA-3\nFXA-4\nFXA-5' 2>/dev/null)"
+check "a fork PR in the 200-PR list, closed, named after a done key: none, not CLOSED" "FXA-5 none -" "$(grep '^FXA-5 ' <<< "$out")"
 check "an old PR is read by its branch; a newer one comes from the list" "FXA-1 1 MERGED|FXA-2 2 MERGED" "$(grep -E '^FXA-[12] ' <<< "$out" | paste -sd'|' -)"
 check "a fork PR named after the key is not ours: none" "FXA-3 none -" "$(grep '^FXA-3 ' <<< "$out")"
 check "a key with no PR anywhere: none, after one branch read" "FXA-4 none -|1" "$(grep '^FXA-4 ' <<< "$out")|$(grep -c '^fxa-4$' "$tmp/heads")"
