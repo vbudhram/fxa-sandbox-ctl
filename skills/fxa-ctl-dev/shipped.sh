@@ -5,6 +5,12 @@ set -uo pipefail
 W="${FXA_WORKING2:-$HOME/Desktop/working2}"; CTL="$W/fxa-sandbox-ctl"; BOT="$W/fxa-agent-bot"
 for r in "$CTL" "$BOT"; do git -C "$r" fetch -q origin 2>/dev/null || echo "WARN: fetch failed in $r"; done
 
+# packer_after <repo> <time>   The packer/ commits on origin/main after <time>: ship and promote do not
+# carry them to a runner; only a new GCE image (and a Firecracker rootfs rebuild) does.
+packer_after() {
+  git -C "$1" log --since="$2" --format=%h origin/main -- packer/ | grep -c . || true
+}
+
 echo "== work not on origin/main (branch or worktree: commits, uncommitted files, CI)"
 for r in "$CTL" "$BOT"; do
   slug="$(git -C "$r" remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
@@ -46,6 +52,12 @@ if [ "${1:-}" != --no-live ]; then
          printf '  %-16s live %s, %s\n' "$1" "$2" "$s"
        done ;;
   esac
+  img="$(bash "$CTL/skills/fxa-manager/vm.sh" run "gcloud compute images list --filter family=fxa-dev-base --sort-by=~creationTimestamp --limit 1 --format 'value(creationTimestamp)'" 2>/dev/null | tail -1)"
+  if [[ "$img" =~ ^[0-9]{4}- ]]; then
+    n="$(packer_after "$CTL" "$img")"
+    if [ "$n" -gt 0 ]; then echo "  WARN: $n packer/ commit(s) on origin/main are newer than the GCE image ($img): runners do not have them. Rebuild: fxa-sandbox-ctl --backend gce image build (about 30 min); a Firecracker slot gets only 03b-toolchain, 09-fxa-services and 15-firefox from its refresh, the rest needs a rootfs rebuild with infra/firecracker/guest-provision.sh"
+    else echo "  GCE image $img has every packer/ commit"; fi
+  else echo "  GCE image: unknown (${img:-no answer})"; fi
 fi
 
 echo "== backlog items that wait (ready, doing, verifying, blocked)"
