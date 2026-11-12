@@ -1507,7 +1507,10 @@ _runner_postmortem() {
     dmesg 2>/dev/null | grep -E "Out of memory: Killed process" | tail -3
     journalctl -u ssh --no-pager -o cat 2>/dev/null | grep -E "MaxStartups throttling|past MaxStartups" | tail -2
     if [ -f /run/fxa-profile/failed ]; then echo "profile boot failed: $(head -c 300 /run/fxa-profile/failed | tr "\n" " ")"
-      tail -n 5 /var/log/profile-boot.log 2>/dev/null | sed "s/^/  boot: /"; fi' 2>/dev/null)" || return 0
+      tail -n 5 /var/log/profile-boot.log 2>/dev/null | sed "s/^/  boot: /"
+      # A step that sent its output to its own log, as cargo does: that log goes with the runner, so keep its error.
+      f="$(grep -oE "/var/log/[A-Za-z0-9._-]+[.]log" /run/fxa-profile/failed | head -1)"
+      if [ -n "$f" ] && [ -f "$f" ]; then { grep -m5 -E "^error" "$f" || tail -n 10 "$f"; } | cut -c1-300 | sed "s/^/  build: /"; fi; fi' 2>/dev/null)" || return 0
   [ -n "$out" ] || return 0
   echo "Runner '${name}' before it goes:"
   printf '%s\n' "$out" | sed 's/^/  /'

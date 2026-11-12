@@ -45,6 +45,7 @@ The script masks known token formats. Never print a `.env` or a token.
 | a review round `blocked` by the runner, not the change, and the runner is fixed now | The round pushed no fix; the `blocked` label unmarked the comments it acted on | `fxa-sandbox-ctl --pipeline <team> label <KEY> done`: the next pass starts the round again (within 5 min) |
 | `Open PR failed: ERROR: could not create the tree as the App.` after `rebuilt this change on top of it`, and `curl: (22) ... 422` in `<key>.finish.log` | The bot pushed its change, then a person pushed on top; the rebuild was empty and GitHub refuses an empty tree (fixed in c51f043) | After the deploy, tap *Open PR* again: the branch already holds the whole change |
 | `pipeline/runner_tool` in the errors: "a runner tool is not built for the runner's CPU" | An x86-64 tool on an arm64 runner (or the reverse); the agent worked around it | Fix the download in the profile's `boot.sh` or `03b-toolchain.sh` to take `uname -m`'s build |
+| `runner/profile_boot` in the errors: `profile boot failed: cargo build failed (see /var/log/<file>.log)` | A team profile's boot step failed on the runner; the named log went with the runner | Read the `.postmortem` file the error's log names (`<key>.postmortem` beside the session): its `build:` lines hold the step's error |
 
 ## 3. Report
 
