@@ -1014,14 +1014,15 @@ routine_done() {
     [ "$post" = true ] || [ -n "$reason" ] || [ -n "$nochan" ] || reason="kept off Slack: it may hold personal data or a secret"
   fi
   # A routine in tickets mode: its findings become tickets in the team's Jira project for a person to triage, and the
-  # report that is kept and posted holds only their keys. A failed filing keeps the agent's report and says why.
+  # report that is kept and posted holds only their keys. A failed filing keeps the agent's report in History, off
+  # Slack (it holds each attack path), and says why.
   local filed=""
   if [ -n "$rf" ] && [ "$state" = report ] && [ "$(jq -r '(.cfg // "{}") | fromjson | .mode // ""' <<< "$r")" = tickets ] \
       && [[ "$(jq -r .state <<< "$r")" =~ ^(queued|claimed|started)$ ]]; then
     if filed="$(_routine_file_findings "$run" "$rf" "$(jq -r .cfg <<< "$r")" 2> "$f.err")" && [ -n "$filed" ]; then
       report="$filed"; post=true; reason=""
     else
-      filed=""; reason="tickets not filed: $(head -1 "$f.err" | sed 's/^ERROR: //' | cut -c1-200)"
+      filed=""; post=false; reason="tickets not filed: $(head -1 "$f.err" | sed 's/^ERROR: //' | cut -c1-200)"
     fi
     rm -f "$f.err"
   fi

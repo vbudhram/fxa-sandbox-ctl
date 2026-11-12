@@ -104,8 +104,8 @@ check "done files the tickets, keeps only the keys, and the answer gives the bot
 check "a second done call files nothing more" "1" \
   "$(routine_done "$run" --state report --session agent-sec001 --report-file "$tmp/report.md" >/dev/null; grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
 run2="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p2', 'started', 'agent-sec002', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
-check "with no Jira project, a security review keeps its report as before and files nothing" "1|1" \
-  "$(PIPE_JIRA_PROJECT='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
+check "with no Jira project, a security review keeps its report in History, off Slack, and files nothing" "false|1|1" \
+  "$(PIPE_JIRA_PROJECT='' routine_done "$run2" --state report --session agent-sec002 --report-file "$tmp/report.md" | jq -r .post)|$(db_value "SELECT count(*) FROM routine_runs WHERE id = $run2 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
 run3="$(db_value "INSERT INTO routine_runs (routine_id, period, state, session, started_at, config) VALUES ($rr, 'p3', 'started', 'agent-sec003', 1, json($(db_q "$(jq -c '. + {channel: "C0OWN00", mode: "report"}' <<< "$cfg")"))); SELECT last_insert_rowid();")"
 check "a security review in report mode keeps its report and files nothing" "1|1" \
   "$(routine_done "$run3" --state report --session agent-sec003 --report-file "$tmp/report.md" >/dev/null; db_value "SELECT count(*) FROM routine_runs WHERE id = $run3 AND report LIKE '%Refresh grant%';")|$(grep -c '^POST /rest/api/3/issue {' "$tmp/jira")"
