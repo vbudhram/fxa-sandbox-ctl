@@ -46,6 +46,14 @@ check "the history keeps only the person's words" "next please" "$(jq -r 'select
 rm -f "$tmp/turn"; cmd_steer $k --message-file "$tmp/m" --from-name Ana --ci-ok >/dev/null
 check "the message after that keeps the admin role" "1|0" "$(session_get $k turn_admin)|$(grep -c 'ran a command' "$tmp/turn")"
 
+# A command that hits the limit: timeout(1) gives 124, and the 100 s pass (a clock stub: 1000, then 1100).
+new
+_session_sh_in() { cat >/dev/null; echo '@@exit 124' >&2; }
+date() { if [ "${1:-}" = +%s ]; then c=$(( $(cat "$tmp/clk" 2>/dev/null || echo 0) + 1 )); echo "$c" > "$tmp/clk"; [ "$c" = 1 ] && echo 1000 || echo 1100; else command date "$@"; fi; }
+check "a command stopped at the limit says so" "exit 124 in 100s (stopped: the limit is 100 seconds)" \
+  "$(echo 'sleep 200' | session_sh $k UOWNER1 0 | head -1)"
+unset -f date
+
 if [ -d /proc/self/fd ] && command -v setsid >/dev/null && command -v timeout >/dev/null && command -v pkill >/dev/null; then
   cd "$tmp"
   out="$(printf '%s\n' 'echo "path=$PATH"; nohup sleep 300 >/dev/null 2>&1 & echo $! > left; exit 7' | bash -c "$_SESSION_SH_RUN" 2>"$tmp/err")"
