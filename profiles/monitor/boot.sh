@@ -19,7 +19,7 @@ step "Node 20"
 
 step "Postgres"
 if ! command -v psql > /dev/null; then
-  { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q postgresql; } > /dev/null || die "could not install Postgres"
+  { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade postgresql; } > /dev/null || die "could not install Postgres"
 fi
 systemctl start postgresql || die "Postgres did not start"
 pg() { sudo -u postgres psql -qtAc "$1"; }

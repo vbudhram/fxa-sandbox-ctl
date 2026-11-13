@@ -65,7 +65,8 @@ SYNC=/opt/syncserver SYNC_CONF=/etc/syncserver.toml
 syncserver_build() {
   local t; t="$(mktemp -d /tmp/syncserver.XXXXXX)" || return 1
   local env="RUSTUP_HOME=$t/rustup CARGO_HOME=$t/cargo"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -q libmysqlclient-dev > /dev/null || { rm -rf "$t"; return 1; }
+  # With the sync-storage boot's build packages, so its boot runs no apt; a refresh upgrades none.
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade build-essential pkg-config cmake libmysqlclient-dev libpq-dev libssl-dev python3-dev python3-venv > /dev/null || { rm -rf "$t"; return 1; }
   git clone -q --filter=blob:none https://github.com/mozilla-services/syncstorage-rs "$t/src" \
     && git -C "$t/src" checkout -q "$SYNCSTORAGE_SHA" || { rm -rf "$t"; return 1; }
   local rv; rv="$(sed -n 's/^rust-version *= *"\([0-9.]*\)".*/\1/p' "$t/src/Cargo.toml" | head -1)"

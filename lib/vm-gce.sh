@@ -110,7 +110,8 @@ vm_image_exists() { _gce compute images describe-from-family "$FXA_GCE_IMAGE" >/
 # vm_image_build [--android]   --android: the fxa-dev-android image (amd64, the Android SDK, an
 #   emulator and a Fenix build), on an x86 build machine with a bigger disk.
 vm_image_build() {
-  local -a extra=() types=(c4a-highcpu-4 ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4})
+  # The family is FXA_GCE_IMAGE, so a test build (fxa-dev-test) does not reach the live runners.
+  local -a extra=(-var "vm_name=${FXA_GCE_IMAGE:-fxa-dev-base}") types=(c4a-highcpu-4 ${FXA_GCE_MACHINE_FALLBACK-t2a-standard-4})
   if [ "${1:-}" = --android ]; then
     extra=(-var "vm_name=${FXA_GCE_IMAGE_ANDROID}" -var source_image_family=ubuntu-2404-lts-amd64
            -var android=true -var "disk_size_gb=${FXA_GCE_DISK_GB_ANDROID}")

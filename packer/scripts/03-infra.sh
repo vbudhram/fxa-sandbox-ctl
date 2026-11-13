@@ -7,6 +7,8 @@ export DEBIAN_FRONTEND=noninteractive
 # ── MySQL 8.0 ──────────────────────────────────────────────────
 echo "==> Installing MySQL 8.0..."
 apt-get install -y -qq mysql-server
+# An upgrade resets root's login to auth_socket; MySQL changes only with a new image.
+apt-mark hold mysql-server mysql-server-8.0 mysql-server-core-8.0 mysql-client-8.0 mysql-client-core-8.0 > /dev/null
 
 echo "==> Configuring MySQL..."
 # Bind to localhost only

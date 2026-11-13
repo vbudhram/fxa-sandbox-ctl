@@ -15,7 +15,7 @@ t0=$(date +%s)
 
 step "packages"
 pk="build-essential pkg-config libssl-dev"
-dpkg -s $pk > /dev/null 2>&1 || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q $pk; } > /dev/null || die "could not install the build packages"
+dpkg -s $pk > /dev/null 2>&1 || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-upgrade $pk; } > /dev/null || die "could not install the build packages"
 
 step "Rust"
 # The repo's CI builds and lints on stable, not on its rust-version line.
