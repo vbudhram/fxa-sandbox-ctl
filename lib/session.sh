@@ -992,8 +992,11 @@ _session_watch() {
 
 # The watch page's events, from one runner line: what a Claude Code terminal shows.
 # Tool output is clipped and known token formats are masked here, on the host: the
-# page is open to anyone IAP admits. "sub" marks a subagent's line.
-_SESSION_VIEW_JQ='def mask: gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>");
+# page is open to anyone IAP admits. "sub" marks a subagent's line. $vals (--slurpfile) holds the team's
+# runtime secret values: they have no known prefix, so only an exact match finds them.
+_SESSION_VIEW_JQ='def mask: reduce ($vals[]?) as $v (.; split($v) | join("<masked>"))
+  | gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>")
+  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>");
 def clip($n): if length > $n then .[0:$n] + "…" else . end;
 def head($k): (rtrimstr("\n") | split("\n")) as $l | {out: ($l[0:$k] | join("\n") | clip(4000)), more: ([($l | length) - $k, 0] | max)};
 def arg: (.command // .file_path // .pattern // .path // .url // .query // .description // .skill // .prompt
@@ -1025,8 +1028,21 @@ fromjson? | (.parent_tool_use_id != null) as $sub
 # transcript lines first, then live: the reply as it is written, each tool call and result.
 _session_view() {
   _session_sh "$(worktree_branch_for "$1")" 'cd /workspace && { timeout 1800 tail -n 300 -F .fxa-auto-claude.jsonl & timeout 1800 tail -n 0 -F .fxa-auto-stream.jsonl & wait; } 2>/dev/null' \
-    | jq --unbuffered -R -c "$_SESSION_VIEW_JQ" \
+    | jq --unbuffered -R -c --slurpfile vals <(_session_secret_values) "$_SESSION_VIEW_JQ" \
     || true
+}
+
+# _session_secret_values   The team's runtime secret values as JSON strings, for the exact-value mask:
+# each whole value, and each line of 12 or more characters (one line of a PEM in a log). A short value
+# would mask common words, so values under 8 characters are left to the prefix mask.
+_session_secret_values() {
+  local pair v
+  for pair in ${PIPE_RUNTIME_SECRETS:-}; do
+    v="$(gcloud secrets versions access latest --secret "${pair%%=*}" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" || continue
+    printf '%s' "$v" | jq -Rs 'select(length >= 8)'
+    printf '%s\n' "$v" | jq -R 'select(length >= 12)'
+  done
+  return 0
 }
 
 # The session cap. With Firecracker slots on it is at least the slot count

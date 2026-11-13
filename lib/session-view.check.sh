@@ -8,10 +8,21 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 eval "$(sed -n "/^_SESSION_VIEW_JQ='/,/^  else empty end'\$/p" "$(dirname "$0")/session.sh")"
-v() { printf '%s\n' "$1" | jq -R -c "$_SESSION_VIEW_JQ"; }
+v() { printf '%s\n' "$1" | jq -R -c --slurpfile vals <(printf '"%s"\n' "${VALS[@]}") "$_SESSION_VIEW_JQ"; }
+VALS=(hunter2-not-prefixed)
 
 check "text, with a key masked" '{"t":"text","text":"key sk-ant-api03-<masked> and fxl_<masked>","sub":false}' \
   "$(v '{"type":"assistant","message":{"content":[{"type":"text","text":"key sk-ant-api03-ABCDEFGHIJKL and fxl_abcdefghijklmnop"}]}}')"
+check "a team secret with no known prefix, in a tool result" '"login with <masked> now"' \
+  "$(v '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"login with hunter2-not-prefixed now"}]}}' | jq -c .out)"
+check "a JWT in a command" '"curl -H x:<masked>"' \
+  "$(v '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"curl -H x:eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.sig"}}]}}' | jq -c .arg)"
+eval "$(sed -n '/^_session_secret_values() {/,/^}/p' "$(dirname "$0")/session.sh")"
+gcloud() { printf 'short\n-----BEGIN KEY-----\nAAAABBBBCCCCDDDD\n'; }
+check "secret values: the whole value and each long line, never a short one" \
+  '"short\n-----BEGIN KEY-----\nAAAABBBBCCCCDDDD"|"-----BEGIN KEY-----"|"AAAABBBBCCCCDDDD"' \
+  "$(PIPE_RUNTIME_SECRETS='fxa-team-x=/home/agent/a/b' _session_secret_values | paste -sd'|' -)"
+check "secret values: none without runtime secrets" "" "$(PIPE_RUNTIME_SECRETS='' _session_secret_values)"
 check "a tool call, its path relative" '{"t":"tool","id":"t1","name":"Read","sub":false,"arg":"src/a.ts"}' \
   "$(v '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/workspace/src/a.ts"}}]}}')"
 check "a result: 8 lines and a count" '{"out":"1\n2\n3\n4\n5\n6\n7\n8","more":2,"t":"done","id":"t1","ok":true,"sub":false}' \
