@@ -529,6 +529,11 @@ _finish_scope() {
 #   Commit the agent's change, push the branch and open or update the PR.
 #   Prints the PR URL on stdout (an empty line without create_pr). Progress on stderr.
 finish_push_and_pr() {
+  # One writer for each branch (lib/targets.sh): the caller names itself in FXA_LOCK_HOLDER. Exit 4: another holds it.
+  if [ -n "${FXA_LOCK_HOLDER:-}" ] && declare -F branch_lock_take >/dev/null; then
+    local lb; lb="$(git -C "$1" symbolic-ref -q --short HEAD 2>/dev/null || true)"
+    [ -z "$lb" ] || branch_lock_take "${PIPE_REPO_SLUG:-}" "$lb" "$FXA_LOCK_HOLDER" >/dev/null || return 4
+  fi
   _finish_claim "${1:-$(worktree_shared_path 2>/dev/null)}"
   trap '_finish_release "${1:-$(worktree_shared_path 2>/dev/null)}"' RETURN
   _finish_push_and_pr "$@"

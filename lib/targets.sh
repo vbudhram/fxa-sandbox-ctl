@@ -74,3 +74,33 @@ targets_carry() {
   _session_write "$key" '.targets = $l | .current = $i | .target_path = "" | .target_base = ($l[$i].target_base // "")
     | .checkout_admin = ($l[$i].checkout_admin // "")' --argjson l "$keep" --argjson i "$cur"
 }
+
+# Branch writer locks: one writer for each repo:branch, a thread ("thread:<channel>:<ts>") or a pipeline
+# ticket ("ticket:<KEY>"). Sessions and the pipeline both run this controller, so both read SESSION_DIR.
+BRANCH_LOCK_DIR="${FXA_BRANCH_LOCK_DIR:-${SESSION_DIR}/branch-locks}"
+_branch_lock_file() { printf '%s/%s__%s' "$BRANCH_LOCK_DIR" "$(tr 'A-Z/' 'a-z_' <<< "$1")" "$(printf '%s' "$2" | tr '/' '~')"; }
+
+# branch_lock_holder <repo> <branch>   The holder of the branch, or nothing.
+branch_lock_holder() { cat "$(_branch_lock_file "$1" "$2")" 2>/dev/null || true; }
+
+# branch_lock_take <repo> <branch> <holder> [move]   Become the branch's writer. Another holder refuses, with a
+#   line that names it, unless move: then the lock moves, and the old holder prints on stdout to be told.
+branch_lock_take() {
+  local f old m; f="$(_branch_lock_file "$1" "$2")"; m="${f}.lock"
+  mkdir -p "$BRANCH_LOCK_DIR" || return 1
+  local n=0; until mkdir "$m" 2>/dev/null; do n=$((n + 1)); [ "$n" -lt 50 ] || { echo "ERROR: the lock for ${2} is busy" >&2; return 1; }; sleep 0.1; done
+  old="$(cat "$f" 2>/dev/null || true)"
+  if [ -n "$old" ] && [ "$old" != "$3" ] && [ "${4:-}" != move ]; then
+    rmdir "$m"; echo "ERROR: ${2} has another writer: ${old}. Move it here first." >&2; return 1
+  fi
+  printf '%s\n' "$3" > "$f"; rmdir "$m"
+  [ -z "$old" ] || [ "$old" = "$3" ] || printf '%s\n' "$old"
+  return 0
+}
+
+# branch_lock_release <repo> <branch> <holder>   Only the holder releases.
+branch_lock_release() {
+  local f; f="$(_branch_lock_file "$1" "$2")"
+  [ "$(cat "$f" 2>/dev/null)" = "$3" ] && rm -f "$f"
+  return 0
+}

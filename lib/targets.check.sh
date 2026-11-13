@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Offline check for lib/targets.sh: an old record reads as one target, a switch keeps both, a resume carries the
-# open ones.
+# open ones, and one writer holds each branch.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 fail=0
@@ -10,7 +10,7 @@ source "$here/config.sh"
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI=""
 FXA_SESSION_DIR="$tmp" source "$here/session.sh"
 _session_db_sync() { :; }
-export PIPE_REPO_SLUG=mozilla/syncstorage-rs
+export FXA_BRANCH_LOCK_DIR="$tmp/locks" PIPE_REPO_SLUG=mozilla/syncstorage-rs
 source "$here/targets.sh"
 pr2750=https://github.com/mozilla/syncstorage-rs/pull/2750 pr2738=https://github.com/mozilla/syncstorage-rs/pull/2738
 echo '{"state":"active","branch":"agent-46e5fc","pr_url":"'"$pr2750"'"}' > "$tmp/agent-46e5fc.json"
@@ -47,4 +47,21 @@ echo '{"state":"starting"}' > "$tmp/agent-one.json"
 targets_carry agent-one agent-new2
 check "a resume of a one-target session writes no targets" "null" "$(jq -c .targets "$tmp/agent-one.json")"
 
+# One writer for each branch.
+check "the first writer takes the branch" "ok|" "$(branch_lock_take mozilla/syncstorage-rs stor-55 thread:C1:1.1 && echo ok)|"
+check "the same writer takes it again" "ok" "$(branch_lock_take mozilla/syncstorage-rs stor-55 thread:C1:1.1 && echo ok)"
+check "a second writer is refused, and the line names the holder" "no|1" \
+  "$(branch_lock_take mozilla/syncstorage-rs stor-55 ticket:FXA-1 2>/dev/null && echo ok || echo no)|$(branch_lock_take mozilla/syncstorage-rs stor-55 ticket:FXA-1 2>&1 | grep -c 'thread:C1:1.1')"
+check "a move takes the lock and prints the old holder" "thread:C1:1.1|ticket:FXA-1" \
+  "$(branch_lock_take mozilla/syncstorage-rs stor-55 ticket:FXA-1 move)|$(branch_lock_holder mozilla/syncstorage-rs stor-55)"
+branch_lock_release mozilla/syncstorage-rs stor-55 thread:C1:1.1
+check "only the holder releases" "ticket:FXA-1" "$(branch_lock_holder mozilla/syncstorage-rs stor-55)"
+check "a branch with a slash has its own lock" "" "$(branch_lock_holder mozilla/syncstorage-rs stor/55)"
+# The one push path takes the lock: a second writer pushes nothing (exit 4).
+eval "$(sed -n '/^finish_push_and_pr() {/,/^}/p' "$here/finish.sh")"
+_finish_claim() { :; }; _finish_release() { :; }; _finish_push_and_pr() { echo pushed; }
+git init -q -b stor-55 "$tmp/wt"
+check "the ticket that holds stor-55 pushes" "pushed" "$(FXA_LOCK_HOLDER=ticket:FXA-1 finish_push_and_pr "$tmp/wt" true)"
+check "a thread that does not hold it pushes nothing" "4|" "$(out="$(FXA_LOCK_HOLDER=thread:C2:2.2 finish_push_and_pr "$tmp/wt" true)"; echo "$?|$out")"
+check "a push with no holder (cmd_finish) takes no lock" "pushed" "$(finish_push_and_pr "$tmp/wt" true)"
 exit "$fail"

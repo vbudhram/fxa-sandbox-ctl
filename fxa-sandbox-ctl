@@ -605,7 +605,7 @@ EOF
       return 0
     fi
     local pr_url
-    pr_url="$(FXA_SHIP_CHECK="$key" finish_push_and_pr "$worktree_path" "$create_pr")" || { [ "$rebase" != true ] || { _jira_rebase_push_failed "$key" "$worktree_path"; pipeline_rebase_end "$key"; }; return 1; }
+    pr_url="$(FXA_LOCK_HOLDER="ticket:${key}" FXA_SHIP_CHECK="$key" finish_push_and_pr "$worktree_path" "$create_pr")" || { [ "$rebase" != true ] || { _jira_rebase_push_failed "$key" "$worktree_path"; pipeline_rebase_end "$key"; }; return 1; }
     [ "$rebase" != true ] || pipeline_rebase_end "$key"
     # Record the run here, on the host that ran it, while its transcript is in
     # the slot. The row lands in the state dir, which the GCS mirror carries to
@@ -2375,6 +2375,10 @@ _task_checkout() {
   fi
   session_set "$key" fresh 1 checkout "$url" checkout_author "$author" \
     checkout_person "$([ "$(jq -r '.author.is_bot // false' <<< "$info")" = true ] && echo 0 || echo 1)"
+  # A checkout is a move: this thread becomes the branch's one writer, and the old one is told (took_from).
+  local th old; th="$(session_get "$key" thread)"; th="${th:+thread:${th}}"
+  old="$(branch_lock_take "$slug" "$head" "${th:-session:${key}}" move)" || return 1
+  [ -z "$old" ] || session_set "$key" took_from "$old"
 }
 
 # _checkout_gate_on <key>   The session pushes to a person's PR it took over (task --checkout):
@@ -3274,10 +3278,12 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   # A team admin can set a routine to open a regular PR instead.
   [ "$(session_get "$key" routine_draft)" = false ] && local FXA_PR_DRAFT=""
   rc=0
-  pr_url="$(FXA_ALLOW_CI_EDITS="" FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
+  local holder; holder="$(session_get "$key" thread)"; holder="${holder:+thread:${holder}}"; holder="${holder:-session:${key}}"
+  pr_url="$(FXA_LOCK_HOLDER="$holder" FXA_ALLOW_CI_EDITS="" FXA_WORKTREE_BASE="$base" FXA_PR_DRAFT="${FXA_PR_DRAFT-1}" FXA_PR_TEAM="${FXA_SESSION_PR_TEAM-}" FXA_FINISH_PR="$fpr" \
     FXA_APP_COMMIT_FF="$frun" FXA_FIX_HEAD_SHA="$fhead" finish_push_and_pr "$tmp" "$create")" || rc=$?
   session_checkout_remove "$tmp"; rm -rf "$parent"
   [ "$rc" = 3 ] && { _session_finish_fail "$key" "the branch of the PR moved, so nothing was pushed" "$mode"; return 1; }
+  [ "$rc" = 4 ] && { _session_finish_fail "$key" "$(session_get "$key" branch) has another writer ($(branch_lock_holder "$PIPE_REPO_SLUG" "$(session_get "$key" branch)")), so nothing was pushed. A team admin can move it here: 'work on <its PR link>'" "$mode"; return 1; }
   [ "$rc" -eq 0 ] || { _session_finish_fail "$key" "push failed" "$mode"; return 1; }
   session_set "$key" finish_notes "$(_session_finish_notes "$key")"
   if [ "$create" = false ]; then
