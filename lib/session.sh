@@ -543,6 +543,14 @@ EOF
 # _session_sh <name> <script>   Run a script on the runner as the agent user.
 # vm_exec_as_agent goes through `sudo -i`, which blanks $vars in the script.
 _session_sh() { vm_exec "$1" sudo -u agent bash -c "$2"; }
+
+# _session_sh_in <name> <secs> <bytes> <script>   As _session_sh, for a script that reads untrusted text
+# (a word or a command from the thread): the caller pipes the text on stdin, so it never becomes part of
+# a script. timeout stops the script's whole process group; head caps what comes back.
+_session_sh_in() {
+  [[ "$2" =~ ^[0-9]+$ && "$3" =~ ^[0-9]+$ ]] || { echo "ERROR: _session_sh_in needs a time and a byte cap" >&2; return 2; }
+  _session_sh "$1" "timeout -k 5 $2 bash -c $(printf '%q' "$4") | head -c $3"
+}
 # _session_dirty_trees <runner>   The read-only trees (PIPE_REPOS rows that are not the
 # work repo) with changes to tracked files. A ship carries only the work tree.
 _session_dirty_trees() {
