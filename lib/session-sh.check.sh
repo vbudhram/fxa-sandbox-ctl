@@ -30,8 +30,8 @@ cmd="echo \$(id) 'x' \"y\"; ls"
 out="$(printf '%s\n' "$cmd" | session_sh $k UOWNER1 0)"
 check "the command goes on stdin only, word for word, and not into the script" "$cmd|0" \
   "$(cat "$tmp/stdin")|$(grep -cF "$cmd" "$tmp/script")"
-check "the real exit code, and the output masked" "exit 3 in 0s|hi <masked>|0" \
-  "$(head -1 <<< "$out")|$(sed -n 2p <<< "$out")|$(grep -c "$SECRET" <<< "$out")"
+check "the real exit code, and the output masked" "exit 3 in Ns|hi <masked>|0" \
+  "$(head -1 <<< "$out" | sed -E 's/in [0-9]+s/in Ns/')|$(sed -n 2p <<< "$out")|$(grep -c "$SECRET" <<< "$out")"
 check "an audit line with the person, the command and the exit code" "UOWNER1|false|sh|$cmd|3" \
   "$(jq -r '"\(.asked_by)|\(.admin)|\(.ask)|\(.command)|\(.exit)"' "$SESSION_DIR/$k.host-actions.jsonl" | tail -1)"
 check "the lock is free again, and no turn started" "|0|no" "$(ls "$SESSION_DIR/$k.lock" 2>/dev/null)|$(session_get $k turn_open)|$([ -e "$tmp/turn" ] && echo yes || echo no)"
