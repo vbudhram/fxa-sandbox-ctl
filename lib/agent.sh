@@ -130,9 +130,10 @@ _vm_settings_json() {
     | with_entries(select(.value != null)) | . + {outputStyle: "concise"}
     | .permissions.deny = ((.permissions.deny // []) + $deny)
     | {type: "command", command: "command -v fxa-mem >/dev/null && fxa-mem hook; exit 0", timeout: 5} as $mem
+    | {matcher: "*", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-steer.sh", timeout: 5}]} as $steer
     | .hooks = {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "bash /home/agent/.claude/hooks/fxa-bash-guard.sh"}]},
-        {matcher: "Edit|Write|MultiEdit|Bash", hooks: [$mem]}], PostToolUseFailure: [{matcher: "Bash", hooks: [$mem]}],
-        PostToolUse: [{matcher: "Bash", hooks: [$mem]}]}'
+        {matcher: "Edit|Write|MultiEdit|Bash", hooks: [$mem]}], PostToolUseFailure: [{matcher: "Bash", hooks: [$mem]}, $steer],
+        PostToolUse: [{matcher: "Bash", hooks: [$mem]}, $steer]}'
 }
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -898,7 +899,7 @@ _setup_claude_config() {
       [ -n "${PIPE_PROFILE:-}" ] && [ -d "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}/skills" ] \
         && COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "${SANDBOX_ROOT}/profiles/${PIPE_PROFILE}" skills 2>/dev/null
       # The runner's own hooks (hooks/ in this repo), which its settings.json names.
-      COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" hooks/fxa-bash-guard.sh 2>/dev/null
+      COPYFILE_DISABLE=1 tar -rf "$config_tar" -C "$SANDBOX_ROOT" hooks/fxa-bash-guard.sh hooks/fxa-steer.sh 2>/dev/null
       local ssh_key="${LOG_DIR}/ssh/${name}/id_ed25519"
       local ip
       ip="$(vm_ip "$name")"

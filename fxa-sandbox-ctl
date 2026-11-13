@@ -2861,7 +2861,12 @@ cmd_steer() {
   if ! _session_lock "$key"; then asks_role "$key" "$adm" "${person%%$'\t'*}" queued; { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; echo "${key} queued"; return 0; fi
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
     asks_role "$key" "$adm" "${person%%$'\t'*}" queued
-    { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; _session_unlock "$key"; echo "${key} queued"; return 0
+    # Mid-turn: the running turn also gets it at its next tool call. The queue keeps it in case it did not.
+    local shown=""
+    if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" = 1 ] && ! _session_handoff_busy "$key" \
+      && _session_steer_live "$key" "$adm" "${person%%$'\t'*}" "$file"; then shown=1; fi
+    { [ -z "$shown" ] || printf '(already shown mid-turn)\n'; cat "$file"; printf '\n\n'; } >> "$q"
+    words_add "$key" "$words" q; _session_unlock "$key"; echo "${key} queued${shown:+ (shown mid-turn)}"; return 0
   fi
   asks_role "$key" "$adm" "${person%%$'\t'*}"
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?

@@ -693,6 +693,7 @@ ${_MCP_LAUNCH_SNIPPET}
 cd /workspace
 ${trees:+export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1}
 : > /workspace/.fxa-auto-stream.jsonl
+rm -rf /workspace/.fxa-steer # a message the last turn did not show is in this turn's message, from the queue
 claude -p --resume ${sid} --permission-mode bypassPermissions${_CLAUDE_TOOLS_FLAG}${_MCP_CLAUDE_FLAGS}${trees} \\
   --model ${model}${effort:+ --effort ${effort}} --output-format stream-json --verbose${_SESSION_CLAUDE_PARTIAL} -- "\$(cat /workspace/.fxa-steer-msg.txt)" 2>&1 \\
   | ${out}
@@ -757,6 +758,21 @@ session_interrupt_tool() {
   [[ "$out" == stopped* ]] || { echo "$1 no command"; return 0; }
   _session_history_add "$1" action "Stopped the running command; the turn goes on"
   echo "$1 command stopped"
+}
+
+# The runner side of a mid-turn steer, as uid agent with the text on stdin: a new file under .fxa-steer/
+# (noclobber), renamed to .txt only when whole, so the hook never reads half a message.
+_SESSION_STEER_PUT='d=/workspace/.fxa-steer; n=$(date +%s%N)-$$-$RANDOM
+mkdir -p "$d" && set -C && head -c 16384 > "$d/.$n" && mv "$d/.$n" "$d/$n.txt" && echo put'
+
+# _session_steer_live <key> <admin 1|0> <name> <file>   A message that arrives while a Claude turn runs: the
+# fxa-steer hook shows it to the agent after its next tool call. The turn now carries this person's words, so a
+# non-admin takes away its admin role and the session's CI grant first. Fails when the file was not put; the
+# caller queues the text in either case, because the agent owns the hook.
+_session_steer_live() {
+  [ "$(session_get "$1" runtime)" != codex ] || return 1
+  [ "$2" = 1 ] || session_set "$1" turn_admin 0 turn_asker "$3" ci_ok ""
+  _session_sh_in "$(worktree_branch_for "$1")" 20 100 "$_SESSION_STEER_PUT" < "$4" 2>/dev/null | grep -q '^put'
 }
 
 # The text of each tool result in a transcript line: the stream-json file or Claude's own one.

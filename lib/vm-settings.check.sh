@@ -13,7 +13,9 @@ eval "$(sed -n '/^_vm_skill_blocklist() {/,/^}/p; /^_vm_settings_json() {/,/^}/p
 printf '{"env":{"ANTHROPIC_API_KEY":"sk-x"},"hooks":{},"model":"opus","permissions":{"deny":["Bash(rm -rf:*)"]}}' > "$tmp/s.json"
 out="$(_vm_settings_json "$tmp/s.json")"
 hk='command -v fxa-mem >/dev/null && fxa-mem hook; exit 0'
-check "secrets and the host's hooks stay on the host" "null|fxa-bash-guard.sh" "$(jq -c '.env' <<< "$out")|$(jq -r --arg hk "$hk" '[.hooks[][].hooks[].command | select(. != $hk) | split("/")[-1]] | join(",")' <<< "$out")"
+check "secrets and the host's hooks stay on the host" "null|fxa-bash-guard.sh,fxa-steer.sh,fxa-steer.sh" "$(jq -c '.env' <<< "$out")|$(jq -r --arg hk "$hk" '[.hooks[][].hooks[].command | select(. != $hk) | split("/")[-1]] | join(",")' <<< "$out")"
+check "a mid-turn message is shown after any tool call, failed or not" "*|*" \
+  "$(jq -r '[.hooks.PostToolUse, .hooks.PostToolUseFailure | .[] | select(.hooks[0].command | endswith("fxa-steer.sh")) | .matcher] | join("|")' <<< "$out")"
 check "the host's own deny rules are kept" "true" "$(jq '.permissions.deny | index("Bash(rm -rf:*)") != null' <<< "$out")"
 check "a repo skill the runner cannot use is denied" "true" "$(jq '.permissions.deny | index("Skill(fxa-pr-open)") != null' <<< "$out")"
 check "the model and concise style come through" "opus|concise" "$(jq -r '"\(.model)|\(.outputStyle)"' <<< "$out")"
