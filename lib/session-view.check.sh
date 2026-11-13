@@ -23,6 +23,10 @@ check "secret values: the whole value and each long line, never a short one" \
   '"short\n-----BEGIN KEY-----\nAAAABBBBCCCCDDDD"|"-----BEGIN KEY-----"|"AAAABBBBCCCCDDDD"' \
   "$(PIPE_RUNTIME_SECRETS='fxa-team-x=/home/agent/a/b' _session_secret_values | paste -sd'|' -)"
 check "secret values: none without runtime secrets" "" "$(PIPE_RUNTIME_SECRETS='' _session_secret_values)"
+gcloud() { return 1; }
+check "secret values: a failed read gives false" "false" "$(PIPE_RUNTIME_SECRETS='fxa-team-x=/home/agent/a/b' _session_secret_values)"
+check "the mask shows nothing when a secret read failed" "|5" \
+  "$(printf 'pw hunter2-not-prefixed\n' | jq -R -r --slurpfile vals <(echo false) "${_SESSION_MASK_JQ} mask" 2>/dev/null)|$(echo x | jq -R --slurpfile vals <(echo false) "${_SESSION_MASK_JQ} mask" >/dev/null 2>&1; echo $?)"
 check "a tool call, its path relative" '{"t":"tool","id":"t1","name":"Read","sub":false,"arg":"src/a.ts"}' \
   "$(v '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/workspace/src/a.ts"}}]}}')"
 check "a result: 8 lines and a count" '{"out":"1\n2\n3\n4\n5\n6\n7\n8","more":2,"t":"done","id":"t1","ok":true,"sub":false}' \

@@ -21,6 +21,11 @@ check "tail masks the runtime secret and the token" "0|0|2" \
 check "a post writes one history line with the person" "1|yes" \
   "$(wc -l < "$SESSION_DIR/agent-out1.history.jsonl" | tr -d ' ')|$(jq -r .text "$SESSION_DIR/agent-out1.history.jsonl" | grep -q 'bytes of output (tail) to U123ABC' && echo yes)"
 check "a bad line count is refused" "2" "$(session_tail agent-out1 '5; id' >/dev/null 2>&1; echo $?)"
+_session_secret_values() { echo false; }
+out="$(session_tail agent-out1 5)"
+check "tail shows nothing of the output when a secret read failed" "0|0|1" \
+  "$(grep -c "$SECRET" <<< "$out")|$(grep -c 'PASS one' <<< "$out")|$(grep -c 'not shown: the host could not read' <<< "$out")"
+_session_secret_values() { printf '"%s"\n' "$SECRET"; }
 
 w="\$(touch pwned)'x"
 check "the word is a literal, and nothing ran from it" "literal \$(touch pwned)'x here|no" \

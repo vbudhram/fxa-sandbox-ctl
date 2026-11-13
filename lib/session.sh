@@ -791,7 +791,10 @@ for p in $([ -n "$c" ] && pgrep -P "$c"); do o=$(readlink "/proc/$p/fd/1") || co
 true'
 
 # _session_out_mask   Each line from a runner, masked as the watch page masks it and cut at 500 characters.
-_session_out_mask() { jq -R -r --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} mask | .[0:500]"; }
+_session_out_mask() {
+  jq -R -r --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} mask | .[0:500]" 2>/dev/null \
+    || echo "(not shown: the host could not read the team's runtime secrets to mask it)"
+}
 
 # _session_out_logged <key> <what> <slack user> <text>   Print the text for a post, with a history line
 # that says who asked and how many bytes it carries.
@@ -1215,7 +1218,8 @@ _session_watch() {
 # Tool output is clipped and known token formats are masked here, on the host: the
 # page is open to anyone IAP admits. "sub" marks a subagent's line. $vals (--slurpfile) holds the team's
 # runtime secret values: they have no known prefix, so only an exact match finds them.
-_SESSION_MASK_JQ='def mask: reduce ($vals[]?) as $v (.; split($v) | join("<masked>"))
+_SESSION_MASK_JQ='def mask: if any($vals[]?; type != "string") then halt_error("the host could not read a runtime secret to mask the text\n")
+  else reduce ($vals[]?) as $v (.; split($v) | join("<masked>")) end
   | gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>")
   | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>");'
 _SESSION_VIEW_JQ="${_SESSION_MASK_JQ}"'
@@ -1256,11 +1260,12 @@ _session_view() {
 
 # _session_secret_values   The team's runtime secret values as JSON strings, for the exact-value mask:
 # each whole value, and each line of 12 or more characters (one line of a PEM in a log). A short value
-# would mask common words, so values under 8 characters are left to the prefix mask.
+# would mask common words, so values under 8 characters are left to the prefix mask. A read that fails
+# prints false, which makes the mask stop with no output: an unmasked secret must never reach Slack.
 _session_secret_values() {
   local pair v
   for pair in ${PIPE_RUNTIME_SECRETS:-}; do
-    v="$(gcloud secrets versions access latest --secret "${pair%%=*}" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" || continue
+    v="$(gcloud secrets versions access latest --secret "${pair%%=*}" ${FXA_GCE_PROJECT:+--project "$FXA_GCE_PROJECT"} 2>/dev/null)" || { echo false; continue; }
     printf '%s' "$v" | jq -Rs 'select(length >= 8)'
     printf '%s\n' "$v" | jq -R 'select(length >= 12)'
   done
