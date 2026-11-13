@@ -458,7 +458,7 @@ _session_repo_url() {
 _session_wrapup_prompt() {
   # A team stack ships one repo: the same steps, in that repo's tree.
   if [ -n "${FXA_TREE_PATH:-}" ]; then
-    local t="/workspace/${FXA_TREE_NAME}"
+    local t="${FXA_TREE_NAME:+/workspace/${FXA_TREE_NAME}}"; t="${t:-${FXA_TREE_PATH}}"  # a thread target has no tree name
     printf 'This is for one repo only: %s (%s). Run every step below in %s; leave the other repos as they are.\n\n' "$t" "$PIPE_REPO_SLUG" "$t"
     _session_wrapup_steps "$@" | sed -e "s#/workspace/.fxa-auto-done.json#${t}/.fxa-auto-done.json#g" \
       -e "s#/workspace/.github/PULL_REQUEST_TEMPLATE.md#${t}/.github/PULL_REQUEST_TEMPLATE.md (when it exists)#g" \
@@ -1596,12 +1596,14 @@ session_review_ack() {
 # _session_end_facts <key>   What a turn's end needs, in one ssh: the cost so
 # far as {cost, tokens}, a tab, then the changed-file count (as _session_changes).
 _session_end_facts() {
-  local t n cost b; t="$(mktemp)"
+  local t n cost b at; t="$(mktemp)"
+  # A thread's current target counts in its own worktree (lib/targets.sh).
+  at="$(session_get "$1" target_path)"; at="${at:-/workspace}"
   # Only this runner's verify runs and stack starts: a resume brings back the earlier runner's files.
   b="$(session_get "$1" booted_at | tr -dc 0-9)"; b="${b:-0}"
   # shellcheck disable=SC2016  # expanded on the runner
   _session_sh "$(worktree_branch_for "$1")" 'tail -n 5000 /workspace/.fxa-auto-claude.jsonl 2>/dev/null; echo
-    printf "@@changes %s\n" "$(cd /workspace && '"$(_session_count_base "$1")$_SESSION_COUNT"')"
+    printf "@@changes %s\n" "$(cd '"$(printf '%q' "$at")"' && '"$(_session_count_base "$1")$_SESSION_COUNT"')"
     printf "@@trees %s\n" "$('"$_SESSION_TREES_COUNT"')"
     printf "@@notes %s\n" "$(head -c 20000 /workspace/.fxa-thread-notes.md 2>/dev/null | base64 -w0)"
     printf "@@fixed %s\n" "$(grep -o "\"outcome\": *\"fixed\"" /workspace/.fxa-review-outcomes.json 2>/dev/null | wc -l)"

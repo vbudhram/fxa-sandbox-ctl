@@ -76,6 +76,7 @@ gh() {
     "pr view https://github.com/mozilla/syncstorage-rs/pull/2799 "*) echo '{"url":"x/2799","state":"OPEN","headRefName":"f","headRefOid":"'"$SHA"'","baseRefName":"master","isCrossRepository":true,"author":{"login":"y"}}' ;;
     "pr list -R mozilla/syncstorage-rs --head"*) echo '[]' ;;
     "pr list -R mozilla/syncstorage-rs --base"*) echo 0 ;;
+    "api repos/mozilla/syncstorage-rs/branches/"*-new*) echo 'gh: Not Found (HTTP 404)'; return 1 ;;
     "api repos/mozilla/syncstorage-rs/branches/agent-lock -q .protected") echo true ;;
     "api repos/mozilla/syncstorage-rs/branches/"*" -q .protected") echo false ;;
     "api repos/mozilla/syncstorage-rs/branches/"*) echo "$SHA" ;;
@@ -101,6 +102,9 @@ check "main is refused" 1 "$(session_target agent-f main | grep -c 'default or r
 check "a protected branch is refused" 1 "$(session_target agent-f agent-lock | grep -c protected)"
 check "a PR outside the team's repo is refused" 1 "$(session_target agent-f https://github.com/mozilla/other/pull/1 | grep -c "not this team's work repo")"
 check "a branch with no PR that the agent did not make is refused" 1 "$(words agent-f 'switch to stor-77'; session_target agent-f stor-77 | grep -c 'agent-\*')"
+check "a separate PR: a new agent- branch needs no words, and starts at the runner's origin/master" "0|agent-new||new|1" \
+  "$(session_target agent-f agent-new >/dev/null; echo $?)|$(session_get agent-f branch)|$(session_get agent-f checkout)|$(targets_json agent-f | jq -r '.[1].source')|$(grep -c 'worktree add -q -f -B agent-new /home/agent/targets/agent-new origin/master' "$tmp/runner")"
+check "a new branch that is not agent- is refused" 1 "$(session_target agent-f stor-new | grep -c 'no branch')"
 ev='[{"type":"turn_end","status":"ready","ship":true,"asks":["target main"]}]'
 check "a refused target goes before the turn end and drops its ship line" "target|false|turn_end|null" \
   "$(targets_events agent-f "$ev" | jq -r '.[0].type, .[0].ok, .[1].type, .[1].ship' | paste -sd'|' -)"

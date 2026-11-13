@@ -3180,7 +3180,7 @@ _session_finish_fail() {
 # ships each repo of <idx,idx...> in turn, with that tree selected (lib/trees.sh).
 _cmd_session_finish() {
   local key="$1" mode="${2:-}" i="" rc=0 n=0; [ "$mode" = - ] && mode=""
-  [ -n "${3:-}" ] || { _session_finish_one "$key" "$mode"; return; }
+  [ -n "${3:-}" ] || { targets_enter "$key"; _session_finish_one "$key" "$mode"; return; }
   for i in ${3//,/ }; do
     # Each finish leaves the session active: the next repo's wrap-up is still part of this ship.
     [ "$n" = 0 ] || session_set "$key" state wrapping
@@ -3247,7 +3247,7 @@ _session_finish_one() {
   # 1 is a problem; 3 is only the PR text's style, which gets the same one repair turn but never stops the ship.
   if [ "$crc" = 1 ] || [ "$crc" = 3 ]; then
     _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write
-/workspace${at#/home/agent}/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
+${FXA_TREE_NAME:+/workspace/}${FXA_TREE_NAME:-${at}}/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
 $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key" "the repair turn did not start" "$mode"; return 1; }
     sleep 20
     while _session_turn_running "$key"; do
@@ -3261,7 +3261,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   fi
   # Fail closed: a check that could not reach the runner must not read as "no changes".
   # A team stack has no read-only repo: each one ships on its own.
-  local dirty=""; [ -n "${FXA_TREE_PATH:-}" ] || dirty="$(_session_dirty_trees "$name" | tr '\n' ' ')" \
+  local dirty=""; [ -n "${_TREE_IDX:-}" ] || dirty="$(_session_dirty_trees "$name" | tr '\n' ' ')" \
     || { _session_finish_fail "$key" "could not check the read-only repos for changes; try again" "$mode"; return 1; }
   if [ -n "${dirty// /}" ]; then
     _session_finish_fail "$key" "these read-only repos have changes, and only the work repo is shipped: ${dirty% }. Move the change to the work repo, or undo it, then try again" "$mode"; return 1
@@ -3313,7 +3313,7 @@ $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key"
   _session_record_summary "$key" || true
   session_set "$key" state active pr_url "$pr_url" pr_updated "$updated" pr_announced 0
   # A stack's PRs link each other. Best effort: the PR is already up.
-  [ -z "${FXA_TREE_PATH:-}" ] || ( trees_link_prs "$key" ) || true
+  [ -z "${_TREE_IDX:-}" ] || ( trees_link_prs "$key" ) || true
   local tid; tid="$(session_get "$key" thread)"
   _thread_ok "$tid" && thread_set "$tid" pr_url "$pr_url" pr_session "$key" branch "$(session_get "$key" branch)"
   _session_history_add "$key" action "$( [ "$updated" = 1 ] && echo "Updated" || echo "Opened" ) ${pr_url}"

@@ -144,8 +144,12 @@ _target_resolve() {
     info="$(_retry gh pr list -R "$slug" --head "$ref" --state open --json "$f" 2>/dev/null \
       | jq -c --arg u "" "map(select(.isCrossRepository | not))[0] // empty | ${q}" 2>/dev/null)" || { echo "I could not read the PRs of ${slug}"; return 1; }
     if [ -z "$info" ]; then
-      sha="$(_retry gh api "repos/${slug}/branches/${ref}" -q .commit.sha 2>/dev/null)" || { echo "${slug} has no branch ${ref}"; return 1; }
       base="$(_retry gh repo view "$slug" --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || { echo "I could not read ${slug}"; return 1; }
+      if ! sha="$(gh api "repos/${slug}/branches/${ref}" -q .commit.sha 2>&1)"; then
+        # A new agent-* branch is a separate PR from the default branch's head, which the runner fetches itself.
+        [[ "$ref" == agent-* ]] && [[ "$sha" == *"Not Found"* ]] || { echo "${slug} has no branch ${ref}"; return 1; }
+        jq -nc --arg h "$ref" --arg b "$base" '{url: "", head: $h, sha: "", base: $b, author: "", person: false, new: true}'; return 0
+      fi
       info="$(jq -nc --arg h "$ref" --arg s "$sha" --arg b "$base" '{url: "", state: "OPEN", head: $h, sha: $s, base: $b, fork: false, author: "", person: true}')"
     fi
   fi
@@ -165,8 +169,10 @@ _target_never() {
   [ -n "$3" ] || [[ "$b" == agent-* ]] || { echo "${b} has no open PR, and I only start a PR from a branch I made (agent-*)"; return 0; }
   d="$(_retry gh repo view "$slug" --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || { echo "I could not read ${slug}"; return 0; }
   [ "$d" != "$b" ] || { echo "${b} is the default branch of ${slug}"; return 0; }
-  p="$(_retry gh api "repos/${slug}/branches/${b}" -q .protected 2>/dev/null)" || { echo "I could not read branch ${b}"; return 0; }
-  [ "$p" != true ] || { echo "${b} is a protected branch"; return 0; }
+  if [ "$3" != new ]; then
+    p="$(_retry gh api "repos/${slug}/branches/${b}" -q .protected 2>/dev/null)" || { echo "I could not read branch ${b}"; return 0; }
+    [ "$p" != true ] || { echo "${b} is a protected branch"; return 0; }
+  fi
   n="$(_retry gh pr list -R "$slug" --base "$b" --state open --limit 1 --json number -q length 2>/dev/null)" || { echo "I could not read the PRs of ${slug}"; return 0; }
   [ "${n:-0}" = 0 ] || { echo "${b} is the base of an open PR"; return 0; }
   return 1
@@ -188,6 +194,8 @@ _target_worktree() {
       || { rm -rf "$d"; echo "I could not send ${head} to the sandbox"; return 1; }
     rm -rf "$d"
   fi
+  # A new branch starts at the runner's own fetch of the base (sha is origin/<base>).
+  [[ "$sha" == origin/* ]] && { _session_sh "$name" "git -C /workspace fetch -q origin $(printf '%q' "${sha#origin/}")" >/dev/null 2>&1 || true; }
   _session_sh "$name" "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
     && { [ -e ${qa}/.git ] || git -c core.hooksPath=/dev/null worktree add -q -f -B ${qh} ${qa} ${sha}; } && rm -rf /home/agent/.fxa-target" >/dev/null 2>&1 \
     || { echo "the sandbox could not take ${head}"; return 1; }
@@ -205,14 +213,18 @@ session_target() {
     || { echo "I did not switch: ${slug:-that repo} is not this team's work repo (${PIPE_REPO_SLUG:-none})."; return 1; }
   info="$(_target_resolve "$slug" "$kind" "$n")" || { echo "I did not switch: ${info}."; return 1; }
   url="$(jq -r .url <<< "$info")" head="$(jq -r .head <<< "$info")" sha="$(jq -r .sha <<< "$info")" base="$(jq -r .base <<< "$info")"
-  local label="${url:-branch ${head}}"
+  local label="${url:-branch ${head}}" new; new="$(jq -r '.new // false' <<< "$info")"
   # The admin's own words of this turn must name it exactly: the agent read PR text, logs and Jira.
+  # A new agent-* branch writes over nobody's work: a session opens such a PR anyway.
   local -a toks=("branch ${head}"); [[ "$head" =~ [-/0-9] ]] && toks+=("$head")
   [ -z "$url" ] || toks+=("$url" "${slug}#${url##*/}" "#${url##*/}" "pr ${url##*/}" "pr #${url##*/}")
-  who="$(words_match "$key" "$(words_turn "$key")" target "${toks[@]}")" \
-    || { echo "I did not switch to ${label}: only a team admin can move this session, in their own message that names it. Ask one to say it here."; return 1; }
-  who="${who%% *}"
-  if h="$(_target_never "$slug" "$head" "$url")"; then echo "I did not switch to ${label}: ${h}."; return 1; fi
+  if [ "$new" = true ]; then who=session; sha="origin/${base}"
+  else
+    who="$(words_match "$key" "$(words_turn "$key")" target "${toks[@]}")" \
+      || { echo "I did not switch to ${label}: only a team admin can move this session, in their own message that names it. Ask one to say it here."; return 1; }
+    who="${who%% *}"
+  fi
+  if h="$(_target_never "$slug" "$head" "${url}$([ "$new" = true ] && echo new)")"; then echo "I did not switch to ${label}: ${h}."; return 1; fi
   idx="$(target_find "$key" "$slug" "$head")"
   [ "$idx" != "$(targets_current "$key")" ] || { echo "This work is already on ${label}."; return 0; }
   path=""; [ -z "$idx" ] || path="$(targets_json "$key" | jq -r --argjson i "$idx" '.[$i].target_path // ""')"
@@ -223,8 +235,9 @@ session_target() {
   if [ -n "$idx" ]; then target_switch "$key" "$(targets_json "$key" | jq -c --argjson i "$idx" --arg p "$path" '.[$i] | .target_path = $p')" >/dev/null
   else target_switch "$key" "$(jq -nc --arg r "$slug" --arg b "$head" --arg u "$url" --arg s "$sha" --arg a "$(jq -r .author <<< "$info")" \
       --arg pp "$(jq -r 'if .person then "1" else "0" end' <<< "$info")" --arg w "$who" --arg p "$path" --arg tb "$base" \
-      '{repo: $r, branch: $b, pr_url: $u, review_pr: $u, base_sha: $s, push_lease: $s, checkout: (if $u != "" then $u else "https://github.com/\($r)/tree/\($b)" end),
-        checkout_author: $a, checkout_person: $pp, checkout_admin: $w, target_path: $p, target_base: $tb, source: "checkout"}')" >/dev/null
+      --arg n "$new" '{repo: $r, branch: $b, pr_url: $u, review_pr: $u, target_path: $p, target_base: $tb}
+        + if $n == "true" then {source: "new"} else {base_sha: $s, push_lease: $s, checkout: (if $u != "" then $u else "https://github.com/\($r)/tree/\($b)" end),
+          checkout_author: $a, checkout_person: $pp, checkout_admin: $w, source: "checkout"} end')" >/dev/null
   fi || { echo "I did not switch to ${label}: I could not save the session."; return 1; }
   [ -z "$url" ] || session_set "$key" pr_announced 1
   # shellcheck disable=SC2016  # jq variables
@@ -235,6 +248,14 @@ session_target() {
   # The agent goes on at once, in the target's worktree.
   printf '%s\n\n' "(Host: you now work on ${label}, branch ${head}, in ${path}. Finish the ask there: cherry-pick or rebase your commits from the earlier target. 'ship: pr' updates this target.)" >> "${SESSION_DIR}/${key}.queue"
   echo "This work is now on ${label}, as a team admin asked."
+}
+
+# targets_enter <key>   The finish ships the current target's worktree, as _tree_enter selects a team tree.
+targets_enter() {
+  local p; p="$(session_get "$1" target_path)"
+  [ -n "$p" ] && [ "$p" != /workspace ] || return 0
+  FXA_TREE_PATH="$p"; FXA_WORKTREE_BASE="$(session_get "$1" target_base)"; FXA_WORKTREE_BASE="${FXA_WORKTREE_BASE:-main}"
+  export FXA_TREE_PATH FXA_WORKTREE_BASE
 }
 
 # targets_events <key> <events JSON>   At a turn's end, once: each 'host: target' line done, as a target
