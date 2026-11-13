@@ -2385,7 +2385,8 @@ _task_checkout() {
 # its review PR, or after a pause its pr_url. Finish then needs the author's consent.
 _checkout_gate_on() {
   local co; co="$(session_get "$1" checkout)"
-  [ -n "$co" ] && [ "$(session_get "$1" checkout_person)" = 1 ] \
+  # A team admin's own words that named the PR are the consent (lib/targets.sh).
+  [ -n "$co" ] && [ "$(session_get "$1" checkout_person)" = 1 ] && [ -z "$(session_get "$1" checkout_admin)" ] \
     && { [ "$(session_get "$1" review_pr)" = "$co" ] || [ "$(session_get "$1" pr_url)" = "$co" ]; }
 }
 
@@ -2975,6 +2976,11 @@ cmd_events() {
         # Every turn end carries the cost so far, for the status line and the cap,
         # and a ready one the changed-file count: with none, the bot offers no
         # Push branch or Open PR. One ssh reads both.
+        # The agent asked to work on another target: the host checks and switches it, once for each line read,
+        # before the facts read the PR.
+        local thc; thc="$(session_get "$key" history_cursor)"
+        [ "$state" = active ] && [ "$lines" -gt 0 ] && [ "$since" -ge "${thc:-0}" ] && jq -e 'any(.type == "turn_end" and (.asks // [] | length > 0))' <<< "$events" >/dev/null \
+          && events="$(targets_events "$key" "$events")"
         if jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$events" >/dev/null; then
           local facts tcost nchg; facts="$(_session_end_facts "$key")"
           tcost="${facts%%$'\t'*}"; nchg="${facts#*$'\t'}"

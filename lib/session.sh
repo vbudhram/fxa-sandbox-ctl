@@ -155,7 +155,15 @@ Every turn, including later ones:
 - Use git as you like: commit, amend, fetch, and rebase onto origin/main. You
   cannot push and there is no 'gh': the host pushes your branch at Open PR or
   Push, squashed to one commit. Keep the work on origin/main: rebase, do not
-  merge main in, and never start from another branch.
+  merge main in, and never fetch or check out another branch yourself.
+- When the engineer asks to work on another PR or branch of this team's repo
+  ("put this on PR 2738", "switch to stor-55", "open a separate PR"), do not ask:
+  put 'host: target <the PR link, or the branch name>' above the status line and
+  end the turn. For a separate PR, name a new branch that starts with agent-.
+  The host checks who asked and gives the target its own worktree. Your next
+  turn starts with a host note that names its path: work on the current target
+  there, and to move commits, cherry-pick or rebase. 'ship: pr' updates the
+  current target's PR. If the host refuses, the thread says why.
 - Verify with ${verify} --run --plan /workspace/.fxa-test-plan.json: it runs your
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}; wait for a
@@ -1097,8 +1105,11 @@ def fin($t): ($t | tostring) as $t
       elif ($l | test("^OPTION: *")) then (if length == 0 then [{q: null, options: []}] else . end)
         | .[length - 1].options += [$l | sub("^OPTION: *"; "")]
       else . end) | map(select(.options | length > 0))) as $groups
-  | ($t | gsub("(?m)^(status:|ship:|OPTION:|QUESTION:|jira-draft:).*\n?"; "") | sub("\\s+$"; "")) as $body
-  | (if $t | test("(?m)^jira-draft: *ready *$") then {jira_draft: true} else {} end) as $jd
+  | ($t | gsub("(?m)^(status:|ship:|OPTION:|QUESTION:|jira-draft:|host:).*\n?"; "") | sub("\\s+$"; "")) as $body
+  # host: lines ask the host for an action (lib/targets.sh); they ride on the turn end, never in the reply.
+  | ([$t | scan("(?m)^host: *([^\n]*[^\n ])")] | map(.[0]) | .[0:10]) as $asks
+  | ((if $t | test("(?m)^jira-draft: *ready *$") then {jira_draft: true} else {} end)
+    + (if ($asks | length) > 0 then {asks: $asks} else {} end)) as $jd
   | if ($groups | length) > 1 then {type: "question", text: $body, questions: ($groups | .[0:5])} + $jd
     elif ($groups | length) == 1 then {type: "question", options: $groups[0].options,
       text: (if $groups[0].q then ($body + (if $body == "" then "" else "\n\n" end) + "**" + $groups[0].q + "**") else $body end)} + $jd
