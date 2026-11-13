@@ -157,19 +157,19 @@ check "two requests for the last slot: one starts, one is refused at the cap" "1
 [ "$got" = "1|1" ] || echo "FAIL   the two requests said: cap1 [$(tr '\n' ' ' < "$tmp/agent-cap1.out" | cut -c1-200)] cap2 [$(tr '\n' ' ' < "$tmp/agent-cap2.out" | cut -c1-200)]"
 rm -f "$tmp"/agent-cap*
 
-# A team admin's request (the bot passes --ci-ok) lets the session ship CI config, and tells the agent once.
+# A role is not consent: --ci-ok (an older bot's flag) grants nothing, now or on a resume of an old record.
 FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-ciok1 --owner U1 --prompt-file "$tmp/p.md" --ci-ok > "$tmp/ciok.out" 2>&1 || { echo "FAIL   cmd_task --ci-ok: $(tail -2 "$tmp/ciok.out" | tr "\n" " ")"; }
-FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-ciok2 --owner U2 --prompt-file "$tmp/p.md" >/dev/null 2>&1
-check "an admin's session records the CI grant and its prompt says so; another session does not" "1|1||0" \
-  "$(session_get agent-ciok1 ci_ok)|$(grep -c 'a team admin asked for this session' "$tmp/agent-ciok1.prompt.md")|$(session_get agent-ciok2 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok2.prompt.md")"
-session_set agent-ciok1 state stopped
+check "an admin's session gets no CI grant and no CI note" "|0" \
+  "$(session_get agent-ciok1 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok1.prompt.md" || true)"
+session_set agent-ciok1 ci_ok 1; session_set agent-ciok1 state stopped
 FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-ciok3 --owner U2 --prompt-file "$tmp/p.md" --resume-from agent-ciok1 >/dev/null 2>&1
-check "a resume of an admin's session keeps the grant" "1" "$(session_get agent-ciok3 ci_ok)"
+check "a resume of an old record with ci_ok carries no grant" "|0" \
+  "$(session_get agent-ciok3 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok3.prompt.md" || true)"
+FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-ciok2 --owner U2 --prompt-file "$tmp/p.md" >/dev/null 2>&1
 session_set agent-ciok2 state active; session_set agent-ciok2 turn_open 1
-printf 'bump the CI image\n' > "$tmp/m.md"
+printf 'thanks\n' > "$tmp/m.md"
 cmd_steer agent-ciok2 --message-file "$tmp/m.md" --ci-ok >/dev/null 2>&1
-cmd_steer agent-ciok2 --message-file "$tmp/m.md" --ci-ok >/dev/null 2>&1
-check "an admin's steer grants CI config, and the agent gets the note once" "1|1|2" \
-  "$(session_get agent-ciok2 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok2.queue")|$(grep -c 'bump the CI image' "$tmp/agent-ciok2.queue")"
+check "an admin's steer grants nothing and adds no note" "|0|1" \
+  "$(session_get agent-ciok2 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok2.queue" || true)|$(grep -c 'thanks' "$tmp/agent-ciok2.queue")"
 
 exit "$fail"

@@ -1370,21 +1370,23 @@ finish_watch_ci() {
 #   Refuse CI config and yarn or npm config. CI config decides which jobs run with which secrets;
 #   yarn config (yarnPath, plugins) runs code on the manager in a relock (lib/github.sh).
 #   Task scripts, hooks and _scripts/ pass: CI runs the agent's tests with the same env anyway.
-#   FXA_ALLOW_TOOLING_EDITS=1 allows them all. FXA_ALLOW_CI_EDITS=1 (a team admin asked for the session)
-#   allows CI config only: yarn and npm config still run code on the manager.
+#   FXA_ALLOW_TOOLING_EDITS=1 allows them all. FXA_ALLOW_CI_EDITS=1 (a team admin asked on the ticket)
+#   allows .github/workflows/ and .circleci/ only: CODEOWNERS and other .github/ files decide who reviews,
+#   and yarn and npm config run code on the manager.
 _finish_tooling_guard() {
   local wt="$1" f hit=""
   [ "${FXA_ALLOW_TOOLING_EDITS:-}" = "1" ] && return 0
   while IFS= read -r -d '' f; do
     case "$f" in
-      .github/*|.circleci/*) [ "${FXA_ALLOW_CI_EDITS:-}" = 1 ] || hit="${hit}${f}"$'\n' ;;
+      .github/workflows/*|.circleci/*) [ "${FXA_ALLOW_CI_EDITS:-}" = 1 ] || hit="${hit}${f}"$'\n' ;;
+      .github/*) hit="${hit}${f}"$'\n' ;;
       .yarnrc*|*/.yarnrc*|.yarn/*|.npmrc|*/.npmrc) hit="${hit}${f}"$'\n' ;;
     esac
   done < <(git -C "$wt" diff --cached -z --name-only 2>/dev/null)
   [ -z "$hit" ] && return 0
   # The paths on the ERROR line itself: progress and the pass keep only that line.
   echo "ERROR: refusing to ship: the change touches CI or host tooling: $(printf '%s' "$hit" | tr '\n' ' ' | sed 's/ *$//')" >&2
-  echo "       A team admin's request in the thread or on the ticket allows .circleci/ and .github/; yarn and npm config stay refused." >&2
+  echo "       This change edits CI config. It needs a team admin's OK. Other .github/ files, yarn and npm config stay refused." >&2
   return 1
 }
 

@@ -151,8 +151,7 @@ scheduled (routine) runs, on GCE or Firecracker.
 
 `thread → session → runner → change → PR → CI → review → merge`
 
-- One thread, one branch, at most one PR, after the first push. Other work goes to a new thread
-  (`!spin`).
+- One thread, one branch, at most one PR, after the first push. Other work goes to a new thread.
 - A pause frees the runner and keeps the work. A reply resumes it, with thread notes carried across.
 - A merge or a close ends the session with one end card.
 
@@ -339,7 +338,9 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - A general multi-tenant platform or a registry for other companies.
 - Root code from the dashboard. A boot script is repo code with a pinned hash.
 - Changes to the guards by a team: the tooling guard, the personal-data guard, the spend ceilings. One exception: a
-  team admin's request allows CI config (`.circleci/`, `.github/`) for that session or ticket. Yarn and npm config stay refused.
+  team admin's Jira comment, made after the ticket was queued, that asks for a CI config change allows
+  `.circleci/` and `.github/workflows/` for that run. A Slack session ships no CI config yet: a role or an
+  earlier turn is not consent. Other `.github/` files (CODEOWNERS), yarn and npm config stay refused.
 - Hard isolation between teams on the manager in this version. Each team's pass running with only its
   own credentials waits until a team with its own secrets turns on a queue.
 
@@ -355,6 +356,11 @@ Read these before you build in the area. They are the owner's to decide.
 - **MCP identity for each team**, so a team's connectors use its own login.
 - **Old `PROFILE_OPEN` entries** in the live bot env can start a team whose record is disabled. The
   operator removes them.
+- **Egress is not closed.** The allowlist works by IP, so a CDN address admits other tenants by SNI. The
+  agent can write `/etc/hosts`, and root has open egress. A filtering forward proxy is a separate epic.
+- **The frozen-path guard is FxA-only.** It runs only in a repo with `_scripts/check-frozen.ts`.
+- **The functional-tests gate runs agent code with CI secrets.** The host approves the CircleCI gate on
+  each session push, so an agent's test edit runs with the gated context before a review.
 
 ---
 

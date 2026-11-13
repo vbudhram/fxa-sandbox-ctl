@@ -601,18 +601,29 @@ jira_comment() {
   acli jira workitem comment create --key "$key" --body "$adf" >/dev/null
 }
 
-# jira_admin_asked <KEY>   Succeeds when the ticket's reporter, or the author of one of its comments, is an admin
-#   of this team: each admin email in the team record mapped to one Jira account ID. Account IDs only, never a
-#   display name, which anyone can set. A failed read is "no" (fail closed).
+# jira_admin_asked <KEY>   Succeeds when a team admin's comment, made after the ticket got the queue label, asks
+#   for a CI config change: a clause starts with a change verb and names .circleci/, .github/workflows/ or CI config,
+#   and the comment has no negation. The reporter never counts (a bot-filed ticket has the asker as reporter), nor
+#   does a 🤖 comment (the bot's, under a person's login). Admins are mapped to Jira account IDs, never display
+#   names. A failed read is "no" (fail closed).
 jira_admin_asked() {
-  local key="${1:-}" rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" ids="" e id who
-  [ -n "$key" ] && [ -f "$rec" ] || return 1
+  local key="${1:-}" rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" ids="" e id label
+  label="$(pipeline_label_for queued 2>/dev/null)" || label=""
+  [ -n "$key" ] && [ -f "$rec" ] && [ -n "$label" ] || return 1
   for e in $(jq -r '(.admins[]?.email // empty), (.people[]? | select(.admin == true) | .email // empty)' "$rec" 2>/dev/null | sort -u); do
     id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}" | jq -r 'if length == 1 then .[0].accountId else empty end' 2>/dev/null)" || id=""
     [ -z "$id" ] || ids="${ids}${id}"$'\n'
   done
   [ -n "$ids" ] || return 1
-  who="$(_jira_rest GET "/rest/api/3/issue/${key}?fields=reporter,comment" \
-    | jq -r '(.fields.reporter.accountId // empty), (.fields.comment.comments[]?.author.accountId // empty)' 2>/dev/null)" || return 1
-  printf '%s\n' "$who" | grep -qxF -f <(printf '%s' "$ids")
+  _jira_rest GET "/rest/api/3/issue/${key}?fields=comment&expand=changelog" | jq -e --arg ids "$ids" --arg label "$label" "${_JIRA_TEXT_JQ}"'
+    def ep: (.[0:19] + "Z" | fromdateiso8601) - ((if .[-5:-4] == "-" then -1 else 1 end) * ((.[-4:-2] | tonumber) * 3600 + (.[-2:] | tonumber) * 60));
+    def quoted: walk(if type == "object" and (.type | IN("blockquote", "codeBlock")) then {} else . end);
+    ([.changelog.histories[]? | select(any(.items[]?; .field == "labels"
+        and ((.toString // "") | split(" ") | index($label)) and (((.fromString // "") | split(" ") | index($label)) | not))) | .created | ep] | max) as $q
+    | ($ids | split("\n")) as $admins
+    | $q != null and any(.fields.comment.comments[]?; (.author.accountId | IN($admins[])) and (.created | ep) > $q
+        and ((.body | quoted | txt) as $t | ($t | startswith("🤖") | not)
+          and ($t | test("\\b(not|don.t|do not|never|no|without|stop)\\b"; "i") | not)
+          and any($t | splits("[;!?\n]|\\.(\\s|$)"); test("^\\s*(please\\s+|can you\\s+|could you\\s+)?(change|edit|update|fix|add|bump|remove|modify|allow|ship|include|set)\\b"; "i")
+            and test("\\.circleci|\\.github/workflows|\\bci config|\\bcircleci config"; "i"))))' >/dev/null 2>&1
 }
