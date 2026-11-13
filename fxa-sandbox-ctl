@@ -127,6 +127,7 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   session interrupt --tool <key>  WRITE: stop the agent's running Bash command, keep the turn (Claude only)
   session tail <key> [--lines N] [--by <user>]   The last tool output, the running command and the background test run, masked
   session log <key> --grep [--by <user>] < word  The tool output lines with the word (grep -F), live or from the saved transcript
+  session sh <key> --by <user> [--admin] < cmd   WRITE: run one command as the agent with no turn open (100 s), masked output
   media <key> <dir>            Copy the agent's screenshots and videos into <dir>, and list them
   diff <key>                   The runner's working diff, untracked files included
   finish --session <key> [--no-pr]
@@ -2856,11 +2857,16 @@ cmd_steer() {
   session_set "$key" job_notes 0
   # The bot passes --admin-words-file only for a Slack-signed message from a team admin: the turn's role. A host
   # action also needs those words to name it (_ask_one).
-  local adm=0; [ -n "$words" ] && [ -s "$words" ] && adm=1
+  local adm=0 note=""; [ -n "$words" ] && [ -s "$words" ] && adm=1
+  # A !sh run's output (session_sh) goes with this message. No person wrote it, so the turn has no admin role.
+  local shn="${SESSION_DIR}/${key}.sh-note"
+  if [ -s "$shn" ]; then
+    adm=0; note="$(mktemp "${TMPDIR:-/tmp}/fxa-steer.XXXXXX")"; { cat "$shn"; cat "$file"; } > "$note"; file="$note"; rm -f "$shn"
+  fi
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
-  if ! _session_lock "$key"; then asks_role "$key" "$adm" "${person%%$'\t'*}" queued; { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; echo "${key} queued"; return 0; fi
+  if ! _session_lock "$key"; then asks_role "$key" "$adm" "${person%%$'\t'*}" queued; { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; [ -z "$note" ] || rm -f "$note"; echo "${key} queued"; return 0; fi
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
     asks_role "$key" "$adm" "${person%%$'\t'*}" queued
     # Mid-turn: the running turn also gets it at its next tool call. The queue keeps it in case it did not.
@@ -2868,13 +2874,13 @@ cmd_steer() {
     if [ "$(session_get "$key" state)" = active ] && [ "$(session_get "$key" turn_open)" = 1 ] && ! _session_handoff_busy "$key" \
       && _session_steer_live "$key" "$adm" "${person%%$'\t'*}" "$file"; then shown=1; fi
     { [ -z "$shown" ] || printf '(already shown mid-turn)\n'; cat "$file"; printf '\n\n'; } >> "$q"
-    words_add "$key" "$words" q; _session_unlock "$key"; echo "${key} queued${shown:+ (shown mid-turn)}"; return 0
+    words_add "$key" "$words" q; _session_unlock "$key"; [ -z "$note" ] || rm -f "$note"; echo "${key} queued${shown:+ (shown mid-turn)}"; return 0
   fi
   asks_role "$key" "$adm" "${person%%$'\t'*}"
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
   # The words count for the turn that started, and for no turn when it did not start.
   [ "$rc" -ne 0 ] || words_add "$key" "$words" "$(words_turn "$key")"
-  _session_unlock "$key"
+  _session_unlock "$key"; [ -z "$note" ] || rm -f "$note"
   [ "$rc" -eq 0 ] || return "$rc"
   echo "${key} started"
 }
@@ -3376,6 +3382,10 @@ cmd_session() {
         --grep) grep=1; shift ;; *) echo "usage: session tail <key> [--lines N] | session log <key> --grep < word" >&2; return 2 ;; esac; done
       if [ "$verb" = tail ]; then session_tail "$k" "${n:-40}" "$by"
       else [ -n "$grep" ] || { echo "usage: session log <key> --grep < word" >&2; return 2; }; session_log_grep "$k" "$by"; fi ;;
+    # sh <key> --by <slack user> [--admin] < command   !sh: one command as the agent, with no model turn.
+    sh) _session_key "${2:-}" && [ "${3:-}" = --by ] && { [ -z "${5:-}" ] || [ "$5" = --admin ]; } \
+        || { echo "usage: session sh <key> --by <slack user> [--admin] < command" >&2; return 2; }
+      session_sh "$2" "${4:-}" "$([ "${5:-}" = --admin ] && echo 1 || echo 0)" ;;
     # The newest session that made or worked on a PR, for !stack checkout: null for none.
     find-pr) [[ "${2:-}" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "usage: session find-pr <PR link>" >&2; return 2; }
       _session_records | jq -sc --arg u "$2" '[.[] | select(.pr_url == $u or .review_pr == $u or any((.trees // [])[]; .pr_url == $u or .review_pr == $u))]

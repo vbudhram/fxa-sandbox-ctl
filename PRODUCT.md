@@ -179,6 +179,11 @@ Anthropic credential of its own:
   in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a card in the thread
   with the target as GitHub names it and the full masked comment body. Only a team admin's Allow runs it,
   once. A card expires (a Deny) when a person's next turn ends, and at most 3 wait at once.
+- **`!sh <command>`.** The session's owner or a team admin runs one command between turns, with no model turn.
+  On a team with runtime secrets, only a team admin may. The command goes on stdin and runs as `agent` for
+  100 s at most, in a process session that the host kills at the end. The output is masked, a line goes to
+  `<key>.host-actions.jsonl`, and the agent sees the output with the next message, in a turn with no admin
+  role. A replayed or edited `!` command never runs.
 
 - **A repo added mid-session.** A team admin's "also look at mozilla/fxa-private" clones that repo into the
   running sandbox at its record path. The host clones it (with the App's read token for a private repo) and
