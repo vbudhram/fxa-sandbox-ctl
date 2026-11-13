@@ -223,6 +223,8 @@ When a run fails and its output or log is long, give the path to the
   (see `/fxa-functional-local`). For a long verify run, use `verify.sh --bg --run ...`,
   then `verify.sh wait` (see `/fxa-verify`). `wait` returns at once when the run ends or
   dies. Keep waiting in the same turn: the session pauses when it is idle.
+  When the engineer asks you to tell them when a `run.sh --bg` run ends, you can end the
+  turn instead: the host sends you the end of its log in a note when it ends.
 - Never write your own wait loop, such as `until grep -q DONE out; do sleep 5; done`.
   It does not see the job die, so it waits until the 10-minute timeout. A hook
   blocks it, and a `sleep` of 30 s or more.

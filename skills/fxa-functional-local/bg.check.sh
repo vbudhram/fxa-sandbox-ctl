@@ -18,6 +18,7 @@ R="bash $tmp/run.sh"
 check "wait with no run says so" 2 "$($R wait 1 >/dev/null 2>&1; echo $?)"
 $R --bg 3 >/dev/null
 check "a second start while one runs is refused" 2 "$($R --bg 3 >/dev/null 2>&1; echo $?)"
+check "the run is in the host's job registry: pid, start, log" "$(cat "$tmp/job/pid") $(cat "$tmp/job/started") $tmp/job/log" "$(cat "$tmp/.fxa-jobs/functional" 2>/dev/null)"
 out="$($R wait 1)"; rc=$?
 check "a short wait on a long run: still running, exit 75" "75|1" "$rc|$(grep -c 'still running' <<< "$out")"
 out="$($R wait 20)"; rc=$?

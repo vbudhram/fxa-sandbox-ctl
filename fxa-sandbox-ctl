@@ -2850,6 +2850,8 @@ cmd_steer() {
   esac
   local person; person="$(_session_person "$name" "$image")"
   _session_history_add "$key" user "$(cat "$file")" "${person%%$'\t'*}" "${person#*$'\t'}"
+  # A person wrote: background jobs may start notice turns again (_session_jobs).
+  session_set "$key" job_notes 0
   # The bot passes --admin-words-file only for a Slack-signed message from a team admin: the turn's role. A host
   # action also needs those words to name it (_ask_one).
   local adm=0; [ -n "$words" ] && [ -s "$words" ] && adm=1
@@ -2955,11 +2957,15 @@ cmd_events() {
       # One ssh for both: the process count first, then the new transcript lines.
       tmp="$(mktemp)"
       local probe='echo -'; [ "$open" = 1 ] && probe="pgrep -cf '${_SESSION_AGENT_PAT}' || true"
-      if vm_exec_as_agent "$name" "echo \"@@run \$(${probe} | tail -1)\"; tail -n +$(( since + 1 )) /workspace/.fxa-auto-claude.jsonl" > "$tmp" 2>/dev/null; then
-        local nrun; nrun="$(head -1 "$tmp" | sed -n 's/^@@run \([0-9]*\)$/\1/p')"
+      # The background jobs come first (base64: sudo -i blanks the script's $vars), then the count line.
+      local jb; jb="$(printf '%s' "$_SESSION_JOBS" | base64 | tr -d '\n')"
+      if vm_exec_as_agent "$name" "echo ${jb} | base64 -d | env -i PATH=/usr/bin:/bin bash; echo \"@@run \$(${probe} | tail -1)\"; tail -n +$(( since + 1 )) /workspace/.fxa-auto-claude.jsonl" > "$tmp" 2>/dev/null; then
+        local hn nrun; hn="$(grep -n -m1 '^@@run ' "$tmp" | cut -d: -f1 || true)"; hn="${hn:-1}"
+        nrun="$(sed -n "${hn}s/^@@run \([0-9]*\)$/\1/p" "$tmp")"
         # A count that did not come back reads as running, as _session_turn_running does.
         [ "$open" = 1 ] && { [ -z "$nrun" ] || [ "$nrun" -gt 0 ]; } && running=1
-        sed '1d' "$tmp" > "${tmp}.t" && mv "${tmp}.t" "$tmp"
+        local jev='[]'; [ "$hn" -gt 1 ] && jev="$(_session_jobs "$key" "$(sed -n "1,$(( hn - 1 ))p" "$tmp" | head -3)")"
+        sed "1,${hn}d" "$tmp" > "${tmp}.t" && mv "${tmp}.t" "$tmp"
         # Count only whole lines; the last one may still be mid-write.
         lines="$(tr -cd '\n' < "$tmp" | wc -c | tr -d ' ')"
         [ "$lines" -gt 0 ] && events="$(head -n "$lines" "$tmp" | _session_parse | jq -s '.')" \
@@ -3023,6 +3029,7 @@ cmd_events() {
           asks_take "$key" "$events"
           session_set "$key" history_cursor "$(( since + lines ))"
         fi
+        events="$(jq -c --argjson j "$jev" '. + $j' <<< "$events")"
       elif ! vm_is_running "$name" 2>/dev/null; then
         events='[{"type":"error","text":"The runner is gone (lifetime cap or deleted)."}]'
         errors_record session runner_gone "$key" "session events" "the runner is gone while the session was ${state}" ""

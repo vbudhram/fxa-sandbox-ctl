@@ -15,6 +15,8 @@ if [ "${1:-}" = --bg ]; then
   # setsid: its own process group, so the end of this Bash call does not take it down (macOS has none).
   nohup $(command -v setsid) bash -c 'bash "$0" "$@" > "'"$job"'/log" 2>&1; echo $? > "'"$job"'/rc"' "$0" "$@" </dev/null >/dev/null 2>&1 &
   echo $! > "${job}/pid"; date +%s > "${job}/started"
+  # The host's job registry (beside the job folder, so /workspace/.fxa-jobs): it tells the agent when the run ends.
+  reg="$(dirname "$job")/.fxa-jobs"; mkdir -p "$reg" && echo "$(cat "${job}/pid") $(cat "${job}/started") ${job}/log" > "${reg}/functional"
   echo "started in the background. Wait for it with: bash $0 wait"
   exit 0
 fi
