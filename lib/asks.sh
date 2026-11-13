@@ -59,8 +59,9 @@ session_asks() {
   done
   rmdir "$lock" 2>/dev/null || true
   [ -n "$note" ] || return 0
-  # The note's turn keeps the role of the turn that asked, so a follow-up ask in it is judged the same way.
-  asks_role "$key" "$(session_get "$key" turn_admin)" "$(session_get "$key" turn_asker)" queued
+  # No person wrote the note, so its turn has no admin: text the agent read can name a host action,
+  # and only an admin's own new message gives that power back.
+  asks_role "$key" 0 host queued
   printf '(Host: the results of your host lines.\n%s Tell the engineer the result in one line, then go on with the request.)\n\n' "$note" >> "${SESSION_DIR}/${key}.queue"
 }
 

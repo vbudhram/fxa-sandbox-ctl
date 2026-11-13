@@ -59,7 +59,7 @@ _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready","merge"]}]'
 : > "$tmp/gh"; session_asks "$k"
 check "the job logs each ask with who asked" "Ana:ready:true|Ana:merge:true" "$(jq -r '"\(.asked_by):\(.ask):\(.admin)"' "$tmp/$k.host-actions.jsonl" | paste -sd'|' -)"
 check "the results reach the agent's next turn" "2" "$(grep -c '^- `' "$tmp/$k.queue")"
-check "the note's turn keeps the asking role" "1" "$(session_get $k q_admin)"
+check "the note's turn has no admin" "0|host" "$(session_get $k q_admin)|$(session_get $k q_asker)"
 check "the queue is empty after the job" "no" "$([ -e "$tmp/$k.asks.jsonl" ] && echo yes || echo no)"
 new; asks_role "$k" 0 Bo
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
