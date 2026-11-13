@@ -7,7 +7,7 @@ check() { # check <name> <want> <got>
   if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
-eval "$(sed -n "/^_SESSION_VIEW_JQ='/,/^  else empty end'\$/p" "$(dirname "$0")/session.sh")"
+eval "$(sed -n "/^_SESSION_MASK_JQ='/,/^  else empty end'\$/p" "$(dirname "$0")/session.sh")"
 v() { printf '%s\n' "$1" | jq -R -c --slurpfile vals <(printf '"%s"\n' "${VALS[@]}") "$_SESSION_VIEW_JQ"; }
 VALS=(hunter2-not-prefixed)
 

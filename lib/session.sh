@@ -739,6 +739,66 @@ session_interrupt_tool() {
   echo "$1 command stopped"
 }
 
+# The text of each tool result in a transcript line: the stream-json file or Claude's own one.
+_SESSION_OUT_JQ='fromjson? | .message.content[]? | select(type == "object" and .type == "tool_result")
+  | .content // "" | if type == "array" then map(.text? // "") | join("\n") else tostring end'
+# The runner side of session tail, as uid agent with $q, $pat and $n set: the last tool output, each
+# running Bash call's output file (see _SESSION_TOOL_STOP), and the run.sh --bg log. A line is cut at
+# 4000 bytes here; the host masks, then cuts at 500, so a secret split by this cut is never shown.
+_SESSION_TAIL='cd /workspace || exit 0
+echo "== last tool output"; tail -n 2000 .fxa-auto-claude.jsonl 2>/dev/null | jq -R -r "$q" 2>/dev/null | cut -c1-4000 | tail -n "$n"
+c=$(pgrep -f "$pat" | paste -sd, -)
+for p in $([ -n "$c" ] && pgrep -P "$c"); do o=$(readlink "/proc/$p/fd/1") || continue
+  case "$o" in */tasks/*.output) echo "== running command"; cut -c1-4000 "$o" | tail -n "$n" ;; esac; done
+[ -s .fxa-functional-job/log ] && { echo "== background test run"; cut -c1-4000 .fxa-functional-job/log | tail -n "$n"; }
+true'
+
+# _session_out_mask   Each line from a runner, masked as the watch page masks it and cut at 500 characters.
+_session_out_mask() { jq -R -r --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} mask | .[0:500]"; }
+
+# _session_out_logged <key> <what> <slack user> <text>   Print the text for a post, with a history line
+# that says who asked and how many bytes it carries.
+_session_out_logged() {
+  local by="$3"; [[ "$by" =~ ^[UW][A-Z0-9]{2,20}$ ]] || by=""
+  _session_history_add "$1" action "Showed $(printf '%s' "$4" | wc -c | tr -d ' ') bytes of $2${by:+ to ${by}}"
+  printf '%s\n' "$4"
+}
+
+# session_tail <key> [lines] [slack user]   The end of the agent's output, for "Show output". Read only.
+session_tail() {
+  local n="${2:-40}" out=""
+  [[ "$n" =~ ^[1-9][0-9]{0,2}$ ]] && [ "$n" -le 200 ] || { echo "ERROR: --lines takes 1 to 200" >&2; return 2; }
+  case "$(session_get "$1" state)" in active|wrapping) ;; *) echo "$1 not running"; return 0 ;; esac
+  out="$(_session_sh_in "$(worktree_branch_for "$1")" 20 524288 "q=$(printf '%q' "$_SESSION_OUT_JQ"); pat=$(printf '%q' "$_SESSION_AGENT_PAT"); n=${n}
+${_SESSION_TAIL}" </dev/null 2>/dev/null | _session_out_mask)" \
+    || { echo "ERROR: $1: could not reach the runner to read the output" >&2; return 1; }
+  _session_out_logged "$1" "output (tail)" "${3:-}" "$out"
+}
+
+# session_log_grep <key> [slack user]   The tool output lines that hold the word on stdin (grep -F, the last 40):
+# from the runner, or from the saved claude.tgz of a stopped session, streamed and never unpacked.
+session_log_grep() {
+  local w="" out="" tgz="${SESSION_DIR}/$1.claude.tgz" t=()
+  IFS= read -r w || true; w="${w%$'\r'}"
+  [ -n "$w" ] && [ "${#w}" -le 200 ] || { echo "ERROR: session log --grep needs a word of 1 to 200 characters on stdin" >&2; return 2; }
+  # shellcheck disable=SC2016  # expanded by the bash that runs it
+  local g='grep -F -- "$w" | cut -c1-4000 | tail -n 40'
+  case "$(session_get "$1" state)" in
+    active|wrapping)
+      out="$(printf '%s\n' "$w" | _session_sh_in "$(worktree_branch_for "$1")" 20 524288 "q=$(printf '%q' "$_SESSION_OUT_JQ")
+IFS= read -r w; cd /workspace && tail -c 104857600 .fxa-auto-claude.jsonl 2>/dev/null | jq -R -r \"\$q\" 2>/dev/null | ${g}; true" 2>/dev/null \
+        | _session_out_mask)" || { echo "ERROR: $1: could not reach the runner to search the output" >&2; return 1; } ;;
+    *)
+      _session_fetch "$1"
+      [ -s "$tgz" ] || { echo "$1 has no saved transcript"; return 0; }
+      command -v timeout >/dev/null 2>&1 && t=(timeout 20)
+      # The agent built the archive: -O streams each member to the pipe, so no name or link of its own reaches the disk.
+      out="$(${t[@]+"${t[@]}"} bash -c 'w=$2; tar -xzOf "$0" 2>/dev/null | head -c 268435456 | jq -R -r "$1" 2>/dev/null | '"${g}"'; true' \
+        "$tgz" "$_SESSION_OUT_JQ" "$w" | _session_out_mask)" || true ;;
+  esac
+  _session_out_logged "$1" "output (search)" "${2:-}" "$out"
+}
+
 # session_idle_sweep   Pause every active session with no open turn, nothing
 # queued, and no activity for FXA_SESSION_IDLE_SECONDS (10 min: the prompt cache
 # is cold after 5, so waiting longer saves nothing on resume). Stop saves the work
@@ -1034,9 +1094,10 @@ _session_watch() {
 # Tool output is clipped and known token formats are masked here, on the host: the
 # page is open to anyone IAP admits. "sub" marks a subagent's line. $vals (--slurpfile) holds the team's
 # runtime secret values: they have no known prefix, so only an exact match finds them.
-_SESSION_VIEW_JQ='def mask: reduce ($vals[]?) as $v (.; split($v) | join("<masked>"))
+_SESSION_MASK_JQ='def mask: reduce ($vals[]?) as $v (.; split($v) | join("<masked>"))
   | gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>")
-  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>");
+  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>");'
+_SESSION_VIEW_JQ="${_SESSION_MASK_JQ}"'
 def clip($n): if length > $n then .[0:$n] + "…" else . end;
 def head($k): (rtrimstr("\n") | split("\n")) as $l | {out: ($l[0:$k] | join("\n") | clip(4000)), more: ([($l | length) - $k, 0] | max)};
 def arg: (.command // .file_path // .pattern // .path // .url // .query // .description // .skill // .prompt

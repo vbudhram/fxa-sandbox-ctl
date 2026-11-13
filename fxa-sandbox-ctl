@@ -125,6 +125,8 @@ SESSION COMMANDS (owner-steered, no Jira, no pool slot, gce only; pass --backend
   watch <key>                  Stream the running turn's steps as JSON lines until killed
   interrupt <key>              WRITE: stop the running turn, keep the session
   session interrupt --tool <key>  WRITE: stop the agent's running Bash command, keep the turn (Claude only)
+  session tail <key> [--lines N] [--by <user>]   The last tool output, the running command and the background test run, masked
+  session log <key> --grep [--by <user>] < word  The tool output lines with the word (grep -F), live or from the saved transcript
   media <key> <dir>            Copy the agent's screenshots and videos into <dir>, and list them
   diff <key>                   The runner's working diff, untracked files included
   finish --session <key> [--no-pr]
@@ -3353,6 +3355,12 @@ cmd_session() {
     summary) _session_key "${2:-}" && { session_get "$2" summary; echo; } ;;
     interrupt) [ "${2:-}" = --tool ] || { echo "usage: session interrupt --tool <key>" >&2; return 2; }
       _session_key "${3:-}" && runtime_load && session_interrupt_tool "$3" ;;
+    # Read only: the agent's output, masked, for a post to Slack. --by names the Slack user for the history line.
+    tail|log) local verb="$1" k="${2:-}" n="" by="" grep=""; _session_key "$k" || return 1; shift 2
+      while [ $# -gt 0 ]; do case "$1" in --lines) n="${2:-}"; shift; shift || true ;; --by) by="${2:-}"; shift; shift || true ;;
+        --grep) grep=1; shift ;; *) echo "usage: session tail <key> [--lines N] | session log <key> --grep < word" >&2; return 2 ;; esac; done
+      if [ "$verb" = tail ]; then session_tail "$k" "${n:-40}" "$by"
+      else [ -n "$grep" ] || { echo "usage: session log <key> --grep < word" >&2; return 2; }; session_log_grep "$k" "$by"; fi ;;
     # The newest session that made or worked on a PR, for !stack checkout: null for none.
     find-pr) [[ "${2:-}" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "usage: session find-pr <PR link>" >&2; return 2; }
       _session_records | jq -sc --arg u "$2" '[.[] | select(.pr_url == $u or .review_pr == $u or any((.trees // [])[]; .pr_url == $u or .review_pr == $u))]
