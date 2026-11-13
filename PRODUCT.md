@@ -172,6 +172,11 @@ Anthropic credential of its own:
 - Tool calls (Jira, GitHub, Slack, Sentry, Figma, Bugzilla, Argo CD) go through the **MCP gateway**,
   which applies read-only allowlists, a team's scope, and a cap of 200 calls a run.
 - Pushes and PRs come from the **host**, through the GitHub App, never from the runner.
+- **Host actions.** When a team admin asks in the thread, the agent writes a `host:` line and the host
+  runs it: rerun the failed CI jobs, request a review, mark ready, convert to draft, or post a comment,
+  on the session's PRs or a PR in the team's work repos. The host checks the role of the person who
+  started the turn (a turn from several queued messages takes the lowest role), and records who asked
+  in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a plain refusal.
 
 ---
 
@@ -253,7 +258,8 @@ Apply them in this order. When two conflict, the higher one wins, and you say wh
    gateway, and at most a short read token that the controller removes before the agent starts. Never a
    value in a log, a command line, `.git/config`, a Slack message or an audit row.
 4. **A person owns each outside action.** The agent never merges, approves or enables auto-merge, and its
-   PRs are drafts, except for a routine that a team admin set to open a regular PR. It pushes to a person's
+   PRs are drafts, except for a routine that a team admin set to open a regular PR, or a team admin who
+   asks in the thread to mark one ready. It pushes to a person's
    PR only after the author's consent on GitHub. Automatic rounds
    stop at the team's `pr.review_rounds`, 2 by default. Rounds for a team admin's comments stop at
    `pr.admin_review_rounds`, 10 by default.

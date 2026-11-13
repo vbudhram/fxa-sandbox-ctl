@@ -66,6 +66,7 @@ source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/trees.sh"
 source "${SCRIPT_DIR}/lib/turn-words.sh"
 source "${SCRIPT_DIR}/lib/targets.sh"
+source "${SCRIPT_DIR}/lib/asks.sh"
 source "${SCRIPT_DIR}/lib/teams.sh"
 source "${SCRIPT_DIR}/lib/routines.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
@@ -2605,6 +2606,7 @@ cmd_task() {
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"
   [ -n "${person%%$'\t'*}" ] && session_set "$key" owner_name "${person%%$'\t'*}"
+  asks_role "$key" "$([ -n "$ci_ok" ] && echo 1 || echo 0)" "${person%%$'\t'*}"
   [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
   # Only a Slack https link is kept.
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"
@@ -2845,13 +2847,18 @@ cmd_steer() {
   esac
   local person; person="$(_session_person "$name" "$image")"
   _session_history_add "$key" user "$(cat "$file")" "${person%%$'\t'*}" "${person#*$'\t'}"
+  # The bot passes --admin-words-file only for a Slack-signed message from a team admin: the turn's role. A host
+  # action also needs those words to name it (_ask_one).
+  local adm=0; [ -n "$words" ] && [ -s "$words" ] && adm=1
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
-  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; echo "${key} queued"; return 0; fi
+  if ! _session_lock "$key"; then asks_role "$key" "$adm" "${person%%$'\t'*}" queued; { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; echo "${key} queued"; return 0; fi
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
+    asks_role "$key" "$adm" "${person%%$'\t'*}" queued
     { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; _session_unlock "$key"; echo "${key} queued"; return 0
   fi
+  asks_role "$key" "$adm" "${person%%$'\t'*}"
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
   # The words count for the turn that started, and for no turn when it did not start.
   [ "$rc" -ne 0 ] || words_add "$key" "$words" "$(words_turn "$key")"
@@ -3010,6 +3017,7 @@ cmd_events() {
             | (.text // "") + (if (.options // []) | length > 0 then "\n\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n")) else "" end)
               + ((.questions // []) | map("\n\n**\(.q // "Question")**\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n"))) | join("")) | @json' <<< "$events" |
             while IFS= read -r t; do _session_history_add "$key" agent "$(jq -r . <<< "$t")"; done
+          asks_take "$key" "$events"
           session_set "$key" history_cursor "$(( since + lines ))"
         fi
       elif ! vm_is_running "$name" 2>/dev/null; then
@@ -3025,7 +3033,7 @@ cmd_events() {
         # appends to $q meanwhile, and that message must survive for the next turn.
         # Recheck under the lock: another events or a steer may have got here first.
         if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ] && ! _session_handoff_busy "$key"; then
-          mv "$q" "${q}.sending"; words_queue "$key" take
+          mv "$q" "${q}.sending"; words_queue "$key" take; asks_from_queue "$key"
           # Follow-ups are often a quick correction of what the agent just answered.
           if ! _session_turn "$key" "These arrived while you were answering. Answer only what is new; if your last reply already covers one, say so in one line.
 
@@ -3355,6 +3363,8 @@ cmd_session() {
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     review-comments) _session_key "${2:-}" && session_review_comments "$2" "${3:-}" ;;
     pr-ready) _session_key "${2:-}" && session_pr_ready "$2" ;;
+    # The job that runs the agent's host: lines (lib/asks.sh); asks_take starts it.
+    asks) _session_key "${2:-}" && session_asks "$2" ;;
     create-jira) _session_key "${2:-}" && session_create_jira "$2" ;;
     # The jira commands also take a quick answer's key, which has no record (the bot's key for the thread).
     # jira-draft <key> [--stdin] [--as <the thread's Jira key>]

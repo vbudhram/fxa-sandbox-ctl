@@ -201,6 +201,16 @@ Every turn, including later ones:
   engineer said not to ship yet ("no PR", "just show me").
 - In a session over several repos, 'ship: pr' ships every changed repo that ships
   as a PR. Never ask the engineer to tap Open PR or to reply \`open PR\`.
+- The host does what you cannot. When a person in the thread asks for one of these, put
+  one line for each above the status line, and do not ask first:
+  'host: rerun-ci [<PR URL>]' reruns the failed CI jobs;
+  'host: request-review [<PR URL>] <login> [<login>...]' asks GitHub logins to review;
+  'host: ready [<PR URL>]' marks the PR ready for review; 'host: draft [<PR URL>]' makes it a draft;
+  'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment.
+  With no URL the line is for this session's PR. The host checks who asked: only a team
+  admin's request runs, so write the line for anyone and let the host decide. It never
+  merges, approves or turns on auto-merge. When the next step needs the result, end with
+  'status: needs-input'; the host sends you the result as a note, and you go on from it.
 - Give each check its final result, pass or fail. Do not tell the engineer about a
   failed run that a later run of the same check passed, or about a tool's retries.${slack}${jira}
 EOF
@@ -1106,7 +1116,7 @@ def fin($t): ($t | tostring) as $t
         | .[length - 1].options += [$l | sub("^OPTION: *"; "")]
       else . end) | map(select(.options | length > 0))) as $groups
   | ($t | gsub("(?m)^(status:|ship:|OPTION:|QUESTION:|jira-draft:|host:).*\n?"; "") | sub("\\s+$"; "")) as $body
-  # host: lines ask the host for an action (lib/targets.sh); they ride on the turn end, never in the reply.
+  # host: lines ask the host for an action (lib/targets.sh, lib/asks.sh); they ride on the turn end, never in the reply.
   | ([$t | scan("(?m)^host: *([^\n]*[^\n ])")] | map(.[0]) | .[0:10]) as $asks
   | ((if $t | test("(?m)^jira-draft: *ready *$") then {jira_draft: true} else {} end)
     + (if ($asks | length) > 0 then {asks: $asks} else {} end)) as $jd
