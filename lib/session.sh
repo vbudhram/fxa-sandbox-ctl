@@ -168,8 +168,9 @@ Every turn, including later ones:
   planned tests, then the related specs of what you changed, and lint. Update
   the plan when the work changes. For the local stack, ${stack}; wait for a
   service with its 'wait' command, not a sleep loop.
-- To show the engineer a screenshot, a video or a patch, save it in /workspace/.fxa-auto-media/.
-  Files there are posted to the thread when your turn ends. It also holds the files
+- To show the engineer a screenshot, a video, a patch, or a .log, .txt, .csv or .json file (UTF-8, up to
+  2 MB), save it in /workspace/.fxa-auto-media/. Files there are posted to the thread while you work
+  and when your turn ends. It also holds the files
   from earlier sessions in this thread, which were posted already: reuse them, and
   capture again only what changed. For a change the engineer
   can see (a page, an email, a flow), attach a screenshot or a video before you end
@@ -564,15 +565,34 @@ _session_dirty_trees() {
 
 # _session_media_scrub <dir>   Leave only plain media files with safe names and
 # a sane size. Symlinks would let a sandbox point ffmpeg's output at a host file;
-# a newline in a name would split the one-per-line list the bot reads.
+# a newline in a name would split the one-per-line list the bot reads. A text file
+# (.log .txt .csv .json) is capped at 2 MB; .har is not a type here, as it holds cookies.
 _session_media_scrub() {
   local dir="$1" f
   find "$dir" -mindepth 1 \( ! -type f -o -links +1 \) -exec rm -rf {} + 2>/dev/null
   find "$dir" -mindepth 2 -exec rm -rf {} + 2>/dev/null
   while IFS= read -r -d '' f; do
-    [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm|patch|diff)$ ]] && [ "$(_fsize "$f")" -le 52428800 ] \
-      || rm -f "$f"
+    if [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(log|txt|csv|json)$ ]]; then [ "$(_fsize "$f")" -le 2097152 ] || rm -f "$f"
+    else [[ "$(basename "$f")" =~ ^[A-Za-z0-9._-]{1,120}\.(png|jpe?g|gif|webp|mp4|webm|patch|diff)$ ]] && [ "$(_fsize "$f")" -le 52428800 ] \
+      || rm -f "$f"; fi
   done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -print0)
+}
+
+# _session_media_text <dir>   Each text file goes to Slack masked with the exact-value mask, or not at
+# all: a file that is not UTF-8, holds a NUL byte or has a pii_guard hit after the mask is deleted.
+# This stops accidents only: the agent can already put any bytes in a .png.
+_session_media_text() {
+  local f vals="" hits=""
+  for f in "$1"/*.log "$1"/*.txt "$1"/*.csv "$1"/*.json; do
+    [ -f "$f" ] || continue
+    python3 -I -c 'import sys; b = open(sys.argv[1], "rb").read(); b.decode("utf-8"); sys.exit(b"\0" in b)' "$f" 2>/dev/null || { rm -f "$f"; continue; }
+    [ -n "$vals" ] || { vals="$(mktemp)"; _session_secret_values > "$vals"; }
+    jq -R -r --slurpfile vals "$vals" "${_SESSION_MASK_JQ} mask" < "$f" > "$f.m" && mv "$f.m" "$f" || { rm -f "$f" "$f.m"; continue; }
+    jq -Rs --arg n "$(basename "$f")" '{($n): .}' < "$f" > "$f.p"
+    hits="$(python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f.p" /dev/null 2>/dev/null || true)"; rm -f "$f.p"
+    [ -z "$hits" ] || rm -f "$f"
+  done
+  [ -z "$vals" ] || rm -f "$vals"
 }
 
 # A Slack thread's record, across its sessions: the request, the session keys,
@@ -1268,9 +1288,9 @@ _session_fold() {
       else .events += [\$e] end)"
 }
 
-# session_media <key> <dir>   Copy the images, videos and patches the agent saved in
+# session_media <key> <dir>   Copy the images, videos, patches and text files the agent saved in
 # /workspace/.fxa-auto-media into <dir>, and list them. Media types only, top
-# level only, under 20 MB each: the agent picks these names.
+# level only, under 20 MB each (2 MB for text): the agent picks these names.
 session_media() {
   local key="$1" out="$2" f
   mkdir -p "$out" || return 1
@@ -1280,9 +1300,11 @@ session_media() {
   # without error. Nothing at all failed the extract with exit 2.
   _session_sh "$(worktree_branch_for "$key")" 'cd /workspace/.fxa-auto-media 2>/dev/null || { tar -cf - -T /dev/null; exit 0; }
     find . -maxdepth 1 -type f -size -20M \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.gif" \
-      -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" -o -iname "*.patch" -o -iname "*.diff" \) -print0 | tar -cf - --null -T -' \
+      -o -iname "*.webp" -o -iname "*.webm" -o -iname "*.mp4" -o -iname "*.patch" -o -iname "*.diff" \
+      -o -iname "*.log" -o -iname "*.txt" -o -iname "*.csv" -o -iname "*.json" \) -print0 | tar -cf - --null -T -' \
     | head -c 524288000 | tar -xf - -C "$out" 2>/dev/null
   _session_media_scrub "$out"
+  _session_media_text "$out"
   # Playwright records WebM, which Slack does not play inline.
   for f in "$out"/*.webm; do
     [ -f "$f" ] && media_mp4 "$f" && rm -f "$f"
