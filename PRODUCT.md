@@ -181,6 +181,11 @@ Anthropic credential of its own:
   only, until the session ends (a resume does not carry it). The host resolves the name itself and opens
   only public addresses. The team record's refuse list (paste sites, tunnels, request catchers) wins for an
   admin too: `team_record.py host-ok` is the one check for both.
+- **A repo added mid-session.** A team admin's "also look at mozilla/fxa-private" clones that repo into the
+  running sandbox at its record path. The host clones it (with the App's read token for a private repo) and
+  ships the tree, so no token enters the runner. A `work` repo joins a team stack and ships as its trees
+  do; a `dep`, `data` or `ref` repo, or a `work` repo in a one-repo session, is read-only. A repo outside
+  the team's record is refused.
 
 ---
 
