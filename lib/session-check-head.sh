@@ -11,7 +11,7 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 source "$(dirname "$0")/config.sh"
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI=""  # no bucket unless a check stubs gcloud
 FXA_SESSION_DIR="$tmp" source "$(dirname "$0")/session.sh"
-source "$(dirname "$0")/turn-words.sh"
+source "$(dirname "$0")/turn-words.sh"; source "$(dirname "$0")/targets.sh"
 
 eval "$(sed -n '/^worktree_filtered_status() {/,/^}/p;/^worktree_branch_for() {/,/^}/p' "$(dirname "$0")/worktree.sh")"
 _worktree_pull_if_remote() { :; }

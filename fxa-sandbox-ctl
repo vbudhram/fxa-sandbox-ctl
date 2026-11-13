@@ -65,6 +65,7 @@ source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/trees.sh"
 source "${SCRIPT_DIR}/lib/turn-words.sh"
+source "${SCRIPT_DIR}/lib/targets.sh"
 source "${SCRIPT_DIR}/lib/teams.sh"
 source "${SCRIPT_DIR}/lib/routines.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
@@ -2592,6 +2593,8 @@ cmd_task() {
     [ -n "$resume_from" ] && trees_each "$key" _task_carry "$key" "$resume_from" "$fresh_pr"
   else
     [ -n "$resume_from" ] && _task_carry "$key" "$resume_from" "$fresh_pr"
+    # Every open target of a thread with more than one (lib/targets.sh).
+    [ -n "$resume_from" ] && [ -z "$fresh_pr" ] && targets_carry "$key" "$resume_from"
   fi
   [ -n "$checkout" ] && { _task_checkout "$key" "$checkout" || { _task_abort "$key"; return 1; }; }
   # Who started it, for the dashboard's conversation view.
