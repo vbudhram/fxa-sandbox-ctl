@@ -3365,6 +3365,8 @@ cmd_session() {
     pr-ready) _session_key "${2:-}" && session_pr_ready "$2" ;;
     # The job that runs the agent's host: lines (lib/asks.sh); asks_take starts it.
     asks) _session_key "${2:-}" && session_asks "$2" ;;
+    # ask-check <admin 1|0> <who> <host: line>   The checks an ask passes before it runs, with no side effect.
+    ask-check) asks_gate "${2:-0}" "${3:-}" "${4:-}" && echo ok ;;
     create-jira) _session_key "${2:-}" && session_create_jira "$2" ;;
     # The jira commands also take a quick answer's key, which has no record (the bot's key for the thread).
     # jira-draft <key> [--stdin] [--as <the thread's Jira key>]

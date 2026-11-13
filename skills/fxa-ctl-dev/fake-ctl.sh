@@ -74,6 +74,33 @@ if [ -n "${FAKE_CTL_LOG:-}" ]; then
 fi
 get() { cat "$DIR/$1/$2" 2>/dev/null || true; }
 
+# fake_ask <key> <steer args>   A host action asked in plain words: the fake stands in for the agent (the words
+# become a host: line) and for the job (the real controller's asks_gate decides, then a canned result). The turn
+# the steer started ends with that result as its reply.
+fake_ask() {
+  local k="$1" msg line="" adm=0 who n res slug
+  # Slack sends a bare host name as a link: <http://crates.io|crates.io>.
+  msg="$(sed -E 's#<https?://[^|>]*\|([^>]*)>#\1#g' "$(opt --message-file "$@")" 2>/dev/null || true)"; who="$(opt --from-name "$@")"
+  case " $* " in *" --ci-ok "*) adm=1 ;; esac
+  shopt -s nocasematch
+  if [[ "$msg" =~ (^|[^a-z])merge([^a-z]|$) ]]; then line="merge"
+  elif [[ "$msg" =~ rerun ]]; then line="rerun-ci"
+  elif [[ "$msg" =~ (allow|reach)[[:space:]]+([a-z0-9.-]+\.[a-z]+) ]]; then line="egress ${BASH_REMATCH[2]}"
+  elif [[ "$msg" =~ (look[[:space:]]at|clone|add)[[:space:]]+(https://github\.com/)?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) ]]; then line="add-repo ${BASH_REMATCH[3]}"; fi
+  shopt -u nocasematch
+  [ -n "$line" ] || return 0
+  n=$(( $(grep -c . "$DIR/$k/turns") - 1 ))
+  if res="$("$REAL" --pipeline "$(get "$k" team)" session ask-check "$adm" "${who:-someone}" "$line" 2>&1)" && [ "$res" = ok ]; then
+    slug="${line#add-repo }"
+    case "$line" in
+      rerun-ci) res="done: reran the failed jobs of 1 CI run(s) on ${PR_URL}." ;;
+      egress*) res="done: ${line#egress } is open for this session's runner." ;;
+      add-repo*) res="done: cloned ${slug} at /home/agent/${slug#*/}." ;;
+    esac
+  fi
+  printf '%s\t%s\n' "$n" "I asked the host for \`${line}\`. ${res}" >> "$DIR/$k/says"
+}
+
 # The session's script as JSON: every event with its time, and the state now.
 # Steps go to watch only; turn_end, pr and pushed go to events.
 script() {
@@ -81,9 +108,10 @@ script() {
   [ -n "${FAKE_TAPE:-}" ] && [ -n "$(get "$k" tape_idx)" ] && tape="$(jq -c --argjson i "$(get "$k" tape_idx)" '.sessions[$i] // null' "$FAKE_TAPE")"
   jq -n --argjson now "$t" --argjson t0 "$(get "$k" t0)" --arg turns "$(get "$k" turns)" --argjson tape "$tape" \
     --arg fins "$(get "$k" fins)" --arg repos "$(get "$k" repos)" --arg over "$(get "$k" over)" --arg pr "$PR_URL" \
-    --argjson ch "${FAKE_CHANGES:-1}" --arg prs "${FAKE_PR_REPOS:-mozilla/fxa}" --arg ferr "${FAKE_FINISH_FAIL:-}" --arg failat "${FAKE_FAIL_S:-}" --arg stopat "${FAKE_STOP_S:-}" --arg wr "${FAKE_WRAP_REPLY:-}" '
+    --arg says "$(get "$k" says)" --argjson ch "${FAKE_CHANGES:-1}" --arg prs "${FAKE_PR_REPOS:-mozilla/fxa}" --arg ferr "${FAKE_FINISH_FAIL:-}" --arg failat "${FAKE_FAIL_S:-}" --arg stopat "${FAKE_STOP_S:-}" --arg wr "${FAKE_WRAP_REPLY:-}" '
     def url($s): if $s == "" then $pr else "https://github.com/\($s)/pull/999999" end;
     ($turns | split("\n") | map(select(. != "") | tonumber)) as $ts
+    | ($says | split("\n") | map(select(. != "") | split("\t") | {key: .[0], value: .[1]}) | from_entries) as $say
     | ($fins | split("\n") | map(select(. != "") | split(" ") | {at: (.[0] | tonumber), mode: .[1], slug: (if .[2] == "-" then "" else .[2] end)})) as $fs
     | ($repos | split(",") | map(select(. != ""))) as $rs
     | [ $ts | to_entries[] | .value as $T | .key as $n | ($tape.turns[$n] // null) as $tt
@@ -96,7 +124,7 @@ script() {
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
           (($tt.events // [])[] | {at: ($T + 9), ev: .}),
           {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | (.diff // []) | length > 0] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
-            text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
+            text: ($say[$n | tostring] // "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer.")} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T and (.mode | startswith("pr"))) then {pr: $pr} else {} end)
                else {trees: [$rs[] as $s | {name: ($s | split("/")[1] | ascii_downcase), slug: $s, changes: 1,
                  out: (if $prs | split(",") | index($s) then "pr" else "diff" end),
@@ -168,7 +196,7 @@ case "$cmd" in
       [ -z "${FAKE_ROUTINE_TASK_FAIL:-}" ] || { echo "ERROR: ${FAKE_ROUTINE_TASK_FAIL}" >&2; exit 1; }
       mkdir -p "$DIR"; echo "$k" > "$DIR/routine-session-$(opt --routine-run "$@")"
     fi
-    mkdir -p "$DIR/$k"; t="$AT"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"
+    mkdir -p "$DIR/$k"; t="$AT"; echo "$t" > "$DIR/$k/t0"; echo $(( t + 5 )) > "$DIR/$k/turns"; echo "${pipe:-fxa}" > "$DIR/$k/team"
     # A tape: the nth task plays the tape's nth session.
     [ -n "${FAKE_TAPE:-}" ] && { n="$(find "$DIR" -path '*/agent-*/tape_idx' | wc -l | tr -d ' ')"; echo "$n" > "$DIR/$k/tape_idx"; }
     # A routine run's owner is its sentinel, from the run row in the real controller.
@@ -185,6 +213,7 @@ case "$cmd" in
   steer) k="$1"; t="$AT"; last="$(sort -n "$DIR/$k/turns" | tail -1)"
     if [ -z "$(get "$k" over)" ] && [ "$t" -lt $(( last + 10 )) ]; then echo $(( last + 10 )) >> "$DIR/$k/turns"; echo queued
     else echo "$t" >> "$DIR/$k/turns"; fi
+    fake_ask "$@"
     rm -f "$DIR/$k/over" ;;
   events) events "$@" ;;
   watch) k="$1"; n=0
