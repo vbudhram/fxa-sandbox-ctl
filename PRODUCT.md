@@ -151,9 +151,17 @@ scheduled (routine) runs, on GCE or Firecracker.
 
 `thread → session → runner → change → PR → CI → review → merge`
 
-- One thread, one branch, at most one PR, after the first push. Other work goes to a new thread.
-- A pause frees the runner and keeps the work. A reply resumes it, with thread notes carried across.
-- A merge or a close ends the session with one end card.
+- A thread holds a set of targets: each is a branch, and its PR when it has one. One target is current.
+  The agent works on the current one, and Open PR or Push ships it.
+- A team admin switches the target in plain words: "work on PR 2738", "put this commit on stor-55",
+  "open a separate PR". The agent asks the host with `host: target <ref>`. The host switches only when
+  the admin's own message of that turn names the exact PR or branch. A new `agent-` branch needs no words.
+- Each target has its own worktree on the runner. The agent moves commits with cherry-pick or rebase.
+- One writer for each branch: a thread or a ticket. A switch moves the branch's lock, and the old thread is told.
+- The host never writes a default, protected or release branch, the base of an open PR, a fork, or a
+  repo outside the team. A team stack keeps one branch for each repo, with no targets.
+- A pause frees the runner and keeps the work. A reply resumes it with every open target, and the thread notes.
+- A merge or a close ends that target. The last one ends the session with one end card.
 
 ### What the agent can reach
 
@@ -314,7 +322,8 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
 - One shared GitHub App with repo claims that an admin approves. No App and no personal token for each
   team.
 - One Anthropic key, with daily and monthly caps for each team in the proxy. No key for each team.
-- One thread, one branch, at most one PR. Work that is not about that PR goes to a new thread.
+- A thread holds a set of targets, with one writer for each branch. A team admin's own words that name
+  a person's PR are the consent to push to it: no `push ok` from its author. Anyone else still needs it.
 - A PR is its own change record. Moving it moves its home thread.
 - Monitor's sign-in uses a local FxA stack in the runner, so no credential enters the runner.
 - Memory: agents propose, people approve, and memory is scoped by repo first. A run on a private repo
@@ -369,7 +378,8 @@ Read these before you build in the area. They are the owner's to decide.
 | Word | Meaning |
 |---|---|
 | Session | One runner and one agent conversation, key `agent-<hex>`. At most one live session for each thread. |
-| Thread | A Slack thread. Unbound until the first push, then bound to one branch and one PR. |
+| Thread | A Slack thread. It holds a set of targets, and one of them is current. |
+| Target | A branch of the team's work repo, and its PR when it has one, that a thread works on. |
 | Change | A PR as its own record, with a home thread. |
 | Run | One pipeline launch for a ticket. |
 | Pass | A timed job for each team that works its Jira queue. |
