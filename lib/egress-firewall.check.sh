@@ -8,7 +8,7 @@ check() { # check <name> <want> <got>
   else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi
 }
 
-eval "$(sed -n '/^_egress_hosts() {/,/^}/p;/^_setup_egress_firewall() {/,/^}/p;/^_profile_egress_extra() {/,/^}/p;/^_setup_agent_dns() {/,/^}/p' "$(dirname "$0")/agent.sh")"
+eval "$(sed -n '/^_setup_egress_firewall() {/,/^}/p;/^_profile_egress_extra() {/,/^}/p;/^_setup_agent_dns() {/,/^}/p' "$(dirname "$0")/agent.sh")"
 SANDBOX_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FXA_EGRESS_ALLOW_ALL=0 FXA_EGRESS_CIDRS="" FXA_EGRESS_HOSTS="github.com"
 _github_meta_cidrs() { :; } # offline: no fetch of GitHub's published ranges

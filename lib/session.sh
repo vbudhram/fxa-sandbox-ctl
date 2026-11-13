@@ -207,7 +207,6 @@ Every turn, including later ones:
   'host: request-review [<PR URL>] <login> [<login>...]' asks GitHub logins to review;
   'host: ready [<PR URL>]' marks the PR ready for review; 'host: draft [<PR URL>]' makes it a draft;
   'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment;
-  'host: egress <host>' lets this runner reach one more host, such as crates.io, until the session ends;
   'host: add-repo <owner/repo>' clones one of the team's repos into this sandbox; the result says where,
   and whether it ships or is read-only.
   With no URL the line is for this session's PR. The host checks who asked: only a team

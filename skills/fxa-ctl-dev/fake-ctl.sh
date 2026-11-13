@@ -4,7 +4,8 @@
 # Slack messages takes about two minutes and costs nothing.
 #
 #   task       setup 5 s, then a turn: four steps of three kinds, and a reply with Open PR
-#   steer      a reply starts the same turn again
+#   steer      a reply starts the same turn again. A host action in plain words (rerun CI, look at <owner/repo>,
+#              merge) ends that turn with the real asks_gate's refusal, or a canned result when it passes
 #   finish     wrap-up 12 s, then a draft PR event (a PR number that does not exist)
 #   pr-status  CI running for FAKE_CI_S seconds (default 60), then passed
 #   answer     busy (exit 3), so the bot starts a session at once
@@ -85,7 +86,7 @@ fake_ask() {
   shopt -s nocasematch
   if [[ "$msg" =~ (^|[^a-z])merge([^a-z]|$) ]]; then line="merge"
   elif [[ "$msg" =~ rerun ]]; then line="rerun-ci"
-  elif [[ "$msg" =~ (allow|reach)[[:space:]]+([a-z0-9.-]+\.[a-z]+) ]]; then line="egress ${BASH_REMATCH[2]}"
+
   elif [[ "$msg" =~ (look[[:space:]]at|clone|add)[[:space:]]+(https://github\.com/)?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) ]]; then line="add-repo ${BASH_REMATCH[3]}"; fi
   shopt -u nocasematch
   [ -n "$line" ] || return 0
@@ -94,7 +95,7 @@ fake_ask() {
     slug="${line#add-repo }"
     case "$line" in
       rerun-ci) res="done: reran the failed jobs of 1 CI run(s) on ${PR_URL}." ;;
-      egress*) res="done: ${line#egress } is open for this session's runner." ;;
+
       add-repo*) res="done: cloned ${slug} at /home/agent/${slug#*/}." ;;
     esac
   fi

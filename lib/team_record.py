@@ -254,9 +254,8 @@ def check(rec, name=None):
     eg = obj(rec.get("egress", {}), "egress", {"requested", "approved"})
     strs(eg.get("requested", []), "egress.requested", HOST, 30)
     for h in strs(eg.get("approved", []), "egress.approved", HOST, 30):
-        why = HOST.fullmatch(h) and host_refused(h)
-        if why:
-            bad.append(why)
+        if any(h == d or h.endswith("." + d) for d in EGRESS_DENY):
+            bad.append(f"egress host {h} can take data out with no account, so it is refused")
     strs(rec.get("mcp", []), "mcp", CONNECTOR, 10)
 
     jira = obj(rec.get("jira", {}), "jira", {"project", "queue", "secret", "usage", "board", "sprint"})
@@ -619,24 +618,9 @@ def options():
             "skills": sorted(catalog()), "connectors": conns, "boot": boot, "egress_deny": list(EGRESS_DENY)}
 
 
-def host_refused(h):
-    """Why an egress host is refused, or None: the team key and a session's egress ask share this."""
-    if not HOST.fullmatch(h):
-        return f"egress host {h} is not a plain host name"
-    if any(h == d or h.endswith("." + d) for d in EGRESS_DENY):
-        return f"egress host {h} can take data out with no account, so it is refused"
-    return None
-
-
 def main(argv):
     if argv[1:] == ["options"]:
         print(json.dumps(options()))
-        return 0
-    if len(argv) == 3 and argv[1] == "host-ok":
-        why = host_refused(argv[2])
-        if why:
-            print(why)
-            return 1
         return 0
     if len(argv) < 3 or argv[1] not in ("validate", "env", "prompts", "unique", "stamp", "index", "migrate"):
         sys.exit(__doc__)

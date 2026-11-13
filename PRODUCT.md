@@ -177,10 +177,7 @@ Anthropic credential of its own:
   on the session's PRs or a PR in the team's work repos. The host checks the role of the person who
   started the turn (a turn from several queued messages takes the lowest role), and records who asked
   in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a plain refusal.
-- **Egress for one session.** A team admin's "allow crates.io" opens that host for this session's runner
-  only, until the session ends (a resume does not carry it). The host resolves the name itself and opens
-  only public addresses. The team record's refuse list (paste sites, tunnels, request catchers) wins for an
-  admin too: `team_record.py host-ok` is the one check for both.
+
 - **A repo added mid-session.** A team admin's "also look at mozilla/fxa-private" clones that repo into the
   running sandbox at its record path. The host clones it (with the App's read token for a private repo) and
   ships the tree, so no token enters the runner. A `work` repo joins a team stack and ships as its trees
@@ -350,6 +347,10 @@ that works. It shows no dollar amounts to people; cost is the operator's view.
   a time. `PROFILE_OPEN` and `PROFILE_USERS` in the bot env count only for a team name that has no record.
 - A regex field of a record (`jira.sprint`, the log part of `pr.infra_checks`) takes only a literal subset,
   so it means the same in jq, grep and Python, and it cannot be slow.
+- A session cannot open egress, even for an admin. The host cannot tell that the admin named the host, and
+  a prompt-injected agent could write the line in any admin's turn. An opened CDN address also serves other
+  sites, and a host that takes uploads with any account still lets data out. A team adds a host to its
+  record's `egress.approved`, which gets a draft and a test.
 - Not now: AI review of human PRs (no data that people want it), caps for each person (sessions have
   caps), best-of-N runs (twice the cost), fleet migrations (almost no session uses several trees), a
   multiplayer IDE (the watch page covers it).
