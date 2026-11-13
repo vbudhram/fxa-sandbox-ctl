@@ -27,6 +27,10 @@ gcloud() { return 1; }
 check "secret values: a failed read gives false" "false" "$(PIPE_RUNTIME_SECRETS='fxa-team-x=/home/agent/a/b' _session_secret_values)"
 check "the mask shows nothing when a secret read failed" "|5" \
   "$(printf 'pw hunter2-not-prefixed\n' | jq -R -r --slurpfile vals <(echo false) "${_SESSION_MASK_JQ} mask" 2>/dev/null)|$(echo x | jq -R --slurpfile vals <(echo false) "${_SESSION_MASK_JQ} mask" >/dev/null 2>&1; echo $?)"
+check "an OpenAI-style key, and sk-ant- masked once" '"a sk-proj-<masked> b sk-<masked> c sk-ant-api03-<masked>"' \
+  "$(v '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"a sk-proj-AAAAbbbbCCCCddddEEEEffff b sk-AAAAbbbbCCCCddddEEEEffff c sk-ant-api03-ABCDEFGHIJKL"}]}}' | jq -c .out)"
+check "a word that holds sk- is not a key" '"risk-assessment-for-the-new-thing"' \
+  "$(v '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"risk-assessment-for-the-new-thing"}]}}' | jq -c .out)"
 check "a tool call, its path relative" '{"t":"tool","id":"t1","name":"Read","sub":false,"arg":"src/a.ts"}' \
   "$(v '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/workspace/src/a.ts"}}]}}')"
 check "a result: 8 lines and a count" '{"out":"1\n2\n3\n4\n5\n6\n7\n8","more":2,"t":"done","id":"t1","ok":true,"sub":false}' \

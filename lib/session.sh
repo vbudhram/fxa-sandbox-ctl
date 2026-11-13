@@ -1221,7 +1221,8 @@ _session_watch() {
 _SESSION_MASK_JQ='def mask: if any($vals[]?; type != "string") then halt_error("the host could not read a runtime secret to mask the text\n")
   else reduce ($vals[]?) as $v (.; split($v) | join("<masked>")) end
   | gsub("(?<p>sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}"; "\(.p)<masked>")
-  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>");'
+  | gsub("eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_.-]{8,}"; "<masked>")
+  | gsub("\\b(?<p>sk-(proj-)?)(?!ant-)[A-Za-z0-9_-]{20,}"; "\(.p)<masked>");'
 _SESSION_VIEW_JQ="${_SESSION_MASK_JQ}"'
 def clip($n): if length > $n then .[0:$n] + "…" else . end;
 def head($k): (rtrimstr("\n") | split("\n")) as $l | {out: ($l[0:$k] | join("\n") | clip(4000)), more: ([($l | length) - $k, 0] | max)};
