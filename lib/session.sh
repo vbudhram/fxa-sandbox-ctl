@@ -707,6 +707,38 @@ session_interrupt() {
   echo "$1 interrupted"
 }
 
+# The runner side of session interrupt --tool, run as uid agent with $pat set. Claude runs each Bash
+# call in a shell that sources its shell snapshot, as its own process group, output to tasks/<id>.output.
+# A run_in_background call's result names its id, so a group whose id a transcript names is left alone.
+# Hooks (no snapshot) and MCP servers (Claude's own group) never match.
+_SESSION_TOOL_STOP='c=$(pgrep -f "$pat" | paste -sd, -); g=""
+for p in $([ -n "$c" ] && pgrep -P "$c"); do
+  [ "$(ps -o pgid= -p "$p" | tr -d " ")" = "$p" ] || continue
+  tr "\0" " " < "/proc/$p/cmdline" 2>/dev/null | grep -q "shell-snapshots/snapshot-" || continue
+  o=$(readlink "/proc/$p/fd/1") || continue
+  case "$o" in */tasks/*.output) o=${o##*/}; o=${o%.output} ;; *) continue ;; esac
+  grep -rqF -- "$o" /home/agent/.claude/projects 2>/dev/null && continue
+  kill -INT -- "-$p" 2>/dev/null && g="$g $p"
+done
+[ -n "$g" ] || { echo none; exit 0; }
+for i in $(seq 20); do a=""; for p in $g; do kill -0 -- "-$p" 2>/dev/null && a="$a $p"; done; [ -n "$a" ] || break; sleep 0.5; done
+for p in $a; do kill -KILL -- "-$p" 2>/dev/null; done
+echo "stopped$g"'
+
+# session_interrupt_tool <key>   Ctrl-C for the agent's running Bash command: SIGINT, then KILL
+# after 10 s. The turn goes on, and Claude reads a failed tool result. Codex is refused: its
+# commands run in another process tree.
+session_interrupt_tool() {
+  [ "$(session_get "$1" runtime)" != codex ] || { echo "ERROR: $1: Stop command works only in a Claude session" >&2; return 2; }
+  [ "$(session_get "$1" turn_open)" = 1 ] || { echo "$1 idle"; return 0; }
+  local out=""
+  out="$(_session_sh "$(worktree_branch_for "$1")" "pat=$(printf '%q' "$_SESSION_AGENT_PAT"); ${_SESSION_TOOL_STOP}" 2>/dev/null | tr -d '\r' | tail -1)" \
+    || { echo "ERROR: $1: could not reach the runner to stop the command" >&2; return 1; }
+  [[ "$out" == stopped* ]] || { echo "$1 no command"; return 0; }
+  _session_history_add "$1" action "Stopped the running command; the turn goes on"
+  echo "$1 command stopped"
+}
+
 # session_idle_sweep   Pause every active session with no open turn, nothing
 # queued, and no activity for FXA_SESSION_IDLE_SECONDS (10 min: the prompt cache
 # is cold after 5, so waiting longer saves nothing on resume). Stop saves the work
