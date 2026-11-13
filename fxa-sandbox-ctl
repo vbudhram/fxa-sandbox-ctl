@@ -3033,6 +3033,7 @@ cmd_events() {
             | (.text // "") + (if (.options // []) | length > 0 then "\n\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n")) else "" end)
               + ((.questions // []) | map("\n\n**\(.q // "Question")**\n" + (.options | to_entries | map("\(.key + 1). \(.value)") | join("\n"))) | join("")) | @json' <<< "$events" |
             while IFS= read -r t; do _session_history_add "$key" agent "$(jq -r . <<< "$t")"; done
+          asks_cards_expire "$key" "$events"
           asks_take "$key" "$events"
           session_set "$key" history_cursor "$(( since + lines ))"
         fi
@@ -3064,7 +3065,7 @@ $(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; words_queue "$key" back
   # stack announces each repo's own, with the repo named.
   local ann; if trees_on "$key"; then ann="$(trees_each "$key" _session_announce "$key" | jq -cs 'add // []')"
   else ann="$(_session_announce "$key")"; fi
-  events="$(jq -c --argjson a "${ann:-[]}" '. + $a' <<< "$events")"
+  events="$(jq -c --argjson a "${ann:-[]}" --argjson c "$(asks_card_events "$key")" '. + $a + $c' <<< "$events")"
   # A wrap-up that wrote no handoff: the agent's reason goes before the error.
   local wr; wr="$(session_get "$key" wrap_reply)"
   if [ -n "$wr" ]; then
@@ -3392,6 +3393,10 @@ cmd_session() {
     asks) _session_key "${2:-}" && session_asks "$2" ;;
     # ask-check <admin 1|0> <who> <host: line>   The checks an ask passes before it runs, with no side effect.
     ask-check) asks_gate "${2:-0}" "${3:-}" "${4:-}" && echo ok ;;
+    # confirm <key> <nonce> <sha> allow|deny <name> [--admin]   A tap on a host action card. The bot passes --admin only for a team admin.
+    confirm) _session_key "${2:-}" && [[ "${3:-}" =~ ^[0-9a-f]{32}$ && "${4:-}" =~ ^[0-9a-f]{64}$ && "${5:-}" =~ ^(allow|deny)$ ]] && { [ -z "${7:-}" ] || [ "$7" = --admin ]; } \
+        || { echo "usage: session confirm <key> <nonce> <sha> allow|deny <name> [--admin]" >&2; return 2; }
+      asks_confirm "$2" "$3" "$4" "$5" "$(printf '%s' "${6:-}" | tr -d '\n' | cut -c1-80)" "$([ "${7:-}" = --admin ] && echo 1 || echo 0)" ;;
     create-jira) _session_key "${2:-}" && session_create_jira "$2" ;;
     # The jira commands also take a quick answer's key, which has no record (the bot's key for the thread).
     # jira-draft <key> [--stdin] [--as <the thread's Jira key>]

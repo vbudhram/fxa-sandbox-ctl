@@ -41,7 +41,9 @@ check "a PR outside the team is refused" "1" "$(_ask_pr $k https://github.com/ev
 
 # The GitHub calls, with the App's token for the PR's repo.
 github_app_enabled() { :; }; github_app_token() { echo "tok-for-${PIPE_REPO_SLUG}"; }
-gh() { printf '%s|%s\n' "$GH_TOKEN" "$*" >> "$tmp/gh"; case "$*" in *comments*) cat > "$tmp/body"; echo https://github.com/mozilla/fxa/pull/5#c1 ;; esac; }
+# A PR read (the card's target) is logged apart from the writes.
+gh() { case "$*" in "api repos/"*/pulls/[0-9]*" --jq "*) echo "$GH_TOKEN|$*" >> "$tmp/ghread"; echo "${GH_FULL:-mozilla/fxa} alice"; return 0 ;; esac
+  printf '%s|%s\n' "$GH_TOKEN" "$*" >> "$tmp/gh"; case "$*" in *comments*) cat > "$tmp/body"; echo https://github.com/mozilla/fxa/pull/5#c1 ;; esac; }
 worktree_branch_for() { echo runner; }
 vm_exec_as_agent() { printf 'Looks good.\nghp_abcdefghijklmnop\n'; }
 : > "$tmp/gh"; _ask_one $k 1 Ana 'ready' >/dev/null
@@ -64,7 +66,52 @@ check "the queue is empty after the job" "no" "$([ -e "$tmp/$k.asks.jsonl" ] && 
 new; asks_role "$k" 0 Bo
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
 : > "$tmp/gh"; session_asks "$k"
-check "a non-admin turn's ask is refused and makes no call" "0|1" "$(grep -c . "$tmp/gh")|$(grep -c 'is not one' "$tmp/$k.queue")"
+check "a non-admin turn's ask makes no GitHub write, only a card" "0|1|1" "$(grep -c . "$tmp/gh")|$(grep -c 'waiting: only a team admin' "$tmp/$k.queue")|$(_asks_cards $k | grep -c .)"
+
+# The card: a team admin's one tap allows exactly what it shows, once.
+ev="$(asks_card_events $k)"
+check "the card shows GitHub's name for the target, and posts once" "confirm|ready|mozilla/fxa#5 (PR by alice)|Bo|[]" \
+  "$(jq -r '.[0] | "\(.type)|\(.ask)|\(.target)|\(.who)"' <<< "$ev")|$(asks_card_events $k)"
+n1="$(jq -r '.[0].nonce' <<< "$ev")"; s1="$(jq -r '.[0].sha' <<< "$ev")"
+check "a non-admin's Allow is refused and keeps the card" "refused: only a team admin can allow a host action.|1|0" \
+  "$(asks_confirm $k "$n1" "$s1" allow Bo 0)|$(_asks_cards $k | grep -c .)|$(grep -c . "$tmp/gh")"
+check "a wrong body sha runs nothing" "refused: the card changed after it was shown, so nothing ran.|0" \
+  "$(cp "$tmp/$k.confirm-$n1" "$tmp/keep"; asks_confirm $k "$n1" "$(printf %064d 0)" allow Ana 1)|$(grep -c . "$tmp/gh")"
+mv "$tmp/keep" "$tmp/$k.confirm-$n1"; : > "$tmp/$k.queue"
+check "an admin's Allow runs the ask with the App's token" "done: https://github.com/mozilla/fxa/pull/5 is ready for review.|tok-for-mozilla/fxa|pr ready https://github.com/mozilla/fxa/pull/5" \
+  "$(asks_confirm $k "$n1" "$s1" allow Ana 1)|$(cat "$tmp/gh")"
+check "the tap is logged and the result note's turn has no admin" "Bo:Ana:ready|1|0|host" \
+  "$(jq -r 'select(.tapped_by and (.result | startswith("done"))) | "\(.asked_by):\(.tapped_by):\(.ask)"' "$tmp/$k.host-actions.jsonl")|$(grep -c 'Result: done' "$tmp/$k.queue")|$(session_get $k q_admin)|$(session_get $k q_asker)"
+check "a second tap is a Deny and runs nothing" "expired: this card is no longer valid, so it counts as Deny. Nothing ran.|1" \
+  "$(asks_confirm $k "$n1" "$s1" allow Ana 1)|$(grep -c . "$tmp/gh")"
+
+# A comment card posts the body it showed, even when the runner's file changes after.
+new; asks_role "$k" 0 Bo
+vm_exec_as_agent() { printf 'Shown body.\nghp_abcdefghijklmnop\n'; }
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["comment"]}]'; session_asks "$k"
+ev="$(asks_card_events $k)"
+check "a comment card shows the masked body" "Shown body.|ghp_<masked>" "$(jq -r '.[0].body' <<< "$ev" | paste -sd'|' -)"
+check "a comment with internal data gets no card" "1" \
+  "$(vm_exec_as_agent() { echo 'see metadata.google.internal'; }; _asks_card $k Bo comment | grep -c 'must not go to GitHub')"
+vm_exec_as_agent() { printf 'Swapped body.\n'; }
+: > "$tmp/gh"; asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" allow Ana 1 >/dev/null
+check "the allowed comment is the body the card showed" "Shown body.|ghp_<masked>" "$(paste -sd'|' "$tmp/body")"
+
+# At most 3 wait; a Deny runs nothing; a lookalike repo gets no card; a person's next turn end expires them.
+new; asks_role "$k" 0 Bo
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready","draft","rerun-ci","ready"]}]'; : > "$tmp/gh"; session_asks "$k"
+check "at most 3 cards wait" "3|1" "$(_asks_cards $k | grep -c .)|$(grep -c 'already wait for a team admin' "$tmp/$k.queue")"
+ev="$(asks_card_events $k)"
+check "a Deny runs nothing" "denied by Ana: it did not run.|0" "$(asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" deny Ana 0)|$(grep -c . "$tmp/gh")"
+check "merge never gets a card" "1|2" "$(_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["merge"]}]'; session_asks "$k"; grep -c 'never merges' "$tmp/$k.queue")|$(_asks_cards $k | grep -c .)"
+check "a PR whose repo GitHub names another way gets no card" "refused: GitHub names the repo of https://github.com/mozilla/fxa/pull/5 evil/fxa, not mozilla/fxa." \
+  "$(rm -f "$tmp"/$k.confirm-*; GH_FULL=evil/fxa _asks_card $k Bo ready)"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'; session_asks "$k"
+asks_from_queue "$k"; asks_cards_expire "$k" '[{"type":"turn_end"}]'
+check "the host note's turn end leaves the card" "1" "$(_asks_cards $k | grep -c .)"
+ev="$(asks_card_events $k)"; asks_role "$k" 0 Bo; asks_cards_expire "$k" '[{"type":"turn_end"}]'
+check "a person's next turn end expires it, and a tap then is a Deny" "0|expired" \
+  "$(_asks_cards $k | grep -c .)|$(asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" allow Ana 1 | cut -d: -f1)"
 
 # Egress stays the team record's: a session cannot open a host.
 check "egress is not a host action" "1" "$(_ask_one $k 1 Ana 'egress crates.io' | grep -c 'is not a host action')"

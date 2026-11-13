@@ -47,7 +47,11 @@ session_asks() {
       while IFS= read -r line; do
         n="$(session_get "$key" asks_n)"; n="${n:-0}"
         if [ "$n" -ge "$_ASKS_MAX" ]; then out="refused: this session reached its ${_ASKS_MAX} host actions. Start a new thread."
-        else session_set "$key" asks_n "$((n + 1))"; out="$(_ask_one "$key" "$adm" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
+        else session_set "$key" asks_n "$((n + 1))"
+          # Refused only for the role: a team admin's tap on a card can allow it.
+          if [ "$adm" != 1 ] && asks_gate 1 "$who" "$line" >/dev/null 2>&1; then out="$(_asks_card "$key" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
+          else out="$(_ask_one "$key" "$adm" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
+        fi
         jq -nc --arg k "$key" --arg w "$who" --arg a "$line" --arg o "$out" --argjson adm "$adm" \
           '{at: now, key: $k, asked_by: $w, admin: ($adm == 1), ask: $a, result: $o}' >> "${SESSION_DIR}/${key}.host-actions.jsonl"
         _session_history_add "$key" action "Host: ${line}: ${out} (asked by ${who:-someone})"
@@ -142,8 +146,8 @@ _ask_gh() {
       gh api -X POST "repos/${slug}/pulls/${num}/requested_reviewers" "${who[@]}" >/dev/null 2>&1 \
         && echo "done: asked $(printf '%s ' ${args[@]+"${args[@]}"} | sed 's/ *$//') to review ${url}." || { echo "failed: GitHub refused the review request on ${url}."; return 1; } ;;
     comment)
-      local body; body="$(vm_exec_as_agent "$(worktree_branch_for "$key")" 'head -c 8000 /workspace/.fxa-host-comment.md 2>/dev/null; rm -f /workspace/.fxa-host-comment.md' 2>/dev/null \
-        | perl -pe 's/(sk-ant-[a-z0-9]+-|fxl_|fxm_|xox[abpr]-|xapp-|ghs_|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{8,}/$1<masked>/g' || true)"
+      # An allowed card posts the body it showed (_ASKS_BODY, set by asks_confirm), not the file now on the runner.
+      local body="${_ASKS_BODY:-}"; [ -n "$body" ] || body="$(_ask_comment_body "$key")"
       [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
       # One post, no retry: a retried comment can post twice.
       printf '%s' "$body" | gh api -X POST "repos/${slug}/issues/${num}/comments" -F body=@- --jq .html_url 2>/dev/null | grep -E '^https://' \
@@ -217,4 +221,106 @@ _ask_rerun() {
   for wf in $wfs; do circleci_rerun_failed "$ct" "$wf" && n=$((n + 1)); done
   [ "$n" -gt 0 ] || { echo "failed: GitHub and CircleCI refused every rerun on ${url}."; return 1; }
   echo "done: reran the failed jobs of ${n} CI run(s) on ${url}."
+}
+
+# _ask_comment_body <key>   The agent's comment file, taken off the runner and masked (exact values too).
+_ask_comment_body() {
+  vm_exec_as_agent "$(worktree_branch_for "$1")" 'head -c 8000 /workspace/.fxa-host-comment.md 2>/dev/null; rm -f /workspace/.fxa-host-comment.md' 2>/dev/null \
+    | jq -R -r --slurpfile vals <(_session_secret_values) "${_SESSION_MASK_JQ} mask" || true
+}
+
+# _asks_target <key> <line>   What an ask acts on, as GitHub names it: "owner/repo#N (PR by login)", or a
+# team repo's record slug. A PR URL whose repo GitHub names another way (a rename, a lookalike) is refused.
+_asks_target() {
+  local key="$1" action rest a url="" pr slug num got full author tok
+  read -r action rest <<< "$2"
+  if [ "$action" = add-repo ]; then got="$(_asks_repo_row "${rest%% *}")" || { echo "refused: not a team repo."; return 1; }; echo "repo ${got%% *}"; return 0; fi
+  for a in $rest; do [[ "$a" =~ ^https:// ]] && url="$a"; done
+  pr="$(_ask_pr "$key" "$url")" || { echo "$pr"; return 1; }
+  read -r slug num url <<< "$pr"
+  github_app_enabled 2>/dev/null || { echo "refused: the GitHub App is not set up on this host."; return 1; }
+  tok="$(PIPE_REPO_SLUG="$slug" github_app_token 2>/dev/null)" || { echo "failed: no GitHub App token for ${slug}."; return 1; }
+  got="$(GH_TOKEN="$tok" gh api "repos/${slug}/pulls/${num}" --jq '"\(.base.repo.full_name) \(.user.login)"' 2>/dev/null)" || { echo "failed: could not read ${url} on GitHub."; return 1; }
+  read -r full author <<< "$got"
+  [ -n "$author" ] && [ "$(tr 'A-Z' 'a-z' <<< "$full")" = "$(tr 'A-Z' 'a-z' <<< "$slug")" ] || { echo "refused: GitHub names the repo of ${url} ${full:-nothing}, not ${slug}."; return 1; }
+  echo "${full}#${num} (PR by ${author})"
+}
+
+_ASKS_CARDS_MAX=3
+# _asks_cards <key>   The paths of the session's cards that wait for a tap.
+_asks_cards() {
+  local f
+  for f in "${SESSION_DIR}/${1}".confirm-*; do [[ "$f" =~ \.confirm-[0-9a-f]{32}$ ]] && [ -f "$f" ] && echo "$f"; done; return 0
+}
+
+# _asks_card <key> <who> <line>   An ask from a turn that no team admin started: a card in the thread that a team
+# admin can allow with one tap. The host reads the target (and a comment's body, masked) now and keeps them,
+# so a tap runs exactly what the card shows. At most 3 wait at once.
+_asks_card() {
+  local key="$1" who="$2" line="$3" action rest target body="" t hits nonce
+  [ "$(_asks_cards "$key" | grep -c . || true)" -lt "$_ASKS_CARDS_MAX" ] \
+    || { echo "refused: ${_ASKS_CARDS_MAX} host actions already wait for a team admin. Ask a team admin to say it in the thread."; return 1; }
+  target="$(_asks_target "$key" "$line")" || { echo "$target"; return 1; }
+  read -r action rest <<< "$line"
+  if [ "$action" = comment ]; then
+    body="$(_ask_comment_body "$key")"
+    [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
+    t="$(mktemp)"; jq -n --arg b "$body" '{comment: $b}' > "$t"
+    hits="$(python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$t" /dev/null 2>/dev/null | sed 's/ line [0-9]*//' | sort -u | paste -sd, - || true)"; rm -f "$t"
+    [ -z "$hits" ] || { echo "refused: the comment has text that must not go to GitHub (${hits})."; return 1; }
+  fi
+  nonce="$(openssl rand -hex 16 2>/dev/null)" && [[ "$nonce" =~ ^[0-9a-f]{32}$ ]] || { echo "failed: the host could not make a card."; return 1; }
+  ( umask 077; jq -nc --arg n "$nonce" --arg k "$key" --arg a "$line" --arg t "$target" --arg b "$body" --arg w "$who" \
+      --arg s "$(printf '%s' "$body" | shasum -a 256 | cut -c1-64)" '{nonce: $n, key: $k, ask: $a, target: $t, body: $b, sha: $s, who: $w}' \
+      > "${SESSION_DIR}/${key}.confirm-${nonce}" )
+  echo "waiting: only a team admin can allow this, so the thread shows a card for ${target}. It runs only if a team admin taps Allow before a person's next turn ends."
+}
+
+# asks_card_events <key>   The cards not posted yet, as confirm events (a JSON array). Each is posted once.
+asks_card_events() {
+  local f e ev='[]'
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ ! -e "${f}.shown" ] || continue
+    e="$(jq -c --slurpfile c "$f" '. + [$c[0] | {type: "confirm", nonce, sha, ask, target, body, who}]' <<< "$ev" 2>/dev/null)" && { ev="$e"; touch "${f}.shown"; }
+  done < <(_asks_cards "$1")
+  printf '%s\n' "$ev"
+}
+
+# asks_cards_expire <key> <events json>   A turn that a person started ended: each card still waiting is a Deny.
+# A host note's turn (the one that tells the agent a card waits) leaves them.
+asks_cards_expire() {
+  local f a
+  jq -e 'any(.type == "turn_end" or .type == "question")' <<< "$2" >/dev/null 2>&1 || return 0
+  [ "$(session_get "$1" turn_asker)" != host ] || return 0
+  while IFS= read -r f; do
+    [ -n "$f" ] && mv "$f" "${f}.x" 2>/dev/null || continue
+    a="$(jq -r .ask "${f}.x" 2>/dev/null || true)"; rm -f "${f}.x" "${f}.shown"
+    _session_history_add "$1" action "Host: ${a}: no team admin allowed it before the turn ended, so it did not run"
+  done < <(_asks_cards "$1")
+}
+
+# asks_confirm <key> <nonce> <sha> <allow|deny> <name> <admin 1|0>   A tap on a card. Only a team admin's Allow runs
+# the ask, once: the first tap claims the card. A gone, expired or changed card is a Deny. The result goes to the
+# agent in a host note, whose turn has no admin.
+asks_confirm() {
+  local key="$1" nonce="$2" sha="$3" verdict="$4" name="${5:-someone}" adm="${6:-0}" f rec line target out
+  [[ "$nonce" =~ ^[0-9a-f]{32}$ && "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "refused: that is not a card of this session."; return 1; }
+  [ "$verdict" = deny ] || [ "$adm" = 1 ] || { echo "refused: only a team admin can allow a host action."; return 1; }
+  f="${SESSION_DIR}/${key}.confirm-${nonce}"
+  case "$(session_get "$key" state)" in active|starting) ;; *) rm -f "$f" "${f}.shown" ;; esac
+  mv "$f" "${f}.claimed" 2>/dev/null || { echo "expired: this card is no longer valid, so it counts as Deny. Nothing ran."; return 1; }
+  rec="$(cat "${f}.claimed")"; rm -f "${f}.claimed" "${f}.shown"
+  line="$(jq -r .ask <<< "$rec")"; target="$(jq -r .target <<< "$rec")"
+  local _ASKS_BODY; _ASKS_BODY="$(jq -r .body <<< "$rec")"
+  if [ "$(jq -r .sha <<< "$rec")" != "$sha" ] || [ "$(printf '%s' "$_ASKS_BODY" | shasum -a 256 | cut -c1-64)" != "$sha" ]; then
+    out="refused: the card changed after it was shown, so nothing ran."
+  elif [ "$verdict" != allow ]; then out="denied by ${name}: it did not run."
+  elif [ "$(_asks_target "$key" "$line" 2>/dev/null)" != "$target" ]; then out="refused: ${target} is not what GitHub shows now, so nothing ran."
+  else out="$(_ask_one "$key" 1 "$name" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
+  jq -nc --arg k "$key" --arg w "$(jq -r .who <<< "$rec")" --arg by "$name" --arg a "$line" --arg o "$out" --argjson adm "$([ "$adm" = 1 ] && echo true || echo false)" \
+    '{at: now, key: $k, asked_by: $w, tapped_by: $by, admin: $adm, ask: $a, result: $o}' >> "${SESSION_DIR}/${key}.host-actions.jsonl"
+  _session_history_add "$key" action "Host: ${line}: ${out} (card tapped by ${name})"
+  asks_role "$key" 0 host queued
+  printf '(Host: a card for your host line `%s` was tapped. Result: %s Tell the engineer the result in one line, then go on with the request.)\n\n' "$line" "$out" >> "${SESSION_DIR}/${key}.queue"
+  echo "$out"
 }

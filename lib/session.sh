@@ -211,7 +211,8 @@ Every turn, including later ones:
   'host: add-repo <owner/repo>' clones one of the team's repos into this sandbox; the result says where,
   and whether it ships or is read-only.
   With no URL the line is for this session's PR. The host checks who asked: only a team
-  admin's request runs, so write the line for anyone and let the host decide. It never
+  admin's request runs, and anyone else's waits for a team admin's tap on a card, so write
+  the line for anyone and let the host decide. It never
   merges, approves or turns on auto-merge. When the next step needs the result, end with
   'status: needs-input'; the host sends you the result as a note, and you go on from it.
 - Give each check its final result, pass or fail. Do not tell the engineer about a

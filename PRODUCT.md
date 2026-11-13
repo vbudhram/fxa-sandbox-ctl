@@ -176,7 +176,9 @@ Anthropic credential of its own:
   runs it: rerun the failed CI jobs, request a review, mark ready, convert to draft, or post a comment,
   on the session's PRs or a PR in the team's work repos. The host checks the role of the person who
   started the turn (a turn from several queued messages takes the lowest role), and records who asked
-  in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a plain refusal.
+  in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a card in the thread
+  with the target as GitHub names it and the full masked comment body. Only a team admin's Allow runs it,
+  once. A card expires (a Deny) when a person's next turn ends, and at most 3 wait at once.
 
 - **A repo added mid-session.** A team admin's "also look at mozilla/fxa-private" clones that repo into the
   running sandbox at its record path. The host clones it (with the App's read token for a private repo) and
