@@ -172,4 +172,15 @@ cmd_steer agent-ciok2 --message-file "$tmp/m.md" --ci-ok >/dev/null 2>&1
 check "an admin's steer grants nothing and adds no note" "|0|1" \
   "$(session_get agent-ciok2 ci_ok)|$(grep -c 'a team admin asked' "$tmp/agent-ciok2.queue" || true)|$(grep -c 'thanks' "$tmp/agent-ciok2.queue")"
 
+# The admin's own words: the boot turn gets turn 0, a queued steer waits for the turn the queue starts.
+jq -nc '{user: "UA1", ts: "1.1", text: "work on PR 2738"}' > "$tmp/w.json"
+FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-words1 --owner UA1 --prompt-file "$tmp/p.md" --admin-words-file "$tmp/w.json" >/dev/null 2>&1
+check "a task's admin words are the boot turn's (turn 0)" "0|UA1" "$(jq -r '"\(.turn)|\(.user)"' "$tmp/agent-words1.admin-words.jsonl")"
+session_set agent-words1 state active; session_set agent-words1 turn_open 1
+cmd_steer agent-words1 --message-file "$tmp/m.md" --admin-words-file "$tmp/w.json" >/dev/null 2>&1
+check "a queued steer's words wait in the queue file, for no turn yet" "1|1" \
+  "$(wc -l < "$tmp/agent-words1.admin-words.jsonl" | tr -d ' ')|$(wc -l < "$tmp/agent-words1.admin-words.q.jsonl" | tr -d ' ')"
+FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-words2 --owner UA1 --prompt-file "$tmp/p.md" --resume-from agent-words1 >/dev/null 2>&1
+check "a resume copies no words" "no" "$([ -e "$tmp/agent-words2.admin-words.jsonl" ] && echo yes || echo no)"
+
 exit "$fail"

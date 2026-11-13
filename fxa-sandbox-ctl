@@ -64,6 +64,7 @@ source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
 source "${SCRIPT_DIR}/lib/trees.sh"
+source "${SCRIPT_DIR}/lib/turn-words.sh"
 source "${SCRIPT_DIR}/lib/teams.sh"
 source "${SCRIPT_DIR}/lib/routines.sh"
 source "${SCRIPT_DIR}/lib/answer.sh"
@@ -2405,7 +2406,7 @@ _session_announce() {
 }
 
 cmd_task() {
-  local source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
+  local words="" source="" key="" owner="" prompt_file="" resume_from="" runtime="" link="" owner_name="" owner_image="" mcp="" mcp_set="" fresh_pr="" thread="" new_pr="" queued_s="" findings_file="" inbox_dir="" repos="" checkout="" rrun="" caller=""
   while [ $# -gt 0 ]; do
     # A routine run takes only these; any other option is the caller's say, which it must not have.
     case "$1" in --id|--thread|--link|--queued-s|--runtime|--source|--routine-run) ;; *) caller=1 ;; esac
@@ -2425,6 +2426,7 @@ cmd_task() {
       --owner-name) owner_name="$2"; shift 2 ;;
       --owner-image) owner_image="$2"; shift 2 ;;
       --ci-ok) shift ;; # an older bot's flag: a role grants no CI config
+      --admin-words-file) words="$2"; shift 2 ;;
       --source) source="$2"; shift 2 ;;
       --routine-run) rrun="$2"; shift 2 ;;
       --id) key="$2"; shift 2 ;;
@@ -2567,7 +2569,8 @@ cmd_task() {
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
   # The resumed transcript holds what the earlier session read, so its taint carries over.
   [ -n "$resume_from" ] && [ "$(session_get "$resume_from" untrusted 2>/dev/null || true)" = 1 ] && session_set "$key" untrusted 1
-
+  # A team admin's own words for the boot turn (turn 0). A resume is a new key: it copies no earlier words.
+  words_add "$key" "$words" 0 || echo "WARN: ${key}: could not record the admin's words" >&2
   [ -z "$rround" ] || session_set "$key" cap_usd "$rround"
   if [ -n "$thread" ]; then
     session_set "$key" thread "$thread"
@@ -2814,12 +2817,13 @@ The runner did not install this head's dependencies or build its libs. Run \`yar
 }
 
 cmd_steer() {
-  local key="${1:-}" file="" q name="" image=""
+  local key="${1:-}" file="" q name="" image="" words=""
   shift || true
   while [ $# -gt 0 ]; do
     case "$1" in
       --message-file) file="${2:-}"; shift 2 ;;
       --ci-ok) shift ;; # an older bot's flag: a role grants no CI config
+      --admin-words-file) words="${2:-}"; shift 2 ;;
       --from-name) name="${2:-}"; shift 2 ;;
       --from-image) image="${2:-}"; shift 2 ;;
       *) echo "ERROR: unknown steer option: $1" >&2; return 1 ;;
@@ -2836,11 +2840,13 @@ cmd_steer() {
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.
-  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; echo "${key} queued"; return 0; fi
+  if ! _session_lock "$key"; then { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; echo "${key} queued"; return 0; fi
   if [ "$(session_get "$key" state)" = starting ] || [ "$(session_get "$key" turn_open)" = 1 ] || _session_handoff_busy "$key"; then
-    { cat "$file"; printf '\n\n'; } >> "$q"; _session_unlock "$key"; echo "${key} queued"; return 0
+    { cat "$file"; printf '\n\n'; } >> "$q"; words_add "$key" "$words" q; _session_unlock "$key"; echo "${key} queued"; return 0
   fi
   local rc=0; _session_turn "$key" "$(cat "$file")" || rc=$?
+  # The words count for the turn that started, and for no turn when it did not start.
+  [ "$rc" -ne 0 ] || words_add "$key" "$words" "$(words_turn "$key")"
   _session_unlock "$key"
   [ "$rc" -eq 0 ] || return "$rc"
   echo "${key} started"
@@ -3006,11 +3012,11 @@ cmd_events() {
         # appends to $q meanwhile, and that message must survive for the next turn.
         # Recheck under the lock: another events or a steer may have got here first.
         if [ -s "$q" ] && [ "$(session_get "$key" turn_open)" != 1 ] && ! _session_handoff_busy "$key"; then
-          mv "$q" "${q}.sending"
+          mv "$q" "${q}.sending"; words_queue "$key" take
           # Follow-ups are often a quick correction of what the agent just answered.
           if ! _session_turn "$key" "These arrived while you were answering. Answer only what is new; if your last reply already covers one, say so in one line.
 
-$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; fi
+$(cat "${q}.sending")"; then cat "${q}.sending" >> "$q"; words_queue "$key" back; else words_queue "$key" ok "$(words_turn "$key")"; fi
           rm -f "${q}.sending"
         fi
         _session_unlock "$key"
