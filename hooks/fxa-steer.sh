@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PostToolUse hook on the runner: shows the main agent each message that the host put in /workspace/.fxa-steer/
-# while its turn runs (cmd_steer). The host also queues each message for the next turn, so this hook only makes
-# it sooner: a file it misses, or a hook the agent turns off, loses nothing.
+# while its turn runs (cmd_steer). After the turn, the host sends each file that is still here in the next turn,
+# so a file this hook misses, or a hook the agent turns off, loses nothing.
 in="$(cat)"
 # A subagent's tool call: the message is for the main agent, so the file waits for its next tool call.
 [ -z "$(jq -r '.agent_id // ""' <<< "$in" 2>/dev/null)" ] || exit 0
@@ -16,6 +16,6 @@ for f in /workspace/.fxa-steer/*.txt; do
   rm -f "$f.shown"
 done
 [ -n "$t" ] || exit 0
-jq -nc --arg e "$ev" --arg t "(Host: a message from the thread arrived while you work. Read it now: it can change your next step. The host sends it again after this turn, marked as already shown.)
+jq -nc --arg e "$ev" --arg t "(Host: a message from the thread arrived while you work. Read it now: it can change your next step.)
 
 ${t}" '{hookSpecificOutput: {hookEventName: $e, additionalContext: $t}}'

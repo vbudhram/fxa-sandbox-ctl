@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline check for a mid-turn steer: the text goes to .fxa-steer/ from stdin and stays queued, a non-admin
+# Offline check for a mid-turn steer: the text goes to .fxa-steer/ from stdin and is queued after the turn only if unshown, a non-admin
 # takes the admin role and the CI grant from the running turn, and the fxa-steer hook shows each file once.
 #   bash lib/session-steer.check.sh
 source "$(dirname "$0")/session-check-head.sh"
@@ -8,18 +8,27 @@ ws="$tmp/ws"; mkdir -p "$ws"
 _session_sh_in() { echo called >> "$tmp/sh"; bash -c "${4//\/workspace/$ws}" | head -c "$3"; }
 hook() { bash -c "$(sed "s#/workspace#$ws#g" "$(dirname "$0")/../hooks/fxa-steer.sh")"; }
 k=agent-steer1; q="$SESSION_DIR/$k.queue"
-new() { printf '{"key":"%s","state":"active","runtime":"%s","turn_open":"1","turn_admin":"1","turn_asker":"Ana","ci_ok":"1"}\n' "$k" "$1" > "$SESSION_DIR/$k.json"; rm -rf "$q" "$ws/.fxa-steer" "$tmp/sh"; }
+new() { printf '{"key":"%s","state":"active","runtime":"%s","turn_open":"1","turn_admin":"1","turn_asker":"Ana","ci_ok":"1"}\n' "$k" "$1" > "$SESSION_DIR/$k.json"; rm -rf "$q" "$ws/.fxa-steer" "$tmp/sh" "$SESSION_DIR/$k".steer-*; }
 
 new claude
 msg="stop, wrong file \$(touch pwned)'\""; printf '%s\n' "$msg" > "$tmp/m"
 out="$(cd "$ws" && cmd_steer $k --message-file "$tmp/m" --from-name Bo)"
 check "mid-turn: the text is put for the hook, word for word, and nothing ran from it" "1|$msg|no" \
   "$(ls "$ws/.fxa-steer" | grep -c '\.txt$')|$(cat "$ws"/.fxa-steer/*.txt)|$([ -e "$ws/pwned" ] && echo yes || echo no)"
-check "the text stays queued, marked as shown, and the bot still sees queued" "(already shown mid-turn)|$msg|$k queued (shown mid-turn)" \
-  "$(head -2 "$q" | paste -sd'|' -)|$out"
+check "the text is not queued, the host keeps a copy, and the bot still sees queued" "no|$msg|$k queued (shown mid-turn)" \
+  "$([ -e "$q" ] && echo yes || echo no)|$(cat "$SESSION_DIR/$k".steer-*)|$out"
 check "a non-admin's words take the admin role and the CI grant from the running turn" "0|Bo|" \
   "$(session_get $k turn_admin)|$(session_get $k turn_asker)|$(session_get $k ci_ok)"
 check "the next turn from the queue has no admin either" "0" "$(asks_from_queue $k; session_get $k turn_admin)"
+check "after the turn, a message the hook did not show goes to the queue once" "$msg||0" \
+  "$(_session_steer_unshown $k > "$tmp/u"; head -1 "$tmp/u")|$(_session_steer_unshown $k)|$(ls "$SESSION_DIR/$k".steer-* 2>/dev/null | wc -l | tr -d ' ')"
+cmd_steer $k --message-file "$tmp/m" --from-name Bo >/dev/null; echo '{}' | hook >/dev/null
+check "a message the hook showed is not sent again" "|0" \
+  "$(_session_steer_unshown $k)|$(ls "$SESSION_DIR/$k".steer-* 2>/dev/null | wc -l | tr -d ' ')"
+cmd_steer $k --message-file "$tmp/m" --from-name Bo >/dev/null; echo '{}' | hook >/dev/null
+_session_sh_in() { return 255; }
+check "a runner that cannot be reached gets the message again" "$msg" "$(_session_steer_unshown $k > "$tmp/u"; head -1 "$tmp/u")"
+_session_sh_in() { echo called >> "$tmp/sh"; bash -c "${4//\/workspace/$ws}" | head -c "$3"; }
 
 new claude
 cmd_steer $k --message-file "$tmp/m" --from-name Cy --ci-ok >/dev/null
