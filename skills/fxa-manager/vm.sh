@@ -413,6 +413,8 @@ EOF2
           [ "${FXA_DEV_REAL_JIRA:-}" = 1 ] || echo 'printf "FXA_FAKE_JIRA=1\nFAKE_JIRA_DIR=%s\n" "$D/fake-jira" >> fxa-agent-bot/.env.devhost'
           # FXA_DEV_FAKE=1: skills/fxa-ctl-dev/fake-ctl.sh plays each session (no runner, no PR), with its own sessions file.
           [ "${FXA_DEV_FAKE:-}" = 1 ] && echo 'echo FXA_CTL=$D/fxa-sandbox-ctl/skills/fxa-ctl-dev/fake-ctl.sh >> fxa-agent-bot/.env.devhost; export FXA_AGENT_STATE=$HOME/.fxa-agent-dev-fake-sessions.json FAKE_CTL_DIR=$D/fake-ctl'
+          # FAKE_TAPE=<path under the dev folder>: the fake plays that tape (fxa-agent-bot/e2e/tapes/<name>.json).
+          [ "${FXA_DEV_FAKE:-}" = 1 ] && [[ "${FAKE_TAPE:-}" =~ ^[A-Za-z0-9._/-]+\.json$ ]] && [[ "$FAKE_TAPE" != *..* ]] && echo "export FAKE_TAPE=\$D/${FAKE_TAPE}"
           # FAKE_TICK=<s>: a faster fake clock, for the smoke.
           [ "${FXA_DEV_FAKE:-}" = 1 ] && [[ "${FAKE_TICK:-}" =~ ^[0-9]+(\.[0-9]+)?$ ]] && echo "export FAKE_TICK=${FAKE_TICK}"
           cat <<'EOF2'
