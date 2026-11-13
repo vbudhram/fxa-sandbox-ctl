@@ -106,6 +106,14 @@ check "a separate PR: a new agent- branch needs no words, and starts at the runn
   "$(session_target agent-f agent-new >/dev/null; echo $?)|$(session_get agent-f branch)|$(session_get agent-f checkout)|$(targets_json agent-f | jq -r '.[1].source')|$(grep -c 'worktree add -q -f -B agent-new /home/agent/targets/agent-new origin/master' "$tmp/runner")"
 check "a new branch that is not agent- is refused" 1 "$(session_target agent-f stor-new | grep -c 'no branch')"
 ev='[{"type":"turn_end","status":"ready","ship":true,"asks":["target main"]}]'
+echo '{"state":"active","branch":"agent-46e5fc","pr_url":"'"$pr2750"'","thread":"C2:8.8"}' > "$tmp/agent-e.json"; words agent-e 'take over PR 2738'
+check "a switch event names the new PR, the old branch, and the thread that held the branch" "true|$pr2738|stor-55|agent-46e5fc|thread:C1:9.9|1" \
+  "$(targets_events agent-e '[{"type":"turn_end","status":"ready","asks":["target #2738"]}]' | jq -r '.[0] | .ok, .url, .branch, .from, .took_from, .current' | paste -sd'|' -)"
+check "target-end of PR 2750 leaves PR 2738 open" "1|closed|open" \
+  "$(target_end agent-e "$pr2750" CLOSED)|$(targets_json agent-e | jq -r '.[0].state, .[1].state' | paste -sd'|' -)"
+eval "$(sed -n '/^session_pr_status() {/,/^}/p' "$here/session.sh")"
+check "pr-status reads a target's PR, and refuses a PR that is not a target" "OPEN|1" \
+  "$(gh() { echo '{"state":"OPEN"}'; }; session_pr_status agent-e "$pr2750" | jq -r .state)|$(session_pr_status agent-e https://github.com/mozilla/fxa/pull/1 2>/dev/null; echo $?)"
 check "a refused target goes before the turn end and drops its ship line" "target|false|turn_end|null" \
   "$(targets_events agent-f "$ev" | jq -r '.[0].type, .[0].ok, .[1].type, .[1].ship' | paste -sd'|' -)"
 check "the turn end carries the host: lines, and the reply drops them" "target #2738|done" \

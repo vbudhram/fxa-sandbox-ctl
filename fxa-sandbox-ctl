@@ -3347,7 +3347,10 @@ cmd_session() {
       _session_records | jq -sc --arg u "$2" '[.[] | select(.pr_url == $u or .review_pr == $u or any((.trees // [])[]; .pr_url == $u or .review_pr == $u))]
         | sort_by(-(.created // 0)) | first | if . then {key, state, profile: (.profile // ""), thread: (.thread // null), owner}
           + {live: (.state | IN("starting", "active", "wrapping"))} else null end' ;;
-    pr-status) _session_key "${2:-}" && session_pr_status "$2" ;;
+    # pr-status <key> [<PR URL>]: the URL of one of the thread's targets (lib/targets.sh), else the current PR.
+    pr-status) _session_key "${2:-}" && session_pr_status "$2" "${3:-}" ;;
+    # target-end <key> <PR URL> <MERGED|CLOSED>: the bot saw a target's PR end.
+    target-end) _session_key "${2:-}" && case "${4:-}" in MERGED|CLOSED) target_end "$2" "${3:-}" "$4" ;; *) echo "ERROR: target-end needs MERGED or CLOSED" >&2; false ;; esac ;;
     ci-rerun) _session_key "${2:-}" && session_ci_rerun "$2" ;;
     copilot-comments) _session_key "${2:-}" && session_copilot_comments "$2" ;;
     review-comments) _session_key "${2:-}" && session_review_comments "$2" "${3:-}" ;;

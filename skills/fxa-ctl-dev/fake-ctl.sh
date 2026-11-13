@@ -28,7 +28,8 @@
 #   FAKE_ANSWER_JIRA  one @@jira-draft JSON per line: the nth quick look returns line n (the last one after that)
 #   FAKE_PROFILES  a JSON array of teams (profile list's shape) in place of the real controller
 #   FAKE_FIND_PR_PROFILE  the team find-pr reports for the session that made the PR (default none)
-#   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, end}]}]}. The nth task
+#   FAKE_TARGET_STATE  pr-status of a thread target's PR URL: OPEN (default), MERGED or CLOSED
+#   FAKE_TAPE      a recorded session to replay: {sessions: [{turns: [{steps, diff, events, end}]}]}. The nth task
 #                  plays sessions[n]; its turn n ends with turns[n].end (a turn_end, question or error
 #                  event as the real controller emits it; changes counts the branch so far). Past the tape: canned turns, logged as replay_exhausted.
 #   FAKE_CHANGES   the canned turn_end's changes count (default 1)
@@ -93,6 +94,7 @@ script() {
                 {at: ($T + 7), ev: {type: "step", text: "Running yarn test index"}} end),
           (if $tt and (($tt.diff // []) | length == 0) then empty else
            {at: ($T + 6), ev: {type: "diffstat", files: (if $tt then $tt.diff else [{file: "a.ts", added: 3, removed: 1}, {file: "b.ts", added: 2, removed: 0}, {file: "c.ts", added: 1, removed: 1}] end)}} end),
+          (($tt.events // [])[] | {at: ($T + 9), ev: .}),
           {at: ($T + 10), ev: (if $tt then {type: "turn_end", status: "ready", changes: (if [$tape.turns[0:$n + 1][] | (.diff // []) | length > 0] | any then 1 else 0 end), cost: (0.1 * ($n + 1))} + $tt.end else {type: "turn_end", status: "ready", changes: $ch, cost: (0.1 * ($n + 1)),
             text: "Fake turn \($n + 1): I changed one file and the test passes. Tap Open PR, or reply to steer."} end
             + (if ($rs | length) == 0 then (if any($fs[]; .slug == "" and .at < $T and (.mode | startswith("pr"))) then {pr: $pr} else {} end)
@@ -253,7 +255,10 @@ case "$cmd" in
   errors) case "${1:-}" in --json) echo '[]' ;; esac ;;
   session) sub="${1:-}"; shift || true
     case "$sub" in
-      pr-status) prstatus "$@" ;;
+      # A thread target's PR (pr-status <key> <url>): FAKE_TARGET_STATE, else open.
+      pr-status) if [[ "${2:-}" == https://* ]]; then jq -nc --arg u "$2" --arg st "${FAKE_TARGET_STATE:-OPEN}" '{state: $st, url: $u, draft: false, ci: "pass", running: false, reviews: [], mergeable: "MERGEABLE", jira: null, infra: [], failing: [], links: []}'
+        else prstatus "$@"; fi ;;
+      target-end) echo 0 ;;
       find-pr) for d in "$DIR"/agent-*; do k="${d##*/}"
           get "$k" fins | while read -r _ m s; do case "$m" in pr*) [ "$s" = - ] && u="$PR_URL" || u="https://github.com/$s/pull/999999"
             [ "$u" = "$1" ] && echo "$(get "$k" t0) $k"; esac; done; done | sort -rn | awk 'NR == 1 {print $2}' | {

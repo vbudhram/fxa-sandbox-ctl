@@ -1250,6 +1250,10 @@ _session_wrap_step() {
 # as infra too: it is the repo's CI setup, not the change.
 session_pr_status() {
   local url; url="$(session_get "$1" pr_url)"
+  if [ -n "${2:-}" ]; then
+    targets_json "$1" | jq -e --arg u "$2" 'any(.[]; .pr_url == $u)' >/dev/null 2>&1 || { echo "ERROR: $2 is not a target of $1" >&2; return 1; }
+    url="$2"
+  fi
   [ -n "$url" ] || { echo null; return 0; }
   gh pr view "$url" --json state,reviewDecision,statusCheckRollup,latestReviews,isDraft,mergeable,title,body,headRefName,headRefOid,reviewRequests 2>/dev/null \
     | jq -c --arg url "$url" --arg infra "${PIPE_INFRA_CHECKS:-extract=Bad credentials}" '

@@ -261,12 +261,15 @@ targets_enter() {
 # targets_events <key> <events JSON>   At a turn's end, once: each 'host: target' line done, as a target
 #   event before the turn end. A refusal drops the turn's ship line, so no change goes to the wrong PR.
 targets_events() {
-  local key="$1" ev="$2" ref text ok
+  local key="$1" ev="$2" ref text ok from n
   while IFS= read -r ref; do
+    from="$(session_get "$key" branch)"; n="$(jq '(.target_log // []) | length' "$(_session_file "$key")")"
     ok=true; text="$(session_target "$key" "$ref" 2>/dev/null)" || ok=false
-    ev="$(jq -c --arg t "$text" --argjson ok "$ok" --arg u "$(session_get "$key" pr_url)" --arg b "$(session_get "$key" branch)" --arg c "$(targets_current "$key")" '
+    # took_from: the thread or ticket that held the branch before, told by the bot.
+    ev="$(jq -c --arg t "$text" --argjson ok "$ok" --arg u "$(session_get "$key" pr_url)" --arg b "$(session_get "$key" branch)" --arg c "$(targets_current "$key")" \
+      --arg f "$from" --arg o "$(jq -r --argjson n "$n" '(.target_log // [])[$n].took_from // ""' "$(_session_file "$key")")" '
       (map(.type) | index("turn_end")) as $i
-      | ({type: "target", ok: $ok, text: $t} + (if $ok then {url: $u, branch: $b, current: ($c | tonumber)} else {} end)) as $r
+      | ({type: "target", ok: $ok, text: $t} + (if $ok then {url: $u, branch: $b, from: $f, current: ($c | tonumber)} + (if $o != "" then {took_from: $o} else {} end) else {} end)) as $r
       | (if $ok then . else map(if .type == "turn_end" then del(.ship) else . end) end)
       | .[:$i] + [$r] + .[$i:]' <<< "$ev")"
   done < <(jq -r '.[] | select(.type == "turn_end") | (.asks // [])[] | select(test("^target\\s")) | sub("^target\\s+"; "")' <<< "$ev" | head -3)
