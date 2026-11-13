@@ -595,8 +595,9 @@ SUDOERS
 
 # ── Security: Egress firewall ─────────────────────────────────
 
-_setup_egress_firewall() {
-  local name="$1"
+# _egress_hosts   The host names the agent user may reach: the fixed list, the profile's extra hosts,
+# and the runtime's. A session's egress ask (lib/asks.sh) adds its own to these.
+_egress_hosts() {
   # The allowlist is per runtime: Codex talks to OpenAI, not Anthropic. Without
   # these three hosts a Codex runner boots, stages its auth, and every model
   # call is rejected, which reads as a silent stall.
@@ -606,6 +607,12 @@ _setup_egress_firewall() {
   case "${FXA_AGENT_RUNTIME:-claude}" in
     codex) hosts="$hosts api.openai.com chatgpt.com auth.openai.com" ;;
   esac
+  printf '%s' "$hosts"
+}
+
+_setup_egress_firewall() {
+  local name="$1" hosts
+  hosts="$(_egress_hosts)" || return 1
 
   # GitHub serves github.com from more addresses than the fixed ranges, and DNS
   # rotates among them; the check below then failed about one boot in six.

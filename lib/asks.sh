@@ -64,18 +64,65 @@ session_asks() {
   printf '(Host: the results of your host lines.\n%s Tell the engineer the result in one line, then go on with the request.)\n\n' "$note" >> "${SESSION_DIR}/${key}.queue"
 }
 
-# _ask_one <key> <admin 1|0> <who> <line>   One ask. Prints the result in one line; fails when refused.
-_ask_one() {
-  local key="$1" adm="$2" who="${3:-someone}" action rest
-  read -r action rest <<< "$4"
+# asks_gate <admin 1|0> <who> <line>   The checks that need no session: the action list, the role, and
+# the team's rules for the action's argument. Prints the refusal and fails; silent when the ask may run.
+asks_gate() {
+  local adm="$1" who="${2:-someone}" action rest why
+  read -r action rest <<< "$3"
   case "$action" in
     merge|approve|auto-merge|automerge|enable-auto-merge)
       echo "refused: the host never merges, approves or turns on auto-merge. A person does that on GitHub."; return 1 ;;
-    rerun-ci|request-review|ready|draft|comment) ;;
+    rerun-ci|request-review|ready|draft|comment|egress) ;;
     *) echo "refused: ${action:-an empty line} is not a host action."; return 1 ;;
   esac
   [ "$adm" = 1 ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this, and ${who} is not one. Ask a team admin to say it in the thread."; return 1; }
-  _ask_gh "$key" "$action" $rest
+  case "$action" in
+    # The team record's own check: a host that takes data out with no account is refused, for an admin too.
+    egress) why="$(python3 "${SANDBOX_ROOT:-.}/lib/team_record.py" host-ok "$(tr 'A-Z' 'a-z' <<< "${rest%% *}")")" || { echo "refused: ${why}."; return 1; } ;;
+  esac
+}
+
+# _ask_one <key> <admin 1|0> <who> <line>   One ask. Prints the result in one line; fails when refused.
+_ask_one() {
+  local key="$1" action rest
+  asks_gate "$2" "$3" "$4" || return 1
+  read -r action rest <<< "$4"
+  case "$action" in
+    egress) _ask_egress "$key" "${rest%% *}" ;;
+    *) _ask_gh "$key" "$action" $rest ;;
+  esac
+}
+
+# _asks_resolve <host>   The host's public IPv4 addresses, as this host resolves them.
+_asks_resolve() {
+  python3 -c 'import socket, sys, ipaddress
+print(" ".join(sorted({a[4][0] for a in socket.getaddrinfo(sys.argv[1], 443, socket.AF_INET) if ipaddress.ip_address(a[4][0]).is_global})))' "$1" 2>/dev/null || true
+}
+
+# _ask_egress <key> <host>   Open one more host to this session's runner, for the agent user only.
+# The host resolves the name: the agent may write the runner's /etc/hosts (sudo tee), so the runner's answer
+# could point an allowed name at any address. A private address is never opened.
+_ask_egress() {
+  local key="$1" h have ips name
+  h="$(tr 'A-Z' 'a-z' <<< "$2")"; have="$(session_get "$key" egress)"
+  [ "${FXA_EGRESS_ALLOW_ALL:-0}" != 1 ] || { echo "done: this host runs with open egress, so ${h} is reachable."; return 0; }
+  ! tr ' ' '\n' <<< "$have" | grep -qxF "$h" || { echo "done: ${h} is already open for this session."; return 0; }
+  ips="$(_asks_resolve "$h")"
+  [ -n "$ips" ] || { echo "failed: ${h} has no public IPv4 address."; return 1; }
+  name="$(worktree_branch_for "$key")"
+  # Before the agent's REJECT, so after the private-range DROPs; -C keeps a second ask from adding twice.
+  vm_exec "$name" sudo env IPS="$ips" bash -c 'n=$(iptables -L OUTPUT --line-numbers -n | awk "/REJECT/ && /owner UID match/ {print \$1; exit}")
+    [ -n "$n" ] || exit 1
+    for ip in $IPS; do iptables -C OUTPUT -m owner --uid-owner agent -d "$ip" -j ACCEPT 2>/dev/null \
+      || iptables -I OUTPUT "$n" -m owner --uid-owner agent -d "$ip" -j ACCEPT || exit 1; done' >/dev/null 2>&1 \
+    || { echo "failed: the runner's firewall did not take ${h}."; return 1; }
+  session_set "$key" egress "${have:+$have }${h}"
+  # shellcheck disable=SC2046  # one argument per host
+  _setup_agent_dns "$name" $(FXA_AGENT_RUNTIME="$(session_get "$key" runtime)" _egress_hosts) $(session_get "$key" egress) >/dev/null 2>&1 \
+    || { echo "failed: the runner's DNS filter did not take ${h}."; return 1; }
+  if vm_exec "$name" sudo -u agent timeout 8 bash -c "exec 3<>/dev/tcp/${h}/443" >/dev/null 2>&1; then
+    echo "done: ${h} is open for this session's runner (${ips})."
+  else echo "done: ${h} is open for this session's runner, but a test connection to port 443 did not answer."; fi
 }
 
 # _ask_pr <key> [url]   The PR an ask is for: the URL given, else the session's one PR. It must be the

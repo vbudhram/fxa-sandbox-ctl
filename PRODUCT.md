@@ -177,6 +177,10 @@ Anthropic credential of its own:
   on the session's PRs or a PR in the team's work repos. The host checks the role of the person who
   started the turn (a turn from several queued messages takes the lowest role), and records who asked
   in the session history and `<key>.host-actions.jsonl`. Anyone else's request gets a plain refusal.
+- **Egress for one session.** A team admin's "allow crates.io" opens that host for this session's runner
+  only, until the session ends (a resume does not carry it). The host resolves the name itself and opens
+  only public addresses. The team record's refuse list (paste sites, tunnels, request catchers) wins for an
+  admin too: `team_record.py host-ok` is the one check for both.
 
 ---
 

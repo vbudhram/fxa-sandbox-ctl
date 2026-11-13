@@ -66,4 +66,23 @@ _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
 : > "$tmp/gh"; session_asks "$k"
 check "a non-admin turn's ask is refused and makes no call" "0|1" "$(grep -c . "$tmp/gh")|$(grep -c 'is not one' "$tmp/$k.queue")"
 
+# Egress: the team record's refuse list wins for an admin too; an open host goes to this runner only.
+
+check "egress to a paste or tunnel host is refused for an admin" "refused: egress host x.ngrok.io can take data out with no account, so it is refused.|1" \
+  "$(_ask_one $k 1 Ana 'egress x.ngrok.io' | tr -d '\n'; echo "|${PIPESTATUS[0]}")"
+check "egress for a non-admin is refused" "1" "$(_ask_one $k 0 Bo 'egress crates.io' >/dev/null; echo $?)"
+FXA_EGRESS_HOSTS="github.com" FXA_EGRESS_ALLOW_ALL=0
+_profile_egress_extra() { :; }
+eval "$(sed -n '/^_egress_hosts() {/,/^}/p' "$here/agent.sh")"
+_asks_resolve() { [ "$1" = crates.io ] && echo "1.2.3.4 5.6.7.8"; }
+vm_exec() { printf '%s\n' "$*" >> "$tmp/vm"; }
+_setup_agent_dns() { echo "$*" > "$tmp/dns"; }
+new; : > "$tmp/vm"
+got="$(_ask_one $k 1 Ana 'egress Crates.io')"
+check "an admin's egress ask opens the host on the session's runner" "done: crates.io is open for this session's runner (1.2.3.4 5.6.7.8).|crates.io" "$got|$(session_get $k egress)"
+check "the firewall gets the host's addresses, resolved on the host" "1" "$(grep -c 'IPS=1.2.3.4 5.6.7.8' "$tmp/vm")"
+check "the DNS filter gets the fixed hosts and the session's" "runner github.com crates.io" "$(cat "$tmp/dns")"
+check "a second ask for the same host does nothing" "done: crates.io is already open for this session.|1" "$(_ask_one $k 1 Ana 'egress crates.io' | tr -d '\n'; echo "|$(grep -c IPS= "$tmp/vm")")"
+check "a host with no public address is not opened" "1|" "$(_ask_one $k 1 Ana 'egress internal.example' >/dev/null; echo "$?|$(session_get $k egress | grep internal)")"
+
 exit $fail

@@ -206,7 +206,8 @@ Every turn, including later ones:
   'host: rerun-ci [<PR URL>]' reruns the failed CI jobs;
   'host: request-review [<PR URL>] <login> [<login>...]' asks GitHub logins to review;
   'host: ready [<PR URL>]' marks the PR ready for review; 'host: draft [<PR URL>]' makes it a draft;
-  'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment.
+  'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment;
+  'host: egress <host>' lets this runner reach one more host, such as crates.io, until the session ends.
   With no URL the line is for this session's PR. The host checks who asked: only a team
   admin's request runs, so write the line for anyone and let the host decide. It never
   merges, approves or turns on auto-merge. When the next step needs the result, end with
