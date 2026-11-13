@@ -258,6 +258,8 @@ _asks_cards() {
 # so a tap runs exactly what the card shows. At most 3 wait at once.
 _asks_card() {
   local key="$1" who="$2" line="$3" action rest target body="" t hits nonce
+  # The card shows 300 characters, and the tap is the consent: no card for a line it cannot show whole.
+  [ "${#line}" -le 300 ] || { echo "refused: the host line is too long for a card. Ask a team admin to say it in the thread."; return 1; }
   [ "$(_asks_cards "$key" | grep -c . || true)" -lt "$_ASKS_CARDS_MAX" ] \
     || { echo "refused: ${_ASKS_CARDS_MAX} host actions already wait for a team admin. Ask a team admin to say it in the thread."; return 1; }
   target="$(_asks_target "$key" "$line")" || { echo "$target"; return 1; }

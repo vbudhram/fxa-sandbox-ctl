@@ -106,6 +106,8 @@ check "a Deny runs nothing" "denied by Ana: it did not run.|0" "$(asks_confirm $
 check "merge never gets a card" "1|2" "$(_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["merge"]}]'; session_asks "$k"; grep -c 'never merges' "$tmp/$k.queue")|$(_asks_cards $k | grep -c .)"
 check "a PR whose repo GitHub names another way gets no card" "refused: GitHub names the repo of https://github.com/mozilla/fxa/pull/5 evil/fxa, not mozilla/fxa." \
   "$(rm -f "$tmp"/$k.confirm-*; GH_FULL=evil/fxa _asks_card $k Bo ready)"
+check "a line too long for the card gets no card" "1|0" \
+  "$(rm -f "$tmp"/$k.confirm-*; _asks_card $k Bo "ready $(printf 'x%.0s' $(seq 300))" | grep -c 'too long')|$(_asks_cards $k | grep -c . || true)"
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'; session_asks "$k"
 asks_from_queue "$k"; asks_cards_expire "$k" '[{"type":"turn_end"}]'
 check "the host note's turn end leaves the card" "1" "$(_asks_cards $k | grep -c .)"
