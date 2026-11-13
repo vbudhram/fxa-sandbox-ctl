@@ -21,12 +21,15 @@ Rules that follow from this:
   the handoff must match `git branch --show-current`.
 - Make extra worktrees outside `/workspace` (for example `~/wt/<name>`). A
   worktree inside it is copied into the PR.
-- When the session pauses, the host saves the commits on `HEAD` and the
-  working tree. Other branches, stashes and worktrees are lost. Merge or
+- When the session pauses, the host saves the commits on `HEAD`, the
+  working tree and the stashes (in a session with more than one repo, the
+  stashes are lost). Other branches and worktrees are lost. Merge or
   cherry-pick what you need onto the shipping branch first.
-- Files outside `/workspace`, and the databases, are lost too. Keep a setup
-  script in `/workspace/.fxa-keep/` that rebuilds what you added there, such as
-  an OAuth client row, a test account or a downloaded tool.
+- The host also saves the MySQL databases, up to 100 MB compressed, and loads
+  them into the next session of this thread before you start. Files outside
+  `/workspace`, Redis and the Firestore emulator are lost. Keep a setup script
+  in `/workspace/.fxa-keep/` that rebuilds what you added there, such as a
+  downloaded tool.
 - There is no editor, so interactive commands stop. In place of
   `git rebase -i`, use `git commit --fixup <sha>` and then
   `GIT_SEQUENCE_EDITOR=true git rebase -i --autosquash "$(git merge-base HEAD origin/main)"`.

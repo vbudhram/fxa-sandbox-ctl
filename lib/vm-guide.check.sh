@@ -19,7 +19,7 @@ check "session: no pipeline rule" "0" "$(vm_guide_build session | grep -c 'You c
 check "pipeline: cannot commit" "1" "$(vm_guide_build pipeline | grep -c '^You cannot commit')"
 check "pipeline: no session rule" "0" "$(vm_guide_build pipeline | grep -c 'Git is yours\|OPTION: ')"
 check "session: a demo skips the FxA test plan and verify" "1" "$(vm_guide_build session | grep -c 'changes nothing under .packages/. needs no')"
-check "session: a pause loses the databases" "1" "$(vm_guide_build session | grep -c 'and the databases, are lost')"
+check "session: a pause keeps the MySQL databases" "1" "$(vm_guide_build session | grep -c 'also saves the MySQL databases')"
 for mode in session pipeline; do
   check "$mode: rm in a call of its own" "1" "$(vm_guide_build "$mode" | grep -c 'Run .rm. in a Bash call of its own')"
   check "$mode: a bounded for loop waits for a server" "1" "$(vm_guide_build "$mode" | grep -c 'for i in \$(seq 1 60)')"

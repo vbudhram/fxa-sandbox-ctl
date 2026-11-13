@@ -216,7 +216,8 @@ _put_run_files() {
   local tar="${LOG_DIR}/${name}-run.tar"   # its own line: bash 3.2 does not see $name in the same local under set -u
   local -a items=()
   for f in .fxa-jira-context.md .fxa-auto-prompt.txt .fxa-auto-launch.sh .fxa-auto-token \
-           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz .fxa-thread-notes.md .fxa-ci .fxa-inbox ai \
+           .fxa-auto-codex-auth.json .fxa-auto-handoff.schema.json .fxa-resume.patch .fxa-resume.bundle .fxa-resume-claude.tgz .fxa-resume-work.tgz .fxa-resume-media.tgz \
+           .fxa-resume-db.sql.gz .fxa-resume-stash.bundle .fxa-thread-notes.md .fxa-ci .fxa-inbox ai \
            $(worktree_secret_files) _dev/firebase/.config; do
     [ -e "${slot}/${f}" ] && items+=("$f")
   done
@@ -264,6 +265,12 @@ _put_run_files() {
     vm_exec "$name" sudo -u agent bash -c 'mkdir -p /workspace/.fxa-auto-media && tar -xzf /workspace/.fxa-resume-media.tgz -C /workspace/.fxa-auto-media && rm -f /workspace/.fxa-resume-media.tgz' >/dev/null 2>&1 \
       || echo "WARN: could not restore the earlier screenshots and videos." >&2
   fi
+  # The earlier session's databases. The client runs as the agent, never as root: the dump is SQL that the
+  # agent wrote, and the client's \! runs a shell. agent_run calls this after the egress firewall.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-db.sql.gz" ]; then
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && o=""; mysql --help 2>/dev/null | grep -q -- --system-command && o=--skip-system-command; set -o pipefail; gzip -dc .fxa-resume-db.sql.gz | timeout 300 mysql -uroot --local-infile=0 $o && rm -f .fxa-resume-db.sql.gz' >/dev/null 2>&1 \
+      && echo "Restored the earlier session's databases." || echo "WARN: the earlier databases did not restore; the dump is in /workspace/.fxa-resume-db.sql.gz" >&2
+  fi
   # A team stack: each repo gets its exclude and its saved work; FxA's files go into FxA.
   if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-trees.tsv" ]; then _trees_restore "$name" "${slot}/.fxa-trees.tsv"; return 0; fi
   # A session's own files stay out of its commits: it runs git add -A.
@@ -286,6 +293,11 @@ _put_run_files() {
     else
       echo "WARN: the earlier changes did not apply cleanly; they are in /workspace/.fxa-resume.patch" >&2
     fi
+  fi
+  # The earlier stashes, oldest first, so stash@{0} is the same entry as before.
+  if [ "$rc" -eq 0 ] && [ -s "${slot}/.fxa-resume-stash.bundle" ]; then
+    vm_exec "$name" sudo -u agent bash -c 'cd /workspace && git fetch -q .fxa-resume-stash.bundle "refs/fxa-stash/*:refs/fxa-stash/*" && for r in $(git for-each-ref --format="%(refname)" refs/fxa-stash | sort -t/ -k3 -rn); do git stash store -m "$(git log -1 --format=%s "$r")" "$r" && git update-ref -d "$r" || exit 1; done && rm -f .fxa-resume-stash.bundle' >/dev/null 2>&1 \
+      && echo "Restored the earlier session's stashes." || echo "WARN: the earlier stashes did not restore; they are in /workspace/.fxa-resume-stash.bundle" >&2
   fi
   # A restored snapshot runs 123done already, and it reads its secret only at start.
   if [ "$rc" -eq 0 ] && [ -s "${slot}/packages/123done/secrets.json" ]; then

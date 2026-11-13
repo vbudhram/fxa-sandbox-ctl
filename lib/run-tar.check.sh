@@ -21,5 +21,20 @@ mkdir -p "$tmp/slot/.fxa-auto-design"; echo svg > "$tmp/slot/.fxa-auto-design/ph
 tar() { while [ "$1" != -czf ]; do shift; done; shift; shift; printf '%s\n' "$@" > "$tmp/tarred"; : > "$LOG_DIR/agent-x2-run.tar"; }
 _put_run_files agent-x2 "$tmp/slot" >/dev/null 2>&1
 check "the design folder from Figma ships with the run files" "1" "$(grep -cx './.fxa-auto-design' "$tmp/tarred")"
+# A DB dump: it ships, and the restore runs the mysql client as the agent, with LOCAL INFILE and \! off.
+echo 'CREATE DATABASE fxa;' | gzip > "$tmp/slot/.fxa-resume-db.sql.gz"
+vm_exec() { printf '%s\n' "$*" >> "$tmp/calls"; [ "$1 $2 $3 $4 $5" = "agent-x3 sudo -u agent bash" ] && [ "$6" = -c ] && printf '%s' "$7" > "$tmp/dbsh"; return 0; }
+tar() { while [ "$1" != -czf ]; do shift; done; shift; shift; printf '%s\n' "$@" > "$tmp/tarred"; : > "$LOG_DIR/agent-x3-run.tar"; }
+: > "$tmp/calls"; : > "$tmp/dbsh"; _put_run_files agent-x3 "$tmp/slot" >/dev/null 2>&1
+check "the dump ships with the run files" "1" "$(grep -cx './.fxa-resume-db.sql.gz' "$tmp/tarred")"
+check "no root call touches the dump" "0" "$(grep 'fxa-resume-db' "$tmp/calls" | grep -vc '^agent-x3 sudo -u agent bash -c ')"
+mkdir -p "$tmp/ws" "$tmp/bin"; cp "$tmp/slot/.fxa-resume-db.sql.gz" "$tmp/ws/"
+printf '#!/bin/sh\n[ "$1" = --help ] && { echo "  --system-command  Enable system command"; exit 0; }\necho "$*" > %s/args; cat > %s/sql\n' "$tmp" "$tmp" > "$tmp/bin/mysql"
+printf '#!/bin/sh\nshift; exec "$@"\n' > "$tmp/bin/timeout"; chmod +x "$tmp/bin/mysql" "$tmp/bin/timeout"
+c="$(cat "$tmp/dbsh")"; PATH="$tmp/bin:$PATH" bash -c "${c//\/workspace/$tmp/ws}" >/dev/null 2>&1
+check "the client gets --local-infile=0 and --skip-system-command, the SQL on stdin, and the dump goes" \
+  "-uroot --local-infile=0 --skip-system-command|CREATE DATABASE fxa;|no" "$(cat "$tmp/args")|$(cat "$tmp/sql")|$([ -e "$tmp/ws/.fxa-resume-db.sql.gz" ] && echo yes || echo no)"
+check "agent_run ships the run files only after the egress firewall" "yes" "$(sed -n '/^agent_run() {/,/^}/p' "$here/agent.sh" \
+  | awk '/_setup_egress_firewall "\$name"/{f=NR} /_put_run_files "\$name"/{p=NR} END{print (f && p > f) ? "yes" : "no"}')"
 [ "$fail" = 0 ] && echo "all checks pass"
 exit "$fail"

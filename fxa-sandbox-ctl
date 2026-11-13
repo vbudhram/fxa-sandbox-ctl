@@ -2740,6 +2740,7 @@ _cmd_session_boot() {
     [ -z "$stack" ] && [ -z "$review" ] && [ -s "${SESSION_DIR}/${from}.bundle" ] && cp "${SESSION_DIR}/${from}.bundle" "${dir}/.fxa-resume.bundle"
     [ -n "$resume_sid" ] && cp "${SESSION_DIR}/${from}.claude.tgz" "${dir}/.fxa-resume-claude.tgz"
     [ -s "${SESSION_DIR}/${from}.work.tgz" ] && cp "${SESSION_DIR}/${from}.work.tgz" "${dir}/.fxa-resume-work.tgz"
+    _session_warm_carry "$from" "$tid" "$dir"
   fi
   _session_pack_media "$tid" "${dir}/.fxa-resume-media.tgz"
   nonce="$(openssl rand -hex 6)"
@@ -2813,7 +2814,8 @@ The runner did not install this head's dependencies or build its libs. Run \`yar
   GIT_CEILING_DIRECTORIES="$SESSION_DIR" FXA_PIN_SHA="$sha" FXA_PIN_BASE_SHA="$base_sha" FXA_PIN_BRANCH="$branch" FXA_PIN_HIDE="$pin_hide" FXA_PIN_UNTRUSTED="${fixh:+1}" \
     FXA_CLAUDE_RESUME="$resume_sid" FXA_CODEX_RESUME="$resume_sid" FXA_GCE_MAX_RUN_SECONDS="${FXA_SESSION_MAX_RUN_SECONDS:-14400}" \
     agent_run "$dir" "$name" "$prompt" || rc=$?
-  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz" "${dir}/.fxa-resume-media.tgz"
+  rm -f "${dir}/.fxa-resume.patch" "${dir}/.fxa-resume.bundle" "${dir}/.fxa-resume-claude.tgz" "${dir}/.fxa-resume-work.tgz" "${dir}/.fxa-resume-media.tgz" \
+    "${dir}/.fxa-resume-db.sql.gz" "${dir}/.fxa-resume-stash.bundle"
   rm -f "${dir}"/.fxa-resume.*.patch "${dir}"/.fxa-resume.*.bundle
   rm -f "${dir}/.fxa-auto-token" "${dir}/.fxa-auto-codex-auth.json" # the runner has its copy; none stays on the host
   rm -rf "${dir}/.fxa-inbox"

@@ -2156,8 +2156,12 @@ _session_save() {
         # A fresh file, not a fixed /tmp path: another user's file there refused the write.
         _session_sh "$name" "cd /workspace && b=\$(mktemp) && git bundle create \"\$b\" HEAD ^${base} >/dev/null 2>&1 && cat \"\$b\"; rm -f \"\$b\"" \
           2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.bundle" || true
+        # The agent's stashes, as numbered refs in a bundle (0 is the newest); a resume stores them back in order.
+        _session_sh "$name" "cd /workspace && b=\$(mktemp) && i=0 && for h in \$(git stash list --format=%H); do git update-ref refs/fxa-stash/\$i \$h; i=\$((i+1)); done; [ \$i -gt 0 ] && git bundle create \"\$b\" --glob=refs/fxa-stash ^${base} >/dev/null 2>&1 && cat \"\$b\"; rm -f \"\$b\"; for r in \$(git for-each-ref --format='%(refname)' refs/fxa-stash); do git update-ref -d \$r; done" \
+          2>/dev/null | head -c 524288000 > "${SESSION_DIR}/${key}.stash.bundle" || true
       fi
       [ -s "${SESSION_DIR}/${key}.bundle" ] || rm -f "${SESSION_DIR}/${key}.bundle"
+      [ -s "${SESSION_DIR}/${key}.stash.bundle" ] || rm -f "${SESSION_DIR}/${key}.stash.bundle"
       # The whole change, commits included, for !diff once the runner is gone.
       # shellcheck disable=SC2016  # expanded on the runner
       _session_sh "$name" 'cd /workspace && git diff --binary "$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD)" -- . ":(exclude).fxa-*"' \
@@ -2174,6 +2178,11 @@ _session_save() {
     _session_sh "$name" "cd /workspace && ${_SESSION_WORK_TAR}" \
       2>/dev/null | head -c 10485760 > "${SESSION_DIR}/${key}.work.tgz" || true
     [ -s "${SESSION_DIR}/${key}.work.tgz" ] || rm -f "${SESSION_DIR}/${key}.work.tgz"
+    # The dev databases (test accounts), so a resume need not seed them again. A dump over 100 MB is
+    # not kept: a cut dump would restore half the tables.
+    _session_sh "$name" "${_SESSION_DB_DUMP}" 2>/dev/null | head -c 104857601 > "${SESSION_DIR}/${key}.db.sql.gz" || true
+    [ "$(_fsize "${SESSION_DIR}/${key}.db.sql.gz" 2>/dev/null || echo 0)" -le 104857600 ] || rm -f "${SESSION_DIR}/${key}.db.sql.gz"
+    [ -s "${SESSION_DIR}/${key}.db.sql.gz" ] || rm -f "${SESSION_DIR}/${key}.db.sql.gz"
     # Every stop (pause, idle, cost cap, !stop): the last point at which the runner exists.
     declare -F memory_collect_session >/dev/null && memory_collect_session "$key" "$name" stop
     local notes; notes="$(mktemp)"
@@ -2190,7 +2199,18 @@ _session_save() {
 # so a resume here stays local, and one after a lost disk still has it.
 # The work files a pause keeps, as a gzipped tar on stdout, run in /workspace.
 _SESSION_WORK_TAR='f="$(ls .fxa-test-plan.json .fxa-pr-body.md .fxa-verify-verdict.txt 2>/dev/null)"; [ -d .fxa-keep ] && [ "$(du -sk .fxa-keep | cut -f1)" -le 9216 ] && f="$f .fxa-keep"; [ -z "$f" ] || tar -czf - $f'
-_SESSION_SAVED="patch bundle full.patch claude.tgz work.tgz"
+# Every database but MySQL's own, gzipped. Written in full first, so a dump that fails or times out sends nothing.
+_SESSION_DB_DUMP='set -o pipefail; f=$(mktemp) && d=$(mysql -uroot -Nse "SHOW DATABASES" 2>/dev/null | grep -vxE "mysql|sys|information_schema|performance_schema") && timeout 300 mysqldump -uroot --single-transaction --databases $d 2>/dev/null | gzip > "$f" && cat "$f"; rm -f "$f"'
+_SESSION_SAVED="patch bundle full.patch claude.tgz work.tgz db.sql.gz stash.bundle"
+
+# _session_warm_carry <from> <thread> <run dir>   The earlier session's databases and stashes, only
+# from a session of the same thread: the dump is SQL that the agent wrote.
+_session_warm_carry() {
+  [ -n "$2" ] && [ "$(session_get "$1" thread 2>/dev/null || true)" = "$2" ] || return 0
+  [ -s "${SESSION_DIR}/$1.db.sql.gz" ] && cp "${SESSION_DIR}/$1.db.sql.gz" "$3/.fxa-resume-db.sql.gz"
+  [ -s "${SESSION_DIR}/$1.stash.bundle" ] && cp "${SESSION_DIR}/$1.stash.bundle" "$3/.fxa-resume-stash.bundle"
+  return 0
+}
 _session_store() { printf '%s' "${FXA_SESSION_STORE_URI-${FXA_GCE_PROJECT:+gs://${FXA_GCE_PROJECT}-fxa-ai-fixme/saved}}"; }
 
 # _session_upload <key>   The saved files to the bucket, in one call. A failure leaves them on this disk.

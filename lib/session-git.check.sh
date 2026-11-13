@@ -47,7 +47,18 @@ session_checkout_remove "$tmp/wt"
 
 # Save: the commits go in a bundle, the edit in the patch, the whole change in full.patch.
 vm_is_running() { return 0; }; _session_record_summary() { :; }; session_media() { :; }; _thread_save_notes() { :; }
+# Two stashes, newest last; the worktree keeps its edit. A stub MySQL with one dev database and MySQL's own.
+g stash store -m "On agent-gt01: first" "$(g stash create first)"; g stash store -m "On agent-gt01: second" "$(g stash create second)"
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\nprintf "fxa\\nmysql\\nsys\\n"\n' > "$tmp/bin/mysql"; printf '#!/bin/sh\necho "dump $*"\n' > "$tmp/bin/mysqldump"
+printf '#!/bin/sh\nshift; exec "$@"\n' > "$tmp/bin/timeout"   # macOS has none
+chmod +x "$tmp/bin/mysql" "$tmp/bin/mysqldump" "$tmp/bin/timeout"; PATH="$tmp/bin:$PATH"
 _session_save agent-gt01
+check "the save keeps the stashes in their own bundle, and leaves no ref behind" "yes|" "$([ -s "$tmp/agent-gt01.stash.bundle" ] && echo yes)|$(g for-each-ref refs/fxa-stash)"
+check "the save dumps the dev databases, not MySQL's own" "dump -uroot --single-transaction --databases fxa" "$(gzip -dc "$tmp/agent-gt01.db.sql.gz")"
+# shellcheck disable=SC2016  # the source text, not an expansion
+check "a dump over the cap is not kept" "1" "$(grep -c 'head -c 104857601 > "${SESSION_DIR}/${key}.db.sql.gz"' "$HERE/session.sh")"
+printf '#!/bin/sh\nexit 1\n' > "$tmp/bin/mysqldump"; worktree_branch_for() { echo "agent-$1"; }; _session_save agent-gt01
+check "a dump that fails keeps no file" "no" "$([ -e "$tmp/agent-gt01.db.sql.gz" ] && echo yes || echo no)"
 check "the save keeps the commits in a bundle" "yes" "$([ -s "$tmp/agent-gt01.bundle" ] && echo yes)"
 check "the patch holds only the uncommitted edit" "0|1" "$(grep -c '^+TWO$' "$tmp/agent-gt01.patch")|$(grep -c '^+edit$' "$tmp/agent-gt01.patch")"
 check "!diff on a paused session shows the commit too" "1" "$(session_set agent-gt01 state paused; cmd_diff agent-gt01 | grep -c '^+TWO$')"
@@ -58,6 +69,17 @@ cp "$tmp/agent-gt01.bundle" .fxa-resume.bundle; cp "$tmp/agent-gt01.patch" .fxa-
 git fetch -q .fxa-resume.bundle HEAD && g checkout -q -B "$(git branch --show-current)" FETCH_HEAD && git apply --whitespace=nowarn .fxa-resume.patch
 check "the resumed runner has the commit on the new main" "fix(a): two|$N" "$(g log -1 --format=%s)|$(g rev-parse HEAD~1)"
 check "and the uncommitted edit and new file" "edit|new" "$(tail -1 b.txt)|$(cat c.txt)"
+cp "$tmp/agent-gt01.stash.bundle" .fxa-resume-stash.bundle
+cmd="$(grep -m1 'fxa-resume-stash.bundle "refs' "$HERE/agent.sh" | sed -n "s/.*bash -c '\(.*\)' >.*/\1/p")"
+(bash -c "${cmd//\/workspace/$tmp/ws2}") >/dev/null 2>&1
+check "the resumed runner has both stashes in their order, and no bundle" "On agent-gt01: second|On agent-gt01: first|no" \
+  "$(g stash list --format=%gs | paste -sd'|' -)|$([ -e .fxa-resume-stash.bundle ] && echo yes || echo no)"
+check "a stash holds the earlier edit" "1" "$(g stash show -p 'stash@{1}' | grep -c '^+edit$')"
+
+# The dump and stashes reach only a session of the same thread.
+echo '{"key":"w1","thread":"C1-1.1"}' > "$tmp/w1.json"; echo d > "$tmp/w1.db.sql.gz"; echo s > "$tmp/w1.stash.bundle"
+mkdir -p "$tmp/run1" "$tmp/run2"; _session_warm_carry w1 C1-1.1 "$tmp/run1"; _session_warm_carry w1 C2-2.2 "$tmp/run2"; _session_warm_carry w1 "" "$tmp/run2"
+check "the same thread gets the dump and stashes; another thread or none gets nothing" "2|0" "$(ls -A "$tmp/run1" | wc -l | tr -d ' ')|$(ls -A "$tmp/run2" | wc -l | tr -d ' ')"
 
 # No commits: no bundle.
 rm -f "$tmp/agent-gt02.bundle"; echo "{\"key\":\"agent-gt02\",\"state\":\"active\",\"base_sha\":\"$(g -C "$tmp/ws" rev-parse HEAD)\"}" > "$tmp/agent-gt02.json"
