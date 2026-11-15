@@ -52,7 +52,7 @@ check "no handoff: a routine run records no error, a Slack session still does" "
 check "a checked-out PR is the PR finish updates; a session's own PR round still finds its PR by branch" "main https://github.com/o/r/pull/7|main" \
   "$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","checkout":"https://github.com/o/r/pull/7","review_pr":"https://github.com/o/r/pull/7"}')|$(finish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","review_pr":"https://github.com/o/r/pull/7"}')"
 # Thread targets: the finish ships the current target's worktree and PR (lib/targets.sh).
-tfinish() { # tfinish <record json>   the tree, base and PR finish got
+tfinish() { # tfinish <record json> [<mode> <tree idx>]   the tree, base and PR finish got
   ( echo "$1" > "$SESSION_DIR/agent-fb1.json"; : > "$SESSION_DIR/agent-fb1.finish.log"; : > "$BASES"
     runtime_load() { :; }; sleep() { :; }; _session_turn_running() { return 1; }; errors_record() { :; }
     _session_turn() { :; }; vm_exec() { return 0; }; _session_sh() { echo "handoff check: ok"; }
@@ -60,7 +60,8 @@ tfinish() { # tfinish <record json>   the tree, base and PR finish got
     _checkout_consent() { echo "asked push ok" >> "$BASES"; return 1; }; _session_dirty_trees() { :; }
     finish_push_and_pr() { echo "${FXA_TREE_PATH:-/workspace} ${FXA_WORKTREE_BASE} ${FXA_FINISH_PR:-new PR}" >> "$BASES"; echo https://github.com/o/r/pull/9; }
     _session_finish_notes() { :; }; _session_record_summary() { :; }; _thread_ok() { return 1; }; _session_history_add() { :; }
-    _cmd_session_finish agent-fb1 >/dev/null 2>&1
+    [ -z "${2:-}" ] || { source "$(dirname "$0")/trees.sh"; _tree_host_root() { echo /tmp/clone; }; }
+    _cmd_session_finish agent-fb1 ${2:+"$2" "$3"} >/dev/null 2>"$tmp/tfin.err"; [ -z "${2:-}" ] || tail -5 "$tmp/tfin.err" >&2
     paste -sd'|' "$BASES" )
 }
 p2738=https://github.com/mozilla/syncstorage-rs/pull/2738
@@ -73,4 +74,7 @@ check "a separate PR (a new agent- target) opens a new PR from its worktree" "ch
   "$(tfinish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","branch":"agent-x","target_path":"/home/agent/targets/agent-x","target_base":"main"}')"
 check "a person's PR from !stack checkout still asks for push ok" "asked push ok" \
   "$(tfinish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","branch":"stor-55","checkout":"'"$p2738"'","review_pr":"'"$p2738"'","checkout_person":"1"}')"
+check "a one-tree stack switched to PR 2738 ships its tree from the worktree on master, with no push ok" \
+  "checkout /home/agent/targets/stor-55|/home/agent/targets/stor-55 master $p2738" \
+  "$(tfinish '{"key":"agent-fb1","state":"wrapping","runtime":"claude","source":"slack","branch":"stor-55","checkout":"'"$p2738"'","checkout_person":"1","checkout_admin":"UA1","trees":[{"name":"syncstorage","slug":"mozilla/syncstorage-rs","path":"/home/agent/targets/stor-55","out":"pr","branch":"stor-55","base":"master","review_pr":"'"$p2738"'","pr_url":"'"$p2738"'"}]}' - 0)"
 exit "$fail"

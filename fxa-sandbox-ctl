@@ -3247,7 +3247,7 @@ _session_finish_one() {
   # 1 is a problem; 3 is only the PR text's style, which gets the same one repair turn but never stops the ship.
   if [ "$crc" = 1 ] || [ "$crc" = 3 ]; then
     _session_turn "$key" "The host's checks found problems in the change or the handoff. Fix each one, then write
-${FXA_TREE_NAME:+/workspace/}${FXA_TREE_NAME:-${at}}/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
+$( [ -n "${FXA_TREE_NAME:-}" ] && _tree_agent_path || echo "$at")/.fxa-auto-done.json again (to .tmp, then mv). Do nothing else.
 $(grep '^handoff check:' <<<"$chk" | head -20)" || { _session_finish_fail "$key" "the repair turn did not start" "$mode"; return 1; }
     sleep 20
     while _session_turn_running "$key"; do

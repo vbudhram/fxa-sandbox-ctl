@@ -10,7 +10,7 @@ source "$here/config.sh"
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI=""
 FXA_SESSION_DIR="$tmp" source "$here/session.sh"
 _session_db_sync() { :; }
-export FXA_BRANCH_LOCK_DIR="$tmp/locks" PIPE_REPO_SLUG=mozilla/syncstorage-rs
+export FXA_BRANCH_LOCK_DIR="$tmp/locks" PIPE_REPO_SLUG=mozilla/syncstorage-rs PIPE_REPO="$tmp/clone"
 source "$here/targets.sh"
 pr2750=https://github.com/mozilla/syncstorage-rs/pull/2750 pr2738=https://github.com/mozilla/syncstorage-rs/pull/2738
 echo '{"state":"active","branch":"agent-46e5fc","pr_url":"'"$pr2750"'"}' > "$tmp/agent-46e5fc.json"
@@ -66,7 +66,8 @@ check "a thread that does not hold it pushes nothing" "4|" "$(out="$(FXA_LOCK_HO
 check "a push with no holder (cmd_finish) takes no lock" "pushed" "$(finish_push_and_pr "$tmp/wt" true)"
 # Switch in a live session: 'host: target <ref>' and the admin's own words of that turn.
 source "$here/turn-words.sh"
-trees_on() { return 1; }; _thread_ok() { return 1; }; _retry() { "$@"; }
+source "$here/trees.sh"
+_thread_ok() { return 1; }; _retry() { "$@"; }
 worktree_branch_for() { echo "$1"; }; vm_put() { echo put >> "$tmp/runner"; }; pipeline_ensure_clone() { :; }
 _session_sh() { echo "$2" >> "$tmp/runner"; case "$2" in *cat-file*) return 0 ;; esac; }
 SHA=0123456789abcdef0123456789abcdef01234567
@@ -120,4 +121,20 @@ check "the turn end carries the host: lines, and the reply drops them" "target #
   "$(jq -nc '{type: "result", result: "done\nhost: target #2738\nstatus: ready"}' | _session_parse | jq -r '.asks[0], .text' | paste -sd'|' -)"
 eval "$(sed -n '/^_checkout_gate_on() {/,/^}/p' "$here/../fxa-sandbox-ctl")"
 check "a person's PR that an admin named needs no push ok" no "$(_checkout_gate_on agent-s && echo gate || echo no)"
+# A team stack with one tree (every sync-storage session): the switch moves that tree, and the finish ships it.
+tree() { jq -nc --arg b "$1" --arg p "$2" '{name: "syncstorage", slug: "mozilla/syncstorage-rs", path: $p, out: "pr", branch: $b, base: "master"}'; }
+jq -nc --argjson t "$(tree agent-t /home/agent/syncstorage)" '{state: "active", branch: "agent-t", thread: "C3:7.7", trees: [$t]}' > "$tmp/agent-t.json"
+: > "$tmp/runner"; words agent-t 'put the offset-limit-0 commit on PR 2738'
+check "a one-tree stack switches to PR 2738, from its tree's clone" "0|1" \
+  "$(session_target agent-t "$pr2738" >/dev/null; echo $?)|$(grep -c '^cd /home/agent/syncstorage && .*worktree add -q -f -B stor-55 /home/agent/targets/stor-55' "$tmp/runner")"
+check "the tree's fields follow the target, so the tree finish ships PR 2738 from its worktree" "stor-55|$pr2738|$SHA|/home/agent/targets/stor-55|master|UA1" \
+  "$( _tree_enter agent-t 0; echo "$(session_get agent-t branch)|$(session_get agent-t review_pr)|$(session_get agent-t push_lease)|${FXA_TREE_PATH}|${FXA_WORKTREE_BASE}|$(session_get agent-t checkout_admin)")"
+check "the boot target keeps its tree path" "agent-t|/home/agent/syncstorage|master" "$(targets_json agent-t | jq -r '.[0] | .branch, .target_path, .target_base' | paste -sd'|' -)"
+words agent-t 'switch to branch agent-t'
+check "a switch back to the boot target puts the tree on its own path, with no new worktree" "0|agent-t|/home/agent/syncstorage|1" \
+  "$(session_target agent-t agent-t >/dev/null; echo $?)|$(jq -r '.trees[0] | .branch, .path' "$tmp/agent-t.json" | paste -sd'|' -)|$(grep -c 'worktree add' "$tmp/runner")"
+jq -nc --argjson t "$(tree agent-u /home/agent/syncstorage)" '{state: "active", branch: "agent-u", trees: [$t, ($t | .name = "fxa" | .slug = "mozilla/fxa")]}' > "$tmp/agent-u.json"
+check "a stack with two trees is still refused" 1 "$(words agent-u 'work on PR 2738'; session_target agent-u "$pr2738" | grep -c 'several repos')"
+jq -nc --argjson t "$(tree stor-55 /home/agent/targets/stor-55)" '{trees: [$t]}' > "$tmp/agent-v.json"; echo '{}' > "$tmp/agent-w.json"
+check "a resume boots the tree at its own path, not a target's worktree" /home/agent/syncstorage "$(trees_carry agent-v agent-w; jq -r '.trees[0].path' "$tmp/agent-w.json")"
 exit "$fail"

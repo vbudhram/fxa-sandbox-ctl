@@ -78,7 +78,15 @@ trees_init() {
 # trees_carry <from> <key>   A resumed session's repos, each on the new session's branch
 # until _task_carry gives it the earlier one.
 trees_carry() {
-  _session_write "$2" '.trees = $t' --argjson t "$(jq -c --arg b "$2" '[.trees[] | {name, slug, path, out, base, branch: $b}]' "$(_session_file "$1")")"
+  # A thread target's worktree is not on the new runner: the tree boots at its own path.
+  _session_write "$2" '.trees = $t' --argjson t "$(jq -c --arg b "$2" '[.trees[] | {name, slug, out, base, branch: $b,
+    path: (if (.path // "") | startswith("/home/agent/targets/") then "/home/agent/\(.name)" else .path end)}]' "$(_session_file "$1")")"
+}
+
+# _tree_agent_path   Where the agent sees the selected tree: its /workspace link, or a thread target's worktree.
+_tree_agent_path() {
+  if [ -n "${FXA_TREE_NAME:-}" ] && [ "${FXA_TREE_PATH:-}" = "/home/agent/${FXA_TREE_NAME}" ]; then echo "/workspace/${FXA_TREE_NAME}"
+  else echo "${FXA_TREE_PATH:-}"; fi
 }
 
 # trees_from_get <from> <field>   A field of the session a new one resumes. A one-repo session
@@ -292,7 +300,7 @@ trees_idx() {
 
 # _tree_changes <key>   The selected tree's changed-file count on the runner; empty when it did not answer.
 _tree_changes() {
-  [[ "$FXA_TREE_PATH" =~ ^/home/agent/[a-z0-9-]+$ ]] || return 1
+  [[ "$FXA_TREE_PATH" =~ ^/home/agent/([a-z0-9-]+|targets/[A-Za-z0-9._-]+)$ ]] && [[ "$FXA_TREE_PATH" != *..* ]] || return 1
   _session_sh "$(worktree_branch_for "$1")" "cd ${FXA_TREE_PATH} && ${_SESSION_COUNT}" 2>/dev/null | tr -dc '0-9'
 }
 

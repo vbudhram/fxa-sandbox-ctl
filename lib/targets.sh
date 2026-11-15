@@ -4,15 +4,20 @@
 # The current target's live fields stay at the top level (branch, pr_url, review_pr, ...), so every
 # reader and writer of those fields keeps working: targets[current] is only a copy, refreshed on read.
 # An old record with no .targets reads as one target (migrate on read, no rewrite).
-# Only a one-repo session has targets: a team stack keeps one branch for each tree (lib/trees.sh).
+# A one-repo session has targets, and so does a team stack with one tree: its tree's fields follow the
+# current target (target_switch). A stack with several trees keeps one branch for each tree (lib/trees.sh).
 
 # The fields of a target that live at the top level while it is current.
 TARGET_FIELDS="branch pr_url review_pr base_sha push_lease checkout checkout_author checkout_person checkout_admin target_path target_base"
 
 # targets_json <key>   The targets, the current one read from the top level.
 targets_json() {
+  # shellcheck disable=SC2016  # jq variables
   jq -c --arg key "$1" --arg repo "${PIPE_REPO_SLUG:-}" '
-    (.current // 0 | tonumber? // 0) as $c | (.targets // []) as $t
+    (if ((.trees // []) | length) == 1 then .trees[0] else null end) as $tr
+    | (if $tr then . + ($tr | {branch, pr_url, review_pr, base_sha, push_lease, target_path: .path, target_base: .base}
+        | with_entries(select(.value != null and .value != ""))) else . end)
+    | (.current // 0 | tonumber? // 0) as $c | (.targets // []) as $t
     | (($t[$c] // {source: "boot", state: "open"}) + {repo: ($t[$c].repo // $repo), branch: ((.branch // "") | if . == "" then $key else . end),
         pr_url: (.pr_url // ""), review_pr: (.review_pr // ""), base_sha: (.base_sha // ""), push_lease: (.push_lease // ""),
         checkout: (.checkout // ""), checkout_author: (.checkout_author // ""), checkout_person: (.checkout_person // ""), checkout_admin: (.checkout_admin // ""),
@@ -40,6 +45,12 @@ target_switch() {
   _session_write "$key" '.targets = $l | .current = $i | . as $r
     | reduce ($f | split(" "))[] as $k ($r; .[$k] = (($l[$i][$k] // "") | tostring))' \
     --argjson l "$list" --argjson i "$idx" --arg f "$TARGET_FIELDS" || return 1
+  # A stack with one tree: the finish ships the tree's fields, path and base (_tree_enter).
+  # shellcheck disable=SC2016  # jq variables
+  [ "$(jq '(.trees // []) | length' "$(_session_file "$key")")" != 1 ] || _session_write "$key" \
+    '.trees[0] += {branch, pr_url, review_pr, base_sha, push_lease}
+     | if .target_path != "" then .trees[0].path = .target_path else . end
+     | if .target_base != "" then .trees[0].base = .target_base else . end' || return 1
   echo "$idx"
 }
 
@@ -181,9 +192,10 @@ _target_never() {
 # _target_worktree <key> <head> <sha> <path>   On the runner: <sha> (a bundle from the host clone when the
 #   runner lacks it) checked out as branch <head> in its own worktree. /workspace is not touched.
 _target_worktree() {
-  local key="$1" head="$2" sha="$3" at="$4" name root d qh qa
+  local key="$1" head="$2" sha="$3" at="$4" repo="${5:-/workspace}" name root d qh qa qr
+  qr="$(printf '%q' "$repo")"
   name="$(worktree_branch_for "$key")"; qh="$(printf '%q' "$head")"; qa="$(printf '%q' "$at")"
-  if ! _session_sh "$name" "git -C /workspace cat-file -e ${sha}^{commit}" >/dev/null 2>&1; then
+  if ! _session_sh "$name" "git -C ${qr} cat-file -e ${sha}^{commit}" >/dev/null 2>&1; then
     pipeline_ensure_clone >/dev/null 2>&1 && root="$(worktree_repo_root)" || { echo "I could not reach the repo's clone"; return 1; }
     _retry git -C "$root" fetch -q origin "+refs/heads/${head}:refs/remotes/origin/${head}" >/dev/null 2>&1 || { echo "I could not fetch ${head}"; return 1; }
     [ "$(git -C "$root" rev-parse -q --verify "refs/remotes/origin/${head}")" = "$sha" ] || { echo "${head} moved while I read it. Ask again"; return 1; }
@@ -195,17 +207,24 @@ _target_worktree() {
     rm -rf "$d"
   fi
   # A new branch starts at the runner's own fetch of the base (sha is origin/<base>).
-  [[ "$sha" == origin/* ]] && { _session_sh "$name" "git -C /workspace fetch -q origin $(printf '%q' "${sha#origin/}")" >/dev/null 2>&1 || true; }
-  _session_sh "$name" "cd /workspace && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
+  [[ "$sha" == origin/* ]] && { _session_sh "$name" "git -C ${qr} fetch -q origin $(printf '%q' "${sha#origin/}")" >/dev/null 2>&1 || true; }
+  _session_sh "$name" "cd ${qr} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
     && { [ -e ${qa}/.git ] || git -c core.hooksPath=/dev/null worktree add -q -f -B ${qh} ${qa} ${sha}; } && rm -rf /home/agent/.fxa-target" >/dev/null 2>&1 \
     || { echo "the sandbox could not take ${head}"; return 1; }
 }
 
 # session_target <key> <ref>   The agent's 'host: target <ref>' for the turn that just ended. Prints one
 #   line for the thread; fails, with nothing moved, when the ref or the words do not hold.
+#   Run it in a subshell: in a stack with one tree it selects that tree (_tree_enter).
 session_target() {
-  local key="$1" ref="$2" p slug kind n info url head sha base who h idx path old th
-  trees_on "$key" && { echo "I did not switch: this session has several repos, and each keeps its own branch."; return 1; }
+  local key="$1" ref="$2" p slug kind n info url head sha base who h idx path old th home
+  case "$(trees_count "$key")" in
+    0) home=/workspace ;;
+    1) _tree_enter "$key" 0 || { echo "I did not switch: I could not read this session's repo."; return 1; }; home="$FXA_TREE_PATH"
+       # The boot tree's own path: a target's worktree must not be the base of the next one.
+       [[ "$home" != /home/agent/targets/* ]] || home="/home/agent/${FXA_TREE_NAME}" ;;
+    *) echo "I did not switch: this session has several repos, and each keeps its own branch."; return 1 ;;
+  esac
   [ "${PIPE_PR_OPEN:-1}" != 0 ] || { echo "I did not switch: this team is read-only, so I push nowhere."; return 1; }
   p="$(_target_parse "$ref")" || { echo "I did not switch: \"${ref:0:80}\" is not a PR or a branch."; return 1; }
   IFS='|' read -r slug kind n <<< "$p"; slug="${slug:-${PIPE_REPO_SLUG:-}}"
@@ -231,7 +250,7 @@ session_target() {
   [ -n "$path" ] || path="/home/agent/targets/$(tr '/' '_' <<< "$head")"
   th="$(session_get "$key" thread)"; th="${th:+thread:${th}}"
   old="$(branch_lock_take "$slug" "$head" "${th:-session:${key}}" move 2>&1)" || { echo "I did not switch to ${label}: ${old}."; return 1; }
-  [ "$path" = /workspace ] || h="$(_target_worktree "$key" "$head" "$sha" "$path")" || { echo "I did not switch to ${label}: ${h}."; return 1; }
+  [ "$path" = "$home" ] || h="$(_target_worktree "$key" "$head" "$sha" "$path" "$home")" || { echo "I did not switch to ${label}: ${h}."; return 1; }
   if [ -n "$idx" ]; then target_switch "$key" "$(targets_json "$key" | jq -c --argjson i "$idx" --arg p "$path" '.[$i] | .target_path = $p')" >/dev/null
   else target_switch "$key" "$(jq -nc --arg r "$slug" --arg b "$head" --arg u "$url" --arg s "$sha" --arg a "$(jq -r .author <<< "$info")" \
       --arg pp "$(jq -r 'if .person then "1" else "0" end' <<< "$info")" --arg w "$who" --arg p "$path" --arg tb "$base" \

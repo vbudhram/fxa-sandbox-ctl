@@ -458,7 +458,7 @@ _session_repo_url() {
 _session_wrapup_prompt() {
   # A team stack ships one repo: the same steps, in that repo's tree.
   if [ -n "${FXA_TREE_PATH:-}" ]; then
-    local t="${FXA_TREE_NAME:+/workspace/${FXA_TREE_NAME}}"; t="${t:-${FXA_TREE_PATH}}"  # a thread target has no tree name
+    local t; t="$(_tree_agent_path)"
     printf 'This is for one repo only: %s (%s). Run every step below in %s; leave the other repos as they are.\n\n' "$t" "$PIPE_REPO_SLUG" "$t"
     _session_wrapup_steps "$@" | sed -e "s#/workspace/.fxa-auto-done.json#${t}/.fxa-auto-done.json#g" \
       -e "s#/workspace/.github/PULL_REQUEST_TEMPLATE.md#${t}/.github/PULL_REQUEST_TEMPLATE.md (when it exists)#g" \
