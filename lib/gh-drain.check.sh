@@ -8,8 +8,8 @@ check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 here="$(cd "$(dirname "$0")" && pwd)"; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n "/^read -r -d '' _GH_ROLLUP_JQ/,/^JQ\$/p" "$here/github.sh")"
-eval "$(sed -n '/^gh_drain() {/,/^}/p' "$here/github.sh")"
-pipeline_require() { :; }; worktree_branch_for() { printf '%s\n' "$1" | tr 'A-Z' 'a-z'; }; PIPE_REPO_SLUG=mozilla/fxa
+eval "$(sed -n '/^gh_drain() {/,/^}/p;/^gh_base_moved() {/,/^}/p' "$here/github.sh")"
+pipeline_require() { :; }; worktree_branch_for() { printf '%s\n' "$1" | tr 'A-Z' 'a-z'; }; PIPE_REPO_SLUG=mozilla/fxa PIPE_STATE_DIR="$tmp"
 pr() { printf '{"number":%s,"state":"%s","headRefName":"%s","statusCheckRollup":[],"mergeable":"MERGEABLE","headRefOid":"abc","isCrossRepository":%s}' "$@"; }
 # The 200 newest: FXA-2's PR. FXA-1's merged PR is older: only --head finds it. FXA-3 has only a fork PR, which the branch read sees.
 gh() { local q="" head=""; while [ $# -gt 0 ]; do case "$1" in -q) q="$2"; shift ;; --head) head="$2"; shift ;; esac; shift; done
@@ -48,4 +48,10 @@ check "both reads fail: the error says why" "1" "$(OKLIM=10 gh_drain FXA-2 2>&1 
 gh() { local q=""; while [ $# -gt 0 ]; do case "$1" in -q) q="$2"; shift ;; esac; shift; done
   jq -r "$q" <<< '[{"number":7,"state":"OPEN","headRefName":"fxa-7","statusCheckRollup":[],"mergeable":"MERGEABLE","mergeStateStatus":"BEHIND","headRefOid":"abc","isCrossRepository":false}]'; }
 check "an open PR that is only behind is a BEHIND row" "FXA-7 7 BEHIND" "$(gh_drain FXA-7 2>/dev/null)"
+# A person moves the PR to another base: one RETARGET row with the old and the new base, before its other state.
+gh() { local q=""; while [ $# -gt 0 ]; do case "$1" in -q) q="$2"; shift ;; esac; shift; done
+  jq -r "$q" <<< "[{\"number\":8,\"state\":\"OPEN\",\"headRefName\":\"fxa-8\",\"statusCheckRollup\":[],\"mergeable\":\"CONFLICTING\",\"headRefOid\":\"abc\",\"isCrossRepository\":false,\"baseRefName\":\"$(cat "$tmp/b8")\"}]"; }
+echo main > "$tmp/b8"; a="$(gh_drain FXA-8 2>/dev/null)|$(cat "$tmp/FXA-8.base")"
+echo train-349 > "$tmp/b8"
+check "the first base is recorded; a move to another base is a RETARGET row" "FXA-8 8 CONFLICT|main|FXA-8 8 RETARGET main train-349" "$a|$(gh_drain FXA-8 2>/dev/null)"
 exit "$fail"

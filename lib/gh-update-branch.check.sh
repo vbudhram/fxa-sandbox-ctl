@@ -29,4 +29,19 @@ echo conflict > "$tmp/up/b" && g up commit -qam m3
 gh_update_branch 7 2>/dev/null; rc=$?
 check "a conflict with main: fails, and nothing is pushed" "1||" "$rc|$(cat "$tmp/commit" 2>/dev/null)|$(cat "$tmp/api" 2>/dev/null)"
 check "no worktree is left behind" "1" "$(git -C "$tmp/clone" worktree list | wc -l | tr -d ' ')"
+# A person moves the PR from main to train: only the PR's own change moves, not main's commits since the train.
+git init -q -b main "$tmp/up2" && echo a > "$tmp/up2/a" && echo b > "$tmp/up2/b" && g up2 add . && g up2 commit -qm base
+g up2 branch train && echo t > "$tmp/up2/t" && g up2 add t && g up2 commit -qm main-only
+g up2 checkout -qb fix && echo fix > "$tmp/up2/b" && g up2 commit -qam "fix(x): the change" && g up2 checkout -q train
+echo t2 > "$tmp/up2/a" && g up2 commit -qam train-only && g up2 checkout -q main
+rm -rf "$tmp/clone" && git clone -q "$tmp/up2" "$tmp/clone"; rm -f "$tmp/commit" "$tmp/api"
+gh() { echo "fix $(git -C "$tmp/up2" rev-parse fix) train false"; }
+gh_update_branch 7 main; rc=$?
+IFS='|' read -r par tree msg _ < "$tmp/commit"
+check "moved to train: one commit on train, with the fix and without main's commit" "0|$(g up2 rev-parse train)|fix|-|fix(x): the change" \
+  "$rc|$par|$(git -C "$tmp/clone" show "$tree:b")|$(git -C "$tmp/clone" show "$tree:t" 2>/dev/null || echo -)|$msg"
+rm -f "$tmp/commit"; g up2 checkout -q fix && A=Person g up2 commit -q --allow-empty -m person && g up2 checkout -q main
+git -C "$tmp/clone" fetch -q origin; gh() { echo "fix $(git -C "$tmp/up2" rev-parse fix) train false"; }
+gh_update_branch 7 main 2>/dev/null; rc=$?
+check "a move with a person's commit: refused, and no merge of the new base" "1||" "$rc|$(cat "$tmp/commit" 2>/dev/null)|$(cat "$tmp/api" 2>/dev/null)"
 exit "$fail"

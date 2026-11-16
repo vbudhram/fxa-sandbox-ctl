@@ -215,7 +215,7 @@ gh_drain() {
   local map jqx rc=0 own="${PIPE_REPO_SLUG%%/*}"
   # A fork PR from a branch with a key's name is not ours (i619). isCrossRepository made the 200-PR list time out
   # (HTTP 504), so the list asks for headRepositoryOwner instead, and the branch read asks for both.
-  jqx=".[] | select(((.isCrossRepository // false) | not) and ((.headRepositoryOwner.login // \"${own}\") == \"${own}\")) | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.mergeStateStatus) \(.headRefOid)\""
+  jqx=".[] | select(((.isCrossRepository // false) | not) and ((.headRepositoryOwner.login // \"${own}\") == \"${own}\")) | (${_GH_ROLLUP_JQ}) as \$r | \"\(.headRefName) \(.number) \(.state) \(\$r.ok) \(\$r.fail) \(\$r.run) \(.mergeable) \(.mergeStateStatus) \(.headRefOid) \(.baseRefName)\""
   # `|| rc=$?` keeps `set -e` from killing the function before the guard below.
   # GitHub computes `mergeable` lazily and says UNKNOWN until then, but the
   # request starts the computation, so one re-poll resolves most of them.
@@ -224,7 +224,7 @@ gh_drain() {
   local err lim=200; err="$(mktemp)"
   _gh_drain_fetch() {
     gh pr list --repo "$PIPE_REPO_SLUG" --state all --limit "${1:-200}" \
-      --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid,headRepositoryOwner \
+      --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid,headRepositoryOwner,baseRefName \
       -q "$jqx" 2>"$err"
   }
   map="$(_gh_drain_fetch)" || { rc=0; lim=50; map="$(_gh_drain_fetch 50)" || rc=$?; }
@@ -242,26 +242,28 @@ gh_drain() {
     rm -f "$err"; return 1
   fi
   rm -f "$err"
-  local key br line num state ok bad run mrg mst sha
+  local key br line num state ok bad run mrg mst sha bref old
   for key in $keys; do
     br="$(worktree_branch_for "$key")"
     # A here-string, not printf |: awk exits at the first match, and the printf's SIGPIPE error went to stderr.
-    line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8, $9; exit}' <<< "$map")"
+    line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8, $9, $10; exit}' <<< "$map")"
     # Older than the 200 newest PRs: read the branch alone. A failed read reports nothing, not a false `none`.
     if [ -z "$line" ]; then
       line="$(gh pr list --repo "$PIPE_REPO_SLUG" --state all --head "$br" --limit 5 \
-        --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid,isCrossRepository -q "$jqx" 2>/dev/null)" \
+        --json number,state,headRefName,statusCheckRollup,mergeable,mergeStateStatus,headRefOid,isCrossRepository,baseRefName -q "$jqx" 2>/dev/null)" \
         || { echo "drain: could not read the PR of $key's branch" >&2; continue; }
-      line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8, $9; exit}' <<< "$line")"
+      line="$(awk -v b="$br" '$1 == b {print $2, $3, $4, $5, $6, $7, $8, $9, $10; exit}' <<< "$line")"
     fi
     if [ -z "$line" ]; then
       # Report a missing PR, do not relabel it: a human must look.
       echo "$key none -"
       continue
     fi
-    read -r num state ok bad run mrg mst sha <<<"$line"
+    read -r num state ok bad run mrg mst sha bref <<<"$line"
     case "$state" in
       OPEN)
+        # A person moved the PR to another base: precheck rebuilds the change there before it reads the rest.
+        if old="$(gh_base_moved "$key" "$bref")"; then echo "$key $num RETARGET $old $bref"; continue; fi
         # Nothing else re-reads a done PR's checks or mergeability, so report
         # them here. Never relabel: the cause is often repo infrastructure.
         if [ "${bad:-0}" -gt 0 ]; then
@@ -565,26 +567,41 @@ gh_pr_approved() {
     -q '.reviewDecision == "APPROVED" or .autoMergeRequest != null or any(.latestReviews[]?; .state == "APPROVED")' 2>/dev/null | grep -qx true
 }
 
-# gh_update_branch NUM   Bring a PR that is only behind up to its base: no VM, no counter.
+# gh_base_moved <KEY> <base>   Prints the PR's earlier base when a person moved it. Records the first base it sees.
+# ponytail: a move before the first record goes unseen; the drain records each done PR every pass.
+gh_base_moved() {
+  local f="${PIPE_STATE_DIR}/${1}.base" old=""; [ -n "${2:-}" ] || return 1
+  old="$(cat "$f" 2>/dev/null || true)"
+  [ -n "$old" ] || { printf '%s\n' "$2" > "$f"; return 1; }
+  [ "$old" != "$2" ] && echo "$old"
+}
+
+# gh_update_branch NUM [OLD_BASE]   Bring a PR that is only behind up to its base: no VM, no counter.
+# With OLD_BASE (a person moved the PR to another base), only the PR's own change since OLD_BASE moves.
 # With the App, the PR is rebuilt as one App commit on the base, so GitHub signs it and the PR gets no
 # merge commit. A conflict changes nothing. A fork's PR, or a branch with a person's commits, gets
 # GitHub's update-branch instead: it merges the base in and keeps their commits.
 gh_update_branch() {
   local num="${1:-}"; [[ "$num" =~ ^[0-9]+$ ]] || { echo "ERROR: update-branch needs a PR number" >&2; return 1; }
-  github_app_enabled || { gh api -X PUT "repos/${PIPE_REPO_SLUG}/pulls/${num}/update-branch" >/dev/null; return; }
-  local br="" head="" base="" fork="" repo="${PIPE_REPO:-$PWD}" new="" mb="" tree="" first="" wt="" rc=0
+  local from="${2:-}" br="" head="" base="" fork="" repo="${PIPE_REPO:-$PWD}" new="" old="" mb="" tree="" first="" wt="" rc=0
+  # A merge of the new base would keep every commit of the old one, so a move needs the App.
+  github_app_enabled || { [ -z "$from" ] && gh api -X PUT "repos/${PIPE_REPO_SLUG}/pulls/${num}/update-branch" >/dev/null; return; }
   local q='"\(.headRefName) \(.headRefOid) \(.baseRefName) \(.isCrossRepository)"'
   read -r br head base fork <<< "$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json headRefName,headRefOid,baseRefName,isCrossRepository -q "$q" 2>/dev/null || true)"
   [ -n "$fork" ] || { echo "ERROR: could not read PR #${num}." >&2; return 1; }
-  _retry git -C "$repo" fetch -q origin "+refs/heads/${base}:refs/remotes/origin/${base}" "+refs/heads/${br}:refs/remotes/origin/${br}" || return 1
-  if [ "$fork" != false ] || git -C "$repo" log --no-merges --format=%an "origin/${base}..${head}" 2>/dev/null | grep -qviE '\[bot\]$'; then
+  from="${from:-$base}"
+  _retry git -C "$repo" fetch -q origin "+refs/heads/${base}:refs/remotes/origin/${base}" "+refs/heads/${from}:refs/remotes/origin/${from}" \
+    "+refs/heads/${br}:refs/remotes/origin/${br}" || return 1
+  new="$(git -C "$repo" rev-parse "origin/${base}")" && old="$(git -C "$repo" rev-parse "origin/${from}")" || return 1
+  if [ "$fork" != false ] || git -C "$repo" log --no-merges --format=%an "${old}..${head}" 2>/dev/null | grep -qviE '\[bot\]$'; then
+    [ "$from" = "$base" ] || { echo "ERROR: #${num} is a fork's PR or holds a person's commits, so I do not move it to ${base}." >&2; return 1; }
     printf '{}' | _gh_app_api PUT "pulls/${num}/update-branch" >/dev/null; return
   fi
-  new="$(git -C "$repo" rev-parse "origin/${base}")" && mb="$(git -C "$repo" merge-base "$head" "$new")" || return 1
+  mb="$(git -C "$repo" merge-base "$head" "$old")" || return 1
   tree="$(git -C "$repo" merge-tree --write-tree --no-messages --merge-base="$mb" "$new" "$head" 2>/dev/null)" \
     || { echo "ERROR: #${num} conflicts with ${base}." >&2; return 1; }
   # The PR's first commit names the change; the fix rounds after it fold into it.
-  first="$(git -C "$repo" log --reverse --no-merges --format=%H "${new}..${head}" | head -1)"
+  first="$(git -C "$repo" log --reverse --no-merges --format=%H "${old}..${head}" | head -1)"
   [ -n "$first" ] || { echo "ERROR: #${num} has no commit of its own." >&2; return 1; }
   wt="$(mktemp -d "${TMPDIR:-/tmp}/rebase-${num}.XXXXXX")"
   git -C "$repo" -c core.hooksPath=/dev/null worktree add -q --no-checkout --detach "$wt" "$new" >&2 || { rm -rf "$wt"; return 1; }
