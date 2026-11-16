@@ -1495,6 +1495,12 @@ _drain_red_behind() {
   printf '%s\n' "$base" > "$f"
 }
 
+# _drain_retarget <key> <num> <old> <new>   A person moved the PR to another base: rebuild only its own change there.
+_drain_retarget() {
+  if gh_update_branch "$2" "$3" 2>/dev/null; then printf '%s\n' "$4" > "${PIPE_STATE_DIR}/${1}.base"; _info "drain: $1 #$2 moved from $3 to $4; rebuilt the change on $4"
+  else _drain_wake "$1" "$1 $2 RETARGET $3 $4 (the change does not apply to $4 by itself: a person rebuilds it there)"; fi
+}
+
 # The deterministic half of a pass, in shell: idle passes that loaded the skill
 # each cost a large model turn. Lists only what needs judgment, else one `quiet` line.
 # <KEY>.feedback-noted keeps an already reported comment from making every pass loud.
@@ -1523,7 +1529,7 @@ cmd_precheck() {
     fi
     rm -f "$gerr"
   fi
-  local work=0 info="" line key num state ids noted why kinds=""
+  local work=0 info="" line key num state ids noted why kinds="" bold="" bnew=""
   local inflight_pr=0 infra=0 merged_n=0 rejected_n=0 red_seen="" fp
   _work() { work=1; kinds="${kinds}${kinds:+ }${1%%:*}"; printf '%s\n' "$*"; }
   # A drain line the pass can only report (a source conflict, no PR, a failed label): the same line
@@ -1617,6 +1623,7 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
                 else _work "drain: $line"; printf '%s\n' "$fp" > "${PIPE_STATE_DIR}/${key}.red-noted"; fi
               fi ;;
       CONFLICT) _precheck_conflict "$key" "$num" ;;
+      RETARGET) read -r _ _ _ bold bnew <<< "$line"; _drain_retarget "$key" "$num" "$bold" "$bnew" ;;
       # Only where the base requires an up-to-date branch. Behind blocks only a merge, so each base move
       # does not rerun CI on a PR that waits for review: it updates once it is approved.
       BEHIND) if ! gh_pr_approved "$num"; then _info "drain: $key #$num is behind ${PIPE_BASE_BRANCH:-main}; it updates when it is approved"
@@ -1632,7 +1639,7 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
   # Drain reads only done tickets. A blocked ticket's PR can still be merged or closed by a person,
   # and nothing else moves the ticket then. A PR blocked for its review rounds or fix attempts still
   # gets rebases: its code is fine. Above the note cleanup, so its wake stays once an hour.
-  local bstate bkind bm badmin; badmin="$(gh_admin_logins 2>/dev/null || true)"
+  local bstate bkind bm bms bbase badmin; badmin="$(gh_admin_logins 2>/dev/null || true)"
   for key in $(jira_keys_in_state blocked 2>/dev/null || true); do
     read -r _ num bstate _ <<< "$(gh_pr_state "$key" 2>/dev/null)"
     case "$bstate" in
@@ -1651,7 +1658,9 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         bkind="$(cut -f2 "${PIPE_STATE_DIR}/${key}.blocked-why" 2>/dev/null || true)"
         case "$bkind" in rounds|attempts) ;; *) continue ;; esac
         # Not gh_drain: it reports a red PR as RED and hides its conflict.
-        bm="$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json mergeable,mergeStateStatus -q '"\(.mergeable) \(.mergeStateStatus)"' 2>/dev/null || true)"
+        read -r bm bms bbase <<< "$(gh pr view "$num" --repo "$PIPE_REPO_SLUG" --json mergeable,mergeStateStatus,baseRefName -q '"\(.mergeable) \(.mergeStateStatus) \(.baseRefName)"' 2>/dev/null || true)"
+        if bold="$(gh_base_moved "$key" "$bbase")"; then _drain_retarget "$key" "$num" "$bold" "$bbase"; continue; fi
+        bm="$bm $bms"
         case "$bm" in
           CONFLICTING*) _precheck_conflict "$key" "$num" " blocked:${bkind}" ;;
           *" BEHIND") if ! gh_pr_approved "$num"; then _info "drain: $key #$num (blocked ${bkind}) is behind ${PIPE_BASE_BRANCH:-main}; it updates when it is approved"

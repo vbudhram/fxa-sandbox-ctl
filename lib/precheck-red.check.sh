@@ -7,7 +7,8 @@ fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 command -v jq >/dev/null || { echo "skip: needs jq"; exit 0; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-eval "$(sed -n '/^cmd_precheck() {/,/^}/p;/^_drain_red_behind() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+eval "$(sed -n '/^cmd_precheck() {/,/^}/p;/^_drain_red_behind() {/,/^}/p;/^_drain_retarget() {/,/^}/p' "$(dirname "$0")/../fxa-sandbox-ctl")"
+gh_base_moved() { return 1; }
 PIPE_LOCK_DIR="$tmp/pass.lock" PIPE_STATE_DIR="$tmp" PIPE_NAME=test PIPE_REPO_SLUG=o/r
 _mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 pipeline_lock() { :; }; pipeline_unlock() { :; }; db_ingest() { :; }
@@ -64,6 +65,14 @@ check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
   check "a BEHIND PR with no approval: no update and no wake" "0|" "$a"
   gh_pr_approved() { :; }
   check "an approved BEHIND PR gets update-branch and no wake" "0|100" "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-10')|$(cat "$tmp/upd10")" )
+# A person moved the PR to another base: the change moves there, with no approval and no wake; a failure wakes the pass.
+( cmd_drain() { echo "FXA-11 110 RETARGET main train-349"; }; gh_pr_approved() { return 1; }
+  gh_update_branch() { echo "$*" > "$tmp/upd11"; }
+  a="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-11')|$(cat "$tmp/upd11")|$(cat "$tmp/FXA-11.base")"
+  check "a moved PR is rebuilt from its old base, and the new base is recorded" "0|110 main|train-349" "$a"
+  rm -f "$tmp/FXA-11.base"; gh_update_branch() { return 1; }
+  check "a move that does not apply wakes the pass, and keeps the old record" "1|" \
+    "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-11 110 RETARGET main train-349')|$(cat "$tmp/FXA-11.base" 2>/dev/null)" )
 # An inflight PR's conflict wakes the pass too; its red stays reconcile's.
 ( jira_done_keys() { :; }; jira_inflight_keys() { echo FXA-9; }; pipeline_progress() { echo "$1 pr 1"; }; gh_conflicts() { echo "source a.ts"; }
   gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }
