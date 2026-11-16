@@ -73,6 +73,13 @@ check "red, then green, then the same red again: the pass wakes" "drain:" "$(q)"
   rm -f "$tmp/FXA-11.base"; gh_update_branch() { return 1; }
   check "a move that does not apply wakes the pass, and keeps the old record" "1|" \
     "$(cmd_precheck 2>&1 | grep -c '^drain: FXA-11 110 RETARGET main train-349')|$(cat "$tmp/FXA-11.base" 2>/dev/null)" )
+# A merged PR whose ticket lost its pipeline label: labelled merged; its open or closed PR is left alone.
+( jira_orphan_keys() { echo FXA-12; }; cmd_drain() { :; }
+  gh_drain() { case "$1" in FXA-12) cat "$tmp/orph" ;; esac; }; cmd_label() { echo "$*" >> "$tmp/lab12"; }
+  echo "FXA-12 120 OPEN" > "$tmp/orph"; cmd_precheck >/dev/null 2>&1
+  echo "FXA-12 120 CLOSED" > "$tmp/orph"; cmd_precheck >/dev/null 2>&1
+  echo "FXA-12 120 MERGED" > "$tmp/orph"; a="$(cmd_precheck 2>&1 | grep -c '^drain: FXA-12')"
+  check "an unlabelled ticket's merge labels it merged, with no wake; open or closed does nothing" "0|FXA-12 merged" "$a|$(cat "$tmp/lab12")" )
 # An inflight PR's conflict wakes the pass too; its red stays reconcile's.
 ( jira_done_keys() { :; }; jira_inflight_keys() { echo FXA-9; }; pipeline_progress() { echo "$1 pr 1"; }; gh_conflicts() { echo "source a.ts"; }
   gh_drain() { echo "FXA-9 90 CONFLICT"; echo "FXA-9 90 RED ok=1 fail=1 running=0 head=x"; }; cmd_drain() { :; }

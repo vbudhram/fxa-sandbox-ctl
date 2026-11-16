@@ -1674,6 +1674,14 @@ $(gh_drain "$inpr" 2>/dev/null | awk '$3 == "CONFLICT"' || true)"
         esac ;;
     esac
   done
+  # A ticket whose pipeline label a person's label edit dropped: no state read sees its PR, so its merge
+  # still closes it here. Only a merge: an open or closed PR there is the person's to handle.
+  local okey onum ost
+  while read -r okey onum ost _; do
+    [ "$ost" = MERGED ] || continue
+    if cmd_label "$okey" merged >/dev/null 2>&1; then merged_n=$((merged_n + 1)); _info "drain: $okey merged #$onum with no pipeline label (labelled, ticket closed)"
+    else _work "drain: $okey merged #$onum with no pipeline label (label merged FAILED)"; fi
+  done <<< "$(o="$(jira_orphan_keys 2>/dev/null)" && [ -n "$o" ] && gh_drain "$o" 2>/dev/null || true)"
   # A PR that is no longer red forgets its note, so a later red wakes a pass again. Only after a
   # drain that worked: a failed gh read shows no RED row, and would wipe every note.
   [ "$drain_rc" = 0 ] && for line in "${PIPE_STATE_DIR}"/*.red-noted; do

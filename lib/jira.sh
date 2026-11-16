@@ -349,6 +349,18 @@ jira_items_in_state() {
   jira_items_json "${s} AND labels = \"$(pipeline_label_for "${1:?state required}")\"${2:+ AND $2} ORDER BY created ASC"
 }
 jira_done_keys()      { jira_keys_in_state done; }
+# jira_orphan_keys   Tickets this pipeline launched in the last 30 days that are not done and hold none of its
+# labels: a person's label edit dropped the label, so no state read sees their PR any more.
+jira_orphan_keys() {
+  pipeline_require || return 1
+  local keys ls="" st s
+  keys="$(find "$PIPE_STATE_DIR" -maxdepth 1 -name '*.launch.tsv' -mtime -30 2>/dev/null | sed 's#.*/##; s#\.launch\.tsv$##' \
+    | grep -E '^[A-Z][A-Z0-9]*-[0-9]+$' | sort -u | paste -sd, - || true)"
+  [ -n "$keys" ] || return 0
+  for st in $(pipeline_states) queued; do ls="${ls}${ls:+, }\"$(pipeline_label_for "$st")\""; done
+  s="$(pipeline_jira_scope)" || return 1
+  _jira_keys_for_jql "${s} AND key in (${keys}) AND (labels is EMPTY OR labels not in (${ls})) AND statusCategory != Done"
+}
 # jira_secured_keys   The project's pipeline tickets that got a security level or a secret label: the
 # scoped state reads no longer see them, so their label stays until a person moves them.
 # A secret team: its own tickets that lost their level and secret label. A public team: with a team that
