@@ -82,7 +82,7 @@ fake_ask() {
   local k="$1" msg line="" adm=0 who n res slug
   # Slack sends a bare host name as a link: <http://crates.io|crates.io>.
   msg="$(sed -E 's#<https?://[^|>]*\|([^>]*)>#\1#g' "$(opt --message-file "$@")" 2>/dev/null || true)"; who="$(opt --from-name "$@")"
-  case " $* " in *" --ci-ok "*) adm=1 ;; esac
+  case " $* " in *" --admin-words-file "*) adm=1 ;; esac
   shopt -s nocasematch
   if [[ "$msg" =~ (^|[^a-z])merge([^a-z]|$) ]]; then line="merge"
   elif [[ "$msg" =~ rerun ]]; then line="rerun-ci"

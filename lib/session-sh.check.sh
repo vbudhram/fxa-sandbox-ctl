@@ -12,6 +12,7 @@ _session_turn() { printf '%s' "$2" > "$tmp/turn"; }
 k=agent-sh01; n="$SESSION_DIR/$k.sh-note"
 new() { printf '{"key":"%s","state":"active","owner":"UOWNER1","turn_open":"%s"}\n' "$k" "${1:-0}" > "$SESSION_DIR/$k.json"; rm -f "$tmp/sh" "$n"; }
 ran() { [ -e "$tmp/sh" ] && echo yes || echo no; }
+jq -nc '{user: "UANA", ts: "1.2", text: "next please"}' > "$tmp/aw"
 
 new
 check "someone who is not the owner and not an admin is refused, and the runner is not reached" "1|no" \
@@ -39,11 +40,11 @@ check "the output waits as a note, masked" "1|0" "$(grep -c '^hi <masked>$' "$n"
 
 # The next message carries the note, and its turn has no admin role, even from an admin.
 printf 'next please\n' > "$tmp/m"
-cmd_steer $k --message-file "$tmp/m" --from-name Ana --ci-ok >/dev/null
+cmd_steer $k --message-file "$tmp/m" --from-name Ana --admin-words-file "$tmp/aw" >/dev/null
 check "the next message's turn has the note, its own text, and role 0" "1|1|0|no" \
   "$(grep -c 'the engineer ran a command' "$tmp/turn")|$(grep -c '^next please$' "$tmp/turn")|$(session_get $k turn_admin)|$([ -e "$n" ] && echo yes || echo no)"
 check "the history keeps only the person's words" "next please" "$(jq -r 'select(.role == "user") | .text' "$SESSION_DIR/$k.history.jsonl")"
-rm -f "$tmp/turn"; cmd_steer $k --message-file "$tmp/m" --from-name Ana --ci-ok >/dev/null
+rm -f "$tmp/turn"; cmd_steer $k --message-file "$tmp/m" --from-name Ana --admin-words-file "$tmp/aw" >/dev/null
 check "the message after that keeps the admin role" "1|0" "$(session_get $k turn_admin)|$(grep -c 'ran a command' "$tmp/turn")"
 
 # A command that hits the limit: timeout(1) gives 124, and the 100 s pass (a clock stub: 1000, then 1100).

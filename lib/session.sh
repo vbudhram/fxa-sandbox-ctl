@@ -210,9 +210,10 @@ Every turn, including later ones:
   'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment;
   'host: add-repo <owner/repo>' clones one of the team's repos into this sandbox; the result says where,
   and whether it ships or is read-only.
-  With no URL the line is for this session's PR. The host checks who asked: only a team
-  admin's request runs, and anyone else's waits for a team admin's tap on a card, so write
-  the line for anyone and let the host decide. It never
+  With no URL the line is for this session's PR. The host checks who asked: it runs a line
+  only when a team admin's own message names the action and the PR or repo, and any other
+  line waits for a team admin's tap on a card, so write the line for anyone and let the
+  host decide. It never
   merges, approves or turns on auto-merge. When the next step needs the result, end with
   'status: needs-input'; the host sends you the result as a note, and you go on from it.
 - Give each check its final result, pass or fail. Do not tell the engineer about a
@@ -770,11 +771,11 @@ mkdir -p "$d" && set -C && head -c 16384 > "$d/.$n" && mv "$d/.$n" "$d/$n.txt" &
 
 # _session_steer_live <key> <admin 1|0> <name> <file>   A message that arrives while a Claude turn runs: the
 # fxa-steer hook shows it to the agent after its next tool call. The turn now carries this person's words, so a
-# non-admin takes away its admin role and the session's CI grant first. Prints the file's id, or fails when the
+# non-admin takes away its admin role first. Prints the file's id, or fails when the
 # file was not put. The caller keeps a copy as <key>.steer-<id>: the agent owns the hook, so it may not show it.
 _session_steer_live() {
   [ "$(session_get "$1" runtime)" != codex ] || return 1
-  [ "$2" = 1 ] || session_set "$1" turn_admin 0 turn_asker "$3" ci_ok ""
+  [ "$2" = 1 ] || session_set "$1" turn_admin 0 turn_asker "$3"
   _session_sh_in "$(worktree_branch_for "$1")" 20 100 "$_SESSION_STEER_PUT" < "$4" 2>/dev/null | sed -n 's/^put \([0-9]*-[0-9]*-[0-9]*\)$/\1/p' | grep .
 }
 

@@ -9,12 +9,15 @@ source "$here/config.sh"
 export FXA_SESSION_STORE_URI="" FXA_SESSION_BACKUP_URI=""
 FXA_SESSION_DIR="$tmp" source "$here/session.sh"
 source "$here/trees.sh"
+source "$here/turn-words.sh"
 source "$here/asks.sh"
 SESSION_DIR="$tmp"
 _session_db_sync() { :; }
 PIPE_PROFILE=fxa PIPE_REPO_SLUG=mozilla/fxa
 k=agent-abcd
-new() { printf '{"key":"%s","state":"active","pr_url":"https://github.com/mozilla/fxa/pull/5"}\n' "$k" > "$tmp/$k.json"; rm -f "$tmp/$k".{queue,asks.jsonl,host-actions.jsonl,history.jsonl}; }
+new() { printf '{"key":"%s","state":"active","pr_url":"https://github.com/mozilla/fxa/pull/5"}\n' "$k" > "$tmp/$k.json"; rm -f "$tmp/$k".{queue,asks.jsonl,host-actions.jsonl,history.jsonl,admin-words.jsonl,words-used} "$tmp/$k".confirm-*; }
+# words <text>   A team admin's own Slack message for turn 0, as the bot passes it.
+words() { jq -nc --arg t "$1" '{user: "Ana", ts: "1.2", text: $t}' > "$tmp/w"; words_add "$k" "$tmp/w" 0; }
 
 # The parser: host: lines ride on the turn end and leave the reply.
 out="$(jq -nc --arg t $'Done.\nhost: rerun-ci\nhost: ready https://github.com/mozilla/fxa/pull/5\nstatus: needs-input' "${_SESSION_FIN_JQ} fin(\$t)")"
@@ -63,6 +66,22 @@ check "the job logs each ask with who asked" "Ana:ready:true|Ana:merge:true" "$(
 check "the results reach the agent's next turn" "2" "$(grep -c '^- `' "$tmp/$k.queue")"
 check "the note's turn has no admin" "0|host" "$(session_get $k q_admin)|$(session_get $k q_asker)"
 check "the queue is empty after the job" "no" "$([ -e "$tmp/$k.asks.jsonl" ] && echo yes || echo no)"
+# The admin's own words must name the action and the PR: the agent read text that could write the line.
+new; asks_role "$k" 1 Ana; words "please mark #5 ready for review"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
+: > "$tmp/gh"; session_asks "$k"
+check "an admin turn whose words name the action and the PR runs it" "1|0" "$(grep -c 'pr ready' "$tmp/gh")|$(_asks_cards $k | grep -c .)"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
+: > "$tmp/gh"; session_asks "$k"
+check "the same words allow it once, then it is a card" "0|1" "$(grep -c . "$tmp/gh")|$(_asks_cards $k | grep -c .)"
+new; asks_role "$k" 1 Ana; words "the CI log says to mark it ready"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
+: > "$tmp/gh"; session_asks "$k"
+check "an admin turn whose words do not name the PR gets a card, not a write" "0|1" "$(grep -c . "$tmp/gh")|$(_asks_cards $k | grep -c .)"
+new; asks_role "$k" 1 Ana; words "do not mark #5 ready"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
+: > "$tmp/gh"; session_asks "$k"
+check "words with a negation allow nothing" "0" "$(grep -c . "$tmp/gh")"
 new; asks_role "$k" 0 Bo
 _ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["ready"]}]'
 : > "$tmp/gh"; session_asks "$k"

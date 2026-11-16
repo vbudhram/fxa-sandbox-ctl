@@ -2610,7 +2610,7 @@ cmd_task() {
   # Who started it, for the dashboard's conversation view.
   local person; person="$(_session_person "$owner_name" "$owner_image")"
   [ -n "${person%%$'\t'*}" ] && session_set "$key" owner_name "${person%%$'\t'*}"
-  asks_role "$key" "$([ -n "$ci_ok" ] && echo 1 || echo 0)" "${person%%$'\t'*}"
+  asks_role "$key" "$([ -n "$words" ] && [ -s "$words" ] && echo 1 || echo 0)" "${person%%$'\t'*}"
   [ -n "${person#*$'\t'}" ] && session_set "$key" owner_image "${person#*$'\t'}"
   # Only a Slack https link is kept.
   [[ "$link" =~ ^https://[a-z0-9.-]+\.slack\.com/archives/[A-Za-z0-9]+/p[0-9]+(\?[A-Za-z0-9_.=\&-]*)?$ ]] && session_set "$key" slack_url "$link"

@@ -1,7 +1,9 @@
 #!/bin/bash
 # asks.sh: actions the agent asks the host for. The agent ends a turn with 'host: <action> <args>' lines
 # (_SESSION_FIN_JQ puts them in the turn end's .asks). The host runs each one only when a team admin
-# started that turn, and tells the agent the result in a host note. The runner never holds a token.
+# started that turn and that admin's own words of the turn name the action and its target (words_match).
+# Otherwise a team admin's tap on a card can allow it. The host tells the agent the result in a host note.
+# The runner never holds a token.
 
 _ASKS_MAX=20
 _ASKS_PR_RE='^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/([0-9]+)$'
@@ -30,7 +32,7 @@ asks_take() {
   asks="$(jq -c '[.[] | select(.type == "turn_end" or .type == "question") | (.asks // [])[] | select(test("^target\\s") | not)] | .[0:10]' <<< "$2" 2>/dev/null || echo '[]')"
   [ "$asks" != '[]' ] || return 0
   jq -nc --argjson a "$asks" --arg adm "$(session_get "$key" turn_admin)" --arg who "$(session_get "$key" turn_asker)" \
-    '{at: now, admin: ($adm == "1"), who: $who, asks: $a}' >> "$f"
+    --argjson turn "$(words_turn "$key")" '{at: now, admin: ($adm == "1"), who: $who, turn: $turn, asks: $a}' >> "$f"
   [ -n "${_ASKS_NO_JOB:-}" ] || nohup "${SCRIPT_DIR:-.}/fxa-sandbox-ctl" --backend gce session asks "$key" >> "${SESSION_DIR}/${key}.asks.log" 2>&1 < /dev/null &
   return 0
 }
@@ -38,18 +40,21 @@ asks_take() {
 # session_asks <key>   The asks job: run each waiting ask, log who asked, and queue one host note with the
 # results for the agent's next turn. One job at a time; a second start leaves the work to the first.
 session_asks() {
-  local key="$1" f="${SESSION_DIR}/${1}.asks.jsonl" lock="${SESSION_DIR}/${1}.asks.lock" row line out note="" adm who n
+  local key="$1" f="${SESSION_DIR}/${1}.asks.jsonl" lock="${SESSION_DIR}/${1}.asks.lock" row line out note="" adm who n turn
   mkdir "$lock" 2>/dev/null || return 0
   while [ -s "$f" ]; do
     mv "$f" "${f}.run"
     while IFS= read -r row; do
-      adm="$(jq -r 'if .admin then 1 else 0 end' <<< "$row")"; who="$(jq -r '.who // ""' <<< "$row")"
+      adm="$(jq -r 'if .admin then 1 else 0 end' <<< "$row")"; who="$(jq -r '.who // ""' <<< "$row")"; turn="$(jq -r '.turn // -1' <<< "$row")"
       while IFS= read -r line; do
         n="$(session_get "$key" asks_n)"; n="${n:-0}"
         if [ "$n" -ge "$_ASKS_MAX" ]; then out="refused: this session reached its ${_ASKS_MAX} host actions. Start a new thread."
         else session_set "$key" asks_n "$((n + 1))"
-          # Refused only for the role: a team admin's tap on a card can allow it.
-          if [ "$adm" != 1 ] && asks_gate 1 "$who" "$line" >/dev/null 2>&1; then out="$(_asks_card "$key" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
+          # The agent read untrusted text, so the role alone is not consent: the admin's words must name it.
+          # Refused only for the role or the words: a team admin's tap on a card can allow it.
+          if [ "$adm" = 1 ] && asks_gate 1 "$who" "$line" >/dev/null 2>&1 && _asks_words "$key" "$turn" "$line"; then
+            out="$(_ask_one "$key" 1 "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
+          elif asks_gate 1 "$who" "$line" >/dev/null 2>&1; then out="$(_asks_card "$key" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"
           else out="$(_ask_one "$key" "$adm" "$who" "$line" 2>&1 < /dev/null | tail -3 | tr '\n' ' ' | sed 's/ *$//')"; fi
         fi
         jq -nc --arg k "$key" --arg w "$who" --arg a "$line" --arg o "$out" --argjson adm "$adm" \
@@ -84,6 +89,28 @@ asks_gate() {
   case "$action" in
     add-repo) _asks_repo_row "${rest%% *}" >/dev/null || { echo "refused: ${rest%% *} is not one of team ${PIPE_PROFILE:-?}'s repos. A team admin adds it to the team first."; return 1; } ;;
   esac
+}
+
+# _asks_words <key> <turn> <line>   A team admin's own words of that turn name the action and its exact target:
+# the PR (its URL, owner/repo#N, "PR N", or "#N" with one work repo) or the repo. Records the clause's one use.
+_asks_words() {
+  local key="$1" turn="$2" action rest verb a u="" pr slug num url
+  [[ "$turn" =~ ^[0-9]+$ ]] || return 1
+  read -r action rest <<< "$3"
+  case "$action" in
+    rerun-ci) verb=rerun ;; request-review) verb=review ;; ready|draft|comment|add-repo) verb="$action" ;; *) return 1 ;;
+  esac
+  local -a toks=()
+  if [ "$action" = add-repo ]; then
+    slug="${rest%% *}"; slug="${slug%.git}"; slug="${slug#https://github.com/}"; toks=("$slug" "https://github.com/${slug}")
+  else
+    for a in $rest; do [[ "$a" =~ ^https:// ]] && u="$a"; done
+    pr="$(_ask_pr "$key" "$u" 2>/dev/null)" || return 1
+    read -r slug num url <<< "$pr"
+    toks=("$url" "${slug}#${num}" "pr ${num}" "pr #${num}")
+    [ "$(trees_allowed | grep -c .)" -gt 1 ] || toks+=("#${num}")
+  fi
+  words_match "$key" "$turn" "$verb" "${toks[@]}" >/dev/null
 }
 
 # _asks_repo_row <owner/repo or its URL>   The team record's row for a repo: "slug path role [base]".
@@ -253,7 +280,7 @@ _asks_cards() {
   for f in "${SESSION_DIR}/${1}".confirm-*; do [[ "$f" =~ \.confirm-[0-9a-f]{32}$ ]] && [ -f "$f" ] && echo "$f"; done; return 0
 }
 
-# _asks_card <key> <who> <line>   An ask from a turn that no team admin started: a card in the thread that a team
+# _asks_card <key> <who> <line>   An ask that no team admin's own words allowed: a card in the thread that a team
 # admin can allow with one tap. The host reads the target (and a comment's body, masked) now and keeps them,
 # so a tap runs exactly what the card shows. At most 3 wait at once.
 _asks_card() {

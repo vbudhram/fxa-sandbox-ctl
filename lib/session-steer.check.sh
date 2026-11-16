@@ -8,7 +8,8 @@ ws="$tmp/ws"; mkdir -p "$ws"
 _session_sh_in() { echo called >> "$tmp/sh"; bash -c "${4//\/workspace/$ws}" | head -c "$3"; }
 hook() { bash -c "$(sed "s#/workspace#$ws#g" "$(dirname "$0")/../hooks/fxa-steer.sh")"; }
 k=agent-steer1; q="$SESSION_DIR/$k.queue"
-new() { printf '{"key":"%s","state":"active","runtime":"%s","turn_open":"1","turn_admin":"1","turn_asker":"Ana","ci_ok":"1"}\n' "$k" "$1" > "$SESSION_DIR/$k.json"; rm -rf "$q" "$ws/.fxa-steer" "$tmp/sh" "$SESSION_DIR/$k".steer-*; }
+new() { printf '{"key":"%s","state":"active","runtime":"%s","turn_open":"1","turn_admin":"1","turn_asker":"Ana"}\n' "$k" "$1" > "$SESSION_DIR/$k.json"; rm -rf "$q" "$ws/.fxa-steer" "$tmp/sh" "$SESSION_DIR/$k".steer-* "$SESSION_DIR/$k".admin-words*; }
+jq -nc '{user: "UCY", ts: "1.2", text: "mark #5 ready"}' > "$tmp/aw"
 
 new claude
 msg="stop, wrong file \$(touch pwned)'\""; printf '%s\n' "$msg" > "$tmp/m"
@@ -17,8 +18,8 @@ check "mid-turn: the text is put for the hook, word for word, and nothing ran fr
   "$(ls "$ws/.fxa-steer" | grep -c '\.txt$')|$(cat "$ws"/.fxa-steer/*.txt)|$([ -e "$ws/pwned" ] && echo yes || echo no)"
 check "the text is not queued, the host keeps a copy, and the bot still sees queued" "no|$msg|$k queued (shown mid-turn)" \
   "$([ -e "$q" ] && echo yes || echo no)|$(cat "$SESSION_DIR/$k".steer-*)|$out"
-check "a non-admin's words take the admin role and the CI grant from the running turn" "0|Bo|" \
-  "$(session_get $k turn_admin)|$(session_get $k turn_asker)|$(session_get $k ci_ok)"
+check "a non-admin's words take the admin role from the running turn" "0|Bo" \
+  "$(session_get $k turn_admin)|$(session_get $k turn_asker)"
 check "the next turn from the queue has no admin either" "0" "$(asks_from_queue $k; session_get $k turn_admin)"
 check "after the turn, a message the hook did not show goes to the queue once" "$msg||0" \
   "$(_session_steer_unshown $k > "$tmp/u"; head -1 "$tmp/u")|$(_session_steer_unshown $k)|$(ls "$SESSION_DIR/$k".steer-* 2>/dev/null | wc -l | tr -d ' ')"
@@ -31,9 +32,9 @@ check "a runner that cannot be reached gets the message again" "$msg" "$(_sessio
 _session_sh_in() { echo called >> "$tmp/sh"; bash -c "${4//\/workspace/$ws}" | head -c "$3"; }
 
 new claude
-cmd_steer $k --message-file "$tmp/m" --from-name Cy --ci-ok >/dev/null
-check "an admin's mid-turn words keep the role and the grant" "1|Ana|1" \
-  "$(session_get $k turn_admin)|$(session_get $k turn_asker)|$(session_get $k ci_ok)"
+cmd_steer $k --message-file "$tmp/m" --from-name Cy --admin-words-file "$tmp/aw" >/dev/null
+check "an admin's mid-turn words keep the role, and count for the running turn" "1|Ana|0|0" \
+  "$(session_get $k turn_admin)|$(session_get $k turn_asker)|$(jq -r .turn "$SESSION_DIR/$k.admin-words.jsonl")|$(grep -c . "$SESSION_DIR/$k.admin-words.q.jsonl" 2>/dev/null || echo 0)"
 
 new codex
 out="$(cmd_steer $k --message-file "$tmp/m" --from-name Bo)"
