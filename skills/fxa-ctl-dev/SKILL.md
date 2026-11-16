@@ -37,6 +37,11 @@ work:
 git worktree add ../fxa-sandbox-ctl-<topic> -b <topic> origin/main && cd ../fxa-sandbox-ctl-<topic>
 ```
 
+Before you push to a bot PR's branch by hand (a rebuild, a force push), check that no session or round
+works on that PR, and read the ticket's pipeline state. `session list` shows only the PR a session opened;
+a session started from a link to the PR shows it only in its request, so read `session report <key>` for
+each `active` or `paused` session. Its next push would replace yours, or yours would replace its work.
+
 Stage files by name, never with `git add -A` or a whole file you share, and read
 `git diff --cached` before each commit. In a bot worktree, `node_modules` is often a symlink
 to the main checkout: never stage it. Say both rules in the brief of an agent you fork. `vm.sh dev` and `vm.sh promote` work from
@@ -84,7 +89,7 @@ because macOS has no `timeout`, so no check ran.)
 
 To replace exact text, use `python3 ~/.claude/skills/fxa-ctl-dev/rep.py <file> < pairs.json` (`[["old", "new"], ...]`), or `rep.py < triples.json` (`[["file", "old", "new"], ...]`) for several files. For code with quotes or backslashes, use `rep.py --blocks` with a heredoc of `<<<< path`, old lines, `====`, new lines, `>>>>`: no JSON to escape. Block text is literal: write `"` and `\`, never `\"`. Each old text must match once; on a miss, nothing is written to any file. Do not write an inline `def rep(` or `def sub(` heredoc. `python3 rep_test.py` checks the script.
 
-To answer "is everything shipped?" or "what is the status?", run `bash skills/fxa-ctl-dev/shipped.sh` first (about 15 s; `--no-live` skips the manager). It lists work not on origin/main with its CI state, main against the dev deploy and the live bot, and the backlog items that wait.
+To answer "is everything shipped?", "is it deployed?", "did it land?", "is the promote done?" or "what is the status?", run `bash skills/fxa-ctl-dev/shipped.sh` first (about 15 s; `--no-live` skips the manager). It lists work not on origin/main with its CI state, main against the dev deploy and the live bot, and the backlog items that wait.
 
 The dashboard (`dashboard-v2/`, served at `/`; `/v2` still works for old links) is a Vite, React and TypeScript app. It needs Node 20.19 or later (`.nvmrc` has 24).
 The manager does not build it: commit `dashboard-v2/dist` with each change to the app.

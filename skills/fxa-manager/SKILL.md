@@ -129,6 +129,18 @@ change those with `profile set fxa`. FxA runner keys
 `FXA_TEAMS_SKIP_TEST=1 fxa-sandbox-ctl profile set fxa <file>`, then `profile test fxa` at once. If the test
 fails, set the old version again. FxA never goes to draft for a test.
 
+**Run a controller function on live with a team loaded.** For a one-off that no command covers
+(for example a rebuild of one PR). A write here is a live change: ask the person first, as for a promote.
+
+```bash
+bash skills/fxa-manager/vm.sh run - <<'EOF2'
+f=".fn-ctl.$$"; sed '$d' fxa-sandbox-ctl > "$f" && source "./$f"; rm -f "$f"; trap - ERR; set +eu +o pipefail; exec 2>&1
+pipeline_load <team> >/dev/null && echo "$PIPE_REPO_SLUG"   # then the functions, such as gh_update_branch <num>
+EOF2
+```
+
+For the dev controller, use `vm.sh dev fn` instead.
+
 **Change the VM itself.** `bash infra/gce/manager.sh` reprovisions (safe to run
 again). It sends your Claude setup and the `.env` files without secrets, and
 runs `infra/gce/manager-setup.sh` as root.
