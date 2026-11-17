@@ -662,6 +662,48 @@ inv_context() {
     "$nonce" "$(if [ "$(jq length <<< "${e:-[]}" 2>/dev/null)" = 0 ] || [ -z "$e" ]; then echo "None: this is the first investigation."; else jq . <<< "$e" | head -c 30000; fi)" "$nonce"
 }
 
+# _inv_path_ok <repo> <path>   True when the path is a file of the repo at its default branch: the host's clone when it has
+# one, else one GitHub tree read for the whole call (cached in _INV_TREE). A read that fails: false, so the path is dropped.
+_INV_TREE=""
+_inv_path_ok() {
+  local clone ref
+  clone="$(pipeline_host_clone "$1" 2>/dev/null)" || clone=""
+  for ref in origin/HEAD "origin/${PIPE_BASE_BRANCH:-main}"; do
+    if [ -n "$clone" ] && git -C "$clone" rev-parse --verify -q "${ref}^{commit}" >/dev/null 2>&1; then
+      git -C "$clone" cat-file -e "${ref}:$2" 2>/dev/null; return
+    fi
+  done
+  # ponytail: a tree over GitHub's 100k-entry limit is cut; a path past the cut is dropped, never kept.
+  [ -n "$_INV_TREE" ] || _INV_TREE="$(_with_timeout 30 gh api "repos/$1/git/trees/HEAD?recursive=1" --jq '.tree[] | select(.type == "blob") | .path' 2>/dev/null)" || _INV_TREE=""
+  grep -qxF -- "$2" <<< "$_INV_TREE"
+}
+
+# _inv_done <run> <report file> <investigate json> <cfg json>   The Jira comment of an investigation run, posted: the block
+# parsed and cleaned (routine.py), each path kept only when it is in the work repo, the PII guard on the whole text, then
+# one comment led by 🤖. Prints {comment, result}. Fails with one ERROR line, and posts nothing, when the team is not the
+# loaded one, the ticket left the public scope, the block is missing or bad, the guard finds anything, or Jira refuses.
+_inv_done() {
+  local run="$1" rf="$2" key slug p f out rc=0
+  key="$(jq -r '.key // ""' <<< "$3")"; slug="$(jq -r '.repos[0] // ""' <<< "$4")"
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "ERROR: the run has no valid ticket or repo" >&2; return 1; }
+  pipeline_key_in_scope "$key" || { echo "ERROR: ${key} is not in the team's public Jira scope now" >&2; return 1; }
+  f="$(mktemp "${TMPDIR:-/tmp}/fxa-inv.XXXXXX")"
+  out="$(_ROUTINE_PY investigation "$rf" 2>&1)" || { rm -f "$f"; echo "${out}" >&2; return 1; }
+  : > "$f.paths"
+  while IFS= read -r p; do
+    [ -z "$p" ] || ! _inv_path_ok "$slug" "$p" || printf '%s\n' "$p" >> "$f.paths"
+  done < <(jq -r '[.fix.steps[].file, .fix.tests[].file] | map(select(. != null)) | unique | .[]' <<< "$out")
+  out="$(_ROUTINE_PY investigate-render "$rf" "$key" "$run" "$slug" "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}" "$f.paths" 2>&1)" || rc=1
+  if [ "$rc" = 0 ]; then
+    jq -n --arg t "$(jq -r .comment <<< "$out")" '{comment: $t}' > "$f.json" && : > "$f.diff" \
+      && python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f.json" "$f.diff" >/dev/null 2>&1 || { rc=1; out="ERROR: the comment may hold personal data or a secret, so it is not posted"; }
+  fi
+  rm -f "$f" "$f.paths" "$f.json" "$f.diff"
+  [ "$rc" = 0 ] || { echo "$out" | head -1 >&2; return 1; }
+  _inv_note "$key" "$(jq -r .comment <<< "$out")" || { echo "ERROR: Jira refused the comment on ${key}" >&2; return 1; }
+  printf '%s\n' "$out"
+}
+
 # inv_sweep <env> <now>   At the end of routine tick: each active jira-label routine of the env whose last sweep is older
 # than its jira.sweep_min, with its team loaded in a subshell.
 inv_sweep() {
@@ -1084,7 +1126,8 @@ routine_done() {
   [ -z "$sess" ] || [[ "$sess" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --session must look like agent-7f3a" >&2; return 1; }
   [ -z "$pr" ] || [[ "$pr" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$ ]] || { echo "ERROR: --pr must be a GitHub PR link" >&2; return 1; }
   [ ${#reason} -le 300 ] && [[ "$reason" != *$'\n'* ]] || { echo "ERROR: --reason is one line of at most 300 characters" >&2; return 1; }
-  local j r fix=""; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data, coalesce(r.config, t.data) AS cfg, r.heads->'fix' AS fix FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
+  local j r fix=""; j="$(db_json "SELECT r.state, coalesce(r.session, '') AS session, t.data, t.team, coalesce(r.config, t.data) AS cfg, r.heads->'fix' AS fix,
+    r.heads->'investigate' AS inv FROM routine_runs r LEFT JOIN routines t ON t.id = r.routine_id WHERE r.id = ${run};")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   r="$(jq -c '.[0] // empty' <<< "$j")"; [ -n "$r" ] || { echo "ERROR: no routine run ${run}" >&2; return 1; }
   [ "$(jq -r .session <<< "$r")" = "$sess" ] || { echo "ERROR: routine run ${run} is not session ${sess:-(none)}'s" >&2; return 1; }
@@ -1131,11 +1174,24 @@ routine_done() {
     fi
     rm -f "$f.err"
   fi
+  # An investigation run: its result is one comment on the ticket, posted by the host from the agent's block. A run with
+  # no good block, or one the guard or Jira refuses, fails (posting nothing), so the sweep's two-failure rule counts it.
+  local inv="" ires=""
+  inv="$(jq -c '.inv // empty | fromjson? // empty' <<< "$r")"
+  if [ -n "$inv" ] && [[ "$state" =~ ^(ok|report|nochange)$ ]] && [[ "$(jq -r .state <<< "$r")" =~ ^(queued|claimed|started)$ ]]; then
+    if [ -z "$rf" ]; then echo "ERROR: the run ended with no report" > "$f.err"
+    elif [ "$(jq -r '.team // ""' <<< "$r")" != "${PIPE_PROFILE:-}" ]; then echo "ERROR: the run's team is not the loaded one" > "$f.err"
+    else ires="$(_inv_done "$run" "$rf" "$inv" "$(jq -r .cfg <<< "$r")" 2> "$f.err")" || ires=""; fi
+    if [ -n "$ires" ]; then state=report report="$(jq -r .comment <<< "$ires")" post=true reason=""
+    else state=failed post=false reason="investigation not posted: $(head -1 "$f.err" | sed 's/^ERROR: //' | cut -c1-200)"; fi
+    rm -f "$f.err"
+  fi
   [ -z "$nochan" ] || post=false
   rm -f "$f"
   n="$(db_value "UPDATE routine_runs SET state = $(db_q "$state"), reason = $( [ -n "$reason" ] && db_q "$reason" || echo NULL ),
       pr_url = $( [ -n "$pr" ] && db_q "$pr" || echo pr_url ), report = $( [ -n "$rf" ] && db_q "$report" || echo report ),
-      cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now)
+      cost_usd = $( { [ -n "$sess" ] && _routine_session_cost "$sess"; } | grep . || echo cost_usd), ended_at = $(_routine_now),
+      heads = $( [ -n "$ires" ] && echo "json_set(heads, '$.investigate.result', json($(db_q "$(jq -c .result <<< "$ires")")))" || echo heads )
       WHERE id = ${run} AND ${guard}; SELECT changes();")" || n=""
   # The PR comment follows the end at once; a failure is repaired by the next tick.
   [ -z "$fix" ] || prfix_report "$run" >/dev/null 2>&1 || true
@@ -1144,6 +1200,7 @@ routine_done() {
     | jq -c --arg l "$(jq -r '.cfg | fromjson? | .pr.label // "agent-help"' <<< "$r")" '{fix: {pr, url, sha: .new_sha, why, label: $l}}' 2>/dev/null)" || add=""
   [ -n "$add" ] || add='{}'
   [ -z "$filed" ] || add="$(jq -c --arg t "$report" '. + {report: $t}' <<< "$add")"
+  [ -z "$inv" ] || add="$(jq -c --argjson v "$inv" --argjson p "$([ -n "$ires" ] && echo true || echo false)" '. + {investigate: {key: $v.key, url: $v.url, posted: $p}}' <<< "$add")"
   case "$n" in
     1) jq -nc --arg s "$state" --argjson p "$post" --arg n "$next" --argjson x "$add" '{changed: true, state: $s, post: $p, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
     0) jq -nc --arg s "$(db_value "SELECT state FROM routine_runs WHERE id = ${run};")" --arg n "$next" --argjson x "$add" '{changed: false, state: $s, post: false, next: (if $n == "" then null else ($n | tonumber) end)} + $x' ;;
