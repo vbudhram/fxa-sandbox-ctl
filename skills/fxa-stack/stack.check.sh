@@ -63,7 +63,8 @@ let n = 0; require("http").createServer((q, r) => { let b = ""; q.on("data", (c)
   require("fs").appendFileSync(process.argv[1], `${q.method} ${decodeURIComponent(q.url)} ${q.headers.authorization}\n`);
   r.end(JSON.stringify({ data: q.method === "GET" ? (n++ ? [{ documentId: "d1" }] : []) : {} })); }); }).listen(0, "127.0.0.1", function () {
   require("fs").writeFileSync(process.argv[2], String(this.address().port)); });' "$tmp/strapi.log" "$tmp/port" & srv=$!
-for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/port" ] && break; sleep 0.2; done
+# /bin/sleep: an ensure check above stubs sleep in PATH.
+for i in $(seq 50); do [ -s "$tmp/port" ] && break; /bin/sleep 0.2; done
 export FXA_STRAPI_DIR="$tmp/strapi" FXA_STRAPI_URL="http://127.0.0.1:$(cat "$tmp/port")"
 : > "$tmp/pm2.log"; bash "$S" strapi "$tmp/seed.json" >/dev/null 2>&1; rc1=$?; bash "$S" strapi "$tmp/seed.json" >/dev/null 2>&1; rc2=$?
 kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
