@@ -209,7 +209,9 @@ Every turn, including later ones:
   'host: ready [<PR URL>]' marks the PR ready for review; 'host: draft [<PR URL>]' makes it a draft;
   'host: comment [<PR URL>]' posts /workspace/.fxa-host-comment.md (write it first) as a PR comment;
   'host: add-repo <owner/repo>' clones one of the team's repos into this sandbox; the result says where,
-  and whether it ships or is read-only.
+  and whether it ships or is read-only;
+  'host: investigate <Jira key>' starts the team's investigation of that ticket in its own sandbox: the result
+  goes on the ticket as a comment, and this thread gets a line when it posts. Do not watch or wait for it.
   With no URL the line is for this session's PR. The host checks who asked: it runs a line
   only when a team admin's own message names the action and the PR or repo, and any other
   line waits for a team admin's tap on a card, so write the line for anyone and let the

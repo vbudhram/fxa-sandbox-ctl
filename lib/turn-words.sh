@@ -47,6 +47,7 @@ words_match() {
     draft) verbs='move' ;;
     comment) verbs='comment on|reply on|post on' ;;
     add-repo) verbs='add|include' ;;
+    investigate) verbs='investigate|look into|dig into' ;;
     *) return 1 ;;
   esac
   hit="$(jq -r --argjson turn "$turn" --arg verbs "$verbs" --argjson toks "$(printf '%s\n' "$@" | jq -R . | jq -cs 'map(select(. != "") | ascii_downcase)')" '

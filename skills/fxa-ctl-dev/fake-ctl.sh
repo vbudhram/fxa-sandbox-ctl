@@ -255,9 +255,13 @@ case "$cmd" in
   routine) sub="${1:-}"; shift || true; mkdir -p "$DIR"; touch "$DIR/routine-answered"
     case "$sub" in
       tick) [ -n "${FAKE_ROUTINES:-}" ] || { echo '{"runs":[],"skips":[]}'; exit 0; }
-        jq -c --arg env "$(opt --env "$@")" --argjson now "$(now)" --rawfile seen "$DIR/routine-answered" '
+        # investigate.from "@first": the first session of the scenario, as a Slack session's host: investigate names it;
+        # the run waits until that session exists.
+        jq -c --arg env "$(opt --env "$@")" --argjson now "$(now)" --rawfile seen "$DIR/routine-answered" --arg first "$(ls -tr "$DIR" | grep -m1 '^agent-' || true)" '
           ($seen | split("\n")) as $d
-          | map(select((.env // "live") == $env and (.at // 0) <= $now and ((.run | tostring) as $r | $d | index($r) | not)) | del(.env, .at))
+          | map(select((.env // "live") == $env and (.at // 0) <= $now and ((.run | tostring) as $r | $d | index($r) | not))
+            | select(.investigate.from != "@first" or $first != "") | del(.env, .at)
+            | if .investigate.from == "@first" then .investigate.from = $first else . end)
           | {runs: map(select(.reason == null)), skips: map(select(.reason != null))}' "$FAKE_ROUTINES" > "$DIR/tick.out"
         jq -r '.runs[], .skips[] | .run' "$DIR/tick.out" >> "$DIR/routine-answered"
         jq -c '.runs[] | select(.fix) | {run, fix, done}' "$DIR/tick.out" | while read -r l; do echo "$l" > "$DIR/routine-fix-$(jq -r .run <<< "$l")"; done
