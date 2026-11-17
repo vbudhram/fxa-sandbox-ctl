@@ -185,8 +185,10 @@ def check_jira(r, profile):
     bad = [f"jira: {k} is not a jira field" for k in sorted(set(jb) - JIRA_KEYS)]
     jb.setdefault("label", "ai-investigate")
     jb.setdefault("sweep_min", 5)
-    if not isinstance(jb["label"], str) or not LABEL.fullmatch(jb["label"]) or " " in jb["label"]:
-        bad.append("jira: label must be a Jira label of at most 50 characters, with no space")
+    # Slack drafts never add an ai-investigate* label (lib/session.sh), so only a person in Jira can start a run.
+    if not isinstance(jb["label"], str) or not LABEL.fullmatch(jb["label"]) or " " in jb["label"] \
+            or not jb["label"].lower().startswith("ai-investigate"):
+        bad.append("jira: label must be a Jira label that starts with ai-investigate, of at most 50 characters, with no space")
     sm = jb["sweep_min"]
     if isinstance(sm, bool) or not isinstance(sm, int) or not 1 <= sm <= 60:
         bad.append("jira: sweep_min must be a whole number of minutes from 1 to 60")
