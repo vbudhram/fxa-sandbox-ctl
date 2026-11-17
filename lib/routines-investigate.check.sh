@@ -50,6 +50,10 @@ echo FXA-2 > "$tmp/keys"; sweep
 check "a non-admin's label: removed, one comment that says who can, no run" "1|1|0" \
   "$(grep -c '^unlabel .*-k FXA-2' "$tmp/log")|$(grep -c '^comment FXA-2 🤖 Only a team admin can start an investigation. Ask one to add ai-investigate.$' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"
 
+( jira_admin_ids() { return 1; }; sweep )
+check "an admin lookup that fails keeps the label: no comment, no run" "0|0|0" \
+  "$(grep -c '^unlabel' "$tmp/log")|$(grep -c '^comment' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"
+
 db_exec "UPDATE routine_runs SET state = 'failed', ended_at = $N WHERE routine_id = $rid;"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at, ended_at) VALUES ($rid, 'jira-FXA-1-x', 'failed', '{\"investigate\":{\"key\":\"FXA-1\"}}', $N, $((N + 10)));"
 echo FXA-1 > "$tmp/keys"; sweep $((N + 100))

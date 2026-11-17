@@ -614,12 +614,14 @@ jira_comment() {
 }
 
 # jira_admin_ids   The Jira account IDs of the loaded team's admins (its record's admins and admin people), one a line,
-#   each found by email with exactly one match. Fails when the team has no record.
+#   each found by email with exactly one match. Fails when the team has no record, or when a lookup fails, so a Jira
+#   error never reads as "not an admin".
 jira_admin_ids() {
-  local rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" e id
+  local rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" e id="" j=""
   [ -f "$rec" ] || return 1
   for e in $(jq -r '(.admins[]?.email // empty), (.people[]? | select(.admin == true) | .email // empty)' "$rec" 2>/dev/null | sort -u); do
-    id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}" | jq -r 'if length == 1 then .[0].accountId else empty end' 2>/dev/null)" || id=""
+    j="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}")" || return 1
+    id="$(jq -r 'if length == 1 then .[0].accountId else empty end' <<< "$j" 2>/dev/null)" || return 1
     [ -z "$id" ] || printf '%s\n' "$id"
   done
 }

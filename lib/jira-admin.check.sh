@@ -43,4 +43,6 @@ check "no queue label event does not (fail closed)" no "$(yes_no X-8)"
 check "a mention of the path with no change verb does not" no "$(yes_no X-10)"
 check "a ticket Jira does not return does not" no "$(yes_no X-9)"
 check "a team with no record does not" no "$(PIPE_PROFILE=other yes_no X-2)"
+half() { _jira_rest() { if [[ "$*" == *admin2@* ]]; then return 22; fi; echo '[{"accountId":"acc-a1"}]'; }; jira_admin_ids >/dev/null && echo 0 || echo 1; }
+check "jira_admin_ids gives both admins, and fails when one lookup fails" "acc-a1,acc-a2|1" "$(jira_admin_ids | paste -sd, -)|$(half)"
 exit "$fail"
