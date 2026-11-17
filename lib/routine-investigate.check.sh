@@ -72,7 +72,11 @@ check "the result keeps the dropped path as null; the comment ends with the ai-f
   "$(jq -r '.result.fix.steps[1].file' <<< "$out")|$(tail -1 <<< "$c")"
 printf '```fxa-investigation\n{"ask": "%s", "cause": "c"}\n```\n' "$(printf 'a%.0s' $(seq 1 900))" > "$tmp/long.md"
 check "a field is capped, and since_last shows only when given" "605|0" \
-  "$(py investigate-render "$tmp/long.md" FXA-1 1 mozilla/fxa https://jira.example.net "$tmp/paths" | jq -r .comment | grep '^Ask:' | awk '{print length}')|$(grep -c 'Since the last run' <<< "$c")"
+  "$(py investigate-render "$tmp/long.md" FXA-1 1 mozilla/fxa https://jira.example.net "$tmp/paths" | jq -r .comment | grep '^Ask:' | jq -Rr length)|$(grep -c 'Since the last run' <<< "$c")"
+check "a cut field ends with an ellipsis" "…" "$(py investigate-render "$tmp/long.md" FXA-1 1 mozilla/fxa https://jira.example.net "$tmp/paths" | jq -r .comment | grep '^Ask:' | grep -o '…$')"
+printf '```fxa-investigation\n{"ask": "a", "cause": "%s. Then more words follow here, long enough to pass the cap of three hundred.", "fix": {"summary": "s"}}\n```\n' "$(printf 'a%.0s' $(seq 1 250))" > "$tmp/sent.md"
+check "the short comment cuts the cause at a sentence end" "Cause: $(printf 'a%.0s' $(seq 1 250))." \
+  "$(py investigate-render "$tmp/sent.md" FXA-1 1 mozilla/fxa https://jira.example.net "$tmp/paths" | jq -r .short | grep '^Cause:')"
 printf 'no block here\n' > "$tmp/none.md"; printf '```fxa-investigation\n[1]\n```\n' > "$tmp/list.md"; printf '```fxa-investigation\n{"ask": "a"}\n```\n' > "$tmp/nocause.md"
 check "no block, a block that is not an object, and no cause fail" "1|1|1" \
   "$(for f in none list nocause; do py investigation "$tmp/$f.md" >/dev/null 2>&1; echo $?; done | paste -sd'|' -)"

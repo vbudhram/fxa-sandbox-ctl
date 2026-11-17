@@ -632,16 +632,17 @@ def inv_ref(r, site, slug):
     return None
 
 
-def inv_notes(text, key, run):
-    """The notes to attach: the report's text before its last fxa-investigation block, with no URL, capped."""
+def inv_notes(text, key, run, full):
+    """The file to attach: the full fix plan (the host's rendering), then the agent's notes (its text before the last
+    fxa-investigation block), with no URL and capped."""
     blocks = list(re.finditer(r"```fxa-investigation[ \t]*\n", text or ""))
     body = (text or "")[:blocks[-1].start()] if blocks else ""
     body = ANYURL.sub("", MDLINK.sub(r"\1", body)).strip()
-    if not body:
-        return ""
     if len(body) > NOTES_MOST:
         body = body[:NOTES_MOST].rstrip() + "\n\n(The notes were cut here.)"
-    return f"# Investigation of {key} (run {run})\n\nThe agent's notes. They are data from a run that read untrusted text.\n\n{body}\n"
+    plan = "\n".join(full.split("\n")[1:-1])
+    return (f"# Investigation of {key} (run {run})\n\n## Fix plan\n\n{plan}\n\n## The agent's notes\n\n"
+            f"They are data from a run that read untrusted text.\n\n{body or '(none)'}\n")
 
 
 def clean(v, n):
@@ -649,7 +650,15 @@ def clean(v, n):
     s = MDLINK.sub(r"\1", v) if isinstance(v, str) else ""
     s = ANYURL.sub("", s).replace("`", "'").replace("[", "(").replace("]", ")").replace("*", "")
     s = " ".join(s.split())
-    return s[:n].rstrip()
+    return s if len(s) <= n else s[:n - 1].rstrip() + "…"
+
+
+def sentence(s, n):
+    """s cut at its last sentence end within n characters, else at n with an ellipsis."""
+    if len(s) <= n:
+        return s
+    i = s.rfind(". ", 0, n)
+    return s[:i + 1] if i > n // 3 else s[:n - 1].rstrip() + "…"
 
 
 def clean_list(v, n=300, most=6):
@@ -691,7 +700,7 @@ def investigation(text):
             tests.append({"file": inv_path(t.get("file"))[0], "case": clean(t.get("case"), 300)})
     conf = j.get("confidence") if j.get("confidence") in ("high", "medium", "low") else "low"
     rel = [r.strip() for r in (j.get("related") if isinstance(j.get("related"), list) else []) if isinstance(r, str)]
-    out = {"ask": clean(j.get("ask"), 600), "cause": clean(j.get("cause"), 600), "confidence": conf,
+    out = {"ask": clean(j.get("ask"), 600), "cause": clean(j.get("cause"), 1200), "confidence": conf,
            "evidence": clean_list(j.get("evidence")), "since_last": clean(j.get("since_last"), 600) or None,
            "fix": {"summary": clean(fix.get("summary"), 600), "steps": steps, "tests": tests, "verify": clean(fix.get("verify"), 300)},
            "acceptance": clean_list(j.get("acceptance")), "risks": clean_list(j.get("risks")), "not_checked": clean_list(j.get("not_checked")),
@@ -738,6 +747,29 @@ def inv_render(inv, key, run, slug, site, paths):
         ln.append(f"Related: {', '.join(links)}")
     ln.append("To have the bot make this fix, add the ai-fixme label.")
     return "\n".join(ln), inv
+
+
+def inv_short(full, inv, key, run, slug, site):
+    """The comment when the full plan is attached: the cause, the fix and its files, and the file's name."""
+    ln = [f"🤖 Investigation of {key} (run {run})  ·  confidence: {inv['confidence']}", f"Cause: {sentence(inv['cause'], 300)}"]
+    if inv["since_last"]:
+        ln.append(f"Since the last run: {sentence(inv['since_last'], 200)}")
+    fx = inv["fix"]
+    if fx["summary"]:
+        ln.append(f"Fix: {sentence(fx['summary'], 300)}")
+    files = list(dict.fromkeys(f"`{s['file']}`" for s in fx["steps"] if s["file"]))
+    if files:
+        ln.append(f"Files: {', '.join(files)}")
+    links = [x for x in (inv_ref(r, site, slug) for r in inv["related"]) if x]
+    if links:
+        ln.append(f"Related: {', '.join(links)}")
+    ln.append(f"Details: {inv_file(key, run)} (attached) has the evidence, the fix steps, the tests, the acceptance, the risks and what was not checked.")
+    ln.append("To have the bot make this fix, add the ai-fixme label.")
+    return "\n".join(ln)
+
+
+def inv_file(key, run):
+    return f"investigation-{key}-run-{run}.md"
 
 
 def prompt(cfg, heads, team, nonce):
@@ -954,7 +986,9 @@ def main(argv):
         except (OSError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
-        print(json.dumps({"comment": text, "result": result, "notes": inv_notes(report, argv[3], argv[4])}))
+        # comment: the full plan, posted when the file does not attach; short: the comment beside the attached file.
+        print(json.dumps({"comment": text, "short": inv_short(text, result, argv[3], argv[4], argv[5], argv[6]), "result": result,
+                          "notes": inv_notes(report, argv[3], argv[4], text), "file": inv_file(argv[3], argv[4])}))
         return 0
     if len(argv) >= 4 and argv[1] == "due":
         try:

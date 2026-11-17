@@ -570,7 +570,7 @@ EOF
     context="$(printf '%s\n' "$context" | awk 'BEGIN{done=0} /^## Ticket text \(untrusted\)/ && !done {print "## Resumed run\n\nThe tree already holds partial work from an earlier run that was cut off. Read `git status` and `git diff` first and continue from it. Do not start over.\n"; done=1} {print}')"
     echo "Slot holds work from an earlier run; the agent resumes it." >&2
   fi
-  context="${context}$(memory_ticket_md "$key" "$(openssl rand -hex 6)")"
+  context="${context}$(memory_ticket_md "$key" "$(openssl rand -hex 6)")$(inv_fix_md "$key" "$(openssl rand -hex 6)")"
   printf '%s\n' "$context" | slot_write "$context_file"
   echo "Wrote Jira context to ${context_file}" >&2
 
