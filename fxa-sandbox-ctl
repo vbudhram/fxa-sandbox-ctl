@@ -2655,7 +2655,7 @@ cmd_task() {
   # A fix run gets the CI connectors only: its context holds untrusted PR and CI text.
   [ -z "$resume_from" ] && [ -z "$fix" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
   [ -z "$fix" ] || { mcp="$(mcp_ci_only "${PIPE_MCP:-}")"; mcp_set=1; }
-  [ -z "$inv" ] || { mcp="$(mcp_investigate_only "${PIPE_MCP-jira,github,github-ci,circleci}")"; mcp_set=1; }
+  [ -z "$inv" ] || { mcp="$(mcp_investigate_only "${PIPE_MCP-jira,github,github-ci,circleci,sentry,bugzilla}")"; mcp_set=1; }
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
     [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; _task_abort "$key"; return 1; }

@@ -12,6 +12,7 @@ export PIPE_PROFILE=fxa PIPE_JIRA_SITE=https://jira.example.net
 pipeline_key_in_scope() { [ -z "${OUT_OF_SCOPE:-}" ]; }
 _jira_sa() { return 0; }
 jira_comment() { [ -z "${JIRA_DOWN:-}" ] || return 1; printf '%s\n' "$2" > "$tmp/comment.$1"; echo "$1" >> "$tmp/posted"; }
+jira_attach() { [ -z "${ATTACH_DOWN:-}" ] || return 1; cp "$2" "$tmp/attach.$1"; echo "$1 ${2##*/}" >> "$tmp/attached"; }
 # The work repo's default branch, as the host's clone holds it.
 g init -q --bare "$tmp/origin.git"; g clone -q "$tmp/origin.git" "$tmp/src" 2>/dev/null
 ( cd "$tmp/src" && mkdir -p packages/a && echo x > packages/a/b.ts && echo y > packages/a/b.spec.ts && g add . && g commit -qm m && g push -q origin HEAD:main ) >/dev/null 2>&1
@@ -42,6 +43,18 @@ check "a path in the repo keeps its lines; a missing one is dropped" '1. `packag
 check "the row keeps the comment as its report and the cleaned result for the next run" "1|Add the guard|null" \
   "$(db_value "SELECT report = $(db_q "$(cat "$c")") FROM routine_runs WHERE id = $r1;")|$(db_value "SELECT json_extract(heads, '$.investigate.result.fix.summary') || '|' || coalesce(json_extract(heads, '$.investigate.result.fix.steps[1].file'), 'null') FROM routine_runs WHERE id = $r1;")"
 check "a second done changes nothing and posts nothing more" "false|1" "$(done_ "$r1" "$tmp/good.md" | jq -r .changed)|$(grep -c . "$tmp/posted")"
+check "the notes attach as one file, and the comment names it before the ai-fixme line" "FXA-1 investigation-FXA-1-run-${r1}.md|1|Details: investigation-FXA-1-run-${r1}.md (attached)" \
+  "$(cat "$tmp/attached")|$(grep -c '^Notes\.$' "$tmp/attach.FXA-1")|$(tail -2 "$c" | head -1)"
+
+printf 'I read https://evil.example/x and [it](http://evil.example/y).\n```fxa-investigation\n{"ask": "a", "cause": "c"}\n```\n' > "$tmp/url.md"
+r9="$(run FXA-9)"; done_ "$r9" "$tmp/url.md" >/dev/null
+check "the attached notes hold no URL" "0|1" "$(grep -c 'evil' "$tmp/attach.FXA-9")|$(grep -c '^I read  and it\.$' "$tmp/attach.FXA-9")"
+printf 'The user pat.doe@gmail.com saw it.\n```fxa-investigation\n{"ask": "a", "cause": "c"}\n```\n' > "$tmp/pnotes.md"
+r10="$(run FXA-10)"; done_ "$r10" "$tmp/pnotes.md" >/dev/null
+check "personal data in the notes: the comment posts, with no file and no Details line" "report|0|0" \
+  "$(row "$r10" | cut -d'|' -f1)|$([ -e "$tmp/attach.FXA-10" ] && echo 1 || echo 0)|$(grep -c '^Details:' "$tmp/comment.FXA-10")"
+r11="$(run FXA-11)"; ATTACH_DOWN=1 done_ "$r11" "$tmp/good.md" >/dev/null
+check "Jira refuses the file: the comment posts with no Details line" "report|0" "$(row "$r11" | cut -d'|' -f1)|$(grep -c '^Details:' "$tmp/comment.FXA-11")"
 
 printf 'I could not find it.\n' > "$tmp/none.md"; r2="$(run FXA-2)"; a="$(done_ "$r2" "$tmp/none.md")"
 check "no block: the run fails, nothing posts" "failed|investigation not posted: the report has no fxa-investigation block|false|false|0" \

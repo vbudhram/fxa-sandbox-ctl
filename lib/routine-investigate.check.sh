@@ -52,7 +52,7 @@ I looked at the code.
    "tests": [{"file": "packages/a/b.spec.ts", "case": "retries once"}, {"file": "nope.spec.ts", "case": "x"}],
    "verify": "yarn test b"},
  "acceptance": ["login works"], "risks": ["none"], "not_checked": ["Sentry", "CI"],
- "related": ["FXA-1", "#343", "https://github.com/a/b/pull/1", "evil", "FXA-1"]}
+ "related": ["FXA-1", "#343", "https://github.com/a/b/pull/1", "evil", "FXA-1", "bug 1234567", "sentry:4567", "bug 1; x"]}
 ```
 R
 printf 'packages/a/b.ts\npackages/a/b.spec.ts\n' > "$tmp/paths"
@@ -64,8 +64,10 @@ check "no agent URL, markdown link or inline marker is left" "0|0|0|Ask: Make lo
 check "a path in the repo keeps its lines; a missing one and an escape are dropped" '1. `packages/a/b.ts:120-134`: Add a guard|2. Remove it|3. Read it' \
   "$(grep -E '^[0-9]\. ' <<< "$c" | paste -sd'|' -)"
 check "tests keep only paths in the repo" '- `packages/a/b.spec.ts`: retries once|- x' "$(sed -n '/^Tests:/,/^Verify:/p' <<< "$c" | grep '^- ' | paste -sd'|' -)"
-check "related keeps only keys and PR numbers, once each, with host links" 'Related: [FXA-1](https://jira.example.net/browse/FXA-1), [#343](https://github.com/mozilla/fxa/pull/343)' \
+check "related keeps only keys, PR numbers, bugs and Sentry ids, once each, with host links" 'Related: [FXA-1](https://jira.example.net/browse/FXA-1), [#343](https://github.com/mozilla/fxa/pull/343), [bug 1234567](https://bugzilla.mozilla.org/show_bug.cgi?id=1234567), [Sentry 4567](https://mozilla.sentry.io/issues/4567/)' \
   "$(grep '^Related:' <<< "$c")"
+check "the notes are the text before the block, with a header" "# Investigation of FXA-123 (run 42)|1|0" \
+  "$(jq -r .notes <<< "$out" | head -1)|$(jq -r .notes <<< "$out" | grep -c '^I looked at the code\.$')|$(jq -r .notes <<< "$out" | grep -c 'fxa-investigation')"
 check "the result keeps the dropped path as null; the comment ends with the ai-fixme line" "null|To have the bot make this fix, add the ai-fixme label." \
   "$(jq -r '.result.fix.steps[1].file' <<< "$out")|$(tail -1 <<< "$c")"
 printf '```fxa-investigation\n{"ask": "%s", "cause": "c"}\n```\n' "$(printf 'a%.0s' $(seq 1 900))" > "$tmp/long.md"
