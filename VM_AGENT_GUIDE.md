@@ -291,8 +291,9 @@ The stack uses about 2.8GB: `settings-react` alone is 1.2GB. Logs are in
 
 What is different from production:
 
-- Stripe and subscriptions are off, the CMS is off, and rate limiting is off
+- Stripe and subscriptions are off, and rate limiting is off
   (`CUSTOMS_SERVER_URL=none`).
+- The CMS is off until you run `stack.sh strapi` (see §7 and `/fxa-stack`).
 - The auth server's `PUBLIC_URL` must stay `http://localhost:9000`. The JWT
   issuer comes from it, and any other value breaks OAuth.
 - The Cloud Tasks emulator must run before the auth server, or
@@ -335,10 +336,17 @@ records a video, and its `--bg` and `wait` handle a run longer than 10 minutes.
   `packages/123done/secrets.json` and restarts 123done. If a token exchange
   fails with errno 109, the secret is missing; say so in your handoff or reply. If one
   fails on a subscriptions capability, CI covers it.
-- These specs cannot pass here, and CI covers them: the CMS specs
-  (`tests/cms/*`) and payments (`local-payments-next`). Verify with direct
-  content-server flows (sign-in, sign-up, reset, settings) or Sync through
-  `/pair`, and say in the handoff what CI must cover.
+- CMS specs (`tests/cms/*`) and any change to a CMS-styled page:
+  1. Run `bash ~/.claude/skills/fxa-stack/stack.sh strapi`. It starts a local
+     Strapi, seeds the content these specs expect, and turns CMS on.
+  2. Run `PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/cms`.
+     Without step 1, the specs skip ("CMS customization is not set up") and prove nothing.
+  3. Run `stack.sh strapi off` when you are done, before specs that expect CMS off.
+  The recovery phone spec in `cms-2fa.spec.ts` fails here (no Twilio test
+  credentials, so no SMS). The other 9 pass. Say so in the handoff.
+- These specs cannot pass here, and CI covers them: payments
+  (`local-payments-next`). Verify with direct content-server flows (sign-in,
+  sign-up, reset, settings) or Sync through `/pair`, and say in the handoff what CI must cover.
 
 ## 8. Screenshots and videos
 

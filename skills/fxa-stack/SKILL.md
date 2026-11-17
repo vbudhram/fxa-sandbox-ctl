@@ -68,7 +68,29 @@ To try a style, use one of these:
 Then load the page again with its `entrypoint`, for example
 `http://localhost:8080/?entrypoint=purple`. `strapi off` stops Strapi and turns CMS off.
 
-The 2FA specs in `tests/cms` need recovery phone, so `strapi` turns it on.
+### Run the CMS functional tests
+
+    bash ~/.claude/skills/fxa-stack/stack.sh strapi
+    cd /workspace/packages/functional-tests
+    PLAYWRIGHT_WORKERS=2 npx playwright test --project=local tests/cms
+    bash ~/.claude/skills/fxa-stack/stack.sh strapi off
+
+Without `strapi`, every spec skips, and a skip proves nothing. The specs check
+the headline, the description, the logo and the button color of each page, so a
+change to `strapi-seed.json` can break them. Keep the default seed as it is, and
+use a copy for a new style.
+
+### How CMS works here
+
+- auth reads each Relying Party from Strapi's GraphQL API with a `clientId` and an
+  `entrypoint`, and `GET /v1/cms/config?clientId=..&entrypoint=..` returns it. `{}`
+  means no entry (or CMS is off). Settings then shows the default page.
+- auth makes its CMS clients only when a Stripe key is set, so `strapi` gives it a
+  dummy key. If `/v1/cms/config` returns `{}` for a seeded entry, look for
+  `cms.getConfig` in `pm2 logs auth`.
+- Use `127.0.0.1:1337`, not `localhost:1337`: Strapi listens on IPv4 only.
+- The admin at http://127.0.0.1:1337/admin asks you to make an admin user the first time.
+- The 2FA specs in `tests/cms` need recovery phone, so `strapi` turns it on.
 The recovery phone spec still fails here, because the stack has no Twilio test credentials and sends no SMS.
 
 ## What each check needs
@@ -80,6 +102,7 @@ The recovery phone spec still fails here, because the stack has no Twilio test c
 | Settings pages, sign-in, sign-up, screenshots | `ensure` (auth, inbox, content, nginx, settings, profile) |
 | Functional test account cleanup | admin-server on :8095, which `fxa-start` starts |
 | OAuth through 123done and 321done, `tests/oauth/*` | `ensure`, which also starts 321done (:10139) when it is down |
+| CMS specs, `tests/cms/*`, a CMS-styled page | `strapi`, then the specs (see "CMS (Strapi)"); `strapi off` after |
 | Payments | not supported on the VM; leave to CI |
 
 ## Ports
