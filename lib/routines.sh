@@ -598,7 +598,8 @@ _inv_consider() {
     | sort_by(.created) | last | .author.accountId // empty' <<< "$j" 2>/dev/null)" || by=""
   # ponytail: expand=changelog holds the newest 100 changes; an older label add reads as no adder, and the ticket waits.
   [[ "$by" =~ ^[A-Za-z0-9:_-]{1,128}$ ]] || return 0
-  ids="$(jira_admin_ids 2>/dev/null)" || ids=""
+  # A failed admin lookup waits for the next sweep: it never reads as "not an admin".
+  ids="$(jira_admin_ids 2>/dev/null)" || return 0
   if ! grep -qxF "$by" <<< "$ids"; then
     _inv_unlabel "$key" "$label" || return 0
     echo "routine ${rid}: ${key} not started: the label is not from a team admin"
