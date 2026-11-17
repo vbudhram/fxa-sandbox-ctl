@@ -49,6 +49,8 @@
 #                  A dependency fix run carries trigger and fix {pr, url, actor, package}, and done {state, changed,
 #                  sha, why} that the tick keeps from the bot: done then answers that state (else the bot's) and fix
 #                  {pr, url, sha, why}, as ctl derives them from heads.fix. A skip can carry fix {pr, url, why}.
+#                  An investigation run carries investigate {key, url}, and done {posted} (default true): done answers
+#                  investigate {key, url, posted}, and state failed with post false when posted is false.
 set -euo pipefail
 DIR="${FAKE_CTL_DIR:-$HOME/.fxa-fake-ctl}"
 CI_S="${FAKE_CI_S:-60}"
@@ -259,6 +261,7 @@ case "$cmd" in
           | {runs: map(select(.reason == null)), skips: map(select(.reason != null))}' "$FAKE_ROUTINES" > "$DIR/tick.out"
         jq -r '.runs[], .skips[] | .run' "$DIR/tick.out" >> "$DIR/routine-answered"
         jq -c '.runs[] | select(.fix) | {run, fix, done}' "$DIR/tick.out" | while read -r l; do echo "$l" > "$DIR/routine-fix-$(jq -r .run <<< "$l")"; done
+        jq -c '.runs[] | select(.investigate) | {run, investigate, done}' "$DIR/tick.out" | while read -r l; do echo "$l" > "$DIR/routine-inv-$(jq -r .run <<< "$l")"; done
         jq -c '(.runs, .skips) |= map(del(.done))' "$DIR/tick.out" ;;
       done) run="${1:-}"
         case "${FAKE_ROUTINE_DONE:-}" in fail) echo "ERROR: the routine store did not answer (busy or failed); nothing changed, try again" >&2; exit 1 ;;
@@ -274,6 +277,12 @@ case "$cmd" in
           exit 0
         fi
         [ -f "$DIR/routine-done-$run" ] && { jq -nc --arg s "$(cat "$DIR/routine-done-$run")" '{changed: false, state: $s, post: false, next: null}'; exit 0; }
+        if [ -f "$DIR/routine-inv-$run" ]; then
+          a="$(jq -c --arg s "$(opt --state "$@")" '((.done.posted != false) and $s == "report") as $p
+            | {changed: true, state: (if $p or $s != "report" then $s else "failed" end), post: $p, next: null, investigate: {key: .investigate.key, url: .investigate.url, posted: $p}}' \
+            "$DIR/routine-inv-$run")"
+          jq -r .state <<< "$a" > "$DIR/routine-done-$run"; echo "$a"; exit 0
+        fi
         opt --state "$@" > "$DIR/routine-done-$run"
         # FAKE_ROUTINE_REPORT: ctl's own report (a security review's ticket keys), which the bot posts in place of the agent's.
         jq -nc --arg s "$(opt --state "$@")" --argjson n "$(( $(now) + 86400 ))" --argjson p "${FAKE_ROUTINE_POST:-true}" --arg r "${FAKE_ROUTINE_REPORT:-}" \

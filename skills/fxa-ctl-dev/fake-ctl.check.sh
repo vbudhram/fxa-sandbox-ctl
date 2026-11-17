@@ -144,6 +144,12 @@ echo '[{"run": 73, "routine": 9, "team": "fxa", "channel": "C_TEST", "name": "De
 FAKE_ROUTINES="$tmp/fix2.json" f routine tick --env live >/dev/null; f --pipeline fxa task --id agent-fx2 --source routine --routine-run 73 >/dev/null
 check "with no state in the fixture, done takes the bot's state and changes once" "true|ok|0123456789abcdef0123456789abcdef01234567|false|ok|90003" \
   "$(f routine done 73 --state ok --session agent-fx2 | jq -r '"\(.changed)|\(.state)|\(.fix.sha)"')|$(f routine done 73 --state failed --session agent-fx2 | jq -r '"\(.changed)|\(.state)|\(.fix.pr)"')"
+echo '[{"run": 81, "routine": 12, "team": "fxa", "channel": "C_TEST", "name": "Investigate", "mode": "report", "trigger": "jira-label", "investigate": {"key": "FXA-123", "url": "https://example.atlassian.net/browse/FXA-123"}},
+  {"run": 82, "routine": 12, "team": "fxa", "channel": "C_TEST", "name": "Investigate", "mode": "report", "trigger": "jira-label", "investigate": {"key": "FXA-124", "url": "https://example.atlassian.net/browse/FXA-124"}, "done": {"posted": false}}]' > "$tmp/inv.json"
+FAKE_ROUTINES="$tmp/inv.json" f routine tick --env live >/dev/null
+f --pipeline fxa task --id agent-iv1 --source routine --routine-run 81 >/dev/null; f --pipeline fxa task --id agent-iv2 --source routine --routine-run 82 >/dev/null
+check "an investigation's done answers investigate posted, failed when the fixture says not posted, and changes once" "report|true|FXA-123|failed|false|false|false" \
+  "$(f routine done 81 --state report --session agent-iv1 | jq -r '"\(.state)|\(.investigate.posted)|\(.investigate.key)"')|$(f routine done 82 --state report --session agent-iv2 | jq -r '"\(.state)|\(.post)|\(.investigate.posted)"')|$(f routine done 81 --state report --session agent-iv1 | jq -r .changed)"
 check "FAKE_STOP_S: the session is stopped from then on, as a routine stop does" "active|stopped" \
   "$(echo 4006 > "$FAKE_NOW_FILE"; FAKE_STOP_S=8 st agent-fx2)|$(echo 4008 > "$FAKE_NOW_FILE"; FAKE_STOP_S=8 st agent-fx2)"
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"
