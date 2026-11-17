@@ -70,6 +70,10 @@ check "upgrade: the line is split off the answer" "It needs the stack." "$(jq -r
 check "upgrade: reason and findings" "needs the stack|see auth.ts:12" "$(jq -r '"\(.upgrade.reason)|\(.upgrade.findings)"' <<< "$out")"
 check "upgrade: a bad JSON line still upgrades" "the agent asked for a sandbox" \
   "$(_answer_result ask-t003 1 '{"result":"x\n@@upgrade not json"}' | jq -r .upgrade.reason)"
+up='{"result":"x\n@@upgrade {\"reason\": \"r\", \"findings\": \"f\", \"android\": true}"}'
+check "upgrade: the android flag reaches the bot" "true" "$(_answer_result ask-t005 1 "$up" | jq -r .upgrade.android)"
+check "rules: hand off for code outside the trees or a device, with android for Firefox for Android" "1|1" \
+  "$(grep -c 'not in /workspace or /srv/firefox, or a phone, an emulator or a device' <<< "$_ANSWER_RULES")|$(grep -c 'add "android": true to that line' <<< "$_ANSWER_RULES")"
 check "result: no JSON is an error, not a crash" "true" "$(_answer_result ask-t004 1 'Connection refused' | jq -r .error)"
 
 mkdir -p "$PIPE_STATE_DIR/answer-slots"; for n in 1 2; do mkdir "$PIPE_STATE_DIR/answer-slots/$n"; done
