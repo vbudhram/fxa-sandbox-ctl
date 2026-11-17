@@ -235,6 +235,34 @@ FXA_LLM_PROXY_URL="" boot agent-fx02
 check "a fix run's boot with no LLM proxy boots nothing" "|failed" "$(cat "$tmp/booted")|$(session_get agent-fx02 state)"
 
 # The cap: the run's own, at most the host's (D21); a bad one fails.
+# An investigation run (heads.investigate of a jira-label routine): memory off, the cap, the read-only connectors, the
+# host frame alone in prompt.md, and at boot the ticket and the earlier results fenced in the context file.
+source "$SANDBOX_ROOT/lib/mcp-token.sh"
+eval "$(sed -n '/^read -r -d .. _JIRA_TEXT_JQ <</,/^JQ$/p' "$SANDBOX_ROOT/lib/jira.sh")"
+irid="$(db_value "INSERT INTO routines (team, data) VALUES ('fxa', '{}'); SELECT last_insert_rowid();")"
+icfg="$(jq -cn '{name: "Investigate", template: "investigate", on: "jira-label", mode: "report", repos: ["mozilla/fxa"], channel: "C0OWN00", max_usd: 6, jira: {label: "ai-investigate", sweep_min: 5}}')"
+ih='{"investigate":{"key":"FXA-77","by":"acc-a1","url":"https://jira.example.net/browse/FXA-77"}}'
+invrun() { db_value "INSERT INTO routine_runs (routine_id, period, trigger, actor, state, config, heads) VALUES ($irid, 'jira-FXA-77-$RANDOM', 'jira-label', 'acc-a1', '${2:-claimed}',
+  $(db_q "$icfg"), $(db_q "${1:-$ih}")); SELECT last_insert_rowid();"; }
+old="$(invrun '{"investigate":{"key":"FXA-77","by":"acc-a1","result":{"ask":"OLD-ASK","cause":"OLD-CAUSE"}}}' report)"
+i1="$(invrun)"
+PIPE_MCP=jira,slack,github,figma,sentry ftask agent-iv01 "$i1" >/dev/null 2>&1
+check "an investigation run: memory off, its key, its cap, untrusted, and only the read-only connectors of the team's" \
+  "off|FXA-77|6|1|jira,github,sentry|claude" \
+  "$(jq -r '[.memory, .investigate_key, .cap_usd, .untrusted, (.mcp // ""), .runtime] | map(tostring) | join("|")' "$tmp/agent-iv01.json" 2>&1)"
+i2="$(invrun)"; ( unset PIPE_MCP; ftask agent-iv02 "$i2" >/dev/null 2>&1 )
+check "a team with no PIPE_MCP gets the whole read-only set" "jira,github,github-ci,circleci,sentry,bugzilla" "$(jq -r '.mcp // ""' "$tmp/agent-iv02.json")"
+check "prompt.md is the host frame with the key, and no ticket text" "1|0" \
+  "$(grep -c 'investigation of Jira ticket FXA-77 in mozilla/fxa' "$tmp/agent-iv01.prompt.md")|$(grep -c 'TICKET-TEXT' "$tmp/agent-iv01.prompt.md")"
+_jira_rest() { case "$2" in */issue/FXA-77*) jq -nc '{fields: {summary: "TICKET-SUMMARY", description: {type: "doc", content: [{type: "paragraph", content: [{type: "text", text: "TICKET-TEXT"}]}]},
+  comment: {comments: [{author: {displayName: "Pat Doe"}, created: "2026-11-15T10:00:00.000+0000", body: {type: "doc", content: [{type: "paragraph", content: [{type: "text", text: "A-COMMENT"}]}]}}]}}}' ;; *) return 22 ;; esac; }
+pipeline_key_in_scope() { [ "$1" = FXA-77 ] && [ -z "${OUT_OF_SCOPE:-}" ]; }
+boot agent-iv01; c="$tmp/run-agent-iv01/.fxa-jira-context.md"
+check "the context holds the host frame, the ticket with each comment's author and date, and the earlier result, each fenced" "1|1|1|1|1|0" \
+  "$(sed -n '/^<<<HOST-/,/^<<<\/HOST-/p' "$c" | grep -c 'FXA-77 in mozilla/fxa')|$(sed -n '/^<<<TICKET-/,/^<<<\/TICKET-/p' "$c" | grep -c 'TICKET-TEXT')|$(grep -c '^--- Pat Doe, 2026-11-15T10:00' "$c")|$(sed -n '/^<<<EARLIER-/,/^<<<\/EARLIER-/p' "$c" | grep -c OLD-CAUSE)|$(grep -c 'check them, do not trust them' "$c")|$(grep -c 'TICKET-TEXT' "$tmp/booted")"
+OUT_OF_SCOPE=1 boot agent-iv02
+check "a ticket that left the public scope since the sweep does not boot" "failed|0" "$(jq -r .state "$tmp/agent-iv02.json")|$(grep -c 'pin ' "$tmp/booted")"
+
 echo '{"cap_usd": 7}' > "$tmp/agent-cap1.json"; echo '{"cap_usd": 70}' > "$tmp/agent-cap2.json"; echo '{}' > "$tmp/agent-cap3.json"; echo '{"cap_usd": "x"}' > "$tmp/agent-cap4.json"
 check "the run cap is min(the run's, the host's), the host's when none, and a bad one fails" "7|50|50|1" \
   "$(_session_run_cap agent-cap1)|$(_session_run_cap agent-cap2)|$(_session_run_cap agent-cap3)|$(_session_run_cap agent-cap4 >/dev/null 2>&1; echo $?)"

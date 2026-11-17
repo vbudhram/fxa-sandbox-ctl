@@ -6,7 +6,7 @@ fail=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: want [$2] got [$3]"; fail=1; fi; }
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 eval "$(sed -n '/^read -r -d .. _JIRA_TEXT_JQ <</,/^JQ$/p' "$here/jira.sh")"
-eval "$(sed -n '/^jira_admin_asked() {/,/^}/p' "$here/jira.sh")"
+eval "$(sed -n '/^jira_admin_asked() {/,/^}/p;/^jira_admin_ids() {/,/^}/p' "$here/jira.sh")"
 pipeline_label_for() { echo ai-fixme; }
 export FXA_TEAMS_DIR="$tmp" PIPE_PROFILE=demo
 echo '{"admins":[{"slack":"UA1","email":"admin1@example.com"}],"people":[{"slack":"UP1","email":"pat@example.com"},{"slack":"UA2","email":"admin2@example.com","admin":true}]}' > "$tmp/demo.json"
