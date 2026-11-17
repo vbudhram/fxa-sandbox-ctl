@@ -393,7 +393,9 @@ _pipeline_prs() {
   b="$(gh pr list --repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --state "$1" --limit "$(( $2 < 300 ? 300 : $2 ))" --json "$3,author" 2>/dev/null \
     | jq -c --arg a "${FXA_PR_AUTHOR:-app/fxa-agent}" 'map(select(.author.login == $a) | del(.author))' 2>/dev/null)" || b=""
   [ -n "$a$b" ] || return 1
-  jq -cn --argjson a "${a:-[]}" --argjson b "${b:-[]}" --argjson n "$2" '($a | map(.number)) as $have | $a + ($b | map(select(.number as $x | $have | index($x) | not))) | .[0:$n]'
+  # Files, not arguments: 1000 PRs with their urls pass the 128 KB one argument can hold.
+  jq -cn --slurpfile a <(printf '%s' "${a:-[]}") --slurpfile b <(printf '%s' "${b:-[]}") --argjson n "$2" \
+    '$a[0] as $a | $b[0] as $b | ($a | map(.number)) as $have | $a + ($b | map(select(.number as $x | $have | index($x) | not))) | .[0:$n]'
 }
 
 # _stats_prs_fresh <file>   The PR list was read in the last 10 minutes.

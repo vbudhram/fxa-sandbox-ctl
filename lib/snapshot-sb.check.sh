@@ -25,6 +25,8 @@ eval "$(sed -n '/^_pipeline_prs() {/,/^}/p' "$here/snapshot.sh")"
 gh() { case "$*" in *--label*) echo '[{"number":10},{"number":8}]' ;; *) echo '[{"number":12,"author":{"login":"app/fxa-agent"}},{"number":11,"author":{"login":"someone"}},{"number":10,"author":{"login":"app/fxa-agent"}}]' ;; esac; }
 check "pipeline PRs: the label's in their order, then the App's not already listed, a person's PR left out" "[10,8,12]" "$(_pipeline_prs merged 30 number | jq -c 'map(.number)')"
 check "pipeline PRs: the limit holds" "[10,8]" "$(_pipeline_prs merged 2 number | jq -c 'map(.number)')"
+gh() { case "$*" in *--label*) jq -nc '[range(3000) | {number: ., title: ("t" * 1000)}]' ;; *) echo '[]' ;; esac; }
+check "pipeline PRs: a list past what one argument holds (3 MB)" "1000" "$(_pipeline_prs all 1000 number,title | jq length)"
 gh() { return 1; }
 check "pipeline PRs: both reads failed is a failure, not an empty list" "1" "$(_pipeline_prs merged 30 number >/dev/null; echo $?)"
 unset -f gh
