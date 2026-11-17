@@ -157,8 +157,8 @@ _target_resolve() {
     if [ -z "$info" ]; then
       base="$(_retry gh repo view "$slug" --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || { echo "I could not read ${slug}"; return 1; }
       if ! sha="$(gh api "repos/${slug}/branches/${ref}" -q .commit.sha 2>&1)"; then
-        # A new agent-* branch is a separate PR from the default branch's head, which the runner fetches itself.
-        [[ "$ref" == agent-* ]] && [[ "$sha" == *"Not Found"* ]] || { echo "${slug} has no branch ${ref}"; return 1; }
+        # A new branch is a separate PR from the default branch's head, which the runner fetches itself.
+        [[ "$sha" == *"Not Found"* ]] || { echo "${slug} has no branch ${ref}"; return 1; }
         jq -nc --arg h "$ref" --arg b "$base" '{url: "", head: $h, sha: "", base: $b, author: "", person: false, new: true}'; return 0
       fi
       info="$(jq -nc --arg h "$ref" --arg s "$sha" --arg b "$base" '{url: "", state: "OPEN", head: $h, sha: $s, base: $b, fork: false, author: "", person: true}')"
@@ -173,11 +173,10 @@ _target_resolve() {
 }
 
 # _target_never <slug> <branch> <has PR>   The host never writes a default, protected or release branch, or
-#   the base of an open PR. A branch with no PR is one the agent made (agent-*). Fails closed on a read error.
+#   the base of an open PR. <has PR> "new" is a branch that does not exist yet. Fails closed on a read error.
 _target_never() {
   local slug="$1" b="$2" d p n
   [[ "$b" =~ ^(main|master|develop|train-.*|release.*|stable.*)$ ]] && { echo "${b} is a default or release branch"; return 0; }
-  [ -n "$3" ] || [[ "$b" == agent-* ]] || { echo "${b} has no open PR, and I only start a PR from a branch I made (agent-*)"; return 0; }
   d="$(_retry gh repo view "$slug" --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)" || { echo "I could not read ${slug}"; return 0; }
   [ "$d" != "$b" ] || { echo "${b} is the default branch of ${slug}"; return 0; }
   if [ "$3" != new ]; then
@@ -192,10 +191,23 @@ _target_never() {
 # _target_worktree <key> <head> <sha> <path>   On the runner: <sha> (a bundle from the host clone when the
 #   runner lacks it) checked out as branch <head> in its own worktree. /workspace is not touched.
 _target_worktree() {
-  local key="$1" head="$2" sha="$3" at="$4" repo="${5:-/workspace}" name root d qh qa qr
+  local key="$1" head="$2" sha="$3" at="$4" repo="${5:-/workspace}" name qh qa qr
   qr="$(printf '%q' "$repo")"
   name="$(worktree_branch_for "$key")"; qh="$(printf '%q' "$head")"; qa="$(printf '%q' "$at")"
-  if ! _session_sh "$name" "git -C ${qr} cat-file -e ${sha}^{commit}" >/dev/null 2>&1; then
+  [[ "$sha" == origin/* ]] || _target_send "$key" "$head" "$sha" "$repo" || return 1
+  # A new branch starts at the runner's own fetch of the base (sha is origin/<base>).
+  [[ "$sha" == origin/* ]] && { _session_sh "$name" "git -C ${qr} fetch -q origin $(printf '%q' "${sha#origin/}")" >/dev/null 2>&1 || true; }
+  _session_sh "$name" "cd ${qr} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
+    && { [ -e ${qa}/.git ] || git -c core.hooksPath=/dev/null worktree add -q -f -B ${qh} ${qa} ${sha}; } && rm -rf /home/agent/.fxa-target" >/dev/null 2>&1 \
+    || { echo "the sandbox could not take ${head}"; return 1; }
+}
+
+# _target_send <key> <head> <sha> <repo>   Put /home/agent/.fxa-target/target.bundle with <sha> (branch <head>, from
+#   the host clone) on the runner, unless <repo> there already has it. The runner may not reach a private repo.
+_target_send() {
+  local key="$1" head="$2" sha="$3" name root d
+  name="$(worktree_branch_for "$key")"
+  if ! _session_sh "$name" "git -C $(printf '%q' "$4") cat-file -e ${sha}^{commit}" >/dev/null 2>&1; then
     pipeline_ensure_clone >/dev/null 2>&1 && root="$(worktree_repo_root)" || { echo "I could not reach the repo's clone"; return 1; }
     _retry git -C "$root" fetch -q origin "+refs/heads/${head}:refs/remotes/origin/${head}" >/dev/null 2>&1 || { echo "I could not fetch ${head}"; return 1; }
     [ "$(git -C "$root" rev-parse -q --verify "refs/remotes/origin/${head}")" = "$sha" ] || { echo "${head} moved while I read it. Ask again"; return 1; }
@@ -206,11 +218,29 @@ _target_worktree() {
       || { rm -rf "$d"; echo "I could not send ${head} to the sandbox"; return 1; }
     rm -rf "$d"
   fi
-  # A new branch starts at the runner's own fetch of the base (sha is origin/<base>).
-  [[ "$sha" == origin/* ]] && { _session_sh "$name" "git -C ${qr} fetch -q origin $(printf '%q' "${sha#origin/}")" >/dev/null 2>&1 || true; }
-  _session_sh "$name" "cd ${qr} && { git cat-file -e ${sha}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
-    && { [ -e ${qa}/.git ] || git -c core.hooksPath=/dev/null worktree add -q -f -B ${qh} ${qa} ${sha}; } && rm -rf /home/agent/.fxa-target" >/dev/null 2>&1 \
-    || { echo "the sandbox could not take ${head}"; return 1; }
+}
+
+# target_sync_note <key>   Before a person's message: when someone pushed to the current target's branch after
+#   this session's last push, give the runner those commits as origin/<branch> and print a host note, once for
+#   each new tip. The push lease stays: the push still rebuilds on that tip, so a stale tree never reverts it.
+target_sync_note() {
+  local key="$1" t slug b lease tip at name qa
+  [ "$(session_get "$key" state)" = active ] && [ "$(trees_count "$key")" -le 1 ] || return 0
+  t="$(targets_json "$key" | jq -c --argjson i "$(targets_current "$key")" '.[$i]')" || return 0
+  slug="$(jq -r .repo <<< "$t")" b="$(jq -r .branch <<< "$t")" at="$(jq -r .target_path <<< "$t")"
+  # The tip this session last saw: its own push, or the checkout of a person's branch. A branch never pushed has none.
+  lease="$(jq -r .push_lease <<< "$t")"
+
+  [[ "$lease" =~ ^[0-9a-f]{40}$ ]] && [ -n "$slug" ] && _target_branch_ok "$b" || return 0
+  tip="$(_retry gh api "repos/${slug}/branches/${b}" -q .commit.sha 2>/dev/null)" || return 0
+  [[ "$tip" =~ ^[0-9a-f]{40}$ ]] && [ "$tip" != "$lease" ] && [ "$(session_get "$key" sync_seen)" != "${b}@${tip}" ] || return 0
+  _target_send "$key" "$b" "$tip" "$at" >/dev/null || return 0
+  name="$(worktree_branch_for "$key")"; qa="$(printf '%q' "$at")"
+  _session_sh "$name" "cd ${qa} && { git cat-file -e ${tip}^{commit} 2>/dev/null || git fetch -q /home/agent/.fxa-target/target.bundle; } \
+    && git update-ref refs/remotes/origin/$(printf '%q' "$b") ${tip}; rm -rf /home/agent/.fxa-target" >/dev/null 2>&1 || return 0
+  session_set "$key" sync_seen "${b}@${tip}"
+  printf '(Host: someone pushed to %s after your last push: origin/%s is now %s. Before you go on, run git rebase origin/%s in %s, and fix any conflict. Keep their commits.)\n\n' \
+    "$b" "$b" "${tip:0:10}" "$b" "$at"
 }
 
 # session_target <key> <ref>   The agent's 'host: target <ref>' for the turn that just ended. Prints one
@@ -234,10 +264,11 @@ session_target() {
   url="$(jq -r .url <<< "$info")" head="$(jq -r .head <<< "$info")" sha="$(jq -r .sha <<< "$info")" base="$(jq -r .base <<< "$info")"
   local label="${url:-branch ${head}}" new; new="$(jq -r '.new // false' <<< "$info")"
   # The admin's own words of this turn must name it exactly: the agent read PR text, logs and Jira.
-  # A new agent-* branch writes over nobody's work: a session opens such a PR anyway.
+  # A new agent-* branch writes over nobody's work: a session opens such a PR anyway. Any other name is a person's choice.
   local -a toks=("branch ${head}"); [[ "$head" =~ [-/0-9] ]] && toks+=("$head")
   [ -z "$url" ] || toks+=("$url" "${slug}#${url##*/}" "#${url##*/}" "pr ${url##*/}" "pr #${url##*/}")
-  if [ "$new" = true ]; then who=session; sha="origin/${base}"
+  [ "$new" != true ] || sha="origin/${base}"
+  if [ "$new" = true ] && [[ "$head" == agent-* ]]; then who=session
   else
     who="$(words_match "$key" "$(words_turn "$key")" target "${toks[@]}")" \
       || { echo "I did not switch to ${label}: only a team admin can move this session, in their own message that names it. Ask one to say it here."; return 1; }

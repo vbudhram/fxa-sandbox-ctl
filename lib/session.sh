@@ -155,11 +155,13 @@ Every turn, including later ones:
 - Use git as you like: commit, amend, fetch, and rebase onto origin/main. You
   cannot push and there is no 'gh': the host pushes your branch at Open PR or
   Push, squashed to one commit. Keep the work on origin/main: rebase, do not
-  merge main in, and never fetch or check out another branch yourself.
+  merge main in, and never fetch or check out another branch yourself. When a
+  host note says someone pushed to your branch, rebase onto origin/<branch>.
 - When the engineer asks to work on another PR or branch of this team's repo
   ("put this on PR 2738", "switch to stor-55", "open a separate PR"), do not ask:
   put 'host: target <the PR link, or the branch name>' above the status line and
-  end the turn. For a separate PR, name a new branch that starts with agent-.
+  end the turn. For a separate PR, use the branch name the engineer gave, else
+  a new branch that starts with agent-.
   The host checks who asked and gives the target its own worktree. Your next
   turn starts with a host note that names its path: work on the current target
   there, and to move commits, cherry-pick or rebase. 'ship: pr' updates the

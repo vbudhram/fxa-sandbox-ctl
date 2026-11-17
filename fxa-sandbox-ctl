@@ -2895,6 +2895,12 @@ cmd_steer() {
   if [ -s "$shn" ]; then
     adm=0; note="$(mktemp "${TMPDIR:-/tmp}/fxa-steer.XXXXXX")"; { cat "$shn"; cat "$file"; } > "$note"; file="$note"; rm -f "$shn"
   fi
+  # Someone pushed to the target's branch: the agent rebases on it first (lib/targets.sh).
+  local sync; sync="$(target_sync_note "$key" 2>/dev/null || true)"
+  if [ -n "$sync" ]; then
+    local sn; sn="$(mktemp "${TMPDIR:-/tmp}/fxa-steer.XXXXXX")"; { printf '%s\n' "$sync"; cat "$file"; } > "$sn"
+    [ -z "$note" ] || rm -f "$note"; note="$sn"; file="$sn"
+  fi
   q="${SESSION_DIR}/${key}.queue"
   # Queue while booting, mid-turn, or while another writer holds the session;
   # events delivers the queue once no turn is open.

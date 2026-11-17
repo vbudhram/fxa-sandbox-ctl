@@ -102,10 +102,25 @@ check "a fork PR is refused" 1 "$(session_target agent-f "https://github.com/moz
 check "main is refused" 1 "$(session_target agent-f main | grep -c 'default or release')"
 check "a protected branch is refused" 1 "$(session_target agent-f agent-lock | grep -c protected)"
 check "a PR outside the team's repo is refused" 1 "$(session_target agent-f https://github.com/mozilla/other/pull/1 | grep -c "not this team's work repo")"
-check "a branch with no PR that the agent did not make is refused" 1 "$(words agent-f 'switch to stor-77'; session_target agent-f stor-77 | grep -c 'agent-\*')"
+check "a teammate's branch with no PR needs an admin's words" 1 "$(session_target agent-f stor-77 | grep -c 'only a team admin')"
+check "an admin's 'switch to stor-77' checks out that branch, with no PR yet" "0|stor-77||$SHA|checkout" \
+  "$(words agent-f 'switch to stor-77'; session_target agent-f stor-77 >/dev/null; echo $?)|$(session_get agent-f branch)|$(session_get agent-f pr_url)|$(session_get agent-f push_lease)|$(targets_json agent-f | jq -r '.[1].source')"
 check "a separate PR: a new agent- branch needs no words, and starts at the runner's origin/master" "0|agent-new||new|1" \
-  "$(session_target agent-f agent-new >/dev/null; echo $?)|$(session_get agent-f branch)|$(session_get agent-f checkout)|$(targets_json agent-f | jq -r '.[1].source')|$(grep -c 'worktree add -q -f -B agent-new /home/agent/targets/agent-new origin/master' "$tmp/runner")"
-check "a new branch that is not agent- is refused" 1 "$(session_target agent-f stor-new | grep -c 'no branch')"
+  "$(session_target agent-f agent-new >/dev/null; echo $?)|$(session_get agent-f branch)|$(session_get agent-f checkout)|$(targets_json agent-f | jq -r '.[2].source')|$(grep -c 'worktree add -q -f -B agent-new /home/agent/targets/agent-new origin/master' "$tmp/runner")"
+check "a new branch that is not agent- needs an admin's words" 1 "$(session_target agent-f stor-new | grep -c 'only a team admin')"
+check "an admin's 'open a PR on branch stor-new' starts it at the runner's origin/master" "0|stor-new|new|1" \
+  "$(words agent-f 'open a PR on branch stor-new'; session_target agent-f stor-new >/dev/null; echo $?)|$(session_get agent-f branch)|$(targets_json agent-f | jq -r '.[3].source')|$(grep -c 'worktree add -q -f -B stor-new /home/agent/targets/stor-new origin/master' "$tmp/runner")"
+# A person's push to the target's branch reaches the runner before their next message.
+NEW=fedcba9876543210fedcba9876543210fedcba98
+echo '{"state":"active","branch":"stor-55","push_lease":"'"$SHA"'","target_path":"/home/agent/targets/stor-55"}' > "$tmp/agent-y.json"
+check "no note when the branch is where this session last pushed" "" "$(target_sync_note agent-y)"
+: > "$tmp/runner"
+moved() { gh() { case "$*" in "api repos/mozilla/syncstorage-rs/branches/stor-55 -q .commit.sha") echo "$NEW" ;; *) return 1 ;; esac; }; target_sync_note agent-y; }
+check "a person's push: the note names the new tip, and the runner gets it as origin/stor-55" "1|1|$SHA" \
+  "$(moved | grep -c 'git rebase origin/stor-55 in /home/agent/targets/stor-55')|$(grep -c "update-ref refs/remotes/origin/stor-55 ${NEW}" "$tmp/runner")|$(session_get agent-y push_lease)"
+check "the same tip gives no second note" "" "$(moved)"
+echo '{"state":"active","branch":"agent-z","target_path":"/workspace"}' > "$tmp/agent-z.json"
+check "a branch this session never pushed gives no note" "" "$(target_sync_note agent-z)"
 ev='[{"type":"turn_end","status":"ready","ship":true,"asks":["target main"]}]'
 echo '{"state":"active","branch":"agent-46e5fc","pr_url":"'"$pr2750"'","thread":"C2:8.8"}' > "$tmp/agent-e.json"; words agent-e 'take over PR 2738'
 check "a switch event names the new PR, the old branch, and the thread that held the branch" "true|$pr2738|stor-55|agent-46e5fc|thread:C1:9.9|1" \
