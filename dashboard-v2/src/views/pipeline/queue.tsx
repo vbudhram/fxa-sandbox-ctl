@@ -1,7 +1,7 @@
 // The Queue tab (v1 renderTickets): tiles and the queue groups. The review PRs are on Belts, and their wait chart is here for Belts.
 import type { ReactNode } from 'react';
 import { BarList, ChartFrame, StripPlot } from '../../charts';
-import { jiraHref } from '../../format';
+import { jiraHref, plural } from '../../format';
 import { skipGroups, verdictTag } from '../../model';
 import type { J } from '../../model/base';
 import { SNAP, jiraSite, pipe, queueOnly } from '../../model/pipeline';
@@ -141,7 +141,7 @@ export function WaitStrip({ review }: { review: J[] }) {
   return (
     <Card flat sm className="pwait">
       <StripPlot title="Review waits" unit="days" groups={rows}
-        summary={`${pts.length} PRs in review. ${old} wait 3 days or more. The longest wait is ${Math.round(Math.max(...pts.map((p) => p.d)))} days.`}
+        summary={`${plural(pts.length, 'PR')} in review. ${old} wait 3 days or more. The longest wait is ${Math.round(Math.max(...pts.map((p) => p.d)))} days.`}
         table={{ head: ['Ticket', 'Verdict', 'Wait in days'], rows: pts.map((p) => [p.r.key, p.v.label, Math.round(p.d * 10) / 10]) }} />
       <div>
         <h3 className="sgroup">Waits in bins</h3>

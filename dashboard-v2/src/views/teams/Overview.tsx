@@ -45,7 +45,7 @@ const Activity = memo(function Activity({ p }: { p: string }) {
   const word = (i: number) => { const d = ds[i]!; return `${day(d.day)}: ${plural(d.n, 'session or run', 'sessions and runs')}, Slack ${usd(d.slack)}, pipeline ${usd(d.pipe)}`; };
   return (
     <Frame title="Activity, 30 days" keys={k.keys} tip={k.active == null ? null : word(k.active)}
-      summary={`${total} sessions and runs in 30 days, at most ${maxN} a day. Slack ${usd(slack)}, pipeline ${usd(pipe)}.`}
+      summary={`${total} ${total === 1 ? 'session or run' : 'sessions and runs'} in 30 days, at most ${maxN} a day. Slack ${usd(slack)}, pipeline ${usd(pipe)}.`}
       table={{ head: ['Day', 'Sessions and runs', 'Slack', 'Pipeline'], rows: ds.map((d) => [day(d.day), d.n, usd(d.slack), usd(d.pipe)]) }}
       note={<span className="tchartl"><span>30 days ago</span><span>{total} sessions and runs{byCost ? ' · cost: pipeline under Slack' : ''}</span><span>today</span></span>}>
       <div ref={ref}>

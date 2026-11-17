@@ -2,6 +2,7 @@
 import { Frame, NoData, useChartKeys, useWidth } from '../../../charts/frame';
 import type { Tone } from '../../../ui';
 import { cx, SVG } from '../../../ui/tone';
+import { plural } from '../../../format';
 
 export type Bar = { label: string; value: number | null; tone: Tone; word: string };
 
@@ -17,7 +18,7 @@ export function Bars({ title, unit, bars, limit, fmt }: { title: string; unit: s
   const known = bars.filter((b) => b.value != null), top = known.reduce<Bar | null>((a, b) => (!a || (b.value ?? 0) > (a.value ?? 0) ? b : a), null);
   const over = limit != null ? known.filter((b) => (b.value ?? 0) > limit).length : 0;
   const summary = known.length
-    ? `${title}, ${bars.length} runs, oldest first. Highest: ${say(top!)}.${limit != null ? ` Limit ${fmt(limit)}; ${over} over it.` : ''}`
+    ? `${title}, ${plural(bars.length, 'run')}, oldest first. Highest: ${say(top!)}.${limit != null ? ` Limit ${fmt(limit)}; ${over} over it.` : ''}`
     : `${title}: no data yet.`;
   return (
     <Frame title={title} summary={summary} keys={k.keys} tip={k.active == null ? null : say(bars[k.active]!)}

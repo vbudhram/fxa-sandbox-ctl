@@ -16,9 +16,9 @@
 .tpage .prewrap { white-space: pre-wrap; }
 .tpage .btn { display: inline-flex; align-items: center; font: 600 var(--t-sub) var(--head); border: 1px solid var(--line2); border-radius: var(--r-sm);
   padding: 6px var(--s4); background: var(--bg); color: var(--ink); }
-.tpage .btn:hover { background: var(--hover); text-decoration: none; }
+@media (hover: hover) { .tpage .btn:hover { background: var(--hover); text-decoration: none; } }
 .tpage .linkbtn { background: none; border: 0; padding: 0; color: var(--link); font: inherit; font-weight: 600; }
-.tpage .linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; }
+@media (hover: hover) { .tpage .linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; } }
 .tpage button:disabled { opacity: .5; cursor: default; }
 .tpage .linkbtn:disabled { opacity: 1; color: var(--dim); }
 
@@ -46,7 +46,7 @@
 .tpage .ttable td > .input { min-width: 7rem; }
 .tpage .ttable td > input.mono { min-width: 16rem; }
 .tpage .sortbtn { background: none; border: 0; padding: 0; font: inherit; color: inherit; }
-.tpage .sortbtn:hover:not(:disabled) { background: none; color: var(--ink); }
+@media (hover: hover) { .tpage .sortbtn:hover:not(:disabled) { background: none; color: var(--ink); } }
 .tpage .tname { font-weight: 600; color: var(--link); }
 .tpage .tbud { min-width: 140px; }
 .tpage .tbud .num { display: block; margin-bottom: var(--s1); }
@@ -54,7 +54,7 @@
 
 .tpage .ttabs { display: flex; gap: var(--s1); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .tpage .ttabs a { padding: var(--s2) var(--s3); color: var(--dim); font-weight: 600; font-size: var(--t-sub); border-bottom: 2px solid transparent; }
-.tpage .ttabs a:hover { color: var(--ink); text-decoration: none; }
+@media (hover: hover) { .tpage .ttabs a:hover { color: var(--ink); text-decoration: none; } }
 .tpage .ttabs a[aria-current] { color: var(--link); border-bottom-color: var(--link); }
 .tpage .ttabs .n.bad { color: var(--bad); font-weight: 700; }
 

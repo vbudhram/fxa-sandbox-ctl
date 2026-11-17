@@ -1042,7 +1042,7 @@
      "kind": "instance",
      "target": "agent-agent-41c0e6",
      "steps": null,
-     "why": "terminated with no run behind it (59.2h old); it bills until deleted.",
+     "why": "terminated with no run behind it (2d old); it bills until deleted.",
      "cmd": "fxa-sandbox-ctl stop agent-41c0e6"
     },
     "id": "fix:agent-agent-41c0e6",
@@ -1643,7 +1643,7 @@
  "alerts": [
   {
    "tone": "warn",
-   "text": "agent-agent-41c0e6terminated with no run behind it (59.2h old); it bills until deletedfxa-sandbox-ctl stop agent-41c0e6"
+   "text": "agent-agent-41c0e6terminated with no run behind it (2d old); it bills until deletedfxa-sandbox-ctl stop agent-41c0e6"
   }
  ]
 }

@@ -158,3 +158,6 @@ body {
   font: var(--t-body)/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Two tiles a row on a phone: a 7-figure spend at 28px is wider than the tile. After :root, so it wins. */
+@media (max-width: 640px) { :root { --t-kpi: 22px; } }

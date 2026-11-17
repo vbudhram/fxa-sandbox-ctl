@@ -14,6 +14,13 @@ Read this before you change the dashboard in `dashboard-v2/`, a Vite, React and 
 8. Use motion only to show a data change or a running item. A data change moves once, in 300 ms or less: a belt moves to its new stop, a number counts to its new value, a bar grows. A running item can loop (`live` dot, the terminal cursor). Do not move anything on the first paint, on hover, or on an update that changed nothing. Under `prefers-reduced-motion`, stop all motion: set `MotionConfig reducedMotion="user"` and keep the CSS rule that stops every animation and transition.
 9. Give each link, button and summary the 2px `link` focus outline.
 10. Write the words in short, plain sentences in sentence case. Use no emoji. Show a Jira key or a PR number in the `key` class.
+11. Format with the helpers in `src/format`. Do not write a new one in a view.
+    - `usd()` gives "$1,284.50", and from $10,000 it drops the cents, for example "$1,530,863".
+    - `ago()` gives "5m ago", or the date after a week. `age()` gives the bare length, for example "Data is 2h old".
+    - `short()` gives a duration, and from 48 hours it gives days.
+    - `plural(n, 'run')` gives "1 run" or "2 runs". Use it for each count that can be 1.
+12. Put each `:hover` rule in `@media (hover: hover)`, so that a tap on a phone does not leave it on. Give a button the same look on `:active`.
+13. Cap a list of things that need a person, so that the rest of the view stays above the fold. The alerts strip shows 5, with the `bad` alerts first, and a "Show all N alerts" button.
 
 ## Build a view
 

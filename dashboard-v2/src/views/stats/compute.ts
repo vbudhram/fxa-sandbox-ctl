@@ -3,6 +3,7 @@ import type { J } from '../../model/base';
 import { costPerMerged, inRange } from '../../model/stats';
 import type { StatsFilter } from '../../store/types';
 import { isOn, type Tab } from './filter';
+import { plural } from '../../format';
 
 export const DAY = 86400000;
 export const rowMs = (r: J): number => r.ms ?? Date.parse(r.at);
@@ -16,7 +17,7 @@ export const med = (a: unknown[]): number | null => {
 // No Math.min(...rows) or Math.max(...rows): a spread of many thousands of rows can overflow the stack.
 export const minOf = (a: number[], d = Infinity) => a.reduce((m, v) => (v < m ? v : m), d);
 export const maxOf = (a: number[], d = -Infinity) => a.reduce((m, v) => (v > m ? v : m), d);
-export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export { plural };
 
 // A run row matches a model by its main model, or by a model in its priced parts.
 export const hasModel = (r: J, m: string) => r.model === m || (r.models != null && typeof r.models === 'object' && Object.hasOwn(r.models, m));
@@ -197,9 +198,9 @@ export const mins = (s: number) => (s >= 60 ? `${Math.round(s / 60)} min` : `${s
 // The pipeline's passes in the range, and its waits and retries over all time.
 export function pipelineData(p: J, lo: number, hi: number) {
   const days = inRange(p?.days, lo, hi).reverse(), w = (p?.waits ?? []).map((x: J) => x.hours).filter((x: unknown) => x != null).sort((a: number, b: number) => a - b);
-  const medOf = (k: string) => { const v = (p?.waits ?? []).map((x: J) => x[k]).filter((x: unknown) => x != null).sort((a: number, b: number) => a - b); return v.length ? `median ${v[Math.floor(v.length / 2)]} h · ${v.length} tickets` : 'none yet'; };
+  const medOf = (k: string) => { const v = (p?.waits ?? []).map((x: J) => x[k]).filter((x: unknown) => x != null).sort((a: number, b: number) => a - b); return v.length ? `median ${v[Math.floor(v.length / 2)]} h · ${plural(v.length, 'ticket')}` : 'none yet'; };
   if (!days.length && !w.length) return null;
   const known = (x: unknown) => typeof x === 'number';
-  return { days, waits: w.length ? { first: `median ${w[Math.floor(w.length / 2)]} h · ${w.length} tickets`, pr: medOf('pr_hours'), merge: medOf('merge_hours') } : null,
+  return { days, waits: w.length ? { first: `median ${w[Math.floor(w.length / 2)]} h · ${plural(w.length, 'ticket')}`, pr: medOf('pr_hours'), merge: medOf('merge_hours') } : null,
     retried: known(p.retried) && known(p.tickets) ? `${p.retried} of ${p.tickets}` : '—' };
 }

@@ -1,18 +1,20 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { ago, days, jiraHref, mdHtml, modelName, plainMd, prUrl, short, ttyLine, usd } from './index';
+import { ago, days, jiraHref, mdHtml, modelName, plainMd, plural, prUrl, short, ttyLine, usd } from './index';
 
 afterEach(() => { vi.useRealTimers(); });
 
 test('ago, short and days', () => {
   expect([null, 5, 90, 7200, 200000].map(ago)).toEqual(['never', '5s ago', '2m ago', '2h ago', '2d ago']);
-  expect([null, 5, 90, 5400].map(short)).toEqual(['', '5s', '2m', '1.5h']);
+  expect(ago(30 * 86400)).not.toMatch(/ago/);
+  expect([plural(1, 'run'), plural(2, 'run'), plural(1, 'person', 'people'), plural(0, 'person', 'people')]).toEqual(['1 run', '2 runs', '1 person', '0 people']);
+  expect([null, 5, 90, 5400, 4622400].map(short)).toEqual(['', '5s', '2m', '1.5h', '54d']);
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(Date.parse('2026-11-03T00:00:00Z'));
   expect(days('2026-11-01T00:00:00Z')).toBe(2);
   expect(days(null)).toBeNull();
 });
 
 test('usd and modelName', () => {
-  expect([null, 0, 1.005, 12].map(usd)).toEqual(['—', '$0.00', '$1.00', '$12.00']);
+  expect([null, 0, 1.25, 12, 1284.5, 1530863.08, -42.5].map(usd)).toEqual(['—', '$0.00', '$1.25', '$12.00', '$1,284.50', '$1,530,863', '-$42.50']);
   expect(modelName('claude-opus-4-5-20251101[1m]')).toBe('Opus 4.5 (1M)');
   expect(modelName('claude-haiku-5')).toBe('Haiku 5');
   expect(modelName(undefined)).toBe('Unknown');

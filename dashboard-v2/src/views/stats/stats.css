@@ -10,7 +10,7 @@
 .st .chip { padding: 1px 6px; font: 500 var(--t-label) var(--sans); color: var(--dim); border-color: var(--line); white-space: nowrap; }
 .st-ov { font-size: var(--t-sub); color: var(--warn); margin-bottom: var(--s2); }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--link); font: inherit; font-weight: 600; cursor: pointer; }
-.linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; }
+@media (hover: hover) { .linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; } }
 .st .unknown { color: var(--warn); font-size: var(--t-sub); font-weight: 600; }
 .st .emptybox { margin-top: var(--s4); }
 .st .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s3); margin: 0; }

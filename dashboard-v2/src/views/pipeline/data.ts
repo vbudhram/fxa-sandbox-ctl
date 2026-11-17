@@ -1,5 +1,5 @@
 // The pipeline view's pure parts: v1 doneRows, beltTone and the belt phases, and the data of the new charts.
-import { days } from '../../format';
+import { days, plural } from '../../format';
 import type { J } from '../../model/base';
 import type { Tone } from '../../ui';
 
@@ -26,7 +26,7 @@ export const GROUPS = ['working', 'needs', 'fixes', 'review'] as const;
 export const GROUP_NAME: Record<string, string> = { working: 'Working now', needs: 'Needs you', fixes: 'The agent fixes it', review: 'Waits on review' };
 
 const DAY = 86400000;
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
 
 // Merged pipeline PRs, newest first.
 export function doneRows(snap: J): J[] {

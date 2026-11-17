@@ -1,5 +1,5 @@
 // Sessions and quick answers, ported from the retired v1 dashboard.
-import { ago } from '../format';
+import { age } from '../format';
 import type { Session, Store } from '../store/types';
 import { type J, LIVE_SESSION, SS, STATS, TEAM_ADMIN, memo } from './base';
 import { teamLabel } from './teams';
@@ -31,7 +31,7 @@ export function firstLine(t: unknown): string {
 }
 
 // A short age for list meta: "5m", "3h", "2d"; e is an epoch in seconds.
-export const ageOf = (e: unknown): string => (e ? ago(Math.max(0, Math.round(Date.now() / 1000 - Number(e)))).replace(' ago', '') : '');
+export const ageOf = (e: unknown): string => (e ? age(Math.max(0, Math.round(Date.now() / 1000 - Number(e)))) : '');
 
 // The Stats cost of each Slack and dependency fix row, by key.
 const statUsd = memo((s) => [STATS(s)], (s) => new Map<string, J>((STATS(s)?.rows ?? []).filter((r: J) => r.src === 'slack' || r.src === 'depfix').map((r: J) => [r.key, r.usd])));

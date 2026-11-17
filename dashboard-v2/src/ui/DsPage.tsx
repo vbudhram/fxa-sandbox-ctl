@@ -14,6 +14,7 @@ import { Toaster, toast } from './sonner';
 import { Switch } from './switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+import { plural } from '../format';
 
 const TONES: Tone[] = ['ok', 'warn', 'bad', 'info', 'merged', 'dim'];
 const WORD: Record<Tone, string> = { ok: 'green', warn: 'held', bad: 'failing', info: 'live', merged: 'merged', dim: 'idle' };
@@ -50,7 +51,7 @@ export default function DsPage() {
   const days = Array.from({ length: 14 }, (_, i) => (i === 5 ? null : 20 + ((i * 7) % 11)));
   const heatCells = Array.from({ length: 7 * 24 }, (_, n) => {
     const v = (n * 13) % 9;
-    return { row: Math.floor(n / 24), col: n % 24, value: v, label: `${v} runs` };
+    return { row: Math.floor(n / 24), col: n % 24, value: v, label: plural(v, 'run') };
   });
   return (
     <TooltipProvider>
