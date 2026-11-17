@@ -30,8 +30,17 @@ _circleci_get() { printf 'header = "Circle-Token: %s"\n' "$1" | curl -sf -m 30 -
 
 circleci_job_path() {
   [[ "$1" =~ circleci\.com/gh/([^/]+/[^/?#]+)/([0-9]+) ]] \
-    || [[ "$1" =~ app\.circleci\.com/pipelines/(gh|github)/([^/]+/[^/]+)/[0-9]+/workflows/[0-9a-f-]+/jobs/([0-9]+) ]] || return 1
+    || [[ "$1" =~ app\.circleci\.com/pipelines/(gh|github)/([^/]+/[^/]+)/[0-9]+/workflows/[0-9a-f-]+/jobs/([0-9]+) ]] || { _circleci_id_path "$1"; return; }
   if [ "${#BASH_REMATCH[@]}" -eq 3 ]; then echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"; else echo "${BASH_REMATCH[2]}/${BASH_REMATCH[3]}"; fi
+}
+
+# _circleci_id_path <url>   The newer link names the workflow and the job by id: one workflow read gives the job's
+# project and number.
+_circleci_id_path() {
+  [[ "$1" =~ app\.circleci\.com/workflow/([0-9a-f-]{36})/job/([0-9a-f-]{36}) ]] || return 1
+  local wf="${BASH_REMATCH[1]}" id="${BASH_REMATCH[2]}" t; t="$(circleci_token)"; [ -n "$t" ] || return 1
+  _circleci_get "$t" "https://circleci.com/api/v2/workflow/${wf}/job" | jq -er --arg id "$id" '.items[] | select(.id == $id)
+    | select(.project_slug | test("^(gh|github)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) | "\(.project_slug | sub("^(gh|github)/"; ""))/\(.job_number)"' 2>/dev/null
 }
 
 circleci_job_workflow() {
@@ -57,16 +66,17 @@ circleci_rerun_failed() {
     -d '{"from_failed": true}' "https://circleci.com/api/v2/workflow/$2/rerun" >/dev/null
 }
 
-# _circleci_job <token> <number> [dir]   One job: its name and status, failed tests,
+# _circleci_job <token> <org/repo/number> [dir]   One job: its name and status, failed tests,
 # failed steps' tails, Playwright error contexts, and with [dir] their traces.
 _circleci_job() {
-  local t="$1" n="$2" dest="${3:-}" v2=https://circleci.com/api/v2/project/gh/mozilla/fxa job name url arts p d tu shown=0
+  local t="$1" n="${2##*/}" proj="${2%/*}" dest="${3:-}" v2 job name url arts p d tu shown=0
+  v2="https://circleci.com/api/v2/project/gh/${proj}"
   job="$(_circleci_get "$t" "${v2}/job/${n}")" || return 0
   jq -r --arg n "$n" '"Job \($n): \(.name), \(.status)"' <<< "$job" 2>/dev/null || return 0
   _circleci_get "$t" "${v2}/${n}/tests" | jq -r '[.items[] | select(.result == "failure")][:20][]
     | "- \(.classname) \(.name): \(.message // "" | gsub("\\[\\[ATTACHMENT\\|[^]]*\\]\\]\\s*"; "") | .[:300])"' 2>/dev/null | awk 'NR == 1 { print "Failed tests:" } 1' || true
   # v2 has no step logs; v1.1 lists each step with a signed URL for its output.
-  _circleci_get "$t" "https://circleci.com/api/v1.1/project/github/mozilla/fxa/${n}" \
+  _circleci_get "$t" "https://circleci.com/api/v1.1/project/github/${proj}/${n}" \
     | jq -r '.steps[] | .name as $s | .actions[] | select(.failed == true) | "\($s)\t\(.output_url // "")"' 2>/dev/null | head -3 \
     | while IFS=$'\t' read -r name url; do
         printf 'End of the failed step "%s":\n' "$name"
@@ -98,11 +108,12 @@ circleci_digests() {
   [ -n "$urls" ] || return 0
   t="$(circleci_token)"; [ -n "$t" ] || return 0
   for u in $urls; do
-    if [[ "$u" =~ /(jobs|fxa)/([0-9]+)$ ]]; then jobs="${BASH_REMATCH[2]}"
+    if [[ "$u" =~ /(jobs|fxa)/([0-9]+)$ ]]; then jobs="mozilla/fxa/${BASH_REMATCH[2]}"
     else
-      wf="$(grep -oE '[0-9a-f-]{36}' <<< "$u")"
-      jobs="$(_circleci_get "$t" "https://circleci.com/api/v2/workflow/${wf}/job" \
-        | jq -r '.items[] | select(.status == "failed") | .job_number' 2>/dev/null | head -2 || true)"
+      # A workflow link can be any project's: keep only the jobs of mozilla/fxa or the team's repo.
+      wf="$(grep -oE '[0-9a-f-]{36}' <<< "$u" | head -1)"
+      jobs="$(_circleci_get "$t" "https://circleci.com/api/v2/workflow/${wf}/job" | jq -r --arg own "gh/${PIPE_REPO_SLUG:-mozilla/fxa}" \
+        '.items[] | select(.status == "failed" and (.project_slug == "gh/mozilla/fxa" or .project_slug == $own)) | "\(.project_slug | ltrimstr("gh/"))/\(.job_number)"' 2>/dev/null | head -2 || true)"
     fi
     body=""; for j in $jobs; do body+="$(_circleci_job "$t" "$j" "$dest")"$'\n'; done
     [ -n "${body//[$'\n']/}" ] || continue

@@ -28,7 +28,13 @@ curl() ( # a subshell, so its exec > stays inside it
     */api/v2/project/gh/mozilla/fxa/711803/tests) echo '{"items":[{"result":"success","classname":"a","name":"ok"},{"result":"failure","classname":"settings/connectedServices.spec.ts","name":"shows the location","message":"Timeout 10000ms exceeded"}]}' ;;
     */api/v1.1/project/github/mozilla/fxa/711803) echo '{"steps":[{"name":"checkout","actions":[{"failed":null}]},{"name":"run playwright tests","actions":[{"failed":true,"output_url":"https://logs.example/out"}]}]}' ;;
     https://logs.example/out) printf '[{"message":"line one\\n\\u001b[31m1 failed\\u001b[0m\\nkey -----BEGIN RSA PRIVATE KEY-----\\nMIIEfake\\n-----END RSA PRIVATE KEY----- AKIAABCDEFGHIJKLMNOP sha256:%s\\n"}]' "$(printf 'ab%.0s' $(seq 32))" ;;
-    */api/v2/workflow/48a37f1d-c27d-4de2-af96-3b954c8b4be3/job) echo '{"items":[{"status":"success","job_number":1},{"status":"failed","job_number":711803}]}' ;;
+    */api/v2/workflow/48a37f1d-c27d-4de2-af96-3b954c8b4be3/job) echo '{"items":[{"status":"success","job_number":1,"project_slug":"gh/mozilla/fxa"},{"status":"failed","job_number":711803,"project_slug":"gh/mozilla/fxa"}]}' ;;
+    # The newer link form, from a team's own repo, and a failed job of a project that is not the team's.
+    */api/v2/workflow/260009ee-1381-456b-9f7a-bc3140b27c3f/job) echo '{"items":[{"status":"failed","job_number":13660,"project_slug":"gh/mozilla/fxa-private","id":"2bceb29d-6a36-4d3b-8b35-f71f5ab6e850"},
+      {"status":"failed","job_number":77,"project_slug":"gh/evil/repo","id":"11111111-1111-1111-1111-111111111111"}]}' ;;
+    */api/v2/project/gh/mozilla/fxa-private/job/13660) echo '{"name":"Lint (PR)","status":"failed"}' ;;
+    */api/v1.1/project/github/mozilla/fxa-private/13660) echo '{"steps":[{"name":"Linting","actions":[{"failed":true,"output_url":"https://logs.example/lint"}]}]}' ;;
+    https://logs.example/lint) echo '[{"message":"1069:11  error  Duplicate key no-dupe-keys\nFailed tasks:\n- fxa-auth-server:lint\n"}]' ;;
     *) return 22 ;;
   esac
 )
@@ -55,4 +61,15 @@ check "a workflow link reads its failed job" "yes" "$(grep -q 'Job 711803' <<< "
 : > "$tmp/calls"
 check "another project is not read" "|0" "$(circleci_digests 'https://app.circleci.com/pipelines/github/other/repo/1/workflows/48a37f1d-c27d-4de2-af96-3b954c8b4be3/jobs/5' n3)|$(wc -l < "$tmp/calls" | tr -d ' ')"
 check "text with no link: nothing" "" "$(circleci_digests 'why does this fail?' n4)"
+
+# The newer link form: app.circleci.com/workflow/<id>/job/<id>, here a check on a team's private repo.
+new='https://app.circleci.com/workflow/260009ee-1381-456b-9f7a-bc3140b27c3f/job/2bceb29d-6a36-4d3b-8b35-f71f5ab6e850'
+check "circleci_job_path reads the project and number from the workflow" "mozilla/fxa-private/13660|evil/repo/77" \
+  "$(circleci_job_path "$new")|$(circleci_job_path https://app.circleci.com/workflow/260009ee-1381-456b-9f7a-bc3140b27c3f/job/11111111-1111-1111-1111-111111111111)"
+check "an unknown job id and a bad link fail, with nothing" "fail|fail" \
+  "$(circleci_job_path https://app.circleci.com/workflow/260009ee-1381-456b-9f7a-bc3140b27c3f/job/22222222-2222-2222-2222-222222222222 || echo fail)|$(circleci_job_path https://app.circleci.com/workflow/x/job/y || echo fail)"
+out="$(PIPE_REPO_SLUG=mozilla/fxa-private circleci_digests "$new" n7)"
+check "the team's repo: the digest reads its own project, and not another project's job" "1|1|1|0" \
+  "$(grep -c 'Job 13660: Lint (PR), failed' <<< "$out")|$(grep -c 'Duplicate key no-dupe-keys' <<< "$out")|$(grep -c 'fxa-auth-server:lint' <<< "$out")|$(grep -c 'Job 77' <<< "$out")"
+check "another team: the private project is not read" "" "$(PIPE_REPO_SLUG=mozilla/other circleci_digests "$new" n8)"
 exit "$fail"
