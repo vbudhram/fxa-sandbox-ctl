@@ -35,7 +35,7 @@ export function Choices({ c }: { c: Ctl }) {
           <span className="font-semibold">{x.name}</span>
           {x.about && <span className="hint font-normal">{x.about}</span>}
           <span className="flex flex-wrap gap-s1">
-            {x.on ? <><Tag label="One fix commit" tone="merged" /><Tag label="on request" /></> : <>
+            {x.on === 'jira-label' ? <><Tag label="Jira comment" tone="info" /><Tag label="on label" /></> : x.on ? <><Tag label="One fix commit" tone="merged" /><Tag label="on request" /></> : <>
               <Tag label={x.locked_mode ? 'Report or Jira tickets' : RT_MODES.find((m) => m[0] === x.mode)?.[1] ?? x.mode ?? ''} tone={x.locked_mode || x.mode === 'report' ? 'info' : 'merged'} />
               {x.skip_no_commits && <Tag label="skips with no new commits" />}
             </>}
@@ -52,7 +52,7 @@ const Fact = ({ head, children }: { head: string; children: React.ReactNode }) =
 
 function RtCard({ c, r }: { c: Ctl; r: J }) {
   const d = r.data, rec: J[] = r.recent ?? [], nx = r.paused ? null : (r.next ?? [])[0], last = r.last ? rtResult(r.last, d) : null, onpr = d.on === 'pr-label';
-  const s = c.sum?.routines?.[r.id], runOff = (r.live && !onpr) || c.busy === r.id, p = c.team.profile;
+  const oninv = d.on === 'jira-label', s = c.sum?.routines?.[r.id], runOff = (r.live && !onpr) || c.busy === r.id || oninv, p = c.team.profile;
   const per = s?.runs_30d ? s.cost_30d / s.runs_30d : null;
   return (
     <article className="rt rounded-lg border border-card-border bg-panel p-s4 shadow-card" data-rt-row={r.id}>
@@ -62,12 +62,12 @@ function RtCard({ c, r }: { c: Ctl; r: J }) {
           <div className="flex flex-wrap items-center gap-s2">
             <a className="nm font-head text-heading font-bold text-link" href={`#teams/${p}/routines/${r.id}`} data-rt-sel={r.id}>{d.name}</a>
             {!r.live && <RtState r={r} />}
-            {onpr ? <Tag label="dependency fix" sq /> : d.template === 'blank' ? <Tag label="custom prompt" sq /> : null}
+            {onpr ? <Tag label="dependency fix" sq /> : oninv ? <Tag label="investigation" sq /> : d.template === 'blank' ? <Tag label="custom prompt" sq /> : null}
           </div>
           <span className="says text-sub text-dim"><Says d={d} chName={r.channel_name} chans={c.chans} /></span>
         </div>
         <button type="button" data-rt-act="run" data-rt-id={r.id} aria-label={`Run now ${d.name}`} disabled={!!runOff}
-          title={runOff ? (r.live && !onpr ? 'A run is in progress' : 'Working on it') : undefined} onClick={() => c.act('run', r.id)}>Run now</button>
+          title={runOff ? (oninv ? 'It runs when a team admin adds its label to a Jira ticket' : r.live && !onpr ? 'A run is in progress' : 'Working on it') : undefined} onClick={() => c.act('run', r.id)}>Run now</button>
         {r.live && !onpr && (
           <button type="button" data-rt-act="stop" data-rt-id={r.id} data-rt-run={r.live.id} aria-label={`Stop run ${d.name}`} disabled={c.busy === r.id}
             onClick={() => c.act('stop', r.id, String(r.live.id))}>Stop run</button>

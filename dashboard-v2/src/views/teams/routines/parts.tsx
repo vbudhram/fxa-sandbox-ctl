@@ -14,6 +14,7 @@ const GLYPH: Record<string, [Tone | '', ReactNode]> = {
   'ux-review': ['merged', <><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8" /></>],
   blank: ['', <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></>],
   depfix: ['', <path d="M14 7l3-3 3 3-3 3M17 4v6M4 20l9-9" />],
+  investigate: ['info', <><circle cx="11" cy="11" r="7" /><path d="M21 21l-5-5" /></>],
 };
 export function Glyph({ tpl }: { tpl: string }) {
   const [tone, d] = GLYPH[tpl] ?? GLYPH.blank!;
@@ -32,6 +33,8 @@ const Mono = ({ children }: { children: ReactNode }) => <span className="font-mo
 export function Says({ d, chName, chans }: { d: J; chName?: string; chans: Chans | null }) {
   if (d.on === 'pr-label')
     return <>When a dependency PR in <Mono>{d.pr?.repo ?? (d.repos ?? [])[0] ?? 'its repo'}</Mono> asks for help, pushes one fix commit, and posts in {rtChName(d.channel, chName, chans)}.</>;
+  if (d.on === 'jira-label')
+    return <>When a team admin adds <Mono>{d.jira?.label ?? 'ai-investigate'}</Mono> to a Jira ticket, investigates <Mono>{(d.repos ?? [])[0] ?? 'its repo'}</Mono>, comments on the ticket, and posts in {rtChName(d.channel, chName, chans)}.</>;
   const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: 'opens a draft PR', 'pr+notes': 'opens a draft PR with notes' } as Record<string, string>)[d.mode] ?? d.mode;
   const ch = d.channel ? rtChName(d.channel, chName, chans) : '';
   return (

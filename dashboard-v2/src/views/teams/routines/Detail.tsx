@@ -26,7 +26,7 @@ function Runs({ rows, d }: { rows: J[]; d: J }) {
     // A fix run names its trigger as Sessions and Sandboxes do, links its PR, and shows the PR head it started on and the commit it pushed.
     const fx = x.heads?.fix, who = String(x.actor ?? '').slice(0, 60), pr = fx ? rtPr(fx.url) : rtPr(x.pr_url);
     const by = fx ? ({ blender: 'BLEnder', label: who ? `label by ${who}` : 'label', manual: who ? `Run now by ${who.split('@')[0]}` : 'Run now' } as Record<string, string>)[x.trigger] ?? 'Dependency fix'
-      : x.trigger === 'manual' ? `Run now${x.actor ? ` by ${String(x.actor).split('@')[0]}` : ''}` : 'Schedule';
+      : x.trigger === 'manual' ? `Run now${x.actor ? ` by ${String(x.actor).split('@')[0]}` : ''}` : x.heads?.investigate ? `Jira label on ${x.heads.investigate.key}` : 'Schedule';
     const h = fx ? rtSha7(fx.head_sha) : '', n = fx ? rtSha7(fx.new_sha) : '', sh = sessHref(x.session);
     return (
       <div key={x.id} className="item flex flex-col gap-s1 border-t border-line py-s2 first:border-t-0">
@@ -68,9 +68,10 @@ function Lives({ c, r }: { c: Ctl; r: J }) {
 }
 
 export function Detail({ c, r }: { c: Ctl; r: J }) {
-  const d = r.data, n: string = d.name, p = c.team.profile, sum = c.sum?.routines?.[r.id], onpr = d.on === 'pr-label';
+  const d = r.data, n: string = d.name, p = c.team.profile, sum = c.sum?.routines?.[r.id], onpr = d.on === 'pr-label', oninv = d.on === 'jira-label';
   const hist = useApp((s) => s.teamsUi.routineHist[String(r.id)]) as J[] | undefined, histErr = c.histErr[String(r.id)];
-  const runOff = (r.live && !onpr) || c.busy === r.id, offTitle = r.live && !onpr ? 'A run is in progress' : 'Working on it';
+  const runOff = (r.live && !onpr) || c.busy === r.id || oninv;
+  const offTitle = oninv ? 'It runs when a team admin adds its label to a Jira ticket' : r.live && !onpr ? 'A run is in progress' : 'Working on it';
   const next: string[] = r.paused ? [] : r.next ?? [], ch = d.channel ? rtChName(d.channel, r.channel_name, c.chans) : '';
   const b = (act: 'run' | 'pause' | 'resume' | 'edit' | 'delete', label: string, off = false) => (
     <button type="button" data-rt-act={act} data-rt-id={r.id} aria-label={`${label} ${n}`} disabled={off} title={off ? offTitle : undefined} onClick={() => c.act(act, r.id)}>{label}</button>
@@ -97,7 +98,7 @@ export function Detail({ c, r }: { c: Ctl; r: J }) {
         <StatTile label="Runs, 30 days" value={sum?.runs_30d ?? '—'} sub={hist ? `${hist.filter((x) => ['failed', 'missed'].includes(x.state)).length} failed of the last ${hist.length}` : ''} />
         <StatTile label="Cost, 30 days" value={usd(sum?.cost_30d)} sub={sum?.runs_30d ? `${usd(sum.cost_30d / sum.runs_30d)} a run · limit ${usd(d.max_usd)}` : `limit ${usd(d.max_usd)} a run`} />
         <StatTile label="Last result" value={r.last ? rtResult(r.last, d)[0] : 'none'} sub={r.last?.ended_at ? stamp(r.last.ended_at) : 'no run yet'} tone={rtFailed(r, c.sum) ? 'bad' : undefined} />
-        {onpr ? <StatTile label="Next run" value="on request" sub={r.paused ? 'paused' : 'when a dependency PR asks for help'} />
+        {onpr || oninv ? <StatTile label="Next run" value="on request" sub={r.paused ? 'paused' : onpr ? 'when a dependency PR asks for help' : 'when a team admin labels a Jira ticket'} />
           : <StatTile label="Next run" value={next[0] ? rtIn(next[0], c.now) || 'now' : 'none'} sub={r.paused ? 'paused' : next[0] ? `${rtWhen(next[0], d.zone, true)} ${d.zone}` : ''} />}
       </div>
       <div className="grid gap-s4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
@@ -127,6 +128,11 @@ export function Detail({ c, r }: { c: Ctl; r: J }) {
               <Kv label="Authors" value={(d.pr?.authors ?? []).join(', ') || 'none'} na={!(d.pr?.authors ?? []).length} />
               <Kv label="Label" value={d.pr?.label || 'agent-help'} />
               <Kv label="Result" value="One fix commit on the PR branch" />
+            </> : oninv ? <>
+              <Kv label="When" value="A team admin adds the label to a Jira ticket" />
+              <Kv label="Repo" value={(d.repos ?? [])[0] ?? 'none'} na={!(d.repos ?? []).length} />
+              <Kv label="Label" value={d.jira?.label || 'ai-investigate'} />
+              <Kv label="Result" value="One comment on the Jira ticket" />
             </> : <>
               <Kv label="Starts from" value={(c.tpls ?? []).find((x) => x.template === d.template)?.name ?? 'Custom prompt'} />
               <Kv label="Schedule" value={sentence(rtSched(d))} />
@@ -139,7 +145,7 @@ export function Detail({ c, r }: { c: Ctl; r: J }) {
             <Kv label="Cost limit" value={`${usd(d.max_usd)} a run`} />
             <Kv label="Model" value={rtPicks(d).models.find(([v]) => v === (d.model ?? ''))?.[1] ?? d.model} />
             <Kv label="Effort" value={rtPicks(d).efforts.find(([v]) => v === (d.effort ?? ''))?.[1] ?? d.effort} />
-            {!onpr && <Kv label="No new commits" value={d.skip_no_commits ? 'skip the run' : 'run anyway'} />}
+            {!onpr && !oninv && <Kv label="No new commits" value={d.skip_no_commits ? 'skip the run' : 'run anyway'} />}
           </Card>
           {onpr ? (
             <Card><H2>Live runs <span className="n font-normal text-faint">{(r.lives ?? []).length}</span></H2><Lives c={c} r={r} /></Card>

@@ -28,6 +28,8 @@ function Readback({ d, c }: { d: J; c: Ctl }) {
     const au = String(d.pr_authors).split(/[\s,]+/).filter(Boolean);
     return <><b>{d.name || 'This routine'}</b> runs when a dependency PR in <b>{d.pr_repo || 'no repo yet'}</b> by <b>{au.length ? au.join(' or ') : 'no author yet'}</b> asks for help with the <b>{String(d.pr_label).trim() || 'agent-help'}</b> label. It pushes one fix commit to the PR branch, {ch ? <>posts in <b>{chn}</b></> : 'needs a channel for its results'}, and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
   }
+  if (d.on === 'jira-label')
+    return <><b>{d.name || 'This routine'}</b> runs when a team admin adds the <b>{String(d.jira_label).trim() || 'ai-investigate'}</b> label to a Jira ticket of this team. It reads <b>{d.repos.join(', ') || 'no repo yet'}</b>, posts one comment on the ticket, {ch ? <>posts in <b>{chn}</b></> : 'needs a channel for its results'}, and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
   const pr = d.draft === false ? 'a regular PR' : 'a draft PR';
   const mode = ({ report: 'reports', tickets: 'files Jira tickets', pr: `opens ${pr}`, 'pr+notes': `opens ${pr} with notes` } as Record<string, string>)[d.mode] ?? d.mode;
   return <><b>{d.name || 'This routine'}</b> runs <b>{rtSched(rtRoutine(d))} {rtZoneName(d.zone)}</b> on <b>{d.repos.join(', ') || 'no repo yet'}</b>{d.watch ? <>, for the new commits of <b>{d.watch}</b></> : ''}{d.skip_no_commits ? ', when there are new commits' : ''}. It {mode}{ch ? <>, posts in <b>{chn}</b>,</> : ', posts nothing in Slack (the results are in History),'} and stops at <b>{usd(Number(d.max_usd))}</b> a run.</>;
@@ -54,14 +56,14 @@ export function Form({ c }: { c: Ctl }) {
   const set = (patch: J) => c.setForm((x) => (x?.step === 2 ? { ...x, d: { ...x.d, ...patch } } : x));
   const setF = (patch: J) => c.setForm((x) => (x?.step === 2 ? { ...x, ...patch } : x));
   const inp = (k: string) => ({ id: `rt-${k}`, 'data-rt': k, value: d[k] ?? '', onChange: (ev: { target: { value: string } }) => set({ [k]: ev.target.value }), ...bad(`rt-${k}`, e[k]) });
-  const locked = tpl?.locked_mode, onpr = d.on === 'pr-label';
+  const locked = tpl?.locked_mode, onpr = d.on === 'pr-label', oninv = d.on === 'jira-label', trig = onpr || oninv;
   const modeOff = (m: string) => (m === 'report' || m === 'tickets' ? '' : locked ? 'a security review never opens a PR' : t.read_only ? 'this team gets diffs only' : '');
   const openPrompt = f.promptOpen || d.template === 'blank' || !String(d.prompt).trim() || e.prompt;
   const zones = RT_ZONES.some((z) => z[0] === d.zone) ? RT_ZONES : [[d.zone, d.zone] as [string, string], ...RT_ZONES];
   const work: string[] = (t.repos ?? []).filter((r: J) => r.role === 'work').map((r: J) => r.slug), prRepos = work.includes(d.pr_repo) || !d.pr_repo ? work : [d.pr_repo, ...work];
   const hint = rtCostHint(c.sum, t.profile, d, c.tpls);
   const usdField = (
-    <Field id="rt-max_usd" label="Cost limit for each run, USD" err={e.max_usd} hint={!onpr && hint ? hint : undefined}>
+    <Field id="rt-max_usd" label="Cost limit for each run, USD" err={e.max_usd} hint={!trig && hint ? hint : undefined}>
       <input {...inp('max_usd')} className={INPUT} type="number" min={1} step={1} />
     </Field>
   );
@@ -69,8 +71,8 @@ export function Form({ c }: { c: Ctl }) {
     <div data-routine-form className="flex flex-col gap-s4">
       <div className="flex flex-wrap items-start justify-between gap-s3">
         <div>
-          <h3 id="rt-form-h" tabIndex={-1} className="m-0 flex flex-wrap items-center gap-s2 text-heading">{f.id ? `Edit ${d.name}` : 'New routine'} <Tag label={onpr ? 'Dependency fix' : tpl?.name ?? 'Custom prompt'} sq /></h3>
-          <p className="hint m-0">{f.id ? 'Change what you need, then save. The next run uses the new setup.' : onpr ? 'Check the repo, the authors and the channel, then create it.' : 'The start filled in each field. Check the schedule and the channel, then create it.'}</p>
+          <h3 id="rt-form-h" tabIndex={-1} className="m-0 flex flex-wrap items-center gap-s2 text-heading">{f.id ? `Edit ${d.name}` : 'New routine'} <Tag label={onpr ? 'Dependency fix' : oninv ? 'Investigation' : tpl?.name ?? 'Custom prompt'} sq /></h3>
+          <p className="hint m-0">{f.id ? 'Change what you need, then save. The next run uses the new setup.' : onpr ? 'Check the repo, the authors and the channel, then create it.' : oninv ? 'Check the repo, the label and the channel, then create it.' : 'The start filled in each field. Check the schedule and the channel, then create it.'}</p>
         </div>
         {!f.id && <Steps n={2} />}
       </div>
@@ -79,6 +81,7 @@ export function Form({ c }: { c: Ctl }) {
           <Card><H2>What it does</H2><div className="flex flex-col gap-s3">
             <Field id="rt-name" label="Name" err={e.name}><input {...inp('name')} className={INPUT} maxLength={40} /></Field>
             {onpr ? <p className="hint m-0">Each run reads the PR, its failing checks and the BLEnder comment, and fixes the dependency update. The host writes the prompt, so this routine has none.</p>
+              : oninv ? <p className="hint m-0">Each run reads the ticket, all its comments and the earlier investigations of it, finds the cause in the code, and writes a fix plan. It changes no code. The host writes the prompt, so this routine has none.</p>
               : openPrompt ? (
                 <Field id="rt-prompt" label={<>Prompt <span className="font-normal text-faint" data-rt-count>{textSize(d.prompt, RT_PROMPT_MAX)}</span></>} err={e.prompt}>
                   <textarea {...inp('prompt')} className={INPUT} rows={10} />
@@ -115,6 +118,21 @@ export function Form({ c }: { c: Ctl }) {
                 </div>
                 {e.pr && <p className="m-0 text-sub font-semibold text-warn" id="rt-pr-err">{e.pr}</p>}
               </fieldset>
+            </div></Card>
+          ) : oninv ? (
+            <Card><H2>When it runs</H2><div className="flex flex-col gap-s3">
+              <p className="m-0"><b>When:</b> a team admin adds the label to a Jira ticket</p>
+              <p className="hint m-0">The bot checks this team's Jira tickets every few minutes. A label from a person who is not a team admin starts nothing, and the bot says so on the ticket. It does not run on a schedule.</p>
+              {e.on && <p className="m-0 text-sub font-semibold text-warn" id="rt-on" tabIndex={-1}>{e.on}</p>}
+              <div className="grid gap-s3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                <Field id="rt-jira_label" label="Label" err={e.jira_label}><input {...inp('jira_label')} className={INPUT} maxLength={50} /></Field>
+                <Field id="rt-repos" label="Repo" err={e.repos} hint={work.length ? undefined : 'This team has no work repo, so it cannot investigate.'}>
+                  <select id="rt-repos" data-rt="repos" className={INPUT} value={d.repos[0] ?? ''} onChange={(ev) => set({ repos: ev.target.value ? [ev.target.value] : [] })} {...bad('rt-repos', e.repos)}>
+                    <option value="">Pick a work repo</option>
+                    {(work.includes(d.repos[0]) || !d.repos[0] ? work : [d.repos[0], ...work]).map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </Field>
+              </div>
             </div></Card>
           ) : <>
             <Card><H2>When it runs</H2><div className="flex flex-col gap-s3">
@@ -169,7 +187,8 @@ export function Form({ c }: { c: Ctl }) {
             </div></Card>
           </>}
           <Card><H2>What you get</H2><div className="flex flex-col gap-s3">
-            {onpr ? <p className="m-0">One fix commit on the PR branch. Nothing merges by itself.</p> : <>
+            {onpr ? <p className="m-0">One fix commit on the PR branch. Nothing merges by itself.</p>
+              : oninv ? <p className="m-0">One comment on the Jira ticket with the cause and a fix plan. To have the bot make the fix, add the ai-fixme label to the ticket.</p> : <>
               <fieldset id="rt-mode" tabIndex={-1} className="m-0 flex flex-col gap-s2 border-0 p-0" {...bad('rt-mode', e.mode)}>
                 <legend className="mb-s2 text-sub font-semibold">Result</legend>
                 {RT_MODES.map(([v, l, about]) => {
@@ -216,10 +235,10 @@ export function Form({ c }: { c: Ctl }) {
         <aside className="flex flex-col gap-s4">
           <Card><H2>{f.id ? 'Before you save' : 'Before you create it'}</H2><div className="flex flex-col gap-s3">
             <p className="readback m-0" data-rt-readback><Readback d={d} c={c} /></p>
-            <p className="hint m-0">{onpr ? 'Each run posts its start and its result in the channel, and keeps one comment on the PR up to date.' : String(d.channel).trim() ? 'Each run is one thread in the channel, with the result and the next run time.' : "Each run's result is in the routine's Runs, here."}</p>
+            <p className="hint m-0">{onpr ? 'Each run posts its start and its result in the channel, and keeps one comment on the PR up to date.' : oninv ? 'Each run posts its start in the channel, and a link to its comment on the ticket.' : String(d.channel).trim() ? 'Each run is one thread in the channel, with the result and the next run time.' : "Each run's result is in the routine's Runs, here."}</p>
             <div className="flex flex-wrap gap-s2">
               <button type="button" data-rt-save disabled={!!f.saving} onClick={() => c.act('save')}>{f.saving ? 'Saving…' : f.id ? 'Save' : 'Create'}</button>
-              {!f.id && !onpr && <button type="button" data-rt-save data-rt-then="run" disabled={!!f.saving} onClick={() => c.act('save', undefined, 'run')}>Create and run now</button>}
+              {!f.id && !trig && <button type="button" data-rt-save data-rt-then="run" disabled={!!f.saving} onClick={() => c.act('save', undefined, 'run')}>Create and run now</button>}
             </div>
             <div className="flex flex-wrap gap-s2">
               {!f.id && <button type="button" data-rt-back onClick={() => c.act('back')}>Back</button>}
@@ -233,8 +252,9 @@ export function Form({ c }: { c: Ctl }) {
 }
 
 function Channel({ c, d, e, set, setF, paste }: { c: Ctl; d: J; e: Record<string, string>; set: (p: J) => void; setF: (p: J) => void; paste: boolean }) {
-  const C = c.chans?.channels ?? [], why = (x: (typeof C)[number]) => (d.template === 'security-review' ? x.why_security : x.why), cur = C.find((x) => x.id === d.channel), onpr = d.on === 'pr-label';
-  const none = onpr ? 'A dependency fix routine needs a channel: each run posts its start and its result there.' : 'With no channel, nothing posts in Slack and the results show only in History.';
+  const C = c.chans?.channels ?? [], why = (x: (typeof C)[number]) => (d.template === 'security-review' ? x.why_security : x.why), cur = C.find((x) => x.id === d.channel);
+  const onpr = d.on === 'pr-label' || d.on === 'jira-label', kind = d.on === 'pr-label' ? 'A dependency fix routine' : 'An investigation routine';
+  const none = onpr ? `${kind} needs a channel: each run posts its start and its result there.` : 'With no channel, nothing posts in Slack and the results show only in History.';
   const label = <>Slack channel{onpr ? '' : <> <Opt /></>}</>;
   if (C.length && !paste && (!d.channel || cur))
     return (
@@ -250,7 +270,7 @@ function Channel({ c, d, e, set, setF, paste }: { c: Ctl; d: J; e: Record<string
     );
   return (
     <Field id="rt-channel" label={label} err={e.channel}
-      hint={<>{onpr ? 'A dependency fix routine needs a channel.' : 'Leave it empty and the results show only in History.'} Invite @fxa-agent to the channel first. A team with a private repo posts only to a channel of this team; a security review can post to any channel.
+      hint={<>{onpr ? `${kind} needs a channel.` : 'Leave it empty and the results show only in History.'} Invite @fxa-agent to the channel first. A team with a private repo posts only to a channel of this team; a security review can post to any channel.
         {C.length > 0 && <> <button type="button" data-rt-chlist onClick={() => { setF({ chPaste: false }); set({ channel: '' }); }}>Pick from the list</button></>}</>}>
       <input id="rt-channel" data-rt="channel" className={INPUT} placeholder="C0123ABCD or a link to the channel" value={d.channel} onChange={(ev) => set({ channel: ev.target.value })} {...bad('rt-channel', e.channel)} />
     </Field>

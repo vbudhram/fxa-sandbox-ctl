@@ -66,6 +66,17 @@ describe('the draft and the routine', () => {
     expect(rt.rtRoutine(d).pr).toEqual({ repo: 'example/app', authors: ['dependabot[bot]'], label: 'agent-help', blender_login: 'example-blender[bot]', sweep_min: 5 });
   });
   it('rtDraft with no routine equals v1', () => expect(rt.rtDraft()).toEqual(v1.rtDraft()));
+  it('an investigate start saves the jira-label shape, with no schedule or prompt, and an edit keeps sweep_min', () => {
+    const d = rt.rtFromTpl(rt.RT_INVESTIGATE, [{ slug: 'example/app', role: 'work' }, { slug: 'example/docs', role: 'ref' }]);
+    expect(rt.rtRoutine({ ...d, channel: ' C0123ABCD ' })).toEqual({ on: 'jira-label', template: 'investigate', name: 'Investigate tickets', repos: ['example/app'], channel: 'C0123ABCD', mode: 'report', max_usd: 10, jira: { label: 'ai-investigate' } });
+    const saved = { on: 'jira-label', template: 'investigate', name: 'n', repos: ['example/app'], channel: 'C1', mode: 'report', max_usd: 4, jira: { label: 'look', sweep_min: 9 } };
+    expect(rt.rtRoutine(rt.rtDraft(saved))).toEqual(saved);
+    expect(rt.rtStarts(null).map((x) => x.template)).toContain('investigate');
+  });
+  it('the investigate refusals go to the label, repo and on fields', () => {
+    const { errs } = rt.rtErrs('ERROR: jira: label must be a Jira label\nrepos: An investigation needs exactly one of this team\'s work repos\non: Investigations are for public teams only in v1');
+    expect(Object.keys(errs).sort()).toEqual(['jira_label', 'on', 'repos']);
+  });
   it('a Codex pick sends its runtime and has no Max effort; Claude sends no runtime', () => {
     const r = rt.rtDraft({ name: 'n', schedule: 'weekdays 09:00', repos: [], mode: 'report', max_usd: 5 });
     expect(rt.rtRoutine({ ...r, runtime: 'codex', model: 'gpt-6-astra', effort: 'high' })).toMatchObject({ runtime: 'codex', model: 'gpt-6-astra', effort: 'high' });

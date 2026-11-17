@@ -18,7 +18,7 @@ export const RT_MODES: [string, string, string][] = [
   ['pr', 'Draft PR', 'Opens a draft PR with the fixes. Nothing merges by itself.'],
   ['pr+notes', 'Draft PR with notes', 'The draft PR, plus every finding it did not fix, in the PR description.'],
 ];
-export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr'];
+export const RT_FIELDS = ['template', 'name', 'prompt', 'schedule', 'zone', 'repos', 'branch', 'watch', 'channel', 'mode', 'draft', 'max_usd', 'runtime', 'model', 'effort', 'skip_no_commits', 'pr_repo', 'pr_authors', 'pr_label', 'pr_mention', 'pr', 'jira_label', 'jira', 'on'];
 // As lib/routine.py MODELS and EFFORTS; '' is the host's default.
 export const RT_MODELS: [string, string][] = [['', 'Default (Opus 5.5)'], ['claude-opus-5-5', 'Opus 5.5'], ['claude-fable-5-2', 'Fable 5.2'], ['claude-sonnet-5-5', 'Sonnet 5.5'], ['claude-haiku-5-5', 'Haiku 5.5']];
 export const RT_EFFORTS: [string, string][] = [['', 'Default (Medium)'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['xhigh', 'Extra high'], ['max', 'Max']];
@@ -39,13 +39,15 @@ export type Start = { template: string; name: string; about?: string; mode?: str
 export const RT_BLANK: Start = { template: 'blank', name: 'Write your own', about: 'Start with an empty prompt, for a task the other starts do not cover.', mode: 'report', skip_no_commits: true, prompt: '' };
 // The dependency PR start (on='pr-label'): no schedule and no prompt; a red PR that asks for help starts each run.
 export const RT_DEPFIX: Start = { template: 'depfix', on: 'pr-label', name: 'Fix dependency PRs', about: 'When a red Dependabot or BLEnder PR asks for help, pushes one fix commit to its branch and posts in Slack.', mode: 'pr' };
+// The Jira ticket start (on='jira-label'): no schedule and no prompt; a team admin's label on a ticket starts each run.
+export const RT_INVESTIGATE: Start = { template: 'investigate', on: 'jira-label', name: 'Investigate Jira tickets', about: 'When a team admin adds a label to a Jira ticket, finds the cause in the code and posts a fix plan on the ticket.', mode: 'report' };
 export const RT_VERB: Record<string, string> = {
   'code-review': 'Reviews new commits on', 'perf-review': 'Looks for slow paths in', 'security-review': 'Looks for security defects in', 'ux-review': 'Checks the changed screens in',
 };
 // The v1 dot of a run in the strip of last runs, as a tone with its word.
 export const RT_DOT: Record<string, Tone> = { ok: 'merged', report: 'info', failed: 'bad', missed: 'bad', stopped: 'warn' };
 
-export const rtStarts = (tpls: Start[] | null) => [...(tpls ?? []), RT_DEPFIX, RT_BLANK];
+export const rtStarts = (tpls: Start[] | null) => [...(tpls ?? []), RT_DEPFIX, RT_INVESTIGATE, RT_BLANK];
 
 // A text's size against its limit, in bytes as the server counts.
 export const textSize = (s: unknown, max: number) => {
@@ -61,9 +63,14 @@ export function rtDraft(data?: J): J {
     ...d, template: d.template || 'blank', kind, day: kind === 'weekly' ? a : 'mon', time: kind === 'weekly' ? b : a, repos: [...(d.repos ?? [])],
     branch: d.branch ?? '', watch: d.watch ?? '', channel: d.channel ?? '', draft: d.draft !== false,
     ...(d.on === 'pr-label' ? { pr_repo: pr.repo ?? '', pr_authors: (pr.authors ?? []).join(', '), pr_label: pr.label ?? 'agent-help', pr_mention: pr.blender_mention ?? '' } : {}),
+    ...(d.on === 'jira-label' ? { jira_label: d.jira?.label ?? 'ai-investigate' } : {}),
   };
 }
 export function rtRoutine(d: J): J {
+  // An edit keeps the jira fields the form does not show (sweep_min).
+  if (d.on === 'jira-label')
+    return { on: 'jira-label', template: 'investigate', name: d.name, repos: d.repos, channel: String(d.channel).trim(), mode: 'report', max_usd: Number(d.max_usd),
+      jira: { ...(d.jira ?? {}), label: String(d.jira_label).trim() || 'ai-investigate' }, ...own(d), ...(d.env ? { env: d.env } : {}) };
   if (d.on === 'pr-label') {
     // An edit keeps the pr fields the form does not show (blender_login, sweep_min).
     const pr: J = { ...(d.pr ?? {}), repo: d.pr_repo, authors: String(d.pr_authors).split(/[\s,]+/).filter(Boolean), label: String(d.pr_label).trim() || 'agent-help' };
@@ -84,6 +91,8 @@ export function rtFromTpl(x: Start, repos: J[]): J {
   const d = rtDraft(), work = repos.filter((r) => r.role === 'work');
   if (x.on === 'pr-label') return { ...d, template: 'blank', on: 'pr-label', name: 'Dependency fixes', prompt: '', mode: 'pr', max_usd: 10,
     pr_repo: work.length === 1 ? work[0].slug : '', pr_authors: 'dependabot[bot]', pr_label: 'agent-help', pr_mention: '' };
+  if (x.on === 'jira-label') return { ...d, template: 'investigate', on: 'jira-label', name: 'Investigate tickets', prompt: '', mode: 'report', max_usd: 10,
+    repos: work.length === 1 ? [work[0].slug] : [], jira_label: 'ai-investigate' };
   return { ...d, template: x.template, name: x.template === 'blank' ? '' : x.name, prompt: x.prompt ?? '', mode: x.locked_mode || x.mode || 'report',
     skip_no_commits: x.skip_no_commits !== false, repos: repos.length === 1 ? [repos[0].slug] : [], max_usd: 5 };
 }
@@ -95,7 +104,7 @@ export function rtErrs(text: unknown): { errs: Record<string, string>; summary: 
   for (const l of String(text || '').split('\n').map((s) => s.replace(/^ERROR: /, '').trim()).filter(Boolean)) {
     const m = l.match(/^([a-z_]+): (.*)$/);
     if (!m || !RT_FIELDS.includes(m[1]!)) { other.push(l); continue; }
-    const sub = m[1] === 'pr' ? PR_SUB[m[2]!.match(/^(\w+)/)?.[1]?.toLowerCase() ?? ''] : undefined;
+    const sub = m[1] === 'pr' ? PR_SUB[m[2]!.match(/^(\w+)/)?.[1]?.toLowerCase() ?? ''] : m[1] === 'jira' ? 'jira_label' : undefined;
     errs[sub ?? m[1]!] ??= m[2]!;
   }
   const n = Object.keys(errs).length;
