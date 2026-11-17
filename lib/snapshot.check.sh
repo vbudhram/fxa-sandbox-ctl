@@ -284,14 +284,15 @@ rm -rf "$pd"
     "mozilla/fxa#9 ent|mozilla/fxa-private#7 priv|mozilla/fxa#8 fxa|mozilla/fxa#7 fxa" \
     "$(jq -r '[.prs[] | "\(.repo)#\(.n) \(.team)"] | join("|")' <<< "$out")"
   check "prs: a team's PR carries its ticket's state from its own folder" "Sam Roe" "$(jq -r '.prs[] | select(.repo == "mozilla/fxa-private") | .jira.assignee' <<< "$out")"
-  # A stale list refreshes in the background with the team loaded and FXA_PIPELINE exported; a read-only team does not.
+  # A stale list refreshes in the background in a new ctl process for its team; a fresh list does not.
   mkdir -p "$FXA_PROFILES_DIR/ro" "$st/ro"; touch -t 202001011200 "$st/priv/prs.json"
-  pipeline_load() { PIPE_REPO_SLUG="mozilla/$1"; [ "$1" != ro ] || PIPE_PR_OPEN=0; }
-  gh() { echo "[$(pr 1 "$(printenv FXA_PIPELINE)-1" 2026-10-06T10:00:00Z "$PIPE_REPO_SLUG")]"; }
-  echo '{}' > "$tmp/prs-in"; _stats_add_prs < "$tmp/prs-in" > /dev/null; wait
-  check "prs: a stale team list refreshes with its own repo and token; a read-only team reads none" "mozilla/priv#1 PRIV-1|no list|no lock" \
-    "$(_stats_prs_list "$st/priv" priv "" | jq -r '.[0] | "\(.repo)#\(.n) \(.key)"')|$([ -e "$st/ro/prs.json" ] && echo list || echo no list)|$([ -e "$st/priv/prs.lock" ] && echo lock || echo no lock)"
-  unset -f pipeline_load
+  ( SCRIPT_DIR="$tmp/prsroot"; mkdir -p "$SCRIPT_DIR"
+    printf '#!/bin/sh\necho "$*" >> "%s/ctl-calls"\n' "$tmp" > "$SCRIPT_DIR/fxa-sandbox-ctl"; chmod +x "$SCRIPT_DIR/fxa-sandbox-ctl"
+    echo '{}' > "$tmp/prs-in"; _stats_add_prs < "$tmp/prs-in" > /dev/null; wait )
+  check "prs: a stale team list refreshes in a new ctl process for its team; a fresh one does not" "--pipeline priv snapshot --prs-refresh|--pipeline ro snapshot --prs-refresh|no lock" \
+    "$(sort "$tmp/ctl-calls" | paste -sd'|' -)|$([ -e "$st/priv/prs.lock" ] && echo lock || echo no lock)"
+  ( PIPE_PR_OPEN=0; gh() { echo '[]'; }; _stats_prs_refresh "$st/ro" )
+  check "prs: a read-only team reads no list" "no list" "$([ -e "$st/ro/prs.json" ] && echo list || echo no list)"
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
   db_on() { false; }
   check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"

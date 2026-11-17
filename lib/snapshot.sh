@@ -400,9 +400,10 @@ _pipeline_prs() {
 _stats_prs_fresh() { [ -s "$1" ] && [ $(( $(date +%s) - $(_mtime "$1") )) -le 600 ]; }
 
 # _stats_prs_refresh <state dir>   Read the loaded team's PR list into <dir>/prs.json when it is older than
-# 10 minutes: the list takes about 6 s to read. A failed read keeps the last list.
+# 10 minutes: the list takes about 6 s to read. A failed read keeps the last list. A read-only team has no PRs.
 _stats_prs_refresh() {
   local f="$1/prs.json" t=""
+  [ "${PIPE_PR_OPEN:-1}" != 0 ] || return 0
   ! _stats_prs_fresh "$f" || return 0
   t="$(mktemp "${f}.XXXXXX")"
   if _pipeline_prs all 1000 number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions,url > "$t" \
@@ -430,7 +431,8 @@ _stats_add_prs() {
   local f="${PIPE_STATE_DIR}/prs.json" teams="" p="" d="" lists="" at=null
   _stats_prs_refresh "$PIPE_STATE_DIR"
   teams="$(_stats_teams)"
-  # Another team's list needs its repo and token (the gh wrapper mints it for FXA_PIPELINE). It refreshes in the
+  # Another team's list needs its repo and token (the gh wrapper mints it for FXA_PIPELINE). A new ctl process
+  # loads the team: a second pipeline_load in this shell keeps FxA's PIPE_REPO_SLUG. It refreshes in the
   # background, so four reads do not pass the feed's 30 s limit; the feed shows the list that is there.
   for p in $teams; do
     d="${HOME}/.claude/state/${p}"
@@ -438,7 +440,7 @@ _stats_add_prs() {
     ( [ ! -d "$d/prs.lock" ] || [ $(( $(date +%s) - $(_mtime "$d/prs.lock") )) -lt 600 ] || rmdir "$d/prs.lock"
       mkdir "$d/prs.lock" || exit 0
       trap 'rmdir "$d/prs.lock"' EXIT
-      pipeline_load "$p" && [ "${PIPE_PR_OPEN:-1}" != 0 ] && export FXA_PIPELINE="$p" && _stats_prs_refresh "$d" ) </dev/null >/dev/null 2>&1 &
+      "${SCRIPT_DIR:-.}/fxa-sandbox-ctl" --pipeline "$p" snapshot --prs-refresh ) </dev/null >/dev/null 2>&1 &
   done
   lists="$(_stats_prs_list "$PIPE_STATE_DIR" "${PIPE_PROFILE:-fxa}" "${PIPE_REPO_SLUG:-mozilla/fxa}"
     for p in $teams; do _stats_prs_list "${HOME}/.claude/state/${p}" "$p" ""; done)"

@@ -1878,6 +1878,7 @@ cmd_snapshot()  {
   case "${1:-}" in
     --agents) snapshot_agents_json ;;
     --stats)  snapshot_stats_json ;;
+    --prs-refresh) _stats_prs_refresh "$PIPE_STATE_DIR" ;;
     *)        snapshot_json ;;
   esac
 }
