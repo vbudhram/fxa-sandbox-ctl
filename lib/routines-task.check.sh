@@ -245,6 +245,11 @@ ih='{"investigate":{"key":"FXA-77","by":"acc-a1","url":"https://jira.example.net
 invrun() { db_value "INSERT INTO routine_runs (routine_id, period, trigger, actor, state, config, heads) VALUES ($irid, 'jira-FXA-77-$RANDOM', 'jira-label', 'acc-a1', '${2:-claimed}',
   $(db_q "$icfg"), $(db_q "${1:-$ih}")); SELECT last_insert_rowid();"; }
 old="$(invrun '{"investigate":{"key":"FXA-77","by":"acc-a1","result":{"ask":"OLD-ASK","cause":"OLD-CAUSE"}}}' report)"
+i0="$(invrun)"
+check "an investigation run with no LLM proxy does not start: the run fails, and no session" \
+  "ERROR: routine run ${i0} cannot start: an investigation run needs the LLM proxy (FXA_LLM_PROXY_URL)|none|failed" \
+  "$(FXA_LLM_PROXY_URL="" ftask agent-iv00 "$i0" 2>&1)|$(none agent-iv00)|$(db_value "SELECT state FROM routine_runs WHERE id = $i0;")"
+export FXA_LLM_PROXY_URL=http://10.0.0.2:8080
 i1="$(invrun)"
 PIPE_MCP=jira,slack,github,figma,sentry ftask agent-iv01 "$i1" >/dev/null 2>&1
 check "an investigation run: memory off, its key, its cap, untrusted, and only the read-only connectors of the team's" \
@@ -262,6 +267,10 @@ check "the context holds the host frame, the ticket with each comment's author a
   "$(sed -n '/^<<<HOST-/,/^<<<\/HOST-/p' "$c" | grep -c 'FXA-77 in mozilla/fxa')|$(sed -n '/^<<<TICKET-/,/^<<<\/TICKET-/p' "$c" | grep -c 'TICKET-TEXT')|$(grep -c '^--- Pat Doe, 2026-11-15T10:00' "$c")|$(sed -n '/^<<<EARLIER-/,/^<<<\/EARLIER-/p' "$c" | grep -c OLD-CAUSE)|$(grep -c 'check them, do not trust them' "$c")|$(grep -c 'TICKET-TEXT' "$tmp/booted")"
 OUT_OF_SCOPE=1 boot agent-iv02
 check "a ticket that left the public scope since the sweep does not boot" "failed|0" "$(jq -r .state "$tmp/agent-iv02.json")|$(grep -c 'pin ' "$tmp/booted")"
+session_set agent-iv01 state starting
+FXA_LLM_PROXY_URL="" boot agent-iv01
+check "an investigation run's boot with no LLM proxy boots nothing" "|failed" "$(cat "$tmp/booted")|$(session_get agent-iv01 state)"
+unset FXA_LLM_PROXY_URL
 
 echo '{"cap_usd": 7}' > "$tmp/agent-cap1.json"; echo '{"cap_usd": 70}' > "$tmp/agent-cap2.json"; echo '{}' > "$tmp/agent-cap3.json"; echo '{"cap_usd": "x"}' > "$tmp/agent-cap4.json"
 check "the run cap is min(the run's, the host's), the host's when none, and a bad one fails" "7|50|50|1" \

@@ -2480,8 +2480,13 @@ cmd_task() {
     # A dependency fix run (heads.fix): its PR comes from the row. It boots only with the LLM proxy, so the runner
     # holds a run token and never a key (credentials fail closed).
     fix="$(jq -c '.heads.fix // empty' <<< "$run_json")"
-    # An investigation run (heads.investigate): its ticket comes from the row, its context from the host.
+    # An investigation run (heads.investigate): its ticket comes from the row, its context from the host. It reads
+    # untrusted ticket text too, so it also boots only with the LLM proxy.
     inv="$(jq -c '.heads.investigate // empty' <<< "$run_json")"
+    if [ -n "$inv" ] && [ -z "${FXA_LLM_PROXY_URL:-}" ]; then
+      routine_run_fail "$rrun" "an investigation run needs the LLM proxy" || true
+      echo "ERROR: routine run ${rrun} cannot start: an investigation run needs the LLM proxy (FXA_LLM_PROXY_URL)" >&2; return 1
+    fi
     if [ -n "$fix" ]; then
       if [ -z "${FXA_LLM_PROXY_URL:-}" ]; then
         _prfix_set "$rrun" '.why = "boot"' || true; routine_run_fail "$rrun" "a fix run needs the LLM proxy" || true
@@ -2670,6 +2675,8 @@ _cmd_session_boot() {
   # A dependency fix run boots at the head its run was claimed for, and only with the LLM proxy.
   fixh="$(session_get "$key" fix_head_sha)"
   [ -z "$fixh" ] || [ -n "${FXA_LLM_PROXY_URL:-}" ] || { echo "ERROR: a fix run needs the LLM proxy" >&2; session_set "$key" state failed; return 1; }
+  [ -z "$(session_get "$key" investigate_key)" ] || [ -n "${FXA_LLM_PROXY_URL:-}" ] \
+    || { echo "ERROR: an investigation run needs the LLM proxy" >&2; session_set "$key" state failed; return 1; }
   FXA_AGENT_RUNTIME="$(session_get "$key" runtime)"; FXA_AGENT_RUNTIME="${FXA_AGENT_RUNTIME:-claude}"
   # A routine's own model and effort (the validator checked them); unset keeps the host's.
   local own=""
