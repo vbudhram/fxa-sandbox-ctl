@@ -66,7 +66,7 @@ check "the right sha files once, as the person, and records it" "FXA-900|1|FXA-9
 check "a second tap files nothing" "1|1" "$(session_jira_file agent-a1 "$sha" U1 'Pat Doe' >/dev/null 2>&1; echo $?)|$(creates)"
 check "the labels: agent-session, and ai-fixme only when asked" "yes|yes" \
   "$(grep 'workitem create' "$tmp/acli" | tail -1 | grep -q -- '--label agent-session --json' && echo yes)|$(sha2="$(DRAFT="$good" session_jira_draft agent-q1 | jq -r .sha)"; session_jira_file agent-q1 "$sha2" U1 Pat --fixme >/dev/null; grep 'workitem create' "$tmp/acli" | tail -1 | grep -q -- '--label agent-session,ai-fixme' && echo yes)"
-lab='{"type":"Task","summary":"Label me","description":"x","labels":["frontend","Ai-Fixme","agent-x","needs triage"]}'
+lab='{"type":"Task","summary":"Label me","description":"x","labels":["frontend","Ai-Fixme","agent-x","ai-investigate","needs triage"]}'
 out="$(DRAFT="$lab" session_jira_draft agent-l1)"
 check "the agent's labels go on the ticket, without the queue or agent labels, and spaces become dashes" "frontend,needs-triage|yes" \
   "$(jq -r '.labels | join(",")' <<< "$out")|$(session_jira_file agent-l1 "$(jq -r .sha <<< "$out")" U1 Pat >/dev/null 2>&1; grep 'workitem create' "$tmp/acli" | tail -1 | grep -q -- '--label agent-session,frontend,needs-triage --json' && echo yes)"
@@ -83,7 +83,7 @@ check "a quick answer's draft comes on stdin, files, and keeps its counters besi
 check "a later look keeps its draft under the thread's Jira key (--as), so it can change that key's ticket" "change|no" \
   "$(QA=1; printf '%s' '{"key":"FXA-900","labels":["x"]}' | session_jira_draft agent-new1 --stdin --as agent-a1 | jq -r .op)|$([ -e "$tmp/agent-new1.jira-draft.json" ] && echo yes || echo no)"
 rm -f "$tmp/agent-a1.jira-draft.json"
-ch='{"key":"FXA-900","labels":["rate-limit","ai-fixme"],"remove_labels":["sync"],"summary":"Login rate limit too strict"}'
+ch='{"key":"FXA-900","labels":["rate-limit","ai-fixme","ai-investigate-auth"],"remove_labels":["sync"],"summary":"Login rate limit too strict"}'
 out="$(printf '%s' "$ch" | session_jira_draft agent-a1 --stdin)"
 check "a change to a ticket this thread filed is frozen without the queue label, and applied once" "change|rate-limit|yes|1" \
   "$(jq -r .op <<< "$out")|$(jq -r '.labels | join(",")' <<< "$out")|$(session_jira_file agent-a1 "$(jq -r .sha <<< "$out")" U1 Pat >/dev/null 2>&1; grep 'workitem edit --key FXA-900' "$tmp/acli" | tail -1 | grep -q -- '--summary Login rate limit too strict --labels rate-limit --remove-labels sync --yes' && echo yes)|$(session_jira_file agent-a1 "$(jq -r .sha <<< "$out")" U1 Pat >/dev/null 2>&1; echo $?)"

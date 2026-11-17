@@ -23,6 +23,8 @@ check "mode, channel, repo and template rules" "1|1|1|1|1" \
   "$(val "$(jq -c '.mode = "pr"' <<< "$good")" "$pub" | grep -c '^mode: An investigation')|$(val "$(jq -c 'del(.channel)' <<< "$good")" "$pub" | grep -c '^channel: A Jira label')|$(val "$(jq -c '.repos = ["mozilla/dep"]' <<< "$good")" "$pub" | grep -c '^repos: An investigation')|$(val "$(jq -c '.template = "blank" | .prompt = "x"' <<< "$good")" "$pub" | grep -c '^template: A Jira label')|$(val "$(jq -c 'del(.on) | .schedule = "daily 07:00" | .zone = "UTC"' <<< "$good")" "$pub" | grep -c '^template: The investigate template needs')"
 check "a bad jira block and a jira block on a schedule routine are refused" "1|1|1" \
   "$(val "$(jq -c '.jira = {label: "a b", sweep_min: 0, x: 1}' <<< "$good")" "$pub" | grep -c '^jira: label')|$(val "$(jq -c '.jira = {sweep_min: 0}' <<< "$good")" "$pub" | grep -c '^jira: sweep_min')|$(val '{"name":"R","template":"blank","prompt":"x","schedule":"daily 07:00","zone":"UTC","mode":"report","repos":["mozilla/fxa"],"jira":{}}' "$pub" | grep -c '^jira: Only')"
+check "a label without the ai-investigate prefix is refused (Slack drafts can add it); one with it passes" "1|ai-investigate-auth" \
+  "$(val "$(jq -c '.jira = {label: "triage-me"}' <<< "$good")" "$pub" | grep -c '^jira: label')|$(val "$(jq -c '.jira = {label: "ai-investigate-auth"}' <<< "$good")" "$pub" | jq -r .jira.label)"
 printf '%s' "$(val "$good" "$pub")" > "$tmp/cfg.json"
 check "a jira-label routine has no next run and is never due" "|null" "$(py next "$tmp/cfg.json" | paste -sd, -)|$(py due "$tmp/cfg.json" 1790000000)"
 

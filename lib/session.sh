@@ -1672,14 +1672,14 @@ _jira_note() { ! session_exists "$1" || _session_history_add "$1" action "$2"; }
 _SESSION_JIRA_DRAFT_JQ='select(type == "object")
   | {type: (.type // "Task" | tostring), summary: (.summary // "" | tostring | gsub("\\s+"; " ") | sub("^ +"; "") | sub(" +$"; "")),
      description: (.description // "" | tostring | sub("\\s+$"; "")),
-     labels: ([.labels // [] | .[]? | tostring | gsub("\\s+"; "-") | select(test("^(ai-fixme|agent-)"; "i") | not)] | unique)}
+     labels: ([.labels // [] | .[]? | tostring | gsub("\\s+"; "-") | select(test("^(ai-fixme|ai-investigate|agent-)"; "i") | not)] | unique)}
   | select(.type | IN("Task", "Bug", "Story"))
   | select((.summary | length) >= 3 and (.summary | length) <= 200 and (.description | length) <= 2800)
   | select((.labels | length) <= 5 and all(.labels[]; test("^[A-Za-z0-9][A-Za-z0-9_.:-]{0,49}$")))
   | select([.summary, .description] | map(test("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]") or test("(?im)^ *filed from slack by")) | any | not)'
 # A change to a ticket this thread filed: {key, and at least one of summary, type, description, labels (to add), remove_labels}.
-# The queue and agent labels are never added or removed: the queue is a button.
-_SESSION_JIRA_CHANGE_JQ='def lbl: [.[]? | tostring | gsub("\\s+"; "-") | select(test("^(ai-fixme|agent-)"; "i") | not)] | unique;
+# The queue, investigate and agent labels are never added or removed: a label from Slack would carry the host's Jira login.
+_SESSION_JIRA_CHANGE_JQ='def lbl: [.[]? | tostring | gsub("\\s+"; "-") | select(test("^(ai-fixme|ai-investigate|agent-)"; "i") | not)] | unique;
   select(type == "object" and (.key | type) == "string" and (.key | test("^[A-Z][A-Z0-9]*-[0-9]+$")))
   | {key, type: (.type // "" | tostring), summary: (.summary // "" | tostring | gsub("\\s+"; " ") | sub("^ +"; "") | sub(" +$"; "")),
      description: (.description // "" | tostring | sub("\\s+$"; "")), labels: (.labels // [] | lbl), remove_labels: (.remove_labels // [] | lbl)}
