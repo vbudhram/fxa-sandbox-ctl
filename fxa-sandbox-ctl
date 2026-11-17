@@ -2471,7 +2471,7 @@ cmd_task() {
     *) echo "ERROR: task needs --source slack" >&2; return 1 ;;
   esac
   [[ "$key" =~ ^agent-[a-z0-9]{4,12}$ ]] || { echo "ERROR: --id must look like agent-7f3a" >&2; return 1; }
-  local run_json="" run_text="" routine_cfg="" fix=""
+  local run_json="" run_text="" routine_cfg="" fix="" inv=""
   if [ "$source" = routine ]; then
     run_json="$(routine_run_read "$rrun" "${PIPE_PROFILE:-fxa}")" || return 1
     routine_cfg="$(jq -c .config <<< "$run_json")"
@@ -2480,6 +2480,8 @@ cmd_task() {
     # A dependency fix run (heads.fix): its PR comes from the row. It boots only with the LLM proxy, so the runner
     # holds a run token and never a key (credentials fail closed).
     fix="$(jq -c '.heads.fix // empty' <<< "$run_json")"
+    # An investigation run (heads.investigate): its ticket comes from the row, its context from the host.
+    inv="$(jq -c '.heads.investigate // empty' <<< "$run_json")"
     if [ -n "$fix" ]; then
       if [ -z "${FXA_LLM_PROXY_URL:-}" ]; then
         _prfix_set "$rrun" '.why = "boot"' || true; routine_run_fail "$rrun" "a fix run needs the LLM proxy" || true
@@ -2583,7 +2585,7 @@ cmd_task() {
   # A routine run: its branch is the base, its text is untrusted (D18), and a security review is
   # narrowed: watch_narrow for the watch page, no team memory (D9).
   jq -n --arg key "$key" --arg owner "$owner" --arg env "${FXA_ENV:-}" --arg profile "${PIPE_PROFILE:-}" --arg base "${PIPE_BASE_BRANCH:-main}" \
-    --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" --argjson fix "${fix:-null}" \
+    --arg source "$source" --arg run "$rrun" --argjson cfg "${routine_cfg:-null}" --argjson fix "${fix:-null}" --argjson inv "${inv:-null}" \
     --arg run_trigger "$([ -z "$fix" ] || jq -r '.trigger // ""' <<< "$run_json")" --arg run_actor "$([ -z "$fix" ] || jq -r '.actor // ""' <<< "$run_json")" \
     '{key: $key, owner: $owner, source: $source, branch: $key, base: $base, profile: $profile,
       state: "starting", turns: "1", created: now, last_activity: now} + (if $env != "" then {env: $env} else {} end)
@@ -2591,7 +2593,8 @@ cmd_task() {
           base: ($cfg.branch // $base)} + (if $cfg.template == "security-review" then {watch_narrow: "1", memory: "off"} else {} end)
           + (if ($cfg.model // "") != "" then {agent_model: $cfg.model} else {} end) + (if ($cfg.effort // "") != "" then {agent_effort: $cfg.effort} else {} end) end)
      + (if $fix == null then {} else {watch_narrow: "1", memory: "off", fix_pr: ($fix.pr | tostring), fix_trigger: $run_trigger, fix_actor: $run_actor,
-          fix_head_sha: $fix.head_sha} end)' > "$(_session_file "$key")"
+          fix_head_sha: $fix.head_sha} end)
+     + (if $inv == null then {} else {memory: "off", investigate_key: $inv.key} end)' > "$(_session_file "$key")"
   _session_unlock .task-cap
   _session_db_sync "$key"
   [ -n "$resume_from" ] && session_set "$key" resume_from "$resume_from"
@@ -2647,6 +2650,7 @@ cmd_task() {
   # A fix run gets the CI connectors only: its context holds untrusted PR and CI text.
   [ -z "$resume_from" ] && [ -z "$fix" ] && [ -n "${PIPE_MCP+x}" ] && { mcp="$(pipeline_mcp "$mcp")"; mcp_set=1; }
   [ -z "$fix" ] || { mcp="$(mcp_ci_only "${PIPE_MCP:-}")"; mcp_set=1; }
+  [ -z "$inv" ] || { mcp="$(mcp_investigate_only "${PIPE_MCP-jira,github,github-ci,circleci,sentry,bugzilla}")"; mcp_set=1; }
   [ -z "$mcp_set" ] && [ -n "$resume_from" ] && mcp="$(session_get "$resume_from" mcp)"
   if [ -n "$mcp" ]; then
     [[ "$mcp" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]] || { echo "ERROR: --mcp must look like jira,github" >&2; _task_abort "$key"; return 1; }
@@ -2765,6 +2769,10 @@ _cmd_session_boot() {
   if [ -n "$fixh" ]; then
     # A fix run: the host frame, then one untrusted fence. No ticket, no CircleCI scan of the frame and no review.
     _prfix_context "$key" "$dir" "$nonce" > "${dir}/.fxa-jira-context.md"; session_set "$key" untrusted 1
+  elif [ -n "$(session_get "$key" investigate_key)" ]; then
+    # An investigation run: the host frame, the ticket and the earlier results, each fenced. No other scan of the frame.
+    session_set "$key" untrusted 1
+    inv_context "$key" "$nonce" > "${dir}/.fxa-jira-context.md" || { session_set "$key" state failed; return 1; }
   else
   cat > "${dir}/.fxa-jira-context.md" <<EOF
 # Session ${key}

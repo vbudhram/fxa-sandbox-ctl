@@ -613,20 +613,27 @@ jira_comment() {
   acli jira workitem comment create --key "$key" --body "$adf" >/dev/null
 }
 
+# jira_admin_ids   The Jira account IDs of the loaded team's admins (its record's admins and admin people), one a line,
+#   each found by email with exactly one match. Fails when the team has no record.
+jira_admin_ids() {
+  local rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" e id
+  [ -f "$rec" ] || return 1
+  for e in $(jq -r '(.admins[]?.email // empty), (.people[]? | select(.admin == true) | .email // empty)' "$rec" 2>/dev/null | sort -u); do
+    id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}" | jq -r 'if length == 1 then .[0].accountId else empty end' 2>/dev/null)" || id=""
+    [ -z "$id" ] || printf '%s\n' "$id"
+  done
+}
+
 # jira_admin_asked <KEY>   Succeeds when a team admin's comment, made after the ticket got the queue label, asks
 #   for a CI config change: a clause starts with a change verb and names .circleci/, .github/workflows/ or CI config,
 #   and the comment has no negation. The reporter never counts (a bot-filed ticket has the asker as reporter), nor
 #   does a 🤖 comment (the bot's, under a person's login). Admins are mapped to Jira account IDs, never display
 #   names. A failed read is "no" (fail closed).
 jira_admin_asked() {
-  local key="${1:-}" rec="${FXA_TEAMS_DIR:-}/${PIPE_PROFILE:-}.json" ids="" e id label
+  local key="${1:-}" ids="" label
   label="$(pipeline_label_for queued 2>/dev/null)" || label=""
-  [ -n "$key" ] && [ -f "$rec" ] && [ -n "$label" ] || return 1
-  for e in $(jq -r '(.admins[]?.email // empty), (.people[]? | select(.admin == true) | .email // empty)' "$rec" 2>/dev/null | sort -u); do
-    id="$(_jira_rest GET /rest/api/3/user/search -G --data-urlencode "query=${e}" | jq -r 'if length == 1 then .[0].accountId else empty end' 2>/dev/null)" || id=""
-    [ -z "$id" ] || ids="${ids}${id}"$'\n'
-  done
-  [ -n "$ids" ] || return 1
+  [ -n "$key" ] && [ -n "$label" ] || return 1
+  ids="$(jira_admin_ids)" && [ -n "$ids" ] || return 1
   _jira_rest GET "/rest/api/3/issue/${key}?fields=comment&expand=changelog" | jq -e --arg ids "$ids" --arg label "$label" "${_JIRA_TEXT_JQ}"'
     def ep: (.[0:19] + "Z" | fromdateiso8601) - ((if .[-5:-4] == "-" then -1 else 1 end) * ((.[-4:-2] | tonumber) * 3600 + (.[-2:] | tonumber) * 60));
     def quoted: walk(if type == "object" and (.type | IN("blockquote", "codeBlock")) then {} else . end);
