@@ -63,8 +63,8 @@ check "the probe misses and GCE cannot say: the stop fails" "1" "$(UP=0 vm_stop 
 SANDBOX_ROOT="$(cd "$here/.." && pwd)"; sent="$tmp/sent"; : > "$sent"
 _fc_ssh() { printf '%s %s\n' "$(grep -o '/usr/local/[a-z/.0-9-]*' <<< "$1" | head -1)" "$(cksum | cut -d' ' -f1)" >> "$sent"; }
 fc_install
-check "fc install sends the four scripts to their paths" \
-  "/usr/local/sbin/fc-refresh $(cksum < "$SANDBOX_ROOT/infra/firecracker/refresh.sh" | cut -d' ' -f1)|/usr/local/share/fxa/03b-toolchain.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/03b-toolchain.sh" | cut -d' ' -f1)|/usr/local/share/fxa/09-fxa-services.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/09-fxa-services.sh" | cut -d' ' -f1)|/usr/local/share/fxa/15-firefox.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/15-firefox.sh" | cut -d' ' -f1)" \
+check "fc install sends the five scripts to their paths" \
+  "/usr/local/sbin/fc-refresh $(cksum < "$SANDBOX_ROOT/infra/firecracker/refresh.sh" | cut -d' ' -f1)|/usr/local/share/fxa/03b-toolchain.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/03b-toolchain.sh" | cut -d' ' -f1)|/usr/local/share/fxa/09-fxa-services.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/09-fxa-services.sh" | cut -d' ' -f1)|/usr/local/share/fxa/15-firefox.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/15-firefox.sh" | cut -d' ' -f1)|/usr/local/share/fxa/16-fxa-strapi.sh $(cksum < "$SANDBOX_ROOT/packer/scripts/16-fxa-strapi.sh" | cut -d' ' -f1)" \
   "$(paste -sd'|' "$sent")"
 # refresh.sh puts the repo's fxa-start on the guest: the text 09-fxa-services.sh writes, with the auth server's oauth/token fix.
 out="$( fc=fc; fc() { cat > "$tmp/fxa-start.sent"; }

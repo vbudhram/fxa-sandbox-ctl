@@ -96,6 +96,9 @@ fxa_start="$(sed -n "/^cat > \/usr\/local\/bin\/fxa-start <<'FXASTART'$/,/^FXAST
 # Firefox, so a session can change it and hand back a diff (15-firefox.sh, which the GCE image runs too).
 # A failure keeps the snapshot's earlier build and never blocks the FxA refresh.
 "$fc" ssh 0 'sudo -u agent bash -s' < /usr/local/share/fxa/15-firefox.sh || echo "WARN: the Firefox build failed; the snapshot keeps the earlier one"
+# The CMS for `stack.sh strapi` (16-fxa-strapi.sh, which the GCE image runs too). Not started.
+[ -f /usr/local/share/fxa/16-fxa-strapi.sh ] && { "$fc" ssh 0 'sudo -u agent bash -lc "source /etc/agent-env.sh; bash -s"' < /usr/local/share/fxa/16-fxa-strapi.sh \
+  || echo "WARN: the fxa-strapi install failed; stack.sh strapi installs it at session time"; }
 "$fc" ssh 0 'sudo sync; sudo systemctl poweroff' || true
 sleep 8
 

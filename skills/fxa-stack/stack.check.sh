@@ -50,4 +50,29 @@ check "a 321done start that fails leaves the boot marker" "yes" "$([ -e "$tmp/fx
 : > "$tmp/pm2.log"; out="$(bash "$S" ensure 2>&1)"
 check "the next ensure skips the start and says why" "0|1" "$(grep -c 321done "$tmp/pm2.log")|$(grep -c 'failed to start once this boot' <<< "$out")"
 
+# strapi: seeds each entry (add, then update), and restarts auth and content with CMS on.
+bash "$S" strapi "$tmp/none.json" >/dev/null 2>&1; check "strapi needs a seed file" 2 $?
+for s in auth content; do echo "module.exports = { apps: [{ name: '$s', script: 'x.js', env: { CMS_ENABLED: 'false' } }] };" > "$tmp/repo/packages/demo/$s.js"; done
+echo "module.exports = { apps: [...require('./auth.js').apps, ...require('./content.js').apps] };" > "$tmp/repo/packages/demo/pm2.config.js"
+mkdir -p "$tmp/strapi/.git" "$tmp/strapi/node_modules" "$tmp/strapi/build" "$tmp/strapi/src"; : > "$tmp/strapi/.env"
+echo "const METERING_POC_TOKEN = 'tok-local';" > "$tmp/strapi/src/index.js"
+echo '[{"clientId":"c1","entrypoint":"e1","shared":{"buttonColor":"#000"}}]' > "$tmp/seed.json"
+printf '#!/bin/sh\ncase "$*" in *cms/config*) echo "{\\"clientId\\":\\"c1\\"}" ;; esac; exit 0\n' > "$tmp/bin/curl"; chmod +x "$tmp/bin/curl"
+node -e '
+let n = 0; require("http").createServer((q, r) => { let b = ""; q.on("data", (c) => b += c); q.on("end", () => {
+  require("fs").appendFileSync(process.argv[1], `${q.method} ${decodeURIComponent(q.url)} ${q.headers.authorization}\n`);
+  r.end(JSON.stringify({ data: q.method === "GET" ? (n++ ? [{ documentId: "d1" }] : []) : {} })); }); }).listen(0, "127.0.0.1", function () {
+  require("fs").writeFileSync(process.argv[2], String(this.address().port)); });' "$tmp/strapi.log" "$tmp/port" & srv=$!
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -s "$tmp/port" ] && break; sleep 0.2; done
+export FXA_STRAPI_DIR="$tmp/strapi" FXA_STRAPI_URL="http://127.0.0.1:$(cat "$tmp/port")"
+: > "$tmp/pm2.log"; bash "$S" strapi "$tmp/seed.json" >/dev/null 2>&1; rc1=$?; bash "$S" strapi "$tmp/seed.json" >/dev/null 2>&1; rc2=$?
+kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
+check "strapi runs twice" "0 0" "$rc1 $rc2"
+check "strapi adds the entry, then updates it, with the seeded token" \
+  "GET /api/relying-parties?filters[clientId][\$eq]=c1&filters[entrypoint][\$eq]=e1&status=published Bearer tok-local|POST /api/relying-parties?status=published Bearer tok-local|GET /api/relying-parties?filters[clientId][\$eq]=c1&filters[entrypoint][\$eq]=e1&status=published Bearer tok-local|PUT /api/relying-parties/d1?status=published Bearer tok-local" \
+  "$(paste -sd'|' "$tmp/strapi.log")"
+check "strapi turns CMS on in auth with the token and a Stripe key" "true|tok-local|true|true" \
+  "$(node -e 'const e = require(process.argv[1]).apps[0].env; console.log([e.CMS_ENABLED, e.STRAPI_CLIENT_API_KEY, !!e.SUBHUB_STRIPE_APIKEY, e.RECOVERY_PHONE__ENABLED].join("|"))' "$tmp/fxa-stack-restart-auth.config.js")"
+check "strapi turns CMS on in content" "true" "$(node -e 'console.log(require(process.argv[1]).apps[0].env.CMS_ENABLED)' "$tmp/fxa-stack-restart-content.config.js")"
+
 [ "$fail" = 0 ] && echo "all checks pass"; exit "$fail"

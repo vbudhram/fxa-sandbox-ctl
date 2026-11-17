@@ -15,6 +15,7 @@ Run the helper from anywhere:
     bash ~/.claude/skills/fxa-stack/stack.sh account 2fa    # a test account, as one line of JSON
     bash ~/.claude/skills/fxa-stack/stack.sh restart auth KEY=VAL   # one service with extra env
     bash ~/.claude/skills/fxa-stack/stack.sh wait auth settings     # block until healthy (3 min each)
+    bash ~/.claude/skills/fxa-stack/stack.sh strapi         # local Strapi CMS on :1337, CMS on in auth and content
 
 Use `wait` after a change that restarts a service, not a `sleep` or `curl`
 loop. Never run `fxa-start` yourself: `ensure` runs it only when the core is
@@ -48,6 +49,27 @@ With no `KEY=VAL`, the service goes back to the env of its config.
 
 The names are pm2 names: `auth`, `inbox`, `content`, `settings-react`,
 `profile`, `123done`.
+
+## CMS (Strapi)
+
+CMS is off in the stack by default. `strapi` turns it on for this session:
+
+1. It runs `mozilla/fxa-strapi` (branch `dev`) from `/home/agent/fxa-strapi` on :1337. It
+   clones and builds it first when the image does not have it (about 1.5 minutes).
+2. It adds or updates each Relying Party in `strapi-seed.json` (next to the script) and
+   publishes it. The default seed is the content that `tests/cms/*.spec.ts` expects:
+   123done (`entrypoint=purple`) and Sync (`entrypoint=firefox-cms`).
+3. It restarts auth and content with CMS on and cache TTLs of 1 s.
+
+To try a style, use one of these:
+- Edit `strapi-seed.json` or a copy (`strapi my-seed.json`), and run `strapi` again.
+- Edit the entry in the admin at http://127.0.0.1:1337/admin, and publish it.
+
+Then load the page again with its `entrypoint`, for example
+`http://localhost:8080/?entrypoint=purple`. `strapi off` stops Strapi and turns CMS off.
+
+The 2FA specs in `tests/cms` need recovery phone, so `strapi` turns it on.
+The recovery phone spec still fails here, because the stack has no Twilio test credentials and sends no SMS.
 
 ## What each check needs
 

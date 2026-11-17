@@ -212,6 +212,14 @@ build {
     expect_disconnect = false
   }
 
+  # The CMS, installed and built for `stack.sh strapi`; not started. As agent, as the snapshot has it.
+  provisioner "shell" {
+    only              = ["googlecompute.ubuntu"]
+    script            = "${path.root}/scripts/16-fxa-strapi.sh"
+    execute_command   = "chmod a+rx {{ .Path }} && sudo -u agent -H bash -c 'source /etc/agent-env.sh; bash {{ .Path }}'"
+    expect_disconnect = false
+  }
+
   # The android image only; the script exits at once without FXA_ANDROID=true.
   provisioner "shell" {
     only              = ["googlecompute.ubuntu"]

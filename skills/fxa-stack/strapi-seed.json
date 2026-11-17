@@ -1,0 +1,88 @@
+[
+  {
+    "name": "123Done (CMS functional tests)",
+    "clientId": "dcdb5ae7add825d2",
+    "entrypoint": "purple",
+    "shared": {
+      "buttonColor": "#4845D2",
+      "logoUrl": "https://accounts-cdn.stage.mozaws.net/other/123Done-blue-logo.svg",
+      "logoAltText": "123Done logo"
+    },
+    "EmailFirstPage": {
+      "headline": "Make Space for What Matters",
+      "description": "Start your clutter-free to-do list with 123Done. Sign up with your email to create a Mozilla account and get started today.",
+      "primaryButtonText": "Create My List"
+    },
+    "SignupSetPasswordPage": {
+      "headline": "Create Your Password",
+      "description": "Keep your account private and secure. Set a password for your Mozilla account and get started with 123Done.",
+      "primaryButtonText": "Continue"
+    },
+    "SignupConfirmCodePage": {
+      "headline": "Almost There",
+      "description": "Just one quick step. Enter the code from your email to activate your Mozilla account and unlock 123Done.",
+      "primaryButtonText": "Finish Setup"
+    },
+    "SigninPage": {
+      "headline": "Enter your password",
+      "description": "for your Mozilla account",
+      "primaryButtonText": "Sign in"
+    },
+    "SigninTotpCodePage": {
+      "headline": "Enter two-step authentication code",
+      "primaryButtonText": "Confirm"
+    },
+    "SigninRecoveryCodePage": {
+      "headline": "Enter backup authentication code",
+      "primaryButtonText": "Confirm"
+    },
+    "SigninRecoveryPhonePage": {
+      "headline": "Enter recovery code",
+      "primaryButtonText": "Confirm"
+    }
+  },
+  {
+    "name": "Sync (CMS functional tests)",
+    "clientId": "5882386c6d801776",
+    "entrypoint": "firefox-cms",
+    "shared": {
+      "buttonColor": "#FF630B",
+      "logoUrl": "https://accounts-cdn.stage.mozaws.net/other/firefox-browser-logo.svg",
+      "logoAltText": "Firefox logo"
+    },
+    "EmailFirstPage": {
+      "headline": "Continue to your Mozilla account",
+      "description": "Sync your passwords, tabs, and bookmarks everywhere you use Firefox.",
+      "primaryButtonText": "Sign up or sign in"
+    },
+    "SignupSetPasswordPage": {
+      "headline": "Create a password",
+      "description": "Sync your passwords, payment methods, bookmarks, and more everywhere you use Firefox.",
+      "primaryButtonText": "Create account"
+    },
+    "SignupConfirmCodePage": {
+      "headline": "Enter confirmation code",
+      "description": "Just one quick step. Enter the code from your email to activate your Mozilla account.",
+      "primaryButtonText": "Start syncing"
+    },
+    "SignupConfirmedSyncPage": {
+      "headline": "Sync is turned on",
+      "description": "Your passwords, payment methods, addresses, bookmarks, history, and more can sync everywhere you use Firefox.",
+      "primaryButtonText": "Add another device"
+    },
+    "SigninPage": {
+      "headline": "Enter your password",
+      "description": "for your Mozilla account",
+      "primaryButtonText": "Sign in"
+    },
+    "SigninTokenCodePage": {
+      "headline": "Enter confirmation code",
+      "description": "for your Mozilla account",
+      "primaryButtonText": "Confirm"
+    },
+    "SigninTotpCodePage": {
+      "headline": "Enter two-step authentication code",
+      "primaryButtonText": "Confirm"
+    }
+  }
+]

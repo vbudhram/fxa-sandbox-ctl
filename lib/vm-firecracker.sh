@@ -130,7 +130,8 @@ vm_list() {
 fc_install() {
   local src dest
   for src in infra/firecracker/refresh.sh:/usr/local/sbin/fc-refresh packer/scripts/03b-toolchain.sh:/usr/local/share/fxa/03b-toolchain.sh \
-             packer/scripts/09-fxa-services.sh:/usr/local/share/fxa/09-fxa-services.sh packer/scripts/15-firefox.sh:/usr/local/share/fxa/15-firefox.sh; do
+             packer/scripts/09-fxa-services.sh:/usr/local/share/fxa/09-fxa-services.sh packer/scripts/15-firefox.sh:/usr/local/share/fxa/15-firefox.sh \
+             packer/scripts/16-fxa-strapi.sh:/usr/local/share/fxa/16-fxa-strapi.sh; do
     dest="${src#*:}"; src="${SANDBOX_ROOT}/${src%%:*}"
     _fc_ssh "t=\$(mktemp) && cat > \$t && { sudo cmp -s \$t ${dest} || { sudo install -D -m 755 \$t ${dest} && echo 'installed ${dest}'; }; }; rc=\$?; rm -f \$t; exit \$rc" < "$src" || return 1
   done
