@@ -127,6 +127,8 @@
   .bsub .hint { display: none; }
   .belt .tk { grid-area: tk; } .belt .trk { grid-area: trk; }
   .belt .st { grid-area: st; flex-direction: row; align-items: center; justify-content: space-between; }
+  /* The legend follows the track, which now spans the row. */
+  .blegend { grid-template-columns: minmax(0, 1fr); } .blegend > span:not(.stops) { display: none; }
 }
 @media (max-width: 600px) {
   .line1 { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }

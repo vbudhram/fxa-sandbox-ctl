@@ -63,3 +63,16 @@ test('every view uses the shared heading, card padding and title position', asyn
   expect(bad).toEqual([]);
   expect([...tops]).toHaveLength(1);
 });
+
+test('on a phone the belt legend spans the track, and no two stop names cross', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/v2/#pipeline/belts');
+  await expect(page.locator('.blegend .stops > span').first()).toBeAttached();
+  const r = await page.evaluate(() => {
+    const st = [...document.querySelectorAll('.blegend .stops > span')].map((c) => c.getBoundingClientRect());
+    const trk = document.querySelector('.belt .trk')!.getBoundingClientRect();
+    return { cross: st.some((a, i) => i > 0 && a.left < st[i - 1]!.right), gap: Math.abs(st.at(-1)!.right - trk.right) };
+  });
+  expect(r.cross).toBe(false);
+  expect(r.gap).toBeLessThan(8);
+});
