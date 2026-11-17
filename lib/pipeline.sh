@@ -963,10 +963,11 @@ pipeline_profile_json() {
   done
   jq -nc --arg p "${PIPE_PROFILE:-}" --argjson private "$priv" --arg label "${PIPE_LABEL:-}" --arg works "$works" --arg deps "${PIPE_DEP_REPOS:-}" \
     --arg defaults "${PIPE_STACK_DEFAULT:-}" --arg aliases "${PIPE_REPO_ALIASES:-}" --arg ro "${PIPE_PR_OPEN:-1}" --arg app "$app" --argjson ok "$ok" \
-    --arg mcp "${PIPE_MCP:-}" --argjson android "$([ "${PIPE_ANDROID:-}" = 1 ] && echo true || echo false)" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" '
+    --arg mcp "${PIPE_MCP:-}" --argjson android "$([ "${PIPE_ANDROID:-}" = 1 ] && echo true || echo false)" --argjson mcp_set "$([ -n "${PIPE_MCP+x}" ] && echo true || echo false)" \
+    --argjson secret "$([ "${PIPE_SECRET_TICKETS:-}" = 1 ] && echo true || echo false)" '
     ($ro == "0") as $read_only | ($app | split("\n") | map(ascii_downcase)) as $installed |
     ($aliases | split(" ") | map(select(. != "") | split("=") | {key: (.[0] | ascii_downcase), value: (.[1] | split(","))}) | from_entries) as $alias |
-    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only, private: $private, android: $android,
+    { profile: $p, label: (if $label == "" then $p else $label end), read_only: $read_only, private: $private, secret: $secret, android: $android,
       mcp: (if $mcp_set then ($mcp | split(",") | map(select(. != ""))) else null end),
       defaults: ($defaults | split(" ") | map(select(. != ""))),
       repos: (($works | split(" ") | map(select(. != "")) | map(. as $s | { slug: $s, role: "work",
