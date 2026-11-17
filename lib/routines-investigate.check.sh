@@ -50,6 +50,10 @@ echo FXA-2 > "$tmp/keys"; sweep
 check "a non-admin's label: removed, one comment that says who can, no run" "1|1|0" \
   "$(grep -c '^unlabel .*-k FXA-2' "$tmp/log")|$(grep -c '^comment FXA-2 🤖 Only a team admin can start an investigation. Ask one to add ai-investigate.$' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"
 
+( _jira_rest() { echo '{"changelog": {"histories": []}}'; }; echo FXA-11 > "$tmp/keys"; sweep )
+check "a ticket created with the label (no add in its changelog): the label goes, one comment, no run" "1|1|0" \
+  "$(grep -c '^unlabel .*-k FXA-11' "$tmp/log")|$(grep -c '^comment FXA-11 🤖 I cannot tell who added ai-investigate' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-11';")"
+echo FXA-2 > "$tmp/keys"
 ( jira_admin_ids() { return 1; }; sweep )
 check "an admin lookup that fails keeps the label: no comment, no run" "0|0|0" \
   "$(grep -c '^unlabel' "$tmp/log")|$(grep -c '^comment' "$tmp/log")|$(db_value "SELECT count(*) FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-2';")"

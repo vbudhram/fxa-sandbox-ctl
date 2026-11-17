@@ -578,6 +578,7 @@ prfix_sweep() {
 
 _INV_NOT_ADMIN="🤖 Only a team admin can start an investigation. Ask one to add %s."
 _INV_TWICE="🤖 The investigation of this ticket failed twice in 24 hours, so I do not start it again now. Add %s again later."
+_INV_NO_ADDER="🤖 I cannot tell who added %s, so I do not start an investigation. A team admin can add it again."
 _INV_MOST=3
 
 # _inv_note <key> <text>   One comment on the ticket, led by 🤖 (jira_comment adds the 🤖 itself for a person's login).
@@ -596,8 +597,13 @@ _inv_consider() {
   by="$(jq -r --arg l "$label" '[.changelog.histories[]? | select(any(.items[]?; .field == "labels"
       and ((.toString // "") | split(" ") | index($l)) and (((.fromString // "") | split(" ") | index($l)) | not)))]
     | sort_by(.created) | last | .author.accountId // empty' <<< "$j" 2>/dev/null)" || by=""
-  # ponytail: expand=changelog holds the newest 100 changes; an older label add reads as no adder, and the ticket waits.
-  [[ "$by" =~ ^[A-Za-z0-9:_-]{1,128}$ ]] || return 0
+  # No adder (a ticket created with the label, or an add older than the newest 100 changes): the label goes, so the ticket
+  # does not hold one of the _INV_MOST oldest slots on every sweep.
+  if ! [[ "$by" =~ ^[A-Za-z0-9:_-]{1,128}$ ]]; then
+    _inv_unlabel "$key" "$label" || return 0
+    echo "routine ${rid}: ${key} not started: no label add in its changelog"
+    _inv_note "$key" "$(printf "$_INV_NO_ADDER" "$label")" || true; return 0
+  fi
   # A failed admin lookup waits for the next sweep: it never reads as "not an admin".
   ids="$(jira_admin_ids 2>/dev/null)" || return 0
   if ! grep -qxF "$by" <<< "$ids"; then
