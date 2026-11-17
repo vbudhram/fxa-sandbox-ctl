@@ -23,6 +23,7 @@ test('#runners/all: the summary cards use the StatTile label and figure', async 
   await expect(page.locator('#conn')).toHaveAttribute('data-mode', 'live');
   const style = (sel: string) => page.locator(sel).first().evaluate((e) => { const s = getComputedStyle(e); return `${s.fontSize}/${s.fontWeight}/${s.textTransform}`; });
   expect(await style('#sb-cards .lbl')).toBe('12px/600/uppercase');
-  expect(await style('#sb-cards .big')).toBe('28px/700/none');
+  // --t-kpi is 22px under 640px, so a 7-figure value fits a tile.
+  expect(await style('#sb-cards .big')).toBe('22px/700/none');
 });
 
