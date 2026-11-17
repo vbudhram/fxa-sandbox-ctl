@@ -60,6 +60,7 @@ source "${SCRIPT_DIR}/lib/errors.sh"
 source "${SCRIPT_DIR}/lib/memory.sh"
 source "${SCRIPT_DIR}/lib/alerts.sh"
 source "${SCRIPT_DIR}/lib/db.sh"
+source "${SCRIPT_DIR}/lib/bq-export.sh"
 source "${SCRIPT_DIR}/lib/llm-token.sh"
 source "${SCRIPT_DIR}/lib/mcp-token.sh"
 source "${SCRIPT_DIR}/lib/session.sh"
@@ -213,6 +214,7 @@ PIPELINE COMMANDS:
   state push|pull|status       Mirror the state dir to PIPE_STATE_URI (gs://...).
                                Push runs at every unlock; pull is for a takeover.
   snapshot                     The whole pipeline state as JSON
+  bq-export [--dry-run]        Load the metrics tables to BigQuery (FXA_BQ_DATASET); --dry-run prints counts, writes nothing
   dashboard [--port N]         Serve a live status page on localhost (default 8787)
 
 RUN OPTIONS:
@@ -3679,6 +3681,7 @@ main() {
     rebases)    cmd_rebases "$@" ;;
     lock)       cmd_lock "$@" ;;
     snapshot)   cmd_snapshot "$@" ;;
+    bq-export)  bq_export "$@" ;;
     dashboard)  cmd_dashboard "$@" ;;
     unlock)     cmd_unlock "$@" ;;
     pause)      cmd_pause "$@" ;;

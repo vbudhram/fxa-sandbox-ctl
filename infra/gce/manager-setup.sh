@@ -309,6 +309,30 @@ Persistent=false
 [Install]
 WantedBy=timers.target
 UNIT
+# The yardstick dashboard's BigQuery tables (lib/bq-export.sh), loaded whole once a day.
+cat > /etc/systemd/system/fxa-bq-export.service <<UNIT
+[Unit]
+Description=FxAgent metrics export to BigQuery
+Requires=fxa-secrets.service
+After=fxa-secrets.service
+[Service]
+Type=oneshot
+User=$U
+WorkingDirectory=$W/fxa-sandbox-ctl
+Environment=$path
+EnvironmentFile=-$W/fxa-sandbox-ctl/.env
+ExecStart=$W/fxa-sandbox-ctl/fxa-sandbox-ctl bq-export
+TimeoutStartSec=15min
+UNIT
+cat > /etc/systemd/system/fxa-bq-export.timer <<'UNIT'
+[Unit]
+Description=FxAgent metrics export to BigQuery, daily 05:17 New York
+[Timer]
+OnCalendar=*-*-* 05:17:00 America/New_York
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
 # Another team's pass: the same job on its own profile (FXA_PIPELINE), queue, lock and state, on the
 # same schedule. Each profile with a Jira project gets one; FxA keeps fxa-pass. .env must not set FXA_PIPELINE.
 cat > /etc/systemd/system/fxa-pass@.service <<UNIT
@@ -338,6 +362,7 @@ done
 r="$W/fxa-sandbox-ctl/infra/gce/teams-reconcile.sh"
 [ -s "$r" ] && install -m 700 -o root -g root "$r" /usr/local/sbin/fxa-teams-reconcile && /usr/local/sbin/fxa-teams-reconcile --install
 systemctl enable -q fxa-secrets.service
+systemctl enable -q --now fxa-bq-export.timer
 systemctl enable -q fxa-llm-proxy.service
 systemctl enable -q fxa-mcp-gateway.service fxa-grafana-mcp.service
 if [ "$iap_state" = disabled ]; then echo "  grafana-iap stays disabled: systemctl enable --now fxa-grafana-iap turns it back on"
