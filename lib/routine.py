@@ -603,7 +603,8 @@ def investigate_prompt(cfg, heads, team):
 
 # The agent's strings, as data in a Jira comment: no URL (the host builds the links) and no jira_adf.py inline marker.
 MDLINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
-ANYURL = re.compile(r"(?i)\b(?:[a-z][a-z0-9+.-]*://|www\.)\S*")
+# No \b: a URL glued to a word character (_https://, 9https://) must go too, since jira_adf.py links it bare.
+ANYURL = re.compile(r"(?i)(?:[a-z0-9+.-]*://|www\.)\S*")
 INV_PATH = re.compile(r"[A-Za-z0-9_.@/-]{1,200}")
 INV_LINES = re.compile(r"[0-9]{1,6}(-[0-9]{1,6})?")
 PRNUM = re.compile(r"^#[1-9][0-9]{0,6}$")

@@ -41,7 +41,7 @@ I looked at the code.
 {"ask": "Make **login** work [see](https://evil.example/x) again",
  "cause": "The `check` in   www.evil.example/a fails\nhttp://evil.example/b on retry",
  "confidence": "certain",
- "evidence": ["git log shows it", "ftp://x.example/y", 7],
+ "evidence": ["git log shows it", "ftp://x.example/y", 7, "see _https://evil.example/u", "9https://evil.example/n"],
  "since_last": null,
  "fix": {"summary": "Guard the retry", "steps": [
    {"file": "packages/a/b.ts:120-134", "change": "Add a guard"},
