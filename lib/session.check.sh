@@ -175,6 +175,8 @@ session_set agent-t2 state active turn_open 0 last_error "Open PR failed: x"; RU
 check "last error reported once" "Open PR failed: x|0" "$(cmd_events agent-t2 | jq -r '.events[0].text')|$(cmd_events agent-t2 | jq '.events | length')"
 check "push wrap-up skips the review" "0|1" "$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-review-quick)|$(_session_wrapup_prompt agent-x --no-pr | grep -c fxa-auto-done.json.tmp)"
 check "PR wrap-up keeps the review" "1" "$(_session_wrapup_prompt agent-x | grep -c fxa-review-quick)"
+check "the handoff check is told the branch the host ships: the key, or the target a person named" \
+  "1|1" "$(_session_wrapup_prompt agent-x | grep -c 'FXA_SESSION_BRANCH=agent-x bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix')|$(session_get() { [ "$2" = branch ] && echo my-feature/login; }; _session_wrapup_prompt agent-x | grep -c 'FXA_SESSION_BRANCH=my-feature/login bash')"
 echo '{"key":"agent-cdxw","runtime":"codex"}' > "$tmp/agent-cdxw.json"
 check "PR wrap-up: Claude reviews and writes in subagents" "1|1" "$(_session_wrapup_prompt agent-x | grep -c 'fxa-reviewer subagent')|$(_session_wrapup_prompt agent-x | grep -c 'fxa-writer subagent')"
 check "PR wrap-up: Codex, with no subagents, runs the skills itself" "0|1" "$(_session_wrapup_prompt agent-cdxw | grep -c 'subagent')|$(_session_wrapup_prompt agent-cdxw | grep -c '/create-pr-description on the whole diff')"

@@ -82,10 +82,11 @@ if [ -s "$done_file" ]; then
     [ "$cb_lines" -le 15 ] || problems+=("commit_body has ${cb_lines} lines; keep it to 15, the PR body holds the detail")
     [ "$(jq -r .branch "$done_file")" = "$(git branch --show-current)" ] \
       || problems+=("branch is '$(jq -r .branch "$done_file")' but the checkout is on '$(git branch --show-current)'")
-    # The host ships only the session's own branch (agent-xxxxxx or fxa-NNNN); the reflog
+    # The host ships only the session's own branch (agent-xxxxxx, or a pipeline ticket's key in lower case:
+    # fxa-NNNN, pay-NNNN, any Jira project); the reflog
     # names it when the agent switched to a branch of its own.
     # FXA_SESSION_BRANCH: the host's name for it, when the session continues a PR's own branch.
-    cur="$(git branch --show-current)" sess='^(agent-[a-z0-9]+|fxa-[0-9]+)$'
+    cur="$(git branch --show-current)" sess='^(agent-[a-z0-9]+|[a-z][a-z0-9]*-[0-9]+)$'
     if ! [[ "$cur" =~ $sess ]] && [ "$cur" != "${FXA_SESSION_BRANCH:-}" ]; then
       start="$(git reflog --format=%gs 2>/dev/null | sed -n 's/^checkout: moving from \([^ ]*\) to .*/\1/p' | grep -E "$sess" | head -1)"
       problems+=("the checkout is on '$cur', but the host ships only the session branch${start:+ '$start'}. Move your work there with: git checkout -B ${start:-<the session branch>}, then write the handoff again")

@@ -38,6 +38,10 @@ handoff 'fix(auth): x' other; check "a wrong branch is named" 1 "$(bash "$C" | g
 git checkout -q -b deng-1-own-name; handoff 'fix(auth): x' deng-1-own-name
 check "a branch of its own is refused, with the move back" 1 "$(bash "$C" | grep -c "host ships only the session branch 'agent-x'. Move your work there with: git checkout -B agent-x")"
 git checkout -q agent-x
+# A pipeline run's branch is its ticket key in lower case, in any Jira project.
+for b in fxa-14972 pay-3905; do git checkout -q -B "$b"; handoff 'fix(auth): x' "$b"
+  check "a pipeline branch of project ${b%%-*} passes" "handoff check: ok" "$(bash "$C")"; done
+git checkout -q agent-x
 handoff 'fix(auth): x' agent-x '[".fxa-auto-media/gone.png"]'; check "a missing media file is named" 1 "$(bash "$C" | grep -c "gone.png, which does not exist")"
 mkdir -p .fxa-auto-media && touch .fxa-auto-media/gone.png; check "an existing media file passes" "handoff check: ok" "$(bash "$C")"
 echo '{"issue":"x"}' > .fxa-auto-done.json; check "a handoff missing keys is named" 1 "$(bash "$C" | grep -c "needs string keys")"

@@ -483,7 +483,10 @@ _session_wrapup_prompt() {
       -e "s#bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#FXA_WORKSPACE=${FXA_TREE_PATH} FXA_WORKTREE_BASE=${FXA_WORKTREE_BASE} FXA_SESSION_BRANCH=\$(git -C ${FXA_TREE_PATH} branch --show-current) bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#g"
     return
   fi
-  _session_wrapup_steps "$@"
+  # The handoff check passes only the branch the host ships: the session's own, or a target a person named.
+  local b; b="$(session_get "$1" branch 2>/dev/null || true)"; b="${b:-$1}"
+  [[ "$b" =~ ^[A-Za-z0-9._/@+-]+$ ]] && [[ "$b" != *..* ]] || b="$1"
+  _session_wrapup_steps "$@" | sed -e "s#bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#FXA_SESSION_BRANCH=${b} bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix#g"
 }
 _session_wrapup_steps() {
   # A push is a checkpoint: the review and PR write-up run once, at Open PR.
