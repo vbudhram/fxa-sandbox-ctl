@@ -39,7 +39,7 @@
 .sbl tr.fixr:not(.sel) td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 .sbl tr.bad button { color: var(--bad); }
 .sbl button { font: 600 var(--t-sub) var(--mono); background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; text-align: left; min-height: 24px; }
-.sbl button:hover { text-decoration: underline; }
+@media (hover: hover) { .sbl button:hover { text-decoration: underline; } }
 .sbl .steps { display: block; color: var(--dim); }
 .sbl .mt { display: inline-block; width: 60px; vertical-align: middle; margin-right: 4px; }
 .sbl .over { color: var(--bad); white-space: nowrap; }

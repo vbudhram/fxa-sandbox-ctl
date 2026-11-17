@@ -1,6 +1,6 @@
 // The Teams rules of the retired v1 dashboard with no React: the side list, the cells, the banner, and the record forms.
 import type { SideGroup, SideItem } from '../../app/store';
-import { ago, usd } from '../../format';
+import { ago, plural, usd } from '../../format';
 import { ERRS, type J, memo, TEAMS, TEAM_RE } from '../../model/base';
 import { localDay } from '../../model/stats';
 import { APP_FAIL, errOpen, teamAccess, teamLevel, teamName, teamNeeds, teamReason, teamUse } from '../../model/teams';
@@ -18,7 +18,7 @@ const now = () => Date.now() / 1000;
 // "5 min ago" for an epoch in seconds, and whole minutes since one.
 export const sinceAgo = (t: number) => ago(Math.round(now() - t));
 export const minsSince = (t: number) => Math.max(0, Math.floor((now() - t) / 60));
-export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+export { plural };
 
 export const teamDraftOf = (t: J) => !!(t?.access?.record && t.access.status !== 'active');
 export const teamCap = (n: string) => n.split('-').map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w)).join(' ');

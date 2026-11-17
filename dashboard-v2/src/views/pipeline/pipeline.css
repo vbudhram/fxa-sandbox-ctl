@@ -27,7 +27,7 @@
 .belt { background: var(--panel); }
 .brow { position: relative; padding-top: 6px; padding-bottom: 6px; border-top: 1px solid var(--sunk); min-height: 40px; }
 .bnone { margin: 0; padding: 0 var(--s3) var(--s3); font-size: var(--t-sub); color: var(--dim); }
-.brow:hover { background: var(--bg); }
+@media (hover: hover) { .brow:hover { background: var(--bg); } }
 .belt.sel > .brow { background: var(--infobg); box-shadow: inset 3px 0 0 var(--info); }
 /* The title link covers the row; the key and PR links sit above it, so each is its own link. */
 .blink { color: var(--ink); text-decoration: none; }

@@ -111,12 +111,15 @@ export function StatusBar({ s, sel, health, onRefresh }: { s: Store; sel: Sel; h
 }
 
 const alertKey = (a: Alert) => `${a.tone}|${a.subject}|${a.what}`;
+// More alerts than this push the page below the fold, so the rest wait behind a button.
+export const ALERT_CAP = 5;
 
 // ready: the first feed read came; the alerts it brings are the start, not news.
 export function Alerts({ alerts, ready }: { alerts: Alert[]; ready: boolean }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const seen = useRef<Set<string> | null>(null);
   const [say, setSay] = useState('');
+  const [all, setAll] = useState(false);
   // The live region says only the alerts that are new, not the whole strip again.
   useEffect(() => {
     if (!ready) return;
@@ -129,7 +132,7 @@ export function Alerts({ alerts, ready }: { alerts: Alert[]; ready: boolean }) {
     <>
       <div className="vh" role="status" aria-live="polite" id="attn-say">{say}</div>
       <section id="attn" aria-label="Alerts" tabIndex={-1} hidden={!alerts.length}>
-        {alerts.map((a) => {
+        {(all ? alerts : alerts.slice(0, ALERT_CAP)).map((a) => {
           const k = alertKey(a), on = open.has(k);
           return (
             <div key={k} className={`alert ${a.tone}${on ? ' open' : ''}`}>
@@ -145,6 +148,11 @@ export function Alerts({ alerts, ready }: { alerts: Alert[]; ready: boolean }) {
             </div>
           );
         })}
+        {alerts.length > ALERT_CAP && (
+          <button type="button" className="linkbtn allalerts" aria-expanded={all} onClick={() => setAll(!all)}>
+            {all ? 'Show fewer alerts' : `Show all ${alerts.length} alerts`}
+          </button>
+        )}
       </section>
     </>
   );

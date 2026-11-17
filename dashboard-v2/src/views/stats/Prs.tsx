@@ -1,7 +1,7 @@
 // The PRs tab: opened, merged and closed PRs in the range, what each cost, and how long a merge took.
 import { memo, useMemo } from 'react';
 import { Sankey } from '../../charts';
-import { usd } from '../../format';
+import { plural, usd } from '../../format';
 import type { J } from '../../model/base';
 import { teamRepo } from '../../model/pipeline';
 import { Bars, Scatter } from './lazy';
@@ -80,7 +80,7 @@ const PrsCharts = memo(function PrsCharts({ d }: { d: ReturnType<typeof prsData>
   return (
     <div className="charts" data-new>
       <div className="st-chart">
-        <Sankey title="Where the PRs opened in this range went" summary={`${d.opened.length} PRs opened: ${flow.merged} merged, ${flow.closed} closed, ${flow.open} still open.`}
+        <Sankey title="Where the PRs opened in this range went" summary={`${plural(d.opened.length, 'PR')} opened: ${flow.merged} merged, ${flow.closed} closed, ${flow.open} still open.`}
           table={{ head: ['Outcome', 'PRs'], rows: sankeyRows.map(([l, n]) => [l, n]) }}
           nodes={[{ id: 'opened', label: 'Opened' }, { id: 'merged', label: 'Merged' }, { id: 'closed', label: 'Closed' }, { id: 'open', label: 'Still open' }]}
           links={[{ source: 'opened', target: 'merged', value: flow.merged }, { source: 'opened', target: 'closed', value: flow.closed }, { source: 'opened', target: 'open', value: flow.open }]} />

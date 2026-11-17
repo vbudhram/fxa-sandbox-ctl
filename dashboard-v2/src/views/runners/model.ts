@@ -1,5 +1,5 @@
 // The Sandboxes view logic that src/model does not hold, ported from the retired v1 dashboard (sbCards, renderSbList, sbDetails, renderSbDone).
-import { ago, usd } from '../../format';
+import { ago, plural, usd } from '../../format';
 import { AGENTS, LIVE_SESSION, STATE, STATS, TEAM_ADMIN, type J } from '../../model/base';
 import { ovFloor, sbRows } from '../../model/floor';
 import { SNAP } from '../../model/pipeline';
@@ -56,7 +56,7 @@ export function sbCards(s: Store, now = Date.now() / 1000): Cards {
     const pr = rows.filter((r) => r.src === 'pipeline');
     pipe = { unknown: false, busy, total: pt.length, free: pt.filter((t) => t.state === 'free').length, held: pt.filter((t) => t.state === 'held').length,
       slotsUnk: pt.some((t) => t.state === 'unknown'), segs: pt.map((t) => ({ cls: t.kind === 'pipe' ? 'busy' : t.state, title: `${t.slot || t.key}: ${t.kind === 'pipe' ? t.key : t.state}` })),
-      line: statsOk ? `7 days: ${pr.length} runs, ${hrs(pr.reduce((n, r) => n + (r.min || 0), 0) / 60)}` : `7 days: ${unk}`, more: agentsMore(SNAP(s)?.mode?.newtickets === 'off', g) };
+      line: statsOk ? `7 days: ${plural(pr.length, 'run')}, ${hrs(pr.reduce((n, r) => n + (r.min || 0), 0) / 60)}` : `7 days: ${unk}`, more: agentsMore(SNAP(s)?.mode?.newtickets === 'off', g) };
   }
   const cap = g?.session_cap, live: J[] = (g?.sessions ?? []).filter((x: J) => LIVE_SESSION.includes(x.state)), gce = live.filter((x) => x.boot_backend === 'gce').length;
   if (!f.unknown && cap != null) {
@@ -66,7 +66,7 @@ export function sbCards(s: Store, now = Date.now() / 1000): Cards {
     const peak = peaks.length ? Math.max(...peaks) : '?';
     sess = { unknown: false, busy: live.length, cap, gce, host: hostState(g),
       segs: Array.from({ length: Math.max(cap, live.length) }, (_, i) => (i < live.length ? (live[i].boot_backend === 'gce' ? { cls: 'busy gce', title: 'on GCE' } : { cls: 'busy', title: 'busy' }) : { cls: 'free', title: 'free' })),
-      line: statsOk ? `7 days: ${sl.length} sessions, peak ${peak} of ${data.load?.cap ?? cap ?? '?'}${boots.length ? ` · boot median ${Math.round(boots[Math.floor(boots.length / 2)])} s` : ''}` : `7 days: ${unk}` };
+      line: statsOk ? `7 days: ${plural(sl.length, 'session')}, peak ${peak} of ${data.load?.cap ?? cap ?? '?'}${boots.length ? ` · boot median ${Math.round(boots[Math.floor(boots.length / 2)])} s` : ''}` : `7 days: ${unk}` };
   }
   if (!f.unknown) {
     // The manager is always on; the host has a rate only while up, and no 7 day total (no up-time record).

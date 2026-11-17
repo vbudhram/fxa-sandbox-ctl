@@ -6,12 +6,12 @@
 .sx .lnk { font-size: var(--t-sub); color: var(--link); white-space: nowrap; } .sx .lnk a { color: var(--link); }
 .sx .key, .chain .key { color: var(--info); font-weight: 600; }
 .tgl { border: 1px solid transparent; background: transparent; color: var(--dim); padding: 4px 8px; border-radius: var(--r-md); font: 500 var(--t-sub) var(--sans); }
-.tgl:hover:not(:disabled) { background: var(--sunk); color: var(--ink); }
+@media (hover: hover) { .tgl:hover:not(:disabled) { background: var(--sunk); color: var(--ink); } }
 .sx a.tgl { color: var(--link); text-decoration: none; white-space: nowrap; }
 .tgl[aria-pressed="true"] { color: var(--link); border-color: var(--link); background: var(--infobg); }
 .tgl.sm { padding: 1px 6px; font-size: var(--t-label); margin-top: var(--s2); white-space: nowrap; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--link); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
-.linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; }
+@media (hover: hover) { .linkbtn:hover:not(:disabled) { background: none; text-decoration: underline; } }
 .linkbtn.toggle { color: inherit; font-weight: inherit; text-decoration: underline dotted; }
 .sowner { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font: 600 var(--t-label) var(--sans); color: var(--dim); }
 .sowner select { flex: 1; min-width: 0; min-height: 28px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--panel); color: var(--ink); padding: 0 8px; font: 400 var(--t-sub) var(--sans); }
@@ -24,11 +24,11 @@
 
 /* The shell's button rule is not in a layer, so it wins over the terminal's own classes: set them again here. */
 .ttyw button { background: transparent; border-color: var(--tty-line); color: var(--tty-dim); padding: 0 var(--s2); font: 400 var(--t-label) var(--mono); white-space: nowrap; }
-.ttyw button:hover:not(:disabled) { background: var(--tty-line); }
+@media (hover: hover) { .ttyw button:hover:not(:disabled) { background: var(--tty-line); } }
 .ttyw button[aria-pressed="true"] { color: var(--tty-prompt); }
 .sx a:not(.key), .kvl a:not(.key), .answers a, .emptybox a { color: var(--link); }
 .table.figures.answers :is(th, td):nth-child(2) { text-align: left; }
-.termpage { display: flex; flex-direction: column; gap: var(--s3); height: 100vh; padding: var(--s3) var(--s4); background: var(--bg); }
+.termpage { display: flex; flex-direction: column; gap: var(--s3); height: 100vh; height: 100dvh; padding: var(--s3) var(--s4); background: var(--bg); }
 .termbar { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .termbar h1 { flex: 1; min-width: 0; margin: 0; font: 700 var(--t-heading) var(--head); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .termbar .key { color: var(--info); font-weight: 600; }
@@ -91,4 +91,4 @@
 .anscharts { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
 .answers td:nth-child(2) { max-width: 28rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .answers .linkbtn.toggle { color: var(--ink); text-decoration: none; }
-.answers .linkbtn.toggle:hover { text-decoration: underline; }
+@media (hover: hover) { .answers .linkbtn.toggle:hover { text-decoration: underline; } }

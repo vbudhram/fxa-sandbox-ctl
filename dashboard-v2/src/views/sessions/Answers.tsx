@@ -1,6 +1,6 @@
 // Answers: the quick answers of the Stats range as one table, each row opens to its cost (v1 renderAnswers).
 import { memo, useCallback, useMemo, useState } from 'react';
-import { usd } from '../../format';
+import { plural, usd } from '../../format';
 import type { State } from '../../live/reducers';
 import { type J, STATS } from '../../model/base';
 import { answerRows, threadUrl } from '../../model/sessions';
@@ -102,7 +102,7 @@ const Charts = memo(function Charts({ rows }: { rows: J[] }) {
     <aside className="anscharts" aria-label="Answer charts">
       <Card flat sm>
         <Columns title="Outcome per day" cols={by}
-          summary={`${rows.length} answers on ${by.length} days: ${n('answered')} answered, ${n('upgraded')} upgraded, ${n('failed')} failed. Most on ${peak?.label ?? 'no day'}.`} />
+          summary={`${plural(rows.length, 'answer')} on ${plural(by.length, 'day')}: ${n('answered')} answered, ${n('upgraded')} upgraded, ${n('failed')} failed. Most on ${peak?.label ?? 'no day'}.`} />
       </Card>
       <Card flat sm>
         <Columns title="Time to answer" cols={hist}

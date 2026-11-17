@@ -1,6 +1,6 @@
 // The Overview's own rules over the stats rows, the floor and the recent runs, ported from the retired v1 dashboard.
 import type { ChartColor } from '../../charts';
-import { ago, usd } from '../../format';
+import { age, usd } from '../../format';
 import { type J } from '../../model/base';
 import { daysBack, localDay, median } from '../../model/stats';
 import type { Tone } from '../../ui';
@@ -34,7 +34,7 @@ export function byTeam(st: J, team: string): J {
 
 export function prsWhy(st: J, now = Date.now()): string {
   const at = st?.prs_at;
-  return !st ? 'Loading the stats…' : st.prs == null ? 'the PR list is not read yet' : at && now / 1000 - at > 1800 ? `the PR list is ${ago(Math.round(now / 1000 - at)).replace(' ago', '')} old` : '';
+  return !st ? 'Loading the stats…' : st.prs == null ? 'the PR list is not read yet' : at && now / 1000 - at > 1800 ? `the PR list is ${age(Math.round(now / 1000 - at))} old` : '';
 }
 
 // The head: the tag text and who is at work.

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f6f7f9">
 <title>FxA Agent</title>
 <script>
 // Set data-theme before the first paint. With no saved choice, follow the system theme as it changes.
@@ -15,6 +16,11 @@
   }
   apply();
   dark.addEventListener("change", apply);
+  // The phone's browser bar takes the page background (--bg), also when the app's own toggle changes the theme.
+  var meta = document.querySelector('meta[name="theme-color"]');
+  function bar() { meta.content = root.dataset.theme === "dark" ? "#0f141b" : "#f6f7f9"; }
+  bar();
+  new MutationObserver(bar).observe(root, { attributes: true, attributeFilter: ["data-theme"] });
 })();
 </script>
 </head>

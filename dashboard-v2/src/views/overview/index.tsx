@@ -4,7 +4,7 @@ import { Boundary } from '../../app/parts';
 import { useParts } from '../../app/store';
 import type { ViewChunk } from '../../app/views';
 import { Heatmap, Spark, type ChartColor } from '../../charts';
-import { ago, jiraHref, modelName, plainMd, usd } from '../../format';
+import { ago, jiraHref, plural, modelName, plainMd, usd } from '../../format';
 import { latest } from '../../live/api';
 import { costPerMerged, ovFloor, pipeSnap } from '../../model';
 import type { J } from '../../model/base';
@@ -389,7 +389,7 @@ function Hours({ fs, note, now }: P) {
         </>
       ) : <EmptyBox>No run in the last 24 hours.</EmptyBox>}
       <Heatmap title="Runs by weekday and hour, last 4 weeks, local time" rows={WEEKDAYS} cols={cols} cells={cells}
-        summary={wk ? `Runs by weekday and hour, last 4 weeks: ${wk} runs. Busiest: ${WEEKDAYS[top.row]} at ${top.col}:00, ${top.label}. Passes are not counted.` : 'Runs by weekday and hour, last 4 weeks: no run.'}
+        summary={wk ? `Runs by weekday and hour, last 4 weeks: ${plural(wk, 'run')}. Busiest: ${WEEKDAYS[top.row]} at ${top.col}:00, ${top.label}. Passes are not counted.` : 'Runs by weekday and hour, last 4 weeks: no run.'}
         table={{ head: ['Day', ...cols.map((c) => `${c}:00`)], rows: w.map((r, i) => [WEEKDAYS[i]!, ...r]) }} />
     </Sec>
   );

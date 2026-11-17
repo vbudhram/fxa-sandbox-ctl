@@ -2,7 +2,9 @@
   // The layout faults a person sees: clipped text, overlapping text, sideways scroll, the first card's position.
   const main = document.getElementById('main') ?? document.body;
   const leaves = [...main.querySelectorAll('*')].filter((e) => e.children.length === 0 && e.textContent.trim() && e.getClientRects().length);
-  const hidden = (e) => e.closest('.vh, .sr-only, [hidden], details:not([open])');
+  // Also a visually hidden caption (1px, clipped) and a chart tooltip that waits off screen.
+  const hidden = (e) => e.closest('.vh, .sr-only, [hidden], details:not([open]), [role=tooltip], .recharts-tooltip-wrapper')
+    || (getComputedStyle(e).position === 'absolute' && e.clientWidth <= 1);
   const style = (e) => getComputedStyle(e);
   // Clipped: text wider than its box, in a box that hides or cuts the overflow.
   const clipped = leaves.filter((e) => !hidden(e) && e.scrollWidth > e.clientWidth + 1 && style(e).overflow !== 'visible')

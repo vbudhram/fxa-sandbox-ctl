@@ -40,3 +40,11 @@ describe('theme.css', () => {
     expect(refs.filter((r) => !(r in light))).toEqual([]);
   });
 });
+
+// On a phone a tap leaves :hover on, so each hover rule sits in @media (hover: hover).
+it('guards every :hover rule for touch screens', async () => {
+  const { globSync } = await import('node:fs');
+  const bad = globSync('src/**/*.css').flatMap((f) =>
+    readFileSync(f, 'utf8').split('\n').filter((l) => l.includes(':hover') && !l.trimStart().startsWith('@media (hover: hover)')).map((l) => `${f}: ${l}`));
+  expect(bad).toEqual([]);
+});

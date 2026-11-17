@@ -1,5 +1,5 @@
 // The health word and the alerts, ported from renderStatus and renderAlerts in the retired v1 dashboard.
-import { ago, short } from '../format';
+import { age, ago, short } from '../format';
 import { AGENTS, type J, STATE, memo } from './base';
 import { SNAP, merged, pipe, queueWaits, stopName, strayRun, strays } from './pipeline';
 
@@ -37,13 +37,13 @@ export const alerts = memo((s) => [pipe(s), AGENTS(s), STATE(s), merged(s), stra
   staleFeed('agents', st.agents_age_seconds, st.agents_interval);
   staleFeed('tickets', st.age_seconds, st.interval);
   if (!st.stats_error) staleFeed('stats', st.stats_age_seconds, st.stats_interval);
-  if (old.length) add('warn', old.map(([n]) => n).join(', '), `Data is up to ${ago(Math.max(...old.map(([, a]) => a))).replace(' ago', '')} old.`);
+  if (old.length) add('warn', old.map(([n]) => n).join(', '), `Data is up to ${age(Math.max(...old.map(([, a]) => a)))} old.`);
   if (st.error) add('bad', 'tickets', st.error);
   if (st.agents_error) add('bad', 'agents', st.agents_error);
   if (st.stats_error) add('warn', 'stats', st.stats_error);
   // Outside pass hours an old last pass is no fault: the status bar says when passes resume.
   const sp = h.seconds_since_pass, offHours = sp != null && passQuiet(h);
-  if (!offHours && snap && (sp == null || sp > 7200)) add('warn', 'pass', sp == null ? 'no pass recorded yet' : `no pipeline pass in ${ago(sp).replace(' ago', '')}, so open PRs get no reconcile, feedback or rebase rounds. To start the passes, the operator runs /fxa-automation in Claude Code.`);
+  if (!offHours && snap && (sp == null || sp > 7200)) add('warn', 'pass', sp == null ? 'no pass recorded yet' : `no pipeline pass in ${age(sp)}, so open PRs get no reconcile, feedback or rebase rounds. To start the passes, the operator runs /fxa-automation in Claude Code.`);
   else if (!offHours && sp > 1500) add('warn', 'pass', `last pass ${ago(sp)}; the cron fires every 20 minutes`);
   if (h.free_gb != null && h.min_free_gb != null && h.free_gb < h.min_free_gb) add('bad', 'disk', `${h.free_gb}GB free, launches refuse below ${h.min_free_gb}GB`);
   if (snap?.inflight_fetch_failed) add('warn', 'jira', 'could not read in-flight tickets; nothing running is unverified');
@@ -59,6 +59,7 @@ export const alerts = memo((s) => [pipe(s), AGENTS(s), STATE(s), merged(s), stra
     if (stray.has(v)) add('warn', v.name, `${v.state} with no run behind it (${short(v.age_seconds)} old); it bills until deleted`, stopName(run) ? `fxa-sandbox-ctl stop ${run}` : '');
     else if (v.max_seconds && v.age_seconds >= v.max_seconds) add('warn', v.name, `over the ${short(v.max_seconds)} lifetime cap; GCE deletes it any moment`);
   });
-  return out;
+  // bad first: the strip shows only the first few.
+  return out.sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'bad' ? -1 : 1));
 });
 

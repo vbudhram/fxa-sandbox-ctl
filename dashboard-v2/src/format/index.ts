@@ -5,12 +5,18 @@ export const esc = (s: unknown): string => String(s ?? '').replace(/[&<>"']/g, (
 
 export const sentence = (t: string): string => t.charAt(0).toUpperCase() + t.slice(1);
 
-// s is an age in seconds.
+// s is an age in seconds: "5m".
+export const age = (s: number): string =>
+  s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
+
+// "5m ago", or the date after a week, because "340d ago" is hard to place.
 export const ago = (s: number | null | undefined): string =>
-  s == null ? 'never' : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+  s == null ? 'never' : s < 604800 ? `${age(s)} ago` : new Date(Date.now() - s * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 export const short = (s: number | null | undefined): string =>
-  s == null ? '' : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
+  s == null ? '' : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${(s / 3600).toFixed(1)}h` : `${Math.round(s / 86400)}d`;
 
 // e is an epoch in seconds. One formatter for all calls: toLocaleString builds a new one each time, about 10 times slower.
 const STAMP = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -23,7 +29,12 @@ export const stamp = (e: number | null | undefined): string => {
 // Days since an ISO time, or null.
 export const days = (iso: string | null | undefined): number | null => (iso == null ? null : (Date.now() - Date.parse(iso)) / 86400000);
 
-export const usd = (n: number | null | undefined): string => (n == null ? '—' : '$' + Number(n).toFixed(2));
+// "$1,284.50" fits a tile; from $10,000 the cents only add width.
+export const usd = (n: number | null | undefined): string => {
+  if (n == null) return '—';
+  const d = Math.abs(n) >= 10000 ? 0 : 2;
+  return (n < 0 ? '-$' : '$') + Math.abs(Number(n)).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
 
 export const tokn = (n: number | null | undefined): string =>
   n != null && n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n != null && n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n || 0);

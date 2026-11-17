@@ -2,7 +2,7 @@
 import { m, useReducedMotion } from 'motion/react';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent, type MouseEvent, type ReactNode } from 'react';
 import { Belt, Spark } from '../../charts';
-import { ago, days, jiraHref, plainMd, prUrl, usd } from '../../format';
+import { ago, days, jiraHref, plainMd, plural, prUrl, usd } from '../../format';
 import { beltCount, boardItems, beltGroups } from '../../model';
 import { LANE_ST, type J } from '../../model/base';
 import { SNAP, hasChecks, jiraSite, laneTitle, openPrCounts, pipe, teamRepo } from '../../model/pipeline';
@@ -20,7 +20,7 @@ import { Flow } from './flow';
 import { WaitStrip } from './queue';
 import { Ext, SrcBadge, Tile, useOpen } from './parts';
 
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
 // The stops named under the live belts: Queue, Agent, PR, CI and Merged.
 const LEGEND = [0, 2, 5, 6, 8];
 const q = (x: number | null) => (x == null ? null : x);
