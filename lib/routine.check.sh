@@ -82,7 +82,7 @@ jq -cn --argjson b "$base" --argjson x "$prl" '$b + $x | del(.repos)' > "$tmp/r.
 check "a pr-label routine is saved with the pr defaults, its repo, and no schedule" '{"authors":["dependabot[bot]"],"blender_login":"mozilla-blender[bot]","label":"agent-help","repo":"mozilla/two","sweep_min":5}|["mozilla/two"]|null|[]|null' \
   "$(python3 -I "$here/routine.py" validate "$tmp/r.json" second --profile "$tmp/open.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" | jq -c '"\(.pr | tojson)|\(.repos | tojson)|\(.schedule)"' -r)|$(python3 -I "$here/routine.py" next "$tmp/r.json" | jq -Rsc 'split("\n") | map(select(. != ""))')|$(python3 -I "$here/routine.py" due "$tmp/r.json" 1792414800)"
 check "an unknown field" "colour: is not a routine field" "$(v secret priv.json '{"colour":"red"}')"
-check "a bad template" "template: must be one of code-review, ux-review, perf-review, security-review, blank" "$(v secret priv.json '{"template":"x"}')"
+check "a bad template" "template: must be one of code-review, ux-review, perf-review, security-review, blank, investigate" "$(v secret priv.json '{"template":"x"}')"
 check "an empty prompt" "prompt: The prompt is empty" "$(v secret priv.json '{"prompt":"  "}')"
 check "no repos" "repos: Pick at least one of this team's repos" "$(v secret priv.json '{"repos":[]}')"
 for b in '-x' 'a..b' 'a b'; do
