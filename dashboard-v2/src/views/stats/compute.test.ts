@@ -20,7 +20,8 @@ test('a filter applies only on the tabs that read it; a model matches its priced
   expect(f({ model: 'm2' })).toEqual(['EX-2']);
   expect(f({ model: 'm1' })).toEqual(['EX-1', 'EX-2']);
   expect(f({ team: 'fxa' }, 'runners')).toEqual(['EX-1', 'EX-2']);
-  expect(f({ team: 'fxa' }, 'prs')).toEqual(['EX-1', 'EX-2', 'EX-3']);
+  expect(f({ team: 'fxa' }, 'prs')).toEqual(['EX-1', 'EX-2']);
+  expect(f({ team: 'fxa' }, 'pipeline')).toEqual(['EX-1', 'EX-2', 'EX-3']);
   expect(f({ kind: 'fix' })).toEqual(['EX-3']);
   expect(f({ q: ' ex-2 ' })).toEqual(['EX-2']);
 });
@@ -80,6 +81,14 @@ test('PRs: a cost reads only the rows of its PR, and equals a full scan of the r
   expect(d.mergedCosts).toEqual(prs.map(scan));
   // A few passes over the rows, not one pass per merged PR.
   expect(reads).toBeLessThan(10 * runs.length);
+});
+
+test('PRs: a team repo has its own #2, and each run costs only the PR of its repo', () => {
+  const prs = [{ n: 2, key: 'agent-a', state: 'MERGED', created: iso(3), merged: iso(2), src: 'slack' },
+    { n: 2, key: 'agent-b', state: 'MERGED', created: iso(3), merged: iso(2), src: 'slack', repo: 'team/repo', team: 't' }];
+  const runs = [row(1, { src: 'slack', key: 'agent-a', prn: 2, usd: 3 }), row(1, { src: 'slack', key: 'agent-b', prn: 2, prr: 'team/repo', usd: 5 })];
+  const d = prsData(prs, runs, NOW - 6 * DAY, Infinity, 'all', '', 'example/repo', NOW);
+  expect(prs.map(d.cost)).toEqual([3, 5]);
 });
 
 test('PRs: the last 4 weeks are full weeks from Monday, oldest first, and leave out the week now', () => {

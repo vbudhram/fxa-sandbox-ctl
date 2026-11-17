@@ -67,7 +67,7 @@ rm -f "$pd/FXA-1.feedback-admin-rounds" "$pd"/*.feedback-waiting
 # The jq calls do not grow with the tickets: a jq for each file took the stats feed past its 30 s limit.
 for i in $(seq 10 40); do echo "$now" > "$pd/FXA-$i.queued-at"; echo 1 > "$pd/FXA-$i.attempts"; echo '{}' > "$pd/FXA-$i.jira.json"; done
 echo '[]' > "$pd/prs.json"
-n="$(PIPE_STATE_DIR="$pd" PIPE_RUNS_FILE="$pd/runs.jsonl"; jq() { echo >> "$pd/jq-calls"; command jq "$@"; }; _mtime() { date +%s; }
+n="$(PIPE_STATE_DIR="$pd" PIPE_RUNS_FILE="$pd/runs.jsonl" HOME="$pd/h"; jq() { echo >> "$pd/jq-calls"; command jq "$@"; }; _mtime() { date +%s; }
   eval "$(sed -n -e '/^_stats_add_pipeline() {/,/^}/p' -e '/^_stats_add_rounds() {/,/^}/p' -e '/^_stats_add_prs() {/,/^}/p' "$(dirname "$0")/snapshot.sh")"
   echo '{"tickets": {}}' | _stats_add_rounds | _stats_add_prs | _stats_add_pipeline >/dev/null; wc -l < "$pd/jq-calls" | tr -d ' ')"
 check "stats: 31 more tickets add no jq calls" "yes" "$([ "${n:-0}" -gt 0 ] && [ "$n" -le 10 ] && echo yes || echo "no, ${n:-0}")"
@@ -257,19 +257,41 @@ rm -rf "$pd"
 
 # Agent PRs for the PRs tab: the source and key come from the branch, a session row
 # names its PR, and a failed read keeps the last list.
-( export SESSION_DIR="$tmp/prs" PIPE_STATE_DIR="$tmp/prsps"; mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR"
-  gh() { echo '[{"number":7,"title":"t7","headRefName":"fxa-12","state":"MERGED","createdAt":"2026-10-01T10:00:00Z","mergedAt":"2026-10-02T10:00:00Z","closedAt":"2026-10-02T10:00:00Z","mergedBy":{"login":"rev1"},"additions":5,"deletions":2},
-    {"number":8,"title":"t8","headRefName":"agent-ab12","state":"OPEN","createdAt":"2026-10-03T10:00:00Z","mergedAt":null,"closedAt":null,"mergedBy":null,"additions":1,"deletions":0}]'; }
+( export SESSION_DIR="$tmp/prs" PIPE_STATE_DIR="$tmp/prsps" HOME="$tmp/prsh" FXA_PROFILES_DIR="$tmp/prsprof" FXA_TEAMS_DIR="$tmp/prsteams" PIPE_PROFILE=fxa
+  mkdir -p "$SESSION_DIR" "$PIPE_STATE_DIR" "$FXA_PROFILES_DIR" "$FXA_TEAMS_DIR"
+  gh() { echo '[{"number":8,"title":"t8","headRefName":"agent-ab12","state":"OPEN","createdAt":"2026-10-03T10:00:00Z","mergedAt":null,"closedAt":null,"mergedBy":null,"additions":1,"deletions":0},
+    {"number":7,"title":"t7","headRefName":"fxa-12","state":"MERGED","createdAt":"2026-10-01T10:00:00Z","mergedAt":"2026-10-02T10:00:00Z","closedAt":"2026-10-02T10:00:00Z","mergedBy":{"login":"rev1"},"additions":5,"deletions":2}]'; }
   out="$(echo '{}' | _stats_add_prs)"
-  check "prs: source, key and outcome from the branch" "7 pipeline FXA-12 MERGED rev1|8 slack agent-ab12 OPEN null" \
-    "$(jq -r '[.prs[] | "\(.n) \(.src) \(.key) \(.state) \(.by)"] | join("|")' <<< "$out")"
+  check "prs: source, key, outcome, repo and team; newest first" "8 slack agent-ab12 OPEN null mozilla/fxa fxa|7 pipeline FXA-12 MERGED rev1 mozilla/fxa fxa" \
+    "$(jq -r '[.prs[] | "\(.n) \(.src) \(.key) \(.state) \(.by) \(.repo) \(.team)"] | join("|")' <<< "$out")"
   echo '{"assignee":"Pat Doe","status":"Done","at":"2026-10-02T10:15:00Z"}' > "$PIPE_STATE_DIR/FXA-12.jira.json"
   check "prs: a merged PR carries its ticket's state; a PR with none gets null" "Pat Doe Done|null" \
-    "$(echo '{}' | _stats_add_prs | jq -r '[(.prs[0].jira | "\(.assignee) \(.status)"), (.prs[1].jira | tostring)] | join("|")')"
+    "$(echo '{}' | _stats_add_prs | jq -r '[(.prs[1].jira | "\(.assignee) \(.status)"), (.prs[0].jira | tostring)] | join("|")')"
   gh() { return 1; }; touch -t 202001011200 "$PIPE_STATE_DIR/prs.json"
   check "prs: a failed read keeps the last list, with its time" "2 1577836800" "$(echo '{}' | _stats_add_prs | TZ=UTC jq -r '"\(.prs | length) \(.prs_at - (.prs_at % 86400))"')"
   rm -f "$PIPE_STATE_DIR/prs.json"
   check "prs: a list never read is null, not empty, and has no time" "null null" "$(echo '{}' | _stats_add_prs | jq -r '"\(.prs) \(.prs_at)"')"
+  # Two other teams: priv has its own repo, ent shares mozilla/fxa (its #7 is FxA's, its #9 is in both lists).
+  st="$HOME/.claude/state"; mkdir -p "$FXA_PROFILES_DIR/priv" "$FXA_PROFILES_DIR/ent" "$st/priv" "$st/ent"
+  pr() { printf '{"number":%s,"title":"t","headRefName":"%s","state":"OPEN","createdAt":"%s","mergedAt":null,"closedAt":null,"mergedBy":null,"additions":1,"deletions":0,"url":"https://github.com/%s/pull/%s"}' "$1" "$2" "$3" "$4" "$1"; }
+  echo "[$(pr 7 PRIV-3 2026-10-04T10:00:00Z mozilla/fxa-private)]" > "$st/priv/prs.json"
+  echo '{"assignee":"Sam Roe","status":"Done"}' > "$st/priv/PRIV-3.jira.json"
+  echo "[$(pr 9 ENT-1 2026-10-05T10:00:00Z mozilla/fxa),$(pr 7 fxa-12 2026-10-01T10:00:00Z mozilla/fxa)]" > "$st/ent/prs.json"
+  gh() { echo "[$(pr 9 ENT-1 2026-10-05T10:00:00Z mozilla/fxa),$(pr 8 agent-ab12 2026-10-03T10:00:00Z mozilla/fxa),$(pr 7 fxa-12 2026-10-01T10:00:00Z mozilla/fxa)]"; }
+  rm -f "$PIPE_STATE_DIR/prs.json"
+  out="$(echo '{"rows":[{"prr":"mozilla/fxa","prn":9,"profile":"ent"}]}' | _stats_add_prs)"
+  check "prs: every team's list, one per (repo, number); a shared repo's PR has the team of its work" \
+    "mozilla/fxa#9 ent|mozilla/fxa-private#7 priv|mozilla/fxa#8 fxa|mozilla/fxa#7 fxa" \
+    "$(jq -r '[.prs[] | "\(.repo)#\(.n) \(.team)"] | join("|")' <<< "$out")"
+  check "prs: a team's PR carries its ticket's state from its own folder" "Sam Roe" "$(jq -r '.prs[] | select(.repo == "mozilla/fxa-private") | .jira.assignee' <<< "$out")"
+  # A stale list refreshes in the background with the team loaded and FXA_PIPELINE exported; a read-only team does not.
+  mkdir -p "$FXA_PROFILES_DIR/ro" "$st/ro"; touch -t 202001011200 "$st/priv/prs.json"
+  pipeline_load() { PIPE_REPO_SLUG="mozilla/$1"; [ "$1" != ro ] || PIPE_PR_OPEN=0; }
+  gh() { echo "[$(pr 1 "$(printenv FXA_PIPELINE)-1" 2026-10-06T10:00:00Z "$PIPE_REPO_SLUG")]"; }
+  echo '{}' > "$tmp/prs-in"; _stats_add_prs < "$tmp/prs-in" > /dev/null; wait
+  check "prs: a stale team list refreshes with its own repo and token; a read-only team reads none" "mozilla/priv#1 PRIV-1|no list|no lock" \
+    "$(_stats_prs_list "$st/priv" priv "" | jq -r '.[0] | "\(.repo)#\(.n) \(.key)"')|$([ -e "$st/ro/prs.json" ] && echo list || echo no list)|$([ -e "$st/priv/prs.lock" ] && echo lock || echo no lock)"
+  unset -f pipeline_load
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
   db_on() { false; }
   check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"

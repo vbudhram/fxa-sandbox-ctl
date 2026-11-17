@@ -11,11 +11,15 @@ import { axisUsd, bucketLabel, type TabProps } from './Spend';
 
 const SRC: Record<string, string> = { pipeline: 'Pipeline', slack: 'Slack sessions' };
 
-export function Prs({ s, rows, lo, hi, now, unk, srcOn, all, src, q }: TabProps & { all: J[]; src: string; q: string }) {
+export function Prs({ s, rows, lo, hi, now, unk, srcOn, all, src, q, team }: TabProps & { all: J[]; src: string; q: string; team: string }) {
   const runs: J[] | undefined = (s.feeds.stats?.data as J)?.rows;
   const repo = teamRepo(s, '');
   // A session or team event does not change the PR figures, so it does not recount them.
-  const d = useMemo(() => prsData(all, runs ?? [], lo, hi, src, q, repo, now), [all, runs, lo, hi, src, q, repo, now]);
+  // A team's figures read only its PRs and runs, so its cost per merged PR is its own spend over its own PRs.
+  const d = useMemo(() => {
+    const mine = (t: unknown) => team === 'all' || (t || 'fxa') === team;
+    return prsData(all.filter((p) => mine(p.team)), (runs ?? []).filter((r) => mine(r.profile)), lo, hi, src, q, repo, now);
+  }, [all, runs, lo, hi, src, q, repo, now, team]);
   if (d.empty) return <div className="emptybox">{all.length ? 'No PR opened or merged in this range matches these filters.' : 'No PR list yet.'}</div>;
   const kv = (v: string | number) => (unk && srcOn ? 'unknown' : v);
   const b = buckets(rows, lo, hi, now), unit = b.byDay ? 'day' : 'week';
@@ -25,8 +29,8 @@ export function Prs({ s, rows, lo, hi, now, unk, srcOn, all, src, q }: TabProps 
     : p.jira ? (/^done$/i.test(p.jira.status ?? '') ? null : ` · ${p.jira.assignee || 'unassigned'}, ${p.jira.status || '?'}`)
       : <> · <span className="warnt">ticket not updated yet</span></>);
   const line = (p: J) => (
-    <div key={`${p.key}-${p.n}`} title={p.title}>
-      <Row k={<span><PrLink s={s} k={p.key} n={p.n} /> {isKey(p.key) ? <JiraKey s={s} k={p.key} /> : <span className="mono">{p.key}</span>}</span>}
+    <div key={`${p.repo}#${p.n}`} title={p.title}>
+      <Row k={<span><PrLink s={s} k={p.key} n={p.n} repo={p.repo} /> {isKey(p.key) ? <JiraKey s={s} k={p.key} /> : <span className="mono">{p.key}</span>}</span>}
         v={<>{p.state === 'MERGED' ? <>{dur(d.hrs(p))} · <span className="add">+{p.add}</span> <span className="del">−{p.del}</span>{ticket(p)}</>
           : p.state === 'OPEN' ? `open ${dur((now - Date.parse(p.created)) / 3600000)}` : 'closed'} · <b>{usd(d.cost(p))}</b></>} />
     </div>

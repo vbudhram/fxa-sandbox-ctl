@@ -115,5 +115,7 @@ describe('the Overview model', () => {
     expect(byTeam(st, 'sync').rows).toEqual([{ key: 'A-1', profile: 'sync' }]);
     expect(byTeam({ ...st, prs: [{ merged: 'x' }] }, 'fxa').prs).toBeNull();
     expect(byTeam(null, 'fxa')).toBeNull();
+    // A PR with a team counts for that team, even when its ticket key is in another team's rows.
+    expect(byTeam({ ...st, prs: [{ key: 'B-1', merged: 'y', team: 'sync' }] }, 'sync').prs).toEqual([{ key: 'B-1', merged: 'y', team: 'sync' }]);
   });
 });

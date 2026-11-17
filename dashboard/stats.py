@@ -498,7 +498,8 @@ def _rows(s, con, f):
 
 # _stats_add_teams
 
-def _teams(s, con, f):
+# _stats_teams: the other teams with a state folder, as (name, folder).
+def _other_teams(f):
     names = set()
     for d, suf in ((f["profiles"], None), (f["teams"], ".json")):
         try:
@@ -508,8 +509,12 @@ def _teams(s, con, f):
         names |= {n for n in ls if suf is None} | {n[: -len(suf)] for n in ls if suf and n.endswith(suf)}
     for p in sorted(names):
         d = os.path.join(f["home"], ".claude", "state", p)
-        if not (re.fullmatch(r"[a-z0-9-]+", p) and p != f["profile"] and os.path.isdir(d) and d != f["state"]):
-            continue
+        if re.fullmatch(r"[a-z0-9-]+", p) and p != f["profile"] and os.path.isdir(d) and d != f["state"]:
+            yield p, d
+
+
+def _teams(s, con, f):
+    for p, d in _other_teams(f):
         try:
             r, j, ps = (slurp(os.path.join(d, n)) if os.path.exists(os.path.join(d, n)) else []
                         for n in ("agent-runs.jsonl", "job-costs.jsonl", "passes.jsonl"))
@@ -529,14 +534,14 @@ def _teams(s, con, f):
 
 # _stats_add_prs
 
-def _prs(s, con, f):
-    p = os.path.join(f["state"], "prs.json")
+def _prs_list(d, team, repo):
+    """_stats_prs_list: the folder's PR list with each PR's repo and team, or None when there is none."""
+    p = os.path.join(d, "prs.json")
     if not nonempty(p):
-        s["prs"] = s["prs_at"] = None
-        return s
+        return None
     jm = {}
     try:
-        for q in sorted(glob.glob(os.path.join(f["state"], "*.jira.json"))):
+        for q in sorted(glob.glob(os.path.join(d, "*.jira.json"))):
             for x in slurp(q):
                 jm[re.sub(r"\.jira\.json$", "", os.path.basename(q))] = x
     except Exception:  # noqa: BLE001
@@ -544,17 +549,38 @@ def _prs(s, con, f):
 
     def key(h):
         return h.upper() if re.search(r"^[A-Za-z][A-Za-z0-9]+-[0-9]+$", h) and not h.startswith("agent-") else h
+
+    def repo_of(u):
+        m = re.search(r"github.com/(?P<r>[^/]+/[^/]+)/pull/", alt(u, ""))
+        return m.group("r") if m else repo
     try:
         (lst,) = slurp(p)
         prs = [{"n": x.get("number"), "title": x.get("title"), "state": x.get("state"), "created": x.get("createdAt"),
                 "merged": x.get("mergedAt"), "closed": x.get("closedAt"), "by": alt(g(x, "mergedBy", "login"), None),
-                "add": x.get("additions"), "del": x.get("deletions"),
+                "add": x.get("additions"), "del": x.get("deletions"), "repo": repo_of(x.get("url")), "team": team,
                 "src": "slack" if x["headRefName"].startswith("agent-") else "pipeline", "key": key(x["headRefName"])} for x in lst]
         for x in prs:
             x["jira"] = alt(jm.get(x["key"]), None)
     except Exception:  # noqa: BLE001
-        prs = []
-    s["prs"], s["prs_at"] = prs, int(os.stat(p).st_mtime)
+        return None
+    return prs
+
+
+def _prs(s, con, f):
+    lists = [_prs_list(f["state"], f["profile"], f["repo"])] + [_prs_list(d, p, "") for p, d in _other_teams(f)]
+    lists = [x for x in lists if x is not None]
+    if not lists:
+        s["prs"] = s["prs_at"] = None
+        return s
+    # One PR per (repo, number), the first list's; its team is the team of the work on it, else its list's.
+    tm = {f"{r['prr']}#{r['prn']}": r.get("profile") for r in s["rows"] if r.get("prn") is not None and r.get("prr") is not None}
+    one = {}
+    for x in (x for lst in lists for x in lst):
+        one.setdefault(f"{x['repo']}#{x['n']}", x)
+    for k, x in one.items():
+        x["team"] = alt(tm.get(k), x["team"])
+    p = os.path.join(f["state"], "prs.json")
+    s["prs"], s["prs_at"] = sort_by(one.values(), lambda x: x.get("created"))[::-1], int(os.stat(p).st_mtime) if nonempty(p) else None
     return s
 
 
@@ -760,7 +786,9 @@ def files(pipeline="fxa", env=None):
     cap = int(e.get("FXA_SESSION_MAX") or 4)
     if e.get("FXA_FC_HOST") and int(e.get("FXA_FC_SLOTS") or 4) > cap:
         cap = int(e.get("FXA_FC_SLOTS") or 4)
-    return {"state": state, "runs": runs, "home": home, "profile": pipeline, "cap": cap,
+    # The repo of a PR list read before its url was: the shell's PIPE_REPO_SLUG.
+    repo = e.get("PIPE_REPO_SLUG") or ("mozilla/fxa" if pipeline == "fxa" else "")
+    return {"state": state, "runs": runs, "home": home, "profile": pipeline, "cap": cap, "repo": repo,
             "sessions": e.get("FXA_SESSION_DIR") or os.path.join(st, "agent-sessions"),
             "usage": os.path.join(e.get("FXA_LLM_PROXY_DIR") or os.path.join(st, "llm-proxy"), "usage.jsonl"),
             "errors": e.get("FXA_ERRORS_FILE") or os.path.join(st, "fxa-ai-fixme", "errors.jsonl"),

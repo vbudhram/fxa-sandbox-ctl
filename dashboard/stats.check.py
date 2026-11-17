@@ -143,7 +143,15 @@ def fixture(root, store):
         put(os.path.join(prof, p, "profile.conf"), "")
     put(os.path.join(st, "teams", "example-two.json"), "{}")
     jsonl(os.path.join(st, "example", "agent-runs.jsonl"), [
-        {"recorded_at": iso(NOW - 2 * D), "issue": "EX-1", "kind": "fix", "cost_usd": 2.5, "cost_source": "proxy", "wall_seconds": 300}])
+        {"recorded_at": iso(NOW - 2 * D), "issue": "EX-1", "kind": "fix", "cost_usd": 2.5, "cost_source": "proxy", "wall_seconds": 300, "pr": PR + "103"}])
+    # The team's own list: its repo's #102 is not FxA's, and FxA's #103 (its run's PR) is listed once.
+    ex = "https://github.com/example/team-repo/pull/"
+    jsonl(os.path.join(st, "example", "prs.json"), [[
+        {"number": 102, "title": "e102", "headRefName": "EX-2", "state": "MERGED", "createdAt": iso(NOW - 4 * D), "mergedAt": iso(NOW - 3 * D),
+         "closedAt": iso(NOW - 3 * D), "mergedBy": {"login": "octo-example"}, "additions": 2, "deletions": 1, "url": ex + "102"},
+        {"number": 103, "title": "t103", "headRefName": "FXA-10", "state": "OPEN", "createdAt": iso(NOW - 3 * D),
+         "mergedAt": None, "closedAt": None, "mergedBy": None, "additions": 9, "deletions": 9, "url": PR + "103"}]])
+    put(os.path.join(st, "example", "EX-2.jira.json"), '{"assignee": "Example Person", "status": "In Review"}')
     jsonl(os.path.join(st, "example", "job-costs.jsonl"), [{"at": iso(NOW - 2 * D), "job": "pass", "run": "pass-123", "cost_usd": 0.9}])
     jsonl(os.path.join(st, "example", "passes.jsonl"), [{"at": NOW - D, "work": True}, {"at": NOW - 2 * D, "work": False}, {"at": NOW - 9 * D, "work": True}])
     jsonl(os.path.join(st, "example-two", "passes.jsonl"), [{"at": NOW - 3600, "work": False}])
@@ -193,7 +201,11 @@ def golden(store):
         check(f"golden ({name}): the fixture gives every row source", {"pipeline", "slack", "depfix", "pass", "answer"} <= {s for s, _ in rows}, rows)
         check(f"golden ({name}): the fixture gives llm, load, pipeline, memory, teams and PRs",
               bool(shell["llm"].get("days")) and bool(shell["load"]["days"]) and bool(shell["pipeline"]["waits"]) and bool(shell["memory"])
-              and "example" in shell.get("team_passes", {}) and len(shell["prs"]) == 3, json.dumps(shell)[:300])
+              and "example" in shell.get("team_passes", {}) and len(shell["prs"]) == 4, json.dumps(shell)[:300])
+        check(f"golden ({name}): a team's list joins once per (repo, number), with the team of the work on it",
+              sorted(f"{p['repo']}#{p['n']} {p['team']}" for p in shell["prs"])
+              == ["example/team-repo#102 example", "mozilla/fxa#101 fxa", "mozilla/fxa#102 fxa", "mozilla/fxa#103 example"],
+              [f"{p['repo']}#{p['n']} {p['team']}" for p in shell["prs"]])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

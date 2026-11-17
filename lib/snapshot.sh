@@ -263,10 +263,8 @@ snapshot_stats_json() {
 # join the rows from their own state folders, and team_passes has each team's passes in 7 days.
 _stats_add_teams() {
   local f p d in; in="$(mktemp)"; cat > "$in"
-  # The folder teams and the record teams.
-  for p in $( { ls "${FXA_PROFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles}"; ls "${FXA_TEAMS_DIR:-${HOME}/.claude/state/teams}" 2>/dev/null | sed -n 's/\.json$//p'; } 2>/dev/null | sort -u); do
+  for p in $(_stats_teams); do
     d="${HOME}/.claude/state/${p}"
-    [[ "$p" =~ ^[a-z0-9-]+$ ]] && [ "$p" != "${PIPE_PROFILE:-fxa}" ] && [ -d "$d" ] && [ "$d" != "$PIPE_STATE_DIR" ] || continue
     jq -c --arg p "$p" --slurpfile r <(cat "$d/agent-runs.jsonl" 2>/dev/null || true) --slurpfile j <(cat "$d/job-costs.jsonl" 2>/dev/null || true) \
       --slurpfile ps <(cat "$d/passes.jsonl" 2>/dev/null || true) "$_STATS_RUN_ROW$_STATS_JOB_ROW"'
       (.llm // {}) as $llm | .rows += ($r | map(runrow + {profile: $p})) + ($j | map(jobrow($llm) + {profile: $p}))
@@ -274,6 +272,16 @@ _stats_add_teams() {
       | .team_passes[$p] = {passes: ($w | length), work: ($w | map(select(.work)) | length), last: ($ps | map(.at) | max)}' "$in" > "${in}.n" && mv "${in}.n" "$in"
   done
   jq -c --arg me "${PIPE_PROFILE:-fxa}" '.rows |= map(.profile //= $me)' "$in"; rm -f "$in"
+}
+
+# _stats_teams   The other teams with a state folder: the folder teams and the record teams.
+_stats_teams() {
+  local p="" d=""
+  for p in $( { ls "${FXA_PROFILES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles}"; ls "${FXA_TEAMS_DIR:-${HOME}/.claude/state/teams}" 2>/dev/null | sed -n 's/\.json$//p'; } 2>/dev/null | sort -u); do
+    d="${HOME}/.claude/state/${p}"
+    [[ "$p" =~ ^[a-z0-9-]+$ ]] && [ "$p" != "${PIPE_PROFILE:-fxa}" ] && [ -d "$d" ] && [ "$d" != "$PIPE_STATE_DIR" ] || continue
+    echo "$p"
+  done
 }
 
 # _stats_add_memory   Team memory saves in the last 30 days by result, the learnings they
@@ -388,27 +396,63 @@ _pipeline_prs() {
   jq -cn --argjson a "${a:-[]}" --argjson b "${b:-[]}" --argjson n "$2" '($a | map(.number)) as $have | $a + ($b | map(select(.number as $x | $have | index($x) | not))) | .[0:$n]'
 }
 
-# _stats_add_prs   Every PR with the pipeline's label and its outcome, for the PRs tab.
-# The list takes about 6 s to read, so it is read at most every 10 minutes.
-_stats_add_prs() {
-  local f="${PIPE_STATE_DIR}/prs.json" t
-  if [ ! -s "$f" ] || [ $(( $(date +%s) - $(_mtime "$f") )) -gt 600 ]; then
-    t="$(mktemp "${f}.XXXXXX")"
-    if _pipeline_prs all 1000 number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions > "$t" \
-       && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
-  fi
-  # A list never read (no prs.json: gh failed from the start) is null, not empty; prs_at is the
-  # list's time (it refreshes every 10 min), so a page can tell an old list from a live one.
-  [ -s "$f" ] || { jq -c '.prs = null | .prs_at = null'; return; }
-  # Each merged ticket's assignee and status, as jira_close_merged saved them.
+# _stats_prs_fresh <file>   The PR list was read in the last 10 minutes.
+_stats_prs_fresh() { [ -s "$1" ] && [ $(( $(date +%s) - $(_mtime "$1") )) -le 600 ]; }
+
+# _stats_prs_refresh <state dir>   Read the loaded team's PR list into <dir>/prs.json when it is older than
+# 10 minutes: the list takes about 6 s to read. A failed read keeps the last list.
+_stats_prs_refresh() {
+  local f="$1/prs.json" t=""
+  ! _stats_prs_fresh "$f" || return 0
+  t="$(mktemp "${f}.XXXXXX")"
+  if _pipeline_prs all 1000 number,title,headRefName,state,createdAt,mergedAt,closedAt,mergedBy,additions,deletions,url > "$t" \
+     && jq -e 'type == "array"' "$t" >/dev/null 2>&1; then mv "$t" "$f"; else rm -f "$t"; fi
+}
+
+# _stats_prs_list <state dir> <team> <repo>   The dir's PR list for the PRs tab, each PR with its repo (from its url;
+# <repo> for a list read before the url was) and team, and its ticket's assignee and status from the dir's *.jira.json.
+_stats_prs_list() {
+  [ -s "$1/prs.json" ] || return 0
   # One jq for all the files: a jq for each file made the stats feed miss its 30 s limit.
   local jm; jm="$(jq -nc 'reduce inputs as $x ({}; . + {(input_filename | sub(".*/"; "") | sub("\\.jira\\.json$"; "")): $x})' \
-    "${PIPE_STATE_DIR}"/*.jira.json 2>/dev/null)" || jm='{}'
-  jq -c --slurpfile p <(jq -c --argjson jm "$jm" 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
+    "$1"/*.jira.json 2>/dev/null)" || jm='{}'
+  jq -c --argjson jm "$jm" --arg team "$2" --arg repo "$3" 'map({ n: .number, title, state, created: .createdAt, merged: .mergedAt, closed: .closedAt,
       by: (.mergedBy.login // null), add: .additions, del: .deletions,
+      repo: ([.url // "" | capture("github.com/(?<r>[^/]+/[^/]+)/pull/") | .r] | first // $repo), team: $team,
       src: (if (.headRefName | startswith("agent-")) then "slack" else "pipeline" end),
       key: (if (.headRefName | test("^[A-Za-z][A-Za-z0-9]+-[0-9]+$")) and (.headRefName | startswith("agent-") | not) then (.headRefName | ascii_upcase) else .headRefName end) }) | map(. + {jira: ($jm[.key] // null)})' \
-      "$f" 2>/dev/null || echo '[]') --argjson at "$(_mtime "$f")" '.prs = $p[0] | .prs_at = $at'
+    "$1/prs.json" 2>/dev/null || true
+}
+
+# _stats_add_prs   Every team's PRs and their outcome, for the PRs tab: this team's list, read here, and each other
+# team's list from its own state folder.
+_stats_add_prs() {
+  local f="${PIPE_STATE_DIR}/prs.json" teams="" p="" d="" lists="" at=null
+  _stats_prs_refresh "$PIPE_STATE_DIR"
+  teams="$(_stats_teams)"
+  # Another team's list needs its repo and token (the gh wrapper mints it for FXA_PIPELINE). It refreshes in the
+  # background, so four reads do not pass the feed's 30 s limit; the feed shows the list that is there.
+  for p in $teams; do
+    d="${HOME}/.claude/state/${p}"
+    ! _stats_prs_fresh "$d/prs.json" || continue
+    ( [ ! -d "$d/prs.lock" ] || [ $(( $(date +%s) - $(_mtime "$d/prs.lock") )) -lt 600 ] || rmdir "$d/prs.lock"
+      mkdir "$d/prs.lock" || exit 0
+      trap 'rmdir "$d/prs.lock"' EXIT
+      pipeline_load "$p" && [ "${PIPE_PR_OPEN:-1}" != 0 ] && export FXA_PIPELINE="$p" && _stats_prs_refresh "$d" ) </dev/null >/dev/null 2>&1 &
+  done
+  lists="$(_stats_prs_list "$PIPE_STATE_DIR" "${PIPE_PROFILE:-fxa}" "${PIPE_REPO_SLUG:-mozilla/fxa}"
+    for p in $teams; do _stats_prs_list "${HOME}/.claude/state/${p}" "$p" ""; done)"
+  # No list at all (gh failed from the start) is null, not empty; prs_at is this team's list time (it
+  # refreshes every 10 min), so a page can tell an old list from a live one.
+  [ -n "$lists" ] || { jq -c '.prs = null | .prs_at = null'; return; }
+  [ ! -s "$f" ] || at="$(_mtime "$f")"
+  # A PR is one (repo, number): a team that shares a repo lists it too. Its team is the team of the work on it,
+  # else the list's team.
+  jq -c --slurpfile p <(printf '%s\n' "$lists") --argjson at "$at" '
+    ((.rows // []) | map(select(.prn != null and .prr != null)) | map({key: "\(.prr)#\(.prn)", value: .profile}) | from_entries) as $tm
+    | .prs = ($p | add | reduce .[] as $x ({}; .["\($x.repo)#\($x.n)"] //= $x) | [.[]]
+        | map(.team = ($tm["\(.repo)#\(.n)"] // .team)) | sort_by(.created) | reverse)
+    | .prs_at = $at'
 }
 
 # _stats_add_load   Slack sessions per day: the most live at once (from start and stop

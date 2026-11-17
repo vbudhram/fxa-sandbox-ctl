@@ -78,7 +78,7 @@ export function Main() {
       </div>
       {sf.range === 'custom' && sf.from && sf.to && sf.from > sf.to && <p className="unknown" role="status">From is after To, so no day is in the range.</p>}
       {tab === 'spend' && <Spend {...props} />}
-      {tab === 'prs' && <Prs {...props} all={data.prs ?? []} src={sf.src} q={on('q') ? sf.q.trim().toLowerCase() : ''} />}
+      {tab === 'prs' && <Prs {...props} all={data.prs ?? []} src={sf.src} q={on('q') ? sf.q.trim().toLowerCase() : ''} team={on('team') ? sf.team : 'all'} />}
       {tab === 'runners' && <Runners st={data} rows={rows} lo={lo} hi={hi} />}
       {tab === 'pipeline' && <Pipeline st={data} lo={lo} hi={hi} />}
     </section>

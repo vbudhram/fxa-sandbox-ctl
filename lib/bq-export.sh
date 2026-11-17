@@ -37,7 +37,7 @@ _BQ_PRKEY='def prkey($r; $n): "\($r)#\($n)";
 _BQ_WORK="$_BQ_PRKEY"'
   ($rr | map(select(.env == "live"))) as $live
   | ($live | map(select(.session != null) | {key: .session, value: .}) | from_entries) as $rm
-  | ((.prs // []) | map({key: prkey($repo; .n), value: (.state | ascii_downcase)}) | from_entries) as $ps
+  | ((.prs // []) | map({key: prkey(.repo // $repo; .n), value: (.state | ascii_downcase)}) | from_entries) as $ps
   | ((.rows // [])[] | ($rm[.key] // null) as $r | ($r.pr_url | prurl) as $u
      | (if .prn != null then {r: .prr, n: .prn} else $u end) as $p
      | { ts: .at, src: (if $r == null then .src elif $r.fix == 1 then "depfix" else "routine" end), team: (.profile // "unknown"),
@@ -48,13 +48,12 @@ _BQ_WORK="$_BQ_PRKEY"'
      | { ts: .started_at, src: (if .fix == 1 then "depfix" else "routine" end), team, key: "routine-\(.id)", kind: .name,
          pr_repo: $u.r, pr_number: $u.n, usd: (.cost_usd // 0), minutes: null, model: "", outcome: .state })'
 
-# One row per PR in the pipeline repo, with the source from its branch (a ticket branch is pipeline, so a session
-# that continues a pipeline PR leaves it pipeline), the ticket's rounds, and the team from the work that touched it.
-_BQ_PRS="$_BQ_PRKEY"'
+# One row per PR of every team, with the source from its branch (a ticket branch is pipeline, so a session
+# that continues a pipeline PR leaves it pipeline), the ticket's rounds, and the team the Stats feed gives it.
+_BQ_PRS='
   (.tickets // {}) as $t
-  | ((.rows // []) | map(select(.prn != null)) | map({key: prkey(.prr; .prn), value: .profile}) | from_entries) as $tm
   | ((.rows // []) | map(select(.kind == "rebase")) | group_by(.key) | map({key: .[0].key, value: length}) | from_entries) as $rb
-  | (.prs // [])[] | { repo: $repo, number: .n, key, src, team: ($tm[prkey($repo; .n)] // $me), state: (.state | ascii_downcase),
+  | (.prs // [])[] | { repo: (.repo // $repo), number: .n, key, src, team: (.team // $me), state: (.state | ascii_downcase),
       created, merged, closed, attempts: ($t[.key].attempts // 0), feedback_rounds: ($t[.key].feedback_rounds // 0),
       admin_rounds: ($t[.key].admin_rounds // 0), rebases: ($rb[.key] // 0) }'
 

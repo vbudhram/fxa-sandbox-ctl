@@ -57,8 +57,8 @@ export function JiraKey({ s, k }: { s: Store; k: string }) {
   const h = jiraHref(k, jiraSite(s, k));
   return h ? <a className="key" href={h} target="_blank" rel="noreferrer">{k}</a> : <span className="key">{k}</span>;
 }
-export function PrLink({ s, k, n }: { s: Store; k: string; n: unknown }) {
-  const h = prUrl(n, teamRepo(s, k));
+export function PrLink({ s, k, n, repo }: { s: Store; k: string; n: unknown; repo?: string }) {
+  const h = prUrl(n, repo || teamRepo(s, k));
   return h ? <a className="key" href={h} target="_blank" rel="noreferrer">#{String(n)}</a> : <span className="key">#{String(n ?? '')}</span>;
 }
 export const isKey = (k: unknown) => KEY_RE.test(String(k ?? ''));

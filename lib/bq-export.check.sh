@@ -41,7 +41,8 @@ cat > "$tmp/stats.json" <<'JSON'
  {"at":"2026-11-02T11:00:00Z","src":"slack","key":"agent-cccccc","kind":"session","usd":1.45,"min":30,"model":"claude-opus-5","pr":true,"prn":100,"prr":"mozilla/fxa","who":"SECRET name","stop":"idle","profile":"fxa"},
  {"at":"2026-11-01T10:00:00Z","src":"slack","key":"agent-aaaaaa","kind":"session","usd":1.5,"min":5,"model":"claude-opus-5","pr":true,"prn":7,"prr":"mozilla/syncstorage-rs","who":"SECRET name","profile":"sync-storage"},
  {"at":"2026-11-01T12:00:00Z","src":"answer","key":"ask-abcdef","kind":"answered","usd":0.12,"min":0,"model":"","pr":false,"q":"SECRET question","thread":"SECRET thread","profile":"fxa"}],
- "prs":[{"n":100,"title":"SECRET title","state":"MERGED","created":"2026-11-01T10:30:00Z","merged":"2026-11-03T09:00:00Z","closed":"2026-11-03T09:00:00Z","by":"SECRET-login","src":"pipeline","key":"FXA-1","jira":{"assignee":"SECRET assignee"}}],
+ "prs":[{"n":100,"title":"SECRET title","state":"MERGED","created":"2026-11-01T10:30:00Z","merged":"2026-11-03T09:00:00Z","closed":"2026-11-03T09:00:00Z","by":"SECRET-login","src":"pipeline","key":"FXA-1","jira":{"assignee":"SECRET assignee"}},
+  {"n":7,"title":"SECRET title","state":"OPEN","created":"2026-11-01T10:10:00Z","merged":null,"closed":null,"by":null,"src":"slack","key":"agent-aaaaaa","repo":"mozilla/syncstorage-rs","team":"sync-storage"}],
  "tickets":{"FXA-1":{"attempts":1,"feedback_rounds":2,"admin_rounds":0}}}
 JSON
 
@@ -52,7 +53,7 @@ for t in work prs runs sessions routine_runs job_costs answers llm_daily; do
 done
 
 check "work: one row per Stats row and per routine run with no session" 7 "$(printf '%s\n' "$out_work" | grep -c .)"
-check "work: the routine session is depfix with the routine name and its PR" "depfix|sync-storage|RUSTSEC Patches|mozilla/syncstorage-rs|7|pr" \
+check "work: the routine session is depfix with the routine name and its team PR's state" "depfix|sync-storage|RUSTSEC Patches|mozilla/syncstorage-rs|7|open" \
   "$(printf '%s\n' "$out_work" | jq -r 'select(.key == "agent-aaaaaa") | "\(.src)|\(.team)|\(.kind)|\(.pr_repo)|\(.pr_number)|\(.outcome)"')"
 check "work: a routine run with no session gets a row with its state" "routine|failed|0" \
   "$(printf '%s\n' "$out_work" | jq -r 'select(.key == "routine-2") | "\(.src)|\(.outcome)|\(.usd)"')"
@@ -63,8 +64,10 @@ check "work: a PR in the PR list gets its state" "merged merged merged" "$(print
 check "work: an answer keeps its kind as outcome" "answer|answered|0.12" "$(printf '%s\n' "$out_work" | jq -r 'select(.src == "answer") | "\(.src)|\(.outcome)|\(.usd)"')"
 check "work: the columns are the allowlist" "key,kind,minutes,model,outcome,pr_number,pr_repo,src,team,ts,usd" \
   "$(printf '%s\n' "$out_work" | jq -sr 'map(keys) | add | unique | join(",")')"
-check "prs: a session on a pipeline PR leaves it pipeline, with the rounds and rebases" "pipeline|merged|2|1|fxa" \
-  "$(printf '%s\n' "$out_prs" | jq -r '"\(.src)|\(.state)|\(.feedback_rounds)|\(.rebases)|\(.team)"')"
+check "prs: a session on a pipeline PR leaves it pipeline, with the rounds and rebases" "pipeline|merged|2|1|fxa|mozilla/fxa" \
+  "$(printf '%s\n' "$out_prs" | jq -r 'select(.number == 100) | "\(.src)|\(.state)|\(.feedback_rounds)|\(.rebases)|\(.team)|\(.repo)"')"
+check "prs: a team's PR keeps its repo and team" "mozilla/syncstorage-rs|sync-storage" \
+  "$(printf '%s\n' "$out_prs" | jq -r 'select(.number == 7) | "\(.repo)|\(.team)"')"
 check "routine_runs: all four runs, the fix as a boolean" "4 true" "$(printf '%s\n' "$out_routine_runs" | grep -c .) $(printf '%s\n' "$out_routine_runs" | jq -r 'select(.id == 1) | .fix')"
 check "sessions: both rows, a dry run marked, busy_s a number" "2|true|60" \
   "$(printf '%s\n' "$out_sessions" | jq -sr '"\(length)|\(map(select(.key == "agent-bbbbbb"))[0].dryrun)|\(map(select(.key == "agent-aaaaaa"))[0].busy_s | floor)"')"

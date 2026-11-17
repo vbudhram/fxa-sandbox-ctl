@@ -82,18 +82,18 @@ export function prsData(all: J[], rows: J[], lo: number, hi: number, src: string
   // All-in cost reads every PR and run, so a source filter does not divide all spend by fewer PRs.
   const { mergedIn, spentIn } = costPerMerged(lo, hi, all, rows);
   const merged = mergedIn.filter(match);
-  // A session's PR number counts only in this repo's list: a team repo has its own #123.
-  // The row indexes per PR number and per pipeline key, so a PR's cost does not scan every row.
-  const byN = new Map<unknown, number[]>(), byKey = new Map<unknown, number[]>();
+  // A PR is its repo and number: a team repo has its own #123. A row or PR with no repo is in this repo.
+  // The row indexes per PR and per pipeline key, so a PR's cost does not scan every row.
+  const byN = new Map<unknown, number[]>(), byKey = new Map<unknown, number[]>(), prKey = (r: unknown, n: unknown) => `${r || repo}#${n}`;
   rows.forEach((r, i) => {
-    if (!r.prr || r.prr === repo) (byN.get(r.prn) ?? byN.set(r.prn, []).get(r.prn)!).push(i);
+    if (r.prn != null) { const k = prKey(r.prr, r.prn); (byN.get(k) ?? byN.set(k, []).get(k)!).push(i); }
     if (r.src === 'pipeline') (byKey.get(r.key) ?? byKey.set(r.key, []).get(r.key)!).push(i);
   });
   const costs = new Map<J, number>();
   const cost = (p: J): number => {
     if (!costs.has(p)) {
       // Both lists are in row order: the merge adds each row once, in the order of a full scan, so the sum is the same.
-      const a = byN.get(p.n) ?? [], b = byKey.get(p.key) ?? [];
+      const a = byN.get(prKey(p.repo, p.n)) ?? [], b = byKey.get(p.key) ?? [];
       let x = 0, i = 0, j = 0;
       while (i < a.length || j < b.length) {
         const k = j >= b.length || (i < a.length && a[i]! < b[j]!) ? a[i]! : b[j]!;

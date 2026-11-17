@@ -54,7 +54,8 @@ export function convPr(s: Store, x: J): { url: string; n: number; state: string 
   const url = chainOf(x, SS(s)).map((y) => y.pr_url).find(Boolean);
   if (!prHref(url)) return null;
   const repo = repoOf(s), n = Number(String(url).match(/\/pull\/(\d+)/)?.[1]), mine = !!repo && String(url).includes(`/${repo}/`);
-  const p = n && mine ? (STATS(s)?.prs ?? []).find((y: J) => y.n === n) : null;
+  // Every team's PRs are in the list: match the repo too, since a team repo has its own #123.
+  const p = n ? (STATS(s)?.prs ?? []).find((y: J) => y.n === n && String(url).includes(`/${y.repo || repo}/pull/`)) : null;
   return { url: String(url), n, state: p?.state ?? (mine && ((pipeSnap(s) as J)?.open_prs ?? []).some((o: J) => o.number === n) ? 'OPEN' : '') };
 }
 

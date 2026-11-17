@@ -383,9 +383,9 @@ class LiveHub:
             self.publish("delta", {"tbl": tbl, "rows": rows, "deleted": deleted}, {"teams": teams})
 
     def read_files(self, now):
-        """prs.json for the stats; each team test's files for its team-test:<team> feed."""
+        """Every team's prs.json for the stats; each team test's files for its team-test:<team> feed."""
         srv = self.srv
-        m = _mtime(os.path.join(os.path.dirname(srv.ERRORS_FILE), "prs.json"))
+        m = tuple(_mtime(p) for p in sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(srv.ERRORS_FILE)), "*", "prs.json"))))
         if self.mtimes.setdefault("prs.json", m) != m:
             self.mtimes["prs.json"] = m
             self.due = self.due or now + STATS_DELAY_S

@@ -24,11 +24,11 @@ export const overviewOf = (j: J): J => (j && Array.isArray(j.cols) && Array.isAr
   ? { rows: j.rows.map((a: J[]) => Object.fromEntries(j.cols.map((k: string, i: number) => [k, a[i]]))), prs: j.merged == null ? null : j.merged.map((merged: string) => ({ merged })), prs_at: j.prs_at, llm: j.llm ?? {}, slim: true }
   : null);
 
-// One team's stats: its rows, and the merged PRs of its tickets. The slim slice has no PR keys, so its PR list is unknown.
+// One team's stats: its rows, and its merged PRs (by the PR's team, else by its ticket). The slim slice has no PR keys, so its PR list is unknown.
 export function byTeam(st: J, team: string): J {
   if (!st || !team) return st;
   const rows = (st.rows ?? []).filter((r: J) => (r.profile || 'fxa') === team), keys = new Set(rows.map((r: J) => r.key));
-  const prs = Array.isArray(st.prs) && st.prs.every((p: J) => p.key != null) ? st.prs.filter((p: J) => keys.has(p.key)) : null;
+  const prs = Array.isArray(st.prs) && st.prs.every((p: J) => p.key != null) ? st.prs.filter((p: J) => (p.team ? p.team === team : keys.has(p.key))) : null;
   return { ...st, rows, prs };
 }
 

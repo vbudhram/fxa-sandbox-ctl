@@ -9,7 +9,7 @@ export type Tab = 'spend' | 'prs' | 'runners' | 'pipeline';
 export const TABS: Tab[] = ['spend', 'prs', 'runners', 'pipeline'];
 export const TAB_TITLE: Record<Tab, string> = { spend: 'Spend', prs: 'Pull requests', runners: 'Runners and LLM', pipeline: 'Pipeline' };
 // The filters each tab reads; the range applies to every tab.
-export const STATS_USES: Record<Tab, (keyof StatsFilter)[]> = { spend: ['src', 'kind', 'team', 'model', 'q'], prs: ['src', 'q'], runners: ['team'], pipeline: [] };
+export const STATS_USES: Record<Tab, (keyof StatsFilter)[]> = { spend: ['src', 'kind', 'team', 'model', 'q'], prs: ['src', 'team', 'q'], runners: ['team'], pipeline: [] };
 export const SF_SRC: Record<string, string> = { pipeline: 'Pipeline runs', slack: 'Slack sessions', answer: 'Quick answers', pass: 'Passes and triage', depfix: 'Dependency fixes' };
 export const KIND: Record<string, string> = { fix: 'Fix', feedback: 'Review feedback', rebase: 'Rebase', pass: 'Pass', triage: 'Triage', session: 'Session', answered: 'Answered', upgraded: 'Upgraded', 'not recorded': 'Not recorded' };
 export const tabOf = (t: string): Tab => (TABS.includes(t as Tab) ? (t as Tab) : 'spend');
