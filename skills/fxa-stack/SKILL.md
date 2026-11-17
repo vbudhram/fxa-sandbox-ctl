@@ -91,6 +91,40 @@ use a copy for a new style.
 - Use `127.0.0.1:1337`, not `localhost:1337`: Strapi listens on IPv4 only.
 - The admin at http://127.0.0.1:1337/admin asks you to make an admin user the first time.
 - The 2FA specs in `tests/cms` need recovery phone, so `strapi` turns it on.
+
+### The fxa-strapi project
+
+`mozilla/fxa-strapi` holds the Strapi config and the content schema, not the
+content: the real content lives in the cloud instances, so the local database
+has only what `strapi` seeds.
+
+- **Clone:** `/home/agent/fxa-strapi`, branch `dev`. The `dev`, `stg` and `prod`
+  branches deploy on push to their environments. It is not one of the team's repos
+  yet, so a session cannot open a PR there: hand back a diff.
+- **Stack:** Strapi 5, npm (not yarn), SQLite in `.tmp/data.db`, a local `.env` that
+  `strapi` writes with random keys. Delete `.tmp/data.db` to start empty.
+- **Install:** use `npx -y npm@10.9.2 ci`, not `npm ci`: npm 11 rejects the lockfile.
+  One dependency is a `git+ssh` URL, so set the https rewrite as `stack.sh` does.
+  `package.json` asks for Node 20 or lower; it runs on the runner's Node.
+- **Layout:**
+  - `src/api/<type>/content-types/<type>/schema.json`: one content type each.
+    FxA account pages use `relying-party`; the rest are subscription types.
+  - `src/components/accounts/*.json`: the parts of a Relying Party, such as
+    `shared` (colors, logos) and `page-config` (headline, description, button text).
+  - `src/index.js`: at boot it makes the local full-access API token and seeds
+    a meter. The error `bootstrap failed: windowPeriod is required` is from the
+    meter seed and does no harm.
+- **Required on a Relying Party:** `shared`, `EmailFirstPage`, `SignupSetPasswordPage`,
+  `SignupConfirmCodePage` and `SigninPage`. Entries use draft and publish, so FxA
+  sees an entry only after it is published (`strapi` publishes the seed).
+- **A schema change** (a new field on a page, say) needs three steps:
+  1. Edit the `schema.json` or component file, then run `npm run build` and
+     `pm2 restart strapi`.
+  2. In fxa, add the field to `libs/shared/cms/src/lib/queries/relying-party/query.ts`,
+     and run `nx run shared-cms:codegen` with `STRAPI_CLIENT_CONFIG__GRAPHQL_API_URI=http://127.0.0.1:1337/graphql`
+     and `STRAPI_CLIENT_CONFIG__API_KEY` set to the token in `src/index.js`.
+  3. Use the field in Settings, and add it to a copy of the seed to see it.
+  These steps were not yet tried on the runner; say in the handoff what you checked.
 The recovery phone spec still fails here, because the stack has no Twilio test credentials and sends no SMS.
 
 ## What each check needs
