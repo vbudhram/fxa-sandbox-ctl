@@ -569,7 +569,7 @@ RULES_INVESTIGATE = (
     "1. Restate the ask.\n"
     "2. Find the code path, with file:line.\n"
     "3. Read the git history and the related PRs.\n"
-    "4. Read Jira (the linked and similar tickets), GitHub PRs and CI, Sentry and Bugzilla, where they help.\n"
+    "4. Read Jira (the linked and similar tickets), GitHub PRs and CI, where they help.\n"
     "5. Name the cause, or the gap.\n"
     "6. Propose the fix: the files, the lines, the change, and the tests. Make it exact enough that an agent can make the "
     "fix from it.\n"

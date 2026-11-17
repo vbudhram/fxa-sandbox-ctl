@@ -10,8 +10,9 @@ FXA_MCP_GATEWAY_DIR="${FXA_MCP_GATEWAY_DIR:-$HOME/.claude/state/mcp-gateway}"
 # dependency fix run gets: their context holds untrusted text, so no jira, slack or github (PR comments).
 mcp_ci_only() { tr ',' '\n' <<< "${1:-}" | grep -xE 'github-ci|circleci' | paste -sd, - || true; }
 # mcp_investigate_only <connectors>   The read-only set of an investigation run: no slack, figma or other write path
-# for the untrusted ticket text to steer. A team with no PIPE_MCP gets the whole set.
-mcp_investigate_only() { tr ',' '\n' <<< "${1:-}" | grep -xE 'jira|github|github-ci|circleci|sentry|bugzilla' | paste -sd, - || true; }
+# for the untrusted ticket text to steer, and no sentry or bugzilla: the gateway does not scope them, and the result
+# goes to a public Jira comment. A team with no PIPE_MCP gets the whole set.
+mcp_investigate_only() { tr ',' '\n' <<< "${1:-}" | grep -xE 'jira|github|github-ci|circleci' | paste -sd, - || true; }
 
 # mcp_token_for <run> [connectors]   The run's token. The first call makes it
 # with the comma-separated connectors; later calls (a session's next turn)

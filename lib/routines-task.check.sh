@@ -248,10 +248,10 @@ old="$(invrun '{"investigate":{"key":"FXA-77","by":"acc-a1","result":{"ask":"OLD
 i1="$(invrun)"
 PIPE_MCP=jira,slack,github,figma,sentry ftask agent-iv01 "$i1" >/dev/null 2>&1
 check "an investigation run: memory off, its key, its cap, untrusted, and only the read-only connectors of the team's" \
-  "off|FXA-77|6|1|jira,github,sentry|claude" \
+  "off|FXA-77|6|1|jira,github|claude" \
   "$(jq -r '[.memory, .investigate_key, .cap_usd, .untrusted, (.mcp // ""), .runtime] | map(tostring) | join("|")' "$tmp/agent-iv01.json" 2>&1)"
 i2="$(invrun)"; ( unset PIPE_MCP; ftask agent-iv02 "$i2" >/dev/null 2>&1 )
-check "a team with no PIPE_MCP gets the whole read-only set" "jira,github,github-ci,circleci,sentry,bugzilla" "$(jq -r '.mcp // ""' "$tmp/agent-iv02.json")"
+check "a team with no PIPE_MCP gets the whole read-only set, and never sentry or bugzilla" "jira,github,github-ci,circleci" "$(jq -r '.mcp // ""' "$tmp/agent-iv02.json")"
 check "prompt.md is the host frame with the key, and no ticket text" "1|0" \
   "$(grep -c 'investigation of Jira ticket FXA-77 in mozilla/fxa' "$tmp/agent-iv01.prompt.md")|$(grep -c 'TICKET-TEXT' "$tmp/agent-iv01.prompt.md")"
 _jira_rest() { case "$2" in */issue/FXA-77*) jq -nc '{fields: {summary: "TICKET-SUMMARY", description: {type: "doc", content: [{type: "paragraph", content: [{type: "text", text: "TICKET-TEXT"}]}]},
