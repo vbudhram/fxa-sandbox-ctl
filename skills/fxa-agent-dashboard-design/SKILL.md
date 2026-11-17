@@ -67,6 +67,7 @@ Do not use `/design-sync` for this. It is for the standalone claude.ai/design, w
 | A KPI shows 0 or "$0" | A missing value with a default | Show "?" or "unknown", and say "loading" before the data arrives |
 | A 7-figure value spills out of a KPI tile on a phone | The tile value is 28px in a two-column grid | `--t-kpi` drops to 22px under 640px in `theme.css`: use the token, not a fixed size |
 | A hover background stays on after a tap on a phone | A `:hover` rule with no guard | Put each `:hover` rule in `@media (hover: hover)`. `theme.test.ts` fails on a bare one |
+| A chart stays 640px wide and the page scrolls sideways, but only in the Browser pane | The pane is hidden, so the page runs in the background and `ResizeObserver` never fires | Ask the owner to show the pane, or measure in headless Playwright. Do not fix `useWidth` |
 | `ship.sh` cannot find the bot tree | The default `../fxa-agent-bot-main` does not resolve from a worktree | Pass `--bot` with the absolute path |
 
 ## Ship
