@@ -571,7 +571,8 @@ RULES_INVESTIGATE = (
     "1. Restate the ask.\n"
     "2. Find the code path, with file:line.\n"
     "3. Read the git history and the related PRs.\n"
-    "4. Read Jira (the linked and similar tickets), GitHub PRs and CI, where they help.\n"
+    "4. Read Jira (the linked and similar tickets), GitHub PRs and CI, Sentry (the errors, how often and since when) and "
+    "Bugzilla, where they help. A Bugzilla bug in a security group: cite its number only, and copy none of its text.\n"
     "5. Name the cause, or the gap.\n"
     "6. Propose the fix: the files, the lines, the change, and the tests. Make it exact enough that an agent can make the "
     "fix from it.\n"
@@ -582,8 +583,11 @@ INVESTIGATION_RULE = (
     "\"since_last\": str or null (what changed since the earlier investigation, null for the first), \"fix\": {\"summary\": str, "
     "\"steps\": [{\"file\": \"path from the repo root\", \"lines\": \"120-134\", \"change\": str}], \"tests\": [{\"file\": str, "
     "\"case\": str}], \"verify\": \"the command that proves the fix\"}, \"acceptance\": [str], \"risks\": [str], "
-    "\"not_checked\": [str], \"related\": [str]}. related holds only Jira keys (FXA-123) and PR numbers (#123), never a URL. "
-    "Put no URL anywhere in the block: the host builds the links. The host posts the block as a comment on the ticket.")
+    "\"not_checked\": [str], \"related\": [str]}. related holds only Jira keys (FXA-123), PR numbers (#123), Bugzilla bugs "
+    "(bug 1234567) and Sentry issues (sentry:<the numeric issue id>), never a URL. Put no URL anywhere in the block: the host "
+    "builds the links. The host posts the block as a comment on the ticket. Before the block, write your full notes in "
+    "markdown: what you read, what you found, and why, with the file:line and the commands. The host attaches them to the "
+    "ticket, so they can be long, but they hold no URL and no personal data.")
 
 
 def investigate_prompt(cfg, heads, team):
@@ -610,6 +614,34 @@ ANYURL = re.compile(r"(?i)(?:[a-z0-9+.-]*://|www\.)\S*")
 INV_PATH = re.compile(r"[A-Za-z0-9_.@/-]{1,200}")
 INV_LINES = re.compile(r"[0-9]{1,6}(-[0-9]{1,6})?")
 PRNUM = re.compile(r"^#[1-9][0-9]{0,6}$")
+BUGNUM = re.compile(r"^bug [1-9][0-9]{0,7}$")
+SENTRY_ID = re.compile(r"^sentry:[1-9][0-9]{0,15}$")
+NOTES_MOST = 30000
+
+
+def inv_ref(r, site, slug):
+    """The host's link for a checked reference, or None."""
+    if JIRA_KEY.fullmatch(r):
+        return f"[{r}]({site}/browse/{r})"
+    if PRNUM.fullmatch(r):
+        return f"[{r}](https://github.com/{slug}/pull/{r[1:]})"
+    if BUGNUM.fullmatch(r):
+        return f"[{r}](https://bugzilla.mozilla.org/show_bug.cgi?id={r[4:]})"
+    if SENTRY_ID.fullmatch(r):
+        return f"[Sentry {r[7:]}](https://mozilla.sentry.io/issues/{r[7:]}/)"
+    return None
+
+
+def inv_notes(text, key, run):
+    """The notes to attach: the report's text before its last fxa-investigation block, with no URL, capped."""
+    blocks = list(re.finditer(r"```fxa-investigation[ \t]*\n", text or ""))
+    body = (text or "")[:blocks[-1].start()] if blocks else ""
+    body = ANYURL.sub("", MDLINK.sub(r"\1", body)).strip()
+    if not body:
+        return ""
+    if len(body) > NOTES_MOST:
+        body = body[:NOTES_MOST].rstrip() + "\n\n(The notes were cut here.)"
+    return f"# Investigation of {key} (run {run})\n\nThe agent's notes. They are data from a run that read untrusted text.\n\n{body}\n"
 
 
 def clean(v, n):
@@ -663,7 +695,7 @@ def investigation(text):
            "evidence": clean_list(j.get("evidence")), "since_last": clean(j.get("since_last"), 600) or None,
            "fix": {"summary": clean(fix.get("summary"), 600), "steps": steps, "tests": tests, "verify": clean(fix.get("verify"), 300)},
            "acceptance": clean_list(j.get("acceptance")), "risks": clean_list(j.get("risks")), "not_checked": clean_list(j.get("not_checked")),
-           "related": [r for r in dict.fromkeys(rel) if JIRA_KEY.fullmatch(r) or PRNUM.fullmatch(r)][:6]}
+           "related": [r for r in dict.fromkeys(rel) if JIRA_KEY.fullmatch(r) or PRNUM.fullmatch(r) or BUGNUM.fullmatch(r) or SENTRY_ID.fullmatch(r)][:6]}
     if not out["ask"] or not out["cause"]:
         raise ValueError("the fxa-investigation block has no ask or no cause")
     return out
@@ -701,7 +733,7 @@ def inv_render(inv, key, run, slug, site, paths):
             ln += [f"{title}:"] + [f"- {x}" for x in inv[k]]
     if inv["not_checked"]:
         ln.append(f"Not checked: {'; '.join(inv['not_checked'])}")
-    links = [f"[{r}]({site}/browse/{r})" if JIRA_KEY.fullmatch(r) else f"[{r}](https://github.com/{slug}/pull/{r[1:]})" for r in inv["related"]]
+    links = [x for x in (inv_ref(r, site, slug) for r in inv["related"]) if x]
     if links:
         ln.append(f"Related: {', '.join(links)}")
     ln.append("To have the bot make this fix, add the ai-fixme label.")
@@ -911,7 +943,8 @@ def main(argv):
     if (len(argv) >= 3 and argv[1] == "investigation") or (len(argv) >= 8 and argv[1] == "investigate-render"):
         try:
             with open(argv[2], encoding="utf-8", errors="replace") as fh:
-                inv = investigation(fh.read())
+                report = fh.read()
+            inv = investigation(report)
             if argv[1] == "investigation":
                 print(json.dumps(inv))
                 return 0
@@ -921,7 +954,7 @@ def main(argv):
         except (OSError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return 1
-        print(json.dumps({"comment": text, "result": result}))
+        print(json.dumps({"comment": text, "result": result, "notes": inv_notes(report, argv[3], argv[4])}))
         return 0
     if len(argv) >= 4 and argv[1] == "due":
         try:

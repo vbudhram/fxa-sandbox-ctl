@@ -690,7 +690,7 @@ _inv_path_ok() {
 # one comment led by 🤖. Prints {comment, result}. Fails with one ERROR line, and posts nothing, when the team is not the
 # loaded one, the ticket left the public scope, the block is missing or bad, the guard finds anything, or Jira refuses.
 _inv_done() {
-  local run="$1" rf="$2" key slug p f out rc=0
+  local run="$1" rf="$2" key slug p f out rc=0 c="" nf=""
   key="$(jq -r '.key // ""' <<< "$3")"; slug="$(jq -r '.repos[0] // ""' <<< "$4")"
   [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] && [[ "$slug" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "ERROR: the run has no valid ticket or repo" >&2; return 1; }
   pipeline_key_in_scope "$key" || { echo "ERROR: ${key} is not in the team's public Jira scope now" >&2; return 1; }
@@ -705,10 +705,21 @@ _inv_done() {
     jq -n --arg t "$(jq -r .comment <<< "$out")" '{comment: $t}' > "$f.json" && : > "$f.diff" \
       && python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f.json" "$f.diff" >/dev/null 2>&1 || { rc=1; out="ERROR: the comment may hold personal data or a secret, so it is not posted"; }
   fi
-  rm -f "$f" "$f.paths" "$f.json" "$f.diff"
+  c="$(jq -r '.comment // ""' <<< "$out" 2>/dev/null || true)"
+  # The notes attach only when they pass the same guard; the comment posts either way.
+  if [ "$rc" = 0 ] && [ -n "$(jq -r '.notes // ""' <<< "$out")" ]; then
+    mkdir -p "$f.d"; nf="$f.d/investigation-${key}-run-${run}.md"; jq -r .notes <<< "$out" > "$nf"
+    jq -n --rawfile t "$nf" '{notes: $t}' > "$f.json" && : > "$f.diff"
+    if python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$f.json" "$f.diff" >/dev/null 2>&1 && jira_attach "$key" "$nf" >/dev/null 2>&1; then
+      c="$(sed '$d' <<< "$c")"$'\n'"Details: ${nf##*/} (attached)"$'\n'"$(tail -1 <<< "$c")"
+    else
+      echo "WARN: the notes for ${key} are not attached" >&2
+    fi
+  fi
+  rm -rf "$f" "$f.paths" "$f.json" "$f.diff" "$f.d"
   [ "$rc" = 0 ] || { echo "$out" | head -1 >&2; return 1; }
-  _inv_note "$key" "$(jq -r .comment <<< "$out")" || { echo "ERROR: Jira refused the comment on ${key}" >&2; return 1; }
-  printf '%s\n' "$out"
+  _inv_note "$key" "$c" || { echo "ERROR: Jira refused the comment on ${key}" >&2; return 1; }
+  jq -c --arg c "$c" '.comment = $c | del(.notes)' <<< "$out"
 }
 
 # inv_sweep <env> <now>   At the end of routine tick: each active jira-label routine of the env whose last sweep is older
