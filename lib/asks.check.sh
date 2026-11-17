@@ -162,4 +162,20 @@ check "a work repo joins a stack and ships as a PR" "done: cloned mozilla/fxa-pr
   "$got|$(jq -r '.trees[1] | "\(.name):\(.out):\(.base)"' "$tmp/$k.json")"
 check "the new tree has its base commit" "40" "$(jq -r '.trees[1].base_sha | length' "$tmp/$k.json")"
 
+# investigate <KEY>: the team's investigation routine (inv_ask in lib/routines.sh), gated as any ask.
+inv_ask() { echo "inv_ask $*" >> "$tmp/inv"; [ "$1" != FXA-99 ] || { echo "refused: FXA-99 is not in team fxa's public Jira scope."; return 1; }
+  [ "${4:-}" = --check ] && echo "Jira ticket $1" || echo "done: queued an investigation of $1."; }
+new; : > "$tmp/inv"
+check "a non-admin cannot ask; a ticket out of scope is refused before it runs" "1|refused: FXA-99 is not in team fxa's public Jira scope.|inv_ask FXA-99 - Ana --check" \
+  "$(_ask_one $k 0 Bo 'investigate FXA-20' >/dev/null; echo $?)|$(_ask_one $k 1 Ana 'investigate FXA-99')|$(cat "$tmp/inv")"
+new; asks_role "$k" 1 Ana; words "please investigate FXA-20"; : > "$tmp/inv"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["investigate FXA-20"]}]'; session_asks "$k"
+check "an admin's own words that name the ticket run it, with the session and the asker" "inv_ask FXA-20 ${k} Ana|0" "$(grep -v -- --check "$tmp/inv")|$(_asks_cards $k | grep -c .)"
+new; asks_role "$k" 0 Bo; : > "$tmp/inv"
+_ASKS_NO_JOB=1 asks_take "$k" '[{"type":"turn_end","asks":["investigate FXA-20"]}]'; session_asks "$k"
+ev="$(asks_card_events $k)"
+check "a non-admin's ask is a card for the ticket, and runs nothing" "Jira ticket FXA-20|0" "$(jq -r '.[0].target' <<< "$ev")|$(grep -vc -- --check "$tmp/inv")"
+check "a team admin's tap runs it" "done: queued an investigation of FXA-20.|inv_ask FXA-20 ${k} Ana" \
+  "$(asks_confirm $k "$(jq -r '.[0].nonce' <<< "$ev")" "$(jq -r '.[0].sha' <<< "$ev")" allow Ana 1)|$(grep -v -- --check "$tmp/inv")"
+
 exit $fail

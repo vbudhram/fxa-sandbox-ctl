@@ -95,4 +95,21 @@ check "a queued investigation is still queued after 60 min" "queued" "$(db_value
 out="$(FXA_ROUTINE_NOW=$((N + 90000)) routine_tick --env live 2>>"$tmp/err")"
 check "after 24 h it is skipped, not failed, with no fix, and posts once on the skips list" "skipped|it waited 24 h||true|null" \
   "$(db_value "SELECT state || '|' || reason || '|' || coalesce(json_extract(heads, '$.fix'), '') FROM routine_runs WHERE id = $q10;")|$(jq -r --argjson q "$q10" '.skips[] | select(.run == $q) | "\(.post)|\(.fix)"' <<< "$out")"
+
+# A Slack session's 'host: investigate <KEY>' (inv_ask; lib/asks.sh gates the team admin): a run with no label.
+db_exec "DELETE FROM routine_runs;"; PIPE_PROFILE=fxa PIPE_JIRA_SITE=https://jira.example.net; : > "$tmp/log"
+pipeline_key_in_scope() { [ "$1" != FXA-99 ]; }
+check "routines off on the host, a bad key, a ticket out of scope, a secret team: refused, nothing queued" "1|1|1|1|0" \
+  "$(ROUTINES_ENV= inv_ask FXA-20 agent-ab12 Ana | grep -c '^refused: routines are off')|$(ROUTINES_ENV=live inv_ask 'FXA-1;x' agent-ab12 Ana | grep -c '^refused: .* is not a Jira key')|$(ROUTINES_ENV=live inv_ask FXA-99 agent-ab12 Ana | grep -c "^refused: FXA-99 is not in team fxa's public Jira scope")|$(PIPE_SECRET_TICKETS=1 ROUTINES_ENV=live inv_ask FXA-20 agent-ab12 Ana | grep -c '^refused: team fxa takes secret tickets')|$(db_value "SELECT count(*) FROM routine_runs;")"
+check "a dev host finds no live routine" "1" "$(ROUTINES_ENV=dev inv_ask FXA-20 agent-ab12 Ana | grep -c '^refused: team fxa has no active investigate routine')"
+check "--check names the ticket and queues nothing" "Jira ticket FXA-20|0" "$(ROUTINES_ENV=live inv_ask FXA-20 - '' --check)|$(db_value "SELECT count(*) FROM routine_runs;")"
+check "an ask queues one run with the asker and the session, and touches no Jira label" \
+  "done: queued an investigation of FXA-20. Its result goes on the ticket as a comment, and this thread gets a line when it posts.|FXA-20 queued jira-label slack:Ana|agent-ab12|0" \
+  "$(ROUTINES_ENV=live inv_ask FXA-20 agent-ab12 Ana)|$(rows)|$(db_value "SELECT json_extract(heads, '$.investigate.from') FROM routine_runs;")|$(grep -c . "$tmp/log")"
+check "a second ask while it runs is refused" "refused: an investigation of FXA-20 already runs." "$(ROUTINES_ENV=live inv_ask FXA-20 agent-ab12 Ana)"
+out="$(FXA_ROUTINE_NOW=$((N + 100000)) routine_tick --env live 2>>"$tmp/err")"
+check "the tick hands the session to the bot" "FXA-20|agent-ab12" "$(jq -r '.runs[] | select(.investigate.key == "FXA-20") | "\(.investigate.key)|\(.investigate.from)"' <<< "$out")"
+db_exec "UPDATE routine_runs SET state = 'failed', ended_at = $((N + 100000));"
+db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at, ended_at) VALUES ($rid, 'jira-FXA-20-y', 'failed', '{\"investigate\":{\"key\":\"FXA-20\"}}', $N, $((N + 100010)));"
+check "two failures in 24 h refuse the ask" "1" "$(FXA_ROUTINE_NOW=$((N + 100100)) ROUTINES_ENV=live inv_ask FXA-20 agent-ab12 Ana | grep -c '^refused: the investigation of FXA-20 failed twice in 24 h')"
 exit "$fail"

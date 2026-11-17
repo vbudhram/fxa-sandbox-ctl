@@ -82,12 +82,13 @@ asks_gate() {
   case "$action" in
     merge|approve|auto-merge|automerge|enable-auto-merge)
       echo "refused: the host never merges, approves or turns on auto-merge. A person does that on GitHub."; return 1 ;;
-    rerun-ci|request-review|ready|draft|comment|add-repo) ;;
+    rerun-ci|request-review|ready|draft|comment|add-repo|investigate) ;;
     *) echo "refused: ${action:-an empty line} is not a host action."; return 1 ;;
   esac
   [ "$adm" = 1 ] || { echo "refused: only a team admin of ${PIPE_PROFILE:-this team} can ask for this, and ${who} is not one. Ask a team admin to say it in the thread."; return 1; }
   case "$action" in
     add-repo) _asks_repo_row "${rest%% *}" >/dev/null || { echo "refused: ${rest%% *} is not one of team ${PIPE_PROFILE:-?}'s repos. A team admin adds it to the team first."; return 1; } ;;
+    investigate) local o; o="$(inv_ask "${rest%% *}" - "$who" --check)" || { echo "$o"; return 1; } ;;
   esac
 }
 
@@ -98,10 +99,11 @@ _asks_words() {
   [[ "$turn" =~ ^[0-9]+$ ]] || return 1
   read -r action rest <<< "$3"
   case "$action" in
-    rerun-ci) verb=rerun ;; request-review) verb=review ;; ready|draft|comment|add-repo) verb="$action" ;; *) return 1 ;;
+    rerun-ci) verb=rerun ;; request-review) verb=review ;; ready|draft|comment|add-repo|investigate) verb="$action" ;; *) return 1 ;;
   esac
   local -a toks=()
-  if [ "$action" = add-repo ]; then
+  if [ "$action" = investigate ]; then toks=("${rest%% *}")
+  elif [ "$action" = add-repo ]; then
     slug="${rest%% *}"; slug="${slug%.git}"; slug="${slug#https://github.com/}"; toks=("$slug" "https://github.com/${slug}")
   else
     for a in $rest; do [[ "$a" =~ ^https:// ]] && u="$a"; done
@@ -132,6 +134,7 @@ _ask_one() {
   read -r action rest <<< "$4"
   case "$action" in
     add-repo) _ask_repo "$key" "${rest%% *}" ;;
+    investigate) inv_ask "${rest%% *}" "$key" "$3" ;;
     *) _ask_gh "$key" "$action" $rest ;;
   esac
 }
@@ -262,6 +265,7 @@ _asks_target() {
   local key="$1" action rest a url="" pr slug num got full author tok
   read -r action rest <<< "$2"
   if [ "$action" = add-repo ]; then got="$(_asks_repo_row "${rest%% *}")" || { echo "refused: not a team repo."; return 1; }; echo "repo ${got%% *}"; return 0; fi
+  [ "$action" != investigate ] || { inv_ask "${rest%% *}" "$key" "" --check; return; }
   for a in $rest; do [[ "$a" =~ ^https:// ]] && url="$a"; done
   pr="$(_ask_pr "$key" "$url")" || { echo "$pr"; return 1; }
   read -r slug num url <<< "$pr"

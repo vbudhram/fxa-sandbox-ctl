@@ -611,19 +611,50 @@ _inv_consider() {
     echo "routine ${rid}: ${key} not started: the label is not from a team admin"
     _inv_note "$key" "$(printf "$_INV_NOT_ADMIN" "$label")" || true; return 0
   fi
-  last="$(db_value "SELECT group_concat(state) FROM (SELECT state FROM routine_runs WHERE routine_id = ${rid} AND json_extract(heads, '$.investigate.key') = '${key}'
-    AND coalesce(ended_at, started_at, 0) > $((now - 86400)) ORDER BY id DESC LIMIT 2);")" || return 0
+  last="$(_inv_last2 "$rid" "$key" "$now")" || return 0
   if [ "$last" = failed,failed ]; then
     _inv_unlabel "$key" "$label" || return 0
     echo "routine ${rid}: ${key} not started: it failed twice in 24 h"
     _inv_note "$key" "$(printf "$_INV_TWICE" "$label")" || true; return 0
   fi
   _inv_unlabel "$key" "$label" || return 0
-  n="$(db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
-      VALUES (${rid}, $(db_q "jira-${key}-${now}"), 'jira-label', $(db_q "$by"), 'queued', json($(db_q "$cfg")),
-      json($(db_q "$(jq -nc --arg k "$key" --arg b "$by" --arg u "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/browse/${key}" '{investigate: {key: $k, by: $b, url: $u}}')")), ${now});
-      SELECT changes() || '|' || last_insert_rowid();")" || return 0
+  n="$(_inv_queue "$rid" "$cfg" "$key" "$by" "$now")" || return 0
   [ "${n%%|*}" != 1 ] || echo "routine ${rid}: queued run ${n#*|} for ${key}"
+}
+_inv_last2() {
+  db_value "SELECT group_concat(state) FROM (SELECT state FROM routine_runs WHERE routine_id = ${1} AND json_extract(heads, '$.investigate.key') = '${2}'
+    AND coalesce(ended_at, started_at, 0) > $(($3 - 86400)) ORDER BY id DESC LIMIT 2);"
+}
+# _inv_queue <rid> <cfg> <key> <by> <now> [session]   Insert the queued run; prints "changes|id".
+_inv_queue() {
+  db_value "INSERT OR IGNORE INTO routine_runs (routine_id, period, trigger, actor, state, config, heads, started_at)
+      VALUES (${1}, $(db_q "jira-${3}-${5}"), 'jira-label', $(db_q "$4"), 'queued', json($(db_q "$2")),
+      json($(db_q "$(jq -nc --arg k "$3" --arg b "$4" --arg u "${PIPE_JIRA_SITE:-https://mozilla-hub.atlassian.net}/browse/${3}" --arg f "${6:-}" \
+        '{investigate: ({key: $k, by: $b, url: $u} + if $f != "" then {from: $f} else {} end)}')")), ${5});
+      SELECT changes() || '|' || last_insert_rowid();"
+}
+
+# inv_ask <KEY> <session|-> <who> [--check]   A Slack session's 'host: investigate <KEY>' (lib/asks.sh gates the
+# team admin): the team's jira-label routine queues a run for the ticket, with no label to trust, and the bot posts
+# its end line in that session's thread. --check prints the card's target and queues nothing.
+inv_ask() {
+  local key="$1" from="$2" who="${3:-someone}" env="${ROUTINES_ENV:-}" team="${PIPE_PROFILE:-}" r rid cfg now n last
+  [[ "$key" =~ ^[A-Z][A-Z0-9]*-[0-9]+$ ]] || { echo "refused: ${key:-nothing} is not a Jira key."; return 1; }
+  [[ "$env" =~ ^(live|dev)$ ]] || { echo "refused: routines are off on this host."; return 1; }
+  [ "${PIPE_SECRET_TICKETS:-}" != 1 ] || { echo "refused: team ${team} takes secret tickets, and investigations are for public teams only."; return 1; }
+  r="$(db_json "SELECT id, data FROM routines WHERE env = $(db_q "$env") AND team = $(db_q "$team") AND paused = 0
+    AND json_extract(data, '$.on') = 'jira-label' ORDER BY id LIMIT 1;" 2>/dev/null | jq -c '.[0] // empty' 2>/dev/null || true)"
+  [ -n "$r" ] && [ "$(_routine_team_state "$team")" = active ] || { echo "refused: team ${team} has no active investigate routine. A team admin adds one on the dashboard."; return 1; }
+  pipeline_key_in_scope "$key" || { echo "refused: ${key} is not in team ${team}'s public Jira scope."; return 1; }
+  [ "${4:-}" != --check ] || { echo "Jira ticket ${key}"; return 0; }
+  rid="$(jq -r .id <<< "$r")"; cfg="$(jq -c '.data | fromjson' <<< "$r")"; now="$(_routine_now)"
+  [ "$(db_value "SELECT count(*) FROM routine_runs WHERE routine_id = ${rid} AND state IN (${_ROUTINE_LIVE_STATES}) AND json_extract(heads, '$.investigate.key') = '${key}';")" = 0 ] \
+    || { echo "refused: an investigation of ${key} already runs."; return 1; }
+  last="$(_inv_last2 "$rid" "$key" "$now")" || { echo "failed: the host could not read its store."; return 1; }
+  [ "$last" != failed,failed ] || { echo "refused: the investigation of ${key} failed twice in 24 h. Try later."; return 1; }
+  n="$(_inv_queue "$rid" "$cfg" "$key" "slack:${who}" "$now" "$([[ "$from" =~ ^agent-[a-z0-9]+$ ]] && echo "$from")")" && [ "${n%%|*}" = 1 ] \
+    || { echo "failed: the host could not queue the investigation of ${key}."; return 1; }
+  echo "done: queued an investigation of ${key}. Its result goes on the ticket as a comment, and this thread gets a line when it posts."
 }
 
 # _inv_sweep_one <routine row json> <now>   The routine's labelled tickets in its team's public Jira scope, at most
@@ -832,7 +863,8 @@ _routine_quiet() { case "$1" in "the team does not load"|*"passes its checks: ch
 # The claim loop and --resume share it, so the bot gets one shape.
 _PRFIX_RUN_JQ='def fixrun($q; $x): {actor: $q.actor, fix: {pr: $x.pr, url: $x.url, actor: $q.actor, package: ($x.packages // [] | first),
   label: ($q.data | fromjson | .pr.label // "agent-help")}};
-  def invrun($q): ($q.inv // "" | fromjson? // null) as $v | if $v then {trigger: "jira-label", investigate: {key: $v.key, url: $v.url}} else {} end;'
+  def invrun($q): ($q.inv // "" | fromjson? // null) as $v | if $v then {trigger: "jira-label", investigate: ({key: $v.key, url: $v.url}
+    + if ($v.from // "" | test("^agent-[a-z0-9]+$")) then {from: $v.from} else {} end)} else {} end;'
 
 # _routine_q_fields <run row json>   A queued or orphan run's fields in one jq, joined by \x1f for one read:
 # id, routine_id, team, paused, trigger, data (parsed, compact), fix (compact, or empty), channel (or empty).
