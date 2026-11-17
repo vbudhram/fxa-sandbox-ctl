@@ -106,6 +106,8 @@
 .ovrun .d { font-size: var(--t-label); color: var(--dim); grid-column: 3; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; min-width: 0; }
 
 .ovrun .r { grid-row: 2; grid-column: 4; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: var(--t-label); color: var(--dim); font-variant-numeric: tabular-nums; }
+/* The time and cost stay whole: when they do not fit beside the tag, they go under it. */
+.ovrun .r > span:last-child { white-space: nowrap; }
 /* A wide card puts each run on one line: twice the runs in the same height. */
 @container (min-width: 760px) {
   .ovrun { grid-template-columns: 62px 28px minmax(0, 1fr) minmax(0, 12rem) minmax(0, 14rem); }
@@ -113,7 +115,7 @@
   .ovrun time, .ovrun .ic { grid-row: auto; }
   .ovrun .t { grid-column: 3; }
   .ovrun .d { grid-column: 4; flex-wrap: nowrap; overflow: hidden; }
-  .ovrun .r { grid-row: 1; grid-column: 5; flex-direction: row; align-items: center; gap: var(--s2); }
+  .ovrun .r { grid-row: 1; grid-column: 5; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 2px var(--s2); }
 }
 @container (max-width: 420px) {
   .ovrun { grid-template-columns: 56px minmax(0, 1fr) auto; } .ovrun .ic { display: none; }

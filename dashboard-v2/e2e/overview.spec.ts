@@ -90,3 +90,16 @@ test('the Activity card fills the height of the right column and shows only whol
   expect(m.shown).toBeLessThan(30);
   expect(m.cut).toBe(false);
 });
+
+test('an Activity row keeps its time and cost on one line, with a long PR tag and a 5-figure cost', async ({ page }) => {
+  const big = { ...RUNS, runs: RUNS.runs.map((r: Record<string, unknown>) => ({ ...r, pr_number: 123459, pr_state: 'merged', min: 1284, usd: 12345.67 })) };
+  for (const width of [1440, 1024, 768, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.route('**/api/runs/recent*', (r) => r.fulfill({ json: rel(big) }));
+    await page.goto('/v2/#overview');
+    await expect(page.locator('#ov-runs .ovrun').first()).toBeVisible();
+    const tall = await page.locator('#ov-runs .ovrun .r > span:last-child').evaluateAll((es) =>
+      es.filter((e) => e.getClientRects().length && e.getBoundingClientRect().height > 1.6 * parseFloat(getComputedStyle(e).lineHeight || '16')).map((e) => e.textContent));
+    expect(tall, `${width}px`).toEqual([]);
+  }
+});
