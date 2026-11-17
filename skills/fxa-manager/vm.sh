@@ -42,7 +42,7 @@ worktree_tree() {
   rm -f "$idx"; return $rc
 }
 # FXA_DEV_BOT_ROOT: a bot tree other than the sibling one, such as a second worktree on another branch.
-BOT_ROOT="$(cd "${FXA_DEV_BOT_ROOT:-$CTL_ROOT/../fxa-agent-bot}" 2>/dev/null && pwd || true)"
+BOT_ROOT="$(cd "${FXA_DEV_BOT_ROOT:-$(bash "$CTL_ROOT/skills/fxa-ctl-dev/main-tree.sh" "$CTL_ROOT")/../fxa-agent-bot}" 2>/dev/null && pwd || true)"
 # dev_tar <ctl tree> <bot tree>   Both trees' tracked and new files (not ignored ones: .env, ai/, logs/, node_modules) and the
 # dev env, gzipped to stdout under the names the VM expects, whatever the local folders are called.
 dev_tar() {

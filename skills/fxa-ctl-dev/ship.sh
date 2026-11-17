@@ -6,7 +6,7 @@
 # The promote stays a separate step, from the main checkout, so its allow rule matches.
 set -euo pipefail
 CTL="$(cd "$(dirname "$0")/../.." && pwd)"
-BOT="$CTL/../fxa-agent-bot-main" smoke=0
+BOT="$(bash "$CTL/skills/fxa-ctl-dev/main-tree.sh" "$CTL")/../fxa-agent-bot-main" smoke=0
 while [ $# -gt 0 ]; do
   case "$1" in --bot) BOT="${2:?--bot takes a tree}"; shift ;; --smoke) smoke=1 ;;
     *) echo "usage: ship.sh [--bot <bot tree>] [--smoke]" >&2; exit 2 ;; esac; shift

@@ -27,7 +27,7 @@ real() { "$H" dev >/dev/null 2>&1 || { echo "FAIL smoke: the dev bot did not go 
 # Against what is live; both when nothing differs or live cannot be read. SMOKE_PARTS=fake,real forces.
 parts="${SMOKE_PARTS:-}"
 if [ -z "$parts" ]; then
-  ctl="${SMOKE_CTL_ROOT:-$(cd "$here/../.." && pwd)}"; bot="${SMOKE_BOT_ROOT:-$(cd "$ctl/../fxa-agent-bot" && pwd)}"
+  ctl="${SMOKE_CTL_ROOT:-$(cd "$here/../.." && pwd)}"; bot="${SMOKE_BOT_ROOT:-$(cd "$(bash "$here/main-tree.sh" "$ctl")/../fxa-agent-bot" && pwd)}"
   { read -r lc; read -r lb; } <<< "$("$H" run 'git -C ~/Desktop/working2/fxa-sandbox-ctl rev-parse HEAD; git -C ~/Desktop/working2/fxa-agent-bot rev-parse HEAD' 2>/dev/null)"
   # New files count: vm.sh dev ships them too.
   moved() { ! git -C "$1" diff --quiet "${2:-x}" -- 2>/dev/null || [ -n "$(git -C "$1" ls-files -o --exclude-standard)" ]; }

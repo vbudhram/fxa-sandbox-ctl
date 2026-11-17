@@ -11,7 +11,8 @@
 #
 # Buttons cannot be pressed through the API: answer a question with a reply.
 set -euo pipefail
-ENV="${FXA_DEV_ENV:-$(cd "$(dirname "$0")/../../.." && pwd)/fxa-agent-bot/.env.dev}"
+# The .env.dev of the bot tree that vm.sh dev ran, else of the bot beside the main checkout.
+ENV="${FXA_DEV_ENV:-${FXA_DEV_BOT_ROOT:-$(bash "$(dirname "$0")/main-tree.sh" "$(dirname "$0")")/../fxa-agent-bot}/.env.dev}"
 get() { grep -E "^$1=" "$ENV" | cut -d= -f2- | sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//'; }
 USER_TOKEN="$(get SLACK_USER_TOKEN)"; BOT_TOKEN="$(get SLACK_BOT_TOKEN)"; CH="$(get ALLOWED_CHANNELS | cut -d, -f1)"
 [ -n "$USER_TOKEN" ] && [ -n "$CH" ] || { echo "slack-drive: SLACK_USER_TOKEN and ALLOWED_CHANNELS must be in $ENV" >&2; exit 2; }

@@ -6,12 +6,12 @@ set -u
 fail=0
 check() { if [ "$2" = "$3" ]; then printf 'ok   %s\n' "$1"; else printf 'FAIL %s: want [%s] got [%s]\n' "$1" "$2" "$3"; fail=1; fi; }
 src="$(cd "$(dirname "$0")" && pwd)/ship.sh"
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+tmp="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$tmp"' EXIT
 export GIT_CONFIG_GLOBAL="$tmp/gitconfig"; git config --global user.email user@example.com; git config --global user.name t; git config --global init.defaultBranch main
 for r in ctl bot; do git init -q --bare "$tmp/$r.git"; git clone -q "$tmp/$r.git" "$tmp/seed-$r" 2>/dev/null
   (cd "$tmp/seed-$r" && echo a > f && git add f && git commit -qm base && git push -q origin HEAD:main); done
 git clone -q "$tmp/ctl.git" "$tmp/w/ctl"; git clone -q "$tmp/bot.git" "$tmp/w/fxa-agent-bot-main"
-mkdir -p "$tmp/w/ctl/skills/fxa-ctl-dev"; cp "$src" "$tmp/w/ctl/skills/fxa-ctl-dev/"
+mkdir -p "$tmp/w/ctl/skills/fxa-ctl-dev"; cp "$src" "${src%/*}/main-tree.sh" "$tmp/w/ctl/skills/fxa-ctl-dev/"
 (cd "$tmp/w/ctl" && echo 'skills/' > .git/info/exclude)
 printf '#!/bin/bash\necho "vm $* bot=$FXA_DEV_BOT_ROOT" >> %q\n' "$tmp/vm.log" > "$tmp/vm.sh"
 # A stub gcloud: the login is good unless $tmp/expired exists.
