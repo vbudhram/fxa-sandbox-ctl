@@ -841,8 +841,9 @@ routine_tick() {
     [ -n "$q" ] || continue
     IFS=$'\x1f' read -r qid qrid qt qpaused qtrig qd qfix qch < <(_routine_q_fields "$q")
     skips="$(jq -c --argjson q "$q" --argjson i "$(_routine_run_info "$qrid" "$qt" "$qd")" \
-      '($q.data | fromjson) as $d | ($q.fix | fromjson) as $x | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel,
-        template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null), fix: {pr: $x.pr, url: $x.url, why: "expired", label: ($d.pr.label // "agent-help")}}]' <<< "$skips")"
+      '($q.data | fromjson) as $d | . + [{run: $q.id, routine: $q.routine_id, team: $q.team, name: $d.name, channel: $d.channel,
+        template: $i.template, private: $i.private, reason: "it waited 24 h", next: null, post: ($d.channel != null)}
+        + (if $q.fix == null then {} else ($q.fix | fromjson) as $x | {fix: {pr: $x.pr, url: $x.url, why: "expired", label: ($d.pr.label // "agent-help")}} end)]' <<< "$skips")"
   done
   queued="$(db_json "SELECT r.id, r.routine_id, t.team, t.data, t.paused, coalesce(r.trigger, 'manual') AS trigger, coalesce(r.actor, '') AS actor, r.heads->'fix' AS fix,
     r.heads->'investigate' AS inv
@@ -1012,21 +1013,23 @@ _prfix_end() {
 # and fails; a claimed run with no session after 10 min, or a queued one with no free runner after 60, fails. Each change is one
 # UPDATE guarded on the state it read, so a done call or a second tick at the same time cannot be undone.
 routine_reconcile() {
-  local now="$1" env="$2" rows r id st sess since rec sst pr why free="" fix
-  rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since, r.heads->'fix' AS fix FROM routine_runs r
+  local now="$1" env="$2" rows r id st sess since rec sst pr why free="" fix inv
+  rows="$(db_json "SELECT r.id AS id, r.state AS state, coalesce(r.session, '') AS session, coalesce(r.started_at, 0) AS since, r.heads->'fix' AS fix,
+    r.heads->'investigate' AS inv FROM routine_runs r
     LEFT JOIN routines t ON t.id = r.routine_id WHERE r.state IN (${_ROUTINE_LIVE_STATES}) AND coalesce(json_extract(r.config, '$.env'), t.env, 'live') = $(db_q "$env");")" \
     || { echo "$_ROUTINE_STORE" >&2; return 1; }
   while IFS= read -r r; do
     [ -n "$r" ] || continue
     id="$(jq -r .id <<< "$r")"; st="$(jq -r .state <<< "$r")"; sess="$(jq -r .session <<< "$r")"; since="$(jq -r .since <<< "$r")"
     why=""; pr=""; sst=""
-    fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")"
+    fix="$(jq -c '.fix // empty | fromjson? // empty' <<< "$r")"; inv="$(jq -r '.inv // empty' <<< "$r")"
     if [ "$st" = started ] && [ -n "$fix" ]; then _prfix_reconcile "$now" "$id" "$sess" "$since" "$fix" || return 1; continue; fi
     # A queued fix row waits for its gates up to 24 h, not 60 min. Then it ends skipped (no operator error), and its
-    # id goes to stdout, so the tick posts it once on its skips list.
-    if [ "$st" = queued ] && [ -n "$fix" ]; then
+    # id goes to stdout, so the tick posts it once on its skips list. A queued investigation waits the same: the runs of
+    # one routine go one at a time, and its label is gone.
+    if [ "$st" = queued ] && { [ -n "$fix" ] || [ -n "$inv" ]; }; then
       [ "$since" -gt 0 ] && [ $((now - since)) -gt 86400 ] || continue
-      [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = 'it waited 24 h', ended_at = $now, heads = json_set(heads, '$.fix.why', 'expired')
+      [ "$(db_value "UPDATE routine_runs SET state = 'skipped', reason = 'it waited 24 h', ended_at = $now$([ -z "$fix" ] || echo ", heads = json_set(heads, '\$.fix.why', 'expired')")
         WHERE id = $id AND state = 'queued'; SELECT changes();")" = 1 ] && echo "$id"
       continue
     fi

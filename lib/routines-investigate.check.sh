@@ -76,4 +76,15 @@ check "the tick claims it: trigger jira-label, the key and its link" "jira-label
   "$(jq -r '.runs[0] | "\(.trigger)|\(.investigate.key)|\(.investigate.url)|\(.mode)"' <<< "$out")|$(db_value "SELECT state FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-9';")"
 check "run-now refuses a jira-label routine" "ERROR: routine ${rid} runs when a team admin adds its label to a Jira ticket; add the label to start it" \
   "$(routine_runnow fxa "$rid" 2>&1)"
+
+# A run that waits behind another investigation of the routine waits up to 24 h, not 60 min, then posts one skip.
+echo FXA-10 > "$tmp/keys"; db_exec "UPDATE routines SET swept_at = 0;"; sweep
+q10="$(db_value "SELECT id FROM routine_runs WHERE json_extract(heads, '$.investigate.key') = 'FXA-10';")"
+db_exec "UPDATE routine_runs SET state = 'started', session = 'agent-busy1', started_at = $((N + 500)) WHERE json_extract(heads, '$.investigate.key') = 'FXA-9';"
+_mtime() { echo $((N + 9000)); }; session_live() { return 0; }; echo '{"state": "running"}' > "$SESSION_DIR/agent-busy1.json"
+routine_reconcile $((N + 4000)) live >/dev/null
+check "a queued investigation is still queued after 60 min" "queued" "$(db_value "SELECT state FROM routine_runs WHERE id = $q10;")"
+out="$(FXA_ROUTINE_NOW=$((N + 90000)) routine_tick --env live 2>>"$tmp/err")"
+check "after 24 h it is skipped, not failed, with no fix, and posts once on the skips list" "skipped|it waited 24 h||true|null" \
+  "$(db_value "SELECT state || '|' || reason || '|' || coalesce(json_extract(heads, '$.fix'), '') FROM routine_runs WHERE id = $q10;")|$(jq -r --argjson q "$q10" '.skips[] | select(.run == $q) | "\(.post)|\(.fix)"' <<< "$out")"
 exit "$fail"
