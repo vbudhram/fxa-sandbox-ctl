@@ -183,4 +183,11 @@ check "a queued steer's words wait in the queue file, for no turn yet" "1|1" \
 FXA_VM_BACKEND=gce FXA_SESSION_MAX=50 cmd_task --source slack --id agent-words2 --owner UA1 --prompt-file "$tmp/p.md" --resume-from agent-words1 >/dev/null 2>&1
 check "a resume copies no words" "no" "$([ -e "$tmp/agent-words2.admin-words.jsonl" ] && echo yes || echo no)"
 
+# At the cap the bot waits and calls again every 30 s with --queued-s: only the first refusal is an error.
+ERRORS_FILE="$tmp/cap-errors.jsonl"; : > "$ERRORS_FILE"
+errors_record() { printf '{"kind":"%s"}\n' "$2" >> "$ERRORS_FILE"; }
+FXA_VM_BACKEND=gce FXA_SESSION_MAX=0 cmd_task --source slack --id agent-cap1 --owner U1 --prompt-file "$tmp/p.md" >/dev/null 2>&1
+for s in 30 60; do FXA_VM_BACKEND=gce FXA_SESSION_MAX=0 cmd_task --source slack --id agent-cap1 --owner U1 --prompt-file "$tmp/p.md" --queued-s "$s" >/dev/null 2>&1; done
+check "a request that waits in line records one session_cap error, not one per retry" "1" "$(grep -c '"session_cap"' "$ERRORS_FILE" || true)"
+
 exit "$fail"
