@@ -6,7 +6,7 @@
 #   test.sh linux      the Ubuntu container only
 #   test.sh changed [base]   this host only, only the checks for the files changed since base (origin/main):
 #                      a changed check, and each check that names a changed file; a Python service's tests (dashboard/*.check.py too);
-#                      the bot e2e when fake-ctl.sh changed (FXA_BOT_REPO, default ../fxa-agent-bot); dashboard-v2's npm
+#                      the bot e2e when fake-ctl.sh changed (FXA_BOT_REPO, default bot-tree.sh's); dashboard-v2's npm
 #                      typecheck, lint, test and build, and its dist against the build, when it changed. CI runs the full suite on push.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -195,7 +195,7 @@ run_changed() {
   done
   # The bot's e2e plays every scenario against fake-ctl.sh; a ctl push to main does not run it.
   if [ -n "$e2e" ]; then
-    local bot="${FXA_BOT_REPO:-$ROOT/../fxa-agent-bot}"
+    local bot="${FXA_BOT_REPO:-$(bash "$ROOT/skills/fxa-ctl-dev/bot-tree.sh" "$ROOT")}"
     if [ -f "$bot/package.json" ]; then
       echo "$HOST: fake-ctl.sh changed: the bot e2e in $bot"
       ( cd "$bot" && FXA_CTL_REPO="$ROOT" npm run -s e2e ) > "${TMPDIR:-/tmp}/fxa-e2e-$$.log" 2>&1 \

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Offline check that each bot or controller message the symptom table quotes is still in the code, so an
-# operator who searches a thread's text finds its row. FXA_BOT_REPO: the bot tree (default ../fxa-agent-bot).
+# operator who searches a thread's text finds its row. FXA_BOT_REPO: the bot tree (default: bot-tree.sh's).
 #   bash skills/fxa-session-debug/symptoms.check.sh
 set -u
-here="$(cd "$(dirname "$0")" && pwd)"; root="$here/../.."; bot="${FXA_BOT_REPO:-$root/../fxa-agent-bot}"
+here="$(cd "$(dirname "$0")" && pwd)"; root="$here/../.."; bot="${FXA_BOT_REPO:-$(bash "$here/../fxa-ctl-dev/bot-tree.sh" "$root")}"
 [ -d "$bot/src" ] || { echo "skip: no bot tree at $bot"; exit 0; }
 fail=0
 for t in "Paused: my question above still waits for your answer" "I paused: this session reached its usage limit" "handoff file not found" \
