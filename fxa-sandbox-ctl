@@ -2572,8 +2572,9 @@ cmd_task() {
   done
   for f in "$SESSION_DIR"/agent-*.json; do [ -f "$f" ] && session_live "$(basename "$f" .json)" && live=$(( live + 1 )); done
   local cap; cap="$(_session_cap)"
+  # A retry (--queued-s) is the same request that waits in line: its first refusal was the one error.
   [ "$live" -lt "$cap" ] || { _session_unlock .task-cap; echo "ERROR: ${live} sessions running, cap ${cap} (FXA_SESSION_MAX)" >&2
-    errors_record session session_cap "" "session task" "a session was refused: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
+    [ -n "$queued_s" ] || errors_record session session_cap "" "session task" "a request waited in line: the session cap is reached (FXA_SESSION_MAX)" ""; return 1; }
   # The run is this session's only now: a second caller with the same run is refused here, before any record.
   if [ -n "$rrun" ]; then
     routine_run_start "$rrun" "$key" || { _session_unlock .task-cap; return 1; }
