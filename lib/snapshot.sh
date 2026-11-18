@@ -439,6 +439,9 @@ _stats_add_prs() {
   for p in $teams; do
     d="${HOME}/.claude/state/${p}"
     ! _stats_prs_fresh "$d/prs.json" || continue
+    # A read-only team writes no list and a failed read keeps the old one: try each team at most every 10 minutes.
+    [ ! -e "$d/prs.tried" ] || [ $(( $(date +%s) - $(_mtime "$d/prs.tried") )) -ge 600 ] || continue
+    touch "$d/prs.tried"
     ( [ ! -d "$d/prs.lock" ] || [ $(( $(date +%s) - $(_mtime "$d/prs.lock") )) -lt 600 ] || rmdir "$d/prs.lock"
       mkdir "$d/prs.lock" || exit 0
       trap 'rmdir "$d/prs.lock"' EXIT

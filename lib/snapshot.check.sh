@@ -293,6 +293,10 @@ rm -rf "$pd"
     "$(sort "$tmp/ctl-calls" | paste -sd'|' -)|$([ -e "$st/priv/prs.lock" ] && echo lock || echo no lock)"
   ( PIPE_PR_OPEN=0; gh() { echo '[]'; }; _stats_prs_refresh "$st/ro" )
   check "prs: a read-only team reads no list" "no list" "$([ -e "$st/ro/prs.json" ] && echo list || echo no list)"
+  # The read-only team never gets a list: a second build in 10 minutes does not start its refresh again.
+  : > "$tmp/ctl-calls"
+  ( SCRIPT_DIR="$tmp/prsroot"; _stats_add_prs < "$tmp/prs-in" > /dev/null; wait )
+  check "prs: a team with no list is tried at most every 10 minutes" "" "$(cat "$tmp/ctl-calls")"
   _session_records() { echo '{"key":"agent-q1","owner":"U1","created":1,"pr_url":"https://github.com/mozilla/fxa/pull/8"}'; }
   db_on() { false; }
   check "prs: a session row names its PR" "8" "$(echo '{"rows":[]}' | _stats_add_rows 2>/dev/null | jq '.rows[0].prn')"
