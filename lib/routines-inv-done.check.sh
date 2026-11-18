@@ -87,4 +87,15 @@ m="$(inv_fix_md FXA-1 0123456789ab)"
 check "an ai-fixme run reads the newest plan, fenced as agent data" "1|1|Add the guard|0" \
   "$(grep -c '^<<<INVESTIGATION-0123456789ab>>>$' <<< "$m")|$(grep -c '^<<</INVESTIGATION-0123456789ab>>>$' <<< "$m")|$(sed -n '/^<<<INV/,/^<<<\//p' <<< "$m" | sed '1d;$d' | jq -r .fix.summary)|$(grep -c evil <<< "$m")"
 check "a ticket with no investigation, and a bad key, add nothing" "|" "$(inv_fix_md FXA-404 0123456789ab)|$(inv_fix_md "FXA-1' OR 1=1" 0123456789ab)"
+# A team's runtime secret value has no token prefix, so the PII guard cannot see it: it is masked by its value.
+_session_secret_values() { echo '"s3cr3t-value-123"'; }
+block '{"ask": "Fix login", "cause": "the env holds s3cr3t-value-123", "confidence": "high", "evidence": [], "since_last": null,
+  "fix": {"summary": "Rotate s3cr3t-value-123", "steps": [], "tests": [], "verify": "yarn test"}, "acceptance": [], "risks": [], "not_checked": [], "related": []}' sec
+r11="$(run FXA-11)"; PIPE_RUNTIME_SECRETS="fxa-team-x=/a" done_ "$r11" "$tmp/sec.md" >/dev/null
+check "a runtime secret value in the investigation posts masked, in the comment and the file" "report|0|2|0" \
+  "$(row "$r11" | cut -d'|' -f1)|$(cat "$tmp/comment.FXA-11" "$tmp/attach.FXA-11" 2>/dev/null | grep -c s3cr3t)|$(grep -c '<masked>' "$tmp/comment.FXA-11")|$(grep -c s3cr3t "$tmp/err")"
+_session_secret_values() { echo false; }
+r12="$(run FXA-12)"; PIPE_RUNTIME_SECRETS="fxa-team-x=/a" done_ "$r12" "$tmp/sec.md" >/dev/null
+check "a failed secret read: the run fails, nothing posts" "failed|investigation not posted: the host could not read a runtime secret to mask the comment, so it is not posted|0" \
+  "$(row "$r12")|$([ -e "$tmp/comment.FXA-12" ] && echo 1 || echo 0)"
 exit "$fail"
