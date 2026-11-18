@@ -42,7 +42,7 @@ export const teamErrs = memo((s) => [s.feeds.errors, s.sessions], (s): Record<st
 });
 
 const rowT = (r: J) => r.t0 ?? (r.ms ?? Date.parse(r.at)) / 1000;
-// Per-team use in 30 days from the stats rows: cost from every source, the count is Slack conversations.
+// Per-team use in 30 days from the stats rows: cost and last use from every source, the count is Slack conversations.
 export const teamUse = memo((s) => [STATS(s)], (s): Record<string, J> | null => {
   const st = STATS(s);
   if (!st?.rows) return null;
@@ -50,11 +50,11 @@ export const teamUse = memo((s) => [STATS(s)], (s): Record<string, J> | null => 
   for (const r of st.rows) {
     const t = rowT(r); if (!(t >= cut)) continue;
     const x = u[r.profile || 'fxa'] ??= { n: 0, live: 0, usd: 0, last: 0, slack_usd: 0, pipe_usd: 0 };
-    x.usd += r.usd || 0;
+    x.usd += r.usd || 0; x.last = Math.max(x.last, t);
     if (r.src === 'pipeline' || r.src === 'pass') x.pipe_usd += r.usd || 0; else x.slack_usd += r.usd || 0;
     if (r.src === 'pipeline') x.runs = (x.runs ?? 0) + 1;
     if (r.src !== 'slack') continue;
-    (x.convs ??= new Set()).add(r.conv ?? r.key); x.n = x.convs.size; x.live += r.live ? 1 : 0; x.last = Math.max(x.last, t);
+    (x.convs ??= new Set()).add(r.conv ?? r.key); x.n = x.convs.size; x.live += r.live ? 1 : 0;
   }
   return u;
 });
