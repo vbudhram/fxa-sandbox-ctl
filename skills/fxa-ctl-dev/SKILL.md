@@ -198,7 +198,7 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 
 1. Scoped conventional commit: `fix(gce): ...`, `feat(session): ...`.
 2. From the worktree, run `bash skills/fxa-ctl-dev/ship.sh` (`--bot <bot tree>` for a bot change,
-   default `../fxa-agent-bot-main`; `--smoke` deploys through `dev smoke`). It refuses a dirty tree,
+   default from `bot-tree.sh`; `--smoke` deploys through `dev smoke`). It refuses a dirty tree,
    rebases each tree on origin/main, pushes the ones with commits, and runs `vm.sh dev` with both.
 3. `bash skills/fxa-manager/vm.sh promote` deploys to the live bot (Mozilla Slack). It
    refuses unless `main` in both repos is exactly what the last `vm.sh dev` ran,
