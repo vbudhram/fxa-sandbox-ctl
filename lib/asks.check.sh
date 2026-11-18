@@ -55,6 +55,8 @@ check "ready marks the session's PR with its repo's token" "tok-for-mozilla/fxa|
 check "request-review posts the logins" "tok-for-mozilla/fxa|api -X POST repos/mozilla/fxa/pulls/5/requested_reviewers -f reviewers[]=alice -f reviewers[]=bob" "$(cat "$tmp/gh")"
 : > "$tmp/gh"; got="$(_ask_one $k 1 Ana 'comment')"
 check "comment posts the agent's file with tokens masked" "done: posted https://github.com/mozilla/fxa/pull/5#c1|Looks good.|ghp_<masked>" "$got|$(paste -sd'|' "$tmp/body")"
+: > "$tmp/gh"; got="$(vm_exec_as_agent() { echo 'see metadata.google.internal'; }; _ask_one $k 1 Ana 'comment')"
+check "a direct comment with internal data is refused and not posted" "1|0" "$(grep -c 'must not go to GitHub' <<< "$got")|$(grep -c comments "$tmp/gh")"
 : > "$tmp/gh"; _ask_one $k 0 Bo 'ready' >/dev/null
 check "a refused ask makes no GitHub call" "0" "$(grep -c . "$tmp/gh")"
 

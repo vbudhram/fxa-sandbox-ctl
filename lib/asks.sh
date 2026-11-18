@@ -180,6 +180,8 @@ _ask_gh() {
       # An allowed card posts the body it showed (_ASKS_BODY, set by asks_confirm), not the file now on the runner.
       local body="${_ASKS_BODY:-}"; [ -n "$body" ] || body="$(_ask_comment_body "$key")"
       [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
+      # The admin's words name only the action, so the body gets the card's PII check here too.
+      _ask_pii "$body" || return 1
       # One post, no retry: a retried comment can post twice.
       printf '%s' "$body" | gh api -X POST "repos/${slug}/issues/${num}/comments" -F body=@- --jq .html_url 2>/dev/null | grep -E '^https://' \
         | sed 's/^/done: posted /' || { echo "failed: GitHub refused the comment on ${url}."; return 1; } ;;
@@ -285,11 +287,18 @@ _asks_cards() {
   for f in "${SESSION_DIR}/${1}".confirm-*; do [[ "$f" =~ \.confirm-[0-9a-f]{32}$ ]] && [ -f "$f" ] && echo "$f"; done; return 0
 }
 
+# _ask_pii <body>   Refuse a comment body that pii_guard flags: it would reach a GitHub PR.
+_ask_pii() {
+  local t hits; t="$(mktemp)"; jq -n --arg b "$1" '{comment: $b}' > "$t"
+  hits="$(python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$t" /dev/null 2>/dev/null | sed 's/ line [0-9]*//' | sort -u | paste -sd, - || true)"; rm -f "$t"
+  [ -z "$hits" ] || { echo "refused: the comment has text that must not go to GitHub (${hits})."; return 1; }
+}
+
 # _asks_card <key> <who> <line>   An ask that no team admin's own words allowed: a card in the thread that a team
 # admin can allow with one tap. The host reads the target (and a comment's body, masked) now and keeps them,
 # so a tap runs exactly what the card shows. At most 3 wait at once.
 _asks_card() {
-  local key="$1" who="$2" line="$3" action rest target body="" t hits nonce
+  local key="$1" who="$2" line="$3" action rest target body="" nonce
   # The card shows 300 characters, and the tap is the consent: no card for a line it cannot show whole.
   [ "${#line}" -le 300 ] || { echo "refused: the host line is too long for a card. Ask a team admin to say it in the thread."; return 1; }
   [ "$(_asks_cards "$key" | grep -c . || true)" -lt "$_ASKS_CARDS_MAX" ] \
@@ -299,9 +308,7 @@ _asks_card() {
   if [ "$action" = comment ]; then
     body="$(_ask_comment_body "$key")"
     [ -n "$(tr -d '[:space:]' <<< "$body")" ] || { echo "refused: write the comment to /workspace/.fxa-host-comment.md first."; return 1; }
-    t="$(mktemp)"; jq -n --arg b "$body" '{comment: $b}' > "$t"
-    hits="$(python3 -I "${SANDBOX_ROOT}/lib/pii_guard.py" "$t" /dev/null 2>/dev/null | sed 's/ line [0-9]*//' | sort -u | paste -sd, - || true)"; rm -f "$t"
-    [ -z "$hits" ] || { echo "refused: the comment has text that must not go to GitHub (${hits})."; return 1; }
+    _ask_pii "$body" || return 1
   fi
   nonce="$(openssl rand -hex 16 2>/dev/null)" && [[ "$nonce" =~ ^[0-9a-f]{32}$ ]] || { echo "failed: the host could not make a card."; return 1; }
   ( umask 077; jq -nc --arg n "$nonce" --arg k "$key" --arg a "$line" --arg t "$target" --arg b "$body" --arg w "$who" \
