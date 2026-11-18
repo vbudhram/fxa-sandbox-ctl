@@ -37,6 +37,9 @@ work:
 git worktree add ../fxa-sandbox-ctl-<topic> -b <topic> origin/main && cd ../fxa-sandbox-ctl-<topic>
 ```
 
+To clean up, remove each worktree by its path: `git worktree remove --force <path>`.
+A hook blocks the repo-wide cleanup command, because it unregisters every other broken worktree too.
+
 Before you push to a bot PR's branch by hand (a rebuild, a force push), check that no session or round
 works on that PR, and read the ticket's pipeline state. `session list` shows only the PR a session opened;
 a session started from a link to the PR shows it only in its request, so read `session report <key>` for
@@ -195,6 +198,9 @@ Buttons cannot be pressed through the API: answer with a reply. The tokens are i
 `fxa-agent-bot/.env.dev`. When it looks right: commit, push, `vm.sh promote`.
 
 ## Commit and deploy
+
+These two repos take no PR. When the tests pass and the person says to ship, `ship.sh` pushes
+`main`, then you promote. The repos do not allow auto-merge, so a PR only waits.
 
 1. Scoped conventional commit: `fix(gce): ...`, `feat(session): ...`.
 2. From the worktree, run `bash skills/fxa-ctl-dev/ship.sh` (`--bot <bot tree>` for a bot change,
