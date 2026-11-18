@@ -190,9 +190,35 @@ strapi() {
     http "$STRAPI/_health" || { echo "strapi: not up after 2 minutes; run: pm2 logs strapi --lines 50 --nostream" >&2; return 1; }
   fi
   echo "strapi: up on :1337 (admin: $STRAPI/admin)"
-  # fxa-strapi seeds this full-access token at boot, for local use only.
-  local tok; tok="$(sed -n "s/^const METERING_POC_TOKEN = '\(.*\)';$/\1/p" src/index.js)"
-  [ -n "$tok" ] || { echo "strapi: no seeded API token in src/index.js" >&2; return 1; }
+  # fxa-strapi seeds no API token: make a local admin and a full-access token once. They live in .tmp with the database.
+  mkdir -p .tmp; BASE="$STRAPI" DIR="$STRAPI_DIR/.tmp" node <<'JS' || return 1
+const fs = require('fs'), { BASE, DIR } = process.env;
+const tokFile = `${DIR}/fxa-stack-token`, admFile = `${DIR}/fxa-stack-admin.json`;
+const call = async (method, path, body, auth) => {
+  const r = await fetch(BASE + path, { method, headers: { 'Content-Type': 'application/json', ...(auth && { Authorization: `Bearer ${auth}` }) },
+    body: body && JSON.stringify(body) });
+  if (!r.ok) throw new Error(`${method} ${path}: ${r.status} ${await r.text()}`);
+  return r.json();
+};
+(async () => {
+  if (fs.existsSync(tokFile)) {
+    const t = fs.readFileSync(tokFile, 'utf8').trim();
+    if ((await fetch(`${BASE}/api/relying-parties?pagination[pageSize]=1`, { headers: { Authorization: `Bearer ${t}` } })).ok) return;
+  }
+  let jwt;
+  if (!(await call('GET', '/admin/init')).data.hasAdmin) {
+    const adm = { email: 'fxa-stack@example.com', password: `Aa1${require('crypto').randomBytes(12).toString('hex')}` };
+    jwt = (await call('POST', '/admin/register-admin', { firstname: 'FxA', lastname: 'Stack', ...adm })).data;
+    fs.writeFileSync(admFile, JSON.stringify(adm), { mode: 0o600 });
+  } else if (fs.existsSync(admFile)) {
+    jwt = (await call('POST', '/admin/login', JSON.parse(fs.readFileSync(admFile, 'utf8')))).data;
+  } else throw new Error(`an admin exists that stack.sh did not make: make a full-access API token in ${BASE}/admin and write it to ${tokFile}`);
+  jwt = jwt.accessToken || jwt.token;
+  const key = (await call('POST', '/admin/api-tokens', { name: `fxa-stack-${Date.now()}`, type: 'full-access', lifespan: null, description: 'stack.sh strapi' }, jwt)).data.accessKey;
+  fs.writeFileSync(tokFile, key, { mode: 0o600 });
+})().catch((e) => { console.error(`strapi: no API token: ${e.message}`); process.exit(1); });
+JS
+  local tok; tok="$(cat .tmp/fxa-stack-token)"
   TOK="$tok" SEED="$seed" BASE="$STRAPI" node <<'JS' || return 1
 const { TOK, SEED, BASE } = process.env;
 const h = { Authorization: `Bearer ${TOK}`, 'Content-Type': 'application/json' };

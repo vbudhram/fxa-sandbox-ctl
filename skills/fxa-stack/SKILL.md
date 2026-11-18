@@ -89,7 +89,9 @@ use a copy for a new style.
   dummy key. If `/v1/cms/config` returns `{}` for a seeded entry, look for
   `cms.getConfig` in `pm2 logs auth`.
 - Use `127.0.0.1:1337`, not `localhost:1337`: Strapi listens on IPv4 only.
-- The admin at http://127.0.0.1:1337/admin asks you to make an admin user the first time.
+- `strapi` makes the admin user and a full-access API token on a new database. Both
+  are in `.tmp`: `fxa-stack-admin.json` (sign in to http://127.0.0.1:1337/admin) and
+  `fxa-stack-token`. Never print them in a reply.
 - The 2FA specs in `tests/cms` need recovery phone, so `strapi` turns it on.
 
 ### The fxa-strapi project
@@ -111,9 +113,7 @@ has only what `strapi` seeds.
     FxA account pages use `relying-party`; the rest are subscription types.
   - `src/components/accounts/*.json`: the parts of a Relying Party, such as
     `shared` (colors, logos) and `page-config` (headline, description, button text).
-  - `src/index.js`: at boot it makes the local full-access API token and seeds
-    a meter. The error `bootstrap failed: windowPeriod is required` is from the
-    meter seed and does no harm.
+  - `src/index.js`: the boot hooks. They make no API token, so `strapi` makes one.
 - **Required on a Relying Party:** `shared`, `EmailFirstPage`, `SignupSetPasswordPage`,
   `SignupConfirmCodePage` and `SigninPage`. Entries use draft and publish, so FxA
   sees an entry only after it is published (`strapi` publishes the seed).
@@ -122,7 +122,7 @@ has only what `strapi` seeds.
      `pm2 restart strapi`.
   2. In fxa, add the field to `libs/shared/cms/src/lib/queries/relying-party/query.ts`,
      and run `nx run shared-cms:codegen` with `STRAPI_CLIENT_CONFIG__GRAPHQL_API_URI=http://127.0.0.1:1337/graphql`
-     and `STRAPI_CLIENT_CONFIG__API_KEY` set to the token in `src/index.js`.
+     and `STRAPI_CLIENT_CONFIG__API_KEY="$(cat /home/agent/fxa-strapi/.tmp/fxa-stack-token)"`.
   3. Use the field in Settings, and add it to a copy of the seed to see it.
   These steps were not yet tried on the runner; say in the handoff what you checked.
 The recovery phone spec still fails here, because the stack has no Twilio test credentials and sends no SMS.
