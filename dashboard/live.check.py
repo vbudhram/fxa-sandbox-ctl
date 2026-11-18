@@ -314,6 +314,18 @@ class Stream(unittest.TestCase):
         self.assertEqual(problems([{"event": "hello", "data": {"v": 1, "epoch": h.epoch, "sid": "s", "viewer": ADMIN, "retention_s": 300, "max_life_s": 900}},
                                    {"id": f"{h.epoch}-1", "event": "snapshot", "data": {"feeds": {}, "sessions": [], "errors": [], "stats": None, "flow": []}}] + a), [])
 
+    def test_a_private_or_secret_teams_prs_in_the_stats(self):
+        records(example={}, **{"example-secret": {"secret": True}})
+        pr = lambda team, n: {"n": n, "team": team, "repo": "o/r", "title": "t", "key": "EX-1", "jira": {"assignee": "Sam"}, "by": "sam", "state": "MERGED"}
+        stats = {"rows": [], "prs": [pr("fxa", 1), pr("example", 2), pr("example-secret", 3)]}
+        got = server.stats_for(stats, False)["prs"]
+        self.assertEqual([(p["n"], p["title"], p["key"], p["jira"], p["by"]) for p in got], [(1, "t", "EX-1", {"assignee": "Sam"}, "sam"), (2, None, None, None, None)])
+        self.assertEqual(server.stats_for(stats, True), stats)
+        self.assertEqual(len(stats["prs"]), 3)  # the shared copy is not changed
+        frame = {"base": "a", "etag": "b", "prs": stats["prs"]}
+        self.assertEqual([p["n"] for p in self.hub.view("stats", frame, {}, USER)["prs"]], [1, 2])
+        self.assertEqual(len(self.hub.view("stats", frame, {}, ADMIN)["prs"]), 3)
+
     def test_a_narrowed_session_and_an_agents_reply_are_private(self):
         records(example={})
         open_row = {"key": "agent-n1", "profile": "fxa", "state": "running"}

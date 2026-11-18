@@ -820,6 +820,20 @@ def team_snapshot(team, snap, record, admin, state_root):
     return out
 
 
+def stats_for(data, admin):
+    """The stats for this viewer: a team admin gets all; anyone else gets no PR of a secret team, and a private
+    team's PRs as counts only (no title, branch key, Jira state or merger), as team_snapshot does."""
+    if admin or not isinstance(data, dict) or not isinstance(data.get("prs"), list):
+        return data
+    recs, prs = read_records(), []
+    for p in data["prs"]:
+        t = p.get("team") if isinstance(p, dict) else None
+        if (recs.get(t) or {}).get("secret") is True:
+            continue
+        prs.append(dict(p, title=None, key=None, jira=None, by=None) if team_private(t or "fxa") else p)
+    return dict(data, prs=prs)
+
+
 def read_records():
     """The team records' access, from the controller's teams index (lib/teams.sh), or {}."""
     path = os.path.join(os.environ.get("FXA_TEAMS_DIR") or os.path.expanduser("~/.claude/state/teams"), "index.json")
@@ -994,7 +1008,7 @@ class Handler(BaseHTTPRequestHandler):
             body = MASK.sub(r"\1<masked>", body.decode("utf-8") if isinstance(body, bytes) else body)
         payload = body if isinstance(body, bytes) else body.encode("utf-8")
         # etag: a body that stays the same between polls (errors, stats within one refresh) answers a revalidation with 304.
-        tag = f'"{hashlib.sha1(payload).hexdigest()[:20]}"' if etag and code == 200 else None
+        tag = (etag if isinstance(etag, str) else f'"{hashlib.sha1(payload).hexdigest()[:20]}"') if etag and code == 200 else None
         if tag and self.headers.get("If-None-Match") == tag:
             code, payload = 304, b""
         self.send_response(code)
@@ -1777,8 +1791,11 @@ class Handler(BaseHTTPRequestHandler):
             self._live(arg("since"))
         elif path == "/api/stats":
             # inproc=1: the hub's copy, the base of its stats frames (v2); the shell feed until the hub has one.
-            data = HUB.stats if HUB is not None and arg("inproc") == "1" and HUB.stats is not None else STATS.read()[0]
-            self._json(200, data if data is not None else {"error": "stats unavailable"}, etag=data is not None)
+            hub = HUB is not None and arg("inproc") == "1" and HUB.stats is not None
+            data = HUB.stats if hub else STATS.read()[0]
+            # The hub's ETag for the whole copy, also on a viewer's filtered one: its stats frames name that base.
+            self._json(200, stats_for(data, self._team_admin(path)) if data is not None else {"error": "stats unavailable"},
+                       etag=(HUB.stats_etag if hub else True) if data is not None else False)
         elif path == "/api/overview":
             data = STATS.read()[0]
             self._json(200, overview_slice(data) if data is not None else {"error": "stats unavailable"}, etag=data is not None)
