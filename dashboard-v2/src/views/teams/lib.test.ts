@@ -84,7 +84,7 @@ test('teamDaysBy gives each team the counts of teamDays, in one pass over the ro
 });
 
 test('a run that made a PR names its number and links its repo, not PR #true', () => {
-  expect(runPr({ pr: true, prn: 2738, prr: 'example/app' }, 'other/repo')).toEqual({ label: 'PR #2738', href: 'https://github.com/example/app/pull/2738' });
+  expect(runPr({ pr: true, prn: 123456789, prr: 'example/app' }, 'other/repo')).toEqual({ label: 'PR #123456789', href: 'https://github.com/example/app/pull/123456789' });
   expect(runPr({ pr: true, prn: 7 }, 'other/repo')).toEqual({ label: 'PR #7', href: 'https://github.com/other/repo/pull/7' });
   expect(runPr({ pr: true }, 'other/repo')).toEqual({ label: 'PR', href: '' });
   expect(runPr({ pr: false }, 'other/repo')).toBeNull();
