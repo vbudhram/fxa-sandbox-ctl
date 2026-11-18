@@ -11,6 +11,7 @@ result rather than blanking the page.
 import atexit
 import base64
 import calendar
+import glob
 import hashlib
 from datetime import datetime
 import hmac
@@ -776,6 +777,19 @@ def agents_for(ag, admin):
 TEAM_FEEDS = {}   # team -> Feed: each other pipeline team's snapshot (FULL is FxA's)
 STATE_ROOT = os.path.expanduser("~/.claude/state")   # each other team's state folder is STATE_ROOT/<team>
 SNAP_LISTS = ("inflight", "review", "blocked", "open_prs", "merged_prs")
+
+
+def ticket_private(key):
+    """True when a ticket's runner output is not for every viewer: its team is secret or has a private repo, the pass
+    marked it secured, or no team's state folder holds it (fail closed). A Jira key is easy to guess."""
+    recs, k = read_records(), key.upper()
+    for t in ["fxa-ai-fixme"] + pipeline_teams(recs):
+        d = os.path.join(STATE_ROOT, t)
+        if glob.glob(os.path.join(d, glob.escape(k) + ".*")):
+            team = "fxa" if t == "fxa-ai-fixme" else t
+            return ((recs.get(team) or {}).get("secret") is True or team_private(team)
+                    or os.path.exists(os.path.join(d, f"{k}.secured-noted")))
+    return True
 
 
 def pipeline_teams(records):
@@ -1699,8 +1713,8 @@ class Handler(BaseHTTPRequestHandler):
                 key = key.lower()
             if not TAIL_KEY.fullmatch(key):
                 self._json(400, {"error": "bad key"})
-            elif key.startswith("agent-") and session_private(key) and not self._team_admin(path):
-                self._json(403, {"error": "a private team's session: team admins only"})
+            elif (session_private(key) if key.startswith("agent-") else ticket_private(key)) and not self._team_admin(path):
+                self._json(403, {"error": "a private team's session or ticket: team admins only"})
             else:
                 self._json(200, {"key": key, "lines": agent_tail(key)})
         elif path == "/api/watch/events":

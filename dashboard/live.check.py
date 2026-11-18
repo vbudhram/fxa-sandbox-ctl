@@ -32,6 +32,7 @@ for d in ("sessions", "state", "teams"):
 
 
 def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text if isinstance(text, str) else json.dumps(text))
 
@@ -67,6 +68,8 @@ def reset_server():
                                   {"profile": "example-secret", "private": True}, {"profile": "crew", "private": False}])
     server.TEAM_FEEDS.clear()
     server._REC_ADMINS.clear()
+    server.STATE_ROOT = f"{TMP}/state"  # each team's state folder: a ticket's tail is open only when its team's folder holds it
+    write(f"{TMP}/state/fxa-ai-fixme/FXA-12.jira.json", {})
     for f in glob.glob(f"{TMP}/teams/*"):
         os.remove(f)
     records(example={}, **{"example-secret": {"secret": True}})
@@ -313,6 +316,16 @@ class Stream(unittest.TestCase):
         self.assertEqual(c[2]["data"]["tbl"], "history")  # a record admin gets no audit rows, as /api/teams/<t>/audit
         self.assertEqual(problems([{"event": "hello", "data": {"v": 1, "epoch": h.epoch, "sid": "s", "viewer": ADMIN, "retention_s": 300, "max_life_s": 900}},
                                    {"id": f"{h.epoch}-1", "event": "snapshot", "data": {"feeds": {}, "sessions": [], "errors": [], "stats": None, "flow": []}}] + a), [])
+
+    def test_a_ticket_tail_of_a_private_or_secret_team_is_private(self):
+        records(example={}, crew={}, **{"example-secret": {"secret": True}})
+        st = server.STATE_ROOT
+        for team, f in (("fxa-ai-fixme", "FXA-1.jira.json"), ("fxa-ai-fixme", "FXA-2.jira.json"), ("fxa-ai-fixme", "FXA-2.secured-noted"),
+                        ("crew", "CRW-1.jira.json"), ("example", "EX-1.jira.json"), ("example-secret", "SEC-1.jira.json")):
+            write(f"{st}/{team}/{f}", {})
+        got = {k: server.ticket_private(k) for k in ("FXA-1", "fxa-1", "CRW-1", "FXA-2", "EX-1", "SEC-1", "NONE-9")}
+        self.assertEqual(got, {"FXA-1": False, "fxa-1": False, "CRW-1": False, "FXA-2": True, "EX-1": True, "SEC-1": True, "NONE-9": True})
+        self.assertEqual((self.hub.private_key("FXA-1"), self.hub.private_key("SEC-1")), (False, True))
 
     def test_a_narrowed_session_and_an_agents_reply_are_private(self):
         records(example={})

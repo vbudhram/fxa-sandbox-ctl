@@ -204,9 +204,9 @@ class LiveHub:
     # What one viewer may see.
 
     def private_key(self, key):
-        """True when the session's team is private; a ticket key is not a session."""
+        """True when the session's or the ticket's team is private (server.ticket_private for a ticket key)."""
         if not key.startswith("agent-"):
-            return False
+            return self.srv.ticket_private(key)
         s = self.sessions.get(key)
         return self.srv.row_private(s) if isinstance(s, dict) else self.srv.session_private(key)
 
