@@ -4,7 +4,7 @@ import { BarList, ChartFrame, StripPlot } from '../../charts';
 import { jiraHref, plural } from '../../format';
 import { skipGroups, verdictTag } from '../../model';
 import type { J } from '../../model/base';
-import { SNAP, jiraSite, pipe, queueOnly } from '../../model/pipeline';
+import { SNAP, jiraSite, pipe, queueOnly, queueWaits } from '../../model/pipeline';
 import { useParts } from '../../app/store';
 import type { Store } from '../../store/types';
 import { Card, EmptyBox, Tag } from '../../ui';
@@ -47,6 +47,7 @@ export function Queue() {
   const q = snap.queue ?? {}, ready: J[] = q.ready ?? [], skipped: J[] = q.skipped ?? [];
   // A hold waits for another ticket to merge; it is not launchable, and not a skip a person must answer.
   const held = skipped.filter((k) => k.in_queue !== false && k.held_by), live: J[] = queueOnly(s), stale = skipped.filter((k) => k.in_queue === false);
+  const onBelts = queueWaits(s).length - live.length;
   const qv = (x: number) => (q.fetch_failed ? null : x);
   const off = snap.mode?.newtickets === 'off', h = snap.health ?? {};
   const budget = h.launches_24h == null || h.max_launches_per_day == null ? null : `${h.launches_24h} of ${h.max_launches_per_day}`;
@@ -70,7 +71,7 @@ export function Queue() {
         <Tile label="Launchable" value={qv(ready.length)}
           sub={q.fetch_failed ? 'Jira did not answer' : off ? 'intake is off' : ready[0] ? `next up ${ready[0].key}` : 'nothing to launch'} />
         <Tile label="Held" value={qv(held.length)} sub={q.fetch_failed ? 'Jira did not answer' : 'each waits for another ticket to merge'} />
-        <Tile label="Waits on a person" value={qv(live.length)} sub={q.fetch_failed ? 'Jira did not answer' : 'skipped, each waits on an answer in Jira'} tone={live.length ? 'warn' : undefined} />
+        <Tile label="Waits on a person" value={qv(live.length)} sub={q.fetch_failed ? 'Jira did not answer' : `skipped, each waits on an answer in Jira${onBelts ? `; ${onBelts} more on Belts to decide` : ''}`} tone={live.length ? 'warn' : undefined} />
         <Tile label="Launches, 24 h" value={budget} sub={budget ? 'the daily launch budget' : 'this snapshot has no launch budget'} />
       </div>
       <div className="pcols">
