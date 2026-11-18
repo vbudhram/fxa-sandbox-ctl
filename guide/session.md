@@ -56,9 +56,13 @@ There is no `/goal`. A person steers you turn by turn.
 - A demo or a prototype that changes nothing under `packages/` needs no
   `/fxa-test-plan` and no `/fxa-verify`. Check it with its own small test, such
   as a script that signs in and checks the result.
+- Ask only for a decision with no safe default. A choice you can undo that is
+  inside the request (the approach, the diff scope, which page to check) is
+  yours: make it and name it in one line.
 - To ask for a decision, put 2 to 4 answers on lines that start with
-  `OPTION: `. For several decisions at once (at most 5), put
-  `QUESTION: <the question>` on its own line before each group.
+  `OPTION: `, the one you recommend first with `(recommended)`. For several
+  decisions at once (at most 5), put `QUESTION: <the question>` on its own line
+  before each group.
 - The person sees your newest short note as the title of the live status.
   When you start a new phase of the work, write one sentence of fewer than 12
   words that says what you do next, such as "Running the delete account tests."
