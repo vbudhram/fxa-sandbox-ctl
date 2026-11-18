@@ -15,11 +15,13 @@ SH
 chmod +x "$tmp/ctl"
 # A public team's session: a private one's history is a team admin's (lib/private-reads.check.sh).
 echo '{"key":"agent-abcd12","profile":"fxa"}' > "$tmp/agent-abcd12.json"
+# A ticket of the public fxa team: a ticket that no team's state folder holds is private.
+mkdir -p "$tmp/state/fxa-ai-fixme" && echo '{}' > "$tmp/state/fxa-ai-fixme/FXA-1.jira.json"
 FXA_SESSION_DIR="$tmp" FXA_TEAMS_DIR="$tmp/none" python3 - "$(dirname "$0")/../dashboard" "$tmp/ctl" "$(dirname "$0")/session.sh" <<'PY'
 import re, sys, threading, urllib.request
 sys.path.insert(0, sys.argv[1]); import server
 from http.server import ThreadingHTTPServer
-server.CTL, server.PIPELINE = sys.argv[2], "test"
+server.CTL, server.PIPELINE, server.STATE_ROOT = sys.argv[2], "test", sys.argv[2].rsplit("/", 1)[0] + "/state"
 srv = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
 fail = 0
 def get(path):
