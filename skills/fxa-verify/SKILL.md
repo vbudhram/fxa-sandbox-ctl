@@ -42,8 +42,10 @@ integration specs cover: your test plan must cover it); `CI` (left to CI);
 
 Each touched project gets lint, Prettier, and a type-check. The App commits
 through the API, so no hook formats your change: the `format` row writes Prettier
-on your files and passes, and its log names each file it formatted. It fails only
-on a file Prettier cannot parse. Pass file paths to check only those.
+on your files and passes, and its log names each file it formatted. It leaves a
+file as it is when main already has that file unformatted, so a small edit stays
+small. It fails only on a file Prettier cannot parse. Pass file paths to check
+only those.
 
 In the reply, give the count per verdict and name every `FAIL`, `NONE`,
 `NOREL`, `CI` and `TODO` row. Do not give the log paths: a Slack reply must not

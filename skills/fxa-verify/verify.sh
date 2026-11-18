@@ -82,6 +82,21 @@ plan=() # "label|dir|command"
 add() { plan+=("$1|$2|$3"); }
 rel() { local p="$1"; shift; local out=(); for f in "$@"; do out+=("${f#"$p"/}"); done; printf '%q ' "${out[@]}"; }
 
+# fmt_files <file...>   The format row: write Prettier on the files and name them. A file main has
+# unformatted stays as it is, since a full reformat buries a small edit. Exit 2: Prettier cannot parse one.
+fmt_files() {
+  local f="" rc=0 b="" x="" k=()
+  f="$(npx prettier --list-different --ignore-unknown "$@")"; rc=$?; [ "$rc" -le 1 ] || return "$rc"
+  b="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+  for x in $f; do
+    if [ -n "$b" ] && git cat-file -e "$b:./$x" 2>/dev/null && ! git show "$b:./$x" | npx prettier --check --stdin-filepath "$x" >/dev/null 2>&1; then
+      echo "left as on main, which Prettier does not pass: $x"; continue
+    fi
+    k+=("$x")
+  done
+  [ "${#k[@]}" -eq 0 ] || { npx prettier --write --ignore-unknown "${k[@]}" >/dev/null && echo "formatted: ${k[*]}"; }
+}
+
 # plan_files <label prefix> <file...>   One command per owning project for these files.
 plan_files() {
   local pre="$1"; shift
@@ -168,9 +183,8 @@ for p in $(printf '%s\n' "${!byproj[@]}" | sort); do
   if [ "$LINT" = 1 ]; then
     # fxa-settings' CI build treats a lint warning as an error (CI=true), so a warning fails the row here too.
     add "${pre}$p lint" "$p" "npx eslint $([ "$p" = packages/fxa-settings ] && echo '--max-warnings 0 ')$r"
-    # The App commits through the API, so no lint-staged hook formats the change: format the
-    # files here, as the hook would, and say which. Exit 2 is a file Prettier cannot parse.
-    add "${pre}$p format" "$p" "f=\$(npx prettier --list-different --ignore-unknown $(rel "$p" "${fs[@]}")); rc=\$?; [ \$rc -le 1 ] || exit \$rc; [ -z \"\$f\" ] || { npx prettier --write --ignore-unknown \$f >/dev/null && echo \"formatted: \$(echo \$f)\"; }"
+    # The App commits through the API, so no lint-staged hook formats the change: format here, as the hook would.
+    add "${pre}$p format" "$p" "fmt_files $(rel "$p" "${fs[@]}")"
   fi
   if [ "$TYPES" = 1 ]; then
     case "$p" in

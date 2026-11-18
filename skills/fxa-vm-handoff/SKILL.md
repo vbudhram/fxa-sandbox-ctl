@@ -168,7 +168,8 @@ wrote is listed and nothing is typed by hand. Do not replace it with `[]`.
 bash ~/.claude/skills/fxa-vm-handoff/check.sh --fix
 ```
 
-It formats the changed files with Prettier, deletes untracked scratch files
+It formats the changed files with Prettier (a file that the base already has
+unformatted stays as it is, so do not format it by hand), deletes untracked scratch files
 (`zz*.spec.ts`, `*.tmp.mjs`), and checks the handoff file: the keys, a scoped
 conventional `pr_title`, the branch, and that each `media_paths` file exists.
 In the FxA repo, a change to a file a person sees (a non-test `.tsx`, `.css`,

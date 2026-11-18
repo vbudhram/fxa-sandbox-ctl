@@ -16,6 +16,7 @@ mkdir -p "$tmp/bin"; cat > "$tmp/bin/npx" <<'NPX'
 #!/usr/bin/env bash
 [ "$1" = prettier ] || exit 9; shift
 mode="$1"; shift; rc=0
+if [ "$mode" = --check ] && [ "${1:-}" = --stdin-filepath ]; then ! grep -q ugly; exit; fi
 for f in "$@"; do case "$f" in --*) continue ;; esac
   grep -q ugly "$f" 2>/dev/null || continue
   if [ "$mode" = --write ]; then sed -i.bak 's/ugly/pretty/' "$f" && rm -f "$f.bak"; else echo "$f"; rc=1; fi
@@ -54,6 +55,12 @@ rm .fxa-auto-done.json; check "no handoff checks the change only" "handoff check
 echo ugly > src/a.ts; check "an unformatted file is named" 1 "$(bash "$C" | grep -c "not formatted.*src/a.ts")"
 check "--fix formats it and then passes" "formatted: src/a.ts|handoff check: ok" "$(bash "$C" --fix | paste -sd'|' -)"
 check "--fix wrote the formatted file" pretty "$(cat src/a.ts)"
+# A file the base has unformatted: a small edit to it does not reformat the whole file.
+om="$(git rev-parse origin/main)"; echo ugly > src/b.ts && g add src/b.ts && g commit -qm ugly -- src/b.ts && g update-ref refs/remotes/origin/main HEAD
+echo 'ugly edit' > src/b.ts
+check "an edit to a file the base has unformatted is no problem" "left as on the base, which Prettier does not pass: src/b.ts|handoff check: ok" "$(bash "$C" --fix | paste -sd'|' -)"
+check "--fix leaves that file as it is" "ugly edit" "$(cat src/b.ts)"
+g update-ref refs/remotes/origin/main "$om" && g reset -q HEAD~1 && rm -f src/b.ts
 
 printf 'a\n<<<<<<< Updated upstream\nb\n=======\nc\n>>>>>>> Stashed changes\n' > src/a.ts
 check "conflict markers are named" 1 "$(bash "$C" | grep -c "conflict markers remain in src/a.ts")"

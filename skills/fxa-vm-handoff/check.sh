@@ -31,12 +31,21 @@ done
 # The App commits through the API, so no lint-staged hook formats the change.
 # Only a Node repo has prettier: npx would download it for any other (a Python repo).
 if [ "${#kept[@]}" -gt 0 ] && [ -f package.json ]; then
-  if [ "$fix" = 1 ]; then
-    out="$(npx prettier --list-different --ignore-unknown -- "${kept[@]}" 2>/dev/null || true)"
-    [ -n "$out" ] && npx prettier --write --ignore-unknown -- $out >/dev/null 2>&1 && printf 'formatted: %s\n' $out
+  # A file the base already has unformatted stays as it is: a full reformat buries a small edit.
+  skip=() fmt=()
+  for f in $(npx prettier --list-different --ignore-unknown -- "${kept[@]}" 2>/dev/null || true); do
+    git cat-file -e "$base:$f" 2>/dev/null && ! git show "$base:$f" | npx prettier --check --stdin-filepath "$f" >/dev/null 2>&1 \
+      && { skip+=("$f"); echo "left as on the base, which Prettier does not pass: $f"; }
+  done
+  for f in "${kept[@]}"; do case " ${skip[*]-} " in *" $f "*) ;; *) fmt+=("$f") ;; esac; done
+  if [ "${#fmt[@]}" -gt 0 ]; then
+    if [ "$fix" = 1 ]; then
+      out="$(npx prettier --list-different --ignore-unknown -- "${fmt[@]}" 2>/dev/null || true)"
+      [ -n "$out" ] && npx prettier --write --ignore-unknown -- $out >/dev/null 2>&1 && printf 'formatted: %s\n' $out
+    fi
+    out="$(npx prettier --list-different --ignore-unknown -- "${fmt[@]}" 2>&1)" || {
+      [ -n "$out" ] && problems+=("not formatted (run npx prettier --write on them): $(echo $out)"); }
   fi
-  out="$(npx prettier --list-different --ignore-unknown -- "${kept[@]}" 2>&1)" || {
-    [ -n "$out" ] && problems+=("not formatted (run npx prettier --write on them): $(echo $out)"); }
 fi
 
 done_file=.fxa-auto-done.json; [ -s "$done_file" ] || done_file=.fxa-auto-done.json.tmp
