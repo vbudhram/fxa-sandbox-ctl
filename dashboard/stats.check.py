@@ -159,7 +159,8 @@ def fixture(root, store):
     bin_ = os.path.join(root, "bin")
     put(os.path.join(bin_, "gh"), "#!/bin/sh\nexit 1\n")
     os.chmod(os.path.join(bin_, "gh"), 0o755)
-    env = {"PATH": bin_ + os.pathsep + os.environ.get("PATH", ""), "HOME": home, "LC_ALL": "C", "TMPDIR": root,
+    # FXA_NO_DOTENV: a checkout's .env (a team record, FXA_DB) must not reach the fixture's ctl, as in CI.
+    env = {"PATH": bin_ + os.pathsep + os.environ.get("PATH", ""), "HOME": home, "LC_ALL": "C", "TMPDIR": root, "FXA_NO_DOTENV": "1",
            "FXA_FIXME_STATE": ps, "FXA_FIXME_RUNS": os.path.join(ps, "agent-runs.jsonl"), "FXA_SESSION_DIR": sd,
            "FXA_LLM_PROXY_DIR": proxy, "FXA_ERRORS_FILE": errs, "FXA_MEMORY_LOG": os.path.join(st, "memory.jsonl"),
            "FXA_PROFILES_DIR": prof, "FXA_TEAMS_DIR": os.path.join(st, "teams"), "FXA_DB": db, "FXA_SESSION_MAX": "3",
