@@ -284,9 +284,9 @@ export const beltCount = (g: J): number | null => (Object.values(g.unknown).some
 
 // The queue tickets that wait on a person: skipped, still labelled, not held by another ticket.
 export const queueWaits = (s: Store): J[] => (SNAP(s)?.queue?.skipped ?? []).filter((k: J) => k.in_queue !== false && !k.held_by);
-// The skips the Queue tab lists: a skip that has a belt (Decide on Belts) shows there only.
+// The skips the Queue tab lists: a skip that has a belt (Decide on Belts) shows there only, unless Needs you is unknown and lists nothing.
 export const queueOnly = (s: Store): J[] => {
-  const g = beltGroups(s), on = new Set(['working', 'needs', 'fixes', 'review'].flatMap((k) => (g[k] ?? []).map((r: J) => r.t.key)));
+  const g = beltGroups(s), on = new Set(g.unknown.needs ? [] : ['working', 'needs', 'fixes', 'review'].flatMap((k) => (g[k] ?? []).map((r: J) => r.t.key)));
   return queueWaits(s).filter((k) => !on.has(k.key));
 };
 // Skips by their reason's first word; most passes first in each.
