@@ -1,6 +1,6 @@
 // The Teams rules of the retired v1 dashboard with no React: the side list, the cells, the banner, and the record forms.
 import type { SideGroup, SideItem } from '../../app/store';
-import { ago, plural, usd } from '../../format';
+import { ago, plural, prUrl, usd } from '../../format';
 import { ERRS, type J, memo, TEAMS, TEAM_RE } from '../../model/base';
 import { localDay } from '../../model/stats';
 import { APP_FAIL, errOpen, teamAccess, teamLevel, teamName, teamNeeds, teamReason, teamUse } from '../../model/teams';
@@ -32,6 +32,10 @@ export const teamTools = (m: unknown, short?: boolean) =>
 // [tone, short word, full text] for a work repo's shipping.
 export const repoShip = (r: J): [string, string, string] =>
   r.why === APP_FAIL ? ['info', 'write unknown', 'GitHub App check failed; write unknown'] : r.write ? ['ok', '', 'opens a draft PR'] : ['warn', 'diff', 'ships as a diff'];
+
+// A stats row's pr is a flag: prn is the number and prr the repo, when the run knew them.
+export const runPr = (r: J, repo: string): null | { label: string; href: string } =>
+  r.pr ? { label: r.prn != null ? `PR #${r.prn}` : 'PR', href: prUrl(r.prn, r.prr || repo) } : null;
 
 // The text that the side search matches (v1 teamMatch).
 export const teamFind = (t: J) => [t.profile, t.label, ...(t.repos ?? []).map((r: J) => r.slug), ...(t.mcp ?? []), ...(t.access?.jira ?? [])].join(' ');

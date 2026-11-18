@@ -1,7 +1,7 @@
 // A team's Overview: the banner, four tiles, Activity and the budget burn, Recent work, the Routines strip and Readiness.
 import { memo, useMemo } from 'react';
 import { Frame, NoData, useChartKeys, useWidth } from '../../charts/frame';
-import { prUrl, usd } from '../../format';
+import { usd } from '../../format';
 import { ERRS, type J, LIVE_SESSION, SS, STATS, TEAM_ADMIN } from '../../model/base';
 import { teamRepo } from '../../model/pipeline';
 import { convTitle, isFix, ownerName, sessHeads, sessHref, sessRoutine, sessTabOf } from '../../model/sessions';
@@ -11,7 +11,7 @@ import { setPref, store, useApp } from '../../store';
 import type { Store } from '../../store/types';
 import { Card, Meter, StatTile, Tag } from '../../ui';
 import { cx } from '../../ui/tone';
-import { budgetOf, plural, sinceAgo, teamBanner, teamBurn, teamDays, teamReadiness } from './lib';
+import { budgetOf, plural, runPr, sinceAgo, teamBanner, teamBurn, teamDays, teamReadiness } from './lib';
 import { TestCell } from './parts';
 import { useTs } from './state';
 
@@ -110,11 +110,11 @@ const Recent = memo(function Recent({ p }: { p: string }) {
     <>
       {rows.map((r, i) => {
         const x = by.get(r.key), name = r.src === 'pass' ? 'Pipeline pass' : x ? (x.routine_run ? (admin || isFix(x) ? sessRoutine(st, x) : ownerName(st, x) || 'scheduled run') : convTitle(st, x)) : r.key;
-        const h = sessHref(r.key), pu = r.pr ? prUrl(r.pr, teamRepo(st, '')) : '';
+        const h = sessHref(r.key), pr = runPr(r, teamRepo(st, ''));
         return (
           <div key={i} className="titem">
             <span>{h ? <a className="lnk" href={h}>{name}</a> : name} {r.src !== 'pass' && <span className="na">· {r.src}</span>}</span>
-            <span>{r.pr ? (pu ? <a className="lnk" href={pu} target="_blank" rel="noopener noreferrer">PR #{r.pr}</a> : `PR #${r.pr}`) : <span className="na">{sinceAgo(rowT(r))}</span>}</span>
+            <span>{pr ? (pr.href ? <a className="lnk" href={pr.href} target="_blank" rel="noopener noreferrer">{pr.label}</a> : pr.label) : <span className="na">{sinceAgo(rowT(r))}</span>}</span>
           </div>
         );
       })}
