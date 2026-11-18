@@ -3061,7 +3061,8 @@ cmd_events() {
           tcost="${facts%%$'\t'*}"; nchg="${facts#*$'\t'}"
           [ -n "$tcost" ] && events="$(jq --argjson c "$tcost" 'map(if .type == "turn_end" or .type == "question" then .cost = $c.cost | .tokens = $c.tokens else . end)' <<< "$events")"
           # needs-input with changed files and no question (code spans aside) is a finished change the runner could not check: show its ship buttons.
-          [[ "$nchg" =~ ^[1-9][0-9]*$ ]] && events="$(jq 'map(if .type == "turn_end" and .status == "needs-input" and ((.text // "") | gsub("`[^`]*`"; "") | test("[?]") | not) then .status = "ready" | .untested = true else . end)' <<< "$events")"
+          # A Jira draft turn waits for the bot to file, not for a check.
+          [[ "$nchg" =~ ^[1-9][0-9]*$ ]] && events="$(jq 'map(if .type == "turn_end" and .status == "needs-input" and (.jira_draft | not) and ((.text // "") | gsub("`[^`]*`"; "") | test("[?]") | not) then .status = "ready" | .untested = true else . end)' <<< "$events")"
           [ -n "$nchg" ] && events="$(jq --argjson n "$nchg" 'map(if .type == "turn_end" and .status == "ready" then .changes = $n else . end)' <<< "$events")"
           _session_turn_log "$key" "${tcost:-null}"
           # fixed: review comments or CI failures this round fixed, from the agent's outcomes file. An automatic round pushes only then.

@@ -296,6 +296,8 @@ check "a needs-input end with changes and no question becomes ready and untested
   "$(ev_end 1 $'I changed the image. Run `curl localhost:8000/x?y` to check it.\nstatus: needs-input')"
 check "with a question it stays needs-input; with no changed file too" "needs-input|false||needs-input|false|" \
   "$(ev_end 1 $'Which tag do you want?\nstatus: needs-input')|$(ev_end 0 $'I looked. Run it yourself.\nstatus: needs-input')"
+check "a Jira draft turn with changed files is not marked untested" "needs-input|false|" \
+  "$(ev_end 1 $'I drafted the ticket.\njira-draft: ready\nstatus: needs-input')"
 reset 0; CHANGES=0; RUNNING=0
 RUNNER='{"type":"result","result":"Answered.\nstatus: ready"}
 '
