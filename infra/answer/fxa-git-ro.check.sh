@@ -25,6 +25,8 @@ mkdir -p "$tmp/empty" "$tmp/secret-dir"; echo tok-abc123 > "$tmp/secret-dir/.fxa
 check "diff of a directory outside the tree is refused, and lists nothing" "2|0" "$(r diff --name-only "$tmp/empty" "$tmp/secret-dir")|$(grep -c fxa-mcp "$tmp/out")"
 check "-S cannot search a file outside the tree" "2" "$(r diff -Stok --name-only /dev/null "$tmp/secret-dir/.fxa-mcp-x.json")"
 check "a relative path up and out of the tree is refused" "2" "$(r diff --name-only ../empty ../secret-dir)"
+check "blame -S (a revs file) cannot read a file outside the tree" "2|0" "$(r blame -S"$tmp/secret-dir/.fxa-mcp-x.json" a.txt)|$(grep -c tok-abc123 "$tmp/out")"
+check "log -S (a pickaxe string) still works" "0" "$(r log --oneline -Shello)"
 ( cd "$tmp/repo" && echo world >> a.txt && git -c user.email=t@example.com -c user.name=t commit -qam second )
 check "diff between two commits shows the patch" "0|1" "$(r diff HEAD~1 HEAD)|$(grep -c '^+world' "$tmp/out")"
 check "revision ranges with .. still work" "0" "$(r log --oneline HEAD~1..HEAD)"
