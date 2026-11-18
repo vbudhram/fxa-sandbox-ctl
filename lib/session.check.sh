@@ -267,6 +267,8 @@ unset -f gh
 check "no options is a turn end" "turn_end" "$(fin $'done\nstatus: ready' | jq -r .type)"
 check "a jira-draft line leaves the text and marks the turn" "Drafted it.|true|null" \
   "$(fin $'Drafted it.\njira-draft: ready\nstatus: ready' | jq -r '"\(.text)|\(.jira_draft)"')|$(fin $'Done.\nstatus: ready' | jq -r .jira_draft)"
+check "a pr-body: ready line sets pr_body and leaves the reply" "Wrote it.|true|null" \
+  "$(fin $'Wrote it.\npr-body: ready\nstatus: ready' | jq -r '"\(.text)|\(.pr_body)"')|$(fin $'Done.\nstatus: ready' | jq -r .pr_body)"
 check "OPTION lines are one question" "question|2|Pick one" "$(fin $'Pick one\nOPTION: a\nOPTION: b\nstatus: needs-input' | jq -r '"\(.type)|\(.options | length)|\(.text)"')"
 check "one QUESTION joins the text" "Intro\n\n**Where?**|a" "$(fin $'Intro\nQUESTION: Where?\nOPTION: a\nOPTION: b' | jq -r '"\(.text | gsub("\n"; "\\n"))|\(.options[0])"')"
 check "several QUESTIONs keep their options apart" "Where?:a,b|Which?:c,d|Intro" \

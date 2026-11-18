@@ -3456,6 +3456,7 @@ cmd_session() {
         || { echo "usage: session confirm <key> <nonce> <sha> allow|deny <name> [--admin]" >&2; return 2; }
       asks_confirm "$2" "$3" "$4" "$5" "$(printf '%s' "${6:-}" | tr -d '\n' | cut -c1-80)" "$([ "${7:-}" = --admin ] && echo 1 || echo 0)" ;;
     create-jira) _session_key "${2:-}" && session_create_jira "$2" ;;
+    pr-body) _session_key "${2:-}" && session_pr_body "$2" ;;
     # The jira commands also take a quick answer's key, which has no record (the bot's key for the thread).
     # jira-draft <key> [--stdin] [--as <the thread's Jira key>]
     jira-draft) _jira_key "${2:-}" && { [ "${3:-}" != --as ] || _jira_key "${4:-}"; } && { [ "${4:-}" != --as ] || _jira_key "${5:-}"; } && session_jira_draft "${@:2}" ;;
