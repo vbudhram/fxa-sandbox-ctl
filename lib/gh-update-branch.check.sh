@@ -44,4 +44,13 @@ rm -f "$tmp/commit"; g up2 checkout -q fix && A=Person g up2 commit -q --allow-e
 git -C "$tmp/clone" fetch -q origin; gh() { echo "fix $(git -C "$tmp/up2" rev-parse fix) train false"; }
 gh_update_branch 7 main 2>/dev/null; rc=$?
 check "a move with a person's commit: refused, and no merge of the new base" "1||" "$rc|$(cat "$tmp/commit" 2>/dev/null)|$(cat "$tmp/api" 2>/dev/null)"
+# The new base holds commits the old one lacks, and the PR already sits on it: the message is the PR's own commit's.
+git init -q -b main "$tmp/up3" && echo a > "$tmp/up3/a" && g up3 add . && g up3 commit -qm base
+g up3 checkout -qb train && echo p > "$tmp/up3/p" && g up3 add p && g up3 commit -qm "fix(p): a private fix"
+g up3 checkout -qb fix && echo fix > "$tmp/up3/b" && g up3 add b && g up3 commit -qm "fix(x): the change" && g up3 checkout -q main
+rm -rf "$tmp/clone" && git clone -q "$tmp/up3" "$tmp/clone"; rm -f "$tmp/commit" "$tmp/api"
+gh() { echo "fix $(git -C "$tmp/up3" rev-parse fix) train false"; }
+gh_update_branch 7 main; rc=$?
+IFS='|' read -r par tree msg _ < "$tmp/commit"
+check "moved to a base ahead of the old one: the PR's own message, not the new base's commit" "0|$(g up3 rev-parse train)|fix(x): the change" "$rc|$par|$msg"
 exit "$fail"

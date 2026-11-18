@@ -601,7 +601,8 @@ gh_update_branch() {
   tree="$(git -C "$repo" merge-tree --write-tree --no-messages --merge-base="$mb" "$new" "$head" 2>/dev/null)" \
     || { echo "ERROR: #${num} conflicts with ${base}." >&2; return 1; }
   # The PR's first commit names the change; the fix rounds after it fold into it.
-  first="$(git -C "$repo" log --reverse --no-merges --format=%H "${old}..${head}" | head -1)"
+  # Not in either base: a new base ahead of the old one holds commits that are not the PR's.
+  first="$(git -C "$repo" log --reverse --no-merges --format=%H "$head" "^${old}" "^${new}" | head -1)"
   [ -n "$first" ] || { echo "ERROR: #${num} has no commit of its own." >&2; return 1; }
   wt="$(mktemp -d "${TMPDIR:-/tmp}/rebase-${num}.XXXXXX")"
   git -C "$repo" -c core.hooksPath=/dev/null worktree add -q --no-checkout --detach "$wt" "$new" >&2 || { rm -rf "$wt"; return 1; }

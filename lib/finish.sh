@@ -801,6 +801,10 @@ _finish_push_and_pr() {
     local new_sha GH_TOKEN arc=0 msg
     echo "Committing and pushing ${branch} as the GitHub App..." >&2
     msg="$(printf '%s' "$pr_title"; [ -n "${commit_body//[[:space:]]/}" ] && printf '\n\n%s' "$commit_body")"
+    # A round's handoff describes only that round; the folded commit keeps the PR's own message.
+    local folded=""
+    [ -n "$fix" ] || folded="$(_finish_folded_message "$worktree" "$branch" "$merge_base")"
+    [ -z "${folded//[[:space:]]/}" ] || msg="$folded"
     # A fix run's commit lands on a public PR: a fixed host text, never the agent's title or body.
     [ -z "$fix" ] || msg="$(_finish_prfix_message "$fix" "$FXA_FINISH_PR")"
     local first; first="$(_finish_merge_parent "$worktree" "$branch" "$merging")"
@@ -1168,6 +1172,17 @@ _finish_merge_parent() {
 # _finish_squash_base <worktree> <branch> <merge_base> <merging>
 #   Where the squash starts. A person's commits on the PR stay theirs: the change
 #   goes on top of the PR's head. A rebase round (merging) starts at the base, and the App push makes it a merge commit.
+# _finish_folded_message <worktree> <branch> <squash_base>
+#   When the squash folds the pushed PR into one commit, the message of the PR's first
+#   commit, which names the whole change. Empty when the change goes on top of the PR head.
+_finish_folded_message() {
+  local head="" first=""
+  head="$(git -C "$1" rev-parse -q --verify "refs/remotes/origin/${2}" 2>/dev/null || true)"
+  [ -n "$head" ] && [ "$head" != "$3" ] || return 0
+  first="$(git -C "$1" log --reverse --no-merges --format=%H "$head" "^${3}" 2>/dev/null | head -1)"
+  [ -z "$first" ] || git -C "$1" log -1 --format=%B "$first"
+}
+
 _finish_squash_base() {
   local wt="$1" branch="$2" base="$3" merging="${4:-}" head people
   head="$(git -C "$wt" rev-parse -q --verify "refs/remotes/origin/${branch}" 2>/dev/null || true)"
