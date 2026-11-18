@@ -317,9 +317,9 @@ NOWR="$(date +%s)"; rr="$(mk fxa "weekly sun 03:00")"
 # flag (true when the team does not load: fail closed), and the start of the last run with a result.
 ri="$(mk fxa "daily 20:00" '{"branch": "main"}')"
 db_exec "INSERT INTO routine_runs (routine_id, period, state, heads, started_at) VALUES ($ri, '2026-10-18', 'ok', json('{\"mozilla/fxa\": {\"start\": null, \"head\": \"2222222222222222222222222222222222222222\"}}'), $((T - 3600)));"
-check "a run carries name, mode, template, repos, branch, private and since" \
-  '{"name":"Code review","mode":"report","template":"code-review","repos":["mozilla/fxa"],"branch":"main","private":false,"since":'"$((T - 3600))"'}' \
-  "$(_routine_profile() { echo "$OPEN"; }; tick $((T + 11 * 3600 + 30)) | jq -c --argjson r "$ri" '.runs[] | select(.routine == $r) | {name, mode, template, repos, branch, private, since}')"
+check "a run carries name, mode, template, repos, branch, private, since and report_as (thread when unset)" \
+  '{"name":"Code review","mode":"report","template":"code-review","repos":["mozilla/fxa"],"branch":"main","private":false,"since":'"$((T - 3600))"',"report_as":"thread"}' \
+  "$(_routine_profile() { echo "$OPEN"; }; tick $((T + 11 * 3600 + 30)) | jq -c --argjson r "$ri" '.runs[] | select(.routine == $r) | {name, mode, template, repos, branch, private, since, report_as}')"
 rj="$(mk fxa "daily 20:30")"
 check "a team that stops loading after the D8 check marks the run private, and a first run has no since" "true|null" \
   "$(_routine_profile() { [ -e "$tmp/p1" ] && return 1; : > "$tmp/p1"; echo "$OPEN"; }; tick $((T + 11 * 3600 + 1830)) | jq -r --argjson r "$rj" '.runs[] | select(.routine == $r) | "\(.private)|\(.since)"')"

@@ -108,6 +108,9 @@ check "a prompt with a lone surrogate is a field error, not a traceback" "prompt
 check "skip_no_commits that is not a bool" "skip_no_commits: must be true or false" "$(v secret priv.json '{"skip_no_commits":"yes"}')"
 check "draft that is not a bool" "draft: must be true or false" "$(v secret priv.json '{"draft":"no"}')"
 check "an env that is not live or dev" "env: must be live or dev" "$(v secret priv.json '{"env":"prod"}')"
+check "report_as thread or message is valid" "ok ok" "$(v secret priv.json '{"report_as":"thread"}') $(v secret priv.json '{"report_as":"message"}')"
+check "report_as another value" "report_as: must be thread or message" "$(v secret priv.json '{"report_as":"post"}')"
+check "report_as message with no channel" "report_as: A report posted as a message needs a channel" "$(v secret priv.json '{"report_as":"message","channel":""}')"
 echo '[1]' > "$tmp/arr.json"
 check "a routine that is not a JSON object" "routine: must be a JSON object" \
   "$(python3 -I "$here/routine.py" validate "$tmp/arr.json" secret --profile "$tmp/priv.json" --index "$tmp/index.json" --bot-env "$tmp/bot.env" 2>&1 >/dev/null)"

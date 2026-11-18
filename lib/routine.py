@@ -40,7 +40,7 @@ TEMPLATES = ("code-review", "ux-review", "perf-review", "security-review", "blan
 MODES = ("report", "tickets", "pr", "pr+notes")
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 KEYS = {"name", "template", "prompt", "schedule", "zone", "repos", "branch", "channel", "mode", "max_usd",
-        "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime", "jira"}
+        "skip_no_commits", "env", "on", "pr", "draft", "watch", "model", "effort", "runtime", "jira", "report_as"}
 # The routines that a request starts, not the clock: the host frame is their prompt.
 TRIGGERED = ("pr-label", "jira-label")
 # Unset: the host's model (Opus) and the CLI's default effort. The models are the ones the LLM proxy prices.
@@ -321,6 +321,11 @@ def check(r, team, profile, index, env, count):
         bad.append("draft: must be true or false")
     if r.get("env", "live") not in ("live", "dev"):
         bad.append("env: must be live or dev")
+    # message: the report itself is the channel post, as a person's daily report is; the run's details go in its thread.
+    if r.get("report_as", "thread") not in ("thread", "message"):
+        bad.append("report_as: must be thread or message")
+    elif r.get("report_as") == "message" and not r.get("channel"):
+        bad.append("report_as: A report posted as a message needs a channel")
     rt = r.get("runtime") or "claude"
     if rt not in RUNTIMES:
         bad.append(f"runtime: must be one of {', '.join(RUNTIMES)}")

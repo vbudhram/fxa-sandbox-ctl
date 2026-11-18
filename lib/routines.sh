@@ -851,7 +851,7 @@ _routine_run_info() {
   priv="$(_routine_profile "$2" 2>/dev/null | jq -r 'if .private == false then "false" else "true" end' 2>/dev/null)" || priv=true
   [ "$priv" = false ] || priv=true
   since="$(db_value "SELECT started_at FROM routine_runs WHERE routine_id = $1 AND state IN ('ok','report','nochange') ORDER BY id DESC LIMIT 1;")" || since=""
-  jq -c --argjson p "$priv" --arg s "$since" '{name, mode, template: (.template // "blank"), repos, branch: (.branch // null), private: $p,
+  jq -c --argjson p "$priv" --arg s "$since" '{name, mode, template: (.template // "blank"), repos, branch: (.branch // null), private: $p, report_as: (.report_as // "thread"),
     since: (if $s == "" then null else ($s | tonumber) end)}' <<< "$3"
 }
 

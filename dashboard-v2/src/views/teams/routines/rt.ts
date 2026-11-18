@@ -84,6 +84,8 @@ export function rtRoutine(d: J): J {
   if (String(d.branch).trim() && d.repos.length === 1) r.branch = String(d.branch).trim();
   if (d.watch && !d.repos.includes(d.watch)) r.watch = d.watch;
   if (d.env) r.env = d.env;
+  // The form does not show report_as yet: an edit keeps it.
+  if (d.report_as) r.report_as = d.report_as;
   return r;
 }
 // A new draft from a start: its prompt and result, and the team's repo when it has only one.

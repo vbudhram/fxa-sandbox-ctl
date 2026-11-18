@@ -50,6 +50,14 @@ describe('rtResult and rtFixResult equal v1 in every state', () => {
   });
 });
 
+describe('report_as', () => {
+  it('an edit keeps report_as, and a routine with none gets none', () => {
+    const r = { ...sched, name: 'T', prompt: 'p', repos: ['example/app'], max_usd: 5, report_as: 'message' };
+    expect(rt.rtRoutine(rt.rtDraft(r)).report_as).toBe('message');
+    expect('report_as' in rt.rtRoutine(rt.rtDraft({ ...r, report_as: undefined }))).toBe(false);
+  });
+});
+
 describe('the draft and the routine', () => {
   const routines = [
     { ...sched, name: 'A', prompt: 'p', repos: ['example/app'], branch: 'dev', max_usd: 5, skip_no_commits: false, draft: false, env: 'dev' },
