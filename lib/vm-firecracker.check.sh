@@ -116,6 +116,12 @@ done
 skip="$(grep '^\[ "\$new" = "\$cur" \]' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")"
 skips() { ( new=a cur=a cur_cc=1 CLAUDE_CODE_VERSION=1 cur_cx=2 CODEX_VERSION=2 ts=t cur_ts="$1"; eval "$skip"; echo build ) 2>/dev/null | tail -1; }
 check "a changed toolchain script makes a new snapshot; an unchanged one skips" "build|snapshot is at main (a)" "$(skips old)|$(skips t)"
+# The snapshot hash covers every file fc_install puts on the host, refresh.sh itself too.
+ts_line="$(grep '^ts=' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")"
+missing=""; for d in $(declare -f fc_install | grep -o '/usr/local/[^ ;"]*' | sort -u); do
+  case "$ts_line" in *"$d"*) ;; *) [[ "$d" == /usr/local/share/fxa/*.sh && "$ts_line" == *'/usr/local/share/fxa/*.sh'* ]] || missing+="$d "; esac
+done
+check "the snapshot hash covers every file fc_install installs" "" "$missing"
 # refresh.sh keeps only plain versions from the guest's output, which it does not trust.
 tc="$(printf '%s\n' 'claude 2.1.5' 'claude 1.0 $(touch x)' 'codex 0.9.1; rm -rf /' 'codex 0.20.0')"
 eval "$(grep '^cc="$(sed' "$SANDBOX_ROOT/infra/firecracker/refresh.sh")"
