@@ -68,6 +68,8 @@ check "prs: a session on a pipeline PR leaves it pipeline, with the rounds and r
   "$(printf '%s\n' "$out_prs" | jq -r 'select(.number == 100) | "\(.src)|\(.state)|\(.feedback_rounds)|\(.rebases)|\(.team)|\(.repo)"')"
 check "prs: a team's PR keeps its repo and team" "mozilla/syncstorage-rs|sync-storage" \
   "$(printf '%s\n' "$out_prs" | jq -r 'select(.number == 7) | "\(.repo)|\(.team)"')"
+check "prs: a PR that a routine run opened gets the routine's src, as in work" "depfix" \
+  "$(printf '%s\n' "$out_prs" | jq -r 'select(.number == 7) | .src')"
 check "routine_runs: all four runs, the fix as a boolean" "4 true" "$(printf '%s\n' "$out_routine_runs" | grep -c .) $(printf '%s\n' "$out_routine_runs" | jq -r 'select(.id == 1) | .fix')"
 check "sessions: both rows, a dry run marked, busy_s a number" "2|true|60" \
   "$(printf '%s\n' "$out_sessions" | jq -sr '"\(length)|\(map(select(.key == "agent-bbbbbb"))[0].dryrun)|\(map(select(.key == "agent-aaaaaa"))[0].busy_s | floor)"')"

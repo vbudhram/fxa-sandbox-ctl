@@ -50,10 +50,13 @@ _BQ_WORK="$_BQ_PRKEY"'
 
 # One row per PR of every team, with the source from its branch (a ticket branch is pipeline, so a session
 # that continues a pipeline PR leaves it pipeline), the ticket's rounds, and the team the Stats feed gives it.
-_BQ_PRS='
-  (.tickets // {}) as $t
+# A PR that a live routine run opened is routine (or depfix), as in work.
+_BQ_PRS="$_BQ_PRKEY"'
+  ($rr | map(select(.env == "live") | (.pr_url | prurl) as $u | select($u != null)
+     | {key: prkey($u.r; $u.n), value: (if .fix == 1 then "depfix" else "routine" end)}) | from_entries) as $rs
+  | (.tickets // {}) as $t
   | ((.rows // []) | map(select(.kind == "rebase")) | group_by(.key) | map({key: .[0].key, value: length}) | from_entries) as $rb
-  | (.prs // [])[] | { repo: (.repo // $repo), number: .n, key, src, team: (.team // $me), state: (.state | ascii_downcase),
+  | (.prs // [])[] | { repo: (.repo // $repo), number: .n, key, src: ($rs[prkey(.repo // $repo; .n)] // .src), team: (.team // $me), state: (.state | ascii_downcase),
       created, merged, closed, attempts: ($t[.key].attempts // 0), feedback_rounds: ($t[.key].feedback_rounds // 0),
       admin_rounds: ($t[.key].admin_rounds // 0), rebases: ($rb[.key] // 0) }'
 
@@ -63,7 +66,8 @@ _bq_rows() {
   case "$1" in
     work) jq -c --slurpfile rr <(_bq_db "$(_bq_routine_runs_sql)" | jq -sc .) --arg repo "${PIPE_REPO_SLUG:-mozilla/fxa}" \
             '$rr[0] as $rr | '"$_BQ_WORK" "$2" ;;
-    prs) jq -c --arg repo "${PIPE_REPO_SLUG:-mozilla/fxa}" --arg me "${PIPE_PROFILE:-fxa}" "$_BQ_PRS" "$2" ;;
+    prs) jq -c --slurpfile rr <(_bq_db "$(_bq_routine_runs_sql)" | jq -sc .) --arg repo "${PIPE_REPO_SLUG:-mozilla/fxa}" \
+            --arg me "${PIPE_PROFILE:-fxa}" '$rr[0] as $rr | '"$_BQ_PRS" "$2" ;;
     runs) _bq_db "SELECT recorded_at, issue AS key, kind, model, cost_usd, wall_seconds, json_extract(data, '\$.pr') AS pr_url,
             CAST(json_extract(data, '\$.files_changed') AS INTEGER) AS files_changed, json_extract(data, '\$.source') AS source FROM runs ORDER BY id" ;;
     sessions) _bq_db "SELECT key, coalesce(json_extract(data, '\$.profile'), 'fxa') AS team, json_extract(data, '\$.source') AS source,
